@@ -253,9 +253,42 @@ LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
 LiteRtStatus LrtSetGpuOptionsHintFullyDelegatedToSingleDelegate(
     LrtGpuOptions* gpu_options, bool hint_fully_delegated_to_single_delegate);
 
-// Sets whether to use IrModel instead of legacy GraphFloat32.
+// If true, the accelerator initializes via the IrModel pipeline instead of the
+// legacy GraphFloat32 pipeline. Both pipelines are always compiled and linked,
+// the selection happens at runtime.
 LiteRtStatus LrtSetGpuOptionsUseIrModel(LrtGpuOptions* gpu_options,
                                         bool enable);
+
+// If true, tuning is faster but the resulting inference can be slower. This
+// trades steady-state performance for initialization time.
+LiteRtStatus LrtSetGpuOptionsEnableFastTuning(LrtGpuOptions* gpu_options,
+                                              bool enable_fast_tuning);
+
+// Enables per-op profiling.
+LiteRtStatus LrtSetGpuOptionsEnableOpProfiling(LrtGpuOptions* gpu_options,
+                                               bool enable_op_profiling);
+
+// Enables the detailed report of the per-op profiling.
+LiteRtStatus LrtSetGpuOptionsEnableOpProfilingDetailedReport(
+    LrtGpuOptions* gpu_options, bool enable_op_profiling_detailed_report);
+
+// If true, only the node range of `debug_first_delegate_node_index` and
+// `debug_last_delegate_node_index` is delegated.
+//
+// NOTE: This is for debugging purposes, e.g. to bisect which node breaks
+// delegation.
+LiteRtStatus LrtSetGpuOptionsDebugDelegatePartition(
+    LrtGpuOptions* gpu_options, bool debug_delegate_partition);
+
+// Sets the index of the first node that could be delegated. Only used when
+// `debug_delegate_partition` is true.
+LiteRtStatus LrtSetGpuOptionsDebugFirstDelegateNodeIndex(
+    LrtGpuOptions* gpu_options, int debug_first_delegate_node_index);
+
+// Sets the index of the last node that could be delegated. Only used when
+// `debug_delegate_partition` is true.
+LiteRtStatus LrtSetGpuOptionsDebugLastDelegateNodeIndex(
+    LrtGpuOptions* gpu_options, int debug_last_delegate_node_index);
 
 // Declarations below this point are meant to be used by accelerator code.
 
@@ -416,6 +449,31 @@ LiteRtStatus LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
 // Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuOptionsUseIrModel(bool* enabled,
                                         const LrtGpuOptions* options);
+
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetGpuOptionsEnableFastTuning(bool* enabled,
+                                              const LrtGpuOptions* options);
+
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetGpuOptionsEnableOpProfiling(bool* enabled,
+                                               const LrtGpuOptions* options);
+
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetGpuOptionsEnableOpProfilingDetailedReport(
+    bool* enabled, const LrtGpuOptions* options);
+
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetGpuOptionsDebugDelegatePartition(
+    bool* enabled, const LrtGpuOptions* options);
+
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetGpuOptionsDebugFirstDelegateNodeIndex(
+    int* debug_first_delegate_node_index, const LrtGpuOptions* options);
+
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetGpuOptionsDebugLastDelegateNodeIndex(
+    int* debug_last_delegate_node_index, const LrtGpuOptions* options);
+
 
 #ifdef __cplusplus
 }  // extern "C"

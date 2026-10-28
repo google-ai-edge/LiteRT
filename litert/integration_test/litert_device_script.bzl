@@ -231,7 +231,8 @@ def litert_device_script(
         is_test = False,
         shard_count = None,
         size = None,
-        tags = []):
+        tags = [],
+        visibility = None):
     """Generates a shell script and runfiles for executing a binary on a device.
 
     This macro sets up a build environment to run a specified binary (`bin`) on a target device,
@@ -256,6 +257,7 @@ def litert_device_script(
       shard_count: Optional shard_count passed to sh_test when is_test is True.
       size: Optional test size (e.g. "large") passed to sh_test when is_test is True.
       tags: Additional Bazel tags for the generated rules.
+      visibility: Target visibility.
     """
 
     if build_for_host and build_for_device:
@@ -300,6 +302,7 @@ def litert_device_script(
         exec_env_vars = backend.env_paths,
         model_providers = model_providers,
         tags = tags,
+        visibility = visibility,
     )
 
     sh_library(
@@ -313,6 +316,7 @@ def litert_device_script(
         ],
         testonly = testonly,
         tags = tags,
+        visibility = visibility,
     )
 
     script_rule = sh_test if is_test else sh_binary
@@ -328,6 +332,7 @@ def litert_device_script(
         testonly = testonly,
         args = exec_args,
         tags = tags,
+        visibility = visibility,
         **script_kwargs
     )
 
@@ -354,7 +359,7 @@ def make_download_model_provider(name, url, testonly = True):
     )
 
 # copybara:uncomment_begin(google-only)
-# def make_cns_pull_model_provider(name, cns_paths, testonly = True):
+# def make_cns_pull_model_provider(name, cns_paths, testonly = True, visibility = None):
 #     """Generates a shell script and runfiles for downloading model(s) from CNS paths.
 #
 #     This can be depended on by litert_device_scripts to add more models to the data dependencies.
@@ -363,6 +368,7 @@ def make_download_model_provider(name, url, testonly = True):
 #       cns_paths: A list of CNS paths to download the model(s) from. Each entry can be a file or a
 #                  directory. If a directory, all .tflite files in the directory will be downloaded.
 #       testonly: If True, the generated targets are marked as testonly.
+#       visibility: Target visibility.
 #     """
 #     _device_script_lib(
 #         name = name + "_expanded",
@@ -372,12 +378,14 @@ def make_download_model_provider(name, url, testonly = True):
 #             "@@cns_paths@@": " ".join(cns_paths),
 #         },
 #         executable = True,
+#         visibility = visibility,
 #     )
 #
 #     sh_binary(
 #         name = name,
 #         srcs = [":" + name + "_expanded"],
 #         testonly = testonly,
+#         visibility = visibility,
 #     )
 #
 # copybara:uncomment_end

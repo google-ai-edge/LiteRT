@@ -52,7 +52,7 @@ flowchart TB
     end
     subgraph ROW2[" "]
         direction LR
-        C_GEN["🛠 Compile · General<br/><div style='text-align:left'>────────────────────────<br/>enable_just_in_time<br/>graph_io_tensor_mem_type<br/>graph_priority</div>"]
+        C_GEN["🛠 Compile · General<br/><div style='text-align:left'>────────────────────────<br/>enable_just_in_time<br/>graph_io_tensor_mem_type<br/>graph_priority<br/>op_name_format</div>"]
         C_HTP["🛠 Compile · HTP<br/><div style='text-align:left'>───────────────────────<br/>use_conv_hmx<br/>use_fold_relu<br/>htp_dlbc<br/>htp_dlbc_weights<br/>htp_p_point<br/>htp_weight_sharing_channel_tile_size<br/>optimization_level<br/>vtcm_size<br/>num_hvx_threads<br/>use_int64_bias_as_int32<br/>enable_weight_sharing</div>"]
         C_OTHER["🛠 Compile · IR / SAVER / Debug<br/><div style='text-align:left'>──────────────────────────────<br/>dlc_dir<br/>saver_output_dir<br/>dump_tensor_ids<br/>ir_json_dir</div>"]
         C_GEN ~~~ C_HTP ~~~ C_OTHER
@@ -62,7 +62,7 @@ flowchart TB
 
 | Category | Options |
 |----------|---------|
-| **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling` |
+| **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling`, `op_name_format` |
 | **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_dlbc`, `htp_dlbc_weights`, `htp_p_point`, `htp_weight_sharing_channel_tile_size`, `htp_performance_mode`, `htp_pd_session`, `htp_device_id`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
 | **DSP** | `dsp_performance_mode`, `dsp_pd_session` |
 | **LPAI** | `lpai_target`, `lpai_fps`, `lpai_ftrt_ratio`, `lpai_client_perf_type`, `lpai_core_affinity_type`, `lpai_core_selection` |
@@ -90,11 +90,12 @@ key and the C / C++ setters follow the same name (see §10 for examples), with
 |--------|------|---------|-------|----------------|
 | Log level | `log_level` | `info` | both | `off` · `error` · `warn` · `info` · `verbose` · `debug`. SDK libs only — not LiteRT's own logging. |
 | Backend | `backend` | `htp` | both | `gpu` · `htp` · `dsp` · `ir`. |
-| Graph priority | `graph_priority` | `default` | compile | `default` · `low` · `normal` · `normal_high` · `high`. `default` maps to normal. |
+| Graph priority | `graph_priority` | `default` | both | `default` · `low` · `normal` · `normal_high` · `high`. `default` maps to normal. On HTP the dispatch-time value is applied when the context binary is loaded and overrides the compile-time value. |
 | Just-In-Time | `enable_just_in_time` | `false` | compile | Pass QNN context plugin→dispatcher in-memory, skipping serialization. |
 | Graph I/O mem type | `graph_io_tensor_mem_type` | `memhandle` | compile | `raw` · `memhandle`. Mem type for graph I/O tensors at graph-creation. |
 | Profiling | `profiling` | `off` | both | `off` · `basic` · `detailed` · `linting` · `optrace`. Higher = more detailed report. Read at compile (context creation) and dispatch (graph execution). |
 | Custom op package | `custom_op_package` | *(empty)* | both | See note below. |
+| Op name format | `op_name_format` | `basic` | compile | Controls how QNN graph op names are formed. `detailed`: includes the tensor-path namespace prefix and LiteRt op ID suffix — full traceability for debugging. `basic`: omits them, producing shorter op names. |
 
 ### `custom_op_package` details
 
@@ -135,9 +136,28 @@ target:HTP"
 | HTP device ID | `htp_device_id` | `0` | both | A nonzero value selects the matching platform-reported HTP `deviceId`; it requires QNN platform information. `0` leaves device selection to QNN's default configuration. |
 | VTCM size | `vtcm_size` | `0` (=max) | compile | VTCM size (MB) of target device. `0` → device max. |
 | HVX threads | `num_hvx_thread` | `0` (=max) | compile | HVX threads for target device. `0` → device max. |
+| HTP file read memory budget | `htp_file_read_memory_budget_mb` | `0` (=off) | dispatch | Caps host memory (MB) QNN uses to read the context binary during HTP deserialization, and releases the bytecode pages afterwards. `0` disables the feature (QNN default). Choose an explicit budget based on the model and target environment; it can trade peak host RSS for initialization time. HTP only; no effect on other backends or Windows. |
 | INT64→INT32 bias | `use_int64_bias_as_int32` | `true` | compile | Convert FullyConnected/Conv2D bias int64 → int32. |
 | Weight sharing | `enable_weight_sharing` | `false` | compile | Subgraphs share weight tensors. **x86 AOT only** — unsupported on device. |
 | Weight sharing channel tile size | `htp_weight_sharing_channel_tile_size` | `0` | compile | `0` disables this config. Positive values are passed as the QAIRT finalize config `weight_sharing_channel_tile_size`. Use a tile size that is a multiple of 32 for 16-bit weights, 64 for 8-bit weights, or 128 for 2-bit or 4-bit weights. For more details, please refer to the official QAIRT documentation. |
+
+### HTP file read memory budget (peak RSS reduction)
+
+`htp_file_read_memory_budget_mb` caps the host memory QNN uses to read a context
+binary during HTP deserialization and releases the bytecode pages once the
+context is created. It is **off by default (`0`)**.
+
+A smaller budget trades initialization time for lower peak host RSS during
+deserialization: QNN reads the context binary in smaller chunks and reclaims
+each chunk's pages before reading the next, so the device/model/SDK
+combination determines how large a saving this yields and how much slower
+deserialization gets. HTP backend only (no effect on other backends or
+Windows).
+
+```bash
+run_model --graph=model.tflite --accelerator=npu \
+    --qualcomm_htp_file_read_memory_budget_mb=16
+```
 
 ---
 

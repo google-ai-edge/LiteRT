@@ -24,19 +24,24 @@
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_transposed_support.h"  // IWYU pragma: export
 
 namespace litert::ml_drift {
 
-// Whether fused Flash-Attention prefill/decode kernels can be used on this GPU.
-// Enabled on the Metal backend of Apple GPUs (prefill and decode) and on the
-// OpenCL backend (decode). Shape-specific conditions are checked separately by
-// the caller.
-bool SupportsFusedSdpaKernels(const ::ml_drift::GpuInfo& gpu_info);
+// `SupportsFusedSdpaKernels` and the other device and shape checks of the
+// fused kernels are declared in `sdpa_transposed_support.h`.
 
+// Builds `odml.sdpa_transposed` as a fused Flash-Attention kernel when one
+// applies, otherwise as the decomposed BatchedMatMul + Softmax graph.
+// `max_decomposed_score_bytes` is the score tensor budget of the decomposed
+// prefill graph on backends without the MMA prefill kernel (see
+// `UsesWorkGroupFlashPrefill`); tests lower it to run small prefill shapes on
+// the work-group Flash kernel.
 absl::Status BuildSdpaTransposedGpuGraph(
     const std::vector<uint32_t>& input_ids, uint32_t output_id,
     const SdpaTransposedAttributes& attr,
-    ::ml_drift::GpuModelBuilder* model_builder);
+    ::ml_drift::GpuModelBuilder* model_builder,
+    uint64_t max_decomposed_score_bytes = kMaxDecomposedSdpaScoreBytes);
 
 absl::Status CreateSdpaTransposedFromNode(
     const std::vector<::ml_drift::Value*>& inputs,

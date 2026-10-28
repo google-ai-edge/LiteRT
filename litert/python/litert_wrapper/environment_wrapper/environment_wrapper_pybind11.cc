@@ -28,16 +28,19 @@ PYBIND11_MODULE(_pywrap_litert_environment_wrapper, m) {
   m.def(
       "CreateEnvironment",
       [](const std::string& runtime_path, const std::string& compiler_plugin,
-         const std::string& dispatch_library) {
+         const std::string& dispatch_library,
+         const std::string& compiler_cache_dir) {
         PyObject* res = litert::environment_wrapper::CreateEnvironment(
             runtime_path.empty() ? nullptr : runtime_path.c_str(),
             compiler_plugin.empty() ? nullptr : compiler_plugin.c_str(),
-            dispatch_library.empty() ? nullptr : dispatch_library.c_str());
+            dispatch_library.empty() ? nullptr : dispatch_library.c_str(),
+            compiler_cache_dir.empty() ? nullptr : compiler_cache_dir.c_str());
         if (!res) {
           throw py::error_already_set();
         }
         return py::reinterpret_steal<py::object>(res);
       },
       py::arg("runtime_path") = "", py::arg("compiler_plugin_path") = "",
-      py::arg("dispatch_library_path") = "");
+      py::arg("dispatch_library_path") = "",
+      py::arg("compiler_cache_dir") = "");
 }

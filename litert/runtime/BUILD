@@ -113,10 +113,38 @@ cc_library(
         ":ahwb_wrapper",
         ":event",
         "//litert/c:litert_common",
+        "//litert/c:litert_event_type",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ],
+)
+
+cc_test(
+    name = "ahwb_buffer_test",
+    srcs = ["ahwb_buffer_test.cc"],
+    linkopts = litert_android_linkopts(),
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":ahwb_buffer",
+        ":event",
+        "//litert/c:litert_common",
+        "//litert/c:litert_event_type",
+    ] + gtest_main_no_heapcheck_deps(),
+)
+
+litert_device_exec(
+    name = "ahwb_buffer_device_test",
+    data = [],
+    target = ":ahwb_buffer_test",
 )
 
 cc_library(
@@ -215,9 +243,8 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
         "@ml_drift//ml_drift/cl:cl_command_queue",
         "@ml_drift//ml_drift/cl:cl_memory",
         "@ml_drift//ml_drift/cl:tensor",
@@ -425,6 +452,8 @@ cc_test(
 )
 
 GPU_ENVIRONMENT_DEPS = [
+    "@com_google_absl//absl/base:core_headers",
+    "@com_google_absl//absl/synchronization",
     "@ml_drift//ml_drift/cl:cl_command_queue",
     "@ml_drift//ml_drift/cl:cl_context",
     "@ml_drift//ml_drift/cl:cl_device",
@@ -465,7 +494,7 @@ cc_library(
     deps = GPU_ENVIRONMENT_DEPS + [
         "//litert/c:litert_environment_options_header",
         "//litert/cc:litert_any",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
     ] + litert_metal_deps(),
 )
@@ -505,14 +534,20 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_dispatch_delegate_vendor_options",
+        "//litert/core:build_stamp",
+        "//litert/core:dispatch_op_schema",
         "//litert/core:options",
+        "//litert/core/model",
         "//tflite:framework_stable",
         "//tflite:mutable_op_resolver",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ] + select({
         "//litert:without_builtin_ops": [
             "//tflite/c:c_api_opaque_without_op_resolver_without_alwayslink",
@@ -526,6 +561,24 @@ cc_library(
 cc_library(
     name = "tensor_identifier",
     hdrs = ["tensor_identifier.h"],
+)
+
+cc_test(
+    name = "tfl_utils_test",
+    srcs = ["tfl_utils_test.cc"],
+    deps = [
+        ":tfl_utils",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_expected",
+        "//litert/cc/internal:litert_dispatch_delegate_vendor_options",
+        "//litert/core:build_stamp",
+        "//litert/core:dispatch_op_schema",
+        "//litert/core/model",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(
@@ -548,6 +601,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
     ] + select({
         "//litert:without_builtin_ops": [
@@ -727,9 +781,9 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_consts",
+        "//litert/cc/internal:litert_dispatch_delegate_vendor_options",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_tensor_buffer_utils",
-        "//litert/cc/internal:scoped_weight_source",
         "//litert/core:buffer_error_reporter",
         "//litert/core:build_stamp",
         "//litert/core:environment",
@@ -780,6 +834,7 @@ cc_library(
             # Omit default TFLite builtin/reference kernels (e.g.
             # litert_builtin_ops=false or cpu_backend=selective). XNNPACK or a
             # selective op resolver is used instead.
+            "//litert/tflite_support/op_resolver:selected_ops_registry",
             "//tflite/c:c_api_opaque_without_op_resolver_without_alwayslink",
             "//tflite/c:c_api_without_op_resolver_without_alwayslink",
         ],
@@ -790,7 +845,6 @@ cc_library(
             "//tflite/kernels:builtin_ops",
             "//tflite/kernels:reference_ops",
             "//weight_loader:external_weight_loader",
-            "@com_google_absl//absl/status",
         ],
     }),
 )
@@ -1015,7 +1069,6 @@ cc_library(
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -1066,12 +1119,12 @@ cc_library(
     name = "litert_gpu_util",
     hdrs = ["litert_gpu_util.h"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_model_header",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
-        "@com_google_absl//absl/status",
+        "//litert/cc:litert_expected",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common/task:tensor_desc",

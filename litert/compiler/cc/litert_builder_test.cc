@@ -839,6 +839,41 @@ TEST(CcBuilderTest, TestSetConv3dOpOptions) {
   EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeNone);
 }
 
+TEST(CcBuilderTest, TestSetConv3dTransposeOpOptions) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtBuilderT builder;
+  Builder cc_builder(ctx, &builder);
+  std::vector<Tensor> inputs;
+  std::vector<Tensor> outputs;
+  auto op =
+      cc_builder.BuildOp(kLiteRtOpCodeTflConv3dTranspose, inputs, outputs);
+  ASSERT_TRUE(op.HasValue());
+  {
+    Conv3dTransposeOptions options;
+    options.padding = kPaddingValid;
+    options.stride_w = 2;
+    options.stride_h = 3;
+    options.stride_d = 4;
+    options.dilation_w_factor = 5;
+    options.dilation_h_factor = 6;
+    options.dilation_d_factor = 7;
+    options.fused_activation_function = kActivationFunctionTypeRelu;
+    auto res = cc_builder.SetOpOptions<Conv3dTransposeOptions>(
+        *op, std::move(options));
+    ASSERT_TRUE(res.HasValue());
+  }
+  auto res = GetOptionsAs<Conv3dTransposeOptions>(op->Context(), op->Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().padding, kPaddingValid);
+  EXPECT_EQ(res.Value().stride_w, 2);
+  EXPECT_EQ(res.Value().stride_h, 3);
+  EXPECT_EQ(res.Value().stride_d, 4);
+  EXPECT_EQ(res.Value().dilation_w_factor, 5);
+  EXPECT_EQ(res.Value().dilation_h_factor, 6);
+  EXPECT_EQ(res.Value().dilation_d_factor, 7);
+  EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeRelu);
+}
+
 TEST(CcBuilderTest, TestSetDepthwiseConv2dOpOptions) {
   const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtBuilderT builder;

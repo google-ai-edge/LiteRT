@@ -16,13 +16,16 @@
 #define ODML_LITERT_LITERT_CORE_MODEL_VERIFIER_H_
 
 #include <cstddef>
+#include <cstdint>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/core/api/verifier.h"
 #include "tflite/schema/schema_generated.h"
-#include "tflite/stderr_reporter.h"
 
 namespace litert {
 
@@ -59,10 +62,21 @@ absl::Status ValidateFlatBufferOperatorCodes(const tflite::Model* tfl_model);
 absl::Status ValidateFlatBufferTensorQuantization(
     const tflite::SubGraph& subgraph, const tflite::Tensor& tensor);
 
-// Validates tensor ranks, dimensions, shape signatures, and quantization
-// parameters across all subgraphs in `tfl_model`.
+// Validates tensor ranks, dimensions, shape signatures, quantization
+// parameters, and sparsity parameters across all subgraphs in `tfl_model`.
 absl::Status ValidateFlatBufferTensors(const tflite::Model* tfl_model,
                                        const VerifyOptions& options = {});
+
+// Validates `sparsity` level-by-level against `dim_sizes` and returns the
+// total number of stored elements.
+absl::StatusOr<uint32_t> VerifyAndCountElements(
+    const tflite::SparsityParameters& sparsity, absl::Span<const int> dim_sizes,
+    absl::string_view tensor_name = "");
+
+// Validates a sparse `tensor`'s sparsity parameters and returns the total
+// number of stored elements.
+absl::StatusOr<uint32_t> VerifyAndCountSparseElements(
+    const tflite::Tensor& tensor);
 
 }  // namespace internal
 
@@ -72,16 +86,7 @@ absl::Status ValidateFlatBufferTensors(const tflite::Model* tfl_model,
 absl::Status VerifyModel(const void* buf, size_t len,
                          const VerifyOptions& options = {});
 
-bool Verify(const void* buf, size_t len,
-            tflite::ErrorReporter* reporter = tflite::DefaultErrorReporter(),
-            const VerifyOptions& options = {});
-
-// Convenience overload accepting `options` before `reporter`.
-inline bool Verify(
-    const void* buf, size_t len, const VerifyOptions& options,
-    tflite::ErrorReporter* reporter = tflite::DefaultErrorReporter()) {
-  return Verify(buf, len, reporter, options);
-}
+bool Verify(const void* buf, size_t len, const VerifyOptions& options = {});
 
 // TfLiteVerifier adapter for use with
 // tflite::FlatBufferModel::VerifyAndBuildFromBuffer.

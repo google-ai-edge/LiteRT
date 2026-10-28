@@ -16,9 +16,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
+#include <cstdio>
 #include <functional>
-#include <ios>
 #include <optional>
 #include <string>
 #include <utility>
@@ -219,9 +218,8 @@ Expected<void> CompilationCache::SaveModel(
   LITERT_RETURN_IF_ERROR(MkDir(parent_dir));
 
   {
-    std::ofstream output_file(cached_model_file_path,
-                              std::ios::out | std::ios::binary);
-    if (!output_file.is_open()) {
+    std::FILE* output_file = std::fopen(cached_model_file_path.c_str(), "wb");
+    if (output_file == nullptr) {
       LITERT_LOG(LITERT_ERROR, "Failed to open cache file for writing: %s",
                  cached_model_file_path.c_str());
       return Unexpected(kLiteRtStatusErrorFileIO,
@@ -230,9 +228,10 @@ Expected<void> CompilationCache::SaveModel(
 
     size_t data_size = model_buffer.Size();
     const char* data = reinterpret_cast<const char*>(model_buffer.Data());
-    output_file.write(data, data_size);
+    const size_t bytes_written = std::fwrite(data, 1, data_size, output_file);
+    const int close_status = std::fclose(output_file);
 
-    if (!output_file.good()) {
+    if (bytes_written != data_size || close_status != 0) {
       LITERT_LOG(LITERT_ERROR, "Failed to write all data to cache file: %s",
                  cached_model_file_path.c_str());
       return Unexpected(kLiteRtStatusErrorFileIO,

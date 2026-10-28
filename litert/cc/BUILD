@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:uncomment_begin(google-only)
+# load("//litert/integration_test/google:devices.bzl", "LITERT_GPU_ANDROID_DEVICES")
+#
+# copybara:uncomment_end
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
@@ -68,7 +72,6 @@ cc_library(
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -93,7 +96,6 @@ cc_library(
     hdrs = ["litert_buffer_ref.h"],
     deps = [
         ":litert_api_types",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
@@ -164,7 +166,6 @@ cc_library(
         "//litert/c:litert_common",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -457,67 +458,16 @@ litert_device_test(
 #     target = "//litert/cc:litert_compiled_model_gpu_test",
 # )
 #
-# # Real-device Mobile Harness targets for litert_compiled_model_gpu_test across
-# # Android GPU families: Mali (where OpenCL imports AHardwareBuffer via
-# # cl_arm_import_memory_android_hardware_buffer), PowerVR, Adreno, and Xclipse.
-# _LITERT_GPU_DEVICE_TEST_DIMENSIONS = {
-#     # Mali (AHWB -> OpenCL zero-copy path)
-#     "pixel6": {
-#         "pool": "shared",
-#         "model": "pixel 6",
-#         "sdk_version": "33",
-#     },  # Pixel 6, Tensor G1 / Mali-G78
-#     "pixel7": {
-#         "pool": "shared",
-#         "model": "pixel 7",
-#         "sdk_version": "34",
-#     },  # Pixel 7, Tensor G2 / Mali-G710
-#     "pixel8": {
-#         "pool": "shared",
-#         "model": "pixel 8",
-#         "sdk_version": "36",
-#     },  # Pixel 8, Tensor G3 / Mali-G715
-#     "pixel9": {
-#         "pool": "shared",
-#         "model": "pixel 9",
-#         "sdk_version": "36",
-#     },  # Pixel 9, Tensor G4 / Mali-G715
-#     "a346n": {
-#         "pool": "shared",
-#         "model": "sm-a346n",
-#     },  # Galaxy A34, Dimensity 1080 / Mali-G68
-#     "a146u1": {
-#         "pool": "shared",
-#         "model": "sm-a146u1",
-#     },  # Galaxy A14 5G, Exynos 1330 / Mali-G68
-#     # PowerVR (non-AHWB OpenCL buffer path)
-#     "pixel10": {
-#         "pool": "shared",
-#         "model": "pixel 10",
-#         "sdk_version": "36",
-#     },  # Pixel 10, Tensor G5 / PowerVR DXT-48-1536
-#     # Adreno (non-AHWB OpenCL buffer path)
-#     "s928b": {
-#         "pool": "shared",
-#         "model": "sm-s928b",
-#     },  # Galaxy S24 Ultra, Snapdragon 8 Gen 3 / Adreno 750
-#     # Xclipse (non-AHWB OpenCL buffer path)
-#     "s926b": {
-#         "pool": "shared",
-#         "model": "sm-s926b",
-#     },  # Galaxy S24+, Exynos 2400 / Xclipse 940
-# }
-#
 # [
 #     litert_device_exec(
 #         name = "litert_compiled_model_gpu_device_test_" + suffix,
 #         backend_id = "gpu",
 #         data = _LITERT_COMPILED_MODEL_GPU_TEST_DATA,
-#         dimensions = dims,
+#         dimensions = device,
 #         local_suffix = None,
 #         target = "//litert/cc:litert_compiled_model_gpu_test",
 #     )
-#     for suffix, dims in _LITERT_GPU_DEVICE_TEST_DIMENSIONS.items()
+#     for suffix, device in LITERT_GPU_ANDROID_DEVICES.items()
 # ]
 #
 # test_suite(
@@ -532,7 +482,7 @@ litert_device_test(
 #     ],
 #     tests = [
 #         ":litert_compiled_model_gpu_device_test_" + suffix
-#         for suffix in _LITERT_GPU_DEVICE_TEST_DIMENSIONS
+#         for suffix in LITERT_GPU_ANDROID_DEVICES
 #     ],
 # )
 #
@@ -799,6 +749,7 @@ cc_test(
         ":litert_compiled_model",
         ":litert_element_type",
         ":litert_environment",
+        ":litert_environment_options",
         ":litert_expected",
         ":litert_layout",
         ":litert_model",
@@ -943,10 +894,14 @@ cc_test(
         ":litert_environment_options",
         ":litert_expected",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment",
         "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_runtime_builtin_header",
         "//litert/c/internal:litert_runtime_builtin_static",
+        "//litert/c/internal:litert_runtime_c_api",
         "//litert/c/internal:litert_runtime_context_header",
+        "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_runtime_proxy_api",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -1191,14 +1146,22 @@ cc_library(
         "//litert/c:litert_tensor_buffer_header",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_webgpu_types",
-        "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_tensor_buffer_without_registry",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
-    ],
+    ] + select({
+        # In dynamic/none mode, the registry implementation comes from the
+        # LiteRT runtime shared library. Linking it statically would duplicate
+        # LiteRtRegisterTensorBufferHandlers in the binary, which can interpose
+        # the runtime's own calls.
+        "//litert:litert_runtime_link_mode_dynamic": [],
+        "//litert:litert_runtime_link_mode_none": [],
+        "//conditions:default": [
+            "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep
+        ],
+    }),
 )
 
 cc_test(
@@ -1251,10 +1214,13 @@ cc_test(
 #         "@ml_drift//ml_drift/cl:cl_device",
 #         "@ml_drift//ml_drift/cl:opencl_wrapper",
 #         "//litert/c:litert_common",
+#         "//litert/c:litert_custom_tensor_buffer",
 #         "//litert/c:litert_environment",
+#         "//litert/c:litert_environment_options",
 #         "//litert/c:litert_model_types",
 #         "//litert/c:litert_tensor_buffer",
 #         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/c/internal:litert_tensor_buffer_registry",
 #         "//litert/cc/internal:litert_handle",
 #         "//litert/cc/internal:litert_platform_support",
 #         "//litert/runtime:tensor_buffer",

@@ -57,7 +57,6 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@ml_drift//ml_drift/cl:buffer",
-        "@ml_drift//ml_drift/cl:cl_operation",
         "@ml_drift//ml_drift/cl:converter",
         "@ml_drift//ml_drift/cl:environment",
         "@ml_drift//ml_drift/cl:inference_context",
@@ -294,6 +293,7 @@ cc_library(
         "@ml_drift//ml_drift/gl:gl_buffer",
         "@ml_drift//ml_drift/gl:gl_inference_context",
         "@ml_drift//ml_drift/gl:gl_spatial_tensor",
+        "@ml_drift//ml_drift/gl:gl_sync",
     ],
 )
 
@@ -322,6 +322,7 @@ objc_library(
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:gpu_model_builder",
         "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:profiling_info",
         "@ml_drift//ml_drift/common/task:tensor_desc",
@@ -740,6 +741,7 @@ cc_library(
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/profiling:time",
+        "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",

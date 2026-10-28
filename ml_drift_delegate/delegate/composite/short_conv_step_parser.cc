@@ -55,6 +55,12 @@ ShortConvStepAttributes ParseShortConvStepAttributes(
     if (!flexbuffer_map["conv_L_cache"].IsNull()) {
       attr.conv_L_cache = flexbuffer_map["conv_L_cache"].AsInt32();
     }
+    if (!flexbuffer_map["is_gated"].IsNull()) {
+      attr.is_gated = flexbuffer_map["is_gated"].AsBool();
+    }
+    if (!flexbuffer_map["use_silu"].IsNull()) {
+      attr.use_silu = flexbuffer_map["use_silu"].AsBool();
+    }
   }
   return attr;
 }

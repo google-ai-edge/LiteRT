@@ -26,7 +26,6 @@ limitations under the License.
 #include <vector>
 
 #include "xnnpack.h"  // from @XNNPACK
-#include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -117,7 +116,8 @@ absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle>
 MlDriftDummyWeightCreator::CreateFcWeights(
     const Tensor<MlDriftMixinTag>& weight_tensor,
     const absl::Span<const T> weights_data,
-    ml_drift::DataType mld_float_data_type) {
+    ml_drift::DataType mld_float_data_type,
+    ml_drift::TensorDescriptor* out_descriptor) {
   LRT_TENSOR_ASSIGN_OR_RETURN(auto& t_info,
                               graph::GetInfo(weight_tensor.GetRaw()));
   // ABSL_LOG(WARNING) << "CreateFcWeights: weight_name=" << t_info.name
@@ -265,6 +265,11 @@ MlDriftDummyWeightCreator::CreateFcWeights(
       weights_td.UploadDataRaw<uint8_t>(upload_span);
     }
 
+    if (out_descriptor != nullptr) {
+      *out_descriptor = std::move(weights_td);
+      return model_builder_->AddConstantTensor(
+          CopyDescriptorWithoutData(*out_descriptor));
+    }
     return model_builder_->AddConstantTensor(std::move(weights_td));
   };
 
@@ -300,13 +305,15 @@ template absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle>
 MlDriftDummyWeightCreator::CreateFcWeights<float>(
     const Tensor<MlDriftMixinTag>& weight_tensor,
     const absl::Span<const float> weights_data,
-    ml_drift::DataType mld_float_data_type);
+    ml_drift::DataType mld_float_data_type,
+    ml_drift::TensorDescriptor* out_descriptor);
 
 template absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle>
 MlDriftDummyWeightCreator::CreateFcWeights<int8_t>(
     const Tensor<MlDriftMixinTag>& weight_tensor,
     const absl::Span<const int8_t> weights_data,
-    ml_drift::DataType mld_float_data_type);
+    ml_drift::DataType mld_float_data_type,
+    ml_drift::TensorDescriptor* out_descriptor);
 
 template absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle>
 MlDriftDummyWeightCreator::CreateConstantTensor<float>(

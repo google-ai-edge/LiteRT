@@ -24,6 +24,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
@@ -167,24 +168,219 @@ absl::StatusOr<std::unique_ptr<ml_drift::cl::Environment>> CreateClEnvironment(
       std::move(profiling_queue));
 }
 
+absl::StatusOr<ml_drift::cl::CLDevice> GetDefaultClDevice() {
+  static const absl::NoDestructor<absl::StatusOr<ml_drift::cl::CLDevice>>
+      kDefaultDevice([]() -> absl::StatusOr<ml_drift::cl::CLDevice> {
+        ABSL_RETURN_IF_ERROR(::ml_drift::cl::LoadOpenCL());
+        ::ml_drift::cl::CLDevice device;
+        ABSL_RETURN_IF_ERROR(::ml_drift::cl::CreateDefaultGPUDevice(&device));
+        return device;
+      }());
+  return *kDefaultDevice;
+}
+
+template <typename T>
+absl::StatusOr<LiteRtEnvOption> MakeIntEnvOption(LiteRtEnvOptionTag tag,
+                                                 T handle) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtAny value,
+                          litert::ToLiteRtAny(litert::LiteRtVariant(
+                              reinterpret_cast<int64_t>(handle))));
+  return LiteRtEnvOption{.tag = tag, .value = value};
+}
+
+template <typename T>
+absl::StatusOr<LiteRtEnvOption> MakePtrEnvOption(LiteRtEnvOptionTag tag,
+                                                 T ptr) {
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtAny value, litert::ToLiteRtAny(reinterpret_cast<const void*>(ptr)));
+  return LiteRtEnvOption{.tag = tag, .value = value};
+}
+
+void ReadEglOptions(const LiteRtRuntimeContext* runtime_context,
+                    LiteRtEnvironmentOptions env_options,
+                    DelegateEnvironment* resources) {
+  LiteRtAny egl_display_any, egl_context_any;
+  if (runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagEglDisplay, &egl_display_any) ==
+      kLiteRtStatusOk) {
+    resources->egl_display =
+        reinterpret_cast<LiteRtEglDisplay>(egl_display_any.int_value);
+  }
+  if (runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagEglContext, &egl_context_any) ==
+      kLiteRtStatusOk) {
+    resources->egl_context =
+        reinterpret_cast<LiteRtEglContext>(egl_context_any.int_value);
+  }
+}
+
+bool HasOpenClEnvOptions(const LiteRtRuntimeContext* runtime_context,
+                         LiteRtEnvironmentOptions env_options) {
+  LiteRtAny device_id, platform_id, context_id, command_queue;
+  return runtime_context->get_environment_options_value(
+             env_options, kLiteRtEnvOptionTagOpenClDeviceId, &device_id) ==
+             kLiteRtStatusOk &&
+         runtime_context->get_environment_options_value(
+             env_options, kLiteRtEnvOptionTagOpenClPlatformId, &platform_id) ==
+             kLiteRtStatusOk &&
+         runtime_context->get_environment_options_value(
+             env_options, kLiteRtEnvOptionTagOpenClContext, &context_id) ==
+             kLiteRtStatusOk &&
+         runtime_context->get_environment_options_value(
+             env_options, kLiteRtEnvOptionTagOpenClCommandQueue,
+             &command_queue) == kLiteRtStatusOk;
+}
+
+absl::StatusOr<DelegateEnvironment*> WrapExistingClEnvironment(
+    const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment litert_env,
+    LiteRtEnvironmentOptions env_options,
+    const ml_drift::cl::CLContextOptions& context_options,
+    const ml_drift::cl::CLCommandQueueOptions& queue_options,
+    std::unique_ptr<DelegateEnvironment> resources) {
+  LiteRtAny device_id, platform_id, context_id, command_queue;
+  LITERT_RETURN_IF_ERROR(runtime_context->get_environment_options_value(
+      env_options, kLiteRtEnvOptionTagOpenClDeviceId, &device_id));
+  LITERT_RETURN_IF_ERROR(runtime_context->get_environment_options_value(
+      env_options, kLiteRtEnvOptionTagOpenClPlatformId, &platform_id));
+  LITERT_RETURN_IF_ERROR(runtime_context->get_environment_options_value(
+      env_options, kLiteRtEnvOptionTagOpenClContext, &context_id));
+  LITERT_RETURN_IF_ERROR(runtime_context->get_environment_options_value(
+      env_options, kLiteRtEnvOptionTagOpenClCommandQueue, &command_queue));
+
+  const auto cl_dev_id = reinterpret_cast<cl_device_id>(device_id.int_value);
+  const auto cl_plat_id =
+      reinterpret_cast<cl_platform_id>(platform_id.int_value);
+  auto default_device = GetDefaultClDevice();
+  ml_drift::cl::CLDevice device =
+      (default_device.ok() && default_device->id() == cl_dev_id &&
+       default_device->platform() == cl_plat_id)
+          ? *default_device
+          : ml_drift::cl::CLDevice(cl_dev_id, cl_plat_id);
+
+  cl_context cl_ctx = reinterpret_cast<cl_context>(context_id.int_value);
+  if (context_options.performance == ml_drift::cl::PerformanceHint::kHigh &&
+      device.GetInfo().SupportsExtension("cl_qcom_perf_hint")) {
+    auto pfn_set_perf_hint = reinterpret_cast<SetPerfHintQcomFn>(
+        ml_drift::cl::clGetExtensionFunctionAddressForPlatform(
+            cl_plat_id, "clSetPerfHintQCOM"));
+    if (pfn_set_perf_hint) {
+      LITERT_LOG(LITERT_INFO, "Setting QCOM GPU perf hint to HIGH.");
+      pfn_set_perf_hint(cl_ctx, CL_PERF_HINT_HIGH_QCOM);
+    }
+  }
+
+  ml_drift::cl::CLContext context(cl_ctx, /*has_ownership=*/false, device);
+
+  ml_drift::cl::CLCommandQueue queue;
+  if (queue_options.priority == ml_drift::cl::PriorityHint::kHigh) {
+    if (!ml_drift::cl::CreateCLCommandQueue(device, context, &queue,
+                                            queue_options)
+             .ok()) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Failed to create high priority command queue, falling back "
+                 "to default.");
+      queue = ml_drift::cl::CLCommandQueue(
+          reinterpret_cast<cl_command_queue>(command_queue.int_value),
+          /*has_ownership=*/false);
+    }
+  } else {
+    queue = ml_drift::cl::CLCommandQueue(
+        reinterpret_cast<cl_command_queue>(command_queue.int_value),
+        /*has_ownership=*/false);
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      resources->cl_env,
+      CreateClEnvironment(std::move(device), std::move(context),
+                          std::move(queue), queue_options));
+
+  ABSL_ASSIGN_OR_RETURN(
+      LiteRtEnvOption callback_opt,
+      MakePtrEnvOption(kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
+                       &DestroyDelegateEnvironment));
+  ABSL_ASSIGN_OR_RETURN(
+      LiteRtEnvOption user_data_opt,
+      MakePtrEnvOption(kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
+                       resources.get()));
+  const std::array<LiteRtEnvOption, 2> environment_options = {callback_opt,
+                                                              user_data_opt};
+
+  LITERT_RETURN_IF_ERROR(runtime_context->add_environment_options(
+      litert_env, environment_options.size(), environment_options.data(),
+      /*overwrite=*/true));
+  return resources.release();
+}
+
+absl::Status InitializeNewClEnvironment(
+    const ml_drift::cl::CLContextOptions& context_options,
+    const ml_drift::cl::CLCommandQueueOptions& queue_options,
+    DelegateEnvironment* resources) {
+  ABSL_ASSIGN_OR_RETURN(ml_drift::cl::CLDevice device, GetDefaultClDevice());
+  ml_drift::cl::CLContext context;
+  ABSL_RETURN_IF_ERROR(CreateClContext(device, context_options,
+                                       resources->egl_context,
+                                       resources->egl_display, &context));
+  ml_drift::cl::CLCommandQueue queue;
+  ABSL_RETURN_IF_ERROR(
+      CreateCLCommandQueue(device, context, &queue, queue_options));
+  LITERT_ASSIGN_OR_RETURN(
+      resources->cl_env,
+      CreateClEnvironment(std::move(device), std::move(context),
+                          std::move(queue), queue_options));
+  return absl::OkStatus();
+}
+
+// Number of OpenCL (4) + destroy-callback (2) options at the prefix of the
+// array returned by `BuildDelegateEnvironmentOptions()`.
+constexpr size_t kNumOpenClAndCallbackOptions = 6;
+
+absl::StatusOr<std::array<LiteRtEnvOption, 8>> BuildDelegateEnvironmentOptions(
+    DelegateEnvironment* resources) {
+  ABSL_ASSIGN_OR_RETURN(LiteRtEnvOption device_id_opt,
+                        MakeIntEnvOption(kLiteRtEnvOptionTagOpenClDeviceId,
+                                         resources->cl_env->device().id()));
+  ABSL_ASSIGN_OR_RETURN(
+      LiteRtEnvOption platform_id_opt,
+      MakeIntEnvOption(kLiteRtEnvOptionTagOpenClPlatformId,
+                       resources->cl_env->device().platform()));
+  ABSL_ASSIGN_OR_RETURN(
+      LiteRtEnvOption context_id_opt,
+      MakeIntEnvOption(kLiteRtEnvOptionTagOpenClContext,
+                       resources->cl_env->context().context()));
+  ABSL_ASSIGN_OR_RETURN(LiteRtEnvOption command_queue_opt,
+                        MakeIntEnvOption(kLiteRtEnvOptionTagOpenClCommandQueue,
+                                         resources->cl_env->queue()->queue()));
+  ABSL_ASSIGN_OR_RETURN(
+      LiteRtEnvOption callback_opt,
+      MakePtrEnvOption(kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
+                       &DestroyDelegateEnvironment));
+  ABSL_ASSIGN_OR_RETURN(
+      LiteRtEnvOption user_data_opt,
+      MakePtrEnvOption(kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
+                       resources));
+  ABSL_ASSIGN_OR_RETURN(
+      LiteRtEnvOption egl_display_opt,
+      MakeIntEnvOption(kLiteRtEnvOptionTagEglDisplay, resources->egl_display));
+  ABSL_ASSIGN_OR_RETURN(
+      LiteRtEnvOption egl_context_opt,
+      MakeIntEnvOption(kLiteRtEnvOptionTagEglContext, resources->egl_context));
+
+  return std::array<LiteRtEnvOption, 8>{
+      device_id_opt, platform_id_opt, context_id_opt,  command_queue_opt,
+      callback_opt,  user_data_opt,   egl_display_opt, egl_context_opt,
+  };
+}
+
 // Gets or creates the delegate-local wrapper around the LiteRT GPU environment.
 absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
     const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment litert_env,
     GpuPriority gpu_priority) {
-  // Use a holder to keep the environment alive.
-  auto resources = std::make_unique<DelegateEnvironment>();
-
-  // Note: CLContextOptions are not consumed when creating the CLContext if
-  // has_ownership is false (i.e. if LiteRT Environment already has a GPU
-  // environment).
   ml_drift::cl::CLContextOptions context_options =
       GetClContextOptions(gpu_priority);
-  // Note: CLCommandQueueOptions are not consumed when creating the
-  // CLCommandQueue if has_ownership is false (i.e. if LiteRT Environment
-  // already has a GPU environment).
   ml_drift::cl::CLCommandQueueOptions queue_options;
   queue_options.priority = context_options.priority;
 
+  auto resources = std::make_unique<DelegateEnvironment>();
   bool has_gpu_environment = false;
   runtime_context->environment_has_gpu_environment(litert_env,
                                                    &has_gpu_environment);
@@ -193,195 +389,48 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
     LITERT_RETURN_IF_ERROR(
         runtime_context->get_environment_options(litert_env, &env_options));
     LiteRtAny user_data;
-    auto status = runtime_context->get_environment_options_value(
-        env_options, kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
-        &user_data);
-    if (status == kLiteRtStatusOk && user_data.ptr_value != nullptr) {
+    if (runtime_context->get_environment_options_value(
+            env_options, kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
+            &user_data) == kLiteRtStatusOk &&
+        user_data.ptr_value != nullptr) {
       return reinterpret_cast<DelegateEnvironment*>(
           const_cast<void*>(user_data.ptr_value));
     }
 
-    // If we have a GPU environment but no user data, it means it was created
-    // externally. We create a DelegateEnvironment from the options.
-    LiteRtAny egl_display_any, egl_context_any;
-    auto egl_display_status = runtime_context->get_environment_options_value(
-        env_options, kLiteRtEnvOptionTagEglDisplay, &egl_display_any);
-    if (egl_display_status == kLiteRtStatusOk) {
-      resources->egl_display =
-          reinterpret_cast<LiteRtEglDisplay>(egl_display_any.int_value);
-    }
-    auto egl_context_status = runtime_context->get_environment_options_value(
-        env_options, kLiteRtEnvOptionTagEglContext, &egl_context_any);
-    if (egl_context_status == kLiteRtStatusOk) {
-      resources->egl_context =
-          reinterpret_cast<LiteRtEglContext>(egl_context_any.int_value);
+    ReadEglOptions(runtime_context, env_options, resources.get());
+    if (HasOpenClEnvOptions(runtime_context, env_options)) {
+      return WrapExistingClEnvironment(runtime_context, litert_env, env_options,
+                                       context_options, queue_options,
+                                       std::move(resources));
     }
 
-    // Query CL environment options.
-    LiteRtAny device_id, platform_id, context_id, command_queue;
-    LITERT_RETURN_IF_ERROR(runtime_context->get_environment_options_value(
-        env_options, kLiteRtEnvOptionTagOpenClDeviceId, &device_id));
-    LITERT_RETURN_IF_ERROR(runtime_context->get_environment_options_value(
-        env_options, kLiteRtEnvOptionTagOpenClPlatformId, &platform_id));
-    LITERT_RETURN_IF_ERROR(runtime_context->get_environment_options_value(
-        env_options, kLiteRtEnvOptionTagOpenClContext, &context_id));
-    LITERT_RETURN_IF_ERROR(runtime_context->get_environment_options_value(
-        env_options, kLiteRtEnvOptionTagOpenClCommandQueue, &command_queue));
-
-    ml_drift::cl::CLDevice device(
-        reinterpret_cast<cl_device_id>(device_id.int_value),
-        reinterpret_cast<cl_platform_id>(platform_id.int_value));
-
-    cl_context cl_ctx = reinterpret_cast<cl_context>(context_id.int_value);
-    if (context_options.performance == ml_drift::cl::PerformanceHint::kHigh) {
-      if (device.GetInfo().SupportsExtension("cl_qcom_perf_hint")) {
-        auto pfn_set_perf_hint = reinterpret_cast<SetPerfHintQcomFn>(
-            ml_drift::cl::clGetExtensionFunctionAddressForPlatform(
-                reinterpret_cast<cl_platform_id>(platform_id.int_value),
-                "clSetPerfHintQCOM"));
-        if (pfn_set_perf_hint) {
-          LITERT_LOG(LITERT_INFO, "Setting QCOM GPU perf hint to HIGH.");
-          pfn_set_perf_hint(cl_ctx, CL_PERF_HINT_HIGH_QCOM);
-        }
-      }
-    }
-
-    ml_drift::cl::CLContext context(cl_ctx, /*has_ownership=*/false, device);
-
-    ml_drift::cl::CLCommandQueue queue;
-    if (queue_options.priority == ml_drift::cl::PriorityHint::kHigh) {
-      auto high_prio_queue_status = ml_drift::cl::CreateCLCommandQueue(
-          device, context, &queue, queue_options);
-      if (!high_prio_queue_status.ok()) {
-        LITERT_LOG(LITERT_WARNING,
-                   "Failed to create high priority command queue, falling back "
-                   "to default.");
-        queue = ml_drift::cl::CLCommandQueue(
-            reinterpret_cast<cl_command_queue>(command_queue.int_value),
-            /*has_ownership=*/false);
-      }
-    } else {
-      queue = ml_drift::cl::CLCommandQueue(
-          reinterpret_cast<cl_command_queue>(command_queue.int_value),
-          /*has_ownership=*/false);
-    }
-
-    LITERT_ASSIGN_OR_RETURN(
-        resources->cl_env,
-        CreateClEnvironment(std::move(device), std::move(context),
-                            std::move(queue), queue_options));
-
-    // Register callback to LiteRT Environment. This will be called when the
-    // LiteRT GPU environment is destroyed.
-    LITERT_ASSIGN_OR_RETURN(LiteRtAny callback,
-                            litert::ToLiteRtAny(reinterpret_cast<const void*>(
-                                &DestroyDelegateEnvironment)));
-    LITERT_ASSIGN_OR_RETURN(
-        LiteRtAny delegate_env_ptr,
-        litert::ToLiteRtAny(reinterpret_cast<const void*>(resources.get())));
-
-    const std::array<LiteRtEnvOption, 2> environment_options = {
-        LiteRtEnvOption{.tag = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
-                        .value = callback},
-        LiteRtEnvOption{
-            .tag = kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
-            .value = delegate_env_ptr},
-    };
-
+    // `GpuEnvironment` already exists without OpenCL options (e.g. created with
+    // EGL options only). Initialize OpenCL and add the OpenCL options to it.
+    ABSL_RETURN_IF_ERROR(InitializeNewClEnvironment(
+        context_options, queue_options, resources.get()));
+    ABSL_ASSIGN_OR_RETURN(auto options,
+                          BuildDelegateEnvironmentOptions(resources.get()));
+    // `EglDisplay` and `EglContext` are already in `litert_env`; add the
+    // OpenCL and destroy-callback options.
     LITERT_RETURN_IF_ERROR(runtime_context->add_environment_options(
-        litert_env, environment_options.size(), environment_options.data(),
+        litert_env, kNumOpenClAndCallbackOptions, options.data(),
         /*overwrite=*/true));
-    // Release ownership to LiteRT environment.
     return resources.release();
   }
-  // No GPU environment found. Create a new one.
 
-  // Handle EGL environment.
-  {
 #if LITERT_HAS_OPENGL_SUPPORT
-    ABSL_RETURN_IF_ERROR(
-        ml_drift::gl::EglEnvironment::NewEglEnvironment(&resources->egl_env));
-    resources->egl_context = resources->egl_env->context().context();
-    resources->egl_display = resources->egl_env->display();
+  ABSL_RETURN_IF_ERROR(
+      ml_drift::gl::EglEnvironment::NewEglEnvironment(&resources->egl_env));
+  resources->egl_context = resources->egl_env->context().context();
+  resources->egl_display = resources->egl_env->display();
 #endif  // LITERT_HAS_OPENGL_SUPPORT
-  }
 
-  // Handle CL environment.
-  {
-    ml_drift::cl::CLDevice device;
-    ABSL_RETURN_IF_ERROR(ml_drift::cl::CreateDefaultGPUDevice(&device));
-
-    ml_drift::cl::CLContext context;
-    ABSL_RETURN_IF_ERROR(CreateClContext(device, context_options,
-                                         resources->egl_context,
-                                         resources->egl_display, &context));
-
-    ml_drift::cl::CLCommandQueue queue;
-    ABSL_RETURN_IF_ERROR(
-        CreateCLCommandQueue(device, context, &queue, queue_options));
-
-    LITERT_ASSIGN_OR_RETURN(
-        resources->cl_env,
-        CreateClEnvironment(std::move(device), std::move(context),
-                            std::move(queue), queue_options));
-  }
-
-  // Register callback to LiteRT Environment. This will be called when the
-  // LiteRT GPU environment is destroyed.
-  LITERT_ASSIGN_OR_RETURN(LiteRtAny callback,
-                          litert::ToLiteRtAny(reinterpret_cast<const void*>(
-                              &DestroyDelegateEnvironment)));
-  LITERT_ASSIGN_OR_RETURN(
-      LiteRtAny user_data,
-      litert::ToLiteRtAny(reinterpret_cast<const void*>(resources.get())));
-
-  LITERT_ASSIGN_OR_RETURN(
-      LiteRtAny device_id,
-      litert::ToLiteRtAny(litert::LiteRtVariant(
-          reinterpret_cast<int64_t>(resources->cl_env->device().id()))));
-  LITERT_ASSIGN_OR_RETURN(
-      LiteRtAny platform_id,
-      litert::ToLiteRtAny(litert::LiteRtVariant(
-          reinterpret_cast<int64_t>(resources->cl_env->device().platform()))));
-  LITERT_ASSIGN_OR_RETURN(
-      LiteRtAny context_id,
-      litert::ToLiteRtAny(litert::LiteRtVariant(
-          reinterpret_cast<int64_t>(resources->cl_env->context().context()))));
-  LITERT_ASSIGN_OR_RETURN(
-      LiteRtAny command_queue,
-      litert::ToLiteRtAny(litert::LiteRtVariant(
-          reinterpret_cast<int64_t>(resources->cl_env->queue()->queue()))));
-  LITERT_ASSIGN_OR_RETURN(
-      LiteRtAny litert_egl_display,
-      litert::ToLiteRtAny(litert::LiteRtVariant(
-          reinterpret_cast<int64_t>(resources->egl_display))));
-  LITERT_ASSIGN_OR_RETURN(
-      LiteRtAny litert_egl_context,
-      litert::ToLiteRtAny(litert::LiteRtVariant(
-          reinterpret_cast<int64_t>(resources->egl_context))));
-
-  const std::array<LiteRtEnvOption, 8> environment_options = {
-      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClDeviceId,
-                      .value = device_id},
-      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClPlatformId,
-                      .value = platform_id},
-      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClContext,
-                      .value = context_id},
-      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClCommandQueue,
-                      .value = command_queue},
-      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagEglDisplay,
-                      .value = litert_egl_display},
-      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagEglContext,
-                      .value = litert_egl_context},
-      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
-                      .value = callback},
-      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
-                      .value = user_data},
-  };
-
+  ABSL_RETURN_IF_ERROR(InitializeNewClEnvironment(
+      context_options, queue_options, resources.get()));
+  ABSL_ASSIGN_OR_RETURN(auto options,
+                        BuildDelegateEnvironmentOptions(resources.get()));
   LITERT_RETURN_IF_ERROR(runtime_context->gpu_environment_create(
-      litert_env, environment_options.size(), environment_options.data()));
-  // Release ownership to LiteRT environment.
+      litert_env, options.size(), options.data()));
   return resources.release();
 }
 
@@ -761,15 +810,6 @@ TfLiteDelegatePtr CreateMlDriftClDelegate(MlDriftDelegateOptionsPtr options,
   return delegate;
 }
 
-bool IsOpenClSupported() {
-  if (!::ml_drift::cl::LoadOpenCL().ok()) {
-    return false;
-  }
-  ::ml_drift::cl::CLDevice device;
-  if (!::ml_drift::cl::CreateDefaultGPUDevice(&device).ok()) {
-    return false;
-  }
-  return true;
-}
+bool IsOpenClSupported() { return GetDefaultClDevice().ok(); }
 
 }  // namespace litert::ml_drift

@@ -301,6 +301,7 @@ typedef enum {
   kLiteRtStatusErrorWrongVersion = 8,
   kLiteRtStatusErrorUnknown = 9,
   kLiteRtStatusErrorAlreadyExists = 10,
+  kLiteRtStatusErrorFailedPrecondition = 11,
 
   // Inference progression errors.
   kLiteRtStatusCancelled = 100,

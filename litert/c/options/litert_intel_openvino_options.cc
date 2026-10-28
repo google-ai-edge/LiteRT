@@ -19,17 +19,16 @@
 
 #include <stdlib.h>
 
-#include <cstring>
 #include <iterator>
 #include <map>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
@@ -79,30 +78,31 @@ LiteRtStatus LrtGetOpaqueIntelOpenVinoOptionsData(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  std::stringstream ss;
+  std::string toml_str;
   if (options->performance_mode.has_value()) {
-    ss << "performance_mode = " << options->performance_mode.value() << "\n";
+    absl::StrAppend(&toml_str, "performance_mode = ",
+                    static_cast<int>(options->performance_mode.value()), "\n");
   }
   if (options->enable_weight_sharing.has_value()) {
-    ss << "enable_weight_sharing = "
-       << (*options->enable_weight_sharing ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "enable_weight_sharing = ",
+                    (*options->enable_weight_sharing ? "true" : "false"), "\n");
   }
   for (const auto& pair : options->configs_map_options) {
-    ss << "configs_map." << pair.first << " = \"" << pair.second << "\"\n";
+    absl::StrAppend(&toml_str, "configs_map.", pair.first, " = \"", pair.second,
+                    "\"\n");
   }
   for (const auto& [graph_index, override] : options->graph_overrides) {
     if (override.graph_backend.has_value()) {
-      ss << "graph." << graph_index
-         << ".graph_backend = " << override.graph_backend.value() << "\n";
+      absl::StrAppend(&toml_str, "graph.", graph_index, ".graph_backend = ",
+                      static_cast<int>(override.graph_backend.value()), "\n");
     }
     for (const auto& pair : override.configs_map_options) {
-      ss << "graph." << graph_index << ".configs_map." << pair.first << " = \""
-         << pair.second << "\"\n";
+      absl::StrAppend(&toml_str, "graph.", graph_index, ".configs_map.",
+                      pair.first, " = \"", pair.second, "\"\n");
     }
   }
 
   *identifier = LrtGetIntelOpenVinoOptionsIdentifier();
-  std::string toml_str = ss.str();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
 
   return kLiteRtStatusOk;

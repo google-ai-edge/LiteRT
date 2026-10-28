@@ -123,7 +123,12 @@ jobs:
           echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$env:GITHUB_OUTPUT"
           echo "CACHE_KEY=$CACHE_KEY" >> "$env:GITHUB_OUTPUT"
           $SHORT_SHA=$("${{ github.sha }}".SubString(0, 8))
-          echo "BAZEL_OUTPUT_BASE=C:/_w/out" >> "$env:GITHUB_ENV"
+          $WorkRoot = if (Test-Path "C:/actions-runner/_work") { "C:/actions-runner/_work" } else { "C:/_w" }
+          echo "BAZEL_OUTPUT_BASE=$WorkRoot/out" >> "$env:GITHUB_ENV"
+          $TempDir = "$WorkRoot/_tmp"
+          New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+          echo "TMP=$TempDir" >> "$env:GITHUB_ENV"
+          echo "TEMP=$TempDir" >> "$env:GITHUB_ENV"
           $CacheDir = Join-Path $env:USERPROFILE (Join-Path ".cache" "bazel-windows")
           echo "BAZEL_DISK_CACHE=$CacheDir" >> "$env:GITHUB_ENV"
 
@@ -185,6 +190,10 @@ jobs:
             "-//litert/tools/culprit_finder/..."
             "-//litert/vendors/examples:end_to_end_test"
             "-//litert/vendors/examples:example_plugin_so"
+            "-//litert/vendors/examples:example_plugin_test"
+            "-//litert/vendors/examples:example_dispatch_test"
+            "-//litert/vendors/examples:example_dispatch_so"
+            "-//litert/vendors/examples/compatibility_test/..."
             "-//litert/vendors/intel_openvino/compiler:decoder_test"
             "-//litert/vendors/intel_openvino/dispatch:dispatch_api_openvino_test"
             "-//litert/vendors/intel_openvino/compiler:openvino_compiler_plugin_test"

@@ -31,11 +31,30 @@ cc_library(
         "//tensor:datatypes",
         "//tensor/internal:arithmetic_helpers",
         "//tensor/internal:graph",
+        "//tensor/internal:mixin",
         "//tensor/utils:macros",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:source_location",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "transformer_block",
+    hdrs = ["transformer_block.h"],
+    deps = [
+        ":transformer_ops",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:datatypes",
+        "//tensor/internal:arithmetic_helpers",
+        "//tensor/internal:graph",
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/meta:type_traits",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -66,6 +85,26 @@ cc_library(
 # )
 #
 # cc_library(
+#     name = "transformer_ops_execution_plan",
+#     srcs = ["transformer_ops_execution_plan.cc"],
+#     hdrs = ["transformer_ops_execution_plan.h"],
+#     deps = [
+#         ":transformer_ops_graph",
+#         "@com_google_absl//absl/status",
+#         "@com_google_absl//absl/strings",
+#         "@com_google_absl//absl/strings:string_view",
+#         "//tensor",
+#         "//tensor:arithmetic_graph",
+#         "//tensor/backends/execution_plan:arithmetic_execution_plan",
+#         "//tensor/backends/execution_plan:execution_plan_conversion",
+#         "//tensor/internal:graph",
+#         "//tensor/internal:graph_traversal",
+#         "//tensor/internal:mixin",
+#         "//tensor/utils:macros",
+#     ],
+# )
+#
+# cc_library(
 #     name = "transformer_ops_ml_drift",
 #     srcs = ["transformer_ops_ml_drift.cc"],
 #     hdrs = ["transformer_ops_ml_drift.h"],
@@ -87,6 +126,8 @@ cc_library(
 #         "@ml_drift//ml_drift/common/task:gpu_operation",
 #         "@ml_drift//ml_drift/common/task:gpu_tensor",
 #         "@ml_drift//ml_drift/common/task:tensor_desc",
+#         "//ml_drift_delegate/delegate/composite:add_values_to_cache_kernel",
+#         "//ml_drift_delegate/delegate/composite:add_values_to_cache_parser",
 #         "//tensor:buffer",
 #         "//tensor:datatypes",
 #         "//tensor/backends/ml_drift:arithmetic_ml_drift",
@@ -140,7 +181,6 @@ cc_library(
 #         "@com_google_absl//absl/status",
 #         "@com_google_absl//absl/status:status_matchers",
 #         "@com_google_absl//absl/strings",
-#         "@com_google_absl//absl/types:any",
 #         "@com_google_absl//absl/types:span",
 #         "@ml_drift//ml_drift/cl:environment",
 #         "@ml_drift//ml_drift/cl:inference_context",
@@ -175,16 +215,25 @@ cc_library(
 #     name = "transformer_ops_test",
 #     srcs = ["transformer_ops_test.cc"],
 #     deps = [
+#         ":transformer_block",
 #         ":transformer_ops",
+#         ":transformer_ops_graph",
 #         ":transformer_ops_xnnpack",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/status",
 #         "@com_google_absl//absl/status:status_matchers",
+#         "@com_google_absl//absl/types:span",
 #         "//tensor",
+#         "//tensor:arithmetic",
+#         "//tensor:buffer",
 #         "//tensor:datatypes",
+#         "//tensor/backends/common_nnpack:conversion",
 #         "//tensor/backends/xnnpack:arithmetic",
+#         "//tensor/backends/xnnpack:conversion",
 #         "//tensor/internal:graph",
+#         "//tensor/internal:mixin",
 #         "//tensor/runners/xnnpack:runner",
+#         "//tensor/utils:macros",
 #         "//tensor/utils:matchers",
 #     ],
 # )

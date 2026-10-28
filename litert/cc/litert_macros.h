@@ -21,15 +21,13 @@
 #include <type_traits>
 #include <utility>
 
-#ifdef LITERT_NO_ABSL
-#include <sstream>
-#endif  // LITERT_NO_ABSL
-
 #ifndef LITERT_NO_ABSL
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#else
+#include <string_view>
 #endif  // LITERT_NO_ABSL
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -197,16 +195,13 @@ class ErrorStatusBuilder {
   /// @brief Appends data to the error message.
   template <class T>
   ErrorStatusBuilder& operator<<(T&& val) {
-#ifndef LITERT_NO_ABSL
     if (!extra_log_) {
       extra_log_ = std::make_unique<std::string>();
     }
+#ifndef LITERT_NO_ABSL
     absl::StrAppend(extra_log_.get(), std::forward<T>(val));
-#else
-    if (!extra_log_) {
-      extra_log_ = std::make_unique<std::stringstream>();
-    }
-    *extra_log_ << static_cast<T&&>(val);
+#else  // LITERT_NO_ABSL
+    AppendToLog(*extra_log_, std::forward<T>(val));
 #endif  // LITERT_NO_ABSL
     return *this;
   }
@@ -273,13 +268,29 @@ class ErrorStatusBuilder {
 #endif  // LITERT_NO_ABSL
   std::string LogMessage() const;
 
+#ifdef LITERT_NO_ABSL
+  static void AppendToLog(std::string& dst, std::string_view val) {
+    dst.append(val.data(), val.size());
+  }
+  static void AppendToLog(std::string& dst, const char* val) {
+    if (val != nullptr) {
+      dst.append(val);
+    }
+  }
+  static void AppendToLog(std::string& dst, char val) { dst.push_back(val); }
+  template <
+      class T,
+      std::enable_if_t<std::is_arithmetic_v<std::decay_t<T>> &&
+                           !std::is_same_v<std::decay_t<T>, char>,
+                       int> = 0>
+  static void AppendToLog(std::string& dst, T val) {
+    dst += std::to_string(val);
+  }
+#endif  // LITERT_NO_ABSL
+
   litert::Error error_;
   litert::SourceLocation loc_;
-#ifndef LITERT_NO_ABSL
   std::unique_ptr<std::string> extra_log_;
-#else
-  std::unique_ptr<std::stringstream> extra_log_;
-#endif  // LITERT_NO_ABSL
   LiteRtLogSeverity log_level_ = kLiteRtLogSeverityError;
 };
 
@@ -584,6 +595,8 @@ inline absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
       return absl::UnknownError(LogMessage());
     case Status::kErrorAlreadyExists:
       return absl::AlreadyExistsError(LogMessage());
+    case Status::kErrorFailedPrecondition:
+      return absl::FailedPreconditionError(LogMessage());
     case Status::kErrorFileIO:
       return absl::UnavailableError(LogMessage());
     case Status::kErrorInvalidFlatbuffer:
@@ -644,17 +657,22 @@ inline std::string ErrorStatusBuilder::LogMessage() const {
         loc_.line(), "]", extra_log_ ? " " : "",
         extra_log_ ? absl::string_view(*extra_log_) : absl::string_view(),
         error_.Message().empty() ? "" : "\n└ ", error_.Message());
-#else
-    std::stringstream sstr;
-    sstr << LiteRtGetLogSeverityName(log_level_) << ": [" << loc_.file_name()
-         << ':' << loc_.line() << ']';
+#else  // LITERT_NO_ABSL
+    std::string sstr = LiteRtGetLogSeverityName(log_level_);
+    sstr += ": [";
+    sstr += loc_.file_name();
+    sstr += ':';
+    sstr += std::to_string(loc_.line());
+    sstr += ']';
     if (extra_log_) {
-      sstr << ' ' << extra_log_->str();
+      sstr += ' ';
+      sstr += *extra_log_;
     }
     if (!error_.Message().empty()) {
-      sstr << "\n└ " << error_.Message();
+      sstr += "\n└ ";
+      sstr += error_.Message();
     }
-    return sstr.str();
+    return sstr;
 #endif  // LITERT_NO_ABSL
   }
   return "";

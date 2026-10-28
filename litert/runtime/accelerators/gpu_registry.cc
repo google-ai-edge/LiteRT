@@ -28,12 +28,6 @@
 #include "litert/runtime/accelerators/gpu_static_registry.h"
 #include "litert/runtime/accelerators/registration_helper.h"
 
-// Set in BUILD together with the ml_drift_compatibility dep (Android with GPU
-// enabled). Builds without it (e.g. CMake) skip the check.
-#if defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
-#include "litert/runtime/accelerators/gpu/compatibility/ml_drift_compatibility.h"
-#endif  // defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
-
 extern "C" {
 const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorGpuDef = nullptr;
 }
@@ -50,20 +44,6 @@ namespace litert::internal {
 
 LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
 #if !defined(LITERT_DISABLE_GPU)
-#if defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
-  // If a system runtime handle is provided (e.g. Google Play services), the
-  // ML Drift allowlist is not applied.
-  if (!environment->GetOption(kLiteRtEnvOptionTagSystemRuntimeHandle)
-           .has_value() &&
-      !ml_drift::GpuCompatibilityChecker::Instance()
-           .IsSupportedOnThisDevice()) {
-    LITERT_LOG(LITERT_INFO,
-               "GPU accelerator is not supported on this device according to "
-               "the ML Drift compatibility list.");
-    return kLiteRtStatusErrorUnsupported;
-  }
-#endif  // defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
-
   static constexpr absl::string_view kGpuAcceleratorLibs[] = {
       "libLiteRtGpuAccelerator" SO_EXT,
 #ifdef __ANDROID__
@@ -120,21 +100,29 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
                  gpu_handle_option->type);
     }
 
-    if (accelerator_def != nullptr &&
-        RegisterAcceleratorFromDef(environment, accelerator_def) ==
-            kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_INFO, "GPU accelerator registered from handle option.");
-      gpu_accelerator_registered = true;
+    if (accelerator_def != nullptr) {
+      LiteRtStatus status =
+          RegisterAcceleratorFromDef(environment, accelerator_def);
+      if (status == kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_INFO,
+                   "GPU accelerator registered from handle option.");
+        gpu_accelerator_registered = true;
+      } else if (status == kLiteRtStatusErrorUnsupported) {
+        return kLiteRtStatusErrorUnsupported;
+      }
     }
   }
 
   if (!gpu_accelerator_registered &&
-      LiteRtStaticLinkedAcceleratorGpuDef != nullptr &&
-      RegisterAcceleratorFromDef(environment,
-                                 LiteRtStaticLinkedAcceleratorGpuDef) ==
-          kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
-    gpu_accelerator_registered = true;
+      LiteRtStaticLinkedAcceleratorGpuDef != nullptr) {
+    LiteRtStatus status = RegisterAcceleratorFromDef(
+        environment, LiteRtStaticLinkedAcceleratorGpuDef);
+    if (status == kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
+      gpu_accelerator_registered = true;
+    } else if (status == kLiteRtStatusErrorUnsupported) {
+      return kLiteRtStatusErrorUnsupported;
+    }
   }
 
   if (!gpu_accelerator_registered) {
@@ -158,6 +146,9 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
                    plugin_path.data());
         gpu_accelerator_registered = true;
         break;
+      }
+      if (registration.Error().Status() == kLiteRtStatusErrorUnsupported) {
+        return kLiteRtStatusErrorUnsupported;
       }
       // Try to load a GPU accelerator using `LiteRtRegisterGpuAccelerator`
       // symbol.

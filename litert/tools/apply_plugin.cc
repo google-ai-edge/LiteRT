@@ -321,6 +321,11 @@ LiteRtStatus Partition(Context& ctx) {
   auto& model = *model_wrap->Get();
 
   ctx.Dump().Start("Partitioning model");
+  if (auto status =
+          litert::internal::ApplyCompilerOptionsInputShapes(*plugin, model);
+      !status) {
+    return status.Error().Status();
+  }
   auto partition_result =
       PartitionModel(*plugin, model, ctx.SocModelTarget(), ctx.Run().subgraphs);
   if (!partition_result) {
@@ -386,6 +391,12 @@ LiteRtStatus Compile(Context& ctx) {
   DumpCompilationRequest(ctx.Dump(), ctx.SocModelTarget(),
                          model.NumSubgraphs());
 
+  if (auto status =
+          litert::internal::ApplyCompilerOptionsInputShapes(*plugin, model);
+      !status) {
+    ctx.Dump().Fail();
+    return status.Error().Status();
+  }
   if (auto status =
           litert::internal::TransformModel(*plugin, model, ctx.SocModelTarget());
       !status) {

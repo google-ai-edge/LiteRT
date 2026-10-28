@@ -15,7 +15,9 @@
 #include "litert/c/litert_tensor_buffer.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <memory>  // NOLINT: Used for OpenCL logic.
 #include <utility>
@@ -26,8 +28,11 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -935,14 +940,14 @@ TEST(TensorBuffer, ReadWriteBufferSizeMismatch) {
   {
     // Read with smaller size of buffer.
     float read_data[1];
-    auto read_success = tensor_buffer.Read<float>(absl::MakeSpan(read_data, 1));
+    auto read_success = tensor_buffer.Read<float>(absl::MakeSpan(read_data));
     ASSERT_TRUE(read_success);
     ASSERT_EQ(read_data[0], kTensorData[0]);
   }
   {
     // Read with larger size of buffer.
     float read_data[5];
-    auto read_success = tensor_buffer.Read<float>(absl::MakeSpan(read_data, 5));
+    auto read_success = tensor_buffer.Read<float>(absl::MakeSpan(read_data));
     ASSERT_FALSE(read_success);
   }
 }
@@ -1392,6 +1397,136 @@ TEST(TensorBuffer, Event) {
   // Clear event.
   LITERT_ASSERT_OK(tensor_buffer.ClearEvent());
   EXPECT_FALSE(tensor_buffer.HasEvent());
+}
+
+// Host-memory backed custom buffer handlers: `import_func` wraps the caller's
+// pointer without taking ownership.
+struct FakeHostMemoryInfo : HwMemoryInfo {
+  void* data;
+  bool owns_data;
+};
+
+LiteRtStatus CreateFakeHostMemory(LiteRtGpuDeviceId, LiteRtGpuQueueId,
+                                  const LiteRtRankedTensorType*,
+                                  LiteRtTensorBufferType, size_t bytes, size_t,
+                                  HwMemoryInfoPtr* hw_memory_info) {
+  auto* info = new FakeHostMemoryInfo();
+  info->data = std::calloc(bytes, 1);
+  info->owns_data = true;
+  info->memory_handle = info->data;
+  *hw_memory_info = info;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus ImportFakeHostMemory(LiteRtGpuDeviceId, LiteRtGpuQueueId,
+                                  const LiteRtRankedTensorType*,
+                                  LiteRtTensorBufferType,
+                                  HwMemoryHandle hw_buffer_handle, size_t,
+                                  size_t, HwMemoryInfoPtr* hw_memory_info) {
+  auto* info = new FakeHostMemoryInfo();
+  info->data = hw_buffer_handle;
+  info->owns_data = false;
+  info->memory_handle = hw_buffer_handle;
+  *hw_memory_info = info;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DestroyFakeHostMemory(HwMemoryInfoPtr hw_memory_info) {
+  auto* info = static_cast<FakeHostMemoryInfo*>(hw_memory_info);
+  if (info->owns_data) {
+    std::free(info->data);
+  }
+  delete info;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LockFakeHostMemory(HwMemoryInfoPtr hw_memory_info,
+                                LiteRtTensorBufferLockMode,
+                                void** host_memory_ptr) {
+  *host_memory_ptr = static_cast<FakeHostMemoryInfo*>(hw_memory_info)->data;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus UnlockFakeHostMemory(HwMemoryInfoPtr) { return kLiteRtStatusOk; }
+
+// Goes through the C++ API, the runtime proxy and the runtime's C API table.
+TEST(TensorBuffer, CreateFromCustomHandleWrapsMemoryWithoutCopy) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  ASSERT_EQ(LiteRtRegisterTensorBufferHandlers(
+                env.Get(), kLiteRtTensorBufferTypeUserCustomBuffer,
+                CreateFakeHostMemory, DestroyFakeHostMemory,
+                LockFakeHostMemory, UnlockFakeHostMemory,
+                /*clear_func=*/nullptr, ImportFakeHostMemory,
+                kLiteRtEnvOptionTagNull, kLiteRtEnvOptionTagNull),
+            kLiteRtStatusOk);
+
+  float data[] = {10, 20, 30, 40};
+  const auto buffer_type =
+      static_cast<TensorBufferType>(kLiteRtTensorBufferTypeUserCustomBuffer);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer tensor_buffer,
+      TensorBuffer::CreateFromCustomHandle(env,
+                                           RankedTensorType(kTestTensorType),
+                                           buffer_type, data, sizeof(data)));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto size, tensor_buffer.Size());
+  EXPECT_EQ(size, sizeof(data));
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr, TensorBufferScopedLock::Create(
+                                tensor_buffer, TensorBuffer::LockMode::kWrite));
+    EXPECT_EQ(lock_and_addr.second, data);
+    static_cast<float*>(lock_and_addr.second)[0] = 99;
+  }
+  EXPECT_EQ(data[0], 99);
+}
+
+// GetCustomHandle() returns the handle CreateFromCustomHandle() accepts, so a
+// smaller view can be created from an existing custom buffer.
+TEST(TensorBuffer, CreateFromCustomHandleOfGetCustomHandleSharesMemory) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  ASSERT_EQ(LiteRtRegisterTensorBufferHandlers(
+                env.Get(), kLiteRtTensorBufferTypeUserCustomBuffer,
+                CreateFakeHostMemory, DestroyFakeHostMemory,
+                LockFakeHostMemory, UnlockFakeHostMemory,
+                /*clear_func=*/nullptr, ImportFakeHostMemory,
+                kLiteRtEnvOptionTagNull, kLiteRtEnvOptionTagNull),
+            kLiteRtStatusOk);
+  const auto buffer_type =
+      static_cast<TensorBufferType>(kLiteRtTensorBufferTypeUserCustomBuffer);
+
+  constexpr int32_t kLargeDimensions[] = {2 * kTensorDimensions[0]};
+  constexpr LiteRtRankedTensorType kLargeTensorType = {
+      kLiteRtElementTypeFloat32, BuildLayout(kLargeDimensions)};
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer large_buffer,
+      TensorBuffer::CreateManaged(env, buffer_type,
+                                  RankedTensorType(kLargeTensorType),
+                                  2 * sizeof(kTensorData)));
+  LITERT_ASSERT_OK_AND_ASSIGN(HwMemoryHandle handle,
+                              large_buffer.GetCustomHandle());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer view,
+      TensorBuffer::CreateFromCustomHandle(env,
+                                           RankedTensorType(kTestTensorType),
+                                           buffer_type, handle,
+                                           sizeof(kTensorData)));
+
+  LITERT_ASSERT_OK(view.Write<float>(absl::MakeConstSpan(kTensorData)));
+  float large_data[2 * kTensorDimensions[0]];
+  LITERT_ASSERT_OK(large_buffer.Read<float>(absl::MakeSpan(large_data)));
+  for (int i = 0; i < kTensorDimensions[0]; ++i) {
+    EXPECT_EQ(large_data[i], kTensorData[i]);
+  }
+}
+
+TEST(TensorBuffer, GetCustomHandleFailsForNonCustomBuffer) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer tensor_buffer,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory,
+                                  RankedTensorType(kTestTensorType),
+                                  sizeof(kTensorData)));
+  EXPECT_FALSE(tensor_buffer.GetCustomHandle());
 }
 
 }  // namespace

@@ -56,9 +56,11 @@ limitations under the License.
 #define XNN_EXTRA_BYTES 16
 
 namespace litert::tensor {
+
 namespace {
 
 using ::testing::ElementsAre;
+using ::testing::SizeIs;
 
 using TensorMLD = Tensor<MlDriftMixinTag>;
 
@@ -873,8 +875,35 @@ TEST_F(MlDriftConversionTest, DequantizeOp) {
 
   EXPECT_THAT(model.nodes,
               ElementsAre(testing::Truly([](const ml_drift::GpuNode& node) {
-                return node.name == "quantize_and_dequantize";
+                return node.name == "dequantize";
               })));
+}
+
+// Per-channel dequantizations are computed in fp32, like per-tensor ones, so
+// fp16 models don't round the scales.
+TEST_F(MlDriftConversionTest, DequantizePerChannelOpComputesInFp32) {
+  context_.default_float_type = ml_drift::DataType::kFloat16;
+  TensorMLD quant_input({.type = Type::kI8, .shape = {2, 3}});
+  quant_input.SetQuantization(std::make_shared<PerChannelAffineQuantization>(
+      std::vector<float>{0.1f, 0.3f}, std::vector<int64_t>{1, -1},
+      /*quantized_dimension=*/0));
+  TensorMLD output = Dequantize(quant_input);
+  auto tensor_to_handle_or = AppendGpuModelBuilder(context_, {output});
+  ASSERT_OK(tensor_to_handle_or);
+  const ml_drift::ValueId output_id =
+      tensor_to_handle_or->at(output.GetRaw()).id;
+
+  ml_drift::GpuModel model;
+  ASSERT_OK(context_.gpu_model_builder->GetGpuModel(
+      {tensor_to_handle_or->at(quant_input.GetRaw()).id}, {output_id}, &model));
+
+  ASSERT_THAT(model.const_tensors, testing::SizeIs(2));
+  for (const auto& [id, desc] : model.const_tensors) {
+    EXPECT_EQ(desc.GetDataType(), ml_drift::DataType::kFloat32);
+  }
+  ASSERT_TRUE(model.tensors.contains(output_id));
+  EXPECT_EQ(model.tensors.at(output_id).GetDataType(),
+            ml_drift::DataType::kFloat16);
 }
 
 TEST_F(MlDriftConversionTest, CumsumOp) {
@@ -1923,6 +1952,28 @@ TEST_F(MlDriftConversionTest, BatchMatMulRejectsBroadcastBatchDimensions) {
                 absl_testing::StatusIs(absl::StatusCode::kUnimplemented,
                                        testing::HasSubstr("broadcast")));
   }
+}
+
+TEST_F(MlDriftConversionTest, DequantizeSymmetricPerChannelOpSkipsZeroPoints) {
+  TensorMLD input(
+      {.type = Type::kI8,
+       .shape = {2, 3},
+       .quantization = std::make_shared<PerChannelAffineQuantization>(
+           /*scales=*/std::vector<float>{0.1f, 0.3f},
+           /*zero_points=*/std::vector<int64_t>{0, 0},
+           /*quantized_dimension=*/0)});
+  TensorMLD output = Dequantize(input);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto tensor_to_handle_map,
+                                  AppendGpuModelBuilder(context_, {output}));
+  ml_drift::GpuModel model;
+  ASSERT_OK(context_.gpu_model_builder->GetGpuModel(
+      {tensor_to_handle_map.at(input.GetRaw()).id},
+      {tensor_to_handle_map.at(output.GetRaw()).id}, &model));
+
+  for (const ml_drift::GpuNode& node : model.nodes) {
+    EXPECT_NE(node.name, "dequantize_sub");
+  }
+  EXPECT_THAT(model.const_tensors, SizeIs(1));
 }
 
 }  // namespace litert::tensor

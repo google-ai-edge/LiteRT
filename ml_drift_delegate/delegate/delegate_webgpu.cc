@@ -796,6 +796,16 @@ TfLiteDelegatePtr CreateMlDriftWebGpuDelegate(MlDriftDelegateOptionsPtr options,
   bool hint_fully_delegated_to_single_delegate =
       delegate_data->options->hint_fully_delegated_to_single_delegate;
 
+  // The int8 src-quantized fully connected / convolution path (dp4a) produces
+  // corrupted outputs on Intel GPUs with WebGPU (observed on D3D12 with Arc
+  // 140V / B390 for the Gemma 4 12B 128-token prefill graph), so keep the
+  // fp16/fp32 path there.
+  if (delegate_data->options->allow_src_quantized_fc_conv_ops &&
+      (*delegate_env)->webgpu_env->GetInfo().IsIntel()) {
+    ABSL_LOG(INFO) << "Disabling allow_src_quantized_fc_conv_ops on Intel GPU.";
+    delegate_data->options->allow_src_quantized_fc_conv_ops = false;
+  }
+
   // Initialize the ml_drift WebGpu delegate.
   TfLiteDelegatePtr delegate(new TfLiteDelegate(TfLiteDelegateCreate()),
                              LiteRtDeleteMlDriftWebGpuDelegate);

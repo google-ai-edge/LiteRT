@@ -945,8 +945,16 @@ err_get:
   return kLiteRtStatusErrorRuntimeFailure;
 }
 
+namespace {
+
 // Dispatch interface structure
-static LiteRtDispatchInterface bstorm_LiteRt_dispatch_interface = {
+static const LiteRtDispatchInterface_V1 bstorm_LiteRt_dispatch_interface = {
+    /*.abi_header=*/{
+        .struct_size = sizeof(LiteRtDispatchInterface_V1),
+        .major_version = 1,
+        .minor_version = 0,
+        .reserved = 0,
+    },
     /*.initialize=*/bstorm_LiteRt_initialize,
     /*.get_vendor_id=*/bstorm_LiteRt_get_vendor_id,
     /*.get_build_id=*/bstorm_LiteRt_get_build_id,
@@ -976,7 +984,13 @@ static LiteRtDispatchInterface bstorm_LiteRt_dispatch_interface = {
     bstorm_LiteRt_invocation_context_set_options,
 };
 
-static LiteRtDispatchGraphInterface bstorm_LiteRt_graph_interface = {
+static const LiteRtDispatchGraphInterface_V1 bstorm_LiteRt_graph_interface = {
+    /*.abi_header=*/{
+        .struct_size = sizeof(LiteRtDispatchGraphInterface_V1),
+        .major_version = 1,
+        .minor_version = 0,
+        .reserved = 0,
+    },
     /*.graph_create=*/nullptr,
     /*.graph_destroy=*/nullptr,
     /*.add_node=*/nullptr,
@@ -996,25 +1010,22 @@ static LiteRtDispatchGraphInterface bstorm_LiteRt_graph_interface = {
     bstorm_LiteRt_invocation_context_get_graph,
 };
 
-static LiteRtDispatchApi bstorm_LiteRt_dispatch_api = {
-    /*.abi_header=*/
-    {
-        /*.struct_size=*/sizeof(LiteRtDispatchApi),
-        /*.major_version=*/1,
-        /*.minor_version=*/0,
-        /*.reserved=*/0,
-    },
-    /*.version=*/
-    {/*.major=*/LITERT_API_VERSION_MAJOR,
-     /*.minor=*/LITERT_API_VERSION_MINOR,
-     /*.patch=*/LITERT_API_VERSION_PATCH},
-    /*.interface=*/&bstorm_LiteRt_dispatch_interface,
-    /*.async_interface=*/nullptr,
-    /*.graph_interface=*/&bstorm_LiteRt_graph_interface,
-};
+}  // namespace
 
-// Export the main API function
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
-  *api = bstorm_LiteRt_dispatch_api;
-  return kLiteRtStatusOk;
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (litert_runtime_version.major >= 1) {
+    if (interface_id == kLiteRtInterfaceBasic) {
+      *out_interface = &bstorm_LiteRt_dispatch_interface;
+      return kLiteRtStatusOk;
+    } else if (interface_id == kLiteRtInterfaceGraph) {
+      *out_interface = &bstorm_LiteRt_graph_interface;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }

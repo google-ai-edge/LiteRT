@@ -21,8 +21,13 @@
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 
 namespace litert::ml_drift {
+
+std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
+    const ::ml_drift::OperationDef& op_def,
+    const AddValuesToCacheAttributes& attr);
 
 absl::StatusOr<std::unique_ptr<::ml_drift::GPUOperation>>
 CreateAddValuesToCacheFromNode(const ::ml_drift::OperationDef& op_def,

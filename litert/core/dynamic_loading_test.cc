@@ -38,7 +38,48 @@ constexpr absl::string_view kLiteRtSo1 = "libLiteRtCompilerPlugin_1.so";
 constexpr absl::string_view kLiteRtSo2 = "libLiteRtCompilerPlugin_2.so";
 constexpr absl::string_view kLiteRtSo3 = "libLiteRtDispatch_1.so";
 constexpr absl::string_view kLiteRtSo4 = "libLiteRtDispatch_2.so";
+constexpr absl::string_view kLiteRtDylib = "libLiteRtDispatch_3.dylib";
 constexpr absl::string_view kLdLibraryPath = "LD_LIBRARY_PATH";
+
+constexpr absl::string_view kDispatchPrefix = "libLiteRtDispatch";
+constexpr absl::string_view kSoOnly[] = {".so"};
+constexpr absl::string_view kSoAndDylib[] = {".so", ".dylib"};
+
+TEST(TestIsSharedLibFileName, MatchesPrefixAndExtension) {
+  EXPECT_TRUE(IsSharedLibFileName(kLiteRtSo3, kDispatchPrefix, kSoOnly));
+  EXPECT_TRUE(IsSharedLibFileName(kLiteRtSo3, kLiteRtSharedLibPrefix, kSoOnly));
+  // Dots in the stem are fine as long as the name ends with an extension.
+  EXPECT_TRUE(
+      IsSharedLibFileName("libLiteRtDispatch.v2.so", kDispatchPrefix, kSoOnly));
+}
+
+TEST(TestIsSharedLibFileName, RejectsOtherPrefixes) {
+  EXPECT_FALSE(IsSharedLibFileName(kNotLiteRtSo, kDispatchPrefix, kSoOnly));
+  EXPECT_FALSE(IsSharedLibFileName(kLiteRtSo1, kDispatchPrefix, kSoOnly));
+  // The prefix must start the name, not merely occur in it.
+  EXPECT_FALSE(
+      IsSharedLibFileName("xlibLiteRtDispatch.so", kDispatchPrefix, kSoOnly));
+}
+
+TEST(TestIsSharedLibFileName, RejectsOtherExtensions) {
+  EXPECT_FALSE(
+      IsSharedLibFileName("libLiteRtDispatch.txt", kDispatchPrefix, kSoOnly));
+  EXPECT_FALSE(
+      IsSharedLibFileName("libLiteRtDispatch", kDispatchPrefix, kSoOnly));
+  // Versioned names are not matched; callers ship the unversioned name.
+  EXPECT_FALSE(
+      IsSharedLibFileName("libLiteRtDispatch.so.1", kDispatchPrefix, kSoOnly));
+  // A bare extension is not a library name.
+  EXPECT_FALSE(IsSharedLibFileName(".so", "", kSoOnly));
+}
+
+TEST(TestIsSharedLibFileName, DylibDependsOnExtensionList) {
+  EXPECT_FALSE(IsSharedLibFileName(kLiteRtDylib, kDispatchPrefix, kSoOnly));
+  EXPECT_TRUE(IsSharedLibFileName(kLiteRtDylib, kDispatchPrefix, kSoAndDylib));
+  EXPECT_TRUE(IsSharedLibFileName(kLiteRtSo3, kDispatchPrefix, kSoAndDylib));
+  EXPECT_FALSE(
+      IsSharedLibFileName("libOther.dylib", kDispatchPrefix, kSoAndDylib));
+}
 
 TEST(TestDynamicLoading, GlobNoMatch) {
   const auto dir = UniqueTestDirectory::Create();
@@ -97,6 +138,24 @@ TEST(TestDynamicLoading, GlobMultiMatch) {
   ASSERT_EQ(results2.size(), 2);
   EXPECT_THAT(results2, Contains(HasSubstr(kLiteRtSo3)));
   EXPECT_THAT(results2, Contains(HasSubstr(kLiteRtSo4)));
+}
+
+TEST(TestDynamicLoading, GlobDylibOnlyOnApplePlatforms) {
+  const auto dir = UniqueTestDirectory::Create();
+  ASSERT_TRUE(dir);
+  Touch(Join({dir->Str(), kLiteRtSo3}));
+  Touch(Join({dir->Str(), kLiteRtDylib}));
+
+  std::vector<std::string> results;
+  LITERT_ASSERT_OK(
+      litert::internal::FindLiteRtDispatchSharedLibs(dir->Str(), results));
+  EXPECT_THAT(results, Contains(HasSubstr(kLiteRtSo3)));
+#if defined(__APPLE__)
+  EXPECT_EQ(results.size(), 2);
+  EXPECT_THAT(results, Contains(HasSubstr(kLiteRtDylib)));
+#else
+  EXPECT_EQ(results.size(), 1);
+#endif  // defined(__APPLE__)
 }
 
 TEST(TestDynamicLoadingHelper, HelperWithFullMatch) {

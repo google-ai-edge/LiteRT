@@ -16,17 +16,27 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_TESTING_NUMERICAL_TEST_SUITE_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_TESTING_NUMERICAL_TEST_SUITE_H_
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <memory>
+#include <optional>
+#include <type_traits>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/backends/testing/numerical_test_bridge.h"
+#include "tensor/backends/testing/quantized_test_utils.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
@@ -3592,12 +3602,6 @@ TYPED_TEST_P(NumericalTestSuite, QuantizeOp) {
 
 TYPED_TEST_P(NumericalTestSuite, DequantizeOp) {
   using Tag = typename TypeParam::Tag;
-  if constexpr (std::is_same_v<Tag, MlDriftMixinTag>) {
-    GTEST_SKIP()
-        << "Dequantize of int8 inputs fails to compile its OpenCL kernel "
-           "on the ML Drift backend.";
-  }
-
   Tensor<Tag> input(
       {.type = Type::kI8,
        .shape = {1, 8},
@@ -3779,6 +3783,797 @@ TYPED_TEST_P(NumericalTestSuite, StableHLOCompositeOp) {
   EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
 }
 
+namespace numerical_test_internal {
+
+// Runs the float graph producing `outputs` on a new bridge of `Traits`, with
+// `input_data[i]` as the data of `inputs[i]`, and returns the data of each
+// output, `output_sizes[i]` floats for `outputs[i]`. Returns an unimplemented
+// status if the backend doesn't support the graph.
+template <class Traits>
+absl::StatusOr<std::vector<std::vector<float>>> RunFloatGraph(
+    absl::Span<const TensorHandle> inputs,
+    absl::Span<const std::vector<float>> input_data,
+    absl::Span<const TensorHandle> outputs,
+    absl::Span<const size_t> output_sizes) {
+  std::unique_ptr<TestBackendBridge> bridge = Traits::CreateBridge();
+  if (absl::Status status = bridge->Initialize(); !status.ok()) {
+    return status;
+  }
+  if (absl::Status status = bridge->BuildGraph(inputs, outputs); !status.ok()) {
+    return status;
+  }
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    if (absl::Status status =
+            bridge->SetInput(inputs[i], AsBytes(input_data[i]));
+        !status.ok()) {
+      return status;
+    }
+  }
+  if (absl::Status status = bridge->Execute(); !status.ok()) {
+    return status;
+  }
+  std::vector<std::vector<float>> results;
+  for (size_t i = 0; i < outputs.size(); ++i) {
+    std::vector<float>& result = results.emplace_back(output_sizes[i]);
+    if (absl::Status status = bridge->GetOutput(outputs[i], AsBytes(result));
+        !status.ok()) {
+      return status;
+    }
+  }
+  return results;
+}
+
+// Whether the traits of a backend declare `kDisabledTests`.
+template <class Traits, class = void>
+struct HasDisabledTests : std::false_type {};
+template <class Traits>
+struct HasDisabledTests<Traits, std::void_t<decltype(Traits::kDisabledTests)>>
+    : std::true_type {};
+
+// Returns whether the backend of `Traits` disables the current test, e.g. while
+// one of its bugs is being fixed. A backend disables tests by listing their
+// names in `static constexpr absl::string_view kDisabledTests[]`. A name that
+// isn't a test of the suite fails the test, so that a typo can't silently
+// disable nothing.
+template <class Traits>
+bool IsDisabled() {
+  if constexpr (!HasDisabledTests<Traits>::value) {
+    return false;
+  } else {
+    // Built once per backend, when it checks that every name it lists is a
+    // test of the suite, so that a misspelled name can't leave a failing test
+    // enabled. A failure is reported by the first test that calls this.
+    static const absl::NoDestructor<absl::flat_hash_set<absl::string_view>>
+        disabled_tests([] {
+          const ::testing::TestSuite& suite =
+              *::testing::UnitTest::GetInstance()->current_test_suite();
+          absl::flat_hash_set<absl::string_view> names(
+              std::begin(Traits::kDisabledTests),
+              std::end(Traits::kDisabledTests));
+          for (const absl::string_view name : names) {
+            bool is_test = false;
+            for (int i = 0; i < suite.total_test_count() && !is_test; ++i) {
+              is_test = suite.GetTestInfo(i)->name() == name;
+            }
+            EXPECT_TRUE(is_test) << "kDisabledTests lists " << name
+                                 << ", which isn't a test of " << suite.name();
+          }
+          return names;
+        }());
+    return disabled_tests->contains(
+        ::testing::UnitTest::GetInstance()->current_test_info()->name());
+  }
+}
+
+}  // namespace numerical_test_internal
+
+TYPED_TEST_P(NumericalTestSuite, DequantizePerChannelOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  struct TestCase {
+    int quantized_dim;
+    std::vector<float> scales;
+    std::vector<int64_t> zero_points;
+    std::vector<float> expected_output;
+  };
+  // [[1, 3, 5], [-7, 9, 11]].
+  const std::vector<int8_t> input_data = {1, 3, 5, -7, 9, 11};
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.quantized_dim = 0,
+                    .scales = {0.5f, 2.0f},
+                    .zero_points = {1, -1},
+                    .expected_output = {0, 1, 2, -12, 20, 24}},
+           TestCase{.quantized_dim = 1,
+                    .scales = {0.5f, 0.25f, 2.0f},
+                    .zero_points = {1, 3, 5},
+                    .expected_output = {0, 0, 0, -4, 1.5, 12}},
+           TestCase{.quantized_dim = 1,
+                    .scales = {0.5f, 0.25f, 2.0f},
+                    .zero_points = {},
+                    .expected_output = {0.5, 0.75, 10, -3.5, 2.25, 22}},
+       }) {
+    SCOPED_TRACE(::testing::Message()
+                 << "quantized_dimension=" << c.quantized_dim
+                 << " zero_points=" << c.zero_points.size());
+    Tensor<Tag> input(
+        {.type = Type::kI8,
+         .shape = {2, 3},
+         .quantization = std::make_shared<PerChannelAffineQuantization>(
+             c.scales, c.zero_points, c.quantized_dim)});
+    Tensor<Tag> output = Dequantize(input);
+
+    std::unique_ptr<TestBackendBridge> bridge = TypeParam::CreateBridge();
+    ASSERT_OK(bridge->Initialize());
+    absl::Status status = bridge->BuildGraph({input}, {output});
+    if (status.code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(status);
+    ASSERT_OK(bridge->SetInput(input, AsBytes(input_data)));
+    ASSERT_OK(bridge->Execute());
+    std::vector<float> actual_output(c.expected_output.size());
+    ASSERT_OK(bridge->GetOutput(output, AsBytes(actual_output)));
+    ++num_run;
+    EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), c.expected_output));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Per-channel dequantize is unimplemented on this backend.";
+  }
+}
+
+// Fully connected ops with per-channel and blockwise quantized weights, with
+// and without bias and activation. Five output channels don't fill whole bytes
+// of sub-byte weights once transposed to [K, N].
+TYPED_TEST_P(NumericalTestSuite, FullyConnectedQuantizedWeightsOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  struct TestCase {
+    Type type;
+    int n;
+    qtu::Quant quantization;
+    bool has_bias;
+    FusedActivation activation;
+  };
+  constexpr int kM = 3;
+  constexpr int kK = 64;
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .has_bias = false,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .has_bias = true,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI4,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .has_bias = true,
+                    .activation = kActRelu},
+           TestCase{.type = Type::kI2,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .has_bias = true,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .has_bias = false,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/16),
+                    .has_bias = true,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI4,
+                    .n = 8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .has_bias = false,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI4,
+                    .n = 8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/16),
+                    .has_bias = true,
+                    .activation = kActRelu},
+           TestCase{.type = Type::kI2,
+                    .n = 8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .has_bias = true,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI8,
+                    .n = 5,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .has_bias = true,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI4,
+                    .n = 5,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .has_bias = true,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI4,
+                    .n = 5,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .has_bias = true,
+                    .activation = kActNone},
+       }) {
+    SCOPED_TRACE(::testing::Message()
+                 << "bits=" << BitSize(c.type) << " n=" << c.n
+                 << " quantization=" << c.quantization << " has_bias="
+                 << c.has_bias << " relu=" << (c.activation == kActRelu));
+    const qtu::QuantizedMatrix w =
+        qtu::MakeQuantizedMatrix(c.type, c.n, kK, c.quantization);
+    std::vector<float> bias_data(c.n);
+    for (int n = 0; n < c.n; ++n) {
+      bias_data[n] = 0.25f * n - 0.5f;
+    }
+    Tensor<Tag> input({.type = Type::kFP32, .shape = {kM, kK}});
+    std::optional<Tensor<Tag>> bias;
+    if (c.has_bias) {
+      bias = Tensor<Tag>(
+          {.type = Type::kFP32, .shape = {c.n}, .buffer = bias_data});
+    }
+    Tensor<Tag> output =
+        FullyConnected(input, w.ToTensor<Tag>(), bias, c.activation);
+
+    const std::vector<float> input_data = qtu::MakeInput(kM * kK);
+    // Neither the bias nor the activation adds to the error of the dot.
+    auto [expected, tolerance] = qtu::MatMul(
+        input_data, kM, kK, c.n, [&](int k, int n) { return w.At(n, k); });
+    for (int m = 0; m < kM; ++m) {
+      for (int n = 0; n < c.n; ++n) {
+        float& value = expected[m * c.n + n];
+        value += c.has_bias ? bias_data[n] : 0.0f;
+        if (c.activation == kActRelu) {
+          value = std::max(value, 0.0f);
+        }
+      }
+    }
+
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        {input}, {input_data}, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Quantized fully connected is unimplemented.";
+  }
+}
+
+// The input of a fully connected op may have any rank: the rows are all but
+// its last dimension.
+TYPED_TEST_P(NumericalTestSuite, FullyConnectedQuantizedWeightsRank3InputOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  constexpr int kK = 64;
+  constexpr int kN = 8;
+  int num_run = 0;
+  for (const qtu::Quant quantization :
+       {qtu::PerChannel(/*dim=*/0), qtu::Blockwise(/*dim=*/0, /*block=*/32)}) {
+    SCOPED_TRACE(::testing::Message() << "quantization=" << quantization);
+    const qtu::QuantizedMatrix w =
+        qtu::MakeQuantizedMatrix(Type::kI4, kN, kK, quantization);
+    Tensor<Tag> input({.type = Type::kFP32, .shape = {2, 3, kK}});
+    Tensor<Tag> output = FullyConnected(input, w.ToTensor<Tag>());
+
+    const std::vector<float> input_data = qtu::MakeInput(2 * 3 * kK);
+    const auto [expected, tolerance] = qtu::MatMul(
+        input_data, 2 * 3, kK, kN, [&](int k, int n) { return w.At(n, k); });
+
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        {input}, {input_data}, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Quantized fully connected is unimplemented.";
+  }
+}
+
+// Fully connected ops with per-tensor and asymmetric quantized weights.
+TYPED_TEST_P(NumericalTestSuite, FullyConnectedPerTensorAndAsymmetricOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  struct TestCase {
+    const char* name;
+    Type type;
+    int n;
+    qtu::Quant quantization;
+    qtu::ZeroPoints zero_points;
+  };
+  constexpr int kM = 3;
+  constexpr int kK = 64;
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.name = "per-tensor i8",
+                    .type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::PerTensor(),
+                    .zero_points = qtu::ZeroPoints::kNone},
+           TestCase{.name = "per-tensor i4",
+                    .type = Type::kI4,
+                    .n = 8,
+                    .quantization = qtu::PerTensor(),
+                    .zero_points = qtu::ZeroPoints::kNone},
+           TestCase{.name = "per-tensor i4 odd n",
+                    .type = Type::kI4,
+                    .n = 5,
+                    .quantization = qtu::PerTensor(),
+                    .zero_points = qtu::ZeroPoints::kNone},
+           TestCase{.name = "per-tensor asymmetric i8",
+                    .type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::PerTensor(),
+                    .zero_points = qtu::ZeroPoints::kSingle},
+           TestCase{.name = "asymmetric single zp i8",
+                    .type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .zero_points = qtu::ZeroPoints::kSingle},
+           TestCase{.name = "asymmetric per-channel zp i8",
+                    .type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .zero_points = qtu::ZeroPoints::kPerScale},
+           TestCase{.name = "asymmetric per-channel zp i4",
+                    .type = Type::kI4,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .zero_points = qtu::ZeroPoints::kPerScale},
+           TestCase{.name = "asymmetric i4 odd n",
+                    .type = Type::kI4,
+                    .n = 5,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .zero_points = qtu::ZeroPoints::kPerScale},
+           TestCase{.name = "asymmetric blockwise i4",
+                    .type = Type::kI4,
+                    .n = 8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .zero_points = qtu::ZeroPoints::kPerScale},
+       }) {
+    SCOPED_TRACE(c.name);
+    const qtu::QuantizedMatrix w = qtu::MakeQuantizedMatrix(
+        c.type, c.n, kK, c.quantization, c.zero_points);
+    Tensor<Tag> input({.type = Type::kFP32, .shape = {kM, kK}});
+    Tensor<Tag> output = FullyConnected(input, w.ToTensor<Tag>());
+
+    const std::vector<float> input_data = qtu::MakeInput(kM * kK);
+    const auto [expected, tolerance] = qtu::MatMul(
+        input_data, kM, kK, c.n, [&](int k, int n) { return w.At(n, k); });
+
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        {input}, {input_data}, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Quantized fully connected is unimplemented.";
+  }
+}
+
+// A batch matmul with a quantized rank 2 right-hand side: [N, K] with `adj_y`
+// and the channels on dimension 0, [K, N] otherwise with the channels on
+// dimension 1.
+TYPED_TEST_P(NumericalTestSuite, BatchMatMulQuantizedRhsOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  struct TestCase {
+    const char* name;
+    Type type;
+    qtu::Quant quantization;
+    bool adj_y;
+  };
+  constexpr int kK = 64;
+  constexpr int kN = 8;
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.name = "per-channel i8 adj_y",
+                    .type = Type::kI8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .adj_y = true},
+           TestCase{.name = "per-channel i4 adj_y",
+                    .type = Type::kI4,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .adj_y = true},
+           TestCase{.name = "blockwise i4 adj_y",
+                    .type = Type::kI4,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .adj_y = true},
+           TestCase{.name = "per-channel i8",
+                    .type = Type::kI8,
+                    .quantization = qtu::PerChannel(/*dim=*/1),
+                    .adj_y = false},
+           TestCase{.name = "per-channel i4",
+                    .type = Type::kI4,
+                    .quantization = qtu::PerChannel(/*dim=*/1),
+                    .adj_y = false},
+           TestCase{.name = "blockwise i8",
+                    .type = Type::kI8,
+                    .quantization = qtu::Blockwise(/*dim=*/1, /*block=*/16),
+                    .adj_y = false},
+           TestCase{.name = "blockwise i4",
+                    .type = Type::kI4,
+                    .quantization = qtu::Blockwise(/*dim=*/1, /*block=*/32),
+                    .adj_y = false},
+       }) {
+    SCOPED_TRACE(c.name);
+    const qtu::QuantizedMatrix w =
+        c.adj_y ? qtu::MakeQuantizedMatrix(c.type, kN, kK, c.quantization)
+                : qtu::MakeQuantizedMatrix(c.type, kK, kN, c.quantization);
+    Tensor<Tag> lhs({.type = Type::kFP32, .shape = {2, 3, kK}});
+    Tensor<Tag> output =
+        BatchMatMul(lhs, w.ToTensor<Tag>(), /*adj_x=*/false, c.adj_y);
+
+    const std::vector<float> lhs_data = qtu::MakeInput(2 * 3 * kK);
+    const auto [expected, tolerance] = qtu::MatMul(
+        lhs_data, 2 * 3, kK, kN,
+        [&](int k, int n) { return c.adj_y ? w.At(n, k) : w.At(k, n); });
+
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        {lhs}, {lhs_data}, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Batch matmul with a quantized rhs is unimplemented.";
+  }
+}
+
+// [N, K] quantized weights transposed to [K, N] and consumed by a batch matmul.
+// The transpose keeps the quantization, with the quantized dimension following
+// the permutation. Five channels don't fill whole bytes of int4 weights.
+TYPED_TEST_P(NumericalTestSuite, TransposedQuantizedWeightsIntoBatchMatMulOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  struct TestCase {
+    const char* name;
+    Type type;
+    qtu::Quant quantization;
+    int n;
+  };
+  constexpr int kK = 64;
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.name = "per-channel i8",
+                    .type = Type::kI8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .n = 8},
+           TestCase{.name = "blockwise i8",
+                    .type = Type::kI8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .n = 8},
+           TestCase{.name = "per-channel i8 odd n",
+                    .type = Type::kI8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .n = 5},
+           TestCase{.name = "per-channel i4",
+                    .type = Type::kI4,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .n = 8},
+           TestCase{.name = "blockwise i4",
+                    .type = Type::kI4,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .n = 8},
+           TestCase{.name = "per-channel i4 odd n",
+                    .type = Type::kI4,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .n = 5},
+       }) {
+    SCOPED_TRACE(c.name);
+    const qtu::QuantizedMatrix w =
+        qtu::MakeQuantizedMatrix(c.type, c.n, kK, c.quantization);
+    Tensor<Tag> lhs({.type = Type::kFP32, .shape = {3, kK}});
+    Tensor<Tag> transposed =
+        Transpose(w.ToTensor<Tag>(), std::vector<int>{1, 0});
+    Tensor<Tag> output = BatchMatMul(lhs, transposed);
+
+    const std::vector<float> lhs_data = qtu::MakeInput(3 * kK);
+    const auto [expected, tolerance] = qtu::MatMul(
+        lhs_data, 3, kK, c.n, [&](int k, int n) { return w.At(n, k); });
+
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        {lhs}, {lhs_data}, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Transposed quantized weights are unimplemented.";
+  }
+}
+
+// The dequantized values of transposed quantized weights consumed by an op
+// that isn't a dot.
+TYPED_TEST_P(NumericalTestSuite, TransposedQuantizedWeightsIntoAddOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  constexpr int kK = 64;
+  int num_run = 0;
+  for (const Type type : {Type::kI4, Type::kI8}) {
+    for (const int n_channels : {8, 5}) {
+      for (const qtu::Quant quantization :
+           {qtu::PerChannel(/*dim=*/0),
+            qtu::Blockwise(/*dim=*/0, /*block=*/32)}) {
+        for (const qtu::ZeroPoints zp :
+             {qtu::ZeroPoints::kNone, qtu::ZeroPoints::kPerScale}) {
+          SCOPED_TRACE(
+              ::testing::Message()
+              << "bits=" << BitSize(type) << " n=" << n_channels
+              << " quantization=" << quantization << " zero_points="
+              << (zp == qtu::ZeroPoints::kNone ? "none" : "per-scale"));
+          const qtu::QuantizedMatrix w =
+              qtu::MakeQuantizedMatrix(type, n_channels, kK, quantization, zp);
+          Tensor<Tag> transposed =
+              Transpose(w.ToTensor<Tag>(), std::vector<int>{1, 0});
+          Tensor<Tag> x({.type = Type::kFP32, .shape = {kK, n_channels}});
+          Tensor<Tag> output = Add(Dequantize(transposed), x);
+
+          const std::vector<float> x_data = qtu::MakeInput(kK * n_channels);
+          std::vector<float> expected(kK * n_channels);
+          for (int k = 0; k < kK; ++k) {
+            for (int n = 0; n < n_channels; ++n) {
+              expected[k * n_channels + n] =
+                  x_data[k * n_channels + n] + w.At(n, k);
+            }
+          }
+
+          auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+              {x}, {x_data}, {output}, {expected.size()});
+          if (result.status().code() == absl::StatusCode::kUnimplemented) {
+            continue;
+          }
+          ASSERT_OK(result.status());
+          ++num_run;
+          EXPECT_THAT((*result)[0], Pointwise(FloatNear(1e-5f), expected));
+        }
+      }
+    }
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Transposed quantized weights are unimplemented.";
+  }
+}
+
+// [K, N] quantized weights with their channels on dimension 1, as the
+// right-hand side of a batch matmul whose left-hand side is transposed.
+TYPED_TEST_P(NumericalTestSuite, BatchMatMulAdjXQuantizedRhsOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  constexpr int kM = 3;
+  constexpr int kK = 64;
+  constexpr int kN = 8;
+  int num_run = 0;
+  for (const qtu::Quant quantization :
+       {qtu::PerChannel(/*dim=*/1), qtu::Blockwise(/*dim=*/1, /*block=*/16),
+        qtu::Blockwise(/*dim=*/1, /*block=*/32)}) {
+    SCOPED_TRACE(::testing::Message() << "quantization=" << quantization);
+    const qtu::QuantizedMatrix w = qtu::MakeQuantizedMatrix(
+        Type::kI4, kK, kN, quantization, qtu::ZeroPoints::kPerScale);
+    // [K, M], transposed by `adj_x`.
+    Tensor<Tag> lhs({.type = Type::kFP32, .shape = {kK, kM}});
+    Tensor<Tag> output =
+        BatchMatMul(lhs, w.ToTensor<Tag>(), /*adj_x=*/true, /*adj_y=*/false);
+
+    const std::vector<float> lhs_data = qtu::MakeInput(kK * kM);
+    std::vector<float> lhs_t(kM * kK);
+    for (int k = 0; k < kK; ++k) {
+      for (int m = 0; m < kM; ++m) {
+        lhs_t[m * kK + k] = lhs_data[k * kM + m];
+      }
+    }
+    const auto [expected, tolerance] = qtu::MatMul(
+        lhs_t, kM, kK, kN, [&](int k, int n) { return w.At(k, n); });
+
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        {lhs}, {lhs_data}, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Batch matmul with a quantized rhs is unimplemented.";
+  }
+}
+
+// Quantized weights consumed both by a dot and by an op that reads their
+// dequantized values.
+TYPED_TEST_P(NumericalTestSuite, QuantizedWeightsSharedByDotAndAddOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  constexpr int kM = 3;
+  constexpr int kK = 64;
+  constexpr int kN = 8;
+  int num_run = 0;
+  for (const Type type : {Type::kI4, Type::kI8}) {
+    for (const qtu::Quant quantization :
+         {qtu::PerChannel(/*dim=*/0),
+          qtu::Blockwise(/*dim=*/0, /*block=*/32)}) {
+      SCOPED_TRACE(::testing::Message() << "bits=" << BitSize(type)
+                                        << " quantization=" << quantization);
+      const qtu::QuantizedMatrix w =
+          qtu::MakeQuantizedMatrix(type, kN, kK, quantization);
+      Tensor<Tag> weights = w.ToTensor<Tag>();
+      Tensor<Tag> input({.type = Type::kFP32, .shape = {kM, kK}});
+      Tensor<Tag> x({.type = Type::kFP32, .shape = {kN, kK}});
+      Tensor<Tag> dot = FullyConnected(input, weights);
+      Tensor<Tag> sum = Add(Dequantize(weights), x);
+
+      const std::vector<float> input_data = qtu::MakeInput(kM * kK);
+      const auto [expected_dot, tolerance] = qtu::MatMul(
+          input_data, kM, kK, kN, [&](int k, int n) { return w.At(n, k); });
+      const std::vector<float> x_data = qtu::MakeInput(kN * kK);
+      std::vector<float> expected_sum(kN * kK);
+      for (int i = 0; i < expected_sum.size(); ++i) {
+        expected_sum[i] = x_data[i] + w.dequantized[i];
+      }
+
+      auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+          {input, x}, {input_data, x_data}, {dot, sum},
+          {expected_dot.size(), expected_sum.size()});
+      if (result.status().code() == absl::StatusCode::kUnimplemented) {
+        continue;
+      }
+      ASSERT_OK(result.status());
+      ++num_run;
+      EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected_dot));
+      EXPECT_THAT((*result)[1], Pointwise(FloatNear(1e-5f), expected_sum));
+    }
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Quantized weights are unimplemented.";
+  }
+}
+
+// Batch matmuls with rank 2 operands, with and without `adj_x` and `adj_y`,
+// and with a rank 3 left-hand side. The right-hand side is an input, or a
+// constant like the weights of a model.
+TYPED_TEST_P(NumericalTestSuite, BatchMatMulRank2Op) {
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  struct TestCase {
+    const char* name;
+    std::vector<int> lhs_shape;
+    bool adj_x;
+    bool adj_y;
+    bool constant_rhs;
+  };
+  constexpr int kM = 3;
+  constexpr int kK = 8;
+  constexpr int kN = 5;
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.name = "[M, K] x [K, N]",
+                    .lhs_shape = {kM, kK},
+                    .adj_x = false,
+                    .adj_y = false,
+                    .constant_rhs = false},
+           TestCase{.name = "[M, K] x [N, K] adj_y",
+                    .lhs_shape = {kM, kK},
+                    .adj_x = false,
+                    .adj_y = true,
+                    .constant_rhs = false},
+           TestCase{.name = "[K, M] adj_x x [K, N]",
+                    .lhs_shape = {kK, kM},
+                    .adj_x = true,
+                    .adj_y = false,
+                    .constant_rhs = false},
+           TestCase{.name = "[2, M, K] x [K, N]",
+                    .lhs_shape = {2, kM, kK},
+                    .adj_x = false,
+                    .adj_y = false,
+                    .constant_rhs = false},
+           TestCase{.name = "[2, M, K] x constant [N, K] adj_y",
+                    .lhs_shape = {2, kM, kK},
+                    .adj_x = false,
+                    .adj_y = true,
+                    .constant_rhs = true},
+       }) {
+    SCOPED_TRACE(c.name);
+    const int rows = c.lhs_shape.size() == 3 ? 2 * kM : kM;
+    const std::vector<float> lhs_data = qtu::MakeInput(rows * kK);
+    std::vector<float> rhs_data = qtu::MakeInput(kK * kN);
+    for (float& value : rhs_data) {
+      value = 0.5f - value;
+    }
+    // Element (k, n) of the right-hand side.
+    auto rhs = [&](int k, int n) {
+      return c.adj_y ? rhs_data[n * kK + k] : rhs_data[k * kN + n];
+    };
+    // `lhs_data` as [rows, K].
+    std::vector<float> lhs_rows = lhs_data;
+    if (c.adj_x) {
+      for (int k = 0; k < kK; ++k) {
+        for (int m = 0; m < kM; ++m) {
+          lhs_rows[m * kK + k] = lhs_data[k * kM + m];
+        }
+      }
+    }
+    const std::vector<float> expected =
+        qtu::MatMul(lhs_rows, rows, kK, kN, rhs).first;
+
+    Tensor<Tag> lhs({.type = Type::kFP32, .shape = c.lhs_shape});
+    const std::vector<int> rhs_shape =
+        c.adj_y ? std::vector<int>{kN, kK} : std::vector<int>{kK, kN};
+    std::optional<Tensor<Tag>> rhs_tensor;
+    if (c.constant_rhs) {
+      rhs_tensor = Tensor<Tag>(
+          {.type = Type::kFP32, .shape = rhs_shape, .buffer = rhs_data});
+    } else {
+      rhs_tensor = Tensor<Tag>({.type = Type::kFP32, .shape = rhs_shape});
+    }
+    Tensor<Tag> output = BatchMatMul(lhs, *rhs_tensor, c.adj_x, c.adj_y);
+
+    std::vector<TensorHandle> inputs =
+        c.constant_rhs ? std::vector<TensorHandle>{lhs}
+                       : std::vector<TensorHandle>{lhs, *rhs_tensor};
+    std::vector<std::vector<float>> input_data =
+        c.constant_rhs ? std::vector<std::vector<float>>{lhs_data}
+                       : std::vector<std::vector<float>>{lhs_data, rhs_data};
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        inputs, input_data, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(1e-4f), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Batch matmul with rank 2 operands is unimplemented.";
+  }
+}
+
 REGISTER_TYPED_TEST_SUITE_P(
     NumericalTestSuite, AddOp, SubOp, MulOp, DivOp, GeluOp, ReluOp, Relu6Op,
     LeakyReluOp, EluOp, HardSwishOp, LogisticOp, TanhOp, SqrtOp, RsqrtOp,
@@ -3795,8 +4590,14 @@ REGISTER_TYPED_TEST_SUITE_P(
     MaxPool2DOp, SplitOp, PackOp, UnpackOp, ResizeNearestNeighborOp,
     LogSoftmaxOp, Relu0To1Op, ReluN1To1Op, ZerosLikeOp, GreaterOp, LogicalOrOp,
     SpaceToDepthOp, BitwiseXorOp, RightShiftOp, ProbeOp, PadOp, PadV2Op,
-    GatherNdOp, DynamicUpdateSliceOp, QuantizeOp, DequantizeOp, RopeOp, TopKOp,
-    NonMaxSuppressionV5Op, StableHLOCompositeOp);
+    GatherNdOp, DynamicUpdateSliceOp, QuantizeOp, DequantizeOp,
+    DequantizePerChannelOp, RopeOp, TopKOp, NonMaxSuppressionV5Op,
+    StableHLOCompositeOp, FullyConnectedQuantizedWeightsOp,
+    FullyConnectedQuantizedWeightsRank3InputOp,
+    FullyConnectedPerTensorAndAsymmetricOp, BatchMatMulQuantizedRhsOp,
+    TransposedQuantizedWeightsIntoBatchMatMulOp,
+    TransposedQuantizedWeightsIntoAddOp, BatchMatMulAdjXQuantizedRhsOp,
+    QuantizedWeightsSharedByDotAndAddOp, BatchMatMulRank2Op);
 
 }  // namespace litert::tensor
 

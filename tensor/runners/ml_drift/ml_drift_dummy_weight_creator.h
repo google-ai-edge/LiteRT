@@ -35,7 +35,8 @@ class MlDriftDummyWeightCreator {
   absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle> CreateFcWeights(
       const Tensor<MlDriftMixinTag>& weight_tensor,
       absl::Span<const T> data = {},
-      ml_drift::DataType mld_float_data_type = ml_drift::DataType::kFloat32);
+      ml_drift::DataType mld_float_data_type = ml_drift::DataType::kFloat32,
+      ml_drift::TensorDescriptor* out_descriptor = nullptr);
 
   template <typename T>
   absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle> CreateConstantTensor(

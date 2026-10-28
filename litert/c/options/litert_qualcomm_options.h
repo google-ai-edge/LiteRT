@@ -77,6 +77,21 @@ LiteRtStatus LrtQualcommOptionsSetLogLevel(
 LiteRtStatus LrtQualcommOptionsGetLogLevel(
     LrtQualcommOptions options, LrtQualcommOptionsLogLevel* log_level);
 
+typedef enum LrtQualcommOptionsGraphPriority {
+  kLiteRTQualcommGraphPriorityDefault = 0,
+  kLiteRTQualcommGraphPriorityLow,
+  kLiteRTQualcommGraphPriorityNormal,
+  kLiteRTQualcommGraphPriorityNormalHigh,
+  kLiteRTQualcommGraphPriorityHigh,
+} LrtQualcommOptionsGraphPriority;
+
+LiteRtStatus LrtQualcommOptionsSetGraphPriority(
+    LrtQualcommOptions options, LrtQualcommOptionsGraphPriority graph_priority);
+
+LiteRtStatus LrtQualcommOptionsGetGraphPriority(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsGraphPriority* graph_priority);
+
 // profiling
 
 // This option controls the profiling level. A higher level results in a more
@@ -184,6 +199,21 @@ LiteRtStatus LrtQualcommOptionsSetUseFoldReLU(LrtQualcommOptions options,
 
 LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
                                               bool* use_fold_relu);
+
+// op_name_format
+// Reduces op-name length for models with long tensor names.
+
+typedef enum LrtQualcommOptionsOpNameFormat {
+  kLiteRtQualcommOpNameFormatBasic = 0,
+  kLiteRtQualcommOpNameFormatDetailed = 1,
+} LrtQualcommOptionsOpNameFormat;
+
+LiteRtStatus LrtQualcommOptionsSetOpNameFormat(
+    LrtQualcommOptions options, LrtQualcommOptionsOpNameFormat op_name_format);
+
+LiteRtStatus LrtQualcommOptionsGetOpNameFormat(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsOpNameFormat* op_name_format);
 
 // htp_dlbc
 
@@ -394,6 +424,12 @@ LiteRtStatus LrtQualcommOptionsSetHtpDeviceId(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetHtpDeviceId(LrtQualcommOptions options,
                                               uint32_t* htp_device_id);
 
+LiteRtStatus LrtQualcommOptionsSetHtpFileReadMemoryBudgetMB(
+    LrtQualcommOptions options, uint32_t budget_mb);
+
+LiteRtStatus LrtQualcommOptionsGetHtpFileReadMemoryBudgetMB(
+    LrtQualcommOptions options, uint32_t* budget_mb);
+
 LiteRtStatus LrtQualcommOptionsSetNumHvxThreads(LrtQualcommOptions options,
                                                 uint32_t num_hvx_threads);
 
@@ -413,21 +449,6 @@ LiteRtStatus LrtQualcommOptionsSetOptimizationLevel(
 LiteRtStatus LrtQualcommOptionsGetOptimizationLevel(
     LrtQualcommOptions options,
     LrtQualcommOptionsOptimizationLevel* optimization_level);
-
-typedef enum LrtQualcommOptionsGraphPriority {
-  kLiteRTQualcommGraphPriorityDefault = 0,
-  kLiteRTQualcommGraphPriorityLow,
-  kLiteRTQualcommGraphPriorityNormal,
-  kLiteRTQualcommGraphPriorityNormalHigh,
-  kLiteRTQualcommGraphPriorityHigh,
-} LrtQualcommOptionsGraphPriority;
-
-LiteRtStatus LrtQualcommOptionsSetGraphPriority(
-    LrtQualcommOptions options, LrtQualcommOptionsGraphPriority graph_priority);
-
-LiteRtStatus LrtQualcommOptionsGetGraphPriority(
-    LrtQualcommOptions options,
-    LrtQualcommOptionsGraphPriority* graph_priority);
 
 typedef enum LrtQualcommOptionsBackend {
   kLiteRtQualcommBackendUndefined = 0,

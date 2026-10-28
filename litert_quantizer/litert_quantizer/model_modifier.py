@@ -19,6 +19,7 @@ import logging
 import mmap
 from typing import TypeVar
 
+from flatbuffers import flexbuffers
 import numpy as np
 
 from ai_edge_litert.tools import flatbuffer_utils
@@ -98,6 +99,27 @@ def _copy_with_views(value: T) -> T:
         if v is not None
     })
   return value
+
+
+def _get_blockwise_scale_tensor_idx(
+    subgraph: qtyping.SubGraphT, weight_idx: int
+) -> int:
+  """Returns the scale tensor index of a block_shape quantized weight."""
+  weight = subgraph.tensors[weight_idx]
+  quantization = weight.quantization
+  if (
+      quantization is None
+      or quantization.details is None
+      or quantization.detailsType
+      != qtyping.QuantizationDetails.BlockwiseQuantization
+      or quantization.details.blockShape is None
+      or np.size(quantization.details.blockShape) == 0
+  ):
+    raise ValueError(
+        f"Weight tensor {tfl_flatbuffer_utils.get_tensor_name(weight)} is"
+        " missing BlockwiseQuantization details with a non-empty block_shape."
+    )
+  return quantization.details.scales
 
 
 class ModelModifier:
@@ -200,6 +222,9 @@ class ModelModifier:
       )
     del instructions
 
+    # Update quantized MoE custom ops to match the INT8 kernel schema.
+    quantized_model = self._update_quantized_moe_ops(quantized_model)
+
     logging.info("Serializing model...")
     packed_buffer_data = _PackedBufferData(quantized_model)
     if packed_buffer_data.packed_size < 256 * 1024:
@@ -288,6 +313,77 @@ class ModelModifier:
           )
           return True
     return False
+
+  def _update_quantized_moe_ops(
+      self,
+      model: qtyping.ModelT,
+  ) -> qtyping.ModelT:
+    """Updates quantized MoE custom ops to match the INT8 kernel schema.
+
+    The float MoE kernel uses 7 inputs with weight_type='fp32'. When quantized,
+    the LiteRT INT8 MoE kernel requires weight_type='int8' in custom options and
+    10 inputs, interleaving scale tensors for gate, ff1, and linear weights.
+
+    Args:
+      model: The TFLite ModelT object to update.
+
+    Returns:
+      The updated TFLite ModelT object.
+    """
+    for subgraph in model.subgraphs:
+      for op in subgraph.operators:
+        opcode = model.operatorCodes[op.opcodeIndex]
+        custom_code = (
+            opcode.customCode.decode("utf-8")
+            if isinstance(opcode.customCode, bytes)
+            else opcode.customCode
+        )
+        # Only process quantized MoE ops with 7 inputs.
+        if (
+            custom_code != "moe"
+            or len(op.inputs) != 7
+            or subgraph.tensors[op.inputs[3]].type != qtyping.TensorType.INT8
+        ):
+          continue
+
+        # Update weight type in custom options to INT8.
+        custom_options = flexbuffers.Loads(bytes(op.customOptions))
+        custom_options["weight_type"] = "int8"
+        op.customOptions = flexbuffers.Dumps(custom_options)
+
+        # Expand inputs to 10.
+        (
+            src_idx,
+            top_weights_idx,
+            top_indices_idx,
+            gate_weight_idx,
+            ff1_weight_idx,
+            linear_weight_idx,
+            per_expert_scale_idx,
+        ) = op.inputs
+        gate_scale_idx = _get_blockwise_scale_tensor_idx(
+            subgraph, gate_weight_idx
+        )
+        ff1_scale_idx = _get_blockwise_scale_tensor_idx(
+            subgraph, ff1_weight_idx
+        )
+        linear_scale_idx = _get_blockwise_scale_tensor_idx(
+            subgraph, linear_weight_idx
+        )
+
+        op.inputs = [
+            src_idx,
+            top_weights_idx,
+            top_indices_idx,
+            gate_weight_idx,
+            gate_scale_idx,
+            ff1_weight_idx,
+            ff1_scale_idx,
+            linear_weight_idx,
+            linear_scale_idx,
+            per_expert_scale_idx,
+        ]
+    return model
 
   def _serialize_model(
       self,

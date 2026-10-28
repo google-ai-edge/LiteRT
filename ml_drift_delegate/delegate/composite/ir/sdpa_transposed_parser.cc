@@ -19,6 +19,7 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
@@ -26,7 +27,9 @@
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_transposed_support.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "tflite/c/builtin_op_data.h"
@@ -58,6 +61,8 @@ absl::Status SdpaTransposedIsSupported(
   if (tflite_node->outputs->size != 1) {
     return absl::InvalidArgumentError("SDPA transposed expects 1 output.");
   }
+
+  ABSL_RETURN_IF_ERROR(CheckSdpaTransposedKvCacheTypes(context, tflite_node));
 
   return absl::OkStatus();
 }
@@ -95,8 +100,19 @@ void Reshape(::ml_drift::ir::IrModel* ir_model,
   return new_tensor_id;
 }
 
+// Makes the delegate hand the raw int8 cache bytes of `tensor_id` to the kernel
+// as a kUint8 tensor instead of its dequantized f32 shadow. Same trick as the
+// IR AddValuesToCache parser (TODO(b/482104479): allow native int8 tensors in
+// MLDrift).
+void RetagInt8CacheTensor(::ml_drift::ir::IrModel& ir_model,
+                          ::ml_drift::ir::IrTensorId tensor_id) {
+  ir_model.ResetQuantParams(tensor_id);
+  ir_model.GetMutableTensor(tensor_id)->desc.SetDataType(
+      ::ml_drift::DataType::kUint8);
+}
+
 void SdpaTransposedConvert(
-    const TfLiteContext& /*context*/, const TfLiteNode& tflite_node,
+    const TfLiteContext& context, const TfLiteNode& tflite_node,
     const TfLiteRegistration& /*registration*/,
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     const IrModelBuilderOptions& options,
@@ -116,6 +132,25 @@ void SdpaTransposedConvert(
           : -1;
 
   ::ml_drift::ir::IrTensorId output = tensor_map[tflite_node.outputs->data[0]];
+
+  ::ml_drift::ir::IrOp* key_producer = ir_model.FindProducer(input1);
+  const AddValuesToCacheAttributes* cache_update_attr = nullptr;
+  if (key_producer && key_producer->name == kAddValuesToCacheType) {
+    cache_update_attr =
+        &std::any_cast<const AddValuesToCacheAttributes&>(key_producer->attr);
+  }
+
+  // INT8 K/V caches (checked to be both int8 or both float in IsSupported).
+  // Caches produced by odml.cache_update in this graph are already kUint8;
+  // other int8 caches are retagged here, before the merge-batch reshape copies
+  // their type.
+  const TfLiteTensor& k_tensor = context.tensors[tflite_node.inputs->data[1]];
+  const TfLiteTensor& v_tensor = context.tensors[tflite_node.inputs->data[2]];
+  const bool int8_kv = IsInt8Tensor(k_tensor);
+  if (int8_kv && cache_update_attr == nullptr) {
+    RetagInt8CacheTensor(ir_model, input1);
+    RetagInt8CacheTensor(ir_model, input2);
+  }
 
   const auto q_shape = ir_model.tensor(input0)->desc.GetBHWCShape();
   const bool model_batch = q_shape.b != 1;
@@ -141,30 +176,33 @@ void SdpaTransposedConvert(
   }
   attr.is_prefill = (q_shape.w > 2 || model_batch);
 
-  ::ml_drift::ir::IrOp* key_producer = ir_model.FindProducer(input1);
-  if (key_producer && key_producer->name == "add_values_to_cache") {
+  if (cache_update_attr != nullptr) {
     attr.from_cache_update = true;
   }
 
-  const ::ml_drift::BHWC right_shape_k =
-      ir_model.tensor(k_val)->desc.GetBHWCShape();
-  attr.bmm1_weights.weights_shape =
-      ::ml_drift::OHWI(right_shape_k.w, right_shape_k.h, 1, right_shape_k.c);
-  // TODO: b/403337563 - Support quantized weights.
-  attr.bmm1_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
-      ir_model.tensor(k_val)->desc.GetDataType(),
-      attr.bmm1_weights.weights_shape);
-  attr.bmm1_weights.desc.layout =
-      ::ml_drift::WeightsLayout::kOSpatialIOGroupO4I4;
+  if (int8_kv) {
+    SetSdpaTransposedInt8KvCacheWeights(
+        k_tensor, v_tensor, ir_model.tensor(k_val)->desc.GetBHWCShape(),
+        ir_model.tensor(v_val)->desc.GetBHWCShape(), cache_update_attr, attr);
+  } else {
+    const ::ml_drift::BHWC right_shape_k =
+        ir_model.tensor(k_val)->desc.GetBHWCShape();
+    attr.bmm1_weights.weights_shape =
+        ::ml_drift::OHWI(right_shape_k.w, right_shape_k.h, 1, right_shape_k.c);
+    attr.bmm1_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
+        ir_model.tensor(k_val)->desc.GetDataType(),
+        attr.bmm1_weights.weights_shape);
+    attr.bmm1_weights.desc.layout =
+        ::ml_drift::WeightsLayout::kOSpatialIOGroupO4I4;
 
-  const ::ml_drift::BHWC right_shape_v =
-      ir_model.tensor(v_val)->desc.GetBHWCShape();
-  attr.bmm2_weights.weights_shape =
-      ::ml_drift::OHWI(right_shape_v.w, right_shape_v.h, 1, right_shape_v.c);
-  // TODO: b/403337563 - Support quantized weights.
-  attr.bmm2_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
-      ir_model.tensor(v_val)->desc.GetDataType(),
-      attr.bmm2_weights.weights_shape);
+    const ::ml_drift::BHWC right_shape_v =
+        ir_model.tensor(v_val)->desc.GetBHWCShape();
+    attr.bmm2_weights.weights_shape =
+        ::ml_drift::OHWI(right_shape_v.w, right_shape_v.h, 1, right_shape_v.c);
+    attr.bmm2_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
+        ir_model.tensor(v_val)->desc.GetDataType(),
+        attr.bmm2_weights.weights_shape);
+  }
 
   const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
       tflite_node.builtin_data);
@@ -184,35 +222,31 @@ void SdpaTransposedConvert(
       attr.is_causal = flexbuffer_map["is_causal"].AsBool();
     }
   }
-
-  // On Apple Metal GPUs, BuildSdpaTransposedGpuGraph dispatches fused
-  // FlashAttention prefill / FlashDecode kernels when from_cache_update is
-  // true (K/V produced by odml.cache_update). Those kernels enforce causal
-  // masking (key <= q_start + X) and active KV cache bounds (key <
-  // active_tokens) directly in registers using input4 (params) when
-  // attr.is_causal is set, whereas non-Apple backends fall back to decomposed
-  // BMM + SoftmaxReduce ops that still read the mask tensor.
-  bool skip_bool_mask_for_flash_sdpa = false;
-#ifdef __APPLE__
-  const int head_dim = q_shape.c;
-  const int q_w = q_shape.w;
-  const bool is_flash_prefill =
-      attr.is_prefill && head_dim % 4 == 0 && head_dim <= 128;
-  // Flash-Decode runs the wave-SIMD kernel for head_dim 128 and otherwise the
-  // work-group kernel, which needs the head_dim / 4 channel slices to divide
-  // its 256 work items on Apple GPUs (see `IsSupportedFlashDecode`), i.e.
-  // head_dim 4, 8, ..., 1024.
-  const bool is_flash_decode = !attr.is_prefill && q_w == 1 && head_dim > 0 &&
-                               head_dim % 4 == 0 && (256 * 4) % head_dim == 0;
-  if (options.gpu_info != nullptr && options.gpu_info->IsApiMetal() &&
-      attr.is_causal && attr.from_cache_update && input4 != -1 &&
-      input3 != -1 &&
-      ir_model.tensor(input3)->desc.GetDataType() ==
-          ::ml_drift::DataType::kBool &&
-      (is_flash_prefill || is_flash_decode)) {
-    skip_bool_mask_for_flash_sdpa = true;
+  // The int8 cache bytes are only meaningful in the packed layout written by
+  // odml.cache_update, which the FullyConnected external weights path reads.
+  if (int8_kv) {
+    attr.from_cache_update = true;
   }
-#endif  // __APPLE__
+
+  // When `UsesFusedSdpaKernel` holds, BuildSdpaTransposedGpuGraph dispatches a
+  // fused Flash-Attention kernel (MMA prefill on Apple Metal, the work-group
+  // kernel for prefill on OpenCL / WebGPU, Flash-Decode everywhere) for float
+  // K/V produced by odml.cache_update. Those kernels enforce causal masking
+  // (key <= q_start + X) and the active KV cache bound (key < active_tokens)
+  // directly in registers from input4 (params) when attr.is_causal is set, so
+  // the BOOL mask is not needed. The decomposed BMM + SoftmaxReduce graph,
+  // which int8 K/V caches always take, still reads the mask, and
+  // BuildSdpaTransposedGpuGraph rejects a pruned mask there.
+  bool skip_bool_mask_for_flash_sdpa = false;
+  if (options.gpu_info != nullptr && attr.is_causal && attr.from_cache_update &&
+      !int8_kv && input4 != -1 && input3 != -1 &&
+      ir_model.tensor(input3)->desc.GetDataType() ==
+          ::ml_drift::DataType::kBool) {
+    skip_bool_mask_for_flash_sdpa = ::litert::ml_drift::UsesFusedSdpaKernel(
+        *options.gpu_info, ir_model.tensor(q_val)->desc.GetBHWCShape(),
+        ir_model.tensor(k_val)->desc.GetBHWCShape(), attr.is_prefill,
+        attr.from_cache_update);
+  }
 
   ::ml_drift::ir::IrOp* sdpa = ir_model.add_op();
   sdpa->attr = std::move(attr);

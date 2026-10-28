@@ -30,6 +30,7 @@ limitations under the License.
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
@@ -69,13 +70,33 @@ class CompiledMlDriftModelRunner {
   using InferenceContext = typename Backend::InferenceContext;
   using BackendTensor = typename Backend::Tensor;
 
+  // Cross-signature cache of packed constant weight descriptors and allocated
+  // GPU weight tensors. Passing the same `SharedWeightsCache` across prefill
+  // and decode `CompiledMlDriftModelRunner` instances sharing an `Environment`
+  // avoids re-packing weights on the CPU and avoids allocating duplicate
+  // constant weight buffers/textures on the GPU.
+  struct SharedWeightsCache {
+    absl::flat_hash_map<std::string, ml_drift::TensorDescriptor> descriptors;
+    absl::flat_hash_map<std::string, std::unique_ptr<BackendTensor>> tensors;
+    size_t cache_hits = 0;
+    size_t cache_misses = 0;
+    // When true, runners drop the host buffers of fused constant weights
+    // (`+`-joined names, e.g. from `TryConcatConstantFcWeights`) once this
+    // cache holds their packed descriptor. That mutates the graph passed to
+    // the runner, so only set it when every graph is compiled with this cache
+    // (e.g. a decoder runtime that builds a fresh graph for every pass).
+    bool release_fused_host_buffers = false;
+  };
+
   CompiledMlDriftModelRunner(std::vector<TensorHandle> flat_inputs,
                              std::vector<TensorHandle> flat_outputs,
                              ml_drift::CalculationsPrecision precision =
                                  ml_drift::CalculationsPrecision::kF32,
-                             Environment* shared_env = nullptr)
+                             Environment* shared_env = nullptr,
+                             SharedWeightsCache* shared_weights = nullptr)
       : flat_inputs_(std::move(flat_inputs)),
-        flat_outputs_(std::move(flat_outputs)) {
+        flat_outputs_(std::move(flat_outputs)),
+        shared_weights_(shared_weights) {
     if (shared_env != nullptr) {
       env_ptr_ = shared_env;
       env_initialized_ = true;
@@ -87,7 +108,11 @@ class CompiledMlDriftModelRunner {
         .storage_type =
             Backend::GetStorageTypeForBuilder(*env_ptr_, env_initialized_),
     };
-    gpu_model_info_.hints.Add(ml_drift::ModelHints::kFastTuning);
+    const char* fast_tuning_env = std::getenv("LRT_FAST_TUNING");
+    if (fast_tuning_env == nullptr ||
+        std::string(fast_tuning_env) != "false") {
+      gpu_model_info_.hints.Add(ml_drift::ModelHints::kFastTuning);
+    }
     gpu_model_info_.hints.Add(ml_drift::ModelHints::kPreferTextureWeights);
     gpu_model_info_.hints.Add(ml_drift::ModelHints::kEnableHostMappedPointer);
     gpu_model_info_.hints.Add(ml_drift::ModelHints::kDisallow8bitConvs);
@@ -118,6 +143,14 @@ class CompiledMlDriftModelRunner {
     conversion_ctx_.gpu_model_builder = model_builder_.get();
     conversion_ctx_.default_float_type =
         ml_drift::DeduceDataTypeFromPrecision(gpu_model_info_.precision);
+    conversion_ctx_.shared_weight_descriptors =
+        shared_weights_ != nullptr ? &shared_weights_->descriptors : nullptr;
+  }
+
+  void SetSharedWeightsCache(SharedWeightsCache* shared_weights) {
+    shared_weights_ = shared_weights;
+    conversion_ctx_.shared_weight_descriptors =
+        shared_weights_ != nullptr ? &shared_weights_->descriptors : nullptr;
   }
 
   absl::Status Prepare(
@@ -179,9 +212,53 @@ class CompiledMlDriftModelRunner {
     LRT_TENSOR_RETURN_IF_ERROR(conversion_ctx_.gpu_model_builder->GetGpuModel(
         graph_input_ids_, graph_output_ids_, &gpu_model_));
 
-    LRT_TENSOR_RETURN_IF_ERROR(
-        Backend::InitInferenceContext(&inference_context_, gpu_model_info_,
-                                      &gpu_model_, env_ptr_, external_tensors));
+    ml_drift::ExternalTensorsInfo combined_external_tensors = external_tensors;
+    if (shared_weights_ != nullptr) {
+      for (const auto& [weight_name, handle] :
+           conversion_ctx_.weight_name_to_handle) {
+        if (conversion_ctx_.external_weight_names.contains(weight_name)) {
+          continue;
+        }
+        auto const_it = gpu_model_.const_tensors.find(handle.id);
+        if (const_it == gpu_model_.const_tensors.end()) {
+          continue;
+        }
+        auto tensor_it = shared_weights_->tensors.find(weight_name);
+        if (tensor_it == shared_weights_->tensors.end()) {
+          const ml_drift::TensorDescriptor* upload_desc = &const_it->second;
+          auto shared_desc_it = shared_weights_->descriptors.find(weight_name);
+          if (shared_desc_it != shared_weights_->descriptors.end() &&
+              !shared_desc_it->second.GetData().empty()) {
+            upload_desc = &shared_desc_it->second;
+          }
+          auto gpu_tensor = std::make_unique<BackendTensor>();
+          LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensor(
+              env_ptr_, *upload_desc, gpu_tensor.get()));
+          if (shared_desc_it != shared_weights_->descriptors.end()) {
+            shared_desc_it->second =
+                CopyDescriptorWithoutData(shared_desc_it->second);
+          } else {
+            shared_weights_->descriptors.emplace(
+                weight_name, CopyDescriptorWithoutData(*upload_desc));
+          }
+          tensor_it = shared_weights_->tensors
+                          .emplace(weight_name, std::move(gpu_tensor))
+                          .first;
+          ++shared_weights_->cache_misses;
+        } else {
+          ++shared_weights_->cache_hits;
+        }
+        gpu_model_.tensors[handle.id] =
+            CopyDescriptorWithoutData(const_it->second);
+        gpu_model_.const_tensors.erase(const_it);
+        combined_external_tensors.immutable_tensors[handle.id] =
+            tensor_it->second.get();
+      }
+    }
+
+    LRT_TENSOR_RETURN_IF_ERROR(Backend::InitInferenceContext(
+        &inference_context_, gpu_model_info_, &gpu_model_, env_ptr_,
+        combined_external_tensors));
 
     compilation_time_ = absl::Now() - compilation_start;
     return absl::OkStatus();
@@ -204,12 +281,28 @@ class CompiledMlDriftModelRunner {
     return it->second.id;
   }
 
+  absl::StatusOr<ml_drift::ValueId> GetTensorValueId(
+      const std::string& name) const {
+    auto raw_tensor_ptr = FindTensorByName(name);
+    if (!raw_tensor_ptr) {
+      return absl::NotFoundError(absl::StrCat("Tensor not found: ", name));
+    }
+    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
+    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
+      return absl::NotFoundError(
+          absl::StrCat("Tensor handle not found: ", name));
+    }
+    return it->second.id;
+  }
+
   absl::flat_hash_map<ml_drift::ValueId, BackendTensor*> GetWeightTensors() {
     absl::flat_hash_map<ml_drift::ValueId, BackendTensor*> tensors;
     for (const auto& [graph_tensor, handle] :
          conversion_ctx_.graph_tensor_to_handle) {
-      auto info_or = graph::GetInfo(graph_tensor);
-      if (info_or.ok() && info_or->buffer != nullptr) {
+      auto info = graph::GetInfo(graph_tensor);
+      const bool is_weight = (info.ok() && info->buffer != nullptr) ||
+                             released_weight_tensors_.contains(graph_tensor);
+      if (is_weight) {
         auto* t = Backend::GetTensor(&inference_context_, handle.id);
         if (t != nullptr) {
           tensors[handle.id] = t;
@@ -384,6 +477,25 @@ class CompiledMlDriftModelRunner {
     return Backend::CreateOutputBuffer(&inference_context_, env_ptr_, th.id);
   }
 
+  absl::StatusOr<BackendTensor*> GetBackendTensor(const std::string& name) {
+    auto raw_tensor_ptr = FindTensorByName(name);
+    if (!raw_tensor_ptr) {
+      return absl::NotFoundError(absl::StrCat("Tensor not found: ", name));
+    }
+    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
+    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
+      return absl::NotFoundError(
+          absl::StrCat("Tensor handle not found: ", name));
+    }
+    const auto& th = it->second;
+    BackendTensor* tensor = Backend::GetTensor(&inference_context_, th.id);
+    if (tensor == nullptr) {
+      return absl::InternalError(
+          absl::StrCat("Backend tensor is null for: ", name));
+    }
+    return tensor;
+  }
+
   // Returns the compilation time.
   absl::Duration compilation_time() const { return compilation_time_; }
 
@@ -416,13 +528,43 @@ class CompiledMlDriftModelRunner {
       if (op->GetName() == "FullyConnected" ||
           op->GetName() == "EmbeddingLookup") {
         auto weights_tensor = op->inputs[1];
-        LRT_TENSOR_ASSIGN_OR_RETURN(const auto& info,
-                                    graph::GetInfo(weights_tensor));
-        bool skip = conversion_ctx_.external_weight_names.contains(info.name);
-        if (info.buffer == nullptr || skip) {
+        if (conversion_ctx_.graph_tensor_to_handle.contains(weights_tensor)) {
           continue;
         }
-        if (conversion_ctx_.graph_tensor_to_handle.contains(weights_tensor)) {
+        LRT_TENSOR_ASSIGN_OR_RETURN(auto& info,
+                                    graph::GetInfo(weights_tensor));
+        if (conversion_ctx_.external_weight_names.contains(info.name)) {
+          continue;
+        }
+        // Fused weights are always constants; their host buffer may have been
+        // released by an earlier compilation of this graph (see
+        // `SharedWeightsCache::release_fused_host_buffers`).
+        const bool is_fused_weight = absl::StrContains(info.name, '+');
+        // Reuse a packed descriptor of the shared cache before looking at the
+        // host buffer, so that recompiling a graph whose fused weights were
+        // released still finds them.
+        if ((info.buffer != nullptr || is_fused_weight) && !info.name.empty() &&
+            conversion_ctx_.shared_weight_descriptors != nullptr) {
+          auto shared_it =
+              conversion_ctx_.shared_weight_descriptors->find(info.name);
+          if (shared_it != conversion_ctx_.shared_weight_descriptors->end()) {
+            auto gpu_handle = model_builder_->AddConstantTensor(
+                CopyDescriptorWithoutData(shared_it->second));
+            conversion_ctx_.graph_tensor_to_handle[weights_tensor] = gpu_handle;
+            name_to_tensor_map_[info.name] = weights_tensor;
+            conversion_ctx_.weight_name_to_handle.insert(
+                {info.name, gpu_handle});
+            MaybeReleaseFusedHostBuffer(weights_tensor, info);
+            continue;
+          }
+        }
+        if (info.buffer == nullptr) {
+          if (is_fused_weight) {
+            return absl::FailedPreconditionError(absl::StrCat(
+                "The host data of fused weight '", info.name,
+                "' was released after an earlier upload; compile this graph "
+                "with the SharedWeightsCache that holds its packed weights."));
+          }
           continue;
         }
 
@@ -440,6 +582,12 @@ class CompiledMlDriftModelRunner {
           MlDriftDummyWeightCreator weight_creator(model_builder_.get());
           Tensor<MlDriftMixinTag> weights_wrapper(weights_tensor);
           ml_drift::GpuModelBuilder::TensorHandle gpu_handle;
+          ml_drift::TensorDescriptor* shared_desc_out = nullptr;
+          ml_drift::TensorDescriptor local_shared_desc;
+          if (!info.name.empty() &&
+              conversion_ctx_.shared_weight_descriptors != nullptr) {
+            shared_desc_out = &local_shared_desc;
+          }
           if (info.type == Type::kFP32) {
             absl::Span<const float> data(
                 reinterpret_cast<const float*>(raw_span.data()),
@@ -447,16 +595,22 @@ class CompiledMlDriftModelRunner {
             LRT_TENSOR_ASSIGN_OR_RETURN(
                 gpu_handle,
                 weight_creator.CreateFcWeights<float>(
-                    weights_wrapper, data, conversion_ctx_.default_float_type));
+                    weights_wrapper, data, conversion_ctx_.default_float_type,
+                    shared_desc_out));
           } else if (info.type == Type::kI8 || info.type == Type::kI2) {
             LRT_TENSOR_ASSIGN_OR_RETURN(
-                gpu_handle, weight_creator.CreateFcWeights<int8_t>(
-                                weights_wrapper, raw_span,
-                                conversion_ctx_.default_float_type));
+                gpu_handle,
+                weight_creator.CreateFcWeights<int8_t>(
+                    weights_wrapper, raw_span,
+                    conversion_ctx_.default_float_type, shared_desc_out));
           } else {
             return absl::UnimplementedError(absl::StrCat(
                 "Unsupported constant weights type for ", op->GetName(), ": ",
                 info.type, " (tensor '", info.name, "')"));
+          }
+          if (shared_desc_out != nullptr) {
+            conversion_ctx_.shared_weight_descriptors->emplace(
+                info.name, std::move(local_shared_desc));
           }
           conversion_ctx_.graph_tensor_to_handle[weights_tensor] = gpu_handle;
           name_to_tensor_map_[info.name] = weights_tensor;
@@ -464,6 +618,7 @@ class CompiledMlDriftModelRunner {
             conversion_ctx_.weight_name_to_handle.insert(
                 {info.name, gpu_handle});
           }
+          MaybeReleaseFusedHostBuffer(weights_tensor, info);
           continue;
         }
 
@@ -533,16 +688,42 @@ class CompiledMlDriftModelRunner {
 
         weights_td.UploadDataRaw(absl::MakeConstSpan(rearranged_data));
 
-        auto gpu_handle =
-            model_builder_->AddConstantTensor(std::move(weights_td));
+        ml_drift::GpuModelBuilder::TensorHandle gpu_handle;
+        if (!info.name.empty() &&
+            conversion_ctx_.shared_weight_descriptors != nullptr) {
+          auto [shared_it, _] =
+              conversion_ctx_.shared_weight_descriptors->emplace(
+                  info.name, std::move(weights_td));
+          gpu_handle = model_builder_->AddConstantTensor(
+              CopyDescriptorWithoutData(shared_it->second));
+        } else {
+          gpu_handle = model_builder_->AddConstantTensor(std::move(weights_td));
+        }
         conversion_ctx_.graph_tensor_to_handle[weights_tensor] = gpu_handle;
         name_to_tensor_map_[info.name] = weights_tensor;
         if (!info.name.empty()) {
           conversion_ctx_.weight_name_to_handle.insert({info.name, gpu_handle});
         }
+        MaybeReleaseFusedHostBuffer(weights_tensor, info);
       }
     }
     return absl::OkStatus();
+  }
+
+  // Drops the host copy of a fused constant weight once the shared cache holds
+  // its packed descriptor, if the cache allows it
+  // (`SharedWeightsCache::release_fused_host_buffers`). Released tensors stay
+  // visible to `GetWeightTensors()`.
+  void MaybeReleaseFusedHostBuffer(const graph::Tensor& weights_tensor,
+                                   graph::TensorInformation& info) {
+    if (shared_weights_ == nullptr ||
+        !shared_weights_->release_fused_host_buffers ||
+        !absl::StrContains(info.name, '+') ||
+        !shared_weights_->descriptors.contains(info.name)) {
+      return;
+    }
+    info.buffer = nullptr;
+    released_weight_tensors_.insert(weights_tensor);
   }
 
  protected:
@@ -550,9 +731,12 @@ class CompiledMlDriftModelRunner {
   std::vector<TensorHandle> flat_outputs_;
 
   absl::flat_hash_map<std::string, graph::Tensor> name_to_tensor_map_;
+  // Fused weights whose host buffers `MaybeReleaseFusedHostBuffer` dropped.
+  absl::flat_hash_set<graph::Tensor> released_weight_tensors_;
 
   Environment env_;
   Environment* env_ptr_ = &env_;
+  SharedWeightsCache* shared_weights_ = nullptr;
   std::unique_ptr<ml_drift::GpuModelBuilder> model_builder_;
   ml_drift::GpuModel gpu_model_;
   InferenceContext inference_context_;

@@ -35,6 +35,7 @@ load(
     "export_lrt_tflite_runtime_linkopt",
     "export_lrt_tflite_runtime_script",
     "litert_c_api_library",
+    "litert_size_tracking_target",
 )
 load(
     "//litert/build_common:special_rule.bzl",
@@ -160,6 +161,7 @@ litert_c_api_library(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_runtime_c_api",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//litert/runtime/accelerators:auto_registration",
@@ -460,6 +462,7 @@ cc_test(
     deps = [
         ":litert_any",
         ":litert_common",
+        ":litert_custom_tensor_buffer",
         ":litert_environment",
         ":litert_environment_options",
         ":litert_model_types",
@@ -518,6 +521,7 @@ cc_test(
 #     deps = [
 #         ":litert_any",
 #         ":litert_common",
+#         ":litert_custom_tensor_buffer",
 #         ":litert_environment",
 #         ":litert_environment_options",
 #         ":litert_model_types",
@@ -898,12 +902,70 @@ cc_shared_library(
     deps = [":litert_runtime_c_api_so_shim"],
 )
 
+# Size-tracking variant of libLiteRt.so for WeightWatcher (litert.blueprint).
+# Not for distribution; see litert_size_tracking_target.
+litert_size_tracking_target(
+    name = "litert_runtime_c_api_so_ww",
+    target = ":litert_runtime_c_api_so",
+)
+
 sh_test(
     name = "litert_runtime_c_api_so_symbol_test",
     srcs = ["litert_runtime_c_api_so_symbol_test.sh"],
     data = [
         "litert_runtime_c_api_so_symbols.txt",
         ":libLiteRt.so",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+)
+
+# Unstripped binary linking all LiteRt* C API and Lrt* option entrypoints,
+# used for symbol leak testing.
+cc_binary(
+    name = "litert_runtime_for_symbol_test",
+    testonly = True,
+    srcs = ["litert_c_api_common_test.c"],
+    copts = ["--std=c11"],
+    features = ["-legacy_whole_archive"],
+    linkopts = select({
+        "//litert:macos": [],
+        "//litert:ios": [],
+        "//litert:windows": [],
+        "//conditions:default": [
+            "-Wl,--gc-sections",
+            "-Wl,--as-needed",
+            "-Wl,--undefined-glob=LiteRt*",
+            "-Wl,--undefined-glob=Lrt*",
+            "-Wl,--undefined=kLiteRtRuntimeBuiltin",
+            "-Wl,--export-dynamic-symbol=LiteRt*",
+            "-Wl,--export-dynamic-symbol=Lrt*",
+            "-Wl,--export-dynamic-symbol=kLiteRtRuntimeBuiltin",
+        ],
+    }) + litert_android_linkopts(),
+    linkstatic = 1,
+    # copybara:uncomment malloc = "//base:system_malloc",
+    deps = LITERT_C_API_COMMON_DEPS + [
+        ":litert_profiler_event",
+        "//litert/c/internal:litert_runtime_builtin_header",
+        "//litert/c/internal:litert_runtime_context_testonly",
+        "//litert/c/options:litert_compiler_options",
+        "//litert/c/options:litert_runtime_options",
+        "//litert/c/options:litert_webnn_options",
+    ],
+)
+
+sh_test(
+    name = "litert_runtime_symbol_test",
+    srcs = ["//litert/test:litert_runtime_symbol_test.sh"],
+    args = [
+        "$(rootpath :litert_runtime_for_symbol_test)",
+    ],
+    data = [
+        ":litert_runtime_for_symbol_test",
     ],
     tags = [
         "noios",
@@ -937,6 +999,7 @@ ios_framework(
         "iphone",
         "ipad",
     ],
+    # copybara:uncomment google_create_srl_bindings_module = False,
     infoplists = ["LiteRtInfo.plist"],
     linkopts = [
         "-install_name @rpath/libLiteRt.dylib",
@@ -1150,6 +1213,7 @@ filegroup(
     srcs = [
         "litert_any.h",
         "litert_builder.h",
+        "litert_common.cc",
         "litert_common.h",
         "litert_compiled_model.h",
         "litert_custom_op_kernel.h",

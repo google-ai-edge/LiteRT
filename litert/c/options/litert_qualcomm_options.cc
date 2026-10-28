@@ -95,6 +95,7 @@ struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsBackend> qnn_backend;
   std::optional<bool> enable_weight_sharing;
   std::optional<bool> enable_just_in_time;
+  std::optional<LrtQualcommOptionsOpNameFormat> op_name_format;
   std::optional<bool> use_conv_hmx;
   std::optional<bool> use_fold_relu;
   std::optional<bool> htp_dlbc;
@@ -115,6 +116,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::uint32_t> vtcm_size;
   std::optional<std::uint32_t> htp_device_id;
   std::optional<std::uint32_t> num_hvx_threads;
+  std::optional<std::uint32_t> htp_file_read_memory_budget_mb;
   std::optional<LrtQualcommOptionsOptimizationLevel> optimization_level;
   std::optional<LrtQualcommOptionsGraphPriority> graph_priority;
   std::optional<std::string> saver_output_dir;
@@ -182,6 +184,12 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return v.Error().Status();
           LrtQualcommOptionsSetEnableJustInTime(parsed_options, *v);
+        } else if (key == "op_name_format") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetOpNameFormat(
+              parsed_options,
+              static_cast<LrtQualcommOptionsOpNameFormat>(*v));
         } else if (key == "use_conv_hmx") {
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -284,6 +292,11 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetNumHvxThreads(
+              parsed_options, static_cast<uint32_t>(*v));
+        } else if (key == "htp_file_read_memory_budget_mb") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpFileReadMemoryBudgetMB(
               parsed_options, static_cast<uint32_t>(*v));
         } else if (key == "optimization_level") {
           auto v = litert::internal::ParseTomlInt(value);
@@ -419,6 +432,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
     absl::StrAppend(&toml_str, "enable_just_in_time = ",
                     *options->enable_just_in_time ? "true" : "false", "\n");
   }
+  if (options->op_name_format.has_value()) {
+    absl::StrAppend(&toml_str, "op_name_format = ",
+                    static_cast<int>(*options->op_name_format), "\n");
+  }
   if (options->use_conv_hmx.has_value()) {
     absl::StrAppend(&toml_str, "use_conv_hmx = ",
                     *options->use_conv_hmx ? "true" : "false", "\n");
@@ -500,6 +517,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->num_hvx_threads.has_value()) {
     absl::StrAppend(&toml_str, "num_hvx_threads = ", *options->num_hvx_threads,
                     "\n");
+  }
+  if (options->htp_file_read_memory_budget_mb.has_value()) {
+    absl::StrAppend(&toml_str, "htp_file_read_memory_budget_mb = ",
+                    *options->htp_file_read_memory_budget_mb, "\n");
   }
   if (options->optimization_level.has_value()) {
     absl::StrAppend(&toml_str, "optimization_level = ",
@@ -896,6 +917,31 @@ LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
   }
 
   *use_fold_relu = options->use_fold_relu.value_or(true);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetOpNameFormat(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsOpNameFormat op_name_format) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->op_name_format = op_name_format;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetOpNameFormat(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsOpNameFormat* op_name_format) {
+  if (op_name_format == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *op_name_format = options->op_name_format.value_or(
+      kLiteRtQualcommOpNameFormatBasic);
 
   return kLiteRtStatusOk;
 }
@@ -1299,6 +1345,28 @@ LiteRtStatus LrtQualcommOptionsGetHtpDeviceId(LrtQualcommOptions options,
   }
 
   *htp_device_id = options->htp_device_id.value_or(0);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpFileReadMemoryBudgetMB(
+    LrtQualcommOptions options, std::uint32_t budget_mb) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_file_read_memory_budget_mb = budget_mb;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpFileReadMemoryBudgetMB(
+    LrtQualcommOptions options, std::uint32_t* budget_mb) {
+  if (options == nullptr || budget_mb == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *budget_mb = options->htp_file_read_memory_budget_mb.value_or(0);
 
   return kLiteRtStatusOk;
 }

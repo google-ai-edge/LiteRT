@@ -63,7 +63,7 @@ inline constexpr size_t kMaxSupportedSubgraphs = 100;
 // When reading a cache file, the cache should be rejected if `version`
 // doesn't match `kVersion`.
 struct MLDriftCacheHeader {
-  enum : uint64_t { kInvalidHeader = 0, kVersion = 2 };
+  enum : uint64_t { kInvalidHeader = 0, kVersion = 3 };
   // The version of the cache file header. If this doesn't match
   // `kVersion` then the cache file needs to be rebuilt.
   uint64_t version;

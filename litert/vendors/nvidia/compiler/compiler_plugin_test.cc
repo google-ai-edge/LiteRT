@@ -32,6 +32,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/nvidia/bytecode.h"
 #include "litert/vendors/nvidia/cache_layout.h"
 #include "tflite/schema/schema_generated.h"
@@ -53,13 +54,23 @@ class CompilerAotTest : public testing::Test {
         0);
     ASSERT_EQ(
         setenv("LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH", source_.c_str(), 1), 0);
-    ASSERT_EQ(LiteRtCreateCompilerPlugin(LrtGetCompilerContext(), &plugin_,
-                                         nullptr, nullptr),
+    LiteRtInterface raw_interface = nullptr;
+    ASSERT_EQ(LiteRtCompilerPluginQueryInterface(
+                  kLiteRtCompilerPluginInterfaceBasic,
+                  {LITERT_COMPILER_PLUGIN_ABI_VERSION_MAJOR,
+                   LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR,
+                   LITERT_COMPILER_PLUGIN_ABI_VERSION_PATCH},
+                  &raw_interface),
+              kLiteRtStatusOk);
+    api_ = static_cast<const LiteRtCompilerPluginInterface_V1*>(raw_interface);
+    ASSERT_NE(api_, nullptr);
+    ASSERT_EQ(api_->create_compiler_plugin(LrtGetCompilerContext(), &plugin_,
+                                           nullptr, nullptr),
               kLiteRtStatusOk);
   }
 
   void TearDown() override {
-    if (plugin_ != nullptr) LiteRtDestroyCompilerPlugin(plugin_);
+    if (plugin_ != nullptr) api_->destroy_compiler_plugin(plugin_);
     unsetenv("LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR");
     unsetenv("LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH");
     if (!directory_.empty()) std::filesystem::remove_all(directory_);
@@ -123,8 +134,8 @@ class CompilerAotTest : public testing::Test {
               kLiteRtStatusOk);
     EXPECT_EQ(LiteRtAddOpaqueOptions(options, opaque), kLiteRtStatusOk);
     LiteRtCompilerPlugin plugin = nullptr;
-    EXPECT_EQ(LiteRtCreateCompilerPlugin(LrtGetCompilerContext(), &plugin,
-                                         nullptr, options),
+    EXPECT_EQ(api_->create_compiler_plugin(LrtGetCompilerContext(), &plugin,
+                                           nullptr, options),
               expected_status);
     LiteRtDestroyOptions(options);
     // The returned plugin must own its copy after these names/pointers and
@@ -132,6 +143,7 @@ class CompilerAotTest : public testing::Test {
     return plugin;
   }
 
+  const LiteRtCompilerPluginInterface_V1* api_ = nullptr;
   LiteRtCompilerPlugin plugin_ = nullptr;
   std::filesystem::path directory_;
   std::filesystem::path source_;
@@ -143,7 +155,7 @@ TEST_F(CompilerAotTest, PersistsCompletedShardBeforeLaterCompilationFailure) {
   auto& invalid = model.EmplaceSubgraph();
   invalid.EmplaceOp().SetOpCode(kLiteRtOpCodeTflCustom);
   LiteRtCompiledResult result = nullptr;
-  EXPECT_NE(LiteRtCompilerPluginCompile(plugin_, nullptr, &model, &result),
+  EXPECT_NE(api_->compiler_plugin_compile(plugin_, nullptr, &model, &result),
             kLiteRtStatusOk);
   EXPECT_EQ(result, nullptr);
   // Each shard is published before the next partition builds. A failure
@@ -160,20 +172,20 @@ TEST_F(CompilerAotTest, ProducesIndependentShardsAndReusesCompleteManifest) {
   for (int run = 0; run < 2; ++run) {
     LiteRtCompiledResult raw_result = nullptr;
     ASSERT_EQ(
-        LiteRtCompilerPluginCompile(plugin_, nullptr, &model, &raw_result),
+        api_->compiler_plugin_compile(plugin_, nullptr, &model, &raw_result),
         kLiteRtStatusOk);
-    std::unique_ptr<LiteRtCompiledResultT,
-                    decltype(&LiteRtDestroyCompiledResult)>
-        result(raw_result, LiteRtDestroyCompiledResult);
+    std::unique_ptr<LiteRtCompiledResultT, LiteRtDestroyCompiledResultT> result(
+        raw_result, api_->destroy_compiled_result);
     LiteRtParamIndex modules = 0;
-    ASSERT_EQ(LiteRtCompiledResultNumByteCodeModules(result.get(), &modules),
+    ASSERT_EQ(api_->get_compiled_result_num_byte_code(result.get(), &modules),
               kLiteRtStatusOk);
     ASSERT_EQ(modules, 2);
     for (LiteRtParamIndex i = 0; i < modules; ++i) {
       const void* data = nullptr;
       size_t size = 0;
-      ASSERT_EQ(LiteRtGetCompiledResultByteCode(result.get(), i, &data, &size),
-                kLiteRtStatusOk);
+      ASSERT_EQ(
+          api_->get_compiled_result_byte_code(result.get(), i, &data, &size),
+          kLiteRtStatusOk);
       const auto* bytes = static_cast<const uint8_t*>(data);
       std::vector<uint8_t> locator_bytes(bytes, bytes + size);
       if (run == 0)
@@ -206,17 +218,18 @@ TEST_F(CompilerAotTest, NonAotStillSharesOneWeightStoreAcrossEngines) {
   AddPartition(model);
   AddPartition(model);
   LiteRtCompiledResult raw_result = nullptr;
-  ASSERT_EQ(LiteRtCompilerPluginCompile(plugin_, nullptr, &model, &raw_result),
-            kLiteRtStatusOk);
-  std::unique_ptr<LiteRtCompiledResultT, decltype(&LiteRtDestroyCompiledResult)>
-      result(raw_result, LiteRtDestroyCompiledResult);
+  ASSERT_EQ(
+      api_->compiler_plugin_compile(plugin_, nullptr, &model, &raw_result),
+      kLiteRtStatusOk);
+  std::unique_ptr<LiteRtCompiledResultT, LiteRtDestroyCompiledResultT> result(
+      raw_result, api_->destroy_compiled_result);
   LiteRtParamIndex modules = 0;
-  ASSERT_EQ(LiteRtCompiledResultNumByteCodeModules(result.get(), &modules),
+  ASSERT_EQ(api_->get_compiled_result_num_byte_code(result.get(), &modules),
             kLiteRtStatusOk);
   ASSERT_EQ(modules, 1);
   const void* data = nullptr;
   size_t size = 0;
-  ASSERT_EQ(LiteRtGetCompiledResultByteCode(result.get(), 0, &data, &size),
+  ASSERT_EQ(api_->get_compiled_result_byte_code(result.get(), 0, &data, &size),
             kLiteRtStatusOk);
   auto first =
       litert::nvidia::ParseTensorRtBytecode(data, size, "tensorrt_partition_0");
@@ -254,26 +267,26 @@ TEST_F(CompilerAotTest, ReadOnlyValueCacheLayoutSeparatesDirectAotCache) {
   litert::internal::AttachInput(&cache, matmul);
   litert::internal::AttachOutput(&output, matmul);
 
-  std::unique_ptr<LiteRtCompilerPluginT, decltype(&LiteRtDestroyCompilerPlugin)>
+  std::unique_ptr<LiteRtCompilerPluginT, LiteRtDestroyCompilerPluginT>
       transposed_plugin(CreateWithReadOnlyInputs({"cache"}),
-                        LiteRtDestroyCompilerPlugin);
+                        api_->destroy_compiler_plugin);
   ASSERT_NE(transposed_plugin, nullptr);
   std::vector<std::vector<uint8_t>> first_locators(2);
   for (int run = 0; run < 4; ++run) {
     const bool transposed = run % 2 != 0;
     SCOPED_TRACE(run);
     LiteRtCompiledResult raw_result = nullptr;
-    ASSERT_EQ(LiteRtCompilerPluginCompile(
+    ASSERT_EQ(api_->compiler_plugin_compile(
                   transposed ? transposed_plugin.get() : plugin_, nullptr,
                   &model, &raw_result),
               kLiteRtStatusOk);
-    std::unique_ptr<LiteRtCompiledResultT,
-                    decltype(&LiteRtDestroyCompiledResult)>
-        result(raw_result, LiteRtDestroyCompiledResult);
+    std::unique_ptr<LiteRtCompiledResultT, LiteRtDestroyCompiledResultT> result(
+        raw_result, api_->destroy_compiled_result);
     const void* data = nullptr;
     size_t size = 0;
-    ASSERT_EQ(LiteRtGetCompiledResultByteCode(result.get(), 0, &data, &size),
-              kLiteRtStatusOk);
+    ASSERT_EQ(
+        api_->get_compiled_result_byte_code(result.get(), 0, &data, &size),
+        kLiteRtStatusOk);
     const auto* bytes = static_cast<const uint8_t*>(data);
     const std::vector<uint8_t> locator_bytes(bytes, bytes + size);
     if (run < 2)
@@ -302,12 +315,11 @@ TEST_F(CompilerAotTest, ReadOnlyValueCacheOptionsAreCanonicalAndValidated) {
   std::vector<std::string> sdk_versions;
   for (const auto& names : std::vector<std::vector<std::string>>{
            {}, {"a"}, {"b"}, {"a", "b"}, {"b", "a"}}) {
-    std::unique_ptr<LiteRtCompilerPluginT,
-                    decltype(&LiteRtDestroyCompilerPlugin)>
-        plugin(CreateWithReadOnlyInputs(names), LiteRtDestroyCompilerPlugin);
+    std::unique_ptr<LiteRtCompilerPluginT, LiteRtDestroyCompilerPluginT> plugin(
+        CreateWithReadOnlyInputs(names), api_->destroy_compiler_plugin);
     ASSERT_NE(plugin, nullptr);
     const char* sdk = nullptr;
-    ASSERT_EQ(LiteRtGetCompilerPluginSDKVersion(plugin.get(), &sdk),
+    ASSERT_EQ(api_->get_compiler_plugin_sdk_version(plugin.get(), &sdk),
               kLiteRtStatusOk);
     sdk_versions.emplace_back(sdk);
   }

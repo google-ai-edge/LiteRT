@@ -53,6 +53,10 @@
 #include <ios>
 #include <random>
 #include <system_error>  // NOLINT
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #else
 #include <errno.h>
 #include <stdlib.h>  // mkstemp: POSIX, not declared by <cstdlib>.
@@ -86,6 +90,20 @@ class LogErrorReporter : public tflite::ErrorReporter {  // NOLINT
   }
 };
 
+#ifdef LITERT_WINDOWS_OS
+// Removes the pages of [data, data + size) from this process's working set.
+// Used after a chunk of the pool has been read through the model's file
+// mapping and written to the staged bank: the pages are clean views of the
+// model file that nothing reads again (NPUW reads the staged bank), so
+// dropping them keeps the multi-GB pool from staying resident. For pages that
+// are not locked, VirtualUnlock removes them from the working set and reports
+// ERROR_NOT_LOCKED, which is the expected result here. The pages move to the
+// standby list and are re-read from the file if touched again.
+void TrimFromWorkingSet(const uint8_t* data, size_t size) {
+  VirtualUnlock(const_cast<uint8_t*>(data), size);
+}
+#endif  // LITERT_WINDOWS_OS
+
 // Copies the pool to the staged file in kChunkBytes steps through
 // |write_chunk| (bool(const void*, size_t); false on a destination error).
 //
@@ -97,7 +115,8 @@ class LogErrorReporter : public tflite::ErrorReporter {  // NOLINT
 // If a chunk cannot be mapped the copy continues from the same position out of
 // the in-memory pool (logged); bytes already written came from the file at
 // consecutive offsets and stay valid. Without an fd the whole copy is from
-// memory. Returns false only on a destination (write) failure.
+// memory, and on Windows it always is (the fd belongs to another module's C
+// runtime, see below). Returns false only on a destination (write) failure.
 template <typename WriteFn>
 bool CopyPoolChunked(const PoolSource& src, WriteFn&& write_chunk,
                      const char** strategy) {
@@ -106,17 +125,45 @@ bool CopyPoolChunked(const PoolSource& src, WriteFn&& write_chunk,
   size_t done = 0;
 
   bool from_file = src.fd >= 0;
+  // Windows only: whether to drop each chunk from the working set after it is
+  // staged (the pool is then read through the model's file mapping).
+  bool trim_working_set = false;
   if (!from_file) {
     LITERT_LOG(LITERT_WARNING,
                "NPU weight sharing: model is not file-backed (fd=%d); staging "
                "%zu-byte pool from memory, which faults it into RSS",
                src.fd, size);
+#ifdef LITERT_WINDOWS_OS
+  } else {
+    // On Windows src.fd cannot be used here: it is a C runtime file descriptor
+    // opened by the module that loaded the model (the LiteRT runtime in
+    // libLiteRt.dll or the application), while this dispatch DLL links its own
+    // CRT with a separate descriptor table. In this DLL the fd is either not
+    // open, so _dup()/_get_osfhandle() in tflite::MMAPAllocation invoke the CRT
+    // invalid parameter handler and fail-fast the process with 0xC0000409, or
+    // it refers to an unrelated file. Stage the pool from the in-memory model
+    // mapping instead, as before chunked staging was introduced, and drop each
+    // staged chunk from the working set so the pool does not stay resident.
+    // See also https://github.com/google-ai-edge/LiteRT-LM/issues/4023 for the
+    // same CRT file descriptor problem between LiteRT-LM and libLiteRt.dll.
+    // TODO: Restore chunked staging on Windows by passing an OS file HANDLE (or
+    // the model path) instead of a CRT file descriptor across the DLL boundary.
+    LITERT_LOG(LITERT_WARNING,
+               "NPU weight sharing: the model fd (%d) belongs to another "
+               "module's C runtime and cannot be used on Windows; staging "
+               "%zu-byte pool from the model mapping, trimming each chunk from "
+               "the working set",
+               src.fd, size);
+    from_file = false;
+    trim_working_set = true;
+#else
   } else if (!tflite::MMAPAllocation::IsSupported()) {
     LITERT_LOG(LITERT_WARNING,
                "NPU weight sharing: file mapping unsupported on this build; "
                "staging %zu-byte pool from memory, which faults it into RSS",
                size);
     from_file = false;
+#endif  // LITERT_WINDOWS_OS
   }
 
   if (from_file) {
@@ -155,9 +202,13 @@ bool CopyPoolChunked(const PoolSource& src, WriteFn&& write_chunk,
 
   if (!from_file) {
     *strategy = done == 0 ? "memory" : "mmap chunks, then memory";
+    if (trim_working_set) *strategy = "model mapping, trimming working set";
     while (done < size) {
       const size_t n = std::min(kChunkBytes, size - done);
       if (!write_chunk(data + done, n)) return false;
+#ifdef LITERT_WINDOWS_OS
+      if (trim_working_set) TrimFromWorkingSet(data + done, n);
+#endif  // LITERT_WINDOWS_OS
       done += n;
     }
   }

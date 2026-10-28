@@ -111,6 +111,12 @@ struct MlDriftClBackend {
     return ctx->GetTensor(id);
   }
 
+  static absl::Status CreateConstTensor(Environment* env,
+                                        const ml_drift::TensorDescriptor& desc,
+                                        Tensor* tensor) {
+    return tensor->CreateFromDescriptor(desc, env->context());
+  }
+
   static absl::Status UploadTensorDescriptorData(
       Tensor* tensor, Environment* env,
       const ml_drift::TensorDescriptor& desc) {

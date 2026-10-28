@@ -41,6 +41,14 @@ LiteRtStatus CreateDelegate(
 LrtGpuOptions* GetGpuOptionsPayload(LiteRtRuntimeContext* runtime_context,
                                     LiteRtOptions options);
 
+// Retrieves the hardware supported by the ML Drift GPU accelerator.
+// On Android builds with ML Drift compatibility checking enabled, returns
+// kLiteRtStatusErrorUnsupported if `accelerator` is not yet registered to an
+// environment and the current device is not on the ML Drift compatibility
+// allowlist.
+LiteRtStatus GetHardwareSupport(LiteRtAcceleratorConst accelerator,
+                                LiteRtHwAcceleratorSet* supported_hardware);
+
 // Starts collection of HW-specific metrics for ML Drift GPU delegate.
 LiteRtStatus StartMetricsCollection(LiteRtRuntimeContext* runtime_context,
                                     LiteRtDelegateWrapper delegate_wrapper,

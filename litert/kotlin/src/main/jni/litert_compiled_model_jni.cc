@@ -115,6 +115,7 @@ enum QualcommOptionsKey {
   kOptimizationLevel = 13,
   kHtpDlbc = 14,
   kHtpDlbcWeights = 15,
+  kGraphPriority = 16,
 };
 
 // Precision for GPU options, the values should match the ones in Kotlin.
@@ -475,6 +476,12 @@ Expected<void> PopulateQualcommOptions(JNIEnv* env,
             static_cast<QualcommOptions::OptimizationLevel>(
                 ParseInt(qualcomm_options_values_vector[i],
                          "Qualcomm options optimizationLevel")));
+        break;
+      case QualcommOptionsKey::kGraphPriority:
+        qualcomm_options.SetGraphPriority(
+            static_cast<QualcommOptions::GraphPriority>(
+                ParseInt(qualcomm_options_values_vector[i],
+                         "Qualcomm options graphPriority")));
         break;
       default:
         return Unexpected(kLiteRtStatusErrorInvalidArgument,
@@ -1229,7 +1236,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignatureWithMap(
                            input_buffer.Error().Message());
       return;
     }
-    input_buffer_map[key] = std::move(*input_buffer);
+    input_buffer_map.try_emplace(key, std::move(*input_buffer));
   }
 
   AUTO_CLEANUP_JNI_STRING_ARRAY(env, output_keys);
@@ -1248,7 +1255,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignatureWithMap(
                            output_buffer.Error().Message());
       return;
     }
-    output_buffer_map[key] = std::move(*output_buffer);
+    output_buffer_map.try_emplace(key, std::move(*output_buffer));
   }
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
@@ -1304,6 +1311,19 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputTensorType(
     return nullptr;
   }
   return ToJavaTensorType(env, *tensor_type);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeGetLastInferenceDurationNanoseconds(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle) {
+  auto& compiled_model = GetCompiledModel(compiled_model_handle);
+  auto duration = compiled_model.LastInferenceDurationNanoseconds();
+  if (!duration) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get last inference duration: %s",
+               duration.Error().Message().c_str());
+    return -1;
+  }
+  return *duration;
 }
 
 JNIEXPORT void JNICALL

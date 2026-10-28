@@ -152,8 +152,7 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   // func.call boundaries that cause func.call result type mismatches when
   // quantized types are introduced.
   pass_manager.addPass(mlir::createInlinerPass());
-  pass_manager.addNestedPass<mlir::func::FuncOp>(
-      mlir::TFL::CreateFoldStablehloConstantTransformsPass());
+  pass_manager.addPass(mlir::TFL::CreateFoldStablehloConstantTransformsPass());
   pass_manager.addPass(mlir::TFL::CreateLowerQuantAnnotationsPass());
   pass_manager.addPass(mlir::createSymbolDCEPass());
 
@@ -250,7 +249,7 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   // 4. TFLite Optimization & Quantization Passes
   // =========================================================================
   pass_manager.addPass(mlir::TFL::CreateLargeConstantFoldPass(
-      /*fold_fp16_resource_casts=*/false));
+      /*fold_fp16_resource_casts=*/false, /*fold_elementwise_ops=*/true));
   pass_manager.addNestedPass<mlir::func::FuncOp>(
       mlir::TFL::CreateCastBf16OpsToF32Pass());
 
@@ -268,11 +267,11 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
 
   if (!pass_config.unfold_batch_matmul) {
     pass_manager.addPass(mlir::TFL::CreateLargeConstantFoldPass(
-        /*fold_fp16_resource_casts=*/false));
+        /*fold_fp16_resource_casts=*/false, /*fold_elementwise_ops=*/true));
     pass_manager.addNestedPass<mlir::func::FuncOp>(
         mlir::TFL::CreateOptimizeBatchMatmulPass());
     pass_manager.addPass(mlir::TFL::CreateLargeConstantFoldPass(
-        /*fold_fp16_resource_casts=*/false));
+        /*fold_fp16_resource_casts=*/false, /*fold_elementwise_ops=*/true));
     pass_manager.addNestedPass<mlir::func::FuncOp>(
         mlir::TFL::CreateOptimizePass());
   }
@@ -298,7 +297,7 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
 
   // Fold operations on Large DenseResourceElementsAttr constants.
   pass_manager.addPass(mlir::TFL::CreateLargeConstantFoldPass(
-      /*fold_fp16_resource_casts=*/false));
+      /*fold_fp16_resource_casts=*/false, /*fold_elementwise_ops=*/true));
   pass_manager.addNestedPass<mlir::func::FuncOp>(
       mlir::createCanonicalizerPass());
   pass_manager.addNestedPass<mlir::func::FuncOp>(mlir::createCSEPass());

@@ -17,6 +17,7 @@ limitations under the License.
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -237,6 +238,16 @@ FormatConverter<T>::FormatConverter(const std::vector<int>& shape,
   auto traversal_order = TfLiteIntArrayToVector(sparsity.traversal_order);
   auto block_map = TfLiteIntArrayToVector(sparsity.block_map);
 
+  if (sparsity.traversal_order == nullptr || sparsity.dim_metadata == nullptr ||
+      sparsity.dim_metadata_size < 0 ||
+      static_cast<size_t>(sparsity.dim_metadata_size) !=
+          traversal_order.size()) {
+    InitSparseToDenseConverter(shape, /*traversal_order=*/{}, /*format=*/{},
+                               /*dense_size=*/{}, /*segments=*/{},
+                               /*indices=*/{}, /*block_map=*/{});
+    return;
+  }
+
   std::vector<TfLiteDimensionType> format(sparsity.dim_metadata_size);
   std::vector<int> dense_size(sparsity.dim_metadata_size);
   std::vector<std::vector<int>> segments(sparsity.dim_metadata_size);
@@ -271,6 +282,20 @@ void FormatConverter<T>::InitSparseToDenseConverter(
     dense_size_ *= dense_shape_[i];
   }
 
+  if (traversal_order_.size() != dense_shape_.size() + block_map_.size() ||
+      format_.size() != traversal_order_.size() ||
+      dense_size.size() != traversal_order_.size() ||
+      segments.size() != traversal_order_.size() ||
+      indices.size() != traversal_order_.size()) {
+    traversal_order_.clear();
+    block_map_.clear();
+    format_.clear();
+    dim_metadata_.clear();
+    blocked_shape_.clear();
+    block_size_.clear();
+    return;
+  }
+
   dim_metadata_.resize(2 * format_.size());
   for (int i = 0; i < format_.size(); i++) {
     if (format_[i] == kTfLiteDimDense) {
@@ -290,16 +315,19 @@ void FormatConverter<T>::InitSparseToDenseConverter(
     if (block_dim < block_map_.size() && block_map_[block_dim] == i) {
       if (original_rank + block_dim < traversal_order_.size()) {
         int orig_dim = traversal_order_[original_rank + block_dim];
-        // Validate the block traversal_order entry and require a strictly
-        // positive block size before indexing dense_size or dividing by it.
-        if (orig_dim >= 0 && orig_dim < static_cast<int>(dense_size.size()) &&
-            dense_size[orig_dim] > 0) {
-          block_size_[block_dim] = dense_size[orig_dim];
-          blocked_shape_[i] = dense_shape_[i] / dense_size[orig_dim];
-        } else {
-          block_size_[block_dim] = 1;
-          blocked_shape_[i] = dense_shape_[i];
+        if (orig_dim < 0 ||
+            static_cast<size_t>(orig_dim) >= dense_size.size() ||
+            dense_size[orig_dim] <= 0) {
+          traversal_order_.clear();
+          block_map_.clear();
+          format_.clear();
+          dim_metadata_.clear();
+          blocked_shape_.clear();
+          block_size_.clear();
+          return;
         }
+        block_size_[block_dim] = dense_size[orig_dim];
+        blocked_shape_[i] = dense_shape_[i] / dense_size[orig_dim];
         block_dim++;
       }
     } else {
@@ -309,77 +337,100 @@ void FormatConverter<T>::InitSparseToDenseConverter(
 }
 
 template <typename T>
-void FormatConverter<T>::Populate(const T* src_data, std::vector<int> indices,
-                                  int level, int prev_idx, int* src_data_ptr,
-                                  T* dest_data) {
+TfLiteStatus FormatConverter<T>::Populate(const T* src_data,
+                                          std::vector<int> indices, int level,
+                                          int prev_idx, int* src_data_ptr,
+                                          T* dest_data) {
   if (level == indices.size()) {
     int orig_rank = dense_shape_.size();
     std::vector<int> orig_idx;
     orig_idx.resize(orig_rank);
     int i = 0;
     for (; i < orig_idx.size(); i++) {
-      if (i >= static_cast<int>(traversal_order_.size())) {
-        *src_data_ptr = *src_data_ptr + 1;
-        return;
-      }
       int orig_dim = traversal_order_[i];
       if (orig_dim < 0 || orig_dim >= orig_rank) {
-        *src_data_ptr = *src_data_ptr + 1;
-        return;
+        return kTfLiteError;
       }
       orig_idx[orig_dim] = indices[i];
     }
 
     for (; i < indices.size(); i++) {
-      if (i >= static_cast<int>(traversal_order_.size())) {
-        *src_data_ptr = *src_data_ptr + 1;
-        return;
+      // Checked before subtracting so that the subtraction cannot overflow.
+      if (traversal_order_[i] < orig_rank) {
+        return kTfLiteError;
       }
       const int block_idx = traversal_order_[i] - orig_rank;
-      if (block_idx < 0 || block_idx >= static_cast<int>(block_map_.size()) ||
+      if (block_idx >= static_cast<int>(block_map_.size()) ||
           block_idx >= static_cast<int>(block_size_.size())) {
-        *src_data_ptr = *src_data_ptr + 1;
-        return;
+        return kTfLiteError;
       }
       const int orig_dim = block_map_[block_idx];
       if (orig_dim < 0 || orig_dim >= orig_rank) {
-        *src_data_ptr = *src_data_ptr + 1;
-        return;
+        return kTfLiteError;
       }
-      orig_idx[orig_dim] =
-          orig_idx[orig_dim] * block_size_[block_idx] + indices[i];
+      // Computed in 64 bits so that a large stored index cannot overflow
+      // before the range check.
+      const int64_t idx =
+          static_cast<int64_t>(orig_idx[orig_dim]) * block_size_[block_idx] +
+          indices[i];
+      if (idx < 0 || idx >= dense_shape_[orig_dim]) {
+        return kTfLiteError;
+      }
+      orig_idx[orig_dim] = static_cast<int>(idx);
     }
 
-    const uint64_t flat = GetFlattenedIndex(orig_idx, dense_shape_);
-    if (flat >= static_cast<uint64_t>(dense_size_)) {
-      *src_data_ptr = *src_data_ptr + 1;
-      return;
+    // Each index must be within its own dimension before it is flattened.
+    for (int d = 0; d < orig_rank; d++) {
+      if (orig_idx[d] < 0 || orig_idx[d] >= dense_shape_[d]) {
+        return kTfLiteError;
+      }
     }
-    dest_data[flat] = src_data[*src_data_ptr];
+
+    const uint64_t flat_idx = GetFlattenedIndex(orig_idx, dense_shape_);
+    if (flat_idx >= static_cast<uint64_t>(dense_size_)) {
+      return kTfLiteError;
+    }
+    dest_data[flat_idx] = src_data[*src_data_ptr];
 
     *src_data_ptr = *src_data_ptr + 1;
-    return;
+    return kTfLiteOk;
   }
 
   const int metadata_idx = 2 * level;
-  const int shape_of_level = dim_metadata_[metadata_idx][0];
   if (format_[level] == kTfLiteDimDense) {
+    const int shape_of_level = dim_metadata_[metadata_idx][0];
     for (int i = 0; i < shape_of_level; i++) {
       indices[level] = i;
-      Populate(src_data, indices, level + 1, prev_idx * shape_of_level + i,
-               src_data_ptr, dest_data);
+      // The position handed to the next level is computed in 64 bits and
+      // must fit in an int.
+      const int64_t next_idx =
+          static_cast<int64_t>(prev_idx) * shape_of_level + i;
+      if (next_idx < 0 || next_idx > std::numeric_limits<int>::max()) {
+        return kTfLiteError;
+      }
+      TF_LITE_ENSURE_STATUS(Populate(src_data, indices, level + 1,
+                                     static_cast<int>(next_idx), src_data_ptr,
+                                     dest_data));
     }
-  } else if (prev_idx + 1 < dim_metadata_[metadata_idx].size()) {
+  } else {
     const auto& array_segments = dim_metadata_[metadata_idx];
     const auto& array_indices = dim_metadata_[metadata_idx + 1];
+    // prev_idx is the position of the parent element and must select one of
+    // the segments of this level.
+    if (prev_idx < 0 ||
+        static_cast<size_t>(prev_idx) + 1 >= array_segments.size()) {
+      return kTfLiteError;
+    }
     for (int i = array_segments[prev_idx]; i < array_segments[prev_idx + 1];
          i++) {
       if (i < array_indices.size() && level < indices.size()) {
         indices[level] = array_indices[i];
-        Populate(src_data, indices, level + 1, i, src_data_ptr, dest_data);
+        TF_LITE_ENSURE_STATUS(
+            Populate(src_data, indices, level + 1, i, src_data_ptr, dest_data));
       }
     }
   }
+  return kTfLiteOk;
 }
 
 template <typename T>
@@ -387,12 +438,15 @@ TfLiteStatus FormatConverter<T>::SparseToDense(const T* src_data) {
   data_.resize(dense_size_);
   std::fill(data_.begin(), data_.end(), T(0));
 
+  if (traversal_order_.size() != dense_shape_.size() + block_map_.size() ||
+      format_.size() != traversal_order_.size()) {
+    return kTfLiteError;
+  }
+
   int total_rank = traversal_order_.size();
   int src_data_ptr = 0;
   std::vector<int> indices(total_rank);
-  Populate(src_data, indices, 0, 0, &src_data_ptr, data_.data());
-
-  return kTfLiteOk;
+  return Populate(src_data, indices, 0, 0, &src_data_ptr, data_.data());
 }
 
 template <typename T>
@@ -408,15 +462,24 @@ TfLiteStatus FormatConverter<T>::SparseToDense(const T* src_data,
   }
 
   // For types like Eigen::half, we cannot do a simple memset() with 0 values.
-  for (auto i = 0; i < dest_size; i++) {
+  for (size_t i = 0; i < dest_size; ++i) {
     dest_data[i] = T(0);
+  }
+
+  if (traversal_order_.size() != dense_shape_.size() + block_map_.size() ||
+      format_.size() != traversal_order_.size()) {
+    TF_LITE_MAYBE_KERNEL_LOG(context, "Invalid sparsity metadata.\n");
+    return kTfLiteError;
   }
 
   const int total_rank = traversal_order_.size();
   int src_data_ptr = 0;
   std::vector<int> indices(total_rank);
-  Populate(src_data, indices, 0, 0, &src_data_ptr, dest_data);
-
+  if (Populate(src_data, indices, 0, 0, &src_data_ptr, dest_data) !=
+      kTfLiteOk) {
+    TF_LITE_MAYBE_KERNEL_LOG(context, "Invalid sparsity metadata.\n");
+    return kTfLiteError;
+  }
   return kTfLiteOk;
 }
 

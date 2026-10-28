@@ -54,6 +54,8 @@ class AddValuesToCacheOp : public ::ml_drift::GPUOperation {
   int slices_ = 1;
 };
 
+}  // namespace
+
 std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
     const ::ml_drift::OperationDef& op_def,
     const AddValuesToCacheAttributes& attr) {
@@ -118,18 +120,19 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
     quantized_cache = true;
   }
 
-  std::string op_code;
-  op_code = R"(
-MAIN_FUNCTION($0) {
+  std::string op_code = absl::Substitute(
+      R"(
+MAIN_FUNCTION($$0) {
   int X = ucl::GetGlobalId<0>();
   int Y = ucl::GetGlobalId<1>();
   int S = ucl::GetGlobalId<2>();
   if (X >= args.update_width || Y >= args.batch_size || S >= args.slices) {
     return;
   }
-  int token_index_offset = args.params.Read(0);
-  int active_tokens = args.params.Read(1);
-  )";
+  int token_index_offset = args.params.Read($0);
+  int active_tokens = args.params.Read($1);
+  )",
+      attr.token_index_offset_param_idx, attr.active_tokens_param_idx);
   if (is_ring_buffer) {
     op_code += R"(
   int update_length = args.params.Read(3);
@@ -239,8 +242,6 @@ MAIN_FUNCTION($0) {
   custom_op.code_ = std::move(op_code);
   return std::make_unique<AddValuesToCacheOp>(std::move(custom_op));
 }
-
-}  // namespace
 
 absl::StatusOr<std::unique_ptr<::ml_drift::GPUOperation>>
 CreateAddValuesToCacheFromNode(const ::ml_drift::OperationDef& op_def,

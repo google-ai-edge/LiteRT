@@ -31,6 +31,10 @@ struct AddValuesToCacheAttributes {
   int kv_cache_batch_size;
   int cache_size;
   int head_size;
+  // Indices into the `params` buffer for the write offset and active-tokens
+  // bound.
+  int token_index_offset_param_idx = 0;
+  int active_tokens_param_idx = 1;
   // quantized kv cache case
   std::optional<float> scale_k;
   std::optional<float> scale_v;

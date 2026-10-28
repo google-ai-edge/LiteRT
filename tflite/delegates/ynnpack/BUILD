@@ -47,6 +47,7 @@ cc_library(
         "//tflite/types:half",
         "@XNNPACK//ynnpack",
         "@XNNPACK//ynnpack/composites",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/types:span",
         "@flatbuffers//:runtime_cc",
@@ -102,6 +103,7 @@ cc_test(
     copts = tflite_copts(),
     deps = [
         ":ynnpack_delegate",
+        "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite/c:c_api_types",
         "//tflite/c:common",

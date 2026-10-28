@@ -31,10 +31,10 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_any.h"
@@ -55,6 +55,9 @@
 #include "litert/core/environment.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/shape_inference.h"
+#include "litert/core/model/shape_inference_types.h"
+#include "litert/core/options.h"
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/core/version.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
@@ -68,9 +71,13 @@ namespace litert::internal {
 
 Expected<BufferRef<uint8_t>> CompiledResult::ByteCode(
     LiteRtParamIndex byte_code_idx) const {
-  const void* data;
-  size_t size;
-  LITERT_RETURN_IF_ERROR(parent_.get_compiled_result_byte_code(
+  if (!LITERT_ABI_HAS_API(parent_v1_, /*req_major=*/1,
+                          get_compiled_result_byte_code)) {
+    return litert::Error(kLiteRtStatusErrorUnsupported);
+  }
+  const void* data = nullptr;
+  size_t size = 0;
+  LITERT_RETURN_IF_ERROR(parent_v1_->get_compiled_result_byte_code(
       compiled_result_handle_, byte_code_idx, &data, &size));
   return BufferRef(data, size);
 }
@@ -79,8 +86,12 @@ Expected<LiteRtParamIndex> CompiledResult::NumByteCodeModules() const {
   if (compiled_result_handle_ == nullptr) {
     return 0;
   }
-  LiteRtParamIndex byte_code_idx;
-  LITERT_RETURN_IF_ERROR(parent_.get_compiled_result_num_byte_code(
+  if (!LITERT_ABI_HAS_API(parent_v1_, /*req_major=*/1,
+                          get_compiled_result_num_byte_code)) {
+    return litert::Error(kLiteRtStatusErrorUnsupported);
+  }
+  LiteRtParamIndex byte_code_idx = 0;
+  LITERT_RETURN_IF_ERROR(parent_v1_->get_compiled_result_num_byte_code(
       compiled_result_handle_, &byte_code_idx));
   return byte_code_idx;
 }
@@ -89,19 +100,27 @@ Expected<LiteRtParamIndex> CompiledResult::NumCalls() const {
   if (compiled_result_handle_ == nullptr) {
     return 0;
   }
-  LiteRtParamIndex num_calls;
-  LITERT_RETURN_IF_ERROR(parent_.get_compiled_result_num_calls(
+  if (!LITERT_ABI_HAS_API(parent_v1_, /*req_major=*/1,
+                          get_num_compiled_result_calls)) {
+    return litert::Error(kLiteRtStatusErrorUnsupported);
+  }
+  LiteRtParamIndex num_calls = 0;
+  LITERT_RETURN_IF_ERROR(parent_v1_->get_num_compiled_result_calls(
       compiled_result_handle_, &num_calls));
   return num_calls;
 }
 
 Expected<CallInformation> CompiledResult::CallInfo(
     LiteRtParamIndex call_idx) const {
-  const void* data;
-  size_t size;
-  LiteRtParamIndex byte_code_idx;
+  if (!LITERT_ABI_HAS_API(parent_v1_, /*req_major=*/1,
+                          get_compiled_result_call_info)) {
+    return litert::Error(kLiteRtStatusErrorUnsupported);
+  }
+  const void* data = nullptr;
+  size_t size = 0;
+  LiteRtParamIndex byte_code_idx = 0;
 
-  LITERT_RETURN_IF_ERROR(parent_.get_compiled_result_call_info(
+  LITERT_RETURN_IF_ERROR(parent_v1_->get_compiled_result_call_info(
       compiled_result_handle_, call_idx, &data, &size, &byte_code_idx));
 
   absl::string_view call_info_str(reinterpret_cast<const char*>(data), size);
@@ -110,9 +129,10 @@ Expected<CallInformation> CompiledResult::CallInfo(
 
 Expected<LiteRtJitExecutable> CompiledResult::GetHandle(
     LiteRtParamIndex byte_code_idx) const {
-  if (parent_.get_compiled_result_handle) {
+  if (LITERT_ABI_HAS_API(parent_v1_, /*req_major=*/1,
+                         get_compiled_result_handle)) {
     LiteRtJitExecutable handle = nullptr;
-    LITERT_RETURN_IF_ERROR(parent_.get_compiled_result_handle(
+    LITERT_RETURN_IF_ERROR(parent_v1_->get_compiled_result_handle(
         compiled_result_handle_, byte_code_idx, &handle));
     return handle;
   }
@@ -120,25 +140,29 @@ Expected<LiteRtJitExecutable> CompiledResult::GetHandle(
 }
 
 CompiledResult::~CompiledResult() {
-  if (compiled_result_handle_ != nullptr) {
-    parent_.destroy_compiled_result(compiled_result_handle_);
+  if (compiled_result_handle_ != nullptr &&
+      LITERT_ABI_HAS_API(parent_v1_, /*req_major=*/1,
+                         destroy_compiled_result)) {
+    parent_v1_->destroy_compiled_result(compiled_result_handle_);
   }
 }
 
 CompiledResult::CompiledResult(CompiledResult&& other) noexcept
-    : parent_(other.parent_),
+    : parent_v1_(other.parent_v1_),
       compiled_result_handle_(other.compiled_result_handle_) {
-  other.parent_ = {};
+  other.parent_v1_ = nullptr;
   other.compiled_result_handle_ = nullptr;
 }
 
 CompiledResult& CompiledResult::operator=(CompiledResult&& other) noexcept {
   if (this != &other) {
-    if (compiled_result_handle_ != nullptr) {
-      parent_.destroy_compiled_result(compiled_result_handle_);
+    if (compiled_result_handle_ != nullptr &&
+        LITERT_ABI_HAS_API(parent_v1_, /*req_major=*/1,
+                           destroy_compiled_result)) {
+      parent_v1_->destroy_compiled_result(compiled_result_handle_);
     }
-    parent_ = other.parent_;
-    other.parent_ = {};
+    parent_v1_ = other.parent_v1_;
+    other.parent_v1_ = nullptr;
 
     compiled_result_handle_ = other.compiled_result_handle_;
     other.compiled_result_handle_ = nullptr;
@@ -152,71 +176,67 @@ CompiledResult& CompiledResult::operator=(CompiledResult&& other) noexcept {
 
 namespace {
 
-#define RESOLVE_API_FUNC(name, dest) \
-  LITERT_ASSIGN_OR_RETURN(dest, lib.LookupSymbol<decltype(dest)>(name.data()));
-
 LiteRtStatus ResolvePluginApi(SharedLibrary& lib,
-                              LiteRtCompilerPluginApi& result) {
-  RESOLVE_API_FUNC(kLiteRtGetCompilerPluginVersion,
-                   result.get_compiler_plugin_version);
-  RESOLVE_API_FUNC(kLiteRtGetCompilerPluginSupportedHardware,
-                   result.get_compiler_plugin_supported_hardware);
-  RESOLVE_API_FUNC(kLiteRtGetCompilerPluginSocManufacturer,
-                   result.get_compiler_plugin_soc_manufacturer);
-  RESOLVE_API_FUNC(kLiteRtGetNumCompilerPluginSupportedSocModels,
-                   result.get_num_compiler_plugin_supported_models);
-  RESOLVE_API_FUNC(kLiteRtGetCompilerPluginSupportedSocModel,
-                   result.get_compiler_plugin_supported_soc_model);
-
-  RESOLVE_API_FUNC(kLiteRtCreateCompilerPlugin, result.create_compiler_plugin);
-  RESOLVE_API_FUNC(kLiteRtDestroyCompilerPlugin,
-                   result.destroy_compiler_plugin);
-
-  RESOLVE_API_FUNC(kLiteRtCompilerPluginPartition,
-                   result.compiler_plugin_partition);
-  RESOLVE_API_FUNC(kLiteRtCompilerPluginCompile,
-                   result.compiler_plugin_compile);
-
-  RESOLVE_API_FUNC(kLiteRtDestroyCompiledResult,
-                   result.destroy_compiled_result);
-  RESOLVE_API_FUNC(kLiteRtCompiledResultNumByteCodeModules,
-                   result.get_compiled_result_num_byte_code);
-  RESOLVE_API_FUNC(kLiteRtGetCompiledResultByteCode,
-                   result.get_compiled_result_byte_code);
-  // Optional JIT Handle API
-  if (auto resolved = lib.LookupSymbol<LiteRtGetCompiledResultHandleT>(
-          kLiteRtGetCompiledResultHandle.data());
-      resolved.HasValue()) {
-    result.get_compiled_result_handle = resolved.Value();
-  } else {
-    result.get_compiled_result_handle = nullptr;
+                              const LiteRtCompilerPluginInterface_V1*& result,
+                              LiteRtApiVersion& negotiated_version) {
+  auto query_interface_res =
+      lib.LookupSymbol<LiteRtCompilerPluginQueryInterfaceT>(
+          kLiteRtCompilerPluginQueryInterface.data());
+  if (!query_interface_res) {
+    if (lib.LookupSymbol<void*>("LiteRtCreateCompilerPlugin")) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Vendor library exports legacy symbol "
+                 "'LiteRtCreateCompilerPlugin' instead of "
+                 "'LiteRtCompilerPluginQueryInterface'. Please recompile "
+                 "vendor library against the versioned LiteRT Compiler Plugin "
+                 "C ABI.");
+    }
+    return query_interface_res.Error().Status();
   }
-  RESOLVE_API_FUNC(kLiteRtGetCompiledResultCallInfo,
-                   result.get_compiled_result_call_info);
-  RESOLVE_API_FUNC(kLiteRtGetNumCompiledResultCalls,
-                   result.get_compiled_result_num_calls);
-  RESOLVE_API_FUNC(kLiteRtCompilerPluginRegisterAllTransformations,
-                   result.register_all_transformations);
-  RESOLVE_API_FUNC(kLiteRtCompilerPluginCheckCompilerCompatibility,
-                   result.check_compiler_compatibility);
-  RESOLVE_API_FUNC(kLiteRtGetCompilerPluginSDKVersion,
-                   result.get_compiler_plugin_sdk_version);
+  auto query_interface = *query_interface_res;
 
+  LiteRtApiVersion runtime_ver = {LITERT_COMPILER_PLUGIN_ABI_VERSION_MAJOR,
+                                  LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR,
+                                  LITERT_COMPILER_PLUGIN_ABI_VERSION_PATCH};
+  LiteRtInterface basic_interface = nullptr;
+
+  LiteRtStatus status = litert::internal::NegotiateInterface(
+      query_interface, kLiteRtCompilerPluginInterfaceBasic, runtime_ver,
+      /*expected_abi_major=*/LITERT_COMPILER_PLUGIN_ABI_VERSION_MAJOR,
+      &basic_interface, &negotiated_version);
+  if (status != kLiteRtStatusOk || basic_interface == nullptr) {
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to negotiate compiler plugin interface version "
+               "(expected major version %d)",
+               LITERT_COMPILER_PLUGIN_ABI_VERSION_MAJOR);
+    return kLiteRtStatusErrorWrongVersion;
+  }
+
+  result = reinterpret_cast<const LiteRtCompilerPluginInterface_V1*>(
+      basic_interface);
   return kLiteRtStatusOk;
 }
 
 Expected<std::vector<std::string>> GetSocModels(
-    const LiteRtCompilerPluginApi& api, LiteRtCompilerPlugin plugin_handle) {
+    const LiteRtCompilerPluginInterface_V1* api,
+    LiteRtCompilerPlugin plugin_handle) {
   std::vector<std::string> soc_models;
+  if (!LITERT_ABI_HAS_API(api, /*req_major=*/1,
+                          get_num_compiler_plugin_supported_models) ||
+      !LITERT_ABI_HAS_API(api, /*req_major=*/1,
+                          get_compiler_plugin_supported_soc_model)) {
+    return soc_models;
+  }
 
-  LiteRtParamIndex num_models;
-  LITERT_RETURN_IF_ERROR(
-      api.get_num_compiler_plugin_supported_models(plugin_handle, &num_models));
+  LiteRtParamIndex num_models = 0;
+  LITERT_RETURN_IF_ERROR(api->get_num_compiler_plugin_supported_models(
+      plugin_handle, &num_models));
 
   for (LiteRtParamIndex i = 0; i < num_models; ++i) {
-    const char* model;
-    if (api.get_compiler_plugin_supported_soc_model(plugin_handle, i, &model) !=
-        kLiteRtStatusOk) {
+    const char* model = nullptr;
+    if (api->get_compiler_plugin_supported_soc_model(
+            plugin_handle, i, &model) != kLiteRtStatusOk ||
+        model == nullptr) {
       continue;
     }
     soc_models.push_back(std::string(model));
@@ -259,32 +279,31 @@ Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
   // Unloading the library on android can lead to crashes.
   auto flags = RtldFlags::Lazy().Local().NoDelete();
 #else
-  auto flags = RtldFlags::Now().Local().DeepBind().NoDelete();
+  auto flags = RtldFlags::Now().Local().NoDelete();
 #endif
 
   LITERT_ASSIGN_OR_RETURN(plugin.lib_, SharedLibrary::Load(lib_path, flags));
   LITERT_LOG(LITERT_INFO, "Loaded plugin at: %s", lib_path.data());
 
-  LITERT_RETURN_IF_ERROR(ResolvePluginApi(plugin.lib_, plugin.plugin_api_));
+  LITERT_RETURN_IF_ERROR(ResolvePluginApi(plugin.lib_, plugin.plugin_api_v1_,
+                                          plugin.negotiated_version_));
   LITERT_LOG(LITERT_INFO, "Resolved plugin api at: %s", lib_path.data());
 
   plugin.env_ = env;
-  LITERT_RETURN_IF_ERROR(plugin.plugin_api_.create_compiler_plugin(
+  if (!LITERT_ABI_HAS_API(plugin.plugin_api_v1_, /*req_major=*/1,
+                          create_compiler_plugin) ||
+      !LITERT_ABI_HAS_API(plugin.plugin_api_v1_, /*req_major=*/1,
+                          destroy_compiler_plugin)) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Plugin missing required entry points");
+  }
+  LITERT_RETURN_IF_ERROR(plugin.plugin_api_v1_->create_compiler_plugin(
       LrtGetCompilerContext(), &plugin.plugin_handle_, env, options));
   LITERT_LOG(LITERT_INFO, "Initialize plugin at: %s", lib_path.data());
 
-  auto api_version = plugin.ApiVersion();
-  if (!api_version) {
-    return api_version.Error();
-  }
-
-  LITERT_RETURN_IF_ERROR(litert::internal::IsSameVersionAsRuntime(*api_version),
-                         Unexpected(kLiteRtStatusErrorWrongVersion,
-                                    "Unsupported compiler plugin version"));
-
   // This should never change throughout the lifetime of the compiler
   // plugin so save to avoid recalling.
-  auto soc_models = GetSocModels(plugin.plugin_api_, plugin.plugin_handle_);
+  auto soc_models = GetSocModels(plugin.plugin_api_v1_, plugin.plugin_handle_);
   if (!soc_models) {
     return soc_models.Error();
   }
@@ -332,14 +351,19 @@ CompilerPlugin::CompilerPlugin(CompilerPlugin&& other)
       lib_(std::move(other.lib_)),
       options_(other.options_),
       env_(std::move(other.env_)),
-      plugin_api_(std::move(other.plugin_api_)),
-      plugin_handle_(std::move(other.plugin_handle_)) {
+      plugin_api_v1_(other.plugin_api_v1_),
+      plugin_handle_(std::move(other.plugin_handle_)),
+      transformations_(std::move(other.transformations_)),
+      max_transformation_iterations_(other.max_transformation_iterations_),
+      negotiated_version_(other.negotiated_version_) {
   other.soc_models_ = {};
-  other.plugin_api_ = {};
-  other.lib_.Close();
+  other.plugin_api_v1_ = nullptr;
   other.plugin_handle_ = nullptr;
   other.options_ = nullptr;
   other.env_ = nullptr;
+  other.transformations_ = {};
+  other.max_transformation_iterations_ = 100;
+  other.negotiated_version_ = {0, 0, 0};
 }
 
 CompilerPlugin& CompilerPlugin::operator=(CompilerPlugin&& other) {
@@ -347,48 +371,66 @@ CompilerPlugin& CompilerPlugin::operator=(CompilerPlugin&& other) {
     std::swap(soc_models_, other.soc_models_);
     std::swap(lib_, other.lib_);
     std::swap(env_, other.env_);
-    std::swap(plugin_api_, other.plugin_api_);
+    std::swap(plugin_api_v1_, other.plugin_api_v1_);
     std::swap(plugin_handle_, other.plugin_handle_);
     std::swap(options_, other.options_);
+    std::swap(transformations_, other.transformations_);
+    std::swap(max_transformation_iterations_,
+              other.max_transformation_iterations_);
+    std::swap(negotiated_version_, other.negotiated_version_);
   }
   return *this;
 }
 
 CompilerPlugin::~CompilerPlugin() {
-  if (plugin_handle_ != nullptr) {
-    plugin_api_.destroy_compiler_plugin(plugin_handle_);
+  if (plugin_handle_ != nullptr && plugin_api_v1_ != nullptr &&
+      LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
+                         destroy_compiler_plugin)) {
+    plugin_api_v1_->destroy_compiler_plugin(plugin_handle_);
   }
 }
 
 std::string CompilerPlugin::DebugString() const {
   std::string version_str = "?";
   if (auto version = ApiVersion(); version) {
-    version_str = absl::StrFormat("%d.%d.%d", version->major, version->minor,
-                                  version->patch);
+    version_str = absl::StrCat(version->major, ".", version->minor, ".",
+                               version->patch);
   }
-  return absl::StrFormat("%s compiler plugin (ver %s)", SocManufacturer(),
-                         version_str);
+  return absl::StrCat(SocManufacturer(), " compiler plugin (ver ", version_str,
+                      ")");
 }
 
 Expected<LiteRtApiVersion> CompilerPlugin::ApiVersion() const {
+  if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
+                          get_compiler_plugin_version)) {
+    return Unexpected(kLiteRtStatusErrorUnsupported,
+                      "get_compiler_plugin_version not supported");
+  }
   LiteRtApiVersion api_version;
-  LITERT_RETURN_IF_ERROR(plugin_api_.get_compiler_plugin_version(&api_version));
+  LITERT_RETURN_IF_ERROR(
+      plugin_api_v1_->get_compiler_plugin_version(&api_version));
   return api_version;
 }
 
 Expected<LiteRtHwAccelerators> CompilerPlugin::SupportedHardware() const {
+  if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
+                          get_compiler_plugin_supported_hardware)) {
+    return Unexpected(kLiteRtStatusErrorUnsupported,
+                      "get_compiler_plugin_supported_hardware not supported");
+  }
   LiteRtHwAccelerators supported_hardware;
-  LITERT_RETURN_IF_ERROR(plugin_api_.get_compiler_plugin_supported_hardware(
+  LITERT_RETURN_IF_ERROR(plugin_api_v1_->get_compiler_plugin_supported_hardware(
       plugin_handle_, &supported_hardware));
   return supported_hardware;
 }
 
 Expected<std::string> CompilerPlugin::SdkVersion() const {
-  if (plugin_api_.get_compiler_plugin_sdk_version == nullptr) {
+  if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
+                          get_compiler_plugin_sdk_version)) {
     return std::string("");
   }
   const char* sdk_version = nullptr;
-  LITERT_RETURN_IF_ERROR(plugin_api_.get_compiler_plugin_sdk_version(
+  LITERT_RETURN_IF_ERROR(plugin_api_v1_->get_compiler_plugin_sdk_version(
       plugin_handle_, &sdk_version));
   if (sdk_version == nullptr) {
     return std::string("");
@@ -400,25 +442,35 @@ Expected<void> CompilerPlugin::RegisterAllTransformations() {
   // Clear previously registered transformations in case this CompilerPlugin
   // instance is reused across multiple models (e.g. in ATS test suites).
   transformations_.clear();
-  LiteRtParamIndex num_patterns;
-  LiteRtTransformation* transformations;
+  if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
+                          register_all_transformations)) {
+    return {};
+  }
+  LiteRtParamIndex num_patterns = 0;
+  LiteRtTransformation* transformations = nullptr;
 
-  LITERT_RETURN_IF_ERROR(plugin_api_.register_all_transformations(
+  LITERT_RETURN_IF_ERROR(plugin_api_v1_->register_all_transformations(
       plugin_handle_, &transformations, &num_patterns));
-  for (LiteRtParamIndex i = 0; i < num_patterns; ++i) {
-    if (transformations[i].pattern == nullptr) {
-      return Unexpected(
-          kLiteRtStatusInvalidTransformation,
-          absl::StrFormat("Transformation %d has a invalid pattern function.",
-                          i));
+  if (num_patterns > 0) {
+    if (transformations == nullptr) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Transformations array pointer is null.");
     }
-    if (transformations[i].name == nullptr) {
-      return Unexpected(
-          kLiteRtStatusInvalidTransformation,
-          absl::StrFormat(
-              "Transformation %d has a invalid transformation name.", i));
+    for (LiteRtParamIndex i = 0; i < num_patterns; ++i) {
+      if (transformations[i].pattern == nullptr) {
+        return Unexpected(
+            kLiteRtStatusInvalidTransformation,
+            absl::StrCat("Transformation ", i,
+                         " has a invalid pattern function."));
+      }
+      if (transformations[i].name == nullptr) {
+        return Unexpected(
+            kLiteRtStatusInvalidTransformation,
+            absl::StrCat("Transformation ", i,
+                         " has a invalid transformation name."));
+      }
+      transformations_.push_back(transformations[i]);
     }
-    transformations_.push_back(transformations[i]);
   }
 
   // Sort transformations by benefit.
@@ -488,16 +540,26 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
 
 Expected<std::vector<LiteRtOpWithPartitionIndex>> CompilerPlugin::Partition(
     LiteRtSubgraph subgraph, absl::string_view soc_model) {
+  if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
+                          compiler_plugin_partition)) {
+    return Unexpected(kLiteRtStatusErrorUnsupported,
+                      "compiler_plugin_partition not supported");
+  }
   LiteRtOpListT ops;
   const char* soc_model_str = !soc_model.empty() ? soc_model.data() : nullptr;
   LITERT_PERFETTO_TRACE_EVENT("CompilerPlugin Partition");
-  LITERT_RETURN_IF_ERROR(plugin_api_.compiler_plugin_partition(
+  LITERT_RETURN_IF_ERROR(plugin_api_v1_->compiler_plugin_partition(
       plugin_handle_, soc_model_str, subgraph, &ops));
   return ops.Values();
 }
 
 Expected<CompiledResult> CompilerPlugin::Compile(LiteRtModel partitions,
                                                  absl::string_view soc_model) {
+  if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
+                          compiler_plugin_compile)) {
+    return Unexpected(kLiteRtStatusErrorUnsupported,
+                      "compiler_plugin_compile not supported");
+  }
   CompiledResult result = MakeResult();
   // Skip compilation if the model is empty.
   if (partitions->Subgraphs().empty()) {
@@ -511,7 +573,7 @@ Expected<CompiledResult> CompilerPlugin::Compile(LiteRtModel partitions,
   // SoC model based on the user device.
   const char* soc_model_str = !soc_model.empty() ? soc_model.data() : nullptr;
   LITERT_PERFETTO_TRACE_EVENT("CompilerPlugin Compile");
-  LITERT_RETURN_IF_ERROR(plugin_api_.compiler_plugin_compile(
+  LITERT_RETURN_IF_ERROR(plugin_api_v1_->compiler_plugin_compile(
       plugin_handle_, soc_model_str, partitions,
       &result.compiled_result_handle_));
   return result;
@@ -930,26 +992,106 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
   return {};
 }
 
-Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
-                              LiteRtModelT& model,
-                              absl::string_view soc_model) {
-  auto status = compiler_plugin.RegisterAllTransformations();
-  if (!status) {
-    return status;
-  }
-  LITERT_LOG(LITERT_INFO, "Registered %d transformations.",
-             compiler_plugin.GetNumTransformations());
+namespace {
 
-  status = compiler_plugin.GreedyPatternMatchAndRewrite(model);
-
-  if (!status) {
-    return status;
+// Groups the input shape overrides carried by `compiler_options` by signature
+// key and applies them (plus shape inference) to the corresponding subgraphs.
+// Overrides targeting signatures excluded by `selected_signature_keys` (which
+// may have been pruned from `model` prior to compilation) are skipped.
+// Signatures are processed in first-seen order so error messages are stable.
+Expected<bool> ApplyCompilerOptionsInputShapes(
+    const LiteRtCompilerOptionsT& compiler_options,
+    absl::Span<const std::string> selected_signature_keys,
+    LiteRtModelT& model) {
+  if (!compiler_options.HasInputShapes()) {
+    return false;
   }
-  LITERT_LOG(LITERT_INFO, "Applied transformations.");
-  return {};
+
+  struct PerSignatureShapes {
+    std::vector<Dims> positional_inputs;
+    std::vector<std::pair<std::string, Dims>> tensor_inputs;
+    std::vector<std::pair<std::string, Dims>> signature_inputs;
+  };
+  std::vector<std::pair<std::string, PerSignatureShapes>> by_signature;
+  auto resolve_sig_key =
+      [&](absl::string_view raw_sig_key) -> absl::string_view {
+    return (raw_sig_key.empty() && !model.Signatures().empty())
+               ? model.Signatures()[0]->Key()
+               : raw_sig_key;
+  };
+  auto is_signature_selected = [&](absl::string_view sig_key) -> bool {
+    if (selected_signature_keys.empty() || model.Signatures().empty()) {
+      return true;
+    }
+    return absl::c_linear_search(selected_signature_keys, sig_key);
+  };
+  auto bucket_for = [&](absl::string_view raw_sig_key) -> PerSignatureShapes* {
+    absl::string_view sig_key = resolve_sig_key(raw_sig_key);
+    if (!is_signature_selected(sig_key)) {
+      LITERT_LOG(LITERT_INFO,
+                 "Skipping input shape override for unselected signature '%s'.",
+                 std::string(sig_key).c_str());
+      return nullptr;
+    }
+    for (auto& [key, bucket] : by_signature) {
+      if (key == sig_key) return &bucket;
+    }
+    return &by_signature
+                .emplace_back(std::string(sig_key), PerSignatureShapes{})
+                .second;
+  };
+
+  for (const auto& e : compiler_options.positional_input_shapes) {
+    if (auto* bucket = bucket_for(e.signature_key); bucket != nullptr) {
+      bucket->positional_inputs.push_back(e.dims);
+    }
+  }
+  for (const auto& e : compiler_options.tensor_input_shapes) {
+    if (auto* bucket = bucket_for(e.signature_key); bucket != nullptr) {
+      bucket->tensor_inputs.emplace_back(e.name, e.dims);
+    }
+  }
+  for (const auto& e : compiler_options.signature_input_shapes) {
+    if (auto* bucket = bucket_for(e.signature_key); bucket != nullptr) {
+      bucket->signature_inputs.emplace_back(e.name, e.dims);
+    }
+  }
+
+  if (by_signature.empty()) {
+    return false;
+  }
+
+  std::vector<std::pair<LiteRtTensor, TensorType>> saved_types;
+  if (by_signature.size() > 1) {
+    for (auto* sg : model.Subgraphs()) {
+      if (sg == nullptr) continue;
+      for (auto* t : sg->Tensors()) {
+        if (t != nullptr) {
+          saved_types.emplace_back(t, t->Type());
+        }
+      }
+    }
+  }
+
+  ShapeInferenceEngine engine(&model);
+  for (const auto& [sig_key, bucket] : by_signature) {
+    auto res = engine.ApplyInputShapes(
+        sig_key, absl::MakeConstSpan(bucket.positional_inputs),
+        absl::MakeConstSpan(bucket.tensor_inputs),
+        absl::MakeConstSpan(bucket.signature_inputs));
+    if (!res) {
+      for (const auto& [t, type] : saved_types) {
+        t->SetType(type);
+      }
+      return res.Error();
+    }
+    LITERT_LOG(LITERT_INFO, "Applied input shapes for signature '%s'.",
+               sig_key.empty() ? "<default>" : sig_key.c_str());
+  }
+  return true;
 }
 
-Expected<void> ApplyPlugin(
+Expected<void> ApplySinglePlugin(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
     absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition,
@@ -997,6 +1139,51 @@ Expected<void> ApplyPlugin(
                                   std::move(*partitions), soc_model, result);
 }
 
+}  // namespace
+
+Expected<bool> ApplyCompilerOptionsInputShapes(
+    const CompilerPlugin& compiler_plugin, LiteRtModelT& model) {
+  auto compiler_options = compiler_plugin.CompilerOptions();
+  if (!compiler_options.HasValue()) {
+    if (compiler_options.Error().Status() == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return compiler_options.Error();
+  }
+  return ApplyCompilerOptionsInputShapes(
+      compiler_options.Value(), compiler_plugin.SelectedSignatureKeys(), model);
+}
+
+Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
+                              LiteRtModelT& model,
+                              absl::string_view soc_model) {
+  auto status = compiler_plugin.RegisterAllTransformations();
+  if (!status) {
+    return status;
+  }
+  LITERT_LOG(LITERT_INFO, "Registered %d transformations.",
+             compiler_plugin.GetNumTransformations());
+
+  status = compiler_plugin.GreedyPatternMatchAndRewrite(model);
+
+  if (!status) {
+    return status;
+  }
+  LITERT_LOG(LITERT_INFO, "Applied transformations.");
+  return {};
+}
+
+Expected<void> ApplyPlugin(
+    CompilerPlugin& compiler_plugin, LiteRtModelT& model,
+    absl::string_view soc_model,
+    const absl::flat_hash_set<uint32_t>& subgraphs_to_partition,
+    ApplyPluginsResult& result) {
+  LITERT_RETURN_IF_ERROR(
+      ApplyCompilerOptionsInputShapes(compiler_plugin, model));
+  return ApplySinglePlugin(compiler_plugin, model, soc_model,
+                           subgraphs_to_partition, result);
+}
+
 Expected<ApplyPluginsResult> ApplyPlugins(
     LiteRtEnvironment environment, LiteRtOptions options, LiteRtModel model,
     LiteRtHwAcceleratorSet selected_hw_accelerators, bool* mutated) {
@@ -1031,6 +1218,23 @@ Expected<ApplyPluginsResult> ApplyPlugins(
                          "No compiler plugin found");
   }
 
+  bool has_matching_plugin = false;
+  for (auto& compiler_plugin : compiler_plugins) {
+    auto supported_hw = compiler_plugin.SupportedHardware();
+    if (supported_hw && (*supported_hw & selected_hw_accelerators)) {
+      has_matching_plugin = true;
+      break;
+    }
+  }
+  if (has_matching_plugin) {
+    LITERT_ASSIGN_OR_RETURN(
+        bool shapes_applied,
+        ApplyCompilerOptionsInputShapes(compiler_plugins.front(), *model));
+    if (shapes_applied && mutated != nullptr) {
+      *mutated = true;
+    }
+  }
+
   std::vector<std::string> success_messages;
   std::vector<std::string> error_messages;
 
@@ -1047,7 +1251,7 @@ Expected<ApplyPluginsResult> ApplyPlugins(
     }
 
     if (*plugin_supported_hardware & selected_hw_accelerators) {
-      auto status = ApplyPlugin(compiler_plugin, *model, "", {}, result);
+      auto status = ApplySinglePlugin(compiler_plugin, *model, "", {}, result);
 
       if (!status) {
         error_messages.push_back(
@@ -1078,6 +1282,9 @@ Expected<LiteRtCompilerOptionsT> CompilerPlugin::CompilerOptions() const {
   }
   LiteRtOpaqueOptions opaque_options;
   LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(options_, &opaque_options));
+  if (opaque_options == nullptr) {
+    return result;
+  }
 
   // Parse compiler options from the opaque options.
   void* data;
@@ -1096,6 +1303,13 @@ Expected<LiteRtCompilerOptionsT> CompilerPlugin::CompilerOptions() const {
     return Unexpected(status);
   }
   return result;
+}
+
+absl::Span<const std::string> CompilerPlugin::SelectedSignatureKeys() const {
+  if (options_ == nullptr) {
+    return {};
+  }
+  return options_->selected_signature_keys;
 }
 
 Expected<CompilerPlugin> CompilerPlugin::FindPlugin(
@@ -1117,22 +1331,25 @@ Expected<CompilerPlugin> CompilerPlugin::FindPlugin(
   }
   return Error(
       kLiteRtStatusErrorRuntimeFailure,
-      absl::StrFormat("No compiler plugin found for soc manufacturer %s",
-                      soc_manufacturer));
+      absl::StrCat("No compiler plugin found for soc manufacturer ",
+                   soc_manufacturer));
 }
 
 Expected<bool> CompilerPlugin::CheckCompilerCompatibility(
     absl::string_view soc_model) {
-  auto plugin_api_version = ApiVersion();
-  if (!plugin_api_version) {
-    return plugin_api_version.Error();
+  if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
+                          check_compiler_compatibility)) {
+    return true;
   }
   const char* soc_model_name = nullptr;
   if (!soc_model.empty()) {
     soc_model_name = soc_model.data();
   }
-  LITERT_RETURN_IF_ERROR(plugin_api_.check_compiler_compatibility(
-      *plugin_api_version, plugin_handle_, env_, options_, soc_model_name));
+  LiteRtApiVersion host_version{LITERT_API_VERSION_MAJOR,
+                                LITERT_API_VERSION_MINOR,
+                                LITERT_API_VERSION_PATCH};
+  LITERT_RETURN_IF_ERROR(plugin_api_v1_->check_compiler_compatibility(
+      host_version, plugin_handle_, env_, options_, soc_model_name));
   return true;
 }
 }  // namespace litert::internal

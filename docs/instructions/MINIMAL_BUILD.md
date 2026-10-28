@@ -197,7 +197,13 @@ macros in `//litert/build_common:litert_build_defs.bzl`:
 :                              : `cpu_backend`. Use for static-link targets   :
 :                              : such as WebAssembly (`wasm_js_library`).     :
 
-### Example: `litert_cc_binary` / `litert_cc_test`
+### Example: `litert_cc_binary` / `litert_cc_test` (with automatic selective op registration)
+
+Passing `models = [...]` to `litert_cc_binary`, `litert_cc_test`, or
+`litert_cc_library` automatically extracts the operators used by the `.tflite`
+model(s) at build time and registers them at runtime—no manual
+`gen_selected_ops` target, `tflite::MutableOpResolver`, or `SetOpResolver()`
+call is required:
 
 ```python
 load(
@@ -209,22 +215,15 @@ load("//litert/build_common:special_rule.bzl", "litert_linkopts")
 
 litert_cc_binary(
     name = "my_app",
-    srcs = [
-        "my_app.cc",
-        ":my_model_selected_ops",
-    ],
+    srcs = ["my_app.cc"],
     build_include = "cpu_only",
     cpu_backend = "selective",
     linkopts = litert_linkopts(),
     linkstatic = 1,
+    models = ["my_model.tflite"],
     deps = [
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
-        "//litert/cc:litert_options",
-        "//litert/tflite_support/op_resolver",
-        "//third_party/tensorflow/lite:framework",
-        "//third_party/tensorflow/lite:mutable_op_resolver",
-        "//third_party/tensorflow/lite/kernels:builtin_ops",
     ],
 )
 
@@ -233,6 +232,7 @@ litert_cc_test(
     srcs = ["my_app_test.cc"],
     build_include = "cpu_only",
     cpu_backend = "selective",
+    models = ["my_model.tflite"],
     deps = [":my_app_lib"],
 )
 ```
@@ -249,6 +249,7 @@ litert_cc_library(
     name = "my_model_runner_cpu_only",
     build_include = "cpu_only",
     cpu_backend = "selective",
+    models = ["my_model.tflite"],
     deps = [":my_model_runner"],
 )
 

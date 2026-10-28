@@ -96,16 +96,19 @@ ApplyPluginRun::Ptr ParseFlags() {
 }
 
 template <typename OptionsGetter, typename OptionsUpdater>
-void ParseOptionsFlags(litert::tools::UserStream& dump_out,
+bool ParseOptionsFlags(litert::tools::UserStream& dump_out,
                        const char* option_name, OptionsGetter getter,
                        OptionsUpdater updater,
                        absl::string_view failure_message) {
   if (auto opts = getter(); !opts) {
     dump_out.Get().get() << "Failed to create " << option_name
                          << " options: " << opts.Error().Message() << "\n";
+    return false;
   } else if (auto status = updater(*opts); !status) {
     dump_out.Get().get() << failure_message << status.Error().Message() << "\n";
+    return false;
   }
+  return true;
 }
 
 }  // namespace
@@ -140,12 +143,14 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-#if !defined(LITERT_WINDOWS_OS)
-  ParseOptionsFlags(
-      run->dump_out, "Compiler", [&] { return opts->GetCompilerOptions(); },
-      litert::UpdateCompilerOptionsFromFlags,
-      "Failed to add Compiler options to list\n ");
+  if (!ParseOptionsFlags(
+          run->dump_out, "Compiler", [&] { return opts->GetCompilerOptions(); },
+          litert::UpdateCompilerOptionsFromFlags,
+          "Failed to add Compiler options to list: ")) {
+    return 1;
+  }
 
+#if !defined(LITERT_WINDOWS_OS)
   ParseOptionsFlags(
       run->dump_out, "Google Tensor",
       [&] {

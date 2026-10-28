@@ -44,14 +44,22 @@ namespace {
 
 static constexpr absl::string_view kLdLibraryPath = "LD_LIBRARY_PATH";
 
+// Extensions of the shared libraries the finders below accept. ".so" is
+// accepted everywhere because it is what Bazel emits for cc_binary shared
+// libraries on POSIX platforms.
+constexpr absl::string_view kSharedLibExtensions[] = {
+    ".so",
+#if defined(__APPLE__)
+    ".dylib",
+#endif  // defined(__APPLE__)
+};
+
 bool EnvPathContains(absl::string_view path, absl::string_view var_value) {
   return absl::EndsWith(var_value, path) ||
          absl::StrContains(var_value, absl::StrCat(path, ":"));
 }
 
 }  // namespace
-
-static constexpr absl::string_view kSo = ".so";
 
 LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
                                         const std::string& lib_pattern,
@@ -72,17 +80,14 @@ LiteRtStatus FindLiteRtSharedLibsHelper(const std::string& search_path,
     }
     if (entry.is_regular_file()) {
       if (full_match) {
-        if (path.string().find(lib_pattern) != -1) {
+        if (path.string().find(lib_pattern) != std::string::npos) {
           LITERT_LOG(LITERT_VERBOSE, "Found shared library: %s", path.c_str());
           results.push_back(path);
         }
-      } else {
-        const auto stem = path.stem().string();
-        const auto ext = path.extension().string();
-        if (stem.find(lib_pattern) == 0 && kSo == ext) {
-          LITERT_LOG(LITERT_VERBOSE, "Found shared library: %s", path.c_str());
-          results.push_back(path);
-        }
+      } else if (IsSharedLibFileName(path.filename().string(), lib_pattern,
+                                     kSharedLibExtensions)) {
+        LITERT_LOG(LITERT_VERBOSE, "Found shared library: %s", path.c_str());
+        results.push_back(path);
       }
     } else if (entry.is_directory()) {
       FindLiteRtSharedLibsHelper(path, lib_pattern, full_match, results);

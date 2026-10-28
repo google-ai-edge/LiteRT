@@ -262,6 +262,12 @@ class LiteRtCompiledModelT {
   // Returns the number of signatures in the model.
   size_t GetNumSignatures() const { return signature_keys_.size(); }
 
+  // Returns the duration of the last native inference in nanoseconds (-1 if
+  // none or failed).
+  int64_t GetLastInferenceDurationNanoseconds() const {
+    return last_inference_duration_nanos_.load(std::memory_order_relaxed);
+  }
+
   // Error reporter APIs
 
   // Reports an error. Thread-safe.
@@ -618,6 +624,12 @@ class LiteRtCompiledModelT {
                       TensorIdentifierEqual>
       cpu_tensors_;
 
+  // The set of tensors that currently have a caller-supplied TensorBuffer
+  // registered in `buffer_context_` via `RegisterBuffer()`.
+  absl::flat_hash_set<TfLiteTensorIdentifier, TensorIdentifierHash,
+                      TensorIdentifierEqual>
+      user_registered_buffers_;
+
   // The profiler used by the compiled model. This is used to forward the
   // profiler events to the TFLite interpreter.
   LiteRtProfilerT* profiler_ = nullptr;
@@ -637,6 +649,10 @@ class LiteRtCompiledModelT {
 
   // Owns dynamically created TfLiteRegistration objects for TfLiteOperator.
   std::vector<std::unique_ptr<TfLiteRegistration>> owned_tflite_registrations_;
+
+  // Duration of the last native inference in nanoseconds (-1 if none or
+  // failed).
+  std::atomic<int64_t> last_inference_duration_nanos_{-1};
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_

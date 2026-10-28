@@ -240,6 +240,9 @@ flatc --python --gen-onefile --gen-object-api \
     unselected payloads (such as biases) are repacked inline when the remaining
     buffers fit within 1 GiB, or re-appended after the FlatBuffer using
     `Buffer.offset/size` (aligned to 16 bytes) when they exceed 1 GiB.
+-   If no tensor is selected for externalization, copies the input model
+    byte-for-byte instead of repacking it, so appended payloads and
+    `Operator.large_custom_options_*` are kept as they are.
 -   Does not filter by data type: `FLOAT32` weights at selected operator inputs
     are externalized alongside quantized weights, even though the WebGPU
     streamed-loading path does not currently support streaming `FLOAT32`

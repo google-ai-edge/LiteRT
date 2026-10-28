@@ -322,8 +322,10 @@ absl::Status GpuBackendWebGpu::UpdateSpatialTensor(
 
 #if defined(__APPLE__)
   // If the device is Apple and it meets the right storage & data types, use
-  // an optimized path.
-  if (desc.GetStorageType() == ::ml_drift::TensorStorageType::kBuffer &&
+  // an optimized path. A release_data_callback indicates the data is mmap'd,
+  // which CopyBufferToBuffer relies on to wrap whole pages without copying.
+  if (release_data_callback &&
+      desc.GetStorageType() == ::ml_drift::TensorStorageType::kBuffer &&
       (desc.GetDataType() == ::ml_drift::DataType::kUint8 ||
        desc.GetDataType() == ::ml_drift::DataType::kUint4 ||
        desc.GetDataType() == ::ml_drift::DataType::kUint2)) {

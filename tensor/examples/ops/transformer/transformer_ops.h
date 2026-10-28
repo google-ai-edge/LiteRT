@@ -47,6 +47,7 @@ namespace litert::tensor {
 template <class... Mixins>
 Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
                        const Tensor<Mixins...>& sin) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(x, cos, sin));
   graph::ScopeGuard scope("rope");
   scope.Bind("input", x.GetRaw())
       .Bind("cos", cos.GetRaw())
@@ -54,6 +55,15 @@ Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
 
   // We assume a shape of [batch, ..., head_dim].
   const Shape& x_shape = x.GetShape();
+  if (x_shape.empty()) {
+    return absl::InvalidArgumentError(
+        "RoPE expects input `x` with rank >= 1, got scalar.");
+  }
+  if (x_shape.back() <= 0 || x_shape.back() % 2 != 0) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("RoPE expects an even last dimension (head_dim), got ",
+                     x_shape.back(), "."));
+  }
   const int last_axis = static_cast<int>(x_shape.size()) - 1;
   const int half_dim = x_shape[last_axis] / 2;
   const Shape slice_size = [&] {
@@ -76,6 +86,55 @@ Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
   Tensor out = Add(x_cos, rotated_sin);
   scope.Bind("output", out.GetRaw());
   return out;
+}
+
+template <class... Mixins>
+Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,
+                                  const Tensor<Mixins...>& segment_pos,
+                                  float min_timescale, float max_timescale) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(input, segment_pos));
+  auto op = std::make_shared<graph::RotaryEmbeddingOperation>();
+  RegisterMixins<Mixins...>(op);
+  op->min_timescale = min_timescale;
+  op->max_timescale = max_timescale;
+  op->inputs = {input.GetRaw(), segment_pos.GetRaw()};
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
+  const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
+  graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+  output_info.shape = input_info.shape;
+  output_info.type = input_info.type;
+  graph::OpDebugger::DebugOp(*op);
+  return output;
+}
+
+// Parameters for decomposed Rotary Position Embedding (RoPE) using
+// precomputed `cos` and `sin` tables.
+template <class... Mixins>
+struct RopeCosSinParams {
+  Tensor<Mixins...> cos;
+  Tensor<Mixins...> sin;
+};
+
+// Parameters for the fused `RotaryEmbedding` op using a runtime `position_ids`
+// tensor and timescale bounds.
+template <class... Mixins>
+struct RotaryEmbeddingParams {
+  Tensor<Mixins...> position_ids;
+  float min_timescale = 1.0f;
+  float max_timescale = 10000.0f;
+};
+
+template <class... Mixins>
+Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x,
+                       const RopeCosSinParams<Mixins...>& params) {
+  return RoPE(x, params.cos, params.sin);
+}
+
+template <class... Mixins>
+Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x,
+                       const RotaryEmbeddingParams<Mixins...>& params) {
+  return RotaryEmbedding(x, params.position_ids, params.min_timescale,
+                         params.max_timescale);
 }
 
 // Computes the Swish (SiLU) activation function: x * sigmoid(x).
@@ -108,6 +167,8 @@ Tensor<Mixins...> FeedForward(Tensor<Mixins...> x,
                               Tensor<Mixins...> up_weight,
                               Tensor<Mixins...> down_weight,
                               FFNActivation activation) {
+  LRT_TENSOR_RETURN_IF_ERROR(
+      CheckTensors(x, gate_weight, up_weight, down_weight));
   graph::ScopeGuard scope("feed_forward");
   scope.Bind("input", x.GetRaw())
       .Bind("gate_weight", gate_weight.GetRaw())
@@ -142,6 +203,7 @@ Tensor<Mixins...> FeedForward(Tensor<Mixins...> x,
 // head_dim], or an error tensor if `x` is not rank 4.
 template <class... Mixins>
 Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
+  LRT_TENSOR_RETURN_IF_ERROR(x);
   const Shape& shape = x.GetShape();
   if (shape.size() != 4) {
     return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
@@ -186,6 +248,8 @@ Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
 //   It is only used when `scale` or `soft_cap` requires a constant to be
 //   materialized; in that case an untyped `q` and an unset `datatype` are an
 //   error, as there is nothing left to deduce the constant type from.
+// adj_v: if true, v has shape [..., num_kv_heads, head_dim, seq_len_kv] and is
+//   transposed on its last two axes in the final matmul.
 //
 // Expected tensor shapes (any leading dimensions are batch dimensions, shared
 // by q, k and v):
@@ -207,10 +271,12 @@ Tensor<Mixins...> ScaledDotProductAttention(
     const Tensor<Mixins...>& attention_mask = TensorHandle::Invalid(),
     std::optional<float> scale = std::nullopt,
     std::optional<float> soft_cap = std::nullopt,
-    Type datatype = Type::kUnknown) {
+    Type datatype = Type::kUnknown, bool adj_v = false) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(q, k, v));
   graph::ScopeGuard scope("sdpa");
   scope.Bind("q", q.GetRaw()).Bind("k", k.GetRaw()).Bind("v", v.GetRaw());
-  if (attention_mask.GetStatus().ok()) {
+  if (attention_mask != TensorHandle::Invalid()) {
+    LRT_TENSOR_RETURN_IF_ERROR(attention_mask);
     scope.Bind("attention_mask", attention_mask.GetRaw());
   }
   if (scale.has_value()) {
@@ -261,8 +327,15 @@ Tensor<Mixins...> ScaledDotProductAttention(
                                   grouped->num_groups() * grouped->seq_len_q,
                                   grouped->head_dim));
   }
+  const bool need_unfold_for_mask =
+      grouped.has_value() &&
+      (grouped->seq_len_q != 1 ||
+       (attention_mask != TensorHandle::Invalid() &&
+        attention_mask.GetShape().size() == rank &&
+        (attention_mask.GetShape()[head_axis] > 1 ||
+         attention_mask.GetShape()[head_axis + 1] > 1)));
   Tensor scores = BatchMatMul(q_rows, k, /*adj_x=*/false, /*adj_y=*/true);
-  if (grouped) {
+  if (need_unfold_for_mask) {
     // [..., Hkv, G * Sq, Skv] -> [..., H, Sq, Skv] so that the mask broadcasts.
     scores = Reshape(scores, BatchDimsShape(grouped->num_heads,
                                             grouped->seq_len_q, kInferredDim));
@@ -301,12 +374,14 @@ Tensor<Mixins...> ScaledDotProductAttention(
     scores = Mul(tanh_scores, cap_tensor);
   }
 
-  if (attention_mask.GetStatus().ok()) {
+  if (attention_mask != TensorHandle::Invalid()) {
     scores = Add(scores, attention_mask);
   }
+  scope.Bind("scores", scores);
 
   Tensor attention_weights = Softmax(scores);
-  if (grouped) {
+  scope.Bind("attn_weights", attention_weights);
+  if (need_unfold_for_mask) {
     attention_weights =
         Reshape(attention_weights,
                 BatchDimsShape(grouped->num_kv_heads,
@@ -314,7 +389,8 @@ Tensor<Mixins...> ScaledDotProductAttention(
                                kInferredDim));
   }
 
-  Tensor out = BatchMatMul(attention_weights, v);
+  Tensor out =
+      BatchMatMul(attention_weights, v, /*adj_x=*/false, /*adj_y=*/adj_v);
   if (grouped) {
     out = Reshape(out, BatchDimsShape(grouped->num_heads, grouped->seq_len_q,
                                       grouped->head_dim));
@@ -324,29 +400,13 @@ Tensor<Mixins...> ScaledDotProductAttention(
 }
 
 template <class... Mixins>
-Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,
-                                  const Tensor<Mixins...>& segment_pos,
-                                  float min_timescale, float max_timescale,
-                                  float rope_wavelength) {
-  auto op = std::make_shared<graph::RotaryEmbeddingOperation>();
-  RegisterMixins<Mixins...>(op);
-  op->min_timescale = min_timescale;
-  op->max_timescale = max_timescale;
-  // op->rope_wavelength = rope_wavelength;
-  op->inputs = {input.GetRaw(), segment_pos.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
-  const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
-  graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
-  output_info.shape = input_info.shape;
-  output_info.type = input_info.type;
-  graph::OpDebugger::DebugOp(*op);
-  return output;
-}
-
-template <class... Mixins>
 Tensor<Mixins...> RmsNorm(const Tensor<Mixins...>& input,
                           const Tensor<Mixins...>& scale,
                           const Tensor<Mixins...>& epsilon) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(input, epsilon));
+  if (scale != TensorHandle::Invalid()) {
+    LRT_TENSOR_RETURN_IF_ERROR(scale);
+  }
   auto op = std::make_shared<graph::RmsNormOperation>();
   RegisterMixins<Mixins...>(op);
   op->inputs = {input.GetRaw(), scale.GetRaw(), epsilon.GetRaw()};
@@ -504,10 +564,36 @@ std::vector<Tensor<Mixins...>> AddValuesToCache(
 
 template <class... Mixins>
 Tensor<Mixins...> QkNorm(const Tensor<Mixins...>& input,
-                         const Tensor<Mixins...>& scale) {
+                         const Tensor<Mixins...>& scale,
+                         float epsilon = 1e-6f) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(input));
+  if (scale != TensorHandle::Invalid()) {
+    LRT_TENSOR_RETURN_IF_ERROR(scale);
+  }
   auto op = std::make_shared<graph::QkNormOperation>();
   RegisterMixins<Mixins...>(op);
+  op->epsilon = epsilon;
   op->inputs = {input.GetRaw(), scale.GetRaw()};
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
+  const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
+  graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+  output_info.shape = input_info.shape;
+  output_info.type = input_info.type;
+  graph::OpDebugger::DebugOp(*op);
+  return output;
+}
+
+template <class... Mixins>
+Tensor<Mixins...> QkNorm(const Tensor<Mixins...>& input,
+                         const Tensor<Mixins...>& scale,
+                         const Tensor<Mixins...>& epsilon) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(input, epsilon));
+  if (scale != TensorHandle::Invalid()) {
+    LRT_TENSOR_RETURN_IF_ERROR(scale);
+  }
+  auto op = std::make_shared<graph::QkNormOperation>();
+  RegisterMixins<Mixins...>(op);
+  op->inputs = {input.GetRaw(), scale.GetRaw(), epsilon.GetRaw()};
   Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());

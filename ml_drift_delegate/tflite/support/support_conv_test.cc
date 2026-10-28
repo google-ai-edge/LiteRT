@@ -398,6 +398,94 @@ INSTANTIATE_TEST_SUITE_P(
           TfLiteTypeGetName(std::get<4>(info.param)));
     });
 
+// Fully-quantized Conv2D (int8 activations, quantized int8/int4 weights, an
+// int32 bias, and int8 output) must be supported. The int32 bias is the TFLite
+// standard for quantized convolutions, exactly as it is for FULLY_CONNECTED;
+// it is dequantized to float during conversion, so it must be a constant,
+// affine-quantized tensor.
+using QuantizedInt32BiasTest = TestWithParam<TfLiteType>;
+
+// Builds a quantized Conv2D whose bias is tensor `bias` and returns the
+// supported nodes.
+std::vector<int> GetSupportedNodesForConvWithBias(
+    StubContextBuilder& context_builder, TfLiteType weights_dtype,
+    int weights_scale_size, int bias) {
+  const int a =
+      context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultInputDims);
+  const int b = context_builder.AddQuantizedTensor(
+      weights_dtype, kDefaultWeightsDims, weights_scale_size);
+  const int d =
+      context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultOutputDims);
+  context_builder.SetOp(kTfLiteBuiltinConv2d, /*version=*/1,
+                        &kDefaultConvParams,
+                        /*inputs=*/{a, b, bias}, /*outputs=*/{d});
+  TfLiteContext* context = context_builder.Build();
+  if (context == nullptr) return {};
+  return GetSupportedNodes(context, kDefaultOptions);
+}
+
+TEST_P(QuantizedInt32BiasTest, SupportsConstantInt32Bias) {
+  StubContextBuilder context_builder;
+  const int c =
+      context_builder.AddQuantizedTensor(kTfLiteInt32, kDefaultBiasDims);
+  context_builder.SetConst(c);
+  EXPECT_THAT(GetSupportedNodesForConvWithBias(context_builder, GetParam(),
+                                               /*weights_scale_size=*/1, c),
+              ElementsAre(0));
+}
+
+// Per-axis (per-output-channel) quantization is what the converter actually
+// emits for quantized Conv2D, so sweep it alongside per-tensor.
+TEST_P(QuantizedInt32BiasTest, SupportsPerAxisConstantInt32Bias) {
+  StubContextBuilder context_builder;
+  // kDefaultWeightsDims is OHWI with O == 4, so there are 4 scales.
+  const int c = context_builder.AddQuantizedTensor(
+      kTfLiteInt32, kDefaultBiasDims, /*scale_size=*/4);
+  context_builder.SetConst(c);
+  EXPECT_THAT(GetSupportedNodesForConvWithBias(context_builder, GetParam(),
+                                               /*weights_scale_size=*/4, c),
+              ElementsAre(0));
+}
+
+// There is no runtime int32 bias path; only constant biases are dequantized.
+TEST_P(QuantizedInt32BiasTest, RejectsRuntimeInt32Bias) {
+  StubContextBuilder context_builder;
+  const int c =
+      context_builder.AddQuantizedTensor(kTfLiteInt32, kDefaultBiasDims);
+  EXPECT_THAT(GetSupportedNodesForConvWithBias(context_builder, GetParam(),
+                                               /*weights_scale_size=*/1, c),
+              IsEmpty());
+}
+
+TEST_P(QuantizedInt32BiasTest, RejectsUnquantizedConstantInt32Bias) {
+  StubContextBuilder context_builder;
+  const int c = context_builder.AddTensor(kTfLiteInt32, kDefaultBiasDims);
+  context_builder.SetConst(c);
+  EXPECT_THAT(GetSupportedNodesForConvWithBias(context_builder, GetParam(),
+                                               /*weights_scale_size=*/1, c),
+              IsEmpty());
+}
+
+TEST_P(QuantizedInt32BiasTest, RejectsInt32BiasWithMismatchedScaleSize) {
+  StubContextBuilder context_builder;
+  const int c = context_builder.AddQuantizedTensor(
+      kTfLiteInt32, kDefaultBiasDims, /*scale_size=*/2);
+  context_builder.SetConst(c);
+  EXPECT_THAT(GetSupportedNodesForConvWithBias(context_builder, GetParam(),
+                                               /*weights_scale_size=*/1, c),
+              IsEmpty());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ConvOps, QuantizedInt32BiasTest,
+    ValuesIn<TfLiteType>({
+        kTfLiteInt8,
+        kTfLiteInt4,
+    }),
+    [](const TestParamInfo<QuantizedInt32BiasTest::ParamType>& info) {
+      return TfLiteTypeGetName(info.param);
+    });
+
 // Test suite for convolution ops with different dims.
 using DimsTest = TestWithParam<TfLiteBuiltinOperator>;
 

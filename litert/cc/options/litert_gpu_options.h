@@ -21,6 +21,10 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_concrete_options_base.h"
 
+namespace mediapipe {
+class InferenceRunnerLiteRt;
+}  // namespace mediapipe
+
 namespace litert {
 
 namespace benchmark {
@@ -41,6 +45,7 @@ class GpuOptions : public ConcreteOptionsBase {
   friend class benchmark::BenchmarkLiteRtModel;
   friend class test::GpuOptionsTestPeer;
   friend class tools::GpuNumericsCheck;
+  friend class mediapipe::InferenceRunnerLiteRt;
 
   GpuOptions() : options_(nullptr) {}
   explicit GpuOptions(LrtGpuOptions* options) : options_(options) {}
@@ -377,12 +382,52 @@ class GpuOptions : public ConcreteOptionsBase {
                                                              kernel_batch_size);
   }
 
- private:
-  /// @brief Sets whether to use IrModel instead of legacy GraphFloat32.
+  /// @brief Speeds up tuning at the cost of potentially slower inference.
+  /// This trades steady-state performance for initialization time.
+  LiteRtStatus EnableFastTuning(bool enabled) {
+    return LrtSetGpuOptionsEnableFastTuning(options_, enabled);
+  }
+
+  /// @brief Enables per-op profiling.
+  LiteRtStatus EnableOpProfiling(bool enabled) {
+    return LrtSetGpuOptionsEnableOpProfiling(options_, enabled);
+  }
+
+  /// @brief Enables the detailed report of the per-op profiling.
+  LiteRtStatus EnableOpProfilingDetailedReport(bool enabled) {
+    return LrtSetGpuOptionsEnableOpProfilingDetailedReport(options_, enabled);
+  }
+
+  /// @brief Restricts delegation to the node range set with
+  /// `SetDebugFirstDelegateNodeIndex` and `SetDebugLastDelegateNodeIndex`.
+  /// @note For debugging purposes only, e.g. to bisect which node breaks
+  /// delegation.
+  LiteRtStatus SetDebugDelegatePartition(bool enabled) {
+    return LrtSetGpuOptionsDebugDelegatePartition(options_, enabled);
+  }
+
+  /// @brief Sets the index of the first node that could be delegated.
+  /// @note Only used when `SetDebugDelegatePartition` is enabled.
+  LiteRtStatus SetDebugFirstDelegateNodeIndex(int node_index) {
+    return LrtSetGpuOptionsDebugFirstDelegateNodeIndex(options_, node_index);
+  }
+
+  /// @brief Sets the index of the last node that could be delegated.
+  /// @note Only used when `SetDebugDelegatePartition` is enabled.
+  LiteRtStatus SetDebugLastDelegateNodeIndex(int node_index) {
+    return LrtSetGpuOptionsDebugLastDelegateNodeIndex(options_, node_index);
+  }
+
+  /// @brief Selects the IrModel initialization pipeline instead of the legacy
+  /// GraphFloat32 pipeline. Both pipelines are always compiled and linked, the
+  /// selection happens at runtime.
+  /// If LITERT_GPU_USE_IR_MODEL is defined, the set value is ignored and the
+  /// flag is forced to the value of LITERT_GPU_USE_IR_MODEL.
   LiteRtStatus SetUseIrModel(bool use_ir_model) {
     return LrtSetGpuOptionsUseIrModel(options_, use_ir_model);
   }
 
+ private:
   LrtGpuOptions* options_;
 };
 

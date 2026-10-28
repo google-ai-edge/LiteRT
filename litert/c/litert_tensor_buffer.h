@@ -176,6 +176,19 @@ LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
     size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator,
     LiteRtTensorBuffer* buffer);
 
+// Create a tensor buffer of a custom `buffer_type` (e.g.
+// kLiteRtTensorBufferTypeOpenVINOTensorBuffer) from `handle`, using the
+// import_func registered for that buffer type. `handle` is the custom handle
+// of an existing buffer of that type, as returned by
+// LiteRtGetTensorBufferCustomTensorBufferHandle, so this can create a view of
+// `tensor_type` onto that buffer's memory (e.g. a smaller-context KV cache
+// onto the largest one). The returned buffer does not own the memory; the
+// caller must keep the source buffer alive for the returned buffer's lifetime.
+LiteRtStatus LiteRtCreateTensorBufferFromCustomHandle(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, HwMemoryHandle handle,
+    size_t buffer_size, LiteRtTensorBuffer* buffer);
+
 // Return an error if the backing buffer is not a OpenCL memory.
 //
 // @warning kLiteRtStatusErrorUnsupported is returned if OPENCL is not

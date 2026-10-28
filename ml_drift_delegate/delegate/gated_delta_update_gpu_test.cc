@@ -178,9 +178,11 @@ void RunGatedDeltaUpdateTest(int B, int H, int N, int D_k, int D_v,
                              bool zero_initial_state = false,
                              float beta_fixed = -1.0f, float g_fixed = 100.0f,
                              float tolerance = 1e-4, bool use_fp32 = true,
-                             int H_k = -1) {
+                             int H_k = -1, bool force_shared_mem = false) {
   int actual_H_k = (H_k > 0) ? H_k : H;
-  auto model_buf = CreateGatedDeltaUpdateModelBuffer(B, H, N, D_k, D_v, 0, H_k);
+  int mode = force_shared_mem ? 2 : 0;
+  auto model_buf =
+      CreateGatedDeltaUpdateModelBuffer(B, H, N, D_k, D_v, mode, H_k);
 
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
@@ -355,7 +357,8 @@ TEST(GatedDeltaUpdateGpuTest, RejectOddHeadDimension19) {
 }
 
 // 14. Large power-of-2 head dimension 256 (64 k_slices, exceeding 32-lane SIMD
-// width). Exercises shared-memory reduction path across all backends.
+// width). Exercises v_tile=2, k_threads=16, k_rounds=4 in the subgroup shuffle
+// shader (or shared-memory reduction on backends without wave32 shuffle).
 TEST(GatedDeltaUpdateGpuTest, HeadDimension256) {
   RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/256, /*D_v=*/256);
 }
@@ -368,8 +371,7 @@ TEST(GatedDeltaUpdateGpuTest, RejectNonPowerOfTwoHeadDimension384) {
                                  /*D_v=*/384);
 }
 
-// 16. Multi-batch test with large head dimension 256 (exercising shared-memory
-// reduction path with B > 1).
+// 16. Multi-batch test with large head dimension 256 (B > 1).
 TEST(GatedDeltaUpdateGpuTest, MultiBatchHeadDimension256) {
   RunGatedDeltaUpdateTest(/*B=*/2, /*H=*/2, /*N=*/2, /*D_k=*/256, /*D_v=*/256);
 }
@@ -399,7 +401,7 @@ TEST(GatedDeltaUpdateGpuTest, Qwen27BLinearAttentionDecode) {
                           /*use_fp32=*/true, /*H_k=*/16);
 }
 
-// 20. GQA Ratio 4 with large head dimension D_k = 256 (shared-memory path).
+// 20. GQA Ratio 4 with large head dimension D_k = 256.
 TEST(GatedDeltaUpdateGpuTest, GqaRatio4SharedMemReductionD256) {
   RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/8, /*N=*/4, /*D_k=*/256, /*D_v=*/256,
                           /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
@@ -420,6 +422,122 @@ TEST(GatedDeltaUpdateGpuTest, GqaMultiQueryAttentionMqa) {
 TEST(GatedDeltaUpdateGpuTest, RejectInvalidGqaHeadRatio) {
   ExpectGatedDeltaUpdateRejected(/*B=*/1, /*H=*/6, /*N=*/2, /*D_k=*/16,
                                  /*D_v=*/16, /*H_k=*/4);
+}
+
+// 24. Asymmetric D_k < D_v with large value dimension: (D_k=64, D_v=256) and
+// (D_k=128, D_v=256) (2x value expansion, v_tile=4, k_rounds=4).
+TEST(GatedDeltaUpdateGpuTest, AsymmetricLargeValueDim64x256And128x256) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/64, /*D_v=*/256,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/128, /*D_v=*/256,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 25. Asymmetric D_k > D_v with minimum value dimension D_v = 16 across
+// v_tile = 4 (D_k=128), v_tile = 2 (D_k=256), and v_tile = 1 (D_k=512).
+TEST(GatedDeltaUpdateGpuTest, AsymmetricSmallValueDim16AcrossVTiles) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/128, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/256, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/512, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 26. D_k = 256 with FP16 precision and asymmetric D_v = 512 (v_tile = 2,
+// k_threads = 16, k_rounds = 4, k_load_chunks = 2).
+TEST(GatedDeltaUpdateGpuTest, HeadDimension256FP16AndAsymmetric512) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/256, /*D_v=*/256,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/2e-2,
+                          /*use_fp32=*/false);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/256, /*D_v=*/512,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 27. Head dimension D_k = 512 (128 k_slices): exercises v_tile = 1,
+// k_threads = 32, k_rounds = 4, k_load_chunks = 4 in the subgroup shuffle
+// shader while keeping per-thread recurrent state bounded to 16 float4
+// registers (tested across D_v=128 FP32/FP16 and symmetric D_v=512).
+TEST(GatedDeltaUpdateGpuTest, HeadDimension512) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/512, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/1);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/512, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/2e-2,
+                          /*use_fp32=*/false, /*H_k=*/1);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/512, /*D_v=*/512,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 28. Head dimension D_k = 1024 (256 k_slices > kSubgroupSize * kMaxKRounds):
+// exercises the shared-memory fallback shader with work_group_size_x = 256 so
+// each thread holds only 1 round (4 float4 state registers).
+TEST(GatedDeltaUpdateGpuTest, HeadDimension1024SharedMemFallback) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/1024, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/1024, /*D_v=*/64,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 29. Explicitly exercises the shared-memory fallback shader (mode = 2) on
+// D_k <= 512 even when the GPU supports Wave32Vec4Shuffle: covers both the
+// specialized q_slices == 32 (D_k = 128) 2-barrier quarter-folding reduction
+// (FP32 and FP16) and the general power-of-2 tree reduction (D_k = 64, 256,
+// 512 with GQA).
+TEST(GatedDeltaUpdateGpuTest, SharedMemFallbackAcrossHeadDimensions) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/64, /*D_v=*/64,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/-1,
+                          /*force_shared_mem=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/3, /*N=*/4, /*D_k=*/128, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/1,
+                          /*force_shared_mem=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/128, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/2e-2,
+                          /*use_fp32=*/false, /*H_k=*/-1,
+                          /*force_shared_mem=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/256, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/1,
+                          /*force_shared_mem=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/512, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/1,
+                          /*force_shared_mem=*/true);
+}
+
+// 30. Excessive head dimension D_k = 2048 (512 k_slices >
+// kMaxSharedMemWorkGroupSize) must be rejected.
+TEST(GatedDeltaUpdateGpuTest, RejectExcessiveHeadDimension2048) {
+  ExpectGatedDeltaUpdateRejected(/*B=*/1, /*H=*/1, /*N=*/1, /*D_k=*/2048,
+                                 /*D_v=*/64);
 }
 
 }  // namespace

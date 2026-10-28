@@ -14,6 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -213,7 +214,68 @@ cc_test(
         "//tensor/internal:compile",
         "//tensor/utils:matchers",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:precision",
+    ],
+)
+
+# ML Drift over Metal (macOS / iOS). Apple platforms only; the header needs
+# Objective-C++ (use `compiled_ml_drift_metal_model_runner` from C++).
+objc_library(
+    name = "ml_drift_metal_model_runner",
+    srcs = ["ml_drift_metal_model_runner.mm"],
+    hdrs = ["ml_drift_metal_model_runner.h"],
+    # Required to prevent build errors when this target is reachable from the
+    # deps of a Swift target.
+    aspect_hints = ["//tools/build_defs/swift:no_module"],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
+        # Dependency placeholder: apple_frameworks Metal,
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:profiling_info",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/metal:environment",
+        "@ml_drift//ml_drift/metal:inference_context",
+        "@ml_drift//ml_drift/metal:metal_spatial_tensor",
+        "//tensor:buffer",
+        "//tensor/utils:macros",
+    ],
+)
+
+# C++ facade over `CompiledMlDriftModelRunner<MlDriftMetalBackend>` (Apple
+# platforms only).
+objc_library(
+    name = "compiled_ml_drift_metal_model_runner",
+    srcs = ["compiled_ml_drift_metal_model_runner.mm"],
+    hdrs = ["compiled_ml_drift_metal_model_runner.h"],
+    aspect_hints = ["//tools/build_defs/swift:no_module"],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":compiled_ml_drift_model_runner",
+        ":ml_drift_metal_model_runner",
+        "//tensor",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/time",
         "@ml_drift//ml_drift/common:precision",
     ],
 )

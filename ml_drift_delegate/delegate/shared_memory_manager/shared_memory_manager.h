@@ -248,9 +248,12 @@ class SharedMemoryManager {
   // Creates the GPU tensor for a moe_experts block-scale input
   // ([out_channels, experts, 1, blocks_per_row], float) that is shared across
   // subgraphs: the scales are converted once to the layout the moe_experts
-  // kernel expects and the graph value is updated to that shape/type.
+  // kernel expects and the graph value is updated to that shape/type. The
+  // converted scales go through the serialization cache under
+  // `global_tensor_id`, like the quantized weights.
   absl::Status CreateMoeExpertsBlockScaleTensor(
-      const ValueId& shared_tensor_id, const TfLiteTensor& tensor,
+      const ValueId& shared_tensor_id, uint32_t global_tensor_id,
+      const TfLiteTensor& tensor,
       std::unique_ptr<GpuSpatialTensor>& gpu_spatial_tensor);
 
   // Tries to create a GpuSpatialTensor from a device buffer. This is only
@@ -288,9 +291,11 @@ class SharedMemoryManager {
       const ::litert::ml_drift::SharedTfliteTensor& shared_tflite_tensor);
 
   // If the tensor was prepacked and serialized previously in the
-  // serialization_cache_, restore it from the serialized data.
-  absl::Status TryRestoringSerializedTensor(uint32_t global_tensor_id,
-                                            SharedConstTensor& shared_tensor);
+  // serialization_cache_, restore it from the serialized data into
+  // `gpu_spatial_tensor`.
+  absl::Status TryRestoringSerializedTensor(
+      uint32_t global_tensor_id,
+      std::unique_ptr<GpuSpatialTensor>& gpu_spatial_tensor);
 
   // If serialization is enabled, store the serialized tensor descriptor.
   absl::Status TryStoringSerializedTensor(uint32_t global_tensor_id,

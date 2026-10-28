@@ -69,6 +69,7 @@ cc_library(
         "@com_google_absl//absl/base:nullability",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:optional_ref",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_any",
@@ -81,6 +82,7 @@ cc_library(
         "//litert/c/options:litert_google_tensor_options_type",
         # copybara:uncomment "//litert/c/options/google:litert_google_tensor_privileged_options_type",
         "//litert/cc:litert_environment_options",
+        "//litert/cc/internal:litert_dispatch_delegate_vendor_options",
         "//litert/vendors/c:litert_dispatch_c_api",
     ],
 )
@@ -148,6 +150,7 @@ litert_dispatch_api(
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_any",
@@ -168,6 +171,7 @@ litert_dispatch_api(
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_dispatch_delegate_vendor_options",
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
@@ -312,14 +316,40 @@ cc_library(
 #     ],
 # )
 #
+# cc_test(
+#     name = "dispatch_api_utils_test",
+#     srcs = ["dispatch_api_utils_test.cc"],
+#     data = [
+#         ":dispatch_api_so",
+#         "//third_party/darwinn/litert/dispatch:libedgetpu_litert.so",
+#     ],
+#     deps = [
+#         ":dispatch_api_headers",
+#         ":dispatch_api_static",
+#         ":dispatch_api_test_fixtures",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@com_google_absl//absl/types:optional_ref",
+#         "//litert/c:litert_options",
+#         "//litert/c/internal:litert_runtime_context_testonly",
+#         "//litert/cc:litert_environment",
+#         "//litert/cc:litert_opaque_options",
+#         "//litert/cc:litert_options",
+#         "//litert/cc/internal:litert_dispatch_delegate_vendor_options",
+#         "//litert/cc/options:litert_google_tensor_options",
+#         "//litert/test:matchers",
+#         "//litert/vendors/c:litert_dispatch_c_api",
+#     ],
+# )
+#
 # copybara:uncomment_end
 
 sh_test(
     name = "google_tensor_dispatch_so_symbol_test",
     srcs = ["//litert/test:litert_c_api_dependency_test.sh"],
     args = [
-        "LiteRtDispatchGetApi",
-        "$(location :dispatch_api_so)",
+        "LiteRtDispatchQueryInterface",
+        "$(rootpath :dispatch_api_so)",
     ],
     data = [
         ":dispatch_api_so",

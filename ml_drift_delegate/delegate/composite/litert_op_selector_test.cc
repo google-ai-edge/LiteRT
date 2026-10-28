@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/delegate/composite/litert_op_selector.h"
 
+#include <string>
 #include <vector>
 
 #include "testing/base/public/gmock.h"
@@ -34,6 +35,7 @@
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
+#include "ml_drift_delegate/delegate/composite/short_conv_step_parser.h"
 
 namespace litert::ml_drift {
 namespace {
@@ -58,17 +60,24 @@ using ::ml_drift::TensorStorageType;
 using ::ml_drift::Value;
 using ::ml_drift::ValueId;
 using ::ml_drift::WeightsLayout;
+using ::testing::HasSubstr;
+using ::testing::Not;
 
 GpuInfo GetTestGpuInfo() {
   GpuInfo gpu_info;
   gpu_info.gpu_api = GpuApi::kOpenCl;
   gpu_info.opencl_info.supports_fp16 = true;
   gpu_info.opencl_info.supports_images = true;
+  gpu_info.opencl_info.compute_units_count = 4;
   gpu_info.opencl_info.max_allocation_size = 256 * 1024 * 1024;
   gpu_info.opencl_info.buffer_max_size = 256 * 1024 * 1024;
   gpu_info.opencl_info.image2d_max_width = 16384;
   gpu_info.opencl_info.image2d_max_height = 16384;
   gpu_info.opencl_info.image_buffer_max_size = 65536;
+  gpu_info.opencl_info.max_work_group_size_x = 256;
+  gpu_info.opencl_info.max_work_group_size_y = 256;
+  gpu_info.opencl_info.max_work_group_size_z = 256;
+  gpu_info.opencl_info.max_work_group_total_size = 256;
   for (auto type : {DataType::kFloat32, DataType::kFloat16, DataType::kInt32}) {
     gpu_info.opencl_info.supported_images_2d.r_layout.insert(type);
     gpu_info.opencl_info.supported_images_2d.rg_layout.insert(type);
@@ -390,6 +399,195 @@ TEST(LiteRtOpSelectorTest,
     }
   }
   EXPECT_TRUE(found_cache_node);
+}
+
+TEST(LiteRtOpSelectorTest, ShortConvStepAllOptionCombinationsAndConvLengths) {
+  const GpuInfo gpu_info = GetTestGpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kTexture2D;
+
+  constexpr int kHiddenSize = 6144;
+  for (int filter_size : {2, 3, 4}) {
+    const int state_cache_size = filter_size - 1;
+    for (bool is_gated : {false, true}) {
+      for (bool use_silu : {false, true}) {
+        GpuModelBuilderOptions options;
+        options.storage = TensorStorageType::kTexture2D;
+        GpuModelBuilder builder(gpu_info, options);
+
+        const int in_channels = is_gated ? (3 * kHiddenSize) : kHiddenSize;
+        TensorDescriptor in_proj_desc(
+            DataType::kFloat32, TensorStorageType::kTexture2D, Layout::kHWC);
+        in_proj_desc.SetBHWCShape(BHWC(1, 1, 1, in_channels));
+        TensorDescriptor conv_weight_desc(
+            DataType::kFloat32, TensorStorageType::kTexture2D, Layout::kHWC);
+        conv_weight_desc.SetBHWCShape(BHWC(1, 1, kHiddenSize, filter_size));
+        TensorDescriptor out_desc(
+            DataType::kFloat32, TensorStorageType::kTexture2D, Layout::kHWC);
+        out_desc.SetBHWCShape(BHWC(1, 1, 1, kHiddenSize));
+        TensorDescriptor next_state_desc(
+            DataType::kFloat32, TensorStorageType::kBuffer, Layout::kHWC);
+        next_state_desc.SetBHWCShape(BHWC(1, 1, kHiddenSize, state_cache_size));
+
+        auto in_proj = builder.AddTensor(in_proj_desc);
+        auto conv_weight = builder.AddTensor(conv_weight_desc);
+        auto out = builder.AddTensor(out_desc);
+        auto next_state = builder.AddTensor(next_state_desc);
+
+        Value v_in_proj{
+            in_proj.id, {DataType::kFloat32, BHWC(1, 1, 1, in_channels)}};
+        Value v_conv_weight{
+            conv_weight.id,
+            {DataType::kFloat32, BHWC(1, 1, kHiddenSize, filter_size)}};
+        Value v_out{out.id, {DataType::kFloat32, BHWC(1, 1, 1, kHiddenSize)}};
+        Value v_next_state{
+            next_state.id,
+            {DataType::kFloat32, BHWC(1, 1, kHiddenSize, state_cache_size)}};
+
+        OperationDef op_def;
+        op_def.src_tensors = {in_proj.tensor_desc, conv_weight.tensor_desc};
+        op_def.dst_tensors = {out.tensor_desc, next_state.tensor_desc};
+
+        GraphFloat32 graph;
+        Node* conv_node = graph.NewNode();
+        conv_node->operation.type = kShortConvStepType;
+        ShortConvStepAttributes attr;
+        attr.conv_L_cache = filter_size;
+        attr.is_gated = is_gated;
+        attr.use_silu = use_silu;
+        conv_node->operation.attributes = attr;
+
+        LiteRtOpSelector selector(&create_info, &gpu_info);
+        ASSERT_OK(selector.GPUOperationFromNode(
+            op_def, {&v_in_proj, &v_conv_weight}, {&v_out, &v_next_state},
+            *conv_node, &builder));
+
+        GpuModel gpu_model;
+        ASSERT_OK(builder.GetGpuModel({in_proj.id, conv_weight.id},
+                                      {out.id, next_state.id}, &gpu_model));
+
+        ASSERT_EQ(gpu_model.nodes.size(), 1);
+        EXPECT_EQ(gpu_model.nodes[0].name, "short_conv_step");
+        const std::string& code = gpu_model.nodes[0].gpu_operation->code_;
+        EXPECT_THAT(code,
+                    HasSubstr("convert_float4(args.state_in_out_buffer["));
+        EXPECT_THAT(
+            code,
+            HasSubstr("acc0 += wt" + std::to_string(filter_size - 1) +
+                      " * bx0;"));
+        if (is_gated) {
+          EXPECT_THAT(code, HasSubstr("S + 2 * args.num_slices"));
+          EXPECT_THAT(code, HasSubstr("S + args.num_slices"));
+        } else {
+          EXPECT_THAT(code, Not(HasSubstr("args.num_slices")));
+        }
+        if (use_silu) {
+          EXPECT_THAT(code, HasSubstr("exp(-acc0)"));
+        } else {
+          EXPECT_THAT(code, Not(HasSubstr("exp(-acc0)")));
+        }
+        EXPECT_THAT(
+            code,
+            HasSubstr(
+                "args.state_in_out_buffer[(((0) * args.state_in_out_height "
+                "+ (0)) * args.state_in_out_width + (4 * S + 0))] ="));
+      }
+    }
+  }
+}
+
+TEST(LiteRtOpSelectorTest, ScaledDotProductAttentionUsesFlashSdpaKernel) {
+  const GpuInfo gpu_info = GetTestGpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
+
+  GpuModelBuilderOptions options;
+  options.storage = TensorStorageType::kBuffer;
+  GpuModelBuilder builder(gpu_info, options);
+
+  TensorDescriptor desc(DataType::kFloat16, TensorStorageType::kBuffer,
+                        Layout::kHWC);
+  desc.SetBHWCShape(BHWC(1, 10080, 12, 64));
+  auto q = builder.AddTensor(desc);
+  auto k = builder.AddTensor(desc);
+  auto v = builder.AddTensor(desc);
+  auto out = builder.AddTensor(desc);
+
+  Value v_q{q.id, {DataType::kFloat16, BHWC(1, 10080, 12, 64)}};
+  Value v_k{k.id, {DataType::kFloat16, BHWC(1, 10080, 12, 64)}};
+  Value v_v{v.id, {DataType::kFloat16, BHWC(1, 10080, 12, 64)}};
+  Value v_out{out.id, {DataType::kFloat16, BHWC(1, 10080, 12, 64)}};
+
+  OperationDef op_def;
+  op_def.src_tensors = {q.tensor_desc, k.tensor_desc, v.tensor_desc};
+  op_def.dst_tensors = {out.tensor_desc};
+
+  GraphFloat32 graph;
+  Node* sdpa_node = graph.NewNode();
+  sdpa_node->operation.type =
+      ToString(::ml_drift::OperationType::kScaledDotProductAttention);
+  ::ml_drift::ScaledDotProductAttentionAttributes attr;
+  attr.scale = 0.125f;
+  sdpa_node->operation.attributes = attr;
+
+  LiteRtOpSelector selector(&create_info, &gpu_info);
+  ASSERT_OK(selector.GPUOperationFromNode(op_def, {&v_q, &v_k, &v_v}, {&v_out},
+                                          *sdpa_node, &builder));
+
+  GpuModel gpu_model;
+  ASSERT_OK(builder.GetGpuModel({q.id, k.id, v.id}, {out.id}, &gpu_model));
+  ASSERT_EQ(gpu_model.nodes.size(), 5);
+  EXPECT_EQ(gpu_model.nodes[3].name, "flash_sdpa");
+}
+
+TEST(LiteRtOpSelectorTest,
+     ScaledDotProductAttentionFallsBackWhenUnsupported) {
+  const GpuInfo gpu_info = GetTestGpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
+
+  GpuModelBuilderOptions options;
+  options.storage = TensorStorageType::kBuffer;
+  GpuModelBuilder builder(gpu_info, options);
+
+  TensorDescriptor desc(DataType::kFloat16, TensorStorageType::kBuffer,
+                        Layout::kHWC);
+  desc.SetBHWCShape(BHWC(1, 64, 8, 256));
+  auto q = builder.AddTensor(desc);
+  auto k = builder.AddTensor(desc);
+  auto v = builder.AddTensor(desc);
+  auto out = builder.AddTensor(desc);
+
+  Value v_q{q.id, {DataType::kFloat16, BHWC(1, 64, 8, 256)}};
+  Value v_k{k.id, {DataType::kFloat16, BHWC(1, 64, 8, 256)}};
+  Value v_v{v.id, {DataType::kFloat16, BHWC(1, 64, 8, 256)}};
+  Value v_out{out.id, {DataType::kFloat16, BHWC(1, 64, 8, 256)}};
+
+  OperationDef op_def;
+  op_def.src_tensors = {q.tensor_desc, k.tensor_desc, v.tensor_desc};
+  op_def.dst_tensors = {out.tensor_desc};
+
+  GraphFloat32 graph;
+  Node* sdpa_node = graph.NewNode();
+  sdpa_node->operation.type =
+      ToString(::ml_drift::OperationType::kScaledDotProductAttention);
+  ::ml_drift::ScaledDotProductAttentionAttributes attr;
+  attr.scale = 0.0625f;
+  sdpa_node->operation.attributes = attr;
+
+  LiteRtOpSelector selector(&create_info, &gpu_info);
+  ASSERT_OK(selector.GPUOperationFromNode(op_def, {&v_q, &v_k, &v_v}, {&v_out},
+                                          *sdpa_node, &builder));
+
+  GpuModel gpu_model;
+  ASSERT_OK(builder.GetGpuModel({q.id, k.id, v.id}, {out.id}, &gpu_model));
+  EXPECT_FALSE(gpu_model.nodes.empty());
+  for (const auto& node : gpu_model.nodes) {
+    EXPECT_NE(node.name, "flash_sdpa");
+  }
 }
 }  // namespace
 }  // namespace litert::ml_drift

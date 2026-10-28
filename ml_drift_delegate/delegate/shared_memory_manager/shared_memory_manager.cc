@@ -19,11 +19,7 @@
 #include <cstdlib>
 
 #include "fp16/fp16.h"  // from @FP16
-#include "ml_drift/common/kernels/conv_apple_mpp.h"  // from @ml_drift
-#include "ml_drift/common/kernels/conv_generic.h"  // from @ml_drift
-#include "ml_drift/common/kernels/conv_wave_matrix.h"  // from @ml_drift
-#include "ml_drift/common/kernels/conv_wave_matrix_mali.h"  // from @ml_drift
-#include "ml_drift/common/kernels/conv_wave_memory.h"  // from @ml_drift
+#include "ml_drift/common/selectors/convolution_selector.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
 
 #if defined(_WIN32)
@@ -121,14 +117,7 @@ bool IsConvInt8Supported(const CreateGpuModelInfo& create_info,
     return false;
   }
 
-  // TODO(sulemanshahid): Add support for int4 src quantization.
-  bool supports_conv_apple_mpp = SupportsConvAppleMPP(gpu_info);
-
-  return supports_conv_apple_mpp ||
-         SupportsConvWaveMatrixMaliInt8(gpu_info, src_shape) ||
-         SupportsConvWaveMemoryInt8(gpu_info) ||
-         SupportsConvGenericInt8(gpu_info) ||
-         SupportsConvWaveMatrixInt8(gpu_info, OHWI(32, 1, 1, src_shape.c));
+  return SupportsConvolutionInt8(gpu_info, src_shape);
 }
 
 // Check if the convolution int8 kernel is recommended for the computation of
@@ -513,7 +502,8 @@ SharedMemoryManager::SharedMemoryManager(
 }
 
 absl::Status SharedMemoryManager::TryRestoringSerializedTensor(
-    const uint32_t global_tensor_id, SharedConstTensor& shared_tensor) {
+    const uint32_t global_tensor_id,
+    std::unique_ptr<GpuSpatialTensor>& gpu_spatial_tensor) {
   if (!serialization_cache_) {
     return absl::FailedPreconditionError("Serialization is not supported.");
   }
@@ -538,7 +528,7 @@ absl::Status SharedMemoryManager::TryRestoringSerializedTensor(
   // the serialized data.
   return create_tensor_func_(tensor_desc, page_adjusted_offset,
                              std::move(release_data_callback),
-                             shared_tensor.weights);
+                             gpu_spatial_tensor);
 }
 
 absl::Status SharedMemoryManager::TryStoringSerializedTensor(
@@ -565,13 +555,25 @@ absl::Status SharedMemoryManager::CreateQuantizedInt8WeightsTensor(
       gpu_info_, shape,
       create_info_.hints.Check(ModelHints::kPreferTextureWeights));
 
+  // WebGPU binds the packed weights as one storage buffer.
+  if (gpu_info_.IsApiWebGpu()) {
+    const TensorDescriptor packed_desc =
+        GetTensorDescriptorsForWeightsLayout(shape, weights_desc)[0];
+    ABSL_RETURN_IF_ERROR(packed_desc.CanCreateTensorWithShape(
+        gpu_info_, packed_desc.GetBHWDCShape()))
+        << "INT8 weights tensor " << shared_tensor_id << " with shape ["
+        << shape.o << ", " << shape.h << ", " << shape.w << ", " << shape.i
+        << "] is not supported on this WebGPU device.";
+  }
+
   // ML Drift's optimal performance requires the weights to be arranged in a
   // certain layout, which is typically different from TFL flatbuffer's weight
   // layouts.
   // If the packed weight tensor was serialized previously, restore from it
   // directly.
   bool serialized_tensor_found =
-      TryRestoringSerializedTensor(global_tensor_id, shared_tensor).ok();
+      TryRestoringSerializedTensor(global_tensor_id, shared_tensor.weights)
+          .ok();
   if (!serialized_tensor_found) {
     if (has_prepacked_tflite_tensors_) {
       // If the tflite tensor is prepacked, restore from it directly.
@@ -634,7 +636,8 @@ absl::Status SharedMemoryManager::CreateQuantizedInt4WeightsTensor(
 
   // If the tensor was serialized previously, restore from it directly.
   bool serialized_tensor_found =
-      TryRestoringSerializedTensor(global_tensor_id, shared_tensor).ok();
+      TryRestoringSerializedTensor(global_tensor_id, shared_tensor.weights)
+          .ok();
   if (!serialized_tensor_found) {
     if (has_prepacked_tflite_tensors_) {
       // If the tflite tensor is prepacked, restore from it directly.
@@ -710,7 +713,8 @@ absl::Status SharedMemoryManager::CreateQuantizedInt2WeightsTensor(
 
   // If the tensor was serialized previously, restore from it directly.
   bool serialized_tensor_found =
-      TryRestoringSerializedTensor(global_tensor_id, shared_tensor).ok();
+      TryRestoringSerializedTensor(global_tensor_id, shared_tensor.weights)
+          .ok();
   if (!serialized_tensor_found) {
     if (has_prepacked_tflite_tensors_) {
       // If the tflite tensor is prepacked, restore from it directly.
@@ -1453,8 +1457,9 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
   ABSL_RETURN_IF_ERROR(MaybeBindTensorData(shared_tflite_tensor, tensor));
   if (IsMoeExpertsBlockScales(*graph_adapter_, shared_tensor_id, tensor) &&
       !shared_tflite_tensor.dequant_forced) {
-    return CreateMoeExpertsBlockScaleTensor(shared_tensor_id, tensor,
-                                            gpu_spatial_tensor);
+    return CreateMoeExpertsBlockScaleTensor(shared_tensor_id,
+                                            shared_tflite_tensor.global_id,
+                                            tensor, gpu_spatial_tensor);
   }
   if ((tensor.quantization.type ==
            TfLiteQuantizationType::kTfLiteAffineQuantization ||
@@ -1520,7 +1525,8 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
 }
 
 absl::Status SharedMemoryManager::CreateMoeExpertsBlockScaleTensor(
-    const ValueId& shared_tensor_id, const TfLiteTensor& tensor,
+    const ValueId& shared_tensor_id, const uint32_t global_tensor_id,
+    const TfLiteTensor& tensor,
     std::unique_ptr<GpuSpatialTensor>& gpu_spatial_tensor) {
   // The scale tensor is [out_channels, experts, 1, blocks_per_row]; it is
   // converted to the same GPU layout the moe_experts kernel builds for
@@ -1531,6 +1537,26 @@ absl::Status SharedMemoryManager::CreateMoeExpertsBlockScaleTensor(
         "moe_experts block scales must be 4-D [out_channels, experts, 1, "
         "blocks].");
   }
+
+  // Like the quantized weights, restore the converted scales from the
+  // serialization cache when they were stored there before, so they are not
+  // converted on the CPU at every initialization. On Apple platforms the cached
+  // data is mapped into the GPU tensor without a copy, so the scales are also
+  // not charged to the process footprint; on other platforms it is uploaded
+  // into a GPU-owned tensor (see TryRestoringSerializedTensor).
+  //
+  // The scales are a regular constant tensor (their own TFLite buffer), so the
+  // cache entry is keyed by that buffer's global id in the source-tensor id
+  // space, like any other weight, and cannot collide with the quantization
+  // parameter ids (is_quantization_param_tensor = true).
+  if (TryRestoringSerializedTensor(global_tensor_id, gpu_spatial_tensor).ok()) {
+    const TensorDescriptor& restored_desc = gpu_spatial_tensor->GetDescriptor();
+    graph_adapter_->SetValueShapeAndType(shared_tensor_id,
+                                         restored_desc.GetBHWCShape(),
+                                         restored_desc.GetDataType());
+    return absl::OkStatus();
+  }
+
   Tensor<OHWI, DataType::kFloat32> scales;
   scales.shape = OHWI(tensor.dims->data[0], tensor.dims->data[1],
                       tensor.dims->data[2], tensor.dims->data[3]);
@@ -1572,9 +1598,13 @@ absl::Status SharedMemoryManager::CreateMoeExpertsBlockScaleTensor(
       ScaleOrZeroPointToTensorDesc(gpu_info_, scales, data_type);
   graph_adapter_->SetValueShapeAndType(
       shared_tensor_id, tensor_desc.GetBHWCShape(), tensor_desc.GetDataType());
-  return create_tensor_func_(tensor_desc, /*page_adjusted_offset=*/0,
-                             /*release_data_callback=*/nullptr,
-                             gpu_spatial_tensor);
+  ABSL_RETURN_IF_ERROR(create_tensor_func_(tensor_desc,
+                                           /*page_adjusted_offset=*/0,
+                                           /*release_data_callback=*/nullptr,
+                                           gpu_spatial_tensor));
+
+  // If serialization is enabled, store the converted scales.
+  return TryStoringSerializedTensor(global_tensor_id, tensor_desc);
 }
 
 absl::Status SharedMemoryManager::TryCreateTensorFromDeviceBuffer(

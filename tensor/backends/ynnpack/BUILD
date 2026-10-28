@@ -92,16 +92,15 @@ cc_library(
 )
 
 cc_test(
-    name = "arithmetic_test",
-    srcs = ["arithmetic_test.cc"],
+    name = "ynnpack_conversion_numerical_test",
+    srcs = ["ynnpack_conversion_numerical_test.cc"],
     deps = [
         ":arithmetic",
         "//tensor",
-        "//tensor:arithmetic",
-        "//tensor:buffer",
-        "//tensor:datatypes",
+        "//tensor/backends/testing:numerical_test_suite",
         "//tensor/runners/ynnpack:runner",
-        "//tensor/utils:matchers",
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",

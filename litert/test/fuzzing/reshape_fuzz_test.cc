@@ -15,7 +15,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#if !defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
 #include <limits>
+#endif
 #include <memory>
 #include <utility>
 #include <vector>
@@ -26,13 +28,16 @@
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "litert/test/fuzzing/fuzzing_util.h"
 #include "litert/test/fuzzing/one_op_fuzz_model.h"
-#include "tflite/array.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
 #include "tflite/kernels/builtin_op_kernels.h"
+#include "tflite/schema/schema_generated.h"
+
+#if !defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
+#include "tflite/array.h"
 #include "tflite/kernels/internal/reshape_utils.h"
 #include "tflite/kernels/internal/runtime_shape.h"
-#include "tflite/schema/schema_generated.h"
+#endif
 
 #if defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
@@ -75,6 +80,7 @@ struct ReshapeShapeCase {
 constexpr size_t kMaxInputElements = 512;
 constexpr size_t kMaxLiveAllocationBytes = 64 * 1024 * 1024;
 
+#if !defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
 void SilentReportError(TfLiteContext*, const char*, ...) {}
 
 TfLiteContext MakeSilentContext() {
@@ -102,6 +108,7 @@ bool CheckedElementCount(const std::vector<int>& shape, size_t& count) {
   count = result;
   return true;
 }
+#endif  // !defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
 
 bool IsSupportedInputType(TensorType type) {
   switch (type) {
@@ -264,6 +271,7 @@ RunResult RunReshapeCase(
   return fuzzing::BuildAndRunOneOpModel(&builder, model_spec, run_spec);
 }
 
+#if !defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
 TfLiteStatus ResolveReshapeShapeCase(const ReshapeShapeCase& test_case,
                                      std::vector<int>& resolved_shape) {
   TfLiteContext context = MakeSilentContext();
@@ -343,6 +351,7 @@ auto InvalidReshapeElementCountCaseDomain() {
                                           ShapeSpecKind::kConstantTensor,
                                           ShapeSpecKind::kDynamicTensor}));
 }
+#endif  // !defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
 
 #if defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
 auto XnnpackReshapeCaseDomain() {
@@ -384,6 +393,7 @@ auto XnnpackReshapeCaseDomain() {
 }
 #endif
 
+#if !defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
 auto ValidReshapeShapeCaseDomain() {
   return fuzztest::Map(
       [](std::vector<int> input_shape, uint8_t target_kind) {
@@ -517,6 +527,7 @@ FUZZ_TEST(ReshapeShapeResolverFuzzTest, ReshapeShapeResolverAcceptsValidCases)
 FUZZ_TEST(ReshapeShapeResolverFuzzTest,
           ReshapeShapeResolverRejectsMismatchedElementCount)
     .WithDomains(InvalidReshapeShapeCaseDomain());
+#endif  // !defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
 
 #if defined(TFLITE_RESHAPE_FUZZ_ENABLE_XNNPACK)
 TEST(ReshapeFuzzTest, ReshapeXnnpackRankSixSmokeDelegates) {

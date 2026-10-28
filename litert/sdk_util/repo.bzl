@@ -19,6 +19,8 @@ load(
     "get_auth",
 )
 
+_MAX_DOWNLOAD_ATTEMPTS = 3
+
 def _get_path(ctx, s):
     """Turns string into path, ensuring its valid."""
     path = ctx.workspace_root.get_child(s)
@@ -27,6 +29,33 @@ def _get_path(ctx, s):
             ("local_path path is \"%s\" (absolute: \"%s\") but it does not exist.") % (s, path),
         )
     return path
+
+def _download_and_extract_with_retries(ctx, url, strip_prefix, file_type):
+    """Downloads and extracts an archive, retrying on transient download failures.
+
+    Vendor SDK archives can be several GB and are served by hosts that do not
+    support HTTP range requests, so Bazel cannot resume a connection that is
+    dropped mid-download (it fails with a ContentLengthMismatchException).
+    Retry the whole download a few times before giving up.
+    """
+    for attempt in range(1, _MAX_DOWNLOAD_ATTEMPTS + 1):
+        result = ctx.download_and_extract(
+            url = url,
+            auth = get_auth(ctx, [url]),
+            stripPrefix = strip_prefix,
+            type = file_type,
+            allow_fail = True,
+        )
+        if result.success:
+            return
+        if attempt < _MAX_DOWNLOAD_ATTEMPTS:
+            # buildifier: disable=print
+            print("Download of %s failed (attempt %d of %d), retrying..." % (
+                url,
+                attempt,
+                _MAX_DOWNLOAD_ATTEMPTS,
+            ))
+    fail("Failed to download %s after %d attempts." % (url, _MAX_DOWNLOAD_ATTEMPTS))
 
 def _prepare_repo_files(ctx):
     if ctx.attr.local_path_env and ctx.getenv(ctx.attr.local_path_env, None):
@@ -74,12 +103,7 @@ def _prepare_repo_files(ctx):
             if not url:
                 fail("Each package must have a 'url' field")
 
-            ctx.download_and_extract(
-                url = url,
-                auth = get_auth(ctx, [url]),
-                stripPrefix = strip_prefix,
-                type = file_type,
-            )
+            _download_and_extract_with_retries(ctx, url, strip_prefix, file_type)
 
             # Apply package-specific symlink mappings
             symlink_mapping = package.get("symlink_mapping", {})
@@ -93,12 +117,7 @@ def _prepare_repo_files(ctx):
         file_type = "tar.gz"  # MTK gives us .gz instead of .tar.gz
         if ctx.attr.file_extension:
             file_type = ctx.attr.file_extension
-        ctx.download_and_extract(
-            url = ctx.attr.url,
-            auth = get_auth(ctx, [ctx.attr.url]),
-            stripPrefix = ctx.attr.strip_prefix,
-            type = file_type,
-        )
+        _download_and_extract_with_retries(ctx, ctx.attr.url, ctx.attr.strip_prefix, file_type)
 
     if ctx.attr.symlink_mapping:
         for dst, src in ctx.attr.symlink_mapping.items():

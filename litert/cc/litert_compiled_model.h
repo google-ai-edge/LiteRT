@@ -1173,6 +1173,47 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return metrics;
   }
 
+  /// @brief Registers `buffer` with the NPU of this compiled model, so that
+  /// runs reuse the registration whichever tensors the buffer is bound to.
+  ///
+  /// Registrations are counted: the buffer stays registered until
+  /// `UnregisterBuffer()` is called as many times, or this compiled model is
+  /// destroyed. See `LiteRtCompiledModelRegisterTensorBuffer()` for details.
+  /// @note Thread safety: this method must not be called concurrently with
+  /// other methods on this compiled model (such as `Run()` or `RunAsync()`).
+  Expected<void> RegisterBuffer(const TensorBuffer& buffer) const {
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->CompiledModelRegisterTensorBuffer(Get(), buffer.Get()));
+    return {};
+  }
+
+  /// @brief Releases a registration of `buffer` made by `RegisterBuffer()`.
+  ///
+  /// Once the buffer has been unregistered as many times as it was registered,
+  /// it is unregistered from the NPU right away, or once it is no longer bound
+  /// to an I/O tensor (from the latest run, until a subsequent run binds a
+  /// different buffer to that tensor) nor in use by an in-flight asynchronous
+  /// run started by `RunAsync()`. Does nothing if the buffer is not registered.
+  /// @note Thread safety: this method must not be called concurrently with
+  /// other methods on this compiled model (such as `Run()` or `RunAsync()`).
+  Expected<void> UnregisterBuffer(const TensorBuffer& buffer) const {
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->CompiledModelUnregisterTensorBuffer(Get(), buffer.Get()));
+    return {};
+  }
+
+  /// @brief Returns the duration of the last native inference in nanoseconds.
+  /// Returns -1 if no inference has been executed yet or if the last inference
+  /// failed.
+  /// @note When running asynchronously (`async == true`), output buffer
+  /// synchronization is bypassed, so the recorded duration reflects the host
+  /// dispatch latency rather than the full accelerator completion time.
+  Expected<int64_t> LastInferenceDurationNanoseconds() const {
+    int64_t duration = -1;
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->GetCompiledModelLastInferenceDuration(Get(), &duration));
+    return duration;
+  }
   /// @brief Sets a callback function that will be called after every node/op
   /// during model execution to check if the execution should be cancelled.
   ///

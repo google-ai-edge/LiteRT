@@ -15,6 +15,7 @@
 #include "litert/c/litert_compiled_model.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -230,10 +231,20 @@ TEST(CompiledModelTest, Basic) {
     LITERT_ASSERT_OK(LiteRtUnlockTensorBuffer(input_tensor_buffers[1]));
   }
 
+  int64_t duration = 0;
+  LiteRtCompiledModelConst const_compiled_model = compiled_model;
+  LITERT_ASSERT_OK(LiteRtGetCompiledModelLastInferenceDuration(
+      const_compiled_model, &duration));
+  EXPECT_EQ(duration, -1);
+
   LITERT_ASSERT_OK(LiteRtRunCompiledModel(
       compiled_model, /*signature_index=*/0, input_tensor_buffers.size(),
       input_tensor_buffers.data(), output_tensor_buffers.size(),
       output_tensor_buffers.data()));
+
+  LITERT_ASSERT_OK(LiteRtGetCompiledModelLastInferenceDuration(
+      const_compiled_model, &duration));
+  EXPECT_GT(duration, 0);
 
   {
     ABSL_LOG(INFO) << "Checking output...";
@@ -249,6 +260,16 @@ TEST(CompiledModelTest, Basic) {
     EXPECT_THAT(output, Pointwise(FloatNear(1e-3), kTestOutputTensor));
     LITERT_ASSERT_OK(LiteRtUnlockTensorBuffer(output_tensor_buffers[0]));
   }
+
+  // Verify that a failed run resets the duration to -1.
+  EXPECT_NE(LiteRtRunCompiledModel(
+                compiled_model, /*signature_index=*/0, /*num_input_buffers=*/0,
+                /*input_buffers=*/nullptr, output_tensor_buffers.size(),
+                output_tensor_buffers.data()),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK(LiteRtGetCompiledModelLastInferenceDuration(
+      const_compiled_model, &duration));
+  EXPECT_EQ(duration, -1);
 
   LiteRtDestroyCompiledModel(compiled_model);
   LiteRtDestroyModel(model);

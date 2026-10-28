@@ -55,7 +55,9 @@ cc_library(
     srcs = ["registration_helper.cc"],
     hdrs = ["registration_helper.h"],
     deps = [
+        ":accelerator_implementation_helper",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
         "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_accelerator_registration",
@@ -114,12 +116,6 @@ cc_library(
     name = "gpu_registry",
     srcs = ["gpu_registry.cc"],
     hdrs = ["gpu_registry.h"],
-    local_defines = select({
-        "//litert/build_common:android_gpu_enabled": [
-            "LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK",
-        ],
-        "//conditions:default": [],
-    }),
     deps = [
         ":gpu_static_registry",
         ":registration_helper",
@@ -131,12 +127,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/core:environment",
         "@com_google_absl//absl/strings:string_view",
-    ] + select({
-        "//litert/build_common:android_gpu_enabled": [
-            "//litert/runtime/accelerators/gpu/compatibility:ml_drift_compatibility",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 cc_library(

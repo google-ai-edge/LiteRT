@@ -243,6 +243,15 @@ TEST(QnnOptionTest, UseFoldReLU) {
   EXPECT_EQ(options.GetUseFoldReLU(), false);
 }
 
+TEST(QnnOptionTest, OpNameFormat) {
+  Options options;
+  EXPECT_EQ(options.GetOpNameFormat(), OpNameFormat::kBasic);
+  options.SetOpNameFormat(OpNameFormat::kDetailed);
+  EXPECT_EQ(options.GetOpNameFormat(), OpNameFormat::kDetailed);
+  options.SetOpNameFormat(OpNameFormat::kBasic);
+  EXPECT_EQ(options.GetOpNameFormat(), OpNameFormat::kBasic);
+}
+
 TEST(QnnOptionTest, HtpPPoint) {
   Options options;
   EXPECT_EQ(options.GetHtpPPoint(), 0);
@@ -322,6 +331,15 @@ TEST(QnnOptionTest, SetHtpDeviceId) {
   EXPECT_EQ(options.GetHtpDeviceId(), 1);
   options.SetHtpDeviceId(0);
   EXPECT_EQ(options.GetHtpDeviceId(), 0);
+}
+
+TEST(QnnOptionTest, SetHtpFileReadMemoryBudgetMB) {
+  Options options;
+  EXPECT_EQ(options.GetHtpFileReadMemoryBudgetMB(), 0);
+  options.SetHtpFileReadMemoryBudgetMB(16);
+  EXPECT_EQ(options.GetHtpFileReadMemoryBudgetMB(), 16);
+  options.SetHtpFileReadMemoryBudgetMB(0);
+  EXPECT_EQ(options.GetHtpFileReadMemoryBudgetMB(), 0);
 }
 
 TEST(QnnOptionTest, SetHvxThread) {
@@ -413,6 +431,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_FALSE(options.GetEnableWeightSharing());
   EXPECT_TRUE(options.GetUseConvHMX());
   EXPECT_TRUE(options.GetUseFoldReLU());
+  EXPECT_EQ(options.GetOpNameFormat(), OpNameFormat::kBasic);
   EXPECT_EQ(options.GetHtpPPoint(), 0);
   EXPECT_EQ(options.GetHtpWeightSharingChannelTileSize(), 0);
   EXPECT_FALSE(options.GetHtpDlbc());
@@ -430,6 +449,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetVtcmSize(), 0);
   EXPECT_EQ(options.GetHtpDeviceId(), 0);
   EXPECT_EQ(options.GetNumHvxThreads(), 0);
+  EXPECT_EQ(options.GetHtpFileReadMemoryBudgetMB(), 0);
   EXPECT_EQ(options.GetOptimizationLevel(),
             OptimizationLevel::kHtpOptimizeForInferenceO3);
   EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);

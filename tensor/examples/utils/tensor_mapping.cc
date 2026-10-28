@@ -20,6 +20,7 @@ limitations under the License.
 #include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -34,6 +35,16 @@ LazyTensorMapping::LazyTensorMapping(
     const absl::flat_hash_map<std::string, std::string>& name_mapping,
     SafetensorLoader&& loader)
     : loader_(std::move(loader)) {
+  for (const auto& [checkpoint_name, model_name] : name_mapping) {
+    name_mapping_.emplace(model_name, checkpoint_name);
+  }
+}
+
+LazyTensorMapping::LazyTensorMapping(
+    const absl::flat_hash_map<std::string, std::string>& name_mapping,
+    absl::AnyInvocable<absl::StatusOr<TensorHandle>(absl::string_view)>
+        loader_fn)
+    : loader_fn_(std::move(loader_fn)) {
   for (const auto& [checkpoint_name, model_name] : name_mapping) {
     name_mapping_.emplace(model_name, checkpoint_name);
   }
@@ -75,8 +86,10 @@ absl::StatusOr<TensorHandle> LazyTensorMapping::Load(
         absl::StrCat("Could not find a tensor mapping to ", model_name));
   }
 
-  LRT_TENSOR_ASSIGN_OR_RETURN(TensorHandle tensor,
-                              loader_.LoadTensor(checkpoint_name_it->second));
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      TensorHandle tensor,
+      loader_fn_ ? loader_fn_(checkpoint_name_it->second)
+                 : loader_.LoadTensor(checkpoint_name_it->second));
   tensor.SetName(std::string(model_name));
   return tensor;
 }

@@ -2,24 +2,19 @@ VERS_1.0 {
 
   /*
     Export abi-stable "vendor" implemented symbols.
-
-    TODO: Add all vendor symbols. Also export qnn libc++ symbols
-    (statically linked) as "protected" as needed.
   */
 
   global:
 
-    /* Compiler Plugin */
+    /* Compiler Plugin (glob required by lld --no-undefined-version when linking dispatch-only DSOs) */
 
-    LiteRt*CompilerPlugin*;
+    LiteRtCompilerPluginQueryInterface*;
 
-    /* Compiled Result */
+    /* Dispatch (glob required by lld --no-undefined-version when linking compiler-plugin-only DSOs) */
 
-    LiteRt*CompiledResult*;
-
-    /* Dispatch */
-
-    LiteRtDispatch*;
+    LiteRtDispatchQueryInterface*;
+    LiteRtDispatch_Mock*;
+    LiteRtDispatchExample*;
 
   local:
 

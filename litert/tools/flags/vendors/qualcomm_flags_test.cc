@@ -467,6 +467,36 @@ TEST(ProfilingTest, Parse) {
   }
 }
 
+TEST(OpNameFormatTest, Malformed) {
+  std::string error;
+  QualcommOptions::OpNameFormat value;
+
+  EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
+}
+
+TEST(OpNameFormatTest, Parse) {
+  std::string error;
+  QualcommOptions::OpNameFormat value;
+
+  {
+    static constexpr absl::string_view kFormat = "detailed";
+    static constexpr QualcommOptions::OpNameFormat kEnum =
+        QualcommOptions::OpNameFormat::kDetailed;
+    EXPECT_TRUE(AbslParseFlag(kFormat, &value, &error));
+    EXPECT_EQ(value, kEnum);
+    EXPECT_EQ(kFormat, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kFormat = "basic";
+    static constexpr QualcommOptions::OpNameFormat kEnum =
+        QualcommOptions::OpNameFormat::kBasic;
+    EXPECT_TRUE(AbslParseFlag(kFormat, &value, &error));
+    EXPECT_EQ(value, kEnum);
+    EXPECT_EQ(kFormat, AbslUnparseFlag(value));
+  }
+}
+
 TEST(OptimizationLevelTest, Parse) {
   std::string error;
   QualcommOptions::OptimizationLevel value;
@@ -763,6 +793,8 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_FALSE(options.Value().GetEnableWeightSharing());
   EXPECT_TRUE(options.Value().GetUseConvHMX());
   EXPECT_TRUE(options.Value().GetUseFoldReLU());
+  EXPECT_EQ(options.Value().GetOpNameFormat(),
+            QualcommOptions::OpNameFormat::kBasic);
   EXPECT_FALSE(options.Value().GetHtpDlbc());
   EXPECT_FALSE(options.Value().GetHtpDlbcWeights());
   EXPECT_EQ(options.Value().GetHtpPPoint(), 0);
@@ -785,6 +817,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetVtcmSize(), 0);
   EXPECT_EQ(options.Value().GetHtpDeviceId(), 0);
   EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);
+  EXPECT_EQ(options.Value().GetHtpFileReadMemoryBudgetMB(), 0);
   EXPECT_EQ(options.Value().GetOptimizationLevel(),
             QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
   EXPECT_EQ(options.Value().GetGraphPriority(),

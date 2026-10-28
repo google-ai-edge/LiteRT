@@ -17,18 +17,31 @@ This FlatBuffer-level tool moves only large constants that LiteRT-LM's scoped
 external-weight path can consume: weights at input 1 of FullyConnected, Conv2D,
 DepthwiseConv2D with depth multiplier 1, and EmbeddingLookup. Other constants
 remain embedded so they do not become delegate partition inputs.
+
+After externalization, a model can additionally be made to reference payloads
+stored in *another* model's weight blob instead of its own copy (see
+`collect_external_weight_digests` and `redirect_external_weights`). This removes
+weights that are byte-identical across models, e.g. a token embedding table that
+an embedder model looks up and a decoder model reuses as its tied output
+projection.
 """
 
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterator, Mapping
+import contextlib
+import dataclasses
 import hashlib
-from pathlib import Path
+import mmap
+import pathlib
 import shutil
 
 import flatbuffers
 
 from litert.python import schema_py_generated as schema  # pylint:disable=g-direct-tensorflow-import
+
+np = flatbuffers.compat.import_numpy()
 
 _LITERT_HOST_MEMORY_BUFFER_ALIGNMENT = 64
 _TFLITE_BUFFER_ALIGNMENT = 16
@@ -64,7 +77,7 @@ def _tensor_element_count(tensor) -> int:
   return element_count
 
 
-def _buffer_bytes(buffer) -> memoryview | None:
+def _buffer_bytes(buffer) -> memoryview[int] | None:
   if buffer.data is None:
     return None
   try:
@@ -79,15 +92,39 @@ def _buffer_bytes(buffer) -> memoryview | None:
 
 
 def _materialize_appended_buffer_data(model, input_bytes: bytes) -> set[int]:
-  """Moves TFLite appended buffer payloads into the in-memory object model."""
-  input_view = memoryview(input_bytes)
+  """Moves TFLite appended buffer payloads into the in-memory object model.
+
+  The payloads are zero-copy uint8 numpy views of `input_bytes`. The generated
+  `BufferT.Pack` only uses its fast `CreateNumpyVector` path when the data is
+  exactly an `np.ndarray`; any other sequence is serialized one byte at a time.
+  Both paths produce the same bytes. When numpy is not importable (e.g. macOS
+  builds, where the BUILD `select` drops it), the payloads are `memoryview`
+  slices instead, and packing falls back to the slower per-byte path.
+
+  Args:
+    model: The unpacked `ModelT` whose buffers may reference appended data.
+    input_bytes: The serialized model file, including appended buffer data.
+
+  Returns:
+    Indices of buffers whose non-empty payloads were appended in the input file.
+  """
+  input_size = len(input_bytes)
   appended_buffers: set[int] = set()
   for buffer_index, buffer in enumerate(model.buffers or []):
     offset = int(buffer.offset)
     size = int(buffer.size)
     if offset == 0 and size == 0:
       continue
-    if offset <= 0 or size <= 0:
+    if size == 0:
+      # Zero-length appended payload. TFLite's reader treats `offset > 1` with
+      # `size == 0` as a non-null, zero-byte constant, which is what an empty
+      # inline vector encodes; offsets 0 and 1 are "no appended data".
+      if buffer.data is None and offset > 1:
+        buffer.data = np.empty(0, dtype=np.uint8) if np is not None else b""
+      buffer.offset = 0
+      buffer.size = 0
+      continue
+    if offset <= 1 or size < 0:
       raise ValueError(
           f"TFLite buffer {buffer_index} has invalid external range: "
           f"offset={offset}, size={size}"
@@ -97,12 +134,17 @@ def _materialize_appended_buffer_data(model, input_bytes: bytes) -> set[int]:
           f"TFLite buffer {buffer_index} has both inline and appended data"
       )
     end = offset + size
-    if end > len(input_view):
+    if end > input_size:
       raise ValueError(
           f"TFLite buffer {buffer_index} range exceeds the model file: "
-          f"offset={offset}, size={size}, file_size={len(input_view)}"
+          f"offset={offset}, size={size}, file_size={input_size}"
       )
-    buffer.data = input_view[offset:end]
+    if np is not None:
+      buffer.data = np.frombuffer(
+          input_bytes, dtype=np.uint8, count=size, offset=offset
+      )
+    else:
+      buffer.data = memoryview(input_bytes)[offset:end]
     buffer.offset = 0
     buffer.size = 0
     appended_buffers.add(buffer_index)
@@ -110,6 +152,7 @@ def _materialize_appended_buffer_data(model, input_bytes: bytes) -> set[int]:
 
 
 def _bias_tensor_indices(model) -> set[tuple[int, int]]:
+  """Returns `(subgraph_index, tensor_index)` pairs of bias tensors."""
   bias_ops = {
       _enum_value(schema.BuiltinOperator, "FULLY_CONNECTED"),
       _enum_value(schema.BuiltinOperator, "CONV_2D"),
@@ -129,6 +172,7 @@ def _bias_tensor_indices(model) -> set[tuple[int, int]]:
 
 
 def _shareable_weight_tensor_indices(model) -> set[tuple[int, int]]:
+  """Returns `(subgraph_index, tensor_index)` pairs of externalizable weights."""
   depthwise_conv = _enum_value(schema.BuiltinOperator, "DEPTHWISE_CONV_2D")
   weight_ops = {
       _enum_value(schema.BuiltinOperator, "EMBEDDING_LOOKUP"),
@@ -178,6 +222,7 @@ def _referenced_buffers(model, externalized: set[tuple[int, int]]) -> set[int]:
 
 
 def _ensure_group(model, group_name: str) -> int:
+  """Returns the index of `group_name` in `model.externalBufferGroups`."""
   if model.externalBufferGroups is None:
     model.externalBufferGroups = []
   if not model.externalBufferGroups:
@@ -204,13 +249,73 @@ def _make_external_buffer_id(model) -> int:
   return (1 << 31) | len(model.externalBuffers or [])
 
 
+def _write_model(
+    model, appended_buffers: set[int], output_model: pathlib.Path
+) -> None:
+  """Serializes `model` to `output_model`.
+
+  Buffers that were appended in the input file are appended again (instead of
+  being packed into the FlatBuffer) when the inline payload would otherwise
+  approach the FlatBuffer size limit.
+
+  Args:
+    model: The `ModelT` to serialize. Appended buffers must already be
+      materialized (see `_materialize_appended_buffer_data`).
+    appended_buffers: Indices of buffers whose payloads were appended in the
+      input file.
+    output_model: Destination `.tflite` path.
+  """
+  remaining_inline_bytes = sum(
+      len(b.data) for b in model.buffers or [] if b.data is not None
+  )
+  reappend_payloads: list[tuple[int, memoryview[int]]] = []
+  if remaining_inline_bytes >= _MAX_INLINE_BUFFER_BYTES:
+    for buf_idx in sorted(appended_buffers):
+      buf = model.buffers[buf_idx]
+      data = _buffer_bytes(buf)
+      if data is not None:
+        reappend_payloads.append((buf_idx, data))
+        buf.data = None
+        buf.offset = 1
+        buf.size = len(data)
+
+  def _pack_flatbuffer() -> bytes:
+    builder = flatbuffers.Builder(1024)
+    root = model.Pack(builder)
+    builder.Finish(root, file_identifier=b"TFL3")
+    return bytes(builder.Output())
+
+  packed_fb = _pack_flatbuffer()
+  if reappend_payloads:
+    cursor = len(packed_fb)
+    for buf_idx, data in reappend_payloads:
+      cursor = (
+          (cursor + _TFLITE_BUFFER_ALIGNMENT - 1)
+          // _TFLITE_BUFFER_ALIGNMENT
+          * _TFLITE_BUFFER_ALIGNMENT
+      )
+      model.buffers[buf_idx].offset = cursor
+      cursor += len(data)
+    packed_fb = _pack_flatbuffer()
+    with output_model.open("wb") as out_f:
+      out_f.write(packed_fb)
+      for buf_idx, data in reappend_payloads:
+        pad = model.buffers[buf_idx].offset - out_f.tell()
+        if pad > 0:
+          out_f.write(b"\0" * pad)
+        out_f.write(data)
+  else:
+    output_model.write_bytes(packed_fb)
+
+
 def externalize(
-    input_model: Path,
-    output_dir: Path,
+    input_model: pathlib.Path,
+    output_dir: pathlib.Path,
     group_name: str,
     num_elements_threshold: int,
-    existing_weights: Path | None = None,
+    existing_weights: pathlib.Path | None = None,
 ) -> None:
+  """Externalizes eligible weight buffers of `input_model` into `output_dir`."""
   output_dir.mkdir(parents=True, exist_ok=True)
   output_model = output_dir / "model.tflite"
   output_weights = output_dir / group_name
@@ -299,47 +404,12 @@ def externalize(
       model.buffers[buffer_idx].size = 0
       cleared_buffers += 1
 
-  remaining_inline_bytes = sum(
-      len(b.data) for b in model.buffers or [] if b.data is not None
-  )
-  reappend_payloads: list[tuple[int, memoryview[int]]] = []
-  if remaining_inline_bytes >= _MAX_INLINE_BUFFER_BYTES:
-    for buf_idx in sorted(appended_buffers):
-      buf = model.buffers[buf_idx]
-      data = _buffer_bytes(buf)
-      if data is not None:
-        reappend_payloads.append((buf_idx, data))
-        buf.data = None
-        buf.offset = 1
-        buf.size = len(data)
-
-  def _pack_flatbuffer() -> bytes:
-    builder = flatbuffers.Builder(1024)
-    root = model.Pack(builder)
-    builder.Finish(root, file_identifier=b"TFL3")
-    return bytes(builder.Output())
-
-  packed_fb = _pack_flatbuffer()
-  if reappend_payloads:
-    cursor = len(packed_fb)
-    for buf_idx, data in reappend_payloads:
-      cursor = (
-          (cursor + _TFLITE_BUFFER_ALIGNMENT - 1)
-          // _TFLITE_BUFFER_ALIGNMENT
-          * _TFLITE_BUFFER_ALIGNMENT
-      )
-      model.buffers[buf_idx].offset = cursor
-      cursor += len(data)
-    packed_fb = _pack_flatbuffer()
-    with output_model.open("wb") as out_f:
-      out_f.write(packed_fb)
-      for buf_idx, data in reappend_payloads:
-        pad = model.buffers[buf_idx].offset - out_f.tell()
-        if pad > 0:
-          out_f.write(b"\0" * pad)
-        out_f.write(data)
+  if not externalized_tensors:
+    # Nothing changed, so keep the input model (including any appended buffer
+    # data) byte-for-byte instead of repacking it.
+    output_model.write_bytes(input_bytes)
   else:
-    output_model.write_bytes(packed_fb)
+    _write_model(model, appended_buffers, output_model)
 
   print(f"Reading model from {input_model}")
   print(f"Writing model to {output_model}")
@@ -364,10 +434,196 @@ def externalize(
   print("======")
 
 
+# Identity of a weight payload: (byte length, sha256 digest).
+WeightDigest = tuple[int, bytes]
+
+
+def _weight_digest(data) -> WeightDigest:
+  return (len(data), hashlib.sha256(data).digest())
+
+
+def _find_group(model, group_name: str) -> int | None:
+  for idx, group in enumerate(model.externalBufferGroups or []):
+    name = (
+        group.name.decode("utf-8")
+        if isinstance(group.name, bytes)
+        else group.name
+    )
+    if name == group_name:
+      return idx
+  return None
+
+
+@contextlib.contextmanager
+def _map_weights(weights: pathlib.Path) -> Iterator[mmap.mmap | bytes]:
+  """Yields a read-only view of `weights` (empty bytes when the file is empty)."""
+  if weights.stat().st_size == 0:
+    yield b""
+    return
+  with weights.open("rb") as weights_file:
+    with mmap.mmap(weights_file.fileno(), 0, access=mmap.ACCESS_READ) as blob:
+      yield blob
+
+
+def collect_external_weight_digests(
+    input_model: pathlib.Path, weights: pathlib.Path, group_name: str
+) -> dict[WeightDigest, tuple[int, int]]:
+  """Returns where each external payload of `input_model` lives in `weights`.
+
+  Args:
+    input_model: An externalized `.tflite` file.
+    weights: The weight blob backing `group_name` (e.g. the output of
+      `externalize`).
+    group_name: External buffer group whose payloads are inspected.
+
+  Returns:
+    A mapping from payload digest to its `(offset, length)` inside `weights`.
+    Empty when the model has no external buffers in `group_name`.
+
+  Raises:
+    ValueError: If an external buffer range exceeds `weights`.
+  """
+  model = schema.ModelT.InitFromPackedBuf(input_model.read_bytes(), 0)
+  group_idx = _find_group(model, group_name)
+  if group_idx is None:
+    return {}
+  placements: dict[WeightDigest, tuple[int, int]] = {}
+  with _map_weights(weights) as blob:
+    for external_buffer in model.externalBuffers or []:
+      if int(external_buffer.group) != group_idx:
+        continue
+      offset = int(external_buffer.offset)
+      length = int(external_buffer.length)
+      if offset + length > len(blob):
+        raise ValueError(
+            f"External buffer {external_buffer.id} [{offset},"
+            f" {offset + length}) exceeds weight file {weights}"
+            f" ({len(blob)} bytes)"
+        )
+      digest = _weight_digest(blob[offset : offset + length])
+      placements.setdefault(digest, (offset, length))
+  return placements
+
+
+@dataclasses.dataclass(frozen=True)
+class RedirectResult:
+  """Summary of one `redirect_external_weights` call.
+
+  Attributes:
+    redirected_buffers: Number of external buffers now pointing at another
+      group.
+    removed_bytes: Bytes removed from the model's own weight blob.
+  """
+
+  redirected_buffers: int
+  removed_bytes: int
+
+
+def redirect_external_weights(
+    input_model: pathlib.Path,
+    input_weights: pathlib.Path,
+    output_dir: pathlib.Path,
+    group_name: str,
+    redirects: Mapping[WeightDigest, tuple[str, int, int]],
+) -> RedirectResult:
+  """Points external payloads at copies stored in other weight groups.
+
+  Every external buffer of `input_model` in `group_name` whose payload digest
+  is a key of `redirects` is rewritten to reference `(target_group, offset,
+  length)` instead. The model's own blob is then compacted so that it only
+  keeps payloads that are still referenced (64-byte aligned, as written by
+  `externalize`).
+
+  Args:
+    input_model: An externalized `.tflite` file.
+    input_weights: The weight blob backing `group_name` for `input_model`.
+    output_dir: Directory receiving `model.tflite` and the compacted blob named
+      `group_name`.
+    group_name: The model's own external buffer group.
+    redirects: Maps a payload digest to the `(group, offset, length)` where an
+      identical payload is stored. `group` must differ from `group_name`.
+
+  Returns:
+    A `RedirectResult`. When nothing matches, both outputs are byte-identical
+    copies of the inputs.
+
+  Raises:
+    ValueError: If a redirect target group equals `group_name` or has a
+      mismatched payload length.
+  """
+  output_dir.mkdir(parents=True, exist_ok=True)
+  output_model = output_dir / "model.tflite"
+  output_weights = output_dir / group_name
+
+  input_bytes = input_model.read_bytes()
+  model = schema.ModelT.InitFromPackedBuf(input_bytes, 0)
+  group_idx = _find_group(model, group_name)
+  if group_idx is None or not redirects:
+    shutil.copyfile(input_model, output_model)
+    shutil.copyfile(input_weights, output_weights)
+    return RedirectResult(redirected_buffers=0, removed_bytes=0)
+  appended_buffers = _materialize_appended_buffer_data(model, input_bytes)
+
+  with _map_weights(input_weights) as blob:
+    kept = []
+    redirected = 0
+    for external_buffer in model.externalBuffers or []:
+      if int(external_buffer.group) != group_idx:
+        continue
+      offset = int(external_buffer.offset)
+      length = int(external_buffer.length)
+      target = redirects.get(_weight_digest(blob[offset : offset + length]))
+      if target is None:
+        kept.append(external_buffer)
+        continue
+      target_group, target_offset, target_length = target
+      if target_group == group_name:
+        raise ValueError(
+            f"Redirect target group must differ from {group_name!r}"
+        )
+      if target_length != length:
+        raise ValueError(
+            f"Redirect length {target_length} != payload length {length}"
+        )
+      external_buffer.group = _ensure_group(model, target_group)
+      external_buffer.offset = target_offset
+      redirected += 1
+
+    if not redirected:
+      shutil.copyfile(input_model, output_model)
+      shutil.copyfile(input_weights, output_weights)
+      return RedirectResult(redirected_buffers=0, removed_bytes=0)
+
+    new_offsets: dict[tuple[int, int], int] = {}
+    with output_weights.open("wb") as weights_file:
+      for external_buffer in sorted(kept, key=lambda b: int(b.offset)):
+        key = (int(external_buffer.offset), int(external_buffer.length))
+        if key not in new_offsets:
+          padding = (
+              -weights_file.tell()
+          ) % _LITERT_HOST_MEMORY_BUFFER_ALIGNMENT
+          if padding:
+            weights_file.write(b"\0" * padding)
+          new_offsets[key] = weights_file.tell()
+          weights_file.write(blob[key[0] : key[0] + key[1]])
+        external_buffer.offset = new_offsets[key]
+
+  _write_model(model, appended_buffers, output_model)
+  removed_bytes = input_weights.stat().st_size - output_weights.stat().st_size
+  print(
+      f"Redirected {redirected} external buffer(s) of {input_model}; weight"
+      f" file {output_weights}: {output_weights.stat().st_size:,} bytes"
+      f" ({removed_bytes:,} removed)"
+  )
+  return RedirectResult(
+      redirected_buffers=redirected, removed_bytes=removed_bytes
+  )
+
+
 def main() -> None:
   parser = argparse.ArgumentParser()
-  parser.add_argument("--input_model", type=Path, required=True)
-  parser.add_argument("--output_dir", type=Path, required=True)
+  parser.add_argument("--input_model", type=pathlib.Path, required=True)
+  parser.add_argument("--output_dir", type=pathlib.Path, required=True)
   parser.add_argument("--group_name", default="tflite_weights")
   parser.add_argument("--num_elements_threshold", type=int, default=256)
   args = parser.parse_args()

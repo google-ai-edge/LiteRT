@@ -29,6 +29,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_profiler_types.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
+#include "litert/cc/internal/litert_dispatch_delegate_vendor_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 #include "litert/c/options/google/litert_google_tensor_privileged_options_type.h"
@@ -125,6 +126,18 @@ class LiteRtDispatchDeviceContextT {
     return runtime_context_;
   }
 
+  absl::optional_ref<const litert::internal::DispatchDelegateVendorOptions>
+  GetDispatchDelegateVendorOptions() const {
+    return dispatch_delegate_vendor_options_;
+  }
+
+  void SetDispatchDelegateVendorOptions(
+      std::optional<litert::internal::DispatchDelegateVendorOptions>
+          dispatch_delegate_vendor_options) {
+    dispatch_delegate_vendor_options_ =
+        std::move(dispatch_delegate_vendor_options);
+  }
+
   LiteRtStatus AnnotateSystemAttribute(const char* absl_nonnull key,
                                        const char* absl_nonnull value);
 
@@ -180,6 +193,8 @@ class LiteRtDispatchDeviceContextT {
       google_tensor_privileged_options_;
 #endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
   std::optional<GoogleTensorOptionsData> google_tensor_options_;
+  std::optional<litert::internal::DispatchDelegateVendorOptions>
+      dispatch_delegate_vendor_options_;
   // A device context cannot be destroyed with any registered graphs.
   absl::flat_hash_set<LiteRtDispatchGraph> registered_graphs_;
   // Each region backs an executable's bytecode and must outlive any graph

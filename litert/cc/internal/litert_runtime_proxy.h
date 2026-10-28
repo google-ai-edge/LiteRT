@@ -15,8 +15,10 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RUNTIME_PROXY_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RUNTIME_PROXY_H_
 
+#include <climits>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 #include "litert/c/internal/litert_runtime_builtin.h"
@@ -44,8 +46,99 @@ class Options;
 
 namespace internal {
 
+// Encapsulates a version number of the LiteRT Runtime C API following a subset
+// of the Semantic Versioning spec (https://semver.org). Specifically,
+// pre-release and build metadata suffixes are not supported, i.e. all versions
+// must be of the form X.Y.Z.
+struct RuntimeAbiVersion {
+  int major = 0;
+  int minor = 0;
+  int patch = 0;
+
+  constexpr RuntimeAbiVersion() = default;
+  constexpr RuntimeAbiVersion(int major_ver, int minor_ver, int patch_ver)
+      : major{major_ver}, minor{minor_ver}, patch{patch_ver} {}
+
+  // Parses a semantic version string of the form "X.Y.Z", where X, Y, and Z
+  // are non-negative integers without leading zeros.
+  static constexpr std::optional<RuntimeAbiVersion> Parse(
+      StringView version_str) {
+    int components[3] = {0, 0, 0};
+    std::size_t pos = 0;
+    for (int i = 0; i < 3; ++i) {
+      if (pos >= version_str.size()) {
+        return std::nullopt;
+      }
+      std::size_t start = pos;
+      int value = 0;
+      while (pos < version_str.size() && version_str[pos] >= '0' &&
+             version_str[pos] <= '9') {
+        if (pos > start && version_str[start] == '0') {
+          return std::nullopt;
+        }
+        int digit = version_str[pos] - '0';
+        if (value > (INT_MAX - digit) / 10) {
+          return std::nullopt;
+        }
+        value = value * 10 + digit;
+        ++pos;
+      }
+      if (pos == start) {
+        return std::nullopt;
+      }
+      components[i] = value;
+      if (i < 2) {
+        if (pos >= version_str.size() || version_str[pos] != '.') {
+          return std::nullopt;
+        }
+        ++pos;
+      }
+    }
+    if (pos != version_str.size()) {
+      return std::nullopt;
+    }
+    return RuntimeAbiVersion(components[0], components[1], components[2]);
+  }
+
+  constexpr bool IsCompatibleWithClient() const {
+    return major == 1 && minor >= 0 && patch >= 0;
+  }
+
+  constexpr bool operator==(const RuntimeAbiVersion& other) const {
+    return major == other.major && minor == other.minor && patch == other.patch;
+  }
+  constexpr bool operator!=(const RuntimeAbiVersion& other) const {
+    return !(*this == other);
+  }
+  constexpr bool operator<(const RuntimeAbiVersion& other) const {
+    if (major != other.major) return major < other.major;
+    if (minor != other.minor) return minor < other.minor;
+    return patch < other.patch;
+  }
+  constexpr bool operator>(const RuntimeAbiVersion& other) const {
+    return other < *this;
+  }
+  constexpr bool operator<=(const RuntimeAbiVersion& other) const {
+    return !(other < *this);
+  }
+  constexpr bool operator>=(const RuntimeAbiVersion& other) const {
+    return !(*this < other);
+  }
+};
+
+inline constexpr RuntimeAbiVersion kBuiltinRuntimeAbiVersion =
+    *RuntimeAbiVersion::Parse(LITERT_RUNTIME_ABI_VERSION);
+
 #define LITERT_PROXY_METHOD_STATUS(method, ...)  \
   LITERT_INTERNAL_CHECK(runtime_c_api_->method); \
+  return runtime_c_api_->method(__VA_ARGS__);
+
+#define LITERT_PROXY_METHOD_STATUS_MIN_VERSION(major, minor, patch, method, \
+                                               ...)                         \
+  if (abi_version_ < RuntimeAbiVersion(major, minor, patch)) {              \
+    return kLiteRtStatusErrorUnsupported;                                   \
+  }                                                                         \
+  LITERT_INTERNAL_CHECK(runtime_c_api_->method);                            \
   return runtime_c_api_->method(__VA_ARGS__);
 
 #define LITERT_PROXY_METHOD_VOID(method, ...)    \
@@ -67,11 +160,25 @@ class RuntimeProxy {
   /// If the system runtime handle is not provided, the builtin runtime will be
   /// used.
   explicit RuntimeProxy(const LiteRtRuntimeCApiStruct* runtime_c_api)
+      : RuntimeProxy(runtime_c_api, ResolveRuntimeAbiVersion(runtime_c_api)) {}
+
+  /// @brief Creates a runtime proxy with the externally provided system runtime
+  /// handle and an explicit ABI version.
+  RuntimeProxy(const LiteRtRuntimeCApiStruct* runtime_c_api,
+               RuntimeAbiVersion abi_version)
       : runtime_c_api_(LITERT_INTERNAL_DIE_IF_NULL(
             runtime_c_api == nullptr ? GetLiteRtRuntimeBuiltin()
-                                     : runtime_c_api)) {};
+                                     : runtime_c_api)),
+        abi_version_(abi_version) {}
 
   ~RuntimeProxy() = default;
+
+  RuntimeAbiVersion GetAbiVersion() const noexcept { return abi_version_; }
+
+  LiteRtStatus GetRuntimeAbiVersion(const char** abi_version) {
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 4, 0, litert_get_runtime_abi_version, abi_version);
+  }
 
   //
   // LiteRtEnvironment
@@ -531,6 +638,13 @@ class RuntimeProxy {
         output_buffers, async, scheduling_info);
   }
 
+  LiteRtStatus GetCompiledModelLastInferenceDuration(
+      LiteRtCompiledModelConst compiled_model, int64_t* duration_nanoseconds) {
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 6, 0, litert_get_compiled_model_last_inference_duration,
+        compiled_model, duration_nanoseconds);
+  }
+
   LiteRtStatus SetCompiledModelCancellationFunction(
       LiteRtCompiledModel compiled_model, void* data,
       bool (*check_cancelled_func)(void*)) {
@@ -562,67 +676,84 @@ class RuntimeProxy {
 
   LiteRtStatus CompiledModelIsNonCpuFullyAccelerated(
       LiteRtCompiledModel compiled_model, bool* non_cpu_fully_accelerated) {
-    LITERT_PROXY_METHOD_STATUS(
-        litert_compiled_model_is_non_cpu_fully_accelerated, compiled_model,
-        non_cpu_fully_accelerated);
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 2, 0, litert_compiled_model_is_non_cpu_fully_accelerated,
+        compiled_model, non_cpu_fully_accelerated);
   }
 
   LiteRtStatus CompiledModelGetDelegationMetrics(
       LiteRtCompiledModelConst compiled_model,
       LiteRtDelegationMetricsConst* delegation_metrics) {
-    LITERT_PROXY_METHOD_STATUS(litert_compiled_model_get_delegation_metrics,
-                               compiled_model, delegation_metrics);
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 2, 0, litert_compiled_model_get_delegation_metrics, compiled_model,
+        delegation_metrics);
   }
 
   LiteRtStatus GetDelegationMetricsTotalNodeCount(
       LiteRtDelegationMetricsConst metrics, int* total_node_count) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_delegation_metrics_total_node_count,
-                               metrics, total_node_count);
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 2, 0, litert_get_delegation_metrics_total_node_count, metrics,
+        total_node_count);
   }
 
   LiteRtStatus GetNumDelegationMetricsAccelerators(
       LiteRtDelegationMetricsConst metrics,
       LiteRtParamIndex* num_accelerators) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_num_delegation_metrics_accelerators,
-                               metrics, num_accelerators);
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 2, 0, litert_get_num_delegation_metrics_accelerators, metrics,
+        num_accelerators);
   }
 
   LiteRtStatus GetDelegationMetricsAccelerator(
       LiteRtDelegationMetricsConst metrics, LiteRtParamIndex index,
       LiteRtAcceleratorDelegationMetricsConst* accelerator_metrics) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_delegation_metrics_accelerator,
-                               metrics, index, accelerator_metrics);
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 2, 0, litert_get_delegation_metrics_accelerator, metrics, index,
+        accelerator_metrics);
   }
 
   LiteRtStatus GetAcceleratorDelegationMetricsName(
       LiteRtAcceleratorDelegationMetricsConst metrics, const char** name) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_accelerator_delegation_metrics_name,
-                               metrics, name);
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 2, 0, litert_get_accelerator_delegation_metrics_name, metrics, name);
   }
 
   LiteRtStatus GetAcceleratorDelegationMetricsHardwareType(
       LiteRtAcceleratorDelegationMetricsConst metrics,
       LiteRtHwAcceleratorSet* hardware_type) {
-    LITERT_PROXY_METHOD_STATUS(
-        litert_get_accelerator_delegation_metrics_hardware_type, metrics,
-        hardware_type);
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 2, 0, litert_get_accelerator_delegation_metrics_hardware_type,
+        metrics, hardware_type);
   }
 
   LiteRtStatus GetAcceleratorDelegationMetricsDelegatedNodeCount(
       LiteRtAcceleratorDelegationMetricsConst metrics,
       int* delegated_node_count) {
-    LITERT_PROXY_METHOD_STATUS(
-        litert_get_accelerator_delegation_metrics_delegated_node_count, metrics,
-        delegated_node_count);
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 2, 0, litert_get_accelerator_delegation_metrics_delegated_node_count,
+        metrics, delegated_node_count);
   }
 
   LiteRtStatus GetAcceleratorDelegationMetricsPartitionCount(
       LiteRtAcceleratorDelegationMetricsConst metrics, int* partition_count) {
-    LITERT_PROXY_METHOD_STATUS(
-        litert_get_accelerator_delegation_metrics_partition_count, metrics,
-        partition_count);
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 2, 0, litert_get_accelerator_delegation_metrics_partition_count,
+        metrics, partition_count);
   }
 
+  LiteRtStatus CompiledModelRegisterTensorBuffer(
+      LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer) {
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 5, 0, litert_compiled_model_register_tensor_buffer, compiled_model,
+        tensor_buffer);
+  }
+
+  LiteRtStatus CompiledModelUnregisterTensorBuffer(
+      LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer) {
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 5, 0, litert_compiled_model_unregister_tensor_buffer, compiled_model,
+        tensor_buffer);
+  }
   LiteRtStatus CompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                         LiteRtProfiler* profiler) {
     LITERT_PROXY_METHOD_STATUS(litert_compiled_model_get_profiler,
@@ -875,6 +1006,15 @@ class RuntimeProxy {
     LITERT_PROXY_METHOD_STATUS(litert_create_tensor_buffer_from_opencl_memory,
                                env, tensor_type, buffer_type, cl_mem_addr,
                                opencl_buffer_size, deallocator, buffer);
+  }
+
+  LiteRtStatus CreateTensorBufferFromCustomHandle(
+      LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+      LiteRtTensorBufferType buffer_type, HwMemoryHandle handle,
+      size_t buffer_size, LiteRtTensorBuffer* buffer) {
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 3, 0, litert_create_tensor_buffer_from_custom_handle, env,
+        tensor_type, buffer_type, handle, buffer_size, buffer);
   }
 
   LiteRtStatus GetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
@@ -1287,29 +1427,46 @@ class RuntimeProxy {
 
   LiteRtStatus GetNumAccelerators(LiteRtEnvironment environment,
                                   LiteRtParamIndex* num_accelerators) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_num_accelerators, environment,
-                               num_accelerators);
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(1, 1, 0, litert_get_num_accelerators,
+                                           environment, num_accelerators);
   }
 
   LiteRtStatus GetAccelerator(LiteRtEnvironment environment,
                               LiteRtParamIndex index,
                               LiteRtAccelerator* accelerator) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_accelerator, environment, index,
-                               accelerator);
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(1, 1, 0, litert_get_accelerator,
+                                           environment, index, accelerator);
   }
 
   LiteRtStatus GetAcceleratorHardwareSupport(
       LiteRtAcceleratorConst accelerator,
       LiteRtHwAcceleratorSet* supported_hardware) {
-    LITERT_PROXY_METHOD_STATUS(litert_get_accelerator_hardware_support,
-                               accelerator, supported_hardware);
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 1, 0, litert_get_accelerator_hardware_support, accelerator,
+        supported_hardware);
   }
 
  protected:
+  static RuntimeAbiVersion ResolveRuntimeAbiVersion(
+      const LiteRtRuntimeCApiStruct* runtime_c_api) {
+    if (runtime_c_api == nullptr) {
+      // When no external system runtime handle is provided, RuntimeProxy uses
+      // the builtin runtime (GetLiteRtRuntimeBuiltin()), whose ABI version
+      // matches the SDK's kBuiltinRuntimeAbiVersion.
+      return kBuiltinRuntimeAbiVersion;
+    }
+    // TODO(b/574171444): Query `litert_get_runtime_abi_version` from
+    // `runtime_c_api` once the next LiteRT in Google Play services rollout
+    // reaches 100%.
+    return RuntimeAbiVersion(1, 0, 0);
+  }
+
   const LiteRtRuntimeCApiStruct* runtime_c_api_;
+  RuntimeAbiVersion abi_version_;
 };
 
 #undef LITERT_PROXY_METHOD_STATUS
+#undef LITERT_PROXY_METHOD_STATUS_MIN_VERSION
 #undef LITERT_PROXY_METHOD_VOID
 
 }  // namespace internal

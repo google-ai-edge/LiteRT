@@ -363,11 +363,14 @@ cc_test(
     deps = [
         ":framework",
         ":signature_runner",
+        "//tflite:interpreter_options_header",
         "//tflite:model_builder",
         "//tflite/converter/core:model_builder_base",
         "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
         "//tflite/testing:util",
         "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
     ],
 )
 

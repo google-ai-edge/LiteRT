@@ -15,8 +15,11 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_IR_LITERT_OP_SELECTOR_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_IR_LITERT_OP_SELECTOR_H_
 
+#include <memory>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
@@ -49,8 +52,35 @@ class LiteRtOpSelector : public ::ml_drift::ir::IrModelOpSelector {
       ::ml_drift::GpuModelBuilder* model_builder) override;
 
  private:
+  // If `tensor` does not have BUFFER storage type, creates a new tensor with
+  // BUFFER storage type and records the replacement in `replaced_tensors_`.
+  // When `copy_from_original` is true (used for input param tensors), emits a
+  // Copy from the original tensor to the new BUFFER tensor so existing
+  // producers and non-BUFFER consumers of the original tensor remain intact.
+  // When `copy_from_original` is false (used for output tensors of ops like
+  // `add_values_to_cache`), no Copy is emitted because the op itself produces
+  // the tensor directly into the new BUFFER tensor.
+  void TensorToBuffer(const ::ml_drift::ir::IrTensor& tensor,
+                      bool copy_from_original,
+                      ::ml_drift::GpuModelBuilder* model_builder);
+
+  // Promotes `inputs[param_index]` (if `param_index >= 0`) to BUFFER storage
+  // and returns a copy of `inputs` with any tensors present in
+  // `replaced_tensors_` (such as the promoted param tensor or intermediate KV
+  // cache outputs from `add_values_to_cache`) substituted with their BUFFER
+  // replacements.
+  std::vector<const ::ml_drift::ir::IrTensor*> ResolveInputsWithBufferParam(
+      int param_index,
+      const std::vector<const ::ml_drift::ir::IrTensor*>& inputs,
+      ::ml_drift::GpuModelBuilder* model_builder);
+
   ::ml_drift::CreateGpuModelInfo create_info_;
   ::ml_drift::GpuInfo gpu_info_;
+  // Stores replaced tensors if they require different tensor descriptors than
+  // the original tensors.
+  absl::flat_hash_map<::ml_drift::ir::IrTensorId,
+                      std::unique_ptr<::ml_drift::ir::IrTensor>>
+      replaced_tensors_;
 };
 
 }  // namespace litert::ml_drift::ir

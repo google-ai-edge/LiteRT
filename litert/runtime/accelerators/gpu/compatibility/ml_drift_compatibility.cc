@@ -14,10 +14,13 @@
 
 #include "litert/runtime/accelerators/gpu/compatibility/ml_drift_compatibility.h"
 
+#include <cstddef>
 #include <map>
 #include <string>
 
 #include "absl/base/call_once.h"  // from @com_google_absl
+#include "absl/strings/ascii.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -67,6 +70,33 @@ std::map<std::string, std::string> BuildCanonicalVariables(
     value = acceleration::CanonicalizeValueWithKey(key, value);
   }
   return variables;
+}
+
+// Strips a trailing Mali core-count suffix (e.g. "mali_g715_mc7" ->
+// "mali_g715", "mali_g78_mp20" -> "mali_g78") if present; returns an empty
+// string_view otherwise.
+absl::string_view StripMaliCoreCountSuffix(absl::string_view gpu_model) {
+  if (!absl::StartsWith(gpu_model, "mali_")) {
+    return {};
+  }
+  size_t pos = gpu_model.rfind('_');
+  if (pos == absl::string_view::npos) {
+    return {};
+  }
+  absl::string_view suffix = gpu_model.substr(pos + 1);
+  if (!absl::StartsWith(suffix, "mc") && !absl::StartsWith(suffix, "mp")) {
+    return {};
+  }
+  absl::string_view digits = suffix.substr(2);
+  if (digits.empty()) {
+    return {};
+  }
+  for (char c : digits) {
+    if (!absl::ascii_isdigit(static_cast<unsigned char>(c))) {
+      return {};
+    }
+  }
+  return gpu_model.substr(0, pos);
 }
 
 // Returns the database in `compatibility_binary`, or null if the binary is
@@ -165,6 +195,14 @@ bool GpuCompatibilityChecker::IsSupported(const AndroidInfo& android_info,
   std::map<std::string, std::string> variables = BuildCanonicalVariables(
       android_info, gl_renderer, gles_major, gles_minor);
   tflite::acceleration::UpdateVariablesFromDatabase(&variables, *database_);
+  if (variables.find(tflite::acceleration::gpu::kStatus) == variables.end()) {
+    auto& gpu_model = variables[tflite::acceleration::kGPUModel];
+    absl::string_view base_gpu_model = StripMaliCoreCountSuffix(gpu_model);
+    if (!base_gpu_model.empty()) {
+      gpu_model = std::string(base_gpu_model);
+      tflite::acceleration::UpdateVariablesFromDatabase(&variables, *database_);
+    }
+  }
   return variables[tflite::acceleration::gpu::kStatus] ==
          tflite::acceleration::gpu::kStatusSupported;
 }

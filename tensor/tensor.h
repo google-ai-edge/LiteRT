@@ -167,6 +167,9 @@ class TensorHandle {
   friend bool operator==(const TensorHandle& a, const TensorHandle& b) {
     return a.impl_ == b.impl_;
   }
+  friend bool operator!=(const TensorHandle& a, const TensorHandle& b) {
+    return !(a == b);
+  }
 
  private:
   graph::Tensor impl_;

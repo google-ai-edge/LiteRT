@@ -85,6 +85,7 @@ litert_cc_lib_with_qnn(
         "//litert/core:filesystem",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core/backends:backend_utils",
         "//litert/vendors/qualcomm/core/backends:dsp_backend",
         "//litert/vendors/qualcomm/core/backends:gpu_backend",
         "//litert/vendors/qualcomm/core/backends:htp_backend",

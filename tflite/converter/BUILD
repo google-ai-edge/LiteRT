@@ -1136,17 +1136,34 @@ cc_library(
 )
 
 cc_library(
+    name = "resource_constant_fold_utils",
+    hdrs = [
+        "transforms/resource_constant_fold_utils.h",
+    ],
+    deps = [
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
+    ],
+)
+
+cc_library(
     name = "large_constant_fold",
     srcs = [
         "transforms/large_constant_fold_pass.cc",
+        "transforms/resource_elementwise_fold.cc",
     ],
     hdrs = [
         "transforms/large_constant_fold_pass.h",
+        "transforms/resource_elementwise_fold.h",
     ],
     deps = [
         ":attribute_utils",
         ":large_constant_fold_pass_options",
         ":pass",
+        ":resource_constant_fold_utils",
         ":tensorflow_lite_ops",
         ":utils",
         "//tflite/converter/quantization/common/quantization_lib",
@@ -1590,6 +1607,7 @@ cc_library(
         ":elements_attr_roundtrip_pass",
         ":op_quant_spec_getters_inc",
         ":optimize_broadcast_like_pass_options",
+        ":resource_constant_fold_utils",
         ":shape_and_size_utils",
         ":stateful_ops_utils",
         ":tensorflow_lite",
@@ -1620,6 +1638,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:QuantOps",
+        "@llvm-project//mlir:Rewrite",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/common:uniform_quantized_types",

@@ -744,6 +744,11 @@ absl::Status OpMixin<BatchMatMulOperation, XnnpackMixinTag>::ToXnnpack(
     return absl::InvalidArgumentError(
         absl::StrFormat("%s expects 2 inputs", op_name));
   }
+  // `xnn_define_batch_matrix_multiply` ignores `XNN_FLAG_TRANSPOSE_A`.
+  if (op_data.adj_x) {
+    return absl::UnimplementedError(
+        absl::StrFormat("%s with adj_x is not supported", op_name));
+  }
 
   const graph::Tensor& input1 = op.inputs[0];
   const graph::Tensor& input2 = op.inputs[1];
@@ -781,9 +786,6 @@ absl::Status OpMixin<BatchMatMulOperation, XnnpackMixinTag>::ToXnnpack(
   }
 
   uint32_t flags = 0;
-  if (op_data.adj_x) {
-    flags |= XNN_FLAG_TRANSPOSE_A;
-  }
   if (op_data.adj_y) {
     flags |= XNN_FLAG_TRANSPOSE_B;
   }
@@ -925,9 +927,11 @@ absl::Status OpMixin<SliceOperation, XnnpackMixinTag>::ToXnnpack(
   auto begin_locked = begin_info.buffer->Lock();
   const int32_t* begin_data =
       reinterpret_cast<const int32_t*>(begin_locked.data());
-  if (begin_info.shape.empty()) {
-    return absl::InvalidArgumentError(
-        absl::StrFormat("%s: begin tensor must not be a 0D scalar", op_name));
+  if (begin_info.shape.empty() || begin_info.shape[0] <= 0) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "%s: begin tensor must be a 1D tensor with a positive dimension; "
+        "got shape[0] = %d",
+        op_name, begin_info.shape.empty() ? 0 : begin_info.shape[0]));
   }
   size_t num_dims = begin_info.shape[0];
 

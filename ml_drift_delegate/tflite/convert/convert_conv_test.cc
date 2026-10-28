@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <any>
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <string>
@@ -486,6 +487,85 @@ TEST(ConvertConvTest, ConvToFullyConnected) {
   EXPECT_EQ(ir_model->op(0)->name, "fully_connected");
 
   DeleteStubDelegate(delegate);
+}
+
+// Builds a Conv2D with float weights and a constant, affine-quantized int32
+// bias with the given `scales` (one per-tensor scale, or one per output
+// channel), and checks that the bias is dequantized to `expected_bias`.
+void ExpectDequantizedInt32Bias(const std::vector<float>& scales,
+                                const std::vector<float>& expected_bias) {
+  std::unique_ptr<TfLiteDelegate, void (*)(TfLiteDelegate*)> delegate(
+      CreateStubDelegate(), DeleteStubDelegate);
+  ASSERT_TRUE(delegate);
+
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinConv2d, /*version=*/1);
+  model.AddInput(kTfLiteFloat32, {1, 2, 3, 2});   // input data
+  model.AddInput(kTfLiteFloat32, {4, 1, 1, 2});   // weights
+  model.AddInput(kTfLiteInt32, {4});              // bias
+  model.AddOutput(kTfLiteFloat32, {1, 2, 3, 4});  // output
+  TfLiteConvParams* params =
+      reinterpret_cast<TfLiteConvParams*>(calloc(1, sizeof(TfLiteConvParams)));
+  params->padding = kTfLitePaddingValid;
+  params->stride_height = 1;
+  params->stride_width = 1;
+  params->activation = kTfLiteActNone;
+  params->dilation_height_factor = 1;
+  params->dilation_width_factor = 1;
+  model.SetParameters(params);
+
+  std::unique_ptr<::tflite::Interpreter> interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+
+  TfLiteTensor* weights = interpreter->tensor(interpreter->inputs()[1]);
+  weights->allocation_type = kTfLiteMmapRo;
+  std::vector<float> weights_data(4 * 1 * 1 * 2, 1.0f);
+  weights->data.f = weights_data.data();
+  weights->bytes = weights_data.size() * sizeof(float);
+
+  TfLiteTensor* bias = interpreter->tensor(interpreter->inputs()[2]);
+  bias->allocation_type = kTfLiteMmapRo;
+  std::vector<int32_t> bias_data = {2, -4, 6, 8};
+  bias->data.i32 = bias_data.data();
+  bias->bytes = bias_data.size() * sizeof(int32_t);
+  auto* quant_params =
+      static_cast<TfLiteAffineQuantization*>(bias->quantization.params);
+  ASSERT_TRUE(quant_params);
+  TfLiteFloatArrayFree(quant_params->scale);
+  TfLiteIntArrayFree(quant_params->zero_point);
+  quant_params->scale = TfLiteFloatArrayCreate(scales.size());
+  quant_params->zero_point = TfLiteIntArrayCreate(scales.size());
+  for (int i = 0; i < scales.size(); ++i) {
+    quant_params->scale->data[i] = scales[i];
+    quant_params->zero_point->data[i] = 0;
+  }
+  quant_params->quantized_dimension = 0;
+  bias->params.scale = scales[0];
+  bias->params.zero_point = 0;
+
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate.get()), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate.get());
+  ASSERT_TRUE(ir_model);
+  ASSERT_EQ(ir_model->ops().size(), 1);
+  const ::ml_drift::ir::IrOp* conv_op = ir_model->op(0);
+  EXPECT_EQ(conv_op->name, "convolution_2d");
+  const auto* attr =
+      std::any_cast<::ml_drift::Convolution2DAttributes>(&conv_op->attr);
+  ASSERT_TRUE(attr);
+  ASSERT_EQ(attr->bias.data.size(), expected_bias.size());
+  for (int i = 0; i < expected_bias.size(); ++i) {
+    EXPECT_FLOAT_EQ(attr->bias.data[i], expected_bias[i]) << "index " << i;
+  }
+}
+
+TEST(ConvertConvTest, DequantizesPerTensorInt32Bias) {
+  ExpectDequantizedInt32Bias(/*scales=*/{0.5f},
+                             /*expected_bias=*/{1.0f, -2.0f, 3.0f, 4.0f});
+}
+
+TEST(ConvertConvTest, DequantizesPerChannelInt32Bias) {
+  ExpectDequantizedInt32Bias(/*scales=*/{0.5f, 0.25f, 1.0f, 2.0f},
+                             /*expected_bias=*/{1.0f, -1.0f, 6.0f, 16.0f});
 }
 
 }  // namespace
