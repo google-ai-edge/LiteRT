@@ -3602,12 +3602,6 @@ TYPED_TEST_P(NumericalTestSuite, QuantizeOp) {
 
 TYPED_TEST_P(NumericalTestSuite, DequantizeOp) {
   using Tag = typename TypeParam::Tag;
-  if constexpr (std::is_same_v<Tag, MlDriftMixinTag>) {
-    GTEST_SKIP()
-        << "Dequantize of int8 inputs fails to compile its OpenCL kernel "
-           "on the ML Drift backend.";
-  }
-
   Tensor<Tag> input(
       {.type = Type::kI8,
        .shape = {1, 8},

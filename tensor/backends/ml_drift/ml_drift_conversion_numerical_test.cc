@@ -28,7 +28,6 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/any.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
@@ -262,13 +261,6 @@ class MlDriftTestBackendBridge : public TestBackendBridge {
 
 struct MlDriftTraits {
   using Tag = MlDriftMixinTag;
-  // TODO(b/574438217): Enable these tests once the ML Drift backend is fixed.
-  static constexpr absl::string_view kDisabledTests[] = {
-      // Dequantizing values without zero points aborts.
-      "QuantizedWeightsSharedByDotAndAddOp",
-      // Dequantizing per-channel int8 inputs crashes.
-      "DequantizePerChannelOp",
-  };
   static std::unique_ptr<TestBackendBridge> CreateBridge() {
     return std::make_unique<MlDriftTestBackendBridge>();
   }
@@ -438,7 +430,7 @@ TEST_F(MlDriftConversionNumericalTest, DISABLED_QuantizeOp) {
           {0.5f, 1.0f, 1.0f, 1.5f});
 }
 
-TEST_F(MlDriftConversionNumericalTest, DISABLED_DequantizeOp) {
+TEST_F(MlDriftConversionNumericalTest, DequantizeOp) {
   TensorMLD quant_input({.type = Type::kI8, .shape = {1, 2, 2, 1}});
   auto quant_params = std::make_shared<PerChannelAffineQuantization>();
   quant_params->scales = {0.25f};
