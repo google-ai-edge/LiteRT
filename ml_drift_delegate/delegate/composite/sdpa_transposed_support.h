@@ -59,7 +59,9 @@ struct FlashDecodeTuning {
 // The defaults were measured on Adreno 830 (work-group reduction kernel): with
 // Qwen3 0.6B (8 K/V heads, 1280 cache entries), 5 splits of 256 keys read the
 // KV cache at 58 GB/s, compared with 43 GB/s for one work group per K/V head.
-// The wave-SIMD kernel uses 16 waves on Apple GPUs.
+// On Adreno (OpenCL) at most 2 query heads share a work group: with 4 heads the
+// compiler limits the kernel to fewer work items than it is launched with
+// (b/578633071). The wave-SIMD kernel uses 16 waves on Apple GPUs.
 // TODO(b/553029558): Tune for Mali, Intel, Nvidia and AMD GPUs.
 FlashDecodeTuning GetFlashDecodeTuning(const ::ml_drift::GpuInfo& gpu_info);
 

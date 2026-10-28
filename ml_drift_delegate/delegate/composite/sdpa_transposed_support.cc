@@ -36,6 +36,17 @@ FlashDecodeTuning GetFlashDecodeTuning(const ::ml_drift::GpuInfo& gpu_info) {
       tuning.num_simd_groups /= 2;
     }
   }
+  if (gpu_info.IsAdreno() && gpu_info.IsApiOpenCl()) {
+    // The Adreno OpenCL compiler limits the work-group size of a kernel by its
+    // register use, regardless of `reqd_work_group_size`. The work-group
+    // kernel keeps the scores, running maximum, normalizer and output
+    // accumulator of every query head of the work group in registers, and
+    // with 4 heads per work group (e.g. GQA group 4 with head dim 256 or 512)
+    // Adreno 830 limits the kernel to 192 work items, so the 256-work-item
+    // dispatch fails with CL_INVALID_WORK_GROUP_SIZE. With 2 heads per work
+    // group the limit is 384 work items and decode is as fast (b/578633071).
+    tuning.max_heads_per_work_group = 2;
+  }
   if (gpu_info.IsApiWebGpu() &&
       gpu_info.webgpu_info.max_compute_workgroup_storage_size > 0) {
     // WebGPU validates the workgroup storage of a pipeline against the limit

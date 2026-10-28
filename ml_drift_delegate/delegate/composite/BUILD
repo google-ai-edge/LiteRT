@@ -233,6 +233,17 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "sdpa_transposed_support_test",
+    srcs = ["sdpa_transposed_support_test.cc"],
+    deps = [
+        ":sdpa_transposed_support",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
 cc_library(
     name = "sdpa_kernel",
     srcs = ["sdpa_kernel.cc"],
