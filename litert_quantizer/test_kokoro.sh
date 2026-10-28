@@ -35,6 +35,10 @@ ensure_uv
 
 PYTHON_VERSIONS=("3.10" "3.11" "3.12" "3.13")
 
+# Python 3.10 is deprecated (upstream EOL 2026-10-01) and will be dropped in
+# the next release; its test results are informational and non-blocking.
+NON_BLOCKING_PYTHON_VERSIONS=("3.10")
+
 for PYTHON_VERSION in "${PYTHON_VERSIONS[@]}"; do
   echo "----------------------------------------------------------------"
   echo "Testing on Python version ${PYTHON_VERSION}"
@@ -42,7 +46,12 @@ for PYTHON_VERSION in "${PYTHON_VERSIONS[@]}"; do
 
   # Install Python version
   uv python install "${PYTHON_VERSION}"
-  uv run --python "${PYTHON_VERSION}" pytest
+  if [[ " ${NON_BLOCKING_PYTHON_VERSIONS[*]} " == *" ${PYTHON_VERSION} "* ]]; then
+    uv run --python "${PYTHON_VERSION}" pytest || \
+      echo "WARNING: Tests failed on deprecated Python ${PYTHON_VERSION} (non-blocking)."
+  else
+    uv run --python "${PYTHON_VERSION}" pytest
+  fi
 done
 
 echo "All tests passed!"
