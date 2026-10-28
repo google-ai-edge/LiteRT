@@ -1167,10 +1167,36 @@ cc_library(
 #         ":litert_model_impl",
 #         ":litert_options_impl",
 #         ":litert_tensor_buffer_impl",
+#         "//litert/compiler/plugin:compiler_plugin",
+#         "//litert/core/model",
+#         "//litert/core/model:model_buffer",
 #         "//litert/runtime:compiled_model",
+#         "//litert/runtime:gpu_environment",
+#         "//litert/runtime:profiler_summarizer",
+#         "//litert/runtime/dispatch:dispatch_delegate",
+#         "//litert/runtime/dispatch:dispatch_delegate_kernel",
+#         "//weight_loader:external_weight_loader",
 #     ],
 #     depth = 1,
 #     dont_match_regexp = "^//third_party/absl/strings:str_format$",
+#     tags = ["nowindows"],
+# )
+#
+# # Prevent LiteRT C API and core runtime implementations from directly depending on
+# # absl::Status and absl::StatusOr, which pull CordRep and StatusRep into minimal builds.
+# check_dependencies(
+#     name = "litert_c_api_no_status_deps_test",
+#     of = [
+#         ":litert_compiled_model_impl",
+#         ":litert_environment_impl",
+#         ":litert_event_impl",
+#         ":litert_model_impl",
+#         ":litert_options_impl",
+#         ":litert_tensor_buffer_impl",
+#         "//litert/runtime:compiled_model",
+#     ],
+#     depth = 1,
+#     dont_match_regexp = "^//third_party/absl/status(:.*)?$",
 #     tags = ["nowindows"],
 # )
 # copybara:uncomment_end
