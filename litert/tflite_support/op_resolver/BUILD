@@ -41,10 +41,14 @@ cc_library(
     hdrs = ["op_resolver.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_op_resolver",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_options",
-        "//litert/core:options",
+        "//litert/cc/internal:litert_runtime_proxy_api",
+        "//tflite:mutable_op_resolver",
+        "//tflite/c:common",
+        "//tflite/schema:schema_fbs",
     ],
 )
 
@@ -63,6 +67,7 @@ cc_test(
     ],
     data = [
         "//litert/test:testdata/simple_model.tflite",
+        "//litert/test:testdata/simple_model_custom_op.tflite",
     ],
     deps = [
         ":op_resolver",
@@ -78,6 +83,7 @@ cc_test(
         "//litert/test:simple_model",
         "//tflite:framework",
         "//tflite:mutable_op_resolver",
+        "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -94,6 +100,7 @@ litert_cc_test(
     cpu_backend = "selective",
     data = [
         "//litert/test:testdata/simple_model.tflite",
+        "//litert/test:testdata/simple_model_custom_op.tflite",
     ],
     tags = [
         "noios",
@@ -114,6 +121,7 @@ litert_cc_test(
         "//litert/test:simple_model",
         "//tflite:framework",
         "//tflite:mutable_op_resolver",
+        "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",

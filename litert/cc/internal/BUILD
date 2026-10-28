@@ -695,6 +695,7 @@ cc_library(
     hdrs = ["litert_runtime_proxy.h"],
     visibility = [
         "//litert/cc:__pkg__",
+        "//litert/tflite_support/op_resolver:__pkg__",
     ],
     deps = [
         "//litert/c:litert_any",
@@ -707,6 +708,7 @@ cc_library(
         "//litert/c:litert_layout",
         "//litert/c:litert_metrics_header",
         "//litert/c:litert_model_types",
+        "//litert/c:litert_op_resolver",
         "//litert/c:litert_opaque_options_header",
         "//litert/c:litert_opencl_types",
         "//litert/c:litert_tensor_buffer_types",

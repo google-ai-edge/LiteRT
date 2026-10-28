@@ -35,10 +35,11 @@ namespace tflite_support {
 /// litert::tflite_support::SetOpResolver(options, &resolver);
 /// @endcode
 ///
-/// Note: `resolver` must outlive `CompiledModel::Create()`. This API is
-/// experimental and is designed to support selective op registration in TFLite.
-/// It is subject to change or removal at any time without notice. This API is
-/// not ABI stable and should only be used in static runtime builds.
+/// Note: `resolver` must outlive the `CompiledModel` created with these
+/// options. This API bridges the OpResolver through a C callback interface
+/// across the runtime boundary. Because the underlying callbacks return
+/// `const TfLiteRegistration*`, the client and runtime must be built against
+/// matching TFLite versions (see b/580021727 for `TfLiteOperator*` support).
 Expected<void> SetOpResolver(Options& options,
                              const tflite::MutableOpResolver* resolver);
 

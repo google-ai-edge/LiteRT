@@ -16,6 +16,7 @@
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_op_resolver.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -125,6 +126,25 @@ TEST(LiteRtCompiledModelOptionsTest, AddAcceleratorCompilationOptionsWorks) {
 
   EXPECT_EQ(LiteRtGetNextOpaqueOptions(&options_it), kLiteRtStatusOk);
   EXPECT_EQ(options_it, *accelerator_compilation_options2);
+
+  LiteRtDestroyOptions(options);
+}
+
+TEST(LiteRtCompiledModelOptionsTest, SetOpResolverOptionWorks) {
+  LiteRtOptions options;
+  ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
+
+  LiteRtOpResolverCApi op_resolver = {
+      .find_builtin_op = nullptr,
+      .find_custom_op = nullptr,
+      .user_data = nullptr,
+  };
+
+  EXPECT_EQ(LiteRtSetOpResolverOption(nullptr, &op_resolver),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtSetOpResolverOption(options, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtSetOpResolverOption(options, &op_resolver), kLiteRtStatusOk);
 
   LiteRtDestroyOptions(options);
 }
