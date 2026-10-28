@@ -17,6 +17,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
+#include "litert/c/litert_op_resolver.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,6 +53,15 @@ LiteRtStatus LiteRtAddOpaqueOptions(LiteRtOptions options,
 // `LiteRtGetNextAcceleratorCompilationOptions`.
 LiteRtStatus LiteRtGetOpaqueOptions(LiteRtOptions options,
                                     LiteRtOpaqueOptions* opaque_options);
+
+// Sets the OpResolver C API interface for the given options.
+//
+// Note: `op_resolver` is copied by value during this call, so the struct
+// itself does not need to outlive this call. However, `op_resolver->user_data`
+// (and any resources referenced by the callbacks) is owned by the caller and
+// must outlive the CompiledModel created with these options.
+LiteRtStatus LiteRtSetOpResolverOption(LiteRtOptions options,
+                                       const LiteRtOpResolverCApi* op_resolver);
 
 // Adds a custom op kernel to the given options.
 LiteRtStatus LiteRtAddCustomOpKernelOption(

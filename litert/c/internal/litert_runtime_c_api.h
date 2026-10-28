@@ -29,6 +29,7 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_op_resolver.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -46,7 +47,7 @@ extern "C" {
 // LiteRT CompiledModels ABI version number, in semver 2 format
 // (see https://semver.org).  This is the ABI version number for
 // the methods in LiteRtRuntimeCApiStruct, which is defined below.
-#define LITERT_RUNTIME_ABI_VERSION "1.6.0"
+#define LITERT_RUNTIME_ABI_VERSION "1.7.0"
 // TODO(b/493650900): declare that as an extern const (and
 // initialize it in a .cc file) rather than using a macro.
 
@@ -820,6 +821,10 @@ typedef struct LiteRtRuntimeCApiStruct {
   // This API was added in version 1.6.0.
   LiteRtStatus (*litert_get_compiled_model_last_inference_duration)(
       LiteRtCompiledModelConst compiled_model, int64_t* duration_nanoseconds);
+  // litert_options.h: LiteRtSetOpResolverOption
+  // This API was added in version 1.7.0.
+  LiteRtStatus (*litert_set_op_resolver_option)(
+      LiteRtOptions options, const LiteRtOpResolverCApi* op_resolver);
 } LiteRtRuntimeCApiStruct;
 
 // LINT.ThenChange(:version_number)

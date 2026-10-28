@@ -38,6 +38,7 @@
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "litert/c/litert_op_resolver.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "tflite/c/c_api.h"
 #include "tflite/mutable_op_resolver.h"
@@ -116,6 +117,7 @@
 #endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 #include "tflite/converter/allocation.h"
 #include "tflite/builtin_ops.h"
+#include "tflite/core/api/op_resolver.h"
 #include "tflite/core/api/profiler.h"
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/interpreter.h"
@@ -124,6 +126,7 @@
 #include "tflite/kernels/register.h"
 #include "tflite/kernels/register_ref.h"
 #endif  // LITERT_NO_BUILTIN_OPS
+#include "tflite/schema/schema_generated.h"
 
 #if defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/stub_op_resolver.h"
@@ -186,6 +189,62 @@ TfLiteRegistration sStubRegistration = {
     .free = StubOpFree,
     .prepare = StubOpPrepare,
     .invoke = StubOpEval,
+};
+
+class CApiForwardingOpResolver : public tflite::OpResolver {
+ public:
+  explicit CApiForwardingOpResolver(const LiteRtOpResolverCApi& c_api)
+      : c_api_(c_api) {}
+
+  const TfLiteRegistration* FindOp(tflite::BuiltinOperator op,
+                                   int version) const override {
+    if (c_api_.find_builtin_op == nullptr) {
+      return nullptr;
+    }
+    const TfLiteRegistration* reg =
+        c_api_.find_builtin_op(c_api_.user_data, static_cast<int>(op), version);
+    if (reg != nullptr && reg->registration_external == nullptr) {
+      LITERT_LOG(LITERT_ERROR,
+                 "OpResolver callback returned TfLiteRegistration without "
+                 "registration_external for builtin op %d (version %d); "
+                 "ignoring non-ABI-stable registration.",
+                 static_cast<int>(op), version);
+      return nullptr;
+    }
+    return reg;
+  }
+
+  const TfLiteRegistration* FindOp(const char* op, int version) const override {
+    if (c_api_.find_custom_op == nullptr) {
+      return nullptr;
+    }
+    const TfLiteRegistration* reg =
+        c_api_.find_custom_op(c_api_.user_data, op, version);
+    if (reg != nullptr && reg->registration_external == nullptr) {
+      LITERT_LOG(LITERT_ERROR,
+                 "OpResolver callback returned TfLiteRegistration without "
+                 "registration_external for custom op '%s' (version %d); "
+                 "ignoring non-ABI-stable registration.",
+                 op != nullptr ? op : "<null>", version);
+      return nullptr;
+    }
+    return reg;
+  }
+
+ private:
+  LiteRtOpResolverCApi c_api_;
+};
+
+class CApiOpResolver : public tflite::MutableOpResolver {
+ public:
+  explicit CApiOpResolver(const LiteRtOpResolverCApi& c_api)
+      : c_api_forwarder_(c_api) {
+    ChainOpResolver(&c_api_forwarder_);
+    may_directly_contain_user_defined_ops_ = true;
+  }
+
+ private:
+  CApiForwardingOpResolver c_api_forwarder_;
 };
 
 #if !defined(LITERT_DISABLE_NPU)
@@ -339,7 +398,8 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
 
   const bool has_user_op_resolver =
       jit_compilation_options &&
-      jit_compilation_options->op_resolver != nullptr;
+      (jit_compilation_options->op_resolver != nullptr ||
+       jit_compilation_options->op_resolver_c_api.has_value());
   std::unique_ptr<tflite::MutableOpResolver> resolver_storage;
   tflite::MutableOpResolver* resolver = nullptr;
   if (has_user_op_resolver) {
@@ -351,8 +411,13 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
                         "kernels.");
     }
 #endif  // LITERT_NO_BUILTIN_OPS
-    resolver_storage = std::make_unique<tflite::MutableOpResolver>(
-        *jit_compilation_options->op_resolver);
+    if (jit_compilation_options->op_resolver_c_api.has_value()) {
+      resolver_storage = std::make_unique<CApiOpResolver>(
+          *jit_compilation_options->op_resolver_c_api);
+    } else {
+      resolver_storage = std::make_unique<tflite::MutableOpResolver>(
+          *jit_compilation_options->op_resolver);
+    }
     resolver = resolver_storage.get();
   } else {
 #ifdef LITERT_NO_BUILTIN_OPS
