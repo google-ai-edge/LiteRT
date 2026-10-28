@@ -116,7 +116,7 @@ void ResolveWaveSimd(const ::ml_drift::GpuInfo& gpu_info, std::string* code) {
 }
 
 // Whether the fused Flash-Decode kernel supports these shapes. K and V must be
-// BUFFER tensors in the packed layout written by `odml.cache_update`, the
+// float BUFFER tensors in the packed layout written by `odml.cache_update`, the
 // shapes must pass `IsSupportedFlashSdpaShape`, and a mask must be shared by
 // all heads with one row, or one row per query token, that covers every cache
 // entry.
@@ -127,6 +127,10 @@ bool IsSupportedFlashDecode(const ::ml_drift::GpuInfo& gpu_info,
                             const ::ml_drift::TensorDescriptor* mask_desc) {
   if (k_desc.GetStorageType() != ::ml_drift::TensorStorageType::kBuffer ||
       v_desc.GetStorageType() != ::ml_drift::TensorStorageType::kBuffer) {
+    return false;
+  }
+  if (!::ml_drift::IsFloatType(k_desc.GetDataType()) ||
+      !::ml_drift::IsFloatType(v_desc.GetDataType())) {
     return false;
   }
   const ::ml_drift::BHWC k_shape = k_desc.GetBHWCShape();
@@ -1751,15 +1755,40 @@ absl::Status BuildSdpaTransposedGpuGraph(
   const bool supports_fused_kernels =
       SupportsFusedSdpaKernels(model_builder->gpu_info());
 
+  // INT8 symmetric per-tensor quantized K/V caches arrive as kUint8 byte
+  // tensors with per-output-channel dequantization scales (see
+  // `SdpaTransposedAttributes::scale_k`). They only take the decomposed
+  // FullyConnected path below, so the fused Flash kernels are skipped.
+  const bool int8_k =
+      k.tensor_desc.GetDataType() == ::ml_drift::DataType::kUint8;
+  const bool int8_v =
+      v.tensor_desc.GetDataType() == ::ml_drift::DataType::kUint8;
+  if (int8_k != attr.scale_k.has_value() ||
+      int8_v != attr.scale_v.has_value()) {
+    return absl::InvalidArgumentError(
+        "SDPA transposed expects dequantization scales exactly for INT8 K/V "
+        "caches.");
+  }
+  if (int8_k != int8_v) {
+    return absl::InvalidArgumentError(
+        "SDPA transposed expects both or none of the K/V caches to be INT8.");
+  }
+  const bool int8_kv = int8_k && int8_v;
+  if (int8_kv && !attr.from_cache_update) {
+    return absl::InvalidArgumentError(
+        "SDPA transposed expects INT8 K/V caches in the odml.cache_update "
+        "layout.");
+  }
+
   // The fused Flash-Attention prefill kernel indexes K and V directly in the
   // packed 4D layout produced by `odml.cache_update`, so it requires
-  // `from_cache_update` and BUFFER storage. It also uses wave-matrix MMA and
-  // 32-lane wave-SIMD intrinsics covering at most 32 channel slices
+  // `from_cache_update` and float BUFFER storage. It also uses wave-matrix MMA
+  // and 32-lane wave-SIMD intrinsics covering at most 32 channel slices
   // (head_dim <= 128), and reads whole GQA groups and 4-key blocks of the
   // cache (`IsSupportedFlashPrefillShape`). Everything else falls back to the
   // multi-op graph below.
   const bool is_supported_flash_prefill =
-      attr.is_prefill && attr.from_cache_update &&
+      attr.is_prefill && attr.from_cache_update && !int8_kv &&
       IsSupportedFlashPrefillShape(q_shape, k_cache_shape) &&
       k.tensor_desc.GetStorageType() ==
           ::ml_drift::TensorStorageType::kBuffer &&
@@ -1891,7 +1920,27 @@ absl::Status BuildSdpaTransposedGpuGraph(
   }
 
   ::ml_drift::GpuModelBuilder::TensorHandle logits;
-  if (attr.from_cache_update) {
+  if (int8_kv) {
+    // Q * K^T with the raw int8 cache bytes as external weights, dequantized
+    // in the kernel with one scale per cache slot. Without a zero-point tensor
+    // the weights are decoded as `(byte - 128) * scale`, matching the offset
+    // binary encoding written by the AddValuesToCache kernel.
+    ::ml_drift::ConvRuntimeCheckDesc bmm1_runtime_check;
+    if (param_desc) {
+      bmm1_runtime_check.dst_end_ch_index = attr.runtime_check.src_end_ch_index;
+    }
+    const ::ml_drift::GpuModelBuilder::TensorHandle scale_k =
+        model_builder->AddConstantTensor(*attr.scale_k,
+                                         q_for_bmm1.tensor_desc.GetDataType());
+    const ::ml_drift::GpuModelBuilder::Weights bmm1_external_weights =
+        ::ml_drift::CreateExternalWeights(
+            k, attr.bmm1_weights.desc, attr.bmm1_weights.weights_shape,
+            ::ml_drift::OHWI(attr.scale_k->shape.v, 1, 1, 1), &scale_k);
+    logits = model_builder->FullyConnectedInt8ExternalWeights(
+        q_for_bmm1, bmm1_external_weights, /*biases=*/nullptr,
+        /*src_exp=*/nullptr, bmm1_runtime_check,
+        param_desc ? &param_tensor : nullptr);
+  } else if (attr.from_cache_update) {
     ::ml_drift::WeightsDescription bmm1_desc = attr.bmm1_weights.desc;
     bmm1_desc.type = q.tensor_desc.GetDataType();
     const ::ml_drift::GpuModelBuilder::Weights bmm1_external_weights =
@@ -1965,7 +2014,28 @@ absl::Status BuildSdpaTransposedGpuGraph(
   }
 
   ::ml_drift::GpuModelBuilder::TensorHandle output;
-  if (attr.from_cache_update) {
+  if (int8_kv) {
+    // P * V with the raw int8 cache bytes as external weights, dequantized in
+    // the kernel with one scale per head_dim element (see the Q * K^T matmul
+    // above for the byte encoding).
+    auto sfmx_partial = model_builder->SoftmaxReduce(
+        logits, softmax_runtime_check, param_desc ? &param_tensor : nullptr);
+
+    ::ml_drift::ConvRuntimeCheckDesc bmm2_runtime_check;
+    if (param_desc) {
+      bmm2_runtime_check.src_end_ch_index = attr.runtime_check.src_end_ch_index;
+    }
+    const ::ml_drift::GpuModelBuilder::TensorHandle scale_v =
+        model_builder->AddConstantTensor(*attr.scale_v,
+                                         logits.tensor_desc.GetDataType());
+    const ::ml_drift::GpuModelBuilder::Weights bmm2_external_weights =
+        ::ml_drift::CreateExternalWeights(
+            v, attr.bmm2_weights.desc, attr.bmm2_weights.weights_shape,
+            ::ml_drift::OHWI(attr.scale_v->shape.v, 1, 1, 1), &scale_v);
+    output = model_builder->FullyConnectedInt8ExternalWeights(
+        logits, bmm2_external_weights, /*biases=*/nullptr, &sfmx_partial,
+        bmm2_runtime_check, param_desc ? &param_tensor : nullptr);
+  } else if (attr.from_cache_update) {
     auto sfmx_partial = model_builder->SoftmaxReduce(
         logits, softmax_runtime_check, param_desc ? &param_tensor : nullptr);
 
