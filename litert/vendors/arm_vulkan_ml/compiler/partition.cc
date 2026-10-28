@@ -14,13 +14,14 @@
 
 #include "litert/vendors/arm_vulkan_ml/compiler/partition.h"
 #include <unordered_map>
+#include <set>
 #include <utility>
 #include "TosaForSpirvCodegen.hpp"
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
 
 namespace litert::arm_vulkan_ml {
 std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& subgraph,
-                                                        std::string& reason) {
+                                                        std::string& reason, std::vector<LoweringRecord>* diagnostics) {
   auto artifact = std::make_shared<CompiledPartition>();
   auto module = tfsc::CreateModule();
   tfsc::tosa::Graph graph(module, artifact->entry_point);
@@ -51,6 +52,17 @@ std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& subgra
     artifact->inputs.push_back(std::move(*input));
   }
   if (subgraph.Ops().empty()) { reason = "Empty partition"; return nullptr; }
+  std::set<uint32_t> seen_ids;
+  auto new_ids = [&]() {
+    std::vector<uint32_t> ids;
+    for (const auto& instruction : module->GetSpirvGraph())
+      for (const auto& operand : instruction.m_Operands)
+        if (operand.m_Type == tfsc::spirv::RES_ID && seen_ids.insert(operand.m_LiteralWord).second)
+          ids.push_back(operand.m_LiteralWord);
+    return ids;
+  };
+  if (diagnostics) { diagnostics->clear(); new_ids(); }
+  size_t operator_index = 0;
   for (const auto& op : subgraph.Ops()) {
     // Partition selection and compilation use the exact same analysis.
     auto plan = AnalyzeOperation(op, reason);
@@ -85,6 +97,8 @@ std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& subgra
     auto output = EmitOperation(graph, inputs, *plan, constants);
     if (!output || tfsc::IsError(output)) { reason = tfsc::GetErrorMsg(output); return nullptr; }
     values[op.Outputs()[0].Get()] = output;
+    if (diagnostics) diagnostics->push_back({operator_index, new_ids()});
+    ++operator_index;
   }
   for (const auto& tensor : subgraph.Outputs()) {
     auto value = values.find(tensor.Get());

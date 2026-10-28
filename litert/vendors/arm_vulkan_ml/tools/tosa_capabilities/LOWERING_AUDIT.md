@@ -81,7 +81,7 @@ Source SHA-256 fingerprints:
 - `compiler/conv2d_adapter.cc`: `fedb0a2aa5a571b0101c304e2be5009afe4993368c8968da8e14675fc4922b16`
 - `compiler/extended_ops.cc`: `d3567fe248517d66b4c8b919a57319851485422b99559809a2f93481bc9cbd7c`
 - `compiler/operation.cc`: `dab8e8cfc575804706448c7d8710b3951296536d5a026542e147a443db3e91f8`
-- `compiler/partition.cc`: `bc0c72399b9073b2e10c6dbe12a372ec742dcc196c980b1f4c163491fde00ee8`
+- `compiler/partition.cc`: `dcffaf90abb1b5f92eb75d809d64acd8724ed57a4ec74c4343eccd00799e4f12`
 - `compiler/quantization.cc`: `4474eafbb74122343329b0b51372162d86cd5ea69ce24d4dbbab2cd9bf522da0`
 - `include/tosa/OperatorEnum.hpp`: `cba5458b03154132be02eccbe29e349cad9f3c8453364ab2ec461d67b4dcc5be`
 - `include/tosa/GraphOperatorHelpers.hpp`: `233b61fe60392b66d59a529afeb0b53842134cb3a885d578ec8b484afdc4d7c3`

@@ -30,6 +30,21 @@ def arm_vulkan_ml_deps():
     )
 
     http_archive(
+        name = "arm_vulkan_ml_tool_spirv_tools",
+        sha256 = "08905bb11b2693d9f79f4842a53f20e48ab4282c2bf4fd6dd93ff0b9bebac41f",
+        strip_prefix = "SPIRV-Tools-f80351511e9c4672e284842c7b124315c511078a",
+        urls = ["https://github.com/KhronosGroup/SPIRV-Tools/archive/f80351511e9c4672e284842c7b124315c511078a.tar.gz"],
+        repo_mapping = {"@spirv_headers": "@arm_vulkan_ml_tool_spirv_headers"},
+    )
+
+    http_archive(
+        name = "arm_vulkan_ml_tool_spirv_headers",
+        sha256 = "775ee89eb77d067df3f5736e2b4bb2f5f3e39ead915f11f3d366139dcb42209d",
+        strip_prefix = "SPIRV-Headers-575b6512579ebde466ed3dfc04e413439d14d95d",
+        urls = ["https://github.com/KhronosGroup/SPIRV-Headers/archive/575b6512579ebde466ed3dfc04e413439d14d95d.tar.gz"],
+    )
+
+    http_archive(
         name = "ai_ml_sdk_vgf_library",
         build_file = Label("//third_party/arm_vulkan_ml:ai_ml_sdk_vgf_library.BUILD"),
         patch_args = ["-p0"],

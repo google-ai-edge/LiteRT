@@ -14,12 +14,21 @@
 
 #ifndef ODML_LITERT_LITERT_VENDORS_ARM_VULKAN_ML_COMPILER_PARTITION_H_
 #define ODML_LITERT_LITERT_VENDORS_ARM_VULKAN_ML_COMPILER_PARTITION_H_
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <vector>
 #include <string>
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/vendors/arm_vulkan_ml/common/arm_vulkan_ml_jit_executable.h"
 namespace litert::arm_vulkan_ml {
+// Optional diagnostic attribution. IDs shared across operators are recorded at
+// their first creation; graph input/output scaffolding is not attributed.
+struct LoweringRecord {
+  size_t operator_index;
+  std::vector<uint32_t> result_ids;
+};
 std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& graph,
-                                                        std::string& reason);
+                                                        std::string& reason, std::vector<LoweringRecord>* diagnostics = nullptr);
 }  // namespace litert::arm_vulkan_ml
 #endif

@@ -23,6 +23,7 @@
 
 #include "absl/synchronization/mutex.h"
 #include "litert/vendors/arm_vulkan_ml/dispatch/tensor_capabilities.h"
+#include "litert/vendors/arm_vulkan_ml/dispatch/device_capabilities.h"
 #include "vulkan/vulkan.h"
 
 namespace litert::arm_vulkan_ml {
@@ -146,12 +147,7 @@ struct VulkanInvocation::Impl {
   }
 
   bool Initialize(bool allow_emulation) {
-#if defined(__ANDROID__)
-    // Let the Android linker select the ABI-specific system Vulkan loader.
-    constexpr const char* kVulkanLibrary = "libvulkan.so";
-#else
-    constexpr const char* kVulkanLibrary = "libvulkan.so.1";
-#endif
+    const char* kVulkanLibrary = VulkanLibraryName();
     library = dlopen(kVulkanLibrary, RTLD_NOW | RTLD_LOCAL);
     if (!library) {
       const char* detail = dlerror();
@@ -175,12 +171,8 @@ struct VulkanInvocation::Impl {
     INSTANCE_FN(GetPhysicalDeviceProperties);
     INSTANCE_FN(GetPhysicalDeviceProperties2);
     INSTANCE_FN(GetPhysicalDeviceFormatProperties2);
-    INSTANCE_FN(EnumerateDeviceExtensionProperties);
-    INSTANCE_FN(GetPhysicalDeviceQueueFamilyProperties);
     INSTANCE_FN(GetPhysicalDeviceFeatures2);
     INSTANCE_FN(GetPhysicalDeviceMemoryProperties);
-    INSTANCE_FN(GetPhysicalDeviceQueueFamilyDataGraphPropertiesARM);
-    INSTANCE_FN(GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM);
     INSTANCE_FN(CreateDevice);
     INSTANCE_FN(GetDeviceProcAddr);
     uint32_t count = 0;
@@ -192,67 +184,14 @@ struct VulkanInvocation::Impl {
       VK_KHR_MAINTENANCE_5_EXTENSION_NAME, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
       VK_EXT_SHADER_REPLICATED_COMPOSITES_EXTENSION_NAME};
     for (auto candidate : candidates) {
-      VkPhysicalDeviceProperties props{};
-      GetPhysicalDeviceProperties(candidate, &props);
-      uint32_t extension_count = 0;
-      VK_CHECK(EnumerateDeviceExtensionProperties(candidate, nullptr, &extension_count, nullptr));
-      std::vector<VkExtensionProperties> advertised(extension_count);
-      VK_CHECK(EnumerateDeviceExtensionProperties(candidate, nullptr, &extension_count, advertised.data()));
-      bool all = true;
-      for (auto required : extensions) {
-        all &= std::any_of(advertised.begin(), advertised.end(), [&](const auto& e) {
-          const uint32_t minimum_revision =
-              !std::strcmp(required, VK_ARM_TENSORS_EXTENSION_NAME) ? 2 : 1;
-          return !std::strcmp(required, e.extensionName) &&
-                 e.specVersion >= minimum_revision;
-        });
-      }
-      if (!all) continue;
-      if (!QueryTensorCapabilities(candidate, *artifact,
-              GetPhysicalDeviceProperties2, GetPhysicalDeviceFormatProperties2,
-              error)) continue;
-      uint32_t queue_count = 0;
-      GetPhysicalDeviceQueueFamilyProperties(candidate, &queue_count, nullptr);
-      std::vector<VkQueueFamilyProperties> queues(queue_count);
-      GetPhysicalDeviceQueueFamilyProperties(candidate, &queue_count, queues.data());
-      for (uint32_t q = 0; q < queue_count && !physical; ++q) {
-        if (!queues[q].queueCount || !(queues[q].queueFlags & VK_QUEUE_DATA_GRAPH_BIT_ARM)) continue;
-        uint32_t n = 0;
-        VK_CHECK(GetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(candidate, q, &n, nullptr));
-        std::vector<VkQueueFamilyDataGraphPropertiesARM> engines(n,
-            {VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM});
-        VK_CHECK(GetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(candidate, q, &n, engines.data()));
-        for (const auto& engine : engines) {
-          if (engine.engine.isForeign || engine.engine.type != VK_PHYSICAL_DEVICE_DATA_GRAPH_PROCESSING_ENGINE_TYPE_DEFAULT_ARM ||
-              engine.operation.operationType != VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_SPIRV_EXTENDED_INSTRUCTION_SET_ARM ||
-              artifact->instruction_set != engine.operation.name) continue;
-          VkQueueFamilyDataGraphTOSAPropertiesARM tosa{VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_TOSA_PROPERTIES_ARM};
-          VK_CHECK(GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(candidate, q, &engine,
-                    reinterpret_cast<VkBaseOutStructure*>(&tosa)));
-          auto has = [](uint32_t n, const VkDataGraphTOSANameQualityARM* names, const std::string& name) {
-            for (uint32_t i = 0; i < n; ++i) if (name == names[i].name &&
-                (names[i].qualityFlags & VK_DATA_GRAPH_TOSA_QUALITY_CONFORMANT_ARM)) return true;
-            return false;
-          };
-          bool supported = true;
-          // Explicit development opt-in for Arm's 0.11 emulator. Its profile
-          // name is not PRO-INT; never treat it as hardware conformance.
-          bool emulator = allow_emulation && props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU &&
-              has(tosa.profileCount, tosa.pProfiles, "Emulation Layer");
-          for (const auto& profile : artifact->profiles) {
-            if (!has(tosa.profileCount, tosa.pProfiles, profile) &&
-                !(emulator && (profile == "PRO-INT" || profile == "PRO-FP"))) {
-              supported = false;
-              error = "TOSA profile is not advertised as conformant: " + profile;
-            }
-          }
-          for (const auto& extension : artifact->extensions) {
-            if (!has(tosa.extensionCount, tosa.pExtensions, extension)) {
-              supported = false;
-              error = "TOSA extension is not advertised as conformant: " + extension;
-            }
-          }
-          if (supported) { physical = candidate; queue_family = q; break; }
+      DeviceCapabilities caps;
+      if (!QueryDeviceCapabilities(get, instance, candidate, caps, error) ||
+          !CheckDeviceRequirements(caps, error)) continue;
+      if (!QueryTensorCapabilities(candidate, *artifact, GetPhysicalDeviceProperties2,
+                                   GetPhysicalDeviceFormatProperties2, error)) continue;
+      for (const auto& engine : caps.engines) {
+        if (CheckEngineRequirements(*artifact, caps, engine, allow_emulation, error)) {
+          physical = candidate; queue_family = engine.queue_family; break;
         }
       }
       if (physical) break;

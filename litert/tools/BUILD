@@ -1170,45 +1170,12 @@ cc_test(
     ],
 )
 
-litert_bin(
-    name = "imagenet_eval_runner",
+cc_library(
+    name = "imagenet_eval_runner_lib",
     srcs = ["imagenet_eval_runner.cc"],
+    hdrs = ["imagenet_eval_runner.h"],
     copts = ["-fno-exceptions"],
-    export_litert_only = True,
-    ungrte = True,
-    deps = [
-        ":imagenet_eval_data",
-        "//litert/cc:litert_common",
-        "//litert/cc:litert_compiled_model",
-        "//litert/cc:litert_element_type",
-        "//litert/cc:litert_environment",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_options",
-        "//litert/cc:litert_tensor_buffer",
-        "//litert/cc/options:litert_cpu_options",
-        "//litert/cc/options:litert_arm_vulkan_ml_options",
-        "//litert/cc/options:litert_gpu_options",
-        "//litert/cc/options:litert_intel_openvino_options",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
-    ] + litert_gpu_accelerator_deps(),
-)
-
-# Build with --define=litert_runtime_link_mode=dynamic.
-litert_bin(
-    name = "imagenet_eval_runner_dynamic_runtime",
-    srcs = ["imagenet_eval_runner.cc"],
-    copts = ["-fno-exceptions"],
-    data = [
-        "//litert/c:libLiteRt.so",
-    ] + litert_gpu_accelerator_prebuilts(),
-    # LD_LIBRARY_PATH must override Bazel's bundled runtime when evaluating
-    # against a pinned wheel. DT_RPATH would take precedence over that setting.
-    enable_new_dtags = True,
-    linkopts = ["-lm"],
-    ungrte = True,
+    visibility = ["//litert:__subpackages__"],
     deps = [
         ":imagenet_eval_data",
         "//litert/cc:litert_common",
@@ -1229,10 +1196,36 @@ litert_bin(
     ],
 )
 
+litert_bin(
+    name = "imagenet_eval_runner",
+    srcs = ["imagenet_eval_main.cc"],
+    export_litert_only = True,
+    ungrte = True,
+    deps = [":imagenet_eval_runner_lib"] + litert_gpu_accelerator_deps(),
+)
+
+# Build with --define=litert_runtime_link_mode=dynamic.
+litert_bin(
+    name = "imagenet_eval_runner_dynamic_runtime",
+    srcs = ["imagenet_eval_main.cc"],
+    copts = ["-fno-exceptions"],
+    data = [
+        "//litert/c:libLiteRt.so",
+    ] + litert_gpu_accelerator_prebuilts(),
+    # LD_LIBRARY_PATH must override Bazel's bundled runtime when evaluating
+    # against a pinned wheel. DT_RPATH would take precedence over that setting.
+    enable_new_dtags = True,
+    linkopts = ["-lm"],
+    ungrte = True,
+    deps = [":imagenet_eval_runner_lib"],
+)
+
 cc_library(
     name = "imagenet_eval_runner_test_source",
     testonly = True,
     textual_hdrs = ["imagenet_eval_runner.cc"],
+    hdrs = ["imagenet_eval_runner.h"],
+    deps = [":imagenet_eval_data"],
 )
 
 cc_test(
