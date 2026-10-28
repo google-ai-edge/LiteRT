@@ -17,9 +17,6 @@
 namespace litert::qnn {
 namespace {
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 TEST_P(QnnModelTest, QuantizedDepthwiseConv2dKernel4x4Stride4UsesConv2d) {
   static constexpr std::uint32_t kBatch = 1;
   static constexpr std::uint32_t kInputHeight = 4;

@@ -14,9 +14,6 @@ namespace litert::qnn {
 namespace {
 using testing::ElementsAre;
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 TEST_P(QnnModelTest, SingleOneHot) {
   const std::vector<std::uint32_t> kIndicesDims{1, 2};
   const std::vector<std::uint32_t> kOutputDims{1, 2, 3};

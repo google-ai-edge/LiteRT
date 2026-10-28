@@ -99,6 +99,7 @@ target_sources(qnn_model_test
 
 target_link_libraries(qnn_model_test
     PRIVATE
+        qnn_model_test_instantiation
         qnn_test_utils
         GTest::gmock
         GTest::gtest_main
@@ -129,6 +130,7 @@ target_sources(builder_test
 
 target_link_libraries(builder_test
     PRIVATE
+        qnn_model_test_instantiation
         qnn_test_utils
         qnn_builders
         GTest::gmock

@@ -13,9 +13,6 @@ using testing::FloatNear;
 using testing::Pointwise;
 namespace litert::qnn {
 namespace {
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 TEST_P(QnnModelTest, SingleRelu) {
   const std::vector<std::uint32_t> kDims{1, 2, 2, 1};
   auto& input_0 = tensor_pool_.CreateInputTensorWithName(
