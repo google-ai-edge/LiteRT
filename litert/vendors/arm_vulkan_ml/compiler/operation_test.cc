@@ -129,12 +129,18 @@ TEST(OperationTest, GatherRequiresConstantInRangeIndicesAndMatchingQuantization)
 }
 
 TEST(OperationTest, ReductionNormalizesAxesAndChecksOutputShape) {
-  for (auto code : {tflite::BuiltinOperator_REDUCE_MAX, tflite::BuiltinOperator_REDUCE_MIN}) {
+  for (auto code : {tflite::BuiltinOperator_REDUCE_MAX, tflite::BuiltinOperator_REDUCE_MIN, tflite::BuiltinOperator_SUM}) {
     for (int variant = 0; variant < 3; ++variant) {
       auto bytes = AddModel({2, 3, 4}, {3}, variant == 2 ? std::vector<int32_t>{3} : std::vector<int32_t>{2});
       auto object = tflite::UnPackModel(bytes.data());
       object->operator_codes[0]->builtin_code = code;
       auto& graph = *object->subgraphs[0];
+      if (code == tflite::BuiltinOperator_SUM) {
+        for (int index : {0, 2}) {
+          graph.tensors[index]->type = tflite::TensorType_FLOAT32;
+          graph.tensors[index]->quantization.reset();
+        }
+      }
       graph.inputs = {0};
       graph.tensors[1]->type = tflite::TensorType_INT32;
       graph.tensors[1]->quantization.reset();
@@ -237,6 +243,49 @@ TEST(OperationTest, TransposeConvolutionUsesDataInputTwoAndRejectsInvalidGeometr
     auto plan = AnalyzeOperation(subgraph->Ops()[0], reason);
     EXPECT_EQ(static_cast<bool>(plan), variant == 0) << reason;
     if (plan) EXPECT_EQ(plan->runtime_inputs, std::vector<int>{2});
+    EXPECT_EQ(static_cast<bool>(CompilePartition(*subgraph, reason)), variant == 0) << reason;
+  }
+}
+
+TEST(OperationTest, FloatFullyConnectedChecksConstantsShapeAndOptions) {
+  for (int variant = 0; variant < 4; ++variant) {
+    auto bytes = AddModel({2, 4}, {3, 4}, {3});
+    auto object = tflite::UnPackModel(bytes.data());
+    object->operator_codes[0]->builtin_code = tflite::BuiltinOperator_FULLY_CONNECTED;
+    auto& graph = *object->subgraphs[0];
+    for (auto& tensor : graph.tensors) {
+      tensor->type = tflite::TensorType_FLOAT32;
+      tensor->quantization.reset();
+    }
+    auto output = std::make_unique<tflite::TensorT>();
+    output->type = tflite::TensorType_FLOAT32;
+    output->shape = {variant == 2 ? 3 : 2, 3};
+    graph.tensors.push_back(std::move(output));
+    graph.tensors[1]->buffer = 1;
+    graph.tensors[2]->buffer = 2;
+    if (variant == 3) graph.tensors[2]->type = tflite::TensorType_INT32;
+    for (size_t count : {12, 3}) {
+      std::vector<float> values(count, 0.25f);
+      auto buffer = std::make_unique<tflite::BufferT>();
+      buffer->data.resize(values.size() * sizeof(float));
+      std::memcpy(buffer->data.data(), values.data(), buffer->data.size());
+      object->buffers.push_back(std::move(buffer));
+    }
+    graph.inputs = {0};
+    graph.outputs = {3};
+    graph.operators[0]->inputs = {0, 1, 2};
+    graph.operators[0]->outputs = {3};
+    tflite::FullyConnectedOptionsT options;
+    options.keep_num_dims = variant == 1;
+    options.fused_activation_function = tflite::ActivationFunctionType_RELU6;
+    graph.operators[0]->builtin_options.Set(options);
+    flatbuffers::FlatBufferBuilder builder;
+    tflite::FinishModelBuffer(builder, tflite::Model::Pack(builder, object.get()));
+    auto model = ExtendedModel::CreateFromBuffer(BufferRef<uint8_t>(builder.GetBufferPointer(), builder.GetSize()));
+    ASSERT_TRUE(model);
+    auto subgraph = model->Subgraph(0);
+    ASSERT_TRUE(subgraph);
+    std::string reason;
     EXPECT_EQ(static_cast<bool>(CompilePartition(*subgraph, reason)), variant == 0) << reason;
   }
 }

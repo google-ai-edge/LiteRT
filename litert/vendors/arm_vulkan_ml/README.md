@@ -62,13 +62,13 @@ biases. Analysis proves accumulator and rescale ranges before selecting an op.
 | CONCATENATION | Compatible shapes and identical quantization; no fused activation |
 | MAX_POOL_2D | VALID window, preserved quantization |
 | AVERAGE_POOL_2D | Global or disjoint tiled VALID windows, preserved quantization, bounded integer sum |
-| SUM | Constant axes and keep_dims=true; bounded integer sum |
+| SUM | INT8: constant axes, keep_dims=true, bounded integer sum; FP32: constant axes, either keep_dims mode, non-scalar output |
 | REDUCE_MAX, REDUCE_MIN | INT8/FP32, constant axes (negative/duplicate axes normalized), keep_dims true or false, non-scalar output; INT8 quantization preserved |
 | GATHER | INT8/FP32 values, constant in-range INT32 indices, batch_dims=0, any valid axis; INT8 quantization preserved |
 | RESIZE_NEAREST_NEIGHBOR | INT8/FP32 NHWC, constant size, align_corners or half_pixel_centers, TOSA scale/offset/border limits; INT8 quantization preserved |
 | RESIZE_BILINEAR | FP32 NHWC and constant size with the same coordinate/scale checks |
 | TRANSPOSE_CONV | FP32 NHWC, constant OHWI weights/output shape and optional bias, canonical SAME/VALID geometry, stride ≤ kernel, NONE/RELU/RELU6 activation |
-| FULLY_CONNECTED | Constant dense int8 weights/int32 bias; default weight format; flattened output |
+| FULLY_CONNECTED | Constant dense INT8 weights/INT32 bias or FP32 weights/bias; default weight format; flattened 2D output |
 | DEQUANTIZE, QUANTIZE | Int8 ↔ FP32 or int8 → int8 requantization, identical fixed shape; identity INT8 QUANTIZE is eliminated |
 
 A limited FP32 path supports TRANSPOSE, RESHAPE, PAD, CONV_2D, depthwise convolution,
@@ -123,6 +123,16 @@ models. Quantized bilinear resize/transpose convolution, runtime gather indices,
 nonzero gather batch_dims, scalar reduction outputs and aligned singleton
 resize dimensions remain unsupported. The [capability audit](tools/tosa_capabilities/README.md)
 separates these implemented subsets from the full specification inventory.
+
+The FP32 `mobilenet_v2.tflite` artifact (SHA-256
+`34853c702f8da7298c6ae6c100b8a23df98b11d4fb41aa200e6fa45e96d52ea6`)
+now compiles all 70 operations into one Vulkan partition. Its previously missing
+FP32 SUM lowers to REDUCE_SUM, and FULLY_CONNECTED lowers to MATMUL plus bias
+and optional activation. Three ImageNet images matched the CPU reference at
+`atol=1e-4, rtol=1e-3`, with maximum absolute logit error `9.54e-7` and identical
+top-1/top-5 predictions. Both new paths passed four isolated synthetic inputs,
+and the complete graph passed SPIR-V validation. This is emulator smoke evidence,
+not native-device performance or full ImageNet accuracy qualification.
 
 ## Build and validate
 

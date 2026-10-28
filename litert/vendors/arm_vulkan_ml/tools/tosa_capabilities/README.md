@@ -158,7 +158,7 @@ current. Tensor API Revision 2 does not change this operator inventory.
 | AVG_POOL2D | Now direct for INT8 as well as FP32 | Existing static shape/quantization checks remain; accepted INT8 rounding differences are documented in the backend README |
 | SIGMOID / TANH | FP32 SIGMOID already direct; INT8 sigmoid is TABLE; TANH not lowered | Floating-point rows do not authorize direct INT8 activation; use TABLE for quantized activation or a separately validated conversion path |
 | MAXIMUM / MINIMUM / ABS / NEGATE / SUB | Available for new elementwise lowering | Match exact type row, broadcasting, quantization and integer overflow behavior |
-| REDUCE_MAX / REDUCE_MIN / REDUCE_PRODUCT / REDUCE_ALL / REDUCE_ANY | INT8/FP32 MIN/MAX now implemented with constant axes and non-scalar outputs; SUM already used; PRODUCT/ALL/ANY remain future work | Check supported types, axes/keep-dims, accumulator semantics and Boolean types |
+| REDUCE_MAX / REDUCE_MIN / REDUCE_PRODUCT / REDUCE_ALL / REDUCE_ANY | INT8/FP32 MIN/MAX now implemented with constant axes and non-scalar outputs; SUM now covers FP32 as well as INT8; PRODUCT/ALL/ANY remain future work | Check supported types, axes/keep-dims, accumulator semantics and Boolean types |
 | RESIZE | Implemented for INT8/FP32 nearest and FP32 bilinear with constant NHWC sizes; aligned singleton sizes rejected | Match interpolation, coordinate transformation, border behavior and supported scale/offset representation |
 | GATHER / SCATTER / TILE / REVERSE | GATHER implemented for INT8/FP32 values, constant INT32 indices and batch_dims=0; others remain future work | Check index types, negative-index behavior, axis normalization and static output shapes |
 | TRANSPOSE_CONV2D / CONV3D | FP32 TRANSPOSE_CONV2D implemented for canonical SAME/VALID shapes with constant weights and optional bias; quantized transpose convolution and CONV3D remain future work | Validate layouts, padding/output shapes, accumulation and quantization; helper presence alone is insufficient |
@@ -168,7 +168,9 @@ current. Tensor API Revision 2 does not change this operator inventory.
 There is no dedicated HARD_SWISH, SILU, SOFTMAX, FULLY_CONNECTED, QUANTIZE,
 DEQUANTIZE or normalization instruction in this mapping. Existing TABLE,
 MATMUL, CAST and arithmetic sequences therefore cannot all be replaced by a
-single same-named TOSA instruction. Unused mapped operators generally expand
+single same-named TOSA instruction. FP32 FULLY_CONNECTED now uses MATMUL plus
+bias and optional CLAMP, as validated by the full FP32 MobileNetV2 graph.
+Unused mapped operators generally expand
 model coverage; they do not automatically simplify currently supported graphs.
 
 Device eligibility remains the conjunction of compiler legality, the queried
