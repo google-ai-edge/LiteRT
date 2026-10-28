@@ -175,3 +175,8 @@ Use [`litert_arm_vulkan_ml_tool`](tools/devtool/README.md) to inspect coverage,
 export validated SPIR-V, query device capabilities, validate ImageNet models,
 and trace intermediate differences against CPU reference. It builds for Linux
 and Android and defaults to small image samples.
+
+The [portable FP32 matrix](tools/tosa_capabilities/PORTABLE_FP32_COVERAGE.md)
+records the expanded arithmetic, tensor manipulation, pooling, reduction,
+softmax and batch-matmul subsets. Use the developer tool's `--tensor_inputs`
+path to qualify arbitrary graphs and diagnose individual operator differences.

@@ -13,11 +13,14 @@
 // limitations under the License.
 
 #include "litert/vendors/arm_vulkan_ml/tools/devtool/tool.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <set>
+#include "spirv-tools/libspirv.hpp"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/partition.h"
@@ -66,32 +69,90 @@ Expected<void> FillInput(tflite::Interpreter& cpu, const std::vector<float>& pix
 }  // namespace
 Expected<void> Trace(const Options& options, Json& report) {
   LITERT_ASSIGN_OR_RETURN(auto object, LoadModel(options.Get("model")));
-  if (object->subgraphs.size() != 1 || object->subgraphs[0]->inputs.size() != 1)
-    return Failure("Trace requires a single-subgraph, single-input model");
+  if (object->subgraphs.size() != 1 || object->subgraphs[0]->inputs.empty())
+    return Failure("Execution requires one subgraph with data inputs");
+  report["model"] = options.Get("model");
+  LITERT_ASSIGN_OR_RETURN(report["model_sha256"], imagenet::HashFile(options.Get("model")));
   const auto& graph = *object->subgraphs[0];
-  const auto& input = *graph.tensors[graph.inputs[0]];
-  if (input.shape.size() != 4 || input.shape[0] != 1 || ((input.shape[1] == 3) == (input.shape[3] == 3)))
-    return Failure("Trace requires unambiguous NCHW/NHWC batch-one RGB");
-  for (auto dim : input.shape_signature) if (dim < 0) return Failure("Dynamic trace input unsupported");
-  if (options.Get("manifest").empty() || options.Get("preprocessing_config").empty())
-    return Failure("Trace requires manifest and explicit preprocessing");
-  LITERT_ASSIGN_OR_RETURN(auto config_json, imagenet::ReadJson(options.Get("preprocessing_config")));
-  LITERT_ASSIGN_OR_RETURN(auto preprocessing, imagenet::ParsePreprocessing(config_json));
-  LITERT_ASSIGN_OR_RETURN(auto image, ImagePath(options));
-  LITERT_ASSIGN_OR_RETURN(auto pixels, imagenet::DecodePreprocess(image, preprocessing, input.shape[1] == 3));
-  report["image"] = image;
-  report["preprocessing"] = config_json;
-  LITERT_ASSIGN_OR_RETURN(report["image_sha256"], imagenet::HashFile(image));
-  imagenet::Sha256 input_hash;
-  input_hash.Update(pixels.data(), pixels.size() * sizeof(float));
-  report["input_sha256"] = input_hash.Hex();
+  if (graph.operators.empty()) return Failure("Empty execution graph unsupported");
+  if (options.command == "validate" && options.values.count("mode")) return Failure("mode is only valid for trace");
+  const bool raw = !options.Get("tensor_inputs").empty();
+  std::vector<float> pixels;
+  std::vector<std::vector<float>> raw_inputs(graph.inputs.size());
+  if (raw) {
+    if (!options.Get("manifest").empty() || !options.Get("preprocessing_config").empty())
+      return Failure("tensor_inputs and image options are mutually exclusive");
+    LITERT_ASSIGN_OR_RETURN(auto manifest, imagenet::ReadJson(options.Get("tensor_inputs")));
+    if (!manifest.is_object() || !manifest.contains("cases") || !manifest["cases"].is_array())
+      return Failure("Tensor manifest requires cases array");
+    LITERT_ASSIGN_OR_RETURN(int start, options.Integer("start_sample", 0));
+    LITERT_ASSIGN_OR_RETURN(int samples, options.Integer("max_samples", options.command == "trace" ? 1 : 3));
+    if (start < 0 || samples < 1 || samples > 10 || (options.command == "trace" && samples != 1) ||
+        static_cast<size_t>(start + samples) > manifest["cases"].size()) return Failure("Invalid tensor sample range");
+    if (samples > 1) {
+      report["cases"] = Json::array(); bool passed = true;
+      for (int i = 0; i < samples; ++i) {
+        Options child = options; child.values["max_samples"] = "1";
+        child.values["start_sample"] = std::to_string(start + i);
+        Json row; auto status = Trace(child, row);
+        row["status"] = status ? "passed" : "failed";
+        if (!status) { row["error"] = std::string(status.Error().Message()); passed = false; }
+        report["cases"].push_back(std::move(row));
+      }
+      if (!passed) return Failure("Tensor cases failed");
+      return {};
+    }
+    const auto& sample = manifest["cases"][start];
+    if (!sample.is_object() || !sample.contains("id") || !sample.contains("inputs") || !sample["inputs"].is_array())
+      return Failure("Tensor case requires id and inputs");
+    report["case_id"] = sample["id"];
+    std::set<int> seen;
+    for (const auto& entry : sample["inputs"]) {
+      if (!entry.is_object() || !entry.contains("index") || !entry["index"].is_number_integer() ||
+          !entry.contains("file") || !entry["file"].is_string()) return Failure("Invalid tensor input entry");
+      if (entry["index"] < 0 || entry["index"] >= raw_inputs.size()) return Failure("Unknown input index");
+      int slot = entry["index"].get<int>();
+      if (slot < 0 || static_cast<size_t>(slot) >= raw_inputs.size() || !seen.insert(slot).second)
+        return Failure("Unknown or duplicate input index");
+      const auto& tensor = *graph.tensors[graph.inputs[slot]];
+      if (tensor.type != tflite::TensorType_FLOAT32 || tensor.shape.empty()) return Failure("Raw inputs require ranked FP32");
+      size_t count = 1;
+      for (auto dim : tensor.shape) {
+        if (dim <= 0 || count > (256u * 1024u * 1024u / sizeof(float)) / static_cast<size_t>(dim)) return Failure("Invalid/oversized raw shape");
+        count *= dim;
+      }
+      for (auto dim : tensor.shape_signature) if (dim < 0) return Failure("Dynamic raw input unsupported");
+      std::filesystem::path path(entry["file"].get<std::string>());
+      if (path.is_relative()) path = std::filesystem::path(options.Get("tensor_inputs")).parent_path() / path;
+      std::ifstream file(path, std::ios::binary | std::ios::ate);
+      if (!file || file.tellg() != static_cast<std::streamoff>(count * sizeof(float))) return Failure("Raw input byte count mismatch");
+      raw_inputs[slot].resize(count); file.seekg(0);
+      file.read(reinterpret_cast<char*>(raw_inputs[slot].data()), count * sizeof(float));
+      if (!file) return Failure("Cannot read raw input");
+      LITERT_ASSIGN_OR_RETURN(auto hash, imagenet::HashFile(path.string()));
+      report["inputs"].push_back({{"index", slot}, {"sha256", hash}});
+    }
+    if (seen.size() != raw_inputs.size()) return Failure("Missing raw input");
+  } else {
+    if (graph.inputs.size() != 1) return Failure("Images require one input");
+    const auto& input = *graph.tensors[graph.inputs[0]];
+    if (input.shape.size() != 4 || input.shape[0] != 1 || ((input.shape[1] == 3) == (input.shape[3] == 3)))
+      return Failure("Images require unambiguous NCHW/NHWC RGB batch one");
+    for (auto dim : input.shape_signature) if (dim < 0) return Failure("Dynamic input unsupported");
+    LITERT_ASSIGN_OR_RETURN(auto config_json, imagenet::ReadJson(options.Get("preprocessing_config")));
+    LITERT_ASSIGN_OR_RETURN(auto preprocessing, imagenet::ParsePreprocessing(config_json));
+    LITERT_ASSIGN_OR_RETURN(auto image, ImagePath(options));
+    LITERT_ASSIGN_OR_RETURN(pixels, imagenet::DecodePreprocess(image, preprocessing, input.shape[1] == 3));
+    report["image"] = image; report["preprocessing"] = config_json;
+    LITERT_ASSIGN_OR_RETURN(report["image_sha256"], imagenet::HashFile(image));
+  }
   for (const auto& tolerance : std::vector<std::pair<std::string, double>>{
            {"atol", 1e-4}, {"rtol", 1e-3}, {"max_code_error", 4}, {"mean_code_error", .5}}) {
     LITERT_ASSIGN_OR_RETURN(auto value, options.Number(tolerance.first, tolerance.second));
     report["tolerances"][tolerance.first] = value;
   }
   LITERT_ASSIGN_OR_RETURN(int samples, options.Integer("max_samples", 1));
-  if (samples != 1) return Failure("Trace supports exactly one image");
+  if (options.command == "trace" && samples != 1) return Failure("Trace supports exactly one image");
   LITERT_ASSIGN_OR_RETURN(int mb, options.Integer("capture_budget_mb", 256));
   LITERT_ASSIGN_OR_RETURN(int allow, options.Integer("allow_emulation", 0));
   LITERT_ASSIGN_OR_RETURN(int dump, options.Integer("dump_tensors", 0));
@@ -100,7 +161,7 @@ Expected<void> Trace(const Options& options, Json& report) {
   const bool isolated = options.Get("mode", "accumulated") == "isolated";
   if (!isolated && options.Get("mode", "accumulated") != "accumulated") return Failure("Unknown trace mode");
   if (dump && options.Get("output_dir").empty()) return Failure("Tensor dumps require output_dir");
-  report["trace_mode"] = isolated ? "isolated_cpu_fed" : "instrumented_prefix";
+  report["trace_mode"] = options.command == "validate" ? "full_graph" : (isolated ? "isolated_cpu_fed" : "instrumented_prefix");
   report["capture_budget_bytes"] = budget;
   report["budget_scope"] = "captured tensors; excludes model weights and execution workspace";
   report["instrumentation_note"] = "Exposing outputs may change fusion/optimization; not an uninstrumented driver trace";
@@ -115,7 +176,9 @@ Expected<void> Trace(const Options& options, Json& report) {
   }
   for (size_t index = 0; index < graph.operators.size(); ++index) {
     report["last_attempted_operator"] = index;
-    const auto& op = *graph.operators[index];
+    if (options.command == "validate" && index + 1 != graph.operators.size()) continue;
+    auto op = *graph.operators[index];
+    if (options.command == "validate") op.outputs = graph.outputs;
     std::vector<int32_t> runtime_inputs;
     for (auto id : op.inputs) if (id >= 0 && object->buffers[graph.tensors[id]->buffer]->data.empty()) {
       if (std::find(runtime_inputs.begin(), runtime_inputs.end(), id) == runtime_inputs.end()) runtime_inputs.push_back(id);
@@ -143,7 +206,13 @@ Expected<void> Trace(const Options& options, Json& report) {
     if (tflite::InterpreterBuilder(*flat, resolver)(&cpu) != kTfLiteOk || !cpu || cpu->AllocateTensors() != kTfLiteOk)
       return Failure("Cannot allocate CPU reference prefix");
     cpu->SetNumThreads(1);
-    LITERT_RETURN_IF_ERROR(FillInput(*cpu, pixels));
+    if (raw) {
+      for (size_t i = 0; i < raw_inputs.size(); ++i) {
+        auto* tensor = cpu->tensor(graph.inputs[i]);
+        if (tensor->type != kTfLiteFloat32 || tensor->bytes != raw_inputs[i].size() * sizeof(float)) return Failure("CPU input shape mismatch");
+        std::memcpy(tensor->data.raw, raw_inputs[i].data(), tensor->bytes);
+      }
+    } else { LITERT_RETURN_IF_ERROR(FillInput(*cpu, pixels)); }
     if (cpu->Invoke() != kTfLiteOk) return Failure("CPU reference prefix failed");
     sg.outputs = op.outputs;
     if (isolated) {
@@ -155,6 +224,9 @@ Expected<void> Trace(const Options& options, Json& report) {
     LITERT_ASSIGN_OR_RETURN(auto vk_graph, vk_model.Subgraph(0));
     std::string reason; auto artifact = CompilePartition(vk_graph, reason);
     if (!artifact) return Failure("Trace compilation: " + reason);
+    spvtools::SpirvTools validator(SPV_ENV_UNIVERSAL_1_6);
+    if (!validator.Validate(artifact->spirv)) return Failure("SPIR-V validation failed");
+    report["spirv_valid"] = true;
     auto invocation = VulkanInvocation::Create(artifact, allow != 0, reason);
     if (!invocation) return Failure("Trace device/pipeline: " + reason);
     std::vector<const void*> inputs;
@@ -195,7 +267,7 @@ Expected<void> Trace(const Options& options, Json& report) {
       row["outputs"].push_back(std::move(comparison));
     }
     report["operators"].push_back(std::move(row));
-    if (!passed) { report["first_divergence"] = index; return Failure("Intermediate output exceeds tolerance"); }
+    if (!passed) { if (options.command == "trace") report["first_divergence"] = index; return Failure("Output exceeds tolerance"); }
   }
   report["complete"] = true;
   return {};

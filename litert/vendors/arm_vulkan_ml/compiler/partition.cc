@@ -15,6 +15,7 @@
 #include "litert/vendors/arm_vulkan_ml/compiler/partition.h"
 #include <unordered_map>
 #include <set>
+#include "litert/vendors/arm_vulkan_ml/compiler/portable_ops.h"
 #include <utility>
 #include "TosaForSpirvCodegen.hpp"
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
@@ -76,13 +77,13 @@ std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& subgra
       if (value == values.end() && tensor.HasWeights()) {
         auto bytes = tensor.Weights().Bytes();
         auto type = tensor.RankedTensorType();
-        if (!type || tensor.ElementType() != ElementType::Int8) {
+        if (!type || (tensor.ElementType() != ElementType::Int8 && tensor.ElementType() != ElementType::Float32)) {
           reason = "Invalid constant activation"; return nullptr;
         }
         auto dims = type->Layout().Dimensions();
-        tfsc::tosa::Tensor constant_type(tfsc::tosa::DataType::int8_t,
+        tfsc::tosa::Tensor constant_type(tensor.ElementType() == ElementType::Float32 ? tfsc::tosa::DataType::float32_t : tfsc::tosa::DataType::int8_t,
                                        {dims.begin(), dims.end()});
-        if (bytes.size() != constant_type.GetNumElements()) {
+        if (bytes.size() != constant_type.GetNumElements() * (tensor.ElementType() == ElementType::Float32 ? 4 : 1)) {
           reason = "Invalid constant byte count"; return nullptr;
         }
         constants.push_back({constant_type,{bytes.begin(),bytes.end()}});
@@ -93,6 +94,17 @@ std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& subgra
         return nullptr;
       }
       inputs.push_back(value->second);
+    }
+    if (plan->portable) {
+      auto outputs = EmitPortableOperation(graph, inputs, *plan->portable);
+      if (outputs.size() != op.Outputs().size()) { reason = "Portable result count mismatch"; return nullptr; }
+      for (size_t i = 0; i < outputs.size(); ++i) {
+        if (!outputs[i] || tfsc::IsError(outputs[i])) { reason = tfsc::GetErrorMsg(outputs[i]); return nullptr; }
+        values[op.Outputs()[i].Get()] = outputs[i];
+      }
+      if (diagnostics) diagnostics->push_back({operator_index, new_ids()});
+      ++operator_index;
+      continue;
     }
     auto output = EmitOperation(graph, inputs, *plan, constants);
     if (!output || tfsc::IsError(output)) { reason = tfsc::GetErrorMsg(output); return nullptr; }

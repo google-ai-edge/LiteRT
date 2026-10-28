@@ -92,7 +92,7 @@ Expected<Options> ParseOptions(int argc, char** argv) {
   const std::set<std::string> keys = {"model", "report_json", "output_dir", "manifest", "preprocessing_config",
       "image_root", "start_sample", "max_samples", "atol", "rtol", "max_code_error", "mean_code_error",
       "compiler_plugin_library_dir", "dispatch_library_dir", "runtime_library_dir", "allow_emulation",
-      "mode", "capture_budget_mb", "suite", "dump_tensors"};
+      "mode", "capture_budget_mb", "suite", "dump_tensors", "tensor_inputs"};
   for (int i = 2; i < argc; ++i) {
     std::string arg = argv[i]; if (arg.rfind("--", 0) != 0) return Invalid("Expected --option: " + arg);
     auto equals = arg.find('='); std::string key = arg.substr(2, equals == std::string::npos ? equals : equals - 2);
@@ -310,12 +310,12 @@ Expected<void> Validate(const Options& options, Json& report) {
       Options child = options; child.values.erase("suite");
       for (auto it = entry.begin(); it != entry.end(); ++it) {
         if (it.key() == "sha256" || it.key() == "known_failure") continue;
-        const std::set<std::string> allowed = {"model", "manifest", "image_root", "preprocessing_config", "start_sample", "max_samples"};
+        const std::set<std::string> allowed = {"model", "manifest", "image_root", "preprocessing_config", "tensor_inputs", "start_sample", "max_samples"};
         if (!allowed.count(it.key())) return Invalid("Unknown suite field " + it.key());
         if (!it.value().is_string() && !it.value().is_number()) return Invalid("Invalid suite option " + it.key());
         child.values[it.key()] = it.value().is_string() ? it.value().get<std::string>() : it.value().dump();
       }
-      for (const auto* key : {"model", "manifest", "image_root", "preprocessing_config"}) {
+      for (const auto* key : {"model", "manifest", "image_root", "preprocessing_config", "tensor_inputs"}) {
         if (!entry.contains(key)) continue;
         auto path = fs::path(child.Get(key));
         if (path.is_relative()) child.values[key] = (fs::path(options.Get("suite")).parent_path() / path).string();
@@ -331,6 +331,7 @@ Expected<void> Validate(const Options& options, Json& report) {
     if (!passed) return Invalid("One or more suite models failed; known failures are not waived");
     return {};
   }
+  if (!options.Get("tensor_inputs").empty()) return Trace(options, report);
   LITERT_ASSIGN_OR_RETURN(auto object, LoadModel(options.Get("model")));
   LITERT_RETURN_IF_ERROR(ImageInterface(*object));
   LITERT_ASSIGN_OR_RETURN(auto bytes, PackModel(*object));
@@ -410,7 +411,7 @@ int Main(int argc, char** argv) {
     std::cout << "litert_arm_vulkan_ml_tool {inspect|capabilities|compile|validate|trace}\n"
       "  --model FILE --report_json FILE\n"
       "  compile: --output_dir DIR\n"
-      "  validate/trace: --manifest FILE --preprocessing_config FILE --start_sample N\n"
+      "  validate/trace: --tensor_inputs FILE (raw FP32), or --manifest FILE --preprocessing_config FILE --start_sample N\n"
       "  validate: --max_samples 3 --suite FILE (optional alternative)\n"
       "  trace: --mode accumulated|isolated --capture_budget_mb 256 --dump_tensors 0|1\n"
       "  --compiler_plugin_library_dir DIR --dispatch_library_dir DIR\n"
