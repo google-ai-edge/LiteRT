@@ -168,3 +168,10 @@ Host emulation is development evidence, not native Arm GPU qualification.
 `LITERT_ARM_VULKAN_ML_ALLOW_EMULATION=1` is an explicit development override for
 the emulation layer's nonconformant profile advertisement. Native device
 performance, Android execution and dynamic shapes are not qualified here.
+
+## C++ developer diagnostics
+
+Use [`litert_arm_vulkan_ml_tool`](tools/devtool/README.md) to inspect coverage,
+export validated SPIR-V, query device capabilities, validate ImageNet models,
+and trace intermediate differences against CPU reference. It builds for Linux
+and Android and defaults to small image samples.

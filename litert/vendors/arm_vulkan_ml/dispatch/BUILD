@@ -60,9 +60,10 @@ litert_dynamic_lib(
 
 cc_library(
     name = "tensor_capabilities",
-    srcs = ["tensor_capabilities.cc"],
+    visibility = ["//litert:__subpackages__"],
+    srcs = ["tensor_capabilities.cc", "device_capabilities.cc"],
     copts = ["-fno-exceptions"],
-    hdrs = ["tensor_capabilities.h"],
+    hdrs = ["tensor_capabilities.h", "device_capabilities.h"],
     deps = [
         "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
         "@arm_vulkan_ml_dep_vulkan_headers//:vulkan_headers",

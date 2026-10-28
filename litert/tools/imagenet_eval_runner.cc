@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "litert/tools/imagenet_eval_runner.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -61,40 +62,7 @@ namespace {
 namespace im = litert::imagenet;
 using im::Json;
 
-struct Config {
-  std::string model;
-  std::string baseline_model, summary_json, runtime_library_dir;
-  std::string gpu_use_ir_model = "default";
-  std::string interpolation = "bilinear", preprocessing_config;
-  int require_full_acceleration = 0, require_output_parity = 0;
-  double atol = 1e-4, rtol = 1e-3;
-  std::string manifest;
-  std::string image_root;
-  std::string out;
-  std::string scores_out;
-  std::string inputs_out;
-  int num_threads = 0;
-  int xnnpack_only = 0;
-  int warmup_runs = 0;
-  int start_sample = 0;
-  std::string accelerator = "cpu";
-  std::string compiler_plugin_library_dir;
-  int arm_vulkan_ml_enable_jit = 0;
-  std::string baseline_accelerator = "inherit";
-  int baseline_num_threads = 1;
-  std::string dispatch_library_dir;
-  std::string openvino_device;
-  std::string gpu_backend = "automatic";
-  std::string gpu_precision = "default";
-  int gpu_benchmark_mode = 0;
-  int resize = 232;
-  int crop_h = 224;
-  int crop_w = 224;
-  int antialias = 1;
-  std::string mean = "0.485,0.456,0.406";
-  std::string stddev = "0.229,0.224,0.225";
-  int max_samples = 0;
-};
+using Config = litert::imagenet::EvaluationConfig;
 
 struct Row {
   int id;
@@ -872,6 +840,24 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
       base_top1 += br[0] == row.label;
       base_top5 += std::find(br.begin(), br.end(), row.label) != br.end();
       agreements += br[0] == pred;
+      if (cfg.compare_int8_codes) {
+        LITERT_ASSIGN_OR_RETURN(auto tensor_type, candidate->outputs[0].TensorType());
+        if (tensor_type.ElementType() == litert::ElementType::Int8) {
+          LITERT_ASSIGN_OR_RETURN(auto signature, candidate->model.GetSignature(0));
+          LITERT_ASSIGN_OR_RETURN(const auto& tensor, signature.OutputTensor(0));
+          LITERT_ASSIGN_OR_RETURN(auto q, GetPerTensorQuantization(tensor, "output"));
+          double max_code = 0, sum_code = 0;
+          for (size_t i = 0; i < scores.size(); ++i) {
+            double delta = std::abs(std::round(scores[i] / q.scale + q.zero_point) -
+                                    std::round(reference[i] / q.scale + q.zero_point));
+            max_code = std::max(max_code, delta); sum_code += delta;
+          }
+          record["max_code_error"] = max_code;
+          record["mean_code_error"] = sum_code / scores.size();
+          comparison.allclose = max_code <= cfg.max_code_error &&
+              sum_code / scores.size() <= cfg.mean_code_error;
+        }
+      }
       allclose += comparison.allclose;
       max_abs = std::max(max_abs, comparison.max_abs);
       mean_abs += comparison.mean_abs;
@@ -887,6 +873,7 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
     if (scores_file.is_open())
       scores_file.write(reinterpret_cast<const char*>(scores.data()),
                         scores.size() * sizeof(float));
+    if (cfg.capture_records) summary["records"].push_back(record);
     out << record.dump(-1, ' ', false, Json::error_handler_t::replace) << '\n';
     summary["labels"].push_back(row.label);
     summary["candidate_predictions"].push_back(pred);
@@ -914,6 +901,8 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
     summary["output_max_abs"] = max_abs;
     summary["output_mean_abs"] = mean_abs / n;
     summary["baseline_inference_ms"] = baseline_ms;
+    if (cfg.require_prediction_agreement && agreements != rows.size())
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure, "Prediction agreement gate failed");
     if (cfg.require_output_parity && allclose != rows.size())
       return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                            "Output parity tolerance exceeded");
@@ -925,8 +914,13 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
 }
 }  // namespace
 
+litert::Expected<void> litert::imagenet::Evaluate(const EvaluationConfig& config, Json& summary) {
+  LITERT_RETURN_IF_ERROR(ValidateBackendOptions(config));
+  return Run(config, summary);
+}
+
 #ifndef LITERT_IMAGENET_EVAL_TEST
-int main(int argc, char** argv) {
+int litert::imagenet::EvaluationMain(int argc, char** argv) {
   Config cfg;
   Json summary = {{"schema_version", 1}, {"status", "failed"}, {"samples", 0}};
   // Capture the report path even when an earlier argument is malformed.
