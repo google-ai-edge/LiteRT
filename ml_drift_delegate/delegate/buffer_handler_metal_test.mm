@@ -165,6 +165,51 @@
   XCTAssertEqual(event->IsSignaled(event.get()), 1);
 }
 
+- (void)testCustomEventMetalEncodeWaitOrdersCommandBuffers {
+  XCTAssertNotNil(_device, @"Metal device should be initialized in setUp");
+  XCTAssertNotNil(_commandQueue, @"Metal command queue should be initialized in setUp");
+
+  constexpr NSUInteger kBufferSize = 64 * 1024 * 1024;
+  constexpr NSUInteger kResultSize = 16;
+  constexpr uint8_t kFillValue = 0xAB;
+  id<MTLBuffer> buffer = [_device newBufferWithLength:kBufferSize
+                                              options:MTLResourceStorageModePrivate];
+  id<MTLBuffer> result = [_device newBufferWithLength:kResultSize
+                                              options:MTLResourceStorageModeShared];
+  std::memset([result contents], 0, kResultSize);
+  auto event = std::make_unique<litert::ml_drift::CustomEventMetal>(_device);
+
+  // The producer fills the buffer on one queue and signals the event.
+  id<MTLCommandBuffer> producer = [_commandQueue commandBuffer];
+  id<MTLBlitCommandEncoder> fill = [producer blitCommandEncoder];
+  [fill fillBuffer:buffer range:NSMakeRange(0, kBufferSize) value:kFillValue];
+  [fill endEncoding];
+  event->EncodeSignal(producer);
+  [producer commit];
+
+  // The consumer on another queue waits for the event before reading the end of the buffer.
+  id<MTLCommandQueue> other_queue = [_device newCommandQueue];
+  id<MTLCommandBuffer> consumer = [other_queue commandBuffer];
+  event->EncodeWait(consumer);
+  id<MTLBlitCommandEncoder> copy = [consumer blitCommandEncoder];
+  [copy copyFromBuffer:buffer
+           sourceOffset:kBufferSize - kResultSize
+               toBuffer:result
+      destinationOffset:0
+                   size:kResultSize];
+  [copy endEncoding];
+  [consumer commit];
+  [consumer waitUntilCompleted];
+
+  XCTAssertEqual(consumer.status, MTLCommandBufferStatusCompleted);
+  const uint8_t* data = static_cast<const uint8_t*>([result contents]);
+  for (NSUInteger i = 0; i < kResultSize; ++i) {
+    XCTAssertEqual(data[i], kFillValue);
+  }
+  event->Wait(event.get(), /*timeout_in_ms=*/-1);
+  XCTAssertEqual(event->IsSignaled(event.get()), 1);
+}
+
 - (void)testLockUnlockMetalMemory {
   if (!_device) return;
 
