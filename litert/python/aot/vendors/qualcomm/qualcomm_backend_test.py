@@ -145,12 +145,7 @@ class _RecordingApplyPlugin(components.ApplyPluginT):
 
 
 def _fake_qnn_sdk(
-    lib_dir=None,
-    *,
-    error=None,
-    hexagon_arch=None,
-    with_detect_hexagon_arch=True,
-    with_configure_runtime=True,
+    lib_dir=None, *, error=None, default_paths=None
 ) -> types.ModuleType:
   """Returns a fake ai_edge_litert_sdk_qualcomm module."""
   module = types.ModuleType(_SDK_MODULE)
@@ -159,12 +154,9 @@ def _fake_qnn_sdk(
       "path_to_sdk_libs",
       mock.Mock(return_value=lib_dir, side_effect=error),
   )
-  if with_detect_hexagon_arch:
-    setattr(
-        module, "detect_hexagon_arch", mock.Mock(return_value=hexagon_arch)
-    )
-  if with_configure_runtime:
-    setattr(module, "configure_runtime", mock.Mock())
+  setattr(
+      module, "default_qualcomm_paths", mock.Mock(return_value=default_paths)
+  )
   return module
 
 
@@ -260,12 +252,10 @@ class ResolveSdkLibsPathTest(googletest.TestCase):
   def test_config_wins_over_everything(self):
     os.environ["QAIRT_LIB_PATH"] = self.qairt_dir
     self._set_qnn_sdk_root()
-    sdk = _fake_qnn_sdk(self.sdk_dir, hexagon_arch="v75")
+    sdk = _fake_qnn_sdk(self.sdk_dir)
     with mock.patch.dict(sys.modules, {_SDK_MODULE: sdk}):
       self.assertEqual(self._resolve(sdk_libs_path="/cfg/lib"), "/cfg/lib")
     sdk.path_to_sdk_libs.assert_not_called()
-    sdk.detect_hexagon_arch.assert_not_called()
-    sdk.configure_runtime.assert_not_called()
 
   def test_config_pathlib_is_stringified(self):
     self.assertEqual(
@@ -274,10 +264,9 @@ class ResolveSdkLibsPathTest(googletest.TestCase):
 
   def test_qairt_lib_path_wins_over_sdk_package(self):
     os.environ["QAIRT_LIB_PATH"] = self.qairt_dir
-    sdk = _fake_qnn_sdk(self.sdk_dir, hexagon_arch="v75")
+    sdk = _fake_qnn_sdk(self.sdk_dir)
     self.assertEqual(self._resolve_with_sdk(sdk), self.qairt_dir)
     sdk.path_to_sdk_libs.assert_not_called()
-    sdk.configure_runtime.assert_not_called()
 
   def test_missing_qairt_lib_path_is_ignored(self):
     os.environ["QAIRT_LIB_PATH"] = str(self.tmp_dir / "does_not_exist")
@@ -315,38 +304,6 @@ class ResolveSdkLibsPathTest(googletest.TestCase):
     expected = self._set_qnn_sdk_root()
     sdk = _fake_qnn_sdk(error=NotImplementedError("unsupported host"))
     self.assertEqual(self._resolve_with_sdk(sdk), expected)
-
-  def test_detected_arch_configures_runtime(self):
-    sdk = _fake_qnn_sdk(self.sdk_dir, hexagon_arch="v75")
-    self.assertEqual(self._resolve_with_sdk(sdk), self.sdk_dir)
-    sdk.detect_hexagon_arch.assert_called_once_with()
-    sdk.configure_runtime.assert_called_once_with("v75")
-
-  def test_undetected_arch_does_not_configure_runtime(self):
-    # e.g. an x86_64 host or a non-Qualcomm aarch64 board.
-    sdk = _fake_qnn_sdk(self.sdk_dir, hexagon_arch=None)
-    self.assertEqual(self._resolve_with_sdk(sdk), self.sdk_dir)
-    sdk.detect_hexagon_arch.assert_called_once_with()
-    sdk.configure_runtime.assert_not_called()
-
-  def test_sdk_without_detect_hexagon_arch_does_not_configure_runtime(self):
-    sdk = _fake_qnn_sdk(self.sdk_dir, with_detect_hexagon_arch=False)
-    self.assertEqual(self._resolve_with_sdk(sdk), self.sdk_dir)
-    sdk.configure_runtime.assert_not_called()
-
-  def test_sdk_without_configure_runtime_still_resolves(self):
-    sdk = _fake_qnn_sdk(
-        self.sdk_dir, hexagon_arch="v75", with_configure_runtime=False
-    )
-    self.assertEqual(self._resolve_with_sdk(sdk), self.sdk_dir)
-    sdk.detect_hexagon_arch.assert_not_called()
-
-  def test_configure_runtime_not_implemented_falls_through(self):
-    expected = self._set_qnn_sdk_root()
-    sdk = _fake_qnn_sdk(self.sdk_dir, hexagon_arch="v75")
-    sdk.configure_runtime.side_effect = NotImplementedError("unsupported")
-    self.assertEqual(self._resolve_with_sdk(sdk), expected)
-    sdk.path_to_sdk_libs.assert_not_called()
 
   def test_qnn_sdk_root_ignored_off_linux(self):
     root = self._make_sdk_root(_AARCH64_SUBDIR, _X86_SUBDIR)
@@ -435,6 +392,7 @@ class QualcommApplyPluginSdkLibsTest(googletest.TestCase):
             side_effect=FileNotFoundError("no plugin"),
         )
     )
+    self.enter_context(mock.patch.dict(sys.modules, {_SDK_MODULE: None}))
 
   def _run(self):
     backend = qualcomm_backend.QualcommBackend.create({
@@ -470,6 +428,18 @@ class QualcommApplyPluginSdkLibsTest(googletest.TestCase):
     self.assertEqual(
         self._run(), {"libs": str(plugin.parent), "sdk_libs_path": "/qnn/lib"}
     )
+
+  def test_on_device_passes_sdk_dsp_skel_dir(self):
+    sdk = _fake_qnn_sdk(default_paths=("/sdk/lib", "/sdk/skel"))
+    with mock.patch.dict(sys.modules, {_SDK_MODULE: sdk}):
+      self.assertEqual(self._run(), {"qualcomm_dsp_skel_dir": "/sdk/skel"})
+
+  def test_off_device_or_old_sdk_passes_no_dsp_skel_dir(self):
+    for sdk in (_fake_qnn_sdk(), types.ModuleType(_SDK_MODULE)):
+      with self.subTest(sdk=sdk):
+        self.mock_resolve.reset_mock()
+        with mock.patch.dict(sys.modules, {_SDK_MODULE: sdk}):
+          self.assertEqual(self._run(), {})
 
   def test_plugin_found_without_sdk_libs_path(self):
     plugin = self.tmp_dir / "plugin" / "libplugin.so"

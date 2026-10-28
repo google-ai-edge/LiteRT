@@ -88,6 +88,45 @@ def _create_default_environment() -> Environment:
   )
 
 
+_QUALCOMM_DIR_KEYS = ("qualcomm_qnn_lib_dir", "qualcomm_dsp_skel_dir")
+
+
+def _apply_qualcomm_sdk_defaults(kwargs: dict[str, Any]) -> None:
+  """Fills unset Qualcomm library dirs from ai_edge_litert_sdk_qualcomm.
+
+  The QNN libraries are not part of this package. On a Qualcomm device, the
+  optional SDK package provides them; elsewhere it returns no defaults.
+
+  Args:
+    kwargs: Flat pybind kwargs; updated in place.
+  """
+  if all(kwargs.get(key) for key in _QUALCOMM_DIR_KEYS):
+    return
+  try:
+    # pylint: disable=g-import-not-at-top
+    import ai_edge_litert_sdk_qualcomm as qnn_sdk  # pyrefly: ignore[missing-import]
+    # pylint: enable=g-import-not-at-top
+  except ImportError:
+    return
+  # Older SDK releases predate on-device (Linux aarch64) support.
+  default_paths = getattr(qnn_sdk, "default_qualcomm_paths", None)
+  if default_paths is None:
+    return
+  for key, path in zip(_QUALCOMM_DIR_KEYS, default_paths() or ()):
+    kwargs[key] = kwargs.get(key) or str(path)
+
+
+def _compiled_model_kwargs(
+    options: Optional[Options],
+    hardware_accel: Optional[HardwareAccelerator],
+) -> dict[str, Any]:
+  """Returns the flat pybind kwargs for creating a compiled model."""
+  model_options = _resolve_options(options, hardware_accel)
+  kwargs = model_options._as_flat_kwargs()  # pylint: disable=protected-access
+  _apply_qualcomm_sdk_defaults(kwargs)
+  return kwargs
+
+
 class CompiledModel:
   """Python wrapper for the C++ CompiledModelWrapper.
 
@@ -146,11 +185,10 @@ class CompiledModel:
       A new CompiledModel instance.
     """
     env = environment or _create_default_environment()
-    model_options = _resolve_options(options, hardware_accel)
     ptr = _cm.CreateCompiledModelFromFile(
         env.capsule,
         model_path,
-        **model_options._as_flat_kwargs(),
+        **_compiled_model_kwargs(options, hardware_accel),
     )
     return cls(ptr, env)
 
@@ -177,11 +215,10 @@ class CompiledModel:
       A new CompiledModel instance.
     """
     env = environment or _create_default_environment()
-    model_options = _resolve_options(options, hardware_accel)
     ptr = _cm.CreateCompiledModelFromBuffer(
         env.capsule,
         model_data,
-        **model_options._as_flat_kwargs(),
+        **_compiled_model_kwargs(options, hardware_accel),
     )
     return cls(ptr, env)
 

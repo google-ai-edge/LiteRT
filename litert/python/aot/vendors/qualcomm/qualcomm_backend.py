@@ -121,10 +121,6 @@ def _resolve_sdk_libs_path(backend: QualcommBackend) -> str | None:
   `$QNN_SDK_ROOT/lib/<host-arch subdir>` (Linux only). Only existing
   directories are returned.
 
-  On a Qualcomm Linux aarch64 device the SDK runtime is also configured, so
-  that apply_plugin_main (a subprocess, which inherits ADSP_LIBRARY_PATH) can
-  open a CDSP session.
-
   Args:
     backend: The Qualcomm backend whose config may override the path.
 
@@ -140,11 +136,6 @@ def _resolve_sdk_libs_path(backend: QualcommBackend) -> str | None:
   try:
     import ai_edge_litert_sdk_qualcomm as sdk  # pylint: disable=g-import-not-at-top  # pyrefly: ignore[missing-import]
 
-    detect = getattr(sdk, "detect_hexagon_arch", None)
-    if detect is not None and hasattr(sdk, "configure_runtime"):
-      arch = detect()
-      if arch:
-        sdk.configure_runtime(arch)
     sdk_libs = sdk.path_to_sdk_libs()
     if sdk_libs is not None and os.path.isdir(sdk_libs):
       return str(sdk_libs)
@@ -162,6 +153,22 @@ def _resolve_sdk_libs_path(backend: QualcommBackend) -> str | None:
       if candidate.is_dir():
         return str(candidate)
   return None
+
+
+def _device_dsp_skel_dir() -> str | None:
+  """Returns the SDK's Hexagon skel dir when compiling on a Qualcomm device.
+
+  On-device compilation opens a CDSP session, so apply_plugin_main also needs
+  the DSP-side libraries.
+  """
+  try:
+    import ai_edge_litert_sdk_qualcomm as sdk  # pylint: disable=g-import-not-at-top  # pyrefly: ignore[missing-import]
+  except ImportError:
+    return None
+  # Older SDK releases predate on-device (Linux aarch64) support.
+  default_paths = getattr(sdk, "default_qualcomm_paths", None)
+  paths = default_paths() if default_paths else None
+  return str(paths[1]) if paths else None
 
 
 @_call_component.register
@@ -183,6 +190,9 @@ def _apply_plugin(
     extra_kwargs = {"libs": lib_dir, "sdk_libs_path": sdk_libs_path}
   except FileNotFoundError:
     extra_kwargs = {"sdk_libs_path": sdk_libs_path} if sdk_libs_path else {}
+  dsp_skel_dir = _device_dsp_skel_dir()
+  if dsp_skel_dir:
+    extra_kwargs["qualcomm_dsp_skel_dir"] = dsp_skel_dir
   return component(
       input_model,
       output_model,
