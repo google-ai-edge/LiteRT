@@ -64,11 +64,7 @@ using im::Json;
 
 using Config = litert::imagenet::EvaluationConfig;
 
-struct Row {
-  int id;
-  int label;
-  std::string path;
-};
+
 
 void PrintUsage(const char* argv0) {
   std::cerr
@@ -376,41 +372,6 @@ litert::Expected<void> SetOpenVinoDevice(litert::Options& options,
   return {};
 }
 
-litert::Expected<std::vector<Row>> ReadManifest(const std::string& path) {
-  std::ifstream file(path);
-  if (!file) {
-    return litert::Error(kLiteRtStatusErrorInvalidArgument, "Failed to open manifest: " + path);
-  }
-  std::vector<Row> rows;
-  std::string line;
-  bool first = true;
-  std::set<int> ids;
-  while (std::getline(file, line)) {
-    if (line.empty()) continue;
-    if (first && line == "id\tlabel\tpath") {
-      first = false;
-      continue;
-    }
-    first = false;
-    std::vector<std::string> cols;
-    for (absl::string_view col : absl::StrSplit(line, '\t')) {
-      cols.emplace_back(col);
-    }
-    if (cols.size() != 3) {
-      return litert::Error(kLiteRtStatusErrorInvalidArgument, "Bad manifest row: " + line);
-    }
-    Row row{0, 0, cols[2]};
-    if (!absl::SimpleAtoi(cols[0], &row.id) || !absl::SimpleAtoi(cols[1], &row.label))
-      return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid manifest ID or label: " + line);
-    if (row.path.empty() || !ids.insert(row.id).second)
-      return litert::Error(kLiteRtStatusErrorInvalidArgument, "Empty image path or duplicate sample ID");
-    rows.push_back(std::move(row));
-  }
-  if (!file.eof())
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure, "Failed to read manifest: " + path);
-  return rows;
-}
-
 bool IsSupportedIoElementType(litert::ElementType element_type) {
   return element_type == litert::ElementType::Float32 ||
          element_type == litert::ElementType::Int8 ||
@@ -433,21 +394,7 @@ litert::Expected<LiteRtQuantizationPerTensor> GetPerTensorQuantization(
   return quantization;
 }
 
-template <typename T>
-std::vector<T> QuantizePerTensor(
-    const std::vector<float>& values,
-    const LiteRtQuantizationPerTensor& quantization) {
-  std::vector<T> out(values.size());
-  const int64_t q_min = static_cast<int64_t>(std::numeric_limits<T>::min());
-  const int64_t q_max = static_cast<int64_t>(std::numeric_limits<T>::max());
-  for (size_t i = 0; i < values.size(); ++i) {
-    double scaled =
-        static_cast<double>(values[i]) / quantization.scale + quantization.zero_point;
-    int64_t q = std::llround(std::clamp(scaled, static_cast<double>(q_min), static_cast<double>(q_max)));
-    out[i] = static_cast<T>(q);
-  }
-  return out;
-}
+using im::QuantizePerTensor;
 
 template <typename T>
 std::vector<float> DequantizePerTensor(
@@ -752,21 +699,11 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
       preprocessing.crop_w != candidate->shape[nchw ? 3 : 2])
     return litert::Error(kLiteRtStatusErrorInvalidArgument,
                          "Crop/model shape mismatch");
-  LITERT_ASSIGN_OR_RETURN(auto rows, ReadManifest(cfg.manifest));
-  for (auto& row : rows)
-    row.path = (std::filesystem::path(cfg.image_root) / row.path).string();
+  LITERT_ASSIGN_OR_RETURN(auto rows, im::ReadSamples(cfg.manifest, cfg.image_root,
+                                                    cfg.start_sample, cfg.max_samples));
   summary["preprocessing"] = im::DescribePreprocessing(preprocessing);
   LITERT_ASSIGN_OR_RETURN(auto manifest_hash, im::HashFile(cfg.manifest));
   summary["image_manifest_sha256"] = manifest_hash;
-  if (static_cast<size_t>(cfg.start_sample) > rows.size())
-    return litert::Error(kLiteRtStatusErrorInvalidArgument,
-                         "start_sample exceeds manifest size");
-  rows.erase(rows.begin(), rows.begin() + cfg.start_sample);
-  if (cfg.max_samples > 0 && static_cast<size_t>(cfg.max_samples) < rows.size())
-    rows.resize(cfg.max_samples);
-  if (rows.empty())
-    return litert::Error(kLiteRtStatusErrorInvalidArgument,
-                         "No selected samples");
   for (const auto& row : rows)
     if (row.label < 0 || static_cast<size_t>(row.label) >= candidate->classes)
       return litert::Error(kLiteRtStatusErrorInvalidArgument,
@@ -846,16 +783,11 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
           LITERT_ASSIGN_OR_RETURN(auto signature, candidate->model.GetSignature(0));
           LITERT_ASSIGN_OR_RETURN(const auto& tensor, signature.OutputTensor(0));
           LITERT_ASSIGN_OR_RETURN(auto q, GetPerTensorQuantization(tensor, "output"));
-          double max_code = 0, sum_code = 0;
-          for (size_t i = 0; i < scores.size(); ++i) {
-            double delta = std::abs(std::round(scores[i] / q.scale + q.zero_point) -
-                                    std::round(reference[i] / q.scale + q.zero_point));
-            max_code = std::max(max_code, delta); sum_code += delta;
-          }
-          record["max_code_error"] = max_code;
-          record["mean_code_error"] = sum_code / scores.size();
-          comparison.allclose = max_code <= cfg.max_code_error &&
-              sum_code / scores.size() <= cfg.mean_code_error;
+          LITERT_ASSIGN_OR_RETURN(auto codes, im::CompareQuantizedScores(
+              scores, reference, q, cfg.max_code_error, cfg.mean_code_error));
+          record["max_code_error"] = codes.max_abs;
+          record["mean_code_error"] = codes.mean_abs;
+          comparison.allclose = codes.allclose;
         }
       }
       allclose += comparison.allclose;

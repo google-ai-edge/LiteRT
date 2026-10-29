@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include "litert/vendors/arm_vulkan_ml/tools/devtool/tool.h"
+#include "litert/vendors/arm_vulkan_ml/dispatch/vulkan_validation.h"
+#include "litert/vendors/arm_vulkan_ml/dispatch/external_buffer.h"
 #include <dlfcn.h>
 #include <algorithm>
 #include <cmath>
@@ -35,6 +37,34 @@
 namespace litert::arm_vulkan_ml::tool {
 namespace fs = std::filesystem;
 namespace {
+// Numerical evidence is independent of execution/validation errors. A failed
+// pipeline must never be described as a measured numerical mismatch.
+std::string NumericalStatus(const Json& report) {
+  bool measured = false, failed = false;
+  if (report.contains("prediction_agreement") && report.contains("output_allclose_rows")) {
+    measured = true;
+    failed = report["prediction_agreement"].get<double>() != 1.0 ||
+        report["output_allclose_rows"].get<size_t>() != report.value("samples", size_t{0});
+  }
+  if (report.contains("operators")) {
+    for (const auto& op : report["operators"]) if (op.contains("outputs")) {
+      for (const auto& output : op["outputs"]) if (output.contains("passed")) {
+        measured = true; failed |= !output["passed"].get<bool>();
+      }
+    }
+    // A prefix success followed by a pipeline failure is not full validation.
+    if (measured && !failed && !report.value("complete", false)) return "incomplete";
+  }
+  for (const auto* collection : {"cases", "models"}) if (report.contains(collection)) {
+    for (const auto& child : report[collection]) {
+      const auto status = NumericalStatus(child);
+      measured |= status == "passed" || status == "failed";
+      failed |= status == "failed";
+      if (!failed && (status == "not_run" || status == "incomplete")) return "incomplete";
+    }
+  }
+  return failed ? "failed" : measured ? "passed" : "not_run";
+}
 Error Invalid(const std::string& message) { return Error(kLiteRtStatusErrorInvalidArgument, message); }
 Expected<void> Write(const fs::path& path, const void* bytes, size_t size) {
   std::ofstream file(path, std::ios::binary);
@@ -85,21 +115,38 @@ Expected<double> Options::Number(const std::string& key, double fallback) const 
 }
 Expected<Options> ParseOptions(int argc, char** argv) {
   Options options;
-  if (argc < 2) return Invalid("Expected inspect, capabilities, compile, validate, or trace; use --help");
+  if (argc < 2) return Invalid("Expected inspect, capabilities, compile, validate, trace, or tosa-query; use --help");
   options.command = argv[1];
-  const std::set<std::string> commands = {"inspect", "capabilities", "compile", "validate", "trace", "--help"};
+  const std::set<std::string> commands = {"inspect", "capabilities", "compile", "validate", "trace", "tosa-query", "coverage", "--help"};
   if (!commands.count(options.command)) return Invalid("Unknown command: " + options.command);
   const std::set<std::string> keys = {"model", "report_json", "output_dir", "manifest", "preprocessing_config",
       "image_root", "start_sample", "max_samples", "atol", "rtol", "max_code_error", "mean_code_error",
       "compiler_plugin_library_dir", "dispatch_library_dir", "runtime_library_dir", "allow_emulation",
-      "mode", "capture_budget_mb", "suite", "dump_tensors", "tensor_inputs"};
+      "mode", "capture_budget_mb", "suite", "dump_tensors", "tensor_inputs", "dump_vgf", "vulkan_validation", "database", "op", "type", "enum", "capability", "json"};
   for (int i = 2; i < argc; ++i) {
     std::string arg = argv[i]; if (arg.rfind("--", 0) != 0) return Invalid("Expected --option: " + arg);
     auto equals = arg.find('='); std::string key = arg.substr(2, equals == std::string::npos ? equals : equals - 2);
     std::string value;
-    if (equals != std::string::npos) value = arg.substr(equals + 1);
+    if(arg=="--dump_vgf")value="1";
+    else if (arg == "--json" && (options.command == "tosa-query" || options.command == "coverage")) value = "1";
+    else if (equals != std::string::npos) value = arg.substr(equals + 1);
     else if (i + 1 < argc && std::string(argv[i + 1]).rfind("--", 0) != 0) value = argv[++i];
     else return Invalid("Missing value for --" + key);
+    if(key=="dump_vgf" && (options.command!="compile" || (value!="0" && value!="1")))return Invalid("dump_vgf requires compile and a value of 0 or 1");
+    const bool query_flag = key == "type" || key == "enum" || key == "capability";
+    if (query_flag && options.command == "tosa-query") {
+      if (value.empty()) return Invalid("Empty query option --" + key);
+      options.repeated[key].push_back(value); continue;
+    }
+    if ((query_flag || key == "database" || key == "op" || key == "json") && options.command != "tosa-query" && !(key == "json" && options.command == "coverage"))
+      return Invalid("Query options require tosa-query");
+    if(options.command=="coverage" && key=="json" && value!="0" && value!="1")return Invalid("json must be 0 or 1");
+    if (options.command == "coverage" && key != "json" && key != "report_json") return Invalid("coverage accepts only json and report_json");
+    if (options.command == "tosa-query") {
+      const std::set<std::string> allowed = {"database", "op", "json", "report_json", "vulkan_validation"};
+      if (!allowed.count(key)) return Invalid("Option is not used by tosa-query: " + key);
+      if (key == "json" && value != "0" && value != "1") return Invalid("json must be 0 or 1");
+    }
     if (!keys.count(key) || value.empty() || !options.values.emplace(key, value).second)
       return Invalid("Unknown, empty, or repeated option --" + key);
   }
@@ -198,12 +245,34 @@ Expected<void> Inspect(const Options& options, Json& report, bool compile) {
             Json result = Json::array();
             for (const auto& tensor : tensors) {
               result.push_back({{"shape", tensor.shape}, {"binding", tensor.binding},
-                  {"element", static_cast<int>(tensor.element)}});
+                  {"element", static_cast<int>(tensor.element)},
+                  {"logical_element", static_cast<int>(tensor.logical_element)}});
             }
             return result;
           };
           item["inputs"] = descriptors(compiled->inputs);
           item["outputs"] = descriptors(compiled->outputs);
+          const auto& limits = compiled->level_requirements;
+          item["level_requirements"] = {{"checked", limits.checked},
+              {"max_rank", limits.max_rank}, {"max_tensor_bytes", limits.max_tensor_bytes},
+              {"max_kernel", limits.max_kernel}, {"max_stride", limits.max_stride},
+              {"max_scale", limits.max_scale}, {"max_tensor_list_size", limits.max_tensor_list_size},
+              {"max_nesting", limits.max_nesting}};
+          item["tosa_opcodes"] = Json::array();
+          std::set<uint32_t> tosa_sets, emitted;
+          const auto& words=compiled->spirv;
+          for(size_t i=5;i<words.size();){
+            const uint32_t count=words[i]>>16, opcode=words[i]&0xffff;
+            if(!count || count>words.size()-i)return Invalid("Malformed SPIR-V instruction");
+            if(opcode==11 && count>=3){
+              const char* text=reinterpret_cast<const char*>(&words[i+2]);size_t limit=(count-2)*4;
+              const void* end=std::memchr(text,0,limit);
+              if(end && std::string(text,static_cast<const char*>(end)-text)=="TOSA.001000.1")tosa_sets.insert(words[i+1]);
+            }
+            if(opcode==12 && count>=5 && tosa_sets.count(words[i+3]))emitted.insert(words[i+4]);
+            i+=count;
+          }
+          for(auto opcode:emitted)item["tosa_opcodes"].push_back(opcode);
           item["spirv_valid"] = true; item["lowering"] = Json::array(); item["constants"] = Json::array();
           for (const auto& row : mapping) item["lowering"].push_back({{"operator", item["operators"][row.operator_index]}, {"created_result_ids", row.result_ids}});
           size_t ci = 0;
@@ -212,6 +281,13 @@ Expected<void> Inspect(const Options& options, Json& report, bool compile) {
             LITERT_RETURN_IF_ERROR(Write(output / name, constant.bytes.data(), constant.bytes.size()));
             item["constants"].push_back({{"file", name}, {"shape", constant.descriptor.shape},
                 {"element", static_cast<int>(constant.descriptor.element)}, {"binding", constant.descriptor.binding}});
+          }
+          if(options.Get("dump_vgf","0")=="1"){
+            LITERT_RETURN_IF_ERROR(ExportVgf(*compiled,stem,(output/(stem+".vgf")).string()));
+            item["vgf_file"]=stem+".vgf";
+            item["vgf_vulkan_header_version"]=VK_HEADER_VERSION;
+            LITERT_ASSIGN_OR_RETURN(item["vgf_sha256"],imagenet::HashFile((output/(stem+".vgf")).string()));
+            item["vgf_scope"]="one accelerated partition; excludes CPU fallback and LiteRT orchestration";
           }
           item["artifact_kind"] = "diagnostic_export_not_portable_executable";
           LITERT_RETURN_IF_ERROR(imagenet::WriteJson((output / (stem + ".json")).string(), item));
@@ -227,8 +303,9 @@ Expected<void> Inspect(const Options& options, Json& report, bool compile) {
 }
 Expected<void> Capabilities(const Options& options, Json& report) {
   struct Loader {
+    VulkanValidation validation;
     void* library = nullptr; VkInstance instance = VK_NULL_HANDLE; PFN_vkDestroyInstance destroy = nullptr;
-    ~Loader() { if (instance && destroy) destroy(instance, nullptr); if (library) dlclose(library); }
+    ~Loader() { validation.Close(); if (instance && destroy) destroy(instance, nullptr); if (library) dlclose(library); }
   } loader;
   report["loader"] = VulkanLibraryName(); report["devices"] = Json::array();
   loader.library = dlopen(VulkanLibraryName(), RTLD_NOW | RTLD_LOCAL);
@@ -239,9 +316,12 @@ Expected<void> Capabilities(const Options& options, Json& report) {
   if (!create) return Invalid("Missing vkCreateInstance");
   VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO}; app.apiVersion = VK_API_VERSION_1_3;
   VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO}; info.pApplicationInfo = &app;
+  std::string validation_error;
+  if (!loader.validation.Prepare(get, info, validation_error)) return Invalid(validation_error);
   VkResult result = create(&info, nullptr, &loader.instance);
   if (result != VK_SUCCESS) return Invalid("vkCreateInstance returned " + std::to_string(result));
   loader.destroy = reinterpret_cast<PFN_vkDestroyInstance>(get(loader.instance, "vkDestroyInstance"));
+  if (!loader.validation.Attach(get, loader.instance, validation_error)) return Invalid(validation_error);
   auto enumerate = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(get(loader.instance, "vkEnumeratePhysicalDevices"));
   if (!enumerate) return Invalid("Missing physical-device enumeration");
   uint32_t count = 0;
@@ -268,17 +348,35 @@ Expected<void> Capabilities(const Options& options, Json& report) {
         {"device_id", caps.properties.deviceID}, {"device_type", caps.properties.deviceType}, {"extensions", Json::array()}, {"engines", Json::array()}, {"formats", Json::array()}};
     for (const auto& e : caps.extensions) device["extensions"].push_back({{"name", e.extensionName}, {"revision", e.specVersion}});
     device["features"] = {{"tensors", caps.tensors_feature}, {"data_graph", caps.graph_feature},
-        {"synchronization2", caps.synchronization2}, {"maintenance5", caps.maintenance5},
+        {"vulkan_memory_model", caps.vulkan_memory_model}, {"synchronization2", caps.synchronization2}, {"maintenance5", caps.maintenance5},
         {"replicated_composites", caps.replicated_composites}};
     device["tensor_limits"] = {{"rank", caps.tensors.maxTensorDimensionCount}, {"elements", caps.tensors.maxTensorElements},
         {"dimension_elements", caps.tensors.maxPerDimensionTensorElements}, {"bytes", caps.tensors.maxTensorSize},
         {"descriptors", caps.tensors.maxDescriptorSetStorageTensors}};
     for (const auto& f : caps.formats) device["formats"].push_back({{"format", f.first}, {"linear_features", f.second}});
+    device["external_tensors"]=Json::array();
+    if(artifact){
+      auto query=reinterpret_cast<PFN_vkGetPhysicalDeviceExternalTensorPropertiesARM>(get(loader.instance,"vkGetPhysicalDeviceExternalTensorPropertiesARM"));
+      std::vector<TensorDescriptor> io=artifact->inputs;io.insert(io.end(),artifact->outputs.begin(),artifact->outputs.end());
+      auto extension=[&](const char* n){return std::any_of(caps.extensions.begin(),caps.extensions.end(),[&](const auto& e){return !std::strcmp(e.extensionName,n);});};
+      for(size_t slot=0;slot<io.size();++slot){
+        Json row={{"slot",slot},{"direction",slot<artifact->inputs.size()?"input":"output"},{"handles",Json::array()}};
+        for(auto handle:{VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID}){
+          bool platform=handle==VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT?extension(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME)&&extension(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME):extension("VK_ANDROID_external_memory_android_hardware_buffer")&&extension(VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME)&&static_cast<bool>(AndroidHardwareBufferApi());
+          platform=platform && extension(VK_ARM_TENSORS_EXTENSION_NAME);
+          VkExternalTensorPropertiesARM props{VK_STRUCTURE_TYPE_EXTERNAL_TENSOR_PROPERTIES_ARM};
+          if(platform && query){std::vector<int64_t> dims(io[slot].shape.begin(),io[slot].shape.end());VkTensorDescriptionARM d{VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM};d.tiling=VK_TENSOR_TILING_LINEAR_ARM;d.format=TensorFormat(io[slot].element);d.dimensionCount=static_cast<uint32_t>(dims.size());d.pDimensions=dims.data();d.usage=VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM;VkPhysicalDeviceExternalTensorInfoARM info{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_TENSOR_INFO_ARM};info.pDescription=&d;info.handleType=handle;query(physical,&info,&props);}
+          bool supported=platform && query && (props.externalMemoryProperties.externalMemoryFeatures&VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) && (props.externalMemoryProperties.compatibleHandleTypes&handle);
+          row["handles"].push_back({{"type",handle==VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT?"dma_buf":"ahardware_buffer"},{"importable",supported},{"dedicated_only",static_cast<bool>(props.externalMemoryProperties.externalMemoryFeatures&VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT)},{"reason",supported?"configuration_importable; concrete allocation still checked":!platform?"platform_or_extension_unavailable":!query?"query_entry_point_unavailable":"tensor_configuration_not_importable"}});
+        }
+        device["external_tensors"].push_back(std::move(row));
+      }
+    }
     bool required = CheckDeviceRequirements(caps, error); device["required_extensions"] = required;
     if (!required) device["rejection"] = error;
     for (const auto& engine : caps.engines) {
       Json e = {{"queue_family", engine.queue_family}, {"instruction_set", engine.instruction_set},
-          {"level", engine.level}, {"level_constraints", "unchecked"}, {"profiles", Json::array()}, {"extensions", Json::array()}};
+          {"level", engine.level}, {"level_constraints", artifact ? "enforced_for_engine_match" : "model_not_supplied"}, {"profiles", Json::array()}, {"extensions", Json::array()}};
       for (const auto& p : engine.profiles) e["profiles"].push_back({{"name", p.name}, {"quality", p.quality}});
       for (const auto& p : engine.extensions) e["extensions"].push_back({{"name", p.name}, {"quality", p.quality}});
       if (artifact) {
@@ -377,20 +475,16 @@ Expected<void> Compare(const void* actual, const void* expected, size_t count,
   LITERT_ASSIGN_OR_RETURN(auto rtol, options.Number("rtol", 1e-3));
   LITERT_ASSIGN_OR_RETURN(auto max_code, options.Number("max_code_error", 4));
   LITERT_ASSIGN_OR_RETURN(auto mean_code, options.Number("mean_code_error", .5));
-  if (!count) return Invalid("Cannot compare empty tensor");
-  double maximum = 0, sum = 0; bool finite = true, close = true;
-  for (size_t i = 0; i < count; ++i) {
-    double a = floating ? static_cast<const float*>(actual)[i] : static_cast<const int8_t*>(actual)[i];
-    double b = floating ? static_cast<const float*>(expected)[i] : static_cast<const int8_t*>(expected)[i];
-    double error = std::abs(a - b); finite &= std::isfinite(a) && std::isfinite(b);
-    maximum = std::max(maximum, error); sum += error;
-    close &= error <= atol + rtol * std::abs(b);
-  }
-  bool passed = finite && (floating ? close : maximum <= max_code && sum / count <= mean_code);
-  result = {{"passed", passed}, {"max_error", maximum}, {"mean_error", sum / count}, {"finite", finite}, {"elements", count}, {"floating", floating}};
+  LITERT_ASSIGN_OR_RETURN(auto comparison, imagenet::CompareTensorValues(
+      actual, expected, count, floating, atol, rtol, max_code, mean_code));
+  result = {{"passed", comparison.allclose}, {"max_error", comparison.max_abs},
+      {"mean_error", comparison.mean_abs}, {"finite", comparison.finite},
+      {"elements", count}, {"floating", floating}};
   return {};
 }
 Expected<void> Run(const Options& options, Json& report) {
+  if (options.command == "coverage") return Coverage(report);
+  if (options.command == "tosa-query") return TosaQuery(options, report);
   LITERT_ASSIGN_OR_RETURN(int allow, options.Integer("allow_emulation", 0));
   if (allow != 0 && allow != 1) return Invalid("allow_emulation must be 0 or 1");
   // The standalone process explicitly selects this policy for the dispatch plugin.
@@ -406,15 +500,53 @@ Expected<void> Run(const Options& options, Json& report) {
   if (options.command == "trace") return Trace(options, report);
   return Invalid("Unknown command");
 }
+Expected<void> CollectValidationLogs(const std::string& directory, const std::string& mode, Json& result) {
+  Expected<void> status;
+  Json diagnostics = {{"requested", mode}, {"baseline_api_version", VK_HEADER_VERSION_COMPLETE}, {"status", "not_requested"},
+      {"errors", 0}, {"warnings", 0}, {"instances", Json::array()}, {"messages", Json::array()}};
+  if (mode != "off") {
+    bool complete = true, baseline_matches = true; size_t instances = 0; int errors = 0, warnings = 0;
+    std::error_code ec;
+    for (const auto& file : fs::directory_iterator(directory, ec)) {
+      std::ifstream stream(file.path()); std::string line; bool opened = false, closed = false;
+      while (std::getline(stream, line)) {
+        auto event = Json::parse(line, nullptr, false);
+        if (event.is_discarded() || !event.is_object()) { complete = false; continue; }
+        if (event.value("event", "") == "instance") { opened = true; baseline_matches &= event.value("api_version", 0u) == VK_HEADER_VERSION_COMPLETE; diagnostics["instances"].push_back(event); }
+        else if (event.value("event", "") == "closed") {
+          closed = true; complete &= event.value("enabled", false) && event.value("attached", false) && !event.value("lost", true);
+        } else if (event.value("event", "") == "message") {
+          int severity = event.value("severity", 0);
+          errors += (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0;
+          warnings += (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0;
+          event["instance_log"] = file.path().filename().string(); diagnostics["messages"].push_back(event);
+        }
+      }
+      complete &= opened && closed && !stream.bad(); ++instances;
+    }
+    complete &= !ec && instances > 0;
+    diagnostics["baseline_matches"] = baseline_matches && !diagnostics["instances"].empty();
+    diagnostics["errors"] = errors; diagnostics["warnings"] = warnings;
+    diagnostics["status"] = !complete ? "incomplete" : errors ? "failed" : "passed";
+    if (!complete || errors) {
+      status = Invalid(!complete ? "Vulkan validation incomplete" : "Vulkan validation errors");
+    }
+  }
+  result = std::move(diagnostics);
+  return status;
+}
 int Main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--help") {
-    std::cout << "litert_arm_vulkan_ml_tool {inspect|capabilities|compile|validate|trace}\n"
+    std::cout << "litert_arm_vulkan_ml_tool {inspect|capabilities|compile|validate|trace|tosa-query|coverage}\n"
       "  --model FILE --report_json FILE\n"
-      "  compile: --output_dir DIR\n"
-      "  validate/trace: --tensor_inputs FILE (raw FP32), or --manifest FILE --preprocessing_config FILE --start_sample N\n"
+      "  coverage: [--json] [--report_json FILE]\n"
+      "  compile: --output_dir DIR [--dump_vgf[=0|1]]\n"
+      "  tosa-query: --database FILE [--op NAME] [--type column=type] [--enum argument=value] [--capability NAME] [--json]\n"
+      "  validate/trace: --tensor_inputs FILE (raw model-typed tensors), or --manifest FILE --preprocessing_config FILE --start_sample N\n"
       "  validate: --max_samples 3 --suite FILE (optional alternative)\n"
       "  trace: --mode accumulated|isolated --capture_budget_mb 256 --dump_tensors 0|1\n"
       "  --compiler_plugin_library_dir DIR --dispatch_library_dir DIR\n"
+      "  --vulkan_validation off|core|sync\n"
       "  --allow_emulation 0|1 --atol 1e-4 --rtol 1e-3 --max_code_error 4 --mean_code_error .5\n";
     return 0;
   }
@@ -426,12 +558,56 @@ int Main(int argc, char** argv) {
   if (binary_hash) report["binary_sha256"] = *binary_hash;
   report["instruction_set"] = "TOSA.001000.1";
   report["tensor_api_revision"] = 2;
+  const auto validation_mode = parsed->Get("vulkan_validation", "off");
+  if (validation_mode != "off" && validation_mode != "core" && validation_mode != "sync") {
+    std::cerr << "vulkan_validation must be off, core or sync\n"; return 2;
+  }
+  if (validation_mode != "off" && (parsed->command == "inspect" || parsed->command == "compile" || parsed->command == "tosa-query")) {
+    std::cerr << "Vulkan validation requires an execution or capabilities command\n"; return 2;
+  }
+  struct ValidationScope {
+    std::map<std::string, std::string> previous;
+    std::set<std::string> absent;
+    std::string directory;
+    void Set(const std::string& key, const std::string& value) {
+      const char* old = std::getenv(key.c_str());
+      if (old) previous[key] = old; else absent.insert(key);
+      setenv(key.c_str(), value.c_str(), 1);
+    }
+    ~ValidationScope() {
+      for (const auto& entry : previous) setenv(entry.first.c_str(), entry.second.c_str(), 1);
+      for (const auto& key : absent) unsetenv(key.c_str());
+      std::error_code ec; if (!directory.empty()) fs::remove_all(directory, ec);
+    }
+  } validation;
+  if (validation_mode != "off") {
+    char pattern[] = "/tmp/litert-vulkan-validation-XXXXXX";
+#if defined(__ANDROID__)
+    char android_pattern[] = "/data/local/tmp/litert-vulkan-validation-XXXXXX";
+    char* directory = mkdtemp(android_pattern);
+#else
+    char* directory = mkdtemp(pattern);
+#endif
+    if (!directory) { std::cerr << "Cannot create validation directory\n"; return 1; }
+    validation.directory = directory;
+    validation.Set("LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR", directory);
+  }
+  validation.Set("LITERT_ARM_VULKAN_ML_VALIDATION", validation_mode);
   auto status = Run(*parsed, report);
+  report["execution_status"] = status ? "passed" : "failed";
+  report["numerical_status"] = NumericalStatus(report);
+  auto validation_status = CollectValidationLogs(validation.directory, validation_mode, report["vulkan_validation"]);
+  if (!validation_status && status) status = validation_status.Error();
   report["status"] = status ? "passed" : (parsed->command == "trace" && !report.contains("first_divergence") ? "incomplete" : "failed");
+  if (report["vulkan_validation"].value("status", "") == "failed") report["status"] = "failed";
   if (!status) report["error"] = std::string(status.Error().Message());
   if (!parsed->Get("report_json").empty()) {
     auto written = imagenet::WriteJson(parsed->Get("report_json"), report);
     if (!written) { std::cerr << written.Error().Message() << '\n'; return 1; }
+  }
+  if (status && parsed->command == "coverage" && parsed->Get("json") != "1") { PrintCoverage(report); return 0; }
+  if (status && parsed->command == "tosa-query" && parsed->Get("json") != "1") {
+    PrintTosaQuery(report); return 0;
   }
   std::cout << report.dump(2, ' ', false, Json::error_handler_t::replace) << '\n';
   return status ? 0 : 1;

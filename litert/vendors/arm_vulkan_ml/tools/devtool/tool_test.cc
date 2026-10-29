@@ -16,16 +16,34 @@
 
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <set>
 #include <string>
 
 #include "gtest/gtest.h"
+#include "tflite/interpreter.h"
 #include "litert/vendors/arm_vulkan_ml/dispatch/device_capabilities.h"
 
 namespace litert::arm_vulkan_ml::tool {
 namespace {
+
+TEST(ImageInput, UsesSharedXnnpackRoundingAndSaturation) {
+  tflite::Interpreter interpreter;
+  ASSERT_EQ(interpreter.AddTensors(1), kTfLiteOk);
+  ASSERT_EQ(interpreter.SetInputs({0}), kTfLiteOk);
+  ASSERT_EQ(interpreter.SetTensorParametersReadWrite(0, kTfLiteInt8, "input",
+      std::vector<int>{1, 6}, TfLiteQuantizationParams{1.0f, 0}), kTfLiteOk);
+  ASSERT_EQ(interpreter.AllocateTensors(), kTfLiteOk);
+  const std::vector<float> values{.5f, 1.5f, -.5f, -1.5f, -1000, 1000};
+  ASSERT_TRUE(FillImageInput(interpreter, values));
+  const auto* bytes = interpreter.typed_input_tensor<int8_t>(0);
+  EXPECT_EQ(std::vector<int8_t>(bytes, bytes + values.size()),
+            (std::vector<int8_t>{0, 2, 0, -2, -128, 127}));
+  EXPECT_EQ(std::vector<int8_t>(bytes, bytes + values.size()),
+            imagenet::QuantizePerTensor<int8_t>(values, {1.0f, 0}));
+}
 
 TEST(Options, RejectsMalformedAndNonfiniteValues) {
   char command[] = "tool";
@@ -90,6 +108,7 @@ TEST(Capabilities, RequiresRevisionTwoAndEnabledFeatures) {
   EXPECT_FALSE(CheckDeviceRequirements(device, reason));
   device.tensors_feature = device.graph_feature = device.synchronization2 = true;
   device.maintenance5 = device.replicated_composites = true;
+  device.vulkan_memory_model = true;
   EXPECT_TRUE(CheckDeviceRequirements(device, reason));
   device.extensions[0].specVersion = 1;
   EXPECT_FALSE(CheckDeviceRequirements(device, reason));
@@ -105,6 +124,7 @@ TEST(Capabilities, EmulationOptInNeverBypassesExtensions) {
   CompiledPartition artifact;
   artifact.instruction_set = engine.instruction_set;
   artifact.profiles = {"PRO-INT"};
+  artifact.level_requirements.checked = true;
   std::string reason;
   EXPECT_FALSE(CheckEngineRequirements(artifact, device, engine, false, reason));
   EXPECT_TRUE(CheckEngineRequirements(artifact, device, engine, true, reason));
@@ -248,6 +268,52 @@ TEST(TensorInputs, RejectsUnknownMissingAndWrongSizeInputsBeforeExecution) {
     EXPECT_FALSE(Trace(options, report));
     EXPECT_FALSE(report.contains("operators"));
   }
+}
+
+TEST(ValidationReports, ErrorsFailAndIncompleteStreamsNeverPass) {
+  const auto directory = testing::TempDir() + "/validation-report";
+  std::filesystem::create_directories(directory);
+  Json report;
+  EXPECT_FALSE(CollectValidationLogs(directory, "sync", report));
+  EXPECT_EQ(report["status"], "incomplete");
+  const auto path = directory + "/instance";
+  {
+    std::ofstream missing(path);
+    missing << Json({{"event", "closed"}, {"enabled", false}, {"attached", false}, {"lost", false}}).dump() << '\n';
+  }
+  EXPECT_FALSE(CollectValidationLogs(directory, "sync", report));
+  EXPECT_FALSE(report["baseline_matches"].get<bool>());
+
+  auto write = [&](bool lost, int severity) {
+    std::ofstream file(path);
+    file << Json({{"event", "instance"}, {"api_version", VK_HEADER_VERSION_COMPLETE}}).dump() << '\n';
+    file << Json({{"event", "message"}, {"severity", severity}, {"id", "VUID-test-09921"}}).dump() << '\n';
+    file << Json({{"event", "closed"}, {"enabled", true}, {"attached", true}, {"lost", lost}}).dump() << '\n';
+  };
+  write(false, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT);
+  EXPECT_FALSE(CollectValidationLogs(directory, "sync", report));
+  EXPECT_EQ(report["errors"], 1);
+  EXPECT_EQ(report["status"], "failed");
+  write(false, VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT);
+  EXPECT_TRUE(CollectValidationLogs(directory, "sync", report));
+  EXPECT_EQ(report["warnings"], 1);
+  write(true, 0);
+  EXPECT_FALSE(CollectValidationLogs(directory, "sync", report));
+  EXPECT_EQ(report["status"], "incomplete");
+  EXPECT_TRUE(CollectValidationLogs(directory, "off", report));
+  EXPECT_EQ(report["status"], "not_requested");
+}
+
+TEST(DevtoolTest, CoverageIsOfflineAndListsEveryOperator) {
+  Json report;
+  ASSERT_TRUE(Coverage(report));
+  EXPECT_EQ(report["operators"].size(),66);
+  EXPECT_EQ(report["counts"]["emitted"],60);
+  EXPECT_EQ(report["counts"]["unreachable"],5);
+  EXPECT_EQ(report["counts"]["pending"],1);
+  EXPECT_EQ(report["quantized_subset_count"],16);
+  for(const auto& subset:report["quantized_lowerings"]){EXPECT_EQ(subset["emulator"],"passed");EXPECT_EQ(subset["hardware"],"not_qualified");EXPECT_FALSE(subset["fixtures"].empty());}
+  for(const auto& op:report["operators"])EXPECT_EQ(op["hardware"],"not_qualified");
 }
 
 }  // namespace

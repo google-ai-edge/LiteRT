@@ -41,3 +41,11 @@ cc_library(
         "@flatbuffers//:runtime_cc",
     ],
 )
+
+# Debug/export tools only. Keep the encoder out of the production decoder target.
+cc_library(
+    name = "vgf_encoder",
+    srcs = ["src/encoder.cpp"],
+    copts = ["-fno-exceptions"],
+    deps = [":vgf"],
+)

@@ -8,10 +8,12 @@ LiteRT ImageNet evaluator, which continues to support other backends.
 | Command | Purpose | Vulkan device needed |
 | --- | --- | --- |
 | `inspect` | Operator coverage, rejection reasons, tensor types/shapes/quantization and selected partitions | No |
-| `compile` | Lower selected partitions, validate SPIR-V, export assembly, constants and operator/result-ID mappings | No |
+| `compile` | Lower selected partitions, validate SPIR-V, export assembly, constants, operator/result-ID mappings and optional VGF | No |
 | `capabilities` | Query extensions/revisions, feature bits, tensor limits/formats and TOSA engine profiles/extensions | Yes |
 | `validate` | Require complete coverage, validate SPIR-V and compare GPU inference against CPU reference | Yes, with ML support |
 | `trace` | Find the first intermediate output outside tolerance using CPU reference | Yes, with ML support |
+| `tosa-query` | Filter specification type rows and profile/extension requirements | No |
+| `coverage` | Show the reviewed operator implementation inventory | No |
 
 ## Build
 
@@ -30,7 +32,8 @@ export TOOL="$PWD/bazel-bin/litert/vendors/arm_vulkan_ml/tools/litert_arm_vulkan
 
 SPIRV-Tools is pinned as a tool-only dependency. The production compiler and
 dispatch libraries do not depend on it. The generated TOSA capability database
-is development reference material; this executable does not load it at runtime.
+is optional diagnostic input: only `tosa-query` reads it. Inference compiler
+and dispatch libraries never load it.
 
 For Android arm64, add the following flags, using your installed SDK/NDK paths
 and a separate Bazel output base:
@@ -72,6 +75,36 @@ are diagnostic artifacts, not a serialized executable accepted by dispatch.
 SPIR-V validation uses the universal 1.6 environment and is not proof of Vulkan
 pipeline acceptance or hardware conformance.
 
+## Dump lowered partitions as VGF
+
+```sh
+"$TOOL" compile --model model.tflite --output_dir compiled \
+  --dump_vgf --report_json compiled/compile.json
+```
+
+This additionally creates `subgraph_<N>_partition_<M>.vgf` for every accelerated
+partition. Each container embeds its graph SPIR-V, exact constant payloads,
+entry point, descriptor bindings, physical tensor formats/shapes and IO ordering.
+IO names are `input_0`, `input_1`, etc. and `output_0`, `output_1`, etc.; the JSON
+manifest preserves the original LiteRT operator/tensor mapping. The manifest also
+records `vgf_file`, `vgf_sha256` and `vgf_vulkan_header_version` (currently 349).
+Keep the manifest alongside the VGF for profile/extension requirements.
+
+VGF export runs offline on Linux or Android. The pinned Arm encoder writes VGF
+format 0.4.0; its output was also decoded using Arm's SDK 0.11.0 `vgf_dump`.
+Disable export with `--dump_vgf=0`, which is also the default. Each file contains
+one accelerated partition. Consult `complete_coverage`/`coverage_status` before
+using a dump as a complete model: CPU fallback and LiteRT orchestration are
+outside the container. The production compiler/dispatch libraries do not depend
+on the VGF encoder and continue using their JIT execution path.
+
+For example, inspect the embedded SPIR-V with Arm's VGF inspection utility:
+
+```sh
+vgf_dump --input compiled/subgraph_0_partition_0.vgf \
+  --dump-spirv 0 --output graph.spv
+```
+
 ## Query the device
 
 ```sh
@@ -84,8 +117,11 @@ GPUs lacking ML extensions. With a model it requires a single fully lowerable
 subgraph and matches its requirements against each engine. Format flags describe
 linear tensor storage. TOSA conformant profiles/extensions, extension revisions,
 feature bits and actual model tensor limits are checked using dispatch's logic.
-TOSA level constraints remain explicitly `unchecked`; pipeline acceptance is
-`not_tested`. An operator's presence in the specification alone never proves
+The compiler derives TOSA level requirements from the emitted graph, including
+intermediate tensor byte sizes, effective dilated kernels, strides, resize
+ratios and generated tensor lists. Dispatch checks these against the queried
+engine level; the report identifies checks made against the emitted graph.
+Pipeline acceptance remains `not_tested`. An operator's presence in the specification alone never proves
 support for its types or shape on the device.
 
 For Arm's Linux emulator, install the Arm ML emulation-layer package and set
@@ -220,7 +256,7 @@ Validation defaults to three cases and trace to one, with `--start_sample` for
 selection. Reports retain case IDs, input hashes, per-output shapes/errors and
 partial results on failure. Suites may specify `tensor_inputs` per model.
 
-`qualify_portable_ops.py` creates deterministic operator fixtures and exercises
+[The regression driver](../testing/README.md) creates deterministic operator fixtures and exercises
 inspect, compile, capabilities, validate and both trace modes. It requires
 `numpy`, `flatbuffers` and generated TFLite Python bindings with object APIs.
 Generate bindings from `tflite/schema/schema.fbs` with FlatBuffers `flatc --python
@@ -228,7 +264,7 @@ Generate bindings from `tflite/schema/schema.fbs` with FlatBuffers `flatc --pyth
 Vulkan environment as above. Then run:
 
 ```sh
-python litert/vendors/arm_vulkan_ml/tools/devtool/qualify_portable_ops.py \
+python litert/vendors/arm_vulkan_ml/tools/testing/qualify_portable_ops.py \
   --tool "$TOOL" --output_dir .arm-vulkan-preflight/portable-qualification \
   --allow_emulation
 ```
@@ -236,3 +272,124 @@ python litert/vendors/arm_vulkan_ml/tools/devtool/qualify_portable_ops.py \
 The driver uses four synthetic tensor cases per supported fixture, including
 negative values, zeros and ties where applicable. These are not ImageNet images.
 It exits unsuccessfully for unexpected coverage, pipeline or numerical failures.
+
+## Vulkan validation diagnostics
+
+Use `--vulkan_validation=core` or `--vulkan_validation=sync` with `capabilities`,
+`validate` or `trace`. The default is `off`. Offline `inspect`/`compile` commands
+reject a validation request because they do not create a Vulkan instance.
+`sync` enables synchronization validation in addition to core checks.
+
+The requested Khronos layer and required extensions must be available. Point
+`VK_LAYER_PATH` at both the validation and emulator manifest directories when
+using emulation; `VK_ADD_LAYER_PATH` is ignored by loaders when `VK_LAYER_PATH`
+is already set. Use a validation layer built from tag `v1.4.349`, commit
+`8506dcd07d3fbd78f6381c75cab8fa62a91d1b64`, to match the pinned header baseline.
+Layer binaries and build directories remain local development artifacts.
+
+Reports separate `execution_status`, `numerical_status` and `vulkan_validation`.
+The latter includes loaded layer version, baseline match, diagnostics, error and
+warning counts. Every validation error fails the overall check; there is no
+known-error allowlist. Missing layers, collection failures, truncated event
+streams or missing teardown records fail with validation `incomplete`. Warnings
+are retained without failing. Numerical status is `not_run` when execution
+failed before comparison, and may be `incomplete` for partial tracing.
+
+Capture is bounded to 4096 messages per instance. Each instance writes its own
+JSON event stream, including creation and device teardown. The CLI collects
+streams after runtime/plugin cleanup and removes its temporary directory.
+Public LiteRT C APIs are unchanged. Direct backend diagnostic setup also uses
+`LITERT_ARM_VULKAN_ML_VALIDATION` and
+`LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR`; the CLI scopes and restores these.
+
+The fixture driver accepts `--vulkan_validation=sync` and uses that mode for its
+capability, validation and trace commands. A matching baseline and a passing
+fixture run are execution evidence; they do not establish an exhaustive VUID
+audit or native GPU qualification. See the [audit notes](../tosa_capabilities/README.md).
+
+## Query TOSA specification candidates on Linux or Android
+
+`tosa-query` ports the Python capability query engine to C++. It reads an explicit
+schema-version-1 `TOSA.001000.1` database generated on the host. Copy the database
+JSON alongside the executable on Android; Python, Git, registry checkouts and
+Vulkan ML extensions are not needed for querying it.
+
+```sh
+"$TOOL" tosa-query --database tosa_001000_1.json
+"$TOOL" tosa-query --database tosa_001000_1.json \
+  --op CONV2D --type input=fp16_t --enum acc_type=FP32 --capability PRO-FP
+"$TOOL" tosa-query --database tosa_001000_1.json \
+  --op CAST --type input=bf16_t --type output=fp8e4m3_t \
+  --capability PRO-FP --capability EXT-BF16 --capability EXT-FP8E4M3 \
+  --json --report_json cast-query.json
+```
+
+`--type`, `--enum` and `--capability` may be repeated. Type filters name registry
+operand columns and use TOSA names such as `i8_t` and `fp32_t`. Operator names are
+case-insensitive; enum values, operand names and capability names are exact.
+Repeated assignments for the same operand/enum use the last value, matching the
+Python reference. Omit `--op` for database counts; filters require an operator.
+
+Without capability flags, the query returns all matching specification rows.
+Supplying capability flags filters profile/extension OR/AND requirements and
+enum-specific requirements against exactly that supplied set. Zero candidates
+is a successful query, not a supported operation. Unknown names, malformed input
+and incompatible database versions fail. JSON reports preserve the complete
+operator record with filtered `variants`, a candidate count and database hash.
+
+This command does not query the phone or evaluate shape equations, TOSA-level
+limits, lowering availability or hardware support. Reports explicitly mark those
+checks as unassessed/not evaluated/not queried. Use `capabilities --model` and
+actual model validation for device evidence. `--vulkan_validation` must be off
+for this offline command. The inference compiler/dispatch still do not load the
+database; only this diagnostic subcommand does.
+
+Host parity regression:
+
+```sh
+python litert/vendors/arm_vulkan_ml/tools/tosa_capabilities/tosa_query_parity_test.py \
+  --tool "$TOOL" --database tosa_001000_1.json
+```
+
+The test compares C++ output with the Python reference for all operators, all
+350 type rows, profile filtering, enum-extension requirements and invalid names.
+Host extraction and source-audit scripts remain Python tools.
+
+## Operator implementation coverage
+
+Run `litert_arm_vulkan_ml_tool coverage` for an offline inventory, or add
+`--json` and `--report_json FILE` for machine-readable output. The compact
+reviewed manifest is compiled into the executable; no specification database,
+Vulkan loader, or Python installation is required on the target.
+
+Coverage currently means 60 of 66 TOSA instructions have production lowering
+routes from existing TFLite builtins. It does not mean all types/shapes work.
+Each record separates instruction emission, SPIR-V validation, emulator
+qualification and hardware qualification. `pending` means no qualification claim.
+`compile` reports each partition's actual `tosa_opcodes`; fixture qualification
+asserts that its intended instruction was emitted.
+
+Raw tensor manifests also accept INT8, INT32, UINT32 and BOOL model inputs. Files use
+little-endian 32-bit integers or one byte per INT8/Boolean (Boolean values 0/1); the model supplies
+the type and shape. Integer/Boolean outputs compare exactly in validation and
+both trace modes. Existing FP32 and quantized comparison rules still apply.
+
+The `qualify_portable_ops.py --quantized_only` group exercises the quantized
+subsets described in the backend README. It overrides the normal INT8 tolerance
+with `--max_code_error=0 --mean_code_error=0`; all numerical comparisons must be
+exact. It checks intended TABLE, RESIZE and TRANSPOSE_CONV2D opcode emission as
+well as full acceleration, validation, CPU comparison and both trace modes.
+
+## External tensor memory
+
+With `capabilities --model FILE`, each device includes `external_tensors` entries
+for model inputs/outputs, with DMA-BUF/AHardwareBuffer importability and rejection
+reasons. These describe the tensor configuration; attachment must still validate
+the actual allocation, memory type, size, alignment and dedicated-allocation rules.
+
+Direct execution operator records include `buffer_io.input_copy_bytes`,
+`output_copy_bytes` and `imported_slots`. Counts describe explicit backend CPU
+staging payloads for that execution. Existing raw/image trace inputs use host
+memory; supplying native allocations currently goes through LiteRT dispatch's
+buffer registration API. These diagnostics do not assert that a driver performs
+no internal data movement.

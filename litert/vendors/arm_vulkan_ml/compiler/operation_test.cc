@@ -166,10 +166,10 @@ TEST(OperationTest, ReductionNormalizesAxesAndChecksOutputShape) {
 }
 
 TEST(OperationTest, ResizeChecksCoordinatesSizesAndIntegerBilinear) {
-  for (int variant = 0; variant < 4; ++variant) {
+  for (int variant = 0; variant < 5; ++variant) {
     auto bytes = AddModel({1, 3, 4, 2}, {2}, {1, 5, 7, 2});
     auto object = tflite::UnPackModel(bytes.data());
-    object->operator_codes[0]->builtin_code = variant == 3 ? tflite::BuiltinOperator_RESIZE_BILINEAR : tflite::BuiltinOperator_RESIZE_NEAREST_NEIGHBOR;
+    object->operator_codes[0]->builtin_code = variant >= 3 ? tflite::BuiltinOperator_RESIZE_BILINEAR : tflite::BuiltinOperator_RESIZE_NEAREST_NEIGHBOR;
     auto& graph = *object->subgraphs[0];
     graph.inputs = {0};
     graph.tensors[1]->type = tflite::TensorType_INT32;
@@ -180,13 +180,14 @@ TEST(OperationTest, ResizeChecksCoordinatesSizesAndIntegerBilinear) {
     buffer->data.resize(sizes.size() * sizeof(int32_t));
     std::memcpy(buffer->data.data(), sizes.data(), buffer->data.size());
     object->buffers.push_back(std::move(buffer));
-    if (variant == 3) graph.operators[0]->builtin_options.Set(tflite::ResizeBilinearOptionsT());
+    if (variant >= 3) graph.operators[0]->builtin_options.Set(tflite::ResizeBilinearOptionsT());
     else {
       tflite::ResizeNearestNeighborOptionsT options;
       options.align_corners = variant == 1;
       options.half_pixel_centers = true;
       graph.operators[0]->builtin_options.Set(options);
     }
+    if(variant==4)graph.tensors[2]->quantization->scale={0.25f};
     flatbuffers::FlatBufferBuilder builder;
     tflite::FinishModelBuffer(builder, tflite::Model::Pack(builder, object.get()));
     auto model = ExtendedModel::CreateFromBuffer(BufferRef<uint8_t>(builder.GetBufferPointer(), builder.GetSize()));
@@ -194,7 +195,7 @@ TEST(OperationTest, ResizeChecksCoordinatesSizesAndIntegerBilinear) {
     auto subgraph = model->Subgraph(0);
     ASSERT_TRUE(subgraph);
     std::string reason;
-    EXPECT_EQ(static_cast<bool>(CompilePartition(*subgraph, reason)), variant == 0) << reason;
+    EXPECT_EQ(static_cast<bool>(CompilePartition(*subgraph, reason)), (variant == 0 || variant == 3)) << reason;
   }
 }
 

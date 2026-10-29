@@ -53,40 +53,14 @@ first three images from the downloaded shards and retains their class labels.
 It copies the original encoded bytes without decoding or resizing them:
 
 ```sh
-uv run --no-project --python 3.13 --with pyarrow python - <<'PY'
-from pathlib import Path
-import pyarrow.parquet as pq
-
-shards = sorted(Path("eval-data/hf-imagenet/data").glob("validation-*.parquet"))
-if not shards:
-    raise SystemExit("No validation shards found; download them first")
-output = Path("eval-data/imagenet")
-(output / "images").mkdir(parents=True, exist_ok=True)
-limit = 3  # Set to 0 to extract every row in all downloaded validation shards.
-count = 0
-with (output / "manifest.tsv").open("w") as manifest:
-    manifest.write("id\tlabel\tpath\n")
-    for shard in shards:
-        for batch in pq.ParquetFile(shard).iter_batches(
-                batch_size=32, columns=["image", "label"]):
-            for row in batch.to_pylist():
-                encoded = row["image"]["bytes"]
-                label = int(row["label"])
-                if not encoded or not 0 <= label < 1000:
-                    raise ValueError("Expected encoded ImageNet image and label 0..999")
-                relative = f"images/{count:08d}.JPEG"
-                (output / relative).write_bytes(encoded)
-                manifest.write(f"{count}\t{label}\t{relative}\n")
-                count += 1
-                if limit and count >= limit:
-                    break
-            if limit and count >= limit:
-                break
-        if limit and count >= limit:
-            break
-print(f"Wrote {count} images and {output / 'manifest.tsv'}")
-PY
+uv run --no-project --python 3.13 --with pyarrow \
+  tools/export_imagenet_val_jpegs.py \
+  --input_dir eval-data/hf-imagenet/data \
+  --out_dir eval-data/imagenet --max_samples 3
 ```
+
+Set `--max_samples 0` to extract all rows from the downloaded validation shards.
+The exporter uses local Parquet files and does not download data.
 
 For existing JPEGs, create a TSV with the same three columns: unique sample ID,
 zero-based ImageNet class label, and image path relative to `--image_root`.

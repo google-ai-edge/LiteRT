@@ -25,7 +25,7 @@ workflow, without a runtime JSON parser or registry checkout dependency.
 | --- | --- | --- |
 | `/data/bt/os/SPIRV-Registry/extended/TOSA.001000.1.html` | `3b5c31fdd42ed166ef174bd7f1b3613672b6cc46` | Mapped operations/opcodes, SPIR-V types, operand order, constants, type combinations, profiles/extensions and enum values |
 | Arm `tosa-specification`, tag `v1.0.1` | commit `7010bd19cb1e5468f5a60f578b961fc476bd6ae3` | Logical shapes, rank ranges, level bounds, base-profile requirements, numerical prose and validation expressions |
-| Vulkan SPIR-V environment | VUIDs 09919, 09920, 09921 and 09923; checked October 26, 2026 | Manually recorded graph interface/constant shape and resource-description requirements |
+| Vulkan SPIR-V environment | Selected VUIDs 09919, 09920, 09921 and 09923; not exhaustive. Full inventory uses pinned Vulkan-Headers 1.4.349 validusage.json | Manually recorded graph interface/constant shape and resource-description requirements |
 
 The local TOSA source is available in
 `/data/bt/os/tosa-for-spirv-codegen/external/tosa_specification`. Its working tree
@@ -39,8 +39,7 @@ checkout. TOSA is a supplement: operations or extensions present only in general
 TOSA are not imported into the target instruction set. The generated file records
 repository URLs, commit IDs, SHA-256 file hashes and per-operator references; it
 contains no absolute checkout paths. Specification excerpts retain the source
-license; see [the notice](tosa_001000_1.json.license) and
-[TOSA's license](TOSA_SPECIFICATION_LICENSE.txt).
+license; see [TOSA's license](TOSA_SPECIFICATION_LICENSE.txt).
 
 ## Data contract
 
@@ -116,7 +115,20 @@ writing. There are 23 targeted checks, including schema validation, source pins,
 completeness, shape/constant metadata, exact type combinations, profile OR/AND,
 enum requirements, and rejection of unknown queries.
 
+The C++ developer tool can query this database directly on Linux and Android.
+Generate the JSON on the host, then deploy it with `litert_arm_vulkan_ml_tool`;
+no Python or specification checkout is needed on the phone. See the
+[query usage guide](../devtool/README.md#query-tosa-specification-candidates-on-linux-or-android).
+The database is an explicit diagnostic input, not an inference runtime dependency.
+
 Query FP16 CONV2D with FP32 accumulation:
+
+```bash
+litert_arm_vulkan_ml_tool tosa-query --database tosa_001000_1.json \
+  --op CONV2D --type input=fp16_t --enum acc_type=FP32 --capability PRO-FP
+```
+
+The Python query remains available as the host reference:
 
 ```bash
 python3 litert/vendors/arm_vulkan_ml/tools/tosa_capabilities/capability_query.py \
@@ -135,46 +147,140 @@ is reported as zero candidates.
 The specification database does not encode implementation status. Its
 `litert_lowering` field is `not_assessed`, rather than the stale
 `not_implemented` value used before the backend existed. The separate
-[full source audit](LOWERING_AUDIT.md) covers every mapped operator and records
+generated full source audit (`audit_lowering.py`) covers every mapped operator and records
 TFSC helper presence, production source references, and source fingerprints.
-Neither a helper nor a source reference means that all type rows are supported.
+Here, "full" means every mapped specification operator is listed; it does not
+mean every type combination is implemented or qualified. The source audit uses
+text matching and may miss indirect helper calls. Neither helper presence nor a
+source reference establishes complete lowering or device support.
+
+The current production inventory is **60/66 emitted TOSA operators**. Run
+`litert_arm_vulkan_ml_tool coverage [--json]` for the reviewed implementation
+manifest, compiled into the C++ executable. The source audit now recognizes
+portable unary macros and enum aliases. Verify inventory consistency with
+`audit_lowering.py --tfsc /path/to/tosa-for-spirv-codegen --check`.
+Emission, SPIR-V validation, emulator qualification and native-device qualification
+are separate fields. The six remaining operators are FFT2D, CLZ, BITWISE_AND,
+BITWISE_OR, LOGICAL_LEFT_SHIFT and RFFT2D; see the backend README for the frontend
+and extension constraints. New TFLite-reachable subsets and their fixtures are
+recorded in `implementation_coverage.json`; the specification database itself
+continues to describe specification legality only.
+
+The table below separates implemented subsets, proposed optimizations and
+remaining coverage gaps. It is an engineering inventory, not a prioritized or
+committed TODO list. The [portable FP32 matrix](PORTABLE_FP32_COVERAGE.md) records
+implemented subsets and their SPIR-V/emulator qualification evidence. Native GPU
+qualification remains separate.
 Generate the joined machine-readable view with `--json`; no new large generated
 JSON file is needed in source control:
 
 ```bash
 python3 litert/vendors/arm_vulkan_ml/tools/tosa_capabilities/audit_lowering.py \
   --tfsc /data/bt/os/tosa-for-spirv-codegen \
-  --output litert/vendors/arm_vulkan_ml/tools/tosa_capabilities/LOWERING_AUDIT.md
+  --output .arm-vulkan-preflight/lowering-audit.md
 ```
 
-The registry pin was checked against upstream on October 27, 2026 and remains
-current. Tensor API Revision 2 does not change this operator inventory.
+The registry pin was last checked against upstream on October 27, 2026. Tensor API Revision 2 does not change this operator inventory.
 
-| Opportunity | Current implementation / proposed use | Conditions before use |
+| Area | Status | Implemented subset or remaining work |
 | --- | --- | --- |
-| CLAMP for INT8 RELU/RELU6 | Implemented when input/output quantization is identical | Emulator matched all 256 codes; TABLE retained when scale or zero point changes |
-| RESCALE for INT8 QUANTIZE | Identity conversion eliminated; nonidentity conversions still use a 256-entry TABLE | Validate range, rounding and saturation for all 256 inputs; DOUBLE_ROUND additionally requires advertised EXT-DOUBLEROUND |
-| RESCALE DOUBLE_ROUND | Current composed base-profile rounding | Emulator diagnostic passed ResNet18/MobileNetV2/DenseNet121 but advertises no extension support; do not bypass capability checks |
-| AVG_POOL2D | Now direct for INT8 as well as FP32 | Existing static shape/quantization checks remain; accepted INT8 rounding differences are documented in the backend README |
-| SIGMOID / TANH | FP32 SIGMOID already direct; INT8 sigmoid is TABLE; TANH not lowered | Floating-point rows do not authorize direct INT8 activation; use TABLE for quantized activation or a separately validated conversion path |
-| MAXIMUM / MINIMUM / ABS / NEGATE / SUB | Available for new elementwise lowering | Match exact type row, broadcasting, quantization and integer overflow behavior |
-| REDUCE_MAX / REDUCE_MIN / REDUCE_PRODUCT / REDUCE_ALL / REDUCE_ANY | INT8/FP32 MIN/MAX now implemented with constant axes and non-scalar outputs; SUM now covers FP32 as well as INT8; PRODUCT/ALL/ANY remain future work | Check supported types, axes/keep-dims, accumulator semantics and Boolean types |
-| RESIZE | Implemented for INT8/FP32 nearest and FP32 bilinear with constant NHWC sizes; aligned singleton sizes rejected | Match interpolation, coordinate transformation, border behavior and supported scale/offset representation |
-| GATHER / SCATTER / TILE / REVERSE | GATHER implemented for INT8/FP32 values, constant INT32 indices and batch_dims=0; others remain future work | Check index types, negative-index behavior, axis normalization and static output shapes |
-| TRANSPOSE_CONV2D / CONV3D | FP32 TRANSPOSE_CONV2D implemented for canonical SAME/VALID shapes with constant weights and optional bias; quantized transpose convolution and CONV3D remain future work | Validate layouts, padding/output shapes, accumulation and quantization; helper presence alone is insufficient |
-| EXP / RECIPROCAL / RSQRT / LOG / POW | Building blocks for softmax, normalization and other composite functions | Check floating-point rows and numerical stability; these do not provide an atomic softmax/layer-normalization op |
-| ARGMAX / FFT2D / RFFT2D / trigonometric and logical ops | Additional mapped coverage, outside current vision-classifier priorities | Add only for a concrete model need, with type/shape/device checks |
+| INT8 RELU/RELU6 | Implemented subset | Direct CLAMP when quantization is unchanged; TABLE when scale or zero point changes. All 256 input codes were checked on the emulator. |
+| INT8 QUANTIZE | Implemented subset; proposed optimization | Identity conversion is eliminated; other conversions use TABLE. Replacing TABLE with RESCALE remains a proposal requiring range, rounding and saturation checks for all 256 codes. |
+| RESCALE DOUBLE_ROUND | Capability-dependent proposal | Production uses composed base-profile rounding. The emulator diagnostic does not establish advertised EXT-DOUBLEROUND support; unadvertised extensions remain rejected. |
+| AVG_POOL2D / MAX_POOL2D | Implemented subsets; numerical qualification gap | FP32 VALID/SAME pooling is implemented with fused activation handling. INT8 pooling retains its existing geometry/quantization restrictions. INT8 AVG_POOL2D rounding differences and the known DenseNet121/MobileNetV3 Large failures remain visible; see the backend README. |
+| SIGMOID / TANH | Implemented FP32; partial INT8 | FP32 LOGISTIC emits SIGMOID, and FP32 TANH is implemented. INT8 LOGISTIC uses TABLE; INT8 TANH now uses TABLE with standard output quantization. Floating-point type rows do not authorize direct INT8 activation. |
+| MAXIMUM / MINIMUM / ABS / NEGATE / SUB / DIV | Implemented FP32/INT8 subsets | Unary paths and static binary broadcasting are implemented; SUB/DIV support NONE/RELU/RELU6 fused activation. INT8 SUB, ABS and matching-quantization MAXIMUM/MINIMUM now have separately qualified subsets; DIV and affine NEG remain unsupported. |
+| Reductions | Implemented subsets; remaining coverage | SUM and MIN/MAX support existing INT8/FP32 subsets. General-axis MEAN and REDUCE_PROD are implemented for FP32, including keep-dims modes and non-scalar outputs. BOOL REDUCE_ALL/ANY are implemented with constant axes. Runtime axes and scalar outputs remain unsupported. |
+| RESIZE | Implemented subsets; remaining coverage | INT8/FP32 nearest and bilinear use constant NHWC sizes. Quantized bilinear now uses Q10 integer coordinates and signed rounding; aligned singleton sizes remain unsupported; coordinate, border and scale/offset restrictions still apply. |
+| GATHER / TILE / SCATTER / REVERSE | Implemented subsets; remaining coverage | GATHER supports INT8/FP32 values with constant in-range INT32 indices and batch_dims=0. FP32/INT8 TILE and REVERSE use constant controls. FP32 SCATTER_ND supports constant unique indices. Runtime GATHER indices remain unsupported. |
+| Shape manipulation and partition outputs | Implemented FP32/INT8 subsets | SQUEEZE, EXPAND_DIMS, PACK/UNPACK, SPLIT/SPLIT_V and positive-stride STRIDED_SLICE support FP32 and matching-quantization INT8, including multiple results. Controls are constant; scalar interfaces and unsupported slice masks/negative strides are rejected. See the FP32 matrix for exact restrictions. |
+| TRANSPOSE_CONV2D / CONV3D | Implemented subset; remaining coverage | FP32 transpose convolution supports canonical SAME/VALID geometry, constant weights and optional bias. Quantized transpose convolution now supports symmetric constant weights, optional matching INT32 bias and proven rescaling. CONV3D has an FP32 subset; quantized CONV3D remains unsupported. |
+| MATMUL-based lowering | Implemented subsets | FP32 BATCH_MATMUL supports static batch broadcasting and transpose flags with bounded materialization. FULLY_CONNECTED uses existing INT8 or FP32 paths; FP32 lowers to MATMUL plus bias and optional CLAMP. |
+| EXP / RECIPROCAL / RSQRT / LOG / SOFTMAX | Implemented FP32 subsets/compositions | FP32 EXP, RSQRT and LOG are lowered; RECIPROCAL is used internally for DIV, SQRT and SOFTMAX. FP32 SOFTMAX uses stable last-axis max subtraction and finite positive beta. This does not imply a standalone LiteRT RECIPROCAL op or general normalization support. |
+| POW / ARGMAX / FFT and logical ops | Implemented subsets; remaining coverage | FP32 POW/SIN/COS, exact GELU via ERF, FP32-to-INT32 ARGMAX and BOOL logical operations have qualified subsets. FFT2D, CLZ, BITWISE_AND/OR and LOGICAL_LEFT_SHIFT have no selected TFLite route; RFFT2D remains pending complex-intermediate partition handling and EXT-FFT qualification. |
 
 There is no dedicated HARD_SWISH, SILU, SOFTMAX, FULLY_CONNECTED, QUANTIZE,
 DEQUANTIZE or normalization instruction in this mapping. Existing TABLE,
 MATMUL, CAST and arithmetic sequences therefore cannot all be replaced by a
-single same-named TOSA instruction. FP32 FULLY_CONNECTED now uses MATMUL plus
-bias and optional CLAMP, as validated by the full FP32 MobileNetV2 graph.
+single same-named TOSA instruction. In particular, implemented SOFTMAX and
+FULLY_CONNECTED lowerings are compositions. The full FP32 MobileNetV2 graph
+provides model-level evidence for its FULLY_CONNECTED path.
 Unused mapped operators generally expand
 model coverage; they do not automatically simplify currently supported graphs.
 
 Device eligibility remains the conjunction of compiler legality, the queried
-TOSA profile/extensions, tensor-format/size limits, and successful graph pipeline
-creation. The current dispatch does not yet prevalidate every TOSA-level
-constraint; this is an explicit gap, not a claim of universal shape support.
+TOSA profile/extensions/level, tensor-format/size limits, and successful graph
+pipeline creation. The compiler collects level requirements from final TFSC
+instructions: rank, tensor byte size (including intermediates), effective
+dilated kernel and padding extents, strides, resize scale ratios, tensor-list
+lengths and the single flat graph nesting depth. Dispatch compares those values
+with the selected engine's `8K` or `none` bounds; unknown levels and unchecked
+artifacts are rejected. These checks do not replace operator shape/type legality
+analysis or pipeline acceptance.
 The database remains a development input, not a runtime dependency.
+
+## Vulkan valid-usage audit
+
+`vuid_audit.py` inventories the Vulkan commands and recursively referenced
+structures used by dispatch, capability discovery and validation capture. It
+also includes RuntimeSpirv rules for applicability review. Its source is the
+`registry/validusage.json` and `vk.xml` from the pinned Vulkan-Headers v1.4.349
+archive (the valid-usage metadata identifies Vulkan-Docs commit
+`ab80b9e8dd1c08b14c9536c37a31182114ae72ee`).
+
+`vuid_review.json` records explicitly reviewed exclusions and enforcement
+arguments, bound to the registry hash and backend source hashes. It is a partial
+review, **not a complete compliance declaration**. Unreviewed requirements,
+stale source hashes, stale VUIDs, duplicate classifications and missing evidence
+fail the audit. Tests of the audit gate are in `vuid_audit_test.py`.
+
+```sh
+python litert/vendors/arm_vulkan_ml/tools/tosa_capabilities/vuid_audit.py \
+  --registry .bazel-output/external/arm_vulkan_ml_dep_vulkan_headers/registry \
+  --output .arm-vulkan-preflight/vuid-inventory.json --check
+```
+
+The complete applicable-coverage milestone remains open while this command
+fails. Candidate rules for nested structures are deliberately included even
+when their arrays are unused; exclusions require an explicit construction
+argument. Numerical success or a validation-layer run does not automatically
+classify a VUID as covered. Full resource-failure injection and complete
+applicability review are still outstanding. TOSA-level constraints are enforced
+against emitted graph requirements as described above.
+
+### Five individually tested dispatch requirements
+
+The C++ target
+`//litert/vendors/arm_vulkan_ml/dispatch:vulkan_invocation_test` covers 04101,
+09921, 09923, 09796 and 09951. It compiles tiny models through the production
+compiler plugin, injects an instance-procedure resolver into production dispatch,
+and substitutes typed fake Vulkan functions. No loader, GPU or emulator is
+required. Allocations use synthetic handles and small host vectors.
+
+The independent SPIR-V decoder is a test oracle for these single-entry-point
+fixtures, not a general SPIR-V validator. Captured pipeline descriptions and
+constant data are deep-copied while production pointers are valid. FP32 fixtures
+have two constants, two inputs and differently shaped outputs; an INT8 fixture
+checks integer compatibility. Descriptor layouts and writes are checked too.
+
+Named production-path tests are recorded for the five VUIDs in `vuid_review.json`.
+Harness self-tests that deliberately corrupt captured arguments or binding state
+verify the oracle itself and are not counted as additional production coverage.
+Only valid graphs are submitted to the real emulator/validation layer. Fake
+execution does not compute model outputs and is not numerical qualification.
+
+This establishes five individually mapped tests, not completion of the broader
+VUID audit. Existing numerical and real Vulkan validation gates remain separate.
+
+The implementation manifest also records `quantized_lowerings` keyed by LiteRT
+operator. This avoids confusing INT8 TANH implemented through TABLE with a
+nonexistent INT8 type row for the TOSA TANH instruction. Each quantized record
+lists its constraints, fixtures and separate emulator/hardware evidence.
+
+External-memory inventory now includes `external_buffer.cc/.h`, tensor-specific
+external-handle queries, FD/AHardwareBuffer imports and dedicated allocations.
+Five additional reviewed VUIDs have structural resolver-test evidence: tensor
+binding 09896/09897/09717, dedicated tensor allocation size 09710, and
+AHardwareBuffer allocation size 02383. The broader
+VUID audit remains partial; unreviewed rules and stale source-review fingerprints
+continue to fail `--check` rather than being automatically cleared.

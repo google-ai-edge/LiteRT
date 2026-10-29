@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include "litert/c/litert_model_types.h"
+
 namespace litert::arm_vulkan_ml {
 
 enum class TensorElement { kInt8, kInt32, kFloat32 };
@@ -19,6 +21,25 @@ struct TensorDescriptor {
   TensorElement element;
   std::vector<uint32_t> shape;
   uint32_t binding;
+  // BOOL uses INT8 storage and UINT32 uses INT32 storage in the graph ABI.
+  // Retain the model type for LiteRT buffer requirements and attachment checks.
+  LiteRtElementType logical_element =
+      element == TensorElement::kInt8 ? kLiteRtElementTypeInt8 :
+      element == TensorElement::kFloat32 ? kLiteRtElementTypeFloat32 :
+                                         kLiteRtElementTypeInt32;
+};
+
+// Requirements of the emitted graph, including intermediate tensors and
+// generated operators. The specification database remains a development tool.
+struct TosaLevelRequirements {
+  bool checked = false;
+  uint64_t max_rank = 0;
+  uint64_t max_tensor_bytes = 0;
+  uint64_t max_kernel = 0;
+  uint64_t max_stride = 0;
+  uint64_t max_scale = 0;
+  uint64_t max_tensor_list_size = 0;
+  uint64_t max_nesting = 0;
 };
 
 struct ConstantTensor {
@@ -37,6 +58,7 @@ struct CompiledPartition {
   std::string instruction_set = "TOSA.001000.1";
   std::vector<std::string> profiles = {"PRO-INT"};
   std::vector<std::string> extensions;
+  TosaLevelRequirements level_requirements;
 };
 
 // The compiled result owns this wrapper. An invocation must copy `partition`

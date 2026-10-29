@@ -34,25 +34,12 @@ namespace {
 Error Failure(const std::string& text) { return Error(kLiteRtStatusErrorRuntimeFailure, text); }
 Expected<std::string> ImagePath(const Options& options) {
   LITERT_ASSIGN_OR_RETURN(int start, options.Integer("start_sample", 0));
-  if (start < 0) return Failure("Negative start_sample");
-  std::ifstream file(options.Get("manifest")); if (!file) return Failure("Cannot open manifest");
-  std::string line;
-  for (int i = 0; std::getline(file, line);) {
-    if (line.empty() || line[0] == '#') continue;
-    std::istringstream stream(line); std::string id, label, path;
-    if (!std::getline(stream, id, '\t') || !std::getline(stream, label, '\t') || !std::getline(stream, path))
-      return Failure("Manifest requires ID, label, image path columns");
-    if (id == "id") continue;
-    if (i++ != start) continue;
-    if (!path.empty() && path.back() == '\r') path.pop_back();
-    std::filesystem::path image(path);
-    if (image.is_relative()) image = std::filesystem::path(options.Get("image_root",
-        std::filesystem::path(options.Get("manifest")).parent_path().string())) / image;
-    return image.string();
-  }
-  return Failure("start_sample exceeds manifest");
+  LITERT_ASSIGN_OR_RETURN(auto rows, imagenet::ReadSamples(options.Get("manifest"),
+      options.Get("image_root"), start, 1));
+  return rows.front().path;
 }
-Expected<void> FillInput(tflite::Interpreter& cpu, const std::vector<float>& pixels) {
+}  // namespace
+Expected<void> FillImageInput(tflite::Interpreter& cpu, const std::vector<float>& pixels) {
   if (cpu.inputs().size() != 1) return Failure("Trace requires one image input");
   auto* tensor = cpu.input_tensor(0);
   if (tensor->type == kTfLiteFloat32 && tensor->bytes == pixels.size() * sizeof(float)) {
@@ -60,13 +47,13 @@ Expected<void> FillInput(tflite::Interpreter& cpu, const std::vector<float>& pix
   }
   if (tensor->type == kTfLiteInt8 && tensor->bytes == pixels.size() &&
       std::isfinite(tensor->params.scale) && tensor->params.scale > 0) {
-    for (size_t i = 0; i < pixels.size(); ++i) tensor->data.int8[i] = static_cast<int8_t>(
-        std::clamp(std::round(static_cast<double>(pixels[i]) / tensor->params.scale) + tensor->params.zero_point, -128.0, 127.0));
+    const auto quantized = imagenet::QuantizePerTensor<int8_t>(pixels,
+        {tensor->params.scale, tensor->params.zero_point});
+    std::memcpy(tensor->data.raw, quantized.data(), quantized.size());
     return {};
   }
   return Failure("Unsupported image tensor type/shape/quantization");
 }
-}  // namespace
 Expected<void> Trace(const Options& options, Json& report) {
   LITERT_ASSIGN_OR_RETURN(auto object, LoadModel(options.Get("model")));
   if (object->subgraphs.size() != 1 || object->subgraphs[0]->inputs.empty())
@@ -115,7 +102,8 @@ Expected<void> Trace(const Options& options, Json& report) {
       if (slot < 0 || static_cast<size_t>(slot) >= raw_inputs.size() || !seen.insert(slot).second)
         return Failure("Unknown or duplicate input index");
       const auto& tensor = *graph.tensors[graph.inputs[slot]];
-      if (tensor.type != tflite::TensorType_FLOAT32 || tensor.shape.empty()) return Failure("Raw inputs require ranked FP32");
+      if ((tensor.type != tflite::TensorType_INT8 && tensor.type != tflite::TensorType_FLOAT32 && tensor.type != tflite::TensorType_INT32 && tensor.type != tflite::TensorType_UINT32 && tensor.type != tflite::TensorType_BOOL) || tensor.shape.empty()) return Failure("Raw inputs require ranked FP32, INT8, INT32, UINT32 or BOOL");
+      const size_t width=(tensor.type==tflite::TensorType_BOOL || tensor.type==tflite::TensorType_INT8)?1:4;
       size_t count = 1;
       for (auto dim : tensor.shape) {
         if (dim <= 0 || count > (256u * 1024u * 1024u / sizeof(float)) / static_cast<size_t>(dim)) return Failure("Invalid/oversized raw shape");
@@ -125,9 +113,9 @@ Expected<void> Trace(const Options& options, Json& report) {
       std::filesystem::path path(entry["file"].get<std::string>());
       if (path.is_relative()) path = std::filesystem::path(options.Get("tensor_inputs")).parent_path() / path;
       std::ifstream file(path, std::ios::binary | std::ios::ate);
-      if (!file || file.tellg() != static_cast<std::streamoff>(count * sizeof(float))) return Failure("Raw input byte count mismatch");
-      raw_inputs[slot].resize(count); file.seekg(0);
-      file.read(reinterpret_cast<char*>(raw_inputs[slot].data()), count * sizeof(float));
+      if (!file || file.tellg() != static_cast<std::streamoff>(count * width)) return Failure("Raw input byte count mismatch");
+      raw_inputs[slot].resize((count*width+3)/4); file.seekg(0);
+      file.read(reinterpret_cast<char*>(raw_inputs[slot].data()), count * width);
       if (!file) return Failure("Cannot read raw input");
       LITERT_ASSIGN_OR_RETURN(auto hash, imagenet::HashFile(path.string()));
       report["inputs"].push_back({{"index", slot}, {"sha256", hash}});
@@ -143,6 +131,7 @@ Expected<void> Trace(const Options& options, Json& report) {
     LITERT_ASSIGN_OR_RETURN(auto preprocessing, imagenet::ParsePreprocessing(config_json));
     LITERT_ASSIGN_OR_RETURN(auto image, ImagePath(options));
     LITERT_ASSIGN_OR_RETURN(pixels, imagenet::DecodePreprocess(image, preprocessing, input.shape[1] == 3));
+    report["input_sha256"] = imagenet::HashBytes(pixels.data(), pixels.size() * sizeof(float));
     report["image"] = image; report["preprocessing"] = config_json;
     LITERT_ASSIGN_OR_RETURN(report["image_sha256"], imagenet::HashFile(image));
   }
@@ -187,8 +176,8 @@ Expected<void> Trace(const Options& options, Json& report) {
     auto account = [&](int32_t id) -> bool {
       if (id < 0 || static_cast<size_t>(id) >= graph.tensors.size()) return false;
       const auto& tensor = *graph.tensors[id];
-      size_t bytes = tensor.type == tflite::TensorType_FLOAT32 ? sizeof(float) : 1;
-      if (tensor.type != tflite::TensorType_FLOAT32 && tensor.type != tflite::TensorType_INT8) return false;
+      size_t bytes = (tensor.type == tflite::TensorType_FLOAT32 || tensor.type == tflite::TensorType_INT32 || tensor.type == tflite::TensorType_UINT32) ? 4 : 1;
+      if (tensor.type != tflite::TensorType_FLOAT32 && tensor.type != tflite::TensorType_INT8 && tensor.type != tflite::TensorType_INT32 && tensor.type != tflite::TensorType_UINT32 && tensor.type != tflite::TensorType_BOOL) return false;
       for (auto dim : tensor.shape) { if (dim <= 0 || bytes > budget / static_cast<size_t>(dim)) return false; bytes *= dim; }
       if (bytes > (budget - captured) / 2) return false;
       captured += bytes * 2; return true;
@@ -209,10 +198,10 @@ Expected<void> Trace(const Options& options, Json& report) {
     if (raw) {
       for (size_t i = 0; i < raw_inputs.size(); ++i) {
         auto* tensor = cpu->tensor(graph.inputs[i]);
-        if (tensor->type != kTfLiteFloat32 || tensor->bytes != raw_inputs[i].size() * sizeof(float)) return Failure("CPU input shape mismatch");
+        if ((tensor->bytes+3)/4 != raw_inputs[i].size()) return Failure("CPU input shape mismatch");
         std::memcpy(tensor->data.raw, raw_inputs[i].data(), tensor->bytes);
       }
-    } else { LITERT_RETURN_IF_ERROR(FillInput(*cpu, pixels)); }
+    } else { LITERT_RETURN_IF_ERROR(FillImageInput(*cpu, pixels)); }
     if (cpu->Invoke() != kTfLiteOk) return Failure("CPU reference prefix failed");
     sg.outputs = op.outputs;
     if (isolated) {
@@ -237,13 +226,17 @@ Expected<void> Trace(const Options& options, Json& report) {
       actual[j].resize((bytes + sizeof(float) - 1) / sizeof(float)); outputs.push_back(actual[j].data());
     }
     if (!invocation->Run(inputs, outputs, reason)) return Failure("Trace execution: " + reason);
+    auto copy_stats=invocation->Statistics();
     Json row = {{"index", index}, {"name", tflite::EnumNameBuiltinOperator(object->operator_codes[op.opcode_index]->builtin_code)},
         {"outputs", Json::array()}, {"captured_bytes", captured}};
+    row["buffer_io"]={{"input_copy_bytes",copy_stats.input_bytes},{"output_copy_bytes",copy_stats.output_bytes},{"imported_slots",copy_stats.imported_slots}};
     bool passed = true;
     for (size_t j = 0; j < op.outputs.size(); ++j) {
       const auto* expected = cpu->tensor(op.outputs[j]); bool floating = expected->type == kTfLiteFloat32;
       Json comparison;
-      LITERT_RETURN_IF_ERROR(Compare(actual[j].data(), expected->data.raw, expected->bytes / (floating ? 4 : 1), floating, options, comparison));
+      if(expected->type==kTfLiteInt32 || expected->type==kTfLiteUInt32 || expected->type==kTfLiteBool){
+        comparison={{"passed",std::memcmp(actual[j].data(),expected->data.raw,expected->bytes)==0},{"comparison","exact"}};
+      } else LITERT_RETURN_IF_ERROR(Compare(actual[j].data(), expected->data.raw, expected->bytes / (floating ? 4 : 1), floating, options, comparison));
       comparison["tensor"] = op.outputs[j]; passed &= comparison["passed"].get<bool>();
       const auto& tensor = *graph.tensors[op.outputs[j]];
       comparison["shape"] = tensor.shape;

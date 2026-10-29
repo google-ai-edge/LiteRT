@@ -34,7 +34,7 @@ bool CheckDeviceRequirements(const DeviceCapabilities& device, std::string& reas
         })) { reason = std::string("Missing extension/revision: ") + name; return false; }
   }
   if (!device.tensors_feature || !device.graph_feature || !device.synchronization2 ||
-      !device.maintenance5 || !device.replicated_composites) {
+      !device.vulkan_memory_model || !device.maintenance5 || !device.replicated_composites) {
     reason = "Required Vulkan graph/tensor/synchronization features unavailable";
     return false;
   }
@@ -60,6 +60,38 @@ bool CheckEngineRequirements(const CompiledPartition& artifact, const DeviceCapa
     if (!has(engine.extensions, name)) {
       reason = "TOSA extension is not advertised as conformant: " + name; return false;
     }
+  const auto& r = artifact.level_requirements;
+  if (!r.checked) {
+    reason = "Compiled graph has no checked TOSA level requirements"; return false;
+  }
+  const bool eight_k = engine.level == VK_DATA_GRAPH_TOSA_LEVEL_8K_ARM;
+  if (!eight_k && engine.level != VK_DATA_GRAPH_TOSA_LEVEL_NONE_ARM) {
+    reason = "Unknown TOSA level reported by device"; return false;
+  }
+  // TOSA 1.0.1 level definitions. 'none' has larger finite bounds; it does
+  // not mean that rank, tensor_size_t or tensor-list limits are absent.
+  const struct {
+    const char* name;
+    uint64_t required;
+    uint64_t supported;
+  } limits[] = {
+      {"MAX_RANK", r.max_rank, eight_k ? 6u : 32u},
+      {"MAX_LOG2_SIZE (tensor bytes)", r.max_tensor_bytes,
+          eight_k ? uint64_t{INT32_MAX} : static_cast<uint64_t>(INT64_MAX)},
+      {"MAX_KERNEL", r.max_kernel, eight_k ? 8192u : uint64_t{INT32_MAX}},
+      {"MAX_STRIDE", r.max_stride, eight_k ? 8192u : uint64_t{INT32_MAX}},
+      {"MAX_SCALE", r.max_scale, eight_k ? 256u : 2048u},
+      {"MAX_TENSOR_LIST_SIZE", r.max_tensor_list_size, eight_k ? 64u : 256u},
+      {"MAX_NESTING", r.max_nesting, eight_k ? 6u : 256u},
+  };
+  for (const auto& limit : limits) {
+    if (limit.required > limit.supported) {
+      reason = std::string("TOSA level ") + (eight_k ? "8K" : "none") + " " +
+          limit.name + " exceeded: graph requires " + std::to_string(limit.required) +
+          ", device supports " + std::to_string(limit.supported);
+      return false;
+    }
+  }
   return true;
 }
 bool QueryDeviceCapabilities(PFN_vkGetInstanceProcAddr get, VkInstance instance,
@@ -77,6 +109,7 @@ bool QueryDeviceCapabilities(PFN_vkGetInstanceProcAddr get, VkInstance instance,
       [&](const auto& e) { return std::strcmp(e.extensionName, name) == 0; }); };
   FN(GetPhysicalDeviceFeatures2);
   VkPhysicalDeviceFeatures2 features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+  VkPhysicalDeviceVulkan12Features f12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
   VkPhysicalDeviceVulkan13Features f13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
   VkPhysicalDeviceTensorFeaturesARM tensors{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM};
   VkPhysicalDeviceDataGraphFeaturesARM graph{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM};
@@ -84,6 +117,7 @@ bool QueryDeviceCapabilities(PFN_vkGetInstanceProcAddr get, VkInstance instance,
   VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT replicated{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_REPLICATED_COMPOSITES_FEATURES_EXT};
   void** tail = &features.pNext;
   auto append = [&](auto& value) { *tail = &value; tail = &value.pNext; };
+  if (caps.properties.apiVersion >= VK_API_VERSION_1_2) append(f12);
   if (caps.properties.apiVersion >= VK_API_VERSION_1_3) append(f13);
   if (has(VK_ARM_TENSORS_EXTENSION_NAME)) append(tensors);
   if (has(VK_ARM_DATA_GRAPH_EXTENSION_NAME)) append(graph);
@@ -92,6 +126,7 @@ bool QueryDeviceCapabilities(PFN_vkGetInstanceProcAddr get, VkInstance instance,
   GetPhysicalDeviceFeatures2(physical, &features);
   caps.tensors_feature = tensors.tensors;
   caps.graph_feature = graph.dataGraph;
+  caps.vulkan_memory_model = f12.vulkanMemoryModel;
   caps.synchronization2 = f13.synchronization2;
   caps.maintenance5 = maintenance.maintenance5;
   caps.replicated_composites = replicated.shaderReplicatedComposites;

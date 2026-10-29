@@ -11,13 +11,107 @@
 
 #include "litert/tools/imagenet_eval_data.h"
 
+#include <cfenv>
 #include <limits>
+#include <filesystem>
+#include <fstream>
 
 
 #include "gtest/gtest.h"
+#include "tflite/kernels/internal/reference/quantize.h"
+#include "xnnpack.h"
 
 namespace litert::imagenet {
 namespace {
+template <typename T>
+void CheckInputQuantization(enum xnn_datatype datatype) {
+  ASSERT_EQ(xnn_initialize(nullptr), xnn_status_success);
+  for (float scale : {1.0f, 0.125f, 0.1f, 0.0837f}) {
+    std::vector<float> values;
+    for (int k = -260; k <= 260; ++k) {
+      const float value = static_cast<float>(k) * 0.5f * scale;
+      values.push_back(value);
+      values.push_back(std::nextafter(value, -std::numeric_limits<float>::infinity()));
+      values.push_back(std::nextafter(value, std::numeric_limits<float>::infinity()));
+    }
+    values.insert(values.end(), {-1.0e6f, 1.0e6f});
+    const size_t count = values.size();
+    // XNNPACK permits vector loads beyond the final logical input element.
+    values.resize(count + XNN_EXTRA_BYTES / sizeof(float));
+    for (int zp = std::numeric_limits<T>::min(); zp <= std::numeric_limits<T>::max(); ++zp) {
+      SCOPED_TRACE(::testing::Message() << "scale=" << scale << " zp=" << zp);
+      const xnn_quantization_params quantization{zp, scale};
+      std::vector<T> expected(count);
+      ASSERT_EQ(xnn_run_unary_elementwise_nc(
+          xnn_unary_convert, xnn_datatype_fp32, datatype, nullptr, nullptr,
+          &quantization, 0, 1, count, count, count, nullptr, values.data(), expected.data()),
+          xnn_status_success);
+      const auto actual = QuantizePerTensor<T>(
+          std::vector<float>(values.begin(), values.begin() + count), {scale, zp});
+      EXPECT_EQ(actual, expected);
+      EXPECT_EQ(actual[count - 2], std::numeric_limits<T>::min());
+      EXPECT_EQ(actual[count - 1], std::numeric_limits<T>::max());
+    }
+  }
+}
+
+TEST(InputQuantizationTest, MatchesXnnpackIncludingTiesAndFullRangeSaturation) {
+  const int previous = std::fegetround();
+  ASSERT_EQ(std::fesetround(FE_TONEAREST), 0);
+  CheckInputQuantization<int8_t>(xnn_datatype_qint8);
+  CheckInputQuantization<uint8_t>(xnn_datatype_quint8);
+  EXPECT_EQ(std::fesetround(previous), 0);
+}
+
+TEST(InputQuantizationTest, IntentionallyDisagreesWithReferenceHalfStepRounding) {
+  const float input = 0.5f;
+  tflite::QuantizationParams params;
+  params.scale = 1.0;
+  params.zero_point = 0;
+  int8_t reference = 0;
+  tflite::reference_ops::AffineQuantize(params, tflite::RuntimeShape({1}), &input,
+                                      tflite::RuntimeShape({1}), &reference);
+  EXPECT_EQ(reference, 1);
+  EXPECT_EQ(QuantizePerTensor<int8_t>({input}, {1.0f, 0}), std::vector<int8_t>({0}));
+  EXPECT_EQ(QuantizePerTensor<int8_t>({1.5f}, {1.0f, -128}), std::vector<int8_t>({-126}));
+  EXPECT_EQ(QuantizePerTensor<int8_t>({-1.5f}, {1.0f, 127}), std::vector<int8_t>({125}));
+}
+
+TEST(ManifestTest, SelectionRelativePathsAndMalformedRows) {
+  const auto root = std::filesystem::path(testing::TempDir());
+  const auto path = root / "samples.tsv";
+  auto write = [&](const std::string& text) { std::ofstream file(path); file << text; };
+  write("# comment\r\nid\tlabel\tpath\r\n7\t9\ta.jpg\r\n8\t2\t/absolute/b.jpg\n");
+  auto rows = ReadSamples(path.string(), "", 0, 1);
+  ASSERT_TRUE(rows); ASSERT_EQ(rows->size(), 1);
+  EXPECT_EQ(rows->front().id, 7); EXPECT_EQ(rows->front().label, 9);
+  EXPECT_EQ(rows->front().path, (root / "a.jpg").string());
+  rows = ReadSamples(path.string(), "/override", 0, 0);
+  ASSERT_TRUE(rows); ASSERT_EQ(rows->size(), 2);
+  EXPECT_EQ(rows->front().path, "/override/a.jpg");
+  EXPECT_EQ(rows->back().path, "/absolute/b.jpg");
+  rows = ReadSamples(path.string(), "", 1, 1);
+  ASSERT_TRUE(rows); EXPECT_EQ(rows->front().id, 8);
+  EXPECT_FALSE(ReadSamples(path.string(), "", 2, 1));
+  EXPECT_FALSE(ReadSamples(path.string(), "", -1, 1));
+  EXPECT_FALSE(ReadSamples(path.string(), "", 0, -1));
+  for (const auto* text : {"", "id\tlabel\tpath\n", "bad\t2\ta.jpg\n",
+       "1\tbad\ta.jpg\n", "1\t2\t\n", "1\t2\ta\textra\n",
+       "1\t2\ta\n1\t3\tb\n"}) {
+    write(text); EXPECT_FALSE(ReadSamples(path.string(), "", 0, 1)) << text;
+  }
+}
+
+TEST(ComparisonTest, CodeSpaceRecoveryUsesMaximumAndMeanGates) {
+  const LiteRtQuantizationPerTensor q{0.125f, -7};
+  auto result = CompareQuantizedScores({0, 0, .25f, 0}, {0, 0, 0, 0}, q, 2, .5);
+  ASSERT_TRUE(result); EXPECT_TRUE(result->allclose);
+  EXPECT_EQ(result->max_abs, 2); EXPECT_EQ(result->mean_abs, .5);
+  result = CompareQuantizedScores({0, 0, .25f, .125f}, {0, 0, 0, 0}, q, 2, .5);
+  ASSERT_TRUE(result); EXPECT_FALSE(result->allclose);
+  EXPECT_FALSE(CompareQuantizedScores({0}, {0}, {0, 0}, 1, 1));
+}
+
 TEST(Sha256Test, KnownVectorsAndStreaming) {
   EXPECT_EQ(HashBytes("", 0),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");

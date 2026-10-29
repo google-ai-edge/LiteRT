@@ -28,6 +28,7 @@ struct GraphEngine {
 struct DeviceCapabilities {
   VkPhysicalDeviceProperties properties{};
   bool tensors_feature = false, graph_feature = false, synchronization2 = false;
+  bool vulkan_memory_model = false;
   bool maintenance5 = false, replicated_composites = false;
   std::vector<VkExtensionProperties> extensions;
   VkPhysicalDeviceTensorPropertiesARM tensors{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_PROPERTIES_ARM};

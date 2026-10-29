@@ -21,11 +21,13 @@
 #include "litert/tools/imagenet_eval_data.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "tflite/schema/schema_generated.h"
+#include "tflite/interpreter.h"
 namespace litert::arm_vulkan_ml::tool {
 using imagenet::Json;
 struct Options {
   std::string command;
   std::map<std::string, std::string> values;
+  std::map<std::string, std::vector<std::string>> repeated;
   std::string Get(const std::string& key, const std::string& fallback = "") const;
   Expected<int> Integer(const std::string& key, int fallback) const;
   Expected<double> Number(const std::string& key, double fallback) const;
@@ -36,10 +38,18 @@ Expected<std::vector<uint8_t>> PackModel(const tflite::ModelT& model);
 Expected<void> Inspect(const Options& options, Json& report, bool compile);
 Expected<void> Capabilities(const Options& options, Json& report);
 Expected<void> Validate(const Options& options, Json& report);
+Expected<void> FillImageInput(tflite::Interpreter&, const std::vector<float>& pixels);
 Expected<void> Trace(const Options& options, Json& report);
 Expected<void> Compare(const void* actual, const void* expected, size_t count,
                        bool floating, const Options& options, Json& result);
+Expected<void> QueryTosa(const Json& database, const Options& options, Json& result);
+Expected<void> ExportVgf(const CompiledPartition&, const std::string& name, const std::string& path);
+Expected<void> TosaQuery(const Options& options, Json& report);
+Expected<void> Coverage(Json& report);
+void PrintCoverage(const Json& report);
+void PrintTosaQuery(const Json& report);
 Expected<void> Run(const Options& options, Json& report);
+Expected<void> CollectValidationLogs(const std::string& directory, const std::string& mode, Json& result);
 int Main(int argc, char** argv);
 }  // namespace litert::arm_vulkan_ml::tool
 #endif
