@@ -9,6 +9,8 @@
 #include <string_view>
 #include <vector>
 
+#include "QnnCommon.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -17,7 +19,6 @@
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 
@@ -25,9 +26,12 @@ namespace {
 
 std::optional<uint32_t> GetBitwidthFromDataType(Qnn_DataType_t data_type) {
   switch (data_type) {
+#if (QNN_API_VERSION_MAJOR > 2) || \
+    (QNN_API_VERSION_MAJOR == 2 && QNN_API_VERSION_MINOR > 32)
     case QNN_DATATYPE_SFIXED_POINT_2:
     case QNN_DATATYPE_UFIXED_POINT_2:
       return 2;
+#endif
     case QNN_DATATYPE_SFIXED_POINT_4:
     case QNN_DATATYPE_UFIXED_POINT_4:
       return 4;
@@ -47,12 +51,15 @@ std::optional<uint32_t> GetBitwidthFromDataType(Qnn_DataType_t data_type) {
 
 bool IsFixedPointType(Qnn_DataType_t data_type) {
   switch (data_type) {
+#if (QNN_API_VERSION_MAJOR > 2) || \
+    (QNN_API_VERSION_MAJOR == 2 && QNN_API_VERSION_MINOR > 32)
     case QNN_DATATYPE_SFIXED_POINT_2:
+    case QNN_DATATYPE_UFIXED_POINT_2:
+#endif
     case QNN_DATATYPE_SFIXED_POINT_4:
     case QNN_DATATYPE_SFIXED_POINT_8:
     case QNN_DATATYPE_SFIXED_POINT_16:
     case QNN_DATATYPE_SFIXED_POINT_32:
-    case QNN_DATATYPE_UFIXED_POINT_2:
     case QNN_DATATYPE_UFIXED_POINT_4:
     case QNN_DATATYPE_UFIXED_POINT_8:
     case QNN_DATATYPE_UFIXED_POINT_16:
@@ -65,7 +72,10 @@ bool IsFixedPointType(Qnn_DataType_t data_type) {
 
 bool IsSignedFixedPointType(Qnn_DataType_t data_type) {
   switch (data_type) {
+#if (QNN_API_VERSION_MAJOR > 2) || \
+    (QNN_API_VERSION_MAJOR == 2 && QNN_API_VERSION_MINOR > 32)
     case QNN_DATATYPE_SFIXED_POINT_2:
+#endif
     case QNN_DATATYPE_SFIXED_POINT_4:
     case QNN_DATATYPE_SFIXED_POINT_8:
     case QNN_DATATYPE_SFIXED_POINT_16:
