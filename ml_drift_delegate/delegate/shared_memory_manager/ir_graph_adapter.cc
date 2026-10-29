@@ -134,6 +134,10 @@ bool IrModelAdapter::OpHasInputs(uint32_t op_id) const {
   return !graph_.op(op_id)->inputs.empty();
 }
 
+size_t IrModelAdapter::GetOpInputCount(uint32_t op_id) const {
+  return graph_.op(op_id)->inputs.size();
+}
+
 BHWC IrModelAdapter::GetOpFirstInputShape(uint32_t op_id) const {
   const ir::IrTensorId input_id = graph_.op(op_id)->inputs[0];
   return graph_.tensor(input_id)->desc.GetBHWCShape();

@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_webgpu.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -478,7 +479,8 @@ void RunBlockwiseQuantizationTest(const webgpu::ExecutionEnvironment& env,
                                   TfLiteType zp_type, int zp_size,
                                   const std::vector<int>& expected_zp_values,
                                   bool use_invalid_zp = false,
-                                  bool expect_failure = false) {
+                                  bool expect_failure = false,
+                                  bool with_bias_input = false) {
   ValueIdToSharedTensorMap buffer_id_to_spatial_tensor;
   ValueIdToSharedTensorMap quant_param_tensors;
 
@@ -489,9 +491,15 @@ void RunBlockwiseQuantizationTest(const webgpu::ExecutionEnvironment& env,
   GraphFloat32 graph;
   Node* node = graph.NewNode();
   node->operation.type = "fully_connected";
+  if (with_bias_input) {
+    graph.AddConsumer(node->id, graph.NewValue()->id);  // src
+  }
   Value* weights_val = graph.NewValue();
   graph.AddConsumer(node->id, weights_val->id);
   weights_val->tensor.shape = BHWC(100, 1, 1, 64);
+  if (with_bias_input) {
+    graph.AddConsumer(node->id, graph.NewValue()->id);  // bias
+  }
 
   TfLiteContext context;
   std::vector<TfLiteTensor> tensors(3);
@@ -609,7 +617,19 @@ void RunBlockwiseQuantizationTest(const webgpu::ExecutionEnvironment& env,
                 BHWC(1, 1, 25, 8));
     }
   }
-  EXPECT_EQ(params_found, 2);
+  // Without a bias input, an all-zero zero point is left out: the op gets the
+  // scale only and the zero point keeps an empty entry.
+  const bool zero_point_left_out =
+      !with_bias_input &&
+      (use_invalid_zp ||
+       std::all_of(expected_zp_values.begin(), expected_zp_values.end(),
+                   [](int zp) { return zp == 0; }));
+  EXPECT_EQ(params_found, zero_point_left_out ? 1 : 2);
+  int empty_entries = 0;
+  for (auto& [_, tensor] : quant_param_tensors) {
+    if (tensor.GetWeights() == nullptr) ++empty_entries;
+  }
+  EXPECT_EQ(empty_entries, zero_point_left_out ? 1 : 0);
 
   TfLiteIntArrayFree(tensors[0].dims);
   delete quant_params;
@@ -653,6 +673,22 @@ TEST_F(SharedMemoryManagerTest, CreateBlockwiseQuantizedTensorSymmetric) {
   std::vector<int> expected_zp(200, 0);
   RunBlockwiseQuantizationTest(exec_env_.GetEnv(), kTfLiteInt32, 200,
                                expected_zp, /*use_invalid_zp=*/true);
+}
+
+TEST_F(SharedMemoryManagerTest,
+       CreateBlockwiseQuantizedTensorWithAllZeroZeroPoints) {
+  std::vector<int> expected_zp(200, 0);
+  RunBlockwiseQuantizationTest(exec_env_.GetEnv(), kTfLiteInt32, 200,
+                               expected_zp);
+}
+
+TEST_F(SharedMemoryManagerTest,
+       CreateBlockwiseQuantizedTensorSymmetricWithBiasInput) {
+  std::vector<int> expected_zp(200, 0);
+  RunBlockwiseQuantizationTest(exec_env_.GetEnv(), kTfLiteInt32, 200,
+                               expected_zp, /*use_invalid_zp=*/true,
+                               /*expect_failure=*/false,
+                               /*with_bias_input=*/true);
 }
 
 // Integration coverage for the IR path: build an ir::IrModel, drive the unified
