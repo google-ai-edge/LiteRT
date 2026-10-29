@@ -5054,6 +5054,41 @@ TEST(EmbeddingLookupOperationParserTest, TestIsSupportedFailed) {
           .ok());
 }
 
+// One EMBEDDING_LOOKUP node with float32 weights of the given allocation type.
+std::unique_ptr<StubTfLiteContext> CreateFloat32EmbeddingLookupContext(
+    TfLiteAllocationType weights_allocation_type) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinEmbeddingLookup,
+      /*op_version=*/1,
+      /*num_inputs=*/2,
+      /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  context->ChangeTensorShape(1, {1});
+  context->SetTensorType(1, kTfLiteInt32, kTfLiteArenaRw);
+  context->ChangeTensorShape(2, {3, 4});
+  context->SetTensorType(2, kTfLiteFloat32, weights_allocation_type);
+  context->ChangeTensorShape(3, {1, 4});
+  return context;
+}
+
+TEST(EmbeddingLookupOperationParserTest,
+     TestIsSupportedConstantFloat32Weights) {
+  auto context = CreateFloat32EmbeddingLookupContext(kTfLiteMmapRo);
+  auto parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
+}
+
+TEST(EmbeddingLookupOperationParserTest,
+     TestIsSupportedFailsNonConstantFloat32Weights) {
+  // Runtime float32 weights, e.g. the output of a DEQUANTIZE.
+  auto context = CreateFloat32EmbeddingLookupContext(kTfLiteArenaRw);
+  auto parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_THAT(
+      parser->IsSupported(context.get(), context->node(),
+                          context->registration()),
+      StatusIs(absl::StatusCode::kInvalidArgument, HasSubstr("constant")));
+}
+
 enum class NormType { kGroupNorm, kLayerNorm };
 
 struct CompositeLayerOrGroupNormParserInput {
