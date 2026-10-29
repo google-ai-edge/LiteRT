@@ -96,11 +96,13 @@ using GpuEventHandle = void*;
 // [REQUIRED]
 class GpuBackend {
  public:
-  // GPU buffer requirements consist of the buffer types in order and the
-  // corresponding strides in bytes.
+  // GPU buffer requirements consist of the buffer types in order, the
+  // corresponding strides in bytes, and optional host-memory byte alignment
+  // (0 means no additional alignment requirement).
   struct GpuBufferRequirements {
     std::vector<LiteRtTensorBufferType> buffer_types;
     std::vector<uint32_t> strides;
+    size_t alignment = 0;
   };
 
   virtual ~GpuBackend() = default;
@@ -295,13 +297,52 @@ class GpuBackend {
   // Answers the hardware memory coherence capability question: returns true if
   // host pointer I/O buffers require explicit cache flushing/invalidation
   // (e.g. via map/unmap) between host and device.
-  // This is an intrinsic hardware property independent of whether host pointer
-  // allocation was enabled natively or forced for testing. On platforms with
-  // unified memory and hardware cache coherency (e.g. PowerVR D-Series on
-  // Tensor G5 or C-Series on Tensor G6), this returns false.
   // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
   // OpenCL).
   virtual bool RequiresExplicitHostSync() const { return false; }
+
+  // Synchronizes CPU-cached modifications in host memory to GPU address space
+  // for wrapped host pointer TensorBuffers before GPU dispatch.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
+  virtual absl::Status SyncHostMemoryToDevice(
+      const GpuTensorBufferPtr& tensor_buffer) {
+    return absl::OkStatus();
+  }
+
+  // Ensures wrapped host pointer output TensorBuffers are unmapped before GPU
+  // kernels write to them, without performing a cold host-to-device copy if
+  // already unmapped.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
+  virtual absl::Status PrepareHostMemoryForDeviceWrite(
+      const GpuTensorBufferPtr& tensor_buffer) {
+    return absl::OkStatus();
+  }
+
+  // Enqueues synchronization of GPU modifications to host CPU cache for
+  // wrapped host pointer TensorBuffers after GPU dispatch. Callers should wait
+  // for completion and then call FinishHostMemorySyncToHost().
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
+  virtual absl::Status SyncHostMemoryToHost(
+      const GpuTensorBufferPtr& tensor_buffer) {
+    return absl::OkStatus();
+  }
+
+  // Completes any pending host-side synchronization (e.g. driver bounce-buffer
+  // copies) after WaitForCompletion() for wrapped host pointer TensorBuffers.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
+  virtual absl::Status FinishHostMemorySyncToHost(
+      const GpuTensorBufferPtr& tensor_buffer) {
+    return absl::OkStatus();
+  }
+
+  // Drops transient wrappers holding external host pointers for the current
+  // run. [OPTIONAL] Only for backends supporting host pointer I/O buffers
+  // (currently OpenCL).
+  virtual void ClearWrappedHostBuffers() {}
 
   // Returns true if the backend supports host pointer I/O buffers (zero-copy)
   // for the specified input/output direction. Host pointer buffers allow direct
@@ -573,25 +614,49 @@ class GpuIOBuffer {
   // [REQUIRED]
   virtual size_t GetSize() const = 0;
 
+  // Returns true if the buffer is currently mapped for CPU access via
+  // clEnqueueMapBuffer.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
+  virtual bool IsMapped() const { return false; }
+
   // Synchronizes CPU modifications from host memory to the GPU device buffer.
-  // On unified-memory architectures with hardware cache coherency (e.g.
-  // PowerVR D-Series on Tensor G5 or C-Series on Tensor G6), this is a no-op
-  // because CPU and GPU caches are coherent upon clFinish. On discrete or
-  // non-coherent GPUs, standard operation uses clEnqueueWriteBuffer; this
-  // map/unmap synchronization fallback is retained for OpenCL specification
-  // compliance and unit testing.
+  // When explicit host sync is active and the buffer is mapped, unmaps it
+  // (after copying from `host_ptr_` to `mapped_ptr_` if they differ) so the
+  // GPU sees CPU writes. If not mapped, copies host memory to the device
+  // buffer via blocking clEnqueueWriteBuffer.
   // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
   // OpenCL).
   virtual absl::Status SyncToDevice() { return absl::OkStatus(); }
 
-  // Synchronizes GPU modifications from the device buffer to CPU host memory.
-  // On unified-memory cache-coherent architectures, this is a no-op. On
-  // discrete or non-coherent GPUs, standard operation uses
-  // clEnqueueReadBuffer; this map/unmap synchronization fallback is retained
-  // for OpenCL specification compliance and unit testing.
+  // Unmaps the buffer if it is currently mapped without copying from host
+  // memory. Used on output buffers before GPU kernel execution writes to them.
   // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
   // OpenCL).
-  virtual absl::Status SyncToHost() { return absl::OkStatus(); }
+  virtual absl::Status UnmapIfMapped() { return absl::OkStatus(); }
+
+  // Synchronizes GPU modifications from the device buffer to CPU host memory.
+  // Enqueues a map operation (either async when `wait_for_completion` is false
+  // or blocking/completed when true) so CPU writes/reads can access GPU
+  // results. [OPTIONAL] Only for backends supporting host pointer I/O buffers
+  // (currently OpenCL).
+  virtual absl::Status SyncToHost(bool wait_for_completion) {
+    return absl::OkStatus();
+  }
+
+  // Blocking overload of SyncToHost(/*wait_for_completion=*/true).
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
+  virtual absl::Status SyncToHost() {
+    return SyncToHost(/*wait_for_completion=*/true);
+  }
+
+  // Completes any pending async host sync started by
+  // SyncToHost(/*wait_for_completion=*/false), copying mapped contents to
+  // `host_ptr_` if needed once command queue execution has finished.
+  // [OPTIONAL] Only for backends supporting host pointer I/O buffers (currently
+  // OpenCL).
+  virtual absl::Status FinishPendingHostSync() { return absl::OkStatus(); }
 };
 
 // Converter (i.e. data transferer with potential memory layout change) from a

@@ -893,6 +893,7 @@ cc_test(
         ":open_cl_memory",
         ":tensor_buffer",
         ":tensor_buffer_requirements",
+        ":tfl_utils",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment",

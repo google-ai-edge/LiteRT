@@ -247,19 +247,27 @@ class GpuTensorWrapperOpenCl : public GpuTensorWrapper {
 // page-aligned host memory buffer via CL_MEM_USE_HOST_PTR.
 class GpuIOBufferOpenCl : public GpuIOBuffer {
  public:
-  // Constructs a GpuIOBufferOpenCl.
+  // Creates a GpuIOBufferOpenCl.
+  //
+  // On devices requiring explicit host sync, host-pointer buffers are mapped
+  // initially for host CPU access via blocking clEnqueueMapBuffer; any
+  // mapping failure is returned as an error status rather than swallowed.
   //
   // Arguments:
   // - env: OpenCL environment containing context, queue, and device info.
   // - buffer: Wrapped OpenCL buffer handle.
   // - is_host_ptr: True if created with CL_MEM_USE_HOST_PTR.
   // - host_ptr: CPU virtual address of the host memory passed to
-  //   clCreateBuffer. Owned and deallocated with free() in the destructor.
-  explicit GpuIOBufferOpenCl(::ml_drift::cl::Environment* env,
-                             ::ml_drift::cl::Buffer&& buffer,
-                             bool is_host_ptr = false, void* host_ptr = nullptr,
-                             bool owns_host_ptr = false,
-                             bool requires_explicit_host_sync = false);
+  //   clCreateBuffer. Owned and deallocated with free() in the destructor when
+  //   owns_host_ptr is true.
+  // - owns_host_ptr: True if host_ptr is owned by this instance.
+  // - requires_explicit_host_sync: True if explicit map/unmap maintenance is
+  //   required between CPU and GPU accesses.
+  static absl::StatusOr<std::unique_ptr<GpuIOBufferOpenCl>> Create(
+      ::ml_drift::cl::Environment* env, ::ml_drift::cl::Buffer&& buffer,
+      bool is_host_ptr = false, void* host_ptr = nullptr,
+      bool owns_host_ptr = false, bool requires_explicit_host_sync = false);
+
   ~GpuIOBufferOpenCl() override;
 
   // Implementation of GpuIOBuffer.
@@ -273,13 +281,25 @@ class GpuIOBufferOpenCl : public GpuIOBuffer {
 
   bool IsHostPtr() const override { return is_host_ptr_; }
   void* GetHostPtr() const override { return host_ptr_; }
+  bool IsMapped() const override { return is_mapped_; }
   bool OwnsHostPtr() const override { return owns_host_ptr_; }
   bool RequiresExplicitHostSync() const { return requires_explicit_host_sync_; }
   size_t GetSize() const override { return buffer_.GetMemorySizeInBytes(); }
   absl::Status SyncToDevice() override;
-  absl::Status SyncToHost() override;
+  absl::Status UnmapIfMapped() override;
+  absl::Status SyncToHost(bool wait_for_completion) override;
+  absl::Status SyncToHost() override {
+    return SyncToHost(/*wait_for_completion=*/true);
+  }
+  absl::Status FinishPendingHostSync() override;
 
  private:
+  explicit GpuIOBufferOpenCl(::ml_drift::cl::Environment* env,
+                             ::ml_drift::cl::Buffer&& buffer,
+                             bool is_host_ptr = false, void* host_ptr = nullptr,
+                             bool owns_host_ptr = false,
+                             bool requires_explicit_host_sync = false);
+
   ::ml_drift::cl::Environment* const env_;
   ::ml_drift::cl::Buffer buffer_;
 
@@ -298,9 +318,20 @@ class GpuIOBufferOpenCl : public GpuIOBuffer {
   // True if host memory access requires explicit cache sync via map/unmap.
   const bool requires_explicit_host_sync_ = false;
 
-  // Reusable staging buffer for host memory synchronization on platforms
-  // requiring explicit cache sync (e.g. non-coherent workstation GPUs).
+  // Reusable staging buffer for cold host-to-device upload when SyncToDevice()
+  // is called while unmapped.
   std::vector<uint8_t> staging_buffer_;
+
+  // Pointer returned by clEnqueueMapBuffer when mapped for host access.
+  void* mapped_ptr_ = nullptr;
+
+  // True if the buffer is currently mapped for host CPU access.
+  bool is_mapped_ = false;
+
+  // True if an async SyncToHost(/*wait_for_completion=*/false) enqueued a map
+  // whose completion/bounce-buffer copy is finalized by
+  // FinishPendingHostSync().
+  bool pending_host_sync_ = false;
 };
 
 class Tensor2BufferConverterOpenCl : public Tensor2BufferConverter {
