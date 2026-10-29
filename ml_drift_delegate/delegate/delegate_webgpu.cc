@@ -270,6 +270,7 @@ void RequestSupportedExtensions(ml_drift::webgpu::ExecutionEnvironment& env,
 // provided device id and set `is_webgpu_device_provided` to true.
 std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
     LiteRtEnvironment litert_env, GpuPriority gpu_priority,
+    absl::string_view preferred_device_substr,
     DelegateEnvironment* delegate_env,
     const LiteRtRuntimeContext* runtime_context) {
   auto webgpu_env = std::make_unique<ml_drift::webgpu::ExecutionEnvironment>(
@@ -342,12 +343,15 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
     const bool enable_host_mapped_pointer = true;
     LITERT_LOG(LITERT_INFO,
                "Create WebGPU environment (use_low_power=%d, "
-               "enable_host_mapped_pointer=%d)",
-               use_low_power, enable_host_mapped_pointer);
+               "enable_host_mapped_pointer=%d, preferred_device_substr=%.*s)",
+               use_low_power, enable_host_mapped_pointer,
+               static_cast<int>(preferred_device_substr.size()),
+               preferred_device_substr.data());
     // Create ExecutionEnvironment with InitParams.
     ml_drift::webgpu::Environment::InitParams init_params{
         .use_low_power = use_low_power,
-        .enable_host_mapped_pointer = enable_host_mapped_pointer};
+        .enable_host_mapped_pointer = enable_host_mapped_pointer,
+        .preferred_device_substr = std::string(preferred_device_substr)};
     wgpu::DawnCacheDeviceDescriptor cache_desc;
     if (delegate_env != nullptr && delegate_env->HasPipelineCache()) {
       AttachCacheCallbacks(cache_desc, delegate_env);
@@ -371,7 +375,8 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
 // Gets or creates the delegate-local wrapper around the LiteRT GPU environment.
 absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
     const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment litert_env,
-    GpuPriority gpu_priority, litert::ml_drift::SimpleCache&& pipeline_cache) {
+    GpuPriority gpu_priority, absl::string_view preferred_device_substr,
+    litert::ml_drift::SimpleCache&& pipeline_cache) {
   // Use a holder to keep the environment alive.
   auto resources = std::make_unique<DelegateEnvironment>();
 
@@ -394,7 +399,8 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
     // If we have a GPU environment but no user data, it means it was created
     // externally. We create an ExecutionEnvironment from the options.
     resources->webgpu_env = CreateWebGpuEnvironment(
-        litert_env, gpu_priority, resources.get(), runtime_context);
+        litert_env, gpu_priority, preferred_device_substr, resources.get(),
+        runtime_context);
     if (!resources->webgpu_env) {
       return absl::InternalError("Failed to initialize WebGPU environment");
     }
@@ -430,8 +436,9 @@ absl::StatusOr<DelegateEnvironment*> GetOrCreateDelegateEnvironment(
             std::move(pipeline_cache), kMaxNumEntriesInWebGpuPipelineCache));
   }
 
-  resources->webgpu_env = CreateWebGpuEnvironment(
-      litert_env, gpu_priority, resources.get(), runtime_context);
+  resources->webgpu_env =
+      CreateWebGpuEnvironment(litert_env, gpu_priority, preferred_device_substr,
+                              resources.get(), runtime_context);
   if (!resources->webgpu_env) {
     return absl::InternalError("Failed to initialize WebGPU environment");
   }
@@ -735,6 +742,7 @@ TfLiteDelegatePtr CreateMlDriftWebGpuDelegate(MlDriftDelegateOptionsPtr options,
   // Resulting delegate environment is owned by the LiteRT environment.
   auto delegate_env = GetOrCreateDelegateEnvironment(
       runtime_context, litert_env, delegate_data->options->gpu_priority,
+      delegate_data->options->preferred_device_substr,
       std::move(compiled_cache));
   if (!delegate_env.ok()) {
     ABSL_LOG(ERROR) << "Failed to get or create delegate WebGPU environment: "

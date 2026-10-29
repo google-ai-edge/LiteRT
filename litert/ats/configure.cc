@@ -73,6 +73,10 @@ ABSL_FLAG(bool, enable_ynnpack, false,
 ABSL_FLAG(bool, gpu_use_ir_model, true,
           "Whether to use the IR model for the GPU accelerator.");
 
+ABSL_FLAG(std::string, preferred_device_substr, "",
+          "Preferred GPU device name/vendor/description substring "
+          "(case-insensitive).");
+
 ABSL_FLAG(std::string, cpu_kernel_mode, "delegate",
           "CPU kernel mode for the \"actual\" backend when --backend=cpu. One "
           "of: delegate (XNNPACK, default), builtin (TFLite builtin kernels "
@@ -245,6 +249,12 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
     }
     LITERT_RETURN_IF_ERROR(test::GpuOptionsTestPeer::SetUseIrModel(
         gpu_opts, absl::GetFlag(FLAGS_gpu_use_ir_model)));
+    const auto preferred_device_substr =
+        absl::GetFlag(FLAGS_preferred_device_substr);
+    if (!preferred_device_substr.empty()) {
+      LITERT_RETURN_IF_ERROR(
+          gpu_opts.SetPreferredDeviceSubstr(preferred_device_substr.c_str()));
+    }
   }
   return options;
 }

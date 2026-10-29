@@ -53,6 +53,9 @@ ABSL_DECLARE_FLAG(bool, enable_ynnpack);
 // Whether to use the IR model for the GPU accelerator.
 ABSL_DECLARE_FLAG(bool, gpu_use_ir_model);
 
+// Preferred GPU device name/vendor/description substring (case-insensitive).
+ABSL_DECLARE_FLAG(std::string, preferred_device_substr);
+
 // CPU kernel mode for the "actual" backend: delegate, builtin or reference.
 ABSL_DECLARE_FLAG(std::string, cpu_kernel_mode);
 
