@@ -20,7 +20,7 @@ load("//litert/sdk_util:repo.bzl", "configurable_repo")
 def qairt():
     configurable_repo(
         name = "qairt",
-        build_file = "@//third_party/qairt:qairt.BUILD",
+        build_file = Label("//third_party/qairt:qairt.BUILD"),
         local_path_env = "LITERT_QAIRT_SDK",
         strip_prefix = "qairt/2.50.0.260828",
         url = "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.50.0.260828/v2.50.0.260828.zip",

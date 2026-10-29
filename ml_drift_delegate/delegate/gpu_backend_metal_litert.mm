@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#import "third_party/odml/litert/ml_drift/delegate/gpu_backend_metal_litert.h"
+#import "ml_drift_delegate/delegate/gpu_backend_metal_litert.h"
 #import <Metal/Metal.h>
 
 #include <cstdint>

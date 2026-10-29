@@ -20,7 +20,7 @@ def litert_friends():
     Return the package group declaration for internal code locations that need
     visibility to all LiteRT APIs"""
 
-    return []
+    return ["public"]
 
 def friends_of_litert_runtime_builtin_static():
     """Targets with access to litert_runtime_builtin_static target.

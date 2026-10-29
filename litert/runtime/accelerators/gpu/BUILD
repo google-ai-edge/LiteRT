@@ -287,7 +287,10 @@ cc_binary(
         "windows",
     ],
     target_compatible_with = ["@platforms//os:windows"],
-    visibility = ["//visibility:private"],
+    visibility = [
+        "//litert:__subpackages__",
+        "//litert:litert_friends",
+    ],
     win_def_file = ":windows_exported_symbols.def",
     deps = [":ml_drift_webgpu_accelerator_runtimecapi"],
 )
@@ -295,7 +298,10 @@ cc_binary(
 alias(
     name = "ml_drift_webgpu_accelerator_dll",
     actual = ":libLiteRtWebGpuAccelerator",
-    visibility = ["//visibility:private"],
+    visibility = [
+        "//litert:__subpackages__",
+        "//litert:litert_friends",
+    ],
 )
 
 cc_library(

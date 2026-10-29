@@ -715,6 +715,7 @@ cc_library(
     srcs = ["litert_runtime_builtin.cc"],
     local_defines = ["LITERT_CC_RUNTIME_BUILTIN_NONE"],
     visibility = litert_jni_friends() + [
+        "//litert:litert_friends",
         "//litert/cc/internal:__pkg__",
         "//litert/kotlin:__pkg__",
     ],

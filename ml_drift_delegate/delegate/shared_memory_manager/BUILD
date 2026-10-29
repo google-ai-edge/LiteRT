@@ -416,7 +416,7 @@ cc_test(
 objc_library(
     name = "shared_memory_manager_metal",
     hdrs = ["shared_memory_manager_metal.h"],
-    aspect_hints = ["//tools/build_defs/swift:no_module"],
+    # copybara:uncomment(//tools/build_defs/swift:no_module is google-only) aspect_hints = ["//tools/build_defs/swift:no_module"],
     copts = ["-ObjC++"],
     visibility = [
         "//ml_drift_delegate/delegate:__subpackages__",

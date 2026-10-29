@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#import "third_party/odml/litert/ml_drift/delegate/shared_memory_manager/shared_memory_manager_metal.h"
+#import "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_metal.h"
 
 #import <Metal/Metal.h>
 #import <XCTest/XCTest.h>  // IWYU pragma: keep
