@@ -64,12 +64,12 @@ ModuleInterface Decode(const std::vector<uint32_t>& binary) {
   for(size_t i=5;i<binary.size();) {
     auto words=binary[i]>>16;auto op=static_cast<spv::Op>(binary[i]&0xffff);
     if(!words || i+words>binary.size()){ADD_FAILURE()<<"Invalid SPIR-V";return {};}
-    const auto* a=&binary[i+1];
+    const auto a = binary.cbegin() + i + 1;
     switch(op) {
       case spv::Op::OpTypeInt:case spv::Op::OpTypeFloat:case spv::Op::OpTypeTensorARM:
-        types[a[0]]=std::vector<uint32_t>(a+1,a+words-1);break;
+        types[a[0]]=std::vector<uint32_t>(a+1,a+(words-1));break;
       case spv::Op::OpConstant:integers[a[1]]=a[2];break;
-      case spv::Op::OpConstantComposite:shapes[a[1]]=std::vector<uint32_t>(a+2,a+words-1);break;
+      case spv::Op::OpConstantComposite:shapes[a[1]]=std::vector<uint32_t>(a+2,a+(words-1));break;
       case spv::Op::OpTypePointer:pointers[a[0]]=a[2];break;
       case spv::Op::OpVariable:variables[a[1]]=pointers.at(a[0]);break;
       case spv::Op::OpDecorate:
