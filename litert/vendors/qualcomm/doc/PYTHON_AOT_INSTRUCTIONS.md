@@ -13,7 +13,9 @@ compilation.
 **Scope:** this flow covers **AOT model compilation on x86 Linux**, plus
 **host-side CPU verification**. It does **not** run the Qualcomm NPU. NPU
 execution happens on device with `run_model` (see
-[Run the model](#run-the-model) and [HTP_INSTRUCTIONS.md](./HTP_INSTRUCTIONS.md)).
+[Run the model](#run-the-model) and [HTP_INSTRUCTIONS.md](./HTP_INSTRUCTIONS.md)),
+or from Python on Linux aarch64 devices (see
+[On-device compilation and NPU execution](#on-device-compilation-and-npu-execution-linux-aarch64)).
 
 Two ways to compile are covered, followed by how to run the result:
 
@@ -27,8 +29,18 @@ Two ways to compile are covered, followed by how to run the result:
 
 ## Prerequisites
 
-*   **x86-64 Linux** host. Compilation is Linux-x86 only; on other platforms the
-    SDK package raises `NotImplementedError`.
+*   **x86-64 Linux** host (Ubuntu 22.04 or 24.04, as supported by QAIRT).
+    Compilation is Linux-x86 only; on other platforms the SDK package raises
+    `NotImplementedError`.
+*   **System libraries used by the QNN host libraries.** `libQnnHtp.so` and
+    friends are built with clang and link `libc++`, `libc++abi` and
+    `libatomic`:
+
+    ```bash
+    sudo apt-get install -y libc++1 libatomic1
+    ```
+
+    This matches what QAIRT's own `bin/check-linux-dependency.sh` installs.
 *   **Python 3.10+** in a fresh virtual environment. The packages are published
     per-Python-version, so match your interpreter.
 *   **~6 GB free disk.** The Qualcomm SDK package unpacks to ~5.5 GB (it bundles
@@ -132,10 +144,11 @@ above, `model_Qualcomm_SM8850_apply_plugin.tflite`).
 `aot_compile` is defined in the `ai_edge_litert.aot.aot_compile` submodule (it is
 not re-exported from `ai_edge_litert.aot`), so import it directly as shown.
 
-Supported `SocModel` values: `SA8255`, `SA8295`, `SM8350`, `SM8450`, `SM8475`,
-`SM8550`, `SM8650`, `SM8750`, `SM8845`, `SM8850`, and `ALL` (compile for every
-registered SoC). See [supported_soc.csv](../supported_soc.csv) for the full
-device list.
+Supported `SocModel` values: `QCS8275`, `QCS8300`, `SA8255`, `SA8295`, `SM8350`,
+`SM8450`, `SM8475`, `SM8550`, `SM8650`, `SM8750`, `SM8845`, `SM8850`, and `ALL`
+(compile for every registered SoC). See [supported_soc.csv](../supported_soc.csv)
+for the full device list. `QCS*` and `SA*` are Linux IoT/automotive targets and
+are not included in Android AI Pack device targeting.
 
 --------------------------------------------------------------------------------
 
@@ -265,6 +278,77 @@ print(interpreter.get_tensor(out["index"]))
 `HardwareAccelerator` is a bit flag (`CPU=1`, `GPU=2`, `NPU=4`). `NPU` exists in
 the enum but will fail on the host for the reason above; use it only in an
 on-device build that has the Qualcomm dispatch library.
+
+--------------------------------------------------------------------------------
+
+## On-device compilation and NPU execution (Linux aarch64)
+
+On Qualcomm **Linux aarch64** devices (for example QCS8275 running Ubuntu
+24.04), the same two packages compile **and** run models on the NPU directly on
+the device; the `linux_aarch64` `ai-edge-litert` wheel ships the Qualcomm
+compiler plugin, dispatch library, and `apply_plugin_main`.
+
+### Prepare the device
+
+The QNN host libraries link against two system libraries that the device OS
+provides: `libatomic.so.1` and the FastRPC client library `libcdsprpc.so`
+(the unversioned name, which Ubuntu ships in the `-dev` package).
+
+```bash
+sudo apt-get install -y libatomic1 qcom-fastrpc-dev
+```
+
+Devices set up with the Qualcomm PPA as described in
+[IOT_DEVICE_SETUP.md](./IOT_DEVICE_SETUP.md#configure-device) already have
+both. QAIRT's `bin/check-linux-dependency.sh` covers the remaining toolchain
+packages if you also build natively on the device.
+
+### Install and run
+
+```bash
+pip install ai-edge-litert ai-edge-litert-sdk-qualcomm
+```
+
+As on x86, the SDK package unpacks the full QAIRT SDK, so make sure the device
+has enough free disk space (see [Prerequisites](#prerequisites)).
+
+```python
+from ai_edge_litert.compiled_model import CompiledModel
+from ai_edge_litert.environment import Environment
+from ai_edge_litert.hardware_accelerator import HardwareAccelerator
+from ai_edge_litert.options import Options, QualcommOptions
+
+model = CompiledModel.from_file(
+    "model.tflite",
+    # Optional: persist the on-device compiled model across runs.
+    environment=Environment.create(compiler_cache_dir="/tmp/litert_cache"),
+    options=Options(
+        hardware_accelerators=HardwareAccelerator.NPU | HardwareAccelerator.CPU,
+        qualcomm_options=QualcommOptions(
+            htp_performance_mode=QualcommOptions.HTP_PERFORMANCE_MODE.BURST,
+        ),
+    ),
+)
+```
+
+No environment variables are required. When a `CompiledModel` is created (or
+`aot_compile` runs on the device), `ai_edge_litert_sdk_qualcomm` provides the
+defaults for `QualcommOptions.qnn_lib_dir` and `dsp_skel_dir`:
+
+*   the QNN host libraries matching the device glibc
+    (`lib/aarch64-oe-linux-gcc11.2` for glibc 2.34+, e.g. Ubuntu 22.04+ or
+    Qualcomm Linux; older glibc falls back to `lib/aarch64-ubuntu-gcc9.4`,
+    which only supports HTP v68);
+*   the Hexagon skel libraries: every `lib/hexagon-<arch>/unsigned`
+    directory, from which the QNN stub loads the skel for the device's Hexagon
+    architecture (e.g. `libQnnHtpV75Skel.so`).
+
+Explicit `QualcommOptions(qnn_lib_dir=..., dsp_skel_dir=...)` values take
+precedence. Use `QualcommOptions(enable_just_in_time=True)` to compile in
+memory without serializing a context binary (the compiler cache is not used in
+that mode). To pre-compile on the device, run `aot_compile` with
+`target=qualcomm.Target(soc_model=qualcomm.SocModel.QCS8275)` and load the
+exported `.tflite` the same way.
 
 --------------------------------------------------------------------------------
 
