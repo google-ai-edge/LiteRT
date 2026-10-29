@@ -20,6 +20,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="${LITERT_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 LITERT_DIR="${ROOT_DIR}"
 
+ESDK_DEFAULT_ROOT="/opt/toolchains/qcom-esdk-gcc11.2"
+
+if [[ "${SETUP_ESDK_ONLY:-false}" == "true" ]]; then
+  "${SCRIPT_DIR}/install_qcom_esdk.sh"
+  exit 0
+fi
+
 OUTPUT_DIR="${OUTPUT_DIR:-/tmp/litert_binaries}"
 mkdir -p "${OUTPUT_DIR}"
 OUTPUT_DIR="$(cd "${OUTPUT_DIR}" && pwd)"
@@ -35,6 +42,15 @@ run_build_and_stage() {
   local preset="${PRESET:-linux-aarch64-oe-gcc11.2}"
   local bdir="${BDIR:-cmake_build_linux_aarch64_oe_gcc11_2}"
   local jobs="${JOBS:-$(nproc)}"
+
+  if [[ -z "${LINUX_AARCH64_ESDK:-}" && -d "${ESDK_DEFAULT_ROOT}" ]]; then
+    export LINUX_AARCH64_ESDK="${ESDK_DEFAULT_ROOT}"
+  fi
+  if [[ -n "${LINUX_AARCH64_ESDK:-}" && -d "${LINUX_AARCH64_ESDK}" ]]; then
+    mkdir -p "${LINUX_AARCH64_ESDK}/tmp/sysroots-uninative/x86_64-linux/lib"
+    ln -sf /lib64/ld-linux-x86-64.so.2 "${LINUX_AARCH64_ESDK}/tmp/sysroots-uninative/x86_64-linux/lib/ld-linux-x86-64.so.2"
+    export PATH="${PATH}:${LINUX_AARCH64_ESDK}/tmp/sysroots/x86_64/usr/bin/aarch64-qcom-linux"
+  fi
 
   trap 'if [[ -n "${HOST_UID:-}" && -n "${HOST_GID:-}" ]]; then chown -R "${HOST_UID}:${HOST_GID}" "${OUTPUT_DIR}" "${LITERT_DIR}" 2>/dev/null || true; fi' EXIT
 

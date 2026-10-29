@@ -69,7 +69,8 @@
         "LITERT_ENABLE_QUALCOMM": "ON",
         "LITERT_AUTO_BUILD_TFLITE": "ON",
         "LITERT_HOST_C_COMPILER": "/usr/bin/gcc",
-        "LITERT_HOST_CXX_COMPILER": "/usr/bin/g++"
+        "LITERT_HOST_CXX_COMPILER": "/usr/bin/g++",
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5"
       }
     },
     {
