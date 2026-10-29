@@ -659,16 +659,61 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                         {.num_outputs = 1}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(
+        context, tflite_node, registration,
+        {.min_inputs = 2, .max_inputs = 2, .num_outputs = 1}));
+    int first_input_id = 0;
+    ABSL_RETURN_IF_ERROR(GetTensorId(context, tflite_node, 0, &first_input_id));
+    int second_input_id = 0;
+    ABSL_RETURN_IF_ERROR(
+        GetTensorId(context, tflite_node, 1, &second_input_id));
+    if (first_input_id >= context->tensors_size ||
+        second_input_id >= context->tensors_size) {
+      return absl::OutOfRangeError("Input tensor index out of range.");
+    }
+    const TfLiteTensor* first_input = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 0, &first_input));
+    const TfLiteTensor* second_input = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 1, &second_input));
+    TfLiteTensor* output = nullptr;
+    ABSL_RETURN_IF_ERROR(PreGetOutputTensor(context, tflite_node, 0, &output));
+    if (!first_input->dims || first_input->dims->size < 2 ||
+        first_input->dims->size > 4) {
+      return absl::UnavailableError(
+          "Not supported batched mat mul case: first input has unsupported "
+          "rank");
+    }
+    if (!second_input->dims || second_input->dims->size < 2 ||
+        second_input->dims->size > 4) {
+      return absl::UnavailableError(
+          "Not supported batched mat mul case: second input has unsupported "
+          "rank");
+    }
+    if (!output->dims || output->dims->size < 2 || output->dims->size > 4) {
+      return absl::UnavailableError(
+          "Not supported batched mat mul case: output has unsupported rank");
+    }
+    auto has_positive_dims = [](const TfLiteIntArray* dims) {
+      for (int i = 0; i < dims->size; ++i) {
+        if (dims->data[i] <= 0) {
+          return false;
+        }
+      }
+      return true;
+    };
+    if (!has_positive_dims(first_input->dims) ||
+        !has_positive_dims(second_input->dims) ||
+        !has_positive_dims(output->dims)) {
+      return absl::InvalidArgumentError(
+          "BatchMatMul requires static positive dimensions.");
+    }
     const int runtime_inputs =
         GetNumberOfRuntimeInputsForNode(context, tflite_node);
     if (runtime_inputs == 1) {
       // Second input is constant, replace with Convolution2D
       ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
-      const TfLiteTensor* second_input = nullptr;
-      ABSL_RETURN_IF_ERROR(
-          PreGetInputTensor(context, tflite_node, 1, &second_input));
       if (!tflite::IsConstantTensor(second_input)) {
         // first input must be runtime and second is a constant tensor
         return absl::UnavailableError(
@@ -679,16 +724,11 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
             dummy_weights;
         ABSL_RETURN_IF_ERROR(
             PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
-      } else if (second_input->dims->size == 3 ||
-                 second_input->dims->size == 4) {
+      } else {
         ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>
             dummy_weights;
         ABSL_RETURN_IF_ERROR(
             PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
-      } else {
-        return absl::UnavailableError(
-            "Not supported batched mat mul case: second input has unsupported "
-            "rank");
       }
     } else if (runtime_inputs == 2) {
       ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
@@ -697,20 +737,105 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
       return absl::UnavailableError(
           "Not supported batched mat mul case: too many inputs");
     }
-    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    const auto* tflite_options =
+        reinterpret_cast<const TfLiteBatchMatMulParams*>(
+            tflite_node->builtin_data);
+    const bool transpose_left = tflite_options ? tflite_options->adj_x : false;
+    const bool transpose_right = tflite_options ? tflite_options->adj_y : false;
+    const int input0_m =
+        first_input->dims->data[first_input->dims->size -
+                                (transpose_left ? 1 : 2)];
+    const int input0_k =
+        first_input->dims->data[first_input->dims->size -
+                                (transpose_left ? 2 : 1)];
+    const int input1_k =
+        second_input->dims->data[second_input->dims->size -
+                                 (transpose_right ? 1 : 2)];
+    const int input1_n =
+        second_input->dims->data[second_input->dims->size -
+                                 (transpose_right ? 2 : 1)];
+    const int output_m = output->dims->data[output->dims->size - 2];
+    const int output_n = output->dims->data[output->dims->size - 1];
+    const bool is_const_2d_rhs =
+        runtime_inputs == 1 && second_input->dims->size == 2;
+    bool batch_dims_compatible = true;
+    if (is_const_2d_rhs) {
+      batch_dims_compatible = first_input->dims->size == output->dims->size;
+      for (int i = 0; batch_dims_compatible && i < output->dims->size - 2;
+           ++i) {
+        batch_dims_compatible =
+            first_input->dims->data[i] == output->dims->data[i];
+      }
+    } else {
+      const int max_in_rank =
+          std::max(first_input->dims->size, second_input->dims->size);
+      batch_dims_compatible = output->dims->size == max_in_rank;
+      const int b0 = first_input->dims->size - 2;
+      const int b1 = second_input->dims->size - 2;
+      const int b_out = output->dims->size - 2;
+      for (int i = 0; batch_dims_compatible && i < b_out; ++i) {
+        const int d_out = output->dims->data[i];
+        const int d0 =
+            (i >= b_out - b0) ? first_input->dims->data[i - (b_out - b0)] : 1;
+        const int d1 =
+            (i >= b_out - b1) ? second_input->dims->data[i - (b_out - b1)] : 1;
+        batch_dims_compatible = d0 == d_out && d1 == d_out;
+      }
+    }
+    if (!batch_dims_compatible || input0_k != input1_k ||
+        input0_m != output_m || input1_n != output_n) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Incompatible BatchMatMul shapes: ",
+          tflite::GetShapeDebugString(first_input->dims), " vs ",
+          tflite::GetShapeDebugString(second_input->dims), " -> ",
+          tflite::GetShapeDebugString(output->dims),
+          " (adj_x=", transpose_left, ", adj_y=", transpose_right, ")."));
+    }
     return absl::OkStatus();
   }
 
   void Parse(const TfLiteNode* tflite_node,
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
+    const auto* tflite_options =
+        reinterpret_cast<const TfLiteBatchMatMulParams*>(
+            tflite_node->builtin_data);
+    const bool transpose_left = tflite_options ? tflite_options->adj_x : false;
+    const bool transpose_right = tflite_options ? tflite_options->adj_y : false;
+    const TfLiteTensor* src0_tensor = reader->GetInputTensor(0);
     const TfLiteTensor* src1_tensor = reader->GetInputTensor(1);
     if (reader->GetNumberOfRuntimeInputs() == 1 &&
         src1_tensor->dims->size == 2) {
+      ::ml_drift::Value* fc_input = reader->ReadValue(0);
+      if (transpose_left) {
+        ::ml_drift::Node* transpose_node = graph->NewNode();
+        transpose_node->operation.type =
+            ToString(::ml_drift::OperationType::kTranspose);
+        ::ml_drift::TransposeAttributes transpose_attr;
+        ::ml_drift::BHWC transposed_shape;
+        const ::ml_drift::BHWC& in_shape = fc_input->tensor.shape;
+        if (src0_tensor->dims->size == 2) {
+          transpose_attr.perm = ::ml_drift::BHWC(3, 1, 2, 0);
+          transposed_shape =
+              ::ml_drift::BHWC(in_shape.c, in_shape.h, in_shape.w, in_shape.b);
+        } else {
+          transpose_attr.perm = ::ml_drift::BHWC(0, 1, 3, 2);
+          transposed_shape =
+              ::ml_drift::BHWC(in_shape.b, in_shape.h, in_shape.c, in_shape.w);
+        }
+        transpose_node->operation.attributes = transpose_attr;
+        graph->AddConsumer(transpose_node->id, fc_input->id);
+        ::ml_drift::Value* transposed_value = graph->NewValue();
+        transposed_value->tensor.type = fc_input->tensor.type;
+        transposed_value->tensor.shape = transposed_shape;
+        graph->SetProducer(transpose_node->id, transposed_value->id);
+        fc_input = transposed_value;
+      }
+
       ::ml_drift::Node* node = graph->NewNode();
       node->operation.type =
           ToString(::ml_drift::OperationType::kFullyConnected);
-      reader->AddInput(node, 0);
+      graph->AddConsumer(node->id, fc_input->id);
       reader->AddOutputs(node);
 
       ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32>
@@ -719,20 +844,26 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
       ::ml_drift::FullyConnectedAttributes attr;
       attr.weights.data.resize(weights.shape.w * weights.shape.h +
                                XNN_EXTRA_BYTES / sizeof(float));
-      for (int i = 0; i < weights.shape.w; ++i) {
-        for (int j = 0; j < weights.shape.h; ++j) {
-          attr.weights.data[i * weights.shape.h + j] =
-              weights.data[j * weights.shape.w + i];
+      if (transpose_right) {
+        std::copy(weights.data.begin(), weights.data.end(),
+                  attr.weights.data.begin());
+        attr.weights.shape =
+            ::ml_drift::OHWI(weights.shape.h, 1, 1, weights.shape.w);
+      } else {
+        for (int i = 0; i < weights.shape.w; ++i) {
+          for (int j = 0; j < weights.shape.h; ++j) {
+            attr.weights.data[i * weights.shape.h + j] =
+                weights.data[j * weights.shape.w + i];
+          }
         }
+        attr.weights.shape =
+            ::ml_drift::OHWI(weights.shape.w, 1, 1, weights.shape.h);
       }
       attr.weights.id = weights.id;
-      attr.weights.shape =
-          ::ml_drift::OHWI(weights.shape.w, 1, 1, weights.shape.h);
       node->operation.attributes = std::move(attr);
       return;
     }
 
-    const TfLiteTensor* src0_tensor = reader->GetInputTensor(0);
     const TfLiteTensor* dst0_tensor = reader->GetOutputTensor(0);
     ::ml_drift::Value* input0 = reader->ReadValue(0);
     ::ml_drift::Value* input1 = nullptr;
@@ -815,11 +946,9 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
       }
     }
     ::ml_drift::Node* bmm = graph->NewNode();
-    auto tflite_options = reinterpret_cast<const TfLiteBatchMatMulParams*>(
-        tflite_node->builtin_data);
     ::ml_drift::BatchedMatMulAttributes attr;
-    attr.transpose_left = tflite_options->adj_x;
-    attr.transpose_right = tflite_options->adj_y;
+    attr.transpose_left = transpose_left;
+    attr.transpose_right = transpose_right;
     bmm->operation.attributes = std::move(attr);
     bmm->operation.type = ToString(::ml_drift::OperationType::kBatchedMatmul);
     graph->AddConsumer(bmm->id, left_value->id);
