@@ -55,14 +55,12 @@ using litert::compiler::SoftmaxOptions;
 using litert::compiler::SplitOptions;
 using litert::compiler::Tensor;
 
-std::vector<int32_t> Dims(const Tensor& t) {
+bool HasDims(const Tensor& t, absl::Span<const int32_t> expected) {
   auto type = t.RankedTensorType();
-  if (!type) return {};
-  auto dims = type->Layout().Dimensions();
-  return std::vector<int32_t>(dims.begin(), dims.end());
+  return type && type->Layout().Dimensions() == expected;
 }
 
-bool HasPerm(const Op& transpose, const std::vector<int32_t>& expected) {
+bool HasPerm(const Op& transpose, absl::Span<const int32_t> expected) {
   if (transpose.Code() != kLiteRtOpCodeTflTranspose ||
       transpose.Inputs().size() != 2) {
     return false;
@@ -70,8 +68,7 @@ bool HasPerm(const Op& transpose, const std::vector<int32_t>& expected) {
   const Tensor perm = transpose.Inputs()[1];
   if (!perm.IsConstant()) return false;
   auto perm_data = perm.WeightsData<int32_t>();
-  return perm_data &&
-         std::vector<int32_t>(perm_data->begin(), perm_data->end()) == expected;
+  return perm_data && *perm_data == expected;
 }
 
 bool IsPlainBatchMatmul(const Op& op) {
@@ -170,7 +167,9 @@ std::optional<GqaMatch> MatchGqa(const LiteRtCompilerContext* ctx,
   GqaMatch m;
   m.final_reshape = final_reshape;
   m.final_out = final_reshape.Outputs()[0];
-  const auto final_out_dims = Dims(m.final_out);
+  auto final_out_type = m.final_out.RankedTensorType();
+  if (!final_out_type) return std::nullopt;
+  const auto final_out_dims = final_out_type->Layout().Dimensions();
   int32_t total_hidden = 0;
   if (final_out_dims.size() == 3 && final_out_dims[0] == 1) {
     m.s = final_out_dims[1];
@@ -183,7 +182,9 @@ std::optional<GqaMatch> MatchGqa(const LiteRtCompilerContext* ctx,
   }
 
   Tensor attn_out = final_reshape.Inputs()[0];
-  const auto r_in_dims = Dims(attn_out);
+  auto r_in_type = attn_out.RankedTensorType();
+  if (!r_in_type) return std::nullopt;
+  const auto r_in_dims = r_in_type->Layout().Dimensions();
   if (r_in_dims.size() != 4 || r_in_dims[0] != 1) {
     return std::nullopt;
   }
@@ -208,7 +209,9 @@ std::optional<GqaMatch> MatchGqa(const LiteRtCompilerContext* ctx,
 
   m.attn_out = attn_out;
   if (attn_out.Uses().size() != 1) return std::nullopt;
-  const auto attn_dims = Dims(attn_out);
+  auto attn_type = attn_out.RankedTensorType();
+  if (!attn_type) return std::nullopt;
+  const auto attn_dims = attn_type->Layout().Dimensions();
   if (attn_dims.size() != 4 || attn_dims[0] != 1) return std::nullopt;
   m.h_kv = attn_dims[1];
   const int32_t gs = attn_dims[2];
@@ -273,16 +276,19 @@ std::optional<GqaMatch> MatchGqa(const LiteRtCompilerContext* ctx,
   m.v_cache = bmm_v0.Inputs()[1];
   m.v_curr = bmm_v1.Inputs()[1];
 
-  const auto sl0_dims = Dims(sl_out0);
-  const auto sl1_dims = Dims(sl_out1);
+  auto sl0_type = sl_out0.RankedTensorType();
+  auto sl1_type = sl_out1.RankedTensorType();
+  if (!sl0_type || !sl1_type) return std::nullopt;
+  const auto sl0_dims = sl0_type->Layout().Dimensions();
+  const auto sl1_dims = sl1_type->Layout().Dimensions();
   if (sl0_dims.size() != 4 || sl1_dims.size() != 4) return std::nullopt;
   m.l_cache = sl0_dims[3];
   m.l_curr = sl1_dims[3];
   m.l_total = m.l_cache + m.l_curr;
   if (*b1 != m.l_cache || m.l_cache <= 0 || m.l_curr <= 0) return std::nullopt;
 
-  if (Dims(m.v_cache) != std::vector<int32_t>{1, m.h_kv, m.l_cache, m.d_v} ||
-      Dims(m.v_curr) != std::vector<int32_t>{1, m.h_kv, m.l_curr, m.d_v}) {
+  if (!HasDims(m.v_cache, {1, m.h_kv, m.l_cache, m.d_v}) ||
+      !HasDims(m.v_curr, {1, m.h_kv, m.l_curr, m.d_v})) {
     return std::nullopt;
   }
 
@@ -351,7 +357,7 @@ std::optional<GqaMatch> MatchGqa(const LiteRtCompilerContext* ctx,
         op_or->Inputs().size() != 2) {
       return false;
     }
-    return Dims(t) == std::vector<int32_t>{1, m.h_kv, gs, m.l_total};
+    return HasDims(t, {1, m.h_kv, gs, m.l_total});
   };
 
   Tensor concat_qk_out(ctx, nullptr);
@@ -370,8 +376,10 @@ std::optional<GqaMatch> MatchGqa(const LiteRtCompilerContext* ctx,
 
   // Unwrap concat_mask if mask_in is [1, 1, G*S, L_total] produced by
   // Concatenation of G identical [1, 1, S, L_total] tensors along axis 2.
-  const auto mask_dims = Dims(mask_in);
-  if (mask_dims == std::vector<int32_t>{1, 1, gs, m.l_total} && m.g > 1) {
+  auto mask_type = mask_in.RankedTensorType();
+  if (!mask_type) return std::nullopt;
+  const auto mask_dims = mask_type->Layout().Dimensions();
+  if (mask_dims == absl::Span<const int32_t>{1, 1, gs, m.l_total} && m.g > 1) {
     auto mask_op_or = mask_in.GetDefiningOp();
     if (!mask_op_or || mask_op_or->Code() != kLiteRtOpCodeTflConcatenation ||
         static_cast<int32_t>(mask_op_or->Inputs().size()) != m.g) {
@@ -381,13 +389,14 @@ std::optional<GqaMatch> MatchGqa(const LiteRtCompilerContext* ctx,
     for (const auto& inp : mask_op_or->Inputs()) {
       if (inp != first_mask) return std::nullopt;
     }
-    if (Dims(first_mask) != std::vector<int32_t>{1, 1, m.s, m.l_total}) {
+    if (!HasDims(first_mask, {1, 1, m.s, m.l_total})) {
       return std::nullopt;
     }
     m.orphans.push_back(mask_op_or->Get());
     m.base_mask = first_mask;
-  } else if (mask_dims == std::vector<int32_t>{1, 1, m.s, m.l_total} ||
-             mask_dims == std::vector<int32_t>{1, 1, 1, m.l_total}) {
+  } else if (mask_dims ==
+                 absl::Span<const int32_t>{1, 1, m.s, m.l_total} ||
+             mask_dims == absl::Span<const int32_t>{1, 1, 1, m.l_total}) {
     m.base_mask = mask_in;
   } else {
     return std::nullopt;
@@ -419,15 +428,16 @@ std::optional<GqaMatch> MatchGqa(const LiteRtCompilerContext* ctx,
   m.k_cache = bmm_k0_or->Inputs()[1];
   m.k_curr = bmm_k1_or->Inputs()[1];
 
-  const auto q_grouped_dims = Dims(q_grouped);
+  auto q_grouped_type = q_grouped.RankedTensorType();
+  if (!q_grouped_type) return std::nullopt;
+  const auto q_grouped_dims = q_grouped_type->Layout().Dimensions();
   if (q_grouped_dims.size() != 4 || q_grouped_dims[0] != 1 ||
       q_grouped_dims[1] != m.h_kv || q_grouped_dims[2] != gs) {
     return std::nullopt;
   }
   m.d = q_grouped_dims[3];
-  if (m.d <= 0 ||
-      Dims(m.k_cache) != std::vector<int32_t>{1, m.h_kv, m.d, m.l_cache} ||
-      Dims(m.k_curr) != std::vector<int32_t>{1, m.h_kv, m.d, m.l_curr}) {
+  if (m.d <= 0 || !HasDims(m.k_cache, {1, m.h_kv, m.d, m.l_cache}) ||
+      !HasDims(m.k_curr, {1, m.h_kv, m.d, m.l_curr})) {
     return std::nullopt;
   }
 
@@ -443,7 +453,7 @@ std::optional<GqaMatch> MatchGqa(const LiteRtCompilerContext* ctx,
         rq_or && rq_or->Code() == kLiteRtOpCodeTflReshape &&
         !rq_or->Inputs().empty()) {
       const Tensor rq_in = rq_or->Inputs()[0];
-      if (Dims(rq_in) == std::vector<int32_t>{1, m.h_q, m.s, m.d}) {
+      if (HasDims(rq_in, {1, m.h_q, m.s, m.d})) {
         m.q_source = rq_in;
         m.q_source_is_unsplit_heads = true;
         m.orphans.push_back(rq_or->Get());
@@ -455,7 +465,7 @@ std::optional<GqaMatch> MatchGqa(const LiteRtCompilerContext* ctx,
 }
 
 Expected<Tensor> NewLike(Builder& builder, const Tensor& like,
-                         const std::vector<int32_t>& dims) {
+                         absl::Span<const int32_t> dims) {
   RankedTensorType type(
       like.ElementType(),
       Layout(BuildLayout(dims.data(), dims.data() + dims.size())));
@@ -471,20 +481,19 @@ Expected<Tensor> NewLike(Builder& builder, const Tensor& like,
   return builder.BuildTensor(spec);
 }
 
-Expected<Tensor> ConstI32(Builder& builder, const std::vector<int32_t>& data) {
-  const std::vector<int32_t> dims = {static_cast<int32_t>(data.size())};
-  RankedTensorType type(ElementType::Int32,
-                        Layout(BuildLayout(dims.data(), dims.data() + 1)));
+Expected<Tensor> ConstI32(Builder& builder, absl::Span<const int32_t> data) {
+  RankedTensorType type(
+      ElementType::Int32,
+      Layout(BuildLayout({static_cast<int32_t>(data.size())})));
   LITERT_ASSIGN_OR_RETURN(
       auto t, builder.BuildTensor(RankedTensorSpecBuilder(type).Build()));
-  LITERT_RETURN_IF_ERROR(
-      builder.BuildWeights<int32_t>(absl::MakeConstSpan(data), t));
+  LITERT_RETURN_IF_ERROR(builder.BuildWeights<int32_t>(data, t));
   return t;
 }
 
 Expected<std::vector<Tensor>> BuildSplitHeads(
     Builder& builder, const Tensor& in_4d, int32_t num_heads,
-    const std::vector<int32_t>& per_head_dims) {
+    absl::Span<const int32_t> per_head_dims) {
   if (num_heads == 1) {
     return std::vector<Tensor>{in_4d};
   }
@@ -505,31 +514,31 @@ Expected<std::vector<Tensor>> BuildSplitHeads(
 
 Expected<Tensor> BuildReshape(Builder& builder, const Tensor& in,
                               const Tensor& like,
-                              const std::vector<int32_t>& dims) {
+                              absl::Span<const int32_t> dims) {
   LITERT_ASSIGN_OR_RETURN(auto out, NewLike(builder, like, dims));
   LITERT_ASSIGN_OR_RETURN(auto shape, ConstI32(builder, dims));
   LITERT_ASSIGN_OR_RETURN(
       auto op, builder.BuildOp(kLiteRtOpCodeTflReshape, {in, shape}, {out}));
   ReshapeOptions opts;
-  opts.new_shape = dims;
+  opts.new_shape.assign(dims.begin(), dims.end());
   LITERT_RETURN_IF_ERROR(builder.SetOpOptions(op, std::move(opts)));
   return out;
 }
 
 Expected<void> BuildReshapeInto(Builder& builder, const Tensor& in,
-                                const std::vector<int32_t>& dims,
+                                absl::Span<const int32_t> dims,
                                 const Tensor& out) {
   LITERT_ASSIGN_OR_RETURN(auto shape, ConstI32(builder, dims));
   LITERT_ASSIGN_OR_RETURN(
       auto op, builder.BuildOp(kLiteRtOpCodeTflReshape, {in, shape}, {out}));
   ReshapeOptions opts;
-  opts.new_shape = dims;
+  opts.new_shape.assign(dims.begin(), dims.end());
   LITERT_RETURN_IF_ERROR(builder.SetOpOptions(op, std::move(opts)));
   return {};
 }
 
 Expected<Tensor> BuildBmm(Builder& builder, const Tensor& a, const Tensor& b,
-                          const Tensor& like, const std::vector<int32_t>& dims,
+                          const Tensor& like, absl::Span<const int32_t> dims,
                           bool asym) {
   LITERT_ASSIGN_OR_RETURN(auto out, NewLike(builder, like, dims));
   LITERT_ASSIGN_OR_RETURN(
@@ -544,7 +553,7 @@ Expected<Tensor> BuildBmm(Builder& builder, const Tensor& a, const Tensor& b,
 
 Expected<Tensor> BuildConcat(Builder& builder, const std::vector<Tensor>& ins,
                              int32_t axis, const Tensor& like,
-                             const std::vector<int32_t>& dims) {
+                             absl::Span<const int32_t> dims) {
   LITERT_ASSIGN_OR_RETURN(auto out, NewLike(builder, like, dims));
   LITERT_ASSIGN_OR_RETURN(
       auto op, builder.BuildOp(kLiteRtOpCodeTflConcatenation, ins, {out}));
@@ -556,8 +565,7 @@ Expected<Tensor> BuildConcat(Builder& builder, const std::vector<Tensor>& ins,
 }
 
 Expected<Tensor> BuildAdd(Builder& builder, const Tensor& a, const Tensor& b,
-                          const Tensor& like,
-                          const std::vector<int32_t>& dims) {
+                          const Tensor& like, absl::Span<const int32_t> dims) {
   LITERT_ASSIGN_OR_RETURN(auto out, NewLike(builder, like, dims));
   LITERT_ASSIGN_OR_RETURN(auto op,
                           builder.BuildOp(kLiteRtOpCodeTflAdd, {a, b}, {out}));
@@ -569,7 +577,7 @@ Expected<Tensor> BuildAdd(Builder& builder, const Tensor& a, const Tensor& b,
 
 Expected<Tensor> BuildSoftmax(Builder& builder, const Tensor& in, float beta,
                               const Tensor& like,
-                              const std::vector<int32_t>& dims) {
+                              absl::Span<const int32_t> dims) {
   LITERT_ASSIGN_OR_RETURN(auto out, NewLike(builder, like, dims));
   LITERT_ASSIGN_OR_RETURN(
       auto op, builder.BuildOp(kLiteRtOpCodeTflSoftmax, {in}, {out}));
@@ -582,7 +590,7 @@ Expected<Tensor> BuildSoftmax(Builder& builder, const Tensor& in, float beta,
 Expected<Tensor> BuildSlice(Builder& builder, const Tensor& in,
                             const Tensor& begin_t, const Tensor& size_t,
                             const Tensor& like,
-                            const std::vector<int32_t>& dims) {
+                            absl::Span<const int32_t> dims) {
   LITERT_ASSIGN_OR_RETURN(auto out, NewLike(builder, like, dims));
   LITERT_RETURN_IF_ERROR(
       builder.BuildOp(kLiteRtOpCodeTflSlice, {in, begin_t, size_t}, {out}));
@@ -667,8 +675,10 @@ Expected<void> BuildShaGqa(Builder& builder, const GqaMatch& m) {
   LITERT_ASSIGN_OR_RETURN(auto concat_heads,
                           BuildConcat(builder, sha_outs, /*axis=*/3, m.attn_out,
                                       {1, 1, m.s, m.h_q * m.d_v}));
-  LITERT_RETURN_IF_ERROR(
-      BuildReshapeInto(builder, concat_heads, Dims(m.final_out), m.final_out));
+  LITERT_ASSIGN_OR_RETURN(auto final_out_type, m.final_out.RankedTensorType());
+  LITERT_RETURN_IF_ERROR(BuildReshapeInto(builder, concat_heads,
+                                          final_out_type.Layout().Dimensions(),
+                                          m.final_out));
 
   LITERT_RETURN_IF_ERROR(builder.EraseOp(m.final_reshape));
   RegisterOrphanGroup(m.orphans);
@@ -763,8 +773,10 @@ Expected<void> BuildGroupedGqaDecode(Builder& builder, const GqaMatch& m) {
   LITERT_ASSIGN_OR_RETURN(auto concat_groups,
                           BuildConcat(builder, group_outs, /*axis=*/1,
                                       m.attn_out, {1, m.h_kv, m.g, m.d_v}));
-  LITERT_RETURN_IF_ERROR(
-      BuildReshapeInto(builder, concat_groups, Dims(m.final_out), m.final_out));
+  LITERT_ASSIGN_OR_RETURN(auto final_out_type, m.final_out.RankedTensorType());
+  LITERT_RETURN_IF_ERROR(BuildReshapeInto(builder, concat_groups,
+                                          final_out_type.Layout().Dimensions(),
+                                          m.final_out));
 
   LITERT_RETURN_IF_ERROR(builder.EraseOp(m.final_reshape));
   RegisterOrphanGroup(m.orphans);
