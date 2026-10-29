@@ -30,6 +30,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
@@ -49,6 +50,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/options/litert_compiler_options.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -58,6 +60,7 @@
 namespace {
 
 using ::litert::CompiledModel;
+using ::litert::CompilerOptions;
 using ::litert::CpuOptions;
 using ::litert::ElementType;
 using ::litert::Environment;
@@ -116,6 +119,14 @@ enum QualcommOptionsKey {
   kHtpDlbc = 14,
   kHtpDlbcWeights = 15,
   kGraphPriority = 16,
+};
+
+// Input shape addressing modes for compiler options, the values should match
+// the ones in Kotlin.
+enum CompilerOptionsInputShapeMode {
+  kPositional = 0,
+  kTensor = 1,
+  kSignature = 2,
 };
 
 // Precision for GPU options, the values should match the ones in Kotlin.
@@ -492,13 +503,75 @@ Expected<void> PopulateQualcommOptions(JNIEnv* env,
   return {};
 }
 
-Expected<Options> CreateOptions(JNIEnv* env, jintArray accelerators,
-                                jintArray cpu_options_keys,
-                                jobjectArray cpu_options_values,
-                                jintArray gpu_options_keys,
-                                jobjectArray gpu_options_values,
-                                jintArray qualcomm_options_keys,
-                                jobjectArray qualcomm_options_values) {
+// Populates a CompilerOptions from the given input shape overrides, passed as
+// parallel arrays of addressing modes, signature keys, names and dimensions.
+Expected<void> PopulateCompilerOptions(JNIEnv* env,
+                                       CompilerOptions& compiler_options,
+                                       jintArray input_shape_modes,
+                                       jobjectArray input_shape_signatures,
+                                       jobjectArray input_shape_names,
+                                       jobjectArray input_shape_dimensions) {
+  AUTO_CLEANUP_JNI_INT_ARRAY(env, input_shape_modes);
+  AUTO_CLEANUP_JNI_STRING_ARRAY(env, input_shape_signatures);
+  AUTO_CLEANUP_JNI_STRING_ARRAY(env, input_shape_names);
+  const auto num_overrides = env->GetArrayLength(input_shape_modes);
+  const auto dimensions_array_size =
+      env->GetArrayLength(input_shape_dimensions);
+  LITERT_INTERNAL_CHECK_EQ(num_overrides, input_shape_signatures_size);
+  LITERT_INTERNAL_CHECK_EQ(num_overrides, input_shape_names_size);
+  LITERT_INTERNAL_CHECK_EQ(num_overrides, dimensions_array_size);
+
+  for (int i = 0; i < num_overrides; ++i) {
+    auto dims_jarray = static_cast<jintArray>(
+        env->GetObjectArrayElement(input_shape_dimensions, i));
+    LITERT_INTERNAL_CHECK(dims_jarray != nullptr);
+    auto dims_jarray_local_ref_cleanup =
+        absl::MakeCleanup([&]() { env->DeleteLocalRef(dims_jarray); });
+    const auto dims_size = env->GetArrayLength(dims_jarray);
+    AUTO_CLEANUP_JNI_INT_ARRAY(env, dims_jarray);
+    auto dims_span = absl::MakeConstSpan(
+        reinterpret_cast<const int32_t*>(dims_jarray_array), dims_size);
+
+    Expected<void> status;
+    switch (input_shape_modes_array[i]) {
+      case CompilerOptionsInputShapeMode::kPositional:
+        status = compiler_options.AddPositionalInputShape(
+            input_shape_signatures_vector[i], dims_span);
+        break;
+      case CompilerOptionsInputShapeMode::kTensor:
+        status = compiler_options.AddTensorInputShape(
+            input_shape_signatures_vector[i], input_shape_names_vector[i],
+            dims_span);
+        break;
+      case CompilerOptionsInputShapeMode::kSignature:
+        status = compiler_options.AddSignatureInputShape(
+            input_shape_signatures_vector[i], input_shape_names_vector[i],
+            dims_span);
+        break;
+      default:
+        return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                          absl::StrCat("Unknown compiler input shape mode: ",
+                                       input_shape_modes_array[i]));
+    }
+    if (!status) {
+      return Unexpected(
+          status.Error().Status(),
+          absl::StrCat("Invalid input shape override #", i, " (signature='",
+                       input_shape_signatures_vector[i], "', name='",
+                       input_shape_names_vector[i],
+                       "'): ", status.Error().Message()));
+    }
+  }
+  return {};
+}
+
+Expected<Options> CreateOptions(
+    JNIEnv* env, jintArray accelerators, jintArray cpu_options_keys,
+    jobjectArray cpu_options_values, jintArray gpu_options_keys,
+    jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
+    jobjectArray qualcomm_options_values, jintArray input_shape_modes,
+    jobjectArray input_shape_signatures, jobjectArray input_shape_names,
+    jobjectArray input_shape_dimensions) {
   int accelerators_size = env->GetArrayLength(accelerators);
   AUTO_CLEANUP_JNI_INT_ARRAY(env, accelerators);
   litert::HwAcceleratorSet acceleratorSet =
@@ -546,6 +619,14 @@ Expected<Options> CreateOptions(JNIEnv* env, jintArray accelerators,
         compilation_options.GetOptions<::litert::qualcomm::QualcommOptions>());
     LITERT_RETURN_IF_ERROR(PopulateQualcommOptions(
         env, qualcomm_options, qualcomm_options_keys, qualcomm_options_values));
+  }
+
+  if (env->GetArrayLength(input_shape_modes) > 0) {
+    LITERT_ASSIGN_OR_RETURN(auto& compiler_options,
+                            compilation_options.GetCompilerOptions());
+    LITERT_RETURN_IF_ERROR(PopulateCompilerOptions(
+        env, compiler_options, input_shape_modes, input_shape_signatures,
+        input_shape_names, input_shape_dimensions));
   }
   return std::move(compilation_options);
 }
@@ -791,7 +872,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromAsset(
     jstring asset_name, jintArray accelerators, jintArray cpu_options_keys,
     jobjectArray cpu_options_values, jintArray gpu_options_keys,
     jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
-    jobjectArray qualcomm_options_values) {
+    jobjectArray qualcomm_options_values, jintArray input_shape_modes,
+    jobjectArray input_shape_signatures, jobjectArray input_shape_names,
+    jobjectArray input_shape_dimensions) {
   auto am = AAssetManager_fromJava(env, asset_manager);
   AUTO_CLEANUP_JNI_STRING(env, asset_name);
   LITERT_INTERNAL_CHECK(asset_name_str != nullptr);
@@ -828,7 +911,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromAsset(
 
   auto compilation_options = CreateOptions(
       env, accelerators, cpu_options_keys, cpu_options_values, gpu_options_keys,
-      gpu_options_values, qualcomm_options_keys, qualcomm_options_values);
+      gpu_options_values, qualcomm_options_keys, qualcomm_options_values,
+      input_shape_modes, input_shape_signatures, input_shape_names,
+      input_shape_dimensions);
   if (!compilation_options) {
     LITERT_LOG(LITERT_ERROR, "Failed to create compilation options: %s",
                compilation_options.Error().Message().c_str());
@@ -858,13 +943,17 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromFile(
     jintArray accelerators, jintArray cpu_options_keys,
     jobjectArray cpu_options_values, jintArray gpu_options_keys,
     jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
-    jobjectArray qualcomm_options_values) {
+    jobjectArray qualcomm_options_values, jintArray input_shape_modes,
+    jobjectArray input_shape_signatures, jobjectArray input_shape_names,
+    jobjectArray input_shape_dimensions) {
   auto litert_env = reinterpret_cast<Environment*>(env_handle);
   LITERT_INTERNAL_CHECK(litert_env != nullptr);
 
   auto compilation_options = CreateOptions(
       env, accelerators, cpu_options_keys, cpu_options_values, gpu_options_keys,
-      gpu_options_values, qualcomm_options_keys, qualcomm_options_values);
+      gpu_options_values, qualcomm_options_keys, qualcomm_options_values,
+      input_shape_modes, input_shape_signatures, input_shape_names,
+      input_shape_dimensions);
   if (!compilation_options) {
     LITERT_LOG(LITERT_ERROR, "Failed to create compilation options: %s",
                compilation_options.Error().Message().c_str());
