@@ -47,6 +47,7 @@
 #include "litert/test/generators/group_norm.h"  // IWYU pragma: export
 #include "litert/test/generators/layer_norm.h"  // IWYU pragma: export
 #include "litert/test/generators/moe_experts.h"  // IWYU pragma: export
+#include "litert/test/generators/tfl_moe.h"  // IWYU pragma: export
 #include "litert/test/generators/runtime_bmm.h"  // IWYU pragma: export
 // clang-format on
 

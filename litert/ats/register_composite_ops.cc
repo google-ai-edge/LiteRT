@@ -29,6 +29,7 @@
 #include "litert/ats/register_sdpa.h"
 #include "litert/ats/register_sdpa_transposed.h"
 #include "litert/ats/register_swiglu.h"
+#include "litert/ats/register_tfl_moe.h"
 
 namespace litert::testing {
 namespace {
@@ -42,6 +43,7 @@ void RegisterCompositeOpsImpl(const AtsConf& options, size_t& test_id,
   RegisterGroupNorm(options, test_id, kDefaultIters, cap);
   RegisterLayerNorm(options, test_id, kDefaultIters, cap);
   RegisterMoeExperts(options, test_id, kDefaultIters, cap);
+  RegisterTflMoe(options, test_id, kDefaultIters, cap);
   RegisterQkvNormRope(options, test_id, kDefaultIters, cap);
   RegisterRmsNorm(options, test_id, kDefaultIters, cap);
   RegisterRuntimeBmm(options, test_id, kDefaultIters, cap);

@@ -16,6 +16,7 @@
 
 #include <any>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -333,6 +334,16 @@ absl::Status BuildMoeExpertsGpuGraph(
   return model_builder->UpdateOutputTensor(combined, output_id);
 }
 
+absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ResolveIrFloatTensor(
+    ::ml_drift::GpuModelBuilder* model_builder, ::ml_drift::ValueId input_id,
+    const std::optional<::ml_drift::TensorFloat32>& float_tensor,
+    ::ml_drift::DataType activation_type) {
+  if (float_tensor.has_value() && !float_tensor->empty()) {
+    return model_builder->AddConstantTensor(*float_tensor, activation_type);
+  }
+  return model_builder->GetTensor(input_id);
+}
+
 }  // namespace
 
 absl::Status CreateMoeExpertsFromNode(
@@ -442,20 +453,32 @@ absl::Status CreateMoeExpertsFromIrOp(
   ABSL_ASSIGN_OR_RETURN(auto top_indices,
                         model_builder->GetTensor(inputs[2]->id));
 
-  ::ml_drift::GpuModelBuilder::TensorHandle gate_weight;
-  ::ml_drift::GpuModelBuilder::TensorHandle ff1_weight;
-  ::ml_drift::GpuModelBuilder::TensorHandle linear_weight;
-  ::ml_drift::GpuModelBuilder::TensorHandle per_expert_scale;
+  auto legacy_weight_type =
+      attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt8
+          ? MoeExpertsAttributes::WeightType::kInt8
+          : (attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt4
+                 ? MoeExpertsAttributes::WeightType::kInt4
+                 : MoeExpertsAttributes::WeightType::kFp32);
+  const ::ml_drift::DataType act_type = src.tensor_desc.GetDataType();
+
+  ABSL_ASSIGN_OR_RETURN(
+      auto gate_weight,
+      ResolveIrFloatTensor(model_builder, inputs[3]->id,
+                           attr.ff_gate_weight_fp32, act_type));
+  ABSL_ASSIGN_OR_RETURN(auto ff1_weight,
+                        ResolveIrFloatTensor(model_builder, inputs[4]->id,
+                                             attr.ff1_weight_fp32, act_type));
+  ABSL_ASSIGN_OR_RETURN(
+      auto linear_weight,
+      ResolveIrFloatTensor(model_builder, inputs[5]->id,
+                           attr.linear_weight_fp32, act_type));
+  ABSL_ASSIGN_OR_RETURN(auto per_expert_scale,
+                        ResolveIrFloatTensor(model_builder, inputs[6]->id,
+                                             attr.per_expert_scale, act_type));
+
   const MoeScaleTensor* gate_scale_ptr = nullptr;
   const MoeScaleTensor* ff1_scale_ptr = nullptr;
   const MoeScaleTensor* linear_scale_ptr = nullptr;
-
-  ABSL_ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
-  ABSL_ASSIGN_OR_RETURN(ff1_weight, model_builder->GetTensor(inputs[4]->id));
-  ABSL_ASSIGN_OR_RETURN(linear_weight, model_builder->GetTensor(inputs[5]->id));
-  ABSL_ASSIGN_OR_RETURN(per_expert_scale,
-                        model_builder->GetTensor(inputs[6]->id));
-
   if (attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt8 ||
       attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt4) {
     if (!attr.ff_gate_scale.has_value() || !attr.ff1_scale.has_value() ||
@@ -467,13 +490,6 @@ absl::Status CreateMoeExpertsFromIrOp(
     ff1_scale_ptr = &attr.ff1_scale.value();
     linear_scale_ptr = &attr.linear_scale.value();
   }
-
-  auto legacy_weight_type =
-      attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt8
-          ? MoeExpertsAttributes::WeightType::kInt8
-          : (attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt4
-                 ? MoeExpertsAttributes::WeightType::kInt4
-                 : MoeExpertsAttributes::WeightType::kFp32);
 
   return BuildMoeExpertsGpuGraph(
       model_builder, src, top_weights, top_indices, gate_weight, ff1_weight,
