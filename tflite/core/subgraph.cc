@@ -1213,6 +1213,7 @@ TfLiteStatus Subgraph::AddNodeWithParameters(
     TfLiteIntArrayFree(node.outputs);
     TfLiteIntArrayFree(node.intermediates);
     TfLiteIntArrayFree(node.temporaries);
+    nodes_and_registration_.pop_back();
     ReportError("Failed to initialize kernel.");
     return kTfLiteError;
   }
@@ -2051,6 +2052,7 @@ TfLiteStatus Subgraph::SetTensorParametersReadOnly(
     TfLiteTensorDataFreeWithAllocator(&tensor, allocator_);
     TfLiteQuantizationFree(&tensor.quantization);
     tensor.data.raw = const_cast<char*>(buffer);
+    tensor.bytes = bytes;
     if (!tensor.dims) tensor.dims = ConvertArrayToTfLiteIntArray(ndims, dims);
     tensor.params = GetLegacyQuantization(quantization);
     tensor.quantization = *scoped_quantization.release();
