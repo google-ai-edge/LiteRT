@@ -14,12 +14,11 @@
 
 #include "litert/c/options/litert_webnn_options.h"
 
-#include <string>
-
-#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/core/litert_options_encoder.h"
 #include "litert/core/litert_toml_parser.h"
 
 using ::litert::internal::ParseToml;
@@ -56,13 +55,16 @@ LiteRtStatus LrtGetOpaqueWebNnOptionsData(const LrtWebNnOptions* options,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  std::string toml_str = absl::StrCat(
-      "device_type = ", static_cast<int>(options->device_type), "\n",
-      "power_preference = ", static_cast<int>(options->power_preference), "\n",
-      "precision = ", static_cast<int>(options->precision), "\n");
+  litert::internal::OptionsEncoder encoder;
+  LITERT_RETURN_IF_ERROR(
+      encoder.EncodeInt("device_type", static_cast<int>(options->device_type)));
+  LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+      "power_preference", static_cast<int>(options->power_preference)));
+  LITERT_RETURN_IF_ERROR(
+      encoder.EncodeInt("precision", static_cast<int>(options->precision)));
 
   *identifier = "webnn_options_string";
-  litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
+  litert::internal::MakeCStringPayload(encoder.Str(), payload, payload_deleter);
 
   return kLiteRtStatusOk;
 }

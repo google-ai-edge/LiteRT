@@ -29,6 +29,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/litert_options_encoder.h"
 #include "litert/core/litert_toml_parser.h"
 
 // copybara:uncomment_begin(google-only)
@@ -85,70 +86,76 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  std::string toml_str;
+  litert::internal::OptionsEncoder encoder;
   if (options->float_truncation_type !=
       kLiteRtGoogleTensorFloatTruncationTypeAuto) {
-    absl::StrAppend(&toml_str, "float_truncation_type = ",
-                    static_cast<int>(options->float_truncation_type), "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("float_truncation_type",
+                          static_cast<int>(options->float_truncation_type)));
   }
   if (options->int64_to_int32_truncation) {
-    absl::StrAppend(&toml_str, "int64_to_int32_truncation = true\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("int64_to_int32_truncation", true));
   }
   if (!options->output_dir.empty()) {
-    absl::StrAppend(&toml_str, "output_dir = \"", options->output_dir, "\"\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeString("output_dir", options->output_dir));
   }
   if (options->dump_op_timings) {
-    absl::StrAppend(&toml_str, "dump_op_timings = true\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeBool("dump_op_timings", true));
   }
   if (options->enable_large_model_support) {
-    absl::StrAppend(&toml_str, "enable_large_model_support = true\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("enable_large_model_support", true));
   }
   if (options->enable_4bit_compilation) {
-    absl::StrAppend(&toml_str, "enable_four_bit_compilation = true\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("enable_four_bit_compilation", true));
   }
   if (options->sharding_intensity !=
       kLiteRtGoogleTensorShardingIntensityUnspecified) {
-    absl::StrAppend(&toml_str, "sharding_intensity = ",
-                    static_cast<int>(options->sharding_intensity), "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "sharding_intensity", static_cast<int>(options->sharding_intensity)));
   }
   if (options->enable_dynamic_range_quantization) {
-    absl::StrAppend(&toml_str, "enable_dynamic_range_quantization = true\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("enable_dynamic_range_quantization", true));
   }
   if (options->performance_mode.has_value()) {
-    absl::StrAppend(&toml_str, "performance_mode = ",
-                    static_cast<int>(*options->performance_mode), "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "performance_mode", static_cast<int>(*options->performance_mode)));
   }
 
   if (!options->op_filters_proto.empty()) {
-    absl::StrAppend(&toml_str, "op_filters_proto = \"",
-                    absl::Base64Escape(options->op_filters_proto), "\"\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeString(
+        "op_filters_proto", absl::Base64Escape(options->op_filters_proto)));
   }
   if (!options->extra_options_path.empty()) {
-    absl::StrAppend(&toml_str, "extra_options_path = \"",
-                    options->extra_options_path, "\"\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeString("extra_options_path",
+                                                options->extra_options_path));
   }
   if (!options->extra_options.empty()) {
-    absl::StrAppend(&toml_str, "extra_options = \"",
-                    absl::Base64Escape(options->extra_options), "\"\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeString(
+        "extra_options", absl::Base64Escape(options->extra_options)));
   }
   for (const auto& [key, pref] : options->input_coherency) {
-    absl::StrAppend(&toml_str, "input_coherency_", key.first, ":", key.second,
-                    " = ", pref ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeBool(
+        absl::StrCat("input_coherency_", key.first, ":", key.second), pref));
   }
   for (const auto& [key, pref] : options->output_coherency) {
-    absl::StrAppend(&toml_str, "output_coherency_", key.first, ":", key.second,
-                    " = ", pref ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeBool(
+        absl::StrCat("output_coherency_", key.first, ":", key.second), pref));
   }
 
   // copybara:uncomment_begin(google-only)
   // if (options->experimental_enable_input_validator) {
-    // absl::StrAppend(&toml_str, kExperimentalEnableInputValidatorKey,
-                    // " = true\n");
+    // LITERT_RETURN_IF_ERROR(
+        // encoder.EncodeBool(kExperimentalEnableInputValidatorKey, true));
   // }
   // copybara:uncomment_end
 
   *identifier = LrtGoogleTensorOptionsGetIdentifier();
-  litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
+  litert::internal::MakeCStringPayload(encoder.Str(), payload, payload_deleter);
   return kLiteRtStatusOk;
 }
 

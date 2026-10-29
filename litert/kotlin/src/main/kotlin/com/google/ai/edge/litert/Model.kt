@@ -62,6 +62,39 @@ private constructor(
   private val envManaged: Boolean = false,
 ) : JniHandle(handle) {
 
+  internal class NativeOptionsBuilder(accelerators: IntArray) :
+    JniHandle(nativeCreateOptions(accelerators)) {
+
+    fun writeBool(key: String, value: Boolean) {
+      assertNotDestroyed()
+      nativeWriteBoolOption(handle, key, value)
+    }
+
+    fun writeInt(key: String, value: Long) {
+      assertNotDestroyed()
+      nativeWriteIntOption(handle, key, value)
+    }
+
+    fun writeString(key: String, value: String) {
+      assertNotDestroyed()
+      nativeWriteStringOption(handle, key, value)
+    }
+
+    fun writeStringArray(key: String, values: Array<String>) {
+      assertNotDestroyed()
+      nativeWriteStringArrayOption(handle, key, values)
+    }
+
+    fun flush(identifier: String) {
+      assertNotDestroyed()
+      nativeFlushOpaqueOptions(handle, identifier)
+    }
+
+    override fun destroy() {
+      nativeDestroyOptions(handle)
+    }
+  }
+
   /** Options to specify CPU acceleration for compiling a model. */
   data class CpuOptions
   constructor(
@@ -69,26 +102,11 @@ private constructor(
     val xnnPackFlags: Int? = null,
     val xnnPackWeightCachePath: String? = null,
   ) {
-    // Keys for passing the CPU options to the native layer.
-    internal enum class Key constructor(val value: Int) {
-      NUM_THREADS(0),
-      XNNPACK_FLAGS(1),
-      XNNPACK_WEIGHT_CACHE_PATH(2),
-    }
-
-    // Converts the options to a map, with all values converted to strings.
-    internal fun toMap(): Map<Key, String> {
-      val map = mutableMapOf<Key, String>()
-      if (numThreads != null) {
-        map[Key.NUM_THREADS] = numThreads.toString()
-      }
-      if (xnnPackFlags != null) {
-        map[Key.XNNPACK_FLAGS] = xnnPackFlags.toString()
-      }
-      if (xnnPackWeightCachePath != null) {
-        map[Key.XNNPACK_WEIGHT_CACHE_PATH] = xnnPackWeightCachePath
-      }
-      return map.toMap()
+    internal fun writeTo(builder: NativeOptionsBuilder) {
+      numThreads?.let { builder.writeInt("num_threads", it.toLong()) }
+      xnnPackFlags?.let { builder.writeInt("flags", it.toLong() and 0xFFFFFFFFL) }
+      xnnPackWeightCachePath?.let { builder.writeString("weight_cache_file_path", it) }
+      builder.flush("cpu_options")
     }
   }
 
@@ -142,75 +160,31 @@ private constructor(
       HIGH(3),
     }
 
-    // Keys for passing the GPU options to the native layer.
-    internal enum class Key constructor(val value: Int) {
-      CONSTANT_TENSOR_SHARING(0),
-      INFINITE_FLOAT_CAPPING(1),
-      ALLOW_SRC_QUANTIZED_FC_CONV_OPS(2),
-      PRECISION(3),
-      BUFFER_STORAGE_TYPE(4),
-      PREFER_TEXTURE_WEIGHTS(5),
-      SERIALIZATION_DIR(6),
-      MODEL_CACHE_KEY(7),
-      SERIALIZE_PROGRAM_CACHE(8),
-      SERIALIZE_EXTERNAL_TENSORS(9),
-      EXTERNAL_TENSORS_MODE(10),
-      EXTERNAL_TENSOR_PATTERN(11),
-      BACKEND(12),
-      PRIORITY(13),
-      NUM_STEPS_OF_COMMAND_BUFFER_PREPARATIONS(14),
-    }
-
-    // Converts the options to a map, with all values converted to strings.
-    internal fun toMap(): Map<Key, String> {
-      val map = mutableMapOf<Key, String>()
-      if (constantTensorSharing != null) {
-        map[Key.CONSTANT_TENSOR_SHARING] = constantTensorSharing.toString()
+    internal fun writeTo(builder: NativeOptionsBuilder) {
+      constantTensorSharing?.let { builder.writeBool("enable_constant_tensors_sharing", it) }
+      infiniteFloatCapping?.let { builder.writeBool("enable_infinite_float_capping", it) }
+      allowSrcQuantizedFcConvOps?.let { builder.writeBool("allow_src_quantized_fc_conv_ops", it) }
+      precision?.let { builder.writeInt("precision", it.value.toLong()) }
+      bufferStorageType?.let { builder.writeInt("buffer_storage_type", it.value.toLong()) }
+      preferTextureWeights?.let { builder.writeBool("prefer_texture_weights", it) }
+      serializationDir?.let { builder.writeString("serialization_dir", it) }
+      modelCacheKey?.let { builder.writeString("model_cache_key", it) }
+      serializeProgramCache?.let { builder.writeBool("serialize_program_cache", it) }
+      serializeExternalTensors?.let { builder.writeBool("serialize_external_tensors", it) }
+      externalTensorsMode?.let { builder.writeBool("external_tensors_mode", it) }
+      externalTensorPattern?.let {
+        builder.writeStringArray("external_tensor_patterns", arrayOf(it))
       }
-      if (infiniteFloatCapping != null) {
-        map[Key.INFINITE_FLOAT_CAPPING] = infiniteFloatCapping.toString()
+      backend?.let {
+        @Suppress("DEPRECATION")
+        val nativeBackend = if (it == Backend.WEBGPU) Backend.AUTOMATIC else it
+        builder.writeInt("backend", nativeBackend.value.toLong())
       }
-      if (allowSrcQuantizedFcConvOps != null) {
-        map[Key.ALLOW_SRC_QUANTIZED_FC_CONV_OPS] = allowSrcQuantizedFcConvOps.toString()
+      priority?.let { builder.writeInt("priority", it.value.toLong()) }
+      numStepsOfCommandBufferPreparations?.let {
+        builder.writeInt("num_steps_of_command_buffer_preparations", it.toLong())
       }
-      if (precision != null) {
-        map[Key.PRECISION] = precision.value.toString()
-      }
-      if (bufferStorageType != null) {
-        map[Key.BUFFER_STORAGE_TYPE] = bufferStorageType.value.toString()
-      }
-      if (preferTextureWeights != null) {
-        map[Key.PREFER_TEXTURE_WEIGHTS] = preferTextureWeights.toString()
-      }
-      if (serializationDir != null) {
-        map[Key.SERIALIZATION_DIR] = serializationDir
-      }
-      if (modelCacheKey != null) {
-        map[Key.MODEL_CACHE_KEY] = modelCacheKey
-      }
-      if (serializeProgramCache != null) {
-        map[Key.SERIALIZE_PROGRAM_CACHE] = serializeProgramCache.toString()
-      }
-      if (serializeExternalTensors != null) {
-        map[Key.SERIALIZE_EXTERNAL_TENSORS] = serializeExternalTensors.toString()
-      }
-      if (externalTensorsMode != null) {
-        map[Key.EXTERNAL_TENSORS_MODE] = externalTensorsMode.toString()
-      }
-      if (externalTensorPattern != null) {
-        map[Key.EXTERNAL_TENSOR_PATTERN] = externalTensorPattern
-      }
-      if (backend != null) {
-        map[Key.BACKEND] = backend.value.toString()
-      }
-      if (priority != null) {
-        map[Key.PRIORITY] = priority.value.toString()
-      }
-      if (numStepsOfCommandBufferPreparations != null) {
-        map[Key.NUM_STEPS_OF_COMMAND_BUFFER_PREPARATIONS] =
-          numStepsOfCommandBufferPreparations.toString()
-      }
-      return map.toMap()
+      builder.flush("gpu_options")
     }
   }
 
@@ -286,76 +260,25 @@ private constructor(
       HIGH(4),
     }
 
-    // Keys for passing the Qualcomm options to the native layer.
-    internal enum class Key constructor(val value: Int) {
-      LOG_LEVEL(0),
-      USE_HTP_PREFERENCE(1),
-      USE_QINT16_AS_QUINT16(2),
-      ENABLE_WEIGHT_SHARING(3),
-      DUMP_TENSOR_IDS(4),
-      USE_CONV_HMX(5),
-      USE_FOLD_RELU(6),
-      HTP_PERFORMANCE_MODE(7),
-      PROFILING(8),
-      IR_JSON_DIR(9),
-      DLC_DIR(10),
-      VTCM_SIZE(11),
-      NUM_HVX_THREADS(12),
-      OPTIMIZATION_LEVEL(13),
-      HTP_DLBC(14),
-      HTP_DLBC_WEIGHTS(15),
-      GRAPH_PRIORITY(16),
-    }
-
-    // Converts the options to a map, with all values converted to strings.
-    internal fun toMap(): Map<Key, String> {
-      val map = mutableMapOf<Key, String>()
-      if (logLevel != null) {
-        map[Key.LOG_LEVEL] = logLevel.value.toString()
+    internal fun writeTo(builder: NativeOptionsBuilder) {
+      logLevel?.let { builder.writeInt("log_level", it.value.toLong()) }
+      enableWeightSharing?.let { builder.writeBool("enable_weight_sharing", it) }
+      dumpTensorIds?.let { ids ->
+        builder.writeStringArray("dump_tensor_ids", ids.map { it.toString() }.toTypedArray())
       }
-      if (enableWeightSharing != null) {
-        map[Key.ENABLE_WEIGHT_SHARING] = enableWeightSharing.toString()
-      }
-      if (dumpTensorIds != null) {
-        map[Key.DUMP_TENSOR_IDS] = dumpTensorIds.joinToString(",")
-      }
-      if (useConvHmx != null) {
-        map[Key.USE_CONV_HMX] = useConvHmx.toString()
-      }
-      if (useFoldRelu != null) {
-        map[Key.USE_FOLD_RELU] = useFoldRelu.toString()
-      }
-      if (htpDlbc != null) {
-        map[Key.HTP_DLBC] = htpDlbc.toString()
-      }
-      if (htpDlbcWeights != null) {
-        map[Key.HTP_DLBC_WEIGHTS] = htpDlbcWeights.toString()
-      }
-      if (htpPerformanceMode != null) {
-        map[Key.HTP_PERFORMANCE_MODE] = htpPerformanceMode.value.toString()
-      }
-      if (profiling != null) {
-        map[Key.PROFILING] = profiling.value.toString()
-      }
-      if (irJsonDir != null) {
-        map[Key.IR_JSON_DIR] = irJsonDir
-      }
-      if (dlcDir != null) {
-        map[Key.DLC_DIR] = dlcDir
-      }
-      if (vtcmSize != null) {
-        map[Key.VTCM_SIZE] = vtcmSize.toString()
-      }
-      if (numHvxThreads != null) {
-        map[Key.NUM_HVX_THREADS] = numHvxThreads.toString()
-      }
-      if (optimizationLevel != null) {
-        map[Key.OPTIMIZATION_LEVEL] = optimizationLevel.value.toString()
-      }
-      if (graphPriority != null) {
-        map[Key.GRAPH_PRIORITY] = graphPriority.value.toString()
-      }
-      return map.toMap()
+      useConvHmx?.let { builder.writeBool("use_conv_hmx", it) }
+      useFoldRelu?.let { builder.writeBool("use_fold_relu", it) }
+      htpDlbc?.let { builder.writeBool("htp_dlbc", it) }
+      htpDlbcWeights?.let { builder.writeBool("htp_dlbc_weights", it) }
+      htpPerformanceMode?.let { builder.writeInt("htp_performance_mode", it.value.toLong()) }
+      profiling?.let { builder.writeInt("profiling", it.value.toLong()) }
+      irJsonDir?.let { builder.writeString("ir_json_dir", it) }
+      dlcDir?.let { builder.writeString("dlc_dir", it) }
+      vtcmSize?.let { builder.writeInt("vtcm_size", it.toLong() and 0xFFFFFFFFL) }
+      numHvxThreads?.let { builder.writeInt("num_hvx_threads", it.toLong() and 0xFFFFFFFFL) }
+      optimizationLevel?.let { builder.writeInt("optimization_level", it.value.toLong()) }
+      graphPriority?.let { builder.writeInt("graph_priority", it.value.toLong()) }
+      builder.flush("qualcomm")
     }
   }
 
@@ -377,20 +300,20 @@ private constructor(
    * afterwards does not affect already created models.
    */
   class CompilerOptions {
-    internal enum class InputShapeMode constructor(val value: Int) {
-      POSITIONAL(0),
-      TENSOR(1),
-      SIGNATURE(2),
+    private enum class InputShapeMode {
+      POSITIONAL,
+      TENSOR,
+      SIGNATURE,
     }
 
-    internal class InputShapeOverride(
+    private class InputShapeOverride(
       val mode: InputShapeMode,
       val signature: String,
       val name: String,
       val dimensions: List<Int>,
     )
 
-    internal val inputShapeOverrides = mutableListOf<InputShapeOverride>()
+    private val inputShapeOverrides = mutableListOf<InputShapeOverride>()
 
     /**
      * Appends a positional input shape override for [signature]. Call once per input, in subgraph
@@ -460,6 +383,65 @@ private constructor(
         "Dimensions must be positive or -1 (dynamic), got $dimensions"
       }
       return dimensions.toList()
+    }
+
+    // Matches the characters rejected for signature keys and tensor/input names by the native
+    // LrtAddCompilerOptions*InputShape setters (HasInvalidTomlChars in litert_compiler_options.cc).
+    private fun hasInvalidOptionChars(s: String): Boolean = s.any {
+      it == '"' || it == '\'' || it == '\\' || it == '\n' || it == '\r'
+    }
+
+    private fun invalidOverride(
+      index: Int,
+      override: InputShapeOverride,
+      reason: String,
+    ): LiteRtException =
+      LiteRtException(
+        Status.ErrorInvalidArgument,
+        "Invalid input shape override #$index (signature='${override.signature}', " +
+          "name='${override.name}'): $reason.",
+      )
+
+    internal fun writeTo(builder: NativeOptionsBuilder) {
+      if (inputShapeOverrides.isEmpty()) {
+        return
+      }
+      val positional = mutableListOf<String>()
+      val tensor = mutableListOf<String>()
+      val signature = mutableListOf<String>()
+      for ((i, override) in inputShapeOverrides.withIndex()) {
+        if (hasInvalidOptionChars(override.signature) || '@' in override.signature) {
+          throw invalidOverride(i, override, "invalid signature key")
+        }
+        val formattedDims = override.dimensions.joinToString(":")
+        when (override.mode) {
+          InputShapeMode.POSITIONAL -> {
+            positional.add("${override.signature}@$formattedDims")
+          }
+          InputShapeMode.TENSOR -> {
+            if (override.name.isEmpty() || hasInvalidOptionChars(override.name)) {
+              throw invalidOverride(i, override, "invalid tensor name")
+            }
+            tensor.add("${override.signature}@${override.name}@$formattedDims")
+          }
+          InputShapeMode.SIGNATURE -> {
+            if (override.name.isEmpty() || hasInvalidOptionChars(override.name)) {
+              throw invalidOverride(i, override, "invalid input name")
+            }
+            signature.add("${override.signature}@${override.name}@$formattedDims")
+          }
+        }
+      }
+      if (positional.isNotEmpty()) {
+        builder.writeStringArray("positional_input_shapes", positional.toTypedArray())
+      }
+      if (tensor.isNotEmpty()) {
+        builder.writeStringArray("tensor_input_shapes", tensor.toTypedArray())
+      }
+      if (signature.isNotEmpty()) {
+        builder.writeStringArray("signature_input_shapes", signature.toTypedArray())
+      }
+      builder.flush("compiler_options_string")
     }
   }
 
@@ -697,6 +679,22 @@ private constructor(
       System.loadLibrary("litert_jni")
     }
 
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    @JvmName("createNativeOptions")
+    internal fun createNativeOptions(options: Options): NativeOptionsBuilder {
+      val builder = NativeOptionsBuilder(options.getAccelerators().map { it.value }.toIntArray())
+      try {
+        options.cpuOptions?.writeTo(builder)
+        options.gpuOptions?.writeTo(builder)
+        options.qualcommOptions?.writeTo(builder)
+        options.compilerOptions?.writeTo(builder)
+        return builder
+      } catch (e: Throwable) {
+        builder.close()
+        throw e
+      }
+    }
+
     private fun createFromAsset(
       assetManager: AssetManager,
       assetName: String,
@@ -704,34 +702,14 @@ private constructor(
       optionalEnv: Environment? = null,
       envManaged: Boolean = optionalEnv == null,
     ): CompiledModel {
-      val env = optionalEnv ?: Environment.create()
-      val accelerators = options.getAccelerators()
-
-      val cpuOptionsMap = options.cpuOptions?.toMap() ?: mapOf()
-      val gpuOptionsMap = options.gpuOptions?.toMap() ?: mapOf()
-      val qualcommOptionsMap = options.qualcommOptions?.toMap() ?: mapOf()
-      val inputShapeOverrides =
-        options.compilerOptions?.inputShapeOverrides?.toList() ?: emptyList()
-      return CompiledModel(
-        nativeCreateFromAsset(
-          env.handle,
-          assetManager,
-          assetName,
-          accelerators.map { it.value }.toIntArray(),
-          cpuOptionsMap.keys.map { it.value }.toIntArray(),
-          cpuOptionsMap.values.toTypedArray(),
-          gpuOptionsMap.keys.map { it.value }.toIntArray(),
-          gpuOptionsMap.values.toTypedArray(),
-          qualcommOptionsMap.keys.map { it.value }.toIntArray(),
-          qualcommOptionsMap.values.toTypedArray(),
-          inputShapeOverrides.map { it.mode.value }.toIntArray(),
-          inputShapeOverrides.map { it.signature }.toTypedArray(),
-          inputShapeOverrides.map { it.name }.toTypedArray(),
-          inputShapeOverrides.map { it.dimensions.toIntArray() }.toTypedArray(),
-        ),
-        env,
-        envManaged,
-      )
+      createNativeOptions(options).use { nativeOptions ->
+        val env = optionalEnv ?: Environment.create()
+        return CompiledModel(
+          nativeCreateFromAsset(env.handle, assetManager, assetName, nativeOptions.handle),
+          env,
+          envManaged,
+        )
+      }
     }
 
     private fun createFromFile(
@@ -740,33 +718,14 @@ private constructor(
       optionalEnv: Environment? = null,
       envManaged: Boolean = optionalEnv == null,
     ): CompiledModel {
-      val env = optionalEnv ?: Environment.create()
-      val accelerators = options.getAccelerators()
-
-      val cpuOptionsMap = options.cpuOptions?.toMap() ?: mapOf()
-      val gpuOptionsMap = options.gpuOptions?.toMap() ?: mapOf()
-      val qualcommOptionsMap = options.qualcommOptions?.toMap() ?: mapOf()
-      val inputShapeOverrides =
-        options.compilerOptions?.inputShapeOverrides?.toList() ?: emptyList()
-      return CompiledModel(
-        nativeCreateFromFile(
-          env.handle,
-          filePath,
-          accelerators.map { it.value }.toIntArray(),
-          cpuOptionsMap.keys.map { it.value }.toIntArray(),
-          cpuOptionsMap.values.toTypedArray(),
-          gpuOptionsMap.keys.map { it.value }.toIntArray(),
-          gpuOptionsMap.values.toTypedArray(),
-          qualcommOptionsMap.keys.map { it.value }.toIntArray(),
-          qualcommOptionsMap.values.toTypedArray(),
-          inputShapeOverrides.map { it.mode.value }.toIntArray(),
-          inputShapeOverrides.map { it.signature }.toTypedArray(),
-          inputShapeOverrides.map { it.name }.toTypedArray(),
-          inputShapeOverrides.map { it.dimensions.toIntArray() }.toTypedArray(),
-        ),
-        env,
-        envManaged,
-      )
+      createNativeOptions(options).use { nativeOptions ->
+        val env = optionalEnv ?: Environment.create()
+        return CompiledModel(
+          nativeCreateFromFile(env.handle, filePath, nativeOptions.handle),
+          env,
+          envManaged,
+        )
+      }
     }
 
     @Throws(LiteRtException::class)
@@ -797,35 +756,38 @@ private constructor(
       envHandle: Long,
       assetManager: AssetManager,
       assetName: String,
-      accelerators: IntArray,
-      cpuOptionsKeys: IntArray,
-      cpuOptionsValues: Array<String>,
-      gpuOptionsKeys: IntArray,
-      gpuOptionsValues: Array<String>,
-      qualcommOptionsKeys: IntArray,
-      qualcommOptionsValues: Array<String>,
-      inputShapeModes: IntArray,
-      inputShapeSignatures: Array<String>,
-      inputShapeNames: Array<String>,
-      inputShapeDimensions: Array<IntArray>,
+      optionsHandle: Long,
     ): Long
 
     @JvmStatic
     private external fun nativeCreateFromFile(
       envHandle: Long,
       filePath: String,
-      accelerators: IntArray,
-      cpuOptionsKeys: IntArray,
-      cpuOptionsValues: Array<String>,
-      gpuOptionsKeys: IntArray,
-      gpuOptionsValues: Array<String>,
-      qualcommOptionsKeys: IntArray,
-      qualcommOptionsValues: Array<String>,
-      inputShapeModes: IntArray,
-      inputShapeSignatures: Array<String>,
-      inputShapeNames: Array<String>,
-      inputShapeDimensions: Array<IntArray>,
+      optionsHandle: Long,
     ): Long
+
+    @JvmStatic private external fun nativeCreateOptions(accelerators: IntArray): Long
+
+    @JvmStatic private external fun nativeDestroyOptions(optionsHandle: Long)
+
+    @JvmStatic
+    private external fun nativeWriteBoolOption(optionsHandle: Long, key: String, value: Boolean)
+
+    @JvmStatic
+    private external fun nativeWriteIntOption(optionsHandle: Long, key: String, value: Long)
+
+    @JvmStatic
+    private external fun nativeWriteStringOption(optionsHandle: Long, key: String, value: String)
+
+    @JvmStatic
+    private external fun nativeWriteStringArrayOption(
+      optionsHandle: Long,
+      key: String,
+      values: Array<String>,
+    )
+
+    @JvmStatic
+    private external fun nativeFlushOpaqueOptions(optionsHandle: Long, identifier: String)
 
     @JvmStatic
     private external fun nativeCreateInputBuffer(
