@@ -55,6 +55,7 @@ limitations under the License.
 #include "tflite/converter/ir/tfl_ops.h"
 #include "tflite/converter/metrics/error_collector_inst.h"
 #include "tflite/converter/python/conversion_failure_reporter.h"
+#include "tflite/converter/python/location_passes.h"
 #include "tflite/converter/python/pass_debug_instrumentation.h"
 #include "tflite/converter/quantization/ir/QuantOps.h"
 #include "tflite/converter/stablehlo/transforms/stablehlo_passes.h"
@@ -166,8 +167,8 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   // legalization
   pass_manager.addPass(mlir::odml::CreateLegalizeVhloQuantCustomCallsPass());
 
-  // VHLO -> StableHLO
-  pass_manager.addPass(mlir::stablehlo::createVhloLegalizeToStablehloPass());
+  // VHLO -> StableHLO, upgrading VHLO to the current version first.
+  mlir::stablehlo::createStablehloDeserializePipeline(pass_manager);
 
   // Decompose newer StableHLO ops into equivalent older ops for baseline
   // compatibility with the TFLite legalization backend.
@@ -209,6 +210,7 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   // Build StableHLO composite from PyTorch mark_tensor ops before MHLO bridge
   pass_manager.addPass(mlir::odml::createBuildStableHLOCompositePass());
   pass_manager.addPass(mlir::createInlinerPass());
+  pass_manager.addPass(CreateNormalizeLocationsPass());
 
   // StableHLO -> MHLO bridge
   pass_manager.addPass(mlir::mhlo::createStablehloLegalizeToHloPass());
@@ -321,6 +323,7 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   pass_manager.addPass(mlir::odml::createLegalizeStablehloToVhloPass());
   pass_manager.addPass(mlir::createReconcileUnrealizedCastsPass());
   pass_manager.addPass(CreatePruneDeadResourcesPass());
+  pass_manager.addPass(CreateFinalizeExportLocationsPass());
 }
 
 static absl::Status VerifyInputModule(mlir::ModuleOp module,
