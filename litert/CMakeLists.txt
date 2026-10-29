@@ -36,14 +36,38 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Suppress deprecation warnings (matching Bazel build behavior in .bazelrc)
-# The codebase has deprecated Error constructors that are still in use
-add_compile_options(
-  -Wno-deprecated-declarations
-  -Wno-nullability-completeness
-  -Wno-return-type
-  -fpermissive
-)
+# The codebase has deprecated Error constructors that are still in use.
+# These are GCC/Clang spellings; an MSVC-style driver (cl.exe, and clang-cl,
+# which CMake also reports as MSVC) rejects them outright -- cl.exe fails with
+# "D8021: invalid numeric argument '/Wno-deprecated-declarations'".
+if(MSVC)
+  add_compile_options(
+    /wd4996  # deprecated declarations
+    /wd4715  # not all control paths return a value
+  )
+else()
+  add_compile_options(
+    -Wno-deprecated-declarations
+    -Wno-nullability-completeness
+    -Wno-return-type
+    -fpermissive
+  )
+endif()
 add_compile_definitions(CL_TARGET_OPENCL_VERSION=300)
+
+if(WIN32)
+  # TFLite sets these for its own targets (tflite/CMakeLists.txt); LiteRT's
+  # targets include the same headers and need them too. Without NOMINMAX the
+  # windows.h min/max macros break every generated FlatBuffers accessor named
+  # min() or max(), e.g. tflite/converter/schema/schema_generated.h.
+  add_compile_definitions(
+    NOMINMAX              # keep windows.h from defining min()/max()
+    WIN32_LEAN_AND_MEAN
+    NOGDI                 # windows.h ERROR macro vs. logging severity names
+    _USE_MATH_DEFINES     # M_PI and friends
+    _CRT_SECURE_NO_WARNINGS
+  )
+endif()
 
 # Cmake flattens the transitive public and interface link to emit the final link
 # command. Which will trigger a warning on Apple platforms (ld64 still dedups
@@ -105,6 +129,29 @@ set(TFLITE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/tflite_build" CACHE PATH "Path
 option(TFLITE_ENABLE_XNNPACK "Enable XNNPACK in TFLite" ON)
 if(LITERT_DISABLE_KLEIDIAI)
   set(XNNPACK_ENABLE_KLEIDIAI OFF CACHE BOOL "Disable KleidiAI in XNNPACK")
+endif()
+
+# MSVC's cl.exe targeting ARM64 ships none of the ACLE headers or intrinsics
+# these microkernel families need: <arm_fp16.h>, <arm_bf16.h> and <arm_sve.h>
+# do not exist, and arm64_neon.h declares no bf16 intrinsics. XNNPACK selects
+# them from the target ISA alone, so a cl.exe build fails to compile them.
+# clang-cl has all of them, so only gate the MSVC frontend.
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows"
+   AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+   AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"
+   AND LITERT_SYSTEM_PROCESSOR_LOWER MATCHES "^(arm64|aarch64)$")
+  message(STATUS
+      "LiteRT: cl.exe on ARM64 -- disabling XNNPACK FP16/BF16/SVE2/SME "
+      "microkernels (no ACLE support). Build with clang-cl to keep them.")
+  foreach(_litert_xnn_off
+          XNNPACK_ENABLE_ARM_FP16_SCALAR
+          XNNPACK_ENABLE_ARM_FP16_VECTOR
+          XNNPACK_ENABLE_ARM_BF16
+          XNNPACK_ENABLE_ARM_SVE2
+          XNNPACK_ENABLE_ARM_SME
+          XNNPACK_ENABLE_ARM_SME2)
+    set(${_litert_xnn_off} OFF CACHE BOOL "Unsupported by cl.exe on ARM64")
+  endforeach()
 endif()
 
 if(CMAKE_CROSSCOMPILING)
