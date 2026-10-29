@@ -203,11 +203,6 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
   } else if (auto maybe_bwq = info.quantization->As<BlockwiseQuantization>();
              maybe_bwq.ok()) {
     const auto& bwq = maybe_bwq.value();
-    // XNNPACK only has blockwise quantized int4 values (`qbint4`).
-    if (info.type != Type::kI4) {
-      return absl::UnimplementedError(absl::StrCat(
-          info.name, ": XNNPACK only supports blockwise quantized int4."));
-    }
     if (dims.size() < 2) {
       return absl::InvalidArgumentError(absl::StrCat(
           info.name,
