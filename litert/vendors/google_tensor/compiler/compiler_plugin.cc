@@ -682,15 +682,15 @@ bool IsOpSupported(const litert::compiler::Op& op, const OpFilters& op_filters,
       }
       return false;
     }
-    return true;
-  }
-  // Check if the op is in the list of unsupported ops.
-  for (auto unsupported_op : kUnSupportedOps) {
-    if (unsupported_op == op.Code()) {
-      if (offload_reason != nullptr) {
-        *offload_reason = "Op is not supported on the Google Tensor NPU.";
+  } else {
+    // Check if the op is in the list of unsupported ops.
+    for (auto unsupported_op : kUnSupportedOps) {
+      if (unsupported_op == op.Code()) {
+        if (offload_reason != nullptr) {
+          *offload_reason = "Op is not supported on the Google Tensor NPU.";
+        }
+        return false;
       }
-      return false;
     }
   }
 
@@ -1185,6 +1185,16 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       if (!is_supported) {
         offloaded_ops.push_back(
             {i, op.Code(), "Composite operation is not supported."});
+        continue;
+      }
+      if (google_tensor::GetFilterOutcome(op, op_filters) !=
+          google_tensor::FilterOutcome::kRunOnTpu) {
+        std::string offload_reason =
+            google_tensor_options.op_filters_proto().empty()
+                ? "Excluded by user-provided op filter."
+                : absl::StrCat("Excluded by user-provided op filter (",
+                               google_tensor_options.op_filters_proto(), ").");
+        offloaded_ops.push_back({i, op.Code(), std::move(offload_reason)});
         continue;
       }
     } else if (use_static_fallback) {
