@@ -763,9 +763,9 @@ TEST(TestQnnPlugin, TransformationsEnableAll) {
 
   LiteRtTransformation* transformations = nullptr;
   LiteRtParamIndex num_transformations = 0;
-  LITERT_ASSERT_OK(plugin.Api()->register_all_transformations(
-      plugin.Get(), &transformations, &num_transformations));
-  EXPECT_EQ(num_transformations, 8);
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  EXPECT_EQ(num_transformations, 9);
 }
 
 TEST(TestQnnPlugin, TransformationsEnableLegalizeTransforms) {
@@ -817,6 +817,29 @@ TEST(TestQnnPlugin, TransformationsEnableModelTransforms) {
   EXPECT_EQ(num_transformations, 6);
 }
 
+TEST(TestQnnPlugin, TransformationsEnableGqa) {
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetGraphTransform("gqa");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin =
+      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+
+  LiteRtTransformation* transformations = nullptr;
+  LiteRtParamIndex num_transformations = 0;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  ASSERT_EQ(num_transformations, 2);
+  EXPECT_STREQ(transformations[0].name, "GqaTransformation");
+  EXPECT_STREQ(transformations[1].name, "OrphanCleanupTransformation");
+}
+
 TEST(TestQnnPlugin, TransformationsSelectiveEnableAndDisable) {
   auto opts = Options::Create();
   ASSERT_TRUE(opts);
@@ -836,11 +859,11 @@ TEST(TestQnnPlugin, TransformationsSelectiveEnableAndDisable) {
 
   LiteRtTransformation* transformations = nullptr;
   LiteRtParamIndex num_transformations = 0;
-  LITERT_ASSERT_OK(plugin.Api()->register_all_transformations(
-      plugin.Get(), &transformations, &num_transformations));
-  // Sign, ReduceMax, EntryEmbedding, EntryEmbeddingTrigFold, OrphanCleanup
-  // should be registered (5 total).
-  EXPECT_EQ(num_transformations, 5);
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  // Gqa, Sign, ReduceMax, EntryEmbedding, EntryEmbeddingTrigFold,
+  // OrphanCleanup should be registered (6 total).
+  EXPECT_EQ(num_transformations, 6);
 }
 
 }  // namespace
