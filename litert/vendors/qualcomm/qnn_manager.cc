@@ -31,8 +31,6 @@
 #include <utility>
 #include <vector>
 
-#include "GPU/QnnGpuContext.h"  // from @qairt
-#include "HTP/QnnHtpContext.h"  // from @qairt
 #include "HTP/QnnHtpProfile.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnContext.h"  // from @qairt
@@ -53,7 +51,6 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/filesystem.h"
 #include "litert/vendors/qualcomm/common.h"
-#include "litert/vendors/qualcomm/core/backends/backend_utils.h"
 #include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/gpu_backend.h"
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
@@ -136,52 +133,6 @@ Expected<absl::Span<const QnnSystemInterface_t*>> LoadSystemProvidersFromLib(
 }
 
 }  // namespace
-
-absl::Span<const QnnContext_Config_t*> QnnManager::BuildHtpContextConfigs(
-    const ::qnn::Options& options,
-    absl::Span<const QnnContext_Config_t*> configs,
-    HtpContextConfigs& storage) {
-  std::vector<const QnnContext_Config_t*> htp_context_configs_to_add;
-  if (options.GetGraphPriority() != ::qnn::GraphPriority::kDefault) {
-    storage.priority.option = QNN_CONTEXT_CONFIG_OPTION_PRIORITY;
-    storage.priority.priority =
-        GetGraphPriorityValue(options.GetGraphPriority());
-    htp_context_configs_to_add.push_back(&storage.priority);
-  }
-  if (const uint32_t budget_mb = options.GetHtpFileReadMemoryBudgetMB();
-      budget_mb > 0) {
-    storage.budget_custom.option =
-        QNN_HTP_CONTEXT_CONFIG_OPTION_FILE_READ_MEMORY_BUDGET;
-    storage.budget_custom.fileReadMemoryBudgetInMb = budget_mb;
-    storage.budget.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
-    storage.budget.customConfig = &storage.budget_custom;
-    htp_context_configs_to_add.push_back(&storage.budget);
-  }
-  if (options.GetHtpContextInitAcceleration()) {
-    storage.init_acceleration_custom.option =
-        QNN_HTP_CONTEXT_CONFIG_OPTION_INIT_ACCELERATION;
-    storage.init_acceleration_custom.initAcceleration = true;
-    storage.init_acceleration.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
-    storage.init_acceleration.customConfig =
-        &storage.init_acceleration_custom;
-    htp_context_configs_to_add.push_back(&storage.init_acceleration);
-  }
-
-  if (htp_context_configs_to_add.empty()) {
-    return {};
-  }
-  storage.ptrs.reserve(configs.size() + htp_context_configs_to_add.size() +
-                       1);
-  for (const auto* cfg : configs) {
-    if (cfg != nullptr) {
-      storage.ptrs.push_back(cfg);
-    }
-  }
-  storage.ptrs.insert(storage.ptrs.end(), htp_context_configs_to_add.begin(),
-                      htp_context_configs_to_add.end());
-  storage.ptrs.push_back(nullptr);
-  return absl::MakeSpan(storage.ptrs);
-}
 
 LiteRtStatus QnnManager::LoadSharedLibHelper(absl::string_view path,
                                              bool needs_global_symbols,
@@ -655,15 +606,16 @@ QnnManager::CreateSystemContextHandle() {
 
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     ::qnn::QnnBackend& qnn_backend,
-    absl::Span<const QnnContext_Config_t*> configs,
+    absl::Span<const QnnContext_Config_t* const> configs,
     ::qnn::Profiling profiling_level) {
+  auto* qnn_configs = const_cast<const QnnContext_Config_t**>(configs.data());
   Qnn_ContextHandle_t context_handle;
   if (auto status = Api()->contextCreate(
           qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
           // `configs` should be null-terminated. For empty `configs`, most
           // backend libraries accept nullptr so we use nullptr directly instead
           // of a array which contains only one nullptr.
-          configs.size() <= 1 ? nullptr : configs.data(), &context_handle);
+          configs.size() <= 1 ? nullptr : qnn_configs, &context_handle);
       status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to create QNN context: %d", status);
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -710,7 +662,7 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
 
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     ::qnn::QnnBackend& qnn_backend,
-    absl::Span<const QnnContext_Config_t*> configs,
+    absl::Span<const QnnContext_Config_t* const> configs,
     absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle) {
 #if !defined(_WIN32)
   const int64_t page_size = sysconf(_SC_PAGESIZE);
@@ -733,24 +685,12 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
   }
 #endif
 
+  auto* qnn_configs = const_cast<const QnnContext_Config_t**>(configs.data());
   Qnn_ContextHandle_t context_handle;
-  Qnn_ErrorHandle_t status;
-  if (options_.GetBackendType() == ::qnn::BackendType::kHtpBackend) {
-    HtpContextConfigs htp_configs;
-    const auto htp_span =
-        BuildHtpContextConfigs(options_, configs, htp_configs);
-    const auto context_configs =
-        htp_span.empty() ? configs.data() : htp_span.data();
-    status = Api()->contextCreateFromBinary(
-        qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
-        context_configs, bytecode.data(), bytecode.size(), &context_handle,
-        profile_handle);
-  } else {
-    status = Api()->contextCreateFromBinary(
-        qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
-        configs.data(), bytecode.data(), bytecode.size(), &context_handle,
-        profile_handle);
-  }
+  const Qnn_ErrorHandle_t status = Api()->contextCreateFromBinary(
+      qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
+      qnn_configs, bytecode.data(), bytecode.size(), &context_handle,
+      profile_handle);
   if (status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to create QNN context: %d", status);
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -779,51 +719,6 @@ Expected<QnnManager::Ptr> QnnManager::Create(
     return Unexpected(status, "Failed to set up QNN manager");
   }
   return qnn_manager;
-}
-
-absl::Span<const QnnContext_Config_t*> QnnManager::DefaultContextConfigs() {
-  static const QnnContext_Config_t* configs[] = {nullptr};
-  return absl::MakeSpan(configs);
-}
-
-absl::Span<const QnnContext_Config_t*>
-QnnManager::WeightSharingContextConfigs() {
-  static QnnHtpContext_CustomConfig_t customConfig =
-      QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
-  customConfig.option = QNN_HTP_CONTEXT_CONFIG_OPTION_WEIGHT_SHARING_ENABLED;
-  customConfig.weightSharingEnabled = true;
-  static QnnContext_Config_t contextConfig = QNN_CONTEXT_CONFIG_INIT;
-  contextConfig.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
-  contextConfig.customConfig = &customConfig;
-  static const QnnContext_Config_t* configs[2] = {&contextConfig, nullptr};
-  return absl::MakeSpan(configs);
-}
-
-absl::Span<const QnnContext_Config_t*> QnnManager::GpuPerformanceContextConfigs(
-    ::qnn::GpuPerformanceMode performance_mode) {
-  static QnnGpuContext_CustomConfig_t customConfig =
-      QNN_GPU_CONTEXT_CUSTOM_CONFIG_INIT;
-  customConfig.option = QNN_GPU_CONTEXT_CONFIG_OPTION_PERF_HINT;
-  switch (performance_mode) {
-    case ::qnn::GpuPerformanceMode::kHigh:
-      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_HIGH;
-      break;
-    case ::qnn::GpuPerformanceMode::kNormal:
-      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_NORMAL;
-      break;
-    case ::qnn::GpuPerformanceMode::kLow:
-      customConfig.perfHint = QNN_GPU_CONTEXT_PERF_HINT_LOW;
-      break;
-    case ::qnn::GpuPerformanceMode::kDefault:
-    default:
-      return DefaultContextConfigs();
-  }
-
-  static QnnContext_Config_t contextConfig = QNN_CONTEXT_CONFIG_INIT;
-  contextConfig.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
-  contextConfig.customConfig = &customConfig;
-  static const QnnContext_Config_t* configs[2] = {&contextConfig, nullptr};
-  return absl::MakeSpan(configs);
 }
 
 };  // namespace litert::qnn

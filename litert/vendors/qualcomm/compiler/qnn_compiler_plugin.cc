@@ -37,6 +37,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_any.h"
@@ -67,6 +68,7 @@
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
+#include "litert/vendors/qualcomm/context_config_builder.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
 using ::litert::qnn::QnnManager;
@@ -669,7 +671,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     if (context_handle_idx == next_context_handle_idx) {
       // Initialize context.
       LITERT_LOG(LITERT_INFO, "%s", "Creating context handle");
-      auto context_configs = QnnManager::DefaultContextConfigs();
+      bool enable_effective_weight_sharing = false;
       if (backend_options.GetEnableWeightSharing()) {
         if (backend_options.GetBackendType() !=
             ::qnn::BackendType::kHtpBackend) {
@@ -679,25 +681,19 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         }
         if (num_partitions != kDefaultPartitionNum &&
             IsWeightSharingSupported()) {
-          context_configs = QnnManager::WeightSharingContextConfigs();
-          LITERT_LOG(LITERT_INFO, "Enable weight sharing feature");
+          enable_effective_weight_sharing = true;
         } else {
           LITERT_LOG(LITERT_WARNING,
                      "Disable weight sharing feature. Only support with "
                      "multiple partitions and on x86-64 host");
         }
-      } else if (backend_options.GetBackendType() ==
-                 ::qnn::BackendType::kGpuBackend) {
-        if (backend_options.GetGpuPerformanceMode() !=
-            ::qnn::GpuPerformanceMode::kDefault) {
-          context_configs = QnnManager::GpuPerformanceContextConfigs(
-              backend_options.GetGpuPerformanceMode());
-          LITERT_LOG(LITERT_INFO, "Enable GPU performance mode: %d",
-                     static_cast<int>(backend_options.GetGpuPerformanceMode()));
-        }
       }
+      const auto context_configs = ::qnn::BuildCompileContextConfigs(
+          backend_options, enable_effective_weight_sharing);
       auto context_handle = qnn_manager->CreateContextHandle(
-          *qnn_backend, context_configs, backend_options.GetProfiling());
+          *qnn_backend,
+          absl::MakeSpan(context_configs.Data(), context_configs.Size() + 1),
+          backend_options.GetProfiling());
       if (!context_handle) {
         LITERT_LOG(LITERT_ERROR, "%s", context_handle.Error().Message().data());
         return context_handle.Error().Status();
