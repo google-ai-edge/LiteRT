@@ -62,6 +62,14 @@ class Registry {
     return &entries_[handle].value;
   }
 
+  // Calls `f(V&)` for every entry, used or not.
+  template <typename F>
+  void ForEach(F&& f) {
+    for (auto& entry : entries_) {
+      f(entry.value);
+    }
+  }
+
  private:
   struct Entry {
     V value;

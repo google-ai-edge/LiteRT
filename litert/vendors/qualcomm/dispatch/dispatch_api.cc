@@ -306,7 +306,6 @@ LiteRtStatus InvocationContextCreate(
     return context.Error().Status();
   }
   *invocation_context = context->release();
-  device_context->SetInvocationContext(*invocation_context);
   return kLiteRtStatusOk;
 }
 
