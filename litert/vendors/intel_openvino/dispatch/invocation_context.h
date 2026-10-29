@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "openvino/runtime/infer_request.hpp"
+#include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "absl/base/thread_annotations.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
@@ -134,11 +135,13 @@ class LiteRtDispatchInvocationContextT {
   LiteRtDispatchInvocationContextT(LiteRtDispatchDeviceContextT& device_context,
                                    const LiteRtMemBuffer& exec_bytecode_buffer,
                                    std::string function_name, int64_t kv_tier,
-                                   int num_inputs, int num_outputs)
+                                   int num_inputs, int num_outputs,
+                                   ov::AnyMap runtime_properties)
       : device_context_(device_context),
         kv_tier_(kv_tier),
         exec_bytecode_buffer_(exec_bytecode_buffer),
-        function_name_(std::move(function_name)) {}
+        function_name_(std::move(function_name)),
+        runtime_properties_(std::move(runtime_properties)) {}
 
   // `foreground` = called by the kernel (AttachInput/AttachOutput/Invoke),
   // not by a background prefetch: only the foreground releases other tiers and
@@ -181,6 +184,7 @@ class LiteRtDispatchInvocationContextT {
   // for the session; do not relax that.
   LiteRtMemBuffer exec_bytecode_buffer_;
   std::string function_name_;
+  ov::AnyMap runtime_properties_;
   // Written under import_mutex_; also read without it, as a cheap hint.
   std::atomic<bool> imported_{false};
   size_t imported_bytes_ ABSL_GUARDED_BY(import_mutex_) = 0;
