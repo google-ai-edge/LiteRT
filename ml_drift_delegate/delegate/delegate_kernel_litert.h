@@ -131,6 +131,11 @@ class DelegateKernelLiteRt : public DelegateKernel {
     return runtime_context_;
   }
 
+  // Resolves the effective TfLiteTensor for a given index, mapping synthetic
+  // dequantized tensors back to original signature tensors when available.
+  TfLiteTensor* GetEffectiveTensor(TfLiteContext* context,
+                                   int tensor_idx) const;
+
  protected:
   // A virtual function to update the create info with external tensors.
   // In addition to this, it conducts the following tasks:
@@ -171,10 +176,10 @@ class DelegateKernelLiteRt : public DelegateKernel {
     return DelegateKernel::GetStorageType();
   }
 
- private:
-  const LiteRtRuntimeContext* runtime_context_;
+  const LiteRtRuntimeContext* runtime_context_ = nullptr;
   LiteRtExternalLiteRtBufferContext buffer_context_ = nullptr;
 
+ private:
   // Context structure that encapsulates the common parameters needed for tensor
   // processing operations in the ML Drift delegate. This structure helps reduce
   // parameter passing complexity and improves code maintainability by grouping
