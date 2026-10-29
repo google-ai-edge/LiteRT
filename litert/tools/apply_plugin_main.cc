@@ -30,24 +30,21 @@
 #include "litert/c/litert_common.h"  // NOLINT
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
+#include "litert/cc/options/litert_mediatek_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/cc/options/litert_samsung_options.h"
 #include "litert/tools/apply_plugin.h"
 #include "litert/tools/flags/apply_plugin_flags.h"
 #include "litert/tools/flags/common_flags.h"
 #include "litert/tools/flags/flag_types.h"
-#include "litert/tools/flags/vendors/intel_openvino_flags.h"  // IWYU pragma: keep
-#include "litert/tools/outstream.h"
-
-#if !defined(LITERT_WINDOWS_OS)
-#include "litert/cc/options/litert_google_tensor_options.h"
-#include "litert/cc/options/litert_mediatek_options.h"
-#include "litert/cc/options/litert_qualcomm_options.h"
-#include "litert/cc/options/litert_samsung_options.h"
 #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
+#include "litert/tools/flags/vendors/intel_openvino_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/samsung_flags.h"  // IWYU pragma: keep
-#endif  // !defined(LITERT_WINDOWS_OS)
+#include "litert/tools/outstream.h"
 
 namespace {
 
@@ -150,7 +147,6 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-#if !defined(LITERT_WINDOWS_OS)
   ParseOptionsFlags(
       run->dump_out, "Google Tensor",
       [&] {
@@ -176,7 +172,6 @@ int main(int argc, char* argv[]) {
       [&] { return opts->GetOptions<litert::samsung::SamsungOptions>(); },
       litert::samsung::UpdateSamsungOptionsFromFlags,
       "Failed to parse Samsung flags, Error: ");
-#endif  // !defined(LITERT_WINDOWS_OS)
 
   ParseOptionsFlags(
       run->dump_out, "Intel OpenVINO",

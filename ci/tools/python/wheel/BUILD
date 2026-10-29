@@ -152,6 +152,13 @@ PACKAGE_DATA = select({
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
         "//litert/vendors/qualcomm/dispatch:dispatch_api_so",
     ],
+    # `:windows_arm64` is a specialization of `:windows`, so it wins on ARM64.
+    # Intel OpenVINO has no Windows ARM64 build; Snapdragon devices use QNN.
+    "//litert:windows_arm64": [
+        "//litert/tools:apply_plugin_main",
+        "//litert/vendors/qualcomm/compiler:LiteRtCompilerPlugin_Qualcomm",
+        "//litert/vendors/qualcomm/dispatch:LiteRtDispatch_Qualcomm",
+    ],
     "//litert:windows": [
         "//litert/tools:apply_plugin_main",
         "//litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin",

@@ -504,6 +504,10 @@ http_archive(
     patch_cmds = [
         # Add external/ml_drift to flatc include paths for gl_inference_context_cc_fbs.
         "sed -i -e 's|\"-I .\",|\"-I .\", \"-I external/ml_drift\",|g' ml_drift/gl/BUILD",
+        # Avoid passing -ldl to MSVC linker on Windows in opencl_wrapper.
+        "grep -q '\"//conditions:default\": \\[\"-ldl\"\\],' ml_drift/cl/BUILD && sed -i -e 's|\"//conditions:default\": \\[\"-ldl\"\\],|\"@platforms//os:windows\": [], \"//conditions:default\": [\"-ldl\"],|g' ml_drift/cl/BUILD",
+        # Avoid int -> uint32_t narrowing conversion in VulkanInfo default member initializers on MSVC.
+        "grep -q 'uint32_t api_version.* = -1;' ml_drift/common/gpu_info.h && sed -i -e 's|uint32_t api_version\\(.*\\) = -1;|uint32_t api_version\\1 = static_cast<uint32_t>(-1);|g' ml_drift/common/gpu_info.h",
     ],
     repo_mapping = {
         "@fp16": "@FP16",

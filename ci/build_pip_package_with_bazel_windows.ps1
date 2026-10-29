@@ -12,7 +12,79 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Builds LiteRT for Windows with Bazel and MSVC.
+#
+# -TargetArch x86_64 (default) builds for x86_64 on an x86_64 host.
+# -TargetArch arm64 cross-compiles for ARM64 on an x86_64 host
+#   (--config=cross_compile_windows_arm64). Requires the MSVC ARM64 build tools;
+#   see ci/setup_windows_arm64_toolchain.ps1.
+# -Mode wheel (default) builds the ai-edge-litert wheel into dist/.
+# -Mode prebuilts builds the prebuilt binaries (libLiteRt.dll, the GPU
+#   accelerator, the Qualcomm plugins and the tools) into
+#   dist/prebuilts/windows_arm64/ and dist/litert_prebuilts_windows_arm64.zip.
+#   Only supported with -TargetArch arm64; other Windows prebuilts are built by
+#   the Linux prebuilt job.
+# The target and mode can also be selected with the LITERT_TARGET_ARCH and
+# LITERT_BUILD_MODE env variables.
+param (
+  [ValidateSet('x86_64', 'arm64')]
+  [string]$TargetArch = $(if ($env:LITERT_TARGET_ARCH) { $env:LITERT_TARGET_ARCH } else { 'x86_64' }),
+  [ValidateSet('wheel', 'prebuilts')]
+  [string]$Mode = $(if ($env:LITERT_BUILD_MODE) { $env:LITERT_BUILD_MODE } else { 'wheel' })
+)
+
 $ErrorActionPreference = 'Stop'
+
+function Write-GitHubError {
+  param (
+    [string]$Title,
+    [string[]]$Lines
+  )
+  $Msg = ($Lines -join "`n") -replace '%', '%25' -replace "`r", '%0D' -replace "`n", '%0A'
+  if ($Msg.Length -gt 3500) { $Msg = $Msg.Substring(0, 1700) + '%0A...%0A' + $Msg.Substring($Msg.Length - 1700) }
+  Write-Host "::error title=${Title}::$Msg"
+}
+
+# On failure, surface the error and the Bazel errors as GitHub annotations.
+trap {
+  try {
+    Write-GitHubError 'Script Error' @($_.Exception.Message, $_.InvocationInfo.PositionMessage)
+    $CmdLog = if ($OutputBase) { Join-Path $OutputBase 'command.log' }
+    if ($CmdLog -and (Test-Path -LiteralPath $CmdLog)) {
+      $LogLines = @(Get-Content -LiteralPath $CmdLog)
+      $ErrLines = @($LogLines | Where-Object { $_ -match '(ERROR:|FAILED:|fatal:|error C\d+|error LNK\d+|unresolved external|Exception:)' })
+      if ($ErrLines) { Write-GitHubError 'Bazel Errors' $ErrLines }
+      Write-GitHubError 'Bazel Log Tail' @($LogLines | Select-Object -Last 50)
+    }
+  }
+  catch {}
+  break
+}
+
+if ($TargetArch -notin @('x86_64', 'arm64')) {
+  throw "Unsupported TargetArch '$TargetArch'. Expected 'x86_64' or 'arm64'."
+}
+if ($Mode -notin @('wheel', 'prebuilts')) {
+  throw "Unsupported Mode '$Mode'. Expected 'wheel' or 'prebuilts'."
+}
+if ($Mode -eq 'prebuilts' -and $TargetArch -ne 'arm64') {
+  throw '-Mode prebuilts is only supported with -TargetArch arm64.'
+}
+
+# Windows ARM64 prebuilt binaries: Bazel target -> file name in the archive.
+$PrebuiltTargets = [ordered]@{
+  '//litert/c:litert_runtime_c_api_dll' = 'libLiteRt.dll'
+  '//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_dll' = 'libLiteRtWebGpuAccelerator.dll'
+  '//litert/vendors/qualcomm/compiler:LiteRtCompilerPlugin_Qualcomm' = 'LiteRtCompilerPlugin_Qualcomm.dll'
+  '//litert/vendors/qualcomm/dispatch:LiteRtDispatch_Qualcomm' = 'LiteRtDispatch_Qualcomm.dll'
+  '//litert/tools:benchmark_model' = 'benchmark_model.exe'
+  '//litert/tools:run_model' = 'run_model.exe'
+  '//litert/tools:gpu_numerics_check' = 'gpu_numerics_check.exe'
+  '//litert/tools:npu_numerics_check' = 'npu_numerics_check.exe'
+  '//litert/tools:apply_plugin_main' = 'apply_plugin_main.exe'
+  '//litert/tools:analyze_model_main' = 'analyze_model_main.exe'
+}
+[string[]]$BuildTargets = if ($Mode -eq 'prebuilts') { @($PrebuiltTargets.Keys) } else { @('//ci/tools/python/wheel:litert_wheel') }
 
 function Convert-WslPathToWindows {
   param (
@@ -153,28 +225,148 @@ if ($env:BAZEL_OUTPUT_USER_ROOT) {
   }
 }
 
-# Fetch dependencies first to ensure the Bazel server is running and external repos are populated.
-Write-Host 'Fetching dependencies...'
-$BazelStartupOpts = if ($env:BAZEL_OUTPUT_USER_ROOT) {
+[string[]]$BazelStartupOpts = if ($env:BAZEL_OUTPUT_USER_ROOT) {
   @("--output_user_root=$($env:BAZEL_OUTPUT_USER_ROOT)")
-} else {
+}
+else {
   @()
 }
-$FetchArgs = @('fetch', '--config=windows', '--repo_env=USE_PYWRAP_RULES=True', '//ci/tools/python/wheel:litert_wheel')
-& $Bazel $BazelStartupOpts $FetchArgs
-if ($LASTEXITCODE -ne 0) {
-  throw "Bazel fetch failed with exit code $LASTEXITCODE"
+
+$GitHome = 'C:\t\_home'
+$GitConfigDir = "$GitHome\.config\git"
+$ShortTemp = 'C:\t\_tmp'
+New-Item -ItemType Directory -Force -Path $GitConfigDir, $ShortTemp | Out-Null
+New-Item -ItemType File -Force -Path "$GitConfigDir\ignore", "$GitConfigDir\attributes" | Out-Null
+$GitConfigLines = @(
+  '[core]',
+  '	excludesFile = C:/t/_home/.config/git/ignore',
+  '	attributesFile = C:/t/_home/.config/git/attributes'
+)
+Set-Content -LiteralPath "$GitHome\.gitconfig" -Value $GitConfigLines -Encoding ASCII
+Set-Content -LiteralPath "$GitConfigDir\config" -Value $GitConfigLines -Encoding ASCII
+$env:HOME = $GitHome
+$env:XDG_CONFIG_HOME = 'C:/t/_home/.config'
+$env:GIT_CONFIG_GLOBAL = 'C:/t/_home/.gitconfig'
+$env:TMP = $ShortTemp
+$env:TEMP = $ShortTemp
+
+# The Qualcomm plugins only need the QNN headers: extract just those from the
+# QAIRT SDK archive (CI caches C:\t\qairt_sdk) and point @qairt at them.
+if ($TargetArch -eq 'arm64' -and -not $env:LITERT_QAIRT_SDK) {
+  $QairtRoot = 'C:\t\qairt_sdk'
+  $QairtOutDir = Join-Path $QairtRoot 'include\QNN'
+  if (-not (Test-Path -LiteralPath (Join-Path $QairtOutDir 'QnnCommon.h'))) {
+    $QairtWorkspace = Join-Path $RepoRoot 'third_party\qairt\workspace.bzl'
+    $QairtText = Get-Content -LiteralPath $QairtWorkspace -Raw
+    if ($QairtText -notmatch 'url\s*=\s*"([^"]+)"') {
+      throw "Could not find QAIRT URL in $QairtWorkspace"
+    }
+    $QairtUrl = $Matches[1]
+    $QairtSha256 = if ($env:LITERT_QAIRT_SHA256) {
+      $env:LITERT_QAIRT_SHA256
+    }
+    elseif ($QairtText -match 'sha256\s*=\s*"([0-9a-fA-F]{64})"') {
+      $Matches[1]
+    }
+    $TmpZip = Join-Path $env:TEMP 'qairt_sdk.zip'
+    if (Test-Path -LiteralPath $QairtOutDir) {
+      Remove-Item -LiteralPath $QairtOutDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $QairtOutDir | Out-Null
+    Write-Host "Downloading QAIRT SDK archive from $QairtUrl ..."
+    $PrevProgress = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+    try {
+      for ($Attempt = 1; $Attempt -le 3; $Attempt++) {
+        try {
+          Invoke-WebRequest -Uri $QairtUrl -OutFile $TmpZip
+          break
+        }
+        catch {
+          if ($Attempt -eq 3) {
+            throw
+          }
+          Start-Sleep -Seconds 5
+        }
+      }
+      if ($QairtSha256) {
+        $ActualHash = (Get-FileHash -Path $TmpZip -Algorithm SHA256).Hash
+        if ($ActualHash -ne $QairtSha256) {
+          throw "SHA256 mismatch for QAIRT archive: expected $QairtSha256, got $ActualHash"
+        }
+      }
+      Add-Type -AssemblyName System.IO.Compression.FileSystem
+      $Zip = [System.IO.Compression.ZipFile]::OpenRead($TmpZip)
+      try {
+        $Marker = '/include/QNN/'
+        $Extracted = 0
+        foreach ($Entry in $Zip.Entries) {
+          $EntryName = $Entry.FullName.Replace('\', '/')
+          if ($EntryName.EndsWith('/') -or (-not $EntryName.Contains($Marker))) {
+            continue
+          }
+          $Idx = $EntryName.IndexOf($Marker)
+          $RelPath = $EntryName.Substring($Idx + $Marker.Length)
+          if (-not $RelPath) { continue }
+          $Dest = Join-Path $QairtOutDir ($RelPath.Replace('/', '\'))
+          $DestDir = Split-Path -Parent $Dest
+          if (-not (Test-Path -LiteralPath $DestDir)) {
+            New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
+          }
+          [System.IO.Compression.ZipFileExtensions]::ExtractToFile($Entry, $Dest, $true)
+          $Extracted++
+        }
+        if ($Extracted -eq 0 -or (-not (Test-Path -LiteralPath (Join-Path $QairtOutDir 'QnnCommon.h')))) {
+          throw "Failed to extract QNN headers (extracted=$Extracted)"
+        }
+        Write-Host "Extracted $Extracted QNN header files into $QairtOutDir"
+      }
+      finally {
+        $Zip.Dispose()
+      }
+    }
+    finally {
+      $ProgressPreference = $PrevProgress
+      Remove-Item -LiteralPath $TmpZip -Force -ErrorAction SilentlyContinue
+    }
+  }
+  else {
+    Write-Host "Using cached QAIRT headers in $QairtOutDir"
+  }
+  $env:LITERT_QAIRT_SDK = $QairtRoot.Replace('\', '/')
 }
 
 $OutputBase = Get-BazelInfo 'output_base'
 Write-Host "Bazel output_base: $OutputBase"
+
+[string[]]$TargetConfigArgs = if ($TargetArch -eq 'arm64') {
+  $ArgsList = @('--config=cross_compile_windows_arm64')
+  if ($env:LITERT_QAIRT_SDK) {
+    $ArgsList += "--repo_env=LITERT_QAIRT_SDK=$($env:LITERT_QAIRT_SDK)"
+  }
+  $ArgsList
+}
+else {
+  @()
+}
+Write-Host "Target architecture: $TargetArch, mode: $Mode"
+
+# Fetch dependencies first to ensure the Bazel server is running and external repos are populated.
+Write-Host 'Fetching dependencies...'
+$FetchArgs = @('fetch', '--config=windows') + $TargetConfigArgs + @('--repo_env=USE_PYWRAP_RULES=True') + $BuildTargets
+& $Bazel $BazelStartupOpts $FetchArgs
+if ($LASTEXITCODE -ne 0) {
+  throw "Bazel fetch failed with exit code $LASTEXITCODE"
+}
 
 $ExecRoot = Get-BazelInfo 'execution_root'
 Write-Host "Bazel execution_root: $ExecRoot"
 if ($ExecRoot) {
   $ExecBazelOut = Join-Path $ExecRoot 'bazel-out'
   $WorkspaceBazelOut = Join-Path $RepoRoot 'bazel-out'
-  if (Test-Path $WorkspaceBazelOut) {
+  # Skip if bazel-out is already Bazel's junction (e.g. on a second run), which
+  # would otherwise become a junction cycle.
+  if ((Test-Path $WorkspaceBazelOut) -and -not ((Get-Item $WorkspaceBazelOut -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
     if (Test-Path $ExecBazelOut) {
       & cmd.exe /c "rmdir /s /q `"$ExecBazelOut`"" | Out-Null
     }
@@ -186,7 +378,7 @@ if ($ExecRoot) {
 Write-Host 'Deep patching external repositories for incompatible flags...'
 $ExternalDir = Join-Path $OutputBase 'external'
 if (Test-Path $ExternalDir) {
-  Get-ChildItem -Path $ExternalDir -Include '*.bazel','*.bzl','*.rc','BUILD*' -Recurse | Where-Object { -not $_.PSIsContainer } | ForEach-Object {
+  Get-ChildItem -Path $ExternalDir -Include '*.bazel','*.bzl','*.rc','BUILD*' -Recurse -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer } | ForEach-Object {
     Replace-InFile $_.FullName '-Wno-sign-compare' '' | Out-Null
   }
 }
@@ -206,8 +398,10 @@ if (Test-Path $AbslOptions) {
 $ProtoContext = Join-Path $OutputBase 'external\com_google_protobuf\src\google\protobuf\compiler\java\context.h'
 if (Test-Path $ProtoContext) {
   $ProtoLines = Get-Content $ProtoContext
-  $ProtoLines = $ProtoLines | Where-Object { $_ -notmatch '^\s*#include\s*\\\s*$' }
-  Set-Content -Path $ProtoContext -Value $ProtoLines
+  $FilteredProtoLines = $ProtoLines | Where-Object { $_ -notmatch '^\s*#include\s*\\\s*$' }
+  if ($FilteredProtoLines.Count -ne $ProtoLines.Count) {
+    Set-Content -Path $ProtoContext -Value $FilteredProtoLines
+  }
 }
 Ensure-Include $ProtoContext '#include "google/protobuf/compiler/java/helpers.h"' ("`n" + '#include "google/protobuf/compiler/java/field_common.h"') | Out-Null
 
@@ -215,18 +409,22 @@ Ensure-Include $ProtoContext '#include "google/protobuf/compiler/java/helpers.h"
 
 $ProtoJavaBuild = Join-Path $OutputBase 'external\com_google_protobuf\src\google\protobuf\compiler\java\BUILD.bazel'
 if (Test-Path $ProtoJavaBuild) {
-  $BuildText = Get-Content $ProtoJavaBuild -Raw
+  $OrigBuildText = Get-Content $ProtoJavaBuild -Raw
+  $BuildText = $OrigBuildText
   $InsertLine = [Environment]::NewLine + '        "field_common.h",'
   $BuildText = $BuildText.Replace('"helpers.h",`n        "field_common.h",', '"helpers.h",' + $InsertLine)
   if ($BuildText -notmatch '"helpers.h",\s*"field_common.h"') {
     $BuildText = [regex]::Replace($BuildText, '"helpers.h",', '"helpers.h",' + $InsertLine, 1)
   }
-  Set-Content -Path $ProtoJavaBuild -Value $BuildText
+  if ($BuildText -ne $OrigBuildText) {
+    Set-Content -Path $ProtoJavaBuild -Value $BuildText
+  }
 }
 
 $UntypedHeader = Join-Path $OutputBase 'external\com_google_protobuf\src\google\protobuf\json\internal\untyped_message.h'
 if (Test-Path $UntypedHeader) {
-  $Text = Get-Content $UntypedHeader -Raw
+  $OrigText = Get-Content $UntypedHeader -Raw
+  $Text = $OrigText
   $Text = $Text.Replace(', UntypedMessage,', ', std::unique_ptr<UntypedMessage>,')
   $Text = $Text.Replace('std::vector<UntypedMessage>>;', 'std::vector<std::unique_ptr<UntypedMessage>>>;')
 
@@ -252,12 +450,15 @@ if (Test-Path $UntypedHeader) {
       $Text = $Text.Replace($Anchor, $Insert + $Anchor)
     }
   }
-  Set-Content -Path $UntypedHeader -Value $Text
+  if ($Text -ne $OrigText) {
+    Set-Content -Path $UntypedHeader -Value $Text
+  }
 }
 
 $UntypedCc = Join-Path $OutputBase 'external\com_google_protobuf\src\google\protobuf\json\internal\untyped_message.cc'
 if (Test-Path $UntypedCc) {
-  $CcText = Get-Content $UntypedCc -Raw
+  $OrigCcText = Get-Content $UntypedCc -Raw
+  $CcText = $OrigCcText
   $CcText = $CcText.Replace('InsertField(*field, std::move(group))', 'InsertField(*field, std::make_unique<UntypedMessage>(std::move(group)))')
   $CcText = $CcText.Replace('InsertField(field, std::move(*inner))', 'InsertField(field, std::make_unique<UntypedMessage>(std::move(*inner)))')
 
@@ -326,7 +527,9 @@ absl::Status UntypedMessage::InsertField(const ResolverPool::Field& field,
   if ($NewCcText -notmatch 'using value_type = std::decay_t<T>;') {
     throw 'Failed to patch untyped_message.cc InsertField template for MSVC.'
   }
-  Set-Content -Path $UntypedCc -Value $NewCcText
+  if ($NewCcText -ne $OrigCcText) {
+    Set-Content -Path $UntypedCc -Value $NewCcText
+  }
 }
 
 $UnparserTraits = Join-Path $OutputBase 'external\com_google_protobuf\src\google\protobuf\json\internal\unparser_traits.h'
@@ -352,30 +555,89 @@ $BazelArgs = @(
   'opt',
   '--config=windows',
   '--copt=-DLITERT_DISABLE_OPENCL_SUPPORT=1',
-  '--copt=-mavx2',
-  '--copt=-mfma',
-  '--copt=-mf16c',
   '--repo_env=USE_PYWRAP_RULES=True',
   '--define=protobuf_allow_msvc=true',
   '--copt=/Iexternal\com_google_protobuf\src',
   '--host_copt=/Iexternal\com_google_protobuf\src'
 )
+if ($TargetArch -eq 'arm64') {
+  $BazelArgs += $TargetConfigArgs
+}
+else {
+  # x86-only ISA extensions.
+  $BazelArgs += @('--copt=-mavx2', '--copt=-mfma', '--copt=-mf16c')
+}
 if ($env:HERMETIC_PYTHON_VERSION) { $BazelArgs += "--repo_env=HERMETIC_PYTHON_VERSION=$($env:HERMETIC_PYTHON_VERSION)" }
 if ($env:BAZEL_CONFIG_FLAGS) { $BazelArgs += $env:BAZEL_CONFIG_FLAGS.Split(' ') }
 if ($env:NIGHTLY_RELEASE_DATE) { $BazelArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
 if ($env:CUSTOM_BAZEL_FLAGS) { $BazelArgs += $env:CUSTOM_BAZEL_FLAGS.Split(' ') }
 
 Write-Host 'Starting bazel build...'
-& $Bazel $BazelStartupOpts @BazelArgs //ci/tools/python/wheel:litert_wheel
+& $Bazel $BazelStartupOpts @BazelArgs @BuildTargets
 if ($LASTEXITCODE -ne 0) {
   throw "Bazel build failed with exit code $LASTEXITCODE"
 }
 
 $DistDir = Join-Path $RepoRoot 'dist'
-if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
-New-Item -ItemType Directory -Path $DistDir | Out-Null
+New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 
-Get-ChildItem -Path (Join-Path $RepoRoot 'bazel-bin\ci\tools\python\wheel\dist') -Filter *.whl | Move-Item -Destination $DistDir
+if ($Mode -eq 'prebuilts') {
+  $PrebuiltsRoot = Join-Path $DistDir 'prebuilts'
+  if (Test-Path $PrebuiltsRoot) { Remove-Item -Recurse -Force $PrebuiltsRoot }
+  # Stage the binaries in the same layout as litert_prebuilts.zip
+  # (<platform>/<file>).
+  $PlatformDir = Join-Path $PrebuiltsRoot 'windows_arm64'
+  New-Item -ItemType Directory -Force -Path $PlatformDir | Out-Null
+  $CqueryArgs = @('cquery') + $BazelArgs[1..($BazelArgs.Count - 1)] + @('--output=files')
+  foreach ($Target in $PrebuiltTargets.Keys) {
+    $FileName = $PrebuiltTargets[$Target]
+    $Outputs = & $Bazel $BazelStartupOpts @CqueryArgs $Target
+    if ($LASTEXITCODE -ne 0) {
+      throw "bazel cquery failed for $Target with exit code $LASTEXITCODE"
+    }
+    $Output = $Outputs | Where-Object { $_ -match '\.(dll|exe)$' } | Select-Object -First 1
+    if (-not $Output) {
+      throw "No .dll/.exe output found for $Target"
+    }
+    Copy-Item -Path (Join-Path $RepoRoot $Output) -Destination (Join-Path $PlatformDir $FileName) -Force
+    Write-Host "Staged $Target -> windows_arm64\$FileName"
+  }
+  $ZipPath = Join-Path $DistDir 'litert_prebuilts_windows_arm64.zip'
+  if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
+  # Use Python zipfile rather than Compress-Archive so ZIP entry paths always
+  # use POSIX forward slashes even under Windows PowerShell 5.1.
+  & python -c "import pathlib, sys, zipfile; src, dst = pathlib.Path(sys.argv[1]), sys.argv[2]; zf = zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED); [zf.write(p, f'windows_arm64/{p.name}') for p in sorted(src.iterdir()) if p.is_file()]; zf.close()" $PlatformDir $ZipPath
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to create $ZipPath with exit code $LASTEXITCODE"
+  }
+  # The binaries cannot run on the x86_64 host, so verify that every one of
+  # them targets ARM64.
+  & python (Join-Path $ScriptDir 'check_windows_wheel_arch.py') --arch arm64 $ZipPath
+  if ($LASTEXITCODE -ne 0) {
+    throw "Windows ARM64 prebuilts architecture check failed with exit code $LASTEXITCODE"
+  }
+  Get-ChildItem -Path $PlatformDir | ForEach-Object {
+    Write-Host ('{0}  {1}' -f (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash, $_.Name)
+  }
+  Write-Host 'Output can be found here:' $DistDir
+  return
+}
+
+Get-ChildItem -Path $DistDir -Filter *.whl -ErrorAction SilentlyContinue | Remove-Item -Force
+Get-ChildItem -Path $DistDir -Filter *.tar.gz -ErrorAction SilentlyContinue | Remove-Item -Force
+Get-ChildItem -Path (Join-Path $RepoRoot 'bazel-bin\ci\tools\python\wheel\dist') -Filter *.whl | Move-Item -Destination $DistDir -Force
+
+if ($TargetArch -eq 'arm64') {
+  # The cross-compiled wheel cannot be imported on the x86_64 host, so verify
+  # that every native binary in it targets ARM64 instead.
+  & python (Join-Path $ScriptDir 'check_windows_wheel_arch.py') --arch arm64 (Get-ChildItem -Path $DistDir -Filter *.whl).FullName
+  if ($LASTEXITCODE -ne 0) {
+    throw "Windows ARM64 wheel architecture check failed with exit code $LASTEXITCODE"
+  }
+  # Vendor SDK sdists are platform-independent and built by the x86_64 job.
+  Write-Host 'Output can be found here:' $DistDir
+  return
+}
 
 # Vendor SDK sdist packages
 $SdkArgs = @(
