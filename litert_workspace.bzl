@@ -124,6 +124,8 @@ def litert_workspace():
     # cpuinfo
     tf_http_archive(
         name = "cpuinfo",
+        # Needed to build cpuinfo with MSVC for Windows ARM64.
+        patch_file = ["//third_party/cpuinfo:cpuinfo_windows_arm64_msvc.patch"],
         sha256 = "b93044263ee072e9be3577bda52f48d5a4dd9fcb80091529471c8d2bfe59219d",
         strip_prefix = "cpuinfo-66ee79c038d70dad9f08705b2c9b3e58f6d8f512",
         urls = tf_mirror_urls("https://github.com/pytorch/cpuinfo/archive/66ee79c038d70dad9f08705b2c9b3e58f6d8f512.zip"),
