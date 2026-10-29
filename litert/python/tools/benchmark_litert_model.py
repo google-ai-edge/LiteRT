@@ -165,9 +165,43 @@ def parse_args():
       help='Path to compiler plugin library directory.',
   )
   parser.add_argument(
+      '--compiler_cache_dir',
+      default='',
+      help='Directory path used to cache on-device compiled models.',
+  )
+  parser.add_argument(
       '--runtime_path',
       default='',
       help='Path to LiteRT runtime library directory.',
+  )
+  parser.add_argument(
+      '--qualcomm_enable_just_in_time',
+      action='store_true',
+      help='Enable in-memory JIT compilation for Qualcomm NPU.',
+  )
+  parser.add_argument(
+      '--qualcomm_htp_performance_mode',
+      default='',
+      help=(
+          'Qualcomm HTP performance mode (e.g., default, '
+          'sustained_high_performance, burst, high_performance, power_saver, '
+          'balanced).'
+      ),
+  )
+  parser.add_argument(
+      '--qualcomm_log_level',
+      default='',
+      help='Qualcomm QNN log level (off, error, warn, info, verbose, debug).',
+  )
+  parser.add_argument(
+      '--qualcomm_qnn_lib_dir',
+      default='',
+      help='Directory containing Qualcomm QNN host shared libraries.',
+  )
+  parser.add_argument(
+      '--qualcomm_dsp_skel_dir',
+      default='',
+      help='Directory containing Qualcomm Hexagon DSP skel shared libraries.',
   )
 
   parser.add_argument(
@@ -227,15 +261,54 @@ def create_environment(args, environment, environment_options):
       dispatch_path = os.path.dirname(dispatch_path)
     kwargs['dispatch_library_path'] = dispatch_path
 
+  compiler_cache_dir = getattr(args, 'compiler_cache_dir', '')
+  if compiler_cache_dir:
+    kwargs['compiler_cache_dir'] = compiler_cache_dir
+
   return environment.create(options=environment_options(**kwargs))
 
 
 def create_model_options(args, options, cpu_options, hardware_accel):
   """Create grouped LiteRT model options for CompiledModel creation."""
-  return options(
+  opts = options(
       hardware_accelerators=hardware_accel,
       cpu_options=cpu_options(num_threads=args.num_threads),
   )
+  enable_jit = getattr(args, 'qualcomm_enable_just_in_time', False)
+  htp_perf_mode = getattr(args, 'qualcomm_htp_performance_mode', '')
+  log_level = getattr(args, 'qualcomm_log_level', '')
+  qnn_lib_dir = getattr(args, 'qualcomm_qnn_lib_dir', '')
+  dsp_skel_dir = getattr(args, 'qualcomm_dsp_skel_dir', '')
+  if enable_jit or htp_perf_mode or log_level or qnn_lib_dir or dsp_skel_dir:
+    qnn_opts = opts.qualcomm_options
+    if enable_jit:
+      qnn_opts.enable_just_in_time = True
+    if htp_perf_mode:
+      qnn_opts.htp_performance_mode = _parse_enum_flag(
+          qnn_opts.HTP_PERFORMANCE_MODE,
+          htp_perf_mode,
+          '--qualcomm_htp_performance_mode',
+      )
+    if log_level:
+      qnn_opts.log_level = _parse_enum_flag(
+          qnn_opts.LOG_LEVEL, log_level, '--qualcomm_log_level'
+      )
+    if qnn_lib_dir:
+      qnn_opts.qnn_lib_dir = qnn_lib_dir
+    if dsp_skel_dir:
+      qnn_opts.dsp_skel_dir = dsp_skel_dir
+  return opts
+
+
+def _parse_enum_flag(enum_cls, value, flag_name):
+  """Parses a case-insensitive enum member name from a CLI flag value."""
+  member = getattr(enum_cls, value.strip().upper(), None)
+  if not isinstance(member, enum_cls):
+    valid = ', '.join(m.name.lower() for m in enum_cls)
+    raise ValueError(
+        f'Unsupported {flag_name}: {value!r}. Valid values: {valid}.'
+    )
+  return member
 
 
 def get_numpy_dtype(dtype_str):
@@ -320,6 +393,23 @@ def run_benchmark(args):
     logger.info('Dispatch lib:    %s', args.dispatch_library_path)
   if args.compiler_plugin_path:
     logger.info('Compiler plugin: %s', args.compiler_plugin_path)
+  for flag, label in (
+      ('compiler_cache_dir', 'Compiler cache:  %s'),
+      ('qualcomm_enable_just_in_time', 'Qualcomm JIT:    %s'),
+      ('qualcomm_htp_performance_mode', 'Qualcomm HTP:    %s'),
+      ('qualcomm_log_level', 'Qualcomm log:    %s'),
+      ('qualcomm_qnn_lib_dir', 'Qualcomm QNN lib: %s'),
+      ('qualcomm_dsp_skel_dir', 'Qualcomm skel:   %s'),
+  ):
+    value = getattr(args, flag, '')
+    if value:
+      logger.info(label, value)
+
+  # Build the model options first so invalid flag values fail fast.
+  model_options = create_model_options(
+      args, options_cls, cpu_options_cls, hw_accel
+  )
+
   logger.info('Creating environment...')
   t0 = time.perf_counter()
   env = create_environment(args, environment_cls, environment_options_cls)
@@ -328,9 +418,6 @@ def run_benchmark(args):
 
   logger.info('Loading model...')
   t0 = time.perf_counter()
-  model_options = create_model_options(
-      args, options_cls, cpu_options_cls, hw_accel
-  )
   model = compiled_model_cls.from_file(
       model_path,
       environment=env,
