@@ -25,23 +25,33 @@
       "name": "AVG_POOL2D",
       "opcode": 1,
       "implementation": "emitted",
-      "route": "Existing production lowering; see source audit",
-      "constraints": "Existing documented subset",
-      "spirv_validation": "pending",
-      "emulator": "pending",
+      "route": "Native AVG_POOL2D with optional fused-activation CLAMP",
+      "constraints": "INT8: static NHWC, matching affine quantization, bounded VALID windows including overlap and cropped trailing input; FP32: existing VALID/SAME subset",
+      "spirv_validation": "passed",
+      "emulator": "passed",
       "hardware": "not_qualified",
-      "fixtures": []
+      "fixtures": [
+        "AVG_POOL_INT8_-128_False",
+        "AVG_POOL_INT8_-128_True",
+        "AVG_POOL_INT8_-7_False",
+        "AVG_POOL_INT8_-7_True",
+        "AVG_POOL_INT8_127_False",
+        "AVG_POOL_INT8_127_True"
+      ]
     },
     {
       "name": "CONV2D",
       "opcode": 2,
       "implementation": "emitted",
-      "route": "Existing production lowering; see source audit",
-      "constraints": "Existing documented subset",
-      "spirv_validation": "pending",
-      "emulator": "pending",
+      "route": "Native convolution -> SINGLE_ROUND RESCALE -> CLAMP for INT8; existing FP32 path",
+      "constraints": "Existing NHWC constant-weight/bias subset and proven accumulator/rescale ranges; per-channel scaling uses one RESCALE without rounding emulation or channel splitting",
+      "spirv_validation": "passed",
+      "emulator": "passed",
       "hardware": "not_qualified",
-      "fixtures": []
+      "fixtures": [
+        "Conv2d.ChannelwiseConvolutionKeepsTheNativeFusionPattern",
+        "arm_vulkan_ml_conv2d_int8"
+      ]
     },
     {
       "name": "CONV3D",
@@ -65,12 +75,15 @@
       "name": "DEPTHWISE_CONV2D",
       "opcode": 4,
       "implementation": "emitted",
-      "route": "Existing production lowering; see source audit",
-      "constraints": "Existing documented subset",
-      "spirv_validation": "pending",
-      "emulator": "pending",
+      "route": "Native convolution -> SINGLE_ROUND RESCALE -> CLAMP for INT8; existing FP32 path",
+      "constraints": "Existing NHWC constant-weight/bias subset and proven accumulator/rescale ranges; per-channel scaling uses one RESCALE without rounding emulation or channel splitting",
+      "spirv_validation": "passed",
+      "emulator": "passed",
       "hardware": "not_qualified",
-      "fixtures": []
+      "fixtures": [
+        "Conv2d.ChannelwiseConvolutionKeepsTheNativeFusionPattern",
+        "mobilenet_v2_int8_channelwise:op4"
+      ]
     },
     {
       "name": "FFT2D",
@@ -845,12 +858,16 @@
       "name": "RESCALE",
       "opcode": 65,
       "implementation": "emitted",
-      "route": "Existing production lowering; see source audit",
-      "constraints": "Existing documented subset",
-      "spirv_validation": "pending",
-      "emulator": "pending",
+      "route": "Native SINGLE_ROUND RESCALE; per-tensor or per-channel scale32",
+      "constraints": "Static tensors; validated scales, zero points and centered input ranges; accumulator requantization keeps one INT32-to-INT8 instruction; local rounding can differ from LiteRT double rounding",
+      "spirv_validation": "passed",
+      "emulator": "passed",
       "hardware": "not_qualified",
-      "fixtures": []
+      "fixtures": [
+        "arm_vulkan_ml_conv2d_int8",
+        "SUB_INT8_EXHAUSTIVE",
+        "TRANSPOSE_CONV_INT8_0_True"
+      ]
     }
   ],
   "quantized_lowerings": [
@@ -1077,7 +1094,7 @@
         "INT8"
       ],
       "quantization": "per-tensor affine activations",
-      "constraints": "INT32 input rescaling, SUB, requantization; static broadcasting; NONE/RELU/RELU6",
+      "constraints": "INT32 input rescaling, SUB, requantization; static broadcasting; NONE/RELU/RELU6; native SINGLE_ROUND RESCALE, allowing one code of local difference from the double-rounding reference",
       "fixtures": [
         "SUB_INT8",
         "SUB_INT8_EXHAUSTIVE",
@@ -1138,7 +1155,7 @@
         "INT8"
       ],
       "quantization": "per-tensor affine activations",
-      "constraints": "INT8 NHWC; symmetric constant OHWI weights per tensor/channel; optional INT32 bias with matching scale; proven accumulator/rescale ranges; canonical SAME/VALID, stride <= kernel; NONE/RELU/RELU6",
+      "constraints": "INT8 NHWC; symmetric constant OHWI weights per tensor/channel; optional INT32 bias with matching scale; proven accumulator/rescale ranges; canonical SAME/VALID, stride <= kernel; NONE/RELU/RELU6; native SINGLE_ROUND RESCALE, allowing one code of local difference from the double-rounding reference",
       "fixtures": [
         "TRANSPOSE_CONV_INT8_0_False",
         "TRANSPOSE_CONV_INT8_0_True",

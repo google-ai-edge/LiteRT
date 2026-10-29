@@ -114,13 +114,7 @@ int main(int argc, char** argv) {
   JsonArray(manifest, multipliers);
   manifest << ",\"shifts\":";
   JsonArray(manifest, shifts);
-  std::vector<int32_t> staged;
-  for(size_t c=0;c<plan->scales.size();++c) {
-    Conv2dPlan check{};check.scales={plan->scales[c]};check.accumulator_ranges={plan->accumulator_ranges[c]};
-    staged.push_back(UsesStagedRounding(check));
-  }
-  manifest << ",\"staged_rounding_channels\":";
-  JsonArray(manifest,staged);
+  manifest << ",\"rounding_mode\":\"SINGLE_ROUND\"";
   manifest << ",\"depthwise\":" << (s.depthwise ? "true" : "false");
   manifest << ",\"constants\":[";
   for (size_t i = 0; i < constants.size(); ++i) {

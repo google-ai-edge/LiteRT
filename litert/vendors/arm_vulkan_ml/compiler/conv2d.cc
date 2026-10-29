@@ -112,64 +112,27 @@ std::optional<Conv2dPlan> AnalyzeConv2d(Conv2dSpec s, std::string& reason) {
   return plan;
 }
 
-bool UsesStagedRounding(const Conv2dPlan& plan) {
-  for (size_t c = 0; c < plan.scales.size(); ++c) {
-    auto first = plan.scales[c];
-    first.shift = std::min<int8_t>(first.shift, 31);
-    const auto range = plan.accumulator_ranges[c];
-    if (!IsScale32RangeValid(first, range.minimum, range.maximum)) return false;
-    auto minimum = ApplyScale32(range.minimum, plan.scales[c]);
-    auto maximum = ApplyScale32(range.maximum, plan.scales[c]);
-    // The composed result differs from one rounding by at most one code.
-    // Prove that the final identity rescale also meets TOSA's input bound.
-    if (!minimum || !maximum ||
-        !IsScale32RangeValid(Scale32{1 << 30, 30}, int64_t{*minimum} - 1,
-                             int64_t{*maximum} + 1)) return false;
-  }
-  return true;
-}
-
 tfsc::tosa::ResId EmitRescale(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
     const std::vector<uint32_t>& shape, int32_t output_zero_point,
     const std::vector<Scale32>& scales, const std::vector<AccumulatorRange>& ranges,
     std::vector<GraphConstant>& constants) {
-  if(shape.empty() || scales.empty() || scales.size()!=ranges.size() ||
-     (scales.size()!=1 && scales.size()!=shape.back()))return nullptr;
-  Tensor output_type(DataType::int8_t,shape),acc_type(DataType::int32_t,shape);
-  std::vector<bool> legal;
-  for(size_t i=0;i<scales.size();++i) {
-    Conv2dPlan check{};check.scales={scales[i]};check.accumulator_ranges={ranges[i]};
-    legal.push_back(UsesStagedRounding(check));
+  if (shape.empty() || scales.empty() || scales.size() != ranges.size() ||
+      (scales.size() != 1 && scales.size() != shape.back()) ||
+      output_zero_point < -128 || output_zero_point > 127) return nullptr;
+  for (size_t i = 0; i < scales.size(); ++i) {
+    if (!IsScale32RangeValid(scales[i], ranges[i].minimum, ranges[i].maximum))
+      return nullptr;
   }
-  // A bias-underflow guard can make one channel large. Keep the exact rounding
-  // path for the remaining channels instead of downgrading the entire tensor.
-  if(scales.size()>1 && !std::all_of(legal.begin(),legal.end(),[&](bool v){return v==legal[0];})) {
-    std::vector<tfsc::tosa::ResId> pieces;
-    for(size_t first=0;first<scales.size();) {
-      size_t last=first+1;while(last<scales.size() && legal[last]==legal[first])++last;
-      auto subshape=shape;subshape.back()=last-first;
-      std::vector<uint32_t> start(shape.size(),0);start.back()=first;
-      auto slice=graph.AddSliceOperator(input,graph.AddTensorConstant(Attribute(start)),
-          graph.AddTensorConstant(Attribute(subshape)),Tensor(DataType::int32_t,subshape));
-      pieces.push_back(EmitRescale(graph,slice,subshape,output_zero_point,
-          {scales.begin()+first,scales.begin()+last},{ranges.begin()+first,ranges.begin()+last},constants));
-      first=last;
-    }
-    return graph.AddConcatOperator(pieces,Attribute(static_cast<int32_t>(shape.size()-1)),output_type);
-  }
-  // Compose LiteRT's two rounding stages from base-profile SINGLE_ROUND
-  // operations when the proven accumulator range permits a shift-31 stage.
-  // Larger accumulators retain the original, range-checked single rescale.
-  const bool staged = std::all_of(legal.begin(),legal.end(),[](bool v){return v;});
+  // Preserve the native CONV2D -> RESCALE -> CLAMP pattern so the driver can
+  // fuse requantization. SINGLE_ROUND can differ from LiteRT's double-rounding
+  // reference at quantization boundaries; do not emulate it with extra tensor
+  // arithmetic or split channels with large, but legal, accumulators.
+  Tensor output_type(DataType::int8_t, shape);
   std::vector<int32_t> multipliers;
   std::vector<int8_t> shifts;
-  std::vector<int32_t> tail_shifts, correction;
   for (auto scale : scales) {
     multipliers.push_back(scale.multiplier);
-    const int first = staged ? std::min<int>(scale.shift, 31) : scale.shift;
-    shifts.push_back(first);
-    tail_shifts.push_back(scale.shift - first);
-    correction.push_back(scale.shift > first ? 1 : 0);
+    shifts.push_back(scale.shift);
   }
   auto multiplier = Constant(graph, Tensor(DataType::int32_t, {static_cast<uint32_t>(scales.size())}),
                               multipliers, constants);
@@ -177,38 +140,9 @@ tfsc::tosa::ResId EmitRescale(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
                          shifts, constants);
   auto zero = graph.AddTensorConstant(Attribute(int32_t{0}));
   auto output_zp = graph.AddTensorConstant(Attribute(static_cast<int8_t>(output_zero_point)));
-  tfsc::tosa::ResId rescale;
-  if (staged) {
-    auto value = graph.AddRescaleOperator(input, multiplier, shift, zero, zero,
-        Attribute(true), Attribute(int32_t{1}), Attribute(scales.size()>1), Attribute(false),
-        Attribute(false), acc_type);
-    std::vector<uint32_t> channel_shape(shape.size(), 1);
-    channel_shape.back() = static_cast<uint32_t>(scales.size());
-    auto adjustment = Constant(graph, Tensor(DataType::int32_t, channel_shape),
-                               correction, constants);
-    auto right_shift = Constant(graph, Tensor(DataType::int32_t, channel_shape),
-                                tail_shifts, constants);
-    auto broadcast_zero = Constant(graph, Tensor(DataType::int32_t, std::vector<uint32_t>(shape.size(),1)),
-                                   std::vector<int32_t>{0}, constants);
-    auto negative = graph.AddGreaterOperator(broadcast_zero, value,
-        Tensor(DataType::bool_t, shape));
-    auto adjusted = graph.AddSubOperator(value, adjustment, acc_type);
-    value = graph.AddSelectOperator(negative, adjusted, value, acc_type);
-    value = graph.AddArithmeticRightShiftOperator(value, right_shift,
-                                                   Attribute(true), acc_type);
-    auto identity_multiplier = Constant(graph, Tensor(DataType::int32_t, {1}),
-        std::vector<int32_t>{int32_t{1} << 30}, constants);
-    auto identity_shift = Constant(graph, Tensor(DataType::int8_t, {1}),
-        std::vector<int8_t>{30}, constants);
-    rescale = graph.AddRescaleOperator(value, identity_multiplier, identity_shift,
-        zero, output_zp, Attribute(true), Attribute(int32_t{1}), Attribute(false),
-        Attribute(false), Attribute(false), output_type);
-  } else {
-    rescale = graph.AddRescaleOperator(input, multiplier, shift, zero, output_zp,
-        Attribute(true), Attribute(int32_t{1}), Attribute(scales.size()>1), Attribute(false),
-        Attribute(false), output_type);
-  }
-  return rescale;
+  return graph.AddRescaleOperator(input, multiplier, shift, zero, output_zp,
+      Attribute(true), Attribute(int32_t{1}), Attribute(scales.size() > 1),
+      Attribute(false), Attribute(false), output_type);
 }
 
 tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph,

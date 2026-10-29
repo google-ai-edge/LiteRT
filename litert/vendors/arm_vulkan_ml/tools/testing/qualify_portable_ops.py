@@ -50,7 +50,7 @@ if not database.exists():raise SystemExit('Generate the pinned TOSA database fir
 opcodes={op['name']:op['opcode'] for op in json.loads(database.read_text())['operators']}
 expected_tosa={name:[name] for name in ['SIN','COS','POW','LOGICAL_AND','LOGICAL_OR','LOGICAL_NOT','REDUCE_ALL','REDUCE_ANY','BITWISE_XOR']}
 expected_tosa.update({'POW_POSITIVE':['POW'],'GELU':['ERF'],'REVERSE_V2':['REVERSE'],'CONV_3D':['CONV3D'],'ARG_MAX':['ARGMAX'],'NOT_EQUAL_BOOL':['LOGICAL_XOR'],'EQUAL_FP32':['EQUAL'],'BITWISE_NOT_IDIOM':['BITWISE_NOT'],'RIGHT_SHIFT':['LOGICAL_RIGHT_SHIFT'],'FLOOR_DIV':['INTDIV'],'SCATTER_ND':['SCATTER']})
-def fixture(name, shapes, outputs, constants=None, options=None, label=None, supported=True, input_types=None, output_type=None, quantization=None):
+def fixture(name, shapes, outputs, constants=None, options=None, label=None, supported=True, input_types=None, output_type=None, quantization=None, code_error=0):
  opcode_name=name;name=label or name
  m=ModelT();m.version=3;m.buffers=[BufferT()];g=SubGraphT();g.tensors=[];g.inputs=[];g.outputs=[];op=OperatorT();op.opcodeIndex=0;op.inputs=[]
  for i,s in enumerate(shapes):
@@ -89,7 +89,11 @@ def fixture(name, shapes, outputs, constants=None, options=None, label=None, sup
    f=out/f'{name}_{j}_{slot}.bin';f.write_bytes(x.tobytes());inputs.append(dict(index=slot,file=f.name))
   cases.append(dict(id=str(j),inputs=inputs))
  manifest=out/(name+'.inputs.json');manifest.write_text(json.dumps(dict(cases=cases)))
- gates=['--max_code_error=0','--mean_code_error=0'] if quantization is not None else []
+ # These paths use native SINGLE_ROUND RESCALE rather than reproducing the
+ # reference kernel's double rounding. Keep exact gates on all other routes.
+ if quantization is not None and opcode_name in ['SUB','TRANSPOSE_CONV']:
+  code_error=max(code_error,1)
+ gates=['--max_code_error='+str(code_error),'--mean_code_error='+str(code_error)] if quantization is not None else []
  command_args=[tool,'compile','--model='+str(path),'--output_dir='+str(out/name),'--report_json='+str(out/(name+'.compile.json'))]
  with (out/(name+'.log')).open('w') as log:
   r=subprocess.run(command_args,env=env,stdout=log,stderr=subprocess.STDOUT)
@@ -101,7 +105,8 @@ def fixture(name, shapes, outputs, constants=None, options=None, label=None, sup
     return
    if not report.get('complete_coverage'):failures.append(name);return
    emitted={opcode for sg in report['subgraphs'] for part in sg['partitions'] for opcode in part['tosa_opcodes']}
-   for expected in (['TABLE'] if opcode_name in ['TANH','ABS'] else ['RESIZE'] if opcode_name=='RESIZE_BILINEAR' else ['TRANSPOSE_CONV2D'] if opcode_name=='TRANSPOSE_CONV' else [] ) if quantization is not None else expected_tosa.get(name,expected_tosa.get(opcode_name,[])):
+   expected_ops=({'TANH':['TABLE'],'ABS':['TABLE'],'RESIZE_BILINEAR':['RESIZE'],'TRANSPOSE_CONV':['TRANSPOSE_CONV2D'],'AVERAGE_POOL_2D':['AVG_POOL2D']}.get(opcode_name,[]) if quantization is not None else expected_tosa.get(name,expected_tosa.get(opcode_name,[])))
+   for expected in expected_ops:
     if opcodes[expected] not in emitted:failures.append(name+':missing-'+expected);return
    for command in ['inspect','capabilities']:
     check=subprocess.run([tool,command]+(['--vulkan_validation='+args.vulkan_validation] if command!='inspect' else [])+['--model='+str(path),'--allow_emulation='+str(int(args.allow_emulation)),'--report_json='+str(out/(name+'.'+command+'.json'))],env=env,stdout=log,stderr=subprocess.STDOUT)
@@ -114,6 +119,16 @@ def fixture(name, shapes, outputs, constants=None, options=None, label=None, sup
  print(name,r.returncode,flush=True)
  if r.returncode:failures.append(name)
 if args.quantized_only:
+ # Native pooling may differ from LiteRT by one code at rounding boundaries.
+ # Include Inception's overlapping windows, unused trailing input and RELU6.
+ for zp in [-128, -7, 127]:
+  for cropped in [False, True]:
+   source=[1,6,7,2];stride=2 if cropped else 1
+   target=[1,(source[1]-3)//stride+1,(source[2]-3)//stride+1,2]
+   fixture('AVERAGE_POOL_2D',[source],[target],
+    options=('Pool2DOptions',{'padding':1,'filterHeight':3,'filterWidth':3,'strideH':stride,'strideW':stride,'fusedActivationFunction':3 if cropped else 0}),
+    label='AVG_POOL_INT8_'+str(zp)+'_'+str(cropped),input_types=[TensorType.INT8],output_type=TensorType.INT8,
+    quantization={0:([.125],[zp],0),1:([.125],[zp],0)},code_error=1)
  for scale,zp in [(.03125,-7),(.0001,0),(2.0,27)]:
   fixture('TANH',[[1,256]],[[1,256]],label='TANH_INT8_'+str(scale),input_types=[TensorType.INT8],output_type=TensorType.INT8,quantization={0:([scale],[zp],0),1:([1/128],[0],0)})
  fixture('ABS',[[1,256]],[[1,256]],label='ABS_INT8',input_types=[TensorType.INT8],output_type=TensorType.INT8,quantization={})

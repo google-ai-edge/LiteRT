@@ -1,8 +1,8 @@
 # Arm Vulkan ML direct compilation architecture
 
-**Status:** Architecture with a fixed-shape JIT implementation in this worktree; twelve pinned model artifacts pass three-image host-emulator checks
+**Status:** Architecture with a fixed-shape JIT implementation; emulator qualification and numerical limits are tracked in the regression and developer-tool documentation
 
-**Updated:** October 26, 2026
+**Updated:** October 28, 2026
 
 **Comparison baseline:** [LiteRT PR 10660][pr], revision [14b1c3309][pr-revision]
 
@@ -34,8 +34,11 @@ loader and vendor driver implement device interaction.
 
 The implemented model path uses signed int8 activations/weights and int32
 accumulation, with a limited FP32 prefix for MobileNetV3 Large. The latter needs
-both PRO-INT and PRO-FP. Base TOSA arithmetic composes quantized rounding; the
-architecture does not depend on EXT-DOUBLEROUND being available. Grouped
+both PRO-INT and PRO-FP. Accumulator requantization uses native TOSA RESCALE
+with SINGLE_ROUND to preserve driver fusion opportunities. It accepts local
+rounding differences from LiteRT's double-rounding reference instead of
+expanding them into tensor arithmetic. The architecture does not depend on
+EXT-DOUBLEROUND being available. Grouped
 convolutions can be expressed through channel slices, ordinary convolutions and
 concatenation without another conversion framework.
 
