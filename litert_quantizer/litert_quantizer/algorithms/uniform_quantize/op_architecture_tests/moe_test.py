@@ -16,6 +16,7 @@
 import pathlib
 
 from absl.testing import absltest
+from absl.testing import parameterized
 import numpy as np
 
 from litert_quantizer import qtyping
@@ -64,7 +65,8 @@ class MoeTest(op_test_utils.BaseQuantizeTest):
         buffers=self._op_test_info.test_model.buffers,
     )
 
-  def test_materialize_moe_succeeds(self):
+  @parameterized.parameters(8, 4)
+  def test_materialize_moe_succeeds(self, num_bits):
     subgraph0 = self._op_test_info.test_model.subgraphs[0]
     subgraph_op_id = 0
     moe_op = subgraph0.operators[subgraph_op_id]
@@ -75,7 +77,7 @@ class MoeTest(op_test_utils.BaseQuantizeTest):
         subgraph_op_index=subgraph_op_id,
         op_quant_config=qtyping.OpQuantizationConfig(
             weight_tensor_config=_TensorQuantConfig(
-                num_bits=8,
+                num_bits=num_bits,
                 symmetric=True,
                 granularity=qtyping.QuantGranularity.CHANNELWISE,
                 quantized_dimensions=[0, 1],

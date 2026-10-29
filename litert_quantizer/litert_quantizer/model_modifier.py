@@ -222,7 +222,7 @@ class ModelModifier:
       )
     del instructions
 
-    # Update quantized MoE custom ops to match the INT8 kernel schema.
+    # Update quantized MoE custom ops to match the INT8/INT4 kernel schema.
     quantized_model = self._update_quantized_moe_ops(quantized_model)
 
     logging.info("Serializing model...")
@@ -318,36 +318,31 @@ class ModelModifier:
       self,
       model: qtyping.ModelT,
   ) -> qtyping.ModelT:
-    """Updates quantized MoE custom ops to match the INT8 kernel schema.
+    """Updates quantized MoE custom ops to match the INT8/INT4 kernel schema.
 
     The float MoE kernel uses 7 inputs with weight_type='fp32'. When quantized,
-    the LiteRT INT8 MoE kernel requires weight_type='int8' in custom options and
-    10 inputs, interleaving scale tensors for gate, ff1, and linear weights.
+    the LiteRT MoE kernel requires weight_type='int8' or 'int4' in custom
+    options and 10 inputs, interleaving scale tensors for gate, ff1, and linear
+    weights.
 
     Args:
       model: The TFLite ModelT object to update.
 
     Returns:
       The updated TFLite ModelT object.
+
+    Raises:
+      ValueError: If a quantized MoE weight is not INT8 or INT4, or is missing
+        BlockwiseQuantization details with a non-empty block_shape.
     """
     for subgraph in model.subgraphs:
       for op in subgraph.operators:
         opcode = model.operatorCodes[op.opcodeIndex]
         custom_code = tfl_flatbuffer_utils.get_custom_code(opcode)
         # Only process quantized MoE ops with 7 inputs.
-        if (
-            custom_code != "moe"
-            or len(op.inputs) != 7
-            or subgraph.tensors[op.inputs[3]].type != qtyping.TensorType.INT8
-        ):
+        if custom_code != "moe" or len(op.inputs) != 7:
           continue
 
-        # Update weight type in custom options to INT8.
-        custom_options = flexbuffers.Loads(bytes(op.customOptions))
-        custom_options["weight_type"] = "int8"
-        op.customOptions = flexbuffers.Dumps(custom_options)
-
-        # Expand inputs to 10.
         (
             src_idx,
             top_weights_idx,
@@ -357,6 +352,26 @@ class ModelModifier:
             linear_weight_idx,
             per_expert_scale_idx,
         ) = op.inputs
+        gate_weight_type = subgraph.tensors[gate_weight_idx].type
+        if gate_weight_type == qtyping.TensorType.FLOAT32:
+          continue
+        if gate_weight_type not in (
+            qtyping.TensorType.INT8,
+            qtyping.TensorType.INT4,
+        ):
+          raise ValueError(
+              "Quantized MoE weights must be INT8 or INT4, got"
+              f" {tfl_flatbuffer_utils.TENSOR_CODE_TO_TYPE[gate_weight_type]}."
+          )
+
+        # Update weight type in custom options to INT8 or INT4.
+        custom_options = flexbuffers.Loads(bytes(op.customOptions))
+        custom_options["weight_type"] = (
+            "int4" if gate_weight_type == qtyping.TensorType.INT4 else "int8"
+        )
+        op.customOptions = flexbuffers.Dumps(custom_options)
+
+        # Expand inputs to 10.
         gate_scale_idx = _get_blockwise_scale_tensor_idx(
             subgraph, gate_weight_idx
         )

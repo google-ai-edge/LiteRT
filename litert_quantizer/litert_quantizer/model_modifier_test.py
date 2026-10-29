@@ -334,15 +334,17 @@ class ModelModifierTestMoe(BaseModelModifierTest):
       self,
       tensor_idx: int,
       scale_tensor_idx: int,
+      tensor_type: qtyping.TensorType,
   ) -> None:
-    """Configures a tensor as INT8 with BlockwiseQuantization scale details.
+    """Configures a tensor with BlockwiseQuantization scale details.
 
     Args:
       tensor_idx: The index of the tensor to configure.
       scale_tensor_idx: The index of the scale tensor.
+      tensor_type: The quantized type of the tensor.
     """
     tensor = self._model.subgraphs[self._MOE_SUBGRAPH_INDEX].tensors[tensor_idx]
-    tensor.type = qtyping.TensorType.INT8
+    tensor.type = tensor_type
     tensor.quantization = qtyping.QuantizationParametersT()
     tensor.quantization.detailsType = (
         qtyping.QuantizationDetails.BlockwiseQuantization
@@ -353,10 +355,22 @@ class ModelModifierTestMoe(BaseModelModifierTest):
     blockwise_params.blockShape = [1]
     tensor.quantization.details = blockwise_params
 
-  def test_update_quantized_moe_ops(self):
+  @parameterized.named_parameters(
+      dict(
+          testcase_name='int8',
+          tensor_type=qtyping.TensorType.INT8,
+          expected_weight_type='int8',
+      ),
+      dict(
+          testcase_name='int4',
+          tensor_type=qtyping.TensorType.INT4,
+          expected_weight_type='int4',
+      ),
+  )
+  def test_update_quantized_moe_ops(self, tensor_type, expected_weight_type):
     subgraph = self._model.subgraphs[self._MOE_SUBGRAPH_INDEX]
     op = subgraph.operators[self._MOE_OP_INDEX]
-    # Mark weights as INT8 with BlockwiseQuantization scale details.
+    # Mark weights with BlockwiseQuantization scale details.
     (
         src_idx,
         top_weights_idx,
@@ -367,9 +381,13 @@ class ModelModifierTestMoe(BaseModelModifierTest):
         per_expert_scale_idx,
     ) = op.inputs
     gate_scale_idx, ff1_scale_idx, linear_scale_idx = (100, 101, 102)
-    self._set_blockwise_quantization(gate_weight_idx, gate_scale_idx)
-    self._set_blockwise_quantization(ff1_weight_idx, ff1_scale_idx)
-    self._set_blockwise_quantization(linear_weight_idx, linear_scale_idx)
+    self._set_blockwise_quantization(
+        gate_weight_idx, gate_scale_idx, tensor_type
+    )
+    self._set_blockwise_quantization(ff1_weight_idx, ff1_scale_idx, tensor_type)
+    self._set_blockwise_quantization(
+        linear_weight_idx, linear_scale_idx, tensor_type
+    )
 
     updated_model = self._model_modifier._update_quantized_moe_ops(self._model)
     updated_subgraph = updated_model.subgraphs[self._MOE_SUBGRAPH_INDEX]
@@ -377,7 +395,7 @@ class ModelModifierTestMoe(BaseModelModifierTest):
 
     with self.subTest('weight_type'):
       custom_options = flexbuffers.Loads(bytes(updated_op.customOptions))
-      self.assertEqual(custom_options['weight_type'], 'int8')
+      self.assertEqual(custom_options['weight_type'], expected_weight_type)
 
     with self.subTest('inputs'):
       self.assertEqual(
@@ -395,6 +413,28 @@ class ModelModifierTestMoe(BaseModelModifierTest):
               per_expert_scale_idx,
           ],
       )
+
+  def test_update_quantized_moe_ops_skips_float_weights(self):
+    updated_model = self._model_modifier._update_quantized_moe_ops(self._model)
+    updated_subgraph = updated_model.subgraphs[self._MOE_SUBGRAPH_INDEX]
+    updated_op = updated_subgraph.operators[self._MOE_OP_INDEX]
+
+    with self.subTest('weight_type'):
+      custom_options = flexbuffers.Loads(bytes(updated_op.customOptions))
+      self.assertEqual(custom_options['weight_type'], 'fp32')
+
+    with self.subTest('inputs'):
+      self.assertLen(updated_op.inputs, 7)
+
+  def test_update_quantized_moe_ops_unsupported_weight_type_raises_error(self):
+    subgraph = self._model.subgraphs[self._MOE_SUBGRAPH_INDEX]
+    gate_weight_idx = subgraph.operators[self._MOE_OP_INDEX].inputs[3]
+    subgraph.tensors[gate_weight_idx].type = qtyping.TensorType.INT2
+
+    with self.assertRaisesRegex(
+        ValueError, r'Quantized MoE weights must be INT8 or INT4, got INT2\.'
+    ):
+      self._model_modifier._update_quantized_moe_ops(self._model)
 
   @parameterized.named_parameters(
       dict(
