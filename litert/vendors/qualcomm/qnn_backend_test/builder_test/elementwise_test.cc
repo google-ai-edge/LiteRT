@@ -138,9 +138,6 @@ void RunBinaryTest(
 #endif
 }
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 std::vector<::qnn::OpWrapper> BuildAddForTest(
     ::qnn::TensorPool&, const std::vector<::qnn::TensorWrapperRef>& inputs,
     const std::vector<::qnn::TensorWrapperRef>& outputs) {

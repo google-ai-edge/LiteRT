@@ -27,3 +27,19 @@ target_link_libraries(qnn_test_utils
     PRIVATE
         GTest::gtest
 )
+
+# Register QnnModelTest parameters once per test executable. An object library
+# lets the CMake build compile the registration source once, then reuse it in
+# both the aggregate builder test and qnn_model_test binaries.
+add_library(qnn_model_test_instantiation OBJECT)
+
+target_sources(qnn_model_test_instantiation
+    PRIVATE
+        qnn_model_test_instantiation.cc
+)
+
+target_link_libraries(qnn_model_test_instantiation
+    PRIVATE
+        qnn_test_utils
+        GTest::gtest
+)

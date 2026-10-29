@@ -88,7 +88,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -121,7 +121,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/builders:relu_op_builder",
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -187,7 +187,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/builders:topk_op_builder",
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -229,7 +229,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -266,7 +266,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -298,7 +298,7 @@ litert_test(
     deps = [
         "//litert/vendors/qualcomm/core/builders:onehot_op_builder",
         "//litert/vendors/qualcomm/core/utils:test_main",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -331,7 +331,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/builders:pack_op_builder",
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -402,7 +402,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/builders:squeeze_op_builder",
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -435,7 +435,7 @@ litert_test(
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core/builders:splitv_op_builder",
         "//litert/vendors/qualcomm/core/utils:test_main",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -470,7 +470,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/builders:transpose_conv3d_op_builder",
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -504,7 +504,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/builders:spatial_transform_nd_op_builder",
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -540,7 +540,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -575,7 +575,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -608,7 +608,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/builders:spatial_transform_op_builder",
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -642,7 +642,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/builders:hadamard_transform_op_builder",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@com_google_absl//absl/numeric:bits",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
@@ -680,7 +680,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
@@ -716,7 +716,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@flatbuffers",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
@@ -750,7 +750,7 @@ litert_test(
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core/builders:addn_op_builder",
         "//litert/vendors/qualcomm/core/utils:test_main",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )
@@ -783,7 +783,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/builders:local_response_norm_op_builder",
         "//litert/vendors/qualcomm/core/utils:test_main",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
-        "//litert/vendors/qualcomm/qnn_backend_test:test_utils",
+        "//litert/vendors/qualcomm/qnn_backend_test:qnn_model_test_instantiation",
         "@qairt//:qnn_lib_headers",
     ] + _QNN_DEPS,
 )

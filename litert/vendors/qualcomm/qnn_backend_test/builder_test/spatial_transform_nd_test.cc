@@ -17,9 +17,6 @@
 namespace litert::qnn {
 namespace {
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 TEST_P(QnnModelTest, BatchToSpaceNdUint8) {
   const std::vector<std::uint32_t> kInputDims{2, 2, 1, 1};
   const std::vector<std::uint32_t> kOutputDims{1, 2, 2, 1};

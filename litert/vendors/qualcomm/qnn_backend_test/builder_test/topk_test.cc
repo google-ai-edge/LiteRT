@@ -17,9 +17,6 @@ namespace {
 // TODO (chunhsue-qti): The following param tests will be exactly the same when
 // running on arm64 device since qnn manager will use online SoC info
 // automatically. Maybe we can find out a way to skip them.
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 TEST_P(QnnModelTest, SingleTopK) {
   const std::vector<std::uint32_t> inputDims{1, 5};
   const uint32_t k_value = 3;

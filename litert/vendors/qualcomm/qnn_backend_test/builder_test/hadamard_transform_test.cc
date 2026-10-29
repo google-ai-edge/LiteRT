@@ -19,9 +19,6 @@ using ::testing::ElementsAreArray;
 
 namespace litert::qnn {
 namespace {
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 TEST_P(QnnModelTest, HadamardTransform_INT16) {
   constexpr std::uint32_t kDim = 256U;
   const std::vector<std::uint32_t> kIODims{1, 1, 1, kDim};

@@ -21,9 +21,6 @@ namespace {
 using testing::FloatNear;
 using testing::Pointwise;
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 // Returns the value of the QNN Pack op's "axis" scalar param, or std::nullopt
 // if the op is not a Pack with an axis param.
 std::optional<std::uint32_t> GetPackAxisParam(const ::qnn::OpWrapper& op) {

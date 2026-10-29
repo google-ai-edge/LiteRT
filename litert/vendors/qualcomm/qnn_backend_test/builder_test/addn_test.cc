@@ -18,9 +18,6 @@ using testing::ElementsAre;  // NOLINT
 using testing::FloatNear;    // NOLINT
 using testing::Pointwise;    // NOLINT
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 TEST_P(QnnModelTest, AddNThreeInputs) {
   const std::vector<std::uint32_t> kDims{1, 2, 2, 1};
 

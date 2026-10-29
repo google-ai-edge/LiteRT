@@ -16,9 +16,6 @@
 using testing::Pointwise;
 namespace litert::qnn {
 namespace {
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 TEST_P(QnnModelTest, FullyConnectedA16W2Sanity) {
   constexpr float kScale = 0.001;
 
