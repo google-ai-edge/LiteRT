@@ -72,3 +72,18 @@ A ready-to-edit copy lives at
 For the fully-supported OpenEmbedded / Yocto Linux path with eSDK setup, see
 [HTP_INSTRUCTIONS.md](./HTP_INSTRUCTIONS.md) — the `linux-aarch64-oe-gcc11.2` preset
 wraps [../toolchain/linux_aarch64_oe_gcc11_2.toolchain.cmake](../toolchain/linux_aarch64_oe_gcc11_2.toolchain.cmake).
+
+When an eSDK provides more than one target ABI, configure the compiler and
+sysroot explicitly instead of relying on compiler discovery. For example:
+
+```bash
+cmake --preset linux-aarch64-oe-gcc11.2 \
+  -DCMAKE_C_COMPILER=/opt/sdk/.../aarch64-oe-linux-gcc \
+  -DCMAKE_CXX_COMPILER=/opt/sdk/.../aarch64-oe-linux-g++ \
+  -DCMAKE_SYSROOT=/opt/sdk/.../sysroots/armv8a-oe-linux
+```
+
+The IQ-8275 eSDK uses the `aarch64-qcom-linux` triple. Other glibc eSDKs may
+use a different triple, such as `aarch64-oe-linux`. The compiler and sysroot
+must match the target rootfs ABI. The `linux-aarch64-oe-gcc11.2` preset does
+not auto-select musl toolchains.
