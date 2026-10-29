@@ -331,6 +331,15 @@ build:release_cpu_linux --incompatible_enable_cc_toolchain_resolution
 # Linux ARM64 specific options
 build:linux_arm64 --copt="-mtune=generic" --copt="-march=armv8-a" --copt="-O3"
 
+# Cross-compile for Linux aarch64 from a Linux x86_64 host with the hermetic
+# rules_ml_toolchain clang + aarch64 sysroot. --cpu is still needed for
+# dependencies (e.g. XNNPACK) that select on the legacy cpu value.
+build:cross_compile_linux_arm64 --platforms=//platforms:linux_aarch64
+build:cross_compile_linux_arm64 --extra_toolchains=@rules_ml_toolchain//cc:linux_x86_64_linux_aarch64
+build:cross_compile_linux_arm64 --cpu=aarch64
+build:cross_compile_linux_arm64 --host_cpu=k8
+build:cross_compile_linux_arm64 --define=tensorflow_mkldnn_contraction_kernel=0
+
 # Windows pthreadpool configuration
 # On Windows, set /std:c11 and /experimental:c11atomics for pthreadpool.
 build:windows --conlyopt=/std:c11
