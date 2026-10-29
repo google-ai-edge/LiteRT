@@ -15,8 +15,6 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 
-#include <sys/resource.h>
-
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
