@@ -1805,8 +1805,9 @@ TEST(GqaTransformationTest, GqaDecodePositiveMatch) {
   sm_out.SetName("gqa/probs");
   SoftmaxOptions sm_opts{};
   sm_opts.beta = 1.0f;
-  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflSoftmax, {&sm_in},
-                     {&sm_out}, sm_opts);
+  auto& softmax =
+      BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflSoftmax, {&sm_in},
+                         {&sm_out}, sm_opts);
 
   auto& b0 = subgraph.EmplaceTensor();
   b0.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
@@ -1890,6 +1891,8 @@ TEST(GqaTransformationTest, GqaDecodePositiveMatch) {
   AttachOutput(&final_out, final_reshape);
 
   EXPECT_EQ(GqaTransformation(ctx, &builder_impl, &final_reshape),
+            kLiteRtStatusPatternNoMatch);
+  EXPECT_EQ(GqaTransformation(ctx, &builder_impl, &softmax),
             kLiteRtStatusOk);
   builder_impl.ApplyChanges(&subgraph);
 

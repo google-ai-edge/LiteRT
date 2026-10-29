@@ -52,7 +52,6 @@ using litert::compiler::GetOptionsAs;
 using litert::compiler::m_AllOf;
 using litert::compiler::m_Any;
 using litert::compiler::m_CaptureOrSameAs;
-using litert::compiler::m_Custom;
 using litert::compiler::m_HasOneUse;
 using litert::compiler::m_HasUsers;
 using litert::compiler::m_Op;
@@ -71,6 +70,33 @@ using litert::compiler::Tensor;
 bool HasDims(const Tensor& t, absl::Span<const int32_t> expected) {
   auto type = t.RankedTensorType();
   return type && type->Layout().Dimensions() == expected;
+}
+
+bool HasPerm(const Op& transpose, absl::Span<const int32_t> expected) {
+  if (transpose.Code() != kLiteRtOpCodeTflTranspose ||
+      transpose.Inputs().size() != 2) {
+    return false;
+  }
+  const Tensor perm = transpose.Inputs()[1];
+  if (!perm.IsConstant()) return false;
+  auto perm_data = perm.WeightsData<int32_t>();
+  return perm_data && *perm_data == expected;
+}
+
+std::optional<Op> SingleUser(const Tensor& tensor, LiteRtOpCode code,
+                             LiteRtParamIndex input_index) {
+  auto uses = tensor.Uses();
+  if (uses.size() != 1 || uses[0].user.Code() != code ||
+      uses[0].user_arg_ind != input_index) {
+    return std::nullopt;
+  }
+  return uses[0].user;
+}
+
+std::optional<Tensor> SingleOutput(const Op& op) {
+  auto outputs = op.Outputs();
+  if (outputs.size() != 1) return std::nullopt;
+  return outputs[0];
 }
 
 struct PlainBatchMatmulMatch {
@@ -145,33 +171,6 @@ std::optional<UnwrappedReshape> MatchReshape(const Tensor& out,
   return UnwrappedReshape{input, reshape->Get()};
 }
 
-struct UnwrappedPrefillTail {
-  Tensor input;
-  LiteRtOp reshape = nullptr;
-  LiteRtOp transpose = nullptr;
-};
-
-std::optional<UnwrappedPrefillTail> MatchPrefillTail(const Tensor& out) {
-  Op transpose(out.ctx(), nullptr);
-  Tensor reshape_out(out.ctx(), nullptr);
-  auto perm_matcher = m_Custom([](const Tensor& perm) {
-    if (!perm.IsConstant()) return false;
-    auto perm_data = perm.WeightsData<int32_t>();
-    return perm_data &&
-           *perm_data == absl::Span<const int32_t>{0, 2, 1, 3};
-  });
-  auto matcher = m_AllOf(
-      m_HasOneUse(),
-      m_CaptureOrSameAs(
-          &transpose,
-          m_Op<kLiteRtOpCodeTflTranspose>(
-              m_CaptureOrSameAs(&reshape_out, m_Any()), perm_matcher)));
-  if (!Match(out, matcher)) return std::nullopt;
-  auto reshape = MatchReshape(reshape_out, 1);
-  if (!reshape) return std::nullopt;
-  return UnwrappedPrefillTail{reshape->input, reshape->op, transpose.Get()};
-}
-
 struct QkConcatMatch {
   Tensor lhs;
   Tensor rhs;
@@ -212,6 +211,65 @@ std::optional<int32_t> SliceLastAxisBegin(const Op& slice) {
     return std::nullopt;
   }
   return (*begin_data)[3];
+}
+
+struct SliceBatchMatmulMatch {
+  Op slice;
+  Tensor slice_out;
+  PlainBatchMatmulMatch batch_matmul;
+  Tensor batch_matmul_out;
+  int32_t begin = 0;
+};
+
+std::optional<SliceBatchMatmulMatch> MatchSliceBatchMatmul(
+    const Tensor::TensorUse& softmax_use) {
+  if (softmax_use.user_arg_ind != 0) return std::nullopt;
+  auto begin = SliceLastAxisBegin(softmax_use.user);
+  if (!begin) return std::nullopt;
+  auto slice_out = SingleOutput(softmax_use.user);
+  if (!slice_out) return std::nullopt;
+  auto batch_matmul_op =
+      SingleUser(*slice_out, kLiteRtOpCodeTflBatchMatmul, 0);
+  if (!batch_matmul_op) return std::nullopt;
+  auto batch_matmul_out = SingleOutput(*batch_matmul_op);
+  if (!batch_matmul_out) return std::nullopt;
+  auto batch_matmul = MatchPlainBatchMatmul(*batch_matmul_out);
+  if (!batch_matmul || batch_matmul->lhs != *slice_out) {
+    return std::nullopt;
+  }
+  return SliceBatchMatmulMatch{softmax_use.user, *slice_out, *batch_matmul,
+                               *batch_matmul_out, *begin};
+}
+
+struct OutputTailMatch {
+  Op final_reshape;
+  Tensor final_out;
+  LiteRtOp reshape = nullptr;
+  LiteRtOp transpose = nullptr;
+};
+
+std::optional<OutputTailMatch> MatchOutputTail(const Tensor& attn_out) {
+  auto first_reshape =
+      SingleUser(attn_out, kLiteRtOpCodeTflReshape, /*input_index=*/0);
+  if (!first_reshape) return std::nullopt;
+  auto first_out = SingleOutput(*first_reshape);
+  if (!first_out) return std::nullopt;
+
+  auto transpose =
+      SingleUser(*first_out, kLiteRtOpCodeTflTranspose, /*input_index=*/0);
+  if (!transpose || !HasPerm(*transpose, {0, 2, 1, 3})) {
+    return OutputTailMatch{*first_reshape, *first_out};
+  }
+
+  auto transpose_out = SingleOutput(*transpose);
+  if (!transpose_out) return std::nullopt;
+  auto final_reshape =
+      SingleUser(*transpose_out, kLiteRtOpCodeTflReshape, /*input_index=*/0);
+  if (!final_reshape) return std::nullopt;
+  auto final_out = SingleOutput(*final_reshape);
+  if (!final_out) return std::nullopt;
+  return OutputTailMatch{*final_reshape, *final_out, first_reshape->Get(),
+                         transpose->Get()};
 }
 
 struct GqaMatch {
@@ -255,15 +313,74 @@ struct GqaMatch {
 
 std::optional<GqaMatch> MatchGqa(const LiteRtCompilerContext* ctx,
                                  LiteRtOp root_ptr) {
-  Op final_reshape(ctx, root_ptr);
-  if (final_reshape.Code() != kLiteRtOpCodeTflReshape ||
-      final_reshape.Inputs().empty() || final_reshape.Outputs().size() != 1) {
+  Op softmax(ctx, root_ptr);
+  if (softmax.Code() != kLiteRtOpCodeTflSoftmax ||
+      softmax.Inputs().size() != 1 || softmax.Outputs().size() != 1) {
+    return std::nullopt;
+  }
+  auto softmax_opts = GetOptionsAs<SoftmaxOptions>(softmax.ctx(), softmax.Get());
+  if (!softmax_opts) return std::nullopt;
+
+  GqaMatch m;
+  Tensor sm_in = softmax.Inputs()[0];
+  const Tensor sm_out = softmax.Outputs()[0];
+  m.softmax_beta = softmax_opts->beta;
+  m.softmax_in = sm_in;
+  m.softmax_out = sm_out;
+  m.orphans.push_back(softmax.Get());
+
+  auto softmax_uses = sm_out.Uses();
+  if (softmax_uses.size() != 2) return std::nullopt;
+  auto v_branch0 = MatchSliceBatchMatmul(softmax_uses[0]);
+  auto v_branch1 = MatchSliceBatchMatmul(softmax_uses[1]);
+  if (!v_branch0 || !v_branch1) return std::nullopt;
+  if (v_branch0->begin != 0 && v_branch1->begin == 0) {
+    std::swap(v_branch0, v_branch1);
+  }
+  if (v_branch0->begin != 0) return std::nullopt;
+
+  auto slice_cache_type = v_branch0->slice_out.RankedTensorType();
+  auto slice_curr_type = v_branch1->slice_out.RankedTensorType();
+  if (!slice_cache_type || !slice_curr_type) return std::nullopt;
+  const auto slice_cache_dims = slice_cache_type->Layout().Dimensions();
+  const auto slice_curr_dims = slice_curr_type->Layout().Dimensions();
+  if (slice_cache_dims.size() != 4 || slice_curr_dims.size() != 4) {
+    return std::nullopt;
+  }
+  m.l_cache = slice_cache_dims[3];
+  m.l_curr = slice_curr_dims[3];
+  m.l_total = m.l_cache + m.l_curr;
+  if (v_branch1->begin != m.l_cache || m.l_cache <= 0 || m.l_curr <= 0) {
     return std::nullopt;
   }
 
-  GqaMatch m;
-  m.final_reshape = final_reshape;
-  m.final_out = final_reshape.Outputs()[0];
+  auto v_cache_uses = v_branch0->batch_matmul_out.Uses();
+  auto v_curr_uses = v_branch1->batch_matmul_out.Uses();
+  if (v_cache_uses.size() != 1 || v_curr_uses.size() != 1 ||
+      v_cache_uses[0].user.Get() != v_curr_uses[0].user.Get()) {
+    return std::nullopt;
+  }
+  auto attn_out_or = SingleOutput(v_cache_uses[0].user);
+  if (!attn_out_or) return std::nullopt;
+  Tensor attn_out = *attn_out_or;
+  auto add2 = MatchPlainAdd(attn_out);
+  if (!add2) return std::nullopt;
+  const bool inputs_match =
+      (add2->lhs == v_branch0->batch_matmul_out &&
+       add2->rhs == v_branch1->batch_matmul_out) ||
+      (add2->lhs == v_branch1->batch_matmul_out &&
+       add2->rhs == v_branch0->batch_matmul_out);
+  if (!inputs_match) return std::nullopt;
+
+  auto output_tail = MatchOutputTail(attn_out);
+  if (!output_tail) return std::nullopt;
+  m.final_reshape = output_tail->final_reshape;
+  m.final_out = output_tail->final_out;
+  if (output_tail->transpose != nullptr) {
+    m.orphans.push_back(output_tail->transpose);
+    m.orphans.push_back(output_tail->reshape);
+  }
+
   auto final_out_type = m.final_out.RankedTensorType();
   if (!final_out_type) return std::nullopt;
   const auto final_out_dims = final_out_type->Layout().Dimensions();
@@ -278,24 +395,7 @@ std::optional<GqaMatch> MatchGqa(const LiteRtCompilerContext* ctx,
     return std::nullopt;
   }
 
-  Tensor attn_out = final_reshape.Inputs()[0];
-  auto r_in_type = attn_out.RankedTensorType();
-  if (!r_in_type) return std::nullopt;
-  const auto r_in_dims = r_in_type->Layout().Dimensions();
-  if (r_in_dims.size() != 4 || r_in_dims[0] != 1) {
-    return std::nullopt;
-  }
-
-  // Case 1: Prefill tail Reshape([1, H_kv, G*S, D_v] -> [1, H_q, S, D_v]) ->
-  // Transpose(0, 2, 1, 3) -> Reshape([1, S, H_q*D_v])
-  if (auto tail = MatchPrefillTail(attn_out)) {
-    m.orphans.push_back(tail->transpose);
-    m.orphans.push_back(tail->reshape);
-    attn_out = tail->input;
-  }
-
   m.attn_out = attn_out;
-  if (attn_out.Uses().size() != 1) return std::nullopt;
   auto attn_type = attn_out.RankedTensorType();
   if (!attn_type) return std::nullopt;
   const auto attn_dims = attn_type->Layout().Dimensions();
@@ -312,97 +412,24 @@ std::optional<GqaMatch> MatchGqa(const LiteRtCompilerContext* ctx,
     return std::nullopt;
   }
 
-  // Match add2 (direct Add)
-  auto add2 = MatchPlainAdd(attn_out);
-  if (!add2) return std::nullopt;
   m.orphans.push_back(add2->op);
-
-  Tensor v_out0 = add2->lhs;
-  Tensor v_out1 = add2->rhs;
-  if (v_out0.Uses().size() != 1 || v_out1.Uses().size() != 1) {
-    return std::nullopt;
-  }
-  auto batch_matmul_v0_or = MatchPlainBatchMatmul(v_out0);
-  auto batch_matmul_v1_or = MatchPlainBatchMatmul(v_out1);
-  if (!batch_matmul_v0_or || !batch_matmul_v1_or) return std::nullopt;
-  PlainBatchMatmulMatch batch_matmul_v0 = *batch_matmul_v0_or;
-  PlainBatchMatmulMatch batch_matmul_v1 = *batch_matmul_v1_or;
-
-  Tensor sl_out0 = batch_matmul_v0.lhs;
-  Tensor sl_out1 = batch_matmul_v1.lhs;
-  if (sl_out0.Uses().size() != 1 || sl_out1.Uses().size() != 1) {
-    return std::nullopt;
-  }
-  auto sl0_or = sl_out0.GetDefiningOp();
-  auto sl1_or = sl_out1.GetDefiningOp();
-  if (!sl0_or || !sl1_or) return std::nullopt;
-  auto b0 = SliceLastAxisBegin(*sl0_or);
-  auto b1 = SliceLastAxisBegin(*sl1_or);
-  if (!b0 || !b1) return std::nullopt;
-  if (*b0 != 0 && *b1 == 0) {
-    std::swap(batch_matmul_v0, batch_matmul_v1);
-    std::swap(v_out0, v_out1);
-    std::swap(sl_out0, sl_out1);
-    std::swap(sl0_or, sl1_or);
-    std::swap(b0, b1);
-  }
-  if (*b0 != 0) return std::nullopt;
-
-  m.orphans.push_back(batch_matmul_v0.op);
-  m.orphans.push_back(batch_matmul_v1.op);
-  m.orphans.push_back(sl0_or->Get());
-  m.orphans.push_back(sl1_or->Get());
-
-  m.batch_matmul_v_cache_out = v_out0;
-  m.batch_matmul_v_curr_out = v_out1;
-  m.slice_cache_out = sl_out0;
-  m.slice_curr_out = sl_out1;
-  m.v_cache = batch_matmul_v0.rhs;
-  m.v_curr = batch_matmul_v1.rhs;
-
-  auto sl0_type = sl_out0.RankedTensorType();
-  auto sl1_type = sl_out1.RankedTensorType();
-  if (!sl0_type || !sl1_type) return std::nullopt;
-  const auto sl0_dims = sl0_type->Layout().Dimensions();
-  const auto sl1_dims = sl1_type->Layout().Dimensions();
-  if (sl0_dims.size() != 4 || sl1_dims.size() != 4) return std::nullopt;
-  m.l_cache = sl0_dims[3];
-  m.l_curr = sl1_dims[3];
-  m.l_total = m.l_cache + m.l_curr;
-  if (*b1 != m.l_cache || m.l_cache <= 0 || m.l_curr <= 0) return std::nullopt;
-
+  m.orphans.push_back(v_branch0->batch_matmul.op);
+  m.orphans.push_back(v_branch1->batch_matmul.op);
+  m.orphans.push_back(v_branch0->slice.Get());
+  m.orphans.push_back(v_branch1->slice.Get());
+  m.batch_matmul_v_cache_out = v_branch0->batch_matmul_out;
+  m.batch_matmul_v_curr_out = v_branch1->batch_matmul_out;
+  m.slice_cache_out = v_branch0->slice_out;
+  m.slice_curr_out = v_branch1->slice_out;
+  m.v_cache = v_branch0->batch_matmul.rhs;
+  m.v_curr = v_branch1->batch_matmul.rhs;
   if (!HasDims(m.v_cache, {1, m.h_kv, m.l_cache, m.d_v}) ||
       !HasDims(m.v_curr, {1, m.h_kv, m.l_curr, m.d_v})) {
     return std::nullopt;
   }
-
-  m.batch_matmul_v_asym = batch_matmul_v0.asymmetric_quantize_input;
-
-  // Softmax
-  const Tensor sm_out = sl0_or->Inputs()[0];
-  Op softmax(ctx, nullptr);
-  Tensor sm_in(ctx, nullptr);
-  auto softmax_matcher = m_AllOf(
-      m_HasUsers(2),
-      m_CaptureOrSameAs(
-          &softmax,
-          m_AllOf(
-              m_Options<SoftmaxOptions>([](const SoftmaxOptions&) {
-                return true;
-              }),
-              m_Op<kLiteRtOpCodeTflSoftmax>(
-                  m_CaptureOrSameAs(&sm_in, m_Any())))));
-  if (sm_out != sl1_or->Inputs()[0] || !Match(sm_out, softmax_matcher)) {
-    return std::nullopt;
-  }
-  auto sm_opts = GetOptionsAs<SoftmaxOptions>(softmax.ctx(), softmax.Get());
-  if (!sm_opts) return std::nullopt;
-  m.softmax_beta = sm_opts->beta;
-  m.softmax_out = sm_out;
-  m.orphans.push_back(softmax.Get());
-
+  m.batch_matmul_v_asym =
+      v_branch0->batch_matmul.asymmetric_quantize_input;
   if (sm_in.Uses().size() != 1) return std::nullopt;
-  m.softmax_in = sm_in;
 
   // Unwrap optional reshape_mask1 before Softmax
   if (auto reshape = MatchReshape(sm_in, 1)) {
