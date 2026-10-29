@@ -291,17 +291,12 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
   // Whether next_command_buffers_ is ready to use. It's set to true when
   // all next_command_buffers_ are prepared.
   bool next_command_buffers_ready_ = false;
+  // Prepares next_command_buffers_ in parallel with the current Dispatch()
+  // call. It is only accessed by the thread calling Dispatch(), which joins it
+  // before touching next_command_buffers_ again, so no synchronization is
+  // needed; see SharedWebGpuEnv for how a Dispatch() by a different context on
+  // the same environment is handled.
   std::unique_ptr<std::thread> next_command_buffers_thread_;
-
-  // Static member var indicating the last context which built the command
-  // buffers. It's used to invalidate the next_command_buffers_ if it is not
-  // the same as the current context. For example, during multiple conversions
-  // with a LLM, prefill inference starts after decode and it would have command
-  // buffers prepared by the previous prefill inference which must be
-  // invalidated since the gpu resource binding would be changed.
-  // No synchronization is needed as the inference context is supposed to be
-  // running on a single thread.
-  static GpuInferenceContextWebGpu* last_ctx_;
 };
 
 class GpuTensorWrapperWebGpu : public GpuTensorWrapper {
