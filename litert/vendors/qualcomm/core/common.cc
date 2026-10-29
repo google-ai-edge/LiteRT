@@ -625,6 +625,15 @@ absl::string_view Options::GetDlcDir() const { return dlc_dir_; }
 
 void Options::SetDlcDir(absl::string_view dlc_dir) { dlc_dir_ = dlc_dir; }
 
+absl::string_view Options::GetQualcommQuantOverrides() const {
+  return qualcomm_quant_overrides_;
+}
+
+void Options::SetQualcommQuantOverrides(
+    absl::string_view quantization_overrides) {
+  qualcomm_quant_overrides_ = quantization_overrides;
+}
+
 absl::string_view Options::GetGraphTransform() const {
   return graph_transform_;
 }
@@ -837,6 +846,7 @@ std::string Options::Dump() const {
   absl::StrAppend(&out, "[IR]\n");
   field(2, "IrJsonDir", ir_json_dir_);
   field(2, "DlcDir", dlc_dir_);
+  field(2, "QualcommQuantOverrides", qualcomm_quant_overrides_);
 
   // --- SAVER ---
   absl::StrAppend(&out, "[SAVER]\n");

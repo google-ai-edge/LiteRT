@@ -543,6 +543,9 @@ ABSL_FLAG(std::string, qualcomm_graph_transform, "",
           "Comma-separated list of graph transform options to apply, e.g. "
           "\"option1,option2\".");
 
+ABSL_FLAG(std::string, qualcomm_quant_overrides, "",
+          "Path to a quantization overrides JSON file.");
+
 ABSL_FLAG(uint32_t, qualcomm_vtcm_size, 0,
           "The vtcm size of the target device. If this option is set to 0, the "
           "max size of vtcm size will be used.");
@@ -1056,6 +1059,12 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const std::string graph_transform =
       absl::GetFlag(FLAGS_qualcomm_graph_transform);
   opts.SetGraphTransform(graph_transform);
+
+  const std::string quant_overrides =
+      absl::GetFlag(FLAGS_qualcomm_quant_overrides);
+  if (!quant_overrides.empty()) {
+    opts.SetQualcommQuantOverrides(quant_overrides);
+  }
 
   const auto vtcm_size = absl::GetFlag(FLAGS_qualcomm_vtcm_size);
   opts.SetVtcmSize(vtcm_size);

@@ -359,6 +359,7 @@ litert_lib(
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
         "@qairt//:qnn_lib_headers",
+        "@com_github_nlohmann_json//:json",
     ],
 )
 
