@@ -22,8 +22,11 @@ limitations under the License.
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/flags/commandlineflag.h"  // from @com_google_absl
+#include "absl/flags/reflection.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -123,46 +126,69 @@ Options BenchmarkLiteRtModel::CreateCompiledModelOptions(
       GetRequestedHardwareAccelerators(params);
 
   if (use_npu) {
-    // Set default QNN options
-    LITERT_ASSIGN_OR_ABORT(
-        auto& qnn_opts,
-        compilation_options.GetOptions<litert::qualcomm::QualcommOptions>());
-    qnn_opts.SetLogLevel(litert::qualcomm::QualcommOptions::LogLevel::kOff);
-    qnn_opts.SetHtpPerformanceMode(
-        litert::qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
-    qnn_opts.SetUseFoldReLU(false);
-    qnn_opts.SetUseConvHMX(true);
-    qnn_opts.SetOptimizationLevel(
-        litert::qualcomm::QualcommOptions::OptimizationLevel::
-            kOptimizeForInferenceO3);
-
-    // Set default MTK options
-    LITERT_ASSIGN_OR_ABORT(
-        auto& mtk_opts,
-        compilation_options.GetOptions<litert::mediatek::MediatekOptions>());
-    if (mediatek_nerun_pilot_version == "version9") {
-      mtk_opts.SetNeronSDKVersionType(
-          litert::mediatek::MediatekOptions::NeronSDKVersion::kVersion9);
-    }
-    mtk_opts.SetPerformanceMode(
-        litert::mediatek::MediatekOptions::PerformanceMode::kTurboBoost);
-    mtk_opts.SetEnableL1CacheOptimizations(true);
-
-    // Google Tensor options
-    LITERT_ASSIGN_OR_ABORT(
-        auto& google_tensor_opts,
-        compilation_options
-            .GetOptions<litert::google_tensor::GoogleTensorOptions>());
-    google_tensor_opts.SetPerformanceMode(
-        google_tensor::GoogleTensorOptions::PerformanceMode::kBurst);
-
-    // Parser user provided NPU options
+    // Parse user-provided NPU options first, then apply benchmark-specific
+    // defaults for any option whose flag was not explicitly modified.
     auto status = tools::OptionsParserRegistry::GetInstance().RunAllParsers(
         compilation_options);
     if (!status) {
       LITERT_LOG(LITERT_ERROR, "Failed to run options parsers: %s",
                  status.Error().Message().c_str());
       std::abort();
+    }
+
+    auto is_flag_modified = [](absl::string_view name) {
+      const absl::CommandLineFlag* flag = absl::FindCommandLineFlag(name);
+      return flag != nullptr && flag->CurrentValue() != flag->DefaultValue();
+    };
+
+    // Set default QNN options
+    LITERT_ASSIGN_OR_ABORT(
+        auto& qnn_opts,
+        compilation_options.GetOptions<litert::qualcomm::QualcommOptions>());
+    if (!is_flag_modified("qualcomm_log_level")) {
+      qnn_opts.SetLogLevel(litert::qualcomm::QualcommOptions::LogLevel::kOff);
+    }
+    if (!is_flag_modified("qualcomm_htp_performance_mode")) {
+      qnn_opts.SetHtpPerformanceMode(
+          litert::qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
+    }
+    if (!is_flag_modified("qualcomm_use_fold_relu")) {
+      qnn_opts.SetUseFoldReLU(false);
+    }
+    if (!is_flag_modified("qualcomm_use_conv_hmx")) {
+      qnn_opts.SetUseConvHMX(true);
+    }
+    if (!is_flag_modified("qualcomm_optimization_level")) {
+      qnn_opts.SetOptimizationLevel(
+          litert::qualcomm::QualcommOptions::OptimizationLevel::
+              kOptimizeForInferenceO3);
+    }
+
+    // Set default MTK options
+    LITERT_ASSIGN_OR_ABORT(
+        auto& mtk_opts,
+        compilation_options.GetOptions<litert::mediatek::MediatekOptions>());
+    if (mediatek_nerun_pilot_version == "version9" &&
+        !is_flag_modified("mediatek_sdk_version_type")) {
+      mtk_opts.SetNeronSDKVersionType(
+          litert::mediatek::MediatekOptions::NeronSDKVersion::kVersion9);
+    }
+    if (!is_flag_modified("mediatek_performance_mode_type")) {
+      mtk_opts.SetPerformanceMode(
+          litert::mediatek::MediatekOptions::PerformanceMode::kTurboBoost);
+    }
+    if (!is_flag_modified("mediatek_enable_l1_cache_optimizations")) {
+      mtk_opts.SetEnableL1CacheOptimizations(true);
+    }
+
+    // Google Tensor options
+    LITERT_ASSIGN_OR_ABORT(
+        auto& google_tensor_opts,
+        compilation_options
+            .GetOptions<litert::google_tensor::GoogleTensorOptions>());
+    if (!is_flag_modified("google_tensor_performance_mode")) {
+      google_tensor_opts.SetPerformanceMode(
+          google_tensor::GoogleTensorOptions::PerformanceMode::kBurst);
     }
   }
 
