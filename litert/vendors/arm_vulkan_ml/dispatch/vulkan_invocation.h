@@ -14,19 +14,32 @@
 
 #ifndef ODML_LITERT_LITERT_VENDORS_ARM_VULKAN_ML_DISPATCH_VULKAN_INVOCATION_H_
 #define ODML_LITERT_LITERT_VENDORS_ARM_VULKAN_ML_DISPATCH_VULKAN_INVOCATION_H_
+#include "vulkan/vulkan.h"
+#include "litert/vendors/arm_vulkan_ml/dispatch/external_buffer.h"
 #include <memory>
 #include <string>
 #include <vector>
 #include "litert/vendors/arm_vulkan_ml/common/arm_vulkan_ml_jit_executable.h"
 namespace litert::arm_vulkan_ml {
-// Synchronous host-buffer execution. An invocation owns its Vulkan device and
+// Synchronous execution with host staging or retained external-memory bindings. An invocation owns its Vulkan device and
 // queue, avoiding shared queue synchronization and function-pointer lifetime.
 class VulkanInvocation {
  public:
   static std::unique_ptr<VulkanInvocation> Create(
       std::shared_ptr<const CompiledPartition> artifact, bool allow_emulation,
       std::string& error);
+  // Internal dependency-injection entry point; resolver must outlive invocation.
+  static std::unique_ptr<VulkanInvocation> CreateWithResolver(
+      std::shared_ptr<const CompiledPartition> artifact, bool allow_emulation,
+      PFN_vkGetInstanceProcAddr resolver, std::string& error,
+      std::shared_ptr<HardwareBufferApi> hardware_api = nullptr);
   ~VulkanInvocation();
+  struct BufferRequirements { size_t bytes=0, alignment=1; bool dma_buf=false, ahb=false; };
+  bool Requirements(size_t slot, BufferRequirements&, std::string& error);
+  bool AttachExternal(size_t slot, std::shared_ptr<ExternalBuffer>, std::string& error);
+  void DetachExternal(size_t slot);
+  struct CopyStatistics { uint64_t input_bytes=0, output_bytes=0; size_t imported_slots=0; };
+  CopyStatistics Statistics() const;
   bool Run(const std::vector<const void*>& inputs,
            const std::vector<void*>& outputs, std::string& error);
  private:

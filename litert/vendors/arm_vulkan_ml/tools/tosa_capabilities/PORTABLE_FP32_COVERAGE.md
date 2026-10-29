@@ -19,13 +19,15 @@ The reference database remains a development input, never runtime JSON.
 | BATCH_MATMUL | Static batch broadcasting, both transpose flags, bounded explicit broadcast materialization | SPIR-V + emulator |
 | MAX_POOL_2D, AVERAGE_POOL_2D | Static NHWC VALID/SAME, cropped unused trailing input, NONE/RELU/RELU6 | SPIR-V + emulator |
 
-`qualify_portable_ops.py` covers 39 positive fixtures with four tensor cases each,
-plus four explicit rejection fixtures. Every positive fixture uses the developer
+The [regression driver](../testing/README.md) covers 59 FP32/typed positive
+fixtures with four tensor cases each, plus eight explicit rejection fixtures. Every positive fixture uses the developer
 tool for inspection, SPIR-V export/validation, capability matching, CPU comparison
 and both trace modes. Generated models and reports are not checked in.
 
-No new runtime INT32/BOOL interfaces, quantized variants, dynamic shapes, FFT or
-CONV3D are enabled. Existing quantized lowerings remain separate. Engine profiles,
+The original fixture group above does not cover INT32/BOOL interfaces,
+quantized variants, dynamic shapes, FFT or CONV3D. The later breadth expansion
+adds separate INT32/BOOL paths and FP32 CONV3D; see the backend README and
+implementation inventory. Existing quantized lowerings remain separate. Engine profiles,
 extensions and tensor limits are checked at runtime, and pipeline creation must
 succeed. Missing advertisements remain blocking even under emulation opt-in.
 Native GPU numerical/performance qualification is outstanding; emulator success

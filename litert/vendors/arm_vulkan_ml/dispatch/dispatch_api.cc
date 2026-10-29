@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "litert/vendors/arm_vulkan_ml/dispatch/buffer_events.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -31,6 +32,7 @@
 
 namespace {
 struct RegisteredBuffer {
+  std::shared_ptr<litert::arm_vulkan_ml::ExternalBuffer> external;
   LiteRtTensorBuffer buffer;
   LiteRtRankedTensorType type;
   size_t size;
@@ -46,9 +48,7 @@ struct DeviceState {
 using litert::arm_vulkan_ml::TensorDescriptor;
 using litert::arm_vulkan_ml::TensorElement;
 bool Matches(const TensorDescriptor& desc, const LiteRtRankedTensorType& type) {
-  const auto element = desc.element == TensorElement::kInt8 ? kLiteRtElementTypeInt8 :
-      desc.element == TensorElement::kFloat32 ? kLiteRtElementTypeFloat32 : kLiteRtElementTypeInt32;
-  if (type.element_type != element || type.layout.has_strides ||
+  if (type.element_type != desc.logical_element || type.layout.has_strides ||
       type.layout.rank != desc.shape.size()) return false;
   for (size_t i = 0; i < desc.shape.size(); ++i)
     if (type.layout.dimensions[i] <= 0 || static_cast<uint32_t>(type.layout.dimensions[i]) != desc.shape[i]) return false;
@@ -70,6 +70,7 @@ class LiteRtDispatchDeviceContextT {
 };
 class LiteRtDispatchInvocationContextT {
  public:
+  absl::Mutex mutex;
   std::shared_ptr<DeviceState> state;
   std::shared_ptr<const litert::arm_vulkan_ml::CompiledPartition> artifact;
   std::unique_ptr<litert::arm_vulkan_ml::VulkanInvocation> invocation;
@@ -123,8 +124,14 @@ LiteRtStatus Requirements(LiteRtDispatchInvocationContext context, int index,
     return kLiteRtStatusErrorInvalidArgument;
   auto bytes = Bytes(descriptors[index]);
   if (!bytes) return kLiteRtStatusErrorInvalidArgument;
-  const LiteRtTensorBufferType host = kLiteRtTensorBufferTypeHostMemory;
-  return context->state->runtime->create_tensor_buffer_requirements(1, &host, bytes, 0, nullptr, output);
+  VulkanInvocation::BufferRequirements r;std::string error;
+  size_t slot=input?static_cast<size_t>(index):context->artifact->inputs.size()+static_cast<size_t>(index);
+  if(!context->invocation->Requirements(slot,r,error))return kLiteRtStatusErrorRuntimeFailure;
+  std::vector<LiteRtTensorBufferType> types;
+  if(r.ahb && context->state->runtime->get_tensor_buffer_ahwb)types.push_back(kLiteRtTensorBufferTypeAhwb);
+  if(r.dma_buf && context->state->runtime->get_tensor_buffer_dma_buf_buffer)types.push_back(kLiteRtTensorBufferTypeDmaBuf);
+  types.push_back(kLiteRtTensorBufferTypeHostMemory);
+  return context->state->runtime->create_tensor_buffer_requirements(static_cast<int>(types.size()),types.data(),r.bytes,0,nullptr,output);
 }
 LiteRtStatus GetInputRequirements(LiteRtDispatchInvocationContext c, int i,
     const LiteRtRankedTensorType* t, LiteRtTensorBufferRequirements* r) { return Requirements(c,i,t,r,true); }
@@ -139,13 +146,29 @@ LiteRtStatus RegisterTensorBuffer(LiteRtDispatchDeviceContext context,
   const auto* api = state.runtime;
   LiteRtTensorBufferType type;
   if (api->get_tensor_buffer_type(buffer, &type) != kLiteRtStatusOk ||
-      type != kLiteRtTensorBufferTypeHostMemory) return kLiteRtStatusErrorUnsupported;
+      (type != kLiteRtTensorBufferTypeHostMemory && type != kLiteRtTensorBufferTypeDmaBuf && type != kLiteRtTensorBufferTypeAhwb)) return kLiteRtStatusErrorUnsupported;
   auto registration = std::make_shared<RegisteredBuffer>();
   if (api->get_tensor_buffer_tensor_type(buffer, &registration->type) != kLiteRtStatusOk ||
       api->get_tensor_buffer_size(buffer, &registration->size) != kLiteRtStatusOk ||
       api->get_tensor_buffer_offset(buffer, &registration->offset) != kLiteRtStatusOk ||
       registration->offset > registration->size || !state.next_handle)
     return kLiteRtStatusErrorInvalidArgument;
+  std::string error;
+  if(type==kLiteRtTensorBufferTypeDmaBuf){
+    void* address=nullptr;int fd=-1;
+    if(!api->get_tensor_buffer_dma_buf_buffer || api->get_tensor_buffer_dma_buf_buffer(buffer,&address,&fd)!=kLiteRtStatusOk)return kLiteRtStatusErrorUnsupported;
+    registration->external=ExternalBuffer::DmaBuf(fd,registration->size,registration->offset,error);
+    if(!registration->external)return kLiteRtStatusErrorInvalidArgument;
+  }else if(type==kLiteRtTensorBufferTypeAhwb){
+#if defined(__ANDROID__)
+    AHardwareBuffer* ahb=nullptr;
+    if(!api->get_tensor_buffer_ahwb || api->get_tensor_buffer_ahwb(buffer,&ahb)!=kLiteRtStatusOk)return kLiteRtStatusErrorUnsupported;
+    registration->external=ExternalBuffer::Ahb(ahb,registration->size,registration->offset,AndroidHardwareBufferApi(),error);
+    if(!registration->external)return kLiteRtStatusErrorInvalidArgument;
+#else
+    return kLiteRtStatusErrorUnsupported;
+#endif
+  }
   registration->buffer = buffer;
   registration->handle = state.next_handle++;
   *output = registration->handle;
@@ -200,12 +223,14 @@ LiteRtStatus InvocationContextSetOptions(LiteRtDispatchInvocationContext c,
 LiteRtStatus Attach(LiteRtDispatchInvocationContext context, int index,
                     LiteRtTensorBufferHandle handle, bool input, bool detach) {
   if (!context || index < 0) return kLiteRtStatusErrorInvalidArgument;
+  absl::MutexLock invocation_lock(&context->mutex);
   absl::MutexLock lock(&context->state->mutex);
   auto& slots = input ? context->inputs : context->outputs;
   const auto& descriptors = input ? context->artifact->inputs : context->artifact->outputs;
   if (static_cast<size_t>(index) >= slots.size()) return kLiteRtStatusErrorInvalidArgument;
   if (detach) {
     if (!slots[index] || slots[index]->handle != handle) return kLiteRtStatusErrorInvalidArgument;
+    context->invocation->DetachExternal(input?static_cast<size_t>(index):context->artifact->inputs.size()+static_cast<size_t>(index));
     slots[index].reset(); return kLiteRtStatusOk;
   }
   auto found = context->state->buffers.find(handle);
@@ -214,6 +239,10 @@ LiteRtStatus Attach(LiteRtDispatchInvocationContext context, int index,
   if (!Matches(descriptors[index], registration->type) ||
       Bytes(descriptors[index]) > registration->size - registration->offset)
     return kLiteRtStatusErrorInvalidArgument;
+  std::string error;
+  if(!context->invocation->AttachExternal(input?static_cast<size_t>(index):context->artifact->inputs.size()+static_cast<size_t>(index),registration->external,error)){
+    std::fprintf(stderr,"ArmVulkanML buffer attachment: %s\n",error.c_str());return kLiteRtStatusErrorRuntimeFailure;
+  }
   slots[index] = registration; return kLiteRtStatusOk;
 }
 LiteRtStatus AttachInput(LiteRtDispatchInvocationContext c, int i, LiteRtTensorBufferHandle h) { return Attach(c,i,h,true,false); }
@@ -222,7 +251,7 @@ LiteRtStatus DetachInput(LiteRtDispatchInvocationContext c, int i, LiteRtTensorB
 LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext c, int i, LiteRtTensorBufferHandle h) { return Attach(c,i,h,false,true); }
 LiteRtStatus Invoke(LiteRtDispatchInvocationContext context) {
   if (!context) return kLiteRtStatusErrorInvalidArgument;
-  absl::MutexLock lock(&context->state->mutex);
+  absl::MutexLock lock(&context->mutex);
   const auto* api = context->state->runtime;
   struct Locks {
     const LiteRtRuntimeContext* api;
@@ -242,8 +271,10 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext context) {
   };
   std::vector<const void*> inputs;
   std::vector<void*> outputs;
-  for (const auto& r : context->inputs) { auto p = address(r); if (!p) return kLiteRtStatusErrorRuntimeFailure; inputs.push_back(p); }
-  for (const auto& r : context->outputs) { auto p = address(r); if (!p) return kLiteRtStatusErrorRuntimeFailure; outputs.push_back(p); }
+  for(const auto& r:context->inputs)if(!r || !WaitForBufferEvent(api,r->buffer))return kLiteRtStatusErrorRuntimeFailure;
+  for(const auto& r:context->outputs)if(!r || !WaitForBufferEvent(api,r->buffer))return kLiteRtStatusErrorRuntimeFailure;
+  for (const auto& r : context->inputs) {auto p=r->external?nullptr:address(r);if(!p && !r->external)return kLiteRtStatusErrorRuntimeFailure;inputs.push_back(p); }
+  for (const auto& r : context->outputs) {auto p=r->external?nullptr:address(r);if(!p && !r->external)return kLiteRtStatusErrorRuntimeFailure;outputs.push_back(p); }
   std::string error;
   if (!context->invocation->Run(inputs, outputs, error)) {
     std::fprintf(stderr, "ArmVulkanML: %s\n", error.c_str());

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Test-only exporter. Uses the production adapter/emitter and builtin CPU
-// reference kernels. VGF packaging is done by the separate Python test harness.
+// reference kernels. The Python test independently checks the accumulator.
 #include <charconv>
 #include <cstdint>
 #include <cstring>
@@ -26,6 +26,7 @@
 #include "TosaForSpirvCodegen.hpp"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/conv2d_adapter.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/tosa_requirements.h"
 #include "litert/vendors/arm_vulkan_ml/dispatch/vulkan_invocation.h"
 #include "tflite/interpreter.h"
 #include "tflite/model_builder.h"
@@ -147,6 +148,10 @@ int main(int argc, char** argv) {
     if (std::string(argv[4]) != "--vulkan-emulation") return 1;
     auto artifact = std::make_shared<CompiledPartition>();
     artifact->spirv = spirv;
+    if (!CollectTosaLevelRequirements(*module, artifact->level_requirements, reason)) {
+      std::cerr << reason << "\n";
+      return 1;
+    }
     artifact->inputs.push_back({TensorElement::kInt8,
         {s.input_shape.begin(), s.input_shape.end()}, 0});
     artifact->outputs.push_back({TensorElement::kInt8,

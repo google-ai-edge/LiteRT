@@ -13,64 +13,55 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Materialize ImageNet validation JPEGs and a device-friendly manifest.
-
-The Hugging Face dataset cache stores ImageNet as Arrow shards. This script
-exports the original encoded JPEG bytes so Android eval can decode and
-preprocess images on-device without storing model-specific tensor copies.
-"""
-
-from __future__ import annotations
+"""Extract original validation image bytes from downloaded HF Parquet shards."""
 
 import argparse
 from pathlib import Path
 
-from datasets import Image
-from datasets import load_dataset
+import pyarrow.parquet as pq
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out_dir", required=True)
-    parser.add_argument("--max_samples", type=int, default=500)
-    parser.add_argument("--cache_dir", default="/data/bt/models/datasets")
-    parser.add_argument("--token", default=True)
-    return parser.parse_args()
-
-
-def main() -> int:
-    args = _parse_args()
-    out_dir = Path(args.out_dir)
+def export(shards, out_dir, max_samples):
+    """Write encoded images and a manifest; zero selects all rows."""
+    shards = sorted(Path(shards).glob("validation-*.parquet"))
+    if not shards:
+        raise ValueError("No validation-*.parquet shards found")
+    if max_samples < 0:
+        raise ValueError("max_samples must be nonnegative")
+    out_dir = Path(out_dir)
     images_dir = out_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
+    count = 0
+    with (out_dir / "manifest.tsv").open("w", encoding="utf-8") as manifest:
+        manifest.write("id\tlabel\tpath\n")
+        for shard in shards:
+            for batch in pq.ParquetFile(shard).iter_batches(
+                    batch_size=32, columns=["image", "label"]):
+                for row in batch.to_pylist():
+                    encoded = row["image"]["bytes"]
+                    label = int(row["label"])
+                    if not encoded or not 0 <= label < 1000:
+                        raise ValueError("Expected encoded image and label 0..999")
+                    relative = f"images/{count:08d}.JPEG"
+                    (out_dir / relative).write_bytes(encoded)
+                    manifest.write(f"{count}\t{label}\t{relative}\n")
+                    count += 1
+                    if max_samples and count >= max_samples:
+                        return count
+    return count
 
-    ds = load_dataset(
-        "imagenet-1k",
-        split="validation",
-        cache_dir=args.cache_dir,
-        token=args.token,
-    )
-    ds = ds.cast_column("image", Image(decode=False))
-    if args.max_samples:
-        ds = ds.select(range(min(args.max_samples, len(ds))))
 
-    manifest = out_dir / "manifest.tsv"
-    with manifest.open("w", encoding="utf-8") as f:
-        f.write("id\tlabel\tpath\n")
-        for i, row in enumerate(ds):
-            image = row["image"]
-            rel = image["path"] or f"{i:08d}.JPEG"
-            rel = Path(rel).name
-            data = image["bytes"]
-            if data is None:
-                raise ValueError(f"Image {i} has no embedded bytes")
-            (images_dir / rel).write_bytes(data)
-            f.write(f"{i}\t{int(row['label'])}\timages/{rel}\n")
-
-    print(f"Wrote {len(ds)} images")
-    print(f"Manifest: {manifest}")
-    return 0
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input_dir", required=True,
+                        help="Directory containing downloaded validation Parquet shards")
+    parser.add_argument("--out_dir", required=True)
+    parser.add_argument("--max_samples", type=int, default=3,
+                        help="Number to extract; 0 extracts all downloaded validation rows")
+    args = parser.parse_args()
+    print(f"Wrote {export(args.input_dir, args.out_dir, args.max_samples)} images")
+    print(Path(args.out_dir) / "manifest.tsv")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

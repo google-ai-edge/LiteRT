@@ -12,13 +12,17 @@
 #ifndef LITERT_TOOLS_IMAGENET_EVAL_DATA_H_
 #define LITERT_TOOLS_IMAGENET_EVAL_DATA_H_
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
 #include "nlohmann/json.hpp"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert::imagenet {
@@ -43,6 +47,43 @@ Expected<std::string> HashFile(const std::string& path);
 std::string HashBytes(const void* data, size_t size);
 Expected<Json> ReadJson(const std::string& path);
 Expected<void> WriteJson(const std::string& path, const Json& value);
+
+struct Sample {
+  int id;
+  int label;
+  std::string path;
+};
+// Empty image_root resolves relative paths against the manifest directory.
+// A zero limit selects all remaining rows; a nonzero limit selects at most N.
+Expected<std::vector<Sample>> ReadSamples(const std::string& manifest,
+                                        const std::string& image_root,
+                                        int start, int limit);
+
+// Callers validate finite inputs and a finite, positive per-tensor scale.
+template <typename T>
+std::vector<T> QuantizePerTensor(
+    const std::vector<float>& values,
+    const LiteRtQuantizationPerTensor& quantization) {
+  const int64_t q_min = std::numeric_limits<T>::min();
+  const int64_t q_max = std::numeric_limits<T>::max();
+  const float reciprocal = 1.0f / quantization.scale;
+  std::vector<T> out(values.size());
+  for (size_t i = 0; i < values.size(); ++i) {
+    // Match XNNPACK: FP32 reciprocal multiplication and nearest-even rounding
+    // before adding the zero point. TFLite's reference AffineQuantize rounds
+    // ties away from zero and can disagree with XNNPACK at half steps.
+    const float scaled = std::clamp(
+        values[i] * reciprocal,
+        static_cast<float>(q_min - quantization.zero_point),
+        static_cast<float>(q_max - quantization.zero_point));
+    const int64_t lower = static_cast<int64_t>(std::floor(scaled));
+    const float fraction = scaled - static_cast<float>(lower);
+    const int64_t rounded = lower +
+        (fraction > 0.5f || (fraction == 0.5f && lower % 2 != 0));
+    out[i] = static_cast<T>(rounded + quantization.zero_point);
+  }
+  return out;
+}
 
 struct Preprocessing {
   std::string interpolation = "bilinear";
@@ -71,9 +112,18 @@ Expected<std::vector<float>> DecodePreprocess(const std::string& path,
 
 struct Comparison {
   bool allclose = true;
+  bool finite = true;
   double max_abs = 0;
   double mean_abs = 0;
 };
+Expected<Comparison> CompareTensorValues(const void* actual, const void* reference,
+                                        size_t count, bool floating,
+                                        double atol, double rtol,
+                                        double max_code, double mean_code);
+Expected<Comparison> CompareQuantizedScores(
+    const std::vector<float>& actual, const std::vector<float>& reference,
+    const LiteRtQuantizationPerTensor& quantization,
+    double max_code, double mean_code);
 Expected<Comparison> CompareScores(const std::vector<float>& actual,
                                    const std::vector<float>& reference,
                                    double atol, double rtol);

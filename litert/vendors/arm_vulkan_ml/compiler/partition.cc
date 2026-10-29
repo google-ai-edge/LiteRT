@@ -19,6 +19,7 @@
 #include <utility>
 #include "TosaForSpirvCodegen.hpp"
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/tosa_requirements.h"
 
 namespace litert::arm_vulkan_ml {
 std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& subgraph,
@@ -31,11 +32,12 @@ std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& subgra
   uint32_t binding = 0;
   auto descriptor = [&](const Tensor& tensor) -> std::optional<TensorDescriptor> {
     auto ranked = tensor.RankedTensorType();
-    if (!ranked || (ranked->ElementType() != ElementType::Int8 && ranked->ElementType() != ElementType::Float32) ||
+    if (!ranked || (ranked->ElementType() != ElementType::Int8 && ranked->ElementType() != ElementType::Float32 && ranked->ElementType() != ElementType::Int32 && ranked->ElementType() != ElementType::UInt32 && ranked->ElementType() != ElementType::Bool) ||
         ranked->Layout().HasStrides()) return std::nullopt;
     auto dims = ranked->Layout().Dimensions();
     if (dims.empty()) return std::nullopt;
-    TensorDescriptor result{ranked->ElementType() == ElementType::Float32 ? TensorElement::kFloat32 : TensorElement::kInt8, {}, binding++};
+    TensorDescriptor result{ranked->ElementType() == ElementType::Float32 ? TensorElement::kFloat32 : (ranked->ElementType() == ElementType::Int32 || ranked->ElementType() == ElementType::UInt32) ? TensorElement::kInt32 : TensorElement::kInt8, {}, binding++};
+    result.logical_element = static_cast<LiteRtElementType>(ranked->ElementType());
     uint64_t count = 1;
     for (auto dim : dims) {
       if (dim <= 0 || count > uint64_t{INT32_MAX} / dim) return std::nullopt;
@@ -49,7 +51,8 @@ std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& subgra
     auto input = descriptor(tensor);
     if (!input) { reason = "Invalid partition input layout/type"; return nullptr; }
     values[tensor.Get()] = graph.AddInput(
-        tfsc::tosa::Tensor(input->element == TensorElement::kFloat32 ? tfsc::tosa::DataType::float32_t : tfsc::tosa::DataType::int8_t, input->shape), input->binding);
+        tfsc::tosa::Tensor(input->element == TensorElement::kFloat32 ? tfsc::tosa::DataType::float32_t : input->element == TensorElement::kInt32 ? tfsc::tosa::DataType::int32_t : tfsc::tosa::DataType::int8_t, input->shape), input->binding);
+    if(tensor.ElementType()==ElementType::Bool)values[tensor.Get()]=graph.AddCastOperator(values[tensor.Get()],tfsc::tosa::Tensor(tfsc::tosa::DataType::bool_t,input->shape));
     artifact->inputs.push_back(std::move(*input));
   }
   if (subgraph.Ops().empty()) { reason = "Empty partition"; return nullptr; }
@@ -77,17 +80,19 @@ std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& subgra
       if (value == values.end() && tensor.HasWeights()) {
         auto bytes = tensor.Weights().Bytes();
         auto type = tensor.RankedTensorType();
-        if (!type || (tensor.ElementType() != ElementType::Int8 && tensor.ElementType() != ElementType::Float32)) {
+        if (!type || (tensor.ElementType() != ElementType::Int8 && tensor.ElementType() != ElementType::Float32 && tensor.ElementType() != ElementType::Int32 && tensor.ElementType() != ElementType::UInt32 && tensor.ElementType() != ElementType::Bool)) {
           reason = "Invalid constant activation"; return nullptr;
         }
         auto dims = type->Layout().Dimensions();
-        tfsc::tosa::Tensor constant_type(tensor.ElementType() == ElementType::Float32 ? tfsc::tosa::DataType::float32_t : tfsc::tosa::DataType::int8_t,
+        tfsc::tosa::Tensor constant_type(tensor.ElementType() == ElementType::Float32 ? tfsc::tosa::DataType::float32_t : (tensor.ElementType() == ElementType::Int32 || tensor.ElementType() == ElementType::UInt32) ? tfsc::tosa::DataType::int32_t : tfsc::tosa::DataType::int8_t,
                                        {dims.begin(), dims.end()});
-        if (bytes.size() != constant_type.GetNumElements() * (tensor.ElementType() == ElementType::Float32 ? 4 : 1)) {
+        if (bytes.size() != constant_type.GetNumElements() * ((tensor.ElementType() == ElementType::Float32 || tensor.ElementType() == ElementType::Int32 || tensor.ElementType() == ElementType::UInt32) ? 4 : 1)) {
           reason = "Invalid constant byte count"; return nullptr;
         }
         constants.push_back({constant_type,{bytes.begin(),bytes.end()}});
-        value = values.emplace(tensor.Get(), graph.AddGraphConstant(constant_type)).first;
+        auto id=graph.AddGraphConstant(constant_type);
+        if(tensor.ElementType()==ElementType::Bool)id=graph.AddCastOperator(id,tfsc::tosa::Tensor(tfsc::tosa::DataType::bool_t,constant_type.GetTensorShape()));
+        value = values.emplace(tensor.Get(), id).first;
       }
       if (value == values.end()) {
         reason = "Partition is not topologically ordered or has an unbound input";
@@ -118,13 +123,16 @@ std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& subgra
     if (value == values.end() || !output) {
       reason = "Unbound or invalid partition output"; return nullptr;
     }
-    graph.AddOutput(value->second, output->binding);
+    auto result=value->second;
+    if(tensor.ElementType()==ElementType::Bool)result=graph.AddCastOperator(result,tfsc::tosa::Tensor(tfsc::tosa::DataType::int8_t,output->shape));
+    graph.AddOutput(result, output->binding);
     artifact->outputs.push_back(std::move(*output));
   }
   if (artifact->outputs.empty()) { reason = "Partition has no outputs"; return nullptr; }
   graph.FinalizeGraph();
   artifact->spirv = tfsc::WriteToBinary(module);
   if (artifact->spirv.empty()) { reason = "TFSC failed to serialize partition"; return nullptr; }
+  if (!CollectTosaLevelRequirements(*module, artifact->level_requirements, reason)) return nullptr;
   for (auto& constant : constants) {
     const auto element = constant.tensor.GetDataType() == tfsc::tosa::DataType::int8_t
         ? TensorElement::kInt8 : constant.tensor.GetDataType() == tfsc::tosa::DataType::float32_t

@@ -15,12 +15,13 @@ package(
 
 cc_library(
     name = "vulkan_invocation",
-    srcs = ["vulkan_invocation.cc"],
-    hdrs = ["vulkan_invocation.h"],
-    linkopts = ["-ldl"],
+    srcs = ["vulkan_invocation.cc", "external_buffer.cc"],
+    hdrs = ["vulkan_invocation.h", "device_memory_allocator.h", "external_buffer.h"],
+    linkopts = ["-ldl"] + select({"//litert:android": ["-landroid"], "//conditions:default": []}),
     visibility = ["//litert:__subpackages__"],
     deps = [
         ":tensor_capabilities",
+        ":vulkan_validation",
         "@com_google_absl//absl/synchronization",
         "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
         "@arm_vulkan_ml_dep_vulkan_headers//:vulkan_headers",
@@ -29,7 +30,7 @@ cc_library(
 
 litert_dynamic_lib(
     name = "dispatch_api",
-    srcs = ["dispatch_api.cc"],
+    srcs = ["dispatch_api.cc", "buffer_events.h"],
     copts = [
         "-Os",
         "-fno-exceptions",
@@ -77,4 +78,73 @@ cc_test(
         ":tensor_capabilities",
         "@com_google_googletest//:gtest_main",
     ],
+)
+
+cc_library(
+    name = "vulkan_validation",
+    srcs = ["vulkan_validation.cc"],
+    hdrs = ["vulkan_validation.h"],
+    copts = ["-fno-exceptions"],
+    visibility = ["//litert:__subpackages__"],
+    deps = ["@com_google_absl//absl/synchronization", "@com_github_nlohmann_json//:json", "@arm_vulkan_ml_dep_vulkan_headers//:vulkan_headers"],
+)
+
+cc_test(
+    name = "vulkan_validation_test",
+    srcs = ["vulkan_validation_test.cc"],
+    deps = [":vulkan_validation", "@com_google_googletest//:gtest_main"],
+)
+
+cc_test(
+    name = "vulkan_invocation_test",
+    data = ["//litert/test:tflite_test_data"],
+    srcs = ["vulkan_invocation_test.cc"],
+    copts = ["-fno-exceptions"],
+    linkstatic = True,
+    deps = [
+        ":dispatch_api_test_source",
+        ":vulkan_invocation",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
+        "//litert/c/internal:litert_runtime_context_testonly",
+        "//litert/vendors/arm_vulkan_ml/compiler:compiler_plugin",
+        "//litert/test:load_test_model",
+        "//litert/cc/internal:litert_extended_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:litert_arm_vulkan_ml_options",
+        "//litert/core/model",
+        "//litert/vendors/cc:litert_compiler_plugin",
+        "//tflite/schema:schema_fbs",
+        "@arm_vulkan_ml_dep_spirv_headers//:spirv_cpp_headers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# The resolver harness constructs an invocation with fake Vulkan entry points,
+# then exercises the production dispatch interface and real LiteRT buffers.
+cc_library(
+    name = "dispatch_api_test_source",
+    testonly = True,
+    textual_hdrs = ["dispatch_api.cc"],
+    hdrs = ["buffer_events.h"],
+    deps = [
+        ":vulkan_invocation",
+        "@com_google_absl//absl/synchronization",
+        "//litert/c/internal:litert_runtime_context",
+        "//litert/c/internal:litert_scheduling_info",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_requirements",
+        "//litert/vendors/c:litert_dispatch_c_api",
+    ],
+)
+
+cc_test(
+    name = "buffer_events_test",
+    linkstatic = True,
+    size = "small",
+    srcs = ["buffer_events_test.cc", "buffer_events.h"],
+    copts = ["-fno-exceptions"],
+    deps = ["//litert/c/internal:litert_runtime_context", "@com_google_googletest//:gtest_main"],
 )

@@ -52,11 +52,21 @@ cc_library(
 )
 
 cc_library(
+    name = "tosa_requirements",
+    srcs = ["tosa_requirements.cc"],
+    hdrs = ["tosa_requirements.h"],
+    deps = [
+        "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
+        "@tosa_for_spirv_codegen",
+    ],
+)
+
+cc_library(
     name = "partition",
     srcs = ["partition.cc"],
     hdrs = ["partition.h"],
     deps = [
-        ":conv2d", ":operation",
+        ":conv2d", ":operation", ":tosa_requirements",
         "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
         "//litert/cc/internal:litert_extended_model",
         "@tosa_for_spirv_codegen",
@@ -71,6 +81,7 @@ cc_binary(
         "//litert/vendors/arm_vulkan_ml/dispatch:vulkan_invocation",
         ":conv2d_adapter",
         ":conv2d",
+        ":tosa_requirements",
         "//litert/cc/internal:litert_extended_model",
         "//tflite:framework",
         "//tflite/kernels:reference_ops",
@@ -204,6 +215,18 @@ cc_test(
         ":partition",
         "//litert/cc/internal:litert_extended_model",
         "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "tosa_requirements_test",
+    srcs = ["tosa_requirements_test.cc"],
+    copts = ["-fno-exceptions"],
+    deps = [
+        ":operation",
+        ":tosa_requirements",
+        "@tosa_for_spirv_codegen",
         "@com_google_googletest//:gtest_main",
     ],
 )

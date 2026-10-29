@@ -30,6 +30,9 @@ struct PortablePlan;
 struct OperationPlan {
   std::shared_ptr<PortablePlan> portable;
   LiteRtOpCode code;
+  bool typed = false;
+  std::vector<tfsc::tosa::DataType> input_types;
+  tfsc::tosa::DataType output_type = tfsc::tosa::DataType::int8_t;
   std::vector<int> runtime_inputs;
   std::vector<QuantizedTensor> inputs;
   QuantizedTensor output;

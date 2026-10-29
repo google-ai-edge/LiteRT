@@ -1,0 +1,1178 @@
+{
+  "schema_version": 1,
+  "instruction_set": "TOSA.001000.1",
+  "scope": "TFLite builtin reachability; emitted is not numerical or hardware qualification",
+  "operators": [
+    {
+      "name": "ARGMAX",
+      "opcode": 0,
+      "implementation": "emitted",
+      "route": "ARG_MAX FP32 input, INT32 output, constant axis",
+      "constraints": "ARG_MAX FP32 input, INT32 output, constant axis",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "ARG_MAX"
+      ],
+      "required_profiles": [
+        "PRO-INT",
+        "PRO-FP"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "AVG_POOL2D",
+      "opcode": 1,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "CONV2D",
+      "opcode": 2,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "CONV3D",
+      "opcode": 3,
+      "implementation": "emitted",
+      "route": "CONV_3D FP32 NDHWC, constant DHWIO weights/bias",
+      "constraints": "CONV_3D FP32 NDHWC, constant DHWIO weights/bias",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "CONV_3D"
+      ],
+      "required_profiles": [
+        "PRO-INT",
+        "PRO-FP"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "DEPTHWISE_CONV2D",
+      "opcode": 4,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "FFT2D",
+      "opcode": 5,
+      "implementation": "unreachable",
+      "route": "No TFLite full-complex FFT builtin",
+      "constraints": "Not enabled",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "MATMUL",
+      "opcode": 6,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "MAX_POOL2D",
+      "opcode": 7,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "RFFT2D",
+      "opcode": 8,
+      "implementation": "pending",
+      "route": "RFFT2D with REAL/IMAG/COMPLEX_ABS consumers: not implemented",
+      "constraints": "Needs paired complex SSA values and partition closure; EXT-FFT not advertised by local emulator",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "TRANSPOSE_CONV2D",
+      "opcode": 9,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "CLAMP",
+      "opcode": 10,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "ERF",
+      "opcode": 11,
+      "implementation": "emitted",
+      "route": "GELU FP32 approximate=false",
+      "constraints": "GELU FP32 approximate=false",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "GELU"
+      ],
+      "required_profiles": [
+        "PRO-INT",
+        "PRO-FP"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "SIGMOID",
+      "opcode": 12,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "TANH",
+      "opcode": 13,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "ADD",
+      "opcode": 14,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "ARITHMETIC_RIGHT_SHIFT",
+      "opcode": 15,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "BITWISE_AND",
+      "opcode": 16,
+      "implementation": "unreachable",
+      "route": "No TFLite integer AND builtin; StableHLO frontend excluded",
+      "constraints": "Not enabled",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "BITWISE_OR",
+      "opcode": 17,
+      "implementation": "unreachable",
+      "route": "No TFLite integer OR builtin; StableHLO frontend excluded",
+      "constraints": "Not enabled",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "BITWISE_XOR",
+      "opcode": 18,
+      "implementation": "emitted",
+      "route": "BITWISE_XOR INT32 broadcasting",
+      "constraints": "BITWISE_XOR INT32 broadcasting",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "BITWISE_XOR"
+      ],
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "INTDIV",
+      "opcode": 19,
+      "implementation": "emitted",
+      "route": "FLOOR_DIV INT32, positive constant divisors and signed floor correction",
+      "constraints": "FLOOR_DIV INT32, positive constant divisors and signed floor correction",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "FLOOR_DIV"
+      ],
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "LOGICAL_AND",
+      "opcode": 20,
+      "implementation": "emitted",
+      "route": "LOGICAL_AND BOOL broadcasting",
+      "constraints": "LOGICAL_AND BOOL broadcasting",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "LOGICAL_AND_BOOL"
+      ],
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "LOGICAL_LEFT_SHIFT",
+      "opcode": 21,
+      "implementation": "unreachable",
+      "route": "No TFLite left-shift builtin; StableHLO frontend excluded",
+      "constraints": "Not enabled",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "LOGICAL_RIGHT_SHIFT",
+      "opcode": 22,
+      "implementation": "emitted",
+      "route": "RIGHT_SHIFT UINT32, constant shifts 0..31",
+      "constraints": "RIGHT_SHIFT UINT32, constant shifts 0..31",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "RIGHT_SHIFT"
+      ],
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "LOGICAL_OR",
+      "opcode": 23,
+      "implementation": "emitted",
+      "route": "LOGICAL_OR BOOL broadcasting",
+      "constraints": "LOGICAL_OR BOOL broadcasting",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "LOGICAL_OR_BOOL"
+      ],
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "LOGICAL_XOR",
+      "opcode": 24,
+      "implementation": "emitted",
+      "route": "NOT_EQUAL BOOL broadcasting",
+      "constraints": "NOT_EQUAL BOOL broadcasting",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "NOT_EQUAL_BOOL"
+      ],
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "MAXIMUM",
+      "opcode": 25,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "MINIMUM",
+      "opcode": 26,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "MUL",
+      "opcode": 27,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "POW",
+      "opcode": 28,
+      "implementation": "emitted",
+      "route": "POW FP32 static broadcast",
+      "constraints": "POW FP32 static broadcast",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "POW_POSITIVE"
+      ],
+      "required_profiles": [
+        "PRO-INT",
+        "PRO-FP"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "SUB",
+      "opcode": 29,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "TABLE",
+      "opcode": 30,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "ABS",
+      "opcode": 31,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "BITWISE_NOT",
+      "opcode": 32,
+      "implementation": "emitted",
+      "route": "BITWISE_XOR INT32 with all-ones constant",
+      "constraints": "BITWISE_XOR INT32 with all-ones constant",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "BITWISE_NOT_IDIOM"
+      ],
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "CEIL",
+      "opcode": 33,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "CLZ",
+      "opcode": 34,
+      "implementation": "unreachable",
+      "route": "No TFLite count-leading-zeros builtin",
+      "constraints": "Not enabled",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "COS",
+      "opcode": 35,
+      "implementation": "emitted",
+      "route": "COS FP32",
+      "constraints": "COS FP32",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "COS"
+      ],
+      "required_profiles": [
+        "PRO-INT",
+        "PRO-FP"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "EXP",
+      "opcode": 36,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "FLOOR",
+      "opcode": 37,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "LOG",
+      "opcode": 38,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "LOGICAL_NOT",
+      "opcode": 39,
+      "implementation": "emitted",
+      "route": "LOGICAL_NOT BOOL",
+      "constraints": "LOGICAL_NOT BOOL",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "LOGICAL_NOT"
+      ],
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "NEGATE",
+      "opcode": 40,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "RECIPROCAL",
+      "opcode": 41,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "RSQRT",
+      "opcode": 42,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "SIN",
+      "opcode": 43,
+      "implementation": "emitted",
+      "route": "SIN FP32",
+      "constraints": "SIN FP32",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "SIN"
+      ],
+      "required_profiles": [
+        "PRO-INT",
+        "PRO-FP"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "SELECT",
+      "opcode": 44,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "EQUAL",
+      "opcode": 45,
+      "implementation": "emitted",
+      "route": "EQUAL FP32/INT32 to BOOL",
+      "constraints": "EQUAL FP32/INT32 to BOOL",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "EQUAL_FP32"
+      ],
+      "required_profiles": [
+        "PRO-INT",
+        "PRO-FP"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "GREATER",
+      "opcode": 46,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "GREATER_EQUAL",
+      "opcode": 47,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "REDUCE_ALL",
+      "opcode": 48,
+      "implementation": "emitted",
+      "route": "REDUCE_ALL BOOL constant axes, non-scalar output",
+      "constraints": "REDUCE_ALL BOOL constant axes, non-scalar output",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "REDUCE_ALL"
+      ],
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "REDUCE_ANY",
+      "opcode": 49,
+      "implementation": "emitted",
+      "route": "REDUCE_ANY BOOL constant axes, non-scalar output",
+      "constraints": "REDUCE_ANY BOOL constant axes, non-scalar output",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "REDUCE_ANY"
+      ],
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "REDUCE_MAX",
+      "opcode": 50,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "REDUCE_MIN",
+      "opcode": 51,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "REDUCE_PRODUCT",
+      "opcode": 52,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "REDUCE_SUM",
+      "opcode": 53,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "CONCAT",
+      "opcode": 54,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "PAD",
+      "opcode": 55,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "RESHAPE",
+      "opcode": 56,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "REVERSE",
+      "opcode": 57,
+      "implementation": "emitted",
+      "route": "REVERSE_V2 FP32 constant axes",
+      "constraints": "REVERSE_V2 FP32 constant axes",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "REVERSE_V2"
+      ],
+      "required_profiles": [
+        "PRO-INT",
+        "PRO-FP"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "SLICE",
+      "opcode": 58,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "TILE",
+      "opcode": 59,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "TRANSPOSE",
+      "opcode": 60,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "GATHER",
+      "opcode": 61,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "SCATTER",
+      "opcode": 62,
+      "implementation": "emitted",
+      "route": "SCATTER_ND FP32, constant unique in-range indices and output shape",
+      "constraints": "SCATTER_ND FP32, constant unique in-range indices and output shape",
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "hardware": "not_qualified",
+      "fixtures": [
+        "SCATTER_ND"
+      ],
+      "required_profiles": [
+        "PRO-INT",
+        "PRO-FP"
+      ],
+      "required_extensions": []
+    },
+    {
+      "name": "RESIZE",
+      "opcode": 63,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "CAST",
+      "opcode": 64,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    },
+    {
+      "name": "RESCALE",
+      "opcode": 65,
+      "implementation": "emitted",
+      "route": "Existing production lowering; see source audit",
+      "constraints": "Existing documented subset",
+      "spirv_validation": "pending",
+      "emulator": "pending",
+      "hardware": "not_qualified",
+      "fixtures": []
+    }
+  ],
+  "quantized_lowerings": [
+    {
+      "litert_operator": "ABS",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "TABLE; per-tensor affine INT8; range-proven LiteRT double-round rescaling",
+      "fixtures": [
+        "ABS_INT8",
+        "ABS_INT8_RESCALE"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "EXPAND_DIMS",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "Static dense shape operation; constant controls; preserved quantization; existing shape/mask limits",
+      "fixtures": [
+        "EXPAND_DIMS_INT8"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "MAXIMUM",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "INT32 CAST/MAXIMUM/CAST; static broadcasting and identical quantization",
+      "fixtures": [
+        "MAXIMUM_INT8"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "MINIMUM",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "INT32 CAST/MINIMUM/CAST; static broadcasting and identical quantization",
+      "fixtures": [
+        "MINIMUM_INT8"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "PACK",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "Static dense shape operation; constant controls; preserved quantization; existing shape/mask limits",
+      "fixtures": [
+        "PACK_INT8"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "RESIZE_BILINEAR",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "INT8 to INT32 RESIZE with LiteRT Q10 coordinates, signed rounding and CAST; unchanged quantization; fixed NHWC sizes; existing TOSA geometry limits",
+      "fixtures": [
+        "RESIZE_INT8_1_False_False",
+        "RESIZE_INT8_1_False_True",
+        "RESIZE_INT8_2_False_False",
+        "RESIZE_INT8_2_False_True",
+        "RESIZE_INT8_2_True_False",
+        "RESIZE_INT8_5_False_False",
+        "RESIZE_INT8_5_False_True",
+        "RESIZE_INT8_5_True_False"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "REVERSE_V2",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "Static dense shape operation; constant controls; preserved quantization; existing shape/mask limits",
+      "fixtures": [
+        "REVERSE_V2_INT8"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "SPLIT",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "Static dense shape operation; constant controls; preserved quantization; existing shape/mask limits",
+      "fixtures": [
+        "SPLIT_INT8"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "SPLIT_V",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "Static dense shape operation; constant controls; preserved quantization; existing shape/mask limits",
+      "fixtures": [
+        "SPLIT_V_INT8"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "SQUEEZE",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "Static dense shape operation; constant controls; preserved quantization; existing shape/mask limits",
+      "fixtures": [
+        "SQUEEZE_INT8"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "STRIDED_SLICE",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "Static dense shape operation; constant controls; preserved quantization; existing shape/mask limits",
+      "fixtures": [
+        "STRIDED_SLICE_INT8"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "SUB",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "INT32 input rescaling, SUB, requantization; static broadcasting; NONE/RELU/RELU6",
+      "fixtures": [
+        "SUB_INT8",
+        "SUB_INT8_EXHAUSTIVE",
+        "SUB_INT8_SCALES"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "TANH",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "TABLE; per-tensor affine INT8; output scale 1/128, zero point 0",
+      "fixtures": [
+        "TANH_INT8_0.0001",
+        "TANH_INT8_0.03125",
+        "TANH_INT8_2.0"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "TILE",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "Static dense shape operation; constant controls; preserved quantization; existing shape/mask limits",
+      "fixtures": [
+        "TILE_INT8"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "TRANSPOSE_CONV",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "INT8 NHWC; symmetric constant OHWI weights per tensor/channel; optional INT32 bias with matching scale; proven accumulator/rescale ranges; canonical SAME/VALID, stride <= kernel; NONE/RELU/RELU6",
+      "fixtures": [
+        "TRANSPOSE_CONV_INT8_0_False",
+        "TRANSPOSE_CONV_INT8_0_True",
+        "TRANSPOSE_CONV_INT8_1_False",
+        "TRANSPOSE_CONV_INT8_1_True",
+        "TRANSPOSE_CONV_INT8_PER_TENSOR_RELU6"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    },
+    {
+      "litert_operator": "UNPACK",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine activations",
+      "constraints": "Static dense shape operation; constant controls; preserved quantization; existing shape/mask limits",
+      "fixtures": [
+        "UNPACK_INT8"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "exact CPU reference; four cases per fixture",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
+    }
+  ]
+}

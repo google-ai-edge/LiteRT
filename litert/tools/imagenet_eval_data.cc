@@ -12,7 +12,10 @@
 #include "litert/tools/imagenet_eval_data.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
+#include <filesystem>
+#include <set>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
@@ -144,24 +147,109 @@ Expected<void> WriteJson(const std::string& path, const Json& value) {
   return {};
 }
 
-Expected<Comparison> CompareScores(const std::vector<float>& actual,
-                         const std::vector<float>& reference, double atol,
-                         double rtol) {
-  LITERT_RETURN_IF_ERROR(Require(actual.size() == reference.size() && !actual.empty(),
-          "Output size mismatch"));
-  LITERT_RETURN_IF_ERROR(Require(std::isfinite(atol) && std::isfinite(rtol) && atol >= 0 && rtol >= 0,
-          "Tolerances must be finite and nonnegative"));
+Expected<std::vector<Sample>> ReadSamples(const std::string& manifest,
+                                        const std::string& image_root,
+                                        int start, int limit) {
+  LITERT_RETURN_IF_ERROR(Require(start >= 0 && limit >= 0, "Negative sample range"));
+  std::ifstream file(manifest);
+  LITERT_RETURN_IF_ERROR(Require(static_cast<bool>(file), "Cannot open manifest: " + manifest));
+  std::vector<Sample> rows;
+  std::set<int> ids;
+  std::string line;
+  bool first = true;
+  const auto root = image_root.empty() ? std::filesystem::path(manifest).parent_path()
+                                       : std::filesystem::path(image_root);
+  auto integer = [](const std::string& text, int& value) {
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+    return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
+  };
+  while (std::getline(file, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (line.empty() || line[0] == '#') continue;
+    if (first && line == "id\tlabel\tpath") { first = false; continue; }
+    first = false;
+    const auto tab = line.find('\t');
+    const auto second = tab == std::string::npos ? tab : line.find('\t', tab + 1);
+    LITERT_RETURN_IF_ERROR(Require(second != std::string::npos &&
+        line.find('\t', second + 1) == std::string::npos, "Bad manifest row: " + line));
+    Sample row{};
+    LITERT_RETURN_IF_ERROR(Require(integer(line.substr(0, tab), row.id) &&
+        integer(line.substr(tab + 1, second - tab - 1), row.label),
+        "Invalid manifest ID or label: " + line));
+    row.path = line.substr(second + 1);
+    LITERT_RETURN_IF_ERROR(Require(!row.path.empty() && ids.insert(row.id).second,
+        "Empty image path or duplicate sample ID"));
+    row.path = (root / row.path).string();
+    rows.push_back(std::move(row));
+  }
+  LITERT_RETURN_IF_ERROR(Require(file.eof(), "Failed to read manifest: " + manifest));
+  LITERT_RETURN_IF_ERROR(Require(static_cast<size_t>(start) < rows.size(), "No selected samples"));
+  rows.erase(rows.begin(), rows.begin() + start);
+  if (limit && static_cast<size_t>(limit) < rows.size()) rows.resize(limit);
+  return rows;
+}
+
+namespace {
+template <typename Actual, typename Reference>
+Expected<Comparison> CompareElements(size_t count, Actual actual, Reference reference,
+                                      bool floating, double atol, double rtol,
+                                      double max_code, double mean_code) {
+  LITERT_RETURN_IF_ERROR(Require(count > 0, "Cannot compare empty tensor"));
+  for (double tolerance : {atol, rtol, max_code, mean_code}) {
+    LITERT_RETURN_IF_ERROR(Require(std::isfinite(tolerance) && tolerance >= 0,
+        "Tolerances must be finite and nonnegative"));
+  }
   Comparison out;
-  for (size_t i = 0; i < actual.size(); ++i) {
-    LITERT_RETURN_IF_ERROR(Require(std::isfinite(actual[i]) && std::isfinite(reference[i]),
-            "Nonfinite output score"));
-    double delta = std::abs(static_cast<double>(actual[i]) - reference[i]);
+  for (size_t i = 0; i < count; ++i) {
+    const double a = actual(i), b = reference(i);
+    const double delta = std::abs(a - b);
+    out.finite &= std::isfinite(a) && std::isfinite(b);
     out.max_abs = std::max(out.max_abs, delta);
     out.mean_abs += delta;
-    out.allclose &= delta <= atol + rtol * std::abs(static_cast<double>(reference[i]));
+    out.allclose &= delta <= atol + rtol * std::abs(b);
   }
-  out.mean_abs /= actual.size();
+  out.mean_abs /= count;
+  out.allclose = out.finite && (floating ? out.allclose :
+      out.max_abs <= max_code && out.mean_abs <= mean_code);
   return out;
+}
+}  // namespace
+
+Expected<Comparison> CompareTensorValues(const void* actual, const void* reference,
+                                        size_t count, bool floating,
+                                        double atol, double rtol,
+                                        double max_code, double mean_code) {
+  LITERT_RETURN_IF_ERROR(Require(actual && reference, "Missing tensor data"));
+  return CompareElements(count,
+      [&](size_t i) -> double { return floating ? static_cast<const float*>(actual)[i]
+                                               : static_cast<const int8_t*>(actual)[i]; },
+      [&](size_t i) -> double { return floating ? static_cast<const float*>(reference)[i]
+                                               : static_cast<const int8_t*>(reference)[i]; },
+      floating, atol, rtol, max_code, mean_code);
+}
+
+Expected<Comparison> CompareScores(const std::vector<float>& actual,
+                                    const std::vector<float>& reference,
+                                    double atol, double rtol) {
+  LITERT_RETURN_IF_ERROR(Require(actual.size() == reference.size(), "Output size mismatch"));
+  LITERT_ASSIGN_OR_RETURN(auto result, CompareTensorValues(actual.data(), reference.data(),
+      actual.size(), true, atol, rtol, 0, 0));
+  LITERT_RETURN_IF_ERROR(Require(result.finite, "Nonfinite output score"));
+  return result;
+}
+
+Expected<Comparison> CompareQuantizedScores(
+    const std::vector<float>& actual, const std::vector<float>& reference,
+    const LiteRtQuantizationPerTensor& quantization, double max_code, double mean_code) {
+  LITERT_RETURN_IF_ERROR(Require(actual.size() == reference.size(), "Output size mismatch"));
+  LITERT_RETURN_IF_ERROR(Require(std::isfinite(quantization.scale) && quantization.scale > 0,
+                                "Invalid quantization scale"));
+  // Recover integer output codes from dequantized scores. This is distinct
+  // from quantizing FP32 model inputs; these values already represent codes.
+  return CompareElements(actual.size(),
+      [&](size_t i) { return std::round(actual[i] / quantization.scale + quantization.zero_point); },
+      [&](size_t i) { return std::round(reference[i] / quantization.scale + quantization.zero_point); },
+      false, 0, 0, max_code, mean_code);
 }
 Expected<std::vector<int>> TopK(const std::vector<float>& scores, int k) {
   LITERT_RETURN_IF_ERROR(Require(k >= 0 && std::all_of(scores.begin(), scores.end(),

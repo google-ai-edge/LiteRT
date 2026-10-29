@@ -27,9 +27,9 @@ using tfsc::tosa::DataType;
 using tfsc::tosa::ResId;
 using TT = tfsc::tosa::Tensor;
 using Shape = std::vector<uint32_t>;
-bool ShapeOf(const Tensor& t, Shape& shape) {
+bool ShapeOf(const Tensor& t, Shape& shape, bool quantized = false) {
   auto type = t.RankedTensorType();
-  if (!type || type->ElementType() != ElementType::Float32 || type->Layout().HasStrides()) return false;
+  if (!type || type->ElementType() != (quantized ? ElementType::Int8 : ElementType::Float32) || type->Layout().HasStrides()) return false;
   uint64_t count = 1;
   for (int dim : type->Layout().Dimensions()) {
     if (dim <= 0 || dim > 8192 || count > uint64_t{INT32_MAX}/dim) return false;
@@ -58,6 +58,7 @@ bool IsPortableOperation(LiteRtOpCode code) {
 #define OP(name) case kLiteRtOpCodeTfl##name:
     OP(Relu) OP(Relu6) OP(Slice) OP(Concatenation) OP(Padv2)
     OP(Sub) OP(Div) OP(Maximum) OP(Minimum) OP(Abs) OP(Neg) OP(Square)
+    OP(Pow) OP(Sin) OP(Cos) OP(Gelu) OP(ReverseV2) OP(Conv3d)
     OP(Sqrt) OP(Rsqrt) OP(Exp) OP(Log) OP(Floor) OP(Ceil) OP(Tanh)
     OP(Squeeze) OP(ExpandDims) OP(Pack) OP(Unpack) OP(Split) OP(SplitV) OP(Tile)
     OP(Mean) OP(ReduceProd) OP(Softmax) OP(BatchMatmul) OP(StridedSlice) OP(MaxPool2d) OP(AveragePool2d)
@@ -69,21 +70,57 @@ bool IsPortableOperation(LiteRtOpCode code) {
 std::shared_ptr<PortablePlan> AnalyzePortableOperation(const Op& op, std::string& reason) {
   auto reject = [&](const char* message) -> std::shared_ptr<PortablePlan> { reason = message; return nullptr; };
   auto p = std::make_shared<PortablePlan>(); p->code = op.Code();
+  p->quantized = !op.Outputs().empty() && op.Outputs()[0].ElementType()==ElementType::Int8;
+  if(p->quantized){
+    switch(p->code){case kLiteRtOpCodeTflMaximum:case kLiteRtOpCodeTflMinimum:case kLiteRtOpCodeTflSqueeze:case kLiteRtOpCodeTflExpandDims:case kLiteRtOpCodeTflPack:case kLiteRtOpCodeTflUnpack:case kLiteRtOpCodeTflSplit:case kLiteRtOpCodeTflSplitV:case kLiteRtOpCodeTflTile:case kLiteRtOpCodeTflStridedSlice:case kLiteRtOpCodeTflReverseV2:break;default:return reject("Quantized portable operation not enabled");}
+    const auto output=op.Outputs()[0];if(output.QTypeId()!=QuantizationTypeId::PerTensor)return reject("Quantized shape op requires per-tensor quantization");auto q=output.PerTensorQuantization();
+    if(!std::isfinite(q.scale) || q.scale<=0 || q.zero_point < -128 || q.zero_point>127)return reject("Invalid shape-op quantization");
+    for(const auto& t:op.Inputs())if(t.ElementType()==ElementType::Int8){if(t.QTypeId()!=QuantizationTypeId::PerTensor)return reject("Shape-op quantization differs");auto iq=t.PerTensorQuantization();if(iq.scale!=q.scale || iq.zero_point!=q.zero_point)return reject("Shape-op quantization differs");}
+    for(const auto& t:op.Outputs()){if(t.ElementType()!=ElementType::Int8 || t.QTypeId()!=QuantizationTypeId::PerTensor)return reject("Shape-op output type differs");auto oq=t.PerTensorQuantization();if(oq.scale!=q.scale || oq.zero_point!=q.zero_point)return reject("Shape-op output quantization differs");}
+  }
+  auto shape_of=[&](const Tensor& t,Shape& s){return ShapeOf(t,s,p->quantized);};
   const auto in = op.Inputs(); const auto out = op.Outputs();
   const int first = p->code == kLiteRtOpCodeTflSplit ? 1 : 0;
   if (in.size() <= first || out.empty()) return reject("Missing data operands");
   Shape source;
-  if (!ShapeOf(in[first], source)) return reject("Portable lowering requires static dense non-scalar FP32");
+  if (!shape_of(in[first], source)) return reject("Portable lowering requires supported static dense non-scalar data");
   p->inputs = {first}; p->shapes = {source};
-  for (const auto& t : out) { Shape s; if (!ShapeOf(t, s)) return reject("Invalid FP32 output shape"); p->outputs.push_back(s); }
+  for (const auto& t : out) { Shape s; if (!shape_of(t, s)) return reject("Invalid FP32 output shape"); p->outputs.push_back(s); }
   const int rank = source.size();
   Shape expected = source;
   auto axis = [&](int limit) { if (p->axis < 0) p->axis += limit; return p->axis >= 0 && p->axis < limit; };
   auto ints = [&](int i, std::vector<int32_t>& v) { return i < in.size() && Ints(in[i],v); };
   const auto code = p->code;
-  if (code == kLiteRtOpCodeTflBatchMatmul) {
+  if (code == kLiteRtOpCodeTflConv3d) {
+    Shape weight, bias;
+    if (in.size()!=3 || rank!=5 || !shape_of(in[1],weight) || weight.size()!=5 ||
+        !shape_of(in[2],bias) || bias.size()!=1 || !in[1].HasWeights() || !in[2].HasWeights() ||
+        weight[3]!=source[4] || bias[0]!=weight[4]) return reject("CONV3D requires constant DHWIO weights and bias");
+    for (int i : {1,2}) { auto data=in[i].WeightsData<float>(); if(!data || data->size()!=Count(i==1?weight:bias))return reject("Invalid CONV3D constants");for(float v:*data)if(!std::isfinite(v))return reject("Nonfinite CONV3D constants"); }
+    uint32_t pad;
+    p->strides.resize(3);p->sizes.resize(3);p->padding.resize(6);
+    if(LiteRtGetConv3dPaddingOption(op.Get(),&pad)!=kLiteRtStatusOk || pad>1 ||
+       LiteRtGetConv3dStrideDOption(op.Get(),&p->strides[0])!=kLiteRtStatusOk ||
+       LiteRtGetConv3dStrideHOption(op.Get(),&p->strides[1])!=kLiteRtStatusOk ||
+       LiteRtGetConv3dStrideWOption(op.Get(),&p->strides[2])!=kLiteRtStatusOk ||
+       LiteRtGetConv3dDilationDOption(op.Get(),&p->sizes[0])!=kLiteRtStatusOk ||
+       LiteRtGetConv3dDilationHOption(op.Get(),&p->sizes[1])!=kLiteRtStatusOk ||
+       LiteRtGetConv3dDilationWOption(op.Get(),&p->sizes[2])!=kLiteRtStatusOk ||
+       LiteRtGetConv3dFusedActivationOption(op.Get(),&p->activation)!=kLiteRtStatusOk ||
+       (p->activation!=0 && p->activation!=1 && p->activation!=3))return reject("Invalid CONV3D options");
+    expected[4]=weight[4];
+    for(int a=0;a<3;++a){int64_t n=source[a+1],st=p->strides[a],d=p->sizes[a];if(st<=0 || st>8192 || d<=0 || d>8192)return reject("Invalid CONV3D stride/dilation");int64_t k=(weight[a]-1)*d+1;if(pad==1 && n<k)return reject("Invalid CONV3D geometry");int64_t count=pad==0?(n+st-1)/st:(n-k)/st+1;int64_t total=pad==0?std::max(int64_t{0},(count-1)*st+k-n):0;if(total>INT32_MAX)return reject("CONV3D padding overflow");p->padding[2*a]=total/2;p->padding[2*a+1]=total-total/2;expected[a+1]=static_cast<uint32_t>(count);}
+    p->inputs={0,1,2};p->shapes={source,weight,bias};
+  } else if(code==kLiteRtOpCodeTflReverseV2) {
+    if(in.size()!=2 || !ints(1,p->parameters))return reject("REVERSE requires constant axes");
+    std::set<int32_t> seen;
+    for(auto& a:p->parameters){if(a<0)a+=rank;if(a<0 || a>=rank || !seen.insert(a).second)return reject("Invalid or duplicate REVERSE axis");}
+  } else if(code==kLiteRtOpCodeTflGelu) {
+    bool approximate;
+    if(in.size()!=1 || LiteRtGetGeluApproximateOption(op.Get(),&approximate)!=kLiteRtStatusOk || approximate)return reject("GELU requires exact erf mode");
+  } else if (code == kLiteRtOpCodeTflBatchMatmul) {
     Shape rhs;
-    if(in.size()!=2 || !ShapeOf(in[1],rhs) || rank<2 || rhs.size()<2 ||
+    if(in.size()!=2 || !shape_of(in[1],rhs) || rank<2 || rhs.size()<2 ||
        LiteRtGetBatchMatmulAdjXOption(op.Get(),&p->adj_x)!=kLiteRtStatusOk ||
        LiteRtGetBatchMatmulAdjYOption(op.Get(),&p->adj_y)!=kLiteRtStatusOk)return reject("Invalid BATCH_MATMUL operands/options");
     auto lhs=source;
@@ -95,7 +132,7 @@ std::shared_ptr<PortablePlan> AnalyzePortableOperation(const Op& op, std::string
     for(size_t i=0;i+2<r;++i){if(lhs[i]!=rhs[i] && lhs[i]!=1 && rhs[i]!=1)return reject("Batch broadcast mismatch");expected[i]=std::max(lhs[i],rhs[i]);}
     expected[r-2]=lhs[r-2];expected[r-1]=rhs[r-1];
     if(Count(Shape(expected.begin(),expected.end()-2))>8192)return reject("Flattened batch exceeds limit");
-    p->inputs.push_back(1);p->shapes.push_back({});if(!ShapeOf(in[1],p->shapes[1]))return reject("Invalid rhs");
+    p->inputs.push_back(1);p->shapes.push_back({});if(!shape_of(in[1],p->shapes[1]))return reject("Invalid rhs");
     auto expanded=expected;expanded[r-1]=lhs[r-1];
     if(Count(expanded)>64*1024*1024)return reject("Batch materialization exceeds 256 MiB");
     expanded[r-2]=rhs[r-2];expanded[r-1]=rhs[r-1];
@@ -126,9 +163,9 @@ std::shared_ptr<PortablePlan> AnalyzePortableOperation(const Op& op, std::string
        LiteRtGetStridedSliceOffsetOption(op.Get(),&offset)!=kLiteRtStatusOk || ellipsis || new_axis || offset)return reject("Unsupported STRIDED_SLICE masks/options");
     expected.clear();
     for(int i=0;i<rank;++i){int n=source[i],b=p->parameters[i],e=p->sizes[i],st=p->strides[i];if(st<=0 || st>8192)return reject("STRIDED_SLICE requires positive strides");if(b<0)b+=n;if(e<0)e+=n;b=(begin_mask&(1<<i))?0:std::clamp(b,0,n);e=(end_mask&(1<<i))?n:std::clamp(e,0,n);if(shrink&(1<<i)){if(b>=n)return reject("Shrink index out of range");e=b+1;st=1;}int size=(e-b+st-1)/st;if(size<=0)return reject("Empty slices unsupported");p->parameters[i]=b;p->sizes[i]=size;p->strides[i]=st;if(!(shrink&(1<<i)))expected.push_back(size);}
-  } else if (code == kLiteRtOpCodeTflSub || code == kLiteRtOpCodeTflDiv || code == kLiteRtOpCodeTflMaximum || code == kLiteRtOpCodeTflMinimum) {
+  } else if (code == kLiteRtOpCodeTflPow || code == kLiteRtOpCodeTflSub || code == kLiteRtOpCodeTflDiv || code == kLiteRtOpCodeTflMaximum || code == kLiteRtOpCodeTflMinimum) {
     Shape rhs;
-    if (in.size()!=2 || !ShapeOf(in[1],rhs)) return reject("Binary op requires two FP32 operands");
+    if (in.size()!=2 || !shape_of(in[1],rhs)) return reject("Binary op requires two FP32 operands");
     size_t r=std::max(source.size(),rhs.size()); source.insert(source.begin(),r-source.size(),1); rhs.insert(rhs.begin(),r-rhs.size(),1);
     expected.resize(r);
     for(size_t i=0;i<r;++i) { if(source[i]!=rhs[i] && source[i]!=1 && rhs[i]!=1) return reject("Broadcast mismatch"); expected[i]=std::max(source[i],rhs[i]); }
@@ -159,7 +196,7 @@ std::shared_ptr<PortablePlan> AnalyzePortableOperation(const Op& op, std::string
     if(get(op.Get(),&p->axis)!=kLiteRtStatusOk || !axis(rank+(code==kLiteRtOpCodeTflPack))) return reject("Invalid axis");
     p->inputs.clear();p->shapes.clear();
     if(code==kLiteRtOpCodeTflPack) expected.insert(expected.begin()+p->axis,in.size()); else expected[p->axis]=0;
-    for(size_t i=0;i<in.size();++i) { Shape s; if(!ShapeOf(in[i],s) || s.size()!=source.size()) return reject("Invalid concatenated shape"); for(int j=0;j<rank;++j) if((code==kLiteRtOpCodeTflPack || j!=p->axis) && s[j]!=source[j]) return reject("Concatenated shape mismatch"); if(code!=kLiteRtOpCodeTflPack) expected[p->axis]+=s[p->axis]; p->inputs.push_back(i);p->shapes.push_back(s); }
+    for(size_t i=0;i<in.size();++i) { Shape s; if(!shape_of(in[i],s) || s.size()!=source.size()) return reject("Invalid concatenated shape"); for(int j=0;j<rank;++j) if((code==kLiteRtOpCodeTflPack || j!=p->axis) && s[j]!=source[j]) return reject("Concatenated shape mismatch"); if(code!=kLiteRtOpCodeTflPack) expected[p->axis]+=s[p->axis]; p->inputs.push_back(i);p->shapes.push_back(s); }
     if(code==kLiteRtOpCodeTflConcatenation && (LiteRtGetConcatenationFusedActivationOption(op.Get(),&p->activation)!=kLiteRtStatusOk || p->activation!=0)) return reject("CONCAT activation unsupported");
   } else if(code==kLiteRtOpCodeTflUnpack || code==kLiteRtOpCodeTflSplit || code==kLiteRtOpCodeTflSplitV) {
     if(code==kLiteRtOpCodeTflUnpack) { if(LiteRtGetUnpackAxisOption(op.Get(),&p->axis)!=kLiteRtStatusOk) return reject("Invalid UNPACK axis"); }
@@ -192,7 +229,7 @@ std::shared_ptr<PortablePlan> AnalyzePortableOperation(const Op& op, std::string
   reason.clear();return p;
 }
 std::vector<ResId> EmitPortableOperation(tfsc::tosa::Graph& g, std::vector<ResId> v, const PortablePlan& p) {
-  auto type=[](const Shape& s){return TT(DataType::float32_t,s);};
+  auto type=[&](const Shape& s){return TT(p.quantized?DataType::int8_t:DataType::float32_t,s);};
   auto reshape=[&](ResId x,const Shape& s){return g.AddReshapeOperator(x,g.AddTensorConstant(Attribute(s)),type(s));};
   auto constant=[&](float x,const Shape& s){return reshape(g.AddTensorConstant(Attribute(x)),Shape(s.size(),1));};
   const Shape& out=p.outputs[0];const auto t=type(out);auto x=v[0];
@@ -200,10 +237,32 @@ std::vector<ResId> EmitPortableOperation(tfsc::tosa::Graph& g, std::vector<ResId
   auto binary=[&](tfsc::tosa::OperatorEnum op){for(size_t i=0;i<v.size();++i)v[i]=reshape(v[i],p.shapes[i]);return g.AddOperator(op,v,{t})[0];};
   using O=tfsc::tosa::OperatorEnum;
   switch(p.code) {
+    case kLiteRtOpCodeTflConv3d: {
+      // LiteRT DHWIO -> TOSA ODHWI.
+      auto w=p.shapes[1];Shape tw={w[4],w[0],w[1],w[2],w[3]};
+      auto weight=g.AddTransposeOperator(v[1],Attribute(std::vector<int32_t>{4,0,1,2,3}),type(tw));
+      auto cropped=p.shapes[0];
+      for(size_t a=0;a<3;++a){uint64_t k=(static_cast<uint64_t>(w[a])-1)*p.sizes[a]+1;cropped[a+1]-=(cropped[a+1]+p.padding[2*a]+p.padding[2*a+1]-k)%p.strides[a];}
+      if(cropped!=p.shapes[0])x=g.AddSliceOperator(x,g.AddTensorConstant(Attribute(std::vector<int32_t>(5,0))),g.AddTensorConstant(Attribute(cropped)),type(cropped));
+      auto zero=g.AddTensorConstant(Attribute(0.0f));
+      x=g.AddConv3dOperator(x,weight,v[2],zero,zero,Attribute(p.padding),Attribute(p.strides),Attribute(p.sizes),Attribute(int32_t{3}),Attribute(false),t);
+      break;
+    }
+    case kLiteRtOpCodeTflReverseV2:
+      for(auto a:p.parameters)x=g.AddReverseOperator(x,Attribute(a),t);
+      return {x};
+    case kLiteRtOpCodeTflGelu: {
+      auto zero=g.AddTensorConstant(Attribute(int8_t{0}));
+      auto z=g.AddMulOperator(x,constant(0.7071067811865475f,out),zero,t);
+      z=g.AddErfOperator(z,t);z=g.AddAddOperator(z,constant(1.0f,out),t);
+      z=g.AddMulOperator(z,constant(0.5f,out),zero,t);
+      return {g.AddMulOperator(x,z,zero,t)};
+    }
+    case kLiteRtOpCodeTflPow:x=binary(O::Pow);break;
     case kLiteRtOpCodeTflBatchMatmul: {
       size_t rank=out.size();auto batch=out;batch.resize(rank-2);uint32_t n=Count(batch);
       for(size_t i=0;i<2;++i){auto shape=p.shapes[i];bool adj=i==0?p.adj_x:p.adj_y;if(adj){std::vector<uint32_t> perm(shape.size());std::iota(perm.begin(),perm.end(),0);std::swap(perm[perm.size()-1],perm[perm.size()-2]);std::swap(shape[shape.size()-1],shape[shape.size()-2]);v[i]=g.AddTransposeOperator(v[i],Attribute(perm),type(shape));}shape.insert(shape.begin(),rank-shape.size(),1);v[i]=reshape(v[i],shape);Shape mult(rank,1),full=shape;for(size_t j=0;j+2<rank;++j){mult[j]=out[j]/shape[j];full[j]=out[j];}if(full!=shape)v[i]=g.AddTileOperator(v[i],g.AddTensorConstant(Attribute(mult)),type(full));v[i]=reshape(v[i],{n,full[rank-2],full[rank-1]});}
-      auto zero=g.AddTensorConstant(Attribute(int8_t{0}));
+      auto zero=g.AddTensorConstant(Attribute(0.0f));
       return {reshape(g.AddMatmulOperator(v[0],v[1],zero,zero,type({n,out[rank-2],out.back()})),out)};
     }
     case kLiteRtOpCodeTflMaxPool2d:case kLiteRtOpCodeTflAveragePool2d: {
@@ -211,7 +270,7 @@ std::vector<ResId> EmitPortableOperation(tfsc::tosa::Graph& g, std::vector<ResId
       for(int a=0;a<2;++a)cropped[a+1]-=(cropped[a+1]+p.padding[2*a]+p.padding[2*a+1]-p.kernel[a])%p.strides[a];
       if(cropped!=p.shapes[0])x=g.AddSliceOperator(x,g.AddTensorConstant(Attribute(std::vector<int32_t>(4,0))),g.AddTensorConstant(Attribute(cropped)),type(cropped));
       if(p.code==kLiteRtOpCodeTflMaxPool2d)x=g.AddMaxPool2dOperator(x,Attribute(p.kernel),Attribute(p.strides),Attribute(p.padding),Attribute(uint32_t{0}),t);
-      else {auto zero=g.AddTensorConstant(Attribute(int8_t{0}));x=g.AddAvgPool2dOperator(x,zero,zero,Attribute(p.kernel),Attribute(p.strides),Attribute(p.padding),Attribute(int32_t{3}),t);}
+      else {auto zero=g.AddTensorConstant(Attribute(0.0f));x=g.AddAvgPool2dOperator(x,zero,zero,Attribute(p.kernel),Attribute(p.strides),Attribute(p.padding),Attribute(int32_t{3}),t);}
       break;
     }
     case kLiteRtOpCodeTflStridedSlice: {
@@ -225,9 +284,10 @@ std::vector<ResId> EmitPortableOperation(tfsc::tosa::Graph& g, std::vector<ResId
     case kLiteRtOpCodeTflDiv:v[1]=reshape(v[1],p.shapes[1]);v[1]=g.AddReciprocalOperator(v[1],type(p.shapes[1]));v[0]=reshape(v[0],p.shapes[0]);x=g.AddMulOperator(v[0],v[1],g.AddTensorConstant(Attribute(int8_t{0})),t);break;
     case kLiteRtOpCodeTflMaximum:case kLiteRtOpCodeTflMinimum:
       for(size_t i=0;i<v.size();++i)v[i]=reshape(v[i],p.shapes[i]);
+      if(p.quantized){for(size_t i=0;i<v.size();++i)v[i]=g.AddCastOperator(v[i],TT(DataType::int32_t,p.shapes[i]));auto z=g.AddOperator(p.code==kLiteRtOpCodeTflMaximum?O::Maximum:O::Minimum,v,{TT(DataType::int32_t,out)},{Attribute(uint32_t{1})})[0];return {g.AddCastOperator(z,t)};}
       return {g.AddOperator(p.code==kLiteRtOpCodeTflMaximum?O::Maximum:O::Minimum,v,{t},{Attribute(uint32_t{0})})[0]};
 #define UNARY(name, helper) case kLiteRtOpCodeTfl##name:return {g.Add##helper##Operator(x,t)};
-    UNARY(Abs,Abs)  UNARY(Rsqrt,Rsqrt) UNARY(Exp,Exp) UNARY(Log,Log)
+    UNARY(Sin,Sin) UNARY(Cos,Cos) UNARY(Abs,Abs)  UNARY(Rsqrt,Rsqrt) UNARY(Exp,Exp) UNARY(Log,Log)
     UNARY(Floor,Floor) UNARY(Ceil,Ceil) UNARY(Tanh,Tanh)
 #undef UNARY
     case kLiteRtOpCodeTflNeg:return {g.AddNegateOperator(x,g.AddTensorConstant(Attribute(0.0f)),g.AddTensorConstant(Attribute(0.0f)),t)};

@@ -31,5 +31,7 @@ cmake_build/
 # Local Arm Vulkan ML preflight environments and execution artifacts.
 /.arm-vulkan-preflight/
 /.bazel-output/
+/.bazel-output-*/
 /.bazelisk-cache/
 /.cache/
+/eval-data/

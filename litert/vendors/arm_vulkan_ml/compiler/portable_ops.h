@@ -18,6 +18,7 @@
 namespace litert::arm_vulkan_ml {
 struct PortablePlan {
   LiteRtOpCode code;
+  bool quantized = false;
   std::vector<int> inputs;
   std::vector<std::vector<uint32_t>> shapes, outputs;
   std::vector<int32_t> parameters, sizes, strides, padding, kernel;

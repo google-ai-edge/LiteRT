@@ -13,12 +13,52 @@
 // limitations under the License.
 
 #include "litert/vendors/arm_vulkan_ml/dispatch/tensor_capabilities.h"
+#include "litert/vendors/arm_vulkan_ml/dispatch/device_capabilities.h"
 
 #include <map>
 #include "gtest/gtest.h"
 
 namespace litert::arm_vulkan_ml {
 namespace {
+TEST(TosaLevelTest, EnforcesEveryLevelBoundAndRejectsUncheckedOrUnknownLevels) {
+  DeviceCapabilities device;
+  GraphEngine engine{};
+  engine.instruction_set = "TOSA.001000.1";
+  engine.level = VK_DATA_GRAPH_TOSA_LEVEL_8K_ARM;
+  engine.profiles = {{"PRO-INT", VK_DATA_GRAPH_TOSA_QUALITY_CONFORMANT_ARM}};
+  CompiledPartition artifact;
+  std::string reason;
+  EXPECT_FALSE(CheckEngineRequirements(artifact, device, engine, false, reason));
+  EXPECT_NE(reason.find("no checked"), std::string::npos);
+  artifact.level_requirements.checked = true;
+  const std::pair<uint64_t TosaLevelRequirements::*, uint64_t> bounds[] = {
+      {&TosaLevelRequirements::max_rank, 6},
+      {&TosaLevelRequirements::max_tensor_bytes, INT32_MAX},
+      {&TosaLevelRequirements::max_kernel, 8192},
+      {&TosaLevelRequirements::max_stride, 8192},
+      {&TosaLevelRequirements::max_scale, 256},
+      {&TosaLevelRequirements::max_tensor_list_size, 64},
+      {&TosaLevelRequirements::max_nesting, 6},
+  };
+  for (const auto& [member, maximum] : bounds) {
+    artifact.level_requirements.*member = maximum;
+    EXPECT_TRUE(CheckEngineRequirements(artifact, device, engine, false, reason)) << reason;
+    artifact.level_requirements.*member = maximum + 1;
+    EXPECT_FALSE(CheckEngineRequirements(artifact, device, engine, false, reason));
+    EXPECT_NE(reason.find("exceeded"), std::string::npos);
+    engine.level = VK_DATA_GRAPH_TOSA_LEVEL_NONE_ARM;
+    EXPECT_TRUE(CheckEngineRequirements(artifact, device, engine, false, reason)) << reason;
+    engine.level = VK_DATA_GRAPH_TOSA_LEVEL_8K_ARM;
+    artifact.level_requirements.*member = 0;
+  }
+  engine.level = VK_DATA_GRAPH_TOSA_LEVEL_NONE_ARM;
+  artifact.level_requirements.max_scale = 2049;
+  EXPECT_FALSE(CheckEngineRequirements(artifact, device, engine, false, reason));
+  engine.level = VK_DATA_GRAPH_TOSALEVEL_MAX_ENUM_ARM;
+  EXPECT_FALSE(CheckEngineRequirements(artifact, device, engine, false, reason));
+  EXPECT_NE(reason.find("Unknown TOSA level"), std::string::npos);
+}
+
 VkPhysicalDeviceTensorPropertiesARM limits;
 std::map<VkFormat, VkFormatFeatureFlags2> formats;
 std::map<VkFormat, int> queries;

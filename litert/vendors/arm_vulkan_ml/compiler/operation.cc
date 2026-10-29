@@ -15,6 +15,7 @@
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/extended_ops.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/portable_ops.h"
+#include "litert/core/model/model.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -158,15 +159,61 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
   auto reject = [&](const char* s)->std::optional<OperationPlan> { reason=s; return std::nullopt; };
   OperationPlan p{}; p.code=op.Code();
   auto in=op.Inputs(); auto out=op.Outputs();
-  if (IsPortableOperation(p.code) && !out.empty() && out[0].ElementType() == ElementType::Float32) {
+  const bool typed = p.code==kLiteRtOpCodeTflLogicalAnd || p.code==kLiteRtOpCodeTflLogicalOr ||
+      p.code==kLiteRtOpCodeTflLogicalNot || p.code==kLiteRtOpCodeTflNotEqual || p.code==kLiteRtOpCodeTflEqual ||
+      p.code==kLiteRtOpCodeTflReduceAll || p.code==kLiteRtOpCodeTflReduceAny || p.code==kLiteRtOpCodeTflArgMax ||
+      p.code==kLiteRtOpCodeTflBitwiseXor || p.code==kLiteRtOpCodeTflFloorDiv || p.code==kLiteRtOpCodeTflRightShift;
+  if(typed) {
+    if(out.size()!=1 || in.empty())return reject("Typed operation requires one output");
+    auto read=[&](const Tensor& t, QuantizedTensor& q, DataType& type){
+      auto rt=t.RankedTensorType();if(!rt || rt->Layout().HasStrides())return false;
+      switch(rt->ElementType()) {case ElementType::Bool:type=DataType::bool_t;break;case ElementType::UInt32:if(p.code!=kLiteRtOpCodeTflRightShift)return false;[[fallthrough]];case ElementType::Int32:type=DataType::int32_t;break;case ElementType::Float32:type=DataType::float32_t;break;default:return false;}
+      q.floating=type==DataType::float32_t;uint64_t count=1;
+      for(auto d:rt->Layout().Dimensions()){if(d<=0 || d>8192 || count>uint64_t{INT32_MAX}/d)return false;count*=d;q.shape.push_back(static_cast<uint32_t>(d));}
+      return !q.shape.empty() && q.shape.size()<=6;
+    };
+    QuantizedTensor lhs;DataType lt;
+    if(!read(in[0],lhs,lt) || !read(out[0],p.output,p.output_type))return reject("Unsupported typed tensor layout/type");
+    p.typed=true;p.inputs={lhs};p.runtime_inputs={0};p.input_types={lt};auto expected=lhs.shape;
+    const bool reduce=p.code==kLiteRtOpCodeTflReduceAll || p.code==kLiteRtOpCodeTflReduceAny;
+    const bool argmax=p.code==kLiteRtOpCodeTflArgMax;
+    if(reduce || argmax){
+      if(in.size()!=2)return reject("Expected constant axes");auto rt=in[1].RankedTensorType();auto axes=in[1].WeightsData<int32_t>();
+      if(!rt || rt->ElementType()!=ElementType::Int32 || rt->Layout().HasStrides() || !axes || axes->empty())return reject("Expected constant INT32 axes");
+      std::set<int32_t> unique;for(auto a:*axes){if(a<0)a+=static_cast<int32_t>(lhs.shape.size());if(a<0 || a>=lhs.shape.size() || !unique.insert(a).second)return reject("Invalid reduction axis");}p.parameters.assign(unique.begin(),unique.end());
+      if(argmax){if(lt!=DataType::float32_t || p.output_type!=DataType::int32_t || unique.size()!=1)return reject("ARGMAX requires FP32 to INT32 and one axis");expected.erase(expected.begin()+p.parameters[0]);}
+      else {if(lt!=DataType::bool_t || p.output_type!=DataType::bool_t)return reject("Logical reduction requires BOOL");auto* opts=internal::GetTflOptions(*op.Get()).AsReducerOptions();if(!opts)return reject("Missing reduction options");expected.clear();for(size_t i=0;i<lhs.shape.size();++i){if(!unique.count(static_cast<int32_t>(i)))expected.push_back(lhs.shape[i]);else if(opts->keep_dims)expected.push_back(1);}}
+    } else if(p.code==kLiteRtOpCodeTflLogicalNot){if(in.size()!=1 || lt!=DataType::bool_t || p.output_type!=lt)return reject("LOGICAL_NOT requires BOOL");}
+    else {
+      QuantizedTensor rhs;DataType rt;
+      if(in.size()!=2 || !read(in[1],rhs,rt) || lt!=rt)return reject("Binary types differ");
+      if(p.code==kLiteRtOpCodeTflRightShift){
+        auto shifts=in[1].WeightsData<uint32_t>();
+        if(in[0].ElementType()!=ElementType::UInt32 || in[1].ElementType()!=ElementType::UInt32 || out[0].ElementType()!=ElementType::UInt32 || !shifts || shifts->empty())return reject("RIGHT_SHIFT requires UINT32 data and constant shifts");
+        for(auto shift:*shifts)if(shift>31)return reject("RIGHT_SHIFT constant out of range");
+      } else if(p.code==kLiteRtOpCodeTflFloorDiv){
+        auto divisors=in[1].WeightsData<int32_t>();
+        if(lt!=DataType::int32_t || p.output_type!=lt || !divisors || divisors->empty())return reject("INT32 FLOOR_DIV requires positive constant divisors");
+        for(auto d:*divisors)if(d<=0)return reject("FLOOR_DIV divisor must be positive");
+      } else if(p.code==kLiteRtOpCodeTflBitwiseXor){if(lt!=DataType::int32_t || p.output_type!=lt)return reject("BITWISE_XOR requires INT32");
+        auto rhs=in[1].WeightsData<int32_t>();if(rhs && !rhs->empty() && std::all_of(rhs->begin(),rhs->end(),[](int32_t x){return x==-1;}))p.parameters={-1};}
+      else if(p.output_type!=DataType::bool_t || ((p.code==kLiteRtOpCodeTflLogicalAnd || p.code==kLiteRtOpCodeTflLogicalOr) && lt!=DataType::bool_t))return reject("Expected BOOL output");
+      size_t rank=std::max(lhs.shape.size(),rhs.shape.size());auto a=lhs.shape,b=rhs.shape;a.insert(a.begin(),rank-a.size(),1);b.insert(b.begin(),rank-b.size(),1);expected.resize(rank);
+      for(size_t i=0;i<rank;++i){if(a[i]!=b[i] && a[i]!=1 && b[i]!=1)return reject("Typed broadcast mismatch");expected[i]=std::max(a[i],b[i]);}
+      p.inputs[0].shape=a;rhs.shape=b;p.inputs.push_back(rhs);p.input_types.push_back(rt);p.runtime_inputs.push_back(1);
+    }
+    if(expected!=p.output.shape)return reject("Typed output shape mismatch");return p;
+  }
+  const bool quantized_shape=p.code==kLiteRtOpCodeTflMaximum || p.code==kLiteRtOpCodeTflMinimum || p.code==kLiteRtOpCodeTflSqueeze || p.code==kLiteRtOpCodeTflExpandDims || p.code==kLiteRtOpCodeTflPack || p.code==kLiteRtOpCodeTflUnpack || p.code==kLiteRtOpCodeTflSplit || p.code==kLiteRtOpCodeTflSplitV || p.code==kLiteRtOpCodeTflTile || p.code==kLiteRtOpCodeTflStridedSlice || p.code==kLiteRtOpCodeTflReverseV2;
+  if (IsPortableOperation(p.code) && !out.empty() && (out[0].ElementType() == ElementType::Float32 || (quantized_shape && out[0].ElementType()==ElementType::Int8))) {
     p.portable = AnalyzePortableOperation(op, reason);
     if (!p.portable) return std::nullopt;
     p.runtime_inputs = p.portable->inputs;
-    p.inputs.push_back({p.portable->shapes[0],1,0,true});
+    p.inputs.push_back({p.portable->shapes[0],1,0,!p.portable->quantized});
     return p;
   }
   if(in.empty() || out.size()!=1) return reject("Expected data inputs and exactly one output");
-  const int data_index = p.code == kLiteRtOpCodeTflTransposeConv ? 2 : 0;
+  const int data_index = p.code == kLiteRtOpCodeTflTransposeConv ? 2 : p.code == kLiteRtOpCodeTflScatterNd ? 1 : 0;
   if (data_index >= in.size()) return reject("Missing data input");
   auto input=ReadTensor(in[data_index]); auto output=ReadTensor(out[0]);
   if(!input || !output || output->shape.empty()) return reject("Requires static dense int8 tensors with finite per-tensor quantization");
@@ -301,6 +348,18 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
         return reject("Requires int8/float32 conversion with identical shapes");
       break;
     }
+    case kLiteRtOpCodeTflAbs: {
+      if(in.size()!=1 || input->floating || output->floating || input->shape!=output->shape )return reject("INT8 ABS requires matching shapes");
+      auto table=RequantizeTable(static_cast<float>(input->scale),-128,static_cast<float>(output->scale),output->zero_point);
+      if(!table)return reject("INT8 ABS rescale range not proven");
+      for(int code=-128;code<=127;++code)p.table.push_back((*table)[std::abs(code-input->zero_point)]);
+      break;
+    }
+    case kLiteRtOpCodeTflTanh: {
+      if(in.size()!=1 || input->floating || output->floating || input->shape!=output->shape || output->scale!=1.0/128 || output->zero_point!=0)return reject("INT8 TANH requires output scale 1/128, zero point 0");
+      for(int code=-128;code<=127;++code){float x=static_cast<float>(input->scale)*(code-input->zero_point);float y=std::tanh(x);p.table.push_back(static_cast<int8_t>(std::clamp(std::round(y/static_cast<float>(output->scale))+static_cast<float>(output->zero_point),-128.0f,127.0f)));}
+      break;
+    }
     case kLiteRtOpCodeTflLogistic: {
       if (in.size() != 1 || input->shape != output->shape ||
           input->floating != output->floating)
@@ -386,6 +445,7 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
       }
       break;
     }
+    case kLiteRtOpCodeTflSub:
     case kLiteRtOpCodeTflAdd: {
       if(in.size()!=2) return reject("ADD requires two inputs");
       auto rhs=ReadTensor(in[1]);
@@ -401,7 +461,7 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
       }
       if(shape!=output->shape) return reject("ADD output shape mismatch");
       uint32_t fused;
-      if(LiteRtGetAddFusedActivationOption(op.Get(),&fused)!=kLiteRtStatusOk)
+      if((p.code==kLiteRtOpCodeTflSub?LiteRtGetSubFusedActivationOption:LiteRtGetAddFusedActivationOption)(op.Get(),&fused)!=kLiteRtStatusOk)
         return reject("Cannot read ADD activation");
       auto activation=ActivationCode(fused);
       if(!activation) return reject("Unsupported ADD activation");
@@ -417,7 +477,8 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
       for(int i=0;i<2;++i) {
         int32_t lo=-128-p.inputs[i].zero_point, hi=127-p.inputs[i].zero_point;
         if(!IsScale32RangeValid(p.scales[i],lo,hi)) return reject("ADD input rescale range invalid");
-        minimum+=*ApplyScale32(lo,p.scales[i]); maximum+=*ApplyScale32(hi,p.scales[i]);
+        if(p.code==kLiteRtOpCodeTflSub && i==1){minimum-=*ApplyScale32(hi,p.scales[i]);maximum-=*ApplyScale32(lo,p.scales[i]);}
+        else {minimum+=*ApplyScale32(lo,p.scales[i]); maximum+=*ApplyScale32(hi,p.scales[i]);}
       }
       if(!IsScale32RangeValid(p.scales[2],minimum,maximum)) return reject("ADD accumulator range invalid");
       p.ranges.push_back({static_cast<int32_t>(minimum),static_cast<int32_t>(maximum)});
@@ -558,7 +619,7 @@ ResId EmitFloatOperation(Graph& g,const std::vector<ResId>& inputs,const Operati
       return value;
     }
     case kLiteRtOpCodeTflAveragePool2d: {
-      auto zero = g.AddTensorConstant(Attribute(int8_t{0}));
+      auto zero = g.AddTensorConstant(Attribute(0.0f));
       value = g.AddAvgPool2dOperator(value, zero, zero, Attribute(p.kernel),
           Attribute(p.stride), Attribute(std::vector<int32_t>(4, 0)), Attribute(int32_t{3}), ftype);
       if (p.float_activation)
@@ -581,7 +642,7 @@ ResId EmitFloatOperation(Graph& g,const std::vector<ResId>& inputs,const Operati
       if(dw)shape={shape[1],shape[2],shape[3],1};
       auto weights=Constant(g,p.float_weights,shape,constants);
       auto bias=Constant(g,p.float_bias,{p.output.shape[3]},constants);
-      auto zero=g.AddTensorConstant(Attribute(int8_t{0}));
+      auto zero=g.AddTensorConstant(Attribute(0.0f));
       value=g.AddOperator(dw?tfsc::tosa::OperatorEnum::DepthwiseConv2d:tfsc::tosa::OperatorEnum::Conv2d,
           {value,weights,bias,zero,zero},{ftype},{Attribute(p.padding),Attribute(p.stride),Attribute(p.dilation),Attribute(int32_t{3}),Attribute(false)})[0];
       if(p.float_activation)value=g.AddClampOperator(value,Attribute(0.0f),Attribute(p.float_activation==3?6.0f:std::numeric_limits<float>::infinity()),Attribute(int32_t{1}),ftype);
@@ -593,6 +654,42 @@ ResId EmitFloatOperation(Graph& g,const std::vector<ResId>& inputs,const Operati
 
 ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPlan& p,
                     std::vector<GraphConstant>& constants) {
+  if(p.typed){
+    auto type=[&](DataType dt,const std::vector<uint32_t>& shape){return TosaTensor(dt,shape);};
+    std::vector<ResId> v;
+    for(size_t i=0;i<inputs.size();++i)v.push_back(g.AddReshapeOperator(inputs[i],g.AddTensorConstant(Attribute(p.inputs[i].shape)),type(p.input_types[i],p.inputs[i].shape)));
+    auto output=type(p.output_type,p.output.shape);
+    switch(p.code){
+      case kLiteRtOpCodeTflLogicalAnd:return g.AddLogicalAndOperator(v[0],v[1],output);
+      case kLiteRtOpCodeTflLogicalOr:return g.AddLogicalOrOperator(v[0],v[1],output);
+      case kLiteRtOpCodeTflLogicalNot:return g.AddLogicalNotOperator(v[0],output);
+      case kLiteRtOpCodeTflBitwiseXor: {
+        if(!p.parameters.empty())return g.AddBitwiseNotOperator(v[0],output);
+        // XOR with all ones is the standard bitwise complement idiom.
+        return g.AddBitwiseXorOperator(v[0],v[1],output);
+      }
+      case kLiteRtOpCodeTflRightShift:return g.AddLogicalRightShiftOperator(v[0],v[1],output);
+      case kLiteRtOpCodeTflFloorDiv: {
+        auto constant=[&](int32_t x){auto id=g.AddTensorConstant(Attribute(x));return g.AddReshapeOperator(id,g.AddTensorConstant(Attribute(std::vector<uint32_t>(p.output.shape.size(),1))),type(DataType::int32_t,std::vector<uint32_t>(p.output.shape.size(),1)));};
+        auto q=g.AddIntDivOperator(v[0],v[1],output);
+        auto product=g.AddMulOperator(q,v[1],g.AddTensorConstant(Attribute(int8_t{0})),output);
+        auto rem=g.AddSubOperator(v[0],product,output);auto bt=type(DataType::bool_t,p.output.shape);
+        auto negative=g.AddGreaterOperator(constant(0),v[0],bt);
+        auto nonzero=g.AddLogicalNotOperator(g.AddEqualOperator(rem,constant(0),bt),bt);
+        auto adjust=g.AddSelectOperator(g.AddLogicalAndOperator(negative,nonzero,bt),constant(-1),constant(0),output);
+        return g.AddAddOperator(q,adjust,output);
+      }
+      case kLiteRtOpCodeTflEqual:
+        if(p.input_types[0]==DataType::bool_t)return g.AddLogicalNotOperator(g.AddLogicalXorOperator(v[0],v[1],output),output);
+        return g.AddEqualOperator(v[0],v[1],output);
+      case kLiteRtOpCodeTflNotEqual:
+        if(p.input_types[0]==DataType::bool_t)return g.AddLogicalXorOperator(v[0],v[1],output);
+        return g.AddLogicalNotOperator(g.AddEqualOperator(v[0],v[1],output),output);
+      case kLiteRtOpCodeTflArgMax:return g.AddArgMaxOperator(v[0],Attribute(p.parameters[0]),Attribute(uint32_t{1}),output);
+      default:{auto shape=p.inputs[0].shape;auto x=v[0];for(auto axis:p.parameters){shape[axis]=1;x=p.code==kLiteRtOpCodeTflReduceAll?g.AddReduceAllOperator(x,Attribute(axis),type(DataType::bool_t,shape)):g.AddReduceAnyOperator(x,Attribute(axis),type(DataType::bool_t,shape));}return g.AddReshapeOperator(x,g.AddTensorConstant(Attribute(p.output.shape)),output);}
+    }
+  }
+
   auto input=inputs[0]; const auto& q=p.inputs[0];
   TosaTensor out(p.output.floating ? DataType::float32_t : DataType::int8_t,p.output.shape);
   if (IsExtendedOperation(p.code, q.floating)) return EmitExtendedOperation(g, input, p, constants);
@@ -608,6 +705,8 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
     case kLiteRtOpCodeTflQuantize:
       if (SameQuant(q, p.output)) return input;
       return g.AddTableOperator(input, Constant(g, p.table, {256}, constants), out);
+    case kLiteRtOpCodeTflAbs:
+    case kLiteRtOpCodeTflTanh:
     case kLiteRtOpCodeTflLogistic:
     case kLiteRtOpCodeTflHardSwish:
       return g.AddTableOperator(input,Constant(g,p.table,{256},constants),out);
@@ -627,6 +726,7 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
     case kLiteRtOpCodeTflPadv2:
     case kLiteRtOpCodeTflPad: return g.AddPadOperator(input,g.AddTensorConstant(Attribute(p.parameters)),
         g.AddTensorConstant(Attribute(p.pad_value)),out);
+    case kLiteRtOpCodeTflSub:
     case kLiteRtOpCodeTflAdd: {
       auto lhs=Rescale(g,input,q.shape,DataType::int8_t,DataType::int32_t,q.zero_point,0,{p.scales[0]},constants);
       auto rhs=Rescale(g,inputs[1],p.inputs[1].shape,DataType::int8_t,DataType::int32_t,p.inputs[1].zero_point,0,{p.scales[1]},constants);
@@ -634,7 +734,7 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
       lhs=Reshape(g,lhs,DataType::int32_t,shape);
       shape=p.inputs[1].shape;shape.insert(shape.begin(),p.output.shape.size()-shape.size(),1);
       rhs=Reshape(g,rhs,DataType::int32_t,shape);
-      auto sum=g.AddAddOperator(lhs,rhs,TosaTensor(DataType::int32_t,p.output.shape));
+      auto sum=p.code==kLiteRtOpCodeTflSub?g.AddSubOperator(lhs,rhs,TosaTensor(DataType::int32_t,p.output.shape)):g.AddAddOperator(lhs,rhs,TosaTensor(DataType::int32_t,p.output.shape));
       return Clamp(g,EmitRescale(g,sum,p.output.shape,p.output.zero_point,{p.scales[2]},p.ranges,constants),p);
     }
     case kLiteRtOpCodeTflAveragePool2d: {

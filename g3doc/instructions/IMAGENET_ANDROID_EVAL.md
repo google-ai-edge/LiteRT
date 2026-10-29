@@ -56,9 +56,8 @@ and dispatch directory flags for the dynamic executable.
 Select the phone explicitly with `adb -s SERIAL`. Use a fresh directory below
 `/data/local/tmp`, and push the executable, model, checkpoint preprocessing JSON,
 a three-row manifest and only its three JPEGs. Preserve manifest sample IDs and
-relative image paths. `tools/export_imagenet_val_jpegs.py` can export original
-JPEGs when a local dataset cache is available; exporting the full dataset is
-not required for a smoke check.
+relative image paths. Follow the shared evaluator guide to download validation Parquet shards and
+extract three JPEGs with `tools/export_imagenet_val_jpegs.py`.
 
 Make the executable runnable with `chmod +x`. Run from the deployment directory
 so paths in the following examples resolve there. Set the serial and deployment

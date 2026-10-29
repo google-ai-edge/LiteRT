@@ -1152,6 +1152,7 @@ cc_library(
     hdrs = ["imagenet_eval_data.h"],
     copts = ["-fno-exceptions"],
     deps = [
+        "//litert/c:litert_model_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "@com_github_nlohmann_json//:json",
@@ -1165,6 +1166,8 @@ cc_test(
     srcs = ["imagenet_eval_data_test.cc"],
     copts = ["-fno-exceptions"],
     deps = [
+        "@XNNPACK//:XNNPACK",
+        "//tflite/kernels/internal:reference_base",
         ":imagenet_eval_data",
         "@com_google_googletest//:gtest_main",
     ],

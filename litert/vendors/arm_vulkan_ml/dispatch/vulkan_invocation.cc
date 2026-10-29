@@ -16,7 +16,15 @@
 // (src/vulkan/vulkan_compute.cc). This implementation owns all resources and
 // function pointers per invocation and checks the advertised TOSA requirements.
 #include "litert/vendors/arm_vulkan_ml/dispatch/vulkan_invocation.h"
+#include "litert/vendors/arm_vulkan_ml/dispatch/vulkan_validation.h"
+#include "litert/vendors/arm_vulkan_ml/dispatch/device_memory_allocator.h"
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <unistd.h>
+#if defined(__ANDROID__)
+#include <android/hardware_buffer.h>
+#include "vulkan/vulkan_android.h"
+#endif
 #include <algorithm>
 #include <cstring>
 #include <utility>
@@ -41,15 +49,24 @@ size_t Bytes(const TensorDescriptor& tensor) {
 }  // namespace
 
 struct VulkanInvocation::Impl {
+  VulkanValidation validation;
   std::shared_ptr<const CompiledPartition> artifact;
   absl::Mutex mutex;
   void* library = nullptr;
   PFN_vkGetInstanceProcAddr get = nullptr;
   PFN_vkDestroyInstance destroy_instance = nullptr;
   VkInstance instance = VK_NULL_HANDLE;
+  PFN_vkGetDeviceProcAddr device_get = nullptr;
+  PFN_vkGetPhysicalDeviceExternalTensorPropertiesARM external_properties = nullptr;
+  PFN_vkGetMemoryFdPropertiesKHR fd_properties = nullptr;
+  bool dma_enabled=false, ahb_enabled=false;
+  std::shared_ptr<HardwareBufferApi> hardware_api;
+  CopyStatistics statistics;
   VkPhysicalDevice physical = VK_NULL_HANDLE;
   VkDevice device = VK_NULL_HANDLE;
   VkQueue queue = VK_NULL_HANDLE;
+  uint32_t max_allocations = 0;
+  std::unique_ptr<DeviceMemoryAllocator> allocator;
   VkPhysicalDeviceMemoryProperties memory_properties{};
   uint32_t queue_family = 0;
   PFN_vkDestroyDevice DestroyDevice = nullptr;
@@ -114,8 +131,14 @@ struct VulkanInvocation::Impl {
     VkDeviceMemory memory = VK_NULL_HANDLE;
     void* mapped = nullptr;
     size_t bytes = 0;
+    size_t binding_span = 0;
+    std::shared_ptr<ExternalBuffer> external;
   };
   std::vector<TensorMemory> tensors;
+  // Successful synchronous submissions leave this recording executable.
+  bool command_recorded = false;
+  bool command_needs_reset = false;
+  bool failed_submission=false;
   std::string error;
   bool Check(VkResult result, const char* operation) {
     if (result == VK_SUCCESS) return true;
@@ -142,20 +165,24 @@ struct VulkanInvocation::Impl {
     }
     if (module) DestroyShaderModule(device, module, nullptr);
     if (device && DestroyDevice) DestroyDevice(device, nullptr);
+    validation.Close();
     if (instance && destroy_instance) destroy_instance(instance, nullptr);
     if (library) dlclose(library);
   }
 
-  bool Initialize(bool allow_emulation) {
-    const char* kVulkanLibrary = VulkanLibraryName();
-    library = dlopen(kVulkanLibrary, RTLD_NOW | RTLD_LOCAL);
-    if (!library) {
-      const char* detail = dlerror();
-      error = std::string("Cannot load ") + kVulkanLibrary + ": " +
-          (detail ? detail : "unknown dynamic loader error");
-      return false;
+  bool Initialize(bool allow_emulation, PFN_vkGetInstanceProcAddr resolver = nullptr) {
+    get = resolver;
+    if (!get) {
+      const char* kVulkanLibrary = VulkanLibraryName();
+      library = dlopen(kVulkanLibrary, RTLD_NOW | RTLD_LOCAL);
+      if (!library) {
+        const char* detail = dlerror();
+        error = std::string("Cannot load ") + kVulkanLibrary + ": " +
+            (detail ? detail : "unknown dynamic loader error");
+        return false;
+      }
+      get = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(library, "vkGetInstanceProcAddr"));
     }
-    get = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(library, "vkGetInstanceProcAddr"));
     if (!get) { error = "Missing vkGetInstanceProcAddr"; return false; }
     auto create = reinterpret_cast<PFN_vkCreateInstance>(get(nullptr, "vkCreateInstance"));
     if (!create) { error = "Missing vkCreateInstance"; return false; }
@@ -164,8 +191,10 @@ struct VulkanInvocation::Impl {
     app.apiVersion = VK_API_VERSION_1_3;
     VkInstanceCreateInfo ci{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     ci.pApplicationInfo = &app;
+    if (!validation.Prepare(get, ci, error)) return false;
     VK_CHECK(create(&ci, nullptr, &instance));
     destroy_instance = reinterpret_cast<PFN_vkDestroyInstance>(get(instance, "vkDestroyInstance"));
+    if (!validation.Attach(get, instance, error)) return false;
 #define INSTANCE_FN(name) auto name = reinterpret_cast<PFN_vk##name>(get(instance, "vk" #name)); if (!name) { error = "Missing vk" #name; return false; }
     INSTANCE_FN(EnumeratePhysicalDevices);
     INSTANCE_FN(GetPhysicalDeviceProperties);
@@ -179,7 +208,7 @@ struct VulkanInvocation::Impl {
     VK_CHECK(EnumeratePhysicalDevices(instance, &count, nullptr));
     std::vector<VkPhysicalDevice> candidates(count);
     VK_CHECK(EnumeratePhysicalDevices(instance, &count, candidates.data()));
-    const char* extensions[] = {VK_ARM_TENSORS_EXTENSION_NAME,
+    std::vector<const char*> extensions = {VK_ARM_TENSORS_EXTENSION_NAME,
       VK_ARM_DATA_GRAPH_EXTENSION_NAME, VK_ARM_DATA_GRAPH_INSTRUCTION_SET_TOSA_EXTENSION_NAME,
       VK_KHR_MAINTENANCE_5_EXTENSION_NAME, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
       VK_EXT_SHADER_REPLICATED_COMPOSITES_EXTENSION_NAME};
@@ -191,7 +220,8 @@ struct VulkanInvocation::Impl {
                                    GetPhysicalDeviceFormatProperties2, error)) continue;
       for (const auto& engine : caps.engines) {
         if (CheckEngineRequirements(*artifact, caps, engine, allow_emulation, error)) {
-          physical = candidate; queue_family = engine.queue_family; break;
+          physical = candidate; queue_family = engine.queue_family;
+          max_allocations = caps.properties.limits.maxMemoryAllocationCount; break;
         }
       }
       if (physical) break;
@@ -203,6 +233,14 @@ struct VulkanInvocation::Impl {
       return false;
     }
     error.clear();
+    DeviceCapabilities selected;
+    if(!QueryDeviceCapabilities(get,instance,physical,selected,error))return false;
+    auto supported=[&](const char* name){return std::any_of(selected.extensions.begin(),selected.extensions.end(),[&](const auto& e){return !std::strcmp(e.extensionName,name);});};
+    external_properties=reinterpret_cast<PFN_vkGetPhysicalDeviceExternalTensorPropertiesARM>(get(instance,"vkGetPhysicalDeviceExternalTensorPropertiesARM"));
+    dma_enabled=external_properties && supported(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME) && supported(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
+    if(dma_enabled){extensions.push_back(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME);extensions.push_back(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);}
+    ahb_enabled=external_properties && hardware_api && supported("VK_ANDROID_external_memory_android_hardware_buffer") && supported(VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME);
+    if(ahb_enabled){extensions.push_back("VK_ANDROID_external_memory_android_hardware_buffer");extensions.push_back(VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME);}
     VkPhysicalDeviceTensorFeaturesARM tensor_features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM};
     VkPhysicalDeviceDataGraphFeaturesARM graph_features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM};
     VkPhysicalDeviceVulkan12Features f12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
@@ -224,7 +262,7 @@ struct VulkanInvocation::Impl {
     VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     device_info.pNext = &features;
     device_info.queueCreateInfoCount = 1; device_info.pQueueCreateInfos = &queue_info;
-    device_info.enabledExtensionCount = sizeof(extensions)/sizeof(extensions[0]); device_info.ppEnabledExtensionNames = extensions;
+    device_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size()); device_info.ppEnabledExtensionNames = extensions.data();
     VK_CHECK(CreateDevice(physical, &device_info, nullptr, &device));
 #define DEVICE_FN(name) name = reinterpret_cast<PFN_vk##name>(GetDeviceProcAddr(device, "vk" #name)); if (!name) { error = "Missing vk" #name; return false; }
     DEVICE_FN(DestroyDevice);
@@ -274,24 +312,104 @@ struct VulkanInvocation::Impl {
     DEVICE_FN(DeviceWaitIdle);
 #undef DEVICE_FN
 #undef INSTANCE_FN
+    device_get=GetDeviceProcAddr;
+    if(dma_enabled){fd_properties=reinterpret_cast<PFN_vkGetMemoryFdPropertiesKHR>(device_get(device,"vkGetMemoryFdPropertiesKHR"));if(!fd_properties){error="Missing vkGetMemoryFdPropertiesKHR";return false;}}
     GetDeviceQueue(device, queue_family, 0, &queue);
     GetPhysicalDeviceMemoryProperties(physical, &memory_properties);
+    allocator = std::make_unique<DeviceMemoryAllocator>(device, memory_properties, max_allocations, AllocateMemory);
     return Build();
   }
 
   bool Allocate(const VkMemoryRequirements& requirements, VkMemoryPropertyFlags flags,
                 VkDeviceMemory& memory) {
-    for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
-      if ((requirements.memoryTypeBits & (1u << i)) &&
-          (memory_properties.memoryTypes[i].propertyFlags & flags) == flags) {
-        VkMemoryAllocateInfo info{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-        info.allocationSize = std::max(VkDeviceSize{1}, requirements.size);
-        info.memoryTypeIndex = i;
-        VK_CHECK(AllocateMemory(device, &info, nullptr, &memory));
-        return true;
-      }
+    return allocator->Allocate(requirements, flags, memory, error);
+  }
+
+  TensorDescriptor Descriptor(size_t slot) const {
+    return slot<artifact->inputs.size()?artifact->inputs[slot]:artifact->outputs[slot-artifact->inputs.size()];
+  }
+  void DestroyTensor(TensorMemory& t){
+    if(t.mapped)UnmapMemory(device,t.memory);
+    if(t.view)DestroyTensorViewARM(device,t.view,nullptr);
+    if(t.tensor)DestroyTensorARM(device,t.tensor,nullptr);
+    if(t.memory){FreeMemory(device,t.memory,nullptr);allocator->Released();}
+    t=TensorMemory{};
+  }
+  bool Supports(size_t slot,VkExternalMemoryHandleTypeFlagBits handle){
+    if(!external_properties || (handle==VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT?!dma_enabled:!ahb_enabled))return false;
+    auto desc=Descriptor(slot);std::vector<int64_t> dims(desc.shape.begin(),desc.shape.end());
+    VkTensorDescriptionARM d{VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM};d.tiling=VK_TENSOR_TILING_LINEAR_ARM;d.format=TensorFormat(desc.element);d.dimensionCount=static_cast<uint32_t>(dims.size());d.pDimensions=dims.data();d.usage=VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM;
+    VkPhysicalDeviceExternalTensorInfoARM info{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_TENSOR_INFO_ARM};info.pDescription=&d;info.handleType=handle;
+    VkExternalTensorPropertiesARM props{VK_STRUCTURE_TYPE_EXTERNAL_TENSOR_PROPERTIES_ARM};external_properties(physical,&info,&props);
+    return (props.externalMemoryProperties.externalMemoryFeatures&VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) && (props.externalMemoryProperties.compatibleHandleTypes&handle);
+  }
+  bool CreateTensor(size_t slot,VkExternalMemoryHandleTypeFlags handles,TensorMemory& t,VkMemoryRequirements2& req,VkMemoryDedicatedRequirements& dedicated){
+    auto desc=Descriptor(slot);std::vector<int64_t> dims(desc.shape.begin(),desc.shape.end());t.bytes=Bytes(desc);
+    VkTensorDescriptionARM d{VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM};d.tiling=VK_TENSOR_TILING_LINEAR_ARM;d.format=TensorFormat(desc.element);d.dimensionCount=static_cast<uint32_t>(dims.size());d.pDimensions=dims.data();d.usage=VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM;
+    VkExternalMemoryTensorCreateInfoARM external{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_TENSOR_CREATE_INFO_ARM};external.handleTypes=handles;
+    VkTensorCreateInfoARM info{VK_STRUCTURE_TYPE_TENSOR_CREATE_INFO_ARM};info.pNext=handles?&external:nullptr;info.pDescription=&d;info.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
+    VK_CHECK(CreateTensorARM(device,&info,nullptr,&t.tensor));
+    VkTensorMemoryRequirementsInfoARM query{VK_STRUCTURE_TYPE_TENSOR_MEMORY_REQUIREMENTS_INFO_ARM};query.tensor=t.tensor;req.pNext=&dedicated;GetTensorMemoryRequirementsARM(device,&query,&req);
+    if(req.memoryRequirements.size<t.bytes || !req.memoryRequirements.alignment){error="Invalid tensor memory requirements";return false;}t.binding_span=static_cast<size_t>(req.memoryRequirements.size);return true;
+  }
+  bool Requirements(size_t slot,BufferRequirements& out){
+    if(slot>=tensors.size()){error="Invalid tensor slot";return false;}
+    out={};out.bytes=Bytes(Descriptor(slot));
+    for(auto handle:{VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID}){
+      if(!Supports(slot,handle))continue;
+      TensorMemory t;VkMemoryRequirements2 req{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};VkMemoryDedicatedRequirements dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
+      if(!CreateTensor(slot,handle,t,req,dedicated)){DestroyTensor(t);return false;}
+      out.bytes=std::max(out.bytes,static_cast<size_t>(req.memoryRequirements.size));out.alignment=std::max(out.alignment,static_cast<size_t>(req.memoryRequirements.alignment));
+      if(handle==VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT)out.dma_buf=true;else out.ahb=true;
+      DestroyTensor(t);
+    }return true;
+  }
+  bool PrepareTensor(size_t slot,std::shared_ptr<ExternalBuffer> external){
+    if(slot>=tensors.size()){error="Invalid IO slot";return false;}
+    if(tensors[slot].tensor && tensors[slot].external==external)return true;
+    if(external){
+      if(!Supports(slot,external->HandleType())){error="External tensor handle is not importable for this tensor";return false;}
     }
-    error = "No compatible Vulkan memory type"; return false;
+    TensorMemory t;VkMemoryRequirements2 req{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};VkMemoryDedicatedRequirements dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
+    auto prepare=[&]()->bool{
+      if(!CreateTensor(slot,external?external->HandleType():0,t,req,dedicated))return false;
+      if(external)for(size_t i=0;i<tensors.size();++i)if(i!=slot && tensors[i].external && (slot>=artifact->inputs.size() || i>=artifact->inputs.size()) && (external->kind!=tensors[i].external->kind || external->Overlaps(*tensors[i].external,t.binding_span,tensors[i].binding_span))){error="Overlapping writable views or mixed external handle kinds with writable IO";return false;}
+      VkMemoryDedicatedAllocateInfoTensorARM di{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_TENSOR_ARM};di.tensor=t.tensor;
+      bool needs_dedicated=dedicated.requiresDedicatedAllocation;
+      if(external){
+        VkPhysicalDeviceExternalTensorInfoARM info{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_TENSOR_INFO_ARM};
+        // Query again using the same description for DEDICATED_ONLY.
+        auto desc=Descriptor(slot);std::vector<int64_t> dims(desc.shape.begin(),desc.shape.end());VkTensorDescriptionARM description{VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM};description.tiling=VK_TENSOR_TILING_LINEAR_ARM;description.format=TensorFormat(desc.element);description.dimensionCount=static_cast<uint32_t>(dims.size());description.pDimensions=dims.data();description.usage=VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM;
+        info.pDescription=&description;info.handleType=external->HandleType();VkExternalTensorPropertiesARM props{VK_STRUCTURE_TYPE_EXTERNAL_TENSOR_PROPERTIES_ARM};external_properties(physical,&info,&props);needs_dedicated|=(props.externalMemoryProperties.externalMemoryFeatures&VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT)!=0;
+        if(external->offset>external->size || req.memoryRequirements.size>external->size-external->offset || external->offset%req.memoryRequirements.alignment || (needs_dedicated && external->offset)){error="External tensor allocation size, offset or alignment incompatible";return false;}
+        VkMemoryRequirements imported=req.memoryRequirements;imported.size=needs_dedicated?req.memoryRequirements.size:external->size;
+        if(external->kind==ExternalBuffer::Kind::kDmaBuf){
+          VkMemoryFdPropertiesKHR props_fd{VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR};VK_CHECK(fd_properties(device,external->HandleType(),external->fd,&props_fd));imported.memoryTypeBits&=props_fd.memoryTypeBits;
+          VkImportMemoryFdInfoKHR fd{VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR};fd.handleType=external->HandleType();fd.fd=fcntl(external->fd,F_DUPFD_CLOEXEC,0);if(fd.fd<0){error="Cannot duplicate import FD";return false;}fd.pNext=needs_dedicated?&di:nullptr;
+          if(!allocator->Allocate(imported,0,t.memory,error,&fd)){close(fd.fd);return false;}
+        }else{
+          uint32_t bits=0;VkDeviceSize size=0;if(!external->api->Properties(device,device_get,external->ahb,size,bits) || size<req.memoryRequirements.size){error="Incompatible AHardwareBuffer Vulkan properties";return false;}if(needs_dedicated && size!=req.memoryRequirements.size){error="Dedicated AHardwareBuffer allocation size must match tensor requirements";return false;}imported.size=size;imported.memoryTypeBits&=bits;
+          // Platform-neutral ABI mirror; Android adapter is compiled against native declarations.
+#if defined(__ANDROID__)
+          VkImportAndroidHardwareBufferInfoANDROID ahb{VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID};ahb.pNext=needs_dedicated?&di:nullptr;ahb.buffer=static_cast<AHardwareBuffer*>(external->ahb);
+#else
+          struct AhbImport{VkStructureType sType;const void* pNext;void* buffer;} ahb{VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID,needs_dedicated?&di:nullptr,external->ahb};
+#endif
+          if(!allocator->Allocate(imported,0,t.memory,error,&ahb))return false;
+        }
+      }else if(!allocator->Allocate(req.memoryRequirements,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,t.memory,error,needs_dedicated?&di:nullptr))return false;
+      VkBindTensorMemoryInfoARM bind{VK_STRUCTURE_TYPE_BIND_TENSOR_MEMORY_INFO_ARM};bind.tensor=t.tensor;bind.memory=t.memory;bind.memoryOffset=external?external->offset:0;VK_CHECK(BindTensorMemoryARM(device,1,&bind));
+      VkTensorViewCreateInfoARM view{VK_STRUCTURE_TYPE_TENSOR_VIEW_CREATE_INFO_ARM};view.tensor=t.tensor;view.format=TensorFormat(Descriptor(slot).element);VK_CHECK(CreateTensorViewARM(device,&view,nullptr,&t.view));
+      if(!external)VK_CHECK(MapMemory(device,t.memory,0,VK_WHOLE_SIZE,0,&t.mapped));return true;
+    };
+    if(!prepare()){DestroyTensor(t);return false;}
+    t.external=std::move(external);
+    VkWriteDescriptorSetTensorARM tw{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM};tw.tensorViewCount=1;tw.pTensorViews=&t.view;
+    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};write.pNext=&tw;write.dstSet=descriptor_set;write.dstBinding=Descriptor(slot).binding;write.descriptorCount=1;write.descriptorType=VK_DESCRIPTOR_TYPE_TENSOR_ARM;
+    // Ordinary descriptor writes invalidate recordings referencing this set.
+    command_recorded = false;
+    UpdateDescriptorSets(device,1,&write,0,nullptr);
+    DestroyTensor(tensors[slot]);tensors[slot]=std::move(t);return true;
   }
 
   bool Build() {
@@ -320,23 +438,6 @@ struct VulkanInvocation::Impl {
       tensors.emplace_back(); auto& memory = tensors.back();
       memory.bytes = Bytes(t);
       if (!memory.bytes) { error = "Invalid tensor size"; return false; }
-      VkTensorCreateInfoARM info{VK_STRUCTURE_TYPE_TENSOR_CREATE_INFO_ARM};
-      info.pDescription = &descriptions.back(); info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-      VK_CHECK(CreateTensorARM(device, &info, nullptr, &memory.tensor));
-      VkTensorMemoryRequirementsInfoARM query{VK_STRUCTURE_TYPE_TENSOR_MEMORY_REQUIREMENTS_INFO_ARM};
-      query.tensor = memory.tensor;
-      VkMemoryRequirements2 requirements{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};
-      GetTensorMemoryRequirementsARM(device, &query, &requirements);
-      if (requirements.memoryRequirements.size < memory.bytes) { error = "Invalid tensor allocation size"; return false; }
-      if (!Allocate(requirements.memoryRequirements,
-          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memory.memory)) return false;
-      VkBindTensorMemoryInfoARM bind{VK_STRUCTURE_TYPE_BIND_TENSOR_MEMORY_INFO_ARM};
-      bind.tensor = memory.tensor; bind.memory = memory.memory;
-      VK_CHECK(BindTensorMemoryARM(device, 1, &bind));
-      VkTensorViewCreateInfoARM view{VK_STRUCTURE_TYPE_TENSOR_VIEW_CREATE_INFO_ARM};
-      view.tensor = memory.tensor; view.format = TensorFormat(t.element);
-      VK_CHECK(CreateTensorViewARM(device, &view, nullptr, &memory.view));
-      VK_CHECK(MapMemory(device, memory.memory, 0, VK_WHOLE_SIZE, 0, &memory.mapped));
       bindings.push_back({t.binding, VK_DESCRIPTOR_TYPE_TENSOR_ARM, 1, VK_SHADER_STAGE_ALL, nullptr});
       VkDataGraphPipelineResourceInfoARM resource{VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_RESOURCE_INFO_ARM};
       resource.pNext = &descriptions.back(); resource.binding = t.binding;
@@ -353,14 +454,6 @@ struct VulkanInvocation::Impl {
     set_info.descriptorPool = descriptor_pool; set_info.descriptorSetCount = 1;
     set_info.pSetLayouts = &descriptor_layout;
     VK_CHECK(AllocateDescriptorSets(device, &set_info, &descriptor_set));
-    for (size_t i = 0; i < io.size(); ++i) {
-      VkWriteDescriptorSetTensorARM tensor_write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM};
-      tensor_write.tensorViewCount = 1; tensor_write.pTensorViews = &tensors[i].view;
-      VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-      write.pNext = &tensor_write; write.dstSet = descriptor_set; write.dstBinding = io[i].binding;
-      write.descriptorCount = 1; write.descriptorType = VK_DESCRIPTOR_TYPE_TENSOR_ARM;
-      UpdateDescriptorSets(device, 1, &write, 0, nullptr);
-    }
     VkPipelineLayoutCreateInfo pipeline_layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pipeline_layout_info.setLayoutCount = 1; pipeline_layout_info.pSetLayouts = &descriptor_layout;
     VK_CHECK(CreatePipelineLayout(device, &pipeline_layout_info, nullptr, &pipeline_layout));
@@ -419,19 +512,13 @@ struct VulkanInvocation::Impl {
     return true;
   }
 
-  bool Run(const std::vector<const void*>& inputs, const std::vector<void*>& outputs) {
-    if (inputs.size() != artifact->inputs.size() || outputs.size() != artifact->outputs.size()) {
-      error = "Vulkan invocation input/output count mismatch"; return false;
-    }
-    for (size_t i = 0; i < inputs.size(); ++i) {
-      if (!inputs[i]) { error = "Null input"; return false; }
-      std::memcpy(tensors[i].mapped, inputs[i], tensors[i].bytes);
-    }
-    for (auto output : outputs) if (!output) { error = "Null output"; return false; }
-    VK_CHECK(ResetCommandBuffer(command, 0));
-    VK_CHECK(ResetFences(device, 1, &fence));
+  bool RecordCommands() {
+    if (command_recorded) return true;
+    if (command_needs_reset) VK_CHECK(ResetCommandBuffer(command, 0));
+    // Reset even a partially failed recording before retrying it.
+    command_needs_reset = true;
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    begin.flags = 0; // Reusable; the invocation never has concurrent submissions.
     VK_CHECK(BeginCommandBuffer(command, &begin));
     VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
     barrier.srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
@@ -449,7 +536,15 @@ struct VulkanInvocation::Impl {
         tensor.dstAccessMask = barrier.dstAccessMask;
         tensor.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         tensor.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        tensor.tensor = tensors[first + i].tensor;
+        const auto& t=tensors[first+i];
+        if(t.external){
+          bool acquire=barrier.dstStageMask==VK_PIPELINE_STAGE_2_DATA_GRAPH_BIT_ARM;
+          tensor.srcQueueFamilyIndex=acquire?t.external->ForeignQueue():queue_family;
+          tensor.dstQueueFamilyIndex=acquire?queue_family:t.external->ForeignQueue();
+          if(acquire){tensor.srcStageMask=VK_PIPELINE_STAGE_2_NONE;tensor.srcAccessMask=0;tensor.dstAccessMask=VK_ACCESS_2_DATA_GRAPH_READ_BIT_ARM|VK_ACCESS_2_DATA_GRAPH_WRITE_BIT_ARM;}
+          else {tensor.dstStageMask=VK_PIPELINE_STAGE_2_NONE;tensor.dstAccessMask=0;tensor.srcAccessMask=VK_ACCESS_2_DATA_GRAPH_READ_BIT_ARM|VK_ACCESS_2_DATA_GRAPH_WRITE_BIT_ARM;}
+        }
+        tensor.tensor = t.tensor;
       }
       // Tensor barriers are an array in the tensor dependency wrapper, not
       // individual entries in VkDependencyInfo's pNext chain.
@@ -464,7 +559,7 @@ struct VulkanInvocation::Impl {
       dependency.pMemoryBarriers = &barrier;
       CmdPipelineBarrier2(command, &dependency);
     };
-    tensor_barrier(0, inputs.size());
+    tensor_barrier(0, tensors.size());
     CmdBindPipeline(command, VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM, pipeline);
     CmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM, pipeline_layout,
                           0, 1, &descriptor_set, 0, nullptr);
@@ -474,17 +569,38 @@ struct VulkanInvocation::Impl {
     barrier.srcAccessMask = VK_ACCESS_2_DATA_GRAPH_WRITE_BIT_ARM;
     barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
     barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
-    tensor_barrier(inputs.size(), outputs.size());
+    tensor_barrier(0, tensors.size());
     VK_CHECK(EndCommandBuffer(command));
+    command_recorded = true;
+    return true;
+  }
+
+  bool Run(const std::vector<const void*>& inputs, const std::vector<void*>& outputs) {
+    if (inputs.size() != artifact->inputs.size() || outputs.size() != artifact->outputs.size()) {
+      error = "Vulkan invocation input/output count mismatch"; return false;
+    }
+    statistics={};
+    for(size_t slot=0;slot<tensors.size();++slot){if(!tensors[slot].tensor && !PrepareTensor(slot,nullptr))return false;if(tensors[slot].external)++statistics.imported_slots;}
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      if(tensors[i].external)continue;
+      if (!inputs[i]) { error = "Null input"; return false; }
+      std::memcpy(tensors[i].mapped, inputs[i], tensors[i].bytes);
+      statistics.input_bytes+=tensors[i].bytes;
+    }
+    for(size_t i=0;i<outputs.size();++i)if(!outputs[i] && !tensors[inputs.size()+i].external){error="Null output";return false;}
+    if (!RecordCommands()) return false;
+    VK_CHECK(ResetFences(device, 1, &fence));
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submit.commandBufferCount = 1; submit.pCommandBuffers = &command;
-    VK_CHECK(QueueSubmit(queue, 1, &submit, fence));
+    if(!Check(QueueSubmit(queue,1,&submit,fence),"QueueSubmit")){failed_submission=true;return false;}
     // Completion is synchronous. A failed wait keeps resources owned until
     // device-idle teardown; callers cannot reuse in-flight allocations.
-    VK_CHECK(WaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
+    if(!Check(WaitForFences(device,1,&fence,VK_TRUE,UINT64_MAX),"WaitForFences")){failed_submission=true;return false;}
     for (size_t i = 0; i < outputs.size(); ++i) {
       const auto& t = tensors[inputs.size() + i];
+      if(t.external)continue;
       std::memcpy(outputs[i], t.mapped, t.bytes);
+      statistics.output_bytes+=t.bytes;
     }
     return true;
   }
@@ -495,16 +611,26 @@ VulkanInvocation::VulkanInvocation(std::unique_ptr<Impl> impl) : impl_(std::move
 VulkanInvocation::~VulkanInvocation() = default;
 std::unique_ptr<VulkanInvocation> VulkanInvocation::Create(
     std::shared_ptr<const CompiledPartition> artifact, bool allow_emulation, std::string& error) {
+  return CreateWithResolver(std::move(artifact), allow_emulation, nullptr, error);
+}
+std::unique_ptr<VulkanInvocation> VulkanInvocation::CreateWithResolver(
+    std::shared_ptr<const CompiledPartition> artifact, bool allow_emulation,
+    PFN_vkGetInstanceProcAddr resolver, std::string& error, std::shared_ptr<HardwareBufferApi> hardware_api) {
   if (!artifact || artifact->spirv.empty() || artifact->outputs.empty()) {
     error = "Empty compiled artifact"; return nullptr;
   }
-  auto impl = std::make_unique<Impl>(); impl->artifact = std::move(artifact);
-  if (!impl->Initialize(allow_emulation)) { error = impl->error; return nullptr; }
+  auto impl = std::make_unique<Impl>();impl->hardware_api=hardware_api?std::move(hardware_api):AndroidHardwareBufferApi(); impl->artifact = std::move(artifact);
+  if (!impl->Initialize(allow_emulation, resolver)) { error = impl->error; return nullptr; }
   return std::unique_ptr<VulkanInvocation>(new VulkanInvocation(std::move(impl)));
 }
+bool VulkanInvocation::Requirements(size_t slot,BufferRequirements& r,std::string& error){absl::MutexLock lock(&impl_->mutex);if(!impl_->Requirements(slot,r)){error=impl_->error;return false;}return true;}
+bool VulkanInvocation::AttachExternal(size_t slot,std::shared_ptr<ExternalBuffer> buffer,std::string& error){absl::MutexLock lock(&impl_->mutex);if(impl_->failed_submission || !impl_->PrepareTensor(slot,std::move(buffer))){error=impl_->error;return false;}return true;}
+void VulkanInvocation::DetachExternal(size_t slot){absl::MutexLock lock(&impl_->mutex);if(slot<impl_->tensors.size()){if(impl_->failed_submission)impl_->DeviceWaitIdle(impl_->device);if(impl_->tensors[slot].tensor)impl_->command_recorded=false;impl_->DestroyTensor(impl_->tensors[slot]);}}
+VulkanInvocation::CopyStatistics VulkanInvocation::Statistics() const {absl::MutexLock lock(&impl_->mutex);return impl_->statistics;}
 bool VulkanInvocation::Run(const std::vector<const void*>& inputs,
                            const std::vector<void*>& outputs, std::string& error) {
   absl::MutexLock lock(&impl_->mutex);
+  if(impl_->failed_submission){error="Invocation has an incomplete submission";return false;}
   if (!impl_->Run(inputs, outputs)) { error = impl_->error; return false; }
   return true;
 }

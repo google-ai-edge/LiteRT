@@ -36,10 +36,17 @@ def audit(database, compiler, tfsc):
     known = {key(op["name"]) for op in database["operators"]}
     references = {}
     for filename, source in sources.items():
+        # Level validation mentions operators without emitting them. Keep its
+        # source fingerprint, but do not count it as lowering coverage.
+        if filename == "tosa_requirements.cc":
+            continue
         for number, line in enumerate(source.splitlines(), 1):
-            names = re.findall(r"Add(\w+)Operator\s*\(|OperatorEnum::(\w+)", line)
+            names = re.findall(r"Add(\w+)Operator\s*\(|(?:OperatorEnum|O)::(\w+)", line)
+            names += [(helper, "") for helper in re.findall(r"UNARY\(\w+,\s*(\w+)\)", line)]
             for helper, enum in names:
                 name = key(helper or enum)
+                if helper == "helper":
+                    continue
                 if name not in known:
                     raise ValueError(f"Unmapped TFSC operator {helper or enum}")
                 references.setdefault(name, []).append(f"compiler/{filename}:{number}")
@@ -82,11 +89,23 @@ def markdown(report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tfsc", type=Path, required=True)
+    parser.add_argument("--check", action="store_true", help="Verify reviewed implementation inventory matches emitted source operators")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     database = json.loads((HERE / "tosa_001000_1.json").read_text())
     report = audit(database, COMPILER, args.tfsc)
+    if args.check:
+        manifest=json.loads((HERE/"implementation_coverage.json").read_text())
+        rows={op["name"]:op for op in manifest["operators"]}
+        if len(rows)!=len(manifest["operators"]) or set(rows)!={op["name"] for op in report["operators"]}:
+            raise SystemExit("Implementation inventory differs from specification operator set")
+        for op in report["operators"]:
+            emitted=op["lowering"]=="referenced"
+            if emitted != (rows[op["name"]]["implementation"]=="emitted"):
+                raise SystemExit("Stale implementation entry: "+op["name"])
+            if rows[op["name"]]["emulator"]=="passed" and not rows[op["name"]]["fixtures"]:
+                raise SystemExit("Missing qualification fixture: "+op["name"])
     text = json.dumps(report, indent=2) + "\n" if args.json else markdown(report)
     if args.output:
         args.output.write_text(text)
