@@ -24,7 +24,9 @@ extern "C" {
 // ynnpack_accelerator is linked into the binary.
 #if defined(LITERT_HAS_YNNPACK)
 extern const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorYnnpackDef;
-#elif !defined(_MSC_VER)
+#elif !defined(_MSC_VER) || defined(__clang__)
+// clang-cl supports weak symbols on Windows too (lld-link prefers a strong
+// definition over a weak one), so only MSVC proper needs the non-weak fallback.
 __attribute__((weak))
 const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorYnnpackDef = nullptr;
 #else
