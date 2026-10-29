@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-include "tensorflow/lite/delegates/gpu/common/gpu_model.fbs";
-include "tensorflow/lite/delegates/gpu/common/task/tflite_serialization_base.fbs";
+include "tflite/delegates/gpu/common/gpu_model.fbs";
+include "tflite/delegates/gpu/common/task/tflite_serialization_base.fbs";
 
 namespace tflite.gpu.cl.data;
 
