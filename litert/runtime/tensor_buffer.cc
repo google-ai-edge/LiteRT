@@ -298,6 +298,10 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromAhwb(
     LiteRtAhwbDeallocator deallocator) {
   LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
                           litert::internal::AhwbBuffer::GetSize(ahwb));
+  if (deallocator == nullptr) {
+    litert::internal::AndroidHardwareBufferWrapper::Instance().Acquire(ahwb);
+    deallocator = litert::internal::AhwbBuffer::Free;
+  }
 
   Ptr tensor_buffer(new LiteRtTensorBufferT(
       env, tensor_type, kLiteRtTensorBufferTypeAhwb, buffer_size, ahwb_offset));

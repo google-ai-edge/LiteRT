@@ -75,12 +75,14 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
   DispatchDelegateKernel(LiteRtEnvironmentOptions environment_options,
                          LiteRtOptions options, std::string&& graph_name,
                          LiteRtDispatchDeviceContext device_context,
-                         bool async_dispatch)
+                         bool async_dispatch,
+                         bool multi_inflight_async = false)
       : environment_options_(environment_options),
         options_(options),
         graph_name_(std::move(graph_name)),
         device_context_(std::move(device_context)),
-        async_dispatch_(async_dispatch) {}
+        async_dispatch_(async_dispatch),
+        multi_inflight_async_(multi_inflight_async) {}
 
   static Expected<std::vector<TfLiteOpaqueNode*>> GetNodes(
       TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams& params);
@@ -118,10 +120,13 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
       TfLiteOpaqueContext* context);
 
   // Allocates a new tensor buffer or reuses an existing one, registering it
-  // with the dispatch API. Defers unregistration of replaced buffers if needed.
+  // with the dispatch API. If an I/O buffer is replaced, defers its
+  // unregistration until `prev_out_fence_buffer`'s completion event (if any)
+  // is signaled.
   Expected<void> AllocateAndRegisterBuffer(
       int tensor_id, TfLiteOpaqueContext* context,
-      const absl::flat_hash_set<int>& io_tensor_ids);
+      const absl::flat_hash_set<int>& io_tensor_ids,
+      LiteRtTensorBufferT* prev_out_fence_buffer);
 
   // Polls fences for stale buffers in deferred_unregistrations_ and unregisters
   // them if their execution has completed.
@@ -173,6 +178,8 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
   LiteRtDispatchDeviceContext device_context_;
   const bool async_dispatch_;  // Indicates whether the Dispatch API can be
                                // invoked asynchronously.
+  const bool multi_inflight_async_;  // Indicates whether the Dispatch API
+                                     // supports >1 in-flight async invocation.
 
   LiteRtExternalLiteRtBufferContextT* buffer_context_ = nullptr;
   std::vector<TfLiteOpaqueNode*> nodes_;

@@ -71,6 +71,11 @@ LiteRtStatus InitializeDispatchApiConfig(
   if (GoogleTensorSouthBoundFeatureSupported(
           GoogleTensorSouthBoundFeature::kRobustFences)) {
     TheCapabilities |= kLiteRtDispatchCapabilitiesAsync;
+    // SouthBound 0.21.0+ supports multiple in-flight async invocations.
+    if (GoogleTensorSouthBoundMajorVersion() > 0 ||
+        GoogleTensorSouthBoundMinorVersion() >= 21) {
+      TheCapabilities |= kLiteRtDispatchCapabilitiesMultiInflightAsync;
+    }
   }
   if (GoogleTensorSouthBoundFeatureSupported(
           GoogleTensorSouthBoundFeature::kIndexedNodeBinding)) {

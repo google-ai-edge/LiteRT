@@ -11,10 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include <atomic>
+#include <chrono>  // NOLINT(build/c++11)
 #include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>  // NOLINT(build/c++11)
 #include <utility>
 #include <vector>
 
@@ -77,6 +80,8 @@ class DispatchDelegateAsyncTest : public ::testing::Test {
 
     mock_set_env_ = (void (*)(LiteRtEnvironment))dlsym(
         mock_lib_handle_, "LiteRtDispatch_MockDispatchSetEnvironment");
+    mock_set_multi_inflight_async_ = (void (*)(bool))dlsym(
+        mock_lib_handle_, "LiteRtDispatch_MockDispatchSetMultiInflightAsync");
     mock_signal_next_job_ = (void (*)())dlsym(
         mock_lib_handle_, "LiteRtDispatch_MockDispatchSignalNextJob");
     mock_is_unregistered_ = (bool (*)(LiteRtTensorBufferHandle))dlsym(
@@ -93,6 +98,7 @@ class DispatchDelegateAsyncTest : public ::testing::Test {
         mock_lib_handle_, "LiteRtDispatch_MockDispatchFailNextRegistration");
 
     ASSERT_NE(mock_set_env_, nullptr);
+    ASSERT_NE(mock_set_multi_inflight_async_, nullptr);
     ASSERT_NE(mock_signal_next_job_, nullptr);
     ASSERT_NE(mock_is_unregistered_, nullptr);
     ASSERT_NE(mock_get_handle_, nullptr);
@@ -113,6 +119,9 @@ class DispatchDelegateAsyncTest : public ::testing::Test {
 #endif  // !defined(LITERT_WINDOWS_OS) && !defined(__APPLE__)
   }
 
+  void SetMultiInflightAsync(bool enabled) {
+    mock_set_multi_inflight_async_(enabled);
+  }
   void SignalNextJob() { mock_signal_next_job_(); }
   bool IsBufferUnregistered(LiteRtTensorBufferHandle handle) const {
     return mock_is_unregistered_(handle);
@@ -140,6 +149,7 @@ class DispatchDelegateAsyncTest : public ::testing::Test {
 
   void* mock_lib_handle_ = nullptr;
   void (*mock_set_env_)(LiteRtEnvironment) = nullptr;
+  void (*mock_set_multi_inflight_async_)(bool) = nullptr;
   void (*mock_signal_next_job_)() = nullptr;
   bool (*mock_is_unregistered_)(LiteRtTensorBufferHandle) = nullptr;
   LiteRtTensorBufferHandle (*mock_get_handle_)(LiteRtTensorBuffer) = nullptr;
@@ -201,11 +211,14 @@ TEST_F(DispatchDelegateAsyncTest,
   // Verify that the output buffer has an event attached.
   EXPECT_TRUE(outputs[0].HasEvent());
 
-  // Get handle of the first input buffer to track it
+  // Get handles of the first input and output buffers to track them.
   LiteRtTensorBufferHandle input_buffer_handle_run1 =
       GetHandle(inputs[0].Get());
+  LiteRtTensorBufferHandle output_buffer_handle_run1 =
+      GetHandle(outputs[0].Get());
 
   ASSERT_NE(input_buffer_handle_run1, 0);
+  ASSERT_NE(output_buffer_handle_run1, 0);
 
   // 6. Swap Input Buffer and Output Buffer for the second invocation
   LITERT_ASSERT_OK_AND_ASSIGN(auto new_input_buffer,
@@ -223,10 +236,12 @@ TEST_F(DispatchDelegateAsyncTest,
   // 7. RunAsync (Second Invocation)
   LITERT_ASSERT_OK(compiled_model.RunAsync(inputs, outputs2, async, nullptr));
 
-  // Verify buffer was NOT unregistered yet because job 1 is not signaled.
+  // Verify replaced buffers are NOT unregistered yet because job 1 is not
+  // signaled.
   EXPECT_FALSE(IsBufferUnregistered(input_buffer_handle_run1));
+  EXPECT_FALSE(IsBufferUnregistered(output_buffer_handle_run1));
 
-  // 8. Signal job completion
+  // 8. Signal job 1 completion (while job 2 remains unsignaled).
   SignalNextJob();
 
   // 9. RunAsync (Third Invocation)
@@ -239,9 +254,98 @@ TEST_F(DispatchDelegateAsyncTest,
 
   LITERT_ASSERT_OK(compiled_model.RunAsync(inputs, outputs3, async, nullptr));
 
-  // Verify buffer IS unregistered now
+  // Verify both replaced buffers from run 1 ARE unregistered now even though
+  // job 2 has not been signaled.
   EXPECT_TRUE(IsBufferUnregistered(input_buffer_handle_run1));
-  // It is not detached, since attaching its replacement detached it.
+  EXPECT_TRUE(IsBufferUnregistered(output_buffer_handle_run1));
+  // Neither is detached, since attaching its replacement detached it.
+  EXPECT_EQ(NumDetaches(), num_detaches);
+#endif  // defined(LITERT_WINDOWS_OS) || defined(__APPLE__)
+}
+
+TEST_F(DispatchDelegateAsyncTest,
+       SingleInflightAsyncWaitsForPreviousInvocationAndUnregisters) {
+#if defined(LITERT_WINDOWS_OS) || defined(__APPLE__)
+  GTEST_SKIP() << "Mock async dispatch test helpers use dlopen/dlsym and Linux "
+                  "sync fence FDs.";
+#else
+  SetMultiInflightAsync(false);
+  auto& env = *env_;
+
+  std::string model_path = litert::testing::GetTestFilePath("one_mul.tflite");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compilation_options, Options::Create());
+  LITERT_ASSERT_OK(compilation_options.SetHardwareAccelerators(
+      litert::HwAccelerators::kNpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, model_path, compilation_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames());
+  ASSERT_THAT(input_names, ::testing::Not(::testing::IsEmpty()));
+
+  std::vector<TensorBuffer> inputs;
+  for (auto input_name : input_names) {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffer,
+                                compiled_model.CreateInputBuffer(input_name));
+    inputs.push_back(std::move(input_buffer));
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames());
+  std::vector<TensorBuffer> outputs;
+  for (auto output_name : output_names) {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffer,
+                                compiled_model.CreateOutputBuffer(output_name));
+    outputs.push_back(std::move(output_buffer));
+  }
+
+  // 1. RunAsync (First Invocation)
+  const int num_detaches = NumDetaches();
+  bool async = true;
+  LITERT_ASSERT_OK(compiled_model.RunAsync(inputs, outputs, async, nullptr));
+  EXPECT_TRUE(outputs[0].HasEvent());
+
+  LiteRtTensorBufferHandle input_buffer_handle_run1 =
+      GetHandle(inputs[0].Get());
+  LiteRtTensorBufferHandle output_buffer_handle_run1 =
+      GetHandle(outputs[0].Get());
+  ASSERT_NE(input_buffer_handle_run1, 0);
+  ASSERT_NE(output_buffer_handle_run1, 0);
+
+  // 2. Swap input and output buffers for the second invocation.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto new_input_buffer,
+                              compiled_model.CreateInputBuffer(input_names[0]));
+  inputs[0] = std::move(new_input_buffer);
+
+  std::vector<TensorBuffer> outputs2;
+  for (auto output_name : output_names) {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffer,
+                                compiled_model.CreateOutputBuffer(output_name));
+    outputs2.push_back(std::move(output_buffer));
+  }
+
+  // 3. Signal job 1 asynchronously from a background thread while the second
+  // RunAsync waits for the previous invocation to finish.
+  std::atomic<bool> job1_signaled{false};
+  std::thread signal_thread([this, &job1_signaled]() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    job1_signaled.store(true);
+    SignalNextJob();
+  });
+
+  LITERT_ASSERT_OK(compiled_model.RunAsync(inputs, outputs2, async, nullptr));
+  EXPECT_TRUE(job1_signaled.load());
+  signal_thread.join();
+
+  // Because job 1's completion event was waited on at the start of
+  // AllocateTensorBuffersIfNeeded and ProcessDeferredUnregistrations ran after
+  // attaching the replacement buffers, run 1's replaced buffers are immediately
+  // unregistered during the second invocation without explicit detach calls.
+  EXPECT_TRUE(IsBufferUnregistered(input_buffer_handle_run1));
+  EXPECT_TRUE(IsBufferUnregistered(output_buffer_handle_run1));
   EXPECT_EQ(NumDetaches(), num_detaches);
 #endif  // defined(LITERT_WINDOWS_OS) || defined(__APPLE__)
 }

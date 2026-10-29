@@ -185,13 +185,17 @@ DispatchDelegateKernel::Create(std::string&& graph_name,
   }
 
   bool async_dispatch = (capabilities & kLiteRtDispatchCapabilitiesAsync);
+  bool multi_inflight_async =
+      (capabilities & kLiteRtDispatchCapabilitiesMultiInflightAsync);
   if (async_dispatch) {
-    LITERT_LOG(LITERT_INFO, "Found async dispatch capabilities");
+    LITERT_LOG(LITERT_INFO,
+               "Found async dispatch capabilities (multi_inflight=%d)",
+               multi_inflight_async);
   }
 
   return absl::WrapUnique(new DispatchDelegateKernel(
       environment_options, options, std::move(graph_name), device_context,
-      async_dispatch));
+      async_dispatch, multi_inflight_async));
 }
 
 Expected<const void*> DispatchDelegateKernel::FindAllocBase() const {
@@ -442,6 +446,15 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
                                                   TfLiteOpaqueNode* node) {
   LITERT_RETURN_IF_ERROR(AllocateTensorBuffersIfNeeded(context));
   LITERT_RETURN_IF_ERROR(AttachBuffersToInvocationContextsIfNeeded(context));
+  if (async_dispatch_ && !multi_inflight_async_ && buffer_context_ &&
+      buffer_context_->IsAsyncExecutionMode()) {
+    // In single-inflight async mode, AllocateTensorBuffersIfNeeded() already
+    // waited for the previous invocation's output events to signal, and
+    // AttachBuffersToInvocationContextsIfNeeded() has now replaced any old
+    // buffers on the invocation context ports. Unregister those replaced
+    // buffers immediately before scheduling the next invocation.
+    ProcessDeferredUnregistrations();
+  }
 
   // Copy input buffers from CPU, if needed.
   for (int tensor_id : input_tensor_ids_) {
@@ -969,7 +982,8 @@ void DispatchDelegateKernel::ReleaseBufferHandle(
 
 Expected<void> DispatchDelegateKernel::AllocateAndRegisterBuffer(
     int tensor_id, TfLiteOpaqueContext* context,
-    const absl::flat_hash_set<int>& io_tensor_ids) {
+    const absl::flat_hash_set<int>& io_tensor_ids,
+    LiteRtTensorBufferT* prev_out_fence_buffer) {
   auto* tfl_tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
   if (!tfl_tensor) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
@@ -994,21 +1008,14 @@ Expected<void> DispatchDelegateKernel::AllocateAndRegisterBuffer(
 
     // The tensor buffer associated with tfl_tensor has changed across frames.
     // To safely defer unregistration until this specific pipeline stage truly
-    // finishes, we locate an output buffer for the current frame, duplicate
-    // its reference to pin its completion out-fence, and poll it
-    // (in a non-blocking way) during subsequent runs.
-
-    for (int out_id : output_tensor_ids_) {
-      auto info_it = tensor_buffer_infos_.find(out_id);
-      if (info_it != tensor_buffer_infos_.end() &&
-          info_it->second.tensor_buffer) {
-        // Increment ref count via Duplicate() to safely share the specific
-        // output buffer and its completion event.
-        info_it->second.tensor_buffer->Duplicate();
-        tensor_buffer_info.out_fence_buffer.reset(
-            info_it->second.tensor_buffer.get());
-        break;
-      }
+    // finishes, pin the previous frame's completion out-fence buffer (resolved
+    // before any tensor_buffer_infos_ entries are replaced for the current
+    // frame) and poll it (in a non-blocking way) during subsequent runs.
+    if (prev_out_fence_buffer != nullptr) {
+      // Increment ref count via Duplicate() to safely share the specific
+      // output buffer and its completion event.
+      prev_out_fence_buffer->Duplicate();
+      tensor_buffer_info.out_fence_buffer.reset(prev_out_fence_buffer);
     }
 
     // Preserve old TensorInfo for deferred unregistration.
@@ -1059,7 +1066,49 @@ Expected<void> DispatchDelegateKernel::AllocateAndRegisterBuffer(
 
 Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded(
     TfLiteOpaqueContext* context) {
+  if (async_dispatch_ && !multi_inflight_async_ && buffer_context_ &&
+      buffer_context_->IsAsyncExecutionMode()) {
+    // If the underlying dispatch runtime does not support multiple in-flight
+    // async invocations, wait for any previous async invocation's output events
+    // to complete before detaching or replacing buffers and scheduling the next
+    // invocation.
+    for (int out_id : output_tensor_ids_) {
+      auto info_it = tensor_buffer_infos_.find(out_id);
+      if (info_it != tensor_buffer_infos_.end() &&
+          info_it->second.tensor_buffer &&
+          info_it->second.tensor_buffer->HasEvent()) {
+        if (Expected<LiteRtEventT*> ev_res =
+                info_it->second.tensor_buffer->GetEvent();
+            ev_res && *ev_res) {
+          if (Expected<void> wait_res = (*ev_res)->Wait(-1); !wait_res) {
+            LITERT_LOG(LITERT_WARNING,
+                       "Failed to wait for previous async invocation output "
+                       "event for tensor id %d: %s",
+                       out_id, wait_res.Error().Message().c_str());
+          }
+        }
+      }
+    }
+  }
+
   ProcessDeferredUnregistrations();
+
+  // Resolve the previous invocation's output fence buffer once before mutating
+  // tensor_buffer_infos_ so that replacing an output tensor with a reused
+  // pooled buffer (which may still carry an already-signaled event from an
+  // earlier frame) cannot shadow the previous invocation's in-flight event when
+  // replacing subsequent output tensors.
+  LiteRtTensorBufferPtr prev_out_fence_buffer;
+  for (int out_id : output_tensor_ids_) {
+    auto info_it = tensor_buffer_infos_.find(out_id);
+    if (info_it != tensor_buffer_infos_.end() &&
+        info_it->second.tensor_buffer &&
+        info_it->second.tensor_buffer->HasEvent()) {
+      info_it->second.tensor_buffer->Duplicate();
+      prev_out_fence_buffer.reset(info_it->second.tensor_buffer.get());
+      break;
+    }
+  }
 
   absl::flat_hash_set<int> io_tensor_ids;
   io_tensor_ids.insert(input_tensor_ids_.begin(), input_tensor_ids_.end());
@@ -1081,8 +1130,8 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded(
     if (!tfl_tensor) {
       continue;
     }
-    LITERT_RETURN_IF_ERROR(
-        AllocateAndRegisterBuffer(tensor_id, context, io_tensor_ids));
+    LITERT_RETURN_IF_ERROR(AllocateAndRegisterBuffer(
+        tensor_id, context, io_tensor_ids, prev_out_fence_buffer.get()));
   }
 
   // Allocate buffers for output tensors
@@ -1091,8 +1140,8 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded(
     if (!tfl_tensor) {
       continue;
     }
-    LITERT_RETURN_IF_ERROR(
-        AllocateAndRegisterBuffer(tensor_id, context, io_tensor_ids));
+    LITERT_RETURN_IF_ERROR(AllocateAndRegisterBuffer(
+        tensor_id, context, io_tensor_ids, prev_out_fence_buffer.get()));
   }
 
   // Then allocate intermediate tensor buffers. They are always allocated,

@@ -59,11 +59,23 @@ static int g_num_detaches = 0;
 static int g_num_registrations_to_fail = 0;
 static LiteRtEnvironment g_env = nullptr;
 static const LiteRtRuntimeContext* g_runtime_context = nullptr;
+static bool g_multi_inflight_async = true;
 
 extern "C" {
 
 void LiteRtDispatch_MockDispatchSetEnvironment(LiteRtEnvironment env) {
   g_env = env;
+  g_multi_inflight_async = true;
+  for (auto& job : GetPendingJobs()) {
+    (void)close(job.second);
+  }
+  GetPendingJobs().clear();
+  GetUnregisteredHandles().clear();
+  GetBufferToHandle().clear();
+}
+
+void LiteRtDispatch_MockDispatchSetMultiInflightAsync(bool enabled) {
+  g_multi_inflight_async = enabled;
 }
 
 void LiteRtDispatch_MockDispatchSignalNextJob() {
@@ -159,6 +171,9 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(
     g_intercepted_interface.get_capabilities = [](int* capabilities) {
       *capabilities =
           kLiteRtDispatchCapabilitiesBasic | kLiteRtDispatchCapabilitiesAsync;
+      if (g_multi_inflight_async) {
+        *capabilities |= kLiteRtDispatchCapabilitiesMultiInflightAsync;
+      }
       return kLiteRtStatusOk;
     };
 
@@ -276,6 +291,8 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(
 extern "C" {
 
 void LiteRtDispatch_MockDispatchSetEnvironment(LiteRtEnvironment env) {}
+
+void LiteRtDispatch_MockDispatchSetMultiInflightAsync(bool enabled) {}
 
 void LiteRtDispatch_MockDispatchSignalNextJob() {}
 

@@ -185,8 +185,9 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
 
   /// @brief Creates a `TensorBuffer` that wraps an Android Hardware Buffer.
   ///
-  /// The provided `AHardwareBuffer` is not owned by the `TensorBuffer` and must
-  /// outlive it.
+  /// The `TensorBuffer` acquires its own reference to the provided
+  /// `AHardwareBuffer` and releases it on destruction; the caller remains
+  /// responsible for releasing its own reference.
   /// @param ahwb_offset The offset in bytes from the start of the
   /// `AHardwareBuffer` where the tensor data begins.
   static Expected<TensorBuffer> CreateFromAhwb(
