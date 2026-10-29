@@ -124,8 +124,23 @@ struct GlInfo {
   GLint minor_version = 0;
 };
 
-// Reads the GL renderer and GLES version through a temporary 1x1 pbuffer
-// context. Leaves `gl_info` empty if any EGL step fails.
+void ReadGlInfoFromCurrentContext(GlInfo* gl_info) {
+  const GLubyte* version = glGetString(GL_VERSION);
+  if (version == nullptr ||
+      absl::StartsWith(reinterpret_cast<const char*>(version),
+                       "OpenGL ES 2.")) {
+    return;
+  }
+  const GLubyte* renderer = glGetString(GL_RENDERER);
+  if (renderer != nullptr) {
+    gl_info->renderer = reinterpret_cast<const char*>(renderer);
+  }
+  glGetIntegerv(GL_MAJOR_VERSION, &gl_info->major_version);
+  glGetIntegerv(GL_MINOR_VERSION, &gl_info->minor_version);
+}
+
+// Reads the GL renderer and GLES version through a temporary GLES 3 context.
+// Leaves `gl_info` empty if any EGL step fails.
 void ReadGlInfo(GlInfo* gl_info) {
   EGLDisplay display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
   if (display == EGL_NO_DISPLAY ||
@@ -148,18 +163,25 @@ void ReadGlInfo(GlInfo* gl_info) {
       num_configs > 0) {
     context =
         eglCreateContext(display, config, EGL_NO_CONTEXT, context_attributes);
-    surface = eglCreatePbufferSurface(display, config, surface_attributes);
   }
 
-  if (context != EGL_NO_CONTEXT && surface != EGL_NO_SURFACE &&
-      eglMakeCurrent(display, surface, surface, context) == EGL_TRUE) {
-    const GLubyte* renderer = glGetString(GL_RENDERER);
-    if (renderer != nullptr) {
-      gl_info->renderer = reinterpret_cast<const char*>(renderer);
+  if (context != EGL_NO_CONTEXT) {
+    // Prefer binding surfacelessly (supported on Android GLES 3+ drivers) to
+    // avoid allocating a temporary pbuffer surface; fall back to a 1x1 pbuffer
+    // if surfaceless make-current fails.
+    bool made_current = eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE,
+                                       context) == EGL_TRUE;
+    if (!made_current) {
+      surface = eglCreatePbufferSurface(display, config, surface_attributes);
+      if (surface != EGL_NO_SURFACE) {
+        made_current =
+            eglMakeCurrent(display, surface, surface, context) == EGL_TRUE;
+      }
     }
-    glGetIntegerv(GL_MAJOR_VERSION, &gl_info->major_version);
-    glGetIntegerv(GL_MINOR_VERSION, &gl_info->minor_version);
-    eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    if (made_current) {
+      ReadGlInfoFromCurrentContext(gl_info);
+      eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    }
   }
 
   if (surface != EGL_NO_SURFACE) eglDestroySurface(display, surface);
@@ -220,10 +242,15 @@ bool GpuCompatibilityChecker::IsSupportedOnThisDevice() const {
       return;
     }
 
-    // Read GL info on a separate thread so that the EGL context and bindings of
-    // the calling thread are not modified.
     GlInfo gl_info;
-    std::thread(ReadGlInfo, &gl_info).join();
+    if (eglGetCurrentContext() != EGL_NO_CONTEXT) {
+      ReadGlInfoFromCurrentContext(&gl_info);
+    }
+    if (gl_info.renderer.empty()) {
+      // Read GL info on a separate thread so that the EGL context and bindings
+      // of the calling thread are not modified.
+      std::thread(ReadGlInfo, &gl_info).join();
+    }
     if (gl_info.renderer.empty()) {
       LITERT_LOG(LITERT_WARNING,
                  "GpuCompatibilityChecker: Failed to read the GL renderer.");
