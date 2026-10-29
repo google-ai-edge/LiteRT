@@ -104,6 +104,42 @@ cc_library(
 )
 
 cc_library(
+    name = "location_passes",
+    srcs = ["location_passes.cc"],
+    hdrs = ["location_passes.h"],
+    deps = [
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Support",
+        "@org_tensorflow//tensorflow/compiler/mlir/utils:name_utils",
+        "@stablehlo//:stablehlo_ops",
+    ],
+)
+
+tf_cc_test(
+    name = "location_passes_test",
+    srcs = ["location_passes_test.cc"],
+    deps = [
+        ":location_passes",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:FuncExtensions",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Parser",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:Transforms",
+        "@org_tensorflow//tensorflow/compiler/mlir/utils:name_utils",
+        "@stablehlo//:stablehlo_ops",
+    ],
+)
+
+cc_library(
     name = "stablehlo_tfl_pipeline",
     srcs = [
         "stablehlo_tfl_pipeline.cc",
@@ -113,21 +149,30 @@ cc_library(
     ],
     deps = [
         ":conversion_failure_reporter",
+        ":location_passes",
         "//tflite/converter:common",
         "//tflite/converter:converter_flags_proto_cc",
         "//tflite/converter:downcast_x64",
         "//tflite/converter:flatbuffer_export",
         "//tflite/converter:optimize_broadcast_like_pass_options",
         "//tflite/converter:tensorflow_lite",
+        "//tflite/converter:tensorflow_lite_legalize_tf",
+        "//tflite/converter:tensorflow_lite_optimize_batch_matmul",
         "//tflite/converter/core:macros",
         "//tflite/converter/debug",
         "//tflite/converter/metrics:error_collector_inst",
         "//tflite/converter/quantization/ir:QuantOps",
+        "//tflite/converter/stablehlo:build_stablehlo_composite",
+        "//tflite/converter/stablehlo:compose_uniform_quantized_type_pass",
+        "//tflite/converter/stablehlo:composite_lowering",
         "//tflite/converter/stablehlo:drop_shape_assertions",
+        "//tflite/converter/stablehlo:legalize_stablehlo_composite_to_tfl_custom",
         "//tflite/converter/stablehlo:legalize_stablehlo_to_vhlo_pass",
         "//tflite/converter/stablehlo:legalize_vhlo_quant_custom_calls",
         "//tflite/converter/stablehlo:prepare_hlo",
+        "//tflite/converter/stablehlo:tfl_legalize_chlo",
         "//tflite/converter/stablehlo:tfl_legalize_hlo",
+        "//tflite/converter/stablehlo:transforms",
         "//tflite/converter/stablehlo:unfold_splat_constant_pass",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
@@ -149,6 +194,28 @@ cc_library(
         "@xla//xla/mlir_hlo:mhlo_passes",
         "@xla//xla/mlir_hlo:stablehlo_extension_passes",
         "@xla//xla/tsl/platform:env",
+    ],
+)
+
+tf_cc_test(
+    name = "stablehlo_tfl_pipeline_test",
+    srcs = ["stablehlo_tfl_pipeline_test.cc"],
+    deps = [
+        ":stablehlo_tfl_pipeline",
+        "//tflite/converter:common",
+        "//tflite/converter:converter_flags_proto_cc",
+        "//tflite/converter:tensorflow_lite",
+        "//tflite/converter/quantization/common/quantization_lib:quantization_config",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Parser",
+        "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:vhlo_ops",
     ],
 )
 
@@ -254,6 +321,7 @@ tf_cc_test(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:vhlo_ops",
         "@xla//xla/tsl/platform:env",
     ],
 )
