@@ -16,6 +16,7 @@
 #include <string>
 #include <gtest/gtest.h>
 #include "TosaForSpirvCodegen.hpp"
+#include "spirv/Module.hpp"
 namespace litert::arm_vulkan_ml {
 namespace {
 Conv2dSpec Fixture() {
@@ -73,15 +74,60 @@ TEST(Conv2d, GroupedChannelsAreSlicedAndConcatenated) {
   spec.input_shape[3]=4;spec.weight_shape[0]=5;spec.output_shape[3]=5;
   EXPECT_FALSE(AnalyzeConv2d(spec,reason));
 }
-TEST(Conv2d, LargeBiasChannelDoesNotChangeOtherChannelsRounding) {
-  auto spec=Fixture();spec.bias[2]=1073741824;
-  std::string reason;auto plan=AnalyzeConv2d(spec,reason);ASSERT_TRUE(plan)<<reason;
-  EXPECT_FALSE(UsesStagedRounding(*plan));
-  auto module=tfsc::CreateModule();tfsc::tosa::Graph graph(module,"main");
-  auto input=graph.AddInput(tfsc::tosa::Tensor(tfsc::tosa::DataType::int8_t,{1,8,8,2}),0);
-  std::vector<GraphConstant> constants;auto output=EmitConv2d(graph,input,*plan,constants);
-  ASSERT_TRUE(output);ASSERT_FALSE(tfsc::IsError(output))<<tfsc::GetErrorMsg(output);
-  graph.AddOutput(output,1);graph.FinalizeGraph();EXPECT_FALSE(tfsc::WriteToBinary(module).empty());
+TEST(Conv2d, ChannelwiseConvolutionKeepsTheNativeFusionPattern) {
+  using O = tfsc::tosa::OperatorEnum;
+  for (bool depthwise : {false, true}) {
+    for (bool large_bias : {false, true}) {
+      auto spec = Fixture();
+      // Avoid a geometry slice so the entire graph must have exactly three ops.
+      spec.input_shape = {1, 7, 7, depthwise ? 3u : 2u};
+      spec.depthwise = depthwise;
+      if (depthwise) {
+        spec.weight_shape[3] = 1;
+        spec.weights.assign(27, 2);
+      }
+      if (large_bias) spec.bias[2] = 1073741824;
+      std::string reason;
+      auto plan = AnalyzeConv2d(spec, reason);
+      ASSERT_TRUE(plan) << reason;
+      EXPECT_EQ(plan->scales[2].shift, 62);
+      auto module = tfsc::CreateModule();
+      tfsc::tosa::Graph graph(module, "main");
+      auto input = graph.AddInput(tfsc::tosa::Tensor(
+          tfsc::tosa::DataType::int8_t,
+          {spec.input_shape.begin(), spec.input_shape.end()}), 0);
+      std::vector<GraphConstant> constants;
+      auto output = EmitConv2d(graph, input, *plan, constants);
+      ASSERT_NE(output, nullptr);
+      ASSERT_FALSE(tfsc::IsError(output)) << tfsc::GetErrorMsg(output);
+      graph.AddOutput(output, 1);
+      graph.FinalizeGraph();
+      ASSERT_FALSE(tfsc::WriteToBinary(module).empty());
+      std::vector<O> operators;
+      for (const auto& instruction : module->GetSpirvGraph()) {
+        if (instruction.m_Opcode == spv::Op::OpExtInst)
+          operators.push_back(static_cast<O>(instruction.m_Operands[3].m_LiteralWord));
+      }
+      EXPECT_EQ(operators, (std::vector<O>{
+          depthwise ? O::DepthwiseConv2d : O::Conv2d, O::Rescale, O::Clamp}));
+      // Only weights, bias, multipliers and shifts; no rounding-correction data.
+      EXPECT_EQ(constants.size(), 4);
+    }
+  }
+}
+
+TEST(Conv2d, NativeRescaleRejectsUnprovenRanges) {
+  auto module = tfsc::CreateModule();
+  tfsc::tosa::Graph graph(module, "main");
+  auto input = graph.AddInput(tfsc::tosa::Tensor(
+      tfsc::tosa::DataType::int32_t, {1, 1}), 0);
+  std::vector<GraphConstant> constants;
+  const Scale32 scale{1 << 30, 30};
+  EXPECT_EQ(EmitRescale(graph, input, {1, 1}, 0, {scale},
+                       {{0, 1 << 29}}, constants), nullptr);
+  EXPECT_EQ(EmitRescale(graph, input, {1, 1}, 128, {scale},
+                       {{0, 127}}, constants), nullptr);
+  EXPECT_TRUE(constants.empty());
 }
 TEST(Conv2d, RejectsUnsafeOrInconsistentMetadata) {
   std::string reason;

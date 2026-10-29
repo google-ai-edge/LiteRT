@@ -2,7 +2,8 @@
   {
     "model": "models/mobilenet_v2_int8_channelwise.tflite",
     "sha256": "8ec776c5b4cd99a024f7dd3f2c9eced750d80f5ebeca6de7bc8021ecf922c9c3",
-    "preprocessing_config": "preprocessing_232.json"
+    "preprocessing_config": "preprocessing_232.json",
+    "known_failure": "Native TOSA rounding: three-image emulator mean code error reaches 0.569, above the default 0.5 gate; top-1 predictions match. Report without waiving."
   },
   {
     "model": "models/mobilenet_v2.tflite",
@@ -12,23 +13,30 @@
   {
     "model": "models/resnet18_int8_channelwise.tflite",
     "sha256": "8fea1acb62829e120b4953b6fbf0f842e0032909254f51c2d989703b66534683",
-    "preprocessing_config": "preprocessing_256.json"
+    "preprocessing_config": "preprocessing_256.json",
+    "known_failure": "Native TOSA rounding: three-image emulator mean code error reaches 0.685, above the default 0.5 gate; top-1 predictions match. Report without waiving."
   },
   {
     "model": "models/efficientnet_b0_int8_channelwise.tflite",
     "sha256": "5106e5665786e750cae6c90bc0710410bb0ec34b20ed0d8cff5c54b334498c98",
-    "preprocessing_config": "preprocessing_256_bicubic.json"
+    "preprocessing_config": "preprocessing_256_bicubic.json",
+    "known_failure": "Three-image emulator output error reaches max 5 codes and mean 1.053, above the default gates; top-1 predictions match. Report without waiving."
   },
   {
     "model": "models/densenet121_int8_channelwise.tflite",
     "sha256": "c7c2567fca641e92b2448165e00907fde969cad4fabca352cb93d8033515e37e",
     "preprocessing_config": "preprocessing_256.json",
-    "known_failure": "Direct AVG_POOL2D rounding: one top-1 difference on the three-image qualification sample. Report without waiving."
+    "known_failure": "Three-image emulator smoke: one top-1 difference and mean code error reaches 0.602. Report without waiving."
   },
   {
     "model": "models/mobilenet_v3_large_int8_channelwise.tflite",
     "sha256": "13993dec4dcfdf95d6f671b40e907b6fd6f04897577d23f4f407418fbf73bf48",
     "preprocessing_config": "preprocessing_232.json",
-    "known_failure": "Direct AVG_POOL2D rounding: output error can exceed INT8 max/mean gates. Report without waiving."
+    "known_failure": "Three-image emulator output error reaches max 12 codes and mean 2.426, above the default gates; top-1 predictions match. Report without waiving."
+  },
+  {
+    "model": "models/inception_v3_int8_channelwise.tflite",
+    "sha256": "129cf96f06a2aa83e4ca2aee344cc1b66f569607c46477aa49b6b738cb14d2ff",
+    "preprocessing_config": "preprocessing_342.json"
   }
 ]

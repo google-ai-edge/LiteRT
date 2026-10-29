@@ -61,7 +61,7 @@ biases. Analysis proves accumulator and rescale ranges before selecting an op.
 | PAD, PADV2 | Constant padding; PADV2 fill has matching quantization |
 | CONCATENATION | Compatible shapes and identical quantization; no fused activation |
 | MAX_POOL_2D | VALID window, preserved quantization |
-| AVERAGE_POOL_2D | Global or disjoint tiled VALID windows, preserved quantization, bounded integer sum |
+| AVERAGE_POOL_2D | VALID windows, including overlap and cropped unused trailing input; preserved quantization and bounded integer sum |
 | SUM | INT8: constant axes, keep_dims=true, bounded integer sum; FP32: constant axes, either keep_dims mode, non-scalar output |
 | REDUCE_MAX, REDUCE_MIN | INT8/FP32, constant axes (negative/duplicate axes normalized), keep_dims true or false, non-scalar output; INT8 quantization preserved |
 | GATHER | INT8/FP32 values, constant in-range INT32 indices, batch_dims=0, any valid axis; INT8 quantization preserved |
@@ -79,22 +79,24 @@ and SqueezeNet1.1's FP32 output pooling.
 It requires PRO-FP in addition to PRO-INT. This is not general floating-point
 model support. EfficientNet SiLU is represented as LOGISTIC followed by MUL.
 
-Requantization composes base TOSA integer operations to reproduce LiteRT's
-rounding where range proofs permit it, with per-channel decisions. It does not
-assume EXT-DOUBLEROUND support. Invalid ranges are rejected rather than wrapped.
+Accumulator requantization emits one native TOSA `RESCALE` with `SINGLE_ROUND`,
+including per-channel scales, tiny scales and large legal bias values. Ordinary
+convolutions retain `CONV2D` (INT8 to INT32) → `RESCALE` (INT32 to INT8) → `CLAMP`;
+depthwise convolution uses the equivalent `DEPTHWISE_CONV2D` pattern. This lets
+the driver fuse requantization without extra comparisons, shifts, selections or
+channel splitting to emulate LiteRT's double rounding. FULLY_CONNECTED,
+TRANSPOSE_CONV and quantized arithmetic share this rescaling policy.
+Invalid accumulator/rescale ranges remain rejected. No unadvertised
+`EXT-DOUBLEROUND` support is assumed. A local rescale can differ by one code
+from the reference kernel; differences can accumulate through a model.
 
-INT8 average pooling emits TOSA `AVG_POOL2D` directly, retaining the existing
-shape, cropping and quantization checks. TOSA rounding can differ from LiteRT
-at quantization boundaries. In the three-image emulator smoke check, ResNet18
-and MobileNetV2 retained their previous results; DenseNet121 had a maximum
-output difference of two int8 codes and a different top-1 prediction on one
-image. This numerical tradeoff is accepted for this lowering. The shared
-evaluator still reports the top-1 mismatch; its parity gates are unchanged. A subsequent
-MobileNetV3 Large check retained all three top-1 predictions but exceeded the
-numerical gate (maximum 11 codes, mean 1.89); reverting the later CLAMP and
-identity-QUANTIZE simplifications reproduced the same per-image errors.
-Direct pooling therefore remains numerically unqualified for that model under
-the existing thresholds.
+INT8 average pooling emits TOSA `AVG_POOL2D` directly. Overlapping VALID
+windows have the same fixed divisor as disjoint windows; their centered sum is
+bounded before selection. Explicit PAD operations remain part of the graph.
+SAME padding and mismatched input/output quantization remain unsupported for
+INT8 pooling. Native pooling rounding can also differ from LiteRT.
+
+### Runtime capability checks
 
 Before selecting a device, dispatch queries `VkTensorFormatPropertiesARM`
 through `vkGetPhysicalDeviceFormatProperties2` for every format used by inputs,

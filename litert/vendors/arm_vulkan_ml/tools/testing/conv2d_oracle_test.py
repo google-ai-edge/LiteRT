@@ -38,6 +38,8 @@ def invoke(argv, directory, env, name):
 
 
 def integer_oracle(directory, metadata, inp):
+    if metadata["rounding_mode"] != "SINGLE_ROUND":
+        raise AssertionError("Convolution must use native SINGLE_ROUND RESCALE")
     weights = np.fromfile(directory / ("weights.bin" if (directory / "weights.bin").exists() else "constant_0.bin"), dtype=np.int8).reshape(
         metadata["weight_shape"]).astype(np.int64)
     if metadata.get("depthwise") and not (directory / "weights.bin").exists():
@@ -70,14 +72,6 @@ def integer_oracle(directory, metadata, inp):
     mult = np.array(metadata["multipliers"], dtype=np.int64)
     shift = np.array(metadata["shifts"], dtype=np.int64)
     result = (acc * mult + np.left_shift(np.int64(1), shift - 1)) // np.left_shift(np.int64(1), shift)
-    if metadata.get("staged_rounding_channels") or metadata.get("staged_rounding"):
-        first = np.minimum(shift, 31)
-        tail = shift - first
-        value = (acc * mult + (np.int64(1) << (first - 1))) // (np.int64(1) << first)
-        # Rounding division, ties away from zero, independent of graph SELECT.
-        magnitude = (np.abs(value) + np.where(tail > 0, np.int64(1) << np.maximum(tail - 1, 0), 0)) // (np.int64(1) << tail)
-        staged_result = np.where(value < 0, -magnitude, magnitude)
-        result = np.where(np.array(metadata.get("staged_rounding_channels", [1]), dtype=bool), staged_result, result)
     result += metadata["output_zero_point"]
     result = np.clip(result, metadata["activation_min"], metadata["activation_max"])
     return acc.astype(np.int32), result.astype(np.int8)
@@ -106,7 +100,8 @@ def run(args, directory):
                           exact_tosa_rescale=True))
     return dict(model_sha256=sha256(args.model), op_index=args.op_index,
                 spirv_sha256=sha256(directory / "graph.spv"), reference=metadata["reference"],
-                single_rounding=metadata["single_rounding"], cases=cases)
+                rounding_mode=metadata["rounding_mode"],
+                reference_single_rounding=metadata["single_rounding"], cases=cases)
 
 
 def main():

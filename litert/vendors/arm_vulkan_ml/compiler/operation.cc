@@ -512,14 +512,11 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
           return reject("Invalid pool geometry");
         p.cropped_shape[axis+1]-=(d-k)%stride;
       }
-      // Support global pooling and disjoint VALID tiles. Overlapping windows
-      // and padding need their own divisor and rounding analysis.
-      const bool global = output->shape[1] == 1 && output->shape[2] == 1 &&
-          p.kernel[0] == input->shape[1] && p.kernel[1] == input->shape[2];
-      const bool tiled = !input->floating && p.stride == p.kernel;
-      if (avg && ((!global && !tiled) ||
-          uint64_t{static_cast<uint32_t>(p.kernel[0])} * p.kernel[1] * 255 > INT32_MAX))
-        return reject("AVG_POOL requires a bounded global or disjoint int8 VALID window");
+      // Every VALID window has the same divisor, including overlapping windows.
+      // TOSA AVG_POOL2D handles its own division and rounding; prove that the
+      // centered INT8 sum fits INT32 regardless of stride or output geometry.
+      if (avg && uint64_t{static_cast<uint32_t>(p.kernel[0])} * p.kernel[1] * 255 > INT32_MAX)
+        return reject("AVG_POOL requires a bounded int8 VALID window");
       break;
     }
     case kLiteRtOpCodeTflSum: {

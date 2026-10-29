@@ -65,15 +65,12 @@ struct GraphConstant {
   std::vector<uint8_t> bytes;
 };
 
-// Range-proven requantization; composes base TOSA operations for LiteRT
-// rounding, and isolates channels requiring the single-round path.
+// Range-proven native TOSA SINGLE_ROUND requantization. Per-channel scales use
+// one RESCALE, including channels with large accumulators or tiny scales.
 tfsc::tosa::ResId EmitRescale(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
     const std::vector<uint32_t>& shape, int32_t output_zero_point,
     const std::vector<Scale32>& scales, const std::vector<AccumulatorRange>& ranges,
     std::vector<GraphConstant>& constants);
-
-// Whether both stages of the base-profile rounding composition are legal.
-bool UsesStagedRounding(const Conv2dPlan& plan);
 
 // Emits CONV2D -> RESCALE -> CLAMP, or a TFSC error ResId. The module owner
 // must check both this result and WriteToBinary before publishing an artifact.

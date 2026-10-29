@@ -58,10 +58,14 @@ PYTHONPATH=.arm-vulkan-preflight/schema \
 
 Use the repository's per-worktree Bazel cache/output flags for these builds.
 The driver checks 59 FP32/typed positive fixtures and eight expected rejections.
-Repeat with `--quantized_only` and a separate output directory for 32 INT8
+Repeat with `--quantized_only` and a separate output directory for 38 INT8
 positive fixtures and six rejections. Four synthetic cases are generated per
 positive fixture. Each checks intended opcode emission, SPIR-V, capabilities,
-full validation, and accumulated/isolated tracing. INT8 comparisons are exact.
+full validation, and accumulated/isolated tracing. INT8 comparisons are exact
+except native average pooling, SUB and transpose convolution, which permit a
+one-code difference from the double-rounding reference. The six average-pool
+fixtures cover overlapping and cropped VALID windows, extreme zero points and
+fused RELU6. Numerical gates for complete ImageNet models remain unchanged.
 These cases consume no ImageNet images.
 
 ## Real LiteRT model lifecycle
@@ -105,7 +109,9 @@ independent NumPy INT64 oracle:
 
 Four inputs exercise zero points, negative values, saturation and layout.
 Accumulator and rescale comparisons are exact; the separate TFLite reference
-comparison allows one code difference. `generate_conv_fixture.py OUTPUT 2`
+comparison allows one code difference. The fixture records `SINGLE_ROUND`, and
+the independent oracle rejects a different rescale mode.
+`generate_conv_fixture.py OUTPUT 2`
 creates a grouped-convolution variant using the generated schema bindings.
 
 For full-model smoke checks use the public example suite and preprocessing

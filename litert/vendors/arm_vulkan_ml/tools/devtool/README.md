@@ -173,8 +173,17 @@ ImageNet accuracy measurement. Each image's errors/predictions and the exact
 preprocessed-input hash are retained. CPU baseline uses reference kernels.
 `--runtime_library_dir` is available when built for dynamic LiteRT runtime loading.
 
-`suite.example.json` pins six model artifacts (FP32/INT8 MobileNetV2, INT8
-ResNet18, EfficientNet-B0, DenseNet121 and MobileNetV3 Large). Copy it and the three
+`suite.example.json` pins seven model artifacts (FP32/INT8 MobileNetV2, INT8
+ResNet18, EfficientNet-B0, DenseNet121, MobileNetV3 Large and Inception V3).
+Inception uses resize 342 and crop 299; download its pinned static INT8 artifact:
+
+```sh
+uvx --from huggingface_hub hf download litert-community/inception_v3 \
+  inception_v3_int8_channelwise.tflite \
+  --revision 1b7f421b5ecf8082620670e381c11aa284687237 --local-dir models
+```
+
+Copy the suite and the four
 preprocessing JSON files to a local working directory, download models into its
 `models/` directory, then run:
 
@@ -187,8 +196,10 @@ preprocessing JSON files to a local working directory, download models into its
 
 Paths specified by suite entries resolve relative to the suite file. CLI paths
 resolve from the working directory. Model SHA-256 must match before execution.
-`known_failure` is an annotation only: DenseNet121's known prediction difference
-and MobileNetV3 Large's pooling error remain failures under the default gates.
+`known_failure` is an annotation only. Native TOSA rescaling uses SINGLE_ROUND
+and can differ from the double-rounding reference. Per-model numerical errors
+and DenseNet121's known prediction difference remain failures under the default
+gates; [the example suite](suite.example.json) records the known failures.
 Do not commit downloaded models or generated reports/artifacts.
 
 ## Trace a mismatch

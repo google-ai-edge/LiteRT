@@ -95,6 +95,42 @@ TEST(OperationTest, UnarySimplificationsPreserveRequantizingFallback) {
   }
 }
 
+TEST(OperationTest, Int8AveragePoolAcceptsOverlappingValidWindows) {
+  for (int variant = 0; variant < 6; ++variant) {
+    const int stride = variant == 1 ? 2 : 1;
+    auto bytes = AddModel({1, 6, 7, 2}, {1},
+                         {1, variant == 2 ? 5 : (6 - 3) / stride + 1,
+                          (7 - 3) / stride + 1, 2});
+    auto object = tflite::UnPackModel(bytes.data());
+    object->operator_codes[0]->builtin_code = tflite::BuiltinOperator_AVERAGE_POOL_2D;
+    auto& graph = *object->subgraphs[0];
+    graph.inputs = {0};
+    graph.operators[0]->inputs = {0};
+    tflite::Pool2DOptionsT options;
+    options.padding = variant == 3 ? tflite::Padding_SAME : tflite::Padding_VALID;
+    options.filter_height = options.filter_width = 3;
+    options.stride_h = options.stride_w = stride;
+    if (variant == 5) options.fused_activation_function = tflite::ActivationFunctionType_RELU6;
+    graph.operators[0]->builtin_options.Set(options);
+    if (variant == 4) graph.tensors[2]->quantization->scale = {0.25f};
+    flatbuffers::FlatBufferBuilder builder;
+    tflite::FinishModelBuffer(builder, tflite::Model::Pack(builder, object.get()));
+    auto model = ExtendedModel::CreateFromBuffer(
+        BufferRef<uint8_t>(builder.GetBufferPointer(), builder.GetSize()));
+    ASSERT_TRUE(model);
+    auto subgraph = model->Subgraph(0);
+    ASSERT_TRUE(subgraph);
+    std::string reason;
+    auto plan = AnalyzeOperation(subgraph->Ops()[0], reason);
+    const bool supported = variant == 0 || variant == 1 || variant == 5;
+    ASSERT_EQ(plan.has_value(), supported) << reason;
+    if (!supported) continue;
+    EXPECT_EQ(plan->cropped_shape,
+              (std::vector<uint32_t>{1, variant == 1 ? 5u : 6u, 7, 2}));
+    EXPECT_TRUE(CompilePartition(*subgraph, reason)) << reason;
+  }
+}
+
 TEST(OperationTest, GatherRequiresConstantInRangeIndicesAndMatchingQuantization) {
   for (int variant = 0; variant < 5; ++variant) {
     auto bytes = AddModel({2, 3, 4}, {2}, {2, 2, 4});
@@ -431,7 +467,7 @@ TEST(OperationTest, FloatGlobalAveragePoolRejectsMismatchedGeometryAndMixedTypes
   }
 }
 
-TEST(OperationTest, DisjointInt8AveragePoolAcceptsCroppedEdgesButRejectsOverlap) {
+TEST(OperationTest, Int8AveragePoolAcceptsCroppedEdgesAndRequiresMatchingQuantization) {
   for (int variant = 0; variant < 3; ++variant) {
     auto bytes = AddModel({1, 5, 5, 3}, {1}, variant == 1 ? std::vector<int32_t>{1, 4, 4, 3}
                                                        : std::vector<int32_t>{1, 2, 2, 3});
@@ -453,7 +489,7 @@ TEST(OperationTest, DisjointInt8AveragePoolAcceptsCroppedEdgesButRejectsOverlap)
     auto subgraph = model->Subgraph(0);
     ASSERT_TRUE(subgraph);
     std::string reason;
-    EXPECT_EQ(static_cast<bool>(CompilePartition(*subgraph, reason)), variant == 0) << reason;
+    EXPECT_EQ(static_cast<bool>(CompilePartition(*subgraph, reason)), variant != 2) << reason;
   }
 }
 
