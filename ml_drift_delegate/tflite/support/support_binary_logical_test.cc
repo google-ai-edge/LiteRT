@@ -79,7 +79,7 @@ INSTANTIATE_TEST_SUITE_P(
         {kTfLiteBuiltinEqual, 1},         // min
         {kTfLiteBuiltinEqual, 2},         // max
         {kTfLiteBuiltinGreater, 1},       // min
-        {kTfLiteBuiltinGreater, 2},       // max
+        {kTfLiteBuiltinGreater, 3},       // max
         {kTfLiteBuiltinGreaterEqual, 1},  // min
         {kTfLiteBuiltinGreaterEqual, 2},  // max
         {kTfLiteBuiltinLess, 1},          // min
@@ -120,7 +120,7 @@ INSTANTIATE_TEST_SUITE_P(
         {kTfLiteBuiltinEqual, 0},         // min-1
         {kTfLiteBuiltinEqual, 3},         // max+1
         {kTfLiteBuiltinGreater, 0},       // min-1
-        {kTfLiteBuiltinGreater, 3},       // max+1
+        {kTfLiteBuiltinGreater, 4},       // max+1
         {kTfLiteBuiltinGreaterEqual, 0},  // min-1
         {kTfLiteBuiltinGreaterEqual, 3},  // max+1
         {kTfLiteBuiltinLess, 0},          // min-1
