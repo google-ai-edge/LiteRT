@@ -15,6 +15,7 @@
 
 """Recovers quantized weights from dequantized weights (often from QAT)."""
 
+from collections.abc import Sequence
 import dataclasses
 from typing import Any, Optional
 
@@ -78,7 +79,7 @@ def _get_scale(arr: np.ndarray, min_scale: float) -> float:
 
 def _check_unique_values(
     tensor_content: np.ndarray,
-    quantized_dimension: int | None,
+    quantized_dimension: int | Sequence[int] | None,
     *,
     block_size: int,
     num_bits: int,
@@ -87,7 +88,7 @@ def _check_unique_values(
 
   Args:
     tensor_content: The tensor content to check.
-    quantized_dimension: The dimension along which the tensor is quantized.
+    quantized_dimension: The dimension(s) along which the tensor is quantized.
     block_size: The block size for blockwise quantization.
     num_bits: The number of bits for quantization.
 
@@ -100,24 +101,16 @@ def _check_unique_values(
   # The maximum number of unique values representable by the target bit width.
   limit = 1 << num_bits
 
-  if block_size > 0:
-    reshaped_2d = common_utils.reshape_to_blocks(
-        tensor_content, quantized_dimension, block_size
-    )
+  if quantized_dimension is None:
+    # Per-tensor quantization: the entire tensor shares a single scale.
+    return np.unique(tensor_content).size, limit
 
-    max_found = 0
-    for row in reshaped_2d:
-      num_unique = np.unique(row).size
-      max_found = max(max_found, num_unique)
-      if max_found > limit:
-        break
-    return max_found, limit
-
-  if quantized_dimension is not None:
+  if isinstance(quantized_dimension, int) and block_size == 0:
+    # Single-axis channelwise quantization: check each slice along the axis.
     max_found = 0
     for i in range(tensor_content.shape[quantized_dimension]):
-      slices = [slice(None)] * tensor_content.ndim
-      slices[quantized_dimension] = i  # pyrefly: ignore[unsupported-operation]
+      slices: list[Any] = [slice(None)] * tensor_content.ndim
+      slices[quantized_dimension] = i
       vec = tensor_content[tuple(slices)]
       num_unique = np.unique(vec).size
       max_found = max(max_found, num_unique)
@@ -125,24 +118,44 @@ def _check_unique_values(
         break
     return max_found, limit
 
-  num_unique = np.unique(tensor_content).size
-  return num_unique, limit
+  if isinstance(quantized_dimension, Sequence):
+    # Multi-axis channelwise quantization: flatten the quantized dimensions
+    # into rows so each row contains all elements of one quantization channel.
+    num_channels = int(
+        np.prod([tensor_content.shape[d] for d in quantized_dimension])
+    )
+    reshaped_2d = tensor_content.reshape(num_channels, -1)
+  else:
+    # Blockwise quantization: reshape so each row is one quantization block.
+    reshaped_2d = common_utils.reshape_to_blocks(
+        tensor_content, quantized_dimension, block_size
+    )
+
+  max_found = 0
+  for row in reshaped_2d:
+    num_unique = np.unique(row).size
+    max_found = max(max_found, num_unique)
+    if max_found > limit:
+      break
+  return max_found, limit
 
 
 def get_zp_scale_from_dequantized_symmetric_weights(
     dequant_vals: np.ndarray,
-    quantized_dimension: Optional[int] = None,
+    quantized_dimension: int | Sequence[int] | None = None,
     block_size: int = 0,
     min_scale: float = 1e-9,
 ) -> tuple[np.ndarray, np.ndarray]:
   """Calculates scale and zero point from dequantized and symmetric weights.
 
-  Handles per-tensor, per-channel (axis), and blockwise quantization.
+  Handles per-tensor, per-channel (axis), multi-axis, and blockwise
+  quantization.
 
   Args:
       dequant_vals: The dequantized weight values (numpy array).
-      quantized_dimension:  The dimension along which quantization was performed
-        (0 or 1), or None for per-tensor quantization.
+      quantized_dimension: The dimension(s) along which quantization was
+        performed (0, 1, a sequence for multi-axis), or None for per-tensor
+        quantization.
       block_size: The block size for blockwise quantization.
       min_scale: The minimum allowed scale value.
 
@@ -152,13 +165,8 @@ def get_zp_scale_from_dequantized_symmetric_weights(
           - scales: Scales.
 
   Raises:
-      ValueError: If `quantized_dimension` is not 0, 1, or None.
+      ValueError: If `quantized_dimension` is invalid.
   """
-
-  if quantized_dimension not in (0, 1, None):
-    raise ValueError(
-        f"quantized_dimension must be 0, 1, or None. Got {quantized_dimension}"
-    )
 
   # Use absolute values for symmetric quantization.
   dequant_vals = np.abs(dequant_vals)
@@ -167,52 +175,73 @@ def get_zp_scale_from_dequantized_symmetric_weights(
     # Per-tensor quantization: One scale for the entire tensor.
     scales = _get_scale(np.ravel(dequant_vals), min_scale)
     scales = np.array([[scales]])
+    return np.zeros_like(scales, dtype=np.int32), scales
+
+  # Reshape `dequant_vals` into a 2D array `(num_groups, elements_per_group)` so
+  # each row is one quantization group (channel or block) sharing a single
+  # scale, and compute `target_shape` to reshape the recovered 1D scales back to
+  # match `dequant_vals.ndim`.
+  if isinstance(quantized_dimension, Sequence):
+    # Multi-axis channelwise quantization.
+    num_channels = int(
+        np.prod([dequant_vals.shape[d] for d in quantized_dimension])
+    )
+    reshaped_2d = dequant_vals.reshape(num_channels, -1)
+    target_shape = tuple(
+        dequant_vals.shape[d] if d in quantized_dimension else 1
+        for d in range(dequant_vals.ndim)
+    )
+  elif quantized_dimension not in (0, 1):
+    raise ValueError(
+        "quantized_dimension must be 0, 1, a sequence, or None. Got"
+        f" {quantized_dimension}"
+    )
+  elif block_size > 0:
+    reshaped_2d = common_utils.reshape_to_blocks(
+        dequant_vals, quantized_dimension, block_size
+    )
+    target_shape = common_utils.get_blockwise_shape(
+        dequant_vals.shape, quantized_dimension, block_size
+    )
   else:
-    # Per-channel or Blockwise quantization.
-    if block_size > 0:
-      reshaped_2d = common_utils.reshape_to_blocks(
-          dequant_vals, quantized_dimension, block_size
-      )
-      target_shape = common_utils.get_blockwise_shape(
-          dequant_vals.shape, quantized_dimension, block_size
-      )
-    else:
-      # Per-channel: Move quantized_dimension to axis 0.
-      perm = [quantized_dimension] + [
-          i for i in range(dequant_vals.ndim) if i != quantized_dimension
-      ]
-      transposed = np.transpose(dequant_vals, perm)
-      # Flatten all other dimensions.
-      reshaped_2d = transposed.reshape(
-          dequant_vals.shape[quantized_dimension], -1
-      )
-      target_shape = [1] * dequant_vals.ndim
-      target_shape[quantized_dimension] = dequant_vals.shape[
-          quantized_dimension
-      ]
-      target_shape = tuple(target_shape)
+    # Per-channel: Move quantized_dimension to axis 0.
+    perm = [quantized_dimension] + [
+        i for i in range(dequant_vals.ndim) if i != quantized_dimension
+    ]
+    transposed = np.transpose(dequant_vals, perm)
+    # Flatten all other dimensions.
+    reshaped_2d = transposed.reshape(
+        dequant_vals.shape[quantized_dimension], -1
+    )
+    target_shape = [1] * dequant_vals.ndim
+    target_shape[quantized_dimension] = dequant_vals.shape[quantized_dimension]
+    target_shape = tuple(target_shape)
 
-    # Append 0 to each row to handle symmetric quantization.
-    zeros = np.zeros((reshaped_2d.shape[0], 1), dtype=reshaped_2d.dtype)
-    reshaped_2d = np.hstack([reshaped_2d, zeros])
+  # Recover the scale for each quantization group (row) as the minimum non-zero
+  # difference between adjacent sorted values (including 0), since dequantized
+  # symmetric weights are integer multiples of their group's scale.
+  # Append 0 to each row to handle symmetric quantization.
+  zeros = np.zeros((reshaped_2d.shape[0], 1), dtype=reshaped_2d.dtype)
+  reshaped_2d = np.hstack([reshaped_2d, zeros])
 
-    # Sort each row.
-    sorted_2d = np.sort(reshaped_2d, axis=1)
+  # Sort each row.
+  sorted_2d = np.sort(reshaped_2d, axis=1)
 
-    # Diff each row.
-    diffs = np.diff(sorted_2d, axis=1)
+  # Diff each row.
+  diffs = np.diff(sorted_2d, axis=1)
 
-    # Find min non-zero diff.
-    tolerance = 1e-9
-    masked_diffs = np.where(diffs > tolerance, diffs, np.inf)
-    min_diffs = np.min(masked_diffs, axis=1)
+  # Find min non-zero diff.
+  tolerance = 1e-9
+  masked_diffs = np.where(diffs > tolerance, diffs, np.inf)
+  min_diffs = np.min(masked_diffs, axis=1)
 
-    # Apply min_scale and handle np.inf (all values were same).
-    scales_1d = np.maximum(min_diffs, min_scale)
-    scales_1d[scales_1d == np.inf] = min_scale
+  # Apply min_scale and handle np.inf (all values were same).
+  scales_1d = np.maximum(min_diffs, min_scale)
+  scales_1d[scales_1d == np.inf] = min_scale
 
-    scales = scales_1d.reshape(target_shape)
+  scales = scales_1d.reshape(target_shape)
 
+  # Zero points are all zeros for symmetric quantization.
   zero_points = np.zeros_like(scales, dtype=np.int32)
   return zero_points, scales
 
@@ -260,18 +289,19 @@ def get_tensor_quant_params(
   quantized_dim = common_utils.get_weight_quantized_dim(
       op_info, tensor_content, tensor_quant_config.granularity
   )
-
   zp, scale = get_zp_scale_from_dequantized_symmetric_weights(
       dequant_vals=tensor_content,
       quantized_dimension=quantized_dim,
       block_size=block_size,
   )
+  is_multi_axis = isinstance(quantized_dim, Sequence)
   quant_params = qtyping.UniformQuantParams(
       scale=scale,
       zero_point=zp,
       num_bits=tensor_quant_config.num_bits,
       symmetric=tensor_quant_config.symmetric,
-      quantized_dimension=quantized_dim,
+      quantized_dimension=(quantized_dim if not is_multi_axis else None),
+      quantized_dimensions=(quantized_dim if is_multi_axis else None),
       block_size=block_size,
   )
   quantized_vars = uniform_quantize_tensor.uniform_quantize(

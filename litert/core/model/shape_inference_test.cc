@@ -381,6 +381,7 @@ TEST(ShapeInferenceTest, CheckSupportedOps) {
       kLiteRtOpCodeTflTanh,
       kLiteRtOpCodeTflEqual,
       kLiteRtOpCodeTflFloorDiv,
+      kLiteRtOpCodeTflFloorMod,
       kLiteRtOpCodeTflGreater,
       kLiteRtOpCodeTflGreaterEqual,
       kLiteRtOpCodeTflLess,
@@ -430,6 +431,7 @@ TEST(ShapeInferenceTest, CheckSupportedOps) {
       kLiteRtOpCodeTflResizeNearestNeighbor,
       kLiteRtOpCodeTflSelectV2,
       kLiteRtOpCodeTflSpaceToDepth,
+      kLiteRtOpCodeTflTile,
       kLiteRtOpCodeTflTranspose,
       kLiteRtOpCodeTflTransposeConv,
       kLiteRtOpCodeTflUnpack,
@@ -1541,6 +1543,362 @@ TEST(ShapeInferenceTest, TransposeWithNegativePerm) {
         return &output;
       },
       /*expected=*/{3, 2}, /*wrong=*/{2, 3});
+}
+
+TEST(ShapeInferenceTest, ReshapeWithoutShapeOperandOrOptionsIsScalar) {
+  // Neither a shape operand nor ReshapeOptions: TFLite reshapes to a scalar.
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflReshape);
+        auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {1, 1});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{}, /*wrong=*/{1});
+}
+
+TEST(ShapeInferenceTest, ReshapeWithLegacyZeroNewShapeOption) {
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflReshape);
+        auto reshape_opts = std::make_unique<tflite::ReshapeOptionsT>();
+        reshape_opts->new_shape = {0};
+        TflOptions opts;
+        opts.type = tflite::BuiltinOptions_ReshapeOptions;
+        opts.value = reshape_opts.release();
+        SetTflOptions(op, std::move(opts));
+        auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {1, 1});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{}, /*wrong=*/{1});
+
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflReshape);
+    auto reshape_opts = std::make_unique<tflite::ReshapeOptionsT>();
+    reshape_opts->new_shape = {0};
+    TflOptions opts;
+    opts.type = tflite::BuiltinOptions_ReshapeOptions;
+    opts.value = reshape_opts.release();
+    SetTflOptions(op, std::move(opts));
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {});
+    AttachInput(&input, op);
+    AttachOutput(&output, op);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
+}
+
+TEST(ShapeInferenceTest, ReshapeWithoutShapeOperandOrOptionsNeedsOneElement) {
+  // The declared output shape is not a fallback target: like TFLite, a
+  // multi-element input cannot be reshaped to the implicit scalar.
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflReshape);
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {6});
+    AttachInput(&input, op);
+    AttachOutput(&output, op);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
+}
+
+TEST(ShapeInferenceTest,
+     ReshapeDynamicShapeOperandTakesPrecedenceOverLegacyZeroNewShapeOption) {
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflReshape);
+    auto reshape_opts = std::make_unique<tflite::ReshapeOptionsT>();
+    reshape_opts->new_shape = {0};
+    TflOptions opts;
+    opts.type = tflite::BuiltinOptions_ReshapeOptions;
+    opts.value = reshape_opts.release();
+    SetTflOptions(op, std::move(opts));
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {1});
+    auto& shape_tensor = AddTensor(subgraph, kLiteRtElementTypeInt32, {1});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {1});
+    AttachInput(&input, op);
+    AttachInput(&shape_tensor, op);
+    AttachOutput(&output, op);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorShapeInferenceFailed);
+    EXPECT_EQ(TensorDims(output), Dims({1}));
+  }
+}
+
+TEST(ShapeInferenceTest, Conv2DAndDepthwiseConv2DStrideLargerThanInput) {
+  // VALID padding with input >= filter and stride_h > input_h succeeds in both
+  // modes.
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflConv2d);
+        auto options = std::make_unique<tflite::Conv2DOptionsT>();
+        options->padding = tflite::Padding_VALID;
+        options->stride_h = 2;
+        options->stride_w = 2;
+        options->dilation_h_factor = 1;
+        options->dilation_w_factor = 1;
+        TflOptions tfl_options;
+        tfl_options.type = tflite::BuiltinOptions_Conv2DOptions;
+        tfl_options.value = options.release();
+        SetTflOptions(op, std::move(tfl_options));
+
+        auto& input =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, {1, 1, 6, 4});
+        auto& filter =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, {8, 1, 3, 4});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachInput(&filter, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{1, 1, 2, 8}, /*wrong=*/{1, 1, 3, 8});
+
+  // SAME padding with stride > input and filter > input succeeds in both modes.
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflConv2d);
+        auto options = std::make_unique<tflite::Conv2DOptionsT>();
+        options->padding = tflite::Padding_SAME;
+        options->stride_h = 2;
+        options->stride_w = 2;
+        options->dilation_h_factor = 1;
+        options->dilation_w_factor = 1;
+        TflOptions tfl_options;
+        tfl_options.type = tflite::BuiltinOptions_Conv2DOptions;
+        tfl_options.value = options.release();
+        SetTflOptions(op, std::move(tfl_options));
+
+        auto& input =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, {1, 1, 1, 4});
+        auto& filter =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, {8, 3, 3, 4});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachInput(&filter, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{1, 1, 1, 8}, /*wrong=*/{1, 2, 2, 8});
+
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflDepthwiseConv2d);
+        auto options = std::make_unique<tflite::DepthwiseConv2DOptionsT>();
+        options->padding = tflite::Padding_VALID;
+        options->stride_h = 2;
+        options->stride_w = 2;
+        options->dilation_h_factor = 1;
+        options->dilation_w_factor = 1;
+        options->depth_multiplier = 2;
+        TflOptions tfl_options;
+        tfl_options.type = tflite::BuiltinOptions_DepthwiseConv2DOptions;
+        tfl_options.value = options.release();
+        SetTflOptions(op, std::move(tfl_options));
+
+        auto& input =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, {1, 1, 6, 4});
+        auto& filter =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, {1, 1, 3, 8});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachInput(&filter, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{1, 1, 2, 8}, /*wrong=*/{1, 1, 3, 8});
+
+  // VALID padding with filter larger than input is rejected in both modes.
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflConv2d);
+    auto options = std::make_unique<tflite::Conv2DOptionsT>();
+    options->padding = tflite::Padding_VALID;
+    options->stride_h = 2;
+    options->stride_w = 2;
+    options->dilation_h_factor = 1;
+    options->dilation_w_factor = 1;
+    TflOptions tfl_options;
+    tfl_options.type = tflite::BuiltinOptions_Conv2DOptions;
+    tfl_options.value = options.release();
+    SetTflOptions(op, std::move(tfl_options));
+
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {1, 1, 1, 4});
+    auto& filter = AddTensor(subgraph, kLiteRtElementTypeFloat32, {8, 3, 3, 4});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {1, 1, 1, 8});
+    AttachInput(&input, op);
+    AttachInput(&filter, op);
+    AttachOutput(&output, op);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
+}
+
+TEST(ShapeInferenceTest, TileWithInt32AndInt64Multiples) {
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflTile);
+        auto& input =
+            AddTensor(subgraph, kLiteRtElementTypeInt32, {1, 2, 1, 24});
+        auto& multiples = AddConstTensor<int64_t>(
+            subgraph, kLiteRtElementTypeInt64, {1, 1, 12, 1});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeInt32, declared_output);
+        AttachInput(&input, op);
+        AttachInput(&multiples, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{1, 2, 12, 24}, /*wrong=*/{1, 2, 1, 24});
+
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflTile);
+        auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3});
+        auto& multiples =
+            AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32, {3, 4});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachInput(&multiples, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{6, 12}, /*wrong=*/{2, 3});
+}
+
+TEST(ShapeInferenceTest, TileRejectsMismatchedMultiplesLength) {
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflTile);
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3});
+    auto& multiples =
+        AddConstTensor<int64_t>(subgraph, kLiteRtElementTypeInt64, {2, 2, 2});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {4, 6});
+    AttachInput(&input, op);
+    AttachInput(&multiples, op);
+    AttachOutput(&output, op);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorInvalidArgument);
+  }
+}
+
+TEST(ShapeInferenceTest, TileRejectsNegativeMultiples) {
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflTile);
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3});
+    auto& multiples =
+        AddConstTensor<int64_t>(subgraph, kLiteRtElementTypeInt64, {2, -1});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {4, 3});
+    AttachInput(&input, op);
+    AttachInput(&multiples, op);
+    AttachOutput(&output, op);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorInvalidArgument);
+  }
+}
+
+TEST(ShapeInferenceTest, FloorModBroadcastAndValidation) {
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflFloorMod);
+        auto& lhs = AddTensor(subgraph, kLiteRtElementTypeInt32, {1, 630, 2});
+        auto& rhs = AddTensor(subgraph, kLiteRtElementTypeInt32, {});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeInt32, declared_output);
+        AttachInput(&lhs, op);
+        AttachInput(&rhs, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{1, 630, 2}, /*wrong=*/{1, 630, 1});
+
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflFloorMod);
+        auto& lhs = AddTensor(subgraph, kLiteRtElementTypeInt32, {1, 630, 2});
+        auto& rhs = AddTensor(subgraph, kLiteRtElementTypeInt32, {1, 1});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeInt32, declared_output);
+        AttachInput(&lhs, op);
+        AttachInput(&rhs, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{1, 630, 2}, /*wrong=*/{1, 1});
+
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflFloorMod);
+    auto& lhs = AddTensor(subgraph, kLiteRtElementTypeInt32, {1, 630, 2});
+    auto& rhs = AddTensor(subgraph, kLiteRtElementTypeInt32, {1, 5, 3});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeInt32, {1, 630, 2});
+    AttachInput(&lhs, op);
+    AttachInput(&rhs, op);
+    AttachOutput(&output, op);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
 }
 
 }  // namespace
