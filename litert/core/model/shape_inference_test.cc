@@ -1432,5 +1432,73 @@ TEST(ShapeInferenceTest,
   }
 }
 
+TEST(ShapeInferenceTest, SliceWithInt32BeginAndInt64SizeIsRejected) {
+  // TFLite's Slice Prepare() requires `begin->type == size->type` and its
+  // kernel decodes `size` with `begin`'s element type, so a mixed-type SLICE
+  // cannot run; both modes reject it.
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    {
+      LiteRtModelT model;
+      auto& subgraph = model.EmplaceSubgraph();
+      auto& op = subgraph.EmplaceOp();
+      op.SetOpCode(kLiteRtOpCodeTflSlice);
+      auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {4, 6});
+      auto& begin =
+          AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32, {1, 2});
+      auto& size =
+          AddConstTensor<int64_t>(subgraph, kLiteRtElementTypeInt64, {2, -1});
+      auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 4});
+      AttachInput(&input, op);
+      AttachInput(&begin, op);
+      AttachInput(&size, op);
+      AttachOutput(&output, op);
+      ShapeInferenceEngine engine(&model);
+      EXPECT_EQ(engine.InferShapes(validation_only),
+                kLiteRtStatusErrorShapeInferenceFailed);
+    }
+    {
+      LiteRtModelT model;
+      auto& subgraph = model.EmplaceSubgraph();
+      auto& op = subgraph.EmplaceOp();
+      op.SetOpCode(kLiteRtOpCodeTflSlice);
+      auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {4, 6});
+      auto& begin =
+          AddConstTensor<int64_t>(subgraph, kLiteRtElementTypeInt64, {1, 2});
+      auto& size =
+          AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32, {2, -1});
+      auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 4});
+      AttachInput(&input, op);
+      AttachInput(&begin, op);
+      AttachInput(&size, op);
+      AttachOutput(&output, op);
+      ShapeInferenceEngine engine(&model);
+      EXPECT_EQ(engine.InferShapes(validation_only),
+                kLiteRtStatusErrorShapeInferenceFailed);
+    }
+  }
+}
+
+TEST(ShapeInferenceTest, SliceWithInt64BeginAndSize) {
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflSlice);
+        auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {4, 6});
+        auto& begin =
+            AddConstTensor<int64_t>(subgraph, kLiteRtElementTypeInt64, {1, 2});
+        auto& size =
+            AddConstTensor<int64_t>(subgraph, kLiteRtElementTypeInt64, {2, -1});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachInput(&begin, op);
+        AttachInput(&size, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{2, 4}, /*wrong=*/{2, 5});
+}
 }  // namespace
 }  // namespace litert::internal
