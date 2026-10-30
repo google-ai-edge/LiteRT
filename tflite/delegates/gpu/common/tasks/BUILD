@@ -156,8 +156,8 @@ cc_library(
 
 cc_library(
     name = "conv_generic",
-    srcs = ["conv_generic.cc"],
-    hdrs = ["conv_generic.h"],
+    srcs = ["conv_generic.cc", "conv_generic_coop_mat.cc"],
+    hdrs = ["conv_generic.h", "conv_generic_coop_mat.h"],
     deps = [
         "//tflite/delegates/gpu/common:data_type",
         "//tflite/delegates/gpu/common:gpu_info",

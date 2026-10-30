@@ -26,6 +26,7 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/status.h"
 #include "tflite/delegates/gpu/common/task/util.h"
 #include "tflite/delegates/gpu/common/task/work_group_picking.h"
+#include "tflite/delegates/gpu/common/tasks/conv_generic_coop_mat.h"
 
 namespace tflite {
 namespace gpu {
@@ -337,6 +338,12 @@ absl::Status ConvGeneric::BindArguments(ArgumentsBinder* args) {
 }
 
 int3 ConvGeneric::GetGridSize() const {
+  // For cooperative matrix mode, return the pre-calculated grid_size_
+  // Cooperative matrix is indicated by tensor_to_grid_ == kCustom AND grid_size_ is valid
+  if (tensor_to_grid_ == TensorToGrid::kCustom && grid_size_.x != 0) {
+    return grid_size_;
+  }
+
   const int task_size_b = dst_[0]->Batch();
   const int task_size_x =
       DivideRoundUp(dst_[0]->Width(), conv_params_.block_size.x);
@@ -1981,10 +1988,89 @@ ConvGeneric::ConvParams ConvGeneric::GuessBestParamsPointwise(
   return params;
 }
 
+namespace {
+
+// Static eligibility for the cooperative-matrix kernel (cl_khr_cooperative_matrix,
+// 16x16 tiles, supports both F16 and F32 precision and accumulator modes).
+bool IsCoopMatEligible(const GpuInfo& gpu_info,
+                       const OperationDef& definition,
+                       const Convolution2DAttributes& attr,
+                       const BHWC* dst_shape) {
+  // coop_mat_* builtins do not compile without the extension.
+  if (!IsCooperativeMatrixSupported(gpu_info)) {
+    return false;
+  }
+  // The kernel supports F16 (half/half4) and F32 (float/float4) tensor types.
+  if (definition.precision != CalculationsPrecision::F16 &&
+      definition.precision != CalculationsPrecision::F32) {
+    return false;
+  }
+  // Routing needs the static output shape; w or h == 1 marks sequence-based
+  // layers that do not map to a 2D pixel plane.
+  if (dst_shape == nullptr || dst_shape->w <= 1 || dst_shape->h <= 1) {
+    return false;
+  }
+  // Input channels must fill the K=16 tiles. cin=3 padded to 16 wastes 81%
+  // of the MACs on zero-padding.
+  if (attr.weights.shape.i % 16 != 0) {
+    return false;
+  }
+  return true;
+}
+
+// Per-layer routing heuristic. The cooperative matrix path loses to the
+// standard FMA path when:
+//  (a) cout < 64: at most 3 output channel groups, no input-tile reuse
+//  (b) kh*kw*ceil(cin/16) < 4 K iterations: cooperative matrix epilogue
+//      dominates
+//  (c) 1x1 conv with < 24 workgroups: too few waves to hide latency
+//  (d) any conv on tiny outputs: too few workgroups
+//  (e) pointwise channel reduction with an in:out group ratio > 8:
+//      rearrange/buffer overhead outweighs the few output tiles
+bool CoopMatExpectedFaster(const Convolution2DAttributes& attr,
+                           const BHWC& dst_shape) {
+  const int cin = attr.weights.shape.i;
+  const int cout = attr.weights.shape.o;
+  const int kh = attr.weights.shape.h;
+  const int kw = attr.weights.shape.w;
+  const int cin_groups = (cin + 15) / 16;
+  const int cout_groups = (cout + 15) / 16;
+  const int k_iters = kh * kw * cin_groups;
+  const int work_groups = DivideRoundUp(dst_shape.w, 8) *
+                          DivideRoundUp(dst_shape.h, 2) *
+                          DivideRoundUp(cout_groups, 8);
+
+  if (cout < 64) {                                   // (a)
+    return false;
+  }
+  if (k_iters < 4) {                                 // (b)
+    return false;
+  }
+  if (kh == 1 && kw == 1 && work_groups < 24) {      // (c)
+    return false;
+  }
+  if (work_groups < 8) {                             // (d)
+    return false;
+  }
+  const bool is_pointwise =                          // (e)
+      kh == 1 && kw == 1 && attr.strides.w == 1 && attr.strides.h == 1 &&
+      attr.dilations.w == 1 && attr.dilations.h == 1 &&
+      attr.padding.prepended.w == 0 && attr.padding.prepended.h == 0;
+  return !(is_pointwise && cin_groups > 8 * cout_groups);
+}
+
+}  // namespace
+
 ConvGeneric CreateConvGeneric(const GpuInfo& gpu_info,
                               const OperationDef& definition,
                               const Convolution2DAttributes& attr,
                               const BHWC* dst_shape) {
+  if (IsCoopMatEligible(gpu_info, definition, attr, dst_shape) &&
+      CoopMatExpectedFaster(attr, *dst_shape)) {
+    return CreateDirectConvolutionWithCooperativeMatrix(definition, attr,
+                                                        gpu_info, dst_shape);
+  }
+
   ConvGeneric result(definition, attr, gpu_info, dst_shape);
   result.GenerateCode(gpu_info);
   result.UploadData(attr.weights, attr.bias);
