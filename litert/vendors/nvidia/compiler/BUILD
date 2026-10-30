@@ -452,10 +452,6 @@ litert_dynamic_lib(
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    visibility = [
-        "//litert:__subpackages__",
-        "//litert:litert_friends",
-    ],
     deps = [
         ":tensorrt_graph_builder",
         ":weight_holder_calibration",
