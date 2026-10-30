@@ -15,6 +15,7 @@
 #include "ml_drift_delegate/delegate/buffer_handler_utils.h"
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "testing/base/public/gmock.h"
@@ -428,5 +429,33 @@ TEST(BufferHandlerUtilsTest, ConvertDataFromDescriptorUInt16) {
   EXPECT_THAT(host_data[0], Eq(1));
   EXPECT_THAT(host_data[7], Eq(8));
 }
+
+TEST(BufferHandlerUtilsTest, ToMlDriftDataTypeAllSupportedTypes) {
+  const std::vector<std::pair<LiteRtElementType, ::ml_drift::DataType>>
+      kTestCases = {
+          {kLiteRtElementTypeFloat32, ::ml_drift::DataType::kFloat32},
+          {kLiteRtElementTypeFloat16, ::ml_drift::DataType::kFloat16},
+          {kLiteRtElementTypeInt32, ::ml_drift::DataType::kInt32},
+          {kLiteRtElementTypeInt64, ::ml_drift::DataType::kInt64},
+          {kLiteRtElementTypeUInt32, ::ml_drift::DataType::kUint32},
+          {kLiteRtElementTypeUInt64, ::ml_drift::DataType::kUint64},
+          {kLiteRtElementTypeInt16, ::ml_drift::DataType::kInt16},
+          {kLiteRtElementTypeUInt16, ::ml_drift::DataType::kUint16},
+          {kLiteRtElementTypeInt8, ::ml_drift::DataType::kInt8},
+          {kLiteRtElementTypeUInt8, ::ml_drift::DataType::kUint8},
+          {kLiteRtElementTypeBool, ::ml_drift::DataType::kBool},
+      };
+  for (const auto& [element_type, expected_data_type] : kTestCases) {
+    auto status_or = ToMlDriftDataType(element_type);
+    ASSERT_TRUE(status_or.ok());
+    EXPECT_EQ(*status_or, expected_data_type);
+  }
+}
+
+TEST(BufferHandlerUtilsTest, ToMlDriftDataTypeUnsupported) {
+  EXPECT_FALSE(ToMlDriftDataType(kLiteRtElementTypeNone).ok());
+  EXPECT_FALSE(ToMlDriftDataType(kLiteRtElementTypeComplex64).ok());
+}
+
 }  // namespace
 }  // namespace litert::ml_drift

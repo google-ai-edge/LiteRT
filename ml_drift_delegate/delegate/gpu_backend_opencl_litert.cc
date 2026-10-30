@@ -16,6 +16,7 @@
 
 #include <fcntl.h>  // IWYU pragma: keep b/332641196
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -40,9 +41,11 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
+#include "ml_drift_delegate/delegate/buffer_handler_utils.h"
 #include "ml_drift_delegate/delegate/cache/simple_cache.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/gpu_backend_opencl.h"
@@ -187,14 +190,60 @@ GpuBackendOpenClLitert::~GpuBackendOpenClLitert() {
 
 absl::StatusOr<GpuMemoryHandle> GpuBackendOpenClLitert::GetGpuMemoryAllocated(
     const GpuTensorBufferPtr& tensor_buffer) {
+  LiteRtTensorBufferType buffer_type;
+  LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_type(
+      tensor_buffer.get(), &buffer_type));
+
+  if (buffer_type == kLiteRtTensorBufferTypeHostMemory) {
+    const bool is_supported = SupportsZeroCopyHostPtr(/*input=*/false) ||
+                              SupportsZeroCopyHostPtr(/*input=*/true);
+    if (!is_supported) {
+      return absl::FailedPreconditionError(
+          "Host pointer I/O buffers are not supported on this device.");
+    }
+
+    void* host_addr = nullptr;
+    LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_host_memory(
+        tensor_buffer.get(), &host_addr));
+    size_t buffer_size = 0;
+    LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_size(
+        tensor_buffer.get(), &buffer_size));
+
+    auto it = wrapped_host_buffers_.find(tensor_buffer.get());
+    if (it != wrapped_host_buffers_.end()) {
+      auto* opencl_io_buf = static_cast<GpuIOBufferOpenCl*>(it->second.get());
+      if (opencl_io_buf->GetHostPtr() == host_addr &&
+          opencl_io_buf->GetSize() == buffer_size) {
+        return opencl_io_buf->cl_buffer().GetMemoryPtr();
+      }
+    }
+
+    LiteRtRankedTensorType tensor_type;
+    LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_tensor_type(
+        tensor_buffer.get(), &tensor_type));
+    ABSL_ASSIGN_OR_RETURN(auto data_type,
+                          ToMlDriftDataType(tensor_type.element_type));
+
+    const bool input_dir = !SupportsZeroCopyHostPtr(/*input=*/false);
+    ABSL_ASSIGN_OR_RETURN(
+        auto host_io_buf,
+        WrapExternalHostBuffer(data_type, buffer_size, input_dir, host_addr));
+    auto* opencl_io_buf = static_cast<GpuIOBufferOpenCl*>(host_io_buf.get());
+    GpuMemoryHandle cl_mem = opencl_io_buf->cl_buffer().GetMemoryPtr();
+    if (it != wrapped_host_buffers_.end()) {
+      it->second = std::move(host_io_buf);
+    } else {
+      wrapped_host_buffers_.emplace(tensor_buffer.get(),
+                                    std::move(host_io_buf));
+    }
+    return cl_mem;
+  }
+
   LiteRtClMem cl_mem_addr;
   LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_opencl_memory(
       tensor_buffer.get(), &cl_mem_addr));
 #if LITERT_HAS_OPENGL_SUPPORT
   if (gl_interop_fabric_) {
-    LiteRtTensorBufferType buffer_type;
-    LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_type(
-        tensor_buffer.get(), &buffer_type));
     if (buffer_type == kLiteRtTensorBufferTypeGlBuffer) {
       ABSL_RETURN_IF_ERROR(gl_interop_fabric_->RegisterMemory(cl_mem_addr));
     }
@@ -295,6 +344,10 @@ GpuBackendOpenClLitert::GetGpuBufferRequirements(
     requirements.strides.push_back(0);
   }
 #endif
+  if (SupportsZeroCopyHostPtr(/*input=*/true)) {
+    requirements.buffer_types.push_back(kLiteRtTensorBufferTypeHostMemory);
+    requirements.strides.push_back(0);
+  }
   return std::move(requirements);
 }
 
@@ -325,6 +378,10 @@ GpuBackendOpenClLitert::GetGpuBufferRequirementsForNonExternalTensors() {
     requirements.strides.push_back(0);
   }
 #endif
+  if (SupportsZeroCopyHostPtr(/*input=*/false)) {
+    requirements.buffer_types.push_back(kLiteRtTensorBufferTypeHostMemory);
+    requirements.strides.push_back(0);
+  }
   return requirements;
 }
 

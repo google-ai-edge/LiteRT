@@ -19,6 +19,7 @@
 #include <memory>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -105,6 +106,10 @@ class GpuBackendOpenClLitert : public GpuBackendOpenCl {
   int invoke_count_to_flush_compiled_cache_;
   // If > 0, specifies the kernel (op) batch size, for a flush.
   int kernel_batch_size_ = 0;
+
+  // Cache of wrapped external host memory buffers (CL_MEM_USE_HOST_PTR).
+  absl::flat_hash_map<const LiteRtTensorBufferT*, std::unique_ptr<GpuIOBuffer>>
+      wrapped_host_buffers_;
 };
 
 class GpuInferenceContextOpenClLitert : public GpuInferenceContextOpenCl {
