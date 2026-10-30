@@ -15,18 +15,23 @@
 #include "litert/cc/litert_options.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <ios>
+#include <memory>
 #include <string>
 #include <utility>
 
 #include <gtest/gtest.h>
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/internal/scoped_file.h"
 #include "litert/cc/internal/scoped_weight_source.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/options/litert_concrete_options_base.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/core/options.h"
@@ -105,6 +110,77 @@ TEST(OptionsTest, GetOptionsGenericAccessor) {
       auto options_handle,
       internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
   ASSERT_NE(options_handle, nullptr);
+}
+
+class FakeEncodedOptions : public ConcreteOptionsBase {
+ public:
+  FakeEncodedOptions(std::string identifier, std::string payload)
+      : identifier_(std::move(identifier)), payload_(std::move(payload)) {}
+
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** identifier, void** payload,
+      void (**payload_deleter)(void*)) const override {
+    *identifier = identifier_.c_str();
+    char* copy = static_cast<char*>(std::malloc(payload_.size() + 1));
+    std::memcpy(copy, payload_.c_str(), payload_.size() + 1);
+    *payload = copy;
+    *payload_deleter = [](void* p) { std::free(p); };
+    return kLiteRtStatusOk;
+  }
+
+ private:
+  std::string identifier_;
+  std::string payload_;
+};
+
+TEST(OptionsTest, AddConcreteOpaqueOptionsMaterializesMultiplePayloads) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+
+  EXPECT_FALSE(
+      options.AddOpaqueOptions(std::unique_ptr<ConcreteOptionsBase>(nullptr))
+          .HasValue());
+  LITERT_EXPECT_OK(options.AddOpaqueOptions(
+      std::make_unique<FakeEncodedOptions>("opt_a", "a = 1\n")));
+  LITERT_EXPECT_OK(options.AddOpaqueOptions(
+      std::make_unique<FakeEncodedOptions>("opt_b", "b = true\n")));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options_handle,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+  auto* impl = reinterpret_cast<LiteRtOptionsT*>(options_handle.get());
+  ASSERT_NE(impl->options, nullptr);
+
+  void* data_a = nullptr;
+  ASSERT_EQ(LiteRtFindOpaqueOptionsData(impl->options, "opt_a", &data_a),
+            kLiteRtStatusOk);
+  EXPECT_STREQ(static_cast<const char*>(data_a), "a = 1\n");
+
+  void* data_b = nullptr;
+  ASSERT_EQ(LiteRtFindOpaqueOptionsData(impl->options, "opt_b", &data_b),
+            kLiteRtStatusOk);
+  EXPECT_STREQ(static_cast<const char*>(data_b), "b = true\n");
+}
+
+class FailingEncodedOptions : public ConcreteOptionsBase {
+ public:
+  LiteRtStatus GetOpaqueOptionsData(
+      const char** /*identifier*/, void** /*payload*/,
+      void (** /*payload_deleter*/)(void*)) const override {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+};
+
+TEST(OptionsTest, AddConcreteOpaqueOptionsPropagatesPayloadError) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+
+  LITERT_EXPECT_OK(
+      options.AddOpaqueOptions(std::make_unique<FailingEncodedOptions>()));
+
+  EXPECT_FALSE(
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder())
+          .HasValue());
 }
 
 }  // namespace

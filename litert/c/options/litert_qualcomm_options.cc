@@ -30,6 +30,8 @@
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_common.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/core/litert_options_encoder.h"
 #include "litert/core/litert_toml_parser.h"
 
 using litert::internal::ParseToml;
@@ -398,193 +400,199 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  std::string toml_str;
+  litert::internal::OptionsEncoder encoder;
   if (options->log_level.has_value()) {
-    absl::StrAppend(
-        &toml_str, "log_level = ", static_cast<int>(*options->log_level), "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("log_level", static_cast<int>(*options->log_level)));
   }
   if (options->profiling.has_value()) {
-    absl::StrAppend(
-        &toml_str, "profiling = ", static_cast<int>(*options->profiling), "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("profiling", static_cast<int>(*options->profiling)));
   }
   if (options->use_htp_preference.has_value()) {
-    absl::StrAppend(&toml_str, "use_htp_preference = ",
-                    *options->use_htp_preference ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("use_htp_preference", *options->use_htp_preference));
   }
   if (options->use_qint16_as_quint16.has_value()) {
-    absl::StrAppend(&toml_str, "use_qint16_as_quint16 = ",
-                    *options->use_qint16_as_quint16 ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeBool("use_qint16_as_quint16",
+                                              *options->use_qint16_as_quint16));
   }
   if (options->use_int64_bias_as_int32.has_value()) {
-    absl::StrAppend(&toml_str, "use_int64_bias_as_int32 = ",
-                    *options->use_int64_bias_as_int32 ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeBool(
+        "use_int64_bias_as_int32", *options->use_int64_bias_as_int32));
   }
   if (options->qnn_backend.has_value()) {
-    absl::StrAppend(&toml_str,
-                    "qnn_backend = ", static_cast<int>(*options->qnn_backend),
-                    "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "qnn_backend", static_cast<int>(*options->qnn_backend)));
   }
   if (options->enable_weight_sharing.has_value()) {
-    absl::StrAppend(&toml_str, "enable_weight_sharing = ",
-                    *options->enable_weight_sharing ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeBool("enable_weight_sharing",
+                                              *options->enable_weight_sharing));
   }
   if (options->enable_just_in_time.has_value()) {
-    absl::StrAppend(&toml_str, "enable_just_in_time = ",
-                    *options->enable_just_in_time ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeBool("enable_just_in_time",
+                                              *options->enable_just_in_time));
   }
   if (options->op_name_format.has_value()) {
-    absl::StrAppend(&toml_str, "op_name_format = ",
-                    static_cast<int>(*options->op_name_format), "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "op_name_format", static_cast<int>(*options->op_name_format)));
   }
   if (options->use_conv_hmx.has_value()) {
-    absl::StrAppend(&toml_str, "use_conv_hmx = ",
-                    *options->use_conv_hmx ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("use_conv_hmx", *options->use_conv_hmx));
   }
   if (options->use_fold_relu.has_value()) {
-    absl::StrAppend(&toml_str, "use_fold_relu = ",
-                    *options->use_fold_relu ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("use_fold_relu", *options->use_fold_relu));
   }
   if (options->htp_dlbc.has_value()) {
-    absl::StrAppend(&toml_str, "htp_dlbc = ",
-                    *options->htp_dlbc ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeBool("htp_dlbc", *options->htp_dlbc));
   }
   if (options->htp_dlbc_weights.has_value()) {
-    absl::StrAppend(&toml_str, "htp_dlbc_weights = ",
-                    *options->htp_dlbc_weights ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("htp_dlbc_weights", *options->htp_dlbc_weights));
   }
   if (options->htp_p_point.has_value()) {
-    absl::StrAppend(&toml_str, "htp_p_point = ", *options->htp_p_point, "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("htp_p_point", *options->htp_p_point));
   }
   if (options->htp_weight_sharing_channel_tile_size.has_value()) {
-    absl::StrAppend(&toml_str, "htp_weight_sharing_channel_tile_size = ",
-                    *options->htp_weight_sharing_channel_tile_size, "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("htp_weight_sharing_channel_tile_size",
+                          *options->htp_weight_sharing_channel_tile_size));
   }
   if (options->htp_performance_mode.has_value()) {
-    absl::StrAppend(&toml_str, "htp_performance_mode = ",
-                    static_cast<int>(*options->htp_performance_mode), "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("htp_performance_mode",
+                          static_cast<int>(*options->htp_performance_mode)));
   }
   if (options->dsp_performance_mode.has_value()) {
-    absl::StrAppend(&toml_str, "dsp_performance_mode = ",
-                    static_cast<int>(*options->dsp_performance_mode), "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("dsp_performance_mode",
+                          static_cast<int>(*options->dsp_performance_mode)));
   }
   if (options->htp_perf_ctrl_mode.has_value()) {
-    absl::StrAppend(&toml_str, "htp_perf_ctrl_mode = ",
-                    static_cast<int>(*options->htp_perf_ctrl_mode), "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "htp_perf_ctrl_mode", static_cast<int>(*options->htp_perf_ctrl_mode)));
   }
   if (options->htp_pd_session.has_value()) {
-    absl::StrAppend(&toml_str, "htp_pd_session = ",
-                    static_cast<int>(*options->htp_pd_session), "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "htp_pd_session", static_cast<int>(*options->htp_pd_session)));
   }
   if (options->dsp_perf_ctrl_mode.has_value()) {
-    absl::StrAppend(&toml_str, "dsp_perf_ctrl_mode = ",
-                    static_cast<int>(*options->dsp_perf_ctrl_mode), "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "dsp_perf_ctrl_mode", static_cast<int>(*options->dsp_perf_ctrl_mode)));
   }
   if (options->dsp_pd_session.has_value()) {
-    absl::StrAppend(&toml_str, "dsp_pd_session = ",
-                    static_cast<int>(*options->dsp_pd_session), "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "dsp_pd_session", static_cast<int>(*options->dsp_pd_session)));
   }
   if (options->dsp_encoding.has_value()) {
-    absl::StrAppend(&toml_str,
-                    "dsp_encoding = ", static_cast<int>(*options->dsp_encoding),
-                    "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "dsp_encoding", static_cast<int>(*options->dsp_encoding)));
   }
   if (options->dump_tensor_ids.has_value()) {
-    absl::StrAppend(&toml_str, "dump_tensor_ids = [");
-    for (size_t i = 0; i < options->dump_tensor_ids->size(); ++i) {
-      if (i > 0) absl::StrAppend(&toml_str, ", ");
-      absl::StrAppend(&toml_str, "\"", (*options->dump_tensor_ids)[i], "\"");
+    std::vector<std::string> id_strings;
+    id_strings.reserve(options->dump_tensor_ids->size());
+    for (int32_t id : *options->dump_tensor_ids) {
+      id_strings.push_back(absl::StrCat(id));
     }
-    absl::StrAppend(&toml_str, "]\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeStringArray("dump_tensor_ids", id_strings));
   }
   if (options->ir_json_dir.has_value()) {
-    absl::StrAppend(&toml_str, "ir_json_dir = \"", *options->ir_json_dir,
-                    "\"\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeString("ir_json_dir", *options->ir_json_dir));
   }
   if (options->dlc_dir.has_value()) {
-    absl::StrAppend(&toml_str, "dlc_dir = \"", *options->dlc_dir, "\"\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeString("dlc_dir", *options->dlc_dir));
   }
   if (options->graph_transform.has_value()) {
-    absl::StrAppend(&toml_str, "graph_transform = \"",
-                    *options->graph_transform, "\"\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeString("graph_transform", *options->graph_transform));
   }
   if (options->vtcm_size.has_value()) {
-    absl::StrAppend(&toml_str, "vtcm_size = ", *options->vtcm_size, "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt("vtcm_size", *options->vtcm_size));
   }
   if (options->htp_device_id.has_value()) {
-    absl::StrAppend(&toml_str, "htp_device_id = ", *options->htp_device_id,
-                    "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("htp_device_id", *options->htp_device_id));
   }
   if (options->num_hvx_threads.has_value()) {
-    absl::StrAppend(&toml_str, "num_hvx_threads = ", *options->num_hvx_threads,
-                    "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("num_hvx_threads", *options->num_hvx_threads));
   }
   if (options->htp_file_read_memory_budget_mb.has_value()) {
-    absl::StrAppend(&toml_str, "htp_file_read_memory_budget_mb = ",
-                    *options->htp_file_read_memory_budget_mb, "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("htp_file_read_memory_budget_mb",
+                          *options->htp_file_read_memory_budget_mb));
   }
   if (options->optimization_level.has_value()) {
-    absl::StrAppend(&toml_str, "optimization_level = ",
-                    static_cast<int>(*options->optimization_level), "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "optimization_level", static_cast<int>(*options->optimization_level)));
   }
   if (options->graph_priority.has_value()) {
-    absl::StrAppend(&toml_str, "graph_priority = ",
-                    static_cast<int>(*options->graph_priority), "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "graph_priority", static_cast<int>(*options->graph_priority)));
   }
   if (options->saver_output_dir.has_value()) {
-    absl::StrAppend(&toml_str, "saver_output_dir = \"",
-                    *options->saver_output_dir, "\"\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeString("saver_output_dir", *options->saver_output_dir));
   }
   if (options->schematic_dir.has_value()) {
-    absl::StrAppend(&toml_str, "schematic_dir = \"", *options->schematic_dir,
-                    "\"\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeString("schematic_dir", *options->schematic_dir));
   }
   if (options->graph_io_tensor_mem_type.has_value()) {
-    absl::StrAppend(&toml_str, "graph_io_tensor_mem_type = ",
-                    static_cast<int>(*options->graph_io_tensor_mem_type), "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "graph_io_tensor_mem_type",
+        static_cast<int>(*options->graph_io_tensor_mem_type)));
   }
   if (options->custom_op_package.has_value()) {
     const auto& package = *options->custom_op_package;
-    absl::StrAppend(&toml_str, "custom_op_package = \"", "name:", package.name,
-                    ";", "interface_provider:", package.interface_provider, ";",
-                    "compile_package_path:", package.compile_package_path, ";",
-                    "dispatch_package_path:", package.dispatch_package_path,
-                    ";", "target:", package.target, ";", "\"\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeString(
+        "custom_op_package",
+        absl::StrCat("name:", package.name,
+                     ";interface_provider:", package.interface_provider,
+                     ";compile_package_path:", package.compile_package_path,
+                     ";dispatch_package_path:", package.dispatch_package_path,
+                     ";target:", package.target, ";")));
   }
   if (options->lpai_target.has_value()) {
-    absl::StrAppend(&toml_str,
-                    "lpai_target = ", static_cast<int>(*options->lpai_target),
-                    "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "lpai_target", static_cast<int>(*options->lpai_target)));
   }
   if (options->lpai_fps.has_value()) {
-    absl::StrAppend(&toml_str, "lpai_fps = ", *options->lpai_fps, "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt("lpai_fps", *options->lpai_fps));
   }
   if (options->lpai_ftrt_ratio.has_value()) {
-    absl::StrAppend(&toml_str, "lpai_ftrt_ratio = ", *options->lpai_ftrt_ratio,
-                    "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("lpai_ftrt_ratio", *options->lpai_ftrt_ratio));
   }
   if (options->lpai_client_perf_type.has_value()) {
-    absl::StrAppend(&toml_str, "lpai_client_perf_type = ",
-                    static_cast<int>(*options->lpai_client_perf_type), "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("lpai_client_perf_type",
+                          static_cast<int>(*options->lpai_client_perf_type)));
   }
   if (options->lpai_core_affinity_type.has_value()) {
-    absl::StrAppend(&toml_str, "lpai_core_affinity_type = ",
-                    static_cast<int>(*options->lpai_core_affinity_type), "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("lpai_core_affinity_type",
+                          static_cast<int>(*options->lpai_core_affinity_type)));
   }
   if (options->lpai_core_selection.has_value()) {
-    absl::StrAppend(&toml_str,
-                    "lpai_core_selection = ", *options->lpai_core_selection,
-                    "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt("lpai_core_selection",
+                                             *options->lpai_core_selection));
   }
   if (options->qnn_lib_dir.has_value()) {
-    absl::StrAppend(&toml_str, "qnn_lib_dir = \"", *options->qnn_lib_dir,
-                    "\"\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeString("qnn_lib_dir", *options->qnn_lib_dir));
   }
   if (options->dsp_skel_dir.has_value()) {
-    absl::StrAppend(&toml_str, "dsp_skel_dir = \"", *options->dsp_skel_dir,
-                    "\"\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeString("dsp_skel_dir", *options->dsp_skel_dir));
   }
   *identifier = LrtQualcommOptionsGetIdentifier();
-  litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
+  litert::internal::MakeCStringPayload(encoder.Str(), payload, payload_deleter);
 
   return kLiteRtStatusOk;
 }

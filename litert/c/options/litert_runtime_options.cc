@@ -14,17 +14,15 @@
 
 #include "litert/c/options/litert_runtime_options.h"
 
-#include <string.h>  // NOLINT: To use strdup in some environments.
-
-#include <cstdlib>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/core/litert_options_encoder.h"
 
 struct LrtRuntimeOptions {
   std::optional<bool> enable_profiling;
@@ -59,39 +57,33 @@ LiteRtStatus LrtGetOpaqueRuntimeOptionsData(const LrtRuntimeOptions* options,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  std::string toml_str;
+  litert::internal::OptionsEncoder encoder;
   if (options->enable_profiling.has_value()) {
-    absl::StrAppend(&toml_str, "enable_profiling = ",
-                    options->enable_profiling.value() ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeBool(
+        "enable_profiling", options->enable_profiling.value()));
   }
   if (options->error_reporter_mode.has_value()) {
-    absl::StrAppend(&toml_str, "error_reporter_mode = ",
-                    static_cast<int>(options->error_reporter_mode.value()),
-                    "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "error_reporter_mode",
+        static_cast<int>(options->error_reporter_mode.value())));
   }
   if (options->compress_quantization_zero_points.has_value()) {
-    absl::StrAppend(
-        &toml_str, "compress_quantization_zero_points = ",
-        options->compress_quantization_zero_points.value() ? "true" : "false",
-        "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("compress_quantization_zero_points",
+                           options->compress_quantization_zero_points.value()));
   }
   if (options->disable_delegate_clustering.has_value()) {
-    absl::StrAppend(
-        &toml_str, "disable_delegate_clustering = ",
-        options->disable_delegate_clustering.value() ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("disable_delegate_clustering",
+                           options->disable_delegate_clustering.value()));
   }
   if (!options->selected_signature_keys.empty()) {
-    absl::StrAppend(&toml_str, "selected_signature_keys = [");
-    for (size_t i = 0; i < options->selected_signature_keys.size(); ++i) {
-      if (i > 0) absl::StrAppend(&toml_str, ", ");
-      absl::StrAppend(&toml_str, "\"", options->selected_signature_keys[i],
-                      "\"");
-    }
-    absl::StrAppend(&toml_str, "]\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeStringArray(
+        "selected_signature_keys", options->selected_signature_keys));
   }
 
   *identifier = LrtGetRuntimeOptionsIdentifier();
-  litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
+  litert::internal::MakeCStringPayload(encoder.Str(), payload, payload_deleter);
 
   return kLiteRtStatusOk;
 }

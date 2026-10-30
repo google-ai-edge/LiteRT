@@ -36,6 +36,33 @@ android_local_test(
 )
 
 android_local_test(
+    name = "compiled_model_options_no_jni_test",
+    size = "small",
+    srcs = ["java/com/google/ai/edge/litert/CompiledModelOptionsNoJniTest.java"],
+    manifest = "AndroidManifest.xml",
+    test_class = "com.google.ai.edge.litert.CompiledModelOptionsNoJniTest",
+    deps = [
+        "//litert/kotlin:litert_compiled_model_api_no_jni_no_aipack",
+        "//third_party/java/junit",
+        "//third_party/java/truth",
+    ],
+)
+
+android_local_test(
+    name = "compiled_model_options_test",
+    size = "small",
+    srcs = ["java/com/google/ai/edge/litert/CompiledModelOptionsTest.java"],
+    data = ["//litert/test:testdata/simple_model.tflite"],
+    manifest = "AndroidManifest.xml",
+    test_class = "com.google.ai.edge.litert.CompiledModelOptionsTest",
+    deps = [
+        "//litert/kotlin:litert_compiled_model_api",
+        "//third_party/java/junit",
+        "//third_party/java/truth",
+    ],
+)
+
+android_local_test(
     name = "compiled_model_resize_test",
     size = "small",
     srcs = ["java/com/google/ai/edge/litert/CompiledModelResizeTest.java"],

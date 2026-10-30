@@ -183,6 +183,43 @@ class Options {
     return {};
   }
 
+  /// @internal
+  /// @brief Attaches a `ConcreteOptionsBase` instance whose opaque payload is
+  /// materialized via the environment's runtime when building `LiteRtOptions`.
+  /// @warning This is for internal use only and is not ready for public use.
+  Expected<void> AddOpaqueOptions(std::unique_ptr<ConcreteOptionsBase> option) {
+    if (option == nullptr) {
+      return Unexpected(Status::kErrorInvalidArgument,
+                        "ConcreteOptionsBase must not be null.");
+    }
+    std::shared_ptr<ConcreteOptionsBase> shared_option(std::move(option));
+    build_actions_.push_back([shared_option = std::move(shared_option)](
+                                 internal::RuntimeProxy* runtime,
+                                 LiteRtOptions litert_options) -> LiteRtStatus {
+      const char* identifier = nullptr;
+      void* payload = nullptr;
+      void (*payload_deleter)(void*) = nullptr;
+      LITERT_RETURN_IF_ERROR(shared_option->GetOpaqueOptionsData(
+          &identifier, &payload, &payload_deleter));
+      LiteRtOpaqueOptions opaque_opts = nullptr;
+      LiteRtStatus status = runtime->CreateOpaqueOptions(
+          identifier, payload, payload_deleter, &opaque_opts);
+      if (status != kLiteRtStatusOk) {
+        if (payload_deleter != nullptr) {
+          payload_deleter(payload);
+        }
+        return status;
+      }
+      status = runtime->AddOpaqueOptions(litert_options, opaque_opts);
+      if (status != kLiteRtStatusOk) {
+        runtime->DestroyOpaqueOptions(opaque_opts);
+        return status;
+      }
+      return kLiteRtStatusOk;
+    });
+    return {};
+  }
+
   /// Adds a custom operator kernel.
   /// @param custom_op_name The name of the custom operator.
   /// @param custom_op_version The version of the custom operator.
@@ -409,8 +446,14 @@ class Options {
   static Expected<internal::LiteRtOptionsPtr> Build(
       const Options& options, const internal::EnvironmentHolder& env) {
     auto* runtime = env.runtime;
-    LiteRtOptions litert_options;
-    LITERT_RETURN_IF_ERROR(runtime->CreateOptions(&litert_options));
+    LiteRtOptions raw_litert_options;
+    LITERT_RETURN_IF_ERROR(runtime->CreateOptions(&raw_litert_options));
+    // Take ownership immediately so early error returns don't leak.
+    internal::LiteRtOptionsPtr litert_options_ptr(
+        raw_litert_options,
+        internal::LiteRtDestroyOptionsDeleter{
+            runtime->runtime_c_api_->litert_destroy_options});
+    LiteRtOptions litert_options = litert_options_ptr.get();
 
     if (options.lite_rt_hw_accelerator_set_.has_value()) {
       LITERT_RETURN_IF_ERROR(runtime->SetOptionsHardwareAccelerators(
@@ -433,15 +476,22 @@ class Options {
       LITERT_RETURN_IF_ERROR(option_ptr->GetOpaqueOptionsData(
           &identifier, &payload, &payload_deleter));
       LiteRtOpaqueOptions opaque_opts = nullptr;
-      LITERT_RETURN_IF_ERROR(runtime->CreateOpaqueOptions(
-          identifier, payload, payload_deleter, &opaque_opts));
-      LITERT_RETURN_IF_ERROR(
-          runtime->AddOpaqueOptions(litert_options, opaque_opts));
+      LiteRtStatus status = runtime->CreateOpaqueOptions(
+          identifier, payload, payload_deleter, &opaque_opts);
+      if (status != kLiteRtStatusOk) {
+        if (payload_deleter != nullptr) {
+          payload_deleter(payload);
+        }
+        return Unexpected(ToStatus(status), "Failed to create opaque options");
+      }
+      status = runtime->AddOpaqueOptions(litert_options, opaque_opts);
+      if (status != kLiteRtStatusOk) {
+        runtime->DestroyOpaqueOptions(opaque_opts);
+        return Unexpected(ToStatus(status), "Failed to add opaque options");
+      }
     }
 
-    return internal::LiteRtOptionsPtr(
-        litert_options, internal::LiteRtDestroyOptionsDeleter{
-                            runtime->runtime_c_api_->litert_destroy_options});
+    return litert_options_ptr;
   }
 
   std::optional<LiteRtHwAcceleratorSet> lite_rt_hw_accelerator_set_;
