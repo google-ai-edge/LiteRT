@@ -23,22 +23,13 @@ package(
     default_visibility = ["//litert:litert_internal_users"],
 )
 
-# copybara:uncomment_begin(google-only)
-# config_setting(
-#     name = "windows_msvc",
-#     constraint_values = ["@platforms//os:windows"],
-#     flag_values = {"//tools/cpp:compiler": "msvc"},
-# )
-# copybara:uncomment_end
-
-# copybara:comment_begin(oss-only)
 config_setting(
     name = "windows_msvc",
-    values = {
-        "cpu": "x64_windows",
-    },
+    constraint_values = ["@platforms//os:windows"],
+    # copybara:uncomment_begin(google-only)
+    # flag_values = {"//tools/cpp:compiler": "msvc"},
+    # copybara:uncomment_end
 )
-# copybara:comment_end
 
 # copybara:uncomment_begin(google-only)
 # config_setting(

@@ -12,7 +12,46 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Builds LiteRT for Windows with Bazel and MSVC.
+#
+# -TargetArch x86_64 (default) builds for x86_64 on an x86_64 host.
+# -TargetArch arm64 cross-compiles for ARM64 on an x86_64 host
+#   (--config=cross_compile_windows_arm64). Requires the MSVC ARM64 build tools;
+#   see ci/setup_windows_arm64_toolchain.ps1.
+# -Mode wheel (default) builds the ai-edge-litert wheel into dist/.
+# -Mode prebuilts builds the prebuilt binaries (libLiteRt.dll, the GPU
+#   accelerator, the Qualcomm plugins and the tools) into
+#   dist/prebuilts/windows_arm64/ and dist/litert_prebuilts_windows_arm64.zip.
+#   Only supported with -TargetArch arm64; other Windows prebuilts are built by
+#   the Linux prebuilt job.
+# The target and mode can also be selected with the LITERT_TARGET_ARCH and
+# LITERT_BUILD_MODE env variables.
+param (
+  [ValidateSet('x86_64', 'arm64')]
+  [string]$TargetArch = $(if ($env:LITERT_TARGET_ARCH) { $env:LITERT_TARGET_ARCH } else { 'x86_64' }),
+  [ValidateSet('wheel', 'prebuilts')]
+  [string]$Mode = $(if ($env:LITERT_BUILD_MODE) { $env:LITERT_BUILD_MODE } else { 'wheel' })
+)
+
 $ErrorActionPreference = 'Stop'
+
+if ($Mode -eq 'prebuilts' -and $TargetArch -ne 'arm64') {
+  throw '-Mode prebuilts is only supported with -TargetArch arm64.'
+}
+
+# Windows ARM64 prebuilt binaries: Bazel target -> file name in the archive.
+$PrebuiltTargets = [ordered]@{
+  '//litert/c:litert_runtime_c_api_dll' = 'libLiteRt.dll'
+  '//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_dll' = 'libLiteRtWebGpuAccelerator.dll'
+  '//litert/vendors/qualcomm/compiler:LiteRtCompilerPlugin_Qualcomm' = 'LiteRtCompilerPlugin_Qualcomm.dll'
+  '//litert/vendors/qualcomm/dispatch:LiteRtDispatch_Qualcomm' = 'LiteRtDispatch_Qualcomm.dll'
+  '//litert/tools:benchmark_model' = 'benchmark_model.exe'
+  '//litert/tools:run_model' = 'run_model.exe'
+  '//litert/tools:gpu_numerics_check' = 'gpu_numerics_check.exe'
+  '//litert/tools:npu_numerics_check' = 'npu_numerics_check.exe'
+  '//litert/tools:apply_plugin_main' = 'apply_plugin_main.exe'
+}
+$BuildTargets = if ($Mode -eq 'prebuilts') { @($PrebuiltTargets.Keys) } else { @('//ci/tools/python/wheel:litert_wheel') }
 
 function Convert-WslPathToWindows {
   param (
@@ -132,6 +171,7 @@ $ConfigureBazelrc = Join-Path $RepoRoot '.litert_configure.bazelrc'
 if (Test-Path $ConfigureBazelrc) {
   Write-Host "Checking for incompatible flags in $ConfigureBazelrc..."
   Replace-InFile $ConfigureBazelrc '-Wno-sign-compare' '' | Out-Null
+  Replace-InFile $ConfigureBazelrc '-Wno-gnu-offsetof-extensions' '' | Out-Null
 }
 
 # Verify Bazel version
@@ -160,7 +200,9 @@ $BazelStartupOpts = if ($env:BAZEL_OUTPUT_USER_ROOT) {
 } else {
   @()
 }
-$FetchArgs = @('fetch', '--config=windows', '--repo_env=USE_PYWRAP_RULES=True', '//ci/tools/python/wheel:litert_wheel')
+$TargetConfigArgs = if ($TargetArch -eq 'arm64') { @('--config=cross_compile_windows_arm64') } else { @() }
+Write-Host "Target architecture: $TargetArch, mode: $Mode"
+$FetchArgs = @('fetch', '--config=windows') + $TargetConfigArgs + @('--repo_env=USE_PYWRAP_RULES=True') + $BuildTargets
 & $Bazel $BazelStartupOpts $FetchArgs
 if ($LASTEXITCODE -ne 0) {
   throw "Bazel fetch failed with exit code $LASTEXITCODE"
@@ -352,21 +394,25 @@ $BazelArgs = @(
   'opt',
   '--config=windows',
   '--copt=-DLITERT_DISABLE_OPENCL_SUPPORT=1',
-  '--copt=-mavx2',
-  '--copt=-mfma',
-  '--copt=-mf16c',
   '--repo_env=USE_PYWRAP_RULES=True',
   '--define=protobuf_allow_msvc=true',
   '--copt=/Iexternal\com_google_protobuf\src',
   '--host_copt=/Iexternal\com_google_protobuf\src'
 )
+if ($TargetArch -eq 'arm64') {
+  $BazelArgs += $TargetConfigArgs
+}
+else {
+  # x86-only ISA extensions.
+  $BazelArgs += @('--copt=-mavx2', '--copt=-mfma', '--copt=-mf16c')
+}
 if ($env:HERMETIC_PYTHON_VERSION) { $BazelArgs += "--repo_env=HERMETIC_PYTHON_VERSION=$($env:HERMETIC_PYTHON_VERSION)" }
 if ($env:BAZEL_CONFIG_FLAGS) { $BazelArgs += $env:BAZEL_CONFIG_FLAGS.Split(' ') }
 if ($env:NIGHTLY_RELEASE_DATE) { $BazelArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
 if ($env:CUSTOM_BAZEL_FLAGS) { $BazelArgs += $env:CUSTOM_BAZEL_FLAGS.Split(' ') }
 
 Write-Host 'Starting bazel build...'
-& $Bazel $BazelStartupOpts @BazelArgs //ci/tools/python/wheel:litert_wheel
+& $Bazel $BazelStartupOpts @BazelArgs @BuildTargets
 if ($LASTEXITCODE -ne 0) {
   throw "Bazel build failed with exit code $LASTEXITCODE"
 }
@@ -375,7 +421,58 @@ $DistDir = Join-Path $RepoRoot 'dist'
 if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
 New-Item -ItemType Directory -Path $DistDir | Out-Null
 
+if ($Mode -eq 'prebuilts') {
+  # Stage the binaries in the same layout as litert_prebuilts.zip
+  # (<platform>/<file>).
+  $PlatformDir = Join-Path $DistDir 'prebuilts\windows_arm64'
+  New-Item -ItemType Directory -Force -Path $PlatformDir | Out-Null
+  $CqueryArgs = @('cquery') + $BazelArgs[1..($BazelArgs.Count - 1)] + @('--output=files')
+  foreach ($Target in $PrebuiltTargets.Keys) {
+    $FileName = $PrebuiltTargets[$Target]
+    $Outputs = & $Bazel $BazelStartupOpts @CqueryArgs $Target
+    if ($LASTEXITCODE -ne 0) {
+      throw "bazel cquery failed for $Target with exit code $LASTEXITCODE"
+    }
+    $Output = $Outputs | Where-Object { $_ -match '\.(dll|exe)$' } | Select-Object -First 1
+    if (-not $Output) {
+      throw "No .dll/.exe output found for $Target"
+    }
+    Copy-Item -Path (Join-Path $RepoRoot $Output) -Destination (Join-Path $PlatformDir $FileName) -Force
+    Write-Host "Staged $Target -> windows_arm64\$FileName"
+  }
+  $ZipPath = Join-Path $DistDir 'litert_prebuilts_windows_arm64.zip'
+  # Use Python zipfile rather than Compress-Archive so ZIP entry paths always
+  # use POSIX forward slashes even under Windows PowerShell 5.1.
+  & python -c 'import pathlib, sys, zipfile; src, dst = pathlib.Path(sys.argv[1]), sys.argv[2]; zf = zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED); [zf.write(p, f"windows_arm64/{p.name}") for p in sorted(src.iterdir()) if p.is_file()]; zf.close()' $PlatformDir $ZipPath
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to create $ZipPath with exit code $LASTEXITCODE"
+  }
+  # The binaries cannot run on the x86_64 host, so verify that every one of
+  # them targets ARM64.
+  & python (Join-Path $ScriptDir 'check_windows_wheel_arch.py') --arch arm64 $ZipPath
+  if ($LASTEXITCODE -ne 0) {
+    throw "Windows ARM64 prebuilts architecture check failed with exit code $LASTEXITCODE"
+  }
+  Get-ChildItem -Path $PlatformDir | ForEach-Object {
+    Write-Host ('{0}  {1}' -f (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash, $_.Name)
+  }
+  Write-Host 'Output can be found here:' $DistDir
+  return
+}
+
 Get-ChildItem -Path (Join-Path $RepoRoot 'bazel-bin\ci\tools\python\wheel\dist') -Filter *.whl | Move-Item -Destination $DistDir
+
+if ($TargetArch -eq 'arm64') {
+  # The cross-compiled wheel cannot be imported on the x86_64 host, so verify
+  # that every native binary in it targets ARM64 instead.
+  & python (Join-Path $ScriptDir 'check_windows_wheel_arch.py') --arch arm64 (Get-ChildItem -Path $DistDir -Filter *.whl).FullName
+  if ($LASTEXITCODE -ne 0) {
+    throw "Windows ARM64 wheel architecture check failed with exit code $LASTEXITCODE"
+  }
+  # Vendor SDK sdists are platform-independent and built by the x86_64 job.
+  Write-Host 'Output can be found here:' $DistDir
+  return
+}
 
 # Vendor SDK sdist packages
 $SdkArgs = @(

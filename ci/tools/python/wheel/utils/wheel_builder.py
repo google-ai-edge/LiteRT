@@ -184,17 +184,18 @@ if _sys.platform == "win32" and hasattr(_os, "add_dll_directory"):
     except ImportError:
         pass
     # Register vendor SDK data dirs so in-process dispatch DLLs can resolve
-    # vendor-shipped dependencies (e.g. openvino_intel_npu_compiler.dll).
-    # The SDK packages also self-register on import; this loop covers the
+    # vendor-shipped dependencies (e.g. openvino_intel_npu_compiler.dll, or
+    # QnnHtp.dll's dependencies on Windows ARM64).
+    # The SDK packages also register them when used; this loop covers the
     # case where the user imports ai_edge_litert before the SDK.
-    for _sdk_mod in ("ai_edge_litert_sdk_intel",):
+    for _sdk_mod in ("ai_edge_litert_sdk_intel", "ai_edge_litert_sdk_qualcomm"):
         try:
             _sdk = __import__(_sdk_mod)
         except ImportError:
             continue
         try:
             _sdk_dir = _sdk.path_to_sdk_libs()
-        except AttributeError:
+        except (AttributeError, NotImplementedError):
             continue
         if _sdk_dir and _os.path.isdir(str(_sdk_dir)):
             _dll_dirs.append(str(_sdk_dir))
