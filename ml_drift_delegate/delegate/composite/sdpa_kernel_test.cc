@@ -252,9 +252,8 @@ absl::Status RunSdpaKernelTest(
       // Add a monotonic key-tile trend across `s / 16` so even query rows see
       // increasing tile maxima (`m_new > m_i`), actively exercising the
       // `alpha = exp2(m_i - m_new)` online softmax rescaling path.
-      const float tile_trend =
-          0.6f * static_cast<float>(s / 16) /
-          static_cast<float>(std::max(1, (S - 1) / 16));
+      const float tile_trend = 0.6f * static_cast<float>(s / 16) /
+                               static_cast<float>(std::max(1, (S - 1) / 16));
       for (int nkv = 0; nkv < N_kv; ++nkv) {
         for (int h = 0; h < H; ++h) {
           const int idx = ((b * S + s) * N_kv + nkv) * H + h;
@@ -293,18 +292,18 @@ absl::Status RunSdpaKernelTest(
           for (int s = 0; s < S; ++s) {
             const bool unmasked = (s == 0) || ((mt + s + mn + mb) % 4 != 3);
             const int idx = ((mb * mask_N + mn) * mask_T + mt) * S + s;
-            mask_data[idx] =
-                unmasked ? -0.25f * static_cast<float>((mt + s) % 4)
-                         : -10000.0f;
+            mask_data[idx] = unmasked
+                                 ? -0.25f * static_cast<float>((mt + s) % 4)
+                                 : -10000.0f;
           }
         }
       }
     }
   }
 
-  const std::vector<float> expected_out_data = ComputeSdpaReference(
-      q_data, k_data, v_data, mask_data, B, T, S, N_q, N_kv, H, scale,
-      mask_mode, mask_B, mask_N, mask_T);
+  const std::vector<float> expected_out_data =
+      ComputeSdpaReference(q_data, k_data, v_data, mask_data, B, T, S, N_q,
+                           N_kv, H, scale, mask_mode, mask_B, mask_N, mask_T);
 
   ::ml_drift::TensorFloat32 q_tensor;
   q_tensor.shape = q_shape;
@@ -379,6 +378,21 @@ TEST_P(SdpaKernelExecuteTest, OddSliceSplitHeadDim76) {
                                   /*T=*/16, /*S=*/24, /*N_q=*/4, /*N_kv=*/2,
                                   /*H=*/76, mask_mode());
   EXPECT_TRUE(status.ok()) << status.message();
+}
+
+TEST_P(SdpaKernelExecuteTest, FourWaySliceSplitMultiTailHeadDim68) {
+  // H = 68 (17 slices, `5/4/4/4`, `rem_s = 1`) and H = 72 (18 slices,
+  // `5/5/4/4`, `rem_s = 2`) exercise 4-way balanced slice splitting in FP32
+  // (`s_splits = 4, block_s = 5`, `b_r = 32, threads = 128` when
+  // `max_work_group_size >= 128`), skewed `k_local` / `v_local` indexing, and
+  // double-buffered `red_local` ping-pong across multiple query tiles
+  // (`T = 35`) and 16-key interior tiles (`S = 37`).
+  for (int head_dim : {68, 72}) {
+    auto status = RunSdpaKernelTest(*exec_env, precision(), storage(), /*B=*/1,
+                                    /*T=*/35, /*S=*/37, /*N_q=*/4, /*N_kv=*/2,
+                                    /*H=*/head_dim, mask_mode());
+    EXPECT_TRUE(status.ok()) << "H=" << head_dim << ": " << status.message();
+  }
 }
 
 TEST_P(SdpaKernelExecuteTest, RaggedQueryAndKeyLengths) {
@@ -457,6 +471,26 @@ TEST_P(SdpaKernelExecuteTest, MaliQInLocalCodegenAndExecute) {
   EXPECT_TRUE(status.ok()) << status.message();
 }
 
+TEST_P(SdpaKernelExecuteTest, MaliGemma4VisionAndMultiTailSliceSplit) {
+  ::ml_drift::GpuInfo mali_gpu_info = exec_env->GetGpuInfo();
+  mali_gpu_info.vendor = ::ml_drift::GpuVendor::kMali;
+  // Exercises Mali `q_in_local` with H = 64 (`s_splits = 2, b_r = 32` in FP32;
+  // `s_splits = 1, b_r = 64` in FP16) across multiple query and key tiles.
+  auto status_h64 = RunSdpaKernelTest(
+      *exec_env, precision(), storage(), /*B=*/1, /*T=*/35, /*S=*/37,
+      /*N_q=*/4, /*N_kv=*/4, /*H=*/64, mask_mode(), /*mask_B=*/1, /*mask_N=*/1,
+      /*mask_T=*/35, mali_gpu_info);
+  EXPECT_TRUE(status_h64.ok()) << status_h64.message();
+
+  // Exercises Mali `q_in_local` with H = 68 (`s_splits = 4, block_s = 5,
+  // b_r = 32` in FP32) and multiple query (`T = 35`) and key (`S = 37`) tiles.
+  auto status_h68 = RunSdpaKernelTest(
+      *exec_env, precision(), storage(), /*B=*/1, /*T=*/35, /*S=*/37,
+      /*N_q=*/4, /*N_kv=*/2, /*H=*/68, mask_mode(), /*mask_B=*/1, /*mask_N=*/1,
+      /*mask_T=*/35, mali_gpu_info);
+  EXPECT_TRUE(status_h68.ok()) << status_h68.message();
+}
+
 INSTANTIATE_TEST_SUITE_P(
     SdpaKernelExecuteTestSuite, SdpaKernelExecuteTest,
     Combine(ValuesIn({::ml_drift::CalculationsPrecision::kF32,
@@ -480,9 +514,9 @@ TEST(IsSupportedFlashSdpaTest, SupportsGemma4VisionAndRejectsInvalidConfigs) {
   gpu_info.gpu_api = ::ml_drift::GpuApi::kOpenCl;
   gpu_info.opencl_info.extensions.push_back("ucl_wave_memory");
 
-  ::ml_drift::TensorDescriptor q_desc(
-      ::ml_drift::DataType::kFloat16, ::ml_drift::TensorStorageType::kBuffer,
-      ::ml_drift::Layout::kBHWC);
+  ::ml_drift::TensorDescriptor q_desc(::ml_drift::DataType::kFloat16,
+                                      ::ml_drift::TensorStorageType::kBuffer,
+                                      ::ml_drift::Layout::kBHWC);
   q_desc.SetBHWCShape(::ml_drift::BHWC(1, 10080, 12, 64));
   ::ml_drift::TensorDescriptor k_desc = q_desc;
   ::ml_drift::TensorDescriptor v_desc = q_desc;

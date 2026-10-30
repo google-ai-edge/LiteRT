@@ -39,8 +39,8 @@ namespace litert::ml_drift {
 //   dimension `H`, query length `T > 1` (single-token decode `T == 1` falls
 //   back to ML Drift's decode-parallel path), and key length `S > 0`.
 // - Head dimension `H` is a positive multiple of 4 (for 4-channel vector
-//   slices) and `<= 128` (`<= 32` slices, so each thread holds at most 16
-//   accumulator slices with `s_splits = 1` or `2`).
+//   slices) and `<= 128` (`<= 32` slices, so each thread holds `<= 16` `half4`
+//   or `<= 8` `float4` accumulator slices with `s_splits` in `{1, 2, 4}`).
 // - `N_kv > 0`, `N_q >= N_kv`, and `N_q % N_kv == 0` (supports both MHA where
 //   `N_q == N_kv` and GQA where `N_q` is a multiple of `N_kv`).
 // - Unmasked MHA shapes already handled by ML Drift's tuned `ConvSoftmaxConv`

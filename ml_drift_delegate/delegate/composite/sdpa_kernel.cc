@@ -51,9 +51,9 @@ struct FlashSdpaConfig {
   int threads = 0;
   // Total channel slices (`head_dim / 4`).
   int slices = 0;
-  // Channel slices per thread (`<= 16`).
+  // Channel slices per thread (`<= 16` in FP16, `<= 8` in FP32).
   int block_s = 0;
-  // Number of threads cooperating across the channel slices (`1` or `2`).
+  // Number of threads cooperating across the channel slices (`1`, `2`, or `4`).
   int s_splits = 0;
   // Query rows per work group (`threads / s_splits`).
   int b_r = 0;
@@ -80,15 +80,18 @@ int FlashSdpaLocalMemoryBytes(int slices, int block_s, int s_splits, int b_r,
                               int b_c, bool use_fp16, bool q_in_local) {
   const int threads = s_splits * b_r;
   const int vec_bytes = use_fp16 ? 8 : 16;
-  // `k_local[slices * b_c]` + `v_local[slices * b_c]` of `vec_type`.
-  int bytes = 2 * slices * b_c * vec_bytes;
+  const int kv_local_size = slices * b_c + (s_splits - 1);
+  // `k_local[kv_local_size]` + `v_local[kv_local_size]` of `vec_type`.
+  int bytes = 2 * kv_local_size * vec_bytes;
   if (q_in_local) {
     // `q_local[block_s * threads]` of `vec_type`.
     bytes += block_s * threads * vec_bytes;
   }
   if (s_splits > 1) {
-    // `red_local[s_splits * b_r]` of `float4` (16 bytes each).
-    bytes += s_splits * b_r * 16;
+    // `red_local` ping-pongs two `threads`-element buffers when `b_c > 4` to
+    // avoid a second work-group barrier per 4-key substep.
+    const int red_buffers = (b_c > 4) ? 2 : 1;
+    bytes += red_buffers * threads * 16;
   }
   return bytes;
 }
@@ -112,10 +115,9 @@ FlashSdpaConfig GetFlashSdpaConfig(const ::ml_drift::GpuInfo& gpu_info,
             ? gpu_info.webgpu_info.max_compute_workgroup_storage_size
             : 16 * 1024;
   }
-  config.use_fp16 =
-      (q_desc.GetDataType() == ::ml_drift::DataType::kFloat16) &&
-      !use_f32_accum && gpu_info.SupportsFP16() &&
-      !gpu_info.IsApiWebGpu();
+  config.use_fp16 = (q_desc.GetDataType() == ::ml_drift::DataType::kFloat16) &&
+                    !use_f32_accum && gpu_info.SupportsFP16() &&
+                    !gpu_info.IsApiWebGpu();
 
   const int head_dim = q_desc.GetBHWCShape().c;
   if (head_dim <= 0 || head_dim % 4 != 0 || head_dim > 128) {
@@ -123,15 +125,22 @@ FlashSdpaConfig GetFlashSdpaConfig(const ::ml_drift::GpuInfo& gpu_info,
   }
   const int slices = head_dim / 4;
 
-  // Keep per-thread `acc` slice count `<= 16` (`<= 32` 32-bit registers in
-  // FP16). On Mali Valhall (64 32-bit registers per thread), also stage `Q` in
-  // `__local` SRAM so `Q` consumes 0 general-purpose registers across the
-  // `K`/`V` loop.
-  const int s_splits = (slices <= 16) ? 1 : 2;
+  // Keep per-thread `acc` register footprint `<= 32` 32-bit registers to
+  // prevent register spilling across the `K`/`V` loop:
+  // - FP16 (`half4`, 2 32-bit registers per slice): `max_block_s = 16` slices
+  //   (`H <= 64` uses `s_splits = 1`; `64 < H <= 128` uses `s_splits = 2`).
+  // - FP32 (`float4`, 4 32-bit registers per slice): `max_block_s = 8` slices
+  //   (`H <= 32` uses `s_splits = 1`; `32 < H <= 64` uses `s_splits = 2`;
+  //   `64 < H <= 128` uses `s_splits = 4`).
+  // On Mali Valhall (64 32-bit registers per thread), also stage `Q` in
+  // `__local` SRAM so `Q` consumes 0 general-purpose registers.
+  const int max_block_s = config.use_fp16 ? 16 : 8;
+  const int s_splits =
+      (slices <= max_block_s) ? 1 : ((slices <= 2 * max_block_s) ? 2 : 4);
   const int block_s = (slices + s_splits - 1) / s_splits;
   const bool q_in_local = gpu_info.IsMali();
 
-  int b_r = std::max(1, 64 / s_splits);
+  int b_r = (s_splits == 4) ? 32 : std::max(1, 64 / s_splits);
   const int max_work_group_size = gpu_info.GetMaxWorkGroupTotalSize();
   if (max_work_group_size > 0) {
     while (b_r > 1 && s_splits * b_r > max_work_group_size) {
@@ -144,19 +153,25 @@ FlashSdpaConfig GetFlashSdpaConfig(const ::ml_drift::GpuInfo& gpu_info,
 
   int b_c = 16;
   if (FlashSdpaLocalMemoryBytes(slices, block_s, s_splits, b_r, b_c,
-                                config.use_fp16, q_in_local) >
-      config.local_memory_bytes) {
-    b_c = 4;
+                                config.use_fp16,
+                                q_in_local) > config.local_memory_bytes) {
+    if (s_splits == 4 && b_r > 16 &&
+        FlashSdpaLocalMemoryBytes(slices, block_s, s_splits, /*b_r=*/16, b_c,
+                                  config.use_fp16,
+                                  q_in_local) <= config.local_memory_bytes) {
+      b_r = 16;
+    } else {
+      b_c = 4;
+    }
   }
-  while (b_r > 1 &&
-         FlashSdpaLocalMemoryBytes(slices, block_s, s_splits, b_r, b_c,
-                                   config.use_fp16, q_in_local) >
-             config.local_memory_bytes) {
+  while (b_r > 1 && FlashSdpaLocalMemoryBytes(
+                        slices, block_s, s_splits, b_r, b_c, config.use_fp16,
+                        q_in_local) > config.local_memory_bytes) {
     b_r /= 2;
   }
   if (FlashSdpaLocalMemoryBytes(slices, block_s, s_splits, b_r, b_c,
-                                config.use_fp16, q_in_local) >
-      config.local_memory_bytes) {
+                                config.use_fp16,
+                                q_in_local) > config.local_memory_bytes) {
     return config;
   }
 
@@ -173,10 +188,11 @@ FlashSdpaConfig GetFlashSdpaConfig(const ::ml_drift::GpuInfo& gpu_info,
 class FusedFlashSdpaOp : public ::ml_drift::GPUOperation {
  public:
   // Uses a 1D work group of `(threads, 1, 1)` (`threads = s_splits * b_r`, up
-  // to 64 work items) so all threads in a work group share the same `(B,
+  // to 128 work items) so all threads in a work group share the same `(B,
   // q_head)` and `kv_head`, cooperatively staging `b_c` keys of `K` and `V`
-  // into `__local` SRAM (`64x` global read reuse and uniform broadcast SRAM
-  // reads). Within the work group, `tid = GetLocalId<0>()` is split into
+  // into `__local` SRAM (`b_r`x — up to `64x` — global read reuse and
+  // bank-conflict-free SRAM reads). Within the work group, `tid =
+  // GetLocalId<0>()` is split into
   // `q_grp = tid / s_splits` (`b_r` query rows) and `s_grp = tid % s_splits`
   // (`s_splits` channel-slice partitions).
   FusedFlashSdpaOp(int threads, int b_r) : b_r_(b_r) {
@@ -218,11 +234,12 @@ class FusedFlashSdpaOp : public ::ml_drift::GPUOperation {
 // (`BHWC`: `Batch=B`, `Height=N_q/N_kv`, `Width=T/S`, `Channels=H`) tensors:
 // - All `threads` work items in the work group cooperatively stage `b_c` (16)
 //   keys of `K` and `V` into `__local` SRAM (`k_local` and `v_local`), reducing
-//   global memory `K`/`V` reads and 3D address calculations by 64x.
+//   global memory `K`/`V` reads and 3D address calculations by up to 64x.
 // - Each thread then processes the staged keys in 4-key sub-steps (`sub += 4`)
-//   using uniform broadcast SRAM reads from `k_local` and `v_local` (zero bank
-//   conflicts), native FP16 (`half4`) dot products and `V` accumulation, and
-//   normalized online softmax (`exp2`) in registers.
+//   using bank-conflict-free SRAM reads from `k_local` and `v_local` (uniform
+//   broadcast when `s_splits == 1`, or group-skewed `+ s_grp` indexing when
+//   `s_splits > 1`), vectorized `half4` / `float4` dot products and `V`
+//   accumulation, and normalized online softmax (`exp2`) in registers.
 //
 // Final rendered shader example (OpenCL, H=16, slices=4, block_s=4,
 // s_splits=1, b_r=64, b_c=16, threads=64, use_fp16=true, q_in_local=false,
@@ -313,19 +330,31 @@ class FusedFlashSdpaOp : public ::ml_drift::GPUOperation {
 //       half4 acc_scale_v = ucl::Init<half4>(acc_scale);
 //       {
 //         int kv_idx = (s_base + 0) * 16 + sub;
-//         acc_0 = acc_0 * acc_scale_v + p_v.x * v_local[kv_idx + 0] + p_v.y * v_local[kv_idx + 1] + p_v.z * v_local[kv_idx + 2] + p_v.w * v_local[kv_idx + 3];
+//         acc_0 = acc_0 * acc_scale_v + p_v.x * v_local[kv_idx + 0];
+//         acc_0 += p_v.y * v_local[kv_idx + 1];
+//         acc_0 += p_v.z * v_local[kv_idx + 2];
+//         acc_0 += p_v.w * v_local[kv_idx + 3];
 //       }
 //       {
 //         int kv_idx = (s_base + 1) * 16 + sub;
-//         acc_1 = acc_1 * acc_scale_v + p_v.x * v_local[kv_idx + 0] + p_v.y * v_local[kv_idx + 1] + p_v.z * v_local[kv_idx + 2] + p_v.w * v_local[kv_idx + 3];
+//         acc_1 = acc_1 * acc_scale_v + p_v.x * v_local[kv_idx + 0];
+//         acc_1 += p_v.y * v_local[kv_idx + 1];
+//         acc_1 += p_v.z * v_local[kv_idx + 2];
+//         acc_1 += p_v.w * v_local[kv_idx + 3];
 //       }
 //       {
 //         int kv_idx = (s_base + 2) * 16 + sub;
-//         acc_2 = acc_2 * acc_scale_v + p_v.x * v_local[kv_idx + 0] + p_v.y * v_local[kv_idx + 1] + p_v.z * v_local[kv_idx + 2] + p_v.w * v_local[kv_idx + 3];
+//         acc_2 = acc_2 * acc_scale_v + p_v.x * v_local[kv_idx + 0];
+//         acc_2 += p_v.y * v_local[kv_idx + 1];
+//         acc_2 += p_v.z * v_local[kv_idx + 2];
+//         acc_2 += p_v.w * v_local[kv_idx + 3];
 //       }
 //       {
 //         int kv_idx = (s_base + 3) * 16 + sub;
-//         acc_3 = acc_3 * acc_scale_v + p_v.x * v_local[kv_idx + 0] + p_v.y * v_local[kv_idx + 1] + p_v.z * v_local[kv_idx + 2] + p_v.w * v_local[kv_idx + 3];
+//         acc_3 = acc_3 * acc_scale_v + p_v.x * v_local[kv_idx + 0];
+//         acc_3 += p_v.y * v_local[kv_idx + 1];
+//         acc_3 += p_v.z * v_local[kv_idx + 2];
+//         acc_3 += p_v.w * v_local[kv_idx + 3];
 //       }
 //     }
 //     ucl::SyncThreads<WorkGroup, Local>();
@@ -395,19 +424,31 @@ class FusedFlashSdpaOp : public ::ml_drift::GPUOperation {
 //     half4 acc_scale_v = ucl::Init<half4>(acc_scale);
 //     {
 //       int kv_idx = (s_base + 0) * 4;
-//       acc_0 = acc_0 * acc_scale_v + p_v.x * v_local[kv_idx + 0] + p_v.y * v_local[kv_idx + 1] + p_v.z * v_local[kv_idx + 2] + p_v.w * v_local[kv_idx + 3];
+//       acc_0 = acc_0 * acc_scale_v + p_v.x * v_local[kv_idx + 0];
+//       acc_0 += p_v.y * v_local[kv_idx + 1];
+//       acc_0 += p_v.z * v_local[kv_idx + 2];
+//       acc_0 += p_v.w * v_local[kv_idx + 3];
 //     }
 //     {
 //       int kv_idx = (s_base + 1) * 4;
-//       acc_1 = acc_1 * acc_scale_v + p_v.x * v_local[kv_idx + 0] + p_v.y * v_local[kv_idx + 1] + p_v.z * v_local[kv_idx + 2] + p_v.w * v_local[kv_idx + 3];
+//       acc_1 = acc_1 * acc_scale_v + p_v.x * v_local[kv_idx + 0];
+//       acc_1 += p_v.y * v_local[kv_idx + 1];
+//       acc_1 += p_v.z * v_local[kv_idx + 2];
+//       acc_1 += p_v.w * v_local[kv_idx + 3];
 //     }
 //     {
 //       int kv_idx = (s_base + 2) * 4;
-//       acc_2 = acc_2 * acc_scale_v + p_v.x * v_local[kv_idx + 0] + p_v.y * v_local[kv_idx + 1] + p_v.z * v_local[kv_idx + 2] + p_v.w * v_local[kv_idx + 3];
+//       acc_2 = acc_2 * acc_scale_v + p_v.x * v_local[kv_idx + 0];
+//       acc_2 += p_v.y * v_local[kv_idx + 1];
+//       acc_2 += p_v.z * v_local[kv_idx + 2];
+//       acc_2 += p_v.w * v_local[kv_idx + 3];
 //     }
 //     {
 //       int kv_idx = (s_base + 3) * 4;
-//       acc_3 = acc_3 * acc_scale_v + p_v.x * v_local[kv_idx + 0] + p_v.y * v_local[kv_idx + 1] + p_v.z * v_local[kv_idx + 2] + p_v.w * v_local[kv_idx + 3];
+//       acc_3 = acc_3 * acc_scale_v + p_v.x * v_local[kv_idx + 0];
+//       acc_3 += p_v.y * v_local[kv_idx + 1];
+//       acc_3 += p_v.z * v_local[kv_idx + 2];
+//       acc_3 += p_v.w * v_local[kv_idx + 3];
 //     }
 //     ucl::SyncThreads<WorkGroup, Local>();
 //   }
@@ -445,15 +486,18 @@ std::string GenerateFlashSdpaCode(const ::ml_drift::GpuInfo& gpu_info,
   const int b_r = config.b_r;
   const int b_c = config.b_c;
   const bool q_in_local = config.q_in_local;
-  const bool has_tail_slice = (s_splits * block_s > slices);
+  const int floor_s = slices / s_splits;
+  const int rem_s = slices % s_splits;
+  const int first_tail_s = (rem_s == 0) ? block_s : floor_s;
+  const int kv_local_size = slices * b_c + (s_splits - 1);
   const absl::string_view vec_type = config.use_fp16 ? "half4" : "float4";
 
-  auto repeat_s = [block_s, has_tail_slice](absl::string_view pattern,
-                                            absl::string_view tail_pattern) {
+  auto repeat_s = [block_s, first_tail_s](absl::string_view pattern,
+                                          absl::string_view tail_pattern) {
     std::string out;
     for (int s = 0; s < block_s; ++s) {
       const absl::string_view pat =
-          (has_tail_slice && s == block_s - 1) ? tail_pattern : pattern;
+          (s >= first_tail_s) ? tail_pattern : pattern;
       absl::StrAppend(&out,
                       absl::StrReplaceAll(pat, {{"$s", absl::StrCat(s)}}));
     }
@@ -491,29 +535,32 @@ std::string GenerateFlashSdpaCode(const ::ml_drift::GpuInfo& gpu_info,
     }
   }
 
+  const std::string s_base_expr =
+      (rem_s > 0 && rem_s < s_splits - 1)
+          ? absl::StrCat("s_grp * ", floor_s, " + min(s_grp, ", rem_s, ")")
+          : absl::StrCat("s_grp * ", block_s);
   absl::StrAppend(
       &c, "  int kv_head = ",
       (gqa_ratio > 1 ? absl::StrCat("q_head / ", gqa_ratio) : "q_head"), ";\n",
       "  int s_grp = ", (s_splits > 1 ? absl::StrCat("tid % ", s_splits) : "0"),
       ";\n", "  int q_grp = ",
       (s_splits > 1 ? absl::StrCat("tid / ", s_splits) : "tid"), ";\n",
-      "  int s_base = s_grp * ", block_s, ";\n",
-      "  int q_idx = q_tile * ", b_r, " + q_grp;\n",
-      "  int qr = min(q_idx, args.q.Width() - 1);\n",
-      "  float q_scale = args.scale * 1.4426950408889634f;\n",
-      "  __local ", vec_type, " k_local[", slices * b_c, "];\n",
-      "  __local ", vec_type, " v_local[", slices * b_c, "];\n");
+      "  int s_base = ", s_base_expr, ";\n", "  int q_idx = q_tile * ", b_r,
+      " + q_grp;\n", "  int qr = min(q_idx, args.q.Width() - 1);\n",
+      "  float q_scale = args.scale * 1.4426950408889634f;\n", "  __local ",
+      vec_type, " k_local[", kv_local_size, "];\n", "  __local ", vec_type,
+      " v_local[", kv_local_size, "];\n");
 
   if (q_in_local) {
     absl::StrAppend(
         &c, "  __local ", vec_type, " q_local[", block_s * threads, "];\n",
         repeat_s(
-            absl::StrCat("  q_local[$s * ", threads,
-                         " + tid] = ucl::Convert<", vec_type,
+            absl::StrCat("  q_local[$s * ", threads, " + tid] = ucl::Convert<",
+                         vec_type,
                          ">(ucl::Convert<float4>(args.q.Read(qr, q_head, "
                          "s_base + $s)) * q_scale);\n"),
             absl::StrCat(
-                "  q_local[$s * ", threads, " + tid] = (s_base + $s < ", slices,
+                "  q_local[$s * ", threads, " + tid] = (s_grp < ", rem_s,
                 ") ? ucl::Convert<", vec_type,
                 ">(ucl::Convert<float4>(args.q.Read(qr, q_head, s_base + $s)) "
                 "* q_scale) : ucl::Init<",
@@ -521,27 +568,26 @@ std::string GenerateFlashSdpaCode(const ::ml_drift::GpuInfo& gpu_info,
   } else {
     absl::StrAppend(
         &c,
-        repeat_s(
-            absl::StrCat("  ", vec_type, " q_$s = ucl::Convert<", vec_type,
-                         ">(ucl::Convert<float4>(args.q.Read(qr, q_head, "
-                         "s_base + $s)) * q_scale);\n"),
-            absl::StrCat("  ", vec_type, " q_$s = (s_base + $s < ", slices,
-                         ") ? ucl::Convert<", vec_type,
-                         ">(ucl::Convert<float4>(args.q.Read(qr, q_head, "
-                         "s_base + $s)) * q_scale) : ucl::Init<",
-                         vec_type, ">(0.0f);\n")));
+        repeat_s(absl::StrCat("  ", vec_type, " q_$s = ucl::Convert<", vec_type,
+                              ">(ucl::Convert<float4>(args.q.Read(qr, q_head, "
+                              "s_base + $s)) * q_scale);\n"),
+                 absl::StrCat("  ", vec_type, " q_$s = (s_grp < ", rem_s,
+                              ") ? ucl::Convert<", vec_type,
+                              ">(ucl::Convert<float4>(args.q.Read(qr, q_head, "
+                              "s_base + $s)) * q_scale) : ucl::Init<",
+                              vec_type, ">(0.0f);\n")));
   }
 
-  absl::StrAppend(
-      &c,
-      repeat_s(absl::StrCat("  ", vec_type, " acc_$s = ucl::Init<", vec_type,
-                            ">(0.0f);\n"),
-               absl::StrCat("  ", vec_type, " acc_$s = ucl::Init<", vec_type,
-                            ">(0.0f);\n")),
-      "  float m_i = -1.0e30f;\n  float l_i = 0.0f;\n");
+  absl::StrAppend(&c,
+                  repeat_s(absl::StrCat("  ", vec_type, " acc_$s = ucl::Init<",
+                                        vec_type, ">(0.0f);\n"),
+                           absl::StrCat("  ", vec_type, " acc_$s = ucl::Init<",
+                                        vec_type, ">(0.0f);\n")),
+                  "  float m_i = -1.0e30f;\n  float l_i = 0.0f;\n");
 
   if (s_splits > 1) {
-    absl::StrAppend(&c, "  __local float4 red_local[", s_splits * b_r,
+    const int red_buffers = (b_c > 4) ? 2 : 1;
+    absl::StrAppend(&c, "  __local float4 red_local[", red_buffers * threads,
                     "];\n\n");
   }
 
@@ -552,6 +598,7 @@ std::string GenerateFlashSdpaCode(const ::ml_drift::GpuInfo& gpu_info,
 
   const std::string q_expr =
       q_in_local ? absl::StrCat("q_local[$s * ", threads, " + tid]") : "q_$s";
+  const std::string kv_grp_skew = (s_splits > 1) ? " + s_grp" : "";
 
   auto emit_substep = [&](bool is_interior, int kv_stride,
                           absl::string_view cur_key_expr,
@@ -560,7 +607,7 @@ std::string GenerateFlashSdpaCode(const ::ml_drift::GpuInfo& gpu_info,
     const std::string k_block = absl::StrCat(
         "      {\n"
         "        int kv_idx = (s_base + $s) * ",
-        kv_stride, kv_sub_offset,
+        kv_stride, kv_sub_offset, kv_grp_skew,
         ";\n"
         "        ",
         vec_type, " q_val = ", q_expr,
@@ -571,27 +618,40 @@ std::string GenerateFlashSdpaCode(const ::ml_drift::GpuInfo& gpu_info,
         "        d.w += ucl::Convert<float>(dot(q_val, k_local[kv_idx + 3]));\n"
         "      }\n");
     const std::string k_tail_block = absl::StrCat(
-        "      if (s_base + $s < ", slices, ") {\n", k_block, "      }\n");
+        "      if (s_grp < ", rem_s, ") {\n", k_block, "      }\n");
     absl::StrAppend(&c, repeat_s(k_block, k_tail_block));
 
     if (s_splits > 1) {
       // Index `red_local` linearly by `tid` (`q_grp * s_splits + s_grp`) so
       // consecutive lanes write consecutive `float4` entries without bank
-      // conflicts.
-      absl::StrAppend(&c, "      red_local[tid] = d;\n",
-                      "      ucl::SyncThreads<WorkGroup, Local>();\n",
-                      "      d = red_local[q_grp * ", s_splits, "]");
-      for (int sp = 1; sp < s_splits; ++sp) {
-        absl::StrAppend(&c, " + red_local[q_grp * ", s_splits, " + ", sp, "]");
+      // conflicts, and ping-pong across two `threads`-element buffers in the
+      // interior `b_c > 4` loop so no second barrier is needed after reading.
+      if (is_interior && b_c > 4) {
+        absl::StrAppend(&c, "      int red_base = ((sub >> 2) & 1) * ", threads,
+                        ";\n", "      red_local[red_base + tid] = d;\n",
+                        "      ucl::SyncThreads<WorkGroup, Local>();\n",
+                        "      int red_row = red_base + q_grp * ", s_splits,
+                        ";\n", "      d = red_local[red_row]");
+        for (int sp = 1; sp < s_splits; ++sp) {
+          absl::StrAppend(&c, " + red_local[red_row + ", sp, "]");
+        }
+        absl::StrAppend(&c, ";\n");
+      } else {
+        absl::StrAppend(&c, "      red_local[tid] = d;\n",
+                        "      ucl::SyncThreads<WorkGroup, Local>();\n",
+                        "      d = red_local[q_grp * ", s_splits, "]");
+        for (int sp = 1; sp < s_splits; ++sp) {
+          absl::StrAppend(&c, " + red_local[q_grp * ", s_splits, " + ", sp,
+                          "]");
+        }
+        absl::StrAppend(&c, ";\n");
       }
-      absl::StrAppend(&c, ";\n");
     }
 
     if (has_mask) {
       absl::StrAppend(&c, "      int mask_slice = (", cur_key_expr, ") / 4;\n");
       if (is_bool_mask) {
-        absl::StrAppend(
-            &c, R"(      {
+        absl::StrAppend(&c, R"(      {
         bool4 mv = args.mask.Read<bool>(mx, mask_y, mask_slice);
         d.x = mv.x ? d.x : -1.0e30f;
         d.y = mv.y ? d.y : -1.0e30f;
@@ -600,8 +660,7 @@ std::string GenerateFlashSdpaCode(const ::ml_drift::GpuInfo& gpu_info,
       }
 )");
       } else {
-        absl::StrAppend(
-            &c, R"(      {
+        absl::StrAppend(&c, R"(      {
         float4 mv =
             ucl::Convert<float4>(args.mask.Read(mx, mask_y, mask_slice));
         if (mv.x <= -1.0e29f) {
@@ -630,14 +689,13 @@ std::string GenerateFlashSdpaCode(const ::ml_drift::GpuInfo& gpu_info,
     }
 
     if (!is_interior) {
-      absl::StrAppend(&c, "      if ((", cur_key_expr,
-                      ") + 0 >= args.k.Width()) d.x = -1.0e30f;\n",
-                      "      if ((", cur_key_expr,
-                      ") + 1 >= args.k.Width()) d.y = -1.0e30f;\n",
-                      "      if ((", cur_key_expr,
-                      ") + 2 >= args.k.Width()) d.z = -1.0e30f;\n",
-                      "      if ((", cur_key_expr,
-                      ") + 3 >= args.k.Width()) d.w = -1.0e30f;\n");
+      absl::StrAppend(
+          &c, "      if ((", cur_key_expr,
+          ") + 0 >= args.k.Width()) d.x = -1.0e30f;\n", "      if ((",
+          cur_key_expr, ") + 1 >= args.k.Width()) d.y = -1.0e30f;\n",
+          "      if ((", cur_key_expr,
+          ") + 2 >= args.k.Width()) d.z = -1.0e30f;\n", "      if ((",
+          cur_key_expr, ") + 3 >= args.k.Width()) d.w = -1.0e30f;\n");
     }
 
     // When all keys seen so far are masked (`l_new == 0.0f`), `inv_l = 0.0f`
@@ -683,47 +741,54 @@ std::string GenerateFlashSdpaCode(const ::ml_drift::GpuInfo& gpu_info,
     const std::string v_block = absl::StrCat(
         "      {\n"
         "        int kv_idx = (s_base + $s) * ",
-        kv_stride, kv_sub_offset,
+        kv_stride, kv_sub_offset, kv_grp_skew,
         ";\n"
-        "        acc_$s = acc_$s * acc_scale_v + p_v.x * v_local[kv_idx + 0] + "
-        "p_v.y * v_local[kv_idx + 1] + p_v.z * v_local[kv_idx + 2] + p_v.w * "
-        "v_local[kv_idx + 3];\n"
+        "        acc_$s = acc_$s * acc_scale_v + p_v.x * v_local[kv_idx + 0];\n"
+        "        acc_$s += p_v.y * v_local[kv_idx + 1];\n"
+        "        acc_$s += p_v.z * v_local[kv_idx + 2];\n"
+        "        acc_$s += p_v.w * v_local[kv_idx + 3];\n"
         "      }\n");
     const std::string v_tail_block = absl::StrCat(
-        "      if (s_base + $s < ", slices, ") {\n", v_block, "      }\n");
+        "      if (s_grp < ", rem_s, ") {\n", v_block, "      }\n");
     absl::StrAppend(&c, repeat_s(v_block, v_tail_block));
-
-    if (s_splits > 1) {
-      absl::StrAppend(&c, "      ucl::SyncThreads<WorkGroup, Local>();\n");
-    }
   };
 
-  absl::StrAppend(
-      &c, "  int key_base = 0;\n", "  for (; key_base + ", b_c,
-      " <= args.k.Width(); key_base += ", b_c, ") {\n",
-      "    for (int idx = tid; idx < ", slices * b_c, "; idx += ", threads,
-      ") {\n", "      int k_off = idx % ", b_c, ";\n",
-      "      int sl = idx / ", b_c, ";\n",
-      "      k_local[idx] = ucl::Convert<", vec_type,
-      ">(args.k.Read(key_base + k_off, kv_head, sl));\n",
-      "      v_local[idx] = ucl::Convert<", vec_type,
-      ">(args.v.Read(key_base + k_off, kv_head, sl));\n", "    }\n",
-      "    ucl::SyncThreads<WorkGroup, Local>();\n",
-      "    for (int sub = 0; sub < ", b_c, "; sub += 4) {\n");
+  const std::string kv_dst_expr = [&]() -> std::string {
+    if (s_splits <= 1) {
+      return "idx";
+    }
+    if (rem_s > 0 && rem_s < s_splits - 1) {
+      const int split_sl = rem_s * block_s;
+      return absl::StrCat("idx + min(sl / ", block_s, ", ", rem_s,
+                          ") + max(0, sl - ", split_sl, ") / ", floor_s);
+    }
+    return absl::StrCat("idx + sl / ", block_s);
+  }();
+
+  absl::StrAppend(&c, "  int key_base = 0;\n", "  for (; key_base + ", b_c,
+                  " <= args.k.Width(); key_base += ", b_c, ") {\n",
+                  "    for (int idx = tid; idx < ", slices * b_c,
+                  "; idx += ", threads, ") {\n", "      int k_off = idx % ",
+                  b_c, ";\n", "      int sl = idx / ", b_c, ";\n",
+                  "      k_local[", kv_dst_expr, "] = ucl::Convert<", vec_type,
+                  ">(args.k.Read(key_base + k_off, kv_head, sl));\n",
+                  "      v_local[", kv_dst_expr, "] = ucl::Convert<", vec_type,
+                  ">(args.v.Read(key_base + k_off, kv_head, sl));\n", "    }\n",
+                  "    ucl::SyncThreads<WorkGroup, Local>();\n",
+                  "    for (int sub = 0; sub < ", b_c, "; sub += 4) {\n");
   emit_substep(/*is_interior=*/true, b_c, "key_base + sub", " + sub");
-  absl::StrAppend(&c, "    }\n",
-                  "    ucl::SyncThreads<WorkGroup, Local>();\n", "  }\n");
+  absl::StrAppend(&c, "    }\n", "    ucl::SyncThreads<WorkGroup, Local>();\n",
+                  "  }\n");
 
   absl::StrAppend(
       &c, "  for (; key_base < args.k.Width(); key_base += 4) {\n",
       "    for (int idx = tid; idx < ", slices * 4, "; idx += ", threads,
       ") {\n", "      int k_off = idx % 4;\n", "      int sl = idx / 4;\n",
-      "      int k_idx = key_base + k_off;\n",
-      "      k_local[idx] = (k_idx < args.k.Width()) ? ucl::Convert<",
-      vec_type,
+      "      int k_idx = key_base + k_off;\n", "      k_local[", kv_dst_expr,
+      "] = (k_idx < args.k.Width()) ? ucl::Convert<", vec_type,
       ">(args.k.Read(k_idx, kv_head, sl)) : ucl::Init<", vec_type, ">(0.0f);\n",
-      "      v_local[idx] = (k_idx < args.v.Width()) ? ucl::Convert<",
-      vec_type,
+      "      v_local[", kv_dst_expr,
+      "] = (k_idx < args.v.Width()) ? ucl::Convert<", vec_type,
       ">(args.v.Read(k_idx, kv_head, sl)) : ucl::Init<", vec_type, ">(0.0f);\n",
       "    }\n", "    ucl::SyncThreads<WorkGroup, Local>();\n");
   emit_substep(/*is_interior=*/false, 4, "key_base", "");
@@ -736,7 +801,7 @@ std::string GenerateFlashSdpaCode(const ::ml_drift::GpuInfo& gpu_info,
           "      args.dst.Write(res, q_idx, q_head, s_base + $s);\n"
           "    }\n",
           absl::StrCat(
-              "    if (s_base + $s < ", slices,
+              "    if (s_grp < ", rem_s,
               ") {\n"
               "      args.dst::type res = "
               "ucl::Convert<args.dst::type>(acc_$s);\n"
@@ -838,8 +903,8 @@ bool IsSupportedFlashSdpa(const ::ml_drift::GpuInfo& gpu_info,
     return false;
   }
   // Head dimension `H` must be a multiple of 4 (vectorized 4-channel slices)
-  // and at most 128 (`<= 32` slices; up to 16 slices per thread with
-  // `s_splits <= 2`).
+  // and at most 128 (`<= 32` slices; `<= 16` `half4` or `<= 8` `float4` slices
+  // per thread with `s_splits` in `{1, 2, 4}`).
   if (q_shape.c <= 0 || q_shape.c % 4 != 0 || q_shape.c > 128) {
     return false;
   }
@@ -928,9 +993,9 @@ absl::Status BuildSdpaGpuGraph(
   auto dst_t = model_builder->AddTensor(dst_t_shape,
                                         output_ref.tensor_desc.GetDataType());
 
-  auto op = CreateFusedFlashSdpa(
-      model_builder->gpu_info(), q_t.tensor_desc, k_t.tensor_desc,
-      v_t.tensor_desc, mask_desc, dst_t.tensor_desc, attr, config);
+  auto op = CreateFusedFlashSdpa(model_builder->gpu_info(), q_t.tensor_desc,
+                                 k_t.tensor_desc, v_t.tensor_desc, mask_desc,
+                                 dst_t.tensor_desc, attr, config);
   std::vector<::ml_drift::GpuModelBuilder::TensorHandle> src_tensors = {
       q_t, k_t, v_t};
   if (mask_desc != nullptr) {
