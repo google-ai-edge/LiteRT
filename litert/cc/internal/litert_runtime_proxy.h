@@ -34,6 +34,7 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_op_resolver.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -1410,6 +1411,12 @@ class RuntimeProxy {
                                         int size_bytes) {
     LITERT_PROXY_METHOD_STATUS(litert_add_external_tensor_binding, options,
                                signature_name, tensor_name, data, size_bytes);
+  }
+
+  LiteRtStatus SetOpResolverOption(LiteRtOptions options,
+                                   const LiteRtOpResolverCApi* op_resolver) {
+    LITERT_PROXY_METHOD_STATUS_MIN_VERSION(
+        1, 7, 0, litert_set_op_resolver_option, options, op_resolver);
   }
 
   LiteRtStatus EnvironmentSupportsFP16(LiteRtEnvironment environment,

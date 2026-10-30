@@ -15,17 +15,34 @@
 #include "litert/tflite_support/op_resolver/op_resolver.h"
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_op_resolver.h"
+#include "litert/cc/internal/litert_runtime_proxy.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_options.h"
-#include "litert/core/options.h"
+#include "tflite/c/common.h"
+#include "tflite/mutable_op_resolver.h"
+#include "tflite/schema/schema_generated.h"
 
 namespace litert {
-namespace internal {
-class RuntimeProxy;
-}  // namespace internal
-
 namespace tflite_support {
+
+namespace {
+
+const TfLiteRegistration* FindBuiltinOpCallback(void* user_data, int op,
+                                                int version) {
+  auto* resolver = static_cast<const tflite::MutableOpResolver*>(user_data);
+  return resolver->FindOp(static_cast<tflite::BuiltinOperator>(op), version);
+}
+
+const TfLiteRegistration* FindCustomOpCallback(void* user_data,
+                                               const char* custom_op,
+                                               int version) {
+  auto* resolver = static_cast<const tflite::MutableOpResolver*>(user_data);
+  return resolver->FindOp(custom_op, version);
+}
+
+}  // namespace
 
 Expected<void> SetOpResolver(Options& options,
                              const tflite::MutableOpResolver* resolver) {
@@ -33,11 +50,15 @@ Expected<void> SetOpResolver(Options& options,
     return Unexpected(Status::kErrorInvalidArgument,
                       "OpResolver must not be null.");
   }
-  return options.AddBuildAction([resolver](internal::RuntimeProxy* /*runtime*/,
+  return options.AddBuildAction([resolver](internal::RuntimeProxy* runtime,
                                            LiteRtOptions litert_options) {
-    auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(litert_options);
-    options_impl->op_resolver = resolver;
-    return kLiteRtStatusOk;
+    LiteRtOpResolverCApi c_api = {
+        /*find_builtin_op=*/FindBuiltinOpCallback,
+        /*find_custom_op=*/FindCustomOpCallback,
+        /*user_data=*/
+        const_cast<void*>(static_cast<const void*>(resolver)),
+    };
+    return runtime->SetOpResolverOption(litert_options, &c_api);
   });
 }
 

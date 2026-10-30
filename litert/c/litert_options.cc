@@ -15,6 +15,7 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
+#include "litert/c/litert_op_resolver.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/options.h"
@@ -85,6 +86,14 @@ LiteRtStatus LiteRtGetOpaqueOptions(LiteRtOptions options,
   LRT_CHECK_NON_NULL(options);
   LRT_CHECK_NON_NULL(opaque_options);
   *opaque_options = options->options;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetOpResolverOption(
+    LiteRtOptions options, const LiteRtOpResolverCApi* op_resolver) {
+  LRT_CHECK_NON_NULL(options);
+  LRT_CHECK_NON_NULL(op_resolver);
+  options->op_resolver_c_api = *op_resolver;
   return kLiteRtStatusOk;
 }
 

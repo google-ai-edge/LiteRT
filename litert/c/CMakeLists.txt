@@ -39,6 +39,7 @@ set(LITERT_C_PUBLIC_HEADERS
     litert_model.h
     litert_op_code.h
     litert_op_options.h
+    litert_op_resolver.h
     litert_opaque_options.h
     litert_opencl_types.h
     litert_options.h

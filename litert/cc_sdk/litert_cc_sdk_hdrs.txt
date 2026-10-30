@@ -22,6 +22,7 @@ litert/c/litert_model.h
 litert/c/litert_model_types.h
 litert/c/litert_op_code.h
 litert/c/litert_op_options.h
+litert/c/litert_op_resolver.h
 litert/c/litert_opaque_options.h
 litert/c/litert_opencl_types.h
 litert/c/litert_options.h
