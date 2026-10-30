@@ -1830,7 +1830,277 @@ TEST(BatchMatMulOperationParserTest, TestIsSupported) {
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
-  context->node()->inputs->data[0] = 0;
+  context->node()->inputs->data[0] = 1;
+
+  // Reject 1D and 5D inputs in GraphFloat32 parser.
+  context->ChangeTensorShape(1, {4});
+  context->ChangeTensorShape(2, {4, 2});
+  context->ChangeTensorShape(3, {2});
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  context->ChangeTensorShape(1, {1, 1, 2, 3, 4});
+  context->ChangeTensorShape(2, {1, 1, 2, 4, 5});
+  context->ChangeTensorShape(3, {1, 1, 2, 3, 5});
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Validate adj_x and adj_y dimension checks.
+  auto* params =
+      static_cast<TfLiteBatchMatMulParams*>(context->node()->builtin_data);
+  context->ChangeTensorShape(1, {2, 4, 3});
+  context->ChangeTensorShape(2, {2, 5, 4});
+  context->ChangeTensorShape(3, {2, 3, 5});
+  params->adj_x = false;
+  params->adj_y = false;
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  params->adj_x = true;
+  params->adj_y = false;
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  params->adj_x = true;
+  params->adj_y = true;
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Reject batch-broadcasted shapes on runtime BatchedMatMul while accepting
+  // implicit unit leading batch dims (e.g. [1, 3, 5] x [5, 4] -> [1, 3, 4]).
+  params->adj_x = false;
+  params->adj_y = false;
+  context->ChangeTensorShape(1, {2, 3, 5});
+  context->ChangeTensorShape(2, {1, 5, 4});
+  context->ChangeTensorShape(3, {2, 3, 4});
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  context->ChangeTensorShape(1, {2, 3, 5});
+  context->ChangeTensorShape(2, {5, 4});
+  context->ChangeTensorShape(3, {2, 3, 4});
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  context->ChangeTensorShape(1, {1, 3, 5});
+  context->ChangeTensorShape(2, {5, 4});
+  context->ChangeTensorShape(3, {1, 3, 4});
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Constant 2D RHS supports batch > 1 on LHS when output batch matches,
+  // and rejects mismatched output batch or dynamic (-1) dimensions.
+  context->ChangeTensorShape(1, {2, 3, 5});
+  context->ChangeTensorShape(2, {5, 4});
+  context->SetTensorType(2, kTfLiteFloat32, kTfLiteMmapRo);
+  context->ChangeTensorShape(3, {2, 3, 4});
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  context->ChangeTensorShape(3, {4, 3, 4});
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  context->ChangeTensorShape(3, {2, 3, 4});
+  context->tensor(1)->dims->data[2] = -1;
+  context->tensor(2)->dims->data[0] = -1;
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  context->SetTensorType(2, kTfLiteFloat32, kTfLiteArenaRw);
+  context->ChangeTensorShape(1, {2, 3, 5});
+  context->ChangeTensorShape(2, {2, 5, 4});
+  context->ChangeTensorShape(3, {2, 3, 4});
+  context->tensor(1)->dims->data[0] = 0;
+  context->tensor(2)->dims->data[0] = 0;
+  context->tensor(3)->dims->data[0] = 0;
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+}
+
+TEST(BatchMatMulOperationParserTest, ParseFullyConnectedAdjCombinations) {
+  for (bool is_3d_lhs : {false, true}) {
+    for (bool adj_x : {false, true}) {
+      for (bool adj_y : {false, true}) {
+        auto context = std::make_unique<StubTfLiteContext>(
+            kTfLiteBuiltinBatchMatmul, /*op_version=*/1, /*num_inputs=*/2,
+            /*shape=*/std::vector<int>({1, 1, 1, 1}));
+        // M = 3, K = 4, N = 2.
+        if (is_3d_lhs) {
+          context->ChangeTensorShape(1, adj_x ? std::vector<int>({2, 4, 3})
+                                              : std::vector<int>({2, 3, 4}));
+          context->ChangeTensorShape(3, {2, 3, 2});
+        } else {
+          context->ChangeTensorShape(1, adj_x ? std::vector<int>({4, 3})
+                                              : std::vector<int>({3, 4}));
+          context->ChangeTensorShape(3, {3, 2});
+        }
+        context->ChangeTensorShape(2, adj_y ? std::vector<int>({2, 4})
+                                            : std::vector<int>({4, 2}));
+        context->SetTensorType(2, kTfLiteFloat32, kTfLiteMmapRo);
+        const std::vector<float> raw_weights = {1.0f, 2.0f, 3.0f, 4.0f,
+                                                5.0f, 6.0f, 7.0f, 8.0f};
+        std::memcpy(context->tensor(2)->data.f, raw_weights.data(),
+                    raw_weights.size() * sizeof(float));
+
+        auto* params = static_cast<TfLiteBatchMatMulParams*>(
+            context->node()->builtin_data);
+        params->adj_x = adj_x;
+        params->adj_y = adj_y;
+
+        auto parser =
+            NewOperationParser(context->node(), context->registration());
+        ASSERT_OK(parser->IsSupported(context.get(), context->node(),
+                                      context->registration()));
+
+        ::ml_drift::GraphFloat32 graph;
+        absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+        if (adj_x) {
+          ::ml_drift::Value* quant_lhs = graph.NewValue();
+          quant_lhs->tensor.type = ::ml_drift::DataType::kFloat32;
+          quant_lhs->tensor.shape =
+              is_3d_lhs ? ::ml_drift::BHWC(2, 1, 4, 3)
+                        : ::ml_drift::BHWC(4, 1, 1, 3);
+          quant_lhs->tensor.ref = 1;
+          quant_lhs->quant_params =
+              ::ml_drift::QuantizationParams{-1.0f, 1.0f, 0.01f};
+          tensor_to_value[1] = quant_lhs;
+        }
+        ObjectReader reader(&graph, context.get(), context->node(),
+                            &tensor_to_value, /*quant_conversion_map=*/nullptr,
+                            /*tensor_to_buffer_id_map=*/nullptr,
+                            /*shared_tensor_map=*/nullptr);
+        parser->Parse(context->node(), context->registration(), &graph,
+                      &reader);
+
+        ASSERT_EQ(graph.nodes().size(), adj_x ? 2 : 1);
+        const ::ml_drift::Node* fc_node = graph.nodes().back();
+        EXPECT_EQ(fc_node->operation.type,
+                  ToString(::ml_drift::OperationType::kFullyConnected));
+        if (adj_x) {
+          const ::ml_drift::Node* transpose_node = graph.nodes().front();
+          EXPECT_EQ(transpose_node->operation.type,
+                    ToString(::ml_drift::OperationType::kTranspose));
+          const auto transpose_outputs = graph.FindOutputs(transpose_node->id);
+          ASSERT_EQ(transpose_outputs.size(), 1);
+          EXPECT_FALSE(transpose_outputs[0]->quant_params.has_value());
+          const auto& transpose_attr =
+              std::any_cast<const ::ml_drift::TransposeAttributes&>(
+                  transpose_node->operation.attributes);
+          EXPECT_EQ(transpose_attr.perm, is_3d_lhs
+                                             ? ::ml_drift::BHWC(0, 1, 3, 2)
+                                             : ::ml_drift::BHWC(3, 1, 2, 0));
+        }
+
+        const auto& fc_attr =
+            std::any_cast<const ::ml_drift::FullyConnectedAttributes&>(
+                fc_node->operation.attributes);
+        EXPECT_EQ(fc_attr.weights.shape, ::ml_drift::OHWI(2, 1, 1, 4));
+        const std::vector<float> expected_weights =
+            adj_y ? raw_weights
+                  : std::vector<float>{1.0f, 3.0f, 5.0f, 7.0f,
+                                       2.0f, 4.0f, 6.0f, 8.0f};
+        ASSERT_GE(fc_attr.weights.data.size(), expected_weights.size());
+        for (size_t i = 0; i < expected_weights.size(); ++i) {
+          EXPECT_EQ(fc_attr.weights.data[i], expected_weights[i]);
+        }
+      }
+    }
+  }
+}
+
+TEST(BatchMatMulOperationParserTest, ParseBatchedMatMulAdjCombinations) {
+  for (bool adj_x : {false, true}) {
+    for (bool adj_y : {false, true}) {
+      auto context = std::make_unique<StubTfLiteContext>(
+          kTfLiteBuiltinBatchMatmul, /*op_version=*/1, /*num_inputs=*/2,
+          /*shape=*/std::vector<int>({1, 1, 1, 1}));
+      context->ChangeTensorShape(1, adj_x ? std::vector<int>({2, 4, 3})
+                                          : std::vector<int>({2, 3, 4}));
+      context->ChangeTensorShape(2, adj_y ? std::vector<int>({2, 5, 4})
+                                          : std::vector<int>({2, 4, 5}));
+      context->ChangeTensorShape(3, {2, 3, 5});
+
+      auto* params =
+          static_cast<TfLiteBatchMatMulParams*>(context->node()->builtin_data);
+      params->adj_x = adj_x;
+      params->adj_y = adj_y;
+
+      auto parser =
+          NewOperationParser(context->node(), context->registration());
+      ASSERT_OK(parser->IsSupported(context.get(), context->node(),
+                                    context->registration()));
+
+      ::ml_drift::GraphFloat32 graph;
+      absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+      ObjectReader reader(&graph, context.get(), context->node(),
+                          &tensor_to_value, /*quant_conversion_map=*/nullptr,
+                          /*tensor_to_buffer_id_map=*/nullptr,
+                          /*shared_tensor_map=*/nullptr);
+      parser->Parse(context->node(), context->registration(), &graph, &reader);
+      // 3D batch size 2 != 1 emits pre-reshapes on both inputs, BatchedMatmul,
+      // and a post-reshape on the output.
+      ASSERT_EQ(graph.nodes().size(), 4);
+      EXPECT_EQ(graph.nodes()[0]->operation.type,
+                ToString(::ml_drift::OperationType::kReshape));
+      EXPECT_EQ(graph.nodes()[1]->operation.type,
+                ToString(::ml_drift::OperationType::kReshape));
+      EXPECT_EQ(graph.nodes()[2]->operation.type,
+                ToString(::ml_drift::OperationType::kBatchedMatmul));
+      EXPECT_EQ(graph.nodes()[3]->operation.type,
+                ToString(::ml_drift::OperationType::kReshape));
+      const auto& attr =
+          std::any_cast<const ::ml_drift::BatchedMatMulAttributes&>(
+              graph.nodes()[2]->operation.attributes);
+      EXPECT_EQ(attr.transpose_left, adj_x);
+      EXPECT_EQ(attr.transpose_right, adj_y);
+    }
+  }
+
+  // Also verify null builtin_data defaults both transpose flags to false
+  // (using b == 1 so no pre/post reshapes are emitted).
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinBatchMatmul, /*op_version=*/1, /*num_inputs=*/2,
+      /*shape=*/std::vector<int>({1, 3, 3}));
+  void* saved_builtin_data = context->node()->builtin_data;
+  context->node()->builtin_data = nullptr;
+  auto parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr,
+                      /*tensor_to_buffer_id_map=*/nullptr,
+                      /*shared_tensor_map=*/nullptr);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+  context->node()->builtin_data = saved_builtin_data;
+  ASSERT_EQ(graph.nodes().size(), 1);
+  const auto& attr = std::any_cast<const ::ml_drift::BatchedMatMulAttributes&>(
+      graph.nodes()[0]->operation.attributes);
+  EXPECT_FALSE(attr.transpose_left);
+  EXPECT_FALSE(attr.transpose_right);
 }
 
 TEST(BitcastOperationParserTest, TestIsSupported) {

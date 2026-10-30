@@ -39,20 +39,86 @@ void ConvertBatchMatMul(
   const int input1_id = node.inputs->data[1];
   const int output_id = node.outputs->data[0];
 
+  const TfLiteTensor& input0_tensor = context.tensors[input0_id];
   const TfLiteTensor& input1_tensor = context.tensors[input1_id];
+  const TfLiteTensor& output_tensor = context.tensors[output_id];
 
   const TfLiteBatchMatMulParams* params =
       reinterpret_cast<const TfLiteBatchMatMulParams*>(node.builtin_data);
+  const bool transpose_left = params ? params->adj_x : false;
+  const bool transpose_right = params ? params->adj_y : false;
 
   // Case 1: 1 runtime input + 2D constant weights -> FULLY_CONNECTED
   if (tflite::IsConstantTensor(&input1_tensor) &&
       input1_tensor.dims->size == 2 &&
       !ir_model.tensor(tensor_map[input1_id])->buffer_source.is_shared) {
+    ::ml_drift::ir::IrTensorId fc_input_id = tensor_map[input0_id];
+    ::ml_drift::ir::IrTensorId fc_output_id = tensor_map[output_id];
+
+    const ::ml_drift::ir::IrTensor* input0_desc = ir_model.tensor(fc_input_id);
+    const ::ml_drift::ir::IrTensor* output_desc = ir_model.tensor(fc_output_id);
+    const ::ml_drift::DataType input0_dtype = input0_desc->desc.GetDataType();
+    const ::ml_drift::DataType output_dtype = output_desc->desc.GetDataType();
+    const ::ml_drift::BHWDC l_shape = input0_desc->desc.GetBHWDCShape();
+    const ::ml_drift::BHWDC out_shape = output_desc->desc.GetBHWDCShape();
+    const bool left_is_5d =
+        input0_desc->desc.GetLayout() == ::ml_drift::Layout::kBHWDC ||
+        l_shape.d > 1 || input0_tensor.dims->size == 5;
+    const bool out_is_5d =
+        output_desc->desc.GetLayout() == ::ml_drift::Layout::kBHWDC ||
+        out_shape.d > 1 || output_tensor.dims->size == 5;
+
+    if (left_is_5d) {
+      ::ml_drift::ir::IrOp* reshape_left = ir_model.add_op();
+      reshape_left->name = ToString(::ml_drift::OperationType::kReshape);
+      ::ml_drift::ReshapeAttributes reshape_attr;
+      reshape_attr.new_shape = ::ml_drift::BHWC(
+          1, l_shape.b * l_shape.h * l_shape.w, l_shape.d, l_shape.c);
+      reshape_left->attr = reshape_attr;
+      ir_model.AddConsumer(fc_input_id, reshape_left->id);
+      ::ml_drift::ir::IrTensor* reshaped_input =
+          ir_model.add_tensor(input0_dtype, reshape_attr.new_shape);
+      ir_model.SetProducer(reshaped_input->id, reshape_left->id);
+      fc_input_id = reshaped_input->id;
+    }
+
+    if (transpose_left) {
+      const ::ml_drift::BHWC cur_shape =
+          ir_model.tensor(fc_input_id)->desc.GetBHWCShape();
+      ::ml_drift::ir::IrOp* transpose_op = ir_model.add_op();
+      transpose_op->name = ToString(::ml_drift::OperationType::kTranspose);
+      ::ml_drift::TransposeAttributes transpose_attr;
+      ::ml_drift::BHWC transposed_shape;
+      if (!left_is_5d && input0_tensor.dims->size == 2) {
+        transpose_attr.perm = ::ml_drift::BHWC(3, 1, 2, 0);
+        transposed_shape = ::ml_drift::BHWC(cur_shape.c, cur_shape.h,
+                                            cur_shape.w, cur_shape.b);
+      } else {
+        transpose_attr.perm = ::ml_drift::BHWC(0, 1, 3, 2);
+        transposed_shape = ::ml_drift::BHWC(cur_shape.b, cur_shape.h,
+                                            cur_shape.c, cur_shape.w);
+      }
+      transpose_op->attr = transpose_attr;
+      ir_model.AddConsumer(fc_input_id, transpose_op->id);
+      ::ml_drift::ir::IrTensor* transposed_input =
+          ir_model.add_tensor(input0_dtype, transposed_shape);
+      ir_model.SetProducer(transposed_input->id, transpose_op->id);
+      fc_input_id = transposed_input->id;
+    }
+
+    if (out_is_5d) {
+      ::ml_drift::ir::IrTensor* flat_output = ir_model.add_tensor(
+          output_dtype,
+          ::ml_drift::BHWC(1, out_shape.b * out_shape.h * out_shape.w,
+                           out_shape.d, out_shape.c));
+      fc_output_id = flat_output->id;
+    }
+
     ::ml_drift::ir::IrOp* fc_op = ir_model.add_op();
     fc_op->name = ToString(::ml_drift::OperationType::kFullyConnected);
 
-    ir_model.AddConsumer(tensor_map[input0_id], fc_op->id);
-    ir_model.SetProducer(tensor_map[output_id], fc_op->id);
+    ir_model.AddConsumer(fc_input_id, fc_op->id);
+    ir_model.SetProducer(fc_output_id, fc_op->id);
 
     ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32> weights;
     PopulateTensor(&input1_tensor, input1_id, &weights,
@@ -61,7 +127,6 @@ void ConvertBatchMatMul(
     const int h = weights.shape.h;
     const int w = weights.shape.w;
     attr.weights.data.resize(w * h + XNN_EXTRA_BYTES / sizeof(float));
-    const bool transpose_right = params ? params->adj_y : false;
     if (transpose_right) {
       std::copy(weights.data.begin(), weights.data.end(),
                 attr.weights.data.begin());
@@ -77,6 +142,16 @@ void ConvertBatchMatMul(
 
     attr.weights.id = weights.id;
     fc_op->attr = std::move(attr);
+
+    if (out_is_5d) {
+      ::ml_drift::ir::IrOp* reshape_result = ir_model.add_op();
+      reshape_result->name = ToString(::ml_drift::OperationType::kReshape);
+      ::ml_drift::Reshape3DAttributes reshape_attr;
+      reshape_attr.new_shape = out_shape;
+      reshape_result->attr = reshape_attr;
+      ir_model.AddConsumer(fc_output_id, reshape_result->id);
+      ir_model.SetProducer(tensor_map[output_id], reshape_result->id);
+    }
     return;
   }
 
@@ -94,10 +169,22 @@ void ConvertBatchMatMul(
   const ::ml_drift::ir::IrTensor* input0_desc = ir_model.tensor(left_id);
   const ::ml_drift::ir::IrTensor* input1_desc = ir_model.tensor(right_id);
   const ::ml_drift::ir::IrTensor* output_desc = ir_model.tensor(result_id);
+  const ::ml_drift::DataType input0_dtype = input0_desc->desc.GetDataType();
+  const ::ml_drift::DataType input1_dtype = input1_desc->desc.GetDataType();
+  const ::ml_drift::DataType output_dtype = output_desc->desc.GetDataType();
 
   ::ml_drift::BHWDC l_shape = input0_desc->desc.GetBHWDCShape();
   ::ml_drift::BHWDC r_shape = input1_desc->desc.GetBHWDCShape();
   ::ml_drift::BHWDC out_shape = output_desc->desc.GetBHWDCShape();
+  const bool left_is_5d =
+      input0_desc->desc.GetLayout() == ::ml_drift::Layout::kBHWDC ||
+      l_shape.d > 1 || input0_tensor.dims->size == 5;
+  const bool right_is_5d =
+      input1_desc->desc.GetLayout() == ::ml_drift::Layout::kBHWDC ||
+      r_shape.d > 1 || input1_tensor.dims->size == 5;
+  const bool out_is_5d =
+      output_desc->desc.GetLayout() == ::ml_drift::Layout::kBHWDC ||
+      out_shape.d > 1 || output_tensor.dims->size == 5;
 
   // MLDrift supports batched matmul with single batch.
   // Model can have model batch in addition to matmul batch. In this case we
@@ -106,9 +193,6 @@ void ConvertBatchMatMul(
   // 1x8x128x32.
   // If shape is 2d(MxN) MLDrift treats it as Mx1x1xN. In this case we need
   // to make reshape to get 1x1xMxN.
-  bool left_is_5d =
-      input0_desc->desc.GetLayout() == ::ml_drift::Layout::kBHWDC ||
-      l_shape.d > 1;
   if (left_is_5d || l_shape.b != 1) {
     ::ml_drift::ir::IrOp* reshape_left = ir_model.add_op();
     reshape_left->name = ToString(::ml_drift::OperationType::kReshape);
@@ -117,7 +201,7 @@ void ConvertBatchMatMul(
       reshape_attr.new_shape = ::ml_drift::BHWC(
           1, l_shape.b * l_shape.h * l_shape.w, l_shape.d, l_shape.c);
     } else {
-      if (l_shape.h == 1 && l_shape.w == 1) {
+      if (input0_tensor.dims->size == 2) {
         reshape_attr.new_shape = ::ml_drift::BHWC(1, 1, l_shape.b, l_shape.c);
       } else {
         reshape_attr.new_shape =
@@ -127,15 +211,12 @@ void ConvertBatchMatMul(
     reshape_left->attr = reshape_attr;
 
     ir_model.AddConsumer(left_id, reshape_left->id);
-    ::ml_drift::ir::IrTensor* left_tensor = ir_model.add_tensor(
-        input0_desc->desc.GetDataType(), reshape_attr.new_shape);
+    ::ml_drift::ir::IrTensor* left_tensor =
+        ir_model.add_tensor(input0_dtype, reshape_attr.new_shape);
     ir_model.SetProducer(left_tensor->id, reshape_left->id);
     left_id = left_tensor->id;
   }
 
-  bool right_is_5d =
-      input1_desc->desc.GetLayout() == ::ml_drift::Layout::kBHWDC ||
-      r_shape.d > 1;
   if (right_is_5d || r_shape.b != 1) {
     ::ml_drift::ir::IrOp* reshape_right = ir_model.add_op();
     reshape_right->name = ToString(::ml_drift::OperationType::kReshape);
@@ -144,7 +225,7 @@ void ConvertBatchMatMul(
       reshape_attr.new_shape = ::ml_drift::BHWC(
           1, r_shape.b * r_shape.h * r_shape.w, r_shape.d, r_shape.c);
     } else {
-      if (r_shape.h == 1 && r_shape.w == 1) {
+      if (input1_tensor.dims->size == 2) {
         reshape_attr.new_shape = ::ml_drift::BHWC(1, 1, r_shape.b, r_shape.c);
       } else {
         reshape_attr.new_shape =
@@ -154,22 +235,19 @@ void ConvertBatchMatMul(
     reshape_right->attr = reshape_attr;
 
     ir_model.AddConsumer(right_id, reshape_right->id);
-    ::ml_drift::ir::IrTensor* right_tensor = ir_model.add_tensor(
-        input1_desc->desc.GetDataType(), reshape_attr.new_shape);
+    ::ml_drift::ir::IrTensor* right_tensor =
+        ir_model.add_tensor(input1_dtype, reshape_attr.new_shape);
     ir_model.SetProducer(right_tensor->id, reshape_right->id);
     right_id = right_tensor->id;
   }
 
-  bool out_is_5d =
-      output_desc->desc.GetLayout() == ::ml_drift::Layout::kBHWDC ||
-      out_shape.d > 1;
   if (out_is_5d || out_shape.b != 1) {
     ::ml_drift::BHWC flat_out_shape;
     if (out_is_5d) {
       flat_out_shape = ::ml_drift::BHWC(
           1, out_shape.b * out_shape.h * out_shape.w, out_shape.d, out_shape.c);
     } else {
-      if (out_shape.h == 1 && out_shape.w == 1) {
+      if (output_tensor.dims->size == 2) {
         flat_out_shape = ::ml_drift::BHWC(1, 1, out_shape.b, out_shape.c);
       } else {
         flat_out_shape = ::ml_drift::BHWC(1, out_shape.b * out_shape.h,
@@ -177,7 +255,7 @@ void ConvertBatchMatMul(
       }
     }
     ::ml_drift::ir::IrTensor* result_tensor =
-        ir_model.add_tensor(output_desc->desc.GetDataType(), flat_out_shape);
+        ir_model.add_tensor(output_dtype, flat_out_shape);
     result_id = result_tensor->id;
   }
 
@@ -189,8 +267,8 @@ void ConvertBatchMatMul(
   ir_model.SetProducer(result_id, bmm_op->id);
 
   ::ml_drift::BatchedMatMulAttributes attr;
-  attr.transpose_left = params ? params->adj_x : false;
-  attr.transpose_right = params ? params->adj_y : false;
+  attr.transpose_left = transpose_left;
+  attr.transpose_right = transpose_right;
 
   bmm_op->attr = std::move(attr);
 

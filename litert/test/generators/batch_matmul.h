@@ -44,6 +44,7 @@
 #include "litert/test/simple_buffer.h"
 #include "tensor/arithmetic.h"
 #include "tensor/backends/tflite/arithmetic_tflite.h"
+#include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
 #include "tflite/schema/schema_generated.h"
@@ -52,7 +53,8 @@
 namespace litert::testing {
 
 template <typename Rank1, typename Rank2, typename T_in, typename T_out,
-          typename AdjX = std::false_type, typename AdjY = std::false_type>
+          typename AdjX = std::false_type, typename AdjY = std::false_type,
+          typename DynamicRhs = std::true_type>
 class BatchMatmul : public TestGraph {
   static_assert(std::is_same_v<typename Rank1::value_type, size_t>);
   static constexpr size_t kRank1 = Rank1::value;
@@ -64,20 +66,24 @@ class BatchMatmul : public TestGraph {
 
   static constexpr bool kAdjX = AdjX::value;
   static constexpr bool kAdjY = AdjY::value;
+  static constexpr bool kDynamicRhs = DynamicRhs::value;
 
   static constexpr ElementType kInElementType = GetElementType<T_in>();
   static constexpr ElementType kOutElementType = GetElementType<T_out>();
   static constexpr TensorNames<2> kInputNames = {"lhs", "rhs"};
   static constexpr TensorNames<1> kOutputNames = {"output"};
 
+ public:
   struct Params {
     std::array<Layout::Dim, kRank1> input1_shape;
     std::array<Layout::Dim, kRank2> input2_shape;
     std::array<Layout::Dim, kMaxRank> output_shape;
+    std::vector<T_in> rhs_data;
   };
 
- public:
-  using Traits = TestLogicTraits<TypeList<T_in, T_in>, TypeList<T_out>, Params>;
+  using InputTypesT =
+      std::conditional_t<kDynamicRhs, TypeList<T_in, T_in>, TypeList<T_in>>;
+  using Traits = TestLogicTraits<InputTypesT, TypeList<T_out>, Params>;
   using Ptr = std::unique_ptr<BatchMatmul>;
 
   static constexpr absl::string_view Name() { return "BatchMatmul"; }
@@ -141,6 +147,44 @@ class BatchMatmul : public TestGraph {
       }
     }
 
+    if constexpr (!kDynamicRhs) {
+      size_t num_rhs_elements = 1;
+      for (Layout::Dim dim : params.input2_shape) {
+        num_rhs_elements *= dim;
+      }
+      std::uniform_real_distribution<float> rhs_dist(-2.0f, 2.0f);
+      std::vector<float> rhs_f32(num_rhs_elements);
+      for (float& v : rhs_f32) {
+        v = rhs_dist(rng);
+      }
+      params.rhs_data.resize(num_rhs_elements);
+      PackFromFloat(absl::MakeConstSpan(rhs_f32),
+                    absl::MakeSpan(params.rhs_data));
+    }
+
+    return Create(std::move(params));
+  }
+
+  static Expected<BatchMatmul::Ptr> Create(Params params) {
+    if constexpr (!kDynamicRhs) {
+      size_t num_rhs_elements = 1;
+      for (Layout::Dim dim : params.input2_shape) {
+        num_rhs_elements *= dim;
+      }
+      if (params.rhs_data.empty()) {
+        std::vector<float> rhs_f32(num_rhs_elements);
+        for (size_t i = 0; i < num_rhs_elements; ++i) {
+          rhs_f32[i] = static_cast<float>(static_cast<int>(i % 7) - 3) * 0.5f;
+        }
+        params.rhs_data.resize(num_rhs_elements);
+        PackFromFloat(absl::MakeConstSpan(rhs_f32),
+                      absl::MakeSpan(params.rhs_data));
+      } else if (params.rhs_data.size() != num_rhs_elements) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Static RHS data size does not match input2_shape");
+      }
+    }
+
     LiteRtOpT op;
     op.SetOpCode(kLiteRtOpCodeTflBatchMatmul);
     auto options = std::make_unique<tflite::BatchMatMulOptionsT>();
@@ -173,7 +217,8 @@ class BatchMatmul : public TestGraph {
   ConformanceSpec GetConformanceSpec() const override {
     ConformanceSpec spec;
     spec.comparator_kind = ConformanceComparatorKind::kFloatAccumulationAware;
-    spec.accumulation_depth = params_.input1_shape[kRank1 - 1];
+    spec.accumulation_depth = kAdjX ? params_.input1_shape[kRank1 - 2]
+                                    : params_.input1_shape[kRank1 - 1];
     if constexpr (std::is_same_v<T_in, tflite::half> ||
                   std::is_same_v<T_out, tflite::half>) {
       spec.relative_tolerance = 5e-3;
@@ -187,9 +232,11 @@ class BatchMatmul : public TestGraph {
       DefaultDevice& device,
       const RandomTensorDataBuilder& data_builder) const override {
     VarBuffers inputs;
-    inputs.reserve(2);
+    inputs.reserve(kDynamicRhs ? 2 : 1);
     RandomTensorDataBuilder modified_data_builder = data_builder;
-    modified_data_builder.SetFloatRange(-2.0f, 2.0f);
+    if (!modified_data_builder.IsFloatDummy()) {
+      modified_data_builder.SetFloatRange(-2.0f, 2.0f);
+    }
 
     LITERT_ASSIGN_OR_RETURN(auto input1,
                             SimpleBuffer::Create<T_in>(params_.input1_shape));
@@ -197,11 +244,13 @@ class BatchMatmul : public TestGraph {
         (input1.template WriteRandom<T_in>(modified_data_builder, device)));
     inputs.push_back(std::move(input1));
 
-    LITERT_ASSIGN_OR_RETURN(auto input2,
-                            SimpleBuffer::Create<T_in>(params_.input2_shape));
-    LITERT_RETURN_IF_ERROR(
-        (input2.template WriteRandom<T_in>(modified_data_builder, device)));
-    inputs.push_back(std::move(input2));
+    if constexpr (kDynamicRhs) {
+      LITERT_ASSIGN_OR_RETURN(auto input2,
+                              SimpleBuffer::Create<T_in>(params_.input2_shape));
+      LITERT_RETURN_IF_ERROR(
+          (input2.template WriteRandom<T_in>(modified_data_builder, device)));
+      inputs.push_back(std::move(input2));
+    }
 
     return inputs;
   }
@@ -213,11 +262,19 @@ class BatchMatmul : public TestGraph {
     LITERT_ASSIGN_OR_RETURN(auto ref_outputs,
                             Traits::MakeReferenceOutputs(outputs));
 
-    auto [lhs, rhs] = ref_inputs;
     auto [output] = ref_outputs;
 
-    std::vector<float> lhs_f32 = UnpackToFloat(lhs.data);
-    std::vector<float> rhs_f32 = UnpackToFloat(rhs.data);
+    std::vector<float> lhs_f32;
+    std::vector<float> rhs_f32;
+    if constexpr (kDynamicRhs) {
+      auto [lhs, rhs] = ref_inputs;
+      lhs_f32 = UnpackToFloat(lhs.data);
+      rhs_f32 = UnpackToFloat(rhs.data);
+    } else {
+      auto [lhs] = ref_inputs;
+      lhs_f32 = UnpackToFloat(lhs.data);
+      rhs_f32 = UnpackToFloat(absl::MakeConstSpan(params_.rhs_data));
+    }
     std::vector<float> out_f32(output.data.size());
 
     litert::internal::ReferenceBatchMatmul(
@@ -247,9 +304,19 @@ class BatchMatmul : public TestGraph {
     TensorTf input1 =
         litert::tensor::Create(std::string(kInputNames[0]),
                                litert::tensor::ApiType<T_in>::value, dims1);
-    TensorTf input2 =
-        litert::tensor::Create(std::string(kInputNames[1]),
-                               litert::tensor::ApiType<T_in>::value, dims2);
+    TensorTf input2;
+    if constexpr (kDynamicRhs) {
+      input2 =
+          litert::tensor::Create(std::string(kInputNames[1]),
+                                 litert::tensor::ApiType<T_in>::value, dims2);
+    } else {
+      auto rhs_buf = std::make_shared<litert::tensor::SpanCpuBuffer>(
+          reinterpret_cast<const std::byte*>(params.rhs_data.data()),
+          params.rhs_data.size() * sizeof(T_in));
+      input2 = litert::tensor::Create(
+          std::string(kInputNames[1]), litert::tensor::ApiType<T_in>::value,
+          dims2, std::move(rhs_buf));
+    }
 
     TensorTf output =
         litert::tensor::BatchMatMul(input1, input2, kAdjX, kAdjY);
