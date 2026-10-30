@@ -160,7 +160,11 @@ class RuntimeProxy {
   /// If the system runtime handle is not provided, the builtin runtime will be
   /// used.
   explicit RuntimeProxy(const LiteRtRuntimeCApiStruct* runtime_c_api)
-      : RuntimeProxy(runtime_c_api, ResolveRuntimeAbiVersion(runtime_c_api)) {}
+      : runtime_c_api_(LITERT_INTERNAL_DIE_IF_NULL(
+            runtime_c_api == nullptr ? GetLiteRtRuntimeBuiltin()
+                                     : runtime_c_api)),
+        abi_version_(DefaultRuntimeAbiVersion(runtime_c_api)),
+        abi_version_resolved_(false) {}
 
   /// @brief Creates a runtime proxy with the externally provided system runtime
   /// handle and an explicit ABI version.
@@ -169,7 +173,8 @@ class RuntimeProxy {
       : runtime_c_api_(LITERT_INTERNAL_DIE_IF_NULL(
             runtime_c_api == nullptr ? GetLiteRtRuntimeBuiltin()
                                      : runtime_c_api)),
-        abi_version_(abi_version) {}
+        abi_version_(abi_version),
+        abi_version_resolved_(true) {}
 
   ~RuntimeProxy() = default;
 
@@ -1447,22 +1452,45 @@ class RuntimeProxy {
   }
 
  protected:
-  static RuntimeAbiVersion ResolveRuntimeAbiVersion(
+  static constexpr RuntimeAbiVersion DefaultRuntimeAbiVersion(
       const LiteRtRuntimeCApiStruct* runtime_c_api) {
-    if (runtime_c_api == nullptr) {
-      // When no external system runtime handle is provided, RuntimeProxy uses
-      // the builtin runtime (GetLiteRtRuntimeBuiltin()), whose ABI version
-      // matches the SDK's kBuiltinRuntimeAbiVersion.
-      return kBuiltinRuntimeAbiVersion;
+    // External system runtimes may predate post-1.0.0 LiteRtRuntimeCApiStruct
+    // fields, so start at 1.0.0 until ResolveAbiVersionFromEnvironment()
+    // inspects the created environment's 1.0.0 options API.
+    return runtime_c_api == nullptr ? kBuiltinRuntimeAbiVersion
+                                    : RuntimeAbiVersion(1, 0, 0);
+  }
+
+  void ResolveAbiVersionFromEnvironment(LiteRtEnvironment environment) {
+    if (abi_version_resolved_ || environment == nullptr) {
+      return;
     }
-    // TODO(b/574171444): Query `litert_get_runtime_abi_version` from
-    // `runtime_c_api` once the next LiteRT in Google Play services rollout
-    // reaches 100%.
-    return RuntimeAbiVersion(1, 0, 0);
+    abi_version_resolved_ = true;
+    LiteRtEnvironmentOptions options = nullptr;
+    if (GetEnvironmentOptions(environment, &options) != kLiteRtStatusOk ||
+        options == nullptr) {
+      return;
+    }
+    LiteRtAny value{};
+    if (GetEnvironmentOptionsValue(
+            options, kLiteRtEnvOptionTagRuntimeAbiVersion, &value) !=
+        kLiteRtStatusOk) {
+      return;
+    }
+    if (value.type != kLiteRtAnyTypeString || value.str_value == nullptr) {
+      abi_version_ = RuntimeAbiVersion(1, 0, 0);
+      return;
+    }
+    std::optional<RuntimeAbiVersion> parsed =
+        RuntimeAbiVersion::Parse(StringView(value.str_value));
+    abi_version_ = (parsed.has_value() && parsed->IsCompatibleWithClient())
+                       ? *parsed
+                       : RuntimeAbiVersion(1, 0, 0);
   }
 
   const LiteRtRuntimeCApiStruct* runtime_c_api_;
   RuntimeAbiVersion abi_version_;
+  bool abi_version_resolved_ = false;
 };
 
 #undef LITERT_PROXY_METHOD_STATUS

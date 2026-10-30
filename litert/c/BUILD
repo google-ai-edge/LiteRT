@@ -156,6 +156,7 @@ litert_c_api_library(
     header_deps = [":litert_environment_options_header"],
     header_kwargs = {"compatible_with": get_compatible_with_portable()},
     impl_deps = [
+        ":litert_any",
         ":litert_environment_options",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/synchronization",

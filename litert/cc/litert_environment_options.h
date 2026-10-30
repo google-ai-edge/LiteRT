@@ -107,6 +107,8 @@ class EnvironmentOptions {
     kContext = kLiteRtEnvOptionTagContext,
     /// \internal This is for internal use only.
     kSystemGpuAcceleratorHandle = kLiteRtEnvOptionTagSystemGpuAcceleratorHandle,
+    /// \internal This is for internal use only.
+    kRuntimeAbiVersion = kLiteRtEnvOptionTagRuntimeAbiVersion,
   };
 
   struct Option {
