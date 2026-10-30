@@ -42,9 +42,23 @@
 #include "tflite/c/c_api.h"
 #include "tflite/mutable_op_resolver.h"
 
-#if !defined(LITERT_WINDOWS_OS)
+#if defined(LITERT_WINDOWS_OS)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif  // NOMINMAX
+#include <windows.h>
+#else
 #include <unistd.h>
-#endif  // !defined(LITERT_WINDOWS_OS)
+#endif  // defined(LITERT_WINDOWS_OS)
+#if defined(__linux__) || defined(__APPLE__)
+#include <sys/mman.h>
+#endif  // defined(__linux__) || defined(__APPLE__)
+#if defined(__APPLE__)
+#include <dispatch/dispatch.h>
+#include <mach/mach.h>
+#include <mach/vm_map.h>
+#include <mach/vm_region.h>
+#endif  // defined(__APPLE__)
 
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
@@ -2598,6 +2612,15 @@ Expected<void> LiteRtCompiledModelT::RunCApi(
     return Unexpected(kLiteRtStatusErrorIndexOOB,
                       "Signature index is out of range of signature keys");
   }
+  if (run_options != nullptr &&
+      !run_options->prefetch_embedding_token_ids.empty()) {
+    if (auto prefetch_res = PrefetchEmbeddingRows(
+            signature_index, run_options->prefetch_embedding_token_ids);
+        !prefetch_res.HasValue()) {
+      LITERT_LOG(LITERT_DEBUG, "Embedding row prefetch skipped: %s",
+                 prefetch_res.Error().Message().c_str());
+    }
+  }
   std::vector<LiteRtTensorBuffer> input_buffers_vec;
   input_buffers_vec.reserve(num_input_buffers);
   for (int i = 0; i < num_input_buffers; ++i) {
@@ -2950,6 +2973,371 @@ void LiteRtCompiledModelT::SetCancellationFunction(
     return;
   }
   interp_->SetCancellationFunction(data, check_cancelled_func);
+}
+
+namespace {
+
+// Largest single prefetch hint, so one call never blocks on a huge readahead.
+constexpr size_t kMaxPrefetchRangeBytes = 128 * 1024;
+
+// SplitPrefetchRanges() keeps a single slice unless every slice would hold at
+// least this many ranges; fanning out fewer would cost more than it saves.
+constexpr size_t kMinRangesPerSlice = 16;
+
+// Upper bound on the slices SplitPrefetchRanges() produces. A guard only: the
+// one caller, AdviseWillNeed() on Apple, asks for kAppleAdviseSlices.
+constexpr size_t kMaxSlices = 8;
+
+#if defined(__APPLE__)
+// Slices AdviseWillNeed() issues concurrently on Apple. XNU serves
+// madvise(MADV_WILLNEED) as a synchronous per-page pre-fault on the calling
+// thread (vm_map_willneed), so a single caller faults the rows in one page at
+// a time; the count of two comes from the prototype measurements
+// (b/576340655).
+constexpr int kAppleAdviseSlices = 2;
+
+// Whether every page of [data, data + bytes) is mapped in this task with read
+// access and without write access. vm_map_willneed pre-faults with
+// VM_PROT_WRITE whenever the VM map entry's current protection allows
+// writing, which on a MAP_PRIVATE file mapping copies every hinted page into
+// anonymous memory (charged to phys_footprint) instead of reading it into
+// the page cache; read-only entries are pre-faulted with VM_PROT_READ. Fails
+// closed: any lookup error or hole counts as writable. Uses vm_region_64
+// rather than mach_vm_region because <mach/mach_vm.h> is not in the iOS SDK.
+bool IsReadOnlyMapping(const uint8_t* data, size_t bytes) {
+  if (data == nullptr || bytes == 0) return false;
+  vm_address_t address = reinterpret_cast<vm_address_t>(data);
+  const vm_address_t end = address + bytes;
+  if (end < address) return false;  // Wrapped around.
+  while (address < end) {
+    vm_address_t region_address = address;
+    vm_size_t region_size = 0;
+    vm_region_basic_info_data_64_t info;
+    mach_msg_type_number_t info_count = VM_REGION_BASIC_INFO_COUNT_64;
+    mach_port_t object_name = MACH_PORT_NULL;
+    const kern_return_t kr = vm_region_64(
+        mach_task_self(), &region_address, &region_size,
+        VM_REGION_BASIC_INFO_64, reinterpret_cast<vm_region_info_t>(&info),
+        &info_count, &object_name);
+    if (object_name != MACH_PORT_NULL) {
+      mach_port_deallocate(mach_task_self(), object_name);
+    }
+    if (kr != KERN_SUCCESS) return false;
+    // vm_region_64 returns the first region at or above `address`; one that
+    // starts past it means `address` itself is unmapped. The size guard keeps
+    // the walk strictly moving forward.
+    if (region_address > address || region_size == 0 ||
+        region_address + region_size <= address) {
+      return false;
+    }
+    if ((info.protection & VM_PROT_READ) == 0 ||
+        (info.protection & VM_PROT_WRITE) != 0) {
+      return false;
+    }
+    address = region_address + region_size;
+  }
+  return true;
+}
+#endif  // defined(__APPLE__)
+
+size_t GetPageSize() {
+  static const size_t kPageSize = [] {
+#if defined(LITERT_WINDOWS_OS)
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    return info.dwPageSize > 0 ? static_cast<size_t>(info.dwPageSize)
+                               : size_t{4096};
+#else
+    const int64_t size = sysconf(_SC_PAGESIZE);
+    return size > 0 ? static_cast<size_t>(size) : size_t{4096};
+#endif
+  }();
+  return kPageSize;
+}
+
+#if defined(LITERT_WINDOWS_OS)
+// Toolchains targeting Windows 7 hide WIN32_MEMORY_RANGE_ENTRY and
+// PrefetchVirtualMemory in <memoryapi.h>; resolve it (Windows 8+) at runtime.
+struct Win32MemoryRangeEntry {
+  PVOID VirtualAddress;
+  SIZE_T NumberOfBytes;
+};
+using PrefetchVirtualMemoryFn = BOOL(WINAPI*)(HANDLE, ULONG_PTR,
+                                              Win32MemoryRangeEntry*, ULONG);
+
+// Returns the PrefetchVirtualMemory entry point, or null when the running
+// Windows does not provide it.
+PrefetchVirtualMemoryFn GetPrefetchVirtualMemory() {
+  static const PrefetchVirtualMemoryFn kPrefetchVirtualMemory =
+      reinterpret_cast<PrefetchVirtualMemoryFn>(GetProcAddress(
+          GetModuleHandleW(L"kernel32.dll"), "PrefetchVirtualMemory"));
+  return kPrefetchVirtualMemory;
+}
+#endif  // defined(LITERT_WINDOWS_OS)
+
+// Whether this platform offers a prefetch hint at all, so the probe can report
+// Unsupported before any range is computed.
+bool PrefetchHintAvailable() {
+#if defined(__linux__) || defined(__APPLE__)
+  return true;
+#elif defined(LITERT_WINDOWS_OS)
+  return GetPrefetchVirtualMemory() != nullptr;
+#else
+  return false;
+#endif
+}
+
+#if defined(__linux__) || defined(__APPLE__)
+// Issues madvise(MADV_WILLNEED) for each range, in order.
+void MadviseWillNeed(
+    absl::Span<const LiteRtCompiledModelT::PrefetchRange> ranges) {
+  for (const LiteRtCompiledModelT::PrefetchRange& range : ranges) {
+    // madvise takes a non-const pointer; the memory is only read.
+    madvise(reinterpret_cast<void*>(range.begin), range.end - range.begin,
+            MADV_WILLNEED);
+  }
+}
+#endif  // defined(__linux__) || defined(__APPLE__)
+
+// Issues the OS readahead hint for `ranges`. Linux queues the readahead
+// asynchronously inside the call, so one thread suffices. XNU serves
+// madvise(MADV_WILLNEED) as a synchronous per-page pre-fault on the calling
+// thread, so on Apple the ranges are split into up to kAppleAdviseSlices
+// contiguous slices that dispatch_apply_f() issues concurrently, each in
+// address order. Returns Unsupported where no hint exists so callers can stop
+// calling.
+Expected<void> AdviseWillNeed(
+    absl::Span<const LiteRtCompiledModelT::PrefetchRange> ranges) {
+#if defined(__linux__) || defined(__APPLE__)
+#if defined(__APPLE__)
+  using Slice = absl::Span<const LiteRtCompiledModelT::PrefetchRange>;
+  std::vector<Slice> slices =
+      LiteRtCompiledModelT::SplitPrefetchRanges(ranges, kAppleAdviseSlices);
+  if (slices.empty()) return {};
+  // Synchronous: returns once every slice is done. The calling thread runs
+  // slices too and GCD worker threads, at the caller's QoS, run the rest; if
+  // no worker is free the caller runs them all. Unlike starting a thread this
+  // cannot fail, so the advisory hint can never abort the process.
+  dispatch_apply_f(slices.size(), DISPATCH_APPLY_AUTO, slices.data(),
+                   [](void* context, size_t i) {
+                     MadviseWillNeed(static_cast<const Slice*>(context)[i]);
+                   });
+#else
+  MadviseWillNeed(ranges);
+#endif  // defined(__APPLE__)
+  return {};
+#elif defined(LITERT_WINDOWS_OS)
+  const PrefetchVirtualMemoryFn prefetch_virtual_memory =
+      GetPrefetchVirtualMemory();
+  if (prefetch_virtual_memory == nullptr) {
+    return Unexpected(kLiteRtStatusErrorUnsupported,
+                      "PrefetchVirtualMemory is not available.");
+  }
+  if (ranges.empty()) {
+    return {};
+  }
+  std::vector<Win32MemoryRangeEntry> entries;
+  entries.reserve(ranges.size());
+  for (const LiteRtCompiledModelT::PrefetchRange& range : ranges) {
+    entries.push_back(
+        {reinterpret_cast<PVOID>(range.begin), range.end - range.begin});
+  }
+  prefetch_virtual_memory(GetCurrentProcess(), entries.size(), entries.data(),
+                          /*Flags=*/0);
+  return {};
+#else
+  (void)ranges;
+  return Unexpected(
+      kLiteRtStatusErrorUnsupported,
+      "Embedding row prefetch is not supported on this platform.");
+#endif
+}
+
+}  // namespace
+
+std::vector<LiteRtCompiledModelT::PrefetchRange>
+LiteRtCompiledModelT::ComputeEmbeddingPrefetchRanges(
+    absl::Span<const EmbeddingTable> tables,
+    absl::Span<const int32_t> token_ids, size_t page_size) {
+  std::vector<PrefetchRange> result;
+  if (tables.empty() || token_ids.empty() || page_size == 0 ||
+      (page_size & (page_size - 1)) != 0) {
+    return result;
+  }
+  std::vector<int32_t> rows;
+  rows.reserve(token_ids.size());
+  for (int32_t token : token_ids) {
+    if (token >= 0) rows.push_back(token);
+  }
+  std::sort(rows.begin(), rows.end());
+  rows.erase(std::unique(rows.begin(), rows.end()), rows.end());
+  if (rows.empty()) return result;
+
+  // The page size is a power of two, so masking with ~(page - 1) rounds down.
+  const uintptr_t page = page_size;
+  const uintptr_t page_mask = ~(page - 1);
+  std::vector<PrefetchRange> ranges;
+  ranges.reserve(rows.size() * tables.size());
+  for (const EmbeddingTable& table : tables) {
+    if (table.data == nullptr || table.num_rows == 0 || table.row_bytes == 0) {
+      continue;
+    }
+    for (int32_t row : rows) {
+      if (static_cast<size_t>(row) >= table.num_rows) break;  // rows sorted.
+      const uintptr_t begin = reinterpret_cast<uintptr_t>(
+          table.data + static_cast<size_t>(row) * table.row_bytes);
+      const uintptr_t end = begin + table.row_bytes;
+      ranges.push_back({begin & page_mask, (end + page - 1) & page_mask});
+    }
+  }
+  if (ranges.empty()) return result;
+  std::sort(ranges.begin(), ranges.end(),
+            [](const PrefetchRange& a, const PrefetchRange& b) {
+              return a.begin < b.begin;
+            });
+
+  // Coalesce adjacent/overlapping page ranges, then split each run into pieces
+  // of at most kMaxPrefetchRangeBytes (page-aligned as long as that constant
+  // is a multiple of the page size; otherwise a piece is one page).
+  const uintptr_t piece = std::max<uintptr_t>(kMaxPrefetchRangeBytes, page);
+  auto flush = [&result, piece](const PrefetchRange& range) {
+    for (uintptr_t begin = range.begin; begin < range.end; begin += piece) {
+      result.push_back({begin, std::min(range.end, begin + piece)});
+    }
+  };
+  PrefetchRange current = ranges.front();
+  for (size_t i = 1; i < ranges.size(); ++i) {
+    if (ranges[i].begin <= current.end) {
+      current.end = std::max(current.end, ranges[i].end);
+    } else {
+      flush(current);
+      current = ranges[i];
+    }
+  }
+  flush(current);
+  return result;
+}
+
+std::vector<absl::Span<const LiteRtCompiledModelT::PrefetchRange>>
+LiteRtCompiledModelT::SplitPrefetchRanges(
+    absl::Span<const PrefetchRange> ranges, int max_slices) {
+  std::vector<absl::Span<const PrefetchRange>> slices;
+  if (ranges.empty()) return slices;
+  const size_t requested = max_slices > 1 ? static_cast<size_t>(max_slices) : 1;
+  const size_t num_slices = std::max<size_t>(
+      1, std::min({requested, kMaxSlices, ranges.size() / kMinRangesPerSlice}));
+  slices.reserve(num_slices);
+  for (size_t i = 0; i < num_slices; ++i) {
+    const size_t begin = ranges.size() * i / num_slices;
+    const size_t end = ranges.size() * (i + 1) / num_slices;
+    slices.push_back(ranges.subspan(begin, end - begin));
+  }
+  return slices;
+}
+
+Expected<void> LiteRtCompiledModelT::PrefetchEmbeddingRows(
+    size_t signature_index, absl::Span<const int32_t> token_ids) {
+  if (!interp_) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Interpreter is not initialized.");
+  }
+  if (signature_index >= signature_keys_.size()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Signature index is out of range of signature keys");
+  }
+  const std::string& signature_key = *signature_keys_[signature_index];
+  LITERT_RETURN_IF_ERROR(ValidateSignatureIsActive(signature_key));
+
+  auto [it, inserted] =
+      embedding_tables_by_signature_.try_emplace(signature_index);
+  if (inserted) {
+    // Same signature -> subgraph mapping as MarkSignatureIoTensorsNonCpu().
+    const bool has_signature_defs = !interp_->signature_keys().empty();
+    const int subgraph_index =
+        has_signature_defs
+            ? interp_->GetSubgraphIndexFromSignature(signature_key.c_str())
+            : 0;
+    if (subgraph_index < 0 || subgraph_index >= interp_->subgraphs_size()) {
+      embedding_tables_by_signature_.erase(it);
+      return Unexpected(kLiteRtStatusErrorNotFound,
+                        "No subgraph for the signature.");
+    }
+    tflite::Subgraph* subgraph = interp_->subgraph(subgraph_index);
+    std::vector<EmbeddingTable>& tables = it->second.tables;
+    // Walk the post-delegation execution plan (as CheckCpuTensors() does): an
+    // EMBEDDING_LOOKUP that a delegate took shows up as a delegate node, so
+    // only tables the CPU kernel will actually read are collected, and only
+    // those whose rows are a whole number of bytes (true for the shipped Gemma
+    // int4/int2 tables); blockwise-quantized scale tensors are not hinted.
+    const auto& execution_plan = subgraph->execution_plan();
+    const auto& nodes_and_registration = subgraph->nodes_and_registration();
+    for (int node_index : execution_plan) {
+      const TfLiteNode& node = nodes_and_registration[node_index].first;
+      const TfLiteRegistration& registration =
+          nodes_and_registration[node_index].second;
+      if (registration.builtin_code != kTfLiteBuiltinEmbeddingLookup ||
+          node.inputs == nullptr || node.inputs->size < 2) {
+        continue;
+      }
+      // Input 0 is the lookup ids, input 1 the value table
+      // (tensorflow/lite/kernels/embedding_lookup.cc).
+      const int value_tensor_index = node.inputs->data[1];
+      if (value_tensor_index == kTfLiteOptionalTensor) continue;
+      const TfLiteTensor* value = subgraph->tensor(value_tensor_index);
+      if (value == nullptr || value->allocation_type != kTfLiteMmapRo ||
+          value->data.raw == nullptr || value->dims == nullptr ||
+          value->dims->size < 2 || value->dims->data[0] <= 0) {
+        continue;
+      }
+      const size_t num_rows = static_cast<size_t>(value->dims->data[0]);
+      // Rows must be whole bytes for data + i * row_bytes to be the kernel's
+      // address.
+      if (value->bytes % num_rows != 0) continue;
+      const size_t row_bytes = value->bytes / num_rows;
+      if (row_bytes == 0) continue;
+      tables.push_back({reinterpret_cast<const uint8_t*>(value->data.raw),
+                        num_rows, row_bytes});
+    }
+#if defined(__APPLE__)
+    // One-time check per signature: the table addresses and the mapping
+    // protection are fixed after Create() (the only in-place writer,
+    // magic-number replacement, runs inside InitializeModel()), so re-checking
+    // per range would add Mach traps for a verdict that cannot change. The
+    // verdict covers the whole signature: its tables are constants of one
+    // model, normally in one buffer and one mapping, so a writable table means
+    // a writable model buffer, and a signature that mixes both is not hinted.
+    for (const EmbeddingTable& table : tables) {
+      // num_rows * row_bytes is the tensor's byte size (row_bytes is
+      // bytes / num_rows with no remainder), so it cannot overflow.
+      if (!IsReadOnlyMapping(table.data, table.num_rows * table.row_bytes)) {
+        it->second.writable_mapping = true;
+        break;
+      }
+    }
+#endif  // defined(__APPLE__)
+  }
+  if (it->second.tables.empty()) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "The signature runs no CPU EMBEDDING_LOOKUP op.");
+  }
+  if (!PrefetchHintAvailable()) {
+    return Unexpected(
+        kLiteRtStatusErrorUnsupported,
+        "Embedding row prefetch is not supported on this platform.");
+  }
+#if defined(__APPLE__)
+  if (it->second.writable_mapping) {
+    return Unexpected(
+        kLiteRtStatusErrorUnsupported,
+        "Embedding row prefetch on Apple platforms needs the tables in a "
+        "read-only mapping (madvise(MADV_WILLNEED) copy-on-writes writable "
+        "private pages); this model buffer is mapped writable.");
+  }
+#endif  // defined(__APPLE__)
+
+  if (token_ids.empty()) return {};  // Probe only.
+  return AdviseWillNeed(ComputeEmbeddingPrefetchRanges(
+      it->second.tables, token_ids, GetPageSize()));
 }
 
 // -----------------------------------------------------------------------------
