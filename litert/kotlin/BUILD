@@ -83,6 +83,8 @@ cc_library(
     deps = [
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_options",
+        "//litert/core:litert_options_encoder",
     ],
 )
 
@@ -95,6 +97,7 @@ cc_library(
         ":litert_model_wrapper",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_api_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
@@ -108,12 +111,9 @@ cc_library(
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc/internal:litert_tensor_buffer_without_registry",
-        "//litert/cc/options:litert_compiler_options",
-        "//litert/cc/options:litert_cpu_options",
-        "//litert/cc/options:litert_gpu_options",
-        "//litert/cc/options:litert_qualcomm_options",
+        "//litert/cc/options:litert_concrete_options_base",
+        "//litert/core:litert_options_encoder",
         "//tflite/java/jni",
-        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",

@@ -20,9 +20,23 @@
 
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_options.h"
+#include "litert/core/litert_options_encoder.h"
 
 namespace litert {
 namespace jni {
+
+// Wrapper to build compilation options incrementally from Kotlin via JNI.
+struct JniOptionsBuilder {
+  litert::Options options;
+  litert::internal::OptionsEncoder encoder;
+
+  explicit JniOptionsBuilder(litert::Options&& o) : options(std::move(o)) {}
+  ~JniOptionsBuilder() = default;
+
+  JniOptionsBuilder(const JniOptionsBuilder&) = delete;
+  JniOptionsBuilder& operator=(const JniOptionsBuilder&) = delete;
+};
 
 // Wrapper to keep compiled model and its buffer alive together
 struct CompiledModelWrapper {
