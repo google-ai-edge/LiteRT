@@ -5,7 +5,7 @@ description: Build and measure Gemma 4 through LiteRT TensorRT-RTX, run its boun
 
 # NVIDIA (TensorRT-RTX) benchmarks of the Gemma 4 models
 
-One measurement is one run of the unchanged LiteRT-LM advanced CLI in benchmark mode on the
+One measurement is one run of the LiteRT-LM advanced CLI in benchmark mode on the
 NVIDIA backend; the CLI's own benchmark report is the data. These scripts build the pieces,
 choose the flags of a workload, keep a run's files together and turn run directories into tables.
 
@@ -13,7 +13,7 @@ choose the flags of a workload, keep a run's files together and turn run directo
 |---|---|
 | `env.sh` | paths (the LiteRT tree, LiteRT-LM, the SDK, CUDA, the state directory, the model files) and the TensorRT-RTX environment of a model cache pool; an optional `env.local.sh` next to it sets a machine's paths |
 | `build.sh` | builds the compiler plugin, the dispatch library and the LiteRT-LM CLI with Bazel into the state directory |
-| `bench.sh` | one measurement: `--model e2b\|e4b\|12b\|26b\|FILE --out DIR [--workload short\|8k\|16k\|30k\|32k\|128k] [--metric latency\|memory\|verify\|cold] [--mtp] [--prompt-file FILE] [--iterations N] [--label NAME] [--cli-arg ARG] [--env NAME=VALUE]` |
+| `bench.sh` | one measurement: `--model e2b\|e4b\|12b\|26b\|FILE --out DIR [--workload short\|8k\|16k\|30k\|32k\|128k\|256k] [--metric latency\|memory\|verify\|cold] [--mtp] [--prompt-file FILE] [--iterations N] [--context N] [--label NAME] [--cli-arg ARG] [--env NAME=VALUE]` |
 | `ci.sh` | `ci.sh OUT_DIR`: 12B cold 128k, 12B hot 32k, 26B cold MTP 32k; builds once, validates and prints results |
 | `matrix.sh` | the data points of the record: `matrix.sh OUT_DIR [MODEL...]`, `BENCH_GROUPS="context mtp init verify"` selects the groups |
 | `report.py` | tables from run directories: `python3 report.py [--json] RUN_DIR...` |
@@ -106,3 +106,62 @@ Within the root, `cache/build/` holds Bazel outputs and the runnable binaries;
 caches. `runs/` holds measurement evidence. Retired model pools and completed scratch
 pools can be removed without deleting the corresponding runs; keep pools and build
 outputs needed for current work. Model downloads stay in their configured model directories.
+
+## Experimental 26B long context
+
+This requires a LiteRT-LM build with `--allow_context_length_expansion` and
+TensorRT-RTX 1.7 weight-store support. Point `LITERT_LM_DIR` at that checkout
+before `./build.sh`. Keep the baseline arithmetic settings in `env.sh`.
+
+The 26B export uses context marker 32,771. LiteRT-LM normally limits it to
+32,768. The opt-in lets the context dimension grow to `--max_num_tokens`;
+prefill and decode batch limits are unchanged. It is only suitable for exports
+whose position encoding and constants support the requested length. It does
+not establish long-context answer quality.
+
+The existing MoE plugin places whole layers of expert weights in GPU memory
+while space remains above `LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB`. Other layers
+use pinned, mapped host memory, which GPU kernels read across PCIe. This is a
+VRAM reserve at weight-loading time, not a total GPU-memory limit. KV buffers,
+activation workspaces and masks still need GPU memory. The default 512 MiB
+reserve was chosen for shorter contexts; use an explicit reserve for these
+experiments and check the actual allocation and completion logs.
+
+For a 128k capacity and the existing roughly 127.5k-token real-text prompt:
+
+```sh
+OUT="${LITERT_BENCH_ROOT:-$HOME/.local/state/litert-nvidia-benchmark-wl}/runs/long_context_$(date -u +%Y%m%dT%H%M%SZ)"
+./bench.sh --model 26b --workload 128k --context 131072 --metric cold --mtp \
+  --prompt-file prompts/prompt_128k.txt --out "$OUT" \
+  --cli-arg --allow_context_length_expansion=true \
+  --env LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB=5120
+```
+
+Generate the 256k prompt from the checked-in documents without storing another
+large prompt in Git. With the current 26B tokenizer this is about 256.3k tokens;
+the benchmark report gives the actual prefill count after prompt formatting.
+
+```sh
+mkdir -p "$OUT"
+python3 - prompts/prompt_128k.txt "$OUT/prompt_256k.txt" <<'PY'
+import sys
+from pathlib import Path
+body, separator, question = Path(sys.argv[1]).read_text().rpartition("\n\nQuestion:")
+assert separator
+Path(sys.argv[2]).write_text(
+    body + "\n\n" + body + "\n\n" + body[:5000] + separator + question)
+PY
+./bench.sh --model 26b --workload 256k --metric cold --mtp \
+  --prompt-file "$OUT/prompt_256k.txt" --out "$OUT" \
+  --cli-arg --allow_context_length_expansion=true \
+  --env LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB=10240
+python3 report.py "$OUT"
+rg 'Expanding exported context|arenas now|Prefill|Decode|Total init' "$OUT"/*/cli.log
+```
+
+The 256k preset has 262,144 total context capacity and requests 128 output
+tokens. `--context` overrides capacity and records it in `meta.json`; it does
+not override the output budget. Real-text runs honor stop tokens. A successful
+check requires a populated long prefix followed by decode and a positive host
+arena count. Initialization alone does not validate long-context execution.
+Treat timings as diagnostic unless the host passed formal preparation.

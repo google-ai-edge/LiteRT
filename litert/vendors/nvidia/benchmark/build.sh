@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Copyright 2026 The ODML Authors. Licensed under the Apache License, Version 2.0.
 # Builds what the NVIDIA benchmarks run: the compiler plugin and dispatch libraries of this
-# LiteRT tree and the unchanged LiteRT-LM advanced CLI against it, with Bazel output bases
+# LiteRT tree and the LiteRT-LM advanced CLI against it, with Bazel output bases
 # under the benchmark root so the benchmark caches and the binaries stay together.
 # usage: build.sh [--rt-only | --lm-only]    (environment: see env.sh)
 set -euo pipefail
 source "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/env.sh"
 nb_resolve_paths
 what=${1:-all}
+echo "TensorRT-RTX SDK: $NB_SDK; CUDA: $NB_CUDA"
 for command in bazel git realpath flock; do command -v "$command" >/dev/null || nb_die "Missing prerequisite: $command"; done
 # The system clang, not the caller's CC/CXX: toolchain managers (swiftly) export proxies named
 # clang that print their own help when Bazel calls them. LITERT_BENCH_CC/CXX override.
