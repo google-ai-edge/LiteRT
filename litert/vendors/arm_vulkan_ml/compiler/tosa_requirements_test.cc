@@ -54,7 +54,7 @@ TEST(TosaRequirementsTest, FloatingZeroPointsHaveTheSpecificationElementType) {
     auto p = FloatConvolution(variant == 1);
     std::vector<tfsc::tosa::ResId> inputs;
     tfsc::tosa::ResId result;
-    std::vector<GraphConstant> constants;
+    GraphConstantPool constants;
     O expected;
     size_t first_zero;
     if (variant < 2) {
@@ -135,7 +135,7 @@ TEST(TosaRequirementsTest, CollectsStrideAndEffectiveDilatedKernel) {
     auto module = tfsc::CreateModule();
     tfsc::tosa::Graph graph(module, "main");
     auto input = graph.AddInput(Tensor(DataType::float32_t, p.inputs[0].shape), 0);
-    std::vector<GraphConstant> constants;
+    GraphConstantPool constants;
     auto output = EmitOperation(graph, {input}, p, constants);
     ASSERT_FALSE(tfsc::IsError(output));
     graph.AddOutput(output, 1);

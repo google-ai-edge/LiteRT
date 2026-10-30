@@ -39,11 +39,41 @@ cc_library(
 )
 
 cc_library(
+    name = "softmax",
+    srcs = ["softmax.cc"],
+    hdrs = ["softmax.h"],
+    copts = ["-fno-exceptions"],
+    deps = ["//litert/c/options:litert_arm_vulkan_ml_options", "@tosa_for_spirv_codegen"],
+)
+
+cc_library(
+    name = "op_registry",
+    srcs = ["op_registry.cc"],
+    hdrs = ["op_registry.h"],
+    copts = ["-fno-exceptions"],
+    deps = ["//litert/c:litert_model_types", "//litert/c:litert_op_code"],
+)
+
+cc_library(
+    name = "decomposition",
+    srcs = ["decomposition.cc"],
+    hdrs = ["decomposition.h"],
+    copts = ["-fno-exceptions"],
+    deps = [
+        ":conv2d", ":quantization", ":op_registry",
+        "//litert/c:litert_op_options",
+        "//litert/cc/internal:litert_extended_model",
+        "//litert/core/model:model",
+        "@tosa_for_spirv_codegen",
+    ],
+)
+
+cc_library(
     name = "operation",
     srcs = ["operation.cc", "extended_ops.cc", "portable_ops.cc"],
     hdrs = ["operation.h", "extended_ops.h", "portable_ops.h"],
     deps = [
-        ":conv2d", ":conv2d_adapter", ":quantization",
+        ":conv2d", ":conv2d_adapter", ":quantization", ":softmax", ":op_registry", ":decomposition",
         "//litert/core/model:model",
         "//litert/c:litert_op_options",
         "//litert/cc/internal:litert_extended_model",
@@ -62,11 +92,24 @@ cc_library(
 )
 
 cc_library(
+    name = "graph_ir",
+    srcs = ["graph_ir.cc"],
+    hdrs = ["graph_ir.h"],
+    copts = ["-fno-exceptions"],
+    deps = [
+        ":operation", ":conv2d", ":quantization",
+        "//litert/c/options:litert_arm_vulkan_ml_options",
+        "//litert/cc/internal:litert_extended_model",
+        "@tosa_for_spirv_codegen",
+    ],
+)
+
+cc_library(
     name = "partition",
     srcs = ["partition.cc"],
     hdrs = ["partition.h"],
     deps = [
-        ":conv2d", ":operation", ":tosa_requirements",
+        ":conv2d", ":operation", ":graph_ir", ":tosa_requirements",
         "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
         "//litert/cc/internal:litert_extended_model",
         "@tosa_for_spirv_codegen",
@@ -94,6 +137,17 @@ cc_test(
     name = "quantization_test",
     srcs = ["quantization_test.cc"],
     deps = [":quantization", "@com_google_googletest//:gtest_main"],
+)
+
+cc_test(
+    name = "decomposition_test",
+    srcs = ["decomposition_test.cc"],
+    deps = [
+        ":decomposition", ":operation", ":partition",
+        "//litert/cc/internal:litert_extended_model",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_test(
@@ -229,4 +283,31 @@ cc_test(
         "@tosa_for_spirv_codegen",
         "@com_google_googletest//:gtest_main",
     ],
+)
+
+cc_test(
+    name = "graph_ir_test",
+    srcs = ["graph_ir_test.cc"],
+    copts = ["-fno-exceptions"],
+    deps = [":graph_ir", ":conv2d", ":quantization", "@com_google_googletest//:gtest_main"],
+)
+
+cc_test(
+    name = "softmax_test",
+    srcs = ["softmax_test.cc"],
+    copts = ["-fno-exceptions"],
+    linkstatic = True,
+    deps = [
+        ":softmax",
+        "@arm_vulkan_ml_tool_spirv_tools//:spirv_tools",
+        "@tosa_for_spirv_codegen",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "op_registry_test",
+    srcs = ["op_registry_test.cc"],
+    copts = ["-fno-exceptions"],
+    deps = [":op_registry", "@com_google_googletest//:gtest_main"],
 )

@@ -19,6 +19,8 @@
 #include <vector>
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/conv2d.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/op_registry.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/softmax.h"
 namespace litert::arm_vulkan_ml {
 struct QuantizedTensor {
   std::vector<uint32_t> shape;
@@ -27,9 +29,13 @@ struct QuantizedTensor {
   bool floating = false;
 };
 struct PortablePlan;
+struct DecompositionPlan;
 struct OperationPlan {
   std::shared_ptr<PortablePlan> portable;
+  std::shared_ptr<DecompositionPlan> decomposition;
   LiteRtOpCode code;
+  LoweringRoute route = LoweringRoute::kGeneral;
+  std::vector<std::string> required_extensions;
   bool typed = false;
   std::vector<tfsc::tosa::DataType> input_types;
   tfsc::tosa::DataType output_type = tfsc::tosa::DataType::int8_t;
@@ -37,6 +43,7 @@ struct OperationPlan {
   std::vector<QuantizedTensor> inputs;
   QuantizedTensor output;
   std::optional<Conv2dPlan> convolution;
+  std::optional<QuantizedSoftmaxPlan> softmax;
   std::vector<int32_t> parameters;
   std::vector<int32_t> kernel, stride;
   std::vector<uint32_t> cropped_shape;
@@ -51,9 +58,10 @@ struct OperationPlan {
   int32_t axis = 0;
   int8_t pad_value = 0;
 };
-std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason);
+std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason,
+    SoftmaxLutType softmax_lut = kLrtArmVulkanMLSoftmaxLutAuto);
 tfsc::tosa::ResId EmitOperation(tfsc::tosa::Graph& graph,
     const std::vector<tfsc::tosa::ResId>& inputs, const OperationPlan& plan,
-    std::vector<GraphConstant>& constants);
+    GraphConstantPool& constants);
 }  // namespace litert::arm_vulkan_ml
 #endif

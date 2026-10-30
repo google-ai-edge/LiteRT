@@ -306,3 +306,13 @@ filegroup(
     visibility = ["//litert/cc_sdk:__pkg__"],
 )
 # lint ThenChange(litert/cc_sdk/litert_cc_sdk_hdrs.txt, litert/cc_sdk/litert_cc_sdk_srcs.txt)
+
+cc_test(
+    name = "litert_arm_vulkan_ml_options_test",
+    srcs = ["litert_arm_vulkan_ml_options_test.cc"],
+    deps = [
+        ":litert_arm_vulkan_ml_options",
+        "//litert/c/options:litert_arm_vulkan_ml_options",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

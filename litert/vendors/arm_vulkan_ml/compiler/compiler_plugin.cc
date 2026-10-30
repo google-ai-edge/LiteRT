@@ -94,6 +94,18 @@ class LiteRtCompilerPluginT {
     return enable_just_in_time && *enable_just_in_time;
   }
 
+  LrtArmVulkanMLOptimizationMode Optimization() const {
+    if (!arm_vulkan_ml_options_) return kLrtArmVulkanMLOptimizationQualified;
+    auto mode = arm_vulkan_ml_options_->GetOptimizationMode();
+    return mode ? *mode : kLrtArmVulkanMLOptimizationQualified;
+  }
+
+  LrtArmVulkanMLSoftmaxLutType SoftmaxLut() const {
+    if (!arm_vulkan_ml_options_) return kLrtArmVulkanMLSoftmaxLutAuto;
+    auto type = arm_vulkan_ml_options_->GetSoftmaxLutType();
+    return type ? *type : kLrtArmVulkanMLSoftmaxLutAuto;
+  }
+
  private:
   litert::Expected<litert::arm_vulkan_ml::ArmVulkanMLOptions>
       arm_vulkan_ml_options_ = litert::Error(kLiteRtStatusErrorNotFound,
@@ -214,7 +226,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   litert::Subgraph graph(subgraph);
   for (const auto& op : graph.Ops()) {
     std::string reason;
-    if (litert::arm_vulkan_ml::AnalyzeOperation(op, reason)) {
+    if (litert::arm_vulkan_ml::AnalyzeOperation(op, reason, compiler_plugin->SoftmaxLut())) {
       LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
     }
   }
@@ -238,7 +250,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     auto graph = model.Subgraph(i);
     if (!graph) return graph.Error().Status();
     std::string reason;
-    auto partition = litert::arm_vulkan_ml::CompilePartition(*graph, reason);
+    auto partition = litert::arm_vulkan_ml::CompilePartition(*graph, reason, nullptr, compiler_plugin->Optimization(), nullptr, compiler_plugin->SoftmaxLut());
     if (!partition) {
       LITERT_LOG(LITERT_ERROR, "ArmVulkanML partition %zu: %s", i, reason.c_str());
       return kLiteRtStatusErrorUnsupported;

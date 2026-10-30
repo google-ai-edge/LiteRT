@@ -48,21 +48,13 @@ bool Ints(const Tensor& tensor, std::vector<int32_t>& values, int rank = -1) {
 }
 template <typename T>
 ResId Constant(tfsc::tosa::Graph& graph, const std::vector<T>& data,
-               const std::vector<uint32_t>& shape, std::vector<GraphConstant>& constants) {
+               const std::vector<uint32_t>& shape, GraphConstantPool& constants) {
   TosaTensor type(tfsc::tosa::GetDataType<T>(), shape);
   GraphConstant constant{type, std::vector<uint8_t>(data.size() * sizeof(T))};
   std::memcpy(constant.bytes.data(), data.data(), constant.bytes.size());
-  constants.push_back(std::move(constant));
-  return graph.AddGraphConstant(type);
+  return AddGraphConstant(graph, type, std::move(constant.bytes), constants);
 }
 }  // namespace
-
-bool IsExtendedOperation(LiteRtOpCode code, bool floating) {
-  return code == kLiteRtOpCodeTflScatterNd || code == kLiteRtOpCodeTflGather || code == kLiteRtOpCodeTflReduceMax ||
-      code == kLiteRtOpCodeTflReduceMin || code == kLiteRtOpCodeTflResizeBilinear ||
-      code == kLiteRtOpCodeTflResizeNearestNeighbor || code == kLiteRtOpCodeTflTransposeConv ||
-      (floating && (code == kLiteRtOpCodeTflSum || code == kLiteRtOpCodeTflFullyConnected));
-}
 
 bool AnalyzeExtendedOperation(const Op& op, OperationPlan& p, std::string& reason) {
   auto reject = [&](const char* message) { reason = message; return false; };
@@ -264,7 +256,7 @@ bool AnalyzeExtendedOperation(const Op& op, OperationPlan& p, std::string& reaso
 }
 
 ResId EmitExtendedOperation(tfsc::tosa::Graph& g, ResId input, const OperationPlan& p,
-                            std::vector<GraphConstant>& constants) {
+                            GraphConstantPool& constants) {
   const auto type = p.inputs[0].floating ? DataType::float32_t : DataType::int8_t;
   TosaTensor output(type, p.output.shape);
   auto reshape = [&](ResId value, const std::vector<uint32_t>& shape) {

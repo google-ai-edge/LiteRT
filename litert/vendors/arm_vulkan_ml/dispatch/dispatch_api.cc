@@ -48,9 +48,13 @@ struct DeviceState {
 using litert::arm_vulkan_ml::TensorDescriptor;
 using litert::arm_vulkan_ml::TensorElement;
 bool Matches(const TensorDescriptor& desc, const LiteRtRankedTensorType& type) {
+  const bool complex = desc.logical_element == kLiteRtElementTypeComplex64;
+  if (complex && (desc.element != TensorElement::kFloat32 || desc.shape.empty() || desc.shape.back() != 2)) return false;
+  const size_t rank = desc.shape.size() - (complex ? 1 : 0);
   if (type.element_type != desc.logical_element || type.layout.has_strides ||
-      type.layout.rank != desc.shape.size()) return false;
-  for (size_t i = 0; i < desc.shape.size(); ++i)
+      type.layout.rank != (desc.logical_scalar ? 0 : rank)) return false;
+  if (desc.logical_scalar) return desc.shape == (complex ? std::vector<uint32_t>{2} : std::vector<uint32_t>{1});
+  for (size_t i = 0; i < rank; ++i)
     if (type.layout.dimensions[i] <= 0 || static_cast<uint32_t>(type.layout.dimensions[i]) != desc.shape[i]) return false;
   return true;
 }

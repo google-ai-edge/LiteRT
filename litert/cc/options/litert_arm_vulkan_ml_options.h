@@ -64,6 +64,27 @@ class ArmVulkanMLOptions : public ConcreteOptionsBase {
     return enable_just_in_time;
   }
 
+  Expected<void> SetOptimizationMode(LrtArmVulkanMLOptimizationMode mode) {
+    LITERT_RETURN_IF_ERROR(LrtArmVulkanMLOptionsSetOptimizationMode(Get(), mode));
+    return {};
+  }
+
+  Expected<LrtArmVulkanMLOptimizationMode> GetOptimizationMode() const {
+    LrtArmVulkanMLOptimizationMode mode;
+    LITERT_RETURN_IF_ERROR(LrtArmVulkanMLOptionsGetOptimizationMode(Get(), &mode));
+    return mode;
+  }
+
+  Expected<void> SetSoftmaxLutType(LrtArmVulkanMLSoftmaxLutType type) {
+    LITERT_RETURN_IF_ERROR(LrtArmVulkanMLOptionsSetSoftmaxLutType(Get(), type));
+    return {};
+  }
+  Expected<LrtArmVulkanMLSoftmaxLutType> GetSoftmaxLutType() const {
+    LrtArmVulkanMLSoftmaxLutType type;
+    LITERT_RETURN_IF_ERROR(LrtArmVulkanMLOptionsGetSoftmaxLutType(Get(), &type));
+    return type;
+  }
+
   LrtArmVulkanMLOptions Get() const { return options_.get(); }
   LrtArmVulkanMLOptions Release() { return options_.release(); }
 

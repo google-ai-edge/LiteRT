@@ -154,17 +154,83 @@ mean every type combination is implemented or qualified. The source audit uses
 text matching and may miss indirect helper calls. Neither helper presence nor a
 source reference establishes complete lowering or device support.
 
-The current production inventory is **60/66 emitted TOSA operators**. Run
+The current production inventory is **63/66 emitted TOSA operators**. Run
 `litert_arm_vulkan_ml_tool coverage [--json]` for the reviewed implementation
 manifest, compiled into the C++ executable. The source audit now recognizes
 portable unary macros and enum aliases. Verify inventory consistency with
 `audit_lowering.py --tfsc /path/to/tosa-for-spirv-codegen --check`.
+The same check verifies that the shared TFLite registration set matches the
+analyzer/emitter code references. `coverage --op_set=tflite` prints that registry,
+including registered data/result type pairs and subset constraints; `--op_set=all`
+includes both views. Per-model legality and device qualification remain separate.
 Emission, SPIR-V validation, emulator qualification and native-device qualification
-are separate fields. The six remaining operators are FFT2D, CLZ, BITWISE_AND,
-BITWISE_OR, LOGICAL_LEFT_SHIFT and RFFT2D; see the backend README for the frontend
+are separate fields. The three remaining instructions are FFT2D, CLZ and
+BITWISE_OR. RFFT2D compiles with EXT-FFT but has no local execution qualification;
+BITWISE_AND is used for raw CAST narrowing. See the backend README for the frontend
 and extension constraints. New TFLite-reachable subsets and their fixtures are
 recorded in `implementation_coverage.json`; the specification database itself
 continues to describe specification legality only.
+
+## TFLite converter comparison
+
+Compared with `tosa-converter-for-tflite` commit
+`c604ad22c832c1e336355b3d79f1a635578c92a6`, the backend previously lacked 40 of
+its 109 builtin legalization routes. Its converter sources were used to study
+decompositions and limits; the backend implements its own lowering from TFLite
+semantics and standard TOSA operations. No converter source code or runtime
+dependency is added.
+
+The compiler's shared registry now contains 109 of 161 ordinary TFLite builtins
+and 227 principal-data/result type pairs. It overlaps 108 of the converter's
+109 builtin routes and also implements UINT32 RIGHT_SHIFT. Registration counts
+describe subsets, not every type or shape accepted by the other compiler.
+The converter's CONST/QCONST/YIELD patterns are MLIR infrastructure; its CUSTOM
+wrapper is not general custom-op support and is excluded from this comparison.
+
+| Added frontend group | Implemented subset |
+| --- | --- |
+| SELECT/SELECT_V2, GREATER/GREATER_EQUAL/LESS/LESS_EQUAL | BOOL conditions; FP32/INT32 or matching-quantization INT8 data; legacy SELECT first-dimension selection and SELECT_V2 broadcasting |
+| PRELU, LEAKY_RELU, RELU_N1_TO_1, RELU_0_TO_1 | FP32 and affine INT8; INT8 PRELU proves product/rescale bounds; other INT8 activations use mathematical TABLEs |
+| ADD_N, ARG_MIN, ATAN2, ELU, ROUND, SIGN, SQUARED_DIFFERENCE, FLOOR_DIV/FLOOR_MOD, FAKE_QUANT | FP32 subsets; INT32 ADD_N/SIGN/ARG_MIN/FLOOR_MOD; INT8 ARG_MIN; constant positive integer divisors; FP32 floor division/modulo requires constant normal power-of-two divisors with normal reciprocals; bounded fake-quant options |
+| L2_NORMALIZATION, LOG_SOFTMAX | FP32 last-axis compositions; L2 has no fused activation |
+| SPACE_TO_DEPTH/DEPTH_TO_SPACE, SPACE_TO_BATCH_ND/BATCH_TO_SPACE_ND, MIRROR_PAD, BROADCAST_TO | FP32/INT32 and preserved-quantization INT8; constant controls; bounded NHWC rearrangements, reflection and broadcasting |
+| CAST | Raw numeric conversions between FP32, INT8, INT32 and BOOL; integer narrowing preserves low bits; float-to-int domain must fit INT32 |
+| FILL, RANK, SHAPE, ZEROS_LIKE | Constant output dimensions/static metadata; INT32 metadata; FP32/INT32 FILL and ZEROS_LIKE; scalar I/O retained in the LiteRT buffer ABI |
+| GATHER_ND, ONE_HOT, SPARSE_TO_DENSE, BUCKETIZE | Constant in-range GATHER_ND indices; ONE_HOT comparisons safely handle invalid runtime indices; sparse indices must be constant, unique and in range; at most 256 sorted finite bucket boundaries |
+| RFFT2D, REAL, IMAG | COMPLEX64 represented as interleaved FP32 pairs; scalar/component extraction; native RFFT2D with constant power-of-two lengths and crop/zero-pad; EXT-FFT required for execution |
+
+Existing registrations also gained INT8 EXP/LOG/RSQRT/GELU/SQUARE, MEAN,
+BATCH_MATMUL and CONV_3D, approximate FP32 GELU, positive depth multipliers and
+INT8 SAME pooling. INT8 CONV_3D retains native CONV3D → RESCALE → CLAMP;
+BATCH_MATMUL and MEAN also use native rescaling with proven integer ranges.
+
+`tools/testing/qualify_converter_gap.py` checks 165 executable fixtures with three
+synthetic cases each, SPIR-V validation and synchronization validation. TFLite
+CPU kernels provide the default oracle; independent FP64 square/dot-product
+oracles cover INT8 SQUARE/CONV_3D, whose types the local CPU kernels do not
+implement. Three RFFT2D geometries are compile/SPIR-V qualified only because the
+local emulator does not advertise EXT-FFT. REAL/IMAG run independently on complex
+inputs. Public LiteRT lifecycle tests additionally exercise scalar and complex
+buffer attachment through the dispatch API. No dataset images are used.
+
+Remaining differences are explicit:
+
+- WHILE is the remaining converter builtin without a registration. Its MLIR
+  lowering uses TOSA region control flow; the Vulkan mapping and this backend
+  currently use a single flat graph. CALL_ONCE, VAR_HANDLE, READ_VARIABLE and
+  ASSIGN_VARIABLE are handled by separate converter stateful passes, also
+  outside the mapped instruction set. They need host/state orchestration or a
+  proven static transformation, not a nominal operator registration.
+- INT16 model interfaces/accumulation, UINT8 normalization and hybrid
+  quantization are still broader in the converter. Internal INT16 Softmax LUTs
+  do not establish INT16 model support. EXT-INT16/EXT-FFT stay capability-gated.
+- Runtime gather indices, nonzero GATHER batch_dims, differing quantization in
+  CONCATENATION/MAXIMUM/MINIMUM, dynamic shapes, empty tensors and some scalar
+  variants remain restricted. LOG/RSQRT INT8 require a nonnegative domain.
+- Native single rounding can differ from TFLite's double rounding. Operator
+  fixtures allow at most one INT8 code and mean error 0.5; existing full-model
+  numerical gates remain unchanged. Hardware accuracy/performance qualification
+  remains separate from emulator results.
 
 The table below separates implemented subsets, proposed optimizations and
 remaining coverage gaps. It is an engineering inventory, not a prioritized or
@@ -184,8 +250,8 @@ The registry pin was last checked against upstream on October 27, 2026. Tensor A
 
 | Area | Status | Implemented subset or remaining work |
 | --- | --- | --- |
-| INT8 RELU/RELU6 | Implemented subset | Direct CLAMP when quantization is unchanged; TABLE when scale or zero point changes. All 256 input codes were checked on the emulator. |
-| INT8 QUANTIZE | Implemented subset; proposed optimization | Identity conversion is eliminated; other conversions use TABLE. Replacing TABLE with RESCALE remains a proposal requiring range, rounding and saturation checks for all 256 codes. |
+| INT8 RELU/RELU6 | Implemented subset and exact composition | Direct CLAMP when quantization is unchanged; requantizing TABLE otherwise, with exact native RESCALE replacement when all 256 codes match. Consecutive eligible clamps and INT8 lookups compose without discarding intermediate rounding/saturation. |
+| INT8 QUANTIZE | Implemented exact optimization | Identity conversion is eliminated. Semantically affine TABLEs use native RESCALE only when its legal range and all 256 input codes match exactly. The approximate candidate (max 1 code, mean 0.25) failed the model corpus gate and remains disabled, including qualified mode. |
 | RESCALE SINGLE_ROUND / DOUBLE_ROUND | Native SINGLE_ROUND implemented; DOUBLE_ROUND capability-dependent | Production emits one SINGLE_ROUND RESCALE per accumulator requantization, including per-channel scales. It accepts local rounding differences from LiteRT instead of emulating double rounding. EXT-DOUBLEROUND remains required for any future direct DOUBLE_ROUND route; unadvertised extensions remain rejected. |
 | AVG_POOL2D / MAX_POOL2D | Implemented subsets; numerical qualification gap | FP32 VALID/SAME pooling is implemented with fused activation handling. INT8 AVG_POOL2D supports bounded VALID windows, including overlap and cropped trailing input, with matching quantization. The developer tool and example suite retain model-specific numerical failures. |
 | SIGMOID / TANH | Implemented FP32; partial INT8 | FP32 LOGISTIC emits SIGMOID, and FP32 TANH is implemented. INT8 LOGISTIC uses TABLE; INT8 TANH now uses TABLE with standard output quantization. Floating-point type rows do not authorize direct INT8 activation. |
@@ -193,11 +259,13 @@ The registry pin was last checked against upstream on October 27, 2026. Tensor A
 | Reductions | Implemented subsets; remaining coverage | SUM and MIN/MAX support existing INT8/FP32 subsets. General-axis MEAN and REDUCE_PROD are implemented for FP32, including keep-dims modes and non-scalar outputs. BOOL REDUCE_ALL/ANY are implemented with constant axes. Runtime axes and scalar outputs remain unsupported. |
 | RESIZE | Implemented subsets; remaining coverage | INT8/FP32 nearest and bilinear use constant NHWC sizes. Quantized bilinear now uses Q10 integer coordinates and signed rounding; aligned singleton sizes remain unsupported; coordinate, border and scale/offset restrictions still apply. |
 | GATHER / TILE / SCATTER / REVERSE | Implemented subsets; remaining coverage | GATHER supports INT8/FP32 values with constant in-range INT32 indices and batch_dims=0. FP32/INT8 TILE and REVERSE use constant controls. FP32 SCATTER_ND supports constant unique indices. Runtime GATHER indices remain unsupported. |
-| Shape manipulation and partition outputs | Implemented FP32/INT8 subsets | SQUEEZE, EXPAND_DIMS, PACK/UNPACK, SPLIT/SPLIT_V and positive-stride STRIDED_SLICE support FP32 and matching-quantization INT8, including multiple results. Controls are constant; scalar interfaces and unsupported slice masks/negative strides are rejected. See the FP32 matrix for exact restrictions. |
-| TRANSPOSE_CONV2D / CONV3D | Implemented subset; remaining coverage | FP32 transpose convolution supports canonical SAME/VALID geometry, constant weights and optional bias. Quantized transpose convolution now supports symmetric constant weights, optional matching INT32 bias and proven rescaling. CONV3D has an FP32 subset; quantized CONV3D remains unsupported. |
-| MATMUL-based lowering | Implemented subsets | FP32 BATCH_MATMUL supports static batch broadcasting and transpose flags with bounded materialization. FULLY_CONNECTED uses existing INT8 or FP32 paths; FP32 lowers to MATMUL plus bias and optional CLAMP. |
+| Graph optimization | Implemented portable passes | Owned graph IR and quantized composites expand into standard TOSA. Exact scale normalization, constant layout folding/interning, reshape/transpose canonicalization, single-consumer spatial real-zero PAD folding, clamp/TABLE composition and dead-node cleanup preserve exposed outputs and fanout. No physical buffer aliasing, packed target layouts or Regor dependency is introduced. |
+| Shape manipulation and partition outputs | Implemented FP32/INT8 subsets | SQUEEZE, EXPAND_DIMS, PACK/UNPACK, SPLIT/SPLIT_V and positive-stride STRIDED_SLICE support FP32 and matching-quantization INT8, including multiple results. Controls are constant; these older shape routes still reject scalar interfaces and unsupported slice masks/negative strides. New registered decompositions preserve scalar I/O. See the FP32 matrix for exact restrictions. |
+| TRANSPOSE_CONV2D / CONV3D | Implemented subset; remaining coverage | FP32 transpose convolution supports canonical SAME/VALID geometry, constant weights and optional bias. Quantized transpose convolution now supports symmetric constant weights, optional matching INT32 bias and proven rescaling. CONV3D supports FP32 and range-proven INT8 with symmetric per-output-channel weights, matching INT32 bias and native rescaling. |
+| MATMUL-based lowering | Implemented subsets | FP32/INT8 BATCH_MATMUL supports static batch broadcasting and transpose flags with bounded materialization; INT8 accumulation/rescale bounds are proven. FULLY_CONNECTED uses existing INT8 or FP32 paths; FP32 lowers to MATMUL plus bias and optional CLAMP. |
 | EXP / RECIPROCAL / RSQRT / LOG / SOFTMAX | Implemented FP32 subsets/compositions | FP32 EXP, RSQRT and LOG are lowered; RECIPROCAL is used internally for DIV, SQRT and SOFTMAX. FP32 SOFTMAX uses stable last-axis max subtraction and finite positive beta. This does not imply a standalone LiteRT RECIPROCAL op or general normalization support. |
-| POW / ARGMAX / FFT and logical ops | Implemented subsets; remaining coverage | FP32 POW/SIN/COS, exact GELU via ERF, FP32-to-INT32 ARGMAX and BOOL logical operations have qualified subsets. FFT2D, CLZ, BITWISE_AND/OR and LOGICAL_LEFT_SHIFT have no selected TFLite route; RFFT2D remains pending complex-intermediate partition handling and EXT-FFT qualification. |
+| INT8 SOFTMAX | Implemented bounded integer composition | Standard INT8 output quantization, finite positive input scale/beta and last-axis length 1..4095. Four INT8 or three INT16 TABLEs reconstruct identical Q31 exponentials; signed INT32 normalization uses proven bounds and INTDIV. INT8 is emulator-qualified against FP64 and guarded XNNPACK QU8. Forced INT16 compiles with EXT-INT16 but requires device execution qualification. |
+| POW / ARGMAX / FFT and logical ops | Implemented subsets; remaining coverage | FP32 POW/SIN/COS, exact GELU via ERF, FP32-to-INT32 ARGMAX and BOOL logical operations have qualified subsets. FFT2D, CLZ and BITWISE_OR have no selected TFLite route; BITWISE_AND implements raw CAST narrowing; LOGICAL_LEFT_SHIFT is used internally by INT8 SOFTMAX. RFFT2D compiles with interleaved complex storage and explicit EXT-FFT gating; local execution remains unqualified because the emulator lacks that extension. |
 
 There is no dedicated HARD_SWISH, SILU, SOFTMAX, FULLY_CONNECTED, QUANTIZE,
 DEQUANTIZE or normalization instruction in this mapping. Existing TABLE,
