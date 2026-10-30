@@ -441,6 +441,20 @@ TEST_F(MlDriftConversionNumericalTest, DequantizeOp) {
           {0.25f, 0.5f, -0.25f, -0.5f});
 }
 
+TEST_F(MlDriftConversionNumericalTest, DequantizeConstantOp) {
+  // [[1, 3, 5], [-7, 9, 11]] quantized along their first dimension.
+  TensorMLD weights(
+      {.type = Type::kI8,
+       .shape = {2, 3},
+       .buffer = OwningCpuBuffer::Copy<Type::kI8>({1, 3, 5, -7, 9, 11}),
+       .quantization = std::make_shared<PerChannelAffineQuantization>(
+           std::vector<float>{0.5f, 2.0f}, std::vector<int64_t>{1, -1})});
+  TensorMLD input({.type = Type::kFP32, .shape = {2, 3}});
+  TensorMLD output = Add(Dequantize(weights), input);
+  RunTest(output, {{input, std::vector<float>{1, 1, 1, 1, 1, 1}}},
+          {1, 2, 3, -11, 21, 25});
+}
+
 TEST_F(MlDriftConversionNumericalTest, GetTensorHandleWithMlDriftBuffer) {
   // 1. Create a graph and inference context to get a valid tensor ID.
   TensorMLD input({.type = Type::kFP32, .shape = {1, 1, 1, 1}});

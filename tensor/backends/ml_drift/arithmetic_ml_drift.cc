@@ -886,14 +886,15 @@ absl::Status OpMixin<DequantizeOperation, MlDriftMixinTag>::ToMlDrift(
         "Dequantize only supports per-tensor and per-channel quantization in "
         "ML Drift.");
   }
-  // Constants, e.g. quantized weights, may have been uploaded in the layout of
-  // another consumer, like the packed weights of a fully connected op.
+  ml_drift::GpuModelBuilder::TensorHandle input;
   if (in_info.buffer != nullptr) {
-    return absl::UnimplementedError(
-        "Dequantize of constants is not supported in ML Drift.");
+    // Constants, e.g. quantized weights, may have been uploaded in the layout
+    // of another consumer, like the packed weights of a fully connected op.
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        input, GetConstantTensorHandleInTensorLayout(ctx, op.inputs[0]));
+  } else {
+    LRT_TENSOR_ASSIGN_OR_RETURN(input, GetTensorHandle(ctx, op.inputs[0]));
   }
-
-  LRT_TENSOR_ASSIGN_OR_RETURN(auto input, GetTensorHandle(ctx, op.inputs[0]));
   if (ml_drift::IsFloatType(input.tensor_desc.GetDataType())) {
     // The input holds the dequantized values, e.g. a `Quantize` output lowered
     // as a float `QuantizeAndDequantize`.
