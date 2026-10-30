@@ -308,7 +308,11 @@ DEFAULT_JSON_POLICY = """
       "CONV_2D",
       "CUSTOM_OP"
     ],
-    "dynamic_wi4_afp32_blockwise": ["EMBEDDING_LOOKUP", "FULLY_CONNECTED"],
+    "dynamic_wi4_afp32_blockwise": [
+      "EMBEDDING_LOOKUP",
+      "FULLY_CONNECTED",
+      "CUSTOM_OP"
+    ],
     "dynamic_wi2_afp32": ["FULLY_CONNECTED", "EMBEDDING_LOOKUP", "CONV_2D"],
     "dynamic_wi2_afp32_blockwise": ["FULLY_CONNECTED"],
     "weightonly_wi8_afp32": [

@@ -203,24 +203,57 @@ class TensorUtilsTest(parameterized.TestCase):
           ),
       )
 
-  def test_uniform_quantize_quant_dim_not_divisible_by_block_size_raise(self):
-    tensor = np.random.rand(34, 2)
+  def test_uniform_quantize_multiaxis_blockwise_succeeds(self):
+    tensor = np.array([[[1.0, 2.0, 4.0, 8.0]]], dtype=np.float32)
+    quant_params = qtyping.UniformQuantParams(
+        quantized_dimension=None,
+        quantized_dimensions=(0, 1),
+        block_size=2,
+        num_bits=4,
+        scale=np.array([[[0.5, 2.0]]], dtype=np.float32),
+        zero_point=np.zeros((1, 1, 2), dtype=np.int32),
+    )
+    quantized_tensor = uniform_quantize_tensor.uniform_quantize(
+        tensor, quant_params, is_blockwise_quant=True
+    )
+    np.testing.assert_array_equal(
+        quantized_tensor, np.array([[[2, 4, 2, 4]]], dtype=np.int8)
+    )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="single_axis",
+          tensor_shape=(34, 2),
+          quantized_dimension=0,
+          quantized_dimensions=None,
+      ),
+      dict(
+          testcase_name="multiaxis",
+          tensor_shape=(2, 3, 34),
+          quantized_dimension=None,
+          quantized_dimensions=(0, 1),
+      ),
+  )
+  def test_uniform_quantize_quant_dim_not_divisible_by_block_size_raise(
+      self, tensor_shape, quantized_dimension, quantized_dimensions
+  ):
+    tensor = np.random.rand(*tensor_shape)
     error_message = (
-        "Quantized dimension 34 in tensor shape (34, 2) is not divisible by"
-        " block size 32."
+        f"Quantized dimension 34 in tensor shape {tensor_shape} is not"
+        " divisible by block size 32."
     )
     with self.assertRaisesWithPredicateMatch(
         ValueError, lambda err: error_message in str(err)
     ):
       uniform_quantize_tensor.uniform_quantize(
-          np.array(tensor),
+          tensor,
           qtyping.UniformQuantParams(
-              quantized_dimension=0,
+              quantized_dimension=quantized_dimension,
+              quantized_dimensions=quantized_dimensions,
               block_size=32,
               num_bits=4,
               scale=np.array([1.2666667]),
               zero_point=np.array([-6]),
-              symmetric=True,
           ),
           is_blockwise_quant=True,
       )
