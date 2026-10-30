@@ -140,7 +140,6 @@ litert_dispatch_api(
         ":google_tensor_hook",
         "//litert/c:litert_profiler_types",
         # copybara:uncomment "//litert/c/options/google:litert_google_tensor_privileged_options_type",
-        "//litert/vendors/google_tensor/hooks",
         # copybara:uncomment "//litert/vendors/google_tensor/dispatch/google:google_tensor_privileged_options_utils",
         "@com_google_absl//absl/algorithm:container",
         "//litert/c/internal:litert_scheduling_info",
