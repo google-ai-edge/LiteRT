@@ -94,13 +94,25 @@ absl::Status MlDriftMetalEnvironment::Init() {
       return absl::InternalError("Failed to create an MTLCommandQueue.");
     }
     metal_env_ = std::make_unique<ml_drift::metal::Environment>(device);
+    gpu_info_ = metal_env_->GetInfo();
+    // Paravirtualized or future Apple Metal GPUs whose device string is not yet
+    // listed in `AppleInfo` (e.g., "Apple Paravirtual device" on macOS VMs)
+    // default to `AppleGpu::kUnknown` / `Family::kApple1` (A7), which selects
+    // legacy `kTexture2D` storage and an 8192x8192 texture cap. Promote unknown
+    // Apple Metal devices to `Family::kApple6` (Bionic, `kBuffer` default
+    // storage, 16384x16384 2D textures) without assuming `simdgroup_matrix`
+    // (`kApple7`+, which macOS paravirtual GPUs in `MTLGPUFamilyMac2` omit).
+    if (gpu_info_.IsApple() && gpu_info_.apple_info.gpu_type == ml_drift::AppleGpu::kUnknown) {
+      gpu_info_.apple_info.gpu_family = ml_drift::AppleInfo::Family::kApple6;
+      gpu_info_.metal_info.image2d_max_width = 16384;
+      gpu_info_.metal_info.image2d_max_height = 16384;
+    }
     queue_ = queue;
     ABSL_LOG(INFO) << "Initialized ML Drift Metal device: '"
                    << SafeUtf8String([device name], "unknown")
-                   << "' (gpu_type="
-                   << static_cast<int>(metal_env_->GetInfo().apple_info.gpu_type)
-                   << ", compute_units="
-                   << metal_env_->GetInfo().GetComputeUnitsCount()
+                   << "' (gpu_type=" << static_cast<int>(gpu_info_.apple_info.gpu_type)
+                   << ", gpu_family=" << static_cast<int>(gpu_info_.apple_info.gpu_family)
+                   << ", compute_units=" << gpu_info_.GetComputeUnitsCount()
                    << ", tasks_per_encoder=" << tasks_per_encoder_ << ")";
   }
   return absl::OkStatus();
@@ -110,9 +122,7 @@ id<MTLDevice> MlDriftMetalEnvironment::device() const {
   return metal_env_ != nullptr ? metal_env_->device() : nil;
 }
 
-const ml_drift::GpuInfo& MlDriftMetalEnvironment::GetInfo() const {
-  return metal_env_->GetInfo();
-}
+const ml_drift::GpuInfo& MlDriftMetalEnvironment::GetInfo() const { return gpu_info_; }
 
 id<MTLCommandBuffer> MlDriftMetalEnvironment::command_buffer() {
   if (open_command_buffer_ == nil) {
