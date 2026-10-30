@@ -237,6 +237,7 @@ struct WeightSource {
   const litert::ScopedWeightSection* section = nullptr;
   litert::ScopedWeightSource* scoped_source = nullptr;
   absl::Span<const std::byte> host_memory;
+  bool read_only_cpu_mapping = false;  // See CreateLiteRtWeightLoader.
 };
 
 #if defined(_WIN32)
@@ -334,8 +335,22 @@ MmapParams GetMmapParams(uint64_t absolute_offset, uint64_t length) {
   return params;
 }
 
+#if !defined(_WIN32)
+// Protection of the loader's private file mappings of CPU weight slices. The
+// default keeps PROT_WRITE because the Nvidia Vulkan driver imports the host
+// pointer for zero-copy weight loading and needs a writable private mapping.
+// A loader created with read_only_cpu_mappings (a compiled model that applies
+// no GPU delegate) maps PROT_READ instead; on Apple that lets
+// madvise(MADV_WILLNEED) page the file in instead of copy-on-writing every
+// hinted page into app memory.
+int CpuMappingProtection(bool read_only) {
+  return read_only ? PROT_READ : (PROT_READ | PROT_WRITE);
+}
+#endif  // !defined(_WIN32)
+
 litert::Expected<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
-                                                 const std::string& path) {
+                                                  const std::string& path,
+                                                  bool read_only) {
 #if !defined(_WIN32)
   int fd = open(path.c_str(), O_RDONLY);
   if (fd < 0) {
@@ -362,9 +377,7 @@ litert::Expected<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
   }
 
   MmapParams params = GetMmapParams(info.offset, info.length);
-  // MAP_PRIVATE with PROT_WRITE is required for Nvidia vulkan driver to use
-  // host mapped pointer for zero copy weight loading.
-  void* base = mmap(nullptr, params.map_length, PROT_READ | PROT_WRITE,
+  void* base = mmap(nullptr, params.map_length, CpuMappingProtection(read_only),
                     MAP_PRIVATE, fd, params.map_offset);
   int saved_errno = errno;
   close(fd);
@@ -374,6 +387,7 @@ litert::Expected<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
         absl::StrCat("mmap failed for ", path, ": ", strerror(saved_errno)));
   }
 #else
+  (void)read_only;
   HANDLE file_handle =
       CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
                   OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -508,7 +522,7 @@ litert::Expected<void> ValidateScopedSlice(
 
 litert::Expected<CpuMapping> MapScopedFileSlice(
     const LiteRtWeightInfo& info, const litert::ScopedWeightSection& section,
-    litert::ScopedWeightSource* source) {
+    litert::ScopedWeightSource* source, bool read_only) {
   if (!source || !source->file.IsValid()) {
     return litert::Unexpected(kLiteRtStatusErrorFailedPrecondition,
                               "Scoped weight source is not available");
@@ -518,9 +532,7 @@ litert::Expected<CpuMapping> MapScopedFileSlice(
 #if !defined(_WIN32)
   int fd = source->file.file();
   MmapParams params = GetMmapParams(absolute_offset, info.length);
-  // MAP_PRIVATE with PROT_WRITE is required for Nvidia vulkan driver to use
-  // host mapped pointer for zero copy weight loading.
-  void* base = mmap(nullptr, params.map_length, PROT_READ | PROT_WRITE,
+  void* base = mmap(nullptr, params.map_length, CpuMappingProtection(read_only),
                     MAP_PRIVATE, fd, params.map_offset);
   int saved_errno = errno;
   if (base == MAP_FAILED) {
@@ -529,6 +541,7 @@ litert::Expected<CpuMapping> MapScopedFileSlice(
         absl::StrCat("mmap failed: ", strerror(saved_errno)));
   }
 #else
+  (void)read_only;
   HANDLE handle = source->file.file();
   MmapParams params = GetMmapParams(absolute_offset, info.length);
 
@@ -618,9 +631,10 @@ litert::Expected<CpuMapping> MapWeightSlice(const LiteRtWeightInfo& info,
                       .mmapped = false};
   }
   if (source.kind == WeightSource::Kind::kScopedFile) {
-    return MapScopedFileSlice(info, *source.section, source.scoped_source);
+    return MapScopedFileSlice(info, *source.section, source.scoped_source,
+                              source.read_only_cpu_mapping);
   }
-  return MapFileSliceFromPath(info, source.path);
+  return MapFileSliceFromPath(info, source.path, source.read_only_cpu_mapping);
 }
 
 litert::Expected<void> ReadWeightSlice(const LiteRtWeightInfo& info,
@@ -840,11 +854,13 @@ class LiteRtWeightLoader : public WeightLoader {
       LiteRtRuntimeContext* runtime_context, const tflite::Model* model,
       std::optional<std::string> model_directory,
       std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source,
-      const WeightInMemoryMap* weight_in_memory_map = nullptr)
+      const WeightInMemoryMap* weight_in_memory_map = nullptr,
+      bool read_only_cpu_mappings = false)
       : runtime_context_(runtime_context),
         model_directory_(std::move(model_directory)),
         scoped_weight_source_(std::move(scoped_weight_source)),
-        weight_in_memory_map_(weight_in_memory_map) {
+        weight_in_memory_map_(weight_in_memory_map),
+        read_only_cpu_mappings_(read_only_cpu_mappings) {
     ParseFlatBuffer(*model, infos_, entries_, canonical_external_buffer_ids_,
                     group_paths_);
     if (scoped_weight_source_) {
@@ -1167,7 +1183,8 @@ class LiteRtWeightLoader : public WeightLoader {
 #else
       return WeightSource{.kind = WeightSource::Kind::kScopedFile,
                           .section = &section_it->second,
-                          .scoped_source = scoped_weight_source_.get()};
+                          .scoped_source = scoped_weight_source_.get(),
+                          .read_only_cpu_mapping = read_only_cpu_mappings_};
 #endif
     }
 
@@ -1175,7 +1192,8 @@ class LiteRtWeightLoader : public WeightLoader {
         std::string path,
         ResolveGroupPath(info.group_id, group_paths_, model_directory_));
     return WeightSource{.kind = WeightSource::Kind::kFilePath,
-                        .path = std::move(path)};
+                        .path = std::move(path),
+                        .read_only_cpu_mapping = read_only_cpu_mappings_};
   }
 
   LiteRtRuntimeContext* runtime_context_;
@@ -1192,6 +1210,7 @@ class LiteRtWeightLoader : public WeightLoader {
 #endif
   absl::flat_hash_map<uint32_t, litert::ScopedWeightSection> group_sections_;
   const WeightInMemoryMap* weight_in_memory_map_;  // Client provided, not owned
+  const bool read_only_cpu_mappings_;
 
   mutable std::vector<WeightInfo> weight_info_cache_;
 };
@@ -1208,10 +1227,12 @@ std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
     LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
     std::optional<std::string> model_directory,
     std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source,
-    const WeightInMemoryMap* weight_in_memory_map) {
+    const WeightInMemoryMap* weight_in_memory_map,
+    bool read_only_cpu_mappings) {
   return std::make_unique<LiteRtWeightLoader>(
       runtime_context, flatbuffer, std::move(model_directory),
-      std::move(scoped_weight_source), std::move(weight_in_memory_map));
+      std::move(scoped_weight_source), std::move(weight_in_memory_map),
+      read_only_cpu_mappings);
 }
 
 }  // namespace weight_loader

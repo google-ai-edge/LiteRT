@@ -33,6 +33,14 @@
 #include <utility>
 #include <vector>
 
+#if defined(__linux__)
+#include <sstream>
+#elif defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/vm_map.h>
+#include <mach/vm_region.h>
+#endif  // defined(__linux__) || defined(__APPLE__)
+
 #include <gtest/gtest.h>
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -408,6 +416,124 @@ void ExpectHostBufferMetadata(const WeightAccess* access) {
             kLiteRtStatusOk);
   EXPECT_EQ(packed_size, kSliceLengthBytes);
 }
+
+#if defined(__linux__) || defined(__APPLE__)
+// Protection ("rwx" letters, '-' when absent) of the mapping that holds
+// `address`, or "" if it is unmapped: /proc/self/maps on Linux, vm_region_64
+// on Apple. Copied from litert_lm/support/util/test_utils.cc, which LiteRT
+// cannot depend on.
+std::string MappingProtection(const void* address) {
+#if defined(__linux__)
+  const uintptr_t target = reinterpret_cast<uintptr_t>(address);
+  std::ifstream maps("/proc/self/maps");
+  std::string line;
+  while (std::getline(maps, line)) {
+    // "begin-end perms offset dev inode path", addresses in hex.
+    std::istringstream fields(line);
+    uintptr_t begin = 0;
+    uintptr_t end = 0;
+    char dash = '\0';
+    std::string perms;
+    if (!(fields >> std::hex >> begin >> dash >> end >> perms)) continue;
+    if (target >= begin && target < end) return perms.substr(0, 3);
+  }
+  return "";
+#else  // defined(__APPLE__)
+  vm_address_t region_address = reinterpret_cast<vm_address_t>(address);
+  vm_size_t region_size = 0;
+  vm_region_basic_info_data_64_t info;
+  mach_msg_type_number_t info_count = VM_REGION_BASIC_INFO_COUNT_64;
+  mach_port_t object_name = MACH_PORT_NULL;
+  const kern_return_t kr = vm_region_64(
+      mach_task_self(), &region_address, &region_size, VM_REGION_BASIC_INFO_64,
+      reinterpret_cast<vm_region_info_t>(&info), &info_count, &object_name);
+  if (object_name != MACH_PORT_NULL) {
+    mach_port_deallocate(mach_task_self(), object_name);
+  }
+  // vm_region_64 returns the first region at or above `address`; one that
+  // starts past it means `address` itself is unmapped.
+  if (kr != KERN_SUCCESS ||
+      region_address > reinterpret_cast<vm_address_t>(address)) {
+    return "";
+  }
+  std::string perms = (info.protection & VM_PROT_READ) ? "r" : "-";
+  perms += (info.protection & VM_PROT_WRITE) ? "w" : "-";
+  perms += (info.protection & VM_PROT_EXECUTE) ? "x" : "-";
+  return perms;
+#endif
+}
+
+// Host address of `access`'s host buffer. It stays valid after the unlock:
+// the loader owns the mapping behind it.
+const void* HostBufferAddress(const WeightAccess* access) {
+  if (access == nullptr || access->GetHostBuffer() == nullptr) {
+    return nullptr;
+  }
+  void* host_mem_addr = nullptr;
+  EXPECT_EQ(LrtGetRuntimeContext()->lock_tensor_buffer(
+                access->GetHostBuffer(), &host_mem_addr,
+                kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LrtGetRuntimeContext()->unlock_tensor_buffer(access->GetHostBuffer()),
+      kLiteRtStatusOk);
+  return host_mem_addr;
+}
+
+// File-backed CPU slices are mapped PROT_READ | PROT_WRITE by default (the
+// Nvidia Vulkan zero-copy import needs a writable private mapping) and
+// PROT_READ when the loader is created with read_only_cpu_mappings, for both
+// the file-path and the scoped-file source; the bytes are the same either way.
+TEST(ExternalWeightLoaderTest, ReadOnlyCpuMappingsSelectProtection) {
+  constexpr absl::string_view kGroupName = "protection_weights.bin";
+  const std::string payload = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ4545454545";
+  auto model = BuildModel(kGroupName);
+  const std::string weights_path = WriteWeightsFile(kGroupName, payload);
+  const std::vector<uint8_t> expected = ExpectedSlice(payload);
+  WeightAccessRequest request;
+  request.cpu = true;
+
+  for (const bool read_only : {false, true}) {
+    SCOPED_TRACE(read_only ? "read_only_cpu_mappings" : "default");
+    const char* const expected_protection = read_only ? "r--" : "rw-";
+
+    auto path_loader = CreateLiteRtWeightLoader(
+        LrtGetRuntimeContext(), model.model(),
+        /*model_directory=*/std::string(::testing::TempDir()),
+        /*scoped_weight_source=*/nullptr, /*weight_in_memory_map=*/nullptr,
+        read_only);
+    ASSERT_NE(path_loader, nullptr);
+    ASSERT_EQ(path_loader->PrepareAccess(request, /*env=*/nullptr),
+              kLiteRtStatusOk);
+    const auto* path_access =
+        path_loader->GetExternalWeightByBuffer(kExternalBufferId);
+    ExpectHostBufferEquals(path_access, expected);
+    EXPECT_EQ(MappingProtection(HostBufferAddress(path_access)),
+              expected_protection);
+
+    auto scoped_file_or = ScopedFile::Open(weights_path);
+    ASSERT_TRUE(scoped_file_or.ok());
+    ScopedWeightSource::SectionMap sections;
+    sections.emplace(
+        std::string(kGroupName),
+        ScopedWeightSection{.offset = 0,
+                            .length = static_cast<uint64_t>(payload.size())});
+    auto scoped_loader = CreateLiteRtWeightLoader(
+        LrtGetRuntimeContext(), model.model(), /*model_directory=*/std::nullopt,
+        std::make_unique<ScopedWeightSource>(std::move(*scoped_file_or),
+                                             std::move(sections)),
+        /*weight_in_memory_map=*/nullptr, read_only);
+    ASSERT_NE(scoped_loader, nullptr);
+    ASSERT_EQ(scoped_loader->PrepareAccess(request, /*env=*/nullptr),
+              kLiteRtStatusOk);
+    const auto* scoped_access =
+        scoped_loader->GetExternalWeightByBuffer(kExternalBufferId);
+    ExpectHostBufferEquals(scoped_access, expected);
+    EXPECT_EQ(MappingProtection(HostBufferAddress(scoped_access)),
+              expected_protection);
+  }
+}
+#endif  // defined(__linux__) || defined(__APPLE__)
 
 TEST(ExternalWeightLoaderTest, LoadsWeightsFromFilesystemPath) {
   constexpr absl::string_view kGroupName = "weights.bin";

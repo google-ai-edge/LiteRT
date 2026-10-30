@@ -36,6 +36,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/detached_buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
+#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
 #include "ml_drift/cl/cl_context.h"  // from @ml_drift
 #include "ml_drift/cl/environment.h"  // from @ml_drift
@@ -80,6 +81,7 @@
 #include "litert/core/options.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
+#include "litert/runtime/embedding_row_prefetcher.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/open_cl_memory.h"
 #include "litert/runtime/tensor_buffer.h"
@@ -89,6 +91,8 @@
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "ml_drift_delegate/delegate/buffer_handler_opencl.h"
 #include "tflite/builtin_ops.h"
+#include "tflite/c/common.h"
+#include "tflite/core/subgraph.h"
 #include "tflite/interpreter.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -3095,6 +3099,497 @@ TEST(CompiledModelTest, SelectedSignaturesForwardsExpectedDispatchFunctions) {
     ASSERT_TRUE(capture.delegate_created);
     EXPECT_TRUE(capture.expected_function_names.empty());
   }
+}
+
+TEST(CompiledModelTest, PrefetchEmbeddingRowsOnEmbeddingModel) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel from the EMBEDDING_LOOKUP test model.
+  std::string path =
+      testing::GetTestFilePath("simple_embedding_lookup_op.tflite");
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  // Create CompiledModel on CPU.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // Cross-check the table the hook will discover: the CPU EMBEDDING_LOOKUP
+  // node reads a flatbuffer-backed 20x1x2 f32 value tensor (160 bytes). Its
+  // data pointer is what the kernel reads, so the cached table must point at
+  // exactly that address.
+  LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter * interpreter,
+                              GetInterpreter(compiled_model.get()));
+  tflite::Subgraph* subgraph = interpreter->subgraph(0);
+  int num_lookup_nodes = 0;
+  const void* kernel_table_data = nullptr;
+  for (int node_index : subgraph->execution_plan()) {
+    const auto& [node, registration] =
+        subgraph->nodes_and_registration()[node_index];
+    if (registration.builtin_code != kTfLiteBuiltinEmbeddingLookup) continue;
+    ++num_lookup_nodes;
+    ASSERT_GE(node.inputs->size, 2);
+    const TfLiteTensor* value = subgraph->tensor(node.inputs->data[1]);
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(value->allocation_type, kTfLiteMmapRo);
+    EXPECT_EQ(value->bytes, 160);
+    EXPECT_EQ(value->dims->data[0], 20);
+    kernel_table_data = value->data.raw;
+  }
+  EXPECT_EQ(num_lookup_nodes, 1);
+  ASSERT_NE(kernel_table_data, nullptr);
+
+  // Before any prefetch or RunCApi with prefetch options, the per-signature
+  // table cache is empty.
+  EXPECT_TRUE(GetCachedEmbeddingTables(compiled_model.get(), 0).empty());
+
+  // Run the model via RunCApi with prefetch_embedding_token_ids first, proving
+  // that RunCApi itself triggers table discovery and populates the cache.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> input_buffers,
+      CreateInputBuffersFromRequirements(
+          env_ptr, *model, litert::kDefaultSignatureKey, *compiled_model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> output_buffers,
+      CreateOutputBuffersFromRequirements(
+          env_ptr, *model, litert::kDefaultSignatureKey, *compiled_model));
+  ASSERT_EQ(input_buffers.size(), 1);
+  {
+    TensorBuffer ids_buffer =
+        TensorBuffer::WrapCObject(input_buffers[0], OwnHandle::kNo);
+    const int32_t lookup_ids[] = {0, 1, 2, 3, 4};
+    ids_buffer.Write<int32_t>(absl::MakeConstSpan(lookup_ids));
+  }
+  bool async = false;
+  LiteRtOptions run_options;
+  ASSERT_EQ(LiteRtCreateOptions(&run_options), kLiteRtStatusOk);
+  run_options->prefetch_embedding_token_ids = {0, 19, -1, 20};
+  LITERT_ASSERT_OK(compiled_model->RunCApi(
+      /*signature_index=*/0, input_buffers.size(), input_buffers.data(),
+      output_buffers.size(), output_buffers.data(), &async, run_options));
+  LiteRtDestroyOptions(run_options);
+
+  auto cached_tables = GetCachedEmbeddingTables(compiled_model.get(), 0);
+  ASSERT_EQ(cached_tables.size(), 1);
+  EXPECT_EQ(cached_tables[0].data, kernel_table_data);
+  EXPECT_EQ(cached_tables[0].num_rows, 20);
+  EXPECT_EQ(cached_tables[0].row_bytes, 8);
+
+  // An empty probe reports whether this signature can be prefetched here: Ok
+  // where the platform has a hint (on Apple the from-file model is a
+  // PROT_READ, MAP_SHARED mapping, so the read-only check passes),
+  // Unsupported elsewhere; never NotFound for a signature with a CPU
+  // EMBEDDING_LOOKUP table.
+  auto probed = PrefetchEmbeddingRows(compiled_model.get(), 0, {});
+#if defined(__linux__) || defined(__APPLE__) || defined(LITERT_WINDOWS_OS)
+  LITERT_EXPECT_OK(probed);
+#else
+  EXPECT_THAT(probed, IsError(kLiteRtStatusErrorUnsupported));
+#endif
+
+  // Out-of-range and negative ids are ignored; the hint itself is advisory.
+  const int32_t ids[] = {0, 19, 19, -1, 20};
+  auto prefetched = PrefetchEmbeddingRows(compiled_model.get(), 0, ids);
+#if defined(__linux__) || defined(__APPLE__) || defined(LITERT_WINDOWS_OS)
+  LITERT_EXPECT_OK(prefetched);
+#else
+  EXPECT_THAT(prefetched, IsError(kLiteRtStatusErrorUnsupported));
+#endif
+
+  // Signature index out of range.
+  EXPECT_THAT(PrefetchEmbeddingRows(compiled_model.get(), 1, ids),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  // Run the model again without options; the cached tables must survive.
+  LITERT_ASSERT_OK(compiled_model->Run(litert::kDefaultSignatureKey,
+                                       input_buffers, output_buffers, async));
+  auto prefetched_again = PrefetchEmbeddingRows(compiled_model.get(), 0, ids);
+  EXPECT_EQ(prefetched_again.HasValue(), prefetched.HasValue());
+  if (!prefetched.HasValue()) {
+    EXPECT_EQ(prefetched_again.Error().StatusCC(),
+              prefetched.Error().StatusCC());
+  }
+
+  // Cleanup.
+  for (auto& input_buffer : input_buffers) {
+    LiteRtDestroyTensorBuffer(input_buffer);
+  }
+  for (auto& output_buffer : output_buffers) {
+    LiteRtDestroyTensorBuffer(output_buffer);
+  }
+  compiled_model.reset();
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+// Builds a copy of `simple_embedding_lookup_op.tflite` whose constant table
+// tensor (input 1 of the EMBEDDING_LOOKUP op) is replaced with a tensor of
+// `tensor_type`, `shape`, and `packed_bytes` bytes of constant data.
+Expected<flatbuffers::DetachedBuffer> BuildEmbeddingLookupModelWithTable(
+    tflite::TensorType tensor_type, const std::vector<int32_t>& shape,
+    size_t packed_bytes) {
+  std::ifstream input_file(
+      testing::GetTestFilePath("simple_embedding_lookup_op.tflite"),
+      std::ios::binary);
+  if (!input_file.is_open()) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Failed to open simple_embedding_lookup_op.tflite");
+  }
+  const std::string original_model((std::istreambuf_iterator<char>(input_file)),
+                                   std::istreambuf_iterator<char>());
+  std::unique_ptr<tflite::ModelT> tfl_model =
+      tflite::UnPackModel(original_model.data());
+  if (tfl_model == nullptr || tfl_model->subgraphs.empty() ||
+      tfl_model->subgraphs[0]->operators.empty()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Unexpected simple_embedding_lookup_op.tflite structure");
+  }
+  tflite::SubGraphT& subgraph = *tfl_model->subgraphs[0];
+  const int32_t table_tensor_idx = subgraph.operators[0]->inputs[1];
+  tflite::TensorT& table_tensor = *subgraph.tensors[table_tensor_idx];
+  table_tensor.type = tensor_type;
+  table_tensor.shape = shape;
+  table_tensor.shape_signature.clear();
+  if (table_tensor.quantization == nullptr) {
+    table_tensor.quantization =
+        std::make_unique<tflite::QuantizationParametersT>();
+  }
+  table_tensor.quantization->scale = {1.0f};
+  table_tensor.quantization->zero_point = {0};
+  tfl_model->buffers[table_tensor.buffer]->data.assign(packed_bytes, 0x5A);
+
+  flatbuffers::FlatBufferBuilder builder;
+  tflite::FinishModelBuffer(builder,
+                            tflite::Model::Pack(builder, tfl_model.get()));
+  return builder.Release();
+}
+
+TEST(CompiledModelTest, PrefetchEmbeddingRowsQuantizedRowBytes) {
+  struct TestCase {
+    const char* name;
+    tflite::TensorType tensor_type;
+    std::vector<int32_t> shape;
+    size_t packed_bytes;
+    size_t expected_row_bytes;  // 0 if the table must be skipped.
+  };
+  const TestCase kCases[] = {
+      // Gemma 4 E2B PLE style: INT4 [rows, 256], 2 values per byte -> 128 B/row
+      {"int4_256cols", tflite::TensorType_INT4, {20, 256}, 20 * 128, 128},
+      // Gemma 4 E4B PLE style: INT2 [rows, 256], 4 values per byte -> 64 B/row
+      {"int2_256cols", tflite::TensorType_INT2, {20, 256}, 20 * 64, 64},
+      // INT8 [rows, 256] -> 256 B/row
+      {"int8_256cols", tflite::TensorType_INT8, {20, 256}, 20 * 256, 256},
+      // FLOAT16 [rows, 256] -> 512 B/row
+      {"f16_256cols", tflite::TensorType_FLOAT16, {20, 256}, 20 * 512, 512},
+      // Odd INT4 width (3 cols -> 30 bytes across 20 rows, 30 % 20 != 0):
+      // rows are not byte-aligned, so PrefetchEmbeddingRows skips the table.
+      {"int4_non_byte_aligned_row", tflite::TensorType_INT4, {20, 3}, 30, 0},
+  };
+
+  for (const TestCase& tc : kCases) {
+    SCOPED_TRACE(tc.name);
+    LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                                LiteRtEnvironmentT::CreateWithOptions({}));
+    LiteRtEnvironmentT* env_ptr = env.release();
+
+    LITERT_ASSERT_OK_AND_ASSIGN(flatbuffers::DetachedBuffer model_buffer,
+                                BuildEmbeddingLookupModelWithTable(
+                                    tc.tensor_type, tc.shape, tc.packed_bytes));
+    LiteRtModel model;
+    ASSERT_EQ(LiteRtCreateModelFromBuffer(env_ptr, model_buffer.data(),
+                                          model_buffer.size(), &model),
+              kLiteRtStatusOk);
+
+    LiteRtOptions jit_options;
+    ASSERT_EQ(LiteRtCreateOptions(&jit_options), kLiteRtStatusOk);
+    ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_options,
+                                                   kLiteRtHwAcceleratorCpu),
+              kLiteRtStatusOk);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        LiteRtCompiledModelT::Ptr compiled_model,
+        LiteRtCompiledModelT::Create(env_ptr, model, jit_options));
+    LiteRtDestroyOptions(jit_options);
+
+    const int32_t ids[] = {0, 10, 19};
+    auto res = PrefetchEmbeddingRows(compiled_model.get(), 0, ids);
+    if (tc.expected_row_bytes == 0) {
+      EXPECT_THAT(res, IsError(kLiteRtStatusErrorNotFound));
+      EXPECT_TRUE(GetCachedEmbeddingTables(compiled_model.get(), 0).empty());
+    } else {
+      // The table lives in the heap-backed DetachedBuffer: writable, so Apple
+      // refuses the hint (Unsupported) while still caching the table;
+      // platforms without a hint report Unsupported as well.
+#if defined(__linux__) || defined(LITERT_WINDOWS_OS)
+      LITERT_EXPECT_OK(res);
+#else
+      EXPECT_THAT(res, IsError(kLiteRtStatusErrorUnsupported));
+#endif
+      auto tables = GetCachedEmbeddingTables(compiled_model.get(), 0);
+      ASSERT_EQ(tables.size(), 1);
+      EXPECT_EQ(tables[0].num_rows, static_cast<size_t>(tc.shape[0]));
+      EXPECT_EQ(tables[0].row_bytes, tc.expected_row_bytes);
+    }
+
+    compiled_model.reset();
+    LiteRtDestroyModel(model);
+    LiteRtDestroyEnvironment(env_ptr);
+  }
+}
+
+// Builds a model whose subgraph 0 is one STABLEHLO_COMPOSITE op whose
+// decomposition (subgraph 1) is the EMBEDDING_LOOKUP graph of
+// simple_embedding_lookup_op.tflite, with the same inputs and outputs.
+Expected<flatbuffers::DetachedBuffer> BuildCompositeEmbeddingLookupModel() {
+  std::ifstream input_file(
+      testing::GetTestFilePath("simple_embedding_lookup_op.tflite"),
+      std::ios::binary);
+  if (!input_file.is_open()) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Failed to open simple_embedding_lookup_op.tflite");
+  }
+  const std::string original_model((std::istreambuf_iterator<char>(input_file)),
+                                   std::istreambuf_iterator<char>());
+  std::unique_ptr<tflite::ModelT> tfl_model =
+      tflite::UnPackModel(original_model.data());
+  // A second unpack yields an independent copy of the lookup subgraph, which
+  // becomes the decomposition; its buffer indices match tfl_model's.
+  std::unique_ptr<tflite::ModelT> decomposition_model =
+      tflite::UnPackModel(original_model.data());
+  if (tfl_model == nullptr || decomposition_model == nullptr ||
+      tfl_model->subgraphs.size() != 1 ||
+      tfl_model->subgraphs[0]->operators.size() != 1) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Unexpected simple_embedding_lookup_op.tflite structure");
+  }
+  tfl_model->subgraphs.push_back(std::move(decomposition_model->subgraphs[0]));
+  tfl_model->subgraphs[1]->name = "embedding_lookup_decomposition";
+
+  auto opcode = std::make_unique<tflite::OperatorCodeT>();
+  opcode->deprecated_builtin_code = static_cast<int8_t>(
+      tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES);
+  opcode->builtin_code = tflite::BuiltinOperator_STABLEHLO_COMPOSITE;
+  opcode->version = 1;
+  tfl_model->operator_codes.push_back(std::move(opcode));
+
+  tflite::SubGraphT& main = *tfl_model->subgraphs[0];
+  auto composite = std::make_unique<tflite::OperatorT>();
+  composite->opcode_index = tfl_model->operator_codes.size() - 1;
+  composite->inputs = main.inputs;
+  composite->outputs = main.outputs;
+  auto composite_options =
+      std::make_unique<tflite::StableHLOCompositeOptionsT>();
+  composite_options->name = "odml.embedding_lookup";
+  composite_options->decomposition_subgraph_index = 1;
+  composite_options->version = 1;
+  // Required by the op parser (an empty attribute map); never read once the
+  // node is inlined.
+  flexbuffers::Builder attributes;
+  attributes.Map([] {});
+  attributes.Finish();
+  composite_options->composite_attributes = attributes.GetBuffer();
+  composite_options->composite_attributes_format =
+      tflite::CustomOptionsFormat_FLEXBUFFERS;
+  composite->builtin_options_2.type =
+      tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  composite->builtin_options_2.value = composite_options.release();
+  main.operators.clear();
+  main.operators.push_back(std::move(composite));
+
+  flatbuffers::FlatBufferBuilder builder;
+  tflite::FinishModelBuffer(builder,
+                            tflite::Model::Pack(builder, tfl_model.get()));
+  return builder.Release();
+}
+
+// With composite inlining enabled (any runtime options turn it on), the first
+// Run()'s AllocateTensors() replaces the STABLEHLO_COMPOSITE node of subgraph
+// 0 with the lookup from its decomposition. The hook must discover the table
+// from that inlined plan, not from the plan seen before allocation, which
+// holds no EMBEDDING_LOOKUP and would cache "no table" for the life of the
+// model.
+TEST(CompiledModelTest, PrefetchEmbeddingRowsSeesTablesInlinedFromComposite) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(flatbuffers::DetachedBuffer model_buffer,
+                              BuildCompositeEmbeddingLookupModel());
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromBuffer(env_ptr, model_buffer.data(),
+                                        model_buffer.size(), &model),
+            kLiteRtStatusOk);
+
+  LiteRtOptions jit_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+  // InitializeRuntime() turns composite inlining on when it parses runtime
+  // options, and the parser rejects an empty payload, so set one field.
+  runtime_options.SetEnableProfiling(/*enabled=*/false);
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueRuntimeOptionsData(runtime_options.Get(), &identifier,
+                                           &payload, &payload_deleter),
+            kLiteRtStatusOk);
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  ASSERT_EQ(LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter,
+                                      &opaque_opts),
+            kLiteRtStatusOk);
+  litert::OpaqueOptions opaque_runtime_options =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
+  ASSERT_EQ(LiteRtAddOpaqueOptions(jit_options,
+                                   opaque_runtime_options.Release()),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_options));
+  LiteRtDestroyOptions(jit_options);
+
+  // Before the first run, subgraph 0 runs the composite node, not the lookup.
+  LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter * interpreter,
+                              GetInterpreter(compiled_model.get()));
+  tflite::Subgraph* subgraph = interpreter->subgraph(0);
+  auto count_lookup_nodes = [subgraph](const void** table_data) {
+    int count = 0;
+    for (int node_index : subgraph->execution_plan()) {
+      const auto& [node, registration] =
+          subgraph->nodes_and_registration()[node_index];
+      if (registration.builtin_code != kTfLiteBuiltinEmbeddingLookup) continue;
+      ++count;
+      *table_data = subgraph->tensor(node.inputs->data[1])->data.raw;
+    }
+    return count;
+  };
+  const void* table_data = nullptr;
+  EXPECT_EQ(count_lookup_nodes(&table_data), 0);
+  EXPECT_TRUE(GetCachedEmbeddingTables(compiled_model.get(), 0).empty());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> input_buffers,
+      CreateInputBuffersFromRequirements(
+          env_ptr, *model, litert::kDefaultSignatureKey, *compiled_model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> output_buffers,
+      CreateOutputBuffersFromRequirements(
+          env_ptr, *model, litert::kDefaultSignatureKey, *compiled_model));
+  ASSERT_EQ(input_buffers.size(), 1);
+  {
+    TensorBuffer ids_buffer =
+        TensorBuffer::WrapCObject(input_buffers[0], OwnHandle::kNo);
+    const int32_t lookup_ids[] = {0, 1, 2, 3, 4};
+    ids_buffer.Write<int32_t>(absl::MakeConstSpan(lookup_ids));
+  }
+  bool async = false;
+  LiteRtOptions run_options;
+  ASSERT_EQ(LiteRtCreateOptions(&run_options), kLiteRtStatusOk);
+  run_options->prefetch_embedding_token_ids = {0, 19};
+  LITERT_ASSERT_OK(compiled_model->RunCApi(
+      /*signature_index=*/0, input_buffers.size(), input_buffers.data(),
+      output_buffers.size(), output_buffers.data(), &async, run_options));
+  LiteRtDestroyOptions(run_options);
+
+  // The run inlined the lookup into subgraph 0 and the hook cached its table.
+  EXPECT_EQ(count_lookup_nodes(&table_data), 1);
+  ASSERT_NE(table_data, nullptr);
+  auto tables = GetCachedEmbeddingTables(compiled_model.get(), 0);
+  ASSERT_EQ(tables.size(), 1);
+  EXPECT_EQ(tables[0].data, table_data);
+  EXPECT_EQ(tables[0].num_rows, 20);
+  EXPECT_EQ(tables[0].row_bytes, 8);
+
+  for (auto& input_buffer : input_buffers) {
+    LiteRtDestroyTensorBuffer(input_buffer);
+  }
+  for (auto& output_buffer : output_buffers) {
+    LiteRtDestroyTensorBuffer(output_buffer);
+  }
+  compiled_model.reset();
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, PrefetchEmbeddingRowsReturnsNotFoundWithoutLookupOp) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel (simple_model.tflite has no EMBEDDING_LOOKUP op).
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  // Create CompiledModel on CPU.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  const int32_t ids[] = {0};
+  EXPECT_THAT(PrefetchEmbeddingRows(compiled_model.get(), 0, ids),
+              IsError(kLiteRtStatusErrorNotFound));
+  // The probe reports NotFound as well, so callers can stop after one call.
+  EXPECT_THAT(PrefetchEmbeddingRows(compiled_model.get(), 0, {}),
+              IsError(kLiteRtStatusErrorNotFound));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> input_buffers,
+      CreateInputBuffersFromRequirements(
+          env_ptr, *model, litert::kDefaultSignatureKey, *compiled_model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> output_buffers,
+      CreateOutputBuffersFromRequirements(
+          env_ptr, *model, litert::kDefaultSignatureKey, *compiled_model));
+  {
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_buffers[0], OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
+  }
+  {
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_buffers[1], OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
+  }
+  bool async = false;
+  LiteRtOptions run_options;
+  ASSERT_EQ(LiteRtCreateOptions(&run_options), kLiteRtStatusOk);
+  run_options->prefetch_embedding_token_ids = {0, 1};
+  LITERT_ASSERT_OK(compiled_model->RunCApi(
+      /*signature_index=*/0, input_buffers.size(), input_buffers.data(),
+      output_buffers.size(), output_buffers.data(), &async, run_options));
+  LiteRtDestroyOptions(run_options);
+
+  for (auto& input_buffer : input_buffers) {
+    LiteRtDestroyTensorBuffer(input_buffer);
+  }
+  for (auto& output_buffer : output_buffers) {
+    LiteRtDestroyTensorBuffer(output_buffer);
+  }
+  compiled_model.reset();
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
 }
 
 }  // namespace
