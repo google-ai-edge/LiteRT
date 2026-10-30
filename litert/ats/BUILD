@@ -537,8 +537,7 @@ litert_define_ats(
         "FullyConnected.*,2d_f32[^c]",  # OpenCL does not support dynamic weights
         "FullyConnected.*,2d_f32.*,1d_f32",  # OpenCL dynamic bias permutations
         "BatchMatmul.*2d.*,[34]d",  # OpenCL does not support rank-asymmetric batch broadcasting
-        "BatchMatmul.*3d",  # ATS generator forces 1xB broadcast on 3D BatchMatmul
-        "BatchMatmul.*4d",  # ATS generator forces 1xB broadcast on 4D BatchMatmul
+        "BatchMatmul(?!.*_cst).*[34]d",  # OpenCL only supports 3D/4D BatchMatmul with constant 2D RHS (dynamic 3D/4D uses 1xB or rank-asymmetric broadcast)
         "Swiglu.*3d_f(16|32)<(?!1x)",  # GPU accelerator does not support SwiGLU with batch > 1
         "QkvNormRope.*4d_f(16|32)<(?!1x)",  # GPU accelerator does not support QkvNormRope with batch > 1
         "SelectV2",  # OpenCL SelectV2 rejects multidimensional if/else broadcasting and uses kExact on FP16-rounded f32

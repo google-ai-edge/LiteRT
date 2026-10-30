@@ -443,6 +443,7 @@ cc_library(
         "//litert/test:simple_buffer",
         "//tensor",
         "//tensor:arithmetic",
+        "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/backends/tflite:arithmetic_tflite",
         "//tflite/schema:schema_fbs",
