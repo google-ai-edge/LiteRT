@@ -10,7 +10,7 @@
 #   TENSORRT_RTX_ROOT  TensorRT-RTX SDK (default: ~/opt/tensorrt-rtx-sdk)
 #   CUDA_HOME          CUDA toolkit (default: /usr/local/cuda)
 #   LITERT_BENCH_ROOT  where builds, caches and runs live
-#                      (default: ~/.local/state/litert-nvidia-benchmark)
+#                      (default: ~/.local/state/litert-nvidia-benchmark-wl)
 #   LITERT_BENCH_MODELS directory of the litertlm files (default: $LITERT_LM_DIR/../models)
 #   LITERT_BENCH_DISTDIR a Bazel --distdir for offline builds
 
@@ -26,7 +26,8 @@ nb_resolve_paths() {
   export NB_RT NB_LM NB_ROOT NB_SDK NB_CUDA NB_MODELS NB_BUILD_RT NB_BUILD_LM NB_RUNTIME_LIBS
   NB_RT=$(realpath -m "${LITERT_RT_DIR:-$here/../../../..}")
   NB_LM=$(realpath -m "${LITERT_LM_DIR:-$NB_RT/../../llm/LiteRT-LM}")
-  NB_ROOT=${LITERT_BENCH_ROOT:-$HOME/.local/state/litert-nvidia-benchmark}
+  NB_ROOT=$(realpath -m "${LITERT_BENCH_ROOT:-$HOME/.local/state/litert-nvidia-benchmark-wl}")
+  export LITERT_BENCH_ROOT=$NB_ROOT
   NB_SDK=$(realpath -m "${TENSORRT_RTX_ROOT:-$HOME/opt/tensorrt-rtx-sdk}")
   NB_CUDA=$(realpath -m "${CUDA_HOME:-/usr/local/cuda}")
   NB_MODELS=$(realpath -m "${LITERT_BENCH_MODELS:-$NB_LM/../models}")
