@@ -17,11 +17,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
@@ -44,11 +46,30 @@ namespace litert::openvino {
 class WeightBank {
  public:
   WeightBank() = default;
+  // Pool spans may point into |converted_buffers_|, so a copy would dangle.
+  WeightBank(const WeightBank&) = delete;
+  WeightBank& operator=(const WeightBank&) = delete;
+  WeightBank(WeightBank&&) = default;
+  WeightBank& operator=(WeightBank&&) = default;
 
   // Records every constant-weight buffer referenced by |subgraph|. Repeated
   // BufferIds (within or across subgraphs) collapse to a single entry. Safe to
   // call once per partition to accumulate the union of all weight buffers.
-  void AddSubgraph(const litert::compiler::Subgraph& subgraph);
+  //
+  // |convert_i2_to_u2| (NPU shared path): store quantized int2 buffers in their
+  // converted u2 form (see i2_u2_convert.h) instead of the raw i2 bytes. The
+  // frontend rewrites those weights to u2 before OpenVINO sees them, so a pool
+  // holding raw i2 bytes could never match the compiled u2 Constants -- and,
+  // being tagged weightless, NPUW would reload the wrong bytes from it at
+  // runtime. Storing u2 keeps int2 weights shareable and correct. The converted
+  // copies are owned by the bank; all other buffers stay zero-copy views of the
+  // model's mmapped weights. Must mirror the condition under which
+  // GraphIteratorDelegate performs the same conversion.
+  void AddSubgraph(const litert::compiler::Subgraph& subgraph,
+                   bool convert_i2_to_u2 = false);
+
+  // Number of int2 buffers stored converted (u2) in the pool.
+  size_t NumConvertedBuffers() const { return converted_ids_.size(); }
 
   // Number of distinct weight buffers recorded so far.
   size_t NumBuffers() const { return buffer_bytes_.size(); }
@@ -84,8 +105,13 @@ class WeightBank {
   void FinalizeDerivedBuffers();
 
  private:
-  // BufferId -> the buffer's bytes (a view into the model's mmapped weights).
+  // BufferId -> the buffer's bytes: a view into the model's mmapped weights, or
+  // into |converted_buffers_| for int2 buffers stored as u2.
   std::unordered_map<int32_t, absl::Span<const uint8_t>> buffer_bytes_;
+  // Owned u2 copies of int2 buffers. A deque keeps element addresses stable as
+  // it grows, so the spans in |buffer_bytes_| stay valid.
+  std::deque<std::vector<uint8_t>> converted_buffers_;
+  std::unordered_set<int32_t> converted_ids_;
   // Weight tensor name -> its BufferId. Many names may map to one BufferId
   // (tensors that share storage), which is how shared weights resolve to a
   // single pool buffer. Also holds derived/generated keys once

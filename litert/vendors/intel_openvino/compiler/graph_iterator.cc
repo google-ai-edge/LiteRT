@@ -28,6 +28,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/intel_openvino/compiler/i2_u2_convert.h"
 #include "litert/vendors/intel_openvino/utils.h"
 
 namespace litert {
@@ -117,19 +118,12 @@ bool fill_tensor_meta(
 void GraphIteratorDelegate::ConvertI2WeightsToU2(
     const litert::compiler::Tensor& tensor,
     ov::frontend::tensorflow_lite::TensorMetaInfo& tensor_meta_info) const {
-  // XOR flips each sub-byte element's MSB, which is equivalent to adding
-  // 2^(bits-1) mod 2^bits. The zero points are adjusted by the same offset
-  // to keep dequantized values unchanged. u2 packs 4 elements per byte, so
-  // the byte layout is preserved and only the bit pattern changes.
-  constexpr uint8_t xor_mask = 0xAA;  // flip MSB of each 2-bit pair
-  constexpr int64_t zp_offset = 2;    // [-2..1] -> [0..3]
+  // The byte rewrite and zero-point offset are defined in i2_u2_convert.h,
+  // shared with WeightBank so the NPU shared pool holds exactly these bytes.
+  constexpr int64_t zp_offset = kI2ToU2ZeroPointOffset;
 
-  auto weight_bytes = tensor.Weights().Bytes();
   auto& buf = converted_weight_buffers_.emplace_back(
-      weight_bytes.data(), weight_bytes.data() + weight_bytes.size());
-  for (auto& byte : buf) {
-    byte ^= xor_mask;
-  }
+      ConvertI2BytesToU2(tensor.Weights().Bytes()));
   tensor_meta_info.m_tensor_data = buf.data();
   tensor_meta_info.m_element_type = ov::element::u2;
 

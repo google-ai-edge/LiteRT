@@ -23,10 +23,39 @@
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/test/load_test_model.h"
+#include "litert/vendors/intel_openvino/compiler/i2_u2_convert.h"
 
 namespace litert {
 namespace openvino {
 namespace {
+
+// The pool's u2 bytes must equal what the frontend feeds OpenVINO: the
+// offset-binary shift [-2..1] -> [0..3] applied to each 2-bit element.
+TEST(WeightBankTest, ConvertI2BytesToU2FlipsEachElementMsb) {
+  // Elements (low bits first) -2,-1,0,1 -> two's complement 10,11,00,01.
+  const uint8_t i2 = 0b01'00'11'10;
+  const std::vector<uint8_t> u2 = ConvertI2BytesToU2({&i2, 1});
+  ASSERT_EQ(u2.size(), 1u);
+  // u2 elements = i2 + 2: 0,1,2,3 -> 00,01,10,11.
+  EXPECT_EQ(u2[0], 0b11'10'01'00);
+  // The transform is an involution, so applying it twice restores the bytes.
+  EXPECT_EQ(ConvertI2BytesToU2(u2)[0], i2);
+}
+
+// Non-int2 weights must stay zero-copy views even in convert mode.
+TEST(WeightBankTest, ConvertModeLeavesNonInt2WeightsUntouched) {
+  auto cc_model = testing::LoadTestFileModel("add_cst.tflite");
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::compiler::Model model(ctx, cc_model.Get());
+  auto graph = model.Subgraph(0);
+  ASSERT_TRUE(graph.HasValue());
+
+  WeightBank bank;
+  bank.AddSubgraph(graph.Value(), /*convert_i2_to_u2=*/true);
+
+  EXPECT_EQ(bank.NumBuffers(), 1u);
+  EXPECT_EQ(bank.NumConvertedBuffers(), 0u);
+}
 
 // add_cst.tflite has a single constant operand (a 16-byte add constant), so the
 // bank should record exactly that one buffer.
