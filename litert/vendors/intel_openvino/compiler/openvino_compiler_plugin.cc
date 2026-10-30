@@ -575,7 +575,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           LITERT_LOG(LITERT_ERROR, "Failed to retrieve Subgraph");
           return kLiteRtStatusErrorCompilation;
         }
-        weight_bank.AddSubgraph(subgraph.Value());
+        // NPU stores int2 weights in the pool as the same u2 bytes the frontend
+        // feeds OpenVINO, so they stay byte-identical to the compiled constants
+        // and remain shareable.
+        weight_bank.AddSubgraph(subgraph.Value(),
+                                /*convert_i2_to_u2=*/share_npu);
 
         // Only the NPU path needs the optimized graph here, to harvest the
         // Constants MoE lowering synthesizes (they don't exist before
