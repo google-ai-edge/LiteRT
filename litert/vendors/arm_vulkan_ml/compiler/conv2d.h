@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_VENDORS_ARM_VULKAN_ML_COMPILER_CONV2D_H_
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -42,7 +43,7 @@ struct Conv2dSpec {
   std::vector<double> weight_scales;
   std::vector<double> bias_scales;
   Activation activation;
-  bool depthwise = false;  // Initial path supports depth_multiplier=1.
+  bool depthwise = false;
 };
 
 struct Conv2dPlan {
@@ -63,14 +64,24 @@ std::optional<Conv2dPlan> AnalyzeConv2d(Conv2dSpec spec, std::string& reason);
 struct GraphConstant {
   tfsc::tosa::Tensor tensor;
   std::vector<uint8_t> bytes;
+  tfsc::tosa::ResId id = nullptr;
 };
+struct GraphConstantPool {
+  bool deduplicate = false;
+  size_t reused = 0;
+  std::vector<GraphConstant> values;
+};
+// The pool belongs to one TFSC graph. Constants retain insertion/binding order.
+tfsc::tosa::ResId AddGraphConstant(tfsc::tosa::Graph& graph,
+    const tfsc::tosa::Tensor& tensor, std::vector<uint8_t> bytes,
+    GraphConstantPool& constants);
 
 // Range-proven native TOSA SINGLE_ROUND requantization. Per-channel scales use
 // one RESCALE, including channels with large accumulators or tiny scales.
 tfsc::tosa::ResId EmitRescale(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
     const std::vector<uint32_t>& shape, int32_t output_zero_point,
     const std::vector<Scale32>& scales, const std::vector<AccumulatorRange>& ranges,
-    std::vector<GraphConstant>& constants);
+    GraphConstantPool& constants);
 
 // Emits CONV2D -> RESCALE -> CLAMP, or a TFSC error ResId. The module owner
 // must check both this result and WriteToBinary before publishing an artifact.
@@ -78,7 +89,7 @@ tfsc::tosa::ResId EmitRescale(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
 tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph,
                             tfsc::tosa::ResId input,
                             const Conv2dPlan& plan,
-                            std::vector<GraphConstant>& constants,
+                            GraphConstantPool& constants,
                             tfsc::tosa::ResId* accumulator = nullptr);
 
 }  // namespace litert::arm_vulkan_ml

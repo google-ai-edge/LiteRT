@@ -29,6 +29,32 @@ extern "C" {
 
 LITERT_DEFINE_HANDLE(LrtArmVulkanMLOptions);
 
+// Qualified includes exhaustively bounded INT8 rewrites; exact preserves the
+// unoptimized integer results. Off keeps the analyzed per-operation expansion.
+// These modes do not alter partition selection or device capability checks.
+typedef enum LrtArmVulkanMLOptimizationMode {
+  kLrtArmVulkanMLOptimizationOff = 0,
+  kLrtArmVulkanMLOptimizationExact = 1,
+  kLrtArmVulkanMLOptimizationQualified = 2,
+} LrtArmVulkanMLOptimizationMode;
+
+LiteRtStatus LrtArmVulkanMLOptionsSetOptimizationMode(
+    LrtArmVulkanMLOptions options, LrtArmVulkanMLOptimizationMode mode);
+LiteRtStatus LrtArmVulkanMLOptionsGetOptimizationMode(
+    LrtArmVulkanMLOptions options, LrtArmVulkanMLOptimizationMode* mode);
+
+// Auto conservatively uses INT8 tables. INT16 tables require the device's
+// conformant EXT-INT16 support; model inputs/outputs remain INT8.
+typedef enum LrtArmVulkanMLSoftmaxLutType {
+  kLrtArmVulkanMLSoftmaxLutAuto = 0,
+  kLrtArmVulkanMLSoftmaxLutInt8 = 1,
+  kLrtArmVulkanMLSoftmaxLutInt16 = 2,
+} LrtArmVulkanMLSoftmaxLutType;
+LiteRtStatus LrtArmVulkanMLOptionsSetSoftmaxLutType(
+    LrtArmVulkanMLOptions options, LrtArmVulkanMLSoftmaxLutType type);
+LiteRtStatus LrtArmVulkanMLOptionsGetSoftmaxLutType(
+    LrtArmVulkanMLOptions options, LrtArmVulkanMLSoftmaxLutType* type);
+
 LiteRtStatus LrtCreateArmVulkanMLOptions(LrtArmVulkanMLOptions* options);
 
 LiteRtStatus LrtCreateArmVulkanMLOptionsFromToml(

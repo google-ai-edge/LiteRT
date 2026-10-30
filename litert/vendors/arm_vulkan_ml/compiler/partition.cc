@@ -13,49 +13,55 @@
 // limitations under the License.
 
 #include "litert/vendors/arm_vulkan_ml/compiler/partition.h"
-#include <unordered_map>
+
+#include <chrono>
+#include <algorithm>
 #include <set>
-#include "litert/vendors/arm_vulkan_ml/compiler/portable_ops.h"
 #include <utility>
+#include <vector>
+
 #include "TosaForSpirvCodegen.hpp"
-#include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/portable_ops.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/tosa_requirements.h"
 
 namespace litert::arm_vulkan_ml {
-std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& subgraph,
-                                                        std::string& reason, std::vector<LoweringRecord>* diagnostics) {
+std::shared_ptr<const CompiledPartition> CompilePartition(
+    const Subgraph& subgraph, std::string& reason,
+    std::vector<LoweringRecord>* diagnostics, OptimizationMode mode,
+    OptimizationReport* optimization, SoftmaxLutType softmax_lut) {
+  const auto start = std::chrono::steady_clock::now();
+  // Import and optimize without allocating any TFSC result IDs. The operation
+  // analysis is shared with partition selection; optimizations cannot add ops
+  // to a partition that selection rejected.
+  auto ir = ImportGraph(subgraph, reason, softmax_lut);
+  if (!ir || !OptimizeGraph(*ir, mode, optimization, reason)) return nullptr;
   auto artifact = std::make_shared<CompiledPartition>();
   auto module = tfsc::CreateModule();
   tfsc::tosa::Graph graph(module, artifact->entry_point);
-  std::unordered_map<LiteRtTensor, tfsc::tosa::ResId> values;
-  std::vector<GraphConstant> constants;
+  std::vector<tfsc::tosa::ResId> values(ir->values.size());
+  GraphConstantPool constants;
+  constants.deduplicate = mode != kLrtArmVulkanMLOptimizationOff;
   uint32_t binding = 0;
-  auto descriptor = [&](const Tensor& tensor) -> std::optional<TensorDescriptor> {
-    auto ranked = tensor.RankedTensorType();
-    if (!ranked || (ranked->ElementType() != ElementType::Int8 && ranked->ElementType() != ElementType::Float32 && ranked->ElementType() != ElementType::Int32 && ranked->ElementType() != ElementType::UInt32 && ranked->ElementType() != ElementType::Bool) ||
-        ranked->Layout().HasStrides()) return std::nullopt;
-    auto dims = ranked->Layout().Dimensions();
-    if (dims.empty()) return std::nullopt;
-    TensorDescriptor result{ranked->ElementType() == ElementType::Float32 ? TensorElement::kFloat32 : (ranked->ElementType() == ElementType::Int32 || ranked->ElementType() == ElementType::UInt32) ? TensorElement::kInt32 : TensorElement::kInt8, {}, binding++};
-    result.logical_element = static_cast<LiteRtElementType>(ranked->ElementType());
-    uint64_t count = 1;
-    for (auto dim : dims) {
-      if (dim <= 0 || count > uint64_t{INT32_MAX} / dim) return std::nullopt;
-      count *= dim;
-      result.shape.push_back(dim);
-    }
+  auto descriptor = [&](const GraphValue& value) {
+    TensorDescriptor result{
+        value.storage_type == tfsc::tosa::DataType::float32_t ? TensorElement::kFloat32 :
+        value.storage_type == tfsc::tosa::DataType::int32_t ? TensorElement::kInt32 : TensorElement::kInt8,
+        value.shape, binding++};
+    result.logical_element = value.logical_type;
+    result.logical_scalar = value.logical_scalar;
     return result;
   };
-  for (const auto& tensor : subgraph.Inputs()) {
-    if (tensor.HasWeights()) continue;
-    auto input = descriptor(tensor);
-    if (!input) { reason = "Invalid partition input layout/type"; return nullptr; }
-    values[tensor.Get()] = graph.AddInput(
-        tfsc::tosa::Tensor(input->element == TensorElement::kFloat32 ? tfsc::tosa::DataType::float32_t : input->element == TensorElement::kInt32 ? tfsc::tosa::DataType::int32_t : tfsc::tosa::DataType::int8_t, input->shape), input->binding);
-    if(tensor.ElementType()==ElementType::Bool)values[tensor.Get()]=graph.AddCastOperator(values[tensor.Get()],tfsc::tosa::Tensor(tfsc::tosa::DataType::bool_t,input->shape));
-    artifact->inputs.push_back(std::move(*input));
+  auto logical = [&](tfsc::tosa::ResId id, const GraphValue& value) {
+    if (value.logical_type == kLiteRtElementTypeBool)
+      return graph.AddCastOperator(id, tfsc::tosa::Tensor(tfsc::tosa::DataType::bool_t, value.shape));
+    return id;
+  };
+  for (auto id : ir->inputs) {
+    const auto& value = ir->values[id];
+    auto input = descriptor(value);
+    values[id] = logical(graph.AddInput(tfsc::tosa::Tensor(value.storage_type, value.shape), input.binding), value);
+    artifact->inputs.push_back(std::move(input));
   }
-  if (subgraph.Ops().empty()) { reason = "Empty partition"; return nullptr; }
   std::set<uint32_t> seen_ids;
   auto new_ids = [&]() {
     std::vector<uint32_t> ids;
@@ -65,80 +71,99 @@ std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& subgra
           ids.push_back(operand.m_LiteralWord);
     return ids;
   };
-  if (diagnostics) { diagnostics->clear(); new_ids(); }
-  size_t operator_index = 0;
-  for (const auto& op : subgraph.Ops()) {
-    // Partition selection and compilation use the exact same analysis.
-    auto plan = AnalyzeOperation(op, reason);
-    if (!plan) return nullptr;
-    if ((plan->inputs[0].floating || plan->output.floating) && artifact->profiles.size()==1)
+  if (diagnostics) {
+    diagnostics->clear();
+    for (size_t i = 0; i < ir->original_operator_count; ++i)
+      diagnostics->push_back({i, {}, {}, "removed"});
+    new_ids();
+  }
+  auto get_value = [&](ValueId id) {
+    const auto& value = ir->values[id];
+    if (!values[id] && value.is_constant)
+      values[id] = logical(AddGraphConstant(graph, tfsc::tosa::Tensor(value.storage_type, value.shape), value.constant, constants), value);
+    return values[id];
+  };
+  for (const auto& node : ir->nodes) {
+    if (node.removed) continue;
+    for (auto id : node.inputs) if (ir->values[id].storage_type == tfsc::tosa::DataType::float32_t && artifact->profiles.size() == 1)
       artifact->profiles.push_back("PRO-FP");
-    std::vector<tfsc::tosa::ResId> inputs;
-    for (int index : plan->runtime_inputs) {
-      auto tensor = op.Inputs()[index];
-      auto value = values.find(tensor.Get());
-      if (value == values.end() && tensor.HasWeights()) {
-        auto bytes = tensor.Weights().Bytes();
-        auto type = tensor.RankedTensorType();
-        if (!type || (tensor.ElementType() != ElementType::Int8 && tensor.ElementType() != ElementType::Float32 && tensor.ElementType() != ElementType::Int32 && tensor.ElementType() != ElementType::UInt32 && tensor.ElementType() != ElementType::Bool)) {
-          reason = "Invalid constant activation"; return nullptr;
-        }
-        auto dims = type->Layout().Dimensions();
-        tfsc::tosa::Tensor constant_type(tensor.ElementType() == ElementType::Float32 ? tfsc::tosa::DataType::float32_t : (tensor.ElementType() == ElementType::Int32 || tensor.ElementType() == ElementType::UInt32) ? tfsc::tosa::DataType::int32_t : tfsc::tosa::DataType::int8_t,
-                                       {dims.begin(), dims.end()});
-        if (bytes.size() != constant_type.GetNumElements() * ((tensor.ElementType() == ElementType::Float32 || tensor.ElementType() == ElementType::Int32 || tensor.ElementType() == ElementType::UInt32) ? 4 : 1)) {
-          reason = "Invalid constant byte count"; return nullptr;
-        }
-        constants.push_back({constant_type,{bytes.begin(),bytes.end()}});
-        auto id=graph.AddGraphConstant(constant_type);
-        if(tensor.ElementType()==ElementType::Bool)id=graph.AddCastOperator(id,tfsc::tosa::Tensor(tfsc::tosa::DataType::bool_t,constant_type.GetTensorShape()));
-        value = values.emplace(tensor.Get(), id).first;
-      }
-      if (value == values.end()) {
-        reason = "Partition is not topologically ordered or has an unbound input";
-        return nullptr;
-      }
-      inputs.push_back(value->second);
+    for (auto id : node.outputs) if (ir->values[id].storage_type == tfsc::tosa::DataType::float32_t && artifact->profiles.size() == 1)
+      artifact->profiles.push_back("PRO-FP");
+    if (node.body.softmax && node.body.softmax->lut_type == kLrtArmVulkanMLSoftmaxLutInt16 &&
+        std::find(artifact->extensions.begin(), artifact->extensions.end(), "EXT-INT16") == artifact->extensions.end())
+      artifact->extensions.push_back("EXT-INT16");
+    for (const auto& extension : node.body.required_extensions)
+      if (std::find(artifact->extensions.begin(), artifact->extensions.end(), extension) == artifact->extensions.end())
+        artifact->extensions.push_back(extension);
+    const size_t reused_before = constants.reused;
+    std::vector<tfsc::tosa::ResId> inputs, outputs;
+    for (auto id : node.inputs) inputs.push_back(get_value(id));
+    if (node.body.portable) outputs = EmitPortableOperation(graph, inputs, *node.body.portable);
+    else if (node.transform_only) outputs = {inputs[0]};
+    else outputs = {EmitOperation(graph, inputs, node.body, constants)};
+    if (outputs.size() != node.outputs.size()) { reason = "IR expansion result count mismatch"; return nullptr; }
+    for (const auto& transform : node.output_transforms) {
+      if (!outputs[0] || tfsc::IsError(outputs[0])) { reason = tfsc::GetErrorMsg(outputs[0]); return nullptr; }
+      outputs[0] = EmitOutputTransform(graph, outputs[0], transform, constants);
     }
-    if (plan->portable) {
-      auto outputs = EmitPortableOperation(graph, inputs, *plan->portable);
-      if (outputs.size() != op.Outputs().size()) { reason = "Portable result count mismatch"; return nullptr; }
-      for (size_t i = 0; i < outputs.size(); ++i) {
-        if (!outputs[i] || tfsc::IsError(outputs[i])) { reason = tfsc::GetErrorMsg(outputs[i]); return nullptr; }
-        values[op.Outputs()[i].Get()] = outputs[i];
-      }
-      if (diagnostics) diagnostics->push_back({operator_index, new_ids()});
-      ++operator_index;
-      continue;
+    for (size_t i = 0; i < outputs.size(); ++i) {
+      if (!outputs[i] || tfsc::IsError(outputs[i])) { reason = tfsc::GetErrorMsg(outputs[i]); return nullptr; }
+      values[node.outputs[i]] = outputs[i];
     }
-    auto output = EmitOperation(graph, inputs, *plan, constants);
-    if (!output || tfsc::IsError(output)) { reason = tfsc::GetErrorMsg(output); return nullptr; }
-    values[op.Outputs()[0].Get()] = output;
-    if (diagnostics) diagnostics->push_back({operator_index, new_ids()});
-    ++operator_index;
+    if (optimization && constants.reused != reused_before)
+      optimization->decisions.push_back({"intern_constants", node.source_operators, true,
+          std::to_string(constants.reused - reused_before) + " immutable constants reused with identical storage type/shape/bytes"});
+    if (diagnostics) {
+      // Many-to-one provenance, with newly created IDs attributed once only.
+      auto& primary = (*diagnostics)[node.source_operators[0]];
+      auto ids = new_ids();
+      primary.result_ids.insert(primary.result_ids.end(), ids.begin(), ids.end());
+      for (auto index : node.source_operators) {
+        auto& record = (*diagnostics)[index];
+        record.source_operators = node.source_operators;
+        record.composite = CompositeKindName(node.kind);
+      }
+    }
   }
-  for (const auto& tensor : subgraph.Outputs()) {
-    auto value = values.find(tensor.Get());
-    auto output = descriptor(tensor);
-    if (value == values.end() || !output) {
-      reason = "Unbound or invalid partition output"; return nullptr;
-    }
-    auto result=value->second;
-    if(tensor.ElementType()==ElementType::Bool)result=graph.AddCastOperator(result,tfsc::tosa::Tensor(tfsc::tosa::DataType::int8_t,output->shape));
-    graph.AddOutput(result, output->binding);
-    artifact->outputs.push_back(std::move(*output));
+  for (auto id : ir->outputs) {
+    const auto& value = ir->values[id];
+    auto result = get_value(id);
+    if (!result) { reason = "Unbound partition output"; return nullptr; }
+    auto output = descriptor(value);
+    if (value.logical_type == kLiteRtElementTypeBool)
+      result = graph.AddCastOperator(result, tfsc::tosa::Tensor(tfsc::tosa::DataType::int8_t, output.shape));
+    graph.AddOutput(result, output.binding);
+    artifact->outputs.push_back(std::move(output));
   }
-  if (artifact->outputs.empty()) { reason = "Partition has no outputs"; return nullptr; }
   graph.FinalizeGraph();
+  // Internal decompositions can use FP32 even with integer graph interfaces
+  // (for example BUCKETIZE). Derive profile requirements from emitted types.
+  for (const auto& instruction : module->GetSpirvGraph()) {
+    if (instruction.m_Opcode == spv::Op::OpTypeFloat && artifact->profiles.size() == 1)
+      artifact->profiles.push_back("PRO-FP");
+  }
   artifact->spirv = tfsc::WriteToBinary(module);
   if (artifact->spirv.empty()) { reason = "TFSC failed to serialize partition"; return nullptr; }
   if (!CollectTosaLevelRequirements(*module, artifact->level_requirements, reason)) return nullptr;
-  for (auto& constant : constants) {
+  if (optimization) {
+    for (size_t i = 5; i < artifact->spirv.size();) {
+      uint32_t count = artifact->spirv[i] >> 16;
+      if (!count || count > artifact->spirv.size() - i) break;
+      if ((artifact->spirv[i] & 0xffff) == 12) ++optimization->emitted_operators;
+      i += count;
+    }
+  }
+  for (auto& constant : constants.values) {
     const auto element = constant.tensor.GetDataType() == tfsc::tosa::DataType::int8_t
         ? TensorElement::kInt8 : constant.tensor.GetDataType() == tfsc::tosa::DataType::float32_t
         ? TensorElement::kFloat32 : TensorElement::kInt32;
     artifact->constants.push_back({{element, constant.tensor.GetTensorShape(),
         static_cast<uint32_t>(artifact->constants.size())}, std::move(constant.bytes)});
+  }
+  if (optimization) {
+    optimization->constant_count = artifact->constants.size();
+    for (const auto& constant : artifact->constants) optimization->constant_bytes += constant.bytes.size();
+    optimization->compile_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
   }
   return artifact;
 }

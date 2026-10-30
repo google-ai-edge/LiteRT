@@ -26,6 +26,24 @@ def key(name):
     return name.replace("_", "").lower()
 
 
+def frontend_inventory(compiler):
+    """Catch omitted registrations and stale entries; not per-type qualification."""
+    references = set()
+    for name in ['operation.cc', 'portable_ops.cc', 'extended_ops.cc', 'conv2d_adapter.cc', 'decomposition.cc']:
+        path = compiler / name
+        if path.is_file():
+            source = path.read_text()
+            references.update(re.findall(r'kLiteRtOpCodeTfl(\w+)', source))
+            references.update(re.findall(r'\bUNARY\((\w+),', source))
+    references.discard('name')
+    path = compiler / 'op_registry.cc'
+    registered = set(re.findall(r'\bOP\((\w+)\)', path.read_text())) if path.is_file() else set()
+    registered.discard('name')
+    return dict(registered=sorted(registered),
+                unregistered_references=sorted(references - registered),
+                registrations_without_references=sorted(registered - references))
+
+
 def audit(database, compiler, tfsc):
     sources = {p.name: p.read_text() for p in sorted(compiler.glob("*.cc"))
                if not p.name.endswith(("_test.cc", "_fixture.cc"))}
@@ -53,6 +71,7 @@ def audit(database, compiler, tfsc):
     return {
         "instruction_set": database["instruction_set"],
         "scope": "Source references are not per-type qualification or device support",
+        "tflite_frontend": frontend_inventory(compiler),
         "source_sha256": {
             **{f"compiler/{name}": hashlib.sha256(text.encode()).hexdigest()
                for name, text in sources.items()},
@@ -96,6 +115,9 @@ def main():
     database = json.loads((HERE / "tosa_001000_1.json").read_text())
     report = audit(database, COMPILER, args.tfsc)
     if args.check:
+        frontend = report['tflite_frontend']
+        if frontend['unregistered_references'] or frontend['registrations_without_references']:
+            raise SystemExit('TFLite registry/code references differ: ' + json.dumps(frontend))
         manifest=json.loads((HERE/"implementation_coverage.json").read_text())
         rows={op["name"]:op for op in manifest["operators"]}
         if len(rows)!=len(manifest["operators"]) or set(rows)!={op["name"] for op in report["operators"]}:

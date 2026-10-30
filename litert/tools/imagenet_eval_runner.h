@@ -36,6 +36,10 @@ struct EvaluationConfig {
   std::string accelerator = "cpu";
   std::string compiler_plugin_library_dir;
   int arm_vulkan_ml_enable_jit = 0;
+  std::string arm_vulkan_ml_optimization_mode = "qualified";
+  std::string arm_vulkan_ml_softmax_lut_type = "auto";
+  // Empty inherits the candidate's mode, like other baseline options.
+  std::string baseline_arm_vulkan_ml_optimization_mode;
   std::string baseline_accelerator = "inherit";
   int baseline_num_threads = 1;
   std::string dispatch_library_dir;

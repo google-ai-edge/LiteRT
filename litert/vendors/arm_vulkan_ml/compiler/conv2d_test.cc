@@ -49,15 +49,15 @@ TEST(Conv2d, TrailingSlicePreservesValidOutput) {
   tfsc::tosa::Graph graph(module, "main");
   auto input = graph.AddInput(tfsc::tosa::Tensor(tfsc::tosa::DataType::int8_t,
                                                 {1, 8, 8, 2}), 0);
-  std::vector<GraphConstant> constants;
+  GraphConstantPool constants;
   auto result = EmitConv2d(graph, input, *plan, constants);
   ASSERT_FALSE(tfsc::IsError(result)) << tfsc::GetErrorMsg(result);
   graph.AddOutput(result, 1);
   graph.FinalizeGraph();
   EXPECT_FALSE(tfsc::WriteToBinary(module).empty());
-  ASSERT_GE(constants.size(), 4);
-  EXPECT_EQ(constants[0].bytes.size(), 54);
-  EXPECT_EQ(constants[1].bytes.size(), 12);
+  ASSERT_GE(constants.values.size(), 4);
+  EXPECT_EQ(constants.values[0].bytes.size(), 54);
+  EXPECT_EQ(constants.values[1].bytes.size(), 12);
 }
 TEST(Conv2d, GroupedChannelsAreSlicedAndConcatenated) {
   auto spec=Fixture();spec.input_shape[3]=4;
@@ -67,7 +67,7 @@ TEST(Conv2d, GroupedChannelsAreSlicedAndConcatenated) {
   std::string reason;auto plan=AnalyzeConv2d(spec,reason);ASSERT_TRUE(plan)<<reason;
   auto module=tfsc::CreateModule();tfsc::tosa::Graph graph(module,"main");
   auto input=graph.AddInput(tfsc::tosa::Tensor(tfsc::tosa::DataType::int8_t,{1,8,8,4}),0);
-  std::vector<GraphConstant> constants;auto output=EmitConv2d(graph,input,*plan,constants);
+  GraphConstantPool constants;auto output=EmitConv2d(graph,input,*plan,constants);
   ASSERT_TRUE(output);ASSERT_FALSE(tfsc::IsError(output))<<tfsc::GetErrorMsg(output);
   graph.AddOutput(output,1);graph.FinalizeGraph();EXPECT_FALSE(tfsc::WriteToBinary(module).empty());
   spec.input_shape[3]=3;EXPECT_FALSE(AnalyzeConv2d(spec,reason));
@@ -96,7 +96,7 @@ TEST(Conv2d, ChannelwiseConvolutionKeepsTheNativeFusionPattern) {
       auto input = graph.AddInput(tfsc::tosa::Tensor(
           tfsc::tosa::DataType::int8_t,
           {spec.input_shape.begin(), spec.input_shape.end()}), 0);
-      std::vector<GraphConstant> constants;
+      GraphConstantPool constants;
       auto output = EmitConv2d(graph, input, *plan, constants);
       ASSERT_NE(output, nullptr);
       ASSERT_FALSE(tfsc::IsError(output)) << tfsc::GetErrorMsg(output);
@@ -111,8 +111,24 @@ TEST(Conv2d, ChannelwiseConvolutionKeepsTheNativeFusionPattern) {
       EXPECT_EQ(operators, (std::vector<O>{
           depthwise ? O::DepthwiseConv2d : O::Conv2d, O::Rescale, O::Clamp}));
       // Only weights, bias, multipliers and shifts; no rounding-correction data.
-      EXPECT_EQ(constants.size(), 4);
+      EXPECT_EQ(constants.values.size(), 4);
     }
+  }
+}
+
+TEST(Conv2d, ConstantInterningRequiresIdenticalStorageTypeShapeAndBytes) {
+  for (bool intern : {false, true}) {
+    auto module = tfsc::CreateModule(); tfsc::tosa::Graph graph(module, "main");
+    GraphConstantPool constants; constants.deduplicate = intern;
+    tfsc::tosa::Tensor bytes(tfsc::tosa::DataType::int8_t, {1, 4});
+    auto first = AddGraphConstant(graph, bytes, {1, 2, 3, 4}, constants);
+    auto second = AddGraphConstant(graph, bytes, {1, 2, 3, 4}, constants);
+    EXPECT_EQ(first == second, intern);
+    EXPECT_NE(first, AddGraphConstant(graph, tfsc::tosa::Tensor(tfsc::tosa::DataType::int8_t, {4, 1}), {1, 2, 3, 4}, constants));
+    EXPECT_NE(first, AddGraphConstant(graph, tfsc::tosa::Tensor(tfsc::tosa::DataType::int32_t, {1, 1}), {1, 2, 3, 4}, constants));
+    EXPECT_NE(first, AddGraphConstant(graph, bytes, {4, 3, 2, 1}, constants));
+    EXPECT_EQ(constants.values.size(), intern ? 4 : 5);
+    EXPECT_EQ(constants.reused, intern ? 1 : 0);
   }
 }
 
@@ -121,13 +137,13 @@ TEST(Conv2d, NativeRescaleRejectsUnprovenRanges) {
   tfsc::tosa::Graph graph(module, "main");
   auto input = graph.AddInput(tfsc::tosa::Tensor(
       tfsc::tosa::DataType::int32_t, {1, 1}), 0);
-  std::vector<GraphConstant> constants;
+  GraphConstantPool constants;
   const Scale32 scale{1 << 30, 30};
   EXPECT_EQ(EmitRescale(graph, input, {1, 1}, 0, {scale},
                        {{0, 1 << 29}}, constants), nullptr);
   EXPECT_EQ(EmitRescale(graph, input, {1, 1}, 128, {scale},
                        {{0, 127}}, constants), nullptr);
-  EXPECT_TRUE(constants.empty());
+  EXPECT_TRUE(constants.values.empty());
 }
 TEST(Conv2d, RejectsUnsafeOrInconsistentMetadata) {
   std::string reason;

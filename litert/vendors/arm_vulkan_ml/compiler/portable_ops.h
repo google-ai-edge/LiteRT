@@ -27,7 +27,6 @@ struct PortablePlan {
   uint32_t activation = 0;
   float scalar = 0;
 };
-bool IsPortableOperation(LiteRtOpCode code);
 std::shared_ptr<PortablePlan> AnalyzePortableOperation(const Op&, std::string&);
 std::vector<tfsc::tosa::ResId> EmitPortableOperation(tfsc::tosa::Graph&,
     std::vector<tfsc::tosa::ResId>, const PortablePlan&);

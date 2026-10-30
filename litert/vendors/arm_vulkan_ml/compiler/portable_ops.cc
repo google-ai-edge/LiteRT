@@ -53,26 +53,20 @@ bool Ints(const Tensor& t, std::vector<int32_t>& values) {
 }
 uint64_t Count(const Shape& s) { return std::accumulate(s.begin(), s.end(), uint64_t{1}, std::multiplies<uint64_t>()); }
 }
-bool IsPortableOperation(LiteRtOpCode code) {
-  switch (code) {
-#define OP(name) case kLiteRtOpCodeTfl##name:
-    OP(Relu) OP(Relu6) OP(Slice) OP(Concatenation) OP(Padv2)
-    OP(Sub) OP(Div) OP(Maximum) OP(Minimum) OP(Abs) OP(Neg) OP(Square)
-    OP(Pow) OP(Sin) OP(Cos) OP(Gelu) OP(ReverseV2) OP(Conv3d)
-    OP(Sqrt) OP(Rsqrt) OP(Exp) OP(Log) OP(Floor) OP(Ceil) OP(Tanh)
-    OP(Squeeze) OP(ExpandDims) OP(Pack) OP(Unpack) OP(Split) OP(SplitV) OP(Tile)
-    OP(Mean) OP(ReduceProd) OP(Softmax) OP(BatchMatmul) OP(StridedSlice) OP(MaxPool2d) OP(AveragePool2d)
-      return true;
-#undef OP
-    default: return false;
-  }
-}
 std::shared_ptr<PortablePlan> AnalyzePortableOperation(const Op& op, std::string& reason) {
   auto reject = [&](const char* message) -> std::shared_ptr<PortablePlan> { reason = message; return nullptr; };
   auto p = std::make_shared<PortablePlan>(); p->code = op.Code();
   p->quantized = !op.Outputs().empty() && op.Outputs()[0].ElementType()==ElementType::Int8;
+  const auto* registration = FindOperationRegistration(p->code);
+  if (!registration || op.Outputs().empty() ||
+      registration->data_input >= op.Inputs().size())
+    return reject("Missing registered portable data operands");
+  const auto* variant = FindOperationVariant(*registration,
+      static_cast<LiteRtElementType>(op.Inputs()[registration->data_input].ElementType()),
+      static_cast<LiteRtElementType>(op.Outputs()[0].ElementType()));
+  if (!variant || variant->route != LoweringRoute::kPortable)
+    return reject("Type pair is not registered for portable lowering");
   if(p->quantized){
-    switch(p->code){case kLiteRtOpCodeTflMaximum:case kLiteRtOpCodeTflMinimum:case kLiteRtOpCodeTflSqueeze:case kLiteRtOpCodeTflExpandDims:case kLiteRtOpCodeTflPack:case kLiteRtOpCodeTflUnpack:case kLiteRtOpCodeTflSplit:case kLiteRtOpCodeTflSplitV:case kLiteRtOpCodeTflTile:case kLiteRtOpCodeTflStridedSlice:case kLiteRtOpCodeTflReverseV2:break;default:return reject("Quantized portable operation not enabled");}
     const auto output=op.Outputs()[0];if(output.QTypeId()!=QuantizationTypeId::PerTensor)return reject("Quantized shape op requires per-tensor quantization");auto q=output.PerTensorQuantization();
     if(!std::isfinite(q.scale) || q.scale<=0 || q.zero_point < -128 || q.zero_point>127)return reject("Invalid shape-op quantization");
     for(const auto& t:op.Inputs())if(t.ElementType()==ElementType::Int8){if(t.QTypeId()!=QuantizationTypeId::PerTensor)return reject("Shape-op quantization differs");auto iq=t.PerTensorQuantization();if(iq.scale!=q.scale || iq.zero_point!=q.zero_point)return reject("Shape-op quantization differs");}
@@ -117,7 +111,8 @@ std::shared_ptr<PortablePlan> AnalyzePortableOperation(const Op& op, std::string
     for(auto& a:p->parameters){if(a<0)a+=rank;if(a<0 || a>=rank || !seen.insert(a).second)return reject("Invalid or duplicate REVERSE axis");}
   } else if(code==kLiteRtOpCodeTflGelu) {
     bool approximate;
-    if(in.size()!=1 || LiteRtGetGeluApproximateOption(op.Get(),&approximate)!=kLiteRtStatusOk || approximate)return reject("GELU requires exact erf mode");
+    if(in.size()!=1 || LiteRtGetGeluApproximateOption(op.Get(),&approximate)!=kLiteRtStatusOk)return reject("GELU requires valid approximation options");
+    p->parameters={approximate?1:0};
   } else if (code == kLiteRtOpCodeTflBatchMatmul) {
     Shape rhs;
     if(in.size()!=2 || !shape_of(in[1],rhs) || rank<2 || rhs.size()<2 ||
@@ -253,8 +248,17 @@ std::vector<ResId> EmitPortableOperation(tfsc::tosa::Graph& g, std::vector<ResId
       return {x};
     case kLiteRtOpCodeTflGelu: {
       auto zero=g.AddTensorConstant(Attribute(int8_t{0}));
-      auto z=g.AddMulOperator(x,constant(0.7071067811865475f,out),zero,t);
-      z=g.AddErfOperator(z,t);z=g.AddAddOperator(z,constant(1.0f,out),t);
+      ResId z;
+      if(!p.parameters.empty() && p.parameters[0]) {
+        auto square=g.AddMulOperator(x,x,zero,t);
+        auto cube=g.AddMulOperator(x,square,zero,t);
+        auto corrected=g.AddAddOperator(x,g.AddMulOperator(cube,constant(.044715f,out),zero,t),t);
+        z=g.AddTanhOperator(g.AddMulOperator(corrected,constant(.7978845608028654f,out),zero,t),t);
+      } else {
+        z=g.AddMulOperator(x,constant(0.7071067811865475f,out),zero,t);
+        z=g.AddErfOperator(z,t);
+      }
+      z=g.AddAddOperator(z,constant(1.0f,out),t);
       z=g.AddMulOperator(z,constant(0.5f,out),zero,t);
       return {g.AddMulOperator(x,z,zero,t)};
     }

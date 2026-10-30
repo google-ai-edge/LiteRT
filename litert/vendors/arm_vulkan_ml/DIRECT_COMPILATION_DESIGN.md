@@ -168,7 +168,9 @@ flowchart TD
     P --> T["LiteRT semantic lowering<br/>Translate operations and numerical behavior"]
     P --> U["Undelegated operations<br/>LiteRT CPU or another backend"]
     C --> T
-    T --> E["Reuse TFSC core<br/>TOSA graph builder and SPIR-V emitter"]
+    T --> I["Owned graph IR<br/>Quantized composites and ordered output transforms"]
+    I --> O["Portable graph optimization<br/>Validate geometry, quantization and observable boundaries"]
+    O --> E["Expand standard TOSA operations<br/>TFSC graph builder and SPIR-V emitter"]
     E --> A["Executable graph artifact<br/>SPIR-V, constants, tensor metadata"]
     T -. "constants and binding metadata" .-> A
     A --> D["Arm dispatch<br/>Resources, bindings, synchronization"]
@@ -178,6 +180,33 @@ flowchart TD
     A -. "optional storage" .-> S["VGF artifact"]
     S -. "load" .-> A
 ```
+
+### Portable optimization boundary
+
+The compiler keeps graph values, quantization, constants and original-operator
+provenance in an owned IR before allocating SPIR-V result IDs. Quantized
+convolution, depthwise/transpose convolution, binary arithmetic, fully connected,
+pooling and lookup functions are recognizable composites. Their ordered
+output transforms retain intermediate rounding, zero points and saturation;
+two rounded scales are not combined by multiplication. All composites expand
+to standard TOSA instructions at emission. Device packing, physical aliasing,
+scheduling and hardware fusion remain the driver's responsibility.
+
+Portable rewrites can simplify shape chains and constant layouts, absorb
+spatial real-zero padding into a legal convolution, compose compatible clamps
+and INT8 lookups, and share immutable constants. Graph inputs/outputs,
+persistent values and additional consumers constrain removal and fusion.
+Partition legality uses the same operation analysis as before optimization;
+emitted graph requirements are recomputed for device acceptance.
+
+`off`, `exact` and `qualified` modes support differential validation. Exact
+rewrites preserve integer results. Approximate rules require both exhaustive
+local INT8 error checks and bounded end-to-end model differences before being
+enabled in qualified mode. A locally bounded affine requantization candidate
+failed that second gate and remains disabled; local error bounds alone do not
+establish model-level accuracy. The capability database stays a development
+aid, not a runtime dependency. This architecture adds no Regor dependency,
+custom VGF operation or dispatch ABI.
 
 ### LiteRT integration and capability selection
 
@@ -474,6 +503,19 @@ LiteRT backends when a configuration is unsupported.
 Hardware optimizations performed by the driver do not substitute for correct
 frontend translation. A driver cannot recover an incorrect quantization rule or
 a lost activation from the submitted graph.
+
+Quantized Softmax illustrates the distinction between storage and arithmetic
+precision. Both selectable LUT layouts retain the same Q31 exponential values;
+four INT8 tables or three INT16 tables reconstruct those values for INT32
+normalization. INT16 tables therefore do not inherently improve accuracy.
+The compiler proves signed accumulation and numerator bounds for its admitted
+row lengths. `auto` chooses the base integer-profile path; forcing INT16 adds
+`EXT-INT16` to the artifact requirements, which dispatch checks before pipeline
+creation. Selection is a compilation option, not a per-inference switch.
+Qualification uses an independent FP64 mathematical oracle and the XNNPACK QU8
+operator with signed/unsigned rebasing. Legacy TFLite output differences are
+recorded separately. Neither the compiler nor dispatch depends on gemmlowp or
+XNNPACK for this lowering; XNNPACK is a developer-tool reference dependency.
 
 ## Software emulation and execution testing
 

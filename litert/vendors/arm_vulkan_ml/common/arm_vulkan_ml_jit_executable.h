@@ -22,11 +22,15 @@ struct TensorDescriptor {
   std::vector<uint32_t> shape;
   uint32_t binding;
   // BOOL uses INT8 storage and UINT32 uses INT32 storage in the graph ABI.
+  // COMPLEX64 uses interleaved FP32 storage with a trailing dimension of two.
   // Retain the model type for LiteRT buffer requirements and attachment checks.
   LiteRtElementType logical_element =
       element == TensorElement::kInt8 ? kLiteRtElementTypeInt8 :
       element == TensorElement::kFloat32 ? kLiteRtElementTypeFloat32 :
                                          kLiteRtElementTypeInt32;
+  // Vulkan tensors have positive rank. A logical LiteRT scalar is stored as
+  // one physical element and retains strict rank-zero buffer validation.
+  bool logical_scalar = false;
 };
 
 // Requirements of the emitted graph, including intermediate tensors and

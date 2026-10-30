@@ -47,7 +47,7 @@ Python object bindings with this checkout's FlatBuffers compiler:
 
 ```sh
 bazelisk run @flatbuffers//:flatc -- --python --gen-object-api \
-  -o .arm-vulkan-preflight/schema tflite/schema/schema.fbs
+  -o .arm-vulkan-preflight/schema tflite/converter/schema/schema.fbs
 PYTHONPATH=.arm-vulkan-preflight/schema \
 .arm-vulkan-preflight/venv/bin/python \
   litert/vendors/arm_vulkan_ml/tools/testing/qualify_portable_ops.py \
@@ -57,7 +57,7 @@ PYTHONPATH=.arm-vulkan-preflight/schema \
 ```
 
 Use the repository's per-worktree Bazel cache/output flags for these builds.
-The driver checks 59 FP32/typed positive fixtures and eight expected rejections.
+The driver checks 60 FP32/typed positive fixtures and seven expected rejections.
 Repeat with `--quantized_only` and a separate output directory for 38 INT8
 positive fixtures and six rejections. Four synthetic cases are generated per
 positive fixture. Each checks intended opcode emission, SPIR-V, capabilities,
@@ -68,13 +68,35 @@ fixtures cover overlapping and cropped VALID windows, extreme zero points and
 fused RELU6. Numerical gates for complete ImageNet models remain unchanged.
 These cases consume no ImageNet images.
 
+`qualify_softmax.py` uses the same host setup to qualify the bounded INT8 Softmax
+composition through the C++ tool. It compiles both LUT layouts, then compares
+available device paths against FP64 and XNNPACK QU8 using six synthetic patterns
+per fixture. Use `--fixture NAME` to select cases or `--generate_only` to prepare
+fixtures for Android. An unavailable `EXT-INT16` engine is recorded without
+bypassing capability checks. See [Softmax validation](../devtool/README.md#quantized-softmax-validation)
+for reference limitations and command examples.
+
+`qualify_converter_gap.py` uses the same environment and C++ tool to exercise
+165 new frontend/type/geometry fixtures, with three synthetic cases per model.
+It compares against TFLite CPU kernels, or independent FP64 references for INT8
+SQUARE/CONV_3D. Three additional RFFT2D fixtures are compile/SPIR-V qualified
+only and retain their EXT-FFT requirement. Use `--fixture NAME` for focused
+iterations and `--generate_only` to prepare artifacts. `--skip_passed` resumes a
+run in the same output directory; use a fresh directory after lowering changes
+to repeat all checks. No torchvision calibration or ImageNet evaluation runs
+are part of this suite. See the [comparison and limits](../tosa_capabilities/README.md#tflite-converter-comparison).
+
 ## Real LiteRT model lifecycle
 
 `//litert/vendors/arm_vulkan_ml/tools/testing:lifecycle_test` generates tiny FP32
 and INT8 ADD models and uses the real compiler plugin, dispatch and public
 LiteRT compiled-model API. It checks complete acceleration, exact expected sums,
 repeated invocation, interleaved live instances and survival after another model
-is destroyed. No downloaded model is needed.
+is destroyed. A separate INT8 Softmax case verifies that `auto`/`int8` table
+options reach JIT compilation and produce mathematical-oracle results within
+one output code. No downloaded model is needed.
+Scalar RANK and complex IMAG cases also verify the logical LiteRT buffer layouts,
+allocation and attachment through the real dispatch API.
 
 Build the test with Bazel. With the Vulkan environment above configured, opt in:
 

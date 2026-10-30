@@ -15,6 +15,7 @@
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/extended_ops.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/portable_ops.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/decomposition.h"
 #include "litert/core/model/model.h"
 #include <algorithm>
 #include <cmath>
@@ -66,17 +67,16 @@ std::optional<Activation> ActivationCode(uint32_t code) {
 }
 template <typename T>
 ResId Constant(Graph& graph, const std::vector<T>& data, const std::vector<uint32_t>& shape,
-               std::vector<GraphConstant>& constants) {
+               GraphConstantPool& constants) {
   const auto type = tfsc::tosa::GetDataType<T>();
   TosaTensor tensor(type, shape);
   GraphConstant constant{tensor, std::vector<uint8_t>(data.size()*sizeof(T))};
   std::memcpy(constant.bytes.data(), data.data(), constant.bytes.size());
-  constants.push_back(std::move(constant));
-  return graph.AddGraphConstant(tensor);
+  return AddGraphConstant(graph, tensor, std::move(constant.bytes), constants);
 }
 ResId Rescale(Graph& g, ResId input, const std::vector<uint32_t>& shape,
     DataType input_type, DataType output_type, int32_t izp, int32_t ozp,
-    const std::vector<Scale32>& scales, std::vector<GraphConstant>& constants,
+    const std::vector<Scale32>& scales, GraphConstantPool& constants,
     bool per_channel = false) {
   std::vector<int32_t> mult; std::vector<int8_t> shift;
   for (auto scale : scales) { mult.push_back(scale.multiplier); shift.push_back(scale.shift); }
@@ -127,8 +127,9 @@ bool AnalyzeFloatConvolution(const Op& op, OperationPlan& p, std::string& reason
   if(p.inputs[0].shape[0]!=p.output.shape[0])return false;
   if(dw) {
     int32_t multiplier;
-    if(LiteRtGetDepthwiseConv2dDepthMultiplierOption(op.Get(),&multiplier)!=kLiteRtStatusOk || multiplier!=1 ||
-       p.weight_shape[0]!=1 || p.weight_shape[3]!=p.inputs[0].shape[3] || p.output.shape[3]!=p.inputs[0].shape[3])return false;
+    if(LiteRtGetDepthwiseConv2dDepthMultiplierOption(op.Get(),&multiplier)!=kLiteRtStatusOk || multiplier<=0 ||
+       p.weight_shape[0]!=1 || p.weight_shape[3]!=p.output.shape[3] ||
+       int64_t{multiplier}*p.inputs[0].shape[3]!=p.output.shape[3])return false;
   } else if(p.weight_shape[0]!=p.output.shape[3] || p.weight_shape[3]!=p.inputs[0].shape[3])return false;
   auto padding_fn=dw?LiteRtGetDepthwiseConv2dPaddingOption:LiteRtGetConv2dPaddingOption;
   auto activation_fn=dw?LiteRtGetDepthwiseConv2dFusedActivationOption:LiteRtGetConv2dFusedActivationOption;
@@ -155,15 +156,32 @@ bool AnalyzeFloatConvolution(const Op& op, OperationPlan& p, std::string& reason
   return true;
 }
 
-std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason) {
+std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason, SoftmaxLutType softmax_lut) {
   auto reject = [&](const char* s)->std::optional<OperationPlan> { reason=s; return std::nullopt; };
   OperationPlan p{}; p.code=op.Code();
   auto in=op.Inputs(); auto out=op.Outputs();
-  const bool typed = p.code==kLiteRtOpCodeTflLogicalAnd || p.code==kLiteRtOpCodeTflLogicalOr ||
-      p.code==kLiteRtOpCodeTflLogicalNot || p.code==kLiteRtOpCodeTflNotEqual || p.code==kLiteRtOpCodeTflEqual ||
-      p.code==kLiteRtOpCodeTflReduceAll || p.code==kLiteRtOpCodeTflReduceAny || p.code==kLiteRtOpCodeTflArgMax ||
-      p.code==kLiteRtOpCodeTflBitwiseXor || p.code==kLiteRtOpCodeTflFloorDiv || p.code==kLiteRtOpCodeTflRightShift;
-  if(typed) {
+  const auto* registration = FindOperationRegistration(p.code);
+  if (!registration) return reject("TFLite operator has no registered lowering");
+  if (out.empty() || registration->data_input >= in.size())
+    return reject("Missing registered data input or output");
+  const auto* variant = FindOperationVariant(*registration,
+      static_cast<LiteRtElementType>(in[registration->data_input].ElementType()),
+      static_cast<LiteRtElementType>(out[0].ElementType()));
+  if (!variant) return reject("TFLite data input/output type pair has no registered lowering");
+  p.route = variant->route;
+  if (p.route == LoweringRoute::kDecomposed) {
+    p.decomposition = AnalyzeDecomposition(op, reason);
+    if (!p.decomposition) return std::nullopt;
+    p.runtime_inputs = p.decomposition->runtime_inputs;
+    const auto& data = p.decomposition->data;
+    const auto& output = p.decomposition->output;
+    p.inputs.push_back({data.shape, data.scale, data.zero_point, data.type == DataType::float32_t});
+    p.output = {output.shape, output.scale, output.zero_point, output.type == DataType::float32_t};
+    p.table = p.decomposition->table;
+    p.required_extensions = p.decomposition->extensions;
+    return p;
+  }
+  if(p.route == LoweringRoute::kTyped) {
     if(out.size()!=1 || in.empty())return reject("Typed operation requires one output");
     auto read=[&](const Tensor& t, QuantizedTensor& q, DataType& type){
       auto rt=t.RankedTensorType();if(!rt || rt->Layout().HasStrides())return false;
@@ -204,8 +222,7 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
     }
     if(expected!=p.output.shape)return reject("Typed output shape mismatch");return p;
   }
-  const bool quantized_shape=p.code==kLiteRtOpCodeTflMaximum || p.code==kLiteRtOpCodeTflMinimum || p.code==kLiteRtOpCodeTflSqueeze || p.code==kLiteRtOpCodeTflExpandDims || p.code==kLiteRtOpCodeTflPack || p.code==kLiteRtOpCodeTflUnpack || p.code==kLiteRtOpCodeTflSplit || p.code==kLiteRtOpCodeTflSplitV || p.code==kLiteRtOpCodeTflTile || p.code==kLiteRtOpCodeTflStridedSlice || p.code==kLiteRtOpCodeTflReverseV2;
-  if (IsPortableOperation(p.code) && !out.empty() && (out[0].ElementType() == ElementType::Float32 || (quantized_shape && out[0].ElementType()==ElementType::Int8))) {
+  if (p.route == LoweringRoute::kPortable) {
     p.portable = AnalyzePortableOperation(op, reason);
     if (!p.portable) return std::nullopt;
     p.runtime_inputs = p.portable->inputs;
@@ -213,12 +230,22 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
     return p;
   }
   if(in.empty() || out.size()!=1) return reject("Expected data inputs and exactly one output");
-  const int data_index = p.code == kLiteRtOpCodeTflTransposeConv ? 2 : p.code == kLiteRtOpCodeTflScatterNd ? 1 : 0;
+  const int data_index = registration->data_input;
   if (data_index >= in.size()) return reject("Missing data input");
   auto input=ReadTensor(in[data_index]); auto output=ReadTensor(out[0]);
-  if(!input || !output || output->shape.empty()) return reject("Requires static dense int8 tensors with finite per-tensor quantization");
+  if(!input || !output || output->shape.empty()) return reject("Requires static dense FP32 or per-tensor affine INT8 data tensors");
   p.inputs.push_back(*input); p.output=*output; p.runtime_inputs={data_index};
-  if (IsExtendedOperation(p.code, input->floating)) {
+  if (p.code == kLiteRtOpCodeTflSoftmax) {
+    float beta;
+    if (in.size() != 1 || input->floating || output->floating || input->shape != output->shape ||
+        output->scale != 1.0 / 256 || output->zero_point != -128 ||
+        LiteRtGetSoftmaxBetaOption(op.Get(), &beta) != kLiteRtStatusOk)
+      return reject("INT8 SOFTMAX requires matching shapes, scale=1/256 and zero_point=-128 output");
+    p.softmax = AnalyzeQuantizedSoftmax(input->shape.back(), input->scale, beta, softmax_lut, reason);
+    if (!p.softmax) return std::nullopt;
+    return p;
+  }
+  if (p.route == LoweringRoute::kExtended) {
     if (!AnalyzeExtendedOperation(op, p, reason)) return std::nullopt;
     return p;
   }
@@ -247,17 +274,12 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
     reason.clear();
     return p;
   }
-  if ((input->floating || output->floating) &&
-      p.code != kLiteRtOpCodeTflTranspose && p.code != kLiteRtOpCodeTflPad &&
-      p.code != kLiteRtOpCodeTflHardSwish && p.code != kLiteRtOpCodeTflQuantize &&
-      p.code != kLiteRtOpCodeTflDequantize &&
-      p.code != kLiteRtOpCodeTflLogistic && p.code != kLiteRtOpCodeTflAveragePool2d &&
-      p.code != kLiteRtOpCodeTflReshape) {
-    if ((p.code == kLiteRtOpCodeTflConv2d || p.code == kLiteRtOpCodeTflDepthwiseConv2d) &&
-        input->floating && output->floating && AnalyzeFloatConvolution(op, p, reason)) return p;
-    return reject("Unsupported floating-point operation or convolution geometry");
-  }
   if(p.code==kLiteRtOpCodeTflConv2d || p.code==kLiteRtOpCodeTflDepthwiseConv2d) {
+    if (input->floating) {
+      if (!AnalyzeFloatConvolution(op, p, reason))
+        return reject("Unsupported floating-point convolution geometry");
+      return p;
+    }
     p.convolution=AnalyzeConv2d(op,reason);
     if(!p.convolution) return std::nullopt;
     return p;
@@ -497,26 +519,33 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
       auto get_sh=avg?LiteRtGetAveragePool2dStrideHOption:LiteRtGetMaxPool2dStrideHOption;
       auto get_sw=avg?LiteRtGetAveragePool2dStrideWOption:LiteRtGetMaxPool2dStrideWOption;
       uint32_t padding,fused; p.kernel.resize(2); p.stride.resize(2);
-      if(get_padding(op.Get(),&padding)!=kLiteRtStatusOk || padding!=1 ||
+      if(get_padding(op.Get(),&padding)!=kLiteRtStatusOk || padding>1 ||
          get_activation(op.Get(),&fused)!=kLiteRtStatusOk ||
          get_h(op.Get(),&p.kernel[0])!=kLiteRtStatusOk || get_w(op.Get(),&p.kernel[1])!=kLiteRtStatusOk ||
          get_sh(op.Get(),&p.stride[0])!=kLiteRtStatusOk || get_sw(op.Get(),&p.stride[1])!=kLiteRtStatusOk)
-        return reject("Pool currently requires VALID padding");
+        return reject("Invalid pool options");
       auto activation=ActivationCode(fused); if(!activation) return reject("Unsupported pool activation");
       p.float_activation=fused;
       p.activation=*ActivationRange(*activation,output->scale,output->zero_point);
       p.cropped_shape=input->shape;
+      p.padding.assign(4, 0);
       for(int axis=0;axis<2;++axis) {
         int64_t d=input->shape[axis+1], k=p.kernel[axis], stride=p.stride[axis];
-        if(k<=0 || stride<=0 || d<k || (d-k)/stride+1!=output->shape[axis+1])
+        if(k<=0 || k>8192 || stride<=0 || stride>8192 || (padding==1 && d<k))
           return reject("Invalid pool geometry");
-        p.cropped_shape[axis+1]-=(d-k)%stride;
+        const int64_t count=padding==0?(d+stride-1)/stride:(d-k)/stride+1;
+        if(count!=output->shape[axis+1])return reject("Pool output shape mismatch");
+        const int64_t total=padding==0?std::max(int64_t{0},(count-1)*stride+k-d):0;
+        p.padding[2*axis]=total/2;p.padding[2*axis+1]=total-total/2;
+        const int64_t trailing=(d+total-k)%stride;
+        const int64_t removed=std::min(trailing,int64_t{p.padding[2*axis+1]});
+        p.padding[2*axis+1]-=removed;
+        p.cropped_shape[axis+1]-=trailing-removed;
       }
-      // Every VALID window has the same divisor, including overlapping windows.
-      // TOSA AVG_POOL2D handles its own division and rounding; prove that the
+      // TOSA AVG_POOL2D excludes padded elements from its divisor. Prove that the
       // centered INT8 sum fits INT32 regardless of stride or output geometry.
       if (avg && uint64_t{static_cast<uint32_t>(p.kernel[0])} * p.kernel[1] * 255 > INT32_MAX)
-        return reject("AVG_POOL requires a bounded int8 VALID window");
+        return reject("AVG_POOL requires a bounded int8 window");
       break;
     }
     case kLiteRtOpCodeTflSum: {
@@ -574,7 +603,7 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason)
 }
 
 ResId EmitFloatOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPlan& p,
-                         std::vector<GraphConstant>& constants) {
+                         GraphConstantPool& constants) {
   const auto& q=p.inputs[0];auto value=inputs[0];
   TosaTensor ftype(DataType::float32_t,p.output.shape);
   auto scalar=[&](float x) {return Constant(g,std::vector<float>{x},std::vector<uint32_t>(q.shape.size(),1),constants);};
@@ -636,7 +665,7 @@ ResId EmitFloatOperation(Graph& g,const std::vector<ResId>& inputs,const Operati
           g.AddTensorConstant(Attribute(p.cropped_shape)),TosaTensor(DataType::float32_t,p.cropped_shape));
       bool dw=p.code==kLiteRtOpCodeTflDepthwiseConv2d;
       auto shape=p.weight_shape;
-      if(dw)shape={shape[1],shape[2],shape[3],1};
+      if(dw)shape={shape[1],shape[2],q.shape[3],shape[3]/q.shape[3]};
       auto weights=Constant(g,p.float_weights,shape,constants);
       auto bias=Constant(g,p.float_bias,{p.output.shape[3]},constants);
       auto zero=g.AddTensorConstant(Attribute(0.0f));
@@ -650,7 +679,8 @@ ResId EmitFloatOperation(Graph& g,const std::vector<ResId>& inputs,const Operati
 }
 
 ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPlan& p,
-                    std::vector<GraphConstant>& constants) {
+                    GraphConstantPool& constants) {
+  if (p.decomposition) return EmitDecomposition(g, inputs, *p.decomposition, constants);
   if(p.typed){
     auto type=[&](DataType dt,const std::vector<uint32_t>& shape){return TosaTensor(dt,shape);};
     std::vector<ResId> v;
@@ -688,8 +718,9 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
   }
 
   auto input=inputs[0]; const auto& q=p.inputs[0];
+  if (p.softmax) return EmitQuantizedSoftmax(g, input, p.output.shape, *p.softmax);
   TosaTensor out(p.output.floating ? DataType::float32_t : DataType::int8_t,p.output.shape);
-  if (IsExtendedOperation(p.code, q.floating)) return EmitExtendedOperation(g, input, p, constants);
+  if (p.route == LoweringRoute::kExtended) return EmitExtendedOperation(g, input, p, constants);
   if(q.floating || p.output.floating) return EmitFloatOperation(g, inputs, p, constants);
   switch(p.code) {
     case kLiteRtOpCodeTflReshape:return Reshape(g,input,DataType::int8_t,p.output.shape);
@@ -744,7 +775,7 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
       auto result = g.AddAvgPool2dOperator(input,
           g.AddTensorConstant(Attribute(static_cast<int8_t>(q.zero_point))),
           g.AddTensorConstant(Attribute(static_cast<int8_t>(p.output.zero_point))),
-          Attribute(p.kernel), Attribute(p.stride), Attribute({0, 0, 0, 0}),
+          Attribute(p.kernel), Attribute(p.stride), Attribute(p.padding),
           Attribute(int32_t{1}), out);
       return Clamp(g, result, p);
     }
@@ -753,7 +784,7 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
           g.AddTensorConstant(Attribute(std::vector<uint32_t>(4,0))),
           g.AddTensorConstant(Attribute(p.cropped_shape)),TosaTensor(DataType::int8_t,p.cropped_shape));
       auto result = g.AddMaxPool2dOperator(input, Attribute(p.kernel), Attribute(p.stride),
-          Attribute({0, 0, 0, 0}), Attribute(int32_t{1}), out);
+          Attribute(p.padding), Attribute(int32_t{1}), out);
       return Clamp(g,result,p);
     }
     case kLiteRtOpCodeTflSum: {

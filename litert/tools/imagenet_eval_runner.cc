@@ -93,6 +93,9 @@ void PrintUsage(const char* argv0) {
       << "  --dispatch_library_dir=DIR\n"
       << "  --compiler_plugin_library_dir=DIR\n"
       << "  --arm_vulkan_ml_enable_jit=0|1  Requires accelerator=npu\n"
+      << "  --arm_vulkan_ml_optimization_mode=off|exact|qualified\n"
+      << "  --arm_vulkan_ml_softmax_lut_type=auto|int8|int16\n"
+      << "  --baseline_arm_vulkan_ml_optimization_mode=off|exact|qualified\n"
       << "  --baseline_accelerator=inherit|cpu  CPU uses reference kernels\n"
       << "  --baseline_num_threads=1  Explicit CPU baseline threads\n"
       << "  --openvino_device=cpu|gpu|npu|auto\n"
@@ -113,6 +116,11 @@ litert::Expected<void> ValidateBackendOptions(const Config& cfg) {
       return litert::Error(kLiteRtStatusErrorInvalidArgument, "Unknown accelerator: " + std::string(accelerator));
     npu |= accelerator == "npu";
   }
+  for (const auto& mode : {cfg.arm_vulkan_ml_optimization_mode, cfg.baseline_arm_vulkan_ml_optimization_mode})
+    if (!mode.empty() && mode != "off" && mode != "exact" && mode != "qualified")
+      return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid Arm Vulkan ML optimization mode");
+  if (cfg.arm_vulkan_ml_softmax_lut_type != "auto" && cfg.arm_vulkan_ml_softmax_lut_type != "int8" && cfg.arm_vulkan_ml_softmax_lut_type != "int16")
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid Arm Vulkan ML Softmax LUT type");
   if (cfg.arm_vulkan_ml_enable_jit != 0 && cfg.arm_vulkan_ml_enable_jit != 1)
     return litert::Error(kLiteRtStatusErrorInvalidArgument, "arm_vulkan_ml_enable_jit must be 0 or 1");
   if (cfg.arm_vulkan_ml_enable_jit && !npu)
@@ -129,6 +137,8 @@ litert::Expected<void> ValidateBackendOptions(const Config& cfg) {
 Config BaselineConfig(const Config& candidate) {
   Config baseline = candidate;
   baseline.model = candidate.baseline_model;
+  if (!candidate.baseline_arm_vulkan_ml_optimization_mode.empty())
+    baseline.arm_vulkan_ml_optimization_mode = candidate.baseline_arm_vulkan_ml_optimization_mode;
   if (candidate.baseline_accelerator == "cpu") {
     baseline.accelerator = "cpu";
     baseline.num_threads = candidate.baseline_num_threads;
@@ -159,6 +169,9 @@ litert::Expected<void> ParseArgs(int argc, char** argv, Config& cfg) {
       {"image_root", &cfg.image_root},
       {"out", &cfg.out},
       {"scores_out", &cfg.scores_out},
+      {"arm_vulkan_ml_optimization_mode", &cfg.arm_vulkan_ml_optimization_mode},
+      {"arm_vulkan_ml_softmax_lut_type", &cfg.arm_vulkan_ml_softmax_lut_type},
+      {"baseline_arm_vulkan_ml_optimization_mode", &cfg.baseline_arm_vulkan_ml_optimization_mode},
       {"inputs_out", &cfg.inputs_out},
       {"accelerator", &cfg.accelerator},
       {"dispatch_library_dir", &cfg.dispatch_library_dir},
@@ -608,6 +621,18 @@ litert::Expected<litert::Options> CreateOptions(const Config& cfg, bool referenc
   if (cfg.arm_vulkan_ml_enable_jit) {
     LITERT_ASSIGN_OR_RETURN(auto& arm, options.GetOptions<litert::arm_vulkan_ml::ArmVulkanMLOptions>());
     LITERT_RETURN_IF_ERROR(arm.SetEnableJustInTime(true));
+    LrtArmVulkanMLOptimizationMode mode;
+    if (cfg.arm_vulkan_ml_optimization_mode == "off") mode = kLrtArmVulkanMLOptimizationOff;
+    else if (cfg.arm_vulkan_ml_optimization_mode == "exact") mode = kLrtArmVulkanMLOptimizationExact;
+    else if (cfg.arm_vulkan_ml_optimization_mode == "qualified") mode = kLrtArmVulkanMLOptimizationQualified;
+    else return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid Arm Vulkan ML optimization mode");
+    LITERT_RETURN_IF_ERROR(arm.SetOptimizationMode(mode));
+    LrtArmVulkanMLSoftmaxLutType type;
+    if (cfg.arm_vulkan_ml_softmax_lut_type == "auto") type = kLrtArmVulkanMLSoftmaxLutAuto;
+    else if (cfg.arm_vulkan_ml_softmax_lut_type == "int8") type = kLrtArmVulkanMLSoftmaxLutInt8;
+    else if (cfg.arm_vulkan_ml_softmax_lut_type == "int16") type = kLrtArmVulkanMLSoftmaxLutInt16;
+    else return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid Arm Vulkan ML Softmax LUT type");
+    LITERT_RETURN_IF_ERROR(arm.SetSoftmaxLutType(type));
   }
   return options;
 }
@@ -618,6 +643,8 @@ Json DescribeExecution(const Config& cfg, bool reference_cpu) {
           {"gpu_backend", cfg.gpu_backend}, {"gpu_precision", cfg.gpu_precision},
           {"gpu_use_ir_model", cfg.gpu_use_ir_model},
           {"arm_vulkan_ml_enable_jit", static_cast<bool>(cfg.arm_vulkan_ml_enable_jit)},
+          {"arm_vulkan_ml_optimization_mode", cfg.arm_vulkan_ml_optimization_mode},
+          {"arm_vulkan_ml_softmax_lut_type", cfg.arm_vulkan_ml_softmax_lut_type},
           {"compiler_plugin_library_dir", cfg.compiler_plugin_library_dir},
           {"dispatch_library_dir", cfg.dispatch_library_dir},
           {"require_full_acceleration", static_cast<bool>(cfg.require_full_acceleration)}};
@@ -654,10 +681,13 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
       auto env,
       litert::Environment::Create(litert::EnvironmentOptions(env_options)));
   LITERT_ASSIGN_OR_RETURN(auto options, CreateOptions(cfg));
+  auto candidate_setup_start = std::chrono::steady_clock::now();
   LITERT_ASSIGN_OR_RETURN(
       auto candidate,
       CreateExecution(env, options, cfg.model, cfg.require_full_acceleration));
   summary["candidate_execution"] = DescribeExecution(cfg, false);
+  summary["candidate_setup_ms"] = std::chrono::duration<double, std::milli>(
+      std::chrono::steady_clock::now() - candidate_setup_start).count();
   LITERT_ASSIGN_OR_RETURN(summary["candidate_delegation"], DelegationSummary(candidate->model));
   if (cfg.num_threads > 0 || cfg.xnnpack_only)
     summary["cpu_options_identifiers"] = {"cpu_options", "xnnpack", "cpu_delegate"};
@@ -667,9 +697,12 @@ litert::Expected<void> Run(const Config& cfg, Json& summary) {
     const bool reference_cpu = cfg.baseline_accelerator == "cpu";
     LITERT_ASSIGN_OR_RETURN(auto baseline_options, CreateOptions(baseline_cfg, reference_cpu));
     summary["baseline_execution"] = DescribeExecution(baseline_cfg, reference_cpu);
+    auto baseline_setup_start = std::chrono::steady_clock::now();
     LITERT_ASSIGN_OR_RETURN(baseline,
                             CreateExecution(env, baseline_options, cfg.baseline_model,
                                             baseline_cfg.require_full_acceleration));
+    summary["baseline_setup_ms"] = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - baseline_setup_start).count();
     LITERT_ASSIGN_OR_RETURN(summary["baseline_delegation"], DelegationSummary(baseline->model));
     if (baseline->shape != candidate->shape ||
         baseline->classes != candidate->classes)
@@ -873,6 +906,8 @@ int litert::imagenet::EvaluationMain(int argc, char** argv) {
          {"dispatch_library_dir", cfg.dispatch_library_dir},
          {"compiler_plugin_library_dir", cfg.compiler_plugin_library_dir},
          {"arm_vulkan_ml_enable_jit", static_cast<bool>(cfg.arm_vulkan_ml_enable_jit)},
+          {"arm_vulkan_ml_optimization_mode", cfg.arm_vulkan_ml_optimization_mode},
+          {"arm_vulkan_ml_softmax_lut_type", cfg.arm_vulkan_ml_softmax_lut_type},
          {"baseline_accelerator", cfg.baseline_accelerator},
          {"accelerator", cfg.accelerator},
          {"gpu_backend", cfg.gpu_backend},

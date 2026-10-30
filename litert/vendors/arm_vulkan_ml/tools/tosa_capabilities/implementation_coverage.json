@@ -26,7 +26,7 @@
       "opcode": 1,
       "implementation": "emitted",
       "route": "Native AVG_POOL2D with optional fused-activation CLAMP",
-      "constraints": "INT8: static NHWC, matching affine quantization, bounded VALID windows including overlap and cropped trailing input; FP32: existing VALID/SAME subset",
+      "constraints": "INT8/FP32 static NHWC, SAME/VALID; INT8 matching affine quantization and bounded windows; native padding exclusion/division; trailing input/padding cropped for exact TOSA shape equations",
       "spirv_validation": "passed",
       "emulator": "passed",
       "hardware": "not_qualified",
@@ -76,7 +76,7 @@
       "opcode": 4,
       "implementation": "emitted",
       "route": "Native convolution -> SINGLE_ROUND RESCALE -> CLAMP for INT8; existing FP32 path",
-      "constraints": "Existing NHWC constant-weight/bias subset and proven accumulator/rescale ranges; per-channel scaling uses one RESCALE without rounding emulation or channel splitting",
+      "constraints": "Static NHWC; constant weights/bias; positive depth multiplier; symmetric per-channel INT8 weights with matching INT32 bias; proven ranges; SAME/VALID",
       "spirv_validation": "passed",
       "emulator": "passed",
       "hardware": "not_qualified",
@@ -121,13 +121,24 @@
     {
       "name": "RFFT2D",
       "opcode": 8,
-      "implementation": "pending",
-      "route": "RFFT2D with REAL/IMAG/COMPLEX_ABS consumers: not implemented",
-      "constraints": "Needs paired complex SSA values and partition closure; EXT-FFT not advertised by local emulator",
-      "spirv_validation": "pending",
-      "emulator": "pending",
+      "implementation": "emitted",
+      "route": "RFFT2D with interleaved COMPLEX64 storage and REAL/IMAG extraction",
+      "constraints": "Static FP32 input; constant positive power-of-two FFT lengths; crop/zero-pad; physical rank<=6 and bounded batch/materialization; runtime EXT-FFT query required",
+      "spirv_validation": "passed",
+      "emulator": "extension_unavailable",
       "hardware": "not_qualified",
-      "fixtures": []
+      "fixtures": [
+        "RFFT2D_4_8",
+        "RFFT2D_2_4",
+        "RFFT2D_8_16"
+      ],
+      "required_profiles": [
+        "PRO-INT",
+        "PRO-FP"
+      ],
+      "required_extensions": [
+        "EXT-FFT"
+      ]
     },
     {
       "name": "TRANSPOSE_CONV2D",
@@ -216,13 +227,20 @@
     {
       "name": "BITWISE_AND",
       "opcode": 16,
-      "implementation": "unreachable",
-      "route": "No TFLite integer AND builtin; StableHLO frontend excluded",
-      "constraints": "Not enabled",
-      "spirv_validation": "pending",
-      "emulator": "pending",
+      "implementation": "emitted",
+      "route": "Raw INT32/FP32-to-INT8 CAST narrowing via low-bit mask",
+      "constraints": "Constant mask 255; INT32 signed reconstruction; raw numeric conversion",
+      "spirv_validation": "passed",
+      "emulator": "passed",
       "hardware": "not_qualified",
-      "fixtures": []
+      "fixtures": [
+        "CAST_INT32_INT8",
+        "CAST_FP32_INT8"
+      ],
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
     },
     {
       "name": "BITWISE_OR",
@@ -289,13 +307,19 @@
     {
       "name": "LOGICAL_LEFT_SHIFT",
       "opcode": 21,
-      "implementation": "unreachable",
-      "route": "No TFLite left-shift builtin; StableHLO frontend excluded",
-      "constraints": "Not enabled",
-      "spirv_validation": "pending",
-      "emulator": "pending",
+      "implementation": "emitted",
+      "route": "INT8 SOFTMAX Q31 TABLE reconstruction and integer normalization",
+      "constraints": "INT32 nonnegative values and constant proven-safe shifts; internal composition only",
+      "spirv_validation": "passed",
+      "emulator": "passed",
       "hardware": "not_qualified",
-      "fixtures": []
+      "fixtures": [
+        "qualify_softmax.py:channels_1..4095"
+      ],
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": []
     },
     {
       "name": "LOGICAL_RIGHT_SHIFT",
@@ -1013,6 +1037,43 @@
       "required_extensions": []
     },
     {
+      "litert_operator": "SOFTMAX",
+      "types": [
+        "INT8"
+      ],
+      "quantization": "per-tensor affine input; output scale=1/256, zero_point=-128",
+      "constraints": "Static dense shape; finite positive input scale/beta; last axis length 1..4095; four INT8 TABLEs or three INT16 TABLEs reconstruct Q31 exponentials; signed INT32 bounds proven before emission",
+      "fixtures": [
+        "tools/testing/qualify_softmax.py"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "passed",
+      "comparison": "INT8 tables: independent FP64 and guarded XNNPACK QU8, max 1 code and mean 0.5 gate; legacy TFLite differences reported separately",
+      "hardware": "not_qualified",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": [],
+      "lut_variants": [
+        {
+          "type": "int8",
+          "required_extensions": [],
+          "spirv_validation": "passed",
+          "emulator": "passed",
+          "hardware": "not_qualified"
+        },
+        {
+          "type": "int16",
+          "required_extensions": [
+            "EXT-INT16"
+          ],
+          "spirv_validation": "passed",
+          "emulator": "not_qualified_extension_unavailable",
+          "hardware": "not_qualified"
+        }
+      ]
+    },
+    {
       "litert_operator": "SPLIT",
       "types": [
         "INT8"
@@ -1191,5 +1252,44 @@
       ],
       "required_extensions": []
     }
-  ]
+  ],
+  "graph_optimization": {
+    "default_mode": "qualified",
+    "modes": [
+      "off",
+      "exact",
+      "qualified"
+    ],
+    "representation": "Owned values and analyzed quantized composites; ordered output transforms; standard TOSA expansion",
+    "exact_passes": [
+      "scale normalization with range revalidation",
+      "constant layout folding and interning",
+      "reshape/transpose canonicalization",
+      "single-consumer spatial real-zero PAD folding",
+      "clamp composition",
+      "INT8 TABLE composition",
+      "exhaustively exact affine TABLE-to-RESCALE replacement",
+      "dead-node cleanup"
+    ],
+    "barriers": [
+      "graph inputs/outputs",
+      "persistent values",
+      "additional consumers"
+    ],
+    "approximate_affine_requantization": {
+      "enabled": false,
+      "local_max_codes": 1,
+      "local_mean_codes": 0.25,
+      "model_max_additional_codes": 2,
+      "model_per_image_mean_additional_codes": 0.5,
+      "require_unchanged_top1": true,
+      "reason": "Locally bounded candidate failed the end-to-end corpus gate; qualified mode currently enables exact rules only"
+    },
+    "tests": [
+      "//litert/vendors/arm_vulkan_ml/compiler:graph_ir_test",
+      "//litert/vendors/arm_vulkan_ml/tools:devtool_test",
+      "tools/testing/qualify_graph_optimizations.py"
+    ],
+    "hardware": "not_qualified"
+  }
 }

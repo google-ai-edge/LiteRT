@@ -9,7 +9,7 @@
     "dispatch/device_memory_allocator.h": "f3d0489f018c3951bfac396886e44754d6f32ea79c995f9e677c51d97810a429",
     "dispatch/external_buffer.cc": "44eb90f81792c942ee062909f70437722dee550466b7b1373459434690c6af74",
     "dispatch/external_buffer.h": "9a253670406e769dadc707be870e23b6061212fe752296da61d4bab6aa647742",
-    "tools/devtool/tool.cc": "1492ce8db8bd1dd937384b0fbb24a07671d95943f7b08e3e7ecf3bd00486d99f"
+    "tools/devtool/tool.cc": "9d3b9d6f63f1f8f73f8d1aac19e465aa76338697477aa9daea94cc5a16df2a2b"
   },
   "groups": [
     {
@@ -486,5 +486,5 @@
       ]
     }
   ],
-  "review_scope": "Partial review only. Source fingerprints refreshed after checking the retained aggregate sType construction and zero buffer/image-barrier conditions and rerunning the named dispatch tests. Unlisted VUIDs remain unreviewed; this is not native device conformance evidence."
+  "review_scope": "Partial review only. Source fingerprints refreshed after checking the retained aggregate sType construction and zero buffer/image-barrier conditions and rerunning the named dispatch tests. Unlisted VUIDs remain unreviewed; this is not native device conformance evidence. Tool optimization controls/diagnostics and differential execution reuse the existing Vulkan query and dispatch paths; the Vulkan candidate inventory is unchanged after this source review. Softmax LUT selection and external numerical references retain the same device queries and invocation API usage; no Vulkan candidate requirement was added or removed. Shared TFLite registration and offline coverage selection do not change Vulkan queries, invocation API use or the candidate VUID inventory."
 }

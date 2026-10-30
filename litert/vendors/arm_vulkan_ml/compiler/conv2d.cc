@@ -39,13 +39,30 @@ bool Elements(const std::array<uint32_t, 4>& shape, uint64_t& count) {
 template <typename T>
 tfsc::tosa::ResId Constant(tfsc::tosa::Graph& graph, const Tensor& tensor,
                            const std::vector<T>& data,
-                           std::vector<GraphConstant>& constants) {
+                           GraphConstantPool& constants) {
   GraphConstant constant{tensor, std::vector<uint8_t>(data.size() * sizeof(T))};
   std::memcpy(constant.bytes.data(), data.data(), constant.bytes.size());
-  constants.push_back(std::move(constant));
-  return graph.AddGraphConstant(tensor);
+  return AddGraphConstant(graph, tensor, std::move(constant.bytes), constants);
 }
 }  // namespace
+
+tfsc::tosa::ResId AddGraphConstant(tfsc::tosa::Graph& graph,
+    const tfsc::tosa::Tensor& tensor, std::vector<uint8_t> bytes,
+    GraphConstantPool& constants) {
+  if (constants.deduplicate) {
+    for (const auto& constant : constants.values) {
+      if (constant.id && constant.tensor.GetDataType() == tensor.GetDataType() &&
+          constant.tensor.GetTensorShape() == tensor.GetTensorShape() &&
+          constant.bytes == bytes) {
+        ++constants.reused;
+        return constant.id;
+      }
+    }
+  }
+  auto id = graph.AddGraphConstant(tensor);
+  constants.values.push_back({tensor, std::move(bytes), id});
+  return id;
+}
 
 std::optional<Conv2dPlan> AnalyzeConv2d(Conv2dSpec s, std::string& reason) {
   reason.clear();
@@ -60,7 +77,7 @@ std::optional<Conv2dPlan> AnalyzeConv2d(Conv2dSpec s, std::string& reason) {
     return reject("CONV2D requires static nonempty shapes with int32 element counts");
   const uint32_t channels = s.weight_shape[0];
   if (s.input_shape[0] != s.output_shape[0] ||
-      (s.depthwise ? (s.input_shape[3] != channels || s.weight_shape[3] != 1) :
+      (s.depthwise ? (channels % s.input_shape[3] != 0 || s.weight_shape[3] != 1) :
        (s.input_shape[3] % s.weight_shape[3] != 0 || channels % (s.input_shape[3] / s.weight_shape[3]) != 0)) || s.output_shape[3] != channels)
     return reject("CONV2D batch/channel dimensions disagree");
   if (s.weights.size() != weight_count || s.bias.size() != channels ||
@@ -115,7 +132,7 @@ std::optional<Conv2dPlan> AnalyzeConv2d(Conv2dSpec s, std::string& reason) {
 tfsc::tosa::ResId EmitRescale(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
     const std::vector<uint32_t>& shape, int32_t output_zero_point,
     const std::vector<Scale32>& scales, const std::vector<AccumulatorRange>& ranges,
-    std::vector<GraphConstant>& constants) {
+    GraphConstantPool& constants) {
   if (shape.empty() || scales.empty() || scales.size() != ranges.size() ||
       (scales.size() != 1 && scales.size() != shape.back()) ||
       output_zero_point < -128 || output_zero_point > 127) return nullptr;
@@ -147,7 +164,7 @@ tfsc::tosa::ResId EmitRescale(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
 
 tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph,
                             tfsc::tosa::ResId input, const Conv2dPlan& plan,
-                            std::vector<GraphConstant>& constants,
+                            GraphConstantPool& constants,
                             tfsc::tosa::ResId* accumulator) {
   const auto& s = plan.spec;
   const uint32_t groups=s.depthwise?1:s.input_shape[3]/s.weight_shape[3];
@@ -199,7 +216,8 @@ tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph,
     for (size_t k = 0; k < kernel; ++k)
       for (size_t c = 0; c < channels; ++c)
         weights[k * channels + c] = s.weights[c * kernel + k];
-    weight_type = Tensor(DataType::int8_t, {s.weight_shape[1], s.weight_shape[2], channels, 1});
+    weight_type = Tensor(DataType::int8_t, {s.weight_shape[1], s.weight_shape[2],
+                                           s.input_shape[3], channels / s.input_shape[3]});
   }
   auto weight = Constant(graph, weight_type, weights, constants);
   auto bias = Constant(graph, Tensor(DataType::int32_t, {s.weight_shape[0]}),

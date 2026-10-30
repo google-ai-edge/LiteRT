@@ -20,6 +20,7 @@
 #include <vector>
 #include <string>
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/graph_ir.h"
 #include "litert/vendors/arm_vulkan_ml/common/arm_vulkan_ml_jit_executable.h"
 namespace litert::arm_vulkan_ml {
 // Optional diagnostic attribution. IDs shared across operators are recorded at
@@ -27,8 +28,13 @@ namespace litert::arm_vulkan_ml {
 struct LoweringRecord {
   size_t operator_index;
   std::vector<uint32_t> result_ids;
+  std::vector<size_t> source_operators;
+  std::string composite;
 };
 std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& graph,
-                                                        std::string& reason, std::vector<LoweringRecord>* diagnostics = nullptr);
+                                                        std::string& reason, std::vector<LoweringRecord>* diagnostics = nullptr,
+                                                        OptimizationMode mode = kLrtArmVulkanMLOptimizationQualified,
+                                                        OptimizationReport* optimization = nullptr,
+                                                        SoftmaxLutType softmax_lut = kLrtArmVulkanMLSoftmaxLutAuto);
 }  // namespace litert::arm_vulkan_ml
 #endif

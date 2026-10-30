@@ -201,9 +201,18 @@ bool CollectTosaLevelRequirements(const tfsc::spirv::Module& module,
         result.max_tensor_list_size = std::max(result.max_tensor_list_size, static_cast<uint64_t>(a.size() - 5));
         break;
       case O::Fft2d:
-      case O::Rfft2d:
-        // Add FFT extent accounting when complex lowering is implemented.
-        return reject();
+      case O::Rfft2d: {
+        const bool real = static_cast<O>(a[3].m_LiteralWord) == O::Rfft2d;
+        std::vector<uint32_t> shape;
+        if (a.size() != (real ? 6 : 8) || !ValueShape(a[real ? 5 : 6], shape) || shape.size() != 3)
+          return reject();
+        for (size_t axis : {size_t{1}, size_t{2}}) {
+          if (!shape[axis] || (shape[axis] & (shape[axis] - 1))) return reject();
+        }
+        // RFFT2D/FFT2D have power-of-two shape rules, not a MAX_KERNEL
+        // requirement. Their global rank/tensor byte limits were collected above.
+        break;
+      }
       default:
         break;  // Remaining mapped operators have only the global tensor limits.
     }

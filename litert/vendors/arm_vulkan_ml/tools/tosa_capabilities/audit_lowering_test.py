@@ -21,6 +21,21 @@ import audit_lowering
 
 
 class AuditTest(unittest.TestCase):
+    def test_frontend_registry_catches_omissions_and_stale_entries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'operation.cc').write_text('case kLiteRtOpCodeTflAdd: break;')
+            (root / 'portable_ops.cc').write_text('UNARY(Abs, Abs)\n')
+            (root / 'op_registry.cc').write_text('#define OP(name) code##name\nOP(Add)\nOP(Abs)\n')
+            result = audit_lowering.frontend_inventory(root)
+            self.assertEqual(result['registered'], ['Abs', 'Add'])
+            self.assertFalse(result['unregistered_references'])
+            self.assertFalse(result['registrations_without_references'])
+            (root / 'op_registry.cc').write_text('OP(Add)\nOP(Select)\n')
+            result = audit_lowering.frontend_inventory(root)
+            self.assertEqual(result['unregistered_references'], ['Abs'])
+            self.assertEqual(result['registrations_without_references'], ['Select'])
+
     def test_macros_aliases_and_test_sources(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

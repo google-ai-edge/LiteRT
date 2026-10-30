@@ -69,8 +69,8 @@ std::optional<Conv2dPlan> AnalyzeConv2d(const Op& op, std::string& reason) {
     return reject("CONV_2D requires dense static rank-4 int8 tensors");
   s.depthwise = depthwise;
   if (depthwise) {
-    if (s.weight_shape[0] != 1 || s.weight_shape[3] != s.input_shape[3])
-      return reject("Depthwise convolution requires depth_multiplier=1");
+    if (s.weight_shape[0] != 1 || s.weight_shape[3] % s.input_shape[3] != 0)
+      return reject("Depthwise output channels must be a multiple of input channels");
     s.weight_shape = {s.weight_shape[3], s.weight_shape[1], s.weight_shape[2], 1};
   }
   const auto& bias = inputs[2];
@@ -123,8 +123,9 @@ std::optional<Conv2dPlan> AnalyzeConv2d(const Op& op, std::string& reason) {
     return reject("Convolution option lookup failed");
   if (depthwise) {
     int32_t multiplier;
-    if (LiteRtGetDepthwiseConv2dDepthMultiplierOption(op.Get(), &multiplier) != kLiteRtStatusOk || multiplier != 1)
-      return reject("Depthwise convolution requires depth_multiplier=1");
+    if (LiteRtGetDepthwiseConv2dDepthMultiplierOption(op.Get(), &multiplier) != kLiteRtStatusOk ||
+        multiplier <= 0 || int64_t{multiplier} * s.input_shape[3] != s.output_shape[3])
+      return reject("Depthwise multiplier disagrees with channel dimensions");
   }
   switch (activation) {
     case 0: s.activation = Activation::kNone; break;

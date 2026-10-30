@@ -49,7 +49,7 @@ database=Path(__file__).resolve().parents[1]/'tosa_capabilities/tosa_001000_1.js
 if not database.exists():raise SystemExit('Generate the pinned TOSA database first')
 opcodes={op['name']:op['opcode'] for op in json.loads(database.read_text())['operators']}
 expected_tosa={name:[name] for name in ['SIN','COS','POW','LOGICAL_AND','LOGICAL_OR','LOGICAL_NOT','REDUCE_ALL','REDUCE_ANY','BITWISE_XOR']}
-expected_tosa.update({'POW_POSITIVE':['POW'],'GELU':['ERF'],'REVERSE_V2':['REVERSE'],'CONV_3D':['CONV3D'],'ARG_MAX':['ARGMAX'],'NOT_EQUAL_BOOL':['LOGICAL_XOR'],'EQUAL_FP32':['EQUAL'],'BITWISE_NOT_IDIOM':['BITWISE_NOT'],'RIGHT_SHIFT':['LOGICAL_RIGHT_SHIFT'],'FLOOR_DIV':['INTDIV'],'SCATTER_ND':['SCATTER']})
+expected_tosa.update({'POW_POSITIVE':['POW'],'GELU':['ERF'],'GELU_APPROXIMATE':['TANH'],'REVERSE_V2':['REVERSE'],'CONV_3D':['CONV3D'],'ARG_MAX':['ARGMAX'],'NOT_EQUAL_BOOL':['LOGICAL_XOR'],'EQUAL_FP32':['EQUAL'],'BITWISE_NOT_IDIOM':['BITWISE_NOT'],'RIGHT_SHIFT':['LOGICAL_RIGHT_SHIFT'],'FLOOR_DIV':['INTDIV'],'SCATTER_ND':['SCATTER']})
 def fixture(name, shapes, outputs, constants=None, options=None, label=None, supported=True, input_types=None, output_type=None, quantization=None, code_error=0):
  opcode_name=name;name=label or name
  m=ModelT();m.version=3;m.buffers=[BufferT()];g=SubGraphT();g.tensors=[];g.inputs=[];g.outputs=[];op=OperatorT();op.opcodeIndex=0;op.inputs=[]
@@ -193,7 +193,7 @@ else:
   fixture(name,[[2,3]],[[2,3]],options=('SoftmaxOptions',{'beta':.7}) if name=='SOFTMAX' else None)
  fixture('POW',[[2,3],[1,3]],[[2,3]],label='POW_POSITIVE')
  fixture('GELU',[[2,3]],[[2,3]],options=('GeluOptions',{'approximate':False}))
- fixture('GELU',[[2,3]],[[2,3]],options=('GeluOptions',{'approximate':True}),label='GELU_APPROXIMATE',supported=False)
+ fixture('GELU',[[2,3]],[[2,3]],options=('GeluOptions',{'approximate':True}),label='GELU_APPROXIMATE')
  fixture('REVERSE_V2',[[2,3],[2]],[[2,3]],{1:np.array([0,-1],np.int32)})
  fixture('CONV_3D',[[1,3,3,3,2],[2,2,2,2,3],[3]],[[1,2,2,2,3]],{1:np.linspace(-.2,.3,48,dtype=np.float32).reshape(2,2,2,2,3),2:np.array([.1,-.2,.3],np.float32)},('Conv3DOptions',{'padding':1,'strideD':1,'strideH':1,'strideW':1,'dilationDFactor':1,'dilationHFactor':1,'dilationWFactor':1}))
  for name in ['SUB','DIV','MAXIMUM','MINIMUM']:

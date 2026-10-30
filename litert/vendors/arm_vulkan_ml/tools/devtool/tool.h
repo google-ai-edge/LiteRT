@@ -15,6 +15,7 @@
 #ifndef LITERT_ARM_VULKAN_ML_DEVTOOL_H_
 #define LITERT_ARM_VULKAN_ML_DEVTOOL_H_
 #include "litert/vendors/arm_vulkan_ml/dispatch/device_capabilities.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/graph_ir.h"
 #include <map>
 #include <string>
 #include <vector>
@@ -29,6 +30,8 @@ struct Options {
   std::map<std::string, std::string> values;
   std::map<std::string, std::vector<std::string>> repeated;
   std::string Get(const std::string& key, const std::string& fallback = "") const;
+  Expected<OptimizationMode> Optimization() const;
+  Expected<SoftmaxLutType> SoftmaxLut() const;
   Expected<int> Integer(const std::string& key, int fallback) const;
   Expected<double> Number(const std::string& key, double fallback) const;
 };
@@ -38,6 +41,11 @@ Expected<std::vector<uint8_t>> PackModel(const tflite::ModelT& model);
 Expected<void> Inspect(const Options& options, Json& report, bool compile);
 Expected<void> Capabilities(const Options& options, Json& report);
 Expected<void> Validate(const Options& options, Json& report);
+Expected<void> CompareOptimizations(const Options& options, Json& report);
+Expected<std::vector<int8_t>> SoftmaxReference(const std::vector<int8_t>& input,
+    size_t channels, double input_scale, double beta, const std::string& reference);
+Expected<std::vector<int8_t>> QuantizedReference(
+    const tflite::ModelT& model, const std::vector<int8_t>& input);
 Expected<void> FillImageInput(tflite::Interpreter&, const std::vector<float>& pixels);
 Expected<void> Trace(const Options& options, Json& report);
 Expected<void> Compare(const void* actual, const void* expected, size_t count,
@@ -45,7 +53,7 @@ Expected<void> Compare(const void* actual, const void* expected, size_t count,
 Expected<void> QueryTosa(const Json& database, const Options& options, Json& result);
 Expected<void> ExportVgf(const CompiledPartition&, const std::string& name, const std::string& path);
 Expected<void> TosaQuery(const Options& options, Json& report);
-Expected<void> Coverage(Json& report);
+Expected<void> Coverage(Json& report, const std::string& op_set = "tosa");
 void PrintCoverage(const Json& report);
 void PrintTosaQuery(const Json& report);
 Expected<void> Run(const Options& options, Json& report);

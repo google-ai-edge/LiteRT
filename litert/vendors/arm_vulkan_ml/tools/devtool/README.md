@@ -12,6 +12,7 @@ LiteRT ImageNet evaluator, which continues to support other backends.
 | `capabilities` | Query extensions/revisions, feature bits, tensor limits/formats and TOSA engine profiles/extensions | Yes |
 | `validate` | Require complete coverage, validate SPIR-V and compare GPU inference against CPU reference | Yes, with ML support |
 | `trace` | Find the first intermediate output outside tolerance using CPU reference | Yes, with ML support |
+| `compare` | Compare off and optimized lowering on identical inputs, with separate graph, compiler, setup and inference metrics | Yes, with ML support |
 | `tosa-query` | Filter specification type rows and profile/extension requirements | No |
 | `coverage` | Show the reviewed operator implementation inventory | No |
 
@@ -284,6 +285,68 @@ The driver uses four synthetic tensor cases per supported fixture, including
 negative values, zeros and ties where applicable. These are not ImageNet images.
 It exits unsuccessfully for unexpected coverage, pipeline or numerical failures.
 
+## Quantized Softmax validation
+
+All model commands accept `--softmax_lut_type=auto|int8|int16`. This chooses the
+internal table layout before compilation; input/output tensors remain INT8.
+`auto` conservatively uses four INT8 tables under `PRO-INT`. The three-table
+INT16 layout requires conformant `EXT-INT16`; emulation opt-in does not waive
+that extension. Both layouts reconstruct the same Q31 exponentials and use the
+same bounded INT32 normalization. There is no measured native performance
+comparison yet.
+
+The admitted subset uses static last-axis lengths 1..4095, finite positive
+input scale and beta, and output scale `1/256`, zero point `-128`. Larger rows
+are rejected before compilation. Select the layout through C/C++
+`SetSoftmaxLutType`, TOML `softmax_lut_type = "int8"`, or the shared ImageNet
+evaluator's `--arm_vulkan_ml_softmax_lut_type=int8` option.
+
+For a raw single-op INT8 Softmax fixture, `validate --reference=fp64` computes a
+stable mathematical oracle independently of the production LUT. The alternative
+`--reference=xnnpack` invokes XNNPACK's QU8 Softmax operator after adding 128 to
+signed input codes, then subtracts 128 from its output. Input zero points cancel
+in Softmax; this is a numerical rebase, not a byte reinterpretation. The TFLite
+XNNPACK delegate does not select this integer operator, so a CPU delegate option
+alone would not provide this comparison. `--reference=tflite` remains the
+default and measures compatibility with the legacy fixed-point kernel.
+
+`--reference=fp64` also accepts raw single-op INT8 `SQUARE` and `CONV_3D`
+fixtures. This checkout's CPU kernels do not implement those types. The tool
+uses an independent mathematical square or INT64 dot product with FP64 affine
+scaling, then saturates to INT8. These are mathematical accuracy checks rather
+than comparisons with a nonexistent CPU kernel. The oracle shares no lowering,
+lookup table or fixed-point helper with the compiler. XNNPACK reference mode
+continues to apply only to Softmax.
+
+```sh
+"$TOOL" validate --model softmax.tflite --tensor_inputs softmax.inputs.json \
+  --softmax_lut_type=int8 --reference=fp64 --max_samples=3 \
+  --max_code_error=1 --mean_code_error=0.5 --report_json=softmax-fp64.json
+python litert/vendors/arm_vulkan_ml/tools/testing/qualify_softmax.py \
+  --tool "$TOOL" --output_dir .arm-vulkan-preflight/softmax-qualification \
+  --allow_emulation --vulkan_validation=sync
+```
+
+The host generator uses the bindings described above. It compiles both layouts
+and checks engine acceptance before execution, recording an unavailable INT16
+engine explicitly. Six synthetic patterns per fixture cover uniform rows,
+random codes, all byte values, near ties, isolated peaks and long tails. Shapes,
+scales and beta vary; no dataset images are needed. FP64 and available XNNPACK
+comparisons gate qualification; legacy TFLite differences are recorded separately.
+The local TFLite reference kernel also aborts on some long tied rows (including
+width 512) because its normalization exponent exceeds its checked range. The
+host qualification driver records that process failure as a compatibility
+measurement; alternate references do not invoke the TFLite evaluation kernel.
+
+The XNNPACK reference checks its rounded exponential sum in UINT64 before
+invocation. Some tied rows (including widths 1001, 1024 and 2048) exceed its
+UINT32 accumulation range after LUT rounding. Those cases report an unavailable
+XNNPACK reference (`reference_status: unavailable`) rather than using wrapped
+values; FP64 still validates them.
+This reference limitation does not restrict backend execution. INT16 execution
+and performance remain unqualified on the local emulator, which advertises no
+conformant `EXT-INT16`.
+
 ## Vulkan validation diagnostics
 
 Use `--vulkan_validation=core` or `--vulkan_validation=sync` with `capabilities`,
@@ -368,22 +431,49 @@ Host extraction and source-audit scripts remain Python tools.
 
 ## Operator implementation coverage
 
-Run `litert_arm_vulkan_ml_tool coverage` for an offline inventory, or add
-`--json` and `--report_json FILE` for machine-readable output. The compact
-reviewed manifest is compiled into the executable; no specification database,
-Vulkan loader, or Python installation is required on the target.
+Run `litert_arm_vulkan_ml_tool coverage` for the offline TOSA inventory. Select
+`--op_set=tflite` for TFLite frontend registrations or `--op_set=all` for both.
+Add `--json` and `--report_json FILE` for machine-readable output. No specification
+database, Vulkan loader, or Python installation is required on the target.
 
-Coverage currently means 60 of 66 TOSA instructions have production lowering
-routes from existing TFLite builtins. It does not mean all types/shapes work.
+```sh
+"$TOOL" coverage --op_set=tflite
+"$TOOL" coverage --op_set=all --json --report_json=coverage.json
+```
+
+The TFLite view reads the same `compiler:op_registry` library that dispatches
+compiler analysis. Each registered type pair selects a general, portable, typed
+or extended analyzer; unsupported operator/type pairs are rejected before that
+dispatch. The tool prints the principal data input position, its type, first
+result type, route and subset constraints. Other operands/results, quantization,
+geometry, options and numerical bounds are checked by the selected analyzer.
+Use `inspect --model FILE` for acceptance and rejection reasons for an actual
+model. Registration is not numerical qualification or device capability evidence.
+
+Currently 109 of 161 TFLite builtins have registered subsets, comprising 227
+principal-data/result type pairs. The 210-entry FlatBuffer schema also contains
+49 excluded entries: StableHLO operations, CUSTOM, DELEGATE and the opcode
+placeholder. These are listed separately in JSON and excluded from the builtin
+coverage denominator. The list comes from this build's schema, so counts change
+when that schema changes. A source audit checks registry/code-path consistency.
+
+The TOSA view records 63 of 66 instructions referenced by production lowering.
+Its reviewed manifest is compiled into the executable. TOSA emission and TFLite
+frontend registration have different denominators: an instruction emitted inside
+a composition does not establish a corresponding TFLite frontend route.
 Each record separates instruction emission, SPIR-V validation, emulator
 qualification and hardware qualification. `pending` means no qualification claim.
 `compile` reports each partition's actual `tosa_opcodes`; fixture qualification
 asserts that its intended instruction was emitted.
 
-Raw tensor manifests also accept INT8, INT32, UINT32 and BOOL model inputs. Files use
-little-endian 32-bit integers or one byte per INT8/Boolean (Boolean values 0/1); the model supplies
+Raw tensor manifests also accept INT8, INT32, UINT32, BOOL and COMPLEX64 model inputs. Files use
+little-endian 32-bit integers, interleaved FP32 real/imaginary pairs, or one byte per INT8/Boolean (Boolean values 0/1); the model supplies
 the type and shape. Integer/Boolean outputs compare exactly in validation and
 both trace modes. Existing FP32 and quantized comparison rules still apply.
+Scalar inputs/outputs are supported by the registered decompositions and retain
+rank-zero LiteRT buffer types while using a positive-rank physical Vulkan tensor.
+See the [converter comparison](../tosa_capabilities/README.md#tflite-converter-comparison)
+for newly implemented groups, tested subsets and remaining constraints.
 
 The `qualify_portable_ops.py --quantized_only` group exercises the quantized
 subsets described in the backend README. It overrides the normal INT8 tolerance
@@ -404,3 +494,73 @@ staging payloads for that execution. Existing raw/image trace inputs use host
 memory; supplying native allocations currently goes through LiteRT dispatch's
 buffer registration API. These diagnostics do not assert that a driver performs
 no internal data movement.
+
+## Graph optimization diagnostics
+
+All model commands accept `--optimization_mode=off|exact|qualified`; the default
+is `qualified`. `off` expands the analyzed operations without graph rewrites or
+constant interning. `exact` enables transformations that preserve integer
+results. `qualified` also permits approximate rules that have passed both their
+local numerical proof and the model qualification gates. Currently no
+approximate rule is enabled: the bounded affine TABLE-to-RESCALE candidate
+failed the end-to-end corpus gate and stays disabled in production.
+
+The plugin receives the same mode through the Arm C/C++ options API or TOML
+`optimization_mode = "exact"`. The shared ImageNet evaluator accepts
+`--arm_vulkan_ml_optimization_mode=exact`; its optional
+`--baseline_arm_vulkan_ml_optimization_mode=off` overrides an inherited Arm
+baseline. CPU and GPU evaluator options retain their existing behavior.
+
+`compile` writes `.before.ir` and `.after.ir` files alongside each partition's
+SPIR-V and constants. Its `optimization` report records applied/skipped rewrites
+and reasons, the emitted TOSA operator count, constant count/bytes, and
+compiler-only elapsed time. IR values own shapes, logical/storage types,
+quantization and immutable constants. Quantized composites retain their
+analyzed arithmetic and ordered output transforms until expansion into
+standard TOSA; no private driver opcode is introduced.
+
+The existing `lowering.operator` and `created_result_ids` fields remain.
+`source_operators` records all contributing original operators and `composite`
+names their IR family. Newly created IDs belong to the first contributing
+operator only; other members can have an empty ID list. Constant sharing and
+eliminated operations can also have no new result IDs. Trace captures remain
+indexed by original operators. Exposed outputs block cross-output fusion, so
+instrumented traces can differ from the uninstrumented graph.
+
+Compare on images using the same model, preprocessing and library arguments as
+`validate`:
+
+```sh
+"$TOOL" compare --model model.tflite --optimization_mode exact \
+  --manifest /path/to/manifest.tsv --image_root /path/to/images \
+  --preprocessing_config preprocessing_232.json --max_samples 3 \
+  --compiler_plugin_library_dir /path/to/compiler \
+  --dispatch_library_dir /path/to/dispatch --report_json comparison.json
+```
+
+The two executions receive the same preprocessed input. `compare` requires full
+acceleration and matching predictions. Exact mode requires zero additional
+INT8 code error; qualified mode requires at most 2 additional codes and a
+per-image mean of at most 0.5. These gates compare against `off`; run `validate`
+separately to check CPU-reference parity. Existing reference failures are not
+waived by passing the optimizer comparison. Reports separate compiler-only
+`graphs.*.compile_ms`, runtime/driver `*_setup_ms`, and per-image inference times.
+Emulator times are functional diagnostics, not native device performance.
+
+Raw fixtures use `compare --tensor_inputs fixture.inputs.json --max_samples 3`.
+They compare every output tensor and preserve intermediate quantization
+boundaries; prediction checks apply to the image-classification workflow.
+Generate and run the small graph rewrite regression corpus on a configured
+host:
+
+```sh
+python litert/vendors/arm_vulkan_ml/tools/testing/qualify_graph_optimizations.py \
+  --tool "$TOOL" --output_dir .arm-vulkan-preflight/graph-optimizations \
+  --allow_emulation --vulkan_validation sync
+```
+
+`--generate_only` creates relocatable model/input fixtures for adb deployment.
+The C++ `graph_ir_test` target covers exhaustive INT8 transforms, pass ordering,
+fanout/output barriers, spatial real-zero PAD legality, constant layouts and
+scale/range preservation. The graph regression script runs three small
+synthetic inputs per fixture; it does not run an ImageNet evaluation.

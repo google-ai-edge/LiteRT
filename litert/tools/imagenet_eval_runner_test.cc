@@ -87,6 +87,49 @@ TEST(EvaluationOptionsTest, ArmJitIsOptInAndOwnedIndependently) {
   EXPECT_FALSE(*disabled);
 }
 
+TEST(EvaluationOptionsTest, ArmOptimizationModesReachCandidateAndBaseline) {
+  Config config;
+  config.model = "candidate.tflite"; config.baseline_model = config.model;
+  config.accelerator = "npu"; config.arm_vulkan_ml_enable_jit = 1;
+  config.arm_vulkan_ml_optimization_mode = "exact";
+  config.baseline_arm_vulkan_ml_optimization_mode = "off";
+  auto candidate = CreateOptions(config); ASSERT_TRUE(candidate);
+  auto baseline = CreateOptions(BaselineConfig(config)); ASSERT_TRUE(baseline);
+  auto arm = candidate->GetOptions<litert::arm_vulkan_ml::ArmVulkanMLOptions>(); ASSERT_TRUE(arm);
+  auto other = baseline->GetOptions<litert::arm_vulkan_ml::ArmVulkanMLOptions>(); ASSERT_TRUE(other);
+  auto candidate_mode = arm->GetOptimizationMode(); auto baseline_mode = other->GetOptimizationMode();
+  ASSERT_TRUE(candidate_mode); ASSERT_TRUE(baseline_mode);
+  EXPECT_EQ(*candidate_mode, kLrtArmVulkanMLOptimizationExact);
+  EXPECT_EQ(*baseline_mode, kLrtArmVulkanMLOptimizationOff);
+  config.arm_vulkan_ml_optimization_mode = "typo";
+  EXPECT_FALSE(ValidateBackendOptions(config)); EXPECT_FALSE(CreateOptions(config));
+}
+
+TEST(EvaluationOptionsTest, ArmSoftmaxLutIsAppliedBeforeJitAndInheritedByBaseline) {
+  Config config;
+  config.accelerator = "npu";
+  config.arm_vulkan_ml_enable_jit = 1;
+  config.model = "candidate.tflite";
+  config.baseline_model = config.model;
+  for (const std::string& lut : {"auto", "int8", "int16"}) {
+    config.arm_vulkan_ml_softmax_lut_type = lut;
+    ASSERT_TRUE(ValidateBackendOptions(config));
+    for (const auto& candidate : {config, BaselineConfig(config)}) {
+      auto options = CreateOptions(candidate);
+      ASSERT_TRUE(options);
+      auto arm = options->GetOptions<litert::arm_vulkan_ml::ArmVulkanMLOptions>();
+      ASSERT_TRUE(arm);
+      auto selected = arm->GetSoftmaxLutType();
+      ASSERT_TRUE(selected);
+      EXPECT_EQ(*selected, lut == "auto" ? kLrtArmVulkanMLSoftmaxLutAuto :
+          lut == "int8" ? kLrtArmVulkanMLSoftmaxLutInt8 : kLrtArmVulkanMLSoftmaxLutInt16);
+    }
+  }
+  config.arm_vulkan_ml_softmax_lut_type = "typo";
+  EXPECT_FALSE(ValidateBackendOptions(config));
+  EXPECT_FALSE(CreateOptions(config));
+}
+
 TEST(EvaluationOptionsTest, RejectsInvalidBackendCombinations) {
   Config cfg;
   EXPECT_TRUE(ValidateBackendOptions(cfg));

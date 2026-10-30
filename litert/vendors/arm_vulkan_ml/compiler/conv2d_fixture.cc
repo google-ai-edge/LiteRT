@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
   tfsc::tosa::Graph graph(module, "main");
   auto input = graph.AddInput(tfsc::tosa::Tensor(tfsc::tosa::DataType::int8_t,
       {s.input_shape.begin(), s.input_shape.end()}), 0);
-  std::vector<GraphConstant> constants;
+  GraphConstantPool constants;
   tfsc::tosa::ResId accumulator;
   auto output = EmitConv2d(graph, input, *plan, constants, &accumulator);
   if (tfsc::IsError(output)) { std::cerr << tfsc::GetErrorMsg(output); return 1; }
@@ -117,8 +117,8 @@ int main(int argc, char** argv) {
   manifest << ",\"rounding_mode\":\"SINGLE_ROUND\"";
   manifest << ",\"depthwise\":" << (s.depthwise ? "true" : "false");
   manifest << ",\"constants\":[";
-  for (size_t i = 0; i < constants.size(); ++i) {
-    const auto& c = constants[i];
+  for (size_t i = 0; i < constants.values.size(); ++i) {
+    const auto& c = constants.values[i];
     if (i) manifest << ",";
     manifest << "{\"file\":\"constant_" << i << ".bin\",\"dtype\":\""
              << (c.tensor.GetDataType() == tfsc::tosa::DataType::int8_t ? "int8" : "int32")
@@ -152,7 +152,7 @@ int main(int argc, char** argv) {
         {s.output_shape.begin(), s.output_shape.end()}, 1});
     artifact->outputs.push_back({TensorElement::kInt32,
         {s.output_shape.begin(), s.output_shape.end()}, 2});
-    for (const auto& c : constants) {
+    for (const auto& c : constants.values) {
       auto type = c.tensor.GetDataType() == tfsc::tosa::DataType::int8_t
           ? TensorElement::kInt8 : TensorElement::kInt32;
       artifact->constants.push_back({{type, c.tensor.GetTensorShape(),

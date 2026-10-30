@@ -88,11 +88,58 @@ TEST(OperationTest, UnarySimplificationsPreserveRequantizingFallback) {
         EXPECT_EQ(plan->activation.maximum,
                   code == tflite::BuiltinOperator_RELU6 ? 45 : 127);
       }
-      auto compiled = CompilePartition(*subgraph, reason);
+      auto compiled = CompilePartition(*subgraph, reason, nullptr, kLrtArmVulkanMLOptimizationOff);
       ASSERT_TRUE(compiled) << reason;
       EXPECT_EQ(compiled->constants.size(), variant == 0 ? 0 : 1);
     }
   }
+}
+
+TEST(OperationTest, QuantizedSoftmaxValidatesOutputQuantizationAndRequirements) {
+  for (int variant = 0; variant < 5; ++variant) {
+    auto bytes = AddModel({2, variant == 3 ? 4096 : 5}, {1}, {2, variant == 3 ? 4096 : 5});
+    auto object = tflite::UnPackModel(bytes.data());
+    object->operator_codes[0]->builtin_code = tflite::BuiltinOperator_SOFTMAX;
+    auto& graph = *object->subgraphs[0]; graph.inputs = {0}; graph.operators[0]->inputs = {0};
+    tflite::SoftmaxOptionsT options; options.beta = variant == 4 ? 0 : .7f;
+    graph.operators[0]->builtin_options.Set(options);
+    graph.tensors[2]->quantization->scale = {variant == 1 ? .125f : 1.0f / 256};
+    graph.tensors[2]->quantization->zero_point = {variant == 2 ? 0 : -128};
+    flatbuffers::FlatBufferBuilder builder;
+    tflite::FinishModelBuffer(builder, tflite::Model::Pack(builder, object.get()));
+    auto model = ExtendedModel::CreateFromBuffer(BufferRef<uint8_t>(builder.GetBufferPointer(), builder.GetSize()));
+    ASSERT_TRUE(model); auto subgraph = model->Subgraph(0); ASSERT_TRUE(subgraph);
+    for (auto lut : {kLrtArmVulkanMLSoftmaxLutAuto, kLrtArmVulkanMLSoftmaxLutInt8, kLrtArmVulkanMLSoftmaxLutInt16}) {
+      std::string reason;
+      auto compiled = CompilePartition(*subgraph, reason, nullptr, kLrtArmVulkanMLOptimizationQualified, nullptr, lut);
+      ASSERT_EQ(static_cast<bool>(compiled), variant == 0) << reason;
+      if (!compiled) continue;
+      EXPECT_EQ(compiled->profiles, (std::vector<std::string>{"PRO-INT"}));
+      EXPECT_EQ(compiled->extensions, lut == kLrtArmVulkanMLSoftmaxLutInt16 ?
+          std::vector<std::string>{"EXT-INT16"} : std::vector<std::string>{});
+    }
+  }
+}
+
+TEST(OperationTest, ScalarConstantActivationIsImportedAndOwned) {
+  auto bytes = AddModel({1, 256}, {}, {1, 256});
+  auto object = tflite::UnPackModel(bytes.data());
+  object->buffers.push_back(std::make_unique<tflite::BufferT>());
+  object->buffers[1]->data = {17};
+  object->subgraphs[0]->tensors[1]->buffer = 1;
+  object->subgraphs[0]->inputs = {0};
+  flatbuffers::FlatBufferBuilder builder;
+  tflite::FinishModelBuffer(builder, tflite::Model::Pack(builder, object.get()));
+  auto model = ExtendedModel::CreateFromBuffer(BufferRef<uint8_t>(builder.GetBufferPointer(), builder.GetSize()));
+  ASSERT_TRUE(model); auto subgraph = model->Subgraph(0); ASSERT_TRUE(subgraph);
+  std::string reason;
+  for (auto mode : {kLrtArmVulkanMLOptimizationOff, kLrtArmVulkanMLOptimizationExact, kLrtArmVulkanMLOptimizationQualified})
+    ASSERT_TRUE(CompilePartition(*subgraph, reason, nullptr, mode)) << reason;
+  auto ir = ImportGraph(*subgraph, reason); ASSERT_TRUE(ir) << reason;
+  auto constant = ir->nodes[0].inputs[1];
+  EXPECT_EQ(ir->values[constant].shape, (std::vector<uint32_t>{1}));
+  EXPECT_TRUE(ir->values[constant].logical_scalar);
+  EXPECT_EQ(ir->values[constant].constant, (std::vector<uint8_t>{17}));
 }
 
 TEST(OperationTest, Int8AveragePoolAcceptsOverlappingValidWindows) {

@@ -52,7 +52,7 @@ biases. Analysis proves accumulator and rescale ranges before selecting an op.
 | LiteRT operations | Constraints |
 | --- | --- |
 | CONV_2D | NHWC activation, constant OHWI weights/bias, validated padding/stride/dilation; grouped convolution lowers to slices, convolutions, concat |
-| DEPTHWISE_CONV_2D | Depth multiplier 1; constant weights/bias |
+| DEPTHWISE_CONV_2D | Positive depth multiplier; constant weights/bias |
 | ADD, MUL | Validated broadcasting, int8 inputs/output, NONE/RELU/RELU6 fused activation |
 | LOGISTIC | Int8 output scale 1/256, zero point -128; reference-compatible lookup table |
 | RELU, RELU6 | Direct CLAMP when quantization is unchanged; lookup table otherwise |
@@ -60,8 +60,8 @@ biases. Analysis proves accumulator and rescale ranges before selecting an op.
 | TRANSPOSE, RESHAPE, SLICE | Constant permutation/shape/slice parameters; preserved quantization |
 | PAD, PADV2 | Constant padding; PADV2 fill has matching quantization |
 | CONCATENATION | Compatible shapes and identical quantization; no fused activation |
-| MAX_POOL_2D | VALID window, preserved quantization |
-| AVERAGE_POOL_2D | VALID windows, including overlap and cropped unused trailing input; preserved quantization and bounded integer sum |
+| MAX_POOL_2D | SAME/VALID window, preserved quantization |
+| AVERAGE_POOL_2D | SAME/VALID windows, including overlap and cropped unused trailing input/padding; preserved quantization and bounded integer sum |
 | SUM | INT8: constant axes, keep_dims=true, bounded integer sum; FP32: constant axes, either keep_dims mode, non-scalar output |
 | REDUCE_MAX, REDUCE_MIN | INT8/FP32, constant axes (negative/duplicate axes normalized), keep_dims true or false, non-scalar output; INT8 quantization preserved |
 | GATHER | INT8/FP32 values, constant in-range INT32 indices, batch_dims=0, any valid axis; INT8 quantization preserved |
@@ -187,15 +187,31 @@ path to qualify arbitrary graphs and diagnose individual operator differences.
 
 ## TOSA breadth expansion
 
-Production lowering now references **60/66** mapped TOSA operators. The reviewed
+The compiler imports each selected partition into an owned graph IR before
+emitting SPIR-V. Quantized convolution, arithmetic, fully connected, pooling
+and lookup-function composites preserve bias, broadcasting, rounding and
+activation semantics. Graph passes simplify layouts, fold eligible real-zero
+padding, compose clamps/lookups, and share immutable constants. Composites
+expand back to standard TOSA operations for the Vulkan driver. The developer
+tool exposes optimization modes, before/after IR and numerical comparisons;
+see its [optimization diagnostics](tools/devtool/README.md#graph-optimization-diagnostics).
+
+Production lowering now references **63/66** mapped TOSA operators. The reviewed
 `tools/tosa_capabilities/implementation_coverage.json` inventory and the developer
 tool's offline `coverage` command separate emission from qualification. These are
 restricted subsets, not support for all 350 specification type combinations.
+`coverage --op_set=tflite` reads the compiler's shared operation registry and
+lists frontend data/result types, analysis routes, subset constraints and
+unimplemented builtins. Use `inspect` to check a particular model's shapes and
+options. `coverage --op_set=all` reports both inventories.
+The shared registry contains subsets for **109/161 TFLite builtins** and 227
+principal input/output type pairs. The [converter comparison](tools/tosa_capabilities/README.md#tflite-converter-comparison)
+describes the 39 added frontend routes and remaining type/shape constraints.
 
-New FP32 paths cover POW (static broadcasting), SIN, COS, exact GELU via ERF,
+New FP32 paths cover POW (static broadcasting), SIN, COS, exact/approximate GELU,
 REVERSE_V2 with constant axes, and static NDHWC CONV_3D with constant DHWIO
 weights/bias, SAME/VALID padding, stride/dilation and NONE/RELU/RELU6 activation.
-Approximate GELU remains rejected. FP32 SCATTER_ND requires constant unique
+FP32 SCATTER_ND requires constant unique
 in-range indices and output shape; duplicate-index accumulation is rejected.
 
 BOOL interfaces use byte INT8 storage with explicit TOSA CAST operations at
@@ -205,18 +221,31 @@ supports FP32 input and INT32 output with a constant axis and non-scalar result.
 INT32 BITWISE_XOR supports broadcasting and recognizes an all-ones constant as
 BITWISE_NOT. INT32 FLOOR_DIV uses INTDIV with signed floor correction and
 requires positive constant divisors, excluding division-by-zero and signed
-quotient overflow. UINT32 RIGHT_SHIFT uses logical shifts with constant counts
+quotient overflow. FP32 FLOOR_DIV/FLOOR_MOD require constant normal power-of-two
+divisors with normal reciprocals so reciprocal approximation cannot change a
+floor boundary. UINT32 RIGHT_SHIFT uses logical shifts with constant counts
 0..31; its bits cross the Vulkan interface in the mapped 32-bit integer storage
 format without arithmetic signedness conversion. Other UINT32 arithmetic is
 not enabled.
 
-Five operators have no selected TFLite frontend route: FFT2D, CLZ, integer
-BITWISE_AND/OR and LOGICAL_LEFT_SHIFT. StableHLO-named builtins and custom ops
-remain outside this expansion. RFFT2D remains pending: supporting its complex
-intermediates requires partition pattern handling; the local emulator also
-advertises no EXT-FFT. No native-device qualification is claimed.
+Three mapped instructions have no selected TFLite frontend route: FFT2D, CLZ
+and BITWISE_OR. BITWISE_AND is used internally for raw CAST narrowing;
+LOGICAL_LEFT_SHIFT is used internally by quantized Softmax.
+StableHLO-named builtins and custom ops
+remain outside this expansion. RFFT2D compiles to native RFFT2D with interleaved
+COMPLEX64 storage; REAL/IMAG extract FP32 components. It requires EXT-FFT, which
+the local emulator does not advertise, so RFFT2D execution remains unqualified.
+No native-device qualification is claimed.
 
 ## Quantized coverage expansion
+
+INT8 Softmax supports static last-axis rows of 1..4095 elements, finite positive
+input scale/beta, and output scale `1/256` with zero point `-128`. It uses integer
+lookup and normalization operations. The pre-compilation `softmax_lut_type`
+option selects `auto`, `int8` or `int16`; `auto` uses INT8 tables. INT16 tables
+require conformant `EXT-INT16` and retain INT8 model interfaces. See the developer
+tool's [Softmax validation](tools/devtool/README.md#quantized-softmax-validation)
+for independent FP64 and XNNPACK comparisons and qualification limits.
 
 The following paths now support static dense per-tensor affine INT8 activations:
 
@@ -229,6 +258,10 @@ The following paths now support static dense per-tensor affine INT8 activations:
 | SQUEEZE, EXPAND_DIMS, PACK, UNPACK, SPLIT, SPLIT_V, TILE, STRIDED_SLICE, REVERSE_V2 | Preserve INT8 codes and quantization; constant controls; existing rank, shape and slice-mask limits |
 | RESIZE_BILINEAR | Native INT8-to-INT32 RESIZE with LiteRT Q10 coordinates, followed by signed rounding and INT8 cast; matching quantization and static NHWC sizes; TOSA coordinate/border limits |
 | TRANSPOSE_CONV | Native INT8-to-INT32 transpose convolution, range-proven requantization and activation clamp; constant symmetric weights with per-tensor/per-output-channel scales; optional matching INT32 bias; canonical SAME/VALID geometry and stride no larger than kernel |
+| EXP, LOG, RSQRT, GELU, SQUARE, LEAKY_RELU, RELU_N1_TO_1, RELU_0_TO_1 | Compile-time mathematical TABLE; LOG/RSQRT require a nonnegative representable domain; GELU exact/approximate modes |
+| PRELU | Broadcast alpha; centered INT32 product and range-proven positive/negative native RESCALE paths |
+| MEAN | Constant axes, either keep_dims mode or scalar result; proven INT32 sum and native RESCALE |
+| BATCH_MATMUL, CONV_3D | Native INT8-to-INT32 operation followed by native RESCALE; constant symmetric per-channel weights/bias for CONV_3D |
 
 The quantized fixture group requires **exact** CPU reference agreement in
 validation and both trace modes. TANH/ABS cover all 256 codes; the SUB broadcast
