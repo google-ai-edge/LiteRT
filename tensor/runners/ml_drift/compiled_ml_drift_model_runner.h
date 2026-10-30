@@ -683,7 +683,7 @@ class CompiledMlDriftModelRunner {
           ml_drift::uint2 tex_size =
               ml_drift::Get2dResourceSize(desc, weights_ohwi);
           weights_td.SetBHWDCShape(
-              ml_drift::BHWDC(1, tex_size.y, tex_size.x, 1, 1));
+              ml_drift::BHWDC(1, tex_size.y, tex_size.x / 4, 1, 4));
         }
 
         weights_td.UploadDataRaw(absl::MakeConstSpan(rearranged_data));

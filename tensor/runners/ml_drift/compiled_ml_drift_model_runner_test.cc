@@ -24,7 +24,10 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "tensor/arithmetic.h"
 #include "tensor/backends/ml_drift/arithmetic_ml_drift.h"
 #include "tensor/buffer.h"
@@ -39,6 +42,19 @@ namespace {
 
 using Runner = CompiledMlDriftModelRunner<MlDriftClBackend>;
 using TensorMLD = Tensor<MlDriftMixinTag>;
+
+// Forces `UseBufferForIntWeights(..., int_bit_size=4, ...)` to select the 2D
+// texture weights layout (`k2DYIsSpatialIOAndXIsOGroupI4O4`) even when the host
+// test runs on an NVIDIA OpenCL GPU, matching Mali, PowerVR, and Adreno < 740.
+struct MlDriftClTextureWeightsBackend : public MlDriftClBackend {
+  static ml_drift::GpuInfo GetGpuInfoForBuilder(Environment& env,
+                                                bool env_initialized) {
+    ml_drift::GpuInfo info =
+        MlDriftClBackend::GetGpuInfoForBuilder(env, env_initialized);
+    info.vendor = ml_drift::GpuVendor::kMali;
+    return info;
+  }
+};
 
 TEST(CompiledMlDriftModelRunnerTest, BasicExecution) {
   auto lambda = [](TensorMLD x) {
@@ -193,6 +209,85 @@ TEST(CompiledMlDriftModelRunnerTest, ConstantInt2FullyConnectedWeights) {
 
   Runner runner({x}, {y}, ml_drift::CalculationsPrecision::kF32);
   ASSERT_THAT(runner.BuildModel(), IsOk());
+  TensorMLD fed({.name = "x",
+                 .type = Type::kFP32,
+                 .shape = {1, kBatch, kIn},
+                 .buffer = input});
+  ASSERT_THAT(runner.SetInput("x", fed), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<float> actual,
+                                  runner.GetFloatOutput("y"));
+
+  std::vector<float> expected(kBatch * kOut, 0.0f);
+  for (int b = 0; b < kBatch; ++b) {
+    for (int o = 0; o < kOut; ++o) {
+      for (int i = 0; i < kIn; ++i) {
+        expected[b * kOut + o] +=
+            input[b * kIn + i] *
+            (static_cast<float>(unpacked[o * kIn + i]) * scales[o]);
+      }
+    }
+  }
+  EXPECT_THAT(actual, testing::Pointwise(testing::FloatNear(1e-4f), expected));
+}
+
+TEST(CompiledMlDriftModelRunnerTest,
+     ConstantInt4TextureFullyConnectedWeights) {
+  using TextureRunner =
+      CompiledMlDriftModelRunner<MlDriftClTextureWeightsBackend>;
+  constexpr int kBatch = 2;
+  constexpr int kIn = 32;
+  constexpr int kOut = 8;
+  std::shared_ptr<OwningCpuBuffer> w_buf =
+      OwningCpuBuffer::Allocate<Type::kI4>(kOut * kIn);
+  int4_t* packed = w_buf->Span<int4_t>().data();
+  std::vector<int> unpacked(kOut * kIn);
+  for (int idx = 0; idx < (kOut * kIn) / 2; ++idx) {
+    const int v0 = (idx % 11) - 5;
+    const int v1 = ((idx * 3 + 2) % 11) - 5;
+    packed[idx].a = v0;
+    packed[idx].b = v1;
+    unpacked[2 * idx + 0] = v0;
+    unpacked[2 * idx + 1] = v1;
+  }
+  std::vector<float> scales(kOut);
+  for (int o = 0; o < kOut; ++o) {
+    scales[o] = 0.05f * static_cast<float>(o + 1);
+  }
+  std::vector<float> input(kBatch * kIn);
+  for (int i = 0; i < input.size(); ++i) {
+    input[i] = 0.1f * static_cast<float>((i % 7) - 3);
+  }
+
+  MlDriftClTextureWeightsBackend::Environment shared_env;
+  ASSERT_THAT(MlDriftClTextureWeightsBackend::InitEnvironment(&shared_env),
+              IsOk());
+  TextureRunner::SharedWeightsCache shared_weights;
+
+  TensorMLD x({.name = "x", .type = Type::kFP32, .shape = {1, kBatch, kIn}});
+  TensorMLD w({.name = "w_i4",
+               .type = Type::kI4,
+               .shape = {kOut, kIn},
+               .buffer = w_buf,
+               .quantization = std::make_shared<PerChannelAffineQuantization>(
+                   scales, std::vector<int64_t>(kOut, 0),
+                   /*quantized_dimension=*/0)});
+  TensorMLD y = FullyConnected(x, w);
+  y.SetName("y");
+
+  TextureRunner runner({x}, {y}, ml_drift::CalculationsPrecision::kF32,
+                       &shared_env, &shared_weights);
+  ASSERT_THAT(runner.BuildModel(), IsOk());
+
+  auto desc_it = shared_weights.descriptors.find("w_i4");
+  ASSERT_NE(desc_it, shared_weights.descriptors.end());
+  EXPECT_EQ(desc_it->second.GetStorageType(),
+            ml_drift::TensorStorageType::kTexture2D);
+  // Each RGBA texel holds 4 uint16 channels (16 uint4 weights), so the 2D
+  // texture BHWDC shape has C = 4 and W = tex_size.x / 4 = DivideRoundUp(O, 4).
+  EXPECT_EQ(desc_it->second.GetBHWDCShape(),
+            ml_drift::BHWDC(1, kIn / 4, kOut / 4, 1, 4));
+
   TensorMLD fed({.name = "x",
                  .type = Type::kFP32,
                  .shape = {1, kBatch, kIn},

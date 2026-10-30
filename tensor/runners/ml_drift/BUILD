@@ -216,7 +216,10 @@ cc_test(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
     ],
 )
 
