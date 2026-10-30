@@ -36,14 +36,38 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Suppress deprecation warnings (matching Bazel build behavior in .bazelrc)
-# The codebase has deprecated Error constructors that are still in use
-add_compile_options(
-  -Wno-deprecated-declarations
-  -Wno-nullability-completeness
-  -Wno-return-type
-  -fpermissive
-)
+# The codebase has deprecated Error constructors that are still in use.
+# These are GCC/Clang spellings; an MSVC-style driver (cl.exe, and clang-cl,
+# which CMake also reports as MSVC) rejects them outright -- cl.exe fails with
+# "D8021: invalid numeric argument '/Wno-deprecated-declarations'".
+if(MSVC)
+  add_compile_options(
+    /wd4996  # deprecated declarations
+    /wd4715  # not all control paths return a value
+  )
+else()
+  add_compile_options(
+    -Wno-deprecated-declarations
+    -Wno-nullability-completeness
+    -Wno-return-type
+    -fpermissive
+  )
+endif()
 add_compile_definitions(CL_TARGET_OPENCL_VERSION=300)
+
+if(WIN32)
+  # TFLite sets these for its own targets (tflite/CMakeLists.txt); LiteRT's
+  # targets include the same headers and need them too. Without NOMINMAX the
+  # windows.h min/max macros break every generated FlatBuffers accessor named
+  # min() or max(), e.g. tflite/converter/schema/schema_generated.h.
+  add_compile_definitions(
+    NOMINMAX              # keep windows.h from defining min()/max()
+    WIN32_LEAN_AND_MEAN
+    NOGDI                 # windows.h ERROR macro vs. logging severity names
+    _USE_MATH_DEFINES     # M_PI and friends
+    _CRT_SECURE_NO_WARNINGS
+  )
+endif()
 
 # Cmake flattens the transitive public and interface link to emit the final link
 # command. Which will trigger a warning on Apple platforms (ld64 still dedups
@@ -107,19 +131,51 @@ if(LITERT_DISABLE_KLEIDIAI)
   set(XNNPACK_ENABLE_KLEIDIAI OFF CACHE BOOL "Disable KleidiAI in XNNPACK")
 endif()
 
+# MSVC's cl.exe targeting ARM64 ships none of the ACLE headers or intrinsics
+# these microkernel families need: <arm_fp16.h>, <arm_bf16.h> and <arm_sve.h>
+# do not exist, and arm64_neon.h declares no bf16 intrinsics. XNNPACK selects
+# them from the target ISA alone, so a cl.exe build fails to compile them.
+# clang-cl has all of them, so only gate the MSVC frontend.
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows"
+   AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+   AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang"
+   AND LITERT_SYSTEM_PROCESSOR_LOWER MATCHES "^(arm64|aarch64)$")
+  message(STATUS
+      "LiteRT: cl.exe on ARM64 -- disabling XNNPACK FP16/BF16/SVE2/SME "
+      "microkernels (no ACLE support). Build with clang-cl to keep them.")
+  foreach(_litert_xnn_off
+          XNNPACK_ENABLE_ARM_FP16_SCALAR
+          XNNPACK_ENABLE_ARM_FP16_VECTOR
+          XNNPACK_ENABLE_ARM_BF16
+          XNNPACK_ENABLE_ARM_SVE2
+          XNNPACK_ENABLE_ARM_SME
+          XNNPACK_ENABLE_ARM_SME2)
+    set(${_litert_xnn_off} OFF CACHE BOOL "Unsupported by cl.exe on ARM64")
+  endforeach()
+endif()
+
 if(CMAKE_CROSSCOMPILING)
   # Build or reuse a host flatc for cross compilation.
   if(NOT TFLITE_HOST_TOOLS_DIR)
     set(_root_host_flatc_dir "${CMAKE_CURRENT_SOURCE_DIR}/../host_flatc_build")
-    if(EXISTS "${_root_host_flatc_dir}/_deps/flatbuffers-build/flatc")
+    if(EXISTS "${_root_host_flatc_dir}/_deps/flatbuffers-build/flatc${CMAKE_HOST_EXECUTABLE_SUFFIX}")
       set(TFLITE_HOST_TOOLS_DIR "${_root_host_flatc_dir}/_deps/flatbuffers-build" CACHE PATH "Host tools directory" FORCE)
+      message(STATUS "Reusing host flatc from ${TFLITE_HOST_TOOLS_DIR}")
+    elseif(EXISTS "${_root_host_flatc_dir}/_deps/flatbuffers-build/Release/flatc${CMAKE_HOST_EXECUTABLE_SUFFIX}")
+      set(TFLITE_HOST_TOOLS_DIR "${_root_host_flatc_dir}/_deps/flatbuffers-build/Release" CACHE PATH "Host tools directory" FORCE)
       message(STATUS "Reusing host flatc from ${TFLITE_HOST_TOOLS_DIR}")
     else()
       file(MAKE_DIRECTORY "${_root_host_flatc_dir}")
       file(WRITE "${_root_host_flatc_dir}/CMakeLists.txt" "cmake_minimum_required(VERSION 3.16)\nproject(HostFlatc LANGUAGES C CXX)\ninclude(FetchContent)\nFetchContent_Declare(flatbuffers GIT_REPOSITORY https://github.com/google/flatbuffers.git GIT_TAG v25.9.23)\nset(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL \"\" FORCE)\nFetchContent_MakeAvailable(flatbuffers)\n")
       set(_litert_host_flatc_cmake_args -S . -B . -DCMAKE_BUILD_TYPE=Release)
+      if(CMAKE_HOST_WIN32 AND CMAKE_CROSSCOMPILING AND NOT LITERT_HOST_C_COMPILER AND NOT LITERT_HOST_CXX_COMPILER)
+        if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(AMD64|x86_64)$" AND
+           (NOT DEFINED ENV{CMAKE_GENERATOR} OR "$ENV{CMAKE_GENERATOR}" MATCHES "^Visual Studio"))
+          list(APPEND _litert_host_flatc_cmake_args -A x64)
+        endif()
+      endif()
       set(_litert_host_c_compiler "${LITERT_HOST_C_COMPILER}")
-      if(NOT _litert_host_c_compiler)
+      if(NOT _litert_host_c_compiler AND NOT CMAKE_HOST_WIN32)
         if(EXISTS "/usr/bin/clang")
           set(_litert_host_c_compiler "/usr/bin/clang")
         else()
@@ -130,7 +186,7 @@ if(CMAKE_CROSSCOMPILING)
         list(APPEND _litert_host_flatc_cmake_args -DCMAKE_C_COMPILER=${_litert_host_c_compiler})
       endif()
       set(_litert_host_cxx_compiler "${LITERT_HOST_CXX_COMPILER}")
-      if(NOT _litert_host_cxx_compiler)
+      if(NOT _litert_host_cxx_compiler AND NOT CMAKE_HOST_WIN32)
         if(EXISTS "/usr/bin/clang++")
           set(_litert_host_cxx_compiler "/usr/bin/clang++")
         else()
@@ -154,14 +210,18 @@ if(CMAKE_CROSSCOMPILING)
         set(_flatc_jobs ${CMAKE_BUILD_PARALLEL_LEVEL})
       endif()
       execute_process(
-        COMMAND ${CMAKE_COMMAND} --build . --target flatc -- -j${_flatc_jobs}
+        COMMAND ${CMAKE_COMMAND} --build . --target flatc --config Release --parallel ${_flatc_jobs}
         WORKING_DIRECTORY "${_root_host_flatc_dir}"
         RESULT_VARIABLE HOSTBUILD_RC
         ERROR_VARIABLE HOSTBUILD_ERR)
       if(NOT HOSTBUILD_RC EQUAL 0)
         message(FATAL_ERROR "Failed to build host flatc:\n${HOSTBUILD_ERR}")
       endif()
-      set(TFLITE_HOST_TOOLS_DIR "${_root_host_flatc_dir}/_deps/flatbuffers-build" CACHE PATH "Host tools directory")
+      if(EXISTS "${_root_host_flatc_dir}/_deps/flatbuffers-build/Release/flatc${CMAKE_HOST_EXECUTABLE_SUFFIX}")
+        set(TFLITE_HOST_TOOLS_DIR "${_root_host_flatc_dir}/_deps/flatbuffers-build/Release" CACHE PATH "Host tools directory")
+      else()
+        set(TFLITE_HOST_TOOLS_DIR "${_root_host_flatc_dir}/_deps/flatbuffers-build" CACHE PATH "Host tools directory")
+      endif()
     endif()
   endif()
 endif()
@@ -169,6 +229,20 @@ endif()
 # Add TFLite as a subdirectory
 if(EXISTS "${TFLITE_SOURCE_DIR}/CMakeLists.txt")
   add_subdirectory("${TFLITE_SOURCE_DIR}" "${TFLITE_BUILD_DIR}" EXCLUDE_FROM_ALL)
+  if(WIN32 AND TARGET tensorflow-lite)
+    # simple_memory_arena_debug_dump.cc is the strong override of the
+    # TFLITE_ATTRIBUTE_WEAK DumpArenaInfo() in simple_memory_arena.cc. PE/COFF
+    # has no weak symbols, so core/macros.h defines TFLITE_ATTRIBUTE_WEAK away
+    # on Windows and both definitions become strong: linking the two objects
+    # together fails with LNK2005 when LiteRt.dll whole-archives
+    # tensorflow-lite. TFLite's own CMakeLists.txt only filters this file out
+    # when BUILD_SHARED_LIBS is ON.
+    get_target_property(_litert_tflite_srcs tensorflow-lite SOURCES)
+    if(_litert_tflite_srcs)
+      list(FILTER _litert_tflite_srcs EXCLUDE REGEX ".*simple_memory_arena_debug_dump\\.cc$")
+      set_target_properties(tensorflow-lite PROPERTIES SOURCES "${_litert_tflite_srcs}")
+    endif()
+  endif()
 else()
   message(FATAL_ERROR "TFLite source directory NOT found at ${TFLITE_SOURCE_DIR}.
     Please ensure TFLite source is available or set TFLITE_SOURCE_DIR.")
@@ -265,30 +339,47 @@ find_package(flatbuffers QUIET
 )
 
 if(NOT TARGET flatbuffers::flatbuffers)
-  add_library(flatbuffers::flatbuffers STATIC IMPORTED)
-  set_target_properties(flatbuffers::flatbuffers PROPERTIES
-    IMPORTED_LOCATION "${LITERT_FLATBUFFERS_BUILD_DIR}/libflatbuffers.a"
-    INTERFACE_INCLUDE_DIRECTORIES "${LITERT_FLATBUFFERS_DIR}/include"
-  )
+  if(TARGET flatbuffers)
+    add_library(flatbuffers::flatbuffers ALIAS flatbuffers)
+  else()
+    add_library(flatbuffers::flatbuffers STATIC IMPORTED)
+    set_target_properties(flatbuffers::flatbuffers PROPERTIES
+      IMPORTED_LOCATION "${LITERT_FLATBUFFERS_BUILD_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}flatbuffers${CMAKE_STATIC_LIBRARY_SUFFIX}"
+      INTERFACE_INCLUDE_DIRECTORIES "${LITERT_FLATBUFFERS_DIR}/include"
+    )
+  endif()
 endif()
 
 # Locate flatc for generating ML Drift FlatBuffer headers
 set(LITERT_FLATC_EXECUTABLE "")
 set(LITERT_FLATC_TARGET "")
-if(CMAKE_CROSSCOMPILING AND TFLITE_HOST_TOOLS_DIR AND EXISTS "${TFLITE_HOST_TOOLS_DIR}/flatc")
-  set(LITERT_FLATC_EXECUTABLE "${TFLITE_HOST_TOOLS_DIR}/flatc")
-elseif(TARGET flatbuffers::flatc)
-  set(LITERT_FLATC_EXECUTABLE "$<TARGET_FILE:flatbuffers::flatc>")
-  set(LITERT_FLATC_TARGET flatbuffers::flatc)
-elseif(TARGET flatc)
-  set(LITERT_FLATC_EXECUTABLE "$<TARGET_FILE:flatc>")
-  set(LITERT_FLATC_TARGET flatc)
-elseif(EXISTS "${CMAKE_BINARY_DIR}/flatbuffers-flatc/bin/flatc")
-  set(LITERT_FLATC_EXECUTABLE "${CMAKE_BINARY_DIR}/flatbuffers-flatc/bin/flatc")
-elseif(EXISTS "${LITERT_FLATBUFFERS_BUILD_DIR}/flatc")
-  set(LITERT_FLATC_EXECUTABLE "${LITERT_FLATBUFFERS_BUILD_DIR}/flatc")
-else()
-  find_program(LITERT_FLATC_EXECUTABLE NAMES flatc)
+if(CMAKE_CROSSCOMPILING AND TFLITE_HOST_TOOLS_DIR)
+  foreach(_litert_flatc_candidate
+          "${TFLITE_HOST_TOOLS_DIR}/flatc${CMAKE_HOST_EXECUTABLE_SUFFIX}"
+          "${TFLITE_HOST_TOOLS_DIR}/Release/flatc${CMAKE_HOST_EXECUTABLE_SUFFIX}"
+          "${TFLITE_HOST_TOOLS_DIR}/bin/flatc${CMAKE_HOST_EXECUTABLE_SUFFIX}"
+          "${TFLITE_HOST_TOOLS_DIR}/flatbuffers-flatc/bin/flatc${CMAKE_HOST_EXECUTABLE_SUFFIX}")
+    if(EXISTS "${_litert_flatc_candidate}")
+      set(LITERT_FLATC_EXECUTABLE "${_litert_flatc_candidate}")
+      break()
+    endif()
+  endforeach()
+endif()
+if(NOT LITERT_FLATC_EXECUTABLE)
+  if(TARGET flatbuffers::flatc)
+    set(LITERT_FLATC_EXECUTABLE "$<TARGET_FILE:flatbuffers::flatc>")
+    set(LITERT_FLATC_TARGET flatbuffers::flatc)
+  elseif(TARGET flatc)
+    set(LITERT_FLATC_EXECUTABLE "$<TARGET_FILE:flatc>")
+    set(LITERT_FLATC_TARGET flatc)
+  elseif(EXISTS "${CMAKE_BINARY_DIR}/flatbuffers-flatc/bin/flatc${CMAKE_HOST_EXECUTABLE_SUFFIX}")
+    set(LITERT_FLATC_EXECUTABLE "${CMAKE_BINARY_DIR}/flatbuffers-flatc/bin/flatc${CMAKE_HOST_EXECUTABLE_SUFFIX}")
+  elseif(EXISTS "${LITERT_FLATBUFFERS_BUILD_DIR}/flatc${CMAKE_HOST_EXECUTABLE_SUFFIX}")
+    set(LITERT_FLATC_EXECUTABLE "${LITERT_FLATBUFFERS_BUILD_DIR}/flatc${CMAKE_HOST_EXECUTABLE_SUFFIX}")
+  else()
+    unset(LITERT_FLATC_EXECUTABLE)
+    find_program(LITERT_FLATC_EXECUTABLE NAMES flatc)
+  endif()
 endif()
 
 set(MLDRIFT_SERIALIZATION_BASE_FBS "${ml_drift_SOURCE_DIR}/ml_drift/common/task/serialization_base.fbs")

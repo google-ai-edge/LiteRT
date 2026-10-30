@@ -123,9 +123,13 @@ litert_bin(
         "//litert/vendors/c:litert_compiler_plugin.h",
     ],
     copts = select({
-        "//litert:windows": [
+        "//litert/runtime/dispatch:windows_msvc": [
             "/DLITERT_COMPILE_LIBRARY",
             "/wd4018",  # -Wno-sign-compare
+        ],
+        "//litert/runtime/dispatch:windows_lexan": [
+            "-DLITERT_COMPILE_LIBRARY",
+            "-Wno-sign-compare",
         ],
         "//conditions:default": [],
     }),
@@ -140,7 +144,7 @@ litert_bin(
         "//litert:windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    visibility = ["//litert:litert_public"],
+    visibility = ["//visibility:public"],
     deps = [
         ":qnn_compose_graph",
         "//litert/c:litert_any",
