@@ -425,6 +425,62 @@ TEST_P(ShapesTest, SupportsAdjY) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
 }
 
+TEST_P(ShapesTest, SupportsAdjX) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kDefaultDtype, {2, 4, 3});
+  const int b = context_builder.AddTensor(kDefaultDtype, {2, 4, 5});
+  const int c = context_builder.AddTensor(kDefaultDtype, {2, 3, 5});
+  TfLiteBatchMatMulParams params = {.adj_x = true};
+  context_builder.SetOp(op, /*version=*/1, &params,
+                        /*inputs=*/{a, b}, /*outputs=*/{c});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST_P(ShapesTest, SupportsAdjXAndAdjY) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kDefaultDtype, {2, 4, 3});
+  const int b = context_builder.AddTensor(kDefaultDtype, {2, 5, 4});
+  const int c = context_builder.AddTensor(kDefaultDtype, {2, 3, 5});
+  TfLiteBatchMatMulParams params = {.adj_x = true, .adj_y = true};
+  context_builder.SetOp(op, /*version=*/1, &params,
+                        /*inputs=*/{a, b}, /*outputs=*/{c});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST_P(ShapesTest, RejectsAdjXShapeMismatch) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kDefaultDtype, {2, 3, 4});
+  const int b = context_builder.AddTensor(kDefaultDtype, {2, 4, 5});
+  const int c = context_builder.AddTensor(kDefaultDtype, {2, 3, 5});
+  TfLiteBatchMatMulParams params = {.adj_x = true};
+  context_builder.SetOp(op, /*version=*/1, &params,
+                        /*inputs=*/{a, b}, /*outputs=*/{c});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_P(ShapesTest, RejectsAdjYShapeMismatch) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kDefaultDtype, {2, 3, 4});
+  const int b = context_builder.AddTensor(kDefaultDtype, {2, 4, 5});
+  const int c = context_builder.AddTensor(kDefaultDtype, {2, 3, 5});
+  TfLiteBatchMatMulParams params = {.adj_y = true};
+  context_builder.SetOp(op, /*version=*/1, &params,
+                        /*inputs=*/{a, b}, /*outputs=*/{c});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
 TEST_P(ShapesTest, SupportsBroadcastingBatchDims) {
   const TfLiteBuiltinOperator op = GetParam();
   StubContextBuilder context_builder;
