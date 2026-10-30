@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "openvino/core/any.hpp"
+#include "openvino/core/except.hpp"
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/intel_npu/properties.hpp"  // NOLINT
 #include "openvino/runtime/properties.hpp"            // NOLINT
@@ -224,6 +225,8 @@ void LiteRtDispatchInvocationContextT::ReleaseImportedLocked() {
   // go with it. attached_inputs_/attached_outputs_ are kept on purpose.
   infer_request_ = {};
   bound_weights_.clear();
+  // The next import creates a new compiled model at the default priority.
+  requested_model_priority_.reset();
   imported_ = false;
   LITERT_LOG(LITERT_INFO,
              "EVICT released imported model for '%s' (%zu byte payload); it "
@@ -670,9 +673,63 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::BindOutput(
   return {};
 }
 
-struct ov_infer_request_wrapper {
-  std::shared_ptr<ov::InferRequest> object;
+#if defined(__ANDROID__)
+namespace {
+
+// State shared with the NPU HAL hook's callbacks for one inference. The hook
+// calls back on the invoking thread; nothing OpenVINO crosses into it.
+struct GatedRun {
+  ov::InferRequest* request;
+  int timeout_ms;
+  // Set once the hook has called start. After that, a failure must not be
+  // retried by running the inference again.
+  bool started = false;
+  bool timed_out = false;
+  // OpenVINO exception message; exceptions must not cross the C callbacks.
+  std::optional<std::string> error;
 };
+
+void GatedStart(void* user) {
+  auto* run = static_cast<GatedRun*>(user);
+  run->started = true;
+  try {
+    run->request->start_async();
+  } catch (const std::exception& e) {
+    // `start` returns void, so the failure is reported through `wait`.
+    run->error = e.what();
+  } catch (...) {
+    run->error = "unknown exception";
+  }
+}
+
+// `timeout_ns` is the hook's optional deadline. The hook passes UINT64_MAX,
+// which its header defines as "no HAL-side deadline; the shim owns its own
+// timeout", so the dispatch's own limit (run->timeout_ms) applies. Honor the
+// smaller of the two if a hook ever passes a finite value.
+int GatedWait(void* user, uint64_t /*timeout_ns*/) {
+  auto* run = static_cast<GatedRun*>(user);
+  if (run->error.has_value()) return litert::openvino::kGatedWaitFailed;
+  try {
+    if (!run->request->wait_for(std::chrono::milliseconds(run->timeout_ms))) {
+      // Known limitation: the request is not cancelled (the Intel NPU plugin
+      // does not support cancel), so it may still be running. The hook reports
+      // the NPU HAL work as ended when this returns non-zero, and the next
+      // invoke gets ov::Busy until the device finishes.
+      run->timed_out = true;
+      return litert::openvino::kGatedWaitFailed;
+    }
+  } catch (const std::exception& e) {
+    run->error = e.what();
+    return litert::openvino::kGatedWaitFailed;
+  } catch (...) {
+    run->error = "unknown exception";
+    return litert::openvino::kGatedWaitFailed;
+  }
+  return litert::openvino::kGatedWaitOk;
+}
+
+}  // namespace
+#endif  // defined(__ANDROID__)
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
   // Normally a no-op: AttachInput/AttachOutput already imported. Kept so a
@@ -698,10 +755,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
   // Route every inference through the NPU HAL whenever the hook is present.
   // When the caller supplied no job priority, schedule at the default priority
   // instead of bypassing the HAL.
-  if (npu_hal_hooks.submit_inference_async != nullptr) {
-    const int32_t job_priority = has_job_priority
-                                     ? scheduling_info->job_priority
-                                     : litert::openvino::kDefaultJobPriority;
+  if (npu_hal_hooks.run_gated != nullptr) {
     const bool has_original_uid =
         scheduling_info != nullptr &&
         (scheduling_info->fields_mask & kLiteRtSchedulingInfoFieldOriginalUid);
@@ -709,45 +763,89 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
                                      ? scheduling_info->original_uid
                                      : static_cast<int32_t>(getuid());
 
-    // Best-effort: some OpenVINO/NPU driver versions expose MODEL_PRIORITY as
-    // read-only on a compiled model. If it can't be set, ignore and continue.
-    try {
-      auto compiled_model = infer_request_.get_compiled_model();
-      compiled_model.set_property(ov::hint::model_priority(
-          litert::openvino::ToOvModelPriority(job_priority)));
-    } catch (const std::exception& e) {
-      LITERT_LOG(LITERT_WARNING,
-                 "NPU HAL model priority not applied, ignoring: %s", e.what());
+    // Caller's own job priority, [0, 1000] with smaller values meaning higher
+    // priority. Reported to the HAL as-is.
+    const int32_t job_priority = has_job_priority
+                                     ? scheduling_info->job_priority
+                                     : litert::openvino::kDefaultJobPriority;
+    // The hook owns the priority model and maps the result to the OpenVINO
+    // hint.
+    const std::optional<ov::hint::Priority> ov_priority =
+        litert::openvino::ResolveOvModelPriority(job_priority, original_uid);
+    if (ov_priority.has_value() && ov_priority != requested_model_priority_) {
+      // Best-effort: a plugin that rejects the model-priority property must not
+      // fail the invoke.
+      try {
+        auto compiled_model = infer_request_.get_compiled_model();
+        compiled_model.set_property(ov::hint::model_priority(*ov_priority));
+        requested_model_priority_ = ov_priority;
+      } catch (const ov::Exception& e) {
+        // WORKAROUND for a C++ runtime mismatch across the library boundary.
+        // This library carries its own libc++, so its std::exception is a
+        // different type from the one OpenVINO's exceptions derive from, and
+        // the std::exception handler below misses them. ov::Exception is
+        // defined once, in libopenvino, so it matches. Remove this once the
+        // library and OpenVINO share one C++ runtime.
+        // OpenVINO before 26.5 does not implement this property on the NPUW
+        // compiled model: the priority is quietly ignored there.
+        LITERT_LOG(LITERT_WARNING,
+                   "NPU HAL model priority not applied, ignoring: %s",
+                   e.what());
+        // Remember it anyway so a failing plugin is not retried every inference.
+        requested_model_priority_ = ov_priority;
+      } catch (const std::exception& e) {
+        LITERT_LOG(LITERT_WARNING,
+                   "NPU HAL model priority not applied, ignoring: %s",
+                   e.what());
+        requested_model_priority_ = ov_priority;
+      }
     }
 
-    auto wrapper = std::make_unique<ov_infer_request_wrapper>();
-    wrapper->object = std::make_shared<ov::InferRequest>(infer_request_);
-    if (npu_hal_hooks.submit_inference_async(&ctx,
-                                             static_cast<void*>(wrapper.get()),
-                                             job_priority, original_uid) != 0) {
-      infer_request_ = {};
-      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                "Inference submission rejected by NPU HAL");
-    }
-
-    // Block until the async NPU inference the HAL started has finished, then
-    // release the HAL context and the infer-request wrapper it borrowed. Per
-    // the HAL contract the wrapper (owned by unique_ptr, freed at scope exit)
-    // must outlive npu_hal_release_context().
-    const bool completed = infer_request_.wait_for(
-        std::chrono::milliseconds(kInferRequestTimeoutMs));
+    // `run` and `ops` live on this stack frame. The hook calls start and wait
+    // synchronously on this thread and does not use either one after
+    // run_gated returns; the context it hands back is released below.
+    GatedRun run{&infer_request_, kInferRequestTimeoutMs};
+    const npu_hal_infer_ops_t ops = {sizeof(npu_hal_infer_ops_t), &GatedStart,
+                                     &GatedWait, /*cancel=*/nullptr,
+                                     /*get_output=*/nullptr};
+    const int rc = npu_hal_hooks.run_gated(job_priority, original_uid, &ops,
+                                           &run, &ctx);
     if (ctx != nullptr) {
       if (npu_hal_hooks.release_context != nullptr) {
         npu_hal_hooks.release_context(ctx);
       }
       ctx = nullptr;
     }
-    if (!completed) {
+    // run_gated returns OK only after start has run and wait returned 0 (the
+    // inference is complete), so success needs no further check here.
+    if (rc == NPU_HAL_SUBMIT_OK) {
+      return {};
+    }
+    if (rc == NPU_HAL_SUBMIT_ACCESS_DENIED) {
+      // The HAL refused this app. Running the inference anyway would bypass
+      // the policy. The request was never started, so it is kept: the context
+      // is still marked imported, and a later invoke can be admitted.
+      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                "NPU HAL denied direct NPU access to this app");
+    }
+    if (run.started) {
+      // The inference started and then failed: do not run it again.
+      if (run.timed_out) {
+        return litert::Unexpected(
+            kLiteRtStatusErrorRuntimeFailure,
+            "Failed to execute inference request due to timeout");
+      }
       return litert::Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
-          "Failed to execute inference request due to timeout");
+          run.error.has_value() ? *run.error
+                                : "NPU HAL inference failed after it started");
     }
-    return {};
+    // The HAL never started the inference (unreachable, or an error before
+    // admission): run it directly, as if the HAL were not there.
+    LITERT_LOG(LITERT_WARNING,
+               "NPU HAL not used (rc=%d), running without HAL notification",
+               rc);
+    // Falls through to the direct path below.
   }
 #endif
   infer_request_.start_async();
