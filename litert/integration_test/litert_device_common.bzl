@@ -286,10 +286,10 @@ def _IntelOpenVinoSpec():
                 ("//litert/vendors/intel_openvino/dispatch:libLiteRtDispatch_IntelOpenvino.so", "LD_LIBRARY_PATH"),
                 ("//litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so", "LD_LIBRARY_PATH"),
                 # copybara:uncomment_begin(oss openvino)
-                # ("@intel_openvino//src_gen:libopenvino_so", "LD_LIBRARY_PATH"),
-                # ("@intel_openvino//src_gen:libopenvino_tensorflow_lite_frontend_so", "LD_LIBRARY_PATH"),
-                # ("@intel_openvino//src_gen:libopenvino_intel_cpu_plugin_so", "LD_LIBRARY_PATH"),
-                # ("@intel_openvino//src_gen:libopenvino_intel_npu_plugin_so", "LD_LIBRARY_PATH"),
+                # ("@intel_openvino//:libopenvino_so", "LD_LIBRARY_PATH"),
+                # ("@intel_openvino//:libopenvino_tensorflow_lite_frontend_so", "LD_LIBRARY_PATH"),
+                # ("@intel_openvino//:libopenvino_intel_cpu_plugin_so", "LD_LIBRARY_PATH"),
+                # ("@intel_openvino//:libopenvino_intel_npu_plugin_so", "LD_LIBRARY_PATH"),
                 # copybara:uncomment_end_and_comment_begin
                 ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino.so", "LD_LIBRARY_PATH"),
                 ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so", "LD_LIBRARY_PATH"),
@@ -306,8 +306,8 @@ def _IntelOpenVinoSpec():
             plugin = "libLiteRtCompilerPlugin_IntelOpenvino.so",
             host_libs = [
                 # copybara:uncomment_begin(oss openvino)
-                # "@intel_openvino//src_gen:libopenvino_so",
-                # "@intel_openvino//src_gen:libopenvino_tensorflow_lite_frontend_so",
+                # "@intel_openvino//:libopenvino_so",
+                # "@intel_openvino//:libopenvino_tensorflow_lite_frontend_so",
                 # copybara:uncomment_end_and_comment_begin
                 "@intel_openvino//:openvino/runtime/lib/intel64/libopenvino.so",
                 "@intel_openvino//:openvino/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",
