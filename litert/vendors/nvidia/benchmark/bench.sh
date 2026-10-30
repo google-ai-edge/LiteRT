@@ -140,6 +140,7 @@ meta = {
   'input_tokens': int(os.environ['NB_INPUT']), 'output_tokens': int(os.environ['NB_OUTPUT']), 'context': int(os.environ['NB_CONTEXT']),
   'iterations': int(os.environ['NB_ITERATIONS']), 'warmups': int(os.environ['NB_WARMUPS']),
   'build_id': os.environ['NB_BUILD_ID'], 'pool': os.environ['NB_POOL'], 'command': command, 'exit_code': int(rc),
+  'host_mode': os.environ.get('CI_HOST_MODE', 'unspecified'),
   'start': start, 'end': end, 'gpu_baseline_mib': int(baseline),
   'environment': {k: v for k, v in os.environ.items() if k.startswith('LITERT_NVIDIA_')},
   'binaries': {n: sha(os.path.realpath(os.path.join(libs, n))) for n in ('libLiteRtCompilerPlugin_Nvidia.so', 'libLiteRtDispatch_Nvidia.so', 'litert_lm_advanced_main')},
