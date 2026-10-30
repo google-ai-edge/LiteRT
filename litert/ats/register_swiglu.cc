@@ -35,7 +35,7 @@ void RegisterSwigluImpl(const AtsConf& options, size_t& test_id, size_t iters,
       Fixture,
       Swiglu,
       TypeList<float, tflite::half>>
-    (iters, test_id, options, cap, "CompositeOp");
+    (iters, test_id, options, cap);
   // clang-format on
 }
 

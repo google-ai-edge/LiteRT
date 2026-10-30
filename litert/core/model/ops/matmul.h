@@ -21,14 +21,43 @@
 #include <utility>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/ops/simple_binary.h"
 #include "litert/core/model/shape_inference_types.h"
 #include "tflite/converter/schema/schema_generated.h"
 
 namespace litert::internal {
+
+inline bool HasValidDims(absl::Span<const int32_t> dims) {
+  for (int32_t dim : dims) {
+    if (dim < -1) {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline bool ComputeStaticElementCount(absl::Span<const int32_t> dims,
+                                      int32_t& num_elements,
+                                      bool& has_dynamic_dim) {
+  num_elements = 1;
+  has_dynamic_dim = false;
+  for (int32_t dim : dims) {
+    if (dim < -1) {
+      return false;
+    }
+    if (dim == -1) {
+      has_dynamic_dim = true;
+    } else if (!SafeMultiply(num_elements, dim, num_elements)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 inline LiteRtStatus InferBatchMatmul(const LiteRtOpT& op,
                                      absl::Span<const Dims> input_shapes,
@@ -38,12 +67,13 @@ inline LiteRtStatus InferBatchMatmul(const LiteRtOpT& op,
   constexpr size_t kRhsArgIndex = 1;
   constexpr size_t kMinRank = 2;
 
-  if (input_shapes.size() != kBatchMatMulMinArgs) {
+  if (input_shapes.size() != kBatchMatMulMinArgs || output_shapes.size() != 1) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  const auto& lhs = input_shapes[kLhsArgIndex];
-  const auto& rhs = input_shapes[kRhsArgIndex];
-  if (lhs.size() < kMinRank || rhs.size() < kMinRank) {
+  const Dims& lhs = input_shapes[kLhsArgIndex];
+  const Dims& rhs = input_shapes[kRhsArgIndex];
+  if (lhs.size() < kMinRank || rhs.size() < kMinRank || !HasValidDims(lhs) ||
+      !HasValidDims(rhs)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
@@ -64,6 +94,21 @@ inline LiteRtStatus InferBatchMatmul(const LiteRtOpT& op,
 
   if (k_lhs != -1 && k_rhs != -1 && k_lhs != k_rhs) {
     return kLiteRtStatusErrorInvalidArgument;  // Mismatch K
+  }
+
+  if (op.NumInputs() > kRhsArgIndex && op.Inputs()[kRhsArgIndex] != nullptr) {
+    const LiteRtTensorT& rhs_tensor = op.Input(kRhsArgIndex);
+    if (rhs_tensor.Qparams().first == kLiteRtQuantizationPerChannel) {
+      const LiteRtQuantizationPerChannel& per_channel =
+          rhs_tensor.Qparams().second.per_channel;
+      const int32_t expected_qdim =
+          adj_y ? static_cast<int32_t>(rhs.size() - kOffset2)
+                : static_cast<int32_t>(rhs.size() - kOffset1);
+      if (per_channel.quantized_dimension != expected_qdim ||
+          (n >= 0 && per_channel.num_channels != static_cast<size_t>(n))) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
+    }
   }
 
   size_t rank = std::max(lhs.size(), rhs.size());
@@ -101,22 +146,33 @@ inline LiteRtStatus InferFullyConnected(const LiteRtOpT& op,
   constexpr size_t kFullyConnectedMinArgs = 2;
   constexpr size_t kInputArgIndex = 0;
   constexpr size_t kWeightsArgIndex = 1;
+  constexpr size_t kBiasArgIndex = 2;
   constexpr size_t kWeightsRank = 2;
   constexpr size_t kOutputDimIndex = 0;
+  constexpr size_t kInputDimIndex = 1;
 
-  if (input_shapes.size() < kFullyConnectedMinArgs) {
+  if (input_shapes.size() < kFullyConnectedMinArgs ||
+      output_shapes.size() != 1) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& input = input_shapes[kInputArgIndex];
   const auto& weights = input_shapes[kWeightsArgIndex];
+  if (op.NumInputs() > kInputArgIndex &&
+      op.Inputs()[kInputArgIndex] != nullptr &&
+      op.Input(kInputArgIndex).Type().first != kLiteRtRankedTensorType) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 
   const auto& opts = GetTflOptions(op);
   const auto* fc_opts = opts.AsFullyConnectedOptions();
   bool keep_num_dims = fc_opts ? fc_opts->keep_num_dims : false;
+  if (keep_num_dims && input.empty()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   // TFLite FullyConnectedWeightsFormat_DEFAULT = 0.
   // We assume default: weights are [O, I].
 
-  if (weights.size() != kWeightsRank) {
+  if (weights.size() != kWeightsRank || !HasValidDims(weights)) {
     // TFLite weights are usually 2D.
     // If not, we might need to handle sparse etc.
     // For now assume 2D.
@@ -124,20 +180,71 @@ inline LiteRtStatus InferFullyConnected(const LiteRtOpT& op,
   }
 
   int32_t output_dim = weights[kOutputDimIndex];
+  int32_t filter_cols = weights[kInputDimIndex];
+
+  if (keep_num_dims && input.back() >= 0 && filter_cols > 0 &&
+      input.back() != filter_cols) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  int32_t total_input_elements = 1;
+  bool has_dynamic_input = false;
+  if (!ComputeStaticElementCount(input, total_input_elements,
+                                 has_dynamic_input)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!has_dynamic_input && filter_cols > 0 &&
+      total_input_elements % filter_cols != 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  if (input_shapes.size() > kBiasArgIndex &&
+      !input_shapes[kBiasArgIndex].empty()) {
+    const Dims& bias = input_shapes[kBiasArgIndex];
+    int32_t bias_elements = 1;
+    bool has_dynamic_bias = false;
+    if (!ComputeStaticElementCount(bias, bias_elements, has_dynamic_bias)) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    if (!has_dynamic_bias && output_dim >= 0 && bias_elements != output_dim) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+  }
+
+  if (op.NumInputs() > kWeightsArgIndex &&
+      op.Inputs()[kWeightsArgIndex] != nullptr) {
+    const LiteRtTensorT& weights_tensor = op.Input(kWeightsArgIndex);
+    if (weights_tensor.Qparams().first == kLiteRtQuantizationPerChannel) {
+      const LiteRtQuantizationPerChannel& per_channel =
+          weights_tensor.Qparams().second.per_channel;
+      if (per_channel.quantized_dimension != 0 ||
+          (output_dim >= 0 &&
+           per_channel.num_channels != static_cast<size_t>(output_dim))) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
+    }
+  }
 
   Dims out_shape;
   if (keep_num_dims) {
     out_shape = input;
     out_shape.back() = output_dim;
   } else {
-    int64_t batch = 1;
+    int32_t batch = 1;
     bool dynamic_batch = false;
-    for (size_t i = 0; i < input.size() - 1; ++i) {
-      if (input[i] == -1) {
-        dynamic_batch = true;
-      } else {
-        batch *= input[i];
+    if (!has_dynamic_input && filter_cols > 0) {
+      batch = total_input_elements / filter_cols;
+    } else if (!input.empty()) {
+      if (!ComputeStaticElementCount(
+              absl::MakeConstSpan(input).first(input.size() - 1), batch,
+              dynamic_batch)) {
+        return kLiteRtStatusErrorInvalidArgument;
       }
+      if (filter_cols < 0 || (input.back() < 0 && filter_cols > 0)) {
+        dynamic_batch = true;
+      }
+    } else if (filter_cols < 0) {
+      dynamic_batch = true;
     }
     // If we collapsed dims, output is 2D.
     out_shape.push_back(dynamic_batch ? -1 : batch);

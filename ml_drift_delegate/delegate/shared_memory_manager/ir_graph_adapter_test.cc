@@ -52,7 +52,7 @@ struct TestGraph {
 
     ir::IrTensor* weights = model.add_tensor(TensorDescriptor{});
     weights->desc.SetBHWCShape(BHWC(1, 1, 1, 10));
-    weights->desc.SetDataType(DataType::FLOAT32);
+    weights->desc.SetDataType(DataType::kFloat32);
     weights_id = static_cast<uint32_t>(weights->id);
 
     ir::IrTensor* output = model.add_tensor(TensorDescriptor{});
@@ -74,10 +74,10 @@ TEST(IrModelAdapterTest, SetValueTypeChangesTypeAndPreservesShape) {
   TestGraph g;
   IrModelAdapter adapter(g.model);
 
-  adapter.SetValueType(g.weights_id, DataType::FLOAT16);
+  adapter.SetValueType(g.weights_id, DataType::kFloat16);
 
   EXPECT_EQ(g.model.tensor(g.weights_id)->desc.GetDataType(),
-            DataType::FLOAT16);
+            DataType::kFloat16);
   // Shape is untouched.
   EXPECT_EQ(g.model.tensor(g.weights_id)->desc.GetBHWCShape(),
             BHWC(1, 1, 1, 10));
@@ -92,14 +92,14 @@ TEST(IrModelAdapterTest, SetValueShapeAndTypeMutatesInPlaceWithStableId) {
   const ir::IrTensorId id_before = before->id;
 
   adapter.SetValueShapeAndType(g.weights_id, BHWC(1, 1, 25, 8),
-                               DataType::FLOAT16);
+                               DataType::kFloat16);
 
   const ir::IrTensor* after = g.model.tensor(g.weights_id);
   // Same object, same id: the descriptor was mutated in place (not replaced).
   EXPECT_EQ(after, before);
   EXPECT_EQ(after->id, id_before);
   EXPECT_EQ(after->desc.GetBHWCShape(), BHWC(1, 1, 25, 8));
-  EXPECT_EQ(after->desc.GetDataType(), DataType::FLOAT16);
+  EXPECT_EQ(after->desc.GetDataType(), DataType::kFloat16);
   // The consumer wiring still references the same stable id.
   EXPECT_THAT(adapter.FindConsumerOps(g.weights_id), ElementsAre(g.op_id));
 }
@@ -135,7 +135,7 @@ TEST(IrModelAdapterTest, GetOpFirstInputShapeAndType) {
   IrModelAdapter adapter(g.model);
 
   EXPECT_EQ(adapter.GetOpFirstInputShape(g.op_id), BHWC(1, 1, 1, 10));
-  EXPECT_EQ(adapter.GetOpFirstInputType(g.op_id), DataType::FLOAT32);
+  EXPECT_EQ(adapter.GetOpFirstInputType(g.op_id), DataType::kFloat32);
 }
 
 TEST(IrModelAdapterTest, AddConstantInputWiresNewValueToConsumerOp) {
@@ -143,14 +143,14 @@ TEST(IrModelAdapterTest, AddConstantInputWiresNewValueToConsumerOp) {
   IrModelAdapter adapter(g.model);
 
   const uint32_t new_id = adapter.AddConstantInput(
-      /*global_tensor_id=*/123, BHWC(1, 1, 1, 4), DataType::FLOAT16, g.op_id);
+      /*global_tensor_id=*/123, BHWC(1, 1, 1, 4), DataType::kFloat16, g.op_id);
 
   // A distinct new value was created with the requested shape/type.
   EXPECT_NE(new_id, g.weights_id);
   EXPECT_NE(new_id, g.output_id);
   ASSERT_NE(g.model.tensor(new_id), nullptr);
   EXPECT_EQ(g.model.tensor(new_id)->desc.GetBHWCShape(), BHWC(1, 1, 1, 4));
-  EXPECT_EQ(g.model.tensor(new_id)->desc.GetDataType(), DataType::FLOAT16);
+  EXPECT_EQ(g.model.tensor(new_id)->desc.GetDataType(), DataType::kFloat16);
 
   // The global tensor id is recorded as a shared buffer source.
   EXPECT_TRUE(g.model.tensor(new_id)->buffer_source.is_shared);
@@ -168,27 +168,27 @@ TEST(IrModelAdapterTest, ResolveSharedTensorType) {
   IrModelAdapter adapter(g.model);
 
   // Default FLOAT32 with FLOAT32 graph tensor and FLOAT32 input -> FLOAT32.
-  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::FLOAT32),
-            DataType::FLOAT32);
+  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::kFloat32),
+            DataType::kFloat32);
 
   // Default FLOAT16 with FLOAT32 graph tensor -> FLOAT16.
-  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::FLOAT16),
-            DataType::FLOAT16);
+  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::kFloat16),
+            DataType::kFloat16);
 
   // Non-float graph tensor preserves its native type.
-  adapter.SetValueType(g.weights_id, DataType::INT32);
-  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::FLOAT32),
-            DataType::INT32);
-  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::FLOAT16),
-            DataType::INT32);
+  adapter.SetValueType(g.weights_id, DataType::kInt32);
+  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::kFloat32),
+            DataType::kInt32);
+  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::kFloat16),
+            DataType::kInt32);
 
-  adapter.SetValueType(g.weights_id, DataType::INT8);
-  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::FLOAT16),
-            DataType::INT8);
+  adapter.SetValueType(g.weights_id, DataType::kInt8);
+  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::kFloat16),
+            DataType::kInt8);
 
-  adapter.SetValueType(g.weights_id, DataType::UINT8);
-  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::FLOAT16),
-            DataType::UINT8);
+  adapter.SetValueType(g.weights_id, DataType::kUint8);
+  EXPECT_EQ(adapter.ResolveSharedTensorType(g.weights_id, DataType::kFloat16),
+            DataType::kUint8);
 }
 
 TEST(IrModelAdapterTest, UploadTensorData) {
@@ -200,8 +200,8 @@ TEST(IrModelAdapterTest, UploadTensorData) {
   TfLiteTensor int8_tensor{};
   int8_tensor.type = kTfLiteInt8;
   int8_tensor.data.int8 = &int8_val;
-  TensorDescriptor int8_desc(DataType::INT8, TensorStorageType::BUFFER,
-                             Layout::HWC);
+  TensorDescriptor int8_desc(DataType::kInt8, TensorStorageType::kBuffer,
+                             Layout::kHWC);
   int8_desc.SetBHWCShape(BHWC(1, 1, 1, 1));
   adapter.UploadTensorData(int8_tensor, nullptr, int8_desc);
   EXPECT_EQ(reinterpret_cast<const int8_t*>(int8_desc.GetData().data())[0], -7);
@@ -211,8 +211,8 @@ TEST(IrModelAdapterTest, UploadTensorData) {
   TfLiteTensor uint8_tensor{};
   uint8_tensor.type = kTfLiteUInt8;
   uint8_tensor.data.uint8 = &uint8_val;
-  TensorDescriptor uint8_desc(DataType::UINT8, TensorStorageType::BUFFER,
-                              Layout::HWC);
+  TensorDescriptor uint8_desc(DataType::kUint8, TensorStorageType::kBuffer,
+                              Layout::kHWC);
   uint8_desc.SetBHWCShape(BHWC(1, 1, 1, 1));
   adapter.UploadTensorData(uint8_tensor, nullptr, uint8_desc);
   EXPECT_EQ(reinterpret_cast<const uint8_t*>(uint8_desc.GetData().data())[0],
@@ -223,8 +223,8 @@ TEST(IrModelAdapterTest, UploadTensorData) {
   TfLiteTensor int_tensor{};
   int_tensor.type = kTfLiteInt32;
   int_tensor.data.i32 = &int_val;
-  TensorDescriptor int_desc(DataType::INT32, TensorStorageType::BUFFER,
-                            Layout::HWC);
+  TensorDescriptor int_desc(DataType::kInt32, TensorStorageType::kBuffer,
+                            Layout::kHWC);
   int_desc.SetBHWCShape(BHWC(1, 1, 1, 1));
   adapter.UploadTensorData(int_tensor, nullptr, int_desc);
   EXPECT_EQ(reinterpret_cast<const int32_t*>(int_desc.GetData().data())[0], 42);
@@ -234,8 +234,8 @@ TEST(IrModelAdapterTest, UploadTensorData) {
   TfLiteTensor float_tensor{};
   float_tensor.type = kTfLiteFloat32;
   float_tensor.data.f = &float_val;
-  TensorDescriptor float_desc(DataType::FLOAT32, TensorStorageType::BUFFER,
-                              Layout::HWC);
+  TensorDescriptor float_desc(DataType::kFloat32, TensorStorageType::kBuffer,
+                              Layout::kHWC);
   float_desc.SetBHWCShape(BHWC(1, 1, 1, 1));
   adapter.UploadTensorData(float_tensor, &float_val, float_desc);
   EXPECT_FLOAT_EQ(

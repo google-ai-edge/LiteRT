@@ -36,11 +36,11 @@ namespace {
 
 // Helper to convert int32 zero point to float zero point for
 // EmbeddingLookupAttributes.
-::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
 ConvertZeroPoint(
-    const ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32>&
+    const ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32>&
         int_zp) {
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32> float_zp;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32> float_zp;
   float_zp.shape = int_zp.shape;
   float_zp.data.resize(int_zp.data.size());
   for (size_t i = 0; i < int_zp.data.size(); ++i) {
@@ -64,9 +64,9 @@ void ConvertEmbeddingLookup(
 
   if (tflite::IsConstantTensor(weights_tensor) &&
       !ir_model.tensor(ir_weights_id)->buffer_source.is_shared) {
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32> tmp_zp;
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32> tmp_zp;
     if (weights_tensor->type == kTfLiteInt2) {
-      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::UINT8>
+      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kUint8>
           weights_hw;
       PopulateTensor(weights_tensor, weights_id, &weights_hw,
                      PopulateTensorFlags::kExtraBytes,
@@ -77,12 +77,12 @@ void ConvertEmbeddingLookup(
       attr.original_weights_shape =
           ::ml_drift::OHWI(weights_hw.shape.h, 1, 1, weights_hw.shape.w);
       auto& weights_uint8 = attr.weights.emplace<
-          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::UINT8>>();
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kUint8>>();
       weights_uint8.shape = attr.original_weights_shape;
       weights_uint8.data = std::move(weights_hw.data);
       weights_uint8.spanned_data = weights_hw.spanned_data;
     } else if (weights_tensor->type == kTfLiteInt4) {
-      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::UINT8>
+      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kUint8>
           weights_hw;
       PopulateTensor(weights_tensor, weights_id, &weights_hw,
                      PopulateTensorFlags::kExtraBytes,
@@ -93,12 +93,13 @@ void ConvertEmbeddingLookup(
       attr.original_weights_shape =
           ::ml_drift::OHWI(weights_hw.shape.h, 1, 1, weights_hw.shape.w);
       auto& weights_uint8 = attr.weights.emplace<
-          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::UINT8>>();
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kUint8>>();
       weights_uint8.shape = attr.original_weights_shape;
       weights_uint8.data = std::move(weights_hw.data);
       weights_uint8.spanned_data = weights_hw.spanned_data;
     } else if (weights_tensor->type == kTfLiteInt8) {
-      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::INT8> weights_hw;
+      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kInt8>
+          weights_hw;
       PopulateTensor(weights_tensor, weights_id, &weights_hw,
                      PopulateTensorFlags::kExtraBytes,
                      options.enable_spanned_weights, &attr.weights_scale,
@@ -108,12 +109,12 @@ void ConvertEmbeddingLookup(
       attr.original_weights_shape =
           ::ml_drift::OHWI(weights_hw.shape.h, 1, 1, weights_hw.shape.w);
       auto& weights_int8 = attr.weights.emplace<
-          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>>();
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>>();
       weights_int8.shape = attr.original_weights_shape;
       weights_int8.data = std::move(weights_hw.data);
       weights_int8.spanned_data = weights_hw.spanned_data;
     } else if (weights_tensor->type == kTfLiteFloat32) {
-      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32>
           weights_hw;
       PopulateTensor(weights_tensor, weights_id, &weights_hw,
                      PopulateTensorFlags::kExtraBytes,
@@ -123,7 +124,7 @@ void ConvertEmbeddingLookup(
       attr.original_weights_shape =
           ::ml_drift::OHWI(weights_hw.shape.h, 1, 1, weights_hw.shape.w);
       auto& weights_f32 = attr.weights.emplace<::ml_drift::Tensor<
-          ::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
+          ::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>();
       weights_f32.shape = attr.original_weights_shape;
       weights_f32.data = std::move(weights_hw.data);
       weights_f32.spanned_data = weights_hw.spanned_data;
@@ -145,19 +146,19 @@ void ConvertEmbeddingLookup(
       attr.weights_type =
           ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt8;
       auto& weights_int8 = attr.weights.emplace<
-          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>>();
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>>();
       weights_int8.shape = ::ml_drift::OHWI(rows, 1, 1, cols);
     } else if (weights_tensor->type == kTfLiteInt4) {
       attr.weights_type =
           ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt4;
       auto& weights_uint8 = attr.weights.emplace<
-          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::UINT8>>();
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kUint8>>();
       weights_uint8.shape = ::ml_drift::OHWI(rows, 1, 1, cols);
     } else if (weights_tensor->type == kTfLiteInt2) {
       attr.weights_type =
           ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt2;
       auto& weights_uint8 = attr.weights.emplace<
-          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::UINT8>>();
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kUint8>>();
       weights_uint8.shape = ::ml_drift::OHWI(rows, 1, 1, cols);
     } else {
       ABSL_LOG(FATAL) << "EMBEDDING_LOOKUP: Unsupported external weights type: "
@@ -179,7 +180,7 @@ void ConvertEmbeddingLookup(
   }
 
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::EMBEDDING_LOOKUP);
+  op->name = ToString(::ml_drift::OperationType::kEmbeddingLookup);
   op->attr = std::move(attr);
   ir_model.AddConsumer(tensor_map[node.inputs->data[0]], op->id);
   // Shared weights are consumed as a runtime input (added after the lookup ids

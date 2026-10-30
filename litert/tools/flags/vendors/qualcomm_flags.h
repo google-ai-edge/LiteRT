@@ -93,6 +93,9 @@ ABSL_DECLARE_FLAG(std::string, qualcomm_qnn_lib_dir);
 ABSL_DECLARE_FLAG(std::string, qualcomm_dsp_skel_dir);
 
 ABSL_DECLARE_FLAG(uint32_t, qualcomm_vtcm_size);
+ABSL_DECLARE_FLAG(uint32_t, qualcomm_htp_device_id);
+
+ABSL_DECLARE_FLAG(uint32_t, qualcomm_htp_file_read_memory_budget_mb);
 
 ABSL_DECLARE_FLAG(uint32_t, qualcomm_num_hvx_thread);
 
@@ -130,7 +133,25 @@ ABSL_DECLARE_FLAG(bool, qualcomm_use_conv_hmx);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_use_fold_relu);
 
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::OpNameFormat,
+                  qualcomm_op_name_format);
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::OpNameFormat* out,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::OpNameFormat v);
+
+}  // namespace litert::qualcomm
+
+ABSL_DECLARE_FLAG(bool, qualcomm_htp_dlbc);
+
+ABSL_DECLARE_FLAG(bool, qualcomm_htp_dlbc_weights);
+
 ABSL_DECLARE_FLAG(int32_t, qualcomm_htp_p_point);
+
+ABSL_DECLARE_FLAG(int32_t, qualcomm_htp_weight_sharing_channel_tile_size);
 
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 

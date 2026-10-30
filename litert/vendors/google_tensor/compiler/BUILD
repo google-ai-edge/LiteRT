@@ -68,6 +68,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_c_types_printing",
         "//litert/cc/internal:litert_context_wrapper",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_opaque_options_wrapper",
@@ -77,6 +78,7 @@ litert_dynamic_lib(
         "//litert/core/model",
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/google_tensor:adapter",
         "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/algorithm:container",
@@ -86,6 +88,7 @@ litert_dynamic_lib(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@com_google_protobuf//:protobuf",
         "@com_googlesource_code_re2//:re2",
     ],
@@ -128,6 +131,7 @@ cc_test(
         "//litert/c:litert_op_code",
         "//litert/c:litert_op_options",
         "//litert/c/internal:litert_compiler_context_testonly",
+        "//litert/c/options:litert_google_tensor_options",
         "//litert/c/options:litert_google_tensor_options_type",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
@@ -135,10 +139,13 @@ cc_test(
         "//litert/cc/options:litert_google_tensor_options",
         "//litert/compiler/cc:litert_model",
         "//litert/core/model",
+        "//litert/test:common",
         "//litert/test:load_test_model",
         "//litert/test:matchers",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main_no_heapcheck",
     ],
@@ -147,10 +154,7 @@ cc_test(
 proto_library(
     name = "google_tensor_options_proto",
     srcs = ["google_tensor_options.proto"],
-    visibility = [
-        "//litert/vendors/google_tensor:__subpackages__",
-        "//platforms/darwinn/compiler:__subpackages__",
-    ],
+    visibility = ["//litert/vendors/google_tensor:__subpackages__"],
 )
 
 cc_proto_library(
@@ -166,7 +170,7 @@ sh_test(
     name = "google_tensor_compiler_plugin_so_symbol_test",
     srcs = ["//litert/test:litert_compiler_plugin_symbol_test.sh"],
     args = [
-        "$(location :google_tensor_compiler_plugin_so)",
+        "$(rootpath :google_tensor_compiler_plugin_so)",
     ],
     data = [
         ":google_tensor_compiler_plugin_so",

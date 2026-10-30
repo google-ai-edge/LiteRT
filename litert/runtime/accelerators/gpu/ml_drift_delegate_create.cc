@@ -33,6 +33,13 @@
 #include "ml_drift_delegate/delegate/precision.h"
 #include "tflite/c/c_api_opaque.h"
 
+// Set in BUILD together with the ml_drift_compatibility dep (Android with GPU
+// enabled). Builds without it (e.g. CMake) skip the check.
+#if defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
+#include "litert/runtime/accelerator.h"
+#include "litert/runtime/accelerators/gpu/compatibility/ml_drift_compatibility.h"
+#endif  // defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
+
 namespace litert::ml_drift {
 namespace {
 
@@ -110,11 +117,8 @@ LiteRtStatus CreateDelegate(
         &gpu_delegate_options->litert_external_tensors_mode,
         gpu_options_payload);
 
-    bool use_ir_model;
-    if (LrtGetGpuOptionsUseIrModel(&use_ir_model, gpu_options_payload) ==
-        kLiteRtStatusOk) {
-      gpu_delegate_options->use_ir_model = use_ir_model;
-    }
+    LrtGetGpuOptionsUseIrModel(&gpu_delegate_options->use_ir_model,
+                               gpu_options_payload);
 
     LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
         &gpu_delegate_options->allow_src_quantized_fc_conv_ops,
@@ -136,8 +140,7 @@ LiteRtStatus CreateDelegate(
     gpu_delegate_options->precision =
         ::litert::ml_drift::GetMlDriftPrecision(litert_delegate_precision);
     gpu_delegate_options->use_f32_accum_for_fp16 =
-        litert_delegate_precision ==
-        kLiteRtDelegatePrecisionFp16WithFp32Accum;
+        litert_delegate_precision == kLiteRtDelegatePrecisionFp16WithFp32Accum;
 
     LiteRtDelegateBufferStorageType litert_delegate_buffer_storage_type =
         kLiteRtDelegateBufferStorageTypeDefault;
@@ -185,8 +188,7 @@ LiteRtStatus CreateDelegate(
         &gpu_delegate_options->num_threads_to_compile, gpu_options_payload);
 
     LrtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
-        &gpu_delegate_options->convert_weights_on_gpu,
-        gpu_options_payload);
+        &gpu_delegate_options->convert_weights_on_gpu, gpu_options_payload);
 
     LrtGetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
         &gpu_delegate_options->wait_for_weights_conversion_complete,
@@ -196,9 +198,32 @@ LiteRtStatus CreateDelegate(
         &gpu_delegate_options->hint_fully_delegated_to_single_delegate,
         gpu_options_payload);
 
+    LrtGetGpuOptionsEnableFastTuning(&gpu_delegate_options->enable_fast_tuning,
+                                     gpu_options_payload);
+
+    LrtGetGpuOptionsEnableOpProfiling(
+        &gpu_delegate_options->enable_op_profiling, gpu_options_payload);
+
+    LrtGetGpuOptionsEnableOpProfilingDetailedReport(
+        &gpu_delegate_options->enable_op_profiling_detailed_report,
+        gpu_options_payload);
+
+    LrtGetGpuOptionsDebugDelegatePartition(
+        &gpu_delegate_options->debug_delegate_partition,
+        gpu_options_payload);
+
+    LrtGetGpuOptionsDebugFirstDelegateNodeIndex(
+        &gpu_delegate_options->debug_first_delegate_node_index,
+        gpu_options_payload);
+
+    LrtGetGpuOptionsDebugLastDelegateNodeIndex(
+        &gpu_delegate_options->debug_last_delegate_node_index,
+        gpu_options_payload);
+
+
 #ifdef __APPLE__
     LrtGetGpuOptionsUseMetalArgumentBuffers(
-        gpu_options_payload, &gpu_delegate_options->use_metal_argument_buffers);
+        &gpu_delegate_options->use_metal_argument_buffers, gpu_options_payload);
 #endif  // __APPLE__
 
     int num_patterns;
@@ -235,7 +260,7 @@ LiteRtStatus CreateDelegate(
       }
     }
 
-    LiteRtGpuPriority gpu_priority;
+    LiteRtGpuPriority gpu_priority = kLiteRtGpuPriorityDefault;
     LrtGetGpuOptionsGpuPriority(&gpu_priority, gpu_options_payload);
     if (gpu_priority == kLiteRtGpuPriorityLow) {
       gpu_delegate_options->gpu_priority = kGpuLowPriority;
@@ -257,7 +282,7 @@ LiteRtStatus CreateDelegate(
         &gpu_delegate_options->num_steps_of_command_buffer_preparations,
         gpu_options_payload);
 
-    LiteRtGpuWaitType wait_type;
+    LiteRtGpuWaitType wait_type = kLiteRtGpuWaitTypeDefault;
     LrtGetGpuAcceleratorRuntimeOptionsWaitType(&wait_type, gpu_options_payload);
     switch (wait_type) {
       case kLiteRtGpuWaitTypeDefault:
@@ -277,18 +302,15 @@ LiteRtStatus CreateDelegate(
         break;
     }
 
-    const char* preferred_device_substr;
+    const char* preferred_device_substr = "";
     LrtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
         &preferred_device_substr, gpu_options_payload);
     gpu_delegate_options->preferred_device_substr = preferred_device_substr;
   } else if (gpu_delegate_options != nullptr) {
     LrtGpuOptions* default_gpu_options = nullptr;
     if (LrtCreateGpuOptions(&default_gpu_options) == kLiteRtStatusOk) {
-      bool use_ir_model;
-      if (LrtGetGpuOptionsUseIrModel(&use_ir_model, default_gpu_options) ==
-          kLiteRtStatusOk) {
-        gpu_delegate_options->use_ir_model = use_ir_model;
-      }
+      LrtGetGpuOptionsUseIrModel(&gpu_delegate_options->use_ir_model,
+                                 default_gpu_options);
       LrtDestroyGpuOptions(default_gpu_options);
     }
   }
@@ -307,6 +329,25 @@ LiteRtStatus CreateDelegate(
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus GetHardwareSupport(LiteRtAcceleratorConst accelerator,
+                                LiteRtHwAcceleratorSet* supported_hardware) {
+  LITERT_RETURN_IF_ERROR(supported_hardware != nullptr,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`supported_hardware` pointer is null.";
+#if defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
+  if ((accelerator == nullptr || accelerator->env == nullptr) &&
+      !GpuCompatibilityChecker::Instance().IsSupportedOnThisDevice()) {
+    LITERT_LOG(LITERT_INFO,
+               "GPU accelerator is not supported on this device according to "
+               "the ML Drift compatibility list.");
+    *supported_hardware = kLiteRtHwAcceleratorNone;
+    return kLiteRtStatusErrorUnsupported;
+  }
+#endif  // defined(LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK)
+  *supported_hardware = kLiteRtHwAcceleratorGpu;
   return kLiteRtStatusOk;
 }
 
@@ -340,10 +381,11 @@ LiteRtStatus StopMetricsCollection(LiteRtRuntimeContext* runtime_context,
   if (intermediate_memory.ok()) {
     LiteRtMetric metric = {
         .name = "gpu_intermediate_memory_bytes",
-        .value = LiteRtAny{
-            .type = kLiteRtAnyTypeInt,
-            .int_value = static_cast<int64_t>(*intermediate_memory),
-        },
+        .value =
+            LiteRtAny{
+                .type = kLiteRtAnyTypeInt,
+                .int_value = static_cast<int64_t>(*intermediate_memory),
+            },
     };
     LITERT_RETURN_IF_ERROR(runtime_context->append_metric(metrics, &metric));
   }
@@ -352,10 +394,11 @@ LiteRtStatus StopMetricsCollection(LiteRtRuntimeContext* runtime_context,
   if (constant_memory.ok()) {
     LiteRtMetric metric = {
         .name = "gpu_constant_memory_bytes",
-        .value = LiteRtAny{
-            .type = kLiteRtAnyTypeInt,
-            .int_value = static_cast<int64_t>(*constant_memory),
-        },
+        .value =
+            LiteRtAny{
+                .type = kLiteRtAnyTypeInt,
+                .int_value = static_cast<int64_t>(*constant_memory),
+            },
     };
     LITERT_RETURN_IF_ERROR(runtime_context->append_metric(metrics, &metric));
   }

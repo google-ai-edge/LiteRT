@@ -78,6 +78,20 @@ struct CacheEntry {
   TensorDescriptor tensor_desc;
 };
 
+// Options for generating a unique model identifier for the weight cache.
+// Pack the struct to prevent hashing uninitialized alignment padding bytes.
+#pragma pack(push, 1)
+struct ModelIdentifierOptions {
+  MlDriftDelegatePrecision precision = kDefault;
+  bool prefer_texture_weights = false;
+  bool allow_src_quantized_fc_conv_ops = false;
+  bool prepare_weights_in_batches = false;
+  bool serialize_external_tensors = false;
+  bool ordered_by_size = true;
+  bool use_ir_model = false;
+};
+#pragma pack(pop)
+
 // Allows MLDrift to directly load packed weights from disk instead of having to
 // repack them every time.
 class SerializationWeightCache {
@@ -162,9 +176,7 @@ class SerializationWeightCache {
       absl::string_view model_token, TfLiteContext* context,
       const TfLiteDelegateParams* delegate_params,
       absl::string_view serialization_prefix,
-      const MlDriftDelegatePrecision& precision, bool prefer_texture_weights,
-      bool allow_src_quantized_fc_conv_ops, bool prepare_weights_in_batches,
-      bool serialize_external_tensors, bool ordered_by_size);
+      const ModelIdentifierOptions& options);
 
  private:
   friend class SerializationWeightCacheTestPeer;

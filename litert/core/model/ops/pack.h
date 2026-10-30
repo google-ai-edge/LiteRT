@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
@@ -41,8 +42,12 @@ inline LiteRtStatus InferPack(const ShapeInferenceContext& ctx,
   constexpr size_t kFirstInputIndex = 0;
   Dims element_shape = ctx.GetInputShape(kFirstInputIndex);
   int rank = element_shape.size();
-  if (axis < 0) axis += rank + 1;
-  if (axis < 0 || axis > rank) return kLiteRtStatusErrorInvalidArgument;
+  int rank_plus_one = 0;
+  if ((axis < 0 && (!SafeAdd(rank, 1, rank_plus_one) ||
+                    !SafeAdd(axis, rank_plus_one, axis))) ||
+      axis < 0 || axis > rank) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 
   // Unify across all inputs to catch mismatches and resolve dynamic -1
   // dimensions.
@@ -85,11 +90,12 @@ inline LiteRtStatus InferPack(const ShapeInferenceContext& ctx,
     // Determine outer and inner chunk sizes (in bytes) around `axis`.
     size_t outer_size = 1;
     for (int j = 0; j < axis; ++j) {
-      if (element_shape[j] == -1) {
+      if (element_shape[j] <= 0 ||
+          !SafeMultiply(outer_size, static_cast<size_t>(element_shape[j]),
+                        outer_size)) {
         all_static = false;
         break;
       }
-      outer_size *= element_shape[j];
     }
     if (all_static && elem_bytes % outer_size == 0) {
       size_t inner_bytes = elem_bytes / outer_size;

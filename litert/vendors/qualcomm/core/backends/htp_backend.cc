@@ -20,7 +20,6 @@
 #include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
 #include "HTP/QnnHtpProperty.h"  // from @qairt
-#include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
 #include "QnnGraph.h"  // from @qairt
@@ -54,30 +53,14 @@ float GetOptimizationValue(OptimizationLevel level) {
   }
 }
 
-Qnn_Priority_t GetGraphPriorityValue(GraphPriority graph_priority) {
-  // Default priority is NORMAL
-  switch (graph_priority) {
-    case GraphPriority::kDefault:
-      return QNN_PRIORITY_DEFAULT;
-    case GraphPriority::kLow:
-      return QNN_PRIORITY_LOW;
-    case GraphPriority::kNormal:
-      return QNN_PRIORITY_NORMAL;
-    case GraphPriority::kNormalHigh:
-      return QNN_PRIORITY_NORMAL_HIGH;
-    case GraphPriority::kHigh:
-      return QNN_PRIORITY_HIGH;
-    default:
-      return QNN_PRIORITY_UNDEFINED;
-  }
-}
-
 }  // namespace
 
 // HTP PERF CONTROL /////////////////////////////////////////////////////////
 class HtpBackend::HtpPerfControl {
  public:
-  explicit HtpPerfControl(const QNN_INTERFACE_VER_TYPE* api) : api_(api) {}
+  explicit HtpPerfControl(const QNN_INTERFACE_VER_TYPE* api,
+                          std::uint32_t device_id)
+      : api_(api), device_id_(device_id) {}
 
   ~HtpPerfControl() {
     DownVote();
@@ -116,7 +99,7 @@ class HtpBackend::HtpPerfControl {
 
     if (power_config_id_ == 0) {
       if (error = htp_perf_infra_->perfInfra.createPowerConfigId(
-              /*device_id=*/0, /*core_id=*/0, &power_config_id_);
+              device_id_, /*core_id=*/0, &power_config_id_);
           error != QNN_SUCCESS) {
         QNN_LOG_ERROR("HTP backend unable to create power config. Error %d",
                       QNN_GET_ERROR_CODE(error));
@@ -177,32 +160,39 @@ class HtpBackend::HtpPerfControl {
     voting_thread_->Enqueue(VotingThread::VoteType::kDownVote, debounce);
   }
 
-  bool ReinitIfNeeded(HtpPerformanceMode new_mode) {
-    const bool needs_init =
-        htp_perf_infra_ == nullptr || new_mode != current_mode_;
-    if (needs_init && !Init(new_mode)) {
-      QNN_LOG_ERROR("HTP backend failed to re-init for performance mode %d.",
-                    new_mode);
-      return false;
-    }
-    ScheduleUpVote();
-    return true;
-  }
-
-  // Applies new_mode for one inference. Manual skips a same-mode re-vote
-  // when init already upvoted, auto always re-votes.
-  bool ApplyPerfMode(HtpPerformanceMode new_mode, HtpPerfCtrlMode ctrl_mode,
-                     bool supports_rpc_polling) {
+  bool SetPerfModeAndApplyIfManual(const Options& options) {
+    const auto new_mode = options.GetHtpPerformanceMode();
     const bool mode_changed = new_mode != current_mode_;
-    if (!mode_changed && ctrl_mode == HtpPerfCtrlMode::kManual) {
+    if (!mode_changed) {
+      QNN_LOG_DEBUG("SetPerfModeAndApplyIfManual: Perf mode doesn't change.");
       return true;
     }
-    if (!ReinitIfNeeded(new_mode)) {
+    if (new_mode == HtpPerformanceMode::kDefault) {
+      if (htp_perf_infra_ != nullptr) {
+        InitDownVotePowerConfigs(HtpPerformanceMode::kDefault);
+        if (options.GetHtpPerfCtrlMode() == HtpPerfCtrlMode::kManual) {
+          DownVote();
+        } else {
+          ScheduleDownVote();
+        }
+      }
+      current_mode_ = HtpPerformanceMode::kDefault;
+      return true;
+    }
+    QNN_LOG_DEBUG("SetPerfModeAndApplyIfManual: Init new mode.");
+    if (!Init(new_mode)) return false;
+    // TODO(jiunkaiy): Enable RPC polling only on SoCs v69 and later. For now,
+    // rely on the QAIRT SDK to disable it on unsupported platforms.
+    if (!SetRpcPolling(new_mode)) {
+      QNN_LOG_ERROR(
+          "Failed to set RPC polling in SetPerfModeAndApplyIfManual.");
       return false;
     }
-    if (mode_changed && supports_rpc_polling && !SetRpcPolling(new_mode)) {
-      QNN_LOG_ERROR("Failed to set RPC Polling in ApplyPerfMode.");
-      return false;
+    if (options.GetHtpPerfCtrlMode() == HtpPerfCtrlMode::kManual) {
+      QNN_LOG_DEBUG("SetPerfModeAndApplyIfManual: Work for kManual.");
+      UpVote();
+    } else {
+      QNN_LOG_DEBUG("SetPerfModeAndApplyIfManual: Ignore due to kAuto.");
     }
     return true;
   }
@@ -392,6 +382,16 @@ class HtpBackend::HtpPerfControl {
             DCVS_VOLTAGE_CORNER_DISABLE, DCVS_VOLTAGE_CORNER_DISABLE,
             DCVS_VOLTAGE_CORNER_DISABLE);
         break;
+      case HtpPerformanceMode::kDefault:
+        // Follow Hexagon SDK design
+        SetPowerConfigs(down_vote_power_configs_, power_config_id_,
+                        PowerConfig::kDcvsEnable,
+                        QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE,
+                        PowerConfig::kSleepMaxLatency,
+                        DCVS_VOLTAGE_VCORNER_NOM, DCVS_VOLTAGE_VCORNER_NOM,
+                        DCVS_VOLTAGE_VCORNER_NOM, DCVS_VOLTAGE_VCORNER_NOM,
+                        DCVS_VOLTAGE_VCORNER_NOM, DCVS_VOLTAGE_VCORNER_NOM);
+        break;
       default:
         QNN_LOG_ERROR(
             "Invalid performance profile %d to set power configs "
@@ -453,6 +453,7 @@ class HtpBackend::HtpPerfControl {
 
   // Performance control
   const QNN_INTERFACE_VER_TYPE* api_{nullptr};
+  std::uint32_t device_id_{0};
   std::uint32_t power_config_id_{0};
   QnnDevice_Infrastructure_t htp_perf_infra_{nullptr};
   // Last successfully-applied mode, used to skip a redundant re-vote.
@@ -494,20 +495,77 @@ HtpBackend::QnnDevicePlatformInfo HtpBackend::CreateDevicePlatformInfo() {
                                PlatformInfoDeleter{QnnApi()}};
 }
 
-std::vector<const QnnDevice_Config_t*> HtpBackend::CreateDeviceConfigs(
-    const Options& options) {
-  std::vector<const QnnDevice_Config_t*> device_configs;
+bool HtpBackend::CreateDevicePlatformConfigs(
+    std::uint32_t htp_device_id,
+    std::vector<const QnnDevice_Config_t*>& device_configs) {
+  auto device_platform_info = CreateDevicePlatformInfo();
+  if (!device_platform_info) {
+    QNN_LOG_ERROR("Cannot select HTP device_id=%u without platform info.",
+                  htp_device_id);
+    return false;
+  }
+
+  const std::uint32_t num_hw_devices = device_platform_info->v1.numHwDevices;
+  if (device_platform_info->v1.hwDevices == nullptr) {
+    QNN_LOG_ERROR(
+        "HTP platform info reports %u devices but has no device array.",
+        num_hw_devices);
+    return false;
+  }
+
+  QnnDevice_HardwareDeviceInfo_t* selected_hw_device = nullptr;
+  for (std::uint32_t i = 0; i < num_hw_devices; ++i) {
+    auto* hw_device = &device_platform_info->v1.hwDevices[i];
+    if (hw_device->v1.deviceId == htp_device_id) {
+      selected_hw_device = hw_device;
+      break;
+    }
+  }
+  if (selected_hw_device == nullptr) {
+    QNN_LOG_ERROR("HTP device_id=%u was not found among %u devices.",
+                  htp_device_id, num_hw_devices);
+    return false;
+  }
+
+  QNN_LOG_INFO("Using HTP device_id=%u.", htp_device_id);
+  qnn_device_platform_info_ = std::move(device_platform_info);
+  auto& selected_platform_info = AllocateDevicePlatformInfo();
+  selected_platform_info.v1.numHwDevices = 1;
+  selected_platform_info.v1.hwDevices = selected_hw_device;
+
+  auto& platform_info_config = AllocateDeviceConfig();
+  platform_info_config.option = QNN_DEVICE_CONFIG_OPTION_PLATFORM_INFO;
+  platform_info_config.hardwareInfo = &selected_platform_info;
+  device_configs.emplace_back(&platform_info_config);
+  return true;
+}
+
+bool HtpBackend::CreateDeviceConfigs(
+    const Options& options,
+    std::vector<const QnnDevice_Config_t*>& device_configs) {
+  const std::uint32_t htp_device_id = options.GetHtpDeviceId();
+  if (htp_device_id != 0 &&
+      !CreateDevicePlatformConfigs(htp_device_id, device_configs)) {
+    return false;
+  }
 
 #if defined(__x86_64__) || defined(_M_X64)
-  QnnHtpDevice_CustomConfig_t* htp_device_custom_config =
-      &AllocateHtpDeviceConfig();
+  std::vector<QnnDevice_CustomConfig_t> device_custom_configs;
+  auto* htp_device_custom_config = &AllocateHtpDeviceConfig();
   htp_device_custom_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_SOC;
   htp_device_custom_config->socModel = soc_info_.soc_model;
-  QnnDevice_Config_t* soc_device_config = &AllocateDeviceConfig();
-  soc_device_config->option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
-  soc_device_config->customConfig =
-      static_cast<QnnDevice_CustomConfig_t>(htp_device_custom_config);
-  device_configs.emplace_back(soc_device_config);
+  device_custom_configs.emplace_back(
+      static_cast<QnnDevice_CustomConfig_t>(htp_device_custom_config));
+
+  // +1 for null terminated.
+  device_configs.reserve(device_configs.size() + device_custom_configs.size() +
+                         1);
+  for (std::size_t i = 0; i < device_custom_configs.size(); ++i) {
+    auto* device_custom_config = &AllocateDeviceConfig();
+    device_custom_config->option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
+    device_custom_config->customConfig = device_custom_configs[i];
+    device_configs.emplace_back(device_custom_config);
+  }
 #endif
 
   bool use_signed_pd = false;
@@ -531,11 +589,11 @@ std::vector<const QnnDevice_Config_t*> HtpBackend::CreateDeviceConfigs(
   }
 
   if (use_signed_pd) {
-    QnnHtpDevice_CustomConfig_t* signed_pd_config = &AllocateHtpDeviceConfig();
+    auto* signed_pd_config = &AllocateHtpDeviceConfig();
     signed_pd_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD;
-    signed_pd_config->useSignedProcessDomain.deviceId = 0;
+    signed_pd_config->useSignedProcessDomain.deviceId = htp_device_id;
     signed_pd_config->useSignedProcessDomain.useSignedProcessDomain = true;
-    QnnDevice_Config_t* signed_pd_device_config = &AllocateDeviceConfig();
+    auto* signed_pd_device_config = &AllocateDeviceConfig();
     signed_pd_device_config->option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
     signed_pd_device_config->customConfig =
         static_cast<QnnDevice_CustomConfig_t>(signed_pd_config);
@@ -545,7 +603,7 @@ std::vector<const QnnDevice_Config_t*> HtpBackend::CreateDeviceConfigs(
   if (!device_configs.empty()) {
     device_configs.emplace_back(nullptr);
   }
-  return device_configs;
+  return true;
 }
 
 bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
@@ -563,12 +621,12 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
     return false;
   }
 
+  // Device Handle
   if (soc_info.has_value()) {
     QNN_LOG_INFO("Using provided SoC info. SoC name: %s.",
                  soc_info->soc_name.data());
     soc_info_ = *soc_info;
   }
-
 #if defined(__x86_64__) || defined(_M_X64)
   if (soc_info_.soc_model == 0) {
     QNN_LOG_ERROR("SoC info was not configured successfully.");
@@ -577,10 +635,11 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   QNN_LOG_INFO("Initializing QNN backend for SoC model: %d",
                soc_info_.soc_model);
 #endif
-
-  // Device Handle
-  std::vector<const QnnDevice_Config_t*> device_configs =
-      CreateDeviceConfigs(options);
+  const std::uint32_t htp_device_id = options.GetHtpDeviceId();
+  std::vector<const QnnDevice_Config_t*> device_configs;
+  if (!CreateDeviceConfigs(options, device_configs)) {
+    return false;
+  }
   auto local_device_handle = CreateDeviceHandle(local_log_handle.get(),
                                                 absl::MakeSpan(device_configs));
   if (!local_device_handle) {
@@ -593,7 +652,8 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
   if (performance_mode != HtpPerformanceMode::kDefault) {
     QNN_LOG_INFO("Set HTP performance mode: %d", performance_mode);
 
-    htp_perf_control_ = std::make_unique<HtpPerfControl>(QnnApi());
+    htp_perf_control_ =
+        std::make_unique<HtpPerfControl>(QnnApi(), htp_device_id);
     if (!htp_perf_control_->Init(performance_mode)) {
       QNN_LOG_ERROR(
           "Failed to initialize HTP performance Control, using default "
@@ -623,30 +683,39 @@ bool HtpBackend::Init(const Options& options, std::optional<SocInfo> soc_info) {
 }
 
 bool HtpBackend::SetPerformanceMode(const Options& options) {
-  HtpPerformanceMode performance_mode = options.GetHtpPerformanceMode();
-
-  if (performance_mode == HtpPerformanceMode::kDefault) {
-    if (htp_perf_control_) {
-      htp_perf_control_->ScheduleDownVote();
+  const auto perf_mode = options.GetHtpPerformanceMode();
+  if (perf_mode != HtpPerformanceMode::kDefault) {
+    if (!htp_perf_control_) {
+      htp_perf_control_ =
+          std::make_unique<HtpPerfControl>(QnnApi(), options.GetHtpDeviceId());
     }
-    return true;
   }
-
-  if (!htp_perf_control_) {
-    QNN_LOG_ERROR(
-        "HTP performance control is not initialized in SetPerformanceMode.");
-    return false;
-  }
-
-  // TODO(jiunkaiy): Enable RPC polling only on SoCs v69 and later. For now,
-  // rely on the QAIRT SDK to disable it on unsupported platforms.
-  if (!htp_perf_control_->ApplyPerfMode(performance_mode,
-                                        options.GetHtpPerfCtrlMode(), true)) {
+  if (htp_perf_control_ &&
+      !htp_perf_control_->SetPerfModeAndApplyIfManual(options)) {
     QNN_LOG_ERROR("Failed to set HTP performance mode in SetPerformanceMode");
     return false;
   }
-
   return true;
+}
+
+void HtpBackend::ScheduleUpVote() {
+  if (htp_perf_control_) {
+    htp_perf_control_->ScheduleUpVote();
+  } else {
+    QNN_LOG_WARNING(
+        "ScheduleUpVote called but HTP performance control is not "
+        "initialized.");
+  }
+}
+
+void HtpBackend::ScheduleDownVote() {
+  if (htp_perf_control_) {
+    htp_perf_control_->ScheduleDownVote();
+  } else {
+    QNN_LOG_WARNING(
+        "ScheduleDownVote called but HTP performance control is not "
+        "initialized.");
+  }
 }
 
 GraphConfigBuilder HtpBackend::BuildGraphConfigs(
@@ -696,6 +765,23 @@ GraphConfigBuilder HtpBackend::BuildGraphConfigs(
         htp_p_point);
   }
 
+  const std::int32_t htp_weight_sharing_channel_tile_size =
+      options.GetHtpWeightSharingChannelTileSize();
+  if (htp_weight_sharing_channel_tile_size > 0) {
+    QnnHtpGraph_CustomConfig_t tile_size = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    tile_size.option = QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG;
+    tile_size.finalizeConfig.key = "weight_sharing_channel_tile_size";
+    tile_size.finalizeConfig.value = {
+        QNN_DATATYPE_INT_32,
+        {.int32Value = htp_weight_sharing_channel_tile_size}};
+    config_builder.AddCustomConfig(tile_size);
+  } else if (htp_weight_sharing_channel_tile_size < 0) {
+    QNN_LOG_WARNING(
+        "Invalid weight sharing channel tile size (%d): negative values not "
+        "supported, skipping weight sharing channel tile size config.",
+        htp_weight_sharing_channel_tile_size);
+  }
+
   // Hvx Thread
   if (const std::uint32_t num_hvx_threads = options.GetNumHvxThreads();
       num_hvx_threads > 0) {
@@ -705,7 +791,7 @@ GraphConfigBuilder HtpBackend::BuildGraphConfigs(
     config_builder.AddCustomConfig(hvx_threads);
   }
 
-  // DLBC (activations / inputs). Offline-prep only.
+  // DLBC input compression.
   if (options.GetHtpDlbc()) {
     QnnHtpGraph_CustomConfig_t dlbc = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
     dlbc.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
@@ -714,7 +800,7 @@ GraphConfigBuilder HtpBackend::BuildGraphConfigs(
     config_builder.AddCustomConfig(dlbc);
   }
 
-  // DLBC weights. Offline-prep only.
+  // DLBC weight compression.
   if (options.GetHtpDlbcWeights()) {
     QnnHtpGraph_CustomConfig_t dlbc_weights = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
     dlbc_weights.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;

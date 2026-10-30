@@ -88,7 +88,7 @@ inline std::string GetTensorDebugString(const TfLiteTensor* tensor) {
 ::ml_drift::FullyConnectedAttributes GetFullyConnectedAttributes(
     int weights_node_input_index, int bias_node_input_index,
     ObjectReader* reader) {
-  ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32> weights;
+  ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32> weights;
   reader->ReadTensor(weights_node_input_index, &weights,
                      ReadTensorFlags::kExtraBytes);
   ::ml_drift::FullyConnectedAttributes attr;
@@ -318,7 +318,7 @@ void ReshapeFullyConnectedOutput(const TfLiteTensor* src_tensor,
   copy_value->tensor.type = input_value->tensor.type;
   copy_value->tensor.shape = expected_output_shape;
   ::ml_drift::Node* node_reshape = graph->NewNode();
-  node_reshape->operation.type = ToString(::ml_drift::OperationType::RESHAPE);
+  node_reshape->operation.type = ToString(::ml_drift::OperationType::kReshape);
   ::ml_drift::ReshapeAttributes reshape_attr;
   reshape_attr.new_shape = output_shape;
   node_reshape->operation.attributes = reshape_attr;
@@ -377,7 +377,7 @@ void ConfigSharedWeightFullyConnectedNode(
 
   if (weights_tensor->type == kTfLiteInt8) {
     node->operation.type =
-        ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8);
+        ToString(::ml_drift::OperationType::kFullyConnectedInt8);
     ::ml_drift::FullyConnectedInt8Attributes attr;
     attr.weights.shape = shape;
     if (weights_tensor->data.raw_const != nullptr &&
@@ -390,9 +390,9 @@ void ConfigSharedWeightFullyConnectedNode(
     node->operation.attributes = std::move(attr);
   } else if (weights_tensor->type == kTfLiteInt4) {
     node->operation.type =
-        ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT4);
+        ToString(::ml_drift::OperationType::kFullyConnectedInt4);
     ::ml_drift::FullyConnectedInt4Attributes attr;
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt4>
         int4_weights;
     int4_weights.shape = shape;
     if (weights_tensor->data.raw_const != nullptr &&
@@ -406,9 +406,9 @@ void ConfigSharedWeightFullyConnectedNode(
     node->operation.attributes = std::move(attr);
   } else if (weights_tensor->type == kTfLiteInt2) {
     node->operation.type =
-        ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT2);
+        ToString(::ml_drift::OperationType::kFullyConnectedInt2);
     ::ml_drift::FullyConnectedInt2Attributes attr;
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT2>
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt2>
         int2_weights;
     int2_weights.shape = shape;
     if (weights_tensor->data.raw_const != nullptr &&
@@ -579,7 +579,7 @@ class ArgMaxOperationParser : public TFLiteOperationParser {
                                           .required_const_inputs = 1,
                                           .check_gpu_compatibility = false}));
 
-    ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::INT32>
+    ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::kInt32>
         dims_tensor;
     ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &dims_tensor,
                                        ReadTensorFlags::kNoExtraBytes));
@@ -603,11 +603,11 @@ class ArgMaxOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::MAX_INDEX);
+    node->operation.type = ToString(::ml_drift::OperationType::kMaxIndex);
     ::ml_drift::MaxIndexAttributes attr;
     const TfLiteTensor* src_tensor = reader->GetInputTensor(0);
     const TfLiteTensor* dst_tensor = reader->GetOutputTensor(0);
-    ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::INT32>
+    ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::kInt32>
         dims_tensor;
     reader->ReadTensor(1, &dims_tensor, ReadTensorFlags::kNoExtraBytes);
     attr.dim = ExtractAxisFromIndex(*src_tensor, dims_tensor.data[0]);
@@ -619,7 +619,7 @@ class ArgMaxOperationParser : public TFLiteOperationParser {
       arg_max_shape.set(attr.dim, 1);
       ::ml_drift::Node* node_reshape = graph->NewNode();
       node_reshape->operation.type =
-          ToString(::ml_drift::OperationType::RESHAPE);
+          ToString(::ml_drift::OperationType::kReshape);
       ::ml_drift::ReshapeAttributes reshape_attr;
       reshape_attr.new_shape = ExtractTensorShape(dst_tensor);
       node_reshape->operation.attributes = reshape_attr;
@@ -641,7 +641,7 @@ class ArgMaxOperationParser : public TFLiteOperationParser {
 ::ml_drift::Value* NewConstNode(::ml_drift::TensorFloat32 t,
                                 ::ml_drift::GraphFloat32* graph) {
   ::ml_drift::Node* node = graph->NewNode();
-  node->operation.type = ToString(::ml_drift::OperationType::CONSTANT);
+  node->operation.type = ToString(::ml_drift::OperationType::kConstant);
   ::ml_drift::Value* value = graph->NewValue();
   graph->SetProducer(node->id, value->id);
   // Keep data inside this tensor.
@@ -675,13 +675,13 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
             "Not supported batched mat mul case: non-constant tensor");
       }
       if (second_input->dims->size == 2) {
-        ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32>
+        ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32>
             dummy_weights;
         ABSL_RETURN_IF_ERROR(
             PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
       } else if (second_input->dims->size == 3 ||
                  second_input->dims->size == 4) {
-        ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>
+        ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>
             dummy_weights;
         ABSL_RETURN_IF_ERROR(
             PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
@@ -709,11 +709,12 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
         src1_tensor->dims->size == 2) {
       ::ml_drift::Node* node = graph->NewNode();
       node->operation.type =
-          ToString(::ml_drift::OperationType::FULLY_CONNECTED);
+          ToString(::ml_drift::OperationType::kFullyConnected);
       reader->AddInput(node, 0);
       reader->AddOutputs(node);
 
-      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32> weights;
+      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32>
+          weights;
       reader->ReadTensor(1, &weights, ReadTensorFlags::kNoExtraBytes);
       ::ml_drift::FullyConnectedAttributes attr;
       attr.weights.data.resize(weights.shape.w * weights.shape.h +
@@ -758,7 +759,7 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
     if (input0->tensor.shape.b != 1) {
       ::ml_drift::Node* reshape_left = graph->NewNode();
       reshape_left->operation.type =
-          ToString(::ml_drift::OperationType::RESHAPE);
+          ToString(::ml_drift::OperationType::kReshape);
       ::ml_drift::ReshapeAttributes reshape_attr;
       if (src0_tensor->dims->size == 2) {
         // reshape left, Mx1x1xK -> 1x1xMxK
@@ -780,7 +781,7 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
     if (input1->tensor.shape.b != 1) {
       ::ml_drift::Node* reshape_right = graph->NewNode();
       reshape_right->operation.type =
-          ToString(::ml_drift::OperationType::RESHAPE);
+          ToString(::ml_drift::OperationType::kReshape);
       ::ml_drift::ReshapeAttributes reshape_attr;
       if (src1_tensor->dims->size == 2) {
         // reshape right, Kx1x1xN -> 1x1xKxN
@@ -820,7 +821,7 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
     attr.transpose_left = tflite_options->adj_x;
     attr.transpose_right = tflite_options->adj_y;
     bmm->operation.attributes = std::move(attr);
-    bmm->operation.type = ToString(::ml_drift::OperationType::BATCHED_MATMUL);
+    bmm->operation.type = ToString(::ml_drift::OperationType::kBatchedMatmul);
     graph->AddConsumer(bmm->id, left_value->id);
     graph->AddConsumer(bmm->id, right_value->id);
     graph->SetProducer(bmm->id, result_value->id);
@@ -828,7 +829,7 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
       // reshape result to original shape
       ::ml_drift::Node* reshape_result = graph->NewNode();
       reshape_result->operation.type =
-          ToString(::ml_drift::OperationType::RESHAPE);
+          ToString(::ml_drift::OperationType::kReshape);
       ::ml_drift::ReshapeAttributes reshape_attr;
       reshape_attr.new_shape = output->tensor.shape;
       reshape_result->operation.attributes = std::move(reshape_attr);
@@ -872,7 +873,7 @@ class BitcastOperationParser : public TFLiteOperationParser {
       //     (2, 2, 4) -> (bitcast) -> (2, 2, 1) -> (reshape) -> (2, 2)
       ::ml_drift::Node* bitcast_node = graph->NewNode();
       bitcast_node->operation.type =
-          ToString(::ml_drift::OperationType::BITCAST);
+          ToString(::ml_drift::OperationType::kBitcast);
       reader->AddInput(bitcast_node, 0);
       const auto bitcast_input = graph->FindInputs(bitcast_node->id)[0];
       ::ml_drift::BHWC interim_shape = bitcast_input->tensor.shape;
@@ -890,7 +891,7 @@ class BitcastOperationParser : public TFLiteOperationParser {
         // Add reshape
         ::ml_drift::Node* reshape_node = graph->NewNode();
         reshape_node->operation.type =
-            ToString(::ml_drift::OperationType::RESHAPE);
+            ToString(::ml_drift::OperationType::kReshape);
         ::ml_drift::ReshapeAttributes reshape_attr;
         reshape_attr.new_shape = output_shape;
         reshape_node->operation.attributes = std::move(reshape_attr);
@@ -906,7 +907,7 @@ class BitcastOperationParser : public TFLiteOperationParser {
       //     (2, 2) -> (reshape) -> (2, 2, 1) -> (bitcast) -> (2, 2, 4)
       ::ml_drift::Node* reshape_node = graph->NewNode();
       reshape_node->operation.type =
-          ToString(::ml_drift::OperationType::RESHAPE);
+          ToString(::ml_drift::OperationType::kReshape);
       reader->AddInput(reshape_node, 0);
       ::ml_drift::Value* interim_val = graph->NewValue();
       interim_val->tensor.type = ToDataType(src_tensor->type);
@@ -921,7 +922,7 @@ class BitcastOperationParser : public TFLiteOperationParser {
       // Add bitcast
       ::ml_drift::Node* bitcast_node = graph->NewNode();
       bitcast_node->operation.type =
-          ToString(::ml_drift::OperationType::BITCAST);
+          ToString(::ml_drift::OperationType::kBitcast);
       graph->AddConsumer(bitcast_node->id, interim_val->id);
       reader->AddOutputs(bitcast_node);
     } else {  // maintain precision size
@@ -930,7 +931,7 @@ class BitcastOperationParser : public TFLiteOperationParser {
       //     (2, 2, 4) -> (bitcast) -> (2, 2, 4)
       ::ml_drift::Node* bitcast_node = graph->NewNode();
       bitcast_node->operation.type =
-          ToString(::ml_drift::OperationType::BITCAST);
+          ToString(::ml_drift::OperationType::kBitcast);
       reader->AddInput(bitcast_node, 0);
       reader->AddOutputs(bitcast_node);
     }
@@ -957,7 +958,8 @@ class BroadcastInDimOperationParser : public TFLiteOperationParser {
       return absl::InvalidArgumentError("Only supports 1D-4D output tensor.");
     }
 
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> indices;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32>
+        indices;
     ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &indices,
                                        ReadTensorFlags::kNoExtraBytes));
     ABSL_RETURN_IF_ERROR(CheckIndices(input_tensor, output_tensor, indices));
@@ -970,7 +972,8 @@ class BroadcastInDimOperationParser : public TFLiteOperationParser {
   void Parse(const TfLiteNode* tflite_node, const TfLiteRegistration*,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     // Ensure valid inputs
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> indices;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32>
+        indices;
     reader->ReadTensor(1, &indices, ReadTensorFlags::kNoExtraBytes);
     TfLiteTensor* input_tensor = reader->GetInputTensor(0);
     TfLiteTensor* output_tensor = reader->GetOutputTensor(0);
@@ -978,7 +981,7 @@ class BroadcastInDimOperationParser : public TFLiteOperationParser {
     // Add transpose node
     ::ml_drift::Node* transpose_node = graph->NewNode();
     transpose_node->operation.type =
-        ToString(::ml_drift::OperationType::TRANSPOSE);
+        ToString(::ml_drift::OperationType::kTranspose);
     reader->AddInput(transpose_node, 0);
     const auto input = graph->FindInputs(transpose_node->id)[0];
     ::ml_drift::Value* interim_val = graph->NewValue();
@@ -1015,7 +1018,7 @@ class BroadcastInDimOperationParser : public TFLiteOperationParser {
     if (interim_shape != output_shape) {
       graph->SetProducer(transpose_node->id, interim_val->id);
       ::ml_drift::Node* tile_node = graph->NewNode();
-      tile_node->operation.type = ToString(::ml_drift::OperationType::TILE);
+      tile_node->operation.type = ToString(::ml_drift::OperationType::kTile);
       graph->AddConsumer(tile_node->id, interim_val->id);
       reader->AddOutputs(tile_node);
     } else {
@@ -1034,7 +1037,7 @@ class BroadcastInDimOperationParser : public TFLiteOperationParser {
 
   absl::Status CheckIndices(
       const TfLiteTensor* input_tensor, TfLiteTensor* output_tensor,
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32>&
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32>&
           indices) const {
     for (int d = 0; d < indices.data.size(); ++d) {
       if (indices.data[d] < 0 || indices.data[d] >= output_tensor->dims->size) {
@@ -1078,7 +1081,7 @@ class CastOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::CAST);
+    node->operation.type = ToString(::ml_drift::OperationType::kCast);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
   }
@@ -1100,7 +1103,7 @@ class CbrtOperationParser : public TFLiteOperationParser {
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     // cbrt(x) = pow(x, 1/3)
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::POW);
+    node->operation.type = ToString(::ml_drift::OperationType::kPow);
     reader->AddInput(node, 0);
     ::ml_drift::ElementwiseAttributes attr;
     attr.param = 1.0f / 3.0f;
@@ -1129,9 +1132,9 @@ class ClampOperationsParser : public TFLiteOperationParser {
     // tensors. They either are the same shape as value, or are scalars.
     // clamp(min, value, max) = min(max(value, min), max))
     ::ml_drift::Node* max_node = graph->NewNode();
-    max_node->operation.type = ToString(::ml_drift::OperationType::MAXIMUM);
+    max_node->operation.type = ToString(::ml_drift::OperationType::kMaximum);
     ::ml_drift::Node* min_node = graph->NewNode();
-    min_node->operation.type = ToString(::ml_drift::OperationType::MINIMUM);
+    min_node->operation.type = ToString(::ml_drift::OperationType::kMinimum);
 
     reader->AddInput(max_node, 0);
     reader->AddInput(max_node, 1);
@@ -1152,6 +1155,9 @@ class ClampOperationsParser : public TFLiteOperationParser {
 
 class ConcatenationOperationParser : public TFLiteOperationParser {
  public:
+  explicit ConcatenationOperationParser(const ModelBuilderOptions& options)
+      : options_(options) {}
+
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
@@ -1168,7 +1174,7 @@ class ConcatenationOperationParser : public TFLiteOperationParser {
       input_shapes.push_back(ExtractTensorShape(input));
     }
 
-    if (GetAxis(input_shapes) == ::ml_drift::Axis::UNKNOWN) {
+    if (GetAxis(input_shapes) == ::ml_drift::Axis::kUnknown) {
       return absl::InvalidArgumentError(
           "Couldn't find an axis to concatenate by.");
     }
@@ -1187,13 +1193,31 @@ class ConcatenationOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::ConcatAttributes attr;
+    // CONCATENATION requires all inputs to share the output's data type. The
+    // partitioner (FP16GraphPartitionHelper::RemapFp16InputTensors) rewires a
+    // float16 constant straight into this node, removing the DEQUANTIZE the
+    // graph declared in front of it; for a float32 concat that leaves a
+    // float16 operand beside float32 ones. Read such a constant as float32 to
+    // restore what the graph declared. Only at float32 precision. Otherwise
+    // every float32 tensor is lowered to float16.
+    const bool requires_float32_constants =
+        !options_.enable_reduced_precision &&
+        reader->GetOutputTensor(0)->type == kTfLiteFloat32;
     // Read inputs first to make sure const node is added to a graph before
     // concat node to ensure topological order.
     std::vector<const ::ml_drift::Value*> inputs;
     for (uint32_t idx = 0; idx < tflite_node->inputs->size; ++idx) {
-      ::ml_drift::Value* input = reader->IsConstantTensor(idx)
-                                     ? reader->AddConstInput(idx, /*layout=*/{})
-                                     : reader->ReadValue(idx);
+      ::ml_drift::Value* input;
+      if (reader->IsConstantTensor(idx)) {
+        const bool read_float16_constants_as_float32 =
+            requires_float32_constants &&
+            reader->GetInputTensor(idx)->type == kTfLiteFloat16;
+        input = read_float16_constants_as_float32
+                    ? reader->AddFloat16ConstAsFloat32Input(idx, /*layout=*/{})
+                    : reader->AddConstInput(idx, /*layout=*/{});
+      } else {
+        input = reader->ReadValue(idx);
+      }
       inputs.push_back(input);
     }
 
@@ -1201,7 +1225,8 @@ class ConcatenationOperationParser : public TFLiteOperationParser {
       for (int j = 0; j < i; ++j) {
         if (inputs[i] == inputs[j]) {
           ::ml_drift::Node* node_copy = graph->NewNode();
-          node_copy->operation.type = ToString(::ml_drift::OperationType::COPY);
+          node_copy->operation.type =
+              ToString(::ml_drift::OperationType::kCopy);
           graph->AddConsumer(node_copy->id, inputs[j]->id);
           ::ml_drift::Value* copy_value = graph->NewValue();
           copy_value->tensor.type = inputs[j]->tensor.type;
@@ -1214,7 +1239,7 @@ class ConcatenationOperationParser : public TFLiteOperationParser {
     }
 
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::CONCAT);
+    node->operation.type = ToString(::ml_drift::OperationType::kConcat);
     reader->AddOutputs(node);
     for (int i = 0; i < inputs.size(); ++i) {
       graph->AddConsumer(node->id, inputs[i]->id);
@@ -1231,15 +1256,15 @@ class ConcatenationOperationParser : public TFLiteOperationParser {
         graph->FindOutputs(node->id)[0]->tensor.shape;
     for (auto input : graph->FindInputs(node->id)) {
       if (input->tensor.shape.h != output_shape.h) {
-        attr.axis = ::ml_drift::Axis::HEIGHT;
+        attr.axis = ::ml_drift::Axis::kHeight;
         break;
       }
       if (input->tensor.shape.w != output_shape.w) {
-        attr.axis = ::ml_drift::Axis::WIDTH;
+        attr.axis = ::ml_drift::Axis::kWidth;
         break;
       }
       if (input->tensor.shape.c != output_shape.c) {
-        attr.axis = ::ml_drift::Axis::CHANNELS;
+        attr.axis = ::ml_drift::Axis::kChannels;
         break;
       }
     }
@@ -1252,43 +1277,46 @@ class ConcatenationOperationParser : public TFLiteOperationParser {
  private:
   static ::ml_drift::Axis GetAxis(
       const std::vector<::ml_drift::BHWC>& input_shapes) {
-    ::ml_drift::Axis axis = ::ml_drift::Axis::BATCH;
+    ::ml_drift::Axis axis = ::ml_drift::Axis::kBatch;
     for (int i = 1; i < input_shapes.size(); i++) {
       if (input_shapes[0].h != input_shapes[i].h &&
           input_shapes[0].w != input_shapes[i].w &&
           input_shapes[0].c != input_shapes[i].c) {
-        axis = ::ml_drift::Axis::HEIGHT;
+        axis = ::ml_drift::Axis::kHeight;
         break;
       }
     }
-    if (axis == ::ml_drift::Axis::BATCH) return axis;
+    if (axis == ::ml_drift::Axis::kBatch) return axis;
     for (int i = 1; i < input_shapes.size(); i++) {
       if (input_shapes[0].b != input_shapes[i].b &&
           input_shapes[0].w != input_shapes[i].w &&
           input_shapes[0].c != input_shapes[i].c) {
-        axis = ::ml_drift::Axis::WIDTH;
+        axis = ::ml_drift::Axis::kWidth;
         break;
       }
     }
-    if (axis == ::ml_drift::Axis::HEIGHT) return axis;
+    if (axis == ::ml_drift::Axis::kHeight) return axis;
     for (int i = 1; i < input_shapes.size(); i++) {
       if (input_shapes[0].b != input_shapes[i].b &&
           input_shapes[0].h != input_shapes[i].h &&
           input_shapes[0].c != input_shapes[i].c) {
-        axis = ::ml_drift::Axis::CHANNELS;
+        axis = ::ml_drift::Axis::kChannels;
         break;
       }
     }
-    if (axis == ::ml_drift::Axis::WIDTH) return axis;
+    if (axis == ::ml_drift::Axis::kWidth) return axis;
     for (int i = 1; i < input_shapes.size(); i++) {
       if (input_shapes[0].b != input_shapes[i].b &&
           input_shapes[0].w != input_shapes[i].w &&
           input_shapes[0].h != input_shapes[i].h) {
-        return ::ml_drift::Axis::UNKNOWN;
+        return ::ml_drift::Axis::kUnknown;
       }
     }
     return axis;
   }
+
+ private:
+  ModelBuilderOptions options_;
 };
 
 class Conv2DOperationParser : public TFLiteOperationParser {
@@ -1380,7 +1408,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
       // Weights are runtime input.
       ::ml_drift::Node* node = graph->NewNode();
       node->operation.type =
-          ToString(::ml_drift::OperationType::CONVOLUTION_2D);
+          ToString(::ml_drift::OperationType::kConvolution2D);
       node->operation.attributes = std::move(attr);
       reader->AddInput(node, 0);
       reader->AddInput(node, 1);
@@ -1401,7 +1429,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
           /*copy_weights=*/!options_.enable_raw_weights_propagation);
       // TODO: b/378522761 - add support for int4 quantized weights.
       node->operation.type =
-          ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8);
+          ToString(::ml_drift::OperationType::kFullyConnectedInt8);
       reader->AddOutputs(node);
       HandleFusedActivation(params->activation, graph, node);
       return;
@@ -1422,7 +1450,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
       const auto& conv_weights = GetFloatWeights(attr);
       ::ml_drift::DepthwiseConvolution2DAttributes dw_attr;
       auto& dw_weights = dw_attr.weights.emplace<::ml_drift::Tensor<
-          ::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
+          ::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>();
       dw_weights.id = conv_weights.id;
       dw_weights.shape =
           ::ml_drift::OHWI(conv_weights.shape.i, conv_weights.shape.h,
@@ -1446,7 +1474,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
       dw_attr.padding = attr.padding;
       ::ml_drift::Node* node = graph->NewNode();
       node->operation.type =
-          ToString(::ml_drift::OperationType::DEPTHWISE_CONVOLUTION);
+          ToString(::ml_drift::OperationType::kDepthwiseConvolution);
       node->operation.attributes = std::move(dw_attr);
       reader->AddInput(node, 0);
       reader->AddOutputs(node);
@@ -1462,7 +1490,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
       return;
     }
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::CONVOLUTION_2D);
+    node->operation.type = ToString(::ml_drift::OperationType::kConvolution2D);
     node->operation.attributes = std::move(attr);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
@@ -1514,7 +1542,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
         reader->SetSharedTensor(node_inputs[2]->id, bias_share.PreferredId(),
                                 tflite_node->inputs->data[kInputBiasId],
                                 /*dequant_forced=*/false,
-                                ::ml_drift::Layout::LINEAR);
+                                ::ml_drift::Layout::kLinear);
       }
       const TfLiteTensor* src_tensor = reader->GetInputTensor(kInputSrcId);
       if (IsFullyConnectedOutputReshapeNeeded(src_tensor, weights_tensor,
@@ -1532,7 +1560,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
     ::ml_drift::Node* node = graph->NewNode();
     ::ml_drift::Convolution2DAttributes attr =
         ReadAttributes(tflite_node, params, reader);
-    node->operation.type = ToString(::ml_drift::OperationType::CONVOLUTION_2D);
+    node->operation.type = ToString(::ml_drift::OperationType::kConvolution2D);
     node->operation.attributes = std::move(attr);
     reader->AddInput(node, 0);
     const int runtime_inputs = reader->GetNumberOfRuntimeInputs();
@@ -1571,7 +1599,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
       reader->SetSharedTensor(node_inputs[2]->id, bias_share.PreferredId(),
                               tflite_node->inputs->data[kInputBiasId],
                               /*dequant_forced=*/false,
-                              ::ml_drift::Layout::LINEAR);
+                              ::ml_drift::Layout::kLinear);
     }
     reader->AddOutputs(node);
     HandleFusedActivation(params->activation, graph, node);
@@ -1588,7 +1616,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
     const int runtime_inputs = reader->GetNumberOfRuntimeInputs();
     if (runtime_inputs == 2 || weights_share.IsShared()) {
       auto& weights = attr.weights.emplace<::ml_drift::Tensor<
-          ::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
+          ::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>();
       const TfLiteTensor* weights_tensor =
           reader->GetInputTensor(kInputWeightsId);
       const ::ml_drift::BHWC weights_shape = ExtractTensorShape(weights_tensor);
@@ -1599,20 +1627,20 @@ class Conv2DOperationParser : public TFLiteOperationParser {
       const TfLiteTensor* tflite_tensor =
           reader->GetInputTensor(kInputWeightsId);
       if (tflite_tensor->type == kTfLiteInt4) {
-        auto& weights = attr.weights.emplace<
-            ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>>();
+        auto& weights = attr.weights.emplace<::ml_drift::Tensor<
+            ::ml_drift::OHWI, ::ml_drift::DataType::kInt4>>();
         reader->ReadTensor(
             kInputWeightsId, &weights, ReadTensorFlags::kExtraBytes,
             options_.enable_spanned_weights, &attr.scale, &attr.zero_point);
       } else if (tflite_tensor->type == kTfLiteInt8) {
-        auto& weights = attr.weights.emplace<
-            ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>>();
+        auto& weights = attr.weights.emplace<::ml_drift::Tensor<
+            ::ml_drift::OHWI, ::ml_drift::DataType::kInt8>>();
         reader->ReadTensor(
             kInputWeightsId, &weights, ReadTensorFlags::kExtraBytes,
             options_.enable_spanned_weights, &attr.scale, &attr.zero_point);
       } else {
         auto& weights = attr.weights.emplace<::ml_drift::Tensor<
-            ::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
+            ::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>();
         reader->ReadTensor(kInputWeightsId, &weights,
                            ReadTensorFlags::kExtraBytes,
                            options_.enable_spanned_weights, /*scale=*/nullptr,
@@ -1651,13 +1679,13 @@ class Conv2DOperationParser : public TFLiteOperationParser {
     const ::ml_drift::BHWC src_shape = ExtractTensorShape(src_tensor);
     const ::ml_drift::BHWC dst_shape = ExtractTensorShape(dst_tensor);
 
-    ::ml_drift::DataType src_type = ::ml_drift::DataType::FLOAT32;
+    ::ml_drift::DataType src_type = ::ml_drift::DataType::kFloat32;
     if (src_tensor->type == kTfLiteFloat16) {
-      src_type = ::ml_drift::DataType::FLOAT16;
+      src_type = ::ml_drift::DataType::kFloat16;
     }
-    ::ml_drift::DataType dst_type = ::ml_drift::DataType::FLOAT32;
+    ::ml_drift::DataType dst_type = ::ml_drift::DataType::kFloat32;
     if (dst_tensor->type == kTfLiteFloat16) {
-      dst_type = ::ml_drift::DataType::FLOAT16;
+      dst_type = ::ml_drift::DataType::kFloat16;
     }
 
     const auto& weights_shape =
@@ -1666,10 +1694,10 @@ class Conv2DOperationParser : public TFLiteOperationParser {
     const int dst_group_size = weights_shape.o / attr.groups;
 
     ::ml_drift::Node* split_node = graph->NewNode();
-    split_node->operation.type = ToString(::ml_drift::OperationType::SPLIT);
+    split_node->operation.type = ToString(::ml_drift::OperationType::kSplit);
     {
       ::ml_drift::SplitAttributes attr;
-      attr.axis = ::ml_drift::Axis::CHANNELS;
+      attr.axis = ::ml_drift::Axis::kChannels;
       split_node->operation.attributes = std::move(attr);
     }
     reader->AddInput(split_node, 0);
@@ -1692,7 +1720,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
       conv_attr = attr;
       conv_attr.groups = 1;
       auto& conv_weights = conv_attr.weights.emplace<::ml_drift::Tensor<
-          ::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
+          ::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>();
       conv_weights.id = -1;
       conv_weights.shape.o = dst_group_size;
       conv_weights.data.resize(conv_weights.shape.DimensionsProduct() +
@@ -1721,7 +1749,7 @@ class Conv2DOperationParser : public TFLiteOperationParser {
         }
       }
       conv_nodes[i]->operation.type =
-          ToString(::ml_drift::OperationType::CONVOLUTION_2D);
+          ToString(::ml_drift::OperationType::kConvolution2D);
       conv_nodes[i]->operation.attributes = conv_attr;
 
       graph->SetProducer(split_node->id, conv_src[i]->id);
@@ -1732,8 +1760,9 @@ class Conv2DOperationParser : public TFLiteOperationParser {
     ::ml_drift::Node* concat_node = graph->NewNode();
     {
       ::ml_drift::ConcatAttributes concat_attr;
-      concat_attr.axis = ::ml_drift::Axis::CHANNELS;
-      concat_node->operation.type = ToString(::ml_drift::OperationType::CONCAT);
+      concat_attr.axis = ::ml_drift::Axis::kChannels;
+      concat_node->operation.type =
+          ToString(::ml_drift::OperationType::kConcat);
       concat_node->operation.attributes = concat_attr;
     }
     for (int i = 0; i < attr.groups; ++i) {
@@ -1767,10 +1796,10 @@ class CumsumOperationParser : public TFLiteOperationParser {
     const TfLiteIntArray* shape = input_tensor->dims;
     const int tflite_axis = tflite::GetTensorData<int32_t>(axis_tensor)[0];
     const ::ml_drift::Axis axes[4] = {
-        ::ml_drift::Axis::BATCH, ::ml_drift::Axis::HEIGHT,
-        ::ml_drift::Axis::WIDTH, ::ml_drift::Axis::CHANNELS};
+        ::ml_drift::Axis::kBatch, ::ml_drift::Axis::kHeight,
+        ::ml_drift::Axis::kWidth, ::ml_drift::Axis::kChannels};
     attr.axis = axes[tflite_axis + 4 - shape->size];
-    node->operation.type = ToString(::ml_drift::OperationType::CUMSUM);
+    node->operation.type = ToString(::ml_drift::OperationType::kCumsum);
     node->operation.attributes = std::move(attr);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
@@ -1790,7 +1819,7 @@ class DepthwiseConvolutionOperationParser : public TFLiteOperationParser {
     if (runtime_inputs == 2) {
       ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
     } else if (runtime_inputs == 1) {
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
           dummy_weights;
       ABSL_RETURN_IF_ERROR(
           PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
@@ -1815,7 +1844,7 @@ class DepthwiseConvolutionOperationParser : public TFLiteOperationParser {
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
     node->operation.type =
-        ToString(::ml_drift::OperationType::DEPTHWISE_CONVOLUTION);
+        ToString(::ml_drift::OperationType::kDepthwiseConvolution);
     reader->AddInput(node, 0);
 
     reader->AllowSharingInput(1);
@@ -1845,7 +1874,7 @@ class DepthwiseConvolutionOperationParser : public TFLiteOperationParser {
         can_share_weights && !has_inline_weights;
     ::ml_drift::DepthwiseConvolution2DAttributes attr;
     auto& weights = attr.weights.emplace<
-        ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
+        ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>();
     if (runtime_inputs == 2 || shared_weights) {
       node_input_index_for_weights = 1;
       reader->AddInput(node, 1);
@@ -1911,7 +1940,8 @@ class DepthwiseConvolutionOperationParser : public TFLiteOperationParser {
     const int filter_width = filter->dims->data[2];
     const int kernel_spatial_size = filter_height * filter_width;
 
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32> weights;
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
+        weights;
     const auto& src_weights = GetFloatWeights(*attr);
     weights.id = src_weights.id;
     weights.shape = ::ml_drift::OHWI(depth_multiplier, filter_height,
@@ -1943,7 +1973,7 @@ class DepthwiseConvolutionOperationParser : public TFLiteOperationParser {
       }
     }
     attr->weights.emplace<
-        ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>(
+        ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>(
         std::move(weights));
   }
 };
@@ -1970,7 +2000,7 @@ class DepthToSpaceOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::DEPTH_TO_SPACE);
+    node->operation.type = ToString(::ml_drift::OperationType::kDepthToSpace);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
     const auto* params =
@@ -1999,12 +2029,12 @@ class DequantizeOperationParser : public TFLiteOperationParser {
                          " Got dims:", input->dims->size));
       }
       if (input->dims->size == 2) {
-        ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32>
+        ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32>
             dummy_tensor_2d;
         ABSL_RETURN_IF_ERROR(
             PreCheckReadTensor(context, tflite_node, 0, &dummy_tensor_2d));
       } else if (input->dims->size == 3) {
-        ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::FLOAT32>
+        ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::kFloat32>
             dummy_tensor_3d;
         ABSL_RETURN_IF_ERROR(
             PreCheckReadTensor(context, tflite_node, 0, &dummy_tensor_3d));
@@ -2061,7 +2091,7 @@ class DequantizeOperationParser : public TFLiteOperationParser {
                        ::ml_drift::TensorFloat32* tensor) {
     const TfLiteTensor* input = reader->GetInputTensor(input_index);
     if (input->dims->size == 2) {
-      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32>
           tensor_2d;
       reader->ReadTensor(input_index, &tensor_2d,
                          ReadTensorFlags::kNoExtraBytes);
@@ -2070,7 +2100,7 @@ class DequantizeOperationParser : public TFLiteOperationParser {
           ::ml_drift::BHWC(1, 1, tensor_2d.shape.h, tensor_2d.shape.w);
       tensor->data = std::move(tensor_2d.data);
     } else if (input->dims->size == 3) {
-      ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::kFloat32>
           tensor_3d;
       reader->ReadTensor(input_index, &tensor_3d,
                          ReadTensorFlags::kNoExtraBytes);
@@ -2097,13 +2127,13 @@ class DequantizeOperationParser : public TFLiteOperationParser {
       attr.tensor = std::move(attr_tensor);
       ::ml_drift::Node* node = graph->NewNode();
       node->operation.attributes = attr;
-      node->operation.type = ToString(::ml_drift::OperationType::CONSTANT);
+      node->operation.type = ToString(::ml_drift::OperationType::kConstant);
       reader->AddOutputs(node);
       return;
     }
     ::ml_drift::Node* node = graph->NewNode();
     node->operation.type =
-        ToString(::ml_drift::OperationType::QUANTIZE_AND_DEQUANTIZE);
+        ToString(::ml_drift::OperationType::kQuantizeAndDequantize);
     // Non-constant dequantization.
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
@@ -2188,7 +2218,7 @@ class DynamicUpdateSliceOperationParser : public TFLiteOperationParser {
       // Add reshape node for start_indices.
       ::ml_drift::Node* reshape_node = graph->NewNode();
       reshape_node->operation.type =
-          ToString(::ml_drift::OperationType::RESHAPE);
+          ToString(::ml_drift::OperationType::kReshape);
       ::ml_drift::ReshapeAttributes start_indices_reshape_attr;
       start_indices_reshape_attr.new_shape = tflite_style_start_indices_shape;
       reshape_node->operation.attributes =
@@ -2203,7 +2233,7 @@ class DynamicUpdateSliceOperationParser : public TFLiteOperationParser {
     }
     ::ml_drift::Node* node = graph->NewNode();
     node->operation.type =
-        ToString(::ml_drift::OperationType::DYNAMIC_UPDATE_SLICE);
+        ToString(::ml_drift::OperationType::kDynamicUpdateSlice);
 
     reader->AddInput(node, 0);  // array_to_update
     reader->AddInput(node, 1);  // updated_slice
@@ -2232,6 +2262,39 @@ class DynamicUpdateSliceOperationParser : public TFLiteOperationParser {
   }
 };
 
+// Checks that a constant tensor can be added to the graph as a CONSTANT
+// node by ObjectReader::AddConstInput (which hard-checks the tensor type).
+absl::Status PreCheckConstInputForGraph(const TfLiteTensor* tensor,
+                                        const std::string& opname) {
+  if (tensor->sparsity != nullptr) {
+    return absl::UnimplementedError(absl::StrCat(
+        opname, ": sparse constant tensor ", GetTensorDebugString(tensor)));
+  }
+  if (tensor->dims->size > 4) {
+    return absl::UnimplementedError(absl::StrCat(
+        opname,
+        ": constant tensor with rank > 4: ", GetTensorDebugString(tensor)));
+  }
+  const auto* quant_params =
+      static_cast<const TfLiteAffineQuantization*>(tensor->quantization.params);
+  const bool quantized =
+      tensor->quantization.type == kTfLiteAffineQuantization &&
+      quant_params != nullptr && quant_params->scale != nullptr &&
+      quant_params->zero_point != nullptr;
+  const bool supported_type =
+      tensor->type == kTfLiteFloat32 || tensor->type == kTfLiteFloat16 ||
+      tensor->type == kTfLiteInt32 || tensor->type == kTfLiteBool ||
+      (quantized &&
+       (tensor->type == kTfLiteInt8 || tensor->type == kTfLiteUInt8 ||
+        tensor->type == kTfLiteInt4));
+  if (!supported_type) {
+    return absl::UnimplementedError(absl::StrCat(
+        opname, ": unsupported constant tensor type: ",
+        TfLiteTypeGetName(tensor->type), " ", GetTensorDebugString(tensor)));
+  }
+  return absl::OkStatus();
+}
+
 class ElementwiseOperationParser : public TFLiteOperationParser {
  public:
   explicit ElementwiseOperationParser(::ml_drift::OperationType operation_type)
@@ -2241,13 +2304,13 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
     const int kSupportedOpVersion =
-        operation_type_ == ::ml_drift::OperationType::ABS         ? 5
-        : operation_type_ == ::ml_drift::OperationType::FLOOR_DIV ? 3
-        : operation_type_ == ::ml_drift::OperationType::MAXIMUM   ? 4
-        : operation_type_ == ::ml_drift::OperationType::MINIMUM   ? 4
-        : operation_type_ == ::ml_drift::OperationType::MUL       ? 8
-        : operation_type_ == ::ml_drift::OperationType::ADD       ? 6
-        : operation_type_ == ::ml_drift::OperationType::GELU      ? 3
+        operation_type_ == ::ml_drift::OperationType::kAbs        ? 5
+        : operation_type_ == ::ml_drift::OperationType::kFloorDiv ? 3
+        : operation_type_ == ::ml_drift::OperationType::kMaximum  ? 4
+        : operation_type_ == ::ml_drift::OperationType::kMinimum  ? 4
+        : operation_type_ == ::ml_drift::OperationType::kMul      ? 8
+        : operation_type_ == ::ml_drift::OperationType::kAdd      ? 6
+        : operation_type_ == ::ml_drift::OperationType::kGelu     ? 3
                                                                   : 2;
     // `CheckGpuDelegateCompatibility()` is shared with the TFLite GPU delegate
     // and requires two-argument elementwise ops to have at least one runtime
@@ -2288,15 +2351,15 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
       ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input0));
       ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &input1));
       if (input0 == input1) {
-        if (operation_type_ != ::ml_drift::OperationType::MUL &&
-            operation_type_ != ::ml_drift::OperationType::ADD) {
+        if (operation_type_ != ::ml_drift::OperationType::kMul &&
+            operation_type_ != ::ml_drift::OperationType::kAdd) {
           return absl::UnimplementedError(
               "No support of few identical inputs in the same operation.");
         }
         ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
       } else {
-        if (operation_type_ == ::ml_drift::OperationType::MUL ||
-            operation_type_ == ::ml_drift::OperationType::ADD) {
+        if (operation_type_ == ::ml_drift::OperationType::kMul ||
+            operation_type_ == ::ml_drift::OperationType::kAdd) {
           // The "larger" input tensor must be bound to 1st input and the
           // "smaller" input tensor must be bound to 2nd input.
           ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*input0));
@@ -2366,17 +2429,17 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
     }
     ::ml_drift::Node* node = graph->NewNode();
     node->operation.type = ToString(operation_type_);
-    if (operation_type_ == ::ml_drift::OperationType::ADD) {
+    if (operation_type_ == ::ml_drift::OperationType::kAdd) {
       ::ml_drift::ElementwiseAttributes attr;
       node->operation.attributes = std::move(attr);
     }
     if (IsOneArgumentOperation()) {
-      if (operation_type_ == ::ml_drift::OperationType::GELU) {
+      if (operation_type_ == ::ml_drift::OperationType::kGelu) {
         auto tflite_options = reinterpret_cast<const TfLiteGeluParams*>(
             tflite_node->builtin_data);
         if (tflite_options->approximate) {
           node->operation.type =
-              ToString(::ml_drift::OperationType::GELU_TANH_APPROX);
+              ToString(::ml_drift::OperationType::kGeluTanhApprox);
         }
       }
 
@@ -2393,13 +2456,13 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
 
       // TODO(b/166831113): Support the same inputs for operations.
       if (input0 == input1) {
-        if (operation_type_ == ::ml_drift::OperationType::MUL) {
+        if (operation_type_ == ::ml_drift::OperationType::kMul) {
           // replace MUL(A, A) with SQUARE(A)
-          node->operation.type = ToString(::ml_drift::OperationType::SQUARE);
+          node->operation.type = ToString(::ml_drift::OperationType::kSquare);
           reader->AddInput(node, 0);
-        } else if (operation_type_ == ::ml_drift::OperationType::ADD) {
+        } else if (operation_type_ == ::ml_drift::OperationType::kAdd) {
           // replace ADD(A, A) with MUL(A, 2.0)
-          node->operation.type = ToString(::ml_drift::OperationType::MUL);
+          node->operation.type = ToString(::ml_drift::OperationType::kMul);
           ::ml_drift::ElementwiseAttributes attr;
           attr.param = 2.0f;
           node->operation.attributes = std::move(attr);
@@ -2441,8 +2504,8 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
   void SwapInputs(::ml_drift::OperationType operation_type,
                   const TfLiteTensor* input0, const TfLiteTensor* input1,
                   int* input_tensor0, int* input_tensor1) {
-    if (operation_type != ::ml_drift::OperationType::MUL &&
-        operation_type != ::ml_drift::OperationType::ADD) {
+    if (operation_type != ::ml_drift::OperationType::kMul &&
+        operation_type != ::ml_drift::OperationType::kAdd) {
       return;
     }
 
@@ -2510,7 +2573,7 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
     // Add reshape node for input0
     ::ml_drift::Node* reshape_node0 = graph->NewNode();
     reshape_node0->operation.type =
-        ToString(::ml_drift::OperationType::RESHAPE);
+        ToString(::ml_drift::OperationType::kReshape);
     ::ml_drift::ReshapeAttributes reshape_attr;
     reshape_attr.new_shape = input0_shape;
     reshape_node0->operation.attributes = std::move(reshape_attr);
@@ -2523,7 +2586,7 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
     // Add reshape node for input1
     ::ml_drift::Node* reshape_node1 = graph->NewNode();
     reshape_node1->operation.type =
-        ToString(::ml_drift::OperationType::RESHAPE);
+        ToString(::ml_drift::OperationType::kReshape);
     ::ml_drift::ReshapeAttributes reshape_attr1;
     reshape_attr1.new_shape = input1_shape;
     reshape_node1->operation.attributes = std::move(reshape_attr1);
@@ -2553,7 +2616,7 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
 
     // Reshape the output to the ml_drift output tensor shape.
     ::ml_drift::Node* reshape = graph->NewNode();
-    reshape->operation.type = ToString(::ml_drift::OperationType::RESHAPE);
+    reshape->operation.type = ToString(::ml_drift::OperationType::kReshape);
     graph->AddConsumer(reshape->id, output_value->id);
     reader->AddOutput(reshape, 0);
     ::ml_drift::ReshapeAttributes output_reshape_attr;
@@ -2681,9 +2744,9 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
   }
 
   // Specialization of TfLiteTensorToTensor<Tensor<Scalar, DataType::FLOAT32>>.
-  static ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::FLOAT32>
+  static ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::kFloat32>
   ConvertToScalarFloat32Tensor(const TfLiteTensor* tfl_tensor) {
-    ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::kFloat32>
         mld_tensor;
     mld_tensor.data.resize(1);
     CopyFloat32Data(tfl_tensor, &mld_tensor.data[0]);
@@ -2692,10 +2755,10 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
   }
 
   // Specialization of TfLiteTensorToTensor<Tensor<Scalar, DataType::INT32>>.
-  static ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::INT32>
+  static ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::kInt32>
   ConvertToScalarInt32Tensor(const TfLiteTensor* tfl_tensor) {
     const TfLiteType dtype = tfl_tensor->type;
-    ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::INT32>
+    ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::kInt32>
         mld_tensor;
     mld_tensor.data.push_back(
         dtype == kTfLiteFloat32  ? tfl_tensor->data.f[0]
@@ -2710,9 +2773,9 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
   }
 
   // Specialization of TfLIteTensorToTensor<Tensor<Linear, DataType::FLOAT32>>.
-  static ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+  static ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
   ConvertToLinearFloat32Tensor(const TfLiteTensor* tfl_tensor) {
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
         mld_tensor;
     const int n = tflite::NumElements(tfl_tensor);
     mld_tensor.data.resize(n);
@@ -2723,9 +2786,9 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
 
   // Specialization of TfLIteTensorToTensor<Tensor<::ml_drift::BHWC,
   // DataType::FLOAT32>>.
-  static ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>
+  static ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>
   ConvertToBhwcFloat32Tensor(const TfLiteTensor* tfl_tensor) {
-    ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>
         mld_tensor;
     mld_tensor.data.resize(tflite::NumElements(tfl_tensor));
     CopyFloat32Data(tfl_tensor, &mld_tensor.data[0]);
@@ -2777,14 +2840,14 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
     if (constant_dims->size < 1 || tflite::NumElements(constant_dims) == 1) {
       if (convertible_to_f32) {
         const ::ml_drift::Tensor<::ml_drift::Scalar,
-                                 ::ml_drift::DataType::FLOAT32>
+                                 ::ml_drift::DataType::kFloat32>
             t = ConvertToScalarFloat32Tensor(constant_tensor);
         *tensor_or_scalar = t.data[0];
         return;
       }
       if (constant_tensor->type == kTfLiteInt32) {
         const ::ml_drift::Tensor<::ml_drift::Scalar,
-                                 ::ml_drift::DataType::INT32>
+                                 ::ml_drift::DataType::kInt32>
             t = ConvertToScalarInt32Tensor(constant_tensor);
         *tensor_or_scalar = t.data[0];
         return;
@@ -2801,13 +2864,13 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
       return;
     }
     if (IsLinearConvertible(constant_dims)) {
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
           tensor = ConvertToLinearFloat32Tensor(constant_tensor);
       *tensor_or_scalar = std::move(tensor);
       return;
     }
     if (constant_dims->size < 5) {
-      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>
           tensor = ConvertToBhwcFloat32Tensor(constant_tensor);
       if (constant_dims->size == 2) {
         tensor.shape = ::ml_drift::BHWC(1, 1, tensor.shape.b, tensor.shape.c);
@@ -2825,25 +2888,25 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
                                     ::ml_drift::Node* node) {
     TfLiteFusedActivation activation = kTfLiteActNone;
     switch (operation_type) {
-      case ::ml_drift::OperationType::ADD:
+      case ::ml_drift::OperationType::kAdd:
         if (const auto* params = static_cast<const TfLiteAddParams*>(
                 tflite_node->builtin_data)) {
           activation = params->activation;
         }
         break;
-      case ::ml_drift::OperationType::DIV:
+      case ::ml_drift::OperationType::kDiv:
         if (const auto* params = static_cast<const TfLiteDivParams*>(
                 tflite_node->builtin_data)) {
           activation = params->activation;
         }
         break;
-      case ::ml_drift::OperationType::MUL:
+      case ::ml_drift::OperationType::kMul:
         if (const auto* params = static_cast<const TfLiteMulParams*>(
                 tflite_node->builtin_data)) {
           activation = params->activation;
         }
         break;
-      case ::ml_drift::OperationType::SUB:
+      case ::ml_drift::OperationType::kSub:
         if (const auto* params = static_cast<const TfLiteSubParams*>(
                 tflite_node->builtin_data)) {
           activation = params->activation;
@@ -2857,25 +2920,25 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
 
   bool IsOneArgumentOperation() const {
     switch (operation_type_) {
-      case ::ml_drift::OperationType::ABS:
-      case ::ml_drift::OperationType::CEIL:
-      case ::ml_drift::OperationType::COPY:
-      case ::ml_drift::OperationType::COS:
-      case ::ml_drift::OperationType::ELU:
-      case ::ml_drift::OperationType::EXP:
-      case ::ml_drift::OperationType::FLOOR:
-      case ::ml_drift::OperationType::GELU:
-      case ::ml_drift::OperationType::LOG:
-      case ::ml_drift::OperationType::LOGICAL_NOT:
-      case ::ml_drift::OperationType::NEG:
-      case ::ml_drift::OperationType::ROUND:
-      case ::ml_drift::OperationType::RSQRT:
-      case ::ml_drift::OperationType::SIGMOID:
-      case ::ml_drift::OperationType::SIGN:
-      case ::ml_drift::OperationType::SIN:
-      case ::ml_drift::OperationType::SQRT:
-      case ::ml_drift::OperationType::SQUARE:
-      case ::ml_drift::OperationType::TANH:
+      case ::ml_drift::OperationType::kAbs:
+      case ::ml_drift::OperationType::kCeil:
+      case ::ml_drift::OperationType::kCopy:
+      case ::ml_drift::OperationType::kCos:
+      case ::ml_drift::OperationType::kElu:
+      case ::ml_drift::OperationType::kExp:
+      case ::ml_drift::OperationType::kFloor:
+      case ::ml_drift::OperationType::kGelu:
+      case ::ml_drift::OperationType::kLog:
+      case ::ml_drift::OperationType::kLogicalNot:
+      case ::ml_drift::OperationType::kNeg:
+      case ::ml_drift::OperationType::kRound:
+      case ::ml_drift::OperationType::kRsqrt:
+      case ::ml_drift::OperationType::kSigmoid:
+      case ::ml_drift::OperationType::kSign:
+      case ::ml_drift::OperationType::kSin:
+      case ::ml_drift::OperationType::kSqrt:
+      case ::ml_drift::OperationType::kSquare:
+      case ::ml_drift::OperationType::kTanh:
         return true;
       default:
         return false;
@@ -2884,28 +2947,28 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
 
   bool IsTwoArgumentOperation() const {
     switch (operation_type_) {
-      case ::ml_drift::OperationType::ADD:
-      case ::ml_drift::OperationType::ATAN2:
-      case ::ml_drift::OperationType::DIV:
-      case ::ml_drift::OperationType::EQUAL:
-      case ::ml_drift::OperationType::FLOOR_DIV:
-      case ::ml_drift::OperationType::FLOOR_MOD:
-      case ::ml_drift::OperationType::GREATER:
-      case ::ml_drift::OperationType::GREATER_EQUAL:
-      case ::ml_drift::OperationType::LESS:
-      case ::ml_drift::OperationType::LESS_EQUAL:
-      case ::ml_drift::OperationType::LOGICAL_AND:
-      case ::ml_drift::OperationType::LOGICAL_OR:
-      case ::ml_drift::OperationType::LOGICAL_XOR:
-      case ::ml_drift::OperationType::MAXIMUM:
-      case ::ml_drift::OperationType::MINIMUM:
-      case ::ml_drift::OperationType::MUL:
-      case ::ml_drift::OperationType::NOT_EQUAL:
-      case ::ml_drift::OperationType::POW:
-      case ::ml_drift::OperationType::SHIFT_LEFT:
-      case ::ml_drift::OperationType::SHIFT_RIGHT:
-      case ::ml_drift::OperationType::SQUARED_DIFF:
-      case ::ml_drift::OperationType::SUB:
+      case ::ml_drift::OperationType::kAdd:
+      case ::ml_drift::OperationType::kAtan2:
+      case ::ml_drift::OperationType::kDiv:
+      case ::ml_drift::OperationType::kEqual:
+      case ::ml_drift::OperationType::kFloorDiv:
+      case ::ml_drift::OperationType::kFloorMod:
+      case ::ml_drift::OperationType::kGreater:
+      case ::ml_drift::OperationType::kGreaterEqual:
+      case ::ml_drift::OperationType::kLess:
+      case ::ml_drift::OperationType::kLessEqual:
+      case ::ml_drift::OperationType::kLogicalAnd:
+      case ::ml_drift::OperationType::kLogicalOr:
+      case ::ml_drift::OperationType::kLogicalXor:
+      case ::ml_drift::OperationType::kMaximum:
+      case ::ml_drift::OperationType::kMinimum:
+      case ::ml_drift::OperationType::kMul:
+      case ::ml_drift::OperationType::kNotEqual:
+      case ::ml_drift::OperationType::kPow:
+      case ::ml_drift::OperationType::kShiftLeft:
+      case ::ml_drift::OperationType::kShiftRight:
+      case ::ml_drift::OperationType::kSquaredDiff:
+      case ::ml_drift::OperationType::kSub:
         return true;
       default:
         return false;
@@ -2930,35 +2993,6 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
     }
     return ::ml_drift::BHWC(dims->data[0], dims->data[1], dims->data[2],
                             dims->data[3]);
-  }
-
-  // Checks that a constant tensor can be added to the graph as a CONSTANT
-  // node by ObjectReader::AddConstInput (which hard-checks the tensor type).
-  static absl::Status PreCheckConstInputForGraph(const TfLiteTensor* tensor,
-                                                 const std::string& opname) {
-    if (tensor->sparsity != nullptr) {
-      return absl::UnimplementedError(absl::StrCat(
-          opname, ": sparse constant tensor ", GetTensorDebugString(tensor)));
-    }
-    if (tensor->dims->size > 4) {
-      return absl::UnimplementedError(absl::StrCat(
-          opname,
-          ": constant tensor with rank > 4: ", GetTensorDebugString(tensor)));
-    }
-    const bool quantized =
-        tensor->quantization.type == kTfLiteAffineQuantization;
-    const bool supported_type =
-        tensor->type == kTfLiteFloat32 || tensor->type == kTfLiteFloat16 ||
-        tensor->type == kTfLiteInt32 || tensor->type == kTfLiteBool ||
-        (quantized &&
-         (tensor->type == kTfLiteInt8 || tensor->type == kTfLiteUInt8 ||
-          tensor->type == kTfLiteInt4));
-    if (!supported_type) {
-      return absl::UnimplementedError(absl::StrCat(
-          opname, ": unsupported constant tensor type: ",
-          TfLiteTypeGetName(tensor->type), " ", GetTensorDebugString(tensor)));
-    }
-    return absl::OkStatus();
   }
 
   // Checks that a two-argument operation whose both inputs are constant can be
@@ -3060,11 +3094,11 @@ class ElementwiseOperationParser : public TFLiteOperationParser {
         return absl::OkStatus();
       }
       if (IsLinearConvertible(constant_dims)) {
-        ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+        ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
             tensor;
         ABSL_RETURN_IF_ERROR(PreCheckTensorToTensor(constant_tensor, &tensor));
       } else if (constant_dims->size <= 4) {
-        ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>
+        ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>
             tensor;
         ABSL_RETURN_IF_ERROR(PreCheckTensorToTensor(constant_tensor, &tensor));
       } else {
@@ -3126,11 +3160,15 @@ class EmbeddingLookupOperationParser : public TFLiteOperationParser {
   void Parse(const TfLiteNode* tflite_node,
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
-    reader->AllowSharingInput(kInputWeightsId);
+    const TfLiteTensor weights_tensor = *reader->GetInputTensor(1);
+    if (weights_tensor.type == kTfLiteInt8 ||
+        weights_tensor.type == kTfLiteInt4 ||
+        weights_tensor.type == kTfLiteInt2) {
+      reader->AllowSharingInput(kInputWeightsId);
+    }
     ::ml_drift::Node* node = graph->NewNode();
     node->operation.type =
-        ToString(::ml_drift::OperationType::EMBEDDING_LOOKUP);
-    const TfLiteTensor weights_tensor = *reader->GetInputTensor(1);
+        ToString(::ml_drift::OperationType::kEmbeddingLookup);
     const ObjectReader::ConstantInputSharingInfo weights_share =
         reader->GetSharingInfoByNodeInputIndex(kInputWeightsId);
     reader->AddInput(node, 0);
@@ -3202,12 +3240,12 @@ class EmbeddingLookupOperationParser : public TFLiteOperationParser {
   // TODO: b/352629255 - Refactor the code to remove duplication.
   void SetInt2Attributes(ObjectReader* reader, ::ml_drift::Node* node,
                          TfLiteAffineQuantization* quantization_data) {
-    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::UINT8>
+    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kUint8>
         lookup_tensor;
     reader->ReadTensor(1, &lookup_tensor, ReadTensorFlags::kExtraBytes);
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
         scale_tensor;
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
         zero_point_tensor;
 
     scale_tensor.shape = ::ml_drift::OHWI(lookup_tensor.shape.h, 1, 1, 1);
@@ -3233,7 +3271,7 @@ class EmbeddingLookupOperationParser : public TFLiteOperationParser {
     attr.weights_zero_point = zero_point_tensor;
     attr.weights_type =
         ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt2;
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::UINT8>
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kUint8>
         weights_int2;
     weights_int2.data = lookup_tensor.data;
     weights_int2.shape.h = 1;
@@ -3246,12 +3284,12 @@ class EmbeddingLookupOperationParser : public TFLiteOperationParser {
 
   void SetInt4Attributes(ObjectReader* reader, ::ml_drift::Node* node,
                          TfLiteAffineQuantization* quantization_data) {
-    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::UINT8>
+    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kUint8>
         lookup_tensor;
     reader->ReadTensor(1, &lookup_tensor, ReadTensorFlags::kExtraBytes);
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
         scale_tensor;
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
         zero_point_tensor;
 
     scale_tensor.shape = ::ml_drift::OHWI(lookup_tensor.shape.h, 1, 1, 1);
@@ -3277,7 +3315,7 @@ class EmbeddingLookupOperationParser : public TFLiteOperationParser {
     attr.weights_zero_point = zero_point_tensor;
     attr.weights_type =
         ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt4;
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::UINT8>
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kUint8>
         weights_int4;
     weights_int4.data = lookup_tensor.data;
     weights_int4.shape.h = 1;
@@ -3290,12 +3328,12 @@ class EmbeddingLookupOperationParser : public TFLiteOperationParser {
 
   void SetInt8Attributes(ObjectReader* reader, ::ml_drift::Node* node,
                          TfLiteAffineQuantization* quantization_data) {
-    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::INT8>
+    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kInt8>
         lookup_tensor;
     reader->ReadTensor(1, &lookup_tensor, ReadTensorFlags::kExtraBytes);
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
         scale_tensor;
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
         zero_point_tensor;
 
     scale_tensor.shape = ::ml_drift::OHWI(lookup_tensor.shape.h, 1, 1, 1);
@@ -3321,7 +3359,7 @@ class EmbeddingLookupOperationParser : public TFLiteOperationParser {
     attr.weights_zero_point = zero_point_tensor;
     attr.weights_type =
         ::ml_drift::EmbeddingLookupAttributes::WeightsType::kInt8;
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>
         weights_int8;
     weights_int8.data = lookup_tensor.data;
     weights_int8.shape.h = 1;
@@ -3334,7 +3372,7 @@ class EmbeddingLookupOperationParser : public TFLiteOperationParser {
 
   void SetFloat32Attributes(ObjectReader* reader, ::ml_drift::Node* node,
                             TfLiteAffineQuantization* quantization_data) {
-    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32>
         lookup_tensor;
     reader->ReadTensor(1, &lookup_tensor, ReadTensorFlags::kExtraBytes);
     // Construct attributes.
@@ -3344,7 +3382,7 @@ class EmbeddingLookupOperationParser : public TFLiteOperationParser {
     attr.weights_type =
         ::ml_drift::EmbeddingLookupAttributes::WeightsType::kFloat32;
 
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
         weights_float32;
     weights_float32.data = lookup_tensor.data;
     weights_float32.shape.h = 1;
@@ -3459,7 +3497,7 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
             graph, node);
       } else {
         node->operation.type =
-            ToString(::ml_drift::OperationType::FULLY_CONNECTED);
+            ToString(::ml_drift::OperationType::kFullyConnected);
         reader->AddInput(node, 1);
       }
 
@@ -3476,7 +3514,7 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
           reader->SetSharedTensor(node_inputs[2]->id, bias_share.PreferredId(),
                                   tflite_node->inputs->data[kInputBiasId],
                                   /*dequant_forced=*/false,
-                                  ::ml_drift::Layout::LINEAR);
+                                  ::ml_drift::Layout::kLinear);
         }
       }
       if (IsFullyConnectedOutputReshapeNeeded(src_tensor, weights_tensor,
@@ -3514,7 +3552,7 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
             /*copy_weights=*/!options_.enable_raw_weights_propagation);
         // TODO: b/378522761 - add support for int2/int4 quantized weights.
         node->operation.type =
-            ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT8);
+            ToString(::ml_drift::OperationType::kFullyConnectedInt8);
         reader->AddOutputs(node);
         HandleFusedActivation(params->activation, graph, node);
         return;
@@ -3531,7 +3569,7 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
             kInputWeightsId, kInputBiasId, reader,
             /*copy_weights=*/!options_.enable_raw_weights_propagation);
         node->operation.type =
-            ToString(::ml_drift::OperationType::FULLY_CONNECTED_INT4);
+            ToString(::ml_drift::OperationType::kFullyConnectedInt4);
         reader->AddOutputs(node);
         HandleFusedActivation(params->activation, graph, node);
         return;
@@ -3560,11 +3598,11 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
       conv_attr.weights = attr.weights;
       conv_attr.bias = attr.bias;
       conv->operation.type =
-          ToString(::ml_drift::OperationType::CONVOLUTION_2D);
+          ToString(::ml_drift::OperationType::kConvolution2D);
       conv->operation.attributes = std::move(conv_attr);
     } else {
       conv->operation.type =
-          ToString(::ml_drift::OperationType::FULLY_CONNECTED);
+          ToString(::ml_drift::OperationType::kFullyConnected);
       conv->operation.attributes = std::move(attr);
     }
     if (IsFullyConnectedOutputReshapeNeeded(src_tensor, weights_tensor,
@@ -3631,7 +3669,7 @@ class GatherOperationParser : public TFLiteOperationParser {
                                        original_indices->tensor.shape.b);
       ::ml_drift::Node* reshape_node = graph->NewNode();
       reshape_node->operation.type =
-          ToString(::ml_drift::OperationType::RESHAPE);
+          ToString(::ml_drift::OperationType::kReshape);
       ::ml_drift::ReshapeAttributes reshape_attr;
       reshape_attr.new_shape = new_shape;
       reshape_node->operation.attributes = std::move(reshape_attr);
@@ -3644,7 +3682,7 @@ class GatherOperationParser : public TFLiteOperationParser {
 
     // Insert the GATHER.
     ::ml_drift::Node* gather_node = graph->NewNode();
-    gather_node->operation.type = ToString(::ml_drift::OperationType::GATHER);
+    gather_node->operation.type = ToString(::ml_drift::OperationType::kGather);
     ::ml_drift::GatherAttributes gather_attr;
     gather_attr.axis = ExtractAxisFromIndex(*input_tensor, params->axis);
     gather_node->operation.attributes = std::move(gather_attr);
@@ -3662,7 +3700,7 @@ class GatherOperationParser : public TFLiteOperationParser {
       // RESHAPE inserted for runtime indices above.
       SizedLayout indices_layout;
       if (indices_are_1d) {
-        indices_layout.layout_1d = ::ml_drift::Layout::SCALAR;
+        indices_layout.layout_1d = ::ml_drift::Layout::kScalar;
       }
       indices_value = reader->AddConstInput(1, indices_layout);
       graph->AddConsumer(gather_node->id, indices_value->id);
@@ -3691,7 +3729,7 @@ class HardSwishOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::HARD_SWISH);
+    node->operation.type = ToString(::ml_drift::OperationType::kHardSwish);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
   }
@@ -3787,7 +3825,7 @@ class LSTMOperationParser : public TFLiteOperationParser {
     ABSL_RETURN_IF_ERROR(CheckBasicParameters(tf_options));
 
     // checking for GetFullyConnectedAttributes
-    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32>
         dummy_weights;
     ABSL_RETURN_IF_ERROR(
         PreCheckReadTensor(context, tflite_node, 2, &dummy_weights));
@@ -3813,23 +3851,23 @@ class LSTMOperationParser : public TFLiteOperationParser {
                   ::ml_drift::GraphFloat32* graph, ObjectReader* reader,
                   const TfLiteLSTMParams* tf_options) {
     ::ml_drift::Node* concat_node = graph->NewNode();
-    concat_node->operation.type = ToString(::ml_drift::OperationType::CONCAT);
+    concat_node->operation.type = ToString(::ml_drift::OperationType::kConcat);
     ::ml_drift::ConcatAttributes concat_attr;
-    concat_attr.axis = ::ml_drift::Axis::CHANNELS;
+    concat_attr.axis = ::ml_drift::Axis::kChannels;
     concat_node->operation.attributes = concat_attr;
 
     ::ml_drift::Node* fc_node = graph->NewNode();
     fc_node->operation.type =
-        ToString(::ml_drift::OperationType::FULLY_CONNECTED);
+        ToString(::ml_drift::OperationType::kFullyConnected);
     ::ml_drift::FullyConnectedAttributes fc_attr = GetFullyConnectedAttributes(
         /*weights_node_input_index=*/2,
         /*bias_node_input_index=*/3, reader);
     fc_node->operation.attributes = std::move(fc_attr);
 
     ::ml_drift::Node* lstm_node = graph->NewNode();
-    lstm_node->operation.type = ToString(::ml_drift::OperationType::LSTM);
+    lstm_node->operation.type = ToString(::ml_drift::OperationType::kLstm);
     ::ml_drift::LstmAttributes lstm_attr;
-    lstm_attr.kernel_type = ::ml_drift::LstmKernelType::BASIC;
+    lstm_attr.kernel_type = ::ml_drift::LstmKernelType::kBasic;
     lstm_node->operation.attributes = lstm_attr;
 
     ::ml_drift::Value* concat_temp =
@@ -3877,7 +3915,7 @@ class LSTMOperationParser : public TFLiteOperationParser {
       ABSL_RETURN_IF_ERROR(
           GetTensorId(context, tflite_node, weight_tensor_id, &tensor_id));
     } else {
-      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32>
           dummy_weights;
       ABSL_RETURN_IF_ERROR(PreCheckReadTensor(
           context, tflite_node, weight_tensor_id, &dummy_weights));
@@ -3898,18 +3936,18 @@ class LSTMOperationParser : public TFLiteOperationParser {
         CheckFullyConnected(context, tflite_node, recurrent_weight_id));
 
     if (has_peephole) {
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
           dummy_weights;
       ABSL_RETURN_IF_ERROR(PreCheckReadTensor(context, tflite_node,
                                               cell_weight_id, &dummy_weights));
     }
 
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
         dummy_norm_weights;
     ABSL_RETURN_IF_ERROR(PreCheckReadTensor(
         context, tflite_node, normalization_weight_id, &dummy_norm_weights));
 
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
         dummy_bias;
     ABSL_RETURN_IF_ERROR(
         PreCheckReadTensor(context, tflite_node, bias_id, &dummy_bias));
@@ -4072,7 +4110,7 @@ class OneHotOperationParser : public TFLiteOperationParser {
     const TfLiteTensor* off_tensor = reader->GetInputTensor(3);
     attr.on_value = tflite::GetTensorData<float>(on_tensor)[0];
     attr.off_value = tflite::GetTensorData<float>(off_tensor)[0];
-    node->operation.type = ToString(::ml_drift::OperationType::ONE_HOT);
+    node->operation.type = ToString(::ml_drift::OperationType::kOneHot);
     node->operation.attributes = std::move(attr);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
@@ -4120,7 +4158,7 @@ class PackOperationParser : public TFLiteOperationParser {
     if (tflite_node->inputs->size == 1) {
       // Pack with single input can be replaced with Reshape
       ::ml_drift::Node* node = graph->NewNode();
-      node->operation.type = ToString(::ml_drift::OperationType::RESHAPE);
+      node->operation.type = ToString(::ml_drift::OperationType::kReshape);
       reader->AddInput(node, 0);
       reader->AddOutputs(node);
       // New shape comes from output shape.
@@ -4158,7 +4196,7 @@ class PackOperationParser : public TFLiteOperationParser {
           // adding explicit Reshape
           ::ml_drift::Node* node_reshape = graph->NewNode();
           node_reshape->operation.type =
-              ToString(::ml_drift::OperationType::RESHAPE);
+              ToString(::ml_drift::OperationType::kReshape);
           ::ml_drift::ReshapeAttributes reshape_attr;
           reshape_attr.new_shape = input_required_shape;
           node_reshape->operation.attributes = reshape_attr;
@@ -4172,7 +4210,7 @@ class PackOperationParser : public TFLiteOperationParser {
       }
 
       ::ml_drift::Node* node = graph->NewNode();
-      node->operation.type = ToString(::ml_drift::OperationType::CONCAT);
+      node->operation.type = ToString(::ml_drift::OperationType::kConcat);
       reader->AddOutputs(node);
       for (const ::ml_drift::Value* input : inputs) {
         graph->AddConsumer(node->id, input->id);
@@ -4195,7 +4233,7 @@ class PReLUOperationParser : public TFLiteOperationParser {
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     const ::ml_drift::BHWC input_shape = ExtractTensorShape(input);
 
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
         linear_alpha;
     absl::Status status = PreReadTensor(context, tflite_node, 1, &linear_alpha,
                                         ReadTensorFlags::kNoExtraBytes);
@@ -4205,7 +4243,7 @@ class PReLUOperationParser : public TFLiteOperationParser {
             "Linear alpha shape does not match the number of input channels.");
       }
     } else {
-      ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::kFloat32>
           hwc_alpha;
       ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &hwc_alpha,
                                          ReadTensorFlags::kNoExtraBytes));
@@ -4225,16 +4263,16 @@ class PReLUOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::PRELU);
+    node->operation.type = ToString(::ml_drift::OperationType::kPrelu);
     reader->AddInput(node, 0);
 
     ::ml_drift::PReLUAttributes attr;
     if (reader->IsLinearTensor(1)) {
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> t;
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> t;
       reader->ReadTensor(1, &t, ReadTensorFlags::kNoExtraBytes);
       attr.alpha = std::move(t);
     } else {
-      ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::FLOAT32> t;
+      ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::kFloat32> t;
       reader->ReadTensor(1, &t, ReadTensorFlags::kNoExtraBytes);
       attr.alpha = std::move(t);
     }
@@ -4252,18 +4290,54 @@ class PadOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                         {.max_version = 5}));
+    const TfLiteTensor* input = nullptr;
+    const bool has_const_input =
+        PreGetInputTensor(context, tflite_node, 0, &input).ok() &&
+        tflite::IsConstantTensor(input);
+    ABSL_RETURN_IF_ERROR(ValidateSupport(
+        context, tflite_node, registration,
+        {.max_version = 5,
+         .min_inputs = 2,
+         .max_inputs =
+             (registration->builtin_code == kTfLiteBuiltinPadv2 ? 3 : 2),
+         .num_outputs = 1,
+         .required_runtime_inputs = has_const_input ? 0 : 1,
+         .check_gpu_compatibility = !has_const_input}));
 
-    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    if (has_const_input) {
+      if (mirror_pad_) {
+        const auto* params =
+            reinterpret_cast<const TfLiteMirrorPaddingParams*>(
+                tflite_node->builtin_data);
+        if (params == nullptr) {
+          return absl::InternalError("Missing TfLiteMirrorPaddingParams.");
+        }
+        if (params->mode !=
+            TfLiteMirrorPaddingMode::kTfLiteMirrorPaddingReflect) {
+          return absl::UnimplementedError(
+              "Only Reflective padding is supported for Mirror Pad operation.");
+        }
+      }
+      ABSL_RETURN_IF_ERROR(PreCheckConstInputForGraph(input, "PAD"));
+      TfLiteTensor* output = nullptr;
+      ABSL_RETURN_IF_ERROR(
+          PreGetOutputTensor(context, tflite_node, 0, &output));
+      if (input->type != output->type &&
+          !(input->type == kTfLiteFloat16 && output->type == kTfLiteFloat32)) {
+        return absl::InvalidArgumentError(
+            "Input and output types must match for Pad.");
+      }
+    } else {
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    }
 
-    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::INT32> paddings;
+    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kInt32> paddings;
     ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &paddings,
                                        ReadTensorFlags::kNoExtraBytes));
 
     if (registration->builtin_code == kTfLiteBuiltinPadv2 &&
         tflite_node->inputs->size == 3) {
-      ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::kFloat32>
           dummy_const_tensor;
       ABSL_RETURN_IF_ERROR(
           PreCheckReadTensor(context, tflite_node, 2, &dummy_const_tensor));
@@ -4281,24 +4355,39 @@ class PadOperationParser : public TFLiteOperationParser {
   void Parse(const TfLiteNode* tflite_node,
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
+    const ::ml_drift::Value* const_input = nullptr;
+    if (reader->IsConstantTensor(0)) {
+      const bool read_float16_constants_as_float32 =
+          !options_.enable_reduced_precision &&
+          reader->GetOutputTensor(0)->type == kTfLiteFloat32 &&
+          reader->GetInputTensor(0)->type == kTfLiteFloat16;
+      const_input =
+          read_float16_constants_as_float32
+              ? reader->AddFloat16ConstAsFloat32Input(0, /*layout=*/{})
+              : reader->AddConstInput(0, /*layout=*/{});
+    }
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::PAD);
-    reader->AddInput(node, 0);
+    node->operation.type = ToString(::ml_drift::OperationType::kPad);
+    if (const_input != nullptr) {
+      graph->AddConsumer(node->id, const_input->id);
+    } else {
+      reader->AddInput(node, 0);
+    }
     reader->AddOutputs(node);
 
     ::ml_drift::PadAttributes attr;
     if (mirror_pad_) {
-      attr.type = ::ml_drift::PaddingContentType::REFLECT;
+      attr.type = ::ml_drift::PaddingContentType::kReflect;
     } else /*zero pad*/ {
-      attr.type = ::ml_drift::PaddingContentType::ZEROS;
+      attr.type = ::ml_drift::PaddingContentType::kZeros;
     }
 
-    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::INT32> paddings;
+    ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kInt32> paddings;
     reader->ReadTensor(1, &paddings, ReadTensorFlags::kNoExtraBytes);
 
     if (registration->builtin_code == kTfLiteBuiltinPadv2 &&
         tflite_node->inputs->size == 3) {
-      ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::kFloat32>
           const_tensor;
       reader->ReadTensor(2, &const_tensor, ReadTensorFlags::kNoExtraBytes);
       attr.constant_values = const_tensor.data[0];
@@ -4367,7 +4456,7 @@ class Pooling2DOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::POOLING_2D);
+    node->operation.type = ToString(::ml_drift::OperationType::kPooling2D);
     reader->AddInput(node, 0);
     reader->AddOutput(node, 0);
 
@@ -4397,7 +4486,7 @@ class Pooling2DOperationParser : public TFLiteOperationParser {
     attr.output_indices = outputs.size() == 2;
     if (attr.output_indices) {
       // Fix data type for output indices. In the model it is set as float32.
-      outputs[1]->tensor.type = ::ml_drift::DataType::INT32;
+      outputs[1]->tensor.type = ::ml_drift::DataType::kInt32;
     }
     attr.kernel = ToHW(params->filter_height, params->filter_width);
     attr.strides = ToHW(params->stride_height, params->stride_width);
@@ -4473,7 +4562,7 @@ class ReduceOperationParser : public TFLiteOperationParser {
       }
       ::ml_drift::Node* node_reshape = graph->NewNode();
       node_reshape->operation.type =
-          ToString(::ml_drift::OperationType::RESHAPE);
+          ToString(::ml_drift::OperationType::kReshape);
       ::ml_drift::ReshapeAttributes reshape_attr;
       const TfLiteTensor* output = reader->GetOutputTensor(0);
       reshape_attr.new_shape = ExtractTensorShape(output);
@@ -4499,7 +4588,10 @@ class QuantizeOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 2));
+    // BuiltinOperator_QUANTIZE versions 1-2 support 8-bit quantization, while
+    // versions 3-4 add support for sub-byte (Int4, UInt4, Int2) and block-wise
+    // quantization.
+    ABSL_RETURN_IF_ERROR(CheckMaxSupportedOpVersion(registration, 4));
     ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
         context, tflite_node, registration));
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
@@ -4522,7 +4614,7 @@ class QuantizeOperationParser : public TFLiteOperationParser {
     // with floating-point versions of the original tensors.
     ::ml_drift::Node* node = graph->NewNode();
     node->operation.type =
-        ToString(::ml_drift::OperationType::QUANTIZE_AND_DEQUANTIZE);
+        ToString(::ml_drift::OperationType::kQuantizeAndDequantize);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
 
@@ -4558,7 +4650,7 @@ class ReLUOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::RELU);
+    node->operation.type = ToString(::ml_drift::OperationType::kRelu);
     reader->AddInput(node, 0);
 
     ::ml_drift::ReLUAttributes attr;
@@ -4596,7 +4688,7 @@ class RemainderOperationParser : public TFLiteOperationParser {
     // if float: d = floor(x / y)
     // if int: d = x / y
     ::ml_drift::Node* div_node = graph->NewNode();
-    div_node->operation.type = ToString(::ml_drift::OperationType::DIV);
+    div_node->operation.type = ToString(::ml_drift::OperationType::kDiv);
 
     reader->AddInput(div_node, 0);
     reader->AddInput(div_node, 1);
@@ -4610,12 +4702,12 @@ class RemainderOperationParser : public TFLiteOperationParser {
     graph->SetProducer(div_node->id, d->id);
 
     ::ml_drift::Node* mul_node = graph->NewNode();
-    mul_node->operation.type = ToString(::ml_drift::OperationType::MUL);
+    mul_node->operation.type = ToString(::ml_drift::OperationType::kMul);
     reader->AddInput(mul_node, 1);
-    if (type == ::ml_drift::DataType::FLOAT16 ||
-        type == ::ml_drift::DataType::FLOAT32) {
+    if (type == ::ml_drift::DataType::kFloat16 ||
+        type == ::ml_drift::DataType::kFloat32) {
       ::ml_drift::Node* floor_node = graph->NewNode();
-      floor_node->operation.type = ToString(::ml_drift::OperationType::FLOOR);
+      floor_node->operation.type = ToString(::ml_drift::OperationType::kFloor);
       graph->AddConsumer(floor_node->id, d->id);
       ::ml_drift::Value* floor_result = graph->NewValue();
       floor_result->tensor.type = type;
@@ -4631,7 +4723,7 @@ class RemainderOperationParser : public TFLiteOperationParser {
     graph->SetProducer(mul_node->id, mul_output->id);
 
     ::ml_drift::Node* sub_node = graph->NewNode();
-    sub_node->operation.type = ToString(::ml_drift::OperationType::SUB);
+    sub_node->operation.type = ToString(::ml_drift::OperationType::kSub);
     reader->AddInput(sub_node, 0);
     graph->AddConsumer(sub_node->id, mul_output->id);
     reader->AddOutputs(sub_node);
@@ -4659,7 +4751,7 @@ class ResamplerOperationParser : public TFLiteOperationParser {
     reader->AddInput(node, 1);  // warp
     reader->AddOutputs(node);
 
-    node->operation.type = ToString(::ml_drift::OperationType::RESAMPLER);
+    node->operation.type = ToString(::ml_drift::OperationType::kResampler);
 
     auto src_shape = graph->FindInputs(node->id)[0]->tensor.shape;
     auto warp_shape = graph->FindInputs(node->id)[1]->tensor.shape;
@@ -4692,7 +4784,7 @@ class ReshapeOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::RESHAPE);
+    node->operation.type = ToString(::ml_drift::OperationType::kReshape);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
 
@@ -4717,7 +4809,7 @@ class Resize2DOperationParser : public TFLiteOperationParser {
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
-    if (sampling_type_ == ::ml_drift::SamplingType::BILINEAR) {
+    if (sampling_type_ == ::ml_drift::SamplingType::kBilinear) {
       const auto* params = static_cast<const TfLiteResizeBilinearParams*>(
           tflite_node->builtin_data);
       if (!params) {
@@ -4728,7 +4820,7 @@ class Resize2DOperationParser : public TFLiteOperationParser {
         return absl::InternalError(
             "If half_pixel_centers is True, align_corners must be False.");
       }
-    } else if (sampling_type_ == ::ml_drift::SamplingType::NEAREST) {
+    } else if (sampling_type_ == ::ml_drift::SamplingType::kNearest) {
       if (!static_cast<const TfLiteResizeNearestNeighborParams*>(
               tflite_node->builtin_data)) {
         return absl::InvalidArgumentError(
@@ -4744,14 +4836,14 @@ class Resize2DOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::RESIZE);
+    node->operation.type = ToString(::ml_drift::OperationType::kResize);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
     // Here we may have extra inputs. Other tensors were supposed to
     // define new shape, but in TFLite these are ignored.
 
     ::ml_drift::Resize2DAttributes attr;
-    if (sampling_type_ == ::ml_drift::SamplingType::BILINEAR) {
+    if (sampling_type_ == ::ml_drift::SamplingType::kBilinear) {
       const auto* params = static_cast<const TfLiteResizeBilinearParams*>(
           tflite_node->builtin_data);
       attr.align_corners = params->align_corners;
@@ -4770,7 +4862,7 @@ class Resize2DOperationParser : public TFLiteOperationParser {
   }
 
  private:
-  ::ml_drift::SamplingType sampling_type_ = ::ml_drift::SamplingType::UNKNOWN;
+  ::ml_drift::SamplingType sampling_type_ = ::ml_drift::SamplingType::kUnknown;
 };
 
 class ReverseOperationParser : public TFLiteOperationParser {
@@ -4798,7 +4890,7 @@ class ReverseOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::REVERSE);
+    node->operation.type = ToString(::ml_drift::OperationType::kReverse);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
 
@@ -4867,7 +4959,7 @@ class SelectV2OperationParser : public TFLiteOperationParser {
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::SelectV2Attributes attr;
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::SELECT_V2);
+    node->operation.type = ToString(::ml_drift::OperationType::kSelectV2);
 
     {  // cond tensor
       constexpr int kIndex = 0;
@@ -4882,7 +4974,7 @@ class SelectV2OperationParser : public TFLiteOperationParser {
 
     // num_dims == 3; convert HWC to 1HWC for constant tensors
     const SizedLayout constants_layout = {
-        /*layout_3d=*/::ml_drift::Layout::HWC};
+        /*layout_3d=*/::ml_drift::Layout::kHWC};
     {  // then tensor
       constexpr int kIndex = 1;
       if (reader->IsConstantTensor(kIndex)) {
@@ -4930,7 +5022,7 @@ class SliceOperationParser : public TFLiteOperationParser {
 
     ::ml_drift::SliceAttributes attr;
     attr.strides = ::ml_drift::BHWC(1, 1, 1, 1);
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> starts,
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32> starts,
         sizes;
     ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &starts,
                                        ReadTensorFlags::kNoExtraBytes));
@@ -5037,7 +5129,7 @@ class SliceOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+    node->operation.type = ToString(::ml_drift::OperationType::kSlice);
     reader->AddOutputs(node);
     ::ml_drift::Value* input = reader->ReadValue(0);
     graph->AddConsumer(node->id, input->id);
@@ -5047,7 +5139,7 @@ class SliceOperationParser : public TFLiteOperationParser {
 
     ::ml_drift::SliceAttributes attr;
     attr.strides = ::ml_drift::BHWC(1, 1, 1, 1);
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> starts,
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32> starts,
         sizes;
     reader->ReadTensor(1, &starts, ReadTensorFlags::kNoExtraBytes);
     reader->ReadTensor(2, &sizes, ReadTensorFlags::kNoExtraBytes);
@@ -5169,7 +5261,7 @@ class SoftmaxOperationParser : public TFLiteOperationParser {
       const float cap_value =
           use_half ? ::ml_drift::kMaxHalf : std::numeric_limits<float>::max();
       ::ml_drift::Node* max_node = graph->NewNode();
-      max_node->operation.type = ToString(::ml_drift::OperationType::MAXIMUM);
+      max_node->operation.type = ToString(::ml_drift::OperationType::kMaximum);
       max_node->operation.attributes =
           ::ml_drift::ElementwiseAttributes{/*param=*/-cap_value};
       reader->AddInput(max_node, 0);
@@ -5180,7 +5272,7 @@ class SoftmaxOperationParser : public TFLiteOperationParser {
       graph->SetProducer(max_node->id, max_output_value->id);
 
       ::ml_drift::Node* min_node = graph->NewNode();
-      min_node->operation.type = ToString(::ml_drift::OperationType::MINIMUM);
+      min_node->operation.type = ToString(::ml_drift::OperationType::kMinimum);
       min_node->operation.attributes =
           ::ml_drift::ElementwiseAttributes{/*param=*/cap_value};
       graph->AddConsumer(min_node->id, max_output_value->id);
@@ -5191,18 +5283,18 @@ class SoftmaxOperationParser : public TFLiteOperationParser {
 
       softmax_node = graph->NewNode();
       softmax_node->operation.type =
-          ToString(::ml_drift::OperationType::SOFTMAX);
+          ToString(::ml_drift::OperationType::kSoftmax);
       graph->AddConsumer(softmax_node->id, min_output_value->id);
       reader->AddOutputs(softmax_node);
     } else {
       softmax_node = graph->NewNode();
       softmax_node->operation.type =
-          ToString(::ml_drift::OperationType::SOFTMAX);
+          ToString(::ml_drift::OperationType::kSoftmax);
       reader->AddInput(softmax_node, 0);
       reader->AddOutputs(softmax_node);
     }
     ::ml_drift::SoftmaxAttributes attr;
-    attr.axis = ::ml_drift::Axis::CHANNELS;  // always by channels
+    attr.axis = ::ml_drift::Axis::kChannels;  // always by channels
     softmax_node->operation.attributes = attr;
   }
 
@@ -5234,7 +5326,7 @@ class SpaceToDepthOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::SPACE_TO_DEPTH);
+    node->operation.type = ToString(::ml_drift::OperationType::kSpaceToDepth);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
     const auto* params =
@@ -5286,7 +5378,7 @@ class SplitOperationParser : public TFLiteOperationParser {
     if (params->num_splits == 1) {
       // Adding Identity reshape that will be removed.
       ::ml_drift::Node* node = graph->NewNode();
-      node->operation.type = ToString(::ml_drift::OperationType::RESHAPE);
+      node->operation.type = ToString(::ml_drift::OperationType::kReshape);
       reader->AddInput(node, 0);
       reader->AddOutputs(node);
       // New shape comes from output shape.
@@ -5301,7 +5393,7 @@ class SplitOperationParser : public TFLiteOperationParser {
     attr.axis = ExtractAxisFromIndex(*input, axis_tensor->data.i32[0]);
 
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::SPLIT);
+    node->operation.type = ToString(::ml_drift::OperationType::kSplit);
     node->operation.attributes = attr;
     reader->AddInput(node, 1);
     reader->AddOutputs(node);
@@ -5346,7 +5438,7 @@ class SplitVOperationParser : public TFLiteOperationParser {
     if (params->num_splits == 1) {
       // Adding Identity reshape that will be removed.
       ::ml_drift::Node* node = graph->NewNode();
-      node->operation.type = ToString(::ml_drift::OperationType::RESHAPE);
+      node->operation.type = ToString(::ml_drift::OperationType::kReshape);
       reader->AddInput(node, 0);
       reader->AddOutputs(node);
       // New shape comes from output shape.
@@ -5361,7 +5453,7 @@ class SplitVOperationParser : public TFLiteOperationParser {
     attr.axis = ExtractAxisFromIndex(*input, axis_tensor->data.i32[0]);
 
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::SPLIT);
+    node->operation.type = ToString(::ml_drift::OperationType::kSplit);
     node->operation.attributes = attr;
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
@@ -5381,7 +5473,7 @@ class StridedSliceOperationParser : public TFLiteOperationParser {
     const TfLiteTensor* input_tensor;
     ABSL_RETURN_IF_ERROR(
         PreGetInputTensor(context, tflite_node, 0, &input_tensor));
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32>
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32>
         starts_sizes;
     ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &starts_sizes,
                                        ReadTensorFlags::kNoExtraBytes));
@@ -5484,13 +5576,13 @@ class StridedSliceOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::SLICE);
+    node->operation.type = ToString(::ml_drift::OperationType::kSlice);
     ::ml_drift::Value* input = reader->ReadValue(0);
     graph->AddConsumer(node->id, input->id);
 
     const TfLiteTensor* input_tensor = reader->GetInputTensor(0);
 
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32>
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32>
         starts_sizes;
     reader->ReadTensor(1, &starts_sizes, ReadTensorFlags::kNoExtraBytes);
 
@@ -5561,7 +5653,7 @@ class StridedSliceOperationParser : public TFLiteOperationParser {
 
   static void ReadBhwc(const ObjectReader* reader, int node_input_index,
                        ::ml_drift::BHWC* bhwc) {
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> t;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32> t;
     reader->ReadTensor(node_input_index, &t, ReadTensorFlags::kNoExtraBytes);
     if (t.data.size() == 4) {
       *bhwc = ::ml_drift::BHWC(t.data[0], t.data[1], t.data[2], t.data[3]);
@@ -5583,7 +5675,7 @@ class StridedSliceOperationParser : public TFLiteOperationParser {
 
   static void ReadHwc(const ObjectReader* reader, int node_input_index,
                       ::ml_drift::BHWC* bhwc) {
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> t;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32> t;
     reader->ReadTensor(node_input_index, &t, ReadTensorFlags::kNoExtraBytes);
     if (t.data.size() == 3) {
       *bhwc = ::ml_drift::BHWC(bhwc->b, t.data[0], t.data[1], t.data[2]);
@@ -5605,7 +5697,7 @@ class StridedSliceOperationParser : public TFLiteOperationParser {
                                   const TfLiteNode* tflite_node,
                                   int node_input_index,
                                   ::ml_drift::BHWC* bhwc) {
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> t;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32> t;
     ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, node_input_index,
                                        &t, ReadTensorFlags::kNoExtraBytes));
     if (t.data.size() == 4) {
@@ -5632,7 +5724,7 @@ class StridedSliceOperationParser : public TFLiteOperationParser {
   static absl::Status CanReadHwc(const TfLiteContext* context,
                                  const TfLiteNode* tflite_node,
                                  int node_input_index, ::ml_drift::BHWC* bhwc) {
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> t;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32> t;
     ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, node_input_index,
                                        &t, ReadTensorFlags::kNoExtraBytes));
     if (t.data.size() == 3) {
@@ -5695,7 +5787,7 @@ class TileOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::TILE);
+    node->operation.type = ToString(::ml_drift::OperationType::kTile);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
   }
@@ -5742,7 +5834,7 @@ class TopKOperationParser : public TFLiteOperationParser {
                                        original_input->tensor.shape.b);
       ::ml_drift::Node* reshape_node = graph->NewNode();
       reshape_node->operation.type =
-          ToString(::ml_drift::OperationType::RESHAPE);
+          ToString(::ml_drift::OperationType::kReshape);
       ::ml_drift::ReshapeAttributes reshape_attr;
       reshape_attr.new_shape = new_shape;
       reshape_node->operation.attributes = std::move(reshape_attr);
@@ -5755,9 +5847,9 @@ class TopKOperationParser : public TFLiteOperationParser {
 
     // Insert the TOP_K.
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::TOP_K);
+    node->operation.type = ToString(::ml_drift::OperationType::kTopK);
     ::ml_drift::TopKAttributes attr;
-    ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::INT32>
+    ::ml_drift::Tensor<::ml_drift::Scalar, ::ml_drift::DataType::kInt32>
         k_tensor;
     reader->ReadTensor(1, &k_tensor, ReadTensorFlags::kNoExtraBytes);
     attr.k = k_tensor.data[0];
@@ -5779,7 +5871,7 @@ class TopKOperationParser : public TFLiteOperationParser {
         graph->SetProducer(node->id, top_k_interm_output->id);
         ::ml_drift::Node* reshape_node = graph->NewNode();
         reshape_node->operation.type =
-            ToString(::ml_drift::OperationType::RESHAPE);
+            ToString(::ml_drift::OperationType::kReshape);
         ::ml_drift::ReshapeAttributes reshape_attr;
         reshape_attr.new_shape = ::ml_drift::BHWC(attr.k, 1, 1, 1);
         reshape_node->operation.attributes = std::move(reshape_attr);
@@ -5815,7 +5907,7 @@ class TransposeConvBuiltinOperationParser : public TFLiteOperationParser {
     if (runtime_inputs == 2) {
       ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
     } else {
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
           dummy_weights;
       ABSL_RETURN_IF_ERROR(
           PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
@@ -5829,7 +5921,7 @@ class TransposeConvBuiltinOperationParser : public TFLiteOperationParser {
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     auto* node = graph->NewNode();
     node->operation.type =
-        ToString(::ml_drift::OperationType::CONVOLUTION_TRANSPOSED);
+        ToString(::ml_drift::OperationType::kConvolutionTransposed);
     ::ml_drift::Value* input = reader->ReadValue(2);
     graph->AddConsumer(node->id, input->id);
     reader->AddOutputs(node);
@@ -5869,7 +5961,7 @@ class TransposeConvCustomOperationParser : public TFLiteOperationParser {
         context, tflite_node, registration));
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
         dummy_weights;
     ABSL_RETURN_IF_ERROR(
         PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
@@ -5881,7 +5973,7 @@ class TransposeConvCustomOperationParser : public TFLiteOperationParser {
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     auto* node = graph->NewNode();
     node->operation.type =
-        ToString(::ml_drift::OperationType::CONVOLUTION_TRANSPOSED);
+        ToString(::ml_drift::OperationType::kConvolutionTransposed);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
 
@@ -5914,7 +6006,7 @@ class TransposeOperationParser : public TFLiteOperationParser {
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
 
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> perm;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32> perm;
     ABSL_RETURN_IF_ERROR(PreReadTensor(context, tflite_node, 1, &perm,
                                        ReadTensorFlags::kNoExtraBytes));
     if (perm.data.size() > 4 || perm.data.size() < 2) {
@@ -5928,32 +6020,32 @@ class TransposeOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::TRANSPOSE);
+    node->operation.type = ToString(::ml_drift::OperationType::kTranspose);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
 
     ::ml_drift::TransposeAttributes attr;
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::INT32> perm;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32> perm;
     reader->ReadTensor(1, &perm, ReadTensorFlags::kNoExtraBytes);
     std::map<::ml_drift::Axis, int> axis_to_index = {
-        {::ml_drift::Axis::BATCH, 0},
-        {::ml_drift::Axis::HEIGHT, 1},
-        {::ml_drift::Axis::WIDTH, 2},
-        {::ml_drift::Axis::CHANNELS, 3}};
+        {::ml_drift::Axis::kBatch, 0},
+        {::ml_drift::Axis::kHeight, 1},
+        {::ml_drift::Axis::kWidth, 2},
+        {::ml_drift::Axis::kChannels, 3}};
     if (perm.data.size() == 4) {
       attr.perm = ::ml_drift::BHWC(perm.data[0], perm.data[1], perm.data[2],
                                    perm.data[3]);
     } else if (perm.data.size() == 3) {
       std::vector<::ml_drift::Axis> index_to_axis = {
-          ::ml_drift::Axis::BATCH, ::ml_drift::Axis::WIDTH,
-          ::ml_drift::Axis::CHANNELS};
+          ::ml_drift::Axis::kBatch, ::ml_drift::Axis::kWidth,
+          ::ml_drift::Axis::kChannels};
       attr.perm.b = axis_to_index[index_to_axis[perm.data[0]]];
       attr.perm.h = 1;
       attr.perm.w = axis_to_index[index_to_axis[perm.data[1]]];
       attr.perm.c = axis_to_index[index_to_axis[perm.data[2]]];
     } else if (perm.data.size() == 2) {
       std::vector<::ml_drift::Axis> index_to_axis = {
-          ::ml_drift::Axis::BATCH, ::ml_drift::Axis::CHANNELS};
+          ::ml_drift::Axis::kBatch, ::ml_drift::Axis::kChannels};
       attr.perm.b = axis_to_index[index_to_axis[perm.data[0]]];
       attr.perm.h = 1;
       attr.perm.w = 2;
@@ -6004,7 +6096,7 @@ class UnpackOperationParser : public TFLiteOperationParser {
     if (params->num == 1) {
       // Adding Identity reshape that will be removed.
       ::ml_drift::Node* node = graph->NewNode();
-      node->operation.type = ToString(::ml_drift::OperationType::RESHAPE);
+      node->operation.type = ToString(::ml_drift::OperationType::kReshape);
       reader->AddInput(node, 0);
       reader->AddOutputs(node);
       // New shape comes from output shape.
@@ -6021,7 +6113,7 @@ class UnpackOperationParser : public TFLiteOperationParser {
     output_required_shape.set(attr.axis, 1);
 
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::SPLIT);
+    node->operation.type = ToString(::ml_drift::OperationType::kSplit);
     node->operation.attributes = attr;
     reader->AddInput(node, 0);
     auto input_value = graph->FindInputs(node->id)[0];
@@ -6037,7 +6129,7 @@ class UnpackOperationParser : public TFLiteOperationParser {
         graph->SetProducer(node->id, copy_value->id);
         ::ml_drift::Node* node_reshape = graph->NewNode();
         node_reshape->operation.type =
-            ToString(::ml_drift::OperationType::RESHAPE);
+            ToString(::ml_drift::OperationType::kReshape);
         ::ml_drift::ReshapeAttributes reshape_attr;
         reshape_attr.new_shape = output_shape;
         node_reshape->operation.attributes = reshape_attr;
@@ -6070,8 +6162,7 @@ class Unpooling2DOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type =
-        ToString(::ml_drift::OperationType::MAX_UNPOOLING_2D);
+    node->operation.type = ToString(::ml_drift::OperationType::kMaxUnpooling2D);
     reader->AddInput(node, 0);
     reader->AddInput(node, 1);
     reader->AddOutputs(node);
@@ -6132,12 +6223,12 @@ class GroupNormParser : public TFLiteOperationParser {
 
     ::ml_drift::GroupNormAttributes attr;
     if (reader->IsNodeInputTensorPresent(1)) {
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> t;
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> t;
       reader->ReadTensor(1, &t, ReadTensorFlags::kNoExtraBytes);
       attr.gamma = std::move(t);
     }
     if (reader->IsNodeInputTensorPresent(2)) {
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> t;
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> t;
       reader->ReadTensor(2, &t, ReadTensorFlags::kNoExtraBytes);
       attr.beta = std::move(t);
     }
@@ -6198,12 +6289,12 @@ class LayerNormParser : public TFLiteOperationParser {
 
     ::ml_drift::LayerNormAttributes attr;
     if (reader->IsNodeInputTensorPresent(1)) {
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> t;
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> t;
       reader->ReadTensor(1, &t, ReadTensorFlags::kNoExtraBytes);
       attr.scale = std::move(t);
     }
     if (reader->IsNodeInputTensorPresent(2)) {
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> t;
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> t;
       reader->ReadTensor(2, &t, ReadTensorFlags::kNoExtraBytes);
       attr.bias = std::move(t);
     }
@@ -6230,7 +6321,7 @@ class PixelShuffleParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     ::ml_drift::Node* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::DEPTH_TO_SPACE);
+    node->operation.type = ToString(::ml_drift::OperationType::kDepthToSpace);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
 
@@ -6282,7 +6373,7 @@ class PositionalEmbeddingParser : public TFLiteOperationParser {
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     auto* node = graph->NewNode();
     node->operation.type =
-        ToString(::ml_drift::OperationType::POSITIONAL_EMBEDDING);
+        ToString(::ml_drift::OperationType::kPositionalEmbedding);
     reader->AddInput(node, 0);
     reader->AddInput(node, 1);
     reader->AddOutputs(node);
@@ -6321,9 +6412,32 @@ class RoPEParser : public TFLiteOperationParser {
     ABSL_RETURN_IF_ERROR(
         PreGetInputTensor(context, tflite_node, pos_tensor_idx, &pos));
     const ::ml_drift::BHWC pos_sh = ExtractTensorShape(pos);
-    if (src_sh.w != pos_sh.w) {
+    if (pos_sh.b != 1 && src_sh.b != pos_sh.b) {
       return absl::InvalidArgumentError(
-          "src and pos must have the same width for PositionalEmbedding.");
+          "src and pos must have the same batch size (or pos batch size must "
+          "be 1) for PositionalEmbedding.");
+    }
+    int pos_seq_len = 0;
+    switch (pos->dims->size) {
+      case 2:
+        // 2D pos: [B, T] -> BHWC(B, 1, 1, T)
+        pos_seq_len = pos_sh.c;
+        break;
+      case 3:
+      case 4:
+        // 3D pos: [B, T, 1] -> BHWC(B, 1, T, 1)
+        // 4D pos: [B, 1, T, 1] -> BHWC(B, 1, T, 1)
+        pos_seq_len = pos_sh.w;
+        break;
+      default:
+        return absl::InvalidArgumentError(absl::StrCat(
+            "Unsupported pos tensor rank for PositionalEmbedding: ",
+            pos->dims->size, ". Expected rank 2, 3, or 4."));
+    }
+    if (src_sh.w != pos_seq_len) {
+      return absl::InvalidArgumentError(
+          "src and pos must have the same sequence length for "
+          "PositionalEmbedding.");
     }
     ABSL_RETURN_IF_ERROR(
         PreCheckRuntimeOrConstantInput(context, tflite_node, 0));
@@ -6341,7 +6455,7 @@ class RoPEParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     auto* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::ROPE);
+    node->operation.type = ToString(::ml_drift::OperationType::kRope);
     {
       constexpr int kIndex = 0;
       if (reader->IsConstantTensor(kIndex)) {
@@ -6499,20 +6613,22 @@ class CompositeGroupNormParser : public TFLiteOperationParser {
     if (!flexbuffer_map["_TENSOR_V1_reduction_axes"].IsNull()) {
       // Check that reduction axes are
       //   - [1, 2, ..., n-1] if sub_type is set (default GroupNorm behavior)
-      //   - [n-1] if sub_type is not set
+      //   - [1, 2, ..., n-1] or [n-1] if sub_type is not set
       //     (for backward compatibility, see b/489399819)
       bool has_sub_type = !flexbuffer_map["sub_type"].IsNull();
-      std::vector<int64_t> expected_reduction_axes;
+      std::vector<int64_t> full_reduction_axes(tensor_dims_size - 1);
+      std::iota(full_reduction_axes.begin(), full_reduction_axes.end(), 1);
       if (has_sub_type) {
-        expected_reduction_axes.resize(tensor_dims_size - 1);
-        std::iota(expected_reduction_axes.begin(),
-                  expected_reduction_axes.end(), 1);
+        ABSL_RETURN_IF_ERROR(ExpectReductionAxes(
+            flexbuffer_map, full_reduction_axes, "GroupNorm"));
       } else {
-        expected_reduction_axes.push_back(tensor_dims_size - 1);
+        absl::Status full_status = ExpectReductionAxes(
+            flexbuffer_map, full_reduction_axes, "GroupNorm");
+        if (!full_status.ok()) {
+          ABSL_RETURN_IF_ERROR(ExpectReductionAxes(
+              flexbuffer_map, {tensor_dims_size - 1}, "GroupNorm"));
+        }
       }
-
-      ABSL_RETURN_IF_ERROR(ExpectReductionAxes(
-          flexbuffer_map, expected_reduction_axes, "GroupNorm"));
     }
 
     if (!flexbuffer_map["channel_axis"].IsNull() &&
@@ -6534,19 +6650,19 @@ class CompositeGroupNormParser : public TFLiteOperationParser {
   void Parse(const TfLiteNode* tflite_node, const TfLiteRegistration*,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     auto* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::GROUP_NORM);
+    node->operation.type = ToString(::ml_drift::OperationType::kGroupNorm);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
 
     ::ml_drift::GroupNormAttributes attr;
     if (reader->IsNodeInputTensorPresent(1)) {
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
           gamma;
       reader->ReadTensor(1, &gamma, ReadTensorFlags::kNoExtraBytes);
       attr.gamma = std::move(gamma);
     }
     if (reader->IsNodeInputTensorPresent(2)) {
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
           beta;
       reader->ReadTensor(2, &beta, ReadTensorFlags::kNoExtraBytes);
       attr.beta = std::move(beta);
@@ -6631,19 +6747,19 @@ class CompositeLayerNormParser : public TFLiteOperationParser {
   void Parse(const TfLiteNode* tflite_node, const TfLiteRegistration*,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     auto* node = graph->NewNode();
-    node->operation.type = ToString(::ml_drift::OperationType::LAYER_NORM);
+    node->operation.type = ToString(::ml_drift::OperationType::kLayerNorm);
     reader->AddInput(node, 0);
     reader->AddOutputs(node);
 
     ::ml_drift::LayerNormAttributes attr;
     if (reader->IsNodeInputTensorPresent(1)) {
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
           scale;
       reader->ReadTensor(1, &scale, ReadTensorFlags::kNoExtraBytes);
       attr.scale = std::move(scale);
     }
     if (reader->IsNodeInputTensorPresent(2)) {
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
           bias;
       reader->ReadTensor(2, &bias, ReadTensorFlags::kNoExtraBytes);
       attr.bias = std::move(bias);
@@ -6688,7 +6804,7 @@ class CompositeRmsNormParser : public TFLiteOperationParser {
     reader->AddOutputs(node);
 
     ::ml_drift::RmsNormAttributes attr;
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> t;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> t;
     reader->ReadTensor(1, &t, ReadTensorFlags::kNoExtraBytes);
     attr.scale = std::move(t);
 
@@ -6755,7 +6871,7 @@ class CompositeSdpaParser : public TFLiteOperationParser {
     reader->GetNumberOfRuntimeInputs();
     ::ml_drift::Node* node = graph->NewNode();
     node->operation.type =
-        ToString(::ml_drift::OperationType::SCALED_DOT_PRODUCT_ATTENTION);
+        ToString(::ml_drift::OperationType::kScaledDotProductAttention);
     reader->AddInput(node, 0);  // Q
     reader->AddInput(node, 1);  // K
     reader->AddInput(node, 2);  // V
@@ -6823,7 +6939,7 @@ class RmsNormParser : public TFLiteOperationParser {
 
     ::ml_drift::RmsNormAttributes attr;
     if (reader->IsNodeInputTensorPresent(1)) {
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> t;
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> t;
       reader->ReadTensor(1, &t, ReadTensorFlags::kNoExtraBytes);
       attr.scale = std::move(t);
     }
@@ -6869,7 +6985,9 @@ bool IsAllAllowedTensors(TfLiteContext* context,
         break;
       }
     }
-    if (t->allocation_type == kTfLiteArenaRw && !type_supported) {
+    if ((t->allocation_type == kTfLiteArenaRw ||
+         t->allocation_type == kTfLiteNonCpu) &&
+        !type_supported) {
       *unsupported_details += "Tensor type(" +
                               std::string(TfLiteTypeGetName(t->type)) +
                               ") is not supported. " + std::string(t->name);
@@ -6895,26 +7013,26 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
   switch (builtin_code) {
     case kTfLiteBuiltinAbs:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::ABS);
+          ::ml_drift::OperationType::kAbs);
     case kTfLiteBuiltinAdd:
     case kTfLiteBuiltinAddN:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::ADD);
+          ::ml_drift::OperationType::kAdd);
     case kTfLiteBuiltinArgMax:
       return std::make_unique<ArgMaxOperationParser>();
     case kTfLiteBuiltinAtan2:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::ATAN2);
+          ::ml_drift::OperationType::kAtan2);
     case kTfLiteBuiltinAveragePool2d:
       return std::make_unique<Pooling2DOperationParser>(
-          ::ml_drift::PoolingType::AVERAGE);
+          ::ml_drift::PoolingType::kAverage);
     case kTfLiteBuiltinBatchMatmul:
       return std::make_unique<BatchedMatMulOperationParser>();
     case kTfLiteBuiltinBitcast:
       return std::make_unique<BitcastOperationParser>();
     case kTfLiteBuiltinBitwiseXor:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::LOGICAL_XOR);
+          ::ml_drift::OperationType::kLogicalXor);
     case kTfLiteBuiltinStablehloBroadcastInDim:
       return std::make_unique<BroadcastInDimOperationParser>();
     case kTfLiteBuiltinCast:
@@ -6923,14 +7041,14 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
       return std::make_unique<CbrtOperationParser>();
     case kTfLiteBuiltinCeil:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::CEIL);
+          ::ml_drift::OperationType::kCeil);
     case kTfLiteBuiltinConcatenation:
-      return std::make_unique<ConcatenationOperationParser>();
+      return std::make_unique<ConcatenationOperationParser>(options);
     case kTfLiteBuiltinConv2d:
       return std::make_unique<Conv2DOperationParser>(options);
     case kTfLiteBuiltinCos:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::COS);
+          ::ml_drift::OperationType::kCos);
     case kTfLiteBuiltinCumsum:
       return std::make_unique<CumsumOperationParser>();
     case kTfLiteBuiltinDepthwiseConv2d:
@@ -6942,90 +7060,90 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
       break;
     case kTfLiteBuiltinDiv:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::DIV);
+          ::ml_drift::OperationType::kDiv);
     case kTfLiteBuiltinDynamicUpdateSlice:
       return std::make_unique<DynamicUpdateSliceOperationParser>();
     case kTfLiteBuiltinEqual:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::EQUAL);
+          ::ml_drift::OperationType::kEqual);
     case kTfLiteBuiltinElu:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::ELU);
+          ::ml_drift::OperationType::kElu);
     case kTfLiteBuiltinEmbeddingLookup:
       return std::make_unique<EmbeddingLookupOperationParser>();
     case kTfLiteBuiltinExp:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::EXP);
+          ::ml_drift::OperationType::kExp);
     case kTfLiteBuiltinFloor:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::FLOOR);
+          ::ml_drift::OperationType::kFloor);
     case kTfLiteBuiltinFloorDiv:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::FLOOR_DIV);
+          ::ml_drift::OperationType::kFloorDiv);
     case kTfLiteBuiltinFloorMod:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::FLOOR_MOD);
+          ::ml_drift::OperationType::kFloorMod);
     case kTfLiteBuiltinFullyConnected:
       return std::make_unique<FullyConnectedOperationParser>(options);
     case kTfLiteBuiltinGather:
       return std::make_unique<GatherOperationParser>();
     case kTfLiteBuiltinGelu:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::GELU);
+          ::ml_drift::OperationType::kGelu);
     case kTfLiteBuiltinGreater:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::GREATER);
+          ::ml_drift::OperationType::kGreater);
     case kTfLiteBuiltinGreaterEqual:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::GREATER_EQUAL);
+          ::ml_drift::OperationType::kGreaterEqual);
     case kTfLiteBuiltinHardSwish:
       return std::make_unique<HardSwishOperationParser>();
     case kTfLiteBuiltinLess:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::LESS);
+          ::ml_drift::OperationType::kLess);
     case kTfLiteBuiltinLessEqual:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::LESS_EQUAL);
+          ::ml_drift::OperationType::kLessEqual);
     case kTfLiteBuiltinLogicalAnd:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::LOGICAL_AND);
+          ::ml_drift::OperationType::kLogicalAnd);
     case kTfLiteBuiltinLogicalNot:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::LOGICAL_NOT);
+          ::ml_drift::OperationType::kLogicalNot);
     case kTfLiteBuiltinLogicalOr:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::LOGICAL_OR);
+          ::ml_drift::OperationType::kLogicalOr);
     case kTfLiteBuiltinLogistic:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::SIGMOID);
+          ::ml_drift::OperationType::kSigmoid);
     case kTfLiteBuiltinLog:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::LOG);
+          ::ml_drift::OperationType::kLog);
     case kTfLiteBuiltinLstm:
       return std::make_unique<LSTMOperationParser>();
     case kTfLiteBuiltinMaximum:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::MAXIMUM);
+          ::ml_drift::OperationType::kMaximum);
     case kTfLiteBuiltinMaxPool2d:
       return std::make_unique<Pooling2DOperationParser>(
-          ::ml_drift::PoolingType::MAX);
+          ::ml_drift::PoolingType::kMax);
     case kTfLiteBuiltinMean:
       return std::make_unique<ReduceOperationParser>(
-          ::ml_drift::OperationType::MEAN);
+          ::ml_drift::OperationType::kMean);
     case kTfLiteBuiltinMinimum:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::MINIMUM);
+          ::ml_drift::OperationType::kMinimum);
     case kTfLiteBuiltinMirrorPad:
       return std::make_unique<PadOperationParser>(/*mirror_pad=*/true, options);
     case kTfLiteBuiltinMul:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::MUL);
+          ::ml_drift::OperationType::kMul);
     case kTfLiteBuiltinNeg:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::NEG);
+          ::ml_drift::OperationType::kNeg);
     case kTfLiteBuiltinNotEqual:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::NOT_EQUAL);
+          ::ml_drift::OperationType::kNotEqual);
     case kTfLiteBuiltinOneHot:
       return std::make_unique<OneHotOperationParser>();
     case kTfLiteBuiltinPack:
@@ -7036,22 +7154,22 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
                                                   options);
     case kTfLiteBuiltinPow:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::POW);
+          ::ml_drift::OperationType::kPow);
     case kTfLiteBuiltinReduceAll:
       return std::make_unique<ReduceOperationParser>(
-          ::ml_drift::OperationType::REDUCE_ALL);
+          ::ml_drift::OperationType::kReduceAll);
     case kTfLiteBuiltinReduceAny:
       return std::make_unique<ReduceOperationParser>(
-          ::ml_drift::OperationType::REDUCE_ANY);
+          ::ml_drift::OperationType::kReduceAny);
     case kTfLiteBuiltinReduceMax:
       return std::make_unique<ReduceOperationParser>(
-          ::ml_drift::OperationType::REDUCE_MAXIMUM);
+          ::ml_drift::OperationType::kReduceMaximum);
     case kTfLiteBuiltinReduceMin:
       return std::make_unique<ReduceOperationParser>(
-          ::ml_drift::OperationType::REDUCE_MINIMUM);
+          ::ml_drift::OperationType::kReduceMinimum);
     case kTfLiteBuiltinReduceProd:
       return std::make_unique<ReduceOperationParser>(
-          ::ml_drift::OperationType::REDUCE_PRODUCT);
+          ::ml_drift::OperationType::kReduceProduct);
     case kTfLiteBuiltinQuantize:
       if (allow_quant_ops) {
         return std::make_unique<QuantizeOperationParser>();
@@ -7075,33 +7193,33 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
       return std::make_unique<ReshapeOperationParser>();
     case kTfLiteBuiltinResizeBilinear:
       return std::make_unique<Resize2DOperationParser>(
-          ::ml_drift::SamplingType::BILINEAR);
+          ::ml_drift::SamplingType::kBilinear);
     case kTfLiteBuiltinResizeNearestNeighbor:
       return std::make_unique<Resize2DOperationParser>(
-          ::ml_drift::SamplingType::NEAREST);
+          ::ml_drift::SamplingType::kNearest);
     case kTfLiteBuiltinReverseV2:
       return std::make_unique<ReverseOperationParser>();
     case kTfLiteBuiltinRound:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::ROUND);
+          ::ml_drift::OperationType::kRound);
     case kTfLiteBuiltinRsqrt:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::RSQRT);
+          ::ml_drift::OperationType::kRsqrt);
     case kTfLiteBuiltinSelect:
     case kTfLiteBuiltinSelectV2:
       return std::make_unique<SelectV2OperationParser>();
     case kTfLiteBuiltinStablehloShiftLeft:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::SHIFT_LEFT);
+          ::ml_drift::OperationType::kShiftLeft);
     case kTfLiteBuiltinRightShift:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::SHIFT_RIGHT);
+          ::ml_drift::OperationType::kShiftRight);
     case kTfLiteBuiltinSign:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::SIGN);
+          ::ml_drift::OperationType::kSign);
     case kTfLiteBuiltinSin:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::SIN);
+          ::ml_drift::OperationType::kSin);
     case kTfLiteBuiltinSlice:
       return std::make_unique<SliceOperationParser>();
     case kTfLiteBuiltinSoftmax:
@@ -7114,24 +7232,24 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
       return std::make_unique<SplitVOperationParser>();
     case kTfLiteBuiltinSqrt:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::SQRT);
+          ::ml_drift::OperationType::kSqrt);
     case kTfLiteBuiltinSquare:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::SQUARE);
+          ::ml_drift::OperationType::kSquare);
     case kTfLiteBuiltinSquaredDifference:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::SQUARED_DIFF);
+          ::ml_drift::OperationType::kSquaredDiff);
     case kTfLiteBuiltinStridedSlice:
       return std::make_unique<StridedSliceOperationParser>();
     case kTfLiteBuiltinSub:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::SUB);
+          ::ml_drift::OperationType::kSub);
     case kTfLiteBuiltinSum:
       return std::make_unique<ReduceOperationParser>(
-          ::ml_drift::OperationType::REDUCE_SUM);
+          ::ml_drift::OperationType::kReduceSum);
     case kTfLiteBuiltinTanh:
       return std::make_unique<ElementwiseOperationParser>(
-          ::ml_drift::OperationType::TANH);
+          ::ml_drift::OperationType::kTanh);
     case kTfLiteBuiltinTile:
       return std::make_unique<TileOperationParser>();
     case kTfLiteBuiltinTopkV2:
@@ -7171,7 +7289,7 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
       }
       if (custom_name == "MaxPoolingWithArgmax2D") {
         return std::make_unique<Pooling2DOperationParser>(
-            ::ml_drift::PoolingType::MAX);
+            ::ml_drift::PoolingType::kMax);
       }
       if (custom_name == "MaxUnpooling2D") {
         return std::make_unique<Unpooling2DOperationParser>();
@@ -7297,6 +7415,8 @@ TfLiteIntArray* GetOpsToReplaceWithOptions(
       allowed_in_types.push_back(kTfLiteInt4);
       allowed_in_types.push_back(kTfLiteInt8);
       allowed_in_types.push_back(kTfLiteUInt8);
+      allowed_out_types.push_back(kTfLiteInt2);
+      allowed_out_types.push_back(kTfLiteInt4);
       allowed_out_types.push_back(kTfLiteInt8);
       allowed_out_types.push_back(kTfLiteUInt8);
     }
@@ -7473,7 +7593,7 @@ absl::Status CopyVariableTensorOutputs(
                          tensor_idx));
       } else {
         ::ml_drift::Node* node = graph->NewNode();
-        node->operation.type = ToString(::ml_drift::OperationType::COPY);
+        node->operation.type = ToString(::ml_drift::OperationType::kCopy);
         graph->AddConsumer(node->id, new_variable_tensor_values_copy.at(i));
         reader.AddUpdate(node, i);
         new_variable_tensor_values_copy.erase(

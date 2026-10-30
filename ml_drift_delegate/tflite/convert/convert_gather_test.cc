@@ -100,7 +100,7 @@ TEST_P(ConvertGatherTest, Basic) {
 
   const auto* attr = std::any_cast<::ml_drift::GatherAttributes>(&op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::WIDTH);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kWidth);
 }
 
 TEST_P(ConvertGatherTest, Indices1D_WithReshapeOp) {
@@ -166,7 +166,7 @@ TEST_P(ConvertGatherTest, Indices1D_WithReshapeOp) {
 
   const auto* attr = std::any_cast<::ml_drift::GatherAttributes>(&op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::WIDTH);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kWidth);
 
   // The gather kernel reads its indices along the channels axis, so a 1-D [N]
   // index tensor has to reach it as {1,1,1,N} however it was produced -- via

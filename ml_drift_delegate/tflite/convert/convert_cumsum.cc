@@ -43,7 +43,7 @@ void ConvertCumsum(
   attr.axis = ExtractAxisFromIndex(input_tensor, tflite_axis);
 
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::CUMSUM);
+  op->name = ToString(::ml_drift::OperationType::kCumsum);
   op->attr = attr;
 
   ir_model.AddConsumer(tensor_map.at(input_id), op->id);

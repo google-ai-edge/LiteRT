@@ -18,6 +18,7 @@
 #include <memory>
 #include <string_view>
 
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/operation_parser.h"
 
 namespace litert::ml_drift {
@@ -26,6 +27,13 @@ namespace litert::ml_drift {
 class CustomOperationParserFactory
     : public TFLiteStablehloCompositeParserFactory {
  public:
+  // `gpu_info` describes the device the graph is built for. It may be nullptr
+  // when the factory is only used to check op support (e.g. GetOpsToReplace);
+  // parsers then take the backend-agnostic path. It must outlive the factory
+  // and the parsers it creates.
+  explicit CustomOperationParserFactory(
+      const ::ml_drift::GpuInfo* gpu_info = nullptr)
+      : gpu_info_(gpu_info) {}
   ~CustomOperationParserFactory() override = default;
 
   // TFLiteStablehloCompositeParserFactory implementation.
@@ -33,6 +41,9 @@ class CustomOperationParserFactory
       std::string_view op_name) override;
   bool SupportsIntegerTypes(std::string_view op_name) override;
   bool SupportsBoolTypes(std::string_view op_name) override;
+
+ private:
+  const ::ml_drift::GpuInfo* const gpu_info_;
 };
 
 }  // namespace litert::ml_drift

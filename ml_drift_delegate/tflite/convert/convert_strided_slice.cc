@@ -33,7 +33,7 @@ void ConvertStridedSlice(
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* slice_op = ir_model.add_op();
-  slice_op->name = ToString(::ml_drift::OperationType::SLICE);
+  slice_op->name = ToString(::ml_drift::OperationType::kSlice);
 
   const int input_id = node.inputs->data[0];
   const int begin_id = node.inputs->data[1];

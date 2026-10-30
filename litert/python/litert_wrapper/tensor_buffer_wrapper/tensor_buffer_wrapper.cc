@@ -53,6 +53,7 @@ size_t ByteWidthOfDTypeImpl(const std::string& dtype) {
   if (dtype == "bfloat16") return 2;
   if (dtype == "float8_e4m3fn") return 1;
   if (dtype == "float8_e5m2") return 1;
+  if (dtype == "int64") return 8;
   if (dtype == "int32") return 4;
   if (dtype == "int8") return 1;
   if (dtype == "uint8") return 1;
@@ -81,6 +82,32 @@ bool ConvertPyListToFloatVector(PyObject* py_list, std::vector<float>* out,
       return false;
     }
     out->push_back(static_cast<float>(val));
+  }
+  return true;
+}
+
+// Converts a Python list of integers to a std::vector<int64_t>.
+// Returns true on success, false on failure with error message populated.
+bool ConvertPyListToInt64Vector(PyObject* py_list, std::vector<int64_t>* out,
+                                std::string* error) {
+  if (!PyList_Check(py_list)) {
+    *error = "Expected a Python list for int64 data";
+    return false;
+  }
+  Py_ssize_t length = PyList_Size(py_list);
+  out->reserve(length);
+  for (Py_ssize_t i = 0; i < length; ++i) {
+    PyObject* item = PyList_GetItem(py_list, i);
+    if (!PyLong_Check(item)) {
+      *error = "Non-integer value in int64 list.";
+      return false;
+    }
+    int64_t val = PyLong_AsLongLong(item);
+    if ((val == -1) && PyErr_Occurred()) {
+      *error = "Error converting python int to int64.";
+      return false;
+    }
+    out->push_back(val);
   }
   return true;
 }
@@ -192,6 +219,15 @@ PyObject* BuildPyListFromFloat(absl::Span<const float> data) {
   PyObject* py_list = PyList_New(data.size());
   for (size_t i = 0; i < data.size(); i++) {
     PyList_SetItem(py_list, i, PyFloat_FromDouble(data[i]));
+  }
+  return py_list;
+}
+
+// Creates a Python list from a span of int64_t values.
+PyObject* BuildPyListFromInt64(absl::Span<const int64_t> data) {
+  PyObject* py_list = PyList_New(data.size());
+  for (size_t i = 0; i < data.size(); i++) {
+    PyList_SetItem(py_list, i, PyLong_FromLongLong(data[i]));
   }
   return py_list;
 }
@@ -411,6 +447,8 @@ PyObject* TensorBufferWrapper::CreateFromHostMemory(PyObject* py_data,
     dummy_type.element_type = kLiteRtElementTypeInt8;
   } else if (dtype == "uint8") {
     dummy_type.element_type = kLiteRtElementTypeUInt8;
+  } else if (dtype == "int64") {
+    dummy_type.element_type = kLiteRtElementTypeInt64;
   } else if (dtype == "int32") {
     dummy_type.element_type = kLiteRtElementTypeInt32;
   } else if (dtype == "bool") {
@@ -477,7 +515,7 @@ PyObject* TensorBufferWrapper::CreateFromHostMemory(PyObject* py_data,
 }
 
 // Writes data from a Python list to a TensorBuffer.
-// Supports float32, int32, and int8 data types.
+// Supports float32, int64, int32, and int8 data types.
 PyObject* TensorBufferWrapper::WriteTensor(PyObject* buffer_capsule,
                                            PyObject* data_list,
                                            const std::string& dtype) {
@@ -510,6 +548,16 @@ PyObject* TensorBufferWrapper::WriteTensor(PyObject* buffer_capsule,
         !status) {
       return ConvertErrorToPyExc(status.Error());
     }
+    Py_RETURN_NONE;
+  }
+  if (dtype == "int64") {
+    std::vector<int64_t> host_data;
+    if (!ConvertPyListToInt64Vector(data_list, &host_data, &error)) {
+      if (!error.empty()) return ReportError(error);
+    }
+    if (auto status = tb.Write<int64_t>(absl::MakeConstSpan(host_data));
+        !status)
+      return ConvertErrorToPyExc(status.Error());
     Py_RETURN_NONE;
   }
   if (dtype == "int32") {
@@ -545,7 +593,7 @@ PyObject* TensorBufferWrapper::WriteTensor(PyObject* buffer_capsule,
 }
 
 // Reads data from a TensorBuffer into a Python list.
-// Supports float32, int32, and int8 data types.
+// Supports float32, int64, int32, and int8 data types.
 PyObject* TensorBufferWrapper::ReadTensor(PyObject* buffer_capsule,
                                           int num_elements,
                                           const std::string& dtype) {
@@ -566,6 +614,12 @@ PyObject* TensorBufferWrapper::ReadTensor(PyObject* buffer_capsule,
     if (auto status = tb.Read<uint16_t>(absl::MakeSpan(data)); !status)
       return ConvertErrorToPyExc(status.Error());
     return BuildPyListFromFloat16(data);
+  }
+  if (dtype == "int64") {
+    std::vector<int64_t> data(num_elements, 0);
+    if (auto status = tb.Read<int64_t>(absl::MakeSpan(data)); !status)
+      return ConvertErrorToPyExc(status.Error());
+    return BuildPyListFromInt64(data);
   }
   if (dtype == "int32") {
     std::vector data(num_elements, 0);

@@ -27,7 +27,6 @@
 #include <ios>
 #include <iterator>
 #include <limits>
-#include <optional>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -41,7 +40,6 @@
 #include "QnnProfile.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 #include "absl/base/no_destructor.h"  // from @com_google_absl
-#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
@@ -87,14 +85,28 @@ std::string_view inline GetEventUnit(QnnProfile_EventUnit_t unit) {
 }
 
 namespace {
-bool IsAutoPerfCtrlMode(const std::optional<::qnn::Options>& run_options,
-                        ::qnn::BackendType backend_type) {
-  if (!run_options.has_value()) return false;
+bool IsPerformanceModeSet(const ::qnn::Options& options,
+                          ::qnn::BackendType backend_type) {
   switch (backend_type) {
     case ::qnn::BackendType::kHtpBackend:
-      return run_options->GetHtpPerfCtrlMode() == ::qnn::HtpPerfCtrlMode::kAuto;
+      return options.GetHtpPerformanceMode() !=
+             ::qnn::HtpPerformanceMode::kDefault;
     case ::qnn::BackendType::kDspBackend:
-      return run_options->GetDspPerfCtrlMode() == ::qnn::DspPerfCtrlMode::kAuto;
+      return options.GetDspPerformanceMode() !=
+             ::qnn::DspPerformanceMode::kDefault;
+    default:
+      return false;
+  }
+}
+
+bool IsAutoPerfCtrlMode(const ::qnn::Options& options,
+                        ::qnn::BackendType backend_type) {
+  if (!IsPerformanceModeSet(options, backend_type)) return false;
+  switch (backend_type) {
+    case ::qnn::BackendType::kHtpBackend:
+      return options.GetHtpPerfCtrlMode() == ::qnn::HtpPerfCtrlMode::kAuto;
+    case ::qnn::BackendType::kDspBackend:
+      return options.GetDspPerfCtrlMode() == ::qnn::DspPerfCtrlMode::kAuto;
     default:
       return false;
   }
@@ -179,12 +191,10 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
-  // Manual: sync downvote handled by backend dtor.
-  // Auto: schedule a final downvote here.
-  if (IsAutoPerfCtrlMode(run_options_,
-                         qnn_manager_.GetOptions().GetBackendType())) {
-    ::qnn::Options default_options;
-    (void)qnn_backend_.SetPerformanceMode(default_options);
+  const ::qnn::Options& options =
+      run_options_.has_value() ? *run_options_ : qnn_manager_.GetOptions();
+  if (IsAutoPerfCtrlMode(options, qnn_manager_.GetOptions().GetBackendType())) {
+    qnn_backend_.ScheduleDownVote();
   }
 }
 
@@ -385,19 +395,17 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
-    int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+    int graph_input_index, LiteRtTensorBufferHandle /*tensor_buffer_handle*/) {
   auto& tensor = inputs_[graph_input_index];
-  LITERT_RETURN_IF_ERROR(
-      DetachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle));
+  LITERT_RETURN_IF_ERROR(DetachBuffer(tensor.GetQnnTensor()));
   input_buffer_handles_[graph_input_index] = -1;
   return {};
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
-    int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+    int graph_output_index, LiteRtTensorBufferHandle /*tensor_buffer_handle*/) {
   auto& tensor = outputs_[graph_output_index];
-  LITERT_RETURN_IF_ERROR(
-      DetachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle));
+  LITERT_RETURN_IF_ERROR(DetachBuffer(tensor.GetQnnTensor()));
   output_buffer_handles_[graph_output_index] = -1;
   return {};
 }
@@ -479,36 +487,23 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
-    Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  const auto mem_type = tensor.version == QNN_TENSOR_VERSION_1
-                            ? tensor.v1.memType
-                            : tensor.v2.memType;
-  if (mem_type == QNN_TENSORMEMTYPE_RAW) {
-    return device_context_->UnregisterTensorBuffer(tensor_buffer_handle);
+    Qnn_Tensor_t& tensor) {
+  // The buffer stays registered, since it may still be attached to other
+  // tensors: its QNN memory handle is released when it is unregistered.
+  if (tensor.version == QNN_TENSOR_VERSION_1) {
+    tensor.v1.memType = QNN_TENSORMEMTYPE_UNDEFINED;
+    tensor.v1.clientBuf = QNN_CLIENT_BUFFER_INIT;
+  } else if (tensor.version == QNN_TENSOR_VERSION_2) {
+    tensor.v2.memType = QNN_TENSORMEMTYPE_UNDEFINED;
+    tensor.v2.clientBuf = QNN_CLIENT_BUFFER_INIT;
+  } else {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Unsupported QNN tensor version");
   }
-  LITERT_RETURN_IF_ERROR(
-      device_context_->UnregisterTensorBuffer(tensor_buffer_handle, tensor));
   return {};
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::Execute() {
-  // Auto mode does per-inference upvote + debounced downvote.
-  // Manual mode is unchanged (upvote at init).
-  const bool auto_mode = IsAutoPerfCtrlMode(
-      run_options_, qnn_manager_.GetOptions().GetBackendType());
-  if (auto_mode) {
-    if (!qnn_backend_.SetPerformanceMode(*run_options_)) {
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Failed to set performance mode");
-    }
-  }
-
-  absl::Cleanup downvote = [this, auto_mode] {
-    if (!auto_mode) return;
-    ::qnn::Options default_options;
-    qnn_backend_.SetPerformanceMode(default_options);
-  };
-
   const size_t num_ins = inputs_.size();
   LITERT_STACK_ARRAY(Qnn_Tensor_t, inputs, num_ins, QNN_TENSOR_INIT);
   for (size_t i = 0; i < num_ins; ++i) {
@@ -525,15 +520,26 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
     }
     *(outputs + i) = outputs_.at(i).GetQnnTensor();
   }
+  const ::qnn::Options& options =
+      run_options_.has_value() ? *run_options_ : qnn_manager_.GetOptions();
 
-  if (auto status = qnn_manager_.Api()->graphExecute(
-          graph_handle_, inputs, num_ins, outputs, num_outs, profile_handle_,
-          /*signalHandle=*/nullptr);
-      status != QNN_SUCCESS) {
+  // Auto mode does per-inference upvote + debounced downvote. Manual mode
+  // upvotes when its options are applied in SetOptions().
+  const bool auto_mode =
+      IsAutoPerfCtrlMode(options, qnn_manager_.GetOptions().GetBackendType());
+  if (auto_mode) {
+    qnn_backend_.ScheduleUpVote();
+  }
+  const auto status = qnn_manager_.Api()->graphExecute(
+      graph_handle_, inputs, num_ins, outputs, num_outs, profile_handle_,
+      /*signalHandle=*/nullptr);
+  if (auto_mode) {
+    qnn_backend_.ScheduleDownVote();
+  }
+  if (status != QNN_SUCCESS) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to execute graph");
   }
-
   if (profile_handle_ != nullptr) {
     LITERT_RETURN_IF_ERROR(Profile());
   }
@@ -572,12 +578,11 @@ Expected<void> LiteRtDispatchInvocationContextT::Profile() {
   QnnProfile_EventData_t event_data;
   if (events_ptr != nullptr) {
     for (std::uint32_t i = 0; i < num_events; ++i) {
-      if (auto status = qnn_manager_.Api()->profileGetEventData(
-              events_ptr[i], &event_data);
+      if (auto status = qnn_manager_.Api()->profileGetEventData(events_ptr[i],
+                                                                &event_data);
           status != QNN_SUCCESS) {
-        return Unexpected(
-            kLiteRtStatusErrorRuntimeFailure,
-            "Failed to get the event data from profiling result");
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Failed to get the event data from profiling result");
       }
       data_ss << "    " << event_data.identifier << ": " << event_data.value
               << " " << GetEventUnit(event_data.unit) << std::endl;
@@ -657,9 +662,12 @@ Expected<void> LiteRtDispatchInvocationContextT::SetOptions(
     LiteRtOptions options) {
   if (options == nullptr) {
     run_options_ = std::nullopt;
+    if (!qnn_backend_.SetPerformanceMode(qnn_manager_.GetOptions())) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to reset performance mode.");
+    }
     return {};
   }
-
   // Parse LiteRtOptions into qnn::Options (same path as dispatch_api.cc).
   auto* runtime_context = device_context_->runtime_context();
   litert::internal::OptionsWrapper internal_options(
@@ -689,31 +697,10 @@ Expected<void> LiteRtDispatchInvocationContextT::SetOptions(
   ::qnn::Options qnn_options;
   litert::qualcomm::QualcommOptions qualcomm_options(options_handle);
   LITERT_RETURN_IF_ERROR(InitQnnOptions(qnn_options, qualcomm_options));
-
-  run_options_ = qnn_options;
-
-  // Manual mode: forward to the backend so a runtime mode change re-votes
-  // (same-mode is skipped there). Auto defers voting to Execute().
-  bool manual = false;
-  switch (qnn_manager_.GetOptions().GetBackendType()) {
-    case ::qnn::BackendType::kHtpBackend:
-      manual =
-          qnn_options.GetHtpPerformanceMode() !=
-              ::qnn::HtpPerformanceMode::kDefault &&
-          qnn_options.GetHtpPerfCtrlMode() == ::qnn::HtpPerfCtrlMode::kManual;
-      break;
-    case ::qnn::BackendType::kDspBackend:
-      manual =
-          qnn_options.GetDspPerformanceMode() !=
-              ::qnn::DspPerformanceMode::kDefault &&
-          qnn_options.GetDspPerfCtrlMode() == ::qnn::DspPerfCtrlMode::kManual;
-      break;
-    default:
-      break;
+  if (!qnn_backend_.SetPerformanceMode(qnn_options)) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to set performance mode.");
   }
-  if (manual) {
-    (void)qnn_backend_.SetPerformanceMode(qnn_options);
-  }
-
+  run_options_ = std::move(qnn_options);
   return {};
 }

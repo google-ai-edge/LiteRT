@@ -15,31 +15,31 @@
 #include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
 
 #include <gtest/gtest.h>
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_logging.h"
+#include "tflite/schema/schema_generated.h"
 
 namespace litert {
 namespace {
 
 TEST(LitertCTypesPrintingTest, LiteRtElementType) {
-  EXPECT_EQ(absl::StrFormat("%v", kLiteRtElementTypeInt32), "i32");
-  EXPECT_EQ(absl::StrFormat("%v", kLiteRtElementTypeFloat32), "f32");
-  EXPECT_EQ(absl::StrFormat("%v", kLiteRtElementTypeFloat8E4M3FN),
-            "f8e4m3fn");
-  EXPECT_EQ(absl::StrFormat("%v", kLiteRtElementTypeFloat8E5M2), "f8e5m2");
+  EXPECT_EQ(absl::StrCat(kLiteRtElementTypeInt32), "i32");
+  EXPECT_EQ(absl::StrCat(kLiteRtElementTypeFloat32), "f32");
+  EXPECT_EQ(absl::StrCat(kLiteRtElementTypeFloat8E4M3FN), "f8e4m3fn");
+  EXPECT_EQ(absl::StrCat(kLiteRtElementTypeFloat8E5M2), "f8e5m2");
 }
 
 TEST(LitertCTypesPrintingTest, LiteRtLayoutScalar) {
   LiteRtLayout layout = {0, false, {}, {}};
-  EXPECT_EQ(absl::StrFormat("%v", layout), "<>");
+  EXPECT_EQ(absl::StrCat(layout), "<>");
 }
 
 TEST(LitertCTypesPrintingTest, LiteRtLayoutMultiDim) {
   LiteRtLayout layout = {2, false, {1, 2}, {}};
-  EXPECT_EQ(absl::StrFormat("%v", layout), "<1x2>");
+  EXPECT_EQ(absl::StrCat(layout), "<1x2>");
 }
 
 TEST(LitertCTypesPrintingTest, LiteRtRankedTensorTypeScalar) {
@@ -47,7 +47,7 @@ TEST(LitertCTypesPrintingTest, LiteRtRankedTensorTypeScalar) {
       kLiteRtElementTypeInt32,
       {0, false, {}, {}},
   };
-  EXPECT_EQ(absl::StrFormat("%v", type), "0d_i32<>");
+  EXPECT_EQ(absl::StrCat(type), "0d_i32<>");
 }
 
 TEST(LitertCTypesPrintingTest, LiteRtRankedTensorTypeMultiDim) {
@@ -55,13 +55,27 @@ TEST(LitertCTypesPrintingTest, LiteRtRankedTensorTypeMultiDim) {
       kLiteRtElementTypeFloat32,
       {2, false, {1, 2}, {}},
   };
-  EXPECT_EQ(absl::StrFormat("%v", type), "2d_f32<1x2>");
+  EXPECT_EQ(absl::StrCat(type), "2d_f32<1x2>");
 }
 
 TEST(LitertCTypesPrintingTest, LiteRtOpCode) {
-  EXPECT_EQ(absl::StrFormat("%v", kLiteRtOpCodeTflAdd), "tfl.add");
-  EXPECT_EQ(absl::StrFormat("%v", kLiteRtOpCodeTflMul), "tfl.mul");
-  EXPECT_EQ(absl::StrFormat("%v", kLiteRtOpCodeTflCustom), "tfl.custom_op");
+  EXPECT_EQ(absl::StrCat(kLiteRtOpCodeTflAdd), "tfl.add");
+  EXPECT_EQ(absl::StrCat(kLiteRtOpCodeTflMul), "tfl.mul");
+  EXPECT_EQ(absl::StrCat(kLiteRtOpCodeTflCustom), "tfl.custom_op");
+}
+
+// LiteRtOpCode mirrors tflite::BuiltinOperator value for value: the model
+// loader casts builtin codes to it. Every builtin operator needs an enumerator,
+// and every enumerator a printer.
+TEST(LitertCTypesPrintingTest, EveryBuiltinOperatorHasAnOpCode) {
+  for (int code = tflite::BuiltinOperator_MIN;
+       code <= tflite::BuiltinOperator_MAX; ++code) {
+    EXPECT_NE(GetOpCodeStringView(static_cast<LiteRtOpCode>(code)),
+              kNoPrinterTag)
+        << "no LiteRtOpCode for "
+        << tflite::EnumNameBuiltinOperator(
+               static_cast<tflite::BuiltinOperator>(code));
+  }
 }
 
 TEST(LitertCTypesPrintingTest, GetOpCodeStringView) {
@@ -69,7 +83,10 @@ TEST(LitertCTypesPrintingTest, GetOpCodeStringView) {
   EXPECT_EQ(GetOpCodeStringView(kLiteRtOpCodeTflAdd), "tfl.add");
   EXPECT_EQ(GetOpCodeStringView(kLiteRtOpCodeTflMul), "tfl.mul");
   EXPECT_EQ(GetOpCodeStringView(kLiteRtOpCodeTflCustom), "tfl.custom_op");
-  EXPECT_EQ(GetOpCodeStringView(static_cast<LiteRtOpCode>(207)), kNoPrinterTag);
+  EXPECT_EQ(GetOpCodeStringView(kLiteRtOpCodeShloCase), "shlo.case");
+  // Use an unassigned value within the enum's representable range.
+  EXPECT_EQ(GetOpCodeStringView(static_cast<LiteRtOpCode>(255)),
+            kNoPrinterTag);
 }
 
 }  // namespace

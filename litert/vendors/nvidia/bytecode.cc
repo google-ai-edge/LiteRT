@@ -269,9 +269,218 @@ Expected<TensorRtLlmHead> ReadTypedHead(
   return head;
 }
 
+Expected<void> ValidateWeightStore(const TensorRtWeightStore& store) {
+  const uint64_t granule = store.granule;
+  if (store.source_path.empty() || store.source_path.front() != '/' ||
+      absl::StrContains(store.source_path, '\0') || granule == 0 ||
+      (granule & (granule - 1)) != 0 || store.weight_data_size == 0 ||
+      store.weight_data_size % granule != 0 || store.segments.empty()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid TensorRT weight store");
+  }
+  uint64_t previous_end = 0;
+  std::unordered_set<std::string> holder_names;
+  for (const auto& segment : store.segments) {
+    if (segment.holder_name.empty() ||
+        !holder_names.insert(segment.holder_name).second || segment.size == 0 ||
+        segment.size % granule != 0 || segment.payload_offset % granule != 0 ||
+        segment.payload_offset < previous_end ||
+        segment.size > store.weight_data_size ||
+        segment.payload_offset > store.weight_data_size - segment.size ||
+        segment.pieces.empty()) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Invalid TensorRT weight segment");
+    }
+    previous_end = segment.payload_offset + segment.size;
+    uint64_t piece_end = 0;
+    for (const auto& piece : segment.pieces) {
+      if (piece.size == 0 || piece.segment_offset < piece_end ||
+          piece.size > segment.size ||
+          piece.segment_offset > segment.size - piece.size ||
+          piece.size > store.source_size ||
+          piece.source_offset > store.source_size - piece.size) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Invalid TensorRT weight segment piece");
+      }
+      piece_end = piece.segment_offset + piece.size;
+    }
+  }
+  uint64_t run_end = 0;
+  size_t next_segment = 0;
+  for (const auto& run : store.private_runs) {
+    if (run.data == nullptr || run.size == 0 || run.offset < run_end ||
+        run.size > store.weight_data_size ||
+        run.offset > store.weight_data_size - run.size) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Invalid TensorRT private weight run");
+    }
+    run_end = run.offset + run.size;
+    while (next_segment < store.segments.size() &&
+           store.segments[next_segment].payload_offset +
+                   store.segments[next_segment].size <=
+               run.offset) {
+      ++next_segment;
+    }
+    if (next_segment < store.segments.size() &&
+        store.segments[next_segment].payload_offset < run_end) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "TensorRT private weight run overlaps a segment");
+    }
+  }
+  return {};
+}
+
+// The serialized size of a weight store, or an error if it overflows.
+Expected<size_t> WeightStoreBytes(const TensorRtWeightStore& store) {
+  size_t bytes = sizeof(uint32_t) * 3 + store.source_path.size() +
+                 sizeof(uint64_t) * 5 + sizeof(int64_t) * 4;
+  const auto add = [&](size_t more) {
+    if (more > std::numeric_limits<size_t>::max() - bytes) {
+      return false;
+    }
+    bytes += more;
+    return true;
+  };
+  for (const auto& segment : store.segments) {
+    if (segment.pieces.size() > std::numeric_limits<uint32_t>::max() ||
+        !add(sizeof(uint32_t) * 2 + segment.holder_name.size() +
+             sizeof(uint64_t) * 4) ||
+        !add(segment.pieces.size() * sizeof(uint64_t) * 3)) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "TensorRT weight store size overflows");
+    }
+  }
+  for (const auto& run : store.private_runs) {
+    if (!add(sizeof(uint64_t) * 2) || !add(run.size)) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "TensorRT weight store size overflows");
+    }
+  }
+  return bytes;
+}
+
+Expected<void> AppendWeightStore(std::vector<uint8_t>& out,
+                                 const TensorRtWeightStore& store) {
+  if (store.segments.size() > std::numeric_limits<uint32_t>::max() ||
+      store.private_runs.size() > std::numeric_limits<uint32_t>::max()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Too many TensorRT weight segments or runs");
+  }
+  LITERT_RETURN_IF_ERROR(AppendString(out, store.source_path));
+  AppendScalar<uint64_t>(out, store.source_size);
+  AppendScalar<uint64_t>(out, store.source_identity.device);
+  AppendScalar<uint64_t>(out, store.source_identity.inode);
+  AppendScalar<int64_t>(out, store.source_identity.mtime_seconds);
+  AppendScalar<int64_t>(out, store.source_identity.mtime_nanoseconds);
+  AppendScalar<int64_t>(out, store.source_identity.ctime_seconds);
+  AppendScalar<int64_t>(out, store.source_identity.ctime_nanoseconds);
+  AppendScalar<uint64_t>(out, store.granule);
+  AppendScalar<uint64_t>(out, store.weight_data_size);
+  AppendScalar<uint32_t>(out, static_cast<uint32_t>(store.segments.size()));
+  for (const auto& segment : store.segments) {
+    LITERT_RETURN_IF_ERROR(AppendString(out, segment.holder_name));
+    AppendScalar<uint64_t>(out, segment.size);
+    AppendScalar<uint64_t>(out, segment.payload_offset);
+    AppendScalar<uint64_t>(out, segment.key.low);
+    AppendScalar<uint64_t>(out, segment.key.high);
+    AppendScalar<uint32_t>(out, static_cast<uint32_t>(segment.pieces.size()));
+    for (const auto& piece : segment.pieces) {
+      AppendScalar<uint64_t>(out, piece.source_offset);
+      AppendScalar<uint64_t>(out, piece.size);
+      AppendScalar<uint64_t>(out, piece.segment_offset);
+    }
+  }
+  AppendScalar<uint32_t>(out, static_cast<uint32_t>(store.private_runs.size()));
+  for (const auto& run : store.private_runs) {
+    AppendScalar<uint64_t>(out, run.offset);
+    AppendScalar<uint64_t>(out, static_cast<uint64_t>(run.size));
+    out.insert(out.end(), run.data, run.data + run.size);
+  }
+  return {};
+}
+
+Expected<TensorRtWeightStore> ReadWeightStore(const uint8_t*& cur,
+                                              const uint8_t* end) {
+  TensorRtWeightStore store;
+  LITERT_ASSIGN_OR_RETURN(store.source_path, ReadString(cur, end));
+  LITERT_ASSIGN_OR_RETURN(store.source_size, ReadScalar<uint64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(store.source_identity.device,
+                          ReadScalar<uint64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(store.source_identity.inode,
+                          ReadScalar<uint64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(store.source_identity.mtime_seconds,
+                          ReadScalar<int64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(store.source_identity.mtime_nanoseconds,
+                          ReadScalar<int64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(store.source_identity.ctime_seconds,
+                          ReadScalar<int64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(store.source_identity.ctime_nanoseconds,
+                          ReadScalar<int64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(store.granule, ReadScalar<uint64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(store.weight_data_size,
+                          ReadScalar<uint64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(uint32_t segment_count,
+                          ReadScalar<uint32_t>(cur, end));
+  // A segment needs at least its name length, four scalars and a piece count.
+  if (segment_count > static_cast<size_t>(end - cur) /
+                          (sizeof(uint32_t) * 2 + sizeof(uint64_t) * 4)) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "TensorRT weight segment count exceeds payload");
+  }
+  store.segments.reserve(segment_count);
+  for (uint32_t i = 0; i < segment_count; ++i) {
+    TensorRtWeightSegment segment;
+    LITERT_ASSIGN_OR_RETURN(segment.holder_name, ReadString(cur, end));
+    LITERT_ASSIGN_OR_RETURN(segment.size, ReadScalar<uint64_t>(cur, end));
+    LITERT_ASSIGN_OR_RETURN(segment.payload_offset,
+                            ReadScalar<uint64_t>(cur, end));
+    LITERT_ASSIGN_OR_RETURN(segment.key.low, ReadScalar<uint64_t>(cur, end));
+    LITERT_ASSIGN_OR_RETURN(segment.key.high, ReadScalar<uint64_t>(cur, end));
+    LITERT_ASSIGN_OR_RETURN(uint32_t piece_count,
+                            ReadScalar<uint32_t>(cur, end));
+    if (piece_count > static_cast<size_t>(end - cur) / (sizeof(uint64_t) * 3)) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "TensorRT weight piece count exceeds payload");
+    }
+    segment.pieces.reserve(piece_count);
+    for (uint32_t j = 0; j < piece_count; ++j) {
+      TensorRtWeightPiece piece;
+      LITERT_ASSIGN_OR_RETURN(piece.source_offset,
+                              ReadScalar<uint64_t>(cur, end));
+      LITERT_ASSIGN_OR_RETURN(piece.size, ReadScalar<uint64_t>(cur, end));
+      LITERT_ASSIGN_OR_RETURN(piece.segment_offset,
+                              ReadScalar<uint64_t>(cur, end));
+      segment.pieces.push_back(piece);
+    }
+    store.segments.push_back(std::move(segment));
+  }
+  LITERT_ASSIGN_OR_RETURN(uint32_t run_count, ReadScalar<uint32_t>(cur, end));
+  if (run_count > static_cast<size_t>(end - cur) / (sizeof(uint64_t) * 2)) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "TensorRT private weight run count exceeds payload");
+  }
+  store.private_runs.reserve(run_count);
+  for (uint32_t i = 0; i < run_count; ++i) {
+    TensorRtWeightRun run;
+    LITERT_ASSIGN_OR_RETURN(run.offset, ReadScalar<uint64_t>(cur, end));
+    LITERT_ASSIGN_OR_RETURN(uint64_t run_size, ReadScalar<uint64_t>(cur, end));
+    if (run_size > static_cast<uint64_t>(end - cur)) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Truncated TensorRT private weight run");
+    }
+    run.data = cur;
+    run.size = static_cast<size_t>(run_size);
+    cur += run.size;
+    store.private_runs.push_back(run);
+  }
+  LITERT_RETURN_IF_ERROR(ValidateWeightStore(store));
+  return store;
+}
+
 Expected<TensorRtBytecode> ParseSharedWeightBundle(const uint8_t*& cur,
                                                    const uint8_t* end,
-                                                   const char* function_name) {
+                                                   const char* function_name,
+                                                   uint32_t version) {
   struct SharedWeightView {
     TensorRtWeightDataType data_type;
     uint64_t count;
@@ -381,13 +590,27 @@ Expected<TensorRtBytecode> ParseSharedWeightBundle(const uint8_t*& cur,
       }
     }
 
+    std::optional<TensorRtWeightStore> weight_store;
+    if (version == kTensorRtBytecodeVersionWithWeightStore) {
+      LITERT_ASSIGN_OR_RETURN(uint32_t has_store,
+                              ReadScalar<uint32_t>(cur, end));
+      if (has_store > 1) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Invalid TensorRT bundle weight store marker");
+      }
+      if (has_store != 0) {
+        LITERT_ASSIGN_OR_RETURN(weight_store, ReadWeightStore(cur, end));
+      }
+    }
+
     if (is_selected) {
       if (found) {
         return Error(kLiteRtStatusErrorInvalidArgument,
                      "TensorRT bundle engine selection is ambiguous");
       }
       found = true;
-      selected.version = kTensorRtBytecodeVersionWithSharedWeights;
+      selected.version = version;
+      selected.weight_store = std::move(weight_store);
       selected.function_name = std::move(entry_function_name);
       selected.input_names = std::move(input_names);
       selected.output_names = std::move(output_names);
@@ -513,6 +736,9 @@ Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundleImpl(
     }
   }
 
+  // An entry with a weight store makes the bundle a version 5 one, in which
+  // every entry says whether it has a store.
+  bool with_weight_store = false;
   std::unordered_set<std::string> function_names;
   for (const auto& entry : entries) {
     if (entry.function_name.empty() ||
@@ -566,12 +792,28 @@ Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundleImpl(
                      "TensorRT bundle size overflows");
       }
     }
+    if (entry.weight_store != nullptr) {
+      LITERT_RETURN_IF_ERROR(ValidateWeightStore(*entry.weight_store));
+      LITERT_ASSIGN_OR_RETURN(const size_t store_bytes,
+                              WeightStoreBytes(*entry.weight_store));
+      if (!add_reserve_size(store_bytes)) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "TensorRT bundle size overflows");
+      }
+      with_weight_store = true;
+    }
+    if (!add_reserve_size(sizeof(uint32_t))) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "TensorRT bundle size overflows");
+    }
   }
 
   std::vector<uint8_t> out;
   out.reserve(reserve_size);
   AppendScalar<uint32_t>(out, kMagic);
-  AppendScalar<uint32_t>(out, kTensorRtBytecodeVersionWithSharedWeights);
+  AppendScalar<uint32_t>(out, with_weight_store
+                                  ? kTensorRtBytecodeVersionWithWeightStore
+                                  : kTensorRtBytecodeVersionWithSharedWeights);
   AppendScalar<uint32_t>(out, static_cast<uint32_t>(shared_weights.size()));
   for (const auto& weight : shared_weights) {
     AppendScalar<int32_t>(out, static_cast<int32_t>(weight.data_type));
@@ -596,6 +838,12 @@ Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundleImpl(
     for (const auto& ref : entry.refit_weights) {
       LITERT_RETURN_IF_ERROR(AppendString(out, ref.name));
       AppendScalar<uint32_t>(out, ref.shared_weight_index);
+    }
+    if (with_weight_store) {
+      AppendScalar<uint32_t>(out, entry.weight_store != nullptr ? 1 : 0);
+      if (entry.weight_store != nullptr) {
+        LITERT_RETURN_IF_ERROR(AppendWeightStore(out, *entry.weight_store));
+      }
     }
   }
   return out;
@@ -958,12 +1206,14 @@ Expected<TensorRtBytecode> ParseTensorRtBytecode(const void* data, size_t size,
   if (version != kTensorRtBytecodeVersion &&
       version != kTensorRtBytecodeVersionWithTrtLlmHead &&
       version != kTensorRtBytecodeVersionWithTypedHead &&
-      version != kTensorRtBytecodeVersionWithSharedWeights) {
+      version != kTensorRtBytecodeVersionWithSharedWeights &&
+      version != kTensorRtBytecodeVersionWithWeightStore) {
     return Error(kLiteRtStatusErrorUnsupportedCompilerVersion,
                  "Unsupported TensorRT bytecode version");
   }
-  if (version == kTensorRtBytecodeVersionWithSharedWeights) {
-    return ParseSharedWeightBundle(cur, end, function_name);
+  if (version == kTensorRtBytecodeVersionWithSharedWeights ||
+      version == kTensorRtBytecodeVersionWithWeightStore) {
+    return ParseSharedWeightBundle(cur, end, function_name, version);
   }
 
   TensorRtBytecode bytecode;

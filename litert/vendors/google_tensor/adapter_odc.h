@@ -16,7 +16,6 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_ADAPTER_ODC_H_
 
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -46,7 +45,7 @@ class AdapterOdc : public Adapter {
                          size_t** compiled_code_sizes,
                          size_t* num_bytecodes) override;
 
-  Expected<std::vector<int32_t>> GetUnsupportedOps(
+  Expected<std::vector<UnsupportedOp>> GetUnsupportedOps(
       const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
       size_t options_size) override;
 

@@ -22,6 +22,7 @@ set(LITERT_CC_INTERNAL_HEADERS
     litert_consts.h
     litert_detail.h
     litert_dispatch_delegate.h
+    litert_dispatch_delegate_vendor_options.h
     litert_extended_model.h
     litert_handle.h
     litert_logging.h

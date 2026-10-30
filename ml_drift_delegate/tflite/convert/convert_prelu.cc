@@ -40,11 +40,12 @@ void ConvertPrelu(
   if (alpha_tensor->dims->size == 1 ||
       (alpha_tensor->dims->size == 3 && alpha_tensor->dims->data[0] == 1 &&
        alpha_tensor->dims->data[1] == 1)) {
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> alpha;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
+        alpha;
     PopulateTensor(alpha_tensor, 0, &alpha, PopulateTensorFlags::kNoExtraBytes);
     attr.alpha = std::move(alpha);
   } else if (alpha_tensor->dims->size == 3 || alpha_tensor->dims->size == 4) {
-    ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::FLOAT32> alpha;
+    ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::kFloat32> alpha;
     PopulateTensor(alpha_tensor, 0, &alpha, PopulateTensorFlags::kNoExtraBytes);
     attr.alpha = std::move(alpha);
   } else {
@@ -52,7 +53,7 @@ void ConvertPrelu(
   }
 
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::PRELU);
+  op->name = ToString(::ml_drift::OperationType::kPrelu);
   op->attr = std::move(attr);
   ir_model.AddConsumer(tensor_map[node.inputs->data[0]], op->id);
   ir_model.SetProducer(tensor_map[node.outputs->data[0]], op->id);

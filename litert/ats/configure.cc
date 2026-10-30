@@ -33,12 +33,14 @@
 #include "litert/ats/common.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_samsung_options.h"
@@ -65,6 +67,18 @@ ABSL_FLAG(std::string, backend, "cpu",
 ABSL_FLAG(bool, cpu_hint_fully_delegated, true,
           "Whether to hint at fully delegating to a single delegate for CPU.");
 
+ABSL_FLAG(bool, enable_ynnpack, false,
+          "Whether to enable the YNNPACK CPU backend.");
+
+ABSL_FLAG(bool, gpu_use_ir_model, true,
+          "Whether to use the IR model for the GPU accelerator.");
+
+ABSL_FLAG(std::string, cpu_kernel_mode, "delegate",
+          "CPU kernel mode for the \"actual\" backend when --backend=cpu. One "
+          "of: delegate (XNNPACK, default), builtin (TFLite builtin kernels "
+          "without delegates) or reference (TFLite reference kernels). The "
+          "reference backend always uses the default mode.");
+
 ABSL_FLAG(std::string, dispatch_dir, "",
           "Path to directory containing the dispatch library. Only relevant "
           "for NPU.");
@@ -75,12 +89,14 @@ ABSL_FLAG(std::string, plugin_dir, "",
 
 ABSL_FLAG(
     std::vector<std::string>, dont_register, std::vector<std::string>{},
-    "Regex for test selection. This is a negative search match, if the pattern "
-    "can be found anywhere in the test name, it will be skipped.");
+    "Regex for test selection. This is a negative search match; if the pattern "
+    "can be found anywhere in the test name, the test is registered in GTest "
+    "and marked SKIPPED so coverage stats remain complete.");
 
 ABSL_FLAG(std::vector<std::string>, do_register, std::vector<std::string>{},
-          "Regex for test selection. This is a positive search match, if the "
-          "pattern can be found anywhere in the test name, it will be run. "
+          "Regex for test selection. This is a positive search match; only "
+          "tests matching at least one pattern are registered (non-matching "
+          "tests are omitted from registration). "
           "This has lower priority over the dont_register filter.");
 
 ABSL_FLAG(
@@ -130,6 +146,17 @@ ABSL_FLAG(std::string, soc_model, "",
           "The SOC model to target for compilation. Only relevant for "
           "NPU compilation.");
 
+namespace litert::test {
+
+class GpuOptionsTestPeer {
+ public:
+  static LiteRtStatus SetUseIrModel(GpuOptions& options, bool use_ir_model) {
+    return options.SetUseIrModel(use_ir_model);
+  }
+};
+
+}  // namespace litert::test
+
 namespace litert::testing {
 
 namespace {
@@ -168,6 +195,20 @@ Expected<ExecutionBackend> ParseBackend() {
   }
 }
 
+Expected<LiteRtCpuKernelMode> ParseCpuKernelMode() {
+  const auto mode_flag = absl::GetFlag(FLAGS_cpu_kernel_mode);
+  if (mode_flag == "delegate" || mode_flag == "xnnpack") {
+    return kLiteRtCpuKernelModeDelegate;
+  } else if (mode_flag == "builtin") {
+    return kLiteRtCpuKernelModeBuiltin;
+  } else if (mode_flag == "reference") {
+    return kLiteRtCpuKernelModeReference;
+  }
+  return Error(
+      kLiteRtStatusErrorInvalidArgument,
+      absl::StrFormat("Unknown cpu_kernel_mode: %s", mode_flag.c_str()));
+}
+
 Expected<Options> ParseOptions(ExecutionBackend backend) {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   if (backend == ExecutionBackend::kNpu) {
@@ -190,11 +231,20 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
     LITERT_RETURN_IF_ERROR(
         cpu_opts.SetHintFullyDelegatedToSingleDelegate(
             absl::GetFlag(FLAGS_cpu_hint_fully_delegated)));
+    LITERT_RETURN_IF_ERROR(
+        cpu_opts.SetEnableYNNPack(absl::GetFlag(FLAGS_enable_ynnpack)));
+    LITERT_ASSIGN_OR_RETURN(auto kernel_mode, ParseCpuKernelMode());
+    LITERT_RETURN_IF_ERROR(cpu_opts.SetKernelMode(kernel_mode));
   } else if (backend == ExecutionBackend::kGpu) {
     options.SetHardwareAccelerators(HwAccelerators::kGpu);
     LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
     LITERT_RETURN_IF_ERROR(
         gpu_opts.SetHintFullyDelegatedToSingleDelegate(true));
+    if (absl::GetFlag(FLAGS_iters_per_test) > 1) {
+      LITERT_RETURN_IF_ERROR(gpu_opts.EnableBenchmarkMode(true));
+    }
+    LITERT_RETURN_IF_ERROR(test::GpuOptionsTestPeer::SetUseIrModel(
+        gpu_opts, absl::GetFlag(FLAGS_gpu_use_ir_model)));
   }
   return options;
 }
@@ -350,17 +400,19 @@ int AtsConf::GetSeedForParams(absl::string_view name) const {
   return it->second;
 }
 
+bool AtsConf::MatchesDoRegister(absl::string_view name) const {
+  return pos_re_.empty() ||
+         std::any_of(pos_re_.begin(), pos_re_.end(), [&name](const auto& re) {
+           return std::regex_search(name.data(), name.data() + name.size(), re);
+         });
+}
+
 bool AtsConf::ShouldRegister(const std::string& name) const {
   return ShouldRegister(absl::string_view(name));
 };
 
 bool AtsConf::ShouldRegister(absl::string_view name) const {
-  const bool include =
-      pos_re_.empty() ||
-      std::any_of(pos_re_.begin(), pos_re_.end(), [&name](const auto& re) {
-        return std::regex_search(name.data(), name.data() + name.size(), re);
-      });
-  if (!include) {
+  if (!MatchesDoRegister(name)) {
     return false;
   }
   const bool exclude =

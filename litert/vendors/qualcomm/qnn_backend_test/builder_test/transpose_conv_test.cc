@@ -1,6 +1,7 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -118,6 +119,48 @@ TEST_P(QnnModelTest, TransposeConvInt64BiasBelowInt32RangeFails) {
                                              /*use_int64_bias_as_int32=*/true);
 
   EXPECT_TRUE(ops.empty());
+}
+
+TEST_P(QnnModelTest,
+       TransposeConvRemapsBwAxisQuantizationAfterFilterTranspose) {
+  const ::qnn::ScaleOffsetQuantizeParamsWrapper kActQuant{kActScale, 0};
+  static constexpr std::array<std::int32_t, 4> kShapeData{1, 2, 2, 2};
+  auto& output_shape = tensor_pool_.CreateStaticTensor(
+      QNN_DATATYPE_INT_32, ::qnn::QuantizeParamsWrapperVariant{}, {4},
+      sizeof(kShapeData[0]) * kShapeData.size(), kShapeData.data());
+
+  const ::qnn::BwAxisScaleOffsetQuantizeParamsWrapper kFilterQuant{
+      /*bitwidth=*/4, /*axis=*/0, /*scales=*/{kFilterScale, kFilterScale},
+      /*zero_points=*/{0, 0}};
+  static constexpr std::array<std::int8_t, 2> kFilterData{1, -1};
+  auto& filter = tensor_pool_.CreateStaticTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, kFilterQuant, {2, 1, 1, 1},
+      sizeof(kFilterData[0]) * kFilterData.size(), kFilterData.data());
+  auto& input = tensor_pool_.CreateInputTensorWithName(
+      "in_0", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
+
+  const ::qnn::ScaleOffsetQuantizeParamsWrapper kBiasQuant{kBiasScale, 0};
+  static constexpr std::array<std::int32_t, 2> kBiasData{0, 0};
+  auto& bias = tensor_pool_.CreateStaticTensor(
+      QNN_DATATYPE_SFIXED_POINT_32, kBiasQuant, {2},
+      sizeof(kBiasData[0]) * kBiasData.size(), kBiasData.data());
+  auto& output = tensor_pool_.CreateOutputTensorWithName(
+      "out_0", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
+
+  auto ops = ::qnn::BuildTransposeConvOp(
+      tensor_pool_, {output_shape, filter, input, bias}, {output},
+      /*stride_h=*/1, /*stride_w=*/1, ::qnn::PaddingType::Valid,
+      /*use_int64_bias_as_int32=*/false);
+
+  ASSERT_EQ(ops.size(), 1);
+  const auto& transposed_filter = ops[0].GetInputTensor(1);
+  EXPECT_EQ(transposed_filter.GetDimensions(),
+            (std::vector<std::uint32_t>{1, 1, 1, 2}));
+  const auto& quant_params =
+      std::get<::qnn::BwAxisScaleOffsetQuantizeParamsWrapper>(
+          transposed_filter.GetQuantParams());
+  EXPECT_EQ(quant_params.GetAxis(), 3);
+  EXPECT_EQ(quant_params.GetBitwidth(), 4);
 }
 
 TEST_P(QnnModelTest, TransposeConvInt64BiasConvertedIsNumericallyCorrect) {

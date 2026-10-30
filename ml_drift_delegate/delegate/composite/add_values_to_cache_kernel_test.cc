@@ -54,7 +54,8 @@ absl::Status RunAddValuesToCacheTest(
     ::ml_drift::TestExecutionEnvironment& env,
     ::ml_drift::CalculationsPrecision precision,
     ::ml_drift::TensorStorageType storage,
-    ::ml_drift::DataType output_data_type) {
+    ::ml_drift::DataType output_data_type, int k_update_ts_idx = 2,
+    int v_update_ts_idx = 2) {
   constexpr int kCacheSize = 64;
   constexpr int kBatchSize = 2;
   constexpr int kInputWidth = 2;
@@ -66,36 +67,41 @@ absl::Status RunAddValuesToCacheTest(
   ::ml_drift::DataType input_data_type =
       ::ml_drift::DeduceDataTypeFromPrecision(precision);
 
+  // Updates are [T, D] (ts_idx = 2) or [D, T] (ts_idx = 3).
+  const auto update_shape = [](int ts_idx) {
+    return ts_idx == 3
+               ? ::ml_drift::BHWC(1, kBatchSize, kHeadSize, kInputWidth)
+               : ::ml_drift::BHWC(1, kBatchSize, kInputWidth, kHeadSize);
+  };
+
   // src_k
   ::ml_drift::TensorDescriptor src_k_desc(input_data_type, storage,
-                                          ::ml_drift::Layout::HWC);
-  src_k_desc.SetBHWCShape(
-      ::ml_drift::BHWC(1, kBatchSize, kInputWidth, kHeadSize));
+                                          ::ml_drift::Layout::kHWC);
+  src_k_desc.SetBHWCShape(update_shape(k_update_ts_idx));
   op_def.src_tensors.push_back(src_k_desc);
 
   // src_v
   ::ml_drift::TensorDescriptor src_v_desc(input_data_type, storage,
-                                          ::ml_drift::Layout::HWC);
-  src_v_desc.SetBHWCShape(
-      ::ml_drift::BHWC(1, kBatchSize, kInputWidth, kHeadSize));
+                                          ::ml_drift::Layout::kHWC);
+  src_v_desc.SetBHWCShape(update_shape(v_update_ts_idx));
   op_def.src_tensors.push_back(src_v_desc);
 
   // params (token_index_offset, active_tokens)
   ::ml_drift::TensorDescriptor params_desc(
-      ::ml_drift::DataType::INT32, ::ml_drift::TensorStorageType::BUFFER,
-      ::ml_drift::Layout::HWC);
+      ::ml_drift::DataType::kInt32, ::ml_drift::TensorStorageType::kBuffer,
+      ::ml_drift::Layout::kHWC);
   params_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, 2));
   op_def.src_tensors.push_back(params_desc);
 
   // cache_k
   ::ml_drift::TensorDescriptor cache_k_desc(output_data_type, storage,
-                                            ::ml_drift::Layout::LINEAR);
+                                            ::ml_drift::Layout::kLinear);
   cache_k_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, kKVCacheFullSize));
   op_def.dst_tensors.push_back(cache_k_desc);
 
   // cache_v
   ::ml_drift::TensorDescriptor cache_v_desc(output_data_type, storage,
-                                            ::ml_drift::Layout::LINEAR);
+                                            ::ml_drift::Layout::kLinear);
   cache_v_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, kKVCacheFullSize));
   op_def.dst_tensors.push_back(cache_v_desc);
 
@@ -104,10 +110,13 @@ absl::Status RunAddValuesToCacheTest(
   attr.cache_size = kCacheSize;
   attr.head_size = kHeadSize;
   attr.kv_cache_batch_size = kBatchSize;
+  attr.k_update_ts_idx = k_update_ts_idx;
+  attr.v_update_ts_idx = v_update_ts_idx;
   node.operation.attributes = attr;
 
   ABSL_ASSIGN_OR_RETURN(auto op, CreateAddValuesToCacheFromNode(op_def, node));
 
+  // k_data and v_data are always indexed as [batch][token][channel] below.
   std::vector<float> k_data(kKVCacheInputSliceSize);
   for (int i = 0; i < kKVCacheInputSliceSize; ++i) {
     k_data[i] = static_cast<float>(i + 1);
@@ -116,14 +125,30 @@ absl::Status RunAddValuesToCacheTest(
   for (int i = 0; i < kKVCacheInputSliceSize; ++i) {
     v_data[i] = static_cast<float>(i + 1 + kKVCacheInputSliceSize);
   }
+  // Rearranges [batch][token][channel] data into the upload layout.
+  const auto to_upload = [](const std::vector<float>& data, int ts_idx) {
+    if (ts_idx != 3) return data;
+    std::vector<float> upload(data.size());
+    for (int batch = 0; batch < kBatchSize; ++batch) {
+      for (int x = 0; x < kInputWidth; ++x) {
+        for (int c = 0; c < kHeadSize; ++c) {
+          upload[(batch * kHeadSize + c) * kInputWidth + x] =
+              data[(batch * kInputWidth + x) * kHeadSize + c];
+        }
+      }
+    }
+    return upload;
+  };
+  const std::vector<float> k_upload = to_upload(k_data, k_update_ts_idx);
+  const std::vector<float> v_upload = to_upload(v_data, v_update_ts_idx);
 
   constexpr int kStartIndex = 10;
   std::vector<int32_t> params_data = {kStartIndex, kStartIndex + kBatchSize};
 
   std::vector<::ml_drift::TensorDescriptor*> src_cpu = {
       &src_k_desc, &src_v_desc, &params_desc};
-  src_k_desc.UploadData(k_data.data());
-  src_v_desc.UploadData(v_data.data());
+  src_k_desc.UploadData(k_upload.data());
+  src_v_desc.UploadData(v_upload.data());
   params_desc.UploadData(params_data.data());
 
   std::vector<::ml_drift::TensorDescriptor*> dst_cpu = {&cache_k_desc,
@@ -189,19 +214,56 @@ absl::Status RunAddValuesToCacheTest(
 }
 
 TEST_P(AddValuesToCacheFloatTest, Float32Cache) {
-  if (!exec_env->IsStorageSupported(storage(), ::ml_drift::DataType::FLOAT32)) {
+  if (!exec_env->IsStorageSupported(storage(),
+                                    ::ml_drift::DataType::kFloat32)) {
     GTEST_SKIP() << "Unsupported storage type: "
                  << ::ml_drift::ToString(storage());
   }
   ASSERT_OK(RunAddValuesToCacheTest(*exec_env, precision(), storage(),
-                                    ::ml_drift::DataType::FLOAT32));
+                                    ::ml_drift::DataType::kFloat32));
+}
+
+TEST_P(AddValuesToCacheFloatTest, Float32CacheVUpdateInCacheLayout) {
+  if (!exec_env->IsStorageSupported(storage(),
+                                    ::ml_drift::DataType::kFloat32)) {
+    GTEST_SKIP() << "Unsupported storage type: "
+                 << ::ml_drift::ToString(storage());
+  }
+  ASSERT_OK(RunAddValuesToCacheTest(*exec_env, precision(), storage(),
+                                    ::ml_drift::DataType::kFloat32,
+                                    /*k_update_ts_idx=*/2,
+                                    /*v_update_ts_idx=*/3));
+}
+
+TEST_P(AddValuesToCacheFloatTest, Float32CacheKUpdateTransposed) {
+  if (!exec_env->IsStorageSupported(storage(),
+                                    ::ml_drift::DataType::kFloat32)) {
+    GTEST_SKIP() << "Unsupported storage type: "
+                 << ::ml_drift::ToString(storage());
+  }
+  ASSERT_OK(RunAddValuesToCacheTest(*exec_env, precision(), storage(),
+                                    ::ml_drift::DataType::kFloat32,
+                                    /*k_update_ts_idx=*/3,
+                                    /*v_update_ts_idx=*/2));
+}
+
+TEST_P(AddValuesToCacheFloatTest, Float32CacheBothUpdatesTransposed) {
+  if (!exec_env->IsStorageSupported(storage(),
+                                    ::ml_drift::DataType::kFloat32)) {
+    GTEST_SKIP() << "Unsupported storage type: "
+                 << ::ml_drift::ToString(storage());
+  }
+  ASSERT_OK(RunAddValuesToCacheTest(*exec_env, precision(), storage(),
+                                    ::ml_drift::DataType::kFloat32,
+                                    /*k_update_ts_idx=*/3,
+                                    /*v_update_ts_idx=*/3));
 }
 
 INSTANTIATE_TEST_SUITE_P(
     AddValuesToCacheFloatTestSuite, AddValuesToCacheFloatTest,
-    Combine(ValuesIn({::ml_drift::CalculationsPrecision::F32}),
-            ValuesIn({::ml_drift::TensorStorageType::BUFFER,
-                      ::ml_drift::TensorStorageType::TEXTURE_2D})),
+    Combine(ValuesIn({::ml_drift::CalculationsPrecision::kF32}),
+            ValuesIn({::ml_drift::TensorStorageType::kBuffer,
+                      ::ml_drift::TensorStorageType::kTexture2D})),
     [](const TestParamInfo<AddValuesToCacheFloatTest::ParamType>& info) {
       return ::ml_drift::ToString(info.param);
     });

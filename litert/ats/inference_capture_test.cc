@@ -23,6 +23,7 @@ TEST(AtsCaptureTest, LatencyRow) {
   Latency l;
   l.Stop(l.Start());
   EXPECT_EQ(l.NumSamples(), 1);
+  EXPECT_EQ(l.Samples().size(), 1);
   EXPECT_EQ(l.Avg(), l.Min());
   EXPECT_EQ(l.Avg(), l.Max());
   EXPECT_DOUBLE_EQ(l.StdDev(), 0.0);

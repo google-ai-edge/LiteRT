@@ -57,15 +57,111 @@ config_setting(
     },
 )
 
-config_setting(
-    name = "litert_disable_cpu",
-    # Relies on the same definition with TFLite to disable CPU backend on TFLite Interpreter.
-    define_values = {"tflite_with_xnnpack": "false"},
+# Selects the kernels used by the CPU backend.
+#   xnnpack: XNNPACK accelerator, with TFLite builtin kernels as fallback.
+#   builtin: TFLite builtin kernels only. XNNPACK is not linked.
+#   selective: Application-selected kernels only. Neither XNNPACK nor the full
+#              TFLite builtin kernel library is linked.
+# Usage: --//litert/build_common:cpu_backend=builtin
+string_flag(
+    name = "cpu_backend",
+    build_setting_default = "xnnpack",
+    values = [
+        "xnnpack",
+        "builtin",
+        "selective",
+    ],
+    visibility = ["//visibility:public"],
 )
 
 config_setting(
-    name = "litert_enable_ynnpack",
+    name = "cpu_backend_builtin",
+    flag_values = {":cpu_backend": "builtin"},
+)
+
+# Selective op registration mode: omits both the XNNPACK CPU accelerator and the
+# default full TFLite builtin kernel library (`builtin_ops` / `reference_ops`).
+# The application is responsible for linking and registering only the ops
+# needed by its model (e.g. via TFLite's `gen_selected_ops`).
+config_setting(
+    name = "cpu_backend_selective",
+    flag_values = {":cpu_backend": "selective"},
+)
+
+# Legacy way to leave out XNNPACK. Relies on the same definition with TFLite to
+# disable the XNNPACK CPU backend on the TFLite Interpreter.
+config_setting(
+    name = "tflite_without_xnnpack",
+    define_values = {"tflite_with_xnnpack": "false"},
+)
+
+# Leaves out the XNNPACK CPU accelerator (defines LITERT_DISABLE_CPU). CPU
+# execution still works through the TFLite builtin kernels (or selected ops).
+selects.config_setting_group(
+    name = "litert_disable_cpu",
+    match_any = [
+        ":cpu_backend_builtin",
+        ":cpu_backend_selective",
+        ":tflite_without_xnnpack",
+    ],
+)
+
+# Enables YNNPACK. Equivalent to `--define=litert_enable_ynnpack=true`, but can also be set from a
+# Starlark transition (transitions on `--define` are not supported).
+bool_flag(
+    name = "enable_ynnpack",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "litert_enable_ynnpack_define",
     define_values = {"litert_enable_ynnpack": "true"},
+)
+
+config_setting(
+    name = "litert_enable_ynnpack_flag",
+    flag_values = {":enable_ynnpack": "true"},
+)
+
+# Matches if YNNPACK is enabled with either `--define=litert_enable_ynnpack=true` or
+# `--//litert/build_common:enable_ynnpack`.
+selects.config_setting_group(
+    name = "litert_enable_ynnpack",
+    match_any = [
+        ":litert_enable_ynnpack_define",
+        ":litert_enable_ynnpack_flag",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Enables ML Drift GPU device compatibility check on Android. Equivalent to
+# `--define=litert_enable_mldrift_compatibility_check=true`.
+bool_flag(
+    name = "enable_mldrift_compatibility_check",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "litert_enable_mldrift_compatibility_check_define",
+    define_values = {"litert_enable_mldrift_compatibility_check": "true"},
+)
+
+config_setting(
+    name = "litert_enable_mldrift_compatibility_check_flag",
+    flag_values = {":enable_mldrift_compatibility_check": "true"},
+)
+
+# Matches if ML Drift GPU compatibility check is enabled with either
+# `--define=litert_enable_mldrift_compatibility_check=true` or
+# `--//litert/build_common:enable_mldrift_compatibility_check=true`.
+selects.config_setting_group(
+    name = "litert_enable_mldrift_compatibility_check",
+    match_any = [
+        ":litert_enable_mldrift_compatibility_check_define",
+        ":litert_enable_mldrift_compatibility_check_flag",
+    ],
     visibility = ["//visibility:public"],
 )
 
@@ -136,6 +232,14 @@ selects.config_setting_group(
 )
 
 selects.config_setting_group(
+    name = "android_gpu_mldrift_compatibility_check_enabled",
+    match_all = [
+        ":android_gpu_enabled",
+        ":litert_enable_mldrift_compatibility_check",
+    ],
+)
+
+selects.config_setting_group(
     name = "linux_gpu_enabled",
     match_all = [
         "//litert:linux",
@@ -165,6 +269,18 @@ selects.config_setting_group(
         "//litert:windows",
         ":build_include_gpu_enabled",
     ],
+)
+
+# Matches Emscripten / WebAssembly builds when GPU (WebGPU) is enabled
+# (e.g. default `build_include` or `--build_include=gpu`). When building in
+# `build_include=cpu_only`, this is not matched, omitting WebGPU headers/code.
+selects.config_setting_group(
+    name = "emscripten_gpu_enabled",
+    match_all = [
+        "//litert:emscripten",
+        ":build_include_gpu_enabled",
+    ],
+    visibility = ["//third_party/odml/litert:__subpackages__"],
 )
 
 exports_files(srcs = [
@@ -204,3 +320,15 @@ cc_library(
     strip_include_prefix = "",
     visibility = ["//visibility:public"],
 )
+
+# Files that make up the LiteRT C++ SDK.
+#
+# lint IfChange(litert_cc_sdk_files)
+filegroup(
+    name = "litert_cc_sdk_files",
+    srcs = [
+        "build_config.h.in",
+    ],
+    visibility = ["//litert/cc_sdk:__pkg__"],
+)
+# lint ThenChange(litert/cc_sdk/litert_cc_sdk_hdrs.txt, litert/cc_sdk/litert_cc_sdk_srcs.txt)

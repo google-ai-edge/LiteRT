@@ -26,6 +26,7 @@ limitations under the License.
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
@@ -64,6 +65,8 @@ safetensors::dtype SafetensorDtype(Type type) {
       return safetensors::dtype::kINT64;
     case Type::kFP32:
       return safetensors::dtype::kFLOAT32;
+    case Type::kBF16:
+      return safetensors::dtype::kBFLOAT16;
     default:
       ADD_FAILURE() << "Unsupported test tensor type: " << ToString(type);
       return safetensors::dtype::kFLOAT32;
@@ -169,7 +172,8 @@ SafetensorFileGuard SafetensorFileGuard::CreateTemp() {
 }
 
 SafetensorFileGuard CreateTempSafetensor(const std::vector<TensorInit>& tensors,
-                                         const std::string& quant_config_json) {
+                                         const std::string& quant_config_json,
+                                         const Order buffer_order) {
   SafetensorFileGuard temp_file = SafetensorFileGuard::CreateTemp();
   safetensors::safetensors_t st;
   if (!quant_config_json.empty()) {
@@ -177,11 +181,20 @@ SafetensorFileGuard CreateTempSafetensor(const std::vector<TensorInit>& tensors,
                        EscapeJsonString(quant_config_json));
   }
 
+  std::vector<int> order(tensors.size(), 0);
+  absl::c_iota(order, 0);
+  if (buffer_order == Order::kReverse) {
+    absl::c_reverse(order);
+  }
+
+  std::vector<safetensors::tensor_t> entries(tensors.size());
+
   // We use a tensor handle to process the buffer initialization.
   TensorHandle handle;
-  for (const TensorInit& init : tensors) {
+  for (int index : order) {
+    const TensorInit& init = tensors[index];
     handle.Set(init);
-    safetensors::tensor_t entry;
+    safetensors::tensor_t& entry = entries[index];
     entry.dtype = SafetensorDtype(handle.GetType());
     entry.shape = SafetensorShape(handle.GetType(), handle.GetShape());
     std::shared_ptr<Buffer> buffer = handle.GetBufferPtr();
@@ -191,7 +204,10 @@ SafetensorFileGuard CreateTempSafetensor(const std::vector<TensorInit>& tensors,
                        buffer->Lock().As<const uint8_t>(), st.storage);
       entry.data_offsets = {start, st.storage.size()};
     }
-    st.tensors.insert(init.name, entry);
+  }
+
+  for (size_t i = 0; i < entries.size(); ++i) {
+    st.tensors.insert(tensors[i].name, entries[i]);
   }
 
   std::string warn, err;

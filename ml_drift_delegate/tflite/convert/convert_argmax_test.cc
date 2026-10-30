@@ -63,7 +63,7 @@ TEST_F(ConvertArgMaxTest, SameRank) {
 
   const auto* attr = std::any_cast<::ml_drift::MaxIndexAttributes>(&op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->dim, ::ml_drift::Axis::CHANNELS);
+  EXPECT_EQ(attr->dim, ::ml_drift::Axis::kChannels);
 }
 
 TEST_F(ConvertArgMaxTest, WithReshape) {
@@ -96,7 +96,7 @@ TEST_F(ConvertArgMaxTest, WithReshape) {
 
   const auto* attr = std::any_cast<::ml_drift::MaxIndexAttributes>(&op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->dim, ::ml_drift::Axis::CHANNELS);
+  EXPECT_EQ(attr->dim, ::ml_drift::Axis::kChannels);
 
   const auto* reshape = ir_model->op(1);
   EXPECT_EQ(reshape->name, "reshape");

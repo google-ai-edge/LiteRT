@@ -33,10 +33,12 @@
 #include "tflite/schema/mutable/schema_generated.h"
 #endif
 
+#include "absl/container/btree_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -49,6 +51,11 @@
 
 namespace litert::internal {
 namespace {
+
+// Extra trailing bytes to pad after constant tensor buffers to prevent
+// out-of-bounds reads by SIMD kernels (e.g. XNNPACK microkernels require up to
+// 128 bytes on Qualcomm Hexagon DSP).
+constexpr size_t kFbTailPadding = 128;
 
 using TensorMap = absl::flat_hash_map<LiteRtTensor, int32_t>;
 
@@ -64,13 +71,14 @@ TflOpCodePtr MakeCustomOpCode(std::string custom_code_name) {
 // Utility for accessing flatbuffer state and other relevant state.
 class SerializationContext {
  public:
-  // Subgraph and op index pair.
+  // Subgraph and op index pair. Ordered maps ensure appended buffers are laid
+  // out deterministically in (subgraph, op) and buffer-index order.
   using TflOpInd = std::pair<size_t, size_t>;
   using TflOpAssetMap =
-      absl::flat_hash_map<TflOpInd, LiteRtModelT::OpAssetReference>;
+      absl::btree_map<TflOpInd, LiteRtModelT::OpAssetReference>;
   using TflBufferInd = uint32_t;
   using TflOffsetTensorMap =
-      absl::flat_hash_map<TflBufferInd, LiteRtModelT::BufferId>;
+      absl::btree_map<TflBufferInd, LiteRtModelT::BufferId>;
   using TflBufferIdMap =
       absl::flat_hash_map<LiteRtModelT::BufferId, TflBufferInd>;
 
@@ -108,6 +116,24 @@ class SerializationContext {
     if (!litert_buf) {
       LITERT_LOG(LITERT_ERROR, "Failed to get buffer");
       return litert_buf.Error().Status();
+    }
+
+    if (const auto& external = litert_buf_ctx->get().external;
+        external.has_value()) {
+      // An external constant keeps its reference; its bytes, resolved or not,
+      // live outside the flatbuffer.
+      tfl_tensor.buffer = 0;
+      tfl_tensor.external_buffer = external->id;
+      if (emitted_external_buffer_ids_.insert(external->id).second) {
+        auto& tfl_external = *tfl_model_->external_buffers.emplace_back(
+            std::make_unique<::tflite::ExternalBufferT>());
+        tfl_external.id = external->id;
+        tfl_external.group = external->group;
+        tfl_external.offset = external->offset;
+        tfl_external.length = external->length;
+        tfl_external.packing = external->packing;
+      }
+      return kLiteRtStatusOk;
     }
 
     TflBufferInd tfl_buffer_ind;
@@ -175,6 +201,7 @@ class SerializationContext {
   TflOpAssetMap op_asset_map_;
   TflOffsetTensorMap offset_tensor_map_;
   TflBufferIdMap buffer_id_map_;
+  absl::flat_hash_set<uint32_t> emitted_external_buffer_ids_;
   size_t bytecode_alignment_ = 0;
 };
 
@@ -355,6 +382,16 @@ Expected<TflModelPtr> PackAsTflite(SerializationContext& builder) {
     builder.PushMetadata(key, *buf);
   }
 
+  // The external buffer groups, kept whole so the group indices of the
+  // external buffers emitted above stay valid.
+  if (!builder.Model().external_buffers.empty()) {
+    for (const auto& name : litert_model.ExternalBufferGroups()) {
+      auto& group = *builder.Model().external_buffer_groups.emplace_back(
+          std::make_unique<::tflite::ExternalBufferGroupT>());
+      group.name = name;
+    }
+  }
+
   builder.Model().version = 3;
 
   return std::move(builder).Release();
@@ -485,12 +522,24 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
       return Error(kLiteRtStatusErrorInvalidFlatbuffer);
     }
   }
-  // Allocate buffer enough for original model and appended buffers and copy.
-  OwningBufferRef<uint8_t> final_model(cur_offset);
+  // Allocate buffer enough for original model, appended buffers, and trailing
+  // padding for SIMD kernels, zeroing any alignment padding between regions.
+  OwningBufferRef<uint8_t> final_model(cur_offset + kFbTailPadding);
+  uint8_t* const start = final_model.Data();
+  size_t written = 0;
+  auto write_at = [start, &written](size_t offset, BufferRef<uint8_t> buf) {
+    ABSL_DCHECK_GE(offset, written);
+    if (offset > written) {
+      std::memset(start + written, 0, offset - written);
+    }
+    if (buf.Size() > 0) {
+      std::memcpy(start + offset, buf.Data(), buf.Size());
+    }
+    written = offset + buf.Size();
+  };
 
   // Copy serialized tflite model.
-  uint8_t* const start = final_model.Data();
-  std::memcpy(start, serialized_tfl.Data(), serialized_tfl.Size());
+  write_at(0, serialized_tfl);
 
   // Copy asset buffers (aligned).
   for (auto it = asset_buffer_offsets.Begin(); it != asset_buffer_offsets.End();
@@ -502,8 +551,7 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
       LITERT_LOG(LITERT_ERROR, "Failed to find asset buffer");
       return asset_buf.Error();
     }
-    uint8_t* const offset = start + it->second.first;
-    std::memcpy(offset, asset_buf->Data(), asset_buf->Size());
+    write_at(it->second.first, *asset_buf);
   }
 
   // Copy offset tensor buffers.
@@ -520,9 +568,9 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
       return litert_buf.Error();
     }
 
-    uint8_t* const offset = start + it->second.first;
-    std::memcpy(offset, litert_buf->Data(), litert_buf->Size());
+    write_at(it->second.first, *litert_buf);
   }
+  write_at(final_model.Size(), {});
 
   return final_model;
 }
@@ -559,7 +607,10 @@ Expected<OwningBufferRef<uint8_t>> SerializeModel(LiteRtModelT&& model,
     return tfl_model.Error();
   }
 
-  auto serialized_tfl = SerializeFlatbuffer(**tfl_model);
+  const bool has_appended_buffers =
+      !builder.OpAssetMap().empty() || !builder.OffsetTensorMap().empty();
+  auto serialized_tfl = SerializeFlatbuffer(
+      **tfl_model, /*tail_padding=*/has_appended_buffers ? 0 : kFbTailPadding);
   auto serialized_with_buffers =
       SerializeWithAppendedBuffers(builder, std::move(serialized_tfl), model);
   if (!serialized_with_buffers) {

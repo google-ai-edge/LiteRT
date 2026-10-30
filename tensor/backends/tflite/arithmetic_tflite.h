@@ -358,6 +358,13 @@ class OpMixin<LessOperation, TfLiteMixinTag> : public TfLiteOperation {
 };
 
 template <>
+class OpMixin<LessEqualOperation, TfLiteMixinTag> : public TfLiteOperation {
+ public:
+  absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(
+      const graph::Operation& op) const override;
+};
+
+template <>
 class OpMixin<GreaterOperation, TfLiteMixinTag> : public TfLiteOperation {
  public:
   absl::StatusOr<TfLiteOpBuildInfo> ToTfLite(

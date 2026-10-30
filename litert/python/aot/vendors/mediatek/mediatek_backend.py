@@ -153,9 +153,7 @@ def _apply_plugin(
     recommended_np_version = target.recommended_np_version
 
     try:
-      # pytype: disable=import-error
-      import ai_edge_litert_sdk_mediatek  # pylint: disable=g-import-not-at-top
-      # pytype: enable=import-error
+      import ai_edge_litert_sdk_mediatek  # pylint: disable=g-import-not-at-top  # pyrefly: ignore[missing-import]
 
       sdk_libs_path = str(
           ai_edge_litert_sdk_mediatek.path_to_sdk_libs(recommended_np_version)

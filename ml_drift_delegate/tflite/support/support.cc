@@ -456,12 +456,12 @@ bool HasQuantTensor(const TfLiteContext* absl_nonnull context,
   for (int i = 0; i < node->inputs->size; ++i) {
     const int tensor_id = node->inputs->data[i];
     if (tensor_id == kTfLiteOptionalTensor) continue;
-    if (quant_types.contains(context->tensors[tensor_id].type)) return true;
+    if (quant_types.count(context->tensors[tensor_id].type) > 0) return true;
   }
   for (int i = 0; i < node->outputs->size; ++i) {
     const int tensor_id = node->outputs->data[i];
     if (tensor_id == kTfLiteOptionalTensor) continue;
-    if (quant_types.contains(context->tensors[tensor_id].type)) return true;
+    if (quant_types.count(context->tensors[tensor_id].type) > 0) return true;
   }
   if (registration->builtin_code == kTfLiteBuiltinQuantize) return true;
   if (registration->builtin_code == kTfLiteBuiltinDequantize) return true;

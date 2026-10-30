@@ -149,6 +149,35 @@ TEST(SimpleBinaryOpTest, ReferencePow) {
   EXPECT_THAT(out, ElementsAre(8.0f, 9.0f));
 }
 
+TEST(SimpleBinaryOpTest, ReferenceComparisonsBroadcast) {
+  std::vector<float> a = {1.0f, 2.0f, 3.0f};
+  std::vector<float> b = {2.0f};
+  bool out[3];
+  int32_t a_dims[] = {3};
+  int32_t b_dims[] = {1};
+  int32_t out_dims[] = {3};
+
+  ReferenceEqual(a.data(), a_dims, 1, b.data(), b_dims, 1, out, out_dims, 1);
+  EXPECT_THAT(out, ElementsAre(false, true, false));
+
+  ReferenceNotEqual(a.data(), a_dims, 1, b.data(), b_dims, 1, out, out_dims, 1);
+  EXPECT_THAT(out, ElementsAre(true, false, true));
+
+  ReferenceGreater(a.data(), a_dims, 1, b.data(), b_dims, 1, out, out_dims, 1);
+  EXPECT_THAT(out, ElementsAre(false, false, true));
+
+  ReferenceGreaterEqual(a.data(), a_dims, 1, b.data(), b_dims, 1, out, out_dims,
+                        1);
+  EXPECT_THAT(out, ElementsAre(false, true, true));
+
+  ReferenceLess(a.data(), a_dims, 1, b.data(), b_dims, 1, out, out_dims, 1);
+  EXPECT_THAT(out, ElementsAre(true, false, false));
+
+  ReferenceLessEqual(a.data(), a_dims, 1, b.data(), b_dims, 1, out, out_dims,
+                     1);
+  EXPECT_THAT(out, ElementsAre(true, true, false));
+}
+
 TEST(SimpleBinaryOpTest, EqualInvalidOutputsFailure) {
   LiteRtOpT op;
   std::vector<Dims> input_shapes = {{1, 2, 3}, {2, 1}};

@@ -108,12 +108,17 @@ cc_library(
     name = "ml_drift_delegate_create",
     srcs = ["ml_drift_delegate_create.cc"],
     hdrs = ["ml_drift_delegate_create.h"],
+    local_defines = select({
+        "//litert/build_common:android_gpu_mldrift_compatibility_check_enabled": [
+            "LITERT_HAS_MLDRIFT_COMPATIBILITY_CHECK",
+        ],
+        "//conditions:default": [],
+    }),
     visibility = ["//litert/tools:__pkg__"],
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_metrics_header",
-        "//litert/c/internal:litert_accelerator",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_runtime_context",
         "//litert/c/internal:litert_runtime_context_header",
@@ -125,7 +130,13 @@ cc_library(
         "//ml_drift_delegate/delegate:gpu_backend",
         "//ml_drift_delegate/delegate:precision",
         "//tflite/c:c_api_opaque",
-    ],
+    ] + select({
+        "//litert/build_common:android_gpu_mldrift_compatibility_check_enabled": [
+            "//litert/runtime:accelerator",
+            "//litert/runtime/accelerators/gpu/compatibility:ml_drift_compatibility",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_test(
@@ -276,7 +287,10 @@ cc_binary(
         "windows",
     ],
     target_compatible_with = ["@platforms//os:windows"],
-    visibility = ["//visibility:private"],
+    visibility = [
+        "//litert:__subpackages__",
+        "//litert:litert_friends",
+    ],
     win_def_file = ":windows_exported_symbols.def",
     deps = [":ml_drift_webgpu_accelerator_runtimecapi"],
 )
@@ -284,7 +298,10 @@ cc_binary(
 alias(
     name = "ml_drift_webgpu_accelerator_dll",
     actual = ":libLiteRtWebGpuAccelerator",
-    visibility = ["//visibility:private"],
+    visibility = [
+        "//litert:__subpackages__",
+        "//litert:litert_friends",
+    ],
 )
 
 cc_library(
@@ -378,6 +395,7 @@ litert_accelerator_library(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_runtime_context_header",
+        "//litert/c/options:litert_gpu_options",
         "//litert/cc:litert_macros",
         "//litert/core:options",
         "//litert/runtime/accelerators:gpu_static_registry",
@@ -424,6 +442,7 @@ ios_framework(
         "iphone",
         "ipad",
     ],
+    # copybara:uncomment google_create_srl_bindings_module = False,
     infoplists = ["AcceleratorInfo.plist"],
     linkopts = [
         "-undefined dynamic_lookup",

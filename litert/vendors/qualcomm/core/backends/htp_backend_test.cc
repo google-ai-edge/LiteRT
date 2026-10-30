@@ -8,6 +8,7 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <optional>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -52,7 +53,17 @@ absl::NoDestructor<std::vector<QnnDevice_Config_t>> captured_device_configs;
 absl::NoDestructor<
     std::vector<std::vector<QnnHtpPerfInfrastructure_PowerConfig_t>>>
     captured_configs;
+std::optional<uint32_t> captured_power_config_device_id;
+std::optional<uint32_t> captured_signed_pd_device_id;
 bool htp_unsigned_pd_supported = false;
+
+struct CapturedDeviceCreateConfig {
+  bool called = false;
+  std::optional<uint32_t> platform_device_id;
+};
+
+CapturedDeviceCreateConfig captured_device_create_config;
+bool platform_info_available = true;
 
 // Test Platform Info structs
 QnnHtpDevice_DeviceInfoExtension_t test_htp_device_info_extension = {
@@ -63,14 +74,18 @@ QnnHtpDevice_DeviceInfoExtension_t test_htp_device_info_extension = {
 QnnDevice_CoreInfo_t test_device_core_info = {
     QNN_DEVICE_CORE_INFO_VERSION_1, {{0 /*coreId*/, 0 /*coreType*/, nullptr}}};
 
-QnnDevice_HardwareDeviceInfo_t test_device_hardware_device_info = {
-    QNN_DEVICE_HARDWARE_DEVICE_INFO_VERSION_1,
-    {{0 /*deviceId*/, 0 /*deviceType*/, 1 /*numCores*/, &test_device_core_info,
-      (QnnDevice_DeviceInfoExtension_t)&test_htp_device_info_extension}}};
+QnnDevice_HardwareDeviceInfo_t test_device_hardware_devices[] = {
+    {QNN_DEVICE_HARDWARE_DEVICE_INFO_VERSION_1,
+     {{0 /*deviceId*/, 0 /*deviceType*/, 1 /*numCores*/, &test_device_core_info,
+       (QnnDevice_DeviceInfoExtension_t)&test_htp_device_info_extension}}},
+    {QNN_DEVICE_HARDWARE_DEVICE_INFO_VERSION_1,
+     {{2 /*deviceId*/, 0 /*deviceType*/, 1 /*numCores*/, &test_device_core_info,
+       (QnnDevice_DeviceInfoExtension_t)&test_htp_device_info_extension}}},
+};
 
-constexpr QnnDevice_PlatformInfo_t kTestDevicePlatformInfo = {
+QnnDevice_PlatformInfo_t test_device_platform_info = {
     QNN_DEVICE_PLATFORM_INFO_VERSION_1,
-    {{1 /*numHwDevices*/, &test_device_hardware_device_info}}};
+    {{2 /*numHwDevices*/, test_device_hardware_devices}}};
 
 // Mock Functions
 Qnn_ErrorHandle_t MockSetPowerConfig(
@@ -86,6 +101,15 @@ Qnn_ErrorHandle_t MockSetPowerConfig(
   return QNN_SUCCESS;
 }
 
+Qnn_ErrorHandle_t MockCreatePowerConfigId(uint32_t device_id, uint32_t,
+                                          uint32_t* power_config_id) {
+  captured_power_config_device_id = device_id;
+  *power_config_id = 1;
+  return QNN_SUCCESS;
+}
+
+Qnn_ErrorHandle_t MockDestroyPowerConfigId(uint32_t) { return QNN_SUCCESS; }
+
 Qnn_ErrorHandle_t MockDeviceGetInfrastructure(
     const QnnDevice_Infrastructure_t* infra) {
   if (!real_device_get_infrastructure) {
@@ -98,6 +122,8 @@ Qnn_ErrorHandle_t MockDeviceGetInfrastructure(
   }
 
   if ((*infra)->infraType == QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF) {
+    (*infra)->perfInfra.createPowerConfigId = MockCreatePowerConfigId;
+    (*infra)->perfInfra.destroyPowerConfigId = MockDestroyPowerConfigId;
     (*infra)->perfInfra.setPowerConfig = MockSetPowerConfig;
   }
 
@@ -106,7 +132,11 @@ Qnn_ErrorHandle_t MockDeviceGetInfrastructure(
 
 Qnn_ErrorHandle_t MockDeviceGetPlatformInfo(
     Qnn_LogHandle_t logger, const QnnDevice_PlatformInfo_t** platformInfo) {
-  *platformInfo = &kTestDevicePlatformInfo;
+  if (!platform_info_available) {
+    *platformInfo = nullptr;
+    return QNN_DEVICE_ERROR_UNSUPPORTED_FEATURE;
+  }
+  *platformInfo = &test_device_platform_info;
   return QNN_SUCCESS;
 }
 
@@ -114,10 +144,31 @@ Qnn_ErrorHandle_t MockDeviceCreate(Qnn_LogHandle_t,
                                    const QnnDevice_Config_t** configs,
                                    Qnn_DeviceHandle_t* device) {
   device_create_called = true;
+  captured_device_create_config = {};
+  captured_signed_pd_device_id.reset();
+  captured_device_create_config.called = true;
   captured_device_configs->clear();
   if (configs) {
     for (size_t i = 0; configs[i] != nullptr; ++i) {
       captured_device_configs->emplace_back(*configs[i]);
+      const auto* config = configs[i];
+      if (config->option == QNN_DEVICE_CONFIG_OPTION_PLATFORM_INFO &&
+          config->hardwareInfo != nullptr &&
+          config->hardwareInfo->v1.numHwDevices == 1 &&
+          config->hardwareInfo->v1.hwDevices != nullptr) {
+        captured_device_create_config.platform_device_id =
+            config->hardwareInfo->v1.hwDevices[0].v1.deviceId;
+      }
+      if (config->option == QNN_DEVICE_CONFIG_OPTION_CUSTOM &&
+          config->customConfig != nullptr) {
+        const auto* htp_config =
+            static_cast<const QnnHtpDevice_CustomConfig_t*>(
+                config->customConfig);
+        if (htp_config->option == QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD) {
+          captured_signed_pd_device_id =
+              htp_config->useSignedProcessDomain.deviceId;
+        }
+      }
     }
   }
   static int fake_device_handle;
@@ -126,6 +177,11 @@ Qnn_ErrorHandle_t MockDeviceCreate(Qnn_LogHandle_t,
 }
 
 Qnn_ErrorHandle_t MockDeviceFree(Qnn_DeviceHandle_t) { return QNN_SUCCESS; }
+
+Qnn_ErrorHandle_t MockDeviceFreePlatformInfo(
+    Qnn_LogHandle_t, const QnnDevice_PlatformInfo_t*) {
+  return QNN_SUCCESS;
+}
 
 Qnn_ErrorHandle_t MockBackendCreateNoConfigs(
     Qnn_LogHandle_t, const QnnBackend_Config_t** configs,
@@ -154,11 +210,38 @@ struct HtpPerfParams {
   QnnHtpPerfInfrastructure_VoltageCorner_t voltage_corner;
 };
 
+const QnnHtpPerfInfrastructure_DcvsV3_t* LastDcvsConfig() {
+  if (captured_configs->empty()) return nullptr;
+  for (const auto& cfg : captured_configs->back()) {
+    if (cfg.option == QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_DCVS_V3) {
+      return &cfg.dcvsV3Config;
+    }
+  }
+  return nullptr;
+}
+
+bool LastVoteIsUpVoteTo(QnnHtpPerfInfrastructure_VoltageCorner_t corner) {
+  const auto* dcvs = LastDcvsConfig();
+  return dcvs != nullptr &&
+         dcvs->sleepLatency != PowerConfig::kSleepMaxLatency &&
+         dcvs->busVoltageCornerTarget == corner;
+}
+
+bool LastVoteIsDownVote() {
+  const auto* dcvs = LastDcvsConfig();
+  return dcvs != nullptr && dcvs->sleepLatency == PowerConfig::kSleepMaxLatency;
+}
+
 class HtpBackendPerfBaseTest : public testing::TestWithParam<HtpPerfParams> {
  public:
   void SetUp() override {
     // Clean the previous captured configs.
     captured_configs->clear();
+    captured_device_create_config = {};
+    captured_power_config_device_id.reset();
+    captured_signed_pd_device_id.reset();
+    platform_info_available = true;
+    test_device_platform_info.v1.hwDevices = test_device_hardware_devices;
 
     handle_ = CreateDLHandle(HtpBackend::GetLibraryName());
     if (!handle_) GTEST_SKIP();
@@ -174,9 +257,11 @@ class HtpBackendPerfBaseTest : public testing::TestWithParam<HtpPerfParams> {
 
     real_device_get_platform_info = qnn_api_copy_.deviceGetPlatformInfo;
     qnn_api_copy_.deviceGetPlatformInfo = MockDeviceGetPlatformInfo;
+    qnn_api_copy_.deviceCreate = MockDeviceCreate;
 
     real_device_free = qnn_api_copy_.deviceFree;
     qnn_api_copy_.deviceFree = MockDeviceFree;
+    qnn_api_copy_.deviceFreePlatformInfo = MockDeviceFreePlatformInfo;
   }
 
   void TearDown() override {
@@ -415,42 +500,43 @@ TEST(HtpBackendInitTest, CreatesBackendAndDevice) {
 #endif
 }
 
-TEST(HtpBackendInitTest, SignedPdAddsOnlyTheSignedPdDeviceConfig) {
-  backend_create_called = false;
-  captured_backend_configs = nullptr;
-  device_create_called = false;
-  captured_device_configs->clear();
-
-  QNN_INTERFACE_VER_TYPE api{};
-  api.backendCreate = MockBackendCreateNoConfigs;
-  api.backendFree = MockBackendFree;
-  api.deviceCreate = MockDeviceCreate;
-  api.deviceFree = MockDeviceFree;
-
+TEST_F(HtpBackendPerfBaseTest,
+       HtpDeviceIdConfiguresDeviceAndPerformanceControl) {
   Options options;
-  options.SetLogLevel(LogLevel::kOff);
-  options.SetHtpPdSession(HtpPdSession::kSigned);
-  HtpBackend backend(&api);
+  options.SetEnableJustInTime(true);
+  options.SetHtpDeviceId(2);  // Mock platform info exposes IDs 0 and 2.
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
+  HtpBackend backend(&qnn_api_copy_);
 
 #if defined(__x86_64__) || defined(_M_X64)
   ASSERT_TRUE(backend.Init(options, kFp16SocInfo));
-  ASSERT_EQ(captured_device_configs->size(), 2);
-  const auto* soc_config = static_cast<const QnnHtpDevice_CustomConfig_t*>(
-      captured_device_configs->at(0).customConfig);
-  ASSERT_NE(soc_config, nullptr);
-  EXPECT_EQ(soc_config->option, QNN_HTP_DEVICE_CONFIG_OPTION_SOC);
-  EXPECT_EQ(soc_config->socModel, kFp16SocInfo->soc_model);
 #else
   ASSERT_TRUE(backend.Init(options, std::nullopt));
-  ASSERT_EQ(captured_device_configs->size(), 1);
 #endif
-  const auto* signed_pd_config =
-      static_cast<const QnnHtpDevice_CustomConfig_t*>(
-          captured_device_configs->back().customConfig);
-  ASSERT_NE(signed_pd_config, nullptr);
-  EXPECT_EQ(signed_pd_config->option, QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD);
-  EXPECT_EQ(signed_pd_config->useSignedProcessDomain.deviceId, 0u);
-  EXPECT_TRUE(signed_pd_config->useSignedProcessDomain.useSignedProcessDomain);
+  ASSERT_TRUE(captured_device_create_config.called);
+  ASSERT_TRUE(captured_device_create_config.platform_device_id.has_value());
+  EXPECT_EQ(*captured_device_create_config.platform_device_id, 2);
+  ASSERT_TRUE(captured_power_config_device_id.has_value());
+  EXPECT_EQ(*captured_power_config_device_id, 2);
+}
+
+TEST_F(HtpBackendPerfBaseTest, SignedPdUsesSelectedHtpDeviceId) {
+  Options options;
+  options.SetEnableJustInTime(true);
+  options.SetHtpDeviceId(2);  // Mock platform info exposes IDs 0 and 2.
+  options.SetHtpPdSession(HtpPdSession::kSigned);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kFp16SocInfo));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+  ASSERT_TRUE(captured_device_create_config.platform_device_id.has_value());
+  EXPECT_EQ(*captured_device_create_config.platform_device_id, 2);
+  ASSERT_TRUE(captured_signed_pd_device_id.has_value());
+  EXPECT_EQ(*captured_signed_pd_device_id, 2);
 }
 
 TEST(HtpBackendInitTest, AdaptivePdUsesUnsignedWhenSupported) {
@@ -544,6 +630,69 @@ TEST(HtpBackendInitTest, AdaptivePdUsesSignedWithoutCapabilityQuery) {
   EXPECT_EQ(signed_pd_config->option, QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD);
 }
 
+TEST_F(HtpBackendPerfBaseTest, UnknownHtpDeviceIdFailsInit) {
+  Options options;
+  options.SetEnableJustInTime(true);
+  options.SetHtpDeviceId(1);  // Mock platform info exposes IDs 0 and 2.
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  EXPECT_FALSE(backend.Init(options, kFp16SocInfo));
+#else
+  EXPECT_FALSE(backend.Init(options, std::nullopt));
+#endif
+  EXPECT_FALSE(captured_device_create_config.called);
+}
+
+TEST_F(HtpBackendPerfBaseTest, NonzeroHtpDeviceIdRequiresPlatformInfo) {
+  platform_info_available = false;
+  Options options;
+  options.SetEnableJustInTime(true);
+  options.SetHtpDeviceId(2);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  EXPECT_FALSE(backend.Init(options, kFp16SocInfo));
+#else
+  EXPECT_FALSE(backend.Init(options, std::nullopt));
+#endif
+  EXPECT_FALSE(captured_device_create_config.called);
+}
+
+TEST_F(HtpBackendPerfBaseTest, NullHardwareDeviceArrayFailsSelection) {
+  test_device_platform_info.v1.hwDevices = nullptr;
+  Options options;
+  options.SetEnableJustInTime(true);
+  options.SetHtpDeviceId(2);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  EXPECT_FALSE(backend.Init(options, kFp16SocInfo));
+#else
+  EXPECT_FALSE(backend.Init(options, std::nullopt));
+#endif
+  EXPECT_FALSE(captured_device_create_config.called);
+}
+
+TEST_F(HtpBackendPerfBaseTest,
+       AotHtpDeviceIdConfiguresDeviceAndPerformanceControl) {
+  Options options;
+  options.SetHtpDeviceId(2);
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kFp16SocInfo));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+  ASSERT_TRUE(captured_device_create_config.called);
+  ASSERT_TRUE(captured_device_create_config.platform_device_id.has_value());
+  EXPECT_EQ(*captured_device_create_config.platform_device_id, 2);
+  ASSERT_TRUE(captured_power_config_device_id.has_value());
+  EXPECT_EQ(*captured_power_config_device_id, 2);
+}
+
 // SETPERFORMANCEMODE /////////////////////////////////////////////////////////
 TEST_P(HtpBackendRPCPollingPerfParamTest, ManualSameModeSkipsRevote) {
   const auto& params = GetParam();
@@ -561,11 +710,10 @@ TEST_P(HtpBackendRPCPollingPerfParamTest, ManualSameModeSkipsRevote) {
   const size_t configs_after_init = captured_configs->size();
 
   EXPECT_TRUE(backend.SetPerformanceMode(options));
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
   EXPECT_EQ(captured_configs->size(), configs_after_init);
 }
 
-TEST_P(HtpBackendRPCPollingPerfParamTest, AutoSameModeRevotes) {
+TEST_P(HtpBackendRPCPollingPerfParamTest, AutoSchedulesVotePerInference) {
   const auto& params = GetParam();
   Options options;
   options.SetHtpPerformanceMode(params.mode);
@@ -581,7 +729,12 @@ TEST_P(HtpBackendRPCPollingPerfParamTest, AutoSameModeRevotes) {
   const size_t configs_after_init = captured_configs->size();
   EXPECT_TRUE(backend.SetPerformanceMode(options));
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(captured_configs->size(), configs_after_init);
+
+  backend.ScheduleUpVote();
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
   EXPECT_EQ(captured_configs->size(), configs_after_init + 1);
+  EXPECT_TRUE(LastVoteIsUpVoteTo(params.voltage_corner));
 }
 
 TEST_F(HtpBackendPerfBaseTest, ManualModeChangeRevotes) {
@@ -599,8 +752,8 @@ TEST_F(HtpBackendPerfBaseTest, ManualModeChangeRevotes) {
 
   options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
   EXPECT_TRUE(backend.SetPerformanceMode(options));
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
   EXPECT_GT(captured_configs->size(), configs_after_init);
+  EXPECT_TRUE(LastVoteIsUpVoteTo(DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER));
 }
 
 TEST_F(HtpBackendPerfBaseTest, DefaultModeSchedulesDownvote) {
@@ -618,11 +771,57 @@ TEST_F(HtpBackendPerfBaseTest, DefaultModeSchedulesDownvote) {
 
   Options default_options;  // kDefault
   EXPECT_TRUE(backend.SetPerformanceMode(default_options));
-  std::this_thread::sleep_for(std::chrono::milliseconds(400));
   EXPECT_GT(captured_configs->size(), configs_after_init);
+  EXPECT_TRUE(LastVoteIsDownVote());
 }
 
-TEST_F(HtpBackendPerfBaseTest, AutoModeChangesAcrossExecutes) {
+TEST_F(HtpBackendPerfBaseTest, AutoDefaultModeSchedulesDownvote) {
+  Options options;
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kSocInfos[8]));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+  backend.ScheduleUpVote();
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  const size_t configs_after_upvote = captured_configs->size();
+
+  Options default_options;
+  default_options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
+  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
+  EXPECT_GT(captured_configs->size(), configs_after_upvote);
+  EXPECT_TRUE(LastVoteIsDownVote());
+}
+
+TEST_F(HtpBackendPerfBaseTest, ManualBurstDefaultBurstRevotes) {
+  Options options;
+  options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kManual);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kSocInfos[8]));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+  Options default_options;
+  default_options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kManual);
+  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
+  const size_t configs_after_downvote = captured_configs->size();
+  EXPECT_TRUE(LastVoteIsDownVote());
+
+  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  EXPECT_GT(captured_configs->size(), configs_after_downvote);
+  EXPECT_TRUE(LastVoteIsUpVoteTo(DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER));
+}
+
+TEST_F(HtpBackendPerfBaseTest, AutoSchedulesUpAndDownVotes) {
   Options options;
   options.SetHtpPerformanceMode(HtpPerformanceMode::kPowerSaver);
   options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
@@ -635,20 +834,16 @@ TEST_F(HtpBackendPerfBaseTest, AutoModeChangesAcrossExecutes) {
 #endif
   const size_t configs_after_init = captured_configs->size();
 
-  EXPECT_TRUE(backend.SetPerformanceMode(options));
+  backend.ScheduleUpVote();
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  const size_t configs_after_same = captured_configs->size();
-  EXPECT_GT(configs_after_same, configs_after_init);
+  const size_t configs_after_upvote = captured_configs->size();
+  EXPECT_GT(configs_after_upvote, configs_after_init);
+  EXPECT_TRUE(LastVoteIsUpVoteTo(DCVS_VOLTAGE_VCORNER_SVS));
 
-  Options default_options;
-  EXPECT_TRUE(backend.SetPerformanceMode(default_options));
-
-  Options burst_options;
-  burst_options.SetHtpPerformanceMode(HtpPerformanceMode::kBurst);
-  burst_options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
-  EXPECT_TRUE(backend.SetPerformanceMode(burst_options));
+  backend.ScheduleDownVote();
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  EXPECT_GT(captured_configs->size(), configs_after_same);
+  EXPECT_GT(captured_configs->size(), configs_after_upvote);
+  EXPECT_TRUE(LastVoteIsDownVote());
 }
 
 // GRAPH CONFIG CHARACTERIZATION ///////////////////////////////////////////////
@@ -694,6 +889,21 @@ const QnnHtpGraph_CustomConfig_t* FindCustom(const ExtractedConfigs& ext,
                                              QnnHtpGraph_ConfigOption_t opt) {
   auto it = ext.custom_configs.find(opt);
   return it == ext.custom_configs.end() ? nullptr : it->second;
+}
+
+const QnnHtpGraph_CustomConfig_t* FindFinalizeConfig(
+    const ExtractedConfigs& ext, const char* key) {
+  auto [begin, end] =
+      ext.custom_configs.equal_range(
+          QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG);
+  for (auto it = begin; it != end; ++it) {
+    const QnnHtpGraph_CustomConfig_t* config = it->second;
+    if (config->finalizeConfig.key != nullptr &&
+        std::strcmp(config->finalizeConfig.key, key) == 0) {
+      return config;
+    }
+  }
+  return nullptr;
 }
 
 const QnnGraph_Config_t* FindPriority(const ExtractedConfigs& ext) {
@@ -763,12 +973,13 @@ TEST_F(HtpBackendDefaultGraphConfigTest, PPointAndHvxInsertedWhenSet) {
   EXPECT_TRUE(ext.graph_configs.count(QNN_GRAPH_CONFIG_OPTION_PRIORITY));
 
   // P-point value and key.
-  const auto* ppoint_cc =
+  const auto* p_point_config =
       FindCustom(ext, QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG);
-  ASSERT_NE(ppoint_cc, nullptr);
-  ASSERT_STREQ(ppoint_cc->finalizeConfig.key, "P");
-  EXPECT_EQ(ppoint_cc->finalizeConfig.value.dataType, QNN_DATATYPE_INT_32);
-  EXPECT_EQ(ppoint_cc->finalizeConfig.value.int32Value, 3);
+  ASSERT_NE(p_point_config, nullptr);
+  ASSERT_STREQ(p_point_config->finalizeConfig.key, "P");
+  EXPECT_EQ(p_point_config->finalizeConfig.value.dataType,
+            QNN_DATATYPE_INT_32);
+  EXPECT_EQ(p_point_config->finalizeConfig.value.int32Value, 3);
 
   // HVX thread count.
   const auto* hvx_cc =
@@ -777,10 +988,63 @@ TEST_F(HtpBackendDefaultGraphConfigTest, PPointAndHvxInsertedWhenSet) {
   EXPECT_EQ(hvx_cc->numHvxThreads, 4u);
 }
 
-TEST_F(HtpBackendDefaultGraphConfigTest, DlbcOptionsAppendOptimizationConfigs) {
+TEST_F(HtpBackendDefaultGraphConfigTest,
+       WeightSharingChannelTileSizeInsertedWhenSet) {
   Options options;
+  options.SetHtpWeightSharingChannelTileSize(64);
+  auto config_builder = backend_.BuildGraphConfigs(options, "graph");
+  auto configs = config_builder.GetNullTerminatedConfigs();
+
+  ASSERT_EQ(configs.back(), nullptr);
+
+  auto ext = ExtractConfigs(configs);
+  ASSERT_EQ(
+      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG),
+      1u);
+
+  const auto* tile_size_config =
+      FindFinalizeConfig(ext, "weight_sharing_channel_tile_size");
+  ASSERT_NE(tile_size_config, nullptr);
+  EXPECT_EQ(tile_size_config->finalizeConfig.value.dataType,
+            QNN_DATATYPE_INT_32);
+  EXPECT_EQ(tile_size_config->finalizeConfig.value.int32Value, 64);
+}
+
+TEST_F(HtpBackendDefaultGraphConfigTest,
+       PPointAndWeightSharingChannelTileSizeCanBothBeInserted) {
+  Options options;
+  options.SetHtpPPoint(3);
+  options.SetHtpWeightSharingChannelTileSize(64);
+  auto config_builder = backend_.BuildGraphConfigs(options, "graph");
+  auto configs = config_builder.GetNullTerminatedConfigs();
+
+  ASSERT_EQ(configs.back(), nullptr);
+
+  auto ext = ExtractConfigs(configs);
+  ASSERT_EQ(
+      ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG),
+      2u);
+
+  const auto* p_point_config = FindFinalizeConfig(ext, "P");
+  ASSERT_NE(p_point_config, nullptr);
+  EXPECT_EQ(p_point_config->finalizeConfig.value.dataType,
+            QNN_DATATYPE_INT_32);
+  EXPECT_EQ(p_point_config->finalizeConfig.value.int32Value, 3);
+
+  const auto* tile_size_config =
+      FindFinalizeConfig(ext, "weight_sharing_channel_tile_size");
+  ASSERT_NE(tile_size_config, nullptr);
+  EXPECT_EQ(tile_size_config->finalizeConfig.value.dataType,
+            QNN_DATATYPE_INT_32);
+  EXPECT_EQ(tile_size_config->finalizeConfig.value.int32Value, 64);
+}
+
+TEST_F(HtpBackendDefaultGraphConfigTest,
+       DlbcOptionsAppendOptimizationConfigsWithWeightSharing) {
+  Options options;
+  options.SetEnableWeightSharing(true);
   options.SetHtpDlbc(true);
-  options.SetHtpDlbcWeights(true);  // weight sharing off by default, so kept.
+  options.SetHtpDlbcWeights(true);
   auto config_builder = backend_.BuildGraphConfigs(options, "graph");
   auto configs = config_builder.GetNullTerminatedConfigs();
 
@@ -813,6 +1077,33 @@ TEST_F(HtpBackendDefaultGraphConfigTest, NegativePPointSkipped) {
   EXPECT_FALSE(
       ext.custom_configs.count(QNN_HTP_GRAPH_CONFIG_OPTION_FINALIZE_CONFIG))
       << "P-point config should be absent for negative HtpPPoint";
+}
+
+TEST_F(HtpBackendDefaultGraphConfigTest,
+       NonPositiveWeightSharingChannelTileSizeSkipped) {
+  Options options;
+  options.SetHtpWeightSharingChannelTileSize(0);
+  {
+    auto config_builder = backend_.BuildGraphConfigs(options, "graph");
+    auto configs = config_builder.GetNullTerminatedConfigs();
+
+    auto ext = ExtractConfigs(configs);
+    EXPECT_EQ(FindFinalizeConfig(ext, "weight_sharing_channel_tile_size"),
+              nullptr)
+        << "Weight sharing channel tile size config should be absent for zero";
+  }
+
+  options.SetHtpWeightSharingChannelTileSize(-1);
+  {
+    auto config_builder = backend_.BuildGraphConfigs(options, "graph");
+    auto configs = config_builder.GetNullTerminatedConfigs();
+
+    auto ext = ExtractConfigs(configs);
+    EXPECT_EQ(FindFinalizeConfig(ext, "weight_sharing_channel_tile_size"),
+              nullptr)
+        << "Weight sharing channel tile size config should be absent for "
+           "negative values";
+  }
 }
 
 TEST_F(HtpBackendDefaultGraphConfigTest, ValuesReflectOptions) {

@@ -21,12 +21,10 @@
 #include <utility>
 #include <vector>
 
-#include "absl/log/absl_check.h"  // from @com_google_absl
-#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/litert_common.h"
 #include "litert/cc/litert_any.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
@@ -35,6 +33,7 @@
 namespace {
 
 using ::litert::Environment;
+using ::litert::jni::ParseInt;
 using ::litert::jni::ThrowLiteRtException;
 
 // Converts a litert::HwAccelerators to the value used in the Kotlin enum.
@@ -76,8 +75,9 @@ extern "C" {
 
 JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Environment_nativeCreate(
     JNIEnv* env, jclass clazz, jintArray tags, jobjectArray values) {
-  ABSL_CHECK_EQ(env->GetArrayLength(tags), env->GetArrayLength(values))
-      << "Number of tags and values do not match.";
+  if (env->GetArrayLength(tags) != env->GetArrayLength(values)) {
+    LITERT_FATAL("Number of tags and values do not match.");
+  }
 
   auto num_tags = env->GetArrayLength(tags);
   AUTO_CLEANUP_JNI_STRING_ARRAY(env, values);
@@ -90,16 +90,14 @@ JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Environment_nativeCreate(
       auto value = values_vector[i];
       auto tag = static_cast<litert::EnvironmentOptions::Tag>(tags_array[i]);
       if (IsPointerOption(tag)) {
-        int64_t handle;
-        ABSL_CHECK(absl::SimpleAtoi(value, &handle))
-            << "Failed to parse handle option: " << value;
         options.push_back(litert::EnvironmentOptions::Option{
             // An intermediate static_cast to std::uintptr_t is used before the
             // reinterpret_cast to const void* to avoid size-mismatch
             // compilation warnings/errors on 32-bit platforms (where pointers
             // are 32-bit but int64_t is 64-bit).
-            tag, litert::LiteRtVariant(reinterpret_cast<const void*>(
-                     static_cast<std::uintptr_t>(handle)))});
+            tag, litert::LiteRtVariant(
+                     reinterpret_cast<const void*>(static_cast<std::uintptr_t>(
+                         ParseInt<int64_t>(value, "pointer option"))))});
       } else {
         options.push_back(litert::EnvironmentOptions::Option{
             tag, litert::LiteRtVariant(value)});
@@ -125,7 +123,7 @@ JNIEXPORT jintArray JNICALL
 Java_com_google_ai_edge_litert_Environment_nativeGetAvailableAccelerators(
     JNIEnv* env, jclass clazz, jlong handle) {
   auto litert_env = reinterpret_cast<Environment*>(handle);
-  ABSL_CHECK(litert_env != nullptr);
+  LITERT_INTERNAL_CHECK(litert_env != nullptr);
 
   auto accelerators_res = litert_env->GetAvailableAccelerators();
   if (!accelerators_res) {

@@ -41,6 +41,7 @@ jobs:
               - '!g3doc/**'
               - '!site/**'
               - '!LICENSE'
+              - '!litert_quantizer/**'
       - name: Determine if build should run
         id: check
         shell: bash
@@ -78,11 +79,11 @@ jobs:
             libc++-18-dev libc++abi-18-dev llvm-18 clang-18 \
             libssl-dev build-essential libbz2-dev libncurses5-dev libncursesw5-dev \
             libffi-dev libreadline-dev libsqlite3-dev liblzma-dev zlib1g-dev git curl
-          python3.11 -m pip install cmake==3.28.3
+          python3.12 -m pip install cmake==3.28.3
           cmake --version
           ninja --version
 
-      - name: Setup Pyenv Python 3.11
+      - name: Setup Pyenv Python 3.12
         # LINT.IfChange(configure_tflite_build_flags)
         # Keep compiler and Python configuration consistent with internal CI
         # (run_bazel_test_with_docker.sh & tflite-py3.Dockerfile) to ensure Bazel remote cache hits.
@@ -91,8 +92,8 @@ jobs:
           git clone https://github.com/pyenv/pyenv.git /pyenv
           export PYENV_ROOT=/pyenv
           export PATH="$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH"
-          pyenv install -s 3.11
-          pyenv global 3.11
+          pyenv install -s 3.12
+          pyenv global 3.12
           echo "PYENV_ROOT=/pyenv" >> "$GITHUB_ENV"
           # In GHA, each echo to GITHUB_PATH prepends to PATH.
           # To achieve PATH=/pyenv/shims:/pyenv/bin:... matching internal CI:
@@ -108,11 +109,11 @@ jobs:
         run: |
           chmod +x configure.py
           sudo ln -sf "$(which python3)" /usr/local/bin/python3
-          sudo mkdir -p /usr/local/lib/python3.11
-          sudo ln -sfn "$(python3 -c 'import site; print(site.getsitepackages()[0])')" /usr/local/lib/python3.11/site-packages
+          sudo mkdir -p /usr/local/lib/python3.12
+          sudo ln -sfn "$(python3 -c 'import site; print(site.getsitepackages()[0])')" /usr/local/lib/python3.12/site-packages
           export PYTHON_BIN_PATH="/usr/local/bin/python3"
-          export PYTHON_LIB_PATH="/usr/local/lib/python3.11/site-packages"
-          export HERMETIC_PYTHON_VERSION=3.11
+          export PYTHON_LIB_PATH="/usr/local/lib/python3.12/site-packages"
+          export HERMETIC_PYTHON_VERSION=3.12
           export TF_NEED_ROCM=0
           export TF_NEED_CLANG=0
           export TF_NEED_CUDA=0
@@ -129,12 +130,11 @@ jobs:
             --config=public_cache \
             --config=bulk_build_cpu \
             --repo_env=USE_PYWRAP_RULES=True \
-            --repo_env=HERMETIC_PYTHON_VERSION=3.11 \
+            --repo_env=HERMETIC_PYTHON_VERSION=3.12 \
             -- \
             //tflite:tensorflowlite \
             //tflite/c:tensorflowlite_c \
-            //tflite/tools/benchmark:benchmark_model \
-            //tflite/converter:flatbuffer_translate
+            //tflite/tools/benchmark:benchmark_model
         # LINT.ThenChange(../ci/run_bazel_test.sh:tflite_bazel_targets)
 
       - name: Configure TFLite with CMake
@@ -149,3 +149,32 @@ jobs:
       - name: Build TFLite runtime with CMake
         # TODO: Build all targets under tflite with cmake
         run: cmake --build "${CMAKE_BUILD_DIR}" --target tensorflow-lite --parallel
+
+  # A PR is accepted only if this check concludes "success" ("skipped" doesn't
+  # count). So this job always runs, and passes if Presubmit-TFLite-Bazel-CMake
+  # passed or was skipped because the PR has no relevant changes. This check is
+  # required by name, so keep the name unique across workflows.
+  gate:
+    name: "Presubmit-TFLite-Bazel-CMake-Gate"
+    needs: [check, tflite-build]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check results
+        shell: bash
+        env:
+          CHECK_RESULT: ${{ needs.check.result }}
+          RUN_BUILD: ${{ needs.check.outputs.run_build }}
+          BUILD_RESULT: ${{ needs.tflite-build.result }}
+        run: |
+          echo "check=${CHECK_RESULT} run_build=${RUN_BUILD} build=${BUILD_RESULT}"
+          if [[ "${CHECK_RESULT}" == "success" ]]; then
+            if [[ "${BUILD_RESULT}" == "success" ]]; then
+              exit 0
+            fi
+            if [[ "${BUILD_RESULT}" == "skipped" && "${RUN_BUILD}" == "false" ]]; then
+              exit 0
+            fi
+          fi
+          exit 1

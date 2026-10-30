@@ -20,6 +20,7 @@
 #import "third_party/odml/litert/litert/objc/apis/LRTEnvironment.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTError.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTModel.h"
+#import "third_party/odml/litert/litert/objc/apis/LRTTensorType.h"
 #include "litert/test/common.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 
@@ -40,15 +41,17 @@ static NSString *GetTestModelPath() {
 
 - (void)testLoadModelFromFilePath {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   NSString *modelPath = GetTestModelPath();
-  LRTModel *model = [LRTModel modelWithModelFilePath:modelPath environment:env error:&error];
+  LRTModel *model = [LRTModel modelWithModelFilePath:modelPath
+                                         environment:environment
+                                               error:&error];
   XCTAssertNotNil(model);
   XCTAssertNil(error);
-  XCTAssertEqual(model.environment, env);
+  XCTAssertEqual(model.environment, environment);
 
   NSArray<NSString *> *signatures = model.signatureKeys;
   XCTAssertNotNil(signatures);
@@ -64,13 +67,14 @@ static NSString *GetTestModelPath() {
   XCTAssertNil(error);
   XCTAssertEqual(outputNames.count, 1);
 
-  NSString *sigKey = signatures.firstObject;
-  NSArray<NSString *> *keyInputNames = [model inputNamesForSignatureKey:sigKey error:&error];
+  NSString *signatureKey = signatures.firstObject;
+  NSArray<NSString *> *keyInputNames = [model inputNamesForSignatureKey:signatureKey error:&error];
   XCTAssertNotNil(keyInputNames);
   XCTAssertNil(error);
   XCTAssertEqualObjects(keyInputNames, inputNames);
 
-  NSArray<NSString *> *keyOutputNames = [model outputNamesForSignatureKey:sigKey error:&error];
+  NSArray<NSString *> *keyOutputNames = [model outputNamesForSignatureKey:signatureKey
+                                                                    error:&error];
   XCTAssertNotNil(keyOutputNames);
   XCTAssertNil(error);
   XCTAssertEqualObjects(keyOutputNames, outputNames);
@@ -78,18 +82,18 @@ static NSString *GetTestModelPath() {
 
 - (void)testLoadModelFromData {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   NSString *modelPath = GetTestModelPath();
   NSData *modelData = [NSData dataWithContentsOfFile:modelPath];
   XCTAssertNotNil(modelData);
 
-  LRTModel *model = [LRTModel modelWithModelData:modelData environment:env error:&error];
+  LRTModel *model = [LRTModel modelWithModelData:modelData environment:environment error:&error];
   XCTAssertNotNil(model);
   XCTAssertNil(error);
-  XCTAssertEqual(model.environment, env);
+  XCTAssertEqual(model.environment, environment);
 
   NSArray<NSString *> *signatures = model.signatureKeys;
   XCTAssertNotNil(signatures);
@@ -108,14 +112,14 @@ static NSString *GetTestModelPath() {
 
 - (void)testLoadModelFromMutableDataThatCallerLaterClobbers {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
   NSMutableData *modelData = [NSMutableData dataWithContentsOfFile:GetTestModelPath()];
   XCTAssertNotNil(modelData);
 
-  LRTModel *model = [LRTModel modelWithModelData:modelData environment:env error:&error];
+  LRTModel *model = [LRTModel modelWithModelData:modelData environment:environment error:&error];
   XCTAssertNotNil(model);
   XCTAssertNil(error);
 
@@ -132,77 +136,267 @@ static NSString *GetTestModelPath() {
   XCTAssertEqual(inputNames.count, 2);
 }
 
-- (void)testModelErrorHandling {
+- (void)testModelTensorTypeIntrospection {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 
-  // Nil file path
-  NSString *nilPath = (id)nil;
-  XCTAssertNil([LRTModel modelWithModelFilePath:nilPath environment:env error:&error]);
+  LRTModel *model = [LRTModel modelWithModelFilePath:GetTestModelPath()
+                                         environment:environment
+                                               error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+  XCTAssertTrue([model.description containsString:@"LRTModel"]);
+
+  LRTTensorType *inputType0 = [model inputTensorTypeAtIndex:0 error:&error];
+  XCTAssertNotNil(inputType0);
+  XCTAssertNil(error);
+  XCTAssertEqual(inputType0.elementType, LRTElementTypeFloat32);
+  XCTAssertEqualObjects(inputType0.dimensions, (@[ @2 ]));
+  XCTAssertEqual(inputType0.rank, 1U);
+  XCTAssertTrue(inputType0.hasStaticShape);
+
+  NSString *signatureKey = model.signatureKeys.firstObject;
+  NSArray<NSString *> *inputNames = [model inputNamesForSignatureIndex:0 error:&error];
+  XCTAssertEqual(inputNames.count, 2U);
+
+  LRTTensorType *namedInputType0 = [model inputTensorTypeForName:inputNames[0]
+                                                    signatureKey:signatureKey
+                                                           error:&error];
+  XCTAssertNotNil(namedInputType0);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects(namedInputType0, inputType0);
+
+  LRTTensorType *outputType0 = [model outputTensorTypeAtIndex:0 error:&error];
+  XCTAssertNotNil(outputType0);
+  XCTAssertNil(error);
+  XCTAssertEqual(outputType0.elementType, LRTElementTypeFloat32);
+  XCTAssertEqualObjects(outputType0.dimensions, (@[ @2 ]));
+
+  NSArray<NSString *> *outputNames = [model outputNamesForSignatureIndex:0 error:&error];
+  XCTAssertEqual(outputNames.count, 1U);
+  LRTTensorType *namedOutputType0 = [model outputTensorTypeForName:outputNames[0]
+                                                      signatureKey:signatureKey
+                                                             error:&error];
+  XCTAssertNotNil(namedOutputType0);
+  XCTAssertNil(error);
+  XCTAssertEqualObjects(namedOutputType0, outputType0);
+}
+
+- (void)testTensorTypeValueSemantics {
+  NSMutableArray<NSNumber *> *mutableDims = [NSMutableArray arrayWithArray:@[ @1, @224, @224 ]];
+  LRTTensorType *staticType = [[LRTTensorType alloc] initWithElementType:LRTElementTypeFloat32
+                                                              dimensions:mutableDims];
+  [mutableDims addObject:@3];
+  XCTAssertEqualObjects(staticType.dimensions, (@[ @1, @224, @224 ]));
+  XCTAssertEqual(staticType.rank, 3U);
+  XCTAssertTrue(staticType.hasStaticShape);
+
+  LRTTensorType *matchingType = [[LRTTensorType alloc] initWithElementType:LRTElementTypeFloat32
+                                                                dimensions:@[ @1, @224, @224 ]];
+  LRTTensorType *permutedType = [[LRTTensorType alloc] initWithElementType:LRTElementTypeFloat32
+                                                                dimensions:@[ @224, @1, @224 ]];
+  LRTTensorType *dynamicType = [[LRTTensorType alloc] initWithElementType:LRTElementTypeFloat32
+                                                               dimensions:@[ @(-1), @224, @224 ]];
+
+  XCTAssertTrue([staticType isEqualToTensorType:matchingType]);
+  XCTAssertEqualObjects(staticType, matchingType);
+  XCTAssertEqual(staticType.hash, matchingType.hash);
+  XCTAssertNotEqualObjects(staticType, permutedType);
+  XCTAssertNotEqual(staticType.hash, permutedType.hash);
+  XCTAssertEqualObjects([staticType copy], staticType);
+  XCTAssertFalse(dynamicType.hasStaticShape);
+  XCTAssertNotEqualObjects(staticType, dynamicType);
+  XCTAssertTrue([staticType.description containsString:@"LRTTensorType"]);
+}
+
+#pragma mark - Parameter Validation Tests
+
+// Suppress -Wnonnull warnings so we can explicitly test runtime defensive null-checks
+// on parameters marked nonnull in public headers (e.g. from Swift or dynamic Objective-C
+// callers).
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnonnull"
+
+- (void)testModelWithNilFilePathFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  XCTAssertNil([LRTModel modelWithModelFilePath:nil environment:environment error:&error]);
   XCTAssertNotNil(error);
   XCTAssertEqual(error.code, LRTErrorCodeInvalidArgument);
-  error = nil;
+}
 
-  // Invalid file path
+- (void)testModelWithInvalidFilePathFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
   XCTAssertNil([LRTModel modelWithModelFilePath:@"/invalid/path/model.tflite"
-                                    environment:env
+                                    environment:environment
                                           error:&error]);
   XCTAssertNotNil(error);
-  error = nil;
+}
 
-  // Nil model data
-  NSData *nilData = (id)nil;
-  XCTAssertNil([LRTModel modelWithModelData:nilData environment:env error:&error]);
+- (void)testModelWithNilDataFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  XCTAssertNil([LRTModel modelWithModelData:nil environment:environment error:&error]);
   XCTAssertNotNil(error);
   XCTAssertEqual(error.code, LRTErrorCodeInvalidArgument);
-  error = nil;
+}
 
-  // Empty model data
-  XCTAssertNil([LRTModel modelWithModelData:[NSData data] environment:env error:&error]);
+- (void)testModelWithEmptyDataFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  XCTAssertNil([LRTModel modelWithModelData:[NSData data] environment:environment error:&error]);
   XCTAssertNotNil(error);
   XCTAssertEqual(error.code, LRTErrorCodeInvalidArgument);
-  error = nil;
+}
 
-  // Valid model inspection error paths
+- (void)testInputNamesWithNilSignatureKeyFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
   LRTModel *model = [LRTModel modelWithModelFilePath:GetTestModelPath()
-                                         environment:env
+                                         environment:environment
                                                error:&error];
   XCTAssertNotNil(model);
   XCTAssertNil(error);
 
-  // Nil signature key
-  NSString *nilKey = (id)nil;
-  XCTAssertNil([model inputNamesForSignatureKey:nilKey error:&error]);
+  XCTAssertNil([model inputNamesForSignatureKey:nil error:&error]);
   XCTAssertNotNil(error);
   XCTAssertEqual(error.code, LRTErrorCodeInvalidArgument);
-  error = nil;
+}
 
-  XCTAssertNil([model outputNamesForSignatureKey:nilKey error:&error]);
+- (void)testOutputNamesWithNilSignatureKeyFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTModel *model = [LRTModel modelWithModelFilePath:GetTestModelPath()
+                                         environment:environment
+                                               error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  XCTAssertNil([model outputNamesForSignatureKey:nil error:&error]);
   XCTAssertNotNil(error);
   XCTAssertEqual(error.code, LRTErrorCodeInvalidArgument);
-  error = nil;
+}
 
-  // Non-existent signature index
+- (void)testInputNamesWithOutOfBoundsSignatureIndexFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTModel *model = [LRTModel modelWithModelFilePath:GetTestModelPath()
+                                         environment:environment
+                                               error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
   XCTAssertNil([model inputNamesForSignatureIndex:999 error:&error]);
   XCTAssertNotNil(error);
-  error = nil;
+}
+
+- (void)testOutputNamesWithOutOfBoundsSignatureIndexFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTModel *model = [LRTModel modelWithModelFilePath:GetTestModelPath()
+                                         environment:environment
+                                               error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
 
   XCTAssertNil([model outputNamesForSignatureIndex:999 error:&error]);
   XCTAssertNotNil(error);
-  error = nil;
+}
 
-  // Nil metadata key
-  NSString *nilMetaKey = (id)nil;
-  XCTAssertNil([model metadataForKey:nilMetaKey error:&error]);
+- (void)testMetadataWithNilKeyFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTModel *model = [LRTModel modelWithModelFilePath:GetTestModelPath()
+                                         environment:environment
+                                               error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  XCTAssertNil([model metadataForKey:nil error:&error]);
   XCTAssertNotNil(error);
   XCTAssertEqual(error.code, LRTErrorCodeInvalidArgument);
-  error = nil;
+}
 
-  // Non-existent metadata key
+- (void)testMetadataWithUnknownKeyFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTModel *model = [LRTModel modelWithModelFilePath:GetTestModelPath()
+                                         environment:environment
+                                               error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
   XCTAssertNil([model metadataForKey:@"non_existent_metadata_key" error:&error]);
   XCTAssertNotNil(error);
 }
+
+- (void)testTensorTypeLookupWithInvalidParametersFails {
+  NSError *error = nil;
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
+  XCTAssertNil(error);
+
+  LRTModel *model = [LRTModel modelWithModelFilePath:GetTestModelPath()
+                                         environment:environment
+                                               error:&error];
+  XCTAssertNotNil(model);
+  XCTAssertNil(error);
+
+  XCTAssertNil([model inputTensorTypeAtIndex:99 error:&error]);
+  XCTAssertNotNil(error);
+
+  error = nil;
+  XCTAssertNil([model inputTensorTypeAtIndex:0 signatureIndex:99 error:&error]);
+  XCTAssertNotNil(error);
+
+  error = nil;
+  XCTAssertNil([model inputTensorTypeForName:nil signatureKey:@"default" error:&error]);
+  XCTAssertNotNil(error);
+  XCTAssertEqual(error.code, LRTErrorCodeInvalidArgument);
+
+  error = nil;
+  XCTAssertNil([model outputTensorTypeAtIndex:99 error:&error]);
+  XCTAssertNotNil(error);
+
+  error = nil;
+  XCTAssertNil([model outputTensorTypeForName:nil signatureKey:@"default" error:&error]);
+  XCTAssertNotNil(error);
+  XCTAssertEqual(error.code, LRTErrorCodeInvalidArgument);
+}
+
+#pragma clang diagnostic pop
 
 @end

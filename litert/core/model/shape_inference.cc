@@ -17,10 +17,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -28,6 +33,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/ops/broadcast_args.h"
@@ -141,7 +147,9 @@ void ShapeInferenceEngine::RegisterStandardOps() {
     return [legacy_f](const ShapeInferenceContext& ctx,
                       InferenceResult& result) {
       const auto* op = ctx.GetOp();
-      if (!op) return kLiteRtStatusErrorShapeInferenceFailed;
+      if (!op || ctx.GetNumOutputs() == 0) {
+        return kLiteRtStatusErrorShapeInferenceFailed;
+      }
       std::vector<Dims> input_shapes;
       input_shapes.reserve(ctx.GetNumInputs());
       for (size_t i = 0; i < ctx.GetNumInputs(); ++i) {
@@ -260,6 +268,8 @@ void ShapeInferenceEngine::RegisterStandardOps() {
                    AdaptToStatelessOpInferrer(InferGather));
   RegisterInferrer(kLiteRtOpCodeTflGatherNd,
                    AdaptToStatelessOpInferrer(InferGatherNd));
+  RegisterInferrer(kLiteRtOpCodeTflHashtableLookup,
+                   AdaptToStatelessOpInferrer(InferHashtableLookup));
   RegisterInferrer(kLiteRtOpCodeTflL2Pool2d,
                    AdaptToStatelessOpInferrer(InferPool2D));
   RegisterInferrer(kLiteRtOpCodeTflMaxPool2d,
@@ -330,6 +340,113 @@ void ShapeInferenceEngine::RegisterStandardOps() {
                    static_cast<StatelessFuncPtr>(InferPack));
   RegisterInferrer(kLiteRtOpCodeTflStridedSlice,
                    static_cast<StatelessFuncPtr>(InferStridedSlice));
+
+  // SHLO composite ops (e.g. `odml.scaled_dot_product_attention`) carry their
+  // semantics in a separate decomposition subgraph referenced by
+  // `decomposition_subgraph_index`. Unlike the stateless inferrers above, this
+  // one needs the engine itself: it looks the decomposition subgraph up on
+  // `model_`, pushes the composite's input shapes into that subgraph, runs
+  // shape inference over its ops, and reports the decomposition's output
+  // shapes back as the composite's outputs.
+  //
+  // Side effects: the decomposition subgraph's tensor types are updated in
+  // place (so a later pass over that subgraph sees static shapes), and any
+  // constant-folded data flowing through the composite is propagated via
+  // `transient_data_` so downstream inferrers (Reshape, StridedSlice, ...)
+  // keep working across the composite boundary.
+  auto infer_shlo_composite = [this](const ShapeInferenceContext& ctx,
+                                     InferenceResult& result) -> LiteRtStatus {
+    const LiteRtOpT* op = ctx.GetOp();
+    if (!model_ || !op) {
+      return kLiteRtStatusErrorUnsupportedOpShapeInferer;
+    }
+    const auto* comp_opts =
+        litert::internal::GetTflOptions2(*op).AsStableHLOCompositeOptions();
+    if (!comp_opts || comp_opts->decomposition_subgraph_index < 0 ||
+        static_cast<size_t>(comp_opts->decomposition_subgraph_index) >=
+            model_->NumSubgraphs()) {
+      return kLiteRtStatusErrorUnsupportedOpShapeInferer;
+    }
+    LiteRtSubgraphT* decomp_subgraph =
+        model_->Subgraphs()[comp_opts->decomposition_subgraph_index];
+    if (ctx.GetNumInputs() != decomp_subgraph->Inputs().size() ||
+        ctx.GetNumOutputs() != decomp_subgraph->Outputs().size()) {
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+
+    // Guard against cyclic decompositions (A -> B -> A, or a composite whose
+    // decomposition is its own subgraph), which would otherwise recurse
+    // forever. The set is scoped to the current nesting chain only.
+    if (!active_composite_subgraphs_.insert(decomp_subgraph).second) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Cyclic recursion detected in composite op decomposition");
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+    absl::Cleanup active_cleanup = [&] {
+      active_composite_subgraphs_.erase(decomp_subgraph);
+    };
+
+    // `transient_data_` is keyed by tensor pointer and belongs to the subgraph
+    // currently being inferred. Swap in a fresh map for the decomposition so
+    // nested inference can't read or clobber the outer subgraph's folded
+    // data, and restore the outer map on every exit path.
+    TensorDataMap saved_transient_data = std::move(transient_data_);
+    transient_data_.clear();
+    absl::Cleanup restore_transient = [&] {
+      transient_data_ = std::move(saved_transient_data);
+    };
+
+    // Seed the decomposition inputs with the composite's input shapes, element
+    // types and (if available) constant data.
+    for (size_t i = 0; i < ctx.GetNumInputs(); ++i) {
+      LiteRtTensorT* inner_in = decomp_subgraph->Inputs()[i];
+      if (!inner_in) continue;
+      Dims in_shape = ctx.GetInputShape(i);
+      LiteRtElementType elem_type = ctx.GetInputElementType(i);
+      if (elem_type == kLiteRtElementTypeNone &&
+          inner_in->Type().first == kLiteRtRankedTensorType) {
+        elem_type = inner_in->Type().second.ranked_tensor_type.element_type;
+      }
+      if (elem_type != kLiteRtElementTypeNone) {
+        inner_in->SetType(
+            MakeRankedTensorType(elem_type, absl::MakeConstSpan(in_shape)));
+      }
+      absl::Span<const uint8_t> in_data = ctx.GetInputData(i);
+      if (!in_data.empty()) {
+        transient_data_[inner_in].assign(in_data.begin(), in_data.end());
+      }
+    }
+
+    // Run inference over the decomposition in topological (stored) order.
+    // Nested composites recurse through this same inferrer.
+    for (auto* inner_op : decomp_subgraph->Ops()) {
+      if (auto status = InferOpShapes(inner_op, /*validation_only=*/false);
+          status != kLiteRtStatusOk) {
+        return status;
+      }
+    }
+
+    // Read the decomposition's output shapes (and any folded data) back as
+    // the composite op's result.
+    result.output_shapes.resize(ctx.GetNumOutputs());
+    for (size_t i = 0; i < ctx.GetNumOutputs(); ++i) {
+      LiteRtTensorT* inner_out = decomp_subgraph->Outputs()[i];
+      if (!inner_out) continue;
+      if (inner_out->Type().first == kLiteRtRankedTensorType) {
+        const auto& inner_layout =
+            inner_out->Type().second.ranked_tensor_type.layout;
+        result.output_shapes[i].assign(
+            inner_layout.dimensions,
+            inner_layout.dimensions + inner_layout.rank);
+      }
+      if (auto it = transient_data_.find(inner_out);
+          it != transient_data_.end()) {
+        result.propagated_data[i] = std::move(it->second);
+      }
+    }
+    return kLiteRtStatusOk;
+  };
+  RegisterInferrer(kLiteRtOpCodeShloComposite, std::move(infer_shlo_composite));
 }
 
 void ShapeInferenceEngine::RegisterInferrer(LiteRtOpCode op_code,
@@ -530,6 +647,191 @@ LiteRtStatus ShapeInferenceEngine::InferOpShapes(
     return kLiteRtStatusErrorUnsupportedOpShapeInferer;
   }
   return it->second(ctx, result);
+}
+
+namespace {
+
+struct PendingShapeUpdate {
+  LiteRtTensor tensor = nullptr;
+  LiteRtElementType element_type = kLiteRtElementTypeNone;
+  const Dims* shape = nullptr;
+};
+
+Expected<PendingShapeUpdate> ValidateTensorShapeUpdate(LiteRtTensor tensor,
+                                                       const Dims& shape) {
+  if (tensor == nullptr) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Target tensor is null");
+  }
+  if (shape.size() > LITERT_TENSOR_MAX_RANK) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Input shape exceeds LITERT_TENSOR_MAX_RANK");
+  }
+  for (int32_t d : shape) {
+    if (d <= 0 && d != -1) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Input shape dimensions must be positive or -1");
+    }
+  }
+  LiteRtElementType element_type = kLiteRtElementTypeNone;
+  if (tensor->Type().first == kLiteRtRankedTensorType) {
+    element_type = tensor->Type().second.ranked_tensor_type.element_type;
+  } else if (tensor->Type().first == kLiteRtUnrankedTensorType) {
+    element_type = tensor->Type().second.unranked_tensor_type.element_type;
+  }
+  if (element_type == kLiteRtElementTypeNone) {
+    return Unexpected(kLiteRtStatusErrorUnsupported,
+                      "Unknown input tensor element type");
+  }
+  return PendingShapeUpdate{
+      .tensor = tensor, .element_type = element_type, .shape = &shape};
+}
+
+}  // namespace
+
+Expected<LiteRtSubgraph> ShapeInferenceEngine::ApplyInputShapes(
+    absl::string_view signature_key, absl::Span<const Dims> positional_inputs,
+    absl::Span<const std::pair<std::string, Dims>> tensor_inputs,
+    absl::Span<const std::pair<std::string, Dims>> signature_inputs) {
+  if (!model_) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument, "Model is null");
+  }
+
+  int num_methods = (!positional_inputs.empty() ? 1 : 0) +
+                    (!tensor_inputs.empty() ? 1 : 0) +
+                    (!signature_inputs.empty() ? 1 : 0);
+  if (num_methods == 0) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "No input shapes provided");
+  }
+  if (num_methods > 1) {
+    return Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        "Only one of positional, tensor-name, or signature-name input "
+        "shapes can be applied per signature");
+  }
+
+  LiteRtSubgraph subgraph = nullptr;
+  LiteRtSignature signature = nullptr;
+  std::optional<LiteRtSignatureT> default_signature;
+
+  if (!signature_key.empty()) {
+    auto sig_res = model_->FindSignature(signature_key);
+    if (!sig_res) {
+      return Unexpected(sig_res.Error().Status(),
+                        absl::StrCat("Signature not found: ", signature_key));
+    }
+    signature = &sig_res->get();
+    subgraph = &signature->GetSubgraph();
+  } else if (!model_->Signatures().empty()) {
+    signature = model_->Signatures()[0];
+    subgraph = &signature->GetSubgraph();
+  } else {
+    if (model_->NumSubgraphs() == 0) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Model has no subgraphs");
+    }
+    subgraph = model_->MainSubgraph();
+  }
+
+  std::vector<PendingShapeUpdate> pending_updates;
+  if (!positional_inputs.empty()) {
+    if (positional_inputs.size() != subgraph->Inputs().size()) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        absl::StrCat("Number of positional inputs (",
+                                     positional_inputs.size(),
+                                     ") does not match subgraph inputs (",
+                                     subgraph->Inputs().size(), ")"));
+    }
+    pending_updates.reserve(positional_inputs.size());
+    for (size_t i = 0; i < positional_inputs.size(); ++i) {
+      LITERT_ASSIGN_OR_RETURN(PendingShapeUpdate update,
+                              ValidateTensorShapeUpdate(subgraph->Inputs()[i],
+                                                        positional_inputs[i]));
+      pending_updates.push_back(update);
+    }
+  } else if (!tensor_inputs.empty()) {
+    pending_updates.reserve(tensor_inputs.size());
+    for (const auto& [tensor_name, shape] : tensor_inputs) {
+      LiteRtTensor found = nullptr;
+      for (auto* tensor : subgraph->Inputs()) {
+        if (tensor != nullptr && tensor->Name() == tensor_name) {
+          found = tensor;
+          break;
+        }
+      }
+      if (!found) {
+        return Unexpected(
+            kLiteRtStatusErrorNotFound,
+            absl::StrCat("Subgraph input tensor not found: ", tensor_name));
+      }
+      LITERT_ASSIGN_OR_RETURN(PendingShapeUpdate update,
+                              ValidateTensorShapeUpdate(found, shape));
+      pending_updates.push_back(update);
+    }
+  } else if (!signature_inputs.empty()) {
+    if (signature == nullptr) {
+      default_signature = MakeDefaultSignature(subgraph);
+      signature = &*default_signature;
+    }
+    pending_updates.reserve(signature_inputs.size());
+    for (const auto& [input_name, shape] : signature_inputs) {
+      auto tensor_res = signature->FindInputTensor(input_name);
+      if (!tensor_res) {
+        return Unexpected(
+            tensor_res.Error().Status(),
+            absl::StrCat("Signature input not found: ", input_name));
+      }
+      LITERT_ASSIGN_OR_RETURN(PendingShapeUpdate update,
+                              ValidateTensorShapeUpdate(*tensor_res, shape));
+      pending_updates.push_back(update);
+    }
+  }
+
+  // Snapshot original tensor types so the model is left untouched if
+  // InferSubgraphShapes fails midway through propagation.
+  std::vector<std::pair<LiteRtTensor, TensorType>> saved_types;
+  for (auto* sg : model_->Subgraphs()) {
+    if (sg == nullptr) continue;
+    for (auto* t : sg->Tensors()) {
+      if (t != nullptr) {
+        saved_types.emplace_back(t, t->Type());
+      }
+    }
+  }
+
+  for (const PendingShapeUpdate& update : pending_updates) {
+    update.tensor->SetType(MakeRankedTensorType(update.element_type,
+                                                absl::MakeSpan(*update.shape)));
+  }
+
+  LiteRtOp failing_op = nullptr;
+  if (auto status =
+          InferSubgraphShapes(subgraph, /*validation_only=*/false, &failing_op);
+      status != kLiteRtStatusOk) {
+    for (const auto& [t, type] : saved_types) {
+      t->SetType(type);
+    }
+    if (failing_op != nullptr) {
+      if (failing_op->OpCode() == kLiteRtOpCodeTflCustom) {
+        if (auto custom_code = failing_op->CustomCode();
+            custom_code.HasValue()) {
+          return Unexpected(
+              status,
+              absl::StrCat("Shape inference failed on subgraph at "
+                           "custom op '",
+                           custom_code.Value(), "' (op_code=",
+                           static_cast<int>(failing_op->OpCode()), ")"));
+        }
+      }
+      return Unexpected(
+          status,
+          absl::StrCat("Shape inference failed on subgraph at op (op_code=",
+                       static_cast<int>(failing_op->OpCode()), ")"));
+    }
+    return Unexpected(status, "Shape inference failed on subgraph");
+  }
+  return subgraph;
 }
 
 }  // namespace litert::internal

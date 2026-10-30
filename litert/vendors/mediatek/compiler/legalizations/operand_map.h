@@ -222,7 +222,7 @@ class OperandMap {
 
   // Add Oem Extension operand to the model and get oem op type
   Expected<uint32_t> AddOemExtensionOperand(const char* value,
-                                            NeuronOperationType* nn_op_type) {
+                                            int32_t* nn_op_type) {
     // Pack the string to the extension format
     size_t oem_scalar_size = 0;
     uint8_t* oem_scalar = nullptr;
@@ -233,6 +233,13 @@ class OperandMap {
     }
 
     // Add oem operand
+    if (neuron_adapter_api_.api().model_get_extension_operand_type == nullptr ||
+        neuron_adapter_api_.api().model_get_extension_operation_type ==
+            nullptr) {
+      free(oem_scalar);
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Extension operand/operation APIs are not available");
+    }
     int32_t operand_type = 0;
     if (neuron_adapter_api_.api().model_get_extension_operand_type(
             model_, kExtensionGeneralOpration,
@@ -256,7 +263,7 @@ class OperandMap {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Failed to get extension operation type");
     }
-    *nn_op_type = static_cast<NeuronOperationType>(operation_type);
+    *nn_op_type = operation_type;
 
     return result;
   }

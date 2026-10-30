@@ -5,12 +5,6 @@ on:
     - cron: '0 20 * * *'
       timezone: 'America/Los_Angeles'
   workflow_dispatch:
-    inputs:
-      build_converter:
-        description: 'When true, build the converter into the wheels.'
-        required: true
-        default: false
-        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-nightly
@@ -88,9 +82,9 @@ jobs:
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
           echo "BAZEL_OUTPUT_BASE=${HOME}/bazel-output-bases/w-$SHORT_SHA" >> "$GITHUB_ENV"
 
-      - name: Restore bazel cache
+      - name: Restore and save bazel cache
         id: bazel-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
         with:
           path: ~/.cache/bazel
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
@@ -103,12 +97,8 @@ jobs:
       - name: Check cache hit
         env:
           CACHE_HIT: ${{ steps.bazel-cache.outputs.cache-hit }}
-          CACHE_PRIMARY_KEY: ${{ steps.bazel-cache.outputs.cache-primary-key }}
-          CACHE_MATCHED_KEY: ${{ steps.bazel-cache.outputs.cache-matched-key }}
         run: |
           echo "Cache Hit: ${CACHE_HIT}"
-          echo "Cache Primary Key: ${CACHE_PRIMARY_KEY}"
-          echo "Cache Matched Key: ${CACHE_MATCHED_KEY}"
 
       - name: Set BAZEL_CONFIG_FLAGS for Cache
         shell: bash
@@ -121,10 +111,8 @@ jobs:
         env:
           DOCKER_PYTHON_VERSION: ${{ matrix.python-version }}
           CUSTOM_BAZEL_FLAGS: "--config=release_cpu_linux"
-          USE_LOCAL_TF: "false"
           TEST_MANYLINUX_COMPLIANCE: "true"
           BAZEL_CONFIG_FLAGS: ${{ env.BAZEL_CONFIG_FLAGS }}
-          BUILD_CONVERTER: ${{ inputs.build_converter }}
         run: |
           export NIGHTLY_RELEASE_DATE=$(TZ='America/Los_Angeles' date +%Y%m%d)
           export CI_BUILD_PYTHON="python${DOCKER_PYTHON_VERSION}"
@@ -161,13 +149,6 @@ jobs:
           path: |
             dist/*.whl
             dist/*.tar.gz
-
-      - name: Save bazel cache
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
-        if: always()
-        with:
-          path: ~/.cache/bazel
-          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
 
   upload-to-pypi:
     name: "Upload Nightly Wheels to PyPI"

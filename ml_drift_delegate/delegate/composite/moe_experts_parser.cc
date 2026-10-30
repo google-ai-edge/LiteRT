@@ -15,6 +15,7 @@
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -203,6 +204,15 @@ absl::Status ValidateInt8ZeroPoint(const TfLiteContext* context,
           static_cast<const TfLiteBlockwiseQuantization*>(
               tensor->quantization.params)
               ->zero_point,
+          name);
+    case kTfLiteMultiAxisQuantization:
+      // Emitted by the converter for per-expert blockwise weights. The block
+      // scales are also passed to the op as the separate *_scale inputs.
+      return ValidateBlockwiseInt8ZeroPoint(
+          context,
+          static_cast<const TfLiteMultiAxisQuantization*>(
+              tensor->quantization.params)
+              ->zero_points,
           name);
     case kTfLiteBlockwiseQuantizationV2:
       return ValidateBlockwiseInt8ZeroPoint(
@@ -403,6 +413,7 @@ void AddQuantizedConstInputPreserveShape(::ml_drift::GraphFloat32* graph,
                                          ObjectReader* reader,
                                          int node_input_index,
                                          ::ml_drift::Node* node) {
+  reader->AllowSharingInput(node_input_index);
   const TfLiteTensor* tensor = reader->GetInputTensor(node_input_index);
   ::ml_drift::Value* input = graph->NewValue();
   input->tensor.type = ToDataType(tensor->type);
@@ -410,6 +421,14 @@ void AddQuantizedConstInputPreserveShape(::ml_drift::GraphFloat32* graph,
   input->tensor.ref = reader->GetTensorId(node_input_index);
   input->tensor.is_variable_input = tensor->is_variable;
   graph->AddConsumer(node->id, input->id);
+  const ObjectReader::ConstantInputSharingInfo share =
+      reader->GetSharingInfoByNodeInputIndex(node_input_index);
+  if (share.IsShared()) {
+    reader->SetSharedTensor(input->id, share.PreferredId(),
+                            reader->GetTensorId(node_input_index),
+                            /*dequant_forced=*/false,
+                            /*layout=*/std::nullopt);
+  }
 }
 
 void AddConstInput(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
@@ -417,6 +436,43 @@ void AddConstInput(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
   const ::ml_drift::Value* input =
       reader->AddConstInput(node_input_index, /*layout=*/{});
   graph->AddConsumer(node->id, input->id);
+}
+
+// Adds a per-expert block-scale tensor as a const input of `node`.
+//
+// Block scales are large for blockwise-quantized experts (one float per 32
+// weights, ~2.7 GB for Gemma 4 26B-A4B), so when the tensor can be shared
+// across subgraphs it is registered with SharedMemoryManager like the expert
+// weights: it is converted to the GPU scale layout once, every subgraph reads
+// the same GPU tensor, and `scale` only records the shape. When sharing is not
+// possible the data is copied into `scale` and uploaded per subgraph.
+void AddBlockScaleConstInput(::ml_drift::GraphFloat32* graph,
+                             ObjectReader* reader, int node_input_index,
+                             ::ml_drift::Node* node,
+                             std::optional<MoeScaleTensor>* scale) {
+  reader->AllowSharingInput(node_input_index);
+  const ObjectReader::ConstantInputSharingInfo share =
+      reader->GetSharingInfoByNodeInputIndex(node_input_index);
+  if (!share.IsShared()) {
+    reader->ReadTensor(node_input_index, &scale->emplace(),
+                       ReadTensorFlags::kNoExtraBytes);
+    AddConstInput(graph, reader, node_input_index, node);
+    return;
+  }
+  const TfLiteTensor* tensor = reader->GetInputTensor(node_input_index);
+  const int tensor_id = reader->GetTensorId(node_input_index);
+  ::ml_drift::Value* input = graph->NewValue();
+  input->tensor.type = ToDataType(tensor->type);
+  input->tensor.shape = ExtractTensorShape(tensor);
+  input->tensor.ref = tensor_id;
+  input->tensor.is_variable_input = tensor->is_variable;
+  graph->AddConsumer(node->id, input->id);
+  reader->SetSharedTensor(input->id, share.PreferredId(), tensor_id,
+                          /*dequant_forced=*/false,
+                          /*layout=*/std::nullopt);
+  MoeScaleTensor& shape_only = scale->emplace();
+  shape_only.id = tensor_id;
+  SetAllDimensions(tensor->dims, &shape_only.shape);
 }
 
 }  // namespace
@@ -610,21 +666,18 @@ void MoeExpertsOperationParser::Parse(const TfLiteNode* tflite_node,
     AddConstInput(graph, reader, kInputFp32LinearWeight, node);
     AddConstInput(graph, reader, kInputFp32PerExpertScale, node);
   } else {
-    reader->ReadTensor(kInputInt8GateScale, &attr.ff_gate_scale.emplace(),
-                       ReadTensorFlags::kNoExtraBytes);
-    reader->ReadTensor(kInputInt8Ff1Scale, &attr.ff1_scale.emplace(),
-                       ReadTensorFlags::kNoExtraBytes);
-    reader->ReadTensor(kInputInt8LinearScale, &attr.linear_scale.emplace(),
-                       ReadTensorFlags::kNoExtraBytes);
     AddQuantizedConstInputPreserveShape(graph, reader, kInputInt8GateWeight,
                                         node);
-    AddConstInput(graph, reader, kInputInt8GateScale, node);
+    AddBlockScaleConstInput(graph, reader, kInputInt8GateScale, node,
+                            &attr.ff_gate_scale);
     AddQuantizedConstInputPreserveShape(graph, reader, kInputInt8Ff1Weight,
                                         node);
-    AddConstInput(graph, reader, kInputInt8Ff1Scale, node);
+    AddBlockScaleConstInput(graph, reader, kInputInt8Ff1Scale, node,
+                            &attr.ff1_scale);
     AddQuantizedConstInputPreserveShape(graph, reader, kInputInt8LinearWeight,
                                         node);
-    AddConstInput(graph, reader, kInputInt8LinearScale, node);
+    AddBlockScaleConstInput(graph, reader, kInputInt8LinearScale, node,
+                            &attr.linear_scale);
     AddConstInput(graph, reader, kInputInt8PerExpertScale, node);
   }
   reader->AddOutputs(node);

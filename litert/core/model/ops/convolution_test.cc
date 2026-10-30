@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -765,6 +766,179 @@ TEST(ConvolutionOpTest, NoBiasSucceeds) {
             kLiteRtStatusOk);
 
   EXPECT_THAT(output_shapes[0], ElementsAre(2, 1, 2, 3));
+}
+
+struct Conv2DOverflowCase {
+  std::string test_name;
+  std::vector<Dims> input_shapes;
+  tflite::Padding padding;
+  int32_t stride_h;
+  int32_t stride_w;
+};
+
+using Conv2DOverflowTest = ::testing::TestWithParam<Conv2DOverflowCase>;
+
+TEST_P(Conv2DOverflowTest, RejectsElementCountOverflow) {
+  const auto& param = GetParam();
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = param.input_shapes;
+  std::vector<Dims> output_shapes(1);
+
+  auto options = std::make_unique<tflite::Conv2DOptionsT>();
+  options->padding = param.padding;
+  options->stride_h = param.stride_h;
+  options->stride_w = param.stride_w;
+  options->dilation_h_factor = 1;
+  options->dilation_w_factor = 1;
+
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_Conv2DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  EXPECT_EQ(InferConv2D(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Conv2DOverflowTests, Conv2DOverflowTest,
+    ::testing::Values(Conv2DOverflowCase{"PointwiseOutputElementCountOverflow",
+                                         {{65536, 32768, 1, 1}, {1, 1, 1, 1}},
+                                         tflite::Padding_VALID,
+                                         1,
+                                         1},
+                      Conv2DOverflowCase{"StridedInputElementCountOverflow",
+                                         {{1, 65536, 32768, 1}, {1, 2, 2, 1}},
+                                         tflite::Padding_SAME,
+                                         4,
+                                         4}),
+    [](const ::testing::TestParamInfo<Conv2DOverflowCase>& info) {
+      return info.param.test_name;
+    });
+
+TEST(ConvolutionOpTest, InferConv3DRejectsInputElementCountOverflow) {
+  // Strided Conv3D where output and im2col fit in int32_t, but input overflows
+  // int32_t (1 * 1 * 65536 * 32768 * 1 = 2^31 > INT32_MAX).
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{1, 1, 65536, 32768, 1}, {1, 2, 2, 1, 1}};
+  std::vector<Dims> output_shapes(1);
+
+  auto options = std::make_unique<tflite::Conv3DOptionsT>();
+  options->padding = tflite::Padding_SAME;
+  options->stride_d = 1;
+  options->stride_h = 4;
+  options->stride_w = 4;
+  options->dilation_d_factor = 1;
+  options->dilation_h_factor = 1;
+  options->dilation_w_factor = 1;
+
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_Conv3DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  EXPECT_EQ(InferConv3D(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+struct TransposeConvErrorCase {
+  std::string test_name;
+  std::vector<Dims> input_shapes;
+  std::vector<int32_t> const_output_shape;
+  bool set_options = false;
+};
+
+using TransposeConvErrorTest = ::testing::TestWithParam<TransposeConvErrorCase>;
+
+TEST_P(TransposeConvErrorTest, RejectsOverflowAndInvalidShapes) {
+  const auto& param = GetParam();
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = param.input_shapes;
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT out_shape_tensor;
+  if (!param.const_output_shape.empty()) {
+    SetWeightsFromOwnedBuffer(
+        out_shape_tensor.Weights(),
+        OwningBufferRef<uint8_t>(
+            reinterpret_cast<const uint8_t*>(param.const_output_shape.data()),
+            param.const_output_shape.size() * sizeof(int32_t)));
+  }
+  op.Inputs().push_back(&out_shape_tensor);
+
+  if (param.set_options) {
+    auto options = std::make_unique<tflite::TransposeConvOptionsT>();
+    options->padding = tflite::Padding_SAME;
+    options->stride_h = 1;
+    options->stride_w = 1;
+    TflOptions tfl_options;
+    tfl_options.type = tflite::BuiltinOptions_TransposeConvOptions;
+    tfl_options.value = options.release();
+    SetTflOptions(op, std::move(tfl_options));
+  }
+
+  EXPECT_EQ(InferTransposeConv(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+constexpr int32_t kHugeDim = 46341;  // 46341 * 46341 > INT32_MAX
+
+INSTANTIATE_TEST_SUITE_P(
+    TransposeConvErrorTests, TransposeConvErrorTest,
+    ::testing::Values(
+        TransposeConvErrorCase{
+            "ConstantOutputShapeExceedingInt32Max",
+            {{4}, {1, 1, 1, 1}, {1, 23171, 23171, 1}},
+            {1, 46342, 46342, 1},
+        },
+        TransposeConvErrorCase{
+            "InputTensorExceedingInt32Max",
+            {{4}, {1, 1, 1, 1}, {1, kHugeDim, kHugeDim, 1}},
+            {},
+        },
+        TransposeConvErrorCase{
+            "Col2ImElementCountOverflow",
+            {{4}, {2048, 2, 2, 1}, {1, 512, 512, 1}},
+            {},
+        },
+        TransposeConvErrorCase{
+            "InconsistentSpatialDimensionsWithOptions",
+            {{4}, {1, 1, 1, 1}, {1, 2, 2, 1}},
+            {1, 3, 3, 1},
+            /*set_options=*/true,
+        }),
+    [](const ::testing::TestParamInfo<TransposeConvErrorCase>& info) {
+      return info.param.test_name;
+    });
+
+TEST(ConvolutionOpTest,
+     RejectsInvalidOutputShapesCountAndMissingConv3DTransposeInputs) {
+  LiteRtOpT op;
+  std::vector<Dims> empty_outputs;
+  std::vector<Dims> conv2d_inputs = {{1, 4, 4, 1}, {1, 2, 2, 1}};
+  std::vector<Dims> conv3d_inputs = {{1, 4, 4, 4, 1}, {1, 2, 2, 1, 1}};
+  std::vector<Dims> tconv_inputs = {{4}, {1, 2, 2, 1}, {1, 4, 4, 1}};
+  std::vector<Dims> tconv3d_inputs = {{5}, {2, 2, 2, 1, 2}, {1, 3, 3, 3, 1}};
+
+  EXPECT_EQ(InferConv2D(op, absl::MakeSpan(conv2d_inputs), empty_outputs),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(
+      InferDepthwiseConv2D(op, absl::MakeSpan(conv2d_inputs), empty_outputs),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(InferTransposeConv(op, absl::MakeSpan(tconv_inputs), empty_outputs),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(InferConv3D(op, absl::MakeSpan(conv3d_inputs), empty_outputs),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(
+      InferConv3DTranspose(op, absl::MakeSpan(tconv3d_inputs), empty_outputs),
+      kLiteRtStatusErrorInvalidArgument);
+
+  // Conv3DTranspose with empty op.Inputs() falls back safely without crashing.
+  std::vector<Dims> output_shapes(1);
+  ASSERT_EQ(
+      InferConv3DTranspose(op, absl::MakeSpan(tconv3d_inputs), output_shapes),
+      kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, -1, -1, -1, 2));
 }
 
 }  // namespace

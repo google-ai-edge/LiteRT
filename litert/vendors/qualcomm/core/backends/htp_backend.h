@@ -69,6 +69,8 @@ class HtpBackend : public QnnBackend {
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
 
   bool SetPerformanceMode(const Options& options) override;
+  void ScheduleUpVote() override;
+  void ScheduleDownVote() override;
 
   GraphConfigBuilder BuildGraphConfigs(
       const Options& options, absl::string_view qnn_graph_name) override;
@@ -90,8 +92,13 @@ class HtpBackend : public QnnBackend {
 
   QnnDevicePlatformInfo CreateDevicePlatformInfo();
 
-  std::vector<const QnnDevice_Config_t*> CreateDeviceConfigs(
-      const Options& options);
+  bool CreateDevicePlatformConfigs(
+      std::uint32_t htp_device_id,
+      std::vector<const QnnDevice_Config_t*>& device_configs);
+
+  bool CreateDeviceConfigs(
+      const Options& options,
+      std::vector<const QnnDevice_Config_t*>& device_configs);
 
   // The qnn_device_platform_info_ is referenced by device configurations
   // managed in the lists below. It must be destructed after the configs to

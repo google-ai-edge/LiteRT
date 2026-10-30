@@ -35,7 +35,7 @@ void ConvertRmsNorm(const TfLiteContext& context, const TfLiteNode& node,
                     ::ml_drift::ir::TensorMap& tensor_map,
                     ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* rms_norm_op = ir_model.add_op();
-  rms_norm_op->name = ToString(::ml_drift::OperationType::RMS_NORM);
+  rms_norm_op->name = ToString(::ml_drift::OperationType::kRmsNorm);
 
   const int input_id = tensor_map[node.inputs->data[0]];
   ir_model.AddConsumer(input_id, rms_norm_op->id);
@@ -43,7 +43,8 @@ void ConvertRmsNorm(const TfLiteContext& context, const TfLiteNode& node,
   ::ml_drift::RmsNormAttributes attr;
 
   if (node.inputs->size > 1) {
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> scale;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
+        scale;
     PopulateTensor(&context.tensors[node.inputs->data[1]], node.inputs->data[1],
                    &scale, PopulateTensorFlags::kNoExtraBytes);
     attr.scale = std::move(scale);

@@ -28,6 +28,7 @@ limitations under the License.
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
+#include "tensor/examples/gemma4/test_backends.h"
 #include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"  // IWYU pragma: keep
 #include "tensor/examples/utils/tensor_mapping.h"
 #include "tensor/runners/xnnpack/runner.h"
@@ -39,130 +40,137 @@ namespace {
 
 using ::testing::FloatNear;
 using ::testing::Pointwise;
-using XnnTensor = Tensor<XnnpackMixinTag>;
 
 absl::flat_hash_map<std::string, TensorHandle> CreateDefaultWeights() {
   absl::flat_hash_map<std::string, TensorHandle> weights;
 
-  weights.insert(
-      {"model.layers.0.self_attn.q_proj.weight",
-       XnnTensor({.name = "q_proj",
-                  .type = Type::kFP32,
-                  .shape = {8, 4},
-                  .buffer = std::vector<float>{
-                      1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-                      0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-                      0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-                      0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f}})});
+  weights.emplace(
+      "model.layers.0.self_attn.q_proj.weight",
+      TensorInit{
+          .name = "q_proj",
+          .type = Type::kFP32,
+          .shape = {8, 4},
+          .buffer = std::vector<float>{
+              1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+              0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+              0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f}});
 
-  weights.insert(
-      {"model.layers.0.self_attn.k_proj.weight",
-       XnnTensor({.name = "k_proj",
-                  .type = Type::kFP32,
-                  .shape = {4, 4},
-                  .buffer = std::vector<float>{
-                      0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f,
-                      0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f}})});
+  weights.emplace(
+      "model.layers.0.self_attn.k_proj.weight",
+      TensorInit{.name = "k_proj",
+                 .type = Type::kFP32,
+                 .shape = {4, 4},
+                 .buffer = std::vector<float>{
+                     0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f,
+                     0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f}});
 
-  weights.insert(
-      {"model.layers.0.self_attn.v_proj.weight",
-       XnnTensor({.name = "v_proj",
-                  .type = Type::kFP32,
-                  .shape = {4, 4},
-                  .buffer = std::vector<float>{
-                      0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 0.0f,
-                      0.0f, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.5f}})});
+  weights.emplace(
+      "model.layers.0.self_attn.v_proj.weight",
+      TensorInit{.name = "v_proj",
+                 .type = Type::kFP32,
+                 .shape = {4, 4},
+                 .buffer = std::vector<float>{
+                     0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
+                     0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.5f}});
 
-  weights.insert(
-      {"model.layers.0.self_attn.o_proj.weight",
-       XnnTensor({.name = "o_proj",
-                  .type = Type::kFP32,
-                  .shape = {4, 8},
-                  .buffer = std::vector<float>{
-                      1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-                      0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
-                      0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-                      0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f}})});
+  weights.emplace(
+      "model.layers.0.self_attn.o_proj.weight",
+      TensorInit{
+          .name = "o_proj",
+          .type = Type::kFP32,
+          .shape = {4, 8},
+          .buffer = std::vector<float>{
+              1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+              0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+              0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f}});
 
-  weights.insert(
-      {"model.layers.0.self_attn.q_norm.weight",
-       XnnTensor({.name = "q_norm",
-                  .type = Type::kFP32,
-                  .shape = {4},
-                  .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}})});
+  weights.emplace(
+      "model.layers.0.self_attn.q_norm.weight",
+      TensorInit{.name = "q_norm",
+                 .type = Type::kFP32,
+                 .shape = {4},
+                 .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}});
 
-  weights.insert(
-      {"model.layers.0.self_attn.k_norm.weight",
-       XnnTensor({.name = "k_norm",
-                  .type = Type::kFP32,
-                  .shape = {4},
-                  .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}})});
+  weights.emplace(
+      "model.layers.0.self_attn.k_norm.weight",
+      TensorInit{.name = "k_norm",
+                 .type = Type::kFP32,
+                 .shape = {4},
+                 .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}});
 
-  weights.insert(
-      {"model.layers.0.input_layernorm.weight",
-       XnnTensor({.name = "pre_attn_norm",
-                  .type = Type::kFP32,
-                  .shape = {4},
-                  .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}})});
-  weights.insert(
-      {"model.layers.0.post_attention_layernorm.weight",
-       XnnTensor({.name = "post_attn_norm",
-                  .type = Type::kFP32,
-                  .shape = {4},
-                  .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}})});
-  weights.insert(
-      {"model.layers.0.pre_feedforward_layernorm.weight",
-       XnnTensor({.name = "pre_ffn_norm",
-                  .type = Type::kFP32,
-                  .shape = {4},
-                  .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}})});
-  weights.insert(
-      {"model.layers.0.post_feedforward_layernorm.weight",
-       XnnTensor({.name = "post_ffn_norm",
-                  .type = Type::kFP32,
-                  .shape = {4},
-                  .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}})});
+  weights.emplace(
+      "model.layers.0.input_layernorm.weight",
+      TensorInit{.name = "pre_attn_norm",
+                 .type = Type::kFP32,
+                 .shape = {4},
+                 .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}});
+  weights.emplace(
+      "model.layers.0.post_attention_layernorm.weight",
+      TensorInit{.name = "post_attn_norm",
+                 .type = Type::kFP32,
+                 .shape = {4},
+                 .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}});
+  weights.emplace(
+      "model.layers.0.pre_feedforward_layernorm.weight",
+      TensorInit{.name = "pre_ffn_norm",
+                 .type = Type::kFP32,
+                 .shape = {4},
+                 .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}});
+  weights.emplace(
+      "model.layers.0.post_feedforward_layernorm.weight",
+      TensorInit{.name = "post_ffn_norm",
+                 .type = Type::kFP32,
+                 .shape = {4},
+                 .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}});
 
-  weights.insert(
-      {"model.layers.0.mlp.gate_proj.weight",
-       XnnTensor({.name = "gate_proj",
-                  .type = Type::kFP32,
-                  .shape = {6, 4},
-                  .buffer = std::vector<float>{
-                      1.0f, 0.0f,  0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-                      0.0f, 0.0f,  1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-                      1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, -1.0f}})});
+  weights.emplace(
+      "model.layers.0.mlp.gate_proj.weight",
+      TensorInit{.name = "gate_proj",
+                 .type = Type::kFP32,
+                 .shape = {6, 4},
+                 .buffer = std::vector<float>{
+                     1.0f, 0.0f,  0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                     0.0f, 0.0f,  1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+                     1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, -1.0f}});
 
-  weights.insert(
-      {"model.layers.0.mlp.up_proj.weight",
-       XnnTensor({.name = "up_proj",
-                  .type = Type::kFP32,
-                  .shape = {6, 4},
-                  .buffer = std::vector<float>{
-                      0.5f, 0.5f, 0.0f,  0.0f, 0.0f, 0.5f, 0.5f, 0.0f,
-                      0.0f, 0.0f, 0.5f,  0.5f, 0.5f, 0.0f, 0.0f, 0.5f,
-                      1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f, -1.0f}})});
+  weights.emplace(
+      "model.layers.0.mlp.up_proj.weight",
+      TensorInit{.name = "up_proj",
+                 .type = Type::kFP32,
+                 .shape = {6, 4},
+                 .buffer = std::vector<float>{
+                     0.5f, 0.5f, 0.0f,  0.0f, 0.0f, 0.5f, 0.5f, 0.0f,
+                     0.0f, 0.0f, 0.5f,  0.5f, 0.5f, 0.0f, 0.0f, 0.5f,
+                     1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f, -1.0f}});
 
-  weights.insert(
-      {"model.layers.0.mlp.down_proj.weight",
-       XnnTensor({.name = "down_proj",
-                  .type = Type::kFP32,
-                  .shape = {4, 6},
-                  .buffer = std::vector<float>{
-                      1.0f,  0.0f, 0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 1.0f,
-                      0.0f,  0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 1.0f, 0.0f,
-                      -0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, -0.5f}})});
+  weights.emplace(
+      "model.layers.0.mlp.down_proj.weight",
+      TensorInit{.name = "down_proj",
+                 .type = Type::kFP32,
+                 .shape = {4, 6},
+                 .buffer = std::vector<float>{
+                     1.0f,  0.0f, 0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 1.0f,
+                     0.0f,  0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 1.0f, 0.0f,
+                     -0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, -0.5f}});
 
-  weights.insert({"model.layers.0.layer_scalar",
-                  XnnTensor({.name = "layer_scalar",
+  weights.emplace("model.layers.0.layer_scalar",
+                  TensorInit{.name = "layer_scalar",
                              .type = Type::kFP32,
                              .shape = {1},
-                             .buffer = std::vector<float>{0.5f}})});
+                             .buffer = std::vector<float>{0.5f}});
 
   return weights;
 }
 
-TEST(Gemma4GraphTest, TransformerLayerTest) {
+template <class Backend>
+class TransformerTest : public ::testing::Test {};
+TYPED_TEST_SUITE(TransformerTest, TestBackends, TestBackendNames);
+
+TYPED_TEST(TransformerTest, TransformerLayerTest) {
+  using Tensor = typename TypeParam::Tensor;
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
@@ -172,35 +180,34 @@ TEST(Gemma4GraphTest, TransformerLayerTest) {
   config.use_post_attn_norm = true;
   config.use_post_ffw_norm = true;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
   LazyTensorMapping weights(CreateDefaultWeights());
 
-  XnnTensor key_cache;
-  XnnTensor value_cache;
-  XnnTensor per_layer_input;
-  XnnTensor shared_key;
-  XnnTensor shared_value;
+  Tensor key_cache;
+  Tensor value_cache;
+  Tensor per_layer_input;
+  Tensor shared_key;
+  Tensor shared_value;
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayerOutput<Tag> layer_out,
       TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
                        per_layer_input, shared_key, shared_value, config,
                        weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create(
-          {layer_out.output, layer_out.key_cache, layer_out.value_cache}));
+      Runner runner, Runner::Create({layer_out.output, layer_out.key_cache,
+                                     layer_out.value_cache}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -242,7 +249,11 @@ TEST(Gemma4GraphTest, TransformerLayerTest) {
                          0.909716f, 1.061335f, 1.212954f}));
 }
 
-TEST(Gemma4GraphTest, DisabledPostNormsTransformerLayerTest) {
+TYPED_TEST(TransformerTest, DisabledPostNormsTransformerLayerTest) {
+  using Tensor = typename TypeParam::Tensor;
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
@@ -252,33 +263,33 @@ TEST(Gemma4GraphTest, DisabledPostNormsTransformerLayerTest) {
   config.use_post_attn_norm = false;
   config.use_post_ffw_norm = false;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
   LazyTensorMapping weights(CreateDefaultWeights());
 
-  XnnTensor key_cache;
-  XnnTensor value_cache;
-  XnnTensor per_layer_input;
-  XnnTensor shared_key;
-  XnnTensor shared_value;
+  Tensor key_cache;
+  Tensor value_cache;
+  Tensor per_layer_input;
+  Tensor shared_key;
+  Tensor shared_value;
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayerOutput<Tag> layer_out,
       TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
                        per_layer_input, shared_key, shared_value, config,
                        weights, 0, eps_tensor));
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(XnnpackRunner runner,
-                                  XnnpackRunner::Create({layer_out.output}));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner,
+                                  Runner::Create({layer_out.output}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -306,7 +317,11 @@ TEST(Gemma4GraphTest, DisabledPostNormsTransformerLayerTest) {
                          3.5445033f, 4.3602568f, 5.1829415f, 5.4708247f}));
 }
 
-TEST(Gemma4GraphTest, PerLayerInputTransformerLayerTest) {
+TYPED_TEST(TransformerTest, PerLayerInputTransformerLayerTest) {
+  using Tensor = typename TypeParam::Tensor;
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
@@ -317,60 +332,60 @@ TEST(Gemma4GraphTest, PerLayerInputTransformerLayerTest) {
   config.use_post_attn_norm = true;
   config.use_post_ffw_norm = true;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor per_layer_input(
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor per_layer_input(
       {.name = "per_layer_input", .type = Type::kFP32, .shape = {1, 2, 2}});
 
   absl::flat_hash_map<std::string, TensorHandle> weight_map =
       CreateDefaultWeights();
 
-  weight_map.insert(
-      {"model.layers.0.per_layer_input_gate.weight",
-       XnnTensor({.name = "per_layer_input_gate",
-                  .type = Type::kFP32,
-                  .shape = {2, 4},
-                  .buffer = std::vector<float>{0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
-                                               0.5f, 0.0f, 0.0f}})});
+  weight_map.emplace(
+      "model.layers.0.per_layer_input_gate.weight",
+      TensorInit{.name = "per_layer_input_gate",
+                 .type = Type::kFP32,
+                 .shape = {2, 4},
+                 .buffer = std::vector<float>{0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                              0.5f, 0.0f, 0.0f}});
 
-  weight_map.insert(
-      {"model.layers.0.per_layer_projection.weight",
-       XnnTensor({.name = "per_layer_projection",
-                  .type = Type::kFP32,
-                  .shape = {4, 2},
-                  .buffer = std::vector<float>{1.0f, 0.0f, 0.0f, 1.0f, 0.5f,
-                                               0.0f, 0.0f, 0.5f}})});
+  weight_map.emplace(
+      "model.layers.0.per_layer_projection.weight",
+      TensorInit{.name = "per_layer_projection",
+                 .type = Type::kFP32,
+                 .shape = {4, 2},
+                 .buffer = std::vector<float>{1.0f, 0.0f, 0.0f, 1.0f, 0.5f,
+                                              0.0f, 0.0f, 0.5f}});
 
-  weight_map.insert(
-      {"model.layers.0.post_per_layer_input_norm.weight",
-       XnnTensor({.name = "post_per_layer_norm",
-                  .type = Type::kFP32,
-                  .shape = {4},
-                  .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}})});
+  weight_map.emplace(
+      "model.layers.0.post_per_layer_input_norm.weight",
+      TensorInit{.name = "post_per_layer_norm",
+                 .type = Type::kFP32,
+                 .shape = {4},
+                 .buffer = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f}});
 
   LazyTensorMapping weights(std::move(weight_map));
 
-  XnnTensor key_cache;
-  XnnTensor value_cache;
-  XnnTensor shared_key;
-  XnnTensor shared_value;
+  Tensor key_cache;
+  Tensor value_cache;
+  Tensor shared_key;
+  Tensor shared_value;
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayerOutput<Tag> layer_out,
       TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
                        per_layer_input, shared_key, shared_value, config,
                        weights, 0, eps_tensor));
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(XnnpackRunner runner,
-                                  XnnpackRunner::Create({layer_out.output}));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner,
+                                  Runner::Create({layer_out.output}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -401,7 +416,11 @@ TEST(Gemma4GraphTest, PerLayerInputTransformerLayerTest) {
                          3.6623252f, 4.7030583f, 4.9267740f, 5.4702132f}));
 }
 
-TEST(Gemma4GraphTest, KVCacheTransformerLayerTest) {
+TYPED_TEST(TransformerTest, KVCacheTransformerLayerTest) {
+  using Tensor = typename TypeParam::Tensor;
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
@@ -411,37 +430,36 @@ TEST(Gemma4GraphTest, KVCacheTransformerLayerTest) {
   config.use_post_attn_norm = true;
   config.use_post_ffw_norm = true;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor key_cache(
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor key_cache(
       {.name = "key_cache", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor value_cache(
+  Tensor value_cache(
       {.name = "value_cache", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
   LazyTensorMapping weights(CreateDefaultWeights());
 
-  XnnTensor per_layer_input;
-  XnnTensor shared_key;
-  XnnTensor shared_value;
+  Tensor per_layer_input;
+  Tensor shared_key;
+  Tensor shared_value;
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayerOutput<Tag> layer_out,
       TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
                        per_layer_input, shared_key, shared_value, config,
                        weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create(
-          {layer_out.output, layer_out.key_cache, layer_out.value_cache}));
+      Runner runner, Runner::Create({layer_out.output, layer_out.key_cache,
+                                     layer_out.value_cache}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -492,7 +510,11 @@ TEST(Gemma4GraphTest, KVCacheTransformerLayerTest) {
                          0.909716f, 1.061335f, 1.212954f}));
 }
 
-TEST(Gemma4GraphTest, SharedKVTransformerLayerTest) {
+TYPED_TEST(TransformerTest, SharedKVTransformerLayerTest) {
+  using Tensor = typename TypeParam::Tensor;
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
@@ -502,37 +524,36 @@ TEST(Gemma4GraphTest, SharedKVTransformerLayerTest) {
   config.use_post_attn_norm = true;
   config.use_post_ffw_norm = true;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor shared_key(
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor shared_key(
       {.name = "shared_key", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor shared_value(
+  Tensor shared_value(
       {.name = "shared_value", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
   LazyTensorMapping weights(CreateDefaultWeights());
 
-  XnnTensor key_cache;
-  XnnTensor value_cache;
-  XnnTensor per_layer_input;
+  Tensor key_cache;
+  Tensor value_cache;
+  Tensor per_layer_input;
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayerOutput<Tag> layer_out,
       TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
                        per_layer_input, shared_key, shared_value, config,
                        weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create(
-          {layer_out.output, layer_out.key_cache, layer_out.value_cache}));
+      Runner runner, Runner::Create({layer_out.output, layer_out.key_cache,
+                                     layer_out.value_cache}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -580,7 +601,11 @@ TEST(Gemma4GraphTest, SharedKVTransformerLayerTest) {
                         {0.1f, 0.1f, 0.1f, 0.1f, 0.8f, 0.8f, 0.8f, 0.8f}));
 }
 
-TEST(Gemma4GraphTest, SoftCappingTransformerLayerTest) {
+TYPED_TEST(TransformerTest, SoftCappingTransformerLayerTest) {
+  using Tensor = typename TypeParam::Tensor;
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
@@ -591,35 +616,34 @@ TEST(Gemma4GraphTest, SoftCappingTransformerLayerTest) {
   config.use_post_ffw_norm = true;
   config.attn_logits_soft_cap = 1.0f;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
   LazyTensorMapping weights(CreateDefaultWeights());
 
-  XnnTensor key_cache;
-  XnnTensor value_cache;
-  XnnTensor per_layer_input;
-  XnnTensor shared_key;
-  XnnTensor shared_value;
+  Tensor key_cache;
+  Tensor value_cache;
+  Tensor per_layer_input;
+  Tensor shared_key;
+  Tensor shared_value;
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayerOutput<Tag> layer_out,
       TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
                        per_layer_input, shared_key, shared_value, config,
                        weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create(
-          {layer_out.output, layer_out.key_cache, layer_out.value_cache}));
+      Runner runner, Runner::Create({layer_out.output, layer_out.key_cache,
+                                     layer_out.value_cache}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -661,7 +685,11 @@ TEST(Gemma4GraphTest, SoftCappingTransformerLayerTest) {
                          0.909716f, 1.061335f, 1.212954f}));
 }
 
-TEST(Gemma4GraphTest, GlobalLayerTransformerLayerTest) {
+TYPED_TEST(TransformerTest, GlobalLayerTransformerLayerTest) {
+  using Tensor = typename TypeParam::Tensor;
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
@@ -673,35 +701,34 @@ TEST(Gemma4GraphTest, GlobalLayerTransformerLayerTest) {
   config.use_post_ffw_norm = true;
   config.attention_pattern_size = 1;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
   LazyTensorMapping weights(CreateDefaultWeights());
 
-  XnnTensor key_cache;
-  XnnTensor value_cache;
-  XnnTensor per_layer_input;
-  XnnTensor shared_key;
-  XnnTensor shared_value;
+  Tensor key_cache;
+  Tensor value_cache;
+  Tensor per_layer_input;
+  Tensor shared_key;
+  Tensor shared_value;
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayerOutput<Tag> layer_out,
       TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
                        per_layer_input, shared_key, shared_value, config,
                        weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create(
-          {layer_out.output, layer_out.key_cache, layer_out.value_cache}));
+      Runner runner, Runner::Create({layer_out.output, layer_out.key_cache,
+                                     layer_out.value_cache}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -751,33 +778,33 @@ absl::flat_hash_map<std::string, TensorHandle> CreateGqaTransformerWeights() {
     q_proj_buf[row * 8 + (row % 4)] = 1.0f;
     q_proj_buf[row * 8 + (row % 4) + 4] = 1.0f;
   }
-  weights.insert({"model.layers.0.self_attn.q_proj.weight",
-                  XnnTensor({.name = "q_proj",
+  weights.emplace("model.layers.0.self_attn.q_proj.weight",
+                  TensorInit{.name = "q_proj",
                              .type = Type::kFP32,
                              .shape = {16, 8},
-                             .buffer = q_proj_buf})});
+                             .buffer = q_proj_buf});
 
   std::vector<float> k_proj_buf(64, 0.0f);
   for (int row = 0; row < 8; ++row) {
     k_proj_buf[row * 8 + (row % 4)] = 1.0f;
     k_proj_buf[row * 8 + (row % 4) + 4] = 1.0f;
   }
-  weights.insert({"model.layers.0.self_attn.k_proj.weight",
-                  XnnTensor({.name = "k_proj",
+  weights.emplace("model.layers.0.self_attn.k_proj.weight",
+                  TensorInit{.name = "k_proj",
                              .type = Type::kFP32,
                              .shape = {8, 8},
-                             .buffer = k_proj_buf})});
+                             .buffer = k_proj_buf});
 
   std::vector<float> v_proj_buf(64, 0.0f);
   for (int row = 0; row < 8; ++row) {
     v_proj_buf[row * 8 + (row % 4)] = 0.5f;
     v_proj_buf[row * 8 + (row % 4) + 4] = 0.5f;
   }
-  weights.insert({"model.layers.0.self_attn.v_proj.weight",
-                  XnnTensor({.name = "v_proj",
+  weights.emplace("model.layers.0.self_attn.v_proj.weight",
+                  TensorInit{.name = "v_proj",
                              .type = Type::kFP32,
                              .shape = {8, 8},
-                             .buffer = v_proj_buf})});
+                             .buffer = v_proj_buf});
 
   std::vector<float> o_proj_buf(128, 0.0f);
   for (int row = 0; row < 8; ++row) {
@@ -785,64 +812,64 @@ absl::flat_hash_map<std::string, TensorHandle> CreateGqaTransformerWeights() {
       o_proj_buf[row * 16 + (row % 4) + k * 4] = 0.5f;
     }
   }
-  weights.insert({"model.layers.0.self_attn.o_proj.weight",
-                  XnnTensor({.name = "o_proj",
+  weights.emplace("model.layers.0.self_attn.o_proj.weight",
+                  TensorInit{.name = "o_proj",
                              .type = Type::kFP32,
                              .shape = {8, 16},
-                             .buffer = o_proj_buf})});
+                             .buffer = o_proj_buf});
 
-  weights.insert({"model.layers.0.self_attn.q_norm.weight",
-                  XnnTensor({.name = "q_norm",
+  weights.emplace("model.layers.0.self_attn.q_norm.weight",
+                  TensorInit{.name = "q_norm",
                              .type = Type::kFP32,
                              .shape = {4},
-                             .buffer = std::vector<float>(4, 1.0f)})});
-  weights.insert({"model.layers.0.self_attn.k_norm.weight",
-                  XnnTensor({.name = "k_norm",
+                             .buffer = std::vector<float>(4, 1.0f)});
+  weights.emplace("model.layers.0.self_attn.k_norm.weight",
+                  TensorInit{.name = "k_norm",
                              .type = Type::kFP32,
                              .shape = {4},
-                             .buffer = std::vector<float>(4, 1.0f)})});
-  weights.insert({"model.layers.0.input_layernorm.weight",
-                  XnnTensor({.name = "pre_attn_norm",
+                             .buffer = std::vector<float>(4, 1.0f)});
+  weights.emplace("model.layers.0.input_layernorm.weight",
+                  TensorInit{.name = "pre_attn_norm",
                              .type = Type::kFP32,
                              .shape = {8},
-                             .buffer = std::vector<float>(8, 1.0f)})});
-  weights.insert({"model.layers.0.post_attention_layernorm.weight",
-                  XnnTensor({.name = "post_attn_norm",
+                             .buffer = std::vector<float>(8, 1.0f)});
+  weights.emplace("model.layers.0.post_attention_layernorm.weight",
+                  TensorInit{.name = "post_attn_norm",
                              .type = Type::kFP32,
                              .shape = {8},
-                             .buffer = std::vector<float>(8, 1.0f)})});
-  weights.insert({"model.layers.0.pre_feedforward_layernorm.weight",
-                  XnnTensor({.name = "pre_ffn_norm",
+                             .buffer = std::vector<float>(8, 1.0f)});
+  weights.emplace("model.layers.0.pre_feedforward_layernorm.weight",
+                  TensorInit{.name = "pre_ffn_norm",
                              .type = Type::kFP32,
                              .shape = {8},
-                             .buffer = std::vector<float>(8, 1.0f)})});
-  weights.insert({"model.layers.0.post_feedforward_layernorm.weight",
-                  XnnTensor({.name = "post_ffn_norm",
+                             .buffer = std::vector<float>(8, 1.0f)});
+  weights.emplace("model.layers.0.post_feedforward_layernorm.weight",
+                  TensorInit{.name = "post_ffn_norm",
                              .type = Type::kFP32,
                              .shape = {8},
-                             .buffer = std::vector<float>(8, 1.0f)})});
+                             .buffer = std::vector<float>(8, 1.0f)});
 
   std::vector<float> gate_buf(96, 0.0f);
   for (int row = 0; row < 12; ++row) {
     gate_buf[row * 8 + (row % 4)] = 1.0f;
     gate_buf[row * 8 + (row % 4) + 4] = 1.0f;
   }
-  weights.insert(
-      {"model.layers.0.mlp.gate_proj.weight", XnnTensor({.name = "gate_proj",
-                                                         .type = Type::kFP32,
-                                                         .shape = {12, 8},
-                                                         .buffer = gate_buf})});
+  weights.emplace("model.layers.0.mlp.gate_proj.weight",
+                  TensorInit{.name = "gate_proj",
+                             .type = Type::kFP32,
+                             .shape = {12, 8},
+                             .buffer = gate_buf});
 
   std::vector<float> up_buf(96, 0.0f);
   for (int row = 0; row < 12; ++row) {
     up_buf[row * 8 + (row % 4)] = 0.5f;
     up_buf[row * 8 + (row % 4) + 4] = 0.5f;
   }
-  weights.insert(
-      {"model.layers.0.mlp.up_proj.weight", XnnTensor({.name = "up_proj",
-                                                       .type = Type::kFP32,
-                                                       .shape = {12, 8},
-                                                       .buffer = up_buf})});
+  weights.emplace("model.layers.0.mlp.up_proj.weight",
+                  TensorInit{.name = "up_proj",
+                             .type = Type::kFP32,
+                             .shape = {12, 8},
+                             .buffer = up_buf});
 
   std::vector<float> down_buf(96, 0.0f);
   for (int row = 0; row < 8; ++row) {
@@ -850,22 +877,26 @@ absl::flat_hash_map<std::string, TensorHandle> CreateGqaTransformerWeights() {
       down_buf[row * 12 + (row % 4) + k * 4] = 0.5f;
     }
   }
-  weights.insert(
-      {"model.layers.0.mlp.down_proj.weight", XnnTensor({.name = "down_proj",
-                                                         .type = Type::kFP32,
-                                                         .shape = {8, 12},
-                                                         .buffer = down_buf})});
+  weights.emplace("model.layers.0.mlp.down_proj.weight",
+                  TensorInit{.name = "down_proj",
+                             .type = Type::kFP32,
+                             .shape = {8, 12},
+                             .buffer = down_buf});
 
-  weights.insert({"model.layers.0.layer_scalar",
-                  XnnTensor({.name = "layer_scalar",
+  weights.emplace("model.layers.0.layer_scalar",
+                  TensorInit{.name = "layer_scalar",
                              .type = Type::kFP32,
                              .shape = {1},
-                             .buffer = std::vector<float>{0.5f}})});
+                             .buffer = std::vector<float>{0.5f}});
 
   return weights;
 }
 
-TEST(Gemma4GraphTest, MultiKvHeadsGqaTransformerLayerTest) {
+TYPED_TEST(TransformerTest, MultiKvHeadsGqaTransformerLayerTest) {
+  using Tensor = typename TypeParam::Tensor;
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 4;
   config.num_kv_heads = 2;
@@ -875,35 +906,34 @@ TEST(Gemma4GraphTest, MultiKvHeadsGqaTransformerLayerTest) {
   config.use_post_attn_norm = true;
   config.use_post_ffw_norm = true;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 8}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 8}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
   LazyTensorMapping weights(CreateGqaTransformerWeights());
 
-  XnnTensor key_cache;
-  XnnTensor value_cache;
-  XnnTensor per_layer_input;
-  XnnTensor shared_key;
-  XnnTensor shared_value;
+  Tensor key_cache;
+  Tensor value_cache;
+  Tensor per_layer_input;
+  Tensor shared_key;
+  Tensor shared_value;
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      TransformerLayerOutput<XnnpackMixinTag> layer_out,
+      TransformerLayerOutput<Tag> layer_out,
       TransformerLayer(input, attention_mask, cos, sin, key_cache, value_cache,
                        per_layer_input, shared_key, shared_value, config,
                        weights, 0, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create(
-          {layer_out.output, layer_out.key_cache, layer_out.value_cache}));
+      Runner runner, Runner::Create({layer_out.output, layer_out.key_cache,
+                                     layer_out.value_cache}));
 
   const std::array<float, 16> input_data = {1.0f, 2.0f, 3.0f, 4.0f, 1.0f, 2.0f,
                                             3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f,

@@ -26,16 +26,33 @@ cuda_library(
     name = "gemma4_head_kernels_cuda",
     srcs = [
         "decode_attention.cu",
+        "global_attention.cu",
         "head_kernels.cu",
         "int2_gemv.cu",
+        "int4_block_gemv.cu",
+        "qkv_norm_rope.cu",
+        "subbyte_gemm.cu",
+        "tiled_attention.cu",
     ],
     hdrs = [
         "decode_attention.h",
+        "global_attention.h",
         "head_kernels.h",
         "int2_gemv.h",
+        "int4_block_gemv.cuh",
+        "int4_block_gemv.h",
+        "qkv_norm_rope.h",
+        "subbyte_gemm.h",
+        "tiled_attention.h",
     ],
-    # Clang may retain loops despite the kernel's best-effort unroll hints.
-    # copybara:uncomment copts = ["-Wno-error=pass-failed"],
+    # Tensor-core instructions require SM80; also include RTX Blackwell kernels.
+    # copybara:uncomment_begin(google-only)
+    # copts = [
+    # "--no-cuda-gpu-arch=sm_60",
+    # "--no-cuda-gpu-arch=sm_70",
+    # "--cuda-gpu-arch=sm_120",
+    # ],
+    # copybara:uncomment_end
     linkstatic = 1,
     tags = ["manual"],
     deps = [
@@ -54,13 +71,60 @@ cc_library(
     name = "gemma4_head_kernels",
     hdrs = [
         "decode_attention.h",
+        "global_attention.h",
         "head_kernels.h",
         "int2_gemv.h",
+        "int4_block_gemv.h",
+        "qkv_norm_rope.h",
+        "subbyte_gemm.h",
+        "tiled_attention.h",
     ],
     tags = ["manual"],
     deps = [
         ":gemma4_head_kernels_archive",
         "@local_cuda//:cuda_headers",
+    ],
+)
+
+cc_test(
+    name = "qkv_norm_rope_test",
+    srcs = ["qkv_norm_rope_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "int4_block_gemv_test",
+    srcs = ["int4_block_gemv_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
     ],
 )
 
@@ -80,6 +144,90 @@ cc_test(
     deps = [
         ":gemma4_head_kernels",
         "//litert/vendors/nvidia:bytecode",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "decode_attention_benchmark_test",
+    srcs = ["decode_attention_benchmark_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "global_attention_test",
+    srcs = ["global_attention_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "tiled_attention_test",
+    srcs = ["tiled_attention_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "subbyte_gemm_test",
+    srcs = ["subbyte_gemm_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
         "@com_google_googletest//:gtest_main",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",

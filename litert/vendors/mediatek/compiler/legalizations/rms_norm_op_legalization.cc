@@ -102,7 +102,7 @@ Expected<void> LegalizeRmsNormOp(const NeuronAdapterApi& neuron_adapter_api,
   input_indices.push_back(epsilon_tensor_id);
 
   const char* custom_name = "MTKEXT_RMS_NORMALIZATION";
-  NeuronOperationType nn_op_type;
+  int32_t nn_op_type = 0;
   auto custom_name_operand_index =
       operand_map.AddOemExtensionOperand(custom_name, &nn_op_type);
   if (!custom_name_operand_index) {

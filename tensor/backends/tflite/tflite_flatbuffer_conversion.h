@@ -42,6 +42,12 @@ limitations under the License.
 
 namespace litert::tensor {
 
+// Metadata key stored in `tflite::Model::metadata` containing the serialized
+// `graph::Scope` hierarchy, attributes, boundary tensor bindings, and
+// per-operator scope assignments.
+inline constexpr absl::string_view kLiteRtGraphScopesMetadataKey =
+    "litert_graph_scopes";
+
 absl::StatusOr<Type> FromTfLite(TfLiteType type);
 
 class ModelFactory {
@@ -93,6 +99,15 @@ class ModelFactory {
                             std::vector<TensorHandle> outputs,
                             std::string name);
 
+  // Declares a tensor's exported shape contract before adding its subgraph.
+  // Each dimension is either -1 (dynamic) or its concrete authoring extent.
+  // The concrete shape, operators, and buffers are unchanged. This is export
+  // metadata, not symbolic shape inference: callers must author operators that
+  // support the declared dimensions and annotate dependent tensors as needed.
+  // Dynamic dimensions on constant tensors are rejected.
+  absl::Status SetShapeSignature(const TensorHandle& tensor,
+                                 Shape shape_signature);
+
   // Registers a set of external buffers. It must be called before
   // AddSubgraph().
   absl::Status AddExternalBufferMap(
@@ -134,6 +149,29 @@ class ModelFactory {
     std::optional<uint32_t> external_buffer_id;
   };
 
+  struct SerializedBoundaryRef {
+    uint32_t subgraph_index = 0;
+    std::string role;
+    uint32_t tensor_index = 0;
+  };
+
+  struct SerializedScopeRecord {
+    const graph::Scope* ptr = nullptr;
+    std::string kind;
+    std::string name;
+    uint32_t parent_id = 0xFFFFFFFFu;
+    absl::flat_hash_map<std::string, graph::ScopeAttrValue> attrs;
+    std::vector<SerializedBoundaryRef> boundaries;
+  };
+
+  struct SubgraphScopeSerializationInfo {
+    std::vector<uint32_t> op_scope_ids;
+    std::vector<uint32_t> auto_named_tensor_indices;
+  };
+
+  uint32_t GetOrRegisterScopeId(const std::shared_ptr<graph::Scope>& scope);
+  std::vector<uint8_t> EncodeScopesMetadata() const;
+
   std::optional<uint32_t> GetExternalBufferId(
       const graph::Tensor& tensor) const;
 
@@ -146,6 +184,11 @@ class ModelFactory {
   tflite::ModelT model_;
   size_t allocation_size_;
   absl::flat_hash_map<graph::Tensor, uint32_t> tensor_to_external_buffer_id_;
+  absl::flat_hash_map<graph::Tensor, Shape> shape_signatures_;
+  absl::flat_hash_map<const graph::Scope*, uint32_t> scope_to_id_;
+  std::vector<SerializedScopeRecord> serialized_scopes_;
+  std::vector<SubgraphScopeSerializationInfo> subgraph_scope_infos_;
+  bool scopes_metadata_serialized_ = false;
 };
 
 class TfLiteMixinRegistrar : public graph::MixinRegistrar {

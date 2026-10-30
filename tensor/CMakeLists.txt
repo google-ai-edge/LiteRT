@@ -29,7 +29,9 @@ target_link_libraries(litert_tensor_api_utils
         litert_cc_internal
         absl::log
         absl::status
+        absl::status_builder
         absl::statusor
+        absl::source_location
 )
 
 add_library(litert_tensor_api_internal STATIC

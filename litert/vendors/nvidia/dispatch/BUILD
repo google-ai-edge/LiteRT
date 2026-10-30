@@ -78,6 +78,70 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "weight_store",
+    srcs = ["weight_store.cc"],
+    hdrs = ["weight_store.h"],
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/vendors/nvidia:bytecode",
+        "//litert/vendors/nvidia:cuda_vmm",
+        "//litert/vendors/nvidia:tensorrt_features",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_test(
+    name = "weight_store_test",
+    srcs = ["weight_store_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":dispatch_api",
+        ":weight_store",
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_tensor_buffer_requirements",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/model",
+        "//litert/vendors/c:litert_compiler_plugin",
+        "//litert/vendors/c:litert_compiler_plugin_api",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/vendors/nvidia:bytecode",
+        "//litert/vendors/nvidia:cuda_vmm",
+        "//litert/vendors/nvidia/compiler:compiler_plugin",
+        "//litert/vendors/nvidia/compiler:weight_holder_calibration",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
+    ],
+)
+
 cc_test(
     name = "runtime_cache_test",
     srcs = ["runtime_cache_test.cc"],
@@ -154,6 +218,7 @@ litert_dispatch_api(
     export_litert_only = True,
     linkopts = [
         "-Wl,-soname=libLiteRtDispatch_Nvidia.so",
+        "-Wl,--no-warn-backrefs",
         "-Wl,-rpath,$$ORIGIN",
         "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
     ],
@@ -175,6 +240,7 @@ litert_dispatch_api(
         ":greedy_sampler_c_api",
         ":greedy_sampler_kernel",
         ":runtime_cache",
+        ":weight_store",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_header",
@@ -188,6 +254,7 @@ litert_dispatch_api(
         "//litert/c:litert_tensor_buffer_header",
         "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_runtime_context",
         "//litert/c/internal:litert_runtime_context_header",
@@ -202,6 +269,9 @@ litert_dispatch_api(
         "//litert/vendors/nvidia:tensorrt_logger",
         "//litert/vendors/nvidia/compiler:cache_update_plugin",
         "//litert/vendors/nvidia/compiler:decode_attention_plugin",
+        "//litert/vendors/nvidia/compiler:int8_cache_write_plugin",
+        "//litert/vendors/nvidia/compiler:moe_plugin",
+        "//litert/vendors/nvidia/compiler:qkv_norm_rope_plugin",
         "//litert/vendors/nvidia/compiler:subbyte_gemv_plugin",
         "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
         "@local_cuda//:cuda_headers",
@@ -253,8 +323,10 @@ cc_test(
     deps = [
         ":dispatch_api",
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_requirements",
+        "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
         "//litert/c/internal:litert_runtime_context_header",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -306,6 +378,7 @@ cc_test(
     deps = [
         ":dispatch_api",
         ":greedy_sampler_c_api",
+        "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c/internal:litert_runtime_context_header",
         "//litert/vendors/c:litert_dispatch_c_api",

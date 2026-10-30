@@ -40,23 +40,23 @@ using ::ml_drift::ir::IrTensor;
 TEST(FuseSdpaTransposedReshapeTest, FusesDirectReshapeOnDecodeGraphFloat32) {
   GraphFloat32 graph;
   Value* q = graph.NewValue();
-  q->tensor.type = DataType::FLOAT32;
+  q->tensor.type = DataType::kFloat32;
   q->tensor.shape = BHWC(1, 16, 1, 128);
 
   Value* k = graph.NewValue();
-  k->tensor.type = DataType::FLOAT32;
+  k->tensor.type = DataType::kFloat32;
   k->tensor.shape = BHWC(1, 8, 1024, 128);
 
   Value* v = graph.NewValue();
-  v->tensor.type = DataType::FLOAT32;
+  v->tensor.type = DataType::kFloat32;
   v->tensor.shape = BHWC(1, 8, 128, 1024);
 
   Value* mid = graph.NewValue();
-  mid->tensor.type = DataType::FLOAT32;
+  mid->tensor.type = DataType::kFloat32;
   mid->tensor.shape = BHWC(1, 16, 1, 128);
 
   Value* out = graph.NewValue();
-  out->tensor.type = DataType::FLOAT32;
+  out->tensor.type = DataType::kFloat32;
   out->tensor.shape = BHWC(1, 1, 1, 2048);
 
   Node* sdpa = graph.NewNode();
@@ -67,7 +67,7 @@ TEST(FuseSdpaTransposedReshapeTest, FusesDirectReshapeOnDecodeGraphFloat32) {
   graph.SetProducer(sdpa->id, mid->id);
 
   Node* reshape = graph.NewNode();
-  reshape->operation.type = ToString(OperationType::RESHAPE);
+  reshape->operation.type = ToString(OperationType::kReshape);
   ReshapeAttributes r_attr;
   r_attr.new_shape = out->tensor.shape;
   reshape->operation.attributes = r_attr;
@@ -84,12 +84,12 @@ TEST(FuseSdpaTransposedReshapeTest, FusesDirectReshapeOnDecodeGraphFloat32) {
 
 TEST(FuseSdpaTransposedReshapeTest, FusesTransposeAndReshapeIrModel) {
   IrModel model;
-  IrTensor* q = model.add_tensor(DataType::FLOAT32, BHWC(1, 16, 1, 128));
-  IrTensor* k = model.add_tensor(DataType::FLOAT32, BHWC(1, 8, 1024, 128));
-  IrTensor* v = model.add_tensor(DataType::FLOAT32, BHWC(1, 8, 128, 1024));
-  IrTensor* mid = model.add_tensor(DataType::FLOAT32, BHWC(1, 16, 1, 128));
-  IrTensor* perm = model.add_tensor(DataType::FLOAT32, BHWC(1, 1, 16, 128));
-  IrTensor* out = model.add_tensor(DataType::FLOAT32, BHWC(1, 1, 1, 2048));
+  IrTensor* q = model.add_tensor(DataType::kFloat32, BHWC(1, 16, 1, 128));
+  IrTensor* k = model.add_tensor(DataType::kFloat32, BHWC(1, 8, 1024, 128));
+  IrTensor* v = model.add_tensor(DataType::kFloat32, BHWC(1, 8, 128, 1024));
+  IrTensor* mid = model.add_tensor(DataType::kFloat32, BHWC(1, 16, 1, 128));
+  IrTensor* perm = model.add_tensor(DataType::kFloat32, BHWC(1, 1, 16, 128));
+  IrTensor* out = model.add_tensor(DataType::kFloat32, BHWC(1, 1, 1, 2048));
   model.add_input(q->id);
   model.add_input(k->id);
   model.add_input(v->id);
@@ -103,7 +103,7 @@ TEST(FuseSdpaTransposedReshapeTest, FusesTransposeAndReshapeIrModel) {
   model.SetProducer(mid->id, sdpa->id);
 
   IrOp* tr = model.add_op();
-  tr->name = ToString(OperationType::TRANSPOSE);
+  tr->name = ToString(OperationType::kTranspose);
   TransposeAttributes t_attr;
   t_attr.perm = BHWC(0, 2, 1, 3);
   tr->attr = t_attr;
@@ -111,7 +111,7 @@ TEST(FuseSdpaTransposedReshapeTest, FusesTransposeAndReshapeIrModel) {
   model.SetProducer(perm->id, tr->id);
 
   IrOp* reshape = model.add_op();
-  reshape->name = ToString(OperationType::RESHAPE);
+  reshape->name = ToString(OperationType::kReshape);
   ReshapeAttributes r_attr;
   r_attr.new_shape = BHWC(1, 1, 1, 2048);
   reshape->attr = r_attr;

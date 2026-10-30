@@ -16,7 +16,9 @@
 
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -217,17 +219,41 @@ TEST(SpatialOpTest, ResizeNearestNeighborInvalidRank) {
             kLiteRtStatusErrorShapeInferenceFailed);
 }
 
-TEST(SpatialOpTest, DepthToSpace) {
+LiteRtOpT MakeDepthToSpaceOp(int32_t block_size) {
   LiteRtOpT op;
-  std::vector<Dims> input_shapes = {{1, 10, 10, 12}};  // Depth 12
-  std::vector<Dims> output_shapes(1);
-
   auto options = std::make_unique<tflite::DepthToSpaceOptionsT>();
-  options->block_size = 2;  // 2x2 block -> Depth / 4 -> 3. Spatial * 2 -> 20x20
+  options->block_size = block_size;
   TflOptions tfl_options;
   tfl_options.type = tflite::BuiltinOptions_DepthToSpaceOptions;
   tfl_options.value = options.release();
   SetTflOptions(op, std::move(tfl_options));
+  return op;
+}
+
+LiteRtOpT MakeSpaceToDepthOp(int32_t block_size) {
+  LiteRtOpT op;
+  auto options = std::make_unique<tflite::SpaceToDepthOptionsT>();
+  options->block_size = block_size;
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_SpaceToDepthOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+  return op;
+}
+
+template <typename T>
+std::vector<uint8_t> ToBytes(const std::vector<T>& values) {
+  std::vector<uint8_t> bytes(values.size() * sizeof(T));
+  if (!bytes.empty()) {
+    std::memcpy(bytes.data(), values.data(), bytes.size());
+  }
+  return bytes;
+}
+
+TEST(SpatialOpTest, DepthToSpace) {
+  LiteRtOpT op = MakeDepthToSpaceOp(2);
+  std::vector<Dims> input_shapes = {{1, 10, 10, 12}};  // Depth 12
+  std::vector<Dims> output_shapes(1);
 
   ASSERT_EQ(InferDepthToSpace(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -235,50 +261,29 @@ TEST(SpatialOpTest, DepthToSpace) {
 }
 
 TEST(SpatialOpTest, DepthToSpaceInvalidRank) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeDepthToSpaceOp(2);
   std::vector<Dims> input_shapes = {{1, 10, 10}};  // Rank 3
   std::vector<Dims> output_shapes(1);
-
-  auto options = std::make_unique<tflite::DepthToSpaceOptionsT>();
-  options->block_size = 2;
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_DepthToSpaceOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   EXPECT_EQ(InferDepthToSpace(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(SpatialOpTest, DepthToSpaceInvalidDepth) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeDepthToSpaceOp(2);
   std::vector<Dims> input_shapes = {
       {1, 10, 10, 10}};  // Depth 10 is not divisible by 2x2
   std::vector<Dims> output_shapes(1);
-
-  auto options = std::make_unique<tflite::DepthToSpaceOptionsT>();
-  options->block_size = 2;
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_DepthToSpaceOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   EXPECT_EQ(InferDepthToSpace(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(SpatialOpTest, SpaceToDepth) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeSpaceToDepthOp(2);
   // Input [1, 10, 10, 3] (Depth 3)
   std::vector<Dims> input_shapes = {{1, 10, 10, 3}};
   std::vector<Dims> output_shapes(1);
-
-  auto options = std::make_unique<tflite::SpaceToDepthOptionsT>();
-  options->block_size = 2;  // 2x2 block -> Depth * 4 -> 12. Spatial / 2 -> 5x5
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_SpaceToDepthOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   ASSERT_EQ(InferSpaceToDepth(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -286,33 +291,19 @@ TEST(SpatialOpTest, SpaceToDepth) {
 }
 
 TEST(SpatialOpTest, SpaceToDepthInvalidRank) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeSpaceToDepthOp(2);
   std::vector<Dims> input_shapes = {{1, 10, 10}};  // Rank 3
   std::vector<Dims> output_shapes(1);
-
-  auto options = std::make_unique<tflite::SpaceToDepthOptionsT>();
-  options->block_size = 2;
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_SpaceToDepthOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   EXPECT_EQ(InferSpaceToDepth(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(SpatialOpTest, SpaceToDepthInvalidSpatialDim) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeSpaceToDepthOp(2);
   std::vector<Dims> input_shapes = {
       {1, 10, 11, 3}};  // Width 11 not divisible by 2
   std::vector<Dims> output_shapes(1);
-
-  auto options = std::make_unique<tflite::SpaceToDepthOptionsT>();
-  options->block_size = 2;
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_SpaceToDepthOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   EXPECT_EQ(InferSpaceToDepth(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusErrorShapeInferenceFailed);
@@ -702,6 +693,148 @@ TEST(SpatialOpTest, BatchToSpaceNdInvalidBufferBytes) {
   InferenceResult result;
   EXPECT_EQ(InferBatchToSpaceNd(ctx, result),
             kLiteRtStatusErrorInvalidArgument);
+}
+
+struct DepthSpaceErrorCase {
+  std::string test_name;
+  Dims input_shape;
+  int32_t block_size;
+  size_t num_outputs = 1;
+};
+
+using DepthToSpaceErrorTest = ::testing::TestWithParam<DepthSpaceErrorCase>;
+
+TEST_P(DepthToSpaceErrorTest, RejectsEmptyOutputsAndIntegerOverflows) {
+  const auto& param = GetParam();
+  LiteRtOpT op = MakeDepthToSpaceOp(param.block_size);
+  std::vector<Dims> input_shapes = {param.input_shape};
+  std::vector<Dims> output_shapes(param.num_outputs);
+  EXPECT_EQ(InferDepthToSpace(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    DepthToSpaceErrorTests, DepthToSpaceErrorTest,
+    ::testing::Values(
+        DepthSpaceErrorCase{"EmptyOutputs",
+                            {1, 10, 10, 12},
+                            2,
+                            /*num_outputs=*/0},
+        DepthSpaceErrorCase{"BlockSizeSquareOverflow", {1, 10, 10, 12}, 225542},
+        DepthSpaceErrorCase{
+            "HeightProductOverflow", {1, INT32_MAX / 2 + 2, 4, 4}, 2},
+        DepthSpaceErrorCase{
+            "WidthProductOverflow", {1, 4, INT32_MAX / 2 + 2, 4}, 2},
+        DepthSpaceErrorCase{"NegativeInputDimension", {-2, 4, 4, 4}, 2}),
+    [](const ::testing::TestParamInfo<DepthSpaceErrorCase>& info) {
+      return info.param.test_name;
+    });
+
+using SpaceToDepthErrorTest = ::testing::TestWithParam<DepthSpaceErrorCase>;
+
+TEST_P(SpaceToDepthErrorTest, RejectsEmptyOutputsAndIntegerOverflows) {
+  const auto& param = GetParam();
+  LiteRtOpT op = MakeSpaceToDepthOp(param.block_size);
+  std::vector<Dims> input_shapes = {param.input_shape};
+  std::vector<Dims> output_shapes(param.num_outputs);
+  EXPECT_EQ(InferSpaceToDepth(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    SpaceToDepthErrorTests, SpaceToDepthErrorTest,
+    ::testing::Values(
+        DepthSpaceErrorCase{"EmptyOutputs",
+                            {1, 10, 10, 3},
+                            2,
+                            /*num_outputs=*/0},
+        DepthSpaceErrorCase{"BlockSizeSquareOverflow", {1, 10, 10, 3}, 225542},
+        DepthSpaceErrorCase{
+            "DepthProductOverflow", {1, 4, 4, INT32_MAX / 4 + 2}, 2},
+        DepthSpaceErrorCase{"NegativeInputDimension", {-2, 4, 4, 4}, 2}),
+    [](const ::testing::TestParamInfo<DepthSpaceErrorCase>& info) {
+      return info.param.test_name;
+    });
+
+struct SpaceBatchNdOverflowCase {
+  std::string test_name;
+  LiteRtOpCode op_code;
+  Dims input_shape;
+  std::vector<uint8_t> block_bytes;
+  std::vector<uint8_t> padding_or_crop_bytes;
+};
+
+using SpaceBatchNdOverflowTest =
+    ::testing::TestWithParam<SpaceBatchNdOverflowCase>;
+
+TEST_P(SpaceBatchNdOverflowTest, RejectsNegativeDimsAndOverflows) {
+  const auto& param = GetParam();
+  SpatialTestShapeInferenceContext ctx(
+      param.op_code, {param.input_shape, {1}, {1, 2}},
+      {{}, param.block_bytes, param.padding_or_crop_bytes});
+  InferenceResult result;
+  LiteRtStatus status = param.op_code == kLiteRtOpCodeTflSpaceToBatchNd
+                            ? InferSpaceToBatchNd(ctx, result)
+                            : InferBatchToSpaceNd(ctx, result);
+  EXPECT_EQ(status, kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    SpaceBatchNdOverflowTests, SpaceBatchNdOverflowTest,
+    ::testing::Values(
+        SpaceBatchNdOverflowCase{
+            "SpaceToBatchNdScaledDimExceedingInt32Max",
+            kLiteRtOpCodeTflSpaceToBatchNd,
+            {1, 1, 3},
+            ToBytes<int32_t>({1}),
+            ToBytes<int32_t>({INT32_MAX, 10}),
+        },
+        SpaceBatchNdOverflowCase{
+            "SpaceToBatchNdNegativeInputDimension",
+            kLiteRtOpCodeTflSpaceToBatchNd,
+            {-2, 4, 3},
+            ToBytes<int32_t>({1}),
+            ToBytes<int32_t>({0, 0}),
+        },
+        SpaceBatchNdOverflowCase{
+            "BatchToSpaceNdNegativeInputDimension",
+            kLiteRtOpCodeTflBatchToSpaceNd,
+            {-2, 4, 3},
+            ToBytes<int32_t>({1}),
+            ToBytes<int32_t>({0, 0}),
+        },
+        SpaceBatchNdOverflowCase{
+            "SpaceToBatchNdOutputBatchSizeProductOverflow",
+            kLiteRtOpCodeTflSpaceToBatchNd,
+            {2, 4, 3},
+            ToBytes<int64_t>({std::numeric_limits<int64_t>::max()}),
+            ToBytes<int64_t>({0, 0}),
+        }),
+    [](const ::testing::TestParamInfo<SpaceBatchNdOverflowCase>& info) {
+      return info.param.test_name;
+    });
+
+TEST(SpatialOpTest, ResizeOpRejectsMissingSizeTensorOrNonPositiveSize) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{1, 10, 10, 3}, {2}};
+  std::vector<Dims> output_shapes(1);
+
+  // Missing op.Inputs() tensors is rejected without dereferencing nullptr.
+  EXPECT_EQ(InferResizeOp(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+
+  LiteRtTensorT input0;
+  LiteRtTensorT size_tensor;
+  op.Inputs() = {&input0, &size_tensor};
+
+  int32_t non_positive_size[] = {0, 10};
+  SetWeightsFromOwnedBuffer(
+      size_tensor.Weights(),
+      OwningBufferRef<uint8_t>(
+          reinterpret_cast<const uint8_t*>(non_positive_size),
+          sizeof(non_positive_size)));
+  EXPECT_EQ(InferResizeOp(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 }  // namespace

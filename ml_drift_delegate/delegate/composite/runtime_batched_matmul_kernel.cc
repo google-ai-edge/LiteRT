@@ -99,11 +99,11 @@ absl::Status BuildRuntimeBatchedMatMulGpuGraph(
         attr.external_weights->weights_shape;
     ::ml_drift::WeightsDescription& weights_desc =
         attr.external_weights->desc;
-    if (weights_desc.type != ::ml_drift::DataType::UINT8) {
+    if (weights_desc.type != ::ml_drift::DataType::kUint8) {
       weights_desc.type = src.tensor_desc.GetDataType();
     }
 
-    if (weights_desc.type == ::ml_drift::DataType::UINT8) {
+    if (weights_desc.type == ::ml_drift::DataType::kUint8) {
       if (!attr.scale.has_value()) {
         return absl::InvalidArgumentError(
             "Runtime Batched MatMul requires channel_count and scale for "

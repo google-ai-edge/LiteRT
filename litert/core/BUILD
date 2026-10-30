@@ -52,7 +52,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -90,19 +89,18 @@ cc_library(
     visibility = ["//litert:litert_public"],
     deps = [
         "//litert/c:litert_common",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ] + select({
         "//litert:windows": [
             ":filesystem",
             "//litert/c/internal:litert_logging",
-            "@com_google_absl//absl/strings",
-            "@com_google_absl//absl/strings:str_format",
         ],
         "//conditions:default": [
             ":filesystem",
             "//litert/c/internal:litert_logging",  # buildcleaner: keep
             "//litert/cc:litert_macros",
-            "@com_google_absl//absl/strings",
         ],
     }),
 )
@@ -202,7 +200,7 @@ cc_library_with_testonly_vis(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
     ],
@@ -268,7 +266,18 @@ cc_library(
     hdrs = ["version.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_abi_header",
+    ],
+)
+
+cc_test(
+    name = "version_test",
+    srcs = ["version_test.cc"],
+    deps = [
+        ":version",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_abi_header",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -326,3 +335,17 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+# Files that make up the LiteRT C++ SDK.
+#
+# lint IfChange(litert_cc_sdk_files)
+filegroup(
+    name = "litert_cc_sdk_files",
+    srcs = [
+        "litert_toml_parser.cc",
+        "litert_toml_parser.h",
+        "options.h",
+    ],
+    visibility = ["//litert/cc_sdk:__pkg__"],
+)
+# lint ThenChange(litert/cc_sdk/litert_cc_sdk_hdrs.txt, litert/cc_sdk/litert_cc_sdk_srcs.txt)

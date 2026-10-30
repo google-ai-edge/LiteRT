@@ -34,7 +34,7 @@ void ConvertClamp(
 
   // Create MAXIMUM op: max(operand, min)
   ::ml_drift::ir::IrOp* max_op = ir_model.add_op();
-  max_op->name = ToString(::ml_drift::OperationType::MAXIMUM);
+  max_op->name = ToString(::ml_drift::OperationType::kMaximum);
   ir_model.AddConsumer(tensor_map.at(operand_id), max_op->id);
   ir_model.AddConsumer(tensor_map.at(min_id), max_op->id);
 
@@ -46,7 +46,7 @@ void ConvertClamp(
 
   // Create MINIMUM op: min(interim, max)
   ::ml_drift::ir::IrOp* min_op = ir_model.add_op();
-  min_op->name = ToString(::ml_drift::OperationType::MINIMUM);
+  min_op->name = ToString(::ml_drift::OperationType::kMinimum);
   ir_model.AddConsumer(interim_tensor->id, min_op->id);
   ir_model.AddConsumer(tensor_map.at(max_id), min_op->id);
 

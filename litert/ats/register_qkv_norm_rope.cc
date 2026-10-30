@@ -35,7 +35,7 @@ void RegisterQkvNormRopeImpl(const AtsConf& options, size_t& test_id,
       Fixture,
       QkvNormRope,
       TypeList<float, tflite::half>>
-    (iters, test_id, options, cap, "CompositeOp");
+    (iters, test_id, options, cap);
   // clang-format on
 }
 

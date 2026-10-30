@@ -40,6 +40,7 @@ jobs:
               - '!g3doc/**'
               - '!site/**'
               - '!LICENSE'
+              - '!litert_quantizer/**'
       - name: Determine if build should run
         id: check
         shell: bash
@@ -82,7 +83,7 @@ jobs:
             libssl-dev build-essential libbz2-dev libncurses5-dev libncursesw5-dev \
             libffi-dev libreadline-dev libsqlite3-dev liblzma-dev zlib1g-dev git curl
 
-      - name: Setup Pyenv Python 3.11
+      - name: Setup Pyenv Python 3.12
         # Keep compiler and Python configuration consistent with internal CI
         # (run_bazel_test_with_docker.sh & tflite-py3.Dockerfile) to ensure Bazel remote cache hits.
         shell: bash
@@ -90,8 +91,8 @@ jobs:
           git clone https://github.com/pyenv/pyenv.git /pyenv
           export PYENV_ROOT=/pyenv
           export PATH="$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH"
-          pyenv install -s 3.11
-          pyenv global 3.11
+          pyenv install -s 3.12
+          pyenv global 3.12
           echo "PYENV_ROOT=/pyenv" >> "$GITHUB_ENV"
           # In GHA, each echo to GITHUB_PATH prepends to PATH.
           # To achieve PATH=/pyenv/shims:/pyenv/bin:... matching internal CI:
@@ -107,11 +108,11 @@ jobs:
         run: |
           chmod +x configure.py
           sudo ln -sf "$(which python3)" /usr/local/bin/python3
-          sudo mkdir -p /usr/local/lib/python3.11
-          sudo ln -sfn "$(python3 -c 'import site; print(site.getsitepackages()[0])')" /usr/local/lib/python3.11/site-packages
+          sudo mkdir -p /usr/local/lib/python3.12
+          sudo ln -sfn "$(python3 -c 'import site; print(site.getsitepackages()[0])')" /usr/local/lib/python3.12/site-packages
           export PYTHON_BIN_PATH="/usr/local/bin/python3"
-          export PYTHON_LIB_PATH="/usr/local/lib/python3.11/site-packages"
-          export HERMETIC_PYTHON_VERSION=3.11
+          export PYTHON_LIB_PATH="/usr/local/lib/python3.12/site-packages"
+          export HERMETIC_PYTHON_VERSION=3.12
           export TF_NEED_ROCM=0
           export TF_NEED_CLANG=0
           export TF_NEED_CUDA=0
@@ -131,7 +132,7 @@ jobs:
             "--test_output=errors"
             "--keep_going"
             "--repo_env=USE_PYWRAP_RULES=True"
-            "--repo_env=HERMETIC_PYTHON_VERSION=3.11"
+            "--repo_env=HERMETIC_PYTHON_VERSION=3.12"
           )
 
           LITERT_EXCLUDED_TARGETS=(
@@ -139,6 +140,7 @@ jobs:
             "-//litert/c:litert_compiled_model_test"
             "-//litert/cc:litert_compiled_model_test"
             "-//litert/cc:litert_environment_test"
+            "-//litert/kotlin/src/tests/..."
             "-//litert/python/tools/model_utils/test/..."
             "-//litert/runtime:compiled_model_test"
             "-//litert/runtime/accelerators/gpu/..."
@@ -148,6 +150,36 @@ jobs:
             "-//litert/vendors/intel_openvino/compiler:decoder_test"
             "-//litert/vendors/intel_openvino/dispatch:dispatch_api_openvino_test"
             "-//litert/vendors/intel_openvino/compiler:openvino_compiler_plugin_test"
+            # Require TensorFlow. Only Internal CI 'cpu_full' tests them, on Linux
+            # with LITERT_WITH_TENSORFLOW=1. macOS and Windows CI do not test them.
+            "-//litert/compiler/..."
+            "-//litert/python/mlir/..."
+            "-//litert/python/tools/model_utils/..."
+            "-//litert/integration_test/models:single_op"
+            "-//litert/integration_test/models:single_op_files"
+            "-//litert/python:_pywrap_litert_with_converter_0_pywrap"
+            "-//litert/python:_pywrap_litert_with_converter_0_shared_object"
+            "-//litert/python:_pywrap_litert_with_converter_1_pywrap"
+            "-//litert/python:_pywrap_litert_with_converter_1_shared_object"
+            "-//litert/python:_pywrap_litert_with_converter_2_pywrap"
+            "-//litert/python:_pywrap_litert_with_converter_2_shared_object"
+            "-//litert/python:_pywrap_litert_with_converter_3_pywrap"
+            "-//litert/python:_pywrap_litert_with_converter_3_shared_object"
+            "-//litert/python:_pywrap_litert_with_converter_common_split"
+            "-//litert/python:_pywrap_litert_with_converter_info_collector"
+            "-//litert/python:_pywrap_litert_with_converter_linker_input_filters"
+            "-//litert/python:libpywrap_litert_with_converter_common.dylib"
+            "-//litert/python:libpywrap_litert_with_converter_common.so"
+            "-//litert/python:pywrap_litert_with_converter"
+            "-//litert/python:pywrap_litert_with_converter_all_binaries"
+            "-//litert/python:pywrap_litert_with_converter_binaries"
+            "-//litert/python:pywrap_litert_with_converter_binaries.json"
+            "-//litert/python:pywrap_litert_with_converter_common"
+            "-//litert/python:pywrap_litert_with_converter_common.dll"
+            "-//litert/python:pywrap_litert_with_converter_common_binaries"
+            "-//litert/python:pywrap_litert_with_converter_common_cc_library"
+            "-//litert/python:pywrap_litert_with_converter_common_if_lib"
+            "-//litert/python:pywrap_litert_with_converter_common_import"
           )
 
           bazel test "${BUILD_FLAGS[@]}" -- //tensor/... //litert/... //weight_loader/... "${LITERT_EXCLUDED_TARGETS[@]}"
@@ -157,6 +189,35 @@ jobs:
           bazel build \
             --config=public_cache \
             --repo_env=USE_PYWRAP_RULES=True \
-            --repo_env=HERMETIC_PYTHON_VERSION=3.11 \
+            --repo_env=HERMETIC_PYTHON_VERSION=3.12 \
             //litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so \
             //litert/vendors/intel_openvino/dispatch:libLiteRtDispatch_IntelOpenvino.so
+
+  # A PR is accepted only if this check concludes "success" ("skipped" doesn't
+  # count). So this job always runs, and passes if Presubmit-Linux passed or was
+  # skipped because the PR has no relevant changes. This check is required by
+  # name, so keep the name unique across workflows.
+  gate:
+    name: "Presubmit-Linux-Gate"
+    needs: [check, presubmit]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check results
+        shell: bash
+        env:
+          CHECK_RESULT: ${{ needs.check.result }}
+          RUN_BUILD: ${{ needs.check.outputs.run_build }}
+          BUILD_RESULT: ${{ needs.presubmit.result }}
+        run: |
+          echo "check=${CHECK_RESULT} run_build=${RUN_BUILD} build=${BUILD_RESULT}"
+          if [[ "${CHECK_RESULT}" == "success" ]]; then
+            if [[ "${BUILD_RESULT}" == "success" ]]; then
+              exit 0
+            fi
+            if [[ "${BUILD_RESULT}" == "skipped" && "${RUN_BUILD}" == "false" ]]; then
+              exit 0
+            fi
+          fi
+          exit 1

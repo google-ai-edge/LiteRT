@@ -18,7 +18,7 @@
 #include <optional>
 #include <string>
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
@@ -160,54 +160,54 @@ LiteRtStatus LrtGetOpaqueMediatekOptionsData(const LrtMediatekOptions* options,
   // Construct a TOML string from the options.
   std::string toml_str;
   if (options->neron_sdk_version.has_value()) {
-    absl::StrAppendFormat(&toml_str, "neron_sdk_version = %d\n",
-                          static_cast<int>(*options->neron_sdk_version));
+    absl::StrAppend(&toml_str, "neron_sdk_version = ",
+                    static_cast<int>(*options->neron_sdk_version), "\n");
   }
   if (options->gemma_compiler_optimizations.has_value()) {
-    absl::StrAppendFormat(
-        &toml_str, "gemma_compiler_optimizations = %s\n",
-        *options->gemma_compiler_optimizations ? "true" : "false");
+    absl::StrAppend(
+        &toml_str, "gemma_compiler_optimizations = ",
+        *options->gemma_compiler_optimizations ? "true\n" : "false\n");
   }
   if (options->option_bundle.has_value()) {
-    absl::StrAppendFormat(&toml_str, "option_bundle = \"%s\"\n",
-                          *options->option_bundle);
+    absl::StrAppend(&toml_str, "option_bundle = \"", *options->option_bundle,
+                    "\"\n");
   }
   if (options->option_bundle_decode.has_value()) {
-    absl::StrAppendFormat(&toml_str, "option_bundle_decode = \"%s\"\n",
-                          *options->option_bundle_decode);
+    absl::StrAppend(&toml_str, "option_bundle_decode = \"",
+                    *options->option_bundle_decode, "\"\n");
   }
   if (options->option_bundle_prefill.has_value()) {
-    absl::StrAppendFormat(&toml_str, "option_bundle_prefill = \"%s\"\n",
-                          *options->option_bundle_prefill);
+    absl::StrAppend(&toml_str, "option_bundle_prefill = \"",
+                    *options->option_bundle_prefill, "\"\n");
   }
   if (options->performance_mode.has_value()) {
-    absl::StrAppendFormat(&toml_str, "performance_mode = %d\n",
-                          static_cast<int>(*options->performance_mode));
+    absl::StrAppend(&toml_str, "performance_mode = ",
+                    static_cast<int>(*options->performance_mode), "\n");
   }
   if (options->l1_cache_optimizations.has_value()) {
-    absl::StrAppendFormat(&toml_str, "l1_cache_optimizations = %s\n",
-                          *options->l1_cache_optimizations ? "true" : "false");
+    absl::StrAppend(&toml_str, "l1_cache_optimizations = ",
+                    *options->l1_cache_optimizations ? "true\n" : "false\n");
   }
   if (options->optimization_hint.has_value()) {
-    absl::StrAppendFormat(&toml_str, "optimization_hint = %d\n",
-                          static_cast<int>(*options->optimization_hint));
+    absl::StrAppend(&toml_str, "optimization_hint = ",
+                    static_cast<int>(*options->optimization_hint), "\n");
   }
   if (options->disable_dla_dir_removal.has_value()) {
-    absl::StrAppendFormat(&toml_str, "disable_dla_dir_removal = %s\n",
-                          *options->disable_dla_dir_removal ? "true" : "false");
+    absl::StrAppend(&toml_str, "disable_dla_dir_removal = ",
+                    *options->disable_dla_dir_removal ? "true\n" : "false\n");
   }
   if (options->use_get_supported_operations.has_value()) {
-    absl::StrAppendFormat(
-        &toml_str, "use_get_supported_operations = %s\n",
-        *options->use_get_supported_operations ? "true" : "false");
+    absl::StrAppend(
+        &toml_str, "use_get_supported_operations = ",
+        *options->use_get_supported_operations ? "true\n" : "false\n");
   }
   if (!options->mediatek_dla_dir.empty()) {
-    absl::StrAppendFormat(&toml_str, "mediatek_dla_dir = \"%s\"\n",
-                          options->mediatek_dla_dir);
+    absl::StrAppend(&toml_str, "mediatek_dla_dir = \"",
+                    options->mediatek_dla_dir, "\"\n");
   }
   if (!options->aot_compilation_options.empty()) {
-    absl::StrAppendFormat(&toml_str, "aot_compilation_options = \"%s\"\n",
-                          options->aot_compilation_options);
+    absl::StrAppend(&toml_str, "aot_compilation_options = \"",
+                    options->aot_compilation_options, "\"\n");
   }
 
   *identifier = "mediatek";

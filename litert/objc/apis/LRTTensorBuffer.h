@@ -16,40 +16,10 @@
 #import <Metal/Metal.h>
 
 #import "third_party/odml/litert/litert/objc/apis/LRTEnvironment.h"
+#import "third_party/odml/litert/litert/objc/apis/LRTTensorBufferRequirements.h"
+#import "third_party/odml/litert/litert/objc/apis/LRTTensorType.h"
 
 NS_ASSUME_NONNULL_BEGIN
-
-// LINT.IfChange(element_types)
-/** Element data types supported by LiteRT tensor buffers (matching @c LiteRtElementType in
- * litert_model_types.h). */
-typedef NS_ENUM(NSInteger, LRTElementType) {
-  LRTElementTypeNone = 0,
-  LRTElementTypeUnknown = LRTElementTypeNone,
-  LRTElementTypeFloat32 = 1,
-  LRTElementTypeInt32 = 2,
-  LRTElementTypeUInt8 = 3,
-  LRTElementTypeInt64 = 4,
-  LRTElementTypeString = 5,
-  LRTElementTypeBool = 6,
-  LRTElementTypeInt16 = 7,
-  LRTElementTypeComplex64 = 8,
-  LRTElementTypeInt8 = 9,
-  LRTElementTypeFloat16 = 10,
-  LRTElementTypeFloat64 = 11,
-  LRTElementTypeComplex128 = 12,
-  LRTElementTypeUInt64 = 13,
-  LRTElementTypeResource = 14,
-  LRTElementTypeVariant = 15,
-  LRTElementTypeUInt32 = 16,
-  LRTElementTypeUInt16 = 17,
-  LRTElementTypeInt4 = 18,
-  LRTElementTypeBFloat16 = 19,
-  LRTElementTypeInt2 = 20,
-  LRTElementTypeUInt4 = 21,
-  LRTElementTypeFloat8E4M3FN = 22,
-  LRTElementTypeFloat8E5M2 = 23,
-};
-// LINT.ThenChange(../../c/litert_model_types.h)
 
 // LINT.IfChange(tensor_buffer_types)
 /** Underlying storage type of a LiteRT tensor buffer (matching @c LiteRtTensorBufferType in
@@ -95,7 +65,26 @@ typedef NS_ENUM(NSInteger, LRTTensorBufferType) {
 /** Wraps a LiteRT tensor buffer holding model inputs or outputs. */
 @interface LRTTensorBuffer : NSObject
 
-- (instancetype)init NS_UNAVAILABLE;
+/** Buffer storage type (HostMemory, MetalBuffer, etc.). */
+@property(nonatomic, readonly) LRTTensorBufferType bufferType;
+
+/** Tensor type describing the element type and shape of this buffer, or nil if unavailable. */
+@property(nonatomic, readonly, nullable) LRTTensorType *tensorType;
+
+/** Element type of tensor elements. */
+@property(nonatomic, readonly) LRTElementType elementType;
+
+/** Tensor shape dimension sizes. */
+@property(nonatomic, readonly, copy) NSArray<NSNumber *> *dimensions;
+
+/** Packed buffer size in bytes. */
+@property(nonatomic, readonly) NSUInteger size;
+
+/** Metal buffer reference if backing memory is a Metal buffer, or nil otherwise. */
+@property(nonatomic, readonly, nullable) id<MTLBuffer> metalBuffer;
+
+/** Metal texture reference if backing memory is a Metal texture, or nil otherwise. */
+@property(nonatomic, readonly, nullable) id<MTLTexture> metalTexture;
 
 /**
  * Creates a managed host memory tensor buffer.
@@ -148,6 +137,37 @@ typedef NS_ENUM(NSInteger, LRTTensorBufferType) {
                                                error:(NSError **)error;
 
 /**
+ * Creates a managed tensor buffer with the specified buffer type and tensor type.
+ *
+ * @param environment LiteRT environment instance.
+ * @param bufferType Underlying buffer storage type (e.g., HostMemory, MetalBuffer).
+ * @param size Buffer capacity in bytes.
+ * @param tensorType Tensor type describing element type and shape dimensions.
+ * @param error Out-parameter populated on failure.
+ * @return A new LRTTensorBuffer instance, or nil on failure.
+ */
++ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                          bufferType:(LRTTensorBufferType)bufferType
+                                                size:(NSUInteger)size
+                                          tensorType:(LRTTensorType *)tensorType
+                                               error:(NSError **)error;
+
+/**
+ * Creates a managed tensor buffer satisfying the given allocation requirements.
+ *
+ * @param environment LiteRT environment instance.
+ * @param tensorType Tensor type describing element type and shape dimensions.
+ * @param requirements Allocation requirements specifying supported buffer types, size, and
+ * alignment.
+ * @param error Out-parameter populated on failure.
+ * @return A new LRTTensorBuffer instance, or nil on failure.
+ */
++ (nullable instancetype)tensorBufferWithEnvironment:(LRTEnvironment *)environment
+                                          tensorType:(LRTTensorType *)tensorType
+                                        requirements:(LRTTensorBufferRequirements *)requirements
+                                               error:(NSError **)error;
+
+/**
  * Creates a tensor buffer wrapping an existing Metal buffer.
  *
  * @param environment LiteRT environment instance.
@@ -179,23 +199,7 @@ typedef NS_ENUM(NSInteger, LRTTensorBufferType) {
                                           dimensions:(NSArray<NSNumber *> *)dimensions
                                                error:(NSError **)error;
 
-/** Buffer storage type (HostMemory, MetalBuffer, etc.). */
-@property(nonatomic, readonly) LRTTensorBufferType bufferType;
-
-/** Element type of tensor elements. */
-@property(nonatomic, readonly) LRTElementType elementType;
-
-/** Tensor shape dimension sizes. */
-@property(nonatomic, readonly, copy) NSArray<NSNumber *> *dimensions;
-
-/** Packed buffer size in bytes. */
-@property(nonatomic, readonly) NSUInteger size;
-
-/** Metal buffer reference if backing memory is a Metal buffer, or nil otherwise. */
-@property(nonatomic, readonly, nullable) id<MTLBuffer> metalBuffer;
-
-/** Metal texture reference if backing memory is a Metal texture, or nil otherwise. */
-@property(nonatomic, readonly, nullable) id<MTLTexture> metalTexture;
+- (instancetype)init NS_UNAVAILABLE;
 
 /**
  * Copies and returns the raw byte data from the tensor buffer.

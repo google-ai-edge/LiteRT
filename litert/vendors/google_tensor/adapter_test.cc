@@ -111,8 +111,8 @@ TEST(AdapterTest, CompileSuccess) {
   };
   LITERT_ASSERT_OK(adapter->Compile(
       model_buffer_view.data(), model_buffer_view.size(), options_str.data(),
-      options_str.size(), &compiled_code_data,
-      &compiled_code_sizes, &num_bytecodes));
+      options_str.size(), &compiled_code_data, &compiled_code_sizes,
+      &num_bytecodes));
   ASSERT_NE(compiled_code_data, nullptr);
   ASSERT_GT(num_bytecodes, 0);
   for (int i = 0; i < num_bytecodes; ++i) {
@@ -144,6 +144,40 @@ TEST(AdapterTest, AreCompositesSupported) {
   LITERT_ASSERT_OK_AND_ASSIGN(const std::vector<bool> empty_results,
                               adapter->AreCompositesSupported({}));
   EXPECT_TRUE(empty_results.empty());
+}
+
+TEST(AdapterTest, GetUnsupportedOpsSuccess) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto adapter,
+                              Adapter::Create(/*shared_library_dir=*/
+                                              std::nullopt));
+
+  auto model = litert::testing::LoadTestFileModel("mul_simple.tflite");
+  ASSERT_NE(model.Get(), nullptr);
+  LiteRtModel litert_model = model.Get();
+
+  litert::OwningBufferRef buf;
+  auto [data, size, offset] = buf.GetWeak();
+  const auto opts = litert::SerializationOptions::Defaults();
+  ASSERT_EQ(
+      LiteRtSerializeModel(litert_model, &data, &size, &offset, false, opts),
+      kLiteRtStatusOk);
+  ASSERT_GT(buf.Size(), 0);
+  absl::string_view model_buffer_view(buf.StrView());
+
+  GoogleTensorOptions google_tensor_options;
+  google_tensor_options.set_float_truncation_type(
+      GoogleTensorOptionsTruncationType::FLOAT_TRUNCATION_TYPE_HALF);
+  google_tensor_options.mutable_compiler_config()->set_device(
+      DeviceType::DEVICE_TYPE_TENSOR_G5);
+
+  std::string options_str = google_tensor_options.SerializeAsString();
+
+  Expected<std::vector<UnsupportedOp>> unsupported_ops =
+      adapter->GetUnsupportedOps(model_buffer_view.data(),
+                                 model_buffer_view.size(), options_str.data(),
+                                 options_str.size());
+  LITERT_ASSERT_OK(unsupported_ops);
+  EXPECT_TRUE(unsupported_ops->empty());
 }
 
 }  // namespace google_tensor

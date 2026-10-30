@@ -19,7 +19,7 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 def litert_prebuilts():
     http_archive(
         name = "litert_prebuilts",
-        build_file = "@//third_party/litert_prebuilts:litert_prebuilts.BUILD",
+        build_file = Label("//third_party/litert_prebuilts:litert_prebuilts.BUILD"),
         type = "zip",
         url = "https://storage.googleapis.com/litert/binaries/latest/litert_prebuilts.zip",
     )

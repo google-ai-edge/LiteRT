@@ -15,14 +15,16 @@ limitations under the License.
 #include "tensor/internal/graph.h"
 
 #include <memory>
+#include <optional>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/type_id.h"
 #include "tensor/utils/matchers.h"
-#include "tensor/utils/source_location.h"
 
 namespace litert::tensor::graph {
 namespace {
@@ -40,7 +42,7 @@ MATCHER_P(IsLocation, loc, "") {
 }
 
 TEST(TensorTest, NewTensorGroupWorks) {
-  const auto loc = source_location::current();
+  const auto loc = absl::SourceLocation::current();
   const std::shared_ptr<const TensorGroup> g = NewTensorGroup(3, loc);
   EXPECT_NE(g, nullptr);
   EXPECT_THAT(g->tensor_infos, SizeIs(3));
@@ -50,7 +52,7 @@ TEST(TensorTest, NewTensorGroupWorks) {
 }
 
 TEST(TensorTest, NewTensorCreatesAValidTensor) {
-  const auto loc = source_location::current();
+  const auto loc = absl::SourceLocation::current();
   Tensor a = NewTensor(loc);
   EXPECT_EQ(a.index, 0);
   ASSERT_NE(a.group, nullptr);
@@ -59,13 +61,13 @@ TEST(TensorTest, NewTensorCreatesAValidTensor) {
 }
 
 TEST(TensorTest, SetAndGetTensorName) {
-  Tensor a = NewTensor(source_location::current());
+  Tensor a = NewTensor(absl::SourceLocation::current());
   EXPECT_THAT(SetName(a, "my tensor name"), IsOk());
   EXPECT_THAT(GetName(a), IsOkAndHolds(StrEq("my tensor name")));
 }
 
 TEST(TensorTest, SetAndGetBuffer) {
-  Tensor a = NewTensor(source_location::current());
+  Tensor a = NewTensor(absl::SourceLocation::current());
   auto buffer = OwningCpuBuffer::Copy<Type::kI32>({1, 2, 3, 4});
   EXPECT_THAT(SetBuffer(a, buffer), IsOk());
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & retrieved_buffer, GetBuffer(a));
@@ -75,13 +77,13 @@ TEST(TensorTest, SetAndGetBuffer) {
 TEST(TensorTest, DefaultTensorIsInvalid) {
   Tensor a;
   EXPECT_THAT(GetStatus(a), Not(IsOk()));
-  EXPECT_THAT(GetLocation(a), IsLocation(source_location()));
+  EXPECT_THAT(GetLocation(a), IsLocation(absl::SourceLocation()));
   EXPECT_THAT(GetProducer(a), Not(IsOk()));
   EXPECT_THAT(GetConsumers(a), Not(IsOk()));
 }
 
 TEST(TensorTest, TensorWithWringIndexIsInvalid) {
-  Tensor a = NewTensor(source_location::current());
+  Tensor a = NewTensor(absl::SourceLocation::current());
   a.index = 3;
   EXPECT_THAT(GetStatus(a), Not(IsOk()));
 }
@@ -121,6 +123,95 @@ TEST(QuantizationTest, As) {
       const_quant_ref.As<PerChannelAffineQuantization>());
   EXPECT_EQ(&const_quant_as, &quant);
   EXPECT_THAT(const_quant_ref.As<DummyQuantization>(), Not(IsOk()));
+}
+
+struct DummyOp : Operation {
+  absl::string_view GetName() const override { return "DummyOp"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
+TEST(ScopeTest, NestedScopeHierarchyAndAttributesAndBoundaries) {
+  EXPECT_EQ(CurrentScope(), nullptr);
+
+  Tensor leaf_input = NewTensor(absl::SourceLocation::current());
+  Tensor leaf_weight = NewTensor(absl::SourceLocation::current());
+
+  std::shared_ptr<DummyOp> inner_op;
+  Tensor inner_output;
+  {
+    ScopeGuard layer_scope("transformer_layer", "layer_3");
+    layer_scope.Attr("layer_idx", 3).Bind("input", leaf_input);
+
+    {
+      ScopeGuard attn_scope("gated_attention", "attn");
+      attn_scope.Attr("num_heads", 8)
+          .Attr("scale", 0.0625)
+          .Attr("mode", "gqa")
+          .Bind("input", leaf_input)
+          .Bind("q_weight", leaf_weight);
+
+      inner_op = std::make_shared<DummyOp>();
+      auto group = NewTensorGroup(1, absl::SourceLocation::current());
+      inner_op->outputs_group = group;
+      group->producer = inner_op;
+      inner_output = GetTensor(0, group);
+      attn_scope.Bind("output", inner_output);
+    }
+
+    EXPECT_EQ(CurrentScope(), layer_scope.scope());
+  }
+  EXPECT_EQ(CurrentScope(), nullptr);
+
+  ASSERT_NE(inner_op->scope, nullptr);
+  EXPECT_EQ(inner_op->scope->kind, "gated_attention");
+  EXPECT_EQ(inner_op->scope->name, "attn");
+  EXPECT_EQ(inner_op->scope->FullPath(), "layer_3/attn");
+  EXPECT_EQ(inner_op->scope->GetIntAttr("num_heads"), 8);
+  EXPECT_DOUBLE_EQ(*inner_op->scope->GetFloatAttr("scale"), 0.0625);
+  EXPECT_EQ(inner_op->scope->GetStringAttr("mode"), "gqa");
+
+  ASSERT_NE(inner_op->scope->parent, nullptr);
+  EXPECT_EQ(inner_op->scope->parent->kind, "transformer_layer");
+  EXPECT_EQ(inner_op->scope->parent->name, "layer_3");
+  EXPECT_EQ(inner_op->scope->parent->GetIntAttr("layer_idx"), 3);
+  EXPECT_EQ(inner_op->scope->FindAncestor("transformer_layer"),
+            inner_op->scope->parent.get());
+
+  auto bound_in = inner_op->scope->GetBoundaryTensor("input");
+  ASSERT_TRUE(bound_in.has_value());
+  EXPECT_EQ(*bound_in, leaf_input);
+
+  auto bound_w = inner_op->scope->GetBoundaryTensor("q_weight");
+  ASSERT_TRUE(bound_w.has_value());
+  EXPECT_EQ(*bound_w, leaf_weight);
+
+  auto bound_out = inner_op->scope->GetBoundaryTensor("output");
+  ASSERT_TRUE(bound_out.has_value());
+  EXPECT_EQ(*bound_out, inner_output);
+}
+
+TEST(ScopeTest, BindOptionalTensorWrapper) {
+  struct FakeTensorWrapper {
+    Tensor raw;
+    const Tensor& GetRaw() const { return raw; }
+  };
+
+  FakeTensorWrapper present{NewTensor(absl::SourceLocation::current())};
+  std::optional<FakeTensorWrapper> opt_present = present;
+  std::optional<FakeTensorWrapper> opt_empty = std::nullopt;
+
+  std::shared_ptr<Scope> captured_scope;
+  {
+    ScopeGuard scope("test_scope");
+    scope.Bind("present", opt_present).Bind("empty", opt_empty);
+    captured_scope = scope.scope();
+  }
+
+  ASSERT_NE(captured_scope, nullptr);
+  auto bound_present = captured_scope->GetBoundaryTensor("present");
+  ASSERT_TRUE(bound_present.has_value());
+  EXPECT_EQ(*bound_present, present.raw);
+  EXPECT_FALSE(captured_scope->GetBoundaryTensor("empty").has_value());
 }
 
 }  // namespace

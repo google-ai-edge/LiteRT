@@ -297,6 +297,221 @@ TEST(TensorRtBytecodeTest, SharedWeightShardRejectsInvalidReferences) {
   EXPECT_FALSE(PackTensorRtSharedWeightShard(shared_weights, entry).HasValue());
 }
 
+// A store with a private run, a segment of two pieces, a gap and a second
+// segment, for an engine whose weight data is five granules.
+TensorRtWeightStore MakeWeightStore(const std::vector<uint8_t>& run_data) {
+  constexpr uint64_t kGranule = 2 << 20;
+  TensorRtWeightStore store;
+  store.source_path = "/models/gemma.litertlm";
+  store.source_size = 1 << 30;
+  store.source_identity = {11, 22, 33, 44, 55, 66};
+  store.granule = kGranule;
+  store.weight_data_size = 5 * kGranule;
+  TensorRtWeightSegment first;
+  first.holder_name = "weight_holder_0";
+  first.size = 2 * kGranule;
+  first.payload_offset = kGranule;
+  first.key = {0x1111, 0x2222};
+  first.pieces = {{4096, 1000, 0}, {8192, 3 << 20, 1024}};
+  TensorRtWeightSegment second;
+  second.holder_name = "weight_holder_3";
+  second.size = kGranule;
+  second.payload_offset = 4 * kGranule;
+  second.key = {0x3333, 0x4444};
+  second.pieces = {{1 << 29, kGranule, 0}};
+  store.segments = {first, second};
+  store.private_runs = {{128, run_data.data(), run_data.size()},
+                        {3 * kGranule + 4096, run_data.data(), 4}};
+  return store;
+}
+
+TEST(TensorRtBytecodeTest, WeightStoreRoundTripsInAShard) {
+  const std::vector<uint8_t> run_data = {1, 2, 3, 4, 5, 6, 7};
+  const TensorRtWeightStore store = MakeWeightStore(run_data);
+  const std::vector<uint8_t> engine = {9, 8, 7};
+  TensorRtBundleEntry entry;
+  entry.function_name = "partition_0";
+  entry.input_names = {"input"};
+  entry.output_names = {"output"};
+  entry.engine_data = engine.data();
+  entry.engine_size = engine.size();
+  entry.weight_store = &store;
+
+  auto shard = PackTensorRtSharedWeightShard({}, entry);
+  ASSERT_TRUE(shard.HasValue()) << shard.Error().Message();
+  auto parsed =
+      ParseTensorRtBytecode(shard->data(), shard->size(), "partition_0");
+  ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
+  EXPECT_EQ(parsed->version, kTensorRtBytecodeVersionWithWeightStore);
+  EXPECT_EQ(std::vector<uint8_t>(parsed->engine_data,
+                                 parsed->engine_data + parsed->engine_size),
+            engine);
+  ASSERT_TRUE(parsed->weight_store.has_value());
+  const TensorRtWeightStore& read = *parsed->weight_store;
+  EXPECT_EQ(read.source_path, store.source_path);
+  EXPECT_EQ(read.source_size, store.source_size);
+  EXPECT_EQ(read.source_identity, store.source_identity);
+  EXPECT_EQ(read.granule, store.granule);
+  EXPECT_EQ(read.weight_data_size, store.weight_data_size);
+  ASSERT_EQ(read.segments.size(), 2);
+  for (size_t i = 0; i < read.segments.size(); ++i) {
+    EXPECT_EQ(read.segments[i].holder_name, store.segments[i].holder_name);
+    EXPECT_EQ(read.segments[i].size, store.segments[i].size);
+    EXPECT_EQ(read.segments[i].payload_offset,
+              store.segments[i].payload_offset);
+    EXPECT_EQ(read.segments[i].key, store.segments[i].key);
+    ASSERT_EQ(read.segments[i].pieces.size(), store.segments[i].pieces.size());
+    for (size_t j = 0; j < read.segments[i].pieces.size(); ++j) {
+      EXPECT_EQ(read.segments[i].pieces[j].source_offset,
+                store.segments[i].pieces[j].source_offset);
+      EXPECT_EQ(read.segments[i].pieces[j].size,
+                store.segments[i].pieces[j].size);
+      EXPECT_EQ(read.segments[i].pieces[j].segment_offset,
+                store.segments[i].pieces[j].segment_offset);
+    }
+  }
+  ASSERT_EQ(read.private_runs.size(), 2);
+  EXPECT_EQ(read.private_runs[0].offset, 128);
+  EXPECT_EQ(std::vector<uint8_t>(
+                read.private_runs[0].data,
+                read.private_runs[0].data + read.private_runs[0].size),
+            run_data);
+  EXPECT_EQ(read.private_runs[1].offset, store.private_runs[1].offset);
+  EXPECT_EQ(read.private_runs[1].size, 4);
+  // The run data aliases the bytecode buffer.
+  EXPECT_GE(read.private_runs[0].data, shard->data());
+  EXPECT_LT(read.private_runs[0].data, shard->data() + shard->size());
+
+  // Every truncation is rejected.
+  for (size_t size = shard->size() - 1; size > shard->size() - 64; --size) {
+    EXPECT_FALSE(
+        ParseTensorRtBytecode(shard->data(), size, "partition_0").HasValue());
+  }
+}
+
+TEST(TensorRtBytecodeTest, BundleWithoutAWeightStoreKeepsVersionFour) {
+  const std::vector<TensorRtSharedWeight> shared_weights = {
+      {TensorRtWeightDataType::kInt8, 1, {7}}};
+  const std::vector<uint8_t> engine = {1};
+  TensorRtBundleEntry entry;
+  entry.function_name = "partition_0";
+  entry.engine_data = engine.data();
+  entry.engine_size = engine.size();
+  entry.refit_weights = {{"weight", 0}};
+  auto shard = PackTensorRtSharedWeightShard(shared_weights, entry);
+  ASSERT_TRUE(shard.HasValue()) << shard.Error().Message();
+  auto parsed =
+      ParseTensorRtBytecode(shard->data(), shard->size(), "partition_0");
+  ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
+  EXPECT_EQ(parsed->version, kTensorRtBytecodeVersionWithSharedWeights);
+  EXPECT_FALSE(parsed->weight_store.has_value());
+}
+
+TEST(TensorRtBytecodeTest, WeightStoreAndStoreLessEnginesShareABundle) {
+  const std::vector<uint8_t> run_data = {1, 2, 3, 4};
+  const TensorRtWeightStore store = MakeWeightStore(run_data);
+  const std::vector<TensorRtSharedWeight> shared_weights = {
+      {TensorRtWeightDataType::kInt8, 1, {7}}};
+  const std::vector<uint8_t> engine = {1, 2};
+  TensorRtBundleEntry with_store;
+  with_store.function_name = "partition_0";
+  with_store.engine_data = engine.data();
+  with_store.engine_size = engine.size();
+  with_store.weight_store = &store;
+  TensorRtBundleEntry without_store;
+  without_store.function_name = "partition_1";
+  without_store.engine_data = engine.data();
+  without_store.engine_size = engine.size();
+  without_store.refit_weights = {{"weight", 0}};
+  auto bundle = PackTensorRtSharedWeightBundle(shared_weights,
+                                               {with_store, without_store});
+  ASSERT_TRUE(bundle.HasValue()) << bundle.Error().Message();
+  auto first =
+      ParseTensorRtBytecode(bundle->data(), bundle->size(), "partition_0");
+  ASSERT_TRUE(first.HasValue()) << first.Error().Message();
+  EXPECT_TRUE(first->weight_store.has_value());
+  EXPECT_TRUE(first->refit_weights.empty());
+  auto second =
+      ParseTensorRtBytecode(bundle->data(), bundle->size(), "partition_1");
+  ASSERT_TRUE(second.HasValue()) << second.Error().Message();
+  EXPECT_FALSE(second->weight_store.has_value());
+  EXPECT_EQ(second->refit_weights.size(), 1);
+}
+
+TEST(TensorRtBytecodeTest, WeightStoreRejectsInvalidLayouts) {
+  const std::vector<uint8_t> run_data = {1, 2, 3, 4, 5, 6, 7};
+  const std::vector<uint8_t> engine = {1};
+  const auto packs = [&](const TensorRtWeightStore& store) {
+    TensorRtBundleEntry entry;
+    entry.function_name = "partition_0";
+    entry.engine_data = engine.data();
+    entry.engine_size = engine.size();
+    entry.weight_store = &store;
+    return PackTensorRtSharedWeightShard({}, entry).HasValue();
+  };
+  EXPECT_TRUE(packs(MakeWeightStore(run_data)));
+  {
+    auto store = MakeWeightStore(run_data);
+    store.source_path = "relative.litertlm";
+    EXPECT_FALSE(packs(store));
+  }
+  {
+    auto store = MakeWeightStore(run_data);
+    store.granule = 3 << 20;  // not a power of two
+    EXPECT_FALSE(packs(store));
+  }
+  {
+    auto store = MakeWeightStore(run_data);
+    store.segments[0].payload_offset += 4096;  // not on a granule boundary
+    EXPECT_FALSE(packs(store));
+  }
+  {
+    auto store = MakeWeightStore(run_data);
+    store.segments[1].payload_offset = 2 * store.granule;  // overlaps the first
+    EXPECT_FALSE(packs(store));
+  }
+  {
+    auto store = MakeWeightStore(run_data);
+    store.segments[1].size = 2 * store.granule;  // past the weight data
+    EXPECT_FALSE(packs(store));
+  }
+  {
+    auto store = MakeWeightStore(run_data);
+    store.segments[1].holder_name = store.segments[0].holder_name;
+    EXPECT_FALSE(packs(store));
+  }
+  {
+    auto store = MakeWeightStore(run_data);
+    store.segments[0].pieces[1].segment_offset = 500;  // overlaps the first
+    EXPECT_FALSE(packs(store));
+  }
+  {
+    auto store = MakeWeightStore(run_data);
+    store.segments[0].pieces[1].size = store.segments[0].size;  // past the end
+    EXPECT_FALSE(packs(store));
+  }
+  {
+    auto store = MakeWeightStore(run_data);
+    store.segments[0].pieces[0].source_offset = store.source_size;
+    EXPECT_FALSE(packs(store));
+  }
+  {
+    auto store = MakeWeightStore(run_data);
+    store.private_runs[1].offset = store.granule + 16;  // inside a segment
+    EXPECT_FALSE(packs(store));
+  }
+  {
+    auto store = MakeWeightStore(run_data);
+    store.private_runs[1].offset = 130;  // overlaps the first run
+    EXPECT_FALSE(packs(store));
+  }
+  {
+    auto store = MakeWeightStore(run_data);
+    store.segments.clear();
+    EXPECT_FALSE(packs(store));
+  }
+}
+
 TEST(TensorRtBytecodeTest, SharedWeightBundleRejectsOverflowingInt4Count) {
   std::vector<TensorRtSharedWeight> shared_weights = {
       {TensorRtWeightDataType::kInt4,

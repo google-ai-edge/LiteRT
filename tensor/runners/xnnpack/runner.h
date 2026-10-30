@@ -32,6 +32,7 @@ limitations under the License.
 #include "tensor/backends/xnnpack/graph.h"
 #include "tensor/runners/common_nnpack/runner.h"
 #include "tensor/tensor.h"
+#include "tensor/utils/macros.h"
 #include "pthreadpool.h"  // from @pthreadpool
 
 namespace litert::tensor {
@@ -68,6 +69,7 @@ class XnnpackRunner : public NnpackRunner {
       : NnpackRunner(std::move(other)),
         runtime_(std::move(other.runtime_)),
         weights_cache_(other.weights_cache_),
+        workspace_(other.workspace_),
         threadpool_(std::exchange(other.threadpool_, nullptr)) {}
 
   XnnpackRunner& operator=(XnnpackRunner&& other) noexcept {
@@ -78,13 +80,16 @@ class XnnpackRunner : public NnpackRunner {
       NnpackRunner::operator=(std::move(other));
       runtime_ = std::move(other.runtime_);
       weights_cache_ = other.weights_cache_;
+      workspace_ = other.workspace_;
       threadpool_ = std::exchange(other.threadpool_, nullptr);
     }
     return *this;
   }
 
-  void SetNumThreads(size_t num_threads) override {
-    NnpackRunner::SetNumThreads(num_threads);
+  absl::Status SetNumThreads(size_t num_threads) override {
+    // Fails once the runtime exists, which keeps the pool below from being
+    // destroyed while the runtime still uses it.
+    LRT_TENSOR_RETURN_IF_ERROR(NnpackRunner::SetNumThreads(num_threads));
     if (threadpool_ != nullptr) {
       pthreadpool_destroy(threadpool_);
       threadpool_ = nullptr;
@@ -92,13 +97,17 @@ class XnnpackRunner : public NnpackRunner {
     if (num_threads > 1) {
       threadpool_ = pthreadpool_create(num_threads);
     }
+    return absl::OkStatus();
   }
 
   void SetWeightsCache(xnn_weights_cache_t weights_cache) {
     weights_cache_ = weights_cache;
   }
 
+  void SetWorkspace(xnn_workspace_t workspace) { workspace_ = workspace; }
+
   xnn_weights_cache_t weights_cache() const { return weights_cache_; }
+  xnn_workspace_t workspace() const { return workspace_; }
   pthreadpool_t threadpool() const { return threadpool_; }
   xnn_runtime_t runtime() const { return runtime_.get(); }
 
@@ -110,7 +119,7 @@ class XnnpackRunner : public NnpackRunner {
     return XNN_VALUE_FLAG_EXTERNAL_OUTPUT;
   }
 
-  absl::Status CreateRuntime(size_t num_threads) override;
+  absl::Status CreateRuntime() override;
   absl::Status SetExternalValueShape(uint32_t id,
                                      absl::Span<const size_t> dims) override;
   absl::Status ReshapeRuntime() override;
@@ -126,6 +135,7 @@ class XnnpackRunner : public NnpackRunner {
  private:
   RuntimePtr runtime_ = nullptr;
   xnn_weights_cache_t weights_cache_ = nullptr;
+  xnn_workspace_t workspace_ = nullptr;
   pthreadpool_t threadpool_ = nullptr;
 };
 

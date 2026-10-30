@@ -16,12 +16,12 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_
 
+// clang-format off
 #include "litert/test/generators/binary_no_bcast.h"  // IWYU pragma: export
 #include "litert/test/generators/common.h"  // IWYU pragma: export
 #include "litert/test/generators/conv_2d.h"  // IWYU pragma: export
 #include "litert/test/generators/depthwise_conv_2d.h"  // IWYU pragma: export
 #include "litert/test/generators/extra_model.h"  // IWYU pragma: export
-#include "litert/test/generators/no_op.h"  // IWYU pragma: export
 #include "litert/test/generators/unary.h"  // IWYU pragma: export
 #include "litert/test/generators/reduction.h"  // IWYU pragma: export
 #include "litert/test/generators/pooling.h"  // IWYU pragma: export
@@ -35,11 +35,19 @@
 #include "litert/test/generators/softmax.h"  // IWYU pragma: export
 #include "litert/test/generators/pad.h"  // IWYU pragma: export
 #include "litert/test/generators/sdpa_transposed.h"  // IWYU pragma: export
+#include "litert/test/generators/cache_update_sdpa_transposed.h"  // IWYU pragma: export
 #include "litert/test/generators/mean.h"  // IWYU pragma: export
 #include "litert/test/generators/slice.h"  // IWYU pragma: export
 #include "litert/test/generators/select_v2.h"  // IWYU pragma: export
 #include "litert/test/generators/sdpa.h"  // IWYU pragma: export
 #include "litert/test/generators/swiglu.h"  // IWYU pragma: export
 #include "litert/test/generators/qkv_norm_rope.h"  // IWYU pragma: export
+#include "litert/test/generators/comparison.h"  // IWYU pragma: export
+#include "litert/test/generators/rms_norm.h"  // IWYU pragma: export
+#include "litert/test/generators/group_norm.h"  // IWYU pragma: export
+#include "litert/test/generators/layer_norm.h"  // IWYU pragma: export
+#include "litert/test/generators/moe_experts.h"  // IWYU pragma: export
+#include "litert/test/generators/runtime_bmm.h"  // IWYU pragma: export
+// clang-format on
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_

@@ -28,6 +28,7 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/base/dynamic_annotations.h"  // from @com_google_absl  // IWYU pragma: keep
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
@@ -109,6 +110,12 @@ class TestRunner : public NnpackRunner {
     hook_statuses_[static_cast<size_t>(hook)] = std::move(status);
   }
 
+  // Configures the mock runtime to mark the output buffer as uninitialized
+  // during invocation, simulating an external assembly kernel.
+  void SetPoisonOutputOnInvoke(bool poison) {
+    poison_output_on_invoke_ = poison;
+  }
+
   // Returns the graph information associated to `tensor`.
   const graph::TensorInformation& InfoOf(const TensorHandle& tensor) const {
     const absl::StatusOr<size_t> index = graph().Lookup(tensor);
@@ -120,7 +127,7 @@ class TestRunner : public NnpackRunner {
   uint32_t FlagExternalInput() const override { return kExternalInput; }
   uint32_t FlagExternalOutput() const override { return kExternalOutput; }
 
-  absl::Status CreateRuntime(size_t num_threads) override {
+  absl::Status CreateRuntime() override {
     return StatusOf(Hook::kCreateRuntime);
   }
 
@@ -170,6 +177,11 @@ class TestRunner : public NnpackRunner {
     if (in_.data() != nullptr && out_.data() != nullptr) {
       std::memcpy(out_.data(), in_.data(), std::min(in_.size(), out_.size()));
     }
+#if defined(ABSL_HAVE_MEMORY_SANITIZER)
+    if (poison_output_on_invoke_ && out_.data() != nullptr) {
+      ABSL_ANNOTATE_MEMORY_IS_UNINITIALIZED(out_.data(), out_.size());
+    }
+#endif
     return absl::OkStatus();
   }
 
@@ -180,6 +192,7 @@ class TestRunner : public NnpackRunner {
   }
 
   std::array<absl::Status, static_cast<size_t>(Hook::kNumHooks)> hook_statuses_;
+  bool poison_output_on_invoke_ = false;
   TensorHandle input_ = TensorHandle::Invalid();
   TensorHandle output_ = TensorHandle::Invalid();
   std::vector<size_t> input_dims_;
@@ -818,6 +831,17 @@ TEST(RunTest, RejectsAnUndersizedOutputView) {
   ASSERT_THAT(runner.SetInput(runner.Input(), data), IsOk());
 
   EXPECT_THAT(runner.Run(), StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(RunTest, OutputBuffersAreUnpoisonedAfterRun) {
+  TestRunner runner = MakeTestRunner();
+  runner.SetPoisonOutputOnInvoke(true);
+  const std::vector<float> data = {1.f, 2.f, 3.f, 4.f};
+  ASSERT_THAT(runner.SetInput(runner.Input(), data), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+
+  EXPECT_THAT(runner.ReadOutputAs<float>(runner.Output()),
+              IsOkAndHolds(ElementsAre(1.f, 2.f, 3.f, 4.f)));
 }
 
 // Names a backend hook for the failure propagation tests.

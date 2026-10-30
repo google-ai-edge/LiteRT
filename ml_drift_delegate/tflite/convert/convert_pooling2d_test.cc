@@ -86,8 +86,8 @@ TEST_P(ConvertPooling2dTest, Parameterized) {
       std::any_cast<::ml_drift::Pooling2DAttributes>(&pool_op->attr);
   ASSERT_TRUE(attr);
   EXPECT_EQ(attr->type, (op_code_ == kTfLiteBuiltinAveragePool2d
-                             ? ::ml_drift::PoolingType::AVERAGE
-                             : ::ml_drift::PoolingType::MAX));
+                             ? ::ml_drift::PoolingType::kAverage
+                             : ::ml_drift::PoolingType::kMax));
   EXPECT_EQ(attr->kernel.h, 2);
   EXPECT_EQ(attr->kernel.w, 2);
   EXPECT_EQ(attr->strides.h, 2);
@@ -133,8 +133,8 @@ TEST_P(ConvertPooling2dTest, GlobalAveragePoolingToMean) {
   const auto* attr = std::any_cast<::ml_drift::ReduceAttributes>(&op->attr);
   ASSERT_TRUE(attr);
   EXPECT_EQ(attr->dims.size(), 2);
-  EXPECT_TRUE(attr->dims.contains(::ml_drift::Axis::WIDTH));
-  EXPECT_TRUE(attr->dims.contains(::ml_drift::Axis::HEIGHT));
+  EXPECT_TRUE(attr->dims.contains(::ml_drift::Axis::kWidth));
+  EXPECT_TRUE(attr->dims.contains(::ml_drift::Axis::kHeight));
   EXPECT_EQ(op->outputs.size(), 1);
 }
 
@@ -207,7 +207,7 @@ TEST_P(ConvertCustomMaxPooling2dTest, Parameterized) {
   const auto* attr =
       std::any_cast<::ml_drift::Pooling2DAttributes>(&pool_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->type, ::ml_drift::PoolingType::MAX);
+  EXPECT_EQ(attr->type, ::ml_drift::PoolingType::kMax);
   EXPECT_EQ(attr->kernel.h, 2);
   EXPECT_EQ(attr->kernel.w, 2);
   EXPECT_EQ(attr->strides.h, 2);

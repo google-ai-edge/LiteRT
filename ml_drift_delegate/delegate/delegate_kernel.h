@@ -101,7 +101,9 @@ class DelegateKernel {
       const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
           input_tensor_refs,
       const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
-          output_tensor_refs) = 0;
+          output_tensor_refs,
+      const absl::flat_hash_set<::ml_drift::ValueId>&
+          preserved_fp32_values) = 0;
 
   // Returns true if the given id is an external shared constant tensor.
   bool IsExternalSharedConstantTensor(::ml_drift::ValueId id) {
@@ -113,10 +115,10 @@ class DelegateKernel {
   ::ml_drift::TensorStorageType GetStorageType() const {
     if (delegate_data_ != nullptr &&
         delegate_data_->options->use_buffer_storage_type) {
-      return ::ml_drift::TensorStorageType::BUFFER;
+      return ::ml_drift::TensorStorageType::kBuffer;
     }
     auto type = backend_->GetFastestStorageType();
-    return type.ok() ? *type : ::ml_drift::TensorStorageType::BUFFER;
+    return type.ok() ? *type : ::ml_drift::TensorStorageType::kBuffer;
   }
 
   // Checks that an inference context just restored from a program-cache entry

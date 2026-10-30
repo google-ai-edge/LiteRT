@@ -78,3 +78,29 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16SoftCapToF32(
       1.0f / soft_cap, soft_cap);
   return cudaPeekAtLastError();
 }
+
+namespace {
+
+// Reads and rewrites every 16 bytes of a buffer: a buffer larger than L2
+// pushes everything else out of it (a memset's streaming writes leave
+// resident lines alone).
+__global__ void L2FlushKernel(int4* buffer, size_t vectors) {
+  for (size_t i = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       i < vectors; i += static_cast<size_t>(gridDim.x) * blockDim.x) {
+    int4 value = buffer[i];
+    value.x += 1;
+    buffer[i] = value;
+  }
+}
+
+}  // namespace
+
+extern "C" cudaError_t LiteRtNvidiaLaunchL2Flush(void* buffer, size_t bytes,
+                                                 cudaStream_t stream) {
+  if (buffer == nullptr || bytes == 0 || bytes % 16 != 0) {
+    return cudaErrorInvalidValue;
+  }
+  L2FlushKernel<<<2048, 256, 0, stream>>>(static_cast<int4*>(buffer),
+                                          bytes / 16);
+  return cudaPeekAtLastError();
+}

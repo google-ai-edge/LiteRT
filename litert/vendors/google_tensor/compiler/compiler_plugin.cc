@@ -14,6 +14,7 @@
 
 #include <stdio.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -33,9 +34,11 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/ascii.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
@@ -45,6 +48,7 @@
 #include "litert/c/litert_op_options.h"
 #include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
+#include "litert/cc/internal/litert_c_types_printing.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_opaque_options_wrapper.h"
@@ -56,7 +60,7 @@
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
 #include "litert/core/util/flatbuffer_tools.h"
-#include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/google_tensor/adapter.h"
 #include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
 #include "google/protobuf/text_format.h"  // from @com_google_protobuf
@@ -87,10 +91,13 @@ namespace google_tensor {
 constexpr char kPluginManufacturer[] = "Google";
 
 constexpr const char* kPluginSocModels[] = {
-    "Tensor_G3", "Tensor_G4", "Tensor_G5", "Tensor_G6",
-// copybara:uncomment_begin(google-only)
-//     "Tensor_G7",
-// copybara:uncomment_end
+    "Tensor_G3",
+    "Tensor_G4",
+    "Tensor_G5",
+    "Tensor_G6",
+    // copybara:uncomment_begin(google-only)
+    // "Tensor_G7",
+    // copybara:uncomment_end
 };  // get the name for plugin soc model
 
 LiteRtStatus GetDeviceType(absl::string_view soc_model,
@@ -107,11 +114,11 @@ LiteRtStatus GetDeviceType(absl::string_view soc_model,
   } else if (soc_model == "Tensor_G6") {
     *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
         compiler::DEVICE_TYPE_TENSOR_G6;
-// copybara:uncomment_begin(google-only)
-//   } else if (soc_model == "Tensor_G7") {
-//     *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
-//         compiler::DEVICE_TYPE_TENSOR_G7;
-// copybara:uncomment_end
+    // copybara:uncomment_begin(google-only)
+  // } else if (soc_model == "Tensor_G7") {
+    // *device_type = ::third_party::odml::litert::litert::vendors::google_tensor::
+        // compiler::DEVICE_TYPE_TENSOR_G7;
+    // copybara:uncomment_end
   } else {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -170,6 +177,10 @@ constexpr const char* kSupportedStableHloCompositeOps[] = {
 
 constexpr auto kNumPluginSocModels =
     sizeof(kPluginSocModels) / sizeof(kPluginSocModels[0]);
+
+constexpr int kDefaultMaxLoggedOffloadReasons = 5;
+constexpr char kMaxLoggedOffloadReasonsEnvVar[] =
+    "LITERT_MAX_LOGGED_OFFLOAD_REASONS";
 
 }  // namespace google_tensor
 
@@ -278,15 +289,15 @@ LiteRtStatus LrtOptionsToGoogleTensorOptions(
       LrtGoogleTensorOptionsGetExtraOptions(lrt_options, &extra_options));
   google_tensor_options.set_extra_options(extra_options);
 
-// copybara:uncomment_begin(google-only)
-//   // EXPERIMENTAL ENABLE INPUT VALIDATOR
-//   bool experimental_enable_input_validator;
-//   LITERT_RETURN_IF_ERROR(
-//       LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
-//           lrt_options, &experimental_enable_input_validator));
-//   google_tensor_options.set_experimental_enable_input_validator(
-//       experimental_enable_input_validator);
-// copybara:uncomment_end
+  // copybara:uncomment_begin(google-only)
+  // // EXPERIMENTAL ENABLE INPUT VALIDATOR
+  // bool experimental_enable_input_validator;
+  // LITERT_RETURN_IF_ERROR(
+      // LrtGoogleTensorOptionsGetExperimentalEnableInputValidator(
+          // lrt_options, &experimental_enable_input_validator));
+  // google_tensor_options.set_experimental_enable_input_validator(
+      // experimental_enable_input_validator);
+  // copybara:uncomment_end
 
   return kLiteRtStatusOk;
 }
@@ -660,32 +671,50 @@ bool IsShloCompositeOpSupported(const litert::compiler::Op& op) {
   return false;
 }
 
-bool IsOpSupported(const litert::compiler::Op& op,
-                   const OpFilters& op_filters) {
+bool IsOpSupported(const litert::compiler::Op& op, const OpFilters& op_filters,
+                   absl::string_view op_filters_path = "",
+                   std::string* offload_reason = nullptr) {
   // Check if the composite op is supported.
   if (op.Code() == kLiteRtOpCodeShloComposite) {
-    return IsShloCompositeOpSupported(op);
-  }
-  // Check if the op is in the list of unsupported ops.
-  for (auto unsupported_op : kUnSupportedOps) {
-    if (unsupported_op == op.Code()) {
+    if (!IsShloCompositeOpSupported(op)) {
+      if (offload_reason != nullptr) {
+        *offload_reason = "Composite operation is not supported.";
+      }
       return false;
+    }
+  } else {
+    // Check if the op is in the list of unsupported ops.
+    for (auto unsupported_op : kUnSupportedOps) {
+      if (unsupported_op == op.Code()) {
+        if (offload_reason != nullptr) {
+          *offload_reason = "Op is not supported on the Google Tensor NPU.";
+        }
+        return false;
+      }
     }
   }
 
   // Check against user-defined OpFilters. An op is supported for TPU
   // delegation if the filters outcome is kRunOnTpu.
-  return GetFilterOutcome(op, op_filters) == FilterOutcome::kRunOnTpu;
+  if (GetFilterOutcome(op, op_filters) != FilterOutcome::kRunOnTpu) {
+    if (offload_reason != nullptr) {
+      *offload_reason = op_filters_path.empty()
+                            ? "Excluded by user-provided op filter."
+                            : absl::StrCat(
+                                  "Excluded by user-provided op filter (",
+                                  op_filters_path, ").");
+    }
+    return false;
+  }
+  return true;
 }
 
 }  // namespace google_tensor
 
 namespace {
 
-
 using OpCodeMap =
     absl::flat_hash_map<std::pair<LiteRtOpCode, std::string>, int32_t>;
-
 
 // Populates the compiler configuration within GoogleTensorOptions.
 LiteRtStatus PopulateCompilerConfig(
@@ -740,7 +769,6 @@ LiteRtStatus PopulateCompilerConfig(
   return kLiteRtStatusOk;
 }
 
-
 // Inserts a new operator code (opcode + custom name) into the global
 // OperatorCode list, or returns its index if it has already been registered.
 int32_t GetOrInsertOpCode(
@@ -777,8 +805,7 @@ void ReconstructTflOpCodes(LiteRtModelT& temp_model) {
   for (LiteRtOpT* op : subgraph->Ops()) {
     std::string custom_code_str = "";
     if (op->OpCode() == kLiteRtOpCodeTflCustom) {
-      if (litert::Expected<absl::string_view> custom_code =
-              op->CustomCode()) {
+      if (litert::Expected<absl::string_view> custom_code = op->CustomCode()) {
         custom_code_str = std::string(*custom_code);
       }
     }
@@ -866,9 +893,8 @@ litert::Expected<litert::OwningBufferRef<uint8_t>> SerializeSubgraph(
   ReconstructTflOpCodes(temp_model);
 
   // Serialize the temp_model
-  auto serialized =
-      litert::internal::SerializeModel(std::move(temp_model),
-                                       /*bytecode_alignment=*/1);
+  auto serialized = litert::internal::SerializeModel(std::move(temp_model),
+                                                     /*bytecode_alignment=*/1);
   if (!serialized.HasValue()) {
     return litert::Unexpected(serialized.Error().Status(),
                               "Failed to serialize temporary model");
@@ -899,10 +925,11 @@ litert::Expected<GoogleTensorOptions> GetGoogleTensorOptions(
   return google_tensor_options;
 }
 
-// Gets unsupported op indices dynamically using the adapter.
-litert::Expected<absl::flat_hash_set<int32_t>> GetUnsupportedOpsDynamic(
-    litert::google_tensor::Adapter* adapter, LiteRtSubgraph subgraph,
-    const GoogleTensorOptions& google_tensor_options) {
+// Gets unsupported op indices and reasons dynamically using the adapter.
+litert::Expected<absl::flat_hash_map<int32_t, std::string>>
+GetUnsupportedOpsDynamic(litert::google_tensor::Adapter* adapter,
+                         LiteRtSubgraph subgraph,
+                         const GoogleTensorOptions& google_tensor_options) {
   std::string options_str;
   if (!google_tensor_options.SerializeToString(&options_str)) {
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -924,8 +951,12 @@ litert::Expected<absl::flat_hash_set<int32_t>> GetUnsupportedOpsDynamic(
     return unsupported_ops.Error();
   }
 
-  return absl::flat_hash_set<int32_t>(unsupported_ops->begin(),
-                                      unsupported_ops->end());
+  absl::flat_hash_map<int32_t, std::string> result;
+  result.reserve(unsupported_ops->size());
+  for (litert::google_tensor::UnsupportedOp& op : *unsupported_ops) {
+    result.emplace(op.op_index, std::move(op.reason));
+  }
+  return result;
 }
 
 // Collects and batch-validates all SHLO composite ops in the subgraph using the
@@ -990,6 +1021,68 @@ absl::flat_hash_map<int, bool> ValidateCompositeOpsBatch(
   return composite_support_map;
 }
 
+struct OffloadedOpDiagnostic {
+  int op_index;
+  LiteRtOpCode op_code;
+  std::string reason;
+};
+
+// Returns the maximum number of CPU-offloaded op reasons to log.
+// Defaults to google_tensor::kDefaultMaxLoggedOffloadReasons (5). Can be
+// overridden via LITERT_MAX_LOGGED_OFFLOAD_REASONS: a negative value (e.g., -1)
+// logs all offloaded ops, 0 suppresses the per-op table, and a positive integer
+// N logs up to N offloaded ops.
+int GetMaxLoggedOffloadReasons() {
+  const char* env_val =
+      std::getenv(google_tensor::kMaxLoggedOffloadReasonsEnvVar);
+  int max_logged = google_tensor::kDefaultMaxLoggedOffloadReasons;
+  if (env_val != nullptr && absl::SimpleAtoi(env_val, &max_logged)) {
+    return max_logged;
+  }
+  return google_tensor::kDefaultMaxLoggedOffloadReasons;
+}
+
+void LogPartitioningDiagnostics(
+    size_t total_ops, absl::Span<const OffloadedOpDiagnostic> offloaded_ops) {
+  const size_t cpu_op_count = offloaded_ops.size();
+  const size_t npu_op_count = total_ops - cpu_op_count;
+  LITERT_LOG(
+      LITERT_INFO,
+      "Partitioning summary: %zu ops on NPU, %zu ops offloaded to CPU (Total: "
+      "%zu).",
+      npu_op_count, cpu_op_count, total_ops);
+
+  const int max_logged = GetMaxLoggedOffloadReasons();
+  if (cpu_op_count == 0 || max_logged == 0) {
+    return;
+  }
+
+  const size_t num_to_log =
+      max_logged < 0 ? cpu_op_count
+                     : std::min(cpu_op_count, static_cast<size_t>(max_logged));
+
+  std::string table =
+      "CPU-offloaded operations:\n"
+      "  Op Index | Op Code                | Reason\n"
+      "  ---------+------------------------+-----------------------------------"
+      "--------------------------------";
+  for (size_t i = 0; i < num_to_log; ++i) {
+    const OffloadedOpDiagnostic& diag = offloaded_ops[i];
+    absl::StrAppendFormat(&table, "\n  %-8d | %-22s | %s", diag.op_index,
+                          litert::GetOpCodeStringView(diag.op_code),
+                          diag.reason);
+  }
+  if (cpu_op_count > num_to_log) {
+    absl::StrAppendFormat(
+        &table,
+        "\n  ... %zu additional unsupported op diagnostics omitted (set %s=-1 "
+        "to log all).",
+        cpu_op_count - num_to_log,
+        google_tensor::kMaxLoggedOffloadReasonsEnvVar);
+  }
+  LITERT_LOG(LITERT_INFO, "%s", table.c_str());
+}
+
 }  // namespace
 
 LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
@@ -1030,12 +1123,19 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   // copybara:uncomment_begin(google-only)
   // // TODO(b/551885395): Remove this experimental flag once the feature is
   // // matured.
+  // const DeviceType device_type =
+      // google_tensor_options.compiler_config().device();
+  // const bool is_input_validator_supported_device =
+      // device_type == DeviceType::DEVICE_TYPE_TENSOR_G5 ||
+      // device_type == DeviceType::DEVICE_TYPE_TENSOR_G6 ||
+      // device_type == DeviceType::DEVICE_TYPE_TENSOR_G7;
   // enable_input_validation =
-      // google_tensor_options.experimental_enable_input_validator();
+      // google_tensor_options.experimental_enable_input_validator() &&
+      // is_input_validator_supported_device;
   // copybara:uncomment_end
 
   bool use_static_fallback = true;
-  absl::flat_hash_set<int32_t> unsupported_op_indices;
+  absl::flat_hash_map<int32_t, std::string> unsupported_ops_map;
   absl::flat_hash_map<int, bool> composite_support_map;
 
   if (enable_input_validation) {
@@ -1049,48 +1149,78 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
     if (has_unsupported_composite) {
       LITERT_LOG(LITERT_INFO,
-                 "Graph contains unsupported composite ops. Skipping dynamic "
-                 "validation for this pass. Falling back to static mapping.");
+                 "Graph contains unsupported composite ops. Dynamic validation "
+                 "did not run. Falling back to static mapping.");
     } else {
-      litert::Expected<absl::flat_hash_set<int32_t>> unsupported_ops_expected =
-          GetUnsupportedOpsDynamic(adapter, subgraph, google_tensor_options);
+      litert::Expected<absl::flat_hash_map<int32_t, std::string>>
+          unsupported_ops_expected = GetUnsupportedOpsDynamic(
+              adapter, subgraph, google_tensor_options);
       if (unsupported_ops_expected.HasValue()) {
-        unsupported_op_indices = std::move(*unsupported_ops_expected);
+        unsupported_ops_map = std::move(*unsupported_ops_expected);
         use_static_fallback = false;
       } else {
         LITERT_LOG(
             LITERT_WARNING,
-            "GetUnsupportedOpsDynamic failed: %s. Falling back to static "
-            "mapping.",
+            "GetUnsupportedOpsDynamic failed: %s. Dynamic validation did not "
+            "run. Falling back to static mapping.",
             unsupported_ops_expected.Error().Message().c_str());
       }
     }
   }
+
+  std::vector<OffloadedOpDiagnostic> offloaded_ops;
   for (int i = 0; i < ops.size(); ++i) {
     const litert::compiler::Op& op = ops[i];
-    bool is_supported = false;
     if (op.Code() == kLiteRtOpCodeShloComposite) {
       // Composite ops are resolved by `ValidateCompositeOpsBatch` ahead of the
       // loop when input validation is enabled; otherwise fall back to the
       // static list of supported composite ops.
+      bool is_supported = false;
       if (enable_input_validation) {
         const auto it = composite_support_map.find(i);
         is_supported = it != composite_support_map.end() && it->second;
       } else {
         is_supported = google_tensor::IsShloCompositeOpSupported(op);
       }
+      if (!is_supported) {
+        offloaded_ops.push_back(
+            {i, op.Code(), "Composite operation is not supported."});
+        continue;
+      }
+      if (google_tensor::GetFilterOutcome(op, op_filters) !=
+          google_tensor::FilterOutcome::kRunOnTpu) {
+        std::string offload_reason =
+            google_tensor_options.op_filters_proto().empty()
+                ? "Excluded by user-provided op filter."
+                : absl::StrCat("Excluded by user-provided op filter (",
+                               google_tensor_options.op_filters_proto(), ").");
+        offloaded_ops.push_back({i, op.Code(), std::move(offload_reason)});
+        continue;
+      }
+    } else if (use_static_fallback) {
+      std::string offload_reason;
+      if (!google_tensor::IsOpSupported(
+              op, op_filters, google_tensor_options.op_filters_proto(),
+              &offload_reason)) {
+        offloaded_ops.push_back({i, op.Code(), std::move(offload_reason)});
+        continue;
+      }
     } else {
-      is_supported = use_static_fallback
-                         ? google_tensor::IsOpSupported(op, op_filters)
-                         : !unsupported_op_indices.contains(i);
-    }
-    if (!is_supported) {
-      continue;
+      auto it = unsupported_ops_map.find(i);
+      if (it != unsupported_ops_map.end()) {
+        offloaded_ops.push_back(
+            {i, op.Code(),
+             it->second.empty() ? "Unsupported operation"
+                                : std::move(it->second)});
+        continue;
+      }
     }
 
     LITERT_RETURN_IF_ERROR(
         compiler_plugin->ctx()->push_op(selected_ops, op.Get(), 0));
   }
+
+  LogPartitioningDiagnostics(ops.size(), offloaded_ops);
 
   return kLiteRtStatusOk;
 }
@@ -1263,4 +1393,59 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     const char* soc_model_name) {
   compiler_plugin->SetLiteRtVersion(api_version);
   return kLiteRtStatusOk;
+}
+
+namespace {
+
+static const LiteRtCompilerPluginInterface_V1
+    GoogleTensorCompilerPluginInterface = {
+        .abi_header =
+            {
+                .struct_size = sizeof(LiteRtCompilerPluginInterface_V1),
+                .major_version = 1,
+                .minor_version = 0,
+                .reserved = 0,
+            },
+        .get_compiler_plugin_version = LiteRtGetCompilerPluginVersion,
+        .get_compiler_plugin_soc_manufacturer =
+            LiteRtGetCompilerPluginSocManufacturer,
+        .create_compiler_plugin = LiteRtCreateCompilerPlugin,
+        .destroy_compiler_plugin = LiteRtDestroyCompilerPlugin,
+        .get_compiler_plugin_supported_hardware =
+            LiteRtGetCompilerPluginSupportedHardware,
+        .get_num_compiler_plugin_supported_models =
+            LiteRtGetNumCompilerPluginSupportedSocModels,
+        .get_compiler_plugin_supported_soc_model =
+            LiteRtGetCompilerPluginSupportedSocModel,
+        .compiler_plugin_partition = LiteRtCompilerPluginPartition,
+        .compiler_plugin_compile = LiteRtCompilerPluginCompile,
+        .destroy_compiled_result = LiteRtDestroyCompiledResult,
+        .get_compiled_result_byte_code = LiteRtGetCompiledResultByteCode,
+        .get_compiled_result_num_byte_code =
+            LiteRtCompiledResultNumByteCodeModules,
+        .get_compiled_result_call_info = LiteRtGetCompiledResultCallInfo,
+        .get_num_compiled_result_calls = LiteRtGetNumCompiledResultCalls,
+        .register_all_transformations =
+            LiteRtCompilerPluginRegisterAllTransformations,
+        .get_compiler_plugin_sdk_version = LiteRtGetCompilerPluginSDKVersion,
+        .get_compiled_result_handle = nullptr,
+        .check_compiler_compatibility =
+            LiteRtCompilerPluginCheckCompilerCompatibility,
+    };
+
+}  // namespace
+
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginQueryInterface(
+    LiteRtCompilerPluginInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (litert_runtime_version.major >= 1) {
+    if (interface_id == kLiteRtCompilerPluginInterfaceBasic) {
+      *out_interface = &GoogleTensorCompilerPluginInterface;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }

@@ -39,7 +39,8 @@ struct LiteRtAcceleratorT {
   // should not be called by client code.
   void (*ReleaseData)(void*);
 
-  // Retrieves the accelerator name.
+  // Retrieves the accelerator name. The returned string pointer is owned by the
+  // accelerator and remains valid for the lifetime of the accelerator.
   LiteRtStatus (*GetName)(LiteRtAcceleratorConst accelerator,
                           const char** name);
 

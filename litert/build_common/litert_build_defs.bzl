@@ -24,6 +24,8 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
 ####################################################################################################
@@ -61,6 +63,14 @@ def to_path(label, get_parent = False):
     return path[:path.rfind("/")]
 
 def make_rpaths(rpaths):
+    """Converts labels or paths into runpath directory entries.
+
+    Args:
+      rpaths: A list of target labels or directory paths.
+
+    Returns:
+      A linkopt string containing the colon-separated rpaths.
+    """
     paths = []
     for rp in rpaths:
         if rp.startswith("@"):
@@ -735,3 +745,527 @@ def litert_accelerator_library(
                 "//litert:__subpackages__",
             ],
         )
+
+####################################################################################################
+# Per-Target Build Configuration Rules
+
+_BUILD_INCLUDE_SETTING = "//litert/build_common:build_include"
+_CPU_BACKEND_SETTING = "//litert/build_common:cpu_backend"
+
+def _litert_config_transition_impl(settings, attr):
+    return {
+        _BUILD_INCLUDE_SETTING: attr.build_include or settings[_BUILD_INCLUDE_SETTING],
+        _CPU_BACKEND_SETTING: attr.cpu_backend or settings[_CPU_BACKEND_SETTING],
+    }
+
+_litert_config_transition = transition(
+    implementation = _litert_config_transition_impl,
+    inputs = [
+        _BUILD_INCLUDE_SETTING,
+        _CPU_BACKEND_SETTING,
+    ],
+    outputs = [
+        _BUILD_INCLUDE_SETTING,
+        _CPU_BACKEND_SETTING,
+    ],
+)
+
+_LITERT_CONFIG_ATTRS = {
+    "build_include": attr.string(
+        default = "",
+        values = [
+            "",
+            "cpu_only",
+            "gpu",
+            "npu",
+            "gpu,npu",
+        ],
+        doc = "Value for `//litert/build_common:build_include`. If empty, preserves the current build setting.",
+    ),
+    "cpu_backend": attr.string(
+        default = "",
+        values = [
+            "",
+            "selective",
+            "builtin",
+            "xnnpack",
+        ],
+        doc = "Value for `//litert/build_common:cpu_backend`. If empty, preserves the current build setting.",
+    ),
+}
+
+def _litert_cc_library_rule_impl(ctx):
+    return [
+        cc_common.merge_cc_infos(
+            direct_cc_infos = [dep[CcInfo] for dep in ctx.attr.deps],
+        ),
+        DefaultInfo(
+            files = depset(transitive = [dep[DefaultInfo].files for dep in ctx.attr.deps]),
+            runfiles = ctx.runfiles().merge_all([
+                dep[DefaultInfo].default_runfiles
+                for dep in ctx.attr.deps
+            ]),
+        ),
+    ]
+
+_litert_cc_library_rule = rule(
+    implementation = _litert_cc_library_rule_impl,
+    doc = """Transitions C++ dependencies to a specific LiteRT `build_include` and `cpu_backend` configuration.
+
+Allows per-target configuration of LiteRT (e.g., `build_include = "cpu_only"` and
+`cpu_backend = "selective"` or `"builtin"`) inside a `BUILD` file without passing
+global command-line flags. Any setting left unspecified preserves the
+current build configuration. Note: because C++ binary/test rules attach
+implicit dependencies (such as `malloc`) in the binary's own configuration, use
+`litert_cc_library` only when all linked libraries are static (e.g. `wasm_js_library`
+or `linkstatic = 1` with `malloc = "//base:system_malloc"`). For general
+`cc_binary` and `cc_test` targets, prefer `litert_cc_binary` / `litert_cc_test`
+or `litert_configured_target` / `litert_configured_test`.""",
+    attrs = {
+        "deps": attr.label_list(
+            cfg = _litert_config_transition,
+            mandatory = True,
+            providers = [CcInfo],
+            doc = "C++ library targets to build under the configured LiteRT settings.",
+        ),
+    } | _LITERT_CONFIG_ATTRS,
+)
+
+def _litert_configured_target_impl(ctx):
+    target = ctx.attr.target[0]
+    default_info = target[DefaultInfo]
+    original_executable = default_info.files_to_run.executable
+
+    new_executable = ctx.actions.declare_file(ctx.attr.name)
+    ctx.actions.symlink(
+        output = new_executable,
+        target_file = original_executable,
+        is_executable = True,
+    )
+
+    files = depset([new_executable])
+    runfiles = default_info.default_runfiles.merge(
+        default_info.data_runfiles,
+    ).merge(ctx.runfiles(files = [new_executable, original_executable]))
+
+    providers = [
+        DefaultInfo(
+            files = files,
+            runfiles = runfiles,
+            executable = new_executable,
+        ),
+    ]
+
+    if testing.ExecutionInfo in target:
+        providers.append(target[testing.ExecutionInfo])
+    if RunEnvironmentInfo in target:
+        providers.append(target[RunEnvironmentInfo])
+    providers.append(
+        coverage_common.instrumented_files_info(
+            ctx,
+            dependency_attributes = ["target"],
+        ),
+    )
+
+    return providers
+
+_LITERT_CONFIGURED_TARGET_ATTRS = {
+    "target": attr.label(
+        allow_files = True,
+        executable = True,
+        mandatory = True,
+        cfg = _litert_config_transition,
+        doc = "The executable or test target to build under the configured LiteRT settings.",
+    ),
+} | _LITERT_CONFIG_ATTRS
+
+litert_configured_target = rule(
+    implementation = _litert_configured_target_impl,
+    doc = "Builds an executable `target` with the specified LiteRT `build_include` and `cpu_backend` settings.",
+    attrs = _LITERT_CONFIGURED_TARGET_ATTRS,
+    executable = True,
+)
+
+litert_configured_test = rule(
+    implementation = _litert_configured_target_impl,
+    doc = "Builds and runs a test `target` with the specified LiteRT `build_include` and `cpu_backend` settings.",
+    attrs = _LITERT_CONFIGURED_TARGET_ATTRS,
+    executable = True,
+    test = True,
+)
+
+####################################################################################################
+# Size Tracking (WeightWatcher) Rules
+
+# Linker flags that remove file padding introduced by page-aligned segment
+# layout. With these flags the on-disk size of an ELF binary follows its code
+# size byte-for-byte instead of stepping at page boundaries, which makes
+# WeightWatcher deltas reflect real code size changes. Segment virtual
+# addresses keep their page alignment (`-z max-page-size`), so the output still
+# loads on 16 KB page devices; only the file layout differs from production.
+_LITERT_SIZE_TRACKING_LINKOPTS = [
+    "-Wl,-z,noseparate-code",
+    "-Wl,--no-rosegment",
+]
+
+_LINKOPT_SETTING = "//command_line_option:linkopt"
+
+def _litert_size_tracking_transition_impl(settings, _attr):
+    linkopts = list(settings[_LINKOPT_SETTING])
+    for opt in _LITERT_SIZE_TRACKING_LINKOPTS:
+        if opt not in linkopts:
+            linkopts.append(opt)
+    return {_LINKOPT_SETTING: linkopts}
+
+_litert_size_tracking_transition = transition(
+    implementation = _litert_size_tracking_transition_impl,
+    inputs = [_LINKOPT_SETTING],
+    outputs = [_LINKOPT_SETTING],
+)
+
+def _litert_size_tracking_target_impl(ctx):
+    target = ctx.attr.target[0]
+    return [
+        DefaultInfo(
+            files = target[DefaultInfo].files,
+            runfiles = target[DefaultInfo].default_runfiles,
+        ),
+    ]
+
+litert_size_tracking_target = rule(
+    implementation = _litert_size_tracking_target_impl,
+    doc = """Builds `target` with size-tracking linker flags for WeightWatcher.
+
+Forwards the output files of `target` (a `cc_binary`, `cc_shared_library`,
+`litert_dynamic_lib`, or JNI library) built with `-z noseparate-code` and
+`--no-rosegment` appended to `--linkopt`, so the measured file size does not
+include page alignment padding. Only intended for size-tracking targets
+registered in `litert.blueprint`; production artifacts keep the default
+linker layout.""",
+    attrs = {
+        "target": attr.label(
+            allow_files = True,
+            mandatory = True,
+            cfg = _litert_size_tracking_transition,
+            doc = "The binary or shared library target whose size is tracked.",
+        ),
+    },
+)
+
+_COMMON_WRAPPER_ATTRS = [
+    "testonly",
+    "tags",
+    "visibility",
+    "target_compatible_with",
+    "compatible_with",
+    "restricted_to",
+]
+
+_TEST_WRAPPER_ATTRS = [
+    "args",
+    "env",
+    "env_inherit",
+    "flaky",
+    "local",
+    "shard_count",
+    "size",
+    "timeout",
+]
+
+def _litert_gen_selected_ops_impl(ctx):
+    raw_output = ctx.actions.declare_file(ctx.label.name + "_raw.cc")
+    tflite_path = Label("//tflite:op_resolver").package
+    registry_hdr = (
+        Label("//litert/tflite_support/op_resolver:selected_ops_registry").package +
+        "/selected_ops_registry.h"
+    )
+
+    args = ctx.actions.args()
+    args.add(raw_output, format = "--output_registration=%s")
+    args.add("--tflite_path=%s" % tflite_path)
+    args.add_joined(
+        ctx.files.models,
+        join_with = ",",
+        format_joined = "--input_models=%s",
+    )
+
+    ctx.actions.run(
+        outputs = [raw_output],
+        inputs = ctx.files.models,
+        arguments = [args],
+        executable = ctx.executable._generate_op_registrations,
+        mnemonic = "LiteRtOpRegistrationRaw",
+        progress_message = "Generating raw selected ops for %s" % ctx.label,
+        use_default_shell_env = True,
+    )
+
+    model_include = '#include "%s/model.h"' % tflite_path
+    registry_include = '#include "%s"' % registry_hdr
+    fn_sig = "void RegisterSelectedOps("
+    ctx.actions.run_shell(
+        outputs = [ctx.outputs.output],
+        inputs = [raw_output],
+        command = """
+sed -e 's|{model_include}|{registry_include}|' \\
+    -e 's|{fn_sig}|namespace {{ {fn_sig}|' \\
+    "{src}" > "{dst}"
+cat << 'EOF' >> "{dst}"
+struct LiteRtSelectedOpsAutoRegister {{
+  LiteRtSelectedOpsAutoRegister() {{
+    ::litert::tflite_support::RegisterSelectedOpsCallback(&RegisterSelectedOps);
+  }}
+}} g_litert_selected_ops_auto_register;
+}}  // namespace
+EOF
+""".format(
+            model_include = model_include,
+            registry_include = registry_include,
+            fn_sig = fn_sig,
+            src = raw_output.path,
+            dst = ctx.outputs.output.path,
+        ),
+        mnemonic = "LiteRtOpRegistrationWrap",
+        progress_message = "Wrapping selected ops for %s" % ctx.label,
+    )
+
+_litert_gen_selected_ops_rule = rule(
+    implementation = _litert_gen_selected_ops_impl,
+    attrs = {
+        "models": attr.label_list(default = [], allow_files = True),
+        "output": attr.output(mandatory = True),
+        "_generate_op_registrations": attr.label(
+            executable = True,
+            default = Label("//tflite/tools:generate_op_registrations"),
+            cfg = "exec",
+        ),
+    },
+)
+
+def _litert_selected_ops_lib(
+        name,
+        models,
+        testonly = None,
+        tags = None,
+        compatible_with = None,
+        target_compatible_with = None,
+        restricted_to = None):
+    gen_name = name + "_gen"
+    out_file = name + ".cc"
+    common_kwargs = {}
+    if testonly != None:
+        common_kwargs["testonly"] = testonly
+    if tags != None:
+        common_kwargs["tags"] = tags
+    if compatible_with != None:
+        common_kwargs["compatible_with"] = compatible_with
+    if target_compatible_with != None:
+        common_kwargs["target_compatible_with"] = target_compatible_with
+    if restricted_to != None:
+        common_kwargs["restricted_to"] = restricted_to
+
+    _litert_gen_selected_ops_rule(
+        name = gen_name,
+        models = models,
+        output = out_file,
+        visibility = ["//visibility:private"],
+        **common_kwargs
+    )
+    cc_library(
+        name = name,
+        srcs = [":" + gen_name],
+        deps = [
+            "//litert/tflite_support/op_resolver:selected_ops_registry",
+            "//tflite:mutable_op_resolver",
+            "//tflite:op_resolver",
+            "//tflite/kernels:builtin_ops",
+            "//tflite/schema:schema_fbs",
+        ],
+        alwayslink = 1,
+        visibility = ["//visibility:private"],
+        **common_kwargs
+    )
+
+def litert_cc_binary(
+        name,
+        build_include = None,
+        cpu_backend = None,
+        models = None,
+        **kwargs):
+    """Defines a `cc_binary` built with per-target LiteRT `build_include` and `cpu_backend` settings.
+
+    Args:
+      name: Name of the resulting binary target.
+      build_include: Optional value for `build_include` (`"cpu_only"`, `"gpu"`, `"npu"`, `"gpu,npu"`).
+        If omitted, preserves the current build setting.
+      cpu_backend: Optional value for `cpu_backend` (`"selective"`, `"builtin"`, `"xnnpack"`).
+        If omitted, preserves the current build setting.
+      models: Optional list of `.tflite` model labels used to generate selective op
+        registrations at build time and auto-register them at runtime.
+      **kwargs: Keyword arguments forwarded to the underlying `cc_binary`.
+    """
+    outer_kwargs = {k: kwargs[k] for k in _COMMON_WRAPPER_ATTRS if k in kwargs}
+    inner_kwargs = dict(kwargs)
+    inner_kwargs["visibility"] = ["//visibility:private"]
+    inner_tags = list(kwargs.get("tags", []))
+    if "manual" not in inner_tags:
+        inner_tags.append("manual")
+    kwargs["tags"] = inner_tags
+    inner_kwargs["tags"] = inner_tags
+
+    if models:
+        selected_ops_name = "_" + name + "_selected_ops"
+        _litert_selected_ops_lib(
+            name = selected_ops_name,
+            models = models,
+            testonly = kwargs.get("testonly"),
+            tags = inner_tags,
+            compatible_with = kwargs.get("compatible_with"),
+            target_compatible_with = kwargs.get("target_compatible_with"),
+            restricted_to = kwargs.get("restricted_to"),
+        )
+        append_rule_kwargs(inner_kwargs, deps = [":" + selected_ops_name])
+
+    inner_name = "_" + name + "_litert_bin"
+    cc_binary(
+        name = inner_name,
+        **inner_kwargs
+    )
+    litert_configured_target(
+        name = name,
+        target = ":" + inner_name,
+        build_include = build_include or "",
+        cpu_backend = cpu_backend or "",
+        **outer_kwargs
+    )
+
+def litert_cc_test(
+        name,
+        build_include = None,
+        cpu_backend = None,
+        models = None,
+        **kwargs):
+    """Defines a `cc_test` built with per-target LiteRT `build_include` and `cpu_backend` settings.
+
+    Args:
+      name: Name of the resulting test target.
+      build_include: Optional value for `build_include` (`"cpu_only"`, `"gpu"`, `"npu"`, `"gpu,npu"`).
+        If omitted, preserves the current build setting.
+      cpu_backend: Optional value for `cpu_backend` (`"selective"`, `"builtin"`, `"xnnpack"`).
+        If omitted, preserves the current build setting.
+      models: Optional list of `.tflite` model labels used to generate selective op
+        registrations at build time and auto-register them at runtime.
+      **kwargs: Keyword arguments forwarded to the underlying `cc_test`.
+    """
+    outer_kwargs = {
+        k: kwargs[k]
+        for k in _COMMON_WRAPPER_ATTRS + _TEST_WRAPPER_ATTRS
+        if k in kwargs
+    }
+    inner_kwargs = dict(kwargs)
+    inner_kwargs["visibility"] = ["//visibility:private"]
+    inner_tags = list(kwargs.get("tags", []))
+    if "manual" not in inner_tags:
+        inner_tags.append("manual")
+    kwargs["tags"] = inner_tags
+    inner_kwargs["tags"] = inner_tags
+
+    if models:
+        selected_ops_name = "_" + name + "_selected_ops"
+        _litert_selected_ops_lib(
+            name = selected_ops_name,
+            models = models,
+            testonly = kwargs.get("testonly", True),
+            tags = inner_tags,
+            compatible_with = kwargs.get("compatible_with"),
+            target_compatible_with = kwargs.get("target_compatible_with"),
+            restricted_to = kwargs.get("restricted_to"),
+        )
+        append_rule_kwargs(inner_kwargs, deps = [":" + selected_ops_name])
+
+    inner_name = "_" + name + "_litert_test"
+    cc_test(
+        name = inner_name,
+        **inner_kwargs
+    )
+    litert_configured_test(
+        name = name,
+        target = ":" + inner_name,
+        build_include = build_include or "",
+        cpu_backend = cpu_backend or "",
+        **outer_kwargs
+    )
+
+def litert_cc_library(
+        name,
+        build_include = None,
+        cpu_backend = None,
+        models = None,
+        **kwargs):
+    """Defines a `cc_library` built with per-target LiteRT settings.
+
+    Can be used either to define a C++ library target directly (with `srcs`,
+    `hdrs`, `deps`, etc.) whose dependencies are evaluated under the configured
+    LiteRT settings, or as a transition proxy wrapping an existing list of
+    `deps` (when `srcs` and `hdrs` are omitted).
+
+    Args:
+      name: Name of the resulting library target.
+      build_include: Optional value for `build_include` (`"cpu_only"`, `"gpu"`, `"npu"`, `"gpu,npu"`).
+        If omitted, preserves the current build setting.
+      cpu_backend: Optional value for `cpu_backend` (`"selective"`, `"builtin"`, `"xnnpack"`).
+        If omitted, preserves the current build setting.
+      models: Optional list of `.tflite` model labels used to generate selective op
+        registrations at build time and auto-register them at runtime.
+      **kwargs: Keyword arguments forwarded to the underlying `cc_library`.
+    """
+    inner_tags = list(kwargs.get("tags", []))
+    if "manual" not in inner_tags:
+        inner_tags.append("manual")
+    kwargs["tags"] = inner_tags
+
+    if models:
+        selected_ops_name = "_" + name + "_selected_ops"
+        _litert_selected_ops_lib(
+            name = selected_ops_name,
+            models = models,
+            testonly = kwargs.get("testonly"),
+            tags = inner_tags,
+            compatible_with = kwargs.get("compatible_with"),
+            target_compatible_with = kwargs.get("target_compatible_with"),
+            restricted_to = kwargs.get("restricted_to"),
+        )
+        append_rule_kwargs(kwargs, deps = [":" + selected_ops_name])
+
+    if not build_include and not cpu_backend:
+        cc_library(
+            name = name,
+            **kwargs
+        )
+        return
+
+    if not kwargs.get("srcs") and not kwargs.get("hdrs"):
+        _litert_cc_library_rule(
+            name = name,
+            build_include = build_include or "",
+            cpu_backend = cpu_backend or "",
+            **kwargs
+        )
+        return
+
+    outer_kwargs = {k: kwargs[k] for k in _COMMON_WRAPPER_ATTRS if k in kwargs}
+    inner_kwargs = dict(kwargs)
+    inner_kwargs["visibility"] = ["//visibility:private"]
+    inner_kwargs["tags"] = inner_tags
+
+    inner_name = "_" + name + "_litert_lib"
+    cc_library(
+        name = inner_name,
+        **inner_kwargs
+    )
+    _litert_cc_library_rule(
+        name = name,
+        deps = [":" + inner_name],
+        build_include = build_include or "",
+        cpu_backend = cpu_backend or "",
+        **outer_kwargs
+    )

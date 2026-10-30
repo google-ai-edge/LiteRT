@@ -19,11 +19,7 @@
 #include <cstdlib>
 
 #include "fp16/fp16.h"  // from @FP16
-#include "ml_drift/common/kernels/conv_apple_mpp.h"  // from @ml_drift
-#include "ml_drift/common/kernels/conv_generic.h"  // from @ml_drift
-#include "ml_drift/common/kernels/conv_wave_matrix.h"  // from @ml_drift
-#include "ml_drift/common/kernels/conv_wave_matrix_mali.h"  // from @ml_drift
-#include "ml_drift/common/kernels/conv_wave_memory.h"  // from @ml_drift
+#include "ml_drift/common/selectors/convolution_selector.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
 
 #if defined(_WIN32)
@@ -85,7 +81,7 @@ using ::litert::ml_drift::ReleaseDataCallback;
 using ::litert::ml_drift::UnownedDataTensorDescriptor;
 
 void UnpackInt4IntoInt8(const int8_t* src, const size_t src_size,
-                        ml_drift::Tensor<OHWI, DataType::INT8>* dst) {
+                        ml_drift::Tensor<OHWI, DataType::kInt8>* dst) {
   constexpr int uint4_bits = 4;
   constexpr int kUint4ValuesPerUint8Value =
       std::numeric_limits<uint8_t>::digits / uint4_bits;
@@ -96,7 +92,7 @@ void UnpackInt4IntoInt8(const int8_t* src, const size_t src_size,
 }
 
 void UnpackInt2ToInt8(const int8_t* src, const size_t src_size,
-                      ml_drift::Tensor<OHWI, DataType::INT8>* dst) {
+                      ml_drift::Tensor<OHWI, DataType::kInt8>* dst) {
   constexpr int uint2_bits = 2;
   constexpr int kUint2ValuesPerUint8Value =
       std::numeric_limits<uint8_t>::digits / uint2_bits;
@@ -121,14 +117,7 @@ bool IsConvInt8Supported(const CreateGpuModelInfo& create_info,
     return false;
   }
 
-  // TODO(sulemanshahid): Add support for int4 src quantization.
-  bool supports_conv_apple_mpp = SupportsConvAppleMPP(gpu_info);
-
-  return supports_conv_apple_mpp ||
-         SupportsConvWaveMatrixMaliInt8(gpu_info, src_shape) ||
-         SupportsConvWaveMemoryInt8(gpu_info) ||
-         SupportsConvGenericInt8(gpu_info) ||
-         SupportsConvWaveMatrixInt8(gpu_info, OHWI(32, 1, 1, src_shape.c));
+  return SupportsConvolutionInt8(gpu_info, src_shape);
 }
 
 // Check if the convolution int8 kernel is recommended for the computation of
@@ -157,7 +146,7 @@ void RewriteDenormalScales(const GpuInfo& gpu_info,
   }
   if ((!gpu_info.IsApiOpenCl() ||
        gpu_info.opencl_info.is_fp16_ftz_hardware_forced) &&
-      create_info.precision != CalculationsPrecision::F32) {
+      create_info.precision != CalculationsPrecision::kF32) {
     const float min_normal_fp16 = 6.1035e-5f;
     for (int i = 0; i < size; ++i) {
       const float val = scales[i];
@@ -169,6 +158,29 @@ void RewriteDenormalScales(const GpuInfo& gpu_info,
       }
     }
   }
+}
+
+constexpr char kMoeExpertsOpType[] = "moe_experts";
+
+// Returns true if `value_id` is consumed by a single moe_experts op.
+// moe_experts receives its quantization scales as separate op inputs, so its
+// shared weights are packed regardless of the TFLite quantization type (e.g.
+// multi-axis quantization, which is not handled for other ops).
+bool IsMoeExpertsWeights(const GraphAdapter& graph_adapter,
+                         uint32_t value_id) {
+  const std::vector<uint32_t> consumers =
+      graph_adapter.FindConsumerOps(value_id);
+  return consumers.size() == 1 &&
+         graph_adapter.GetOpTypeName(consumers[0]) == kMoeExpertsOpType;
+}
+
+// Returns true if `tensor` is a float block-scale input of a moe_experts op
+// ([out_channels, experts, 1, blocks_per_row]). The op parser only shares the
+// scale inputs, so a shared float tensor consumed by moe_experts is a scale.
+bool IsMoeExpertsBlockScales(const GraphAdapter& graph_adapter,
+                             uint32_t value_id, const TfLiteTensor& tensor) {
+  return (tensor.type == kTfLiteFloat32 || tensor.type == kTfLiteFloat16) &&
+         IsMoeExpertsWeights(graph_adapter, value_id);
 }
 
 }  // namespace
@@ -223,8 +235,8 @@ void MadviseData(void* ptr, size_t space) {
 TensorDescriptor SharedMemoryManager::GetInt8TensorDesc(
     const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
     const OHWI& shape, const int8_t* data, bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
-  Tensor<OHWI, DataType::INT8> weights_i8;
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
+  Tensor<OHWI, DataType::kInt8> weights_i8;
   weights_i8.shape = shape;
   weights_i8.data.resize(weights_i8.shape.DimensionsProduct());
   weights_i8.data.assign(data, data + weights_i8.shape.DimensionsProduct());
@@ -244,7 +256,7 @@ TensorDescriptor SharedMemoryManager::GetInt4TensorDesc(
     const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
     const OHWI& shape, const int8_t* data, size_t bytes,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i,
+    Tensor<Linear, DataType::kInt32>* weights_sum_i,
     bool experimental_int4_unpacking) {
   if (experimental_int4_unpacking) {
     auto status =
@@ -257,7 +269,7 @@ TensorDescriptor SharedMemoryManager::GetInt4TensorDesc(
       return status.value();
     }
   }
-  ml_drift::Tensor<OHWI, DataType::INT8> weights_i8;
+  ml_drift::Tensor<OHWI, DataType::kInt8> weights_i8;
   weights_i8.shape = shape;
   weights_i8.data.resize(weights_i8.shape.DimensionsProduct());
 
@@ -278,7 +290,7 @@ TensorDescriptor SharedMemoryManager::GetInt2TensorDesc(
     const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
     const OHWI& shape, const int8_t* data, size_t bytes,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i,
+    Tensor<Linear, DataType::kInt32>* weights_sum_i,
     bool experimental_int2_unpacking) {
   if (experimental_int2_unpacking) {
     auto status =
@@ -291,7 +303,7 @@ TensorDescriptor SharedMemoryManager::GetInt2TensorDesc(
       return status.value();
     }
   }
-  ml_drift::Tensor<OHWI, DataType::INT8> weights_i8;
+  ml_drift::Tensor<OHWI, DataType::kInt8> weights_i8;
   weights_i8.shape = shape;
   weights_i8.data.resize(weights_i8.shape.DimensionsProduct());
 
@@ -314,8 +326,8 @@ SharedMemoryManager::GetInt4TensorDescExperimental(
     const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
     const OHWI& shape, const int8_t* data, size_t bytes,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
-  ml_drift::Tensor<OHWI, DataType::UINT8> weights_u8;
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
+  ml_drift::Tensor<OHWI, DataType::kUint8> weights_u8;
   weights_u8.shape = shape;
   // Remove const qualifier because ml_drift::Tensor requires the spanned_data
   // to be mutable. However, this function does not actually modify the data.
@@ -342,12 +354,12 @@ SharedMemoryManager::GetInt4TensorDescExperimental(
 
   TensorDescriptor weights_u8_td;
   if (weights_desc.IsLinearLayout()) {
-    weights_u8_td = TensorDescriptor(weights_desc.type,
-                                     TensorStorageType::BUFFER, Layout::LINEAR);
+    weights_u8_td = TensorDescriptor(
+        weights_desc.type, TensorStorageType::kBuffer, Layout::kLinear);
     weights_u8_td.SetBHWDCShape(BHWDC(1, 1, 1, 1, rearranged_weights.size()));
   } else {
-    weights_u8_td = TensorDescriptor(DataType::UINT16,
-                                     TensorStorageType::TEXTURE_2D, Layout::HW);
+    weights_u8_td = TensorDescriptor(
+        DataType::kUint16, TensorStorageType::kTexture2D, Layout::kHW);
     uint2 tex_size = Get2dResourceSize(weights_desc, shape);
     constexpr int uint4_bits = 4;
     constexpr int kUint4ElementsPerUint16Texel =
@@ -364,8 +376,8 @@ SharedMemoryManager::GetInt2TensorDescExperimental(
     const GpuInfo& gpu_info, const CreateGpuModelInfo& create_info,
     const OHWI& shape, const int8_t* data, size_t bytes,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
-  ml_drift::Tensor<OHWI, DataType::UINT8> weights_u8;
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
+  ml_drift::Tensor<OHWI, DataType::kUint8> weights_u8;
   weights_u8.shape = shape;
   // Remove const qualifier because ml_drift::Tensor requires the spanned_data
   // to be mutable. However, this function does not actually modify the data.
@@ -392,12 +404,12 @@ SharedMemoryManager::GetInt2TensorDescExperimental(
 
   TensorDescriptor weights_u8_td;
   if (weights_desc.IsLinearLayout()) {
-    weights_u8_td = TensorDescriptor(weights_desc.type,
-                                     TensorStorageType::BUFFER, Layout::LINEAR);
+    weights_u8_td = TensorDescriptor(
+        weights_desc.type, TensorStorageType::kBuffer, Layout::kLinear);
     weights_u8_td.SetBHWDCShape(BHWDC(1, 1, 1, 1, rearranged_weights.size()));
   } else {
-    weights_u8_td = TensorDescriptor(DataType::UINT8,
-                                     TensorStorageType::TEXTURE_2D, Layout::HW);
+    weights_u8_td = TensorDescriptor(
+        DataType::kUint8, TensorStorageType::kTexture2D, Layout::kHW);
     uint2 tex_size = Get2dResourceSize(weights_desc, shape);
     constexpr int uint2_bits = 2;
     constexpr int kUint2ElementsPerUint8Texel =
@@ -415,11 +427,11 @@ namespace {
 // constant weight of BHWC `bhwc_shape` carried by `tflite_tensor`.
 absl::Status CalculateWeightsSumI(
     const TfLiteTensor& tflite_tensor, const BHWC& bhwc_shape,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
   OHWI shape(bhwc_shape.b, bhwc_shape.h, bhwc_shape.w, bhwc_shape.c);
   const int8_t* data = tflite_tensor.data.int8;
 
-  Tensor<OHWI, DataType::INT8> weights_i8;
+  Tensor<OHWI, DataType::kInt8> weights_i8;
   weights_i8.shape = shape;
   weights_i8.data.resize(weights_i8.shape.DimensionsProduct());
 
@@ -490,7 +502,8 @@ SharedMemoryManager::SharedMemoryManager(
 }
 
 absl::Status SharedMemoryManager::TryRestoringSerializedTensor(
-    const uint32_t global_tensor_id, SharedConstTensor& shared_tensor) {
+    const uint32_t global_tensor_id,
+    std::unique_ptr<GpuSpatialTensor>& gpu_spatial_tensor) {
   if (!serialization_cache_) {
     return absl::FailedPreconditionError("Serialization is not supported.");
   }
@@ -515,7 +528,7 @@ absl::Status SharedMemoryManager::TryRestoringSerializedTensor(
   // the serialized data.
   return create_tensor_func_(tensor_desc, page_adjusted_offset,
                              std::move(release_data_callback),
-                             shared_tensor.weights);
+                             gpu_spatial_tensor);
 }
 
 absl::Status SharedMemoryManager::TryStoringSerializedTensor(
@@ -533,14 +546,25 @@ absl::Status SharedMemoryManager::CreateQuantizedInt8WeightsTensor(
     const ValueId& shared_tensor_id, const uint32_t global_tensor_id,
     const TfLiteTensor& tflite_tensor, SharedConstTensor& shared_tensor,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
   BHWC bhwc_shape = graph_adapter_->GetValueShape(shared_tensor_id);
-  graph_adapter_->SetValueType(shared_tensor_id, DataType::UINT8);
+  graph_adapter_->SetValueType(shared_tensor_id, DataType::kUint8);
   OHWI shape(bhwc_shape.b, bhwc_shape.h, bhwc_shape.w, bhwc_shape.c);
 
   WeightsDescription weights_desc = GetFullyConnectedInt8WeightsDesc(
       gpu_info_, shape,
       create_info_.hints.Check(ModelHints::kPreferTextureWeights));
+
+  // WebGPU binds the packed weights as one storage buffer.
+  if (gpu_info_.IsApiWebGpu()) {
+    const TensorDescriptor packed_desc =
+        GetTensorDescriptorsForWeightsLayout(shape, weights_desc)[0];
+    ABSL_RETURN_IF_ERROR(packed_desc.CanCreateTensorWithShape(
+        gpu_info_, packed_desc.GetBHWDCShape()))
+        << "INT8 weights tensor " << shared_tensor_id << " with shape ["
+        << shape.o << ", " << shape.h << ", " << shape.w << ", " << shape.i
+        << "] is not supported on this WebGPU device.";
+  }
 
   // ML Drift's optimal performance requires the weights to be arranged in a
   // certain layout, which is typically different from TFL flatbuffer's weight
@@ -548,7 +572,8 @@ absl::Status SharedMemoryManager::CreateQuantizedInt8WeightsTensor(
   // If the packed weight tensor was serialized previously, restore from it
   // directly.
   bool serialized_tensor_found =
-      TryRestoringSerializedTensor(global_tensor_id, shared_tensor).ok();
+      TryRestoringSerializedTensor(global_tensor_id, shared_tensor.weights)
+          .ok();
   if (!serialized_tensor_found) {
     if (has_prepacked_tflite_tensors_) {
       // If the tflite tensor is prepacked, restore from it directly.
@@ -563,7 +588,7 @@ absl::Status SharedMemoryManager::CreateQuantizedInt8WeightsTensor(
             MaybeGetExternalBufferId(shared_tensor_id);
         weight_id_to_external_buffer_id_[shared_tensor_id] = external_buffer_id;
         weights_manager_->RegisterWeightsConversion(
-            {shared_tensor_id}, weights_desc, shape, DataType::INT8,
+            {shared_tensor_id}, weights_desc, shape, DataType::kInt8,
             tflite_tensor.data.int8, {}, {});
 
         auto weights_i8_tensor_desc =
@@ -601,7 +626,7 @@ absl::Status SharedMemoryManager::CreateQuantizedInt4WeightsTensor(
     const ValueId& shared_tensor_id, const uint32_t global_tensor_id,
     const TfLiteTensor& tflite_tensor, SharedConstTensor& shared_tensor,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
   BHWC bhwc_shape = graph_adapter_->GetValueShape(shared_tensor_id);
   OHWI shape(bhwc_shape.b, bhwc_shape.h, bhwc_shape.w, bhwc_shape.c);
 
@@ -611,7 +636,8 @@ absl::Status SharedMemoryManager::CreateQuantizedInt4WeightsTensor(
 
   // If the tensor was serialized previously, restore from it directly.
   bool serialized_tensor_found =
-      TryRestoringSerializedTensor(global_tensor_id, shared_tensor).ok();
+      TryRestoringSerializedTensor(global_tensor_id, shared_tensor.weights)
+          .ok();
   if (!serialized_tensor_found) {
     if (has_prepacked_tflite_tensors_) {
       // If the tflite tensor is prepacked, restore from it directly.
@@ -635,7 +661,7 @@ absl::Status SharedMemoryManager::CreateQuantizedInt4WeightsTensor(
           weight_id_to_external_buffer_id_[shared_tensor_id] =
               external_buffer_id;
           weights_manager_->RegisterWeightsConversion(
-              {shared_tensor_id}, weights_desc, shape, DataType::INT4,
+              {shared_tensor_id}, weights_desc, shape, DataType::kInt4,
               tflite_tensor.data.int8, {}, {});
 
           auto weights_i4_tensor_desc =
@@ -677,7 +703,7 @@ absl::Status SharedMemoryManager::CreateQuantizedInt2WeightsTensor(
     const ValueId& shared_tensor_id, const uint32_t global_tensor_id,
     const TfLiteTensor& tflite_tensor, SharedConstTensor& shared_tensor,
     bool is_weight_sum_i_required,
-    Tensor<Linear, DataType::INT32>* weights_sum_i) {
+    Tensor<Linear, DataType::kInt32>* weights_sum_i) {
   BHWC bhwc_shape = graph_adapter_->GetValueShape(shared_tensor_id);
   OHWI shape(bhwc_shape.b, bhwc_shape.h, bhwc_shape.w, bhwc_shape.c);
 
@@ -687,7 +713,8 @@ absl::Status SharedMemoryManager::CreateQuantizedInt2WeightsTensor(
 
   // If the tensor was serialized previously, restore from it directly.
   bool serialized_tensor_found =
-      TryRestoringSerializedTensor(global_tensor_id, shared_tensor).ok();
+      TryRestoringSerializedTensor(global_tensor_id, shared_tensor.weights)
+          .ok();
   if (!serialized_tensor_found) {
     if (has_prepacked_tflite_tensors_) {
       // If the tflite tensor is prepacked, restore from it directly.
@@ -701,7 +728,7 @@ absl::Status SharedMemoryManager::CreateQuantizedInt2WeightsTensor(
             MaybeGetExternalBufferId(shared_tensor_id);
         weight_id_to_external_buffer_id_[shared_tensor_id] = external_buffer_id;
         weights_manager_->RegisterWeightsConversion(
-            {shared_tensor_id}, weights_desc, shape, DataType::INT2,
+            {shared_tensor_id}, weights_desc, shape, DataType::kInt2,
             tflite_tensor.data.int8, {}, {});
 
         auto weights_i2_tensor_desc =
@@ -803,21 +830,21 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
           weights_sum_i_value_id,
           AddInputWithData<int32_t>(
               shared_tensor->weights_sum_i_global_tensor_id.value(),
-              scale_shape, fc_op_id, nullptr, DataType::INT32));
+              scale_shape, fc_op_id, nullptr, DataType::kInt32));
     } else if (weights_manager_) {
       BHWC scale_or_zero_point_shape = BHWC(
           1, 1, 1, tflite_tensor.dims->data[quant_params->quantized_dimension]);
       ABSL_ASSIGN_OR_RETURN(
           weights_sum_i_value_id,
           AddInputNode(shared_tensor->weights_sum_i_global_tensor_id.value(),
-                       scale_or_zero_point_shape, fc_op_id, DataType::INT32));
-      DataType src_data_type = DataType::INT4;
+                       scale_or_zero_point_shape, fc_op_id, DataType::kInt32));
+      DataType src_data_type = DataType::kInt4;
       if (tflite_tensor.type == TfLiteType::kTfLiteInt8) {
-        src_data_type = DataType::INT8;
+        src_data_type = DataType::kInt8;
       } else if (tflite_tensor.type == TfLiteType::kTfLiteInt4) {
-        src_data_type = DataType::INT4;
+        src_data_type = DataType::kInt4;
       } else if (tflite_tensor.type == TfLiteType::kTfLiteInt2) {
-        src_data_type = DataType::INT2;
+        src_data_type = DataType::kInt2;
       }
       weights_manager_->RegisterWeightsSumIConversion(
           {weights_sum_i_value_id}, weights_shape, src_data_type,
@@ -828,7 +855,7 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
                                      : shared_tensor->weights_sum_i.data.data();
       absl::StatusOr<ValueId> status_or_value_id = AddInputWithData(
           shared_tensor->weights_sum_i_global_tensor_id.value(), scale_shape,
-          fc_op_id, weights_sum_i_data, DataType::INT32);
+          fc_op_id, weights_sum_i_data, DataType::kInt32);
 
       // If the weights_sum_i is empty and there is no entry in the cache, we
       // will get an error when trying to add the input. In this case, we
@@ -971,7 +998,7 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
   }
   uint32_t fc_op_id = weight_consumers[0];
   DataType data_type = data_type_;
-  if (data_type_ == DataType::FLOAT32) {
+  if (data_type_ == DataType::kFloat32) {
     if (graph_adapter_->OpHasInputs(fc_op_id)) {
       DataType input_type = graph_adapter_->GetOpFirstInputType(fc_op_id);
       if (IsFloatType(input_type)) {
@@ -989,9 +1016,9 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
   // required to avoid dereferencing null data during initialization.
   if (!is_streamed) {
     if (graph_adapter_->GetOpTypeName(fc_op_id) ==
-            ToString(OperationType::FULLY_CONNECTED_INT8) ||
+            ToString(OperationType::kFullyConnectedInt8) ||
         graph_adapter_->GetOpTypeName(fc_op_id) ==
-            ToString(OperationType::FULLY_CONNECTED_INT4)) {
+            ToString(OperationType::kFullyConnectedInt4)) {
       const BHWC fc_src_shape = graph_adapter_->GetOpFirstInputShape(fc_op_id);
       const bool is_conv_int8_supported =
           IsConvInt8Supported(create_info_, gpu_info_, fc_src_shape) &&
@@ -1036,6 +1063,11 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
     ABSL_RETURN_IF_ERROR(CreateQuantizedInt2WeightsTensor(
         shared_tensor_id, global_tensor_id, tflite_tensor, *shared_tensor,
         is_weight_sum_i_required, &shared_tensor->weights_sum_i));
+  }
+
+  // moe_experts consumes its block scales as separate op inputs.
+  if (graph_adapter_->GetOpTypeName(fc_op_id) == kMoeExpertsOpType) {
+    return absl::OkStatus();
   }
 
   if (tflite_tensor.quantization.type ==
@@ -1092,7 +1124,7 @@ absl::StatusOr<ValueId> SharedMemoryManager::AddInputWithData(
   }
 
   TensorDescriptor tensor_desc =
-      TensorDescriptor(data_type, create_info_.storage_type, Layout::LINEAR);
+      TensorDescriptor(data_type, create_info_.storage_type, Layout::kLinear);
   tensor_desc.SetBHWCShape(graph_adapter_->GetValueShape(local_value_id));
   ABSL_RETURN_IF_ERROR(tensor_desc.UpdateToSupportedStorageType(
       gpu_info_, tensor_desc.GetBHWCShape()));
@@ -1132,7 +1164,7 @@ absl::StatusOr<ValueId> SharedMemoryManager::AddScaleNodeWithData(
       ValueId local_value_id,
       AddInputNode(global_tensor_id, bhwc_shape, consumer_op_id, data_type));
 
-  Tensor<OHWI, DataType::FLOAT32> scale_values;
+  Tensor<OHWI, DataType::kFloat32> scale_values;
   scale_values.data.resize(shape.DimensionsProduct());
   for (int i = 0; i < shape.DimensionsProduct(); ++i) {
     scale_values.data[i] = data[i];  // implicit cast of int8 -> fp32
@@ -1159,12 +1191,6 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
     const TfLiteTensor& tflite_tensor,
     absl::flat_hash_map<ValueId, GlobalId>* external_tensors) {
   auto& shared_tensor = buffer_id_to_spatial_tensor_.at(global_tensor_id);
-  if (!shared_tensor.scale_global_tensor_id.has_value()) {
-    return absl::InternalError("Expected scale tensor id to be set.");
-  }
-  if (!shared_tensor.zero_point_global_tensor_id.has_value()) {
-    return absl::InternalError("Expected zero point tensor id to be set.");
-  }
   BHWC shared_const_shape = graph_adapter_->GetValueShape(shared_tensor_id);
 
   std::vector<uint32_t> weight_consumers =
@@ -1174,17 +1200,53 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
     return absl::InternalError("Expected to have only one weights consumer.");
   }
   uint32_t fc_op_id = weight_consumers[0];
+  if (graph_adapter_->GetOpTypeName(fc_op_id) == kMoeExpertsOpType) {
+    if (weights_manager_ &&
+        !IsMoeExpertsBlockScales(*graph_adapter_, shared_tensor_id,
+                                 tflite_tensor)) {
+      OHWI shape(shared_const_shape.b, shared_const_shape.h,
+                 shared_const_shape.w, shared_const_shape.c);
+      WeightsDescription weights_desc =
+          tflite_tensor.type == kTfLiteInt4
+              ? GetFullyConnectedInt4WeightsDesc(
+                    gpu_info_, shape,
+                    create_info_.hints.Check(ModelHints::kPreferTextureWeights))
+              : GetFullyConnectedInt8WeightsDesc(
+                    gpu_info_, shape,
+                    create_info_.hints.Check(
+                        ModelHints::kPreferTextureWeights));
+      auto weights_int_tensor_desc =
+          GetTensorDescriptorsForWeightsLayout(shape, weights_desc)[0];
+      graph_adapter_->SetValueShapeAndType(
+          shared_tensor_id, weights_int_tensor_desc.GetBHWCShape(),
+          weights_int_tensor_desc.GetDataType());
+    } else {
+      auto* weights = shared_tensor.GetWeights();
+      graph_adapter_->SetValueShapeAndType(
+          shared_tensor_id,
+          BHWC(weights->Batch(), weights->Height(), weights->Width(),
+               weights->Channels()),
+          weights->GetDescriptor().GetDataType());
+    }
+    return absl::OkStatus();
+  }
+  if (!shared_tensor.scale_global_tensor_id.has_value()) {
+    return absl::InternalError("Expected scale tensor id to be set.");
+  }
+  if (!shared_tensor.zero_point_global_tensor_id.has_value()) {
+    return absl::InternalError("Expected zero point tensor id to be set.");
+  }
   DataType data_type = data_type_;
-  if (data_type_ == DataType::FLOAT32) {
+  if (data_type_ == DataType::kFloat32) {
     if (graph_adapter_->OpHasInputs(fc_op_id)) {
       data_type = graph_adapter_->GetOpFirstInputType(fc_op_id);
     }
   }
   bool is_weight_sum_i_required = false;
   if (graph_adapter_->GetOpTypeName(fc_op_id) ==
-          ToString(OperationType::FULLY_CONNECTED_INT8) ||
+          ToString(OperationType::kFullyConnectedInt8) ||
       graph_adapter_->GetOpTypeName(fc_op_id) ==
-          ToString(OperationType::FULLY_CONNECTED_INT4)) {
+          ToString(OperationType::kFullyConnectedInt4)) {
     const BHWC fc_src_shape = graph_adapter_->GetOpFirstInputShape(fc_op_id);
     const bool is_conv_int8_supported =
         IsConvInt8Supported(create_info_, gpu_info_, fc_src_shape) &&
@@ -1224,7 +1286,8 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
         ABSL_ASSIGN_OR_RETURN(
             ValueId weights_sum_i_value_id,
             AddInputNode(shared_tensor.weights_sum_i_global_tensor_id.value(),
-                         scale_or_zero_point_shape, fc_op_id, DataType::INT32));
+                         scale_or_zero_point_shape, fc_op_id,
+                         DataType::kInt32));
         (*external_tensors)[weights_sum_i_value_id] = GlobalId::BuildParamId(
             shared_tensor.weights_sum_i_global_tensor_id.value());
       } else {
@@ -1239,17 +1302,17 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
               weights_sum_i_value_id,
               AddInputNode(shared_tensor.weights_sum_i_global_tensor_id.value(),
                            scale_or_zero_point_shape, fc_op_id,
-                           DataType::INT32));
+                           DataType::kInt32));
 
           OHWI weights_shape = OHWI(shared_const_shape.b, shared_const_shape.h,
                                     shared_const_shape.w, shared_const_shape.c);
-          DataType src_data_type = DataType::INT4;
+          DataType src_data_type = DataType::kInt4;
           if (tflite_tensor.type == TfLiteType::kTfLiteInt8) {
-            src_data_type = DataType::INT8;
+            src_data_type = DataType::kInt8;
           } else if (tflite_tensor.type == TfLiteType::kTfLiteInt4) {
-            src_data_type = DataType::INT4;
+            src_data_type = DataType::kInt4;
           } else if (tflite_tensor.type == TfLiteType::kTfLiteInt2) {
-            src_data_type = DataType::INT2;
+            src_data_type = DataType::kInt2;
           }
           weights_manager_->RegisterWeightsSumIConversion(
               {weights_sum_i_value_id}, weights_shape, src_data_type,
@@ -1284,7 +1347,7 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
           absl::StatusOr<ValueId> status_or_value_id = AddInputWithData(
               shared_tensor.weights_sum_i_global_tensor_id.value(),
               weights_sum_i_shape, fc_op_id, weights_sum_i_data,
-              DataType::INT32);
+              DataType::kInt32);
           if (!status_or_value_id.ok()) {
             return status_or_value_id.status();
           }
@@ -1392,10 +1455,17 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
   TfLiteTensor& tensor =
       context_->tensors[shared_tflite_tensor.tflite_tensor_id];
   ABSL_RETURN_IF_ERROR(MaybeBindTensorData(shared_tflite_tensor, tensor));
+  if (IsMoeExpertsBlockScales(*graph_adapter_, shared_tensor_id, tensor) &&
+      !shared_tflite_tensor.dequant_forced) {
+    return CreateMoeExpertsBlockScaleTensor(shared_tensor_id,
+                                            shared_tflite_tensor.global_id,
+                                            tensor, gpu_spatial_tensor);
+  }
   if ((tensor.quantization.type ==
            TfLiteQuantizationType::kTfLiteAffineQuantization ||
        tensor.quantization.type ==
-           TfLiteQuantizationType::kTfLiteBlockwiseQuantization) &&
+           TfLiteQuantizationType::kTfLiteBlockwiseQuantization ||
+       IsMoeExpertsWeights(*graph_adapter_, shared_tensor_id)) &&
       !shared_tflite_tensor.dequant_forced) {
     return CreateQuantizedTensorWithScaleAndZeroPoint(
         shared_tensor_id, shared_tflite_tensor.global_id, tensor,
@@ -1432,9 +1502,9 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
   // an unnecessary batch axis.
   Layout layout = shared_tflite_tensor.layout.has_value()
                       ? shared_tflite_tensor.layout.value()
-                      : (value_shape.b == 1 ? Layout::HWC : Layout::BHWC);
+                      : (value_shape.b == 1 ? Layout::kHWC : Layout::kBHWC);
   BHWC shape =
-      layout == Layout::LINEAR ? BHWC(1, 1, 1, value_shape.c) : value_shape;
+      layout == Layout::kLinear ? BHWC(1, 1, 1, value_shape.c) : value_shape;
   tensor_desc =
       ml_drift::TensorDescriptor(data_type, create_info_.storage_type, layout);
   tensor_desc.SetBHWCShape(shape);
@@ -1452,6 +1522,89 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
   return create_tensor_func_(tensor_desc, /*page_adjusted_offset=*/0,
                              /*release_data_callback=*/nullptr,
                              gpu_spatial_tensor);
+}
+
+absl::Status SharedMemoryManager::CreateMoeExpertsBlockScaleTensor(
+    const ValueId& shared_tensor_id, const uint32_t global_tensor_id,
+    const TfLiteTensor& tensor,
+    std::unique_ptr<GpuSpatialTensor>& gpu_spatial_tensor) {
+  // The scale tensor is [out_channels, experts, 1, blocks_per_row]; it is
+  // converted to the same GPU layout the moe_experts kernel builds for
+  // per-subgraph scales (ScaleOrZeroPointToTensorDesc), but only once here, so
+  // every subgraph reads the same GPU tensor and no host copy is kept.
+  if (tensor.dims == nullptr || tensor.dims->size != 4) {
+    return absl::InvalidArgumentError(
+        "moe_experts block scales must be 4-D [out_channels, experts, 1, "
+        "blocks].");
+  }
+
+  // Like the quantized weights, restore the converted scales from the
+  // serialization cache when they were stored there before, so they are not
+  // converted on the CPU at every initialization. On Apple platforms the cached
+  // data is mapped into the GPU tensor without a copy, so the scales are also
+  // not charged to the process footprint; on other platforms it is uploaded
+  // into a GPU-owned tensor (see TryRestoringSerializedTensor).
+  //
+  // The scales are a regular constant tensor (their own TFLite buffer), so the
+  // cache entry is keyed by that buffer's global id in the source-tensor id
+  // space, like any other weight, and cannot collide with the quantization
+  // parameter ids (is_quantization_param_tensor = true).
+  if (TryRestoringSerializedTensor(global_tensor_id, gpu_spatial_tensor).ok()) {
+    const TensorDescriptor& restored_desc = gpu_spatial_tensor->GetDescriptor();
+    graph_adapter_->SetValueShapeAndType(shared_tensor_id,
+                                         restored_desc.GetBHWCShape(),
+                                         restored_desc.GetDataType());
+    return absl::OkStatus();
+  }
+
+  Tensor<OHWI, DataType::kFloat32> scales;
+  scales.shape = OHWI(tensor.dims->data[0], tensor.dims->data[1],
+                      tensor.dims->data[2], tensor.dims->data[3]);
+  const int64_t num_elements = tflite::NumElements(&tensor);
+  if (num_elements != scales.shape.DimensionsProduct()) {
+    return absl::InternalError("moe_experts block scale size mismatch.");
+  }
+  scales.data.resize(num_elements);
+  if (tensor.type == kTfLiteFloat32) {
+    std::copy(tensor.data.f, tensor.data.f + num_elements, scales.data.begin());
+  } else if (tensor.type == kTfLiteFloat16) {
+    const auto* scale_f16 = reinterpret_cast<TfLiteFloat16*>(tensor.data.f16);
+    for (int64_t i = 0; i < num_elements; ++i) {
+      scales.data[i] = fp16_ieee_to_fp32_value(scale_f16[i].data);
+    }
+  } else {
+    return absl::UnimplementedError(
+        absl::StrCat("Unimplemented moe_experts scale dtype: ", tensor.type));
+  }
+  RewriteDenormalScales(gpu_info_, create_info_, scales.data.data(),
+                        num_elements);
+
+  // Match the data type the kernel uses for a per-subgraph scale tensor: the
+  // inference precision (f16 scales under F16 precision), refined by the op's
+  // activation type only under F32 precision, as for the other shared weights.
+  DataType data_type = data_type_;
+  if (data_type_ == DataType::kFloat32) {
+    const std::vector<uint32_t> consumers =
+        graph_adapter_->FindConsumerOps(shared_tensor_id);
+    if (!consumers.empty() && graph_adapter_->OpHasInputs(consumers[0])) {
+      const DataType input_type =
+          graph_adapter_->GetOpFirstInputType(consumers[0]);
+      if (IsFloatType(input_type)) {
+        data_type = input_type;
+      }
+    }
+  }
+  TensorDescriptor tensor_desc =
+      ScaleOrZeroPointToTensorDesc(gpu_info_, scales, data_type);
+  graph_adapter_->SetValueShapeAndType(
+      shared_tensor_id, tensor_desc.GetBHWCShape(), tensor_desc.GetDataType());
+  ABSL_RETURN_IF_ERROR(create_tensor_func_(tensor_desc,
+                                           /*page_adjusted_offset=*/0,
+                                           /*release_data_callback=*/nullptr,
+                                           gpu_spatial_tensor));
+
+  // If serialization is enabled, store the converted scales.
+  return TryStoringSerializedTensor(global_tensor_id, tensor_desc);
 }
 
 absl::Status SharedMemoryManager::TryCreateTensorFromDeviceBuffer(
@@ -1514,7 +1667,8 @@ absl::Status SharedMemoryManager::RegisterExternalConstantTensors(
       (tensor.quantization.type ==
            TfLiteQuantizationType::kTfLiteAffineQuantization ||
        tensor.quantization.type ==
-           TfLiteQuantizationType::kTfLiteBlockwiseQuantization)) {
+           TfLiteQuantizationType::kTfLiteBlockwiseQuantization ||
+       IsMoeExpertsWeights(*graph_adapter_, shared_tensor_id))) {
     if (!shared_tflite_tensor.dequant_forced) {
       ABSL_RETURN_IF_ERROR(RetrieveTensorWithScaleAndZeroPoint(
           shared_tensor_id, shared_tflite_tensor.global_id, tensor,
@@ -1559,9 +1713,9 @@ SharedMemoryManager::CreatePrepackedWeightsTensorFromTfliteTensor(
     const TfLiteTensor& tflite_tensor) {
   DataType data_type = weights_desc.type;
   int count = shape.DimensionsProduct();
-  if (data_type == DataType::UINT4) {
+  if (data_type == DataType::kUint4) {
     count /= 2;
-  } else if (data_type == DataType::UINT2 || data_type == DataType::INT2) {
+  } else if (data_type == DataType::kUint2 || data_type == DataType::kInt2) {
     return absl::InternalError(
         "INT2 and UINT2 data types are not supported for prepacked tensors.");
   }
@@ -1569,8 +1723,8 @@ SharedMemoryManager::CreatePrepackedWeightsTensorFromTfliteTensor(
       reinterpret_cast<const uint8_t*>(tflite_tensor.data.data), count);
 
   if (weights_desc.IsLinearLayout()) {
-    TensorDescriptor tensor_desc(data_type, TensorStorageType::BUFFER,
-                                 Layout::LINEAR);
+    TensorDescriptor tensor_desc(data_type, TensorStorageType::kBuffer,
+                                 Layout::kLinear);
     tensor_desc.SetBHWDCShape(BHWDC(1, 1, 1, 1, count));
     UnownedDataTensorDescriptor unowned_desc(tensor_desc, data);
     std::unique_ptr<GpuSpatialTensor> tensor;
@@ -1580,12 +1734,12 @@ SharedMemoryManager::CreatePrepackedWeightsTensorFromTfliteTensor(
     return tensor;
   }
 
-  DataType texture_type = DataType::UINT32;
-  if (data_type == DataType::UINT4) {
-    texture_type = DataType::UINT16;
+  DataType texture_type = DataType::kUint32;
+  if (data_type == DataType::kUint4) {
+    texture_type = DataType::kUint16;
   }
-  TensorDescriptor tensor_desc(texture_type, TensorStorageType::TEXTURE_2D,
-                               Layout::HW);
+  TensorDescriptor tensor_desc(texture_type, TensorStorageType::kTexture2D,
+                               Layout::kHW);
   uint2 tex_size = Get2dResourceSize(weights_desc, shape);
   // Values are packed: 4 x uint4 = uint16, 4 x uint8 = uint32.
   tex_size.x /= 4;

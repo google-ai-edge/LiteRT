@@ -15,22 +15,25 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RNG_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RNG_H_
 
+#include <algorithm>
+#include <array>
 #include <bitset>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
-#include <iostream>
+#include <cstring>
 #include <iterator>
 #include <limits>
 #include <optional>
 #include <ostream>
 #include <random>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
@@ -85,10 +88,10 @@ class RandomDevice {
   /// @brief Returns a string representation of the RNG.
   absl::string_view Repr() const { return repr_; }
 
-  /// @brief Supports `absl::StrFormat`.
+  /// @brief Supports `AbslStringify`.
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const RandomDevice& rng) {
-    absl::Format(&sink, "%s", rng.Repr());
+    sink.Append(rng.Repr());
   }
 
   /// @brief Supports printing to `std::ostream`.
@@ -117,11 +120,9 @@ class RandomDevice {
   }
 
   static std::string MakeRepr(std::optional<int> seed) {
-    constexpr absl::string_view kReprFmt = "%s(seed=%s, min=%d, max=%d)";
     const auto seed_str = seed.has_value() ? absl::StrCat(*seed) : "<default>";
-    auto res = absl::StrFormat(kReprFmt, Name(), seed_str, Engine::min(),
-                               Engine::max());
-    return res;
+    return absl::StrCat(Name(), "(seed=", seed_str, ", min=", Engine::min(),
+                        ", max=", Engine::max(), ")");
   }
 
   const std::optional<int> seed_;
@@ -162,12 +163,18 @@ class DataGenerator : public DataGeneratorBase<D> {
   using Wide = WideType<D>;
 
   /// @brief Returns the maximum value of the distribution.
-  DataType Max() const override { return dist_.max(); }
+  DataType Max() const override { return static_cast<DataType>(dist_.max()); }
   /// @brief Returns the minimum value of the distribution.
-  DataType Min() const override { return dist_.min(); }
+  DataType Min() const override { return static_cast<DataType>(dist_.min()); }
 
  protected:
-  Dist<DataType> dist_;
+  // Widen 1-byte ints as std::uniform_int_distribution requires >= 16-bit ints.
+  using DistDataType =
+      std::conditional_t<std::is_integral_v<D> && sizeof(D) == 1,
+                         std::conditional_t<std::is_signed_v<D>, int16_t,
+                                            uint16_t>,
+                         D>;
+  Dist<DistDataType> dist_;
 };
 
 /// @brief A data generator that produces values within a given range.
@@ -180,12 +187,14 @@ class RangedGenerator final : public DataGenerator<D, Dist> {
 
  public:
   using typename Base::DataType;
+  using typename Base::DistDataType;
   using typename Base::Wide;
 
   RangedGenerator(Wide min = NumericLimits<D>::Lowest(),
                   Wide max = NumericLimits<D>::Max()) {
-    ConstructAt(&this->dist_, LowerBoundary<DataType>(min),
-                UpperBoundary<DataType>(max));
+    ConstructAt(&this->dist_,
+                static_cast<DistDataType>(LowerBoundary<DataType>(min)),
+                static_cast<DistDataType>(UpperBoundary<DataType>(max)));
   }
 
   RangedGenerator(const RangedGenerator&) = default;
@@ -195,7 +204,7 @@ class RangedGenerator final : public DataGenerator<D, Dist> {
 
   template <typename Rng>
   DataType operator()(Rng& rng) {
-    return this->dist_(rng);
+    return static_cast<DataType>(this->dist_(rng));
   }
 };
 
@@ -613,6 +622,16 @@ class RandomTensorDataBuilder {
     return *this;
   }
 
+  RandomTensorDataBuilder& SetInt64Range(int64_t min, int64_t max) {
+    int64_config_ = std::make_pair(min, max);
+    return *this;
+  }
+
+  RandomTensorDataBuilder& SetInt64Dummy() {
+    int64_config_ = Dummy();
+    return *this;
+  }
+
   RandomTensorDataBuilder& SetFloatRange(float min, float max) {
     float_config_ = std::make_pair(min, max);
     return *this;
@@ -631,6 +650,12 @@ class RandomTensorDataBuilder {
   RandomTensorDataBuilder& SetSin() {
     float_config_ = Sin();
     return *this;
+  }
+
+  bool IsIntDummy() const { return std::holds_alternative<Dummy>(int_config_); }
+
+  bool IsInt64Dummy() const {
+    return std::holds_alternative<Dummy>(int64_config_);
   }
 
   bool IsFloatDummy() const {

@@ -46,5 +46,22 @@ TEST(BroadcastArgsOpTest, BasicBroadcast) {
               testing::ElementsAre(2, 3, 4));
 }
 
+TEST(BroadcastArgsOpTest, RejectsMisalignedShapeBufferSize) {
+  MockShapeInferenceContext::TensorData unaligned = {{1}, {1, 2, 3}};
+  auto valid = MakeTensorData({2}, std::vector<int32_t>{3, 4});
+
+  MockShapeInferenceContext ctx1(kLiteRtOpCodeTflBroadcastArgs,
+                                 {unaligned, valid});
+  InferenceResult result1;
+  EXPECT_EQ(InferBroadcastArgs(ctx1, result1),
+            kLiteRtStatusErrorInvalidArgument);
+
+  MockShapeInferenceContext ctx2(kLiteRtOpCodeTflBroadcastArgs,
+                                 {valid, unaligned});
+  InferenceResult result2;
+  EXPECT_EQ(InferBroadcastArgs(ctx2, result2),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
 }  // namespace
 }  // namespace litert::internal

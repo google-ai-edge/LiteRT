@@ -54,6 +54,8 @@ class AddValuesToCacheOp : public ::ml_drift::GPUOperation {
   int slices_ = 1;
 };
 
+}  // namespace
+
 std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
     const ::ml_drift::OperationDef& op_def,
     const AddValuesToCacheAttributes& attr) {
@@ -66,8 +68,13 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
   AddValuesToCacheOp custom_op;
   custom_op.AllowFuseInputReorder(true);
 
-  int num_heads = attr.head_size > 0 ? (src_shape.c / attr.head_size) : 1;
-  custom_op.update_width_ = src_shape.w;
+  // K update [B, H, T, D] maps to (w = T, c = D); [B, H, D, T] maps to
+  // (w = D, c = T).
+  const bool k_update_transposed = attr.k_update_ts_idx == 3;
+  const int k_tokens = k_update_transposed ? src_shape.c : src_shape.w;
+  const int k_head_dim = k_update_transposed ? src_shape.w : src_shape.c;
+  int num_heads = attr.head_size > 0 ? (k_head_dim / attr.head_size) : 1;
+  custom_op.update_width_ = k_tokens;
   custom_op.batch_size_ = attr.kv_cache_batch_size * std::max(1, num_heads);
   custom_op.slices_ = (attr.head_size + 3) / 4;
 
@@ -80,7 +87,7 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
   custom_op.AddSrcTensor("src_k", src_k);
   custom_op.AddSrcTensor("src_v", src_v);
   ::ml_drift::BufferDescriptor params_buffer;
-  params_buffer.element_type = ::ml_drift::DataType::INT32;
+  params_buffer.element_type = ::ml_drift::DataType::kInt32;
   params_buffer.element_size = 1;
   custom_op.AddSrcBuffer("params", params_buffer);
   custom_op.AddDstTensor("cache_k", cache_k);
@@ -93,9 +100,9 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
   // quantized cache case. Expects src_k and src_v to be float and quantize
   // inside the shader.
   bool quantized_cache = false;
-  if ((src_k.GetDataType() == ::ml_drift::DataType::FLOAT32 ||
-       src_k.GetDataType() == ::ml_drift::DataType::FLOAT16) &&
-      cache_k.GetDataType() == ::ml_drift::DataType::UINT8) {
+  if ((src_k.GetDataType() == ::ml_drift::DataType::kFloat32 ||
+       src_k.GetDataType() == ::ml_drift::DataType::kFloat16) &&
+      cache_k.GetDataType() == ::ml_drift::DataType::kUint8) {
     float max_value_k = static_cast<float>(INT8_MAX) * scale_k;
     float min_value_k = static_cast<float>(INT8_MIN) * scale_k;
     float inverse_scale_k = 1.0f / scale_k;
@@ -113,18 +120,19 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateAddValuesToCache(
     quantized_cache = true;
   }
 
-  std::string op_code;
-  op_code = R"(
-MAIN_FUNCTION($0) {
+  std::string op_code = absl::Substitute(
+      R"(
+MAIN_FUNCTION($$0) {
   int X = ucl::GetGlobalId<0>();
   int Y = ucl::GetGlobalId<1>();
   int S = ucl::GetGlobalId<2>();
   if (X >= args.update_width || Y >= args.batch_size || S >= args.slices) {
     return;
   }
-  int token_index_offset = args.params.Read(0);
-  int active_tokens = args.params.Read(1);
-  )";
+  int token_index_offset = args.params.Read($0);
+  int active_tokens = args.params.Read($1);
+  )",
+      attr.token_index_offset_param_idx, attr.active_tokens_param_idx);
   if (is_ring_buffer) {
     op_code += R"(
   int update_length = args.params.Read(3);
@@ -144,9 +152,36 @@ MAIN_FUNCTION($0) {
 
   op_code += R"(
   int src_y = Y % args.src_height;  // broadcast Height dim used as Batch
-  args.src_k::type value_k = args.src_k.Read(X, src_y, S);
-  args.src_v::type value_v = args.src_v.Read(X, src_y, S);
   )";
+  // Emits the read of one head-dim slice of token X from `name`.
+  auto emit_read = [&op_code](const std::string& name, int update_ts_idx) {
+    if (update_ts_idx == 3) {
+      // Update [B, H, D, T]: width is the head dim and channels are tokens,
+      // so gather the 4 head-dim values of token X.
+      for (int i = 0; i < 4; ++i) {
+        op_code += absl::Substitute(R"(
+  float $0_$1 = 0.0f;
+  if (S * 4 + $1 < args.head_size) {
+    args.src_$0.ReadPerChannel<float>($0_$1, S * 4 + $1, src_y, X);
+  }
+  )",
+                                    name, i);
+      }
+      op_code += absl::Substitute(R"(
+  args.src_$0::type value_$0 = ucl::Convert<args.src_$0::type>(
+      ucl::Init<float4>($0_0, $0_1, $0_2, $0_3));
+  )",
+                                  name);
+    } else {
+      // Update [B, H, T, D], the historical layout.
+      op_code += absl::Substitute(R"(
+  args.src_$0::type value_$0 = args.src_$0.Read(X, src_y, S);
+  )",
+                                  name);
+    }
+  };
+  emit_read("k", attr.k_update_ts_idx);
+  emit_read("v", attr.v_update_ts_idx);
 
   if (quantized_cache) {
     const std::string src_k_type = ToUclDataType(src_k.GetDataType(), 4);
@@ -207,8 +242,6 @@ MAIN_FUNCTION($0) {
   custom_op.code_ = std::move(op_code);
   return std::make_unique<AddValuesToCacheOp>(std::move(custom_op));
 }
-
-}  // namespace
 
 absl::StatusOr<std::unique_ptr<::ml_drift::GPUOperation>>
 CreateAddValuesToCacheFromNode(const ::ml_drift::OperationDef& op_def,

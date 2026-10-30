@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dispatch_api")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
@@ -20,6 +22,27 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_internal_users"],
+)
+
+cc_library(
+    name = "file_backed_pages",
+    srcs = ["file_backed_pages.cc"],
+    hdrs = ["file_backed_pages.h"],
+)
+
+cc_test(
+    name = "file_backed_pages_test",
+    srcs = ["file_backed_pages_test.cc"],
+    # Uses POSIX mmap and /proc/self/smaps.
+    target_compatible_with = select({
+        "//litert:android": [],
+        "//litert:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":file_backed_pages",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 litert_dispatch_api(
@@ -61,6 +84,7 @@ litert_dispatch_api(
         "//litert:litert_friends",
     ],
     deps = [
+        ":file_backed_pages",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_header",
@@ -88,7 +112,7 @@ litert_dispatch_api(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        "@neuro_pilot//:v8_latest_host_headers",
+        "@neuro_pilot//:neuron_host_headers",
     ],
 )
 
@@ -96,8 +120,8 @@ sh_test(
     name = "mediatek_dispatch_so_symbol_test",
     srcs = ["//litert/test:litert_c_api_dependency_test.sh"],
     args = [
-        "LiteRtDispatchGetApi",
-        "$(location :dispatch_api_so)",
+        "LiteRtDispatchQueryInterface",
+        "$(rootpath :dispatch_api_so)",
     ],
     data = [
         ":dispatch_api_so",
@@ -129,6 +153,6 @@ litert_device_test(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-        "@neuro_pilot//:v8_latest_host_headers",
+        "@neuro_pilot//:neuron_host_headers",
     ],
 )

@@ -1278,9 +1278,9 @@ cc_library(
         ":xnnpack_delegate_test_mode",
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
-        "//tflite/schema:schema_conversion_utils",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
@@ -1300,9 +1300,9 @@ cc_library(
         ":xnnpack_delegate",
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
-        "//tflite/schema:schema_conversion_utils",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
@@ -1330,9 +1330,20 @@ cc_library(
     copts = tflite_copts(),
 )
 
+# moe_block_scale.h asks clang to vectorize its dot-product loops. Clang reports
+# a hint it could not honor (e.g. under instrumentation it does not expect) as
+# -Wpass-failed, attributed to a post-inlining location that source pragmas
+# cannot reliably cover, so the warning is disabled for the translation units
+# that compile those loops.
+MOE_VECTORIZE_HINT_COPTS = select({
+    "@org_tensorflow//tensorflow:windows": [],
+    "//conditions:default": ["-Wno-pass-failed"],
+})
+
 cc_test(
     name = "moe_block_scale_test",
     srcs = ["moe_block_scale_test.cc"],
+    copts = MOE_VECTORIZE_HINT_COPTS,
     linkopts = select({
         "@org_tensorflow//tensorflow:emscripten": EMSCRIPTEN_LINKOPTS,
         "//conditions:default": [],
@@ -1349,7 +1360,7 @@ cc_library(
     srcs = ["moe_delegate_kernel.cc"],
     hdrs = ["moe_delegate_kernel.h"],
     compatible_with = get_compatible_with_portable(),
-    copts = tflite_copts() + ["-DFLATBUFFERS_LOCALE_INDEPENDENT=0"],
+    copts = tflite_copts() + ["-DFLATBUFFERS_LOCALE_INDEPENDENT=0"] + MOE_VECTORIZE_HINT_COPTS,
     deps = [
         ":moe_block_scale",
         "//tflite:builtin_ops",
@@ -1520,8 +1531,14 @@ cc_test(
     deps = [
         ":test_main",
         ":xnnpack_delegate_test_mode",
+        "//tflite:framework",
+        "//tflite:schema_fbs_version",
         "//tflite/c:c_api_types",
+        "//tflite/core:framework",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
+        "@flatbuffers//:runtime_cc",
         "@pthreadpool",
     ],
 )
@@ -2894,3 +2911,19 @@ cc_test(
 )
 
 tflite_portable_test_suite_combined(combine_conditions = {"deps": [":test_main"]})
+
+cc_test(
+    name = "sparse_fully_connected_test",
+    srcs = ["sparse_fully_connected_test.cc"],
+    deps = [
+        ":xnnpack_delegate",
+        "//tflite:framework",
+        "//tflite:version",
+        "//tflite/converter/schema:schema_conversion_utils",
+        "//tflite/core:framework",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+    ],
+)

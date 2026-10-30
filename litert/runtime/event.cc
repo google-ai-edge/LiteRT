@@ -19,7 +19,7 @@
 #include <cerrno>
 #include <cstdint>
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_gl_types.h"
@@ -37,7 +37,7 @@
 #endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
+#include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 using litert::Error;
@@ -76,12 +76,11 @@ Expected<void> LiteRtEventT::Wait(int64_t timeout_in_ms) {
   if (type == LiteRtEventTypeOpenCl) {
 #if LITERT_HAS_OPENCL_SUPPORT
     LiteRtClInt res =
-        tflite::gpu::cl::clWaitForEvents(/*num_events=*/1,
-                                         /*event_list=*/&opencl_event);
+        ::ml_drift::cl::clWaitForEvents(/*num_events=*/1,
+                                        /*event_list=*/&opencl_event);
     if (res != LITE_RT_CL_SUCCESS) {
-      return Error(
-          kLiteRtStatusErrorRuntimeFailure,
-          absl::StrFormat("clWaitForEvents fails with error code %d", res));
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   absl::StrCat("clWaitForEvents fails with error code ", res));
     }
     return {};
 #else
@@ -146,7 +145,7 @@ LiteRtEventT::~LiteRtEventT() {
 #endif  // LITERT_HAS_OPENGL_SUPPORT
   } else if (type == LiteRtEventTypeOpenCl) {
 #if LITERT_HAS_OPENCL_SUPPORT
-    tflite::gpu::cl::clReleaseEvent(opencl_event);
+    ::ml_drift::cl::clReleaseEvent(opencl_event);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
   } else if (type == LiteRtEventTypeCustom) {
 #if LITERT_HAS_CUSTOM_EVENT_SUPPORT
@@ -170,8 +169,8 @@ Expected<int> LiteRtEventT::GetSyncFenceFd() {
   }
   return litert::Unexpected(
       kLiteRtStatusErrorInvalidArgument,
-      absl::StrFormat("GetSyncFenceFd is not supported for this event type: %d",
-                      static_cast<int>(type)));
+      absl::StrCat("GetSyncFenceFd is not supported for this event type: ",
+                   static_cast<int>(type)));
 #else
   return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                             "Sync fence is not supported on this platform");
@@ -181,12 +180,12 @@ Expected<int> LiteRtEventT::GetSyncFenceFd() {
 Expected<void> LiteRtEventT::Signal() {
 #if LITERT_HAS_OPENCL_SUPPORT
   if (type == LiteRtEventTypeOpenCl) {
-    LiteRtClInt res = tflite::gpu::cl::clSetUserEventStatus(
-        opencl_event, LITE_RT_CL_COMPLETE);
+    LiteRtClInt res =
+        ::ml_drift::cl::clSetUserEventStatus(opencl_event, LITE_RT_CL_COMPLETE);
     if (res != LITE_RT_CL_SUCCESS) {
-      return Error(kLiteRtStatusErrorRuntimeFailure,
-                   absl::StrFormat(
-                       "clSetUserEventStatus fails with error code %d", res));
+      return Error(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrCat("clSetUserEventStatus fails with error code ", res));
     }
     return {};
   }
@@ -201,12 +200,12 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
 #if LITERT_HAS_OPENCL_SUPPORT
     LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());
     LiteRtClInt res;
-    LiteRtClEvent user_event = tflite::gpu::cl::clCreateUserEvent(
+    LiteRtClEvent user_event = ::ml_drift::cl::clCreateUserEvent(
         gpu_env->GetContext()->context(), &res);
     if (res != LITE_RT_CL_SUCCESS) {
       return Error(
           kLiteRtStatusErrorRuntimeFailure,
-          absl::StrFormat("clCreateUserEvent fails with error code %d", res));
+          absl::StrCat("clCreateUserEvent fails with error code ", res));
     }
     return new LiteRtEventT{
         .env = env,
@@ -298,7 +297,8 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
   }
 
   return Error(kLiteRtStatusErrorInvalidArgument,
-               absl::StrFormat("CreateManaged doesn't support type %d", type));
+               absl::StrCat("CreateManaged doesn't support type ",
+                            static_cast<int>(type)));
 }
 
 Expected<bool> LiteRtEventT::IsSignaled() const {
@@ -334,7 +334,7 @@ Expected<bool> LiteRtEventT::IsSignaled() const {
   } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
 
   return Error(kLiteRtStatusErrorRuntimeFailure,
-               absl::StrFormat("Failed to check if fd %d is signaled", fd));
+               absl::StrCat("Failed to check if fd ", fd, " is signaled"));
 #else
   return Error(kLiteRtStatusErrorUnsupported,
                "LiteRT does not have sync fence support enabled.");
@@ -376,9 +376,9 @@ Expected<int> LiteRtEventT::DupFd() const {
                  "LiteRT does not have EGL native fence support enabled.");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
   }
-  return Error(
-      kLiteRtStatusErrorInvalidArgument,
-      absl::StrFormat("DupFd is not supported for this event type: %d", type));
+  return Error(kLiteRtStatusErrorInvalidArgument,
+               absl::StrCat("DupFd is not supported for this event type: ",
+                            static_cast<int>(type)));
 }
 
 Expected<LiteRtEventType> GetEventTypeFromEglSync(LiteRtEnvironment env,
@@ -410,7 +410,7 @@ Expected<LiteRtEventType> GetEventTypeFromEglSync(LiteRtEnvironment env,
   }
   return litert::Unexpected(
       kLiteRtStatusErrorInvalidArgument,
-      absl::StrFormat("EGL sync type %d is not supported", sync_type));
+      absl::StrCat("EGL sync type ", sync_type, " is not supported"));
 #else
   return Error(kLiteRtStatusErrorUnsupported,
                "LiteRT does not have OpenGL support enabled.");

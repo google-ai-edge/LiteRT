@@ -18,6 +18,10 @@
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
 #include <stdlib.h>
+#if !defined(_WIN32)
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 #include <array>
 #include <cstdint>
@@ -49,6 +53,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/filesystem.h"
 #include "litert/vendors/qualcomm/common.h"
+#include "litert/vendors/qualcomm/core/backends/backend_utils.h"
 #include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/gpu_backend.h"
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
@@ -128,6 +133,49 @@ Expected<absl::Span<const QnnSystemInterface_t*>> LoadSystemProvidersFromLib(
                  "Failed to get system providers");
   }
   return absl::MakeSpan(interface_providers, num_providers);
+}
+
+struct HtpContextConfigs {
+  QnnContext_Config_t priority = QNN_CONTEXT_CONFIG_INIT;
+  QnnHtpContext_CustomConfig_t budget_custom =
+      QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
+  QnnContext_Config_t budget = QNN_CONTEXT_CONFIG_INIT;
+  std::vector<const QnnContext_Config_t*> ptrs;
+};
+
+absl::Span<const QnnContext_Config_t*> BuildHtpContextConfigs(
+    const ::qnn::Options& options,
+    absl::Span<const QnnContext_Config_t*> configs,
+    HtpContextConfigs& storage) {
+  const uint32_t budget_mb = options.GetHtpFileReadMemoryBudgetMB();
+  const bool apply_budget = budget_mb > 0;
+  const bool apply_priority =
+      options.GetGraphPriority() != ::qnn::GraphPriority::kDefault;
+  if (!apply_budget && !apply_priority) {
+    return {};
+  }
+
+  for (const auto* cfg : configs) {
+    if (cfg != nullptr) {
+      storage.ptrs.push_back(cfg);
+    }
+  }
+  if (apply_priority) {
+    storage.priority.option = QNN_CONTEXT_CONFIG_OPTION_PRIORITY;
+    storage.priority.priority =
+        GetGraphPriorityValue(options.GetGraphPriority());
+    storage.ptrs.push_back(&storage.priority);
+  }
+  if (apply_budget) {
+    storage.budget_custom.option =
+        QNN_HTP_CONTEXT_CONFIG_OPTION_FILE_READ_MEMORY_BUDGET;
+    storage.budget_custom.fileReadMemoryBudgetInMb = budget_mb;
+    storage.budget.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
+    storage.budget.customConfig = &storage.budget_custom;
+    storage.ptrs.push_back(&storage.budget);
+  }
+  storage.ptrs.push_back(nullptr);
+  return absl::MakeSpan(storage.ptrs);
 }
 
 }  // namespace
@@ -454,6 +502,17 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::QnnBackend& qnn_backend,
     return kLiteRtStatusOk;
   }
 
+  // Bypass StridedSlice OP validation.
+  if (sdk_version < SdkVersion{2, 52, 0} &&
+      op.IsOpCode(::qnn::QnnOpCode::kStridedSlice) &&
+      op.GetInputTensor(0).GetDataType() == QNN_DATATYPE_BOOL_8 &&
+      op.GetOutputTensor(0).GetDataType() == QNN_DATATYPE_BOOL_8) {
+    LITERT_LOG(LITERT_WARNING,
+               "SDK version is earlier than 2.52.0; bool StridedSlice OP "
+               "validation is bypassed.");
+    return kLiteRtStatusOk;
+  }
+
   if (op.IsOpCode(::qnn::QnnOpCode::kFullyConnected) &&
       op.GetInputTensor(0).IsQuantI8() && op.GetInputTensor(1).IsQuantI8() &&
       op.GetInputTensor(1).IsQuantBitwidth(::qnn::kQuantBitWidth2) &&
@@ -652,16 +711,58 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     ::qnn::QnnBackend& qnn_backend,
     absl::Span<const QnnContext_Config_t*> configs,
     absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle) {
+#if !defined(_WIN32)
+  const int64_t page_size = sysconf(_SC_PAGESIZE);
+  uintptr_t aligned_start = 0;
+  uintptr_t aligned_end = 0;
+  if (page_size > 0 && !bytecode.empty()) {
+    const uintptr_t mask = static_cast<uintptr_t>(page_size) - 1;
+    const uintptr_t start = reinterpret_cast<uintptr_t>(bytecode.data());
+    const uintptr_t end = start + bytecode.size();
+    aligned_start = (start + mask) & ~mask;
+    aligned_end = end & ~mask;
+#if defined(MADV_NOHUGEPAGE)
+    const uintptr_t outer_start = start & ~mask;
+    const uintptr_t outer_end = (end + mask) & ~mask;
+    if (outer_end > outer_start) {
+      madvise(reinterpret_cast<void*>(outer_start), outer_end - outer_start,
+              MADV_NOHUGEPAGE);
+    }
+#endif
+  }
+#endif
+
   Qnn_ContextHandle_t context_handle;
-  if (auto status = Api()->contextCreateFromBinary(
-          qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
-          configs.data(), bytecode.data(), bytecode.size(), &context_handle,
-          profile_handle);
-      status != QNN_SUCCESS) {
+  Qnn_ErrorHandle_t status;
+  if (options_.GetBackendType() == ::qnn::BackendType::kHtpBackend) {
+    HtpContextConfigs htp_configs;
+    const auto htp_span =
+        BuildHtpContextConfigs(options_, configs, htp_configs);
+    const auto context_configs =
+        htp_span.empty() ? configs.data() : htp_span.data();
+    status = Api()->contextCreateFromBinary(
+        qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
+        context_configs, bytecode.data(), bytecode.size(), &context_handle,
+        profile_handle);
+  } else {
+    status = Api()->contextCreateFromBinary(
+        qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
+        configs.data(), bytecode.data(), bytecode.size(), &context_handle,
+        profile_handle);
+  }
+  if (status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to create QNN context: %d", status);
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to create QNN context");
   }
+
+#if !defined(_WIN32)
+  if (aligned_end > aligned_start) {
+    madvise(reinterpret_cast<void*>(aligned_start), aligned_end - aligned_start,
+            MADV_DONTNEED);
+  }
+#endif
+
   auto context_deleter = Api()->contextFree;
   auto profile_deleter = Api()->profileFree;
   return ContextHandle{context_handle, profile_handle, context_deleter,

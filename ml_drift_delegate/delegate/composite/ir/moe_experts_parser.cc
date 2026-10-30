@@ -203,6 +203,15 @@ absl::Status ValidateInt8ZeroPoint(const TfLiteContext* context,
               tensor->quantization.params)
               ->zero_point,
           name);
+    case kTfLiteMultiAxisQuantization:
+      // Emitted by the converter for per-expert blockwise weights. The block
+      // scales are also passed to the op as the separate *_scale inputs.
+      return ValidateBlockwiseInt8ZeroPoint(
+          context,
+          static_cast<const TfLiteMultiAxisQuantization*>(
+              tensor->quantization.params)
+              ->zero_points,
+          name);
     case kTfLiteBlockwiseQuantizationV2:
       return ValidateBlockwiseInt8ZeroPoint(
           context,

@@ -102,7 +102,7 @@ TEST_F(ConvertRoPETest, WithAttributes) {
   flexbuffers::Builder fbb;
   fbb.Map([&]() {
     fbb.Int("kernel_type",
-            static_cast<int>(::ml_drift::RoPEKernelType::INTERLEAVED_2D));
+            static_cast<int>(::ml_drift::RoPEKernelType::kInterleaved2D));
     fbb.Float("min_timescale", 2.0f);
   });
   fbb.Finish();
@@ -129,7 +129,7 @@ TEST_F(ConvertRoPETest, WithAttributes) {
 
   const auto* attr = std::any_cast<::ml_drift::RoPEAttributes>(&op->attr);
   ASSERT_NE(attr, nullptr);
-  EXPECT_EQ(attr->kernel_type, ::ml_drift::RoPEKernelType::INTERLEAVED_2D);
+  EXPECT_EQ(attr->kernel_type, ::ml_drift::RoPEKernelType::kInterleaved2D);
   EXPECT_FLOAT_EQ(attr->min_timescale, 2.0f);
 }
 

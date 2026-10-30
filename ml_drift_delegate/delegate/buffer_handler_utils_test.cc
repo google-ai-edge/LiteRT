@@ -39,9 +39,9 @@ TEST(BufferHandlerUtilsTest, CreateTensorDescriptorRank2Float32) {
   auto desc = CreateTensorDescriptor(
       tensor_type, kLiteRtTensorBufferTypeOpenClImageBuffer);
   ASSERT_TRUE(desc.ok());
-  EXPECT_THAT(desc->GetDataType(), Eq(::ml_drift::DataType::FLOAT32));
+  EXPECT_THAT(desc->GetDataType(), Eq(::ml_drift::DataType::kFloat32));
   EXPECT_THAT(desc->GetStorageType(),
-              Eq(::ml_drift::TensorStorageType::IMAGE_BUFFER));
+              Eq(::ml_drift::TensorStorageType::kImageBuffer));
   EXPECT_THAT(desc->GetBHWDCShape().b, Eq(3));
   EXPECT_THAT(desc->GetBHWDCShape().h, Eq(1));
   EXPECT_THAT(desc->GetBHWDCShape().w, Eq(1));
@@ -60,9 +60,9 @@ TEST(BufferHandlerUtilsTest, CreateTensorDescriptorRank4Float16) {
   auto desc = CreateTensorDescriptor(
       tensor_type, kLiteRtTensorBufferTypeMetalBufferFp16);
   ASSERT_TRUE(desc.ok());
-  EXPECT_THAT(desc->GetDataType(), Eq(::ml_drift::DataType::FLOAT16));
+  EXPECT_THAT(desc->GetDataType(), Eq(::ml_drift::DataType::kFloat16));
   EXPECT_THAT(desc->GetStorageType(),
-              Eq(::ml_drift::TensorStorageType::BUFFER));
+              Eq(::ml_drift::TensorStorageType::kBuffer));
 }
 
 TEST(BufferHandlerUtilsTest, CreateTensorDescriptorRank1Dim0Scalar) {
@@ -75,9 +75,9 @@ TEST(BufferHandlerUtilsTest, CreateTensorDescriptorRank1Dim0Scalar) {
       tensor_type, kLiteRtTensorBufferTypeOpenClBuffer);
   ASSERT_TRUE(desc.ok());
   if (desc.ok()) {
-    EXPECT_THAT(desc->GetDataType(), Eq(::ml_drift::DataType::FLOAT32));
+    EXPECT_THAT(desc->GetDataType(), Eq(::ml_drift::DataType::kFloat32));
     EXPECT_THAT(desc->GetStorageType(),
-                Eq(::ml_drift::TensorStorageType::BUFFER));
+                Eq(::ml_drift::TensorStorageType::kBuffer));
     EXPECT_THAT(desc->GetBHWDCShape().b, Eq(1));
     EXPECT_THAT(desc->GetBHWDCShape().h, Eq(1));
     EXPECT_THAT(desc->GetBHWDCShape().w, Eq(1));

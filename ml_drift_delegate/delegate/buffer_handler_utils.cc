@@ -67,38 +67,38 @@ absl::StatusOr<::ml_drift::TensorDescriptor> CreateTensorDescriptor(
   switch (tensor_type.element_type) {
     case kLiteRtElementTypeFloat32:
       data_type = IsGpuFloat16Memory(buffer_type)
-                      ? ::ml_drift::DataType::FLOAT16
-                      : ::ml_drift::DataType::FLOAT32;
+                      ? ::ml_drift::DataType::kFloat16
+                      : ::ml_drift::DataType::kFloat32;
       break;
     case kLiteRtElementTypeBool:
-      data_type = ::ml_drift::DataType::BOOL;
+      data_type = ::ml_drift::DataType::kBool;
       break;
     case kLiteRtElementTypeInt32:
-      data_type = ::ml_drift::DataType::INT32;
+      data_type = ::ml_drift::DataType::kInt32;
       break;
     case kLiteRtElementTypeFloat16:
-      data_type = ::ml_drift::DataType::FLOAT16;
+      data_type = ::ml_drift::DataType::kFloat16;
       break;
     case kLiteRtElementTypeInt8:
-      data_type = ::ml_drift::DataType::INT8;
+      data_type = ::ml_drift::DataType::kInt8;
       break;
     case kLiteRtElementTypeUInt8:
-      data_type = ::ml_drift::DataType::UINT8;
+      data_type = ::ml_drift::DataType::kUint8;
       break;
     case kLiteRtElementTypeUInt32:
-      data_type = ::ml_drift::DataType::UINT32;
+      data_type = ::ml_drift::DataType::kUint32;
       break;
     case kLiteRtElementTypeInt64:
-      data_type = ::ml_drift::DataType::INT64;
+      data_type = ::ml_drift::DataType::kInt64;
       break;
     case kLiteRtElementTypeUInt64:
-      data_type = ::ml_drift::DataType::UINT64;
+      data_type = ::ml_drift::DataType::kUint64;
       break;
     case kLiteRtElementTypeInt16:
-      data_type = ::ml_drift::DataType::INT16;
+      data_type = ::ml_drift::DataType::kInt16;
       break;
     case kLiteRtElementTypeUInt16:
-      data_type = ::ml_drift::DataType::UINT16;
+      data_type = ::ml_drift::DataType::kUint16;
       break;
     default:
       return absl::InvalidArgumentError(
@@ -107,11 +107,11 @@ absl::StatusOr<::ml_drift::TensorDescriptor> CreateTensorDescriptor(
 
   ::ml_drift::TensorStorageType storage_type;
   if (IsGpuBuffer(buffer_type)) {
-    storage_type = ::ml_drift::TensorStorageType::BUFFER;
+    storage_type = ::ml_drift::TensorStorageType::kBuffer;
   } else if (IsGpuTexture(buffer_type)) {
-    storage_type = ::ml_drift::TensorStorageType::TEXTURE_2D;
+    storage_type = ::ml_drift::TensorStorageType::kTexture2D;
   } else if (IsGpuImageBuffer(buffer_type)) {
-    storage_type = ::ml_drift::TensorStorageType::IMAGE_BUFFER;
+    storage_type = ::ml_drift::TensorStorageType::kImageBuffer;
   } else {
     return absl::InvalidArgumentError("Unsupported buffer type.");
   }

@@ -15,8 +15,11 @@
 #import <Metal/Metal.h>
 #import <XCTest/XCTest.h>
 
+#include <malloc/malloc.h>
 #include <unistd.h>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 
@@ -158,6 +161,51 @@
   XCTAssertEqual(event->IsSignaled(event.get()), 0);
   [commandBuffer2 commit];
   [commandBuffer2 waitUntilCompleted];
+  event->Wait(event.get(), /*timeout_in_ms=*/-1);
+  XCTAssertEqual(event->IsSignaled(event.get()), 1);
+}
+
+- (void)testCustomEventMetalEncodeWaitOrdersCommandBuffers {
+  XCTAssertNotNil(_device, @"Metal device should be initialized in setUp");
+  XCTAssertNotNil(_commandQueue, @"Metal command queue should be initialized in setUp");
+
+  constexpr NSUInteger kBufferSize = 64 * 1024 * 1024;
+  constexpr NSUInteger kResultSize = 16;
+  constexpr uint8_t kFillValue = 0xAB;
+  id<MTLBuffer> buffer = [_device newBufferWithLength:kBufferSize
+                                              options:MTLResourceStorageModePrivate];
+  id<MTLBuffer> result = [_device newBufferWithLength:kResultSize
+                                              options:MTLResourceStorageModeShared];
+  std::memset([result contents], 0, kResultSize);
+  auto event = std::make_unique<litert::ml_drift::CustomEventMetal>(_device);
+
+  // The producer fills the buffer on one queue and signals the event.
+  id<MTLCommandBuffer> producer = [_commandQueue commandBuffer];
+  id<MTLBlitCommandEncoder> fill = [producer blitCommandEncoder];
+  [fill fillBuffer:buffer range:NSMakeRange(0, kBufferSize) value:kFillValue];
+  [fill endEncoding];
+  event->EncodeSignal(producer);
+  [producer commit];
+
+  // The consumer on another queue waits for the event before reading the end of the buffer.
+  id<MTLCommandQueue> other_queue = [_device newCommandQueue];
+  id<MTLCommandBuffer> consumer = [other_queue commandBuffer];
+  event->EncodeWait(consumer);
+  id<MTLBlitCommandEncoder> copy = [consumer blitCommandEncoder];
+  [copy copyFromBuffer:buffer
+           sourceOffset:kBufferSize - kResultSize
+               toBuffer:result
+      destinationOffset:0
+                   size:kResultSize];
+  [copy endEncoding];
+  [consumer commit];
+  [consumer waitUntilCompleted];
+
+  XCTAssertEqual(consumer.status, MTLCommandBufferStatusCompleted);
+  const uint8_t* data = static_cast<const uint8_t*>([result contents]);
+  for (NSUInteger i = 0; i < kResultSize; ++i) {
+    XCTAssertEqual(data[i], kFillValue);
+  }
   event->Wait(event.get(), /*timeout_in_ms=*/-1);
   XCTAssertEqual(event->IsSignaled(event.get()), 1);
 }
@@ -673,4 +721,308 @@
 #endif
 }
 
+// Copies `bytes` bytes of `src` into a new shared buffer on the GPU and waits,
+// so the result reflects what GPU work observes.
+- (id<MTLBuffer>)gpuCopyOfBuffer:(id<MTLBuffer>)src bytes:(size_t)bytes {
+  id<MTLBuffer> staging = [_device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
+  id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+  id<MTLBlitCommandEncoder> blit = [commandBuffer blitCommandEncoder];
+  [blit copyFromBuffer:src sourceOffset:0 toBuffer:staging destinationOffset:0 size:bytes];
+  [blit endEncoding];
+  [commandBuffer commit];
+  [commandBuffer waitUntilCompleted];
+  return staging;
+}
+
+- (void)testUnlockWritesSharedMetalBufferInPlace {
+  if (!_device) return;
+
+  LiteRtRankedTensorType tensorType;
+  tensorType.element_type = kLiteRtElementTypeFloat32;
+  tensorType.layout.rank = 4;
+  tensorType.layout.dimensions[0] = 1;
+  tensorType.layout.dimensions[1] = 1;
+  tensorType.layout.dimensions[2] = 1;
+  tensorType.layout.dimensions[3] = 4;
+  tensorType.layout.has_strides = false;
+
+  size_t bytes = 4 * sizeof(float);
+  HwMemoryInfoPtr memoryInfo = nullptr;
+  LiteRtStatus status =
+      LiteRtCreateMetalMemory((__bridge void*)_device, (__bridge void*)_commandQueue, &tensorType,
+                              kLiteRtTensorBufferTypeMetalBuffer, bytes, bytes, &memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)memoryInfo->raw_handle;
+  XCTAssertNotNil(buffer);
+  XCTAssertEqual(buffer.storageMode, MTLStorageModeShared);
+
+  void* hostMemory = nullptr;
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeWrite, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  const float values[4] = {1.0f, -2.5f, 3.0f, 4.25f};
+  std::memcpy(hostMemory, values, bytes);
+  status = LiteRtUnlockMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  // The data is in the buffer as soon as Unlock returns...
+  const float* contents = (const float*)[buffer contents];
+  for (int i = 0; i < 4; ++i) {
+    XCTAssertEqual(contents[i], values[i]);
+  }
+  // ...and visible to GPU work submitted afterwards.
+  id<MTLBuffer> gpuCopy = [self gpuCopyOfBuffer:buffer bytes:bytes];
+  const float* copied = (const float*)[gpuCopy contents];
+  for (int i = 0; i < 4; ++i) {
+    XCTAssertEqual(copied[i], values[i]);
+  }
+
+  // A second write overwrites the first one.
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeWrite, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  const float values2[4] = {5.0f, 6.0f, 7.0f, 8.0f};
+  std::memcpy(hostMemory, values2, bytes);
+  status = LiteRtUnlockMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  for (int i = 0; i < 4; ++i) {
+    XCTAssertEqual(contents[i], values2[i]);
+  }
+
+  status = LiteRtDestroyMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+}
+
+- (void)testUnlockConvertsToFp16MetalBufferInPlace {
+  if (!_device) return;
+
+  LiteRtRankedTensorType tensorType;
+  tensorType.element_type = kLiteRtElementTypeFloat32;
+  tensorType.layout.rank = 4;
+  tensorType.layout.dimensions[0] = 1;
+  tensorType.layout.dimensions[1] = 1;
+  tensorType.layout.dimensions[2] = 1;
+  tensorType.layout.dimensions[3] = 4;
+  tensorType.layout.has_strides = false;
+
+  size_t bytes = 4 * sizeof(float);
+  HwMemoryInfoPtr memoryInfo = nullptr;
+  LiteRtStatus status =
+      LiteRtCreateMetalMemory((__bridge void*)_device, (__bridge void*)_commandQueue, &tensorType,
+                              kLiteRtTensorBufferTypeMetalBufferFp16, bytes, bytes, &memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)memoryInfo->raw_handle;
+  XCTAssertNotNil(buffer);
+
+  void* hostMemory = nullptr;
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeWrite, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  const float values[4] = {0.5f, -1.25f, 2.0f, 3.75f};
+  std::memcpy(hostMemory, values, bytes);
+  status = LiteRtUnlockMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  // IEEE half bit patterns of `values`, as seen by the GPU.
+  const uint16_t expected_halfs[4] = {0x3800, 0xBD00, 0x4000, 0x4380};
+  id<MTLBuffer> gpuCopy = [self gpuCopyOfBuffer:buffer bytes:4 * sizeof(uint16_t)];
+  const uint16_t* halfs = (const uint16_t*)[gpuCopy contents];
+  for (int i = 0; i < 4; ++i) {
+    XCTAssertEqual(halfs[i], expected_halfs[i]);
+  }
+
+  hostMemory = nullptr;
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeRead, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  const float* floatMemory = (const float*)hostMemory;
+  for (int i = 0; i < 4; ++i) {
+    XCTAssertEqual(floatMemory[i], values[i]);
+  }
+  status = LiteRtUnlockMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  status = LiteRtDestroyMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+}
+
+- (void)testUnlockPadsChannelsInPlace {
+  if (!_device) return;
+
+  // 3 channels are padded to a 4-channel slice on the GPU.
+  LiteRtRankedTensorType tensorType;
+  tensorType.element_type = kLiteRtElementTypeFloat32;
+  tensorType.layout.rank = 4;
+  tensorType.layout.dimensions[0] = 1;
+  tensorType.layout.dimensions[1] = 1;
+  tensorType.layout.dimensions[2] = 2;
+  tensorType.layout.dimensions[3] = 3;
+  tensorType.layout.has_strides = false;
+
+  size_t bytes = 6 * sizeof(float);
+  HwMemoryInfoPtr memoryInfo = nullptr;
+  LiteRtStatus status =
+      LiteRtCreateMetalMemory((__bridge void*)_device, (__bridge void*)_commandQueue, &tensorType,
+                              kLiteRtTensorBufferTypeMetalBuffer, bytes, bytes, &memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  void* hostMemory = nullptr;
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeWrite, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  float* floatMemory = (float*)hostMemory;
+  for (int i = 0; i < 6; ++i) {
+    floatMemory[i] = (float)(i + 7);
+  }
+  status = LiteRtUnlockMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  hostMemory = nullptr;
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeRead, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  floatMemory = (float*)hostMemory;
+  for (int i = 0; i < 6; ++i) {
+    XCTAssertEqual(floatMemory[i], (float)(i + 7));
+  }
+  status = LiteRtUnlockMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  status = LiteRtDestroyMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+}
+
+- (void)testUnlockUploadsToPrivateMetalBuffer {
+  if (!_device) return;
+
+  LiteRtRankedTensorType tensorType;
+  tensorType.element_type = kLiteRtElementTypeFloat32;
+  tensorType.layout.rank = 4;
+  tensorType.layout.dimensions[0] = 1;
+  tensorType.layout.dimensions[1] = 1;
+  tensorType.layout.dimensions[2] = 1;
+  tensorType.layout.dimensions[3] = 4;
+  tensorType.layout.has_strides = false;
+  size_t bytes = 4 * sizeof(float);
+
+  // A private buffer is not CPU-visible, so Unlock must upload through the GPU.
+  id<MTLBuffer> buffer = [_device newBufferWithLength:bytes options:MTLResourceStorageModePrivate];
+  HwMemoryInfoPtr memoryInfo = nullptr;
+  LiteRtStatus status = LiteRtImportMetalMemory(
+      (__bridge void*)_device, (__bridge void*)_commandQueue, &tensorType,
+      kLiteRtTensorBufferTypeMetalBuffer, (__bridge void*)buffer, bytes, bytes, &memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  void* hostMemory = nullptr;
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeWrite, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  const float values[4] = {10.0f, 11.0f, 12.0f, 13.0f};
+  std::memcpy(hostMemory, values, bytes);
+  status = LiteRtUnlockMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  id<MTLBuffer> gpuCopy = [self gpuCopyOfBuffer:buffer bytes:bytes];
+  const float* copied = (const float*)[gpuCopy contents];
+  for (int i = 0; i < 4; ++i) {
+    XCTAssertEqual(copied[i], values[i]);
+  }
+
+  status = LiteRtDestroyMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+}
+
+- (void)testPartialWriteLockPreservesUnwrittenContents {
+  if (!_device) return;
+
+  constexpr int kNumElements = 8;
+  LiteRtRankedTensorType tensorType;
+  tensorType.element_type = kLiteRtElementTypeFloat32;
+  tensorType.layout.rank = 1;
+  tensorType.layout.dimensions[0] = kNumElements;
+  tensorType.layout.has_strides = false;
+
+  const size_t bytes = kNumElements * sizeof(float);
+  HwMemoryInfoPtr memoryInfo = nullptr;
+  LiteRtStatus status =
+      LiteRtCreateMetalMemory((__bridge void*)_device, (__bridge void*)_commandQueue, &tensorType,
+                              kLiteRtTensorBufferTypeMetalBuffer, bytes, bytes, &memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  // First write lock initializes the whole buffer (like InitializeAttentionMask()).
+  void* hostMemory = nullptr;
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeWrite, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  float* floatMemory = static_cast<float*>(hostMemory);
+  for (int i = 0; i < kNumElements; ++i) {
+    floatMemory[i] = -1.0f;
+  }
+  XCTAssertEqual(LiteRtUnlockMetalMemory(memoryInfo), kLiteRtStatusOk);
+
+  // Second write lock updates only the first element (like FillAttentionMask()).
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeWrite, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  static_cast<float*>(hostMemory)[0] = 0.0f;
+  XCTAssertEqual(LiteRtUnlockMetalMemory(memoryInfo), kLiteRtStatusOk);
+
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeRead, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  floatMemory = static_cast<float*>(hostMemory);
+  XCTAssertEqual(floatMemory[0], 0.0f);
+  for (int i = 1; i < kNumElements; ++i) {
+    XCTAssertEqual(floatMemory[i], -1.0f);
+  }
+  XCTAssertEqual(LiteRtUnlockMetalMemory(memoryInfo), kLiteRtStatusOk);
+
+  status = LiteRtDestroyMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+}
+
+- (void)testLockUnlockFreesShadowHostMemory {
+  if (!_device) return;
+
+  constexpr int kNumElements = 4 * 1024 * 1024;  // 16 MB
+  LiteRtRankedTensorType tensorType;
+  tensorType.element_type = kLiteRtElementTypeFloat32;
+  tensorType.layout.rank = 1;
+  tensorType.layout.dimensions[0] = kNumElements;
+  tensorType.layout.has_strides = false;
+
+  const size_t bytes = kNumElements * sizeof(float);
+  HwMemoryInfoPtr memoryInfo = nullptr;
+  LiteRtStatus status =
+      LiteRtCreateMetalMemory((__bridge void*)_device, (__bridge void*)_commandQueue, &tensorType,
+                              kLiteRtTensorBufferTypeMetalBuffer, bytes, bytes, &memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  XCTAssertTrue(memoryInfo != nullptr);
+
+  malloc_statistics_t statsBefore = {};
+  malloc_zone_statistics(nullptr, &statsBefore);
+
+  void* hostMemory = nullptr;
+  status = LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeWrite, &hostMemory);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+  XCTAssertTrue(hostMemory != nullptr);
+  std::memset(hostMemory, 0xAB, bytes);
+
+  malloc_statistics_t statsLocked = {};
+  malloc_zone_statistics(nullptr, &statsLocked);
+  XCTAssertGreaterThanOrEqual(statsLocked.size_in_use, statsBefore.size_in_use + bytes / 2);
+
+  // Unlocking must free the aligned host shadow buffer while memoryInfo remains alive.
+  status = LiteRtUnlockMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  malloc_statistics_t statsUnlocked = {};
+  malloc_zone_statistics(nullptr, &statsUnlocked);
+  XCTAssertLessThanOrEqual(statsUnlocked.size_in_use + bytes / 2, statsLocked.size_in_use);
+
+  // Repeated lock/unlock cycles on a live buffer should not accumulate host allocations.
+  for (int i = 0; i < 10; ++i) {
+    void* ptr = nullptr;
+    XCTAssertEqual(LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeRead, &ptr),
+                   kLiteRtStatusOk);
+    XCTAssertTrue(ptr != nullptr);
+    XCTAssertEqual(LiteRtUnlockMetalMemory(memoryInfo), kLiteRtStatusOk);
+  }
+
+  malloc_statistics_t statsAfterLoop = {};
+  malloc_zone_statistics(nullptr, &statsAfterLoop);
+  XCTAssertLessThanOrEqual(statsAfterLoop.size_in_use, statsBefore.size_in_use + bytes / 2);
+
+  XCTAssertEqual(LiteRtDestroyMetalMemory(memoryInfo), kLiteRtStatusOk);
+}
 @end

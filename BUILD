@@ -32,4 +32,5 @@ exports_files([
     "requirements_lock_3_13.txt",
     "requirements_lock_3_14.txt",
     "requirements_lock_3_14_freethreaded.txt",
+    "rbe_platform.bzl",
 ])

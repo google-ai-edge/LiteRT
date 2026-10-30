@@ -44,6 +44,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/cc/internal/litert_c_types_printing.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
@@ -53,9 +54,13 @@
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/nvidia/bytecode.h"
 #include "litert/vendors/nvidia/cache_layout.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_graph_builder.h"
+#include "litert/vendors/nvidia/compiler/weight_holder_calibration.h"
+#include "litert/vendors/nvidia/compiler/weight_store_builder.h"
+#include "litert/vendors/nvidia/cuda_vmm.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "NvInferRuntime.h"
 #include "NvInferVersion.h"
@@ -67,7 +72,7 @@ using litert::Expected;
 
 constexpr char kPluginManufacturer[] = "NVIDIA";
 constexpr char kPluginSocModel[] = "tensorrt-rtx";
-constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 14;
+constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 15;
 
 enum class PartitionPolicy {
   kSafe,
@@ -139,6 +144,11 @@ struct PendingBundleEntry {
   std::vector<uint8_t> engine;
   std::optional<litert::nvidia::TensorRtLlmHeadBuildData> trtllm_head;
   std::vector<litert::nvidia::TensorRtSharedWeightRef> refit_weights;
+  // Where the packed plugin weights of a plan built without them come from;
+  // its private runs alias private_runs.
+  std::optional<litert::nvidia::TensorRtWeightStore> weight_store;
+  std::vector<litert::nvidia::TensorRtWeightHolderCalibration::Run>
+      private_runs;
 
   // The view borrows this entry and the caller-provided head storage.
   litert::nvidia::TensorRtBundleEntry View(
@@ -157,8 +167,10 @@ struct PendingBundleEntry {
       head.bf16_scales_size = trtllm_head->bf16_scales.size();
       head_ptr = &head;
     }
-    return {function_name, input_names, output_names, engine.data(),
-            engine.size(), head_ptr,    refit_weights};
+    return {function_name, input_names,
+            output_names,  engine.data(),
+            engine.size(), head_ptr,
+            refit_weights, weight_store.has_value() ? &*weight_store : nullptr};
   }
 };
 
@@ -289,9 +301,13 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
     case kLiteRtOpCodeTflCast:
     case kLiteRtOpCodeTflConcatenation:
     case kLiteRtOpCodeTflCos:
+    // Gemma 4 26B-A4B: the mixture-of-experts op, its router's top-k, the
+    // masks' Equal and the inlined attention composites' Mean.
+    case kLiteRtOpCodeTflCustom:
     case kLiteRtOpCodeTflDequantize:
     case kLiteRtOpCodeTflDiv:
     case kLiteRtOpCodeTflDynamicUpdateSlice:
+    case kLiteRtOpCodeTflEqual:
     case kLiteRtOpCodeTflFill:
     case kLiteRtOpCodeTflFloorMod:
     case kLiteRtOpCodeTflFullyConnected:
@@ -300,6 +316,7 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
     case kLiteRtOpCodeTflLess:
     case kLiteRtOpCodeTflLogicalAnd:
     case kLiteRtOpCodeTflMaximum:
+    case kLiteRtOpCodeTflMean:
     case kLiteRtOpCodeTflMinimum:
     case kLiteRtOpCodeTflMul:
     case kLiteRtOpCodeTflNotEqual:
@@ -316,6 +333,7 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
     case kLiteRtOpCodeTflSub:
     case kLiteRtOpCodeTflSum:
     case kLiteRtOpCodeTflTanh:
+    case kLiteRtOpCodeTflTopkV2:
     case kLiteRtOpCodeTflTranspose:
     case kLiteRtOpCodeTflUnpack:
       return true;
@@ -455,6 +473,9 @@ std::string BuildCompilerSdkVersion() {
       "LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH",
       "LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN",
       "LITERT_NVIDIA_TENSORRT_BUILDER_OPT_LEVEL",
+      "LITERT_NVIDIA_TENSORRT_BLOCK_SCALES_IN_STORE",
+      "LITERT_NVIDIA_TENSORRT_CACHE_STORAGE",
+      "LITERT_NVIDIA_TENSORRT_CUDA_GEMM",
       "LITERT_NVIDIA_TENSORRT_DISABLE_FC_SHAPES",
       "LITERT_NVIDIA_TENSORRT_DISABLE_INT8_ELEMENTWISE",
       "LITERT_NVIDIA_TENSORRT_DISABLE_OPS",
@@ -466,6 +487,9 @@ std::string BuildCompilerSdkVersion() {
       "LITERT_NVIDIA_TENSORRT_FP16",
       "LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS",
       "LITERT_NVIDIA_TENSORRT_FUSE_GEMV_GROUPS",
+      "LITERT_NVIDIA_TENSORRT_FUSE_MOE_ROUTER",
+      "LITERT_NVIDIA_TENSORRT_FUSE_MOE_BLOCK",
+      "LITERT_NVIDIA_TENSORRT_FUSE_NORM_GEMV",
       "LITERT_NVIDIA_TENSORRT_JIT_HANDLE",
       "LITERT_NVIDIA_TENSORRT_MAX_FC_WEIGHT_BYTES",
       "LITERT_NVIDIA_TENSORRT_MAX_FILL_BYTES",
@@ -486,6 +510,8 @@ std::string BuildCompilerSdkVersion() {
       "LITERT_NVIDIA_TENSORRT_SYNC_ALLOCATOR",
       "LITERT_NVIDIA_TENSORRT_TACTIC_DRAM_MB",
       "LITERT_NVIDIA_TENSORRT_VALUE_CACHE_LAYOUT",
+      "LITERT_NVIDIA_TENSORRT_WEIGHT_STORE",
+      "LITERT_NVIDIA_TENSORRT_WEIGHT_STORE_SEGMENT_MB",
       "LITERT_NVIDIA_TENSORRT_WORKSPACE_MB",
   };
 
@@ -527,8 +553,12 @@ std::string BuildCompilerSdkVersion() {
          Hex64(fingerprint.high);
 }
 
-Expected<std::vector<std::string>> ReadOnlyValueCacheInputs(
-    const LiteRtCompilerContext* context, LiteRtOptions options) {
+// The sorted, unique names of a name-list option (`what` names it in errors),
+// empty when the options do not carry it.
+template <typename Payload>
+Expected<std::vector<std::string>> CacheInputNameList(
+    const LiteRtCompilerContext* context, LiteRtOptions options,
+    const char* identifier, const char* what) {
   std::vector<std::string> names;
   if (options == nullptr) {
     return names;
@@ -539,33 +569,45 @@ Expected<std::vector<std::string>> ReadOnlyValueCacheInputs(
     return names;
   }
   void* data = nullptr;
-  const LiteRtStatus find_status = context->find_opaque_options_data(
-      opaque, LITERT_NVIDIA_READ_ONLY_VALUE_CACHE_OPTIONS_ID, &data);
+  const LiteRtStatus find_status =
+      context->find_opaque_options_data(opaque, identifier, &data);
   if (find_status == kLiteRtStatusErrorNotFound) {
     return names;
   }
   LITERT_RETURN_IF_ERROR(find_status);
-  const auto* layout =
-      static_cast<const LiteRtNvidiaReadOnlyValueCacheOptions*>(data);
+  const auto* layout = static_cast<const Payload*>(data);
   if (layout == nullptr ||
       (layout->num_inputs != 0 && layout->input_names == nullptr)) {
     return Error(kLiteRtStatusErrorInvalidArgument,
-                 "Invalid NVIDIA read-only value cache options");
+                 std::string("Invalid NVIDIA ") + what + " options");
   }
   for (uint32_t i = 0; i < layout->num_inputs; ++i) {
     if (layout->input_names[i] == nullptr ||
         layout->input_names[i][0] == '\0') {
       return Error(kLiteRtStatusErrorInvalidArgument,
-                   "Read-only value cache input names must not be empty");
+                   std::string(what) + " input names must not be empty");
     }
     names.emplace_back(layout->input_names[i]);
   }
   std::sort(names.begin(), names.end());
   if (std::adjacent_find(names.begin(), names.end()) != names.end()) {
     return Error(kLiteRtStatusErrorInvalidArgument,
-                 "Read-only value cache input names must be unique");
+                 std::string(what) + " input names must be unique");
   }
   return names;
+}
+
+Expected<std::vector<std::string>> ReadOnlyValueCacheInputs(
+    const LiteRtCompilerContext* context, LiteRtOptions options) {
+  return CacheInputNameList<LiteRtNvidiaReadOnlyValueCacheOptions>(
+      context, options, LITERT_NVIDIA_READ_ONLY_VALUE_CACHE_OPTIONS_ID,
+      "read-only value cache");
+}
+
+Expected<std::vector<std::string>> SharedCacheInputs(
+    const LiteRtCompilerContext* context, LiteRtOptions options) {
+  return CacheInputNameList<LiteRtNvidiaSharedCacheInputs>(
+      context, options, LITERT_NVIDIA_SHARED_CACHE_INPUTS_ID, "shared cache");
 }
 
 std::string TensorRtAotCacheDir() {
@@ -941,9 +983,9 @@ Expected<void> AppendTensorStructure(std::string& key,
       break;
     }
     case kLiteRtQuantizationBlockWise: {
+      // Symmetric blockwise weights (Gemma 4 26B-A4B) have no zero points.
       const auto quantization = tensor.BlockWiseQuantization();
-      if (quantization.scales == nullptr ||
-          quantization.zero_points == nullptr) {
+      if (quantization.scales == nullptr) {
         return Error(kLiteRtStatusErrorInvalidArgument,
                      "Invalid block-wise quantization in AOT cache key");
       }
@@ -951,9 +993,14 @@ Expected<void> AppendTensorStructure(std::string& key,
       AppendCacheKeyScalar<uint32_t>(
           key, litert::compiler::Tensor(tensor.ctx(), quantization.scales)
                    .TensorIndex());
-      AppendCacheKeyScalar<uint32_t>(
-          key, litert::compiler::Tensor(tensor.ctx(), quantization.zero_points)
-                   .TensorIndex());
+      AppendCacheKeyScalar<uint8_t>(
+          key, quantization.zero_points != nullptr ? 1 : 0);
+      if (quantization.zero_points != nullptr) {
+        AppendCacheKeyScalar<uint32_t>(
+            key,
+            litert::compiler::Tensor(tensor.ctx(), quantization.zero_points)
+                .TensorIndex());
+      }
       break;
     }
     default:
@@ -1285,6 +1332,28 @@ bool ContainsReductionOp(const LiteRtCompilerContext* ctx,
   return false;
 }
 
+// Whether the island writes a KV cache: an odml.cache_update composite or a
+// dynamic update slice. Such an island is kept however small: on the CPU it
+// would rewrite a whole cache that the engines keep on the device (Gemma 4
+// 26B's prefill ends with the last layer's cache update, which the unlowered
+// rope composite before it cuts off from the rest of the graph).
+bool ContainsCacheUpdate(const LiteRtCompilerContext* ctx,
+                         const std::vector<LiteRtOp>& partition) {
+  for (auto* raw_op : partition) {
+    const litert::compiler::Op op(ctx, raw_op);
+    if (op.Code() == kLiteRtOpCodeTflDynamicUpdateSlice) {
+      return true;
+    }
+    const char* name = nullptr;
+    if (op.Code() == kLiteRtOpCodeShloComposite &&
+        LiteRtGetSHLOCompositeOpName(raw_op, &name) == kLiteRtStatusOk &&
+        name != nullptr && std::strcmp(name, "odml.cache_update") == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool ShouldKeepPartition(const LiteRtCompilerContext* ctx,
                          const std::vector<LiteRtOp>& partition,
                          PartitionPolicy policy, size_t output_bytes) {
@@ -1292,7 +1361,8 @@ bool ShouldKeepPartition(const LiteRtCompilerContext* ctx,
                   /*default_value=*/true)) {
     return true;
   }
-  if (ContainsComputeDenseOp(ctx, partition)) {
+  if (ContainsComputeDenseOp(ctx, partition) ||
+      ContainsCacheUpdate(ctx, partition)) {
     return true;
   }
   if (ContainsReductionOp(ctx, partition) &&
@@ -1393,27 +1463,36 @@ struct LiteRtCompiledResultT {
 
 struct LiteRtCompilerPluginT {
   LiteRtCompilerPluginT(const LiteRtCompilerContext* ctx,
-                        std::vector<std::string> read_only_value_cache_inputs)
+                        std::vector<std::string> read_only_value_cache_inputs,
+                        std::vector<std::string> shared_cache_inputs)
       : ctx(ctx),
         sdk_version(BuildCompilerSdkVersion()),
-        read_only_value_cache_inputs(std::move(read_only_value_cache_inputs)) {
-    if (!this->read_only_value_cache_inputs.empty()) {
+        read_only_value_cache_inputs(std::move(read_only_value_cache_inputs)),
+        shared_cache_inputs(std::move(shared_cache_inputs)) {
+    // Both LiteRT's outer cache and the NVIDIA direct AOT lookup include
+    // this per-instance SDK string. Environment settings alone cannot
+    // distinguish differently laid-out drafter inputs.
+    const auto append_names = [this](const char* label,
+                                     const std::vector<std::string>& names) {
+      if (names.empty()) {
+        return;
+      }
       std::string key;
-      for (const auto& name : this->read_only_value_cache_inputs) {
+      for (const auto& name : names) {
         AppendCacheKeyString(key, name);
       }
       const auto fingerprint =
           litert::nvidia::FingerprintTensorRtArtifact(key.data(), key.size());
-      // Both LiteRT's outer cache and the NVIDIA direct AOT lookup include
-      // this per-instance SDK string. Environment settings alone cannot
-      // distinguish differently laid-out drafter inputs.
-      sdk_version += " read-only-value-cache=" + Hex64(fingerprint.low) +
+      sdk_version += std::string(" ") + label + "=" + Hex64(fingerprint.low) +
                      Hex64(fingerprint.high);
-    }
+    };
+    append_names("read-only-value-cache", this->read_only_value_cache_inputs);
+    append_names("shared-cache-inputs", this->shared_cache_inputs);
   }
   const LiteRtCompilerContext* ctx = nullptr;
   std::string sdk_version;
   std::vector<std::string> read_only_value_cache_inputs;
+  std::vector<std::string> shared_cache_inputs;
 };
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
@@ -1551,8 +1630,10 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
   LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
   LITERT_ASSIGN_OR_RETURN(auto read_only_inputs,
                           ReadOnlyValueCacheInputs(compiler_context, options));
-  *compiler_plugin =
-      new LiteRtCompilerPluginT(compiler_context, std::move(read_only_inputs));
+  LITERT_ASSIGN_OR_RETURN(auto shared_inputs,
+                          SharedCacheInputs(compiler_context, options));
+  *compiler_plugin = new LiteRtCompilerPluginT(
+      compiler_context, std::move(read_only_inputs), std::move(shared_inputs));
   return kLiteRtStatusOk;
 }
 
@@ -1667,6 +1748,95 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   return kLiteRtStatusOk;
 }
 
+namespace {
+
+// The weight store of a compilation, or nullptr when the plans keep their
+// plugin weights: it needs the weight placeholders and the weights manager of
+// TensorRT-RTX 1.7, persistent shards that can describe it, the model file,
+// and CUDA virtual memory. LITERT_NVIDIA_TENSORRT_WEIGHT_STORE=0 turns it off.
+std::unique_ptr<litert::nvidia::TensorRtWeightStoreBuilder> CreateWeightStore(
+    bool shared_weights, const std::string& aot_cache_dir) {
+  if (!shared_weights || aot_cache_dir.empty() ||
+      !litert::nvidia::TensorRtWeightHoldersSupported() ||
+      !EnvEnabled("LITERT_NVIDIA_TENSORRT_WEIGHT_STORE",
+                  /*default_value=*/true)) {
+    return nullptr;
+  }
+  const std::string model_path = TensorRtAotModelPath();
+  if (model_path.empty()) {
+    return nullptr;
+  }
+  auto granule = litert::nvidia::CudaVmmGranule();
+  if (!granule) {
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX weight store is unavailable: %s",
+               granule.Error().Message().c_str());
+    return nullptr;
+  }
+  // TensorRT holds two copies of a placeholder while it builds, one
+  // placeholder at a time: the segment size bounds the host memory of the
+  // build, and every segment costs an engine about a granule of device
+  // memory around its holder.
+  const size_t segment_mb =
+      EnvSizeT("LITERT_NVIDIA_TENSORRT_WEIGHT_STORE_SEGMENT_MB", 256);
+  auto store = litert::nvidia::TensorRtWeightStoreBuilder::Create(
+      model_path, *granule, static_cast<uint64_t>(segment_mb) << 20);
+  if (!store) {
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX weight store is unavailable: %s",
+               store.Error().Message().c_str());
+    return nullptr;
+  }
+  LITERT_LOG(LITERT_INFO,
+             "NVIDIA TensorRT-RTX weight store enabled: source=%s granule=%llu "
+             "segment_mb=%zu",
+             (*store)->source_path().c_str(),
+             static_cast<unsigned long long>(*granule), segment_mb);
+  return std::move(*store);
+}
+
+// Describes, for the bytecode, the weight store of a plan from the holders
+// the plan was built with and where calibration found them. The description
+// borrows the private runs of `entry`.
+void DescribeWeightStore(
+    const litert::nvidia::TensorRtWeightStoreBuilder& builder,
+    const std::vector<litert::nvidia::TensorRtWeightHolderBuildData>& holders,
+    litert::nvidia::TensorRtWeightHolderCalibration calibration,
+    PendingBundleEntry& entry) {
+  litert::nvidia::TensorRtWeightStore store;
+  store.source_path = builder.source_path();
+  store.source_size = builder.source_size();
+  store.source_identity = builder.source_identity();
+  store.granule = builder.granule();
+  store.weight_data_size = calibration.weight_data_size;
+  store.segments.reserve(holders.size());
+  for (size_t i = 0; i < holders.size(); ++i) {
+    const auto& built = builder.segments()[holders[i].segment];
+    litert::nvidia::TensorRtWeightSegment segment;
+    segment.holder_name = holders[i].name;
+    segment.size = built.size;
+    segment.payload_offset =
+        (calibration.holder_offsets[i] + store.granule - 1) / store.granule *
+        store.granule;
+    segment.key = built.key;
+    segment.pieces = built.pieces;
+    store.segments.push_back(std::move(segment));
+  }
+  std::sort(store.segments.begin(), store.segments.end(),
+            [](const auto& a, const auto& b) {
+              return a.payload_offset < b.payload_offset;
+            });
+  entry.private_runs = std::move(calibration.private_runs);
+  store.private_runs.reserve(entry.private_runs.size());
+  for (const auto& run : entry.private_runs) {
+    store.private_runs.push_back(
+        {run.offset, run.data.data(), run.data.size()});
+  }
+  entry.weight_store = std::move(store);
+}
+
+}  // namespace
+
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
@@ -1677,30 +1847,42 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   litert::compiler::Model model(compiler_plugin->ctx, partitions);
   auto result = std::make_unique<LiteRtCompiledResultT>();
   const auto num_partitions = model.NumSubgraphs();
-  std::vector<std::vector<std::string>> read_only_inputs(num_partitions);
-  if (!compiler_plugin->read_only_value_cache_inputs.empty()) {
-    std::unordered_set<std::string> unmatched(
-        compiler_plugin->read_only_value_cache_inputs.begin(),
-        compiler_plugin->read_only_value_cache_inputs.end());
+  // The names of each list that are inputs of each partition; every name
+  // must be one.
+  const auto partition_inputs =
+      [&](const std::vector<std::string>& sorted_names,
+          const char* what) -> Expected<std::vector<std::vector<std::string>>> {
+    std::vector<std::vector<std::string>> per_partition(num_partitions);
+    if (sorted_names.empty()) {
+      return per_partition;
+    }
+    std::unordered_set<std::string> unmatched(sorted_names.begin(),
+                                              sorted_names.end());
     for (LiteRtParamIndex i = 0; i < num_partitions; ++i) {
       LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
       for (const auto& input : subgraph.Inputs()) {
         const std::string name(input.Name());
-        if (std::binary_search(
-                compiler_plugin->read_only_value_cache_inputs.begin(),
-                compiler_plugin->read_only_value_cache_inputs.end(), name)) {
-          read_only_inputs[i].push_back(name);
+        if (std::binary_search(sorted_names.begin(), sorted_names.end(),
+                               name)) {
+          per_partition[i].push_back(name);
           unmatched.erase(name);
         }
       }
     }
     if (!unmatched.empty()) {
-      LITERT_LOG(LITERT_ERROR,
-                 "Read-only value cache is not a delegated input: %s",
+      LITERT_LOG(LITERT_ERROR, "%s is not a delegated input: %s", what,
                  unmatched.begin()->c_str());
-      return kLiteRtStatusErrorInvalidArgument;
+      return Error(kLiteRtStatusErrorInvalidArgument);
     }
-  }
+    return per_partition;
+  };
+  LITERT_ASSIGN_OR_RETURN(
+      auto read_only_inputs,
+      partition_inputs(compiler_plugin->read_only_value_cache_inputs,
+                       "Read-only value cache"));
+  LITERT_ASSIGN_OR_RETURN(
+      auto shared_inputs,
+      partition_inputs(compiler_plugin->shared_cache_inputs, "Shared cache"));
   const bool shared_weights = litert::nvidia::TensorRtSharedWeightsEnabled();
   const std::string aot_cache_dir = TensorRtAotCacheDir();
   std::string canonical_aot_cache_dir;
@@ -1708,10 +1890,21 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   std::string aot_manifest_path;
   if (!aot_cache_dir.empty()) {
     memory_profiler.Log("aot_cache_lookup_begin", soc_model);
-    LITERT_ASSIGN_OR_RETURN(canonical_aot_cache_dir,
-                            CanonicalAotCacheDir(aot_cache_dir));
-    LITERT_ASSIGN_OR_RETURN(
-        aot_cache_key, BuildAotCacheKey(compiler_plugin->sdk_version, model));
+    auto canonical_dir = CanonicalAotCacheDir(aot_cache_dir);
+    if (!canonical_dir) {
+      LITERT_LOG(LITERT_ERROR, "NVIDIA TensorRT-RTX AOT cache dir %s: %s",
+                 aot_cache_dir.c_str(),
+                 canonical_dir.Error().Message().c_str());
+      return canonical_dir.Error().Status();
+    }
+    canonical_aot_cache_dir = std::move(*canonical_dir);
+    auto cache_key = BuildAotCacheKey(compiler_plugin->sdk_version, model);
+    if (!cache_key) {
+      LITERT_LOG(LITERT_ERROR, "NVIDIA TensorRT-RTX AOT cache key: %s",
+                 cache_key.Error().Message().c_str());
+      return cache_key.Error().Status();
+    }
+    aot_cache_key = std::move(*cache_key);
     if (aot_cache_key.has_value()) {
       aot_manifest_path =
           AotManifestPath(canonical_aot_cache_dir, *aot_cache_key);
@@ -1770,6 +1963,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   size_t total_locator_bytes = 0;
   size_t total_shard_weight_bytes = 0;
   bool aot_artifacts_persisted = false;
+  const std::unique_ptr<litert::nvidia::TensorRtWeightStoreBuilder>
+      plugin_weight_store = CreateWeightStore(shared_weights, aot_cache_dir);
   memory_profiler.Log("compile_begin", soc_model);
 
   for (LiteRtParamIndex i = 0; i < num_partitions; ++i) {
@@ -1788,8 +1983,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       }
     }
     memory_profiler.Log("partition_build_begin", function_name.c_str());
-    auto engine_or =
-        litert::nvidia::BuildTensorRtEngine(subgraph, read_only_inputs[i]);
+    auto engine_or = litert::nvidia::BuildTensorRtEngine(
+        subgraph, read_only_inputs[i], plugin_weight_store.get(),
+        shared_inputs[i]);
     if (!engine_or) {
       std::string op_codes;
       for (const auto& op : subgraph.Ops()) {
@@ -1838,10 +2034,46 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                  "NVIDIA TensorRT-RTX compiled %s partition %d/%d: "
                  "plan_bytes=%zu refit_weights=%zu logical_weight_bytes=%zu "
                  "retained_unique_weight_bytes=%zu",
-                 engine.is_stripped_plan ? "stripped" : "self-contained",
+                 engine.is_stripped_plan         ? "stripped"
+                 : engine.weight_holders.empty() ? "self-contained"
+                                                 : "weight-store",
                  static_cast<int>(i + 1), static_cast<int>(num_partitions),
                  pending.engine.size(), pending.refit_weights.size(),
                  partition_logical_weight_bytes, weight_store.unique_bytes());
+      if (!engine.weight_holders.empty()) {
+        // The plan has placeholders for its packed plugin weights. Find where
+        // TensorRT put them in the weight data of an engine and keep the rest
+        // of that data, so that the runtime can map the weights in.
+        memory_profiler.Log("weight_holder_calibration_begin",
+                            function_name.c_str());
+        LITERT_ASSIGN_OR_RETURN(
+            auto calibration,
+            litert::nvidia::CalibrateTensorRtWeightHolders(
+                pending.engine.data(), pending.engine.size(),
+                engine.weight_holders, plugin_weight_store->granule()));
+        memory_profiler.Log("weight_holder_calibration_end",
+                            function_name.c_str());
+        DescribeWeightStore(*plugin_weight_store, engine.weight_holders,
+                            std::move(calibration), pending);
+        size_t private_bytes = 0;
+        for (const auto& run : pending.private_runs) {
+          private_bytes += run.data.size();
+        }
+        uint64_t segment_bytes = 0;
+        for (const auto& segment : pending.weight_store->segments) {
+          segment_bytes += segment.size;
+        }
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA TensorRT-RTX weight store of partition %d/%d: "
+                   "holders=%zu segment_bytes=%llu weight_data_bytes=%llu "
+                   "private_bytes=%zu",
+                   static_cast<int>(i + 1), static_cast<int>(num_partitions),
+                   pending.weight_store->segments.size(),
+                   static_cast<unsigned long long>(segment_bytes),
+                   static_cast<unsigned long long>(
+                       pending.weight_store->weight_data_size),
+                   private_bytes);
+      }
       result->call_infos.push_back(function_name);
       if (!aot_cache_dir.empty()) {
         memory_profiler.Log("aot_shard_pack_begin", function_name.c_str());
@@ -2036,4 +2268,57 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
                soc_model_name);
   }
   return kLiteRtStatusOk;
+}
+
+namespace {
+
+static const LiteRtCompilerPluginInterface_V1 NvidiaCompilerPluginInterface = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtCompilerPluginInterface_V1),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
+    .get_compiler_plugin_version = LiteRtGetCompilerPluginVersion,
+    .get_compiler_plugin_soc_manufacturer =
+        LiteRtGetCompilerPluginSocManufacturer,
+    .create_compiler_plugin = LiteRtCreateCompilerPlugin,
+    .destroy_compiler_plugin = LiteRtDestroyCompilerPlugin,
+    .get_compiler_plugin_supported_hardware =
+        LiteRtGetCompilerPluginSupportedHardware,
+    .get_num_compiler_plugin_supported_models =
+        LiteRtGetNumCompilerPluginSupportedSocModels,
+    .get_compiler_plugin_supported_soc_model =
+        LiteRtGetCompilerPluginSupportedSocModel,
+    .compiler_plugin_partition = LiteRtCompilerPluginPartition,
+    .compiler_plugin_compile = LiteRtCompilerPluginCompile,
+    .destroy_compiled_result = LiteRtDestroyCompiledResult,
+    .get_compiled_result_byte_code = LiteRtGetCompiledResultByteCode,
+    .get_compiled_result_num_byte_code = LiteRtCompiledResultNumByteCodeModules,
+    .get_compiled_result_call_info = LiteRtGetCompiledResultCallInfo,
+    .get_num_compiled_result_calls = LiteRtGetNumCompiledResultCalls,
+    .register_all_transformations =
+        LiteRtCompilerPluginRegisterAllTransformations,
+    .get_compiler_plugin_sdk_version = LiteRtGetCompilerPluginSDKVersion,
+    .get_compiled_result_handle = nullptr,
+    .check_compiler_compatibility =
+        LiteRtCompilerPluginCheckCompilerCompatibility,
+};
+
+}  // namespace
+
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginQueryInterface(
+    LiteRtCompilerPluginInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (litert_runtime_version.major >= 1) {
+    if (interface_id == kLiteRtCompilerPluginInterfaceBasic) {
+      *out_interface = &NvidiaCompilerPluginInterface;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }

@@ -42,7 +42,7 @@ via the `"mediatek"` opaque-options key).
 
 | Option | CLI flag | Default | Purpose |
 | :--- | :--- | :--- | :--- |
-| `NeronSDKVersionType` | `--mediatek_sdk_version_type` | v8 | Selects NeuroPilot SDK version (v7 / v8 / v9). Determines which `libneuron_adapter` symbols are loaded and which `third_party/neuro_pilot/vN_latest` host path is searched. |
+| `NeronSDKVersionType` | `--mediatek_sdk_version_type` | v8 | Selects NeuroPilot SDK version (v7 / v8 / v9). Determines which `libneuron_adapter` symbols are loaded and which `third_party/neuro_pilot` host path is searched. |
 | `GemmaCompilerOptimizations` | `--mediatek_enable_gemma_compiler_optimizations` | false | Enables Gemma-specific compiler passes. |
 | `PerformanceMode` | `--mediatek_performance_mode_type` | `SustainedSpeed` | Sets `NeuronAdapterPreferenceCode` at compile time: `LowPower`, `FastSingleAnswer`, `SustainedSpeed`, `TurboBoost`. |
 | `L1CacheOptimizations` | `--mediatek_enable_l1_cache_optimizations` | false | Enables L1 cache optimization pass. |

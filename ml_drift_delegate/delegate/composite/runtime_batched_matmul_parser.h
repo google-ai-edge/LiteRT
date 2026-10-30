@@ -52,7 +52,7 @@ struct RuntimeBatchedMatMulAttributes {
   std::optional<ExternalWeightsAttributes> external_weights;
   // quantized case
   std::optional<
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>>
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>>
       scale;
 };
 

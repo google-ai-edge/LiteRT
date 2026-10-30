@@ -61,6 +61,8 @@ class SafetensorFileGuard {
   std::filesystem::path file_;
 };
 
+enum class Order { kKeep, kReverse };
+
 // Writes `tensors` into a temporary safetensors file.
 //
 // - `quant_config_json` is written to the header metadata if not empty.
@@ -68,7 +70,8 @@ class SafetensorFileGuard {
 // Each file gets its own folder, so that a neighbouring config.json only
 // affects the test that wrote it.
 SafetensorFileGuard CreateTempSafetensor(const std::vector<TensorInit>& tensors,
-                                         const std::string& quant_config_json);
+                                         const std::string& quant_config_json,
+                                         Order order = Order::kKeep);
 
 // Writes a single dummy FP32 tensor into a temporary safetensors file.
 //

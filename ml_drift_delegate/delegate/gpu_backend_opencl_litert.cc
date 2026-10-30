@@ -263,15 +263,15 @@ GpuBackendOpenClLitert::GetGpuBufferRequirements(
     ::ml_drift::TensorStorageType used_storage_type,
     ::ml_drift::DataType data_type) {
   GpuBufferRequirements requirements;
-  if (used_storage_type == ::ml_drift::TensorStorageType::TEXTURE_2D) {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+  if (used_storage_type == ::ml_drift::TensorStorageType::kTexture2D) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(
           kLiteRtTensorBufferTypeOpenClTextureFp16);
     } else {
       requirements.buffer_types.push_back(kLiteRtTensorBufferTypeOpenClTexture);
     }
-  } else if (used_storage_type == ::ml_drift::TensorStorageType::IMAGE_BUFFER) {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+  } else if (used_storage_type == ::ml_drift::TensorStorageType::kImageBuffer) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(
           kLiteRtTensorBufferTypeOpenClImageBufferFp16);
     } else {
@@ -279,7 +279,7 @@ GpuBackendOpenClLitert::GetGpuBufferRequirements(
           kLiteRtTensorBufferTypeOpenClImageBuffer);
     }
   } else {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(
           kLiteRtTensorBufferTypeOpenClBufferFp16);
     } else {
@@ -312,7 +312,14 @@ GpuBackendOpenClLitert::GetGpuBufferRequirementsForNonExternalTensors() {
   }
 #endif
 #if LITERT_HAS_AHWB_SUPPORT
-  if (cl_env()->device().GetInfo().SupportsExtension("cl_arm_import_memory") &&
+  // `cl_arm_import_memory` alone only guarantees the base import API (e.g.
+  // host / dma_buf import types). Importing with
+  // CL_IMPORT_TYPE_ANDROID_HARDWARE_BUFFER_ARM additionally requires
+  // `cl_arm_import_memory_android_hardware_buffer`; drivers such as PowerVR
+  // DXT on Pixel 10 advertise the former but not the latter, and fail
+  // clImportMemoryARM with CL_INVALID_PROPERTY.
+  if (cl_env()->device().GetInfo().SupportsExtension(
+          "cl_arm_import_memory_android_hardware_buffer") &&
       ::ml_drift::cl::clImportMemoryARM != nullptr) {
     requirements.buffer_types.push_back(kLiteRtTensorBufferTypeAhwb);
     requirements.strides.push_back(0);

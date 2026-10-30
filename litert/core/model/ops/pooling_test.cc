@@ -408,5 +408,23 @@ TEST(PoolingOpTest, L2Pool_Simple) {
   EXPECT_THAT(output_shapes[0], ElementsAre(1, 2, 2, 1));
 }
 
+TEST(PoolingOpTest, RejectsInvalidOutputShapesCount) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{1, 4, 4, 1}};
+  auto options = CreatePoolOptions(tflite::Padding_VALID, 2, 2, 2, 2);
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_Pool2DOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  std::vector<Dims> empty_outputs;
+  EXPECT_EQ(InferPool2D(op, absl::MakeSpan(input_shapes), empty_outputs),
+            kLiteRtStatusErrorInvalidArgument);
+
+  std::vector<Dims> two_outputs(2);
+  EXPECT_EQ(InferPool2D(op, absl::MakeSpan(input_shapes), two_outputs),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
 }  // namespace
 }  // namespace litert::internal

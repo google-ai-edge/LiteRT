@@ -92,7 +92,7 @@ bool IsBroadcastInDimSupported(
     return false;
   }
   const absl::Status status =
-      CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::INT32>(
+      CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kInt32>(
           &axis);
   if (!status.ok()) {
     *error = status.message();

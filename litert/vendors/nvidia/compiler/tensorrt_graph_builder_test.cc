@@ -14,6 +14,10 @@
 
 #include "litert/vendors/nvidia/compiler/tensorrt_graph_builder.h"
 
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -36,6 +40,8 @@
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/nvidia/cache_layout.h"
+#include "litert/vendors/nvidia/compiler/weight_holder_calibration.h"
+#include "litert/vendors/nvidia/compiler/weight_store_builder.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
 #include "tflite/schema/schema_generated.h"
@@ -84,6 +90,20 @@ uint16_t Fp16Bits(float value) {
     ++half;
   }
   return static_cast<uint16_t>(half);
+}
+
+uint16_t FloatToBf16(float value) {
+  uint32_t bits = 0;
+  std::memcpy(&bits, &value, sizeof(bits));
+  bits += 0x7fff + ((bits >> 16) & 1);
+  return static_cast<uint16_t>(bits >> 16);
+}
+
+float Bf16ToFloat(uint16_t value) {
+  const uint32_t bits = static_cast<uint32_t>(value) << 16;
+  float result = 0.0f;
+  std::memcpy(&result, &bits, sizeof(result));
+  return result;
 }
 
 float Fp16ToFloat(uint16_t half) {
@@ -309,10 +329,14 @@ TEST(TensorRtGraphBuilderTest, CudaSubbyteGemvGroupSharesOneLaunch) {
     ASSERT_NE(inspector, nullptr);
     const std::string layers = inspector->getEngineInformation(
         nvinfer1::LayerInformationFormat::kONELINE);
+    // The launches are named after their output, "cuda_subbyte_gemv_<tensor>"
+    // or "cuda_subbyte_gemv_group_<tensors>".
     size_t plugin_layers = 0;
-    for (size_t at = layers.find("PluginV3"); at != std::string::npos;
-         at = layers.find("PluginV3", at + 1)) {
-      ++plugin_layers;
+    for (size_t at = layers.find("cuda_subbyte_gemv_"); at != std::string::npos;
+         at = layers.find("cuda_subbyte_gemv_", at + 1)) {
+      if (layers.compare(at, 23, "cuda_subbyte_gemv_slice") != 0) {
+        ++plugin_layers;
+      }
     }
     EXPECT_EQ(plugin_layers, fuse ? 1 : rows.size()) << layers;
 
@@ -359,6 +383,789 @@ TEST(TensorRtGraphBuilderTest, CudaSubbyteGemvGroupSharesOneLaunch) {
             << "fc=" << f << " n=" << n;
       }
       EXPECT_EQ(cudaFree(device_outputs[f]), cudaSuccess);
+    }
+    EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+    EXPECT_EQ(cudaFree(device_input), cudaSuccess);
+  }
+}
+
+TEST(TensorRtGraphBuilderTest, Int8PerChannelProjectionRunsOnTheGemv) {
+  // Gemma 4 E2B/E4B's per-layer embedding gate and projection: M=1 fully
+  // connected ops with INT8 per-channel weights. They take the CUDA GEMV
+  // plugin like the sub-byte projections (TensorRT would dequantize the
+  // weights every step) and match the FP32 reference.
+  constexpr int32_t kK = 256;
+  constexpr int32_t kN = 24;
+  setenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS", "cuda_gemv", 1);
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  auto& input = graph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1, kK}));
+  input.SetName("input");
+  graph.Inputs().push_back(&input);
+  std::vector<int8_t> values(static_cast<size_t>(kN) * kK);
+  for (size_t i = 0; i < values.size(); ++i) {
+    values[i] = static_cast<int8_t>((i * 37 + i / 7) % 256) - 128;
+  }
+  auto& weights = graph.EmplaceTensor();
+  weights.SetType(MakeRankedTensorType(kLiteRtElementTypeInt8, {kN, kK}));
+  weights.SetName("weights");
+  SetWeightsFromUnownedBuffer(
+      weights.Weights(),
+      litert::BufferRef<uint8_t>(reinterpret_cast<uint8_t*>(values.data()),
+                                 values.size()));
+  std::vector<float> scales(kN);
+  for (int32_t n = 0; n < kN; ++n) {
+    scales[n] = 0.001f * (n + 1);
+  }
+  const std::vector<int64_t> zero_points(kN, 0);
+  weights.SetQarams(MakePerChannelQuantization(scales, zero_points,
+                                               /*quantized_dim=*/0, weights));
+  auto& output = graph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1, kN}));
+  output.SetName("output");
+  graph.Outputs().push_back(&output);
+  auto& fc = graph.EmplaceOp();
+  fc.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+  tflite::FullyConnectedOptionsT fc_options;
+  fc_options.keep_num_dims = true;
+  tflite::BuiltinOptionsUnion options;
+  options.Set(std::move(fc_options));
+  litert::internal::SetTflOptions(fc, std::move(options));
+  litert::internal::AttachInput(&input, fc);
+  litert::internal::AttachInput(&weights, fc);
+  litert::internal::AttachOutput(&output, fc);
+
+  const auto* compiler_context = LrtGetCompilerContext();
+  auto built = litert::nvidia::BuildTensorRtEngine(
+      litert::compiler::Subgraph(compiler_context, &graph));
+  unsetenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS");
+  ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+  ASSERT_EQ(built->output_names.size(), 1u);
+
+  litert::nvidia::TensorRtLogger logger;
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(runtime->deserializeCudaEngine(
+      built->engine.data(), built->engine.size()));
+  ASSERT_NE(engine, nullptr);
+  std::unique_ptr<nvinfer1::IEngineInspector> inspector(
+      engine->createEngineInspector());
+  ASSERT_NE(inspector, nullptr);
+  const std::string layers = inspector->getEngineInformation(
+      nvinfer1::LayerInformationFormat::kONELINE);
+  EXPECT_NE(layers.find("cuda_subbyte_gemv_"), std::string::npos) << layers;
+
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  std::vector<float> activations(kK);
+  for (int32_t i = 0; i < kK; ++i) {
+    activations[i] = 0.125f * ((i % 11) - 5);
+  }
+  void* device_input = nullptr;
+  ASSERT_EQ(cudaMalloc(&device_input, activations.size() * sizeof(float)),
+            cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpy(device_input, activations.data(),
+                 activations.size() * sizeof(float), cudaMemcpyHostToDevice),
+      cudaSuccess);
+  ASSERT_TRUE(
+      context->setTensorAddress(built->input_names[0].c_str(), device_input));
+  void* device_output = nullptr;
+  ASSERT_EQ(cudaMalloc(&device_output, kN * sizeof(float)), cudaSuccess);
+  ASSERT_TRUE(
+      context->setTensorAddress(built->output_names[0].c_str(), device_output));
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  ASSERT_TRUE(context->enqueueV3(stream));
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  std::vector<float> actual(kN);
+  ASSERT_EQ(cudaMemcpy(actual.data(), device_output,
+                       actual.size() * sizeof(float), cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  for (int32_t n = 0; n < kN; ++n) {
+    float expected = 0.0f;
+    for (int32_t i = 0; i < kK; ++i) {
+      expected += activations[i] * values[n * kK + i];
+    }
+    expected *= scales[n];
+    EXPECT_NEAR(actual[n], expected, 0.02f * std::fabs(expected) + 1e-3f)
+        << "n=" << n;
+  }
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_output), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_input), cudaSuccess);
+}
+
+TEST(TensorRtGraphBuilderTest, FewRowsRunOnTheBatchedGemv) {
+  // A verify step: four activation rows through an INT4 group (two
+  // projections of one activation) and an INT2 projection run on the batched
+  // GEMV of the CUDA subbyte plugin, as decode does with one row, and match
+  // the FP32 reference. Neither product is one the tensor-core GEMM takes.
+  constexpr int32_t kM = 4;
+  constexpr int32_t kK = 64;
+  const std::array<int32_t, 3> rows = {8, 16, 24};
+  const std::array<LiteRtElementType, 3> types = {
+      kLiteRtElementTypeInt4, kLiteRtElementTypeInt4, kLiteRtElementTypeInt2};
+  setenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS", "cuda_gemv", 1);
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  auto& input = graph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, kM, kK}));
+  input.SetName("input");
+  graph.Inputs().push_back(&input);
+  std::vector<std::vector<int8_t>> values(rows.size());
+  std::vector<std::vector<uint8_t>> packed(rows.size());
+  std::vector<std::vector<float>> scales(rows.size());
+  for (size_t f = 0; f < rows.size(); ++f) {
+    values[f].resize(static_cast<size_t>(rows[f]) * kK);
+    const int span = types[f] == kLiteRtElementTypeInt2 ? 4 : 16;
+    for (size_t i = 0; i < values[f].size(); ++i) {
+      values[f][i] = static_cast<int8_t>((i * 5 + f * 3) % span) - span / 2;
+    }
+    if (types[f] == kLiteRtElementTypeInt2) {
+      packed[f].assign(values[f].size() / 4, 0);
+      for (size_t i = 0; i < values[f].size(); ++i) {
+        packed[f][i / 4] |= (static_cast<uint8_t>(values[f][i]) & 3)
+                            << (2 * (i % 4));
+      }
+    } else {
+      packed[f] = PackInt4(values[f]);
+    }
+    auto& weights = graph.EmplaceTensor();
+    weights.SetType(MakeRankedTensorType(types[f], {rows[f], kK}));
+    weights.SetName("weights" + std::to_string(f));
+    SetWeightsFromUnownedBuffer(
+        weights.Weights(),
+        litert::BufferRef<uint8_t>(packed[f].data(), packed[f].size()));
+    scales[f].resize(rows[f]);
+    for (int32_t n = 0; n < rows[f]; ++n) {
+      scales[f][n] = 0.005f * (n + 1 + f);
+    }
+    const std::vector<int64_t> zero_points(rows[f], 0);
+    weights.SetQarams(MakePerChannelQuantization(scales[f], zero_points,
+                                                 /*quantized_dim=*/0, weights));
+    auto& output = graph.EmplaceTensor();
+    output.SetType(
+        MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, kM, rows[f]}));
+    output.SetName("output" + std::to_string(f));
+    graph.Outputs().push_back(&output);
+    auto& fc = graph.EmplaceOp();
+    fc.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+    tflite::FullyConnectedOptionsT fc_options;
+    fc_options.keep_num_dims = true;
+    tflite::BuiltinOptionsUnion options;
+    options.Set(std::move(fc_options));
+    litert::internal::SetTflOptions(fc, std::move(options));
+    litert::internal::AttachInput(&input, fc);
+    litert::internal::AttachInput(&weights, fc);
+    litert::internal::AttachOutput(&output, fc);
+  }
+
+  auto built = litert::nvidia::BuildTensorRtEngine(
+      litert::compiler::Subgraph(LrtGetCompilerContext(), &graph));
+  unsetenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS");
+  ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+  ASSERT_EQ(built->output_names.size(), rows.size());
+
+  litert::nvidia::TensorRtLogger logger;
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(runtime->deserializeCudaEngine(
+      built->engine.data(), built->engine.size()));
+  ASSERT_NE(engine, nullptr);
+  std::unique_ptr<nvinfer1::IEngineInspector> inspector(
+      engine->createEngineInspector());
+  ASSERT_NE(inspector, nullptr);
+  const std::string layers = inspector->getEngineInformation(
+      nvinfer1::LayerInformationFormat::kONELINE);
+  // One group launch for the two INT4 projections, one for the INT2 one, and
+  // no TensorRT matmul.
+  EXPECT_NE(layers.find("cuda_subbyte_gemv_group_"), std::string::npos)
+      << layers;
+  size_t plugin_layers = 0;
+  for (size_t at = layers.find("cuda_subbyte_gemv_"); at != std::string::npos;
+       at = layers.find("cuda_subbyte_gemv_", at + 1)) {
+    if (layers.compare(at, 23, "cuda_subbyte_gemv_slice") != 0) {
+      ++plugin_layers;
+    }
+  }
+  EXPECT_EQ(plugin_layers, 2u) << layers;
+  EXPECT_EQ(layers.find("Matrix Multiply"), std::string::npos) << layers;
+
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  std::vector<float> activations(static_cast<size_t>(kM) * kK);
+  for (size_t i = 0; i < activations.size(); ++i) {
+    activations[i] = 0.25f * static_cast<float>((i % 7) - 3) +
+                     0.125f * static_cast<float>(i / kK);
+  }
+  void* device_input = nullptr;
+  ASSERT_EQ(cudaMalloc(&device_input, activations.size() * sizeof(float)),
+            cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpy(device_input, activations.data(),
+                 activations.size() * sizeof(float), cudaMemcpyHostToDevice),
+      cudaSuccess);
+  ASSERT_TRUE(
+      context->setTensorAddress(built->input_names[0].c_str(), device_input));
+  std::vector<void*> device_outputs(rows.size(), nullptr);
+  for (size_t f = 0; f < rows.size(); ++f) {
+    ASSERT_EQ(cudaMalloc(&device_outputs[f],
+                         static_cast<size_t>(kM) * rows[f] * sizeof(float)),
+              cudaSuccess);
+    ASSERT_TRUE(context->setTensorAddress(built->output_names[f].c_str(),
+                                          device_outputs[f]));
+  }
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  ASSERT_TRUE(context->enqueueV3(stream));
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  for (size_t f = 0; f < rows.size(); ++f) {
+    std::vector<float> actual(static_cast<size_t>(kM) * rows[f]);
+    ASSERT_EQ(cudaMemcpy(actual.data(), device_outputs[f],
+                         actual.size() * sizeof(float), cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    for (int32_t m = 0; m < kM; ++m) {
+      for (int32_t n = 0; n < rows[f]; ++n) {
+        float expected = 0.0f;
+        for (int32_t i = 0; i < kK; ++i) {
+          expected += Bf16ToFloat(FloatToBf16(
+                          activations[static_cast<size_t>(m) * kK + i])) *
+                      values[f][n * kK + i];
+        }
+        expected *= scales[f][n];
+        EXPECT_NEAR(actual[static_cast<size_t>(m) * rows[f] + n], expected,
+                    0.02f * std::fabs(expected) + 1e-3f)
+            << "fc=" << f << " m=" << m << " n=" << n;
+      }
+    }
+    EXPECT_EQ(cudaFree(device_outputs[f]), cudaSuccess);
+  }
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_input), cudaSuccess);
+}
+
+TEST(TensorRtGraphBuilderTest, WeightStoreKeepsPluginWeightsOutOfThePlan) {
+  if (!litert::nvidia::TensorRtWeightHoldersSupported()) {
+    GTEST_SKIP() << "Needs the weight placeholders of TensorRT-RTX 1.7.";
+  }
+  // The two projections of CudaSubbyteGemvGroupSharesOneLaunch, with their
+  // weights as views of a memory-mapped file, as the weights of a model file
+  // are. With a weight store the plan holds a placeholder instead of them.
+  constexpr int32_t kK = 64;
+  constexpr uint64_t kGranule = 2 << 20;
+  // The weights sit apart in the file: 8 rows at 4096 and 16 rows at 12288.
+  const std::array<int32_t, 2> rows = {8, 16};
+  const std::array<uint64_t, 2> file_offsets = {4096, 12288};
+  std::vector<std::vector<int8_t>> values(rows.size());
+  std::vector<uint8_t> file_bytes(1 << 16, 0x5a);
+  for (size_t f = 0; f < rows.size(); ++f) {
+    values[f].resize(static_cast<size_t>(rows[f]) * kK);
+    for (size_t i = 0; i < values[f].size(); ++i) {
+      values[f][i] = static_cast<int8_t>((i * 5 + f * 3) % 16) - 8;
+    }
+    const std::vector<uint8_t> packed = PackInt4(values[f]);
+    std::memcpy(file_bytes.data() + file_offsets[f], packed.data(),
+                packed.size());
+  }
+  std::string path = ::testing::TempDir() + "/weight_store_model.XXXXXX";
+  const int fd = mkstemp(path.data());
+  ASSERT_GE(fd, 0);
+  ASSERT_EQ(write(fd, file_bytes.data(), file_bytes.size()),
+            static_cast<ssize_t>(file_bytes.size()));
+  auto* mapping = static_cast<const uint8_t*>(mmap(
+      nullptr, file_bytes.size(), PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0));
+  close(fd);
+  ASSERT_NE(mapping, MAP_FAILED);
+
+  setenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS", "cuda_gemv", 1);
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  auto& input = graph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1, kK}));
+  input.SetName("input");
+  graph.Inputs().push_back(&input);
+  std::vector<std::vector<float>> scales(rows.size());
+  for (size_t f = 0; f < rows.size(); ++f) {
+    auto& weights = graph.EmplaceTensor();
+    weights.SetType(
+        MakeRankedTensorType(kLiteRtElementTypeInt4, {rows[f], kK}));
+    weights.SetName("weights" + std::to_string(f));
+    SetWeightsFromUnownedBuffer(
+        weights.Weights(),
+        litert::BufferRef<uint8_t>(mapping + file_offsets[f],
+                                   static_cast<size_t>(rows[f]) * kK / 2));
+    scales[f].resize(rows[f]);
+    for (int32_t n = 0; n < rows[f]; ++n) {
+      scales[f][n] = 0.005f * (n + 1 + f);
+    }
+    const std::vector<int64_t> zero_points(rows[f], 0);
+    weights.SetQarams(MakePerChannelQuantization(scales[f], zero_points,
+                                                 /*quantized_dim=*/0, weights));
+    auto& output = graph.EmplaceTensor();
+    output.SetType(
+        MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1, rows[f]}));
+    output.SetName("output" + std::to_string(f));
+    graph.Outputs().push_back(&output);
+    auto& fc = graph.EmplaceOp();
+    fc.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+    tflite::FullyConnectedOptionsT fc_options;
+    fc_options.keep_num_dims = true;
+    tflite::BuiltinOptionsUnion options;
+    options.Set(std::move(fc_options));
+    litert::internal::SetTflOptions(fc, std::move(options));
+    litert::internal::AttachInput(&input, fc);
+    litert::internal::AttachInput(&weights, fc);
+    litert::internal::AttachOutput(&output, fc);
+  }
+
+  auto store = litert::nvidia::TensorRtWeightStoreBuilder::Create(
+      path, kGranule, /*segment_bytes=*/kGranule);
+  ASSERT_TRUE(store.HasValue()) << store.Error().Message();
+  const auto* compiler_context = LrtGetCompilerContext();
+  auto built = litert::nvidia::BuildTensorRtEngine(
+      litert::compiler::Subgraph(compiler_context, &graph), {}, store->get());
+  unsetenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS");
+  ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+
+  // One launch reads both projections: one segment of one granule, made of
+  // the two pieces of the file, behind one holder of two granules.
+  ASSERT_EQ((*store)->segments().size(), 1);
+  const auto& segment = (*store)->segments()[0];
+  EXPECT_TRUE(segment.closed);
+  EXPECT_EQ(segment.size, kGranule);
+  ASSERT_EQ(segment.pieces.size(), 2);
+  EXPECT_EQ(segment.pieces[0].source_offset, file_offsets[0]);
+  EXPECT_EQ(segment.pieces[0].segment_offset, 0);
+  EXPECT_EQ(segment.pieces[1].source_offset, file_offsets[1]);
+  EXPECT_EQ(segment.pieces[1].segment_offset, rows[0] * kK / 2);
+  ASSERT_EQ(built->weight_holders.size(), 1);
+  EXPECT_EQ(built->weight_holders[0].segment, 0);
+  EXPECT_EQ(built->weight_holders[0].bytes, 2 * kGranule);
+  EXPECT_TRUE(built->refit_weights.empty());
+  // The plan holds neither the weights nor the 4 MiB placeholder.
+  EXPECT_LT(built->engine.size(), 1 << 20);
+
+  auto calibration = litert::nvidia::CalibrateTensorRtWeightHolders(
+      built->engine.data(), built->engine.size(), built->weight_holders,
+      kGranule);
+  ASSERT_TRUE(calibration.HasValue()) << calibration.Error().Message();
+  ASSERT_EQ(calibration->holder_offsets.size(), 1);
+  EXPECT_EQ(calibration->holder_offsets[0] % 128, 0);
+  EXPECT_EQ(calibration->weight_data_size % kGranule, 0);
+  const uint64_t holder_offset = calibration->holder_offsets[0];
+  const uint64_t segment_offset =
+      (holder_offset + kGranule - 1) / kGranule * kGranule;
+  EXPECT_LE(segment_offset + kGranule, calibration->weight_data_size);
+  // The private runs are whole pages outside the segment, in order.
+  uint64_t run_end = 0;
+  for (const auto& run : calibration->private_runs) {
+    EXPECT_EQ(run.offset % 4096, 0);
+    EXPECT_EQ(run.data.size() % 4096, 0);
+    EXPECT_GE(run.offset, run_end);
+    run_end = run.offset + run.data.size();
+    EXPECT_TRUE(run_end <= segment_offset ||
+                run.offset >= segment_offset + kGranule);
+  }
+  EXPECT_LE(run_end, calibration->weight_data_size);
+
+  // Load the plan as the runtime does, except that the holder is refitted
+  // from host memory instead of mapped: the segment goes where the plugin
+  // looks for it, at the first granule boundary inside the holder.
+  litert::nvidia::TensorRtLogger logger;
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(runtime->deserializeCudaEngine(
+      built->engine.data(), built->engine.size()));
+  ASSERT_NE(engine, nullptr);
+  std::vector<uint8_t> holder(built->weight_holders[0].bytes, 0xee);
+  for (const auto& piece : segment.pieces) {
+    std::memcpy(
+        holder.data() + (segment_offset - holder_offset) + piece.segment_offset,
+        file_bytes.data() + piece.source_offset, piece.size);
+  }
+  {
+    std::unique_ptr<nvinfer1::IRefitter> refitter(
+        nvinfer1::createInferRefitter(*engine, logger));
+    ASSERT_NE(refitter, nullptr);
+    // The holder is the only stripped weight of the plan.
+    ASSERT_EQ(refitter->getAllWeights(0, nullptr), 1);
+    ASSERT_TRUE(refitter->setNamedWeights(
+        built->weight_holders[0].name.c_str(),
+        nvinfer1::Weights{nvinfer1::DataType::kINT64, holder.data(),
+                          static_cast<int64_t>(holder.size() / 8)}));
+    ASSERT_TRUE(refitter->refitCudaEngine());
+  }
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  std::vector<float> activations(kK);
+  for (int32_t i = 0; i < kK; ++i) {
+    activations[i] = 0.25f * ((i % 7) - 3);
+  }
+  void* device_input = nullptr;
+  ASSERT_EQ(cudaMalloc(&device_input, activations.size() * sizeof(float)),
+            cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpy(device_input, activations.data(),
+                 activations.size() * sizeof(float), cudaMemcpyHostToDevice),
+      cudaSuccess);
+  ASSERT_TRUE(
+      context->setTensorAddress(built->input_names[0].c_str(), device_input));
+  std::vector<void*> device_outputs(rows.size(), nullptr);
+  for (size_t f = 0; f < rows.size(); ++f) {
+    ASSERT_EQ(cudaMalloc(&device_outputs[f], rows[f] * sizeof(float)),
+              cudaSuccess);
+    ASSERT_TRUE(context->setTensorAddress(built->output_names[f].c_str(),
+                                          device_outputs[f]));
+  }
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  ASSERT_TRUE(context->enqueueV3(stream));
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  for (size_t f = 0; f < rows.size(); ++f) {
+    std::vector<float> actual(rows[f]);
+    ASSERT_EQ(cudaMemcpy(actual.data(), device_outputs[f],
+                         actual.size() * sizeof(float), cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    for (int32_t n = 0; n < rows[f]; ++n) {
+      float expected = 0.0f;
+      for (int32_t i = 0; i < kK; ++i) {
+        expected += activations[i] * values[f][n * kK + i];
+      }
+      expected *= scales[f][n];
+      EXPECT_NEAR(actual[n], expected, 0.02f * std::fabs(expected) + 1e-3f)
+          << "fc=" << f << " n=" << n;
+    }
+    EXPECT_EQ(cudaFree(device_outputs[f]), cudaSuccess);
+  }
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_input), cudaSuccess);
+  munmap(const_cast<uint8_t*>(mapping), file_bytes.size());
+  unlink(path.c_str());
+}
+
+TEST(TensorRtGraphBuilderTest, WeightsOutsideTheModelFileStayInThePlan) {
+  // With a weight store but weights that are not views of the model file (a
+  // model assembled in memory), the launch keeps its weights in the plan.
+  constexpr int32_t kK = 64;
+  constexpr int32_t kRows = 8;
+  std::string path = ::testing::TempDir() + "/weight_store_unused.XXXXXX";
+  const int fd = mkstemp(path.data());
+  ASSERT_GE(fd, 0);
+  ASSERT_EQ(write(fd, "model", 5), 5);
+  auto* mapping = mmap(nullptr, 5, PROT_READ, MAP_PRIVATE, fd, 0);
+  close(fd);
+  ASSERT_NE(mapping, MAP_FAILED);
+  auto store = litert::nvidia::TensorRtWeightStoreBuilder::Create(
+      path, /*granule=*/2 << 20, /*segment_bytes=*/2 << 20);
+  ASSERT_TRUE(store.HasValue()) << store.Error().Message();
+
+  setenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS", "cuda_gemv", 1);
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  auto& input = graph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1, kK}));
+  input.SetName("input");
+  graph.Inputs().push_back(&input);
+  std::vector<int8_t> values(static_cast<size_t>(kRows) * kK);
+  for (size_t i = 0; i < values.size(); ++i) {
+    values[i] = static_cast<int8_t>((i * 5) % 16) - 8;
+  }
+  const std::vector<uint8_t> packed = PackInt4(values);
+  auto& weights = graph.EmplaceTensor();
+  weights.SetType(MakeRankedTensorType(kLiteRtElementTypeInt4, {kRows, kK}));
+  weights.SetName("weights");
+  SetWeightsFromUnownedBuffer(
+      weights.Weights(),
+      litert::BufferRef<uint8_t>(packed.data(), packed.size()));
+  const std::vector<float> scales(kRows, 0.01f);
+  const std::vector<int64_t> zero_points(kRows, 0);
+  weights.SetQarams(MakePerChannelQuantization(scales, zero_points,
+                                               /*quantized_dim=*/0, weights));
+  auto& output = graph.EmplaceTensor();
+  output.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 1, kRows}));
+  output.SetName("output");
+  graph.Outputs().push_back(&output);
+  auto& fc = graph.EmplaceOp();
+  fc.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+  tflite::FullyConnectedOptionsT fc_options;
+  fc_options.keep_num_dims = true;
+  tflite::BuiltinOptionsUnion options;
+  options.Set(std::move(fc_options));
+  litert::internal::SetTflOptions(fc, std::move(options));
+  litert::internal::AttachInput(&input, fc);
+  litert::internal::AttachInput(&weights, fc);
+  litert::internal::AttachOutput(&output, fc);
+
+  const auto* compiler_context = LrtGetCompilerContext();
+  auto built = litert::nvidia::BuildTensorRtEngine(
+      litert::compiler::Subgraph(compiler_context, &graph), {}, store->get());
+  unsetenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS");
+  ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+  EXPECT_TRUE(built->weight_holders.empty());
+  EXPECT_TRUE((*store)->segments().empty());
+  // The plan is self-contained: it runs without a refit.
+  litert::nvidia::TensorRtLogger logger;
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(runtime->deserializeCudaEngine(
+      built->engine.data(), built->engine.size()));
+  ASSERT_NE(engine, nullptr);
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  munmap(mapping, 5);
+  unlink(path.c_str());
+}
+
+// Column tiles of 8 row tiles (1024 activation rows) that fill the device:
+// the CUDA GEMM takes products of three blocks per two multiprocessors.
+int32_t ColumnTilesThatFillTheDevice() {
+  int device = 0;
+  int multiprocessors = 0;
+  if (cudaGetDevice(&device) != cudaSuccess ||
+      cudaDeviceGetAttribute(&multiprocessors, cudaDevAttrMultiProcessorCount,
+                             device) != cudaSuccess) {
+    return 0;
+  }
+  return (multiprocessors * 3 + 15) / 16;
+}
+
+TEST(TensorRtGraphBuilderTest, CudaGemmForManyActivationRows) {
+  // Prefill: INT4 fully connected ops over 1024 activation rows run on the
+  // CUDA GEMM, and the gate and up projections of a feed-forward block (fully
+  // connected, GELU, multiply) in one launch that applies the gate. A product
+  // too small to fill the device keeps the TensorRT lowering. Results match
+  // an FP32 reference.
+  constexpr int32_t kM = 1024;
+  constexpr int32_t kK = 256;
+  constexpr int32_t kSmall = 130;
+  const int32_t tiles = ColumnTilesThatFillTheDevice();
+  ASSERT_GT(tiles, 0);
+  const int32_t projection_channels = tiles * 128 - 126;
+  const int32_t hidden_channels = tiles * 64;
+  // Unset (the default) runs every product that is large enough on the GEMM,
+  // "gated" only the feed-forward pair.
+  for (const char* mode : {"", "gated", "0"}) {
+    SCOPED_TRACE(testing::Message() << "mode=" << mode);
+    const bool gemm = std::strcmp(mode, "0") != 0;
+    const bool all = mode[0] == '\0';
+    LiteRtModelT model;
+    auto& graph = model.EmplaceSubgraph();
+    const auto tensor =
+        [&](const char* name, LiteRtElementType type,
+            const std::vector<int32_t>& dims) -> LiteRtTensorT& {
+      auto& value = graph.EmplaceTensor();
+      value.SetName(name);
+      value.SetType(MakeRankedTensorType(type, dims));
+      return value;
+    };
+    auto& input = tensor("input", kLiteRtElementTypeFloat32, {kM, kK});
+    graph.Inputs().push_back(&input);
+    auto& other_input =
+        tensor("other_input", kLiteRtElementTypeFloat32, {kM, kK});
+    graph.Inputs().push_back(&other_input);
+    // Weights of the projection, the gate, the up projection and the small
+    // projection.
+    const std::array<int32_t, 4> rows = {projection_channels, hidden_channels,
+                                         hidden_channels, kSmall};
+    const std::array<const char*, 4> names = {"projection", "gate", "up",
+                                              "small"};
+    std::array<std::vector<int8_t>, 4> values;
+    std::array<std::vector<uint8_t>, 4> packed;
+    std::array<std::vector<float>, 4> scales;
+    std::array<LiteRtTensorT*, 4> weights{};
+    for (size_t f = 0; f < rows.size(); ++f) {
+      values[f].resize(static_cast<size_t>(rows[f]) * kK);
+      for (size_t i = 0; i < values[f].size(); ++i) {
+        values[f][i] = static_cast<int8_t>((i * 5 + i / 7 + f * 3) % 16) - 8;
+      }
+      packed[f] = PackInt4(values[f]);
+      auto& weight = tensor(names[f], kLiteRtElementTypeInt4, {rows[f], kK});
+      SetWeightsFromUnownedBuffer(
+          weight.Weights(),
+          litert::BufferRef<uint8_t>(packed[f].data(), packed[f].size()));
+      scales[f].resize(rows[f]);
+      for (int32_t n = 0; n < rows[f]; ++n) {
+        scales[f][n] = 0.002f * (1 + (n + f) % 5);
+      }
+      const std::vector<int64_t> zero_points(rows[f], 0);
+      weight.SetQarams(MakePerChannelQuantization(scales[f], zero_points,
+                                                  /*quantized_dim=*/0, weight));
+      weights[f] = &weight;
+    }
+    const auto fully_connected = [&](LiteRtTensorT& activation,
+                                     LiteRtTensorT& weight, const char* name,
+                                     int32_t channels) -> LiteRtTensorT& {
+      auto& output = tensor(name, kLiteRtElementTypeFloat32, {kM, channels});
+      auto& fc = graph.EmplaceOp();
+      fc.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+      tflite::FullyConnectedOptionsT fc_options;
+      fc_options.keep_num_dims = true;
+      tflite::BuiltinOptionsUnion options;
+      options.Set(std::move(fc_options));
+      litert::internal::SetTflOptions(fc, std::move(options));
+      litert::internal::AttachInput(&activation, fc);
+      litert::internal::AttachInput(&weight, fc);
+      litert::internal::AttachOutput(&output, fc);
+      return output;
+    };
+    auto& projected =
+        fully_connected(input, *weights[0], "projected", projection_channels);
+    graph.Outputs().push_back(&projected);
+    // Gemma's feed-forward block: the gate projection is reshaped before the
+    // GELU and multiplies the up projection as it is.
+    auto& gate =
+        fully_connected(input, *weights[1], "gate_projection", hidden_channels);
+    auto& gate_3d =
+        tensor("gate_3d", kLiteRtElementTypeFloat32, {1, kM, hidden_channels});
+    auto& reshape = graph.EmplaceOp();
+    reshape.SetOpCode(kLiteRtOpCodeTflReshape);
+    litert::internal::AttachInput(&gate, reshape);
+    litert::internal::AttachOutput(&gate_3d, reshape);
+    auto& gated =
+        tensor("gated", kLiteRtElementTypeFloat32, {1, kM, hidden_channels});
+    auto& gelu = graph.EmplaceOp();
+    gelu.SetOpCode(kLiteRtOpCodeTflGelu);
+    tflite::GeluOptionsT gelu_options;
+    gelu_options.approximate = true;
+    tflite::BuiltinOptionsUnion gelu_union;
+    gelu_union.Set(std::move(gelu_options));
+    litert::internal::SetTflOptions(gelu, std::move(gelu_union));
+    litert::internal::AttachInput(&gate_3d, gelu);
+    litert::internal::AttachOutput(&gated, gelu);
+    auto& up =
+        fully_connected(input, *weights[2], "up_projection", hidden_channels);
+    auto& hidden =
+        tensor("hidden", kLiteRtElementTypeFloat32, {1, kM, hidden_channels});
+    graph.Outputs().push_back(&hidden);
+    auto& multiply = graph.EmplaceOp();
+    multiply.SetOpCode(kLiteRtOpCodeTflMul);
+    tflite::BuiltinOptionsUnion multiply_options;
+    multiply_options.Set(tflite::MulOptionsT{});
+    litert::internal::SetTflOptions(multiply, std::move(multiply_options));
+    litert::internal::AttachInput(&gated, multiply);
+    litert::internal::AttachInput(&up, multiply);
+    litert::internal::AttachOutput(&hidden, multiply);
+    auto& small =
+        fully_connected(other_input, *weights[3], "small_projected", kSmall);
+    graph.Outputs().push_back(&small);
+
+    setenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS", "cuda_gemv", 1);
+    if (mode[0] != '\0') {
+      setenv("LITERT_NVIDIA_TENSORRT_CUDA_GEMM", mode, 1);
+    }
+    auto built = litert::nvidia::BuildTensorRtEngine(
+        litert::compiler::Subgraph(LrtGetCompilerContext(), &graph));
+    unsetenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS");
+    unsetenv("LITERT_NVIDIA_TENSORRT_CUDA_GEMM");
+    ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+    ASSERT_EQ(built->input_names.size(), 2u);
+    ASSERT_EQ(built->output_names.size(), 3u);
+    litert::nvidia::TensorRtLogger logger;
+    std::unique_ptr<nvinfer1::IRuntime> runtime(
+        nvinfer1::createInferRuntime(logger));
+    ASSERT_NE(runtime, nullptr);
+    std::unique_ptr<nvinfer1::ICudaEngine> engine(
+        runtime->deserializeCudaEngine(built->engine.data(),
+                                       built->engine.size()));
+    ASSERT_NE(engine, nullptr);
+    std::unique_ptr<nvinfer1::IEngineInspector> inspector(
+        engine->createEngineInspector());
+    ASSERT_NE(inspector, nullptr);
+    const std::string layers = inspector->getEngineInformation(
+        nvinfer1::LayerInformationFormat::kONELINE);
+    EXPECT_EQ(layers.find("cuda_subbyte_gated_gemm") != std::string::npos, gemm)
+        << layers;
+    EXPECT_EQ(layers.find("cuda_subbyte_gemv_") != std::string::npos, all)
+        << layers;
+    // The small projection always is a TensorRT matmul.
+    EXPECT_TRUE(layers.find("Matrix Multiply") != std::string::npos ||
+                layers.find("Fc") != std::string::npos)
+        << layers;
+
+    std::unique_ptr<nvinfer1::IExecutionContext> context(
+        engine->createExecutionContext());
+    ASSERT_NE(context, nullptr);
+    std::vector<float> activations(static_cast<size_t>(kM) * kK);
+    uint32_t state = 99u;
+    for (auto& value : activations) {
+      state = state * 1664525u + 1013904223u;
+      value =
+          static_cast<float>((state >> 8) & 0xFFFF) / 65535.0f * 4.0f - 2.0f;
+    }
+    // Both inputs hold the same activations.
+    void* device_input = nullptr;
+    ASSERT_EQ(cudaMalloc(&device_input, activations.size() * sizeof(float)),
+              cudaSuccess);
+    ASSERT_EQ(
+        cudaMemcpy(device_input, activations.data(),
+                   activations.size() * sizeof(float), cudaMemcpyHostToDevice),
+        cudaSuccess);
+    for (const auto& name : built->input_names) {
+      ASSERT_TRUE(context->setTensorAddress(name.c_str(), device_input));
+    }
+    const std::array<int32_t, 3> channels = {projection_channels,
+                                             hidden_channels, kSmall};
+    std::array<void*, 3> device_outputs{};
+    for (size_t i = 0; i < channels.size(); ++i) {
+      ASSERT_EQ(cudaMalloc(&device_outputs[i], static_cast<size_t>(kM) *
+                                                   channels[i] * sizeof(float)),
+                cudaSuccess);
+      ASSERT_TRUE(context->setTensorAddress(built->output_names[i].c_str(),
+                                            device_outputs[i]));
+    }
+    cudaStream_t stream = nullptr;
+    ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+    ASSERT_TRUE(context->enqueueV3(stream));
+    ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+    const auto dot = [&](int f, int m, int n) {
+      double sum = 0.0;
+      for (int32_t k = 0; k < kK; ++k) {
+        // The engine computes on BF16 activations.
+        sum += static_cast<double>(Bf16ToFloat(
+                   FloatToBf16(activations[static_cast<size_t>(m) * kK + k]))) *
+               values[f][static_cast<size_t>(n) * kK + k];
+      }
+      return sum * scales[f][n];
+    };
+    for (size_t i = 0; i < channels.size(); ++i) {
+      std::vector<float> actual(static_cast<size_t>(kM) * channels[i]);
+      ASSERT_EQ(
+          cudaMemcpy(actual.data(), device_outputs[i],
+                     actual.size() * sizeof(float), cudaMemcpyDeviceToHost),
+          cudaSuccess);
+      for (int m : {0, 1, 127, 128, 601, kM - 1}) {
+        double error = 0.0;
+        double norm = 0.0;
+        for (int32_t n = 0; n < channels[i]; ++n) {
+          double expected = dot(i == 0 ? 0 : 3, m, n);
+          if (i == 1) {
+            const double x = dot(1, m, n);
+            expected = 0.5 * x *
+                       (1.0 + std::tanh(0.7978845608028654 *
+                                        (x + 0.044715 * x * x * x))) *
+                       dot(2, m, n);
+          }
+          const double value = actual[static_cast<size_t>(m) * channels[i] + n];
+          error += (value - expected) * (value - expected);
+          norm += expected * expected;
+        }
+        // BF16 results: about 2e-3 of the norm of a row for one rounding, two
+        // more for the matmul lowering of the gate (its factors are BF16).
+        EXPECT_LE(std::sqrt(error), 6.0e-3 * std::sqrt(norm))
+            << "output=" << i << " row=" << m;
+      }
+      EXPECT_EQ(cudaFree(device_outputs[i]), cudaSuccess);
     }
     EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
     EXPECT_EQ(cudaFree(device_input), cudaSuccess);
@@ -1577,6 +2384,400 @@ TEST(TensorRtGraphBuilderTest, PrefillAttentionJoinSurvivesCacheUpdate) {
   }
 }
 
+TEST(TensorRtGraphBuilderTest, PrefillAttentionPluginBlock) {
+  // Prefill attention over a ring cache (runtime_bmm against the cache before
+  // its update, batch matmuls against the chunk's keys and values, a mask row
+  // per query row, and the join the cache update forwards) lowers to one CUDA
+  // plugin launch. Its result matches a host reference and the TensorRT
+  // lowering, and the cache update still sees the old cache first.
+  constexpr int kHeads = 2;
+  constexpr int kTokens = 128;
+  constexpr int kRows = 2 * kTokens;  // two query heads per cache head
+  constexpr int kDepth = 256;
+  constexpr int kSeq = 160;
+  constexpr int kColumns = kSeq + kTokens;
+  constexpr size_t kCacheElements = kHeads * kSeq * kDepth;
+  constexpr size_t kUpdateElements = kHeads * kTokens * kDepth;
+  constexpr size_t kQueryElements = kHeads * kRows * kDepth;
+  const std::vector<int32_t> cache_dims{1, kHeads, kSeq, kDepth};
+  const std::vector<int32_t> value_cache_dims{1, kHeads, kDepth, kSeq};
+  const std::vector<int32_t> update_dims{1, kHeads, kTokens, kDepth};
+  const std::vector<int32_t> query_dims{1, kHeads, kRows, kDepth};
+  const std::vector<int32_t> score_dims{1, kHeads, kRows, kColumns};
+  for (const bool plugin : {true, false}) {
+    SCOPED_TRACE(testing::Message() << "plugin=" << plugin);
+    LiteRtModelT model;
+    auto& graph = model.EmplaceSubgraph();
+    const auto tensor =
+        [&](const char* name, LiteRtElementType type,
+            const std::vector<int32_t>& dims) -> LiteRtTensorT& {
+      auto& value = graph.EmplaceTensor();
+      value.SetName(name);
+      value.SetType(MakeRankedTensorType(type, dims));
+      return value;
+    };
+    const auto constant = [&](const char* name, LiteRtElementType type,
+                              const std::vector<int32_t>& dims,
+                              const void* data,
+                              size_t bytes) -> LiteRtTensorT& {
+      auto& value = tensor(name, type, dims);
+      SetWeightsFromUnownedBuffer(
+          value.Weights(),
+          litert::BufferRef<uint8_t>(static_cast<const uint8_t*>(data), bytes));
+      return value;
+    };
+    auto& update_k = tensor("update_k", kLiteRtElementTypeFloat16, update_dims);
+    auto& update_v = tensor("update_v", kLiteRtElementTypeFloat16, update_dims);
+    auto& params = tensor("params", kLiteRtElementTypeInt32, {1, 1, 1, 7});
+    auto& cache_k = tensor("cache_k", kLiteRtElementTypeFloat16, cache_dims);
+    auto& cache_v =
+        tensor("cache_v", kLiteRtElementTypeFloat16, value_cache_dims);
+    auto& start_k = tensor("start_k", kLiteRtElementTypeInt32, {4});
+    auto& start_v = tensor("start_v", kLiteRtElementTypeInt32, {4});
+    auto& query = tensor("query", kLiteRtElementTypeFloat16, query_dims);
+    auto& mask =
+        tensor("mask", kLiteRtElementTypeBool, {1, 1, kRows, kColumns});
+    graph.Inputs() = {&update_k, &update_v, &params, &cache_k, &cache_v,
+                      &start_k,  &start_v,  &query,  &mask};
+    auto& output_k = tensor("output_k", kLiteRtElementTypeFloat16, cache_dims);
+    auto& output_v =
+        tensor("output_v", kLiteRtElementTypeFloat16, value_cache_dims);
+    graph.Outputs() = {&output_k, &output_v};
+    const auto runtime_bmm = [&](LiteRtTensorT& lhs, LiteRtTensorT& rhs,
+                                 const char* name,
+                                 int width) -> LiteRtTensorT& {
+      auto& result =
+          tensor(name, kLiteRtElementTypeFloat16, {1, kHeads, kRows, width});
+      auto& op = graph.EmplaceOp();
+      op.SetOpCode(kLiteRtOpCodeShloComposite);
+      tflite::StableHLOCompositeOptionsT composite;
+      composite.name = "odml.runtime_bmm";
+      tflite::BuiltinOptions2Union options;
+      options.Set(std::move(composite));
+      litert::internal::SetTflOptions2(op, std::move(options));
+      litert::internal::AttachInput(&lhs, op);
+      litert::internal::AttachInput(&rhs, op);
+      litert::internal::AttachInput(&params, op);
+      litert::internal::AttachOutput(&result, op);
+      return result;
+    };
+    const auto matmul = [&](LiteRtTensorT& lhs, LiteRtTensorT& rhs,
+                            const char* name, int width,
+                            bool transpose_rhs) -> LiteRtTensorT& {
+      auto& result =
+          tensor(name, kLiteRtElementTypeFloat16, {1, kHeads, kRows, width});
+      auto& op = graph.EmplaceOp();
+      op.SetOpCode(kLiteRtOpCodeTflBatchMatmul);
+      tflite::BatchMatMulOptionsT matmul;
+      matmul.adj_y = transpose_rhs;
+      tflite::BuiltinOptionsUnion options;
+      options.Set(std::move(matmul));
+      litert::internal::SetTflOptions(op, std::move(options));
+      litert::internal::AttachInput(&lhs, op);
+      litert::internal::AttachInput(&rhs, op);
+      litert::internal::AttachOutput(&result, op);
+      return result;
+    };
+    auto& old_scores = runtime_bmm(query, cache_k, "old_scores", kSeq);
+    auto& fresh_scores = matmul(query, update_k, "fresh_scores", kTokens, true);
+    auto& scores = tensor("scores", kLiteRtElementTypeFloat16, score_dims);
+    auto& concat = graph.EmplaceOp();
+    concat.SetOpCode(kLiteRtOpCodeTflConcatenation);
+    tflite::ConcatenationOptionsT concatenation;
+    concatenation.axis = 3;
+    tflite::BuiltinOptionsUnion concat_options;
+    concat_options.Set(std::move(concatenation));
+    litert::internal::SetTflOptions(concat, std::move(concat_options));
+    litert::internal::AttachInput(&old_scores, concat);
+    litert::internal::AttachInput(&fresh_scores, concat);
+    litert::internal::AttachOutput(&scores, concat);
+    const float fill_value = -45824.0f;
+    const uint16_t fill_bits = Fp16Bits(fill_value);
+    auto& fill = constant("fill", kLiteRtElementTypeFloat16, {}, &fill_bits,
+                          sizeof(fill_bits));
+    auto& masked = tensor("masked", kLiteRtElementTypeFloat16, score_dims);
+    auto& select = graph.EmplaceOp();
+    select.SetOpCode(kLiteRtOpCodeTflSelectV2);
+    litert::internal::AttachInput(&mask, select);
+    litert::internal::AttachInput(&scores, select);
+    litert::internal::AttachInput(&fill, select);
+    litert::internal::AttachOutput(&masked, select);
+    auto& probabilities =
+        tensor("probabilities", kLiteRtElementTypeFloat16, score_dims);
+    auto& softmax = graph.EmplaceOp();
+    softmax.SetOpCode(kLiteRtOpCodeTflSoftmax);
+    tflite::SoftmaxOptionsT softmax_options;
+    softmax_options.beta = 1.0f;
+    tflite::BuiltinOptionsUnion softmax_union;
+    softmax_union.Set(std::move(softmax_options));
+    litert::internal::SetTflOptions(softmax, std::move(softmax_union));
+    litert::internal::AttachInput(&masked, softmax);
+    litert::internal::AttachOutput(&probabilities, softmax);
+    const std::array<std::array<int32_t, 4>, 2> begins{
+        std::array<int32_t, 4>{0, 0, 0, 0}, {0, 0, 0, kSeq}};
+    const std::array<std::array<int32_t, 4>, 2> sizes{
+        std::array<int32_t, 4>{1, kHeads, kRows, kSeq},
+        {1, kHeads, kRows, kTokens}};
+    std::array<LiteRtTensorT*, 2> sliced{};
+    for (int i = 0; i < 2; ++i) {
+      auto& begin = constant(i == 0 ? "old_begin" : "fresh_begin",
+                             kLiteRtElementTypeInt32, {4}, begins[i].data(),
+                             sizeof(begins[i]));
+      auto& size =
+          constant(i == 0 ? "old_size" : "fresh_size", kLiteRtElementTypeInt32,
+                   {4}, sizes[i].data(), sizeof(sizes[i]));
+      auto& result =
+          tensor(i == 0 ? "old_probs" : "fresh_probs",
+                 kLiteRtElementTypeFloat16, {1, kHeads, kRows, sizes[i][3]});
+      auto& slice = graph.EmplaceOp();
+      slice.SetOpCode(kLiteRtOpCodeTflSlice);
+      litert::internal::AttachInput(&probabilities, slice);
+      litert::internal::AttachInput(&begin, slice);
+      litert::internal::AttachInput(&size, slice);
+      litert::internal::AttachOutput(&result, slice);
+      sliced[i] = &result;
+    }
+    auto& old_values = runtime_bmm(*sliced[0], cache_v, "old_values", kDepth);
+    auto& fresh_values =
+        matmul(*sliced[1], update_v, "fresh_values", kDepth, false);
+    const auto add = [&](LiteRtTensorT& lhs, LiteRtTensorT& rhs,
+                         const char* name) -> LiteRtTensorT& {
+      auto& result = tensor(name, kLiteRtElementTypeFloat16, query_dims);
+      auto& op = graph.EmplaceOp();
+      op.SetOpCode(kLiteRtOpCodeTflAdd);
+      tflite::BuiltinOptionsUnion options;
+      options.Set(tflite::AddOptionsT{});
+      litert::internal::SetTflOptions(op, std::move(options));
+      litert::internal::AttachInput(&lhs, op);
+      litert::internal::AttachInput(&rhs, op);
+      litert::internal::AttachOutput(&result, op);
+      return result;
+    };
+    auto& join = add(old_values, fresh_values, "attention_join");
+    auto& update = graph.EmplaceOp();
+    update.SetOpCode(kLiteRtOpCodeShloComposite);
+    tflite::StableHLOCompositeOptionsT composite;
+    composite.name = "odml.cache_update";
+    flexbuffers::Builder attributes;
+    const auto map = attributes.StartMap();
+    attributes.Bool("is_ring_buffer", true);
+    attributes.Int("cache_size", kSeq);
+    attributes.Int("head_size", kDepth);
+    attributes.EndMap(map);
+    attributes.Finish();
+    composite.composite_attributes = attributes.GetBuffer();
+    tflite::BuiltinOptions2Union composite_options;
+    composite_options.Set(std::move(composite));
+    litert::internal::SetTflOptions2(update, std::move(composite_options));
+    for (auto* input : {&update_k, &update_v, &params, &cache_k, &cache_v,
+                        &start_k, &start_v}) {
+      litert::internal::AttachInput(input, update);
+    }
+    litert::internal::AttachOutput(&output_k, update);
+    litert::internal::AttachOutput(&output_v, update);
+    // The join's consumer follows the cache update, as it does between
+    // transformer blocks.
+    const uint16_t one = Fp16Bits(1.0f);
+    auto& bias =
+        constant("bias", kLiteRtElementTypeFloat16, {}, &one, sizeof(one));
+    auto& attention = add(join, bias, "attention");
+    graph.Outputs().push_back(&attention);
+
+    setenv("LITERT_NVIDIA_TENSORRT_LOCAL_ATTENTION_PLUGIN", plugin ? "1" : "0",
+           1);
+    auto built = litert::nvidia::BuildTensorRtEngine(
+        litert::compiler::Subgraph(LrtGetCompilerContext(), &graph));
+    unsetenv("LITERT_NVIDIA_TENSORRT_LOCAL_ATTENTION_PLUGIN");
+    ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+    ASSERT_EQ(built->input_names.size(), 9u);
+    ASSERT_EQ(built->output_names.size(), 3u);
+    EXPECT_TRUE(
+        litert::nvidia::IsTransposedValueCacheTensor(built->input_names[4]));
+    litert::nvidia::TensorRtLogger logger;
+    std::unique_ptr<nvinfer1::IRuntime> runtime(
+        nvinfer1::createInferRuntime(logger));
+    ASSERT_NE(runtime, nullptr);
+    std::unique_ptr<nvinfer1::ICudaEngine> engine(
+        runtime->deserializeCudaEngine(built->engine.data(),
+                                       built->engine.size()));
+    ASSERT_NE(engine, nullptr);
+    std::unique_ptr<nvinfer1::IEngineInspector> inspector(
+        engine->createEngineInspector());
+    ASSERT_NE(inspector, nullptr);
+    const std::string layers = inspector->getEngineInformation(
+        nvinfer1::LayerInformationFormat::kONELINE);
+    EXPECT_EQ(layers.find("cuda_prefill_attention") != std::string::npos,
+              plugin)
+        << layers;
+    EXPECT_EQ(layers.find("Matrix Multiply") == std::string::npos, plugin)
+        << layers;
+    EXPECT_NE(layers.find("cache_update_forward_attention"), std::string::npos)
+        << layers;
+    std::unique_ptr<nvinfer1::IExecutionContext> context(
+        engine->createExecutionContext());
+    ASSERT_NE(context, nullptr);
+    const std::array<size_t, 9> input_sizes{
+        kUpdateElements * 2,
+        kUpdateElements * 2,
+        7 * sizeof(int32_t),
+        kCacheElements * 2,
+        kCacheElements * 2,
+        4 * sizeof(int32_t),
+        4 * sizeof(int32_t),
+        kQueryElements * 2,
+        static_cast<size_t>(kRows) * kColumns};
+    std::array<void*, 9> inputs{};
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      ASSERT_EQ(cudaMalloc(&inputs[i], input_sizes[i]), cudaSuccess);
+      ASSERT_EQ(cudaMemset(inputs[i], 0, input_sizes[i]), cudaSuccess);
+      ASSERT_TRUE(
+          context->setTensorAddress(built->input_names[i].c_str(), inputs[i]));
+    }
+    void* attention_device = nullptr;
+    ASSERT_EQ(cudaMalloc(&attention_device, kQueryElements * 2), cudaSuccess);
+    ASSERT_TRUE(context->setTensorAddress(built->output_names[0].c_str(),
+                                          inputs[3]));  // in place
+    ASSERT_TRUE(context->setTensorAddress(built->output_names[1].c_str(),
+                                          inputs[4]));  // in place
+    ASSERT_TRUE(context->setTensorAddress(built->output_names[2].c_str(),
+                                          attention_device));
+    cudaStream_t stream = nullptr;
+    ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+
+    uint32_t state = 424242u;
+    const auto next = [&]() -> float {
+      state = state * 1664525u + 1013904223u;
+      return static_cast<float>((state >> 8) & 0xFFFF) / 65535.0f * 2.0f - 1.0f;
+    };
+    // Caches as the engine holds them: [heads, seq, depth] rows.
+    std::vector<uint16_t> old_k(kCacheElements), old_v(kCacheElements);
+    for (size_t i = 0; i < kCacheElements; ++i) {
+      old_k[i] = Fp16Bits(next() * 0.5f);
+      old_v[i] = Fp16Bits(next());
+    }
+    for (const auto& [i, data] :
+         {std::pair<int, const void*>{3, old_k.data()}, {4, old_v.data()}}) {
+      ASSERT_EQ(
+          cudaMemcpy(inputs[i], data, input_sizes[i], cudaMemcpyHostToDevice),
+          cudaSuccess);
+    }
+    // A chunk that fills part of the ring, one that wraps, and a padded one
+    // whose last rows see nothing.
+    for (const auto [write, valid] : {std::pair<int, int>{0, kTokens},
+                                      {kSeq - 5, kTokens},
+                                      {17, kTokens - 28}}) {
+      SCOPED_TRACE(testing::Message()
+                   << "write=" << write << " valid=" << valid);
+      std::vector<uint16_t> fresh_k(kUpdateElements), fresh_v(kUpdateElements);
+      std::vector<uint16_t> queries(kQueryElements);
+      for (size_t i = 0; i < kUpdateElements; ++i) {
+        fresh_k[i] = Fp16Bits(next() * 0.5f);
+        fresh_v[i] = Fp16Bits(next());
+      }
+      for (size_t i = 0; i < kQueryElements; ++i) {
+        queries[i] = Fp16Bits(next() * 0.25f);
+      }
+      // Row r belongs to token r % kTokens, which sees every third slot of
+      // the ring aside and the chunk up to itself.
+      std::vector<uint8_t> mask_host(static_cast<size_t>(kRows) * kColumns, 0);
+      for (int r = 0; r < kRows; ++r) {
+        const int token = r % kTokens;
+        if (token >= valid) continue;
+        for (int s = 0; s < kColumns; ++s) {
+          mask_host[static_cast<size_t>(r) * kColumns + s] =
+              s < kSeq ? (s + token) % 3 != 0 : s - kSeq <= token;
+        }
+      }
+      const std::array<int32_t, 7> params_host{write, 0, 0, valid, 0, 0, 0};
+      for (const auto& [i, data] :
+           {std::pair<int, const void*>{0, fresh_k.data()},
+            {1, fresh_v.data()},
+            {2, params_host.data()},
+            {7, queries.data()},
+            {8, mask_host.data()}}) {
+        ASSERT_EQ(
+            cudaMemcpy(inputs[i], data, input_sizes[i], cudaMemcpyHostToDevice),
+            cudaSuccess);
+      }
+      ASSERT_TRUE(context->enqueueV3(stream));
+      ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+      std::vector<uint16_t> actual_k(kCacheElements), actual_v(kCacheElements);
+      std::vector<uint16_t> actual(kQueryElements);
+      ASSERT_EQ(cudaMemcpy(actual_k.data(), inputs[3], kCacheElements * 2,
+                           cudaMemcpyDeviceToHost),
+                cudaSuccess);
+      ASSERT_EQ(cudaMemcpy(actual_v.data(), inputs[4], kCacheElements * 2,
+                           cudaMemcpyDeviceToHost),
+                cudaSuccess);
+      ASSERT_EQ(cudaMemcpy(actual.data(), attention_device, kQueryElements * 2,
+                           cudaMemcpyDeviceToHost),
+                cudaSuccess);
+      // Attention over the cache before the update.
+      float max_error = 0.0f;
+      std::vector<double> row_scores(kColumns);
+      for (int h = 0; h < kHeads; ++h) {
+        for (int r = 0; r < kRows; ++r) {
+          const uint8_t* mask_row =
+              mask_host.data() + static_cast<size_t>(r) * kColumns;
+          double max_score = -INFINITY;
+          for (int s = 0; s < kColumns; ++s) {
+            double score = fill_value;
+            if (mask_row[s]) {
+              const uint16_t* key =
+                  s < kSeq ? &old_k[(h * kSeq + s) * kDepth]
+                           : &fresh_k[(h * kTokens + s - kSeq) * kDepth];
+              score = 0.0;
+              for (int d = 0; d < kDepth; ++d) {
+                score += static_cast<double>(Fp16ToFloat(
+                             queries[(h * kRows + r) * kDepth + d])) *
+                         Fp16ToFloat(key[d]);
+              }
+            }
+            row_scores[s] = score;
+            max_score = std::max(max_score, score);
+          }
+          double sum = 0.0;
+          std::vector<double> reference(kDepth, 0.0);
+          for (int s = 0; s < kColumns; ++s) {
+            const double p = std::exp(row_scores[s] - max_score);
+            sum += p;
+            const uint16_t* value =
+                s < kSeq ? &old_v[(h * kSeq + s) * kDepth]
+                         : &fresh_v[(h * kTokens + s - kSeq) * kDepth];
+            for (int d = 0; d < kDepth; ++d) {
+              reference[d] += p * Fp16ToFloat(value[d]);
+            }
+          }
+          for (int d = 0; d < kDepth; ++d) {
+            max_error = std::max(
+                max_error,
+                std::abs(Fp16ToFloat(actual[(h * kRows + r) * kDepth + d]) -
+                         static_cast<float>(1.0 + reference[d] / sum)));
+          }
+        }
+      }
+      EXPECT_LT(max_error, 0.03f);
+      // The valid rows of the chunk enter the ring at the write position.
+      for (int h = 0; h < kHeads; ++h) {
+        for (int r = 0; r < valid; ++r) {
+          const int s = (write + r) % kSeq;
+          for (int d = 0; d < kDepth; ++d) {
+            old_k[(h * kSeq + s) * kDepth + d] =
+                fresh_k[(h * kTokens + r) * kDepth + d];
+            old_v[(h * kSeq + s) * kDepth + d] =
+                fresh_v[(h * kTokens + r) * kDepth + d];
+          }
+        }
+      }
+      EXPECT_EQ(actual_k, old_k);
+      EXPECT_EQ(actual_v, old_v);
+    }
+    EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+    EXPECT_EQ(cudaFree(attention_device), cudaSuccess);
+    for (void* input : inputs) EXPECT_EQ(cudaFree(input), cudaSuccess);
+  }
+}
+
 TEST(TensorRtGraphBuilderTest, TransposedCacheMatmul) {
   // Gemma 4 multiplies the query against the updated key cache ([B, H, S, D])
   // and the probabilities against the updated value cache (stored transposed,
@@ -2027,11 +3228,13 @@ TEST(TensorRtGraphBuilderTest, RejectsInvalidReadOnlyValueCacheContract) {
   }
 }
 
-TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
-  // The decode attention block (in-place K/V updates, runtime_bmm scores,
-  // select_v2 mask, softmax, runtime_bmm values) lowers to one CUDA plugin
-  // launch when the experimental plugin is enabled; its result matches an
-  // FP32 host reference and the default TensorRT lowering.
+TEST(TensorRtGraphBuilderTest, AttentionPluginBlock) {
+  // The attention block (in-place K/V updates, runtime_bmm scores, select_v2
+  // mask, softmax, runtime_bmm values) lowers to one CUDA plugin launch: by
+  // default for a single-head cache of depth 512 (tensor-core kernels, decode
+  // and prefill rows, mask tiled over the query heads), and for the other
+  // decode shapes when the experimental plugin is enabled. Its result matches
+  // an FP32 host reference and the TensorRT lowering.
   struct Case {
     int heads;
     int rows;
@@ -2039,21 +3242,35 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
     int depth;
     int mask_rows;
     uint16_t fill_bits;
+    int update_rows;  // cache rows written by this invocation
+    int mask_copies;  // > 0: the mask is tiled this many times over the rows
+    bool global;      // handled by the tensor-core kernels
+    // The caches updated by one odml.cache_update composite (Gemma 4 12B and
+    // 26B) instead of two dynamic update slices.
+    bool composite_update = false;
   };
   const std::vector<Case> cases = {
-      {2, 2, 300, 128, 2, 0xFC00},   // -inf fill, two chunks
-      {1, 16, 600, 512, 1, 0xF0E2},  // -10000 fill, shared mask row
+      {2, 2, 300, 128, 2, 0xFC00, 1, 0, false},      // -inf fill, two chunks
+      {1, 16, 600, 512, 1, 0xF0E2, 1, 0, true},      // -10000 fill, shared row
+      {1, 16, 600, 512, 1, 0xF0E2, 1, 16, true},     // decode, tiled mask
+      {1, 64, 700, 512, 4, 0xFC00, 4, 16, true},     // prefill of 4 tokens
+      {1, 256, 900, 512, 16, 0xF0E2, 16, 16, true},  // prefill of 16 tokens
+      {1, 16, 600, 512, 16, 0xF0E2, 1, 0, true, true},  // 12B decode
+      {1, 64, 700, 512, 64, 0xF0E2, 4, 0, true, true},  // 12B prefill rows
   };
   for (const auto& test_case : cases) {
     const int heads = test_case.heads;
     const int rows = test_case.rows;
     const int seq = test_case.seq;
     const int depth = test_case.depth;
+    const int update_rows = test_case.update_rows;
     const int position = seq / 2 + 3;
-    SCOPED_TRACE(::testing::Message() << "heads=" << heads << " rows=" << rows
-                                      << " seq=" << seq << " depth=" << depth);
+    SCOPED_TRACE(::testing::Message()
+                 << "heads=" << heads << " rows=" << rows << " seq=" << seq
+                 << " depth=" << depth << " copies=" << test_case.mask_copies
+                 << " composite=" << test_case.composite_update);
     // Deterministic inputs in FP16.
-    uint32_t state = 12345u + seq;
+    uint32_t state = 12345u + seq + rows;
     const auto next = [&]() -> float {
       state = state * 1664525u + 1013904223u;
       return static_cast<float>((state >> 8) & 0xFFFF) / 65535.0f * 2.0f - 1.0f;
@@ -2067,34 +3284,45 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       k_ref[i] = Fp16ToFloat(k_host[i]);
       v_ref[i] = Fp16ToFloat(v_host[i]);
     }
-    std::vector<uint16_t> k_update(heads * depth), v_update(heads * depth);
-    for (int i = 0; i < heads * depth; ++i) {
+    // Updates as the engine sees them in memory: [heads, update_rows, depth]
+    // rows for keys and for the values it holds as [B, H, S, D].
+    const size_t update_elements =
+        static_cast<size_t>(heads) * update_rows * depth;
+    std::vector<uint16_t> k_update(update_elements), v_update(update_elements);
+    for (size_t i = 0; i < update_elements; ++i) {
       k_update[i] = Fp16Bits(next() * 0.5f);
       v_update[i] = Fp16Bits(next());
     }
-    std::vector<uint16_t> q_host(heads * rows * depth);
+    std::vector<uint16_t> q_host(static_cast<size_t>(heads) * rows * depth);
     std::vector<float> q_ref(q_host.size());
     for (size_t i = 0; i < q_host.size(); ++i) {
       q_host[i] = Fp16Bits(next() * 0.25f);
       q_ref[i] = Fp16ToFloat(q_host[i]);
     }
-    std::vector<uint8_t> mask_host(test_case.mask_rows * seq);
+    std::vector<uint8_t> mask_host(static_cast<size_t>(test_case.mask_rows) *
+                                   seq);
     for (int r = 0; r < test_case.mask_rows; ++r) {
       for (int j = 0; j < seq; ++j) {
-        mask_host[r * seq + j] = (j <= position - r && j % 7 != 3) ? 1 : 0;
+        mask_host[static_cast<size_t>(r) * seq + j] =
+            (j <= position + r && j % 7 != 3) ? 1 : 0;
       }
     }
     const float fill = Fp16ToFloat(test_case.fill_bits);
     // Host reference: caches after the update, masked softmax, weighted sum.
     for (int h = 0; h < heads; ++h) {
-      for (int d = 0; d < depth; ++d) {
-        const size_t idx =
-            (static_cast<size_t>(h) * seq + position) * depth + d;
-        k_ref[idx] = Fp16ToFloat(k_update[h * depth + d]);
-        v_ref[idx] = Fp16ToFloat(v_update[h * depth + d]);
+      for (int u = 0; u < update_rows; ++u) {
+        for (int d = 0; d < depth; ++d) {
+          const size_t idx =
+              (static_cast<size_t>(h) * seq + position + u) * depth + d;
+          const size_t from =
+              (static_cast<size_t>(h) * update_rows + u) * depth + d;
+          k_ref[idx] = Fp16ToFloat(k_update[from]);
+          v_ref[idx] = Fp16ToFloat(v_update[from]);
+        }
       }
     }
-    std::vector<float> expected(heads * rows * depth, 0.0f);
+    std::vector<float> expected(static_cast<size_t>(heads) * rows * depth,
+                                0.0f);
     std::vector<float> scores(seq);
     for (int h = 0; h < heads; ++h) {
       for (int r = 0; r < rows; ++r) {
@@ -2105,8 +3333,9 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
             score += q_ref[(static_cast<size_t>(h) * rows + r) * depth + d] *
                      k_ref[(static_cast<size_t>(h) * seq + j) * depth + d];
           }
-          const int mask_row = test_case.mask_rows == 1 ? 0 : r;
-          scores[j] = mask_host[mask_row * seq + j] ? score : fill;
+          const int mask_row = r % test_case.mask_rows;
+          scores[j] =
+              mask_host[static_cast<size_t>(mask_row) * seq + j] ? score : fill;
           max_score = std::max(max_score, scores[j]);
         }
         float sum = 0.0f;
@@ -2128,6 +3357,8 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       SCOPED_TRACE(::testing::Message() << "plugin=" << plugin);
       setenv("LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN",
              plugin ? "1" : "0", 1);
+      setenv("LITERT_NVIDIA_TENSORRT_GLOBAL_ATTENTION_PLUGIN",
+             plugin ? "1" : "0", 1);
       LiteRtModelT model;
       auto& graph = model.EmplaceSubgraph();
       auto& k_cache = graph.EmplaceTensor();
@@ -2142,12 +3373,16 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       graph.Inputs().push_back(&v_cache);
       auto& k_upd = graph.EmplaceTensor();
       k_upd.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat16,
-                                         {1, heads, 1, depth}));
+                                         {1, heads, update_rows, depth}));
       k_upd.SetName("k_update");
       graph.Inputs().push_back(&k_upd);
       auto& v_upd = graph.EmplaceTensor();
-      v_upd.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat16,
-                                         {1, heads, depth, 1}));
+      // The composite takes the value update as rows like the key update.
+      v_upd.SetType(MakeRankedTensorType(
+          kLiteRtElementTypeFloat16,
+          test_case.composite_update
+              ? std::vector<int32_t>{1, heads, update_rows, depth}
+              : std::vector<int32_t>{1, heads, depth, update_rows}));
       v_upd.SetName("v_update");
       graph.Inputs().push_back(&v_upd);
       auto& k_start = graph.EmplaceTensor();
@@ -2172,6 +3407,14 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       positions.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {1}));
       positions.SetName("positions");
       graph.Inputs().push_back(&positions);
+      LiteRtTensorT* params = nullptr;
+      if (test_case.composite_update) {
+        params = &graph.EmplaceTensor();
+        params->SetType(
+            MakeRankedTensorType(kLiteRtElementTypeInt32, {1, 1, 1, 7}));
+        params->SetName("params");
+        graph.Inputs().push_back(params);
+      }
       auto& fill_const = graph.EmplaceTensor();
       fill_const.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat16, {}));
       fill_const.SetName("fill");
@@ -2205,18 +3448,70 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       context_out.SetName("context");
       graph.Outputs().push_back(&context_out);
 
-      auto& k_dus = graph.EmplaceOp();
-      k_dus.SetOpCode(kLiteRtOpCodeTflDynamicUpdateSlice);
-      litert::internal::AttachInput(&k_cache, k_dus);
-      litert::internal::AttachInput(&k_upd, k_dus);
-      litert::internal::AttachInput(&k_start, k_dus);
-      litert::internal::AttachOutput(&k_out, k_dus);
-      auto& v_dus = graph.EmplaceOp();
-      v_dus.SetOpCode(kLiteRtOpCodeTflDynamicUpdateSlice);
-      litert::internal::AttachInput(&v_cache, v_dus);
-      litert::internal::AttachInput(&v_upd, v_dus);
-      litert::internal::AttachInput(&v_start, v_dus);
-      litert::internal::AttachOutput(&v_out, v_dus);
+      // The model tiles the mask over the query heads.
+      LiteRtTensorT* select_mask = &mask;
+      if (test_case.mask_copies > 0) {
+        auto& stacked = graph.EmplaceTensor();
+        stacked.SetType(MakeRankedTensorType(
+            kLiteRtElementTypeBool,
+            {1, test_case.mask_copies, test_case.mask_rows, seq}));
+        auto& tiled = graph.EmplaceTensor();
+        tiled.SetType(
+            MakeRankedTensorType(kLiteRtElementTypeBool, {1, 1, rows, seq}));
+        auto& concat = graph.EmplaceOp();
+        concat.SetOpCode(kLiteRtOpCodeTflConcatenation);
+        tflite::ConcatenationOptionsT concatenation;
+        concatenation.axis = 1;
+        tflite::BuiltinOptionsUnion concat_options;
+        concat_options.Set(std::move(concatenation));
+        litert::internal::SetTflOptions(concat, std::move(concat_options));
+        for (int i = 0; i < test_case.mask_copies; ++i) {
+          litert::internal::AttachInput(&mask, concat);
+        }
+        litert::internal::AttachOutput(&stacked, concat);
+        auto& reshape = graph.EmplaceOp();
+        reshape.SetOpCode(kLiteRtOpCodeTflReshape);
+        litert::internal::AttachInput(&stacked, reshape);
+        litert::internal::AttachOutput(&tiled, reshape);
+        select_mask = &tiled;
+      }
+
+      if (test_case.composite_update) {
+        auto& update = graph.EmplaceOp();
+        update.SetOpCode(kLiteRtOpCodeShloComposite);
+        tflite::StableHLOCompositeOptionsT composite;
+        composite.name = "odml.cache_update";
+        flexbuffers::Builder attributes;
+        const auto map = attributes.StartMap();
+        attributes.Bool("is_ring_buffer", false);
+        attributes.Int("cache_size", seq);
+        attributes.Int("head_size", depth);
+        attributes.EndMap(map);
+        attributes.Finish();
+        composite.composite_attributes = attributes.GetBuffer();
+        tflite::BuiltinOptions2Union options;
+        options.Set(std::move(composite));
+        litert::internal::SetTflOptions2(update, std::move(options));
+        for (LiteRtTensorT* input :
+             {&k_upd, &v_upd, params, &k_cache, &v_cache, &k_start, &v_start}) {
+          litert::internal::AttachInput(input, update);
+        }
+        litert::internal::AttachOutput(&k_out, update);
+        litert::internal::AttachOutput(&v_out, update);
+      } else {
+        auto& k_dus = graph.EmplaceOp();
+        k_dus.SetOpCode(kLiteRtOpCodeTflDynamicUpdateSlice);
+        litert::internal::AttachInput(&k_cache, k_dus);
+        litert::internal::AttachInput(&k_upd, k_dus);
+        litert::internal::AttachInput(&k_start, k_dus);
+        litert::internal::AttachOutput(&k_out, k_dus);
+        auto& v_dus = graph.EmplaceOp();
+        v_dus.SetOpCode(kLiteRtOpCodeTflDynamicUpdateSlice);
+        litert::internal::AttachInput(&v_cache, v_dus);
+        litert::internal::AttachInput(&v_upd, v_dus);
+        litert::internal::AttachInput(&v_start, v_dus);
+        litert::internal::AttachOutput(&v_out, v_dus);
+      }
       const auto add_runtime_bmm = [&](LiteRtTensorT& lhs, LiteRtTensorT& rhs,
                                        LiteRtTensorT& out) {
         auto& op = graph.EmplaceOp();
@@ -2234,7 +3529,7 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       add_runtime_bmm(q, k_out, scores_t);
       auto& select = graph.EmplaceOp();
       select.SetOpCode(kLiteRtOpCodeTflSelectV2);
-      litert::internal::AttachInput(&mask, select);
+      litert::internal::AttachInput(select_mask, select);
       litert::internal::AttachInput(&scores_t, select);
       litert::internal::AttachInput(&fill_const, select);
       litert::internal::AttachOutput(&masked, select);
@@ -2254,6 +3549,7 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       auto built = litert::nvidia::BuildTensorRtEngine(
           litert::compiler::Subgraph(LrtGetCompilerContext(), &graph));
       unsetenv("LITERT_NVIDIA_TENSORRT_DECODE_ATTENTION_PLUGIN");
+      unsetenv("LITERT_NVIDIA_TENSORRT_GLOBAL_ATTENTION_PLUGIN");
       ASSERT_TRUE(built.HasValue()) << built.Error().Message();
       litert::nvidia::TensorRtLogger logger;
       std::unique_ptr<nvinfer1::IRuntime> runtime(
@@ -2268,17 +3564,19 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       ASSERT_NE(inspector, nullptr);
       const std::string layers = inspector->getEngineInformation(
           nvinfer1::LayerInformationFormat::kONELINE);
-      EXPECT_EQ(layers.find("PluginV3") != std::string::npos, plugin);
+      EXPECT_EQ(layers.find("cuda_decode_attention") != std::string::npos,
+                plugin);
       EXPECT_EQ(layers.find("Matrix Multiply") == std::string::npos, plugin)
           << layers;
-      ASSERT_EQ(built->input_names.size(), 9u);
+      const size_t num_inputs = test_case.composite_update ? 10u : 9u;
+      ASSERT_EQ(built->input_names.size(), num_inputs);
       ASSERT_EQ(built->output_names.size(), 3u);
       std::unique_ptr<nvinfer1::IExecutionContext> context(
           engine->createExecutionContext());
       ASSERT_NE(context, nullptr);
 
       // The value cache buffer holds [B, H, S, D] (the engine layout); the
-      // model's [B, H, D, S] update is a [B, H, 1, D] row in memory.
+      // model's [B, H, D, n] update is [B, H, n, D] rows in memory.
       void* d_k = nullptr;
       void* d_v = nullptr;
       void* d_ku = nullptr;
@@ -2288,10 +3586,25 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       void* d_q = nullptr;
       void* d_mask = nullptr;
       void* d_pos = nullptr;
+      void* d_params = nullptr;
       void* d_out = nullptr;
       const std::array<int32_t, 4> k_start_host = {0, 0, position, 0};
       const std::array<int32_t, 4> v_start_host = {0, 0, 0, position};
       const int32_t position_host = position;
+      const std::array<int32_t, 7> params_host = {
+          position, position + update_rows, position + update_rows, 0, 0, 0, 0};
+      // The engine reads the model's [B, H, D, n] value update.
+      std::vector<uint16_t> v_update_model(update_elements);
+      for (int h = 0; h < heads; ++h) {
+        for (int u = 0; u < update_rows; ++u) {
+          for (int d = 0; d < depth; ++d) {
+            v_update_model[(static_cast<size_t>(h) * depth + d) * update_rows +
+                           u] =
+                v_update[(static_cast<size_t>(h) * update_rows + u) * depth +
+                         d];
+          }
+        }
+      }
       ASSERT_EQ(cudaMalloc(&d_k, cache_elements * 2), cudaSuccess);
       ASSERT_EQ(cudaMalloc(&d_v, cache_elements * 2), cudaSuccess);
       ASSERT_EQ(cudaMalloc(&d_ku, k_update.size() * 2), cudaSuccess);
@@ -2311,8 +3624,12 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       ASSERT_EQ(cudaMemcpy(d_ku, k_update.data(), k_update.size() * 2,
                            cudaMemcpyHostToDevice),
                 cudaSuccess);
-      ASSERT_EQ(cudaMemcpy(d_vu, v_update.data(), v_update.size() * 2,
-                           cudaMemcpyHostToDevice),
+      // The composite reads the value update as rows, the slice the model's
+      // [B, H, D, n] layout.
+      ASSERT_EQ(cudaMemcpy(d_vu,
+                           test_case.composite_update ? v_update.data()
+                                                      : v_update_model.data(),
+                           v_update.size() * 2, cudaMemcpyHostToDevice),
                 cudaSuccess);
       ASSERT_EQ(cudaMemcpy(d_ks, k_start_host.data(), sizeof(k_start_host),
                            cudaMemcpyHostToDevice),
@@ -2329,8 +3646,15 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       ASSERT_EQ(cudaMemcpy(d_pos, &position_host, sizeof(position_host),
                            cudaMemcpyHostToDevice),
                 cudaSuccess);
-      const std::array<void*, 9> input_ptrs = {d_k,  d_v, d_ku,   d_vu, d_ks,
-                                               d_vs, d_q, d_mask, d_pos};
+      std::vector<void*> input_ptrs = {d_k,  d_v, d_ku,   d_vu, d_ks,
+                                       d_vs, d_q, d_mask, d_pos};
+      if (test_case.composite_update) {
+        ASSERT_EQ(cudaMalloc(&d_params, sizeof(params_host)), cudaSuccess);
+        ASSERT_EQ(cudaMemcpy(d_params, params_host.data(), sizeof(params_host),
+                             cudaMemcpyHostToDevice),
+                  cudaSuccess);
+        input_ptrs.push_back(d_params);
+      }
       for (size_t i = 0; i < input_ptrs.size(); ++i) {
         ASSERT_TRUE(context->setTensorAddress(built->input_names[i].c_str(),
                                               input_ptrs[i]))
@@ -2357,8 +3681,8 @@ TEST(TensorRtGraphBuilderTest, DecodeAttentionPluginBlock) {
       }
       EXPECT_LT(max_error, 0.03f);
       EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
-      for (void* ptr :
-           {d_out, d_pos, d_mask, d_q, d_vs, d_ks, d_vu, d_ku, d_v, d_k}) {
+      for (void* ptr : {d_out, d_pos, d_params, d_mask, d_q, d_vs, d_ks, d_vu,
+                        d_ku, d_v, d_k}) {
         EXPECT_EQ(cudaFree(ptr), cudaSuccess);
       }
     }
@@ -2795,4 +4119,139 @@ TEST(TensorRtGraphBuilderTest, ConstantInt64ToHalfCast) {
     EXPECT_EQ(cudaFree(device_output), cudaSuccess);
     EXPECT_EQ(cudaFree(device_input), cudaSuccess);
   }
+}
+
+TEST(TensorRtGraphBuilderTest, Fp16ActivationsKeepPositionsExact) {
+  // Gemma 4 graphs cast integer positions to float for the rotary angles
+  // (position * inverse frequency -> sin/cos) and, in E2B, round-trip them
+  // through float into cache update offsets. BF16 keeps 8 significant bits:
+  // narrowed, 777 becomes 776 and the angles move by whole radians.
+  constexpr int32_t kPositions = 4;
+  constexpr int32_t kFrequencies = 2;
+  const std::array<int32_t, kPositions> positions = {3, 300, 777, 1021};
+  const std::array<float, kFrequencies> inverse_frequencies = {1.0f, 0.01f};
+  const float zero = 0.0f;
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  const auto tensor = [&](const char* name, LiteRtElementType type,
+                          const std::vector<int32_t>& dims) -> LiteRtTensorT& {
+    auto& value = graph.EmplaceTensor();
+    value.SetName(name);
+    value.SetType(MakeRankedTensorType(type, dims));
+    return value;
+  };
+  const auto op = [&](LiteRtOpCode code,
+                      std::initializer_list<LiteRtTensorT*> inputs,
+                      LiteRtTensorT& output) -> LiteRtOpT& {
+    auto& value = graph.EmplaceOp();
+    value.SetOpCode(code);
+    for (auto* input : inputs) {
+      litert::internal::AttachInput(input, value);
+    }
+    litert::internal::AttachOutput(&output, value);
+    return value;
+  };
+  auto& input_pos = tensor("input_pos", kLiteRtElementTypeInt32, {kPositions});
+  graph.Inputs().push_back(&input_pos);
+  auto& pos_float =
+      tensor("pos_float", kLiteRtElementTypeFloat32, {kPositions});
+  op(kLiteRtOpCodeTflCast, {&input_pos}, pos_float);
+  auto& pos_column =
+      tensor("pos_column", kLiteRtElementTypeFloat32, {kPositions, 1});
+  op(kLiteRtOpCodeTflReshape, {&pos_float}, pos_column);
+  auto& frequencies =
+      tensor("frequencies", kLiteRtElementTypeFloat32, {1, kFrequencies});
+  SetWeightsFromUnownedBuffer(
+      frequencies.Weights(),
+      litert::BufferRef<uint8_t>(
+          reinterpret_cast<const uint8_t*>(inverse_frequencies.data()),
+          sizeof(inverse_frequencies)));
+  auto& angles =
+      tensor("angles", kLiteRtElementTypeFloat32, {kPositions, kFrequencies});
+  auto& mul = op(kLiteRtOpCodeTflMul, {&pos_column, &frequencies}, angles);
+  tflite::BuiltinOptionsUnion mul_options;
+  mul_options.Set(tflite::MulOptionsT{});
+  litert::internal::SetTflOptions(mul, std::move(mul_options));
+  auto& cos =
+      tensor("cos", kLiteRtElementTypeFloat32, {kPositions, kFrequencies});
+  op(kLiteRtOpCodeTflCos, {&angles}, cos);
+  graph.Outputs().push_back(&cos);
+  // A cache offset: [0, position] cast back to integers.
+  auto& zero_tensor = tensor("zero", kLiteRtElementTypeFloat32, {1});
+  SetWeightsFromUnownedBuffer(
+      zero_tensor.Weights(),
+      litert::BufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(&zero),
+                                 sizeof(zero)));
+  auto& offsets_float =
+      tensor("offsets_float", kLiteRtElementTypeFloat32, {1 + kPositions});
+  auto& concat = op(kLiteRtOpCodeTflConcatenation, {&zero_tensor, &pos_float},
+                    offsets_float);
+  tflite::ConcatenationOptionsT concatenation;
+  concatenation.axis = 0;
+  tflite::BuiltinOptionsUnion concat_options;
+  concat_options.Set(std::move(concatenation));
+  litert::internal::SetTflOptions(concat, std::move(concat_options));
+  auto& offsets = tensor("offsets", kLiteRtElementTypeInt32, {1 + kPositions});
+  op(kLiteRtOpCodeTflCast, {&offsets_float}, offsets);
+  graph.Outputs().push_back(&offsets);
+
+  const auto* compiler_context = LrtGetCompilerContext();
+  auto built = litert::nvidia::BuildTensorRtEngine(
+      litert::compiler::Subgraph(compiler_context, &graph));
+  ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+
+  litert::nvidia::TensorRtLogger logger;
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(runtime->deserializeCudaEngine(
+      built->engine.data(), built->engine.size()));
+  ASSERT_NE(engine, nullptr);
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  void* device_positions = nullptr;
+  void* device_cos = nullptr;
+  void* device_offsets = nullptr;
+  ASSERT_EQ(cudaMalloc(&device_positions, sizeof(positions)), cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&device_cos, kPositions * kFrequencies * sizeof(float)),
+            cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&device_offsets, (1 + kPositions) * sizeof(int32_t)),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(device_positions, positions.data(), sizeof(positions),
+                       cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_TRUE(context->setTensorAddress(built->input_names[0].c_str(),
+                                        device_positions));
+  ASSERT_TRUE(
+      context->setTensorAddress(built->output_names[0].c_str(), device_cos));
+  ASSERT_TRUE(context->setTensorAddress(built->output_names[1].c_str(),
+                                        device_offsets));
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  ASSERT_TRUE(context->enqueueV3(stream));
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  std::array<float, kPositions * kFrequencies> actual_cos{};
+  std::array<int32_t, 1 + kPositions> actual_offsets{};
+  ASSERT_EQ(cudaMemcpy(actual_cos.data(), device_cos, sizeof(actual_cos),
+                       cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(actual_offsets.data(), device_offsets,
+                       sizeof(actual_offsets), cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  EXPECT_EQ(actual_offsets[0], 0);
+  for (int32_t p = 0; p < kPositions; ++p) {
+    EXPECT_EQ(actual_offsets[1 + p], positions[p]) << "p=" << p;
+    for (int32_t f = 0; f < kFrequencies; ++f) {
+      // The cosine itself is narrowed to BF16: about 3 significant digits.
+      const double expected =
+          std::cos(static_cast<double>(positions[p]) * inverse_frequencies[f]);
+      EXPECT_NEAR(actual_cos[p * kFrequencies + f], expected, 0.01)
+          << "position=" << positions[p] << " f=" << f;
+    }
+  }
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_offsets), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_cos), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_positions), cudaSuccess);
 }

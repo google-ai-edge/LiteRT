@@ -16,6 +16,11 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+// Lint prefers absl over <chrono>, but we need a steady monotonic clock that
+// measures elapsed real time unaffected by wall-clock adjustments and ignoring
+// periods when the device is suspended, which absl does not provide.
+#include <chrono>  // NOLINT(build/c++11)
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
@@ -30,6 +35,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/options/litert_cpu_options.h"
@@ -41,7 +47,6 @@
 #endif  // !defined(LITERT_WINDOWS_OS)
 
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
-#include "absl/status/status.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/core/filesystem.h"
@@ -50,11 +55,9 @@
 #include <android/hardware_buffer.h>
 #endif
 
-#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator.h"
@@ -85,6 +88,7 @@
 #include "litert/core/util/perfetto_profiling.h"
 #include "tflite/model_builder.h"
 #if !defined(LITERT_DISABLE_NPU)
+#include "litert/cc/internal/litert_dispatch_delegate_vendor_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/cache/compilation_cache.h"
 #include "litert/core/model/model_serialize.h"
@@ -99,13 +103,17 @@
 #include "litert/runtime/litert_cpu_options.h"
 #endif  // !defined(LITERT_DISABLE_CPU)
 #include "litert/runtime/litert_runtime_options.h"
+#if !defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/magic_number_utils.h"
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 #include "weight_loader/external_weight_loader_litert.h"
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 #include "tflite/converter/allocation.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/core/api/profiler.h"
@@ -119,6 +127,7 @@
 
 #if defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/stub_op_resolver.h"
+#include "litert/tflite_support/op_resolver/selected_ops_registry.h"
 #endif  // LITERT_NO_BUILTIN_OPS
 
 using litert::Error;
@@ -228,11 +237,10 @@ Expected<void> ValidateSchedulingInfo(
       !IsValidSchedulingPriority(scheduling_info.job_priority)) {
     return Unexpected(
         kLiteRtStatusErrorInvalidArgument,
-        absl::StrFormat(
-            "Scheduling info job_priority=%d is out of range [%d, %d]",
-            scheduling_info.job_priority,
-            kLiteRtSchedulingInfoJobPriorityHighest,
-            kLiteRtSchedulingInfoJobPriorityLowest));
+        absl::StrCat(
+            "Scheduling info job_priority=", scheduling_info.job_priority,
+            " is out of range [", kLiteRtSchedulingInfoJobPriorityHighest, ", ",
+            kLiteRtSchedulingInfoJobPriorityLowest, "]"));
   }
   return {};
 }
@@ -283,7 +291,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Runtime Initialization");
   int num_threads = 1;
   [[maybe_unused]] bool use_builtin_or_reference_cpu_backend = false;
-  bool use_reference_cpu_kernels = false;
+  [[maybe_unused]] bool use_reference_cpu_kernels = false;
 #if !defined(LITERT_DISABLE_CPU)
   LiteRtCpuOptionsT cpu_options;
   if (jit_compilation_options &&
@@ -305,36 +313,85 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
             cpu_options.kernel_mode == kLiteRtCpuKernelModeReference;
         use_reference_cpu_kernels =
             cpu_options.kernel_mode == kLiteRtCpuKernelModeReference;
+        if (cpu_options.enable_ynnpack &&
+            !use_builtin_or_reference_cpu_backend) {
+          bool ynnpack_registered = false;
+          for (const auto& accelerator : env->GetAcceleratorRegistry()) {
+            const char* name = nullptr;
+            if (accelerator->GetName(accelerator.get(), &name) ==
+                    kLiteRtStatusOk &&
+                name != nullptr &&
+                absl::string_view(name) == "YNNPackAccelerator") {
+              ynnpack_registered = true;
+              break;
+            }
+          }
+          if (!ynnpack_registered) {
+            return Unexpected(kLiteRtStatusErrorUnsupported,
+                              "enable_ynnpack was requested, but the YNNPACK "
+                              "accelerator is not registered or linked.");
+          }
+        }
       }
     }
   }
 #endif  // !defined(LITERT_DISABLE_CPU)
 
-#ifdef LITERT_NO_BUILTIN_OPS
-  if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-      use_builtin_or_reference_cpu_backend) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                      "Builtin and reference CPU kernel modes require builtin "
-                      "kernels.");
-  }
-  // Use StubOpResolver which provides minimal stub implementations for all
-  // builtin ops. These stubs allow the model to pass validation, but the
-  // actual operations will be handled by LiteRT's accelerator system
-  // (NPU > GPU > CPU) through their respective delegates.
-  litert::internal::StubOpResolver resolver_storage;
-  tflite::MutableOpResolver* resolver = &resolver_storage;
-#else
+  const bool has_user_op_resolver =
+      jit_compilation_options &&
+      jit_compilation_options->op_resolver != nullptr;
   std::unique_ptr<tflite::MutableOpResolver> resolver_storage;
-  if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-      use_reference_cpu_kernels) {
-    resolver_storage =
-        std::make_unique<tflite::ops::builtin::BuiltinRefOpResolver>();
-  } else {
-    resolver_storage = std::make_unique<
-        tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates>();
-  }
-  tflite::MutableOpResolver* resolver = resolver_storage.get();
+  tflite::MutableOpResolver* resolver = nullptr;
+  if (has_user_op_resolver) {
+#ifdef LITERT_NO_BUILTIN_OPS
+    if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+        use_reference_cpu_kernels) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Reference CPU kernel mode requires reference "
+                        "kernels.");
+    }
 #endif  // LITERT_NO_BUILTIN_OPS
+    resolver_storage = std::make_unique<tflite::MutableOpResolver>(
+        *jit_compilation_options->op_resolver);
+    resolver = resolver_storage.get();
+  } else {
+#ifdef LITERT_NO_BUILTIN_OPS
+    if (litert::tflite_support::HasSelectedOpsCallback()) {
+      if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+          use_reference_cpu_kernels) {
+        return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                          "Reference CPU kernel mode requires reference "
+                          "kernels.");
+      }
+      resolver_storage = std::make_unique<tflite::MutableOpResolver>();
+      litert::tflite_support::ApplySelectedOpsCallbacks(resolver_storage.get());
+      resolver = resolver_storage.get();
+    } else {
+      if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+          use_builtin_or_reference_cpu_backend) {
+        return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                          "Builtin and reference CPU kernel modes require "
+                          "builtin kernels.");
+      }
+      // Use StubOpResolver which provides minimal stub implementations for all
+      // builtin ops. These stubs allow the model to pass validation, but the
+      // actual operations will be handled by LiteRT's accelerator system
+      // (NPU > GPU > CPU) through their respective delegates.
+      resolver_storage = std::make_unique<litert::internal::StubOpResolver>();
+      resolver = resolver_storage.get();
+    }
+#else
+    if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+        use_reference_cpu_kernels) {
+      resolver_storage =
+          std::make_unique<tflite::ops::builtin::BuiltinRefOpResolver>();
+    } else {
+      resolver_storage = std::make_unique<
+          tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates>();
+    }
+    resolver = resolver_storage.get();
+#endif  // LITERT_NO_BUILTIN_OPS
+  }
 
   // Apply custom ops.
   if (jit_compilation_options) {
@@ -468,9 +525,9 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
                     binding.tensor_name.c_str());
         return Unexpected(
             kLiteRtStatusErrorInvalidArgument,
-            absl::StrFormat("Failed to apply external tensor binding for "
-                            "signature %s, tensor %s.",
-                            binding.signature_name, binding.tensor_name));
+            absl::StrCat(
+                "Failed to apply external tensor binding for signature ",
+                binding.signature_name, ", tensor ", binding.tensor_name, "."));
       }
     }
   }
@@ -486,6 +543,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     signature_keys_.push_back(default_signature_key);
   }
   LITERT_RETURN_IF_ERROR(InitializeActiveSubgraphs(jit_compilation_options));
+  MarkSignatureIoTensorsNonCpu();
 
   signature_needs_allocation_.clear();
 
@@ -510,6 +568,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   interp_->SetExternalContext(kTfLiteLiteRtBufferContext,
                               buffer_context_.get());
 
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
   // Check if the external weights is provided by the client.
   if (jit_compilation_options == nullptr) {
     weight_loader_owned_ = weight_loader::CreateLiteRtWeightLoader(
@@ -539,20 +598,21 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     // TODO(b/456318365): Handle weight access request to support multiple
     // backends.
     request.opencl = false;
-    absl::Status prepare_status = weight_loader_->PrepareAccess(request, env);
+    LiteRtStatus prepare_status = weight_loader_->PrepareAccess(request, env);
 #ifdef __EMSCRIPTEN__
-    if (!prepare_status.ok()) {
+    if (prepare_status != kLiteRtStatusOk) {
       LITERT_LOG(LITERT_WARNING,
                  "External weight loader: failed to prepare CPU access: %s. "
                  "Continuing as weights may be provided via other means (e.g. "
                  "streaming).",
-                 std::string(prepare_status.message()).c_str());
+                 LiteRtGetStatusString(prepare_status));
     }
 #else
-    if (!prepare_status.ok()) {
+    if (prepare_status != kLiteRtStatusOk) {
       weight_loader_ = nullptr;
-      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                std::string(prepare_status.message()));
+      return litert::Unexpected(prepare_status,
+                                "External weight loader: failed to prepare CPU "
+                                "access to external weights.");
     }
 #endif
   }
@@ -568,17 +628,91 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
              "delegates",
              weight_infos.size());
   for (const auto& info : weight_infos) {
-    if (info.packing.empty()) {
+    if (info.packing == nullptr || info.packing[0] == '\0') {
       LITERT_LOG(LITERT_DEBUG,
                  "  Weight tensor: external_buffer_id=%u, packing=<none>",
                  info.external_buffer_id);
     } else {
       LITERT_LOG(LITERT_DEBUG,
-                 "  Weight tensor: external_buffer_id=%u, packing=%.*s",
-                 info.external_buffer_id, static_cast<int>(info.packing.size()),
-                 info.packing.data());
+                 "  Weight tensor: external_buffer_id=%u, packing=%s",
+                 info.external_buffer_id, info.packing);
     }
   }
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
+  return {};
+}
+
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
+Expected<void> LiteRtCompiledModelT::ResolveExternalWeightsForCompilation(
+    LiteRtModelT& model, LiteRtOptions jit_compilation_options,
+    LiteRtEnvironmentT& env) {
+  auto* buffers = model.Buffers();
+  std::vector<LiteRtModelT::BufferId> external_ids;
+  for (LiteRtModelT::BufferId id = 1; id < buffers->NumBuffers(); ++id) {
+    auto context = buffers->GetContext(id);
+    if (context && context->get().external.has_value()) {
+      external_ids.push_back(id);
+    }
+  }
+  if (external_ids.empty()) {
+    return {};
+  }
+
+  const auto& tfl_wrapper = litert::internal::GetTflFlatbuffer(model);
+  if (tfl_wrapper.PackedModel() == nullptr) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "External weights need the model's original flatbuffer");
+  }
+  if (jit_compilation_options->weight_loader != nullptr) {
+    weight_loader_ = jit_compilation_options->weight_loader;
+  } else {
+    weight_loader_owned_ = weight_loader::CreateLiteRtWeightLoader(
+        LrtGetRuntimeContext(), tfl_wrapper.PackedModel(), model_directory_,
+        std::move(jit_compilation_options->scoped_weight_source),
+        static_cast<const weight_loader::WeightInMemoryMap*>(
+            jit_compilation_options->weight_in_memory_map));
+    weight_loader_ = weight_loader_owned_.get();
+  }
+  weight_loader::WeightAccessRequest request;
+  request.cpu = true;
+  request.opencl = false;
+  if (LiteRtStatus status = weight_loader_->PrepareAccess(request, &env);
+      status != kLiteRtStatusOk) {
+    return litert::Unexpected(
+        status,
+        "External weight loader: failed to map the external weights for "
+        "compilation");
+  }
+
+  for (const auto id : external_ids) {
+    auto context = buffers->GetContext(id);
+    const auto& external = context->get().external;
+    const weight_loader::WeightAccess* access =
+        weight_loader_->GetExternalWeightByBuffer(external->id);
+    LiteRtTensorBuffer host_buffer =
+        access != nullptr ? access->GetHostBuffer() : nullptr;
+    void* host_memory = nullptr;
+    if (host_buffer == nullptr ||
+        LiteRtGetTensorBufferHostMemory(host_buffer, &host_memory) !=
+            kLiteRtStatusOk ||
+        host_memory == nullptr) {
+      return litert::Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrCat("External weight loader: no host mapping for external "
+                       "buffer id ",
+                       external->id));
+    }
+    LITERT_RETURN_IF_ERROR(buffers->SetNonOwnedBuffer(
+        id, litert::BufferRef<uint8_t>(host_memory, external->length)));
+  }
+  // The runtime initialization keeps using this loader: the serialized model
+  // refers to the same external buffer ids.
+  jit_compilation_options->weight_loader = weight_loader_;
+  LITERT_LOG(LITERT_INFO,
+             "External weight loader: %zu external constants mapped for "
+             "compilation",
+             external_ids.size());
   return {};
 }
 
@@ -600,18 +734,16 @@ Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
       if (!weight_access) {
         return litert::Unexpected(
             kLiteRtStatusErrorRuntimeFailure,
-            absl::StrFormat(
-                "Failed to get external weight for buffer id %u (tensor %zu)",
-                external_buffer_id, tensor_index));
+            absl::StrCat("Failed to get external weight for buffer id ",
+                         external_buffer_id, " (tensor ", tensor_index, ")"));
       }
 
       LiteRtTensorBuffer host_buffer = weight_access->GetHostBuffer();
       if (!host_buffer) {
         return litert::Unexpected(
             kLiteRtStatusErrorRuntimeFailure,
-            absl::StrFormat(
-                "Host tensor buffer is null for buffer id %u (tensor %zu)",
-                external_buffer_id, tensor_index));
+            absl::StrCat("Host tensor buffer is null for buffer id ",
+                         external_buffer_id, " (tensor ", tensor_index, ")"));
       }
 
       void* host_memory_addr = nullptr;
@@ -619,17 +751,16 @@ Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
           kLiteRtStatusOk) {
         return litert::Unexpected(
             kLiteRtStatusErrorRuntimeFailure,
-            absl::StrFormat(
-                "Failed to get host memory for buffer id %u (tensor %zu)",
-                external_buffer_id, tensor_index));
+            absl::StrCat("Failed to get host memory for buffer id ",
+                         external_buffer_id, " (tensor ", tensor_index, ")"));
       }
 
       TfLiteTensor* tensor = subgraph->tensor(tensor_index);
       if (!tensor) {
         return litert::Unexpected(
             kLiteRtStatusErrorRuntimeFailure,
-            absl::StrFormat("Tensor %zu not found in subgraph %d", tensor_index,
-                            subgraph_idx));
+            absl::StrCat("Tensor ", tensor_index, " not found in subgraph ",
+                         subgraph_idx));
       }
 
       // Set the tensor data to point to the external weight buffer.
@@ -649,6 +780,7 @@ Expected<void> LiteRtCompiledModelT::RestoreExternalWeightsForCpu() {
   }
   return {};
 }
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 
 namespace {
 
@@ -778,8 +910,10 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
     LiteRtOptions options, LiteRtEnvironmentT& env) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Graph Loading");
+#if !defined(LITERT_NO_BUILTIN_OPS)
   LITERT_RETURN_IF_ERROR(
       litert::internal::ReplaceMagicNumbersIfAny(env, model));
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   if (auto source_path = model.SourcePath()) {
     model_directory_ = ExtractDirectory(*source_path);
@@ -787,18 +921,36 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     model_directory_.reset();
   }
 
-  // If hardware acceleration is requested then apply the plugins to the model
-  // and initialize the compiled model from the translated LiteRt model.
-  if (hw_accelerators != kLiteRtHwAcceleratorNone) {
+  // A compiler plugin is applied only if its supported hardware overlaps the
+  // requested accelerators (see LiteRtGetCompilerPluginSupportedHardware): NPU
+  // for all plugins, and GPU for some (e.g. NVIDIA). A CPU-only request can
+  // never use one, so it skips loading the plugins, which would otherwise cost
+  // initialization time and log errors when a plugin's vendor SDK is not
+  // installed.
+  const bool maybe_using_compiler_plugin =
+      (hw_accelerators & (kLiteRtHwAcceleratorNpu | kLiteRtHwAcceleratorGpu)) !=
+      0;
+
+  // If a compiler plugin may be used then apply the plugins to the model and
+  // initialize the compiled model from the translated LiteRt model.
+  if (maybe_using_compiler_plugin) {
 #if !defined(LITERT_DISABLE_NPU)
     // Check if the model is pre-compiled by looking for LiteRt build stamp.
     // Fall through to the next step if it's pre-compiled, else try to apply
     // plugins to the model.
     if (!IsCompiled(model)) {
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
+      if (hw_accelerators & kLiteRtHwAcceleratorNpu) {
+        LITERT_RETURN_IF_ERROR(
+            ResolveExternalWeightsForCompilation(model, options, env));
+      }
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
       Expected<bool> maybe_initialized_model =
           ApplyPluginsWithCaching(model, hw_accelerators, *options, env);
-      if (maybe_initialized_model.HasValue() &&
-          maybe_initialized_model.Value() == true) {
+      if (!maybe_initialized_model.HasValue()) {
+        return maybe_initialized_model.Error();
+      }
+      if (maybe_initialized_model.Value() == true) {
         // The compiled model's flatbuffer has initialized by applying the
         // plugins.
         return {};
@@ -946,9 +1098,33 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
       LITERT_RETURN_IF_ERROR(
           dispatch_options.SetAllocBaseSize(compiled_model->fb_model_size_));
     }
+#if !defined(LITERT_DISABLE_NPU)
+    // Only needed when delegating to NPU.
+    LITERT_ASSIGN_OR_RETURN(
+        litert::internal::DispatchDelegateVendorOptions vendor_options,
+        litert::internal::BuildDispatchDelegateVendorOptions(*model));
+    if (!vendor_options.FunctionMappings().empty()) {
+      const char* identifier = nullptr;
+      void* payload = nullptr;
+      void (*payload_deleter)(void*) = nullptr;
+      LITERT_RETURN_IF_ERROR(vendor_options.GetOpaqueOptionsData(
+          &identifier, &payload, &payload_deleter));
+      auto cleaner = absl::MakeCleanup([&] {
+        if (payload_deleter != nullptr && payload != nullptr) {
+          payload_deleter(payload);
+        }
+      });
+      LITERT_ASSIGN_OR_RETURN(
+          litert::OpaqueOptions vendor_node,
+          litert::OpaqueOptions::Create(identifier, payload, payload_deleter));
+      std::move(cleaner).Cancel();
+      LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(vendor_node)));
+    }
+#endif  // !defined(LITERT_DISABLE_NPU)
     LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
   }
 
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
   // Load and restore external weights for CPU execution before delegates are
   // applied. This ensures that XNNPack and other CPU delegates can see the
   // weight data.
@@ -967,6 +1143,7 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
   if (should_restore_cpu) {
     LITERT_RETURN_IF_ERROR(compiled_model->RestoreExternalWeightsForCpu());
   }
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 
   const bool npu_requested = hardware_accelerators & kLiteRtHwAcceleratorNpu;
   const bool has_npu_ops = compiled_model->HasNpuOps();
@@ -985,8 +1162,11 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
 
   compiled_model->delegation_metrics_.total_node_count =
       compiled_model->CountTotalNodes();
-  int current_undelegated_nodes =
-      compiled_model->delegation_metrics_.total_node_count;
+  GraphCounts prev_counts = {
+      .undelegated_nodes = compiled_model->delegation_metrics_.total_node_count,
+      .partitions = 0,
+  };
+  int cpu_delegated_node_count = 0;
 
   // Apply accelerators matching the requested hardware support to the
   // model in the order they were registered.
@@ -1017,16 +1197,15 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
       continue;
     }
 
-    LITERT_DEBUG_CODE({
-      const char* accelerator_name = nullptr;
-      if (accelerator->GetName(accelerator.get(), &accelerator_name) !=
-              kLiteRtStatusOk ||
-          !accelerator_name) {
-        LITERT_LOG(LITERT_WARNING, "Failed to get name for accelerator");
-      } else {
-        LITERT_LOG(LITERT_DEBUG, "Apply accelerator %s", accelerator_name);
-      }
-    });
+    const char* accelerator_name = nullptr;
+    if (accelerator->GetName(accelerator.get(), &accelerator_name) !=
+            kLiteRtStatusOk ||
+        !accelerator_name) {
+      accelerator_name = "";
+      LITERT_LOG(LITERT_WARNING, "Failed to get name for accelerator");
+    } else {
+      LITERT_LOG(LITERT_DEBUG, "Apply accelerator %s", accelerator_name);
+    }
 
     {
       LITERT_PERFETTO_TRACE_EVENT("CompiledModel Delegate Graph Conversion");
@@ -1074,24 +1253,22 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
       }
 
       GraphCounts counts = compiled_model->GetGraphCounts();
-      int delegated_ops = current_undelegated_nodes - counts.undelegated_nodes;
-      if (is_npu_accelerator) {
-        compiled_model->delegation_metrics_.npu_delegated_node_count +=
-            delegated_ops;
-        compiled_model->delegation_metrics_.npu_partition_count =
-            counts.npu_partitions;
-      } else if (accelerator_supported_hardware & kLiteRtHwAcceleratorGpu) {
-        compiled_model->delegation_metrics_.gpu_delegated_node_count +=
-            delegated_ops;
-        compiled_model->delegation_metrics_.gpu_partition_count =
-            counts.gpu_partitions;
-      } else if (accelerator_supported_hardware & kLiteRtHwAcceleratorCpu) {
-        compiled_model->delegation_metrics_.cpu_delegated_node_count +=
-            delegated_ops;
-        compiled_model->delegation_metrics_.cpu_partition_count =
-            counts.cpu_partitions;
+      int delegated_ops =
+          prev_counts.undelegated_nodes - counts.undelegated_nodes;
+      int partitions = counts.partitions - prev_counts.partitions;
+      prev_counts = counts;
+
+      if (accelerator_supported_hardware & kLiteRtHwAcceleratorCpu) {
+        cpu_delegated_node_count += delegated_ops;
       }
-      current_undelegated_nodes = counts.undelegated_nodes;
+
+      compiled_model->delegation_metrics_.accelerators.push_back(
+          LiteRtAcceleratorDelegationMetricsT{
+              /*accelerator_name=*/accelerator_name,
+              /*hardware_type=*/accelerator_supported_hardware,
+              /*delegated_node_count=*/delegated_ops,
+              /*partition_count=*/partitions,
+          });
 
       if (compiled_model->profiler_ != nullptr) {
         compiled_model->profiler_->TriggerHook(kLiteRtHookTypeCompilerStop,
@@ -1105,12 +1282,12 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
   }
 
   compiled_model->non_cpu_fully_delegated_ =
-      (compiled_model->delegation_metrics_.cpu_delegated_node_count == 0) &&
-      (current_undelegated_nodes == 0) &&
+      (cpu_delegated_node_count == 0) &&
+      (prev_counts.undelegated_nodes == 0) &&
       (compiled_model->delegation_metrics_.total_node_count > 0);
 
   if (!(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-      current_undelegated_nodes > 0) {
+      prev_counts.undelegated_nodes > 0) {
     return Error(
         kLiteRtStatusErrorCompilation,
         "Some ops are not accelerated. Add kLiteRtHwAcceleratorCpu to the "
@@ -1155,16 +1332,15 @@ Expected<void> LiteRtCompiledModelT::InitializeActiveSubgraphs(
           interp_->GetSubgraphIndexFromSignature(signature_key.c_str());
     }
     if (subgraph_index < 0) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                        absl::StrFormat("Unknown selected signature key: %s.",
-                                        signature_key));
-    }
-    if (subgraph_index >= interp_->subgraphs_size()) {
       return Unexpected(
           kLiteRtStatusErrorInvalidArgument,
-          absl::StrFormat(
-              "Selected signature '%s' references invalid subgraph index %d.",
-              signature_key, subgraph_index));
+          absl::StrCat("Unknown selected signature key: ", signature_key, "."));
+    }
+    if (subgraph_index >= interp_->subgraphs_size()) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        absl::StrCat("Selected signature '", signature_key,
+                                     "' references invalid subgraph index ",
+                                     subgraph_index, "."));
     }
     selected_signature_keys_.insert(signature_key);
     root_subgraph_indices.insert(subgraph_index);
@@ -1190,9 +1366,94 @@ Expected<void> LiteRtCompiledModelT::ValidateSignatureIsActive(
   }
   return Unexpected(
       kLiteRtStatusErrorNotFound,
-      absl::StrFormat("Signature '%s' was not selected when the compiled model "
-                      "was created.",
-                      signature_key));
+      absl::StrCat("Signature '", signature_key,
+                   "' was not selected when the compiled model was created."));
+}
+
+void LiteRtCompiledModelT::MarkSignatureIoTensorsNonCpu() {
+  const bool has_signature_defs = !interp_->signature_keys().empty();
+  for (const std::string* signature_key : signature_keys_) {
+    const int subgraph_index =
+        has_signature_defs
+            ? interp_->GetSubgraphIndexFromSignature(signature_key->c_str())
+            : 0;
+    if (subgraph_index < 0 || subgraph_index >= interp_->subgraphs_size()) {
+      continue;
+    }
+    tflite::Subgraph* subgraph = interp_->subgraph(subgraph_index);
+    for (const std::vector<int>* io :
+         {&subgraph->inputs(), &subgraph->outputs()}) {
+      for (int tensor_index : *io) {
+        // Subgraph::tensor() returns nullptr for kTfLiteOptionalTensor and
+        // out-of-range indices.
+        TfLiteTensor* tensor = subgraph->tensor(tensor_index);
+        if (tensor == nullptr || tensor->type == kTfLiteString) continue;
+        if (tensor->allocation_type == kTfLiteArenaRw ||
+            tensor->allocation_type == kTfLiteArenaRwPersistent) {
+          tensor->allocation_type = kTfLiteNonCpu;
+          tensor->data.data = nullptr;
+        }
+      }
+    }
+  }
+}
+
+Expected<LiteRtTensorBuffer> LiteRtCompiledModelT::GetBufferForUnboundInput(
+    TfLiteTensor* tensor) {
+  if (tensor->type == kTfLiteString || tensor->bytes == 0) return nullptr;
+  LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                          GetTensorIdentifier(*interp_, tensor));
+
+  // Only unbound inputs consumed by CPU nodes require runtime-allocated backing
+  // memory. Accelerator nodes (GPU, NPU) manage their own tensor buffers and
+  // do not require CPU host memory for unbound inputs. Allocating host buffers
+  // for them would unnecessarily allocate and touch large blocks of host RAM
+  // (e.g. LLM weights).
+  if (!cpu_tensors_.contains(tensor_id)) {
+    return nullptr;
+  }
+
+  auto it = unbound_input_buffers_.find(tensor_id);
+  if (it == unbound_input_buffers_.end()) {
+    // Never bound by the runtime: leave tensors that already have backing
+    // memory (external tensor bindings, accelerator buffers) alone.
+    if (tensor->data.raw != nullptr ||
+        buffer_context_->GetTensorBuffer(tensor)) {
+      return nullptr;
+    }
+  } else {
+    // Reuse the existing buffer unless the tensor has been resized since. The
+    // layout must match exactly, otherwise RegisterBuffer() would resize the
+    // tensor back to the buffer's shape.
+    const LiteRtLayout& layout = it->second->tensor_type().layout;
+    absl::Span<const int> tensor_shape;
+    if (tensor->dims != nullptr) {
+      tensor_shape =
+          absl::MakeConstSpan(tensor->dims->data, tensor->dims->size);
+    }
+    if (absl::MakeConstSpan(layout.dimensions, layout.rank) == tensor_shape) {
+      return it->second.get();
+    }
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      const LiteRtRankedTensorType tensor_type,
+      litert::internal::ConvertTensorType(
+          reinterpret_cast<const TfLiteOpaqueTensor*>(tensor)));
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtTensorBufferT::Ptr buffer,
+      LiteRtTensorBufferT::CreateManaged(
+          env_, kLiteRtTensorBufferTypeHostMemory, tensor_type, tensor->bytes));
+  LITERT_ASSIGN_OR_RETURN(void* host_memory, buffer->GetHostBuffer());
+  std::memset(host_memory, 0, tensor->bytes);
+  LITERT_LOG(LITERT_VERBOSE,
+             "Bound zero-filled host buffer to unbound input %s",
+             tensor->name ? tensor->name : "<unnamed>");
+  // Ref-counted ownership: RegisterBuffer() may share it with the buffer
+  // context.
+  LiteRtTensorBufferPtr& slot = unbound_input_buffers_[tensor_id];
+  slot = LiteRtTensorBufferPtr(buffer.release());
+  return slot.get();
 }
 
 bool LiteRtCompiledModelT::HasNpuOps() const {
@@ -1243,18 +1504,10 @@ LiteRtCompiledModelT::GraphCounts LiteRtCompiledModelT::GetGraphCounts() const {
     const auto& nodes_and_registration = subgraph->nodes_and_registration();
     for (int node_index : execution_plan) {
       const TfLiteRegistration& reg = nodes_and_registration[node_index].second;
-      bool is_cpu_delegate =
-          reg.custom_name &&
-          (reg.custom_name == absl::string_view("TfLiteXNNPackDelegate") ||
-           reg.custom_name == absl::string_view("YNNPackDelegate"));
-      if (reg.builtin_code == kTfLiteBuiltinCustom &&
-          litert::internal::kLiteRtDispatchOpCustomName == reg.custom_name) {
-        counts.npu_partitions++;
-      } else if (reg.builtin_code == kTfLiteBuiltinDelegate &&
-                 !is_cpu_delegate) {
-        counts.gpu_partitions++;
-      } else if (is_cpu_delegate) {
-        counts.cpu_partitions++;
+      if (reg.builtin_code == kTfLiteBuiltinDelegate ||
+          (reg.builtin_code == kTfLiteBuiltinCustom &&
+           litert::internal::kLiteRtDispatchOpCustomName == reg.custom_name)) {
+        counts.partitions++;
       } else {
         counts.undelegated_nodes++;
       }
@@ -1391,6 +1644,9 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
       LITERT_LOG(GetLogSeverityForJitCompilationFailure(hw_accelerators),
                  "Failed to apply compiler plugins: %s",
                  jit_result.Error().Message().c_str());
+      if (!maybe_compiled_plugins->empty()) {
+        return jit_result.Error();
+      }
     } else {
       LITERT_LOG(
           LITERT_INFO, "%d compiler plugins were applied successfully: %s",
@@ -1635,9 +1891,8 @@ Expected<void> LiteRtCompiledModelT::GetOutputTensorShapes(
   if (output_layouts.size() != output_names.size()) {
     return Unexpected(
         kLiteRtStatusErrorInvalidArgument,
-        absl::StrFormat("Output layout size is incorrect, expected "
-                        "%d but got %d",
-                        output_names.size(), output_layouts.size()));
+        absl::StrCat("Output layout size is incorrect, expected ",
+                     output_names.size(), " but got ", output_layouts.size()));
   }
   for (int i = 0; i < output_names.size(); ++i) {
     const TfLiteIntArray* dims = runner->output_tensor(output_names[i])->dims;
@@ -1729,6 +1984,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
   }
 
   bool buffer_requires_cpu_sync = false;
+  bool registered_in_buffer_context = false;
 
   Expected<LiteRtTensorBufferRequirementsConst> requirements =
       buffer_context_->GetBufferRequirements(tensor);
@@ -1746,15 +2002,16 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
           return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                             "Failed to register tensor buffer");
         }
+        registered_in_buffer_context = true;
+        LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                                GetTensorIdentifier(*interp_, tensor));
+        user_registered_buffers_.insert(tensor_id);
 
         // A host buffer shared with CPU nodes needs a CPU allocation even
         // when it is also registered with an accelerator backend.
-        if (buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory) {
-          LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
-                                  GetTensorIdentifier(*interp_, tensor));
-          if (cpu_tensors_.contains(tensor_id)) {
-            break;
-          }
+        if (buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory &&
+            cpu_tensors_.contains(tensor_id)) {
+          break;
         }
 
         // Mark the tensor as non-CPU to avoid TFLite from allocating it.
@@ -1775,6 +2032,16 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
   }
 
   if (buffer_requires_cpu_sync) {
+    // A host buffer shared with CPU nodes is registered with the backend above
+    // and still needs CPU sync, so only unregister a stale buffer that was
+    // registered by an earlier RegisterBuffer() call for this tensor.
+    if (!registered_in_buffer_context) {
+      LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                              GetTensorIdentifier(*interp_, tensor));
+      if (user_registered_buffers_.erase(tensor_id) > 0) {
+        buffer_context_->UnregisterTensorBuffer(tensor);
+      }
+    }
     // When backend requires CPU buffer.
     bool buffer_is_cpu_compatible =
         buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory ||
@@ -1827,9 +2094,8 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
                 LiteRtLockTensorBuffer(buffer, &host_mem_addr, lock_mode);
             status != kLiteRtStatusOk) {
           return Unexpected(
-              status,
-              absl::StrFormat("Failed to lock the tensor buffer: %s",
-                              tensor->name ? tensor->name : "<unnamed>"));
+              status, absl::StrCat("Failed to lock the tensor buffer: ",
+                                   tensor->name ? tensor->name : "<unnamed>"));
         }
         locked_buffers[buffer] = host_mem_addr;
       }
@@ -1922,9 +2188,8 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
               LiteRtLockTensorBuffer(buffer, &host_mem_addr, lock_mode);
           status != kLiteRtStatusOk) {
         return Unexpected(
-            status,
-            absl::StrFormat("Failed to lock the tensor buffer: %s",
-                            tensor->name ? tensor->name : "<unnamed>"));
+            status, absl::StrCat("Failed to lock the tensor buffer: ",
+                                 tensor->name ? tensor->name : "<unnamed>"));
       }
       locked_buffers[buffer] = host_mem_addr;
     }
@@ -1996,6 +2261,7 @@ Expected<void> LiteRtCompiledModelT::Run(
     const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async,
     LiteRtOptions run_options, const LiteRtSchedulingInfo* scheduling_info) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Inference");
+  last_inference_duration_nanos_.store(-1, std::memory_order_relaxed);
   LITERT_RETURN_IF_ERROR(ValidateSignatureIsActive(signature_key));
 
   uint64_t event_handle = std::numeric_limits<uint64_t>::max();
@@ -2067,10 +2333,6 @@ Expected<void> LiteRtCompiledModelT::Run(
   });
 
   for (int i = 0; i < num_inputs; ++i) {
-    if (input_buffers[i] == nullptr) {
-      continue;
-    }
-
     int tensor_index = -1;
     const char* tensor_name = nullptr;
     TfLiteTensor* input_tensor = nullptr;
@@ -2084,10 +2346,18 @@ Expected<void> LiteRtCompiledModelT::Run(
       input_tensor = runner->input_tensor(tensor_name);
     }
 
-    auto res =
-        RegisterBuffer(runner, input_tensor, tensor_index, tensor_name,
-                       input_buffers[i], /*is_input=*/true, locked_buffers,
-                       constant_outputs, pending_string_output_copies);
+    LiteRtTensorBuffer input_buffer = input_buffers[i];
+    if (input_buffer == nullptr) {
+      // The caller may leave some inputs unbound (e.g. external tensor
+      // bindings). Tensors without backing memory get a runtime-owned buffer.
+      LITERT_ASSIGN_OR_RETURN(input_buffer,
+                              GetBufferForUnboundInput(input_tensor));
+      if (input_buffer == nullptr) continue;
+    }
+
+    auto res = RegisterBuffer(runner, input_tensor, tensor_index, tensor_name,
+                              input_buffer, /*is_input=*/true, locked_buffers,
+                              constant_outputs, pending_string_output_copies);
 
     if (!res) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -2185,6 +2455,7 @@ Expected<void> LiteRtCompiledModelT::Run(
   };
 
   TfLiteStatus invoke_status = kTfLiteOk;
+  const auto inference_start = std::chrono::steady_clock::now();
   {
     LITERT_PERFETTO_TRACE_EVENT("CompiledModel Invoke");
     if (use_interpreter_directly) {
@@ -2199,6 +2470,43 @@ Expected<void> LiteRtCompiledModelT::Run(
     }
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to invoke");
   }
+
+  if (profiler_ && profiler_->IsProfiling()) {
+    profiler_->SetCurrentEventSource(LITERT);
+    event_handle = profiler_->BeginEvent(
+        "LiteRT::Run[Buffer sync]", tflite::Profiler::EventType::DEFAULT, 0, 0);
+  }
+
+  if (async) {
+    // If the caller requested async execution, then set async to true if any
+    // of the output buffers have been assigned a synchronization event.
+    async = false;
+    for (auto& tb : output_buffers) {
+      async |= tb->HasEvent();
+    }
+  } else {
+    // If the caller has not requested async execution, then wait on
+    // synchronization events that have been attached to the outputs.
+    for (auto& tb : output_buffers) {
+      if (tb->HasEvent()) {
+        LITERT_ASSIGN_OR_RETURN(LiteRtEventT * event, tb->GetEvent());
+        LITERT_RETURN_IF_ERROR(event->Wait(/*timeout_in_ms=*/-1));
+      }
+    }
+  }
+
+  const auto inference_end = std::chrono::steady_clock::now();
+  const int64_t inference_duration_nanos =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(inference_end -
+                                                           inference_start)
+          .count();
+
+  if (profiler_ && profiler_->IsProfiling() &&
+      event_handle != std::numeric_limits<uint64_t>::max()) {
+    profiler_->SetCurrentEventSource(LITERT);
+    profiler_->EndEvent(event_handle);
+  }
+
   // Copy data from TfLiteTensor to LiteRtTensorBuffer for pending outputs (e.g.
   // strings)
   LITERT_LOG(LITERT_DEBUG, "Run: pending_string_output_copies size=%d",
@@ -2225,10 +2533,9 @@ Expected<void> LiteRtCompiledModelT::Run(
                tensor_bytes, buffer_size, pending_copy.tensor->data.raw,
                pending_copy.tensor->allocation_type);
     if (buffer_size < tensor_bytes) {
-      return Unexpected(
-          kLiteRtStatusErrorRuntimeFailure,
-          absl::StrFormat("Output buffer too small: allocated %d, required %d",
-                          buffer_size, tensor_bytes));
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        absl::StrCat("Output buffer too small: allocated ",
+                                     buffer_size, ", required ", tensor_bytes));
     }
     std::memcpy(host_mem_addr, pending_copy.tensor->data.raw, tensor_bytes);
   }
@@ -2257,35 +2564,8 @@ Expected<void> LiteRtCompiledModelT::Run(
     }
   }
 
-  if (profiler_ && profiler_->IsProfiling()) {
-    profiler_->SetCurrentEventSource(LITERT);
-    event_handle = profiler_->BeginEvent(
-        "LiteRT::Run[Buffer sync]", tflite::Profiler::EventType::DEFAULT, 0, 0);
-  }
-
-  if (async) {
-    // If the caller requested async execution, then set async to true if any
-    // of the output buffers have been assigned a synchronization event.
-    async = false;
-    for (auto& tb : output_buffers) {
-      async |= tb->HasEvent();
-    }
-  } else {
-    // If the caller has not requested async execution, then wait on
-    // synchronization events that have been attached to the outputs.
-    for (auto& tb : output_buffers) {
-      if (tb->HasEvent()) {
-        LITERT_ASSIGN_OR_RETURN(LiteRtEventT * event, tb->GetEvent());
-        LITERT_RETURN_IF_ERROR(event->Wait(/*timeout_in_ms=*/-1));
-      }
-    }
-  }
-  if (profiler_ && profiler_->IsProfiling() &&
-      event_handle != std::numeric_limits<uint64_t>::max()) {
-    profiler_->SetCurrentEventSource(LITERT);
-    profiler_->EndEvent(event_handle);
-  }
-
+  last_inference_duration_nanos_.store(inference_duration_nanos,
+                                       std::memory_order_relaxed);
   return {};
 }
 
@@ -2433,9 +2713,9 @@ Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
                                   " (current: ", signature_shape[i],
                                   ", new: ", new_shape[i], ")")));
     } else {
-      // Dynamic dim ⇒ new value must be positive.
+      // A dynamic dimension may be zero for an empty tensor.
       LITERT_RETURN_IF_ERROR(
-          new_shape[i] > 0,
+          new_shape[i] >= 0,
           Unexpected(kLiteRtStatusErrorInvalidArgument,
                      absl::StrCat("Cannot auto-resize tensor ",
                                   tensor->name ? tensor->name : "<unnamed>",
@@ -2496,9 +2776,9 @@ Expected<void> LiteRtCompiledModelT::ResizeInputTensorImpl(
                       "New shape must not be empty.");
   }
   for (int dim : dims) {
-    if (dim <= 0) {
+    if (dim < 0) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                        "Dimensions must be positive.");
+                        "Dimensions must be nonnegative.");
     }
   }
 
@@ -2584,7 +2864,12 @@ Expected<bool> LiteRtCompiledModelT::SignatureNeedsAllocation(
     const tflite::SignatureRunner* runner) const {
   auto iter = signature_needs_allocation_.find(runner);
   if (iter == signature_needs_allocation_.end()) {
-    return false;
+    // No record means the signature has never been allocated. Until
+    // AllocateTensors() runs, output tensors still carry the shapes serialized
+    // in the model, which can differ from the runtime shapes (e.g. outputs
+    // declared as rank 0 whose shape is set by an op's Prepare()). Report that
+    // allocation is needed so the first shape query returns runtime shapes.
+    return true;
   }
   return iter->second;
 }

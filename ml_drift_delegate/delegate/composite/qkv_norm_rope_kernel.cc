@@ -72,14 +72,16 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedQkvNormRoPE(
     const ::ml_drift::TensorDescriptor& qkv_desc,
     const ::ml_drift::TensorDescriptor& pos_desc,
     const ::ml_drift::TensorDescriptor& q_weight_desc,
-    const ::ml_drift::TensorDescriptor& k_weight_desc,
+    const ::ml_drift::TensorDescriptor* k_weight_desc,
     const ::ml_drift::TensorDescriptor& q_out_desc,
-    const ::ml_drift::TensorDescriptor& k_out_desc,
-    const ::ml_drift::TensorDescriptor& v_out_desc,
+    const ::ml_drift::TensorDescriptor* k_out_desc,
+    const ::ml_drift::TensorDescriptor* v_out_desc,
     const QkvNormRopeAttributes& attr) {
+  const bool is_q_only = (attr.num_kv_heads == 0 || k_weight_desc == nullptr);
   int total_slices_per_head = (attr.head_dim + 3) / 4;
   int half_slices = total_slices_per_head / 2;
-  int total_heads = attr.num_heads + 2 * attr.num_kv_heads;
+  int total_heads =
+      is_q_only ? attr.num_heads : (attr.num_heads + 2 * attr.num_kv_heads);
 
   FusedQkvNormRoPEOp custom_op(total_heads, half_slices);
   custom_op.work_group_size_ = ::ml_drift::int3(1, 1, half_slices);
@@ -97,10 +99,14 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedQkvNormRoPE(
   custom_op.AddSrcTensor("qkv", qkv_desc);
   custom_op.AddSrcTensor("position", pos_desc);
   custom_op.AddSrcTensor("q_weight", q_weight_desc);
-  custom_op.AddSrcTensor("k_weight", k_weight_desc);
+  if (!is_q_only) {
+    custom_op.AddSrcTensor("k_weight", *k_weight_desc);
+  }
   custom_op.AddDstTensor("q_out", q_out_desc);
-  custom_op.AddDstTensor("k_out", k_out_desc);
-  custom_op.AddDstTensor("v_out", v_out_desc);
+  if (!is_q_only) {
+    custom_op.AddDstTensor("k_out", *k_out_desc);
+    custom_op.AddDstTensor("v_out", *v_out_desc);
+  }
 
   std::string pow_func_name = "pow";
   std::string sin_func_name = "sin";
@@ -116,6 +122,64 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedQkvNormRoPE(
     absl::StrAppend(&reduction_code, "  if (tid < ", offset,
                     ") { shared_sum[tid] += shared_sum[tid + ", offset,
                     "]; }\n  ucl::SyncThreads<WorkGroup, Local>();\n");
+  }
+
+  std::string v_norm_code;
+  if (attr.has_v_norm) {
+    v_norm_code = R"(
+    float inv_std = rsqrt(shared_sum[0] / ucl::Convert<float>(args.head_dim) + args.epsilon);
+    val0 = val0 * inv_std;
+    val1 = val1 * inv_std;
+)";
+  }
+
+  // Reads the token position and computes the RoPE sin/cos for slice `S`.
+  const std::string rope_sin_cos_code =
+      absl::StrCat(R"(
+    float pos_scalar;
+    if (args.position.Channels() > 1) {
+      args.position.ReadPerChannel<float>(pos_scalar, 0, 0, X % args.position.Channels());
+    } else {
+      pos_scalar = args.position.Read<float>(X % args.position.Width(), 0, 0).x;
+    }
+    float4 pos_val = ucl::Init<float4>(pos_scalar);
+    float4 min_timescale = ucl::Init<float4>(args.min_timescale);
+    float4 max_timescale = ucl::Init<float4>(args.max_timescale);
+    float4 timescale = min_timescale * )",
+                   pow_func_name,
+                   R"((max_timescale / min_timescale, fraction);
+    float4 sinusoid_inp = pos_val / timescale;
+    Type sin_val = ucl::Convert<Type>()",
+                   sin_func_name,
+                   R"((sinusoid_inp));
+    Type cos_val = ucl::Convert<Type>()",
+                   cos_func_name, R"((sinusoid_inp));)");
+
+  // RoPE on (val0, val1), producing (out0, out1).
+  std::string rope_code = R"(
+    // RoPE
+    float inv_dst_ch = 1.0f / ucl::Convert<float>(args.head_dim);
+    int4 p = S * 4 + ucl::Init<int4>(0, 1, 2, 3);
+    float4 fraction = 2.0f * ucl::Convert<float4>(p) * inv_dst_ch;
+    Type v0 = ucl::Convert<Type>(val0);
+    Type v1 = ucl::Convert<Type>(val1);)";
+  if (attr.proportion < 1.0f) {
+    // Partial RoPE: only slices with `fraction < proportion` are rotated.
+    // `fraction` grows with `S`, so the branch is uniform across most SIMD
+    // groups, and the unrotated slices skip the position read and the
+    // transcendental math entirely.
+    absl::StrAppend(&rope_code, R"(
+    Type out0 = v0;
+    Type out1 = v1;
+    if (fraction.w < args.proportion) {)",
+                    rope_sin_cos_code, R"(
+      out0 = v0 * cos_val - v1 * sin_val;
+      out1 = v1 * cos_val + v0 * sin_val;
+    })");
+  } else {
+    absl::StrAppend(&rope_code, rope_sin_cos_code, R"(
+    Type out0 = v0 * cos_val - v1 * sin_val;
+    Type out1 = v1 * cos_val + v0 * sin_val;)");
   }
 
   std::string op_code =
@@ -163,37 +227,15 @@ MAIN_FUNCTION($0) {
 
     val0 = val0 * inv_std * w0;
     val1 = val1 * inv_std * w1;
-
-    // RoPE
-    float pos_scalar;
-    if (args.position.Channels() > 1) {
-      args.position.ReadPerChannel<float>(pos_scalar, 0, 0, X % args.position.Channels());
-    } else {
-      pos_scalar = args.position.Read<float>(X % args.position.Width(), 0, 0).x;
-    }
-    float4 pos_val = ucl::Init<float4>(pos_scalar);
-    float inv_dst_ch = 1.0f / ucl::Convert<float>(args.head_dim);
-    int4 p = S * 4 + ucl::Init<int4>(0, 1, 2, 3);
-    float4 fraction = 2.0f * ucl::Convert<float4>(p) * inv_dst_ch;
-
-    float4 min_timescale = ucl::Init<float4>(args.min_timescale);
-    float4 max_timescale = ucl::Init<float4>(args.max_timescale);
-    float4 timescale = min_timescale * )",
-                   pow_func_name, R"((max_timescale / min_timescale, fraction);
-    float4 sinusoid_inp = pos_val / timescale;
-    Type sin_val = ucl::Convert<Type>()",
-                   sin_func_name, R"((sinusoid_inp));
-    Type cos_val = ucl::Convert<Type>()",
-                   cos_func_name, R"((sinusoid_inp));
-
-    Type v0 = ucl::Convert<Type>(val0);
-    Type v1 = ucl::Convert<Type>(val1);
-    Type out0 = v0 * cos_val - v1 * sin_val;
-    Type out1 = v1 * cos_val + v0 * sin_val;
+)",
+                   rope_code, R"(
 
     args.q_out.Write(out0, X, Y, S);
     args.q_out.Write(out1, X, Y, S + args.half_slices);
-  } else if (Y < args.num_heads + args.num_kv_heads) {
+  })");
+
+  if (!is_q_only) {
+    absl::StrAppend(&op_code, R"( else if (Y < args.num_heads + args.num_kv_heads) {
     // === KEY HEAD ===
     int kv_head = Y - args.num_heads;
     float inv_std = rsqrt(shared_sum[0] / ucl::Convert<float>(args.head_dim) + args.epsilon);
@@ -212,46 +254,23 @@ MAIN_FUNCTION($0) {
 
     val0 = val0 * inv_std * w0;
     val1 = val1 * inv_std * w1;
-
-    // RoPE
-    float pos_scalar;
-    if (args.position.Channels() > 1) {
-      args.position.ReadPerChannel<float>(pos_scalar, 0, 0, X % args.position.Channels());
-    } else {
-      pos_scalar = args.position.Read<float>(X % args.position.Width(), 0, 0).x;
-    }
-    float4 pos_val = ucl::Init<float4>(pos_scalar);
-    float inv_dst_ch = 1.0f / ucl::Convert<float>(args.head_dim);
-    int4 p = S * 4 + ucl::Init<int4>(0, 1, 2, 3);
-    float4 fraction = 2.0f * ucl::Convert<float4>(p) * inv_dst_ch;
-
-    float4 min_timescale = ucl::Init<float4>(args.min_timescale);
-    float4 max_timescale = ucl::Init<float4>(args.max_timescale);
-    float4 timescale = min_timescale * )",
-                   pow_func_name, R"((max_timescale / min_timescale, fraction);
-    float4 sinusoid_inp = pos_val / timescale;
-    Type sin_val = ucl::Convert<Type>()",
-                   sin_func_name, R"((sinusoid_inp));
-    Type cos_val = ucl::Convert<Type>()",
-                   cos_func_name, R"((sinusoid_inp));
-
-    Type v0 = ucl::Convert<Type>(val0);
-    Type v1 = ucl::Convert<Type>(val1);
-    Type out0 = v0 * cos_val - v1 * sin_val;
-    Type out1 = v1 * cos_val + v0 * sin_val;
+)",
+                    rope_code, R"(
 
     args.k_out.Write(out0, X, kv_head, S);
     args.k_out.Write(out1, X, kv_head, S + args.half_slices);
   } else {
     // === VALUE HEAD ===
     int kv_head = Y - (args.num_heads + args.num_kv_heads);
+)",
+                    v_norm_code, R"(
     Type out0 = ucl::Convert<Type>(val0);
     Type out1 = ucl::Convert<Type>(val1);
     args.v_out.Write(out0, X, kv_head, S);
     args.v_out.Write(out1, X, kv_head, S + args.half_slices);
+  })");
   }
-}
-)");
+  op_code += "\n}\n";
 
   absl::StrReplaceAll(
       {{"Type", ::ml_drift::ToUclDataType(q_out_desc.GetDataType(), 4)}},
@@ -265,16 +284,15 @@ absl::Status BuildQkvNormRopeGpuGraph(
     const std::vector<uint32_t>& output_ids,
     const QkvNormRopeAttributes& attr,
     ::ml_drift::GpuModelBuilder* model_builder) {
-  if (input_ids.size() != 4) {
-    return absl::InvalidArgumentError("QkvNormRoPE expects 4 inputs.");
-  }
-  if (output_ids.size() != 3) {
-    return absl::InvalidArgumentError("QkvNormRoPE expects 3 outputs.");
+  const bool is_full_qkv = (input_ids.size() == 4 && output_ids.size() == 3);
+  const bool is_q_only = (input_ids.size() == 3 && output_ids.size() == 1);
+  if (!is_full_qkv && !is_q_only) {
+    return absl::InvalidArgumentError(
+        "QkvNormRoPE expects (4 inputs, 3 outputs) or (3 inputs, 1 output).");
   }
   ABSL_ASSIGN_OR_RETURN(auto qkv, model_builder->GetTensor(input_ids[0]));
   ABSL_ASSIGN_OR_RETURN(auto pos, model_builder->GetTensor(input_ids[1]));
   ABSL_ASSIGN_OR_RETURN(auto q_weight, model_builder->GetTensor(input_ids[2]));
-  ABSL_ASSIGN_OR_RETURN(auto k_weight, model_builder->GetTensor(input_ids[3]));
 
   QkvNormRopeAttributes resolved_attr = attr;
   auto q_target = model_builder->GetTensor(output_ids[0]);
@@ -297,6 +315,24 @@ absl::Status BuildQkvNormRopeGpuGraph(
       resolved_attr.head_dim = q_shape.c;
     }
   }
+
+  int T = qkv.tensor_desc.GetBHWCShape().w;
+  auto q_out = model_builder->AddTensor(
+      ::ml_drift::BHWC(1, resolved_attr.num_heads, T, resolved_attr.head_dim),
+      qkv.tensor_desc.GetDataType());
+
+  if (is_q_only) {
+    resolved_attr.num_kv_heads = 0;
+    auto op = CreateFusedQkvNormRoPE(
+        model_builder->gpu_info(), qkv.tensor_desc, pos.tensor_desc,
+        q_weight.tensor_desc, /*k_weight_desc=*/nullptr, q_out.tensor_desc,
+        /*k_out_desc=*/nullptr, /*v_out_desc=*/nullptr, resolved_attr);
+    model_builder->AddGpuOperation({qkv, pos, q_weight}, {q_out}, std::move(op),
+                                   "qkv_norm_rope");
+    return model_builder->UpdateOutputTensor(q_out, output_ids[0]);
+  }
+
+  ABSL_ASSIGN_OR_RETURN(auto k_weight, model_builder->GetTensor(input_ids[3]));
   auto k_target = model_builder->GetTensor(output_ids[1]);
   if (k_target.ok()) {
     const auto k_shape = k_target->tensor_desc.GetBHWCShape();
@@ -311,10 +347,6 @@ absl::Status BuildQkvNormRopeGpuGraph(
     }
   }
 
-  int T = qkv.tensor_desc.GetBHWCShape().w;
-  auto q_out = model_builder->AddTensor(
-      ::ml_drift::BHWC(1, resolved_attr.num_heads, T, resolved_attr.head_dim),
-      qkv.tensor_desc.GetDataType());
   auto k_out =
       model_builder->AddTensor(::ml_drift::BHWC(1, resolved_attr.num_kv_heads,
                                                 T, resolved_attr.head_dim),
@@ -326,8 +358,8 @@ absl::Status BuildQkvNormRopeGpuGraph(
 
   auto op = CreateFusedQkvNormRoPE(
       model_builder->gpu_info(), qkv.tensor_desc, pos.tensor_desc,
-      q_weight.tensor_desc, k_weight.tensor_desc, q_out.tensor_desc,
-      k_out.tensor_desc, v_out.tensor_desc, resolved_attr);
+      q_weight.tensor_desc, &k_weight.tensor_desc, q_out.tensor_desc,
+      &k_out.tensor_desc, &v_out.tensor_desc, resolved_attr);
   model_builder->AddGpuOperation(
       {qkv, pos, q_weight, k_weight}, {q_out, k_out, v_out}, std::move(op),
       "qkv_norm_rope");

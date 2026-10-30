@@ -476,31 +476,6 @@ TEST(OpWrapperTest, GetScalarParam) {
   ASSERT_TRUE(res.has_value());
 }
 
-TEST(OpWrapperTest, IsElementWiseTest) {
-  // TODO: Use the op builders after we refactor them into less-dependency
-  // version.
-  OpWrapper add_op("name", QNN_OP_ELEMENT_WISE_BINARY,
-                   QnnOpCode::kElementWiseBinary);
-  add_op.AddScalarParam<std::uint32_t>(
-      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
-  EXPECT_TRUE(IsElementWiseAdd(add_op));
-
-  OpWrapper mul_op("name", QNN_OP_ELEMENT_WISE_BINARY,
-                   QnnOpCode::kElementWiseBinary);
-  mul_op.AddScalarParam<std::uint32_t>(
-      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MULTIPLY);
-  EXPECT_TRUE(IsElementWiseMultiply(mul_op));
-
-  OpWrapper not_op("name", QNN_OP_ELEMENT_WISE_UNARY,
-                   QnnOpCode::kElementWiseUnary);
-  not_op.AddScalarParam<std::uint32_t>(
-      QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
-      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NOT);
-  EXPECT_TRUE(IsElementWiseNot(not_op));
-}
-
 TEST(OpWrapperTest, ToString) {
   std::vector<uint32_t> dims = {1, 1, 3};
   auto input = CreateTensor(dims, QNN_TENSOR_TYPE_NATIVE);
@@ -519,28 +494,6 @@ TEST(OpWrapperTest, ToString) {
       "\n  Outputs:"
       "\n    [0] name=\"\" dtype=QNN_DATATYPE_UFIXED_POINT_8 dims=[1,1,3] "
       "(no quantization)");
-}
-
-TEST(OpWrapperTest, ToStringElementWiseOperation) {
-  OpWrapper binary{"add", QNN_OP_ELEMENT_WISE_BINARY,
-                   QnnOpCode::kElementWiseBinary};
-  binary.AddScalarParam<std::uint32_t>(
-      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
-  EXPECT_NE(binary.ToString().find("operation=Add"), std::string::npos);
-
-  OpWrapper unary{"not", QNN_OP_ELEMENT_WISE_UNARY,
-                  QnnOpCode::kElementWiseUnary};
-  unary.AddScalarParam<std::uint32_t>(QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
-                                      QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NOT);
-  EXPECT_NE(unary.ToString().find("operation=Not"), std::string::npos);
-
-  OpWrapper neuron{"tanh", QNN_OP_ELEMENT_WISE_NEURON,
-                   QnnOpCode::kElementWiseNeuron};
-  neuron.AddScalarParam<std::uint32_t>(
-      QNN_OP_ELEMENT_WISE_NEURON_PARAM_OPERATION,
-      QNN_OP_ELEMENT_WISE_NEURON_OPERATION_TANH);
-  EXPECT_NE(neuron.ToString().find("operation=Tanh"), std::string::npos);
 }
 
 TEST(OpWrapperTest, ToStringNoOperationSuffix) {

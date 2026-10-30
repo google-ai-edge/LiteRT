@@ -43,7 +43,7 @@ void ConvertTranspose(
   const int* perm_data = tflite::GetTensorData<int32_t>(&perm_tensor);
 
   ::ml_drift::ir::IrOp* transpose_op = ir_model.add_op();
-  transpose_op->name = ToString(::ml_drift::OperationType::TRANSPOSE);
+  transpose_op->name = ToString(::ml_drift::OperationType::kTranspose);
 
   ir_model.AddConsumer(tensor_map[input_id], transpose_op->id);
   ir_model.SetProducer(tensor_map[output_id], transpose_op->id);
@@ -56,25 +56,25 @@ void ConvertTranspose(
   } else {
     ::ml_drift::TransposeAttributes attr;
     std::map<::ml_drift::Axis, int> axis_to_index = {
-        {::ml_drift::Axis::BATCH, 0},
-        {::ml_drift::Axis::HEIGHT, 1},
-        {::ml_drift::Axis::WIDTH, 2},
-        {::ml_drift::Axis::CHANNELS, 3}};
+        {::ml_drift::Axis::kBatch, 0},
+        {::ml_drift::Axis::kHeight, 1},
+        {::ml_drift::Axis::kWidth, 2},
+        {::ml_drift::Axis::kChannels, 3}};
 
     if (num_elements == 4) {
       attr.perm = ::ml_drift::BHWC(perm_data[0], perm_data[1], perm_data[2],
                                    perm_data[3]);
     } else if (num_elements == 3) {
       std::vector<::ml_drift::Axis> index_to_axis = {
-          ::ml_drift::Axis::BATCH, ::ml_drift::Axis::WIDTH,
-          ::ml_drift::Axis::CHANNELS};
+          ::ml_drift::Axis::kBatch, ::ml_drift::Axis::kWidth,
+          ::ml_drift::Axis::kChannels};
       attr.perm.b = axis_to_index[index_to_axis[perm_data[0]]];
       attr.perm.h = 1;
       attr.perm.w = axis_to_index[index_to_axis[perm_data[1]]];
       attr.perm.c = axis_to_index[index_to_axis[perm_data[2]]];
     } else if (num_elements == 2) {
       std::vector<::ml_drift::Axis> index_to_axis = {
-          ::ml_drift::Axis::BATCH, ::ml_drift::Axis::CHANNELS};
+          ::ml_drift::Axis::kBatch, ::ml_drift::Axis::kChannels};
       attr.perm.b = axis_to_index[index_to_axis[perm_data[0]]];
       attr.perm.h = 1;
       attr.perm.w = 2;

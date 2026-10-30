@@ -14,6 +14,7 @@
 
 use crate::bindings::*;
 use crate::call_check_status;
+use crate::compiled_model::LiteRtHwAccelerator;
 use crate::error::{Error, ErrorCause};
 use std::any::{Any, TypeId};
 use std::ffi::CString;
@@ -32,6 +33,7 @@ pub enum OptionTag {
     WebGpuQueue,
     MetalDevice,
     MetalCommandQueue,
+    SystemGpuAcceleratorHandle,
     // TODO(mgubin): Add VulkanEnvironment.
 }
 
@@ -52,6 +54,9 @@ impl OptionTag {
             Self::WebGpuQueue => LiteRtEnvOptionTag_kLiteRtEnvOptionTagWebGpuQueue,
             Self::MetalDevice => LiteRtEnvOptionTag_kLiteRtEnvOptionTagMetalDevice,
             Self::MetalCommandQueue => LiteRtEnvOptionTag_kLiteRtEnvOptionTagMetalCommandQueue,
+            Self::SystemGpuAcceleratorHandle => {
+                LiteRtEnvOptionTag_kLiteRtEnvOptionTagSystemGpuAcceleratorHandle
+            }
         }
     }
 }
@@ -192,6 +197,65 @@ impl Environment {
         );
         Ok(Self { raw_environment: raw_environment_ptr, cstring_storage: builder.cstring_storage })
     }
+
+    /// Returns the list of hardware accelerators available in this environment.
+    pub fn get_available_accelerators(&self) -> Result<Vec<LiteRtHwAccelerator>, Error> {
+        let mut num_accelerators: LiteRtParamIndex = 0;
+        call_check_status!(
+            // SAFETY:
+            // - `self.raw_environment` is a valid, non-null pointer to an initialized
+            //   `LiteRtEnvironment` managed by `Environment` and only freed when `self` is
+            //   dropped.
+            // - `&mut num_accelerators` is a valid, properly aligned, non-null pointer to local
+            //   stack memory with exclusive write permission to receive the accelerator count.
+            unsafe { LiteRtGetNumAccelerators(self.raw_environment, &mut num_accelerators) },
+            ErrorCause::GetNumAccelerators
+        );
+
+        let mut accelerators = Vec::with_capacity(num_accelerators);
+        for i in 0..num_accelerators {
+            let mut accelerator: LiteRtAccelerator = std::ptr::null_mut();
+            call_check_status!(
+                // SAFETY:
+                // - `self.raw_environment` is valid and live for the lifetime of `self`.
+                // - `i` is within `[0, num_accelerators)`, where `num_accelerators` was obtained
+                //   from `LiteRtGetNumAccelerators` above and the environment's accelerator
+                //   registry is immutable during `&self`.
+                // - `&mut accelerator` is a valid, properly aligned, non-null pointer to local
+                //   stack memory with exclusive write permission to receive the unowned
+                //   accelerator handle borrowing from `self.raw_environment` (which does not
+                //   require manual destruction).
+                unsafe { LiteRtGetAccelerator(self.raw_environment, i, &mut accelerator) },
+                ErrorCause::GetAccelerator
+            );
+
+            let mut hardware_support: LiteRtHwAcceleratorSet = 0;
+            call_check_status!(
+                // SAFETY:
+                // - `accelerator` is a valid handle returned by `LiteRtGetAccelerator` (guaranteed
+                //   successful by the preceding `call_check_status!`). It is an unowned reference
+                //   whose lifetime is bound to `self.raw_environment`.
+                // - `&mut hardware_support` is a valid, properly aligned, non-null pointer to
+                //   local stack memory with exclusive write permission to receive the bitfield.
+                unsafe { LiteRtGetAcceleratorHardwareSupport(accelerator, &mut hardware_support) },
+                ErrorCause::GetAcceleratorHardwareSupport
+            );
+
+            if (hardware_support
+                & (LiteRtHwAccelerators_kLiteRtHwAcceleratorCpu as LiteRtHwAcceleratorSet)) != 0 {
+                accelerators.push(LiteRtHwAccelerator::Cpu);
+            }
+            if (hardware_support
+                & (LiteRtHwAccelerators_kLiteRtHwAcceleratorGpu as LiteRtHwAcceleratorSet)) != 0 {
+                accelerators.push(LiteRtHwAccelerator::Gpu);
+            }
+            if (hardware_support
+                & (LiteRtHwAccelerators_kLiteRtHwAcceleratorNpu as LiteRtHwAcceleratorSet)) != 0 {
+                accelerators.push(LiteRtHwAccelerator::Npu);
+            }
+        }
+        Ok(accelerators)
+    }
 }
 
 impl Drop for Environment {
@@ -207,6 +271,7 @@ impl Drop for Environment {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn test_environment_options_builder() {
         let environment = EnvironmentBuilder::new()
@@ -218,7 +283,20 @@ mod tests {
             .expect("Valid add_option")
             .add_option(OptionTag::CompilerPluginLibraryDir, "/tmp/plugin")
             .expect("Valid add_option")
+            .add_option(OptionTag::SystemGpuAcceleratorHandle, true)
+            .expect("Valid add_option")
             .build();
         assert_eq!(environment.is_ok(), true);
+    }
+
+    #[test]
+    fn test_get_available_accelerators() {
+        let environment =
+            EnvironmentBuilder::build_default().expect("Failed to create environment");
+        let accelerators =
+            environment.get_available_accelerators().expect("Failed to get available accelerators");
+        // CPU accelerator is always available by default.
+        assert!(!accelerators.is_empty());
+        assert!(accelerators.contains(&LiteRtHwAccelerator::Cpu));
     }
 }

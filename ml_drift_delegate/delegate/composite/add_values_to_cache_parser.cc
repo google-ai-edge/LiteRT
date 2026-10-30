@@ -29,6 +29,33 @@
 
 namespace litert::ml_drift {
 
+absl::Status ReadAddValuesToCacheLayout(const flexbuffers::Map& attributes,
+                                        AddValuesToCacheAttributes& attr) {
+  const auto read = [&attributes](const char* name, int& value) {
+    if (!attributes[name].IsNull()) {
+      value = attributes[name].AsInt32();
+    }
+  };
+  read("k_cache_ts_idx", attr.k_cache_ts_idx);
+  read("v_cache_ts_idx", attr.v_cache_ts_idx);
+  read("k_update_ts_idx", attr.k_update_ts_idx);
+  read("v_update_ts_idx", attr.v_update_ts_idx);
+  // The caches are bound to packed weight layouts that downstream matmuls
+  // read, so only the historical cache layouts are implemented. Each update
+  // may be [B, H, T, D] (ts_idx 2) or [B, H, D, T] (ts_idx 3).
+  const auto valid_update = [](int ts_idx) {
+    return ts_idx == 2 || ts_idx == 3;
+  };
+  if (attr.k_cache_ts_idx != 2 || attr.v_cache_ts_idx != 3 ||
+      !valid_update(attr.k_update_ts_idx) ||
+      !valid_update(attr.v_update_ts_idx)) {
+    return absl::UnavailableError(
+        "odml.cache_update: unsupported layout (k_cache_ts_idx, "
+        "v_cache_ts_idx, k_update_ts_idx, v_update_ts_idx).");
+  }
+  return absl::OkStatus();
+}
+
 absl::Status AddValuesToCacheOperationParser::IsSupported(
     const TfLiteContext* context, const TfLiteNode* tflite_node,
     const TfLiteRegistration*) {
@@ -63,6 +90,8 @@ absl::Status AddValuesToCacheOperationParser::IsSupported(
       return absl::InvalidArgumentError(
           "odml.cache_update is missing head_size.");
     }
+    AddValuesToCacheAttributes layout;
+    ABSL_RETURN_IF_ERROR(ReadAddValuesToCacheLayout(flexbuffer_map, layout));
   }
 
   return absl::OkStatus();
@@ -86,7 +115,11 @@ void AddValuesToCacheOperationParser::Parse(const TfLiteNode* tflite_node,
   // TODO(b/482104479): allow native int8 tensors in MLDrift. Currently, MLDrift
   // will automatically dequantize int8 tensors to float32 if the tflite tensor
   // is quantized (AffineQuantization present).
-  if (reader->GetOutputTensor(0)->type == kTfLiteInt8) {
+  if (reader->GetOutputTensor(0)->type == kTfLiteInt8 ||
+      reader->GetOutputTensor(0)->type == kTfLiteUInt8 ||
+      reader->GetOutputTensor(0)->type == kTfLiteInt4 ||
+      reader->GetOutputTensor(0)->type == kTfLiteUInt4 ||
+      reader->GetOutputTensor(0)->type == kTfLiteInt2) {
     auto output_1 = graph->FindOutputs(node->id)[0];
     auto output_2 = graph->FindOutputs(node->id)[1];
     // reader->AddOutputs() created new FP32 tflite tensors, and uses those as
@@ -102,9 +135,17 @@ void AddValuesToCacheOperationParser::Parse(const TfLiteNode* tflite_node,
     if (output_2->quant_params.has_value()) {
       output_2->quant_params.reset();
     }
-    // we expect uint8 instead of int8.
-    output_1->tensor.type = ::ml_drift::DataType::UINT8;
-    output_2->tensor.type = ::ml_drift::DataType::UINT8;
+    // For quantized KV cache tensors (Int8, UInt8, Int4, UInt4, Int2), we set
+    // the DataType to UINT8 so MLDrift allocates a plain byte buffer on the GPU
+    // without injecting implicit dequantization ops.
+    // Note: the GPU cache is NOT sub-byte packed. The AddValuesToCache kernel
+    // writes one byte per element (quantized to the int8 range), and the shape
+    // is left unchanged, so the buffer holds exactly one byte per element even
+    // when the TFLite tensor type is Int4/UInt4/Int2.
+    // TODO(b/482104479): Support native sub-byte/intX data types directly in
+    // MLDrift.
+    output_1->tensor.type = ::ml_drift::DataType::kUint8;
+    output_2->tensor.type = ::ml_drift::DataType::kUint8;
   }
 
   const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
@@ -124,6 +165,8 @@ void AddValuesToCacheOperationParser::Parse(const TfLiteNode* tflite_node,
   if (!flexbuffer_map["is_ring_buffer"].IsNull()) {
     attr.is_ring_buffer = flexbuffer_map["is_ring_buffer"].AsBool();
   }
+  // IsSupported() has already rejected unsupported layouts.
+  ReadAddValuesToCacheLayout(flexbuffer_map, attr).IgnoreError();
   node->operation.attributes = std::move(attr);
 }
 

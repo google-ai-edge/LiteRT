@@ -15,7 +15,9 @@ limitations under the License.
 
 #include "tensor/examples/gemma3/gemma3_graph.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -26,6 +28,7 @@ limitations under the License.
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #ifndef GEMMA3_XNNPACK_ONLY
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #endif
@@ -41,6 +44,7 @@ limitations under the License.
 #endif
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
+#include "tensor/examples/ops/transformer/transformer_block.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
 #ifndef GEMMA3_XNNPACK_ONLY
 #include "tensor/examples/ops/transformer/transformer_ops_ml_drift.h"  // IWYU pragma: keep
@@ -108,286 +112,84 @@ Tensor<Mixins...> GetWeight(
       {.name = std::move(name), .type = type, .shape = shape});
 }
 
-
-
-// GELU activation with tanh approximation.
+// Returns the `KvCache` for `layer_idx`, or `std::nullopt` if either cache is
+// uninitialized or zero-length.
 template <class... Mixins>
-Tensor<Mixins...> GeluTanh(const Tensor<Mixins...>& input) {
-  return Gelu(input, /*approximate=*/true);
-}
-
-// Feed-forward network layer.
-template <class... Mixins>
-Tensor<Mixins...> MakeFeedForwardLayer(
-    const Tensor<Mixins...>& input, const std::string& name,
-    const Gemma3Config& config,
-    const absl::flat_hash_map<std::string, Tensor<Mixins...>>& weights) {
-  Tensor gate_proj =
-      GetWeight(weights, absl::StrCat(name, ".gate_proj.weight"), Type::kFP32,
-                {config.hidden_dim, config.emb_dim});
-  Tensor up_proj = GetWeight(weights, absl::StrCat(name, ".up_proj.weight"),
-                             Type::kFP32, {config.hidden_dim, config.emb_dim});
-  Tensor down_proj =
-      GetWeight(weights, absl::StrCat(name, ".down_proj.weight"), Type::kFP32,
-                {config.emb_dim, config.hidden_dim});
-
-  // SwiGLU: out = down_proj(gelu(gate_proj(x)) * up_proj(x)).
-  Tensor up = FullyConnected(input, up_proj);
-  up.SetName(absl::StrCat(name, ".up_proj"));
-  Tensor gate_proj_tensor = FullyConnected(input, gate_proj);
-  gate_proj_tensor.SetName(absl::StrCat(name, ".gate_proj"));
-  Tensor gate = GeluTanh(gate_proj_tensor);
-  gate.SetName(absl::StrCat(name, ".gate_gelu"));
-  Tensor mul_out = Mul(up, gate);
-  mul_out.SetName(absl::StrCat(name, ".mul_out"));
-  Tensor output = FullyConnected(mul_out, down_proj);
-  output.SetName(absl::StrCat(name, ".output"));
-  return output;
+std::optional<KvCache<Mixins...>> LayerKvCache(
+    const std::vector<Tensor<Mixins...>>& key_caches,
+    const std::vector<Tensor<Mixins...>>& value_caches, size_t layer_idx,
+    std::optional<Tensor<Mixins...>> cache_params = std::nullopt,
+    std::optional<int> local_cache_size = std::nullopt) {
+  auto valid = [](const std::vector<Tensor<Mixins...>>& caches, size_t idx) {
+    if (idx >= caches.size() || !caches[idx].GetStatus().ok()) {
+      return false;
+    }
+    const Shape& shape = caches[idx].GetShape();
+    return shape.size() == 4 && shape[2] > 0;
+  };
+  if (!valid(key_caches, layer_idx) || !valid(value_caches, layer_idx)) {
+    return std::nullopt;
+  }
+  return KvCache<Mixins...>{
+      .k = key_caches[layer_idx],
+      .v = value_caches[layer_idx],
+      .params = std::move(cache_params),
+      .local_cache_size = local_cache_size,
+  };
 }
 
 template <class... Mixins>
-Tensor<Mixins...> Gemma3RotaryEmbedding(const Tensor<Mixins...>& x,
-                                        const Tensor<Mixins...>& position_ids,
-                                        const Tensor<Mixins...>& cos,
-                                        const Tensor<Mixins...>& sin,
-                                        float rope_base) {
-  return RoPE(x, cos, sin);
-}
-
-#ifndef GEMMA3_XNNPACK_ONLY
-template <>
-Tensor<MlDriftMixinTag> Gemma3RotaryEmbedding<MlDriftMixinTag>(
-    const Tensor<MlDriftMixinTag>& x,
-    const Tensor<MlDriftMixinTag>& position_ids,
-    const Tensor<MlDriftMixinTag>& cos, const Tensor<MlDriftMixinTag>& sin,
-    float rope_base) {
-  return RotaryEmbedding(x, position_ids, 1.0f, rope_base, 0.0f);
-}
-#endif
-
-// Self-attention layer output structure.
-template <class... Mixins>
-struct SelfAttentionOutput {
-  Tensor<Mixins...> output;
-  Tensor<Mixins...> key_cache;
-  Tensor<Mixins...> value_cache;
-  Tensor<Mixins...> q_rope;
-  Tensor<Mixins...> k_rope;
-  Tensor<Mixins...> v_for_attn;
-  Tensor<Mixins...> attn_weights;
-  Tensor<Mixins...> attn_output_flat;
-  Tensor<Mixins...> q_raw;
-  Tensor<Mixins...> k_raw;
-  Tensor<Mixins...> v_raw;
-  Tensor<Mixins...> k_cache_src;
-  Tensor<Mixins...> v_cache_src;
-  Tensor<Mixins...> scores;
-};
-
-// Grouped Query Attention layer.
-template <class... Mixins>
-SelfAttentionOutput<Mixins...> MakeSelfAttentionLayer(
-    const Tensor<Mixins...>& input, absl::string_view name,
-    const Gemma3Config& config, bool is_sliding_attention,
-    const Tensor<Mixins...>& attention_mask,
-    const Tensor<Mixins...>& position_ids, float rope_base,
-    const Tensor<Mixins...>& cos, const Tensor<Mixins...>& sin,
-    const Tensor<Mixins...>& key_cache, const Tensor<Mixins...>& value_cache,
+TransformerBlockWeights<Mixins...> BuildGemma3BlockWeights(
     const absl::flat_hash_map<std::string, Tensor<Mixins...>>& weights,
-    const Tensor<Mixins...>* cache_params = nullptr) {
-  // Get weight tensors.
-  int qkv_out_dim = config.n_heads * config.head_dim;
-  int kv_out_dim = config.n_kv_groups * config.head_dim;
-
-  Tensor q_proj = GetWeight(weights, absl::StrCat(name, ".q_proj.weight"),
-                            Type::kFP32, {qkv_out_dim, config.emb_dim});
-  Tensor k_proj = GetWeight(weights, absl::StrCat(name, ".k_proj.weight"),
-                            Type::kFP32, {kv_out_dim, config.emb_dim});
-  Tensor v_proj = GetWeight(weights, absl::StrCat(name, ".v_proj.weight"),
-                            Type::kFP32, {kv_out_dim, config.emb_dim});
-  Tensor o_proj = GetWeight(weights, absl::StrCat(name, ".o_proj.weight"),
-                            Type::kFP32, {config.emb_dim, qkv_out_dim});
-
-  // QK normalization weights (Gemma3 specific).
-  Tensor q_norm = GetWeight(weights, absl::StrCat(name, ".q_norm.weight"),
-                            Type::kFP32, {config.head_dim});
-  Tensor k_norm = GetWeight(weights, absl::StrCat(name, ".k_norm.weight"),
-                            Type::kFP32, {config.head_dim});
-
-  // Project Q, K, V.
-  Tensor q = FullyConnected(input, q_proj);
-  q.SetName(absl::StrCat(name, ".q_raw"));
-  Tensor k = FullyConnected(input, k_proj);
-  k.SetName(absl::StrCat(name, ".k_raw"));
-  Tensor v = FullyConnected(input, v_proj);
-  v.SetName(absl::StrCat(name, ".v_raw"));
-
-  Tensor q_raw = q;
-  Tensor k_raw = k;
-  Tensor v_raw = v;
-
-  // Get input shape for reshaping.
-  const Shape& input_shape = input.GetShape();
-  int batch_size = input_shape[0];
-  int seq_len = input_shape[1];
-
-  // Reshape Q: [batch, seq, n_heads * head_dim] -> [batch, seq, n_heads,
-  // head_dim].
-  q = Reshape(q, {batch_size, seq_len, config.n_heads, config.head_dim});
-  q = Transpose(q, {0, 2, 1, 3});  // [batch, n_heads, seq, head_dim]
-
-  // Reshape K, V: [batch, seq, n_kv_groups * head_dim] -> [batch, seq,
-  // n_kv_groups, head_dim].
-  k = Reshape(k, {batch_size, seq_len, config.n_kv_groups, config.head_dim});
-  k = Transpose(k, {0, 2, 1, 3});  // [batch, n_kv_groups, seq, head_dim]
-  v = Reshape(v, {batch_size, seq_len, config.n_kv_groups, config.head_dim});
-  v = Transpose(v, {0, 2, 1, 3});  // [batch, n_kv_groups, seq, head_dim]
-  v.SetName(absl::StrCat(name, ".v_cache_src"));
-
-  // Apply QK normalization (Gemma3 specific).
-  Tensor eps_tensor = Tensor<Mixins...>(
-      {.type = Type::kFP32,
-       .shape = {1},
-       .buffer = config.rms_norm_eps});
-  q = RmsNorm(q, q_norm, eps_tensor);
-  k = RmsNorm(k, k_norm, eps_tensor);
-
-  // Apply rotary positional embedding.
-  q = Gemma3RotaryEmbedding(q, position_ids, cos, sin, rope_base);
-  q.SetName(absl::StrCat(name, ".q_rope"));
-  k = Gemma3RotaryEmbedding(k, position_ids, cos, sin, rope_base);
-  k.SetName(absl::StrCat(name, ".k_rope"));
-
-  Tensor updated_key_cache = k;
-  Tensor updated_value_cache = v;
-
-  Tensor k_for_attn = k;
-  Tensor v_for_attn = v;
-  bool used_mld_cache_update = false;
-
-  constexpr bool kIsMlDrift = (std::is_same_v<MlDriftMixinTag, Mixins> || ...);
-  if constexpr (kIsMlDrift) {
-    if (cache_params != nullptr && key_cache.GetStatus().ok() &&
-        value_cache.GetStatus().ok()) {
-      const Shape& key_cache_shape = key_cache.GetShape();
-      if (key_cache_shape.size() == 4 && key_cache_shape[2] > 0) {
-        const int cache_heads = key_cache_shape[1];
-        const int cache_size = key_cache_shape[2];
-        Tensor<Mixins...> k_cache_src = k;
-        Tensor<Mixins...> v_cache_src = v;
-        if (config.n_kv_groups > 0 && cache_heads % config.n_kv_groups == 0) {
-          std::vector<Tensor<Mixins...>> updated_caches = AddValuesToKvCache(
-              key_cache, value_cache, k_cache_src, v_cache_src, *cache_params,
-              /*num_of_kv_heads=*/cache_heads,
-              /*kv_cache_batch_size=*/batch_size,
-              /*cache_size=*/cache_size,
-              /*head_dimension=*/config.head_dim,
-              /*token_index_offset=*/0, /*active_tokens=*/1);
-          updated_key_cache = updated_caches[0];
-          updated_value_cache = updated_caches[1];
-          // Keep k_for_attn and v_for_attn as k and v (standard layout) for
-          // prefill.
-          used_mld_cache_update = true;
-        }
-      }
-    }
-  }
-
-  if (!used_mld_cache_update) {
-    if (key_cache.GetStatus().ok() && value_cache.GetStatus().ok()) {
-      const auto& key_cache_shape = key_cache.GetShape();
-      if (key_cache_shape.size() == 4 && key_cache_shape[2] > 0) {
-        k_for_attn = Concatenation({key_cache, k}, /*axis=*/2);
-        v_for_attn = Concatenation({value_cache, v}, /*axis=*/2);
-      }
-    }
-  }
-
-  float scale = 1.0f / std::sqrt(config.query_pre_attn_scalar);
-  Tensor scale_tensor = Tensor<Mixins...>(
-      {.type = Type::kFP32,
-       .shape = {1},
-       .buffer = OwningCpuBuffer::Copy<Type::kFP32>({scale})});
-  int kv_heads_for_attn = config.n_kv_groups;
-  const auto& k_for_attn_shape = k_for_attn.GetShape();
-  if (k_for_attn_shape.size() == 4 && k_for_attn_shape[1] > 0) {
-    kv_heads_for_attn = k_for_attn_shape[1];
-  }
-
-  Tensor<Mixins...> scores;
-  Tensor<Mixins...> attn_weights;
-  Tensor<Mixins...> attn_output;
-
-  const auto& q_shape = q.GetShape();
-  bool is_decode = (q_shape.size() == 4 && q_shape[2] == 1);
-
-  Tensor<Mixins...> k_local_out;
-  Tensor<Mixins...> v_local_out;
-
-  if (used_mld_cache_update && is_decode) {
-    Tensor<Mixins...> tiled_k = updated_key_cache;
-    Tensor<Mixins...> tiled_v = updated_value_cache;
-
-    const auto& key_cache_shape = key_cache.GetShape();
-    int cache_size = key_cache_shape[2];
-    int local_cache_size =
-        is_sliding_attention ? config.sliding_window : cache_size;
-
-    auto local_caches = ExtractLocalCache(
-        tiled_k, tiled_v, *cache_params, local_cache_size, kv_heads_for_attn,
-        config.head_dim, local_cache_size, cache_size);
-
-    k_local_out = local_caches.first;
-    v_local_out = local_caches.second;
-
-    Tensor<Mixins...> tiled_k_local = local_caches.first;
-    Tensor<Mixins...> tiled_v_local = local_caches.second;
-    if (kv_heads_for_attn > 0 && config.n_heads % kv_heads_for_attn == 0) {
-      int num_groups = config.n_heads / kv_heads_for_attn;
-      tiled_k_local = RepeatKVHeads(tiled_k_local, num_groups);
-      tiled_v_local = RepeatKVHeads(tiled_v_local, num_groups);
-    }
-
-    scores = BatchMatMul(q, tiled_k_local, /*adj_x=*/false,
-                         /*adj_y=*/true);
-    scores = Mul(scores, scale_tensor);
-    scores = Add(scores, attention_mask);
-    attn_weights = SoftmaxWithRuntimeCheck(scores, *cache_params, std::nullopt,
-                                           std::nullopt);
-    attn_output = BatchMatMul(attn_weights, tiled_v_local,
-                              /*adj_x=*/false, /*adj_y=*/true);
-  } else {
-    if (kv_heads_for_attn > 0 && config.n_heads % kv_heads_for_attn == 0) {
-      int num_groups = config.n_heads / kv_heads_for_attn;
-      k_for_attn = RepeatKVHeads(k_for_attn, num_groups);
-      v_for_attn = RepeatKVHeads(v_for_attn, num_groups);
-    }
-
-    k_local_out = k_for_attn;
-    v_local_out = v_for_attn;
-
-    scores = BatchMatMul(q, k_for_attn, /*adj_x=*/false, /*adj_y=*/true);
-    scores = Mul(scores, scale_tensor);
-    scores = Add(scores, attention_mask);
-    scores.SetName(absl::StrCat(name, ".scores"));
-    attn_weights = Softmax(scores);
-    attn_weights.SetName(absl::StrCat(name, ".attn_weights"));
-    attn_output = BatchMatMul(attn_weights, v_for_attn);
-    attn_output.SetName(absl::StrCat(name, ".attn_output"));
-  }
-
-  // Reshape back: [batch, n_heads, seq, head_dim] -> [batch, seq, n_heads *
-  // head_dim].
-  attn_output = Transpose(attn_output, {0, 2, 1, 3});
-  attn_output = Reshape(attn_output, {batch_size, seq_len, qkv_out_dim});
-
-  // Output projection.
-  Tensor output = FullyConnected(attn_output, o_proj);
-  output.SetName(absl::StrCat(name, ".output"));
-
-  return {output,     updated_key_cache, updated_value_cache, q,     k,
-          v_for_attn, attn_weights,      attn_output,         q_raw, k_raw,
-          v_raw,      k_local_out,       v_local_out,         scores};
+    absl::string_view layer_prefix, const Gemma3Config& config) {
+  const int qkv_out_dim = config.n_heads * config.head_dim;
+  const int kv_out_dim = config.n_kv_groups * config.head_dim;
+  const std::string attn_prefix = absl::StrCat(layer_prefix, ".self_attn.");
+  const std::string mlp_prefix = absl::StrCat(layer_prefix, ".mlp.");
+  return TransformerBlockWeights<Mixins...>{
+      .pre_attn_norm_weight = GetWeight(
+          weights, absl::StrCat(layer_prefix, ".input_layernorm.weight"),
+          Type::kFP32, {config.emb_dim}),
+      .q_weight =
+          GetWeight(weights, absl::StrCat(attn_prefix, "q_proj.weight"),
+                    Type::kFP32, {qkv_out_dim, config.emb_dim}),
+      .k_weight =
+          GetWeight(weights, absl::StrCat(attn_prefix, "k_proj.weight"),
+                    Type::kFP32, {kv_out_dim, config.emb_dim}),
+      .v_weight =
+          GetWeight(weights, absl::StrCat(attn_prefix, "v_proj.weight"),
+                    Type::kFP32, {kv_out_dim, config.emb_dim}),
+      .o_weight =
+          GetWeight(weights, absl::StrCat(attn_prefix, "o_proj.weight"),
+                    Type::kFP32, {config.emb_dim, qkv_out_dim}),
+      .pre_ffn_norm_weight = GetWeight(
+          weights,
+          absl::StrCat(layer_prefix, ".pre_feedforward_layernorm.weight"),
+          Type::kFP32, {config.emb_dim}),
+      .ffn_gate_weight =
+          GetWeight(weights, absl::StrCat(mlp_prefix, "gate_proj.weight"),
+                    Type::kFP32, {config.hidden_dim, config.emb_dim}),
+      .ffn_up_weight =
+          GetWeight(weights, absl::StrCat(mlp_prefix, "up_proj.weight"),
+                    Type::kFP32, {config.hidden_dim, config.emb_dim}),
+      .ffn_down_weight =
+          GetWeight(weights, absl::StrCat(mlp_prefix, "down_proj.weight"),
+                    Type::kFP32, {config.emb_dim, config.hidden_dim}),
+      .q_norm_weight =
+          GetWeight(weights, absl::StrCat(attn_prefix, "q_norm.weight"),
+                    Type::kFP32, {config.head_dim}),
+      .k_norm_weight =
+          GetWeight(weights, absl::StrCat(attn_prefix, "k_norm.weight"),
+                    Type::kFP32, {config.head_dim}),
+      .post_attn_norm_weight = GetWeight(
+          weights,
+          absl::StrCat(layer_prefix, ".post_attention_layernorm.weight"),
+          Type::kFP32, {config.emb_dim}),
+      .post_ffn_norm_weight = GetWeight(
+          weights,
+          absl::StrCat(layer_prefix, ".post_feedforward_layernorm.weight"),
+          Type::kFP32, {config.emb_dim}),
+  };
 }
 
 }  // namespace
@@ -401,7 +203,6 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
     const absl::flat_hash_map<std::string, Tensor<Mixins...>>& weights) {
   // Get input shape (embedded_input is already [batch, seq, emb_dim]).
   const Shape& input_shape = embedded_input.GetShape();
-  // int batch_size = input_shape[0];
   int seq_len = input_shape[1];
   int key_len = seq_len;
 
@@ -453,122 +254,75 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings(
   auto [sliding_cos, sliding_sin] = FillRopeCosSin<Mixins...>(
       seq_len, config.head_dim, config.rope_local_base);
 
-  const Tensor<Mixins...>* cache_params = nullptr;
-  Tensor<Mixins...> prefill_cache_params;
   constexpr bool kIsMlDrift = (std::is_same_v<MlDriftMixinTag, Mixins> || ...);
+  std::optional<Tensor<Mixins...>> cache_params;
   if constexpr (kIsMlDrift) {
-    if (!key_caches.empty() && key_len > 0) {
-      prefill_cache_params = Tensor<Mixins...>(
+    if (LayerKvCache(key_caches, value_caches, 0).has_value()) {
+      cache_params = Tensor<Mixins...>(
           {.name = "cache_params",
            .type = Type::kI32,
            .shape = {3},
            .buffer = OwningCpuBuffer::Copy<Type::kI32>({0, seq_len, seq_len})});
-      cache_params = &prefill_cache_params;
     }
   }
 
+  RopeCosSinParams<Mixins...> global_cos_sin{
+      .cos = global_cos,
+      .sin = global_sin,
+  };
+  RopeCosSinParams<Mixins...> sliding_cos_sin{
+      .cos = sliding_cos,
+      .sin = sliding_sin,
+  };
+  RotaryEmbeddingParams<Mixins...> global_rotary{
+      .position_ids = position_ids,
+      .max_timescale = config.rope_global_base,
+  };
+  RotaryEmbeddingParams<Mixins...> sliding_rotary{
+      .position_ids = position_ids,
+      .max_timescale = config.rope_local_base,
+  };
+
+  const float scale = 1.0f / std::sqrt(config.query_pre_attn_scalar);
   for (int layer_idx = 0; layer_idx < config.n_layers; ++layer_idx) {
     std::string layer_prefix = absl::StrCat("model.layers.", layer_idx);
+    graph::ScopeGuard layer_scope("transformer_layer",
+                                  absl::StrCat("layer_", layer_idx));
+    layer_scope.Attr("layer_idx", layer_idx);
     bool is_sliding = (layer_types[layer_idx] == "sliding_attention");
 
-    // Create attention mask.
     Tensor attention_mask =
         is_sliding ? sliding_attention_mask : global_attention_mask;
-    Tensor cos = is_sliding ? sliding_cos : global_cos;
-    Tensor sin = is_sliding ? sliding_sin : global_sin;
+    TransformerBlockWeights<Mixins...> block_weights =
+        BuildGemma3BlockWeights(weights, layer_prefix, config);
+    std::optional<KvCache<Mixins...>> kv_cache =
+        LayerKvCache(key_caches, value_caches, layer_idx, cache_params);
 
-    // Pre-attention RMS normalization.
-    Tensor input_norm_scale = GetWeight(
-        weights, absl::StrCat(layer_prefix, ".input_layernorm.weight"),
-        Type::kFP32, {config.emb_dim});
-    Tensor normed_input = RmsNorm(hidden_states, input_norm_scale, eps_tensor);
-    normed_input.SetName(absl::StrCat(layer_prefix, ".input_layernorm.output"));
-    if (layer_idx == 0 || layer_idx == 4) {
-      intermediate_tensors[absl::StrCat("layer_", layer_idx, "_normed_input")] =
-          normed_input;
+    absl::StatusOr<TransformerBlockOutputs<Mixins...>> block_output;
+    if constexpr (kIsMlDrift) {
+      block_output = TransformerBlock(
+          hidden_states, block_weights,
+          is_sliding ? sliding_rotary : global_rotary, config.n_heads,
+          config.n_kv_groups, config.head_dim, std::move(kv_cache),
+          attention_mask, config.rms_norm_eps, FFNActivation::kGeluApproximate,
+          scale);
+    } else {
+      block_output = TransformerBlock(
+          hidden_states, block_weights,
+          is_sliding ? sliding_cos_sin : global_cos_sin, config.n_heads,
+          config.n_kv_groups, config.head_dim, std::move(kv_cache),
+          attention_mask, config.rms_norm_eps, FFNActivation::kGeluApproximate,
+          scale);
+    }
+    if (!block_output.ok()) {
+      Tensor<Mixins...> error(block_output.status());
+      return {error, updated_key_caches, updated_value_caches,
+              intermediate_tensors};
     }
 
-    // Self-attention.
-    SelfAttentionOutput attn_output = MakeSelfAttentionLayer(
-        normed_input, absl::StrCat(layer_prefix, ".self_attn"), config,
-        is_sliding, attention_mask, position_ids,
-        is_sliding ? config.rope_local_base : config.rope_global_base, cos, sin,
-        layer_idx < key_caches.size() ? key_caches[layer_idx]
-                                      : Tensor<Mixins...>(),
-        layer_idx < value_caches.size() ? value_caches[layer_idx]
-                                        : Tensor<Mixins...>(),
-        weights, cache_params);
-
-    if (layer_idx == 0 || layer_idx == 4) {
-      intermediate_tensors[absl::StrCat("layer_", layer_idx, "_attn_output")] =
-          attn_output.output;
-      intermediate_tensors[absl::StrCat("layer_", layer_idx, "_q_rope")] =
-          attn_output.q_rope;
-      intermediate_tensors[absl::StrCat("layer_", layer_idx, "_k_rope")] =
-          attn_output.k_rope;
-      if (layer_idx == 0) {
-        intermediate_tensors["layer_0_v_for_attn"] = attn_output.v_for_attn;
-        intermediate_tensors["layer_0_attn_weights"] = attn_output.attn_weights;
-        intermediate_tensors["layer_0_attn_output_flat"] =
-            attn_output.attn_output_flat;
-        intermediate_tensors["layer_0_q_raw"] = attn_output.q_raw;
-        intermediate_tensors["layer_0_k_raw"] = attn_output.k_raw;
-        intermediate_tensors["layer_0_v_raw"] = attn_output.v_raw;
-        intermediate_tensors["layer_0_v_cache_src"] = attn_output.v_cache_src;
-        intermediate_tensors["layer_0_k_cache_src"] = attn_output.k_cache_src;
-        intermediate_tensors["layer_0_scores"] = attn_output.scores;
-      }
-    }
-
-    updated_key_caches.push_back(attn_output.key_cache);
-    updated_value_caches.push_back(attn_output.value_cache);
-
-    // Post-attention RMS normalization.
-    Tensor post_attn_norm_scale = GetWeight(
-        weights, absl::StrCat(layer_prefix, ".post_attention_layernorm.weight"),
-        Type::kFP32, {config.emb_dim});
-    Tensor normed_attn_output =
-        RmsNorm(attn_output.output, post_attn_norm_scale, eps_tensor);
-    normed_attn_output.SetName(
-        absl::StrCat(layer_prefix, ".post_attention_layernorm.output"));
-
-    // Residual connection after attention.
-    hidden_states = Add(hidden_states, normed_attn_output);
-    hidden_states.SetName(
-        absl::StrCat(layer_prefix, ".hidden_states_post_attn"));
-    if (layer_idx == 0 || layer_idx == 4) {
-      intermediate_tensors[absl::StrCat("layer_", layer_idx, "_post_attn")] =
-          hidden_states;
-    }
-
-    // Pre-FFN RMS normalization.
-    Tensor pre_ffn_norm_scale = GetWeight(
-        weights,
-        absl::StrCat(layer_prefix, ".pre_feedforward_layernorm.weight"),
-        Type::kFP32, {config.emb_dim});
-    Tensor normed_for_ffn =
-        RmsNorm(hidden_states, pre_ffn_norm_scale, eps_tensor);
-    normed_for_ffn.SetName(
-        absl::StrCat(layer_prefix, ".pre_feedforward_layernorm.output"));
-
-    // Feed-forward network.
-    Tensor ffn_output = MakeFeedForwardLayer(
-        normed_for_ffn, absl::StrCat(layer_prefix, ".mlp"), config, weights);
-
-    // Post-FFN RMS normalization.
-    Tensor post_ffn_norm_scale = GetWeight(
-        weights,
-        absl::StrCat(layer_prefix, ".post_feedforward_layernorm.weight"),
-        Type::kFP32, {config.emb_dim});
-    Tensor normed_ffn_output =
-        RmsNorm(ffn_output, post_ffn_norm_scale, eps_tensor);
-    normed_ffn_output.SetName(
-        absl::StrCat(layer_prefix, ".post_feedforward_layernorm.output"));
-
-    // Residual connection after FFN.
-    hidden_states = Add(hidden_states, normed_ffn_output);
-    hidden_states.SetName(
-        absl::StrCat(layer_prefix, ".hidden_states_post_ffn"));
+    hidden_states = block_output->output;
+    updated_key_caches.push_back(block_output->updated_kv_cache_k);
+    updated_value_caches.push_back(block_output->updated_kv_cache_v);
     intermediate_tensors[absl::StrCat("layer_", layer_idx, "_post_ffn")] =
         hidden_states;
   }
@@ -660,7 +414,6 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
     const Tensor<Mixins...>* cache_params) {
   // embedded_input is [batch, 1, emb_dim].
   const Shape& input_shape = embedded_input.GetShape();
-  // int batch_size = input_shape[0];
   int seq_len = input_shape[1];
 
   // Scale embeddings by sqrt(emb_dim) - Gemma3 specific.
@@ -707,10 +460,13 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
       key_len = key_cache_shape[2];
     }
   }
+  const int local_window = config.sliding_window > 0
+                               ? std::min(config.sliding_window, key_len)
+                               : key_len;
   if (cache_params != nullptr && key_len > 0) {
     mldrift_sliding_mask =
-        FillAttentionMask(*cache_params, {1, 1, seq_len, config.sliding_window},
-                          /*is_local=*/true, config.sliding_window,
+        FillAttentionMask(*cache_params, {1, 1, seq_len, local_window},
+                          /*is_local=*/false, local_window,
                           /*is_decode=*/true);
     mldrift_global_mask =
         FillAttentionMask(*cache_params, {1, 1, seq_len, key_len},
@@ -720,105 +476,78 @@ Gemma3_Outputs<Mixins...> BuildGemma3_FromEmbeddings_Decode(
     global_mask = &mldrift_global_mask;
   }
 
-  Tensor<Mixins...> position_ids;
   constexpr bool kIsMlDrift = (std::is_same_v<MlDriftMixinTag, Mixins> || ...);
+  Tensor<Mixins...> position_ids = TensorHandle::Invalid();
   if constexpr (kIsMlDrift) {
     if (cache_params != nullptr) {
       position_ids = FillSegmentPos(*cache_params, {1, 1, seq_len, 1}, 0);
     }
   }
 
-  Tensor<Mixins...> cos_global_sliced;
-  Tensor<Mixins...> sin_global_sliced;
-  Tensor<Mixins...> cos_local_sliced;
-  Tensor<Mixins...> sin_local_sliced;
+  RopeCosSinParams<Mixins...> global_cos_sin{
+      .cos = rope_global_cos,
+      .sin = rope_global_sin,
+  };
+  RopeCosSinParams<Mixins...> sliding_cos_sin{
+      .cos = rope_local_cos,
+      .sin = rope_local_sin,
+  };
+  RotaryEmbeddingParams<Mixins...> global_rotary{
+      .position_ids = position_ids,
+      .max_timescale = config.rope_global_base,
+  };
+  RotaryEmbeddingParams<Mixins...> sliding_rotary{
+      .position_ids = position_ids,
+      .max_timescale = config.rope_local_base,
+  };
 
-  if constexpr (kIsMlDrift) {
-    if (cache_params != nullptr) {
-      Tensor index_0 =
-          Tensor<Mixins...>({.type = Type::kI32,
-                             .shape = {1},
-                             .buffer = OwningCpuBuffer::Copy<Type::kI32>({0})});
-      Tensor cache_len = Gather(*cache_params, index_0, 0);
-
-      Tensor cos_g_sliced = Gather(rope_global_cos, cache_len, 0);
-      Tensor sin_g_sliced = Gather(rope_global_sin, cache_len, 0);
-      cos_global_sliced = Reshape(cos_g_sliced, {1, 1, config.head_dim});
-      sin_global_sliced = Reshape(sin_g_sliced, {1, 1, config.head_dim});
-
-      Tensor cos_l_sliced = Gather(rope_local_cos, cache_len, 0);
-      Tensor sin_l_sliced = Gather(rope_local_sin, cache_len, 0);
-      cos_local_sliced = Reshape(cos_l_sliced, {1, 1, config.head_dim});
-      sin_local_sliced = Reshape(sin_l_sliced, {1, 1, config.head_dim});
-    }
-  }
-
+  const std::optional<Tensor<Mixins...>> decode_cache_params =
+      cache_params != nullptr ? std::optional(*cache_params) : std::nullopt;
+  const float scale = 1.0f / std::sqrt(config.query_pre_attn_scalar);
   for (int layer_idx = 0; layer_idx < config.n_layers; ++layer_idx) {
     std::string layer_prefix = absl::StrCat("model.layers.", layer_idx);
+    graph::ScopeGuard layer_scope("transformer_layer",
+                                  absl::StrCat("layer_", layer_idx));
+    layer_scope.Attr("layer_idx", layer_idx);
     bool is_sliding = (layer_types[layer_idx] == "sliding_attention");
 
     Tensor attention_mask = is_sliding ? *sliding_mask : *global_mask;
-    Tensor<Mixins...> cos;
-    Tensor<Mixins...> sin;
-    if constexpr (kIsMlDrift) {
-      if (cache_params != nullptr) {
-        cos = is_sliding ? cos_local_sliced : cos_global_sliced;
-        sin = is_sliding ? sin_local_sliced : sin_global_sliced;
-      } else {
-        cos = is_sliding ? rope_local_cos : rope_global_cos;
-        sin = is_sliding ? rope_local_sin : rope_global_sin;
-      }
+    TransformerBlockWeights<Mixins...> block_weights =
+        BuildGemma3BlockWeights(weights, layer_prefix, config);
+
+    std::optional<int> local_cache_size;
+    if (cache_params != nullptr && is_sliding) {
+      local_cache_size = local_window;
+    }
+    std::optional<KvCache<Mixins...>> kv_cache =
+        LayerKvCache(key_caches, value_caches, layer_idx, decode_cache_params,
+                     local_cache_size);
+
+    absl::StatusOr<TransformerBlockOutputs<Mixins...>> block_output;
+    if (position_ids.GetStatus().ok()) {
+      block_output = TransformerBlock(
+          hidden_states, block_weights,
+          is_sliding ? sliding_rotary : global_rotary, config.n_heads,
+          config.n_kv_groups, config.head_dim, std::move(kv_cache),
+          attention_mask, config.rms_norm_eps, FFNActivation::kGeluApproximate,
+          scale);
     } else {
-      cos = is_sliding ? rope_local_cos : rope_global_cos;
-      sin = is_sliding ? rope_local_sin : rope_global_sin;
+      block_output = TransformerBlock(
+          hidden_states, block_weights,
+          is_sliding ? sliding_cos_sin : global_cos_sin, config.n_heads,
+          config.n_kv_groups, config.head_dim, std::move(kv_cache),
+          attention_mask, config.rms_norm_eps, FFNActivation::kGeluApproximate,
+          scale);
+    }
+    if (!block_output.ok()) {
+      Tensor<Mixins...> error(block_output.status());
+      return {error, updated_key_caches, updated_value_caches,
+              intermediate_tensors};
     }
 
-    Tensor input_norm_scale = GetWeight(
-        weights, absl::StrCat(layer_prefix, ".input_layernorm.weight"),
-        Type::kFP32, {config.emb_dim});
-    Tensor normed_input = RmsNorm(hidden_states, input_norm_scale, eps_tensor);
-
-    SelfAttentionOutput attn_output = MakeSelfAttentionLayer(
-        normed_input, absl::StrCat(layer_prefix, ".self_attn"), config,
-        is_sliding, attention_mask, position_ids,
-        is_sliding ? config.rope_local_base : config.rope_global_base, cos, sin,
-        layer_idx < key_caches.size() ? key_caches[layer_idx]
-                                      : Tensor<Mixins...>(),
-        layer_idx < value_caches.size() ? value_caches[layer_idx]
-                                        : Tensor<Mixins...>(),
-        weights, cache_params);
-
-    updated_key_caches.push_back(attn_output.key_cache);
-    updated_value_caches.push_back(attn_output.value_cache);
-
-    Tensor post_attn_norm_scale = GetWeight(
-        weights, absl::StrCat(layer_prefix, ".post_attention_layernorm.weight"),
-        Type::kFP32, {config.emb_dim});
-    Tensor normed_attn_output =
-        RmsNorm(attn_output.output, post_attn_norm_scale, eps_tensor);
-
-    hidden_states = Add(hidden_states, normed_attn_output);
-
-    Tensor pre_ffn_norm_scale = GetWeight(
-        weights,
-        absl::StrCat(layer_prefix, ".pre_feedforward_layernorm.weight"),
-        Type::kFP32, {config.emb_dim});
-    Tensor normed_for_ffn =
-        RmsNorm(hidden_states, pre_ffn_norm_scale, eps_tensor);
-
-    Tensor ffn_output = MakeFeedForwardLayer(
-        normed_for_ffn, absl::StrCat(layer_prefix, ".mlp"), config, weights);
-
-    Tensor post_ffn_norm_scale = GetWeight(
-        weights,
-        absl::StrCat(layer_prefix, ".post_feedforward_layernorm.weight"),
-        Type::kFP32, {config.emb_dim});
-    Tensor normed_ffn_output =
-        RmsNorm(ffn_output, post_ffn_norm_scale, eps_tensor);
-
-    hidden_states = Add(hidden_states, normed_ffn_output);
-    hidden_states.SetName(
-        absl::StrCat(layer_prefix, ".hidden_states_post_ffn"));
+    hidden_states = block_output->output;
+    updated_key_caches.push_back(block_output->updated_kv_cache_k);
+    updated_value_caches.push_back(block_output->updated_kv_cache_v);
     intermediate_tensors[absl::StrCat("layer_", layer_idx, "_post_ffn")] =
         hidden_states;
   }

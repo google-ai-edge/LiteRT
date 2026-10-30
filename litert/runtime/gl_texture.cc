@@ -22,14 +22,15 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/gl/gl_texture.h"
+#include "ml_drift/gl/gl_call.h"  // from @ml_drift
+#include "ml_drift/gl/portable_gl31.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert::internal {
 
 LiteRtGLenum GlTexture::target() const {
 #if LITERT_HAS_OPENGL_SUPPORT
-  return tflite_gl_texture_.target();
+  return target_;
 #endif
   LITERT_LOG(LITERT_ERROR, "GlTexture::target() is not supported");
   return 0;
@@ -37,7 +38,7 @@ LiteRtGLenum GlTexture::target() const {
 
 LiteRtGLuint GlTexture::id() const {
 #if LITERT_HAS_OPENGL_SUPPORT
-  return tflite_gl_texture_.id();
+  return id_;
 #endif
   LITERT_LOG(LITERT_ERROR, "GlTexture::id() is not supported");
   return 0;
@@ -45,7 +46,7 @@ LiteRtGLuint GlTexture::id() const {
 
 LiteRtGLenum GlTexture::format() const {
 #if LITERT_HAS_OPENGL_SUPPORT
-  return tflite_gl_texture_.format();
+  return format_;
 #endif
   LITERT_LOG(LITERT_ERROR, "GlTexture::format() is not supported");
   return 0;
@@ -53,7 +54,7 @@ LiteRtGLenum GlTexture::format() const {
 
 size_t GlTexture::size_bytes() const {
 #if LITERT_HAS_OPENGL_SUPPORT
-  return tflite_gl_texture_.bytes_size();
+  return size_bytes_;
 #endif
   LITERT_LOG(LITERT_ERROR, "GlTexture::size_bytes() is not supported");
   return 0;
@@ -61,7 +62,7 @@ size_t GlTexture::size_bytes() const {
 
 LiteRtGLint GlTexture::layer() const {
 #if LITERT_HAS_OPENGL_SUPPORT
-  return tflite_gl_texture_.layer();
+  return layer_;
 #else
   LITERT_LOG(LITERT_ERROR, "GlTexture::layer() is not supported");
   return 0;
@@ -72,15 +73,12 @@ GlTexture::GlTexture(LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
                      size_t size_bytes, LiteRtGLint layer,
                      LiteRtGlTextureDeallocator deallocator) {
 #if LITERT_HAS_OPENGL_SUPPORT
-  if (deallocator != nullptr) {
-    tflite_gl_texture_ = tflite::gpu::gl::GlTexture(
-        target, id, format, size_bytes, layer, /*has_ownership=*/false);
-    deallocator_ = deallocator;
-  } else {
-    tflite_gl_texture_ = tflite::gpu::gl::GlTexture(
-        target, id, format, size_bytes, layer, /*has_ownership=*/true);
-    deallocator_ = nullptr;
-  }
+  target_ = target;
+  id_ = id;
+  format_ = format;
+  size_bytes_ = size_bytes;
+  layer_ = layer;
+  deallocator_ = deallocator;
 #else
   LITERT_LOG(LITERT_ERROR, "GlTexture::GlTexture() is not supported");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
@@ -88,8 +86,14 @@ GlTexture::GlTexture(LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
 
 GlTexture::GlTexture(GlTexture&& other) {
 #if LITERT_HAS_OPENGL_SUPPORT
-  tflite_gl_texture_ = std::move(other.tflite_gl_texture_);
+  target_ = other.target_;
+  id_ = other.id_;
+  format_ = other.format_;
+  size_bytes_ = other.size_bytes_;
+  layer_ = other.layer_;
   deallocator_ = other.deallocator_;
+  other.id_ = GL_INVALID_INDEX;
+  other.deallocator_ = nullptr;
 #else
   LITERT_LOG(LITERT_ERROR, "GlTexture::GlTexture() is not supported");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
@@ -97,8 +101,12 @@ GlTexture::GlTexture(GlTexture&& other) {
 
 GlTexture::~GlTexture() {
 #if LITERT_HAS_OPENGL_SUPPORT
-  if (deallocator_ != nullptr) {
-    deallocator_(reinterpret_cast<void*>(tflite_gl_texture_.id()));
+  if (id_ != GL_INVALID_INDEX) {
+    if (deallocator_ != nullptr) {
+      deallocator_(reinterpret_cast<void*>(id_));
+    } else {
+      ML_DRIFT_CALL_GL(glDeleteTextures, 1, &id_).IgnoreError();
+    }
   }
 #else
   LITERT_LOG(LITERT_ERROR, "GlTexture::~GlTexture() is not supported");

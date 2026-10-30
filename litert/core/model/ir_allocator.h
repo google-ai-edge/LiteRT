@@ -43,7 +43,9 @@ class IrAllocator {
   // Emplace a new element onto the list.
   template <class... Args>
   Ir& EmplaceBack(Args&&... args) {
-    return EmplaceAt(Size(), std::forward<Args>(args)...);
+    auto& emp = storage_.emplace_back(std::forward<Args>(args)...);
+    refs_->push_back(&emp);
+    return emp;
   }
 
   template <class... Args>

@@ -33,6 +33,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/ats/common.h"
@@ -98,10 +99,12 @@ class AtsInferenceTest : public RngTest {
   }
 
   void SetUp() override {
-    cap_.model.SetFields(names_, Graph());
     if (names_.should_skip) {
+      cap_.model.SetFields(names_);
       return;
     }
+    LITERT_ASSERT_OK(graph_->EnsureLoaded());
+    cap_.model.SetFields(names_, Graph());
     ASSERT_GE(Graph().NumSubgraphs(), 1);
     LITERT_LOG(LITERT_INFO, "Setting up test for %s",
                absl::StrFormat("%v", conf_.Backend()).c_str());
@@ -113,19 +116,20 @@ class AtsInferenceTest : public RngTest {
   void TestBody() override {
     auto device = this->TracedDevice(conf_.DataSeed());
     LITERT_ASSERT_OK_AND_ASSIGN(exec_, MakeExecutor());
+    LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, MakeInputs(device));
+
     const int num_warmup = conf_.WarmupRuns();
-    if (num_warmup > 0) {
-      LITERT_ASSERT_OK_AND_ASSIGN(auto warmup_inputs, MakeInputs(device));
-      for (int w = 0; w < num_warmup; ++w) {
-        LITERT_ASSERT_OK(exec_->Run(warmup_inputs));
-      }
+    for (int w = 0; w < num_warmup; ++w) {
+      LITERT_ASSERT_OK(exec_->Run(inputs));
     }
+
+    VarBuffers actual;
     for (auto _ : this->FuzzBlock(conf_.ItersPerTest(), conf_.MaxMsPerTest())) {
-      LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, MakeInputs(device));
-      LITERT_ASSERT_OK_AND_ASSIGN(auto ref, Reference(inputs));
-      LITERT_ASSERT_OK_AND_ASSIGN(auto actual, Actual(inputs, exec_.get()));
-      CheckOutputs(actual, ref);
+      LITERT_ASSERT_OK_AND_ASSIGN(actual, Actual(inputs, exec_.get()));
     }
+
+    LITERT_ASSERT_OK_AND_ASSIGN(auto ref, Reference(inputs));
+    CheckOutputs(actual, ref);
   }
 
   void TearDown() override {
@@ -136,7 +140,8 @@ class AtsInferenceTest : public RngTest {
       }
     }
 
-    if (conf_.IsNpu() && !cap_.accelerator.soc_man.empty()) {
+    if (conf_.IsNpu() && !cap_.accelerator.soc_man.empty() &&
+        graph_->IsLoaded()) {
       auto stamp = GetBuildStamp(Graph());
       if (stamp) {
         cap_.accelerator.soc_man = std::string(stamp->soc_manufacturer);
@@ -155,6 +160,11 @@ class AtsInferenceTest : public RngTest {
       return;
     } else {
       cap_.run.status = RunStatus::kOk;
+    }
+    if (conf_.ItersPerTest() > 1 && !cap_.latency.Samples().empty()) {
+      RecordProperty("latency_samples_us",
+                     absl::StrJoin(cap_.latency.Samples(), ","));
+      RecordProperty("backend", absl::StrFormat("%v", conf_.Backend()));
     }
     LITERT_ASSERT_OK(
         conf_.SaveModel(names_.report_id, std::move(graph_->Graph())));
@@ -205,7 +215,7 @@ class AtsInferenceTest : public RngTest {
     return exec->Run(inputs, cap_.latency);
   }
 
-  Expected<VarBuffers> Reference(const VarBuffers& inputs) const {
+  Expected<VarBuffers> Reference(const VarBuffers& inputs) {
     return graph_->HasReference() ? CustomReference(inputs)
                                   : CpuReference(inputs);
   }
@@ -216,11 +226,16 @@ class AtsInferenceTest : public RngTest {
     return outputs;
   }
 
-  Expected<VarBuffers> CpuReference(const VarBuffers& inputs) const {
-    LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
-                                           Graph(), conf_.ReferenceOptions(),
+  Expected<VarBuffers> CpuReference(const VarBuffers& inputs) {
+    if (!cpu_ref_exec_) {
+      LITERT_ASSIGN_OR_RETURN(
+          auto exec,
+          CpuCompiledModelExecutor::Create(Graph(), conf_.ReferenceOptions(),
                                            conf_.GetEnvironment()));
-    return exec.Run(inputs);
+      cpu_ref_exec_ =
+          std::make_unique<CpuCompiledModelExecutor>(std::move(exec));
+    }
+    return cpu_ref_exec_->Run(inputs);
   }
 
   Expected<VarBuffers> MakeOutputs() const {
@@ -428,6 +443,15 @@ class AtsInferenceTest : public RngTest {
         } else if (actual[i].Type().ElementType() == ElementType::Float16) {
           CheckFloatElementwiseOutputImpl(actual[i].AsView<tflite::half>(),
                                           ref[i].AsView<tflite::half>(), spec);
+        } else if (actual[i].Type().ElementType() == ElementType::Int32) {
+          // Integer outputs of float-elementwise ops must match exactly.
+          CheckQuantizedBucketOutputImpl(actual[i].AsView<int32_t>(),
+                                         ref[i].AsView<int32_t>(),
+                                         /*bucket_tolerance=*/0);
+        } else if (actual[i].Type().ElementType() == ElementType::Int64) {
+          CheckQuantizedBucketOutputImpl(actual[i].AsView<int64_t>(),
+                                         ref[i].AsView<int64_t>(),
+                                         /*bucket_tolerance=*/0);
         } else {
           FAIL() << "Unsupported float elementwise element type";
         }
@@ -478,6 +502,7 @@ class AtsInferenceTest : public RngTest {
   TestNames names_;
   Capture::Entry& cap_;
   CompiledModelExecutor::Ptr exec_ = nullptr;
+  CompiledModelExecutor::Ptr cpu_ref_exec_ = nullptr;
   bool has_failure_ = false;
 };
 

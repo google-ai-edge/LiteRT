@@ -31,6 +31,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
@@ -1247,7 +1248,7 @@ TEST(ModelBuilderTest, BuildModel_SimpleAdd) {
   EXPECT_EQ(graph.nodes().size(), 1);
   EXPECT_EQ(
       ::ml_drift::OperationTypeFromString(graph.nodes()[0]->operation.type),
-      ::ml_drift::OperationType::ADD);
+      ::ml_drift::OperationType::kAdd);
 
   TfLiteIntArrayFree(params.nodes_to_replace);
   TfLiteIntArrayFree(params.input_tensors);
@@ -1364,7 +1365,7 @@ TEST(ModelBuilderTest, BuildModel_EmbeddingLookupBlockwiseQuantized) {
   ASSERT_EQ(graph.nodes().size(), 1);
   EXPECT_EQ(
       ::ml_drift::OperationTypeFromString(graph.nodes()[0]->operation.type),
-      ::ml_drift::OperationType::EMBEDDING_LOOKUP);
+      ::ml_drift::OperationType::kEmbeddingLookup);
 
   auto attr = std::any_cast<::ml_drift::EmbeddingLookupAttributes>(
       graph.nodes()[0]->operation.attributes);
@@ -1455,16 +1456,16 @@ TEST(ModelBuilderTest, BuildModel_BroadcastMul) {
   EXPECT_EQ(graph.nodes().size(), 4);
   EXPECT_EQ(
       ::ml_drift::OperationTypeFromString(graph.nodes()[0]->operation.type),
-      ::ml_drift::OperationType::RESHAPE);
+      ::ml_drift::OperationType::kReshape);
   EXPECT_EQ(
       ::ml_drift::OperationTypeFromString(graph.nodes()[1]->operation.type),
-      ::ml_drift::OperationType::RESHAPE);
+      ::ml_drift::OperationType::kReshape);
   EXPECT_EQ(
       ::ml_drift::OperationTypeFromString(graph.nodes()[2]->operation.type),
-      ::ml_drift::OperationType::MUL);
+      ::ml_drift::OperationType::kMul);
   EXPECT_EQ(
       ::ml_drift::OperationTypeFromString(graph.nodes()[3]->operation.type),
-      ::ml_drift::OperationType::RESHAPE);
+      ::ml_drift::OperationType::kReshape);
 
   const auto& reshape_attr0 =
       std::any_cast<const ::ml_drift::ReshapeAttributes&>(
@@ -2719,10 +2720,10 @@ TEST_F(FullyConnectedOperationParserTest, ParseSrc3dDst2d) {
   ASSERT_EQ(graph_.nodes().size(), 2);  // added reshape node for output
   ASSERT_EQ(
       ::ml_drift::OperationTypeFromString(graph_.nodes()[0]->operation.type),
-      ::ml_drift::OperationType::FULLY_CONNECTED);
+      ::ml_drift::OperationType::kFullyConnected);
   ASSERT_EQ(
       ::ml_drift::OperationTypeFromString(graph_.nodes()[1]->operation.type),
-      ::ml_drift::OperationType::RESHAPE);
+      ::ml_drift::OperationType::kReshape);
   auto fc_input = graph_.FindInputs(graph_.nodes()[0]->id)[0];
   ASSERT_EQ(fc_input->tensor.shape, ::ml_drift::BHWC(1, 1, 16, 4));
   auto fc_output = graph_.FindOutputs(graph_.nodes()[0]->id)[0];
@@ -3055,6 +3056,129 @@ TEST(PadOperationParserTest, TestIsSupported) {
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
+
+  // Valid with constant input[0]
+  context->tensor(2)->dims->data[1] = 2;
+  context->SetTensorType(1, kTfLiteFloat32, kTfLiteMmapRo);
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Valid with FP16 constant input[0] and FP32 output[0] (from DEQUANTIZE
+  // remapping).
+  context->SetTensorType(1, kTfLiteFloat16, kTfLiteMmapRo);
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Mismatched non-FP16 constant input[0] type and FP32 output[0] is rejected.
+  context->SetTensorType(1, kTfLiteInt32, kTfLiteMmapRo);
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Unsupported constant input[0] type is rejected.
+  context->SetTensorType(1, kTfLiteInt64, kTfLiteMmapRo);
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  // Constant input[0] with non-constant paddings (input[1]) is rejected.
+  context->SetTensorType(1, kTfLiteFloat32, kTfLiteMmapRo);
+  context->tensor(2)->allocation_type = kTfLiteArenaRw;
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  context->tensor(2)->allocation_type = kTfLiteMmapRo;
+
+  // Malformed quantized constant input[0] (missing quantization.params) is
+  // rejected.
+  context->SetTensorType(1, kTfLiteInt8, kTfLiteMmapRo);
+  context->SetTensorType(3, kTfLiteInt8, kTfLiteArenaRw);
+  context->tensor(1)->quantization.type = kTfLiteAffineQuantization;
+  context->tensor(1)->quantization.params = nullptr;
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+}
+
+TEST(PadOperationParserTest, ParseWithConstInput) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinPad,
+      /*op_version=*/2,
+      /*num_inputs=*/2,
+      /*shape=*/std::vector<int>({1, 2, 2, 1}));
+  context->SetTensorType(1, kTfLiteFloat32, kTfLiteMmapRo);
+  context->ChangeTensorShape(2, {4, 2});
+  context->SetTensorType(2, kTfLiteInt32, kTfLiteMmapRo);
+  context->ChangeTensorShape(3, {1, 4, 4, 1});
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  ASSERT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr,
+                      /*tensor_to_buffer_id_map=*/nullptr,
+                      /*shared_tensor_map=*/nullptr);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+
+  ASSERT_EQ(graph.nodes().size(), 2);
+  EXPECT_EQ(
+      ::ml_drift::OperationTypeFromString(graph.nodes()[0]->operation.type),
+      ::ml_drift::OperationType::kConstant);
+  EXPECT_EQ(
+      ::ml_drift::OperationTypeFromString(graph.nodes()[1]->operation.type),
+      ::ml_drift::OperationType::kPad);
+  EXPECT_EQ(graph.inputs().size(), 0);
+  EXPECT_EQ(graph.outputs().size(), 1);
+}
+
+TEST(PadOperationParserTest, ParseWithFp16ConstInputAsFloat32) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinPad,
+      /*op_version=*/2,
+      /*num_inputs=*/2,
+      /*shape=*/std::vector<int>({1, 2, 2, 1}));
+  context->SetTensorType(1, kTfLiteFloat16, kTfLiteMmapRo);
+  context->ChangeTensorShape(2, {4, 2});
+  context->SetTensorType(2, kTfLiteInt32, kTfLiteMmapRo);
+  context->ChangeTensorShape(3, {1, 4, 4, 1});
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  ASSERT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr,
+                      /*tensor_to_buffer_id_map=*/nullptr,
+                      /*shared_tensor_map=*/nullptr);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+
+  ASSERT_EQ(graph.nodes().size(), 2);
+  EXPECT_EQ(
+      ::ml_drift::OperationTypeFromString(graph.nodes()[0]->operation.type),
+      ::ml_drift::OperationType::kConstant);
+  EXPECT_EQ(
+      ::ml_drift::OperationTypeFromString(graph.nodes()[1]->operation.type),
+      ::ml_drift::OperationType::kPad);
+  const auto const_outputs = graph.FindOutputs(graph.nodes()[0]->id);
+  ASSERT_EQ(const_outputs.size(), 1);
+  EXPECT_EQ(const_outputs[0]->tensor.type, ::ml_drift::DataType::kFloat32);
 }
 
 TEST(Padv2OperationParserTest, TestIsSupported) {
@@ -3437,7 +3561,7 @@ TEST(QuantizeOperationParserTest, TestIsSupported) {
   // Invalid op_version
   auto context = std::make_unique<StubTfLiteContext>(
       kTfLiteBuiltinQuantize,
-      /*op_version=*/3,
+      /*op_version=*/5,
       /*num_inputs=*/1,
       /*shape=*/std::vector<int>({1, 1, 1, 1}));
   auto parser = NewOperationParser(context->node(), context->registration(),
@@ -3868,8 +3992,22 @@ TEST(RoPEParserTest, TestIsSupported) {
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
-  // Valid
-  input_shapes[1].w = 8;
+  // Valid (2D pos [B, T] -> BHWC(B, 1, 1, T))
+  context->ChangeTensorShape(2, {1, 8});
+  parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  // Invalid: 1D pos [T] -> BHWC(T, 1, 1, 1) has mismatched batch
+  context->ChangeTensorShape(2, {8});
+  parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  // Valid (4D pos has seq_len in w)
+  input_shapes[1] = ::ml_drift::BHWC(1, 1, 8, 256);
   context = std::make_unique<StubTfLiteContext>(kTfLiteBuiltinCustom,
                                                 /*op_version=*/1,
                                                 /*num_inputs=*/2, input_shapes);
@@ -3880,6 +4018,34 @@ TEST(RoPEParserTest, TestIsSupported) {
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
+  // Valid (pos batch=1 broadcasts across src batch > 1, e.g. SAM2 mask decoder)
+  input_shapes[0] = ::ml_drift::BHWC(2, 16, 16, 256);
+  input_shapes[1] = ::ml_drift::BHWC(1, 1, 16, 1);
+  context = std::make_unique<StubTfLiteContext>(kTfLiteBuiltinCustom,
+                                                /*op_version=*/1,
+                                                /*num_inputs=*/2, input_shapes);
+  context->registration()->custom_name =
+      "custom_call.rotary_positional_embedding";
+  parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_TRUE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  // Invalid (mismatched batch when pos batch != 1)
+  input_shapes[1] = ::ml_drift::BHWC(3, 1, 16, 1);
+  context = std::make_unique<StubTfLiteContext>(kTfLiteBuiltinCustom,
+                                                /*op_version=*/1,
+                                                /*num_inputs=*/2, input_shapes);
+  context->registration()->custom_name =
+      "custom_call.rotary_positional_embedding";
+  parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+  // Restore input_shapes for 3-input tests
+  input_shapes[0] = ::ml_drift::BHWC(1, 1, 8, 256);
+  input_shapes[1] = ::ml_drift::BHWC(1, 1, 8, 256);
   // If 3 inputs, then pos tensor is index 2. Also require 2 outputs
   input_shapes.push_back(::ml_drift::BHWC(1, 1, 8, 256));
   context = std::make_unique<StubTfLiteContext>(kTfLiteBuiltinCustom,
@@ -3942,7 +4108,7 @@ TEST(RoPEParserTest, TestParseAttributesCustom) {
     fbb.Float("max_timescale", 50000.0f);
     fbb.Float("proportion", 0.5f);
     fbb.Int("kernel_type",
-            static_cast<int>(::ml_drift::RoPEKernelType::INTERLEAVED_2D));
+            static_cast<int>(::ml_drift::RoPEKernelType::kInterleaved2D));
   });
   fbb.Finish();
   context->node()->custom_initial_data = fbb.GetBuffer().data();
@@ -3967,7 +4133,7 @@ TEST(RoPEParserTest, TestParseAttributesCustom) {
   EXPECT_NEAR(attr.min_timescale, 2.0f, 1e-6f);
   EXPECT_NEAR(attr.max_timescale, 50000.0f, 1e-6f);
   EXPECT_NEAR(attr.proportion, 0.5f, 1e-6f);
-  EXPECT_EQ(attr.kernel_type, ::ml_drift::RoPEKernelType::INTERLEAVED_2D);
+  EXPECT_EQ(attr.kernel_type, ::ml_drift::RoPEKernelType::kInterleaved2D);
 }
 
 TEST(RoPEParserTest, TestParseAttributesComposite) {
@@ -3988,7 +4154,7 @@ TEST(RoPEParserTest, TestParseAttributesComposite) {
     fbb.Float("max_timescale", 50000.0f);
     fbb.Float("proportion", 0.5f);
     fbb.Int("kernel_type",
-            static_cast<int>(::ml_drift::RoPEKernelType::INTERLEAVED_2D));
+            static_cast<int>(::ml_drift::RoPEKernelType::kInterleaved2D));
   });
   fbb.Finish();
   composite_params->attributes = fbb.GetBuffer().data();
@@ -4013,7 +4179,7 @@ TEST(RoPEParserTest, TestParseAttributesComposite) {
   EXPECT_NEAR(attr.min_timescale, 2.0f, 1e-6f);
   EXPECT_NEAR(attr.max_timescale, 50000.0f, 1e-6f);
   EXPECT_NEAR(attr.proportion, 0.5f, 1e-6f);
-  EXPECT_EQ(attr.kernel_type, ::ml_drift::RoPEKernelType::INTERLEAVED_2D);
+  EXPECT_EQ(attr.kernel_type, ::ml_drift::RoPEKernelType::kInterleaved2D);
 }
 
 TEST(ScaledDotProductAttentionParserTest, TestIsSupportedNoMask) {
@@ -5201,6 +5367,39 @@ TEST(ModelBuilderTest, CheckIfSupportedNode_FullyConnected) {
   EXPECT_TRUE(CheckIfSupportedNode(context.get(), context->node(),
                                    context->registration())
                   .ok());
+}
+
+TEST(CompositeGroupNormParserTest,
+     SupportsGroupNormWithoutSubTypeFullReductionAxes) {
+  std::vector<::ml_drift::BHWC> input_shapes = {::ml_drift::BHWC(1, 2, 3, 8)};
+  auto context =
+      std::make_unique<StubTfLiteContext>(kTfLiteBuiltinStablehloComposite,
+                                          /*op_version=*/1,
+                                          /*num_inputs=*/1, input_shapes);
+  TfLiteStablehloCompositeParams* composite_params =
+      static_cast<TfLiteStablehloCompositeParams*>(
+          context->node()->builtin_data);
+  composite_params->name = "odml.group_norm";
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("num_groups", 8);
+    fbb.Float("epsilon", 1e-6f);
+    fbb.Int("channel_axis", 3);
+    fbb.Map("_TENSOR_V1_reduction_axes", [&]() {
+      fbb.Vector("TENSOR_DATA", [&]() {
+        fbb.Add(1);
+        fbb.Add(2);
+        fbb.Add(3);
+      });
+    });
+  });
+  fbb.Finish();
+  composite_params->attributes = fbb.GetBuffer().data();
+  composite_params->attributes_size = fbb.GetSize();
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
 }
 
 }  // namespace

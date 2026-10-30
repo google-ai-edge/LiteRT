@@ -22,7 +22,8 @@
 
 #include "absl/container/btree_map.h"  // from @com_google_absl
 #include "absl/strings/escaping.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/strings/strip.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
@@ -87,64 +88,62 @@ LiteRtStatus LrtGetOpaqueGoogleTensorOptionsData(
   std::string toml_str;
   if (options->float_truncation_type !=
       kLiteRtGoogleTensorFloatTruncationTypeAuto) {
-    absl::StrAppendFormat(&toml_str, "float_truncation_type = %d\n",
-                          static_cast<int>(options->float_truncation_type));
+    absl::StrAppend(&toml_str, "float_truncation_type = ",
+                    static_cast<int>(options->float_truncation_type), "\n");
   }
   if (options->int64_to_int32_truncation) {
-    absl::StrAppendFormat(&toml_str, "int64_to_int32_truncation = true\n");
+    absl::StrAppend(&toml_str, "int64_to_int32_truncation = true\n");
   }
   if (!options->output_dir.empty()) {
-    absl::StrAppendFormat(&toml_str, "output_dir = \"%s\"\n",
-                          options->output_dir);
+    absl::StrAppend(&toml_str, "output_dir = \"", options->output_dir, "\"\n");
   }
   if (options->dump_op_timings) {
-    absl::StrAppendFormat(&toml_str, "dump_op_timings = true\n");
+    absl::StrAppend(&toml_str, "dump_op_timings = true\n");
   }
   if (options->enable_large_model_support) {
-    absl::StrAppendFormat(&toml_str, "enable_large_model_support = true\n");
+    absl::StrAppend(&toml_str, "enable_large_model_support = true\n");
   }
   if (options->enable_4bit_compilation) {
-    absl::StrAppendFormat(&toml_str, "enable_four_bit_compilation = true\n");
+    absl::StrAppend(&toml_str, "enable_four_bit_compilation = true\n");
   }
   if (options->sharding_intensity !=
       kLiteRtGoogleTensorShardingIntensityUnspecified) {
-    absl::StrAppendFormat(&toml_str, "sharding_intensity = %d\n",
-                          static_cast<int>(options->sharding_intensity));
+    absl::StrAppend(&toml_str, "sharding_intensity = ",
+                    static_cast<int>(options->sharding_intensity), "\n");
   }
   if (options->enable_dynamic_range_quantization) {
-    absl::StrAppendFormat(&toml_str,
-                          "enable_dynamic_range_quantization = true\n");
+    absl::StrAppend(&toml_str, "enable_dynamic_range_quantization = true\n");
   }
   if (options->performance_mode.has_value()) {
-    absl::StrAppendFormat(&toml_str, "performance_mode = %d\n",
-                          static_cast<int>(*options->performance_mode));
+    absl::StrAppend(&toml_str, "performance_mode = ",
+                    static_cast<int>(*options->performance_mode), "\n");
   }
 
   if (!options->op_filters_proto.empty()) {
-    absl::StrAppendFormat(&toml_str, "op_filters_proto = \"%s\"\n",
-                          absl::Base64Escape(options->op_filters_proto));
+    absl::StrAppend(&toml_str, "op_filters_proto = \"",
+                    absl::Base64Escape(options->op_filters_proto), "\"\n");
   }
   if (!options->extra_options_path.empty()) {
-    absl::StrAppendFormat(&toml_str, "extra_options_path = \"%s\"\n",
-                          options->extra_options_path);
+    absl::StrAppend(&toml_str, "extra_options_path = \"",
+                    options->extra_options_path, "\"\n");
   }
   if (!options->extra_options.empty()) {
-    absl::StrAppendFormat(&toml_str, "extra_options = \"%s\"\n",
-                          absl::Base64Escape(options->extra_options));
+    absl::StrAppend(&toml_str, "extra_options = \"",
+                    absl::Base64Escape(options->extra_options), "\"\n");
   }
   for (const auto& [key, pref] : options->input_coherency) {
-    absl::StrAppendFormat(&toml_str, "input_coherency_%s:%s = %s\n", key.first,
-                          key.second, pref ? "true" : "false");
+    absl::StrAppend(&toml_str, "input_coherency_", key.first, ":", key.second,
+                    " = ", pref ? "true" : "false", "\n");
   }
   for (const auto& [key, pref] : options->output_coherency) {
-    absl::StrAppendFormat(&toml_str, "output_coherency_%s:%s = %s\n", key.first,
-                          key.second, pref ? "true" : "false");
+    absl::StrAppend(&toml_str, "output_coherency_", key.first, ":", key.second,
+                    " = ", pref ? "true" : "false", "\n");
   }
 
   // copybara:uncomment_begin(google-only)
   // if (options->experimental_enable_input_validator) {
-    // absl::StrAppendFormat(&toml_str, "%s = true\n",
-                          // kExperimentalEnableInputValidatorKey);
+    // absl::StrAppend(&toml_str, kExperimentalEnableInputValidatorKey,
+                    // " = true\n");
   // }
   // copybara:uncomment_end
 

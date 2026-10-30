@@ -92,12 +92,13 @@ RunResult BuildAndRunOneOpModel(flatbuffers::FlatBufferBuilder* builder,
     return RunResult::kHarnessFailure;
   }
 
-  SilentErrorReporter error_reporter;
-  if (!litert::Verify(builder->GetBufferPointer(), builder->GetSize(),
-                      &error_reporter, run_spec.verify_options)) {
+  if (!litert::VerifyModel(builder->GetBufferPointer(), builder->GetSize(),
+                           run_spec.verify_options)
+           .ok()) {
     return RunResult::kRejected;
   }
 
+  SilentErrorReporter error_reporter;
   MutableOpResolver resolver;
   resolver.AddBuiltin(model_spec.builtin_operator, run_spec.registration,
                       run_spec.min_version, run_spec.max_version);

@@ -17,7 +17,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -35,6 +37,24 @@ namespace litert::internal {
 namespace {
 
 using ::testing::ElementsAre;
+
+TflOptions MakeReshapeOptions(Dims new_shape) {
+  auto options = std::make_unique<tflite::ReshapeOptionsT>();
+  options->new_shape = std::move(new_shape);
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
+  tfl_options.value = options.release();
+  return tfl_options;
+}
+
+template <typename T>
+std::vector<uint8_t> ToBytes(const std::vector<T>& values) {
+  std::vector<uint8_t> bytes(values.size() * sizeof(T));
+  if (!bytes.empty()) {
+    std::memcpy(bytes.data(), values.data(), bytes.size());
+  }
+  return bytes;
+}
 
 class TestShapeInferenceContext : public ShapeInferenceContext {
  public:
@@ -88,13 +108,7 @@ class TestShapeInferenceContext : public ShapeInferenceContext {
 };
 
 TEST(ReshapeOpTest, WithOptions) {
-  auto options = std::make_unique<tflite::ReshapeOptionsT>();
-  options->new_shape = {1, 4, 4, 3};
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
-  tfl_options.value = options.release();
-
-  TestShapeInferenceContext ctx({{1, 48}}, std::move(tfl_options));
+  TestShapeInferenceContext ctx({{1, 48}}, MakeReshapeOptions({1, 4, 4, 3}));
   InferenceResult result;
 
   ASSERT_EQ(InferReshape(ctx, result), kLiteRtStatusOk);
@@ -103,11 +117,8 @@ TEST(ReshapeOpTest, WithOptions) {
 }
 
 TEST(ReshapeOpTest, WithShapeTensor) {
-  std::vector<int32_t> shape_data = {1, 4, 4, 3};
-  std::vector<uint8_t> shape_bytes(shape_data.size() * sizeof(int32_t));
-  std::memcpy(shape_bytes.data(), shape_data.data(), shape_bytes.size());
-
-  TestShapeInferenceContext ctx({{1, 48}, {4}}, {}, {{}, shape_bytes});
+  TestShapeInferenceContext ctx({{1, 48}, {4}}, {},
+                                {{}, ToBytes<int32_t>({1, 4, 4, 3})});
   InferenceResult result;
 
   ASSERT_EQ(InferReshape(ctx, result), kLiteRtStatusOk);
@@ -139,26 +150,14 @@ TEST(ReshapeOpTest, NoOptionsAndNoShapeTensor) {
 }
 
 TEST(ReshapeOpTest, MultipleMinusOne) {
-  auto options = std::make_unique<tflite::ReshapeOptionsT>();
-  options->new_shape = {1, -1, -1, 3};
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
-  tfl_options.value = options.release();
-
-  TestShapeInferenceContext ctx({{1, 48}}, std::move(tfl_options));
+  TestShapeInferenceContext ctx({{1, 48}}, MakeReshapeOptions({1, -1, -1, 3}));
   InferenceResult result;
 
   EXPECT_EQ(InferReshape(ctx, result), kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ReshapeOpTest, MinusOneWithDynamicInput) {
-  auto options = std::make_unique<tflite::ReshapeOptionsT>();
-  options->new_shape = {1, -1, 3};
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
-  tfl_options.value = options.release();
-
-  TestShapeInferenceContext ctx({{1, -1}}, std::move(tfl_options));
+  TestShapeInferenceContext ctx({{1, -1}}, MakeReshapeOptions({1, -1, 3}));
   InferenceResult result;
 
   ASSERT_EQ(InferReshape(ctx, result), kLiteRtStatusOk);
@@ -166,26 +165,14 @@ TEST(ReshapeOpTest, MinusOneWithDynamicInput) {
 }
 
 TEST(ReshapeOpTest, IncompatibleVolumesWithMinusOne) {
-  auto options = std::make_unique<tflite::ReshapeOptionsT>();
-  options->new_shape = {1, -1, 5};
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
-  tfl_options.value = options.release();
-
-  TestShapeInferenceContext ctx({{1, 48}}, std::move(tfl_options));
+  TestShapeInferenceContext ctx({{1, 48}}, MakeReshapeOptions({1, -1, 5}));
   InferenceResult result;
 
   EXPECT_EQ(InferReshape(ctx, result), kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ReshapeOpTest, ResolveMinusOne) {
-  auto options = std::make_unique<tflite::ReshapeOptionsT>();
-  options->new_shape = {1, -1, 3};
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
-  tfl_options.value = options.release();
-
-  TestShapeInferenceContext ctx({{1, 48}}, std::move(tfl_options));
+  TestShapeInferenceContext ctx({{1, 48}}, MakeReshapeOptions({1, -1, 3}));
   InferenceResult result;
 
   ASSERT_EQ(InferReshape(ctx, result), kLiteRtStatusOk);
@@ -193,13 +180,7 @@ TEST(ReshapeOpTest, ResolveMinusOne) {
 }
 
 TEST(ReshapeOpTest, StaticShapeSuccess) {
-  auto options = std::make_unique<tflite::ReshapeOptionsT>();
-  options->new_shape = {2, 3, 8};
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
-  tfl_options.value = options.release();
-
-  TestShapeInferenceContext ctx({{1, 48}}, std::move(tfl_options));
+  TestShapeInferenceContext ctx({{1, 48}}, MakeReshapeOptions({2, 3, 8}));
   InferenceResult result;
 
   ASSERT_EQ(InferReshape(ctx, result), kLiteRtStatusOk);
@@ -207,38 +188,22 @@ TEST(ReshapeOpTest, StaticShapeSuccess) {
 }
 
 TEST(ReshapeOpTest, StaticShapeVolumeMismatch) {
-  auto options = std::make_unique<tflite::ReshapeOptionsT>();
-  options->new_shape = {2, 3, 10};  // Volume 60 != 48
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
-  tfl_options.value = options.release();
-
-  TestShapeInferenceContext ctx({{1, 48}}, std::move(tfl_options));
+  TestShapeInferenceContext ctx({{1, 48}}, MakeReshapeOptions({2, 3, 10}));
   InferenceResult result;
 
   EXPECT_EQ(InferReshape(ctx, result), kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ReshapeOpTest, StaticShapeWithShapeTensorVolumeMismatch) {
-  std::vector<int32_t> shape_data = {3, 5};  // Volume 15 != 12
-  std::vector<uint8_t> shape_bytes(shape_data.size() * sizeof(int32_t));
-  std::memcpy(shape_bytes.data(), shape_data.data(), shape_bytes.size());
-
-  TestShapeInferenceContext ctx(
-      {{2, 6}, {2}}, {}, {std::vector<uint8_t>(), std::move(shape_bytes)});
+  TestShapeInferenceContext ctx({{2, 6}, {2}}, {},
+                                {{}, ToBytes<int32_t>({3, 5})});
   InferenceResult result;
 
   EXPECT_EQ(InferReshape(ctx, result), kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ReshapeOpTest, DivisionByZeroBaseFailure) {
-  auto options = std::make_unique<tflite::ReshapeOptionsT>();
-  options->new_shape = {0, -1};  // Zero volume and -1 wildcard
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
-  tfl_options.value = options.release();
-
-  TestShapeInferenceContext ctx({{2, 3}}, std::move(tfl_options));
+  TestShapeInferenceContext ctx({{2, 3}}, MakeReshapeOptions({0, -1}));
   InferenceResult result;
 
   // Must return error, but on base commit crashes with hardware
@@ -247,13 +212,7 @@ TEST(ReshapeOpTest, DivisionByZeroBaseFailure) {
 }
 
 TEST(ReshapeOpTest, StaticShapeVolumeMismatchBaseFailure) {
-  auto options = std::make_unique<tflite::ReshapeOptionsT>();
-  options->new_shape = {2, 3, 10};  // Volume 60 != 48
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
-  tfl_options.value = options.release();
-
-  TestShapeInferenceContext ctx({{1, 48}}, std::move(tfl_options));
+  TestShapeInferenceContext ctx({{1, 48}}, MakeReshapeOptions({2, 3, 10}));
   InferenceResult result;
 
   // Must return error, but on base commit skips check and returns
@@ -262,12 +221,8 @@ TEST(ReshapeOpTest, StaticShapeVolumeMismatchBaseFailure) {
 }
 
 TEST(ReshapeOpTest, Int64ShapeTensorBaseFailure) {
-  std::vector<int64_t> shape_data = {2, 3};
-  std::vector<uint8_t> shape_bytes(shape_data.size() * sizeof(int64_t));
-  std::memcpy(shape_bytes.data(), shape_data.data(), shape_bytes.size());
-
-  TestShapeInferenceContext ctx(
-      {{2, 3}, {2}}, {}, {std::vector<uint8_t>(), std::move(shape_bytes)});
+  TestShapeInferenceContext ctx({{2, 3}, {2}}, {},
+                                {{}, ToBytes<int64_t>({2, 3})});
   InferenceResult result;
 
   // Must output `{2, 3}`, but on base commit parses 16 bytes as `{2, 0, 3, 0}`
@@ -287,20 +242,105 @@ TEST(ReshapeOpTest, ZeroElementShapeTensor) {
 }
 
 TEST(ReshapeOpTest, EmptyOptionsNewShape) {
-  auto options = std::make_unique<tflite::ReshapeOptionsT>();
-  options->new_shape = {};  // empty
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ReshapeOptions;
-  tfl_options.value = options.release();
-
   TestShapeInferenceContext ctx(
-      {{1}}, std::move(tfl_options));  // 1-input, Input volume 1
+      {{1}}, MakeReshapeOptions({}));  // 1-input, Input volume 1
   InferenceResult result;
 
   ASSERT_EQ(InferReshape(ctx, result), kLiteRtStatusOk);
 
   EXPECT_THAT(result.output_shapes[0], ElementsAre());  // 0D scalar
 }
+
+struct ReshapeErrorCase {
+  std::string test_name;
+  std::vector<Dims> input_shapes;
+  bool use_options;
+  Dims options_new_shape;
+  std::vector<uint8_t> shape_tensor_bytes;
+  LiteRtStatus expected_status;
+};
+
+using ReshapeErrorTest = ::testing::TestWithParam<ReshapeErrorCase>;
+
+TEST_P(ReshapeErrorTest, RejectsInvalidShapesAndOverflows) {
+  const auto& param = GetParam();
+  TflOptions tfl_options = param.use_options
+                               ? MakeReshapeOptions(param.options_new_shape)
+                               : TflOptions{};
+  std::vector<std::vector<uint8_t>> input_data;
+  if (!param.shape_tensor_bytes.empty()) {
+    input_data = {{}, param.shape_tensor_bytes};
+  }
+  TestShapeInferenceContext ctx(param.input_shapes, std::move(tfl_options),
+                                std::move(input_data));
+  InferenceResult result;
+  EXPECT_EQ(InferReshape(ctx, result), param.expected_status);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ReshapeErrorTests, ReshapeErrorTest,
+    ::testing::Values(
+        ReshapeErrorCase{
+            "NegativeDimInOptions",
+            {{1, 8}},
+            /*use_options=*/true,
+            {-2, 4},
+            {},
+            kLiteRtStatusErrorInvalidArgument,
+        },
+        ReshapeErrorCase{
+            "NegativeDimInInt32ShapeTensor",
+            {{1, 8}, {2}},
+            /*use_options=*/false,
+            {},
+            ToBytes<int32_t>({-2, 4}),
+            kLiteRtStatusErrorInvalidArgument,
+        },
+        ReshapeErrorCase{
+            "DimExceedingInt32MaxInInt64ShapeTensor",
+            {{1, 8}, {2}},
+            /*use_options=*/false,
+            {},
+            ToBytes<int64_t>(
+                {static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 1,
+                 1}),
+            kLiteRtStatusErrorInvalidArgument,
+        },
+        ReshapeErrorCase{
+            "NegativeDimInInputShape",
+            {{-2, 4}},
+            /*use_options=*/true,
+            {8},
+            {},
+            kLiteRtStatusErrorShapeInferenceFailed,
+        },
+        ReshapeErrorCase{
+            "NewShapeProductOverflow",
+            {{1, 8}},
+            /*use_options=*/true,
+            {1073741824, 1073741824, 1073741824, 16},
+            {},
+            kLiteRtStatusErrorShapeInferenceFailed,
+        },
+        ReshapeErrorCase{
+            "InputShapeProductOverflow",
+            {{1073741824, 1073741824, 1073741824, 16}},
+            /*use_options=*/true,
+            {-1},
+            {},
+            kLiteRtStatusErrorShapeInferenceFailed,
+        },
+        ReshapeErrorCase{
+            "InferredWildcardExceedingInt32Max",
+            {{65536, 65536}},
+            /*use_options=*/true,
+            {-1},
+            {},
+            kLiteRtStatusErrorShapeInferenceFailed,
+        }),
+    [](const ::testing::TestParamInfo<ReshapeErrorCase>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace litert::internal

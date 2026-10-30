@@ -16,9 +16,7 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_COMMON_NNPACK_RUNNER_TEST_SUITE_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_COMMON_NNPACK_RUNNER_TEST_SUITE_H_
 
-#include <array>
 #include <cmath>
-#include <cstddef>
 #include <utility>
 #include <vector>
 
@@ -26,8 +24,8 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_matchers.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
+#include "tensor/backends/testing/quantized_test_utils.h"
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
@@ -60,11 +58,60 @@ TYPED_TEST_P(NnpackRunnerTest, SetInputRejectsNonExternalTensors) {
   TensorType output = Add(lhs, rhs);
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto runner, Runner::Create({output}));
-  const std::array<float, 2> data = {0.f, 0.f};
-  absl::Span<const std::byte> bytes(
-      reinterpret_cast<const std::byte*>(data.data()), sizeof(data));
-  absl::Status status = runner.SetInput(lhs, bytes);
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(runner.SetInputAsCopy(lhs, {0.f, 0.f}),
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TYPED_TEST_P(NnpackRunnerTest, SetNumThreadsBeforeRunUsesThreads) {
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+
+  TensorType a({.name = "a",
+                .type = Type::kFP32,
+                .shape = {8},
+                .buffer = std::vector<float>{1, 2, 3, 4, 5, 6, 7, 8}});
+  TensorType b({.name = "b",
+                .type = Type::kFP32,
+                .shape = {8},
+                .buffer = std::vector<float>{2, 4, 6, 8, 10, 12, 14, 16}});
+  TensorType c = Add(a, b);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({c}));
+  ASSERT_THAT(runner.SetNumThreads(4), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  EXPECT_THAT(runner.template ReadOutputAs<float>(c),
+              absl_testing::IsOkAndHolds(testing::Pointwise(
+                  testing::FloatEq(), {3, 6, 9, 12, 15, 18, 21, 24})));
+}
+
+TYPED_TEST_P(NnpackRunnerTest, SetNumThreadsFailsAfterPrepare) {
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+
+  TensorType a({.name = "a",
+                .type = Type::kFP32,
+                .shape = {2},
+                .buffer = std::vector<float>{1.f, 2.f}});
+  TensorType b({.name = "b",
+                .type = Type::kFP32,
+                .shape = {2},
+                .buffer = std::vector<float>{3.f, 4.f}});
+  TensorType c = Add(a, b);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({c}));
+  ASSERT_THAT(runner.SetNumThreads(2), IsOk());
+  ASSERT_THAT(runner.PrepareRuntime(), IsOk());
+
+  // The runtime now uses the thread pool it was created with, so it can't be
+  // replaced anymore.
+  EXPECT_THAT(runner.SetNumThreads(4),
+              absl_testing::StatusIs(absl::StatusCode::kFailedPrecondition));
+
+  // The runtime is still usable.
+  ASSERT_THAT(runner.Run(), IsOk());
+  EXPECT_THAT(runner.template ReadOutputAs<float>(c),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {4, 6})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesConstantAdd) {
@@ -83,12 +130,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesConstantAdd) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({c}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(c));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_FLOAT_EQ(values[0], 4.f);
-  EXPECT_FLOAT_EQ(values[1], 6.f);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(c),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {4.f, 6.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesRuntimeInputAdd) {
@@ -104,20 +148,11 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesRuntimeInputAdd) {
   TensorType sum = Add(runtime_input, bias);
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto runner, Runner::Create({sum}));
-  const std::array<float, 2> host = {10.f, 20.f};
-  ASSERT_THAT(
-      runner.SetInput(
-          runtime_input,
-          absl::Span<const std::byte>(
-              reinterpret_cast<const std::byte*>(host.data()), sizeof(host))),
-      IsOk());
+  ASSERT_THAT(runner.SetInputAsCopy(runtime_input, {10.f, 20.f}), IsOk());
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto result, runner.ReadOutput(sum));
-  auto floats = std::move(result).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_FLOAT_EQ(values[0], 10.5f);
-  EXPECT_FLOAT_EQ(values[1], 20.5f);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(sum),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {10.5f, 20.5f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, MoveConstructorTransfersRuntime) {
@@ -139,12 +174,9 @@ TYPED_TEST_P(NnpackRunnerTest, MoveConstructorTransfersRuntime) {
 
   Runner moved_runner = std::move(runner);
   ASSERT_THAT(moved_runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, moved_runner.ReadOutput(c));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_FLOAT_EQ(values[0], 4.f);
-  EXPECT_FLOAT_EQ(values[1], 6.f);
+  EXPECT_THAT(moved_runner.template ReadOutputAs<float>(c),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {4.f, 6.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, MoveAssignmentTransfersRuntime) {
@@ -168,12 +200,9 @@ TYPED_TEST_P(NnpackRunnerTest, MoveAssignmentTransfersRuntime) {
   runner_b = std::move(runner_a);
 
   ASSERT_THAT(runner_b.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner_b.ReadOutput(c));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_FLOAT_EQ(values[0], 4.f);
-  EXPECT_FLOAT_EQ(values[1], 6.f);
+  EXPECT_THAT(runner_b.template ReadOutputAs<float>(c),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {4.f, 6.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ConstantsAreNotBoundAsExternals) {
@@ -222,12 +251,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesConstantMul) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({c}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(c));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_FLOAT_EQ(values[0], 8.f);
-  EXPECT_FLOAT_EQ(values[1], -0.5f);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(c),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {8.f, -0.5f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesConstantSub) {
@@ -246,12 +272,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesConstantSub) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({c}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(c));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_FLOAT_EQ(values[0], 2.f);
-  EXPECT_FLOAT_EQ(values[1], -3.f);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(c),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {2.f, -3.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesConstantDiv) {
@@ -270,12 +293,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesConstantDiv) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({c}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(c));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_FLOAT_EQ(values[0], 4.f);
-  EXPECT_FLOAT_EQ(values[1], -2.f);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(c),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {4.f, -2.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesMaximumAndMinimum) {
@@ -297,19 +317,12 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesMaximumAndMinimum) {
                                   Runner::Create({max_out, min_out}));
   ASSERT_THAT(runner.Run(), IsOk());
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto max_bytes, runner.ReadOutput(max_out));
-  auto max_vals = std::move(max_bytes).template As<const float>();
-  ASSERT_EQ(max_vals.size(), 3);
-  EXPECT_FLOAT_EQ(max_vals.data()[0], 0.f);
-  EXPECT_FLOAT_EQ(max_vals.data()[1], 4.f);
-  EXPECT_FLOAT_EQ(max_vals.data()[2], 5.f);
-
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto min_bytes, runner.ReadOutput(min_out));
-  auto min_vals = std::move(min_bytes).template As<const float>();
-  ASSERT_EQ(min_vals.size(), 3);
-  EXPECT_FLOAT_EQ(min_vals.data()[0], -1.f);
-  EXPECT_FLOAT_EQ(min_vals.data()[1], 2.f);
-  EXPECT_FLOAT_EQ(min_vals.data()[2], 1.f);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(max_out),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {0.f, 4.f, 5.f})));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(min_out),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {-1.f, 2.f, 1.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesPow) {
@@ -328,11 +341,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesPow) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({out}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(out));
-  auto vals = std::move(bytes).template As<const float>();
-  ASSERT_EQ(vals.size(), 2);
-  EXPECT_FLOAT_EQ(vals.data()[0], 8.f);
-  EXPECT_FLOAT_EQ(vals.data()[1], 3.f);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(out),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {8.f, 3.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesAbs) {
@@ -347,13 +358,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesAbs) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 3);
-  const float* values = floats.data();
-  EXPECT_FLOAT_EQ(values[0], 3.f);
-  EXPECT_FLOAT_EQ(values[1], 0.f);
-  EXPECT_FLOAT_EQ(values[2], 5.f);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {3.f, 0.f, 5.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesSquare) {
@@ -368,13 +375,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesSquare) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 3);
-  const float* values = floats.data();
-  EXPECT_FLOAT_EQ(values[0], 9.f);
-  EXPECT_FLOAT_EQ(values[1], 4.f);
-  EXPECT_FLOAT_EQ(values[2], 0.25f);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {9.f, 4.f, 0.25f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesRsqrt) {
@@ -389,12 +392,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesRsqrt) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_FLOAT_EQ(values[0], 0.5f);
-  EXPECT_FLOAT_EQ(values[1], 1.f / 3.f);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {0.5f, 1.f / 3.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesSqrt) {
@@ -409,12 +409,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesSqrt) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_FLOAT_EQ(values[0], 2.f);
-  EXPECT_FLOAT_EQ(values[1], 1.5f);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {2.f, 1.5f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesNeg) {
@@ -429,13 +426,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesNeg) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 3);
-  const float* values = floats.data();
-  EXPECT_FLOAT_EQ(values[0], 2.f);
-  EXPECT_FLOAT_EQ(values[1], -0.f);
-  EXPECT_FLOAT_EQ(values[2], -7.f);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {2.f, -0.f, -7.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesTanh) {
@@ -450,12 +443,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesTanh) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_NEAR(values[0], 0.f, 1e-6);
-  EXPECT_NEAR(values[1], 0.7615942f, 1e-6);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+              absl_testing::IsOkAndHolds(testing::Pointwise(
+                  testing::FloatNear(1e-6), {0.f, 0.7615942f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesSigmoid) {
@@ -470,12 +460,10 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesSigmoid) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_NEAR(values[0], 0.5f, 1e-6);
-  EXPECT_NEAR(values[1], 1.f / (1.f + std::exp(-1.f)), 1e-6);
+  EXPECT_THAT(
+      runner.template ReadOutputAs<float>(output),
+      absl_testing::IsOkAndHolds(testing::Pointwise(
+          testing::FloatNear(1e-6), {0.5f, 1.f / (1.f + std::exp(-1.f))})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesCos) {
@@ -491,12 +479,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesCos) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_NEAR(values[0], 1.f, 1e-6);
-  EXPECT_NEAR(values[1], -1.f, 1e-6);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatNear(1e-6), {1.f, -1.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesSin) {
@@ -512,12 +497,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesSin) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_NEAR(values[0], 0.f, 1e-6);
-  EXPECT_NEAR(values[1], 1.f, 1e-6);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatNear(1e-6), {0.f, 1.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesGelu) {
@@ -532,12 +514,10 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesGelu) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 1);
-  const float value = floats.data()[0];
   // Expected exact GELU(1) ≈ 0.8413447
-  EXPECT_NEAR(value, 0.8413447f, 1e-5);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatNear(1e-5), {0.8413447f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesSoftmax) {
@@ -552,26 +532,33 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesSoftmax) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 2);
-  const float* values = floats.data();
-  EXPECT_NEAR(values[0], 0.5f, 1e-5);
-  EXPECT_NEAR(values[1], 0.5f, 1e-5);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatNear(1e-5), {0.5f, 0.5f})));
 }
 
-TYPED_TEST_P(NnpackRunnerTest, SoftmaxRejectsBetaNotEqualToOne) {
-  using TensorType = typename TestFixture::TensorType;
-  using Runner = typename TestFixture::Runner;
+TYPED_TEST_P(NnpackRunnerTest, ComputesSoftmaxWithBeta) {
+  if constexpr (!TestFixture::Traits::kSupportsSoftmaxBeta) {
+    GTEST_SKIP() << "Softmax with beta != 1 is not supported by this backend";
+  } else {
+    using TensorType = typename TestFixture::TensorType;
+    using Runner = typename TestFixture::Runner;
 
-  TensorType input({.name = "input",
-                    .type = Type::kFP32,
-                    .shape = {2},
-                    .buffer = std::vector<float>{0.f, 0.f}});
-  TensorType output = Softmax(input, /*beta=*/2.0f);
+    TensorType input({.name = "input",
+                      .type = Type::kFP32,
+                      .shape = {2},
+                      .buffer = std::vector<float>{0.f, 1.f}});
+    TensorType output = Softmax(input, /*beta=*/2.0f);
 
-  auto runner = Runner::Create({output});
-  EXPECT_TRUE(absl::IsUnimplemented(runner.status()));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
+    ASSERT_THAT(runner.Run(), IsOk());
+    // softmax(beta * x) with beta = 2 and x = {0, 1}.
+    const float e2 = std::exp(2.0f);
+    EXPECT_THAT(
+        runner.template ReadOutputAs<float>(output),
+        absl_testing::IsOkAndHolds(testing::Pointwise(
+            testing::FloatNear(1e-5), {1.f / (1.f + e2), e2 / (1.f + e2)})));
+  }
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesConv2D) {
@@ -603,13 +590,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesConv2D) {
 
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto runner, Runner::Create({output}));
     ASSERT_THAT(runner.Run(), IsOk());
-    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-    auto floats = std::move(bytes).template As<const float>();
-    ASSERT_EQ(floats.size(), 4);
-    EXPECT_FLOAT_EQ(floats.data()[0], 93.f);
-    EXPECT_FLOAT_EQ(floats.data()[1], 113.f);
-    EXPECT_FLOAT_EQ(floats.data()[2], 193.f);
-    EXPECT_FLOAT_EQ(floats.data()[3], 213.f);
+    EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                absl_testing::IsOkAndHolds(testing::Pointwise(
+                    testing::FloatEq(), {93.f, 113.f, 193.f, 213.f})));
   }
 }
 
@@ -643,13 +626,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesDepthwiseConv2D) {
 
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto runner, Runner::Create({output}));
     ASSERT_THAT(runner.Run(), IsOk());
-    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-    auto floats = std::move(bytes).template As<const float>();
-    ASSERT_EQ(floats.size(), 4);
-    EXPECT_FLOAT_EQ(floats.data()[0], 93.f);
-    EXPECT_FLOAT_EQ(floats.data()[1], 113.f);
-    EXPECT_FLOAT_EQ(floats.data()[2], 193.f);
-    EXPECT_FLOAT_EQ(floats.data()[3], 213.f);
+    EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                absl_testing::IsOkAndHolds(testing::Pointwise(
+                    testing::FloatEq(), {93.f, 113.f, 193.f, 213.f})));
   }
 }
 
@@ -675,14 +654,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesFullyConnected) {
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto runner, Runner::Create({output}));
   ASSERT_THAT(runner.Run(), IsOk());
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-  auto floats = std::move(bytes).template As<const float>();
-  ASSERT_EQ(floats.size(), 4);
-  const float* values = floats.data();
-  EXPECT_FLOAT_EQ(values[0], 14.5f);
-  EXPECT_FLOAT_EQ(values[1], 33.5f);
-  EXPECT_FLOAT_EQ(values[2], 32.5f);
-  EXPECT_FLOAT_EQ(values[3], 78.5f);
+  EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+              absl_testing::IsOkAndHolds(testing::Pointwise(
+                  testing::FloatEq(), {14.5f, 33.5f, 32.5f, 78.5f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, BatchMatMulSupportsTransposeFlags) {
@@ -702,10 +676,10 @@ TYPED_TEST_P(NnpackRunnerTest, BatchMatMulSupportsTransposeFlags) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner1, Runner::Create({out1}));
   ASSERT_THAT(runner1.Run(), IsOk());
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto out1_bytes, runner1.ReadOutput(out1));
-  auto out1_vals = std::move(out1_bytes).template As<const float>();
-  EXPECT_THAT(out1_vals, ::testing::ElementsAreArray(
-                             {4.f, 5.f, 3.f, 1.f, 10.f, 11.f, 9.f, 7.f}));
+  EXPECT_THAT(
+      runner1.template ReadOutputAs<float>(out1),
+      absl_testing::IsOkAndHolds(testing::Pointwise(
+          testing::FloatEq(), {4.f, 5.f, 3.f, 1.f, 10.f, 11.f, 9.f, 7.f})));
 
   TensorType a2({.name = "a2",
                  .type = Type::kFP32,
@@ -720,9 +694,9 @@ TYPED_TEST_P(NnpackRunnerTest, BatchMatMulSupportsTransposeFlags) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({out2}));
   ASSERT_THAT(runner.Run(), IsOk());
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto out2_bytes, runner.ReadOutput(out2));
-  auto out2_vals = std::move(out2_bytes).template As<const float>();
-  EXPECT_THAT(out2_vals, ::testing::ElementsAreArray({9.f, 5.f, 21.f, 11.f}));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(out2),
+              absl_testing::IsOkAndHolds(testing::Pointwise(
+                  testing::FloatEq(), {9.f, 5.f, 21.f, 11.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesTranspose) {
@@ -739,10 +713,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesTranspose) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({transposed}));
   ASSERT_THAT(runner.Run(), IsOk());
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto t_bytes, runner.ReadOutput(transposed));
-  auto t_vals = std::move(t_bytes).template As<const float>();
-  EXPECT_THAT(t_vals,
-              ::testing::ElementsAreArray({1.f, 4.f, 2.f, 5.f, 3.f, 6.f}));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(transposed),
+              absl_testing::IsOkAndHolds(
+                  testing::ElementsAreArray({1.f, 4.f, 2.f, 5.f, 3.f, 6.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesMeanKeepDimsAndSqueeze) {
@@ -762,14 +735,12 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesMeanKeepDimsAndSqueeze) {
                                   Runner::Create({mean_keep, mean_squeeze}));
   ASSERT_THAT(runner.Run(), IsOk());
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto mk_bytes, runner.ReadOutput(mean_keep));
-  auto mk_vals = std::move(mk_bytes).template As<const float>();
-  EXPECT_THAT(mk_vals, ::testing::ElementsAreArray({2.f, 5.f}));
-
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto ms_bytes,
-                                  runner.ReadOutput(mean_squeeze));
-  auto ms_vals = std::move(ms_bytes).template As<const float>();
-  EXPECT_THAT(ms_vals, ::testing::ElementsAreArray({2.f, 5.f}));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(mean_keep),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {2.f, 5.f})));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(mean_squeeze),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {2.f, 5.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, TransposeAndMeanCombined) {
@@ -791,15 +762,12 @@ TYPED_TEST_P(NnpackRunnerTest, TransposeAndMeanCombined) {
 
   ASSERT_THAT(runner.Run(), IsOk());
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto t_bytes, runner.ReadOutput(transposed));
-  auto t_vals = std::move(t_bytes).template As<const float>();
-  EXPECT_THAT(t_vals,
-              ::testing::ElementsAreArray({1.f, 4.f, 2.f, 5.f, 3.f, 6.f}));
-
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto m_bytes,
-                                  runner.ReadOutput(mean_on_transposed));
-  auto m_vals = std::move(m_bytes).template As<const float>();
-  EXPECT_THAT(m_vals, ::testing::ElementsAreArray({2.5f, 3.5f, 4.5f}));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(transposed),
+              absl_testing::IsOkAndHolds(
+                  testing::ElementsAreArray({1.f, 4.f, 2.f, 5.f, 3.f, 6.f})));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(mean_on_transposed),
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {2.5f, 3.5f, 4.5f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesSlice) {
@@ -815,9 +783,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesSlice) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({slice}));
   ASSERT_THAT(runner.Run(), IsOk());
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto slice_bytes, runner.ReadOutput(slice));
-  auto slice_vals = std::move(slice_bytes).template As<const float>();
-  EXPECT_THAT(slice_vals, ::testing::ElementsAreArray({2.f, 3.f, 5.f, 6.f}));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(slice),
+              absl_testing::IsOkAndHolds(
+                  testing::ElementsAreArray({2.f, 3.f, 5.f, 6.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesConcatenation) {
@@ -840,11 +808,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesConcatenation) {
                                   Runner::Create({concatenated}));
   ASSERT_THAT(runner.Run(), IsOk());
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto concat_bytes,
-                                  runner.ReadOutput(concatenated));
-  auto concat_vals = std::move(concat_bytes).template As<const float>();
-  EXPECT_THAT(concat_vals, ::testing::ElementsAreArray(
-                               {1.f, 2.f, 10.f, 20.f, 3.f, 4.f, 30.f, 40.f}));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(concatenated),
+              absl_testing::IsOkAndHolds(testing::ElementsAreArray(
+                  {1.f, 2.f, 10.f, 20.f, 3.f, 4.f, 30.f, 40.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, SliceAndConcatenationCombined) {
@@ -869,15 +835,12 @@ TYPED_TEST_P(NnpackRunnerTest, SliceAndConcatenationCombined) {
                                   Runner::Create({slice, concatenated}));
   ASSERT_THAT(runner.Run(), IsOk());
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto slice_bytes, runner.ReadOutput(slice));
-  auto slice_vals = std::move(slice_bytes).template As<const float>();
-  EXPECT_THAT(slice_vals, ::testing::ElementsAreArray({2.f, 3.f, 5.f, 6.f}));
-
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto concat_bytes,
-                                  runner.ReadOutput(concatenated));
-  auto concat_vals = std::move(concat_bytes).template As<const float>();
-  EXPECT_THAT(concat_vals, ::testing::ElementsAreArray(
-                               {2.f, 3.f, 10.f, 20.f, 5.f, 6.f, 30.f, 40.f}));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(slice),
+              absl_testing::IsOkAndHolds(
+                  testing::ElementsAreArray({2.f, 3.f, 5.f, 6.f})));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(concatenated),
+              absl_testing::IsOkAndHolds(testing::ElementsAreArray(
+                  {2.f, 3.f, 10.f, 20.f, 5.f, 6.f, 30.f, 40.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesReshape) {
@@ -894,10 +857,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesReshape) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({reshaped}));
   ASSERT_THAT(runner.Run(), IsOk());
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto reshape_bytes,
-                                  runner.ReadOutput(reshaped));
-  auto reshape_vals = std::move(reshape_bytes).template As<const float>();
-  EXPECT_THAT(reshape_vals, ::testing::ElementsAreArray({1.f, 2.f, 3.f, 4.f}));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(reshaped),
+              absl_testing::IsOkAndHolds(
+                  testing::ElementsAreArray({1.f, 2.f, 3.f, 4.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ComputesTile) {
@@ -914,10 +876,9 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesTile) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({tiled}));
   ASSERT_THAT(runner.Run(), IsOk());
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto tile_bytes, runner.ReadOutput(tiled));
-  auto tile_vals = std::move(tile_bytes).template As<const float>();
-  EXPECT_THAT(tile_vals,
-              ::testing::ElementsAreArray({1.f, 2.f, 1.f, 2.f, 1.f, 2.f}));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(tiled),
+              absl_testing::IsOkAndHolds(
+                  testing::ElementsAreArray({1.f, 2.f, 1.f, 2.f, 1.f, 2.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, TilAndReshape) {
@@ -936,11 +897,9 @@ TYPED_TEST_P(NnpackRunnerTest, TilAndReshape) {
                                   Runner::Create({tiled, reshaped}));
   ASSERT_THAT(runner.Run(), IsOk());
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto reshape_bytes,
-                                  runner.ReadOutput(reshaped));
-  auto reshape_vals = std::move(reshape_bytes).template As<const float>();
-  EXPECT_THAT(reshape_vals,
-              ::testing::ElementsAreArray({1.f, 2.f, 1.f, 2.f, 1.f, 2.f}));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(reshaped),
+              absl_testing::IsOkAndHolds(
+                  testing::ElementsAreArray({1.f, 2.f, 1.f, 2.f, 1.f, 2.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ResizeBilinearAlignCorners) {
@@ -965,8 +924,8 @@ TYPED_TEST_P(NnpackRunnerTest, ResizeBilinearAlignCorners) {
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
     ASSERT_THAT(runner.Run(), IsOk());
 
-    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-    auto floats = std::move(bytes).template As<const float>();
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto floats, runner.template ReadOutputAs<float>(output));
     ASSERT_EQ(floats.size(), 16);
 
     // Top-left should remain 1.0
@@ -1013,8 +972,8 @@ TYPED_TEST_P(NnpackRunnerTest, ResizeBilinearHalfPixelCenters) {
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
     ASSERT_THAT(runner.Run(), IsOk());
 
-    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-    auto floats = std::move(bytes).template As<const float>();
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto floats, runner.template ReadOutputAs<float>(output));
     ASSERT_EQ(floats.size(), 16);
 
     // Scale = 2/4 = 0.5.
@@ -1054,8 +1013,8 @@ TYPED_TEST_P(NnpackRunnerTest, ResizeBilinearLegacy) {
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
     ASSERT_THAT(runner.Run(), IsOk());
 
-    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-    auto floats = std::move(bytes).template As<const float>();
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto floats, runner.template ReadOutputAs<float>(output));
 
     // Scale = 2/4 = 0.5.
     // in_coord = out * scale
@@ -1096,8 +1055,8 @@ TYPED_TEST_P(NnpackRunnerTest, ResizeBilinearDownsample) {
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
     ASSERT_THAT(runner.Run(), IsOk());
 
-    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-    auto floats = std::move(bytes).template As<const float>();
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto floats, runner.template ReadOutputAs<float>(output));
     ASSERT_EQ(floats.size(), 4);
 
     // Scale = 4/2 = 2.
@@ -1135,8 +1094,8 @@ TYPED_TEST_P(NnpackRunnerTest, ResizeBilinearBatchAndChannels) {
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
     ASSERT_THAT(runner.Run(), IsOk());
 
-    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-    auto floats = std::move(bytes).template As<const float>();
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        auto floats, runner.template ReadOutputAs<float>(output));
     ASSERT_EQ(floats.size(), 2 * 4 * 4 * 2);  // 64 elements
 
     // Check Batch 0, Channel 0, Top-Left (should be 1)
@@ -1168,39 +1127,15 @@ TYPED_TEST_P(NnpackRunnerTest, ResizeNearestNeighborIntegerScale) {
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
     ASSERT_THAT(runner.Run(), IsOk());
 
-    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-    auto floats = std::move(bytes).template As<const float>();
-    ASSERT_EQ(floats.size(), 16);
-
     // Expected:
     // 1 1 2 2
     // 1 1 2 2
     // 3 3 4 4
     // 3 3 4 4
-
-    // Row 0
-    EXPECT_NEAR(floats.data()[0], 1.f, 1e-5);
-    EXPECT_NEAR(floats.data()[1], 1.f, 1e-5);
-    EXPECT_NEAR(floats.data()[2], 2.f, 1e-5);
-    EXPECT_NEAR(floats.data()[3], 2.f, 1e-5);
-
-    // Row 1
-    EXPECT_NEAR(floats.data()[4], 1.f, 1e-5);
-    EXPECT_NEAR(floats.data()[5], 1.f, 1e-5);
-    EXPECT_NEAR(floats.data()[6], 2.f, 1e-5);
-    EXPECT_NEAR(floats.data()[7], 2.f, 1e-5);
-
-    // Row 2
-    EXPECT_NEAR(floats.data()[8], 3.f, 1e-5);
-    EXPECT_NEAR(floats.data()[9], 3.f, 1e-5);
-    EXPECT_NEAR(floats.data()[10], 4.f, 1e-5);
-    EXPECT_NEAR(floats.data()[11], 4.f, 1e-5);
-
-    // Row 3
-    EXPECT_NEAR(floats.data()[12], 3.f, 1e-5);
-    EXPECT_NEAR(floats.data()[13], 3.f, 1e-5);
-    EXPECT_NEAR(floats.data()[14], 4.f, 1e-5);
-    EXPECT_NEAR(floats.data()[15], 4.f, 1e-5);
+    EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                absl_testing::IsOkAndHolds(testing::ElementsAreArray(
+                    {1.f, 1.f, 2.f, 2.f, 1.f, 1.f, 2.f, 2.f, 3.f, 3.f, 4.f, 4.f,
+                     3.f, 3.f, 4.f, 4.f})));
   }
 }
 
@@ -1216,9 +1151,10 @@ TYPED_TEST_P(NnpackRunnerTest, ResizeNearestNeighborRejectsNonInteger) {
   // Resize to 3x3 (1.5x scale) - unsupported.
   TensorType output = ResizeNearestNeighbor(input, {3, 3});
 
-  auto runner = Runner::Create({output});
-  EXPECT_TRUE(absl::IsUnimplemented(runner.status()) ||
-              absl::IsInvalidArgument(runner.status()));
+  EXPECT_THAT(Runner::Create({output}),
+              absl_testing::StatusIs(
+                  testing::AnyOf(absl::StatusCode::kUnimplemented,
+                                 absl::StatusCode::kInvalidArgument)));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ResizeNearestNeighborRejectsAlignCorners) {
@@ -1233,9 +1169,10 @@ TYPED_TEST_P(NnpackRunnerTest, ResizeNearestNeighborRejectsAlignCorners) {
   TensorType output =
       ResizeNearestNeighbor(input, {4, 4}, /*align_corners=*/true);
 
-  auto runner = Runner::Create({output});
-  EXPECT_TRUE(absl::IsUnimplemented(runner.status()) ||
-              absl::IsInvalidArgument(runner.status()));
+  EXPECT_THAT(Runner::Create({output}),
+              absl_testing::StatusIs(
+                  testing::AnyOf(absl::StatusCode::kUnimplemented,
+                                 absl::StatusCode::kInvalidArgument)));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ResizeNearestNeighborRejectsHalfPixel) {
@@ -1251,9 +1188,10 @@ TYPED_TEST_P(NnpackRunnerTest, ResizeNearestNeighborRejectsHalfPixel) {
       ResizeNearestNeighbor(input, {4, 4}, /*align_corners=*/false,
                             /*half_pixel_centers=*/true);
 
-  auto runner = Runner::Create({output});
-  EXPECT_TRUE(absl::IsUnimplemented(runner.status()) ||
-              absl::IsInvalidArgument(runner.status()));
+  EXPECT_THAT(Runner::Create({output}),
+              absl_testing::StatusIs(
+                  testing::AnyOf(absl::StatusCode::kUnimplemented,
+                                 absl::StatusCode::kInvalidArgument)));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ResizeNearestNeighborIdentityScale) {
@@ -1270,9 +1208,9 @@ TYPED_TEST_P(NnpackRunnerTest, ResizeNearestNeighborIdentityScale) {
     TensorType output = ResizeNearestNeighbor(input, {2, 2});
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
     ASSERT_THAT(runner.Run(), IsOk());
-    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-    auto floats = std::move(bytes).template As<const float>();
-    EXPECT_THAT(floats, ::testing::ElementsAreArray({1.f, 2.f, 3.f, 4.f}));
+    EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                absl_testing::IsOkAndHolds(
+                    testing::ElementsAreArray({1.f, 2.f, 3.f, 4.f})));
   }
 }
 
@@ -1291,14 +1229,13 @@ TYPED_TEST_P(NnpackRunnerTest, ResizeNearestNeighborAnisotropicScale) {
     TensorType output = ResizeNearestNeighbor(input, {2, 6});
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
     ASSERT_THAT(runner.Run(), IsOk());
-    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-    auto floats = std::move(bytes).template As<const float>();
 
     // Row 0: [10, 10, 10, 20, 20, 20]
     // Row 1: [10, 10, 10, 20, 20, 20]
-    std::vector<float> expected = {10.f, 10.f, 10.f, 20.f, 20.f, 20.f,
-                                   10.f, 10.f, 10.f, 20.f, 20.f, 20.f};
-    EXPECT_THAT(floats, ::testing::ElementsAreArray(expected));
+    EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                absl_testing::IsOkAndHolds(testing::ElementsAreArray(
+                    {10.f, 10.f, 10.f, 20.f, 20.f, 20.f, 10.f, 10.f, 10.f, 20.f,
+                     20.f, 20.f})));
   }
 }
 
@@ -1321,25 +1258,15 @@ TYPED_TEST_P(NnpackRunnerTest, ResizeNearestNeighborBatchAndChannels) {
     TensorType output = ResizeNearestNeighbor(input, {2, 2});
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
     ASSERT_THAT(runner.Run(), IsOk());
-    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-    auto floats = std::move(bytes).template As<const float>();
 
     // Output: 2x2x2x2
     // B0 should be all [1, 2] blocks.
     // B1 should be all [3, 4] blocks.
     // 4 pixels per batch. 8 floats per batch.
-    ASSERT_EQ(floats.size(), 16);
-
-    // Check B0
-    for (int i = 0; i < 8; i += 2) {
-      EXPECT_EQ(floats.data()[i], 1.f);
-      EXPECT_EQ(floats.data()[i + 1], 2.f);
-    }
-    // Check B1
-    for (int i = 8; i < 16; i += 2) {
-      EXPECT_EQ(floats.data()[i], 3.f);
-      EXPECT_EQ(floats.data()[i + 1], 4.f);
-    }
+    EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                absl_testing::IsOkAndHolds(testing::ElementsAreArray(
+                    {1.f, 2.f, 1.f, 2.f, 1.f, 2.f, 1.f, 2.f, 3.f, 4.f, 3.f, 4.f,
+                     3.f, 4.f, 3.f, 4.f})));
   }
 }
 
@@ -1376,17 +1303,17 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesTransposeConv2D) {
 
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
     ASSERT_THAT(runner.Run(), IsOk());
-    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-    auto floats = std::move(bytes).template As<const float>();
 
     // Expected:
     // 1 1 2 2
     // 1 1 2 2
     // 3 3 4 4
     // 3 3 4 4
-    std::vector<float> expected = {1.f, 1.f, 2.f, 2.f, 1.f, 1.f, 2.f, 2.f,
-                                   3.f, 3.f, 4.f, 4.f, 3.f, 3.f, 4.f, 4.f};
-    EXPECT_THAT(floats, ::testing::ElementsAreArray(expected));
+    EXPECT_THAT(
+        runner.template ReadOutputAs<float>(output),
+        absl_testing::IsOkAndHolds(testing::Pointwise(
+            testing::FloatEq(), {1.f, 1.f, 2.f, 2.f, 1.f, 1.f, 2.f, 2.f, 3.f,
+                                 3.f, 4.f, 4.f, 3.f, 3.f, 4.f, 4.f})));
   }
 }
 
@@ -1420,17 +1347,17 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesTransposeConv2DSame) {
 
     LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
     ASSERT_THAT(runner.Run(), IsOk());
-    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto bytes, runner.ReadOutput(output));
-    auto floats = std::move(bytes).template As<const float>();
 
     // Expected:
     // 1 1 3 2
     // 1 1 3 2
     // 4 4 10 6
     // 3 3 7 4
-    std::vector<float> expected = {1.f, 1.f, 3.f,  2.f, 1.f, 1.f, 3.f, 2.f,
-                                   4.f, 4.f, 10.f, 6.f, 3.f, 3.f, 7.f, 4.f};
-    EXPECT_THAT(floats, ::testing::ElementsAreArray(expected));
+    EXPECT_THAT(
+        runner.template ReadOutputAs<float>(output),
+        absl_testing::IsOkAndHolds(testing::Pointwise(
+            testing::FloatEq(), {1.f, 1.f, 3.f, 2.f, 1.f, 1.f, 3.f, 2.f, 4.f,
+                                 4.f, 10.f, 6.f, 3.f, 3.f, 7.f, 4.f})));
   }
 }
 
@@ -1461,8 +1388,8 @@ TYPED_TEST_P(NnpackRunnerTest, TransposeConvRejectsInvalidOutputShape) {
         TransposeConv(filter, input, bias, {1, 5, 5, 1}, kPaddingValid,
                       /*stride_h=*/2, /*stride_w=*/2);
 
-    auto runner = Runner::Create({output});
-    EXPECT_EQ(runner.status().code(), absl::StatusCode::kInvalidArgument);
+    EXPECT_THAT(Runner::Create({output}),
+                absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
   }
 }
 
@@ -1488,7 +1415,8 @@ TYPED_TEST_P(NnpackRunnerTest, ComputesRuntimeInputFromTensorHandle) {
   ASSERT_THAT(runner.Run(), IsOk());
 
   EXPECT_THAT(runner.template ReadOutputAs<float>(c),
-              absl_testing::IsOkAndHolds(testing::ElementsAre(4.f, 6.f)));
+              absl_testing::IsOkAndHolds(
+                  testing::Pointwise(testing::FloatEq(), {4.f, 6.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, ReallocatesOwningCpuBufferOnReshape) {
@@ -1514,9 +1442,9 @@ TYPED_TEST_P(NnpackRunnerTest, ReallocatesOwningCpuBufferOnReshape) {
               IsOk());
   ASSERT_THAT(runner.Run(), IsOk());
 
-  EXPECT_THAT(
-      runner.template ReadOutputAs<float>(c),
-      absl_testing::IsOkAndHolds(testing::ElementsAre(6.f, 8.f, 10.f, 12.f)));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(c),
+              absl_testing::IsOkAndHolds(testing::Pointwise(
+                  testing::FloatEq(), {6.f, 8.f, 10.f, 12.f})));
 }
 
 TYPED_TEST_P(NnpackRunnerTest, FailsWhenNonOwningViewTooSmall) {
@@ -1539,20 +1467,215 @@ TYPED_TEST_P(NnpackRunnerTest, FailsWhenNonOwningViewTooSmall) {
   // Reshaping to 4 elements requires 16 bytes, but view only has 8 bytes. Run()
   // must fail!
   ASSERT_THAT(runner.ReshapeInput(a, {4}), IsOk());
-  auto status = runner.Run();
-  EXPECT_THAT(status,
+  EXPECT_THAT(runner.Run(),
               absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+namespace runner_test_internal {
+
+// Returns `size` smoothly varying values in [-scale, scale].
+inline std::vector<float> Wave(int size, float scale) {
+  std::vector<float> values(size);
+  for (int i = 0; i < size; ++i) {
+    values[i] = std::sin(0.3f * i + 0.1f) * scale;
+  }
+  return values;
+}
+
+}  // namespace runner_test_internal
+
+// An attention mask [1, 1, S, K] broadcasts over the heads of the scores
+// [1, H, S, K], and the graph keeps working once S and K change.
+TYPED_TEST_P(NnpackRunnerTest, BroadcastsReshapedInput) {
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+  using runner_test_internal::Wave;
+
+  constexpr int kHeads = 2;
+  TensorType mask({.name = "mask", .type = Type::kFP32, .shape = {1, 1, 1, 3}});
+  TensorType scores(
+      {.name = "scores", .type = Type::kFP32, .shape = {1, kHeads, 1, 3}});
+  TensorType output = Add(scores, mask);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
+  for (const auto& [seq, keys] : {std::pair{1, 3}, std::pair{2, 4}}) {
+    SCOPED_TRACE(testing::Message() << "seq=" << seq << " keys=" << keys);
+    const std::vector<float> mask_data = Wave(seq * keys, 1.f);
+    const std::vector<float> scores_data = Wave(kHeads * seq * keys, 3.f);
+    ASSERT_THAT(runner.ReshapeInput(mask, {1, 1, seq, keys}), IsOk());
+    ASSERT_THAT(runner.ReshapeInput(scores, {1, kHeads, seq, keys}), IsOk());
+    ASSERT_THAT(runner.SetInputAsCopy(mask, mask_data), IsOk());
+    ASSERT_THAT(runner.SetInputAsCopy(scores, scores_data), IsOk());
+    ASSERT_THAT(runner.Run(), IsOk());
+
+    std::vector<float> expected(scores_data.size());
+    for (int h = 0; h < kHeads; ++h) {
+      for (int i = 0; i < seq * keys; ++i) {
+        expected[h * seq * keys + i] =
+            scores_data[h * seq * keys + i] + mask_data[i];
+      }
+    }
+    EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                absl_testing::IsOkAndHolds(
+                    testing::Pointwise(testing::FloatNear(1e-6f), expected)));
+  }
+}
+
+// The key of grouped query attention is tiled over the query heads, transposed
+// and consumed as the right-hand side of a batch matmul, while the number of
+// keys changes.
+TYPED_TEST_P(NnpackRunnerTest, TileTransposeBatchMatMul) {
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+  using runner_test_internal::Wave;
+
+  constexpr int kHeads = 4;
+  constexpr int kSeq = 2;
+  constexpr int kDim = 8;
+  TensorType q(
+      {.name = "q", .type = Type::kFP32, .shape = {1, kHeads, kSeq, kDim}});
+  TensorType k({.name = "k", .type = Type::kFP32, .shape = {1, 1, 3, kDim}});
+  TensorType tiled = Tile(k, std::vector<int>{1, kHeads, 1, 1});
+  TensorType transposed = Transpose(tiled, std::vector<int>{0, 1, 3, 2});
+  TensorType output = BatchMatMul(q, transposed);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
+  for (const int keys : {3, 5}) {
+    SCOPED_TRACE(testing::Message() << "keys=" << keys);
+    const std::vector<float> q_data = Wave(kHeads * kSeq * kDim, 1.f);
+    const std::vector<float> k_data = Wave(keys * kDim, 2.f);
+    ASSERT_THAT(runner.ReshapeInput(k, {1, 1, keys, kDim}), IsOk());
+    ASSERT_THAT(runner.SetInputAsCopy(q, q_data), IsOk());
+    ASSERT_THAT(runner.SetInputAsCopy(k, k_data), IsOk());
+    ASSERT_THAT(runner.Run(), IsOk());
+
+    std::vector<float> expected(kHeads * kSeq * keys);
+    for (int h = 0; h < kHeads; ++h) {
+      for (int s = 0; s < kSeq; ++s) {
+        for (int t = 0; t < keys; ++t) {
+          float sum = 0.f;
+          for (int d = 0; d < kDim; ++d) {
+            sum += q_data[(h * kSeq + s) * kDim + d] * k_data[t * kDim + d];
+          }
+          expected[(h * kSeq + s) * keys + t] = sum;
+        }
+      }
+    }
+    EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                absl_testing::IsOkAndHolds(
+                    testing::Pointwise(testing::FloatNear(1e-4f), expected)));
+  }
+}
+
+// Squeeze keeps working once the dimensions it keeps change.
+TYPED_TEST_P(NnpackRunnerTest, SqueezeReshapedInput) {
+  if constexpr (!TestFixture::Traits::kSupportsSqueezeOfReshapedInput) {
+    GTEST_SKIP()
+        << "Squeeze of a reshaped input not supported for this backend";
+  }
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+  using runner_test_internal::Wave;
+
+  TensorType x({.name = "x", .type = Type::kFP32, .shape = {1, 2, 3}});
+  TensorType output = Squeeze(x, {0});
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
+  for (const int seq : {2, 4}) {
+    SCOPED_TRACE(testing::Message() << "seq=" << seq);
+    const std::vector<float> x_data = Wave(seq * 3, 1.f);
+    ASSERT_THAT(runner.ReshapeInput(x, {1, seq, 3}), IsOk());
+    ASSERT_THAT(runner.SetInputAsCopy(x, x_data), IsOk());
+    ASSERT_THAT(runner.Run(), IsOk());
+    EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                absl_testing::IsOkAndHolds(testing::ElementsAreArray(x_data)));
+  }
+}
+
+TYPED_TEST_P(NnpackRunnerTest, SqueezeSpecificDims) {
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+
+  const std::vector<float> data = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f};
+  TensorType x({.name = "x",
+                .type = Type::kFP32,
+                .shape = {2, 1, 3, 1},
+                .buffer = data});
+  TensorType one_dim = Squeeze(x, {1});
+  TensorType negative_dim = Squeeze(x, {-1});
+  TensorType all_dims = Squeeze(x);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      Runner runner, Runner::Create({one_dim, negative_dim, all_dims}));
+  ASSERT_THAT(runner.Run(), IsOk());
+  EXPECT_THAT(runner.template ReadOutputAs<float>(one_dim),
+              absl_testing::IsOkAndHolds(testing::ElementsAreArray(data)));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(negative_dim),
+              absl_testing::IsOkAndHolds(testing::ElementsAreArray(data)));
+  EXPECT_THAT(runner.template ReadOutputAs<float>(all_dims),
+              absl_testing::IsOkAndHolds(testing::ElementsAreArray(data)));
+}
+
+TYPED_TEST_P(NnpackRunnerTest, SqueezeRejectsDimsWithExtentOtherThanOne) {
+  if constexpr (!TestFixture::Traits::kRejectsInvalidSqueeze) {
+    GTEST_SKIP() << "Invalid squeezes are not rejected by this backend";
+  }
+  using TensorType = typename TestFixture::TensorType;
+  using Runner = typename TestFixture::Runner;
+
+  TensorType x({.name = "x",
+                .type = Type::kFP32,
+                .shape = {2, 1},
+                .buffer = std::vector<float>{1.f, 2.f}});
+  TensorType output = Squeeze(x, {0});
+  EXPECT_THAT(Runner::Create({output}).status(),
+              absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+// A fully connected op with quantized weights keeps working when a decode
+// graph (1 row) is reshaped into a prefill graph (several rows).
+TYPED_TEST_P(NnpackRunnerTest, QuantizedFullyConnectedReshapedInput) {
+  using TensorType = typename TestFixture::TensorType;
+  using Tag = typename TestFixture::Tag;
+  using Runner = typename TestFixture::Runner;
+  namespace qtu = quantized_test_utils;
+
+  constexpr int kK = 64;
+  constexpr int kN = 8;
+  for (const qtu::Quant quantization :
+       {qtu::PerChannel(/*dim=*/0), qtu::Blockwise(/*dim=*/0, /*block=*/32)}) {
+    SCOPED_TRACE(testing::Message() << "quantization=" << quantization);
+    const qtu::QuantizedMatrix w =
+        qtu::MakeQuantizedMatrix(Type::kI4, kN, kK, quantization);
+    TensorType input({.name = "input", .type = Type::kFP32, .shape = {1, kK}});
+    TensorType output = FullyConnected(input, w.ToTensor<Tag>());
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
+    for (const int rows : {1, 5}) {
+      SCOPED_TRACE(testing::Message() << "rows=" << rows);
+      const std::vector<float> input_data = qtu::MakeInput(rows * kK);
+      const auto& [expected, tolerance] = qtu::MatMul(
+          input_data, rows, kK, kN, [&](int k, int n) { return w.At(n, k); });
+      ASSERT_THAT(runner.ReshapeInput(input, {rows, kK}), IsOk());
+      ASSERT_THAT(runner.SetInputAsCopy(input, input_data), IsOk());
+      ASSERT_THAT(runner.Run(), IsOk());
+      EXPECT_THAT(runner.template ReadOutputAs<float>(output),
+                  absl_testing::IsOkAndHolds(testing::Pointwise(
+                      testing::FloatNear(tolerance), expected)));
+    }
+  }
 }
 
 REGISTER_TYPED_TEST_SUITE_P(
     NnpackRunnerTest, SetInputRejectsNonExternalTensors, ComputesConstantAdd,
-    ComputesRuntimeInputAdd, MoveConstructorTransfersRuntime,
+    ComputesRuntimeInputAdd, SetNumThreadsBeforeRunUsesThreads,
+    SetNumThreadsFailsAfterPrepare, MoveConstructorTransfersRuntime,
     MoveAssignmentTransfersRuntime, ConstantsAreNotBoundAsExternals,
     ComputesConstantMul, ComputesConstantSub, ComputesConstantDiv,
     ComputesMaximumAndMinimum, ComputesPow, ComputesAbs, ComputesSquare,
     ComputesRsqrt, ComputesSqrt, ComputesNeg, ComputesTanh, ComputesSigmoid,
     ComputesCos, ComputesSin, ComputesGelu, ComputesSoftmax,
-    SoftmaxRejectsBetaNotEqualToOne, ComputesConv2D, ComputesDepthwiseConv2D,
+    ComputesSoftmaxWithBeta, ComputesConv2D, ComputesDepthwiseConv2D,
     ComputesFullyConnected, BatchMatMulSupportsTransposeFlags,
     ComputesTranspose, ComputesMeanKeepDimsAndSqueeze, TransposeAndMeanCombined,
     ComputesSlice, ComputesConcatenation, SliceAndConcatenationCombined,
@@ -1566,7 +1689,10 @@ REGISTER_TYPED_TEST_SUITE_P(
     ResizeNearestNeighborBatchAndChannels, ComputesTransposeConv2D,
     ComputesTransposeConv2DSame, TransposeConvRejectsInvalidOutputShape,
     ComputesRuntimeInputFromTensorHandle, ReallocatesOwningCpuBufferOnReshape,
-    FailsWhenNonOwningViewTooSmall);
+    FailsWhenNonOwningViewTooSmall, BroadcastsReshapedInput,
+    TileTransposeBatchMatMul, SqueezeReshapedInput, SqueezeSpecificDims,
+    SqueezeRejectsDimsWithExtentOtherThanOne,
+    QuantizedFullyConnectedReshapedInput);
 
 }  // namespace litert::tensor
 

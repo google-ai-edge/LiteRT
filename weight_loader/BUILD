@@ -31,7 +31,9 @@ cc_library(
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context_header",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:scoped_weight_source",
         "//litert/core:environment",
@@ -40,15 +42,16 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ] + select({
         "//conditions:default": [],
         # copybara:uncomment_begin(google-only)
-        # "//tools/cc_target_os:emscripten": [
+        # # WebGPU headers and upload callbacks are only needed on Emscripten when
+        # # GPU support is enabled (omitted in cpu_only builds).
+        # "//litert/build_common:emscripten_gpu_enabled": [
+        # "@com_google_absl//absl/status",
         # "@ml_drift//ml_drift/webgpu:webgpu_headers",
         # ],
         # copybara:uncomment_end
@@ -73,7 +76,6 @@ cc_test(
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",

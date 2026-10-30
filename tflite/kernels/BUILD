@@ -2228,6 +2228,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite:array",
         "//tflite:framework_stable",
         "//tflite/core:framework_stable",
         "//tflite/kernels/internal:tensor",
@@ -2269,6 +2270,7 @@ cc_test(
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_googletest//:gtest",
+        "@flatbuffers",
     ],
 )
 
@@ -2392,6 +2394,7 @@ cc_test(
         "//tflite:string",
         "//tflite:string_util",
         "//tflite/core:framework_stable",
+        "//tflite/core/c:common",
         "//tflite/kernels/internal:tensor",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
@@ -3557,3 +3560,14 @@ tflite_combine_cc_tests(
 )
 
 tflite_self_contained_libs_test_suite(name = "self_contained_libs_tests")
+
+cc_test(
+    name = "register_ref_test",
+    srcs = ["register_ref_test.cc"],
+    deps = [
+        ":reference_ops",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

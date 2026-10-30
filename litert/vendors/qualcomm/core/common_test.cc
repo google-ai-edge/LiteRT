@@ -243,6 +243,15 @@ TEST(QnnOptionTest, UseFoldReLU) {
   EXPECT_EQ(options.GetUseFoldReLU(), false);
 }
 
+TEST(QnnOptionTest, OpNameFormat) {
+  Options options;
+  EXPECT_EQ(options.GetOpNameFormat(), OpNameFormat::kBasic);
+  options.SetOpNameFormat(OpNameFormat::kDetailed);
+  EXPECT_EQ(options.GetOpNameFormat(), OpNameFormat::kDetailed);
+  options.SetOpNameFormat(OpNameFormat::kBasic);
+  EXPECT_EQ(options.GetOpNameFormat(), OpNameFormat::kBasic);
+}
+
 TEST(QnnOptionTest, HtpPPoint) {
   Options options;
   EXPECT_EQ(options.GetHtpPPoint(), 0);
@@ -250,6 +259,15 @@ TEST(QnnOptionTest, HtpPPoint) {
   EXPECT_EQ(options.GetHtpPPoint(), 2);
   options.SetHtpPPoint(0);
   EXPECT_EQ(options.GetHtpPPoint(), 0);
+}
+
+TEST(QnnOptionTest, HtpWeightSharingChannelTileSize) {
+  Options options;
+  EXPECT_EQ(options.GetHtpWeightSharingChannelTileSize(), 0);
+  options.SetHtpWeightSharingChannelTileSize(64);
+  EXPECT_EQ(options.GetHtpWeightSharingChannelTileSize(), 64);
+  options.SetHtpWeightSharingChannelTileSize(0);
+  EXPECT_EQ(options.GetHtpWeightSharingChannelTileSize(), 0);
 }
 
 TEST(QnnOptionTest, HtpDlbc) {
@@ -304,6 +322,24 @@ TEST(QnnOptionTest, SetVtcmSize) {
   EXPECT_EQ(options.GetVtcmSize(), 4);
   options.SetVtcmSize(0);
   EXPECT_EQ(options.GetVtcmSize(), 0);
+}
+
+TEST(QnnOptionTest, SetHtpDeviceId) {
+  Options options;
+  EXPECT_EQ(options.GetHtpDeviceId(), 0);
+  options.SetHtpDeviceId(1);
+  EXPECT_EQ(options.GetHtpDeviceId(), 1);
+  options.SetHtpDeviceId(0);
+  EXPECT_EQ(options.GetHtpDeviceId(), 0);
+}
+
+TEST(QnnOptionTest, SetHtpFileReadMemoryBudgetMB) {
+  Options options;
+  EXPECT_EQ(options.GetHtpFileReadMemoryBudgetMB(), 0);
+  options.SetHtpFileReadMemoryBudgetMB(16);
+  EXPECT_EQ(options.GetHtpFileReadMemoryBudgetMB(), 16);
+  options.SetHtpFileReadMemoryBudgetMB(0);
+  EXPECT_EQ(options.GetHtpFileReadMemoryBudgetMB(), 0);
 }
 
 TEST(QnnOptionTest, SetHvxThread) {
@@ -395,7 +431,9 @@ TEST(QnnOptionTest, Default) {
   EXPECT_FALSE(options.GetEnableWeightSharing());
   EXPECT_TRUE(options.GetUseConvHMX());
   EXPECT_TRUE(options.GetUseFoldReLU());
+  EXPECT_EQ(options.GetOpNameFormat(), OpNameFormat::kBasic);
   EXPECT_EQ(options.GetHtpPPoint(), 0);
+  EXPECT_EQ(options.GetHtpWeightSharingChannelTileSize(), 0);
   EXPECT_FALSE(options.GetHtpDlbc());
   EXPECT_FALSE(options.GetHtpDlbcWeights());
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);
@@ -409,7 +447,9 @@ TEST(QnnOptionTest, Default) {
   EXPECT_TRUE(options.GetDlcDir().empty());
   EXPECT_TRUE(options.GetGraphTransform().empty());
   EXPECT_EQ(options.GetVtcmSize(), 0);
+  EXPECT_EQ(options.GetHtpDeviceId(), 0);
   EXPECT_EQ(options.GetNumHvxThreads(), 0);
+  EXPECT_EQ(options.GetHtpFileReadMemoryBudgetMB(), 0);
   EXPECT_EQ(options.GetOptimizationLevel(),
             OptimizationLevel::kHtpOptimizeForInferenceO3);
   EXPECT_EQ(options.GetGraphPriority(), GraphPriority::kDefault);

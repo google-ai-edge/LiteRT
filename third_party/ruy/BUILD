@@ -16,4 +16,5 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "ruy.BUILD",
+    "ruy.patch",
 ])

@@ -14,6 +14,7 @@
 
 #include "litert/cc/litert_compiled_model.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -43,6 +44,7 @@
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_model.h"
@@ -266,6 +268,25 @@ TEST(CompiledModelTest, Basic) {
                               compiled_model.IsNonCpuFullyAccelerated());
   ASSERT_FALSE(nonCpuFullyAccelerated);
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto delegation_metrics,
+                              compiled_model.GetDelegationMetrics());
+  EXPECT_GT(delegation_metrics.total_node_count, 0);
+  EXPECT_FALSE(delegation_metrics.accelerators.empty());
+  int cpu_delegated_nodes = 0;
+  int cpu_partitions = 0;
+  for (const auto& acc : delegation_metrics.accelerators) {
+    EXPECT_FALSE(acc.accelerator_name.empty());
+    if (acc.hardware_type & kLiteRtHwAcceleratorCpu) {
+      cpu_delegated_nodes += acc.delegated_node_count;
+      cpu_partitions += acc.partition_count;
+    } else {
+      EXPECT_EQ(acc.delegated_node_count, 0);
+      EXPECT_EQ(acc.partition_count, 0);
+    }
+  }
+  EXPECT_GT(cpu_delegated_nodes, 0);
+  EXPECT_GT(cpu_partitions, 0);
+
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -306,7 +327,15 @@ TEST(CompiledModelTest, Basic) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute model with input and output buffers.
+  auto duration_before = compiled_model.LastInferenceDurationNanoseconds();
+  ASSERT_TRUE(duration_before);
+  EXPECT_EQ(*duration_before, -1);
+
   compiled_model.Run(input_buffers, output_buffers);
+
+  auto duration_after = compiled_model.LastInferenceDurationNanoseconds();
+  ASSERT_TRUE(duration_after);
+  EXPECT_GT(*duration_after, 0);
 
   // Check model output.
   {
@@ -320,6 +349,13 @@ TEST(CompiledModelTest, Basic) {
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
+
+  // Verify that a failed run resets the duration to -1.
+  EXPECT_FALSE(compiled_model.Run(std::vector<TensorBuffer>{}, output_buffers));
+  auto duration_after_failed =
+      compiled_model.LastInferenceDurationNanoseconds();
+  ASSERT_TRUE(duration_after_failed);
+  EXPECT_EQ(*duration_after_failed, -1);
 }
 
 TEST(CompiledModelTest, OwningCreateRejectsNonOwnedModel) {
@@ -350,7 +386,7 @@ TEST(CompiledModelTest, OwningCreateRunsAfterModelMove) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
       CompiledModelTestPeer::Create(env, std::move(model), options));
-  EXPECT_FALSE(model);
+  EXPECT_FALSE(model);  // NOLINT(bugprone-use-after-move)
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
                               compiled_model.CreateInputBuffers());
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
@@ -407,7 +443,11 @@ TEST(CompiledModelTest, OwningCreateRunsAfterModelMove) {
 //                               compiled_model.CreateOutputBuffers());
 //   const auto after = GetPrimarySubgraphAllocInfo(*interpreter);
 // 
-//   EXPECT_NE(after.arena_size, before.arena_size);
+//   // Output tensors are marked kTfLiteNonCpu during CompiledModel
+//   // initialization, so TFLite's ArenaPlanner does not allocate host arena
+//   // memory for them even when AllocateTensors is invoked to resolve dynamic
+//   // output dimensions.
+//   EXPECT_EQ(after.arena_size, before.arena_size);
 //   EXPECT_EQ(after.arena_persist_size, before.arena_persist_size);
 //   EXPECT_EQ(after.dynamic_size, before.dynamic_size);
 //   EXPECT_EQ(after.resource_size, before.resource_size);
@@ -848,8 +888,7 @@ TEST(CompiledModelTest, SignatureAccessorsInvalidContext) {
   EXPECT_THAT(input_type_bad_sig.Error().Message(),
               ::testing::HasSubstr("Signature not found: invalid_key_sig"));
 
-  auto input_type =
-      compiled_model.GetInputTensorType("invalid_input_type");
+  auto input_type = compiled_model.GetInputTensorType("invalid_input_type");
   ASSERT_FALSE(input_type.HasValue());
   EXPECT_THAT(
       input_type.Error().Message(),
@@ -861,8 +900,7 @@ TEST(CompiledModelTest, SignatureAccessorsInvalidContext) {
   EXPECT_THAT(output_type_bad_sig.Error().Message(),
               ::testing::HasSubstr("Signature not found: invalid_key_sig"));
 
-  auto output_type =
-      compiled_model.GetOutputTensorType("invalid_output_type");
+  auto output_type = compiled_model.GetOutputTensorType("invalid_output_type");
   ASSERT_FALSE(output_type.HasValue());
   EXPECT_THAT(
       output_type.Error().Message(),
@@ -1601,6 +1639,97 @@ TEST(CompiledModelTest, ResizeInputTensorNonStrictAllowsStaticShapes) {
       /*input_index=*/size_t(0), absl::MakeConstSpan(new_dims)));
 }
 
+TEST(CompiledModelTest, EmptyInputResizeAndRunTransitions) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+  for (bool strict : {true, false}) {
+    SCOPED_TRACE(strict);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        CompiledModel model,
+        CompiledModel::Create(env,
+                              testing::GetTestFilePath(kDynamicModelFileName),
+                              HwAccelerators::kCpu));
+    for (int rows : {0, 3, 0, 1}) {
+      SCOPED_TRACE(rows);
+      const std::vector<int> dims = {rows, 2, 3};
+      for (size_t input = 0; input < 2; ++input) {
+        if (strict) {
+          LITERT_ASSERT_OK(model.ResizeInputTensor(input, dims));
+        } else {
+          LITERT_ASSERT_OK(model.ResizeInputTensorNonStrict(input, dims));
+        }
+        LITERT_ASSERT_OK_AND_ASSIGN(auto requirements,
+                                    model.GetInputBufferRequirements(input));
+        LITERT_ASSERT_OK_AND_ASSIGN(size_t bytes, requirements.BufferSize());
+        EXPECT_EQ(bytes, rows * 6 * sizeof(float));
+      }
+      LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, model.CreateInputBuffers());
+      LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, model.CreateOutputBuffers());
+      std::vector<float> values(rows * 6, 2.0f);
+      if (!values.empty()) {
+        for (auto& input : inputs) {
+          LITERT_ASSERT_OK(input.Write<float>(values));
+        }
+      }
+      LITERT_ASSERT_OK(model.Run(inputs, outputs));
+      LITERT_ASSERT_OK_AND_ASSIGN(auto layouts,
+                                  model.GetOutputTensorLayouts(size_t(0)));
+      ASSERT_EQ(layouts.size(), 1);
+      EXPECT_THAT(layouts[0].Dimensions(), ElementsAre(rows, 2, 3));
+      if (!values.empty()) {
+        LITERT_ASSERT_OK(outputs[0].Read<float>(absl::MakeSpan(values)));
+        EXPECT_THAT(values, ::testing::Each(4.0f));
+      }
+    }
+    const std::vector<int> invalid_dims = {-1, 2, 3};
+    LITERT_ASSERT_ERROR(model.ResizeInputTensor(size_t(0), invalid_dims));
+    LITERT_ASSERT_ERROR(
+        model.ResizeInputTensorNonStrict(size_t(0), invalid_dims));
+  }
+}
+
+TEST(CompiledModelTest, EmptyInputAutomaticResizeTransitions) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel model,
+      CompiledModel::Create(env,
+                            testing::GetTestFilePath(kDynamicModelFileName),
+                            HwAccelerators::kCpu));
+  for (int rows : {0, 3, 0, 1}) {
+    SCOPED_TRACE(rows);
+    const RankedTensorType type(ElementType::Float32,
+                                Layout(Dimensions({rows, 2, 3})));
+    const size_t bytes = rows * 6 * sizeof(float);
+    std::vector<TensorBuffer> inputs;
+    for (size_t input = 0; input < 2; ++input) {
+      LITERT_ASSERT_OK_AND_ASSIGN(
+          auto buffer, TensorBuffer::CreateManaged(
+                           env, TensorBufferType::kHostMemory, type, bytes));
+      if (rows != 0) {
+        const std::vector<float> values(rows * 6, 2.0f);
+        LITERT_ASSERT_OK(buffer.Write<float>(values));
+      }
+      inputs.push_back(std::move(buffer));
+    }
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto output, TensorBuffer::CreateManaged(
+                         env, TensorBufferType::kHostMemory, type, bytes));
+    std::vector<TensorBuffer> outputs;
+    outputs.push_back(std::move(output));
+    // Run must detect the empty/nonempty input layouts without an explicit
+    // ResizeInputTensor call, and keep the supplied output allocation valid.
+    LITERT_ASSERT_OK(model.Run(inputs, outputs));
+    LITERT_ASSERT_OK_AND_ASSIGN(auto layouts,
+                                model.GetOutputTensorLayouts(size_t(0)));
+    ASSERT_EQ(layouts.size(), 1);
+    EXPECT_THAT(layouts[0].Dimensions(), ElementsAre(rows, 2, 3));
+    if (rows != 0) {
+      std::vector<float> values(rows * 6);
+      LITERT_ASSERT_OK(outputs[0].Read<float>(absl::MakeSpan(values)));
+      EXPECT_THAT(values, ::testing::Each(4.0f));
+    }
+  }
+}
+
 TEST(CompiledModelTest, GetBufferRequirementsDetailed) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
@@ -1836,6 +1965,33 @@ TEST(CompiledModelTest, CreateWithConstEnvironment) {
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
   LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+}
+
+TEST(CompiledModelTest, InvalidInputShapesFailCreateEvenWithCpuFallback) {
+  const std::string plugin_dir = testing::GetLiteRtPath("vendors/examples/");
+  const std::array environment_options = {
+      EnvironmentOptions::Option{
+          EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+          plugin_dir.c_str(),
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment env,
+      Environment::Create(EnvironmentOptions(environment_options)));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK(options.SetHardwareAccelerators(HwAccelerators::kCpu |
+                                                   HwAccelerators::kNpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& compiler_options,
+                              options.GetCompilerOptions());
+  const int32_t dims[] = {1, 8};
+  LITERT_ASSERT_OK(
+      compiler_options.AddTensorInputShape("nonexistent_tensor", dims));
+
+  auto compiled_model = CompiledModel::Create(
+      env, testing::GetTestFilePath(kModelFileName), options);
+  ASSERT_FALSE(compiled_model.HasValue());
+  EXPECT_EQ(compiled_model.Error().Status(), kLiteRtStatusErrorNotFound);
 }
 
 }  // namespace

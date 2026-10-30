@@ -25,7 +25,6 @@
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
-#include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -170,7 +169,7 @@ void AdapterAot::FreeCompiledCode(char** compiled_code_data,
                            num_bytecodes);
 }
 
-Expected<std::vector<int32_t>> AdapterAot::GetUnsupportedOps(
+Expected<std::vector<UnsupportedOp>> AdapterAot::GetUnsupportedOps(
     const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
     size_t options_size) {
   if (!api_->get_unsupported_ops) {
@@ -178,21 +177,21 @@ Expected<std::vector<int32_t>> AdapterAot::GetUnsupportedOps(
                               "get_unsupported_ops symbol not loaded");
   }
 
-  int32_t* unsupported_op_indices = nullptr;
+  GoogleTensorUnsupportedOp* unsupported_ops = nullptr;
   size_t num_unsupported_ops = 0;
   char* error_message = nullptr;
   absl::Cleanup cleanup = [&] {
     if (error_message) {
       api_->free_error_message(error_message);
     }
-    if (unsupported_op_indices) {
-      api_->free_unsupported_ops(unsupported_op_indices);
+    if (unsupported_ops) {
+      api_->free_unsupported_ops(unsupported_ops, num_unsupported_ops);
     }
   };
 
   bool success = api_->get_unsupported_ops(
-      tfl_buffer_data, tfl_buffer_size, options, options_size,
-      &unsupported_op_indices, &num_unsupported_ops, &error_message);
+      tfl_buffer_data, tfl_buffer_size, options, options_size, &unsupported_ops,
+      &num_unsupported_ops, &error_message);
 
   if (!success) {
     std::string error_str = "Failed to get unsupported ops";
@@ -202,8 +201,14 @@ Expected<std::vector<int32_t>> AdapterAot::GetUnsupportedOps(
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure, error_str);
   }
 
-  std::vector<int32_t> result(unsupported_op_indices,
-                              unsupported_op_indices + num_unsupported_ops);
+  std::vector<UnsupportedOp> result;
+  result.reserve(num_unsupported_ops);
+  for (size_t i = 0; i < num_unsupported_ops; ++i) {
+    result.push_back(UnsupportedOp{
+        .op_index = unsupported_ops[i].op_index,
+        .reason = unsupported_ops[i].reason ? unsupported_ops[i].reason : "",
+    });
+  }
   return result;
 }
 
@@ -252,8 +257,7 @@ Expected<std::vector<bool>> AdapterAot::AreCompositesSupported(
   supported_flags.reserve(composite_names.size());
   for (const GoogleTensorCompositeOpValidationResult& result : results) {
     if (result.category == GOOGLE_TENSOR_COMPOSITE_VALIDATION_INTERNAL_ERROR) {
-      std::string error_msg =
-          "Internal error during composite op validation";
+      std::string error_msg = "Internal error during composite op validation";
       if (result.failure_reason != nullptr) {
         absl::StrAppend(&error_msg, ": ", result.failure_reason);
       }

@@ -54,6 +54,7 @@ litert_dynamic_lib(
         "//litert/cc/internal:litert_opaque_options_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/compiler/cc:litert_model",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/compiler/legalizations:common_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:operand_map",
@@ -106,7 +107,7 @@ cc_library(
         "//litert/vendors/mediatek/compiler/legalizations:sub_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:transpose_conv_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:transpose_op_legalization",
-        "@neuro_pilot//:v8_latest_host_headers",
+        "@neuro_pilot//:neuron_host_headers",
     ],
 )
 
@@ -126,7 +127,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_absl//absl/strings",
-        "@neuro_pilot//:v8_latest_host_headers",
+        "@neuro_pilot//:neuron_host_headers",
     ],
 )
 
@@ -178,6 +179,7 @@ litert_test(
         "//litert/test:load_test_model",
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/cc:litert_compiler_plugin",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_absl//absl/log:absl_check",
@@ -189,7 +191,7 @@ sh_test(
     name = "mediatek_compiler_plugin_so_symbol_test",
     srcs = ["//litert/test:litert_compiler_plugin_symbol_test.sh"],
     args = [
-        "$(location :compiler_plugin_so)",
+        "$(rootpath :compiler_plugin_so)",
     ],
     data = [
         ":compiler_plugin_so",

@@ -33,6 +33,7 @@ EXPORTS
   LiteRtBuilderBuildConcatenationOpOption
   LiteRtBuilderBuildConv2dOpOption
   LiteRtBuilderBuildConv3dOpOption
+  LiteRtBuilderBuildConv3dTransposeOpOption
   LiteRtBuilderBuildCumsumOpOption
   LiteRtBuilderBuildDepthToSpaceOpOption
   LiteRtBuilderBuildDepthwiseConv2dOpOption
@@ -72,11 +73,13 @@ EXPORTS
   LiteRtClearTensorBuffer
   LiteRtClearTensorBufferEvent
   LiteRtCompiledModelClearErrors
+  LiteRtCompiledModelGetDelegationMetrics
   LiteRtCompiledModelGetDispatchAnnotation
   LiteRtCompiledModelGetErrorMessages
   LiteRtCompiledModelGetProfiler
   LiteRtCompiledModelIsFullyAccelerated
   LiteRtCompiledModelIsNonCpuFullyAccelerated
+  LiteRtCompiledModelRegisterTensorBuffer
   LiteRtCompiledModelRemoveDispatchAnnotation
   LiteRtCompiledModelReportError
   LiteRtCompiledModelResizeInputTensor
@@ -85,6 +88,7 @@ EXPORTS
   LiteRtCompiledModelSetSchedulingInfo
   LiteRtCompiledModelStartMetricsCollection
   LiteRtCompiledModelStopMetricsCollection
+  LiteRtCompiledModelUnregisterTensorBuffer
   LiteRtCreateAccelerator
   LiteRtCreateCompiledModel
   LiteRtCreateEnvironment
@@ -102,6 +106,7 @@ EXPORTS
   LiteRtCreateOptions
   LiteRtCreateProfiler
   LiteRtCreateTensorBufferFromAhwb
+  LiteRtCreateTensorBufferFromCustomHandle
   LiteRtCreateTensorBufferFromDmaBufBuffer
   LiteRtCreateTensorBufferFromFastRpcBuffer
   LiteRtCreateTensorBufferFromGlBuffer
@@ -140,6 +145,10 @@ EXPORTS
   LiteRtExternalLiteRtBufferContextUnregisterTensorBuffer
   LiteRtFindOpaqueOptionsData
   LiteRtFullyConnectedGetQuantizedBiasTypeOption
+  LiteRtGetAcceleratorDelegationMetricsDelegatedNodeCount
+  LiteRtGetAcceleratorDelegationMetricsHardwareType
+  LiteRtGetAcceleratorDelegationMetricsName
+  LiteRtGetAcceleratorDelegationMetricsPartitionCount
   LiteRtGetAcceleratorEnvironment
   LiteRtGetAddFusedActivationOption
   LiteRtGetAveragePool2dFilterHeightOption
@@ -155,6 +164,7 @@ EXPORTS
   LiteRtGetCompiledModelEnvironment
   LiteRtGetCompiledModelInputBufferRequirements
   LiteRtGetCompiledModelInputTensorLayout
+  LiteRtGetCompiledModelLastInferenceDuration
   LiteRtGetCompiledModelOutputBufferRequirements
   LiteRtGetCompiledModelOutputTensorLayouts
   LiteRtGetConcatenationAxisOption
@@ -173,8 +183,18 @@ EXPORTS
   LiteRtGetConv3dStrideDOption
   LiteRtGetConv3dStrideHOption
   LiteRtGetConv3dStrideWOption
+  LiteRtGetConv3dTransposeDilationDOption
+  LiteRtGetConv3dTransposeDilationHOption
+  LiteRtGetConv3dTransposeDilationWOption
+  LiteRtGetConv3dTransposeFusedActivationOption
+  LiteRtGetConv3dTransposePaddingOption
+  LiteRtGetConv3dTransposeStrideDOption
+  LiteRtGetConv3dTransposeStrideHOption
+  LiteRtGetConv3dTransposeStrideWOption
   LiteRtGetCumsumExclusiveOption
   LiteRtGetCumsumReverseOption
+  LiteRtGetDelegationMetricsAccelerator
+  LiteRtGetDelegationMetricsTotalNodeCount
   LiteRtGetDepthToSpaceBlockSizeOption
   LiteRtGetDepthwiseConv2dDepthMultiplierOption
   LiteRtGetDepthwiseConv2dDilationHOption
@@ -206,6 +226,10 @@ EXPORTS
   LiteRtGetL2Pool2dStrideHOption
   LiteRtGetL2Pool2dStrideWOption
   LiteRtGetLeakyReluAlphaOption
+  LiteRtGetLocalResponseNormalizationAlphaOption
+  LiteRtGetLocalResponseNormalizationBetaOption
+  LiteRtGetLocalResponseNormalizationBiasOption
+  LiteRtGetLocalResponseNormalizationRadiusOption
   LiteRtGetMainModelSubgraphIndex
   LiteRtGetMaxPool2dFilterHeightOption
   LiteRtGetMaxPool2dFilterWidthOption
@@ -221,6 +245,7 @@ EXPORTS
   LiteRtGetModelSubgraph
   LiteRtGetMulFusedActivationOption
   LiteRtGetNextOpaqueOptions
+  LiteRtGetNumDelegationMetricsAccelerators
   LiteRtGetNumMetrics
   LiteRtGetNumModelSignatures
   LiteRtGetNumModelSubgraphs
@@ -260,6 +285,7 @@ EXPORTS
   LiteRtGetResizeBilinearHalfPixelCenterOption
   LiteRtGetResizeNearestNeighborAlignCornersOption
   LiteRtGetResizeNearestNeighborHalfPixelCenterOption
+  LiteRtGetRuntimeAbiVersion
   LiteRtGetSHLOCompositeOpAttributes
   LiteRtGetSHLOCompositeOpDecompositionSubgraphIndex
   LiteRtGetSHLOCompositeOpName

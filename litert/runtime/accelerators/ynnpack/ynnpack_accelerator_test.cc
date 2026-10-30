@@ -130,7 +130,8 @@ std::vector<uint8_t> CreateAddThenResizeBilinearModel() {
 
 Expected<void> CompileWithYnnpackEnabled(
     LiteRtEnvironment environment, LiteRtModel model,
-    std::vector<std::string>* delegate_names) {
+    std::vector<std::string>* delegate_names,
+    bool hint_fully_delegated = false) {
   LITERT_RETURN_IF_ERROR(environment != nullptr,
                          ErrorStatusBuilder::InvalidArgument());
   LITERT_RETURN_IF_ERROR(model != nullptr,
@@ -145,6 +146,8 @@ Expected<void> CompileWithYnnpackEnabled(
 
   LITERT_ASSIGN_OR_RETURN(auto cpu_options, CpuOptions::Create());
   LITERT_RETURN_IF_ERROR(cpu_options.SetEnableYNNPack(true));
+  LITERT_RETURN_IF_ERROR(
+      cpu_options.SetHintFullyDelegatedToSingleDelegate(hint_fully_delegated));
   const char* identifier = nullptr;
   void* payload = nullptr;
   void (*payload_deleter)(void*) = nullptr;
@@ -222,6 +225,32 @@ TEST(YnnpackAcceleratorTest, DelegatesSupportedNodesBeforeXnnpack) {
   LITERT_ASSERT_OK(result);
   EXPECT_THAT(delegate_names,
               ElementsAre("YNNPackDelegate", "TfLiteXNNPackDelegate"));
+#else
+  EXPECT_FALSE(result.HasValue());
+  EXPECT_EQ(result.Error().Status(), kLiteRtStatusErrorUnsupported);
+#endif
+
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
+}
+
+TEST(YnnpackAcceleratorTest,
+     FailsWhenSingleDelegateHintIsSetAndGraphIsPartiallyDelegated) {
+  LiteRtEnvironment environment = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateEnvironment(0, nullptr, &environment));
+
+  const std::vector<uint8_t> model_buffer = CreateAddThenResizeBilinearModel();
+  LiteRtModel model = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateModelFromBuffer(environment, model_buffer.data(),
+                                               model_buffer.size(), &model));
+
+  std::vector<std::string> delegate_names;
+  auto result = CompileWithYnnpackEnabled(environment, model, &delegate_names,
+                                          /*hint_fully_delegated=*/true);
+
+#if defined(LITERT_TEST_EXPECT_YNNPACK)
+  EXPECT_FALSE(result.HasValue());
+  EXPECT_EQ(result.Error().Status(), kLiteRtStatusErrorRuntimeFailure);
 #else
   EXPECT_FALSE(result.HasValue());
   EXPECT_EQ(result.Error().Status(), kLiteRtStatusErrorUnsupported);

@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensor/runners/common_nnpack/runner.h"
 
+#include <algorithm>  // IWYU pragma: keep
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -22,6 +23,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/base/dynamic_annotations.h"  // from @com_google_absl  // IWYU pragma: keep
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -195,7 +197,7 @@ absl::Status NnpackRunner::WriteInput(const TensorHandle& tensor,
 
 absl::Status NnpackRunner::PrepareRuntime() {
   if (!runtime_prepared_) {
-    LRT_TENSOR_RETURN_IF_ERROR(CreateRuntime(num_threads_));
+    LRT_TENSOR_RETURN_IF_ERROR(CreateRuntime());
     runtime_prepared_ = true;
   }
   return absl::OkStatus();
@@ -249,7 +251,30 @@ absl::Status NnpackRunner::Run() {
       absl::MakeSpan(graph_->mutable_values()), external_buffers_, locks));
 
   // Invoke runtime
-  return InvokeRuntime();
+  LRT_TENSOR_RETURN_IF_ERROR(InvokeRuntime());
+
+#if defined(ABSL_HAVE_MEMORY_SANITIZER)
+  // Assembly kernels executed by external backends (such as XNNPACK on AArch64)
+  // write directly to memory without compiler-generated MSAN shadow updates.
+  // Explicitly mark external output buffers as initialized to prevent false-
+  // positive MSAN use-of-uninitialized-value errors when outputs are read.
+  for (const auto& value : graph_->values()) {
+    if ((value.flags & FlagExternalOutput()) == 0) {
+      continue;
+    }
+    auto it = external_buffers_.find(value.id);
+    if (it != external_buffers_.end() && it->second != nullptr) {
+      LockedBufferSpan<const std::byte> lock = it->second->Lock();
+      if (lock.data() != nullptr) {
+        const size_t byte_size = ByteSize(value.info);
+        ABSL_ANNOTATE_MEMORY_IS_INITIALIZED(lock.data(),
+                                            std::min(lock.size(), byte_size));
+      }
+    }
+  }
+#endif
+
+  return absl::OkStatus();
 }
 
 absl::StatusOr<LockedBufferSpan<const std::byte>> NnpackRunner::ReadOutput(

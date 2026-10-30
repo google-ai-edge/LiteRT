@@ -44,7 +44,39 @@ TEST(TensorTypeUtil, GetNumElementsWithUnknownDimension) {
 TEST(TensorTypeUtil, GetNumElementsWithZeroDimension) {
   constexpr std::array<int, 3> dimensions = {3, 0, 1};
   auto num_elements = GetNumElements(absl::MakeSpan(dimensions));
-  EXPECT_FALSE(num_elements);
+  ASSERT_TRUE(num_elements);
+  EXPECT_EQ(*num_elements, 0);
+}
+
+TEST(TensorTypeUtil, EmptyShapeStillRejectsNegativeDimensions) {
+  constexpr std::array<int, 3> dimensions = {0, -1, 4};
+  EXPECT_FALSE(GetNumElements(absl::MakeSpan(dimensions)));
+}
+
+TEST(TensorTypeUtil, EmptyShapeDoesNotOverflow) {
+  constexpr std::array<size_t, 3> dimensions = {
+      std::numeric_limits<size_t>::max(), 2, 0};
+  auto num_elements = GetNumElements(absl::MakeSpan(dimensions));
+  ASSERT_TRUE(num_elements);
+  EXPECT_EQ(*num_elements, 0);
+}
+
+TEST(TensorTypeUtil, EmptyPackedAndStridedByteSizes) {
+  constexpr std::array<int, 4> dimensions = {1, 1, 0, 256};
+  constexpr std::array<int, 4> strides = {256, 256, 256, 1};
+  for (auto type : {kLiteRtElementTypeFloat32, kLiteRtElementTypeInt2}) {
+    auto packed = GetNumPackedBytes(type, absl::MakeSpan(dimensions));
+    ASSERT_TRUE(packed);
+    EXPECT_EQ(*packed, 0);
+    auto strided =
+        GetNumBytes(type, absl::MakeSpan(dimensions), absl::MakeSpan(strides));
+    ASSERT_TRUE(strided);
+    EXPECT_EQ(*strided, 0);
+  }
+  constexpr std::array<int, 4> invalid_strides = {256, 256, 256, -1};
+  EXPECT_FALSE(GetNumBytes(kLiteRtElementTypeFloat32,
+                           absl::MakeSpan(dimensions),
+                           absl::MakeSpan(invalid_strides)));
 }
 
 TEST(TensorTypeUtil, GetNumElementsWithOverflow) {

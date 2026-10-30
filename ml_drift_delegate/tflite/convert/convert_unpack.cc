@@ -44,7 +44,7 @@ void ConvertUnpack(
 
   if (num == 1) {
     ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
-    reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+    reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
     const int output_id = node.outputs->data[0];
     const ::ml_drift::ir::IrTensorId ir_output_id = tensor_map[output_id];
 
@@ -68,7 +68,7 @@ void ConvertUnpack(
   split_attr.axis = ml_drift_axis;
 
   ::ml_drift::ir::IrOp* split_op = ir_model.add_op();
-  split_op->name = ToString(::ml_drift::OperationType::SPLIT);
+  split_op->name = ToString(::ml_drift::OperationType::kSplit);
   split_op->attr = split_attr;
 
   ir_model.AddConsumer(input_ir_id, split_op->id);
@@ -100,7 +100,7 @@ void ConvertUnpack(
     ir_model.SetProducer(split_tensor->id, split_op->id);
 
     ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
-    reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+    reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
 
     const TfLiteTensor* output_tensor = context.tensors + output_tfl_id;
     if (output_tensor->dims->size == 5) {

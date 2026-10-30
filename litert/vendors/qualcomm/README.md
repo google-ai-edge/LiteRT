@@ -16,8 +16,10 @@ The build and run docs live in [doc/](./doc/). Read them in this order:
 flowchart LR
     A[PREREQUISITES.md<br/>Install toolchain] --> B[QAIRT_SDK.md<br/>QNN concepts and libraries]
     B --> C[HTP_INSTRUCTIONS.md<br/>Compile and execute]
+    B -. "Pip, no source build" .-> H[PYTHON_AOT_INSTRUCTIONS.md<br/>Compile via pip-installed packages]
+    H -. "Run compiled model on NPU" .-> C
     B -. "QNN Native Path" .-> G[LITERT_QNN_NATIVE_RUN.md<br/>Run a .dlc via qnn-net-run]
-    C -. "IoT target" .-> D[IOT_DEVICE_SETUP.md<br/>Flash oe-linux device]
+    C -. "IoT target" .-> D[IOT_DEVICE_SETUP.md<br/>Flash oe-linux or Ubuntu device]
     C -. "LPAI target" .-> E[LPAI_INSTRUCTIONS.md<br/>Always-on low-power engine]
     C -. "Custom TFLite op" .-> F[CUSTOM_OP_INSTRUCTIONS.md<br/>Build and use a QNN custom op package]
 ```
@@ -27,7 +29,8 @@ flowchart LR
 | [PREREQUISITES.md](./doc/PREREQUISITES.md) | Always | Install the toolchain. Skip if already installed. |
 | [QAIRT_SDK.md](./doc/QAIRT_SDK.md) | Always | QNN backends, platforms, and how to locate the QNN libraries (`.so`), plus QAIRT native tools. |
 | [HTP_INSTRUCTIONS.md](./doc/HTP_INSTRUCTIONS.md) | Always | Compile and run a model: AOT on host (Bazel / CMake) and JIT on device. |
-| [IOT_DEVICE_SETUP.md](./doc/IOT_DEVICE_SETUP.md) | Conditional | Flash an IoT device (with Qualcomm oe-linux or Qualcomm Ubuntu), then follow [Run on device (IoT device with oe-linux)](./doc/HTP_INSTRUCTIONS.md#run-on-device-iot-device-with-oe-linux) in HTP_INSTRUCTIONS.md. |
+| [PYTHON_AOT_INSTRUCTIONS.md](./doc/PYTHON_AOT_INSTRUCTIONS.md) | Conditional | Compile a `.tflite` for the NPU on x86 Linux via pip-installed packages (`ai-edge-litert` + `ai-edge-litert-sdk-qualcomm`); no Bazel/CMake source build. |
+| [IOT_DEVICE_SETUP.md](./doc/IOT_DEVICE_SETUP.md) | Conditional | Flash an IoT device (with Qualcomm oe-linux or Qualcomm Ubuntu), then follow [Run on device (IoT device with oe-linux)](./doc/HTP_INSTRUCTIONS.md#run-on-device-iot-device-with-oe-linux) or [Run on device (IoT device with Ubuntu)](./doc/HTP_INSTRUCTIONS.md#run-on-device-iot-device-with-ubuntu) in HTP_INSTRUCTIONS.md. |
 | [LPAI_INSTRUCTIONS.md](./doc/LPAI_INSTRUCTIONS.md) | Conditional | Target the LPAI (Low Power AI) backend for always-on embedded use cases. |
 | [CUSTOM_OP_INSTRUCTIONS.md](./doc/CUSTOM_OP_INSTRUCTIONS.md) | Conditional | Build a QNN custom op package and run TFLite custom ops on the NPU. |
 | [LITERT_QNN_NATIVE_RUN.md](./doc/LITERT_QNN_NATIVE_RUN.md) | Conditional | Compile a `.tflite` to a `.dlc` with LiteRT, then run the QNN graph natively through the QAIRT native tools (`qnn-context-binary-generator` → `qnn-net-run`) on host or device. |
@@ -54,6 +57,22 @@ LiteRT supports a wide range of Qualcomm SoCs through the QNN SDK. Top tier:
 
 For a complete and up-to-date list of supported devices, please refer to
 [supported_soc.csv](./supported_soc.csv).
+
+## IoT Devices 📦
+
+IoT device (such as IQ-8275) can be flashed with either Qualcomm's oe-linux
+image or an Ubuntu OS image. See
+[IOT_DEVICE_SETUP.md](./doc/IOT_DEVICE_SETUP.md). Both are aarch64 Linux.
+`libLiteRt.so`, `libLiteRtDispatch_Qualcomm.so`, and the JIT compiler plugin
+`libLiteRtCompilerPlugin_Qualcomm.so` are ABI-compatible across both build
+systems and both OS images, so either build works on either device. Keep the
+three LiteRT libraries on the same source revision and pair them with a QAIRT
+SDK version supported by that revision:
+
+| Build system | Config | Needs eSDK | Section |
+|---|---|---|---|
+| Bazel | `--config=linux_arm64` | No | [Run on device (IoT device with Ubuntu)](./doc/HTP_INSTRUCTIONS.md#run-on-device-iot-device-with-ubuntu) |
+| CMake | `linux-aarch64-oe-gcc11.2` preset | Yes | [Run on device (IoT device with oe-linux)](./doc/HTP_INSTRUCTIONS.md#run-on-device-iot-device-with-oe-linux) |
 
 ## Tooling 🛠️
 

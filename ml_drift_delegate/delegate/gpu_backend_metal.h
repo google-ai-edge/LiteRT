@@ -155,6 +155,12 @@ class GpuBackendMetal : public GpuBackend {
   // Underlying Metal command queue.
   id<MTLCommandQueue> command_queue() const { return command_queue_; }
   id<MTLResidencySet> residency_set() const { return residency_set_; }
+  // Updates reference counts in the Metal residency set when a tensor binding
+  // changes from `old_alloc` to `new_alloc`. Returns true if the residency set
+  // membership changed and needs to be committed.
+  API_AVAILABLE(macos(15.0), ios(18.0))
+  bool UpdateResidencyAllocation(id<MTLAllocation> old_alloc,
+                                 id<MTLAllocation> new_alloc);
   // Set up a new command queue to the underying Metal command queue.
   void set_command_queue(id<MTLCommandQueue> command_queue) {
     command_queue_ = command_queue;
@@ -198,6 +204,7 @@ class GpuBackendMetal : public GpuBackend {
   id<MTLComputeCommandEncoder> compute_command_encoder_ = nullptr;
   ::ml_drift::metal::MemoryManager memory_manager_;
   id<MTLResidencySet> residency_set_ = nil;
+  absl::flat_hash_map<const void*, int> residency_allocation_ref_counts_;
   std::thread heartbeat_thread_ ABSL_GUARDED_BY(residency_mutex_);
   std::unique_ptr<absl::Notification> stop_heartbeat_
       ABSL_GUARDED_BY(residency_mutex_);
@@ -290,6 +297,7 @@ class GpuIOBufferMetal : public GpuIOBuffer {
   // Implementation of GpuIOBuffer.
   absl::Status Read(absl::Span<uint8_t> data) override;
   absl::Status Write(absl::Span<const uint8_t> data) override;
+  size_t GetSize() const override { return buffer_.GetMemorySizeInBytes(); }
 
   // Underlying immutable Metal buffer.
   const ::ml_drift::metal::Buffer& metal_buffer() const { return buffer_; }

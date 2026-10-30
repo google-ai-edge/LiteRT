@@ -20,7 +20,7 @@ def litert_friends():
     Return the package group declaration for internal code locations that need
     visibility to all LiteRT APIs"""
 
-    return []
+    return ["public"]
 
 def friends_of_litert_runtime_builtin_static():
     """Targets with access to litert_runtime_builtin_static target.
@@ -68,6 +68,64 @@ def litert_platform_defines():
     """This is a no-op outside of Google."""
     return []
 
+def litert_linkopts_unstripped():
+    """Defines linker flags to reduce size of LiteRT binary without stripping symbols."""
+    return select({
+        "//litert:android": [
+            "-latomic",
+            "-Wl,--gc-sections",
+            "-Wl,--as-needed",
+            "-Wl,-z,max-page-size=16384",
+        ],
+        "//litert:macos": [],
+        "//litert:ios": [],
+        "//litert:windows": [],
+        "//conditions:default": [
+            "-Wl,--gc-sections",
+            "-Wl,--as-needed",
+        ],
+    })
+
+def litert_linkopts():
+    """Defines linker flags to reduce size of LiteRT binary."""
+    return select({
+        "//litert:android": [
+            "-Wl,-s",
+            "-latomic",
+            "-Wl,--gc-sections",
+            "-Wl,--as-needed",
+            "-Wl,-z,max-page-size=16384",
+        ],
+        "//litert:macos": [],
+        "//litert:ios": [],
+        "//litert:windows": [],
+        "//conditions:default": [
+            "-Wl,-s",
+            "-Wl,--gc-sections",
+            "-Wl,--as-needed",
+        ],
+    })
+
+def litert_jni_linkopts():
+    return select({
+        "//litert:android": [
+            "-Wl,-s",
+            "-latomic",
+            "-Wl,--gc-sections",
+            "-Wl,--as-needed",
+            "-Wl,-z,max-page-size=16384",
+        ],
+        "//conditions:default": [
+            "-Wl,-s",
+        ],
+    })
+
+def litert_linkopts_no_undefined():
+    return select({
+        "//litert:macos": ["-Wl,-undefined,error"],
+        "//conditions:default": ["-Wl,--no-undefined"],
+    })
+
 def litert_metal_opts():
     return select({
         "//litert:ios": ["-ObjC++", "-fobjc-arc"],
@@ -76,15 +134,14 @@ def litert_metal_opts():
     })
 
 def litert_metal_linkopts():
-    """This is a no-op outside of Google."""
-    return []
-
-def litert_metal_deps_without_gpu_environment():
     return select({
-        "//litert:ios": ["//tflite/delegates/gpu/metal:metal_device"],
-        "//litert:macos": ["//tflite/delegates/gpu/metal:metal_device"],
+        "//litert:ios": ["-framework Metal"],
+        "//litert:macos": ["-framework Metal"],
         "//conditions:default": [],
     })
+
+def litert_metal_deps_without_gpu_environment():
+    return []
 
 def litert_metal_deps():
     return litert_metal_deps_without_gpu_environment() + select({
@@ -95,7 +152,12 @@ def litert_metal_deps():
 
 # Dependencies for GPU accelerators for each platform.
 def litert_gpu_accelerator_deps():
-    return []
+    return select({
+        "//litert/build_common:android_gpu_enabled": [
+            "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",
+        ],
+        "//conditions:default": [],
+    })
 
 # Prebuilt dependencies for GPU accelerators for each platform.
 def litert_gpu_accelerator_prebuilts():
@@ -160,5 +222,10 @@ def litert_jni_friends():
 
     Return the package group declaration for internal code locations that use
     "litert/kotlin:litert_api_no_jni" and "litert/kotlin:litert_api_jni" libraries directly."""
+
+    return []
+
+def litert_sdk_friends():
+    """Internal visibility for direct clients of LiteRT SDK files."""
 
     return []

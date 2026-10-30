@@ -18,9 +18,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <utility>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
@@ -37,18 +39,24 @@ inline LiteRtStatus InferDepthToSpace(const LiteRtOpT& op,
   constexpr int kDepthDimIndex = 3;
   constexpr int kSpatialRank = 4;
 
-  if (input_shapes.empty()) {
+  if (input_shapes.empty() || output_shapes.size() != 1) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];
   if (input_shape.size() != kSpatialRank) {
     return kLiteRtStatusErrorShapeInferenceFailed;  // NHWC
   }
+  for (int32_t dim : input_shape) {
+    if (dim < -1) {
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+  }
 
   const auto& opts = GetTflOptions(op);
   const auto* d2s_opts = opts.AsDepthToSpaceOptions();
   int32_t block_size = d2s_opts ? d2s_opts->block_size : 0;
-  if (block_size <= 0) {
+  int32_t block_area = 0;
+  if (block_size <= 0 || !SafeMultiply(block_size, block_size, block_area)) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
@@ -58,13 +66,19 @@ inline LiteRtStatus InferDepthToSpace(const LiteRtOpT& op,
   int32_t depth = input_shape[kDepthDimIndex];
 
   if (depth != -1) {
-    if (depth % (block_size * block_size) != 0) {
+    if (depth % block_area != 0) {
       return kLiteRtStatusErrorShapeInferenceFailed;
     }
-    out_shape[kDepthDimIndex] = depth / (block_size * block_size);
+    out_shape[kDepthDimIndex] = depth / block_area;
   }
-  if (height != -1) out_shape[kHeightDimIndex] = height * block_size;
-  if (width != -1) out_shape[kWidthDimIndex] = width * block_size;
+  if (height != -1 &&
+      !SafeMultiply(height, block_size, out_shape[kHeightDimIndex])) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+  if (width != -1 &&
+      !SafeMultiply(width, block_size, out_shape[kWidthDimIndex])) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
 
   output_shapes[0] = std::move(out_shape);
   return kLiteRtStatusOk;
@@ -79,18 +93,24 @@ inline LiteRtStatus InferSpaceToDepth(const LiteRtOpT& op,
   constexpr int kDepthDimIndex = 3;
   constexpr int kSpatialRank = 4;
 
-  if (input_shapes.empty()) {
+  if (input_shapes.empty() || output_shapes.size() != 1) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];
   if (input_shape.size() != kSpatialRank) {
     return kLiteRtStatusErrorShapeInferenceFailed;  // NHWC
   }
+  for (int32_t dim : input_shape) {
+    if (dim < -1) {
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+  }
 
   const auto& opts = GetTflOptions(op);
   const auto* s2d_opts = opts.AsSpaceToDepthOptions();
   int32_t block_size = s2d_opts ? s2d_opts->block_size : 0;
-  if (block_size <= 0) {
+  int32_t block_area = 0;
+  if (block_size <= 0 || !SafeMultiply(block_size, block_size, block_area)) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 
@@ -99,7 +119,10 @@ inline LiteRtStatus InferSpaceToDepth(const LiteRtOpT& op,
   int32_t width = input_shape[kWidthDimIndex];
   int32_t depth = input_shape[kDepthDimIndex];
 
-  if (depth != -1) out_shape[kDepthDimIndex] = depth * block_size * block_size;
+  if (depth != -1 &&
+      !SafeMultiply(depth, block_area, out_shape[kDepthDimIndex])) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
   if (height != -1) {
     if (height % block_size != 0) return kLiteRtStatusErrorShapeInferenceFailed;
     out_shape[kHeightDimIndex] = height / block_size;
@@ -124,7 +147,9 @@ inline LiteRtStatus InferResizeOp(const LiteRtOpT& op,
   constexpr int kResizeSizeTensorSize = 2 * sizeof(int32_t);
 
   // Inputs: Input, Size.
-  if (input_shapes.size() < kResizeMinArgs) {
+  if (input_shapes.size() < kResizeMinArgs || output_shapes.size() != 1 ||
+      op.Inputs().size() < kResizeMinArgs ||
+      op.Inputs()[kSizeArgIndex] == nullptr) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];
@@ -138,6 +163,9 @@ inline LiteRtStatus InferResizeOp(const LiteRtOpT& op,
   if (size_tensor.Weights().Buffer().Size() == kResizeSizeTensorSize) {
     auto buf = size_tensor.Weights().Buffer();
     const int32_t* size_data = reinterpret_cast<const int32_t*>(buf.Data());
+    if (size_data[0] <= 0 || size_data[1] <= 0) {
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
 
     out_shape[1] = size_data[0];  // New Height
     out_shape[2] = size_data[1];  // New Width
@@ -253,14 +281,20 @@ inline LiteRtStatus InferSpaceToBatchNd(const ShapeInferenceContext& ctx,
   }
 
   Dims out_shape = input_shape;
+  for (int32_t dim : input_shape) {
+    if (dim < -1) {
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+  }
   int64_t output_batch_size = input_shape[0];
   for (size_t dim = 0; dim < spatial_dims_num; ++dim) {
     int64_t bs = block_shape_vals[dim];
     if (bs <= 0) {
       return kLiteRtStatusErrorShapeInferenceFailed;
     }
-    if (output_batch_size != -1) {
-      output_batch_size *= bs;
+    if (output_batch_size != -1 &&
+        !SafeMultiply(output_batch_size, bs, output_batch_size)) {
+      return kLiteRtStatusErrorShapeInferenceFailed;
     }
     int64_t pad_before = paddings_vals[dim * 2];
     int64_t pad_after = paddings_vals[dim * 2 + 1];
@@ -268,16 +302,24 @@ inline LiteRtStatus InferSpaceToBatchNd(const ShapeInferenceContext& ctx,
       return kLiteRtStatusErrorShapeInferenceFailed;
     }
     if (input_shape[dim + 1] != -1) {
-      int64_t final_dim_size = input_shape[dim + 1] + pad_before + pad_after;
-      if (final_dim_size % bs != 0) {
+      int64_t final_dim_size = 0;
+      if (!SafeAdd(static_cast<int64_t>(input_shape[dim + 1]), pad_before,
+                   final_dim_size) ||
+          !SafeAdd(final_dim_size, pad_after, final_dim_size) ||
+          final_dim_size % bs != 0) {
         return kLiteRtStatusErrorShapeInferenceFailed;
       }
-      out_shape[dim + 1] = static_cast<int32_t>(final_dim_size / bs);
+      int64_t scaled_dim = final_dim_size / bs;
+      if (scaled_dim > std::numeric_limits<int32_t>::max()) {
+        return kLiteRtStatusErrorShapeInferenceFailed;
+      }
+      out_shape[dim + 1] = static_cast<int32_t>(scaled_dim);
     } else {
       out_shape[dim + 1] = -1;
     }
   }
-  if (output_batch_size != -1 && output_batch_size > INT32_MAX) {
+  if (output_batch_size != -1 &&
+      output_batch_size > std::numeric_limits<int32_t>::max()) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
   out_shape[0] =
@@ -376,6 +418,11 @@ inline LiteRtStatus InferBatchToSpaceNd(const ShapeInferenceContext& ctx,
   }
 
   Dims out_shape = input_shape;
+  for (int32_t dim : input_shape) {
+    if (dim < -1) {
+      return kLiteRtStatusErrorShapeInferenceFailed;
+    }
+  }
   int64_t output_batch_size = input_shape[0];
   for (size_t dim = 0; dim < spatial_dims_num; ++dim) {
     int64_t bs = block_shape_vals[dim];
@@ -394,9 +441,13 @@ inline LiteRtStatus InferBatchToSpaceNd(const ShapeInferenceContext& ctx,
       return kLiteRtStatusErrorShapeInferenceFailed;
     }
     if (input_shape[dim + 1] != -1) {
-      int64_t final_dim_size =
-          input_shape[dim + 1] * bs - crop_before - crop_after;
-      if (final_dim_size < 0) {
+      int64_t final_dim_size = 0;
+      if (!SafeMultiply(static_cast<int64_t>(input_shape[dim + 1]), bs,
+                        final_dim_size) ||
+          !SafeSubtract(final_dim_size, crop_before, final_dim_size) ||
+          !SafeSubtract(final_dim_size, crop_after, final_dim_size) ||
+          final_dim_size < 0 ||
+          final_dim_size > std::numeric_limits<int32_t>::max()) {
         return kLiteRtStatusErrorShapeInferenceFailed;
       }
       out_shape[dim + 1] = static_cast<int32_t>(final_dim_size);
@@ -404,7 +455,8 @@ inline LiteRtStatus InferBatchToSpaceNd(const ShapeInferenceContext& ctx,
       out_shape[dim + 1] = -1;
     }
   }
-  if (output_batch_size != -1 && output_batch_size > INT32_MAX) {
+  if (output_batch_size != -1 &&
+      output_batch_size > std::numeric_limits<int32_t>::max()) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
   out_shape[0] =

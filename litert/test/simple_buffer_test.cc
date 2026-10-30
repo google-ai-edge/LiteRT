@@ -21,7 +21,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_element_type.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
 
@@ -200,6 +200,18 @@ TEST_F(RngTensorBufferHelperTest, WriteRandomWithBuilder) {
   b.SetIntDummy();
   LITERT_ASSERT_OK((buf.WriteRandom<int32_t>(b, device)));
   EXPECT_THAT(buf.Span<int32_t>(), ElementsAre(0, 1, 2, 3));
+}
+
+TEST_F(RngTensorBufferHelperTest, WriteRandomUntemplatedBool) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto buf,
+      SimpleBuffer::Create<bool>({2, 2}, {false, false, false, false}));
+  EXPECT_EQ(buf.Type().ElementType(), ElementType::Bool);
+  auto device = this->TracedDevice();
+  RandomTensorDataBuilder b;
+  b.SetIntDummy();
+  LITERT_ASSERT_OK(buf.WriteRandom(b, device));
+  EXPECT_THAT(buf.Span<bool>(), ElementsAre(false, true, false, true));
 }
 
 }  // namespace

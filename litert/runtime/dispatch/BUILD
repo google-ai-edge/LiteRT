@@ -35,7 +35,6 @@ package(
 config_setting(
     name = "windows_msvc",
     values = {
-        "compiler": "msvc",
         "cpu": "x64_windows",
     },
 )
@@ -82,6 +81,7 @@ cc_library(
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_header",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_metrics",
@@ -99,8 +99,16 @@ cc_library(
         "//litert/core:dynamic_loading",
         "//litert/core:version",
         "//litert/core/util:perfetto_profiling",
+        "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = 1,
+)
+
+cc_library(
+    name = "dispatch_test_helper",
+    testonly = True,
+    hdrs = ["litert_dispatch_test_helper.h"],
+    deps = [":dispatch"],
 )
 
 cc_library(
@@ -211,6 +219,8 @@ cc_test(
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
         "//litert/test:common",
@@ -304,11 +314,13 @@ cc_test(
     srcs = ["dispatch_delegate_custom_buffer_test.cc"],
     deps = [
         ":dispatch",
+        ":dispatch_test_helper",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
         "//litert/c/internal:litert_runtime_context_header",
         "//litert/cc:litert_environment",
@@ -359,13 +371,14 @@ cc_library(
         "//tflite/c:common",
         "//tflite/core/c:private_c_api_opaque_without_op_resolver",
         "//tflite/delegates/utils:simple_opaque_delegate",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/container:node_hash_set",
         "@com_google_absl//absl/memory",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -424,7 +437,6 @@ cc_library(
         "//tflite/c:common",
         "//tflite/delegates/utils:simple_opaque_delegate",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -474,30 +486,29 @@ litert_device_test(
     deps = [
         ":dispatch_delegate",
         ":dispatch_opaque_options",
-        # TODO: gt team update visibility.
-        # "//platforms/darwinn/tachyon/core/fence",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc/internal:litert_handle",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
-        "//litert/cc/internal:litert_compiled_model_next",
-        "//litert/cc:litert_environment",
         "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_event",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
-        "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
+        "//litert/cc/internal:litert_compiled_model_next",
+        "//litert/cc/internal:litert_handle",
         "//litert/core/util:flatbuffer_tools",
         "//litert/runtime:external_litert_buffer_context",
         "//litert/runtime:tensor_buffer",
@@ -533,6 +544,7 @@ litert_device_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
@@ -572,6 +584,7 @@ litert_device_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
+        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",

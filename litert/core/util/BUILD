@@ -31,6 +31,7 @@ package(
 cc_library(
     name = "to_string",
     hdrs = ["to_string.h"],
+    deps = ["@com_google_absl//absl/strings"],
 )
 
 cc_library_with_testonly_vis(
@@ -39,6 +40,14 @@ cc_library_with_testonly_vis(
     hdrs = [
         "flatbuffer_tools.h",
     ],
+    # Minimal (selective) builds skip the full flatbuffer schema verifier,
+    # which otherwise links Verify() for every table in the TFLite schema.
+    copts = select({
+        "//litert:without_builtin_ops": [
+            "-DLITERT_SKIP_FLATBUFFER_VERIFICATION",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",

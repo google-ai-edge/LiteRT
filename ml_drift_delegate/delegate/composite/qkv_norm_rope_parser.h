@@ -35,6 +35,7 @@ struct QkvNormRopeAttributes {
   float max_timescale = 1000000.0f;
   float proportion = 1.0f;
   float epsilon = 1e-6f;
+  bool has_v_norm = false;
 };
 
 // Typedef alias for backward compatibility.

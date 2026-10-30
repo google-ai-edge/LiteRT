@@ -22,10 +22,6 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
-#if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/gl/gl_texture.h"
-#endif  // LITERT_HAS_OPENGL_SUPPORT
-
 namespace litert::internal {
 
 class GlTexture {
@@ -47,8 +43,12 @@ class GlTexture {
  private:
   absl::Mutex mutex_;
 #if LITERT_HAS_OPENGL_SUPPORT
-  tflite::gpu::gl::GlTexture tflite_gl_texture_;
-  LiteRtGlTextureDeallocator deallocator_;
+  LiteRtGLenum target_ = 0;
+  LiteRtGLuint id_ = 0;
+  LiteRtGLenum format_ = 0;
+  size_t size_bytes_ = 0;
+  LiteRtGLint layer_ = 0;
+  LiteRtGlTextureDeallocator deallocator_ = nullptr;
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 };
 

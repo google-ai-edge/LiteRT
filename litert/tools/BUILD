@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:uncomment load("//litert/python:pytype.bzl", "pytype_strict_binary", "pytype_strict_library")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
-# copybara:uncomment load("@rules_python//python:py_binary.bzl", "py_binary")
 # copybara:uncomment load("@rules_python//python:py_library.bzl", "py_library")
 # copybara:uncomment load("@rules_python//python:py_test.bzl", "py_test")
 load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin")
@@ -42,22 +42,32 @@ exports_files([
 ])
 
 # copybara:uncomment_begin(google-only)
-# py_binary(
+# pytype_strict_binary(
 #     name = "externalize_tflite_flatbuffer",
 #     srcs = ["externalize_tflite_flatbuffer.py"],
 #     deps = [
 #         "//third_party/py/flatbuffers",
 #         "//tflite/python:schema_py",
-#     ],
+#     ] + select({
+#         "@platforms//os:macos": [],
+#         "//conditions:default": [
+#             "//third_party/py/numpy",
+#         ],
+#     }),
 # )
 #
-# py_library(
+# pytype_strict_library(
 #     name = "externalize_tflite_flatbuffer_lib",
 #     srcs = ["externalize_tflite_flatbuffer.py"],
 #     deps = [
 #         "//third_party/py/flatbuffers",
 #         "//tflite/python:schema_py",
-#     ],
+#     ] + select({
+#         "@platforms//os:macos": [],
+#         "//conditions:default": [
+#             "//third_party/py/numpy",
+#         ],
+#     }),
 # )
 #
 # py_test(
@@ -67,6 +77,7 @@ exports_files([
 #         ":externalize_tflite_flatbuffer_lib",
 #         "@absl_py//absl/testing:absltest",
 #         "//third_party/py/flatbuffers",
+#         "//third_party/py/numpy",
 #         "//tflite/python:schema_py",
 #     ],
 # )
@@ -144,6 +155,8 @@ cc_test(
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_model",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:litert_compiler_options",
         "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",
         "//litert/core/model",
@@ -172,9 +185,9 @@ litert_bin(
             "@qairt//:libQnnIr.so",
             "@qairt//:libQnnSaver.so",
             "@qairt//:libQnnSystem.so",
-            "@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so",
-            "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
-            "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
+            "@neuro_pilot//:v9_libneuron_adapter_so",
+            "@neuro_pilot//:v8_libneuron_adapter_so",
+            "@neuro_pilot//:v7_libneuron_adapter_so",
             "@exynos_ai_litecore//:lib/x86_64-linux/libgraph_wrapper.so",
             "@exynos_ai_litecore//:lib/x86_64-linux/libgraphgen.so",
             "@exynos_ai_litecore//:lib/x86_64-linux/libgraphgen_api.so",
@@ -238,16 +251,10 @@ litert_bin(
         "//litert:windows": [],
         "//conditions:default": [
             "//litert/vendors/mediatek/compiler:compiler_plugin_so",
-            "@neuro_pilot//:neuron_sdk/host/lib/libatomic.so.1",
-            "@neuro_pilot//:neuron_sdk/host/lib/libc++abi.so.1",
-            "@neuro_pilot//:neuron_sdk/host/lib/libgcc_s.so.1",
-            "@neuro_pilot//:v7_latest/host/lib/libc++.so.1",
-            "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
-            "@neuro_pilot//:v8_latest/host/lib/libc++.so.1",
-            "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
-            "@neuro_pilot//:v9_latest/host/lib/libc++.so.1",
-            "@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so",
-            "@neuro_pilot//:v9_latest/host/lib/libunwind.so.1",
+            "@neuro_pilot//:common_host_libs",
+            "@neuro_pilot//:v7_host_libs",
+            "@neuro_pilot//:v8_host_libs",
+            "@neuro_pilot//:v9_host_libs",
         ],
     }),
     features = select({
@@ -590,7 +597,11 @@ cc_test(
     defines = ["BENCHMARK_MODEL_NO_MAIN"],
     deps = [
         ":benchmark_litert_model",
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_gpu_options",
+        "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/options:litert_gpu_options",
         "//litert/cc/options:litert_mediatek_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/tools/flags/vendors:google_tensor_flags",
@@ -669,6 +680,7 @@ cc_test(
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/test:common",
         "//litert/test:matchers",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",

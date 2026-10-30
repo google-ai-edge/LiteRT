@@ -36,6 +36,7 @@
 
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
+#include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_runtime_context.h"
@@ -58,6 +59,9 @@
 #include "litert/vendors/nvidia/cache_layout.h"
 #include "litert/vendors/nvidia/compiler/cache_update_plugin.h"
 #include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
+#include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
+#include "litert/vendors/nvidia/compiler/moe_plugin.h"
+#include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/dispatch/aot_artifact.h"
 #include "litert/vendors/nvidia/dispatch/dispatch_profiler.h"
@@ -66,6 +70,7 @@
 #include "litert/vendors/nvidia/dispatch/runtime_cache.h"
 #include "litert/vendors/nvidia/dispatch/tensor_buffer_layout.h"
 #include "litert/vendors/nvidia/dispatch/tensor_buffer_view.h"
+#include "litert/vendors/nvidia/dispatch/weight_store.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
@@ -170,13 +175,19 @@ Expected<nvinfer1::DataType> ToTensorRtDataType(
 }
 
 struct CudaTensorBufferInfo : HwMemoryInfo {
+  // The device allocation the producer asked for: below the tensor's packed
+  // size when the engine stores the tensor more compactly (a float32 KV cache
+  // kept as FP16).
   size_t bytes = 0;
+  // The tensor's packed size: the bytes the host sees through Lock.
   size_t packed_bytes = 0;
   void* host_cache = nullptr;
   bool host_cache_pinned = false;
   LiteRtTensorBufferLockMode lock_mode = kLiteRtTensorBufferLockModeRead;
   bool locked = false;
   bool owns_handle = true;
+  // The host wrote host_cache after the device copy was last current.
+  bool host_dirty = false;
 };
 
 struct NvidiaGreedySamplerContext {
@@ -189,6 +200,8 @@ struct NvidiaGreedySamplerContext {
   int32_t* host_result = nullptr;
   size_t result_capacity = 0;
   uint64_t calls = 0;
+  // Calls answered from the argmax the invocation ran itself (FusedGreedy).
+  uint64_t fused_calls = 0;
 };
 
 CudaTensorBufferInfo* AsCudaTensorBufferInfo(HwMemoryInfoPtr info) {
@@ -197,14 +210,222 @@ CudaTensorBufferInfo* AsCudaTensorBufferInfo(HwMemoryInfoPtr info) {
 
 size_t NonZeroBytes(size_t bytes) { return std::max<size_t>(bytes, 1); }
 
-size_t CopyBytes(const CudaTensorBufferInfo& info) {
+// The bytes the host sees through Lock. LiteRT reads, writes and clears a
+// locked buffer at the tensor's packed size, whatever the device holds.
+size_t HostBytes(const CudaTensorBufferInfo& info) {
   return info.packed_bytes == 0 ? info.bytes : info.packed_bytes;
+}
+
+// The bytes copied between the host cache and the device, and cleared: the
+// host's view, no more than the device allocation.
+size_t CopyBytes(const CudaTensorBufferInfo& info) {
+  const size_t host_bytes = HostBytes(info);
+  return info.bytes == 0 ? host_bytes : std::min(host_bytes, info.bytes);
 }
 
 bool PinnedHostStagingEnabled() {
   const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_PINNED_HOST_STAGING");
   return value == nullptr || value[0] == '\0' || std::strcmp(value, "0") != 0;
 }
+
+// What the host writes to a CUDA tensor buffer reaches the device when an
+// invocation reads the buffer, not when the host unlocks it: a runtime that
+// locks a buffer several times before it invokes uploads it once. LiteRT-LM
+// clears and then fills its attention masks before every prefill, 127 MiB
+// each time at a capacity of 130048 tokens.
+// LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD=0 uploads at every unlock.
+bool DeferredUploadEnabled() {
+  const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD");
+  return value == nullptr || value[0] == '\0' || std::strcmp(value, "0") != 0;
+}
+
+// The CUDA tensor buffers by device pointer, for the invocations that read
+// and write them through that pointer.
+class CudaTensorBufferRegistry {
+ public:
+  static CudaTensorBufferRegistry& Get() {
+    static auto* registry = new CudaTensorBufferRegistry;
+    return *registry;
+  }
+
+  void Add(CudaTensorBufferInfo* info) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    buffers_.emplace(info->memory_handle, info);
+  }
+
+  void Remove(CudaTensorBufferInfo* info) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(info->memory_handle);
+    for (auto it = range.first; it != range.second; ++it) {
+      if (it->second == info) {
+        buffers_.erase(it);
+        return;
+      }
+    }
+  }
+
+  void MarkHostWrite(CudaTensorBufferInfo* info) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    info->host_dirty = true;
+  }
+
+  // Whether the host copy is newer than the device copy.
+  bool HostIsNewer(CudaTensorBufferInfo* info) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return info->host_dirty;
+  }
+
+  // Uploads what the host wrote to the buffers at `handle`, in `stream`
+  // order. Returns the bytes uploaded in `bytes`.
+  LiteRtStatus Upload(void* handle, cudaStream_t stream, size_t* bytes) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(handle);
+    for (auto it = range.first; it != range.second; ++it) {
+      CudaTensorBufferInfo* info = it->second;
+      if (!info->host_dirty || info->host_cache == nullptr) {
+        continue;
+      }
+      const size_t copy_bytes = CopyBytes(*info);
+      // Pageable memory is staged before cudaMemcpyAsync returns; pinned
+      // memory must stay as it is until the stream gets to the copy, which
+      // the invocation waits for.
+      const cudaError_t status =
+          cudaMemcpyAsync(info->memory_handle, info->host_cache, copy_bytes,
+                          cudaMemcpyHostToDevice, stream);
+      if (status != cudaSuccess) {
+        LITERT_LOG(LITERT_ERROR, "cudaMemcpyAsync deferred H2D failed: %s",
+                   cudaGetErrorString(status));
+        return kLiteRtStatusErrorRuntimeFailure;
+      }
+      info->host_dirty = false;
+      if (bytes != nullptr) {
+        *bytes += copy_bytes;
+      }
+    }
+    return kLiteRtStatusOk;
+  }
+
+  // Whether any buffer at `handle` has a host copy newer than the device's.
+  bool AnyHostNewer(void* handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(handle);
+    for (auto it = range.first; it != range.second; ++it) {
+      if (it->second->host_dirty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // The device copy of the buffers at `handle` is about to be overwritten.
+  void Discard(void* handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(handle);
+    for (auto it = range.first; it != range.second; ++it) {
+      it->second->host_dirty = false;
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  std::unordered_multimap<void*, CudaTensorBufferInfo*> buffers_;
+};
+
+// Greedy sampling fused into the invocation. Once a sampler has read a logits
+// buffer (SampleNvidiaGreedy), the invocation that next writes that buffer
+// runs the argmax on its own stream, before its synchronization, into the
+// sampler's result buffers; the sampler's next call takes that result without
+// a launch, a copy or a synchronization of its own (each costs a host round
+// trip on WSL). A host write to the logits in between (a constrained decoder)
+// leaves the host copy newer, and the sampler takes its usual path.
+// LITERT_NVIDIA_DISPATCH_FUSED_SAMPLING=0 turns the fusion off.
+bool FusedSamplingEnabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_FUSED_SAMPLING");
+    return value == nullptr || value[0] == '\0' || std::strcmp(value, "0") != 0;
+  }();
+  return enabled;
+}
+
+struct FusedGreedyEntry {
+  NvidiaGreedySamplerContext* context = nullptr;
+  size_t rows = 0;
+  size_t count = 0;
+  bool fp16 = false;
+  // The context's host_result holds the argmax of the buffer's current
+  // contents.
+  bool fresh = false;
+};
+
+// The logits buffers samplers read, by device pointer.
+class FusedGreedyRegistry {
+ public:
+  static FusedGreedyRegistry& Get() {
+    static auto* registry = new FusedGreedyRegistry;
+    return *registry;
+  }
+
+  void Register(const void* logits, const FusedGreedyEntry& entry) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    entries_[logits] = entry;
+  }
+
+  bool Find(const void* logits, FusedGreedyEntry* entry) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = entries_.find(logits);
+    if (it == entries_.end()) {
+      return false;
+    }
+    *entry = it->second;
+    return true;
+  }
+
+  // Takes the fresh result for `logits` if it is `context`'s and matches the
+  // shape; the entry is then stale until the next invocation.
+  bool TakeFresh(const void* logits, const NvidiaGreedySamplerContext* context,
+                 size_t rows, size_t count, bool fp16) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = entries_.find(logits);
+    if (it == entries_.end() || !it->second.fresh ||
+        it->second.context != context || it->second.rows != rows ||
+        it->second.count != count || it->second.fp16 != fp16) {
+      return false;
+    }
+    it->second.fresh = false;
+    return true;
+  }
+
+  void SetFresh(const void* logits, bool fresh) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = entries_.find(logits);
+    if (it != entries_.end()) {
+      it->second.fresh = fresh;
+    }
+  }
+
+  void ForgetContext(const NvidiaGreedySamplerContext* context) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto it = entries_.begin(); it != entries_.end();) {
+      it = it->second.context == context ? entries_.erase(it) : std::next(it);
+    }
+  }
+
+  // A device allocation is going away: its views must not be sampled.
+  void ForgetRange(const void* begin, size_t bytes) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const uintptr_t first = reinterpret_cast<uintptr_t>(begin);
+    for (auto it = entries_.begin(); it != entries_.end();) {
+      const uintptr_t address = reinterpret_cast<uintptr_t>(it->first);
+      it = address >= first && address - first < std::max<size_t>(bytes, 1)
+               ? entries_.erase(it)
+               : std::next(it);
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  std::unordered_map<const void*, FusedGreedyEntry> entries_;
+};
 
 LiteRtStatus ValidateCudaDevicePointer(void* device_ptr) {
   if (device_ptr == nullptr) {
@@ -250,9 +471,16 @@ LiteRtStatus CreateCudaTensorBuffer(LiteRtGpuDeviceId device_id,
   if (info == nullptr) {
     return kLiteRtStatusErrorMemoryAllocationFailure;
   }
+  info->bytes = bytes;
+  info->packed_bytes = packed_bytes;
+  // The buffer size comes from the producer's requirements; when it is
+  // smaller than the tensor's packed size the producer stores the tensor
+  // more compactly (a float32 KV cache kept as FP16), and the device
+  // allocation, its copies and its clears are that size. The host cache
+  // (Lock) stays at the tensor's packed size.
   void* device_ptr = nullptr;
   const LiteRtStatus status = CudaStatus(
-      cudaMalloc(&device_ptr, NonZeroBytes(std::max(bytes, packed_bytes))),
+      cudaMalloc(&device_ptr, NonZeroBytes(bytes != 0 ? bytes : packed_bytes)),
       "cudaMalloc CUDA tensor buffer");
   if (status != kLiteRtStatusOk) {
     delete info;
@@ -260,9 +488,8 @@ LiteRtStatus CreateCudaTensorBuffer(LiteRtGpuDeviceId device_id,
   }
   info->memory_handle = device_ptr;
   info->raw_handle = device_ptr;
-  info->bytes = bytes;
-  info->packed_bytes = packed_bytes;
   info->owns_handle = true;
+  CudaTensorBufferRegistry::Get().Add(info);
   *hw_memory_info = info;
   return kLiteRtStatusOk;
 }
@@ -293,6 +520,7 @@ LiteRtStatus ImportCudaTensorBuffer(LiteRtGpuDeviceId device_id,
   info->bytes = bytes;
   info->packed_bytes = packed_bytes;
   info->owns_handle = false;
+  CudaTensorBufferRegistry::Get().Add(info);
   *hw_memory_info = info;
   return kLiteRtStatusOk;
 }
@@ -301,6 +529,12 @@ LiteRtStatus DestroyCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   auto* info = AsCudaTensorBufferInfo(hw_memory_info);
   if (info == nullptr) {
     return kLiteRtStatusOk;
+  }
+  CudaTensorBufferRegistry::Get().Remove(info);
+  if (info->memory_handle != nullptr) {
+    // A sampler that still reads another view of the allocation registers
+    // again on its next call.
+    FusedGreedyRegistry::Get().ForgetRange(info->memory_handle, info->bytes);
   }
   LiteRtStatus status = kLiteRtStatusOk;
   if (info->host_cache != nullptr) {
@@ -335,8 +569,9 @@ LiteRtStatus LockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info,
   if (info->locked) {
     return kLiteRtStatusErrorRuntimeFailure;
   }
+  const size_t copy_bytes = CopyBytes(*info);
   if (info->host_cache == nullptr) {
-    const size_t alloc_bytes = NonZeroBytes(CopyBytes(*info));
+    const size_t alloc_bytes = NonZeroBytes(HostBytes(*info));
     if (PinnedHostStagingEnabled()) {
       const cudaError_t error = cudaMallocHost(&info->host_cache, alloc_bytes);
       if (error == cudaSuccess) {
@@ -356,10 +591,17 @@ LiteRtStatus LockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info,
       }
       info->host_cache_pinned = false;
     }
+    // The bytes past the device's are the host's alone: read as zeros.
+    if (alloc_bytes > copy_bytes) {
+      std::memset(static_cast<char*>(info->host_cache) + copy_bytes, 0,
+                  alloc_bytes - copy_bytes);
+    }
   }
-  const size_t copy_bytes = CopyBytes(*info);
-  if (copy_bytes > 0 && (mode == kLiteRtTensorBufferLockModeRead ||
-                         mode == kLiteRtTensorBufferLockModeReadWrite)) {
+  // A host copy that is newer than the device copy is what the host reads.
+  if (copy_bytes > 0 &&
+      (mode == kLiteRtTensorBufferLockModeRead ||
+       mode == kLiteRtTensorBufferLockModeReadWrite) &&
+      !CudaTensorBufferRegistry::Get().HostIsNewer(info)) {
     LiteRtStatus status =
         CudaStatus(cudaMemcpy(info->host_cache, info->memory_handle, copy_bytes,
                               cudaMemcpyDeviceToHost),
@@ -387,9 +629,13 @@ LiteRtStatus UnlockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   if (copy_bytes > 0 &&
       (info->lock_mode == kLiteRtTensorBufferLockModeWrite ||
        info->lock_mode == kLiteRtTensorBufferLockModeReadWrite)) {
-    status = CudaStatus(cudaMemcpy(info->memory_handle, info->host_cache,
-                                   copy_bytes, cudaMemcpyHostToDevice),
-                        "cudaMemcpy CUDA tensor buffer H2D unlock");
+    if (DeferredUploadEnabled()) {
+      CudaTensorBufferRegistry::Get().MarkHostWrite(info);
+    } else {
+      status = CudaStatus(cudaMemcpy(info->memory_handle, info->host_cache,
+                                     copy_bytes, cudaMemcpyHostToDevice),
+                          "cudaMemcpy CUDA tensor buffer H2D unlock");
+    }
   }
   info->locked = false;
   return status;
@@ -404,6 +650,10 @@ LiteRtStatus ClearCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   if (copy_bytes == 0) {
     return kLiteRtStatusOk;
   }
+  CudaTensorBufferRegistry::Get().Discard(info->memory_handle);
+  // The device contents change without an invocation: no fused argmax of them
+  // can be fresh.
+  FusedGreedyRegistry::Get().ForgetRange(info->memory_handle, info->bytes);
   return CudaStatus(cudaMemset(info->memory_handle, 0, copy_bytes),
                     "cudaMemset CUDA tensor buffer");
 }
@@ -450,9 +700,13 @@ void DestroyNvidiaGreedySamplerResources(NvidiaGreedySamplerContext* context) {
   if (restore_device) {
     cudaSetDevice(previous_device);
   }
+  FusedGreedyRegistry::Get().ForgetContext(context);
   if (context->calls > 0) {
-    LITERT_LOG(LITERT_INFO, "NVIDIA CUDA greedy sampler completed %llu calls",
-               static_cast<unsigned long long>(context->calls));
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA CUDA greedy sampler completed %llu calls (%llu from "
+               "the invocation's own argmax)",
+               static_cast<unsigned long long>(context->calls),
+               static_cast<unsigned long long>(context->fused_calls));
   }
 }
 
@@ -544,7 +798,7 @@ LiteRtStatus EnsureNvidiaGreedySamplerResources(
     LITERT_RETURN_IF_ERROR(CudaStatus(
         host_free_status, "cudaFreeHost CUDA greedy sampler old results"));
   }
-  const size_t required = LiteRtNvidiaF32ArgMaxWorkspaceBytes(count);
+  const size_t required = LiteRtNvidiaArgMaxRowsWorkspaceBytes(rows, count);
   if (required == 0) {
     return kLiteRtStatusErrorUnsupported;
   }
@@ -562,6 +816,46 @@ LiteRtStatus EnsureNvidiaGreedySamplerResources(
     context->workspace_bytes = required;
   }
   return kLiteRtStatusOk;
+}
+
+// If a sampler reads the logits at `device_ptr`, enqueues their argmax and the
+// copy of the ids to the sampler's host buffer on `stream`, and lists the
+// pointer in `enqueued` (SetFresh once the stream has synchronized). The
+// sampler's first, direct call set the context's device and registered the
+// entry; a resource failure leaves the entry stale and the sampler on its own
+// path, a launch failure is an error of the invocation.
+Expected<void> EnqueueFusedGreedy(void* device_ptr, cudaStream_t stream,
+                                  std::vector<const void*>* enqueued) {
+  FusedGreedyEntry entry;
+  if (device_ptr == nullptr ||
+      !FusedGreedyRegistry::Get().Find(device_ptr, &entry) ||
+      entry.context == nullptr || entry.context->device < 0) {
+    return {};
+  }
+  NvidiaGreedySamplerContext* context = entry.context;
+  FusedGreedyRegistry::Get().SetFresh(device_ptr, false);
+  if (EnsureNvidiaGreedySamplerResources(context, context->device, entry.count,
+                                         entry.rows) != kLiteRtStatusOk) {
+    return {};
+  }
+  const cudaError_t launch_status =
+      entry.fp16
+          ? LiteRtNvidiaLaunchF16ArgMaxRows(
+                static_cast<const uint16_t*>(device_ptr), entry.rows,
+                entry.count, context->workspace, context->workspace_bytes,
+                context->device_result, stream)
+          : LiteRtNvidiaLaunchF32ArgMaxRows(
+                static_cast<const float*>(device_ptr), entry.rows, entry.count,
+                context->workspace, context->workspace_bytes,
+                context->device_result, stream);
+  LITERT_RETURN_IF_ERROR(CudaOk(launch_status, "Launch fused greedy argmax"));
+  LITERT_RETURN_IF_ERROR(
+      CudaOk(cudaMemcpyAsync(context->host_result, context->device_result,
+                             entry.rows * sizeof(int32_t),
+                             cudaMemcpyDeviceToHost, stream),
+             "cudaMemcpyAsync fused greedy result"));
+  enqueued->push_back(device_ptr);
+  return {};
 }
 
 LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
@@ -659,6 +953,17 @@ LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
   if (context->device >= 0 && context->device != attributes.device) {
     return kLiteRtStatusErrorUnsupported;
   }
+  if (FusedSamplingEnabled() &&
+      !CudaTensorBufferRegistry::Get().AnyHostNewer(handle) &&
+      FusedGreedyRegistry::Get().TakeFresh(device_logits, context, rows, count,
+                                           fp16)) {
+    // The invocation that wrote these logits ran the argmax and the copy on
+    // its stream and synchronized; the result is in host memory already.
+    std::copy_n(context->host_result, rows, token_ids);
+    ++context->calls;
+    ++context->fused_calls;
+    return kLiteRtStatusOk;
+  }
 
   int previous_device = -1;
   LITERT_RETURN_IF_ERROR(
@@ -670,18 +975,17 @@ LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
   }
   LiteRtStatus status = EnsureNvidiaGreedySamplerResources(
       context, attributes.device, count, rows);
-  for (size_t row = 0; status == kLiteRtStatusOk && row < rows; ++row) {
-    // Each row reuses the same partial-reduction workspace on one stream.
-    // Only the small ID array is copied back, once all rows have completed.
+  if (status == kLiteRtStatusOk) {
+    // Every row in one launch pair; only the small ID array is copied back.
     const cudaError_t launch_status =
-        fp16 ? LiteRtNvidiaLaunchF16ArgMax(
-                   static_cast<const uint16_t*>(device_logits) + row * count,
-                   count, context->workspace, context->workspace_bytes,
-                   context->device_result + row, context->stream)
-             : LiteRtNvidiaLaunchF32ArgMax(
-                   static_cast<const float*>(device_logits) + row * count,
-                   count, context->workspace, context->workspace_bytes,
-                   context->device_result + row, context->stream);
+        fp16 ? LiteRtNvidiaLaunchF16ArgMaxRows(
+                   static_cast<const uint16_t*>(device_logits), rows, count,
+                   context->workspace, context->workspace_bytes,
+                   context->device_result, context->stream)
+             : LiteRtNvidiaLaunchF32ArgMaxRows(
+                   static_cast<const float*>(device_logits), rows, count,
+                   context->workspace, context->workspace_bytes,
+                   context->device_result, context->stream);
     status = CudaStatus(launch_status, "Launch CUDA greedy sampler argmax");
   }
   if (status == kLiteRtStatusOk) {
@@ -704,6 +1008,11 @@ LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
   if (status == kLiteRtStatusOk) {
     std::copy_n(context->host_result, rows, token_ids);
     ++context->calls;
+    if (FusedSamplingEnabled()) {
+      // From now on the invocation that writes these logits runs the argmax.
+      FusedGreedyRegistry::Get().Register(
+          device_logits, FusedGreedyEntry{context, rows, count, fp16, false});
+    }
   }
   if (restore_device) {
     const LiteRtStatus restore_status =
@@ -815,10 +1124,14 @@ bool WriteBinaryFile(const std::string& path, const void* data, size_t size) {
   return ok && close_status == 0;
 }
 
+// `half_storage`: the engine keeps this float32 tensor as FP16 (a KV cache,
+// Fp16CacheStorageEnabled in the compiler), so the buffer it needs is half
+// the tensor's size. LiteRT's buffer keeps the tensor's type; the dispatch
+// binds and clears the bytes the engine uses.
 Expected<LiteRtTensorBufferRequirements> TensorBufferRequirements(
     const LiteRtRuntimeContext* runtime_context,
     const LiteRtRankedTensorType& tensor_type, bool prefer_cuda,
-    bool transposed_value_cache = false) {
+    bool transposed_value_cache = false, bool half_storage = false) {
   litert::RankedTensorType ranked_type(tensor_type);
   uint32_t strides[4];
   if (transposed_value_cache && !litert::nvidia::GetTransposedValueCacheStrides(
@@ -835,6 +1148,11 @@ Expected<LiteRtTensorBufferRequirements> TensorBufferRequirements(
   LITERT_ASSIGN_OR_RETURN(size_t size, ranked_type.Bytes());
   if (PreferHostBoundaryIo()) {
     prefer_cuda = false;
+  }
+  // Only a CUDA buffer is allocated at the engine's size: LiteRT reads,
+  // writes and clears a host memory buffer at the tensor's packed size.
+  if (half_storage && prefer_cuda) {
+    size /= 2;
   }
   const LiteRtTensorBufferType cuda_buffer_types[] = {
       kNvidiaCudaTensorBufferType, kLiteRtTensorBufferTypeHostMemory};
@@ -972,9 +1290,15 @@ class LiteRtDispatchDeviceContextT {
     LITERT_ASSIGN_OR_RETURN(
         size_t packed_size,
         TensorBufferPackedSize(runtime_context_, tensor_buffer));
+    // A float32 cache the engine stores as FP16 has a buffer of half the
+    // tensor's packed size (TensorBufferRequirements half_storage): the
+    // engine's bytes are the buffer's.
+    size_t allocation_size = 0;
+    LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_size(
+        tensor_buffer, &allocation_size));
     Record record;
     record.tensor_buffer = tensor_buffer;
-    record.size = packed_size;
+    record.size = std::min(packed_size, allocation_size);
     LiteRtRankedTensorType tensor_type;
     LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_tensor_type(
         tensor_buffer, &tensor_type));
@@ -1006,9 +1330,10 @@ class LiteRtDispatchDeviceContextT {
         LITERT_ASSIGN_OR_RETURN(
             record.device_ptr,
             litert::nvidia::ResolveCudaTensorBufferView(
-                handle, buffer_size, buffer_offset, packed_size));
+                handle, buffer_size, buffer_offset, record.size));
         record.owns_device_ptr = false;
         record.direct_cuda_buffer = true;
+        record.cuda_handle = handle;
       }
     }
 
@@ -1050,6 +1375,8 @@ class LiteRtDispatchDeviceContextT {
     size_t size = 0;
     bool owns_device_ptr = true;
     bool direct_cuda_buffer = false;
+    // The device pointer of the CUDA tensor buffer `device_ptr` is a view of.
+    void* cuda_handle = nullptr;
     bool host_tensor_buffer = false;
     bool transient_device_ptr = false;
     bool dense_layout = true;
@@ -1305,6 +1632,8 @@ class LiteRtDispatchInvocationContextT {
       layer_profiler_->Dump(bytecode_.function_name);
     }
     SaveRuntimeCache();
+    LogOwnGraphUse();
+    DestroyOwnGraphs();
     DestroyExternalHeadResources();
     for (cudaStream_t aux_stream : aux_streams_) {
       cudaStreamDestroy(aux_stream);
@@ -1312,6 +1641,24 @@ class LiteRtDispatchInvocationContextT {
     if (stream_ != nullptr) {
       cudaStreamDestroy(stream_);
     }
+  }
+
+  void LogOwnGraphUse() const {
+    if (own_graph_captures_ == 0 && own_graph_direct_ == 0) {
+      return;
+    }
+    int64_t replays = 0;
+    for (const auto& graph : own_graphs_) {
+      replays += graph.replays;
+    }
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA dispatch %s step graphs: %lld captures, %lld replays, "
+               "%lld direct steps%s",
+               bytecode_.function_name.c_str(),
+               static_cast<long long>(own_graph_captures_),
+               static_cast<long long>(replays),
+               static_cast<long long>(own_graph_direct_),
+               own_graph_enabled_ ? "" : " (capture gave up)");
   }
 
   Expected<LiteRtTensorBufferRequirements> GetInputRequirements(
@@ -1323,10 +1670,14 @@ class LiteRtDispatchInvocationContextT {
     LITERT_ASSIGN_OR_RETURN(
         const bool prefer_cuda,
         PrefersCudaTensorBuffer(bytecode_.input_names[index]));
+    LITERT_ASSIGN_OR_RETURN(
+        const bool half_storage,
+        StoredAsHalf(bytecode_.input_names[index], tensor_type));
     return TensorBufferRequirements(
         runtime_context_, tensor_type, prefer_cuda,
         litert::nvidia::IsTransposedValueCacheTensor(
-            bytecode_.input_names[index]));
+            bytecode_.input_names[index]),
+        half_storage);
   }
 
   Expected<LiteRtTensorBufferRequirements> GetOutputRequirements(
@@ -1342,10 +1693,14 @@ class LiteRtDispatchInvocationContextT {
     LITERT_ASSIGN_OR_RETURN(
         const bool prefer_cuda,
         PrefersCudaTensorBuffer(bytecode_.output_names[index]));
+    LITERT_ASSIGN_OR_RETURN(
+        const bool half_storage,
+        StoredAsHalf(bytecode_.output_names[index], tensor_type));
     return TensorBufferRequirements(
         runtime_context_, tensor_type, prefer_cuda,
         litert::nvidia::IsTransposedValueCacheTensor(
-            bytecode_.output_names[index]));
+            bytecode_.output_names[index]),
+        half_storage);
   }
 
   Expected<void> AttachInput(int index, LiteRtTensorBufferHandle handle) {
@@ -1476,6 +1831,10 @@ class LiteRtDispatchInvocationContextT {
                    "cudaMemcpyAsync H2D"));
       } else {
         ++profile_metrics.direct_inputs;
+        size_t uploaded = 0;
+        LITERT_RETURN_IF_ERROR(CudaTensorBufferRegistry::Get().Upload(
+            record->cuda_handle, stream_, &uploaded));
+        profile_metrics.h2d_bytes += uploaded;
       }
       LITERT_ASSIGN_OR_RETURN(
           const bool did_bind,
@@ -1499,6 +1858,10 @@ class LiteRtDispatchInvocationContextT {
                               device_context_->GetRecord(output_handles_[i]));
       LITERT_RETURN_IF_ERROR(device_context_->EnsureDevicePtr(record));
       transient_device_ptrs.Add(record);
+      if (record->direct_cuda_buffer) {
+        // The invocation overwrites the buffer, host writes included.
+        CudaTensorBufferRegistry::Get().Discard(record->cuda_handle);
+      }
       if (bytecode_.output_names[i].empty()) {
         // The external W2 vocabulary head writes this LiteRT output after the
         // TensorRT-RTX prefix, so it has no TensorRT engine binding.
@@ -1556,11 +1919,7 @@ class LiteRtDispatchInvocationContextT {
       execution_context_->setAuxStreams(
           aux_streams_.data(), static_cast<int32_t>(aux_streams_.size()));
     }
-    if (!execution_context_->enqueueV3(stream_)) {
-      return Error(kLiteRtStatusErrorRuntimeFailure,
-                   "TensorRT enqueueV3 failed");
-    }
-    LITERT_RETURN_IF_ERROR(LaunchExternalHead());
+    LITERT_RETURN_IF_ERROR(EnqueueStep());
     profile_metrics.cpu_enqueue_call_ms = enqueue_call_timer.ElapsedMs();
     if (profile) {
       LITERT_RETURN_IF_ERROR(invocation_profiler_.RecordEnqueued(stream_));
@@ -1593,6 +1952,18 @@ class LiteRtDispatchInvocationContextT {
       LITERT_RETURN_IF_ERROR(invocation_profiler_.RecordOutputsReady(stream_));
     }
 
+    // The greedy argmax of the logits a sampler reads, on this stream before
+    // the synchronization (FusedGreedyRegistry).
+    std::vector<const void*> fused_logits;
+    if (FusedSamplingEnabled()) {
+      for (int i = 0; i < static_cast<int>(output_handles_.size()); ++i) {
+        LITERT_ASSIGN_OR_RETURN(auto* record,
+                                device_context_->GetRecord(output_handles_[i]));
+        LITERT_RETURN_IF_ERROR(
+            EnqueueFusedGreedy(record->device_ptr, stream_, &fused_logits));
+      }
+    }
+
     DispatchCpuTimer sync_timer(profile);
     const char* sync_context =
         bytecode_.trtllm_head.has_value()
@@ -1600,6 +1971,9 @@ class LiteRtDispatchInvocationContextT {
             : "cudaStreamSynchronize";
     LITERT_RETURN_IF_ERROR(
         CudaOk(cudaStreamSynchronize(stream_), sync_context));
+    for (const void* logits : fused_logits) {
+      FusedGreedyRegistry::Get().SetFresh(logits, true);
+    }
     if (aot_residency_) {
       resident_has_run_ = true;
     }
@@ -1662,6 +2036,7 @@ class LiteRtDispatchInvocationContextT {
     bytecode_.engine_data = nullptr;
     bytecode_.engine_size = 0;
     bytecode_.refit_weights.clear();
+    bytecode_.weight_store.reset();
     if (bytecode_.trtllm_head.has_value()) {
       bytecode_.trtllm_head->packed_weights = nullptr;
       bytecode_.trtllm_head->packed_weights_size = 0;
@@ -1678,11 +2053,13 @@ class LiteRtDispatchInvocationContextT {
     LITERT_RETURN_IF_ERROR(RecordAliasedOutputs());
     for (const auto& name : bytecode_.input_names) {
       tensor_locations_.emplace(name, engine_->getTensorLocation(name.c_str()));
+      tensor_types_.emplace(name, engine_->getTensorDataType(name.c_str()));
     }
     for (const auto& name : bytecode_.output_names) {
       if (!name.empty()) {
         tensor_locations_.emplace(name,
                                   engine_->getTensorLocation(name.c_str()));
+        tensor_types_.emplace(name, engine_->getTensorDataType(name.c_str()));
       }
     }
     engine_.reset();
@@ -1716,6 +2093,8 @@ class LiteRtDispatchInvocationContextT {
     if (save_runtime_cache) {
       SaveRuntimeCache();
     }
+    LogOwnGraphUse();
+    DestroyOwnGraphs();
     execution_context_.reset();
     runtime_config_.reset();
     runtime_cache_.reset();
@@ -1728,8 +2107,10 @@ class LiteRtDispatchInvocationContextT {
       cudaStreamDestroy(stream_);
       stream_ = nullptr;
     }
+    weight_mapping_.reset();
     engine_.reset();
     runtime_.reset();
+    weight_memory_.reset();
     std::fill(bound_input_ptrs_.begin(), bound_input_ptrs_.end(), nullptr);
     std::fill(bound_output_ptrs_.begin(), bound_output_ptrs_.end(), nullptr);
     bound_arena_ptr_ = nullptr;
@@ -1798,6 +2179,11 @@ class LiteRtDispatchInvocationContextT {
     litert::nvidia::EnsureSubbyteGemvPluginRegistered();
     litert::nvidia::EnsureDecodeAttentionPluginRegistered();
     litert::nvidia::EnsureCacheUpdatePluginRegistered();
+    litert::nvidia::EnsureInt8CacheWritePluginRegistered();
+    litert::nvidia::EnsureMoePluginRegistered();
+    litert::nvidia::EnsureQkvNormRopePluginRegistered();
+    // Execution contexts of this process load their expert arenas.
+    litert::nvidia::SetMoeArenaLoadingEnabled(true);
     LITERT_LOG(LITERT_INFO,
                "NVIDIA dispatch creating TensorRT runtime for function %s "
                "(inputs=%zu outputs=%zu engine_bytes=%zu)",
@@ -1829,12 +2215,15 @@ class LiteRtDispatchInvocationContextT {
     memory_profiler_.Log("stream_created", bytecode_.function_name.c_str());
     LITERT_RETURN_IF_ERROR(DeserializeEngine());
     LITERT_RETURN_IF_ERROR(RecordAliasedOutputs());
+    LITERT_RETURN_IF_ERROR(MapEngineWeights());
     LITERT_RETURN_IF_ERROR(RefitEngine());
     DumpEngineInfo();
-    if (UseCudaGraph()) {
+    const bool own_graph = OwnCudaGraph(&own_graph_mode_);
+    if (UseCudaGraph() || own_graph) {
       // TensorRT-RTX owns whole-graph CUDA-graph capture/replay through the
       // runtime config; this collapses per-kernel launch overhead, which
-      // dominates decode-step time on WSL.
+      // dominates decode-step time on WSL. With OwnCudaGraph the context
+      // captures the step itself instead (EnqueueStep).
       runtime_config_.reset(engine_->createRuntimeConfig());
       if (runtime_config_) {
         if (UseSharedActivationArena()) {
@@ -1842,7 +2231,8 @@ class LiteRtDispatchInvocationContextT {
               nvinfer1::ExecutionContextAllocationStrategy::kUSER_MANAGED);
         }
         runtime_config_->setCudaGraphStrategy(
-            nvinfer1::CudaGraphStrategy::kWHOLE_GRAPH_CAPTURE);
+            own_graph ? nvinfer1::CudaGraphStrategy::kDISABLED
+                      : nvinfer1::CudaGraphStrategy::kWHOLE_GRAPH_CAPTURE);
         LITERT_RETURN_IF_ERROR(ConfigureRuntimeCache());
         execution_context_.reset(
             engine_->createExecutionContext(runtime_config_.get()));
@@ -1850,10 +2240,12 @@ class LiteRtDispatchInvocationContextT {
           if (UseSharedActivationArena()) {
             device_memory_bytes_ = engine_->getDeviceMemorySizeV2();
           }
+          own_graph_enabled_ = own_graph;
           LITERT_LOG(LITERT_INFO,
-                     "NVIDIA dispatch context %s uses CUDA graph capture "
+                     "NVIDIA dispatch context %s uses %s "
                      "(device_memory_bytes=%lld)",
                      bytecode_.function_name.c_str(),
+                     own_graph ? "its own step graph" : "CUDA graph capture",
                      static_cast<long long>(device_memory_bytes_));
         }
       }
@@ -1925,6 +2317,40 @@ class LiteRtDispatchInvocationContextT {
                  "their input buffers",
                  bytecode_.function_name.c_str(), aliased);
     }
+    return {};
+  }
+
+  // A plan built without its packed plugin weights (bytecode.h,
+  // TensorRtWeightStore) gets them mapped in from device memory that is filled
+  // from the model file and shared by the engines of the process.
+  Expected<void> MapEngineWeights() {
+    if (!bytecode_.weight_store.has_value()) {
+      return {};
+    }
+    DispatchCpuTimer map_timer(/*enabled=*/true);
+    memory_profiler_.Log("engine_weights_map_begin",
+                         bytecode_.function_name.c_str());
+    LITERT_ASSIGN_OR_RETURN(weight_memory_,
+                            litert::nvidia::EngineWeightMemory::Create(
+                                *bytecode_.weight_store, stream_));
+    memory_profiler_.Log("engine_weights_on_device",
+                         bytecode_.function_name.c_str());
+    LITERT_ASSIGN_OR_RETURN(weight_mapping_,
+                            litert::nvidia::EngineWeightMapping::Create(
+                                *engine_, *weight_memory_, stream_));
+    LITERT_LOG(
+        LITERT_INFO,
+        "NVIDIA dispatch mapped the weights of %s "
+        "(weight_data_bytes=%llu segment_bytes=%llu "
+        "shared_segment_bytes=%llu private_bytes=%llu elapsed_ms=%.3f)",
+        bytecode_.function_name.c_str(),
+        static_cast<unsigned long long>(weight_memory_->weight_data_size()),
+        static_cast<unsigned long long>(weight_memory_->segment_bytes()),
+        static_cast<unsigned long long>(weight_memory_->shared_segment_bytes()),
+        static_cast<unsigned long long>(weight_memory_->private_bytes()),
+        map_timer.ElapsedMs());
+    memory_profiler_.Log("engine_weights_map_end",
+                         bytecode_.function_name.c_str());
     return {};
   }
 
@@ -2235,9 +2661,378 @@ class LiteRtDispatchInvocationContextT {
     }
     const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_CUDA_GRAPH");
     if (value != nullptr && value[0] != '\0') {
-      return std::strcmp(value, "0") != 0;
+      return std::strcmp(value, "0") != 0 && std::strncmp(value, "own", 3) != 0;
     }
     return true;
+  }
+
+  // LITERT_NVIDIA_DISPATCH_CUDA_GRAPH=own|own-relaxed: TensorRT-RTX's graph
+  // strategy stays off and this context captures its own step graph around
+  // enqueueV3 and the external head (EnqueueStep). TensorRT-RTX's whole-graph
+  // capture leaves plugin layers out, so each of their launches pays WSL's
+  // launch latency every step; a capture around the whole enqueue takes them
+  // all. `own` captures in thread-local mode (an unsafe CUDA call during the
+  // capture fails it, loudly); `own-relaxed` lets such calls through.
+  static bool OwnCudaGraph(cudaStreamCaptureMode* mode) {
+    if (litert::nvidia::DispatchLayerProfilingEnabled()) {
+      return false;
+    }
+    const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_CUDA_GRAPH");
+    if (value == nullptr) {
+      return false;
+    }
+    if (std::strcmp(value, "own") == 0) {
+      *mode = cudaStreamCaptureModeThreadLocal;
+      return true;
+    }
+    if (std::strcmp(value, "own-relaxed") == 0) {
+      *mode = cudaStreamCaptureModeRelaxed;
+      return true;
+    }
+    return false;
+  }
+
+  // The step graphs of this context's own (OwnCudaGraph): the bindings they
+  // were captured for, or seen once without a graph yet (exec null).
+  struct OwnGraph {
+    std::vector<void*> inputs;
+    std::vector<void*> outputs;
+    void* arena = nullptr;
+    cudaGraphExec_t exec = nullptr;
+    int64_t replays = 0;
+  };
+
+  bool SameBindings(const OwnGraph& graph) const {
+    return graph.inputs == bound_input_ptrs_ &&
+           graph.outputs == bound_output_ptrs_ &&
+           graph.arena == bound_arena_ptr_;
+  }
+
+  void DestroyOwnGraphs() {
+    for (auto& graph : own_graphs_) {
+      if (graph.exec != nullptr) {
+        cudaGraphExecDestroy(graph.exec);
+      }
+    }
+    own_graphs_.clear();
+  }
+
+  // The engine, then the external head, on stream_.
+  Expected<void> EnqueueDirect() {
+    if (!execution_context_->enqueueV3(stream_)) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "TensorRT enqueueV3 failed");
+    }
+    return LaunchExternalHead();
+  }
+
+  // The step's work: enqueued directly, or (OwnCudaGraph) replayed from the
+  // graph captured for the current bindings. Bindings seen for the first
+  // time run directly, so that lazy work (expert arenas, kernel
+  // specialization) stays out of the graph; their second step captures.
+  Expected<void> EnqueueStep() {
+    if (!own_graph_enabled_) {
+      return EnqueueDirect();
+    }
+    for (auto& graph : own_graphs_) {
+      if (!SameBindings(graph)) {
+        continue;
+      }
+      if (graph.exec == nullptr) {
+        return CaptureOwnGraph(&graph);
+      }
+      LITERT_RETURN_IF_ERROR(CudaOk(cudaGraphLaunch(graph.exec, stream_),
+                                    "cudaGraphLaunch step graph"));
+      ++graph.replays;
+      return {};
+    }
+    constexpr size_t kMaxOwnGraphs = 4;
+    if (own_graphs_.size() >= kMaxOwnGraphs) {
+      if (own_graphs_.front().exec != nullptr) {
+        cudaGraphExecDestroy(own_graphs_.front().exec);
+      }
+      own_graphs_.erase(own_graphs_.begin());
+    }
+    own_graphs_.push_back(OwnGraph{bound_input_ptrs_, bound_output_ptrs_,
+                                   bound_arena_ptr_, nullptr, 0});
+    ++own_graph_direct_;
+    return EnqueueDirect();
+  }
+
+  Expected<void> CaptureOwnGraph(OwnGraph* graph) {
+    const char* name = bytecode_.function_name.c_str();
+    cudaError_t status = cudaStreamBeginCapture(stream_, own_graph_mode_);
+    if (status != cudaSuccess) {
+      LITERT_LOG(LITERT_WARNING,
+                 "NVIDIA dispatch %s: cudaStreamBeginCapture: %s; the step "
+                 "runs without its own graph",
+                 name, cudaGetErrorString(status));
+      static_cast<void>(cudaGetLastError());
+      own_graph_enabled_ = false;
+      return EnqueueDirect();
+    }
+    const auto enqueued = EnqueueDirect();
+    cudaGraph_t captured = nullptr;
+    status = cudaStreamEndCapture(stream_, &captured);
+    if (!enqueued || status != cudaSuccess || captured == nullptr) {
+      LITERT_LOG(LITERT_WARNING,
+                 "NVIDIA dispatch %s: capturing the step failed (%s%s); the "
+                 "step runs without its own graph",
+                 name, enqueued ? "" : "enqueue failed, ",
+                 cudaGetErrorString(status));
+      if (captured != nullptr) {
+        cudaGraphDestroy(captured);
+      }
+      static_cast<void>(cudaGetLastError());
+      own_graph_enabled_ = false;
+      // Captured work never ran: enqueue the step for real.
+      return EnqueueDirect();
+    }
+    ++own_graph_captures_;
+    LogOwnGraph(captured);
+    AutopsyOwnGraph(captured);
+    cudaGraphExec_t exec = nullptr;
+    status = cudaGraphInstantiate(&exec, captured, 0);
+    cudaGraphDestroy(captured);
+    if (status != cudaSuccess || exec == nullptr) {
+      LITERT_LOG(LITERT_WARNING,
+                 "NVIDIA dispatch %s: cudaGraphInstantiate: %s; the step runs "
+                 "without its own graph",
+                 name, cudaGetErrorString(status));
+      static_cast<void>(cudaGetLastError());
+      own_graph_enabled_ = false;
+      return EnqueueDirect();
+    }
+    graph->exec = exec;
+    LITERT_RETURN_IF_ERROR(
+        CudaOk(cudaGraphLaunch(exec, stream_), "cudaGraphLaunch step graph"));
+    ++graph->replays;
+    return {};
+  }
+
+  // LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_AUTOPSY=path: every kernel node of the
+  // first captured step graph timed on its own (a clone of the graph with the
+  // other nodes removed), warm and cold (two passes of a kernel that rewrites
+  // 128 MB ahead of it flush L2; their own time is subtracted). A graph launch
+  // costs 10-16 us here, more than most kernels, so each measurement captures
+  // several launches of the node's graph into one graph and divides. One line
+  // per node: index (the DOT's ID), grid, block, cold us, warm us. The CUPTI
+  // tools do not see kernels on this host; this is the step's per-kernel
+  // profile.
+  void AutopsyOwnGraph(cudaGraph_t graph) {
+    const char* path = std::getenv("LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_AUTOPSY");
+    if (path == nullptr || path[0] == '\0' || autopsy_done_) {
+      return;
+    }
+    autopsy_done_ = true;
+    size_t count = 0;
+    if (cudaGraphGetNodes(graph, nullptr, &count) != cudaSuccess ||
+        count == 0) {
+      return;
+    }
+    std::vector<cudaGraphNode_t> nodes(count);
+    if (cudaGraphGetNodes(graph, nodes.data(), &count) != cudaSuccess) {
+      return;
+    }
+    constexpr size_t kFlushBytes = size_t{128} << 20;
+    void* flush = nullptr;
+    if (cudaMalloc(&flush, kFlushBytes) != cudaSuccess) {
+      static_cast<void>(cudaGetLastError());
+      return;
+    }
+    FILE* out = std::fopen(path, "w");
+    if (out == nullptr) {
+      cudaFree(flush);
+      return;
+    }
+    cudaEvent_t start = nullptr;
+    cudaEvent_t stop = nullptr;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    constexpr int kIters = 10;
+    auto time_graph = [&](cudaGraph_t g) -> double {
+      cudaGraphExec_t exec = nullptr;
+      if (cudaGraphInstantiate(&exec, g, 0) != cudaSuccess) {
+        static_cast<void>(cudaGetLastError());
+        return -1.0;
+      }
+      for (int i = 0; i < 2; ++i) {
+        cudaGraphLaunch(exec, stream_);
+      }
+      cudaEventRecord(start, stream_);
+      for (int i = 0; i < kIters; ++i) {
+        cudaGraphLaunch(exec, stream_);
+      }
+      cudaEventRecord(stop, stream_);
+      cudaEventSynchronize(stop);
+      float ms = 0.0f;
+      cudaEventElapsedTime(&ms, start, stop);
+      cudaGraphExecDestroy(exec);
+      return ms * 1000.0 / kIters;
+    };
+    constexpr int kRepeatWarm = 10;
+    constexpr int kRepeatCold = 4;
+    // Two passes of the flush, captured once as a graph.
+    cudaGraph_t flush_graph = nullptr;
+    if (cudaStreamBeginCapture(stream_, cudaStreamCaptureModeThreadLocal) ==
+        cudaSuccess) {
+      LiteRtNvidiaLaunchL2Flush(flush, kFlushBytes, stream_);
+      LiteRtNvidiaLaunchL2Flush(flush, kFlushBytes, stream_);
+      cudaStreamEndCapture(stream_, &flush_graph);
+    }
+    if (flush_graph == nullptr) {
+      static_cast<void>(cudaGetLastError());
+      std::fclose(out);
+      cudaEventDestroy(start);
+      cudaEventDestroy(stop);
+      cudaFree(flush);
+      return;
+    }
+    // `repeat` rounds of [flush,] node graph, chained as child graph nodes
+    // of one graph; its time per round.
+    auto time_sequence = [&](cudaGraph_t node_graph, bool with_flush,
+                             int repeat) -> double {
+      cudaGraph_t g = nullptr;
+      if (cudaGraphCreate(&g, 0) != cudaSuccess) {
+        static_cast<void>(cudaGetLastError());
+        return -1.0;
+      }
+      cudaGraphNode_t previous = nullptr;
+      bool ok = true;
+      auto append = [&](cudaGraph_t child) {
+        cudaGraphNode_t node = nullptr;
+        ok = ok && cudaGraphAddChildGraphNode(
+                       &node, g, previous == nullptr ? nullptr : &previous,
+                       previous == nullptr ? 0 : 1, child) == cudaSuccess;
+        previous = node;
+      };
+      for (int i = 0; i < repeat && ok; ++i) {
+        if (with_flush) {
+          append(flush_graph);
+        }
+        if (node_graph != nullptr) {
+          append(node_graph);
+        }
+      }
+      double us = -1.0;
+      if (ok) {
+        us = time_graph(g);
+      } else {
+        static_cast<void>(cudaGetLastError());
+      }
+      cudaGraphDestroy(g);
+      return us < 0.0 ? us : us / repeat;
+    };
+    const double flush_us = time_sequence(nullptr, true, kRepeatCold);
+    std::fprintf(out, "# flush_us %.1f\n", flush_us);
+    std::fprintf(out, "# node grid_x grid_y grid_z block_x cold_us warm_us\n");
+    size_t timed = 0;
+    for (size_t i = 0; i < count; ++i) {
+      cudaGraphNodeType type;
+      if (cudaGraphNodeGetType(nodes[i], &type) != cudaSuccess ||
+          type != cudaGraphNodeTypeKernel) {
+        continue;
+      }
+      cudaGraph_t clone = nullptr;
+      if (cudaGraphClone(&clone, graph) != cudaSuccess) {
+        static_cast<void>(cudaGetLastError());
+        break;
+      }
+      cudaGraphNode_t keep = nullptr;
+      if (cudaGraphNodeFindInClone(&keep, nodes[i], clone) != cudaSuccess) {
+        static_cast<void>(cudaGetLastError());
+        cudaGraphDestroy(clone);
+        break;
+      }
+      size_t clone_count = 0;
+      cudaGraphGetNodes(clone, nullptr, &clone_count);
+      std::vector<cudaGraphNode_t> clone_nodes(clone_count);
+      cudaGraphGetNodes(clone, clone_nodes.data(), &clone_count);
+      for (cudaGraphNode_t n : clone_nodes) {
+        if (n != keep) {
+          cudaGraphDestroyNode(n);
+        }
+      }
+      const double warm = time_sequence(clone, false, kRepeatWarm);
+      const double cold = time_sequence(clone, true, kRepeatCold) - flush_us;
+      cudaKernelNodeParams params{};
+      dim3 grid(0, 0, 0);
+      dim3 block(0, 0, 0);
+      if (cudaGraphKernelNodeGetParams(keep, &params) == cudaSuccess) {
+        grid = params.gridDim;
+        block = params.blockDim;
+      } else {
+        static_cast<void>(cudaGetLastError());
+      }
+      std::fprintf(out, "%zu %u %u %u %u %.2f %.2f\n", i, grid.x, grid.y,
+                   grid.z, block.x, cold, warm);
+      cudaGraphDestroy(clone);
+      ++timed;
+    }
+    std::fclose(out);
+    cudaGraphDestroy(flush_graph);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    cudaFree(flush);
+    static_cast<void>(cudaGetLastError());
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA dispatch %s: autopsy of %zu kernel nodes written to %s "
+               "(flush %.1f us)",
+               bytecode_.function_name.c_str(), timed, path, flush_us);
+  }
+
+  // What the captured step holds; LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_DOT=dir
+  // also writes it as a DOT file (kernel names, grids and arguments).
+  void LogOwnGraph(cudaGraph_t graph) {
+    const char* name = bytecode_.function_name.c_str();
+    size_t count = 0;
+    if (cudaGraphGetNodes(graph, nullptr, &count) != cudaSuccess) {
+      return;
+    }
+    std::vector<cudaGraphNode_t> nodes(count);
+    if (count > 0 &&
+        cudaGraphGetNodes(graph, nodes.data(), &count) != cudaSuccess) {
+      return;
+    }
+    int kernels = 0, copies = 0, memsets = 0, events = 0, others = 0;
+    for (cudaGraphNode_t node : nodes) {
+      cudaGraphNodeType type;
+      if (cudaGraphNodeGetType(node, &type) != cudaSuccess) {
+        continue;
+      }
+      switch (type) {
+        case cudaGraphNodeTypeKernel:
+          ++kernels;
+          break;
+        case cudaGraphNodeTypeMemcpy:
+          ++copies;
+          break;
+        case cudaGraphNodeTypeMemset:
+          ++memsets;
+          break;
+        case cudaGraphNodeTypeWaitEvent:
+        case cudaGraphNodeTypeEventRecord:
+          ++events;
+          break;
+        default:
+          ++others;
+          break;
+      }
+    }
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA dispatch %s captured its step: %zu graph nodes (%d "
+               "kernels, %d copies, %d memsets, %d events, %d other)",
+               name, count, kernels, copies, memsets, events, others);
+    const char* dot_dir = std::getenv("LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_DOT");
+    if (dot_dir != nullptr && dot_dir[0] != '\0') {
+      const std::string path = JoinPath(
+          dot_dir, SanitizeCacheComponent(bytecode_.function_name) + "_" +
+                       std::to_string(own_graph_captures_) + ".dot");
+      const cudaError_t status = cudaGraphDebugDotPrint(
+          graph, path.c_str(), cudaGraphDebugDotFlagsVerbose);
+      LITERT_LOG(LITERT_INFO, "NVIDIA dispatch %s step graph to %s: %s", name,
+                 path.c_str(), cudaGetErrorString(status));
+    }
   }
 
   std::string RuntimeCachePath(const std::string& dir) const {
@@ -2410,6 +3205,30 @@ class LiteRtDispatchInvocationContextT {
     return {};
   }
 
+  // Whether the engine keeps a float32 boundary tensor as FP16 (a KV cache
+  // the compiler declared half: Fp16CacheStorageEnabled), from the probed
+  // metadata or the engine.
+  Expected<bool> StoredAsHalf(const std::string& tensor_name,
+                              const LiteRtRankedTensorType& tensor_type) const {
+    if (tensor_type.element_type != kLiteRtElementTypeFloat32) {
+      return false;
+    }
+    if (aot_residency_) {
+      const auto type = tensor_types_.find(tensor_name);
+      if (type == tensor_types_.end()) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Missing NVIDIA AOT tensor type metadata");
+      }
+      return type->second == nvinfer1::DataType::kHALF;
+    }
+    if (engine_ == nullptr) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "TensorRT engine is not initialized");
+    }
+    return engine_->getTensorDataType(tensor_name.c_str()) ==
+           nvinfer1::DataType::kHALF;
+  }
+
   Expected<bool> PrefersCudaTensorBuffer(const std::string& tensor_name) const {
     if (aot_residency_) {
       const auto location = tensor_locations_.find(tensor_name);
@@ -2480,12 +3299,17 @@ class LiteRtDispatchInvocationContextT {
   std::shared_ptr<AotEngineResidency> aot_residency_;
   std::optional<litert::nvidia::TensorRtAotLocator> aot_locator_;
   std::unordered_map<std::string, nvinfer1::TensorLocation> tensor_locations_;
+  std::unordered_map<std::string, nvinfer1::DataType> tensor_types_;
   bool resident_has_run_ = false;
   litert::nvidia::TensorRtBytecode bytecode_;
   litert::nvidia::MemoryProfiler memory_profiler_;
   litert::nvidia::TensorRtLogger logger_;
+  // The device memory of the engine's weight store outlives the engine, and
+  // its mapping into the engine goes before the engine.
+  std::unique_ptr<litert::nvidia::EngineWeightMemory> weight_memory_;
   TrtPtr<nvinfer1::IRuntime> runtime_;
   TrtPtr<nvinfer1::ICudaEngine> engine_;
+  std::unique_ptr<litert::nvidia::EngineWeightMapping> weight_mapping_;
   TrtPtr<nvinfer1::IRuntimeCache> runtime_cache_;
   TrtPtr<nvinfer1::IRuntimeConfig> runtime_config_;
   TrtPtr<nvinfer1::IExecutionContext> execution_context_;
@@ -2493,6 +3317,12 @@ class LiteRtDispatchInvocationContextT {
   litert::nvidia::DispatchInvocationProfiler invocation_profiler_;
   cudaStream_t stream_ = nullptr;
   std::vector<cudaStream_t> aux_streams_;
+  bool own_graph_enabled_ = false;
+  cudaStreamCaptureMode own_graph_mode_ = cudaStreamCaptureModeThreadLocal;
+  std::vector<OwnGraph> own_graphs_;
+  int64_t own_graph_captures_ = 0;
+  int64_t own_graph_direct_ = 0;
+  bool autopsy_done_ = false;
   std::vector<LiteRtTensorBufferHandle> input_handles_;
   std::vector<LiteRtTensorBufferHandle> output_handles_;
   std::vector<void*> bound_input_ptrs_;
@@ -2694,8 +3524,14 @@ LiteRtStatus AttachInput(LiteRtDispatchInvocationContext invocation_context,
   if (invocation_context == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  LITERT_RETURN_IF_ERROR(
-      invocation_context->AttachInput(graph_input_index, tensor_buffer_handle));
+  auto attached =
+      invocation_context->AttachInput(graph_input_index, tensor_buffer_handle);
+  if (!attached) {
+    // The delegate reports only the status; the reason is logged here.
+    LITERT_LOG(LITERT_ERROR, "NVIDIA dispatch failed to attach input %d: %s",
+               graph_input_index, attached.Error().Message().c_str());
+    return attached.Error().Status();
+  }
   return kLiteRtStatusOk;
 }
 
@@ -2705,8 +3541,13 @@ LiteRtStatus AttachOutput(LiteRtDispatchInvocationContext invocation_context,
   if (invocation_context == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  LITERT_RETURN_IF_ERROR(invocation_context->AttachOutput(
-      graph_output_index, tensor_buffer_handle));
+  auto attached = invocation_context->AttachOutput(graph_output_index,
+                                                   tensor_buffer_handle);
+  if (!attached) {
+    LITERT_LOG(LITERT_ERROR, "NVIDIA dispatch failed to attach output %d: %s",
+               graph_output_index, attached.Error().Message().c_str());
+    return attached.Error().Status();
+  }
   return kLiteRtStatusOk;
 }
 
@@ -2766,7 +3607,13 @@ LiteRtStatus InvocationContextSetOptions(
   return kLiteRtStatusOk;
 }
 
-LiteRtDispatchInterface NvidiaInterface = {
+static const LiteRtDispatchInterface_V1 NvidiaInterface = {
+    /*.abi_header=*/{
+        .struct_size = sizeof(LiteRtDispatchInterface_V1),
+        .major_version = 1,
+        .minor_version = 0,
+        .reserved = 0,
+    },
     /*.initialize=*/Initialize,
     /*.get_vendor_id=*/GetVendorId,
     /*.get_build_id=*/GetBuildId,
@@ -2795,43 +3642,26 @@ LiteRtDispatchInterface NvidiaInterface = {
     /*.invocation_context_set_options=*/InvocationContextSetOptions,
 };
 
-LiteRtCustomTensorBufferHandlersDef NvidiaTensorBufferHandlers = {
-    /*.abi_header=*/
+static const LiteRtCustomTensorBufferHandlersDef_V1 NvidiaTensorBufferHandlers =
     {
-        /*.struct_size=*/sizeof(LiteRtCustomTensorBufferHandlersDef),
-        /*.major_version=*/1,
-        /*.minor_version=*/0,
-        /*.reserved=*/0,
-    },
-    /*.create_func=*/CreateCudaTensorBuffer,
-    /*.destroy_func=*/DestroyCudaTensorBuffer,
-    /*.lock_func=*/LockCudaTensorBuffer,
-    /*.unlock_func=*/UnlockCudaTensorBuffer,
-    /*.clear_func=*/ClearCudaTensorBuffer,
-    /*.import_func=*/ImportCudaTensorBuffer,
-    /*.device_tag=*/kLiteRtEnvOptionTagNull,
-    /*.queue_tag=*/kLiteRtEnvOptionTagNull,
-    /*.num_supported_buffer_types=*/1,
-    /*.supported_buffer_types=*/{kNvidiaCudaTensorBufferType},
-};
-
-LiteRtDispatchApi NvidiaApi = {
-    /*.abi_header=*/
-    {
-        /*.struct_size=*/sizeof(LiteRtDispatchApi),
-        /*.major_version=*/1,
-        /*.minor_version=*/0,
-        /*.reserved=*/0,
-    },
-    /*.version=*/
-    {/*.major=*/LITERT_API_VERSION_MAJOR,
-     /*.minor=*/LITERT_API_VERSION_MINOR,
-     /*.patch=*/LITERT_API_VERSION_PATCH},
-    /*.interface=*/&NvidiaInterface,
-    /*.async_interface=*/nullptr,
-    /*.graph_interface=*/nullptr,
-    /*.tensor_buffer_handlers_def=*/&NvidiaTensorBufferHandlers,
-};
+        .abi_header =
+            {
+                .struct_size = sizeof(LiteRtCustomTensorBufferHandlersDef_V1),
+                .major_version = 1,
+                .minor_version = 0,
+                .reserved = 0,
+            },
+        .create_func = CreateCudaTensorBuffer,
+        .destroy_func = DestroyCudaTensorBuffer,
+        .lock_func = LockCudaTensorBuffer,
+        .unlock_func = UnlockCudaTensorBuffer,
+        .clear_func = ClearCudaTensorBuffer,
+        .import_func = ImportCudaTensorBuffer,
+        .device_tag = kLiteRtEnvOptionTagNull,
+        .queue_tag = kLiteRtEnvOptionTagNull,
+        .num_supported_buffer_types = 1,
+        .supported_buffer_types = {kNvidiaCudaTensorBufferType},
+    };
 
 }  // namespace
 
@@ -2877,10 +3707,20 @@ extern "C" LiteRtStatus LiteRtDispatchNvidiaGreedySamplerSampleBatched(
                             /*legacy_f32_only=*/false);
 }
 
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
-  if (api == nullptr) {
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *api = NvidiaApi;
-  return kLiteRtStatusOk;
+  if (litert_runtime_version.major >= 1) {
+    if (interface_id == kLiteRtInterfaceBasic) {
+      *out_interface = &NvidiaInterface;
+      return kLiteRtStatusOk;
+    } else if (interface_id == kLiteRtInterfaceCustomTensorBufferHandlers) {
+      *out_interface = &NvidiaTensorBufferHandlers;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }

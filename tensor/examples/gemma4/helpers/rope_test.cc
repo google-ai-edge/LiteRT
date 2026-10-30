@@ -24,11 +24,11 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
+#include "tensor/examples/gemma4/test_backends.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
-#include "tensor/runners/xnnpack/runner.h"
+#include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"  // IWYU pragma: keep
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
 
@@ -37,7 +37,6 @@ namespace {
 
 using ::testing::FloatNear;
 using ::testing::Pointwise;
-using XnnTensor = Tensor<XnnpackMixinTag>;
 
 std::vector<float> ComputeAngles(const size_t head_dim) {
   std::vector<float> angles(head_dim / 2);
@@ -58,23 +57,29 @@ std::vector<Ret> vector_from(std::vector<T> v, F&& func) {
   return res;
 }
 
-TEST(Gemma4GraphTest, RoPETest) {
-  XnnTensor x({.name = "x", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
+template <class Backend>
+class RoPETest : public ::testing::Test {};
+TYPED_TEST_SUITE(RoPETest, TestBackends, TestBackendNames);
+
+TYPED_TEST(RoPETest, MatchesReference) {
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
+  Tensor x({.name = "x", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
 
   const std::vector<float> angles = ComputeAngles(x.GetShape()[3]);
 
-  XnnTensor cos({.name = "cos",
-                 .type = Type::kFP32,
-                 .shape = {1, 1, 1, 4},
-                 .buffer = vector_from(angles, cosf)});
-  XnnTensor sin({.name = "sin",
-                 .type = Type::kFP32,
-                 .shape = {1, 1, 1, 4},
-                 .buffer = vector_from(angles, sinf)});
-  XnnTensor output = RoPE(x, cos, sin);
+  Tensor cos({.name = "cos",
+              .type = Type::kFP32,
+              .shape = {1, 1, 1, 4},
+              .buffer = vector_from(angles, cosf)});
+  Tensor sin({.name = "sin",
+              .type = Type::kFP32,
+              .shape = {1, 1, 1, 4},
+              .buffer = vector_from(angles, sinf)});
+  Tensor output = RoPE(x, cos, sin);
 
-  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(XnnpackRunner runner,
-                                  XnnpackRunner::Create({output}));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Runner runner, Runner::Create({output}));
 
   const std::array<float, 4> input_data = {1.0f, 2.0f, 3.0f, 4.0f};
   ASSERT_THAT(runner.SetInput(x, input_data), IsOk());
@@ -90,11 +95,12 @@ TEST(Gemma4GraphTest, RoPETest) {
               Pointwise(FloatNear(1e-5f), expected_data));
 }
 
-TEST(RopeTest, RopeCosSinTest) {
-  auto [cos_tensor, sin_tensor] =
-      RopeCosSin<XnnpackMixinTag>(/*seq_len=*/1, /*head_dim=*/4,
-                                  /*rope_base=*/10000.0f,
-                                  /*rope_proportion=*/1.0f);
+TYPED_TEST(RoPETest, RopeCosSin) {
+  using Tag = typename TypeParam::Tag;
+
+  auto [cos_tensor, sin_tensor] = RopeCosSin<Tag>(/*seq_len=*/1, /*head_dim=*/4,
+                                                  /*rope_base=*/10000.0f,
+                                                  /*rope_proportion=*/1.0f);
   EXPECT_EQ(cos_tensor.GetShape(), Shape({1, 1, 1, 4}));
   EXPECT_EQ(sin_tensor.GetShape(), Shape({1, 1, 1, 4}));
 

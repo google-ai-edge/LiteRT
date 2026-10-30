@@ -109,8 +109,12 @@ std::optional<TestNames> NamesForNextTest(size_t& test_id,
                                           const AtsConf& options,
                                           Args&&... args) {
   auto names = TestNames::Create(test_id, std::forward<Args>(args)...);
-  names.should_skip = !options.ShouldRegister(
-      absl::StrCat(names.suite, " ", names.test, " ", names.desc));
+  const std::string full_name =
+      absl::StrCat(names.suite, " ", names.test, " ", names.desc);
+  if (!options.MatchesDoRegister(full_name)) {
+    return std::nullopt;
+  }
+  names.should_skip = !options.ShouldRegister(full_name);
   test_id++;
   return names;
 }
@@ -137,9 +141,8 @@ class RegisterFunctor {
         continue;
       }
       auto names = NamesForNextTest(
-          test_id_, options_,
-          absl::StrFormat("%s_%s", prefix_, Fixture::Name()), Logic::Name(),
-          test_graph.Value()->Graph());
+          test_id_, options_, Fixture::Name(), Logic::Name(),
+          test_graph.Value()->Graph(), prefix_override_);
       if (!names) {
         continue;
       }
@@ -149,19 +152,20 @@ class RegisterFunctor {
   }
 
   RegisterFunctor(size_t iters, size_t& test_id, const AtsConf& options,
-                  typename Fixture::Capture& cap, absl::string_view prefix)
+                  typename Fixture::Capture& cap,
+                  absl::string_view prefix_override)
       : iters_(iters),
         test_id_(test_id),
         options_(options),
         cap_(cap),
-        prefix_(prefix) {}
+        prefix_override_(prefix_override) {}
 
  private:
   const size_t iters_;
   size_t& test_id_;
   const AtsConf& options_;
   typename Fixture::Capture& cap_;
-  absl::string_view prefix_;
+  absl::string_view prefix_override_;
 };
 
 // Specializes the given test logic template with the cartesian product of
@@ -172,8 +176,8 @@ template <typename Fixture, template <typename...> typename Logic,
           typename... Lists>
 void RegisterCombinations(size_t iters, size_t& test_id, const AtsConf& options,
                           typename Fixture::Capture& cap,
-                          absl::string_view prefix = "SingleOp") {
-  RegisterFunctor<Fixture> f(iters, test_id, options, cap, prefix);
+                          absl::string_view prefix_override = "") {
+  RegisterFunctor<Fixture> f(iters, test_id, options, cap, prefix_override);
   ExpandProduct<Logic, Lists...>(f);
 }
 
@@ -183,27 +187,29 @@ void RegisterCombinations(size_t iters, size_t& test_id, const AtsConf& options,
 template <typename Fixture>
 void RegisterExtraModels(size_t& test_id, const AtsConf& options,
                          typename Fixture::Capture& cap) {
-  DefaultDevice device(options.GetSeedForParams(ExtraModel::Name()));
   const auto extra_models = options.ExtraModels();
   LITERT_LOG(LITERT_INFO, "Registering %zu extra models", extra_models.size());
   for (const auto& file : extra_models) {
     if (options.AtLimit(test_id)) {
       return;
     }
-    auto model = ExtraModel::Create(file);
-    if (!model) {
-      LITERT_LOG(LITERT_WARNING, "Failed to create extra model %s: %s",
-                 file.c_str(), model.Error().Message().c_str());
+    auto test_name = internal::Filename(file);
+    if (!test_name || !internal::Exists(file) ||
+        !EndsWith(*test_name, ".tflite")) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Skipping invalid or non-tflite extra model %s",
+                 file.c_str());
       continue;
     }
-    auto test_name = internal::Filename(file);
     auto names =
         NamesForNextTest(test_id, options, Fixture::Name(), ExtraModel::Name(),
                          *test_name, file, "user provided tflite");
     if (!names) {
       continue;
     }
-    Fixture::Register(std::move(*model), options, std::move(*names),
+    // Defer loading the .tflite model until SetUp() so all registered models
+    // are not held in memory simultaneously.
+    Fixture::Register(ExtraModel::CreateLazy(file), options, std::move(*names),
                       cap.NewEntry());
   }
 }

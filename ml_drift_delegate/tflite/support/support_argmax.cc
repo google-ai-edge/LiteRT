@@ -133,7 +133,7 @@ bool IsArgMaxSupported(const TfLiteContext* absl_nonnull context,
     return false;
   }
   const absl::Status status =
-      CheckPopulateTensor<::ml_drift::Scalar, ::ml_drift::DataType::INT32>(
+      CheckPopulateTensor<::ml_drift::Scalar, ::ml_drift::DataType::kInt32>(
           &dim_tensor);
   if (!status.ok()) {
     *error = status.message();

@@ -17,16 +17,16 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/litert_expected.h"
 #include "litert/cc/internal/litert_tensor_buffer_utils.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/core/util/to_string.h"
 
 std::string LiteRtTensorBufferRequirementsT::ToString() const {
@@ -36,14 +36,11 @@ std::string LiteRtTensorBufferRequirementsT::ToString() const {
     type_strings.push_back(litert::BufferTypeToString(type));
   }
 
-  std::ostringstream os;
-  os << "LiteRtTensorBufferRequirementsT["
-     << "supported_types: "
-     << litert::internal::ToString(type_strings)
-     << ", buffer_size: " << buffer_size_
-     << ", strides: " << litert::internal::ToString(strides_)
-     << ", alignment: " << alignment_ << "]";
-  return os.str();
+  return absl::StrCat("LiteRtTensorBufferRequirementsT[supported_types: ",
+                      litert::internal::ToString(type_strings),
+                      ", buffer_size: ", buffer_size_,
+                      ", strides: ", litert::internal::ToString(strides_),
+                      ", alignment: ", alignment_, "]");
 }
 
 namespace litert::internal {

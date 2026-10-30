@@ -46,6 +46,9 @@ void GatedDeltaUpdateConvert(
   op->name = "gated_delta_update";
 
   for (int i = 0; i < tflite_node.inputs->size; ++i) {
+    // Skip input 5 (recurrent_state_in); we read and update output 1
+    // (recurrent_state_out) in-place.
+    if (i == 5) continue;
     if (tflite_node.inputs->data[i] != kTfLiteOptionalTensor) {
       ir_model.AddConsumer(tensor_map[tflite_node.inputs->data[i]], op->id);
     }
@@ -66,6 +69,9 @@ void GatedDeltaUpdateConvert(
     if (!flexbuffer_map["mode"].IsNull()) {
       attr.mode = flexbuffer_map["mode"].AsInt32();
     }
+    if (!flexbuffer_map["state_dtype"].IsNull()) {
+      attr.state_dtype = flexbuffer_map["state_dtype"].AsString().str();
+    }
   } else if (tflite_node.custom_initial_data &&
              tflite_node.custom_initial_data_size > 0) {
     const flexbuffers::Map flexbuffer_map =
@@ -75,6 +81,9 @@ void GatedDeltaUpdateConvert(
             .AsMap();
     if (!flexbuffer_map["mode"].IsNull()) {
       attr.mode = flexbuffer_map["mode"].AsInt32();
+    }
+    if (!flexbuffer_map["state_dtype"].IsNull()) {
+      attr.state_dtype = flexbuffer_map["state_dtype"].AsString().str();
     }
   }
   op->attr = attr;

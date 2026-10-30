@@ -56,7 +56,7 @@ Expected<bool> IsQuantizedType(NeuronTensorType type);
 bool IsPerChannelQuantizedType(NeuronTensorType type);
 
 NeuronReturnCode ModelAddOperation(const NeuronAdapterApi& api,
-                                   NeuronModel* model, NeuronOperationType type,
+                                   NeuronModel* model, int32_t type,
                                    std::vector<uint32_t> input,
                                    std::vector<uint32_t> output);
 

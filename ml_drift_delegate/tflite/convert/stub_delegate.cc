@@ -102,9 +102,10 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteDelegate* delegate) {
 TfLiteDelegate* CreateStubDelegate(const IrModelBuilderOptions& options,
                                    CustomIrOpMap custom_parsers) {
   auto* delegate = new TfLiteDelegate();
-  auto* stub_data = new StubDelegateData();
-  stub_data->options = options;
-  stub_data->custom_parsers = std::move(custom_parsers);
+  auto* stub_data = new StubDelegateData{
+      .options = options,
+      .custom_parsers = std::move(custom_parsers),
+  };
   delegate->data_ = stub_data;
   delegate->Prepare = Prepare;
   delegate->CopyFromBufferHandle = nullptr;

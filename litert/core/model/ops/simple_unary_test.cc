@@ -154,6 +154,26 @@ TEST(SimpleUnaryOpTest, ReferenceCast) {
   EXPECT_THAT(out_i32, ElementsAre(1, 2, -3));
 }
 
+TEST(SimpleUnaryOpTest, ReferenceDequantize) {
+  std::vector<int32_t> in = {-10, 0, 10, 20};
+  std::vector<float> out(4);
+  ReferenceDequantize(in.data(), in.size(), out.data(), /*scale=*/0.5f,
+                      /*zero_point=*/10);
+  EXPECT_THAT(out, ElementsAre(-10.0f, -5.0f, 0.0f, 5.0f));
+}
+
+TEST(SimpleUnaryOpTest, ReferenceDequantizePerChannel) {
+  std::vector<int32_t> in = {-2, 2, -1, 3};
+  std::vector<int32_t> dims = {2, 2};
+  std::vector<float> scales = {0.5f, 2.0f};
+  std::vector<int64_t> zero_points = {0, 1};
+  std::vector<float> out(4);
+  ReferenceDequantizePerChannel(in.data(), dims.data(), /*rank=*/2,
+                                /*quantized_dimension=*/0, scales.data(),
+                                zero_points.data(), out.data());
+  EXPECT_THAT(out, ElementsAre(-1.0f, 1.0f, -4.0f, 4.0f));
+}
+
 TEST(SimpleUnaryOpTest, AbsEmptyInputsFailure) {
   LiteRtOpT op;
   std::vector<Dims> input_shapes = {};

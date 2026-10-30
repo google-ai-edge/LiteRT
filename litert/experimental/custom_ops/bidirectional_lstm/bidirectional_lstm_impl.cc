@@ -14,7 +14,10 @@
 
 #include "litert/experimental/custom_ops/bidirectional_lstm/bidirectional_lstm_impl.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include "Eigen/Core"  // from @eigen_archive
 
@@ -97,12 +100,23 @@ void ComputeBidirectionalLstm(const float* x, const int32_t* seq_lengths,
     const float* mask_b = mask + static_cast<int64_t>(b) * t_steps;
     float* out_b = out + static_cast<int64_t>(b) * t_steps * out_stride;
     const int length = seq_lengths[b];
+    // Only the first `active_steps` frames are unmasked (`t < length`), and
+    // `ReverseIndex(length, t, t_steps)` clamps to `[0, active_steps - 1]`.
+    // Running the input projection GEMM and recurrent steps only over
+    // `active_steps` avoids computing padded bucket steps that will be masked
+    // out.
+    const int active_steps = std::clamp(length, 1, t_steps);
 
-    RunUnidirectionalLstm(x_b, w_ih_fwd, w_hh_fwd, b_fwd, fwd_out, t_steps, d,
-                          h);
+    RunUnidirectionalLstm(x_b, w_ih_fwd, w_hh_fwd, b_fwd, fwd_out, active_steps,
+                          d, h);
+    if (active_steps < t_steps) {
+      std::memset(
+          fwd_out + active_steps * h, 0,
+          static_cast<size_t>(t_steps - active_steps) * h * sizeof(float));
+    }
 
-    // Gather the input into "last real token first" order and zero padding.
-    for (int t = 0; t < t_steps; ++t) {
+    // Gather the active input into "last real token first" order.
+    for (int t = 0; t < active_steps; ++t) {
       const float keep = 1.0f - mask_b[t];
       const float* src = x_b + ReverseIndex(length, t, t_steps) * d;
       float* dst = reversed_in + t * d;
@@ -112,19 +126,20 @@ void ComputeBidirectionalLstm(const float* x, const int32_t* seq_lengths,
     }
 
     RunUnidirectionalLstm(reversed_in, w_ih_bwd, w_hh_bwd, b_bwd, reversed_out,
-                          t_steps, d, h);
+                          active_steps, d, h);
 
-    // Gather back into forward time order, mask, and concatenate. The forward
-    // half is intentionally not masked, matching the exporter.
+    // Gather back into forward time order, mask padded steps, and concatenate.
+    // Masking the forward half (matching the backward half and PyTorch's
+    // `pad_packed_sequence`) zeros out padded timesteps `[length, t_steps)`
+    // instead of leaking non-zero recurrent bias drift from padded frames,
+    // which in turn allows skipping forward LSTM execution past `active_steps`.
     for (int t = 0; t < t_steps; ++t) {
       const float keep = 1.0f - mask_b[t];
       const float* fwd = fwd_out + t * h;
       const float* bwd = reversed_out + ReverseIndex(length, t, t_steps) * h;
       float* dst = out_b + t * out_stride;
       for (int i = 0; i < h; ++i) {
-        dst[i] = fwd[i];
-      }
-      for (int i = 0; i < h; ++i) {
+        dst[i] = fwd[i] * keep;
         dst[h + i] = bwd[i] * keep;
       }
     }

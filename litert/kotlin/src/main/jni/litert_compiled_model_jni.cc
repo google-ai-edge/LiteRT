@@ -30,13 +30,15 @@
 #include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
@@ -48,6 +50,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/options/litert_compiler_options.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -57,6 +60,7 @@
 namespace {
 
 using ::litert::CompiledModel;
+using ::litert::CompilerOptions;
 using ::litert::CpuOptions;
 using ::litert::ElementType;
 using ::litert::Environment;
@@ -68,6 +72,7 @@ using ::litert::RankedTensorType;
 using ::litert::TensorBuffer;
 using ::litert::Unexpected;
 using ::litert::jni::CompiledModelWrapper;
+using ::litert::jni::ParseInt;
 using ::litert::jni::ThrowLiteRtException;
 using ::litert::qualcomm::QualcommOptions;
 
@@ -111,6 +116,17 @@ enum QualcommOptionsKey {
   kVtcmSize = 11,
   kNumHvxThreads = 12,
   kOptimizationLevel = 13,
+  kHtpDlbc = 14,
+  kHtpDlbcWeights = 15,
+  kGraphPriority = 16,
+};
+
+// Input shape addressing modes for compiler options, the values should match
+// the ones in Kotlin.
+enum CompilerOptionsInputShapeMode {
+  kPositional = 0,
+  kTensor = 1,
+  kSignature = 2,
 };
 
 // Precision for GPU options, the values should match the ones in Kotlin.
@@ -123,8 +139,7 @@ enum Precision {
 
 // Converts the precision string to LiteRtDelegatePrecision.
 GpuOptions::Precision ToGpuOptionsPrecision(const char* precision_str) {
-  auto precision = std::stoi(precision_str);
-  switch (precision) {
+  switch (ParseInt(precision_str, "GPU options precision")) {
     case kPrecisionFp16:
       return GpuOptions::Precision::kFp16;
     case kPrecisionFp32:
@@ -147,8 +162,7 @@ enum BufferStorageType {
 // Converts the buffer storage type string to LiteRtDelegateBufferStorageType.
 GpuOptions::BufferStorageType ToGpuOptionsBufferStorageType(
     const char* buffer_storage_type_str) {
-  auto type = std::stoi(buffer_storage_type_str);
-  switch (type) {
+  switch (ParseInt(buffer_storage_type_str, "GPU options bufferStorageType")) {
     case kBufferStorageTypeBuffer:
       return GpuOptions::BufferStorageType::kBuffer;
     case kBufferStorageTypeTexture2D:
@@ -168,8 +182,7 @@ enum Backend {
 
 // Converts the backend string to GpuOptions::Backend.
 GpuOptions::Backend ToGpuOptionsBackend(const char* backend_str) {
-  auto backend = std::stoi(backend_str);
-  switch (backend) {
+  switch (ParseInt(backend_str, "GPU options backend")) {
     case kBackendOpenCl:
       return GpuOptions::Backend::kOpenCl;
     case kBackendOpenGl:
@@ -189,8 +202,7 @@ enum Priority {
 
 // Converts the priority string to GpuOptions::Priority.
 GpuOptions::Priority ToGpuOptionsPriority(const char* priority_str) {
-  auto priority = std::stoi(priority_str);
-  switch (priority) {
+  switch (ParseInt(priority_str, "GPU options priority")) {
     case kPriorityLow:
       return GpuOptions::Priority::kLow;
     case kPriorityNormal:
@@ -207,8 +219,37 @@ CompiledModel& GetCompiledModel(jlong compiled_model_handle) {
   // Extract the actual compiled model from the wrapper
   auto* wrapper =
       reinterpret_cast<CompiledModelWrapper*>(compiled_model_handle);
-  ABSL_CHECK(wrapper != nullptr);
+  LITERT_INTERNAL_CHECK(wrapper != nullptr);
   return wrapper->compiled_model;
+}
+
+enum class ResizeInputTensorMode { kStrict, kNonStrict };
+
+void ResizeInputTensor(JNIEnv* env, jlong compiled_model_handle,
+                       jstring signature, jstring input_name,
+                       jintArray dimensions, ResizeInputTensorMode mode) {
+  auto& compiled_model = GetCompiledModel(compiled_model_handle);
+
+  AUTO_CLEANUP_JNI_STRING(env, signature);
+  LITERT_INTERNAL_CHECK(signature_str != nullptr);
+  AUTO_CLEANUP_JNI_STRING(env, input_name);
+  LITERT_INTERNAL_CHECK(input_name_str != nullptr);
+  const auto dimensions_size = env->GetArrayLength(dimensions);
+  AUTO_CLEANUP_JNI_INT_ARRAY(env, dimensions);
+  auto dimensions_span = absl::MakeConstSpan(
+      reinterpret_cast<const int*>(dimensions_array), dimensions_size);
+
+  auto result = mode == ResizeInputTensorMode::kStrict
+                    ? compiled_model.ResizeInputTensor(
+                          signature_str, input_name_str, dimensions_span)
+                    : compiled_model.ResizeInputTensorNonStrict(
+                          signature_str, input_name_str, dimensions_span);
+  if (!result) {
+    LITERT_LOG(LITERT_ERROR, "Failed to resize input tensor: %s",
+               result.Error().Message().c_str());
+    ThrowLiteRtException(env, result.Error().Status(),
+                         result.Error().Message());
+  }
 }
 
 // Populates a CpuOptions from the given cpu options.
@@ -219,15 +260,15 @@ Expected<void> PopulateCpuOptions(JNIEnv* env, CpuOptions& cpu_options,
   AUTO_CLEANUP_JNI_INT_ARRAY(env, cpu_options_keys);
   AUTO_CLEANUP_JNI_STRING_ARRAY(env, cpu_options_values);
   auto cpu_options_keys_size = env->GetArrayLength(cpu_options_keys);
-  ABSL_CHECK(cpu_options_keys_size == cpu_options_values_size);
+  LITERT_INTERNAL_CHECK_EQ(cpu_options_keys_size, cpu_options_values_size);
 
   for (int i = 0; i < cpu_options_keys_size; ++i) {
     if (cpu_options_keys_array[i] == CpuOptionsKey::kNumThreads) {
-      LITERT_RETURN_IF_ERROR(
-          cpu_options.SetNumThreads(std::stoi(cpu_options_values_vector[i])));
+      LITERT_RETURN_IF_ERROR(cpu_options.SetNumThreads(
+          ParseInt(cpu_options_values_vector[i], "CPU options numThreads")));
     } else if (cpu_options_keys_array[i] == CpuOptionsKey::kXnnPackFlags) {
-      LITERT_RETURN_IF_ERROR(
-          cpu_options.SetXNNPackFlags(std::stoi(cpu_options_values_vector[i])));
+      LITERT_RETURN_IF_ERROR(cpu_options.SetXNNPackFlags(
+          ParseInt(cpu_options_values_vector[i], "CPU options xnnPackFlags")));
     } else if (cpu_options_keys_array[i] ==
                CpuOptionsKey::kXnnPackWeightCachePath) {
       LITERT_RETURN_IF_ERROR(
@@ -248,7 +289,7 @@ Expected<void> PopulateGpuOptions(JNIEnv* env, GpuOptions& gpu_options,
   AUTO_CLEANUP_JNI_INT_ARRAY(env, gpu_options_keys);
   AUTO_CLEANUP_JNI_STRING_ARRAY(env, gpu_options_values);
   auto gpu_options_keys_size = env->GetArrayLength(gpu_options_keys);
-  ABSL_CHECK(gpu_options_keys_size == gpu_options_values_size);
+  LITERT_INTERNAL_CHECK_EQ(gpu_options_keys_size, gpu_options_values_size);
 
   LiteRtStatus status = kLiteRtStatusOk;
   for (int i = 0; i < gpu_options_keys_size; ++i) {
@@ -348,7 +389,8 @@ Expected<void> PopulateGpuOptions(JNIEnv* env, GpuOptions& gpu_options,
         break;
       case GpuOptionsKey::kNumStepsOfCommandBufferPreparations:
         status = gpu_options.SetNumStepsOfCommandBufferPreparations(
-            std::stoi(gpu_options_values_vector[i]));
+            ParseInt(gpu_options_values_vector[i],
+                     "GPU options numStepsOfCommandBufferPreparations"));
         if (status != kLiteRtStatusOk) {
           return Unexpected(status,
                             "Failed to set GPU options "
@@ -373,13 +415,15 @@ Expected<void> PopulateQualcommOptions(JNIEnv* env,
   AUTO_CLEANUP_JNI_INT_ARRAY(env, qualcomm_options_keys);
   AUTO_CLEANUP_JNI_STRING_ARRAY(env, qualcomm_options_values);
   auto qualcomm_options_keys_size = env->GetArrayLength(qualcomm_options_keys);
-  ABSL_CHECK(qualcomm_options_keys_size == qualcomm_options_values_size);
+  LITERT_INTERNAL_CHECK_EQ(qualcomm_options_keys_size,
+                           qualcomm_options_values_size);
 
   for (int i = 0; i < qualcomm_options_keys_size; ++i) {
     switch (qualcomm_options_keys_array[i]) {
       case QualcommOptionsKey::kLogLevel:
         qualcomm_options.SetLogLevel(static_cast<QualcommOptions::LogLevel>(
-            std::stoi(qualcomm_options_values_vector[i])));
+            ParseInt(qualcomm_options_values_vector[i],
+                     "Qualcomm options logLevel")));
         break;
       case QualcommOptionsKey::kEnableWeightSharing:
         qualcomm_options.SetEnableWeightSharing(
@@ -391,7 +435,7 @@ Expected<void> PopulateQualcommOptions(JNIEnv* env,
         std::vector<std::int32_t> ids;
         ids.reserve(ids_str.size());
         for (const auto& id_str : ids_str) {
-          ids.push_back(std::stoi(id_str));
+          ids.push_back(ParseInt(id_str, "Qualcomm options dumpTensorIds"));
         }
         qualcomm_options.SetDumpTensorIds(ids);
         break;
@@ -404,14 +448,24 @@ Expected<void> PopulateQualcommOptions(JNIEnv* env,
         (qualcomm_options.SetUseFoldReLU(
             strcmp(qualcomm_options_values_vector[i], "true") == 0));
         break;
+      case QualcommOptionsKey::kHtpDlbc:
+        (qualcomm_options.SetHtpDlbc(
+            strcmp(qualcomm_options_values_vector[i], "true") == 0));
+        break;
+      case QualcommOptionsKey::kHtpDlbcWeights:
+        (qualcomm_options.SetHtpDlbcWeights(
+            strcmp(qualcomm_options_values_vector[i], "true") == 0));
+        break;
       case QualcommOptionsKey::kHtpPerformanceMode:
         qualcomm_options.SetHtpPerformanceMode(
             static_cast<QualcommOptions::HtpPerformanceMode>(
-                std::stoi(qualcomm_options_values_vector[i])));
+                ParseInt(qualcomm_options_values_vector[i],
+                         "Qualcomm options htpPerformanceMode")));
         break;
       case QualcommOptionsKey::kProfiling:
         qualcomm_options.SetProfiling(static_cast<QualcommOptions::Profiling>(
-            std::stoi(qualcomm_options_values_vector[i])));
+            ParseInt(qualcomm_options_values_vector[i],
+                     "Qualcomm options profiling")));
         break;
       case QualcommOptionsKey::kIrJsonDir:
         qualcomm_options.SetIrJsonDir(qualcomm_options_values_vector[i]);
@@ -420,17 +474,25 @@ Expected<void> PopulateQualcommOptions(JNIEnv* env,
         qualcomm_options.SetDlcDir(qualcomm_options_values_vector[i]);
         break;
       case QualcommOptionsKey::kVtcmSize:
-        qualcomm_options.SetVtcmSize(
-            std::stoi(qualcomm_options_values_vector[i]));
+        qualcomm_options.SetVtcmSize(ParseInt(qualcomm_options_values_vector[i],
+                                              "Qualcomm options vtcmSize"));
         break;
       case QualcommOptionsKey::kNumHvxThreads:
         qualcomm_options.SetNumHvxThreads(
-            std::stoi(qualcomm_options_values_vector[i]));
+            ParseInt(qualcomm_options_values_vector[i],
+                     "Qualcomm options numHvxThreads"));
         break;
       case QualcommOptionsKey::kOptimizationLevel:
         qualcomm_options.SetOptimizationLevel(
             static_cast<QualcommOptions::OptimizationLevel>(
-                std::stoi(qualcomm_options_values_vector[i])));
+                ParseInt(qualcomm_options_values_vector[i],
+                         "Qualcomm options optimizationLevel")));
+        break;
+      case QualcommOptionsKey::kGraphPriority:
+        qualcomm_options.SetGraphPriority(
+            static_cast<QualcommOptions::GraphPriority>(
+                ParseInt(qualcomm_options_values_vector[i],
+                         "Qualcomm options graphPriority")));
         break;
       default:
         return Unexpected(kLiteRtStatusErrorInvalidArgument,
@@ -441,13 +503,75 @@ Expected<void> PopulateQualcommOptions(JNIEnv* env,
   return {};
 }
 
-Expected<Options> CreateOptions(JNIEnv* env, jintArray accelerators,
-                                jintArray cpu_options_keys,
-                                jobjectArray cpu_options_values,
-                                jintArray gpu_options_keys,
-                                jobjectArray gpu_options_values,
-                                jintArray qualcomm_options_keys,
-                                jobjectArray qualcomm_options_values) {
+// Populates a CompilerOptions from the given input shape overrides, passed as
+// parallel arrays of addressing modes, signature keys, names and dimensions.
+Expected<void> PopulateCompilerOptions(JNIEnv* env,
+                                       CompilerOptions& compiler_options,
+                                       jintArray input_shape_modes,
+                                       jobjectArray input_shape_signatures,
+                                       jobjectArray input_shape_names,
+                                       jobjectArray input_shape_dimensions) {
+  AUTO_CLEANUP_JNI_INT_ARRAY(env, input_shape_modes);
+  AUTO_CLEANUP_JNI_STRING_ARRAY(env, input_shape_signatures);
+  AUTO_CLEANUP_JNI_STRING_ARRAY(env, input_shape_names);
+  const auto num_overrides = env->GetArrayLength(input_shape_modes);
+  const auto dimensions_array_size =
+      env->GetArrayLength(input_shape_dimensions);
+  LITERT_INTERNAL_CHECK_EQ(num_overrides, input_shape_signatures_size);
+  LITERT_INTERNAL_CHECK_EQ(num_overrides, input_shape_names_size);
+  LITERT_INTERNAL_CHECK_EQ(num_overrides, dimensions_array_size);
+
+  for (int i = 0; i < num_overrides; ++i) {
+    auto dims_jarray = static_cast<jintArray>(
+        env->GetObjectArrayElement(input_shape_dimensions, i));
+    LITERT_INTERNAL_CHECK(dims_jarray != nullptr);
+    auto dims_jarray_local_ref_cleanup =
+        absl::MakeCleanup([&]() { env->DeleteLocalRef(dims_jarray); });
+    const auto dims_size = env->GetArrayLength(dims_jarray);
+    AUTO_CLEANUP_JNI_INT_ARRAY(env, dims_jarray);
+    auto dims_span = absl::MakeConstSpan(
+        reinterpret_cast<const int32_t*>(dims_jarray_array), dims_size);
+
+    Expected<void> status;
+    switch (input_shape_modes_array[i]) {
+      case CompilerOptionsInputShapeMode::kPositional:
+        status = compiler_options.AddPositionalInputShape(
+            input_shape_signatures_vector[i], dims_span);
+        break;
+      case CompilerOptionsInputShapeMode::kTensor:
+        status = compiler_options.AddTensorInputShape(
+            input_shape_signatures_vector[i], input_shape_names_vector[i],
+            dims_span);
+        break;
+      case CompilerOptionsInputShapeMode::kSignature:
+        status = compiler_options.AddSignatureInputShape(
+            input_shape_signatures_vector[i], input_shape_names_vector[i],
+            dims_span);
+        break;
+      default:
+        return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                          absl::StrCat("Unknown compiler input shape mode: ",
+                                       input_shape_modes_array[i]));
+    }
+    if (!status) {
+      return Unexpected(
+          status.Error().Status(),
+          absl::StrCat("Invalid input shape override #", i, " (signature='",
+                       input_shape_signatures_vector[i], "', name='",
+                       input_shape_names_vector[i],
+                       "'): ", status.Error().Message()));
+    }
+  }
+  return {};
+}
+
+Expected<Options> CreateOptions(
+    JNIEnv* env, jintArray accelerators, jintArray cpu_options_keys,
+    jobjectArray cpu_options_values, jintArray gpu_options_keys,
+    jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
+    jobjectArray qualcomm_options_values, jintArray input_shape_modes,
+    jobjectArray input_shape_signatures, jobjectArray input_shape_names,
+    jobjectArray input_shape_dimensions) {
   int accelerators_size = env->GetArrayLength(accelerators);
   AUTO_CLEANUP_JNI_INT_ARRAY(env, accelerators);
   litert::HwAcceleratorSet acceleratorSet =
@@ -495,6 +619,14 @@ Expected<Options> CreateOptions(JNIEnv* env, jintArray accelerators,
         compilation_options.GetOptions<::litert::qualcomm::QualcommOptions>());
     LITERT_RETURN_IF_ERROR(PopulateQualcommOptions(
         env, qualcomm_options, qualcomm_options_keys, qualcomm_options_values));
+  }
+
+  if (env->GetArrayLength(input_shape_modes) > 0) {
+    LITERT_ASSIGN_OR_RETURN(auto& compiler_options,
+                            compilation_options.GetCompilerOptions());
+    LITERT_RETURN_IF_ERROR(PopulateCompilerOptions(
+        env, compiler_options, input_shape_modes, input_shape_signatures,
+        input_shape_names, input_shape_dimensions));
   }
   return std::move(compilation_options);
 }
@@ -586,13 +718,17 @@ jobject CreateJavaTensorBufferRequirements(
 jobject ToJavaElementType(JNIEnv* env, ElementType element_type) {
   jclass element_type_class =
       env->FindClass("com/google/ai/edge/litert/TensorType$ElementType");
-  ABSL_CHECK(element_type_class != nullptr)
-      << "Failed to find ElementType class.";
+  if (element_type_class == nullptr) {
+    LITERT_FATAL("Failed to find ElementType class.");
+  }
 
   std::string element_type_name;
   switch (element_type) {
     case ElementType::Int32:
       element_type_name = "INT";
+      break;
+    case ElementType::Int16:
+      element_type_name = "INT16";
       break;
     case ElementType::Float32:
       element_type_name = "FLOAT";
@@ -616,13 +752,15 @@ jobject ToJavaElementType(JNIEnv* env, ElementType element_type) {
   auto field_id = env->GetStaticFieldID(
       element_type_class, element_type_name.c_str(),
       "Lcom/google/ai/edge/litert/TensorType$ElementType;");
-  ABSL_CHECK(field_id != nullptr)
-      << "Failed to get field: " << element_type_name;
+  if (field_id == nullptr) {
+    LITERT_FATAL("Failed to get field: %s", element_type_name.c_str());
+  }
 
   auto java_element_type =
       env->GetStaticObjectField(element_type_class, field_id);
-  ABSL_CHECK(java_element_type != nullptr)
-      << "Failed to get element type: " << element_type_name;
+  if (java_element_type == nullptr) {
+    LITERT_FATAL("Failed to get element type: %s", element_type_name.c_str());
+  }
   return java_element_type;
 }
 
@@ -630,7 +768,9 @@ jobject ToJavaElementType(JNIEnv* env, ElementType element_type) {
 jobject ToJavaLayout(JNIEnv* env, const Layout& layout) {
   jclass layout_class =
       env->FindClass("com/google/ai/edge/litert/TensorType$Layout");
-  ABSL_CHECK(layout_class != nullptr) << "Failed to find Layout class.";
+  if (layout_class == nullptr) {
+    LITERT_FATAL("Failed to find Layout class.");
+  }
 
   auto dimensions = env->NewIntArray(layout.Dimensions().size());
   if (dimensions == nullptr) {
@@ -658,11 +798,15 @@ jobject ToJavaLayout(JNIEnv* env, const Layout& layout) {
                            strides_vector.data());
 
     auto constructor = env->GetMethodID(layout_class, "<init>", "([I[I)V");
-    ABSL_CHECK(constructor != nullptr) << "Failed to get constructor.";
+    if (constructor == nullptr) {
+      LITERT_FATAL("Failed to get constructor.");
+    }
     layout_obj = env->NewObject(layout_class, constructor, dimensions, strides);
   } else {
     auto constructor = env->GetMethodID(layout_class, "<init>", "([I)V");
-    ABSL_CHECK(constructor != nullptr) << "Failed to get constructor.";
+    if (constructor == nullptr) {
+      LITERT_FATAL("Failed to get constructor.");
+    }
     layout_obj = env->NewObject(layout_class, constructor, dimensions);
   }
   if (layout_obj == nullptr) {
@@ -680,8 +824,9 @@ jobject ToJavaTensorType(JNIEnv* env, const RankedTensorType& tensor_type) {
   auto layout = tensor_type.Layout();
   jclass tensor_type_class =
       env->FindClass("com/google/ai/edge/litert/TensorType");
-  ABSL_CHECK(tensor_type_class != nullptr)
-      << "Failed to find TensorType class.";
+  if (tensor_type_class == nullptr) {
+    LITERT_FATAL("Failed to find TensorType class.");
+  }
 
   auto java_element_type = ToJavaElementType(env, element_type);
   if (java_element_type == nullptr) {
@@ -698,7 +843,9 @@ jobject ToJavaTensorType(JNIEnv* env, const RankedTensorType& tensor_type) {
       tensor_type_class, "<init>",
       "(Lcom/google/ai/edge/litert/TensorType$ElementType;Lcom/google/ai/"
       "edge/litert/TensorType$Layout;)V");
-  ABSL_CHECK(constructor != nullptr) << "Failed to get constructor.";
+  if (constructor == nullptr) {
+    LITERT_FATAL("Failed to get constructor.");
+  }
   java_tensor_type = env->NewObject(tensor_type_class, constructor,
                                     java_element_type, java_layout);
   env->DeleteLocalRef(java_layout);
@@ -725,10 +872,12 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromAsset(
     jstring asset_name, jintArray accelerators, jintArray cpu_options_keys,
     jobjectArray cpu_options_values, jintArray gpu_options_keys,
     jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
-    jobjectArray qualcomm_options_values) {
+    jobjectArray qualcomm_options_values, jintArray input_shape_modes,
+    jobjectArray input_shape_signatures, jobjectArray input_shape_names,
+    jobjectArray input_shape_dimensions) {
   auto am = AAssetManager_fromJava(env, asset_manager);
   AUTO_CLEANUP_JNI_STRING(env, asset_name);
-  ABSL_CHECK(asset_name_str != nullptr);
+  LITERT_INTERNAL_CHECK(asset_name_str != nullptr);
   auto model_asset = AAssetManager_open(am, asset_name_str, AASSET_MODE_BUFFER);
   if (model_asset == nullptr) {
     LITERT_LOG(LITERT_ERROR, "Failed to open asset: %s", asset_name_str);
@@ -758,11 +907,13 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromAsset(
   }
 
   auto litert_env = reinterpret_cast<Environment*>(env_handle);
-  ABSL_CHECK(litert_env != nullptr);
+  LITERT_INTERNAL_CHECK(litert_env != nullptr);
 
   auto compilation_options = CreateOptions(
       env, accelerators, cpu_options_keys, cpu_options_values, gpu_options_keys,
-      gpu_options_values, qualcomm_options_keys, qualcomm_options_values);
+      gpu_options_values, qualcomm_options_keys, qualcomm_options_values,
+      input_shape_modes, input_shape_signatures, input_shape_names,
+      input_shape_dimensions);
   if (!compilation_options) {
     LITERT_LOG(LITERT_ERROR, "Failed to create compilation options: %s",
                compilation_options.Error().Message().c_str());
@@ -792,13 +943,17 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromFile(
     jintArray accelerators, jintArray cpu_options_keys,
     jobjectArray cpu_options_values, jintArray gpu_options_keys,
     jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
-    jobjectArray qualcomm_options_values) {
+    jobjectArray qualcomm_options_values, jintArray input_shape_modes,
+    jobjectArray input_shape_signatures, jobjectArray input_shape_names,
+    jobjectArray input_shape_dimensions) {
   auto litert_env = reinterpret_cast<Environment*>(env_handle);
-  ABSL_CHECK(litert_env != nullptr);
+  LITERT_INTERNAL_CHECK(litert_env != nullptr);
 
   auto compilation_options = CreateOptions(
       env, accelerators, cpu_options_keys, cpu_options_values, gpu_options_keys,
-      gpu_options_values, qualcomm_options_keys, qualcomm_options_values);
+      gpu_options_values, qualcomm_options_keys, qualcomm_options_values,
+      input_shape_modes, input_shape_signatures, input_shape_names,
+      input_shape_dimensions);
   if (!compilation_options) {
     LITERT_LOG(LITERT_ERROR, "Failed to create compilation options: %s",
                compilation_options.Error().Message().c_str());
@@ -808,7 +963,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromFile(
   }
 
   AUTO_CLEANUP_JNI_STRING(env, file_path);
-  ABSL_CHECK(file_path_str != nullptr);
+  LITERT_INTERNAL_CHECK(file_path_str != nullptr);
   auto compiled_model =
       CompiledModel::Create(*litert_env, file_path_str, *compilation_options);
   if (!compiled_model) {
@@ -830,9 +985,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffer(
   auto& compiled_model = GetCompiledModel(compiled_model_handle);
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
-  ABSL_CHECK(signature_str != nullptr);
+  LITERT_INTERNAL_CHECK(signature_str != nullptr);
   AUTO_CLEANUP_JNI_STRING(env, input_name);
-  ABSL_CHECK(input_name_str != nullptr);
+  LITERT_INTERNAL_CHECK(input_name_str != nullptr);
   auto tensor_buffer =
       compiled_model.CreateInputBuffer(signature_str, input_name_str);
   if (!tensor_buffer) {
@@ -853,9 +1008,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetInputBufferRequirements(
   auto& compiled_model = GetCompiledModel(compiled_model_handle);
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
-  ABSL_CHECK(signature_str != nullptr);
+  LITERT_INTERNAL_CHECK(signature_str != nullptr);
   AUTO_CLEANUP_JNI_STRING(env, input_name);
-  ABSL_CHECK(input_name_str != nullptr);
+  LITERT_INTERNAL_CHECK(input_name_str != nullptr);
   auto requirements =
       compiled_model.GetInputBufferRequirements(signature_str, input_name_str);
   if (!requirements) {
@@ -875,9 +1030,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateOutputBuffer(
   auto& compiled_model = GetCompiledModel(compiled_model_handle);
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
-  ABSL_CHECK(signature_str != nullptr);
+  LITERT_INTERNAL_CHECK(signature_str != nullptr);
   AUTO_CLEANUP_JNI_STRING(env, output_name);
-  ABSL_CHECK(output_name_str != nullptr);
+  LITERT_INTERNAL_CHECK(output_name_str != nullptr);
   auto tensor_buffer =
       compiled_model.CreateOutputBuffer(signature_str, output_name_str);
   if (!tensor_buffer) {
@@ -898,9 +1053,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputBufferRequirements(
   auto& compiled_model = GetCompiledModel(compiled_model_handle);
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
-  ABSL_CHECK(signature_str != nullptr);
+  LITERT_INTERNAL_CHECK(signature_str != nullptr);
   AUTO_CLEANUP_JNI_STRING(env, output_name);
-  ABSL_CHECK(output_name_str != nullptr);
+  LITERT_INTERNAL_CHECK(output_name_str != nullptr);
   auto requirements = compiled_model.GetOutputBufferRequirements(
       signature_str, output_name_str);
   if (!requirements) {
@@ -911,6 +1066,22 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputBufferRequirements(
     return nullptr;
   }
   return CreateJavaTensorBufferRequirements(env, *requirements);
+}
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeResizeInputTensor(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle, jstring signature,
+    jstring input_name, jintArray dimensions) {
+  ResizeInputTensor(env, compiled_model_handle, signature, input_name,
+                    dimensions, ResizeInputTensorMode::kStrict);
+}
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeResizeInputTensorNonStrict(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle, jstring signature,
+    jstring input_name, jintArray dimensions) {
+  ResizeInputTensor(env, compiled_model_handle, signature, input_name,
+                    dimensions, ResizeInputTensorMode::kNonStrict);
 }
 
 JNIEXPORT jlongArray JNICALL
@@ -946,7 +1117,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffersBySignature
   auto& compiled_model = GetCompiledModel(compiled_model_handle);
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
-  ABSL_CHECK(signature_str != nullptr);
+  LITERT_INTERNAL_CHECK(signature_str != nullptr);
   auto tensor_buffers = compiled_model.CreateInputBuffers(signature_str);
   if (!tensor_buffers) {
     LITERT_LOG(LITERT_ERROR, "Failed to create input buffers: %s",
@@ -1001,7 +1172,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateOutputBuffersBySignatur
   auto& compiled_model = GetCompiledModel(compiled_model_handle);
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
-  ABSL_CHECK(signature_str != nullptr);
+  LITERT_INTERNAL_CHECK(signature_str != nullptr);
   auto tensor_buffers = compiled_model.CreateOutputBuffers(signature_str);
   if (!tensor_buffers) {
     LITERT_LOG(LITERT_ERROR, "Failed to create output buffers: %s",
@@ -1116,7 +1287,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignature(
   }
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
-  ABSL_CHECK(signature_str != nullptr);
+  LITERT_INTERNAL_CHECK(signature_str != nullptr);
   auto result = compiled_model.Run(signature_str, input_buffer_vector,
                                    output_buffer_vector);
   if (!result) {
@@ -1132,12 +1303,12 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignatureWithMap(
     JNIEnv* env, jclass clazz, jlong compiled_model_handle, jstring signature,
     jobjectArray input_keys, jlongArray input_buffers, jobjectArray output_keys,
     jlongArray output_buffers) {
-  ABSL_CHECK_EQ(env->GetArrayLength(input_keys),
-                env->GetArrayLength(input_buffers))
-      << "Number of input keys and buffers do not match.";
-  ABSL_CHECK_EQ(env->GetArrayLength(output_keys),
-                env->GetArrayLength(output_buffers))
-      << "Number of output keys and buffers do not match.";
+  if (env->GetArrayLength(input_keys) != env->GetArrayLength(input_buffers)) {
+    LITERT_FATAL("Number of input keys and buffers do not match.");
+  }
+  if (env->GetArrayLength(output_keys) != env->GetArrayLength(output_buffers)) {
+    LITERT_FATAL("Number of output keys and buffers do not match.");
+  }
 
   AUTO_CLEANUP_JNI_STRING_ARRAY(env, input_keys);
   absl::flat_hash_map<absl::string_view, litert::TensorBuffer> input_buffer_map;
@@ -1154,7 +1325,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignatureWithMap(
                            input_buffer.Error().Message());
       return;
     }
-    input_buffer_map[key] = std::move(*input_buffer);
+    input_buffer_map.try_emplace(key, std::move(*input_buffer));
   }
 
   AUTO_CLEANUP_JNI_STRING_ARRAY(env, output_keys);
@@ -1173,11 +1344,11 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignatureWithMap(
                            output_buffer.Error().Message());
       return;
     }
-    output_buffer_map[key] = std::move(*output_buffer);
+    output_buffer_map.try_emplace(key, std::move(*output_buffer));
   }
 
   AUTO_CLEANUP_JNI_STRING(env, signature);
-  ABSL_CHECK(signature_str != nullptr);
+  LITERT_INTERNAL_CHECK(signature_str != nullptr);
   auto& compiled_model = GetCompiledModel(compiled_model_handle);
   auto result =
       compiled_model.Run(signature_str, input_buffer_map, output_buffer_map);
@@ -1195,9 +1366,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetInputTensorType(
     jstring signature) {
   auto& compiled_model = GetCompiledModel(handle);
   AUTO_CLEANUP_JNI_STRING(env, signature);
-  ABSL_CHECK(signature != nullptr);
+  LITERT_INTERNAL_CHECK(signature != nullptr);
   AUTO_CLEANUP_JNI_STRING(env, input_name);
-  ABSL_CHECK(input_name != nullptr);
+  LITERT_INTERNAL_CHECK(input_name != nullptr);
   auto tensor_type =
       compiled_model.GetInputTensorType(signature_str, input_name_str);
   if (!tensor_type) {
@@ -1216,9 +1387,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputTensorType(
     jstring signature) {
   auto& compiled_model = GetCompiledModel(handle);
   AUTO_CLEANUP_JNI_STRING(env, signature);
-  ABSL_CHECK(signature != nullptr);
+  LITERT_INTERNAL_CHECK(signature != nullptr);
   AUTO_CLEANUP_JNI_STRING(env, output_name);
-  ABSL_CHECK(output_name != nullptr);
+  LITERT_INTERNAL_CHECK(output_name != nullptr);
   auto tensor_type =
       compiled_model.GetOutputTensorType(signature_str, output_name_str);
   if (!tensor_type) {
@@ -1229,6 +1400,19 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputTensorType(
     return nullptr;
   }
   return ToJavaTensorType(env, *tensor_type);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeGetLastInferenceDurationNanoseconds(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle) {
+  auto& compiled_model = GetCompiledModel(compiled_model_handle);
+  auto duration = compiled_model.LastInferenceDurationNanoseconds();
+  if (!duration) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get last inference duration: %s",
+               duration.Error().Message().c_str());
+    return -1;
+  }
+  return *duration;
 }
 
 JNIEXPORT void JNICALL

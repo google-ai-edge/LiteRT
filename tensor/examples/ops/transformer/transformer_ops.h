@@ -16,6 +16,10 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_OPS_TRANSFORMER_TRANSFORMER_OPS_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_OPS_TRANSFORMER_TRANSFORMER_OPS_H_
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -23,6 +27,8 @@ limitations under the License.
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/ops/transformer/transformer_ops_graph.h"
@@ -30,7 +36,6 @@ limitations under the License.
 #include "tensor/internal/graph.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
-#include "tensor/utils/source_location.h"
 
 namespace litert::tensor {
 
@@ -42,8 +47,23 @@ namespace litert::tensor {
 template <class... Mixins>
 Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
                        const Tensor<Mixins...>& sin) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(x, cos, sin));
+  graph::ScopeGuard scope("rope");
+  scope.Bind("input", x.GetRaw())
+      .Bind("cos", cos.GetRaw())
+      .Bind("sin", sin.GetRaw());
+
   // We assume a shape of [batch, ..., head_dim].
   const Shape& x_shape = x.GetShape();
+  if (x_shape.empty()) {
+    return absl::InvalidArgumentError(
+        "RoPE expects input `x` with rank >= 1, got scalar.");
+  }
+  if (x_shape.back() <= 0 || x_shape.back() % 2 != 0) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("RoPE expects an even last dimension (head_dim), got ",
+                     x_shape.back(), "."));
+  }
   const int last_axis = static_cast<int>(x_shape.size()) - 1;
   const int half_dim = x_shape[last_axis] / 2;
   const Shape slice_size = [&] {
@@ -63,13 +83,68 @@ Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
 
   Tensor x_cos = Mul(x, cos);
   Tensor rotated_sin = Mul(rotated, sin);
-  return Add(x_cos, rotated_sin);
+  Tensor out = Add(x_cos, rotated_sin);
+  scope.Bind("output", out.GetRaw());
+  return out;
+}
+
+template <class... Mixins>
+Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,
+                                  const Tensor<Mixins...>& segment_pos,
+                                  float min_timescale, float max_timescale) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(input, segment_pos));
+  auto op = std::make_shared<graph::RotaryEmbeddingOperation>();
+  RegisterMixins<Mixins...>(op);
+  op->min_timescale = min_timescale;
+  op->max_timescale = max_timescale;
+  op->inputs = {input.GetRaw(), segment_pos.GetRaw()};
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
+  const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
+  graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+  output_info.shape = input_info.shape;
+  output_info.type = input_info.type;
+  graph::OpDebugger::DebugOp(*op);
+  return output;
+}
+
+// Parameters for decomposed Rotary Position Embedding (RoPE) using
+// precomputed `cos` and `sin` tables.
+template <class... Mixins>
+struct RopeCosSinParams {
+  Tensor<Mixins...> cos;
+  Tensor<Mixins...> sin;
+};
+
+// Parameters for the fused `RotaryEmbedding` op using a runtime `position_ids`
+// tensor and timescale bounds.
+template <class... Mixins>
+struct RotaryEmbeddingParams {
+  Tensor<Mixins...> position_ids;
+  float min_timescale = 1.0f;
+  float max_timescale = 10000.0f;
+};
+
+template <class... Mixins>
+Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x,
+                       const RopeCosSinParams<Mixins...>& params) {
+  return RoPE(x, params.cos, params.sin);
+}
+
+template <class... Mixins>
+Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x,
+                       const RotaryEmbeddingParams<Mixins...>& params) {
+  return RotaryEmbedding(x, params.position_ids, params.min_timescale,
+                         params.max_timescale);
 }
 
 // Computes the Swish (SiLU) activation function: x * sigmoid(x).
 template <class... Mixins>
 Tensor<Mixins...> Swish(Tensor<Mixins...> x) {
-  return Mul(x, Logistic(x));
+  graph::ScopeGuard scope("swish");
+  scope.Bind("input", x.GetRaw());
+  Tensor out = Mul(x, Logistic(x));
+  scope.Bind("output", out.GetRaw());
+  return out;
 }
 
 enum class FFNActivation {
@@ -92,13 +167,25 @@ Tensor<Mixins...> FeedForward(Tensor<Mixins...> x,
                               Tensor<Mixins...> up_weight,
                               Tensor<Mixins...> down_weight,
                               FFNActivation activation) {
+  LRT_TENSOR_RETURN_IF_ERROR(
+      CheckTensors(x, gate_weight, up_weight, down_weight));
+  graph::ScopeGuard scope("feed_forward");
+  scope.Bind("input", x.GetRaw())
+      .Bind("gate_weight", gate_weight.GetRaw())
+      .Bind("up_weight", up_weight.GetRaw())
+      .Bind("down_weight", down_weight.GetRaw())
+      .Attr("activation", activation == FFNActivation::kGeluApproximate
+                              ? "gelu_approximate"
+                              : "swish");
   Tensor gate = FullyConnected(x, gate_weight);
   Tensor up = FullyConnected(x, up_weight);
   Tensor activated_gate = activation == FFNActivation::kGeluApproximate
                               ? Gelu(gate, /*approximate=*/true)
                               : Swish(gate);
   Tensor intermediate = Mul(activated_gate, up);
-  return FullyConnected(intermediate, down_weight, kActNone, true);
+  Tensor out = FullyConnected(intermediate, down_weight, kActNone, true);
+  scope.Bind("output", out.GetRaw());
+  return out;
 }
 
 // Repeats each KV head for Grouped-Query Attention (GQA), keeping the copies
@@ -116,6 +203,7 @@ Tensor<Mixins...> FeedForward(Tensor<Mixins...> x,
 // head_dim], or an error tensor if `x` is not rank 4.
 template <class... Mixins>
 Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
+  LRT_TENSOR_RETURN_IF_ERROR(x);
   const Shape& shape = x.GetShape();
   if (shape.size() != 4) {
     return Tensor<Mixins...>(graph::ErrorTensor(absl::InvalidArgumentError(
@@ -126,26 +214,32 @@ Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
   if (num_groups <= 1) {
     return x;
   }
+  graph::ScopeGuard scope("repeat_kv_heads");
+  scope.Bind("input", x.GetRaw()).Attr("num_groups", num_groups);
   const int batch_size = shape[0];
   const int num_kv_heads = shape[1];
   const int head_dim = shape[3];
 
   if (num_kv_heads == 1) {
-    return Tile(x, {1, num_groups, 1, 1});
+    Tensor out = Tile(x, {1, num_groups, 1, 1});
+    scope.Bind("output", out.GetRaw());
+    return out;
   }
 
   Tensor reshaped =
       Reshape(x, {batch_size * num_kv_heads, 1, kInferredDim, head_dim});
   Tensor tiled = Tile(reshaped, {1, num_groups, 1, 1});
-  return Reshape(
+  Tensor out = Reshape(
       tiled, {batch_size, num_kv_heads * num_groups, kInferredDim, head_dim});
+  scope.Bind("output", out.GetRaw());
+  return out;
 }
 
 // Computes scaled dot-product attention:
 // Attention(Q, K, V) = softmax(soft_cap(Q * K^T * scale) + mask) * V
 //
 // attention_mask: added to the logits after soft-capping; broadcastable to
-//   [batch, num_heads, seq_len_q, seq_len_kv]. An invalid tensor (the default)
+//   [..., num_heads, seq_len_q, seq_len_kv]. An invalid tensor (the default)
 //   means no mask is applied.
 // scale: if set, the logits are multiplied by it; the logits are left as-is
 //   otherwise.
@@ -154,12 +248,19 @@ Tensor<Mixins...> RepeatKVHeads(const Tensor<Mixins...>& x, int num_groups) {
 //   It is only used when `scale` or `soft_cap` requires a constant to be
 //   materialized; in that case an untyped `q` and an unset `datatype` are an
 //   error, as there is nothing left to deduce the constant type from.
+// adj_v: if true, v has shape [..., num_kv_heads, head_dim, seq_len_kv] and is
+//   transposed on its last two axes in the final matmul.
 //
-// Expected tensor shapes:
-//   q: [batch, num_heads, seq_len_q, head_dim]
-//   k: [batch, num_heads, seq_len_kv, head_dim]
-//   v: [batch, num_heads, seq_len_kv, head_dim]
-//   output: [batch, num_heads, seq_len_q, head_dim]
+// Expected tensor shapes (any leading dimensions are batch dimensions, shared
+// by q, k and v):
+//   q: [..., num_heads, seq_len_q, head_dim]
+//   k: [..., num_kv_heads, seq_len_kv, head_dim]
+//   v: [..., num_kv_heads, seq_len_kv, head_dim]
+//   output: [..., num_heads, seq_len_q, head_dim]
+//
+// Note: Grouped-query attention: when `num_kv_heads` < `num_heads`, `num_heads`
+// must be a multiple of `num_kv_heads` and query head `h` attends to KV head
+// `h / (num_heads / num_kv_heads)` (i.e. the copies of a KV head are adjacent).
 //
 // Returns an error tensor if the constant type cannot be resolved or if
 // `soft_cap` is zero.
@@ -170,8 +271,75 @@ Tensor<Mixins...> ScaledDotProductAttention(
     const Tensor<Mixins...>& attention_mask = TensorHandle::Invalid(),
     std::optional<float> scale = std::nullopt,
     std::optional<float> soft_cap = std::nullopt,
-    Type datatype = Type::kUnknown) {
-  Tensor scores = BatchMatMul(q, k, /*adj_x=*/false, /*adj_y=*/true);
+    Type datatype = Type::kUnknown, bool adj_v = false) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(q, k, v));
+  graph::ScopeGuard scope("sdpa");
+  scope.Bind("q", q.GetRaw()).Bind("k", k.GetRaw()).Bind("v", v.GetRaw());
+  if (attention_mask != TensorHandle::Invalid()) {
+    LRT_TENSOR_RETURN_IF_ERROR(attention_mask);
+    scope.Bind("attention_mask", attention_mask.GetRaw());
+  }
+  if (scale.has_value()) {
+    scope.Attr("scale", static_cast<double>(*scale));
+  }
+  if (soft_cap.has_value()) {
+    scope.Attr("soft_cap", static_cast<double>(*soft_cap));
+  }
+
+  // Grouped-query attention: fold the query heads that share a KV head into
+  // the rows of the matrix multiplication. Tensors are [..., heads, seq,
+  // head_dim]; any leading dimensions are batch dimensions shared by q and k.
+  struct GroupedDims {
+    int num_heads;
+    int num_kv_heads;
+    int seq_len_q;
+    int head_dim;
+    int num_groups() const { return num_heads / num_kv_heads; }
+  };
+  const Shape& q_shape = q.GetShape();
+  const Shape& k_shape = k.GetShape();
+  const size_t rank = q_shape.size();
+  const size_t head_axis = rank >= 3 ? rank - 3 : 0;
+  // Only set when the query heads are grouped.
+  std::optional<GroupedDims> grouped;
+  if (rank >= 3 && k_shape.size() == rank &&
+      std::equal(q_shape.begin(), q_shape.begin() + head_axis,
+                 k_shape.begin()) &&
+      k_shape[head_axis] > 0 && q_shape[head_axis] != k_shape[head_axis] &&
+      q_shape[head_axis] % k_shape[head_axis] == 0) {
+    grouped = GroupedDims{.num_heads = q_shape[head_axis],
+                          .num_kv_heads = k_shape[head_axis],
+                          .seq_len_q = q_shape[head_axis + 1],
+                          .head_dim = q_shape[head_axis + 2]};
+  }
+  // Returns the batch dimensions of `q` followed by `heads, rows, cols`.
+  auto BatchDimsShape = [&](int heads, int rows, int cols) {
+    std::vector<int> shape(q_shape.begin(), q_shape.begin() + head_axis);
+    shape.insert(shape.end(), {heads, rows, cols});
+    return shape;
+  };
+
+  Tensor<Mixins...> q_rows = q;
+  if (grouped) {
+    // [..., H, Sq, D] -> [..., Hkv, G * Sq, D]
+    q_rows =
+        Reshape(q, BatchDimsShape(grouped->num_kv_heads,
+                                  grouped->num_groups() * grouped->seq_len_q,
+                                  grouped->head_dim));
+  }
+  const bool need_unfold_for_mask =
+      grouped.has_value() &&
+      (grouped->seq_len_q != 1 ||
+       (attention_mask != TensorHandle::Invalid() &&
+        attention_mask.GetShape().size() == rank &&
+        (attention_mask.GetShape()[head_axis] > 1 ||
+         attention_mask.GetShape()[head_axis + 1] > 1)));
+  Tensor scores = BatchMatMul(q_rows, k, /*adj_x=*/false, /*adj_y=*/true);
+  if (need_unfold_for_mask) {
+    // [..., Hkv, G * Sq, Skv] -> [..., H, Sq, Skv] so that the mask broadcasts.
+    scores = Reshape(scores, BatchDimsShape(grouped->num_heads,
+                                            grouped->seq_len_q, kInferredDim));
+  }
 
   const bool scale_constant_needed = scale.has_value() && *scale != 1.0f;
   if (datatype == Type::kUnknown) {
@@ -206,42 +374,43 @@ Tensor<Mixins...> ScaledDotProductAttention(
     scores = Mul(tanh_scores, cap_tensor);
   }
 
-  if (attention_mask.GetStatus().ok()) {
+  if (attention_mask != TensorHandle::Invalid()) {
     scores = Add(scores, attention_mask);
   }
+  scope.Bind("scores", scores);
 
   Tensor attention_weights = Softmax(scores);
-  return BatchMatMul(attention_weights, v);
-}
+  scope.Bind("attn_weights", attention_weights);
+  if (need_unfold_for_mask) {
+    attention_weights =
+        Reshape(attention_weights,
+                BatchDimsShape(grouped->num_kv_heads,
+                               grouped->num_groups() * grouped->seq_len_q,
+                               kInferredDim));
+  }
 
-template <class... Mixins>
-Tensor<Mixins...> RotaryEmbedding(const Tensor<Mixins...>& input,
-                                  const Tensor<Mixins...>& segment_pos,
-                                  float min_timescale, float max_timescale,
-                                  float rope_wavelength) {
-  auto op = std::make_shared<graph::RotaryEmbeddingOperation>();
-  RegisterMixins<Mixins...>(op);
-  op->min_timescale = min_timescale;
-  op->max_timescale = max_timescale;
-  // op->rope_wavelength = rope_wavelength;
-  op->inputs = {input.GetRaw(), segment_pos.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
-  const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
-  graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
-  output_info.shape = input_info.shape;
-  output_info.type = input_info.type;
-  graph::OpDebugger::DebugOp(*op);
-  return output;
+  Tensor out =
+      BatchMatMul(attention_weights, v, /*adj_x=*/false, /*adj_y=*/adj_v);
+  if (grouped) {
+    out = Reshape(out, BatchDimsShape(grouped->num_heads, grouped->seq_len_q,
+                                      grouped->head_dim));
+  }
+  scope.Bind("output", out.GetRaw());
+  return out;
 }
 
 template <class... Mixins>
 Tensor<Mixins...> RmsNorm(const Tensor<Mixins...>& input,
                           const Tensor<Mixins...>& scale,
                           const Tensor<Mixins...>& epsilon) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(input, epsilon));
+  if (scale != TensorHandle::Invalid()) {
+    LRT_TENSOR_RETURN_IF_ERROR(scale);
+  }
   auto op = std::make_shared<graph::RmsNormOperation>();
   RegisterMixins<Mixins...>(op);
   op->inputs = {input.GetRaw(), scale.GetRaw(), epsilon.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = input_info.shape;
@@ -258,7 +427,7 @@ Tensor<Mixins...> FillSegmentPos(const Tensor<Mixins...>& params,
   RegisterMixins<Mixins...>(op);
   op->param_index = param_index;
   op->inputs = {params.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = shape;
   output_info.type = output_type;
@@ -277,7 +446,7 @@ Tensor<Mixins...> FillAttentionMask(const Tensor<Mixins...>& params,
   op->sliding_window_size = sliding_window_size;
   op->is_decode = is_decode;
   op->inputs = {params.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = shape;
   output_info.type = Type::kFP32;
@@ -292,7 +461,7 @@ std::pair<Tensor<Mixins...>, Tensor<Mixins...>> FillRopeCosSin(
   RegisterMixins<Mixins...>(op);
   op->rope_base = rope_base;
 
-  auto out_group = graph::NewTensorGroup(2, source_location::current());
+  auto out_group = graph::NewTensorGroup(2, absl::SourceLocation::current());
   op->outputs_group = out_group;
   out_group->producer = op;
 
@@ -329,7 +498,7 @@ std::vector<Tensor<Mixins...>> AddValuesToKvCache(
   op->inputs = {key_cache.GetRaw(), value_cache.GetRaw(), key.GetRaw(),
                 value.GetRaw(), params.GetRaw()};
 
-  auto out_group = graph::NewTensorGroup(2, source_location::current());
+  auto out_group = graph::NewTensorGroup(2, absl::SourceLocation::current());
   op->outputs_group = out_group;
   out_group->producer = op;
   std::vector<Tensor<Mixins...>> outputs;
@@ -370,7 +539,7 @@ std::vector<Tensor<Mixins...>> AddValuesToCache(
   op->inputs = {key_cache.GetRaw(), value_cache.GetRaw(), key.GetRaw(),
                 value.GetRaw(), params.GetRaw()};
 
-  auto out_group = graph::NewTensorGroup(2, source_location::current());
+  auto out_group = graph::NewTensorGroup(2, absl::SourceLocation::current());
   op->outputs_group = out_group;
   out_group->producer = op;
   std::vector<Tensor<Mixins...>> outputs;
@@ -395,11 +564,37 @@ std::vector<Tensor<Mixins...>> AddValuesToCache(
 
 template <class... Mixins>
 Tensor<Mixins...> QkNorm(const Tensor<Mixins...>& input,
-                         const Tensor<Mixins...>& scale) {
+                         const Tensor<Mixins...>& scale,
+                         float epsilon = 1e-6f) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(input));
+  if (scale != TensorHandle::Invalid()) {
+    LRT_TENSOR_RETURN_IF_ERROR(scale);
+  }
   auto op = std::make_shared<graph::QkNormOperation>();
   RegisterMixins<Mixins...>(op);
+  op->epsilon = epsilon;
   op->inputs = {input.GetRaw(), scale.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
+  const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
+  graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
+  output_info.shape = input_info.shape;
+  output_info.type = input_info.type;
+  graph::OpDebugger::DebugOp(*op);
+  return output;
+}
+
+template <class... Mixins>
+Tensor<Mixins...> QkNorm(const Tensor<Mixins...>& input,
+                         const Tensor<Mixins...>& scale,
+                         const Tensor<Mixins...>& epsilon) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(input, epsilon));
+  if (scale != TensorHandle::Invalid()) {
+    LRT_TENSOR_RETURN_IF_ERROR(scale);
+  }
+  auto op = std::make_shared<graph::QkNormOperation>();
+  RegisterMixins<Mixins...>(op);
+  op->inputs = {input.GetRaw(), scale.GetRaw(), epsilon.GetRaw()};
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = input_info.shape;
@@ -415,7 +610,7 @@ Tensor<Mixins...> ActivationSparsity(const Tensor<Mixins...>& input,
   RegisterMixins<Mixins...>(op);
   op->stddev_multiplier = stddev_multiplier;
   op->inputs = {input.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = input_info.shape;
@@ -430,7 +625,7 @@ Tensor<Mixins...> SelectMask(const Tensor<Mixins...>& scores,
   auto op = std::make_shared<graph::SelectMaskOperation>();
   RegisterMixins<Mixins...>(op);
   op->inputs = {scores.GetRaw(), mask.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   const graph::TensorInformation& scores_info = *GetInfo(scores.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = scores_info.shape;
@@ -446,7 +641,7 @@ Tensor<Mixins...> WriteCurrentTokens(const Tensor<Mixins...>& input,
   RegisterMixins<Mixins...>(op);
   op->inputs = {input.GetRaw(), params.GetRaw()};
   LRT_TENSOR_ASSIGN_OR_ABORT(auto input_info, graph::GetInfo(input.GetRaw()));
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = {1};
   output_info.type = input_info.type;
@@ -468,7 +663,7 @@ Tensor<Mixins...> MatMulWithCache(const Tensor<Mixins...>& lhs,
   op->sliding_window_size = sliding_window_size;
   LRT_TENSOR_ASSIGN_OR_ABORT(auto lhs_info, graph::GetInfo(lhs.GetRaw()));
   LRT_TENSOR_ASSIGN_OR_ABORT(auto rhs_info, graph::GetInfo(rhs.GetRaw()));
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
 
   std::vector<int> out_shape = lhs_info.shape;
@@ -500,7 +695,7 @@ std::pair<Tensor<Mixins...>, Tensor<Mixins...>> ExtractLocalCache(
   op->global_cache_size = global_cache_size;
   op->inputs = {k.GetRaw(), v.GetRaw(), params.GetRaw()};
 
-  auto out_group = graph::NewTensorGroup(2, source_location::current());
+  auto out_group = graph::NewTensorGroup(2, absl::SourceLocation::current());
   op->outputs_group = out_group;
   out_group->producer = op;
 
@@ -532,13 +727,76 @@ Tensor<Mixins...> SoftmaxWithRuntimeCheck(
   op->start_ch_index = start_ch_index;
   op->end_ch_index = end_ch_index;
   op->inputs = {input.GetRaw(), params.GetRaw()};
-  Tensor<Mixins...> output = AddOutput(op, source_location::current());
+  Tensor<Mixins...> output = AddOutput(op, absl::SourceLocation::current());
   const graph::TensorInformation& input_info = *GetInfo(input.GetRaw());
   graph::TensorInformation& output_info = *GetInfo(output.GetRaw());
   output_info.shape = input_info.shape;
   output_info.type = input_info.type;
   graph::OpDebugger::DebugOp(*op);
   return output;
+}
+
+// Numerically stable softplus: max(x, 0) + log(1 + exp(-|x|)).
+template <class... Mixins>
+Tensor<Mixins...> Softplus(const Tensor<Mixins...>& x) {
+  graph::ScopeGuard scope("softplus");
+  scope.Bind("input", x);
+  Tensor<Mixins...> one({.type = Type::kFP32, .shape = {1}, .buffer = 1.0f});
+  Tensor out = Add(Relu(x), Log(Add(Exp(Neg(Abs(x))), one)));
+  scope.Bind("output", out);
+  return out;
+}
+
+// FLA-style l2norm, `x * rsqrt(sum(x^2) + eps)`, times `scale`, over the last
+// axis of size `dim`. Expressed as an RmsNorm:
+//   rsqrt(sum(x^2) + eps) = rsqrt(dim) * rsqrt(mean(x^2) + eps / dim).
+template <class... Mixins>
+Tensor<Mixins...> ScaledL2Norm(const Tensor<Mixins...>& x, int dim, float eps,
+                               float scale) {
+  graph::ScopeGuard scope("scaled_l2_norm");
+  scope.Attr("dim", static_cast<int64_t>(dim))
+      .Attr("eps", eps)
+      .Attr("scale", scale)
+      .Bind("input", x);
+  Tensor<Mixins...> weight(
+      {.type = Type::kFP32,
+       .shape = {dim},
+       .buffer = std::vector<float>(
+           dim, scale / std::sqrt(static_cast<float>(dim)))});
+  Tensor<Mixins...> norm_eps(
+      {.type = Type::kFP32, .shape = {1}, .buffer = eps / dim});
+  Tensor out = RmsNorm(x, weight, norm_eps);
+  scope.Bind("output", out);
+  return out;
+}
+
+// Concatenates any number of tensors along `axis` as a tree of
+// `Concatenation` ops with at most `kMaxConcatInputs` inputs each (XNNPACK's
+// concatenate takes at most 5 inputs).
+inline constexpr int kMaxConcatInputs = 4;
+
+template <class... Mixins>
+Tensor<Mixins...> ConcatenateMany(std::vector<Tensor<Mixins...>> parts,
+                                  int axis) {
+  if (parts.empty()) {
+    return TensorHandle(
+        absl::InvalidArgumentError("ConcatenateMany requires >= 1 tensor."));
+  }
+  while (parts.size() > 1) {
+    std::vector<Tensor<Mixins...>> merged;
+    merged.reserve((parts.size() + kMaxConcatInputs - 1) / kMaxConcatInputs);
+    for (size_t begin = 0; begin < parts.size(); begin += kMaxConcatInputs) {
+      const size_t end = std::min(parts.size(), begin + kMaxConcatInputs);
+      if (end - begin == 1) {
+        merged.push_back(parts[begin]);
+      } else {
+        merged.push_back(Concatenation(
+            absl::MakeSpan(parts).subspan(begin, end - begin), axis));
+      }
+    }
+    parts = std::move(merged);
+  }
+  return parts[0];
 }
 
 }  // namespace litert::tensor

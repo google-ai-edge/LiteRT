@@ -215,7 +215,8 @@ LiteRtStatus LrtSetGpuOptionsUseMetalArgumentBuffers(
     LrtGpuOptions* gpu_options, bool use_metal_argument_buffers);
 
 // Sets whether to use MTLResidencySet to prevent memory swapping on Metal
-// backend. Requires macOS 15.0+ or iOS 18.0+.
+// backend. Requires macOS 15.0+ or iOS 18.0+. Residency can be toggled via run
+// options. If not specified, residency is unchanged.
 LiteRtStatus LrtSetGpuOptionsMetalResidencySet(LrtGpuOptions* gpu_options,
                                                bool enable);
 
@@ -252,73 +253,125 @@ LiteRtStatus LrtSetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
 LiteRtStatus LrtSetGpuOptionsHintFullyDelegatedToSingleDelegate(
     LrtGpuOptions* gpu_options, bool hint_fully_delegated_to_single_delegate);
 
-// Sets whether to use IrModel instead of legacy GraphFloat32.
+// If true, the accelerator initializes via the IrModel pipeline instead of the
+// legacy GraphFloat32 pipeline. Both pipelines are always compiled and linked,
+// the selection happens at runtime.
 LiteRtStatus LrtSetGpuOptionsUseIrModel(LrtGpuOptions* gpu_options,
                                         bool enable);
+
+// If true, tuning is faster but the resulting inference can be slower. This
+// trades steady-state performance for initialization time.
+LiteRtStatus LrtSetGpuOptionsEnableFastTuning(LrtGpuOptions* gpu_options,
+                                              bool enable_fast_tuning);
+
+// Enables per-op profiling.
+LiteRtStatus LrtSetGpuOptionsEnableOpProfiling(LrtGpuOptions* gpu_options,
+                                               bool enable_op_profiling);
+
+// Enables the detailed report of the per-op profiling.
+LiteRtStatus LrtSetGpuOptionsEnableOpProfilingDetailedReport(
+    LrtGpuOptions* gpu_options, bool enable_op_profiling_detailed_report);
+
+// If true, only the node range of `debug_first_delegate_node_index` and
+// `debug_last_delegate_node_index` is delegated.
+//
+// NOTE: This is for debugging purposes, e.g. to bisect which node breaks
+// delegation.
+LiteRtStatus LrtSetGpuOptionsDebugDelegatePartition(
+    LrtGpuOptions* gpu_options, bool debug_delegate_partition);
+
+// Sets the index of the first node that could be delegated. Only used when
+// `debug_delegate_partition` is true.
+LiteRtStatus LrtSetGpuOptionsDebugFirstDelegateNodeIndex(
+    LrtGpuOptions* gpu_options, int debug_first_delegate_node_index);
+
+// Sets the index of the last node that could be delegated. Only used when
+// `debug_delegate_partition` is true.
+LiteRtStatus LrtSetGpuOptionsDebugLastDelegateNodeIndex(
+    LrtGpuOptions* gpu_options, int debug_last_delegate_node_index);
 
 // Declarations below this point are meant to be used by accelerator code.
 
 const char* LrtGetGpuOptionsIdentifier();
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuOptionsConstantTensorsSharing(
     bool* enabled, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuOptionsInfiniteFloatCapping(bool* enabled,
                                                   const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuOptionsBenchmarkMode(bool* enabled,
                                            const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuOptionsGpuBackend(LiteRtGpuBackend* backend,
                                         const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuOptionsExternalTensorsMode(bool* enabled,
                                                  const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
     bool* enabled, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion(
     bool* enabled, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsKernelBatchSize(
     int* kernel_batch_size, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPrecision(
     LiteRtDelegatePrecision* precision, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsBufferStorageType(
-    LiteRtDelegateBufferStorageType* type, const LrtGpuOptions* options);
+    LiteRtDelegateBufferStorageType* buffer_storage_type,
+    const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
-    bool* prefer_texture_weights, const LrtGpuOptions* options);
+    bool* enabled, const LrtGpuOptions* options);
 
 // Returns serialization directory.
 // The returned string pointer is owned by the user of
 // LrtSetGpuAcceleratorCompilationOptionsSerializationDir() API.
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializationDir(
     const char** serialization_dir, const LrtGpuOptions* options);
 
 // Returns model cache key.
 // The returned string pointer is owned by the user of
 // LrtSetGpuAcceleratorCompilationOptionsModelCacheKey() API.
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsModelCacheKey(
     const char** model_cache_key, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsProgramCacheFd(
     int* program_cache_fd, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsWeightCacheFd(
     int* weight_cache_fd, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
-    bool* serialize_program_cache, const LrtGpuOptions* options);
+    bool* enabled, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly(
-    bool* cache_only_compiled_programs, const LrtGpuOptions* options);
+    bool* enabled, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
-    bool* serialize_external_tensors, const LrtGpuOptions* options);
+    bool* enabled, const LrtGpuOptions* options);
 
 LiteRtStatus LrtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns(
     int* num_patterns, const LrtGpuOptions* options);
@@ -335,54 +388,92 @@ LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsBufferStorageTensorPattern(
     const char** buffer_storage_tensor_pattern, int pattern_index,
     const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,
                                          const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
-    bool* madvise_original_shared_tensors, const LrtGpuOptions* options);
+    bool* enabled, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsDisableShaderOptimization(
-    bool* disable_shader_optimization, const LrtGpuOptions* options);
+    bool* enabled, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorCompilationOptionsSharedTensorMaps(
-    void** shared_tensor_maps, const LrtGpuOptions* gpu_options);
+    void** shared_tensor_maps, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus
 LrtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
     int* num_steps_of_command_buffer_preparations,
     const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuOptionsUseMetalArgumentBuffers(
-    const LrtGpuOptions* options, bool* use_metal_argument_buffers);
+    bool* enabled, const LrtGpuOptions* options);
 
-LiteRtStatus LrtGetGpuOptionsMetalResidencySet(const LrtGpuOptions* options,
-                                               bool* enabled);
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetGpuOptionsMetalResidencySet(bool* enabled,
+                                               const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsWaitType(
     LiteRtGpuWaitType* wait_type, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
     const char** preferred_device_substr, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsNumThreadsToUpload(
     int* num_threads_to_upload, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsNumThreadsToCompile(
     int* num_threads_to_compile, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu(
-    bool* convert_weights_on_gpu, const LrtGpuOptions* options);
+    bool* enabled, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete(
-    bool* wait, const LrtGpuOptions* options);
+    bool* enabled, const LrtGpuOptions* options);
 
+// Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuOptionsHintFullyDelegatedToSingleDelegate(
-    bool* hint_fully_delegated_to_single_delegate,
-    const LrtGpuOptions* options);
+    bool* enabled, const LrtGpuOptions* options);
 
 // Returns kLiteRtStatusErrorNotFound if not set.
 LiteRtStatus LrtGetGpuOptionsUseIrModel(bool* enabled,
                                         const LrtGpuOptions* options);
+
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetGpuOptionsEnableFastTuning(bool* enabled,
+                                              const LrtGpuOptions* options);
+
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetGpuOptionsEnableOpProfiling(bool* enabled,
+                                               const LrtGpuOptions* options);
+
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetGpuOptionsEnableOpProfilingDetailedReport(
+    bool* enabled, const LrtGpuOptions* options);
+
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetGpuOptionsDebugDelegatePartition(
+    bool* enabled, const LrtGpuOptions* options);
+
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetGpuOptionsDebugFirstDelegateNodeIndex(
+    int* debug_first_delegate_node_index, const LrtGpuOptions* options);
+
+// Returns kLiteRtStatusErrorNotFound if not set.
+LiteRtStatus LrtGetGpuOptionsDebugLastDelegateNodeIndex(
+    int* debug_last_delegate_node_index, const LrtGpuOptions* options);
+
 
 #ifdef __cplusplus
 }  // extern "C"

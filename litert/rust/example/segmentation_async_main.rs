@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// Simplified port of litert/samples/async_segmentation/segmentation_model.cc
-///
-/// This example shows how to use LiteRT Rust bindings to run a segmentation model.
-///
-/// Example usage:
-/// cargo run \
-///  --model-path=third_party/odml/litert/litert/samples/async_segmentation/models/selfie_multiclass_256x256.tflite \
-///  --input-image-path=third_party/odml/litert/litert/samples/async_segmentation/test_images/image.jpeg \
-///  --output-image-path=/tmp/out.png
+//! Simplified port of litert/samples/async_segmentation/segmentation_model.cc
+//!
+//! This example shows how to use LiteRT Rust bindings to run a segmentation model.
+//!
+//! Example usage:
+//! cargo run --bin segmentation_async \
+//! --model-path=models/selfie_multiclass_256x256.tflite \
+//! --input-image-path=image.jpeg \
+//! --output-image-path=/tmp/out.png
 use clap::Parser;
 use image::{imageops, ImageBuffer, ImageReader};
 
@@ -41,24 +41,25 @@ struct Args {
 }
 
 struct SegmentationModel {
-    model: litert::Model,
-    env: litert::Environment,
     compiled_model: litert::CompiledModel,
+    model: litert::Model<'static>,
+    env: litert::Environment,
 }
 
 impl SegmentationModel {
-    fn initialize(model_path: &str) -> Result<SegmentationModel, litert::Error> {
+    fn initialize(model_path: &str) -> Result<Self, litert::Error> {
         let env = litert::EnvironmentBuilder::build_default()?;
         let m = litert::Model::create_model_from_file(&env, model_path)?;
         let options = litert::Options::create_with_accelerator(litert::LiteRtHwAccelerator::Cpu)?;
         let cm = litert::CompiledModel::create(&env, &m, &options)?;
-        Ok(SegmentationModel { model: m, env: env, compiled_model: cm })
+        Ok(SegmentationModel { compiled_model: cm, model: m, env })
     }
 
     #[cfg(async_support)]
     async fn run(&self, input: &[f32], output: &mut [f32]) -> Result<(), litert::Error> {
-        let sig_index = litert::SignatureIndex::from(0);
-        let inputs = self.compiled_model.create_input_tensor_buffers(&self.env, &self.model, sig_index)?;
+        let sig_index = litert::SignatureIndex::DEFAULT;
+        let inputs =
+            self.compiled_model.create_input_tensor_buffers(&self.env, &self.model, sig_index)?;
         println!("Input type: {:?}", inputs[0].element_type());
         inputs[0].write(input)?;
         let outputs =
@@ -90,8 +91,9 @@ impl SegmentationModel {
     #[cfg(not(async_support))]
     async fn run(&self, input: &[f32], output: &mut [f32]) -> Result<(), litert::Error> {
         // Fallback if async is not supported (should not happen with our BUILD config)
-        let sig_index = litert::SignatureIndex::from(0);
-        let inputs = self.compiled_model.create_input_tensor_buffers(&self.env, &self.model, sig_index)?;
+        let sig_index = litert::SignatureIndex::DEFAULT;
+        let inputs =
+            self.compiled_model.create_input_tensor_buffers(&self.env, &self.model, sig_index)?;
         inputs[0].write(input)?;
         let outputs =
             self.compiled_model.create_output_tensor_buffers(&self.env, &self.model, sig_index)?;

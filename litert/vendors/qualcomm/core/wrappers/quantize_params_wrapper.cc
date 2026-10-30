@@ -344,6 +344,10 @@ void BwAxisScaleOffsetQuantizeParamsWrapper::CloneTo(
   dst = qnn_quantize_param_;
 }
 
+std::int32_t BwAxisScaleOffsetQuantizeParamsWrapper::GetAxis() const {
+  return qnn_quantize_param_.bwAxisScaleOffsetEncoding.axis;
+}
+
 void BwAxisScaleOffsetQuantizeParamsWrapper::SetAxis(const std::int32_t axis) {
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.axis = axis;
 }

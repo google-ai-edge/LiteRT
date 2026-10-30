@@ -153,5 +153,18 @@ TEST(SelectOpTest, ReferenceSelectBroadcastCondition) {
   EXPECT_THAT(out, ElementsAre(1.0f, 2.0f, 30.0f, 40.0f));
 }
 
+TEST(SelectOpTest, RejectsInvalidOutputShapesCount) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{1, 4}, {1, 4}, {1, 4}};
+
+  std::vector<Dims> empty_outputs;
+  EXPECT_EQ(InferSelect(op, absl::MakeSpan(input_shapes), empty_outputs),
+            kLiteRtStatusErrorInvalidArgument);
+
+  std::vector<Dims> two_outputs(2);
+  EXPECT_EQ(InferSelect(op, absl::MakeSpan(input_shapes), two_outputs),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
 }  // namespace
 }  // namespace litert::internal

@@ -78,7 +78,7 @@ TEST_P(ConvertSoftmaxTest, SoftmaxOperation) {
   const SoftmaxAttributes* attr =
       std::any_cast<SoftmaxAttributes>(&softmax_op->attr);
   ASSERT_THAT(attr, NotNull());
-  EXPECT_EQ(attr->axis, Axis::CHANNELS);
+  EXPECT_EQ(attr->axis, Axis::kChannels);
 }
 
 TEST(ConvertSoftmaxTestNonParam, SoftmaxOperationWithCapping) {

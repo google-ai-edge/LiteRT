@@ -21,6 +21,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -44,16 +45,19 @@
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/runtime/compiled_model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include <CL/cl.h>
+#include "tflite/interpreter.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/cl/cl_device.h"
-#include "tflite/delegates/gpu/cl/gl_interop.h"
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
-#include "tflite/delegates/gpu/gl/egl_environment.h"
+#include "ml_drift/cl/cl_device.h"  // from @ml_drift
+#include "ml_drift/cl/gl_interop.h"  // from @ml_drift
+#include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
+#include "ml_drift/gl/egl_environment.h"  // from @ml_drift
+#include "ml_drift/gl/portable_gl31.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 using testing::ElementsAre;
@@ -144,9 +148,8 @@ TEST(CompiledModelGpuTest, DoubleEnvironmentWithInterleavedDestruction) {
 // that OpenGL support is available, we need to create the EGL environment
 // outside of the LiteRT environment.
 #if LITERT_HAS_OPENGL_SUPPORT
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
-  ASSERT_TRUE(
-      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+  std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(::ml_drift::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
   env_options.push_back(
       {litert::EnvironmentOptions::Tag::kEglContext,
        reinterpret_cast<int64_t>(egl_env->context().context())});
@@ -178,6 +181,11 @@ TEST(CompiledModelGpuTest, DoubleEnvironmentWithInterleavedDestruction) {
     ASSERT_TRUE(input_buffers[1].Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
     compiled_model1.Run(input_buffers, output_buffers);
+    {
+      auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+          output_buffers[0], TensorBuffer::LockMode::kRead);
+      ASSERT_TRUE(lock_and_addr);
+    }
 
     // Create the second environment and model.
     LITERT_ASSERT_OK_AND_ASSIGN(
@@ -541,19 +549,44 @@ Expected<std::vector<TensorBuffer>> CreateGlOutputBuffers(
   return output_buffers;
 }
 
+// TODO(b/383176413): Add API to CompiledModel to create buffers of custom
+// buffer type.
+Expected<std::vector<TensorBuffer>> CreateOutputBuffersInGivenType(
+    Environment& env, CompiledModel& compiled_model, size_t signature_index,
+    std::vector<absl::string_view> output_names, TensorBufferType buffer_type) {
+  std::vector<TensorBuffer> output_buffers;
+  output_buffers.reserve(output_names.size());
+  for (auto& output_name : output_names) {
+    LITERT_ASSIGN_OR_RETURN(TensorBufferRequirements output_buffer_requirements,
+                            compiled_model.GetOutputBufferRequirements(
+                                signature_index, output_name));
+    LITERT_ASSIGN_OR_RETURN(
+        RankedTensorType ranked_tensor_type,
+        compiled_model.GetOutputTensorType(signature_index, output_name));
+    LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
+                            output_buffer_requirements.BufferSize());
+    LITERT_ASSIGN_OR_RETURN(
+        auto output_buffer,
+        TensorBuffer::CreateManaged(env, buffer_type, ranked_tensor_type,
+                                    buffer_size));
+    output_buffers.push_back(std::move(output_buffer));
+  }
+  return output_buffers;
+}
+
 bool IsGlClInteropSupported() {
   if (!HasOpenGlSupport() || !HasOpenClSupport()) {
     return false;
   }
 #if LITERT_HAS_OPENCL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
-  if (!tflite::gpu::cl::LoadOpenCL().ok()) {
+  if (!::ml_drift::cl::LoadOpenCL().ok()) {
     return false;
   }
-  tflite::gpu::cl::CLDevice device;
-  if (!tflite::gpu::cl::CreateDefaultGPUDevice(&device).ok()) {
+  ::ml_drift::cl::CLDevice device;
+  if (!::ml_drift::cl::CreateDefaultGPUDevice(&device).ok()) {
     return false;
   }
-  return tflite::gpu::cl::IsGlSharingSupported(device);
+  return ::ml_drift::cl::IsGlSharingSupported(device);
 #else
   return false;
 #endif  // LITERT_HAS_OPENCL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
@@ -701,6 +734,118 @@ TEST(CompiledModelGpuTest, SyncWithGlClInteropMultiIteration) {
       ASSERT_TRUE(lock_and_addr);
       auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
       EXPECT_THAT(output, Pointwise(FloatNear(1e-5), expected_output));
+    }
+  }
+}
+
+// Runs the model synchronously on OpenCL with AHardwareBuffer inputs and
+// outputs, as MediaPipe's InferenceRunnerLiteRt does on devices whose OpenCL
+// driver can import AHardwareBuffers (Mali GPUs). AHardwareBuffers are read and
+// written with AHardwareBuffer_lock(), which is not ordered after the GPU work,
+// so the GPU must be done with all of them by the time Run() returns.
+TEST(CompiledModelGpuTest, SyncWithAhwbIsCompleteWhenRunReturns) {
+  if (!HasOpenClSupport() || !HasAhwbSupport()) {
+    GTEST_SKIP() << "OpenCL or AHardwareBuffer is not supported";
+  }
+
+  // Pass an EGL context like MediaPipe does, so that LiteRT sets up its GPU
+  // environment, including AHardwareBuffer import into OpenCL, when the
+  // environment is created.
+  std::vector<litert::Environment::Option> env_options;
+#if LITERT_HAS_OPENGL_SUPPORT
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(
+      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+  env_options.push_back(
+      {litert::Environment::OptionTag::EglContext,
+       reinterpret_cast<int64_t>(egl_env->context().context())});
+  env_options.push_back({litert::Environment::OptionTag::EglDisplay,
+                         reinterpret_cast<int64_t>(egl_env->display())});
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env,
+                              litert::Environment::Create(env_options));
+  if (!env.SupportsAhwbClInterop()) {
+    GTEST_SKIP() << "AHardwareBuffer import into OpenCL is not supported";
+  }
+
+  // AHardwareBuffers are only offered when external tensors mode is disabled.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options, CreateGpuOptions(/*external_tensors_mode=*/false));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            options));
+
+  size_t signature_index = 0;
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_buffer_requirements,
+      compiled_model.GetOutputBufferRequirements(signature_index,
+                                                 /*output_index=*/0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types,
+                              output_buffer_requirements.SupportedTypes());
+  if (!absl::c_linear_search(supported_types, TensorBufferType::kAhwb)) {
+    GTEST_SKIP() << "The GPU accelerator doesn't support AHardwareBuffer "
+                    "outputs on this device";
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_names, compiled_model.GetSignatureInputNames(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffers,
+      CreateInputBuffersInGivenType(env, compiled_model, signature_index,
+                                    input_names, TensorBufferType::kAhwb));
+  ASSERT_EQ(input_buffers.size(), 2);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_names,
+      compiled_model.GetSignatureOutputNames(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_buffers,
+      CreateOutputBuffersInGivenType(env, compiled_model, signature_index,
+                                     output_names, TensorBufferType::kAhwb));
+  ASSERT_EQ(output_buffers.size(), 1);
+
+  const std::vector<float> overwritten_input0(kTestInput0Size, 1000.0f);
+  const std::vector<float> overwritten_input1(kTestInput1Size, 1000.0f);
+
+  // The inputs change in every iteration so that reading the output of the
+  // previous iteration is detected too.
+  for (int iter = 0; iter < 20; ++iter) {
+    float input_factor = static_cast<float>(iter + 1);
+
+    std::vector<float> input0(kTestInput0Size);
+    std::vector<float> input1(kTestInput1Size);
+    std::vector<float> expected_output(kTestOutputSize);
+
+    for (size_t i = 0; i < kTestInput0Size; ++i) {
+      input0[i] = kTestInput0Tensor[i] * input_factor;
+    }
+    for (size_t i = 0; i < kTestInput1Size; ++i) {
+      input1[i] = kTestInput1Tensor[i] * input_factor;
+    }
+    for (size_t i = 0; i < kTestOutputSize; ++i) {
+      expected_output[i] = kTestOutputTensor[i] * input_factor;
+    }
+
+    ASSERT_TRUE(input_buffers[0].Write<float>(absl::MakeConstSpan(input0)));
+    ASSERT_TRUE(input_buffers[1].Write<float>(absl::MakeConstSpan(input1)));
+
+    LITERT_ASSERT_OK(
+        compiled_model.Run(signature_index, input_buffers, output_buffers));
+
+    // Overwrite the inputs and read the output right away, without waiting for
+    // anything else.
+    ASSERT_TRUE(
+        input_buffers[0].Write<float>(absl::MakeConstSpan(overwritten_input0)));
+    ASSERT_TRUE(
+        input_buffers[1].Write<float>(absl::MakeConstSpan(overwritten_input1)));
+    {
+      auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+          output_buffers[0], TensorBuffer::LockMode::kRead);
+      ASSERT_TRUE(lock_and_addr);
+      auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+      EXPECT_THAT(output, Pointwise(FloatNear(1e-5), expected_output))
+          << "iteration " << iter;
     }
   }
 }
@@ -954,9 +1099,8 @@ TEST(CompiledModelGpuTest, BasicOpenGlWithProvidedEglEnvironment) {
   }
   bool external_tensors_mode = false;
 #if LITERT_HAS_OPENGL_SUPPORT
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
-  ASSERT_TRUE(
-      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+  std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(::ml_drift::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
 
   std::vector<litert::EnvironmentOptions::Option> env_options;
   env_options.push_back(
@@ -1030,9 +1174,8 @@ TEST(CompiledModelGpuTest, GlBufferIdRecyclingRaceCondition) {
   }
 
   // Setup environment.
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
-  ASSERT_TRUE(
-      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+  std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(::ml_drift::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
 
   std::vector<litert::Environment::Option> env_options;
   env_options.push_back(
@@ -1252,6 +1395,86 @@ TEST(CompiledModelGpuTest, UseCpuBuffer) {
                      << kTestOutputTensor_2[i];
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor_2));
+  }
+}
+
+TEST(CompiledModelGpuTest, UnboundInputBufferAllocationCpuVsGpu) {
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+
+  // 1. CPU: Unbound input should receive a runtime fallback host buffer
+  // (tensor->data.raw != nullptr) because it is consumed by CPU nodes.
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto cpu_options, Options::Create());
+    cpu_options.SetHardwareAccelerators(HwAccelerators::kCpu);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto compiled_model,
+        CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
+                              cpu_options));
+    LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter* interpreter,
+                                GetInterpreter(compiled_model.Get()));
+    ASSERT_NE(interpreter, nullptr);
+
+    auto* input_tensor1 = interpreter->tensor(interpreter->inputs()[1]);
+    EXPECT_EQ(input_tensor1->data.raw, nullptr);
+
+    LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                                compiled_model.CreateInputBuffers());
+    LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                                compiled_model.CreateOutputBuffers());
+
+    ASSERT_TRUE(input_buffers[0].Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+
+    // Leave the second input unbound (null TensorBuffer).
+    std::vector<TensorBuffer> run_inputs;
+    run_inputs.push_back(std::move(input_buffers[0]));
+    run_inputs.emplace_back();
+    LITERT_ASSERT_OK(compiled_model.Run(run_inputs, output_buffers));
+
+    // Input 1 is consumed by CPU op, so runtime fallback buffer was registered.
+    EXPECT_NE(input_tensor1->data.raw, nullptr);
+  }
+
+  // 2. GPU: Unbound input should NOT allocate host fallback buffer
+  // (tensor->data.raw remains nullptr) because GPU delegate manages its own
+  // memory.
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto gpu_options, CreateGpuOptions(/*external_tensors_mode=*/false));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto compiled_model,
+        CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
+                              gpu_options));
+    LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter* interpreter,
+                                GetInterpreter(compiled_model.Get()));
+    ASSERT_NE(interpreter, nullptr);
+
+    auto* input_tensor1 = interpreter->tensor(interpreter->inputs()[1]);
+    EXPECT_EQ(input_tensor1->data.raw, nullptr);
+
+    LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                                compiled_model.CreateInputBuffers());
+    LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                                compiled_model.CreateOutputBuffers());
+
+    ASSERT_TRUE(input_buffers[0].Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+
+    // Leave the second input unbound (null TensorBuffer).
+    std::vector<TensorBuffer> run_inputs;
+    run_inputs.push_back(std::move(input_buffers[0]));
+    run_inputs.emplace_back();
+    auto run_status = compiled_model.Run(run_inputs, output_buffers);
+    (void)run_status;
+
+    // Input 1 is delegated to GPU and not consumed by CPU op; no host buffer
+    // must be allocated or registered.
+    EXPECT_EQ(input_tensor1->data.raw, nullptr);
+
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
   }
 }
 

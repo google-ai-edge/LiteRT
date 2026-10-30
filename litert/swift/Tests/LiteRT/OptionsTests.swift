@@ -98,7 +98,7 @@ final class OptionsTests: XCTestCase {
 
     let opaqueOptions = try options.opaqueOptions()
     XCTAssertNotNil(opaqueOptions)
-    XCTAssertEqual(opaqueOptions?.identifier, "xnnpack")
+    XCTAssertEqual(opaqueOptions?.identifier, "cpu_options")
   }
 
   func testCompiledModelWithCpuOptions() throws {

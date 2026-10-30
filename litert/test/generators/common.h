@@ -404,6 +404,12 @@ class TestGraph {
   // impl.
   virtual bool HasReference() const = 0;
 
+  // Materializes the underlying graph if it is lazily loaded.
+  virtual Expected<void> EnsureLoaded() { return {}; }
+
+  // Returns true if the underlying model has been loaded into memory.
+  bool IsLoaded() const { return model_ != nullptr; }
+
   // Returns the graph under test.
   LiteRtModelT& Graph() const { return *model_; }
 
@@ -443,9 +449,9 @@ class TestGraph {
   TestGraph& operator=(TestGraph&&) = default;
 
  protected:
+  TestGraph() = default;
   explicit TestGraph(LiteRtModelT::Ptr model) : model_(std::move(model)) {}
 
- private:
   LiteRtModelT::Ptr model_;
 };
 

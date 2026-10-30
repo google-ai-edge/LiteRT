@@ -967,6 +967,8 @@ cc_library(
         "//tflite/delegates/gpu/common:types",
         "//tflite/delegates/gpu/common/task:gpu_operation",
         "//tflite/delegates/gpu/common/task:work_group_picking",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
     ],
 )
 
@@ -1006,6 +1008,7 @@ cc_library(
         "//tflite/delegates/gpu/common:operations",
         "//tflite/delegates/gpu/common/task:testing_util",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
     ],
 )
 
@@ -1110,6 +1113,8 @@ cc_library(
         "//tflite/delegates/gpu/common:types",
         "//tflite/delegates/gpu/common/task:gpu_operation",
         "//tflite/delegates/gpu/common/task:work_group_picking",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
     ],
 )
 
@@ -1160,7 +1165,6 @@ cc_library(
         "//tflite/delegates/gpu/common:types",
         "//tflite/delegates/gpu/common/task:gpu_operation",
         "//tflite/delegates/gpu/common/task:work_group_picking",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -1190,7 +1194,7 @@ cc_library(
         "//tflite/delegates/gpu/common/task:gpu_operation",
         "//tflite/delegates/gpu/common/task:tensor_desc",
         "//tflite/delegates/gpu/common/task:work_group_picking",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/status",
     ],
 )
 

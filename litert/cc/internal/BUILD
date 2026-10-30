@@ -92,7 +92,6 @@ cc_library(
         ":litert_handle",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_event",
         "//litert/c:litert_gl_types",
         "//litert/c:litert_model_types",
         "//litert/c:litert_opencl_types",
@@ -111,7 +110,6 @@ cc_library(
         "//litert/cc:litert_tensor_buffer_types",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
     ],
@@ -130,7 +128,6 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -144,7 +141,8 @@ cc_test(
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
-        "@com_google_absl//absl/strings:str_format",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -287,7 +285,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -322,7 +319,7 @@ cc_test(
         "//litert/c:litert_model_types",
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -379,7 +376,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/debugging:leak_check",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -743,3 +739,63 @@ cc_library(
         ],
     }),
 )
+
+cc_library(
+    name = "litert_dispatch_delegate_vendor_options",
+    hdrs = ["litert_dispatch_delegate_vendor_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc/options:litert_concrete_options_base",
+        "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "litert_dispatch_delegate_vendor_options_test",
+    srcs = ["litert_dispatch_delegate_vendor_options_test.cc"],
+    deps = [
+        ":litert_dispatch_delegate_vendor_options",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_opaque_options",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# Files that make up the LiteRT C++ SDK.
+#
+# lint IfChange(litert_cc_sdk_files)
+filegroup(
+    name = "litert_cc_sdk_files",
+    srcs = [
+        "litert_c_types_printing.h",
+        "litert_consts.h",
+        "litert_detail.h",
+        "litert_handle.h",
+        "litert_logging.h",
+        "litert_numerics.h",
+        "litert_op_options.h",
+        "litert_platform_support.h",
+        "litert_runtime_proxy.h",
+        "litert_shared_library.h",
+        "litert_shared_library_windows.h",
+        "litert_source_location.h",
+        "litert_tensor_buffer_utils.h",
+        "litert_tfl_types.h",
+        "litert_tflite_error_status_builder.h",
+        "scoped_file.h",
+        "scoped_file_posix.h",
+        "scoped_file_win.h",
+        "scoped_weight_source.h",
+    ],
+    visibility = ["//litert/cc_sdk:__pkg__"],
+)
+# lint ThenChange(litert/cc_sdk/litert_cc_sdk_hdrs.txt, litert/cc_sdk/litert_cc_sdk_srcs.txt)

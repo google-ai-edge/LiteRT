@@ -20,11 +20,48 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
-#include "openvino/core/model.hpp"
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/intel_openvino/compiler/weight_bank.h"
+#include "openvino/core/model.hpp"
 
 namespace litert::openvino {
+
+// One buffer's placement in the assembled cross-partition pool.
+struct PoolEntry {
+  int32_t buffer_id = 0;
+  size_t pool_offset = 0;  // byte offset within the contiguous pool
+  absl::Span<const uint8_t> bytes;
+};
+
+// The assembled pool, in ascending-BufferId order (the layout
+// OpenVinoGlobalGraph::Serialize() lays down).
+struct PoolLayout {
+  std::vector<PoolEntry> buffers;
+
+  // BufferId -> pool offset, for AliasAndTagSharedConstants. Derived from
+  // |buffers| on demand, so an entry's offset has one source of truth.
+  std::map<int32_t, size_t> OffsetMap() const;
+};
+
+// Lays out |weight_bank|'s buffers in ascending-BufferId order, calling
+// WeightBank::FinalizeDerivedBuffers() first so derived ids exist. Call
+// exactly once. Buffers whose name is absent from |live_names| are dropped;
+// |live_names| is ignored unless |prune_dead|.
+PoolLayout BuildPool(const std::unordered_set<std::string>& live_names,
+                     WeightBank& weight_bank, bool prune_dead);
+
+// In one pass over |ov_model|: registers each Constant tagged with
+// LiteRtGeneratedConstantAttribute into |weight_bank|, and inserts every
+// Constant's friendly_name into |live_names|. A tagged Constant's
+// friendly_name MUST equal its source_key; violations are logged and skipped.
+// The two share a traversal so |live_names| always matches what was harvested.
+void HarvestSharedConstants(const std::shared_ptr<ov::Model>& ov_model,
+                            WeightBank& weight_bank,
+                            std::unordered_set<std::string>& live_names);
 
 // NPU cross-partition weight-sharing transform (counterpart to the GPU
 // ConvertWeightsToParameters).

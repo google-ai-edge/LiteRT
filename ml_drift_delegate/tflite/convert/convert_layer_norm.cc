@@ -33,7 +33,7 @@ void ConvertLayerNorm(const TfLiteContext& context, const TfLiteNode& node,
                       ::ml_drift::ir::TensorMap& tensor_map,
                       ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* layer_norm_op = ir_model.add_op();
-  layer_norm_op->name = ToString(::ml_drift::OperationType::LAYER_NORM);
+  layer_norm_op->name = ToString(::ml_drift::OperationType::kLayerNorm);
 
   const int input_id = tensor_map[node.inputs->data[0]];
   ir_model.AddConsumer(input_id, layer_norm_op->id);
@@ -41,13 +41,14 @@ void ConvertLayerNorm(const TfLiteContext& context, const TfLiteNode& node,
   ::ml_drift::LayerNormAttributes attr;
 
   if (node.inputs->size > 1) {
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> scale;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
+        scale;
     PopulateTensor(&context.tensors[node.inputs->data[1]], node.inputs->data[1],
                    &scale, PopulateTensorFlags::kNoExtraBytes);
     attr.scale = std::move(scale);
   }
   if (node.inputs->size > 2) {
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> bias;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias;
     PopulateTensor(&context.tensors[node.inputs->data[2]], node.inputs->data[2],
                    &bias, PopulateTensorFlags::kNoExtraBytes);
     attr.bias = std::move(bias);

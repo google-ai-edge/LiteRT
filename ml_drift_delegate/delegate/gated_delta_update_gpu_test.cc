@@ -86,22 +86,31 @@ void CompareBuffers(absl::Span<const float> actual,
 void ComputeGoldenRecurrentGatedDelta(
     const float* q, const float* k, const float* v, const float* beta,
     const float* g, const float* initial_state, float* golden_out,
-    float* golden_final_state, int B, int H, int N, int D_k, int D_v) {
+    float* golden_final_state, int B, int H, int N, int D_k, int D_v,
+    int H_k = -1, const int32_t* valid_len = nullptr) {
   int state_elements = B * H * D_k * D_v;
   std::memcpy(golden_final_state, initial_state,
               state_elements * sizeof(float));
 
+  const int actual_H_k = (H_k > 0) ? H_k : H;
+  const int gqa_ratio = H / actual_H_k;
+
   for (int b = 0; b < B; ++b) {
+    const int seq_limit =
+        (valid_len != nullptr) ? std::clamp<int>(valid_len[b], 0, N) : N;
     for (int h = 0; h < H; ++h) {
       const int bh = b * H + h;
+      const int bh_k = b * actual_H_k + (h / gqa_ratio);
       float* S = golden_final_state + bh * D_k * D_v;
 
-      for (int t = 0; t < N; ++t) {
-        const float* q_t = q + (bh * N + t) * D_k;
-        const float* k_t = k + (bh * N + t) * D_k;
+      for (int t = 0; t < seq_limit; ++t) {
+        const float* q_t = q + (bh_k * N + t) * D_k;
+        const float* k_t = k + (bh_k * N + t) * D_k;
         const float* v_t = v + (bh * N + t) * D_v;
-        const float beta_t = beta[bh * N + t];
-        const float g_decay = std::exp(g[bh * N + t]);
+        const float beta_raw = beta[bh * N + t];
+        const float beta_t = (beta_raw > 0.0f) ? beta_raw : 0.0f;
+        const float g_raw = g[bh * N + t];
+        const float g_decay = (g_raw <= 0.0f) ? std::exp(g_raw) : 1.0f;
         float* out_t = golden_out + (bh * N + t) * D_v;
 
         // 1. Decay state S = S * exp(g)
@@ -139,6 +148,10 @@ void ComputeGoldenRecurrentGatedDelta(
           out_t[j] = sum;
         }
       }
+      for (int t = seq_limit; t < N; ++t) {
+        float* out_t = golden_out + (bh * N + t) * D_v;
+        std::fill(out_t, out_t + D_v, 0.0f);
+      }
     }
   }
 }
@@ -146,9 +159,11 @@ void ComputeGoldenRecurrentGatedDelta(
 Expected<litert::Options> CreateGpuOptions(bool use_fp32 = false) {
   LITERT_ASSIGN_OR_RETURN(litert::Options options, litert::Options::Create());
   options.SetHardwareAccelerators(litert::HwAccelerators::kGpu);
+  LITERT_ASSIGN_OR_RETURN(auto& gpu_options,
+                          options.GetOptions<litert::GpuOptions>());
+  gpu_options.AddExternalTensorPattern("final_state");
+  gpu_options.AddBufferStorageTensorPattern("final_state");
   if (use_fp32) {
-    LITERT_ASSIGN_OR_RETURN(auto& gpu_options,
-                            options.GetOptions<litert::GpuOptions>());
     gpu_options.SetPrecision(litert::GpuOptions::Precision::kFp32);
   }
 
@@ -166,8 +181,12 @@ Expected<litert::Options> CreateGpuOptions(bool use_fp32 = false) {
 void RunGatedDeltaUpdateTest(int B, int H, int N, int D_k, int D_v,
                              bool zero_initial_state = false,
                              float beta_fixed = -1.0f, float g_fixed = 100.0f,
-                             float tolerance = 1e-4, bool use_fp32 = true) {
-  auto model_buf = CreateGatedDeltaUpdateModelBuffer(B, H, N, D_k, D_v);
+                             float tolerance = 1e-4, bool use_fp32 = true,
+                             int H_k = -1, bool force_shared_mem = false) {
+  int actual_H_k = (H_k > 0) ? H_k : H;
+  int mode = force_shared_mem ? 2 : 0;
+  auto model_buf =
+      CreateGatedDeltaUpdateModelBuffer(B, H, N, D_k, D_v, mode, H_k);
 
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
@@ -190,8 +209,8 @@ void RunGatedDeltaUpdateTest(int B, int H, int N, int D_k, int D_v,
 
   // Populate inputs.
   std::srand(0);
-  auto q_data = GenerateRandom(B * H * N * D_k, -0.5f, 0.5f);
-  auto k_data = GenerateRandom(B * H * N * D_k, -0.5f, 0.5f);
+  auto q_data = GenerateRandom(B * actual_H_k * N * D_k, -0.5f, 0.5f);
+  auto k_data = GenerateRandom(B * actual_H_k * N * D_k, -0.5f, 0.5f);
   auto v_data = GenerateRandom(B * H * N * D_v, -0.5f, 0.5f);
   auto beta_data = (beta_fixed >= 0.0f)
                        ? GenerateConstant(B * H * N, beta_fixed)
@@ -207,8 +226,10 @@ void RunGatedDeltaUpdateTest(int B, int H, int N, int D_k, int D_v,
   ASSERT_TRUE((*input_buffers)[2].Write<float>(absl::MakeConstSpan(v_data)));
   ASSERT_TRUE((*input_buffers)[3].Write<float>(absl::MakeConstSpan(beta_data)));
   ASSERT_TRUE((*input_buffers)[4].Write<float>(absl::MakeConstSpan(g_data)));
+  // The GPU kernel updates output_buffers[1] (final_state) in-place, so write
+  // initial recurrent state into output_buffers[1].
   ASSERT_TRUE(
-      (*input_buffers)[5].Write<float>(absl::MakeConstSpan(state_data)));
+      (*output_buffers)[1].Write<float>(absl::MakeConstSpan(state_data)));
 
   // Golden reference computation.
   std::vector<float> golden_out(B * H * N * D_v);
@@ -216,7 +237,7 @@ void RunGatedDeltaUpdateTest(int B, int H, int N, int D_k, int D_v,
   ComputeGoldenRecurrentGatedDelta(
       q_data.data(), k_data.data(), v_data.data(), beta_data.data(),
       g_data.data(), state_data.data(), golden_out.data(),
-      golden_final_state.data(), B, H, N, D_k, D_v);
+      golden_final_state.data(), B, H, N, D_k, D_v, H_k);
 
   // Execute GPU compiled model.
   ASSERT_TRUE(compiled_model->Run(*input_buffers, *output_buffers));
@@ -241,9 +262,23 @@ TEST(GatedDeltaUpdateGpuTest, SingleTokenDecode) {
   RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/1, /*D_k=*/16, /*D_v=*/16);
 }
 
+TEST(GatedDeltaUpdateGpuTest, SingleTokenDecodeFP16) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/1, /*D_k=*/16, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-2,
+                          /*use_fp32=*/false);
+}
+
 // 2. Multi-token prefill sequence (N > 1).
 TEST(GatedDeltaUpdateGpuTest, MultiTokenPrefill) {
   RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/8, /*D_k=*/16, /*D_v=*/16);
+}
+
+TEST(GatedDeltaUpdateGpuTest, MultiTokenPrefillFP16) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/8, /*D_k=*/16, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-2,
+                          /*use_fp32=*/false);
 }
 
 // 3. Cold start: initial recurrent state is all zeros.
@@ -274,7 +309,7 @@ TEST(GatedDeltaUpdateGpuTest, StrongDecayGFlush) {
 
 // 7. Multi-batch and multi-head scaling.
 TEST(GatedDeltaUpdateGpuTest, MultiBatchMultiHead) {
-  RunGatedDeltaUpdateTest(/*B=*/2, /*H=*/4, /*N=*/4, /*D_k=*/16, /*D_v=*/16);
+  RunGatedDeltaUpdateTest(/*B=*/2, /*H=*/4, /*N=*/8, /*D_k=*/16, /*D_v=*/16);
 }
 
 // 8. Head dimension 32 (8 k_slices).
@@ -303,8 +338,9 @@ TEST(GatedDeltaUpdateGpuTest, HeadDimension16) {
   RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/16, /*D_v=*/16);
 }
 
-void ExpectGatedDeltaUpdateRejected(int B, int H, int N, int D_k, int D_v) {
-  auto model_buf = CreateGatedDeltaUpdateModelBuffer(B, H, N, D_k, D_v);
+void ExpectGatedDeltaUpdateRejected(int B, int H, int N, int D_k, int D_v,
+                                    int H_k = -1) {
+  auto model_buf = CreateGatedDeltaUpdateModelBuffer(B, H, N, D_k, D_v, 0, H_k);
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
 
@@ -325,7 +361,8 @@ TEST(GatedDeltaUpdateGpuTest, RejectOddHeadDimension19) {
 }
 
 // 14. Large power-of-2 head dimension 256 (64 k_slices, exceeding 32-lane SIMD
-// width). Exercises shared-memory reduction path across all backends.
+// width). Exercises v_tile=2, k_threads=16, k_rounds=4 in the subgroup shuffle
+// shader (or shared-memory reduction on backends without wave32 shuffle).
 TEST(GatedDeltaUpdateGpuTest, HeadDimension256) {
   RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/256, /*D_v=*/256);
 }
@@ -338,10 +375,320 @@ TEST(GatedDeltaUpdateGpuTest, RejectNonPowerOfTwoHeadDimension384) {
                                  /*D_v=*/384);
 }
 
-// 16. Multi-batch test with large head dimension 256 (exercising shared-memory
-// reduction path with B > 1).
+// 16. Multi-batch test with large head dimension 256 (B > 1).
 TEST(GatedDeltaUpdateGpuTest, MultiBatchHeadDimension256) {
   RunGatedDeltaUpdateTest(/*B=*/2, /*H=*/2, /*N=*/2, /*D_k=*/256, /*D_v=*/256);
+}
+
+// 17. GQA Ratio 2 multi-batch prefill: H_v = 8, H_k = 4 (GQA_RATIO = 2).
+TEST(GatedDeltaUpdateGpuTest, GqaRatio2MultiBatchPrefill) {
+  RunGatedDeltaUpdateTest(/*B=*/2, /*H=*/8, /*N=*/8, /*D_k=*/32, /*D_v=*/32,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/4);
+}
+
+// 18. Qwen 27B GQA test: H_v = 48, H_k = 16 (GQA_RATIO = 3),
+// D_k = 128, D_v = 128.
+TEST(GatedDeltaUpdateGpuTest, Qwen27BLinearAttentionGqaRatio3) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/48, /*N=*/8, /*D_k=*/128, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/16);
+}
+
+// 19. Qwen 27B GQA Decode test: N = 1 (single-token decode step).
+TEST(GatedDeltaUpdateGpuTest, Qwen27BLinearAttentionDecode) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/48, /*N=*/1, /*D_k=*/128, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/16);
+}
+
+// 20. GQA Ratio 4 with large head dimension D_k = 256.
+TEST(GatedDeltaUpdateGpuTest, GqaRatio4SharedMemReductionD256) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/8, /*N=*/4, /*D_k=*/256, /*D_v=*/256,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/2);
+}
+
+// 21. Multi-Query Attention (MQA): H_v = 8, H_k = 1 (GQA_RATIO = 8).
+TEST(GatedDeltaUpdateGpuTest, GqaMultiQueryAttentionMqa) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/8, /*N=*/4, /*D_k=*/64, /*D_v=*/64,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/1);
+}
+
+// 22. Invalid GQA head ratio (H_v = 6 not divisible by H_k = 4) must be
+// rejected.
+TEST(GatedDeltaUpdateGpuTest, RejectInvalidGqaHeadRatio) {
+  ExpectGatedDeltaUpdateRejected(/*B=*/1, /*H=*/6, /*N=*/2, /*D_k=*/16,
+                                 /*D_v=*/16, /*H_k=*/4);
+}
+
+// 23. Right-padded sequence steps with explicit valid_len input tensor.
+// Padded positions (t >= valid_len[b]) retain non-zero random q, k, v, beta,
+// and g values to verify that early exit relies strictly on the explicit
+// valid_len tensor rather than beta/g values.
+TEST(GatedDeltaUpdateGpuTest, RightPaddedSequenceEarlyExit) {
+  const int B = 2, H = 48, H_k = 16, N = 16, D_k = 128, D_v = 128;
+  const std::vector<int32_t> valid_len_data = {6, 11};
+  auto model_buf = CreateGatedDeltaUpdateModelBuffer(
+      B, H, N, D_k, D_v, /*mode=*/0, H_k, /*state_dtype=*/"float32",
+      /*has_valid_len=*/true);
+
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+  auto options = CreateGpuOptions(/*use_fp32=*/true);
+  ASSERT_TRUE(options);
+  auto compiled_model = CompiledModel::Create(
+      *env, litert::BufferRef<uint8_t>(model_buf.data(), model_buf.size()),
+      *options);
+  ASSERT_TRUE(compiled_model);
+
+  auto input_buffers = compiled_model->CreateInputBuffers();
+  ASSERT_TRUE(input_buffers);
+  auto output_buffers = compiled_model->CreateOutputBuffers();
+  ASSERT_TRUE(output_buffers);
+  ASSERT_EQ(input_buffers->size(), 7);
+  ASSERT_EQ(output_buffers->size(), 2);
+
+  std::srand(99);
+  auto q_data = GenerateRandom(B * H_k * N * D_k, -0.5f, 0.5f);
+  auto k_data = GenerateRandom(B * H_k * N * D_k, -0.5f, 0.5f);
+  auto v_data = GenerateRandom(B * H * N * D_v, -0.5f, 0.5f);
+  auto beta_data = GenerateRandom(B * H * N, 0.1f, 0.9f);
+  auto g_data = GenerateRandom(B * H * N, -1.0f, -0.1f);
+  auto state_data = GenerateRandom(B * H * D_k * D_v, -0.5f, 0.5f);
+
+  ASSERT_TRUE((*input_buffers)[0].Write<float>(absl::MakeConstSpan(q_data)));
+  ASSERT_TRUE((*input_buffers)[1].Write<float>(absl::MakeConstSpan(k_data)));
+  ASSERT_TRUE((*input_buffers)[2].Write<float>(absl::MakeConstSpan(v_data)));
+  ASSERT_TRUE((*input_buffers)[3].Write<float>(absl::MakeConstSpan(beta_data)));
+  ASSERT_TRUE((*input_buffers)[4].Write<float>(absl::MakeConstSpan(g_data)));
+  // The GPU kernel updates output_buffers[1] (final_state) in-place, so write
+  // initial recurrent state into output_buffers[1].
+  ASSERT_TRUE(
+      (*output_buffers)[1].Write<float>(absl::MakeConstSpan(state_data)));
+  ASSERT_TRUE(
+      (*input_buffers)[6].Write<int32_t>(absl::MakeConstSpan(valid_len_data)));
+
+  std::vector<float> golden_out(B * H * N * D_v);
+  std::vector<float> golden_final_state(B * H * D_k * D_v);
+  ComputeGoldenRecurrentGatedDelta(
+      q_data.data(), k_data.data(), v_data.data(), beta_data.data(),
+      g_data.data(), state_data.data(), golden_out.data(),
+      golden_final_state.data(), B, H, N, D_k, D_v, H_k, valid_len_data.data());
+
+  ASSERT_TRUE(compiled_model->Run(*input_buffers, *output_buffers));
+
+  std::vector<float> actual_out(B * H * N * D_v);
+  std::vector<float> actual_final_state(B * H * D_k * D_v);
+  ASSERT_TRUE((*output_buffers)[0].Read<float>(absl::MakeSpan(actual_out)));
+  ASSERT_TRUE(
+      (*output_buffers)[1].Read<float>(absl::MakeSpan(actual_final_state)));
+
+  CompareBuffers(actual_out, golden_out, 1e-3f);
+  CompareBuffers(actual_final_state, golden_final_state, 1e-3f);
+}
+
+// 23b. Rejects valid_len tensor whose element count does not equal batch size B
+// (no implicit broadcasting).
+TEST(GatedDeltaUpdateGpuTest, RejectMismatchedValidLenBatchSize) {
+  auto model_buf = CreateGatedDeltaUpdateModelBuffer(
+      /*B=*/2, /*H=*/2, /*N=*/4, /*D_k=*/64, /*D_v=*/64, /*mode=*/0,
+      /*H_k=*/2, /*state_dtype=*/"float32", /*has_valid_len=*/true,
+      /*valid_len_size=*/1);
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+  auto options = CreateGpuOptions();
+  ASSERT_TRUE(options);
+  auto compiled_model = CompiledModel::Create(
+      *env, litert::BufferRef<uint8_t>(model_buf.data(), model_buf.size()),
+      *options);
+  EXPECT_FALSE(compiled_model);
+}
+
+// 24. Asymmetric D_k < D_v with large value dimension: (D_k=64, D_v=256) and
+// (D_k=128, D_v=256) (2x value expansion, v_tile=4, k_rounds=4).
+TEST(GatedDeltaUpdateGpuTest, AsymmetricLargeValueDim64x256And128x256) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/64, /*D_v=*/256,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/128, /*D_v=*/256,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 25. Asymmetric D_k > D_v with minimum value dimension D_v = 16 across
+// v_tile = 4 (D_k=128), v_tile = 2 (D_k=256), and v_tile = 1 (D_k=512).
+TEST(GatedDeltaUpdateGpuTest, AsymmetricSmallValueDim16AcrossVTiles) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/128, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/256, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/512, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 26. D_k = 256 with FP16 precision and asymmetric D_v = 512 (v_tile = 2,
+// k_threads = 16, k_rounds = 4, k_load_chunks = 2).
+TEST(GatedDeltaUpdateGpuTest, HeadDimension256FP16AndAsymmetric512) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/256, /*D_v=*/256,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/2e-2,
+                          /*use_fp32=*/false);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/256, /*D_v=*/512,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 27. Head dimension D_k = 512 (128 k_slices): exercises v_tile = 1,
+// k_threads = 32, k_rounds = 4, k_load_chunks = 4 in the subgroup shuffle
+// shader while keeping per-thread recurrent state bounded to 16 float4
+// registers (tested across D_v=128 FP32/FP16 and symmetric D_v=512).
+TEST(GatedDeltaUpdateGpuTest, HeadDimension512) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/512, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/1);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/512, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/2e-2,
+                          /*use_fp32=*/false, /*H_k=*/1);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/512, /*D_v=*/512,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 28. Head dimension D_k = 1024 (256 k_slices > kSubgroupSize * kMaxKRounds):
+// exercises the shared-memory fallback shader with work_group_size_x = 256 so
+// each thread holds only 1 round (4 float4 state registers).
+TEST(GatedDeltaUpdateGpuTest, HeadDimension1024SharedMemFallback) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/1024, /*D_v=*/16,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/1, /*N=*/2, /*D_k=*/1024, /*D_v=*/64,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true);
+}
+
+// 29. Explicitly exercises the shared-memory fallback shader (mode = 2) on
+// D_k <= 512 even when the GPU supports Wave32Vec4Shuffle: covers both the
+// specialized q_slices == 32 (D_k = 128) 2-barrier quarter-folding reduction
+// (FP32 and FP16) and the general power-of-2 tree reduction (D_k = 64, 256,
+// 512 with GQA).
+TEST(GatedDeltaUpdateGpuTest, SharedMemFallbackAcrossHeadDimensions) {
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/64, /*D_v=*/64,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/-1,
+                          /*force_shared_mem=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/3, /*N=*/4, /*D_k=*/128, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/1,
+                          /*force_shared_mem=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/128, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/2e-2,
+                          /*use_fp32=*/false, /*H_k=*/-1,
+                          /*force_shared_mem=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/256, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/1,
+                          /*force_shared_mem=*/true);
+  RunGatedDeltaUpdateTest(/*B=*/1, /*H=*/2, /*N=*/2, /*D_k=*/512, /*D_v=*/128,
+                          /*zero_initial_state=*/false, /*beta_fixed=*/-1.0f,
+                          /*g_fixed=*/100.0f, /*tolerance=*/1e-3,
+                          /*use_fp32=*/true, /*H_k=*/1,
+                          /*force_shared_mem=*/true);
+}
+
+// 30. Excessive head dimension D_k = 2048 (512 k_slices >
+// kMaxSharedMemWorkGroupSize) must be rejected.
+TEST(GatedDeltaUpdateGpuTest, RejectExcessiveHeadDimension2048) {
+  ExpectGatedDeltaUpdateRejected(/*B=*/1, /*H=*/1, /*N=*/1, /*D_k=*/2048,
+                                 /*D_v=*/64);
+}
+
+// 30. Multi-step autoregressive decode state carryover: verifies that
+// output_buffers[1] (final_state) persists across consecutive Run() calls and
+// is updated in-place without writing to input_buffers[5] (state).
+TEST(GatedDeltaUpdateGpuTest, MultiStepDecodeStateCarryover) {
+  const int B = 1, H = 2, N = 1, D_k = 64, D_v = 64, H_k = 2;
+  auto model_buf = CreateGatedDeltaUpdateModelBuffer(B, H, N, D_k, D_v, 0, H_k);
+
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+  auto options = CreateGpuOptions(/*use_fp32=*/true);
+  ASSERT_TRUE(options);
+  auto compiled_model = CompiledModel::Create(
+      *env, litert::BufferRef<uint8_t>(model_buf.data(), model_buf.size()),
+      *options);
+  ASSERT_TRUE(compiled_model);
+
+  auto input_buffers = compiled_model->CreateInputBuffers();
+  ASSERT_TRUE(input_buffers);
+  auto output_buffers = compiled_model->CreateOutputBuffers();
+  ASSERT_TRUE(output_buffers);
+
+  std::srand(123);
+  std::vector<float> current_state =
+      GenerateRandom(B * H * D_k * D_v, -0.5f, 0.5f);
+  ASSERT_TRUE(
+      (*output_buffers)[1].Write<float>(absl::MakeConstSpan(current_state)));
+
+  for (int step = 0; step < 3; ++step) {
+    auto q_data = GenerateRandom(B * H_k * N * D_k, -0.5f, 0.5f);
+    auto k_data = GenerateRandom(B * H_k * N * D_k, -0.5f, 0.5f);
+    auto v_data = GenerateRandom(B * H * N * D_v, -0.5f, 0.5f);
+    auto beta_data = GenerateRandom(B * H * N, 0.1f, 0.9f);
+    auto g_data = GenerateRandom(B * H * N, -1.0f, -0.1f);
+
+    ASSERT_TRUE((*input_buffers)[0].Write<float>(absl::MakeConstSpan(q_data)));
+    ASSERT_TRUE((*input_buffers)[1].Write<float>(absl::MakeConstSpan(k_data)));
+    ASSERT_TRUE((*input_buffers)[2].Write<float>(absl::MakeConstSpan(v_data)));
+    ASSERT_TRUE(
+        (*input_buffers)[3].Write<float>(absl::MakeConstSpan(beta_data)));
+    ASSERT_TRUE((*input_buffers)[4].Write<float>(absl::MakeConstSpan(g_data)));
+    // Deliberately do NOT write to (*input_buffers)[5] or (*output_buffers)[1]
+    // between steps; (*output_buffers)[1] carries the recurrent state in-place.
+
+    std::vector<float> golden_out(B * H * N * D_v);
+    std::vector<float> golden_next_state(B * H * D_k * D_v);
+    ComputeGoldenRecurrentGatedDelta(
+        q_data.data(), k_data.data(), v_data.data(), beta_data.data(),
+        g_data.data(), current_state.data(), golden_out.data(),
+        golden_next_state.data(), B, H, N, D_k, D_v, H_k);
+    current_state = golden_next_state;
+
+    ASSERT_TRUE(compiled_model->Run(*input_buffers, *output_buffers));
+
+    std::vector<float> actual_out(B * H * N * D_v);
+    std::vector<float> actual_final_state(B * H * D_k * D_v);
+    ASSERT_TRUE((*output_buffers)[0].Read<float>(absl::MakeSpan(actual_out)));
+    ASSERT_TRUE(
+        (*output_buffers)[1].Read<float>(absl::MakeSpan(actual_final_state)));
+
+    CompareBuffers(actual_out, golden_out, 1e-3f);
+    CompareBuffers(actual_final_state, golden_next_state, 1e-3f);
+  }
 }
 
 }  // namespace

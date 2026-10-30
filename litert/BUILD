@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@bazel_skylib//lib:selects.bzl", "selects")
 load("//litert/build_common:litert_build_defs.bzl", "if_google", "if_oss")
 load("//litert/build_common:special_rule.bzl", "litert_friends")
 
@@ -277,7 +278,7 @@ package_group(
         "//litert/runtime/...",
         "//litert/sdk_util/...",
         "//litert/test/...",
-        "//litert/tflite_support/custom_op/...",
+        "//litert/tflite_support/...",
         "//litert/tools/...",
         "//litert/vendors/...",
         "//ml_drift_delegate/...",
@@ -361,18 +362,21 @@ config_setting(
 config_setting(
     name = "litert_runtime_link_mode_dynamic",
     values = {"define": "litert_runtime_link_mode=dynamic"},
+    visibility = ["//visibility:public"],
 )
 
 # LiteRT runtime will be linked statically. (This is the default behavior.)
 config_setting(
     name = "litert_runtime_link_mode_static",
     values = {"define": "litert_runtime_link_mode=static"},
+    visibility = ["//visibility:public"],
 )
 
 # LiteRT runtime will not be linked in the binary.
 config_setting(
     name = "litert_runtime_link_mode_none",
     values = {"define": "litert_runtime_link_mode=none"},
+    visibility = ["//visibility:public"],
 )
 
 # Configuration for building with built-in kernels (default)
@@ -383,8 +387,16 @@ config_setting(
 
 # Configuration for building without built-in kernels
 config_setting(
-    name = "without_builtin_ops",
+    name = "without_builtin_ops_define",
     values = {"define": "litert_builtin_ops=false"},
+)
+
+selects.config_setting_group(
+    name = "without_builtin_ops",
+    match_any = [
+        ":without_builtin_ops_define",
+        "//litert/build_common:cpu_backend_selective",
+    ],
 )
 
 # Configuration for building Android builds that can't depend on libandroid.so

@@ -185,8 +185,9 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
 
   /// @brief Creates a `TensorBuffer` that wraps an Android Hardware Buffer.
   ///
-  /// The provided `AHardwareBuffer` is not owned by the `TensorBuffer` and must
-  /// outlive it.
+  /// The `TensorBuffer` acquires its own reference to the provided
+  /// `AHardwareBuffer` and releases it on destruction; the caller remains
+  /// responsible for releasing its own reference.
   /// @param ahwb_offset The offset in bytes from the start of the
   /// `AHardwareBuffer` where the tensor data begins.
   static Expected<TensorBuffer> CreateFromAhwb(
@@ -285,6 +286,27 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
     return litert::Unexpected(Status::kErrorRuntimeFailure,
                               "FastRPC is not supported on this platform");
 #endif
+  }
+
+  /// @brief Wraps an existing handle as a tensor buffer of a custom
+  /// `buffer_type` (e.g. kLiteRtTensorBufferTypeOpenVINOTensorBuffer), via that
+  /// type's registered import handler. `handle` is the custom handle of an
+  /// existing buffer of that type, as returned by `GetCustomHandle()`, so this
+  /// can create a view of `tensor_type` onto that buffer's memory. The
+  /// returned buffer does not own the memory; the caller keeps the source
+  /// buffer alive.
+  static Expected<TensorBuffer> CreateFromCustomHandle(
+      const Environment& env, const RankedTensorType& tensor_type,
+      TensorBufferType buffer_type, HwMemoryHandle handle, size_t size_bytes) {
+    LiteRtTensorBuffer tensor_buffer;
+    auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+    auto env_holder = env.GetHolder();
+    LITERT_RETURN_IF_ERROR(
+        env_holder.runtime->CreateTensorBufferFromCustomHandle(
+            env_holder.handle, &litert_tensor_type,
+            static_cast<LiteRtTensorBufferType>(buffer_type), handle,
+            size_bytes, &tensor_buffer));
+    return TensorBuffer(env_holder, tensor_buffer, OwnHandle::kYes);
   }
 
   static Expected<TensorBuffer> CreateFromClBuffer(
@@ -466,6 +488,18 @@ class TensorBuffer : public internal::BaseHandle<LiteRtTensorBuffer> {
     return litert::Unexpected(Status::kErrorRuntimeFailure,
                               "OpenCL is not supported on this platform");
 #endif
+  }
+
+  /// @brief Returns the handle of a custom tensor buffer (buffer types in the
+  /// `kLiteRtTensorBufferTypeUserCustomBuffer` range). What the handle is
+  /// depends on the buffer type's provider; it can be passed to
+  /// `CreateFromCustomHandle()` with the same buffer type.
+  Expected<HwMemoryHandle> GetCustomHandle() const {
+    HwMemoryHandle hw_memory_handle;
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->GetTensorBufferCustomTensorBufferHandle(
+            Get(), &hw_memory_handle));
+    return hw_memory_handle;
   }
 
   Expected<HwMemoryHandle> GetWebGpuBuffer() const {

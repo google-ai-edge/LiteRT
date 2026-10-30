@@ -593,6 +593,54 @@ def test_multi_kv_heads_gqa_kv_cache() -> None:
   utils.cpp_print("Value Cache Multi-KV GQA KV Cache:", cache_v)
 
 
+def test_multi_kv_heads_gqa_growing_kv_cache() -> None:
+  """Tests two decode steps whose KV cache grows between them.
+
+  This is the shape the runner sees during incremental decoding: the graph is
+  built once and then re-run with a KV cache that is one token longer, so every
+  extent derived from the cache length has to stay dynamic.
+  """
+  print("\n=== Multi-KV Head GQA with a growing KV Cache ===")
+  x = np.array([[[1.0, 2.0, 3.0, 4.0, 1.0, 2.0, 3.0, 4.0]]], dtype=np.float32)
+  cos = np.ones((1, 1, 1, 4), dtype=np.float32)
+  sin = np.zeros((1, 1, 1, 4), dtype=np.float32)
+
+  q_proj = generate_weights(16, 8, scale=0.005, start=0.01)
+  k_proj = generate_weights(8, 8, scale=0.01, start=0.02)
+  v_proj = generate_weights(8, 8, scale=0.008, start=0.01)
+  o_proj = generate_weights(8, 16, scale=0.005, start=0.01)
+
+  q_norm = np.ones(4, dtype=np.float32)
+  k_norm = np.ones(4, dtype=np.float32)
+
+  for cache_len in (3, 4):
+    key_cache = np.full((1, 2, cache_len, 4), 0.5, dtype=np.float32)
+    value_cache = np.full((1, 2, cache_len, 4), 0.2, dtype=np.float32)
+    attention_mask = np.zeros((1, 1, 1, cache_len + 1), dtype=np.float32)
+
+    out_cache, cache_k, cache_v, _, _ = attention(
+        x,
+        q_proj,
+        k_proj,
+        v_proj,
+        o_proj,
+        q_norm,
+        k_norm,
+        cos,
+        sin,
+        attention_mask,
+        key_cache=key_cache,
+        value_cache=value_cache,
+        num_heads=4,
+        num_kv_heads=2,
+        head_dim=4,
+        return_all=True,
+    )
+    utils.cpp_print(f"Output Growing KV Cache (len {cache_len}):", out_cache)
+    utils.cpp_print(f"Key Cache Growing KV Cache (len {cache_len}):", cache_k)
+    utils.cpp_print(f"Value Cache Growing KV Cache (len {cache_len}):", cache_v)
+
+
 def main() -> None:
   x = np.array([[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]], dtype=np.float32)
   attention_mask = np.array([[[[0.0, -1e9], [0.0, 0.0]]]], dtype=np.float32)
@@ -686,6 +734,7 @@ def main() -> None:
       attention_mask,
   )
   test_multi_kv_heads_gqa_kv_cache()
+  test_multi_kv_heads_gqa_growing_kv_cache()
 
 
 if __name__ == "__main__":

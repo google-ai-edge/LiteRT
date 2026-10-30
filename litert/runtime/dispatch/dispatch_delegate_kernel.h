@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -26,14 +27,15 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/dispatch_op_schema.h"
+#include "litert/runtime/dispatch/dispatch_kernel_interface.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
-#include "litert/runtime/dispatch/dispatch_kernel_interface.h"
 
 class LiteRtExternalLiteRtBufferContextT;
 
@@ -73,12 +75,14 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
   DispatchDelegateKernel(LiteRtEnvironmentOptions environment_options,
                          LiteRtOptions options, std::string&& graph_name,
                          LiteRtDispatchDeviceContext device_context,
-                         bool async_dispatch)
+                         bool async_dispatch,
+                         bool multi_inflight_async = false)
       : environment_options_(environment_options),
         options_(options),
         graph_name_(std::move(graph_name)),
         device_context_(std::move(device_context)),
-        async_dispatch_(async_dispatch) {}
+        async_dispatch_(async_dispatch),
+        multi_inflight_async_(multi_inflight_async) {}
 
   static Expected<std::vector<TfLiteOpaqueNode*>> GetNodes(
       TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams& params);
@@ -116,14 +120,42 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
       TfLiteOpaqueContext* context);
 
   // Allocates a new tensor buffer or reuses an existing one, registering it
-  // with the dispatch API. Defers unregistration of replaced buffers if needed.
+  // with the dispatch API. If an I/O buffer is replaced, defers its
+  // unregistration until `prev_out_fence_buffer`'s completion event (if any)
+  // is signaled.
   Expected<void> AllocateAndRegisterBuffer(
       int tensor_id, TfLiteOpaqueContext* context,
-      const absl::flat_hash_set<int>& io_tensor_ids);
+      const absl::flat_hash_set<int>& io_tensor_ids,
+      LiteRtTensorBufferT* prev_out_fence_buffer);
 
   // Polls fences for stale buffers in deferred_unregistrations_ and unregisters
   // them if their execution has completed.
   void ProcessDeferredUnregistrations();
+
+  // Registers `tensor_buffer`, newly registered in buffer_context_, with the
+  // Dispatch API if this kernel can use it, unless it holds a handle for it
+  // already. A failed registration is not retried: the buffer is registered
+  // when it is bound instead.
+  void OnBufferRegistered(LiteRtTensorBuffer tensor_buffer);
+
+  // Releases the handle of `tensor_buffer`, no longer registered in
+  // buffer_context_.
+  void OnBufferUnregistered(LiteRtTensorBuffer tensor_buffer);
+
+  // Returns the handle of `tensor_buffer` if this kernel holds one, for being
+  // user-registered, bound to a tensor or awaiting a deferred unregistration.
+  std::optional<LiteRtTensorBufferHandle> FindBufferHandle(
+      LiteRtTensorBuffer tensor_buffer) const;
+
+  // Returns the handle of `tensor_buffer` if it is currently bound to a tensor
+  // or awaiting a deferred unregistration.
+  std::optional<LiteRtTensorBufferHandle> FindBoundOrDeferredBufferHandle(
+      LiteRtTensorBuffer tensor_buffer) const;
+
+  // Unregisters `buffer_handle` from the Dispatch API, unless it is still used
+  // by user_registered_buffers_, tensor_buffer_infos_ or
+  // deferred_unregistrations_.
+  void ReleaseBufferHandle(LiteRtTensorBufferHandle buffer_handle);
 
   Expected<void> ScheduleAsyncExecution(TfLiteOpaqueContext* context);
   Expected<void> ScheduleSyncExecution(TfLiteOpaqueContext* context);
@@ -146,6 +178,8 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
   LiteRtDispatchDeviceContext device_context_;
   const bool async_dispatch_;  // Indicates whether the Dispatch API can be
                                // invoked asynchronously.
+  const bool multi_inflight_async_;  // Indicates whether the Dispatch API
+                                     // supports >1 in-flight async invocation.
 
   LiteRtExternalLiteRtBufferContextT* buffer_context_ = nullptr;
   std::vector<TfLiteOpaqueNode*> nodes_;
@@ -199,6 +233,25 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
 
   // Hold stale TensorInfo records for non-blocking out-fence unregistration.
   std::vector<std::pair<int, TensorInfo>> deferred_unregistrations_;
+
+  // A buffer explicitly registered by the user in buffer_context_ that this
+  // kernel has registered with the Dispatch API. Binding it to a tensor reuses
+  // its handle.
+  struct UserRegisteredBufferInfo {
+    LiteRtTensorBufferPtr tensor_buffer;
+    LiteRtTensorBufferHandle buffer_handle = 0;
+  };
+  absl::flat_hash_map<LiteRtTensorBuffer, UserRegisteredBufferInfo>
+      user_registered_buffers_;
+
+  // Buffer types that the Dispatch API accepts for the I/Os of this kernel.
+  absl::flat_hash_set<LiteRtTensorBufferType> supported_buffer_types_;
+
+  // Calls OnBufferRegistered() or OnBufferUnregistered() when buffer_context_
+  // registers or unregisters a buffer. buffer_context_ holds it weakly, since
+  // it may be destroyed first.
+  std::shared_ptr<LiteRtExternalLiteRtBufferContextT::RegistrationListener>
+      registration_listener_;
 };
 
 }  // namespace litert::internal

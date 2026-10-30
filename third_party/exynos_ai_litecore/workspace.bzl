@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Workspace definition for Exynos AI Litecore."""
+
 load("//litert/sdk_util:repo.bzl", "configurable_repo")
 
 def exynos_ai_litecore():
     configurable_repo(
         name = "exynos_ai_litecore",
-        build_file = "@//third_party/exynos_ai_litecore:exynos_ai_litecore.BUILD",
+        build_file = Label("//third_party/exynos_ai_litecore:exynos_ai_litecore.BUILD"),
         local_path_env = "EXYNOS_AI_LITECORE_ROOT",
         strip_prefix = "exynos-ai-litecore-v1.2.0",
         # TODO: Internal link (Not available). Please change to official link when release.

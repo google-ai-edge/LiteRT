@@ -126,8 +126,8 @@ RunResult RunSliceCase(const SliceCase& test_case, KernelVariant kernel_variant,
   if (!IsSupportedInputType(test_case.input_type) ||
       (test_case.index_type != TensorType_INT32 &&
        test_case.index_type != TensorType_INT64) ||
-      test_case.begin.size() != test_case.input_shape.size() ||
-      test_case.size.size() != test_case.input_shape.size()) {
+      test_case.begin.size() != test_case.size.size() ||
+      test_case.begin.empty()) {
     return RunResult::kRejected;
   }
 
@@ -164,7 +164,7 @@ RunResult RunSliceCase(const SliceCase& test_case, KernelVariant kernel_variant,
 
   const auto input_shape = builder.CreateVector(test_case.input_shape);
   const auto index_shape = builder.CreateVector(
-      std::vector<int32_t>{static_cast<int32_t>(test_case.input_shape.size())});
+      std::vector<int32_t>{static_cast<int32_t>(test_case.begin.size())});
   const auto empty_output_shape = builder.CreateVector(std::vector<int32_t>{});
   flatbuffers::Offset<QuantizationParameters> quantization = 0;
   if (test_case.input_type == TensorType_INT8 ||
@@ -209,7 +209,7 @@ RunResult RunSliceCase(const SliceCase& test_case, KernelVariant kernel_variant,
       {/*tensor_index=*/0, test_case.input_shape, std::move(input_bytes)});
   if (dynamic_indices) {
     const std::vector<int32_t> runtime_index_shape = {
-        static_cast<int32_t>(test_case.input_shape.size())};
+        static_cast<int32_t>(test_case.begin.size())};
     run_spec.runtime_tensors.push_back(
         {/*tensor_index=*/1, runtime_index_shape, begin_bytes});
     run_spec.runtime_tensors.push_back(
@@ -247,15 +247,16 @@ std::vector<int64_t> MakeBegins(const std::vector<int32_t>& input_shape,
 std::vector<int64_t> MakeValidSizes(const std::vector<int32_t>& input_shape,
                                     const std::vector<int64_t>& begin,
                                     const std::vector<uint8_t>& size_seeds,
-                                    bool allow_special_sizes) {
+                                    bool allow_to_end_sizes,
+                                    bool allow_empty_sizes) {
   std::vector<int64_t> size(input_shape.size());
   for (size_t i = 0; i < input_shape.size(); ++i) {
     const uint8_t seed =
         size_seeds.empty() ? 0 : size_seeds[i % size_seeds.size()];
     const int64_t remaining = input_shape[i] - begin[i];
-    if (allow_special_sizes && seed % 3 == 0) {
+    if (allow_to_end_sizes && seed % 3 == 0) {
       size[i] = -1;
-    } else if (allow_special_sizes && seed % 3 == 1) {
+    } else if (allow_empty_sizes && seed % 3 == 1) {
       size[i] = 0;
     } else {
       size[i] = 1 + seed % remaining;
@@ -264,6 +265,7 @@ std::vector<int64_t> MakeValidSizes(const std::vector<int32_t>& input_shape,
   return size;
 }
 
+#if !defined(TFLITE_SLICE_FUZZ_ENABLE_XNNPACK)
 auto ValidSliceCaseDomain() {
   return fuzztest::Map(
       [](std::vector<int32_t> input_shape, std::vector<uint8_t> begin_seeds,
@@ -271,8 +273,10 @@ auto ValidSliceCaseDomain() {
          TensorType input_type, TensorType index_type,
          IndexSpecKind index_spec_kind) {
         std::vector<int64_t> begin = MakeBegins(input_shape, begin_seeds);
-        std::vector<int64_t> size = MakeValidSizes(
-            input_shape, begin, size_seeds, /*allow_special_sizes=*/true);
+        std::vector<int64_t> size =
+            MakeValidSizes(input_shape, begin, size_seeds,
+                           /*allow_to_end_sizes=*/true,
+                           /*allow_empty_sizes=*/true);
         return SliceCase{
             std::move(input_shape), std::move(begin), std::move(size),
             std::move(input_data),  input_type,       index_type,
@@ -340,6 +344,32 @@ auto MalformedSliceBeginCaseDomain() {
           {IndexSpecKind::kConstant, IndexSpecKind::kDynamic}));
 }
 
+auto MalformedSliceIndexLengthCaseDomain() {
+  return fuzztest::Map(
+      [](std::vector<int32_t> input_shape, size_t begin_len, size_t size_len,
+         TensorType input_type, TensorType index_type,
+         IndexSpecKind index_spec_kind) {
+        if (begin_len == input_shape.size() && size_len == input_shape.size()) {
+          begin_len = input_shape.size() - 1;
+          size_len = input_shape.size() - 1;
+        }
+        std::vector<int64_t> begin(begin_len, 0);
+        std::vector<int64_t> size(size_len, 1);
+        return SliceCase{
+            std::move(input_shape), std::move(begin), std::move(size),
+            /*input_data=*/{},      input_type,       index_type,
+            index_spec_kind,        /*invoke=*/true};
+      },
+      SliceInputShapeDomain(/*max_rank=*/8), fuzztest::InRange<size_t>(0, 8),
+      fuzztest::InRange<size_t>(0, 8),
+      fuzztest::ElementOf<TensorType>({TensorType_FLOAT32, TensorType_UINT8,
+                                       TensorType_INT32, TensorType_BOOL}),
+      fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT64}),
+      fuzztest::ElementOf<IndexSpecKind>(
+          {IndexSpecKind::kConstant, IndexSpecKind::kDynamic}));
+}
+#endif  // !defined(TFLITE_SLICE_FUZZ_ENABLE_XNNPACK)
+
 #if defined(TFLITE_SLICE_FUZZ_ENABLE_XNNPACK)
 auto XnnpackSliceCaseDomain() {
   return fuzztest::Map(
@@ -347,8 +377,11 @@ auto XnnpackSliceCaseDomain() {
          std::vector<uint8_t> size_seeds, std::vector<uint8_t> input_data,
          TensorType input_type, TensorType index_type) {
         std::vector<int64_t> begin = MakeBegins(input_shape, begin_seeds);
-        std::vector<int64_t> size = MakeValidSizes(
-            input_shape, begin, size_seeds, /*allow_special_sizes=*/false);
+        // XNNPACK supports slice-to-end (size == -1) but not empty slices.
+        std::vector<int64_t> size =
+            MakeValidSizes(input_shape, begin, size_seeds,
+                           /*allow_to_end_sizes=*/true,
+                           /*allow_empty_sizes=*/false);
         return SliceCase{
             std::move(input_shape),   std::move(begin), std::move(size),
             std::move(input_data),    input_type,       index_type,
@@ -370,8 +403,10 @@ auto XnnpackUnsupportedRankSliceCaseDomain() {
          std::vector<uint8_t> size_seeds, TensorType input_type,
          TensorType index_type) {
         std::vector<int64_t> begin = MakeBegins(input_shape, begin_seeds);
-        std::vector<int64_t> size = MakeValidSizes(
-            input_shape, begin, size_seeds, /*allow_special_sizes=*/false);
+        std::vector<int64_t> size =
+            MakeValidSizes(input_shape, begin, size_seeds,
+                           /*allow_to_end_sizes=*/false,
+                           /*allow_empty_sizes=*/false);
         return SliceCase{
             std::move(input_shape),   std::move(begin), std::move(size),
             /*input_data=*/{},        input_type,       index_type,
@@ -394,8 +429,10 @@ auto XnnpackUnsupportedSizeSliceCaseDomain() {
          std::vector<uint8_t> size_seeds, uint8_t bad_axis, int64_t bad_size,
          TensorType input_type, TensorType index_type) {
         std::vector<int64_t> begin = MakeBegins(input_shape, begin_seeds);
-        std::vector<int64_t> size = MakeValidSizes(
-            input_shape, begin, size_seeds, /*allow_special_sizes=*/false);
+        std::vector<int64_t> size =
+            MakeValidSizes(input_shape, begin, size_seeds,
+                           /*allow_to_end_sizes=*/false,
+                           /*allow_empty_sizes=*/false);
         size[bad_axis % size.size()] = bad_size;
         return SliceCase{
             std::move(input_shape),   std::move(begin), std::move(size),
@@ -406,13 +443,16 @@ auto XnnpackUnsupportedSizeSliceCaseDomain() {
       SliceInputShapeDomain(/*max_rank=*/6),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(6),
       fuzztest::VectorOf(fuzztest::Arbitrary<uint8_t>()).WithMaxSize(6),
-      fuzztest::Arbitrary<uint8_t>(), fuzztest::ElementOf<int64_t>({-1, 0}),
+      // XNNPACK rejects empty (0) sizes and negative sizes other than -1, which
+      // means "slice to the end" and is supported.
+      fuzztest::Arbitrary<uint8_t>(), fuzztest::ElementOf<int64_t>({-2, 0}),
       fuzztest::ElementOf<TensorType>(
           {TensorType_FLOAT32, TensorType_UINT8, TensorType_INT8}),
       fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT64}));
 }
 #endif
 
+#if !defined(TFLITE_SLICE_FUZZ_ENABLE_XNNPACK)
 void SliceExecutesValidCases(const SliceCase& test_case) {
   SCOPED_TRACE(::testing::Message()
                << "shape=" << ::testing::PrintToString(test_case.input_shape)
@@ -445,34 +485,28 @@ void SliceReferenceRejectsInvalidSizes(const SliceCase& test_case) {
             RunResult::kRejected);
 }
 
-// TODO(b/555975708): Re-enable once Slice kernel begin validation is submitted.
-void DISABLED_SliceRejectsInvalidBegins(const SliceCase& test_case) {
+void SliceRejectsInvalidBegins(const SliceCase& test_case) {
   ASSERT_EQ(RunSliceCase(test_case, KernelVariant::kGenericOptimized,
                          ExecutionMode::kBuiltin),
             RunResult::kRejected);
 }
 
-void DISABLED_SliceReferenceRejectsInvalidBegins(const SliceCase& test_case) {
+void SliceReferenceRejectsInvalidBegins(const SliceCase& test_case) {
   ASSERT_EQ(RunSliceCase(test_case, KernelVariant::kReference,
                          ExecutionMode::kBuiltin),
             RunResult::kRejected);
 }
 
-TEST(SliceFuzzTest, RankSixReferencePathSmoke) {
-  const SliceCase test_case{/*input_shape=*/{1, 1, 1, 1, 2, 2},
-                            /*begin=*/{0, 0, 0, 0, 1, 0},
-                            /*size=*/{1, 1, 1, 1, 1, 2},
-                            /*input_data=*/{},
-                            TensorType_INT32,
-                            TensorType_INT64,
-                            IndexSpecKind::kDynamic,
-                            /*invoke=*/true};
-  EXPECT_EQ(RunSliceCase(test_case, KernelVariant::kGenericOptimized,
+void SliceRejectsMismatchedIndexLength(const SliceCase& test_case) {
+  ASSERT_EQ(RunSliceCase(test_case, KernelVariant::kGenericOptimized,
                          ExecutionMode::kBuiltin),
-            RunResult::kSuccess);
-  EXPECT_EQ(RunSliceCase(test_case, KernelVariant::kReference,
+            RunResult::kRejected);
+}
+
+void SliceReferenceRejectsMismatchedIndexLength(const SliceCase& test_case) {
+  ASSERT_EQ(RunSliceCase(test_case, KernelVariant::kReference,
                          ExecutionMode::kBuiltin),
-            RunResult::kSuccess);
+            RunResult::kRejected);
 }
 
 FUZZ_TEST(SliceFuzzTest, SliceExecutesValidCases)
@@ -483,24 +517,17 @@ FUZZ_TEST(SliceFuzzTest, SliceRejectsInvalidSizes)
     .WithDomains(MalformedSliceSizeCaseDomain());
 FUZZ_TEST(SliceFuzzTest, SliceReferenceRejectsInvalidSizes)
     .WithDomains(MalformedSliceSizeCaseDomain());
-FUZZ_TEST(SliceFuzzTest, DISABLED_SliceRejectsInvalidBegins)
+FUZZ_TEST(SliceFuzzTest, SliceRejectsInvalidBegins)
     .WithDomains(MalformedSliceBeginCaseDomain());
-FUZZ_TEST(SliceFuzzTest, DISABLED_SliceReferenceRejectsInvalidBegins)
+FUZZ_TEST(SliceFuzzTest, SliceReferenceRejectsInvalidBegins)
     .WithDomains(MalformedSliceBeginCaseDomain());
+FUZZ_TEST(SliceFuzzTest, SliceRejectsMismatchedIndexLength)
+    .WithDomains(MalformedSliceIndexLengthCaseDomain());
+FUZZ_TEST(SliceFuzzTest, SliceReferenceRejectsMismatchedIndexLength)
+    .WithDomains(MalformedSliceIndexLengthCaseDomain());
+#endif  // !defined(TFLITE_SLICE_FUZZ_ENABLE_XNNPACK)
 
 #if defined(TFLITE_SLICE_FUZZ_ENABLE_XNNPACK)
-TEST(SliceFuzzTest, SliceXnnpackRankSixSmokeDelegates) {
-  EXPECT_EQ(
-      RunSliceCase({/*input_shape=*/{1, 1, 1, 1, 2, 2},
-                    /*begin=*/{0, 0, 0, 0, 1, 0},
-                    /*size=*/{1, 1, 1, 1, 1, 2},
-                    /*input_data=*/{}, TensorType_FLOAT32, TensorType_INT64,
-                    IndexSpecKind::kConstant,
-                    /*invoke=*/true},
-                   KernelVariant::kGenericOptimized, ExecutionMode::kXnnpack),
-      RunResult::kSuccess);
-}
-
 void SliceXnnpackExecutesValidCases(const SliceCase& test_case) {
   SCOPED_TRACE(::testing::Message()
                << "shape=" << ::testing::PrintToString(test_case.input_shape)
@@ -541,56 +568,6 @@ FUZZ_TEST(SliceFuzzTest, SliceXnnpackRejectsUnsupportedRank)
 FUZZ_TEST(SliceFuzzTest, SliceXnnpackRejectsUnsupportedSizes)
     .WithDomains(XnnpackUnsupportedSizeSliceCaseDomain());
 #endif
-
-TEST(SliceFuzzTest, RejectsMismatchedBeginAndSizeIndexTypes) {
-  flatbuffers::FlatBufferBuilder builder;
-  std::vector<flatbuffers::Offset<Buffer>> buffers;
-  buffers.push_back(
-      fuzzing::CreateAlignedBuffer(&builder, std::vector<uint8_t>{}));
-
-  std::vector<int32_t> begin_vals = {0, 0};
-  std::vector<uint8_t> begin_bytes(begin_vals.size() * sizeof(int32_t));
-  std::memcpy(begin_bytes.data(), begin_vals.data(), begin_bytes.size());
-  buffers.push_back(fuzzing::CreateAlignedBuffer(&builder, begin_bytes));
-
-  std::vector<int64_t> size_vals = {1, 2};
-  std::vector<uint8_t> size_bytes(size_vals.size() * sizeof(int64_t));
-  std::memcpy(size_bytes.data(), size_vals.data(), size_bytes.size());
-  buffers.push_back(fuzzing::CreateAlignedBuffer(&builder, size_bytes));
-
-  const auto input_shape = builder.CreateVector(std::vector<int32_t>{2, 3});
-  const auto index_shape = builder.CreateVector(std::vector<int32_t>{2});
-  const auto empty_output_shape = builder.CreateVector(std::vector<int32_t>{});
-
-  fuzzing::OneOpModelSpec model_spec;
-  model_spec.description = "slice_mismatched_index_types";
-  model_spec.builtin_operator = BuiltinOperator_SLICE;
-  model_spec.version = 1;
-  model_spec.builtin_options_type = BuiltinOptions_SliceOptions;
-  model_spec.builtin_options = CreateSliceOptions(builder).Union();
-  model_spec.tensors = {
-      CreateTensor(builder, input_shape, TensorType_FLOAT32, /*buffer=*/0),
-      CreateTensor(builder, index_shape, TensorType_INT32, /*buffer=*/1),
-      CreateTensor(builder, index_shape, TensorType_INT64, /*buffer=*/2),
-      CreateTensor(builder, empty_output_shape, TensorType_FLOAT32,
-                   /*buffer=*/0),
-  };
-  model_spec.buffers = std::move(buffers);
-  model_spec.model_inputs = {0};
-  model_spec.model_outputs = {3};
-  model_spec.op_inputs = {0, 1, 2};
-  model_spec.op_outputs = {3};
-
-  fuzzing::OneOpRunSpec run_spec;
-  run_spec.registration = SliceRegistration(KernelVariant::kGenericOptimized);
-  run_spec.min_version = 1;
-  run_spec.max_version = 1;
-  run_spec.max_live_allocation_bytes = kMaxLiveAllocationBytes;
-  run_spec.invoke = true;
-
-  EXPECT_EQ(fuzzing::BuildAndRunOneOpModel(&builder, model_spec, run_spec),
-            RunResult::kRejected);
-}
 
 }  // namespace
 }  // namespace tflite

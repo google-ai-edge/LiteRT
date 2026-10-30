@@ -29,7 +29,12 @@ constexpr const char kShortConvStepType[] = "odml.short_conv_step";
 
 struct ShortConvStepAttributes {
   int32_t conv_L_cache = 3;
+  bool is_gated = true;
+  bool use_silu = false;
 };
+
+ShortConvStepAttributes ParseShortConvStepAttributes(
+    const TfLiteNode& tflite_node);
 
 class ShortConvStepOperationParser : public TFLiteOperationParser {
  public:

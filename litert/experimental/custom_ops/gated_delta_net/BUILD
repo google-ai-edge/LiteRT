@@ -45,6 +45,7 @@ cc_library(
         ":gated_delta_update_impl",
         "//litert/cc:litert_common",
         "//litert/cc:litert_custom_op_kernel",
+        "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
@@ -58,6 +59,7 @@ cc_test(
     name = "gated_delta_update_litert_custom_op_test",
     srcs = ["gated_delta_update_litert_custom_op_test.cc"],
     deps = [
+        ":gated_delta_update_impl",
         ":gated_delta_update_litert_custom_op",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_layout",

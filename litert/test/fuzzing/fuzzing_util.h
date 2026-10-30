@@ -221,16 +221,12 @@ inline bool StorageBytesForElements(TensorType type, size_t count,
   if (bytes == nullptr) {
     return false;
   }
-  if (type == TensorType_INT4) {
-    *bytes = (count + 1) / 2;
+  if (type == TensorType_INT4 || type == TensorType_UINT4) {
+    *bytes = (count / 2) + (count % 2);
     return true;
   }
   if (type == TensorType_INT2) {
-    *bytes = (count + 3) / 4;
-    return true;
-  }
-  if (type == TensorType_UINT4) {
-    *bytes = (count + 1) / 2;
+    *bytes = (count / 4) + (count % 4 != 0 ? 1 : 0);
     return true;
   }
   return CheckedMultiply(count, TypeSize(type), bytes);

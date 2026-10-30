@@ -12,11 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_cc_binary", "litert_configured_target", "litert_size_tracking_target")
+load("//litert/build_common:special_rule.bzl", "litert_linkopts", "litert_linkopts_unstripped")
 load("//litert/build_common:symlink_files.bzl", "symlink_files")  # @unused
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")  # @unused
+load("//tflite:build_def.bzl", "gen_selected_ops")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -333,7 +338,6 @@ cc_library(
     deps = [
         ":tflite_half_traits",
         "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
@@ -360,7 +364,7 @@ cc_test(
         ":rng_fixture",
         ":simple_buffer",
         "//litert/cc:litert_element_type",
-        "//litert/cc:litert_model",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_rng",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -385,10 +389,143 @@ objc_library(
     ],
 )
 
+gen_selected_ops(
+    name = "minimal_compiled_model_selected_ops",
+    model = [
+        "testdata/transformer.tflite",
+    ],
+)
+
+# A minimal CompiledModel program for CPU. Used to track the size of a minimal
+# LiteRT CPU runtime. See docs/instructions/MINIMAL_BUILD.md.
+cc_binary(
+    name = "minimal_compiled_model",
+    srcs = ["minimal_compiled_model.cc"] + select({
+        "//litert/build_common:cpu_backend_selective": [
+            ":minimal_compiled_model_selected_ops",
+        ],
+        "//conditions:default": [],
+    }),
+    copts = select({
+        "//litert/build_common:cpu_backend_selective": [
+            "-DLITERT_SELECTIVE_OPS",
+        ],
+        "//conditions:default": [],
+    }),
+    # LiteRT size-oriented link flags.
+    linkopts = litert_linkopts(),
+    linkstatic = 1,
+    # copybara:uncomment malloc = "//base:system_malloc",
+    deps = [
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_tensor_buffer",
+    ] + select({
+        "//litert/build_common:cpu_backend_selective": [
+            "//litert/cc:litert_options",
+            "//litert/tflite_support/op_resolver",
+            "//tflite:framework",
+            "//tflite:mutable_op_resolver",
+            "//tflite/kernels:builtin_ops",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# Size-tracking variant of minimal_compiled_model for WeightWatcher
+# (litert.android.arm.mini and litert.android.arm.mini.selective in
+# litert.blueprint). See litert_size_tracking_target.
+litert_size_tracking_target(
+    name = "minimal_compiled_model_ww",
+    target = ":minimal_compiled_model",
+)
+
+# Unstripped variant of minimal_compiled_model used for symbol leak testing.
+litert_cc_binary(
+    name = "minimal_compiled_model_cpu_only",
+    testonly = True,
+    srcs = ["minimal_compiled_model.cc"],
+    build_include = "cpu_only",
+    cpu_backend = "selective",
+    linkopts = litert_linkopts_unstripped(),
+    linkstatic = 1,
+    # copybara:uncomment malloc = "//base:system_malloc",
+    deps = [
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_tensor_buffer",
+    ],
+)
+
+litert_configured_target(
+    name = "minimal_compiled_model_selective",
+    testonly = True,
+    build_include = "cpu_only",
+    cpu_backend = "selective",
+    target = ":minimal_compiled_model",
+)
+
+sh_test(
+    name = "minimal_compiled_model_test",
+    srcs = ["minimal_compiled_model_test.sh"],
+    args = [
+        "$(rootpath :minimal_compiled_model)",
+        "$(rootpath testdata/transformer.tflite)",
+    ],
+    data = [
+        "testdata/transformer.tflite",
+        ":minimal_compiled_model",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+)
+
+sh_test(
+    name = "minimal_compiled_model_selective_test",
+    srcs = ["minimal_compiled_model_test.sh"],
+    args = [
+        "$(rootpath :minimal_compiled_model_selective)",
+        "$(rootpath testdata/transformer.tflite)",
+    ],
+    data = [
+        "testdata/transformer.tflite",
+        ":minimal_compiled_model_selective",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+)
+
+sh_test(
+    name = "minimal_compiled_model_symbol_test",
+    srcs = ["minimal_compiled_model_symbol_test.sh"],
+    args = [
+        "$(rootpath :minimal_compiled_model_cpu_only)",
+    ],
+    data = [
+        ":minimal_compiled_model_cpu_only",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+)
+
 exports_files(
     srcs = [
         "litert_c_api_dependency_test.sh",
         "litert_compiler_plugin_symbol_test.sh",
+        "litert_jni_symbol_test.sh",
+        "litert_runtime_symbol_test.sh",
+        "minimal_compiled_model_symbol_test.sh",
     ] + glob([
         "testdata/**",
     ]),

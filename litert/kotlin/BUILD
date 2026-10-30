@@ -14,24 +14,23 @@
 
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@build_bazel_rules_android//android:rules.bzl", "android_library")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(
     "//litert/build_common:special_rule.bzl",
     "litert_android_linkopts",
     "litert_jni_friends",
+    "litert_jni_linkopts",
+    "litert_linkopts_no_undefined",
 )
+load("//tflite:build_def.bzl", "tflite_jni_binary")
 
 # copybara:uncomment_begin(google-only)
-# load("//litert/kotlin:google/dackka.bzl", "dackka")
+# load("//litert/kotlin/google:dackka.bzl", "dackka")
 #
 # copybara:uncomment_end
-load(
-    "//tflite:build_def.bzl",
-    "tflite_jni_binary",
-    "tflite_jni_linkopts",
-    "tflite_linkopts_no_undefined",
-)
 load("//tflite/java:aar_with_jni.bzl", "aar_with_jni")
 
 package(
@@ -53,9 +52,10 @@ cc_library(
     hdrs = ["src/main/jni/litert_jni_common.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
         "//tflite/java/jni",
         "@com_google_absl//absl/cleanup",  # buildcleaner: keep
-        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -66,15 +66,13 @@ cc_library(
     hdrs = ["src/main/jni/litert_environment_jni.h"],
     deps = [
         ":litert_jni_common",
-        "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_any",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment_api",
         "//litert/cc:litert_environment_options",
         "//tflite/java/jni",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -97,6 +95,7 @@ cc_library(
         ":litert_model_wrapper",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
@@ -107,17 +106,18 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_options",
         "//litert/cc:litert_ranked_tensor_type",
-        "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_requirements",
-        "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_tensor_buffer_without_registry",
+        "//litert/cc/options:litert_compiler_options",
         "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//tflite/java/jni",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -129,7 +129,7 @@ cc_library(
         ":litert_jni_common",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/internal:litert_tensor_buffer_without_registry",
         "//tflite/java/jni",
         "@com_google_absl//absl/types:span",
     ],
@@ -144,8 +144,10 @@ cc_library(
 #     name = "litert_api_jni_lib",
 #     binary_name = "liblitert_jni.so",
 #     lds = ":litert_api_version_script.lds",
-#     linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
-#     visibility = litert_jni_friends(),
+#     linkopts = litert_jni_linkopts() + litert_linkopts_no_undefined() + litert_android_linkopts(),
+#     visibility = litert_jni_friends() + [
+#         "//litert/kotlin/src/tests:__pkg__",
+#     ],
 #     deps = [
 #         ":litert_compiled_model_jni",
 #         ":litert_environment_jni",
@@ -169,7 +171,7 @@ cc_library(
 #     name = "litert_impl_jni_lib",
 #     binary_name = "libLiteRt.so",
 #     lds = ":litert_version_script.lds",
-#     linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
+#     linkopts = litert_jni_linkopts() + litert_linkopts_no_undefined() + litert_android_linkopts(),
 #     deps = [
 #         "//litert/c:litert_tflite_runtime_c_api_so_shim",  # runtime
 #         "//tflite/java/src/main/native",  # TFLite JNI
@@ -180,16 +182,27 @@ cc_library(
 # copybara:comment_begin(oss-only)
 tflite_jni_binary(
     name = "litert_jni",
-    linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
+    linkopts = litert_jni_linkopts() + litert_linkopts_no_undefined() + litert_android_linkopts(),
     linkscript = ":litert_api_version_script.lds",
     # Set stamp = 0 to avoid including internal info to the binary for the public release.
     stamp = 0,
+    visibility = [
+        "//litert/kotlin/src/tests:__pkg__",
+        "//third_party/odml/litert:__subpackages__",
+    ],
     deps = [
         ":litert_compiled_model_jni",
         ":litert_environment_jni",
         ":litert_tensor_buffer_jni",
-        "//litert/c/internal:litert_runtime_builtin_none",
-    ],
+    ] + select({
+        # The host JVM test needs the runtime linked into liblitert_jni.so.
+        "//litert:android": [
+            "//litert/c/internal:litert_runtime_builtin_none",
+        ],
+        "//conditions:default": [
+            "//litert/c/internal:litert_runtime_builtin_static",
+        ],
+    }),
 )
 
 cc_library(
@@ -199,7 +212,7 @@ cc_library(
 
 tflite_jni_binary(
     name = "LiteRt",
-    linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
+    linkopts = litert_jni_linkopts() + litert_linkopts_no_undefined() + litert_android_linkopts(),
     linkscript = ":litert_version_script.lds",
     # Set stamp = 0 to avoid including internal info to the binary for the public release.
     stamp = 0,
@@ -214,6 +227,50 @@ cc_library(
     srcs = [":LiteRt"],
 )
 # copybara:comment_end
+
+# Unstripped variant of liblitert_jni.so with dynamic runtime linkage (matching
+# Android release builds) used for symbol leak testing.
+cc_binary(
+    name = "liblitert_jni_for_symbol_test.so",
+    testonly = True,
+    features = ["-legacy_whole_archive"],
+    linkopts = select({
+        "//litert:macos": [],
+        "//litert:ios": [],
+        "//litert:windows": [],
+        "//conditions:default": [
+            "-Wl,--gc-sections",
+            "-Wl,--as-needed",
+            "-Wl,--undefined-glob=Java_*",
+            "-Wl,--version-script,$(execpath :litert_api_version_script.lds)",
+        ],
+    }) + litert_linkopts_no_undefined() + litert_android_linkopts(),
+    linkshared = 1,
+    linkstatic = 1,
+    deps = [
+        ":litert_api_version_script.lds",
+        ":litert_compiled_model_jni",
+        ":litert_environment_jni",
+        ":litert_tensor_buffer_jni",
+        "//litert/c/internal:litert_runtime_builtin_none",
+    ],
+)
+
+sh_test(
+    name = "litert_jni_symbol_test",
+    srcs = ["//litert/test:litert_jni_symbol_test.sh"],
+    args = [
+        "$(rootpath :liblitert_jni_for_symbol_test.so)",
+    ],
+    data = [
+        ":liblitert_jni_for_symbol_test.so",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+)
 
 # Bazel kt_android_library does not support cc_library as a dependency, so android_library is used
 # as a workaround.
@@ -320,8 +377,6 @@ LITERT_AI_PACK_SRCS = [
     "src/main/kotlin/com/google/ai/edge/litert/deployment/AiPackModelProvider.kt",
 ]
 
-LITERT_KOTLIN_SRCS_ALL = LITERT_AI_PACK_SRCS + LITERT_KOTLIN_SRCS_NO_AIPACK
-
 TFLITE_JAVA_DEPS = [
     "@litert_maven//:com_google_guava_guava",
     "@litert_maven//:androidx_lifecycle_lifecycle_common",
@@ -333,10 +388,12 @@ LITERT_KOTLIN_DEPS_NO_AIPACK = TFLITE_JAVA_DEPS + [
     "@litert_maven//:org_jetbrains_kotlinx_kotlinx_coroutines_guava",
 ]
 
-LITERT_KOTLIN_DEPS_ALL = LITERT_KOTLIN_DEPS_NO_AIPACK + [
+LITERT_KOTLIN_AI_PACK_DEPS = [
     "@litert_maven//:com_google_android_play_ai_delivery",
     "@litert_maven//:org_jetbrains_kotlinx_kotlinx_coroutines_play_services",
 ]
+
+LITERT_KOTLIN_DEPS_ALL = LITERT_KOTLIN_DEPS_NO_AIPACK + LITERT_KOTLIN_AI_PACK_DEPS
 
 LITERT_API_SRCS_NO_AIPACK = LITERT_KOTLIN_SRCS_NO_AIPACK + TFLITE_JAVA_SRCS_API
 
@@ -351,13 +408,35 @@ JAVACOPTS = select({
 # runtime), Compiled Model API only.
 kt_android_library(
     name = "litert_compiled_model_api_no_jni",
-    srcs = LITERT_KOTLIN_SRCS_ALL,
+    srcs = LITERT_AI_PACK_SRCS,
     exports_manifest = 1,
     javacopts = JAVACOPTS,
     manifest = "src/main/AndroidManifest.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
-    visibility = litert_jni_friends(),
-    deps = LITERT_KOTLIN_DEPS_ALL,
+    visibility = litert_jni_friends() + [
+        "//litert/kotlin/src/tests:__pkg__",
+    ],
+    exports = [
+        ":litert_compiled_model_api_no_jni_no_aipack",
+    ],
+    deps = LITERT_KOTLIN_AI_PACK_DEPS + [
+        ":litert_compiled_model_api_no_jni_no_aipack",
+    ],
+)
+
+# Pure Java/Kotlin API library (no native deps at build time, ":litert_api_jni" is needed at
+# runtime), Compiled Model API only, without support for Google Play AI Pack.
+kt_android_library(
+    name = "litert_compiled_model_api_no_jni_no_aipack",
+    srcs = LITERT_KOTLIN_SRCS_NO_AIPACK,
+    exports_manifest = 1,
+    javacopts = JAVACOPTS,
+    manifest = "src/main/AndroidManifest.xml",
+    proguard_specs = ["//tflite/java:proguard.flags"],
+    visibility = litert_jni_friends() + [
+        "//litert/kotlin/src/tests:__pkg__",
+    ],
+    deps = LITERT_KOTLIN_DEPS_NO_AIPACK,
 )
 
 # Android library for the litert package, CompiledModel API only.
@@ -422,7 +501,7 @@ kt_android_library(
 # Pure Java/Kotlin API library (no native deps at build time, ":litert_api_jni" is needed at
 # runtime), with both the Compiled Model API and also the older TFLite Interpreter API, but
 # without support for Google Play AI Pack.
-android_library(
+kt_android_library(
     name = "litert_api_no_jni_no_aipack",
     srcs = LITERT_API_SRCS_NO_AIPACK,
     exports_manifest = 1,

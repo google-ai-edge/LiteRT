@@ -20,11 +20,13 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
+#include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_environment.h"
@@ -32,9 +34,10 @@
 #include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/core/model/model.h"
+#include "litert/test/common.h"
 #include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
-#include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
 #include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
 
@@ -51,43 +54,56 @@ namespace {
 
 using ::google_tensor::FilterOutcome;
 using ::litert::google_tensor::GoogleTensorOptions;
+using ::testing::AllOf;
+using ::testing::HasSubstr;
+using ::testing::Not;
+using ::testing::TempDir;
 using ::testing::UnorderedElementsAre;
 using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
     OpFilters;
 
 TEST(TestGoogleTensorPlugin, GetConfigInfo) {
-  ASSERT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "Google");
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
 
-  PluginPtr plugin = CreatePlugin();
+  ASSERT_STREQ(plugin.Api()->get_compiler_plugin_soc_manufacturer(), "Google");
 
   LiteRtParamIndex num_supported_soc_models;
-  LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
-      plugin.get(), &num_supported_soc_models));
+  LITERT_ASSERT_OK(plugin.Api()->get_num_compiler_plugin_supported_models(
+      plugin.Get(), &num_supported_soc_models));
+#ifdef EDGETPU_EXTERNAL_RELEASE_COMPILER
+  ASSERT_THAT(num_supported_soc_models, 4);
+#else
+  ASSERT_THAT(num_supported_soc_models, 5);
+#endif
 
   std::vector<std::string> soc_model_names;
   for (int i = 0; i < num_supported_soc_models; ++i) {
     const char* soc_model_name;
-    LITERT_ASSERT_OK(LiteRtGetCompilerPluginSupportedSocModel(plugin.get(), i,
-                                                              &soc_model_name));
+    LITERT_ASSERT_OK(plugin.Api()->get_compiler_plugin_supported_soc_model(
+        plugin.Get(), i, &soc_model_name));
     soc_model_names.push_back(soc_model_name);
   }
-  EXPECT_THAT(soc_model_names,
-              UnorderedElementsAre("Tensor_G3", "Tensor_G4", "Tensor_G5",
-                                   "Tensor_G6",
-                                   // copybara:uncomment_begin(google-only)
-                                   // "Tensor_G7"
-                                   // copybara:uncomment_end
-                                   ));
+  EXPECT_THAT(
+      soc_model_names,
+      UnorderedElementsAre("Tensor_G3", "Tensor_G4", "Tensor_G5", "Tensor_G6",
+                           // copybara:uncomment_begin(google-only)
+                           // "Tensor_G7"
+                           // copybara:uncomment_end
+                           ));
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionSimpleMultiAdd) {
-  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   ExtendedModel model = testing::LoadTestFileModel("simple_multi_op.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
   const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
       selected_op_list.Values();
 
@@ -117,14 +133,16 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnCpu) {
       auto litert_opts,
       internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
 
-  auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
   const auto selected_ops = selected_op_list.Values();
 
   // All ops should be blocked by the filter and fall back to CPU.
@@ -143,36 +161,38 @@ TEST(TestGoogleTensorPlugin, GetFilterOutcome) {
   ASSERT_FALSE(outputs.empty());
   auto output_name = outputs[0].Name();
 
+  litert::compiler::Op compiler_op(LrtGetCompilerContext(), op.Get());
+
   OpFilters filters;
 
   // 1. Empty filter list (Default Blocklist) -> kRunOnTpu
-  EXPECT_EQ(::google_tensor::GetFilterOutcome(op, filters),
+  EXPECT_EQ(::google_tensor::GetFilterOutcome(compiler_op, filters),
             FilterOutcome::kRunOnTpu);
 
   // 2. Empty filter list (Allowlist) -> kDoNotRunOnTpu
   filters.set_filter_behavior(OpFilters::MATCHES_RUN_ON_TPU);
-  EXPECT_EQ(::google_tensor::GetFilterOutcome(op, filters),
+  EXPECT_EQ(::google_tensor::GetFilterOutcome(compiler_op, filters),
             FilterOutcome::kDoNotRunOnTpu);
 
   // 3. MATCHES_NOT_RUN_ON_TPU (Blocklist) - Match -> kDoNotRunOnTpu
   filters.set_filter_behavior(OpFilters::MATCHES_NOT_RUN_ON_TPU);
   auto* filter1 = filters.add_filters();
-  filter1->set_op_name_pattern(output_name);
+  filter1->set_op_name_pattern(std::string(output_name));
   EXPECT_EQ(::google_tensor::GetFilterOutcome(op, filters),
             FilterOutcome::kDoNotRunOnTpu);
 
   // 4. MATCHES_NOT_RUN_ON_TPU (Blocklist) - No Match -> kRunOnTpu
   filter1->set_op_name_pattern("some_unmatched_name");
-  EXPECT_EQ(::google_tensor::GetFilterOutcome(op, filters),
+  EXPECT_EQ(::google_tensor::GetFilterOutcome(compiler_op, filters),
             FilterOutcome::kRunOnTpu);
 
   // 5. MATCHES_RUN_ON_TPU (Allowlist) - No Match -> kDoNotRunOnTpu
   filters.set_filter_behavior(OpFilters::MATCHES_RUN_ON_TPU);
-  EXPECT_EQ(::google_tensor::GetFilterOutcome(op, filters),
+  EXPECT_EQ(::google_tensor::GetFilterOutcome(compiler_op, filters),
             FilterOutcome::kDoNotRunOnTpu);
 
   // 6. MATCHES_RUN_ON_TPU (Allowlist) - Match -> kRunOnTpu
-  filter1->set_op_name_pattern(output_name);
+  filter1->set_op_name_pattern(std::string(output_name));
   EXPECT_EQ(::google_tensor::GetFilterOutcome(op, filters),
             FilterOutcome::kRunOnTpu);
 
@@ -181,7 +201,7 @@ TEST(TestGoogleTensorPlugin, GetFilterOutcome) {
   filters.set_filter_behavior(OpFilters::MATCHES_NOT_RUN_ON_TPU);
   auto* filter2 = filters.add_filters();
   filter2->set_op_name_pattern("");
-  EXPECT_EQ(::google_tensor::GetFilterOutcome(op, filters),
+  EXPECT_EQ(::google_tensor::GetFilterOutcome(compiler_op, filters),
             FilterOutcome::kRunOnTpu);
 }
 
@@ -206,14 +226,16 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnTpu) {
       auto litert_opts,
       internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
 
-  auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
   const auto selected_ops = selected_op_list.Values();
 
   // Since nothing matches the allowlist, everything should fall back to CPU.
@@ -221,20 +243,22 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithOpFiltersRunOnTpu) {
 }
 
 TEST(TestCallGoogleTensorPlugin, CompileMulSubgraph) {
-  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   ExtendedModel model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "Tensor_G5",
-                                               model.Get(), &compiled));
-  absl::Cleanup compiled_cleanup = [&compiled] {
-    LiteRtDestroyCompiledResult(compiled);
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "Tensor_G5", model.Get(), &compiled));
+  absl::Cleanup compiled_cleanup = [&plugin, &compiled] {
+    plugin.Api()->destroy_compiled_result(compiled);
   };
 
   const void* byte_code;
   size_t byte_code_size;
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(compiled, 0, &byte_code,
-                                                   &byte_code_size));
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_byte_code(
+      compiled, 0, &byte_code, &byte_code_size));
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
                                      byte_code_size);
   ASSERT_FALSE(byte_code_string.empty());
@@ -242,7 +266,7 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraph) {
   const void* op_data;
   size_t op_data_size;
   LiteRtParamIndex byte_code_idx;
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultCallInfo(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_call_info(
       compiled, 0, &op_data, &op_data_size, &byte_code_idx));
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
@@ -261,21 +285,23 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
       auto litert_opts,
       internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
 
-  PluginPtr plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "Tensor_G5",
-                                               model.Get(), &compiled));
-  absl::Cleanup compiled_cleanup = [&compiled] {
-    LiteRtDestroyCompiledResult(compiled);
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "Tensor_G5", model.Get(), &compiled));
+  absl::Cleanup compiled_cleanup = [&plugin, &compiled] {
+    plugin.Api()->destroy_compiled_result(compiled);
   };
 
   const void* byte_code;
   size_t byte_code_size;
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(compiled, 0, &byte_code,
-                                                   &byte_code_size));
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_byte_code(
+      compiled, 0, &byte_code, &byte_code_size));
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
                                      byte_code_size);
   ASSERT_FALSE(byte_code_string.empty());
@@ -283,7 +309,7 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
   const void* op_data;
   size_t op_data_size;
   LiteRtParamIndex byte_code_idx;
-  LITERT_ASSERT_OK(LiteRtGetCompiledResultCallInfo(
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_call_info(
       compiled, 0, &op_data, &op_data_size, &byte_code_idx));
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
@@ -291,14 +317,16 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionRmsNormCompositeOp) {
-  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   ExtendedModel model = testing::LoadTestFileModel(
       "stablehlo/stablehlo_composite_rms_norm.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
   const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
       selected_op_list.Values();
 
@@ -307,14 +335,16 @@ TEST(TestCallGoogleTensorPlugin, PartitionRmsNormCompositeOp) {
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionUnsupportedCompositeOp) {
-  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   ExtendedModel model = testing::LoadTestFileModel(
       "stablehlo/stablehlo_composite_softmax.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
   const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
       selected_op_list.Values();
 
@@ -340,15 +370,17 @@ void AddTflOpToSubgraph(LiteRtSubgraphT& subgraph, LiteRtOpCode op_code) {
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionMultipleSupportedCompositeOps) {
-  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   LiteRtModelT model;
   LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
   AddCompositeOpToSubgraph(subgraph, "odml.rms_norm");
   AddCompositeOpToSubgraph(subgraph, "odml.group_norm");
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, &subgraph, &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/nullptr, &subgraph, &selected_op_list));
   const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
       selected_op_list.Values();
 
@@ -368,7 +400,9 @@ TEST(TestCallGoogleTensorPlugin, PartitionMultipleSupportedCompositeOps) {
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionMixedMultipleCompositeOps) {
-  PluginPtr plugin = CreatePlugin(LrtGetCompilerContext());
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   LiteRtModelT model;
   LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
   AddCompositeOpToSubgraph(subgraph, "odml.rms_norm");
@@ -376,8 +410,8 @@ TEST(TestCallGoogleTensorPlugin, PartitionMixedMultipleCompositeOps) {
   AddCompositeOpToSubgraph(subgraph, "odml.group_norm");
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, &subgraph, &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/nullptr, &subgraph, &selected_op_list));
   const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
       selected_op_list.Values();
 
@@ -408,8 +442,10 @@ TEST(TestCallGoogleTensorPlugin, PartitionCompositeOpsWithInputValidation) {
       auto litert_opts,
       internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
 
-  auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
 
   LiteRtModelT model;
   LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
@@ -424,8 +460,8 @@ TEST(TestCallGoogleTensorPlugin, PartitionCompositeOpsWithInputValidation) {
   AddTflOpToSubgraph(subgraph, kLiteRtOpCodeTflFakeQuant);
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, &subgraph, &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/"Tensor_G5", &subgraph, &selected_op_list));
   const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
       selected_op_list.Values();
 
@@ -469,15 +505,17 @@ TEST(TestCallGoogleTensorPlugin,
       auto litert_opts,
       internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
 
-  auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   ExtendedModel model = testing::LoadTestFileModel(kFloatReduceMaxModel);
   LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(
-      LiteRtCompilerPluginPartition(plugin.get(), /*soc_model=*/"Tensor_G5",
-                                    subgraph.Get(), &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/"Tensor_G5", subgraph.Get(),
+      &selected_op_list));
   const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
       selected_op_list.Values();
 
@@ -502,23 +540,167 @@ TEST(TestCallGoogleTensorPlugin, PartitionFloatReduceMaxWithInputValidation) {
       auto litert_opts,
       internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
 
-  auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   ExtendedModel model = testing::LoadTestFileModel(kFloatReduceMaxModel);
   LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
   // The input validator only runs for the chip revisions behind `Tensor_G5`
   // and newer, so the soc model must be set explicitly.
-  LITERT_ASSERT_OK(
-      LiteRtCompilerPluginPartition(plugin.get(), /*soc_model=*/"Tensor_G5",
-                                    subgraph.Get(), &selected_op_list));
+  ::testing::internal::CaptureStderr();
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/"Tensor_G5", subgraph.Get(),
+      &selected_op_list));
+  const std::string log_output = ::testing::internal::GetCapturedStderr();
   const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
       selected_op_list.Values();
 
   // The subgraph has no composite op, so dynamic validation runs and the input
   // validator reports the f32 `tfl.reduce_max` as unsupported.
+  //
+  // clang-format off
+  // Expected log output:
+  // INFO: [...] Partitioning summary: 0 ops on NPU, 1 ops offloaded to CPU ...
+  // INFO: [...] CPU-offloaded operations:
+  //   Op Index | Op Code                | Reason
+  //   ---------+------------------------+--------------------------------------
+  //   0        | tfl.reduce_max         | [tfl.reduce_max] The compiler ...
+  // clang-format on
   EXPECT_EQ(selected_ops.size(), 0);
+  EXPECT_THAT(
+      log_output,
+      AllOf(HasSubstr("0 ops on NPU, 1 ops offloaded to CPU"),
+            HasSubstr("CPU-offloaded operations:"), HasSubstr("tfl.reduce_max"),
+            HasSubstr("f32"), Not(HasSubstr("Delegating unsupported"))));
+}
+
+TEST(TestCallGoogleTensorPlugin, LogsStaticPartitioningDiagnostics) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetOptions<GoogleTensorOptions>());
+
+  const std::string filter_file =
+      absl::StrCat(TempDir(), "/test_static_diagnostics_filter.textproto");
+  {
+    std::ofstream out(filter_file);
+    out << "filter_behavior: MATCHES_NOT_RUN_ON_TPU\n";
+    out << "filters {\n";
+    out << "  op_name_pattern: \"filtered_mul_out\"\n";
+    out << "}\n";
+  }
+  google_tensor_options.SetOpFiltersProto(filter_file);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
+
+  LiteRtModelT model;
+  LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+  // Op 0: supported TFL op
+  AddTflOpToSubgraph(subgraph, kLiteRtOpCodeTflAdd);
+  // Op 1: supported composite op
+  AddCompositeOpToSubgraph(subgraph, "odml.rms_norm");
+  // Op 2: unsupported composite op
+  AddCompositeOpToSubgraph(subgraph, "odml.softmax");
+  // Op 3: unsupported TFL op (in kUnSupportedOps)
+  AddTflOpToSubgraph(subgraph, kLiteRtOpCodeTflFakeQuant);
+  // Op 4: supported TFL op excluded by user-provided op_filters_proto
+  LiteRtTensorT& filtered_tensor = subgraph.EmplaceTensor();
+  filtered_tensor.SetName("filtered_mul_out");
+  LiteRtOpT& filtered_mul = subgraph.EmplaceOp();
+  filtered_mul.SetOpCode(kLiteRtOpCodeTflMul);
+  litert::internal::AttachOutput(&filtered_tensor, filtered_mul);
+
+  LiteRtOpListT selected_op_list;
+  ::testing::internal::CaptureStderr();
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/nullptr, &subgraph, &selected_op_list));
+  const std::string log_output = ::testing::internal::GetCapturedStderr();
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  // clang-format off
+  // Expected log output:
+  // INFO: [...] Partitioning summary: 2 ops on NPU, 3 ops offloaded to CPU ...
+  // INFO: [...] CPU-offloaded operations:
+  //   Op Index | Op Code                | Reason
+  //   ---------+------------------------+--------------------------------------
+  //   2        | shlo.composite         | Composite operation is not supported.
+  //   3        | tfl.fake_quant         | Op is not supported on the ...
+  //   4        | tfl.mul                | Excluded by user-provided op ...
+  // clang-format on
+  ASSERT_EQ(selected_ops.size(), 2);
+  EXPECT_THAT(log_output,
+              AllOf(HasSubstr("2 ops on NPU, 3 ops offloaded to CPU"),
+                    HasSubstr("CPU-offloaded operations:"),
+                    HasSubstr("shlo.composite"),
+                    HasSubstr("Composite operation is not supported"),
+                    HasSubstr("tfl.fake_quant"),
+                    HasSubstr("not supported on the Google Tensor NPU"),
+                    HasSubstr("tfl.mul"),
+                    HasSubstr("Excluded by user-provided op filter"),
+                    HasSubstr(filter_file)));
+
+  // Add 3 more unsupported ops (6 total offloaded > default limit of 5) to
+  // verify the truncation summary line.
+  AddTflOpToSubgraph(subgraph, kLiteRtOpCodeTflWhere);
+  AddTflOpToSubgraph(subgraph, kLiteRtOpCodeTflUnique);
+  AddTflOpToSubgraph(subgraph, kLiteRtOpCodeTflShape);
+
+  LiteRtOpListT truncated_selected_op_list;
+  ::testing::internal::CaptureStderr();
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/nullptr, &subgraph,
+      &truncated_selected_op_list));
+  const std::string truncated_log_output =
+      ::testing::internal::GetCapturedStderr();
+  EXPECT_THAT(truncated_log_output,
+              AllOf(HasSubstr("6 ops offloaded to CPU"),
+                    HasSubstr("1 additional"),
+                    HasSubstr("LITERT_MAX_LOGGED_OFFLOAD_REASONS")));
+}
+
+TEST(TestCallGoogleTensorPlugin,
+     PartitionUnsupportedDeviceSkipsInputValidation) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetOptions<GoogleTensorOptions>());
+  google_tensor_options.SetExperimentalEnableInputValidator(true);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
+
+  LiteRtModelT model;
+  LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+  AddTflOpToSubgraph(subgraph, kLiteRtOpCodeTflAdd);
+  AddTflOpToSubgraph(subgraph, kLiteRtOpCodeTflFakeQuant);
+
+  LiteRtOpListT selected_op_list;
+  // `Tensor_G3` is not supported by the input validator, so the plugin must
+  // skip dynamic validation and fall back to static op support checks.
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/"Tensor_G3", &subgraph, &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  ASSERT_EQ(selected_ops.size(), 1);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeTflAdd);
 }
 
 TEST(TestCallGoogleTensorPlugin, CompileWithExtraOptions) {
@@ -534,19 +716,19 @@ TEST(TestCallGoogleTensorPlugin, CompileWithExtraOptions) {
       auto litert_opts,
       internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
 
-  auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   ExtendedModel model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "Tensor_G5",
-                                               model.Get(), &compiled));
-  absl::Cleanup compiled_cleanup = [&compiled] {
-    LiteRtDestroyCompiledResult(compiled);
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "Tensor_G5", model.Get(), &compiled));
+  absl::Cleanup compiled_cleanup = [&plugin, &compiled] {
+    plugin.Api()->destroy_compiled_result(compiled);
   };
 }
-
-
 
 TEST(TestCallGoogleTensorPlugin, PartitionWithInputValidator) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
@@ -560,21 +742,23 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithInputValidator) {
       auto litert_opts,
       internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
 
-  auto plugin =
-      CreatePlugin(LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
   auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
   LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
 
   LiteRtOpListT selected_op_list;
-  LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/"Tensor_G5", subgraph.Get(),
+      &selected_op_list));
   const auto selected_ops = selected_op_list.Values();
 
   // Verify compilation path with validator enabled succeeds.
   // Add and Mul should be supported by default.
   EXPECT_GT(selected_ops.size(), 0);
 }
-
 
 }  // namespace
 }  // namespace litert

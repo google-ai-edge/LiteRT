@@ -38,14 +38,16 @@ SKIP_SDK_DOWNLOAD = os.environ.get('SKIP_SDK_DOWNLOAD', False)
 
 # Platform information
 IS_LINUX = sys.platform == 'linux'
-IS_X86_ARCHITECTURE = platform.machine() in ('x86_64', 'i386', 'i686')
+IS_SUPPORTED_ARCHITECTURE = platform.machine() in (
+    'x86_64', 'i386', 'i686', 'aarch64', 'arm64'
+)
 
 
 # --- Configuration for Qualcomm SDK Download ---
 # Qairt version doesn't not necessarily match the SDK version though.
 # LINT.IfChange(wheel_qairt_sdk_version)
-QAIRT_URL = 'https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.50.0.260828/v2.50.0.260828.zip'
-QAIRT_CONTENT_DIR = 'qairt/2.50.0.260828'
+QAIRT_URL = 'https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.51.1.261002/v2.51.1.261002.zip'
+QAIRT_CONTENT_DIR = 'qairt/2.51.1.261002'
 # LINT.ThenChange(
 # ../../../../../../opensource_only/third_party/qairt/workspace.bzl:bazel_qairt_sdk_version,
 # ../../../../../../litert/google/npu_runtime_libraries/fetch_qualcomm_library.sh:fetch_qairt_sdk_version,
@@ -67,10 +69,10 @@ def _download_and_extract(
     tarball_url: str, prefix_to_strip: str, target_dir: str
 ):
   """Download archive, extracts and copy."""
-  if not (IS_LINUX and IS_X86_ARCHITECTURE):
+  if not (IS_LINUX and IS_SUPPORTED_ARCHITECTURE):
     print(
-        'IGNORED: Currently LiteRT NPU AOT for Qualcomm is only supported on'
-        ' Linux x86 architecture.'
+        'IGNORED: Currently LiteRT NPU for Qualcomm is only supported on'
+        ' Linux x86_64 and aarch64.'
     )
     return
 
@@ -217,7 +219,7 @@ setuptools.setup(
         f' QAIRT-{QAIRT_SHORT_VERSION} (`{QAIRT_VERSION}`).'
     ),
     long_description_content_type='text/markdown',
-    url='https://www.tensorflow.org/lite/',
+    url='https://developers.google.com/edge/litert',
     author='Google AI Edge Authors',
     author_email='packages@tensorflow.org',
     license='Apache 2.0',

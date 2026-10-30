@@ -234,6 +234,11 @@ def _QualcommSpec(version = "V75"):
                 # "//litert/integration_test:libQnnSystem.so",
                 # "//litert/integration_test:libQnnIr.so",
                 # "//litert/integration_test:libQnnSaver.so",
+                # "@qairt//:libatomic",
+                # "@qairt//:libc++",
+                # "@qairt//:libc++abi",
+                # "@qairt//:libgcc-s1",
+                # "@qairt//:libunwind",
                 # copybara:uncomment_end_and_comment_begin
                 "@qairt//:libQnnHtp.so",
                 "@qairt//:libQnnSystem.so",
@@ -261,7 +266,13 @@ def _MediatekSpec():
             }],
             dispatch = "libLiteRtDispatch_MediaTek.so",
             plugin = "libLiteRtCompilerPlugin_MediaTek.so",
-            host_libs = ["@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so"],
+            # Prebuilt libneuron_adapter.so dynamically links against C++/GCC
+            # runtime libraries not present in the hermetic GRTE sysroot on
+            # remote test runners; bundle them from neuro_pilot for hermeticity.
+            host_libs = [
+                "@neuro_pilot//:common_host_libs",
+                "@neuro_pilot//:neuron_host_libs",
+            ],
         ),
     }
 
@@ -275,27 +286,31 @@ def _IntelOpenVinoSpec():
                 ("//litert/vendors/intel_openvino/dispatch:libLiteRtDispatch_IntelOpenvino.so", "LD_LIBRARY_PATH"),
                 ("//litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so", "LD_LIBRARY_PATH"),
                 # copybara:uncomment_begin(oss openvino)
-                # ("@intel_openvino//:libopenvino_so", "LD_LIBRARY_PATH"),
-                # ("@intel_openvino//:libopenvino_tensorflow_lite_frontend_so", "LD_LIBRARY_PATH"),
-                # ("@intel_openvino//:libopenvino_intel_npu_plugin_so", "LD_LIBRARY_PATH"),
+                # ("@intel_openvino//src_gen:libopenvino_so", "LD_LIBRARY_PATH"),
+                # ("@intel_openvino//src_gen:libopenvino_tensorflow_lite_frontend_so", "LD_LIBRARY_PATH"),
+                # ("@intel_openvino//src_gen:libopenvino_intel_cpu_plugin_so", "LD_LIBRARY_PATH"),
+                # ("@intel_openvino//src_gen:libopenvino_intel_npu_plugin_so", "LD_LIBRARY_PATH"),
                 # copybara:uncomment_end_and_comment_begin
-                ("//third_party/openvino:openvino_android/runtime/lib/intel64/libopenvino.so", "LD_LIBRARY_PATH"),
-                ("//third_party/openvino:openvino_android/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so", "LD_LIBRARY_PATH"),
-                ("//third_party/openvino:openvino_android/runtime/lib/intel64/libopenvino_intel_npu_plugin.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_intel_cpu_plugin.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_intel_npu_plugin.so", "LD_LIBRARY_PATH"),
                 # copybara:comment_end
             ],
             mh_devices = [{
+                "abi": "x86_64",
+                "device": "regex:ruby|moonstone|lapis",
                 "label": "litert-test-intel-ptl",
             }],
             dispatch = "libLiteRtDispatch_IntelOpenvino.so",
             plugin = "libLiteRtCompilerPlugin_IntelOpenvino.so",
             host_libs = [
                 # copybara:uncomment_begin(oss openvino)
-                # "@intel_openvino//:libopenvino_so",
-                # "@intel_openvino//:libopenvino_tensorflow_lite_frontend_so",
+                # "@intel_openvino//src_gen:libopenvino_so",
+                # "@intel_openvino//src_gen:libopenvino_tensorflow_lite_frontend_so",
                 # copybara:uncomment_end_and_comment_begin
-                "//third_party/openvino:openvino/runtime/lib/intel64/libopenvino.so",
-                "//third_party/openvino:openvino/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",
+                "@intel_openvino//:openvino/runtime/lib/intel64/libopenvino.so",
+                "@intel_openvino//:openvino/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",
                 # copybara:comment_end
             ],
         ),
@@ -515,10 +530,17 @@ def split_dep_platform(
         device_name = prefix + "_" + lab.name + device_suffix
 
         if not no_host:
+            host_platform = "//litert/integration_test:host"
+
+            # copybara:uncomment_begin(google-only)
+            # # Prebuilt QAIRT host libraries require GLIBC >= 2.34 rather than GRTE v5 (glibc 2.27).
+            # host_platform = "//litert/integration_test:host_cots_linux" if "qualcomm" in backend_id else host_platform
+            #
+            # copybara:uncomment_end
             platform_data(
                 name = host_name,
                 target = targ,
-                platform = "//litert/integration_test:host",
+                platform = host_platform,
                 testonly = testonly,
             )
             host.append(":" + host_name)

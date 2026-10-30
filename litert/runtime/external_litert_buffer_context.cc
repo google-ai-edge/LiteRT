@@ -16,10 +16,11 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 #include <vector>
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -61,7 +62,8 @@ LiteRtExternalLiteRtBufferContextT::GetBufferRequirements(
   if (it == buffer_requirements_.end()) {
     return litert::Unexpected(
         kLiteRtStatusErrorNotFound,
-        absl::StrFormat("Buffer requirements not found for tensor %p", tensor));
+        absl::StrCat("Buffer requirements not found for tensor ",
+                     reinterpret_cast<uintptr_t>(tensor)));
   }
   return it->second.get();
 }

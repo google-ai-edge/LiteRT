@@ -100,12 +100,6 @@ class OpWrapper final {
   QnnOpCode op_code_{QnnOpCode::kUnknown};
 };
 
-bool IsElementWiseMultiply(const OpWrapper& op);
-
-bool IsElementWiseAdd(const OpWrapper& op);
-
-bool IsElementWiseNot(const OpWrapper& op);
-
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_WRAPPERS_OP_WRAPPER_H_

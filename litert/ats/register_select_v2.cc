@@ -38,7 +38,7 @@ void RegisterSelectV2Impl(const AtsConf& options, size_t& test_id, size_t iters,
       SelectV2,
       SizeListC<1, 2, 3, 4>,
       TypeList<float, tflite::half, int32_t>>
-    (iters, test_id, options, cap, "CoreSingleOp");
+    (iters, test_id, options, cap);
   // clang-format on
 }
 

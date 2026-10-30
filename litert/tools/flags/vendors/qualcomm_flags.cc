@@ -547,6 +547,16 @@ ABSL_FLAG(uint32_t, qualcomm_vtcm_size, 0,
           "The vtcm size of the target device. If this option is set to 0, the "
           "max size of vtcm size will be used.");
 
+ABSL_FLAG(uint32_t, qualcomm_htp_device_id, 0,
+          "The HTP device ID to select from QNN platform information. "
+          "A nonzero value requires a matching platform-reported device; 0 "
+          "leaves device selection to QNN's default configuration.");
+
+ABSL_FLAG(uint32_t, qualcomm_htp_file_read_memory_budget_mb, 0,
+          "Caps the host memory (MB) used to read a context binary during HTP "
+          "deserialization. 0 disables the feature (default). A smaller budget "
+          "may reduce peak host RSS and increase initialization time.");
+
 ABSL_FLAG(uint32_t, qualcomm_num_hvx_thread, 0,
           "The number of hvx threads for the target device. If this option is "
           "set to 0, the max number of hvx threads will be used.");
@@ -560,8 +570,9 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::OptimizationLevel,
 ABSL_FLAG(litert::qualcomm::QualcommOptions::GraphPriority,
           qualcomm_graph_priority,
           litert::qualcomm::QualcommOptions::GraphPriority::kDefault,
-          "QNN graph priority, If the option is set to 'default', the "
-          "QNN_PRIORITY_DEFAULT (Equal to QNN_PRIORITY_NORMAL) will be used.");
+          "QNN graph priority. 'default' maps to QNN_PRIORITY_NORMAL. "
+          "Effective at both compile and dispatch time; on HTP the "
+          "dispatch-time value wins.");
 
 ABSL_FLAG(std::string, qualcomm_saver_output_dir, "",
           "Saver output directory. If provided, you can obtain saver_output.c "
@@ -677,10 +688,56 @@ ABSL_FLAG(bool, qualcomm_use_fold_relu, true,
           "optimization is correct when quantization ranges for convolution "
           "are equal to or are subset of the Relu operation.");
 
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::OpNameFormat* out,
+                   std::string* error) {
+  if (text == "basic") {
+    *out = QualcommOptions::OpNameFormat::kBasic;
+    return true;
+  }
+  if (text == "detailed") {
+    *out = QualcommOptions::OpNameFormat::kDetailed;
+    return true;
+  }
+  *error = "Unknown op_name_format; expected \"detailed\" or \"basic\"";
+  return false;
+}
+
+std::string AbslUnparseFlag(QualcommOptions::OpNameFormat v) {
+  switch (v) {
+    case QualcommOptions::OpNameFormat::kBasic:
+      return "basic";
+    case QualcommOptions::OpNameFormat::kDetailed:
+      return "detailed";
+  }
+  return "basic";
+}
+
+}  // namespace litert::qualcomm
+
+ABSL_FLAG(
+    litert::qualcomm::QualcommOptions::OpNameFormat, qualcomm_op_name_format,
+    litert::qualcomm::QualcommOptions::OpNameFormat::kBasic,
+    "Op name format for QNN graph ops. \"detailed\" includes the "
+    "tensor-path namespace prefix and LiteRt op ID suffix, giving "
+    "full traceability at the cost of longer op names. \"basic\" "
+    "omits them, producing shorter op names.");
+
+ABSL_FLAG(bool, qualcomm_htp_dlbc, false,
+          "Enable HTP DLBC input compression.");
+
+ABSL_FLAG(bool, qualcomm_htp_dlbc_weights, false,
+          "Enable HTP DLBC weight compression.");
+
 ABSL_FLAG(
     std::int32_t, qualcomm_htp_p_point, 0,
     "P points are experimental (HTP backend with O3 only) and map to "
     "predefined compiler configurations affecting latency and DRAM bandwidth.");
+
+ABSL_FLAG(std::int32_t, qualcomm_htp_weight_sharing_channel_tile_size, 0,
+          "Channel tile size used by weight sharing during graph finalization. "
+          "A value of 0 disables this config.");
 
 ABSL_FLAG(litert::qualcomm::QualcommOptions::Backend, qualcomm_backend,
           litert::qualcomm::QualcommOptions::Backend::kHtp,
@@ -1003,6 +1060,13 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto vtcm_size = absl::GetFlag(FLAGS_qualcomm_vtcm_size);
   opts.SetVtcmSize(vtcm_size);
 
+  const auto htp_device_id = absl::GetFlag(FLAGS_qualcomm_htp_device_id);
+  opts.SetHtpDeviceId(htp_device_id);
+
+  const auto htp_file_read_memory_budget_mb =
+      absl::GetFlag(FLAGS_qualcomm_htp_file_read_memory_budget_mb);
+  opts.SetHtpFileReadMemoryBudgetMB(htp_file_read_memory_budget_mb);
+
   const auto num_hvx_threads = absl::GetFlag(FLAGS_qualcomm_num_hvx_thread);
   opts.SetNumHvxThreads(num_hvx_threads);
 
@@ -1019,8 +1083,22 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto use_fold_relu = absl::GetFlag(FLAGS_qualcomm_use_fold_relu);
   opts.SetUseFoldReLU(use_fold_relu);
 
+  const auto op_name_format = absl::GetFlag(FLAGS_qualcomm_op_name_format);
+  opts.SetOpNameFormat(op_name_format);
+
+  const auto htp_dlbc = absl::GetFlag(FLAGS_qualcomm_htp_dlbc);
+  opts.SetHtpDlbc(htp_dlbc);
+
+  const auto htp_dlbc_weights = absl::GetFlag(FLAGS_qualcomm_htp_dlbc_weights);
+  opts.SetHtpDlbcWeights(htp_dlbc_weights);
+
   const auto htp_p_point = absl::GetFlag(FLAGS_qualcomm_htp_p_point);
   opts.SetHtpPPoint(htp_p_point);
+
+  const auto htp_weight_sharing_channel_tile_size =
+      absl::GetFlag(FLAGS_qualcomm_htp_weight_sharing_channel_tile_size);
+  opts.SetHtpWeightSharingChannelTileSize(
+      htp_weight_sharing_channel_tile_size);
 
   const auto qnn_backend = absl::GetFlag(FLAGS_qualcomm_backend);
   opts.SetBackend(qnn_backend);

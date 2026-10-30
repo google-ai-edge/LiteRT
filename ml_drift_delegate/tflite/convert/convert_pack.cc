@@ -36,7 +36,7 @@ void ConvertPack(const TfLiteContext& context, const TfLiteNode& node,
 
   if (node.inputs->size == 1) {
     ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
-    reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+    reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
     const int input_id = node.inputs->data[0];
     ir_model.AddConsumer(tensor_map[input_id], reshape_op->id);
     ir_model.SetProducer(ir_output_id, reshape_op->id);
@@ -61,7 +61,7 @@ void ConvertPack(const TfLiteContext& context, const TfLiteNode& node,
     const ::ml_drift::ir::IrTensorId input_ir_id = tensor_map[input_tfl_id];
 
     ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
-    reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+    reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
     ::ml_drift::ReshapeAttributes attr;
     attr.new_shape = output_shape;
     attr.new_shape.set(ml_drift_axis, 1);
@@ -75,7 +75,7 @@ void ConvertPack(const TfLiteContext& context, const TfLiteNode& node,
   }
 
   ::ml_drift::ir::IrOp* concat_op = ir_model.add_op();
-  concat_op->name = ToString(::ml_drift::OperationType::CONCAT);
+  concat_op->name = ToString(::ml_drift::OperationType::kConcat);
   ::ml_drift::ConcatAttributes concat_attr;
   concat_attr.axis = ml_drift_axis;
   concat_op->attr = std::move(concat_attr);

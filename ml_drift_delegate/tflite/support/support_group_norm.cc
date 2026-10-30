@@ -93,7 +93,7 @@ bool IsGroupNormSupported(const TfLiteContext* absl_nonnull context,
       return false;
     }
     const absl::Status status =
-        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>(
+        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>(
             gamma);
     if (!status.ok()) {
       *error = status.message();
@@ -105,7 +105,7 @@ bool IsGroupNormSupported(const TfLiteContext* absl_nonnull context,
       return false;
     }
     const absl::Status status =
-        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>(
+        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>(
             beta);
     if (!status.ok()) {
       *error = status.message();
@@ -161,20 +161,30 @@ bool IsGroupNormSupported(const TfLiteContext* absl_nonnull context,
         flexbuffer_map["_TENSOR_V1_reduction_axes"]
             .AsMap()["TENSOR_DATA"]
             .AsVector();
+    bool is_full_reduction_axes =
+        reduction_axes_vec.size() == tensor_dims_size - 1;
+    if (is_full_reduction_axes) {
+      for (int i = 0; i < reduction_axes_vec.size(); ++i) {
+        if (reduction_axes_vec[i].AsInt64() != i + 1) {
+          is_full_reduction_axes = false;
+          break;
+        }
+      }
+    }
     if (has_sub_type) {
       if (reduction_axes_vec.size() != tensor_dims_size - 1) {
         *error = "GroupNorm has unexpected reduction axes count.";
         return false;
       }
-      for (int i = 0; i < reduction_axes_vec.size(); ++i) {
-        if (reduction_axes_vec[i].AsInt64() != i + 1) {
-          *error = "GroupNorm has unexpected reduction axes.";
-          return false;
-        }
+      if (!is_full_reduction_axes) {
+        *error = "GroupNorm has unexpected reduction axes.";
+        return false;
       }
     } else {
-      if (reduction_axes_vec.size() != 1 ||
-          reduction_axes_vec[0].AsInt64() != tensor_dims_size - 1) {
+      const bool is_last_axis_only =
+          reduction_axes_vec.size() == 1 &&
+          reduction_axes_vec[0].AsInt64() == tensor_dims_size - 1;
+      if (!is_full_reduction_axes && !is_last_axis_only) {
         *error = "Only reduction on the last axis is supported for GroupNorm.";
         return false;
       }

@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
@@ -118,7 +119,7 @@ class DelegateKernelLiteRt : public DelegateKernel {
     }
     for (const auto& pattern :
          delegate_data_->options->litert_external_tensor_patterns) {
-      if (strncmp(tensor_name, pattern.c_str(), pattern.size()) == 0) {
+      if (strstr(tensor_name, pattern.c_str()) != nullptr) {
         return true;
       }
     }
@@ -149,17 +150,22 @@ class DelegateKernelLiteRt : public DelegateKernel {
       const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
           input_tensor_refs,
       const std::vector<::ml_drift::TensorRef<::ml_drift::BHWC>>&
-          output_tensor_refs) override;
+          output_tensor_refs,
+      const absl::flat_hash_set<::ml_drift::ValueId>& preserved_fp32_values)
+      override;
 
   // Returns the storage type for the given tensor name.
   // If the tensor name matches any of the buffer storage type patterns,
   // BUFFER storage type is returned. Otherwise, the default storage type is
   // returned.
   ::ml_drift::TensorStorageType GetStorageType(const char* tensor_name) const {
+    if (tensor_name == nullptr) {
+      return DelegateKernel::GetStorageType();
+    }
     for (const auto& pattern :
          delegate_data_->options->litert_buffer_storage_tensor_patterns) {
-      if (strncmp(tensor_name, pattern.c_str(), pattern.size()) == 0) {
-        return ::ml_drift::TensorStorageType::BUFFER;
+      if (strstr(tensor_name, pattern.c_str()) != nullptr) {
+        return ::ml_drift::TensorStorageType::kBuffer;
       }
     }
     return DelegateKernel::GetStorageType();
@@ -183,6 +189,9 @@ class DelegateKernelLiteRt : public DelegateKernel {
     // Reference to the GPU model creation info that will be populated with
     // tensor descriptors and external tensor configurations
     ::ml_drift::CreateGpuModelInfo& create_info;
+
+    // Set of ValueIds whose FP32 precision must be preserved.
+    const absl::flat_hash_set<::ml_drift::ValueId>& preserved_fp32_values;
   };
 
   // Registers LiteRT buffer requirements for the given tensor.
@@ -210,19 +219,26 @@ class DelegateKernelLiteRt : public DelegateKernel {
       ::ml_drift::TensorDescriptor& out_tensor_descriptor,
       const ::ml_drift::TensorRef<::ml_drift::BHWC>* graph_tensor_ref);
 
+  struct BoundGpuTensor {
+    GpuMemoryHandle gpu_memory = nullptr;
+    std::unique_ptr<GpuTensorWrapper> gpu_tensor;
+  };
+
   // Binds the GPU memory to the inference context.
   absl::Status BindGpuMemoryToInferenceContext(
       ::ml_drift::ValueId tensor_id,
       const ::ml_drift::TensorDescriptor& tensor_desc,
       GpuMemoryHandle gpu_memory,
-      absl::flat_hash_map<GpuMemoryHandle, std::unique_ptr<GpuTensorWrapper>>&
-          tensors);
+      absl::flat_hash_map<::ml_drift::ValueId, BoundGpuTensor>& tensors);
 
   // Marks the tensor to be flushed from the cache and buffer context if it is
   // a GL buffer.
   absl::Status MarkToFlushIfGlBuffer(TfLiteTensor* tflite_tensor,
                                      GpuTensorBufferPtr& tensor_buffer,
-                                     GpuMemoryHandle gpu_memory);
+                                     ::ml_drift::ValueId tensor_id);
+
+  // Returns true if the tensor buffer is an AHardwareBuffer.
+  bool IsAhwbTensorBuffer(const GpuTensorBufferPtr& tensor_buffer) const;
 
   // Tensor descriptors for I/O tensors.
   // The size and order of these vectors should be the same as input_indices_
@@ -230,13 +246,9 @@ class DelegateKernelLiteRt : public DelegateKernel {
   std::vector<::ml_drift::TensorDescriptor> input_tensor_descriptors_;
   std::vector<::ml_drift::TensorDescriptor> output_tensor_descriptors_;
 
-  // SpatialTensor for I/O tensors.
-  // The size and order of these vectors should be the same as input_indices_
-  // and output_indices_ of the base class.
-  absl::flat_hash_map<GpuMemoryHandle, std::unique_ptr<GpuTensorWrapper>>
-      input_tensors_;
-  absl::flat_hash_map<GpuMemoryHandle, std::unique_ptr<GpuTensorWrapper>>
-      output_tensors_;
+  // SpatialTensor wrappers for currently bound I/O tensors, keyed by ValueId.
+  absl::flat_hash_map<::ml_drift::ValueId, BoundGpuTensor> input_tensors_;
+  absl::flat_hash_map<::ml_drift::ValueId, BoundGpuTensor> output_tensors_;
 
   // Converter to sync input and output tensors. These are used only in
   // NoExternalTensorsMode.
@@ -245,7 +257,12 @@ class DelegateKernelLiteRt : public DelegateKernel {
 
   // Set of tensors that need to be flushed from the cache and buffer context
   // during `FlushBufferCacheIfNeeded`.
-  absl::flat_hash_map<TfLiteTensor*, GpuMemoryHandle> tensors_to_flush_;
+  absl::flat_hash_map<TfLiteTensor*, ::ml_drift::ValueId> tensors_to_flush_;
+
+  // Whether any input or output tensor of the current Invoke() is bound to an
+  // AHardwareBuffer. Updated by BindExternalTensorBuffers() and used by
+  // HandleOutputEvents().
+  bool has_ahwb_tensor_buffers_ = false;
 };
 
 }  // namespace litert::ml_drift

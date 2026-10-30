@@ -19,6 +19,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -49,7 +50,20 @@ class NnpackRunner {
   NnpackRunner(const NnpackRunner&) = delete;
   NnpackRunner& operator=(const NnpackRunner&) = delete;
 
-  virtual void SetNumThreads(size_t num_threads) { num_threads_ = num_threads; }
+  // Sets the number of threads used to run the graph.
+  //
+  // This must be called before the runtime is prepared, i.e. before
+  // `PrepareRuntime()` or the first `Run()`. Returns a
+  // `FailedPreconditionError` otherwise, because the runtime holds on to the
+  // thread pool it was created with.
+  virtual absl::Status SetNumThreads(size_t num_threads) {
+    if (runtime_prepared_) {
+      return absl::FailedPreconditionError(
+          "SetNumThreads must be called before the runtime is prepared.");
+    }
+    num_threads_ = num_threads;
+    return absl::OkStatus();
+  }
 
   // Sets the input data corresponding to `tensor` from `external_tensor`.
   //
@@ -121,6 +135,15 @@ class NnpackRunner {
                         reinterpret_cast<const std::byte*>(seq.data()),
                         seq.size() * sizeof(T)),
                     /*copy_data=*/true);
+  }
+
+  // Sets the input data corresponding to `tensor` by copying `seq`.
+  //
+  // The sequence is unconditionally copied.
+  template <class T>
+  absl::Status SetInputAsCopy(const TensorHandle& tensor,
+                              std::initializer_list<T> seq) {
+    return SetInputAsCopy(tensor, absl::MakeConstSpan(seq.begin(), seq.size()));
   }
 
   // Sets the output data corresponding to `tensor`.
@@ -207,7 +230,7 @@ class NnpackRunner {
   virtual uint32_t FlagExternalInput() const = 0;
   virtual uint32_t FlagExternalOutput() const = 0;
 
-  virtual absl::Status CreateRuntime(size_t num_threads) = 0;
+  virtual absl::Status CreateRuntime() = 0;
   virtual absl::Status SetExternalValueShape(uint32_t id,
                                              absl::Span<const size_t> dims) = 0;
   virtual absl::Status ReshapeRuntime() = 0;

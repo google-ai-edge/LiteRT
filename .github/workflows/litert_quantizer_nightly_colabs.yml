@@ -1,0 +1,63 @@
+# Helpful YAML parser to clarify YAML syntax:
+# https://yaml-online-parser.appspot.com/
+
+name: LiteRT Quantizer Colab Tests (nightly)
+
+on:
+  schedule:
+    - cron: "0 10 * * *" # 10am UTC (3am PST)
+  workflow_dispatch:  # Allow manual triggers
+
+jobs:
+  run-colabs-nightly:
+    name: Run Colabs Python Nightly
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # One job per notebook, so each notebook starts from a fresh environment,
+    # like a new Colab runtime. The notebooks pip install their own packages,
+    # which in a shared environment can break papermill for the next notebook.
+    strategy:
+      fail-fast: false
+      matrix:
+        notebook:
+          - torch_convert_and_quantize
+          - getting_started
+          - selective_quantization_isnet
+    defaults:
+      run:
+        working-directory: litert_quantizer
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: litert_quantizer
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+            python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          # Run everything in a custom environment (required by tensorflow).
+          python3 -m venv colabs_env
+          source colabs_env/bin/activate
+
+          # Install the required packages.
+          python -m pip install --upgrade pip
+          python -m pip install \
+            --index-url https://download.pytorch.org/whl/cpu \
+            torch \
+            torchvision
+          python -m pip install \
+            tensorflow-cpu \
+            papermill \
+            jupyter \
+            matplotlib \
+            scikit-image
+
+      - name: Run Colab notebook
+        run: |
+          source colabs_env/bin/activate
+          papermill colabs/${{ matrix.notebook }}.ipynb /tmp/out -k python3 -p visualize_model 0

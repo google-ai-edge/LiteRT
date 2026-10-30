@@ -17,12 +17,13 @@
 source "${0%.sh}_lib.sh" || exit 1
 
 # TODO: Unify workdirs with other scripts.
-readonly models_out="/tmp/litert_extras/ats"
+readonly models_out="${TEST_TMPDIR:-/tmp}/litert_extras/ats"
 readonly exec_args=("${@:1}")
 
 compile_bin=""
 compile_args=()
 dry_run=""
+has_user_models=""
 link_path=""
 plugin_dir=""
 runtime_lib_dir=""
@@ -135,14 +136,18 @@ function provide_models() {
 # Execute the model provider if this script is being called directly.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   provided_models=()
-  provide_models provided_models 
+  provide_models provided_models
+  status=$?
   if [[ -n "${dry_run}" ]]; then
     exit 1
+  fi
+  if [[ $status -ne 0 ]]; then
+    exit $status
   fi
   print "\nCompiled models:"
   printf "${hightlight_color}\ttotal compiled models: %s\n${reset_color}" "${#provided_models[@]}"
   printf "\t%s\n" "${provided_models[@]}"
-  exit $?
+  exit 0
 fi
 
 

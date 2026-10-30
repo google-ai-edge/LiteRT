@@ -29,6 +29,10 @@ load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_spec", "host_rlocation")
 load("//litert/integration_test:litert_device_script.bzl", "litert_device_script")
 
+# copybara:uncomment_begin(google-only)
+# load("//litert/integration_test/google:mobile_gtest.bzl", "android_device_gtest")
+# copybara:uncomment_end
+
 # MISCELLANEOUS ####################################################################################
 
 def hidden_test_tags():
@@ -60,7 +64,8 @@ def hidden_test_tags():
 #         exec_args = [],
 #         exec_env_vars = [],
 #         dimensions = {},
-#         platform = "android"):
+#         platform = "android",
+#         extra_models = []):
 #     """Wraps the mobile harness "mobile_test" macro"""
 #
 #     if platform == "macos":
@@ -75,8 +80,16 @@ def hidden_test_tags():
 #         mac_files = {
 #             "mac_bin": [":" + mac_bin_name],
 #         }
+#         mac_exec_args = list(exec_args)
+#         mac_extra_model_tags = []
+#         for i, m in enumerate(data + extra_models):
+#             tag = "extra_model_{}".format(i)
+#             mac_files[tag] = [m]
+#             mac_extra_model_tags.append("$$({})".format(tag))
+#         if mac_extra_model_tags:
+#             mac_exec_args.append("--extra_models={}".format(",".join(mac_extra_model_tags)))
 #         mac_params = {
-#             "options": " ".join(exec_args).replace("\\'", "'"),
+#             "options": " ".join(mac_exec_args).replace("\\'", "'"),
 #         }
 #         if libs:
 #             mac_files["accelerator_dylib"] = [libs[0]]
@@ -103,73 +116,26 @@ def hidden_test_tags():
 #         )
 #         return
 #
-#     files = {
-#         "bin": [target],
-#     }
-#
-#     push_files_list = []
-#
-#     for lib_target in libs:
-#         lib_target_split = lib_target.split(":")
-#         if len(lib_target_split) != 2:
-#             fail("Lib inputs must include a colon even if relative label")
-#         lib_id = lib_target_split[-1]
-#         files[lib_id] = [lib_target]
-#
-#         # Push shared libraries into their parent directory (trailing '/') so
-#         # AndroidFilePusherDecorator (with prepare_des_dir_when_src_is_file=true)
-#         # preserves the actual output .so filename regardless of the Bazel target name.
-#         push_files_list.append("{id}:{loc}/".format(
-#             id = lib_id,
-#             loc = device_rlocation(lib_target, get_parent = True),
-#         ))
-#
-#     for data_target in data:
-#         data_target_split = data_target.split(":")
-#         if len(data_target_split) != 2:
-#             # This is required by `mobile_test` for value in `files`.
-#             fail("Data inputs must include a colon even if relative label")
-#         data_id = data_target_split[-1]
-#         files[data_id] = [data_target]
-#
-#         # NOTE: Any non raw file data targets must output a directory with the same name as the
-#         # target (e.g. filegroup "foo" that globs "foo/*"). This may need to be updated later
-#         # but it works for everything in LiteRt for now.
-#         push_files_list.append("{id}:{loc}".format(
-#             id = data_id,
-#             loc = device_rlocation(data_target, get_parent = False),
-#         ))
-#
-#     params = {
-#         "run_dir": device_rlocation(),
-#         "options": " ".join(exec_args).replace("\\'", "'"),
-#         "prepare_des_dir_when_src_is_file": "true",  # Allows dest to be a dir (parent) when src is a file.
-#         "run_env": " ".join(exec_env_vars),
-#         "remove_files_before_push": "true",
-#     }
-#
-#     if push_files_list:
-#         params["push_files"] = ",".join(push_files_list)
-#
-#     args = [
-#         "--run_as={}".format(run_as),
-#         "--test_timeout_sec=3600",
-#         "--job_timeout_sec=3600",
-#     ]
-#
-#     mobile_test(
-#         tags = hidden_test_tags(),
+#     android_device_gtest(
 #         name = name,
-#         size = "enormous",
-#         dimensions = dimensions,
-#         files = files,
-#         params = params,
-#         args = args,
-#         device = "AndroidRealDevice",
-#         driver = "AndroidGUnit",
-#         decorators = [
-#             "AndroidFilePusherDecorator",
+#         bin = target,
+#         device = dimensions,
+#         data = data,
+#         runfiles_prefix = None,
+#         libs = libs,
+#         extra_models = extra_models,
+#         exec_args = exec_args,
+#         exec_env_vars = exec_env_vars,
+#         run_as = run_as,
+#         mh_args = [
+#             "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
+#             "--test_timeout_sec=3600",
+#             "--start_timeout_sec=1800",
+#             "--job_timeout_sec=3600",
 #         ],
+#         decorators = ["AndroidFilePusherDecorator"],
+#         default_shared_pool = False,
+#         tags = hidden_test_tags(),
 #         visibility = [
 #             "//litert/integration_test:__subpackages__",
 #             "//litert/google:__subpackages__",
@@ -197,8 +163,11 @@ def litert_device_exec(
         remote_suffix = "",
         local_suffix = "_adb",
         model_providers = [],
+        extra_models = [],
+        dimensions = None,
         testonly = True,
-        tags = []):
+        tags = [],
+        visibility = None):
     """
     Macro to execute a binary target on a device through adb.
 
@@ -215,8 +184,12 @@ def litert_device_exec(
         remote_suffix: Suffix for the target runnin on device cloud if enabled.
         local_suffix: Suffix for the target that runs locally on physical device through adb.
         model_providers: A list of tools dependencies that return tflite models when called.
+        extra_models: A list of extra .tflite model paths or targets to push to the device.
+        dimensions: Optional Mobile Harness device dimensions dict or device target label string
+            overriding backend default.
         testonly: Whether the target is testonly.
         tags: List of tags to apply to the generated targets.
+        visibility: Target visibility for generated local targets.
     """
     backend = get_spec(backend_id, platform = platform)
 
@@ -244,6 +217,7 @@ def litert_device_exec(
                     "@platforms//os:macos",
                 ],
                 testonly = testonly,
+                visibility = visibility,
             )
         else:
             litert_device_script(
@@ -256,6 +230,7 @@ def litert_device_exec(
                 testonly = testonly,
                 backend_id = backend_id,
                 tags = hidden_test_tags() + tags,
+                visibility = visibility,
             )
 
     if remote_suffix != None:
@@ -268,8 +243,9 @@ def litert_device_exec(
             libs = backend.libs,
             exec_args = exec_args,
             exec_env_vars = backend.env_paths,
-            dimensions = backend.default_mh_device,
+            dimensions = dimensions if dimensions != None else backend.default_mh_device,
             platform = platform,
+            extra_models = extra_models,
         )
 
 def litert_device_test(
@@ -294,14 +270,15 @@ def litert_device_test(
         name: Name of the target.
         srcs: The source files for the target to be generated.
         deps: The dependencies for the target to be generated.
+        features: List of features to enable on the target to be generated.
         rule: The rule to use for the target to be generated.
         backend_id: The backend id to use for the test (e.g. QUALCOMM_ID, GOOGLE_TENSOR_ID).
         data: List of data files to push to the device and for the target to be generated.
         exec_args: List of arguments to pass to the executable.
-        exec_env_vars: List of environment variables to set before executing the target.
         tags: List of tags to apply to the target to be generated.
         linkopts: List of linkopts to apply to the target to be generated.
         copts: List of copts to apply to the target to be generated.
+        **kwargs: Additional keyword arguments forwarded to `rule`.
     """
 
     target = "_{}".format(name)

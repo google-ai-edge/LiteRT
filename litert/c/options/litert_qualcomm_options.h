@@ -77,6 +77,21 @@ LiteRtStatus LrtQualcommOptionsSetLogLevel(
 LiteRtStatus LrtQualcommOptionsGetLogLevel(
     LrtQualcommOptions options, LrtQualcommOptionsLogLevel* log_level);
 
+typedef enum LrtQualcommOptionsGraphPriority {
+  kLiteRTQualcommGraphPriorityDefault = 0,
+  kLiteRTQualcommGraphPriorityLow,
+  kLiteRTQualcommGraphPriorityNormal,
+  kLiteRTQualcommGraphPriorityNormalHigh,
+  kLiteRTQualcommGraphPriorityHigh,
+} LrtQualcommOptionsGraphPriority;
+
+LiteRtStatus LrtQualcommOptionsSetGraphPriority(
+    LrtQualcommOptions options, LrtQualcommOptionsGraphPriority graph_priority);
+
+LiteRtStatus LrtQualcommOptionsGetGraphPriority(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsGraphPriority* graph_priority);
+
 // profiling
 
 // This option controls the profiling level. A higher level results in a more
@@ -138,10 +153,6 @@ LiteRtStatus LrtQualcommOptionsGetUseInt64BiasAsInt32(
 
 // Weight sharing indicates whether different subgraphs may share weight
 // tensors. This is only supported on x86 AOT. Defaults to false.
-//
-// Note: weight sharing is mutually exclusive with HTP DLBC weights (QAIRT
-// 2.36+). When both are requested, weight sharing wins and DLBC weights is
-// forced off.
 
 LiteRtStatus LrtQualcommOptionsSetEnableWeightSharing(
     LrtQualcommOptions options, bool enable_weight_sharing);
@@ -189,6 +200,41 @@ LiteRtStatus LrtQualcommOptionsSetUseFoldReLU(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
                                               bool* use_fold_relu);
 
+// op_name_format
+// Reduces op-name length for models with long tensor names.
+
+typedef enum LrtQualcommOptionsOpNameFormat {
+  kLiteRtQualcommOpNameFormatBasic = 0,
+  kLiteRtQualcommOpNameFormatDetailed = 1,
+} LrtQualcommOptionsOpNameFormat;
+
+LiteRtStatus LrtQualcommOptionsSetOpNameFormat(
+    LrtQualcommOptions options, LrtQualcommOptionsOpNameFormat op_name_format);
+
+LiteRtStatus LrtQualcommOptionsGetOpNameFormat(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsOpNameFormat* op_name_format);
+
+// htp_dlbc
+
+// Enables HTP DLBC input compression. Defaults to false.
+
+LiteRtStatus LrtQualcommOptionsSetHtpDlbc(LrtQualcommOptions options,
+                                          bool htp_dlbc);
+
+LiteRtStatus LrtQualcommOptionsGetHtpDlbc(LrtQualcommOptions options,
+                                          bool* htp_dlbc);
+
+// htp_dlbc_weights
+
+// Enables HTP DLBC weight compression. Defaults to false.
+
+LiteRtStatus LrtQualcommOptionsSetHtpDlbcWeights(LrtQualcommOptions options,
+                                                 bool htp_dlbc_weights);
+
+LiteRtStatus LrtQualcommOptionsGetHtpDlbcWeights(LrtQualcommOptions options,
+                                                 bool* htp_dlbc_weights);
+
 // graph_io_tensor_mem_type
 
 // This controls whether graph inputs and outputs use MemHandle or Raw buffers
@@ -215,6 +261,17 @@ LiteRtStatus LrtQualcommOptionsSetHtpPPoint(LrtQualcommOptions options,
 
 LiteRtStatus LrtQualcommOptionsGetHtpPPoint(LrtQualcommOptions options,
                                             int32_t* htp_p_point);
+// htp_weight_sharing_channel_tile_size
+//
+// Controls the channel tile size used by weight sharing during graph
+// finalization.
+
+LiteRtStatus LrtQualcommOptionsSetHtpWeightSharingChannelTileSize(
+    LrtQualcommOptions options, int32_t htp_weight_sharing_channel_tile_size);
+
+LiteRtStatus LrtQualcommOptionsGetHtpWeightSharingChannelTileSize(
+    LrtQualcommOptions options,
+    int32_t* htp_weight_sharing_channel_tile_size);
 
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
@@ -361,6 +418,18 @@ LiteRtStatus LrtQualcommOptionsSetVtcmSize(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetVtcmSize(LrtQualcommOptions options,
                                            uint32_t* vtcm_size);
 
+LiteRtStatus LrtQualcommOptionsSetHtpDeviceId(LrtQualcommOptions options,
+                                              uint32_t htp_device_id);
+
+LiteRtStatus LrtQualcommOptionsGetHtpDeviceId(LrtQualcommOptions options,
+                                              uint32_t* htp_device_id);
+
+LiteRtStatus LrtQualcommOptionsSetHtpFileReadMemoryBudgetMB(
+    LrtQualcommOptions options, uint32_t budget_mb);
+
+LiteRtStatus LrtQualcommOptionsGetHtpFileReadMemoryBudgetMB(
+    LrtQualcommOptions options, uint32_t* budget_mb);
+
 LiteRtStatus LrtQualcommOptionsSetNumHvxThreads(LrtQualcommOptions options,
                                                 uint32_t num_hvx_threads);
 
@@ -380,21 +449,6 @@ LiteRtStatus LrtQualcommOptionsSetOptimizationLevel(
 LiteRtStatus LrtQualcommOptionsGetOptimizationLevel(
     LrtQualcommOptions options,
     LrtQualcommOptionsOptimizationLevel* optimization_level);
-
-typedef enum LrtQualcommOptionsGraphPriority {
-  kLiteRTQualcommGraphPriorityDefault = 0,
-  kLiteRTQualcommGraphPriorityLow,
-  kLiteRTQualcommGraphPriorityNormal,
-  kLiteRTQualcommGraphPriorityNormalHigh,
-  kLiteRTQualcommGraphPriorityHigh,
-} LrtQualcommOptionsGraphPriority;
-
-LiteRtStatus LrtQualcommOptionsSetGraphPriority(
-    LrtQualcommOptions options, LrtQualcommOptionsGraphPriority graph_priority);
-
-LiteRtStatus LrtQualcommOptionsGetGraphPriority(
-    LrtQualcommOptions options,
-    LrtQualcommOptionsGraphPriority* graph_priority);
 
 typedef enum LrtQualcommOptionsBackend {
   kLiteRtQualcommBackendUndefined = 0,

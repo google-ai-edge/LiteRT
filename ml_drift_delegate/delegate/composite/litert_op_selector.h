@@ -50,11 +50,25 @@ class LiteRtOpSelector : public ::ml_drift::OpSelector {
       ::ml_drift::GpuModelBuilder* model_builder) override;
 
  private:
-  // If the tensor is not BUFFER storage type, create a new tensor with
-  // BUFFER storage type and replace the original tensor.
-  void ParamTensorToBuffer(int param_index,
-                           const std::vector<::ml_drift::Value*>& inputs,
-                           ::ml_drift::GpuModelBuilder* model_builder);
+  // If `value` does not have BUFFER storage type, creates a new tensor with
+  // BUFFER storage type and records the replacement in `replaced_tensors_`.
+  // When `copy_from_original` is true (used for input param tensors), emits a
+  // Copy from the original tensor to the new BUFFER tensor so existing
+  // producers and non-BUFFER consumers of the original tensor remain intact.
+  // When `copy_from_original` is false (used for output tensors of ops like
+  // `add_values_to_cache`), no Copy is emitted because the op itself produces
+  // the tensor directly into the new BUFFER tensor.
+  void TensorToBuffer(const ::ml_drift::Value& value, bool copy_from_original,
+                      ::ml_drift::GpuModelBuilder* model_builder);
+
+  // Promotes `inputs[param_index]` (if `param_index >= 0`) to BUFFER storage
+  // and returns a copy of `inputs` with any tensors present in
+  // `replaced_tensors_` (such as the promoted param tensor or intermediate KV
+  // cache outputs from `add_values_to_cache`) substituted with their BUFFER
+  // replacements.
+  std::vector<::ml_drift::Value*> ResolveInputsWithBufferParam(
+      int param_index, const std::vector<::ml_drift::Value*>& inputs,
+      ::ml_drift::GpuModelBuilder* model_builder);
 
   const ::ml_drift::CreateGpuModelInfo& create_info_;
   const ::ml_drift::GpuInfo& gpu_info_;

@@ -130,7 +130,13 @@ build --incompatible_enforce_config_setting_visibility
 # TODO: also enable this flag after fixing the visibility violations
 # build --incompatible_config_setting_private_default_visibility
 
+# Build with the real TensorFlow instead of the `@org_tensorflow` shim. The
+# converter and the tflite/testing tests need it.
+common:with_tensorflow --repo_env=LITERT_WITH_TENSORFLOW=1
+build:with_tensorflow --define=litert_prefixes="external/org_tensorflow/"
+
 # LiteRT Converter build options
+build:litert_converter --config=with_tensorflow
 build:litert_converter --copt=-Wno-macro-redefined --copt=-DMLIR_PYTHON_PACKAGE_PREFIX=litert_converter.mlir.
 
 # Compiler MLIR Builds
@@ -172,6 +178,8 @@ build:android_x86_64 --platforms=//platforms:x86_64
 build:android --dynamic_mode=off
 # TODO(belitskiy): Remove once on Clang 20.
 build:android --define=xnn_enable_avxvnniint8=false
+# TODO: Remove once Android NDK clang supports SVE2 inline asm.
+build:android --define=xnn_enable_arm_sve2=false
 
 # Sets the default Apple platform to macOS.
 build:macos --apple_platform_type=macos
@@ -296,9 +304,9 @@ build:linux --copt="-Wno-ignored-attributes"
 build:linux --copt="-Wno-array-bounds"
 
 # Windows-specific Python configuration
-build:windows --repo_env=HERMETIC_PYTHON_VERSION=3.11
-build:windows --action_env=PYTHON_BIN_PATH="C:/Program Files/Python311/python.exe"
-build:windows --python_path="C:/Program Files/Python311/python.exe"
+build:windows --repo_env=HERMETIC_PYTHON_VERSION=3.12
+build:windows --action_env=PYTHON_BIN_PATH="C:/Program Files/Python312/python.exe"
+build:windows --python_path="C:/Program Files/Python312/python.exe"
 
 # Add unused-result as an error on Linux.
 build:linux --copt="-Wunused-result"
@@ -322,6 +330,15 @@ build:release_cpu_linux --incompatible_enable_cc_toolchain_resolution
 
 # Linux ARM64 specific options
 build:linux_arm64 --copt="-mtune=generic" --copt="-march=armv8-a" --copt="-O3"
+
+# Cross-compile for Linux aarch64 from a Linux x86_64 host with the hermetic
+# rules_ml_toolchain clang + aarch64 sysroot. --cpu is still needed for
+# dependencies (e.g. XNNPACK) that select on the legacy cpu value.
+build:cross_compile_linux_arm64 --platforms=//platforms:linux_aarch64
+build:cross_compile_linux_arm64 --extra_toolchains=@rules_ml_toolchain//cc:linux_x86_64_linux_aarch64
+build:cross_compile_linux_arm64 --cpu=aarch64
+build:cross_compile_linux_arm64 --host_cpu=k8
+build:cross_compile_linux_arm64 --define=tensorflow_mkldnn_contraction_kernel=0
 
 # Windows pthreadpool configuration
 # On Windows, set /std:c11 and /experimental:c11atomics for pthreadpool.
@@ -512,10 +529,6 @@ try-import %workspace%/warnings.bazelrc
 build:v2 --define=tf_api_version=2 --action_env=TF2_BEHAVIOR=1
 build --config=v2
 
-# Options to filter filepath prefixes when generating python api's
-build:litert_prefixes --define=litert_prefixes="external/org_tensorflow/"
-build --config=litert_prefixes
-
 # Disables generating api v2 under the submodule tensorflow/lite/python.
 build --define=disable_tf_lite_py=true
 
@@ -582,13 +595,13 @@ build:rbe_linux_cpu_clang_local --extra_toolchains="@local_config_cuda//crosstoo
 build:rbe_linux_cpu_clang_local --repo_env=CC="/usr/lib/llvm-18/bin/clang"
 
 # Filters used when building in bulk in cpu.
-build:bulk_build_cpu --build_tag_filters=-no_oss,-oss_serial,-gpu,-tpu,-v1only
+build:bulk_build_cpu --build_tag_filters=-no_oss,-oss_serial,-gpu,-requires-gpu-sm90,-requires-gpu-sm90-full,-tpu,-v1only
 build:bulk_test_cpu --show_timestamps
 build:bulk_test_cpu --experimental_ui_max_stdouterr_bytes=3145728
 
 # Filters used when testing in bulk in cpu.
 test:bulk_test_cpu --config=bulk_build_cpu
-test:bulk_test_cpu --test_tag_filters=-no_oss,-oss_serial,-gpu,-tpu,-v1only,-benchmark-test
+test:bulk_test_cpu --test_tag_filters=-no_oss,-oss_serial,-gpu,-requires-gpu-sm90,-requires-gpu-sm90-full,-tpu,-v1only,-benchmark-test
 test:bulk_test_cpu --test_summary=short
 test:bulk_test_cpu --test_output=errors
 test:bulk_test_cpu --verbose_failures=true
@@ -598,13 +611,3 @@ test:bulk_test_cpu --build_tests_only
 # TODO: b/397625618 Enable bzlmod
 common --noenable_bzlmod
 
-# BEGIN-INTERNAL
-# Flags for tensorflow source rules to use local_repository rather than http_archive.
-# NOTE: due to bazel caching, when switching from http_archive to local_repository,
-# do a bazel clean --expunge --async before building or use the
-# flag --override_repository=org_tensorflow=$TF_LOCAL_SOURCE_PATH
-build:use_local_tf --action_env=USE_LOCAL_TF=true
-build:use_local_tf --action_env=TF_LOCAL_SOURCE_PATH
-test:use_local_tf --action_env=USE_LOCAL_TF=true
-test:use_local_tf --action_env=TF_LOCAL_SOURCE_PATH
-# END-INTERNAL

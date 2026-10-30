@@ -31,7 +31,9 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/build_stamp.h"
+#if !defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/core/dispatch_op_schema.h"
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/flatbuffer_to_litert.h"
 #include "litert/core/model/model.h"
@@ -53,6 +55,7 @@ class FlatbufferContext {
                     BufferManager* buffer_manager)
       : tfl_flatbuffer_(tfl_flatbuffer), buffer_manager_(buffer_manager) {}
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
   Expected<void> SetOpCode(LiteRtOpT& litert_op, uint32_t ind) {
     if (!PackedModel()->operator_codes() ||
         ind >= PackedModel()->operator_codes()->size()) {
@@ -65,14 +68,25 @@ class FlatbufferContext {
     }
     const int32_t builtin_code = code->builtin_code();
     const int32_t dep_code = code->deprecated_builtin_code();
-    litert_op.SetOpCode(
-        static_cast<LiteRtOpCode>(std::max(dep_code, builtin_code)));
+    const int32_t resolved_code = std::max(dep_code, builtin_code);
+    if (builtin_code < 0 || resolved_code < 0 ||
+        resolved_code > static_cast<int32_t>(kLiteRtOpCodeShloComposite) ||
+        (dep_code < 0 && static_cast<int8_t>(builtin_code) !=
+                             code->deprecated_builtin_code())) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Invalid operator code: builtin_code=%d, "
+                 "deprecated_builtin_code=%d",
+                 builtin_code, dep_code);
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    }
+    litert_op.SetOpCode(static_cast<LiteRtOpCode>(resolved_code));
     if (code->custom_code()) {
       litert_op.SetCustomCode(code->custom_code()->str());
     }
     litert::internal::SetTflOpCodeInd(litert_op, ind);
     return {};
   }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   // Get the buffer at the given index in the tflite model.
   Expected<const TflPackedBuffer*> GetTflBuffer(uint32_t ind) const {
@@ -99,16 +113,50 @@ class FlatbufferContext {
 
   BufferIdMap& RegisteredTflBufferIds() { return registered_tfl_buffer_ids_; }
 
+  // The litert buffer registered for each external buffer id, so tensors that
+  // share an external constant share its buffer.
+  BufferIdMap& RegisteredExternalBufferIds() {
+    return registered_external_buffer_ids_;
+  }
+
+  // The external buffer with the given id (Tensor.external_buffer), if the
+  // model declares one.
+  Expected<const ::tflite::ExternalBuffer*> GetExternalBuffer(
+      uint32_t external_buffer_id) {
+    if (!external_buffers_indexed_) {
+      external_buffers_indexed_ = true;
+      if (const auto* buffers = PackedModel()->external_buffers()) {
+        for (const auto* buffer : *buffers) {
+          if (buffer != nullptr) {
+            external_buffers_.emplace(buffer->id(), buffer);
+          }
+        }
+      }
+    }
+    if (auto it = external_buffers_.find(external_buffer_id);
+        it != external_buffers_.end()) {
+      return it->second;
+    }
+    LITERT_LOG(LITERT_ERROR, "Tensor refers to unknown external buffer %u",
+               external_buffer_id);
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+  }
+
  private:
   const FlatbufferWrapper& tfl_flatbuffer_;
   BufferManager* buffer_manager_;
   BufferIdMap registered_tfl_buffer_ids_;
+  BufferIdMap registered_external_buffer_ids_;
+  bool external_buffers_indexed_ = false;
+  absl::flat_hash_map<uint32_t, const ::tflite::ExternalBuffer*>
+      external_buffers_;
 };
 
 bool IsRangeInAllocation(size_t offset, size_t size, size_t allocation_size) {
   return offset <= allocation_size && size <= allocation_size - offset;
 }
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
 LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
                       const TflPackedOp& tfl_op, LiteRtOpT& litert_op,
                       size_t op_index) {
@@ -183,6 +231,7 @@ LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
 
   return kLiteRtStatusOk;
 }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
 struct TflBufferContext {
   BufferRef<uint8_t> buffer;
@@ -246,6 +295,30 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context, LiteRtSubgraphT& parent,
       SetWeightsFromUnownedBuffer(litert_tensor.Weights(), buffer->buffer,
                                   lrt_buf_ctx);
       context.RegisteredTflBufferIds()[buffer_ind] =
+          litert_tensor.Weights().GetBufferId();
+    }
+  } else if (const auto external_buffer_id = tfl_tensor.external_buffer();
+             external_buffer_id != 0) {
+    // A constant stored outside the flatbuffer. The bytes stay empty here: a
+    // runtime with the weight source resolves them, and the reference is kept
+    // so that serialization re-emits it.
+    auto it = context.RegisteredExternalBufferIds().find(external_buffer_id);
+    if (it != context.RegisteredExternalBufferIds().end()) {
+      litert_tensor.Weights().SetBufferId(it->second);
+    } else {
+      auto external = context.GetExternalBuffer(external_buffer_id);
+      if (!external) {
+        return external.Error().Status();
+      }
+      BufferContext lrt_buf_ctx;
+      lrt_buf_ctx.external = ExternalBufferRef{
+          (*external)->id(), (*external)->group(), (*external)->offset(),
+          (*external)->length(),
+          (*external)->packing() ? (*external)->packing()->str()
+                                 : std::string()};
+      SetWeightsFromUnownedBuffer(litert_tensor.Weights(), BufferRef<uint8_t>(),
+                                  lrt_buf_ctx);
+      context.RegisteredExternalBufferIds()[external_buffer_id] =
           litert_tensor.Weights().GetBufferId();
     }
   }
@@ -359,6 +432,7 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
     litert_tensor.SetTensorIndex(i);
   }
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
   // Unpack ops, pass litert_subgraph so they can look up the new litert
   // tensors.
   const auto num_ops =
@@ -371,6 +445,7 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
     LITERT_RETURN_IF_ERROR(UnpackOp(context, litert_subgraph, *tfl_op,
                                     litert_subgraph.EmplaceOp(), i));
   }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   // Update subgraph I/O.
   const auto num_inputs =
@@ -512,6 +587,16 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     }
   }
 
+  if (const auto* groups = packed_model->external_buffer_groups()) {
+    std::vector<std::string> names;
+    names.reserve(groups->size());
+    for (const auto* group : *groups) {
+      names.push_back(group != nullptr && group->name() ? group->name()->str()
+                                                        : std::string());
+    }
+    litert_model->SetExternalBufferGroups(std::move(names));
+  }
+
   // TODO Figure out how to load signatures in packed flatbuffer.
   if (packed_model->signature_defs()) {
     std::vector<TflSignaturePtr> tfl_signatures;
@@ -546,6 +631,7 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     }
   }
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
   if (packed_model->operator_codes()) {
     const auto num_operator_codes = packed_model->operator_codes()->size();
     std::vector<TflOpCodePtr> tfl_op_codes(num_operator_codes);
@@ -559,6 +645,7 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     }
     litert::internal::SetTflOpCodes(*litert_model, std::move(tfl_op_codes));
   }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   return litert_model;
 }
@@ -602,6 +689,7 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
   LITERT_ASSIGN_OR_RETURN(auto model, UnpackModel(std::move(**flatbuffer)));
   model->SetSourcePath(std::string(filename));
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
   // Load bytecode of each dispatch op and attach it to the model.
   absl::flat_hash_map<size_t, unsigned int> buffer_id_map;
   const auto& model_flatbuffer = GetTflFlatbuffer(*model);
@@ -638,6 +726,7 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
       }
     }
   }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   return std::move(model);
 }

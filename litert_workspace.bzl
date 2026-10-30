@@ -30,6 +30,7 @@ def litert_workspace():
             "//third_party/absl:build_dll.patch",
             "//third_party/absl:endian.patch",
             "//third_party/absl:raw_hash_set.patch",
+            "//third_party/absl:source_location.patch",
         ],
         repo_mapping = {
             "@google_benchmark": "@com_google_benchmark",
@@ -83,17 +84,17 @@ def litert_workspace():
     # XNNPACK
     tf_http_archive(
         name = "XNNPACK",
-        sha256 = "aab0ed2b3972125ca057b8e2b16127fbf68f8128ea07dd7efe56cdb92f2c1917",
-        strip_prefix = "XNNPACK-d89ef6669a14db203b3b7935b1b3862cb63fb6df",
-        urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/d89ef6669a14db203b3b7935b1b3862cb63fb6df.zip"),
+        sha256 = "bb3bece5b610830882554f7f1557f3b3f0de61bed7ebbc52df7062f545a40d3e",
+        strip_prefix = "XNNPACK-878f1d8ca60d7f8fb6670ab7c8cbe39a6d7415f7",
+        urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/878f1d8ca60d7f8fb6670ab7c8cbe39a6d7415f7.zip"),
     )
 
     # KleidiAI (XNNPACK dependency)
     tf_http_archive(
         name = "KleidiAI",
-        sha256 = "652ee046ebf99bee5ed78aaf8961ea1df6ac09b6ebbd3a33106d9ce255efba69",
-        strip_prefix = "kleidiai-4bc7bd457930de119f8b826ecfdebfbd9c08cf8c",
-        urls = tf_mirror_urls("https://gitlab.arm.com/kleidi/kleidiai/-/archive/4bc7bd457930de119f8b826ecfdebfbd9c08cf8c/kleidiai-4bc7bd457930de119f8b826ecfdebfbd9c08cf8c.zip"),
+        sha256 = "a424e81535ebb6d0117e9282fba45d70aee0bedb481f603df55e1805bed0e21b",
+        strip_prefix = "kleidiai-5147983e14600ce7f8a6583dc04ba07753ac54c4",
+        urls = tf_mirror_urls("https://gitlab.arm.com/kleidi/kleidiai/-/archive/5147983e14600ce7f8a6583dc04ba07753ac54c4/kleidiai-5147983e14600ce7f8a6583dc04ba07753ac54c4.zip"),
     )
 
     # FXdiv
@@ -115,17 +116,17 @@ def litert_workspace():
     # Slinky (XNNPACK dependency)
     tf_http_archive(
         name = "slinky",
-        sha256 = "6ba811c39fd400149d58a42a1a5ad33e7fe2554c9a45990788779e0657039405",
-        strip_prefix = "slinky-2c9e129fc82215530af851cfd8d3094de0519241",
-        urls = tf_mirror_urls("https://github.com/dsharlet/slinky/archive/2c9e129fc82215530af851cfd8d3094de0519241.zip"),
+        sha256 = "56793854bfd71f81597a59e4590d2fa4c444319c917ac387f5bde8c83b407a0a",
+        strip_prefix = "slinky-9b2ee975f1a8a67a4daf1df6ce0911b66e6faf9f",
+        urls = tf_mirror_urls("https://github.com/dsharlet/slinky/archive/9b2ee975f1a8a67a4daf1df6ce0911b66e6faf9f.zip"),
     )
 
     # cpuinfo
     tf_http_archive(
         name = "cpuinfo",
-        sha256 = "fe2aa43254838a2eb5658d1742696473a1d834a57f2a0b38d533346bcd212482",
-        strip_prefix = "cpuinfo-8ce83db858065145192c97af90cb668ad72a12e9",
-        urls = tf_mirror_urls("https://github.com/pytorch/cpuinfo/archive/8ce83db858065145192c97af90cb668ad72a12e9.zip"),
+        sha256 = "b93044263ee072e9be3577bda52f48d5a4dd9fcb80091529471c8d2bfe59219d",
+        strip_prefix = "cpuinfo-66ee79c038d70dad9f08705b2c9b3e58f6d8f512",
+        urls = tf_mirror_urls("https://github.com/pytorch/cpuinfo/archive/66ee79c038d70dad9f08705b2c9b3e58f6d8f512.zip"),
     )
 
     # Eigen
@@ -140,10 +141,13 @@ def litert_workspace():
     # Ruy
     tf_http_archive(
         name = "ruy",
-        sha256 = "a22c42e80c7bb450db8492728e4742ee66f46d5458c45fe67ce2c9b61240630c",
-        strip_prefix = "ruy-3286a34cc8de6149ac6844107dfdffac91531e72",
-        urls = tf_mirror_urls("https://github.com/google/ruy/archive/3286a34cc8de6149ac6844107dfdffac91531e72.zip"),
+        # LINT.IfChange
+        sha256 = "64a001a81c05743736ed8695edd521c6093519ef2edb6635ffa142e827cfb86b",
+        strip_prefix = "ruy-2af88863614a8298689cc52b1a47b3fcad7be835",
+        urls = tf_mirror_urls("https://github.com/google/ruy/archive/2af88863614a8298689cc52b1a47b3fcad7be835.zip"),
+        # LINT.ThenChange(../../../tensorflow/lite/tools/cmake/modules/ruy.cmake)
         build_file = "//third_party/ruy:ruy.BUILD",
+        patch_file = ["//third_party/ruy:ruy.patch"],
     )
 
     # Gemmlowp
@@ -243,6 +247,15 @@ def litert_workspace():
         strip_prefix = "rules_jvm_external-4.3",
         sha256 = "6274687f6fc5783b589f56a2f1ed60de3ce1f99bc4e8f9edef3de43bdf7c6e74",
         urls = tf_mirror_urls("https://github.com/bazelbuild/rules_jvm_external/archive/4.3.zip"),
+    )
+
+    # Rules Java
+    tf_http_archive(
+        name = "rules_java",
+        urls = tf_mirror_urls(
+            "https://github.com/bazelbuild/rules_java/releases/download/8.7.0/rules_java-8.7.0.tar.gz",
+        ),
+        sha256 = "5449ed36d61269579dd9f4b0e532cd131840f285b389b3795ae8b4d717387dd8",
     )
 
     # Rules Proto

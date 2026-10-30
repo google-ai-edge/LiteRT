@@ -188,16 +188,12 @@ BUILD_FLAGS=("-c" "opt" \
     "--fat_apk_cpu=${FAT_APK_CPU}" \
     "--define=android_dexmerger_tool=d8_dexmerger" \
     "--define=android_incremental_dexing_tool=d8_dexbuilder" \
-    "--repo_env=HERMETIC_PYTHON_VERSION=3.11" \
+    "--repo_env=HERMETIC_PYTHON_VERSION=3.12" \
     "--show_timestamps")
 
 # Merge extra config flags from the environment
 BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
 
-# Conditionally use local submodules vs http_archve tf
-if [[ "${USE_LOCAL_TF}" == "true" ]]; then
-  BUILD_FLAGS+=("--config=use_local_tf")
-fi
 
 if [[ "$BUILD_LITERT_KOTLIN_API" == "true" ]]; then
   echo "Building Litert Kotlin API."
@@ -212,8 +208,13 @@ fi
 
 # TODO(b/503213161): Avoid piggybacking Tensor API's bazel build test on
 # LiteRT's wheel kokoro job (i.e. //tensor/...).
+# Remove the SME disable flags when the Android NDK is updated.
 bazel build "${BUILD_FLAGS[@]}" \
-    //tensor/... \
+    --define=ynn_enable_arm64_sme=false \
+    --define=ynn_enable_arm64_sme2=false \
+    //tensor/...
+
+bazel build "${BUILD_FLAGS[@]}" \
     //tflite/java:tensorflow-lite-api \
     //tflite/java:tensorflow-lite \
     //tflite/java:tensorflow-lite-gpu-api \

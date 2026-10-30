@@ -292,9 +292,9 @@ TEST(TfLiteTensorToTensorTest, Int8QuantizedPerTensor) {
   tfl_tensor.params.zero_point = 5;
 
   // Test deep copy approach.
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8> t;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32> scale;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32> zero_point;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8> t;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32> scale;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32> zero_point;
   TfLiteTensorToTensorCopyData(&tfl_tensor, &t, ReadTensorFlags::kNoExtraBytes,
                                &scale, &zero_point);
   EXPECT_EQ(t.shape, ::ml_drift::OHWI(1, 1, 1, 4));
@@ -305,10 +305,10 @@ TEST(TfLiteTensorToTensorTest, Int8QuantizedPerTensor) {
   EXPECT_EQ(zero_point.data[0], 5);
 
   // Test zero copy approach.
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8> t_view;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8> t_view;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
       scale_view;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32>
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32>
       zero_point_view;
   TfLiteTensorToTensorZeroCopy(&tfl_tensor, &t_view, &scale_view,
                                &zero_point_view);
@@ -349,9 +349,9 @@ TEST(TfLiteTensorToTensorTest, Int8QuantizedPerChannel) {
   tfl_tensor.quantization.params = quant_params;
 
   // Test deep copy approach.
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8> t;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32> scale;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32> zero_point;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8> t;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32> scale;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32> zero_point;
   TfLiteTensorToTensorCopyData(&tfl_tensor, &t, ReadTensorFlags::kNoExtraBytes,
                                &scale, &zero_point);
   EXPECT_EQ(t.shape, ::ml_drift::OHWI(2, 1, 1, 4));
@@ -362,10 +362,10 @@ TEST(TfLiteTensorToTensorTest, Int8QuantizedPerChannel) {
   EXPECT_THAT(zero_point.data, testing::ElementsAreArray(zero_points_data));
 
   // Test zero copy approach.
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8> t_view;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8> t_view;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
       scale_view;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32>
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32>
       zero_point_view;
   TfLiteTensorToTensorZeroCopy(&tfl_tensor, &t_view, &scale_view,
                                &zero_point_view);
@@ -406,9 +406,9 @@ TEST(TfLiteTensorToTensorTest, Int4QuantizedPerTensor) {
   tfl_tensor.params.zero_point = -8;
 
   // Test deep copy approach.
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4> t;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32> scale;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32> zero_point;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt4> t;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32> scale;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32> zero_point;
   TfLiteTensorToTensorCopyData(&tfl_tensor, &t, ReadTensorFlags::kNoExtraBytes,
                                &scale, &zero_point);
   EXPECT_EQ(t.shape, ::ml_drift::OHWI(1, 1, 1, 4));
@@ -422,10 +422,10 @@ TEST(TfLiteTensorToTensorTest, Int4QuantizedPerTensor) {
   EXPECT_EQ(zero_point.data[0], -8);
 
   // Test zero copy approach.
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4> t_view;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt4> t_view;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
       scale_view;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32>
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32>
       zero_point_view;
   TfLiteTensorToTensorZeroCopy(&tfl_tensor, &t_view, &scale_view,
                                &zero_point_view);
@@ -470,9 +470,9 @@ TEST(TfLiteTensorToTensorTest, Int4QuantizedPerChannel) {
   tfl_tensor.quantization.params = quant_params;
 
   // Test deep copy approach.
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4> t;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32> scale;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32> zero_point;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt4> t;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32> scale;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32> zero_point;
   TfLiteTensorToTensorCopyData(&tfl_tensor, &t, ReadTensorFlags::kNoExtraBytes,
                                &scale, &zero_point);
   EXPECT_EQ(t.shape, ::ml_drift::OHWI(2, 1, 1, 4));
@@ -483,10 +483,10 @@ TEST(TfLiteTensorToTensorTest, Int4QuantizedPerChannel) {
   EXPECT_THAT(zero_point.data, testing::ElementsAreArray(zero_points_data));
 
   // Test zero copy approach.
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4> t_view;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt4> t_view;
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
       scale_view;
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT32>
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt32>
       zero_point_view;
   TfLiteTensorToTensorZeroCopy(&tfl_tensor, &t_view, &scale_view,
                                &zero_point_view);

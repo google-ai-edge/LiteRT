@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_MEMORY_MANAGER_SHARED_MEMORY_MANAGER_METAL_H_
 
 #import <Metal/Metal.h>
+#include <unistd.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -30,9 +31,12 @@
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift/metal/metal_device.h"  // from @ml_drift
 #include "ml_drift/metal/metal_spatial_tensor.h"  // from @ml_drift
 #include "litert/c/internal/litert_runtime_context.h"
+#include "litert/c/litert_common.h"
+#include "litert/cc/litert_macros.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
@@ -62,12 +66,9 @@ inline absl::Status MaybeBindExternalWeightData(
 
   weight_loader::WeightAccessRequest request;
   request.cpu = true;
-  absl::Status prepare_status =
-      weight_loader->PrepareAccessForBuffer(static_cast<uint32_t>(it->second), request,
-                                            /*env=*/nullptr);
-  if (!prepare_status.ok()) {
-    return prepare_status;
-  }
+  LITERT_RETURN_IF_ERROR(weight_loader->PrepareAccessForBuffer(static_cast<uint32_t>(it->second),
+                                                               request, /*env=*/nullptr))
+      << "Failed to prepare external weight " << it->second;
   const auto* access = weight_loader->GetExternalWeightByBuffer(static_cast<uint32_t>(it->second));
   if (access == nullptr || access->GetHostBuffer() == nullptr) {
     return absl::NotFoundError("External weight not found.");
@@ -107,7 +108,8 @@ inline absl::StatusOr<std::string> LookupExternalWeightPacking(
     return absl::InvalidArgumentError("Global id is zero.");
   }
   const auto* info = weight_loader->FindWeightInfoByBuffer(global_id);
-  if (info == nullptr || info->packing.empty()) {
+  if (info == nullptr || info->packing == nullptr ||
+      info->packing[0] == '\0') {
     return absl::NotFoundError("Packing info not found.");
   }
   return std::string(info->packing);
@@ -207,7 +209,9 @@ inline std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerMet
       return absl::OkStatus();
     }
     uint32_t external_buffer_id = static_cast<uint32_t>(it->second);
-    return weight_loader->DiscardExternalWeightByBuffer(external_buffer_id);
+    LITERT_RETURN_IF_ERROR(weight_loader->DiscardExternalWeightByBuffer(external_buffer_id))
+        << "Failed to discard external weight " << external_buffer_id;
+    return absl::OkStatus();
   };
 
   SharedMemoryManager::CreateTensorFromDeviceBufferFunc device_buffer_import =
@@ -238,11 +242,15 @@ inline std::unique_ptr<ml_drift::SharedMemoryManager> MakeSharedMemoryManagerMet
         auto metal_tensor = std::make_unique<metal::MetalSpatialTensor>();
         // Create a shared buffer to avoid extra copy. The release callback is called when the
         // buffer is deallocated.
-        if (release_data_callback && tensor_desc.GetStorageType() == TensorStorageType::BUFFER) {
+        if (release_data_callback && tensor_desc.GetStorageType() == TensorStorageType::kBuffer) {
           const uint8_t* data_ptr = tensor_desc.GetData().data();
           const size_t bytes_count = tensor_desc.GetData().size();
           const uint8_t* raw_data_ptr = data_ptr - page_adjusted_offset;
-          const size_t raw_bytes_count = bytes_count + page_adjusted_offset;
+          // newBufferWithBytesNoCopy requires the length to be a multiple of the
+          // VM page size (16 KiB on Apple Silicon), so round up. This is safe
+          // because the data is mmap'd, and mmap maps whole pages.
+          const size_t raw_bytes_count =
+              AlignByN(bytes_count + page_adjusted_offset, static_cast<size_t>(getpagesize()));
           auto* release_cb_ptr =
               new ::litert::ml_drift::ReleaseDataCallback(std::move(release_data_callback));
           id<MTLBuffer> buffer =

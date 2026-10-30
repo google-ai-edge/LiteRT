@@ -61,6 +61,17 @@ jobs:
             -DLITERT_ENABLE_NPU=OFF
           test -f "${CMAKE_BUILD_DIR}/compile_commands.json"
 
+      # clang-tidy only consumes compile_commands.json and never runs the
+      # build, so headers produced by build-time custom commands (e.g. the
+      # flatc-generated tflite/schema/mutable/schema_generated.h used by
+      # tensor/backends/tflite) would otherwise be missing and surface as
+      # clang-diagnostic-error "file not found" in every translation unit
+      # that transitively includes them.
+      - name: Generate FlatBuffers schema headers
+        run: |
+          cmake --build "${CMAKE_BUILD_DIR}" --target tflite_mutable_schema_gen
+          test -f "${CMAKE_BUILD_DIR}/core/model/generated/include/tflite/schema/mutable/schema_generated.h"
+
       - name: Select files for clang-tidy
         id: select-files
         run: |
@@ -176,5 +187,5 @@ jobs:
             clang-tidy-18 \
             -p "${CMAKE_BUILD_DIR}" \
             --checks="${CLANG_TIDY_CHECKS}" \
-            --header-filter='.*litert/.*' \
+            --header-filter='.*litert/[^.].*' \
             < /tmp/clang_tidy_files.txt

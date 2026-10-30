@@ -20,6 +20,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_gpu_options.h"  // IWYU pragma: keep, used on APPLE only, but simpler this way than using preprocessor logic in the header and the BUILD file.
 #include "litert/cc/litert_macros.h"
 #include "litert/core/options.h"
 #include "litert/runtime/accelerators/gpu/ml_drift_delegate_create.h"
@@ -68,12 +69,8 @@ class GpuMetalAccelerator {
   static LiteRtStatus GetHardwareSupport(
       LiteRtAcceleratorConst accelerator,
       LiteRtHwAcceleratorSet* supported_hardware) {
-    LITERT_RETURN_IF_ERROR(supported_hardware,
-                           litert::ErrorStatusBuilder::InvalidArgument())
-        << "`supported_hardware` pointer is null.";
-    static LiteRtHwAcceleratorSet hardware_support = kLiteRtHwAcceleratorGpu;
-    *supported_hardware = hardware_support;
-    return kLiteRtStatusOk;
+    return litert::ml_drift::GetHardwareSupport(accelerator,
+                                                supported_hardware);
   }
 
   static LiteRtStatus IsTfLiteDelegateResponsibleForJitCompilation(
@@ -103,9 +100,8 @@ class GpuMetalAccelerator {
       }
 #if defined(__APPLE__)
       if (gpu_options) {
-        bool enable_residency_set = false;
-        LrtGetGpuOptionsMetalResidencySet(gpu_options, &enable_residency_set);
-        delegate_options->enable_metal_residency_set = enable_residency_set;
+        LrtGetGpuOptionsMetalResidencySet(
+            &delegate_options->enable_metal_residency_set, gpu_options);
       }
 #endif
     }

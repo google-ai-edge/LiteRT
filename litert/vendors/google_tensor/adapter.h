@@ -27,6 +27,12 @@
 
 namespace litert::google_tensor {
 
+// Represents an unsupported operation with its index and rejection reason.
+struct UnsupportedOp {
+  int32_t op_index;
+  std::string reason;
+};
+
 // This class adapts the google tensor compiler API for dynamic loading.
 class Adapter {
  public:
@@ -55,9 +61,8 @@ class Adapter {
                                 size_t num_bytecodes) = 0;
 
   // Checks which operations in the TFLite flatbuffer are supported/unsupported.
-  // Returns a vector of indices of the unsupported operations in the
-  // flatbuffer.
-  virtual Expected<std::vector<int32_t>> GetUnsupportedOps(
+  // Returns a vector of unsupported operations with indices and reasons.
+  virtual Expected<std::vector<UnsupportedOp>> GetUnsupportedOps(
       const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
       size_t options_size) = 0;
 

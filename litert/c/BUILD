@@ -35,13 +35,13 @@ load(
     "export_lrt_tflite_runtime_linkopt",
     "export_lrt_tflite_runtime_script",
     "litert_c_api_library",
+    "litert_size_tracking_target",
 )
 load(
     "//litert/build_common:special_rule.bzl",
     "exclude_wasm_target_compatible_with",
     "exclude_windows_target_compatible_with",
     "get_compatible_with_portable",
-    "gles_deps",
     "gles_headers",
     "gles_linkopts",
     "litert_android_linkopts",
@@ -161,6 +161,7 @@ litert_c_api_library(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_runtime_c_api",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//litert/runtime/accelerators:auto_registration",
@@ -356,8 +357,12 @@ litert_c_api_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/runtime:event",
-        "//tflite/delegates/gpu/cl:opencl_wrapper",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_gpu_enabled": [
+            "@ml_drift//ml_drift/cl:opencl_wrapper",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         ":litert_common",
         ":litert_event_type",
@@ -423,7 +428,7 @@ litert_c_api_library(
         "//litert/runtime:tensor_buffer_requirements",
         "@opencl_headers",
         ":litert_tensor_buffer_requirements_impl",
-    ] + gles_deps(),
+    ],
     linkopts = litert_android_linkopts() + gles_linkopts() + litert_metal_linkopts(),
     deps = [
         ":litert_common",
@@ -457,6 +462,7 @@ cc_test(
     deps = [
         ":litert_any",
         ":litert_common",
+        ":litert_custom_tensor_buffer",
         ":litert_environment",
         ":litert_environment_options",
         ":litert_model_types",
@@ -515,6 +521,7 @@ cc_test(
 #     deps = [
 #         ":litert_any",
 #         ":litert_common",
+#         ":litert_custom_tensor_buffer",
 #         ":litert_environment",
 #         ":litert_environment_options",
 #         ":litert_model_types",
@@ -831,7 +838,7 @@ LITERT_C_API_COMMON_DEPS = [
     "//litert/c/internal:litert_tensor_buffer_registry",
     "//litert/c/options:litert_cpu_options",
     # copybara:uncomment "//litert/c/options/google:litert_google_tensor_privileged_options",
-    "//litert/c/options:litert_arm_options",
+    "//litert/c/options:litert_arm_vulkan_ml_options",
     "//litert/c/options:litert_google_tensor_options_type",
     "//litert/c/options:litert_google_tensor_options",
     "//litert/c/options:litert_gpu_options",
@@ -895,12 +902,70 @@ cc_shared_library(
     deps = [":litert_runtime_c_api_so_shim"],
 )
 
+# Size-tracking variant of libLiteRt.so for WeightWatcher (litert.blueprint).
+# Not for distribution; see litert_size_tracking_target.
+litert_size_tracking_target(
+    name = "litert_runtime_c_api_so_ww",
+    target = ":litert_runtime_c_api_so",
+)
+
 sh_test(
     name = "litert_runtime_c_api_so_symbol_test",
     srcs = ["litert_runtime_c_api_so_symbol_test.sh"],
     data = [
         "litert_runtime_c_api_so_symbols.txt",
         ":libLiteRt.so",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+)
+
+# Unstripped binary linking all LiteRt* C API and Lrt* option entrypoints,
+# used for symbol leak testing.
+cc_binary(
+    name = "litert_runtime_for_symbol_test",
+    testonly = True,
+    srcs = ["litert_c_api_common_test.c"],
+    copts = ["--std=c11"],
+    features = ["-legacy_whole_archive"],
+    linkopts = select({
+        "//litert:macos": [],
+        "//litert:ios": [],
+        "//litert:windows": [],
+        "//conditions:default": [
+            "-Wl,--gc-sections",
+            "-Wl,--as-needed",
+            "-Wl,--undefined-glob=LiteRt*",
+            "-Wl,--undefined-glob=Lrt*",
+            "-Wl,--undefined=kLiteRtRuntimeBuiltin",
+            "-Wl,--export-dynamic-symbol=LiteRt*",
+            "-Wl,--export-dynamic-symbol=Lrt*",
+            "-Wl,--export-dynamic-symbol=kLiteRtRuntimeBuiltin",
+        ],
+    }) + litert_android_linkopts(),
+    linkstatic = 1,
+    # copybara:uncomment malloc = "//base:system_malloc",
+    deps = LITERT_C_API_COMMON_DEPS + [
+        ":litert_profiler_event",
+        "//litert/c/internal:litert_runtime_builtin_header",
+        "//litert/c/internal:litert_runtime_context_testonly",
+        "//litert/c/options:litert_compiler_options",
+        "//litert/c/options:litert_runtime_options",
+        "//litert/c/options:litert_webnn_options",
+    ],
+)
+
+sh_test(
+    name = "litert_runtime_symbol_test",
+    srcs = ["//litert/test:litert_runtime_symbol_test.sh"],
+    args = [
+        "$(rootpath :litert_runtime_for_symbol_test)",
+    ],
+    data = [
+        ":litert_runtime_for_symbol_test",
     ],
     tags = [
         "noios",
@@ -934,6 +999,7 @@ ios_framework(
         "iphone",
         "ipad",
     ],
+    # copybara:uncomment google_create_srl_bindings_module = False,
     infoplists = ["LiteRtInfo.plist"],
     linkopts = [
         "-install_name @rpath/libLiteRt.dylib",
@@ -1084,8 +1150,53 @@ cc_library(
 # copybara:uncomment_begin(google-only)
 # # Check that litert runtime doesn't depend on MLIR.
 # check_dependencies(
+#     name = "litert_runtime_c_api_no_mlir_deps_test",
 #     of = [":litert_runtime_c_api_shared_lib"],
 #     dont_match_regexp = "^//third_party/llvm/llvm-project/mlir",
+#     tags = ["nowindows"],
+# )
+#
+# # Prevent LiteRT C API and runtime implementations from directly depending on
+# # absl::StrFormat, which pulls FormatPack and formatting tables into minimal builds.
+# check_dependencies(
+#     name = "litert_c_api_no_str_format_deps_test",
+#     of = [
+#         ":litert_compiled_model_impl",
+#         ":litert_environment_impl",
+#         ":litert_event_impl",
+#         ":litert_model_impl",
+#         ":litert_options_impl",
+#         ":litert_tensor_buffer_impl",
+#         "//litert/compiler/plugin:compiler_plugin",
+#         "//litert/core/model",
+#         "//litert/core/model:model_buffer",
+#         "//litert/runtime:compiled_model",
+#         "//litert/runtime:gpu_environment",
+#         "//litert/runtime:profiler_summarizer",
+#         "//litert/runtime/dispatch:dispatch_delegate",
+#         "//litert/runtime/dispatch:dispatch_delegate_kernel",
+#         "//weight_loader:external_weight_loader",
+#     ],
+#     depth = 1,
+#     dont_match_regexp = "^//third_party/absl/strings:str_format$",
+#     tags = ["nowindows"],
+# )
+#
+# # Prevent LiteRT C API and core runtime implementations from directly depending on
+# # absl::Status and absl::StatusOr, which pull CordRep and StatusRep into minimal builds.
+# check_dependencies(
+#     name = "litert_c_api_no_status_deps_test",
+#     of = [
+#         ":litert_compiled_model_impl",
+#         ":litert_environment_impl",
+#         ":litert_event_impl",
+#         ":litert_model_impl",
+#         ":litert_options_impl",
+#         ":litert_tensor_buffer_impl",
+#         "//litert/runtime:compiled_model",
+#     ],
+#     depth = 1,
+#     dont_match_regexp = "^//third_party/absl/status(:.*)?$",
 #     tags = ["nowindows"],
 # )
 # copybara:uncomment_end
@@ -1119,3 +1230,43 @@ ios_unit_test(
     runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
     deps = [":litert_tensor_buffer_test_library"],
 )
+
+# Files that make up the LiteRT C++ SDK.
+#
+# lint IfChange(litert_cc_sdk_files)
+filegroup(
+    name = "litert_cc_sdk_files",
+    srcs = [
+        "litert_any.h",
+        "litert_builder.h",
+        "litert_common.cc",
+        "litert_common.h",
+        "litert_compiled_model.h",
+        "litert_custom_op_kernel.h",
+        "litert_custom_tensor_buffer.h",
+        "litert_environment.h",
+        "litert_environment_options.h",
+        "litert_event.h",
+        "litert_event_type.h",
+        "litert_gl_types.h",
+        "litert_layout.cc",
+        "litert_layout.h",
+        "litert_metrics.h",
+        "litert_model.h",
+        "litert_model_types.h",
+        "litert_op_code.h",
+        "litert_op_options.h",
+        "litert_opaque_options.h",
+        "litert_opencl_types.h",
+        "litert_options.h",
+        "litert_platform_support.h",
+        "litert_profiler.h",
+        "litert_profiler_event.h",
+        "litert_tensor_buffer.h",
+        "litert_tensor_buffer_requirements.h",
+        "litert_tensor_buffer_types.h",
+        "litert_webgpu_types.h",
+    ],
+    visibility = ["//litert/cc_sdk:__pkg__"],
+)
+# lint ThenChange(litert/cc_sdk/litert_cc_sdk_hdrs.txt, litert/cc_sdk/litert_cc_sdk_srcs.txt)

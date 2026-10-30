@@ -64,6 +64,7 @@ cc_test(
         "//litert/c:litert_environment",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
+        "//litert/c/options:litert_compiler_options",
         "//litert/cc:litert_macros",
         "//litert/core:filesystem",
         "//litert/core:options",

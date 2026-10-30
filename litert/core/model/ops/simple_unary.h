@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
@@ -166,6 +167,64 @@ inline void ReferenceCast(const InT* input_data, size_t num_elements,
   }
 }
 
+template <typename InT>
+inline void ReferenceDequantize(const InT* input_data, size_t num_elements,
+                                float* output_data, float scale,
+                                int64_t zero_point) {
+  const float zp = static_cast<float>(zero_point);
+  for (size_t i = 0; i < num_elements; ++i) {
+    output_data[i] = (static_cast<float>(input_data[i]) - zp) * scale;
+  }
+}
+
+template <typename InT>
+inline void ReferenceDequantizePerChannel(
+    const InT* input_data, const int32_t* dims, int rank,
+    int32_t quantized_dimension, const float* scales,
+    const int64_t* zero_points, float* output_data) {
+  if (quantized_dimension < 0) quantized_dimension += rank;
+  size_t outer_size = 1;
+  for (int i = 0; i < quantized_dimension; ++i) {
+    outer_size *= static_cast<size_t>(dims[i]);
+  }
+  const size_t num_channels = static_cast<size_t>(dims[quantized_dimension]);
+  size_t inner_size = 1;
+  for (int i = quantized_dimension + 1; i < rank; ++i) {
+    inner_size *= static_cast<size_t>(dims[i]);
+  }
+  for (size_t o = 0; o < outer_size; ++o) {
+    for (size_t c = 0; c < num_channels; ++c) {
+      const float scale = scales[c];
+      const float zp =
+          zero_points != nullptr ? static_cast<float>(zero_points[c]) : 0.0f;
+      const size_t base = (o * num_channels + c) * inner_size;
+      for (size_t i = 0; i < inner_size; ++i) {
+        output_data[base + i] =
+            (static_cast<float>(input_data[base + i]) - zp) * scale;
+      }
+    }
+  }
+}
+
+inline void ReferenceGelu(const float* input_data, size_t num_elements,
+                          bool approximate, float* output_data) {
+  if (approximate) {
+    // Tanh-based GELU approximation:
+    // 0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3))).
+    constexpr float kGeluCubicCoeff = 0.044715f;
+    const float kSqrtTwoOverPi = std::sqrt(2.0f / static_cast<float>(M_PI));
+    ReferenceUnaryGeneric(
+        input_data, num_elements, output_data, [kSqrtTwoOverPi](float val) {
+          return 0.5f * val *
+                 (1.0f + std::tanh(kSqrtTwoOverPi *
+                                   (val + kGeluCubicCoeff * val * val * val)));
+        });
+  } else {
+    ReferenceUnaryGeneric(input_data, num_elements, output_data, [](float val) {
+      return 0.5f * val * (1.0f + std::erf(val / std::sqrt(2.0f)));
+    });
+  }
+}
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_OPS_SIMPLE_UNARY_H_

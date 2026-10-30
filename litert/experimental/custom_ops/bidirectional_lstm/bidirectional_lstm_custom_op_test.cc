@@ -145,10 +145,11 @@ void GoldenBidirectionalLstm(const std::vector<float>& x,
 
     for (int t = 0; t < kTimeSteps; ++t) {
       const int idx = GoldenReverseIndex(length, t, kTimeSteps);
+      const float keep = 1.0f - mask_b[t];
       float* dst = out.data() + (b * kTimeSteps + t) * 2 * h;
       for (int i = 0; i < h; ++i) {
-        dst[i] = fwd_out[t * h + i];
-        dst[h + i] = reversed_out[idx * h + i] * (1.0f - mask_b[t]);
+        dst[i] = fwd_out[t * h + i] * keep;
+        dst[h + i] = reversed_out[idx * h + i] * keep;
       }
     }
   }

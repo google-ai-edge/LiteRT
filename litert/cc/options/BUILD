@@ -39,17 +39,16 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_arm_options",
-    hdrs = ["litert_arm_options.h"],
+    name = "litert_arm_vulkan_ml_options",
+    hdrs = ["litert_arm_vulkan_ml_options.h"],
     deps = [
         ":litert_concrete_options_base",
         "//litert/c:litert_common",
-        "//litert/c/options:litert_arm_options",
+        "//litert/c/options:litert_arm_vulkan_ml_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_detail",
     ],
-    alwayslink = True,
 )
 
 cc_library(
@@ -90,6 +89,7 @@ cc_library(
         ":litert_concrete_options_base",
         "//litert/c:litert_common",
         "//litert/c/options:litert_compiler_options",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ],
@@ -101,11 +101,12 @@ cc_test(
     deps = [
         ":litert_compiler_options",
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options_header",
+        "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_compiler_options",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
         "//litert/test:matchers",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -171,7 +172,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_detail",
     ],
-    alwayslink = True,
 )
 
 cc_library(
@@ -185,7 +185,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ],
-    alwayslink = True,
 )
 
 cc_library(
@@ -201,7 +200,6 @@ cc_library(
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",
     ],
-    alwayslink = True,
 )
 
 cc_library(
@@ -214,7 +212,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ],
-    alwayslink = True,
 )
 
 cc_test(
@@ -240,7 +237,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ],
-    alwayslink = True,
 )
 
 cc_library(
@@ -286,3 +282,27 @@ exports_files(glob([
     "*.h",
     "*.cc",
 ]))
+
+# Files that make up the LiteRT C++ SDK.
+#
+# lint IfChange(litert_cc_sdk_files)
+filegroup(
+    name = "litert_cc_sdk_files",
+    srcs = [
+        "litert_arm_vulkan_ml_options.h",
+        "litert_compiler_options.h",
+        "litert_concrete_options_base.h",
+        "litert_cpu_options.h",
+        "litert_google_tensor_options.h",
+        "litert_gpu_options.h",
+        "litert_intel_openvino_options.h",
+        "litert_magic_number_options.h",
+        "litert_mediatek_options.h",
+        "litert_qualcomm_options.h",
+        "litert_runtime_options.h",
+        "litert_samsung_options.h",
+        "litert_webnn_options.h",
+    ],
+    visibility = ["//litert/cc_sdk:__pkg__"],
+)
+# lint ThenChange(litert/cc_sdk/litert_cc_sdk_hdrs.txt, litert/cc_sdk/litert_cc_sdk_srcs.txt)

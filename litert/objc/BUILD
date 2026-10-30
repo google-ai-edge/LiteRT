@@ -37,6 +37,7 @@ objc_library(
     deps = [
         # Dependency placeholder: apple_frameworks Foundation,
         # Dependency placeholder: apple_frameworks Metal,
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
@@ -69,6 +70,24 @@ ios_unit_test(
 )
 
 objc_library(
+    name = "litert_objc_tensor_type",
+    srcs = [
+        "sources/LRTTensorType.mm",
+    ],
+    hdrs = [
+        "apis/LRTTensorType.h",
+        "sources/LRTTensorType+Internal.h",
+    ],
+    deps = [
+        ":litert_objc_environment",
+        # Dependency placeholder: apple_frameworks Foundation,
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_ranked_tensor_type",
+    ],
+)
+
+objc_library(
     name = "litert_objc_model",
     srcs = [
         "sources/LRTModel.mm",
@@ -79,11 +98,13 @@ objc_library(
     ],
     deps = [
         ":litert_objc_environment",
+        ":litert_objc_tensor_type",
         # Dependency placeholder: apple_frameworks Foundation,
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
+        "//litert/cc:litert_ranked_tensor_type",
     ],
 )
 
@@ -99,6 +120,7 @@ objc_library(
     deps = [
         ":litert_objc_environment",
         ":litert_objc_model",
+        ":litert_objc_tensor_type",
         # Dependency placeholder: apple_frameworks XCTest,
         "//litert/test:common",
         "//litert/test:simple_model",
@@ -164,20 +186,26 @@ objc_library(
     name = "litert_objc_tensor_buffer",
     srcs = [
         "sources/LRTTensorBuffer.mm",
+        "sources/LRTTensorBufferRequirements.mm",
     ],
     hdrs = [
         "apis/LRTTensorBuffer.h",
+        "apis/LRTTensorBufferRequirements.h",
         "sources/LRTTensorBuffer+Internal.h",
+        "sources/LRTTensorBufferRequirements+Internal.h",
     ],
     deps = [
         ":litert_objc_environment",
+        ":litert_objc_tensor_type",
         # Dependency placeholder: apple_frameworks Foundation,
         # Dependency placeholder: apple_frameworks Metal,
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
     ],
 )
@@ -191,6 +219,7 @@ objc_library(
     deps = [
         ":litert_objc_environment",
         ":litert_objc_tensor_buffer",
+        ":litert_objc_tensor_type",
         # Dependency placeholder: apple_frameworks Metal,
         # Dependency placeholder: apple_frameworks XCTest,
         "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
@@ -222,12 +251,17 @@ objc_library(
         ":litert_objc_environment",
         ":litert_objc_options",
         ":litert_objc_tensor_buffer",
+        ":litert_objc_tensor_type",
         # Dependency placeholder: apple_frameworks Foundation,
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_options",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_requirements",
     ],
 )
 
@@ -246,6 +280,7 @@ objc_library(
         ":litert_objc_environment",
         ":litert_objc_options",
         ":litert_objc_tensor_buffer",
+        ":litert_objc_tensor_type",
         # Dependency placeholder: apple_frameworks XCTest,
         "//litert/test:common",
         "//litert/test:simple_model",

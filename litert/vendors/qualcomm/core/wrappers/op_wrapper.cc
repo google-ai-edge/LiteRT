@@ -7,7 +7,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <functional>
 #include <optional>
 #include <sstream>
@@ -321,49 +320,6 @@ std::string OpWrapper::ToString() const {
     out << "\n    [" << i << "] " << output_tensors_[i].get().ToString();
   }
   return out.str();
-}
-
-namespace {
-bool IsElementWiseOpImpl(const OpWrapper& op, QnnOpCode op_code,
-                         const char* op_param_name, std::uint32_t op_param) {
-  if (op.GetOpCode() != op_code) {
-    return false;
-  }
-
-  auto scalar_param = op.GetScalarParam(0);
-  if (!scalar_param.has_value()) {
-    return false;
-  }
-
-  Qnn_Param_t param;
-  scalar_param->CloneTo(param);
-  if (std::strcmp(param.name, op_param_name) != 0 ||
-      param.paramType != QNN_PARAMTYPE_SCALAR ||
-      param.scalarParam.dataType != QNN_DATATYPE_UINT_32 ||
-      param.scalarParam.uint32Value != op_param) {
-    return false;
-  }
-
-  return true;
-}
-}  // namespace
-
-bool IsElementWiseMultiply(const OpWrapper& op) {
-  return IsElementWiseOpImpl(op, QnnOpCode::kElementWiseBinary,
-                             QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-                             QNN_OP_ELEMENT_WISE_BINARY_OPERATION_MULTIPLY);
-}
-
-bool IsElementWiseAdd(const OpWrapper& op) {
-  return IsElementWiseOpImpl(op, QnnOpCode::kElementWiseBinary,
-                             QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
-                             QNN_OP_ELEMENT_WISE_BINARY_OPERATION_ADD);
-}
-
-bool IsElementWiseNot(const OpWrapper& op) {
-  return IsElementWiseOpImpl(op, QnnOpCode::kElementWiseUnary,
-                             QNN_OP_ELEMENT_WISE_UNARY_PARAM_OPERATION,
-                             QNN_OP_ELEMENT_WISE_UNARY_OPERATION_NOT);
 }
 
 }  // namespace qnn

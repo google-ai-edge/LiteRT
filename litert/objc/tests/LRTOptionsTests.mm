@@ -34,9 +34,9 @@ bool ReadMetalFlags(LRTOptions *options, bool *usesMetalArgumentBuffers,
   if (!gpuOptions.HasValue()) {
     return false;
   }
-  return LrtGetGpuOptionsUseMetalArgumentBuffers(gpuOptions->Get(), usesMetalArgumentBuffers) ==
+  return LrtGetGpuOptionsUseMetalArgumentBuffers(usesMetalArgumentBuffers, gpuOptions->Get()) ==
              kLiteRtStatusOk &&
-         LrtGetGpuOptionsMetalResidencySet(gpuOptions->Get(), enablesMetalResidencySet) ==
+         LrtGetGpuOptionsMetalResidencySet(enablesMetalResidencySet, gpuOptions->Get()) ==
              kLiteRtStatusOk;
 }
 
@@ -56,10 +56,8 @@ bool ReadMetalFlags(LRTOptions *options, bool *usesMetalArgumentBuffers,
 }
 
 - (void)testInitWithHardwareAccelerators {
-  LRTHardwareAccelerators expectedFlags =
-      LRTHardwareAcceleratorCPU | LRTHardwareAcceleratorNPU;
-  LRTOptions *options =
-      [[LRTOptions alloc] initWithHardwareAccelerators:expectedFlags];
+  LRTHardwareAccelerators expectedFlags = LRTHardwareAcceleratorCPU | LRTHardwareAcceleratorNPU;
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:expectedFlags];
   XCTAssertNotNil(options);
   XCTAssertEqual(options.hardwareAccelerators, expectedFlags);
 }
@@ -78,6 +76,37 @@ bool ReadMetalFlags(LRTOptions *options, bool *usesMetalArgumentBuffers,
   options.enablesMetalResidencySet = YES;
   XCTAssertTrue(options.usesMetalArgumentBuffers);
   XCTAssertTrue(options.enablesMetalResidencySet);
+}
+
+- (void)testCopyPreservesPropertiesAndIsIndependent {
+  LRTOptions *original =
+      [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
+  original.usesMetalArgumentBuffers = YES;
+
+  LRTOptions *copiedOptions = [original copy];
+  XCTAssertNotNil(copiedOptions);
+  XCTAssertNotEqual(copiedOptions, original);
+  XCTAssertEqualObjects(copiedOptions, original);
+  XCTAssertEqual(copiedOptions.hardwareAccelerators, LRTHardwareAcceleratorGPU);
+  XCTAssertTrue(copiedOptions.usesMetalArgumentBuffers);
+  XCTAssertFalse(copiedOptions.enablesMetalResidencySet);
+
+  original.enablesMetalResidencySet = YES;
+  XCTAssertFalse(copiedOptions.enablesMetalResidencySet);
+  XCTAssertNotEqualObjects(copiedOptions, original);
+}
+
+- (void)testEqualityAndHash {
+  LRTOptions *firstOptions =
+      [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTOptions *secondOptions =
+      [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTOptions *gpuOptions =
+      [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
+
+  XCTAssertEqualObjects(firstOptions, secondOptions);
+  XCTAssertEqual(firstOptions.hash, secondOptions.hash);
+  XCTAssertNotEqualObjects(firstOptions, gpuOptions);
 }
 
 #if defined(__APPLE__)

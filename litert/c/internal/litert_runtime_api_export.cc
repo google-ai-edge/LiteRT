@@ -264,5 +264,30 @@ extern "C" LITERT_CAPI_EXPORT const LiteRtRuntimeCApiStruct
             LiteRtGetAcceleratorHardwareSupport,
         .litert_compiled_model_is_non_cpu_fully_accelerated =
             LiteRtCompiledModelIsNonCpuFullyAccelerated,
+        .litert_compiled_model_get_delegation_metrics =
+            LiteRtCompiledModelGetDelegationMetrics,
+        .litert_get_delegation_metrics_total_node_count =
+            LiteRtGetDelegationMetricsTotalNodeCount,
+        .litert_get_num_delegation_metrics_accelerators =
+            LiteRtGetNumDelegationMetricsAccelerators,
+        .litert_get_delegation_metrics_accelerator =
+            LiteRtGetDelegationMetricsAccelerator,
+        .litert_get_accelerator_delegation_metrics_name =
+            LiteRtGetAcceleratorDelegationMetricsName,
+        .litert_get_accelerator_delegation_metrics_hardware_type =
+            LiteRtGetAcceleratorDelegationMetricsHardwareType,
+        .litert_get_accelerator_delegation_metrics_delegated_node_count =
+            LiteRtGetAcceleratorDelegationMetricsDelegatedNodeCount,
+        .litert_get_accelerator_delegation_metrics_partition_count =
+            LiteRtGetAcceleratorDelegationMetricsPartitionCount,
+        .litert_create_tensor_buffer_from_custom_handle =
+            LiteRtCreateTensorBufferFromCustomHandle,
+        .litert_get_runtime_abi_version = LiteRtGetRuntimeAbiVersion,
+        .litert_compiled_model_register_tensor_buffer =
+            LiteRtCompiledModelRegisterTensorBuffer,
+        .litert_compiled_model_unregister_tensor_buffer =
+            LiteRtCompiledModelUnregisterTensorBuffer,
+        .litert_get_compiled_model_last_inference_duration =
+            LiteRtGetCompiledModelLastInferenceDuration,
         // Google-internal LINT.ThenChange()
     };

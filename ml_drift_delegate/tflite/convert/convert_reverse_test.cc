@@ -66,13 +66,13 @@ TEST_P(ConvertReverseTest, SingleAxis) {
 
   ASSERT_THAT(ir_model->ops(), SizeIs(1));
   EXPECT_THAT(ir_model->ops()[0]->name,
-              Eq(ToString(::ml_drift::OperationType::REVERSE)));
+              Eq(ToString(::ml_drift::OperationType::kReverse)));
 
   const auto* attr =
       std::any_cast<::ml_drift::ReverseAttributes>(&ir_model->ops()[0]->attr);
   ASSERT_NE(attr, nullptr);
   EXPECT_THAT(attr->axes, SizeIs(1));
-  EXPECT_TRUE(attr->axes.count(::ml_drift::Axis::HEIGHT));
+  EXPECT_TRUE(attr->axes.count(::ml_drift::Axis::kHeight));
 }
 
 TEST_P(ConvertReverseTest, MultipleAxes) {
@@ -96,14 +96,14 @@ TEST_P(ConvertReverseTest, MultipleAxes) {
 
   ASSERT_THAT(ir_model->ops(), SizeIs(1));
   EXPECT_THAT(ir_model->ops()[0]->name,
-              Eq(ToString(::ml_drift::OperationType::REVERSE)));
+              Eq(ToString(::ml_drift::OperationType::kReverse)));
 
   const auto* attr =
       std::any_cast<::ml_drift::ReverseAttributes>(&ir_model->ops()[0]->attr);
   ASSERT_NE(attr, nullptr);
   EXPECT_THAT(attr->axes, SizeIs(2));
-  EXPECT_TRUE(attr->axes.count(::ml_drift::Axis::HEIGHT));
-  EXPECT_TRUE(attr->axes.count(::ml_drift::Axis::WIDTH));
+  EXPECT_TRUE(attr->axes.count(::ml_drift::Axis::kHeight));
+  EXPECT_TRUE(attr->axes.count(::ml_drift::Axis::kWidth));
 }
 
 INSTANTIATE_TEST_SUITE_P(ConvertReverseTest, ConvertReverseTest,

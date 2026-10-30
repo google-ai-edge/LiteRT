@@ -21,11 +21,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
@@ -95,9 +95,13 @@ struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsBackend> qnn_backend;
   std::optional<bool> enable_weight_sharing;
   std::optional<bool> enable_just_in_time;
+  std::optional<LrtQualcommOptionsOpNameFormat> op_name_format;
   std::optional<bool> use_conv_hmx;
   std::optional<bool> use_fold_relu;
+  std::optional<bool> htp_dlbc;
+  std::optional<bool> htp_dlbc_weights;
   std::optional<std::int32_t> htp_p_point;
+  std::optional<std::int32_t> htp_weight_sharing_channel_tile_size;
   std::optional<LrtQualcommOptionsHtpPerformanceMode> htp_performance_mode;
   std::optional<LrtQualcommOptionsDspPerformanceMode> dsp_performance_mode;
   std::optional<LrtQualcommOptionsHtpPerfCtrlMode> htp_perf_ctrl_mode;
@@ -110,7 +114,9 @@ struct LrtQualcommOptionsT {
   std::optional<std::string> dlc_dir;
   std::optional<std::string> graph_transform;
   std::optional<std::uint32_t> vtcm_size;
+  std::optional<std::uint32_t> htp_device_id;
   std::optional<std::uint32_t> num_hvx_threads;
+  std::optional<std::uint32_t> htp_file_read_memory_budget_mb;
   std::optional<LrtQualcommOptionsOptimizationLevel> optimization_level;
   std::optional<LrtQualcommOptionsGraphPriority> graph_priority;
   std::optional<std::string> saver_output_dir;
@@ -178,6 +184,12 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return v.Error().Status();
           LrtQualcommOptionsSetEnableJustInTime(parsed_options, *v);
+        } else if (key == "op_name_format") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetOpNameFormat(
+              parsed_options,
+              static_cast<LrtQualcommOptionsOpNameFormat>(*v));
         } else if (key == "use_conv_hmx") {
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -186,10 +198,23 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetUseFoldReLU(parsed_options, *v);
+        } else if (key == "htp_dlbc") {
+          auto v = litert::internal::ParseTomlBool(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpDlbc(parsed_options, *v);
+        } else if (key == "htp_dlbc_weights") {
+          auto v = litert::internal::ParseTomlBool(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpDlbcWeights(parsed_options, *v);
         } else if (key == "htp_p_point") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetHtpPPoint(parsed_options, *v);
+        } else if (key == "htp_weight_sharing_channel_tile_size") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpWeightSharingChannelTileSize(
+              parsed_options, *v);
         } else if (key == "htp_performance_mode") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -258,10 +283,20 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetVtcmSize(parsed_options,
                                                  static_cast<uint32_t>(*v));
+        } else if (key == "htp_device_id") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpDeviceId(parsed_options,
+                                                    static_cast<uint32_t>(*v));
         } else if (key == "num_hvx_threads") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetNumHvxThreads(
+              parsed_options, static_cast<uint32_t>(*v));
+        } else if (key == "htp_file_read_memory_budget_mb") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetHtpFileReadMemoryBudgetMB(
               parsed_options, static_cast<uint32_t>(*v));
         } else if (key == "optimization_level") {
           auto v = litert::internal::ParseTomlInt(value);
@@ -363,152 +398,192 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  std::ostringstream toml;
+  std::string toml_str;
   if (options->log_level.has_value()) {
-    toml << "log_level = " << static_cast<int>(*options->log_level) << "\n";
+    absl::StrAppend(
+        &toml_str, "log_level = ", static_cast<int>(*options->log_level), "\n");
   }
   if (options->profiling.has_value()) {
-    toml << "profiling = " << static_cast<int>(*options->profiling) << "\n";
+    absl::StrAppend(
+        &toml_str, "profiling = ", static_cast<int>(*options->profiling), "\n");
   }
   if (options->use_htp_preference.has_value()) {
-    toml << "use_htp_preference = "
-         << (*options->use_htp_preference ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "use_htp_preference = ",
+                    *options->use_htp_preference ? "true" : "false", "\n");
   }
   if (options->use_qint16_as_quint16.has_value()) {
-    toml << "use_qint16_as_quint16 = "
-         << (*options->use_qint16_as_quint16 ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "use_qint16_as_quint16 = ",
+                    *options->use_qint16_as_quint16 ? "true" : "false", "\n");
   }
   if (options->use_int64_bias_as_int32.has_value()) {
-    toml << "use_int64_bias_as_int32 = "
-         << (*options->use_int64_bias_as_int32 ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "use_int64_bias_as_int32 = ",
+                    *options->use_int64_bias_as_int32 ? "true" : "false", "\n");
   }
   if (options->qnn_backend.has_value()) {
-    toml << "qnn_backend = " << static_cast<int>(*options->qnn_backend) << "\n";
+    absl::StrAppend(&toml_str,
+                    "qnn_backend = ", static_cast<int>(*options->qnn_backend),
+                    "\n");
   }
   if (options->enable_weight_sharing.has_value()) {
-    toml << "enable_weight_sharing = "
-         << (*options->enable_weight_sharing ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "enable_weight_sharing = ",
+                    *options->enable_weight_sharing ? "true" : "false", "\n");
   }
   if (options->enable_just_in_time.has_value()) {
-    toml << "enable_just_in_time = "
-         << (*options->enable_just_in_time ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "enable_just_in_time = ",
+                    *options->enable_just_in_time ? "true" : "false", "\n");
+  }
+  if (options->op_name_format.has_value()) {
+    absl::StrAppend(&toml_str, "op_name_format = ",
+                    static_cast<int>(*options->op_name_format), "\n");
   }
   if (options->use_conv_hmx.has_value()) {
-    toml << "use_conv_hmx = " << (*options->use_conv_hmx ? "true" : "false")
-         << "\n";
+    absl::StrAppend(&toml_str, "use_conv_hmx = ",
+                    *options->use_conv_hmx ? "true" : "false", "\n");
   }
   if (options->use_fold_relu.has_value()) {
-    toml << "use_fold_relu = " << (*options->use_fold_relu ? "true" : "false")
-         << "\n";
+    absl::StrAppend(&toml_str, "use_fold_relu = ",
+                    *options->use_fold_relu ? "true" : "false", "\n");
+  }
+  if (options->htp_dlbc.has_value()) {
+    absl::StrAppend(&toml_str, "htp_dlbc = ",
+                    *options->htp_dlbc ? "true" : "false", "\n");
+  }
+  if (options->htp_dlbc_weights.has_value()) {
+    absl::StrAppend(&toml_str, "htp_dlbc_weights = ",
+                    *options->htp_dlbc_weights ? "true" : "false", "\n");
   }
   if (options->htp_p_point.has_value()) {
-    toml << "htp_p_point = " << *options->htp_p_point << "\n";
+    absl::StrAppend(&toml_str, "htp_p_point = ", *options->htp_p_point, "\n");
+  }
+  if (options->htp_weight_sharing_channel_tile_size.has_value()) {
+    absl::StrAppend(&toml_str, "htp_weight_sharing_channel_tile_size = ",
+                    *options->htp_weight_sharing_channel_tile_size, "\n");
   }
   if (options->htp_performance_mode.has_value()) {
-    toml << "htp_performance_mode = "
-         << static_cast<int>(*options->htp_performance_mode) << "\n";
+    absl::StrAppend(&toml_str, "htp_performance_mode = ",
+                    static_cast<int>(*options->htp_performance_mode), "\n");
   }
   if (options->dsp_performance_mode.has_value()) {
-    toml << "dsp_performance_mode = "
-         << static_cast<int>(*options->dsp_performance_mode) << "\n";
+    absl::StrAppend(&toml_str, "dsp_performance_mode = ",
+                    static_cast<int>(*options->dsp_performance_mode), "\n");
   }
   if (options->htp_perf_ctrl_mode.has_value()) {
-    toml << "htp_perf_ctrl_mode = "
-         << static_cast<int>(*options->htp_perf_ctrl_mode) << "\n";
+    absl::StrAppend(&toml_str, "htp_perf_ctrl_mode = ",
+                    static_cast<int>(*options->htp_perf_ctrl_mode), "\n");
   }
   if (options->htp_pd_session.has_value()) {
-    toml << "htp_pd_session = " << static_cast<int>(*options->htp_pd_session)
-         << "\n";
+    absl::StrAppend(&toml_str, "htp_pd_session = ",
+                    static_cast<int>(*options->htp_pd_session), "\n");
   }
   if (options->dsp_perf_ctrl_mode.has_value()) {
-    toml << "dsp_perf_ctrl_mode = "
-         << static_cast<int>(*options->dsp_perf_ctrl_mode) << "\n";
+    absl::StrAppend(&toml_str, "dsp_perf_ctrl_mode = ",
+                    static_cast<int>(*options->dsp_perf_ctrl_mode), "\n");
   }
   if (options->dsp_pd_session.has_value()) {
-    toml << "dsp_pd_session = " << static_cast<int>(*options->dsp_pd_session)
-         << "\n";
+    absl::StrAppend(&toml_str, "dsp_pd_session = ",
+                    static_cast<int>(*options->dsp_pd_session), "\n");
   }
   if (options->dsp_encoding.has_value()) {
-    toml << "dsp_encoding = " << static_cast<int>(*options->dsp_encoding)
-         << "\n";
+    absl::StrAppend(&toml_str,
+                    "dsp_encoding = ", static_cast<int>(*options->dsp_encoding),
+                    "\n");
   }
   if (options->dump_tensor_ids.has_value()) {
-    toml << "dump_tensor_ids = [";
+    absl::StrAppend(&toml_str, "dump_tensor_ids = [");
     for (size_t i = 0; i < options->dump_tensor_ids->size(); ++i) {
-      if (i > 0) toml << ", ";
-      toml << "\"" << (*options->dump_tensor_ids)[i] << "\"";
+      if (i > 0) absl::StrAppend(&toml_str, ", ");
+      absl::StrAppend(&toml_str, "\"", (*options->dump_tensor_ids)[i], "\"");
     }
-    toml << "]\n";
+    absl::StrAppend(&toml_str, "]\n");
   }
   if (options->ir_json_dir.has_value()) {
-    toml << "ir_json_dir = \"" << *options->ir_json_dir << "\"\n";
+    absl::StrAppend(&toml_str, "ir_json_dir = \"", *options->ir_json_dir,
+                    "\"\n");
   }
   if (options->dlc_dir.has_value()) {
-    toml << "dlc_dir = \"" << *options->dlc_dir << "\"\n";
+    absl::StrAppend(&toml_str, "dlc_dir = \"", *options->dlc_dir, "\"\n");
   }
   if (options->graph_transform.has_value()) {
-    toml << "graph_transform = \"" << *options->graph_transform << "\"\n";
+    absl::StrAppend(&toml_str, "graph_transform = \"",
+                    *options->graph_transform, "\"\n");
   }
   if (options->vtcm_size.has_value()) {
-    toml << "vtcm_size = " << *options->vtcm_size << "\n";
+    absl::StrAppend(&toml_str, "vtcm_size = ", *options->vtcm_size, "\n");
+  }
+  if (options->htp_device_id.has_value()) {
+    absl::StrAppend(&toml_str, "htp_device_id = ", *options->htp_device_id,
+                    "\n");
   }
   if (options->num_hvx_threads.has_value()) {
-    toml << "num_hvx_threads = " << *options->num_hvx_threads << "\n";
+    absl::StrAppend(&toml_str, "num_hvx_threads = ", *options->num_hvx_threads,
+                    "\n");
+  }
+  if (options->htp_file_read_memory_budget_mb.has_value()) {
+    absl::StrAppend(&toml_str, "htp_file_read_memory_budget_mb = ",
+                    *options->htp_file_read_memory_budget_mb, "\n");
   }
   if (options->optimization_level.has_value()) {
-    toml << "optimization_level = "
-         << static_cast<int>(*options->optimization_level) << "\n";
+    absl::StrAppend(&toml_str, "optimization_level = ",
+                    static_cast<int>(*options->optimization_level), "\n");
   }
   if (options->graph_priority.has_value()) {
-    toml << "graph_priority = " << static_cast<int>(*options->graph_priority)
-         << "\n";
+    absl::StrAppend(&toml_str, "graph_priority = ",
+                    static_cast<int>(*options->graph_priority), "\n");
   }
   if (options->saver_output_dir.has_value()) {
-    toml << "saver_output_dir = \"" << *options->saver_output_dir << "\"\n";
+    absl::StrAppend(&toml_str, "saver_output_dir = \"",
+                    *options->saver_output_dir, "\"\n");
   }
   if (options->schematic_dir.has_value()) {
-    toml << "schematic_dir = \"" << *options->schematic_dir << "\"\n";
+    absl::StrAppend(&toml_str, "schematic_dir = \"", *options->schematic_dir,
+                    "\"\n");
   }
   if (options->graph_io_tensor_mem_type.has_value()) {
-    toml << "graph_io_tensor_mem_type = "
-         << static_cast<int>(*options->graph_io_tensor_mem_type) << "\n";
+    absl::StrAppend(&toml_str, "graph_io_tensor_mem_type = ",
+                    static_cast<int>(*options->graph_io_tensor_mem_type), "\n");
   }
   if (options->custom_op_package.has_value()) {
     const auto& package = *options->custom_op_package;
-    toml << "custom_op_package = \"" << "name:" << package.name << ";"
-         << "interface_provider:" << package.interface_provider << ";"
-         << "compile_package_path:" << package.compile_package_path << ";"
-         << "dispatch_package_path:" << package.dispatch_package_path << ";"
-         << "target:" << package.target << ";" << "\"\n";
+    absl::StrAppend(&toml_str, "custom_op_package = \"", "name:", package.name,
+                    ";", "interface_provider:", package.interface_provider, ";",
+                    "compile_package_path:", package.compile_package_path, ";",
+                    "dispatch_package_path:", package.dispatch_package_path,
+                    ";", "target:", package.target, ";", "\"\n");
   }
   if (options->lpai_target.has_value()) {
-    toml << "lpai_target = " << static_cast<int>(*options->lpai_target) << "\n";
+    absl::StrAppend(&toml_str,
+                    "lpai_target = ", static_cast<int>(*options->lpai_target),
+                    "\n");
   }
   if (options->lpai_fps.has_value()) {
-    toml << "lpai_fps = " << *options->lpai_fps << "\n";
+    absl::StrAppend(&toml_str, "lpai_fps = ", *options->lpai_fps, "\n");
   }
   if (options->lpai_ftrt_ratio.has_value()) {
-    toml << "lpai_ftrt_ratio = " << *options->lpai_ftrt_ratio << "\n";
+    absl::StrAppend(&toml_str, "lpai_ftrt_ratio = ", *options->lpai_ftrt_ratio,
+                    "\n");
   }
   if (options->lpai_client_perf_type.has_value()) {
-    toml << "lpai_client_perf_type = "
-         << static_cast<int>(*options->lpai_client_perf_type) << "\n";
+    absl::StrAppend(&toml_str, "lpai_client_perf_type = ",
+                    static_cast<int>(*options->lpai_client_perf_type), "\n");
   }
   if (options->lpai_core_affinity_type.has_value()) {
-    toml << "lpai_core_affinity_type = "
-         << static_cast<int>(*options->lpai_core_affinity_type) << "\n";
+    absl::StrAppend(&toml_str, "lpai_core_affinity_type = ",
+                    static_cast<int>(*options->lpai_core_affinity_type), "\n");
   }
   if (options->lpai_core_selection.has_value()) {
-    toml << "lpai_core_selection = " << *options->lpai_core_selection << "\n";
+    absl::StrAppend(&toml_str,
+                    "lpai_core_selection = ", *options->lpai_core_selection,
+                    "\n");
   }
   if (options->qnn_lib_dir.has_value()) {
-    toml << "qnn_lib_dir = \"" << *options->qnn_lib_dir << "\"\n";
+    absl::StrAppend(&toml_str, "qnn_lib_dir = \"", *options->qnn_lib_dir,
+                    "\"\n");
   }
   if (options->dsp_skel_dir.has_value()) {
-    toml << "dsp_skel_dir = \"" << *options->dsp_skel_dir << "\"\n";
+    absl::StrAppend(&toml_str, "dsp_skel_dir = \"", *options->dsp_skel_dir,
+                    "\"\n");
   }
   *identifier = LrtQualcommOptionsGetIdentifier();
-  std::string toml_str = toml.str();
   litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
 
   return kLiteRtStatusOk;
@@ -846,6 +921,75 @@ LiteRtStatus LrtQualcommOptionsGetUseFoldReLU(LrtQualcommOptions options,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LrtQualcommOptionsSetOpNameFormat(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsOpNameFormat op_name_format) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->op_name_format = op_name_format;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetOpNameFormat(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsOpNameFormat* op_name_format) {
+  if (op_name_format == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *op_name_format = options->op_name_format.value_or(
+      kLiteRtQualcommOpNameFormatBasic);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpDlbc(LrtQualcommOptions options,
+                                          bool htp_dlbc) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_dlbc = htp_dlbc;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpDlbc(LrtQualcommOptions options,
+                                          bool* htp_dlbc) {
+  if (htp_dlbc == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *htp_dlbc = options->htp_dlbc.value_or(false);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpDlbcWeights(LrtQualcommOptions options,
+                                                 bool htp_dlbc_weights) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_dlbc_weights = htp_dlbc_weights;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpDlbcWeights(LrtQualcommOptions options,
+                                                 bool* htp_dlbc_weights) {
+  if (htp_dlbc_weights == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *htp_dlbc_weights = options->htp_dlbc_weights.value_or(false);
+
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LrtQualcommOptionsSetGraphIOTensorMemType(
     LrtQualcommOptions options,
     LrtQualcommOptionsGraphIOTensorMemType graph_io_tensor_mem_type) {
@@ -889,6 +1033,32 @@ LiteRtStatus LrtQualcommOptionsGetHtpPPoint(LrtQualcommOptions options,
   }
 
   *htp_p_point = options->htp_p_point.value_or(0);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpWeightSharingChannelTileSize(
+    LrtQualcommOptions options,
+    std::int32_t htp_weight_sharing_channel_tile_size) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_weight_sharing_channel_tile_size =
+      htp_weight_sharing_channel_tile_size;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpWeightSharingChannelTileSize(
+    LrtQualcommOptions options,
+    std::int32_t* htp_weight_sharing_channel_tile_size) {
+  if (htp_weight_sharing_channel_tile_size == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *htp_weight_sharing_channel_tile_size =
+      options->htp_weight_sharing_channel_tile_size.value_or(0);
 
   return kLiteRtStatusOk;
 }
@@ -1153,6 +1323,50 @@ LiteRtStatus LrtQualcommOptionsGetVtcmSize(LrtQualcommOptions options,
   }
 
   *vtcm_size = options->vtcm_size.value_or(0);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpDeviceId(LrtQualcommOptions options,
+                                              std::uint32_t htp_device_id) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_device_id = htp_device_id;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpDeviceId(LrtQualcommOptions options,
+                                              std::uint32_t* htp_device_id) {
+  if (options == nullptr || htp_device_id == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *htp_device_id = options->htp_device_id.value_or(0);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpFileReadMemoryBudgetMB(
+    LrtQualcommOptions options, std::uint32_t budget_mb) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->htp_file_read_memory_budget_mb = budget_mb;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpFileReadMemoryBudgetMB(
+    LrtQualcommOptions options, std::uint32_t* budget_mb) {
+  if (options == nullptr || budget_mb == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *budget_mb = options->htp_file_read_memory_budget_mb.value_or(0);
 
   return kLiteRtStatusOk;
 }

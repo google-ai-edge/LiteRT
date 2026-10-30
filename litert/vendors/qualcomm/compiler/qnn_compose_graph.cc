@@ -74,6 +74,7 @@
 #include "litert/vendors/qualcomm/core/builders/l2_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/layer_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/leaky_relu_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/local_response_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/log_softmax_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/logistic_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
@@ -105,7 +106,9 @@
 #include "litert/vendors/qualcomm/core/builders/strided_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tile_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/detection_postprocess_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/topk_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/transpose_conv3d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
@@ -140,6 +143,27 @@ std::string SanitizeName(std::string_view name) {
     }
   }
   return out;
+}
+
+void ApplyDetailedOpNames(const litert::compiler::Op& op, int id,
+                          std::vector<::qnn::OpWrapper>& op_wrappers) {
+  for (auto& op_wrapper : op_wrappers) {
+    op_wrapper.AddSuffixToName(
+        absl::StrCat("_LiteRt_OpId_", std::to_string(id)));
+  }
+  if (op.Outputs().empty()) return;
+  std::vector<std::string> candidate_names;
+  for (const auto& output_tensor : op.Outputs()) {
+    for (const auto& name :
+         absl::StrSplit(output_tensor.Name(), ';', absl::SkipEmpty())) {
+      candidate_names.emplace_back(name);
+    }
+  }
+  auto op_namespace =
+      TfliteNodeNamespaceHeuristic(GetTfliteOpName(op.Code()), candidate_names);
+  for (auto& op_wrapper : op_wrappers) {
+    op_wrapper.AddPrefixToName(absl::StrCat(op_namespace, "/"));
+  }
 }
 
 }  // namespace
@@ -333,7 +357,15 @@ LiteRtStatus ConvertTensor(const litert::compiler::Tensor& litert_tensor,
         SanitizeName(litert_tensor.Name()), qnn_data_type, quantize_params,
         dimensions);
     tensor_wrapper = &res;
-  } else if (litert_tensor.Uses().empty() || is_tensor_output) {
+  } else if (is_tensor_output) {
+    // Only tensors explicitly declared as subgraph outputs should be created
+    // as QNN Graph Outputs. Do NOT use `litert_tensor.Uses().empty()` here:
+    // intermediate or orphaned tensors left behind by transformations or
+    // multi-output ops have no uses, but are not model outputs. If marked as
+    // QNN outputs, QNN will require client buffers for them at execution time,
+    // causing runtime crashes ("clientBuf is null", status 0x1774).
+    // TODO: yunandrew - Use "Uses().empty()" once all transformations
+    // properly set output tensors.
     auto& res = tensor_pool.CreateOutputTensorWithName(
         SanitizeName(litert_tensor.Name()), qnn_data_type, quantize_params,
         dimensions);
@@ -568,6 +600,23 @@ REGISTER_SIMPLE_OP_BUILDER(BuildSpaceToBatchNdOp, BuildSpaceToBatchNdOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildAddNOp, BuildAddNOp)
 
 #undef REGISTER_SIMPLE_OP_BUILDER
+
+LiteRtStatus BuildAtan2Op(const litert::compiler::Op& litert_op,
+                          ::qnn::TensorPool& tensor_pool,
+                          std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                          std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                          std::vector<::qnn::OpWrapper>& op_wrappers) {
+  if (input_tensors.size() != 2 || output_tensors.size() != 1) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!input_tensors[0].get().IsF32() || !input_tensors[1].get().IsF32() ||
+      !output_tensors[0].get().IsF32()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  op_wrappers =
+      ::qnn::BuildElementwiseAtan2Op(tensor_pool, input_tensors, output_tensors);
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus BuildQuantizeOp(
     const litert::compiler::Op&, ::qnn::TensorPool& tensor_pool,
@@ -1219,6 +1268,41 @@ LiteRtStatus BuildTransposeConvOp(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus BuildTransposeConv3dOp(
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers) {
+  auto options =
+      litert::compiler::GetOptionsAs<litert::compiler::Conv3dTransposeOptions>(
+          litert_op.ctx(), litert_op.Get());
+  if (!options) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  uint32_t padding = static_cast<uint32_t>(options->padding);
+  int32_t stride_d = options->stride_d;
+  int32_t stride_w = options->stride_w;
+  int32_t stride_h = options->stride_h;
+  int32_t dilation_d_factor = options->dilation_d_factor;
+  int32_t dilation_w_factor = options->dilation_w_factor;
+  int32_t dilation_h_factor = options->dilation_h_factor;
+  uint32_t fused_activation =
+      static_cast<uint32_t>(options->fused_activation_function);
+
+  ::qnn::PaddingType qnn_padding;
+  LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
+
+  auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
+      tensor_pool, fused_activation, output_tensors);
+  op_wrappers = ::qnn::BuildTransposeConv3dOp(
+      tensor_pool, input_tensors, {activation_input}, stride_d, stride_h,
+      stride_w, dilation_d_factor, dilation_h_factor, dilation_w_factor,
+      qnn_padding);
+  ::qnn::AddFusedActivationNode(op_wrappers, fused_activation, activation_input,
+                                output_tensors[0]);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus BuildDepthwiseConv2dOp(
     const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -1398,6 +1482,26 @@ LiteRtStatus BuildLeakyReluOp(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus BuildLocalResponseNormOp(
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers) {
+  auto options = litert::compiler::GetOptionsAs<
+      litert::compiler::LocalResponseNormalizationOptions>(litert_op.ctx(),
+                                                           litert_op.Get());
+  if (!options) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  int32_t radius = options->radius;
+  float bias = options->bias;
+  float alpha = options->alpha;
+  float beta = options->beta;
+  op_wrappers.emplace_back(::qnn::CreateLocalResponseNormOp(
+      input_tensors[0], output_tensors[0], radius, bias, alpha, beta));
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus BuildResizeBilinearOp(
     const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -1528,6 +1632,7 @@ GetOpBuilders() {
   std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1> builders{};
   builders[kLiteRtOpCodeTflAdd] = Adapt<BuildAddOp>;
   builders[kLiteRtOpCodeTflAddN] = Adapt<BuildAddNOp>;
+  builders[kLiteRtOpCodeTflAtan2] = Adapt<BuildAtan2Op>;
   builders[kLiteRtOpCodeTflAveragePool2d] = Adapt<BuildAveragePool2dOp>;
   builders[kLiteRtOpCodeTflConcatenation] = Adapt<BuildConcatenationOp>;
   builders[kLiteRtOpCodeTflConv2d] = Adapt<BuildConv2dOp>;
@@ -1539,6 +1644,8 @@ GetOpBuilders() {
   builders[kLiteRtOpCodeTflFullyConnected] = Adapt<BuildFullyConnectedOp>;
   builders[kLiteRtOpCodeTflL2Normalization] = Adapt<BuildL2NormalizationOp>;
   builders[kLiteRtOpCodeTflL2Pool2d] = Adapt<BuildL2Pool2dOp>;
+  builders[kLiteRtOpCodeTflLocalResponseNormalization] =
+      Adapt<BuildLocalResponseNormOp>;
   builders[kLiteRtOpCodeTflLogistic] = Adapt<BuildLogisticOp>;
   builders[kLiteRtOpCodeTflMaxPool2d] = Adapt<BuildMaxPool2dOp>;
   builders[kLiteRtOpCodeTflMul] = Adapt<BuildMulOp>;
@@ -1621,12 +1728,14 @@ GetOpBuilders() {
   builders[kLiteRtOpCodeTflCumsum] = Adapt<BuildCumsumOp>;
   builders[kLiteRtOpCodeTflBroadcastTo] = Adapt<BuildBroadcastToOp>;
   builders[kLiteRtOpCodeTflConv3d] = Adapt<BuildConv3dOp>;
+  builders[kLiteRtOpCodeTflConv3dTranspose] = Adapt<BuildTransposeConv3dOp>;
   builders[kLiteRtOpCodeTflReduceAll] = Adapt<BuildReduceAllOp>;
   builders[kLiteRtOpCodeTflGelu] = Adapt<BuildGeluOp>;
   builders[kLiteRtOpCodeTflDynamicUpdateSlice] =
       Adapt<BuildDynamicUpdateSliceOp>;
   builders[kLiteRtOpCodeTflRelu0To1] = Adapt<BuildRelu0To1Op>;
   builders[kLiteRtOpCodeTflSign] = Adapt<BuildSignOp>;
+  builders[kLiteRtOpCodeTflExpandDims] = Adapt<BuildReshapeOp>;
   builders[kLiteRtOpCodeShloComposite] = Adapt<BuildShloCompositeOp>;
   return builders;
 }
@@ -1635,24 +1744,56 @@ constexpr std::array<OpBuilder, kLiteRtOpCodeShloComposite + 1> kOpBuilders =
     GetOpBuilders();
 static_assert(kOpBuilders.size() == kLiteRtOpCodeShloComposite + 1);
 
+LiteRtStatus BuildDetectionPostprocessCustomOp(
+    const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers) {
+  auto custom_options = litert_op.CustomOptions();
+  if (!custom_options.HasValue() || custom_options->empty()) {
+    LITERT_LOG(LITERT_ERROR,
+               "TFLite_Detection_PostProcess: missing custom options.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  if (!flexbuffers::VerifyBuffer(custom_options->data(),
+                                 custom_options->size())) {
+    LITERT_LOG(LITERT_ERROR,
+               "TFLite_Detection_PostProcess: custom options are not valid "
+               "flexbuffer.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  return ::qnn::BuildDetectionPostprocessOp(*custom_options, tensor_pool,
+                                            input_tensors, output_tensors,
+                                            op_wrappers);
+}
+
 LiteRtStatus BuildCustomOp(const litert::compiler::Op& litert_op,
                            ::qnn::TensorPool& tensor_pool,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
                            std::vector<::qnn::TensorWrapperRef>& output_tensors,
                            std::vector<::qnn::OpWrapper>& op_wrappers,
                            const ::qnn::CustomOpPackage& custom_op_package) {
-  if (custom_op_package.name.empty()) {
-    LITERT_LOG(LITERT_WARNING,
-               "No custom package registered for custom op, won't create QNN "
-               "custom op.");
-    return kLiteRtStatusOk;
-  }
-
   // Use tflite custom code as op type in QNN custom op package.
   auto custom_code = litert_op.CustomCode();
   if (!custom_code.HasValue() || custom_code->empty()) {
     LITERT_LOG(LITERT_ERROR, "Custom op missing custom code.");
     return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  // TFLite_Detection_PostProcess is translated to the QNN DetectionOutput op.
+  if (*custom_code == "TFLite_Detection_PostProcess") {
+    return BuildDetectionPostprocessCustomOp(litert_op, tensor_pool,
+                                             input_tensors, output_tensors,
+                                             op_wrappers);
+  }
+
+  if (custom_op_package.name.empty()) {
+    LITERT_LOG(LITERT_WARNING,
+               "No custom package registered for custom op, won't create QNN "
+               "custom op.");
+    return kLiteRtStatusOk;
   }
 
   auto custom_options = litert_op.CustomOptions();
@@ -1834,25 +1975,8 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     LITERT_RETURN_IF_ERROR(ConvertOp(options, op, tensor_pool, input_tensors,
                                      output_tensors, op_wrappers, id,
                                      qnn.GetSdkVersion()));
-    for (auto& op_wrapper : op_wrappers) {
-      // Add litert op id to qnn op name to preserve op mapping
-      op_wrapper.AddSuffixToName(
-          absl::StrCat("_LiteRt_OpId_", std::to_string(id)));
-    }
-    if (!op.Outputs().empty()) {
-      // Add op namespace inference based on output tensor names.
-      std::vector<std::string> candidate_names;
-      for (const auto& output_tensor : op.Outputs()) {
-        for (const auto& name :
-             absl::StrSplit(output_tensor.Name(), ';', absl::SkipEmpty())) {
-          candidate_names.emplace_back(name);
-        }
-      }
-      auto op_namespace = TfliteNodeNamespaceHeuristic(
-          GetTfliteOpName(op.Code()), candidate_names);
-      for (auto& op_wrapper : op_wrappers) {
-        op_wrapper.AddPrefixToName(absl::StrCat(op_namespace, "/"));
-      }
+    if (options.GetOpNameFormat() == ::qnn::OpNameFormat::kDetailed) {
+      ApplyDetailedOpNames(op, id, op_wrappers);
     }
     // Move op_wrappers to graph_op_wrappers.
     std::move(op_wrappers.begin(), op_wrappers.end(),

@@ -37,7 +37,7 @@ def openvino_configure():
     # openvino_version.bzl.
     configurable_repo(
         name = "intel_openvino",
-        build_file = Label("@//third_party/intel_openvino:openvino.bazel"),
+        build_file = Label("//third_party/intel_openvino:openvino.bazel"),
         local_path_env = "OPENVINO_NATIVE_DIR",
         packages = json.encode([
             {

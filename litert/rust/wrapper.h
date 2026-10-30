@@ -16,6 +16,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_RUST_WRAPPER_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_RUST_WRAPPER_H_
 
+#include "../c/internal/litert_accelerator.h"        // IWYU pragma: keep
 #include "../c/internal/litert_logging.h"            // IWYU pragma: keep
 #include "../c/litert_common.h"                      // IWYU pragma: keep
 #include "../c/litert_compiled_model.h"              // IWYU pragma: keep

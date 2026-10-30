@@ -17,7 +17,6 @@
 
 #include <cstdarg>
 #include <cstddef>
-#include <sstream>
 #include <string>
 
 #include "tflite/core/api/error_reporter.h"
@@ -45,7 +44,7 @@ class BufferErrorReporter : public ::tflite::ErrorReporter {
   size_t NumErrors() const { return num_errors_; }
 
  private:
-  std::stringstream buffer_;
+  std::string buffer_;
   size_t num_errors_ = 0;
 };
 

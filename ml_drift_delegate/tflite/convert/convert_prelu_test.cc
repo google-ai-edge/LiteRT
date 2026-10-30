@@ -59,7 +59,7 @@ TEST(ConvertPreluTest, LinearAlpha) {
   const auto* attr = std::any_cast<::ml_drift::PReLUAttributes>(&op->attr);
   ASSERT_TRUE(attr);
   const auto* linear_alpha = std::get_if<
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>>(
       &attr->alpha);
   ASSERT_TRUE(linear_alpha);
   EXPECT_EQ(linear_alpha->shape.v, 4);
@@ -90,7 +90,7 @@ TEST(ConvertPreluTest, HwcAlpha) {
   const auto* attr = std::any_cast<::ml_drift::PReLUAttributes>(&op->attr);
   ASSERT_TRUE(attr);
   const auto* hwc_alpha = std::get_if<
-      ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::kFloat32>>(
       &attr->alpha);
   ASSERT_TRUE(hwc_alpha);
   EXPECT_EQ(hwc_alpha->shape.h, 2);

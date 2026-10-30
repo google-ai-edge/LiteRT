@@ -36,6 +36,41 @@ extern "C" size_t LiteRtNvidiaDecodeAttentionWorkspaceBytes(int32_t heads,
                                                             int32_t seq,
                                                             int32_t depth);
 
+// Per-tensor quantization of INT8 key and value caches (Gemma 4 E4B):
+// real = (quantized - zero_point) * scale. value_columns says the value cache
+// is stored [1, H, D, S] (the model's layout) rather than rows [1, H, S, D].
+struct LiteRtNvidiaInt8CacheParams {
+  float k_scale;
+  int32_t k_zero_point;
+  float v_scale;
+  int32_t v_zero_point;
+  bool value_columns;
+};
+
+// Whether the INT8-cache kernel is built for this head depth.
+extern "C" bool LiteRtNvidiaDecodeAttentionInt8Supports(int32_t depth);
+
+// Decode attention over INT8 caches: q [1, H, rows, D] (FP16 or BF16),
+// k [1, H, S, D] INT8, v [1, H, S, D] or [1, H, D, S] INT8, the same mask,
+// workspace (LiteRtNvidiaDecodeAttentionWorkspaceBytes) and output as the
+// FP16 entry below.
+extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttentionInt8(
+    const void* q, bool q_bf16, const void* k, const void* v,
+    const LiteRtNvidiaInt8CacheParams* params, const bool* mask,
+    int32_t mask_rows, int32_t heads, int32_t rows, int32_t seq, int32_t depth,
+    float fill, void* out, void* workspace, cudaStream_t stream);
+
+// INT8 caches read through a window: the caches and the mask hold cache_len
+// keys per head, and `window` keys starting at window_start[0] (a device
+// int32; a multiple of 16 keeps the value loads vectorized) are attended.
+// The workspace is sized for `window` keys.
+extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttentionInt8Window(
+    const void* q, bool q_bf16, const void* k, const void* v,
+    const LiteRtNvidiaInt8CacheParams* params, const bool* mask,
+    int32_t mask_rows, int32_t heads, int32_t rows, int32_t cache_len,
+    int32_t window, const int32_t* window_start, int32_t depth, float fill,
+    void* out, void* workspace, cudaStream_t stream);
+
 extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttention(
     const void* q, bool q_bf16, const void* k, const void* v, const bool* mask,
     int32_t mask_rows, int32_t heads, int32_t rows, int32_t seq, int32_t depth,

@@ -15,6 +15,7 @@
 #include "ml_drift_delegate/delegate/gpu_backend_metal.h"
 
 #import <Metal/Metal.h>
+#include <unistd.h>
 
 #include <memory>
 #include <utility>
@@ -28,6 +29,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
+#include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift/metal/buffer.h"  // from @ml_drift
 #include "ml_drift/metal/converter.h"  // from @ml_drift
 #include "ml_drift/metal/inference_context.h"  // from @ml_drift
@@ -335,14 +337,18 @@ absl::Status GpuBackendMetal::UpdateSpatialTensor(::ml_drift::GpuSpatialTensor* 
 
   auto* metal_tensor = static_cast<::ml_drift::metal::MetalSpatialTensor*>(tensor);
 
-  if (release_data_callback && desc.GetStorageType() == ::ml_drift::TensorStorageType::BUFFER &&
-      (desc.GetDataType() == ::ml_drift::DataType::UINT8 ||
-       desc.GetDataType() == ::ml_drift::DataType::UINT4 ||
-       desc.GetDataType() == ::ml_drift::DataType::UINT2)) {
+  if (release_data_callback && desc.GetStorageType() == ::ml_drift::TensorStorageType::kBuffer &&
+      (desc.GetDataType() == ::ml_drift::DataType::kUint8 ||
+       desc.GetDataType() == ::ml_drift::DataType::kUint4 ||
+       desc.GetDataType() == ::ml_drift::DataType::kUint2)) {
     const uint8_t* data = desc.GetData().data();
     size_t size = desc.GetData().size();
     const uint8_t* raw_data = data - page_adjusted_offset;
-    size_t raw_size = size + page_adjusted_offset;
+    // newBufferWithBytesNoCopy requires the length to be a multiple of the VM
+    // page size (16 KiB on Apple Silicon), so round up. This is safe because the
+    // data is mmap'd, and mmap maps whole pages.
+    size_t raw_size =
+        ::ml_drift::AlignByN(size + page_adjusted_offset, static_cast<size_t>(getpagesize()));
 
     auto* release_cb_ptr = new ReleaseDataCallback(std::move(release_data_callback));
     id<MTLBuffer> buffer =
@@ -437,26 +443,28 @@ absl::StatusOr<::ml_drift::GpuSpatialTensor*> GpuInferenceContextMetal::GetSpati
 
 absl::Status GpuInferenceContextMetal::BindSpatialTensor(::ml_drift::ValueId tensor_id,
                                                          ::ml_drift::GpuSpatialTensor* tensor) {
-  ABSL_RETURN_IF_ERROR(
-      ctx_->SetTensor(tensor_id, static_cast<::ml_drift::metal::MetalSpatialTensor*>(tensor)));
+  auto* old_tensor = ctx_->GetTensor(tensor_id);
+  id<MTLBuffer> old_buffer = old_tensor != nullptr ? old_tensor->GetBufferHandle() : nil;
+  id<MTLTexture> old_texture = old_tensor != nullptr ? old_tensor->GetTextureHandle() : nil;
+
+  auto* metal_tensor = static_cast<::ml_drift::metal::MetalSpatialTensor*>(tensor);
+  ABSL_RETURN_IF_ERROR(ctx_->SetTensor(tensor_id, metal_tensor));
   if (@available(macOS 15.0, iOS 18.0, *)) {
     id<MTLResidencySet> res_set = backend_->residency_set();
     if (res_set != nil) {
       @autoreleasepool {
-        auto* metal_tensor = static_cast<::ml_drift::metal::MetalSpatialTensor*>(tensor);
-        if (metal_tensor != nullptr) {
-          bool added = false;
-          if (metal_tensor->GetBufferHandle() != nil) {
-            [res_set addAllocation:metal_tensor->GetBufferHandle()];
-            added = true;
-          }
-          if (metal_tensor->GetTextureHandle() != nil) {
-            [res_set addAllocation:metal_tensor->GetTextureHandle()];
-            added = true;
-          }
-          if (added) {
-            [res_set commit];
-          }
+        id<MTLBuffer> new_buffer = metal_tensor != nullptr ? metal_tensor->GetBufferHandle() : nil;
+        id<MTLTexture> new_texture =
+            metal_tensor != nullptr ? metal_tensor->GetTextureHandle() : nil;
+        bool changed = false;
+        if (backend_->UpdateResidencyAllocation(old_buffer, new_buffer)) {
+          changed = true;
+        }
+        if (backend_->UpdateResidencyAllocation(old_texture, new_texture)) {
+          changed = true;
+        }
+        if (changed) {
+          [res_set commit];
         }
       }
     }
@@ -620,6 +628,36 @@ absl::Status Buffer2TensorConverterMetal::Convert(GpuIOBuffer& src_buffer,
       static_cast<::ml_drift::metal::MetalSpatialTensor*>(&dst_tensor));
 }
 
+bool GpuBackendMetal::UpdateResidencyAllocation(id<MTLAllocation> old_alloc,
+                                                id<MTLAllocation> new_alloc) {
+  if (residency_set_ == nil || old_alloc == new_alloc) {
+    return false;
+  }
+  bool changed = false;
+  if (new_alloc != nil) {
+    int& count = residency_allocation_ref_counts_[(__bridge const void*)new_alloc];
+    if (count == 0) {
+      [residency_set_ addAllocation:new_alloc];
+      changed = true;
+    }
+    ++count;
+  }
+  if (old_alloc != nil) {
+    auto it = residency_allocation_ref_counts_.find((__bridge const void*)old_alloc);
+    if (it != residency_allocation_ref_counts_.end()) {
+      if (--it->second <= 0) {
+        residency_allocation_ref_counts_.erase(it);
+        [residency_set_ removeAllocation:old_alloc];
+        changed = true;
+      }
+    } else {
+      [residency_set_ removeAllocation:old_alloc];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 void GpuBackendMetal::PopulateResidencySet(const ::ml_drift::CreateGpuModelInfo& create_info,
                                            ::ml_drift::metal::InferenceContext& metal_ctx) {
   if (residency_set_ == nil) return;
@@ -629,12 +667,8 @@ void GpuBackendMetal::PopulateResidencySet(const ::ml_drift::CreateGpuModelInfo&
       for (const auto& [id, tensor] : create_info.external_immutable_tensors) {
         auto* metal_tensor = static_cast<::ml_drift::metal::MetalSpatialTensor*>(tensor);
         if (metal_tensor != nullptr) {
-          if (metal_tensor->GetBufferHandle() != nil) {
-            [residency_set_ addAllocation:metal_tensor->GetBufferHandle()];
-          }
-          if (metal_tensor->GetTextureHandle() != nil) {
-            [residency_set_ addAllocation:metal_tensor->GetTextureHandle()];
-          }
+          UpdateResidencyAllocation(nil, metal_tensor->GetBufferHandle());
+          UpdateResidencyAllocation(nil, metal_tensor->GetTextureHandle());
         }
       }
       [residency_set_ commit];

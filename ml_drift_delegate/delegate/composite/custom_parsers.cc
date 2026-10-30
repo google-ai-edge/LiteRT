@@ -18,14 +18,15 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/gated_delta_update_parser.h"
+#include "ml_drift_delegate/delegate/composite/glu_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/short_conv_step_parser.h"
-#include "ml_drift_delegate/delegate/composite/swiglu_parser.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
 #include "ml_drift_delegate/tflite/unimplemented_operation_parser.h"
 
@@ -40,7 +41,7 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
     return std::make_unique<RuntimeBatchedMatMulOperationParser>();
   }
   if (op_name == "odml.sdpa_transposed") {
-    return std::make_unique<SdpaTransposedOperationParser>();
+    return std::make_unique<SdpaTransposedOperationParser>(gpu_info_);
   }
   if (op_name == "moe") {
     return std::make_unique<MoeExpertsOperationParser>();
@@ -49,7 +50,7 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
     return std::make_unique<RopeOperationParser>();
   }
   if (op_name == "odml.swiglu") {
-    return std::make_unique<SwigluOperationParser>();
+    return std::make_unique<GluOperationParser>();
   }
   if (op_name == kQkvNormRopeType) {
     return std::make_unique<QkvNormRopeOperationParser>();
@@ -60,6 +61,9 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
   if (op_name == "gated_delta_update") {
     return std::make_unique<GatedDeltaUpdateOperationParser>();
   }
+  if (op_name == kFusedSdpaCacheUpdateCompositeName) {
+    return std::make_unique<FusedSdpaCacheUpdateOperationParser>();
+  }
   return std::make_unique<UnimplementedOperationParser>(op_name);
 }
 
@@ -69,12 +73,14 @@ bool CustomOperationParserFactory::SupportsIntegerTypes(
              op_name == "moe" || op_name == "odml.rope" ||
              op_name == "odml.sdpa_transposed" || op_name == "odml.swiglu" ||
              op_name == "gated_delta_update" ||
-             op_name == kQkvNormRopeType || op_name == kShortConvStepType;
+             op_name == kQkvNormRopeType || op_name == kShortConvStepType ||
+             op_name == kFusedSdpaCacheUpdateCompositeName;
   return res;
 }
 
 bool CustomOperationParserFactory::SupportsBoolTypes(std::string_view op_name) {
-  return op_name == "odml.sdpa_transposed";
+  return op_name == "odml.sdpa_transposed" ||
+         op_name == kFusedSdpaCacheUpdateCompositeName;
 }
 
 }  // namespace litert::ml_drift

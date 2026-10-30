@@ -55,11 +55,11 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
     ] + select({
         "//litert/build_common:build_include_gpu_enabled": [
             ":gpu_environment",
-            "//tflite/delegates/gpu/cl:opencl_wrapper",
+            "@ml_drift//ml_drift/cl:opencl_wrapper",
         ],
         "//conditions:default": [],
     }),
@@ -85,13 +85,15 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/types:span",
     ] + gles_deps() + select({
         "//litert/build_common:android_gpu_enabled": [
-            "//tflite/delegates/gpu/gl:egl_environment",
-            "//tflite/delegates/gpu/gl:gl_buffer",
+            "@ml_drift//ml_drift/gl:egl_environment",
+            "@ml_drift//ml_drift/gl:gl_call",
+            "@ml_drift//ml_drift/gl:gl_errors",
+            "@ml_drift//ml_drift/gl:portable",
         ],
         "//conditions:default": [],
     }),
@@ -111,10 +113,38 @@ cc_library(
         ":ahwb_wrapper",
         ":event",
         "//litert/c:litert_common",
+        "//litert/c:litert_event_type",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ],
+)
+
+cc_test(
+    name = "ahwb_buffer_test",
+    srcs = ["ahwb_buffer_test.cc"],
+    linkopts = litert_android_linkopts(),
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+    target_compatible_with = select({
+        "//litert:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":ahwb_buffer",
+        ":event",
+        "//litert/c:litert_common",
+        "//litert/c:litert_event_type",
+    ] + gtest_main_no_heapcheck_deps(),
+)
+
+litert_device_exec(
+    name = "ahwb_buffer_device_test",
+    data = [],
+    target = ":ahwb_buffer_test",
 )
 
 cc_library(
@@ -152,9 +182,14 @@ cc_library(
         "//litert/c:litert_gl_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
-        "//tflite/delegates/gpu/gl:gl_texture",
         "@com_google_absl//absl/synchronization",
-    ],
+    ] + select({
+        "//litert/build_common:android_gpu_enabled": [
+            "@ml_drift//ml_drift/gl:gl_call",
+            "@ml_drift//ml_drift/gl:portable",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(
@@ -186,13 +221,13 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core/util:tensor_type_util",
-        "//tflite/delegates/gpu/cl:buffer",
-        "//tflite/delegates/gpu/cl:cl_context",
-        "//tflite/delegates/gpu/cl:opencl_wrapper",
-        "//tflite/delegates/gpu/cl:util",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
+        "@ml_drift//ml_drift/cl:buffer",
+        "@ml_drift//ml_drift/cl:cl_context",
+        "@ml_drift//ml_drift/cl:opencl_wrapper",
+        "@ml_drift//ml_drift/cl:util",
         "@opencl_headers",
     ],
 )
@@ -208,17 +243,16 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//tflite/delegates/gpu/cl:cl_command_queue",
-        "//tflite/delegates/gpu/cl:cl_memory",
-        "//tflite/delegates/gpu/cl:tensor",
-        "//tflite/delegates/gpu/common:data_type",
-        "//tflite/delegates/gpu/common:shape",
-        "//tflite/delegates/gpu/common:tensor",
-        "//tflite/delegates/gpu/common:types",
-        "//tflite/delegates/gpu/common/task:tensor_desc",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
+        "@ml_drift//ml_drift/cl:cl_command_queue",
+        "@ml_drift//ml_drift/cl:cl_memory",
+        "@ml_drift//ml_drift/cl:tensor",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
         "@opencl_headers",
     ],
 )
@@ -241,9 +275,7 @@ RUNTIME_TENSOR_BUFFER_HEADER_DEPS = [
     "//litert/build_common:android_gpu_enabled": [
         ":gl_buffer",
         ":gl_texture",
-        "//tflite/delegates/gpu/gl:egl_environment",
-        "//tflite/delegates/gpu/gl:gl_buffer",
-        "//tflite/delegates/gpu/gl:gl_texture",
+        "@ml_drift//ml_drift/gl:egl_environment",
     ],
     "//conditions:default": [],
 }) + select({
@@ -323,7 +355,6 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
     ] + select({
@@ -350,6 +381,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc/internal:litert_tensor_buffer_utils",
         "//litert/core/util:to_string",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -420,6 +452,12 @@ cc_test(
 )
 
 GPU_ENVIRONMENT_DEPS = [
+    "@com_google_absl//absl/base:core_headers",
+    "@com_google_absl//absl/synchronization",
+    "@ml_drift//ml_drift/cl:cl_command_queue",
+    "@ml_drift//ml_drift/cl:cl_context",
+    "@ml_drift//ml_drift/cl:cl_device",
+    "@ml_drift//ml_drift/cl:opencl_wrapper",
     "//litert/c:litert_any",
     "//litert/c:litert_common",
     "//litert/c:litert_gl_types",
@@ -428,14 +466,10 @@ GPU_ENVIRONMENT_DEPS = [
     "//litert/cc:litert_macros",
     "//litert/core:environment_options",
     "@opencl_headers",
-    "//tflite/delegates/gpu/cl:cl_command_queue",
-    "//tflite/delegates/gpu/cl:cl_context",
-    "//tflite/delegates/gpu/cl:cl_device",
-    "//tflite/delegates/gpu/cl:opencl_wrapper",
 ] + select({
     "//litert:android": [
-        "//tflite/delegates/gpu/cl:gl_interop",
-        "//tflite/delegates/gpu/gl:egl_environment",
+        "@ml_drift//ml_drift/cl:gl_interop",
+        "@ml_drift//ml_drift/gl:egl_environment",
     ],
     "//conditions:default": [],
 }) + gles_deps()
@@ -460,7 +494,7 @@ cc_library(
     deps = GPU_ENVIRONMENT_DEPS + [
         "//litert/c:litert_environment_options_header",
         "//litert/cc:litert_any",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
     ] + litert_metal_deps(),
 )
@@ -489,25 +523,62 @@ cc_library(
     name = "tfl_utils",
     srcs = ["tfl_utils.cc"],
     hdrs = ["tfl_utils.h"],
+    copts = select({
+        "//litert:without_builtin_ops": [
+            "-DLITERT_NO_BUILTIN_OPS",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         ":tensor_identifier",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_dispatch_delegate_vendor_options",
+        "//litert/core:build_stamp",
+        "//litert/core:dispatch_op_schema",
         "//litert/core:options",
+        "//litert/core/model",
         "//tflite:framework_stable",
-        "//tflite/c:c_api_opaque",
+        "//tflite:mutable_op_resolver",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
-        "@com_google_absl//absl/strings:str_format",
-    ],
+        "@com_google_absl//absl/strings:string_view",
+    ] + select({
+        "//litert:without_builtin_ops": [
+            "//tflite/c:c_api_opaque_without_op_resolver_without_alwayslink",
+        ],
+        "//conditions:default": [
+            "//tflite/c:c_api_opaque",
+        ],
+    }),
 )
 
 cc_library(
     name = "tensor_identifier",
     hdrs = ["tensor_identifier.h"],
+)
+
+cc_test(
+    name = "tfl_utils_test",
+    srcs = ["tfl_utils_test.cc"],
+    deps = [
+        ":tfl_utils",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_expected",
+        "//litert/cc/internal:litert_dispatch_delegate_vendor_options",
+        "//litert/core:build_stamp",
+        "//litert/core:dispatch_op_schema",
+        "//litert/core/model",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(
@@ -528,12 +599,20 @@ cc_library(
         "//litert/c/internal:litert_scheduling_info",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//tflite/c:c_api",
-        "//tflite/c:c_api_opaque",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
-        "@com_google_absl//absl/strings:str_format",
-    ],
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings",
+    ] + select({
+        "//litert:without_builtin_ops": [
+            "//tflite/c:c_api_opaque_without_op_resolver_without_alwayslink",
+            "//tflite/c:c_api_without_op_resolver_without_alwayslink",
+        ],
+        "//conditions:default": [
+            "//tflite/c:c_api",
+            "//tflite/c:c_api_opaque",
+        ],
+    }),
 )
 
 cc_library(
@@ -650,12 +729,23 @@ cc_library(
     ],
     copts = litert_metal_opts() + select({
         "//litert:without_builtin_ops": [
-            # No builtin ops. Xnnpack is used for CPU backend.
+            # Omit default TFLite builtin/reference kernels. Operations must be
+            # handled by an accelerator (e.g. XNNPACK) or a selective op
+            # resolver provided by the application.
             "-DLITERT_NO_BUILTIN_OPS",
         ],
+        "//conditions:default": [],
+    }) + select({
         "//litert/build_common:litert_disable_cpu": [
-            # No support for CPU backend. Builtin ops are still needed for GPU.
+            # Omit the XNNPACK CPU accelerator. CPU execution uses TFLite
+            # builtin kernels (or selected ops) instead.
             "-DLITERT_DISABLE_CPU",
+        ],
+        "//conditions:default": [],
+    }),
+    defines = select({
+        "//litert:without_builtin_ops": [
+            "LITERT_DISABLE_EXTERNAL_WEIGHTS",
         ],
         "//conditions:default": [],
     }),
@@ -665,7 +755,6 @@ cc_library(
         ":custom_op_dispatcher",
         ":external_litert_buffer_context",
         ":litert_runtime_options",
-        ":magic_number_utils",
         ":metrics",
         ":profiler",
         ":tensor_buffer",
@@ -692,9 +781,9 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_consts",
+        "//litert/cc/internal:litert_dispatch_delegate_vendor_options",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_tensor_buffer_utils",
-        "//litert/cc/internal:scoped_weight_source",
         "//litert/core:buffer_error_reporter",
         "//litert/core:build_stamp",
         "//litert/core:environment",
@@ -708,28 +797,21 @@ cc_library(
         "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite:model_builder",
-        "//tflite/c:c_api",
+        "//tflite:mutable_op_resolver",
+        "//tflite/c:c_api_types_opaque_delegate",
+        "//tflite/c:common",
         "//tflite/converter:allocation",
-        "//weight_loader:external_weight_loader",
+        "//tflite/core:private_cc_api_stable",
+        "//tflite/core/api",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-    ] + [
-        "//tflite:mutable_op_resolver",
-        "//tflite/c:c_api_opaque",
-        "//tflite/c:c_api_types_opaque_delegate",
-        "//tflite/c:common",
-        "//tflite/core:private_cc_api_stable",
-        "//tflite/core/api",
-        "//tflite/delegates/utils:simple_opaque_delegate",
-        "//tflite/schema:schema_fbs",
     ] + select({
         "//litert/build_common:build_include_npu_enabled": [
             "//litert/compiler/plugin:compiler_plugin",
@@ -738,21 +820,31 @@ cc_library(
         ],
         "//conditions:default": [],
     }) + select({
-        "//litert:without_builtin_ops": [
-            # No builtin ops. Xnnpack is used for CPU backend.
-            ":litert_cpu_options",
-            "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
-        ],
         "//litert/build_common:litert_disable_cpu": [
-            # No support for CPU backend. Builtin ops are still needed for GPU.
-            "//tflite/kernels:builtin_ops",
-            "//tflite/kernels:reference_ops",
+            # Omit the XNNPACK CPU accelerator (e.g. cpu_backend=builtin or
+            # cpu_backend=selective). Builtin ops are still available for CPU
+            # and GPU fallback unless without_builtin_ops is also set.
         ],
         "//conditions:default": [
             ":litert_cpu_options",
             "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",  # buildcleaner: keep
+        ],
+    }) + select({
+        "//litert:without_builtin_ops": [
+            # Omit default TFLite builtin/reference kernels (e.g.
+            # litert_builtin_ops=false or cpu_backend=selective). XNNPACK or a
+            # selective op resolver is used instead.
+            "//litert/tflite_support/op_resolver:selected_ops_registry",
+            "//tflite/c:c_api_opaque_without_op_resolver_without_alwayslink",
+            "//tflite/c:c_api_without_op_resolver_without_alwayslink",
+        ],
+        "//conditions:default": [
+            ":magic_number_utils",
+            "//tflite/c:c_api",
+            "//tflite/c:c_api_opaque",
             "//tflite/kernels:builtin_ops",
             "//tflite/kernels:reference_ops",
+            "//weight_loader:external_weight_loader",
         ],
     }),
 )
@@ -812,11 +904,13 @@ cc_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
         "@ml_drift//ml_drift/cl:cl_command_queue",
         "@ml_drift//ml_drift/cl:cl_context",
         "@ml_drift//ml_drift/cl:environment",
@@ -858,8 +952,8 @@ cc_test(
         "@com_google_absl//absl/types:span",
     ] + gtest_main_no_heapcheck_deps() + select({
         "//litert:android": [
-            "//tflite/delegates/gpu/gl:egl_environment",
-            "//tflite/delegates/gpu/gl:gl_buffer",
+            "@ml_drift//ml_drift/gl:egl_environment",
+            "@ml_drift//ml_drift/gl:portable",
         ],
         "//conditions:default": [],
     }),
@@ -915,13 +1009,20 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/core:options",
         "//tflite:builtin_ops",
-        "//tflite/c:c_api",
-        "//tflite/c:c_api_opaque",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "@com_google_absl//absl/cleanup",
-        "@com_google_absl//absl/strings:str_format",
-    ],
+        "@com_google_absl//absl/strings",
+    ] + select({
+        "//litert:without_builtin_ops": [
+            "//tflite/c:c_api_opaque_without_op_resolver_without_alwayslink",
+            "//tflite/c:c_api_without_op_resolver_without_alwayslink",
+        ],
+        "//conditions:default": [
+            "//tflite/c:c_api",
+            "//tflite/c:c_api_opaque",
+        ],
+    }),
 )
 
 cc_library(
@@ -968,7 +1069,6 @@ cc_library(
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -986,7 +1086,6 @@ cc_library(
         "//tflite/core/api",
         "//tflite/profiling:profile_buffer",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
     ],
 )
@@ -1020,14 +1119,15 @@ cc_library(
     name = "litert_gpu_util",
     hdrs = ["litert_gpu_util.h"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_model_header",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
-        "//tflite/delegates/gpu/common:data_type",
-        "//tflite/delegates/gpu/common:shape",
-        "@com_google_absl//absl/status",
+        "//litert/cc:litert_expected",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
     ],
 )
 
@@ -1039,8 +1139,9 @@ cc_test(
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/test:matchers",
-        "//tflite/delegates/gpu/common:data_type",
         "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
     ],
 )
 

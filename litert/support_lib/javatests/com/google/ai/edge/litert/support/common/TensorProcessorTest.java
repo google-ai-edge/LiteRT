@@ -72,6 +72,23 @@ public final class TensorProcessorTest {
     }
   }
 
+  @Test
+  public void addWithIgnoredReturnValueRegistersOperators() {
+    TensorProcessor.Builder builder = new TensorProcessor.Builder();
+    // add() is @CanIgnoreReturnValue, so callers may use it as a statement.
+    builder.add(new NormalizeOp(MEAN, STDDEV)); // [0, 255] -> [-1, 1]
+    builder.add(new NormalizeOp(-1, 2)); // [-1, 1] -> [0, 1]
+    TensorProcessor processor = builder.build();
+
+    float[] pixels = processor.process(createExampleTensorBuffer()).getFloatArray();
+
+    assertThat(pixels.length).isEqualTo(EXAMPLE_NUM_FEATURES);
+    for (float p : pixels) {
+      assertThat(p).isAtLeast(0);
+      assertThat(p).isAtMost(1);
+    }
+  }
+
   // Creates a TensorBuffer of size {1, 1000}, containing values in range [0, 255].
   private static TensorBuffer createExampleTensorBuffer() {
     TensorBuffer buffer = TensorBuffer.createDynamic(DataType.FLOAT32);

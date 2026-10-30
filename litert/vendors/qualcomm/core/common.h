@@ -113,6 +113,11 @@ enum class GraphPriority {
   kHigh = 4,
 };
 
+enum class OpNameFormat {
+  kBasic = 0,
+  kDetailed = 1,
+};
+
 struct CustomOpPackage {
   std::string name;
   std::string interface_provider;
@@ -177,6 +182,9 @@ class Options {
   void SetEnableJustInTime(bool enable_just_in_time);
   bool GetEnableJustInTime() const;
 
+  void SetOpNameFormat(OpNameFormat op_name_format);
+  OpNameFormat GetOpNameFormat() const;
+
   void SetUseConvHMX(bool use_conv_hmx);
   bool GetUseConvHMX() const;
 
@@ -185,6 +193,10 @@ class Options {
 
   void SetHtpPPoint(std::int32_t htp_p_point);
   std::int32_t GetHtpPPoint() const;
+
+  void SetHtpWeightSharingChannelTileSize(
+      std::int32_t htp_weight_sharing_channel_tile_size);
+  std::int32_t GetHtpWeightSharingChannelTileSize() const;
 
   void SetHtpDlbc(bool htp_dlbc);
   bool GetHtpDlbc() const;
@@ -229,8 +241,14 @@ class Options {
   std::uint32_t GetVtcmSize() const;
   void SetVtcmSize(std::uint32_t vtcm_size);
 
+  std::uint32_t GetHtpDeviceId() const;
+  void SetHtpDeviceId(std::uint32_t htp_device_id);
+
   std::uint32_t GetNumHvxThreads() const;
   void SetNumHvxThreads(std::uint32_t num_hvx_threads);
+
+  std::uint32_t GetHtpFileReadMemoryBudgetMB() const;
+  void SetHtpFileReadMemoryBudgetMB(std::uint32_t budget_mb);
 
   void SetOptimizationLevel(OptimizationLevel optimization_level);
   OptimizationLevel GetOptimizationLevel() const;
@@ -298,9 +316,11 @@ class Options {
   bool use_int64_bias_as_int32_ = true;
   bool enable_weight_sharing_ = false;
   bool enable_just_in_time_ = false;
+  OpNameFormat op_name_format_ = OpNameFormat::kBasic;
   bool use_conv_hmx_ = true;
   bool use_fold_relu_ = true;
   std::int32_t htp_p_point_ = 0;
+  std::int32_t htp_weight_sharing_channel_tile_size_ = 0;
   bool htp_dlbc_ = false;
   bool htp_dlbc_weights_ = false;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
@@ -315,7 +335,9 @@ class Options {
   std::string dlc_dir_;
   std::string graph_transform_;
   std::uint32_t vtcm_size_ = 0;
+  std::uint32_t htp_device_id_ = 0;
   std::uint32_t num_hvx_threads_ = 0;
+  std::uint32_t htp_file_read_memory_budget_mb_ = 0;
   OptimizationLevel optimization_level_ =
       OptimizationLevel::kHtpOptimizeForInferenceO3;
   GraphPriority graph_priority_ = GraphPriority::kDefault;

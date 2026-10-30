@@ -55,6 +55,8 @@ class TensorBuffer:
       np.dtype(np.float32): "float32",
       np.float16: "float16",
       np.dtype(np.float16): "float16",
+      np.int64: "int64",
+      np.dtype(np.int64): "int64",
       np.int32: "int32",
       np.dtype(np.int32): "int32",
       np.int8: "int8",

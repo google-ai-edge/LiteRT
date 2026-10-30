@@ -259,6 +259,12 @@ void RequestSupportedExtensions(ml_drift::webgpu::ExecutionEnvironment& env,
   if (device.HasFeature(wgpu::FeatureName::Subgroups)) {
     env.RequestExtension("subgroups");
   }
+#ifndef __EMSCRIPTEN__
+  if (device.HasFeature(
+          wgpu::FeatureName::ChromiumExperimentalSubgroupMatrix)) {
+    env.RequestExtension("subgroup_matrix");
+  }
+#endif  // !__EMSCRIPTEN__
   // LINT.ThenChange()
 }
 
@@ -330,6 +336,7 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
     auto device = wgpu::Device::Acquire(ems_device);
     wgpu::AdapterInfo adapter_info;
     device.GetAdapterInfo(&adapter_info);
+    RequestSupportedExtensions(*webgpu_env, device);
     webgpu_init_status = webgpu_env->Initialize(device, adapter_info);
     success_message =
         "Created a WebGPU environment with emscripten_webgpu_get_device().";
@@ -770,24 +777,34 @@ TfLiteDelegatePtr CreateMlDriftWebGpuDelegate(MlDriftDelegateOptionsPtr options,
     case kDefault:
       delegate_data->calculation_precision =
           (*delegate_env)->webgpu_env->GetInfo().SupportsFP16()
-              ? ::ml_drift::CalculationsPrecision::F16
-              : ::ml_drift::CalculationsPrecision::F32;
+              ? ::ml_drift::CalculationsPrecision::kF16
+              : ::ml_drift::CalculationsPrecision::kF32;
       break;
     case kFp16:
       delegate_data->calculation_precision =
-          ::ml_drift::CalculationsPrecision::F16;
+          ::ml_drift::CalculationsPrecision::kF16;
       break;
     case kFp32:
       delegate_data->calculation_precision =
-          ::ml_drift::CalculationsPrecision::F32;
+          ::ml_drift::CalculationsPrecision::kF32;
       break;
   }
   if (delegate_data->options->use_f32_accum_for_fp16) {
     delegate_data->calculation_precision =
-        ::ml_drift::CalculationsPrecision::F32_F16;
+        ::ml_drift::CalculationsPrecision::kF32F16;
   }
   bool hint_fully_delegated_to_single_delegate =
       delegate_data->options->hint_fully_delegated_to_single_delegate;
+
+  // The int8 src-quantized fully connected / convolution path (dp4a) produces
+  // corrupted outputs on Intel GPUs with WebGPU (observed on D3D12 with Arc
+  // 140V / B390 for the Gemma 4 12B 128-token prefill graph), so keep the
+  // fp16/fp32 path there.
+  if (delegate_data->options->allow_src_quantized_fc_conv_ops &&
+      (*delegate_env)->webgpu_env->GetInfo().IsIntel()) {
+    ABSL_LOG(INFO) << "Disabling allow_src_quantized_fc_conv_ops on Intel GPU.";
+    delegate_data->options->allow_src_quantized_fc_conv_ops = false;
+  }
 
   // Initialize the ml_drift WebGpu delegate.
   TfLiteDelegatePtr delegate(new TfLiteDelegate(TfLiteDelegateCreate()),

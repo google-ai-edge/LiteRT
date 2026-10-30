@@ -366,6 +366,53 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  /// @brief When enabled, detailed op information is omitted from QNN graph
+  /// op names.
+  enum class OpNameFormat : int {
+    kBasic = kLiteRtQualcommOpNameFormatBasic,
+    kDetailed = kLiteRtQualcommOpNameFormatDetailed,
+  };
+
+  void SetOpNameFormat(OpNameFormat op_name_format) {
+    LrtQualcommOptionsSetOpNameFormat(
+        options_,
+        static_cast<LrtQualcommOptionsOpNameFormat>(op_name_format));
+  }
+  OpNameFormat GetOpNameFormat() {
+    LrtQualcommOptionsOpNameFormat val;
+    auto status = LrtQualcommOptionsGetOpNameFormat(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return OpNameFormat::kBasic;
+    }
+    return static_cast<OpNameFormat>(val);
+  }
+
+  /// @brief Enables HTP DLBC input compression.
+  void SetHtpDlbc(bool htp_dlbc) {
+    LrtQualcommOptionsSetHtpDlbc(options_, htp_dlbc);
+  }
+  bool GetHtpDlbc() {
+    bool val;
+    auto status = LrtQualcommOptionsGetHtpDlbc(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
+  /// @brief Enables HTP DLBC weight compression.
+  void SetHtpDlbcWeights(bool htp_dlbc_weights) {
+    LrtQualcommOptionsSetHtpDlbcWeights(options_, htp_dlbc_weights);
+  }
+  bool GetHtpDlbcWeights() {
+    bool val;
+    auto status = LrtQualcommOptionsGetHtpDlbcWeights(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
   /// @brief This option controls P point to change compiler configurations.
   ///
   /// P points are experimental (HTP backend with O3 only) and map to predefined
@@ -376,6 +423,21 @@ class QualcommOptions : public ConcreteOptionsBase {
   std::int32_t GetHtpPPoint() {
     std::int32_t val;
     auto status = LrtQualcommOptionsGetHtpPPoint(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return 0;
+    }
+    return val;
+  }
+
+  /// @brief Controls the channel tile size used by weight sharing during graph
+  /// finalization.
+  void SetHtpWeightSharingChannelTileSize(std::int32_t tile_size) {
+    LrtQualcommOptionsSetHtpWeightSharingChannelTileSize(options_, tile_size);
+  }
+  std::int32_t GetHtpWeightSharingChannelTileSize() {
+    std::int32_t val;
+    auto status =
+        LrtQualcommOptionsGetHtpWeightSharingChannelTileSize(options_, &val);
     if (status == kLiteRtStatusErrorNotFound) {
       return 0;
     }
@@ -463,6 +525,28 @@ class QualcommOptions : public ConcreteOptionsBase {
   std::uint32_t GetVtcmSize() {
     std::uint32_t val;
     auto status = LrtQualcommOptionsGetVtcmSize(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return 0;
+    }
+    return val;
+  }
+
+  void SetHtpDeviceId(std::uint32_t htp_device_id) {
+    LrtQualcommOptionsSetHtpDeviceId(options_, htp_device_id);
+  }
+  std::uint32_t GetHtpDeviceId() {
+    std::uint32_t val;
+    LrtQualcommOptionsGetHtpDeviceId(options_, &val);
+    return val;
+  }
+
+  void SetHtpFileReadMemoryBudgetMB(std::uint32_t budget_mb) {
+    LrtQualcommOptionsSetHtpFileReadMemoryBudgetMB(options_, budget_mb);
+  }
+  std::uint32_t GetHtpFileReadMemoryBudgetMB() {
+    std::uint32_t val;
+    auto status =
+        LrtQualcommOptionsGetHtpFileReadMemoryBudgetMB(options_, &val);
     if (status == kLiteRtStatusErrorNotFound) {
       return 0;
     }

@@ -232,7 +232,54 @@ else:
 """
 
 
-def create_init_files(dst_dir: str, meta_dict: Optional[dict[str, str]] = None):
+# Python 3.10 reached upstream end-of-life on 2026-10-01 (PEP 619). Support for
+# it is deprecated and will be removed in the next release. Emitted on import
+# for both the ai-edge-litert and litert-converter wheels.
+#
+# FutureWarning rather than DeprecationWarning: per PEP 565, DeprecationWarning
+# is hidden by default unless triggered directly from __main__ (or run with
+# -Wd), so it would be silently dropped for nearly every end user importing the
+# package. FutureWarning is the category intended for end-user-facing
+# deprecations and is shown by default.
+_PYTHON_DEPRECATION_INIT = """\
+import sys as _sys
+
+if _sys.version_info < (3, 11):
+    import warnings as _warnings
+
+    _warnings.warn(
+        "{pip_name} support for Python 3.10 is deprecated and will be removed"
+        " in the next release, following Python 3.10's upstream end-of-life"
+        " (https://peps.python.org/pep-0619/). Please upgrade to Python 3.11"
+        " or newer.",
+        FutureWarning,
+        stacklevel=2,
+    )
+"""
+
+
+def create_init_files(
+    dst_dir: str,
+    meta_dict: Optional[dict[str, str]] = None,
+    project_name: Optional[str] = None,
+):
+  """Creates `__init__.py` files under `dst_dir`, populating the top-level one.
+
+  Empty `__init__.py` files are created (where missing) in every subdirectory
+  of `dst_dir`, recursively. The top-level `__init__.py` is (re)written with,
+  in order: the key/value pairs from `meta_dict` as module-level string
+  constants, the platform initialization code (`_PLATFORM_INIT`), and, if
+  `project_name` is given, the Python 3.10 deprecation warning
+  (`_PYTHON_DEPRECATION_INIT`). If `meta_dict` is empty or `None`, the
+  top-level `__init__.py` is left empty.
+
+  Args:
+    dst_dir: Root directory of the package in which to create the files.
+    meta_dict: Optional mapping of metadata attribute names to string values
+      (e.g. `__version__`) to write into the top-level `__init__.py`.
+    project_name: Optional project name used to derive the pip package name
+      shown in the deprecation warning (underscores are replaced with dashes).
+  """
   create_empty_init_files(dst_dir)
 
   with open(os.path.join(dst_dir, "__init__.py"), "w") as f:
@@ -240,6 +287,12 @@ def create_init_files(dst_dir: str, meta_dict: Optional[dict[str, str]] = None):
       for key, value in meta_dict.items():
         f.write(f'{key} = "{value}"\n')
       f.write(_PLATFORM_INIT)
+      if project_name:
+        f.write(
+            _PYTHON_DEPRECATION_INIT.format(
+                pip_name=project_name.replace("_", "-")
+            )
+        )
 
 
 def construct_meta_dict(args) -> dict[str, str]:
@@ -425,7 +478,7 @@ def prepare_build_tree(tree_path, args, project_name: str):
 
   meta_dict = construct_meta_dict(args)
 
-  create_init_files(src_dir, meta_dict)
+  create_init_files(src_dir, meta_dict, project_name)
 
   # Copy package data files to the build tree, after filling the __init__.
   if args.package_data is not None:

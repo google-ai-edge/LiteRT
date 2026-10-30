@@ -25,7 +25,7 @@ void ConvertTile(const TfLiteContext& context, const TfLiteNode& node,
                  ::ml_drift::ir::TensorMap& tensor_map,
                  ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* tile_op = ir_model.add_op();
-  tile_op->name = ToString(::ml_drift::OperationType::TILE);
+  tile_op->name = ToString(::ml_drift::OperationType::kTile);
 
   const int input_id = tensor_map[node.inputs->data[0]];
   ir_model.AddConsumer(input_id, tile_op->id);

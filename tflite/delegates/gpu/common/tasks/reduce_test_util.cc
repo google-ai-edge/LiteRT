@@ -16,6 +16,8 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/tasks/reduce_test_util.h"
 
 #include <memory>
+#include <set>
+#include <utility>
 #include <vector>
 
 #include "tflite/delegates/gpu/common/operations.h"

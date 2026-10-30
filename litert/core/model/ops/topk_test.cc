@@ -15,6 +15,9 @@
 #include "litert/core/model/ops/topk.h"
 
 #include <cstdint>
+#include <cstring>
+#include <limits>
+#include <string>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -232,6 +235,51 @@ TEST(TopKV2OpTest, NegativeKTest) {
   EXPECT_EQ(InferTopKV2(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusErrorShapeInferenceFailed);
 }
+
+struct TopKV2ErrorCase {
+  std::string test_name;
+  bool omit_inputs;
+  size_t num_outputs;
+  int64_t k_val;
+};
+
+using TopKV2ErrorTest = ::testing::TestWithParam<TopKV2ErrorCase>;
+
+TEST_P(TopKV2ErrorTest, RejectsEmptyOutputsMissingKTensorAndInt64KOverflow) {
+  const auto& param = GetParam();
+  std::vector<Dims> input_shapes = {{2, 10}, {}};
+  std::vector<Dims> output_shapes(param.num_outputs);
+
+  LiteRtOpT op;
+  LiteRtTensorT input_tensor;
+  LiteRtTensorT k_tensor;
+  if (!param.omit_inputs) {
+    k_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt64, {}));
+    SetWeightsFromOwnedBuffer(
+        k_tensor.Weights(),
+        OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(&param.k_val),
+                                 sizeof(int64_t)));
+    op.Inputs() = {&input_tensor, &k_tensor};
+  }
+
+  EXPECT_EQ(InferTopKV2(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    TopKV2ErrorTests, TopKV2ErrorTest,
+    ::testing::Values(
+        TopKV2ErrorCase{"MissingInputs", /*omit_inputs=*/true,
+                        /*num_outputs=*/2, 3},
+        TopKV2ErrorCase{"EmptyOutputs", /*omit_inputs=*/false,
+                        /*num_outputs=*/0, 3},
+        TopKV2ErrorCase{
+            "Int64KExceedingInt32Max", /*omit_inputs=*/false,
+            /*num_outputs=*/2,
+            static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 2}),
+    [](const ::testing::TestParamInfo<TopKV2ErrorCase>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace litert::internal

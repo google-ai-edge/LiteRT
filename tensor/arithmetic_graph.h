@@ -48,6 +48,9 @@ enum Padding {
   kPaddingValid,
 };
 
+// Placeholder extent for dimensions that should be inferred.
+inline constexpr int kInferredDim = -1;
+
 }  // namespace litert::tensor
 
 namespace litert::tensor::graph {
@@ -464,6 +467,11 @@ struct SliceOperation : Operation {
 
 struct LessOperation : Operation {
   absl::string_view GetName() const override { return "Less"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
+struct LessEqualOperation : Operation {
+  absl::string_view GetName() const override { return "LessEqual"; }
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 

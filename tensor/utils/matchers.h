@@ -157,4 +157,25 @@ auto IsOkAndHolds(Matcher&& matcher) {
 
 }  // namespace litert::tensor
 
+#if !defined(EXPECT_OK)
+#define EXPECT_OK(status) EXPECT_THAT(status, ::litert::tensor::IsOk())
+#endif  // !defined(EXPECT_OK)
+
+#if !defined(ABSL_ASSERT_OK)
+#define ABSL_ASSERT_OK(status) ASSERT_THAT(status, ::litert::tensor::IsOk())
+#endif  // !defined(ABSL_ASSERT_OK)
+
+#if !defined(ASSERT_OK)
+#define ASSERT_OK(status) ABSL_ASSERT_OK(status)
+#endif  // !defined(ASSERT_OK)
+
+#if !defined(ABSL_ASSERT_OK_AND_ASSIGN)
+#define ABSL_ASSERT_OK_AND_ASSIGN(DECL, EXPR) \
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(DECL, EXPR)
+#endif  // !defined(ABSL_ASSERT_OK_AND_ASSIGN)
+
+#if !defined(ASSERT_OK_AND_ASSIGN)
+#define ASSERT_OK_AND_ASSIGN(DECL, EXPR) ABSL_ASSERT_OK_AND_ASSIGN(DECL, EXPR)
+#endif  // !defined(ASSERT_OK_AND_ASSIGN)
+
 #endif  // THIRD_PARTY_ODML_LITERT_TENSOR_UTILS_MATCHERS_H_

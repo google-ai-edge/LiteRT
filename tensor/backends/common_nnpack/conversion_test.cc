@@ -26,6 +26,7 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/backends/common_nnpack/graph.h"
@@ -35,7 +36,6 @@ limitations under the License.
 #include "tensor/internal/type_id.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
-#include "tensor/utils/source_location.h"
 
 namespace litert::tensor {
 namespace {
@@ -244,7 +244,8 @@ struct DummyOp : public graph::Operation {
 
 template <class... Mixins>
 TensorHandle DummyArithmeticOp(
-    TensorHandle a, source_location loc = source_location::current()) {
+    TensorHandle a,
+    absl::SourceLocation loc = absl::SourceLocation::current()) {
   return ElementwiseOp<DummyOp>(loc, a);
 }
 

@@ -19,6 +19,8 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/thread_annotations.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -28,14 +30,14 @@
 #include "litert/core/environment_options.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
+#include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
+#include "ml_drift/cl/cl_context.h"  // from @ml_drift
+#include "ml_drift/cl/cl_device.h"  // from @ml_drift
 #include <CL/cl.h>
-#include "tflite/delegates/gpu/cl/cl_command_queue.h"
-#include "tflite/delegates/gpu/cl/cl_context.h"
-#include "tflite/delegates/gpu/cl/cl_device.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/gl/egl_environment.h"
+#include "ml_drift/gl/egl_environment.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_WEBGPU_SUPPORT
@@ -103,6 +105,15 @@ struct GpuEnvironmentOptions {
            egl_display != LITE_RT_EGL_NO_DISPLAY;
   }
 
+  bool HasOpenClOptions() const {
+#if LITERT_HAS_OPENCL_SUPPORT
+    return device_id != nullptr || platform_id != nullptr ||
+           context != nullptr || command_queue != nullptr;
+#else
+    return false;
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+  }
+
 #if LITERT_HAS_WEBGPU_SUPPORT
   WGPUDevice webgpu_device = nullptr;
   WGPUQueue webgpu_queue = nullptr;
@@ -119,6 +130,14 @@ struct GpuEnvironmentOptions {
 
 // A class for storing the MLD global environment and kept in Environment.
 // This class is used to store OpenCL, OpenGL environment objects.
+//
+// Thread-safety: `SupportsClGlInterop()`, `SupportsAhwbClInterop()`, and
+// `AddEnvironmentOptions()` synchronize lazy OpenCL initialization and option
+// updates via `init_opencl_mutex_`. Direct resource and property accessors
+// (e.g. `GetDevice()`, `GetContext()`, `GetCommandQueue()`, `SupportsFP16()`,
+// `SupportsAhwbGlInterop()`, `GetGeneratedOptions()`) assume configuration is
+// complete and must not be called concurrently with `AddEnvironmentOptions()`
+// or lazy initialization.
 class GpuEnvironment {
  public:
   GpuEnvironment(const GpuEnvironment&) = delete;
@@ -127,9 +146,9 @@ class GpuEnvironment {
   ~GpuEnvironment();
 
 #if LITERT_HAS_OPENCL_SUPPORT
-  tflite::gpu::cl::CLDevice* GetDevice() { return &device_; }
-  tflite::gpu::cl::CLContext* GetContext() { return &context_; }
-  tflite::gpu::cl::CLCommandQueue* GetCommandQueue() { return &command_queue_; }
+  ::ml_drift::cl::CLDevice* GetDevice() { return &device_; }
+  ::ml_drift::cl::CLContext* GetContext() { return &context_; }
+  ::ml_drift::cl::CLCommandQueue* GetCommandQueue() { return &command_queue_; }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
   LiteRtEglDisplay GetEglDisplay() { return options_.egl_display; }
   LiteRtEglContext GetEglContext() { return options_.egl_context; }
@@ -156,9 +175,25 @@ class GpuEnvironment {
     return std::move(instance);
   }
 
-  bool SupportsClGlInterop() { return properties_.is_gl_sharing_supported; }
+  bool SupportsClGlInterop() ABSL_LOCKS_EXCLUDED(init_opencl_mutex_) {
+    absl::MutexLock lock(init_opencl_mutex_);
+#if LITERT_HAS_OPENCL_SUPPORT
+    if (auto status = InitializeOpenClDeviceLocked(); !status) {
+      LITERT_LOG(LITERT_WARNING, "Failed to initialize OpenCL device: %s",
+                 status.Error().Message().c_str());
+    }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+    return properties_.is_gl_sharing_supported;
+  }
 
-  bool SupportsAhwbClInterop() {
+  bool SupportsAhwbClInterop() ABSL_LOCKS_EXCLUDED(init_opencl_mutex_) {
+    absl::MutexLock lock(init_opencl_mutex_);
+#if LITERT_HAS_OPENCL_SUPPORT
+    if (auto status = InitializeOpenClDeviceLocked(); !status) {
+      LITERT_LOG(LITERT_WARNING, "Failed to initialize OpenCL device: %s",
+                 status.Error().Message().c_str());
+    }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
     return properties_.is_ahwb_cl_interop_supported;
   }
 
@@ -173,8 +208,13 @@ class GpuEnvironment {
   }
 
   // Adds options to the existing GPU environment.
+  // Note: When adding OpenCL options to an existing `GpuEnvironment`, callers
+  // should provide all four OpenCL handles (`device_id`, `platform_id`,
+  // `context`, `command_queue`) together, since `generated_options_` is only
+  // copied into `LiteRtEnvironmentT` during initial `SetGpuEnvironment()`.
   Expected<void> AddEnvironmentOptions(
-      absl::Span<const LiteRtEnvOption> options);
+      absl::Span<const LiteRtEnvOption> options)
+      ABSL_LOCKS_EXCLUDED(init_opencl_mutex_);
 
   const std::vector<LiteRtEnvOption>& GetGeneratedOptions() const {
     return generated_options_;
@@ -184,11 +224,21 @@ class GpuEnvironment {
   // Load the OpenCL device, context and command queue from the environment if
   // available. Otherwise, create the default device, context and command queue.
   Expected<void> Initialize(
-      const LiteRtEnvironmentOptionsT& environment_options);
+      const LiteRtEnvironmentOptionsT& environment_options)
+      ABSL_LOCKS_EXCLUDED(init_opencl_mutex_);
 
 #if LITERT_HAS_OPENCL_SUPPORT
-  Expected<void> InitializeOpenCl();
+  Expected<void> InitializeOpenClDeviceLocked()
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(init_opencl_mutex_);
+  Expected<void> InitializeOpenClLocked()
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(init_opencl_mutex_);
+  bool opencl_device_init_attempted_ = false;
+  bool opencl_initialized_ = false;
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_OPENGL_SUPPORT
+  Expected<void> InitializeDefaultEglEnvironment();
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
   Expected<void> InitializeMetal();
@@ -197,13 +247,13 @@ class GpuEnvironment {
   // EGL must be declared before OpenCL so it initializes first and is destroyed
   // last (reverse declaration order), preventing driver crashes during cleanup.
 #if LITERT_HAS_OPENGL_SUPPORT
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;
+  std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env_;
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
-  tflite::gpu::cl::CLDevice device_;
-  tflite::gpu::cl::CLContext context_;
-  tflite::gpu::cl::CLCommandQueue command_queue_;
+  ::ml_drift::cl::CLDevice device_;
+  ::ml_drift::cl::CLContext context_;
+  ::ml_drift::cl::CLCommandQueue command_queue_;
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
@@ -217,6 +267,8 @@ class GpuEnvironment {
   // The values are mostly handles(pointers) to GPU resources and valid as long
   // as the GpuEnvironment is alive.
   std::vector<LiteRtEnvOption> generated_options_;
+  // Guards lazy OpenCL device/environment initialization and options updates.
+  absl::Mutex init_opencl_mutex_;
 };
 
 }  // namespace litert::internal

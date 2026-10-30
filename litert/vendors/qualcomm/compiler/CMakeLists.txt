@@ -13,6 +13,12 @@ add_library(qnn_compiler_plugin SHARED
     qnn_compiler_plugin.cc
     qnn_compose_graph.cc
     graph_mapper.cc
+    transformations/attention_chunk_transformation.cc
+    transformations/entry_embedding_transformation.cc
+    transformations/legalize_int32_ops_transformation.cc
+    transformations/mlp_quant_transformation.cc
+    transformations/orphan_cleanup_transformation.cc
+    transformations/rope_transformation.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/../../cc/namespace_heuristics.cc
 )
 
@@ -74,5 +80,9 @@ elseif(UNIX)
         litert_cc_options
         "-Wl,--end-group"
     )
-endif()
 
+    target_link_options(qnn_compiler_plugin PRIVATE
+        "-Wl,--version-script=${PROJECT_SOURCE_DIR}/build_common/export_litert_only_linux.lds")
+    set_target_properties(qnn_compiler_plugin PROPERTIES
+        LINK_DEPENDS "${PROJECT_SOURCE_DIR}/build_common/export_litert_only_linux.lds")
+endif()

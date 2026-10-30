@@ -20,6 +20,9 @@ set -ex
 EXPERIMENTAL_TARGETS_ONLY="${EXPERIMENTAL_TARGETS_ONLY:-false}"
 LITERT_TARGETS_ONLY="${LITERT_TARGETS_ONLY:-false}"
 TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
+# Set to 1 to build with the real TensorFlow and also run the targets that need
+# it, e.g. the converter and the tflite/testing tests.
+LITERT_WITH_TENSORFLOW="${LITERT_WITH_TENSORFLOW:-0}"
 
 # Common flags for both building and testing.
 COMMON_BUILD_FLAGS=(
@@ -31,10 +34,6 @@ COMMON_BUILD_FLAGS=(
 # Add Bazel --config flags based on kokoro injected env ie. --config=public_cache
 COMMON_BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
 
-# Conditionally use local submodules vs http_archive tf
-if [[ "${USE_LOCAL_TF}" == "true" ]]; then
-  COMMON_BUILD_FLAGS+=("--config=use_local_tf")
-fi
 
 # Flags specific to testing.
 TEST_FLAGS=(
@@ -85,7 +84,75 @@ EXCLUDED_TARGETS=(
         "-//tflite/java/..."
         "-//tflite/delegates/gpu/..."
         "-//tflite/delegates/nnapi/..."
+        # Flex delegate is not supported in the OSS build.
+        "-//tflite/delegates/flex/..."
+        "-//tflite:model_flex_test"
+        "-//tflite/tools:list_flex_ops"
+        "-//tflite/tools:list_flex_ops_main"
+        "-//tflite/tools:list_flex_ops_main_lib"
+        "-//tflite/tools:list_flex_ops_test"
+        "-//tflite/tools/benchmark:benchmark_model_plus_flex"
         # TODO: (b/410925271) - Targets not migrated to pywrap_rules yet
+)
+
+# //tflite targets that need the real TensorFlow (converter, tflite/testing,
+# ...). They are not dropped from CI:
+# - With LITERT_WITH_TENSORFLOW=1 (Internal CI 'cpu_full', Linux), they are
+#   built with --config=with_tensorflow and tested as part of //tflite/...
+# - Without it, they are added to EXCLUDED_TARGETS because the default build
+#   has no TensorFlow.
+TF_EXCLUDED_TARGETS=(
+        "-//tflite/converter/..."
+        "-//tflite/kernels/parse_example/..."
+        "-//tflite/testing/..."
+        "-//tflite/tools/optimize/debugging/python/..."
+        "-//tflite:simple_planner_test"
+        "-//tflite/core/tools:verifier_test"
+        "-//tflite/experimental/microfrontend:audio_microfrontend_op_lib"
+        "-//tflite/profiling:subgraph_tensor_profiler"
+        "-//tflite/profiling:subgraph_tensor_profiler_test"
+        "-//tflite/python:analyzer"
+        "-//tflite/python:analyzer_test"
+        "-//tflite/python:convert"
+        "-//tflite/python:convert_file_to_c_source"
+        "-//tflite/python:convert_file_to_c_source_test"
+        "-//tflite/python:convert_saved_model"
+        "-//tflite/python:interpreter_test"
+        "-//tflite/python:lite"
+        "-//tflite/python:lite_constants"
+        "-//tflite/python:lite_v2_test_util"
+        "-//tflite/python:op_hint"
+        "-//tflite/python:schema_util"
+        "-//tflite/python:test_util"
+        "-//tflite/python:test_util_test"
+        "-//tflite/python:tflite_keras_util"
+        "-//tflite/python:util"
+        "-//tflite/python/metrics:metrics_test"
+        "-//tflite/python/metrics:metrics_wrapper"
+        "-//tflite/python/optimize:calibrator"
+        "-//tflite/python/optimize:calibrator_test"
+        "-//tflite/python/testdata:double_op_and_kernels"
+        "-//tflite/schema:upgrade_schema"
+        "-//tflite/schema:upgrade_schema_main_lib"
+        "-//tflite/tools:convert_image_to_csv"
+        "-//tflite/tools:convert_image_to_csv_lib"
+        "-//tflite/tools:flatbuffer_utils"
+        "-//tflite/tools:flatbuffer_utils_test"
+        "-//tflite/tools:randomize_weights"
+        "-//tflite/tools:reverse_xxd_dump_from_cc"
+        "-//tflite/tools:strip_strings"
+        "-//tflite/tools:visualize_test"
+        "-//tflite/tools/optimize:quantization_utils_test"
+        "-//tflite/tools/optimize:quantize_model_test"
+        "-//tflite/tools/optimize:reduced_precision_support_test"
+        "-//tflite/tools/optimize/calibration:calibrator_test"
+        "-//tflite/tools/optimize/python:modify_model_interface"
+        "-//tflite/tools/optimize/python:modify_model_interface_constants"
+        "-//tflite/tools/optimize/python:modify_model_interface_lib"
+        "-//tflite/tools/optimize/python:modify_model_interface_lib_test"
+        "-//tflite/tools/serialization:writer_lib_test"
+        "-//tflite/tools/versioning:gpu_compatibility_test"
+        "-//tflite/tools/versioning:op_signature_test"
 )
 
 LITERT_EXCLUDED_TARGETS=(
@@ -105,6 +172,60 @@ LITERT_EXCLUDED_TARGETS=(
         "-//litert/tools:apply_plugin_test"
 )
 
+# //litert targets that need the real TensorFlow (litert/compiler, the
+# converter pywrap, ...). They are not dropped from CI:
+# - With LITERT_WITH_TENSORFLOW=1 (Internal CI 'cpu_full', Linux), they are
+#   built with --config=with_tensorflow. They are outside //tflite/..., so they
+#   are added to the //tflite/... test run as LITERT_TF_TARGETS below.
+# - Without it, they are added to LITERT_EXCLUDED_TARGETS because the default
+#   build has no TensorFlow.
+LITERT_TF_EXCLUDED_TARGETS=(
+        "-//litert/compiler/..."
+        "-//litert/python/mlir/..."
+        "-//litert/python/tools/model_utils/..."
+        "-//litert/integration_test/models:single_op"
+        "-//litert/integration_test/models:single_op_files"
+        "-//litert/python:_pywrap_litert_with_converter_0_pywrap"
+        "-//litert/python:_pywrap_litert_with_converter_0_shared_object"
+        "-//litert/python:_pywrap_litert_with_converter_1_pywrap"
+        "-//litert/python:_pywrap_litert_with_converter_1_shared_object"
+        "-//litert/python:_pywrap_litert_with_converter_2_pywrap"
+        "-//litert/python:_pywrap_litert_with_converter_2_shared_object"
+        "-//litert/python:_pywrap_litert_with_converter_3_pywrap"
+        "-//litert/python:_pywrap_litert_with_converter_3_shared_object"
+        "-//litert/python:_pywrap_litert_with_converter_common_split"
+        "-//litert/python:_pywrap_litert_with_converter_info_collector"
+        "-//litert/python:_pywrap_litert_with_converter_linker_input_filters"
+        "-//litert/python:libpywrap_litert_with_converter_common.dylib"
+        "-//litert/python:libpywrap_litert_with_converter_common.so"
+        "-//litert/python:pywrap_litert_with_converter"
+        "-//litert/python:pywrap_litert_with_converter_all_binaries"
+        "-//litert/python:pywrap_litert_with_converter_binaries"
+        "-//litert/python:pywrap_litert_with_converter_binaries.json"
+        "-//litert/python:pywrap_litert_with_converter_common"
+        "-//litert/python:pywrap_litert_with_converter_common.dll"
+        "-//litert/python:pywrap_litert_with_converter_common_binaries"
+        "-//litert/python:pywrap_litert_with_converter_common_cc_library"
+        "-//litert/python:pywrap_litert_with_converter_common_if_lib"
+        "-//litert/python:pywrap_litert_with_converter_common_import"
+)
+
+# Flags without --config=with_tensorflow, to match GitHub Actions CI.
+SHIM_BUILD_FLAGS=("${COMMON_BUILD_FLAGS[@]}")
+
+# Targets that need TensorFlow are only tested here, in Internal CI 'cpu_full'
+# on Linux. GitHub Actions CI (Linux, macOS and Windows) does not test them.
+LITERT_TF_TARGETS=()
+if [ "$LITERT_WITH_TENSORFLOW" == "1" ]; then
+    COMMON_BUILD_FLAGS+=("--config=with_tensorflow")
+    for target in "${LITERT_TF_EXCLUDED_TARGETS[@]}"; do
+        LITERT_TF_TARGETS+=("${target#-}")
+    done
+    LITERT_TF_TARGETS+=("${LITERT_EXCLUDED_TARGETS[@]}")
+else
+    EXCLUDED_TARGETS+=("${TF_EXCLUDED_TARGETS[@]}")
+    LITERT_EXCLUDED_TARGETS+=("${LITERT_TF_EXCLUDED_TARGETS[@]}")
+fi
 
 if [ "$LITERT_TARGETS_ONLY" == "true" ]; then
     bazel test "${COMMON_BUILD_FLAGS[@]}" "${TEST_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
@@ -112,12 +233,12 @@ else
     # Build core TFLite targets to populate remote cache for presubmits (e.g. tflite_bazel_cmake.yml).
     # LINT.IfChange(tflite_bazel_targets)
     bazel build \
-      "${COMMON_BUILD_FLAGS[@]}" \
+      "${SHIM_BUILD_FLAGS[@]}" \
       -- \
       //tflite:tensorflowlite \
       //tflite/c:tensorflowlite_c \
-      //tflite/tools/benchmark:benchmark_model \
-      //tflite/converter:flatbuffer_translate
+      //tflite/tools/benchmark:benchmark_model
     # LINT.ThenChange(../workflows/tflite_bazel_cmake.yml:tflite_bazel_targets)
-    bazel test "${COMMON_BUILD_FLAGS[@]}" "${TEST_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}"
+    bazel test "${COMMON_BUILD_FLAGS[@]}" "${TEST_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}" \
+      "${LITERT_TF_TARGETS[@]}"
 fi

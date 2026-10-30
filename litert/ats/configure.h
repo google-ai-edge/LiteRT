@@ -47,6 +47,15 @@ ABSL_DECLARE_FLAG(std::string, backend);
 // Whether to hint at fully delegating to a single delegate for CPU.
 ABSL_DECLARE_FLAG(bool, cpu_hint_fully_delegated);
 
+// Whether to enable the YNNPACK CPU backend.
+ABSL_DECLARE_FLAG(bool, enable_ynnpack);
+
+// Whether to use the IR model for the GPU accelerator.
+ABSL_DECLARE_FLAG(bool, gpu_use_ir_model);
+
+// CPU kernel mode for the "actual" backend: delegate, builtin or reference.
+ABSL_DECLARE_FLAG(std::string, cpu_kernel_mode);
+
 // Comma-separated test-generator/seed pairings in the form
 // <generator_name>:<seed>. This seed will be used to generator the randomized
 // parameters for all invocations of the respective test-generator.
@@ -151,6 +160,10 @@ class AtsConf {
 
   // Whether to minimize logging.
   bool Quiet() const { return quiet_; }
+
+  // Given name of a potential test, determines if it matches the positive
+  // `--do_register` filter (or if no `--do_register` filter was set).
+  bool MatchesDoRegister(absl::string_view name) const;
 
   // Given name of a potential test, determines if it should be run based on
   // the filter regex.
@@ -291,8 +304,9 @@ class AtsConf {
                    std::vector<std::regex> neg_re,
                    std::vector<std::regex> pos_re,
                    std::vector<std::string> extra_models,
-                   std::optional<int> data_seed, size_t iters_per_test,
-                   int warmup_runs, std::chrono::milliseconds max_ms_per_test,
+                   std::optional<int> data_seed,
+                   size_t iters_per_test, int warmup_runs,
+                   std::chrono::milliseconds max_ms_per_test,
                    bool fail_on_timeout, bool dump_report, std::string csv,
                    bool compile_mode, std::string models_out, int32_t limit,
                    std::optional<internal::CompilerPlugin> plugin,

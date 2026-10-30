@@ -16,10 +16,11 @@
 #include <cstddef>
 #include <memory>
 #include <string>
-#include <vector>
+#include <vector>  // NOLINT
 
 #include "openvino/core/except.hpp"
-#include "openvino/runtime/core.hpp"
+#include "openvino/runtime/core.hpp"  // NOLINT
+#include "openvino/runtime/tensor.hpp"
 #include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
@@ -38,7 +39,9 @@
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
 #include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
+#include "litert/vendors/intel_openvino/openvino_version_info.h"
 
 namespace litert {
 namespace openvino {
@@ -70,17 +73,72 @@ LiteRtStatus CreateOpenVinoTensorBuffer(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DestroyOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
-  OpenVinoTensorBuffer* custom_tensor_buffer =
-      reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
-  if (custom_tensor_buffer->GetTensorData()) {
-    delete custom_tensor_buffer;
+// import_func: `hw_buffer_handle` is the custom handle of an existing OpenVINO
+// tensor buffer, i.e. the `OpenVinoTensorBuffer*` returned by
+// LiteRtGetTensorBufferCustomTensorBufferHandle (for the NPU and GPU devices,
+// a host tensor allocated by the device's remote context). The result is a
+// non-owning ov::Tensor view of `tensor_type` onto the source's memory; the
+// source must outlive it.
+LiteRtStatus ImportOpenVinoTensorBuffer(
+    LiteRtGpuDeviceId device_id, LiteRtGpuQueueId queue_id,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, HwMemoryHandle hw_buffer_handle,
+    size_t bytes, size_t packed_bytes, HwMemoryInfoPtr* hw_memory_info) {
+  if (hw_buffer_handle == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Cannot import a null OpenVino tensor buffer.");
+    return kLiteRtStatusErrorInvalidArgument;
   }
+  auto* source = static_cast<OpenVinoTensorBuffer*>(hw_buffer_handle);
+  litert::Expected<ov::Tensor> source_tensor = source->GetOVTensor();
+  if (!source_tensor) {
+    LITERT_LOG(LITERT_ERROR, "Source OpenVino tensor buffer has no data: %s",
+               source_tensor.Error().Message().c_str());
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // The view must stay within the source's memory; Wrap() only checks that
+  // the view's tensor fits in `bytes`.
+  if (bytes > source_tensor->get_byte_size()) {
+    LITERT_LOG(LITERT_ERROR,
+               "Cannot import %zu bytes from an OpenVino tensor buffer of %zu "
+               "bytes.",
+               bytes, source_tensor->get_byte_size());
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto memory_info = std::make_unique<HwMemoryInfo>();
+  auto custom_tensor_buffer = std::make_unique<OpenVinoTensorBuffer>();
+  litert::Expected<void> result =
+      custom_tensor_buffer->Wrap(*tensor_type, source_tensor->data(), bytes);
+  if (!result) {
+    LITERT_LOG(LITERT_ERROR, "Failed to wrap OpenVino tensor buffer: %s",
+               result.Error().Message().c_str());
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  memory_info->memory_handle = custom_tensor_buffer.release();
+  *hw_memory_info = memory_info.release();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DestroyOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  // Always delete: the buffer may never have been touched (see
+  // OpenVinoTensorBuffer), and asking for its data here would create it.
+  delete reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
   delete hw_memory_info;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus UnlockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus ClearOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  auto result = reinterpret_cast<OpenVinoTensorBuffer*>(
+                    hw_memory_info->memory_handle)
+                    ->Clear();
+  if (!result) {
+    LITERT_LOG(LITERT_ERROR, "Failed to clear tensor buffer: %s",
+               result.Error().Message().c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
   return kLiteRtStatusOk;
 }
 
@@ -111,11 +169,6 @@ LiteRtStatus DispatchInitialize(const LiteRtRuntimeContext* runtime_context,
                                                        environment_options);
   }
 
-  ov::Core core;
-  std::vector<std::string> availableDevices = core.get_available_devices();
-  for (auto&& device : availableDevices)
-    LITERT_LOG(LITERT_INFO, "[Openvino]Found device plugin for: %s",
-               device.c_str());
 
   if (options) {
     litert::internal::OptionsWrapper internal_options(
@@ -152,7 +205,17 @@ LiteRtStatus DispatchGetVendorId(const char** vendor_id) {
 // This function returns a pointer to a statically allocated string that is the
 // ID of the Dispatch API runtime build.
 LiteRtStatus DispatchGetBuildId(const char** build_id) {
-  *build_id = "1.0";
+  if (build_id == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  static const auto* const build_id_str = new std::string([] {
+    const std::string openvino_ver_str =
+        litert::openvino::GetOpenVINOVersionString();
+    return absl::StrFormat("Intel OpenVINO Dispatch API version %d.%d.%d, %s",
+                           LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
+                           LITERT_API_VERSION_PATCH, openvino_ver_str);
+  }());
+  *build_id = build_id_str->c_str();
   return kLiteRtStatusOk;
 }
 
@@ -420,7 +483,14 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
 
 namespace {
 
-LiteRtDispatchInterface TheInterface = {
+static const LiteRtDispatchInterface_V1 TheInterface = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtDispatchInterface_V1),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .initialize = litert::openvino::DispatchInitialize,
     .get_vendor_id = litert::openvino::DispatchGetVendorId,
     .get_build_id = litert::openvino::DispatchGetBuildId,
@@ -451,32 +521,42 @@ LiteRtDispatchInterface TheInterface = {
     .check_runtime_compatibility = litert::openvino::CheckRuntimeCompatibility,
 };
 
-LiteRtCustomTensorBufferHandlersDef TheTensorBufferHandlers = {
+static const LiteRtCustomTensorBufferHandlersDef_V1 TheTensorBufferHandlers = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtCustomTensorBufferHandlersDef_V1),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
     .create_func = litert::openvino::CreateOpenVinoTensorBuffer,
     .destroy_func = litert::openvino::DestroyOpenVinoTensorBuffer,
     .lock_func = litert::openvino::LockOpenVinoTensorBuffer,
     .unlock_func = litert::openvino::UnlockOpenVinoTensorBuffer,
-    .clear_func = nullptr,
-    .import_func = nullptr,
+    .clear_func = litert::openvino::ClearOpenVinoTensorBuffer,
+    .import_func = litert::openvino::ImportOpenVinoTensorBuffer,
     .device_tag = kLiteRtEnvOptionTagNull,
     .queue_tag = kLiteRtEnvOptionTagNull,
     .num_supported_buffer_types = 1,
     .supported_buffer_types = {kLiteRtTensorBufferTypeOpenVINOTensorBuffer},
 };
 
-LiteRtDispatchApi TheApi = {
-    .version = {.major = LITERT_API_VERSION_MAJOR,
-                .minor = LITERT_API_VERSION_MINOR,
-                .patch = LITERT_API_VERSION_PATCH},
-    .interface = &TheInterface,
-    .async_interface = nullptr,
-    .graph_interface = nullptr,
-    .tensor_buffer_handlers_def = &TheTensorBufferHandlers,
-};
-
 }  // namespace
 
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
-  *api = TheApi;
-  return kLiteRtStatusOk;
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (litert_runtime_version.major >= 1) {
+    if (interface_id == kLiteRtInterfaceBasic) {
+      *out_interface = &TheInterface;
+      return kLiteRtStatusOk;
+    } else if (interface_id == kLiteRtInterfaceCustomTensorBufferHandlers) {
+      *out_interface = &TheTensorBufferHandlers;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }

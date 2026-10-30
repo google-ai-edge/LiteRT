@@ -15,6 +15,9 @@
 #include "litert/core/model/ops/broadcast_to.h"
 
 #include <cstdint>
+#include <cstring>
+#include <limits>
+#include <string>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -98,6 +101,63 @@ TEST(BroadcastToOpTest, InvalidBroadcast) {
   EXPECT_EQ(InferBroadcastTo(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusErrorShapeInferenceFailed);
 }
+
+template <typename T>
+std::vector<uint8_t> ToBytes(const std::vector<T>& values) {
+  std::vector<uint8_t> bytes(values.size() * sizeof(T));
+  if (!bytes.empty()) {
+    std::memcpy(bytes.data(), values.data(), bytes.size());
+  }
+  return bytes;
+}
+
+struct BroadcastToErrorCase {
+  std::string test_name;
+  bool omit_inputs;
+  LiteRtElementType shape_type;
+  std::vector<uint8_t> shape_bytes;
+};
+
+using BroadcastToErrorTest = ::testing::TestWithParam<BroadcastToErrorCase>;
+
+TEST_P(BroadcastToErrorTest, RejectsMissingInputTensorOrInvalidTargetDims) {
+  const auto& param = GetParam();
+  std::vector<Dims> input_shapes = {{1, 2}, {2}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtOpT op;
+  LiteRtTensorT input_tensor;
+  LiteRtTensorT shape_tensor;
+  if (!param.omit_inputs) {
+    shape_tensor.SetType(MakeRankedTensorType(param.shape_type, {2}));
+    SetWeightsFromOwnedBuffer(
+        shape_tensor.Weights(),
+        OwningBufferRef<uint8_t>(param.shape_bytes.data(),
+                                 param.shape_bytes.size()));
+    op.Inputs() = {&input_tensor, &shape_tensor};
+  }
+
+  EXPECT_EQ(InferBroadcastTo(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    BroadcastToErrorTests, BroadcastToErrorTest,
+    ::testing::Values(
+        BroadcastToErrorCase{
+            "MissingInputs", /*omit_inputs=*/true, kLiteRtElementTypeInt32, {}},
+        BroadcastToErrorCase{"NegativeDimInInt32Shape", /*omit_inputs=*/false,
+                             kLiteRtElementTypeInt32,
+                             ToBytes<int32_t>({-2, 2})},
+        BroadcastToErrorCase{
+            "DimExceedingInt32MaxInInt64Shape",
+            /*omit_inputs=*/false, kLiteRtElementTypeInt64,
+            ToBytes<int64_t>(
+                {2, static_cast<int64_t>(std::numeric_limits<int32_t>::max()) +
+                        1})}),
+    [](const ::testing::TestParamInfo<BroadcastToErrorCase>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace litert::internal

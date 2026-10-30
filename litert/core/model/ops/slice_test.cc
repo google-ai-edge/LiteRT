@@ -17,7 +17,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -209,6 +211,35 @@ TEST(SliceOpTest, RejectsMismatchedBeginAndSizeTypes) {
             kLiteRtStatusErrorShapeInferenceFailed);
 }
 
+TEST(SliceOpTest, RejectsInt64BeginWithInt32Size) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{4, 6}, {2}, {2}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtTensorT begin, size;
+  int64_t begin_data[] = {1, 2};
+  int32_t size_data[] = {2, 3};
+  SetWeightsFromOwnedBuffer(
+      begin.Weights(),
+      OwningBufferRef<uint8_t>(absl::string_view(
+          reinterpret_cast<char*>(begin_data), sizeof(begin_data))));
+  SetWeightsFromOwnedBuffer(
+      size.Weights(),
+      OwningBufferRef<uint8_t>(absl::string_view(
+          reinterpret_cast<char*>(size_data), sizeof(size_data))));
+  begin.SetType(MakeRankedTensorType(kLiteRtElementTypeInt64, {2}));
+  size.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2}));
+
+  op.Inputs().push_back(nullptr);
+  op.Inputs().push_back(&begin);
+  op.Inputs().push_back(&size);
+
+  // TFLite's kernel would read the 8-byte INT32 size buffer as two INT64
+  // values, i.e. past its end.
+  EXPECT_EQ(InferSlice(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
 TEST(SliceOpTest, RejectsInvalidBeginType) {
   LiteRtOpT op;
   std::vector<Dims> input_shapes = {{10}, {1}, {1}};
@@ -367,7 +398,15 @@ class SliceTestShapeInferenceContext : public ShapeInferenceContext {
     return absl::MakeConstSpan(input_data_[index]);
   }
   LiteRtElementType GetInputElementType(size_t index) const override {
-    if (index == 0) return kLiteRtElementTypeInt64;
+    if (index == 0) {
+      if (!input_shapes_.empty() && !input_shapes_[0].empty() &&
+          input_shapes_[0][0] > 0 && !input_data_.empty() &&
+          input_data_[0].size() ==
+              static_cast<size_t>(input_shapes_[0][0]) * sizeof(int32_t)) {
+        return kLiteRtElementTypeInt32;
+      }
+      return kLiteRtElementTypeInt64;
+    }
     return kLiteRtElementTypeInt32;
   }
   const TflOptions& GetOptions() const override { return options_; }
@@ -451,6 +490,148 @@ TEST(SliceOpTest, ReferenceSliceMultiDimensional) {
   // (1,1,2)->18, (1,1,3)->19
   // (1,2,2)->22, (1,2,3)->23
   EXPECT_THAT(output, ElementsAre(6, 7, 10, 11, 18, 19, 22, 23));
+}
+
+TflOptions MakeStridedSliceOptions() {
+  auto options = std::make_unique<tflite::StridedSliceOptionsT>();
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_StridedSliceOptions;
+  tfl_options.value = options.release();
+  return tfl_options;
+}
+
+template <typename T>
+std::vector<uint8_t> ToBytes(const std::vector<T>& values) {
+  std::vector<uint8_t> bytes(values.size() * sizeof(T));
+  if (!bytes.empty()) {
+    std::memcpy(bytes.data(), values.data(), bytes.size());
+  }
+  return bytes;
+}
+
+struct SliceErrorCase {
+  std::string test_name;
+  std::vector<Dims> input_shapes;
+  LiteRtElementType index_type;
+  std::vector<uint8_t> begin_bytes;
+  std::vector<uint8_t> size_bytes;
+};
+
+using SliceErrorTest = ::testing::TestWithParam<SliceErrorCase>;
+
+TEST_P(SliceErrorTest, RejectsInvalidDimsAndOverflows) {
+  const auto& param = GetParam();
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = param.input_shapes;
+  std::vector<Dims> output_shapes(1);
+  LiteRtTensorT begin, size;
+  if (!param.begin_bytes.empty()) {
+    SetWeightsFromOwnedBuffer(
+        begin.Weights(), OwningBufferRef<uint8_t>(param.begin_bytes.data(),
+                                                  param.begin_bytes.size()));
+  }
+  if (!param.size_bytes.empty()) {
+    SetWeightsFromOwnedBuffer(
+        size.Weights(), OwningBufferRef<uint8_t>(param.size_bytes.data(),
+                                                 param.size_bytes.size()));
+  }
+  begin.SetType(MakeRankedTensorType(param.index_type, {1}));
+  size.SetType(MakeRankedTensorType(param.index_type, {1}));
+  op.Inputs() = {nullptr, &begin, &size};
+  EXPECT_EQ(InferSlice(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    SliceErrorTests, SliceErrorTest,
+    ::testing::Values(
+        SliceErrorCase{
+            "Int64SizeExceedingInt32Max",
+            {{10}, {1}, {1}},
+            kLiteRtElementTypeInt64,
+            ToBytes<int64_t>({0}),
+            ToBytes<int64_t>(
+                {static_cast<int64_t>(std::numeric_limits<int32_t>::max()) +
+                 1}),
+        },
+        SliceErrorCase{
+            "NegativeInputDimWithDynamicBegin",
+            {{-2}, {1}, {1}},
+            kLiteRtElementTypeInt32,
+            {},
+            ToBytes<int32_t>({1}),
+        }),
+    [](const ::testing::TestParamInfo<SliceErrorCase>& info) {
+      return info.param.test_name;
+    });
+
+struct StridedSliceErrorCase {
+  std::string test_name;
+  std::vector<Dims> input_shapes;
+};
+
+using StridedSliceErrorTest = ::testing::TestWithParam<StridedSliceErrorCase>;
+
+TEST_P(StridedSliceErrorTest, RejectsInvalidDimsAndMaskShiftOverflow) {
+  SliceTestShapeInferenceContext ctx(GetParam().input_shapes,
+                                     MakeStridedSliceOptions());
+  InferenceResult result;
+  EXPECT_EQ(InferStridedSlice(ctx, result),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    StridedSliceErrorTests, StridedSliceErrorTest,
+    ::testing::Values(StridedSliceErrorCase{"ProcessingDimsMaskShiftOverflow",
+                                            {{2, 3}, {31}, {31}, {31}}},
+                      StridedSliceErrorCase{"NegativeInputDimension",
+                                            {{-2, 3}, {2}, {2}, {2}}}),
+    [](const ::testing::TestParamInfo<StridedSliceErrorCase>& info) {
+      return info.param.test_name;
+    });
+
+struct StridedSlicePropagationCase {
+  std::string test_name;
+  std::vector<uint8_t> input_bytes;
+  size_t expected_output_bytes;
+};
+
+using StridedSlicePropagationTest =
+    ::testing::TestWithParam<StridedSlicePropagationCase>;
+
+TEST_P(StridedSlicePropagationTest, Propagates1DConstantData) {
+  const auto& param = GetParam();
+  SliceTestShapeInferenceContext ctx(
+      {{3}, {1}, {1}, {1}}, MakeStridedSliceOptions(),
+      {param.input_bytes, ToBytes<int32_t>({-2}), ToBytes<int32_t>({3}),
+       ToBytes<int32_t>({1})});
+  InferenceResult result;
+  ASSERT_EQ(InferStridedSlice(ctx, result), kLiteRtStatusOk);
+  EXPECT_THAT(result.output_shapes[0], ElementsAre(2));
+  ASSERT_TRUE(result.propagated_data.find(0) != result.propagated_data.end());
+  EXPECT_EQ(result.propagated_data[0].size(), param.expected_output_bytes);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    StridedSlicePropagationTests, StridedSlicePropagationTest,
+    ::testing::Values(StridedSlicePropagationCase{"Int64ConstantData",
+                                                  ToBytes<int64_t>({100, 200,
+                                                                    300}),
+                                                  2 * sizeof(int64_t)},
+                      StridedSlicePropagationCase{
+                          "Int32ConstantData", ToBytes<int32_t>({10, 20, 30}),
+                          2 * sizeof(int32_t)}),
+    [](const ::testing::TestParamInfo<StridedSlicePropagationCase>& info) {
+      return info.param.test_name;
+    });
+
+TEST(SliceOpTest, DynamicUpdateSliceRejectsEmptyOutputs) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{1, 10}, {1, 2}, {2}};
+  std::vector<Dims> empty_outputs;
+  EXPECT_EQ(
+      InferDynamicUpdateSlice(op, absl::MakeSpan(input_shapes), empty_outputs),
+      kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 }  // namespace

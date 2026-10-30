@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
@@ -39,16 +40,18 @@ inline LiteRtStatus InferUnpack(const LiteRtOpT& op,
   constexpr int kDefaultAxis = 0;
   int32_t axis = unpack_opts ? unpack_opts->axis : kDefaultAxis;
   int32_t num = unpack_opts ? unpack_opts->num : op.NumOutputs();
-
-  if (axis < 0) axis += s0.size();
+  if (num <= 0) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
 
   Dims out_shape = s0;
-  if (axis < 0 || axis >= out_shape.size())
+  if ((axis < 0 && !SafeAdd(axis, out_shape.size(), axis)) || axis < 0 ||
+      static_cast<size_t>(axis) >= out_shape.size())
     return kLiteRtStatusErrorShapeInferenceFailed;
 
   out_shape.erase(out_shape.begin() + axis);
 
-  if (output_shapes.size() != num) {
+  if (output_shapes.size() != static_cast<size_t>(num)) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
 

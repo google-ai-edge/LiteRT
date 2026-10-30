@@ -251,7 +251,7 @@ TEST(ConvertFullyConnectedFallbackTest, RuntimeWeightsSpatialInputEmitsConv2D) {
       std::any_cast<const ::ml_drift::Convolution2DAttributes&>(conv_op->attr);
   EXPECT_EQ(conv_attr.groups, 1);
   const auto& weights = std::get<
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>(
       conv_attr.weights);
   EXPECT_EQ(weights.shape.o, 8);
   EXPECT_EQ(weights.shape.h, 1);
@@ -479,7 +479,7 @@ TEST(ConvertFullyConnectedTest, ConvertsNativeBlockwiseInt4) {
             static_cast<size_t>(kOutputChannels * kNumBlocks));
   // Weights are unpacked to int8 with shape OHWI(o, 1, 1, i).
   const auto& weights_tensor = std::get<
-      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>>(
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>>(
       attr.weights);
   EXPECT_EQ(weights_tensor.shape.o, kOutputChannels);
   EXPECT_EQ(weights_tensor.shape.i, kInputChannels);

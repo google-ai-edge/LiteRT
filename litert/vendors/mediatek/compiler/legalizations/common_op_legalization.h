@@ -27,13 +27,14 @@ bool VerifyCommonOp(const litert::compiler::Op& op, LiteRtOpCode op_code,
                     const NeuronAdapterApi& neuron_adapter_api);
 
 template <typename T>
-inline Expected<NeuronOperationType> ResolveOpType(
-    OperandMap& operand_map, std::vector<uint32_t>& input_indices,
-    T type_or_name) {
-  if constexpr (std::is_same_v<T, NeuronOperationType>) {
-    return type_or_name;
+inline Expected<int32_t> ResolveOpType(OperandMap& operand_map,
+                                       std::vector<uint32_t>& input_indices,
+                                       T type_or_name) {
+  if constexpr (std::is_same_v<T, NeuronOperationType> ||
+                std::is_integral_v<T>) {
+    return static_cast<int32_t>(type_or_name);
   } else {
-    NeuronOperationType nn_op_type;
+    int32_t nn_op_type = 0;
     auto custom_operand_index =
         operand_map.AddOemExtensionOperand(type_or_name, &nn_op_type);
 
@@ -50,7 +51,7 @@ inline Expected<NeuronOperationType> ResolveOpType(
 Expected<void> LegalizeCommonOp(const NeuronAdapterApi& neuron_adapter_api,
                                 NeuronModel* model, OperandMap& operand_map,
                                 const litert::compiler::Op& op,
-                                NeuronOperationType mtk_operation_type);
+                                int32_t mtk_operation_type);
 
 template <typename OpTypeOrName, typename... AdditionalOperands>
 Expected<void> LegalizeOp(
@@ -96,7 +97,7 @@ Expected<void> LegalizeOp(
   if (!resolved_type) {
     return resolved_type.Error();
   }
-  NeuronOperationType final_op_type = *resolved_type;
+  int32_t final_op_type = *resolved_type;
 
   std::vector<uint32_t> output_indices;
   for (auto& output : op.Outputs()) {

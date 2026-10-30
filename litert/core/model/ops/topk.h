@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_CORE_MODEL_OPS_TOPK_V2_H_
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
@@ -35,7 +36,8 @@ inline LiteRtStatus InferTopKV2(const LiteRtOpT& op,
   constexpr int kOutputValuesIndex = 0;
   constexpr int kOutputIndicesIndex = 1;
 
-  if (input_shapes.size() < kTopKMinArgs) {
+  if (input_shapes.size() < kTopKMinArgs || output_shapes.empty() ||
+      op.Inputs().size() < kTopKMinArgs || op.Inputs()[kKArgIndex] == nullptr) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];
@@ -61,7 +63,11 @@ inline LiteRtStatus InferTopKV2(const LiteRtOpT& op,
       k = *reinterpret_cast<const int16_t*>(buf.Data());
     } else if (k_type == kLiteRtElementTypeInt64 &&
                buf.Size() >= sizeof(int64_t)) {
-      k = static_cast<int32_t>(*reinterpret_cast<const int64_t*>(buf.Data()));
+      int64_t raw_k = *reinterpret_cast<const int64_t*>(buf.Data());
+      if (raw_k < 0 || raw_k > std::numeric_limits<int32_t>::max()) {
+        return kLiteRtStatusErrorShapeInferenceFailed;
+      }
+      k = static_cast<int32_t>(raw_k);
     } else if (buf.Size() >= sizeof(int32_t)) {
       k = *reinterpret_cast<const int32_t*>(buf.Data());
     } else {

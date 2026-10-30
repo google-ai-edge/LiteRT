@@ -15,7 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_C_TYPES_PRINTING_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_C_TYPES_PRINTING_H_
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -60,6 +60,8 @@ inline constexpr absl::string_view kOpCodeStrShloAdd = "shlo.add";
 inline constexpr absl::string_view kOpCodeStrShloAnd = "shlo.and";
 inline constexpr absl::string_view kOpCodeStrShloBroadcastInDim =
     "shlo.broadcast_in_dim";
+inline constexpr absl::string_view kOpCodeStrShloCase = "shlo.case";
+inline constexpr absl::string_view kOpCodeStrShloCbrt = "shlo.cbrt";
 inline constexpr absl::string_view kOpCodeStrShloClamp = "shlo.clamp";
 inline constexpr absl::string_view kOpCodeStrShloCompare = "shlo.compare";
 inline constexpr absl::string_view kOpCodeStrShloComposite = "shlo.composite";
@@ -99,6 +101,7 @@ inline constexpr absl::string_view kOpCodeStrShloRngBitGenerator =
 inline constexpr absl::string_view kOpCodeStrShloRsqrt = "shlo.rsqrt";
 inline constexpr absl::string_view kOpCodeStrShloScatter = "shlo.scatter";
 inline constexpr absl::string_view kOpCodeStrShloSelect = "shlo.select";
+inline constexpr absl::string_view kOpCodeStrShloShiftLeft = "shlo.shift_left";
 inline constexpr absl::string_view kOpCodeStrShloSlice = "shlo.slice";
 inline constexpr absl::string_view kOpCodeStrShloSort = "shlo.sort";
 inline constexpr absl::string_view kOpCodeStrShloSubtract = "shlo.subtract";
@@ -383,22 +386,23 @@ void AbslStringify(Sink& sink, const LiteRtElementType& type) {
       break;
   }
 
-  absl::Format(&sink, "%s", dtype_str);
+  sink.Append(dtype_str);
 }
 
 /// @brief `AbslStringify` specialization for `LiteRtLayout`.
 template <class Sink>
 void AbslStringify(Sink& sink, const LiteRtLayout& layout) {
-  absl::Format(
-      &sink, "<%s>",
+  sink.Append("<");
+  sink.Append(
       absl::StrJoin(absl::MakeConstSpan(layout.dimensions, layout.rank), "x"));
+  sink.Append(">");
 }
 
 /// @brief `AbslStringify` specialization for `LiteRtRankedTensorType`.
 template <class Sink>
 void AbslStringify(Sink& sink, const LiteRtRankedTensorType& type) {
   const auto& layout = type.layout;
-  absl::Format(&sink, "%ud_%v%v", layout.rank, type.element_type, layout);
+  sink.Append(absl::StrCat(layout.rank, "d_", type.element_type, layout));
 }
 
 namespace litert {
@@ -413,6 +417,10 @@ inline absl::string_view GetOpCodeStringView(const LiteRtOpCode& code) {
       return kOpCodeStrShloAnd;
     case kLiteRtOpCodeShloBroadcastInDim:
       return kOpCodeStrShloBroadcastInDim;
+    case kLiteRtOpCodeShloCase:
+      return kOpCodeStrShloCase;
+    case kLiteRtOpCodeShloCbrt:
+      return kOpCodeStrShloCbrt;
     case kLiteRtOpCodeShloClamp:
       return kOpCodeStrShloClamp;
     case kLiteRtOpCodeShloCompare:
@@ -477,6 +485,8 @@ inline absl::string_view GetOpCodeStringView(const LiteRtOpCode& code) {
       return kOpCodeStrShloScatter;
     case kLiteRtOpCodeShloSelect:
       return kOpCodeStrShloSelect;
+    case kLiteRtOpCodeShloShiftLeft:
+      return kOpCodeStrShloShiftLeft;
     case kLiteRtOpCodeShloSlice:
       return kOpCodeStrShloSlice;
     case kLiteRtOpCodeShloSort:
@@ -828,7 +838,7 @@ inline absl::string_view GetOpCodeStringView(const LiteRtOpCode& code) {
 /// @brief `AbslStringify` specialization for `LiteRtOpCode`.
 template <class Sink>
 void AbslStringify(Sink& sink, const LiteRtOpCode& code) {
-  absl::Format(&sink, "%s", ::litert::GetOpCodeStringView(code));
+  sink.Append(::litert::GetOpCodeStringView(code));
 }
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_C_TYPES_PRINTING_H_

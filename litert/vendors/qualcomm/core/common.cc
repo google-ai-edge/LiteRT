@@ -467,6 +467,20 @@ void AbslStringify(Sink& sink, LpaiCoreAffinityType v) {
   absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
 }
 
+template <typename Sink>
+void AbslStringify(Sink& sink, OpNameFormat v) {
+  absl::string_view name = "Unknown";
+  switch (v) {
+    case OpNameFormat::kBasic:
+      name = "Basic";
+      break;
+    case OpNameFormat::kDetailed:
+      name = "Detailed";
+      break;
+  }
+  absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
+}
+
 void Options::SetLogLevel(LogLevel log_level) { log_level_ = log_level; }
 
 LogLevel Options::GetLogLevel() const { return log_level_; }
@@ -491,11 +505,6 @@ bool Options::GetUseInt64BiasAsInt32() const {
 
 void Options::SetEnableWeightSharing(bool enable_weight_sharing) {
   enable_weight_sharing_ = enable_weight_sharing;
-  // Mutually exclusive with DLBC weights (QAIRT 2.36+); weight sharing wins.
-  // Enforced here too so the outcome is order-independent.
-  if (enable_weight_sharing_) {
-    htp_dlbc_weights_ = false;
-  }
 }
 
 bool Options::GetEnableWeightSharing() const { return enable_weight_sharing_; }
@@ -516,19 +525,34 @@ void Options::SetUseFoldReLU(bool use_fold_relu) {
 
 bool Options::GetUseFoldReLU() const { return use_fold_relu_; }
 
+void Options::SetOpNameFormat(OpNameFormat op_name_format) {
+  op_name_format_ = op_name_format;
+}
+
+OpNameFormat Options::GetOpNameFormat() const { return op_name_format_; }
+
 void Options::SetHtpPPoint(std::int32_t htp_p_point) {
   htp_p_point_ = htp_p_point;
 }
 
 std::int32_t Options::GetHtpPPoint() const { return htp_p_point_; }
 
+void Options::SetHtpWeightSharingChannelTileSize(
+    std::int32_t htp_weight_sharing_channel_tile_size) {
+  htp_weight_sharing_channel_tile_size_ =
+      htp_weight_sharing_channel_tile_size;
+}
+
+std::int32_t Options::GetHtpWeightSharingChannelTileSize() const {
+  return htp_weight_sharing_channel_tile_size_;
+}
+
 void Options::SetHtpDlbc(bool htp_dlbc) { htp_dlbc_ = htp_dlbc; }
 
 bool Options::GetHtpDlbc() const { return htp_dlbc_; }
 
 void Options::SetHtpDlbcWeights(bool htp_dlbc_weights) {
-  // DLBC weights is mutually exclusive with weight sharing (QAIRT 2.36+).
-  htp_dlbc_weights_ = htp_dlbc_weights && !enable_weight_sharing_;
+  htp_dlbc_weights_ = htp_dlbc_weights;
 }
 
 bool Options::GetHtpDlbcWeights() const { return htp_dlbc_weights_; }
@@ -612,6 +636,20 @@ void Options::SetGraphTransform(absl::string_view graph_transform) {
 std::uint32_t Options::GetVtcmSize() const { return vtcm_size_; }
 
 void Options::SetVtcmSize(std::uint32_t vtcm_size) { vtcm_size_ = vtcm_size; }
+
+std::uint32_t Options::GetHtpDeviceId() const { return htp_device_id_; }
+
+void Options::SetHtpDeviceId(std::uint32_t htp_device_id) {
+  htp_device_id_ = htp_device_id;
+}
+
+std::uint32_t Options::GetHtpFileReadMemoryBudgetMB() const {
+  return htp_file_read_memory_budget_mb_;
+}
+
+void Options::SetHtpFileReadMemoryBudgetMB(std::uint32_t budget_mb) {
+  htp_file_read_memory_budget_mb_ = budget_mb;
+}
 
 std::uint32_t Options::GetNumHvxThreads() const { return num_hvx_threads_; }
 
@@ -764,6 +802,7 @@ std::string Options::Dump() const {
   field(2, "QnnLibDir", qnn_lib_dir_);
   field(2, "DspSkelDir", dsp_skel_dir_);
   field(2, "UseInt64BiasAsInt32", use_int64_bias_as_int32_);
+  field(2, "OpNameFormat", op_name_format_);
   field(2, "EnableWeightSharing", enable_weight_sharing_);
   field(2, "EnableJustInTime", enable_just_in_time_);
   field(2, "GraphPriority", graph_priority_);
@@ -783,11 +822,15 @@ std::string Options::Dump() const {
   field(2, "HtpDlbc", htp_dlbc_);
   field(2, "HtpDlbcWeights", htp_dlbc_weights_);
   field(2, "HtpPPoint", htp_p_point_);
+  field(2, "HtpWeightSharingChannelTileSize",
+        htp_weight_sharing_channel_tile_size_);
   field(2, "HtpPerformanceMode", htp_performance_mode_);
   field(2, "HtpPerfCtrlMode", htp_perf_ctrl_mode_);
   field(2, "HtpPdSession", htp_pd_session_);
   field(2, "VtcmSize", vtcm_size_);
+  field(2, "HtpDeviceId", htp_device_id_);
   field(2, "NumHvxThreads", num_hvx_threads_);
+  field(2, "HtpFileReadMemoryBudgetMB", htp_file_read_memory_budget_mb_);
   field(2, "OptimizationLevel", optimization_level_);
 
   // --- IR ---

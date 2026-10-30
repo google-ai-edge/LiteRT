@@ -19,6 +19,8 @@
 
 extern "C" {
 
+// Defined in ynnpack_accelerator.cc (overrides the weak nullptr default in
+// cpu_registry.cc when ynnpack_accelerator is linked into the binary).
 extern const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorYnnpackDef;
 
 }  // extern "C"
