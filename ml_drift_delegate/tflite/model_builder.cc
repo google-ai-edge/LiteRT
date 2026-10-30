@@ -51,7 +51,12 @@
 #include "ml_drift/common/transformations/model_transformations.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
-#include "ml_drift_delegate/tflite/custom_parsers.h"
+// copybara:uncomment_begin(google-only)
+// #include "ml_drift_delegate/tflite/custom_parsers.h"
+// copybara:uncomment_end
+// copybara:comment_begin
+#include "ml_drift_delegate/tflite/unimplemented_operation_parser.h"
+// copybara:comment_end
 #include "ml_drift_delegate/tflite/lstm_parser.h"
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "ml_drift_delegate/tflite/object_reader.h"
@@ -7301,7 +7306,12 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
           composite_parser_factory->SupportsIntegerTypes(custom_name)) {
         return composite_parser_factory->Create(custom_name);
       }
-      return NewCustomOperationParser(registration->custom_name);
+      // copybara:uncomment_begin(google-only)
+      // return NewCustomOperationParser(registration->custom_name);
+      // copybara:uncomment_end
+      // copybara:comment_begin
+      return std::make_unique<UnimplementedOperationParser>(registration->custom_name);
+      // copybara:comment_end
     }
 
     case kTfLiteBuiltinStablehloComposite: {
