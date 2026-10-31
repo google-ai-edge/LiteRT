@@ -38,9 +38,14 @@ inline TfLiteStatus FullyConnectedSparseWeight(
     return kTfLiteError;
   }
   const std::vector<float>& dense_weights_data = converter.GetData();
-  FullyConnected(params, input_shape, input_data, weights_shape,
-                 dense_weights_data.data(), bias_shape, bias_data, output_shape,
-                 output_data);
+  const float* dense_buffer = dense_weights_data.data();
+  if (dense_buffer == nullptr ||
+      dense_weights_data.size() <
+          static_cast<size_t>(weights_shape.FlatSize())) {
+    return kTfLiteError;
+  }
+  FullyConnected(params, input_shape, input_data, weights_shape, dense_buffer,
+                 bias_shape, bias_data, output_shape, output_data);
   return kTfLiteOk;
 }
 
