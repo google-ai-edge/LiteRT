@@ -3565,6 +3565,10 @@ class LiteRtDispatchInvocationContextT {
       if (status != cudaSuccess) return fail("row scales copy", status);
       table_source = path;
     }
+    // Every table awaited is in hand, from the runtime or the file: the setup
+    // is not retried at the next invocation (a retry would set the feed up
+    // over its live state).
+    feed_.pending = false;
     status = cudaMalloc(reinterpret_cast<void**>(&feed_.blocks_done),
                         sizeof(unsigned int));
     if (status != cudaSuccess) return fail("block counter", status);
