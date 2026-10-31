@@ -343,6 +343,13 @@ TEST_F(TopKCandidatesCApiTest, SeesHostWritesMadeThroughTheBufferHandlers) {
   ASSERT_FALSE(HasFatalFailure());
   ASSERT_EQ(Select(1, kSmallVocab, 2, ids, out, flags), kLiteRtStatusOk);
   EXPECT_EQ(ids, (std::vector<int32_t>{7, 1}));
+  // The other mode uploads at unlock; the selector sees that write too.
+  ASSERT_EQ(setenv("LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD", "0", 1), 0);
+  write_favorites(1234, 4000);
+  ASSERT_FALSE(HasFatalFailure());
+  ASSERT_EQ(Select(1, kSmallVocab, 2, ids, out, flags), kLiteRtStatusOk);
+  EXPECT_EQ(ids, (std::vector<int32_t>{1234, 4000}));
+  ASSERT_EQ(setenv("LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD", "1", 1), 0);
   // The handlers own the allocation; the fixture must not free it.
   logits_.allocation = nullptr;
   ASSERT_EQ(handlers->destroy_func(info), kLiteRtStatusOk);

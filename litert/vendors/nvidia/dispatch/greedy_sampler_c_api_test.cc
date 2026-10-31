@@ -399,6 +399,13 @@ TEST_F(GreedySamplerCApiTest, SeesHostWritesMadeThroughTheBufferHandlers) {
   ASSERT_FALSE(HasFatalFailure());
   ASSERT_EQ(Sample(1, kVocab, &id), kLiteRtStatusOk);
   EXPECT_EQ(id, 7);
+  // The other mode uploads at unlock; the sampler sees that write too.
+  ASSERT_EQ(setenv("LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD", "0", 1), 0);
+  write_favorite(1234);
+  ASSERT_FALSE(HasFatalFailure());
+  ASSERT_EQ(Sample(1, kVocab, &id), kLiteRtStatusOk);
+  EXPECT_EQ(id, 1234);
+  ASSERT_EQ(setenv("LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD", "1", 1), 0);
   // The handlers own the allocation; the fixture must not free it.
   logits_.allocation = nullptr;
   ASSERT_EQ(handlers->destroy_func(info), kLiteRtStatusOk);

@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <cmath>
 #include <cstddef>
@@ -134,6 +135,34 @@ void DropFileBackedBytecodePages(const LiteRtMemBuffer& buffer) {
                "pages: %s",
                std::strerror(errno));
   }
+}
+
+// IEEE binary16 bits to float (the dumps' half-stored values).
+float HalfBitsToFloat(uint16_t h) {
+  const uint32_t sign = static_cast<uint32_t>(h & 0x8000u) << 16;
+  uint32_t exponent = (h >> 10) & 0x1fu;
+  uint32_t mantissa = h & 0x3ffu;
+  uint32_t bits;
+  if (exponent == 0) {
+    if (mantissa == 0) {
+      bits = sign;
+    } else {
+      exponent = 127 - 15 + 1;
+      while ((mantissa & 0x400u) == 0) {
+        mantissa <<= 1;
+        --exponent;
+      }
+      mantissa &= 0x3ffu;
+      bits = sign | (exponent << 23) | (mantissa << 13);
+    }
+  } else if (exponent == 31) {
+    bits = sign | 0x7f800000u | (mantissa << 13);
+  } else {
+    bits = sign | ((exponent + 127 - 15) << 23) | (mantissa << 13);
+  }
+  float value;
+  std::memcpy(&value, &bits, sizeof(value));
+  return value;
 }
 
 LiteRtStatus CudaStatus(cudaError_t error, const char* what) {
@@ -634,6 +663,10 @@ LiteRtStatus UnlockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
     if (DeferredUploadEnabled()) {
       CudaTensorBufferRegistry::Get().MarkHostWrite(info);
     } else {
+      // The device contents change without an invocation: no fused argmax
+      // of them can be fresh (a deferred write says so through host_dirty).
+      FusedGreedyRegistry::Get().ForgetRange(info->memory_handle,
+                                             std::max(info->bytes, copy_bytes));
       status = CudaStatus(cudaMemcpy(info->memory_handle, info->host_cache,
                                      copy_bytes, cudaMemcpyHostToDevice),
                           "cudaMemcpy CUDA tensor buffer H2D unlock");
@@ -863,6 +896,7 @@ Expected<void> EnqueueFusedGreedy(void* device_ptr, cudaStream_t stream,
 struct ResolvedSamplerLogits {
   HwMemoryHandle handle = nullptr;
   void* device_logits = nullptr;
+  size_t allocation_size = 0;
   bool fp16 = false;
   int device = -1;
 };
@@ -956,6 +990,7 @@ LiteRtStatus ResolveSamplerLogits(const LiteRtRuntimeContext* runtime_context,
   }
   resolved->handle = handle;
   resolved->device_logits = device_logits;
+  resolved->allocation_size = allocation_size;
   resolved->fp16 = fp16;
   resolved->device = attributes.device;
   return kLiteRtStatusOk;
@@ -1115,9 +1150,18 @@ LiteRtStatus SelectNvidiaTopKCandidates(NvidiaTopKCandidatesContext* context,
     // What the host wrote to the logits since the device last had them (a
     // constraint's mask, applied through a host lock) reaches the device in
     // stream order before the kernel reads them, as it would before an
-    // invocation read them.
+    // invocation read them. The upload takes the "host copy is newer" mark
+    // with it, which the greedy sampler's fused path reads to decline the
+    // argmax an invocation ran before the write: that argmax is forgotten
+    // here, so a greedy call on the same logits afterwards reads them too.
+    const bool host_newer =
+        CudaTensorBufferRegistry::Get().AnyHostNewer(resolved.handle);
     status = CudaTensorBufferRegistry::Get().Upload(resolved.handle,
                                                     context->stream, nullptr);
+    if (status == kLiteRtStatusOk && host_newer) {
+      FusedGreedyRegistry::Get().ForgetRange(resolved.handle,
+                                             resolved.allocation_size);
+    }
   }
   if (status == kLiteRtStatusOk) {
     const cudaError_t launch_status =
@@ -2180,12 +2224,19 @@ class LiteRtDispatchInvocationContextT {
       memory_profiler_.Log("invoke_outputs_and_arena_ready",
                            bytecode_.function_name.c_str());
     }
+    if (DumpOutputsSpec() != nullptr) {
+      ++dump_outputs_step_;
+    }
     if (DispatchDumpIoEnabled()) {
+      ++dump_step_;
       for (int i = 0; i < static_cast<int>(input_handles_.size()); ++i) {
         LITERT_ASSIGN_OR_RETURN(auto* record,
                                 device_context_->GetRecord(input_handles_[i]));
-        DumpDeviceBufferPrefix("in", bytecode_.input_names[i],
-                               record->device_ptr, record->size);
+        if (DispatchDumpTopCount() == 0) {
+          DumpDeviceBufferPrefix("in", bytecode_.input_names[i],
+                                 record->device_ptr, record->size);
+        }
+        DumpDeviceBufferToFile("input", i, record->device_ptr, record->size);
       }
     }
     DispatchCpuTimer enqueue_call_timer(profile);
@@ -2260,8 +2311,57 @@ class LiteRtDispatchInvocationContextT {
       for (int i = 0; i < static_cast<int>(output_handles_.size()); ++i) {
         LITERT_ASSIGN_OR_RETURN(auto* record,
                                 device_context_->GetRecord(output_handles_[i]));
-        DumpDeviceBufferPrefix("out", bytecode_.output_names[i],
-                               record->device_ptr, record->size);
+        if (DispatchDumpTopCount() == 0) {
+          DumpDeviceBufferPrefix("out", bytecode_.output_names[i],
+                                 record->device_ptr, record->size);
+        }
+        DumpDeviceBufferTop(bytecode_.output_names[i], record->tensor_buffer,
+                            record->device_ptr, record->size);
+        DumpDeviceBufferToFile("output", i, record->device_ptr, record->size);
+      }
+    }
+    if (DumpOutputsSpec() != nullptr) {
+      // The KV caches are state: LiteRT-LM attaches one buffer as the cache
+      // input and the cache output of a step (in place, whether or not the
+      // engine declares the alias). An output that shares its device memory
+      // with an input is not what the step computed for its caller. A
+      // prefill's whole output is its caches, one chunk per step, so a
+      // context that emits nothing but state has its state dumped at every
+      // step (a change in a later chunk is then named at that chunk); a
+      // context with other outputs (a decode step's logits) has its state
+      // dumped at its first step only, where the caches hold the prefill's
+      // work.
+      std::vector<const void*> input_ptrs;
+      input_ptrs.reserve(input_handles_.size());
+      for (const auto handle : input_handles_) {
+        if (handle == 0) continue;
+        auto input_record = device_context_->GetRecord(handle);
+        if (input_record.HasValue() && (*input_record)->device_ptr != nullptr) {
+          input_ptrs.push_back((*input_record)->device_ptr);
+        }
+      }
+      std::vector<bool> state_of_output(output_handles_.size(), false);
+      bool any_non_state = false;
+      for (int i = 0; i < static_cast<int>(output_handles_.size()); ++i) {
+        LITERT_ASSIGN_OR_RETURN(auto* record,
+                                device_context_->GetRecord(output_handles_[i]));
+        state_of_output[i] =
+            (i < static_cast<int>(aliased_input_of_output_.size()) &&
+             aliased_input_of_output_[i] >= 0) ||
+            std::find(input_ptrs.begin(), input_ptrs.end(),
+                      record->device_ptr) != input_ptrs.end();
+        any_non_state |= !state_of_output[i];
+      }
+      const std::string input_dims = DumpInputDims();
+      for (int i = 0; i < static_cast<int>(output_handles_.size()); ++i) {
+        if (state_of_output[i] && any_non_state && dump_outputs_step_ != 1) {
+          continue;
+        }
+        LITERT_ASSIGN_OR_RETURN(auto* record,
+                                device_context_->GetRecord(output_handles_[i]));
+        DumpOutputToDir(i, bytecode_.output_names[i], record->tensor_buffer,
+                        record->device_ptr, record->size, state_of_output[i],
+                        input_dims);
       }
     }
     DispatchCpuTimer unlock_timer(profile);
@@ -3085,8 +3185,9 @@ class LiteRtDispatchInvocationContextT {
   }
 
   // LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_AUTOPSY=path: every kernel node of the
-  // first captured step graph timed on its own (a clone of the graph with the
-  // other nodes removed), warm and cold (two passes of a kernel that rewrites
+  // first captured step graph of each function timed on its own (a clone of
+  // the graph with the other nodes removed, written to path.<function>), warm
+  // and cold (two passes of a kernel that rewrites
   // 128 MB ahead of it flush L2; their own time is subtracted). A graph launch
   // costs 10-16 us here, more than most kernels, so each measurement captures
   // several launches of the node's graph into one graph and divides. One line
@@ -3114,7 +3215,12 @@ class LiteRtDispatchInvocationContextT {
       static_cast<void>(cudaGetLastError());
       return;
     }
-    FILE* out = std::fopen(path, "w");
+    // One file per function: <path>.<function>, since every context that
+    // captures a step writes its own autopsy.
+    const std::string function_path =
+        std::string(path) + "." +
+        SanitizeCacheComponent(bytecode_.function_name);
+    FILE* out = std::fopen(function_path.c_str(), "w");
     if (out == nullptr) {
       cudaFree(flush);
       return;
@@ -3434,6 +3540,341 @@ class LiteRtDispatchInvocationContextT {
     return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
   }
 
+  // LITERT_NVIDIA_DISPATCH_DUMP_IO=top<K>[:<file>] also records the K largest
+  // values of every row of every large float output (the logits) with their
+  // indices: a numerics probe of one step against the same step on another
+  // build or backend. Without <file> the rows go to the log; with it, one JSON
+  // line per output and step is appended to <file>:
+  //   {"context":C,"function":"decode","step":N,"output":"logits","rows":R,
+  //    "columns":V,"top":[[[index,value],...],...]}
+  // where C numbers the invocation contexts of the process (two models, the
+  // base and its drafter, share function names).
+  static int DispatchDumpTopCount() {
+    const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_DUMP_IO");
+    if (value == nullptr || std::strncmp(value, "top", 3) != 0) return 0;
+    return std::max(0, std::atoi(value + 3));
+  }
+
+  static const char* DispatchDumpTopFile() {
+    const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_DUMP_IO");
+    if (value == nullptr || std::strncmp(value, "top", 3) != 0) return nullptr;
+    const char* colon = std::strchr(value + 3, ':');
+    return colon == nullptr || colon[1] == '\0' ? nullptr : colon + 1;
+  }
+
+  // LITERT_NVIDIA_DISPATCH_DUMP_IO=dir:<path> also writes every input and
+  // output of every step to <path>/<function>/step<N>/<input|output>_<i>.raw,
+  // the step's data for a run of the same signature elsewhere (run_model).
+  static const char* DispatchDumpDir() {
+    const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_DUMP_IO");
+    if (value == nullptr || std::strncmp(value, "dir:", 4) != 0) return nullptr;
+    return value + 4;
+  }
+
+  // LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS=<dir>[:<max_steps>[:<max_mb>]] (any
+  // LITERT_NVIDIA_DISPATCH_DUMP_IO mode may run beside it) writes every
+  // output of the first <max_steps> steps of every context (default 8) that
+  // is at most <max_mb> MB (default 16), as
+  // <dir>/c<context>/<function>/step<N>/out_<i>.raw, and one
+  // JSON line per file to <dir>/index.jsonl, in the order the outputs were
+  // produced: {"seq":S,"context":C,"function":F,"step":N,"output":i,
+  // "name":...,"element_type":T,"dims":[...],"stored_half":H,"state":K,
+  // "input_dims":[...],"bytes":B,"skipped":"","file":"c<C>/<F>/step<N>/out_<i>.raw"}
+  // (an output above <max_mb> keeps its line with "skipped":"size" and no
+  // file, so a reader knows it existed);
+  // "state" marks an output whose device memory is an input's (the in-place
+  // KV caches, declared as aliases by the engine or not), dumped at every
+  // step of a context that emits nothing else (a prefill) and at the first
+  // step of any other; "input_dims" are the step's token input's (the first
+  // integer input of rank at most 2: a prefill chunk's count, a decode
+  // step's one, a verify step's few), which tell the signatures apart. A
+  // numerics guard compares two runs' files in that order and names the first
+  // tensor that differs.
+  static const char* DumpOutputsSpec() {
+    const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS");
+    return value == nullptr || value[0] == '\0' ? nullptr : value;
+  }
+
+  static std::string DumpOutputsDir() {
+    const char* spec = DumpOutputsSpec();
+    if (spec == nullptr) return "";
+    const char* colon = std::strchr(spec, ':');
+    return colon == nullptr ? std::string(spec) : std::string(spec, colon);
+  }
+
+  static int DumpOutputsMaxSteps() {
+    const char* spec = DumpOutputsSpec();
+    const char* colon = spec == nullptr ? nullptr : std::strchr(spec, ':');
+    if (colon == nullptr) return 8;
+    const int steps = std::atoi(colon + 1);
+    return steps > 0 ? steps : 8;
+  }
+
+  static size_t DumpOutputsMaxBytes() {
+    const char* spec = DumpOutputsSpec();
+    const char* colon = spec == nullptr ? nullptr : std::strchr(spec, ':');
+    const char* second =
+        colon == nullptr ? nullptr : std::strchr(colon + 1, ':');
+    if (second == nullptr) return size_t{16} << 20;
+    const long mb = std::atol(second + 1);
+    return (mb > 0 ? static_cast<size_t>(mb) : size_t{16}) << 20;
+  }
+
+  static uint64_t NextDumpOutputsSeq() {
+    static std::atomic<uint64_t> next{0};
+    return next.fetch_add(1);
+  }
+
+  // The dims of the step's token input (the first integer input of rank at
+  // most 2: the tokens or the positions, "[1024]" for a prefill chunk, "[1]"
+  // for a decode step, "[4]" for a verify step, as Gemma's signatures
+  // declare them), as a JSON array, or "[]" when there is none.
+  std::string DumpInputDims() {
+    if (runtime_context_ == nullptr ||
+        runtime_context_->get_tensor_buffer_tensor_type == nullptr) {
+      return "[]";
+    }
+    for (const auto handle : input_handles_) {
+      if (handle == 0) continue;
+      auto record = device_context_->GetRecord(handle);
+      if (!record.HasValue() || (*record)->tensor_buffer == nullptr) continue;
+      LiteRtRankedTensorType type{};
+      if (runtime_context_->get_tensor_buffer_tensor_type(
+              (*record)->tensor_buffer, &type) != kLiteRtStatusOk) {
+        continue;
+      }
+      const bool integer = type.element_type == kLiteRtElementTypeInt32 ||
+                           type.element_type == kLiteRtElementTypeInt64;
+      if (!integer || type.layout.rank > 2) continue;
+      std::string dims = "[";
+      for (uint32_t d = 0; d < type.layout.rank; ++d) {
+        dims += (d == 0 ? "" : ",") + std::to_string(type.layout.dimensions[d]);
+      }
+      return dims + "]";
+    }
+    return "[]";
+  }
+
+  void DumpOutputToDir(int index, const std::string& name,
+                       LiteRtTensorBuffer tensor_buffer, void* device_ptr,
+                       size_t size, bool state, const std::string& input_dims) {
+    const std::string dir = DumpOutputsDir();
+    if (dir.empty() || device_ptr == nullptr || size == 0 ||
+        dump_outputs_step_ > DumpOutputsMaxSteps()) {
+      return;
+    }
+    // Above the cap: an index line without a file, so a reader knows the
+    // output existed and was not dumped (the caches of a long context).
+    const bool skipped = size > DumpOutputsMaxBytes();
+    LiteRtRankedTensorType type{};
+    bool have_type = false;
+    if (tensor_buffer != nullptr && runtime_context_ != nullptr &&
+        runtime_context_->get_tensor_buffer_tensor_type != nullptr) {
+      have_type = runtime_context_->get_tensor_buffer_tensor_type(
+                      tensor_buffer, &type) == kLiteRtStatusOk;
+    }
+    const std::string function =
+        SanitizeCacheComponent(bytecode_.function_name);
+    const std::string relative = "c" + std::to_string(dump_context_id_) + "/" +
+                                 function + "/step" +
+                                 std::to_string(dump_outputs_step_) + "/out_" +
+                                 std::to_string(index) + ".raw";
+    const std::string step_dir =
+        JoinPath(JoinPath(JoinPath(dir, "c" + std::to_string(dump_context_id_)),
+                          function),
+                 "step" + std::to_string(dump_outputs_step_));
+    (void)std::system(("mkdir -p '" + step_dir + "'").c_str());
+    if (!skipped) {
+      std::vector<unsigned char> bytes(size);
+      cudaStreamSynchronize(stream_);
+      if (cudaMemcpy(bytes.data(), device_ptr, size, cudaMemcpyDeviceToHost) !=
+          cudaSuccess) {
+        (void)cudaGetLastError();
+        return;
+      }
+      if (!WriteBinaryFile(JoinPath(dir, relative), bytes.data(),
+                           bytes.size())) {
+        LITERT_LOG(LITERT_WARNING, "NVIDIA dispatch could not write %s",
+                   relative.c_str());
+        return;
+      }
+    }
+    std::string dims;
+    if (have_type) {
+      for (uint32_t d = 0; d < type.layout.rank; ++d) {
+        dims += (d == 0 ? "" : ",") + std::to_string(type.layout.dimensions[d]);
+      }
+    }
+    bool stored_half = false;
+    if (have_type) {
+      const auto half = StoredAsHalf(name, type);
+      stored_half = half.HasValue() && *half;
+    }
+    const std::string line =
+        "{\"seq\":" + std::to_string(NextDumpOutputsSeq()) +
+        ",\"context\":" + std::to_string(dump_context_id_) +
+        ",\"function\":\"" + function +
+        "\",\"step\":" + std::to_string(dump_outputs_step_) +
+        ",\"output\":" + std::to_string(index) + ",\"name\":\"" +
+        SanitizeCacheComponent(name) + "\",\"element_type\":" +
+        std::to_string(have_type ? static_cast<int>(type.element_type) : -1) +
+        ",\"dims\":[" + dims +
+        "],\"stored_half\":" + (stored_half ? "true" : "false") +
+        ",\"state\":" + (state ? "true" : "false") +
+        ",\"input_dims\":" + input_dims + ",\"bytes\":" + std::to_string(size) +
+        ",\"skipped\":" + (skipped ? "\"size\"" : "\"\"") + ",\"file\":\"" +
+        (skipped ? std::string() : relative) + "\"}\n";
+    static std::mutex index_mutex;
+    std::lock_guard<std::mutex> lock(index_mutex);
+    FILE* out = std::fopen(JoinPath(dir, "index.jsonl").c_str(), "a");
+    if (out != nullptr) {
+      std::fputs(line.c_str(), out);
+      std::fclose(out);
+    }
+  }
+
+  // The step counter of this context for the outputs dump (every Invoke).
+  int dump_outputs_step_ = 0;
+
+  void DumpDeviceBufferToFile(const char* kind, int index, void* device_ptr,
+                              size_t size) {
+    const char* dir = DispatchDumpDir();
+    if (dir == nullptr || device_ptr == nullptr || size == 0) return;
+    const std::string step_dir =
+        JoinPath(JoinPath(dir, SanitizeCacheComponent(bytecode_.function_name)),
+                 "step" + std::to_string(dump_step_));
+    (void)std::system(("mkdir -p '" + step_dir + "'").c_str());
+    std::vector<unsigned char> bytes(size);
+    cudaStreamSynchronize(stream_);
+    if (cudaMemcpy(bytes.data(), device_ptr, size, cudaMemcpyDeviceToHost) !=
+        cudaSuccess) {
+      (void)cudaGetLastError();
+      return;
+    }
+    const std::string path = JoinPath(
+        step_dir, std::string(kind) + "_" + std::to_string(index) + ".raw");
+    if (!WriteBinaryFile(path, bytes.data(), bytes.size())) {
+      LITERT_LOG(LITERT_WARNING, "NVIDIA dispatch could not write %s",
+                 path.c_str());
+    }
+  }
+
+  // The step counter of this context (each Invoke) and the context's number
+  // in the process, both for the dumps above.
+  int dump_step_ = 0;
+  const int dump_context_id_ = NextDumpContextId();
+  static int NextDumpContextId() {
+    static std::atomic<int> next{0};
+    return next.fetch_add(1);
+  }
+
+  void DumpDeviceBufferTop(const std::string& name,
+                           LiteRtTensorBuffer tensor_buffer, void* device_ptr,
+                           size_t size) {
+    const int top = DispatchDumpTopCount();
+    if (top <= 0 || device_ptr == nullptr || tensor_buffer == nullptr ||
+        runtime_context_ == nullptr ||
+        runtime_context_->get_tensor_buffer_tensor_type == nullptr) {
+      return;
+    }
+    LiteRtRankedTensorType type;
+    if (runtime_context_->get_tensor_buffer_tensor_type(tensor_buffer, &type) !=
+            kLiteRtStatusOk ||
+        (type.element_type != kLiteRtElementTypeFloat32 &&
+         type.element_type != kLiteRtElementTypeFloat16) ||
+        type.layout.rank == 0) {
+      return;
+    }
+    const size_t columns =
+        static_cast<size_t>(type.layout.dimensions[type.layout.rank - 1]);
+    // Float16 logits (the 12B's) hold two bytes per value, as does a float32
+    // tensor the engine keeps as FP16.
+    const auto half = StoredAsHalf(name, type);
+    const size_t element_bytes =
+        type.element_type == kLiteRtElementTypeFloat16 ||
+                (half.HasValue() && *half)
+            ? 2
+            : 4;
+    const size_t count = size / element_bytes;
+    if (dump_step_ == 1) {
+      // An inventory of the outputs, once, for whoever wonders why a tensor
+      // is not among the dumps.
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch dump inventory context=%d %s output=%s "
+                 "type=%d rank=%u columns=%zu bytes=%zu element_bytes=%zu",
+                 dump_context_id_, bytecode_.function_name.c_str(),
+                 name.c_str(), static_cast<int>(type.element_type),
+                 type.layout.rank, columns, size, element_bytes);
+    }
+    // Logits only: a vocabulary's width, not an activation's.
+    if (columns < 65536 || count < columns || count % columns != 0) return;
+    const size_t rows = count / columns;
+    const size_t k = std::min(static_cast<size_t>(top), columns);
+    std::vector<float> values(count);
+    cudaStreamSynchronize(stream_);
+    if (element_bytes == 2) {
+      std::vector<uint16_t> bits(count);
+      if (cudaMemcpy(bits.data(), device_ptr, count * sizeof(uint16_t),
+                     cudaMemcpyDeviceToHost) != cudaSuccess) {
+        (void)cudaGetLastError();
+        return;
+      }
+      for (size_t i = 0; i < count; ++i) values[i] = HalfBitsToFloat(bits[i]);
+    } else if (cudaMemcpy(values.data(), device_ptr, count * sizeof(float),
+                          cudaMemcpyDeviceToHost) != cudaSuccess) {
+      (void)cudaGetLastError();
+      return;
+    }
+    std::vector<int> order(columns);
+    std::string json;
+    for (size_t row = 0; row < rows; ++row) {
+      const float* row_values = values.data() + row * columns;
+      for (size_t i = 0; i < columns; ++i) order[i] = static_cast<int>(i);
+      // Ties broken by index, as the CPU sampler's top-k orders them.
+      std::partial_sort(order.begin(), order.begin() + k, order.end(),
+                        [&](int a, int b) {
+                          return row_values[a] > row_values[b] ||
+                                 (row_values[a] == row_values[b] && a < b);
+                        });
+      std::string text;
+      for (size_t i = 0; i < k; ++i) {
+        char item[48];
+        std::snprintf(item, sizeof(item), i == 0 ? "[%d,%.7g]" : ",[%d,%.7g]",
+                      order[i], row_values[order[i]]);
+        text += item;
+      }
+      if (DispatchDumpTopFile() == nullptr) {
+        LITERT_LOG(
+            LITERT_INFO,
+            "NVIDIA dispatch top%zu context=%d %s step=%d %s row=%zu/%zu "
+            "n=%zu: %s",
+            k, dump_context_id_, bytecode_.function_name.c_str(), dump_step_,
+            name.c_str(), row, rows, columns, text.c_str());
+      } else {
+        json += row == 0 ? "[" : ",[";
+        json += text;
+        json += "]";
+      }
+    }
+    const char* file = DispatchDumpTopFile();
+    if (file == nullptr) return;
+    static std::mutex file_mutex;
+    std::lock_guard<std::mutex> lock(file_mutex);
+    FILE* out = std::fopen(file, "a");
+    if (out == nullptr) {
+      LITERT_LOG(LITERT_WARNING, "NVIDIA dispatch could not append to %s",
+                 file);
+      return;
+    }
+    std::fprintf(out,
+                 "{\"context\":%d,\"function\":\"%s\",\"step\":%d,"
+                 "\"output\":\"%s\",\"rows\":%zu,\"columns\":%zu,"
+                 "\"top\":[%s]}\n",
+                 dump_context_id_, bytecode_.function_name.c_str(), dump_step_,
+                 name.c_str(), rows, columns, json.c_str());
+    std::fclose(out);
+  }
+
   // Debug helper: logs the first bytes of a device buffer as floats and a
   // cheap checksum, synchronizing the stream first.
   void DumpDeviceBufferPrefix(const char* tag, const std::string& name,
@@ -3443,12 +3884,16 @@ class LiteRtDispatchInvocationContextT {
     cudaStreamSynchronize(stream_);
     if (cudaMemcpy(values, device_ptr, copy_bytes, cudaMemcpyDeviceToHost) !=
         cudaSuccess) {
+      (void)cudaGetLastError();
       return;
     }
     unsigned char sample[64] = {};
-    const size_t sample_bytes = std::min(sizeof(sample), size);
+    const size_t sample_bytes = std::min(sizeof(sample), size - size / 2);
     cudaMemcpy(sample, static_cast<const char*>(device_ptr) + size / 2,
                sample_bytes, cudaMemcpyDeviceToHost);
+    // A failed debug copy must not leave its error for the next launch's
+    // cudaGetLastError (the plugins report it as their own failure).
+    (void)cudaGetLastError();
     unsigned int checksum = 0;
     for (size_t i = 0; i < sample_bytes; ++i) {
       checksum = checksum * 31 + sample[i];
