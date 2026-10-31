@@ -208,9 +208,11 @@ first use); a numerics probe of a model runs before its performance probes.
   on the k-th logit, the CPU heap does not say; a parting of the sampled
   texts warns for that reason instead of failing.
 - Memory beyond the memory probe: one workload (short), one conversation;
-  what a long context or a later conversation allocates is not in it, and
-  the device figure is device-wide (another process's allocation during the
-  run moves it).
+  what a long context or a later conversation allocates is not in it. The
+  device figure is device-wide (another process's allocation during the run
+  moves it) and starts at the run's first memory-profile line, the
+  compiler's AOT lookup: the CUDA context and anything allocated before it
+  (about 860 MiB device-wide on the E2B) is in neither capture's figure.
 - The step feed: the numerics probes dump every step's logits, and the
   dispatch turns the feed off under the dumps, so the plain decode path
   the feed serves (the default) is not in the numerics; the text probes run

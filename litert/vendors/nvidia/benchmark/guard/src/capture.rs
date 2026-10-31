@@ -205,9 +205,14 @@ pub fn list_captures(env: &BenchEnv) -> Vec<Manifest> {
     manifests
 }
 
+/// Writes capture.json whole or not at all (a temporary file, then a rename):
+/// a write that fails, on a full disk or a kill, leaves the previous one.
 fn save(capture: &Capture) -> Result<()> {
     std::fs::create_dir_all(&capture.dir)?;
-    std::fs::write(capture.dir.join("capture.json"), serde_json::to_string_pretty(capture)?)?;
+    let tmp = capture.dir.join("capture.json.tmp");
+    std::fs::write(&tmp, serde_json::to_string_pretty(capture)?)
+        .with_context(|| format!("writing {}", tmp.display()))?;
+    std::fs::rename(&tmp, capture.dir.join("capture.json")).context("replacing capture.json")?;
     Ok(())
 }
 
@@ -260,6 +265,12 @@ pub fn run_capture(
             }
             existing
         }
+        // A capture.json that is there but cannot be read is not a new capture: its runs would be
+        // reused without its environment and build checked.
+        Err(error) if dir.join("capture.json").exists() => bail!(
+            "capture {} has a capture.json that cannot be read ({error:#}): move the capture's directory away, or remove it, before capturing under this name",
+            opts.name
+        ),
         Err(_) => Capture {
             manifest: Manifest {
                 name: opts.name.clone(),
@@ -503,9 +514,13 @@ pub fn run_capture(
             let prompt = config.prompt(&spec.prompt)?;
             let prompt_path = config.prompt_path(guard_dir, prompt);
             let out_dir = conversation_dir(&dir, model);
-            let run = match load_conversation_run(&out_dir)
-                .filter(|r| r.exit_code == 0 && r.build_id == env.build_id)
-            {
+            let run = match load_conversation_run(&out_dir).filter(|r| {
+                r.exit_code == 0
+                    && r.build_id == env.build_id
+                    && r.prompt == spec.prompt
+                    && r.mtp == spec.mtp
+                    && r.texts.len() == spec.conversations as usize
+            }) {
                 Some(run) => {
                     eprintln!("conversations {model}: kept");
                     run
@@ -544,9 +559,12 @@ pub fn run_capture(
             let out_dir = memory_dir(&dir, model);
             for mtp in [false, true] {
                 let mode = if mtp { "mtp" } else { "plain" };
-                let run = match load_memory_run(&out_dir, mtp)
-                    .filter(|r| r.exit_code == 0 && r.build_id == env.build_id && !r.compiled)
-                {
+                let run = match load_memory_run(&out_dir, mtp).filter(|r| {
+                    r.exit_code == 0
+                        && r.build_id == env.build_id
+                        && !r.compiled
+                        && r.workload == spec.workload
+                }) {
                     Some(run) => {
                         eprintln!("memory {model} {mode}: kept");
                         run

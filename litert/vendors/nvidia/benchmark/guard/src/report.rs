@@ -199,6 +199,8 @@ pub struct Prediction {
 pub struct MemoryCheck {
     pub model: String,
     pub mtp: bool,
+    #[serde(default)]
+    pub workload: String,
     pub base_gpu_mib: Option<f64>,
     pub cand_gpu_mib: Option<f64>,
     pub base_rss_gib: Option<f64>,
@@ -217,12 +219,17 @@ pub fn check_memory(
 ) -> Vec<MemoryCheck> {
     let mut out = Vec::new();
     for c in &cand.memory {
-        let Some(b) = base.memory.iter().find(|b| b.model == c.model && b.mtp == c.mtp) else {
+        let Some(b) = base
+            .memory
+            .iter()
+            .find(|b| b.model == c.model && b.mtp == c.mtp && b.workload == c.workload)
+        else {
             // No baseline run to compare with: a failed or compiling run is still judged.
             if c.exit_code != 0 || c.compiled {
                 out.push(MemoryCheck {
                     model: c.model.clone(),
                     mtp: c.mtp,
+                    workload: c.workload.clone(),
                     base_gpu_mib: None,
                     cand_gpu_mib: c.gpu_mib,
                     base_rss_gib: None,
@@ -304,6 +311,7 @@ pub fn check_memory(
         out.push(MemoryCheck {
             model: c.model.clone(),
             mtp: c.mtp,
+            workload: c.workload.clone(),
             base_gpu_mib: b.gpu_mib,
             cand_gpu_mib: c.gpu_mib,
             base_rss_gib: b.rss_gib,
@@ -581,13 +589,31 @@ fn not_compared(base: &Capture, cand: &Capture) -> Vec<String> {
         }
     }
     for b in &base.memory {
-        if !cand.memory.iter().any(|c| c.model == b.model && c.mtp == b.mtp) {
-            out.push(format!("memory {} {}: not in the candidate", b.model, mode(b.mtp)));
+        if !cand
+            .memory
+            .iter()
+            .any(|c| c.model == b.model && c.mtp == b.mtp && c.workload == b.workload)
+        {
+            out.push(format!(
+                "memory {} {} {}: not in the candidate",
+                b.model,
+                mode(b.mtp),
+                b.workload
+            ));
         }
     }
     for c in &cand.memory {
-        if !base.memory.iter().any(|b| b.model == c.model && b.mtp == c.mtp) {
-            out.push(format!("memory {} {}: not in the baseline", c.model, mode(c.mtp)));
+        if !base
+            .memory
+            .iter()
+            .any(|b| b.model == c.model && b.mtp == c.mtp && b.workload == c.workload)
+        {
+            out.push(format!(
+                "memory {} {} {}: not in the baseline",
+                c.model,
+                mode(c.mtp),
+                c.workload
+            ));
         }
     }
     for c in &cand.conversations {
@@ -786,10 +812,23 @@ pub fn compare(
         reasons
             .push("no text probe compared: the candidate ran none of the baseline's".to_string());
     }
-    let memory_paired = cand
-        .memory
-        .iter()
-        .any(|c| base.memory.iter().any(|b| b.model == c.model && b.mtp == c.mtp));
+    let memory_paired = cand.memory.iter().any(|c| {
+        base.memory.iter().any(|b| b.model == c.model && b.mtp == c.mtp && b.workload == c.workload)
+    });
+    // MTP numerics runs paired whose counts are missing (a capture made before 42aca7274): the
+    // acceptance is not judged, and the report says so.
+    for model in
+        cand.numerics.iter().filter(|r| r.mtp).map(|r| r.model.clone()).collect::<BTreeSet<_>>()
+    {
+        let paired = cand.numerics.iter().filter(|c| c.mtp && c.model == model).any(|c| {
+            base.numerics.iter().any(|b| b.mtp && b.model == model && b.prompt == c.prompt)
+        });
+        if paired && !acceptance.iter().any(|a| a.model == model) {
+            reasons.push(format!(
+                "the MTP acceptance of {model} is not judged: its paired MTP runs carry no accepted and drafted counts (a capture made before 42aca7274); nvguard rescan restores them from the runs' logs"
+            ));
+        }
+    }
     if !base.memory.is_empty() && !memory_paired {
         reasons
             .push("no memory probe compared: the candidate ran none of the baseline's".to_string());
@@ -933,14 +972,15 @@ pub fn render_comparison(c: &Comparison) -> String {
         s.push_str(
             "## Memory (bench.sh's memory metric: the most device memory held, the peak RSS)\n\n",
         );
-        s.push_str("| Model | Mode | Device MiB (base, cand) | Peak RSS GiB (base, cand) | Verdict |\n|---|---|---|---|---|\n");
+        s.push_str("| Model | Mode | Workload | Device MiB (base, cand) | Peak RSS GiB (base, cand) | Verdict |\n|---|---|---|---|---|---|\n");
         let f =
             |v: Option<f64>, d: usize| v.map(|v| format!("{v:.d$}")).unwrap_or_else(|| "-".into());
         for m in &c.memory {
             s.push_str(&format!(
-                "| {} | {} | {}, {} | {}, {} | {} |\n",
+                "| {} | {} | {} | {}, {} | {}, {} | {} |\n",
                 m.model,
                 if m.mtp { "mtp" } else { "plain" },
+                m.workload,
                 f(m.base_gpu_mib, 0),
                 f(m.cand_gpu_mib, 0),
                 f(m.base_rss_gib, 3),
@@ -2053,6 +2093,14 @@ mod tests {
         let base = capture_of("old", Vec::new(), &[("e4b", "doc_16k", true)]);
         let cand = mtp_capture("new", &[("doc_16k", 100, 280, "x")]);
         assert!(check_acceptance(&base, &cand, &t).is_empty());
+        // Round 3's F12: the comparison says the acceptance went unjudged.
+        let c = compare(&base, &cand, &Config::load(None).unwrap(), &[]);
+        assert!(
+            c.reasons.iter().any(|r| r.contains("the MTP acceptance of e4b is not judged")
+                && r.contains("nvguard rescan")),
+            "{:?}",
+            c.reasons
+        );
     }
 
     fn text(variant: &str, text: &str, samplers: usize, candidates: usize, top_k: u32) -> TextRun {
@@ -2213,10 +2261,22 @@ mod tests {
         assert_eq!(checks[0].verdict, Verdict::Fail);
         let c = compare(&base, &cand, &config, &[]);
         assert!(
-            c.not_compared.iter().any(|l| l == "memory e2b mtp: not in the baseline"),
+            c.not_compared.iter().any(|l| l == "memory e2b mtp short: not in the baseline"),
             "{:?}",
             c.not_compared
         );
+        // Round 3's F13: runs of different workloads are not paired.
+        let short = memory_capture("short", &[("e2b", false, 1054.0, 0.97, false)]);
+        let mut long = memory_capture("long", &[("e2b", false, 1500.0, 0.97, false)]);
+        long.memory[0].workload = "8k".into();
+        let c = compare(&short, &long, &config, &[]);
+        assert!(c.memory.is_empty(), "{:?}", c.memory);
+        assert!(
+            c.not_compared.iter().any(|l| l == "memory e2b plain 8k: not in the baseline"),
+            "{:?}",
+            c.not_compared
+        );
+        assert!(c.reasons.iter().any(|r| r.contains("no memory probe compared")));
     }
 
     #[test]
