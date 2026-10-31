@@ -39,6 +39,10 @@ pub struct IndexLine {
     /// dumped at a context's first step only.
     #[serde(default)]
     pub state: bool,
+    /// The dims of the step's first input (the tokens): a prefill chunk's
+    /// count, a decode step's one, a verify step's few.
+    #[serde(default)]
+    pub input_dims: Vec<i64>,
     pub bytes: u64,
     pub file: String,
 }
@@ -51,6 +55,16 @@ impl IndexLine {
 
     pub fn columns(&self) -> u64 {
         self.dims.last().copied().unwrap_or(0).max(0) as u64
+    }
+
+    /// The step's input tokens (the product of the first input's dims), 0
+    /// when the dump did not record them.
+    pub fn input_rows(&self) -> i64 {
+        if self.input_dims.is_empty() {
+            0
+        } else {
+            self.input_dims.iter().map(|d| (*d).max(0)).product()
+        }
     }
 
     pub fn is_logits(&self) -> bool {
@@ -152,6 +166,9 @@ pub struct TensorDiff {
     pub name: String,
     #[serde(default)]
     pub state: bool,
+    /// The step's input tokens (0 when unknown).
+    #[serde(default)]
+    pub input_rows: i64,
     pub dims: Vec<i64>,
     pub elements: usize,
     pub differing: usize,
@@ -230,6 +247,7 @@ pub fn tensor_diff(line: &IndexLine, base: &[f64], cand: &[f64]) -> TensorDiff {
         output: line.output,
         name: line.name.clone(),
         state: line.state,
+        input_rows: line.input_rows(),
         dims: line.dims.clone(),
         elements: n,
         differing,
@@ -256,8 +274,11 @@ pub struct Localization {
     /// The first tensor, in production order, that differs.
     pub first: Option<TensorDiff>,
     /// Every differing output of the first differing step (its context and
-    /// step): the functions the difference has reached by then.
+    /// step): how much of that function's output the difference covers.
     pub first_step: Vec<TensorDiff>,
+    /// The outputs paired at that step, differing or not.
+    #[serde(default)]
+    pub first_step_outputs: usize,
     /// The largest relative move over all pairs.
     pub largest: Option<TensorDiff>,
 }
@@ -298,6 +319,13 @@ pub fn localize(base_dir: &Path, cand_dir: &Path) -> Result<Localization> {
         if out.largest.as_ref().map(|l| diff.relative > l.relative).unwrap_or(true) {
             out.largest = Some(diff);
         }
+    }
+    if let Some((context, step)) = first_step {
+        out.first_step_outputs = base
+            .iter()
+            .filter(|l| l.context == context && l.step == step && l.is_comparable())
+            .filter(|l| cand_by_key.get(&l.key()).map(|o| o.is_comparable()).unwrap_or(false))
+            .count();
     }
     Ok(out)
 }
@@ -471,6 +499,9 @@ mod tests {
         write_dump(&b, cand);
         let index = load_index(&a).unwrap();
         assert!(index[0].state && index[0].is_comparable());
+        assert_eq!(index[0].input_rows(), 0, "the test index carries no input dims");
+        let with_dims: IndexLine = serde_json::from_str(r#"{"seq":0,"context":2,"function":"f","step":1,"output":0,"element_type":9,"dims":[1,1,4,2],"state":true,"input_dims":[1,1024],"bytes":8,"file":"x"}"#).unwrap();
+        assert_eq!(with_dims.input_rows(), 1024);
         assert_eq!(
             read_tensor(&a, &index[0]).unwrap(),
             vec![1.0, -2.0, 3.0, 4.0, 5.0, 6.0, 7.0, -128.0]
@@ -486,6 +517,7 @@ mod tests {
         );
         assert_eq!(first.max_abs_delta, 3.0);
         assert_eq!(l.first_step.len(), 1, "the decode step is another context's step");
+        assert_eq!(l.first_step_outputs, 1);
     }
 
     #[test]

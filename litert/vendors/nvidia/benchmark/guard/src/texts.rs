@@ -22,6 +22,14 @@ pub struct TextRun {
     /// Whether the text matched the probe's regex (constraint probes).
     pub regex_ok: Option<bool>,
     pub device_samplers: usize,
+    /// The verifier's candidate-selection lines (its device path at k > 1).
+    #[serde(default)]
+    pub device_candidates: usize,
+    #[serde(default)]
+    pub top_k: u32,
+    /// LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD=0: the immediate-upload mode.
+    #[serde(default)]
+    pub immediate_upload: bool,
     pub parser_errors: usize,
 }
 
@@ -30,6 +38,9 @@ pub struct TextRun {
 pub struct TextComparison {
     pub model: String,
     pub kind: String,
+    /// The device-side variant compared with the host run.
+    #[serde(default)]
+    pub variant: String,
     pub identical: bool,
     /// The character offset where they part (the shorter's length when one
     /// is a prefix of the other).
@@ -41,6 +52,8 @@ pub struct TextComparison {
     pub device_regex_ok: Option<bool>,
     pub host_regex_ok: Option<bool>,
     pub device_samplers: usize,
+    #[serde(default)]
+    pub device_candidates: usize,
     pub device_text_len: usize,
     pub host_text_len: usize,
 }
@@ -66,6 +79,7 @@ pub fn compare_texts(device: &TextRun, host: &TextRun) -> TextComparison {
     TextComparison {
         model: device.model.clone(),
         kind: device.kind.clone(),
+        variant: device.variant.clone(),
         identical: device.text == host.text,
         parted_char: parted_at(&device.text, &host.text),
         common_words: common_words(&device.text, &host.text),
@@ -74,6 +88,7 @@ pub fn compare_texts(device: &TextRun, host: &TextRun) -> TextComparison {
         device_regex_ok: device.regex_ok,
         host_regex_ok: host.regex_ok,
         device_samplers: device.device_samplers,
+        device_candidates: device.device_candidates,
         device_text_len: device.text_len,
         host_text_len: host.text_len,
     }

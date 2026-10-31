@@ -146,8 +146,10 @@ fn capture_options(probe: &ProbeArgs, env: &BenchEnv, config: &Config) -> Result
         bail!("no models to probe");
     }
     config::tier_rank(&probe.tier)?;
+    let name = probe.name.clone().unwrap_or_else(|| env.build_id.clone());
+    capture::validate_name(&name)?;
     Ok(CaptureOptions {
-        name: probe.name.clone().unwrap_or_else(|| env.build_id.clone()),
+        name,
         models,
         tier: probe.tier.clone(),
         numerics: !probe.no_numerics,
@@ -254,11 +256,10 @@ fn main() -> Result<()> {
         Command::Check { probe, baseline, record } => {
             let (env, config, guard_dir) = resolve(&cli)?;
             let base = load_capture(&env, baseline)?;
-            let mut opts = capture_options(probe, &env, &config)?;
+            let opts = capture_options(probe, &env, &config)?;
             if opts.name == base.manifest.name {
                 bail!("the candidate needs a name other than the baseline's ({})", opts.name);
             }
-            opts.mtp |= base.manifest.mtp && probe.mtp;
             eprintln!(
                 "check {} of build {} against {} ({})",
                 opts.name, env.build_id, base.manifest.name, base.manifest.build_id

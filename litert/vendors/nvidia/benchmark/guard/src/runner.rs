@@ -323,7 +323,7 @@ pub struct TextProbe<'a> {
     pub model: &'a str,
     /// sampled | constraint
     pub kind: &'a str,
-    /// device | host
+    /// device | host | immediate (the device verifier in the immediate-upload mode)
     pub variant: &'a str,
     pub prompt_path: &'a Path,
     pub max_output_tokens: u32,
@@ -356,10 +356,15 @@ pub fn run_text_probe(env: &BenchEnv, probe: &TextProbe) -> Result<TextRun> {
             && k != "LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS"
             && k != "LITERT_NVIDIA_MEMORY_PROFILE"
             && k != "LITERT_NVIDIA_MTP_GPU_SAMPLING"
+            && k != "LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD"
     });
     envs.push(("LITERT_NVIDIA_MEMORY_PROFILE".into(), "0".into()));
     if probe.variant == "host" {
         envs.push(("LITERT_NVIDIA_MTP_GPU_SAMPLING".into(), "0".into()));
+    }
+    let immediate_upload = probe.variant == "immediate";
+    if immediate_upload {
+        envs.push(("LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD".into(), "0".into()));
     }
     let mut args: Vec<String> = vec![
         format!("--model_path={}", model_file.display()),
@@ -420,6 +425,9 @@ pub fn run_text_probe(env: &BenchEnv, probe: &TextProbe) -> Result<TextRun> {
         text,
         regex_ok,
         device_samplers: log.device_samplers,
+        device_candidates: log.device_candidates,
+        top_k: probe.top_k,
+        immediate_upload,
         parser_errors: log_text.matches("Parser Error").count(),
     };
     let meta = json!({

@@ -27,8 +27,10 @@ compared step by step while their argmax tokens agree (the inputs of those
 steps are identical): the largest |Δlogit| among the top-K, the KL divergence
 of the top-K distributions, the top-K set overlap, and where the greedy texts
 part. A divergence after a few sentences is a near-tie and only warns; one
-within the first eight tokens, non-finite logits, a repetition loop, a mean KL
-above 1e-3 or a |Δlogit| above 0.5 fail. The thresholds are in `nvguard.toml`.
+within the first eight tokens, non-finite logits and a repetition loop fail.
+The KL over the first four steps warns at 1e-3 and fails at 1e-2, the mean KL
+warns at 1e-3 and fails at 1e-1, a |Δlogit| warns at 1.0 and fails at 8.0, the
+top-K overlap warns under 0.95 and fails under 0.8 (`nvguard.toml`).
 The prompts: three coding problems in LiveCodeBench's format, a reasoning
 question, and the benchmark's 8k document (quick tier); the 30k document
 (standard); the 128k document for the 12B (long). A capture of the same build
@@ -37,7 +39,11 @@ twice gives zero deltas: the engines are deterministic.
 **Where a change enters.** Each numerics probe also runs with
 `LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS=<dir>:8:16`, so the dispatch writes every
 output of the first eight steps of every partition whole (outputs up to
-16 MB; the in-place caches are left out), with an index in production order.
+16 MB; the in-place caches, marked `state`, at every step of a context that
+emits nothing else, the prefill's chunks, and at the first step of the
+others), with an index in production order that also records each step's
+input tokens, which tell the prefill (a chunk's count) from the decode (one)
+and the verify step (a few).
 `localize --baseline A B` compares two captures' dumps in that order and names
 the first tensor that differs (its context, function, step and output, how
 many elements moved and how far, the functions the difference has reached by
@@ -60,16 +66,16 @@ must end without parser errors (a violation or a bad exit fails). The
 greedy probes cannot see any of this: the samplers and the masks are what
 `--sampler_top_k=1` bypasses.
 
-**Performance.** `bench.sh` latency runs of the `short` (2k) and `8k`
-workloads with few iterations, per model; `--mtp` adds the plain and MTP text
-runs of those workloads (acceptance, tokens per round). Candidate/baseline
-ratios below 0.97 warn, below 0.93 fail. From the measured contexts a cost
-model per model (decode step time a + b·context; prefill time per token
-u + v·prompt) predicts the other contexts (16k, 30k); with `--record` the
-measured change ratio, interpolated in context, is applied to the record's
-full curve to say what the candidate would measure there. `predict NAME
---record FILE` also reports the predictor's own error on the record (fitted
-on the record's 2k and 8k, predicting its 16k and 30k).
+**Performance.** `bench.sh` latency runs of the `short` (the record's 1k),
+`8k` and `16k` workloads with few iterations, per model; `--mtp` adds the
+plain and MTP text runs of those workloads (acceptance, tokens per round).
+Candidate/baseline ratios below 0.97 warn, below 0.93 fail. From the measured
+contexts a cost model per model (decode step time a + b·context; prefill time
+c0 + c1·N + c2·N²) predicts the other contexts (30k, 128k); with `--record`
+the measured change ratio, interpolated in context, is applied to the
+record's full curve to say what the candidate would measure there. `predict
+NAME --record FILE` also reports the predictor's own error on the record
+(fitted on the record's measured workloads, predicting its other contexts).
 
 **Kernels.** One run of the `short` workload in the dispatch's own-graph
 mode with `LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_AUTOPSY` and `_DOT`: every
@@ -77,8 +83,11 @@ kernel node of each function's first step graph timed alone (warm and cold)
 and named through the graph's DOT (demangled with `c++filt` where it is).
 Two captures' autopsies diff by function and by kernel, so a performance
 change is attributed to the kernels that moved. The autopsy times kernels
-one at a time: its sums are the kernels' own times, not the step's, and it
-is a diagnostic, never a table cell of the measurements.
+one at a time: its sums are the kernels' own times, not the step's, they are
+noisy (between captures of one build, kernels nobody touched moved by up to
+about 85 µs over a step's launches on the E2B), and it is a diagnostic,
+never a table cell of the measurements: a kernel's Δ means something when it
+stands well above what a same-build pair shows and agrees with the cells.
 
 The reports say what their numbers are: the workload legend (input and
 output tokens, the context) stands above the performance tables, tok/s are
@@ -118,12 +127,12 @@ first use); a numerics probe of a model runs before its performance probes.
 
 ## What it does not probe
 
-- A grammar that ends inside an MTP round, and a constraint under the
-  immediate-upload mode (`LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD=0`): the
-  text probes run one regex in the default mode. Both were checked by hand
-  with the same A/B the text probes automate (the dispatch's device samplers
-  reading a constraint mask the host had written into the logits was found
-  that way).
+- A grammar that ends inside an MTP round: the text probes run one regex,
+  in the default upload mode and, for the constraint, in the immediate-upload
+  mode too (`LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD=0`). The grammar case was
+  checked by hand with the same A/B the text probes automate (the dispatch's
+  device samplers reading a constraint mask the host had written into the
+  logits was found that way).
 - The samplers at exact ties: the device keeps the lowest indices at a tie
   on the k-th logit, the CPU heap does not say; a parting of the sampled
   texts warns for that reason instead of failing.
@@ -133,12 +142,14 @@ first use); a numerics probe of a model runs before its performance probes.
 ## What the gates showed (2026-10-27, E2B, build 3c590a6e1-95cd9c0b)
 
 - The chain against round 5's `final` capture: the ten greedy probes (five
-  prompts, plain and MTP) bit-identical, every performance cell within its
-  spread, acceptance equal.
+  prompts, plain and MTP) bit-identical, every performance cell within four
+  percent (the 8k decode cells up by 2.7 and 3.9 percent, beyond their
+  spreads), acceptance equal.
 - A bit-identical rebuild captured under another name and localized against
   the first: 76 tensors paired per probe, none differing, the texts
-  identical, PASS. The autopsy's warm times moved by up to about 20 µs per
-  kernel between the two: a kernel's change below that is noise.
+  identical, PASS. The autopsy's sums moved by up to 21 µs per kernel
+  between the two, and by up to about 85 µs on untouched decode fusions
+  between the clean capture and the scratch ones: the sums are noisy.
 - A constructed divergence in a kernel the E2B's prefill runs (the INT4
   GEMM's per-row unscale times 1.001, the branch `scratch-divergence-gemm`):
   the first differing tensor is the prefill partition's first cache output

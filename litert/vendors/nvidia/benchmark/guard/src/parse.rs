@@ -81,8 +81,13 @@ pub struct CliLog {
     pub sdk_version: Option<String>,
     /// The compile used the shared weight store (plans without their weights).
     pub weight_store: Option<bool>,
-    /// "NVIDIA MTP GPU ... sampling enabled" lines: the device samplers in use.
+    /// "NVIDIA MTP GPU ... sampling enabled" and "... candidate selection
+    /// enabled" lines: the device samplers in use (the greedy argmax and the
+    /// top-k candidate selection).
     pub device_samplers: usize,
+    /// The "candidate selection enabled" lines alone: the verifier's device
+    /// path at k > 1.
+    pub device_candidates: usize,
 }
 
 fn turns(block: &str, kind: &str) -> Vec<Turn> {
@@ -193,7 +198,8 @@ pub fn parse_cli_log(text: &str) -> CliLog {
     {
         log.weight_store = Some(text.contains("weight store enabled"));
     }
-    log.device_samplers = text.matches("sampling enabled for").count();
+    log.device_candidates = text.matches("candidate selection enabled for").count();
+    log.device_samplers = text.matches("sampling enabled for").count() + log.device_candidates;
     log
 }
 
@@ -260,6 +266,14 @@ pub fn parse_time(text: &str) -> (Option<f64>, Option<f64>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn device_sampler_lines_count_the_greedy_and_the_candidate_paths() {
+        let log = parse_cli_log("I x NVIDIA MTP GPU greedy sampling enabled for 4 rows\nI x NVIDIA MTP GPU candidate selection enabled for 4 rows of 262144 (k 64, p 0.95, temperature 1)\n");
+        assert_eq!(log.device_candidates, 1);
+        assert_eq!(log.device_samplers, 2);
+        assert_eq!(parse_cli_log("nothing").device_samplers, 0);
+    }
 
     const LOG: &str = "I0000 litert_lm_lib.cc:431] BenchmarkInfo:
   Init Phases (7):

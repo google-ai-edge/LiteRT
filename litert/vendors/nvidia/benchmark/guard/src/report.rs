@@ -24,8 +24,12 @@ use crate::texts::{common_words, compare_texts, parted_at, TextComparison, TextR
 pub struct TextCheck {
     pub model: String,
     pub kind: String,
+    /// The device-side variant judged against the host run: device, or
+    /// immediate (the immediate-upload mode).
+    #[serde(default)]
+    pub variant: String,
     pub comparison: TextComparison,
-    /// Whether the candidate's device text equals the baseline's.
+    /// Whether the candidate's text of this variant equals the baseline's.
     pub same_as_baseline: Option<bool>,
     pub verdict: Verdict,
     pub reasons: Vec<String>,
@@ -65,7 +69,7 @@ pub fn workload_legend(names: &[String]) -> Vec<WorkloadLegend> {
 }
 
 /// What the probes do not cover, printed under every comparison.
-pub const NOT_PROBED: &str = "Not probed: a grammar that ends inside an MTP round; a constraint in the immediate-upload mode (LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD=0); the samplers at exact ties on the k-th logit; the device's memory; contexts beyond the measured workloads other than by the cost models.";
+pub const NOT_PROBED: &str = "Not probed: a grammar that ends inside an MTP round; the samplers at exact ties on the k-th logit; the device's memory; contexts beyond the measured workloads other than by the cost models; prefill chunks past the dumped steps (numerics.full_steps).";
 
 fn text_run<'a>(
     runs: &'a [TextRun],
@@ -76,13 +80,22 @@ fn text_run<'a>(
     runs.iter().find(|r| r.model == model && r.kind == kind && r.variant == variant)
 }
 
+/// Every device-side text run of the candidate judged against its host run:
+/// the texts must agree, the device run must show the verifier's device path
+/// (the candidate selection at k > 1, the greedy sampler at k = 1), the host
+/// run must show none, the constrained texts must match the regex, and both
+/// runs must end well.
 pub fn check_texts(base: &Capture, cand: &Capture) -> Vec<TextCheck> {
     let mut out = Vec::new();
-    let keys: BTreeSet<(String, String)> =
-        cand.texts.iter().map(|r| (r.model.clone(), r.kind.clone())).collect();
-    for (model, kind) in keys {
+    let keys: BTreeSet<(String, String, String)> = cand
+        .texts
+        .iter()
+        .filter(|r| r.variant != "host")
+        .map(|r| (r.model.clone(), r.kind.clone(), r.variant.clone()))
+        .collect();
+    for (model, kind, variant) in keys {
         let (Some(device), Some(host)) = (
-            text_run(&cand.texts, &model, &kind, "device"),
+            text_run(&cand.texts, &model, &kind, &variant),
             text_run(&cand.texts, &model, &kind, "host"),
         ) else {
             continue;
@@ -97,40 +110,59 @@ pub fn check_texts(base: &Capture, cand: &Capture) -> Vec<TextCheck> {
         if device.exit_code != 0 || host.exit_code != 0 {
             raise(
                 Verdict::Fail,
-                format!("exit codes device {} host {}", device.exit_code, host.exit_code),
+                format!("exit codes {variant} {} host {}", device.exit_code, host.exit_code),
             );
         }
         if device.parser_errors > 0 || host.parser_errors > 0 {
             raise(
                 Verdict::Fail,
                 format!(
-                    "parser errors device {} host {}",
+                    "parser errors {variant} {} host {}",
                     device.parser_errors, host.parser_errors
                 ),
             );
         }
         if device.regex_ok == Some(false) {
-            raise(Verdict::Fail, "the device text violates the regex".to_string());
+            raise(Verdict::Fail, format!("the {variant} text violates the regex"));
         }
         if host.regex_ok == Some(false) {
             raise(Verdict::Fail, "the host text violates the regex".to_string());
         }
-        if device.device_samplers == 0 {
-            raise(Verdict::Warn, "the device run reports no device sampler".to_string());
+        if device.top_k > 1 && device.device_candidates == 0 {
+            raise(
+                Verdict::Warn,
+                format!("the {variant} run shows no candidate selection at k {}: the verifier sampled on the host", device.top_k),
+            );
+        } else if device.device_samplers == 0 {
+            raise(Verdict::Warn, format!("the {variant} run reports no device sampler"));
+        }
+        if host.device_samplers > 0 {
+            raise(
+                Verdict::Warn,
+                format!("the host run reports {} device sampler line(s): LITERT_NVIDIA_MTP_GPU_SAMPLING=0 was not honored", host.device_samplers),
+            );
         }
         if !comparison.identical {
             raise(
                 Verdict::Warn,
                 format!(
-                    "device and host texts part at char {} ({} words in common; a tie at the k-th logit, or a sampler change)",
+                    "{variant} and host texts part at char {} ({} words in common; a tie at the k-th logit, or a sampler change)",
                     comparison.parted_char.unwrap_or(0),
                     comparison.common_words
                 ),
             );
         }
         let same_as_baseline =
-            text_run(&base.texts, &model, &kind, "device").map(|b| b.text == device.text);
-        out.push(TextCheck { model, kind, comparison, same_as_baseline, verdict, reasons });
+            text_run(&base.texts, &model, &kind, &variant).map(|b| b.text == device.text);
+        out.push(TextCheck {
+            model,
+            kind,
+            variant,
+            comparison,
+            same_as_baseline,
+            verdict,
+            reasons,
+        });
     }
     out
 }
@@ -179,7 +211,73 @@ pub struct Comparison {
     pub autopsies: Vec<AutopsyDiff>,
     #[serde(default)]
     pub workloads: Vec<WorkloadLegend>,
+    /// Probes of either capture without a counterpart in the other.
+    #[serde(default)]
+    pub not_compared: Vec<String>,
+    /// Why the verdict is not PASS for reasons outside the tables.
+    #[serde(default)]
+    pub reasons: Vec<String>,
     pub verdict: Verdict,
+}
+
+/// The probes of one capture without a counterpart in the other, by section.
+fn not_compared(base: &Capture, cand: &Capture) -> Vec<String> {
+    let mut out = Vec::new();
+    let mode = |mtp: bool| if mtp { "mtp" } else { "plain" };
+    for b in &base.numerics {
+        if !cand
+            .numerics
+            .iter()
+            .any(|c| c.model == b.model && c.prompt == b.prompt && c.mtp == b.mtp)
+        {
+            out.push(format!(
+                "numerics {} {} {}: not in the candidate",
+                b.model,
+                b.prompt,
+                mode(b.mtp)
+            ));
+        }
+    }
+    for c in &cand.numerics {
+        if !base
+            .numerics
+            .iter()
+            .any(|b| b.model == c.model && b.prompt == c.prompt && b.mtp == c.mtp)
+        {
+            out.push(format!(
+                "numerics {} {} {}: not in the baseline",
+                c.model,
+                c.prompt,
+                mode(c.mtp)
+            ));
+        }
+    }
+    for b in &base.perf {
+        if !cand.perf.iter().any(|c| c.model == b.model && c.label == b.label) {
+            out.push(format!("performance {}: not in the candidate", b.label));
+        }
+    }
+    for c in &cand.perf {
+        if !base.perf.iter().any(|b| b.model == c.model && b.label == c.label) {
+            out.push(format!("performance {}: not in the baseline", c.label));
+        }
+    }
+    for b in &base.texts {
+        if text_run(&cand.texts, &b.model, &b.kind, &b.variant).is_none() {
+            out.push(format!("text {} {} {}: not in the candidate", b.model, b.kind, b.variant));
+        }
+    }
+    for c in &cand.texts {
+        if text_run(&base.texts, &c.model, &c.kind, &c.variant).is_none() {
+            out.push(format!("text {} {} {}: not in the baseline", c.model, c.kind, c.variant));
+        }
+    }
+    for b in &base.autopsies {
+        if !cand.autopsies.iter().any(|c| c.model == b.model) {
+            out.push(format!("autopsy {}: not in the candidate", b.model));
+        }
+    }
+    out
 }
 
 /// A recorded data point of a full matrix (measurements' bench/results.json
@@ -325,11 +423,31 @@ pub fn compare(
     names.extend(config.perf.predict.iter().cloned());
     names.push(config.probes.autopsy.workload.clone());
     let workloads = workload_legend(&names);
+    let not_compared = not_compared(base, cand);
+    let mut reasons = Vec::new();
+    if !base.numerics.is_empty() && numerics.is_empty() {
+        reasons.push(
+            "no numerics probe compared: the candidate ran none of the baseline's".to_string(),
+        );
+    }
+    if !base.perf.is_empty() && perf.is_empty() {
+        reasons.push(
+            "no performance run compared: the candidate ran none of the baseline's".to_string(),
+        );
+    }
+    if !base.texts.is_empty() && texts.is_empty() {
+        reasons
+            .push("no text probe compared: the candidate ran none of the baseline's".to_string());
+    }
+    if base.numerics.is_empty() && base.perf.is_empty() && base.texts.is_empty() {
+        reasons.push("the baseline holds no probe".to_string());
+    }
     let verdict = numerics
         .iter()
         .map(|n| n.verdict)
         .chain(perf.iter().map(|p| p.verdict))
         .chain(texts.iter().map(|t| t.verdict))
+        .chain(reasons.iter().map(|_| Verdict::Warn))
         .max()
         .unwrap_or(Verdict::Pass);
     Comparison {
@@ -345,6 +463,8 @@ pub fn compare(
         texts,
         autopsies,
         workloads,
+        not_compared,
+        reasons,
         verdict,
     }
 }
@@ -371,6 +491,12 @@ pub fn render_comparison(c: &Comparison) -> String {
     let _ = samplers;
     if c.base_host_mode != c.cand_host_mode {
         s.push_str(&format!("Host modes differ: baseline {}, candidate {}; timings are not comparable across them.\n\n", c.base_host_mode, c.cand_host_mode));
+    }
+    for reason in &c.reasons {
+        s.push_str(&format!("- WARN: {reason}\n"));
+    }
+    if !c.reasons.is_empty() {
+        s.push('\n');
     }
     if !c.numerics.is_empty() {
         s.push_str("## Numerics (greedy decode, logits per step)\n\n");
@@ -408,7 +534,7 @@ pub fn render_comparison(c: &Comparison) -> String {
         s.push('\n');
     }
     if !c.texts.is_empty() {
-        s.push_str("## Texts (sampled and constrained decodes, MTP verifier on the device vs the host)\n\n| Model | Probe | Device vs host | Regex (device, host) | Device samplers | Chars (device, host) | Same as baseline | Verdict |\n|---|---|---|---|---:|---|---|---|\n");
+        s.push_str("## Texts (sampled and constrained decodes, MTP verifier on the device vs the host)\n\nVariants: device (the verifier's candidates on the device, the default upload mode), immediate (the same in the immediate-upload mode, LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD=0), each against the host run (LITERT_NVIDIA_MTP_GPU_SAMPLING=0) of the same seed.\n\n| Model | Probe | Variant | Vs host | Regex (variant, host) | Device samplers (candidate selections) | Chars (variant, host) | Same as baseline | Verdict |\n|---|---|---|---|---|---:|---|---|---|\n");
         for t in &c.texts {
             let cmp = &t.comparison;
             let regex = |v: Option<bool>| match v {
@@ -417,9 +543,10 @@ pub fn render_comparison(c: &Comparison) -> String {
                 None => "-",
             };
             s.push_str(&format!(
-                "| {} | {} | {} | {}, {} | {} | {}, {} | {} | {} |\n",
+                "| {} | {} | {} | {} | {}, {} | {} ({}) | {}, {} | {} | {} |\n",
                 t.model,
                 t.kind,
+                t.variant,
                 if cmp.identical {
                     "identical".to_string()
                 } else {
@@ -432,6 +559,7 @@ pub fn render_comparison(c: &Comparison) -> String {
                 regex(cmp.device_regex_ok),
                 regex(cmp.host_regex_ok),
                 cmp.device_samplers,
+                cmp.device_candidates,
                 cmp.device_text_len,
                 cmp.host_text_len,
                 match t.same_as_baseline {
@@ -444,7 +572,20 @@ pub fn render_comparison(c: &Comparison) -> String {
         }
         s.push('\n');
         for t in c.texts.iter().filter(|t| t.verdict != Verdict::Pass) {
-            s.push_str(&format!("- {} {}: {}\n", t.model, t.kind, t.reasons.join("; ")));
+            s.push_str(&format!(
+                "- {} {} {}: {}\n",
+                t.model,
+                t.kind,
+                t.variant,
+                t.reasons.join("; ")
+            ));
+        }
+        s.push('\n');
+    }
+    if !c.not_compared.is_empty() {
+        s.push_str("## Not compared\n\n");
+        for line in &c.not_compared {
+            s.push_str(&format!("- {line}\n"));
         }
         s.push('\n');
     }
@@ -541,7 +682,7 @@ pub fn render_autopsy_diffs(diffs: &[AutopsyDiff]) -> String {
     if diffs.is_empty() {
         return s;
     }
-    s.push_str("## Kernels (autopsy of the step graphs, warm times per kernel)\n\nEvery kernel node of a function's CUDA graph timed alone; a kernel's time is summed over its launches in the step. The sums are the kernels' own times, not the step's. Between two captures of one build a kernel's sum moves by tens of microseconds (about 20 µs on the E2B's decode step): a change under that is noise, and a change is attributed to a kernel when its Δ stands out of it.\n\n");
+    s.push_str("## Kernels (autopsy of the step graphs, warm times per kernel)\n\nEvery kernel node of a function's CUDA graph timed alone; a kernel's time is summed over its launches in the step. The sums are the kernels' own times, not the step's. The sums are noisy: between captures of one build, kernels the change did not touch moved by up to about 85 µs over a step's launches on the E2B (a few µs per launch), so a Δ of that size says nothing; attribute a change to a kernel only when its Δ is well above what a same-build pair shows and agrees with the measured cells.\n\n");
     for d in diffs {
         s.push_str(&format!("### {} ({}{})\n\n| Function | Kernels (base, cand) | Base us | Cand us | Change |\n|---|---|---:|---:|---:|\n", d.model, d.workload, if d.mtp { ", mtp" } else { "" }));
         for f in &d.functions {
@@ -720,35 +861,46 @@ pub fn parted_tokens(base: &[u32], cand: &[u32]) -> Option<usize> {
     }
 }
 
-/// The differing outputs of the first differing step, the first few by
-/// name and the rest counted.
-fn reached(step: &[TensorDiff]) -> String {
+/// The differing outputs of the first differing step (one function: an
+/// invocation context runs one), the first few by name and the rest counted.
+fn reached(step: &[TensorDiff], outputs: usize) -> String {
     const SHOWN: usize = 6;
+    let states = step.iter().filter(|d| d.state).count();
     let mut parts: Vec<String> = step
         .iter()
         .take(SHOWN)
         .map(|d| {
-            format!(
-                "{} out {}{} ({:.1e})",
-                d.function,
-                d.output,
-                if d.state { " state" } else { "" },
-                d.relative
-            )
+            format!("out {}{} ({:.1e})", d.output, if d.state { " state" } else { "" }, d.relative)
         })
         .collect();
     if step.len() > SHOWN {
-        let states = step.iter().skip(SHOWN).filter(|d| d.state).count();
-        parts.push(format!("and {} more ({} state)", step.len() - SHOWN, states));
+        parts.push(format!("and {} more", step.len() - SHOWN));
     }
-    parts.join(", ")
+    format!(
+        "{} of its {} outputs differ ({} state): {}",
+        step.len(),
+        outputs,
+        states,
+        parts.join(", ")
+    )
+}
+
+/// The step's input tokens tell the signatures apart: a prefill chunk's
+/// count, a decode step's one, a verify step's few.
+fn tokens_cell(rows: i64) -> String {
+    match rows {
+        0 => String::new(),
+        1 => " (1 input token)".to_string(),
+        n => format!(" ({n} input tokens)"),
+    }
 }
 
 fn tensor_cell(d: &TensorDiff) -> String {
     format!(
-        "c{} {} step {} out {} `{}`{} {:?}",
+        "c{} {}{} step {} out {} `{}`{} {:?}",
         d.context,
         d.function,
+        tokens_cell(d.input_rows),
         d.step,
         d.output,
         d.name,
@@ -806,13 +958,14 @@ pub fn render_localization(r: &LocalizationReport) -> String {
             let l = &p.localization;
             let Some(first) = &l.first else { continue };
             s.push_str(&format!(
-                "- {} {}{}: the first difference is at step {} of `{}` (context {}), output {} `{}`: {} of {} elements differ, max |Δ| {:.3e}, rms Δ {:.3e} (relative {:.2e}){}{}{}. The functions reached by that step: {}.\n",
+                "- {} {}{}: the first difference is at step {} of `{}` (context {}{}), output {} `{}`: {} of {} elements differ, max |Δ| {:.3e}, rms Δ {:.3e} (relative {:.2e}){}{}{}. At that step {}.\n",
                 p.model,
                 p.prompt,
                 if p.mtp { " (mtp)" } else { "" },
                 first.step,
                 first.function,
                 first.context,
+                if first.input_rows > 0 { format!(", {} input tokens", first.input_rows) } else { String::new() },
                 first.output,
                 first.name,
                 first.differing,
@@ -831,7 +984,7 @@ pub fn render_localization(r: &LocalizationReport) -> String {
                 } else {
                     String::new()
                 },
-                reached(&l.first_step)
+                reached(&l.first_step, l.first_step_outputs)
             ));
             if l.unpaired > 0 {
                 s.push_str(&format!(
@@ -1063,6 +1216,115 @@ pub fn render_capture(capture: &Capture) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn capture_of(
+        name: &str,
+        texts: Vec<TextRun>,
+        numerics_probes: &[(&str, &str, bool)],
+    ) -> Capture {
+        let mut capture: Capture = serde_json::from_value(serde_json::json!({
+            "manifest": {"name": name, "created": "", "updated": "", "build_id": "b", "rt_head": "", "lm_head": "", "tier": "quick", "models": ["e2b"], "mtp": false, "host_mode": "diagnostic"},
+            "numerics": [], "perf": []
+        }))
+        .unwrap();
+        for (model, prompt, mtp) in numerics_probes {
+            let run: crate::numerics::NumericsRun = serde_json::from_value(serde_json::json!({
+                "model": model, "prompt": prompt, "mtp": mtp, "build_id": "b", "exit_code": 0, "wall_s": 1.0, "steps": [], "tokens": [1, 2, 3],
+                "decode_tokens": 3, "decode_tps": 1.0, "prefill_tokens": 1, "prefill_tps": 1.0, "acceptance": null, "text_len": 3, "text_sha256": "x",
+                "loopiness": 0.0, "nonfinite": false, "sdk_version": null, "weight_store": null, "device_samplers": 0
+            }))
+            .unwrap();
+            capture.numerics.push(run);
+        }
+        capture.texts = texts;
+        capture
+    }
+
+    fn text(variant: &str, text: &str, samplers: usize, candidates: usize, top_k: u32) -> TextRun {
+        TextRun {
+            model: "e2b".into(),
+            kind: "constraint".into(),
+            variant: variant.into(),
+            build_id: "b".into(),
+            exit_code: 0,
+            wall_s: 1.0,
+            text_len: text.chars().count(),
+            text: text.into(),
+            regex_ok: Some(true),
+            device_samplers: samplers,
+            device_candidates: candidates,
+            top_k,
+            immediate_upload: variant == "immediate",
+            parser_errors: 0,
+        }
+    }
+
+    #[test]
+    fn text_checks_judge_every_device_variant_against_the_host() {
+        let host = text("host", "abc", 0, 0, 64);
+        let device = text("device", "abc", 2, 1, 64);
+        let immediate = text("immediate", "abd", 2, 1, 64);
+        let base = capture_of("base", vec![host.clone(), device.clone()], &[]);
+        let cand = capture_of("cand", vec![host.clone(), device.clone(), immediate], &[]);
+        let checks = check_texts(&base, &cand);
+        assert_eq!(checks.len(), 2);
+        let device_check = checks.iter().find(|c| c.variant == "device").unwrap();
+        assert_eq!(device_check.verdict, Verdict::Pass);
+        assert_eq!(device_check.same_as_baseline, Some(true));
+        let immediate_check = checks.iter().find(|c| c.variant == "immediate").unwrap();
+        assert_eq!(immediate_check.verdict, Verdict::Warn, "{:?}", immediate_check.reasons);
+        assert!(immediate_check.reasons[0].contains("part at char 2"));
+        assert_eq!(immediate_check.same_as_baseline, None);
+        // The verifier's device path missing at k > 1, and a host run that is not on the host.
+        let fallen = capture_of(
+            "fallen",
+            vec![text("host", "abc", 1, 0, 64), text("device", "abc", 1, 0, 64)],
+            &[],
+        );
+        let checks = check_texts(&base, &fallen);
+        assert_eq!(checks[0].verdict, Verdict::Warn);
+        assert!(
+            checks[0].reasons.iter().any(|r| r.contains("no candidate selection at k 64")),
+            "{:?}",
+            checks[0].reasons
+        );
+        assert!(
+            checks[0].reasons.iter().any(|r| r.contains("host run reports 1 device sampler")),
+            "{:?}",
+            checks[0].reasons
+        );
+    }
+
+    #[test]
+    fn a_comparison_says_what_it_did_not_compare() {
+        let config = Config::load(None).unwrap();
+        let base = capture_of(
+            "base",
+            vec![text("host", "abc", 0, 0, 64), text("device", "abc", 2, 1, 64)],
+            &[("e2b", "code_grid", false), ("e2b", "code_grid", true)],
+        );
+        let cand = capture_of("cand", vec![], &[("e2b", "reason", false)]);
+        let c = compare(&base, &cand, &config, &[]);
+        assert_eq!(c.verdict, Verdict::Warn, "{:?}", c.reasons);
+        assert!(c.reasons.iter().any(|r| r.contains("no numerics probe compared")));
+        assert!(c.reasons.iter().any(|r| r.contains("no text probe compared")));
+        assert!(
+            c.not_compared.iter().any(|l| l == "numerics e2b code_grid mtp: not in the candidate"),
+            "{:?}",
+            c.not_compared
+        );
+        assert!(c
+            .not_compared
+            .iter()
+            .any(|l| l == "numerics e2b reason plain: not in the baseline"));
+        assert!(c
+            .not_compared
+            .iter()
+            .any(|l| l == "text e2b constraint device: not in the candidate"));
+        let rendered = render_comparison(&c);
+        assert!(rendered.contains("## Not compared"));
+        assert!(rendered.contains("- WARN: no numerics probe compared"));
+    }
 
     #[test]
     fn parted_tokens_and_the_legend() {

@@ -74,11 +74,25 @@ pub fn capture_dir(env: &BenchEnv, name: &str) -> PathBuf {
     guard_root(env).join(name)
 }
 
+/// A capture name is one path component of letters, digits, '.', '_' and
+/// '-', not starting with '.': it becomes the capture's directory and the
+/// dumps' `<dir>:<steps>:<mb>` spec, where a ':' or a '/' would misroute.
+pub fn validate_name(name: &str) -> Result<()> {
+    let ok = !name.is_empty()
+        && !name.starts_with('.')
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-');
+    if !ok {
+        bail!("capture name {name:?}: use letters, digits, '.', '_' and '-' only, not starting with '.'");
+    }
+    Ok(())
+}
+
 fn now() -> String {
     chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
 pub fn load_capture(env: &BenchEnv, name: &str) -> Result<Capture> {
+    validate_name(name)?;
     let dir = capture_dir(env, name);
     let path = dir.join("capture.json");
     let text = std::fs::read_to_string(&path)
@@ -119,6 +133,7 @@ pub fn run_capture(
     if !env.built() {
         bail!("no built CLI under {} (run build.sh first)", env.runtime_libs.display());
     }
+    validate_name(&opts.name)?;
     let dir = capture_dir(env, &opts.name);
     let mut capture = match load_capture(env, &opts.name) {
         Ok(existing) => {
@@ -229,7 +244,15 @@ pub fn run_capture(
             std::fs::create_dir_all(constraint_prompt.parent().unwrap())?;
             std::fs::write(&constraint_prompt, &constraint.prompt_text)?;
             for kind in ["sampled", "constraint"] {
-                for variant in ["device", "host"] {
+                // The constraint also runs the device verifier in the
+                // immediate-upload mode: the fused argmax after a host write
+                // is what that mode must get right.
+                let variants: &[&str] = if kind == "constraint" {
+                    &["device", "host", "immediate"]
+                } else {
+                    &["device", "host"]
+                };
+                for &variant in variants {
                     let out_dir = text_dir(&dir, model, kind, variant);
                     let run = match load_text_run(&out_dir)
                         .filter(|r| r.exit_code == 0 && r.build_id == env.build_id)
@@ -406,6 +429,21 @@ pub fn run_capture(
         }
     }
     Ok(capture)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_name;
+
+    #[test]
+    fn capture_names_are_one_plain_path_component() {
+        for ok in ["3c590a6e1-95cd9c0b", "scratch_div", "rebuild.2", "A-b_c"] {
+            assert!(validate_name(ok).is_ok(), "{ok}");
+        }
+        for bad in ["", "a:b", "a/b", "../x", ".hidden", "a b", "2026-10-27T21:42"] {
+            assert!(validate_name(bad).is_err(), "{bad}");
+        }
+    }
 }
 
 /// Recomputes every numerics summary of a capture from its files.
