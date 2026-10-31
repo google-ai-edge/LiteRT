@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "litert/vendors/arm_vulkan_ml/compiler/graph_ir.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/special_ops.h"
 
 #include <algorithm>
 #include <cmath>
@@ -78,6 +79,48 @@ OutputTransform Table(const GraphValue& input, const GraphValue& output, bool af
   } else for (int code = -128; code <= 127; ++code)
     transform.table.push_back(static_cast<int8_t>(std::clamp(code * 2 + 9, -128, 127)));
   return transform;
+}
+
+TEST(GraphOptimizer, Int16BoundsFuseExactlyWithFanoutAndIoBarriers) {
+  for (int barrier : {0, 1, 2}) {
+    CompilerGraph graph;
+    graph.values = {Value(), Value(), Value()};
+    for (auto& value : graph.values) {
+      value.logical_type = kLiteRtElementTypeInt16;
+      value.storage_type = tfsc::tosa::DataType::int16_t;
+      value.zero_points = {0};
+    }
+    graph.values[0].graph_input = true; graph.values[2].graph_output = true;
+    graph.inputs = {0}; graph.outputs = {2}; graph.original_operator_count = 2;
+    for (size_t i = 0; i < 2; ++i) {
+      GraphNode node;
+      node.inputs = {i}; node.outputs = {i + 1}; node.source_operators = {i};
+      node.body.code = i ? kLiteRtOpCodeTflMaximum : kLiteRtOpCodeTflMinimum;
+      node.body.inputs = {Q(graph.values[i])}; node.body.output = Q(graph.values[i + 1]);
+      node.body.runtime_inputs = {0};
+      node.body.special = std::make_shared<SpecialPlan>();
+      node.body.special->kind = i ? SpecialPlan::Kind::kMaximum : SpecialPlan::Kind::kMinimum;
+      node.body.special->output = Q(graph.values[i + 1]);
+      node.body.special->activation = i ? Int8Range{-24127, 32767} : Int8Range{-32768, 24127};
+      graph.nodes.push_back(std::move(node));
+    }
+    if (barrier == 1) { graph.values[1].graph_output = true; graph.outputs.push_back(1); }
+    if (barrier == 2) {
+      graph.values.push_back(graph.values[2]); graph.outputs.push_back(3);
+      auto consumer = graph.nodes[1]; consumer.outputs = {3}; consumer.source_operators = {2};
+      consumer.body.special = std::make_shared<SpecialPlan>(*consumer.body.special);
+      graph.nodes.push_back(std::move(consumer)); ++graph.original_operator_count;
+    }
+    std::string reason;
+    ASSERT_TRUE(OptimizeGraph(graph, kLrtArmVulkanMLOptimizationExact, nullptr, reason)) << reason;
+    EXPECT_EQ(graph.nodes[0].removed, barrier == 0);
+    if (!barrier) {
+      const auto clamp = graph.nodes[1].body.special->activation;
+      for (int code = -32768; code <= 32767; ++code)
+        EXPECT_EQ(std::clamp(code, clamp.minimum, clamp.maximum), std::max(std::min(code, 24127), -24127));
+      EXPECT_EQ(graph.nodes[1].source_operators, (std::vector<size_t>{0, 1}));
+    }
+  }
 }
 
 TEST(GraphOptimizer, OffPreservesTheImportedGraph) {

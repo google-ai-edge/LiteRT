@@ -130,6 +130,25 @@ TEST(EvaluationOptionsTest, ArmSoftmaxLutIsAppliedBeforeJitAndInheritedByBaselin
   EXPECT_FALSE(CreateOptions(config));
 }
 
+TEST(EvaluationOptionsTest, ArmRescalePrecisionIsAppliedAndInheritedByBaseline) {
+  Config config;
+  config.accelerator = "npu"; config.arm_vulkan_ml_enable_jit = 1;
+  config.model = "candidate.tflite"; config.baseline_model = config.model;
+  for (int bits : {16, 32}) {
+    config.arm_vulkan_ml_rescale_multiplier_bits = bits;
+    ASSERT_TRUE(ValidateBackendOptions(config));
+    for (const auto& candidate : {config, BaselineConfig(config)}) {
+      auto options = CreateOptions(candidate); ASSERT_TRUE(options);
+      auto arm = options->GetOptions<litert::arm_vulkan_ml::ArmVulkanMLOptions>();
+      ASSERT_TRUE(arm);
+      auto selected = arm->GetRescaleMultiplierBits(); ASSERT_TRUE(selected);
+      EXPECT_EQ(*selected, bits);
+    }
+  }
+  config.arm_vulkan_ml_rescale_multiplier_bits = 8;
+  EXPECT_FALSE(ValidateBackendOptions(config)); EXPECT_FALSE(CreateOptions(config));
+}
+
 TEST(EvaluationOptionsTest, RejectsInvalidBackendCombinations) {
   Config cfg;
   EXPECT_TRUE(ValidateBackendOptions(cfg));

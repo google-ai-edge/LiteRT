@@ -129,6 +129,81 @@ std::optional<Conv2dPlan> AnalyzeConv2d(Conv2dSpec s, std::string& reason) {
   return plan;
 }
 
+tfsc::tosa::ResId EmitNativeRescale(tfsc::tosa::Graph& g, tfsc::tosa::ResId input,
+    DataType input_type, DataType output_type, const std::vector<uint32_t>& logical_shape,
+    int32_t input_zero_point, int32_t output_zero_point,
+    const std::vector<Scale32>& scales, GraphConstantPool& pool,
+    const std::vector<int64_t>& minimum, const std::vector<int64_t>& maximum) {
+  const auto shape = logical_shape.empty() ? std::vector<uint32_t>{1} : logical_shape;
+  if (scales.empty() || shape.empty() || minimum.empty() != maximum.empty() || (scales.size() != 1 && scales.size() != shape.back()) ||
+      (!minimum.empty() && (minimum.size() != scales.size() || maximum.size() != scales.size()))) return nullptr;
+  const bool wide = input_type == DataType::int48_t;
+  const bool use16 = pool.rescale_multiplier_bits == 16 || wide;
+  auto emit = [&](tfsc::tosa::ResId value, DataType source_type, DataType dest_type,
+                  int32_t izp, int32_t ozp, const std::vector<int32_t>& mult,
+                  const std::vector<int8_t>& shift) {
+    tfsc::tosa::ResId m;
+    if (use16) m = Constant(g, Tensor(DataType::int16_t, {static_cast<uint32_t>(mult.size())}),
+        std::vector<int16_t>(mult.begin(), mult.end()), pool);
+    else m = Constant(g, Tensor(DataType::int32_t, {static_cast<uint32_t>(mult.size())}), mult, pool);
+    auto sh = Constant(g, Tensor(DataType::int8_t, {static_cast<uint32_t>(shift.size())}), shift, pool);
+    auto zero = source_type == DataType::int48_t ? g.AddTensorConstant(Attribute(int64_t{izp})) :
+        g.AddTensorConstant(Attribute(izp, source_type));
+    return g.AddRescaleOperator(value, m, sh, zero, g.AddTensorConstant(Attribute(ozp, dest_type)),
+        Attribute(!use16), Attribute(int32_t{1}), Attribute(mult.size() > 1),
+        Attribute(false), Attribute(false), Tensor(dest_type, shape));
+  };
+  std::vector<int32_t> multipliers; std::vector<int8_t> shifts;
+  if (!use16) {
+    for (auto scale : scales) { multipliers.push_back(scale.multiplier); shifts.push_back(scale.shift); }
+    return emit(input, input_type, output_type, input_zero_point, output_zero_point, multipliers, shifts);
+  }
+  std::vector<double> residual;
+  std::vector<int> amplification;
+  std::vector<int64_t> lo, hi;
+  for (size_t i = 0; i < scales.size(); ++i) {
+    double scale = std::ldexp(static_cast<double>(scales[i].multiplier), -scales[i].shift);
+    if (!(scale > 0) || !std::isfinite(scale)) return nullptr;
+    int left = 0;
+    while (scale >= 8192.0) { scale *= .5; if (++left > 31) return nullptr; }
+    residual.push_back(scale); amplification.push_back(left);
+    const int64_t lower = input_type == DataType::int8_t ? -128 : input_type == DataType::int16_t ? -32768 : wide ? -(int64_t{1} << 47) : INT32_MIN;
+    const int64_t upper = input_type == DataType::int8_t ? 127 : input_type == DataType::int16_t ? 32767 : wide ? (int64_t{1} << 47) - 1 : INT32_MAX;
+    lo.push_back(minimum.empty() ? lower - input_zero_point : minimum[i]);
+    hi.push_back(maximum.empty() ? upper - input_zero_point : maximum[i]);
+  }
+  auto pair16 = [](double scale, int32_t& multiplier, int8_t& shift) {
+    int exponent; std::frexp(scale, &exponent);
+    int s = std::min(62, 15 - exponent);
+    if (s < 2) return false;
+    int64_t m = std::llround(std::ldexp(scale, s));
+    if (m > INT16_MAX) { --s; m = std::llround(std::ldexp(scale, s)); }
+    if (s < 2 || m <= 0 || m > INT16_MAX) return false;
+    multiplier = static_cast<int32_t>(m); shift = static_cast<int8_t>(s); return true;
+  };
+  while (std::any_of(amplification.begin(), amplification.end(), [](int n) { return n != 0; })) {
+    multipliers.clear(); shifts.clear();
+    for (size_t i = 0; i < amplification.size(); ++i) {
+      int step = std::min(12, amplification[i]);
+      int64_t factor = int64_t{1} << step;
+      if (lo[i] < INT32_MIN / factor || hi[i] > INT32_MAX / factor) return nullptr;
+      lo[i] *= factor; hi[i] *= factor;
+      int32_t m; int8_t sh;
+      if (!pair16(static_cast<double>(factor), m, sh)) return nullptr;
+      multipliers.push_back(m); shifts.push_back(sh); amplification[i] -= step;
+    }
+    input = emit(input, input_type, DataType::int32_t, input_zero_point, 0, multipliers, shifts);
+    input_type = DataType::int32_t; input_zero_point = 0;
+  }
+  multipliers.clear(); shifts.clear();
+  for (double scale : residual) {
+    int32_t m; int8_t sh;
+    if (!pair16(scale, m, sh)) return nullptr;
+    multipliers.push_back(m); shifts.push_back(sh);
+  }
+  return emit(input, input_type, output_type, input_zero_point, output_zero_point, multipliers, shifts);
+}
+
 tfsc::tosa::ResId EmitRescale(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
     const std::vector<uint32_t>& shape, int32_t output_zero_point,
     const std::vector<Scale32>& scales, const std::vector<AccumulatorRange>& ranges,
@@ -140,26 +215,10 @@ tfsc::tosa::ResId EmitRescale(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
     if (!IsScale32RangeValid(scales[i], ranges[i].minimum, ranges[i].maximum))
       return nullptr;
   }
-  // Preserve the native CONV2D -> RESCALE -> CLAMP pattern so the driver can
-  // fuse requantization. SINGLE_ROUND can differ from LiteRT's double-rounding
-  // reference at quantization boundaries; do not emulate it with extra tensor
-  // arithmetic or split channels with large, but legal, accumulators.
-  Tensor output_type(DataType::int8_t, shape);
-  std::vector<int32_t> multipliers;
-  std::vector<int8_t> shifts;
-  for (auto scale : scales) {
-    multipliers.push_back(scale.multiplier);
-    shifts.push_back(scale.shift);
-  }
-  auto multiplier = Constant(graph, Tensor(DataType::int32_t, {static_cast<uint32_t>(scales.size())}),
-                              multipliers, constants);
-  auto shift = Constant(graph, Tensor(DataType::int8_t, {static_cast<uint32_t>(scales.size())}),
-                         shifts, constants);
-  auto zero = graph.AddTensorConstant(Attribute(int32_t{0}));
-  auto output_zp = graph.AddTensorConstant(Attribute(static_cast<int8_t>(output_zero_point)));
-  return graph.AddRescaleOperator(input, multiplier, shift, zero, output_zp,
-      Attribute(true), Attribute(int32_t{1}), Attribute(scales.size() > 1),
-      Attribute(false), Attribute(false), output_type);
+  std::vector<int64_t> lo, hi;
+  for (auto range : ranges) { lo.push_back(range.minimum); hi.push_back(range.maximum); }
+  return EmitNativeRescale(graph, input, DataType::int32_t, DataType::int8_t,
+      shape, 0, output_zero_point, scales, constants, lo, hi);
 }
 
 tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph,
@@ -239,6 +298,7 @@ tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph,
   auto rescale = EmitRescale(graph,conv,output_type.GetTensorShape(),
       s.output_zero_point,plan.scales,plan.accumulator_ranges,constants);
   if (tfsc::IsError(rescale)) return rescale;
+  if (plan.activation_range.minimum == -128 && plan.activation_range.maximum == 127) return rescale;
   return graph.AddClampOperator(rescale,
       Attribute(static_cast<int8_t>(plan.activation_range.minimum)),
       Attribute(static_cast<int8_t>(plan.activation_range.maximum)), Attribute(int32_t{1}),

@@ -47,7 +47,11 @@ remain available.
 The current path accepts fixed positive shapes and dense tensors. Quantized
 activations are signed int8 with per-tensor affine quantization; convolution and
 fully connected weights are symmetric int8 with per-channel scales and int32
-biases. Analysis proves accumulator and rescale ranges before selecting an op.
+biases. A separate INT16 subset supports symmetric activations, INT8 fully
+connected weights and INT64 biases with an INT48 accumulator. It requires a
+conformant `EXT-INT16` engine extension, the emitted SPIR-V integer-width
+features and the actual tensor format capabilities. Analysis proves accumulator
+and rescale ranges before selecting an op.
 
 | LiteRT operations | Constraints |
 | --- | --- |
@@ -68,8 +72,11 @@ biases. Analysis proves accumulator and rescale ranges before selecting an op.
 | RESIZE_NEAREST_NEIGHBOR | INT8/FP32 NHWC, constant size, align_corners or half_pixel_centers, TOSA scale/offset/border limits; INT8 quantization preserved |
 | RESIZE_BILINEAR | INT8/FP32 NHWC and constant size; INT8 uses Q10 coordinates, signed rounding and preserved quantization |
 | TRANSPOSE_CONV | INT8/FP32 NHWC, constant OHWI weights/output shape and optional bias, canonical SAME/VALID geometry, stride ≤ kernel, NONE/RELU/RELU6 activation; INT8 requires symmetric weights, matching INT32 bias scales and proven rescaling |
-| FULLY_CONNECTED | Constant dense INT8 weights/INT32 bias or FP32 weights/bias; default weight format; flattened 2D output |
-| DEQUANTIZE, QUANTIZE | Int8 ↔ FP32 or int8 → int8 requantization, identical fixed shape; identity INT8 QUANTIZE is eliminated |
+| FULLY_CONNECTED | Constant dense INT8 weights and INT32 (INT8 data) or INT64 (INT16 data) bias; default format; keep_num_dims true/false; native 1×1 CONV2D with attached bias; existing FP32 subset has flattened 2D output |
+| DEQUANTIZE, QUANTIZE | INT8 ↔ FP32, symmetric INT16 ↔ FP32, or INT8 → INT8 requantization, identical fixed shape; identity INT8 QUANTIZE is eliminated |
+| SUB (INT16) | Identical symmetric per-tensor quantization, static broadcasting, no fused activation; widened subtraction and saturating unit RESCALE |
+| MINIMUM, MAXIMUM (INT16) | Scalar constant bound and identical quantization; adjacent bounds combine into one CLAMP when the intermediate has one consumer and is not exposed |
+| Named normalization composites | Version 1 `odml.group_norm` with sub_type=1 and num_groups=1 (LayerNorm), and version 0 `odml.rms_norm`/`odml.l2_norm`; static FP32, last axis, positive finite epsilon; channel-vector scale/bias where applicable |
 
 A limited FP32 path supports TRANSPOSE, RESHAPE, PAD, CONV_2D, depthwise convolution,
 HARD_SWISH, LOGISTIC, broadcast ADD/MUL and global VALID AVERAGE_POOL_2D,
@@ -86,9 +93,21 @@ depthwise convolution uses the equivalent `DEPTHWISE_CONV2D` pattern. This lets
 the driver fuse requantization without extra comparisons, shifts, selections or
 channel splitting to emulate LiteRT's double rounding. FULLY_CONNECTED,
 TRANSPOSE_CONV and quantized arithmetic share this rescaling policy.
+`rescale_multiplier_bits=16|32` selects multiplier precision through the C/C++
+options, TOML, developer tool and ImageNet evaluator. The default remains 32;
+16-bit multipliers are available for qualification. INT48 accumulators require
+16-bit multipliers regardless of this preference. Large scales use extra stages
+only when their intermediate integer ranges are proven safe. Switching the default requires numerical qualification.
+
 Invalid accumulator/rescale ranges remain rejected. No unadvertised
 `EXT-DOUBLEROUND` support is assumed. A local rescale can differ by one code
 from the reference kernel; differences can accumulate through a model.
+
+Normalization composites lower directly by name; they do not read or lower the
+composite body. LayerNorm centers its input; RMSNorm uses mean square; L2Norm
+uses sum of squares. Epsilon is added before reciprocal square root for all
+three, preserving their distinct semantics. Unknown names, versions, axes and
+unsupported forms are declined. No backend decomposition fallback is added.
 
 INT8 average pooling emits TOSA `AVG_POOL2D` directly. Overlapping VALID
 windows have the same fixed divisor as disjoint windows; their centered sum is

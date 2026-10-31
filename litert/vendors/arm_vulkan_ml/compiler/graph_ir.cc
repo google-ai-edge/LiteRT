@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "litert/vendors/arm_vulkan_ml/compiler/graph_ir.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/special_ops.h"
 
 #include <algorithm>
 #include <cstring>
@@ -43,6 +44,8 @@ QuantizedTensor Quantized(const GraphValue& value) {
           value.storage_type == DataType::float32_t};
 }
 size_t ElementSize(const GraphValue& value) {
+  if (value.storage_type == DataType::int16_t) return 2;
+  if (value.storage_type == DataType::int48_t) return 8;
   return value.storage_type == DataType::int32_t ||
                  value.storage_type == DataType::float32_t ? 4 : 1;
 }
@@ -54,6 +57,7 @@ bool IsShape(const GraphNode& node) {
           node.body.code == kLiteRtOpCodeTflTranspose);
 }
 CompositeKind Classify(const OperationPlan& plan) {
+  if (plan.special) return CompositeKind::kAnalyzedOperation;
   if (plan.typed || plan.portable || plan.decomposition || plan.inputs[0].floating || plan.output.floating)
     return CompositeKind::kAnalyzedOperation;
   switch (plan.code) {
@@ -213,6 +217,29 @@ bool ShapePass(CompilerGraph& graph, OptimizationReport* report) {
     Origins(node, previous);
     Decision(report, "compose_shapes", node, true, "single consumer; no intermediate element conversion");
     changed = true;
+  }
+  return changed;
+}
+
+bool BoundPass(CompilerGraph& graph, OptimizationReport* report) {
+  Uses uses(graph);
+  auto bound = [](const GraphNode& n) {
+    return n.body.special && (n.body.special->kind == SpecialPlan::Kind::kMinimum ||
+                             n.body.special->kind == SpecialPlan::Kind::kMaximum);
+  };
+  bool changed = false;
+  for (auto& node : graph.nodes) {
+    if (node.removed || !bound(node)) continue;
+    size_t producer = uses.producer[node.inputs[0]];
+    if (producer == graph.nodes.size()) continue;
+    auto& before = graph.nodes[producer];
+    if (before.removed || !bound(before) || !Removable(graph, node.inputs[0], uses)) continue;
+    auto& a = *before.body.special; auto& b = *node.body.special;
+    if (a.output.scale != b.output.scale || a.output.zero_point != b.output.zero_point) continue;
+    b.activation = ComposeClamps(a.activation, b.activation);
+    node.inputs[0] = before.inputs[0]; before.removed = true;
+    Origins(node, before); changed = true;
+    Decision(report, "combine_integer_bounds", node, true, "matching-quantization INT16 guard bounds retained in one CLAMP");
   }
   return changed;
 }
@@ -431,6 +458,8 @@ std::optional<CompilerGraph> ImportGraph(const Subgraph& subgraph, std::string& 
     result.original_tensor = reinterpret_cast<uintptr_t>(tensor.Get());
     result.logical_type = static_cast<LiteRtElementType>(tensor.ElementType());
     switch (tensor.ElementType()) {
+      case ElementType::Int16: result.storage_type = DataType::int16_t; break;
+      case ElementType::Int64: result.storage_type = DataType::int48_t; break;
       case ElementType::Int8:
       case ElementType::Bool: result.storage_type = DataType::int8_t; break;
       case ElementType::Int32:
@@ -593,6 +622,7 @@ bool OptimizeGraph(CompilerGraph& graph, OptimizationMode mode,
     for (size_t iteration = 0; iteration < limit; ++iteration) {
       bool changed = ShapePass(graph, report);
       changed |= PadPass(graph, report);
+      changed |= BoundPass(graph, report);
       changed |= FuseTransforms(graph, report);
       if (!changed) break;
       if (iteration + 1 == limit) { reason = "Optimizer failed to converge"; return false; }
@@ -668,16 +698,8 @@ ResId EmitOutputTransform(tfsc::tosa::Graph& graph, ResId input,
         TosaTensor(DataType::int8_t, {256}), std::move(bytes), constants), output);
   }
   if (t.kind == OutputTransform::Kind::kRescale) {
-    int32_t multiplier = t.scales[0].multiplier;
-    std::vector<uint8_t> bytes(sizeof(multiplier));
-    std::memcpy(bytes.data(), &multiplier, bytes.size());
-    auto mult = AddGraphConstant(graph, TosaTensor(DataType::int32_t, {1}), std::move(bytes), constants);
-    auto shift = AddGraphConstant(graph, TosaTensor(DataType::int8_t, {1}),
-        {static_cast<uint8_t>(t.scales[0].shift)}, constants);
-    input = graph.AddRescaleOperator(input, mult, shift,
-        graph.AddTensorConstant(Attribute(static_cast<int8_t>(t.input.zero_point))),
-        graph.AddTensorConstant(Attribute(static_cast<int8_t>(t.output.zero_point))),
-        Attribute(true), Attribute(int32_t{1}), Attribute(false), Attribute(false), Attribute(false), output);
+    input = EmitNativeRescale(graph, input, DataType::int8_t, DataType::int8_t,
+        t.output.shape, t.input.zero_point, t.output.zero_point, t.scales, constants);
     if (t.clamp.minimum == -128 && t.clamp.maximum == 127) return input;
   }
   return graph.AddClampOperator(input, Attribute(static_cast<int8_t>(t.clamp.minimum)),

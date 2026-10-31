@@ -23,6 +23,7 @@
 #include "litert/cc/internal/litert_extended_model.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/interpreter.h"
+#include "litert/cc/litert_options.h"
 namespace litert::arm_vulkan_ml::tool {
 using imagenet::Json;
 struct Options {
@@ -32,9 +33,12 @@ struct Options {
   std::string Get(const std::string& key, const std::string& fallback = "") const;
   Expected<OptimizationMode> Optimization() const;
   Expected<SoftmaxLutType> SoftmaxLut() const;
+  Expected<int> RescaleMultiplierBits() const;
   Expected<int> Integer(const std::string& key, int fallback) const;
   Expected<double> Number(const std::string& key, double fallback) const;
 };
+std::string CompilerDirectory(const Options& options);
+Expected<litert::Options> RuntimeOptions(const Options& options);
 Expected<Options> ParseOptions(int argc, char** argv);
 Expected<std::unique_ptr<tflite::ModelT>> LoadModel(const std::string& path);
 Expected<std::vector<uint8_t>> PackModel(const tflite::ModelT& model);

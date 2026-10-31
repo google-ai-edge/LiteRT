@@ -19,11 +19,23 @@
 
 namespace litert::arm_vulkan_ml {
 
+const std::vector<NormalizationRegistration>& GetNormalizationRegistrations() {
+  static const std::vector<NormalizationRegistration> registrations{
+      {"odml.group_norm", 1, "Version 1; FP32; LayerNorm subtype 1; num_groups=1; last axis"},
+      {"odml.rms_norm", 0, "Version 0; FP32; last axis; channel-vector scale"},
+      {"odml.l2_norm", 0, "Version 0; FP32; last axis"}};
+  return registrations;
+}
+const NormalizationRegistration* FindNormalizationRegistration(const std::string& name) {
+  for (const auto& entry : GetNormalizationRegistrations()) if (name == entry.name) return &entry;
+  return nullptr;
+}
 const std::vector<OperationRegistration>& GetOperationRegistrations() {
   static const std::vector<OperationRegistration> registrations = [] {
     std::vector<OperationRegistration> result;
     using R = LoweringRoute;
     constexpr auto i8 = kLiteRtElementTypeInt8;
+    constexpr auto i16 = kLiteRtElementTypeInt16;
     constexpr auto f32 = kLiteRtElementTypeFloat32;
     constexpr auto i32 = kLiteRtElementTypeInt32;
     constexpr auto u32 = kLiteRtElementTypeUInt32;
@@ -83,7 +95,7 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
     add({OP(FullyConnected)}, {
         {i8, i8, R::kGeneral,
             "Constant dense INT8 weights and matching INT32 bias; default weight "
-            "format; keep_num_dims=false; proven convolution-derived ranges"},
+            "format; keep_num_dims=true/false; proven convolution-derived ranges"},
         {f32, f32, R::kExtended,
             "Constant dense weights and bias; default format; "
             "keep_num_dims=false; supported fixed dimensions and activation"}});
@@ -297,11 +309,22 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
         "Constant power-of-two FFT lengths; input cropped/zero-padded; interleaved COMPLEX64 storage; EXT-FFT required"}});
     add({OP(Real), OP(Imag)}, {{c64, f32, R::kDecomposed,
         "Static COMPLEX64 input; interleaved FP32 real/imaginary storage; scalar outputs supported"}});
+    add({OP(Sub)}, {{i16, i16, R::kGeneral, "Static broadcast INT16 operands with identical symmetric per-tensor quantization; no fused activation; widened difference and saturating unit RESCALE; EXT-INT16"}});
+    add({OP(FullyConnected)}, {{i16, i16, R::kGeneral, "Static INT16 data, constant INT8 weights and INT64 bias; INT48 accumulator; EXT-INT16"}});
+    add({OP(Quantize)}, {{f32, i16, R::kGeneral, "Static FP32 to symmetric affine INT16; EXT-INT16"}});
+    add({OP(Dequantize)}, {{i16, f32, R::kGeneral, "Static symmetric affine INT16 to FP32; EXT-INT16"}});
+    add({OP(Minimum), OP(Maximum)}, {{i16, i16, R::kGeneral, "Matching quantization; scalar constant bound; EXT-INT16"}});
 #undef OP
     std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
       return a.code < b.code;
     });
-    return result;
+    std::vector<OperationRegistration> merged;
+    for (auto& entry : result) {
+      if (!merged.empty() && merged.back().code == entry.code)
+        merged.back().variants.insert(merged.back().variants.end(), entry.variants.begin(), entry.variants.end());
+      else merged.push_back(std::move(entry));
+    }
+    return merged;
   }();
   return registrations;
 }
@@ -339,6 +362,8 @@ const char* LoweringRouteName(LoweringRoute route) {
 const char* RegisteredElementTypeName(LiteRtElementType type) {
   switch (type) {
     case kLiteRtElementTypeInt8: return "INT8";
+    case kLiteRtElementTypeInt16: return "INT16";
+    case kLiteRtElementTypeInt64: return "INT64";
     case kLiteRtElementTypeFloat32: return "FLOAT32";
     case kLiteRtElementTypeInt32: return "INT32";
     case kLiteRtElementTypeUInt32: return "UINT32";

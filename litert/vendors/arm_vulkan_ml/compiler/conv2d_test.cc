@@ -79,8 +79,9 @@ TEST(Conv2d, ChannelwiseConvolutionKeepsTheNativeFusionPattern) {
   for (bool depthwise : {false, true}) {
     for (bool large_bias : {false, true}) {
       auto spec = Fixture();
-      // Avoid a geometry slice so the entire graph must have exactly three ops.
+      // Keep a nontrivial activation and avoid a geometry slice.
       spec.input_shape = {1, 7, 7, depthwise ? 3u : 2u};
+      spec.output_zero_point = -17;
       spec.depthwise = depthwise;
       if (depthwise) {
         spec.weight_shape[3] = 1;

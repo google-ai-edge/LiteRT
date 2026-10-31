@@ -38,6 +38,7 @@ struct EvaluationConfig {
   int arm_vulkan_ml_enable_jit = 0;
   std::string arm_vulkan_ml_optimization_mode = "qualified";
   std::string arm_vulkan_ml_softmax_lut_type = "auto";
+  int arm_vulkan_ml_rescale_multiplier_bits = 32;
   // Empty inherits the candidate's mode, like other baseline options.
   std::string baseline_arm_vulkan_ml_optimization_mode;
   std::string baseline_accelerator = "inherit";

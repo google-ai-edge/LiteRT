@@ -20,6 +20,13 @@
 
 namespace litert::arm_vulkan_ml {
 namespace {
+TEST(TensorStorage, Int16AndInt64HaveExactWidthsAndFormats) {
+  EXPECT_EQ(TensorElementBytes(TensorElement::kInt16), 2);
+  EXPECT_EQ(TensorElementBytes(TensorElement::kInt64), 8);
+  EXPECT_EQ(TensorFormat(TensorElement::kInt16), VK_FORMAT_R16_SINT);
+  EXPECT_EQ(TensorFormat(TensorElement::kInt64), VK_FORMAT_R64_SINT);
+}
+
 TEST(TosaLevelTest, EnforcesEveryLevelBoundAndRejectsUncheckedOrUnknownLevels) {
   DeviceCapabilities device;
   GraphEngine engine{};
@@ -59,6 +66,26 @@ TEST(TosaLevelTest, EnforcesEveryLevelBoundAndRejectsUncheckedOrUnknownLevels) {
   EXPECT_NE(reason.find("Unknown TOSA level"), std::string::npos);
 }
 
+TEST(TosaLevelTest, IntegerWidthFeaturesDoNotImplyConformantInt16Extension) {
+  DeviceCapabilities device;
+  GraphEngine engine{}; engine.instruction_set = "TOSA.001000.1";
+  engine.level = VK_DATA_GRAPH_TOSA_LEVEL_8K_ARM;
+  engine.profiles = {{"PRO-INT", VK_DATA_GRAPH_TOSA_QUALITY_CONFORMANT_ARM}};
+  CompiledPartition artifact; artifact.level_requirements.checked = true;
+  artifact.requires_shader_int16 = true;
+  std::string reason;
+  EXPECT_FALSE(CheckEngineRequirements(artifact, device, engine, true, reason));
+  device.shader_int16 = true;
+  EXPECT_TRUE(CheckEngineRequirements(artifact, device, engine, true, reason)) << reason;
+  artifact.extensions = {"EXT-INT16"};
+  EXPECT_FALSE(CheckEngineRequirements(artifact, device, engine, true, reason));
+  engine.extensions = {{"EXT-INT16", VK_DATA_GRAPH_TOSA_QUALITY_CONFORMANT_ARM}};
+  artifact.requires_shader_int64 = true;
+  EXPECT_FALSE(CheckEngineRequirements(artifact, device, engine, true, reason));
+  device.shader_int64 = true;
+  EXPECT_TRUE(CheckEngineRequirements(artifact, device, engine, true, reason)) << reason;
+}
+
 VkPhysicalDeviceTensorPropertiesARM limits;
 std::map<VkFormat, VkFormatFeatureFlags2> formats;
 std::map<VkFormat, int> queries;
@@ -95,6 +122,23 @@ class TensorCapabilitiesTest : public testing::Test {
   CompiledPartition artifact;
   std::string reason;
 };
+
+TEST_F(TensorCapabilitiesTest, Int16AndInt64FormatsAndByteLimitsAreQueried) {
+  artifact.inputs = {{TensorElement::kInt16, {1, 4}, 0}};
+  artifact.outputs = {{TensorElement::kInt16, {1, 4}, 1}};
+  artifact.constants = {{{TensorElement::kInt64, {2}, 0}, {}}};
+  formats[VK_FORMAT_R16_SINT] = VK_FORMAT_FEATURE_2_TENSOR_DATA_GRAPH_BIT_ARM;
+  formats[VK_FORMAT_R64_SINT] = VK_FORMAT_FEATURE_2_TENSOR_DATA_GRAPH_BIT_ARM;
+  EXPECT_TRUE(Supported()) << reason;
+  EXPECT_EQ(queries[VK_FORMAT_R16_SINT], 1); EXPECT_EQ(queries[VK_FORMAT_R64_SINT], 1);
+  formats[VK_FORMAT_R64_SINT] = 0;
+  EXPECT_FALSE(Supported());
+  formats[VK_FORMAT_R64_SINT] = VK_FORMAT_FEATURE_2_TENSOR_DATA_GRAPH_BIT_ARM;
+  limits.maxTensorSize = 15;
+  EXPECT_FALSE(Supported()); EXPECT_NE(reason.find("byte size"), std::string::npos);
+  limits.maxTensorSize = 16;
+  EXPECT_TRUE(Supported()) << reason;
+}
 
 TEST_F(TensorCapabilitiesTest, QueriesAllResourceTypesAndCachesFormats) {
   artifact.inputs.push_back(artifact.inputs.front());

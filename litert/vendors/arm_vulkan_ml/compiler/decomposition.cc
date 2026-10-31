@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "litert/vendors/arm_vulkan_ml/compiler/decomposition.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/emission.h"
 
 #include <algorithm>
 #include <cmath>
@@ -133,13 +134,12 @@ bool Broadcast(const std::vector<Shape>& inputs, Shape& result) {
 }
 ResId Reshape(tfsc::tosa::Graph& g, ResId value, DataType type,
               const Shape& shape) {
-  return g.AddReshapeOperator(value, g.AddTensorConstant(Attribute(shape)),
+  return ReshapeTensor(g, value, g.AddTensorConstant(Attribute(shape)),
                                TT(type, shape));
 }
 template <typename T>
-ResId Scalar(tfsc::tosa::Graph& g, T value, size_t rank) {
-  return Reshape(g, g.AddTensorConstant(Attribute(value)),
-                 tfsc::tosa::GetDataType<T>(), Shape(rank, 1));
+ResId Scalar(tfsc::tosa::Graph& g, T value, size_t rank, GraphConstantPool& constants) {
+  return BroadcastScalar(g, value, rank, constants);
 }
 template <typename T>
 ResId Vector(tfsc::tosa::Graph& g, const std::vector<T>& values,
@@ -728,8 +728,8 @@ ResId EmitDecomposition(tfsc::tosa::Graph& g, const std::vector<ResId>& inputs,
   const size_t rank = shape.size();
   const TT output(type, shape), wide(DataType::int32_t, shape);
   const TT boolean(DataType::bool_t, shape), fp(DataType::float32_t, shape);
-  auto scalar = [&](int32_t value) { return Scalar(g, value, rank); };
-  auto floating = [&](float value) { return Scalar(g, value, rank); };
+  auto scalar = [&](int32_t value) { return Scalar(g, value, rank, constants); };
+  auto floating = [&](float value) { return Scalar(g, value, rank, constants); };
   auto multiply = [&](ResId x, ResId y, const TT& result) {
     return g.AddMulOperator(x, y, g.AddTensorConstant(Attribute(int8_t{0})), result);
   };
@@ -906,8 +906,8 @@ ResId EmitDecomposition(tfsc::tosa::Graph& g, const std::vector<ResId>& inputs,
     if (type == DataType::float32_t) {
       on = floating(p.coefficients[0]); off = floating(p.coefficients[1]);
     } else if (type == DataType::int8_t) {
-      on = Scalar(g, static_cast<int8_t>(p.parameters[1]), rank);
-      off = Scalar(g, static_cast<int8_t>(p.parameters[2]), rank);
+      on = Scalar(g, static_cast<int8_t>(p.parameters[1]), rank, constants);
+      off = Scalar(g, static_cast<int8_t>(p.parameters[2]), rank, constants);
     } else if (type == DataType::bool_t) {
       on = g.AddEqualOperator(scalar(p.parameters[1]), scalar(1), TT(DataType::bool_t, Shape(rank, 1)));
       off = g.AddEqualOperator(scalar(p.parameters[2]), scalar(1), TT(DataType::bool_t, Shape(rank, 1)));
@@ -918,8 +918,8 @@ ResId EmitDecomposition(tfsc::tosa::Graph& g, const std::vector<ResId>& inputs,
   }
   if (code == kLiteRtOpCodeTflSparseToDense) {
     const uint32_t width = p.indices.size(), size = Count(shape);
-    auto fill = type == DataType::float32_t ? Scalar(g, p.coefficients[0], 3)
-                                          : Scalar(g, p.parameters[0], 3);
+    auto fill = type == DataType::float32_t ? Scalar(g, p.coefficients[0], 3, constants)
+                                          : Scalar(g, p.parameters[0], 3, constants);
     const Shape base{1, size, 1}, updates{1, width, 1};
     auto initial = g.AddTileOperator(fill, g.AddTensorConstant(Attribute(base)), TT(type, base));
     auto values = reshape(inputs[0], type, p.data.scalar ? Shape{1, 1, 1} : updates);
@@ -959,7 +959,7 @@ ResId EmitDecomposition(tfsc::tosa::Graph& g, const std::vector<ResId>& inputs,
     auto current = p.data.shape;
     const size_t input_rank = current.size();
     auto value = g.AddSubOperator(g.AddCastOperator(inputs[0], TT(DataType::int32_t, current)),
-        Scalar(g, p.data.zero_point, input_rank), TT(DataType::int32_t, current));
+        Scalar(g, p.data.zero_point, input_rank, constants), TT(DataType::int32_t, current));
     for (auto axis : p.parameters) {
       current[axis] = 1;
       value = g.AddReduceSumOperator(value, Attribute(axis), TT(DataType::int32_t, current));
@@ -1065,7 +1065,7 @@ ResId EmitDecomposition(tfsc::tosa::Graph& g, const std::vector<ResId>& inputs,
       Shape index_shape(input_shape.size(), 1); index_shape[axis] = input_shape[axis];
       std::vector<int32_t> indices(input_shape[axis]); std::iota(indices.begin(), indices.end(), 0);
       auto selected = g.AddSelectOperator(match, Vector(g, indices, index_shape),
-          Scalar(g, int32_t{INT32_MAX}, input_shape.size()), data);
+          Scalar(g, int32_t{INT32_MAX}, input_shape.size(), constants), data);
       auto result = g.AddReduceMinOperator(selected, Attribute(axis), Attribute(uint32_t{1}), TT(DataType::int32_t, reduced));
       return reshape(result, DataType::int32_t, shape);
     }
@@ -1200,7 +1200,7 @@ ResId EmitDecomposition(tfsc::tosa::Graph& g, const std::vector<ResId>& inputs,
     }
     auto sum = g.AddReduceSumOperator(multiply(v[0], v[0], fp), axis, row);
     // The float reference clamps the L2 norm to 1e-6.
-    auto bounded = g.AddMaximumOperator(sum, Scalar(g, 1e-12f, rank), Attribute(uint32_t{0}), row);
+    auto bounded = g.AddMaximumOperator(sum, Scalar(g, 1e-12f, rank, constants), Attribute(uint32_t{0}), row);
     return multiply(v[0], g.AddRsqrtOperator(bounded, row), fp);
   }
   return nullptr;

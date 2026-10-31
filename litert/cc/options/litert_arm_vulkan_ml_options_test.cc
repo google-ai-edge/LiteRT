@@ -59,6 +59,27 @@ TEST(ArmVulkanMLOptionsTest, SoftmaxTableTypesRoundTripAndRejectInvalidValues) {
   EXPECT_EQ(bad, nullptr);
 }
 
+TEST(ArmVulkanMLOptionsTest, RescalePrecisionRoundTripsAndRejectsInvalidValues) {
+  auto options = ArmVulkanMLOptions::Create(); ASSERT_TRUE(options);
+  auto defaults = options->GetRescaleMultiplierBits(); ASSERT_TRUE(defaults);
+  EXPECT_EQ(*defaults, 32);
+  for (int bits : {16, 32}) {
+    ASSERT_TRUE(options->SetRescaleMultiplierBits(bits));
+    const char* identifier = nullptr; void* payload = nullptr; void (*deleter)(void*) = nullptr;
+    ASSERT_EQ(options->GetOpaqueOptionsData(&identifier, &payload, &deleter), kLiteRtStatusOk);
+    LrtArmVulkanMLOptions parsed = nullptr;
+    ASSERT_EQ(LrtCreateArmVulkanMLOptionsFromToml(static_cast<const char*>(payload), &parsed), kLiteRtStatusOk);
+    deleter(payload); ArmVulkanMLOptions copy(parsed);
+    auto actual = copy.GetRescaleMultiplierBits(); ASSERT_TRUE(actual); EXPECT_EQ(*actual, bits);
+  }
+  EXPECT_FALSE(options->SetRescaleMultiplierBits(8));
+  EXPECT_EQ(LrtArmVulkanMLOptionsSetRescaleMultiplierBits(nullptr, 16), kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtArmVulkanMLOptionsGetRescaleMultiplierBits(options->Get(), nullptr), kLiteRtStatusErrorInvalidArgument);
+  LrtArmVulkanMLOptions invalid = nullptr;
+  EXPECT_EQ(LrtCreateArmVulkanMLOptionsFromToml("rescale_multiplier_bits=8", &invalid), kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(invalid, nullptr);
+}
+
 TEST(ArmVulkanMLOptionsTest, RejectsInvalidModesAndNullArguments) {
   auto options = ArmVulkanMLOptions::Create(); ASSERT_TRUE(options);
   EXPECT_FALSE(options->SetOptimizationMode(static_cast<LrtArmVulkanMLOptimizationMode>(77)));

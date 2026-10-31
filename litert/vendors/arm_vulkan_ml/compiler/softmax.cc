@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "litert/vendors/arm_vulkan_ml/compiler/softmax.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/emission.h"
 
 #include <algorithm>
 #include <cmath>
@@ -104,7 +105,7 @@ ResId EmitQuantizedSoftmax(tfsc::tosa::Graph& g, ResId input,
   Tensor bytes(DataType::int8_t, shape);
   const std::vector<uint32_t> scalar_shape(shape.size(), 1);
   auto constant = [&](int32_t value) {
-    return g.AddReshapeOperator(g.AddTensorConstant(Attribute(value)),
+    return ReshapeTensor(g, g.AddTensorConstant(Attribute(value)),
                                g.AddTensorConstant(Attribute(scalar_shape)),
                                Tensor(DataType::int32_t, scalar_shape));
   };

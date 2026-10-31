@@ -67,6 +67,7 @@ struct GraphConstant {
   tfsc::tosa::ResId id = nullptr;
 };
 struct GraphConstantPool {
+  int rescale_multiplier_bits = 32;
   bool deduplicate = false;
   size_t reused = 0;
   std::vector<GraphConstant> values;
@@ -75,6 +76,15 @@ struct GraphConstantPool {
 tfsc::tosa::ResId AddGraphConstant(tfsc::tosa::Graph& graph,
     const tfsc::tosa::Tensor& tensor, std::vector<uint8_t> bytes,
     GraphConstantPool& constants);
+
+// Shared typed rescale. INT48 accumulators use 16-bit multipliers as required
+// by TOSA. Optional inclusive ranges prove exact amplification stages safe.
+tfsc::tosa::ResId EmitNativeRescale(tfsc::tosa::Graph& graph,
+    tfsc::tosa::ResId input, tfsc::tosa::DataType input_type,
+    tfsc::tosa::DataType output_type, const std::vector<uint32_t>& shape,
+    int32_t input_zero_point, int32_t output_zero_point,
+    const std::vector<Scale32>& scales, GraphConstantPool& constants,
+    const std::vector<int64_t>& minimum = {}, const std::vector<int64_t>& maximum = {});
 
 // Range-proven native TOSA SINGLE_ROUND requantization. Per-channel scales use
 // one RESCALE, including channels with large accumulators or tiny scales.

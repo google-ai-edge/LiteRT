@@ -221,9 +221,13 @@ Remaining differences are explicit:
   ASSIGN_VARIABLE are handled by separate converter stateful passes, also
   outside the mapped instruction set. They need host/state orchestration or a
   proven static transformation, not a nominal operator registration.
-- INT16 model interfaces/accumulation, UINT8 normalization and hybrid
-  quantization are still broader in the converter. Internal INT16 Softmax LUTs
-  do not establish INT16 model support. EXT-INT16/EXT-FFT stay capability-gated.
+- INT16 now has a deliberately bounded activation subset: FP32 conversion,
+  same-quantization scalar MINIMUM/MAXIMUM and broadcast SUB, plus dense
+  INT16×INT8 fully connected with INT64 bias and INT48 accumulation. The FC
+  rescale is checked against an independent FP64 oracle; the local emulator
+  lacks conformant EXT-INT16, so these are compile/oracle checks, not device
+  qualification. Broader INT16 arithmetic, UINT8 and hybrid quantization remain
+  gaps. EXT-INT16/EXT-FFT stay capability-gated.
 - Runtime gather indices, nonzero GATHER batch_dims, differing quantization in
   CONCATENATION/MAXIMUM/MINIMUM, dynamic shapes, empty tensors and some scalar
   variants remain restricted. LOG/RSQRT INT8 require a nonnegative domain.

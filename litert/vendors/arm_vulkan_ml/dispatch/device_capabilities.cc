@@ -60,6 +60,10 @@ bool CheckEngineRequirements(const CompiledPartition& artifact, const DeviceCapa
     if (!has(engine.extensions, name)) {
       reason = "TOSA extension is not advertised as conformant: " + name; return false;
     }
+  if ((artifact.requires_shader_int16 && !device.shader_int16) ||
+      (artifact.requires_shader_int64 && !device.shader_int64)) {
+    reason = "Required integer-width shader features unavailable"; return false;
+  }
   const auto& r = artifact.level_requirements;
   if (!r.checked) {
     reason = "Compiled graph has no checked TOSA level requirements"; return false;
@@ -124,6 +128,8 @@ bool QueryDeviceCapabilities(PFN_vkGetInstanceProcAddr get, VkInstance instance,
   if (has(VK_KHR_MAINTENANCE_5_EXTENSION_NAME)) append(maintenance);
   if (has(VK_EXT_SHADER_REPLICATED_COMPOSITES_EXTENSION_NAME)) append(replicated);
   GetPhysicalDeviceFeatures2(physical, &features);
+  caps.shader_int16 = features.features.shaderInt16;
+  caps.shader_int64 = features.features.shaderInt64;
   caps.tensors_feature = tensors.tensors;
   caps.graph_feature = graph.dataGraph;
   caps.vulkan_memory_model = f12.vulkanMemoryModel;
@@ -135,7 +141,7 @@ bool QueryDeviceCapabilities(PFN_vkGetInstanceProcAddr get, VkInstance instance,
     FN(GetPhysicalDeviceFormatProperties2);
     VkPhysicalDeviceProperties2 properties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
     properties.pNext = &caps.tensors; GetPhysicalDeviceProperties2(physical, &properties);
-    for (auto format : {VK_FORMAT_R8_SINT, VK_FORMAT_R32_SINT, VK_FORMAT_R32_SFLOAT}) {
+    for (auto format : {VK_FORMAT_R8_SINT, VK_FORMAT_R16_SINT, VK_FORMAT_R32_SINT, VK_FORMAT_R64_SINT, VK_FORMAT_R32_SFLOAT}) {
       VkTensorFormatPropertiesARM tensor{VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM};
       VkFormatProperties2 properties{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2}; properties.pNext = &tensor;
       GetPhysicalDeviceFormatProperties2(physical, format, &properties);

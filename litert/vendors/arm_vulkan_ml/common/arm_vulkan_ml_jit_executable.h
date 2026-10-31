@@ -7,7 +7,9 @@
 #define ODML_LITERT_LITERT_VENDORS_ARM_VULKAN_ML_COMMON_ARM_VULKAN_ML_JIT_EXECUTABLE_H_
 
 #include <cstdint>
+#include <cstddef>
 #include <memory>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -15,7 +17,17 @@
 
 namespace litert::arm_vulkan_ml {
 
-enum class TensorElement { kInt8, kInt32, kFloat32 };
+enum class TensorElement { kInt8, kInt32, kFloat32, kInt16, kInt64 };
+inline size_t TensorElementBytes(TensorElement element) {
+  switch (element) {
+    case TensorElement::kInt8: return 1;
+    case TensorElement::kInt16: return 2;
+    case TensorElement::kInt32:
+    case TensorElement::kFloat32: return 4;
+    case TensorElement::kInt64: return 8;
+  }
+  return 0;
+}
 
 struct TensorDescriptor {
   TensorElement element;
@@ -27,6 +39,8 @@ struct TensorDescriptor {
   LiteRtElementType logical_element =
       element == TensorElement::kInt8 ? kLiteRtElementTypeInt8 :
       element == TensorElement::kFloat32 ? kLiteRtElementTypeFloat32 :
+      element == TensorElement::kInt16 ? kLiteRtElementTypeInt16 :
+      element == TensorElement::kInt64 ? kLiteRtElementTypeInt64 :
                                          kLiteRtElementTypeInt32;
   // Vulkan tensors have positive rank. A logical LiteRT scalar is stored as
   // one physical element and retains strict rank-zero buffer validation.
@@ -46,6 +60,15 @@ struct TosaLevelRequirements {
   uint64_t max_nesting = 0;
 };
 
+// Static logical storage volumes, not allocations or peak live memory.
+struct GraphMetrics {
+  std::map<uint32_t, size_t> operators;
+  size_t identity_reshapes = 0;
+  uint64_t reshape_bytes = 0;
+  uint64_t identity_reshape_bytes = 0;
+  uint64_t largest_result_bytes = 0;
+};
+
 struct ConstantTensor {
   TensorDescriptor descriptor;
   std::vector<uint8_t> bytes;
@@ -54,6 +77,8 @@ struct ConstantTensor {
 // Published as const after compilation. Contains no borrowed model memory,
 // TFSC IR, VGF archive, Vulkan objects, or driver-private handles.
 struct CompiledPartition {
+  bool requires_shader_int16 = false;
+  bool requires_shader_int64 = false;
   std::vector<uint32_t> spirv;
   std::vector<ConstantTensor> constants;
   std::vector<TensorDescriptor> inputs;
@@ -63,6 +88,7 @@ struct CompiledPartition {
   std::vector<std::string> profiles = {"PRO-INT"};
   std::vector<std::string> extensions;
   TosaLevelRequirements level_requirements;
+  GraphMetrics metrics;
 };
 
 // The compiled result owns this wrapper. An invocation must copy `partition`

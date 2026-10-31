@@ -23,7 +23,7 @@ cc_library(
 cc_library(
     name = "conv2d",
     srcs = ["conv2d.cc"],
-    hdrs = ["conv2d.h"],
+    hdrs = ["conv2d.h", "emission.h"],
     deps = [":quantization", "@tosa_for_spirv_codegen"],
 )
 
@@ -43,7 +43,7 @@ cc_library(
     srcs = ["softmax.cc"],
     hdrs = ["softmax.h"],
     copts = ["-fno-exceptions"],
-    deps = ["//litert/c/options:litert_arm_vulkan_ml_options", "@tosa_for_spirv_codegen"],
+    deps = [":conv2d", "//litert/c/options:litert_arm_vulkan_ml_options", "@tosa_for_spirv_codegen"],
 )
 
 cc_library(
@@ -70,8 +70,8 @@ cc_library(
 
 cc_library(
     name = "operation",
-    srcs = ["operation.cc", "extended_ops.cc", "portable_ops.cc"],
-    hdrs = ["operation.h", "extended_ops.h", "portable_ops.h"],
+    srcs = ["operation.cc", "extended_ops.cc", "portable_ops.cc", "special_ops.cc"],
+    hdrs = ["operation.h", "extended_ops.h", "portable_ops.h", "special_ops.h"],
     deps = [
         ":conv2d", ":conv2d_adapter", ":quantization", ":softmax", ":op_registry", ":decomposition",
         "//litert/core/model:model",
@@ -310,4 +310,12 @@ cc_test(
     srcs = ["op_registry_test.cc"],
     copts = ["-fno-exceptions"],
     deps = [":op_registry", "@com_google_googletest//:gtest_main"],
+)
+
+cc_test(
+    name = "special_ops_test",
+    srcs = ["special_ops_test.cc"],
+    copts = ["-fno-exceptions"],
+    deps = [":operation", ":partition", ":tosa_requirements", "//litert/cc/internal:litert_extended_model",
+            "//tflite/schema:schema_fbs", "@com_google_googletest//:gtest_main"],
 )

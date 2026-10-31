@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/emission.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/special_ops.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/extended_ops.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/portable_ops.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/decomposition.h"
@@ -78,34 +80,16 @@ ResId Rescale(Graph& g, ResId input, const std::vector<uint32_t>& shape,
     DataType input_type, DataType output_type, int32_t izp, int32_t ozp,
     const std::vector<Scale32>& scales, GraphConstantPool& constants,
     bool per_channel = false) {
-  std::vector<int32_t> mult; std::vector<int8_t> shift;
-  for (auto scale : scales) { mult.push_back(scale.multiplier); shift.push_back(scale.shift); }
-  auto multiplier = Constant(g, mult, {static_cast<uint32_t>(mult.size())}, constants);
-  auto shifts = Constant(g, shift, {static_cast<uint32_t>(shift.size())}, constants);
-  auto input_zp = g.AddTensorConstant(Attribute(izp, input_type));
-  auto output_zp = g.AddTensorConstant(Attribute(ozp, output_type));
-  return g.AddRescaleOperator(input,multiplier,shifts,input_zp,output_zp,
-      Attribute(true),Attribute(int32_t{1}),Attribute(per_channel),Attribute(false),
-      Attribute(false),TosaTensor(output_type,shape));
+  return EmitNativeRescale(g, input, input_type, output_type, shape, izp, ozp, scales, constants);
 }
 ResId Clamp(Graph& g, ResId input, const OperationPlan& p) {
+  if (p.activation.minimum == -128 && p.activation.maximum == 127) return input;
   return g.AddClampOperator(input, Attribute(static_cast<int8_t>(p.activation.minimum)),
       Attribute(static_cast<int8_t>(p.activation.maximum)), Attribute(int32_t{1}),
       TosaTensor(DataType::int8_t,p.output.shape));
 }
 ResId Reshape(Graph& g, ResId input, DataType type, const std::vector<uint32_t>& shape) {
-  return g.AddReshapeOperator(input, g.AddTensorConstant(Attribute(shape)), TosaTensor(type,shape));
-}
-bool ChannelScales(const Tensor& t, uint32_t channels, std::vector<double>& result) {
-  if (t.QTypeId() == QuantizationTypeId::PerTensor) {
-    auto q=t.PerTensorQuantization(); if(q.zero_point) return false;
-    result.assign(channels,q.scale); return true;
-  }
-  if(t.QTypeId()!=QuantizationTypeId::PerChannel) return false;
-  auto q=t.PerChannelQuantization();
-  if(q.quantized_dimension!=0 || q.num_channels!=channels) return false;
-  for(uint32_t i=0;i<channels;++i) { if(q.zero_points[i]) return false; result.push_back(q.scales[i]); }
-  return true;
+  return ReshapeTensor(g, input, g.AddTensorConstant(Attribute(shape)), TosaTensor(type,shape));
 }
 }  // namespace
 
@@ -158,6 +142,7 @@ bool AnalyzeFloatConvolution(const Op& op, OperationPlan& p, std::string& reason
 
 std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason, SoftmaxLutType softmax_lut) {
   auto reject = [&](const char* s)->std::optional<OperationPlan> { reason=s; return std::nullopt; };
+  if (op.Code() == kLiteRtOpCodeShloComposite) return AnalyzeSpecialOperation(op, reason);
   OperationPlan p{}; p.code=op.Code();
   auto in=op.Inputs(); auto out=op.Outputs();
   const auto* registration = FindOperationRegistration(p.code);
@@ -168,6 +153,7 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason,
       static_cast<LiteRtElementType>(in[registration->data_input].ElementType()),
       static_cast<LiteRtElementType>(out[0].ElementType()));
   if (!variant) return reject("TFLite data input/output type pair has no registered lowering");
+  if (IsSpecialOperation(op)) return AnalyzeSpecialOperation(op, reason);
   p.route = variant->route;
   if (p.route == LoweringRoute::kDecomposed) {
     p.decomposition = AnalyzeDecomposition(op, reason);
@@ -565,38 +551,6 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason,
           (127-int64_t{input->zero_point})*static_cast<int64_t>(n))) return reject("SUM rescale range invalid");
       p.scales.push_back(*scale); break;
     }
-    case kLiteRtOpCodeTflFullyConnected: {
-      if(in.size()!=3) return reject("FC requires constant weights/bias");
-      auto wt=in[1].RankedTensorType(); auto bt=in[2].RankedTensorType();
-      if(!wt || !bt || wt->ElementType()!=ElementType::Int8 || bt->ElementType()!=ElementType::Int32 ||
-         wt->Layout().HasStrides() || bt->Layout().HasStrides() ||
-         wt->Layout().Dimensions().size()!=2 || bt->Layout().Dimensions().size()!=1)
-        return reject("FC requires dense int8 matrix weights and int32 vector bias");
-      auto dims=wt->Layout().Dimensions();
-      if(dims[0]<=0 || dims[1]<=0 || bt->Layout().Dimensions()[0]!=dims[0] ||
-         Count(input->shape)%dims[1] || output->shape!=std::vector<uint32_t>{static_cast<uint32_t>(Count(input->shape)/dims[1]),static_cast<uint32_t>(dims[0])})
-        return reject("FC shapes disagree");
-      uint32_t format,fused; bool keep;
-      if(LiteRtGetFullyConnectedWeightsFormatOption(op.Get(),&format)!=kLiteRtStatusOk || format ||
-         LiteRtGetFullyConnectedKeepNumDimsOption(op.Get(),&keep)!=kLiteRtStatusOk || keep ||
-         LiteRtGetFullyConnectedFusedActivationOption(op.Get(),&fused)!=kLiteRtStatusOk)
-        return reject("FC requires default weight format and fixed dimensions");
-      // asymmetric_quantize_inputs only affects hybrid float-input FC. The
-      // fixed int8 path above uses the tensor's explicit scale and zero point.
-      auto activation=ActivationCode(fused); if(!activation) return reject("Unsupported FC activation");
-      Conv2dSpec s{}; s.input_shape={output->shape[0],1,1,static_cast<uint32_t>(dims[1])};
-      s.weight_shape={static_cast<uint32_t>(dims[0]),1,1,static_cast<uint32_t>(dims[1])}; s.output_shape={output->shape[0],1,1,static_cast<uint32_t>(dims[0])};
-      s.stride={1,1};s.dilation={1,1};s.activation=*activation;
-      s.input_scale=input->scale;s.input_zero_point=input->zero_point;
-      s.output_scale=output->scale;s.output_zero_point=output->zero_point;
-      auto weights=in[1].WeightsData<int8_t>(); auto bias=in[2].WeightsData<int32_t>();
-      if(!weights || !bias || !ChannelScales(in[1],dims[0],s.weight_scales) || !ChannelScales(in[2],dims[0],s.bias_scales))
-        return reject("FC constant/quantization data invalid");
-      s.weights.assign(weights->begin(),weights->end());s.bias.assign(bias->begin(),bias->end());
-      p.convolution=AnalyzeConv2d(std::move(s),reason);
-      if(!p.convolution) return std::nullopt;
-      p.activation=p.convolution->activation_range; break;
-    }
     default: return reject("Operator lowering not implemented");
   }
   reason.clear(); return p;
@@ -611,7 +565,7 @@ ResId EmitFloatOperation(Graph& g,const std::vector<ResId>& inputs,const Operati
   switch(p.code) {
     case kLiteRtOpCodeTflDequantize:
       value=g.AddCastOperator(value,ftype);
-      value=g.AddSubOperator(value,scalar(static_cast<float>(q.zero_point)),ftype);
+      if (q.zero_point != 0) value=g.AddSubOperator(value,scalar(static_cast<float>(q.zero_point)),ftype);
       return mul(value,scalar(static_cast<float>(q.scale)));
     case kLiteRtOpCodeTflQuantize: {
       // Match affine quantization: round the scaled value before adding zp.
@@ -680,11 +634,12 @@ ResId EmitFloatOperation(Graph& g,const std::vector<ResId>& inputs,const Operati
 
 ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPlan& p,
                     GraphConstantPool& constants) {
+  if (p.special) return EmitSpecialOperation(g, inputs, *p.special, constants);
   if (p.decomposition) return EmitDecomposition(g, inputs, *p.decomposition, constants);
   if(p.typed){
     auto type=[&](DataType dt,const std::vector<uint32_t>& shape){return TosaTensor(dt,shape);};
     std::vector<ResId> v;
-    for(size_t i=0;i<inputs.size();++i)v.push_back(g.AddReshapeOperator(inputs[i],g.AddTensorConstant(Attribute(p.inputs[i].shape)),type(p.input_types[i],p.inputs[i].shape)));
+    for(size_t i=0;i<inputs.size();++i)v.push_back(ReshapeTensor(g, inputs[i],g.AddTensorConstant(Attribute(p.inputs[i].shape)),type(p.input_types[i],p.inputs[i].shape)));
     auto output=type(p.output_type,p.output.shape);
     switch(p.code){
       case kLiteRtOpCodeTflLogicalAnd:return g.AddLogicalAndOperator(v[0],v[1],output);
@@ -697,7 +652,7 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
       }
       case kLiteRtOpCodeTflRightShift:return g.AddLogicalRightShiftOperator(v[0],v[1],output);
       case kLiteRtOpCodeTflFloorDiv: {
-        auto constant=[&](int32_t x){auto id=g.AddTensorConstant(Attribute(x));return g.AddReshapeOperator(id,g.AddTensorConstant(Attribute(std::vector<uint32_t>(p.output.shape.size(),1))),type(DataType::int32_t,std::vector<uint32_t>(p.output.shape.size(),1)));};
+        auto constant=[&](int32_t x){auto id=g.AddTensorConstant(Attribute(x));return ReshapeTensor(g, id,g.AddTensorConstant(Attribute(std::vector<uint32_t>(p.output.shape.size(),1))),type(DataType::int32_t,std::vector<uint32_t>(p.output.shape.size(),1)));};
         auto q=g.AddIntDivOperator(v[0],v[1],output);
         auto product=g.AddMulOperator(q,v[1],g.AddTensorConstant(Attribute(int8_t{0})),output);
         auto rem=g.AddSubOperator(v[0],product,output);auto bt=type(DataType::bool_t,p.output.shape);
@@ -713,7 +668,7 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
         if(p.input_types[0]==DataType::bool_t)return g.AddLogicalXorOperator(v[0],v[1],output);
         return g.AddLogicalNotOperator(g.AddEqualOperator(v[0],v[1],output),output);
       case kLiteRtOpCodeTflArgMax:return g.AddArgMaxOperator(v[0],Attribute(p.parameters[0]),Attribute(uint32_t{1}),output);
-      default:{auto shape=p.inputs[0].shape;auto x=v[0];for(auto axis:p.parameters){shape[axis]=1;x=p.code==kLiteRtOpCodeTflReduceAll?g.AddReduceAllOperator(x,Attribute(axis),type(DataType::bool_t,shape)):g.AddReduceAnyOperator(x,Attribute(axis),type(DataType::bool_t,shape));}return g.AddReshapeOperator(x,g.AddTensorConstant(Attribute(p.output.shape)),output);}
+      default:{auto shape=p.inputs[0].shape;auto x=v[0];for(auto axis:p.parameters){shape[axis]=1;x=p.code==kLiteRtOpCodeTflReduceAll?g.AddReduceAllOperator(x,Attribute(axis),type(DataType::bool_t,shape)):g.AddReduceAnyOperator(x,Attribute(axis),type(DataType::bool_t,shape));}return ReshapeTensor(g, x,g.AddTensorConstant(Attribute(p.output.shape)),output);}
     }
   }
 
@@ -792,20 +747,6 @@ ResId EmitOperation(Graph& g,const std::vector<ResId>& inputs,const OperationPla
       auto shape=q.shape;
       for(auto axis:p.parameters) { shape[axis]=1; value=g.AddReduceSumOperator(value,Attribute(axis),TosaTensor(DataType::int32_t,shape)); }
       return Rescale(g,value,p.output.shape,DataType::int32_t,DataType::int8_t,0,p.output.zero_point,p.scales,constants);
-    }
-    case kLiteRtOpCodeTflFullyConnected: {
-      const auto& plan=*p.convolution; const auto& s=plan.spec;
-      uint32_t batch=s.input_shape[0], k=s.weight_shape[3], channels=s.weight_shape[0];
-      auto a=Reshape(g,input,DataType::int8_t,{1,batch,k});
-      std::vector<int8_t> transposed(s.weights.size());
-      for(uint32_t c=0;c<channels;++c) for(uint32_t i=0;i<k;++i) transposed[i*channels+c]=s.weights[c*k+i];
-      auto b=Constant(g,transposed,{1,k,channels},constants);
-      auto value=g.AddMatmulOperator(a,b,g.AddTensorConstant(Attribute(static_cast<int8_t>(q.zero_point))),
-          g.AddTensorConstant(Attribute(int8_t{0})),TosaTensor(DataType::int32_t,{1,batch,channels}));
-      auto bias=Constant(g,s.bias,{1,1,channels},constants);
-      value=g.AddAddOperator(value,bias,TosaTensor(DataType::int32_t,{1,batch,channels}));
-      value=EmitRescale(g,value,{1,batch,channels},p.output.zero_point,plan.scales,plan.accumulator_ranges,constants);
-      return Clamp(g,Reshape(g,value,DataType::int8_t,p.output.shape),p);
     }
     default: return nullptr;
   }

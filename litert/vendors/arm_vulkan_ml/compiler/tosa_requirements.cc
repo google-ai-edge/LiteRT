@@ -110,6 +110,34 @@ bool Maximum(const Operand& operand, size_t count, uint64_t& maximum,
 }
 }  // namespace
 
+GraphMetrics CollectGraphMetrics(const tfsc::spirv::Module& module) {
+  GraphMetrics metrics;
+  for (const auto& instruction : module.GetSpirvGraph()) {
+    const auto& a = instruction.m_Operands;
+    if (instruction.m_Opcode != spv::Op::OpExtInst || a.size() < 5) continue;
+    ++metrics.operators[a[3].m_LiteralWord];
+    const auto* type = Reference(a[0]);
+    std::vector<uint32_t> shape;
+    if (!Shape(type, shape)) continue;
+    const auto* element = Reference(type->m_Operands[1]);
+    if (!element || (element->m_Opcode != spv::Op::OpTypeBool && element->m_Operands.size() < 2)) continue;
+    uint64_t bytes = element->m_Opcode == spv::Op::OpTypeBool ? 1 :
+        (element->m_Operands[1].m_LiteralWord + 7) / 8;
+    for (auto dim : shape) bytes *= dim;
+    metrics.largest_result_bytes = std::max(metrics.largest_result_bytes, bytes);
+    if (static_cast<O>(a[3].m_LiteralWord) != O::Reshape) continue;
+    metrics.reshape_bytes += bytes;
+    const auto* input = Reference(a[4]);
+    std::vector<uint32_t> input_shape;
+    if (input && !input->m_Operands.empty() && ValueShape(a[4], input_shape) &&
+        shape == input_shape && Reference(input->m_Operands[0]) == type) {
+      ++metrics.identity_reshapes;
+      metrics.identity_reshape_bytes += bytes;
+    }
+  }
+  return metrics;
+}
+
 bool CollectTosaLevelRequirements(const tfsc::spirv::Module& module,
                                  TosaLevelRequirements& requirements,
                                  std::string& reason) {

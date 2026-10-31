@@ -29,6 +29,6 @@ struct PortablePlan {
 };
 std::shared_ptr<PortablePlan> AnalyzePortableOperation(const Op&, std::string&);
 std::vector<tfsc::tosa::ResId> EmitPortableOperation(tfsc::tosa::Graph&,
-    std::vector<tfsc::tosa::ResId>, const PortablePlan&);
+    std::vector<tfsc::tosa::ResId>, const PortablePlan&, GraphConstantPool&);
 }
 #endif

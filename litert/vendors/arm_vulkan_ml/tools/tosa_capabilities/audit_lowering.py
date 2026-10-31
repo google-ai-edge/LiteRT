@@ -45,7 +45,7 @@ def frontend_inventory(compiler):
 
 
 def audit(database, compiler, tfsc):
-    sources = {p.name: p.read_text() for p in sorted(compiler.glob("*.cc"))
+    sources = {p.name: p.read_text() for p in sorted([*compiler.glob("*.cc"), *compiler.glob("*.h")])
                if not p.name.endswith(("_test.cc", "_fixture.cc"))}
     headers = [tfsc / "include/tosa/OperatorEnum.hpp",
                tfsc / "include/tosa/GraphOperatorHelpers.hpp"]

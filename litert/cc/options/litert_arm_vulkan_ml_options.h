@@ -85,6 +85,16 @@ class ArmVulkanMLOptions : public ConcreteOptionsBase {
     return type;
   }
 
+  Expected<void> SetRescaleMultiplierBits(int bits) {
+    LITERT_RETURN_IF_ERROR(LrtArmVulkanMLOptionsSetRescaleMultiplierBits(Get(), bits));
+    return {};
+  }
+  Expected<int> GetRescaleMultiplierBits() const {
+    int bits;
+    LITERT_RETURN_IF_ERROR(LrtArmVulkanMLOptionsGetRescaleMultiplierBits(Get(), &bits));
+    return bits;
+  }
+
   LrtArmVulkanMLOptions Get() const { return options_.get(); }
   LrtArmVulkanMLOptions Release() { return options_.release(); }
 

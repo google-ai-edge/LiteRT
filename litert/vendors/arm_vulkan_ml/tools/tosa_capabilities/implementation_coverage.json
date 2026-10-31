@@ -1251,6 +1251,73 @@
         "PRO-INT"
       ],
       "required_extensions": []
+    },
+    {
+      "litert_operator": "FULLY_CONNECTED",
+      "types": [
+        "INT16",
+        "INT8",
+        "INT64"
+      ],
+      "quantization": "symmetric per-tensor activations; per-tensor or per-channel weights/bias",
+      "constraints": "Static symmetric INT16 data, constant symmetric INT8 weights and matching INT64 bias; keep_num_dims true/false; native CONV2D with INT48 accumulation and SINGLE_ROUND 16-bit RESCALE; proven signed-48-bit ranges",
+      "fixtures": [
+        "SpecialOps.*"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "unavailable_EXT_INT16",
+      "hardware": "not_qualified",
+      "comparison": "INT16 FC checked with an independent FP64 oracle; no INT16 device execution claimed",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": [
+        "EXT-INT16"
+      ]
+    },
+    {
+      "litert_operator": "QUANTIZE/DEQUANTIZE",
+      "types": [
+        "FP32",
+        "INT16"
+      ],
+      "quantization": "symmetric per-tensor activations",
+      "constraints": "Symmetric per-tensor INT16 and FP32, identical logical shape; explicit round-away-from-zero quantization and saturated cast",
+      "fixtures": [
+        "SpecialOps.*"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "unavailable_EXT_INT16",
+      "hardware": "not_qualified",
+      "comparison": "Compile/type/shape checks only; conformant INT16 device execution unavailable",
+      "required_profiles": [
+        "PRO-INT",
+        "PRO-FP"
+      ],
+      "required_extensions": [
+        "EXT-INT16"
+      ]
+    },
+    {
+      "litert_operator": "MINIMUM/MAXIMUM/SUB",
+      "types": [
+        "INT16"
+      ],
+      "quantization": "symmetric per-tensor activations",
+      "constraints": "Scalar constant bounds or broadcast SUB, identical symmetric quantization; SUB widens before saturating; adjacent single-consumer bounds may fuse",
+      "fixtures": [
+        "SpecialOps.*"
+      ],
+      "spirv_validation": "passed",
+      "emulator": "unavailable_EXT_INT16",
+      "hardware": "not_qualified",
+      "comparison": "Compile/type/shape checks only; conformant INT16 device execution unavailable",
+      "required_profiles": [
+        "PRO-INT"
+      ],
+      "required_extensions": [
+        "EXT-INT16"
+      ]
     }
   ],
   "graph_optimization": {

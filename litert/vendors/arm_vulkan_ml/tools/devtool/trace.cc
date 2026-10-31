@@ -23,6 +23,9 @@
 #include <set>
 #include "spirv-tools/libspirv.hpp"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/partition.h"
 #include "litert/vendors/arm_vulkan_ml/dispatch/vulkan_invocation.h"
@@ -37,6 +40,8 @@ size_t TensorWidth(tflite::TensorType type) {
   switch (type) {
     case tflite::TensorType_INT8:
     case tflite::TensorType_BOOL: return 1;
+    case tflite::TensorType_INT16: return 2;
+    case tflite::TensorType_INT64: return 8;
     case tflite::TensorType_INT32:
     case tflite::TensorType_UINT32:
     case tflite::TensorType_FLOAT32: return 4;
@@ -49,6 +54,48 @@ Expected<std::string> ImagePath(const Options& options) {
   LITERT_ASSIGN_OR_RETURN(auto rows, imagenet::ReadSamples(options.Get("manifest"),
       options.Get("image_root"), start, 1));
   return rows.front().path;
+}
+// Use the application API for whole-model validation, including core composite
+// processing and the dispatch plugin's actual tensor-buffer contracts.
+Expected<void> ExecuteRuntime(const Options& options, tflite::Interpreter& cpu,
+    const tflite::SubGraphT& graph, std::vector<std::vector<float>>& actual, Json& report) {
+  const auto compiler = CompilerDirectory(options);
+  const auto default_dispatch = std::filesystem::exists(std::filesystem::path(compiler) / "libLiteRtDispatch_ArmVulkanML.so")
+      ? compiler : (std::filesystem::path(compiler).parent_path() / "dispatch").string();
+  const auto dispatch = options.Get("dispatch_library_dir", default_dispatch);
+  std::vector<EnvironmentOptions::Option> environment_options{
+      {EnvironmentOptions::Tag::kCompilerPluginLibraryDir, compiler},
+      {EnvironmentOptions::Tag::kDispatchLibraryDir, dispatch}};
+  LITERT_ASSIGN_OR_RETURN(auto environment, Environment::Create(EnvironmentOptions(environment_options)));
+  LITERT_ASSIGN_OR_RETURN(auto runtime_options, RuntimeOptions(options));
+  LITERT_ASSIGN_OR_RETURN(auto compiled, CompiledModel::Create(environment, options.Get("model"), runtime_options));
+  LITERT_ASSIGN_OR_RETURN(auto fully, compiled.IsFullyAccelerated());
+  report["fully_accelerated"] = fully;
+  report["execution_path"] = "LiteRT CompiledModel with compiler and dispatch plugins";
+  LITERT_ASSIGN_OR_RETURN(auto require, options.Integer("require_full_acceleration", 1));
+  if (require != 0 && require != 1) return Failure("require_full_acceleration must be 0 or 1");
+  if (require && !fully) return Failure("Model is not fully accelerated");
+  LITERT_ASSIGN_OR_RETURN(auto inputs, compiled.CreateInputBuffers());
+  LITERT_ASSIGN_OR_RETURN(auto outputs, compiled.CreateOutputBuffers());
+  if (inputs.size() != graph.inputs.size() || outputs.size() != graph.outputs.size())
+    return Failure("Runtime interface count mismatch");
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    const auto* tensor = cpu.tensor(graph.inputs[i]);
+    LITERT_ASSIGN_OR_RETURN(auto packed, inputs[i].PackedSize());
+    if (packed != tensor->bytes) return Failure("Runtime input byte count mismatch");
+    LITERT_ASSIGN_OR_RETURN(auto lock, TensorBufferScopedLock::Create(inputs[i], TensorBuffer::LockMode::kWrite));
+    std::memcpy(lock.second, tensor->data.raw, tensor->bytes);
+  }
+  LITERT_RETURN_IF_ERROR(compiled.Run(inputs, outputs));
+  for (size_t i = 0; i < outputs.size(); ++i) {
+    const auto* tensor = cpu.tensor(graph.outputs[i]);
+    actual[i].resize((tensor->bytes + sizeof(float) - 1) / sizeof(float));
+    LITERT_ASSIGN_OR_RETURN(auto packed, outputs[i].PackedSize());
+    if (packed != tensor->bytes) return Failure("Runtime output byte count mismatch");
+    LITERT_ASSIGN_OR_RETURN(auto lock, TensorBufferScopedLock::Create(outputs[i], TensorBuffer::LockMode::kRead));
+    std::memcpy(actual[i].data(), lock.second, tensor->bytes);
+  }
+  return {};
 }
 }  // namespace
 Expected<void> FillImageInput(tflite::Interpreter& cpu, const std::vector<float>& pixels) {
@@ -69,13 +116,14 @@ Expected<void> FillImageInput(tflite::Interpreter& cpu, const std::vector<float>
 Expected<void> Trace(const Options& options, Json& report) {
   LITERT_ASSIGN_OR_RETURN(auto optimization_mode, options.Optimization());
   LITERT_ASSIGN_OR_RETURN(auto softmax_lut, options.SoftmaxLut());
+  LITERT_ASSIGN_OR_RETURN(auto rescale_bits, options.RescaleMultiplierBits());
   const auto reference_kind = options.Get("reference", "tflite");
   const bool external_reference = reference_kind != "tflite";
   if (external_reference && (options.command != "validate" ||
       (reference_kind != "fp64" && reference_kind != "xnnpack"))) return Failure("Invalid alternate reference");
   LITERT_ASSIGN_OR_RETURN(auto object, LoadModel(options.Get("model")));
-  if (object->subgraphs.size() != 1 || object->subgraphs[0]->inputs.empty())
-    return Failure("Execution requires one subgraph with data inputs");
+  if (object->subgraphs.empty() || object->subgraphs[0]->inputs.empty())
+    return Failure("Execution requires a main subgraph with data inputs");
   report["model"] = options.Get("model");
   LITERT_ASSIGN_OR_RETURN(report["model_sha256"], imagenet::HashFile(options.Get("model")));
   const auto& graph = *object->subgraphs[0];
@@ -190,7 +238,7 @@ Expected<void> Trace(const Options& options, Json& report) {
   LITERT_ASSIGN_OR_RETURN(auto original_bytes, PackModel(*object));
   LITERT_ASSIGN_OR_RETURN(auto original, ExtendedModel::CreateFromBuffer(BufferRef<uint8_t>(original_bytes.data(), original_bytes.size())));
   LITERT_ASSIGN_OR_RETURN(auto original_graph, original.Subgraph(0));
-  for (const auto& op : original_graph.Ops()) {
+  if (options.command != "validate") for (const auto& op : original_graph.Ops()) {
     std::string reason;
     if (!AnalyzeOperation(op, reason)) return Failure("Trace requires complete coverage: " + reason);
   }
@@ -275,27 +323,37 @@ Expected<void> Trace(const Options& options, Json& report) {
     LITERT_ASSIGN_OR_RETURN(auto vk_model, ExtendedModel::CreateFromBuffer(BufferRef<uint8_t>(vk_bytes.data(), vk_bytes.size())));
     LITERT_ASSIGN_OR_RETURN(auto vk_graph, vk_model.Subgraph(0));
     std::string reason; OptimizationReport optimized_stats;
-    auto artifact = CompilePartition(vk_graph, reason, nullptr, optimization_mode, &optimized_stats, softmax_lut);
-    if (!artifact) return Failure("Trace compilation: " + reason);
     spvtools::SpirvTools validator(SPV_ENV_UNIVERSAL_1_6);
-    if (!validator.Validate(artifact->spirv)) return Failure("SPIR-V validation failed");
-    report["spirv_valid"] = true;
-    auto invocation = VulkanInvocation::Create(artifact, allow != 0, reason);
-    if (!invocation) return Failure("Trace device/pipeline: " + reason);
+    std::unique_ptr<VulkanInvocation> invocation;
+    std::vector<std::vector<float>> actual(op.outputs.size());
+    const auto inference_start = std::chrono::steady_clock::now();
+    if (options.command == "validate") {
+      LITERT_RETURN_IF_ERROR(ExecuteRuntime(options, *cpu, graph, actual, report));
+    } else {
+      auto artifact = CompilePartition(vk_graph, reason, nullptr, optimization_mode, &optimized_stats, softmax_lut, rescale_bits);
+      if (!artifact) return Failure("Trace compilation: " + reason);
+
+      if (!validator.Validate(artifact->spirv)) return Failure("SPIR-V validation failed");
+      report["spirv_valid"] = true;
+      invocation = VulkanInvocation::Create(artifact, allow != 0, reason);
+      if (!invocation) return Failure("Trace device/pipeline: " + reason);
+      std::vector<const void*> inputs;
+      for (auto id : sg.inputs) inputs.push_back(cpu->tensor(id)->data.raw);
+      std::vector<void*> outputs;
+      for (size_t j = 0; j < op.outputs.size(); ++j) {
+        size_t bytes = cpu->tensor(op.outputs[j])->bytes;
+        actual[j].resize((bytes + sizeof(float) - 1) / sizeof(float)); outputs.push_back(actual[j].data());
+      }
+
+      if (!invocation->Run(inputs, outputs, reason)) return Failure("Trace execution: " + reason);
+    }
+    const double inference_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - inference_start).count();
     std::vector<const void*> inputs;
     for (auto id : sg.inputs) inputs.push_back(cpu->tensor(id)->data.raw);
-    std::vector<std::vector<float>> actual(op.outputs.size()); std::vector<void*> outputs;
-    for (size_t j = 0; j < op.outputs.size(); ++j) {
-      size_t bytes = cpu->tensor(op.outputs[j])->bytes;
-      actual[j].resize((bytes + sizeof(float) - 1) / sizeof(float)); outputs.push_back(actual[j].data());
-    }
-    auto inference_start = std::chrono::steady_clock::now();
-    if (!invocation->Run(inputs, outputs, reason)) return Failure("Trace execution: " + reason);
-    double inference_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - inference_start).count();
     std::vector<std::vector<float>> off_outputs;
     if (compare) {
       OptimizationReport off_stats;
-      auto off = CompilePartition(vk_graph, reason, nullptr, kLrtArmVulkanMLOptimizationOff, &off_stats, softmax_lut);
+      auto off = CompilePartition(vk_graph, reason, nullptr, kLrtArmVulkanMLOptimizationOff, &off_stats, softmax_lut, rescale_bits);
       if (!off || !validator.Validate(off->spirv)) return Failure("Off-mode preflight: " + reason);
       auto baseline = VulkanInvocation::Create(off, allow != 0, reason);
       if (!baseline) return Failure("Off-mode pipeline: " + reason);
@@ -311,10 +369,13 @@ Expected<void> Trace(const Options& options, Json& report) {
       report["graphs"] = {{"off", {{"emitted_operators", off_stats.emitted_operators}, {"constant_count", off_stats.constant_count}, {"constant_bytes", off_stats.constant_bytes}, {"compile_ms", off_stats.compile_ms}}},
           {"optimized", {{"emitted_operators", optimized_stats.emitted_operators}, {"constant_count", optimized_stats.constant_count}, {"constant_bytes", optimized_stats.constant_bytes}, {"compile_ms", optimized_stats.compile_ms}}}};
     }
-    auto copy_stats=invocation->Statistics();
+
     Json row = {{"index", index}, {"name", tflite::EnumNameBuiltinOperator(object->operator_codes[op.opcode_index]->builtin_code)},
         {"outputs", Json::array()}, {"captured_bytes", captured}};
-    row["buffer_io"]={{"input_copy_bytes",copy_stats.input_bytes},{"output_copy_bytes",copy_stats.output_bytes},{"imported_slots",copy_stats.imported_slots}};
+    if (invocation) {
+      const auto copy_stats = invocation->Statistics();
+      row["buffer_io"]={{"input_copy_bytes",copy_stats.input_bytes},{"output_copy_bytes",copy_stats.output_bytes},{"imported_slots",copy_stats.imported_slots}};
+    }
     bool passed = true;
     for (size_t j = 0; j < op.outputs.size(); ++j) {
       const auto* expected = cpu->tensor(op.outputs[j]); bool floating = expected->type == kTfLiteFloat32 || expected->type == kTfLiteComplex64;
@@ -326,9 +387,34 @@ Expected<void> Trace(const Options& options, Json& report) {
         gates.values["max_code_error"] = optimization_mode == kLrtArmVulkanMLOptimizationExact ? "0" : "2";
         gates.values["mean_code_error"] = optimization_mode == kLrtArmVulkanMLOptimizationExact ? "0" : "0.5";
       }
-      if(expected->type==kTfLiteInt32 || expected->type==kTfLiteUInt32 || expected->type==kTfLiteBool){
+      if(expected->type==kTfLiteInt64 || expected->type==kTfLiteInt32 || expected->type==kTfLiteUInt32 || expected->type==kTfLiteBool){
         comparison={{"passed",std::memcmp(actual[j].data(),reference,expected->bytes)==0},{"comparison","exact"}};
+      } else if (expected->type == kTfLiteInt16) {
+        const size_t count = expected->bytes / sizeof(int16_t);
+        const auto* a = reinterpret_cast<const uint8_t*>(actual[j].data());
+        const auto* b = static_cast<const uint8_t*>(reference);
+        double maximum = 0, sum = 0;
+        for (size_t k = 0; k < count; ++k) {
+          int16_t av, bv;
+          std::memcpy(&av, a + k * sizeof(av), sizeof(av));
+          std::memcpy(&bv, b + k * sizeof(bv), sizeof(bv));
+          const double error = std::abs(static_cast<int>(av) - static_cast<int>(bv));
+          maximum = std::max(maximum, error); sum += error;
+        }
+        LITERT_ASSIGN_OR_RETURN(auto max_code, gates.Number("max_code_error", 4));
+        LITERT_ASSIGN_OR_RETURN(auto mean_code, gates.Number("mean_code_error", .5));
+        comparison = {{"passed", maximum <= max_code && sum / count <= mean_code},
+            {"max_error", maximum}, {"mean_error", sum / count}, {"elements", count},
+            {"max_dequantized_error", maximum * expected->params.scale}};
       } else LITERT_RETURN_IF_ERROR(Compare(actual[j].data(), reference, expected->bytes / (floating ? 4 : 1), floating, gates, comparison));
+      if (options.command == "validate" && floating && expected->dims->size == 2 && expected->dims->data[0] == 1) {
+        const auto* a = actual[j].data(); const auto* b = static_cast<const float*>(reference);
+        const size_t count = expected->bytes / sizeof(float);
+        const auto ai = std::max_element(a, a + count) - a;
+        const auto bi = std::max_element(b, b + count) - b;
+        comparison["top1_actual"] = ai; comparison["top1_expected"] = bi;
+        comparison["top1_agreement"] = ai == bi;
+      }
       comparison["tensor"] = op.outputs[j]; passed &= comparison["passed"].get<bool>();
       const auto& tensor = *graph.tensors[op.outputs[j]];
       comparison["shape"] = tensor.shape;

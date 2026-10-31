@@ -28,6 +28,10 @@
 #include "absl/strings/numbers.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/litert_environment.h"
+#include "litert/cc/options/litert_arm_vulkan_ml_options.h"
+#include "litert/core/model/model_serialize.h"
 #include "litert/tools/imagenet_eval_runner.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/partition.h"
@@ -80,7 +84,7 @@ Json TensorInfo(const tflite::TensorT& tensor, int id) {
   return result;
 }
 Expected<void> ImageInterface(const tflite::ModelT& model) {
-  if (model.subgraphs.size() != 1) return Invalid("Image execution requires one subgraph");
+  if (model.subgraphs.empty()) return Invalid("Image execution requires a main subgraph");
   const auto& g = *model.subgraphs[0];
   if (g.inputs.size() != 1 || g.outputs.size() != 1) return Invalid("Image execution requires one input and one output");
   auto valid = [&](int id) { return id >= 0 && static_cast<size_t>(id) < g.tensors.size(); };
@@ -123,6 +127,35 @@ Expected<double> Options::Number(const std::string& key, double fallback) const 
     return Invalid("Invalid nonnegative number --" + key);
   return value;
 }
+Expected<int> Options::RescaleMultiplierBits() const {
+  LITERT_ASSIGN_OR_RETURN(auto bits, Integer("rescale_multiplier_bits", 32));
+  if (bits != 16 && bits != 32) return Invalid("rescale_multiplier_bits must be 16 or 32");
+  return bits;
+}
+std::string CompilerDirectory(const Options& options) {
+  if (!options.Get("compiler_plugin_library_dir").empty()) return options.Get("compiler_plugin_library_dir");
+  std::error_code error;
+  const auto executable = fs::read_symlink("/proc/self/exe", error);
+  if (!error) {
+    for (const auto& dir : {executable.parent_path(), executable.parent_path().parent_path() / "compiler"}) {
+      if (fs::exists(dir / "libLiteRtCompilerPlugin_ArmVulkanML.so")) return dir.string();
+    }
+  }
+  return ".";
+}
+Expected<litert::Options> RuntimeOptions(const Options& options) {
+  LITERT_ASSIGN_OR_RETURN(auto result, litert::Options::Create());
+  LITERT_RETURN_IF_ERROR(result.SetHardwareAccelerators(HwAccelerators::kNpu));
+  LITERT_ASSIGN_OR_RETURN(auto& arm, result.GetOptions<ArmVulkanMLOptions>());
+  LITERT_RETURN_IF_ERROR(arm.SetEnableJustInTime(true));
+  LITERT_ASSIGN_OR_RETURN(auto optimization, options.Optimization());
+  LITERT_RETURN_IF_ERROR(arm.SetOptimizationMode(optimization));
+  LITERT_ASSIGN_OR_RETURN(auto softmax, options.SoftmaxLut());
+  LITERT_RETURN_IF_ERROR(arm.SetSoftmaxLutType(softmax));
+  LITERT_ASSIGN_OR_RETURN(auto bits, options.RescaleMultiplierBits());
+  LITERT_RETURN_IF_ERROR(arm.SetRescaleMultiplierBits(bits));
+  return result;
+}
 Expected<Options> ParseOptions(int argc, char** argv) {
   Options options;
   if (argc < 2) return Invalid("Expected inspect, capabilities, compile, validate, trace, or tosa-query; use --help");
@@ -132,7 +165,7 @@ Expected<Options> ParseOptions(int argc, char** argv) {
   const std::set<std::string> keys = {"model", "report_json", "output_dir", "manifest", "preprocessing_config",
       "image_root", "start_sample", "max_samples", "atol", "rtol", "max_code_error", "mean_code_error",
       "compiler_plugin_library_dir", "dispatch_library_dir", "runtime_library_dir", "allow_emulation",
-      "mode", "optimization_mode", "softmax_lut_type", "reference", "capture_budget_mb", "suite", "dump_tensors", "tensor_inputs", "dump_vgf", "vulkan_validation", "database", "op", "type", "enum", "capability", "json", "op_set"};
+      "graph_view", "require_full_acceleration", "rescale_multiplier_bits", "mode", "optimization_mode", "softmax_lut_type", "reference", "capture_budget_mb", "suite", "dump_tensors", "tensor_inputs", "dump_vgf", "vulkan_validation", "database", "op", "type", "enum", "capability", "json", "op_set"};
   for (int i = 2; i < argc; ++i) {
     std::string arg = argv[i]; if (arg.rfind("--", 0) != 0) return Invalid("Expected --option: " + arg);
     auto equals = arg.find('='); std::string key = arg.substr(2, equals == std::string::npos ? equals : equals - 2);
@@ -165,6 +198,8 @@ Expected<Options> ParseOptions(int argc, char** argv) {
   }
   LITERT_RETURN_IF_ERROR(options.Optimization());
   LITERT_RETURN_IF_ERROR(options.SoftmaxLut());
+  LITERT_RETURN_IF_ERROR(options.RescaleMultiplierBits());
+  if (options.Get("graph_view", "effective") != "raw" && options.Get("graph_view", "effective") != "effective") return Invalid("graph_view must be raw or effective");
   if (options.values.count("reference") && (options.command != "validate" ||
       (options.Get("reference") != "tflite" && options.Get("reference") != "fp64" && options.Get("reference") != "xnnpack")))
     return Invalid("reference requires validate and tflite, fp64 or xnnpack");
@@ -193,8 +228,45 @@ Expected<std::vector<uint8_t>> PackModel(const tflite::ModelT& model) {
 Expected<void> Inspect(const Options& options, Json& report, bool compile) {
   LITERT_ASSIGN_OR_RETURN(auto optimization_mode, options.Optimization());
   LITERT_ASSIGN_OR_RETURN(auto softmax_lut, options.SoftmaxLut());
+  LITERT_ASSIGN_OR_RETURN(auto rescale_bits, options.RescaleMultiplierBits());
   LITERT_ASSIGN_OR_RETURN(auto object, LoadModel(options.Get("model")));
-  report["subgraphs"] = Json::array(); bool complete = true;
+  const bool effective = options.Get("graph_view", "effective") == "effective";
+  report["graph_view"] = effective ? "effective" : "raw";
+  report["operator_index_scope"] = effective ? "partition-local after LiteRT core composite processing" : "original subgraph";
+  bool complete = true;
+  if (effective) {
+    LITERT_ASSIGN_OR_RETURN(auto source_bytes, PackModel(*object));
+    LITERT_ASSIGN_OR_RETURN(auto source, ExtendedModel::CreateFromBuffer(
+        BufferRef<uint8_t>(source_bytes.data(), source_bytes.size())));
+    LITERT_ASSIGN_OR_RETURN(auto runtime_options, RuntimeOptions(options));
+    LITERT_ASSIGN_OR_RETURN(auto environment, Environment::Create({}));
+    LITERT_ASSIGN_OR_RETURN(auto built_options, internal::LiteRtOptionsPtrBuilder::Build(runtime_options, environment.GetHolder()));
+    const std::string directory = CompilerDirectory(options);
+    const absl::string_view paths[] = {directory};
+    LITERT_ASSIGN_OR_RETURN(auto plugin, internal::CompilerPlugin::FindPlugin(
+        "ArmVulkanML", paths, nullptr, built_options.get()));
+    LITERT_ASSIGN_OR_RETURN(auto parts, internal::PartitionModel(plugin, *source.Get()));
+    report["residual_operators"] = Json::array();
+    const std::set<LiteRtOp> dispatch(parts.first.begin(), parts.first.end());
+    for (size_t si = 0; si < source.NumSubgraphs(); ++si) {
+      auto* sg = source.Get()->Subgraphs()[si];
+      size_t oi = 0;
+      for (auto* op : sg->Ops()) {
+        if (!dispatch.count(op)) {
+          complete = false;
+          report["residual_operators"].push_back({{"subgraph", si}, {"index", oi},
+              {"opcode", static_cast<int>(op->OpCode())}});
+        }
+        ++oi;
+      }
+    }
+    report["effective_partition_count"] = parts.first.size();
+    if (parts.second.NumSubgraphs()) {
+      LITERT_ASSIGN_OR_RETURN(auto partition_bytes, internal::SerializeModel(std::move(parts.second)));
+      object.reset(tflite::GetModel(partition_bytes.Data())->UnPack());
+    } else object->subgraphs.clear();
+  }
+  report["subgraphs"] = Json::array();
   fs::path output = options.Get("output_dir");
   if (compile) {
     if (output.empty()) return Invalid("compile requires --output_dir");
@@ -214,11 +286,17 @@ Expected<void> Inspect(const Options& options, Json& report, bool compile) {
     std::unordered_map<std::string, size_t> origins;
     size_t index = 0;
     for (const auto& op : subgraph.Ops()) {
-      std::string reason; bool supported = static_cast<bool>(AnalyzeOperation(op, reason));
+      std::string reason; bool supported = static_cast<bool>(AnalyzeOperation(op, reason, softmax_lut));
       entry["operators"].push_back({{"index", index}, {"opcode", static_cast<int>(op.Code())},
           {"name", tflite::EnumNameBuiltinOperator(static_cast<tflite::BuiltinOperator>(op.Code()))},
           {"inputs", original.operators[index]->inputs}, {"outputs", original.operators[index]->outputs},
           {"supported", supported}, {"reason", reason}});
+      entry["operators"].back()["output_names"] = Json::array();
+      for (const auto& tensor : op.Outputs()) entry["operators"].back()["output_names"].push_back(std::string(tensor.Name()));
+      if (const auto* composite = original.operators[index]->builtin_options_2.AsStableHLOCompositeOptions()) {
+        entry["operators"].back()["composite_name"] = composite->name;
+        entry["operators"].back()["composite_version"] = composite->version;
+      }
       // The partitioner clones ops. Tag copied SSA outputs to retain origin IDs
       // through cloning and topological reordering, without changing the file.
       for (auto* tensor : op.Get()->Outputs()) {
@@ -244,7 +322,7 @@ Expected<void> Inspect(const Options& options, Json& report, bool compile) {
         if (compile) {
           std::string reason; std::vector<LoweringRecord> mapping;
           OptimizationReport optimization;
-          auto compiled = CompilePartition(Subgraph(part), reason, &mapping, optimization_mode, &optimization, softmax_lut);
+          auto compiled = CompilePartition(Subgraph(part), reason, &mapping, optimization_mode, &optimization, softmax_lut, rescale_bits);
           if (!compiled) return Invalid("Partition compilation failed: " + reason);
           std::string diagnostics; spvtools::SpirvTools spirv(SPV_ENV_UNIVERSAL_1_6);
           spirv.SetMessageConsumer([&](spv_message_level_t, const char*, const spv_position_t& pos, const char* message) {
@@ -273,6 +351,7 @@ Expected<void> Inspect(const Options& options, Json& report, bool compile) {
                 {"applied", decision.applied}, {"reason", decision.reason}});
           }
           item["softmax_lut_type"] = SoftmaxLutTypeName(softmax_lut);
+          item["rescale_multiplier_bits"] = rescale_bits;
           item["profiles"] = compiled->profiles; item["extensions"] = compiled->extensions;
           item["instruction_set"] = compiled->instruction_set;
           item["entry_point"] = compiled->entry_point;
@@ -311,6 +390,20 @@ Expected<void> Inspect(const Options& options, Json& report, bool compile) {
             i+=count;
           }
           for(auto opcode:emitted)item["tosa_opcodes"].push_back(opcode);
+          Json coverage;
+          LITERT_RETURN_IF_ERROR(Coverage(coverage));
+          Json histogram = Json::array();
+          for (const auto& row : coverage["operators"]) {
+            auto found = compiled->metrics.operators.find(row["opcode"].get<uint32_t>());
+            if (found != compiled->metrics.operators.end())
+              histogram.push_back({{"name", row["name"]}, {"opcode", found->first}, {"count", found->second}});
+          }
+          item["graph_metrics"] = {{"operators", histogram},
+              {"identity_reshapes", compiled->metrics.identity_reshapes},
+              {"identity_reshape_logical_bytes", compiled->metrics.identity_reshape_bytes},
+              {"all_reshape_logical_bytes", compiled->metrics.reshape_bytes},
+              {"largest_result_tensor_bytes", compiled->metrics.largest_result_bytes},
+              {"note", "Static logical storage volumes; reshapes may be views; excludes peak workspace and measured allocation sizes"}};
           item["spirv_valid"] = true; item["lowering"] = Json::array(); item["constants"] = Json::array();
           for (const auto& row : mapping) {
             Json sources = Json::array();
@@ -347,6 +440,7 @@ Expected<void> Inspect(const Options& options, Json& report, bool compile) {
 Expected<void> Capabilities(const Options& options, Json& report) {
   LITERT_ASSIGN_OR_RETURN(auto optimization_mode, options.Optimization());
   LITERT_ASSIGN_OR_RETURN(auto softmax_lut, options.SoftmaxLut());
+  LITERT_ASSIGN_OR_RETURN(auto rescale_bits, options.RescaleMultiplierBits());
   struct Loader {
     VulkanValidation validation;
     void* library = nullptr; VkInstance instance = VK_NULL_HANDLE; PFN_vkDestroyInstance destroy = nullptr;
@@ -376,11 +470,11 @@ Expected<void> Capabilities(const Options& options, Json& report) {
   std::shared_ptr<const CompiledPartition> artifact;
   if (!options.Get("model").empty()) {
     LITERT_ASSIGN_OR_RETURN(auto object, LoadModel(options.Get("model")));
-    if (object->subgraphs.size() != 1) return Invalid("Capability matching requires one subgraph");
+    if (object->subgraphs.empty()) return Invalid("Capability matching requires a main subgraph");
     LITERT_ASSIGN_OR_RETURN(auto bytes, PackModel(*object));
     LITERT_ASSIGN_OR_RETURN(auto model, ExtendedModel::CreateFromBuffer(BufferRef<uint8_t>(bytes.data(), bytes.size())));
     LITERT_ASSIGN_OR_RETURN(auto graph, model.Subgraph(0));
-    std::string error; artifact = CompilePartition(graph, error, nullptr, optimization_mode, nullptr, softmax_lut);
+    std::string error; artifact = CompilePartition(graph, error, nullptr, optimization_mode, nullptr, softmax_lut, rescale_bits);
     if (!artifact) return Invalid(error);
   }
   LITERT_ASSIGN_OR_RETURN(int allow, options.Integer("allow_emulation", 0));
@@ -394,7 +488,8 @@ Expected<void> Capabilities(const Options& options, Json& report) {
     for (const auto& e : caps.extensions) device["extensions"].push_back({{"name", e.extensionName}, {"revision", e.specVersion}});
     device["features"] = {{"tensors", caps.tensors_feature}, {"data_graph", caps.graph_feature},
         {"vulkan_memory_model", caps.vulkan_memory_model}, {"synchronization2", caps.synchronization2}, {"maintenance5", caps.maintenance5},
-        {"replicated_composites", caps.replicated_composites}};
+        {"replicated_composites", caps.replicated_composites},
+        {"shader_int16", caps.shader_int16}, {"shader_int64", caps.shader_int64}};
     device["tensor_limits"] = {{"rank", caps.tensors.maxTensorDimensionCount}, {"elements", caps.tensors.maxTensorElements},
         {"dimension_elements", caps.tensors.maxPerDimensionTensorElements}, {"bytes", caps.tensors.maxTensorSize},
         {"descriptors", caps.tensors.maxDescriptorSetStorageTensors}};
@@ -445,6 +540,7 @@ Expected<void> Capabilities(const Options& options, Json& report) {
 Expected<void> Validate(const Options& options, Json& report) {
   LITERT_ASSIGN_OR_RETURN(auto optimization_mode, options.Optimization());
   LITERT_ASSIGN_OR_RETURN(auto softmax_lut, options.SoftmaxLut());
+  LITERT_ASSIGN_OR_RETURN(auto rescale_bits, options.RescaleMultiplierBits());
   if (!options.Get("suite").empty()) {
     LITERT_ASSIGN_OR_RETURN(auto suite, imagenet::ReadJson(options.Get("suite")));
     if (!suite.is_array() || suite.empty()) return Invalid("Suite must be a nonempty array");
@@ -485,11 +581,11 @@ Expected<void> Validate(const Options& options, Json& report) {
   LITERT_ASSIGN_OR_RETURN(auto graph, model.Subgraph(0));
   std::string reason;
   OptimizationReport optimization;
-  auto artifact = CompilePartition(graph, reason, nullptr, optimization_mode, &optimization, softmax_lut);
+  auto artifact = CompilePartition(graph, reason, nullptr, optimization_mode, &optimization, softmax_lut, rescale_bits);
   if (!artifact) return Invalid("Full model preflight failed: " + reason);
   if (options.command == "compare") {
     OptimizationReport baseline;
-    auto off = CompilePartition(graph, reason, nullptr, kLrtArmVulkanMLOptimizationOff, &baseline, softmax_lut);
+    auto off = CompilePartition(graph, reason, nullptr, kLrtArmVulkanMLOptimizationOff, &baseline, softmax_lut, rescale_bits);
     if (!off) return Invalid("Off-mode preflight failed: " + reason);
     spvtools::SpirvTools validator(SPV_ENV_UNIVERSAL_1_6);
     if (!validator.Validate(off->spirv)) return Invalid("Off-mode SPIR-V preflight failed");
@@ -518,6 +614,7 @@ Expected<void> Validate(const Options& options, Json& report) {
   config.capture_records = true; config.compare_int8_codes = true; config.arm_vulkan_ml_enable_jit = 1;
   config.arm_vulkan_ml_optimization_mode = OptimizationModeName(optimization_mode);
   config.arm_vulkan_ml_softmax_lut_type = SoftmaxLutTypeName(softmax_lut);
+  config.arm_vulkan_ml_rescale_multiplier_bits = rescale_bits;
   config.manifest = options.Get("manifest"); config.image_root = options.Get("image_root", fs::path(config.manifest).parent_path().string());
   config.preprocessing_config = options.Get("preprocessing_config"); config.out = "/dev/null";
   config.compiler_plugin_library_dir = options.Get("compiler_plugin_library_dir", ".");
@@ -628,6 +725,9 @@ int Main(int argc, char** argv) {
       "  --compiler_plugin_library_dir DIR --dispatch_library_dir DIR\n"
       "  --optimization_mode off|exact|qualified (default qualified)\n"
       "  --softmax_lut_type auto|int8|int16 (auto uses int8)\n"
+      "  --rescale_multiplier_bits 16|32 (default 32)\n"
+      "  --graph_view raw|effective (inspect/compile; default effective)\n"
+      "  --require_full_acceleration 0|1 (validate; default 1)\n"
       "  validate --tensor_inputs FILE --reference tflite|fp64|xnnpack (raw single INT8 Softmax; fp64 also supports SQUARE/CONV_3D)\n"
       "  compare: run off and selected mode on identical inputs; separate graph/compile/setup/inference metrics\n"
       "  --vulkan_validation off|core|sync\n"
@@ -640,6 +740,7 @@ int Main(int argc, char** argv) {
   report["command"] = parsed->command;
   report["optimization_mode"] = parsed->Get("optimization_mode", "qualified");
   report["softmax_lut_type"] = parsed->Get("softmax_lut_type", "auto");
+  report["rescale_multiplier_bits"] = parsed->Get("rescale_multiplier_bits", "32");
   auto binary_hash = imagenet::HashFile("/proc/self/exe");
   if (binary_hash) report["binary_sha256"] = *binary_hash;
   report["instruction_set"] = "TOSA.001000.1";

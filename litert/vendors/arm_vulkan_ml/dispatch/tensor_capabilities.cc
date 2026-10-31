@@ -21,6 +21,8 @@ namespace litert::arm_vulkan_ml {
 VkFormat TensorFormat(TensorElement element) {
   switch (element) {
     case TensorElement::kInt8: return VK_FORMAT_R8_SINT;
+    case TensorElement::kInt16: return VK_FORMAT_R16_SINT;
+    case TensorElement::kInt64: return VK_FORMAT_R64_SINT;
     case TensorElement::kInt32: return VK_FORMAT_R32_SINT;
     case TensorElement::kFloat32: return VK_FORMAT_R32_SFLOAT;
   }
@@ -77,7 +79,7 @@ bool QueryTensorCapabilities(
       }
       elements *= dimension;
     }
-    const uint64_t element_bytes = tensor.element == TensorElement::kInt8 ? 1 : 4;
+    const uint64_t element_bytes = TensorElementBytes(tensor.element);
     if (elements > limits.maxTensorSize / element_bytes) {
       reason = "Tensor byte size exceeds device limits";
       return false;

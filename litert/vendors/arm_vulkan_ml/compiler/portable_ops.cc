@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "litert/vendors/arm_vulkan_ml/compiler/portable_ops.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/emission.h"
 #include "litert/core/model/model.h"
 #include <algorithm>
 #include <cmath>
@@ -223,10 +224,10 @@ std::shared_ptr<PortablePlan> AnalyzePortableOperation(const Op& op, std::string
   if(out.size()!=1 || expected!=p->outputs[0] || expected.empty())return reject("FP32 output shape mismatch or scalar output");
   reason.clear();return p;
 }
-std::vector<ResId> EmitPortableOperation(tfsc::tosa::Graph& g, std::vector<ResId> v, const PortablePlan& p) {
+std::vector<ResId> EmitPortableOperation(tfsc::tosa::Graph& g, std::vector<ResId> v, const PortablePlan& p, GraphConstantPool& constants) {
   auto type=[&](const Shape& s){return TT(p.quantized?DataType::int8_t:DataType::float32_t,s);};
-  auto reshape=[&](ResId x,const Shape& s){return g.AddReshapeOperator(x,g.AddTensorConstant(Attribute(s)),type(s));};
-  auto constant=[&](float x,const Shape& s){return reshape(g.AddTensorConstant(Attribute(x)),Shape(s.size(),1));};
+  auto reshape=[&](ResId x,const Shape& s){return ReshapeTensor(g, x,g.AddTensorConstant(Attribute(s)),type(s));};
+  auto constant=[&](float x,const Shape& s){return BroadcastScalar(g,x,s.size(),constants);};
   const Shape& out=p.outputs[0];const auto t=type(out);auto x=v[0];
   auto clamp=[&](ResId z,float lo,float hi){return g.AddClampOperator(z,Attribute(lo),Attribute(hi),Attribute(uint32_t{0}),t);};
   auto binary=[&](tfsc::tosa::OperatorEnum op){for(size_t i=0;i<v.size();++i)v[i]=reshape(v[i],p.shapes[i]);return g.AddOperator(op,v,{t})[0];};

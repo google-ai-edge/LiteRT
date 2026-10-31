@@ -28,7 +28,7 @@ Error InvalidVgf(const std::string& message) {
 Expected<size_t> PackedBytes(const TensorDescriptor& tensor) {
   if(TensorFormat(tensor.element)==VK_FORMAT_UNDEFINED || tensor.shape.empty())
     return InvalidVgf("unsupported tensor format or scalar interface");
-  size_t bytes=tensor.element==TensorElement::kInt8?1:4;
+  size_t bytes=TensorElementBytes(tensor.element);
   for(auto d:tensor.shape){
     if(!d || bytes>SIZE_MAX/d)return InvalidVgf("invalid tensor dimensions");
     bytes*=d;

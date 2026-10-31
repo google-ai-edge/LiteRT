@@ -47,6 +47,7 @@ struct DeviceState {
 };
 using litert::arm_vulkan_ml::TensorDescriptor;
 using litert::arm_vulkan_ml::TensorElement;
+using litert::arm_vulkan_ml::TensorElementBytes;
 bool Matches(const TensorDescriptor& desc, const LiteRtRankedTensorType& type) {
   const bool complex = desc.logical_element == kLiteRtElementTypeComplex64;
   if (complex && (desc.element != TensorElement::kFloat32 || desc.shape.empty() || desc.shape.back() != 2)) return false;
@@ -59,7 +60,7 @@ bool Matches(const TensorDescriptor& desc, const LiteRtRankedTensorType& type) {
   return true;
 }
 size_t Bytes(const TensorDescriptor& tensor) {
-  size_t size = tensor.element == TensorElement::kInt8 ? 1 : 4;
+  size_t size = TensorElementBytes(tensor.element);
   for (auto dim : tensor.shape) {
     if (!dim || size > SIZE_MAX / dim) return 0;
     size *= dim;

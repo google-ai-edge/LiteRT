@@ -30,7 +30,9 @@ struct QuantizedTensor {
 };
 struct PortablePlan;
 struct DecompositionPlan;
+struct SpecialPlan;
 struct OperationPlan {
+  std::shared_ptr<SpecialPlan> special;
   std::shared_ptr<PortablePlan> portable;
   std::shared_ptr<DecompositionPlan> decomposition;
   LiteRtOpCode code;

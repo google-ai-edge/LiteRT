@@ -35,6 +35,7 @@ std::shared_ptr<const CompiledPartition> CompilePartition(const Subgraph& graph,
                                                         std::string& reason, std::vector<LoweringRecord>* diagnostics = nullptr,
                                                         OptimizationMode mode = kLrtArmVulkanMLOptimizationQualified,
                                                         OptimizationReport* optimization = nullptr,
-                                                        SoftmaxLutType softmax_lut = kLrtArmVulkanMLSoftmaxLutAuto);
+                                                        SoftmaxLutType softmax_lut = kLrtArmVulkanMLSoftmaxLutAuto,
+                                                        int rescale_multiplier_bits = 32);
 }  // namespace litert::arm_vulkan_ml
 #endif

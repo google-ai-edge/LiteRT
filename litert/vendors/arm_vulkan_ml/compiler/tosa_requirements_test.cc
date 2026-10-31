@@ -88,7 +88,8 @@ TEST(TosaRequirementsTest, FloatingZeroPointsHaveTheSpecificationElementType) {
         p.stride = portable.strides;
         result = EmitOperation(graph, inputs, p, constants);
       } else {
-        auto outputs = EmitPortableOperation(graph, inputs, portable);
+        GraphConstantPool constants;
+        auto outputs = EmitPortableOperation(graph, inputs, portable, constants);
         ASSERT_EQ(outputs.size(), 1);
         result = outputs[0];
       }

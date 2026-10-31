@@ -22,13 +22,15 @@
 
 #include "TosaForSpirvCodegen.hpp"
 #include "litert/vendors/arm_vulkan_ml/compiler/portable_ops.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/special_ops.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/tosa_requirements.h"
 
 namespace litert::arm_vulkan_ml {
 std::shared_ptr<const CompiledPartition> CompilePartition(
     const Subgraph& subgraph, std::string& reason,
     std::vector<LoweringRecord>* diagnostics, OptimizationMode mode,
-    OptimizationReport* optimization, SoftmaxLutType softmax_lut) {
+    OptimizationReport* optimization, SoftmaxLutType softmax_lut, int rescale_multiplier_bits) {
+  if (rescale_multiplier_bits != 16 && rescale_multiplier_bits != 32) { reason = "Rescale multiplier bits must be 16 or 32"; return nullptr; }
   const auto start = std::chrono::steady_clock::now();
   // Import and optimize without allocating any TFSC result IDs. The operation
   // analysis is shared with partition selection; optimizations cannot add ops
@@ -40,11 +42,14 @@ std::shared_ptr<const CompiledPartition> CompilePartition(
   tfsc::tosa::Graph graph(module, artifact->entry_point);
   std::vector<tfsc::tosa::ResId> values(ir->values.size());
   GraphConstantPool constants;
+  constants.rescale_multiplier_bits = rescale_multiplier_bits;
   constants.deduplicate = mode != kLrtArmVulkanMLOptimizationOff;
   uint32_t binding = 0;
   auto descriptor = [&](const GraphValue& value) {
     TensorDescriptor result{
         value.storage_type == tfsc::tosa::DataType::float32_t ? TensorElement::kFloat32 :
+        value.storage_type == tfsc::tosa::DataType::int16_t ? TensorElement::kInt16 :
+        value.storage_type == tfsc::tosa::DataType::int48_t ? TensorElement::kInt64 :
         value.storage_type == tfsc::tosa::DataType::int32_t ? TensorElement::kInt32 : TensorElement::kInt8,
         value.shape, binding++};
     result.logical_element = value.logical_type;
@@ -97,8 +102,26 @@ std::shared_ptr<const CompiledPartition> CompilePartition(
         artifact->extensions.push_back(extension);
     const size_t reused_before = constants.reused;
     std::vector<tfsc::tosa::ResId> inputs, outputs;
-    for (auto id : node.inputs) inputs.push_back(get_value(id));
-    if (node.body.portable) outputs = EmitPortableOperation(graph, inputs, *node.body.portable);
+    for (size_t slot = 0; slot < node.inputs.size(); ++slot) {
+      auto id = node.inputs[slot];
+      const auto& value = ir->values[id];
+      const auto code = node.body.code;
+      const bool binary = code == kLiteRtOpCodeTflAdd || code == kLiteRtOpCodeTflSub ||
+          code == kLiteRtOpCodeTflMul || code == kLiteRtOpCodeTflDiv ||
+          code == kLiteRtOpCodeTflMinimum || code == kLiteRtOpCodeTflMaximum;
+      const bool affine = slot > 0 && node.body.special &&
+          (node.body.special->kind == SpecialPlan::Kind::kLayerNorm ||
+           node.body.special->kind == SpecialPlan::Kind::kRmsNorm);
+      if (((binary && !node.body.special) || affine) && value.is_constant &&
+          value.storage_type == tfsc::tosa::DataType::float32_t &&
+          value.shape.size() < node.body.output.shape.size()) {
+        auto shape = value.shape;
+        shape.insert(shape.begin(), node.body.output.shape.size() - shape.size(), 1);
+        inputs.push_back(AddGraphConstant(graph, tfsc::tosa::Tensor(value.storage_type,
+            shape), value.constant, constants));
+      } else inputs.push_back(get_value(id));
+    }
+    if (node.body.portable) outputs = EmitPortableOperation(graph, inputs, *node.body.portable, constants);
     else if (node.transform_only) outputs = {inputs[0]};
     else outputs = {EmitOperation(graph, inputs, node.body, constants)};
     if (outputs.size() != node.outputs.size()) { reason = "IR expansion result count mismatch"; return nullptr; }
@@ -139,9 +162,14 @@ std::shared_ptr<const CompiledPartition> CompilePartition(
   // Internal decompositions can use FP32 even with integer graph interfaces
   // (for example BUCKETIZE). Derive profile requirements from emitted types.
   for (const auto& instruction : module->GetSpirvGraph()) {
+    if (instruction.m_Opcode == spv::Op::OpCapability && !instruction.m_Operands.empty()) {
+      artifact->requires_shader_int16 |= instruction.m_Operands[0].m_LiteralWord == static_cast<uint32_t>(spv::CapabilityInt16);
+      artifact->requires_shader_int64 |= instruction.m_Operands[0].m_LiteralWord == static_cast<uint32_t>(spv::CapabilityInt64);
+    }
     if (instruction.m_Opcode == spv::Op::OpTypeFloat && artifact->profiles.size() == 1)
       artifact->profiles.push_back("PRO-FP");
   }
+  artifact->metrics = CollectGraphMetrics(*module);
   artifact->spirv = tfsc::WriteToBinary(module);
   if (artifact->spirv.empty()) { reason = "TFSC failed to serialize partition"; return nullptr; }
   if (!CollectTosaLevelRequirements(*module, artifact->level_requirements, reason)) return nullptr;
@@ -156,7 +184,9 @@ std::shared_ptr<const CompiledPartition> CompilePartition(
   for (auto& constant : constants.values) {
     const auto element = constant.tensor.GetDataType() == tfsc::tosa::DataType::int8_t
         ? TensorElement::kInt8 : constant.tensor.GetDataType() == tfsc::tosa::DataType::float32_t
-        ? TensorElement::kFloat32 : TensorElement::kInt32;
+        ? TensorElement::kFloat32 : constant.tensor.GetDataType() == tfsc::tosa::DataType::int16_t
+        ? TensorElement::kInt16 : constant.tensor.GetDataType() == tfsc::tosa::DataType::int48_t
+        ? TensorElement::kInt64 : TensorElement::kInt32;
     artifact->constants.push_back({{element, constant.tensor.GetTensorShape(),
         static_cast<uint32_t>(artifact->constants.size())}, std::move(constant.bytes)});
   }

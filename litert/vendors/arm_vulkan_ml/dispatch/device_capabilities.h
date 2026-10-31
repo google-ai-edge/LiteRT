@@ -27,6 +27,7 @@ struct GraphEngine {
 };
 struct DeviceCapabilities {
   VkPhysicalDeviceProperties properties{};
+  bool shader_int16 = false, shader_int64 = false;
   bool tensors_feature = false, graph_feature = false, synchronization2 = false;
   bool vulkan_memory_model = false;
   bool maintenance5 = false, replicated_composites = false;

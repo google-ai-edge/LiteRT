@@ -75,6 +75,21 @@ TEST(Options, OptimizationModesAreValidated) {
   EXPECT_EQ(*defaults, kLrtArmVulkanMLOptimizationQualified);
 }
 
+TEST(Options, RescalePrecisionAndGraphViewsAreValidated) {
+  for (const std::string& bits : {"16", "32", "8", "bad"}) {
+    std::vector<std::string> args = {"tool", "compile", "--rescale_multiplier_bits=" + bits};
+    std::vector<char*> argv;
+    for (auto& arg : args) argv.push_back(arg.data());
+    EXPECT_EQ(static_cast<bool>(ParseOptions(static_cast<int>(argv.size()), argv.data())), bits == "16" || bits == "32");
+  }
+  for (const std::string& view : {"raw", "effective", "bad"}) {
+    std::vector<std::string> args = {"tool", "inspect", "--graph_view=" + view};
+    std::vector<char*> argv;
+    for (auto& arg : args) argv.push_back(arg.data());
+    EXPECT_EQ(static_cast<bool>(ParseOptions(static_cast<int>(argv.size()), argv.data())), view != "bad");
+  }
+}
+
 TEST(Options, SoftmaxLutAndAlternateReferencesAreValidated) {
   auto defaults = Options{}.SoftmaxLut();
   ASSERT_TRUE(defaults);
@@ -294,6 +309,7 @@ TEST(Inspection, PreservesOriginsAcrossPartitionCloning) {
   file.close();
   Options options;
   options.values["model"] = path;
+  options.values["graph_view"] = "raw";
   Json report;
   ASSERT_TRUE(Inspect(options, report, false));
   EXPECT_FALSE(report["complete_coverage"].get<bool>());
@@ -455,8 +471,13 @@ TEST(DevtoolTest, CoverageIsOfflineAndListsEveryOperator) {
   EXPECT_EQ(report["counts"]["emitted"],63);
   EXPECT_EQ(report["counts"]["unreachable"],3);
   EXPECT_EQ(report["counts"]["pending"],0);
-  EXPECT_EQ(report["quantized_subset_count"],17);
-  for(const auto& subset:report["quantized_lowerings"]){EXPECT_EQ(subset["emulator"],"passed");EXPECT_EQ(subset["hardware"],"not_qualified");EXPECT_FALSE(subset["fixtures"].empty());}
+  EXPECT_EQ(report["quantized_subset_count"],20);
+  for (const auto& subset : report["quantized_lowerings"]) {
+    EXPECT_TRUE(subset["emulator"] == "passed" || subset["emulator"] == "unavailable_EXT_INT16");
+    if (subset["emulator"] == "unavailable_EXT_INT16") EXPECT_EQ(subset["required_extensions"], Json::array({"EXT-INT16"}));
+    EXPECT_EQ(subset["hardware"], "not_qualified");
+    EXPECT_FALSE(subset["fixtures"].empty());
+  }
   for(const auto& op:report["operators"])EXPECT_EQ(op["hardware"],"not_qualified");
 }
 

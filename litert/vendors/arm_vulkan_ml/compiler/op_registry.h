@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_VENDORS_ARM_VULKAN_ML_COMPILER_OP_REGISTRY_H_
 
 #include <vector>
+#include <string>
 
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
@@ -38,6 +39,14 @@ struct OperationRegistration {
   int data_input;
   std::vector<OperationVariant> variants;
 };
+
+struct NormalizationRegistration {
+  const char* name;
+  int version;
+  const char* constraints;
+};
+const std::vector<NormalizationRegistration>& GetNormalizationRegistrations();
+const NormalizationRegistration* FindNormalizationRegistration(const std::string& name);
 
 // The compiler selects its analysis path from this registry. Diagnostics link
 // the same library; registration is a supported subset, not device acceptance.

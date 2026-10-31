@@ -10,7 +10,7 @@ LiteRT ImageNet evaluator, which continues to support other backends.
 | `inspect` | Operator coverage, rejection reasons, tensor types/shapes/quantization and selected partitions | No |
 | `compile` | Lower selected partitions, validate SPIR-V, export assembly, constants, operator/result-ID mappings and optional VGF | No |
 | `capabilities` | Query extensions/revisions, feature bits, tensor limits/formats and TOSA engine profiles/extensions | Yes |
-| `validate` | Require complete coverage, validate SPIR-V and compare GPU inference against CPU reference | Yes, with ML support |
+| `validate` | Run the original model through LiteRT CompiledModel and compare outputs against CPU reference; require full acceleration by default | Yes, with ML support |
 | `trace` | Find the first intermediate output outside tolerance using CPU reference | Yes, with ML support |
 | `compare` | Compare off and optimized lowering on identical inputs, with separate graph, compiler, setup and inference metrics | Yes, with ML support |
 | `tosa-query` | Filter specification type rows and profile/extension requirements | No |
@@ -63,10 +63,19 @@ work on Android devices without Arm ML extensions.
   --report_json compile.json
 ```
 
-The JSON report includes original zero-based subgraph, operator and tensor
-indices. Partial coverage remains explicitly marked `coverage_status: partial`;
-a successful `inspect` or `compile` does not imply full-model execution support.
-Unsupported operators include the production rejection reason.
+`inspect` and `compile` default to `--graph_view=effective`: the actual LiteRT
+core partition/composite processing runs with the compiler plugin. Deploy the
+compiler library beside the tool or set `--compiler_plugin_library_dir`.
+`--graph_view=raw` shows the original serialized subgraphs and does not load the
+plugin. Effective operator IDs are local to each resulting partition; output
+names preserve provenance. Residual CPU operators are reported separately.
+Neither command rewrites the source model file.
+
+Compile reports include TOSA operator counts, identity reshape counts and
+logical tensor/reshape byte volumes, plus constants, source mappings and checked
+level requirements. These byte volumes are static graph properties, not measured
+allocations or peak workspace. Compile success does not establish device support
+or numerical equivalence.
 
 Each selected partition exports `.spv`, `.spvasm`, a JSON manifest and binary
 constant buffers. The lowering map associates newly created SPIR-V result IDs
@@ -114,8 +123,8 @@ vgf_dump --input compiled/subgraph_0_partition_0.vgf \
 ```
 
 Without a model this inventories available Vulkan devices, including ordinary
-GPUs lacking ML extensions. With a model it requires a single fully lowerable
-subgraph and matches its requirements against each engine. Format flags describe
+GPUs lacking ML extensions. With a model it compiles the main subgraph, including
+named normalization composites, and matches its requirements against each engine. Format flags describe
 linear tensor storage. TOSA conformant profiles/extensions, extension revisions,
 feature bits and actual model tensor limits are checked using dispatch's logic.
 The compiler derives TOSA level requirements from the emitted graph, including
@@ -142,8 +151,8 @@ conformance.
 
 ## Validate ImageNet models
 
-Execution initially supports single-subgraph classification models with one
-static batch-one RGB FP32/INT8 input and one `[1, classes]` output. The input
+Image evaluation supports classification models, including composite body
+subgraphs, with one static batch-one RGB FP32/INT8 input and one `[1, classes]` output. The input
 layout must be unambiguously NCHW or NHWC. Supply a tab-separated ImageNet manifest
 with `id`, zero-based `label`, and image `path` columns. Relative paths resolve
 under `--image_root`, which defaults to the manifest's directory. See the shared
@@ -564,3 +573,19 @@ The C++ `graph_ir_test` target covers exhaustive INT8 transforms, pass ordering,
 fanout/output barriers, spatial real-zero PAD legality, constant layouts and
 scale/range preservation. The graph regression script runs three small
 synthetic inputs per fixture; it does not run an ImageNet evaluation.
+
+### Rescale precision and whole-model execution
+
+`--rescale_multiplier_bits=16|32` applies the same SINGLE_ROUND policy as the
+compiler plugin (default 32). INT48 accumulators always use 16-bit multipliers.
+The ImageNet evaluator accepts `--arm_vulkan_ml_rescale_multiplier_bits=16|32`.
+Selecting 16-bit multipliers does not grant INT16 activation support on a device.
+The engine must advertise every required profile/extension and integer feature.
+
+Raw `validate` also uses the original model through the public `CompiledModel`
+API, with its compiler and dispatch libraries. It supports multiple subgraphs
+and reports `fully_accelerated`; `--require_full_acceleration=0` explicitly allows
+CPU participation. Raw manifests support INT16 inputs and code/dequantized error
+reporting in addition to the existing types. The default maximum is three cases.
+Full-model validation is independent of the instrumented direct execution used
+by `trace` and raw `compare`. A failed pipeline reports no numerical result.

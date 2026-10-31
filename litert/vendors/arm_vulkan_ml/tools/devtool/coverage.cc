@@ -50,10 +50,16 @@ Expected<void> TfliteCoverage(Json& report) {
     }
     report["operators"].push_back(std::move(row));
   }
+  report["named_composites"] = Json::array();
+  for (const auto& registration : GetNormalizationRegistrations()) {
+    report["named_composites"].push_back({{"name", registration.name},
+        {"version", registration.version}, {"data_input_type", "FP32"}, {"output_type", "FP32"},
+        {"constraints", registration.constraints}, {"device_support", "query_required"}});
+  }
   report["counts"] = {{"total", implemented + missing},
       {"implemented_subset", implemented}, {"not_implemented", missing},
       {"excluded", excluded}, {"registered_type_pairs", variants},
-      {"schema_entries", report["operators"].size()}};
+      {"schema_entries", report["operators"].size()}, {"named_composites", report["named_composites"].size()}};
   return {};
 }
 }  // namespace
@@ -113,6 +119,9 @@ void PrintCoverage(const Json& report) {
                   << variant["constraints"].get<std::string>() << '\n';
       }
     }
+    std::cout << "Named normalization composites (outside builtin counts):\n";
+    for (const auto& row : report["named_composites"])
+      std::cout << "  " << row["name"].get<std::string>() << " v" << row["version"] << ": " << row["constraints"].get<std::string>() << '\n';
     return;
   }
   std::cout << report["counts"]["emitted"] << "/" << report["counts"]["total"] << " TOSA operators emitted; numerical/device qualification is separate.\n";

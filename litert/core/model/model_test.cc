@@ -121,6 +121,25 @@ TEST(ModelTest, Signature) {
   EXPECT_EQ(found_signature->get(), signature);
 }
 
+TEST(ModelTest, DefaultSignatureAliasesHandleEmptyDuplicateAndReservedNames) {
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  for (const auto* name : {"", "", "input_0", "duplicate", "duplicate"}) {
+    auto& tensor = graph.EmplaceTensor(); tensor.SetName(name);
+    graph.Inputs().push_back(&tensor); graph.Outputs().push_back(&tensor);
+  }
+  auto signature = MakeDefaultSignature(&graph);
+  const auto& inputs = signature.InputNames();
+  const auto& outputs = signature.OutputNames();
+  ASSERT_EQ(inputs.size(), 5); ASSERT_EQ(outputs.size(), 5);
+  EXPECT_EQ(inputs[0], "input_0_"); EXPECT_EQ(inputs[1], "input_1");
+  EXPECT_EQ(inputs[2], "input_0"); EXPECT_EQ(inputs[3], "duplicate");
+  EXPECT_EQ(inputs[4], "input_4");
+  EXPECT_EQ(outputs[0], "output_0"); EXPECT_EQ(outputs[1], "output_1");
+  EXPECT_EQ(outputs[2], "input_0"); EXPECT_EQ(outputs[3], "duplicate");
+  EXPECT_EQ(outputs[4], "output_4");
+}
+
 TEST(ModelTest, SignatureDNE) {
   static constexpr absl::string_view kSignatureName = "MY_SIGNATURE";
   LiteRtModelT model;

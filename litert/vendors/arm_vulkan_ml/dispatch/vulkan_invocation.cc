@@ -39,7 +39,7 @@ static_assert(VK_ARM_TENSORS_SPEC_VERSION >= 2,
               "Arm Vulkan ML requires VK_ARM_tensors Revision 2 headers");
 namespace {
 size_t Bytes(const TensorDescriptor& tensor) {
-  size_t result = tensor.element == TensorElement::kInt8 ? 1 : 4;
+  size_t result = TensorElementBytes(tensor.element);
   for (auto dim : tensor.shape) {
     if (!dim || result > SIZE_MAX / dim) return 0;
     result *= dim;

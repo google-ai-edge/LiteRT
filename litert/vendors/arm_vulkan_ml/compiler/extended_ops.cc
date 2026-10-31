@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "litert/vendors/arm_vulkan_ml/compiler/extended_ops.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/emission.h"
 
 #include <algorithm>
 #include <cmath>
@@ -260,7 +261,7 @@ ResId EmitExtendedOperation(tfsc::tosa::Graph& g, ResId input, const OperationPl
   const auto type = p.inputs[0].floating ? DataType::float32_t : DataType::int8_t;
   TosaTensor output(type, p.output.shape);
   auto reshape = [&](ResId value, const std::vector<uint32_t>& shape) {
-    return g.AddReshapeOperator(value, g.AddTensorConstant(Attribute(shape)), TosaTensor(type, shape));
+    return ReshapeTensor(g, value, g.AddTensorConstant(Attribute(shape)), TosaTensor(type, shape));
   };
   if(p.code==kLiteRtOpCodeTflScatterNd){
     uint32_t k=p.kernel[0],c=p.kernel[1],w=p.kernel[2];

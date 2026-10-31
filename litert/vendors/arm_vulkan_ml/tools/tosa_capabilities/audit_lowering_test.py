@@ -46,17 +46,18 @@ class AuditTest(unittest.TestCase):
                 'UNARY(Abs, Abs)\nusing O = tfsc::tosa::OperatorEnum;\n'
                 'g.AddOperator(O::Maximum, v, {t});\n')
             (compiler / 'ops_test.cc').write_text('g.AddCosOperator(x,t);')
+            (compiler / 'emission.h').write_text('return g.AddReshapeOperator(x,s,t);')
             (compiler / 'tosa_requirements.cc').write_text('case O::Cos: return false;')
             headers = root / 'include/tosa'
             headers.mkdir(parents=True)
             for name in ['OperatorEnum.hpp', 'GraphOperatorHelpers.hpp']:
-                (headers / name).write_text('OperatorEnum::Abs; OperatorEnum::Maximum;')
+                (headers / name).write_text('OperatorEnum::Abs; OperatorEnum::Maximum; OperatorEnum::Reshape;')
             database = {'instruction_set': 'TOSA.001000.1', 'operators': [
-                {'name': name, 'variants': []} for name in ['ABS', 'MAXIMUM', 'COS']]}
+                {'name': name, 'variants': []} for name in ['ABS', 'MAXIMUM', 'COS', 'RESHAPE']]}
             result = audit_lowering.audit(database, compiler, root)
             states = {op['name']: op['lowering'] for op in result['operators']}
             self.assertEqual(states, {'ABS': 'referenced', 'MAXIMUM': 'referenced',
-                                      'COS': 'not_referenced'})
+                                      'COS': 'not_referenced', 'RESHAPE': 'referenced'})
             self.assertIn('compiler/tosa_requirements.cc', result['source_sha256'])
 
 

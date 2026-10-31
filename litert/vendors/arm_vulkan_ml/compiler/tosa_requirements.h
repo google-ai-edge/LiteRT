@@ -24,6 +24,7 @@ class Module;
 }
 
 namespace litert::arm_vulkan_ml {
+GraphMetrics CollectGraphMetrics(const tfsc::spirv::Module& module);
 // Inspect final TFSC instructions so generated tensors/operators are included.
 bool CollectTosaLevelRequirements(const tfsc::spirv::Module& module,
                                  TosaLevelRequirements& requirements,

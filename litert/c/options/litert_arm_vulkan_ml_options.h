@@ -55,6 +55,13 @@ LiteRtStatus LrtArmVulkanMLOptionsSetSoftmaxLutType(
 LiteRtStatus LrtArmVulkanMLOptionsGetSoftmaxLutType(
     LrtArmVulkanMLOptions options, LrtArmVulkanMLSoftmaxLutType* type);
 
+// SINGLE_ROUND multiplier precision: 16 or 32 bits. INT48 accumulators
+// require 16-bit multipliers independently of this preference.
+LiteRtStatus LrtArmVulkanMLOptionsSetRescaleMultiplierBits(
+    LrtArmVulkanMLOptions options, int bits);
+LiteRtStatus LrtArmVulkanMLOptionsGetRescaleMultiplierBits(
+    LrtArmVulkanMLOptions options, int* bits);
+
 LiteRtStatus LrtCreateArmVulkanMLOptions(LrtArmVulkanMLOptions* options);
 
 LiteRtStatus LrtCreateArmVulkanMLOptionsFromToml(

@@ -29,6 +29,7 @@
 
 struct LrtArmVulkanMLOptionsT {
   bool enable_just_in_time = false;
+  int rescale_multiplier_bits = 32;
   LrtArmVulkanMLSoftmaxLutType softmax_lut_type = kLrtArmVulkanMLSoftmaxLutAuto;
   LrtArmVulkanMLOptimizationMode optimization_mode =
       kLrtArmVulkanMLOptimizationQualified;
@@ -64,6 +65,10 @@ LiteRtStatus LrtCreateArmVulkanMLOptionsFromToml(
         if (key == "enable_just_in_time") {
           LITERT_ASSIGN_OR_RETURN(options_ref.enable_just_in_time,
                                   litert::internal::ParseTomlBool(value));
+        } else if (key == "rescale_multiplier_bits") {
+          if (value == "16") options_ref.rescale_multiplier_bits = 16;
+          else if (value == "32") options_ref.rescale_multiplier_bits = 32;
+          else return kLiteRtStatusErrorInvalidArgument;
         } else if (key == "softmax_lut_type") {
           if (value == "auto") options_ref.softmax_lut_type = kLrtArmVulkanMLSoftmaxLutAuto;
           else if (value == "int8") options_ref.softmax_lut_type = kLrtArmVulkanMLSoftmaxLutInt8;
@@ -115,7 +120,7 @@ LiteRtStatus LrtGetOpaqueArmVulkanMLOptionsData(
       "\"\nsoftmax_lut_type = \"",
       options->softmax_lut_type == kLrtArmVulkanMLSoftmaxLutInt8 ? "int8" :
       options->softmax_lut_type == kLrtArmVulkanMLSoftmaxLutInt16 ? "int16" : "auto",
-      "\"\n");
+      "\"\nrescale_multiplier_bits = ", options->rescale_multiplier_bits, "\n");
 
   litert::internal::MakeCStringPayload(toml, payload, payload_deleter);
   return kLiteRtStatusOk;
@@ -169,5 +174,18 @@ LiteRtStatus LrtArmVulkanMLOptionsGetSoftmaxLutType(
     LrtArmVulkanMLOptions options, LrtArmVulkanMLSoftmaxLutType* type) {
   if (!options || !type) return kLiteRtStatusErrorInvalidArgument;
   *type = options->softmax_lut_type;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtArmVulkanMLOptionsSetRescaleMultiplierBits(
+    LrtArmVulkanMLOptions options, int bits) {
+  if (!options || (bits != 16 && bits != 32)) return kLiteRtStatusErrorInvalidArgument;
+  options->rescale_multiplier_bits = bits;
+  return kLiteRtStatusOk;
+}
+LiteRtStatus LrtArmVulkanMLOptionsGetRescaleMultiplierBits(
+    LrtArmVulkanMLOptions options, int* bits) {
+  if (!options || !bits) return kLiteRtStatusErrorInvalidArgument;
+  *bits = options->rescale_multiplier_bits;
   return kLiteRtStatusOk;
 }

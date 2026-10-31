@@ -949,6 +949,34 @@ TEST(PartitionTest, MappedCompositeOp) {
   ASSERT_EQ(model.NumSubgraphs(), 1);
 }
 
+TEST(PartitionTest, RepeatedMappedCompositesShareOneDecompositionBody) {
+  auto model_wrap = testing::LoadTestFileModel("rms_norm_composite.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+  auto* main = model.MainSubgraph();
+  ASSERT_EQ(main->Ops().size(), 1);
+  const auto* original = main->Ops()[0];
+  auto& repeated = main->EmplaceOp();
+  CloneTo(*original, repeated);
+  for (auto* tensor : original->Inputs()) AttachInput(tensor, repeated);
+  for (auto* tensor : original->Outputs()) {
+    auto& output = main->EmplaceTensor();
+    CloneTo(*tensor, output);
+    AttachOutput(&output, repeated);
+    main->Outputs().push_back(&output);
+  }
+  auto plugins = CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_TRUE(plugins);
+  ASSERT_FALSE(plugins->empty());
+  auto partitions = PartitionModel(plugins->front(), model);
+  ASSERT_TRUE(partitions);
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+  ASSERT_EQ(partitions->second.NumSubgraphs(), partitions->first.size());
+  size_t count = 0;
+  for (auto* part : partitions->second.Subgraphs()) count += part->Ops().size();
+  EXPECT_EQ(count, 2);
+}
+
 TEST(PartitionTest, InlineDecomposition) {
   auto model_wrap = testing::LoadTestFileModel("unsupported_composite.tflite");
   ASSERT_TRUE(model_wrap);

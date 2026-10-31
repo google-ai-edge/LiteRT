@@ -106,6 +106,12 @@ class LiteRtCompilerPluginT {
     return type ? *type : kLrtArmVulkanMLSoftmaxLutAuto;
   }
 
+  int RescaleMultiplierBits() const {
+    if (!arm_vulkan_ml_options_) return 32;
+    auto bits = arm_vulkan_ml_options_->GetRescaleMultiplierBits();
+    return bits ? *bits : 32;
+  }
+
  private:
   litert::Expected<litert::arm_vulkan_ml::ArmVulkanMLOptions>
       arm_vulkan_ml_options_ = litert::Error(kLiteRtStatusErrorNotFound,
@@ -250,7 +256,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     auto graph = model.Subgraph(i);
     if (!graph) return graph.Error().Status();
     std::string reason;
-    auto partition = litert::arm_vulkan_ml::CompilePartition(*graph, reason, nullptr, compiler_plugin->Optimization(), nullptr, compiler_plugin->SoftmaxLut());
+    auto partition = litert::arm_vulkan_ml::CompilePartition(*graph, reason, nullptr, compiler_plugin->Optimization(), nullptr, compiler_plugin->SoftmaxLut(), compiler_plugin->RescaleMultiplierBits());
     if (!partition) {
       LITERT_LOG(LITERT_ERROR, "ArmVulkanML partition %zu: %s", i, reason.c_str());
       return kLiteRtStatusErrorUnsupported;

@@ -1,15 +1,15 @@
 {
   "source_sha256": "9bae1313160a53287a1150a8ea60d9ddef03c38647b81c1138dd988d9299d77b",
   "source_files": {
-    "dispatch/vulkan_invocation.cc": "065df8cc21e810ecdcd2ecb2058d1b5f21244947c78acbeace219a150477d983",
-    "dispatch/device_capabilities.cc": "66547001d3532ceaba2d43607edcc2e71a4874465b75551c6033340debb90324",
-    "dispatch/tensor_capabilities.cc": "972459144445c35c086b275d4096831c34188d90cae570bc0e06318527ac33bc",
+    "dispatch/vulkan_invocation.cc": "ee5883831f95a2bdf30ec5b54735914a71c6c157c5fc36d63b4de6eab1428446",
+    "dispatch/device_capabilities.cc": "785ad2248e3516ca0450698a20e8ae91a728500b072592b15d7f394924ea8e00",
+    "dispatch/tensor_capabilities.cc": "9d759da58640d987e48720463d62d9783ae41dc88a8f8299e0c268d4a094b7cd",
     "dispatch/vulkan_validation.cc": "c2ec4f798633752ccefda63dc49c11d996e8fe415c7bf1257af21c437f9418fa",
     "dispatch/vulkan_validation.h": "de4dae7445df3db93b0980c9780063caebdeea589b63f679fdfd1d96755dbb72",
     "dispatch/device_memory_allocator.h": "f3d0489f018c3951bfac396886e44754d6f32ea79c995f9e677c51d97810a429",
     "dispatch/external_buffer.cc": "44eb90f81792c942ee062909f70437722dee550466b7b1373459434690c6af74",
     "dispatch/external_buffer.h": "9a253670406e769dadc707be870e23b6061212fe752296da61d4bab6aa647742",
-    "tools/devtool/tool.cc": "9d3b9d6f63f1f8f73f8d1aac19e465aa76338697477aa9daea94cc5a16df2a2b"
+    "tools/devtool/tool.cc": "6b85e23fb20d674a29cf32cbd7a76e6b3406f1fc4a5c46eb6b8fe2296c34ba01"
   },
   "groups": [
     {
@@ -486,5 +486,5 @@
       ]
     }
   ],
-  "review_scope": "Partial review only. Source fingerprints refreshed after checking the retained aggregate sType construction and zero buffer/image-barrier conditions and rerunning the named dispatch tests. Unlisted VUIDs remain unreviewed; this is not native device conformance evidence. Tool optimization controls/diagnostics and differential execution reuse the existing Vulkan query and dispatch paths; the Vulkan candidate inventory is unchanged after this source review. Softmax LUT selection and external numerical references retain the same device queries and invocation API usage; no Vulkan candidate requirement was added or removed. Shared TFLite registration and offline coverage selection do not change Vulkan queries, invocation API use or the candidate VUID inventory."
+  "review_scope": "Partial review only. Source fingerprints refreshed after checking the retained aggregate sType construction and zero buffer/image-barrier conditions and rerunning the named dispatch tests. Unlisted VUIDs remain unreviewed; this is not native device conformance evidence. Tool optimization controls/diagnostics and differential execution reuse the existing Vulkan query and dispatch paths; the Vulkan candidate inventory is unchanged after this source review. Softmax LUT selection and external numerical references retain the same device queries and invocation API usage; no Vulkan candidate requirement was added or removed. Shared TFLite registration and offline coverage selection do not change Vulkan queries, invocation API use or the candidate VUID inventory. INT16/INT64 storage adds R16_SINT/R64_SINT format queries and checks the emitted Int16/Int64 capabilities against enabled physical-device features. The existing Vulkan call and VUID candidate inventory is retained; the integer-width capability tests do not claim new native VUID conformance."
 }

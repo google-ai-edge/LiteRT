@@ -29,8 +29,8 @@ using OptimizationMode = LrtArmVulkanMLOptimizationMode;
 using ValueId = size_t;
 
 // Owned, target-independent values. Model handles are identities only: no
-// rewrite or emitter dereferences them after import. INT16 may be represented
-// here in future, but is not admitted by the current operation analysis.
+// rewrite or emitter dereferences them after import. INT48 accumulator values
+// use 64-bit storage; INT16 data requires the EXT-INT16 engine extension.
 struct GraphValue {
   uintptr_t original_tensor = 0;
   LiteRtElementType logical_type = kLiteRtElementTypeInt8;

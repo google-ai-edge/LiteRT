@@ -95,6 +95,7 @@ void PrintUsage(const char* argv0) {
       << "  --arm_vulkan_ml_enable_jit=0|1  Requires accelerator=npu\n"
       << "  --arm_vulkan_ml_optimization_mode=off|exact|qualified\n"
       << "  --arm_vulkan_ml_softmax_lut_type=auto|int8|int16\n"
+      << "  --arm_vulkan_ml_rescale_multiplier_bits=16|32\n"
       << "  --baseline_arm_vulkan_ml_optimization_mode=off|exact|qualified\n"
       << "  --baseline_accelerator=inherit|cpu  CPU uses reference kernels\n"
       << "  --baseline_num_threads=1  Explicit CPU baseline threads\n"
@@ -121,6 +122,8 @@ litert::Expected<void> ValidateBackendOptions(const Config& cfg) {
       return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid Arm Vulkan ML optimization mode");
   if (cfg.arm_vulkan_ml_softmax_lut_type != "auto" && cfg.arm_vulkan_ml_softmax_lut_type != "int8" && cfg.arm_vulkan_ml_softmax_lut_type != "int16")
     return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid Arm Vulkan ML Softmax LUT type");
+  if (cfg.arm_vulkan_ml_rescale_multiplier_bits != 16 && cfg.arm_vulkan_ml_rescale_multiplier_bits != 32)
+    return litert::Error(kLiteRtStatusErrorInvalidArgument, "Arm Vulkan ML rescale multiplier bits must be 16 or 32");
   if (cfg.arm_vulkan_ml_enable_jit != 0 && cfg.arm_vulkan_ml_enable_jit != 1)
     return litert::Error(kLiteRtStatusErrorInvalidArgument, "arm_vulkan_ml_enable_jit must be 0 or 1");
   if (cfg.arm_vulkan_ml_enable_jit && !npu)
@@ -184,6 +187,7 @@ litert::Expected<void> ParseArgs(int argc, char** argv, Config& cfg) {
       {"std", &cfg.stddev},
   };
   std::unordered_map<std::string, int*> ints = {
+      {"arm_vulkan_ml_rescale_multiplier_bits", &cfg.arm_vulkan_ml_rescale_multiplier_bits},
       {"require_full_acceleration", &cfg.require_full_acceleration},
       {"arm_vulkan_ml_enable_jit", &cfg.arm_vulkan_ml_enable_jit},
       {"baseline_num_threads", &cfg.baseline_num_threads},
@@ -633,6 +637,7 @@ litert::Expected<litert::Options> CreateOptions(const Config& cfg, bool referenc
     else if (cfg.arm_vulkan_ml_softmax_lut_type == "int16") type = kLrtArmVulkanMLSoftmaxLutInt16;
     else return litert::Error(kLiteRtStatusErrorInvalidArgument, "Invalid Arm Vulkan ML Softmax LUT type");
     LITERT_RETURN_IF_ERROR(arm.SetSoftmaxLutType(type));
+    LITERT_RETURN_IF_ERROR(arm.SetRescaleMultiplierBits(cfg.arm_vulkan_ml_rescale_multiplier_bits));
   }
   return options;
 }
@@ -645,6 +650,7 @@ Json DescribeExecution(const Config& cfg, bool reference_cpu) {
           {"arm_vulkan_ml_enable_jit", static_cast<bool>(cfg.arm_vulkan_ml_enable_jit)},
           {"arm_vulkan_ml_optimization_mode", cfg.arm_vulkan_ml_optimization_mode},
           {"arm_vulkan_ml_softmax_lut_type", cfg.arm_vulkan_ml_softmax_lut_type},
+          {"arm_vulkan_ml_rescale_multiplier_bits", cfg.arm_vulkan_ml_rescale_multiplier_bits},
           {"compiler_plugin_library_dir", cfg.compiler_plugin_library_dir},
           {"dispatch_library_dir", cfg.dispatch_library_dir},
           {"require_full_acceleration", static_cast<bool>(cfg.require_full_acceleration)}};
@@ -908,6 +914,7 @@ int litert::imagenet::EvaluationMain(int argc, char** argv) {
          {"arm_vulkan_ml_enable_jit", static_cast<bool>(cfg.arm_vulkan_ml_enable_jit)},
           {"arm_vulkan_ml_optimization_mode", cfg.arm_vulkan_ml_optimization_mode},
           {"arm_vulkan_ml_softmax_lut_type", cfg.arm_vulkan_ml_softmax_lut_type},
+          {"arm_vulkan_ml_rescale_multiplier_bits", cfg.arm_vulkan_ml_rescale_multiplier_bits},
          {"baseline_accelerator", cfg.baseline_accelerator},
          {"accelerator", cfg.accelerator},
          {"gpu_backend", cfg.gpu_backend},
