@@ -172,10 +172,11 @@ fn main() -> Result<()> {
             let (env, _, _) = resolve(&cli)?;
             for m in list_captures(&env) {
                 println!(
-                    "{}\t{}\t{}\t{}\t{}{}",
+                    "{}\t{}\t{}\t{}\t{}\t{}{}",
                     m.name,
                     m.build_id,
                     m.tier,
+                    m.host_mode,
                     m.updated,
                     m.models.join(","),
                     if m.mtp { "\tmtp" } else { "" }

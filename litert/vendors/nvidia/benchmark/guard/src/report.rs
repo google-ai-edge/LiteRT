@@ -38,6 +38,8 @@ pub struct Comparison {
     pub cand_name: String,
     pub base_build: String,
     pub cand_build: String,
+    pub base_host_mode: String,
+    pub cand_host_mode: String,
     pub numerics: Vec<NumericsComparison>,
     pub perf: Vec<PerfComparison>,
     pub predictions: Vec<Prediction>,
@@ -192,6 +194,8 @@ pub fn compare(
         cand_name: cand.manifest.name.clone(),
         base_build: base.manifest.build_id.clone(),
         cand_build: cand.manifest.build_id.clone(),
+        base_host_mode: base.manifest.host_mode.clone(),
+        cand_host_mode: cand.manifest.host_mode.clone(),
         numerics,
         perf,
         predictions,
@@ -217,6 +221,9 @@ pub fn render_comparison(c: &Comparison) -> String {
         c.base_build,
         c.verdict.label()
     ));
+    if c.base_host_mode != c.cand_host_mode {
+        s.push_str(&format!("Host modes differ: baseline {}, candidate {}; timings are not comparable across them.\n\n", c.base_host_mode, c.cand_host_mode));
+    }
     if !c.numerics.is_empty() {
         s.push_str("## Numerics (greedy decode, logits per step)\n\n");
         s.push_str("| Model | Prompt | Mode | Steps compared | Parted at | max abs delta | mean KL | top-K overlap | Text | Decode tok/s (base, cand) | Verdict |\n|---|---|---|---:|---:|---:|---:|---:|---|---|---|\n");
@@ -303,8 +310,8 @@ pub fn render_comparison(c: &Comparison) -> String {
 pub fn render_capture(capture: &Capture) -> String {
     let m = &capture.manifest;
     let mut s = format!(
-        "# Capture {} (build {}, tier {}, {})\n\nLiteRT {}\nLiteRT-LM {}\n\n",
-        m.name, m.build_id, m.tier, m.updated, m.rt_head, m.lm_head
+        "# Capture {} (build {}, tier {}, host {}, {})\n\nLiteRT {}\nLiteRT-LM {}\n\n",
+        m.name, m.build_id, m.tier, m.host_mode, m.updated, m.rt_head, m.lm_head
     );
     if !capture.numerics.is_empty() {
         s.push_str("## Numerics probes\n\n| Model | Prompt | Mode | Exit | Steps | Prefill tokens | Decode tokens | Decode tok/s | Loopiness | Non-finite | Wall s |\n|---|---|---|---:|---:|---:|---:|---:|---:|---|---:|\n");

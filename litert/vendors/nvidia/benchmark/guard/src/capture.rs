@@ -27,6 +27,14 @@ pub struct Manifest {
     pub tier: String,
     pub models: Vec<String>,
     pub mtp: bool,
+    /// CI_HOST_MODE of the capture (formal after the host's benchmark
+    /// preparation, else diagnostic): timings compare within one mode.
+    #[serde(default = "default_host_mode")]
+    pub host_mode: String,
+}
+
+fn default_host_mode() -> String {
+    std::env::var("CI_HOST_MODE").unwrap_or_else(|_| "diagnostic".to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,6 +132,7 @@ pub fn run_capture(
                 tier: opts.tier.clone(),
                 models: opts.models.clone(),
                 mtp: opts.mtp,
+                host_mode: default_host_mode(),
             },
             numerics: Vec::new(),
             perf: Vec::new(),
