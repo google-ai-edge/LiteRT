@@ -188,8 +188,8 @@ TEST(SubbyteGemmBenchmark, PrefillShapes) {
     const auto launch = [&]() {
       if (int8) {
         return LiteRtNvidiaLaunchBf16Int4GemmInt8Normed(
-            &shape, activation_device.get(), nullptr, 0.0f, 1.0f,
-            static_cast<const uint8_t*>(weights_device.get()),
+            &shape, activation_device.get(), /*positions=*/nullptr, nullptr,
+            0.0f, 1.0f, static_cast<const uint8_t*>(weights_device.get()),
             scales_device.get(), output_device.get(), workspace8.get(),
             nullptr);
       }

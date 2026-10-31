@@ -124,12 +124,15 @@ __device__ __forceinline__ float Gelu(float x, int gate) {
 
 // The largest magnitude of every input dim over the rows, after the optional norm (the norm's
 // per-dim scale multiplies in; the per-row factor is a positive scalar that cannot change which
-// dims are largest within a row but can across rows, so it is applied too).
+// dims are largest within a row but can across rows, so it is applied too). With `positions`,
+// over the rows of the chunk only: a row whose position does not continue the first row's
+// (positions[r] != positions[0] + r) is padding and counts as zeros.
 // grid (dims / 256, rows / kColumnMaxRows); column_max starts at zero and takes the maxima by
 // atomic max on the bits (non-negative floats order as their bits).
 constexpr int kColumnMaxRows = 32;
 __global__ void __launch_bounds__(256) ColumnMaxKernel(const __nv_bfloat16* __restrict__ activation,
                                                        int rows, int input_size,
+                                                       const int32_t* __restrict__ positions,
                                                        const float* __restrict__ row_factor,
                                                        const float* __restrict__ norm_scale,
                                                        float* __restrict__ column_max) {
@@ -137,6 +140,8 @@ __global__ void __launch_bounds__(256) ColumnMaxKernel(const __nv_bfloat16* __re
   if (k >= input_size) return;
   const int first = blockIdx.y * kColumnMaxRows;
   const int last = min(first + kColumnMaxRows, rows);
+  const int32_t start = positions != nullptr ? positions[0] : 0;
+  const auto padding = [&](int row) { return positions != nullptr && positions[row] != start + row; };
   float largest = 0.0f;
   // Eight rows' loads in flight at a time.
   int row = first;
@@ -149,12 +154,14 @@ __global__ void __launch_bounds__(256) ColumnMaxKernel(const __nv_bfloat16* __re
 #pragma unroll
     for (int i = 0; i < 8; ++i) {
       if (row_factor != nullptr) v[i] *= row_factor[row + i];
+      if (padding(row + i)) v[i] = 0.0f;
       largest = fmaxf(largest, v[i]);
     }
   }
   for (; row < last; ++row) {
     float v = fabsf(__bfloat162float(activation[static_cast<size_t>(row) * input_size + k]));
     if (row_factor != nullptr) v *= row_factor[row];
+    if (padding(row)) v = 0.0f;
     largest = fmaxf(largest, v);
   }
   if (norm_scale != nullptr) largest *= fabsf(norm_scale[k]);
@@ -722,9 +729,9 @@ extern "C" size_t LiteRtNvidiaInt8GemmWorkspaceBytes(const LiteRtNvidiaGemmShape
 }
 
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmInt8Normed(
-    const LiteRtNvidiaGemmShape* shape, const void* activation, const float* norm_scale,
-    float norm_eps, float norm_multiplier, const uint8_t* weights, const void* scales, void* output,
-    void* workspace, cudaStream_t stream) {
+    const LiteRtNvidiaGemmShape* shape, const void* activation, const int32_t* positions,
+    const float* norm_scale, float norm_eps, float norm_multiplier, const uint8_t* weights,
+    const void* scales, void* output, void* workspace, cudaStream_t stream) {
   using namespace litert::nvidia::int8_gemm;
   if (!LiteRtNvidiaInt8GemmSupports(shape) || activation == nullptr || weights == nullptr ||
       scales == nullptr || output == nullptr || workspace == nullptr ||
@@ -761,7 +768,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmInt8Normed(
   cudaError_t status = cudaMemsetAsync(column_max, 0, shape->input_size * sizeof(float), stream);
   if (status != cudaSuccess) return status;
   ColumnMaxKernel<<<dim3((shape->input_size + 255) / 256, (shape->rows + kColumnMaxRows - 1) / kColumnMaxRows),
-                    256, 0, stream>>>(typed_activation, shape->rows, shape->input_size,
+                    256, 0, stream>>>(typed_activation, shape->rows, shape->input_size, positions,
                                       norm_scale != nullptr ? row_factor : nullptr, norm_scale, column_max);
   OutlierDimsKernel<<<1, kSelectThreads, shape->input_size * sizeof(float), stream>>>(
       column_max, shape->input_size, dims, flags);

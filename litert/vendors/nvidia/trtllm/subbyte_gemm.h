@@ -159,6 +159,11 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmNormed(
 // The same product on the int8 tensor cores (subbyte_gemm_int8.cu): int8
 // activations per block of 128 input dims, the 32 input dims with the largest
 // magnitude over the rows added back exactly through an fp16 MMA chunk.
+// `positions` (null: every row counts) are the token positions of the rows:
+// the 32 dims are then those of the rows whose position continues the first
+// row's (positions[r] == positions[0] + r), so the padding a runtime appends
+// to a chunk (LiteRT-LM's rows past the tokens hold position 0) does not
+// choose them for the chunk's rows. Every row is multiplied either way.
 // Per-channel scales (scale_block 0), input_size a multiple of 128 and at
 // most 16384. The workspace is this kernel's own, not the fp16 kernel's.
 extern "C" bool LiteRtNvidiaInt8GemmSupports(
@@ -167,8 +172,8 @@ extern "C" size_t LiteRtNvidiaInt8GemmWorkspaceBytes(
     const LiteRtNvidiaGemmShape* shape);
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmInt8Normed(
     const LiteRtNvidiaGemmShape* shape, const void* activation,
-    const float* norm_scale, float norm_eps, float norm_multiplier,
-    const uint8_t* weights, const void* scales, void* output, void* workspace,
-    cudaStream_t stream);
+    const int32_t* positions, const float* norm_scale, float norm_eps,
+    float norm_multiplier, const uint8_t* weights, const void* scales,
+    void* output, void* workspace, cudaStream_t stream);
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_SUBBYTE_GEMM_H_

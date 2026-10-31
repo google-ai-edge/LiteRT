@@ -2783,6 +2783,22 @@ class TensorRtGraphBuilder {
   }
 
  private:
+  // Whether a signature tensor's name carries `key`: the tensors carry the
+  // signature's key behind the signature's name (decode_embeddings,
+  // prefill_1024_input_pos, decode_logits_output), some models with an output
+  // index after it (decode_input_pos:0).
+  static bool HasSignatureKey(std::string name, const char* key) {
+    const size_t colon = name.rfind(':');
+    if (colon != std::string::npos && colon + 1 < name.size() &&
+        name.find_first_not_of("0123456789", colon + 1) == std::string::npos) {
+      name.erase(colon);
+    }
+    const std::string suffix = std::string("_") + key;
+    return name == key || (name.size() > suffix.size() &&
+                           name.compare(name.size() - suffix.size(),
+                                        suffix.size(), suffix) == 0);
+  }
+
   // A decode step that feeds itself (TensorRtStepFeed): one token's
   // embeddings in, the logits out, the vocabulary head an INT4 per-channel
   // fully connected op whose weights the weight store maps (Gemma ties them
@@ -2805,21 +2821,7 @@ class TensorRtGraphBuilder {
                     /*default_value=*/true)) {
       return none();
     }
-    // The tensors carry the signature's key behind the signature's name
-    // (decode_embeddings, prefill_1024_input_pos, decode_logits_output), some
-    // models with an output index after it (decode_input_pos:0).
-    const auto is_key = [](std::string name, const char* key) {
-      const size_t colon = name.rfind(':');
-      if (colon != std::string::npos && colon + 1 < name.size() &&
-          name.find_first_not_of("0123456789", colon + 1) ==
-              std::string::npos) {
-        name.erase(colon);
-      }
-      const std::string suffix = std::string("_") + key;
-      return name == key || (name.size() > suffix.size() &&
-                             name.compare(name.size() - suffix.size(),
-                                          suffix.size(), suffix) == 0);
-    };
+    const auto is_key = &HasSignatureKey;
     TensorRtStepFeedBuildData feed;
     const auto inputs = subgraph.Inputs();
     for (size_t i = 0; i < inputs.size(); ++i) {
@@ -3237,6 +3239,17 @@ class TensorRtGraphBuilder {
                      "Failed to add TensorRT input");
       }
       raw_input_map_[input.Get()] = tensor;
+      // The token positions of a prefill's rows: the CUDA GEMM's int8 path
+      // takes them to tell a chunk's rows from its padding
+      // (AddSubbyteGemvPlugin). Two such inputs leave both out.
+      if (type.ElementType() == litert::ElementType::Int32 &&
+          (HasSignatureKey(std::string(input.Name()), "input_pos") ||
+           HasSignatureKey(std::string(input.Name()), "positions"))) {
+        int64_t count = 1;
+        for (int d = 0; d < dims.nbDims; ++d) count *= dims.d[d];
+        row_positions_ = row_positions_count_ == 0 ? tensor : nullptr;
+        row_positions_count_ = row_positions_count_ == 0 ? count : -1;
+      }
       nvinfer1::ITensor* value = tensor;
       if (value_view) {
         LITERT_ASSIGN_OR_RETURN(value, ReshapeTensor(tensor, dims));
@@ -4187,13 +4200,24 @@ class TensorRtGraphBuilder {
                                          "cuda_subbyte_gemv_scales" + suffix,
                                          nvinfer1::DataType::kBF16));
     }
+    // A GEMM over a prefill chunk's rows reads their token positions when
+    // its int8 path can take the product: with them that path can choose the
+    // outlier dims over the chunk's rows (LITERT_NVIDIA_GEMM_INT8_REAL_ROWS),
+    // not over the padding past them, whose attention averaged whatever the
+    // cache held.
+    const LiteRtNvidiaGemmShape int8_shape = {
+        static_cast<int32_t>(activation_rows), info.columns,
+        gate != 0 ? info.rows / 2 : info.rows, gate, info.scale_block};
+    const bool row_positions = gemm && row_positions_ != nullptr &&
+                               row_positions_count_ == activation_rows &&
+                               LiteRtNvidiaInt8GemmSupports(&int8_shape);
     TrtPtr<nvinfer1::IPluginV3> plugin(CreateSubbyteGemvPlugin(
         info.bit_width, info.rows, info.columns, gate, gemm,
         location.has_value() ? static_cast<int64_t>(location->offset) : 0,
         location.has_value() ? static_cast<int64_t>(weight_store_->granule())
                              : 0,
         info.scale_block, scale_offset, norm != nullptr ? norm->eps : -1.0f,
-        norm != nullptr ? norm->multiplier : 1.0f));
+        norm != nullptr ? norm->multiplier : 1.0f, row_positions));
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create CUDA subbyte GEMV plugin");
@@ -4202,6 +4226,9 @@ class TensorRtGraphBuilder {
                                               scale_tensor};
     if (norm != nullptr) {
       inputs.push_back(norm->scale);
+    }
+    if (row_positions) {
+      inputs.push_back(row_positions_);
     }
     auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(*network_, inputs.data(),
                                                      inputs.size(), *plugin);
@@ -9860,6 +9887,10 @@ class TensorRtGraphBuilder {
   // Network inputs in their boundary (pre-FP16-conversion) form; used by
   // in-place style ops (cache updates) that operate on the raw int8 data.
   std::unordered_map<LiteRtTensor, nvinfer1::ITensor*> raw_input_map_;
+  // The prefill's token positions input and its element count (0: none, -1:
+  // more than one), for the CUDA GEMM (AddSubbyteGemvPlugin).
+  nvinfer1::ITensor* row_positions_ = nullptr;
+  int64_t row_positions_count_ = 0;
   // Produced tensors that already carry the boundary format (e.g. int8 cache
   // scatter results); MarkOutputs prefers these over the FP16 view.
   std::unordered_map<LiteRtTensor, nvinfer1::ITensor*> raw_output_map_;

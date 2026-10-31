@@ -1301,6 +1301,19 @@ bool StepFeedEnabled() {
   return enabled;
 }
 
+// The feed's table, when the bytecode's is a view of the model file (the
+// tied head), is read where the engine's weight memory holds those bytes
+// instead of a copy of its own. LITERT_NVIDIA_DISPATCH_STEP_FEED_SHARE_TABLE=0
+// reads the file into a copy, as before.
+bool StepFeedShareTable() {
+  static const bool enabled = [] {
+    const char* value =
+        std::getenv("LITERT_NVIDIA_DISPATCH_STEP_FEED_SHARE_TABLE");
+    return value == nullptr || value[0] == '\0' || std::strcmp(value, "0") != 0;
+  }();
+  return enabled;
+}
+
 // LITERT_NVIDIA_DISPATCH_STEP_FEED_FORCE_MISS=N (0 or unset: never) declares
 // every Nth verified step a miss, whether the host's inputs matched or not:
 // a check that the real step after a miss runs on the host's inputs, with
@@ -3101,6 +3114,7 @@ class LiteRtDispatchInvocationContextT {
     weight_mapping_.reset();
     engine_.reset();
     runtime_.reset();
+    weight_memory_table_ = nullptr;
     weight_memory_.reset();
     std::fill(bound_input_ptrs_.begin(), bound_input_ptrs_.end(), nullptr);
     std::fill(bound_output_ptrs_.begin(), bound_output_ptrs_.end(), nullptr);
@@ -3354,9 +3368,10 @@ class LiteRtDispatchInvocationContextT {
     // The bytecode's feed has no table: the runtime's registration is awaited
     // (token_table_c_api.h) and the setup retried at each invocation.
     bool pending = false;
-    bool owns_table = false;      // the table and the scales are this context's
-    void* table = nullptr;        // device INT4 [vocab, dim]
-    float* row_scales = nullptr;  // device [vocab], or null
+    bool owns_table = false;   // the table is this context's allocation
+    bool owns_scales = false;  // the row scales are this context's allocation
+    void* table = nullptr;     // device INT4 [vocab, dim]
+    float* row_scales = nullptr;             // device [vocab], or null
     const uint16_t* block_scales = nullptr;  // device FP16 per block, or null
     uint32_t scale_block = 0;
     float multiplier = 1.0f;
@@ -3516,6 +3531,27 @@ class LiteRtDispatchInvocationContextT {
       }
       feed_.multiplier = registered->multiplier;
       table_source = "the runtime";
+    } else if (bytecode_.weight_store.has_value() &&
+               weight_memory_table_ != nullptr && StepFeedShareTable()) {
+      // The table is the head's weights, which this engine's weight memory
+      // holds as the model file's bytes (MapEngineWeights found them): read
+      // in place, for as long as the engine; only the row scales are copied.
+      // Like the file branch below, only while the store is there: the row
+      // scales point into the AOT artifact, which a retry of a setup that
+      // awaited the runtime's tables finds unmapped (DetachSerializedBacking
+      // resets the store with it).
+      feed_.owns_table = false;
+      feed_.owns_scales = true;
+      feed_.table = const_cast<void*>(weight_memory_table_);
+      feed_.bits = 4;
+      feed_.multiplier = feed.multiplier;
+      status = cudaMalloc(reinterpret_cast<void**>(&feed_.row_scales),
+                          feed.row_scales_size);
+      if (status != cudaSuccess) return fail("row scales", status);
+      status = cudaMemcpy(feed_.row_scales, feed.row_scales,
+                          feed.row_scales_size, cudaMemcpyHostToDevice);
+      if (status != cudaSuccess) return fail("row scales copy", status);
+      table_source = "the engine's weight memory";
     } else {
       // The table in the model file, by the weight store's path (the store
       // is there at the setup: it goes once the engine's weights are mapped).
@@ -3553,6 +3589,7 @@ class LiteRtDispatchInvocationContextT {
         return {};
       }
       feed_.owns_table = true;
+      feed_.owns_scales = true;
       feed_.bits = 4;
       feed_.multiplier = feed.multiplier;
       status = cudaMalloc(&feed_.table, table_bytes);
@@ -3901,10 +3938,10 @@ class LiteRtDispatchInvocationContextT {
       if (handoff.values != nullptr) cudaFreeHost(handoff.values);
       if (handoff.flags != nullptr) cudaFreeHost(handoff.flags);
     }
-    if (feed_.owns_table) {
-      if (feed_.row_scales != nullptr) cudaFree(feed_.row_scales);
-      if (feed_.table != nullptr) cudaFree(feed_.table);
+    if (feed_.owns_scales && feed_.row_scales != nullptr) {
+      cudaFree(feed_.row_scales);
     }
+    if (feed_.owns_table && feed_.table != nullptr) cudaFree(feed_.table);
     const bool stopped = feed_.stopped;
     const bool pending = feed_.pending;  // the table may still be registered
     const uint64_t counts[4] = {feed_.speculated, feed_.hits, feed_.misses,
@@ -4732,7 +4769,45 @@ class LiteRtDispatchInvocationContextT {
         map_timer.ElapsedMs());
     memory_profiler_.Log("engine_weights_map_end",
                          bytecode_.function_name.c_str());
+    // The step feed's table, when the bytecode's is a view of the model file
+    // (the tied head): found now, while the store says where its pieces
+    // went (it is released after the setup).
+    weight_memory_table_ = nullptr;
+    if (bytecode_.step_feed.has_value() &&
+        bytecode_.step_feed->table_offset !=
+            litert::nvidia::kTensorRtStepFeedNoTable) {
+      const auto& feed = *bytecode_.step_feed;
+      weight_memory_table_ = WeightMemoryAddressOf(
+          feed.table_offset, static_cast<uint64_t>(feed.vocab) * feed.dim / 2);
+    }
     return {};
+  }
+
+  // The device address of the model file's bytes [offset, offset + size)
+  // in this engine's weight memory, when one piece of a segment holds them
+  // all (a piece is the file's bytes, copied as they are; the segment's
+  // block is held by weight_memory_), or null.
+  const void* WeightMemoryAddressOf(uint64_t offset, uint64_t size) const {
+    if (weight_memory_ == nullptr || !bytecode_.weight_store.has_value() ||
+        size == 0) {
+      return nullptr;
+    }
+    for (const auto& segment : bytecode_.weight_store->segments) {
+      for (const auto& piece : segment.pieces) {
+        if (offset < piece.source_offset) continue;
+        const uint64_t into = offset - piece.source_offset;
+        if (into >= piece.size || size > piece.size - into) continue;
+        for (const auto& range : weight_memory_->ranges()) {
+          if (range.offset == segment.payload_offset &&
+              range.size == segment.size && range.block != nullptr) {
+            return static_cast<const uint8_t*>(range.block->address()) +
+                   piece.segment_offset + into;
+          }
+        }
+        return nullptr;
+      }
+    }
+    return nullptr;
   }
 
   Expected<void> RefitEngine() {
@@ -6190,6 +6265,9 @@ class LiteRtDispatchInvocationContextT {
   // The device memory of the engine's weight store outlives the engine, and
   // its mapping into the engine goes before the engine.
   std::unique_ptr<litert::nvidia::EngineWeightMemory> weight_memory_;
+  // The step feed's file table inside weight_memory_ (MapEngineWeights), or
+  // null.
+  const void* weight_memory_table_ = nullptr;
   TrtPtr<nvinfer1::IRuntime> runtime_;
   TrtPtr<nvinfer1::ICudaEngine> engine_;
   std::unique_ptr<litert::nvidia::EngineWeightMapping> weight_mapping_;
