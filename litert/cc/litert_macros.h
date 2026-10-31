@@ -15,6 +15,13 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_MACROS_H_
 #define ODML_LITERT_LITERT_CC_LITERT_MACROS_H_
 
+#if defined(_WIN32)
+#include <malloc.h>
+#ifndef alloca
+#define alloca _alloca
+#endif
+#endif  // defined(_WIN32)
+
 #include <cstdlib>
 #include <memory>
 #include <string>
