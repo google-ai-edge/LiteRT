@@ -1184,12 +1184,16 @@ TEST(TensorRtGraphBuilderTest, CudaGemmReadsThePrefillPositions) {
   // outlier dims over the chunk's rows (the plugin's default), so the chunk's
   // results do not depend on the padding. Without the input, or with
   // LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=0, loud padding changes them: the
-  // target tensorrt_graph_builder_real_rows_off_test runs this test with the
-  // switch at 0 (the plugin reads it once per process).
-  const char* real_rows_switch =
-      std::getenv("LITERT_NVIDIA_GEMM_INT8_REAL_ROWS");
-  const bool real_rows =
-      real_rows_switch == nullptr || std::strcmp(real_rows_switch, "0") != 0;
+  // target tensorrt_graph_builder_real_rows_off_test builds this file with
+  // LITERT_NVIDIA_TEST_REAL_ROWS_OFF and runs this test with the switch at 0
+  // (the plugin reads it once per process).
+#ifdef LITERT_NVIDIA_TEST_REAL_ROWS_OFF
+  ASSERT_STREQ(std::getenv("LITERT_NVIDIA_GEMM_INT8_REAL_ROWS"), "0")
+      << "the target sets the switch";
+  constexpr bool kRealRows = false;
+#else
+  constexpr bool kRealRows = true;
+#endif
   constexpr int32_t kM = 1024;
   constexpr int32_t kK = 256;
   constexpr int32_t kChunk = 900;
@@ -1327,7 +1331,7 @@ TEST(TensorRtGraphBuilderTest, CudaGemmReadsThePrefillPositions) {
     for (size_t i = 0; i < static_cast<size_t>(kChunk) * channels; ++i) {
       differences += std::memcmp(&loud[i], &quiet[i], sizeof(float)) != 0;
     }
-    if (positions && real_rows) {
+    if (positions && kRealRows) {
       EXPECT_EQ(differences, 0u);
     } else {
       EXPECT_GT(differences, 0u);

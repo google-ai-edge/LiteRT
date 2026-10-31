@@ -405,12 +405,18 @@ cc_test(
     srcs = ["tensorrt_graph_builder_test.cc"],
     # The int8 GEMM's outlier dims over every row of a chunk, padding included:
     # the rollback the switch keeps (read once per process, hence a target).
-    args = ["--gtest_filter=TensorRtGraphBuilderTest.CudaGemmReadsThePrefillPositions"],
+    # The define gives the test its expectation; a filter that selects no
+    # test fails.
+    args = [
+        "--gtest_fail_if_no_test_selected",
+        "--gtest_filter=TensorRtGraphBuilderTest.CudaGemmReadsThePrefillPositions",
+    ],
     env = {
         "LITERT_NVIDIA_GEMM_INT8_REAL_ROWS": "0",
         "LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS": "bf16",
         "LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS": "0",
     },
+    local_defines = ["LITERT_NVIDIA_TEST_REAL_ROWS_OFF"],
     tags = [
         "exclusive",
         "manual",
