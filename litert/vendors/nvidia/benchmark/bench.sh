@@ -158,6 +158,8 @@ meta = {
   'start': start, 'end': end, 'gpu_baseline_mib': int(baseline),
   'environment': {k: v for k, v in os.environ.items() if k.startswith('LITERT_NVIDIA_')},
   'binaries': {n: sha(os.path.realpath(os.path.join(libs, n))) for n in ('libLiteRtCompilerPlugin_Nvidia.so', 'libLiteRtDispatch_Nvidia.so', 'litert_lm_advanced_main')},
+  # The build the binaries came from (build.sh's stamp), beside the checkout's build_id.
+  'binaries_build_id': open(os.path.join(libs, 'BUILD_ID')).read().strip() if os.path.exists(os.path.join(libs, 'BUILD_ID')) else None,
   'sources': {k: os.environ[k] for k in ('NB_RT', 'NB_LM')},
 }
 json.dump(meta, open(meta_path, 'w'), indent=1)

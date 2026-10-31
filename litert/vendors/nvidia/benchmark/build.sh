@@ -47,5 +47,8 @@ if [[ $what != --rt-only ]]; then
   bazel_build "$NB_LM" "$NB_BUILD_LM" "--override_repository=litert=$NB_RT" //runtime/engine:litert_lm_advanced_main
   ln -sfn "$(realpath "$NB_LM/bazel-bin/runtime/engine/litert_lm_advanced_main")" "$NB_RUNTIME_LIBS/litert_lm_advanced_main"
 fi
-echo "Build id: $(nb_build_id)"
+# The stamp names the build the binaries came from: a run records it beside the checkout's build
+# id, which moves with commits that rebuild nothing.
+nb_build_id > "$NB_RUNTIME_LIBS/BUILD_ID"
+echo "Build id: $(cat "$NB_RUNTIME_LIBS/BUILD_ID")"
 echo "Runtime libraries and CLI: $NB_RUNTIME_LIBS"
