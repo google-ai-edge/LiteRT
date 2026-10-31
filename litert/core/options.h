@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -94,6 +95,12 @@ struct LiteRtOptionsT {
   // The initial implementation does not expand the active set to transitively
   // referenced callee subgraphs.
   std::vector<std::string> selected_signature_keys;
+  // Optional token IDs whose rows should be prefetched from constant tables
+  // read by CPU EMBEDDING_LOOKUP ops when this options object is passed to
+  // CompiledModel::Run / LiteRtRunCompiledModelWithOptions. Advisory only;
+  // ignored if empty or if the signature has no prefetchable CPU
+  // EMBEDDING_LOOKUP tables.
+  std::vector<int32_t> prefetch_embedding_token_ids;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_

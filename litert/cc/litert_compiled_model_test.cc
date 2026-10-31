@@ -668,6 +668,70 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
   }
 }
 
+TEST(CompiledModelTest,
+     RunWithPrefetchEmbeddingTokenIdsPopulatesOptionsAndDiscoversTable) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // 1. Verify Options::SetPrefetchEmbeddingTokenIds populates LiteRtOptionsT
+  // when built via LiteRtOptionsPtrBuilder::Build.
+  LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
+  const int32_t ids[] = {0, 19, -1, 20};
+  LITERT_ASSERT_OK(
+      options.SetPrefetchEmbeddingTokenIds(absl::MakeConstSpan(ids)));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      internal::LiteRtOptionsPtr built_options,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+  ASSERT_NE(built_options, nullptr);
+  EXPECT_THAT(built_options->prefetch_embedding_token_ids,
+              ElementsAre(0, 19, -1, 20));
+
+  // 2. On simple_embedding_lookup_op.tflite, CompiledModel::Run(..., &options)
+  // triggers table discovery and populates the per-signature cache.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel embedding_model,
+      CompiledModel::Create(
+          env, testing::GetTestFilePath("simple_embedding_lookup_op.tflite"),
+          HwAccelerators::kCpu));
+  EXPECT_TRUE(
+      embedding_model.Get()->GetCachedEmbeddingTablesForTesting(0).empty());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> emb_inputs,
+                              embedding_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> emb_outputs,
+                              embedding_model.CreateOutputBuffers());
+  const int32_t lookup_ids[] = {0, 1, 2, 3, 4};
+  ASSERT_TRUE(emb_inputs[0].Write<int32_t>(absl::MakeConstSpan(lookup_ids)));
+  LITERT_ASSERT_OK(embedding_model.Run(emb_inputs, emb_outputs, &options));
+
+  auto cached_tables =
+      embedding_model.Get()->GetCachedEmbeddingTablesForTesting(0);
+  ASSERT_EQ(cached_tables.size(), 1);
+  EXPECT_EQ(cached_tables[0].num_rows, 20);
+  EXPECT_EQ(cached_tables[0].row_bytes, 8);
+
+  // 3. On a model without EMBEDDING_LOOKUP (simple_model.tflite), Run with
+  // prefetch options is a transparent no-op and still succeeds.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers, &options));
+  EXPECT_TRUE(
+      compiled_model.Get()->GetCachedEmbeddingTablesForTesting(0).empty());
+}
+
 TEST(CompiledModelTest, RunTwoModelsPipelineWithSharedTensorBuffers) {
   // In this test, we create two CompiledModels and the second model uses the
   // output of the first model as its first input and the second input is shared
