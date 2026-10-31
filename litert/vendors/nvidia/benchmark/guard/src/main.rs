@@ -167,6 +167,38 @@ fn capture_options(probe: &ProbeArgs, env: &BenchEnv, config: &Config) -> Result
     })
 }
 
+/// The comparison's markdown with the localization appended when the
+/// verdict is not PASS (or the reason it could not be built), written as
+/// against_<baseline>.md beside localize_<baseline>.md.
+fn comparison_with_localization(
+    base: &capture::Capture,
+    cand: &capture::Capture,
+    comparison: &report::Comparison,
+) -> Result<String> {
+    let mut markdown = report::render_comparison(comparison);
+    if comparison.verdict != numerics::Verdict::Pass {
+        match report::localize_captures(base, cand) {
+            Ok(localization) => {
+                let local = report::render_localization(&localization);
+                write_report(
+                    &cand.dir,
+                    &format!("localize_{}", base.manifest.name),
+                    &local,
+                    &localization,
+                )?;
+                markdown.push_str(&local);
+            }
+            Err(error) => {
+                let line = format!("The localization could not be built: {error:#}\n\n");
+                eprintln!("{line}");
+                markdown.push_str(&line);
+            }
+        }
+    }
+    write_report(&cand.dir, &format!("against_{}", base.manifest.name), &markdown, comparison)?;
+    Ok(markdown)
+}
+
 fn write_report(
     dir: &Path,
     stem: &str,
@@ -279,32 +311,7 @@ fn main() -> Result<()> {
                 None => Vec::new(),
             };
             let comparison = report::compare(&base, &cand, &config, &record_points);
-            let mut markdown = report::render_comparison(&comparison);
-            write_report(
-                &cand.dir,
-                &format!("against_{}", base.manifest.name),
-                &markdown,
-                &comparison,
-            )?;
-            if comparison.verdict != numerics::Verdict::Pass {
-                match report::localize_captures(&base, &cand) {
-                    Ok(localization) => {
-                        let local = report::render_localization(&localization);
-                        write_report(
-                            &cand.dir,
-                            &format!("localize_{}", base.manifest.name),
-                            &local,
-                            &localization,
-                        )?;
-                        markdown.push_str(&local);
-                    }
-                    Err(error) => {
-                        let line = format!("The localization could not be built: {error:#}\n\n");
-                        eprintln!("{line}");
-                        markdown.push_str(&line);
-                    }
-                }
-            }
+            let markdown = comparison_with_localization(&base, &cand, &comparison)?;
             print!("{markdown}");
             println!(
                 "Report: {}",
@@ -321,13 +328,7 @@ fn main() -> Result<()> {
                 None => Vec::new(),
             };
             let comparison = report::compare(&base, &cand, &config, &record_points);
-            let markdown = report::render_comparison(&comparison);
-            write_report(
-                &cand.dir,
-                &format!("against_{}", base.manifest.name),
-                &markdown,
-                &comparison,
-            )?;
+            let markdown = comparison_with_localization(&base, &cand, &comparison)?;
             print!("{markdown}");
             std::process::exit(comparison.verdict.exit_code());
         }

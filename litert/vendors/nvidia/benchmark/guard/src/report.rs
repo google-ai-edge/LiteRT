@@ -1007,12 +1007,16 @@ pub fn render_localization(r: &LocalizationReport) -> String {
             let l = &p.localization;
             if l.above_cap > 0 {
                 s.push_str(&format!(
-                    "- {} {}{}: {} outputs above the dump's cap ({} state, the caches): the steps they belong to are not localized below their dumped outputs (numerics.outputs_max_mb).\n",
+                    "- {} {}{}: {} outputs above the dump's cap{}: the steps they belong to are not localized below their dumped outputs (numerics.outputs_max_mb).\n",
                     p.model,
                     p.prompt,
                     if p.mtp { " (mtp)" } else { "" },
                     l.above_cap,
-                    l.above_cap_state
+                    match l.above_cap_state {
+                        0 => String::new(),
+                        n if n == l.above_cap => " (all state, the caches)".to_string(),
+                        n => format!(" ({n} of them state, the caches)"),
+                    }
                 ));
             }
         }
@@ -1356,6 +1360,54 @@ mod tests {
         let rendered = render_comparison(&c);
         assert!(rendered.contains("## Not compared"));
         assert!(rendered.contains("- WARN: no numerics probe compared"));
+    }
+
+    #[test]
+    fn the_localization_says_how_many_outputs_were_above_the_cap() {
+        let probe = |above_cap: usize, above_cap_state: usize| ProbeLocalization {
+            model: "e2b".into(),
+            prompt: "doc_8k".into(),
+            mtp: false,
+            parted_token: None,
+            tokens_base: 3,
+            tokens_cand: 3,
+            parted_char: None,
+            common_words: 0,
+            localization: Localization { above_cap, above_cap_state, ..Localization::default() },
+            row_kls: Vec::new(),
+            max_row_kl: None,
+        };
+        let report = |p: ProbeLocalization| LocalizationReport {
+            base_name: "a".into(),
+            cand_name: "b".into(),
+            base_build: "x".into(),
+            cand_build: "y".into(),
+            probes: vec![p],
+            skipped: Vec::new(),
+            not_compared: Vec::new(),
+            texts: Vec::new(),
+            text_partings: Vec::new(),
+            autopsies: Vec::new(),
+        };
+        let none = render_localization(&report(probe(0, 0)));
+        assert!(!none.contains("above the dump's cap"), "{none}");
+        let logits = render_localization(&report(probe(8, 0)));
+        assert!(
+            logits.contains("- e2b doc_8k: 8 outputs above the dump's cap: the steps"),
+            "{logits}"
+        );
+        let all = render_localization(&report(probe(270, 270)));
+        assert!(
+            all.contains("270 outputs above the dump's cap (all state, the caches): the steps"),
+            "{all}"
+        );
+        let some = render_localization(&report(probe(308, 300)));
+        assert!(
+            some.contains(
+                "308 outputs above the dump's cap (300 of them state, the caches): the steps"
+            ),
+            "{some}"
+        );
     }
 
     #[test]

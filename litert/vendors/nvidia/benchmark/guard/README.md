@@ -42,8 +42,8 @@ output of the first eight steps of every partition whole (outputs up to
 16 MB; the in-place caches, marked `state`, at every step of a context that
 emits nothing else, the prefill's chunks, and at the first step of the
 others), with an index in production order that also records each step's
-input tokens, which tell the prefill (a chunk's count) from the decode (one)
-and the verify step (a few).
+input tokens, which tell the prefill (a chunk's count: 128 or 1024 here)
+from the decode (one) and the verify step (a few).
 `localize --baseline A B` compares two captures' dumps in that order and names
 the first tensor that differs (its context, function and input tokens, step
 and output, how many elements moved and how far, how many of that step's
@@ -186,9 +186,11 @@ first use); a numerics probe of a model runs before its performance probes.
   immediate) identical and matching the regex, the sampled texts identical.
 - The functions in the dumps are the invocation contexts' (`c<context>
   tensorrt_partition_<n>`), with the step's input tokens beside them: a
-  prefill chunk's 1024, a decode step's 1, a verify step's few. The
-  numbering differs between a numerics run and the autopsy's bench.sh run,
-  which load different signatures.
+  prefill chunk's count (128 for the short prompts, which LiteRT-LM prefills
+  through the `prefill_128` signature: three chunks for the code prompts of
+  315 to 360 tokens, one for `reason`; 1024 for the documents), a decode step's 1, a verify step's few.
+  The numbering differs between a numerics run and the autopsy's bench.sh
+  run, which load different signatures.
 
 ## Rules of thumb
 

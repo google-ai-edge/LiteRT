@@ -285,9 +285,9 @@ pub struct Localization {
     pub first_step_outputs: usize,
     /// The largest relative move over all pairs.
     pub largest: Option<TensorDiff>,
-    /// Index lines of either run whose output was above the dump's cap and
-    /// left no file (the caches of a long context): those steps are not
-    /// localized below their dumped outputs.
+    /// Outputs above the dump's cap on either side, each once (an index
+    /// line without a file: the caches of a long context): those steps are
+    /// not localized below their dumped outputs.
     #[serde(default)]
     pub above_cap: usize,
     /// Of those, state outputs (the caches).
