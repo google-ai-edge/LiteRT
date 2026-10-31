@@ -69,7 +69,7 @@ pub fn workload_legend(names: &[String]) -> Vec<WorkloadLegend> {
 }
 
 /// What the probes do not cover, printed under every comparison.
-pub const NOT_PROBED: &str = "Not probed: a grammar that ends inside an MTP round; the samplers at exact ties on the k-th logit; the device's memory; contexts beyond the measured workloads other than by the cost models; prefill chunks past the dumped steps (numerics.full_steps).";
+pub const NOT_PROBED: &str = "Not probed: a grammar that ends inside an MTP round; the samplers at exact ties on the k-th logit; the device's memory; contexts beyond the measured workloads other than by the cost models; prefill chunks past the dumped steps (numerics.full_steps); outputs above the dump's cap (numerics.outputs_max_mb: the caches of a long context, which the localization reports as above the cap).";
 
 fn text_run<'a>(
     runs: &'a [TextRun],
@@ -275,6 +275,11 @@ fn not_compared(base: &Capture, cand: &Capture) -> Vec<String> {
     for b in &base.autopsies {
         if !cand.autopsies.iter().any(|c| c.model == b.model) {
             out.push(format!("autopsy {}: not in the candidate", b.model));
+        }
+    }
+    for c in &cand.autopsies {
+        if !base.autopsies.iter().any(|b| b.model == c.model) {
+            out.push(format!("autopsy {}: not in the baseline", c.model));
         }
     }
     out
@@ -758,6 +763,10 @@ pub struct LocalizationReport {
     pub probes: Vec<ProbeLocalization>,
     /// Probes without dumps on one side.
     pub skipped: Vec<String>,
+    /// Probes, texts and autopsies of either capture without a counterpart
+    /// in the other: what this localization does not cover.
+    #[serde(default)]
+    pub not_compared: Vec<String>,
     pub texts: Vec<TextCheck>,
     /// The candidate's texts against the baseline's, per variant.
     pub text_partings: Vec<TextParting>,
@@ -844,6 +853,7 @@ pub fn localize_captures(base: &Capture, cand: &Capture) -> Result<LocalizationR
         cand_build: cand.manifest.build_id.clone(),
         probes,
         skipped,
+        not_compared: not_compared(base, cand),
         texts: check_texts(base, cand),
         text_partings,
         autopsies: autopsy_diffs(base, cand),
@@ -993,18 +1003,32 @@ pub fn render_localization(r: &LocalizationReport) -> String {
                 ));
             }
         }
+        for p in &r.probes {
+            let l = &p.localization;
+            if l.above_cap > 0 {
+                s.push_str(&format!(
+                    "- {} {}{}: {} outputs above the dump's cap ({} state, the caches): the steps they belong to are not localized below their dumped outputs (numerics.outputs_max_mb).\n",
+                    p.model,
+                    p.prompt,
+                    if p.mtp { " (mtp)" } else { "" },
+                    l.above_cap,
+                    l.above_cap_state
+                ));
+            }
+        }
         s.push('\n');
         let with_rows: Vec<&ProbeLocalization> =
             r.probes.iter().filter(|p| !p.row_kls.is_empty()).collect();
         if !with_rows.is_empty() {
-            s.push_str("## KL over the whole vocabulary (the first logits rows)\n\n| Model | Prompt | Mode | Row (function, step) | KL | max abs delta logit | Same argmax |\n|---|---|---|---|---:|---:|---|\n");
+            s.push_str("## KL over the whole vocabulary (the first logits rows)\n\n| Model | Prompt | Mode | Row (context, function, step) | KL | max abs delta logit | Same argmax |\n|---|---|---|---|---:|---:|---|\n");
             for p in with_rows {
                 for k in p.row_kls.iter().take(12) {
                     s.push_str(&format!(
-                        "| {} | {} | {} | {} step {} row {} | {:.2e} | {:.3e} | {} |\n",
+                        "| {} | {} | {} | c{} {} step {} row {} | {:.2e} | {:.3e} | {} |\n",
                         p.model,
                         p.prompt,
                         if p.mtp { "mtp" } else { "plain" },
+                        k.context,
                         k.function,
                         k.step,
                         k.row,
@@ -1023,6 +1047,13 @@ pub fn render_localization(r: &LocalizationReport) -> String {
     if !r.skipped.is_empty() {
         s.push('\n');
     }
+    if !r.not_compared.is_empty() {
+        s.push_str("## Not compared\n\n");
+        for line in &r.not_compared {
+            s.push_str(&format!("- {line}\n"));
+        }
+        s.push('\n');
+    }
     if !r.text_partings.is_empty() {
         s.push_str("## Texts against the baseline's\n\n| Model | Probe | Variant | Parted at char | Chars (base, cand) |\n|---|---|---|---:|---|\n");
         for t in &r.text_partings {
@@ -1039,9 +1070,10 @@ pub fn render_localization(r: &LocalizationReport) -> String {
         s.push('\n');
         for t in r.texts.iter().filter(|t| t.verdict != Verdict::Pass) {
             s.push_str(&format!(
-                "- {} {} (device vs host): {}\n",
+                "- {} {} ({} vs host): {}\n",
                 t.model,
                 t.kind,
+                t.variant,
                 t.reasons.join("; ")
             ));
         }

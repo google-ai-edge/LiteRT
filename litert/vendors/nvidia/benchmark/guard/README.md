@@ -45,10 +45,14 @@ others), with an index in production order that also records each step's
 input tokens, which tell the prefill (a chunk's count) from the decode (one)
 and the verify step (a few).
 `localize --baseline A B` compares two captures' dumps in that order and names
-the first tensor that differs (its context, function, step and output, how
-many elements moved and how far, the functions the difference has reached by
-that step), the largest move, and the KL of the first logits rows over the
-whole vocabulary (the top-32 of DUMP_IO is a sample of it). A partition is as
+the first tensor that differs (its context, function and input tokens, step
+and output, how many elements moved and how far, how many of that step's
+outputs differ), the largest move, and the KL of the first logits rows over
+the whole vocabulary (the top-32 of DUMP_IO is a sample of it). An output
+above the cap keeps its index line without a file, and the localization says
+how many such outputs a probe had (the caches of a long context: the 12B's
+128k caches are 33 MB each, so at that tier only the decode's outputs are
+localized). A partition is as
 deep as it sees: TensorRT fuses the layers inside one, so a change in a
 kernel shows as the first step and partition whose outputs moved, with the
 greedy token where the texts part; the autopsy below names the kernel when
@@ -139,12 +143,12 @@ first use); a numerics probe of a model runs before its performance probes.
 - Memory: the capture records the peak RSS of the performance runs and
   nothing of the device's.
 
-## What the gates showed (2026-10-27, E2B, build 3c590a6e1-95cd9c0b)
+## What the gates showed (2026-10-27, E2B)
 
-- The chain against round 5's `final` capture: the ten greedy probes (five
-  prompts, plain and MTP) bit-identical, every performance cell within four
-  percent (the 8k decode cells up by 2.7 and 3.9 percent, beyond their
-  spreads), acceptance equal.
+- The chain against round 5's `final` capture (build 3c590a6e1-95cd9c0b):
+  the ten greedy probes (five prompts, plain and MTP) bit-identical, every
+  performance cell within four percent (the 8k decode cells up by 2.7 and
+  3.9 percent, beyond their spreads), acceptance equal.
 - A bit-identical rebuild captured under another name and localized against
   the first: 76 tensors paired per probe, none differing, the texts
   identical, PASS. The autopsy's sums moved by up to 21 µs per kernel
@@ -164,11 +168,26 @@ first use); a numerics probe of a model runs before its performance probes.
   (the autopsy lists 212 GEMV and 30 cache-write launches per decode step
   and 57 INT4 GEMM launches per prefill; the rest are TensorRT's fusions),
   which is the guard saying so.
+- A divergence past the first prefill chunk (the int8 cache write's scale
+  times 1.001 from write position 1024 on, the branch
+  `scratch-divergence-tail`, against the build 44cdec619-95cd9c0b): the
+  four short prompts identical in every tensor; the 8k document named at
+  `c1 tensorrt_partition_1 (1024 input tokens) step 3`, its first cache
+  output differing from row 2047 on, chunks 1 and 2 identical. Step 3, not
+  2: by the dumps chunk 1 writes rows 0 to 1023, chunk 2 rows 1023 to 2046
+  (the first chunk's last row written again), chunk 3 rows 2047 to 3070 and
+  chunk 4 rows 3071 to 4094, so chunk 2's write position is under the gate
+  and chunk 3's, 2047, is the first at or past it.
+- A build against the one before it (the dump's index fields only): every
+  tensor identical, none differing of the 76 to 334 paired per probe (76 for
+  the short prompts, 286 for the 8k document, more for the MTP runs), the
+  three constraint variants (device, host, immediate) identical and matching
+  the regex, the sampled texts identical.
 - The functions in the dumps are the invocation contexts' (`c<context>
-  tensorrt_partition_<n>`): which is the prefill and which the decode follows
-  from the step counts and the dims, and the numbering differs between a
-  numerics run and the autopsy's bench.sh run, which load different
-  signatures.
+  tensorrt_partition_<n>`), with the step's input tokens beside them: a
+  prefill chunk's 1024, a decode step's 1, a verify step's few. The
+  numbering differs between a numerics run and the autopsy's bench.sh run,
+  which load different signatures.
 
 ## Rules of thumb
 

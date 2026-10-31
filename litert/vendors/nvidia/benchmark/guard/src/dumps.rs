@@ -44,6 +44,9 @@ pub struct IndexLine {
     #[serde(default)]
     pub input_dims: Vec<i64>,
     pub bytes: u64,
+    /// "size" when the output was above the dump's cap and left no file.
+    #[serde(default)]
+    pub skipped: String,
     pub file: String,
 }
 
@@ -80,10 +83,11 @@ impl IndexLine {
         }
     }
 
-    /// Whether the guard reads this element type: the floats, and the int8
-    /// of the quantized caches (compared as integers).
+    /// Whether the guard reads this line: a dumped tensor of a type it
+    /// reads (the floats, and the int8 of the quantized caches, compared as
+    /// integers).
     pub fn is_comparable(&self) -> bool {
-        self.element_bytes().is_some()
+        self.skipped.is_empty() && !self.file.is_empty() && self.element_bytes().is_some()
     }
 }
 
@@ -281,6 +285,14 @@ pub struct Localization {
     pub first_step_outputs: usize,
     /// The largest relative move over all pairs.
     pub largest: Option<TensorDiff>,
+    /// Index lines of either run whose output was above the dump's cap and
+    /// left no file (the caches of a long context): those steps are not
+    /// localized below their dumped outputs.
+    #[serde(default)]
+    pub above_cap: usize,
+    /// Of those, state outputs (the caches).
+    #[serde(default)]
+    pub above_cap_state: usize,
 }
 
 /// Compares the two dumps in the baseline's production order.
@@ -293,6 +305,9 @@ pub fn localize(base_dir: &Path, cand_dir: &Path) -> Result<Localization> {
     let mut out = Localization::default();
     out.unpaired = base.iter().filter(|l| !cand_by_key.contains_key(&l.key())).count()
         + cand.iter().filter(|l| !base_keys.contains(&l.key())).count();
+    out.above_cap = base.iter().chain(cand.iter()).filter(|l| !l.skipped.is_empty()).count();
+    out.above_cap_state =
+        base.iter().chain(cand.iter()).filter(|l| !l.skipped.is_empty() && l.state).count();
     let mut first_step: Option<(u32, u32)> = None;
     for line in &base {
         let Some(other) = cand_by_key.get(&line.key()) else { continue };
@@ -500,8 +515,17 @@ mod tests {
         let index = load_index(&a).unwrap();
         assert!(index[0].state && index[0].is_comparable());
         assert_eq!(index[0].input_rows(), 0, "the test index carries no input dims");
-        let with_dims: IndexLine = serde_json::from_str(r#"{"seq":0,"context":2,"function":"f","step":1,"output":0,"element_type":9,"dims":[1,1,4,2],"state":true,"input_dims":[1,1024],"bytes":8,"file":"x"}"#).unwrap();
+        let with_dims: IndexLine = serde_json::from_str(r#"{"seq":0,"context":2,"function":"f","step":1,"output":0,"element_type":9,"dims":[1,1,4,2],"state":true,"input_dims":[1024],"bytes":8,"file":"x"}"#).unwrap();
         assert_eq!(with_dims.input_rows(), 1024);
+        let capped: IndexLine = serde_json::from_str(r#"{"seq":1,"context":2,"function":"f","step":1,"output":1,"element_type":9,"dims":[1,1,130048,256],"state":true,"input_dims":[1024],"bytes":33292288,"skipped":"size","file":""}"#).unwrap();
+        assert!(!capped.is_comparable());
+        let mut index_text = std::fs::read_to_string(a.join("index.jsonl")).unwrap();
+        index_text.push_str(&serde_json::to_string(&capped).unwrap());
+        index_text.push('\n');
+        std::fs::write(a.join("index.jsonl"), &index_text).unwrap();
+        let capped_localization = localize(&a, &b).unwrap();
+        assert_eq!((capped_localization.above_cap, capped_localization.above_cap_state), (1, 1));
+        assert_eq!(capped_localization.pairs, 2, "the capped line pairs with nothing");
         assert_eq!(
             read_tensor(&a, &index[0]).unwrap(),
             vec![1.0, -2.0, 3.0, 4.0, 5.0, 6.0, 7.0, -128.0]

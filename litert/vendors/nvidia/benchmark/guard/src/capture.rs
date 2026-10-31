@@ -74,15 +74,18 @@ pub fn capture_dir(env: &BenchEnv, name: &str) -> PathBuf {
     guard_root(env).join(name)
 }
 
-/// A capture name is one path component of letters, digits, '.', '_' and
-/// '-', not starting with '.': it becomes the capture's directory and the
-/// dumps' `<dir>:<steps>:<mb>` spec, where a ':' or a '/' would misroute.
+/// A capture name is one path component of letters, digits, '.', '_', '-'
+/// and '+' (a dirty tree's build id carries one), not starting with '.': it
+/// becomes the capture's directory and the dumps' `<dir>:<steps>:<mb>` spec,
+/// where a ':' or a '/' would misroute.
 pub fn validate_name(name: &str) -> Result<()> {
     let ok = !name.is_empty()
         && !name.starts_with('.')
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-');
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' || c == '+');
     if !ok {
-        bail!("capture name {name:?}: use letters, digits, '.', '_' and '-' only, not starting with '.'");
+        bail!("capture name {name:?}: use letters, digits, '.', '_', '-' and '+' only, not starting with '.'");
     }
     Ok(())
 }
@@ -437,7 +440,14 @@ mod tests {
 
     #[test]
     fn capture_names_are_one_plain_path_component() {
-        for ok in ["3c590a6e1-95cd9c0b", "scratch_div", "rebuild.2", "A-b_c"] {
+        for ok in [
+            "3c590a6e1-95cd9c0b",
+            "44cdec619+-95cd9c0b",
+            "1261dad0a+-75a399d7+",
+            "scratch_div",
+            "rebuild.2",
+            "A-b_c",
+        ] {
             assert!(validate_name(ok).is_ok(), "{ok}");
         }
         for bad in ["", "a:b", "a/b", "../x", ".hidden", "a b", "2026-10-27T21:42"] {
