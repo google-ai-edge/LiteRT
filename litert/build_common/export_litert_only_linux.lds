@@ -16,6 +16,10 @@ VERS_1.0 {
     LiteRtDispatch_Mock*;
     LiteRtDispatchExample*;
 
+    /* NVIDIA dispatch extensions: the samplers LiteRT-LM looks up with dlsym */
+
+    LiteRtDispatchNvidia*;
+
   local:
 
     /* Hide everything else */
