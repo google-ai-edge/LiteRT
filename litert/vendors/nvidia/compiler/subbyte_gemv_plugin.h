@@ -61,11 +61,12 @@ namespace litert::nvidia {
 // few rows (gemm false): gelu(gate) * up in one launch.
 //
 // `row_positions` (gemm only) adds a last input, the INT32 token positions of
-// the activation rows, one per row. With LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=1
-// the int8 tensor-core path then chooses its outlier dims over the rows whose
-// position continues the first row's, not over the padding a runtime appends
-// to a prefill chunk (LiteRtNvidiaLaunchBf16Int4GemmInt8Normed); otherwise
-// every row chooses, as without the input.
+// the activation rows, one per row: the int8 tensor-core path then chooses its
+// outlier dims over the rows whose position continues the first row's, not
+// over the padding a runtime appends to a prefill chunk
+// (LiteRtNvidiaLaunchBf16Int4GemmInt8Normed).
+// LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=0 ignores the input: every row chooses, as
+// without it.
 nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(
     int32_t bit_width, int32_t rows, int32_t columns, int32_t gate = 0,
     bool gemm = false, int64_t weight_offset = 0, int64_t holder_granule = 0,

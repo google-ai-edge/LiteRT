@@ -91,8 +91,9 @@ warns when the baseline's parted too (a dependence the baseline had
 already). Known failing case: the INT8 GEMM chose its outlier dims over a
 prefill chunk's padding rows, whose attention averages the cache, a
 previous conversation's included; on 413f8dfda the 12B's second text parted
-at character 158 and the E4B's at 736, and with
-`LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=1` (962697400) every conversation agrees.
+at character 158 and the E4B's at 736, and over the chunk's rows (962697400,
+the default since the change that made it so) every conversation agrees;
+`--env LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=0` reproduces the failing case.
 About 15 to 25 seconds per model; `--no-conversations` skips it.
 
 **Memory.** bench.sh's memory metric of the short workload, plain and MTP,

@@ -1182,9 +1182,8 @@ TEST(TensorRtGraphBuilderTest, CudaGemmReadsThePrefillPositions) {
   // whose activations hold whatever their attention averaged from the cache.
   // With the signature's positions input the GEMM's int8 path chooses its
   // outlier dims over the chunk's rows, so the chunk's results do not depend
-  // on the padding; without one, loud padding changes them. The plugin reads
-  // the switch once per process, at the first GEMM that has the positions.
-  setenv("LITERT_NVIDIA_GEMM_INT8_REAL_ROWS", "1", 1);
+  // on the padding; without one, loud padding changes them (the plugin's
+  // default; LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=0 turns it off).
   constexpr int32_t kM = 1024;
   constexpr int32_t kK = 256;
   constexpr int32_t kChunk = 900;

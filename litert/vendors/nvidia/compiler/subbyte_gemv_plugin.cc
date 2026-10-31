@@ -262,8 +262,8 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
     const float* norm_scale =
         norm_eps_ >= 0.0f ? static_cast<const float*>(inputs[3]) : nullptr;
     // The rows' positions, one per row, tell the chunk's rows from the
-    // padding past them (with LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=1; otherwise
-    // every row chooses the int8 path's outlier dims).
+    // padding past them (LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=0: every row
+    // chooses the int8 path's outlier dims, as before).
     const int32_t* positions = nullptr;
     if (row_positions_ != 0 && Int8RealRowsEnabled() &&
         Elements(input_desc[InputCount() - 1].dims) == rows) {
@@ -344,11 +344,11 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
   // Whether the int8 path chooses its outlier dims over the chunk's rows
   // alone when the rows' positions are an input; the padding past them holds
   // what its attention averaged from the cache, a previous conversation's
-  // values included. Opt-in (=1) until measured; read once per process.
+  // values included. On unless =0; read once per process.
   static bool Int8RealRowsEnabled() noexcept {
     static const bool enabled = [] {
       const char* value = std::getenv("LITERT_NVIDIA_GEMM_INT8_REAL_ROWS");
-      return value != nullptr && std::strcmp(value, "1") == 0;
+      return value == nullptr || std::strcmp(value, "0") != 0;
     }();
     return enabled;
   }

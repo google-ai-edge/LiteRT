@@ -4201,10 +4201,10 @@ class TensorRtGraphBuilder {
                                          nvinfer1::DataType::kBF16));
     }
     // A GEMM over a prefill chunk's rows reads their token positions when
-    // its int8 path can take the product: with them that path can choose the
-    // outlier dims over the chunk's rows (LITERT_NVIDIA_GEMM_INT8_REAL_ROWS),
-    // not over the padding past them, whose attention averaged whatever the
-    // cache held.
+    // its int8 path can take the product: with them that path chooses the
+    // outlier dims over the chunk's rows, not over the padding past them,
+    // whose attention averaged whatever the cache held
+    // (LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=0 returns to every row).
     const LiteRtNvidiaGemmShape int8_shape = {
         static_cast<int32_t>(activation_rows), info.columns,
         gate != 0 ? info.rows / 2 : info.rows, gate, info.scale_block};
