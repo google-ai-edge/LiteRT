@@ -467,7 +467,7 @@ pub fn run_autopsy_probe(env: &BenchEnv, probe: &AutopsyProbe) -> Result<Autopsy
     std::fs::create_dir_all(probe.out_dir)?;
     for entry in std::fs::read_dir(probe.out_dir)?.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with("autopsy.txt.") {
+        if name.starts_with("autopsy.txt.") || name.starts_with("timeline.txt.") {
             let _ = std::fs::remove_file(entry.path());
         }
     }
@@ -500,6 +500,11 @@ pub fn run_autopsy_probe(env: &BenchEnv, probe: &AutopsyProbe) -> Result<Autopsy
         ),
         "--env".into(),
         format!("LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_DOT={}", probe.out_dir.join("dot").display()),
+        "--env".into(),
+        format!(
+            "LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_TIMELINE={}",
+            probe.out_dir.join("timeline.txt").display()
+        ),
     ];
     if probe.mtp {
         args.push("--mtp".into());

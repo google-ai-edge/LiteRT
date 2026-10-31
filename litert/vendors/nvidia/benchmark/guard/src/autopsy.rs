@@ -24,6 +24,11 @@ pub struct Kernel {
     pub block: u32,
     pub cold_us: f64,
     pub warm_us: f64,
+    /// The node's time in the real step (the timeline: the time from the
+    /// previous node's end to this one's, its launch gap included), when the
+    /// run wrote one.
+    #[serde(default)]
+    pub graph_us: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +38,12 @@ pub struct FunctionAutopsy {
     pub kernels: Vec<Kernel>,
     pub warm_us: f64,
     pub cold_us: f64,
+    /// The step's whole time in the timeline replay, and the kernel nodes'
+    /// part of it; None without a timeline.
+    #[serde(default)]
+    pub graph_total_us: Option<f64>,
+    #[serde(default)]
+    pub graph_kernel_us: Option<f64>,
 }
 
 /// The autopsy of one run: every function's step graph, kernel by kernel.
@@ -127,6 +138,51 @@ pub fn short_name(demangled: &str) -> String {
     last
 }
 
+/// Parses one function's timeline file (`# total_us T nodes N`, then `node
+/// type end_us dur_us` lines): the total and each node's duration by index.
+pub fn parse_timeline(text: &str) -> (Option<f64>, BTreeMap<u32, f64>) {
+    let mut total = None;
+    let mut durations = BTreeMap::new();
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("# total_us") {
+            total = rest.split_whitespace().next().and_then(|v| v.parse().ok());
+            continue;
+        }
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 4 {
+            continue;
+        }
+        if let (Ok(id), Ok(dur)) = (fields[0].parse::<u32>(), fields[3].parse::<f64>()) {
+            durations.insert(id, dur);
+        }
+    }
+    (total, durations)
+}
+
+/// Parses one function's autopsy file (`# node grid_x grid_y grid_z block_x
+/// cold_us warm_us` lines) with the DOT's names, and the timeline's node
+/// times when given.
+pub fn parse_autopsy_with_timeline(
+    function: &str,
+    autopsy_text: &str,
+    dot_text: Option<&str>,
+    timeline_text: Option<&str>,
+) -> FunctionAutopsy {
+    let mut autopsy = parse_autopsy(function, autopsy_text, dot_text);
+    if let Some(text) = timeline_text {
+        let (total, durations) = parse_timeline(text);
+        for kernel in &mut autopsy.kernels {
+            kernel.graph_us = durations.get(&kernel.id).copied();
+        }
+        autopsy.graph_total_us = total;
+        autopsy.graph_kernel_us = Some(autopsy.kernels.iter().filter_map(|k| k.graph_us).sum());
+    }
+    autopsy
+}
+
 /// Parses one function's autopsy file (`# node grid_x grid_y grid_z block_x
 /// cold_us warm_us` lines) with the DOT's names.
 pub fn parse_autopsy(
@@ -171,6 +227,7 @@ pub fn parse_autopsy(
             id: *id,
             name: name.clone(),
             short: short_name(dem),
+            graph_us: None,
             grid: *grid,
             block: *block,
             cold_us: *cold,
@@ -183,6 +240,8 @@ pub fn parse_autopsy(
         warm_us: kernels.iter().map(|k| k.warm_us.max(0.0)).sum(),
         cold_us: kernels.iter().map(|k| k.cold_us.max(0.0)).sum(),
         kernels,
+        graph_total_us: None,
+        graph_kernel_us: None,
     }
 }
 
@@ -199,6 +258,7 @@ pub fn load_autopsy_dir(dir: &Path, model: &str, workload: &str, mtp: bool) -> R
         let name = entry.file_name().to_string_lossy().into_owned();
         let Some(function) = name.strip_prefix("autopsy.txt.") else { continue };
         let text = std::fs::read_to_string(entry.path())?;
+        let timeline = std::fs::read_to_string(dir.join(format!("timeline.txt.{function}"))).ok();
         let dot = std::fs::read_dir(dir.join("dot"))
             .ok()
             .and_then(|d| {
@@ -212,7 +272,12 @@ pub fn load_autopsy_dir(dir: &Path, model: &str, workload: &str, mtp: bool) -> R
                     .min()
             })
             .and_then(|p| std::fs::read_to_string(p).ok());
-        functions.push(parse_autopsy(function, &text, dot.as_deref()));
+        functions.push(parse_autopsy_with_timeline(
+            function,
+            &text,
+            dot.as_deref(),
+            timeline.as_deref(),
+        ));
     }
     Ok(Autopsy { model: model.to_string(), workload: workload.to_string(), mtp, functions })
 }
@@ -227,6 +292,11 @@ pub struct KernelDelta {
     pub base_us: f64,
     pub cand_us: f64,
     pub delta_us: f64,
+    /// The in-graph (timeline) sums, when both captures have them.
+    #[serde(default)]
+    pub base_graph_us: Option<f64>,
+    #[serde(default)]
+    pub cand_graph_us: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -251,8 +321,14 @@ pub struct AutopsyDiff {
 
 /// Warm times summed by (function, kernel name) on both sides.
 pub fn diff_autopsies(base: &Autopsy, cand: &Autopsy) -> AutopsyDiff {
-    let mut sums: BTreeMap<(String, String), (usize, usize, f64, f64)> = BTreeMap::new();
+    let mut sums: BTreeMap<(String, String), (usize, usize, f64, f64, Option<f64>, Option<f64>)> =
+        BTreeMap::new();
     let mut functions: BTreeMap<String, (usize, usize, f64, f64)> = BTreeMap::new();
+    let add_graph = |slot: &mut Option<f64>, value: Option<f64>| {
+        if let Some(v) = value {
+            *slot = Some(slot.unwrap_or(0.0) + v);
+        }
+    };
     for f in &base.functions {
         let entry = functions.entry(f.function.clone()).or_default();
         entry.0 = f.kernels.len();
@@ -261,6 +337,7 @@ pub fn diff_autopsies(base: &Autopsy, cand: &Autopsy) -> AutopsyDiff {
             let s = sums.entry((f.function.clone(), k.short.clone())).or_default();
             s.0 += 1;
             s.2 += k.warm_us.max(0.0);
+            add_graph(&mut s.4, k.graph_us);
         }
     }
     for f in &cand.functions {
@@ -271,11 +348,12 @@ pub fn diff_autopsies(base: &Autopsy, cand: &Autopsy) -> AutopsyDiff {
             let s = sums.entry((f.function.clone(), k.short.clone())).or_default();
             s.1 += 1;
             s.3 += k.warm_us.max(0.0);
+            add_graph(&mut s.5, k.graph_us);
         }
     }
     let mut kernels: Vec<KernelDelta> = sums
         .into_iter()
-        .map(|((function, short), (bc, cc, bu, cu))| KernelDelta {
+        .map(|((function, short), (bc, cc, bu, cu, bg, cg))| KernelDelta {
             function,
             short,
             base_count: bc,
@@ -283,6 +361,8 @@ pub fn diff_autopsies(base: &Autopsy, cand: &Autopsy) -> AutopsyDiff {
             base_us: bu,
             cand_us: cu,
             delta_us: cu - bu,
+            base_graph_us: bg,
+            cand_graph_us: cg,
         })
         .collect();
     kernels.sort_by(|a, b| {
@@ -322,6 +402,18 @@ mod tests {
 }"#;
 
     const AUTOPSY: &str = "# flush_us 657.4\n# node grid_x grid_y grid_z block_x cold_us warm_us\n0 1024 1 1 128 36.24 11.69\n1 1024 1 1 256 20.00 8.50\n";
+
+    #[test]
+    fn a_timeline_gives_every_kernel_its_time_in_the_step() {
+        let base = parse_autopsy_with_timeline("decode", AUTOPSY, Some(DOT), Some("# total_us 30.5 nodes 3\n# node type end_us dur_us\n0 K 12.0 12.0\n2 S 13.0 1.0\n1 K 30.5 17.5\n"));
+        assert_eq!(base.graph_total_us, Some(30.5));
+        assert_eq!(base.kernels[0].graph_us, Some(12.0));
+        assert_eq!(base.kernels[1].graph_us, Some(17.5));
+        assert_eq!(base.graph_kernel_us, Some(29.5));
+        let plain = parse_autopsy("decode", AUTOPSY, Some(DOT));
+        assert_eq!(plain.graph_total_us, None);
+        assert_eq!(plain.kernels[0].graph_us, None);
+    }
 
     #[test]
     fn dot_names_by_id_and_short_names() {

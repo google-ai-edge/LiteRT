@@ -711,17 +711,19 @@ pub fn render_autopsy_diffs(diffs: &[AutopsyDiff]) -> String {
         if moved.is_empty() {
             s.push_str("No kernel moved by a microsecond or more.\n\n");
         } else {
-            s.push_str("| Function | Kernel | Launches (base, cand) | Base us | Cand us | Δ us |\n|---|---|---|---:|---:|---:|\n");
+            s.push_str("| Function | Kernel | Launches (base, cand) | Base us | Cand us | Δ us | In step (base, cand) |\n|---|---|---|---:|---:|---:|---|\n");
             for k in moved {
                 s.push_str(&format!(
-                    "| {} | `{}` | {}, {} | {:.1} | {:.1} | {:+.1} |\n",
+                    "| {} | `{}` | {}, {} | {:.1} | {:.1} | {:+.1} | {}, {} |\n",
                     k.function,
                     k.short,
                     k.base_count,
                     k.cand_count,
                     k.base_us,
                     k.cand_us,
-                    k.delta_us
+                    k.delta_us,
+                    opt(k.base_graph_us, 0),
+                    opt(k.cand_graph_us, 0)
                 ));
             }
             s.push('\n');
@@ -1228,11 +1230,11 @@ pub fn render_capture(capture: &Capture) -> String {
         s.push('\n');
     }
     if !capture.autopsies.is_empty() {
-        s.push_str("## Autopsies (every kernel node of a step graph timed alone)\n\n| Model | Workload | Mode | Function | Kernels | Warm us | Cold us | Flush us |\n|---|---|---|---|---:|---:|---:|---:|\n");
+        s.push_str("## Autopsies (every kernel node of a step graph timed alone, and the step's timeline)\n\nWarm and cold: each kernel node replayed alone (the sums are not the step's time). Step and kernels in step: the step graph replayed with an event after every node, the real data and launch gaps included.\n\n| Model | Workload | Mode | Function | Kernels | Warm us | Cold us | Flush us | Step us | Kernels in step us |\n|---|---|---|---|---:|---:|---:|---:|---:|---:|\n");
         for a in &capture.autopsies {
             for f in &a.functions {
                 s.push_str(&format!(
-                    "| {} | {} | {} | {} | {} | {:.0} | {:.0} | {:.0} |\n",
+                    "| {} | {} | {} | {} | {} | {:.0} | {:.0} | {:.0} | {} | {} |\n",
                     a.model,
                     a.workload,
                     if a.mtp { "mtp" } else { "plain" },
@@ -1240,7 +1242,9 @@ pub fn render_capture(capture: &Capture) -> String {
                     f.kernels.len(),
                     f.warm_us,
                     f.cold_us,
-                    f.flush_us
+                    f.flush_us,
+                    opt(f.graph_total_us, 0),
+                    opt(f.graph_kernel_us, 0)
                 ));
             }
         }
