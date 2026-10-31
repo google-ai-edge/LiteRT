@@ -228,16 +228,17 @@ pub fn render_comparison(c: &Comparison) -> String {
     }
     if !c.numerics.is_empty() {
         s.push_str("## Numerics (greedy decode, logits per step)\n\n");
-        s.push_str("| Model | Prompt | Mode | Steps compared | Parted at | max abs delta | mean KL | top-K overlap | Text | Decode tok/s (base, cand) | Verdict |\n|---|---|---|---:|---:|---:|---:|---:|---|---|---|\n");
+        s.push_str("| Model | Prompt | Mode | Steps compared | Parted at | First-steps KL | max abs delta | mean KL | top-K overlap | Text | Decode tok/s (base, cand) | Verdict |\n|---|---|---|---:|---:|---:|---:|---:|---:|---|---|---|\n");
         for n in &c.numerics {
             s.push_str(&format!(
-                "| {} | {} | {} | {} / {} | {} | {:.4} | {:.2e} | {:.3} | {}{} | {}, {} | {} |\n",
+                "| {} | {} | {} | {} / {} | {} | {:.2e} | {:.4} | {:.2e} | {:.3} | {}{} | {}, {} | {} |\n",
                 n.model,
                 n.prompt,
                 if n.mtp { "mtp" } else { "plain" },
                 n.steps_compared,
                 n.steps_base.min(n.steps_cand),
                 n.diverged_at.map(|d| d.to_string()).unwrap_or_else(|| "-".into()),
+                n.first_kl,
                 n.max_abs_delta,
                 n.mean_kl,
                 n.mean_overlap,

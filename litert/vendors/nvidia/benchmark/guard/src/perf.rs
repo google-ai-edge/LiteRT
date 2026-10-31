@@ -235,7 +235,9 @@ impl CostModel {
     }
 }
 
-/// Linear interpolation (extrapolation beyond the ends) of y at x.
+/// Linear interpolation of y at x between the points; outside their range
+/// the nearest point's y (a measured change ratio holds beyond the measured
+/// contexts rather than growing without bound).
 pub fn interpolate(points: &[(f64, f64)], x: f64) -> Option<f64> {
     let mut sorted: Vec<(f64, f64)> = points.to_vec();
     sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -243,14 +245,14 @@ pub fn interpolate(points: &[(f64, f64)], x: f64) -> Option<f64> {
         0 => None,
         1 => Some(sorted[0].1),
         _ => {
-            let (lo, hi) = if x <= sorted[0].0 {
-                (sorted[0], sorted[1])
-            } else if x >= sorted[sorted.len() - 1].0 {
-                (sorted[sorted.len() - 2], sorted[sorted.len() - 1])
-            } else {
-                let i = sorted.iter().position(|p| p.0 > x).unwrap_or(1).max(1);
-                (sorted[i - 1], sorted[i])
-            };
+            if x <= sorted[0].0 {
+                return Some(sorted[0].1);
+            }
+            if x >= sorted[sorted.len() - 1].0 {
+                return Some(sorted[sorted.len() - 1].1);
+            }
+            let i = sorted.iter().position(|p| p.0 > x).unwrap_or(1).max(1);
+            let (lo, hi) = (sorted[i - 1], sorted[i]);
             if (hi.0 - lo.0).abs() < 1e-12 {
                 return Some(lo.1);
             }
@@ -402,7 +404,7 @@ mod tests {
         assert!((a - 1.0).abs() < 1e-9 && (b - 2.0).abs() < 1e-9);
         assert_eq!(fit_line(&[(5.0, 7.0)]), Some((7.0, 0.0)));
         assert_eq!(interpolate(&[(0.0, 1.0), (10.0, 2.0)], 5.0), Some(1.5));
-        assert_eq!(interpolate(&[(0.0, 1.0), (10.0, 2.0)], 20.0), Some(3.0));
+        assert_eq!(interpolate(&[(0.0, 1.0), (10.0, 2.0)], 20.0), Some(2.0));
     }
 
     #[test]

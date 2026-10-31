@@ -56,13 +56,21 @@ models = ["12b"]
 [numerics]
 top_k = 32
 
+# BF16 logits move by 0.125 per ulp; a different summation order moves the
+# top logits one to three ulp per step and more along the sequence, with KL
+# spikes at near-ties, so the regression signals are the KL over the first
+# steps (identical inputs; about 1e-5 for a reorder), an early parting of the
+# greedy text, loops and non-finite values. The rest warns.
 [numerics.thresholds]
-warn_max_abs_delta = 0.05
-fail_max_abs_delta = 0.5
-warn_mean_kl = 1e-4
-fail_mean_kl = 1e-3
-warn_min_overlap = 0.97
-fail_min_overlap = 0.85
+warn_max_abs_delta = 1.0
+fail_max_abs_delta = 8.0
+first_steps = 4
+warn_first_kl = 1e-3
+fail_first_kl = 1e-2
+warn_mean_kl = 1e-3
+fail_mean_kl = 1e-1
+warn_min_overlap = 0.95
+fail_min_overlap = 0.8
 fail_diverge_before = 8
 fail_loopiness = 0.25
 

@@ -192,6 +192,9 @@ pub struct NumericsComparison {
     pub max_abs_delta: f64,
     pub mean_kl: f64,
     pub max_kl: f64,
+    /// Mean KL over the first `first_steps` comparable steps.
+    #[serde(default)]
+    pub first_kl: f64,
     pub mean_overlap: f64,
     pub mean_margin_delta: f64,
     pub text_identical: bool,
@@ -232,6 +235,12 @@ pub fn compare_runs(
     let max_abs_delta = deltas.iter().map(|d| d.max_abs_delta).fold(0.0, f64::max);
     let mean_kl = deltas.iter().map(|d| d.kl).sum::<f64>() / n;
     let max_kl = deltas.iter().map(|d| d.kl).fold(0.0, f64::max);
+    let first = deltas.iter().take(thresholds.first_steps.max(1)).collect::<Vec<_>>();
+    let first_kl = if first.is_empty() {
+        0.0
+    } else {
+        first.iter().map(|d| d.kl).sum::<f64>() / first.len() as f64
+    };
     let mean_overlap =
         if deltas.is_empty() { 0.0 } else { deltas.iter().map(|d| d.overlap).sum::<f64>() / n };
     let mean_margin_delta = deltas.iter().map(|d| d.margin_delta).sum::<f64>() / n;
@@ -261,6 +270,25 @@ pub fn compare_runs(
         raise(
             Verdict::Fail,
             format!("the candidate's text loops (loopiness {:.2})", cand.loopiness),
+        );
+    }
+    if first_kl >= thresholds.fail_first_kl {
+        raise(
+            Verdict::Fail,
+            format!(
+                "KL over the first {} steps {first_kl:.2e} ≥ {:.0e}",
+                first.len(),
+                thresholds.fail_first_kl
+            ),
+        );
+    } else if first_kl >= thresholds.warn_first_kl {
+        raise(
+            Verdict::Warn,
+            format!(
+                "KL over the first {} steps {first_kl:.2e} ≥ {:.0e}",
+                first.len(),
+                thresholds.warn_first_kl
+            ),
         );
     }
     if max_abs_delta >= thresholds.fail_max_abs_delta {
@@ -322,6 +350,7 @@ pub fn compare_runs(
         max_abs_delta,
         mean_kl,
         max_kl,
+        first_kl,
         mean_overlap,
         mean_margin_delta,
         text_identical: base.text_sha256 == cand.text_sha256,
@@ -388,13 +417,36 @@ mod tests {
 
     #[test]
     fn small_drift_warns_large_drift_fails() {
-        let base = run(vec![step("decode", 1, &[(5, 2.0), (3, 1.0), (7, 0.5)])], "abc");
-        let drift = run(vec![step("decode", 1, &[(5, 2.06), (3, 1.0), (7, 0.5)])], "abc");
-        let c = compare_runs(&base, &drift, &NumericsThresholds::default());
+        // Four confident steps; the variants change the first one.
+        let steps: Vec<StepLogits> =
+            (0..4).map(|i| step("decode", i, &[(5, 2.0), (3, 1.0), (7, 0.5)])).collect();
+        let base = run(steps.clone(), "abc");
+        let variant = |first: &[(u32, f64)]| {
+            let mut s = steps.clone();
+            s[0].top = first.to_vec();
+            run(s, "abc")
+        };
+        // One ulp of BF16 on a logit: no verdict.
+        let c = compare_runs(
+            &base,
+            &variant(&[(5, 2.125), (3, 1.0), (7, 0.5)]),
+            &NumericsThresholds::default(),
+        );
+        assert_eq!(c.verdict, Verdict::Pass, "{:?}", c.reasons);
+        // Probability mass visibly moved on the first step: a warning.
+        let c = compare_runs(
+            &base,
+            &variant(&[(5, 2.0), (3, 1.4), (7, 0.5)]),
+            &NumericsThresholds::default(),
+        );
         assert_eq!(c.verdict, Verdict::Warn, "{:?}", c.reasons);
-        let broken = run(vec![step("decode", 1, &[(5, 4.0), (3, 1.0), (7, 0.5)])], "abc");
-        let c = compare_runs(&base, &broken, &NumericsThresholds::default());
-        assert_eq!(c.verdict, Verdict::Fail);
+        // The distribution rewritten on the first step: a failure.
+        let c = compare_runs(
+            &base,
+            &variant(&[(5, 4.0), (3, 3.5), (7, 3.4)]),
+            &NumericsThresholds::default(),
+        );
+        assert_eq!(c.verdict, Verdict::Fail, "{:?}", c.reasons);
     }
 
     #[test]

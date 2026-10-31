@@ -69,10 +69,23 @@ impl Default for NumericsConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NumericsThresholds {
     /// Largest |candidate - baseline| logit among the top-K of either run, over
-    /// the comparable steps.
+    /// the comparable steps. BF16 logits move by 0.125 per ulp at their usual
+    /// magnitude and a different summation order moves them one to three ulp
+    /// per step, more as the sequence amplifies it, so this warns late and
+    /// fails only on gross change.
     pub warn_max_abs_delta: f64,
     pub fail_max_abs_delta: f64,
-    /// Mean per-step KL(baseline || candidate) over the union of both top-K sets.
+    /// Mean KL(baseline || candidate) over the union of both top-K sets,
+    /// over the first steps (identical inputs, nothing amplified yet): the
+    /// regression signal. A reordered reduction gives about 1e-5; a broken
+    /// kernel orders of magnitude more.
+    #[serde(default = "default_first_steps")]
+    pub first_steps: usize,
+    #[serde(default = "default_warn_first_kl")]
+    pub warn_first_kl: f64,
+    #[serde(default = "default_fail_first_kl")]
+    pub fail_first_kl: f64,
+    /// Mean per-step KL over every comparable step (near-ties spike it).
     pub warn_mean_kl: f64,
     pub fail_mean_kl: f64,
     /// Mean |top-K(baseline) ∩ top-K(candidate)| / K; a value at or below warns/fails.
@@ -85,15 +98,28 @@ pub struct NumericsThresholds {
     pub fail_loopiness: f64,
 }
 
+fn default_first_steps() -> usize {
+    4
+}
+fn default_warn_first_kl() -> f64 {
+    1e-3
+}
+fn default_fail_first_kl() -> f64 {
+    1e-2
+}
+
 impl Default for NumericsThresholds {
     fn default() -> Self {
         Self {
-            warn_max_abs_delta: 0.05,
-            fail_max_abs_delta: 0.5,
-            warn_mean_kl: 1e-4,
-            fail_mean_kl: 1e-3,
-            warn_min_overlap: 0.97,
-            fail_min_overlap: 0.85,
+            warn_max_abs_delta: 1.0,
+            fail_max_abs_delta: 8.0,
+            first_steps: default_first_steps(),
+            warn_first_kl: default_warn_first_kl(),
+            fail_first_kl: default_fail_first_kl(),
+            warn_mean_kl: 1e-3,
+            fail_mean_kl: 1e-1,
+            warn_min_overlap: 0.95,
+            fail_min_overlap: 0.8,
             fail_diverge_before: 8,
             fail_loopiness: 0.25,
         }
