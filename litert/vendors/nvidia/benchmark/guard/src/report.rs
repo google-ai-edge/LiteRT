@@ -386,7 +386,7 @@ pub fn render_capture(capture: &Capture) -> String {
         }
         s.push('\n');
         let models: BTreeSet<&str> = capture.perf.iter().map(|p| p.model.as_str()).collect();
-        s.push_str("## Cost models\n\n| Model | Decode step ms = a + b·context | Prefill s/token = u + v·prompt | Fit points |\n|---|---|---|---:|\n");
+        s.push_str("## Cost models\n\n| Model | Decode step ms = a + b·context | Prefill s = c0 + c1·N + c2·N² | Fit points |\n|---|---|---|---:|\n");
         for model in models {
             let cm = CostModel::fit(model, &capture.perf);
             s.push_str(&format!(
@@ -395,12 +395,13 @@ pub fn render_capture(capture: &Capture) -> String {
                 cm.decode_ms
                     .map(|(a, b)| format!("{a:.3} + {b:.3e}·c"))
                     .unwrap_or_else(|| "-".into()),
-                cm.prefill_s_per_token
-                    .map(|(u, v)| format!("{u:.3e} + {v:.3e}·n"))
+                cm.prefill_s
+                    .map(|(c0, c1, c2)| format!("{c0:.4} + {c1:.3e}·N + {c2:.3e}·N²"))
                     .unwrap_or_else(|| "-".into()),
                 cm.decode_fit_points.len()
             ));
         }
+        s.push_str("\nWith two measured contexts the prefill model has no attention term (c2 = 0) and long contexts come out optimistic; measure a third (perf.workloads) for it. The measured change ratios are the regression yardstick.\n");
         s.push('\n');
     }
     s

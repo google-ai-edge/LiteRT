@@ -68,13 +68,16 @@ fail_loopiness = 0.25
 
 # Performance probes: bench.sh latency runs of these workloads (synthetic
 # prompt, 256 decode tokens); the cost models fitted on them predict the rest.
+# Three contexts: the third lets the prefill model fit the attention's growth
+# (two contexts leave long-context predictions 10-50% optimistic).
 [perf]
-workloads = ["short", "8k"]
-predict = ["16k", "30k"]
+workloads = ["short", "8k", "16k"]
+predict = ["30k", "128k"]
 
 [perf.iterations]
 short = 5
 8k = 2
+16k = 2
 
 [perf.thresholds]
 warn_ratio = 0.97

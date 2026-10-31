@@ -116,15 +116,15 @@ pub struct PerfConfig {
 }
 
 fn default_workloads() -> Vec<String> {
-    vec!["short".to_string(), "8k".to_string()]
+    vec!["short".to_string(), "8k".to_string(), "16k".to_string()]
 }
 
 fn default_iterations() -> BTreeMap<String, u32> {
-    BTreeMap::from([("short".to_string(), 5), ("8k".to_string(), 2)])
+    BTreeMap::from([("short".to_string(), 5), ("8k".to_string(), 2), ("16k".to_string(), 2)])
 }
 
 fn default_predict() -> Vec<String> {
-    vec!["16k".to_string(), "30k".to_string()]
+    vec!["30k".to_string(), "128k".to_string()]
 }
 
 impl Default for PerfConfig {

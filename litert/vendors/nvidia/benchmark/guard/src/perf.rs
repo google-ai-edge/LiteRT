@@ -128,18 +128,69 @@ pub fn decode_context(input_tokens: u32, output_tokens: u32) -> f64 {
     input_tokens as f64 + output_tokens as f64 / 2.0
 }
 
-/// The cost model of one model's plain decoding and prefill:
-/// decode step time = a + b * context (the attention over the cache grows
-/// with it), prefill time per token = u + v * prompt tokens (each 1,024-token
-/// batch attends to everything before it, so the mean cost per token grows
-/// with the prompt).
+/// Least-squares parabola y = c0 + c1 x + c2 x² (three points or more; a
+/// line with two, a constant with one).
+pub fn fit_parabola(points: &[(f64, f64)]) -> Option<(f64, f64, f64)> {
+    if points.len() < 3 {
+        return fit_line(points).map(|(a, b)| (a, b, 0.0));
+    }
+    // Normal equations in a scaled x (the contexts span 1e3..1e5).
+    let scale = points.iter().map(|p| p.0.abs()).fold(0.0, f64::max).max(1.0);
+    let xs: Vec<f64> = points.iter().map(|p| p.0 / scale).collect();
+    let ys: Vec<f64> = points.iter().map(|p| p.1).collect();
+    let mut m = [[0.0f64; 3]; 3];
+    let mut v = [0.0f64; 3];
+    for (x, y) in xs.iter().zip(ys.iter()) {
+        let powers = [1.0, *x, x * x];
+        for i in 0..3 {
+            for j in 0..3 {
+                m[i][j] += powers[i] * powers[j];
+            }
+            v[i] += powers[i] * y;
+        }
+    }
+    // Gaussian elimination.
+    for i in 0..3 {
+        let pivot = (i..3).max_by(|a, b| m[*a][i].abs().partial_cmp(&m[*b][i].abs()).unwrap())?;
+        m.swap(i, pivot);
+        v.swap(i, pivot);
+        if m[i][i].abs() < 1e-18 {
+            return fit_line(points).map(|(a, b)| (a, b, 0.0));
+        }
+        for r in (i + 1)..3 {
+            let f = m[r][i] / m[i][i];
+            for c in i..3 {
+                m[r][c] -= f * m[i][c];
+            }
+            v[r] -= f * v[i];
+        }
+    }
+    let mut c = [0.0f64; 3];
+    for i in (0..3).rev() {
+        let mut s = v[i];
+        for j in (i + 1)..3 {
+            s -= m[i][j] * c[j];
+        }
+        c[i] = s / m[i][i];
+    }
+    Some((c[0], c[1] / scale, c[2] / (scale * scale)))
+}
+
+/// The cost model of one model's plain decoding and prefill: decode step
+/// time = a + b * context (the attention over the cache grows with it);
+/// prefill time of a prompt = c0 + c1 * N + c2 * N² (a fixed cost, the
+/// per-token work, and the attention's growth, which only a third measured
+/// context can fit: with two it is folded into c1 and long contexts come out
+/// optimistic). The measured change ratios (predictions' `cand_expected`)
+/// are the robust yardstick; the model is the physics view.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CostModel {
     pub model: String,
     pub decode_fit_points: Vec<(f64, f64)>,
+    /// (prompt tokens, prefill seconds)
     pub prefill_fit_points: Vec<(f64, f64)>,
     pub decode_ms: Option<(f64, f64)>,
-    pub prefill_s_per_token: Option<(f64, f64)>,
+    pub prefill_s: Option<(f64, f64, f64)>,
 }
 
 impl CostModel {
@@ -155,12 +206,14 @@ impl CostModel {
             .collect();
         let prefill_fit_points: Vec<(f64, f64)> = plain
             .iter()
-            .filter_map(|p| p.prefill_tps.map(|tps| (p.input_tokens as f64, 1.0 / tps)))
+            .filter_map(|p| {
+                p.prefill_tps.map(|tps| (p.input_tokens as f64, p.input_tokens as f64 / tps))
+            })
             .collect();
         CostModel {
             model: model.to_string(),
             decode_ms: fit_line(&decode_fit_points),
-            prefill_s_per_token: fit_line(&prefill_fit_points),
+            prefill_s: fit_parabola(&prefill_fit_points),
             decode_fit_points,
             prefill_fit_points,
         }
@@ -175,9 +228,10 @@ impl CostModel {
 
     pub fn predict_prefill_tps(&self, workload_name: &str) -> Option<f64> {
         let w = workload(workload_name).ok()?;
-        let (u, v) = self.prefill_s_per_token?;
-        let s = u + v * w.input as f64;
-        (s > 0.0).then(|| 1.0 / s)
+        let (c0, c1, c2) = self.prefill_s?;
+        let n = w.input as f64;
+        let s = c0 + c1 * n + c2 * n * n;
+        (s > 0.0).then(|| n / s)
     }
 }
 
@@ -320,21 +374,31 @@ mod tests {
 
     #[test]
     fn cost_model_reproduces_a_linear_world() {
-        // Step time 2.5 ms + 0.00005 ms per context token; prefill 20 us + 1 ns per prompt token
-        // per token.
+        // Step time 2.5 ms + 0.00005 ms per context token; prefill 30 ms + 25 us per token.
         let step = |ctx: f64| 2.5 + 5e-5 * ctx;
-        let pre = |n: f64| 20e-6 + 1e-9 * n;
+        let pre = |n: f64| 0.030 + 25e-6 * n;
         let points = vec![
-            point("e2b", "short", 1000.0 / step(decode_context(1024, 256)), 1.0 / pre(1024.0)),
-            point("e2b", "8k", 1000.0 / step(decode_context(8192, 256)), 1.0 / pre(8192.0)),
+            point("e2b", "short", 1000.0 / step(decode_context(1024, 256)), 1024.0 / pre(1024.0)),
+            point("e2b", "8k", 1000.0 / step(decode_context(8192, 256)), 8192.0 / pre(8192.0)),
         ];
         let model = CostModel::fit("e2b", &points);
         let predicted = model.predict_decode_tps("30k").unwrap();
         let expected = 1000.0 / step(decode_context(30720, 256));
         assert!((predicted - expected).abs() / expected < 1e-6);
         let predicted = model.predict_prefill_tps("16k").unwrap();
-        let expected = 1.0 / pre(16384.0);
+        let expected = 16384.0 / pre(16384.0);
         assert!((predicted - expected).abs() / expected < 1e-6);
+        // Three contexts fit the attention's growth too.
+        let pre2 = |n: f64| 0.030 + 25e-6 * n + 1e-9 * n * n;
+        let points = vec![
+            point("e4b", "short", 200.0, 1024.0 / pre2(1024.0)),
+            point("e4b", "8k", 190.0, 8192.0 / pre2(8192.0)),
+            point("e4b", "16k", 180.0, 16384.0 / pre2(16384.0)),
+        ];
+        let model = CostModel::fit("e4b", &points);
+        let predicted = model.predict_prefill_tps("30k").unwrap();
+        let expected = 30720.0 / pre2(30720.0);
+        assert!((predicted - expected).abs() / expected < 1e-4, "{predicted} vs {expected}");
     }
 
     #[test]
