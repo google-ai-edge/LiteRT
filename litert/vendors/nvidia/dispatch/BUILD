@@ -230,10 +230,6 @@ litert_dispatch_api(
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    visibility = [
-        "//litert:__subpackages__",
-        "//litert:litert_friends",
-    ],
     deps = [
         ":aot_artifact",
         ":dispatch_profiler",
