@@ -17,6 +17,7 @@ limitations under the License.
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -336,9 +337,10 @@ void FormatConverter<T>::InitSparseToDenseConverter(
 }
 
 template <typename T>
-void FormatConverter<T>::Populate(const T* src_data, std::vector<int> indices,
-                                  int level, int prev_idx, int* src_data_ptr,
-                                  T* dest_data) {
+TfLiteStatus FormatConverter<T>::Populate(const T* src_data,
+                                          std::vector<int> indices, int level,
+                                          int prev_idx, int* src_data_ptr,
+                                          T* dest_data) {
   if (level == indices.size()) {
     int orig_rank = dense_shape_.size();
     std::vector<int> orig_idx;
@@ -346,21 +348,52 @@ void FormatConverter<T>::Populate(const T* src_data, std::vector<int> indices,
     int i = 0;
     for (; i < orig_idx.size(); i++) {
       int orig_dim = traversal_order_[i];
+      if (orig_dim < 0 || orig_dim >= orig_rank) {
+        return kTfLiteError;
+      }
       orig_idx[orig_dim] = indices[i];
     }
 
     for (; i < indices.size(); i++) {
+      // Checked before subtracting so that the subtraction cannot overflow.
+      if (traversal_order_[i] < orig_rank) {
+        return kTfLiteError;
+      }
       const int block_idx = traversal_order_[i] - orig_rank;
+      if (block_idx >= static_cast<int>(block_map_.size()) ||
+          block_idx >= static_cast<int>(block_size_.size())) {
+        return kTfLiteError;
+      }
       const int orig_dim = block_map_[block_idx];
-      orig_idx[orig_dim] =
-          orig_idx[orig_dim] * block_size_[block_idx] + indices[i];
+      if (orig_dim < 0 || orig_dim >= orig_rank) {
+        return kTfLiteError;
+      }
+      // Computed in 64 bits so that a large stored index cannot overflow
+      // before the range check.
+      const int64_t idx =
+          static_cast<int64_t>(orig_idx[orig_dim]) * block_size_[block_idx] +
+          indices[i];
+      if (idx < 0 || idx >= dense_shape_[orig_dim]) {
+        return kTfLiteError;
+      }
+      orig_idx[orig_dim] = static_cast<int>(idx);
     }
 
-    dest_data[GetFlattenedIndex(orig_idx, dense_shape_)] =
-        src_data[*src_data_ptr];
+    // Each index must be within its own dimension before it is flattened.
+    for (int d = 0; d < orig_rank; d++) {
+      if (orig_idx[d] < 0 || orig_idx[d] >= dense_shape_[d]) {
+        return kTfLiteError;
+      }
+    }
+
+    const uint64_t flat_idx = GetFlattenedIndex(orig_idx, dense_shape_);
+    if (flat_idx >= static_cast<uint64_t>(dense_size_)) {
+      return kTfLiteError;
+    }
+    dest_data[flat_idx] = src_data[*src_data_ptr];
 
     *src_data_ptr = *src_data_ptr + 1;
-    return;
+    return kTfLiteOk;
   }
 
   const int metadata_idx = 2 * level;
@@ -368,20 +401,36 @@ void FormatConverter<T>::Populate(const T* src_data, std::vector<int> indices,
     const int shape_of_level = dim_metadata_[metadata_idx][0];
     for (int i = 0; i < shape_of_level; i++) {
       indices[level] = i;
-      Populate(src_data, indices, level + 1, prev_idx * shape_of_level + i,
-               src_data_ptr, dest_data);
+      // The position handed to the next level is computed in 64 bits and
+      // must fit in an int.
+      const int64_t next_idx =
+          static_cast<int64_t>(prev_idx) * shape_of_level + i;
+      if (next_idx < 0 || next_idx > std::numeric_limits<int>::max()) {
+        return kTfLiteError;
+      }
+      TF_LITE_ENSURE_STATUS(Populate(src_data, indices, level + 1,
+                                     static_cast<int>(next_idx), src_data_ptr,
+                                     dest_data));
     }
-  } else if (prev_idx + 1 < dim_metadata_[metadata_idx].size()) {
+  } else {
     const auto& array_segments = dim_metadata_[metadata_idx];
     const auto& array_indices = dim_metadata_[metadata_idx + 1];
+    // prev_idx is the position of the parent element and must select one of
+    // the segments of this level.
+    if (prev_idx < 0 ||
+        static_cast<size_t>(prev_idx) + 1 >= array_segments.size()) {
+      return kTfLiteError;
+    }
     for (int i = array_segments[prev_idx]; i < array_segments[prev_idx + 1];
          i++) {
       if (i < array_indices.size() && level < indices.size()) {
         indices[level] = array_indices[i];
-        Populate(src_data, indices, level + 1, i, src_data_ptr, dest_data);
+        TF_LITE_ENSURE_STATUS(
+            Populate(src_data, indices, level + 1, i, src_data_ptr, dest_data));
       }
     }
   }
+  return kTfLiteOk;
 }
 
 template <typename T>
@@ -397,9 +446,7 @@ TfLiteStatus FormatConverter<T>::SparseToDense(const T* src_data) {
   int total_rank = traversal_order_.size();
   int src_data_ptr = 0;
   std::vector<int> indices(total_rank);
-  Populate(src_data, indices, 0, 0, &src_data_ptr, data_.data());
-
-  return kTfLiteOk;
+  return Populate(src_data, indices, 0, 0, &src_data_ptr, data_.data());
 }
 
 template <typename T>
@@ -428,8 +475,11 @@ TfLiteStatus FormatConverter<T>::SparseToDense(const T* src_data,
   const int total_rank = traversal_order_.size();
   int src_data_ptr = 0;
   std::vector<int> indices(total_rank);
-  Populate(src_data, indices, 0, 0, &src_data_ptr, dest_data);
-
+  if (Populate(src_data, indices, 0, 0, &src_data_ptr, dest_data) !=
+      kTfLiteOk) {
+    TF_LITE_MAYBE_KERNEL_LOG(context, "Invalid sparsity metadata.\n");
+    return kTfLiteError;
+  }
   return kTfLiteOk;
 }
 

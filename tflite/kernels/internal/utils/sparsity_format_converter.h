@@ -106,9 +106,10 @@ class FormatConverter {
                                   std::vector<int> block_map);
 
   // A recursive function to fetch data from the compressed src_data buffer and
-  // populate the dense buffer.
-  void Populate(const T* src_data, std::vector<int> indices, int level,
-                int prev_idx, int* src_data_ptr, T* dest_data);
+  // populate the dense buffer. Returns kTfLiteError if the sparsity metadata
+  // is inconsistent or maps an element outside the dense tensor.
+  TfLiteStatus Populate(const T* src_data, std::vector<int> indices, int level,
+                        int prev_idx, int* src_data_ptr, T* dest_data);
 
   // Check if val is equal to zero.
   bool IsZero(const T val);
