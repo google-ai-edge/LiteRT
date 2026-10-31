@@ -433,6 +433,7 @@ pub fn check_acceptance(
         let fell = probes.iter().filter(|p| p.cand < p.base).count();
         let rose = probes.iter().filter(|p| p.cand > p.base).count();
         let drop = base_pooled - cand_pooled;
+        let (warn_drop, fail_drop) = t.drops(probes.len());
         let mut verdict = Verdict::Pass;
         let mut reasons = Vec::new();
         if probes.len() < t.min_probes {
@@ -441,17 +442,17 @@ pub fn check_acceptance(
                 probes.len(),
                 t.min_probes
             ));
-        } else if drop >= t.fail_drop && 3 * fell >= 2 * probes.len() {
+        } else if drop >= fail_drop && 3 * fell >= 2 * probes.len() {
             verdict = Verdict::Fail;
             reasons.push(format!(
-                "FAIL: pooled acceptance {:.1}% against {:.1}% (a drop of {:.1} points, at least {:.0}), {fell} of {} prompts lower",
-                cand_pooled * 100.0, base_pooled * 100.0, drop * 100.0, t.fail_drop * 100.0, probes.len()
+                "FAIL: pooled acceptance {:.1}% against {:.1}% (a drop of {:.1} points, at least {:.1} for {} prompts), {fell} of {} prompts lower",
+                cand_pooled * 100.0, base_pooled * 100.0, drop * 100.0, fail_drop * 100.0, probes.len(), probes.len()
             ));
-        } else if drop >= t.warn_drop && fell > rose {
+        } else if drop >= warn_drop && fell > rose {
             verdict = Verdict::Warn;
             reasons.push(format!(
-                "WARN: pooled acceptance {:.1}% against {:.1}% (a drop of {:.1} points, at least {:.0}), {fell} prompts lower, {rose} higher",
-                cand_pooled * 100.0, base_pooled * 100.0, drop * 100.0, t.warn_drop * 100.0
+                "WARN: pooled acceptance {:.1}% against {:.1}% (a drop of {:.1} points, at least {:.1} for {} prompts), {fell} prompts lower, {rose} higher",
+                cand_pooled * 100.0, base_pooled * 100.0, drop * 100.0, warn_drop * 100.0, probes.len()
             ));
         }
         out.push(AcceptanceCheck {
@@ -1834,7 +1835,14 @@ mod tests {
     #[test]
     fn acceptance_falling_on_every_prompt_fails_and_a_mixed_one_passes() {
         let t = crate::config::AcceptanceThresholds::default();
-        // The INT8 GEMM's E4B 16k case: 52.5% against 44.2%, and two prompts lower too.
+        // The thresholds scale with the standard error: 4.0 and 6.0 points for five prompts, the
+        // floors of 2 and 5 points from about twenty on.
+        let (warn, fail) = t.drops(5);
+        assert!((warn - 0.0402).abs() < 1e-3 && (fail - 0.0604).abs() < 1e-3, "{warn} {fail}");
+        assert_eq!(t.drops(100), (0.02, 0.05));
+        // The INT8 GEMM's E4B 16k case: 52.5% against 44.2%, and two prompts lower too: a drop of
+        // 6.1 points on three prompts warns (it fails from 7.8); across 195 paired E4B prompts the
+        // int8 GEMM moved the pooled acceptance by under a point.
         let base = mtp_capture(
             "fp16",
             &[("doc_16k", 147, 280, "a"), ("code_grid", 160, 240, "b"), ("reason", 70, 120, "c")],
@@ -1846,7 +1854,41 @@ mod tests {
         let checks = check_acceptance(&base, &cand, &t);
         assert_eq!(checks.len(), 1);
         assert_eq!(checks[0].fell, 3);
+        assert_eq!(checks[0].verdict, Verdict::Warn, "{:?}", checks[0].reasons);
+        // Every prompt of five eight or nine points lower: FAIL.
+        let five = &[
+            ("a", 120, 200, "a"),
+            ("b", 120, 200, "b"),
+            ("c", 120, 200, "c"),
+            ("d", 120, 200, "d"),
+            ("e", 120, 200, "e"),
+        ];
+        let lower = mtp_capture(
+            "lower",
+            &[
+                ("a", 103, 200, "v"),
+                ("b", 104, 200, "w"),
+                ("c", 103, 200, "x"),
+                ("d", 104, 200, "y"),
+                ("e", 103, 200, "z"),
+            ],
+        );
+        let checks = check_acceptance(&mtp_capture("five", five), &lower, &t);
         assert_eq!(checks[0].verdict, Verdict::Fail, "{:?}", checks[0].reasons);
+        // The noise of a numerics change on five prompts (the guard's quick tier, 2026-10-29): 2.4
+        // points, three lower and one higher, PASS where the uncalibrated 2 points warned.
+        let noise = mtp_capture(
+            "noise",
+            &[
+                ("a", 108, 200, "v"),
+                ("b", 114, 200, "w"),
+                ("c", 110, 200, "x"),
+                ("d", 124, 200, "y"),
+                ("e", 120, 200, "e"),
+            ],
+        );
+        let checks = check_acceptance(&mtp_capture("five", five), &noise, &t);
+        assert_eq!(checks[0].verdict, Verdict::Pass, "{:?}", checks[0].reasons);
         // Moves of both signs with the pool within two points: text-dependent, not judged down.
         let mixed = mtp_capture(
             "mixed",

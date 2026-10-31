@@ -52,17 +52,53 @@ impl Default for DiskConfig {
 pub struct AcceptanceThresholds {
     /// Fewer probes paired than this: reported, not judged.
     pub min_probes: usize,
-    /// A pooled drop (absolute) at or above this, with more prompts falling
-    /// than rising, warns.
+    /// A pooled drop (absolute) at or above this, and at or above warn_se
+    /// standard errors, with more prompts falling than rising, warns.
     pub warn_drop: f64,
-    /// At or above this, with at least two thirds of the prompts falling,
-    /// fails.
+    /// At or above this and fail_se standard errors, with at least two
+    /// thirds of the prompts falling, fails.
     pub fail_drop: f64,
+    /// The standard deviation of one prompt's acceptance difference under a
+    /// numerics change that leaves acceptance alone in expectation: the
+    /// standard error of n prompts' drop is sigma / sqrt(n).
+    #[serde(default = "default_sigma")]
+    pub sigma: f64,
+    #[serde(default = "default_warn_se")]
+    pub warn_se: f64,
+    #[serde(default = "default_fail_se")]
+    pub fail_se: f64,
+}
+
+fn default_sigma() -> f64 {
+    0.045
+}
+
+fn default_warn_se() -> f64 {
+    2.0
+}
+
+fn default_fail_se() -> f64 {
+    3.0
+}
+
+impl AcceptanceThresholds {
+    /// The drops that warn and fail for n paired prompts.
+    pub fn drops(&self, n: usize) -> (f64, f64) {
+        let se = self.sigma / (n.max(1) as f64).sqrt();
+        (self.warn_drop.max(self.warn_se * se), self.fail_drop.max(self.fail_se * se))
+    }
 }
 
 impl Default for AcceptanceThresholds {
     fn default() -> Self {
-        Self { min_probes: 3, warn_drop: 0.02, fail_drop: 0.05 }
+        Self {
+            min_probes: 3,
+            warn_drop: 0.02,
+            fail_drop: 0.05,
+            sigma: default_sigma(),
+            warn_se: default_warn_se(),
+            fail_se: default_fail_se(),
+        }
     }
 }
 

@@ -89,12 +89,20 @@ min_free_gib = 20
 # MTP acceptance (accepted over drafted tokens) of the greedy MTP numerics
 # probes, pooled per model across the prompts and judged on the pool and on
 # how many prompts fell: one prompt's acceptance moves with its text, which
-# a numerics change parts. A same-build pair is identical; the thresholds
-# are not yet calibrated on a many-prompt A/B (README).
+# a numerics change parts. A same-build pair is identical. The drops that warn
+# and fail are the larger of a floor and warn_se / fail_se standard errors of
+# n prompts' mean, sigma / sqrt(n): sigma is one prompt's spread under a
+# numerics change that left the pooled acceptance alone, 2.6 to 4.9 points
+# over 274 prompts paired three ways (the INT8 GEMM, its real rows, the FP16
+# GEMM; 2026-10-29). Five prompts: 4.0 and 6.0 points; twenty and more: the
+# floors, 2 and 5.
 [acceptance]
 min_probes = 3
 warn_drop = 0.02
 fail_drop = 0.05
+sigma = 0.045
+warn_se = 2.0
+fail_se = 3.0
 
 # Performance probes: bench.sh latency runs of these workloads (synthetic
 # prompt, 256 decode tokens); the cost models fitted on them predict the rest.

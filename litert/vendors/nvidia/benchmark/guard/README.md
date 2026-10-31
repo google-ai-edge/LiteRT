@@ -116,15 +116,17 @@ on 2026-10-29. `--config` with `full_steps = 0` keeps only the top-K logits.
 **MTP acceptance.** With `--mtp` each numerics prompt also decodes greedily
 with the drafter, and the run keeps its accepted and drafted tokens. `check`
 and `compare` pool them per model (accepted over drafted, across the
-prompts) and judge the pool: a drop of 2 points with more prompts falling
-than rising warns, a drop of 5 points with two thirds of them falling
-fails (`[acceptance]` in `nvguard.toml`); fewer than three prompts paired
-are reported, not judged. One prompt's acceptance moves with its text,
-which any numerics change parts, so a single prompt never decides. The
-performance probes' acceptance stays reported only: their texts are the
-model's sampled ones. (Until 2026-10-29 no acceptance was judged at all,
-and the INT8 GEMM's drop on the E4B's 16k document, 52.5% to 44.2%, passed
-unnoticed.)
+prompts) and judge the pool: a drop with more prompts falling than rising
+warns, and one with two thirds of them falling fails, past the larger of a
+floor (2 and 5 points) and 2 and 3 standard errors of the prompts' mean
+(`[acceptance]`: one prompt's spread under a numerics change, 4.5 points,
+over the square root of the prompts paired). Five prompts warn from 4.0
+points and fail from 6.0; fewer than three are reported, not judged. One
+prompt's acceptance moves with its text, which any numerics change parts:
+the INT8 GEMM took the E4B's 16k document from 52.5% to 44.2%, while 195
+paired E4B prompts moved by under a point and 79 paired 12B prompts by under
+two (2026-10-29). The performance probes' acceptance stays reported only:
+their texts are the model's sampled ones.
 
 **Provenance.** A capture records the build its binaries came from
 (runtime-libs/BUILD_ID, build.sh's stamp) and refuses to run when it is not
