@@ -1985,7 +1985,7 @@ mod tests {
     #[test]
     fn a_conversation_that_parts_fails_unless_the_baseline_parted_too() {
         // The INT8 GEMM's dependence on an earlier conversation (the 12B at 8k,
-        // LITERT_NVIDIA_GEMM_INT8_REAL_ROWS unset) against the fixed build.
+        // LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=0) against the default build.
         let fixed = conversation_capture(
             "fixed",
             &[("12b", 0, &["same text", "same text"]), ("e4b", 0, &["a", "a"])],
