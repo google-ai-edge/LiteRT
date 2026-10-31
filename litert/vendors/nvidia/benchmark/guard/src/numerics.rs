@@ -71,6 +71,14 @@ pub struct NumericsRun {
     pub prefill_tokens: u64,
     pub prefill_tps: Option<f64>,
     pub acceptance: Option<f64>,
+    /// MTP: the accepted and drafted tokens and the rounds of the run (None:
+    /// no MTP block, or a summary written before they were kept).
+    #[serde(default)]
+    pub accepted: Option<u64>,
+    #[serde(default)]
+    pub drafted: Option<u64>,
+    #[serde(default)]
+    pub rounds: Option<u64>,
     pub text_len: usize,
     pub text_sha256: String,
     pub loopiness: f64,
@@ -388,6 +396,9 @@ mod tests {
             prefill_tokens: 10,
             prefill_tps: Some(1000.0),
             acceptance: None,
+            accepted: None,
+            drafted: None,
+            rounds: None,
             text_len: text.len(),
             text_sha256: text.to_string(),
             loopiness: loopiness(text),

@@ -34,6 +34,24 @@ pub struct Manifest {
     /// preparation, else diagnostic): timings compare within one mode.
     #[serde(default = "default_host_mode")]
     pub host_mode: String,
+    /// The extra environment of every probe (capture --env), and the pool
+    /// suffix its probes compiled under.
+    #[serde(default)]
+    pub env: Vec<(String, String)>,
+    #[serde(default)]
+    pub pool_suffix: String,
+    /// clock_check.py's report when the capture last ran (null: not checked).
+    #[serde(default)]
+    pub host_clock: Option<serde_json::Value>,
+    /// Whether that report found the clock fit for timings.
+    #[serde(default)]
+    pub clock_fit: Option<bool>,
+    /// The build the binaries came from (runtime-libs/BUILD_ID), when stamped.
+    #[serde(default)]
+    pub binaries_build_id: Option<String>,
+    /// What the capture did differently and why (a skipped probe family).
+    #[serde(default)]
+    pub notes: Vec<String>,
 }
 
 fn default_host_mode() -> String {
@@ -64,6 +82,9 @@ pub struct CaptureOptions {
     pub texts: bool,
     pub autopsy: bool,
     pub mtp: bool,
+    /// Run the timed probes (performance, autopsy) on a clock clock_check.py
+    /// finds unfit; they are noted as such.
+    pub allow_unfit_clock: bool,
 }
 
 pub fn guard_root(env: &BenchEnv) -> PathBuf {
@@ -145,6 +166,17 @@ pub fn run_capture(
         bail!("no built CLI under {} (run build.sh first)", env.runtime_libs.display());
     }
     validate_name(&opts.name)?;
+    // The binaries must be the trees' build: a capture names its build id.
+    let stamp = env.binaries_build_id();
+    match &stamp {
+        Some(stamp) if stamp != &env.build_id => bail!(
+            "the binaries in {} are build {stamp} but the trees are at {}: run build.sh, or capture from the trees they were built from",
+            env.runtime_libs.display(),
+            env.build_id
+        ),
+        None => eprintln!("warning: no BUILD_ID stamp in {} (a build.sh before the stamp): the binaries' build is not checked", env.runtime_libs.display()),
+        _ => {}
+    }
     let dir = capture_dir(env, &opts.name);
     let mut capture = match load_capture(env, &opts.name) {
         Ok(existing) => {
@@ -152,6 +184,14 @@ pub fn run_capture(
                 eprintln!(
                     "capture {} resumes under the dirty build id {}: an edit since its probes ran is not told apart (use a new name after each edit)",
                     opts.name, env.build_id
+                );
+            }
+            if existing.manifest.env != env.extra_env {
+                bail!(
+                    "capture {} ran with the extra environment {:?}, this run has {:?}; use another --name",
+                    opts.name,
+                    existing.manifest.env,
+                    env.extra_env
                 );
             }
             if existing.manifest.build_id != env.build_id {
@@ -176,6 +216,12 @@ pub fn run_capture(
                 models: opts.models.clone(),
                 mtp: opts.mtp,
                 host_mode: default_host_mode(),
+                env: env.extra_env.clone(),
+                pool_suffix: env.pool_suffix.clone(),
+                host_clock: None,
+                clock_fit: None,
+                binaries_build_id: stamp.clone(),
+                notes: Vec::new(),
             },
             numerics: Vec::new(),
             perf: Vec::new(),
@@ -190,6 +236,34 @@ pub fn run_capture(
         }
     }
     capture.manifest.mtp |= opts.mtp;
+    capture.manifest.binaries_build_id = stamp;
+    // The host's clock: the timed probes (performance, autopsy) need it fit.
+    let mut timed_ok = true;
+    match env.host_clock(3) {
+        Ok((report, fit)) => {
+            if !fit {
+                let reasons = report.get("reasons").map(|r| r.to_string()).unwrap_or_default();
+                if opts.allow_unfit_clock {
+                    let note = format!("timed probes ran on an unfit clock ({reasons}): their numbers are diagnostic");
+                    eprintln!("warning: {note}");
+                    capture.manifest.notes.push(note);
+                } else if opts.perf || opts.autopsy {
+                    let note = format!("timed probes skipped: the host's clock is unfit ({reasons}); --allow-unfit-clock runs them as diagnostic");
+                    eprintln!("{note}");
+                    capture.manifest.notes.push(note);
+                    timed_ok = false;
+                }
+            }
+            capture.manifest.host_clock = Some(report);
+            capture.manifest.clock_fit = Some(fit);
+        }
+        Err(error) => {
+            let note = format!("the host's clock was not checked: {error}");
+            eprintln!("warning: {note}");
+            capture.manifest.notes.push(note);
+        }
+    }
+    capture.manifest.notes.dedup();
     if crate::config::tier_rank(&opts.tier)? > crate::config::tier_rank(&capture.manifest.tier)? {
         capture.manifest.tier = opts.tier.clone();
     }
@@ -338,7 +412,7 @@ pub fn run_capture(
                 }
             }
         }
-        if opts.autopsy {
+        if opts.autopsy && timed_ok {
             let out_dir = autopsy_dir(&dir, model);
             let autopsy = match load_autopsy(&out_dir) {
                 Some(a) => {
@@ -385,7 +459,7 @@ pub fn run_capture(
             capture.manifest.updated = now();
             save(&capture)?;
         }
-        if opts.perf {
+        if opts.perf && timed_ok {
             let perf_dir = dir.join("perf").join(model);
             let mut plan: Vec<(String, bool, Option<PathBuf>, u32)> = Vec::new();
             for workload in &config.perf.workloads {

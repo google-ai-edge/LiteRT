@@ -21,6 +21,11 @@ pub struct BenchEnv {
     pub models_dir: PathBuf,
     pub build_id: String,
     pub smi: PathBuf,
+    /// Extra environment of every probe (capture --env NAME=VALUE): a runtime
+    /// knob's A/B as a capture of its own. Its probes run in a pool of their
+    /// own (pool_suffix), so a compile-time knob compiles its own engines.
+    pub extra_env: Vec<(String, String)>,
+    pub pool_suffix: String,
 }
 
 fn bash(script: &str, args: &[&str]) -> Result<String> {
@@ -73,6 +78,8 @@ printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_
             models_dir: PathBuf::from(get("NB_MODELS")?),
             build_id: get("BUILD_ID")?,
             smi,
+            extra_env: Vec::new(),
+            pool_suffix: String::new(),
         })
     }
 
@@ -95,9 +102,64 @@ printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_
         Ok(path)
     }
 
-    /// The standard model cache pool of a profile for this build.
+    /// The model cache pool of a profile for this build (and this
+    /// environment's extra environment, when it has one).
     pub fn pool(&self, model: &str) -> PathBuf {
-        self.root.join("cache").join("models").join(model).join(&self.build_id)
+        self.root
+            .join("cache")
+            .join("models")
+            .join(model)
+            .join(format!("{}{}", self.build_id, self.pool_suffix))
+    }
+
+    /// bench.sh's arguments for this environment: its pool when the extra
+    /// environment asks for one of its own, and the extra environment.
+    pub fn bench_args(&self, model: &str) -> Vec<String> {
+        let mut args = Vec::new();
+        if !self.pool_suffix.is_empty() {
+            args.push("--pool".to_string());
+            args.push(self.pool(model).display().to_string());
+        }
+        for (key, value) in &self.extra_env {
+            args.push("--env".to_string());
+            args.push(format!("{key}={value}"));
+        }
+        args
+    }
+
+    /// The build the binaries in runtime-libs came from (build.sh's BUILD_ID
+    /// stamp), when there is one.
+    pub fn binaries_build_id(&self) -> Option<String> {
+        std::fs::read_to_string(self.runtime_libs.join("BUILD_ID"))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    /// clock_check.py's report over a window of `seconds` (the kernel tick,
+    /// the monotonic clock's rate against the raw clock) and whether it finds
+    /// the clock fit for timings.
+    pub fn host_clock(&self, seconds: u32) -> Result<(serde_json::Value, bool)> {
+        let script = self.bench_dir.join("clock_check.py");
+        if !script.is_file() {
+            bail!("no {}", script.display());
+        }
+        let output = Command::new("python3")
+            .arg("-I")
+            .arg(&script)
+            .arg(seconds.to_string())
+            .output()
+            .context("running clock_check.py")?;
+        let report: serde_json::Value =
+            serde_json::from_slice(&output.stdout).with_context(|| {
+                format!(
+                    "clock_check.py printed no report: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                )
+            })?;
+        let fit =
+            output.status.success() && report.get("fit").and_then(|v| v.as_bool()).unwrap_or(false);
+        Ok((report, fit))
     }
 
     pub fn pool_has_engines(&self, pool: &Path) -> bool {
@@ -128,7 +190,7 @@ printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_
         if !output.status.success() {
             bail!("nb_runtime_env failed: {}", String::from_utf8_lossy(&output.stderr).trim());
         }
-        let mut env = Vec::new();
+        let mut env: Vec<(String, String)> = Vec::new();
         for entry in output.stdout.split(|b| *b == 0) {
             if entry.is_empty() {
                 continue;
@@ -140,6 +202,10 @@ printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_
                 }
                 env.push((key.to_string(), value.to_string()));
             }
+        }
+        for (key, value) in &self.extra_env {
+            env.retain(|(k, _)| k != key);
+            env.push((key.clone(), value.clone()));
         }
         Ok(env)
     }

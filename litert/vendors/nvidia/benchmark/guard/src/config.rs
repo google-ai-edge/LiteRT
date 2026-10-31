@@ -23,6 +23,30 @@ pub struct Config {
     pub perf: PerfConfig,
     #[serde(default)]
     pub probes: ProbesConfig,
+    #[serde(default)]
+    pub acceptance: AcceptanceThresholds,
+}
+
+/// The MTP acceptance of the greedy MTP numerics probes, pooled per model
+/// (accepted over drafted tokens across the prompts): a drop judged on the
+/// pool and on how many prompts fell, since one prompt's acceptance moves
+/// with its text.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptanceThresholds {
+    /// Fewer probes paired than this: reported, not judged.
+    pub min_probes: usize,
+    /// A pooled drop (absolute) at or above this, with more prompts falling
+    /// than rising, warns.
+    pub warn_drop: f64,
+    /// At or above this, with at least two thirds of the prompts falling,
+    /// fails.
+    pub fail_drop: f64,
+}
+
+impl Default for AcceptanceThresholds {
+    fn default() -> Self {
+        Self { min_probes: 3, warn_drop: 0.02, fail_drop: 0.05 }
+    }
 }
 
 /// The probes beside the greedy decodes and the latency runs.

@@ -81,6 +81,34 @@ record's full curve to say what the candidate would measure there. `predict
 NAME --record FILE` also reports the predictor's own error on the record
 (fitted on the record's measured workloads, predicting its other contexts).
 
+**MTP acceptance.** With `--mtp` each numerics prompt also decodes greedily
+with the drafter, and the run keeps its accepted and drafted tokens. `check`
+and `compare` pool them per model (accepted over drafted, across the
+prompts) and judge the pool: a drop of 2 points with more prompts falling
+than rising warns, a drop of 5 points with two thirds of them falling
+fails (`[acceptance]` in `nvguard.toml`); fewer than three prompts paired
+are reported, not judged. One prompt's acceptance moves with its text,
+which any numerics change parts, so a single prompt never decides. The
+performance probes' acceptance stays reported only: their texts are the
+model's sampled ones. (Until 2026-10-29 no acceptance was judged at all,
+and the INT8 GEMM's drop on the E4B's 16k document, 52.5% to 44.2%, passed
+unnoticed.)
+
+**Provenance.** A capture records the build its binaries came from
+(runtime-libs/BUILD_ID, build.sh's stamp) and refuses to run when it is not
+the trees' build id; it records clock_check.py's report on the host's
+clock and skips the timed probes (performance, autopsy) when the clock is
+unfit, unless `--allow-unfit-clock`, which notes them as diagnostic. The
+CLI's timers read the monotonic clock, which a kernel tick off 10,000 us
+scales: on cuda-wsl from 2026-10-20 every rate read 1 to 5 percent low.
+
+**A runtime knob's A/B.** `--env NAME=VALUE` (repeatable) runs every probe
+of a capture with that environment, in a model pool of its own (so a
+compile-time knob compiles its own engines), and the manifest records it:
+`capture --name fp16 --env LITERT_NVIDIA_GEMM_INT8=0` beside the plain
+capture is the INT8 GEMM's A/B. Names the probes set themselves, and
+env.sh's pool variables, are refused.
+
 **Kernels.** One run of the `short` workload in the dispatch's own-graph
 mode with `LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_AUTOPSY` and `_DOT`: every
 kernel node of each function's first step graph timed alone (warm and cold)
@@ -142,6 +170,14 @@ first use); a numerics probe of a model runs before its performance probes.
   texts warns for that reason instead of failing.
 - Memory: the capture records the peak RSS of the performance runs and
   nothing of the device's.
+- The step feed: the numerics probes dump every step's logits, and the
+  dispatch turns the feed off under the dumps, so the plain decode path
+  the feed serves (the default) is not in the numerics; the text probes run
+  MTP, where the feed is inert.
+- Across conversations: every probe decodes one conversation in a fresh
+  process; a second conversation of one process can part from the first
+  (greedy, at 8k on the E4B and the 12B, 2026-10-29), which the benchmark's
+  measured conversations are.
 
 ## What the gates showed (2026-10-27, E2B)
 

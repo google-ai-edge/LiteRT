@@ -194,6 +194,119 @@ pub struct Prediction {
     pub ratio: Option<f64>,
 }
 
+/// One prompt's MTP acceptance in both captures (greedy MTP numerics probes).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptanceProbe {
+    pub prompt: String,
+    pub base: f64,
+    pub cand: f64,
+    pub base_drafted: u64,
+    pub cand_drafted: u64,
+    pub text_identical: bool,
+}
+
+/// A model's MTP acceptance across the paired prompts: the pooled rates
+/// (accepted over drafted), how many prompts fell and rose, the verdict.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptanceCheck {
+    pub model: String,
+    pub probes: Vec<AcceptanceProbe>,
+    pub base_pooled: f64,
+    pub cand_pooled: f64,
+    pub fell: usize,
+    pub rose: usize,
+    pub verdict: Verdict,
+    pub reasons: Vec<String>,
+}
+
+/// The MTP acceptance of each model's greedy MTP numerics probes, paired by
+/// prompt. A run without the counts (a summary from before they were kept)
+/// is left out of the pool.
+pub fn check_acceptance(
+    base: &Capture,
+    cand: &Capture,
+    t: &crate::config::AcceptanceThresholds,
+) -> Vec<AcceptanceCheck> {
+    let mut models: Vec<String> = Vec::new();
+    for c in cand.numerics.iter().filter(|r| r.mtp) {
+        if !models.contains(&c.model) {
+            models.push(c.model.clone());
+        }
+    }
+    let mut out = Vec::new();
+    for model in models {
+        let mut probes = Vec::new();
+        let (mut base_acc, mut base_draft, mut cand_acc, mut cand_draft) = (0u64, 0u64, 0u64, 0u64);
+        for c in cand.numerics.iter().filter(|r| r.mtp && r.model == model) {
+            let Some(b) =
+                base.numerics.iter().find(|b| b.mtp && b.model == model && b.prompt == c.prompt)
+            else {
+                continue;
+            };
+            let (Some(ba), Some(bd), Some(ca), Some(cd)) =
+                (b.accepted, b.drafted, c.accepted, c.drafted)
+            else {
+                continue;
+            };
+            if bd == 0 || cd == 0 || b.exit_code != 0 || c.exit_code != 0 {
+                continue;
+            }
+            base_acc += ba;
+            base_draft += bd;
+            cand_acc += ca;
+            cand_draft += cd;
+            probes.push(AcceptanceProbe {
+                prompt: c.prompt.clone(),
+                base: ba as f64 / bd as f64,
+                cand: ca as f64 / cd as f64,
+                base_drafted: bd,
+                cand_drafted: cd,
+                text_identical: b.text_sha256 == c.text_sha256,
+            });
+        }
+        if probes.is_empty() {
+            continue;
+        }
+        let base_pooled = base_acc as f64 / base_draft.max(1) as f64;
+        let cand_pooled = cand_acc as f64 / cand_draft.max(1) as f64;
+        let fell = probes.iter().filter(|p| p.cand < p.base).count();
+        let rose = probes.iter().filter(|p| p.cand > p.base).count();
+        let drop = base_pooled - cand_pooled;
+        let mut verdict = Verdict::Pass;
+        let mut reasons = Vec::new();
+        if probes.len() < t.min_probes {
+            reasons.push(format!(
+                "{} prompts paired, fewer than {}: reported, not judged",
+                probes.len(),
+                t.min_probes
+            ));
+        } else if drop >= t.fail_drop && 3 * fell >= 2 * probes.len() {
+            verdict = Verdict::Fail;
+            reasons.push(format!(
+                "FAIL: pooled acceptance {:.1}% against {:.1}% (a drop of {:.1} points, at least {:.0}), {fell} of {} prompts lower",
+                cand_pooled * 100.0, base_pooled * 100.0, drop * 100.0, t.fail_drop * 100.0, probes.len()
+            ));
+        } else if drop >= t.warn_drop && fell > rose {
+            verdict = Verdict::Warn;
+            reasons.push(format!(
+                "WARN: pooled acceptance {:.1}% against {:.1}% (a drop of {:.1} points, at least {:.0}), {fell} prompts lower, {rose} higher",
+                cand_pooled * 100.0, base_pooled * 100.0, drop * 100.0, t.warn_drop * 100.0
+            ));
+        }
+        out.push(AcceptanceCheck {
+            model,
+            probes,
+            base_pooled,
+            cand_pooled,
+            fell,
+            rose,
+            verdict,
+            reasons,
+        });
+    }
+    out
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Comparison {
     pub base_name: String,
@@ -211,6 +324,18 @@ pub struct Comparison {
     pub autopsies: Vec<AutopsyDiff>,
     #[serde(default)]
     pub workloads: Vec<WorkloadLegend>,
+    #[serde(default)]
+    pub acceptance: Vec<AcceptanceCheck>,
+    /// The extra environment of each capture (capture --env).
+    #[serde(default)]
+    pub base_env: Vec<(String, String)>,
+    #[serde(default)]
+    pub cand_env: Vec<(String, String)>,
+    /// Whether each capture's clock was fit for timings (None: not checked).
+    #[serde(default)]
+    pub base_clock_fit: Option<bool>,
+    #[serde(default)]
+    pub cand_clock_fit: Option<bool>,
     /// Probes of either capture without a counterpart in the other.
     #[serde(default)]
     pub not_compared: Vec<String>,
@@ -424,6 +549,7 @@ pub fn compare(
     let predictions = predictions(base, cand, config, record);
     let texts = check_texts(base, cand);
     let autopsies = autopsy_diffs(base, cand);
+    let acceptance = check_acceptance(base, cand, &config.acceptance);
     let mut names: Vec<String> = config.perf.workloads.clone();
     names.extend(config.perf.predict.iter().cloned());
     names.push(config.probes.autopsy.workload.clone());
@@ -447,11 +573,17 @@ pub fn compare(
     if base.numerics.is_empty() && base.perf.is_empty() && base.texts.is_empty() {
         reasons.push("the baseline holds no probe".to_string());
     }
+    if !perf.is_empty()
+        && (base.manifest.clock_fit == Some(false) || cand.manifest.clock_fit == Some(false))
+    {
+        reasons.push("a capture's timings ran on a clock clock_check.py found unfit: the performance rows are diagnostic".to_string());
+    }
     let verdict = numerics
         .iter()
         .map(|n| n.verdict)
         .chain(perf.iter().map(|p| p.verdict))
         .chain(texts.iter().map(|t| t.verdict))
+        .chain(acceptance.iter().map(|a| a.verdict))
         .chain(reasons.iter().map(|_| Verdict::Warn))
         .max()
         .unwrap_or(Verdict::Pass);
@@ -468,6 +600,11 @@ pub fn compare(
         texts,
         autopsies,
         workloads,
+        acceptance,
+        base_env: base.manifest.env.clone(),
+        cand_env: cand.manifest.env.clone(),
+        base_clock_fit: base.manifest.clock_fit,
+        cand_clock_fit: cand.manifest.clock_fit,
         not_compared,
         reasons,
         verdict,
@@ -494,6 +631,30 @@ pub fn render_comparison(c: &Comparison) -> String {
     ));
     let samplers = |cap: &[NumericsComparison]| cap.len();
     let _ = samplers;
+    let env_text = |env: &[(String, String)]| {
+        if env.is_empty() {
+            "none".to_string()
+        } else {
+            env.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(" ")
+        }
+    };
+    if !c.base_env.is_empty() || !c.cand_env.is_empty() {
+        s.push_str(&format!(
+            "Extra environment: baseline {}, candidate {}.\n\n",
+            env_text(&c.base_env),
+            env_text(&c.cand_env)
+        ));
+    }
+    let clock_text = |fit: Option<bool>| match fit {
+        Some(true) => "fit",
+        Some(false) => "UNFIT",
+        None => "not checked",
+    };
+    s.push_str(&format!(
+        "Host clock (clock_check.py): baseline {}, candidate {}.\n\n",
+        clock_text(c.base_clock_fit),
+        clock_text(c.cand_clock_fit)
+    ));
     if c.base_host_mode != c.cand_host_mode {
         s.push_str(&format!("Host modes differ: baseline {}, candidate {}; timings are not comparable across them.\n\n", c.base_host_mode, c.cand_host_mode));
     }
@@ -501,6 +662,45 @@ pub fn render_comparison(c: &Comparison) -> String {
         s.push_str(&format!("- WARN: {reason}\n"));
     }
     if !c.reasons.is_empty() {
+        s.push('\n');
+    }
+    if !c.acceptance.is_empty() {
+        s.push_str(
+            "## MTP acceptance (greedy MTP numerics probes, accepted over drafted tokens)\n\n",
+        );
+        s.push_str("| Model | Prompts | Pooled (base, cand) | Lower, higher | Per prompt (base -> cand, same text) | Verdict |\n|---|---:|---|---|---|---|\n");
+        for a in &c.acceptance {
+            let per = a
+                .probes
+                .iter()
+                .map(|p| {
+                    format!(
+                        "{} {:.0}->{:.0}%{}",
+                        p.prompt,
+                        p.base * 100.0,
+                        p.cand * 100.0,
+                        if p.text_identical { " =" } else { "" }
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            s.push_str(&format!(
+                "| {} | {} | {:.1}%, {:.1}% | {}, {} | {} | {} |\n",
+                a.model,
+                a.probes.len(),
+                a.base_pooled * 100.0,
+                a.cand_pooled * 100.0,
+                a.fell,
+                a.rose,
+                per,
+                a.verdict.label()
+            ));
+        }
+        for a in &c.acceptance {
+            for r in &a.reasons {
+                s.push_str(&format!("- {}: {r}\n", a.model));
+            }
+        }
         s.push('\n');
     }
     if !c.numerics.is_empty() {
@@ -1278,6 +1478,64 @@ mod tests {
         }
         capture.texts = texts;
         capture
+    }
+
+    /// A capture of MTP numerics runs with these (prompt, accepted, drafted, text).
+    fn mtp_capture(name: &str, runs: &[(&str, u64, u64, &str)]) -> Capture {
+        let mut capture = capture_of(name, Vec::new(), &[]);
+        for (prompt, accepted, drafted, text) in runs {
+            let run: crate::numerics::NumericsRun = serde_json::from_value(serde_json::json!({
+                "model": "e4b", "prompt": prompt, "mtp": true, "build_id": "b", "exit_code": 0, "wall_s": 1.0, "steps": [], "tokens": [1],
+                "decode_tokens": 256, "decode_tps": 1.0, "prefill_tokens": 1, "prefill_tps": 1.0,
+                "acceptance": *accepted as f64 / *drafted as f64, "accepted": accepted, "drafted": drafted, "rounds": 90,
+                "text_len": 3, "text_sha256": text, "loopiness": 0.0, "nonfinite": false, "sdk_version": null, "weight_store": null, "device_samplers": 0
+            }))
+            .unwrap();
+            capture.numerics.push(run);
+        }
+        capture
+    }
+
+    #[test]
+    fn acceptance_falling_on_every_prompt_fails_and_a_mixed_one_passes() {
+        let t = crate::config::AcceptanceThresholds::default();
+        // The INT8 GEMM's E4B 16k case: 52.5% against 44.2%, and two prompts lower too.
+        let base = mtp_capture(
+            "fp16",
+            &[("doc_16k", 147, 280, "a"), ("code_grid", 160, 240, "b"), ("reason", 70, 120, "c")],
+        );
+        let cand = mtp_capture(
+            "int8",
+            &[("doc_16k", 124, 280, "x"), ("code_grid", 150, 240, "y"), ("reason", 64, 120, "z")],
+        );
+        let checks = check_acceptance(&base, &cand, &t);
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].fell, 3);
+        assert_eq!(checks[0].verdict, Verdict::Fail, "{:?}", checks[0].reasons);
+        // Moves of both signs with the pool within two points: text-dependent, not judged down.
+        let mixed = mtp_capture(
+            "mixed",
+            &[("doc_16k", 150, 280, "x"), ("code_grid", 150, 240, "y"), ("reason", 75, 120, "z")],
+        );
+        let checks = check_acceptance(&base, &mixed, &t);
+        assert_eq!(checks[0].verdict, Verdict::Pass, "{:?}", checks[0].reasons);
+        // The same build twice: identical, PASS.
+        let checks = check_acceptance(&base, &base, &t);
+        assert_eq!(checks[0].verdict, Verdict::Pass);
+        assert!(checks[0].probes.iter().all(|p| p.text_identical && p.base == p.cand));
+        // Too few prompts paired: reported, not judged.
+        let one = mtp_capture("one", &[("doc_16k", 100, 280, "x")]);
+        let checks = check_acceptance(&base, &one, &t);
+        assert_eq!(checks[0].verdict, Verdict::Pass);
+        assert_eq!(checks[0].probes.len(), 1);
+    }
+
+    #[test]
+    fn acceptance_without_counts_is_left_out() {
+        let t = crate::config::AcceptanceThresholds::default();
+        let base = capture_of("old", Vec::new(), &[("e4b", "doc_16k", true)]);
+        let cand = mtp_capture("new", &[("doc_16k", 100, 280, "x")]);
+        assert!(check_acceptance(&base, &cand, &t).is_empty());
     }
 
     fn text(variant: &str, text: &str, samplers: usize, candidates: usize, top_k: u32) -> TextRun {

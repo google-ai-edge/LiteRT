@@ -209,6 +209,9 @@ pub fn summarize_numerics(
         prefill_tokens: iteration.and_then(|i| i.prefill.first()).map(|t| t.tokens).unwrap_or(0),
         prefill_tps: iteration.and_then(|i| i.prefill.first()).map(|t| t.tokens_per_second),
         acceptance: iteration.and_then(|i| i.mtp.as_ref()).map(|m| m.acceptance),
+        accepted: iteration.and_then(|i| i.mtp.as_ref()).map(|m| m.accepted),
+        drafted: iteration.and_then(|i| i.mtp.as_ref()).map(|m| m.drafted),
+        rounds: iteration.and_then(|i| i.mtp.as_ref()).and_then(|m| m.rounds),
         text_len: text.chars().count(),
         text_sha256: fnv1a(text),
         loopiness: loopiness(text),
@@ -283,6 +286,7 @@ pub fn run_perf_probe(env: &BenchEnv, probe: &PerfProbe) -> Result<PerfPoint> {
         args.push("--prompt-file".into());
         args.push(prompt.display().to_string());
     }
+    args.extend(env.bench_args(probe.model));
     let bench_log = File::create(probe.out_dir.join(format!("{}.bench.log", probe.label)))?;
     let status = Command::new(env.bench_dir.join("bench.sh"))
         .args(&args)
@@ -478,8 +482,9 @@ pub fn run_autopsy_probe(env: &BenchEnv, probe: &AutopsyProbe) -> Result<Autopsy
         probe.workload,
         if probe.mtp { "mtp" } else { "plain" }
     );
-    let mut args: Vec<String> = vec![
-        "--model".into(),
+    let mut args: Vec<String> = env.bench_args(probe.model);
+    args.extend([
+        "--model".to_string(),
         probe.model.into(),
         "--out".into(),
         probe.out_dir.display().to_string(),
@@ -505,7 +510,7 @@ pub fn run_autopsy_probe(env: &BenchEnv, probe: &AutopsyProbe) -> Result<Autopsy
             "LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_TIMELINE={}",
             probe.out_dir.join("timeline.txt").display()
         ),
-    ];
+    ]);
     if probe.mtp {
         args.push("--mtp".into());
     }

@@ -72,6 +72,16 @@ struct ProbeArgs {
     /// plain and MTP text runs of each workload.
     #[arg(long)]
     mtp: bool,
+    /// Extra environment of every probe, NAME=VALUE (repeatable): a runtime
+    /// knob's A/B as a capture of its own (LITERT_NVIDIA_GEMM_INT8=0). The
+    /// probes run in a pool of their own, so a compile-time knob compiles
+    /// its own engines; the manifest records the environment.
+    #[arg(long = "env", value_name = "NAME=VALUE")]
+    env: Vec<String>,
+    /// Run the timed probes (performance, autopsy) although clock_check.py
+    /// finds the host's clock unfit; the capture notes them as diagnostic.
+    #[arg(long)]
+    allow_unfit_clock: bool,
 }
 
 #[derive(Subcommand)]
@@ -140,6 +150,60 @@ fn resolve(cli: &Cli) -> Result<(BenchEnv, Config, PathBuf)> {
     Ok((env, config, guard_dir))
 }
 
+/// The probes' extra environment from --env NAME=VALUE: names the probes set
+/// themselves, or env.sh's pool variables, are refused.
+fn extra_env(probe: &ProbeArgs) -> Result<Vec<(String, String)>> {
+    const OWN: [&str; 8] = [
+        "LITERT_NVIDIA_DISPATCH_DUMP_IO",
+        "LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS",
+        "LITERT_NVIDIA_MEMORY_PROFILE",
+        "LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR",
+        "LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH",
+        "LITERT_NVIDIA_DISPATCH_RUNTIME_CACHE_DIR",
+        "CUDA_CACHE_PATH",
+        "LD_LIBRARY_PATH",
+    ];
+    let mut out: Vec<(String, String)> = Vec::new();
+    for item in &probe.env {
+        let Some((key, value)) = item.split_once('=') else {
+            bail!("--env {item}: not NAME=VALUE")
+        };
+        let valid = !key.is_empty()
+            && key.chars().next().is_some_and(|c| c.is_ascii_uppercase() || c == '_')
+            && key.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
+        if !valid {
+            bail!("--env {item}: {key} is not an environment variable name");
+        }
+        if OWN.contains(&key) {
+            bail!("--env {item}: the probes set {key} themselves");
+        }
+        out.retain(|(k, _)| k != key);
+        out.push((key.to_string(), value.to_string()));
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// A pool suffix that names an extra environment (empty without one).
+fn pool_suffix(extra: &[(String, String)]) -> String {
+    if extra.is_empty() {
+        return String::new();
+    }
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for (key, value) in extra {
+        for byte in key
+            .bytes()
+            .chain(std::iter::once(b'='))
+            .chain(value.bytes())
+            .chain(std::iter::once(0u8))
+        {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    }
+    format!("-env{:08x}", hash as u32)
+}
+
 fn capture_options(probe: &ProbeArgs, env: &BenchEnv, config: &Config) -> Result<CaptureOptions> {
     let models = probe.models.clone().unwrap_or_else(|| config.models.clone());
     if models.is_empty() {
@@ -151,6 +215,9 @@ fn capture_options(probe: &ProbeArgs, env: &BenchEnv, config: &Config) -> Result
         None if capture::dirty_build_id(&env.build_id) => bail!(
             "the build id {} is a dirty tree's (uncommitted tracked changes): it does not identify the code, so name the capture with --name, a new name after each edit",
             env.build_id
+        ),
+        None if !env.extra_env.is_empty() => bail!(
+            "a capture with an extra environment needs a --name: the build id alone names the plain capture"
         ),
         None => env.build_id.clone(),
     };
@@ -164,6 +231,7 @@ fn capture_options(probe: &ProbeArgs, env: &BenchEnv, config: &Config) -> Result
         texts: !probe.no_texts,
         autopsy: !probe.no_autopsy,
         mtp: probe.mtp,
+        allow_unfit_clock: probe.allow_unfit_clock,
     })
 }
 
@@ -279,7 +347,9 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::Capture(probe) => {
-            let (env, config, guard_dir) = resolve(&cli)?;
+            let (mut env, config, guard_dir) = resolve(&cli)?;
+            env.extra_env = extra_env(probe)?;
+            env.pool_suffix = pool_suffix(&env.extra_env);
             let opts = capture_options(probe, &env, &config)?;
             eprintln!(
                 "capture {} of build {} ({:?}, tier {})",
@@ -293,7 +363,9 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::Check { probe, baseline, record } => {
-            let (env, config, guard_dir) = resolve(&cli)?;
+            let (mut env, config, guard_dir) = resolve(&cli)?;
+            env.extra_env = extra_env(probe)?;
+            env.pool_suffix = pool_suffix(&env.extra_env);
             let base = load_capture(&env, baseline)?;
             let opts = capture_options(probe, &env, &config)?;
             if opts.name == base.manifest.name {

@@ -79,6 +79,16 @@ fail_min_overlap = 0.8
 fail_diverge_before = 8
 fail_loopiness = 0.25
 
+# MTP acceptance (accepted over drafted tokens) of the greedy MTP numerics
+# probes, pooled per model across the prompts and judged on the pool and on
+# how many prompts fell: one prompt's acceptance moves with its text, which
+# a numerics change parts. A same-build pair is identical; the thresholds
+# are not yet calibrated on a many-prompt A/B (README).
+[acceptance]
+min_probes = 3
+warn_drop = 0.02
+fail_drop = 0.05
+
 # Performance probes: bench.sh latency runs of these workloads (synthetic
 # prompt, 256 decode tokens); the cost models fitted on them predict the rest.
 # Three contexts: the third lets the prefill model fit the attention's growth
