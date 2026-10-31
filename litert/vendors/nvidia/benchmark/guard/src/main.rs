@@ -11,6 +11,7 @@ mod config;
 mod conversations;
 mod dumps;
 mod env;
+mod memory;
 mod numerics;
 mod parse;
 mod perf;
@@ -70,6 +71,9 @@ struct ProbeArgs {
     /// conversations of one process; their texts must agree).
     #[arg(long)]
     no_conversations: bool,
+    /// Skip the memory probe (bench.sh's memory metric, plain and MTP).
+    #[arg(long)]
+    no_memory: bool,
     /// Skip the per-kernel autopsy.
     #[arg(long)]
     no_autopsy: bool,
@@ -235,6 +239,7 @@ fn capture_options(probe: &ProbeArgs, env: &BenchEnv, config: &Config) -> Result
         perf: !probe.no_perf,
         texts: !probe.no_texts,
         conversations: !probe.no_conversations,
+        memory: !probe.no_memory,
         autopsy: !probe.no_autopsy,
         mtp: probe.mtp,
         allow_unfit_clock: probe.allow_unfit_clock,

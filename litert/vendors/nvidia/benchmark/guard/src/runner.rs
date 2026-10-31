@@ -16,6 +16,7 @@ use crate::autopsy::{load_autopsy_dir, Autopsy};
 use crate::config::PromptSpec;
 use crate::conversations::ConversationRun;
 use crate::env::BenchEnv;
+use crate::memory::{summarize_memory_run, MemoryRun};
 use crate::numerics::{loopiness, NumericsRun, StepLogits};
 use crate::parse::{captured_outputs, parse_cli_log, parse_logits_jsonl};
 use crate::perf::{summarize_run, PerfPoint};
@@ -455,6 +456,84 @@ pub fn load_text_run(out_dir: &Path) -> Option<TextRun> {
 
 pub fn text_dir(capture_dir: &Path, model: &str, kind: &str, variant: &str) -> PathBuf {
     capture_dir.join("texts").join(model).join(format!("{kind}_{variant}"))
+}
+
+/// The memory probe of one model and mode (memory.rs).
+pub struct MemoryProbe<'a> {
+    pub model: &'a str,
+    pub workload: &'a str,
+    pub mtp: bool,
+    pub prompt_file: Option<&'a Path>,
+    pub out_dir: &'a Path,
+}
+
+/// Runs bench.sh's memory metric once, and again from the warm cache when the
+/// first run compiled its engines.
+pub fn run_memory_probe(env: &BenchEnv, probe: &MemoryProbe) -> Result<MemoryRun> {
+    std::fs::create_dir_all(probe.out_dir)?;
+    let mode = if probe.mtp { "mtp" } else { "plain" };
+    let mut run = None;
+    for label in [
+        format!("{}_{}_{mode}_memory", probe.model, probe.workload),
+        format!("{}_{}_{mode}_memory_warm", probe.model, probe.workload),
+    ] {
+        let mut args: Vec<String> = vec![
+            "--model".into(),
+            probe.model.into(),
+            "--out".into(),
+            probe.out_dir.display().to_string(),
+            "--workload".into(),
+            probe.workload.into(),
+            "--metric".into(),
+            "memory".into(),
+            "--label".into(),
+            label.clone(),
+        ];
+        if probe.mtp {
+            args.push("--mtp".into());
+        }
+        if let Some(prompt) = probe.prompt_file {
+            args.push("--prompt-file".into());
+            args.push(prompt.display().to_string());
+        }
+        args.extend(env.bench_args(probe.model));
+        let bench_log = File::create(probe.out_dir.join(format!("{label}.bench.log")))?;
+        Command::new(env.bench_dir.join("bench.sh"))
+            .args(&args)
+            .env("LITERT_RT_DIR", &env.rt)
+            .stdin(Stdio::null())
+            .stdout(bench_log.try_clone()?)
+            .stderr(bench_log)
+            .status()
+            .context("running bench.sh")?;
+        let summary = summarize_memory_run(
+            &probe.out_dir.join(&label),
+            probe.model,
+            probe.mtp,
+            probe.workload,
+        )?;
+        let compiled = summary.compiled;
+        run = Some(summary);
+        if !compiled {
+            break;
+        }
+    }
+    let run = run.expect("one run at least");
+    std::fs::write(
+        probe.out_dir.join(format!("summary_{mode}.json")),
+        serde_json::to_string_pretty(&run)?,
+    )?;
+    Ok(run)
+}
+
+pub fn load_memory_run(out_dir: &Path, mtp: bool) -> Option<MemoryRun> {
+    let mode = if mtp { "mtp" } else { "plain" };
+    let text = std::fs::read_to_string(out_dir.join(format!("summary_{mode}.json"))).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+pub fn memory_dir(capture_dir: &Path, model: &str) -> PathBuf {
+    capture_dir.join("memory").join(model)
 }
 
 /// The conversation probe of one model (conversations.rs).

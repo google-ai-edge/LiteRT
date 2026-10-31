@@ -60,6 +60,8 @@ pub struct ProbesConfig {
     pub autopsy: AutopsyProbeConfig,
     #[serde(default)]
     pub conversations: ConversationsProbeConfig,
+    #[serde(default)]
+    pub memory: MemoryProbeConfig,
 }
 
 /// A sampled decode (top-k / top-p, a fixed seed) of a numerics prompt, run
@@ -133,6 +135,29 @@ pub struct AutopsyProbeConfig {
 impl Default for AutopsyProbeConfig {
     fn default() -> Self {
         Self { workload: "short".into(), mtp: false }
+    }
+}
+
+/// The memory probe: bench.sh's memory metric of a workload, plain and with
+/// MTP, and the growth that warns and fails (memory.rs).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryProbeConfig {
+    pub workload: String,
+    pub warn_gpu_mib: f64,
+    pub fail_gpu_mib: f64,
+    pub warn_rss_gib: f64,
+    pub fail_rss_gib: f64,
+}
+
+impl Default for MemoryProbeConfig {
+    fn default() -> Self {
+        Self {
+            workload: "short".into(),
+            warn_gpu_mib: 64.0,
+            fail_gpu_mib: 256.0,
+            warn_rss_gib: 0.1,
+            fail_rss_gib: 0.25,
+        }
     }
 }
 
@@ -411,6 +436,7 @@ impl Config {
             workload(name)?;
         }
         workload(&config.probes.autopsy.workload)?;
+        workload(&config.probes.memory.workload)?;
         config.prompt(&config.probes.sampled.prompt)?;
         config.prompt(&config.probes.conversations.prompt)?;
         if config.probes.conversations.conversations < 2 {

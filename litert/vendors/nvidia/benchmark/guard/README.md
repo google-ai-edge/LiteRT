@@ -95,6 +95,18 @@ at character 158 and the E4B's at 736, and with
 `LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=1` (962697400) every conversation agrees.
 About 15 to 25 seconds per model; `--no-conversations` skips it.
 
+**Memory.** bench.sh's memory metric of the short workload, plain and MTP,
+per model: the most device memory the run allocated (the dispatch's memory
+profile's largest device-wide use less its first, once the CUDA context
+exists) and its peak RSS. These are allocations, not nvidia-smi's sampled peak
+(which moves by 100 MiB between two runs of one build): a same-build pair
+agrees to a few MiB. `check` fails growth of 256 MiB or 0.25 GiB and warns
+from 64 MiB or 0.1 GiB (`[probes.memory]`); a run that compiled its engines
+in the process holds the compiler's memory and is run again from the warm
+cache. Known failing case: the step feed's tables under MTP before
+LiteRT-LM 12ed7c4b, 1,254 MiB and 1.15 GiB on the E2B. About 15 to 40
+seconds per model and mode; `--no-memory` skips it.
+
 **MTP acceptance.** With `--mtp` each numerics prompt also decodes greedily
 with the drafter, and the run keeps its accepted and drafted tokens. `check`
 and `compare` pool them per model (accepted over drafted, across the
@@ -182,8 +194,10 @@ first use); a numerics probe of a model runs before its performance probes.
 - The samplers at exact ties: the device keeps the lowest indices at a tie
   on the k-th logit, the CPU heap does not say; a parting of the sampled
   texts warns for that reason instead of failing.
-- Memory: the capture records the peak RSS of the performance runs and
-  nothing of the device's.
+- Memory beyond the memory probe: one workload (short), one conversation;
+  what a long context or a later conversation allocates is not in it, and
+  the device figure is device-wide (another process's allocation during the
+  run moves it).
 - The step feed: the numerics probes dump every step's logits, and the
   dispatch turns the feed off under the dumps, so the plain decode path
   the feed serves (the default) is not in the numerics; the text probes run

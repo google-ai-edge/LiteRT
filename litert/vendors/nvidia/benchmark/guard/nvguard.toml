@@ -147,3 +147,16 @@ prompt = "doc_8k"
 max_output_tokens = 256
 conversations = 2
 mtp = false
+
+# The memory probe: bench.sh's memory metric of this workload, plain and MTP:
+# the most device memory the run allocated (the dispatch's memory profile's
+# largest device-wide use less its first) and its peak RSS. Allocation-based: a
+# same-build pair agrees to a few MiB (nvidia-smi's sampled peak moves by
+# 100). Growth past these warns and fails; a run that compiled its engines in
+# the process is run again from the warm cache.
+[probes.memory]
+workload = "short"
+warn_gpu_mib = 64
+fail_gpu_mib = 256
+warn_rss_gib = 0.1
+fail_rss_gib = 0.25

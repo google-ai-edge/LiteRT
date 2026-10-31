@@ -11,13 +11,15 @@ use crate::autopsy::Autopsy;
 use crate::config::{workload_prompt, Config};
 use crate::conversations::ConversationRun;
 use crate::env::BenchEnv;
+use crate::memory::MemoryRun;
 use crate::numerics::NumericsRun;
 use crate::perf::PerfPoint;
 use crate::runner::{
-    autopsy_dir, conversation_dir, load_autopsy, load_conversation_run, load_numerics_run,
-    load_text_run, numerics_dir, perf_label, perf_run_complete, rescan_numerics_run,
-    run_autopsy_probe, run_conversation_probe, run_numerics_probe, run_perf_probe, run_text_probe,
-    text_dir, AutopsyProbe, ConversationProbe, NumericsProbe, PerfProbe, TextProbe,
+    autopsy_dir, conversation_dir, load_autopsy, load_conversation_run, load_memory_run,
+    load_numerics_run, load_text_run, memory_dir, numerics_dir, perf_label, perf_run_complete,
+    rescan_numerics_run, run_autopsy_probe, run_conversation_probe, run_memory_probe,
+    run_numerics_probe, run_perf_probe, run_text_probe, text_dir, AutopsyProbe, ConversationProbe,
+    MemoryProbe, NumericsProbe, PerfProbe, TextProbe,
 };
 use crate::texts::TextRun;
 
@@ -74,6 +76,9 @@ pub struct Capture {
     /// The conversation probes, one per model.
     #[serde(default)]
     pub conversations: Vec<ConversationRun>,
+    /// The memory probes, plain and MTP per model.
+    #[serde(default)]
+    pub memory: Vec<MemoryRun>,
     #[serde(skip)]
     pub dir: PathBuf,
 }
@@ -86,6 +91,7 @@ pub struct CaptureOptions {
     pub perf: bool,
     pub texts: bool,
     pub conversations: bool,
+    pub memory: bool,
     pub autopsy: bool,
     pub mtp: bool,
     /// Run the timed probes (performance, autopsy) on a clock clock_check.py
@@ -234,6 +240,7 @@ pub fn run_capture(
             texts: Vec::new(),
             autopsies: Vec::new(),
             conversations: Vec::new(),
+            memory: Vec::new(),
             dir: dir.clone(),
         },
     };
@@ -459,6 +466,59 @@ pub fn run_capture(
             capture.conversations.push(run);
             capture.manifest.updated = now();
             save(&capture)?;
+        }
+        if opts.memory {
+            let spec = &config.probes.memory;
+            let out_dir = memory_dir(&dir, model);
+            for mtp in [false, true] {
+                let mode = if mtp { "mtp" } else { "plain" };
+                let run = match load_memory_run(&out_dir, mtp)
+                    .filter(|r| r.exit_code == 0 && r.build_id == env.build_id && !r.compiled)
+                {
+                    Some(run) => {
+                        eprintln!("memory {model} {mode}: kept");
+                        run
+                    }
+                    None => {
+                        eprintln!("memory {model} {mode}: running ({})", spec.workload);
+                        let prompt_file = if mtp {
+                            workload_prompt(&spec.workload)
+                                .map(|f| env.bench_dir.join("prompts").join(f))
+                        } else {
+                            None
+                        };
+                        let run = run_memory_probe(
+                            env,
+                            &MemoryProbe {
+                                model,
+                                workload: &spec.workload,
+                                mtp,
+                                prompt_file: prompt_file.as_deref(),
+                                out_dir: &out_dir,
+                            },
+                        )?;
+                        let fmt = |v: Option<f64>, d: usize| {
+                            v.map(|v| format!("{v:.d$}")).unwrap_or_else(|| "-".into())
+                        };
+                        eprintln!(
+                            "  exit {}: device {} MiB, RSS {} GiB{}",
+                            run.exit_code,
+                            fmt(run.gpu_mib, 0),
+                            fmt(run.rss_gib, 3),
+                            if run.compiled {
+                                " (compiled twice: the peaks are the compiler's)"
+                            } else {
+                                ""
+                            }
+                        );
+                        run
+                    }
+                };
+                capture.memory.retain(|r| !(r.model == run.model && r.mtp == run.mtp));
+                capture.memory.push(run);
+                capture.manifest.updated = now();
+                save(&capture)?;
+            }
         }
         if opts.autopsy && timed_ok {
             let out_dir = autopsy_dir(&dir, model);

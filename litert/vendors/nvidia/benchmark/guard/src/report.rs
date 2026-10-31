@@ -69,7 +69,7 @@ pub fn workload_legend(names: &[String]) -> Vec<WorkloadLegend> {
 }
 
 /// What the probes do not cover, printed under every comparison.
-pub const NOT_PROBED: &str = "Not probed: a grammar that ends inside an MTP round; the samplers at exact ties on the k-th logit; the device's memory; contexts beyond the measured workloads other than by the cost models; prefill chunks past the dumped steps (numerics.full_steps); outputs above the dump's cap (numerics.outputs_max_mb: the caches of a long context, which the localization reports as above the cap).";
+pub const NOT_PROBED: &str = "Not probed: a grammar that ends inside an MTP round; the samplers at exact ties on the k-th logit; memory beyond the memory probe's one workload and conversation; contexts beyond the measured workloads other than by the cost models; prefill chunks past the dumped steps (numerics.full_steps); outputs above the dump's cap (numerics.outputs_max_mb: the caches of a long context, which the localization reports as above the cap).";
 
 fn text_run<'a>(
     runs: &'a [TextRun],
@@ -192,6 +192,110 @@ pub struct Prediction {
     pub cand_expected: Option<f64>,
     pub record: Option<f64>,
     pub ratio: Option<f64>,
+}
+
+/// A model's memory probe in one mode (memory.rs), against the baseline's.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryCheck {
+    pub model: String,
+    pub mtp: bool,
+    pub base_gpu_mib: Option<f64>,
+    pub cand_gpu_mib: Option<f64>,
+    pub base_rss_gib: Option<f64>,
+    pub cand_rss_gib: Option<f64>,
+    pub verdict: Verdict,
+    pub reasons: Vec<String>,
+}
+
+/// The candidate's memory probes against the baseline's: growth of the device
+/// memory or the RSS past the thresholds warns or fails; a failed run, or one
+/// whose peaks are the compiler's, fails; less memory passes.
+pub fn check_memory(
+    base: &Capture,
+    cand: &Capture,
+    spec: &crate::config::MemoryProbeConfig,
+) -> Vec<MemoryCheck> {
+    let mut out = Vec::new();
+    for c in &cand.memory {
+        let Some(b) = base.memory.iter().find(|b| b.model == c.model && b.mtp == c.mtp) else {
+            continue;
+        };
+        let mut verdict = Verdict::Pass;
+        let mut reasons = Vec::new();
+        let mut raise = |v: Verdict, reason: String| {
+            verdict = verdict.max(v);
+            reasons.push(reason);
+        };
+        if c.exit_code != 0 || b.exit_code != 0 {
+            raise(
+                Verdict::Fail,
+                format!("exit codes: baseline {}, candidate {}", b.exit_code, c.exit_code),
+            );
+        }
+        if c.compiled || b.compiled {
+            raise(
+                Verdict::Fail,
+                "a run compiled its engines twice: its peaks are the compiler's".to_string(),
+            );
+        }
+        match (b.gpu_mib, c.gpu_mib) {
+            (Some(bg), Some(cg)) => {
+                let grew = cg - bg;
+                if grew >= spec.fail_gpu_mib {
+                    raise(
+                        Verdict::Fail,
+                        format!(
+                            "device memory {bg:.0} -> {cg:.0} MiB (+{grew:.0}, at least {:.0})",
+                            spec.fail_gpu_mib
+                        ),
+                    );
+                } else if grew >= spec.warn_gpu_mib {
+                    raise(
+                        Verdict::Warn,
+                        format!(
+                            "device memory {bg:.0} -> {cg:.0} MiB (+{grew:.0}, at least {:.0})",
+                            spec.warn_gpu_mib
+                        ),
+                    );
+                }
+            }
+            _ => raise(
+                Verdict::Warn,
+                "no memory profile in a run: the device memory is not compared".to_string(),
+            ),
+        }
+        if let (Some(br), Some(cr)) = (b.rss_gib, c.rss_gib) {
+            let grew = cr - br;
+            if grew >= spec.fail_rss_gib {
+                raise(
+                    Verdict::Fail,
+                    format!(
+                        "peak RSS {br:.3} -> {cr:.3} GiB (+{grew:.3}, at least {:.2})",
+                        spec.fail_rss_gib
+                    ),
+                );
+            } else if grew >= spec.warn_rss_gib {
+                raise(
+                    Verdict::Warn,
+                    format!(
+                        "peak RSS {br:.3} -> {cr:.3} GiB (+{grew:.3}, at least {:.2})",
+                        spec.warn_rss_gib
+                    ),
+                );
+            }
+        }
+        out.push(MemoryCheck {
+            model: c.model.clone(),
+            mtp: c.mtp,
+            base_gpu_mib: b.gpu_mib,
+            cand_gpu_mib: c.gpu_mib,
+            base_rss_gib: b.rss_gib,
+            cand_rss_gib: c.rss_gib,
+            verdict,
+            reasons,
+        });
+    }
+    out
 }
 
 /// A model's conversation probe (conversations.rs): whether a later
@@ -385,6 +489,8 @@ pub struct Comparison {
     pub acceptance: Vec<AcceptanceCheck>,
     #[serde(default)]
     pub conversations: Vec<ConversationCheck>,
+    #[serde(default)]
+    pub memory: Vec<MemoryCheck>,
     /// The extra environment of each capture (capture --env).
     #[serde(default)]
     pub base_env: Vec<(String, String)>,
@@ -454,6 +560,11 @@ fn not_compared(base: &Capture, cand: &Capture) -> Vec<String> {
     for c in &cand.texts {
         if text_run(&base.texts, &c.model, &c.kind, &c.variant).is_none() {
             out.push(format!("text {} {} {}: not in the baseline", c.model, c.kind, c.variant));
+        }
+    }
+    for b in &base.memory {
+        if !cand.memory.iter().any(|c| c.model == b.model && c.mtp == b.mtp) {
+            out.push(format!("memory {} {}: not in the candidate", b.model, mode(b.mtp)));
         }
     }
     for b in &base.conversations {
@@ -619,6 +730,7 @@ pub fn compare(
     let autopsies = autopsy_diffs(base, cand);
     let acceptance = check_acceptance(base, cand, &config.acceptance);
     let conversations = check_conversations(base, cand);
+    let memory = check_memory(base, cand, &config.probes.memory);
     let mut names: Vec<String> = config.perf.workloads.clone();
     names.extend(config.perf.predict.iter().cloned());
     names.push(config.probes.autopsy.workload.clone());
@@ -654,6 +766,7 @@ pub fn compare(
         .chain(texts.iter().map(|t| t.verdict))
         .chain(acceptance.iter().map(|a| a.verdict))
         .chain(conversations.iter().map(|c| c.verdict))
+        .chain(memory.iter().map(|m| m.verdict))
         .chain(reasons.iter().map(|_| Verdict::Warn))
         .max()
         .unwrap_or(Verdict::Pass);
@@ -672,6 +785,7 @@ pub fn compare(
         workloads,
         acceptance,
         conversations,
+        memory,
         base_env: base.manifest.env.clone(),
         cand_env: cand.manifest.env.clone(),
         base_clock_fit: base.manifest.clock_fit,
@@ -733,6 +847,36 @@ pub fn render_comparison(c: &Comparison) -> String {
         s.push_str(&format!("- WARN: {reason}\n"));
     }
     if !c.reasons.is_empty() {
+        s.push('\n');
+    }
+    if !c.memory.is_empty() {
+        s.push_str(
+            "## Memory (bench.sh's memory metric: the most device memory held, the peak RSS)\n\n",
+        );
+        s.push_str("| Model | Mode | Device MiB (base, cand) | Peak RSS GiB (base, cand) | Verdict |\n|---|---|---|---|---|\n");
+        let f =
+            |v: Option<f64>, d: usize| v.map(|v| format!("{v:.d$}")).unwrap_or_else(|| "-".into());
+        for m in &c.memory {
+            s.push_str(&format!(
+                "| {} | {} | {}, {} | {}, {} | {} |\n",
+                m.model,
+                if m.mtp { "mtp" } else { "plain" },
+                f(m.base_gpu_mib, 0),
+                f(m.cand_gpu_mib, 0),
+                f(m.base_rss_gib, 3),
+                f(m.cand_rss_gib, 3),
+                m.verdict.label()
+            ));
+        }
+        for m in c.memory.iter().filter(|m| m.verdict != Verdict::Pass) {
+            for r in &m.reasons {
+                s.push_str(&format!(
+                    "- {} {}: {r}\n",
+                    m.model,
+                    if m.mtp { "mtp" } else { "plain" }
+                ));
+            }
+        }
         s.push('\n');
     }
     if !c.conversations.is_empty() {
@@ -1605,6 +1749,56 @@ mod tests {
             });
         }
         capture
+    }
+
+    fn memory_capture(name: &str, runs: &[(&str, bool, f64, f64, bool)]) -> Capture {
+        let mut capture = capture_of(name, Vec::new(), &[]);
+        for (model, mtp, gpu, rss, compiled) in runs {
+            capture.memory.push(crate::memory::MemoryRun {
+                model: model.to_string(),
+                mtp: *mtp,
+                workload: "short".into(),
+                build_id: "b".into(),
+                exit_code: 0,
+                gpu_mib: Some(*gpu),
+                rss_gib: Some(*rss),
+                compiled: *compiled,
+                label: "l".into(),
+            });
+        }
+        capture
+    }
+
+    #[test]
+    fn memory_that_grows_fails_and_memory_that_shrinks_passes() {
+        let spec = crate::config::MemoryProbeConfig::default();
+        // The step feed's tables under MTP before LiteRT-LM 12ed7c4b (E2B: +1,254 MiB, +1.15 GiB),
+        // against after.
+        let after = memory_capture(
+            "after",
+            &[
+                ("e2b", true, 1989.0, 1.079, false),
+                ("e4b", true, 2985.0, 1.258, false),
+                ("12b", false, 7207.0, 0.612, false),
+            ],
+        );
+        let before = memory_capture(
+            "before",
+            &[
+                ("e2b", true, 3243.0, 2.230, false),
+                ("e4b", true, 3030.0, 1.300, false),
+                ("12b", false, 7207.0, 0.612, true),
+            ],
+        );
+        let checks = check_memory(&after, &before, &spec);
+        let verdict = |model: &str| checks.iter().find(|c| c.model == model).unwrap().verdict;
+        assert_eq!(verdict("e2b"), Verdict::Fail);
+        assert_eq!(verdict("e4b"), Verdict::Pass); // +45 MiB, +0.04 GiB: within the warning
+        assert_eq!(verdict("12b"), Verdict::Fail); // the compiler's peaks
+        let checks = check_memory(&before, &after, &spec);
+        assert_eq!(checks.iter().find(|c| c.model == "e2b").unwrap().verdict, Verdict::Pass);
+        let warn = memory_capture("warn", &[("e4b", true, 3085.0, 1.258, false)]);
+        assert_eq!(check_memory(&after, &warn, &spec)[0].verdict, Verdict::Warn); // +100 MiB
     }
 
     #[test]
