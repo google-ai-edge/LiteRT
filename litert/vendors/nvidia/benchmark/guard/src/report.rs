@@ -221,6 +221,8 @@ pub fn render_comparison(c: &Comparison) -> String {
         c.base_build,
         c.verdict.label()
     ));
+    let samplers = |cap: &[NumericsComparison]| cap.len();
+    let _ = samplers;
     if c.base_host_mode != c.cand_host_mode {
         s.push_str(&format!("Host modes differ: baseline {}, candidate {}; timings are not comparable across them.\n\n", c.base_host_mode, c.cand_host_mode));
     }
@@ -314,10 +316,10 @@ pub fn render_capture(capture: &Capture) -> String {
         m.name, m.build_id, m.tier, m.host_mode, m.updated, m.rt_head, m.lm_head
     );
     if !capture.numerics.is_empty() {
-        s.push_str("## Numerics probes\n\n| Model | Prompt | Mode | Exit | Steps | Prefill tokens | Decode tokens | Decode tok/s | Loopiness | Non-finite | Wall s |\n|---|---|---|---:|---:|---:|---:|---:|---:|---|---:|\n");
+        s.push_str("## Numerics probes\n\n| Model | Prompt | Mode | Exit | Steps | Prefill tokens | Decode tokens | Decode tok/s | Loopiness | Non-finite | Device samplers | Wall s |\n|---|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|\n");
         for n in &capture.numerics {
             s.push_str(&format!(
-                "| {} | {} | {} | {} | {} | {} | {} | {} | {:.2} | {} | {:.0} |\n",
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {:.2} | {} | {} | {:.0} |\n",
                 n.model,
                 n.prompt,
                 if n.mtp { "mtp" } else { "plain" },
@@ -328,10 +330,38 @@ pub fn render_capture(capture: &Capture) -> String {
                 opt(n.decode_tps, 1),
                 n.loopiness,
                 if n.nonfinite { "yes" } else { "no" },
+                n.device_samplers,
                 n.wall_s
             ));
         }
         s.push('\n');
+        let compiles: Vec<&crate::numerics::NumericsRun> =
+            capture.numerics.iter().filter(|n| n.weight_store.is_some()).collect();
+        if !compiles.is_empty() {
+            s.push_str("Compiles seen by the probes: ");
+            let sdks: BTreeSet<String> =
+                compiles.iter().filter_map(|n| n.sdk_version.clone()).collect();
+            s.push_str(&format!(
+                "SDK {}; ",
+                if sdks.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    sdks.into_iter().collect::<Vec<_>>().join(", ")
+                }
+            ));
+            let without_store: Vec<String> = compiles
+                .iter()
+                .filter(|n| n.weight_store == Some(false))
+                .map(|n| n.model.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            if without_store.is_empty() {
+                s.push_str("weight store used by every compile.\n\n");
+            } else {
+                s.push_str(&format!("WITHOUT the weight store for {} (plans carry their weights: check the SDK the plugin was built against).\n\n", without_store.join(", ")));
+            }
+        }
     }
     if !capture.perf.is_empty() {
         s.push_str("## Performance probes\n\n| Model | Workload | Mode | Iterations | Decode tok/s | Prefill tok/s | Acceptance | Tokens/round | Init s |\n|---|---|---|---:|---:|---:|---:|---:|---:|\n");

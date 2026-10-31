@@ -125,40 +125,17 @@ pub fn run_numerics_probe(env: &BenchEnv, probe: &NumericsProbe) -> Result<Numer
         Ok(t) => parse_logits_jsonl(&t)?,
         Err(_) => Vec::new(),
     };
-    let mut steps = Vec::new();
-    let mut nonfinite = false;
-    for line in &lines {
-        for (row, top) in line.top.iter().enumerate() {
-            nonfinite |= top.iter().any(|(_, v)| !v.is_finite());
-            steps.push(StepLogits {
-                context: line.context,
-                function: line.function.clone(),
-                step: line.step,
-                row,
-                top: top.clone(),
-            });
-        }
-    }
-    let iteration = log.iterations.last();
-    let run = NumericsRun {
-        model: probe.model.to_string(),
-        prompt: probe.prompt.name.clone(),
-        mtp: probe.mtp,
-        build_id: env.build_id.clone(),
+    let run = summarize_numerics(
+        probe.model,
+        &probe.prompt.name,
+        probe.mtp,
+        &env.build_id,
         exit_code,
         wall_s,
-        tokens: steps.iter().filter_map(|s| s.argmax()).collect(),
-        steps,
-        decode_tokens: iteration.and_then(|i| i.decode.first()).map(|t| t.tokens).unwrap_or(0),
-        decode_tps: iteration.and_then(|i| i.decode.first()).map(|t| t.tokens_per_second),
-        prefill_tokens: iteration.and_then(|i| i.prefill.first()).map(|t| t.tokens).unwrap_or(0),
-        prefill_tps: iteration.and_then(|i| i.prefill.first()).map(|t| t.tokens_per_second),
-        acceptance: iteration.and_then(|i| i.mtp.as_ref()).map(|m| m.acceptance),
-        text_len: text.chars().count(),
-        text_sha256: fnv1a(&text),
-        loopiness: loopiness(&text),
-        nonfinite,
-    };
+        &log,
+        &text,
+        &lines,
+    );
     let meta = json!({
         "command": std::iter::once(env.cli().display().to_string()).chain(args.iter().cloned()).collect::<Vec<_>>(),
         "environment": envs.iter().filter(|(k, _)| k.starts_with("LITERT_NVIDIA_")).cloned().collect::<std::collections::BTreeMap<_, _>>(),
@@ -174,6 +151,82 @@ pub fn run_numerics_probe(env: &BenchEnv, probe: &NumericsProbe) -> Result<Numer
     std::fs::write(probe.out_dir.join("meta.json"), serde_json::to_string_pretty(&meta)?)?;
     std::fs::write(probe.out_dir.join("summary.json"), serde_json::to_string_pretty(&run)?)?;
     Ok(run)
+}
+
+/// A probe's summary from what it left behind (also used to rescan a run).
+pub fn summarize_numerics(
+    model: &str,
+    prompt: &str,
+    mtp: bool,
+    build_id: &str,
+    exit_code: i32,
+    wall_s: f64,
+    log: &crate::parse::CliLog,
+    text: &str,
+    lines: &[crate::parse::LogitsLine],
+) -> NumericsRun {
+    let mut steps = Vec::new();
+    let mut nonfinite = false;
+    for line in lines {
+        for (row, top) in line.top.iter().enumerate() {
+            nonfinite |= top.iter().any(|(_, v)| !v.is_finite());
+            steps.push(StepLogits {
+                context: line.context,
+                function: line.function.clone(),
+                step: line.step,
+                row,
+                top: top.clone(),
+            });
+        }
+    }
+    let iteration = log.iterations.last();
+    NumericsRun {
+        model: model.to_string(),
+        prompt: prompt.to_string(),
+        mtp,
+        build_id: build_id.to_string(),
+        exit_code,
+        wall_s,
+        tokens: steps.iter().filter_map(|s| s.argmax()).collect(),
+        steps,
+        decode_tokens: iteration.and_then(|i| i.decode.first()).map(|t| t.tokens).unwrap_or(0),
+        decode_tps: iteration.and_then(|i| i.decode.first()).map(|t| t.tokens_per_second),
+        prefill_tokens: iteration.and_then(|i| i.prefill.first()).map(|t| t.tokens).unwrap_or(0),
+        prefill_tps: iteration.and_then(|i| i.prefill.first()).map(|t| t.tokens_per_second),
+        acceptance: iteration.and_then(|i| i.mtp.as_ref()).map(|m| m.acceptance),
+        text_len: text.chars().count(),
+        text_sha256: fnv1a(text),
+        loopiness: loopiness(text),
+        nonfinite,
+        sdk_version: log.sdk_version.clone(),
+        weight_store: log.weight_store,
+        device_samplers: log.device_samplers,
+    }
+}
+
+/// Recomputes a run's summary from its files (after a change of the metrics).
+pub fn rescan_numerics_run(out_dir: &Path) -> Result<Option<NumericsRun>> {
+    let Some(previous) = load_numerics_run(out_dir) else { return Ok(None) };
+    let log_text = std::fs::read_to_string(out_dir.join("cli.log")).unwrap_or_default();
+    let log = parse_cli_log(&log_text);
+    let text = std::fs::read_to_string(out_dir.join("response.txt")).unwrap_or_default();
+    let lines = match std::fs::read_to_string(out_dir.join("logits.jsonl")) {
+        Ok(t) => parse_logits_jsonl(&t)?,
+        Err(_) => Vec::new(),
+    };
+    let run = summarize_numerics(
+        &previous.model,
+        &previous.prompt,
+        previous.mtp,
+        &previous.build_id,
+        previous.exit_code,
+        previous.wall_s,
+        &log,
+        &text,
+        &lines,
+    );
+    std::fs::write(out_dir.join("summary.json"), serde_json::to_string_pretty(&run)?)?;
+    Ok(Some(run))
 }
 
 pub fn load_numerics_run(out_dir: &Path) -> Option<NumericsRun> {

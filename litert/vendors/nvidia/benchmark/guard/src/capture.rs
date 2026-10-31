@@ -12,8 +12,8 @@ use crate::env::BenchEnv;
 use crate::numerics::NumericsRun;
 use crate::perf::PerfPoint;
 use crate::runner::{
-    load_numerics_run, numerics_dir, perf_label, perf_run_complete, run_numerics_probe,
-    run_perf_probe, NumericsProbe, PerfProbe,
+    load_numerics_run, numerics_dir, perf_label, perf_run_complete, rescan_numerics_run,
+    run_numerics_probe, run_perf_probe, NumericsProbe, PerfProbe,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -266,5 +266,22 @@ pub fn run_capture(
             }
         }
     }
+    Ok(capture)
+}
+
+/// Recomputes every numerics summary of a capture from its files.
+pub fn rescan_capture(env: &BenchEnv, name: &str) -> Result<Capture> {
+    let mut capture = load_capture(env, name)?;
+    let mut rescanned = Vec::new();
+    for run in &capture.numerics {
+        let dir = numerics_dir(&capture.dir, &run.model, &run.prompt, run.mtp);
+        match rescan_numerics_run(&dir)? {
+            Some(updated) => rescanned.push(updated),
+            None => rescanned.push(run.clone()),
+        }
+    }
+    capture.numerics = rescanned;
+    capture.manifest.updated = now();
+    save(&capture)?;
     Ok(capture)
 }

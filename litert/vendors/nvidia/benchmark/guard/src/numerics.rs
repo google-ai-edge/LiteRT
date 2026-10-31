@@ -75,6 +75,15 @@ pub struct NumericsRun {
     pub text_sha256: String,
     pub loopiness: f64,
     pub nonfinite: bool,
+    /// The compiler plugin's SDK version line, when the run compiled.
+    #[serde(default)]
+    pub sdk_version: Option<String>,
+    /// Whether a compile in this run used the weight store.
+    #[serde(default)]
+    pub weight_store: Option<bool>,
+    /// Device sampler lines (greedy or top-k) seen in the log.
+    #[serde(default)]
+    pub device_samplers: usize,
 }
 
 /// The share of the last 4,000 characters covered by the most repeated line
@@ -90,8 +99,11 @@ pub fn loopiness(text: &str) -> f64 {
         }
     }
     let tail_len = tail.chars().count().max(1);
+    // A loop repeats a line many times; a paragraph said twice in a short
+    // answer is not one.
     counts
         .iter()
+        .filter(|(_, n)| **n >= 3)
         .map(|(line, n)| (*n * line.chars().count()) as f64 / tail_len as f64)
         .fold(0.0, f64::max)
 }
@@ -351,6 +363,9 @@ mod tests {
             text_sha256: text.to_string(),
             loopiness: loopiness(text),
             nonfinite: false,
+            sdk_version: None,
+            weight_store: None,
+            device_samplers: 0,
         }
     }
 
@@ -409,6 +424,8 @@ mod tests {
         let looping = line.repeat(200);
         assert!(loopiness(&looping) > 0.9);
         assert!(loopiness("short\nlines\n") < 0.01);
+        let twice = "a paragraph of a few dozen characters said once\nmore text\na paragraph of a few dozen characters said once\n";
+        assert_eq!(loopiness(twice), 0.0);
     }
 
     #[test]

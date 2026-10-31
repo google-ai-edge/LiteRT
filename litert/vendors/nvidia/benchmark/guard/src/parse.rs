@@ -76,6 +76,13 @@ pub struct CliLog {
     pub aot_misses: usize,
     pub compiled_partitions: usize,
     pub sampler_lines: Vec<String>,
+    /// "Applying plugin with SDK version: TensorRT-RTX via NvInfer headers X":
+    /// the SDK the compiler plugin was built against.
+    pub sdk_version: Option<String>,
+    /// The compile used the shared weight store (plans without their weights).
+    pub weight_store: Option<bool>,
+    /// "NVIDIA MTP GPU ... sampling enabled" lines: the device samplers in use.
+    pub device_samplers: usize,
 }
 
 fn turns(block: &str, kind: &str) -> Vec<Turn> {
@@ -177,6 +184,16 @@ pub fn parse_cli_log(text: &str) -> CliLog {
         .filter(|l| l.contains("NVIDIA") || l.contains("GPU") || l.contains("CUDA"))
         .map(|l| l.splitn(5, ' ').last().unwrap_or(l).to_string())
         .collect();
+    static SDK: OnceLock<Regex> = OnceLock::new();
+    let sdk = re(&SDK, r"Applying plugin with SDK version: ([^\n]*?) cache-schema");
+    log.sdk_version = sdk.captures(text).map(|c| c[1].trim().to_string());
+    if log.compiled_partitions > 0
+        || text.contains("compiled self-contained partition")
+        || text.contains("compiled weight-store partition")
+    {
+        log.weight_store = Some(text.contains("weight store enabled"));
+    }
+    log.device_samplers = text.matches("sampling enabled for").count();
     log
 }
 

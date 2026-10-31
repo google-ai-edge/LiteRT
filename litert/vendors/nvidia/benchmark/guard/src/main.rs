@@ -94,6 +94,9 @@ enum Command {
         #[arg(long)]
         record: Option<PathBuf>,
     },
+    /// Recompute a capture's numerics summaries from its files (after a
+    /// change of the metrics).
+    Rescan { name: String },
     /// The captures under $LITERT_BENCH_ROOT/guard.
     List,
     /// The resolved benchmark environment.
@@ -166,6 +169,14 @@ fn main() -> Result<()> {
             println!("models: {}", env.models_dir.display());
             println!("build id: {}", env.build_id);
             println!("captures: {}", capture::guard_root(&env).display());
+            Ok(())
+        }
+        Command::Rescan { name } => {
+            let (env, _, _) = resolve(&cli)?;
+            let capture = capture::rescan_capture(&env, name)?;
+            let markdown = report::render_capture(&capture);
+            write_report(&capture.dir, "capture", &markdown, &capture)?;
+            print!("{markdown}");
             Ok(())
         }
         Command::List => {
