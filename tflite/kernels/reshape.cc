@@ -129,9 +129,10 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TfLiteTensor* output;
   TF_LITE_ENSURE_OK(context,
                     GetOutputSafe(context, node, kOutputTensor, &output));
+  const TfLiteTensor* input;
+  TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, kInputTensor, &input));
+  TF_LITE_ENSURE_TYPES_EQ(context, input->type, output->type);
   if (output->type != kTfLiteString) {
-    const TfLiteTensor* input = GetInput(context, node, kInputTensor);
-    TF_LITE_ENSURE(context, input != nullptr);
     const TfLiteTensor* shape = GetInput(context, node, kShapeTensor);
     if (NumInputs(node) == 1 || IsConstantOrPersistentTensor(shape)) {
       op_data->output_shape_known = true;
@@ -165,6 +166,8 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   TfLiteTensor* output;
   TF_LITE_ENSURE_OK(context,
                     GetOutputSafe(context, node, kOutputTensor, &output));
+
+  TF_LITE_ENSURE_TYPES_EQ(context, input->type, output->type);
 
   // There are two ways in which the 'output' can be made dynamic: it could be
   // a string tensor, or its shape cannot be calculated during Prepare(). In
@@ -203,12 +206,18 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     output->bytes = bytes_required;
   }
 
+  TF_LITE_ENSURE(context, output->bytes >= input->bytes);
+  if (input->bytes > 0) {
+    TF_LITE_ENSURE(context, input->data.raw != nullptr);
+    TF_LITE_ENSURE(context, output->data.raw != nullptr);
+  }
+
   if (op_data->output_ptr == output->data.data) {
     return kTfLiteOk;
   }
   // Only copy data if input and output do not share a buffer.
-  if (output->data.data != input->data.data) {
-    memcpy(output->data.data, input->data.data, input->bytes);
+  if (input->bytes > 0 && output->data.raw != input->data.raw) {
+    memcpy(output->data.raw, input->data.raw, input->bytes);
   }
 
   return kTfLiteOk;
