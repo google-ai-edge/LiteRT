@@ -194,6 +194,7 @@ litert_device_test(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_runtime_context_testonly",
         "//litert/cc:litert_any",
+        "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_options",

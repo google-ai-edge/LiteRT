@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
@@ -34,7 +35,9 @@ class LiteRtDispatchDeviceContextT {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
 
-  ~LiteRtDispatchDeviceContextT() = default;
+  // Deregisters the QNN memory handles that are still registered against QNN
+  // contexts owned by this device context (they are freed right after).
+  ~LiteRtDispatchDeviceContextT();
 
   static litert::Expected<Ptr> Create(
       const LiteRtRuntimeContext* runtime_context,
@@ -46,21 +49,23 @@ class LiteRtDispatchDeviceContextT {
         TensorBufferRegistryEntry(tensor_buffer));
   }
 
-  // Unregisters the tensor buffer and releases its QNN memory handle, if any.
+  // Unregisters the tensor buffer and releases its QNN memory handles, one per
+  // QNN context it was attached to.
   litert::Expected<void> UnregisterTensorBuffer(
       LiteRtTensorBufferHandle tensor_buffer_handle);
 
   litert::Expected<LiteRtTensorBuffer> GetTensorBuffer(
       LiteRtTensorBufferHandle tensor_buffer_handle);
 
+  // Returns the QNN memory handle of the tensor buffer registered against
+  // `context_handle`, i.e. the QNN context of the invocation context the
+  // buffer is attached to, registering the buffer with that context on first
+  // use. QNN memory handles are per context, and contexts of one model may
+  // live in different HTP process domains (PDs), so a buffer shared by several
+  // contexts gets one memory handle per context.
   litert::Expected<Qnn_MemHandle_t> GetMemHandle(
-      LiteRtTensorBufferHandle tensor_buffer_handle,
-      const Qnn_Tensor_t& tensor);
-
-  void SetInvocationContext(
-      LiteRtDispatchInvocationContextT* invocation_context) {
-    invocation_context_ = invocation_context;
-  }
+      LiteRtTensorBufferHandle tensor_buffer_handle, const Qnn_Tensor_t& tensor,
+      Qnn_ContextHandle_t context_handle);
 
   litert::Expected<const litert::qnn::QnnManager::ContextHandle&>
   GetOrCreateContext(const void* bytecode_ptr, size_t bytecode_size,
@@ -71,9 +76,21 @@ class LiteRtDispatchDeviceContextT {
   }
 
  private:
+  // A QNN memory handle of a tensor buffer, registered against one QNN
+  // context.
+  struct QnnMemHandleEntry {
+    Qnn_ContextHandle_t context_handle = nullptr;
+    Qnn_MemHandle_t mem_handle = nullptr;
+    // False when registering against `context_handle` failed and the handle
+    // registered against another context is reused instead (this only works
+    // when both contexts are in the same HTP PD); such an entry never
+    // deregisters `mem_handle` itself.
+    bool owned = true;
+  };
+
   struct TensorBufferRegistryEntry {
     LiteRtTensorBuffer tensor_buffer;
-    Qnn_MemHandle_t qnn_mem_handle = nullptr;
+    std::vector<QnnMemHandleEntry> qnn_mem_handles;
     explicit TensorBufferRegistryEntry(LiteRtTensorBuffer tensor_buffer_)
         : tensor_buffer(tensor_buffer_) {}
     bool operator==(const TensorBufferRegistryEntry& other) const {
@@ -92,13 +109,22 @@ class LiteRtDispatchDeviceContextT {
         qnn_backend_(qnn_backend) {}
 
   litert::Expected<Qnn_MemHandle_t> RegisterTensorBuffer(
-      LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor);
+      LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor,
+      Qnn_ContextHandle_t context_handle);
+
+  // Deregisters the memory handles of `entry` that were registered against
+  // `context_handle` (or against any context if `context_handle` is null) and
+  // removes them, together with the entries that reuse them, from `entry`.
+  // Returns the first QNN error.
+  litert::Expected<void> DeregisterMemHandles(
+      TensorBufferRegistryEntry& entry, Qnn_ContextHandle_t context_handle);
+
+  bool OwnsContext(Qnn_ContextHandle_t context_handle) const;
 
   const LiteRtRuntimeContext* runtime_context_;
   litert::qnn::QnnManager& qnn_manager_;
   ::qnn::QnnBackend& qnn_backend_;
   TensorBufferRegistry tensor_buffer_registry_;
-  LiteRtDispatchInvocationContextT* invocation_context_ = nullptr;
 
   struct ContextCacheKey {
     const void* ptr;
