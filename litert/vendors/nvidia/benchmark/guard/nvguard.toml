@@ -1,0 +1,81 @@
+# nvguard's defaults: the models, the numerics probe prompts, the performance
+# workloads and the verdict thresholds. --config FILE replaces this file.
+
+models = ["e2b", "e4b", "12b", "26b"]
+
+# Numerics probes: a prompt decoded greedily for max_output_tokens inside a
+# context of `context` tokens; the dispatch records the top-K logits of every
+# step. Tiers are cumulative: quick < standard < long.
+[[prompts]]
+name = "code_grid"
+file = "prompts/code_grid.txt"
+max_output_tokens = 256
+context = 2048
+
+[[prompts]]
+name = "code_stdin"
+file = "prompts/code_stdin.txt"
+max_output_tokens = 256
+context = 2048
+
+[[prompts]]
+name = "code_class"
+file = "prompts/code_class.txt"
+max_output_tokens = 256
+context = 2048
+
+[[prompts]]
+name = "reason"
+file = "prompts/reason.txt"
+max_output_tokens = 128
+context = 2048
+
+# The benchmark's own long documents: the attention kernels change with the
+# sequence length (chunking, INT8 cache paths), so the long contexts count.
+[[prompts]]
+name = "doc_8k"
+file = "../prompts/prompt_8k.txt"
+max_output_tokens = 64
+context = 9216
+
+[[prompts]]
+name = "doc_30k"
+file = "../prompts/prompt_30k.txt"
+max_output_tokens = 64
+context = 31744
+tier = "standard"
+
+[[prompts]]
+name = "doc_128k"
+file = "../prompts/prompt_128k.txt"
+max_output_tokens = 32
+context = 130048
+tier = "long"
+models = ["12b"]
+
+[numerics]
+top_k = 32
+
+[numerics.thresholds]
+warn_max_abs_delta = 0.05
+fail_max_abs_delta = 0.5
+warn_mean_kl = 1e-4
+fail_mean_kl = 1e-3
+warn_min_overlap = 0.97
+fail_min_overlap = 0.85
+fail_diverge_before = 8
+fail_loopiness = 0.25
+
+# Performance probes: bench.sh latency runs of these workloads (synthetic
+# prompt, 256 decode tokens); the cost models fitted on them predict the rest.
+[perf]
+workloads = ["short", "8k"]
+predict = ["16k", "30k"]
+
+[perf.iterations]
+short = 5
+8k = 2
+
+[perf.thresholds]
+warn_ratio = 0.97
+fail_ratio = 0.93
