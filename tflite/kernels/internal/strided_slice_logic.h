@@ -16,6 +16,8 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_KERNELS_INTERNAL_STRIDED_SLICE_LOGIC_H_
 #define TENSORFLOW_LITE_KERNELS_INTERNAL_STRIDED_SLICE_LOGIC_H_
 
+#include <algorithm>
+#include <cstdint>
 #include <limits>
 #include <vector>
 
@@ -112,28 +114,28 @@ inline int StridedSliceEndForAxis(const tflite::StridedSliceParams& params,
     }
   }
   const auto* indices = params.stop_indices;
-  int end = indices[axis];
+  int64_t end = indices[axis];
   if (offset) {
     end += start;
   }
   const int32_t stride = params.strides[axis];
   const int32_t end_mask = (params.end_mask & 1 << axis);
-  if (end < 0) {
+  if (!offset && end < 0) {
     end += axis_size;
   }
   if (stride > 0) {
-    end = Clamp(end, 0, axis_size);
+    end = std::clamp<int64_t>(end, 0, axis_size);
   } else {
-    end = Clamp(end, -1, axis_size - 1);
+    end = std::clamp<int64_t>(end, -1, axis_size - 1);
   }
-  if (end_mask) {
+  if (!offset && end_mask) {
     if (stride > 0) {
       end = axis_size;
     } else {
       end = -1;
     }
   }
-  return end;
+  return static_cast<int>(end);
 }
 
 // Return the index for the first element along that axis. This index will be a

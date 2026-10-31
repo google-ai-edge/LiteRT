@@ -600,5 +600,11 @@ TEST(GatherNdOpTest, ErrorOnNegativeInnermostIndicesDimension) {
   EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
 }
 
+TEST(GatherNdOpTest, ErrorOnScalarIndices) {
+  GatherNdOpModel m({TensorType_FLOAT32, {2, 2}}, {TensorType_INT32, {}},
+                    /*allocate_and_delegate=*/false);
+  EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+}
+
 }  // namespace
 }  // namespace tflite
