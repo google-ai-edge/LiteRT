@@ -55,6 +55,11 @@ models = ["12b"]
 
 [numerics]
 top_k = 32
+# The first steps of every function are dumped whole (the logits rows give
+# the KL over the whole vocabulary; every partition's outputs, caches aside,
+# give the localization); outputs above this size are left out.
+full_steps = 8
+outputs_max_mb = 16
 
 # BF16 logits move by 0.125 per ulp; a different summation order moves the
 # top logits one to three ulp per step and more along the sequence, with KL
@@ -90,3 +95,34 @@ short = 5
 [perf.thresholds]
 warn_ratio = 0.97
 fail_ratio = 0.93
+
+# The text probes: a sampled decode and a constrained one, each with the MTP
+# verifier sampling on the device and on the host (LITERT_NVIDIA_MTP_GPU_SAMPLING=0);
+# the texts must agree, and the constrained one must match its regex, which
+# is space-free (Gemma 4's tokenizer and llguidance disagree on a space).
+[probes.sampled]
+prompt = "code_stdin"
+max_output_tokens = 200
+context = 2048
+top_k = 64
+top_p = 0.95
+temperature = 1.0
+seed = 1
+
+[probes.constraint]
+prompt_text = "Describe a fictional person as a JSON object with the fields name, age and city. Output only the JSON object."
+regex = '\{"name":"[A-Z][a-z]+","age":[1-9][0-9]?,"city":"[A-Z][a-z]+"\}'
+repetition_penalty = 1.3
+max_output_tokens = 80
+context = 2048
+top_k = 64
+top_p = 0.95
+temperature = 1.0
+seed = 1
+
+# The per-kernel autopsy: one run of this workload in the dispatch's
+# own-graph mode, every kernel node of each function's step graph timed
+# alone; two captures' autopsies diff by kernel.
+[probes.autopsy]
+workload = "short"
+mtp = false

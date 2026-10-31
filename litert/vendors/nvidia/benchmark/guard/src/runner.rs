@@ -12,11 +12,13 @@ use std::time::Instant;
 use anyhow::{bail, Context, Result};
 use serde_json::json;
 
+use crate::autopsy::{load_autopsy_dir, Autopsy};
 use crate::config::PromptSpec;
 use crate::env::BenchEnv;
 use crate::numerics::{loopiness, NumericsRun, StepLogits};
 use crate::parse::{parse_cli_log, parse_logits_jsonl};
 use crate::perf::{summarize_run, PerfPoint};
+use crate::texts::{session_output, TextRun};
 
 /// Plain runs of the larger models compile only the signatures they run; an
 /// MTP run compiles every signature (bench.sh's rule).
@@ -43,6 +45,9 @@ pub struct NumericsProbe<'a> {
     pub prompt_path: &'a Path,
     pub mtp: bool,
     pub top_k: u32,
+    /// Steps of every function dumped whole (0: none).
+    pub full_steps: u32,
+    pub outputs_max_mb: u32,
     pub out_dir: &'a Path,
 }
 
@@ -64,13 +69,23 @@ pub fn run_numerics_probe(env: &BenchEnv, probe: &NumericsProbe) -> Result<Numer
     let pool = env.pool(probe.model);
     let mut envs = env.runtime_env(&pool, &model_file)?;
     envs.retain(|(k, _)| {
-        k != "LITERT_NVIDIA_DISPATCH_DUMP_IO" && k != "LITERT_NVIDIA_MEMORY_PROFILE"
+        k != "LITERT_NVIDIA_DISPATCH_DUMP_IO"
+            && k != "LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS"
+            && k != "LITERT_NVIDIA_MEMORY_PROFILE"
     });
     envs.push((
         "LITERT_NVIDIA_DISPATCH_DUMP_IO".into(),
         format!("top{}:{}", probe.top_k, logits_path.display()),
     ));
     envs.push(("LITERT_NVIDIA_MEMORY_PROFILE".into(), "0".into()));
+    let outputs = outputs_dir(probe.out_dir);
+    let _ = std::fs::remove_dir_all(&outputs);
+    if probe.full_steps > 0 {
+        envs.push((
+            "LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS".into(),
+            format!("{}:{}:{}", outputs.display(), probe.full_steps, probe.outputs_max_mb.max(1)),
+        ));
+    }
     let mut args: Vec<String> = vec![
         format!("--model_path={}", model_file.display()),
         "--backend=npu".into(),
@@ -299,4 +314,226 @@ pub fn perf_label(model: &str, workload: &str, mtp: bool, text: bool) -> String 
 pub fn numerics_dir(capture_dir: &Path, model: &str, prompt: &str, mtp: bool) -> PathBuf {
     let suffix = if mtp { "_mtp" } else { "" };
     capture_dir.join("numerics").join(model).join(format!("{prompt}{suffix}"))
+}
+
+/// A text probe: a sampled or constrained decode in the CLI's session mode
+/// (the only mode that takes a constraint), with the MTP verifier sampling
+/// on the device or on the host.
+pub struct TextProbe<'a> {
+    pub model: &'a str,
+    /// sampled | constraint
+    pub kind: &'a str,
+    /// device | host
+    pub variant: &'a str,
+    pub prompt_path: &'a Path,
+    pub max_output_tokens: u32,
+    pub context: u32,
+    pub top_k: u32,
+    pub top_p: f64,
+    pub temperature: f64,
+    pub seed: u32,
+    pub regex: Option<&'a str>,
+    pub repetition_penalty: Option<f64>,
+    pub out_dir: &'a Path,
+}
+
+pub fn run_text_probe(env: &BenchEnv, probe: &TextProbe) -> Result<TextRun> {
+    if !env.built() {
+        bail!("no built CLI under {} (run build.sh)", env.runtime_libs.display());
+    }
+    if !probe.prompt_path.is_file() {
+        bail!("prompt file missing: {}", probe.prompt_path.display());
+    }
+    if env.gpu_busy()? {
+        bail!("another GPU compute process is running");
+    }
+    std::fs::create_dir_all(probe.out_dir)?;
+    let model_file = env.model_file(probe.model)?;
+    let pool = env.pool(probe.model);
+    let mut envs = env.runtime_env(&pool, &model_file)?;
+    envs.retain(|(k, _)| {
+        k != "LITERT_NVIDIA_DISPATCH_DUMP_IO"
+            && k != "LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS"
+            && k != "LITERT_NVIDIA_MEMORY_PROFILE"
+            && k != "LITERT_NVIDIA_MTP_GPU_SAMPLING"
+    });
+    envs.push(("LITERT_NVIDIA_MEMORY_PROFILE".into(), "0".into()));
+    if probe.variant == "host" {
+        envs.push(("LITERT_NVIDIA_MTP_GPU_SAMPLING".into(), "0".into()));
+    }
+    let mut args: Vec<String> = vec![
+        format!("--model_path={}", model_file.display()),
+        "--backend=npu".into(),
+        "--prefill_batch_sizes=1024".into(),
+        format!("--max_num_tokens={}", probe.context),
+        format!("--cache_dir={}", pool.join("compiler").display()),
+        format!("--litert_dispatch_lib_dir={}", env.runtime_libs.display()),
+        "--min_log_severity=0".into(),
+        "--enable_speculative_decoding=true".into(),
+        "--benchmark=false".into(),
+        "--use_session=true".into(),
+        "--async=false".into(),
+        format!("--max_output_tokens={}", probe.max_output_tokens),
+        format!("--input_prompt_file={}", probe.prompt_path.display()),
+        format!("--sampler_top_k={}", probe.top_k),
+        format!("--sampler_top_p={}", probe.top_p),
+        format!("--sampler_temperature={}", probe.temperature),
+        format!("--sampler_seed={}", probe.seed),
+    ];
+    if let Some(regex) = probe.regex {
+        args.push(format!("--constraint_regex={regex}"));
+    }
+    if let Some(penalty) = probe.repetition_penalty {
+        args.push(format!("--repetition_penalty={penalty}"));
+    }
+    let stdout_path = probe.out_dir.join("stdout.txt");
+    let stdout = File::create(&stdout_path)?;
+    let stderr = File::create(probe.out_dir.join("cli.log"))?;
+    let start = Instant::now();
+    let status = Command::new(env.cli())
+        .args(&args)
+        .current_dir(&env.lm)
+        .env_clear()
+        .envs(envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+        .stdin(Stdio::null())
+        .stdout(stdout)
+        .stderr(stderr)
+        .status()
+        .with_context(|| format!("running {}", env.cli().display()))?;
+    let wall_s = start.elapsed().as_secs_f64();
+    let exit_code = status.code().unwrap_or(-1);
+    let log_text = std::fs::read_to_string(probe.out_dir.join("cli.log")).unwrap_or_default();
+    let log = parse_cli_log(&log_text);
+    let text = session_output(&std::fs::read_to_string(&stdout_path).unwrap_or_default());
+    std::fs::write(probe.out_dir.join("response.txt"), &text)?;
+    let regex_ok = probe.regex.map(|r| {
+        regex::Regex::new(&format!("^(?:{r})$")).map(|re| re.is_match(&text)).unwrap_or(false)
+    });
+    let run = TextRun {
+        model: probe.model.to_string(),
+        kind: probe.kind.to_string(),
+        variant: probe.variant.to_string(),
+        build_id: env.build_id.clone(),
+        exit_code,
+        wall_s,
+        text_len: text.chars().count(),
+        text,
+        regex_ok,
+        device_samplers: log.device_samplers,
+        parser_errors: log_text.matches("Parser Error").count(),
+    };
+    let meta = json!({
+        "command": std::iter::once(env.cli().display().to_string()).chain(args.iter().cloned()).collect::<Vec<_>>(),
+        "environment": envs.iter().filter(|(k, _)| k.starts_with("LITERT_NVIDIA_")).cloned().collect::<std::collections::BTreeMap<_, _>>(),
+        "build_id": env.build_id,
+        "pool": pool.display().to_string(),
+        "exit_code": exit_code,
+        "wall_s": wall_s,
+    });
+    std::fs::write(probe.out_dir.join("meta.json"), serde_json::to_string_pretty(&meta)?)?;
+    std::fs::write(probe.out_dir.join("summary.json"), serde_json::to_string_pretty(&run)?)?;
+    Ok(run)
+}
+
+pub fn load_text_run(out_dir: &Path) -> Option<TextRun> {
+    let text = std::fs::read_to_string(out_dir.join("summary.json")).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+pub fn text_dir(capture_dir: &Path, model: &str, kind: &str, variant: &str) -> PathBuf {
+    capture_dir.join("texts").join(model).join(format!("{kind}_{variant}"))
+}
+
+/// The per-kernel autopsy of a workload: bench.sh in the dispatch's own-graph
+/// mode with the autopsy and DOT writers, two iterations (the first captures
+/// the step graphs, the prefill one included).
+pub struct AutopsyProbe<'a> {
+    pub model: &'a str,
+    pub workload: &'a str,
+    pub mtp: bool,
+    pub prompt_file: Option<&'a Path>,
+    pub out_dir: &'a Path,
+}
+
+pub fn run_autopsy_probe(env: &BenchEnv, probe: &AutopsyProbe) -> Result<Autopsy> {
+    std::fs::create_dir_all(probe.out_dir)?;
+    for entry in std::fs::read_dir(probe.out_dir)?.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with("autopsy.txt.") {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    let _ = std::fs::remove_dir_all(probe.out_dir.join("dot"));
+    let label = format!(
+        "{}_{}_{}_autopsy",
+        probe.model,
+        probe.workload,
+        if probe.mtp { "mtp" } else { "plain" }
+    );
+    let mut args: Vec<String> = vec![
+        "--model".into(),
+        probe.model.into(),
+        "--out".into(),
+        probe.out_dir.display().to_string(),
+        "--workload".into(),
+        probe.workload.into(),
+        "--metric".into(),
+        "latency".into(),
+        "--iterations".into(),
+        "2".into(),
+        "--label".into(),
+        label.clone(),
+        "--env".into(),
+        "LITERT_NVIDIA_DISPATCH_CUDA_GRAPH=own".into(),
+        "--env".into(),
+        format!(
+            "LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_AUTOPSY={}",
+            probe.out_dir.join("autopsy.txt").display()
+        ),
+        "--env".into(),
+        format!("LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_DOT={}", probe.out_dir.join("dot").display()),
+    ];
+    if probe.mtp {
+        args.push("--mtp".into());
+    }
+    if let Some(prompt) = probe.prompt_file {
+        args.push("--prompt-file".into());
+        args.push(prompt.display().to_string());
+    }
+    std::fs::create_dir_all(probe.out_dir.join("dot"))?;
+    let bench_log = File::create(probe.out_dir.join(format!("{label}.bench.log")))?;
+    let status = Command::new(env.bench_dir.join("bench.sh"))
+        .args(&args)
+        .env("LITERT_RT_DIR", &env.rt)
+        .stdin(Stdio::null())
+        .stdout(bench_log.try_clone()?)
+        .stderr(bench_log)
+        .status()
+        .context("running bench.sh for the autopsy")?;
+    if !status.success() {
+        bail!("bench.sh failed for {label} ({status}); see {}", probe.out_dir.display());
+    }
+    let autopsy = load_autopsy_dir(probe.out_dir, probe.model, probe.workload, probe.mtp)?;
+    if autopsy.functions.is_empty() {
+        bail!(
+            "the autopsy run of {label} wrote no autopsy files under {}",
+            probe.out_dir.display()
+        );
+    }
+    std::fs::write(probe.out_dir.join("autopsy.json"), serde_json::to_string_pretty(&autopsy)?)?;
+    Ok(autopsy)
+}
+
+pub fn load_autopsy(out_dir: &Path) -> Option<Autopsy> {
+    let text = std::fs::read_to_string(out_dir.join("autopsy.json")).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+pub fn autopsy_dir(capture_dir: &Path, model: &str) -> PathBuf {
+    capture_dir.join("perf").join(model).join("autopsy")
+}
+
+/// The directory of a numerics probe's whole-output dumps.
+pub fn outputs_dir(probe_dir: &Path) -> PathBuf {
+    probe_dir.join("outputs")
 }

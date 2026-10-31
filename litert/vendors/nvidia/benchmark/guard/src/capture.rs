@@ -7,14 +7,17 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::autopsy::Autopsy;
 use crate::config::{workload_prompt, Config};
 use crate::env::BenchEnv;
 use crate::numerics::NumericsRun;
 use crate::perf::PerfPoint;
 use crate::runner::{
-    load_numerics_run, numerics_dir, perf_label, perf_run_complete, rescan_numerics_run,
-    run_numerics_probe, run_perf_probe, NumericsProbe, PerfProbe,
+    autopsy_dir, load_autopsy, load_numerics_run, load_text_run, numerics_dir, perf_label,
+    perf_run_complete, rescan_numerics_run, run_autopsy_probe, run_numerics_probe, run_perf_probe,
+    run_text_probe, text_dir, AutopsyProbe, NumericsProbe, PerfProbe, TextProbe,
 };
+use crate::texts::TextRun;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
@@ -42,6 +45,12 @@ pub struct Capture {
     pub manifest: Manifest,
     pub numerics: Vec<NumericsRun>,
     pub perf: Vec<PerfPoint>,
+    /// The sampled and constrained decodes, device and host.
+    #[serde(default)]
+    pub texts: Vec<TextRun>,
+    /// The per-kernel autopsies, one per model.
+    #[serde(default)]
+    pub autopsies: Vec<Autopsy>,
     #[serde(skip)]
     pub dir: PathBuf,
 }
@@ -52,6 +61,8 @@ pub struct CaptureOptions {
     pub tier: String,
     pub numerics: bool,
     pub perf: bool,
+    pub texts: bool,
+    pub autopsy: bool,
     pub mtp: bool,
 }
 
@@ -136,6 +147,8 @@ pub fn run_capture(
             },
             numerics: Vec::new(),
             perf: Vec::new(),
+            texts: Vec::new(),
+            autopsies: Vec::new(),
             dir: dir.clone(),
         },
     };
@@ -182,6 +195,8 @@ pub fn run_capture(
                                     prompt_path: &prompt_path,
                                     mtp,
                                     top_k: config.numerics.top_k,
+                                    full_steps: config.numerics.full_steps,
+                                    outputs_max_mb: config.numerics.outputs_max_mb,
                                     out_dir: &out_dir,
                                 },
                             )?;
@@ -205,6 +220,130 @@ pub fn run_capture(
                     save(&capture)?;
                 }
             }
+        }
+        if opts.texts {
+            let sampled = &config.probes.sampled;
+            let constraint = &config.probes.constraint;
+            let sampled_prompt = config.prompt_path(guard_dir, config.prompt(&sampled.prompt)?);
+            let constraint_prompt = dir.join("texts").join("constraint_prompt.txt");
+            std::fs::create_dir_all(constraint_prompt.parent().unwrap())?;
+            std::fs::write(&constraint_prompt, &constraint.prompt_text)?;
+            for kind in ["sampled", "constraint"] {
+                for variant in ["device", "host"] {
+                    let out_dir = text_dir(&dir, model, kind, variant);
+                    let run = match load_text_run(&out_dir)
+                        .filter(|r| r.exit_code == 0 && r.build_id == env.build_id)
+                    {
+                        Some(run) => {
+                            eprintln!("text {model} {kind} {variant}: kept");
+                            run
+                        }
+                        None => {
+                            eprintln!("text {model} {kind} {variant}: running");
+                            let probe = if kind == "sampled" {
+                                TextProbe {
+                                    model,
+                                    kind,
+                                    variant,
+                                    prompt_path: &sampled_prompt,
+                                    max_output_tokens: sampled.max_output_tokens,
+                                    context: sampled.context,
+                                    top_k: sampled.top_k,
+                                    top_p: sampled.top_p,
+                                    temperature: sampled.temperature,
+                                    seed: sampled.seed,
+                                    regex: None,
+                                    repetition_penalty: None,
+                                    out_dir: &out_dir,
+                                }
+                            } else {
+                                TextProbe {
+                                    model,
+                                    kind,
+                                    variant,
+                                    prompt_path: &constraint_prompt,
+                                    max_output_tokens: constraint.max_output_tokens,
+                                    context: constraint.context,
+                                    top_k: constraint.top_k,
+                                    top_p: constraint.top_p,
+                                    temperature: constraint.temperature,
+                                    seed: constraint.seed,
+                                    regex: Some(&constraint.regex),
+                                    repetition_penalty: Some(constraint.repetition_penalty),
+                                    out_dir: &out_dir,
+                                }
+                            };
+                            let run = run_text_probe(env, &probe)?;
+                            eprintln!(
+                                "  exit {} in {:.0} s: {} chars, device samplers {}{}",
+                                run.exit_code,
+                                run.wall_s,
+                                run.text_len,
+                                run.device_samplers,
+                                match run.regex_ok {
+                                    Some(true) => ", regex ok",
+                                    Some(false) => ", REGEX VIOLATED",
+                                    None => "",
+                                }
+                            );
+                            run
+                        }
+                    };
+                    capture.texts.retain(|r| {
+                        !(r.model == run.model && r.kind == run.kind && r.variant == run.variant)
+                    });
+                    capture.texts.push(run);
+                    capture.manifest.updated = now();
+                    save(&capture)?;
+                }
+            }
+        }
+        if opts.autopsy {
+            let out_dir = autopsy_dir(&dir, model);
+            let autopsy = match load_autopsy(&out_dir) {
+                Some(a) => {
+                    eprintln!("autopsy {model}: kept");
+                    a
+                }
+                None => {
+                    let spec = &config.probes.autopsy;
+                    eprintln!(
+                        "autopsy {model}: running ({}{})",
+                        spec.workload,
+                        if spec.mtp { ", mtp" } else { "" }
+                    );
+                    let prompt_file = if spec.mtp {
+                        workload_prompt(&spec.workload)
+                            .map(|f| env.bench_dir.join("prompts").join(f))
+                    } else {
+                        None
+                    };
+                    let autopsy = run_autopsy_probe(
+                        env,
+                        &AutopsyProbe {
+                            model,
+                            workload: &spec.workload,
+                            mtp: spec.mtp,
+                            prompt_file: prompt_file.as_deref(),
+                            out_dir: &out_dir,
+                        },
+                    )?;
+                    for f in &autopsy.functions {
+                        eprintln!(
+                            "  {}: {} kernels, warm {:.0} us, cold {:.0} us",
+                            f.function,
+                            f.kernels.len(),
+                            f.warm_us,
+                            f.cold_us
+                        );
+                    }
+                    autopsy
+                }
+            };
+            capture.autopsies.retain(|a| a.model != autopsy.model);
+            capture.autopsies.push(autopsy);
+            capture.manifest.updated = now();
+            save(&capture)?;
         }
         if opts.perf {
             let perf_dir = dir.join("perf").join(model);

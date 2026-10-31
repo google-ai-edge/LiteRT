@@ -21,6 +21,93 @@ pub struct Config {
     pub numerics: NumericsConfig,
     #[serde(default)]
     pub perf: PerfConfig,
+    #[serde(default)]
+    pub probes: ProbesConfig,
+}
+
+/// The probes beside the greedy decodes and the latency runs.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProbesConfig {
+    #[serde(default)]
+    pub sampled: SampledProbeConfig,
+    #[serde(default)]
+    pub constraint: ConstraintProbeConfig,
+    #[serde(default)]
+    pub autopsy: AutopsyProbeConfig,
+}
+
+/// A sampled decode (top-k / top-p, a fixed seed) of a numerics prompt, run
+/// with the MTP verifier sampling on the device and on the host.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SampledProbeConfig {
+    pub prompt: String,
+    pub max_output_tokens: u32,
+    pub context: u32,
+    pub top_k: u32,
+    pub top_p: f64,
+    pub temperature: f64,
+    pub seed: u32,
+}
+
+impl Default for SampledProbeConfig {
+    fn default() -> Self {
+        Self {
+            prompt: "code_stdin".into(),
+            max_output_tokens: 200,
+            context: 2048,
+            top_k: 64,
+            top_p: 0.95,
+            temperature: 1.0,
+            seed: 1,
+        }
+    }
+}
+
+/// A constrained decode (a regex, a repetition penalty) in the CLI's session
+/// mode, the only one that takes a constraint, sampled like the above.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConstraintProbeConfig {
+    pub prompt_text: String,
+    /// Space-free: with Gemma 4's tokenizer a regex with spaces fails on
+    /// every backend ("token ▁\" doesn't satisfy the grammar").
+    pub regex: String,
+    pub repetition_penalty: f64,
+    pub max_output_tokens: u32,
+    pub context: u32,
+    pub top_k: u32,
+    pub top_p: f64,
+    pub temperature: f64,
+    pub seed: u32,
+}
+
+impl Default for ConstraintProbeConfig {
+    fn default() -> Self {
+        Self {
+            prompt_text: "Describe a fictional person as a JSON object with the fields name, age and city. Output only the JSON object.".into(),
+            regex: r#"\{"name":"[A-Z][a-z]+","age":[1-9][0-9]?,"city":"[A-Z][a-z]+"\}"#.into(),
+            repetition_penalty: 1.3,
+            max_output_tokens: 80,
+            context: 2048,
+            top_k: 64,
+            top_p: 0.95,
+            temperature: 1.0,
+            seed: 1,
+        }
+    }
+}
+
+/// The per-kernel autopsy of a step graph: one bench.sh run of a workload in
+/// the dispatch's own-graph mode with the autopsy and DOT writers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutopsyProbeConfig {
+    pub workload: String,
+    pub mtp: bool,
+}
+
+impl Default for AutopsyProbeConfig {
+    fn default() -> Self {
+        Self { workload: "short".into(), mtp: false }
+    }
 }
 
 /// One numerics probe: a prompt file, decoded greedily for a fixed number of
@@ -50,6 +137,14 @@ pub struct NumericsConfig {
     /// How many logits per row the dispatch records (LITERT_NVIDIA_DISPATCH_DUMP_IO=top<K>).
     #[serde(default = "default_top_k")]
     pub top_k: u32,
+    /// How many steps of every function the dispatch dumps whole
+    /// (LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS): the full logits rows for the
+    /// whole-distribution KL, the partitions' outputs for the localization.
+    #[serde(default = "default_full_steps")]
+    pub full_steps: u32,
+    /// Outputs above this size are not dumped (caches never are).
+    #[serde(default = "default_outputs_max_mb")]
+    pub outputs_max_mb: u32,
     #[serde(default)]
     pub thresholds: NumericsThresholds,
 }
@@ -57,10 +152,21 @@ pub struct NumericsConfig {
 fn default_top_k() -> u32 {
     32
 }
+fn default_full_steps() -> u32 {
+    8
+}
+fn default_outputs_max_mb() -> u32 {
+    16
+}
 
 impl Default for NumericsConfig {
     fn default() -> Self {
-        Self { top_k: default_top_k(), thresholds: NumericsThresholds::default() }
+        Self {
+            top_k: default_top_k(),
+            full_steps: default_full_steps(),
+            outputs_max_mb: default_outputs_max_mb(),
+            thresholds: NumericsThresholds::default(),
+        }
     }
 }
 
@@ -261,7 +367,19 @@ impl Config {
         for name in &config.perf.predict {
             workload(name)?;
         }
+        workload(&config.probes.autopsy.workload)?;
+        config.prompt(&config.probes.sampled.prompt)?;
+        regex::Regex::new(&format!("^(?:{})$", config.probes.constraint.regex))
+            .context("the constraint probe's regex")?;
         Ok(config)
+    }
+
+    /// A prompt by name.
+    pub fn prompt(&self, name: &str) -> Result<&PromptSpec> {
+        self.prompts
+            .iter()
+            .find(|p| p.name == name)
+            .ok_or_else(|| anyhow!("no prompt {name} in the configuration"))
     }
 
     /// The prompts of a tier (and the tiers below it) for a model.

@@ -5,14 +5,17 @@
 //! $LITERT_BENCH_ROOT/guard/<name>; a check captures and compares against a
 //! baseline capture, with a verdict per cell and an exit code.
 
+mod autopsy;
 mod capture;
 mod config;
+mod dumps;
 mod env;
 mod numerics;
 mod parse;
 mod perf;
 mod report;
 mod runner;
+mod texts;
 
 use std::path::{Path, PathBuf};
 
@@ -58,6 +61,13 @@ struct ProbeArgs {
     /// Skip the performance probes.
     #[arg(long)]
     no_perf: bool,
+    /// Skip the text probes (the sampled and the constrained decode, with the
+    /// MTP verifier sampling on the device and on the host).
+    #[arg(long)]
+    no_texts: bool,
+    /// Skip the per-kernel autopsy.
+    #[arg(long)]
+    no_autopsy: bool,
     /// Also probe speculative decoding (MTP): greedy MTP numerics, and the
     /// plain and MTP text runs of each workload.
     #[arg(long)]
@@ -93,6 +103,17 @@ enum Command {
         name: String,
         #[arg(long)]
         record: Option<PathBuf>,
+    },
+    /// Where a candidate capture parts from a baseline: the first output
+    /// tensor that differs (step, partition, output), the KL of the first
+    /// logits rows over the whole vocabulary, the kernels whose times moved,
+    /// and the sampled texts' parting. Reads the captures' dumps; runs nothing.
+    Localize {
+        /// The baseline capture's name.
+        #[arg(long)]
+        baseline: String,
+        /// The candidate capture's name.
+        name: String,
     },
     /// Recompute a capture's numerics summaries from its files (after a
     /// change of the metrics).
@@ -131,6 +152,8 @@ fn capture_options(probe: &ProbeArgs, env: &BenchEnv, config: &Config) -> Result
         tier: probe.tier.clone(),
         numerics: !probe.no_numerics,
         perf: !probe.no_perf,
+        texts: !probe.no_texts,
+        autopsy: !probe.no_autopsy,
         mtp: probe.mtp,
     })
 }
@@ -169,6 +192,25 @@ fn main() -> Result<()> {
             println!("models: {}", env.models_dir.display());
             println!("build id: {}", env.build_id);
             println!("captures: {}", capture::guard_root(&env).display());
+            Ok(())
+        }
+        Command::Localize { baseline, name } => {
+            let (env, config, _) = resolve(&cli)?;
+            let base = load_capture(&env, baseline)?;
+            let cand = load_capture(&env, name)?;
+            let localization = report::localize_captures(&base, &cand, &config)?;
+            let markdown = report::render_localization(&localization);
+            write_report(
+                &cand.dir,
+                &format!("localize_{}", base.manifest.name),
+                &markdown,
+                &localization,
+            )?;
+            print!("{markdown}");
+            println!(
+                "Report: {}",
+                cand.dir.join(format!("localize_{}.md", base.manifest.name)).display()
+            );
             Ok(())
         }
         Command::Rescan { name } => {
@@ -229,13 +271,24 @@ fn main() -> Result<()> {
                 None => Vec::new(),
             };
             let comparison = report::compare(&base, &cand, &config, &record_points);
-            let markdown = report::render_comparison(&comparison);
+            let mut markdown = report::render_comparison(&comparison);
             write_report(
                 &cand.dir,
                 &format!("against_{}", base.manifest.name),
                 &markdown,
                 &comparison,
             )?;
+            if comparison.verdict != numerics::Verdict::Pass {
+                let localization = report::localize_captures(&base, &cand, &config)?;
+                let local = report::render_localization(&localization);
+                write_report(
+                    &cand.dir,
+                    &format!("localize_{}", base.manifest.name),
+                    &local,
+                    &localization,
+                )?;
+                markdown.push_str(&local);
+            }
             print!("{markdown}");
             println!(
                 "Report: {}",

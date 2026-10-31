@@ -7,12 +7,128 @@ use std::collections::BTreeSet;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use crate::autopsy::{diff_autopsies, AutopsyDiff};
 use crate::capture::Capture;
-use crate::config::{workload, Config};
+use crate::config::{workload, Config, WORKLOADS};
+use crate::dumps::{full_row_kls, localize, Localization, RowKl, TensorDiff};
 use crate::numerics::{compare_runs, NumericsComparison, Verdict};
 use crate::perf::{
     compare_points, decode_context, interpolate, CostModel, PerfComparison, PerfPoint,
 };
+use crate::runner::{numerics_dir, outputs_dir};
+use crate::texts::{compare_texts, parted_at, TextComparison, TextRun};
+
+/// A text probe of the candidate judged: the device and the host must agree,
+/// the constrained text must match its regex, and both runs must end well.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextCheck {
+    pub model: String,
+    pub kind: String,
+    pub comparison: TextComparison,
+    /// Whether the candidate's device text equals the baseline's.
+    pub same_as_baseline: Option<bool>,
+    pub verdict: Verdict,
+    pub reasons: Vec<String>,
+}
+
+/// What a workload name means (the report's measurement language).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkloadLegend {
+    pub name: String,
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+    pub context: u32,
+}
+
+pub fn workload_legend(names: &[String]) -> Vec<WorkloadLegend> {
+    WORKLOADS
+        .iter()
+        .filter(|w| names.iter().any(|n| n == w.name))
+        .map(|w| WorkloadLegend {
+            name: w.name.to_string(),
+            input_tokens: w.input,
+            output_tokens: w.output,
+            context: w.context,
+        })
+        .collect()
+}
+
+fn text_run<'a>(
+    runs: &'a [TextRun],
+    model: &str,
+    kind: &str,
+    variant: &str,
+) -> Option<&'a TextRun> {
+    runs.iter().find(|r| r.model == model && r.kind == kind && r.variant == variant)
+}
+
+pub fn check_texts(base: &Capture, cand: &Capture) -> Vec<TextCheck> {
+    let mut out = Vec::new();
+    let keys: BTreeSet<(String, String)> =
+        cand.texts.iter().map(|r| (r.model.clone(), r.kind.clone())).collect();
+    for (model, kind) in keys {
+        let (Some(device), Some(host)) = (
+            text_run(&cand.texts, &model, &kind, "device"),
+            text_run(&cand.texts, &model, &kind, "host"),
+        ) else {
+            continue;
+        };
+        let comparison = compare_texts(device, host);
+        let mut verdict = Verdict::Pass;
+        let mut reasons = Vec::new();
+        let mut raise = |v: Verdict, reason: String| {
+            verdict = verdict.max(v);
+            reasons.push(reason);
+        };
+        if device.exit_code != 0 || host.exit_code != 0 {
+            raise(
+                Verdict::Fail,
+                format!("exit codes device {} host {}", device.exit_code, host.exit_code),
+            );
+        }
+        if device.parser_errors > 0 || host.parser_errors > 0 {
+            raise(
+                Verdict::Fail,
+                format!(
+                    "parser errors device {} host {}",
+                    device.parser_errors, host.parser_errors
+                ),
+            );
+        }
+        if device.regex_ok == Some(false) {
+            raise(Verdict::Fail, "the device text violates the regex".to_string());
+        }
+        if host.regex_ok == Some(false) {
+            raise(Verdict::Fail, "the host text violates the regex".to_string());
+        }
+        if device.device_samplers == 0 {
+            raise(Verdict::Warn, "the device run reports no device sampler".to_string());
+        }
+        if !comparison.identical {
+            raise(
+                Verdict::Warn,
+                format!(
+                    "device and host texts part at char {} ({} words in common; a tie at the k-th logit, or a sampler change)",
+                    comparison.parted_char.unwrap_or(0),
+                    comparison.common_words
+                ),
+            );
+        }
+        let same_as_baseline =
+            text_run(&base.texts, &model, &kind, "device").map(|b| b.text == device.text);
+        out.push(TextCheck { model, kind, comparison, same_as_baseline, verdict, reasons });
+    }
+    out
+}
+
+pub fn autopsy_diffs(base: &Capture, cand: &Capture) -> Vec<AutopsyDiff> {
+    cand.autopsies
+        .iter()
+        .filter_map(|c| {
+            base.autopsies.iter().find(|b| b.model == c.model).map(|b| diff_autopsies(b, c))
+        })
+        .collect()
+}
 
 /// A context the captures did not measure, predicted from what they did.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +159,12 @@ pub struct Comparison {
     pub numerics: Vec<NumericsComparison>,
     pub perf: Vec<PerfComparison>,
     pub predictions: Vec<Prediction>,
+    #[serde(default)]
+    pub texts: Vec<TextCheck>,
+    #[serde(default)]
+    pub autopsies: Vec<AutopsyDiff>,
+    #[serde(default)]
+    pub workloads: Vec<WorkloadLegend>,
     pub verdict: Verdict,
 }
 
@@ -183,10 +305,17 @@ pub fn compare(
     }
     let perf = compare_points(&base.perf, &cand.perf, &config.perf.thresholds);
     let predictions = predictions(base, cand, config, record);
+    let texts = check_texts(base, cand);
+    let autopsies = autopsy_diffs(base, cand);
+    let mut names: Vec<String> = config.perf.workloads.clone();
+    names.extend(config.perf.predict.iter().cloned());
+    names.push(config.probes.autopsy.workload.clone());
+    let workloads = workload_legend(&names);
     let verdict = numerics
         .iter()
         .map(|n| n.verdict)
         .chain(perf.iter().map(|p| p.verdict))
+        .chain(texts.iter().map(|t| t.verdict))
         .max()
         .unwrap_or(Verdict::Pass);
     Comparison {
@@ -199,6 +328,9 @@ pub fn compare(
         numerics,
         perf,
         predictions,
+        texts,
+        autopsies,
+        workloads,
         verdict,
     }
 }
@@ -261,6 +393,62 @@ pub fn render_comparison(c: &Comparison) -> String {
         }
         s.push('\n');
     }
+    if !c.texts.is_empty() {
+        s.push_str("## Texts (sampled and constrained decodes, MTP verifier on the device vs the host)\n\n| Model | Probe | Device vs host | Regex (device, host) | Device samplers | Chars (device, host) | Same as baseline | Verdict |\n|---|---|---|---|---:|---|---|---|\n");
+        for t in &c.texts {
+            let cmp = &t.comparison;
+            let regex = |v: Option<bool>| match v {
+                Some(true) => "ok",
+                Some(false) => "VIOLATED",
+                None => "-",
+            };
+            s.push_str(&format!(
+                "| {} | {} | {} | {}, {} | {} | {}, {} | {} | {} |\n",
+                t.model,
+                t.kind,
+                if cmp.identical {
+                    "identical".to_string()
+                } else {
+                    format!(
+                        "part at char {} ({} words in common)",
+                        cmp.parted_char.unwrap_or(0),
+                        cmp.common_words
+                    )
+                },
+                regex(cmp.device_regex_ok),
+                regex(cmp.host_regex_ok),
+                cmp.device_samplers,
+                cmp.device_text_len,
+                cmp.host_text_len,
+                match t.same_as_baseline {
+                    Some(true) => "yes",
+                    Some(false) => "no",
+                    None => "-",
+                },
+                t.verdict.label()
+            ));
+        }
+        s.push('\n');
+        for t in c.texts.iter().filter(|t| t.verdict != Verdict::Pass) {
+            s.push_str(&format!("- {} {}: {}\n", t.model, t.kind, t.reasons.join("; ")));
+        }
+        s.push('\n');
+    }
+    if !c.workloads.is_empty() {
+        s.push_str("Workloads: ");
+        let legend: Vec<String> = c
+            .workloads
+            .iter()
+            .map(|w| {
+                format!(
+                    "{} = {} input tokens, {} output tokens (context {})",
+                    w.name, w.input_tokens, w.output_tokens, w.context
+                )
+            })
+            .collect();
+        s.push_str(&legend.join("; "));
+        s.push_str(". tok/s are tokens per second of the measured phase.\n\n");
+    }
     if !c.perf.is_empty() {
         s.push_str("## Performance (measured)\n\nSpread: (max - min) / mean of the measured iterations; a change within the spread is noise.\n\n| Model | Workload | Mode | Metric | Baseline | Candidate | Change | Spread (base, cand) | Verdict |\n|---|---|---|---|---:|---:|---:|---|---|\n");
         for p in &c.perf {
@@ -312,6 +500,311 @@ pub fn render_comparison(c: &Comparison) -> String {
         }
         s.push('\n');
     }
+    s.push_str(&render_autopsy_diffs(&c.autopsies));
+    s
+}
+
+/// The kernels whose warm times moved, per model: the attribution of a
+/// performance change (the autopsy times every kernel node of a step graph
+/// alone, so the sums are not the step's time).
+pub fn render_autopsy_diffs(diffs: &[AutopsyDiff]) -> String {
+    let mut s = String::new();
+    if diffs.is_empty() {
+        return s;
+    }
+    s.push_str("## Kernels (autopsy of the step graphs, warm times per kernel)\n\nEvery kernel node of a function's CUDA graph timed alone; a kernel's time is summed over its launches in the step. The sums are the kernels' own times, not the step's.\n\n");
+    for d in diffs {
+        s.push_str(&format!("### {} ({}{})\n\n| Function | Kernels (base, cand) | Base us | Cand us | Change |\n|---|---|---:|---:|---:|\n", d.model, d.workload, if d.mtp { ", mtp" } else { "" }));
+        for f in &d.functions {
+            s.push_str(&format!(
+                "| {} | {}, {} | {:.0} | {:.0} | {} |\n",
+                f.function,
+                f.base_kernels,
+                f.cand_kernels,
+                f.base_us,
+                f.cand_us,
+                if f.base_us > 0.0 { pct(f.cand_us / f.base_us) } else { "-".into() }
+            ));
+        }
+        s.push('\n');
+        let moved: Vec<&crate::autopsy::KernelDelta> = d
+            .kernels
+            .iter()
+            .filter(|k| k.delta_us.abs() >= 1.0 || k.base_count != k.cand_count)
+            .take(16)
+            .collect();
+        if moved.is_empty() {
+            s.push_str("No kernel moved by a microsecond or more.\n\n");
+        } else {
+            s.push_str("| Function | Kernel | Launches (base, cand) | Base us | Cand us | Δ us |\n|---|---|---|---:|---:|---:|\n");
+            for k in moved {
+                s.push_str(&format!(
+                    "| {} | `{}` | {}, {} | {:.1} | {:.1} | {:+.1} |\n",
+                    k.function,
+                    k.short,
+                    k.base_count,
+                    k.cand_count,
+                    k.base_us,
+                    k.cand_us,
+                    k.delta_us
+                ));
+            }
+            s.push('\n');
+        }
+    }
+    s
+}
+
+/// Where one numerics probe's whole-output dumps part.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbeLocalization {
+    pub model: String,
+    pub prompt: String,
+    pub mtp: bool,
+    /// The step at which the greedy tokens part (the top-K logits).
+    pub parted_token: Option<usize>,
+    pub localization: Localization,
+    /// The whole-vocabulary KL of the first logits rows, in production order.
+    pub row_kls: Vec<RowKl>,
+    pub max_row_kl: Option<f64>,
+}
+
+/// Where a candidate parts from a baseline, as far as the captures' dumps say.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalizationReport {
+    pub base_name: String,
+    pub cand_name: String,
+    pub base_build: String,
+    pub cand_build: String,
+    pub probes: Vec<ProbeLocalization>,
+    /// Probes without dumps on one side.
+    pub skipped: Vec<String>,
+    pub texts: Vec<TextCheck>,
+    /// The candidate's texts against the baseline's, per variant.
+    pub text_partings: Vec<TextParting>,
+    pub autopsies: Vec<AutopsyDiff>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextParting {
+    pub model: String,
+    pub kind: String,
+    pub variant: String,
+    pub parted_char: Option<usize>,
+    pub base_len: usize,
+    pub cand_len: usize,
+}
+
+pub fn localize_captures(
+    base: &Capture,
+    cand: &Capture,
+    config: &Config,
+) -> Result<LocalizationReport> {
+    let mut probes = Vec::new();
+    let mut skipped = Vec::new();
+    for c in &cand.numerics {
+        let label = format!("{} {}{}", c.model, c.prompt, if c.mtp { " (mtp)" } else { "" });
+        let Some(b) = base
+            .numerics
+            .iter()
+            .find(|b| b.model == c.model && b.prompt == c.prompt && b.mtp == c.mtp)
+        else {
+            skipped.push(format!("{label}: not in the baseline"));
+            continue;
+        };
+        let base_dumps = outputs_dir(&numerics_dir(&base.dir, &b.model, &b.prompt, b.mtp));
+        let cand_dumps = outputs_dir(&numerics_dir(&cand.dir, &c.model, &c.prompt, c.mtp));
+        if !base_dumps.join("index.jsonl").is_file() || !cand_dumps.join("index.jsonl").is_file() {
+            skipped.push(format!(
+                "{label}: no whole-output dumps on both sides (numerics.full_steps)"
+            ));
+            continue;
+        }
+        let comparison = compare_runs(b, c, &config.numerics.thresholds);
+        let localization = localize(&base_dumps, &cand_dumps)?;
+        let row_kls = full_row_kls(&base_dumps, &cand_dumps)?;
+        let max_row_kl = row_kls
+            .iter()
+            .map(|r| r.kl)
+            .fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| m.max(v))));
+        probes.push(ProbeLocalization {
+            model: c.model.clone(),
+            prompt: c.prompt.clone(),
+            mtp: c.mtp,
+            parted_token: comparison.diverged_at,
+            localization,
+            row_kls,
+            max_row_kl,
+        });
+    }
+    let mut text_partings = Vec::new();
+    for c in &cand.texts {
+        if let Some(b) = text_run(&base.texts, &c.model, &c.kind, &c.variant) {
+            text_partings.push(TextParting {
+                model: c.model.clone(),
+                kind: c.kind.clone(),
+                variant: c.variant.clone(),
+                parted_char: parted_at(&b.text, &c.text),
+                base_len: b.text_len,
+                cand_len: c.text_len,
+            });
+        }
+    }
+    Ok(LocalizationReport {
+        base_name: base.manifest.name.clone(),
+        cand_name: cand.manifest.name.clone(),
+        base_build: base.manifest.build_id.clone(),
+        cand_build: cand.manifest.build_id.clone(),
+        probes,
+        skipped,
+        texts: check_texts(base, cand),
+        text_partings,
+        autopsies: autopsy_diffs(base, cand),
+    })
+}
+
+fn tensor_cell(d: &TensorDiff) -> String {
+    format!(
+        "c{} {} step {} out {} `{}` {:?}",
+        d.context, d.function, d.step, d.output, d.name, d.dims
+    )
+}
+
+pub fn render_localization(r: &LocalizationReport) -> String {
+    let mut s = format!(
+        "# Localization: {} ({}) against {} ({})\n\n",
+        r.cand_name, r.cand_build, r.base_name, r.base_build
+    );
+    if r.probes.is_empty() && r.skipped.is_empty() {
+        s.push_str("No numerics probe to localize.\n\n");
+    }
+    if !r.probes.is_empty() {
+        s.push_str("## Where the outputs part (whole-output dumps of the first steps)\n\nTensors are compared in production order; the first that differs names the step and the partition (function) the change first reaches. A relative move is rms(Δ) / rms(baseline).\n\n| Model | Prompt | Mode | Tokens part at | Tensors paired | Differing | First differing tensor | Rel. move | max abs delta | Largest move | Rel. | max row KL |\n|---|---|---|---:|---:|---:|---|---:|---:|---|---:|---:|\n");
+        for p in &r.probes {
+            let l = &p.localization;
+            s.push_str(&format!(
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+                p.model,
+                p.prompt,
+                if p.mtp { "mtp" } else { "plain" },
+                p.parted_token.map(|t| t.to_string()).unwrap_or_else(|| "-".into()),
+                l.pairs,
+                l.differing,
+                l.first.as_ref().map(tensor_cell).unwrap_or_else(|| "none: identical".into()),
+                l.first
+                    .as_ref()
+                    .map(|d| format!("{:.2e}", d.relative))
+                    .unwrap_or_else(|| "-".into()),
+                l.first
+                    .as_ref()
+                    .map(|d| format!("{:.3e}", d.max_abs_delta))
+                    .unwrap_or_else(|| "-".into()),
+                l.largest.as_ref().map(tensor_cell).unwrap_or_else(|| "-".into()),
+                l.largest
+                    .as_ref()
+                    .map(|d| format!("{:.2e}", d.relative))
+                    .unwrap_or_else(|| "-".into()),
+                p.max_row_kl.map(|v| format!("{v:.2e}")).unwrap_or_else(|| "-".into())
+            ));
+        }
+        s.push('\n');
+        for p in &r.probes {
+            let l = &p.localization;
+            let Some(first) = &l.first else { continue };
+            s.push_str(&format!(
+                "- {} {}{}: the first difference is at step {} of `{}` (context {}), output {} `{}`: {} of {} elements differ, max |Δ| {:.3e}, rms Δ {:.3e} (relative {:.2e}){}{}{}. The functions reached by that step: {}.\n",
+                p.model,
+                p.prompt,
+                if p.mtp { " (mtp)" } else { "" },
+                first.step,
+                first.function,
+                first.context,
+                first.output,
+                first.name,
+                first.differing,
+                first.elements,
+                first.max_abs_delta,
+                first.rms_delta,
+                first.relative,
+                first.first_index.map(|i| format!(", first at element {i}")).unwrap_or_default(),
+                if first.nonfinite { ", NON-FINITE values" } else { "" },
+                if !first.base_top.is_empty() {
+                    format!(
+                        "; top logits base {} vs cand {}",
+                        first.base_top.iter().take(4).map(|(i, v)| format!("{i}:{v:.3}")).collect::<Vec<_>>().join(" "),
+                        first.cand_top.iter().take(4).map(|(i, v)| format!("{i}:{v:.3}")).collect::<Vec<_>>().join(" ")
+                    )
+                } else {
+                    String::new()
+                },
+                l.first_step
+                    .iter()
+                    .map(|d| format!("{} out {} ({:.1e})", d.function, d.output, d.relative))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+            if l.unpaired > 0 {
+                s.push_str(&format!(
+                    "  ({} tensors without a counterpart in the other run)\n",
+                    l.unpaired
+                ));
+            }
+        }
+        s.push('\n');
+        let with_rows: Vec<&ProbeLocalization> =
+            r.probes.iter().filter(|p| !p.row_kls.is_empty()).collect();
+        if !with_rows.is_empty() {
+            s.push_str("## KL over the whole vocabulary (the first logits rows)\n\n| Model | Prompt | Mode | Row (function, step) | KL | max abs delta logit | Same argmax |\n|---|---|---|---|---:|---:|---|\n");
+            for p in with_rows {
+                for k in p.row_kls.iter().take(12) {
+                    s.push_str(&format!(
+                        "| {} | {} | {} | {} step {} row {} | {:.2e} | {:.3e} | {} |\n",
+                        p.model,
+                        p.prompt,
+                        if p.mtp { "mtp" } else { "plain" },
+                        k.function,
+                        k.step,
+                        k.row,
+                        k.kl,
+                        k.max_abs_delta,
+                        if k.same_argmax { "yes" } else { "NO" }
+                    ));
+                }
+            }
+            s.push('\n');
+        }
+    }
+    for line in &r.skipped {
+        s.push_str(&format!("- skipped {line}\n"));
+    }
+    if !r.skipped.is_empty() {
+        s.push('\n');
+    }
+    if !r.text_partings.is_empty() {
+        s.push_str("## Texts against the baseline's\n\n| Model | Probe | Variant | Parted at char | Chars (base, cand) |\n|---|---|---|---:|---|\n");
+        for t in &r.text_partings {
+            s.push_str(&format!(
+                "| {} | {} | {} | {} | {}, {} |\n",
+                t.model,
+                t.kind,
+                t.variant,
+                t.parted_char.map(|c| c.to_string()).unwrap_or_else(|| "identical".into()),
+                t.base_len,
+                t.cand_len
+            ));
+        }
+        s.push('\n');
+        for t in r.texts.iter().filter(|t| t.verdict != Verdict::Pass) {
+            s.push_str(&format!(
+                "- {} {} (device vs host): {}\n",
+                t.model,
+                t.kind,
+                t.reasons.join("; ")
+            ));
+        }
+        s.push('\n');
+    }
+    s.push_str(&render_autopsy_diffs(&r.autopsies));
     s
 }
 
@@ -408,6 +901,70 @@ pub fn render_capture(capture: &Capture) -> String {
             ));
         }
         s.push_str("\nWith two measured contexts the prefill model has no attention term (c2 = 0) and long contexts come out optimistic; measure a third (perf.workloads) for it. The measured change ratios are the regression yardstick.\n");
+        s.push('\n');
+    }
+    if !capture.texts.is_empty() {
+        s.push_str("## Text probes (session mode, MTP verifier sampling on the device or on the host)\n\n| Model | Probe | Variant | Exit | Chars | Regex | Device samplers | Parser errors | Wall s |\n|---|---|---|---:|---:|---|---:|---:|---:|\n");
+        for t in &capture.texts {
+            s.push_str(&format!(
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {:.0} |\n",
+                t.model,
+                t.kind,
+                t.variant,
+                t.exit_code,
+                t.text_len,
+                match t.regex_ok {
+                    Some(true) => "ok",
+                    Some(false) => "VIOLATED",
+                    None => "-",
+                },
+                t.device_samplers,
+                t.parser_errors,
+                t.wall_s
+            ));
+        }
+        s.push('\n');
+        let keys: BTreeSet<(String, String)> =
+            capture.texts.iter().map(|t| (t.model.clone(), t.kind.clone())).collect();
+        for (model, kind) in keys {
+            if let (Some(d), Some(h)) = (
+                text_run(&capture.texts, &model, &kind, "device"),
+                text_run(&capture.texts, &model, &kind, "host"),
+            ) {
+                let c = compare_texts(d, h);
+                s.push_str(&format!(
+                    "- {model} {kind}: device and host texts {}\n",
+                    if c.identical {
+                        "identical".to_string()
+                    } else {
+                        format!(
+                            "part at char {} ({} words in common)",
+                            c.parted_char.unwrap_or(0),
+                            c.common_words
+                        )
+                    }
+                ));
+            }
+        }
+        s.push('\n');
+    }
+    if !capture.autopsies.is_empty() {
+        s.push_str("## Autopsies (every kernel node of a step graph timed alone)\n\n| Model | Workload | Mode | Function | Kernels | Warm us | Cold us | Flush us |\n|---|---|---|---|---:|---:|---:|---:|\n");
+        for a in &capture.autopsies {
+            for f in &a.functions {
+                s.push_str(&format!(
+                    "| {} | {} | {} | {} | {} | {:.0} | {:.0} | {:.0} |\n",
+                    a.model,
+                    a.workload,
+                    if a.mtp { "mtp" } else { "plain" },
+                    f.function,
+                    f.kernels.len(),
+                    f.warm_us,
+                    f.cold_us,
+                    f.flush_us
+                ));
+            }
+        }
         s.push('\n');
     }
     s
