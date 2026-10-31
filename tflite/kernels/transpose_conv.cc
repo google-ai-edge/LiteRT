@@ -584,10 +584,16 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
                                               scaling_factors_size.release()));
     }
 
+    TF_LITE_ENSURE_EQ(context, weights->quantization.type,
+                      kTfLiteAffineQuantization);
     auto* affine_quantization = reinterpret_cast<TfLiteAffineQuantization*>(
         weights->quantization.params);
     TF_LITE_ENSURE(context, affine_quantization);
     TF_LITE_ENSURE(context, affine_quantization->scale);
+    TF_LITE_ENSURE(context, affine_quantization->quantized_dimension >= 0 &&
+                                affine_quantization->quantized_dimension <
+                                    weights->dims->size);
+    TF_LITE_ENSURE_EQ(context, affine_quantization->quantized_dimension, 0);
 
     const int channels_out =
         weights->dims->data[affine_quantization->quantized_dimension];
