@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 /// LiteRtElementType values (litert/c/litert_model_types.h).
 const ELEMENT_FLOAT32: i32 = 1;
+const ELEMENT_INT8: i32 = 9;
 const ELEMENT_FLOAT16: i32 = 10;
 const ELEMENT_BFLOAT16: i32 = 19;
 
@@ -34,6 +35,10 @@ pub struct IndexLine {
     pub dims: Vec<i64>,
     #[serde(default)]
     pub stored_half: bool,
+    /// An output whose device memory is an input's (an in-place KV cache),
+    /// dumped at a context's first step only.
+    #[serde(default)]
+    pub state: bool,
     pub bytes: u64,
     pub file: String,
 }
@@ -56,11 +61,14 @@ impl IndexLine {
         match self.element_type {
             ELEMENT_FLOAT32 if !self.stored_half => Some(4),
             ELEMENT_FLOAT32 | ELEMENT_FLOAT16 | ELEMENT_BFLOAT16 => Some(2),
+            ELEMENT_INT8 => Some(1),
             _ => None,
         }
     }
 
-    pub fn is_float(&self) -> bool {
+    /// Whether the guard reads this element type: the floats, and the int8
+    /// of the quantized caches (compared as integers).
+    pub fn is_comparable(&self) -> bool {
         self.element_bytes().is_some()
     }
 }
@@ -106,8 +114,8 @@ fn bfloat16_to_f64(bits: u16) -> f64 {
     f32::from_bits((bits as u32) << 16) as f64
 }
 
-/// A float tensor of the dump as f64 values (float16 and the float32
-/// tensors the engine keeps as half widened exactly).
+/// A tensor of the dump as f64 values (float16 and the float32 tensors the
+/// engine keeps as half widened exactly; int8 as its integers).
 pub fn read_tensor(dir: &Path, line: &IndexLine) -> Result<Vec<f64>> {
     let path = dir.join(&line.file);
     let bytes = std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
@@ -123,7 +131,12 @@ pub fn read_tensor(dir: &Path, line: &IndexLine) -> Result<Vec<f64>> {
         (ELEMENT_FLOAT32, true) | (ELEMENT_FLOAT16, _) => {
             bytes.chunks_exact(2).map(|c| half_to_f64(u16::from_le_bytes([c[0], c[1]]))).collect()
         }
-        _ => anyhow::bail!("{}: element type {} is not a float", line.file, line.element_type),
+        (ELEMENT_INT8, _) => bytes.iter().map(|b| *b as i8 as f64).collect(),
+        _ => anyhow::bail!(
+            "{}: element type {} is not one the guard reads",
+            line.file,
+            line.element_type
+        ),
     };
     Ok(values)
 }
@@ -137,6 +150,8 @@ pub struct TensorDiff {
     pub step: u32,
     pub output: u32,
     pub name: String,
+    #[serde(default)]
+    pub state: bool,
     pub dims: Vec<i64>,
     pub elements: usize,
     pub differing: usize,
@@ -214,6 +229,7 @@ pub fn tensor_diff(line: &IndexLine, base: &[f64], cand: &[f64]) -> TensorDiff {
         step: line.step,
         output: line.output,
         name: line.name.clone(),
+        state: line.state,
         dims: line.dims.clone(),
         elements: n,
         differing,
@@ -259,7 +275,7 @@ pub fn localize(base_dir: &Path, cand_dir: &Path) -> Result<Localization> {
     let mut first_step: Option<(u32, u32)> = None;
     for line in &base {
         let Some(other) = cand_by_key.get(&line.key()) else { continue };
-        if !line.is_float() || !other.is_float() {
+        if !line.is_comparable() || !other.is_comparable() {
             continue;
         }
         out.pairs += 1;
@@ -341,7 +357,7 @@ pub fn full_row_kls(base_dir: &Path, cand_dir: &Path) -> Result<Vec<RowKl>> {
     let cand_by_key: BTreeMap<(u32, String, u32, u32), &IndexLine> =
         cand.iter().map(|l| (l.key(), l)).collect();
     let mut out = Vec::new();
-    for line in base.iter().filter(|l| l.is_logits() && l.is_float()) {
+    for line in base.iter().filter(|l| l.is_logits() && l.is_comparable()) {
         let Some(other) = cand_by_key.get(&line.key()) else { continue };
         let b = read_tensor(base_dir, line)?;
         let c = read_tensor(cand_dir, other)?;
@@ -384,13 +400,17 @@ mod tests {
             for v in *values {
                 if *element_type == ELEMENT_FLOAT16 {
                     bytes.extend_from_slice(&half_bits(*v).to_le_bytes());
+                } else if *element_type == ELEMENT_INT8 {
+                    bytes.push(*v as i8 as u8);
                 } else {
                     bytes.extend_from_slice(&v.to_le_bytes());
                 }
             }
             std::fs::write(&path, &bytes).unwrap();
+            // An int8 tensor stands for a quantized cache: state.
+            let state = *element_type == ELEMENT_INT8;
             index.push_str(&format!(
-                "{{\"seq\":{seq},\"context\":{context},\"function\":\"{function}\",\"step\":{step},\"output\":{output},\"name\":\"t{output}\",\"element_type\":{element_type},\"dims\":{},\"stored_half\":false,\"bytes\":{},\"file\":\"{file}\"}}\n",
+                "{{\"seq\":{seq},\"context\":{context},\"function\":\"{function}\",\"step\":{step},\"output\":{output},\"name\":\"t{output}\",\"element_type\":{element_type},\"dims\":{},\"stored_half\":false,\"state\":{state},\"bytes\":{},\"file\":\"{file}\"}}\n",
                 serde_json::to_string(dims).unwrap(),
                 bytes.len()
             ));
@@ -417,6 +437,55 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn int8_state_tensors_compare_as_integers_and_come_first() {
+        let a = temp_dir("i");
+        let b = temp_dir("j");
+        let base: &[(u32, &str, u32, u32, i32, &[i64], &[f32])] = &[
+            (
+                2,
+                "prefill",
+                1,
+                3,
+                ELEMENT_INT8,
+                &[1, 1, 4, 2],
+                &[1.0, -2.0, 3.0, 4.0, 5.0, 6.0, 7.0, -128.0],
+            ),
+            (0, "decode", 1, 0, ELEMENT_FLOAT32, &[1, 1, 4], &[0.5, 1.5, -2.0, 3.0]),
+        ];
+        let cand: &[(u32, &str, u32, u32, i32, &[i64], &[f32])] = &[
+            (
+                2,
+                "prefill",
+                1,
+                3,
+                ELEMENT_INT8,
+                &[1, 1, 4, 2],
+                &[1.0, -2.0, 3.0, 4.0, 5.0, 9.0, 7.0, -128.0],
+            ),
+            (0, "decode", 1, 0, ELEMENT_FLOAT32, &[1, 1, 4], &[0.5, 1.5, -2.0, 3.25]),
+        ];
+        write_dump(&a, base);
+        write_dump(&b, cand);
+        let index = load_index(&a).unwrap();
+        assert!(index[0].state && index[0].is_comparable());
+        assert_eq!(
+            read_tensor(&a, &index[0]).unwrap(),
+            vec![1.0, -2.0, 3.0, 4.0, 5.0, 6.0, 7.0, -128.0]
+        );
+        let l = localize(&a, &b).unwrap();
+        assert_eq!(l.pairs, 2);
+        assert_eq!(l.differing, 2);
+        let first = l.first.unwrap();
+        assert!(first.state);
+        assert_eq!(
+            (first.function.as_str(), first.step, first.output, first.first_index),
+            ("prefill", 1, 3, Some(5))
+        );
+        assert_eq!(first.max_abs_delta, 3.0);
+        assert_eq!(l.first_step.len(), 1, "the decode step is another context's step");
     }
 
     #[test]

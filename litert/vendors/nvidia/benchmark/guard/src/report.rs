@@ -16,7 +16,7 @@ use crate::perf::{
     compare_points, decode_context, interpolate, CostModel, PerfComparison, PerfPoint,
 };
 use crate::runner::{numerics_dir, outputs_dir};
-use crate::texts::{compare_texts, parted_at, TextComparison, TextRun};
+use crate::texts::{common_words, compare_texts, parted_at, TextComparison, TextRun};
 
 /// A text probe of the candidate judged: the device and the host must agree,
 /// the constrained text must match its regex, and both runs must end well.
@@ -31,13 +31,23 @@ pub struct TextCheck {
     pub reasons: Vec<String>,
 }
 
-/// What a workload name means (the report's measurement language).
+/// What a workload name means, in the measurements record's language: its
+/// name there (1k = 1024 input tokens, 8k = 8192, 16k = 16384, 30k = 30720,
+/// 128k = 128001), the requested output tokens and the runtime capacity.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkloadLegend {
     pub name: String,
+    pub record_name: String,
     pub input_tokens: u32,
     pub output_tokens: u32,
-    pub context: u32,
+    pub capacity: u32,
+}
+
+pub fn record_workload_name(name: &str) -> &str {
+    match name {
+        "short" => "1k",
+        other => other,
+    }
 }
 
 pub fn workload_legend(names: &[String]) -> Vec<WorkloadLegend> {
@@ -46,12 +56,16 @@ pub fn workload_legend(names: &[String]) -> Vec<WorkloadLegend> {
         .filter(|w| names.iter().any(|n| n == w.name))
         .map(|w| WorkloadLegend {
             name: w.name.to_string(),
+            record_name: record_workload_name(w.name).to_string(),
             input_tokens: w.input,
             output_tokens: w.output,
-            context: w.context,
+            capacity: w.context,
         })
         .collect()
 }
+
+/// What the probes do not cover, printed under every comparison.
+pub const NOT_PROBED: &str = "Not probed: a grammar that ends inside an MTP round; a constraint in the immediate-upload mode (LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD=0); the samplers at exact ties on the k-th logit; the device's memory; contexts beyond the measured workloads other than by the cost models.";
 
 fn text_run<'a>(
     runs: &'a [TextRun],
@@ -435,19 +449,7 @@ pub fn render_comparison(c: &Comparison) -> String {
         s.push('\n');
     }
     if !c.workloads.is_empty() {
-        s.push_str("Workloads: ");
-        let legend: Vec<String> = c
-            .workloads
-            .iter()
-            .map(|w| {
-                format!(
-                    "{} = {} input tokens, {} output tokens (context {})",
-                    w.name, w.input_tokens, w.output_tokens, w.context
-                )
-            })
-            .collect();
-        s.push_str(&legend.join("; "));
-        s.push_str(". tok/s are tokens per second of the measured phase.\n\n");
+        s.push_str(&render_legend(&c.workloads));
     }
     if !c.perf.is_empty() {
         s.push_str("## Performance (measured)\n\nSpread: (max - min) / mean of the measured iterations; a change within the spread is noise.\n\n| Model | Workload | Mode | Metric | Baseline | Candidate | Change | Spread (base, cand) | Verdict |\n|---|---|---|---|---:|---:|---:|---|---|\n");
@@ -501,7 +503,34 @@ pub fn render_comparison(c: &Comparison) -> String {
         s.push('\n');
     }
     s.push_str(&render_autopsy_diffs(&c.autopsies));
+    s.push_str(NOT_PROBED);
+    s.push_str("\n\n");
     s
+}
+
+/// The workload legend in the measurements record's language.
+pub fn render_legend(workloads: &[WorkloadLegend]) -> String {
+    let legend: Vec<String> = workloads
+        .iter()
+        .map(|w| {
+            format!(
+                "{}{} = {} input tokens, {} requested output tokens, runtime capacity {}",
+                w.name,
+                if w.record_name != w.name {
+                    format!(" (the record's {})", w.record_name)
+                } else {
+                    String::new()
+                },
+                w.input_tokens,
+                w.output_tokens,
+                w.capacity
+            )
+        })
+        .collect();
+    format!(
+        "Workloads: {}. tok/s are tokens per second of the measured phase, over few iterations in the manifest's host mode: diagnostic numbers, never a cell of the measurements' tables.\n\n",
+        legend.join("; ")
+    )
 }
 
 /// The kernels whose warm times moved, per model: the attribution of a
@@ -512,7 +541,7 @@ pub fn render_autopsy_diffs(diffs: &[AutopsyDiff]) -> String {
     if diffs.is_empty() {
         return s;
     }
-    s.push_str("## Kernels (autopsy of the step graphs, warm times per kernel)\n\nEvery kernel node of a function's CUDA graph timed alone; a kernel's time is summed over its launches in the step. The sums are the kernels' own times, not the step's.\n\n");
+    s.push_str("## Kernels (autopsy of the step graphs, warm times per kernel)\n\nEvery kernel node of a function's CUDA graph timed alone; a kernel's time is summed over its launches in the step. The sums are the kernels' own times, not the step's. Between two captures of one build a kernel's sum moves by tens of microseconds (about 20 µs on the E2B's decode step): a change under that is noise, and a change is attributed to a kernel when its Δ stands out of it.\n\n");
     for d in diffs {
         s.push_str(&format!("### {} ({}{})\n\n| Function | Kernels (base, cand) | Base us | Cand us | Change |\n|---|---|---:|---:|---:|\n", d.model, d.workload, if d.mtp { ", mtp" } else { "" }));
         for f in &d.functions {
@@ -561,8 +590,17 @@ pub struct ProbeLocalization {
     pub model: String,
     pub prompt: String,
     pub mtp: bool,
-    /// The step at which the greedy tokens part (the top-K logits).
+    /// The index of the first emitted token that differs: the argmax rows of
+    /// a plain greedy run are its emitted tokens. None for an MTP run, whose
+    /// rows are the verifier's; its texts' parting stands for it.
     pub parted_token: Option<usize>,
+    /// The emitted tokens of both runs (plain runs).
+    pub tokens_base: usize,
+    pub tokens_cand: usize,
+    /// Where the two runs' texts part (a character offset) and the words in
+    /// common before it; None when the texts are identical.
+    pub parted_char: Option<usize>,
+    pub common_words: usize,
     pub localization: Localization,
     /// The whole-vocabulary KL of the first logits rows, in production order.
     pub row_kls: Vec<RowKl>,
@@ -595,11 +633,7 @@ pub struct TextParting {
     pub cand_len: usize,
 }
 
-pub fn localize_captures(
-    base: &Capture,
-    cand: &Capture,
-    config: &Config,
-) -> Result<LocalizationReport> {
+pub fn localize_captures(base: &Capture, cand: &Capture) -> Result<LocalizationReport> {
     let mut probes = Vec::new();
     let mut skipped = Vec::new();
     for c in &cand.numerics {
@@ -620,18 +654,30 @@ pub fn localize_captures(
             ));
             continue;
         }
-        let comparison = compare_runs(b, c, &config.numerics.thresholds);
         let localization = localize(&base_dumps, &cand_dumps)?;
         let row_kls = full_row_kls(&base_dumps, &cand_dumps)?;
         let max_row_kl = row_kls
             .iter()
             .map(|r| r.kl)
             .fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| m.max(v))));
+        let parted_token = if c.mtp { None } else { parted_tokens(&b.tokens, &c.tokens) };
+        let base_text = std::fs::read_to_string(
+            numerics_dir(&base.dir, &b.model, &b.prompt, b.mtp).join("response.txt"),
+        )
+        .unwrap_or_default();
+        let cand_text = std::fs::read_to_string(
+            numerics_dir(&cand.dir, &c.model, &c.prompt, c.mtp).join("response.txt"),
+        )
+        .unwrap_or_default();
         probes.push(ProbeLocalization {
             model: c.model.clone(),
             prompt: c.prompt.clone(),
             mtp: c.mtp,
-            parted_token: comparison.diverged_at,
+            parted_token,
+            tokens_base: b.tokens.len(),
+            tokens_cand: c.tokens.len(),
+            parted_char: parted_at(&base_text, &cand_text),
+            common_words: common_words(&base_text, &cand_text),
             localization,
             row_kls,
             max_row_kl,
@@ -663,10 +709,51 @@ pub fn localize_captures(
     })
 }
 
+/// The index of the first emitted token that differs (the shorter run's
+/// length when one is a prefix of the other); None when they are the same.
+pub fn parted_tokens(base: &[u32], cand: &[u32]) -> Option<usize> {
+    let n = base.iter().zip(cand.iter()).take_while(|(a, b)| a == b).count();
+    if n == base.len() && n == cand.len() {
+        None
+    } else {
+        Some(n)
+    }
+}
+
+/// The differing outputs of the first differing step, the first few by
+/// name and the rest counted.
+fn reached(step: &[TensorDiff]) -> String {
+    const SHOWN: usize = 6;
+    let mut parts: Vec<String> = step
+        .iter()
+        .take(SHOWN)
+        .map(|d| {
+            format!(
+                "{} out {}{} ({:.1e})",
+                d.function,
+                d.output,
+                if d.state { " state" } else { "" },
+                d.relative
+            )
+        })
+        .collect();
+    if step.len() > SHOWN {
+        let states = step.iter().skip(SHOWN).filter(|d| d.state).count();
+        parts.push(format!("and {} more ({} state)", step.len() - SHOWN, states));
+    }
+    parts.join(", ")
+}
+
 fn tensor_cell(d: &TensorDiff) -> String {
     format!(
-        "c{} {} step {} out {} `{}` {:?}",
-        d.context, d.function, d.step, d.output, d.name, d.dims
+        "c{} {} step {} out {} `{}`{} {:?}",
+        d.context,
+        d.function,
+        d.step,
+        d.output,
+        d.name,
+        if d.state { " (state)" } else { "" },
+        d.dims
     )
 }
 
@@ -679,15 +766,22 @@ pub fn render_localization(r: &LocalizationReport) -> String {
         s.push_str("No numerics probe to localize.\n\n");
     }
     if !r.probes.is_empty() {
-        s.push_str("## Where the outputs part (whole-output dumps of the first steps)\n\nTensors are compared in production order; the first that differs names the step and the partition (function) the change first reaches. A relative move is rms(Δ) / rms(baseline).\n\n| Model | Prompt | Mode | Tokens part at | Tensors paired | Differing | First differing tensor | Rel. move | max abs delta | Largest move | Rel. | max row KL |\n|---|---|---|---:|---:|---:|---|---:|---:|---|---:|---:|\n");
+        s.push_str("## Where the outputs part (whole-output dumps of the first steps)\n\nTensors are compared in production order; the first that differs names the step and the partition (function) the change first reaches. A relative move is rms(Δ) / rms(baseline). The emitted token where the texts part is counted on a plain run's emitted tokens (an MTP run's rows are the verifier's, so its texts' character offset stands instead).\n\n| Model | Prompt | Mode | Emitted token parts at | Text parts at (char, words in common) | Tensors paired | Differing | First differing tensor | Rel. move | max abs delta | Largest move | Rel. | max row KL |\n|---|---|---|---:|---|---:|---:|---|---:|---:|---|---:|---:|\n");
         for p in &r.probes {
             let l = &p.localization;
             s.push_str(&format!(
-                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
                 p.model,
                 p.prompt,
                 if p.mtp { "mtp" } else { "plain" },
-                p.parted_token.map(|t| t.to_string()).unwrap_or_else(|| "-".into()),
+                match (p.mtp, p.parted_token) {
+                    (true, _) => "- (verify rows)".to_string(),
+                    (false, Some(t)) => format!("{t} of {}/{}", p.tokens_base, p.tokens_cand),
+                    (false, None) => "same".to_string(),
+                },
+                p.parted_char
+                    .map(|c| format!("{c}, {}", p.common_words))
+                    .unwrap_or_else(|| "identical".into()),
                 l.pairs,
                 l.differing,
                 l.first.as_ref().map(tensor_cell).unwrap_or_else(|| "none: identical".into()),
@@ -737,11 +831,7 @@ pub fn render_localization(r: &LocalizationReport) -> String {
                 } else {
                     String::new()
                 },
-                l.first_step
-                    .iter()
-                    .map(|d| format!("{} out {} ({:.1e})", d.function, d.output, d.relative))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                reached(&l.first_step)
             ));
             if l.unpaired > 0 {
                 s.push_str(&format!(
@@ -968,6 +1058,32 @@ pub fn render_capture(capture: &Capture) -> String {
         s.push('\n');
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parted_tokens_and_the_legend() {
+        assert_eq!(parted_tokens(&[1, 2, 3], &[1, 2, 3]), None);
+        assert_eq!(parted_tokens(&[1, 2, 3], &[1, 2, 4]), Some(2));
+        assert_eq!(parted_tokens(&[1, 2], &[1, 2, 3]), Some(2));
+        let legend = workload_legend(&["short".into(), "8k".into(), "nope".into()]);
+        assert_eq!(legend.len(), 2);
+        assert_eq!(
+            (
+                legend[0].record_name.as_str(),
+                legend[0].input_tokens,
+                legend[0].output_tokens,
+                legend[0].capacity
+            ),
+            ("1k", 1024, 256, 2048)
+        );
+        let text = render_legend(&legend);
+        assert!(text.contains("short (the record's 1k) = 1024 input tokens, 256 requested output tokens, runtime capacity 2048"), "{text}");
+        assert!(text.contains("8k = 8192 input tokens"));
+    }
 }
 
 /// The predictor's own error on a record: fitted on the record's 2k and 8k

@@ -195,10 +195,10 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::Localize { baseline, name } => {
-            let (env, config, _) = resolve(&cli)?;
+            let (env, _, _) = resolve(&cli)?;
             let base = load_capture(&env, baseline)?;
             let cand = load_capture(&env, name)?;
-            let localization = report::localize_captures(&base, &cand, &config)?;
+            let localization = report::localize_captures(&base, &cand)?;
             let markdown = report::render_localization(&localization);
             write_report(
                 &cand.dir,
@@ -279,7 +279,7 @@ fn main() -> Result<()> {
                 &comparison,
             )?;
             if comparison.verdict != numerics::Verdict::Pass {
-                let localization = report::localize_captures(&base, &cand, &config)?;
+                let localization = report::localize_captures(&base, &cand)?;
                 let local = report::render_localization(&localization);
                 write_report(
                     &cand.dir,

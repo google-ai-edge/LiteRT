@@ -338,6 +338,19 @@ mod tests {
         assert_eq!(short_name("ns::Outer<int>::Inner<float>::Run(int)"), "Run");
         assert_eq!(short_name("void gemm::Kernel<void (*)(int), 4>(float const*)"), "Kernel");
         assert_eq!(short_name("plain_kernel(int)"), "plain_kernel");
+        // c++filt's rendering of the dispatch's own kernels.
+        assert_eq!(
+            short_name("void litert::nvidia::(anonymous namespace)::Int8CacheWriteKernel<__nv_bfloat16, false>(signed char*, __nv_bfloat16 const*, int const*, int, int, int, int, float, int)"),
+            "Int8CacheWriteKernel"
+        );
+        assert_eq!(
+            short_name("void (anonymous namespace)::Bf16SubbytePerChannelGemvKernel<4, 1, 128>(__nv_bfloat16 const*, unsigned char const*, __nv_bfloat16 const*, __nv_bfloat16*, int, int)"),
+            "Bf16SubbytePerChannelGemvKernel"
+        );
+        assert_eq!(
+            short_name("cudnn_generated_fort_native_sm120_matMul_knob_25_32x32x32_0_0"),
+            "cudnn_generated_fort_native_sm120_matMul_knob_25_32x32x32_0_0"
+        );
         assert_eq!(short_name("__myl_CastCastMul_0x79a974d26df997acf47414e94793d5c9").len(), 48);
     }
 
