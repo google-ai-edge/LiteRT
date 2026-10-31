@@ -76,6 +76,10 @@ if [[ -n $context_override ]]; then
   context=$context_override
 fi
 iterations=${iterations:-$default_iterations}
+# Under MTP the decode engine runs once per conversation (the priming step), so its second run,
+# where TensorRT-RTX captures its CUDA graph (a one-time cost that grows with the context), is
+# the second conversation: the report skips two.
+[[ $mtp == false || $warmups -ge 2 ]] || warmups=2
 [[ $metric != memory && $metric != cold ]] || { iterations=1; warmups=0; }
 mode=plain; [[ $mtp == false ]] || mode=mtp
 label=${label:-${profile}_${workload}_${mode}_${metric}}
