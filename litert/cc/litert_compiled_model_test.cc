@@ -72,6 +72,17 @@
 // copybara:uncomment_end
 #include "tflite/interpreter.h"
 
+#if defined(__APPLE__)
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <cerrno>
+
+#include "litert/cc/litert_buffer_ref.h"
+#endif  // defined(__APPLE__)
+
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::FloatNear;
@@ -667,6 +678,174 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
 }
+
+TEST(CompiledModelTest,
+     RunWithPrefetchEmbeddingTokenIdsPopulatesOptionsAndDiscoversTable) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // 1. Verify Options::SetPrefetchEmbeddingTokenIds populates LiteRtOptionsT
+  // when built via LiteRtOptionsPtrBuilder::Build.
+  LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
+  const int32_t ids[] = {0, 19, -1, 20};
+  LITERT_ASSERT_OK(
+      options.SetPrefetchEmbeddingTokenIds(absl::MakeConstSpan(ids)));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      internal::LiteRtOptionsPtr built_options,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+  ASSERT_NE(built_options, nullptr);
+  EXPECT_THAT(built_options->prefetch_embedding_token_ids,
+              ElementsAre(0, 19, -1, 20));
+
+  // 2. On simple_embedding_lookup_op.tflite, CompiledModel::Run(..., &options)
+  // triggers table discovery and populates the per-signature cache.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel embedding_model,
+      CompiledModel::Create(
+          env, testing::GetTestFilePath("simple_embedding_lookup_op.tflite"),
+          HwAccelerators::kCpu));
+  EXPECT_TRUE(
+      embedding_model.Get()->GetCachedEmbeddingTablesForTesting(0).empty());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> emb_inputs,
+                              embedding_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> emb_outputs,
+                              embedding_model.CreateOutputBuffers());
+  const int32_t lookup_ids[] = {0, 1, 2, 3, 4};
+  ASSERT_TRUE(emb_inputs[0].Write<int32_t>(absl::MakeConstSpan(lookup_ids)));
+  LITERT_ASSERT_OK(embedding_model.Run(emb_inputs, emb_outputs, &options));
+
+  auto cached_tables =
+      embedding_model.Get()->GetCachedEmbeddingTablesForTesting(0);
+  ASSERT_EQ(cached_tables.size(), 1);
+  EXPECT_EQ(cached_tables[0].num_rows, 20);
+  EXPECT_EQ(cached_tables[0].row_bytes, 8);
+
+  // 3. On a model without EMBEDDING_LOOKUP (simple_model.tflite), Run with
+  // prefetch options is a transparent no-op and still succeeds.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers, &options));
+  EXPECT_TRUE(
+      compiled_model.Get()->GetCachedEmbeddingTablesForTesting(0).empty());
+}
+
+#if defined(__APPLE__)
+// A MAP_PRIVATE mapping of a whole file, unmapped on destruction. data() is
+// null if the file could not be mapped; error() then holds errno.
+class PrivateFileMapping {
+ public:
+  PrivateFileMapping(const std::string& path, int prot) {
+    const int fd = open(path.c_str(), O_RDONLY);
+    if (fd < 0) {
+      error_ = errno;
+      return;
+    }
+    struct stat file_stat;
+    if (fstat(fd, &file_stat) != 0) {
+      error_ = errno;
+    } else {
+      const size_t file_size = static_cast<size_t>(file_stat.st_size);
+      void* mapped = mmap(nullptr, file_size, prot, MAP_PRIVATE, fd, 0);
+      if (mapped == MAP_FAILED) {
+        error_ = errno;
+      } else {
+        data_ = mapped;
+        size_ = file_size;
+      }
+    }
+    close(fd);
+  }
+  ~PrivateFileMapping() {
+    if (data_ != nullptr) munmap(data_, size_);
+  }
+  PrivateFileMapping(const PrivateFileMapping&) = delete;
+  PrivateFileMapping& operator=(const PrivateFileMapping&) = delete;
+
+  void* data() const { return data_; }
+  size_t size() const { return size_; }
+  int error() const { return error_; }
+
+ private:
+  void* data_ = nullptr;
+  size_t size_ = 0;
+  int error_ = 0;
+};
+
+// On Apple platforms the hint is issued only when every table lies in a
+// read-only mapping. The same model is loaded from a heap buffer and from a
+// writable private file mapping, which are refused (Unsupported, cached per
+// signature), and from a PROT_READ private file mapping, which is how
+// LiteRT-LM maps its embedding lookup sections, and from the file itself,
+// which LiteRT maps read-only; those two are prefetched. The test lives here
+// because runtime:compiled_model_test does not build for darwin.
+TEST(CompiledModelTest, PrefetchEmbeddingRowsSkipsWritableTablesOnApple) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+  const std::string path =
+      testing::GetTestFilePath("simple_embedding_lookup_op.tflite");
+  const PrivateFileMapping read_only(path, PROT_READ);
+  ASSERT_NE(read_only.data(), nullptr) << strerror(read_only.error());
+  const PrivateFileMapping writable(path, PROT_READ | PROT_WRITE);
+  ASSERT_NE(writable.data(), nullptr) << strerror(writable.error());
+  const uint8_t* const file_bytes =
+      static_cast<const uint8_t*>(read_only.data());
+  const std::vector<uint8_t> heap(file_bytes, file_bytes + read_only.size());
+
+  struct TestCase {
+    const char* name;
+    const void* model_data;  // Null: CompiledModel::Create(env, path, ...).
+    bool expect_prefetched;  // Ok when true, Unsupported otherwise.
+  };
+  const TestCase kCases[] = {
+      {"heap_buffer", heap.data(), false},
+      {"writable_private_mapping", writable.data(), false},
+      {"read_only_private_mapping", read_only.data(), true},
+      {"model_file", nullptr, true},
+  };
+  const int32_t ids[] = {0, 10, 19};
+  for (const TestCase& tc : kCases) {
+    SCOPED_TRACE(tc.name);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        CompiledModel compiled_model,
+        tc.model_data == nullptr
+            ? CompiledModel::Create(env, path, HwAccelerators::kCpu)
+            : CompiledModel::Create(
+                  env, BufferRef<uint8_t>(tc.model_data, read_only.size()),
+                  HwAccelerators::kCpu));
+    // Twice: a second call must give the same verdict. The empty probe must
+    // report the same verdict as a real batch.
+    for (int round = 0; round < 2; ++round) {
+      auto probe = compiled_model.Get()->PrefetchEmbeddingRows(0, {});
+      auto prefetched = compiled_model.Get()->PrefetchEmbeddingRows(0, ids);
+      if (tc.expect_prefetched) {
+        LITERT_EXPECT_OK(probe);
+        LITERT_EXPECT_OK(prefetched);
+      } else {
+        EXPECT_THAT(probe,
+                    ::testing::litert::IsError(kLiteRtStatusErrorUnsupported));
+        EXPECT_THAT(prefetched,
+                    ::testing::litert::IsError(kLiteRtStatusErrorUnsupported));
+      }
+    }
+    // The table is cached either way.
+    EXPECT_EQ(
+        compiled_model.Get()->GetCachedEmbeddingTablesForTesting(0).size(), 1);
+  }
+}
+#endif  // defined(__APPLE__)
 
 TEST(CompiledModelTest, RunTwoModelsPipelineWithSharedTensorBuffers) {
   // In this test, we create two CompiledModels and the second model uses the
