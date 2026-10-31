@@ -91,6 +91,10 @@ struct AccuracyDebuggerOptions {
   bool use_gpu_ref = false;
   bool dump_only = false;
   bool dump_tensors = false;
+  // Optional directory of AOT-compiled work-unit models. The filenames must
+  // match those emitted by dump_only. This lets offline-only accelerators run
+  // without a compiler plugin on the execution device.
+  std::string precompiled_model_dir;
   AccuracyThresholds thresholds;
 };
 
