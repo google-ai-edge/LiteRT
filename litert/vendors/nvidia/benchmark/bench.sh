@@ -83,6 +83,16 @@ iterations=${iterations:-$default_iterations}
 [[ $metric != memory && $metric != cold ]] || { iterations=1; warmups=0; }
 mode=plain; [[ $mtp == false ]] || mode=mtp
 label=${label:-${profile}_${workload}_${mode}_${metric}}
+# The host's clocks (clock_check.py beside this script: the kernel tick and frequency, the monotonic
+# clock's rate against the raw clock over 3 s): recorded with the run; a formal or idle-verified run
+# refuses a clock that is not fit, since the CLI's rates are read on the monotonic clock.
+NB_HOST_CLOCK=$(python3 "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/clock_check.py" 3) || {
+  case ${CI_HOST_MODE:-unspecified} in
+    formal|idle-verified) nb_die "The host's clock is not fit for a $CI_HOST_MODE run: $NB_HOST_CLOCK" ;;
+    *) echo "Warning: the host's clock is not fit: $NB_HOST_CLOCK" >&2 ;;
+  esac
+}
+export NB_HOST_CLOCK
 run=$out/$label
 mkdir -p "$run"
 build_id=$(nb_build_id)
@@ -170,16 +180,6 @@ PY
 export NB_LABEL=$label NB_PROFILE=$profile NB_MODEL=$model NB_WORKLOAD=$workload NB_METRIC=$metric NB_MTP=$mtp
 export NB_PROMPT_FILE=$prompt_file NB_INPUT=$input NB_OUTPUT=$output NB_CONTEXT=$context NB_ITERATIONS=$iterations
 export NB_WARMUPS=$warmups NB_BUILD_ID=$build_id NB_POOL=$pool
-# The host's clocks (clock_check.py: the kernel tick and frequency, the monotonic clock's rate against
-# the real-time clock over 3 s): recorded with the run; a formal or idle-verified run refuses a clock
-# that is not fit, since the CLI's rates are read on the monotonic clock.
-NB_HOST_CLOCK=$(python3 "$BENCH/clock_check.py" 3) || {
-  case ${CI_HOST_MODE:-unspecified} in
-    formal|idle-verified) nb_die "The host's clock is not fit for a $CI_HOST_MODE run: $NB_HOST_CLOCK" ;;
-    *) echo "Warning: the host's clock is not fit: $NB_HOST_CLOCK" >&2 ;;
-  esac
-}
-export NB_HOST_CLOCK
 
 # A pool without AOT artifacts compiles in its first run; that run is kept apart as "prepare"
 # so the measured runs read warm caches (the cold metric is that first run itself).

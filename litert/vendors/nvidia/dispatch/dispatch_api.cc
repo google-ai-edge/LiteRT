@@ -3493,6 +3493,10 @@ class LiteRtDispatchInvocationContextT {
       feed_.pending = true;
       return {};
     }
+    // Every table awaited is in hand: whatever follows, the setup is not
+    // retried at the next invocation (a setup that fails, fails once, and
+    // a retry would set the feed up over its live state).
+    feed_.pending = false;
     if (per_layer_fed) {
       feed_.per_layer_table = static_cast<const uint8_t*>(per_layer->table);
       feed_.per_layer_scales = static_cast<const float*>(per_layer->scales);
@@ -3501,7 +3505,6 @@ class LiteRtDispatchInvocationContextT {
     }
     if (runtime_table) {
       // The embedder's table, registered by the runtime.
-      feed_.pending = false;
       feed_.owns_table = false;
       feed_.table = registered->table;
       feed_.bits = registered->bits;
@@ -3565,10 +3568,6 @@ class LiteRtDispatchInvocationContextT {
       if (status != cudaSuccess) return fail("row scales copy", status);
       table_source = path;
     }
-    // Every table awaited is in hand, from the runtime or the file: the setup
-    // is not retried at the next invocation (a retry would set the feed up
-    // over its live state).
-    feed_.pending = false;
     status = cudaMalloc(reinterpret_cast<void**>(&feed_.blocks_done),
                         sizeof(unsigned int));
     if (status != cudaSuccess) return fail("block counter", status);
