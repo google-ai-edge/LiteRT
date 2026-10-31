@@ -178,6 +178,145 @@ TEST(GatherPrepareTest, RejectsBatchDimsOutsideInt16Range) {
   EXPECT_EQ(too_small.AllocateTensors(), kTfLiteError);
 }
 
+class ConstantPrepareGatherOpModel : public SingleOpModel {
+ public:
+  ConstantPrepareGatherOpModel(const TensorData& input,
+                               const std::vector<int32_t>& input_data,
+                               const TensorData& positions,
+                               const std::vector<int32_t>& positions_data,
+                               int axis = 0, int batch_dims = 0) {
+    input_ = AddConstInput(input, input_data);
+    positions_ = AddConstInput(positions, positions_data);
+    output_ = AddOutput(input.type);
+    SetBuiltinOp(BuiltinOperator_GATHER, BuiltinOptions_GatherOptions,
+                 CreateGatherOptions(builder_, axis, batch_dims).Union());
+    BuildInterpreter({GetShape(input_), GetShape(positions_)},
+                     /*num_threads=*/1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false,
+                     /*allocate_and_delegate=*/false);
+  }
+
+ private:
+  int input_;
+  int positions_;
+  int output_;
+};
+
+TEST(GatherPrepareTest, ValidNegativeAxisAndBatchDimsSucceed) {
+  GatherOpModel<int32_t, int32_t> model(
+      {TensorType_INT32, {2, 3, 2}}, {TensorType_INT32, {2, 2}},
+      /*constant_tensor=*/false,
+      {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+      {2, 0, 1, 2}, /*axis=*/-2, /*batch_dims=*/-1);
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+  EXPECT_THAT(model.GetOutputShape(), ElementsAreArray({2, 2, 2}));
+  EXPECT_THAT(model.GetOutput(), ElementsAreArray({5, 6, 1, 2, 9, 10, 11, 12}));
+}
+
+TEST(GatherPrepareTest, ConstantPrepareFailureDoesNotMarkEvalAsNoop) {
+  ConstantPrepareGatherOpModel invalid_const(
+      {TensorType_INT32, {2, 2}}, {10, 20, 30, 40},
+      {TensorType_INT32, {2}}, {-1, 0});
+  EXPECT_EQ(invalid_const.AllocateTensors(), kTfLiteError);
+  EXPECT_EQ(invalid_const.Invoke(), kTfLiteError);
+}
+
+TEST(GatherPrepareTest, RejectsInconsistentOrOverflowingShapesInEval) {
+  GatherOpModel<int32_t, int32_t> mismatched_output(
+      {TensorType_INT32, {2, 3}}, {TensorType_INT32, {2}},
+      /*constant_tensor=*/false, {1, 2, 3, 4, 5, 6}, {1, 0}, /*axis=*/0);
+  mismatched_output.GetOutputTensor(0)->dims->data[0] = 1;
+  EXPECT_EQ(mismatched_output.Invoke(), kTfLiteError);
+
+  GatherOpModel<int32_t, int32_t> mismatched_batch_dim(
+      {TensorType_INT32, {2, 3}}, {TensorType_INT32, {2, 2}},
+      /*constant_tensor=*/false, {1, 2, 3, 4, 5, 6}, {1, 0, 0, 1},
+      /*axis=*/1, /*batch_dims=*/1);
+  mismatched_batch_dim.GetInputTensor(0)->dims->data[0] = 1;
+  EXPECT_EQ(mismatched_batch_dim.Invoke(), kTfLiteError);
+
+  GatherOpModel<int32_t, int32_t> negative_output_dim(
+      {TensorType_INT32, {2, 3}}, {TensorType_INT32, {2}},
+      /*constant_tensor=*/false, {1, 2, 3, 4, 5, 6}, {1, 0}, /*axis=*/0);
+  negative_output_dim.GetOutputTensor(0)->dims->data[1] = -1;
+  EXPECT_EQ(negative_output_dim.Invoke(), kTfLiteError);
+
+  GatherOpModel<int32_t, int32_t> input_product_exceeds_int_max(
+      {TensorType_INT32, {2, 3}}, {TensorType_INT32, {2}},
+      /*constant_tensor=*/false, {1, 2, 3, 4, 5, 6}, {0, 0}, /*axis=*/0);
+  input_product_exceeds_int_max.GetInputTensor(0)->dims->data[0] = 46341;
+  input_product_exceeds_int_max.GetInputTensor(0)->dims->data[1] = 46341;
+  input_product_exceeds_int_max.GetInputTensor(1)->dims->data[0] = 0;
+  EXPECT_EQ(input_product_exceeds_int_max.Invoke(), kTfLiteError);
+
+  // Set dim 0 to 0 with axis=0 so CheckedNumElements(input) succeeds with 0
+  // while CheckedGatherComponentSizes rejects the 46341 * 46341 inner slice.
+  GatherOpModel<int32_t, int32_t> component_product_exceeds_int_max(
+      {TensorType_INT32, {2, 3, 1}}, {TensorType_INT32, {2}},
+      /*constant_tensor=*/false, {1, 2, 3, 4, 5, 6}, {0, 0}, /*axis=*/0);
+  component_product_exceeds_int_max.GetInputTensor(0)->dims->data[0] = 0;
+  component_product_exceeds_int_max.GetInputTensor(0)->dims->data[1] = 46341;
+  component_product_exceeds_int_max.GetInputTensor(0)->dims->data[2] = 46341;
+  component_product_exceeds_int_max.GetInputTensor(1)->dims->data[0] = 0;
+  EXPECT_EQ(component_product_exceeds_int_max.Invoke(), kTfLiteError);
+
+  GatherOpModel<int32_t, int32_t> insufficient_output_bytes(
+      {TensorType_INT32, {2, 3}}, {TensorType_INT32, {2}},
+      /*constant_tensor=*/false, {1, 2, 3, 4, 5, 6}, {1, 0}, /*axis=*/0);
+  TfLiteTensor* short_output = insufficient_output_bytes.GetOutputTensor(0);
+  const size_t orig_output_bytes = short_output->bytes;
+  short_output->bytes = orig_output_bytes - 1;
+  EXPECT_EQ(insufficient_output_bytes.Invoke(), kTfLiteError);
+  short_output->bytes = orig_output_bytes;
+
+  GatherOpModel<std::string, int32_t> oversized_string_positions(
+      {TensorType_STRING, {3}}, {TensorType_INT32, {2}},
+      /*constant_tensor=*/false, {"a", "b", "c"}, {0, 2}, /*axis=*/0);
+  TfLiteTensor* short_str_positions =
+      oversized_string_positions.GetInputTensor(1);
+  const size_t orig_str_pos_bytes = short_str_positions->bytes;
+  short_str_positions->bytes = sizeof(int32_t);
+  const TfLiteStatus oversized_string_status =
+      oversized_string_positions.Invoke();
+  EXPECT_EQ(oversized_string_status, kTfLiteError);
+  short_str_positions->bytes = orig_str_pos_bytes;
+
+  // The base kernel accepts the truncated-capacity case above, so gate these
+  // pointer-ordering checks on the patched rejection to avoid dereferencing a
+  // deliberately null pointer in the unpatched red run.
+  if (oversized_string_status == kTfLiteError) {
+    GatherOpModel<std::string, int32_t> null_string_positions(
+        {TensorType_STRING, {3}}, {TensorType_INT32, {2}},
+        /*constant_tensor=*/false, {"a", "b", "c"}, {0, 2}, /*axis=*/0);
+    TfLiteTensor* null_positions = null_string_positions.GetInputTensor(1);
+    char* original_positions_data = null_positions->data.raw;
+    null_positions->data.raw = nullptr;
+    EXPECT_EQ(null_string_positions.Invoke(), kTfLiteError);
+    null_positions->data.raw = original_positions_data;
+
+    GatherOpModel<std::string, int32_t> null_string_input(
+        {TensorType_STRING, {3}}, {TensorType_INT32, {2}},
+        /*constant_tensor=*/false, {"a", "b", "c"}, {0, 2}, /*axis=*/0);
+    TfLiteTensor* null_input = null_string_input.GetInputTensor(0);
+    char* original_input_data = null_input->data.raw;
+    null_input->data.raw = nullptr;
+    EXPECT_EQ(null_string_input.Invoke(), kTfLiteError);
+    null_input->data.raw = original_input_data;
+
+    GatherOpModel<std::string, int32_t> null_string_output(
+        {TensorType_STRING, {3}}, {TensorType_INT32, {2}},
+        /*constant_tensor=*/false, {"a", "b", "c"}, {0, 2}, /*axis=*/0);
+    ASSERT_EQ(null_string_output.Invoke(), kTfLiteOk);
+    TfLiteTensor* null_output = null_string_output.GetOutputTensor(0);
+    ASSERT_GT(null_output->bytes, 0);
+    char* original_output_data = null_output->data.raw;
+    null_output->data.raw = nullptr;
+    EXPECT_EQ(null_string_output.Invoke(), kTfLiteError);
+    null_output->data.raw = original_output_data;
+  }
+}
+
 struct GatherOpTest : public testing::TestWithParam<bool> {};
 
 INSTANTIATE_TEST_SUITE_P(ConstantTensor, GatherOpTest, testing::Bool());
