@@ -148,13 +148,16 @@ __host__ __device__ constexpr size_t SharedBytesFor() {
   // row max and sum, and mask bytes [rows][kChunk]. Column value caches are
   // read straight into registers (below), so no staging tile.
   // Row value caches with few rows also merge the warps' value sums through
-  // shared memory ([rows][depth] fp32) at the end.
+  // shared memory at the end: half the warps' partials ([warps / 2][rows]
+  // [depth] fp32), the other half added in, each slot by one warp, then the
+  // slots summed in order (a fixed order: the same bits every run).
   return static_cast<size_t>(kRowsCap) * kDepth * sizeof(float) +
          static_cast<size_t>(kChunk) * RowsPadFor<kRowsCap>() * sizeof(float) +
          3 * kRowsCap * sizeof(float) +
          static_cast<size_t>(kRowsCap) * kChunk * sizeof(bool) +
          (!kValueColumns && kRowsCap <= 4
-              ? static_cast<size_t>(kRowsCap) * kDepth * sizeof(float)
+              ? static_cast<size_t>(ThreadsFor<kDepth>() / 32 / 2) * kRowsCap *
+                    kDepth * sizeof(float)
               : 0);
 }
 
@@ -260,8 +263,8 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   float* l_s = m_s + kRowsCap;                         // rows
   float* scale_s = l_s + kRowsCap;                     // rows
   bool* mask_s = reinterpret_cast<bool*>(scale_s + kRowsCap);  // rows*kChunk
-  float* merge_s =
-      reinterpret_cast<float*>(mask_s + kRowsCap * kChunk);  // rows * depth
+  float* merge_s = reinterpret_cast<float*>(
+      mask_s + kRowsCap * kChunk);  // [warps / 2][rows][depth]
 
   const int split = blockIdx.x;
   const int head = blockIdx.y;
@@ -648,23 +651,49 @@ __global__ void __launch_bounds__(ThreadsFor<kDepth>(), 2)
   }
   const size_t part = (static_cast<size_t>(head) * splits + split) * rows;
   if constexpr (kWarpValues) {
-    // The warps' value sums, merged through shared memory.
-    for (int i = tid; i < rows * kDepth; i += kThreads) {
-      merge_s[i] = 0.0f;
+    // The warps' value sums, merged through shared memory in a fixed order
+    // (shared-memory atomics would add them in whatever order the warps
+    // arrive, and the 26B's logits then differed from run to run): the first
+    // half of the warps store their partials, the second half add theirs
+    // into the slot of their partner warp, and the slots are summed in
+    // order.
+    constexpr int kHalf = kWarps / 2;
+    static_assert(kWarps % 2 == 0, "the merge pairs the warps");
+    const int slot = warp < kHalf ? warp : warp - kHalf;
+    float* mine = merge_s + static_cast<size_t>(slot) * kRowsCap * kDepth;
+    if (warp < kHalf) {
+#pragma unroll
+      for (int r = 0; r < kRowsCap; ++r) {
+        if (r < rows) {
+#pragma unroll
+          for (int e = 0; e < kLaneVals; ++e) {
+            mine[r * kDepth + lane * kLaneVals + e] = acc[r][e];
+          }
+        }
+      }
     }
     __syncthreads();
+    if (warp >= kHalf) {
 #pragma unroll
-    for (int r = 0; r < kRowsCap; ++r) {
-      if (r < rows) {
+      for (int r = 0; r < kRowsCap; ++r) {
+        if (r < rows) {
 #pragma unroll
-        for (int e = 0; e < kLaneVals; ++e) {
-          atomicAdd(merge_s + r * kDepth + lane * kLaneVals + e, acc[r][e]);
+          for (int e = 0; e < kLaneVals; ++e) {
+            mine[r * kDepth + lane * kLaneVals + e] += acc[r][e];
+          }
         }
       }
     }
     __syncthreads();
     for (int i = tid; i < rows * kDepth; i += kThreads) {
-      ws_acc[part * kDepth + i] = merge_s[i];
+      const int r = i / kDepth;
+      const int d = i - r * kDepth;
+      float sum = 0.0f;
+#pragma unroll
+      for (int s = 0; s < kHalf; ++s) {
+        sum += merge_s[(static_cast<size_t>(s) * kRowsCap + r) * kDepth + d];
+      }
+      ws_acc[part * kDepth + i] = sum;
     }
   } else {
 #pragma unroll

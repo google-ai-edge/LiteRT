@@ -31,6 +31,13 @@ cc_library(
 )
 
 cc_library(
+    name = "topk_candidates_c_api",
+    hdrs = ["topk_candidates_c_api.h"],
+    visibility = ["//visibility:public"],
+    deps = ["//litert/c:litert_common"],
+)
+
+cc_library(
     name = "dispatch_profiler",
     srcs = ["dispatch_profiler.cc"],
     hdrs = ["dispatch_profiler.h"],
@@ -207,6 +214,32 @@ cc_library(
     ],
 )
 
+cuda_library(
+    name = "topk_candidates_kernel_cuda",
+    srcs = ["topk_candidates_kernel.cu"],
+    hdrs = ["topk_candidates_kernel.h"],
+    linkstatic = 1,
+    tags = ["manual"],
+    deps = ["@local_cuda//:cuda_runtime"],
+)
+
+cc_import(
+    name = "topk_candidates_kernel_archive",
+    static_library = ":topk_candidates_kernel_cuda",
+    tags = ["manual"],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "topk_candidates_kernel",
+    hdrs = ["topk_candidates_kernel.h"],
+    tags = ["manual"],
+    deps = [
+        ":topk_candidates_kernel_archive",
+        "@local_cuda//:cuda_headers",
+    ],
+)
+
 litert_dispatch_api(
     name = "dispatch_api",
     srcs = ["dispatch_api.cc"],
@@ -240,6 +273,8 @@ litert_dispatch_api(
         ":greedy_sampler_c_api",
         ":greedy_sampler_kernel",
         ":runtime_cache",
+        ":topk_candidates_c_api",
+        ":topk_candidates_kernel",
         ":weight_store",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
@@ -378,6 +413,57 @@ cc_test(
     deps = [
         ":dispatch_api",
         ":greedy_sampler_c_api",
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_custom_tensor_buffer_handlers_def",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/vendors/nvidia:cache_layout",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "topk_candidates_kernel_test",
+    srcs = ["topk_candidates_kernel_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":topk_candidates_kernel",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "topk_candidates_c_api_test",
+    srcs = ["topk_candidates_c_api_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":dispatch_api",
+        ":topk_candidates_c_api",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_model_types",

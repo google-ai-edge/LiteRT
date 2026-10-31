@@ -62,6 +62,15 @@ cc_library(
     ],
 )
 
+# The dispatch C API for a test in another repository that drives a dispatch
+# library directly (LiteRT-LM's NVIDIA sampler integration test).
+cc_library(
+    name = "litert_dispatch_c_api_testonly",
+    testonly = 1,
+    visibility = ["//visibility:public"],
+    deps = [":litert_dispatch_c_api"],
+)
+
 # This test verifies that the C API header files can build via C compiler.
 cc_test(
     name = "litert_vendor_c_api_common_test",

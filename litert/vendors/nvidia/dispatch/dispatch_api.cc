@@ -70,6 +70,8 @@
 #include "litert/vendors/nvidia/dispatch/runtime_cache.h"
 #include "litert/vendors/nvidia/dispatch/tensor_buffer_layout.h"
 #include "litert/vendors/nvidia/dispatch/tensor_buffer_view.h"
+#include "litert/vendors/nvidia/dispatch/topk_candidates_c_api.h"
+#include "litert/vendors/nvidia/dispatch/topk_candidates_kernel.h"
 #include "litert/vendors/nvidia/dispatch/weight_store.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
@@ -858,19 +860,21 @@ Expected<void> EnqueueFusedGreedy(void* device_ptr, cudaStream_t stream,
   return {};
 }
 
-LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
-                                LiteRtTensorBuffer logits, size_t rows,
-                                size_t count, int32_t* token_ids,
-                                bool legacy_f32_only) {
-  if (context == nullptr || logits == nullptr || token_ids == nullptr ||
-      rows == 0 || count == 0 ||
-      rows > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
-      count > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
-      rows > std::numeric_limits<size_t>::max() / count / sizeof(float) ||
-      context->runtime_context == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  const LiteRtRuntimeContext* runtime_context = context->runtime_context;
+struct ResolvedSamplerLogits {
+  HwMemoryHandle handle = nullptr;
+  void* device_logits = nullptr;
+  bool fp16 = false;
+  int device = -1;
+};
+
+// A dense [1, rows, count] float32 (or, unless legacy_f32_only, float16)
+// NVIDIA CUDA buffer, after its producer's event: its handle, its device
+// pointer and its device. Unsupported buffers, element types and layouts are
+// kLiteRtStatusErrorUnsupported, so a caller can keep its host sampler.
+LiteRtStatus ResolveSamplerLogits(const LiteRtRuntimeContext* runtime_context,
+                                  LiteRtTensorBuffer logits, size_t rows,
+                                  size_t count, bool legacy_f32_only,
+                                  ResolvedSamplerLogits* resolved) {
   if (runtime_context->get_tensor_buffer_type == nullptr ||
       runtime_context->get_tensor_buffer_tensor_type == nullptr ||
       runtime_context->get_tensor_buffer_packed_size == nullptr ||
@@ -950,7 +954,269 @@ LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
     cudaGetLastError();
     return kLiteRtStatusErrorUnsupported;
   }
-  if (context->device >= 0 && context->device != attributes.device) {
+  resolved->handle = handle;
+  resolved->device_logits = device_logits;
+  resolved->fp16 = fp16;
+  resolved->device = attributes.device;
+  return kLiteRtStatusOk;
+}
+
+// The k largest logits of every row (topk_candidates_c_api.h).
+struct NvidiaTopKCandidatesContext {
+  const LiteRtRuntimeContext* runtime_context = nullptr;
+  int device = -1;
+  cudaStream_t stream = nullptr;
+  int32_t* device_ids = nullptr;
+  float* device_values = nullptr;
+  int32_t* device_flags = nullptr;
+  int32_t* host_ids = nullptr;
+  float* host_values = nullptr;
+  int32_t* host_flags = nullptr;
+  // Candidate slots (rows * k) and row slots the buffers hold.
+  size_t slots = 0;
+  size_t row_slots = 0;
+  uint64_t calls = 0;
+};
+
+void FreeNvidiaTopKCandidatesBuffers(NvidiaTopKCandidatesContext* context) {
+  if (context->device_ids != nullptr) cudaFree(context->device_ids);
+  if (context->device_values != nullptr) cudaFree(context->device_values);
+  if (context->device_flags != nullptr) cudaFree(context->device_flags);
+  if (context->host_ids != nullptr) cudaFreeHost(context->host_ids);
+  if (context->host_values != nullptr) cudaFreeHost(context->host_values);
+  if (context->host_flags != nullptr) cudaFreeHost(context->host_flags);
+  context->device_ids = nullptr;
+  context->device_values = nullptr;
+  context->device_flags = nullptr;
+  context->host_ids = nullptr;
+  context->host_values = nullptr;
+  context->host_flags = nullptr;
+  context->slots = 0;
+  context->row_slots = 0;
+}
+
+void DestroyNvidiaTopKCandidatesResources(
+    NvidiaTopKCandidatesContext* context) {
+  if (context == nullptr) {
+    return;
+  }
+  int previous_device = -1;
+  const bool restore_device = context->device >= 0 &&
+                              cudaGetDevice(&previous_device) == cudaSuccess &&
+                              previous_device != context->device;
+  if (restore_device) {
+    cudaSetDevice(context->device);
+  }
+  if (context->stream != nullptr) {
+    cudaStreamSynchronize(context->stream);
+  }
+  FreeNvidiaTopKCandidatesBuffers(context);
+  if (context->stream != nullptr) {
+    cudaStreamDestroy(context->stream);
+    context->stream = nullptr;
+  }
+  if (restore_device) {
+    cudaSetDevice(previous_device);
+  }
+  if (context->calls > 0) {
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA CUDA top-k candidate selection completed %llu calls",
+               static_cast<unsigned long long>(context->calls));
+  }
+}
+
+LiteRtStatus EnsureNvidiaTopKCandidatesResources(
+    NvidiaTopKCandidatesContext* context, int device, size_t rows, size_t k) {
+  if (context->device >= 0 && context->device != device) {
+    return kLiteRtStatusErrorUnsupported;
+  }
+  if (context->device < 0) {
+    int compute_capability_major = 0;
+    const cudaError_t capability_status = cudaDeviceGetAttribute(
+        &compute_capability_major, cudaDevAttrComputeCapabilityMajor, device);
+    if (capability_status != cudaSuccess) {
+      return CudaStatus(capability_status,
+                        "cudaDeviceGetAttribute CUDA top-k candidates");
+    }
+    // The archive carries compute_80 PTX; older devices keep the host path.
+    if (compute_capability_major < 8) {
+      return kLiteRtStatusErrorUnsupported;
+    }
+    cudaStream_t stream = nullptr;
+    LITERT_RETURN_IF_ERROR(
+        CudaStatus(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking),
+                   "cudaStreamCreateWithFlags CUDA top-k candidates"));
+    context->device = device;
+    context->stream = stream;
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA CUDA top-k candidate selection initialized on device %d",
+               device);
+  }
+  const size_t slots = rows * k;
+  if (context->slots < slots || context->row_slots < rows) {
+    // Previous calls synchronized before returning: the buffers are idle.
+    FreeNvidiaTopKCandidatesBuffers(context);
+    const cudaError_t status =
+        cudaMalloc(reinterpret_cast<void**>(&context->device_ids),
+                   slots * sizeof(int32_t)) != cudaSuccess ||
+                cudaMalloc(reinterpret_cast<void**>(&context->device_values),
+                           slots * sizeof(float)) != cudaSuccess ||
+                cudaMalloc(reinterpret_cast<void**>(&context->device_flags),
+                           rows * sizeof(int32_t)) != cudaSuccess ||
+                cudaMallocHost(reinterpret_cast<void**>(&context->host_ids),
+                               slots * sizeof(int32_t)) != cudaSuccess ||
+                cudaMallocHost(reinterpret_cast<void**>(&context->host_values),
+                               slots * sizeof(float)) != cudaSuccess ||
+                cudaMallocHost(reinterpret_cast<void**>(&context->host_flags),
+                               rows * sizeof(int32_t)) != cudaSuccess
+            ? cudaGetLastError()
+            : cudaSuccess;
+    if (status != cudaSuccess) {
+      FreeNvidiaTopKCandidatesBuffers(context);
+      return CudaStatus(status, "allocate CUDA top-k candidate buffers");
+    }
+    context->slots = slots;
+    context->row_slots = rows;
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus SelectNvidiaTopKCandidates(NvidiaTopKCandidatesContext* context,
+                                        LiteRtTensorBuffer logits, size_t rows,
+                                        size_t count, int32_t k, int32_t* ids,
+                                        float* values, int32_t* row_flags) {
+  if (context == nullptr || logits == nullptr || ids == nullptr ||
+      values == nullptr || row_flags == nullptr || rows == 0 || count == 0 ||
+      rows > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
+      count > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
+      rows > std::numeric_limits<size_t>::max() / count / sizeof(float) ||
+      k < 1 || k > LiteRtNvidiaTopKCandidatesMaxK() ||
+      static_cast<size_t>(k) > count || context->runtime_context == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  ResolvedSamplerLogits resolved;
+  LITERT_RETURN_IF_ERROR(
+      ResolveSamplerLogits(context->runtime_context, logits, rows, count,
+                           /*legacy_f32_only=*/false, &resolved));
+  if (context->device >= 0 && context->device != resolved.device) {
+    return kLiteRtStatusErrorUnsupported;
+  }
+  int previous_device = -1;
+  LITERT_RETURN_IF_ERROR(CudaStatus(cudaGetDevice(&previous_device),
+                                    "cudaGetDevice top-k candidates"));
+  const bool restore_device = previous_device != resolved.device;
+  if (restore_device) {
+    LITERT_RETURN_IF_ERROR(CudaStatus(cudaSetDevice(resolved.device),
+                                      "cudaSetDevice top-k candidates"));
+  }
+  LiteRtStatus status = EnsureNvidiaTopKCandidatesResources(
+      context, resolved.device, rows, static_cast<size_t>(k));
+  if (status == kLiteRtStatusOk) {
+    // What the host wrote to the logits since the device last had them (a
+    // constraint's mask, applied through a host lock) reaches the device in
+    // stream order before the kernel reads them, as it would before an
+    // invocation read them.
+    status = CudaTensorBufferRegistry::Get().Upload(resolved.handle,
+                                                    context->stream, nullptr);
+  }
+  if (status == kLiteRtStatusOk) {
+    const cudaError_t launch_status =
+        resolved.fp16
+            ? LiteRtNvidiaLaunchF16TopKCandidateRows(
+                  static_cast<const uint16_t*>(resolved.device_logits), rows,
+                  count, k, context->device_ids, context->device_values,
+                  context->device_flags, context->stream)
+            : LiteRtNvidiaLaunchF32TopKCandidateRows(
+                  static_cast<const float*>(resolved.device_logits), rows,
+                  count, k, context->device_ids, context->device_values,
+                  context->device_flags, context->stream);
+    status = CudaStatus(launch_status, "Launch CUDA top-k candidates");
+  }
+  const size_t slots = rows * static_cast<size_t>(k);
+  if (status == kLiteRtStatusOk) {
+    status =
+        CudaStatus(cudaMemcpyAsync(context->host_ids, context->device_ids,
+                                   slots * sizeof(int32_t),
+                                   cudaMemcpyDeviceToHost, context->stream),
+                   "cudaMemcpyAsync CUDA top-k candidate ids");
+  }
+  if (status == kLiteRtStatusOk) {
+    status =
+        CudaStatus(cudaMemcpyAsync(context->host_values, context->device_values,
+                                   slots * sizeof(float),
+                                   cudaMemcpyDeviceToHost, context->stream),
+                   "cudaMemcpyAsync CUDA top-k candidate values");
+  }
+  if (status == kLiteRtStatusOk) {
+    status =
+        CudaStatus(cudaMemcpyAsync(context->host_flags, context->device_flags,
+                                   rows * sizeof(int32_t),
+                                   cudaMemcpyDeviceToHost, context->stream),
+                   "cudaMemcpyAsync CUDA top-k candidate flags");
+  }
+  if (context->stream != nullptr) {
+    // Also complete any earlier work if a later launch or copy fails, so the
+    // caller may release the logits or fall back to the host after an error.
+    const LiteRtStatus sync_status =
+        CudaStatus(cudaStreamSynchronize(context->stream),
+                   "cudaStreamSynchronize CUDA top-k candidates");
+    if (status == kLiteRtStatusOk) {
+      status = sync_status;
+    }
+  }
+  if (status == kLiteRtStatusOk) {
+    for (size_t row = 0; row < rows; ++row) {
+      if ((context->host_flags[row] &
+           kLiteRtNvidiaTopKCandidatesInconsistent) != 0) {
+        LITERT_LOG(LITERT_ERROR,
+                   "NVIDIA CUDA top-k candidate selection failed for row %zu",
+                   row);
+        status = kLiteRtStatusErrorRuntimeFailure;
+        break;
+      }
+    }
+  }
+  if (status == kLiteRtStatusOk) {
+    std::copy_n(context->host_ids, slots, ids);
+    std::copy_n(context->host_values, slots, values);
+    for (size_t row = 0; row < rows; ++row) {
+      row_flags[row] =
+          (context->host_flags[row] & kLiteRtNvidiaTopKCandidatesNaN)
+              ? LITERT_DISPATCH_NVIDIA_TOPK_CANDIDATES_NAN
+              : 0;
+    }
+    ++context->calls;
+  }
+  if (restore_device) {
+    const LiteRtStatus restore_status =
+        CudaStatus(cudaSetDevice(previous_device), "restore CUDA device");
+    if (restore_status != kLiteRtStatusOk) {
+      status = restore_status;
+    }
+  }
+  return status;
+}
+
+LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
+                                LiteRtTensorBuffer logits, size_t rows,
+                                size_t count, int32_t* token_ids,
+                                bool legacy_f32_only) {
+  if (context == nullptr || logits == nullptr || token_ids == nullptr ||
+      rows == 0 || count == 0 ||
+      rows > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
+      count > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
+      rows > std::numeric_limits<size_t>::max() / count / sizeof(float) ||
+      context->runtime_context == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  ResolvedSamplerLogits resolved;
+  LITERT_RETURN_IF_ERROR(ResolveSamplerLogits(context->runtime_context, logits,
+                                              rows, count, legacy_f32_only,
+                                              &resolved));
+  HwMemoryHandle handle = resolved.handle;
+  void* device_logits = resolved.device_logits;
+  const bool fp16 = resolved.fp16;
+  if (context->device >= 0 && context->device != resolved.device) {
     return kLiteRtStatusErrorUnsupported;
   }
   if (FusedSamplingEnabled() &&
@@ -968,13 +1234,13 @@ LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
   int previous_device = -1;
   LITERT_RETURN_IF_ERROR(
       CudaStatus(cudaGetDevice(&previous_device), "cudaGetDevice sampler"));
-  const bool restore_device = previous_device != attributes.device;
+  const bool restore_device = previous_device != resolved.device;
   if (restore_device) {
     LITERT_RETURN_IF_ERROR(
-        CudaStatus(cudaSetDevice(attributes.device), "cudaSetDevice sampler"));
+        CudaStatus(cudaSetDevice(resolved.device), "cudaSetDevice sampler"));
   }
-  LiteRtStatus status = EnsureNvidiaGreedySamplerResources(
-      context, attributes.device, count, rows);
+  LiteRtStatus status =
+      EnsureNvidiaGreedySamplerResources(context, resolved.device, count, rows);
   if (status == kLiteRtStatusOk) {
     // What the host wrote to the logits since the device last had them (a
     // constraint's mask, applied through a host lock) reaches the device in
@@ -3713,6 +3979,45 @@ extern "C" LiteRtStatus LiteRtDispatchNvidiaGreedySamplerSampleBatched(
   return SampleNvidiaGreedy(static_cast<NvidiaGreedySamplerContext*>(sampler),
                             logits, rows, vocab_size, token_ids,
                             /*legacy_f32_only=*/false);
+}
+
+extern "C" int32_t LiteRtDispatchNvidiaTopKCandidatesMaxK(void) {
+  return LiteRtNvidiaTopKCandidatesMaxK();
+}
+
+extern "C" LiteRtStatus LiteRtDispatchNvidiaTopKCandidatesCreate(
+    LiteRtDispatchNvidiaTopKCandidates* selector) {
+  if (selector == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *selector = nullptr;
+  auto* context = new (std::nothrow) NvidiaTopKCandidatesContext;
+  if (context == nullptr) {
+    return kLiteRtStatusErrorMemoryAllocationFailure;
+  }
+  if (static_runtime_context == nullptr) {
+    delete context;
+    return kLiteRtStatusErrorUnsupported;
+  }
+  context->runtime_context = static_runtime_context;
+  *selector = context;
+  return kLiteRtStatusOk;
+}
+
+extern "C" void LiteRtDispatchNvidiaTopKCandidatesDestroy(
+    LiteRtDispatchNvidiaTopKCandidates selector) {
+  auto* context = static_cast<NvidiaTopKCandidatesContext*>(selector);
+  DestroyNvidiaTopKCandidatesResources(context);
+  delete context;
+}
+
+extern "C" LiteRtStatus LiteRtDispatchNvidiaTopKCandidatesSelect(
+    LiteRtDispatchNvidiaTopKCandidates selector, LiteRtTensorBuffer logits,
+    size_t rows, size_t vocab_size, int32_t k, int32_t* ids, float* values,
+    int32_t* row_flags) {
+  return SelectNvidiaTopKCandidates(
+      static_cast<NvidiaTopKCandidatesContext*>(selector), logits, rows,
+      vocab_size, k, ids, values, row_flags);
 }
 
 extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(

@@ -50,11 +50,14 @@ nb_model_file() {
 
 # nb_build_id -> "<litert sha>[+]-<litert-lm sha>[+]" (a + marks local changes); the model
 # caches of one build live under it, because the compiler, dispatch and CLI binaries decide
-# what the AOT and runtime caches hold.
+# what the AOT and runtime caches hold. The LiteRT side is the last commit that changed
+# anything but this benchmark directory: its scripts and tools are not part of the binaries,
+# so editing them keeps the pools warm.
 nb_build_id() {
   local rt lm
-  rt=$(git -C "$NB_RT" rev-parse --short=9 HEAD)
-  [[ -z $(git -C "$NB_RT" status --porcelain --untracked-files=no) ]] || rt+=+
+  local -a sources=(. ':(exclude)litert/vendors/nvidia/benchmark')
+  rt=$(git -C "$NB_RT" log -1 --format=%h --abbrev=9 HEAD -- "${sources[@]}")
+  [[ -z $(git -C "$NB_RT" status --porcelain --untracked-files=no -- "${sources[@]}") ]] || rt+=+
   lm=$(git -C "$NB_LM" rev-parse --short=8 HEAD)
   [[ -z $(git -C "$NB_LM" status --porcelain --untracked-files=no) ]] || lm+=+
   echo "$rt-$lm"
