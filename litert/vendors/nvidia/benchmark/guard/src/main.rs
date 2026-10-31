@@ -344,8 +344,16 @@ fn main() -> Result<()> {
         Command::List => {
             let (env, _, _) = resolve(&cli)?;
             for m in list_captures(&env) {
+                let env = if m.env.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "\tenv {}",
+                        m.env.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(",")
+                    )
+                };
                 println!(
-                    "{}\t{}\t{}\t{}\t{}\t{}{}",
+                    "{}\t{}\t{}\t{}\t{}\t{}{}{env}",
                     m.name,
                     m.build_id,
                     m.tier,

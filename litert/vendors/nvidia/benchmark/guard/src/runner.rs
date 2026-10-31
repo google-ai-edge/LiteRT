@@ -497,8 +497,12 @@ pub fn run_memory_probe(env: &BenchEnv, probe: &MemoryProbe) -> Result<MemoryRun
             args.push(prompt.display().to_string());
         }
         args.extend(env.bench_args(probe.model));
-        let bench_log = File::create(probe.out_dir.join(format!("{label}.bench.log")))?;
-        Command::new(env.bench_dir.join("bench.sh"))
+        // A run directory of an earlier attempt would be read as this one's.
+        let run_dir = probe.out_dir.join(&label);
+        let _ = std::fs::remove_dir_all(&run_dir);
+        let log_path = probe.out_dir.join(format!("{label}.bench.log"));
+        let bench_log = File::create(&log_path)?;
+        let status = Command::new(env.bench_dir.join("bench.sh"))
             .args(&args)
             .env("LITERT_RT_DIR", &env.rt)
             .stdin(Stdio::null())
@@ -506,12 +510,14 @@ pub fn run_memory_probe(env: &BenchEnv, probe: &MemoryProbe) -> Result<MemoryRun
             .stderr(bench_log)
             .status()
             .context("running bench.sh")?;
-        let summary = summarize_memory_run(
-            &probe.out_dir.join(&label),
-            probe.model,
-            probe.mtp,
-            probe.workload,
-        )?;
+        if !run_dir.join("meta.json").is_file() {
+            // bench.sh refused before the run (an unfit clock in formal mode, another GPU process).
+            let log = std::fs::read_to_string(&log_path).unwrap_or_default();
+            let tail: Vec<&str> =
+                log.lines().rev().take(3).collect::<Vec<_>>().into_iter().rev().collect();
+            bail!("bench.sh made no run for {label} ({status}): {}", tail.join(" | "));
+        }
+        let summary = summarize_memory_run(&run_dir, probe.model, probe.mtp, probe.workload)?;
         let compiled = summary.compiled;
         run = Some(summary);
         if !compiled {

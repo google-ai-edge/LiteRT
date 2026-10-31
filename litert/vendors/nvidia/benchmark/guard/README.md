@@ -140,8 +140,13 @@ scales: on cuda-wsl from 2026-10-20 every rate read 1 to 5 percent low.
 of a capture with that environment, in a model pool of its own (so a
 compile-time knob compiles its own engines), and the manifest records it:
 `capture --name fp16 --env LITERT_NVIDIA_GEMM_INT8=0` beside the plain
-capture is the INT8 GEMM's A/B. Names the probes set themselves, and
-env.sh's pool variables, are refused.
+capture is the INT8 GEMM's A/B. Names the numerics and memory probes set
+themselves (the dumps, the memory profile) and env.sh's pool variables are
+refused; a name the text probes or the autopsy set themselves (the MTP
+verifier's sampling, the upload mode, the CUDA graph mode) skips those
+probes, with a note, rather than run them without it. Each timed run keeps
+the clock report bench.sh made for it, and a comparison judges the runs by
+their own clocks, so a resumed capture's earlier runs keep theirs.
 
 **Kernels.** One run of the `short` workload in the dispatch's own-graph
 mode with `LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_AUTOPSY` and `_DOT`: every

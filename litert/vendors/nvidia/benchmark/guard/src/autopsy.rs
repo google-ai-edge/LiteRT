@@ -53,6 +53,10 @@ pub struct Autopsy {
     pub workload: String,
     pub mtp: bool,
     pub functions: Vec<FunctionAutopsy>,
+    /// Whether the host's clock was fit when bench.sh ran the autopsy (None:
+    /// not recorded).
+    #[serde(default)]
+    pub clock_fit: Option<bool>,
 }
 
 /// The kernel names of a graph's DOT (cudaGraphDebugDotPrint), by node id.
@@ -279,7 +283,20 @@ pub fn load_autopsy_dir(dir: &Path, model: &str, workload: &str, mtp: bool) -> R
             timeline.as_deref(),
         ));
     }
-    Ok(Autopsy { model: model.to_string(), workload: workload.to_string(), mtp, functions })
+    let label = format!("{model}_{workload}_{}_autopsy", if mtp { "mtp" } else { "plain" });
+    let clock_fit = std::fs::read_to_string(dir.join(&label).join("meta.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|meta| {
+            meta.get("host_clock").and_then(|c| c.get("fit")).and_then(|f| f.as_bool())
+        });
+    Ok(Autopsy {
+        model: model.to_string(),
+        workload: workload.to_string(),
+        mtp,
+        functions,
+        clock_fit,
+    })
 }
 
 /// One kernel (by function and short name) in both autopsies.
@@ -466,12 +483,14 @@ mod tests {
             workload: "short".into(),
             mtp: false,
             functions: vec![base],
+            clock_fit: None,
         };
         let b = Autopsy {
             model: "12b".into(),
             workload: "short".into(),
             mtp: false,
             functions: vec![cand],
+            clock_fit: None,
         };
         let diff = diff_autopsies(&a, &b);
         assert_eq!(diff.functions.len(), 1);

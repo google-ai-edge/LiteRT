@@ -39,6 +39,10 @@ pub struct PerfPoint {
     pub init_total_s: Option<f64>,
     pub max_rss_gib: Option<f64>,
     pub exit_code: i32,
+    /// Whether clock_check.py found the host's clock fit when bench.sh ran
+    /// this run (its meta.json's host_clock; None: not recorded).
+    #[serde(default)]
+    pub clock_fit: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,6 +58,8 @@ struct BenchMeta {
     iterations: usize,
     warmups: usize,
     exit_code: i32,
+    #[serde(default)]
+    host_clock: Option<serde_json::Value>,
 }
 
 /// Reads a bench.sh run directory (meta.json, cli.log, time.txt).
@@ -97,6 +103,7 @@ pub fn summarize_run(run_dir: &Path) -> Result<PerfPoint> {
         init_total_s: log.iterations.first().and_then(|i| i.init_total_s),
         max_rss_gib,
         exit_code: meta.exit_code,
+        clock_fit: meta.host_clock.as_ref().and_then(|c| c.get("fit")).and_then(|f| f.as_bool()),
     })
 }
 
@@ -395,6 +402,7 @@ mod tests {
             init_total_s: None,
             max_rss_gib: None,
             exit_code: 0,
+            clock_fit: None,
         }
     }
 

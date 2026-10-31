@@ -99,6 +99,33 @@ pub struct CaptureOptions {
     pub allow_unfit_clock: bool,
 }
 
+/// Names the text probes and the autopsy set themselves: the variants of the
+/// text probes (the MTP verifier's sampling, the upload mode) and the
+/// autopsy's own step graph. An extra environment that sets one would not
+/// reach them, so they are skipped, with a note, rather than run without it.
+pub const TEXT_PROBE_NAMES: [&str; 2] =
+    ["LITERT_NVIDIA_MTP_GPU_SAMPLING", "LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD"];
+pub const AUTOPSY_NAMES: [&str; 4] = [
+    "LITERT_NVIDIA_DISPATCH_CUDA_GRAPH",
+    "LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_AUTOPSY",
+    "LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_DOT",
+    "LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_TIMELINE",
+];
+
+/// The names of `extra` among `names`.
+pub fn overridden(extra: &[(String, String)], names: &[&str]) -> Vec<String> {
+    extra.iter().filter(|(k, _)| names.contains(&k.as_str())).map(|(k, _)| k.clone()).collect()
+}
+
+/// Adds a note, replacing an earlier one of the same kind (its text up to the
+/// first ':' or '('): a resumed capture keeps one note per kind, the latest.
+pub fn push_note(notes: &mut Vec<String>, note: String) {
+    let kind = |n: &str| n.split([':', '(']).next().unwrap_or(n).trim().to_string();
+    let key = kind(&note);
+    notes.retain(|n| kind(n) != key);
+    notes.push(note);
+}
+
 pub fn guard_root(env: &BenchEnv) -> PathBuf {
     env.root.join("guard")
 }
@@ -258,13 +285,15 @@ pub fn run_capture(
             if !fit {
                 let reasons = report.get("reasons").map(|r| r.to_string()).unwrap_or_default();
                 if opts.allow_unfit_clock {
-                    let note = format!("timed probes ran on an unfit clock ({reasons}): their numbers are diagnostic");
+                    let note = format!(
+                        "timed probes on an unfit clock: ({reasons}) their numbers are diagnostic"
+                    );
                     eprintln!("warning: {note}");
-                    capture.manifest.notes.push(note);
+                    push_note(&mut capture.manifest.notes, note);
                 } else if opts.perf || opts.autopsy {
-                    let note = format!("timed probes skipped: the host's clock is unfit ({reasons}); --allow-unfit-clock runs them as diagnostic");
+                    let note = format!("timed probes on an unfit clock: skipped ({reasons}); --allow-unfit-clock runs them as diagnostic");
                     eprintln!("{note}");
-                    capture.manifest.notes.push(note);
+                    push_note(&mut capture.manifest.notes, note);
                     timed_ok = false;
                 }
             }
@@ -274,10 +303,26 @@ pub fn run_capture(
         Err(error) => {
             let note = format!("the host's clock was not checked: {error}");
             eprintln!("warning: {note}");
-            capture.manifest.notes.push(note);
+            push_note(&mut capture.manifest.notes, note);
         }
     }
-    capture.manifest.notes.dedup();
+    let text_conflict = overridden(&env.extra_env, &TEXT_PROBE_NAMES);
+    let texts_ok = text_conflict.is_empty();
+    if opts.texts && !texts_ok {
+        let note = format!("text probes: skipped, the extra environment sets {} (their variants set it themselves)", text_conflict.join(", "));
+        eprintln!("{note}");
+        push_note(&mut capture.manifest.notes, note);
+    }
+    let autopsy_conflict = overridden(&env.extra_env, &AUTOPSY_NAMES);
+    let autopsy_ok = autopsy_conflict.is_empty();
+    if opts.autopsy && !autopsy_ok {
+        let note = format!(
+            "the autopsy: skipped, the extra environment sets {} (it runs its own step graph)",
+            autopsy_conflict.join(", ")
+        );
+        eprintln!("{note}");
+        push_note(&mut capture.manifest.notes, note);
+    }
     if crate::config::tier_rank(&opts.tier)? > crate::config::tier_rank(&capture.manifest.tier)? {
         capture.manifest.tier = opts.tier.clone();
     }
@@ -355,7 +400,7 @@ pub fn run_capture(
                 }
             }
         }
-        if opts.texts {
+        if opts.texts && texts_ok {
             let sampled = &config.probes.sampled;
             let constraint = &config.probes.constraint;
             let sampled_prompt = config.prompt_path(guard_dir, config.prompt(&sampled.prompt)?);
@@ -534,7 +579,7 @@ pub fn run_capture(
                 save(&capture)?;
             }
         }
-        if opts.autopsy && timed_ok {
+        if opts.autopsy && timed_ok && autopsy_ok {
             let out_dir = autopsy_dir(&dir, model);
             let autopsy = match load_autopsy(&out_dir) {
                 Some(a) => {

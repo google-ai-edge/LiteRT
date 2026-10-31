@@ -218,6 +218,23 @@ pub fn check_memory(
     let mut out = Vec::new();
     for c in &cand.memory {
         let Some(b) = base.memory.iter().find(|b| b.model == c.model && b.mtp == c.mtp) else {
+            // No baseline run to compare with: a failed or compiling run is still judged.
+            if c.exit_code != 0 || c.compiled {
+                out.push(MemoryCheck {
+                    model: c.model.clone(),
+                    mtp: c.mtp,
+                    base_gpu_mib: None,
+                    cand_gpu_mib: c.gpu_mib,
+                    base_rss_gib: None,
+                    cand_rss_gib: c.rss_gib,
+                    verdict: Verdict::Fail,
+                    reasons: vec![if c.exit_code != 0 {
+                        format!("the candidate's run exited {}", c.exit_code)
+                    } else {
+                        "the candidate's run compiled its engines twice: its peaks are the compiler's".to_string()
+                    }],
+                });
+            }
             continue;
         };
         let mut verdict = Verdict::Pass;
@@ -568,6 +585,23 @@ fn not_compared(base: &Capture, cand: &Capture) -> Vec<String> {
             out.push(format!("memory {} {}: not in the candidate", b.model, mode(b.mtp)));
         }
     }
+    for c in &cand.memory {
+        if !base.memory.iter().any(|b| b.model == c.model && b.mtp == c.mtp) {
+            out.push(format!("memory {} {}: not in the baseline", c.model, mode(c.mtp)));
+        }
+    }
+    for c in &cand.conversations {
+        if !base
+            .conversations
+            .iter()
+            .any(|b| b.model == c.model && b.prompt == c.prompt && b.mtp == c.mtp)
+        {
+            out.push(format!(
+                "conversations {} {}: not in the baseline (judged on its own)",
+                c.model, c.prompt
+            ));
+        }
+    }
     for b in &base.conversations {
         if !cand
             .conversations
@@ -752,13 +786,34 @@ pub fn compare(
         reasons
             .push("no text probe compared: the candidate ran none of the baseline's".to_string());
     }
-    if base.numerics.is_empty() && base.perf.is_empty() && base.texts.is_empty() {
+    if base.numerics.is_empty()
+        && base.perf.is_empty()
+        && base.texts.is_empty()
+        && base.memory.is_empty()
+        && base.conversations.is_empty()
+        && base.autopsies.is_empty()
+    {
         reasons.push("the baseline holds no probe".to_string());
     }
-    if !perf.is_empty()
-        && (base.manifest.clock_fit == Some(false) || cand.manifest.clock_fit == Some(false))
-    {
-        reasons.push("a capture's timings ran on a clock clock_check.py found unfit: the performance rows are diagnostic".to_string());
+    // Each timed run's own clock (bench.sh's report when it ran): a resumed capture keeps runs
+    // of earlier invocations, whose clock the manifest's last sample does not describe.
+    let unfit_runs = |capture: &Capture| {
+        capture
+            .perf
+            .iter()
+            .filter(|p| p.clock_fit.or(capture.manifest.clock_fit) == Some(false))
+            .count()
+            + capture
+                .autopsies
+                .iter()
+                .filter(|a| a.clock_fit.or(capture.manifest.clock_fit) == Some(false))
+                .count()
+    };
+    let (base_unfit, cand_unfit) = (unfit_runs(base), unfit_runs(cand));
+    if (!perf.is_empty() || !autopsies.is_empty()) && base_unfit + cand_unfit > 0 {
+        reasons.push(format!(
+            "timed runs on a clock clock_check.py found unfit (baseline {base_unfit}, candidate {cand_unfit}): the performance rows and the autopsy are diagnostic"
+        ));
     }
     let verdict = numerics
         .iter()
@@ -1534,6 +1589,62 @@ pub fn render_capture(capture: &Capture) -> String {
         "# Capture {} (build {}, tier {}, host {}, {})\n\nLiteRT {}\nLiteRT-LM {}\n\n",
         m.name, m.build_id, m.tier, m.host_mode, m.updated, m.rt_head, m.lm_head
     );
+    if !m.env.is_empty() {
+        let env = m.env.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(" ");
+        s.push_str(&format!("Extra environment: {env} (pool suffix {}).\n\n", m.pool_suffix));
+    }
+    s.push_str(&match m.clock_fit {
+        Some(true) => "Host clock (clock_check.py, at the last invocation): fit.\n\n".to_string(),
+        Some(false) => format!(
+            "Host clock (clock_check.py, at the last invocation): UNFIT ({}).\n\n",
+            m.host_clock
+                .as_ref()
+                .and_then(|c| c.get("reasons"))
+                .map(|r| r.to_string())
+                .unwrap_or_default()
+        ),
+        None => "Host clock: not checked.\n\n".to_string(),
+    });
+    for note in &m.notes {
+        s.push_str(&format!("- Note: {note}\n"));
+    }
+    if !m.notes.is_empty() {
+        s.push('\n');
+    }
+    if !capture.conversations.is_empty() {
+        s.push_str("## Conversation probes\n\n| Model | Prompt | Mode | Exit | Conversations | Parts from the first | Wall s |\n|---|---|---|---:|---:|---|---:|\n");
+        for c in &capture.conversations {
+            s.push_str(&format!(
+                "| {} | {} | {} | {} | {} | {} | {:.0} |\n",
+                c.model,
+                c.prompt,
+                if c.mtp { "mtp" } else { "plain" },
+                c.exit_code,
+                c.texts.len(),
+                c.parting()
+                    .map(|(i, at)| format!("conversation {i} at char {at}"))
+                    .unwrap_or_else(|| "no".into()),
+                c.wall_s
+            ));
+        }
+        s.push('\n');
+    }
+    if !capture.memory.is_empty() {
+        s.push_str("## Memory probes\n\n| Model | Mode | Workload | Exit | Device MiB | Peak RSS GiB | Compiled |\n|---|---|---|---:|---:|---:|---|\n");
+        for r in &capture.memory {
+            s.push_str(&format!(
+                "| {} | {} | {} | {} | {} | {} | {} |\n",
+                r.model,
+                if r.mtp { "mtp" } else { "plain" },
+                r.workload,
+                r.exit_code,
+                opt(r.gpu_mib, 0),
+                opt(r.rss_gib, 3),
+                if r.compiled { "yes (the compiler's peaks)" } else { "no" }
+            ));
+        }
+        s.push('\n');
+    }
     if !capture.numerics.is_empty() {
         s.push_str("## Numerics probes\n\n| Model | Prompt | Mode | Exit | Steps | Prefill tokens | Decode tokens | Decode tok/s | Loopiness | Non-finite | Device samplers | Wall s |\n|---|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|\n");
         for n in &capture.numerics {
@@ -1970,6 +2081,116 @@ mod tests {
         );
     }
 
+    fn perf_point(clock_fit: Option<bool>) -> PerfPoint {
+        serde_json::from_value(serde_json::json!({
+            "model": "e2b", "workload": "short", "mtp": false, "text": false, "label": "e2b_short_plain_latency",
+            "input_tokens": 1024, "output_tokens": 256, "context": 2048, "iterations": 3, "warmups": 1,
+            "measured_iterations": 2, "prompt_tokens": 1024, "decode_tps": 100.0, "prefill_tps": 5000.0,
+            "decode_tps_values": [100.0, 100.0], "prefill_tps_values": [5000.0, 5000.0], "acceptance": null,
+            "tokens_per_round": null, "round_ms": null, "draft_ms": null, "verify_ms": null, "init_total_s": 1.0,
+            "max_rss_gib": 1.0, "exit_code": 0, "clock_fit": clock_fit
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn timed_runs_are_judged_by_the_clock_they_ran_on() {
+        let config = Config::load(None).unwrap();
+        // A resumed capture: its last invocation's clock was fit, a kept run's was not.
+        let mut kept = capture_of("kept", Vec::new(), &[]);
+        kept.manifest.clock_fit = Some(true);
+        kept.perf.push(perf_point(Some(false)));
+        let c = compare(&kept, &kept, &config, &[]);
+        assert!(
+            c.reasons.iter().any(|r| r.contains("unfit (baseline 1, candidate 1)")),
+            "{:?}",
+            c.reasons
+        );
+        // The opposite: the last invocation unfit, every timed run fit.
+        let mut fit = capture_of("fit", Vec::new(), &[]);
+        fit.manifest.clock_fit = Some(false);
+        fit.perf.push(perf_point(Some(true)));
+        let c = compare(&fit, &fit, &config, &[]);
+        assert!(!c.reasons.iter().any(|r| r.contains("unfit")), "{:?}", c.reasons);
+        // A run without its own report falls back on the manifest's.
+        let mut old = capture_of("old", Vec::new(), &[]);
+        old.manifest.clock_fit = Some(false);
+        old.perf.push(perf_point(None));
+        assert!(compare(&old, &old, &config, &[]).reasons.iter().any(|r| r.contains("unfit")));
+    }
+
+    #[test]
+    fn a_memory_only_comparison_passes_and_a_failed_run_without_a_baseline_fails() {
+        let config = Config::load(None).unwrap();
+        let a = memory_capture("a", &[("e2b", false, 1000.0, 1.0, false)]);
+        let c = compare(&a, &a, &config, &[]);
+        assert_eq!(c.verdict, Verdict::Pass, "{:?}", c.reasons);
+        // A baseline without the memory probe: the candidate's failed run is still judged.
+        let base = capture_of("old", Vec::new(), &[("e2b", "code_grid", false)]);
+        let mut cand = memory_capture(
+            "new",
+            &[("e2b", false, 2000.0, 1.0, false), ("e2b", true, 2000.0, 1.0, false)],
+        );
+        cand.memory[0].exit_code = 134;
+        let checks = check_memory(&base, &cand, &config.probes.memory);
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].verdict, Verdict::Fail);
+        let c = compare(&base, &cand, &config, &[]);
+        assert!(
+            c.not_compared.iter().any(|l| l == "memory e2b mtp: not in the baseline"),
+            "{:?}",
+            c.not_compared
+        );
+    }
+
+    #[test]
+    fn a_capture_report_shows_the_environment_the_clock_the_notes_and_the_new_probes() {
+        let mut capture = memory_capture("m", &[("e2b", true, 1120.0, 1.078, false)]);
+        capture.manifest.env = vec![("LITERT_NVIDIA_DISPATCH_STEP_FEED".into(), "0".into())];
+        capture.manifest.pool_suffix = "-envabc".into();
+        capture.manifest.clock_fit = Some(false);
+        crate::capture::push_note(
+            &mut capture.manifest.notes,
+            "timed probes on an unfit clock: skipped (tick 10545)".into(),
+        );
+        crate::capture::push_note(
+            &mut capture.manifest.notes,
+            "timed probes on an unfit clock: skipped (tick 10550)".into(),
+        );
+        assert_eq!(capture.manifest.notes.len(), 1);
+        capture.conversations.push(crate::conversations::ConversationRun {
+            model: "e2b".into(),
+            prompt: "doc_8k".into(),
+            mtp: false,
+            build_id: "b".into(),
+            exit_code: 0,
+            wall_s: 1.0,
+            texts: vec!["a".into(), "b".into()],
+        });
+        let r = render_capture(&capture);
+        for part in [
+            "Extra environment: LITERT_NVIDIA_DISPATCH_STEP_FEED=0",
+            "UNFIT",
+            "- Note: timed probes on an unfit clock: skipped (tick 10550)",
+            "## Conversation probes",
+            "conversation 2 at char 0",
+            "## Memory probes",
+            "| e2b | mtp | short | 0 | 1120 | 1.078 | no |",
+        ] {
+            assert!(r.contains(part), "{part} missing from:\n{r}");
+        }
+        assert_eq!(
+            crate::capture::overridden(
+                &[
+                    ("LITERT_NVIDIA_MTP_GPU_SAMPLING".into(), "0".into()),
+                    ("LITERT_NVIDIA_GEMM_INT8".into(), "0".into())
+                ],
+                &crate::capture::TEXT_PROBE_NAMES
+            ),
+            vec!["LITERT_NVIDIA_MTP_GPU_SAMPLING".to_string()]
+        );
+    }
+
     #[test]
     fn a_comparison_says_what_it_did_not_compare() {
         let config = Config::load(None).unwrap();
@@ -2109,6 +2330,7 @@ pub fn validate_predictor(record: &[RecordPoint], fit_workloads: &[String]) -> S
                     init_total_s: None,
                     max_rss_gib: None,
                     exit_code: 0,
+                    clock_fit: None,
                 })
             })
             .collect();
