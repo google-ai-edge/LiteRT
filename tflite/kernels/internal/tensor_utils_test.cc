@@ -2139,6 +2139,41 @@ TEST(uKernels, UnpackInt2Basic) {
               testing::Pointwise(testing::Eq(), expected_output));
 }
 
+TEST(uKernels, UnpackInt2NegativePackedByte) {
+  // Negative test: 0xAA is a negative int8_t while each packed INT2 value is
+  // -2. Unpacking must not left-shift the negative storage byte.
+  const int8_t input[1] = {static_cast<int8_t>(0xAA)};
+  const int8_t expected_output[4] = {-2, -2, -2, -2};
+  int8_t actual_output[4];
+  UnpackPackedIntToInt8(input, 4, 2, actual_output);
+  EXPECT_THAT(actual_output,
+              testing::Pointwise(testing::Eq(), expected_output));
+}
+
+TEST(uKernels, PackAndUnpackInt2AndInt4NegativeRoundtripValid) {
+  // Positive control: valid roundtrip packing and unpacking of negative INT2
+  // and INT4 values.
+  const int8_t int4_values[4] = {-8, -1, -5, -2};
+  int8_t packed_int4[2] = {0, 0};
+  int8_t unpacked_int4[4] = {0, 0, 0, 0};
+  int8_t dense_unpacked_int4[4] = {0, 0, 0, 0};
+  PackInt8IntoDenseInt(int4_values, 4, 4, packed_int4);
+  UnpackPackedIntToInt8(packed_int4, 4, 4, unpacked_int4);
+  UnpackDenseInt4IntoInt8(packed_int4, 4, dense_unpacked_int4);
+  EXPECT_THAT(unpacked_int4,
+              testing::Pointwise(testing::Eq(), int4_values));
+  EXPECT_THAT(dense_unpacked_int4,
+              testing::Pointwise(testing::Eq(), int4_values));
+
+  const int8_t int2_values[4] = {-2, -1, -2, -1};
+  int8_t packed_int2[1] = {0};
+  int8_t unpacked_int2[4] = {0, 0, 0, 0};
+  PackInt8IntoDenseInt(int2_values, 4, 2, packed_int2);
+  UnpackPackedIntToInt8(packed_int2, 4, 2, unpacked_int2);
+  EXPECT_THAT(unpacked_int2,
+              testing::Pointwise(testing::Eq(), int2_values));
+}
+
 TEST(uKernels, UnpackInt2OddLength) {
   // `num_elements` is odd, so the last element 0x3 should be ignored
   const int8_t input[1] = {static_cast<int8_t>(0xD8)};
