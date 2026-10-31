@@ -42,13 +42,26 @@ namespace {
 
 TfLiteStatus ReadTopK(TfLiteContext* context, const TfLiteTensor& top_k,
                       int32_t& k) {
+  int top_k_elements = 0;
+  TF_LITE_ENSURE_MSG(context,
+                     CheckedNumElements(&top_k, top_k_elements) == kTfLiteOk,
+                     "TopK k element count overflows int.");
+  TF_LITE_ENSURE_EQ(context, top_k_elements, 1);
   switch (top_k.type) {
-    case kTfLiteInt32:
-      k = *GetTensorData<int32_t>(&top_k);
+    case kTfLiteInt32: {
+      TF_LITE_ENSURE(context, top_k.bytes >= sizeof(int32_t));
+      const int32_t* k_data = GetTensorData<int32_t>(&top_k);
+      TF_LITE_ENSURE(context, k_data != nullptr);
+      k = *k_data;
       return kTfLiteOk;
-    case kTfLiteInt16:
-      k = *GetTensorData<int16_t>(&top_k);
+    }
+    case kTfLiteInt16: {
+      TF_LITE_ENSURE(context, top_k.bytes >= sizeof(int16_t));
+      const int16_t* k_data = GetTensorData<int16_t>(&top_k);
+      TF_LITE_ENSURE(context, k_data != nullptr);
+      k = *k_data;
       return kTfLiteOk;
+    }
     default:
       TF_LITE_KERNEL_LOG(context,
                          "Type %s is currently not supported k Type by TopK.",
@@ -63,9 +76,7 @@ TfLiteStatus ResizeOutput(TfLiteContext* context, TfLiteNode* node) {
   // INT32 and INT16 number of top result index is supported.
   TF_LITE_ENSURE(context,
                  top_k->type == kTfLiteInt32 || top_k->type == kTfLiteInt16);
-  // Check that the tensor contains only one value.
-  TF_LITE_ENSURE_EQ(context, NumElements(top_k), 1);
-
+  // ReadTopK validates that top_k contains exactly one scalar value.
   int32 k = 0;
   TF_LITE_ENSURE_OK(context, ReadTopK(context, *top_k, k));
 
@@ -136,7 +147,7 @@ class TopContainer {
  public:
   TopContainer() = delete;
   TopContainer(int32 k, int32 row_size) : k_(k) {
-    container_.reserve(std::min(k, row_size) + 1);
+    container_.reserve(static_cast<size_t>(std::min(k, row_size)) + 1);
   }
 
   void start_collecting(const T* values) {
@@ -149,7 +160,7 @@ class TopContainer {
     auto comparator = [this](Tidx a, Tidx b) { return compare_fun(a, b); };
     if (!is_heap_) {
       container_.push_back(a);
-      if (container_.size() == k_ + 1) {
+      if (container_.size() == static_cast<size_t>(k_) + 1) {
         std::make_heap(container_.begin(), container_.end(), comparator);
         std::pop_heap(container_.begin(), container_.end(), comparator);
         container_.pop_back();
@@ -298,7 +309,16 @@ TfLiteStatus TopKImpl(TfLiteContext* context, TfLiteNode* node, int32_t k,
   TF_LITE_ENSURE_OK(
       context, GetOutputSafe(context, node, kOutputValues, &output_values));
 
+  TF_LITE_ENSURE(context, input->dims != nullptr);
+  TF_LITE_ENSURE_MSG(context, input->dims->size >= 1,
+                     "TopK k input must have 1 or more dimensions.");
+  TF_LITE_ENSURE_TYPES_EQ(context, input->type, output_values->type);
   const int32 row_size = input->dims->data[input->dims->size - 1];
+  TF_LITE_ENSURE(context, row_size >= 0);
+  if (k > 0) {
+    TF_LITE_ENSURE_MSG(context, k <= row_size,
+                       "TopK k is higher than the internal dimension.");
+  }
   int32 num_rows = 1;
   TF_LITE_ENSURE_OK(context,
                     kernel_utils::CheckedDimensionProduct(
@@ -307,6 +327,41 @@ TfLiteStatus TopKImpl(TfLiteContext* context, TfLiteNode* node, int32_t k,
   TF_LITE_ENSURE_MSG(context,
                      CheckedNumElements(input, input_elements) == kTfLiteOk,
                      "Input element count overflows int.");
+  const int32 output_last_dim = std::max<int32>(0, k);
+  const int64_t expected_output_elements =
+      static_cast<int64_t>(num_rows) * static_cast<int64_t>(output_last_dim);
+  TfLiteTensor* output_indexes_tensor;
+  TF_LITE_ENSURE_OK(
+      context, GetOutputSafe(context, node, kOutputIndexes, &output_indexes_tensor));
+  int output_values_elements = 0;
+  TF_LITE_ENSURE_MSG(
+      context,
+      CheckedNumElements(output_values, output_values_elements) == kTfLiteOk,
+      "Output values element count overflows int.");
+  int output_indexes_elements = 0;
+  TF_LITE_ENSURE_MSG(
+      context,
+      CheckedNumElements(output_indexes_tensor, output_indexes_elements) ==
+          kTfLiteOk,
+      "Output indexes element count overflows int.");
+  TF_LITE_ENSURE_EQ(context, static_cast<int64_t>(output_values_elements),
+                    expected_output_elements);
+  TF_LITE_ENSURE_EQ(context, static_cast<int64_t>(output_indexes_elements),
+                    expected_output_elements);
+  size_t type_size = 0;
+  TF_LITE_ENSURE_OK(context,
+                    GetSizeOfType(context, output_values->type, &type_size));
+  TF_LITE_ENSURE(context,
+                 input->bytes / type_size >= static_cast<size_t>(input_elements));
+  TF_LITE_ENSURE(context, output_values->bytes / type_size >=
+                              static_cast<size_t>(output_values_elements));
+  TF_LITE_ENSURE(context, output_indexes_tensor->bytes / sizeof(idx_type) >=
+                              static_cast<size_t>(output_indexes_elements));
+  if (expected_output_elements > 0) {
+    TF_LITE_ENSURE(context, input->data.raw != nullptr);
+    TF_LITE_ENSURE(context, output_values->data.raw != nullptr);
+    TF_LITE_ENSURE(context, output_indexes != nullptr);
+  }
   if (num_rows > 0 && k > 0) {
     TF_LITE_ENSURE_MSG(context,
                        row_size <= std::numeric_limits<idx_type>::max(),
@@ -370,7 +425,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     default:
       TF_LITE_KERNEL_LOG(
           context, "Output index type %s is currently not supported by TopK.",
-          TfLiteTypeGetName(output_values->type));
+          TfLiteTypeGetName(output_indexes->type));
       return kTfLiteError;
   }
 }
