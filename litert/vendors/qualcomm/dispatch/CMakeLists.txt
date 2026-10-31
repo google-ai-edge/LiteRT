@@ -39,7 +39,24 @@ set_target_properties(dispatch_api_qualcomm_so PROPERTIES
     INSTALL_RPATH "\$ORIGIN"
 )
 
-if(UNIX AND NOT APPLE)
+if(WIN32)
+    # See litert/c/litert_common.h: without this the C API entry points this
+    # library defines are declared __declspec(dllimport) and MSVC rejects the
+    # definitions (C2491). The Bazel build passes the same define.
+    target_compile_definitions(dispatch_api_qualcomm_so PRIVATE
+        LITERT_COMPILE_LIBRARY)
+
+    # Windows has no rpath; LiteRt.dll is found via the loader search path,
+    # which includes the directory of the module being loaded.
+    target_link_libraries(dispatch_api_qualcomm_so PRIVATE
+        litert_runtime_c_api_shared_lib
+        litert_compiler_plugin
+        litert_cc_api
+        litert_cc_options
+        tensorflow-lite
+        Threads::Threads
+    )
+elseif(UNIX AND NOT APPLE)
     # Set soname and rpath to search origin directory for libLiteRt.so
     target_link_options(dispatch_api_qualcomm_so PRIVATE
         "-Wl,-soname=libLiteRtDispatch_Qualcomm.so"
