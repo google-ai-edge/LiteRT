@@ -3165,6 +3165,7 @@ class LiteRtDispatchInvocationContextT {
     ++own_graph_captures_;
     LogOwnGraph(captured);
     AutopsyOwnGraph(captured);
+    TimelineOwnGraph(captured);
     cudaGraphExec_t exec = nullptr;
     status = cudaGraphInstantiate(&exec, captured, 0);
     cudaGraphDestroy(captured);
@@ -3359,6 +3360,155 @@ class LiteRtDispatchInvocationContextT {
                "NVIDIA dispatch %s: autopsy of %zu kernel nodes written to %s "
                "(flush %.1f us)",
                bytecode_.function_name.c_str(), timed, path, flush_us);
+  }
+
+  // LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_TIMELINE=path: the first captured step
+  // graph of each function replayed with an event-record node after every
+  // node, so that each node's time in the real step, with its launch gap and
+  // its real data (the autopsy above replays a node alone, which a routed
+  // expert kernel or a chunked attention may not survive), is the time
+  // between its event and the one before. Written to path.<function>: one
+  // line per node, index (the DOT's ID), type (K kernel, M memcpy, S memset,
+  // O other), end us from the step's start and its duration; the third
+  // launch of the instrumented graph is the one read.
+  void TimelineOwnGraph(cudaGraph_t graph) {
+    const char* path =
+        std::getenv("LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_TIMELINE");
+    if (path == nullptr || path[0] == '\0' || timeline_done_) {
+      return;
+    }
+    timeline_done_ = true;
+    size_t count = 0;
+    if (cudaGraphGetNodes(graph, nullptr, &count) != cudaSuccess ||
+        count == 0) {
+      return;
+    }
+    std::vector<cudaGraphNode_t> nodes(count);
+    if (cudaGraphGetNodes(graph, nodes.data(), &count) != cudaSuccess) {
+      return;
+    }
+    // Only graphs of kernel and memset nodes: a replay of a step graph that
+    // copies (an aliased cache input seeded from its output, a deferred
+    // upload from host memory) is not the step's own work, and the 26B's
+    // prefill graph did not survive three replays with events.
+    std::vector<char> types(count, 'O');
+    for (size_t i = 0; i < count; ++i) {
+      cudaGraphNodeType type;
+      if (cudaGraphNodeGetType(nodes[i], &type) == cudaSuccess) {
+        types[i] = type == cudaGraphNodeTypeKernel   ? 'K'
+                   : type == cudaGraphNodeTypeMemcpy ? 'M'
+                   : type == cudaGraphNodeTypeMemset ? 'S'
+                                                     : 'O';
+      }
+      if (types[i] != 'K' && types[i] != 'S') {
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA dispatch %s: no timeline (node %zu is not a kernel "
+                   "or a memset)",
+                   bytecode_.function_name.c_str(), i);
+        return;
+      }
+    }
+    cudaGraph_t clone = nullptr;
+    if (cudaGraphClone(&clone, graph) != cudaSuccess) {
+      static_cast<void>(cudaGetLastError());
+      return;
+    }
+    std::vector<cudaEvent_t> events(count + 1, nullptr);
+    bool ok = true;
+    for (size_t i = 0; ok && i <= count; ++i) {
+      ok =
+          cudaEventCreateWithFlags(&events[i], cudaEventDefault) == cudaSuccess;
+    }
+    // Every event node sits on the chain: it depends on its node and the
+    // node's dependents depend on it, so an event records when its node is
+    // done and before the next node starts. The start event precedes the
+    // roots.
+    std::vector<cudaGraphNode_t> in_clone(count, nullptr);
+    for (size_t i = 0; ok && i < count; ++i) {
+      ok = cudaGraphNodeFindInClone(&in_clone[i], nodes[i], clone) ==
+           cudaSuccess;
+    }
+    cudaGraphNode_t event_node = nullptr;
+    if (ok) {
+      ok = cudaGraphAddEventRecordNode(&event_node, clone, nullptr, 0,
+                                       events[count]) == cudaSuccess;
+    }
+    for (size_t i = 0; ok && i < count; ++i) {
+      size_t dependencies = 0;
+      cudaGraphNodeGetDependencies(in_clone[i], nullptr, &dependencies);
+      if (dependencies == 0) {
+        ok = cudaGraphAddDependencies(clone, &event_node, &in_clone[i], 1) ==
+             cudaSuccess;
+      }
+    }
+    for (size_t i = 0; ok && i < count; ++i) {
+      size_t dependents = 0;
+      cudaGraphNodeGetDependentNodes(in_clone[i], nullptr, &dependents);
+      std::vector<cudaGraphNode_t> next(dependents);
+      if (dependents > 0) {
+        ok = cudaGraphNodeGetDependentNodes(in_clone[i], next.data(),
+                                            &dependents) == cudaSuccess;
+      }
+      cudaGraphNode_t after = nullptr;
+      ok = ok && cudaGraphAddEventRecordNode(&after, clone, &in_clone[i], 1,
+                                             events[i]) == cudaSuccess;
+      for (size_t d = 0; ok && d < dependents; ++d) {
+        ok =
+            cudaGraphAddDependencies(clone, &after, &next[d], 1) == cudaSuccess;
+      }
+    }
+    cudaGraphExec_t exec = nullptr;
+    if (ok) {
+      ok = cudaGraphInstantiate(&exec, clone, 0) == cudaSuccess;
+    }
+    for (int launch = 0; ok && launch < 3; ++launch) {
+      ok = cudaGraphLaunch(exec, stream_) == cudaSuccess &&
+           cudaStreamSynchronize(stream_) == cudaSuccess;
+    }
+    FILE* out =
+        ok ? std::fopen((std::string(path) + "." +
+                         SanitizeCacheComponent(bytecode_.function_name))
+                            .c_str(),
+                        "w")
+           : nullptr;
+    if (out != nullptr) {
+      std::vector<std::pair<float, size_t>> ends;
+      ends.reserve(count);
+      for (size_t i = 0; i < count; ++i) {
+        float ms = 0.0f;
+        if (cudaEventElapsedTime(&ms, events[count], events[i]) ==
+            cudaSuccess) {
+          ends.emplace_back(ms * 1000.0f, i);
+        } else {
+          static_cast<void>(cudaGetLastError());
+        }
+      }
+      std::sort(ends.begin(), ends.end());
+      const float total = ends.empty() ? 0.0f : ends.back().first;
+      std::fprintf(out, "# total_us %.1f nodes %zu\n", total, count);
+      std::fprintf(out, "# node type end_us dur_us\n");
+      float previous = 0.0f;
+      for (const auto& [end, i] : ends) {
+        std::fprintf(out, "%zu %c %.1f %.1f\n", i, types[i], end,
+                     end - previous);
+        previous = end;
+      }
+      std::fclose(out);
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: timeline of %zu nodes written to %s "
+                 "(%.1f us)",
+                 bytecode_.function_name.c_str(), count, path, total);
+    } else {
+      LITERT_LOG(LITERT_WARNING, "NVIDIA dispatch %s: no timeline (%s)",
+                 bytecode_.function_name.c_str(),
+                 cudaGetErrorString(cudaGetLastError()));
+    }
+    if (exec != nullptr) cudaGraphExecDestroy(exec);
+    cudaGraphDestroy(clone);
+    for (cudaEvent_t e : events) {
+      if (e != nullptr) cudaEventDestroy(e);
+    }
+    static_cast<void>(cudaGetLastError());
   }
 
   // What the captured step holds; LITERT_NVIDIA_DISPATCH_CUDA_GRAPH_DOT=dir
@@ -4042,6 +4192,7 @@ class LiteRtDispatchInvocationContextT {
   int64_t own_graph_captures_ = 0;
   int64_t own_graph_direct_ = 0;
   bool autopsy_done_ = false;
+  bool timeline_done_ = false;
   std::vector<LiteRtTensorBufferHandle> input_handles_;
   std::vector<LiteRtTensorBufferHandle> output_handles_;
   std::vector<void*> bound_input_ptrs_;

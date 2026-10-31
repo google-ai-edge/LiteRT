@@ -17,6 +17,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -30,6 +31,15 @@
 
 namespace litert::nvidia {
 namespace {
+
+// The CUDA GEMM's error against double precision, relative to a row's norm:
+// BF16 rounding alone is about 1.7e-3 on the fp16 kernel; the int8 kernel,
+// the default (LITERT_NVIDIA_GEMM_INT8 unset or not "0"), quantizes the
+// activations to int8 per block of 128 input dims and lands near 4e-3.
+double GemmTolerance() {
+  const char* value = std::getenv("LITERT_NVIDIA_GEMM_INT8");
+  return value != nullptr && std::strcmp(value, "0") == 0 ? 3.0e-3 : 1.0e-2;
+}
 
 class TestLogger final : public nvinfer1::ILogger {
  public:
@@ -491,8 +501,8 @@ TEST(SubbyteGemvPluginTest, ManyRowsRunAsGemm) {
         error += (value - expected) * (value - expected);
         norm += expected * expected;
       }
-      // BF16 rounding alone is about 1.7e-3 of the norm of a row.
-      EXPECT_LE(std::sqrt(error), 3.0e-3 * std::sqrt(norm)) << "row=" << row;
+      EXPECT_LE(std::sqrt(error), GemmTolerance() * std::sqrt(norm))
+          << "row=" << row;
     }
   }
 }
@@ -687,7 +697,8 @@ TEST(SubbyteGemvPluginTest, ReadsWeightsAtAnOffsetInAHolder) {
       error += (value - expected) * (value - expected);
       norm += expected * expected;
     }
-    EXPECT_LE(std::sqrt(error), 3.0e-3 * std::sqrt(norm)) << "row=" << m;
+    EXPECT_LE(std::sqrt(error), GemmTolerance() * std::sqrt(norm))
+        << "row=" << m;
   }
 }
 

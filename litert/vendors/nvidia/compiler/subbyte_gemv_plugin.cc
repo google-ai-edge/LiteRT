@@ -14,6 +14,7 @@
 
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -235,7 +236,10 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
     }
     const LiteRtNvidiaGemmShape shape =
         GemmShape(ActivationRows(inputs[0].max, columns_));
-    return LiteRtNvidiaSubbyteGemmWorkspaceBytes(&shape);
+    // Whichever kernel runs at enqueue: the fp16 one, or the int8 one on
+    // per-channel weights.
+    return std::max(LiteRtNvidiaSubbyteGemmWorkspaceBytes(&shape),
+                    LiteRtNvidiaInt8GemmWorkspaceBytes(&shape));
   }
 
   int32_t enqueue(const nvinfer1::PluginTensorDesc* input_desc,
@@ -274,9 +278,17 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
     } else {
       const LiteRtNvidiaGemmShape shape = GemmShape(rows);
       if (LiteRtNvidiaSubbyteGemmWeightBytes(&shape) == WeightBytes()) {
-        status = LiteRtNvidiaLaunchBf16Int4GemmNormed(
-            &shape, inputs[0], norm_scale, norm_eps_, norm_multiplier_, weights,
-            scales, outputs[0], workspace, stream);
+        // The int8 tensor cores take the per-channel products
+        // (LITERT_NVIDIA_GEMM_INT8=0 keeps the fp16 kernel for every product).
+        if (Int8GemmEnabled() && LiteRtNvidiaInt8GemmSupports(&shape)) {
+          status = LiteRtNvidiaLaunchBf16Int4GemmInt8Normed(
+              &shape, inputs[0], norm_scale, norm_eps_, norm_multiplier_,
+              weights, scales, outputs[0], workspace, stream);
+        } else {
+          status = LiteRtNvidiaLaunchBf16Int4GemmNormed(
+              &shape, inputs[0], norm_scale, norm_eps_, norm_multiplier_,
+              weights, scales, outputs[0], workspace, stream);
+        }
       }
     }
     if (status != cudaSuccess) {
@@ -305,6 +317,14 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
   // With a gate the weights hold the gate and the up projection.
   int32_t OutputChannels() const noexcept {
     return gate_ != 0 ? rows_ / 2 : rows_;
+  }
+
+  static bool Int8GemmEnabled() noexcept {
+    static const bool enabled = [] {
+      const char* value = std::getenv("LITERT_NVIDIA_GEMM_INT8");
+      return value == nullptr || std::strcmp(value, "0") != 0;
+    }();
+    return enabled;
   }
 
   LiteRtNvidiaGemmShape GemmShape(int64_t rows) const noexcept {

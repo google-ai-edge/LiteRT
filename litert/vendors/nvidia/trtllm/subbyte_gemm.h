@@ -156,4 +156,19 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmNormed(
     const uint8_t* weights, const void* scales, void* output, void* workspace,
     cudaStream_t stream);
 
+// The same product on the int8 tensor cores (subbyte_gemm_int8.cu): int8
+// activations per block of 128 input dims, the 32 input dims with the largest
+// magnitude over the rows added back exactly through an fp16 MMA chunk.
+// Per-channel scales (scale_block 0), input_size a multiple of 128 and at
+// most 16384. The workspace is this kernel's own, not the fp16 kernel's.
+extern "C" bool LiteRtNvidiaInt8GemmSupports(
+    const LiteRtNvidiaGemmShape* shape);
+extern "C" size_t LiteRtNvidiaInt8GemmWorkspaceBytes(
+    const LiteRtNvidiaGemmShape* shape);
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmInt8Normed(
+    const LiteRtNvidiaGemmShape* shape, const void* activation,
+    const float* norm_scale, float norm_eps, float norm_multiplier,
+    const uint8_t* weights, const void* scales, void* output, void* workspace,
+    cudaStream_t stream);
+
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_SUBBYTE_GEMM_H_
