@@ -44,6 +44,26 @@ struct TensorRtLlmHeadBuildData {
   std::vector<uint8_t> bf16_scales;
 };
 
+// A decode step that feeds itself (TensorRtStepFeed): the signature's
+// embeddings, positions, cache parameter and mask inputs by port, the logits
+// output, and the token table (the vocabulary head's INT4 weights in the
+// model file, tied to the embedder's table) with the rows' FP32 scales.
+struct TensorRtStepFeedBuildData {
+  uint32_t embeddings_port = kTensorRtStepFeedNoPort;
+  uint32_t positions_port = kTensorRtStepFeedNoPort;
+  uint32_t param_port = kTensorRtStepFeedNoPort;
+  uint32_t local_mask_port = kTensorRtStepFeedNoPort;
+  uint32_t global_mask_port = kTensorRtStepFeedNoPort;
+  uint32_t logits_output_port = 0;
+  uint32_t vocab = 0;
+  uint32_t dim = 0;
+  uint32_t ring = 0;
+  uint32_t window = 0;
+  uint64_t table_offset = 0;
+  float multiplier = 1.0f;
+  std::vector<uint8_t> row_scales;  // vocab little-endian FP32 values
+};
+
 struct TensorRtRefitWeightBuildData {
   std::string name;
   TensorRtWeightDataType data_type = TensorRtWeightDataType::kFloat;
@@ -64,6 +84,7 @@ struct TensorRtBuildResult {
   std::vector<std::string> input_names;
   std::vector<std::string> output_names;
   std::optional<TensorRtLlmHeadBuildData> trtllm_head;
+  std::optional<TensorRtStepFeedBuildData> step_feed;
   std::vector<TensorRtRefitWeightBuildData> refit_weights;
   bool is_stripped_plan = false;
   // Not empty when the plan was built without its packed plugin weights.

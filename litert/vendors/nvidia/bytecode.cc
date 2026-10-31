@@ -269,6 +269,91 @@ Expected<TensorRtLlmHead> ReadTypedHead(
   return head;
 }
 
+Expected<void> ValidateStepFeed(const TensorRtStepFeed& feed,
+                                const std::vector<std::string>& input_names,
+                                const std::vector<std::string>& output_names) {
+  const auto port_ok = [&](uint32_t port) {
+    return port == kTensorRtStepFeedNoPort || port < input_names.size();
+  };
+  if (feed.embeddings_port == kTensorRtStepFeedNoPort ||
+      !port_ok(feed.embeddings_port) || !port_ok(feed.positions_port) ||
+      !port_ok(feed.param_port) || !port_ok(feed.local_mask_port) ||
+      !port_ok(feed.global_mask_port) ||
+      feed.logits_output_port >= output_names.size()) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid TensorRT step feed ports");
+  }
+  const size_t scales_size =
+      feed.table_offset == kTensorRtStepFeedNoTable
+          ? 0
+          : static_cast<size_t>(feed.vocab) * sizeof(float);
+  if (feed.vocab == 0 || feed.dim == 0 || feed.dim % 2 != 0 ||
+      !std::isfinite(feed.multiplier) || feed.multiplier == 0.0f ||
+      feed.row_scales_size != scales_size ||
+      (feed.row_scales == nullptr && feed.row_scales_size != 0)) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid TensorRT step feed token table");
+  }
+  if ((feed.local_mask_port == kTensorRtStepFeedNoPort) != (feed.ring == 0) ||
+      feed.window > feed.ring) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid TensorRT step feed local mask");
+  }
+  return {};
+}
+
+constexpr size_t kStepFeedFixedBytes =
+    sizeof(uint32_t) * 10 + sizeof(uint64_t) * 2 + sizeof(float);
+
+void AppendStepFeed(std::vector<uint8_t>& out, const TensorRtStepFeed& feed) {
+  AppendScalar<uint32_t>(out, feed.embeddings_port);
+  AppendScalar<uint32_t>(out, feed.positions_port);
+  AppendScalar<uint32_t>(out, feed.param_port);
+  AppendScalar<uint32_t>(out, feed.local_mask_port);
+  AppendScalar<uint32_t>(out, feed.global_mask_port);
+  AppendScalar<uint32_t>(out, feed.logits_output_port);
+  AppendScalar<uint32_t>(out, feed.vocab);
+  AppendScalar<uint32_t>(out, feed.dim);
+  AppendScalar<uint32_t>(out, feed.ring);
+  AppendScalar<uint32_t>(out, feed.window);
+  AppendScalar<uint64_t>(out, feed.table_offset);
+  AppendScalar<float>(out, feed.multiplier);
+  AppendScalar<uint64_t>(out, static_cast<uint64_t>(feed.row_scales_size));
+  out.insert(out.end(), feed.row_scales,
+             feed.row_scales + feed.row_scales_size);
+}
+
+Expected<TensorRtStepFeed> ReadStepFeed(
+    const uint8_t*& cur, const uint8_t* end,
+    const std::vector<std::string>& input_names,
+    const std::vector<std::string>& output_names) {
+  TensorRtStepFeed feed;
+  LITERT_ASSIGN_OR_RETURN(feed.embeddings_port, ReadScalar<uint32_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(feed.positions_port, ReadScalar<uint32_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(feed.param_port, ReadScalar<uint32_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(feed.local_mask_port, ReadScalar<uint32_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(feed.global_mask_port,
+                          ReadScalar<uint32_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(feed.logits_output_port,
+                          ReadScalar<uint32_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(feed.vocab, ReadScalar<uint32_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(feed.dim, ReadScalar<uint32_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(feed.ring, ReadScalar<uint32_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(feed.window, ReadScalar<uint32_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(feed.table_offset, ReadScalar<uint64_t>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(feed.multiplier, ReadScalar<float>(cur, end));
+  LITERT_ASSIGN_OR_RETURN(uint64_t scales_size, ReadScalar<uint64_t>(cur, end));
+  if (scales_size > static_cast<uint64_t>(end - cur)) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Truncated TensorRT step feed row scales");
+  }
+  feed.row_scales = cur;
+  feed.row_scales_size = static_cast<size_t>(scales_size);
+  cur += feed.row_scales_size;
+  LITERT_RETURN_IF_ERROR(ValidateStepFeed(feed, input_names, output_names));
+  return feed;
+}
+
 Expected<void> ValidateWeightStore(const TensorRtWeightStore& store) {
   const uint64_t granule = store.granule;
   if (store.source_path.empty() || store.source_path.front() != '/' ||
@@ -591,7 +676,7 @@ Expected<TensorRtBytecode> ParseSharedWeightBundle(const uint8_t*& cur,
     }
 
     std::optional<TensorRtWeightStore> weight_store;
-    if (version == kTensorRtBytecodeVersionWithWeightStore) {
+    if (version >= kTensorRtBytecodeVersionWithWeightStore) {
       LITERT_ASSIGN_OR_RETURN(uint32_t has_store,
                               ReadScalar<uint32_t>(cur, end));
       if (has_store > 1) {
@@ -600,6 +685,19 @@ Expected<TensorRtBytecode> ParseSharedWeightBundle(const uint8_t*& cur,
       }
       if (has_store != 0) {
         LITERT_ASSIGN_OR_RETURN(weight_store, ReadWeightStore(cur, end));
+      }
+    }
+    std::optional<TensorRtStepFeed> step_feed;
+    if (version >= kTensorRtBytecodeVersionWithStepFeed) {
+      LITERT_ASSIGN_OR_RETURN(uint32_t has_feed,
+                              ReadScalar<uint32_t>(cur, end));
+      if (has_feed > 1) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Invalid TensorRT bundle step feed marker");
+      }
+      if (has_feed != 0) {
+        LITERT_ASSIGN_OR_RETURN(
+            step_feed, ReadStepFeed(cur, end, input_names, output_names));
       }
     }
 
@@ -618,6 +716,7 @@ Expected<TensorRtBytecode> ParseSharedWeightBundle(const uint8_t*& cur,
       selected.engine_size = engine_size;
       selected.trtllm_head = std::move(head);
       selected.refit_weights = std::move(refit_weights);
+      selected.step_feed = std::move(step_feed);
     }
   }
   if (cur != end) {
@@ -737,8 +836,10 @@ Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundleImpl(
   }
 
   // An entry with a weight store makes the bundle a version 5 one, in which
-  // every entry says whether it has a store.
+  // every entry says whether it has a store; an entry with a step feed a
+  // version 6 one, in which every entry says both.
   bool with_weight_store = false;
+  bool with_step_feed = false;
   std::unordered_set<std::string> function_names;
   for (const auto& entry : entries) {
     if (entry.function_name.empty() ||
@@ -802,18 +903,32 @@ Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundleImpl(
       }
       with_weight_store = true;
     }
-    if (!add_reserve_size(sizeof(uint32_t))) {
+    if (entry.step_feed != nullptr) {
+      LITERT_RETURN_IF_ERROR(ValidateStepFeed(
+          *entry.step_feed, entry.input_names, entry.output_names));
+      if (!add_reserve_size(kStepFeedFixedBytes) ||
+          !add_reserve_size(entry.step_feed->row_scales_size)) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "TensorRT bundle size overflows");
+      }
+      with_step_feed = true;
+    }
+    if (!add_reserve_size(sizeof(uint32_t) * 2)) {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "TensorRT bundle size overflows");
     }
+  }
+  if (with_step_feed) {
+    with_weight_store = true;
   }
 
   std::vector<uint8_t> out;
   out.reserve(reserve_size);
   AppendScalar<uint32_t>(out, kMagic);
-  AppendScalar<uint32_t>(out, with_weight_store
-                                  ? kTensorRtBytecodeVersionWithWeightStore
-                                  : kTensorRtBytecodeVersionWithSharedWeights);
+  AppendScalar<uint32_t>(
+      out, with_step_feed      ? kTensorRtBytecodeVersionWithStepFeed
+           : with_weight_store ? kTensorRtBytecodeVersionWithWeightStore
+                               : kTensorRtBytecodeVersionWithSharedWeights);
   AppendScalar<uint32_t>(out, static_cast<uint32_t>(shared_weights.size()));
   for (const auto& weight : shared_weights) {
     AppendScalar<int32_t>(out, static_cast<int32_t>(weight.data_type));
@@ -843,6 +958,12 @@ Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundleImpl(
       AppendScalar<uint32_t>(out, entry.weight_store != nullptr ? 1 : 0);
       if (entry.weight_store != nullptr) {
         LITERT_RETURN_IF_ERROR(AppendWeightStore(out, *entry.weight_store));
+      }
+    }
+    if (with_step_feed) {
+      AppendScalar<uint32_t>(out, entry.step_feed != nullptr ? 1 : 0);
+      if (entry.step_feed != nullptr) {
+        AppendStepFeed(out, *entry.step_feed);
       }
     }
   }
@@ -1207,12 +1328,12 @@ Expected<TensorRtBytecode> ParseTensorRtBytecode(const void* data, size_t size,
       version != kTensorRtBytecodeVersionWithTrtLlmHead &&
       version != kTensorRtBytecodeVersionWithTypedHead &&
       version != kTensorRtBytecodeVersionWithSharedWeights &&
-      version != kTensorRtBytecodeVersionWithWeightStore) {
+      version != kTensorRtBytecodeVersionWithWeightStore &&
+      version != kTensorRtBytecodeVersionWithStepFeed) {
     return Error(kLiteRtStatusErrorUnsupportedCompilerVersion,
                  "Unsupported TensorRT bytecode version");
   }
-  if (version == kTensorRtBytecodeVersionWithSharedWeights ||
-      version == kTensorRtBytecodeVersionWithWeightStore) {
+  if (version >= kTensorRtBytecodeVersionWithSharedWeights) {
     return ParseSharedWeightBundle(cur, end, function_name, version);
   }
 

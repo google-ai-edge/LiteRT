@@ -143,6 +143,7 @@ struct PendingBundleEntry {
   std::vector<std::string> output_names;
   std::vector<uint8_t> engine;
   std::optional<litert::nvidia::TensorRtLlmHeadBuildData> trtllm_head;
+  std::optional<litert::nvidia::TensorRtStepFeedBuildData> step_feed;
   std::vector<litert::nvidia::TensorRtSharedWeightRef> refit_weights;
   // Where the packed plugin weights of a plan built without them come from;
   // its private runs alias private_runs.
@@ -150,10 +151,29 @@ struct PendingBundleEntry {
   std::vector<litert::nvidia::TensorRtWeightHolderCalibration::Run>
       private_runs;
 
-  // The view borrows this entry and the caller-provided head storage.
+  // The view borrows this entry and the caller-provided head and feed storage.
   litert::nvidia::TensorRtBundleEntry View(
-      litert::nvidia::TensorRtLlmHead& head) const {
+      litert::nvidia::TensorRtLlmHead& head,
+      litert::nvidia::TensorRtStepFeed& feed) const {
     const litert::nvidia::TensorRtLlmHead* head_ptr = nullptr;
+    const litert::nvidia::TensorRtStepFeed* feed_ptr = nullptr;
+    if (step_feed.has_value()) {
+      feed.embeddings_port = step_feed->embeddings_port;
+      feed.positions_port = step_feed->positions_port;
+      feed.param_port = step_feed->param_port;
+      feed.local_mask_port = step_feed->local_mask_port;
+      feed.global_mask_port = step_feed->global_mask_port;
+      feed.logits_output_port = step_feed->logits_output_port;
+      feed.vocab = step_feed->vocab;
+      feed.dim = step_feed->dim;
+      feed.ring = step_feed->ring;
+      feed.window = step_feed->window;
+      feed.table_offset = step_feed->table_offset;
+      feed.multiplier = step_feed->multiplier;
+      feed.row_scales = step_feed->row_scales.data();
+      feed.row_scales_size = step_feed->row_scales.size();
+      feed_ptr = &feed;
+    }
     if (trtllm_head.has_value()) {
       head.hidden_output_port = trtllm_head->hidden_output_port;
       head.logits_output_port = trtllm_head->logits_output_port;
@@ -170,7 +190,8 @@ struct PendingBundleEntry {
     return {function_name, input_names,
             output_names,  engine.data(),
             engine.size(), head_ptr,
-            refit_weights, weight_store.has_value() ? &*weight_store : nullptr};
+            refit_weights, weight_store.has_value() ? &*weight_store : nullptr,
+            feed_ptr};
   }
 };
 
@@ -2022,6 +2043,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       pending.output_names = std::move(engine.output_names);
       pending.engine = std::move(engine.engine);
       pending.trtllm_head = std::move(engine.trtllm_head);
+      pending.step_feed = std::move(engine.step_feed);
       pending.refit_weights.reserve(engine.refit_weights.size());
       size_t partition_logical_weight_bytes = 0;
       for (auto& weight : engine.refit_weights) {
@@ -2078,9 +2100,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       if (!aot_cache_dir.empty()) {
         memory_profiler.Log("aot_shard_pack_begin", function_name.c_str());
         litert::nvidia::TensorRtLlmHead head;
+        litert::nvidia::TensorRtStepFeed feed;
         LITERT_ASSIGN_OR_RETURN(
-            auto packed_shard, litert::nvidia::PackTensorRtSharedWeightShard(
-                                   weight_store.weights(), pending.View(head)));
+            auto packed_shard,
+            litert::nvidia::PackTensorRtSharedWeightShard(
+                weight_store.weights(), pending.View(head, feed)));
         memory_profiler.Log("aot_shard_pack_end", function_name.c_str());
         LITERT_ASSIGN_OR_RETURN(
             auto persisted,
@@ -2145,10 +2169,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     memory_profiler.Log("bundle_pack_begin", soc_model);
     std::vector<litert::nvidia::TensorRtLlmHead> trtllm_heads(
         pending_bundle_entries.size());
+    std::vector<litert::nvidia::TensorRtStepFeed> step_feeds(
+        pending_bundle_entries.size());
     std::vector<litert::nvidia::TensorRtBundleEntry> bundle_entries;
     bundle_entries.reserve(pending_bundle_entries.size());
     for (size_t i = 0; i < pending_bundle_entries.size(); ++i) {
-      bundle_entries.push_back(pending_bundle_entries[i].View(trtllm_heads[i]));
+      bundle_entries.push_back(
+          pending_bundle_entries[i].View(trtllm_heads[i], step_feeds[i]));
     }
     LITERT_ASSIGN_OR_RETURN(auto packed_bundle,
                             litert::nvidia::PackTensorRtSharedWeightBundle(

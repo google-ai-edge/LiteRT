@@ -2757,6 +2757,7 @@ class TensorRtGraphBuilder {
     result.input_names = input_names_;
     result.output_names = output_names_;
     result.trtllm_head = std::move(trtllm_head);
+    LITERT_ASSIGN_OR_RETURN(result.step_feed, MatchStepFeed(subgraph));
     result.is_stripped_plan = strip_plan;
     result.weight_holders = std::move(weight_holders_);
     // TensorRT-RTX has consumed every network constant at this point. Destroy
@@ -2782,6 +2783,221 @@ class TensorRtGraphBuilder {
   }
 
  private:
+  // A decode step that feeds itself (TensorRtStepFeed): one token's
+  // embeddings in, the logits out, the vocabulary head an INT4 per-channel
+  // fully connected op whose weights the weight store maps (Gemma ties them
+  // to the embedder's table; the embedder's multiplier is sqrt(dim), and the
+  // dispatch verifies every embedding the host feeds against what it ran, so
+  // an untied table only costs the speculation). Nothing when the signature
+  // is not that shape. LITERT_NVIDIA_TENSORRT_STEP_FEED=0 records none.
+  Expected<std::optional<TensorRtStepFeedBuildData>> MatchStepFeed(
+      const Subgraph& subgraph) {
+    const auto none = [] { return std::optional<TensorRtStepFeedBuildData>(); };
+    if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_STEP_FEED",
+                    /*default_value=*/true) ||
+        weight_store_ == nullptr) {
+      return none();
+    }
+    // The tensors carry the signature's key behind the signature's name
+    // (decode_embeddings, prefill_1024_input_pos, decode_logits_output).
+    const auto is_key = [](const std::string& name, const char* key) {
+      const std::string suffix = std::string("_") + key;
+      return name == key || (name.size() > suffix.size() &&
+                             name.compare(name.size() - suffix.size(),
+                                          suffix.size(), suffix) == 0);
+    };
+    TensorRtStepFeedBuildData feed;
+    const auto inputs = subgraph.Inputs();
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      const Tensor& input = inputs[i];
+      const std::string name(input.Name());
+      auto type = input.RankedTensorType();
+      if (!type) continue;
+      const auto dims = type->Layout().Dimensions();
+      const uint32_t port = static_cast<uint32_t>(i);
+      const auto all_ones_but_last = [&] {
+        for (size_t d = 0; d + 1 < dims.size(); ++d) {
+          if (dims[d] != 1) return false;
+        }
+        return !dims.empty();
+      };
+      if (is_key(name, "embeddings")) {
+        if (input.ElementType() != litert::ElementType::Float32 ||
+            !all_ones_but_last() || dims.back() <= 0 || dims.back() % 2 != 0) {
+          return none();
+        }
+        feed.embeddings_port = port;
+        feed.dim = static_cast<uint32_t>(dims.back());
+      } else if (is_key(name, "positions") || is_key(name, "input_pos")) {
+        if (input.ElementType() != litert::ElementType::Int32 ||
+            !all_ones_but_last() || dims.back() != 1) {
+          return none();
+        }
+        feed.positions_port = port;
+      } else if (is_key(name, "param_tensor")) {
+        if (input.ElementType() != litert::ElementType::Int32 ||
+            !all_ones_but_last() || dims.back() < 3) {
+          return none();
+        }
+        feed.param_port = port;
+      } else if (is_key(name, "local_mask") ||
+                 is_key(name, "attn_mask_local") ||
+                 is_key(name, "local_attn_mask")) {
+        if (input.ElementType() != litert::ElementType::Bool ||
+            !all_ones_but_last() || dims.back() <= 0) {
+          return none();
+        }
+        feed.local_mask_port = port;
+        feed.ring = static_cast<uint32_t>(dims.back());
+      } else if (is_key(name, "attn_mask") || is_key(name, "global_mask") ||
+                 is_key(name, "mask")) {
+        if (input.ElementType() != litert::ElementType::Bool ||
+            !all_ones_but_last()) {
+          return none();
+        }
+        feed.global_mask_port = port;
+      }
+    }
+    if (feed.embeddings_port == kTensorRtStepFeedNoPort ||
+        feed.positions_port == kTensorRtStepFeedNoPort) {
+      std::string names;
+      for (size_t i = 0; i < inputs.size() && i < 8; ++i) {
+        names += (i == 0 ? "" : ", ") + std::string(inputs[i].Name());
+      }
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX step feed: no embeddings and positions "
+                 "inputs among %zu (%s%s)",
+                 inputs.size(), names.c_str(),
+                 inputs.size() > 8 ? ", ..." : "");
+      return none();
+    }
+    // The logits output, one row, and the fully connected op behind it
+    // through the elementwise tail (the soft cap, casts, reshapes).
+    const auto outputs = subgraph.Outputs();
+    std::optional<Tensor> logits;
+    for (size_t i = 0; i < outputs.size(); ++i) {
+      const std::string name(outputs[i].Name());
+      if (!is_key(name, "logits") && !is_key(name, "logits_output")) continue;
+      auto type = outputs[i].RankedTensorType();
+      if (!type) return none();
+      const auto dims = type->Layout().Dimensions();
+      for (size_t d = 0; d + 1 < dims.size(); ++d) {
+        if (dims[d] != 1) return none();
+      }
+      if (dims.empty() || dims.back() <= 0) return none();
+      feed.logits_output_port = static_cast<uint32_t>(i);
+      feed.vocab = static_cast<uint32_t>(dims.back());
+      logits = outputs[i];
+    }
+    if (!logits.has_value()) return none();
+    // The token table: the head's weights when they are an INT4 per-channel
+    // [vocab, dim] view of the model file (the embedder's table is tied to
+    // them, with the multiplier sqrt(dim)); otherwise the runtime registers
+    // the embedder's own table (an external head, a blockwise embedder).
+    feed.table_offset = kTensorRtStepFeedNoTable;
+    feed.multiplier =
+        static_cast<float>(std::sqrt(static_cast<double>(feed.dim)));
+    MatchTiedHeadTable(*logits, feed);
+    if (feed.local_mask_port != kTensorRtStepFeedNoPort) {
+      // The sliding window is the runtime's (the model's metadata); the
+      // graph shows it only where a block reads its cache through a window.
+      // Unknown (0), the dispatch learns it from the host's masks.
+      for (const auto& read : windowed_reads_) {
+        feed.window = std::max(feed.window, static_cast<uint32_t>(read.window));
+      }
+      if (feed.window > feed.ring) feed.window = 0;
+    }
+    const std::string table_text =
+        feed.table_offset == kTensorRtStepFeedNoTable
+            ? "from the runtime"
+            : "at " + std::to_string(feed.table_offset);
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX step feed: embeddings port %u, positions "
+               "%u, param %s, local mask %s (ring %u, window %u), global mask "
+               "%s, logits output %u, table [%u, %u] %s, multiplier %g",
+               feed.embeddings_port, feed.positions_port,
+               feed.param_port == kTensorRtStepFeedNoPort
+                   ? "-"
+                   : std::to_string(feed.param_port).c_str(),
+               feed.local_mask_port == kTensorRtStepFeedNoPort
+                   ? "-"
+                   : std::to_string(feed.local_mask_port).c_str(),
+               feed.ring, feed.window,
+               feed.global_mask_port == kTensorRtStepFeedNoPort
+                   ? "-"
+                   : std::to_string(feed.global_mask_port).c_str(),
+               feed.logits_output_port, feed.vocab, feed.dim,
+               table_text.c_str(), feed.multiplier);
+    return std::optional<TensorRtStepFeedBuildData>(std::move(feed));
+  }
+
+  // The fully connected op behind the logits through the elementwise tail
+  // (the soft cap, casts, reshapes), and its weights as the feed's table when
+  // they are the tied embedder's: INT4 per-channel [vocab, dim] in the model
+  // file.
+  void MatchTiedHeadTable(const Tensor& logits,
+                          TensorRtStepFeedBuildData& feed) {
+    Tensor value = logits;
+    std::optional<Op> head;
+    for (int hops = 0; hops < 12 && !head.has_value(); ++hops) {
+      auto producer = value.GetDefiningOp();
+      if (!producer) return;
+      switch (producer->Code()) {
+        case kLiteRtOpCodeTflFullyConnected:
+          head = *producer;
+          break;
+        case kLiteRtOpCodeTflCast:
+        case kLiteRtOpCodeTflReshape:
+        case kLiteRtOpCodeTflTanh:
+          if (producer->Inputs().empty()) return;
+          value = producer->Inputs()[0];
+          break;
+        case kLiteRtOpCodeTflMul:
+        case kLiteRtOpCodeTflDiv:
+          if (producer->Inputs().size() != 2) return;
+          // The other input is the scalar.
+          value =
+              producer
+                  ->Inputs()[ReadFloatScalar(producer->Inputs()[0]) ? 1 : 0];
+          break;
+        default:
+          return;
+      }
+    }
+    if (!head.has_value() || head->Inputs().size() < 2) return;
+    const Tensor weights = head->Inputs()[1];
+    auto weights_type = weights.RankedTensorType();
+    if (!weights_type || weights.ElementType() != litert::ElementType::Int4 ||
+        !weights.HasWeights() || weights_type->Layout().Rank() != 2 ||
+        weights_type->Layout().Dimensions()[0] !=
+            static_cast<int32_t>(feed.vocab) ||
+        weights_type->Layout().Dimensions()[1] !=
+            static_cast<int32_t>(feed.dim) ||
+        weights.QTypeId() != kLiteRtQuantizationPerChannel) {
+      return;
+    }
+    const auto q = weights.PerChannelQuantization();
+    if (q.quantized_dimension != 0 || q.num_channels != feed.vocab ||
+        q.scales == nullptr) {
+      return;
+    }
+    const absl::Span<const uint8_t> bytes = weights.Weights().Bytes();
+    if (bytes.size() != static_cast<size_t>(feed.vocab) * feed.dim / 2) {
+      return;
+    }
+    auto offset = weight_store_->SourceOffset(bytes);
+    if (!offset) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX step feed: the head's weights are not a "
+                 "view of the model file (%s)",
+                 offset.Error().Message().c_str());
+      return;
+    }
+    feed.table_offset = *offset;
+    feed.row_scales.resize(static_cast<size_t>(feed.vocab) * sizeof(float));
+    std::memcpy(feed.row_scales.data(), q.scales, feed.row_scales.size());
+  }
+
   // FP16-activation mode: activations flow through the network as FP16 real
   // values; int8 activation quantization survives only at island boundaries
   // (one dequantize per input, one quantize per output) and weights keep

@@ -32,6 +32,10 @@ inline constexpr uint32_t kTensorRtBytecodeVersionWithSharedWeights = 4;
 // Version 4 plus, per engine, an optional weight store: where the weights
 // the plan was built without come from.
 inline constexpr uint32_t kTensorRtBytecodeVersionWithWeightStore = 5;
+// Version 5 plus, per engine, an optional step feed: how a decode step's
+// inputs follow from its outputs (TensorRtStepFeed), so that the dispatch can
+// run the next step before the host asks for it.
+inline constexpr uint32_t kTensorRtBytecodeVersionWithStepFeed = 6;
 
 // Versioned POD payload behind LiteRtJitExecutable. The compiler plugin owns
 // the bytecode for the lifetime of the compiled result; dispatch reads it
@@ -143,6 +147,40 @@ struct TensorRtLlmHead {
   size_t bf16_scales_size = 0;
 };
 
+inline constexpr uint32_t kTensorRtStepFeedNoPort = 0xffffffffu;
+// A feed without a token table of its own: the runtime registers the
+// embedder's (dispatch/token_table_c_api.h) before the first decode step.
+inline constexpr uint64_t kTensorRtStepFeedNoTable = 0xffffffffffffffffull;
+
+// A decode step feeds itself: given the step's logits, the next step's inputs
+// are the greedy token's embedding (a row of the token table times the
+// embedder's multiplier), the position plus one, the cache parameter
+// {start + 1, end + 1, end + 1} and the local mask of the next position
+// (LiteRT-LM's ring-buffer decode mask). The dispatch runs that step on the
+// device before the host asks for it and verifies the host's inputs against
+// what it ran. The row scales alias the enclosing bytecode buffer.
+struct TensorRtStepFeed {
+  uint32_t embeddings_port = kTensorRtStepFeedNoPort;   // FP32 [1, 1, dim]
+  uint32_t positions_port = kTensorRtStepFeedNoPort;    // INT32 [1]
+  uint32_t param_port = kTensorRtStepFeedNoPort;        // INT32 [.., 7]
+  uint32_t local_mask_port = kTensorRtStepFeedNoPort;   // BOOL [1, 1, 1, ring]
+  uint32_t global_mask_port = kTensorRtStepFeedNoPort;  // BOOL [1, 1, 1, keys]
+  uint32_t logits_output_port = 0;  // the logits the greedy sampler reads
+  uint32_t vocab = 0;
+  uint32_t dim = 0;
+  // The local mask's keys, and the sliding window the host fills it with.
+  uint32_t ring = 0;
+  uint32_t window = 0;
+  // The token table in the weight store's source file: INT4 row-major
+  // [vocab, dim], the low nibble first, one FP32 scale per row. Or no table
+  // and no scales (kTensorRtStepFeedNoTable): the runtime registers the
+  // embedder's table, scales and multiplier.
+  uint64_t table_offset = 0;
+  float multiplier = 1.0f;
+  const uint8_t* row_scales = nullptr;  // vocab little-endian FP32 values
+  size_t row_scales_size = 0;
+};
+
 // TensorRT weight types are kept independent of NvInfer headers so the
 // bytecode parser remains usable by LiteRT tooling that does not link the
 // TensorRT SDK. The numeric values intentionally match nvinfer1::DataType.
@@ -250,6 +288,7 @@ struct TensorRtBundleEntry {
   const TensorRtLlmHead* trtllm_head = nullptr;
   std::vector<TensorRtSharedWeightRef> refit_weights;
   const TensorRtWeightStore* weight_store = nullptr;
+  const TensorRtStepFeed* step_feed = nullptr;
 };
 
 struct TensorRtBytecode {
@@ -262,6 +301,7 @@ struct TensorRtBytecode {
   std::optional<TensorRtLlmHead> trtllm_head;
   std::vector<TensorRtRefitWeight> refit_weights;
   std::optional<TensorRtWeightStore> weight_store;
+  std::optional<TensorRtStepFeed> step_feed;
 };
 
 Expected<std::vector<uint8_t>> PackTensorRtBytecode(
