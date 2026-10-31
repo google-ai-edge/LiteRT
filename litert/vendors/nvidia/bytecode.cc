@@ -278,10 +278,15 @@ Expected<void> ValidateStepFeed(const TensorRtStepFeed& feed,
   if (feed.embeddings_port == kTensorRtStepFeedNoPort ||
       !port_ok(feed.embeddings_port) || !port_ok(feed.positions_port) ||
       !port_ok(feed.param_port) || !port_ok(feed.local_mask_port) ||
-      !port_ok(feed.global_mask_port) ||
+      !port_ok(feed.global_mask_port) || !port_ok(feed.per_layer_port) ||
       feed.logits_output_port >= output_names.size()) {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  "Invalid TensorRT step feed ports");
+  }
+  if ((feed.per_layer_port == kTensorRtStepFeedNoPort) !=
+      (feed.per_layer_count == 0 && feed.per_layer_width == 0)) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid TensorRT step feed per-layer embeddings");
   }
   const size_t scales_size =
       feed.table_offset == kTensorRtStepFeedNoTable
@@ -303,7 +308,7 @@ Expected<void> ValidateStepFeed(const TensorRtStepFeed& feed,
 }
 
 constexpr size_t kStepFeedFixedBytes =
-    sizeof(uint32_t) * 10 + sizeof(uint64_t) * 2 + sizeof(float);
+    sizeof(uint32_t) * 13 + sizeof(uint64_t) * 2 + sizeof(float);
 
 void AppendStepFeed(std::vector<uint8_t>& out, const TensorRtStepFeed& feed) {
   AppendScalar<uint32_t>(out, feed.embeddings_port);
@@ -321,10 +326,14 @@ void AppendStepFeed(std::vector<uint8_t>& out, const TensorRtStepFeed& feed) {
   AppendScalar<uint64_t>(out, static_cast<uint64_t>(feed.row_scales_size));
   out.insert(out.end(), feed.row_scales,
              feed.row_scales + feed.row_scales_size);
+  AppendScalar<uint32_t>(out, feed.per_layer_port);
+  AppendScalar<uint32_t>(out, feed.per_layer_count);
+  AppendScalar<uint32_t>(out, feed.per_layer_width);
 }
 
+// A version 6 record stops at the row scales.
 Expected<TensorRtStepFeed> ReadStepFeed(
-    const uint8_t*& cur, const uint8_t* end,
+    const uint8_t*& cur, const uint8_t* end, uint32_t version,
     const std::vector<std::string>& input_names,
     const std::vector<std::string>& output_names) {
   TensorRtStepFeed feed;
@@ -350,6 +359,14 @@ Expected<TensorRtStepFeed> ReadStepFeed(
   feed.row_scales = cur;
   feed.row_scales_size = static_cast<size_t>(scales_size);
   cur += feed.row_scales_size;
+  if (version >= kTensorRtBytecodeVersionWithPerLayerFeed) {
+    LITERT_ASSIGN_OR_RETURN(feed.per_layer_port,
+                            ReadScalar<uint32_t>(cur, end));
+    LITERT_ASSIGN_OR_RETURN(feed.per_layer_count,
+                            ReadScalar<uint32_t>(cur, end));
+    LITERT_ASSIGN_OR_RETURN(feed.per_layer_width,
+                            ReadScalar<uint32_t>(cur, end));
+  }
   LITERT_RETURN_IF_ERROR(ValidateStepFeed(feed, input_names, output_names));
   return feed;
 }
@@ -697,7 +714,8 @@ Expected<TensorRtBytecode> ParseSharedWeightBundle(const uint8_t*& cur,
       }
       if (has_feed != 0) {
         LITERT_ASSIGN_OR_RETURN(
-            step_feed, ReadStepFeed(cur, end, input_names, output_names));
+            step_feed,
+            ReadStepFeed(cur, end, version, input_names, output_names));
       }
     }
 
@@ -926,7 +944,7 @@ Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundleImpl(
   out.reserve(reserve_size);
   AppendScalar<uint32_t>(out, kMagic);
   AppendScalar<uint32_t>(
-      out, with_step_feed      ? kTensorRtBytecodeVersionWithStepFeed
+      out, with_step_feed      ? kTensorRtBytecodeVersionWithPerLayerFeed
            : with_weight_store ? kTensorRtBytecodeVersionWithWeightStore
                                : kTensorRtBytecodeVersionWithSharedWeights);
   AppendScalar<uint32_t>(out, static_cast<uint32_t>(shared_weights.size()));
@@ -1329,7 +1347,8 @@ Expected<TensorRtBytecode> ParseTensorRtBytecode(const void* data, size_t size,
       version != kTensorRtBytecodeVersionWithTypedHead &&
       version != kTensorRtBytecodeVersionWithSharedWeights &&
       version != kTensorRtBytecodeVersionWithWeightStore &&
-      version != kTensorRtBytecodeVersionWithStepFeed) {
+      version != kTensorRtBytecodeVersionWithStepFeed &&
+      version != kTensorRtBytecodeVersionWithPerLayerFeed) {
     return Error(kLiteRtStatusErrorUnsupportedCompilerVersion,
                  "Unsupported TensorRT bytecode version");
   }

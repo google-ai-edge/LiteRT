@@ -389,7 +389,7 @@ TEST(TensorRtBytecodeTest, WeightStoreRoundTripsInAShard) {
   }
 }
 
-TEST(TensorRtBytecodeTest, StepFeedRoundTripsInAShardAsVersionSix) {
+TEST(TensorRtBytecodeTest, StepFeedRoundTripsInAShardAsVersionSeven) {
   const std::vector<uint8_t> run_data = {1, 2, 3};
   const TensorRtWeightStore store = MakeWeightStore(run_data);
   const std::vector<uint8_t> engine = {4, 5};
@@ -410,10 +410,14 @@ TEST(TensorRtBytecodeTest, StepFeedRoundTripsInAShardAsVersionSix) {
   feed.multiplier = 61.967735f;
   feed.row_scales = scales.data();
   feed.row_scales_size = scales.size();
+  feed.per_layer_port = 4;
+  feed.per_layer_count = 42;
+  feed.per_layer_width = 256;
   TensorRtBundleEntry entry;
   entry.function_name = "decode";
-  entry.input_names = {"embeddings", "positions", "param", "local_mask",
-                       "cache"};
+  entry.input_names = {
+      "embeddings",           "positions", "param", "local_mask",
+      "per_layer_embeddings", "cache"};
   entry.output_names = {"cache_out", "logits"};
   entry.engine_data = engine.data();
   entry.engine_size = engine.size();
@@ -424,10 +428,13 @@ TEST(TensorRtBytecodeTest, StepFeedRoundTripsInAShardAsVersionSix) {
   ASSERT_TRUE(shard.HasValue()) << shard.Error().Message();
   auto parsed = ParseTensorRtBytecode(shard->data(), shard->size(), "decode");
   ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
-  EXPECT_EQ(parsed->version, kTensorRtBytecodeVersionWithStepFeed);
+  EXPECT_EQ(parsed->version, kTensorRtBytecodeVersionWithPerLayerFeed);
   ASSERT_TRUE(parsed->weight_store.has_value());
   ASSERT_TRUE(parsed->step_feed.has_value());
   const TensorRtStepFeed& read = *parsed->step_feed;
+  EXPECT_EQ(read.per_layer_port, 4u);
+  EXPECT_EQ(read.per_layer_count, 42u);
+  EXPECT_EQ(read.per_layer_width, 256u);
   EXPECT_EQ(read.embeddings_port, 0u);
   EXPECT_EQ(read.positions_port, 1u);
   EXPECT_EQ(read.param_port, 2u);
@@ -462,7 +469,7 @@ TEST(TensorRtBytecodeTest, StepFeedRoundTripsInAShardAsVersionSix) {
   auto second =
       ParseTensorRtBytecode(bundle->data(), bundle->size(), "prefill");
   ASSERT_TRUE(second.HasValue()) << second.Error().Message();
-  EXPECT_EQ(second->version, kTensorRtBytecodeVersionWithStepFeed);
+  EXPECT_EQ(second->version, kTensorRtBytecodeVersionWithPerLayerFeed);
   EXPECT_FALSE(second->step_feed.has_value());
   EXPECT_FALSE(second->weight_store.has_value());
 }
@@ -502,6 +509,8 @@ TEST(TensorRtBytecodeTest, StepFeedWithoutATableRoundTrips) {
   EXPECT_EQ(read.local_mask_port, kTensorRtStepFeedNoPort);
   EXPECT_EQ(read.ring, 0u);
   EXPECT_EQ(read.multiplier, feed.multiplier);
+  EXPECT_EQ(read.per_layer_port, kTensorRtStepFeedNoPort);
+  EXPECT_EQ(read.per_layer_count, 0u);
 }
 
 TEST(TensorRtBytecodeTest, StepFeedRejectsInvalidRecords) {
@@ -544,6 +553,15 @@ TEST(TensorRtBytecodeTest, StepFeedRejectsInvalidRecords) {
   bad = feed;
   bad.row_scales_size = 0;  // a table in the file needs its scales
   EXPECT_FALSE(packs(bad));
+  bad = feed;
+  bad.per_layer_count = 3;  // per-layer dims need their port
+  EXPECT_FALSE(packs(bad));
+  bad = feed;
+  bad.per_layer_port = 1;  // and the port its dims
+  EXPECT_FALSE(packs(bad));
+  bad.per_layer_count = 3;
+  bad.per_layer_width = 8;
+  EXPECT_TRUE(packs(bad));
   bad = feed;
   bad.logits_output_port = 1;  // past the outputs
   EXPECT_FALSE(packs(bad));

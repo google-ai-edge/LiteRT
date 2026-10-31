@@ -23,7 +23,8 @@
 // back exactly through one fp16 MMA chunk, so an outlier does not coarsen its
 // block's quantization. Per-channel weight scales only (the blockwise models
 // stay on the fp16 kernel); the workspace holds the quantized rows, their
-// scales, the column maxima, the outlier set and its gathered weights.
+// scales, the column maxima, the outlier set (with the rows' fp16 scaling)
+// and its gathered weights.
 
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
@@ -297,7 +298,7 @@ __global__ void __launch_bounds__(kThreads) QuantizeRowsKernel(
     const __nv_bfloat16* __restrict__ activation, int input_size, const float* __restrict__ norm_scale,
     float norm_eps, float norm_multiplier, const uint8_t* __restrict__ outlier_flags,
     const int32_t* __restrict__ outlier_dims, int8_t* __restrict__ quantized,
-    float* __restrict__ scales, __half* __restrict__ outliers) {
+    float* __restrict__ scales, __half* __restrict__ outliers, int32_t* __restrict__ outlier_shift) {
   __shared__ float squares_s[kWarps];
   const int row = blockIdx.x;
   const __nv_bfloat162* src = reinterpret_cast<const __nv_bfloat162*>(activation + static_cast<size_t>(row) * input_size);
@@ -335,10 +336,19 @@ __global__ void __launch_bounds__(kThreads) QuantizeRowsKernel(
     if (outlier_flags[2 * i + 1] != 0) v.y = 0.0f;
     return v;
   };
+  static_assert(kOutliers == 32, "the outliers' reduction is one warp's");
   if (threadIdx.x < kOutliers) {
     const int k = outlier_dims[threadIdx.x];
     const float2 v = value_at(k / 2);
-    outliers[static_cast<size_t>(row) * kOutliers + threadIdx.x] = __float2half((k & 1) ? v.y : v.x);
+    const float value = (k & 1) ? v.y : v.x;
+    // fp16 holds 65504 at most: the row's outliers are stored below 2^15, scaled down by the power
+    // of two (exact) the GEMM scales their products back up by.
+    float largest = fabsf(value);
+#pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) largest = fmaxf(largest, __shfl_xor_sync(0xffffffffu, largest, offset));
+    const int shift = largest >= 32768.0f && largest < INFINITY ? ilogbf(largest) - 14 : 0;
+    outliers[static_cast<size_t>(row) * kOutliers + threadIdx.x] = __float2half(ldexpf(value, -shift));
+    if (threadIdx.x == 0) outlier_shift[row] = shift;
   }
   const int blocks = input_size / kActivationBlock;
   const size_t tile = row / kBlockRows;
@@ -379,8 +389,9 @@ __global__ void __launch_bounds__(kThreads) QuantizeRowsKernel(
 __global__ void __launch_bounds__(kThreads, 1) Int8GemmKernel(
     const int8_t* __restrict__ quantized, const float* __restrict__ quant_scales,
     const uint8_t* __restrict__ weights, const __nv_bfloat16* __restrict__ channel_scales,
-    const __half* __restrict__ outliers, const __half* __restrict__ outlier_weights,
-    int input_size, int output_size, int gate, __nv_bfloat16* __restrict__ output) {
+    const __half* __restrict__ outliers, const int32_t* __restrict__ outlier_shift,
+    const __half* __restrict__ outlier_weights, int input_size, int output_size, int gate,
+    __nv_bfloat16* __restrict__ output) {
   extern __shared__ __align__(16) unsigned char smem[];
   unsigned char* activation_s = smem;
   unsigned char* packed_s = smem + kStages * kActivationStageBytes;
@@ -569,6 +580,30 @@ __global__ void __launch_bounds__(kThreads, 1) Int8GemmKernel(
           *reinterpret_cast<const int4*>(outlier_weights + static_cast<size_t>(channel) * kOutliers + v * 8);
     }
     __syncthreads();
+    // A row whose outliers were stored scaled down by 2^shift (QuantizeRowsKernel): its
+    // accumulators scale down by the same before the MMAs add the scaled products, and back up
+    // after; powers of two, so the sums are what the unscaled products would have given.
+    float down[kWarpRowGroups][2];
+    float up[kWarpRowGroups][2];
+#pragma unroll
+    for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+#pragma unroll
+      for (int h = 0; h < 2; ++h) {
+        const int shift = outlier_shift[m0 + warp_row + rg * 16 + g + h * 8];
+        down[rg][h] = ldexpf(1.0f, -shift);
+        up[rg][h] = ldexpf(1.0f, shift);
+      }
+    }
+#pragma unroll
+    for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+#pragma unroll
+      for (int cg = 0; cg < kWarpColGroups; ++cg) {
+        acc[rg][cg][0] *= down[rg][0];
+        acc[rg][cg][1] *= down[rg][0];
+        acc[rg][cg][2] *= down[rg][1];
+        acc[rg][cg][3] *= down[rg][1];
+      }
+    }
     // A 16x16 fp16 operand per row group and slice; B (16 dims x 8 channels) per column pair.
     const unsigned char* x_lane = x_s + (warp_row + (lane & 7) + ((lane >> 3) & 1) * 8) * kOutlierRowBytes + (lane >> 4) * 16;
     const unsigned char* w_lane = w_s + (warp_col + (lane & 7) + (lane >> 4) * 8) * kOutlierRowBytes + ((lane >> 3) & 1) * 16;
@@ -590,6 +625,16 @@ __global__ void __launch_bounds__(kThreads, 1) Int8GemmKernel(
           MmaF16F32(acc[rg][2 * pair + 1][0], acc[rg][2 * pair + 1][1], acc[rg][2 * pair + 1][2],
                     acc[rg][2 * pair + 1][3], a[rg][0], a[rg][1], a[rg][2], a[rg][3], b[2], b[3]);
         }
+      }
+    }
+#pragma unroll
+    for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+#pragma unroll
+      for (int cg = 0; cg < kWarpColGroups; ++cg) {
+        acc[rg][cg][0] *= up[rg][0];
+        acc[rg][cg][1] *= up[rg][0];
+        acc[rg][cg][2] *= up[rg][1];
+        acc[rg][cg][3] *= up[rg][1];
       }
     }
     __syncthreads();  // the stages are reused by the gate below
@@ -644,7 +689,7 @@ __global__ void __launch_bounds__(kThreads, 1) Int8GemmKernel(
 
 namespace litert::nvidia::int8_gemm {
 struct Workspace {
-  size_t scales, quantized, column_max, row_factor, dims, flags, outliers, outlier_weights, total;
+  size_t scales, quantized, column_max, row_factor, dims, flags, outliers, outlier_shift, outlier_weights, total;
 };
 Workspace Layout(const LiteRtNvidiaGemmShape* shape) {
   const size_t rows = shape->rows;
@@ -658,7 +703,8 @@ Workspace Layout(const LiteRtNvidiaGemmShape* shape) {
   w.dims = align(w.row_factor + rows * sizeof(float));
   w.flags = align(w.dims + kOutliers * sizeof(int32_t));
   w.outliers = align(w.flags + shape->input_size);
-  w.outlier_weights = align(w.outliers + rows * kOutliers * sizeof(__half));
+  w.outlier_shift = align(w.outliers + rows * kOutliers * sizeof(__half));
+  w.outlier_weights = align(w.outlier_shift + rows * sizeof(int32_t));
   w.total = align(w.outlier_weights + channels * kOutliers * sizeof(__half));
   return w;
 }
@@ -704,6 +750,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmInt8Normed(
   int32_t* dims = reinterpret_cast<int32_t*>(base + w.dims);
   uint8_t* flags = reinterpret_cast<uint8_t*>(base + w.flags);
   __half* outliers = reinterpret_cast<__half*>(base + w.outliers);
+  int32_t* outlier_shift = reinterpret_cast<int32_t*>(base + w.outlier_shift);
   __half* outlier_weights = reinterpret_cast<__half*>(base + w.outlier_weights);
   const int channels = (shape->gate != 0 ? 2 : 1) * shape->output_size;
   const __nv_bfloat16* typed_activation = static_cast<const __nv_bfloat16*>(activation);
@@ -722,14 +769,14 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmInt8Normed(
       weights, channels, shape->input_size, dims, outlier_weights);
   QuantizeRowsKernel<<<shape->rows, kThreads, 0, stream>>>(
       typed_activation, shape->input_size, norm_scale, norm_eps, norm_multiplier, flags, dims,
-      quantized, quant_scales, outliers);
+      quantized, quant_scales, outliers, outlier_shift);
   status = cudaGetLastError();
   if (status != cudaSuccess) return status;
   const int block_channels = shape->gate != 0 ? kBlockCols / 2 : kBlockCols;
   const dim3 grid(shape->rows / kBlockRows, (shape->output_size + block_channels - 1) / block_channels);
   Int8GemmKernel<<<grid, kThreads, kSharedBytes, stream>>>(
       quantized, quant_scales, weights, static_cast<const __nv_bfloat16*>(scales), outliers,
-      outlier_weights, shape->input_size, shape->output_size, shape->gate,
+      outlier_shift, outlier_weights, shape->input_size, shape->output_size, shape->gate,
       static_cast<__nv_bfloat16*>(output));
   return cudaGetLastError();
 }

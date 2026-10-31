@@ -163,6 +163,9 @@ struct PendingBundleEntry {
       feed.param_port = step_feed->param_port;
       feed.local_mask_port = step_feed->local_mask_port;
       feed.global_mask_port = step_feed->global_mask_port;
+      feed.per_layer_port = step_feed->per_layer_port;
+      feed.per_layer_count = step_feed->per_layer_count;
+      feed.per_layer_width = step_feed->per_layer_width;
       feed.logits_output_port = step_feed->logits_output_port;
       feed.vocab = step_feed->vocab;
       feed.dim = step_feed->dim;

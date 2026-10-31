@@ -23,6 +23,18 @@ namespace {
 
 constexpr int kThreads = 256;
 
+// Element `index` of a packed table of `bits` bits per element, the low bits
+// first, two's complement.
+__device__ __forceinline__ int Unpack(const uint8_t* table, size_t index,
+                                      int bits) {
+  if (bits == 4) {
+    const int nibble = (table[index / 2] >> ((index & 1) * 4)) & 15;
+    return (nibble ^ 8) - 8;
+  }
+  const int pair = (table[index / 4] >> ((index & 3) * 2)) & 3;
+  return (pair ^ 2) - 2;
+}
+
 // The embedding of the token and the local mask of the next position, over the
 // position as it is before the scalars advance; the block that finishes last
 // (every other block has read the position by then) advances the scalars.
@@ -31,13 +43,12 @@ __global__ void StepFeedKernel(LiteRtNvidiaStepFeedParams p) {
   const int32_t token = p.token[0];
   const int32_t position = p.positions[0];
   const int i = blockIdx.x * kThreads + threadIdx.x;
+  const bool in_range = token >= 0 && token < p.vocab;
   if (i < p.dim) {
     float value = 0.0f;
-    if (token >= 0 && token < p.vocab) {
-      const uint8_t byte =
-          p.table[(static_cast<size_t>(token) * p.dim + i) / 2];
-      const int nibble = (byte >> ((i & 1) * 4)) & 15;
-      const int q = (nibble ^ 8) - 8;
+    if (in_range) {
+      const int q = Unpack(p.table, static_cast<size_t>(token) * p.dim + i,
+                           p.bits);
       float scale;
       if (p.block_scales != nullptr) {
         const size_t block = static_cast<size_t>(token) * (p.dim / p.scale_block) +
@@ -52,6 +63,23 @@ __global__ void StepFeedKernel(LiteRtNvidiaStepFeedParams p) {
     }
     p.embeddings[i] = value;
     if (p.embeddings_mirror != nullptr) p.embeddings_mirror[i] = value;
+  }
+  if (p.per_layer != nullptr && i < p.per_layer_count * p.per_layer_width) {
+    float value = 0.0f;
+    if (in_range) {
+      const int layer = i / p.per_layer_width;
+      const int column = i - layer * p.per_layer_width;
+      const size_t index =
+          (static_cast<size_t>(layer) * p.vocab + token) * p.per_layer_width +
+          column;
+      const int q = Unpack(p.per_layer_table, index, p.per_layer_bits);
+      value = __fmul_rn(static_cast<float>(q),
+                        p.per_layer_scales[static_cast<size_t>(layer) * p.vocab +
+                                           token]);
+      value = __fmul_rn(value, p.per_layer_multiplier);
+    }
+    p.per_layer[i] = value;
+    if (p.per_layer_mirror != nullptr) p.per_layer_mirror[i] = value;
   }
   if (p.local_mask != nullptr && i < p.ring) {
     const int next = position + 1;
@@ -103,7 +131,15 @@ extern "C" cudaError_t LiteRtNvidiaLaunchStepFeed(
        (params->scale_block <= 0 || params->dim % params->scale_block != 0)) ||
       params->embeddings == nullptr || params->positions == nullptr ||
       params->blocks_done == nullptr ||
-      params->vocab <= 0 || params->dim <= 0 || params->dim % 2 != 0 ||
+      (params->bits != 4 && params->bits != 2) ||
+      params->vocab <= 0 || params->dim <= 0 ||
+      (params->dim * params->bits) % 8 != 0 ||
+      (params->per_layer != nullptr &&
+       (params->per_layer_table == nullptr ||
+        params->per_layer_scales == nullptr || params->per_layer_count <= 0 ||
+        params->per_layer_width <= 0 ||
+        (params->per_layer_bits != 4 && params->per_layer_bits != 2) ||
+        (params->per_layer_width * params->per_layer_bits) % 8 != 0)) ||
       (params->local_mask != nullptr &&
        (params->ring <= 0 || params->window <= 0 ||
         params->window > params->ring)) ||
@@ -111,9 +147,12 @@ extern "C" cudaError_t LiteRtNvidiaLaunchStepFeed(
       (params->param_mirror != nullptr && params->param_count < 3)) {
     return cudaErrorInvalidValue;
   }
-  const int span = params->local_mask != nullptr
-                       ? (params->dim > params->ring ? params->dim : params->ring)
-                       : params->dim;
+  int span = params->dim;
+  if (params->local_mask != nullptr && params->ring > span) span = params->ring;
+  if (params->per_layer != nullptr &&
+      params->per_layer_count * params->per_layer_width > span) {
+    span = params->per_layer_count * params->per_layer_width;
+  }
   const int blocks = (span + kThreads - 1) / kThreads;
   StepFeedKernel<<<blocks, kThreads, 0, stream>>>(*params);
   return cudaPeekAtLastError();

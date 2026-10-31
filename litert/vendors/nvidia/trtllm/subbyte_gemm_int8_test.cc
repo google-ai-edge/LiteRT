@@ -78,6 +78,7 @@ enum class Rows {
   kChannels,  // sixteen input dims forty times larger in every row (massive
               // activations)
   kSparse,    // mostly zeros, some rows all zeros
+  kHuge,  // uniform rows, three of them with an activation past fp16's reach
 };
 
 struct Case {
@@ -112,6 +113,13 @@ void RunCase(const Case& test_case) {
     if (test_case.rows == Rows::kChannels && k % 241 == 7) value *= 40.0f;
     if (test_case.rows == Rows::kSparse && (row % 5 == 3 || i % 11 != 0))
       value = 0.0f;
+    if (test_case.rows == Rows::kHuge) {
+      // In rows the check samples: the fp16 outlier path would overflow on
+      // them.
+      if (row == 0 && k == 5) value = 7.0e4f;
+      if (row == 89 && k == 1000) value = -3.0e5f;
+      if (row == shape.rows - 1 && k == 77) value = 1.2e5f;
+    }
     activation[i] = FloatToBf16Bits(value);
   }
   std::vector<uint8_t> weights(static_cast<size_t>(channels) * input / 2);
@@ -242,6 +250,12 @@ TEST(SubbyteGemmInt8Test, UniformRows) {
   RunCase({{128, 4096, 384, kLiteRtNvidiaGemmGateGeluErf, 0},
            Rows::kUniform,
            true});
+}
+
+TEST(SubbyteGemmInt8Test, OutliersPastFp16Reach) {
+  RunCase({{256, 1536, 768, kLiteRtNvidiaGemmGateNone, 0}, Rows::kHuge, false});
+  RunCase(
+      {{128, 3840, 512, kLiteRtNvidiaGemmGateGeluTanh, 0}, Rows::kHuge, false});
 }
 
 TEST(SubbyteGemmInt8Test, OutlierChannelsAreExact) {

@@ -149,6 +149,7 @@ TEST(StepFeedKernelTest, FeedsTheNextStepLikeTheHost) {
       LiteRtNvidiaStepFeedParams params{};
       params.token = static_cast<const int32_t*>(device_token.get());
       params.table = static_cast<const uint8_t*>(device_table.get());
+      params.bits = 4;
       params.row_scales = static_cast<const float*>(device_scales.get());
       params.multiplier = multiplier;
       params.vocab = kVocab;
@@ -255,6 +256,7 @@ TEST(StepFeedKernelTest, OutOfRangeTokenGivesZeros) {
   LiteRtNvidiaStepFeedParams params{};
   params.token = static_cast<const int32_t*>(device_token.get());
   params.table = static_cast<const uint8_t*>(device_table.get());
+  params.bits = 4;
   params.row_scales = static_cast<const float*>(device_scales.get());
   params.multiplier = 2.0f;
   params.vocab = kVocab;
@@ -297,6 +299,136 @@ TEST(StepFeedKernelTest, OutOfRangeTokenGivesZeros) {
   params.block_scales = nullptr;
   EXPECT_EQ(LiteRtNvidiaLaunchStepFeed(&params, nullptr),
             cudaErrorInvalidValue);
+  params.row_scales = static_cast<const float*>(device_scales.get());
+  params.bits = 3;  // 4 or 2
+  EXPECT_EQ(LiteRtNvidiaLaunchStepFeed(&params, nullptr),
+            cudaErrorInvalidValue);
+  params.bits = 4;
+  params.per_layer =
+      static_cast<float*>(device_embeddings.get());  // without its tables
+  EXPECT_EQ(LiteRtNvidiaLaunchStepFeed(&params, nullptr),
+            cudaErrorInvalidValue);
+}
+
+int DecodeInt2(const std::vector<uint8_t>& table, size_t index) {
+  const int pair = (table[index / 4] >> (2 * (index % 4))) & 3;
+  return (pair ^ 2) - 2;
+}
+
+TEST(StepFeedKernelTest, FeedsInt2AndPerLayerEmbeddingsLikeTheHost) {
+  // The Gemma E models: an INT2 text table, and per-layer tables with their
+  // own row scales, concatenated, no multiplier.
+  constexpr int kVocab = 40;
+  constexpr int kDim = 16;
+  constexpr int kLayers = 3;
+  constexpr int kWidth = 8;
+  const float multiplier = 4.0f;
+  std::vector<uint8_t> table(static_cast<size_t>(kVocab) * kDim / 4);
+  std::vector<uint8_t> per_layer_table(static_cast<size_t>(kLayers) * kVocab *
+                                       kWidth / 4);
+  uint32_t state = 99u;
+  for (auto* bytes : {&table, &per_layer_table}) {
+    for (auto& byte : *bytes) {
+      state = state * 1664525u + 1013904223u;
+      byte = static_cast<uint8_t>(state >> 24);
+    }
+  }
+  std::vector<float> scales(kVocab);
+  std::vector<float> per_layer_scales(static_cast<size_t>(kLayers) * kVocab);
+  for (int v = 0; v < kVocab; ++v)
+    scales[v] = 0.01f + 0.001f * static_cast<float>(v);
+  for (size_t i = 0; i < per_layer_scales.size(); ++i) {
+    per_layer_scales[i] = 0.02f + 0.0005f * static_cast<float>(i % 13);
+  }
+  auto device_table = AllocateCuda(table.size());
+  auto device_scales = AllocateCuda(scales.size() * sizeof(float));
+  auto device_per_layer_table = AllocateCuda(per_layer_table.size());
+  auto device_per_layer_scales =
+      AllocateCuda(per_layer_scales.size() * sizeof(float));
+  auto device_token = AllocateCuda(sizeof(int32_t));
+  auto device_embeddings = AllocateCuda(kDim * sizeof(float));
+  auto device_per_layer = AllocateCuda(kLayers * kWidth * sizeof(float));
+  auto device_positions = AllocateCuda(sizeof(int32_t));
+  auto device_counter = AllocateCuda(sizeof(unsigned int));
+  auto mirror = AllocateMapped(kLayers * kWidth * sizeof(float));
+  auto* per_layer_mirror = static_cast<float*>(mirror.get());
+  ASSERT_EQ(cudaMemset(device_counter.get(), 0, sizeof(unsigned int)),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(device_table.get(), table.data(), table.size(),
+                       cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(device_scales.get(), scales.data(),
+                       scales.size() * sizeof(float), cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(device_per_layer_table.get(), per_layer_table.data(),
+                       per_layer_table.size(), cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(device_per_layer_scales.get(), per_layer_scales.data(),
+                       per_layer_scales.size() * sizeof(float),
+                       cudaMemcpyHostToDevice),
+            cudaSuccess);
+  for (const int32_t token : {0, 11, kVocab - 1}) {
+    const int32_t position = 7;
+    ASSERT_EQ(cudaMemcpy(device_token.get(), &token, sizeof(token),
+                         cudaMemcpyHostToDevice),
+              cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(device_positions.get(), &position, sizeof(position),
+                         cudaMemcpyHostToDevice),
+              cudaSuccess);
+    LiteRtNvidiaStepFeedParams params{};
+    params.token = static_cast<const int32_t*>(device_token.get());
+    params.table = static_cast<const uint8_t*>(device_table.get());
+    params.bits = 2;
+    params.row_scales = static_cast<const float*>(device_scales.get());
+    params.multiplier = multiplier;
+    params.vocab = kVocab;
+    params.dim = kDim;
+    params.embeddings = static_cast<float*>(device_embeddings.get());
+    params.positions = static_cast<int32_t*>(device_positions.get());
+    params.per_layer = static_cast<float*>(device_per_layer.get());
+    params.per_layer_table =
+        static_cast<const uint8_t*>(device_per_layer_table.get());
+    params.per_layer_scales =
+        static_cast<const float*>(device_per_layer_scales.get());
+    params.per_layer_count = kLayers;
+    params.per_layer_width = kWidth;
+    params.per_layer_bits = 2;
+    params.per_layer_multiplier = 1.0f;
+    params.per_layer_mirror = per_layer_mirror;
+    params.blocks_done = static_cast<unsigned int*>(device_counter.get());
+    ASSERT_EQ(LiteRtNvidiaLaunchStepFeed(&params, nullptr), cudaSuccess);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    std::vector<float> embeddings(kDim);
+    std::vector<float> per_layer(kLayers * kWidth);
+    ASSERT_EQ(cudaMemcpy(embeddings.data(), device_embeddings.get(),
+                         kDim * sizeof(float), cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    ASSERT_EQ(
+        cudaMemcpy(per_layer.data(), device_per_layer.get(),
+                   per_layer.size() * sizeof(float), cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    // The INT2 unpack of the CPU embedder: (q * 64) * (scale / 64), which is
+    // q * scale rounded once, then the multiplier.
+    for (int k = 0; k < kDim; ++k) {
+      const float dequantized =
+          static_cast<float>(
+              DecodeInt2(table, static_cast<size_t>(token) * kDim + k)) *
+          scales[token];
+      ASSERT_EQ(embeddings[k], dequantized * multiplier) << "dim " << k;
+    }
+    for (int layer = 0; layer < kLayers; ++layer) {
+      for (int c = 0; c < kWidth; ++c) {
+        const size_t index =
+            (static_cast<size_t>(layer) * kVocab + token) * kWidth + c;
+        const float expected =
+            static_cast<float>(DecodeInt2(per_layer_table, index)) *
+            per_layer_scales[static_cast<size_t>(layer) * kVocab + token];
+        ASSERT_EQ(per_layer[layer * kWidth + c], expected)
+            << "layer " << layer << " column " << c;
+        ASSERT_EQ(per_layer_mirror[layer * kWidth + c], expected);
+      }
+    }
+  }
 }
 
 TEST(StepFeedKernelTest, BlockScalesFeedLikeTheHostsBlockwiseLookup) {
@@ -343,6 +475,7 @@ TEST(StepFeedKernelTest, BlockScalesFeedLikeTheHostsBlockwiseLookup) {
     LiteRtNvidiaStepFeedParams params{};
     params.token = static_cast<const int32_t*>(device_token.get());
     params.table = static_cast<const uint8_t*>(device_table.get());
+    params.bits = 4;
     params.block_scales = static_cast<const uint16_t*>(device_scales.get());
     params.scale_block = kBlock;
     params.multiplier = multiplier;

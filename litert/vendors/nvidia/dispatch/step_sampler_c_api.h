@@ -41,6 +41,13 @@ LiteRtStatus LiteRtDispatchNvidiaStepSamplerSet(int32_t k, float p,
 LiteRtStatus LiteRtDispatchNvidiaStepSamplerPushUniforms(const double* uniforms,
                                                          int32_t count);
 
+// The decode invocations the host will still make after the one it makes
+// next (a bounded response: its output limit less the tokens decoded so
+// far, less one), told before each invocation: the steps ahead stop at that
+// count, so a response's end leaves none in flight for the next prefill to
+// wait on. UINT32_MAX, or no call, is no bound. Process-wide.
+LiteRtStatus LiteRtDispatchNvidiaStepFeedSetBudget(uint32_t remaining);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

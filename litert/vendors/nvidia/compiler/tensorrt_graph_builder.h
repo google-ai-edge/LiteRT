@@ -54,6 +54,9 @@ struct TensorRtStepFeedBuildData {
   uint32_t param_port = kTensorRtStepFeedNoPort;
   uint32_t local_mask_port = kTensorRtStepFeedNoPort;
   uint32_t global_mask_port = kTensorRtStepFeedNoPort;
+  uint32_t per_layer_port = kTensorRtStepFeedNoPort;
+  uint32_t per_layer_count = 0;
+  uint32_t per_layer_width = 0;
   uint32_t logits_output_port = 0;
   uint32_t vocab = 0;
   uint32_t dim = 0;

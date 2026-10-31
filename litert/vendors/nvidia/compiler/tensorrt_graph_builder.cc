@@ -2793,14 +2793,28 @@ class TensorRtGraphBuilder {
   Expected<std::optional<TensorRtStepFeedBuildData>> MatchStepFeed(
       const Subgraph& subgraph) {
     const auto none = [] { return std::optional<TensorRtStepFeedBuildData>(); };
+    // A signature the feed cannot follow: the line that saw why.
+    const auto refuse = [&none](int line) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX step feed: not this signature "
+                 "(tensorrt_graph_builder.cc:%d)",
+                 line);
+      return none();
+    };
     if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_STEP_FEED",
-                    /*default_value=*/true) ||
-        weight_store_ == nullptr) {
+                    /*default_value=*/true)) {
       return none();
     }
     // The tensors carry the signature's key behind the signature's name
-    // (decode_embeddings, prefill_1024_input_pos, decode_logits_output).
-    const auto is_key = [](const std::string& name, const char* key) {
+    // (decode_embeddings, prefill_1024_input_pos, decode_logits_output), some
+    // models with an output index after it (decode_input_pos:0).
+    const auto is_key = [](std::string name, const char* key) {
+      const size_t colon = name.rfind(':');
+      if (colon != std::string::npos && colon + 1 < name.size() &&
+          name.find_first_not_of("0123456789", colon + 1) ==
+              std::string::npos) {
+        name.erase(colon);
+      }
       const std::string suffix = std::string("_") + key;
       return name == key || (name.size() > suffix.size() &&
                              name.compare(name.size() - suffix.size(),
@@ -2821,23 +2835,35 @@ class TensorRtGraphBuilder {
         }
         return !dims.empty();
       };
-      if (is_key(name, "embeddings")) {
+      if (is_key(name, "per_layer_embeddings")) {
+        // [.., layers, width], the per-layer embedder's lookups of the token.
+        if (input.ElementType() != litert::ElementType::Float32 ||
+            dims.size() < 2 || dims[dims.size() - 2] <= 0 || dims.back() <= 0) {
+          return refuse(__LINE__);
+        }
+        for (size_t d = 0; d + 2 < dims.size(); ++d) {
+          if (dims[d] != 1) return refuse(__LINE__);
+        }
+        feed.per_layer_port = port;
+        feed.per_layer_count = static_cast<uint32_t>(dims[dims.size() - 2]);
+        feed.per_layer_width = static_cast<uint32_t>(dims.back());
+      } else if (is_key(name, "embeddings")) {
         if (input.ElementType() != litert::ElementType::Float32 ||
             !all_ones_but_last() || dims.back() <= 0 || dims.back() % 2 != 0) {
-          return none();
+          return refuse(__LINE__);
         }
         feed.embeddings_port = port;
         feed.dim = static_cast<uint32_t>(dims.back());
       } else if (is_key(name, "positions") || is_key(name, "input_pos")) {
         if (input.ElementType() != litert::ElementType::Int32 ||
             !all_ones_but_last() || dims.back() != 1) {
-          return none();
+          return refuse(__LINE__);
         }
         feed.positions_port = port;
       } else if (is_key(name, "param_tensor")) {
         if (input.ElementType() != litert::ElementType::Int32 ||
             !all_ones_but_last() || dims.back() < 3) {
-          return none();
+          return refuse(__LINE__);
         }
         feed.param_port = port;
       } else if (is_key(name, "local_mask") ||
@@ -2845,7 +2871,7 @@ class TensorRtGraphBuilder {
                  is_key(name, "local_attn_mask")) {
         if (input.ElementType() != litert::ElementType::Bool ||
             !all_ones_but_last() || dims.back() <= 0) {
-          return none();
+          return refuse(__LINE__);
         }
         feed.local_mask_port = port;
         feed.ring = static_cast<uint32_t>(dims.back());
@@ -2853,7 +2879,7 @@ class TensorRtGraphBuilder {
                  is_key(name, "mask")) {
         if (input.ElementType() != litert::ElementType::Bool ||
             !all_ones_but_last()) {
-          return none();
+          return refuse(__LINE__);
         }
         feed.global_mask_port = port;
       }
@@ -2871,25 +2897,47 @@ class TensorRtGraphBuilder {
                  inputs.size() > 8 ? ", ..." : "");
       return none();
     }
-    // The logits output, one row, and the fully connected op behind it
-    // through the elementwise tail (the soft cap, casts, reshapes).
+    // The logits output, one row: by its key, or, where the outputs carry
+    // the exporter's names (StatefulPartitionedCall:49), the one row output
+    // a fully connected op from the embedding dim to its width produces,
+    // through the elementwise tail (the head).
     const auto outputs = subgraph.Outputs();
     std::optional<Tensor> logits;
     for (size_t i = 0; i < outputs.size(); ++i) {
       const std::string name(outputs[i].Name());
-      if (!is_key(name, "logits") && !is_key(name, "logits_output")) continue;
+      const bool named =
+          is_key(name, "logits") || is_key(name, "logits_output");
       auto type = outputs[i].RankedTensorType();
-      if (!type) return none();
-      const auto dims = type->Layout().Dimensions();
-      for (size_t d = 0; d + 1 < dims.size(); ++d) {
-        if (dims[d] != 1) return none();
+      if (!type) {
+        if (named) return refuse(__LINE__);
+        continue;
       }
-      if (dims.empty() || dims.back() <= 0) return none();
+      const auto dims = type->Layout().Dimensions();
+      bool one_row = !dims.empty() && dims.back() > 0;
+      for (size_t d = 0; d + 1 < dims.size(); ++d) {
+        if (dims[d] != 1) one_row = false;
+      }
+      if (!one_row) {
+        if (named) return refuse(__LINE__);
+        continue;
+      }
+      if (!named) {
+        auto head = FindHeadBehind(outputs[i]);
+        if (!head.has_value() || head->Inputs().size() < 2) continue;
+        auto weights_type = head->Inputs()[1].RankedTensorType();
+        if (!weights_type || weights_type->Layout().Rank() != 2 ||
+            weights_type->Layout().Dimensions()[0] != dims.back() ||
+            weights_type->Layout().Dimensions()[1] !=
+                static_cast<int32_t>(feed.dim)) {
+          continue;
+        }
+      }
       feed.logits_output_port = static_cast<uint32_t>(i);
       feed.vocab = static_cast<uint32_t>(dims.back());
       logits = outputs[i];
+      if (named) break;
     }
-    if (!logits.has_value()) return none();
+    if (!logits.has_value()) return refuse(__LINE__);
     // The token table: the head's weights when they are an INT4 per-channel
     // [vocab, dim] view of the model file (the embedder's table is tied to
     // them, with the multiplier sqrt(dim)); otherwise the runtime registers
@@ -2911,10 +2959,17 @@ class TensorRtGraphBuilder {
         feed.table_offset == kTensorRtStepFeedNoTable
             ? "from the runtime"
             : "at " + std::to_string(feed.table_offset);
+    const std::string per_layer_text =
+        feed.per_layer_port == kTensorRtStepFeedNoPort
+            ? "-"
+            : std::to_string(feed.per_layer_port) + " [" +
+                  std::to_string(feed.per_layer_count) + ", " +
+                  std::to_string(feed.per_layer_width) + "]";
     LITERT_LOG(LITERT_INFO,
                "NVIDIA TensorRT-RTX step feed: embeddings port %u, positions "
                "%u, param %s, local mask %s (ring %u, window %u), global mask "
-               "%s, logits output %u, table [%u, %u] %s, multiplier %g",
+               "%s, per-layer %s, logits output %u, table [%u, %u] %s, "
+               "multiplier %g",
                feed.embeddings_port, feed.positions_port,
                feed.param_port == kTensorRtStepFeedNoPort
                    ? "-"
@@ -2926,44 +2981,47 @@ class TensorRtGraphBuilder {
                feed.global_mask_port == kTensorRtStepFeedNoPort
                    ? "-"
                    : std::to_string(feed.global_mask_port).c_str(),
-               feed.logits_output_port, feed.vocab, feed.dim,
-               table_text.c_str(), feed.multiplier);
+               per_layer_text.c_str(), feed.logits_output_port, feed.vocab,
+               feed.dim, table_text.c_str(), feed.multiplier);
     return std::optional<TensorRtStepFeedBuildData>(std::move(feed));
   }
 
-  // The fully connected op behind the logits through the elementwise tail
-  // (the soft cap, casts, reshapes), and its weights as the feed's table when
-  // they are the tied embedder's: INT4 per-channel [vocab, dim] in the model
-  // file.
-  void MatchTiedHeadTable(const Tensor& logits,
-                          TensorRtStepFeedBuildData& feed) {
-    Tensor value = logits;
-    std::optional<Op> head;
-    for (int hops = 0; hops < 12 && !head.has_value(); ++hops) {
+  // The fully connected op behind a tensor through the elementwise tail
+  // (the soft cap, casts, reshapes), or none.
+  static std::optional<Op> FindHeadBehind(const Tensor& tensor) {
+    Tensor value = tensor;
+    for (int hops = 0; hops < 12; ++hops) {
       auto producer = value.GetDefiningOp();
-      if (!producer) return;
+      if (!producer) return std::nullopt;
       switch (producer->Code()) {
         case kLiteRtOpCodeTflFullyConnected:
-          head = *producer;
-          break;
+          return *producer;
         case kLiteRtOpCodeTflCast:
         case kLiteRtOpCodeTflReshape:
         case kLiteRtOpCodeTflTanh:
-          if (producer->Inputs().empty()) return;
+          if (producer->Inputs().empty()) return std::nullopt;
           value = producer->Inputs()[0];
           break;
         case kLiteRtOpCodeTflMul:
         case kLiteRtOpCodeTflDiv:
-          if (producer->Inputs().size() != 2) return;
+          if (producer->Inputs().size() != 2) return std::nullopt;
           // The other input is the scalar.
           value =
               producer
                   ->Inputs()[ReadFloatScalar(producer->Inputs()[0]) ? 1 : 0];
           break;
         default:
-          return;
+          return std::nullopt;
       }
     }
+    return std::nullopt;
+  }
+
+  // The head's weights as the feed's table when they are the tied
+  // embedder's: INT4 per-channel [vocab, dim] in the model file.
+  void MatchTiedHeadTable(const Tensor& logits,
+                          TensorRtStepFeedBuildData& feed) {
+    auto head = FindHeadBehind(logits);
     if (!head.has_value() || head->Inputs().size() < 2) return;
     const Tensor weights = head->Inputs()[1];
     auto weights_type = weights.RankedTensorType();
@@ -2982,8 +3040,9 @@ class TensorRtGraphBuilder {
       return;
     }
     const absl::Span<const uint8_t> bytes = weights.Weights().Bytes();
-    if (bytes.size() != static_cast<size_t>(feed.vocab) * feed.dim / 2) {
-      return;
+    if (bytes.size() != static_cast<size_t>(feed.vocab) * feed.dim / 2 ||
+        weight_store_ == nullptr) {
+      return;  // without a weight store the table has no place in the file
     }
     auto offset = weight_store_->SourceOffset(bytes);
     if (!offset) {
@@ -3759,9 +3818,17 @@ class TensorRtGraphBuilder {
   };
 
   // A cast between float types, whose input the fusion reads instead.
+  // LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS=0 stops the fusion at a cast,
+  // as it stopped before it read through them: the projections behind the
+  // Gemma 4 exports' casts then take TensorRT's norm, for a comparison.
   static bool IsFloatCast(const Op& op) {
-    return op.Code() == kLiteRtOpCodeTflCast && op.Inputs().size() == 1 &&
-           op.Outputs().size() == 1 &&
+    static const bool through_casts = [] {
+      const char* value =
+          std::getenv("LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS");
+      return value == nullptr || std::strcmp(value, "0") != 0;
+    }();
+    return through_casts && op.Code() == kLiteRtOpCodeTflCast &&
+           op.Inputs().size() == 1 && op.Outputs().size() == 1 &&
            IsFloatLike(op.Inputs()[0].ElementType()) &&
            IsFloatLike(op.Outputs()[0].ElementType());
   }

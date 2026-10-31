@@ -31,9 +31,11 @@ extern "C" {
 typedef struct {
   uint32_t vocab;
   uint32_t dim;
-  // INT4 row-major [vocab, dim], the low nibble first: vocab * dim / 2 bytes,
-  // in memory (table), or in a file (table null): read from the open
-  // descriptor table_fd at table_offset during the call.
+  // INT4 (bits 4) or INT2 (bits 2) row-major [vocab, dim], the low bits
+  // first: vocab * dim * bits / 8 bytes, in memory (table), or in a file
+  // (table null): read from the open descriptor table_fd at table_offset
+  // during the call.
+  uint32_t bits;
   const void* table;
   size_t table_bytes;
   int32_t table_fd;
@@ -55,6 +57,29 @@ typedef struct {
 // kLiteRtStatusErrorUnsupported before the dispatch is initialized.
 LiteRtStatus LiteRtDispatchNvidiaRegisterTokenTable(
     const LiteRtDispatchNvidiaTokenTable* table);
+
+// The per-layer embedder's tables (the Gemma E models): `layers` tables
+// [vocab, width] of `bits` bits, each with one FP32 scale per row, whose
+// lookups of a token, concatenated and times the multiplier, are the decode
+// step's per-layer embeddings [layers, width].
+typedef struct {
+  uint32_t vocab;
+  uint32_t width;
+  uint32_t layers;
+  uint32_t bits;
+  const void* const* tables;       // layers pointers, table_bytes each
+  size_t table_bytes;              // vocab * width * bits / 8
+  const float* const* row_scales;  // layers pointers, vocab floats each
+  float multiplier;
+} LiteRtDispatchNvidiaPerLayerTokenTables;
+
+// Registers the per-layer tables for the decode steps that await them, as
+// LiteRtDispatchNvidiaRegisterTokenTable registers a token table: copied to
+// the device during the call (one buffer of the tables, one of the scales),
+// kept as long as the process; kLiteRtStatusErrorNotFound when no step
+// awaits them.
+LiteRtStatus LiteRtDispatchNvidiaRegisterPerLayerTokenTables(
+    const LiteRtDispatchNvidiaPerLayerTokenTables* tables);
 
 // The local attention's sliding window (keys a position reads), for the
 // masks the decode steps ahead fill, when the model's bytecode does not say:

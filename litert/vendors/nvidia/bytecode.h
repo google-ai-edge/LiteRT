@@ -36,6 +36,9 @@ inline constexpr uint32_t kTensorRtBytecodeVersionWithWeightStore = 5;
 // inputs follow from its outputs (TensorRtStepFeed), so that the dispatch can
 // run the next step before the host asks for it.
 inline constexpr uint32_t kTensorRtBytecodeVersionWithStepFeed = 6;
+// Version 6 plus, in the step feed, the per-layer embeddings: a second input
+// the feed writes, from the per-layer embedder's tables the runtime registers.
+inline constexpr uint32_t kTensorRtBytecodeVersionWithPerLayerFeed = 7;
 
 // Versioned POD payload behind LiteRtJitExecutable. The compiler plugin owns
 // the bytecode for the lifetime of the compiled result; dispatch reads it
@@ -165,6 +168,11 @@ struct TensorRtStepFeed {
   uint32_t param_port = kTensorRtStepFeedNoPort;        // INT32 [.., 7]
   uint32_t local_mask_port = kTensorRtStepFeedNoPort;   // BOOL [1, 1, 1, ring]
   uint32_t global_mask_port = kTensorRtStepFeedNoPort;  // BOOL [1, 1, 1, keys]
+  // FP32 [1, 1, per_layer_count, per_layer_width]: the per-layer embedder's
+  // lookups of the token, concatenated (the Gemma 3n and 4 E models).
+  uint32_t per_layer_port = kTensorRtStepFeedNoPort;
+  uint32_t per_layer_count = 0;
+  uint32_t per_layer_width = 0;
   uint32_t logits_output_port = 0;  // the logits the greedy sampler reads
   uint32_t vocab = 0;
   uint32_t dim = 0;

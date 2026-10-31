@@ -108,22 +108,40 @@ Expected<void> CudaOk(cudaError_t error, const char* what) {
 }
 
 // A token table the runtime registered (token_table_c_api.h), on the device,
-// for the step feeds whose bytecode has no table of its own.
+// for the step feeds whose bytecode has no table of its own: the text
+// embedder's (kind 0: [vocab, dim]) or the per-layer embedder's (kind 1:
+// `layers` tables [vocab, dim] one after the other, FP32 scales [layers,
+// vocab]).
 struct RegisteredTokenTable {
+  uint32_t kind = 0;
   uint32_t vocab = 0;
   uint32_t dim = 0;
+  uint32_t layers = 0;
+  uint32_t bits = 4;         // INT4 or INT2 elements
   uint32_t scale_block = 0;  // 0: FP32 scales per row, else FP16 per block
   float multiplier = 1.0f;
-  void* table = nullptr;   // INT4 [vocab, dim]
-  void* scales = nullptr;  // FP32 [vocab] or FP16 [vocab, dim / scale_block]
+  void* table = nullptr;
+  void* scales = nullptr;
 };
 
-// The registered tables and the [vocab, dim] the step feeds await: a
-// registration is taken only when a feed awaits it.
+// What a step feed awaits.
+struct AwaitedTokenTable {
+  uint32_t kind;
+  uint32_t vocab;
+  uint32_t dim;
+  uint32_t layers;
+  bool operator==(const AwaitedTokenTable& other) const {
+    return kind == other.kind && vocab == other.vocab && dim == other.dim &&
+           layers == other.layers;
+  }
+};
+
+// The registered tables and the tables the step feeds await: a registration
+// is taken only when a feed awaits it.
 struct TokenTableRegistry {
   std::mutex mutex;
   std::vector<RegisteredTokenTable> tables;
-  std::vector<std::pair<uint32_t, uint32_t>> awaited;
+  std::vector<AwaitedTokenTable> awaited;
 };
 
 TokenTableRegistry& GetTokenTableRegistry() {
@@ -155,6 +173,13 @@ std::atomic<uint32_t>& StepFeedLocalWindow() {
   return window;
 }
 
+// The decode invocations the host will still make after its next one
+// (step_sampler_c_api.h, StepFeedSetBudget): the steps ahead stop there.
+std::atomic<uint32_t>& StepFeedBudget() {
+  static std::atomic<uint32_t> budget{UINT32_MAX};
+  return budget;
+}
+
 // What a decode step's own token selection leaves for the host's sampler:
 // the step's k candidates (ids, values, the row's flag), or its argmax (k of
 // 1), in pinned memory the feed owns, by the logits buffer's device pointer,
@@ -166,6 +191,10 @@ struct StepHandoff {
   const float* values = nullptr;
   const int32_t* flags = nullptr;
   int32_t k = 0;
+  // The newest step ahead's completion (null: none in flight): a reader of
+  // the logits buffer itself waits for it, since the steps ahead overwrite
+  // the buffer.
+  cudaEvent_t done = nullptr;
 };
 
 class StepHandoffRegistry {
@@ -195,20 +224,95 @@ class StepHandoffRegistry {
   std::unordered_map<const void*, StepHandoff> handoffs_;
 };
 
-// The registered table [vocab, dim]; none notes that a feed awaits one.
-std::optional<RegisteredTokenTable> FindTokenTable(uint32_t vocab,
-                                                   uint32_t dim) {
+// The registered table; none notes that a feed awaits one.
+std::optional<RegisteredTokenTable> FindTokenTable(
+    const AwaitedTokenTable& key) {
   auto& registry = GetTokenTableRegistry();
   std::lock_guard<std::mutex> lock(registry.mutex);
   for (const auto& table : registry.tables) {
-    if (table.vocab == vocab && table.dim == dim) return table;
+    if (AwaitedTokenTable{table.kind, table.vocab, table.dim, table.layers} ==
+        key) {
+      return table;
+    }
   }
-  const std::pair<uint32_t, uint32_t> key(vocab, dim);
   if (std::find(registry.awaited.begin(), registry.awaited.end(), key) ==
       registry.awaited.end()) {
     registry.awaited.push_back(key);
   }
   return std::nullopt;
+}
+
+// Whether a feed awaits such a table.
+bool TokenTableAwaited(const AwaitedTokenTable& key) {
+  auto& registry = GetTokenTableRegistry();
+  std::lock_guard<std::mutex> lock(registry.mutex);
+  return std::find(registry.awaited.begin(), registry.awaited.end(), key) !=
+         registry.awaited.end();
+}
+
+// Takes a registration: the table and the scales to the device, when a feed
+// awaits such a table and none is registered yet.
+LiteRtStatus TakeTokenTable(RegisteredTokenTable registered,
+                            const std::vector<const void*>& table_parts,
+                            size_t part_bytes,
+                            const std::vector<const void*>& scale_parts,
+                            size_t scale_part_bytes) {
+  auto& registry = GetTokenTableRegistry();
+  std::lock_guard<std::mutex> lock(registry.mutex);
+  const AwaitedTokenTable key{registered.kind, registered.vocab, registered.dim,
+                              registered.layers};
+  const std::string what =
+      registered.kind == 0
+          ? "token table [" + std::to_string(registered.vocab) + ", " +
+                std::to_string(registered.dim) + "]"
+          : std::to_string(registered.layers) + " per-layer tables [" +
+                std::to_string(registered.vocab) + ", " +
+                std::to_string(registered.dim) + "]";
+  if (std::find(registry.awaited.begin(), registry.awaited.end(), key) ==
+      registry.awaited.end()) {
+    LITERT_LOG(LITERT_INFO, "NVIDIA dispatch: no decode step awaits the %s",
+               what.c_str());
+    return kLiteRtStatusErrorNotFound;
+  }
+  for (const auto& table : registry.tables) {
+    if (AwaitedTokenTable{table.kind, table.vocab, table.dim, table.layers} ==
+        key) {
+      return kLiteRtStatusOk;  // the first registration stands
+    }
+  }
+  const size_t table_bytes = part_bytes * table_parts.size();
+  const size_t scales_bytes = scale_part_bytes * scale_parts.size();
+  cudaError_t status = cudaMalloc(&registered.table, table_bytes);
+  for (size_t i = 0; status == cudaSuccess && i < table_parts.size(); ++i) {
+    status =
+        cudaMemcpy(static_cast<uint8_t*>(registered.table) + i * part_bytes,
+                   table_parts[i], part_bytes, cudaMemcpyHostToDevice);
+  }
+  if (status == cudaSuccess) {
+    status = cudaMalloc(&registered.scales, scales_bytes);
+  }
+  for (size_t i = 0; status == cudaSuccess && i < scale_parts.size(); ++i) {
+    status = cudaMemcpy(
+        static_cast<uint8_t*>(registered.scales) + i * scale_part_bytes,
+        scale_parts[i], scale_part_bytes, cudaMemcpyHostToDevice);
+  }
+  if (status != cudaSuccess) {
+    LITERT_LOG(LITERT_WARNING, "NVIDIA dispatch: the %s is not registered: %s",
+               what.c_str(), cudaGetErrorString(status));
+    if (registered.scales != nullptr) cudaFree(registered.scales);
+    if (registered.table != nullptr) cudaFree(registered.table);
+    return status == cudaErrorMemoryAllocation
+               ? kLiteRtStatusErrorMemoryAllocationFailure
+               : kLiteRtStatusErrorRuntimeFailure;
+  }
+  registry.tables.push_back(registered);
+  LITERT_LOG(LITERT_INFO,
+             "NVIDIA dispatch: the %s registered (%zu bytes, INT%u, %s "
+             "scales, multiplier %g) for the step feed",
+             what.c_str(), table_bytes + scales_bytes, registered.bits,
+             registered.scale_block == 0 ? "row" : "block",
+             registered.multiplier);
+  return kLiteRtStatusOk;
 }
 
 void DropFileBackedBytecodePages(const LiteRtMemBuffer& buffer) {
@@ -384,6 +488,39 @@ bool DeferredUploadEnabled() {
 
 // The CUDA tensor buffers by device pointer, for the invocations that read
 // and write them through that pointer.
+// The host copy of a CUDA tensor buffer: pinned when the staging allows it
+// and the allocation succeeds, pageable otherwise. The bytes past the
+// device's are the host's alone: read as zeros.
+LiteRtStatus AllocateHostCache(CudaTensorBufferInfo* info) {
+  const size_t copy_bytes = CopyBytes(*info);
+  const size_t alloc_bytes = NonZeroBytes(HostBytes(*info));
+  if (PinnedHostStagingEnabled()) {
+    const cudaError_t error = cudaMallocHost(&info->host_cache, alloc_bytes);
+    if (error == cudaSuccess) {
+      info->host_cache_pinned = true;
+    } else {
+      LITERT_LOG(LITERT_WARNING,
+                 "cudaMallocHost CUDA tensor buffer staging failed for "
+                 "%zu bytes (%s); falling back to pageable host staging",
+                 alloc_bytes, cudaGetErrorString(error));
+      cudaGetLastError();
+      info->host_cache = nullptr;
+    }
+  }
+  if (info->host_cache == nullptr) {
+    info->host_cache = std::malloc(alloc_bytes);
+    if (info->host_cache == nullptr) {
+      return kLiteRtStatusErrorMemoryAllocationFailure;
+    }
+    info->host_cache_pinned = false;
+  }
+  if (alloc_bytes > copy_bytes) {
+    std::memset(static_cast<char*>(info->host_cache) + copy_bytes, 0,
+                alloc_bytes - copy_bytes);
+  }
+  return kLiteRtStatusOk;
+}
+
 class CudaTensorBufferRegistry {
  public:
   static CudaTensorBufferRegistry& Get() {
@@ -522,10 +659,10 @@ class CudaTensorBufferRegistry {
     return false;
   }
 
-  // Whether what the host wrote to the buffers at `handle`, if anything, is
-  // the `bytes` bytes at `expected` (the device copy already holds them): a
-  // dirty copy that matches is clean afterwards; one that differs stays
-  // dirty. The first `bytes` bytes of the host copy are compared.
+  // Whether every host write pending on the buffers at `handle` holds the
+  // `bytes` expected (the first `bytes` of the host copy are compared).
+  // Nothing is marked: ConfirmHostWrite does, once every input of a step has
+  // been verified.
   bool VerifyHostWrite(void* handle, const void* expected, size_t bytes) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto range = buffers_.equal_range(handle);
@@ -538,9 +675,79 @@ class CudaTensorBufferRegistry {
           std::memcmp(info->host_cache, expected, bytes) != 0) {
         return false;
       }
-      info->host_dirty = false;
     }
     return true;
+  }
+
+  // The device holds what the host wrote to the buffers at `handle` (a step
+  // ahead wrote the same): the pending writes are done with.
+  void ConfirmHostWrite(void* handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(handle);
+    for (auto it = range.first; it != range.second; ++it) {
+      it->second->host_dirty = false;
+    }
+  }
+
+  // The device no longer holds the host's copy of the buffers at `handle`
+  // (a step ahead wrote them in place): the host copy is uploaded again
+  // before the next invocation reads them.
+  void MarkHostStale(void* handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(handle);
+    for (auto it = range.first; it != range.second; ++it) {
+      CudaTensorBufferInfo* info = it->second;
+      if (info->host_cache != nullptr) {
+        info->host_dirty = true;
+        info->host_current = false;
+      }
+    }
+  }
+
+  // Uploads the host copy of the buffers at `handle` whether the host wrote
+  // it or it mirrors what the device held (a prefetched output), in `stream`
+  // order: for a reader of the buffer after the device moved on.
+  LiteRtStatus UploadHostCopy(void* handle, cudaStream_t stream) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(handle);
+    for (auto it = range.first; it != range.second; ++it) {
+      CudaTensorBufferInfo* info = it->second;
+      if (info->host_cache == nullptr ||
+          (!info->host_dirty && !info->host_current)) {
+        continue;
+      }
+      const cudaError_t status =
+          cudaMemcpyAsync(info->memory_handle, info->host_cache,
+                          CopyBytes(*info), cudaMemcpyHostToDevice, stream);
+      if (status != cudaSuccess) {
+        LITERT_LOG(LITERT_ERROR, "cudaMemcpyAsync host copy failed: %s",
+                   cudaGetErrorString(status));
+        return kLiteRtStatusErrorRuntimeFailure;
+      }
+      info->host_dirty = false;
+    }
+    return kLiteRtStatusOk;
+  }
+
+  // A pinned host copy of every buffer at `handle`, allocated now when a
+  // buffer has none (a lock allocates it otherwise): the prefetch of a fed
+  // output needs it, so that the host reads the step's outputs and not what
+  // the steps ahead wrote since. False when a copy is pageable, or there is
+  // no buffer.
+  bool EnsurePinnedHostCache(void* handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(handle);
+    bool any = false;
+    for (auto it = range.first; it != range.second; ++it) {
+      CudaTensorBufferInfo* info = it->second;
+      if (info->host_cache == nullptr &&
+          AllocateHostCache(info) != kLiteRtStatusOk) {
+        return false;
+      }
+      if (!info->host_cache_pinned) return false;
+      any = true;
+    }
+    return any;
   }
 
  private:
@@ -788,31 +995,7 @@ LiteRtStatus LockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info,
   }
   const size_t copy_bytes = CopyBytes(*info);
   if (info->host_cache == nullptr) {
-    const size_t alloc_bytes = NonZeroBytes(HostBytes(*info));
-    if (PinnedHostStagingEnabled()) {
-      const cudaError_t error = cudaMallocHost(&info->host_cache, alloc_bytes);
-      if (error == cudaSuccess) {
-        info->host_cache_pinned = true;
-      } else {
-        LITERT_LOG(LITERT_WARNING,
-                   "cudaMallocHost CUDA tensor buffer staging failed for "
-                   "%zu bytes (%s); falling back to pageable host staging",
-                   alloc_bytes, cudaGetErrorString(error));
-        cudaGetLastError();
-      }
-    }
-    if (info->host_cache == nullptr) {
-      info->host_cache = std::malloc(alloc_bytes);
-      if (info->host_cache == nullptr) {
-        return kLiteRtStatusErrorMemoryAllocationFailure;
-      }
-      info->host_cache_pinned = false;
-    }
-    // The bytes past the device's are the host's alone: read as zeros.
-    if (alloc_bytes > copy_bytes) {
-      std::memset(static_cast<char*>(info->host_cache) + copy_bytes, 0,
-                  alloc_bytes - copy_bytes);
-    }
+    LITERT_RETURN_IF_ERROR(AllocateHostCache(info));
   }
   // A host copy that is newer than the device copy, or that already holds
   // it, is what the host reads.
@@ -1117,6 +1300,19 @@ bool StepFeedEnabled() {
   return enabled;
 }
 
+// LITERT_NVIDIA_DISPATCH_STEP_FEED_FORCE_MISS=N (0 or unset: never) declares
+// every Nth verified step a miss, whether the host's inputs matched or not:
+// a check that the real step after a miss runs on the host's inputs, with
+// the misses counted but the feed not stopped for them.
+uint64_t StepFeedForcedMissEvery() {
+  static const uint64_t every = [] {
+    const char* value =
+        std::getenv("LITERT_NVIDIA_DISPATCH_STEP_FEED_FORCE_MISS");
+    return value == nullptr ? 0 : std::strtoull(value, nullptr, 10);
+  }();
+  return every;
+}
+
 // The feed stops when the steps run ahead miss too often: at first when the
 // misses outnumber the hits (an embedder the table is not tied to, an input
 // the feed does not write), later when more than this share of the steps
@@ -1370,9 +1566,10 @@ LiteRtStatus SelectNvidiaTopKCandidates(NvidiaTopKCandidatesContext* context,
     return kLiteRtStatusErrorUnsupported;
   }
   StepHandoff handoff;
-  if (rows == 1 &&
+  const bool fed =
+      StepHandoffRegistry::Get().Find(resolved.device_logits, &handoff);
+  if (fed && rows == 1 &&
       !CudaTensorBufferRegistry::Get().AnyHostNewer(resolved.handle) &&
-      StepHandoffRegistry::Get().Find(resolved.device_logits, &handoff) &&
       handoff.k == k) {
     // The decode step that feeds itself selected these for the host already
     // (its own sampling of the step's logits), and the step is synchronized.
@@ -1392,6 +1589,21 @@ LiteRtStatus SelectNvidiaTopKCandidates(NvidiaTopKCandidatesContext* context,
   }
   LiteRtStatus status = EnsureNvidiaTopKCandidatesResources(
       context, resolved.device, rows, static_cast<size_t>(k));
+  const bool host_newer =
+      CudaTensorBufferRegistry::Get().AnyHostNewer(resolved.handle);
+  if (status == kLiteRtStatusOk && fed) {
+    // The steps ahead overwrite the logits buffer on their own stream: the
+    // reader waits for the newest, then puts the host's copy of the step's
+    // logits (prefetched, with what the host wrote) back in the buffer.
+    if (handoff.done != nullptr) {
+      status = CudaStatus(cudaStreamWaitEvent(context->stream, handoff.done, 0),
+                          "cudaStreamWaitEvent steps ahead");
+    }
+    if (status == kLiteRtStatusOk) {
+      status = CudaTensorBufferRegistry::Get().UploadHostCopy(resolved.handle,
+                                                              context->stream);
+    }
+  }
   if (status == kLiteRtStatusOk) {
     // What the host wrote to the logits since the device last had them (a
     // constraint's mask, applied through a host lock) reaches the device in
@@ -1400,8 +1612,6 @@ LiteRtStatus SelectNvidiaTopKCandidates(NvidiaTopKCandidatesContext* context,
     // with it, which the greedy sampler's fused path reads to decline the
     // argmax an invocation ran before the write: that argmax is forgotten
     // here, so a greedy call on the same logits afterwards reads them too.
-    const bool host_newer =
-        CudaTensorBufferRegistry::Get().AnyHostNewer(resolved.handle);
     status = CudaTensorBufferRegistry::Get().Upload(resolved.handle,
                                                     context->stream, nullptr);
     if (status == kLiteRtStatusOk && host_newer) {
@@ -1521,9 +1731,9 @@ LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
     return kLiteRtStatusOk;
   }
   StepHandoff handoff;
-  if (rows == 1 && !CudaTensorBufferRegistry::Get().AnyHostNewer(handle) &&
-      StepHandoffRegistry::Get().Find(device_logits, &handoff) &&
-      handoff.k == 1) {
+  const bool fed = StepHandoffRegistry::Get().Find(device_logits, &handoff);
+  if (fed && rows == 1 &&
+      !CudaTensorBufferRegistry::Get().AnyHostNewer(handle) && handoff.k == 1) {
     // The decode step that feeds itself argmaxed the step's logits already.
     token_ids[0] = handoff.ids[0];
     ++context->calls;
@@ -1541,6 +1751,19 @@ LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
   }
   LiteRtStatus status =
       EnsureNvidiaGreedySamplerResources(context, resolved.device, count, rows);
+  if (status == kLiteRtStatusOk && fed) {
+    // The steps ahead overwrite the logits buffer on their own stream: the
+    // reader waits for the newest, then puts the host's copy of the step's
+    // logits (prefetched, with what the host wrote) back in the buffer.
+    if (handoff.done != nullptr) {
+      status = CudaStatus(cudaStreamWaitEvent(context->stream, handoff.done, 0),
+                          "cudaStreamWaitEvent steps ahead");
+    }
+    if (status == kLiteRtStatusOk) {
+      status = CudaTensorBufferRegistry::Get().UploadHostCopy(handle,
+                                                              context->stream);
+    }
+  }
   if (status == kLiteRtStatusOk) {
     // What the host wrote to the logits since the device last had them (a
     // constraint's mask, applied through a host lock) reaches the device in
@@ -2427,9 +2650,10 @@ class LiteRtDispatchInvocationContextT {
       LITERT_RETURN_IF_ERROR(DropStepsAhead());
       ++feed_.misses;
       const uint64_t steps = feed_.hits + feed_.misses;
-      if ((feed_.misses >= kStepFeedMaxMisses && feed_.hits < feed_.misses) ||
-          (steps >= kStepFeedMissWindow &&
-           feed_.misses * 100 > steps * kStepFeedMissPercent)) {
+      if (StepFeedForcedMissEvery() == 0 &&
+          ((feed_.misses >= kStepFeedMaxMisses && feed_.hits < feed_.misses) ||
+           (steps >= kStepFeedMissWindow &&
+            feed_.misses * 100 > steps * kStepFeedMissPercent))) {
         feed_.stopped = true;
         LITERT_LOG(LITERT_INFO,
                    "NVIDIA dispatch %s: the step feed stops after %llu of "
@@ -2638,10 +2862,11 @@ class LiteRtDispatchInvocationContextT {
       FusedGreedyRegistry::Get().SetFresh(logits, true);
     }
     MarkPrefetched();
-    if (feed_.argmax_ready) {
-      PublishHandoff(feed_.host_handoff);
-    } else if (feed_.enabled || feed_.stopped) {
-      ClearHandoff();
+    // The feed selected this step's token, or not: the handoff is published
+    // after the speculation below, which names the newest step ahead.
+    const bool host_selected = feed_.argmax_ready;
+    if (!host_selected && (feed_.enabled || feed_.stopped)) {
+      ClearHandoff();  // this step's selection is not the feed's
     }
     if (aot_residency_) {
       resident_has_run_ = true;
@@ -2709,6 +2934,7 @@ class LiteRtDispatchInvocationContextT {
       }
     }
     LITERT_RETURN_IF_ERROR(SpeculateNextStep());
+    if (host_selected) PublishHandoff(feed_.host_handoff);
     feed_.returned = std::chrono::steady_clock::now();
     feed_.returned_valid = true;
     DispatchCpuTimer unlock_timer(profile);
@@ -3058,10 +3284,14 @@ class LiteRtDispatchInvocationContextT {
     int32_t* param_mirror = nullptr;
     uint8_t* local_mask_mirror = nullptr;
     uint8_t* global_mask_mirror = nullptr;
+    float* per_layer_mirror = nullptr;
     cudaEvent_t feed_done = nullptr;
     cudaEvent_t step_done = nullptr;
     int32_t position = 0;  // the step's position
     int handoff = 0;       // the set its token selection went to
+    // The ring cache rows this step overwrites, saved before it (device).
+    void* backup = nullptr;
+    bool backed_up = false;
     // The outputs the host reads, staged in pinned memory per output port.
     std::vector<void*> staging;
     std::vector<size_t> staging_bytes;
@@ -3085,12 +3315,35 @@ class LiteRtDispatchInvocationContextT {
     const uint16_t* block_scales = nullptr;  // device FP16 per block, or null
     uint32_t scale_block = 0;
     float multiplier = 1.0f;
+    uint32_t bits = 4;  // the table's elements: INT4 or INT2
+    // The per-layer embedder's tables (registered), when the feed writes the
+    // per-layer embeddings.
+    const uint8_t* per_layer_table = nullptr;
+    const float* per_layer_scales = nullptr;
+    uint32_t per_layer_bits = 4;
+    float per_layer_multiplier = 1.0f;
     unsigned int* blocks_done = nullptr;  // the kernel's block counter
     int32_t param_count = 0;
     size_t global_bytes = 0;
     StepFeedSlot slots[kStepFeedDepth];
-    int head = 0;                 // the oldest step ahead's slot
-    int in_flight = 0;            // the steps ahead
+    int head = 0;       // the oldest step ahead's slot
+    int in_flight = 0;  // the steps ahead
+    // The local ring caches, when the ring is no larger than the window: a
+    // step ahead at position q writes ring row q mod ring, which holds a key
+    // the real step at q - 1 or q - 2 still reads after a miss (the 26B:
+    // ring 1024, window 1024). Each step ahead saves those rows first and a
+    // drop puts them back; a larger ring (the 12B's 1152) needs nothing, the
+    // overwritten key being outside the window.
+    struct CacheRow {
+      size_t port = 0;         // the output
+      size_t outer = 0;        // slabs before the ring axis
+      size_t inner_bytes = 0;  // one row's bytes within a slab
+      size_t backup_offset = 0;
+    };
+    std::vector<CacheRow> cache_rows;
+    size_t backup_bytes = 0;
+    bool restores_rows = false;
+    bool cache_rows_found = false;
     int32_t queued_position = 0;  // the newest step ahead's position
     // The feed's own token from the logits: the argmax, or the session's
     // sampling on the device (EnqueueFeedToken); the host samples on its
@@ -3148,22 +3401,47 @@ class LiteRtDispatchInvocationContextT {
     };
     std::string table_source;
     cudaError_t status = cudaSuccess;
-    if (feed.table_offset == litert::nvidia::kTensorRtStepFeedNoTable) {
-      // The embedder's table, registered by the runtime.
-      auto registered = FindTokenTable(feed.vocab, feed.dim);
-      if (!registered.has_value()) {
-        if (!feed_.pending) {
-          LITERT_LOG(LITERT_INFO,
-                     "NVIDIA dispatch %s: the step feed awaits the runtime's "
-                     "token table [%u, %u]",
-                     bytecode_.function_name.c_str(), feed.vocab, feed.dim);
-        }
-        feed_.pending = true;
-        return {};
+    // The tables the runtime registers: each lookup notes what is awaited,
+    // so the runtime's registrations find every want before the first step.
+    const bool runtime_table =
+        feed.table_offset == litert::nvidia::kTensorRtStepFeedNoTable;
+    const bool per_layer_fed =
+        feed.per_layer_port != litert::nvidia::kTensorRtStepFeedNoPort;
+    std::optional<RegisteredTokenTable> registered;
+    std::optional<RegisteredTokenTable> per_layer;
+    if (runtime_table) {
+      registered =
+          FindTokenTable(AwaitedTokenTable{0, feed.vocab, feed.dim, 0});
+    }
+    if (per_layer_fed) {
+      per_layer = FindTokenTable(AwaitedTokenTable{
+          1, feed.vocab, feed.per_layer_width, feed.per_layer_count});
+    }
+    if ((runtime_table && !registered.has_value()) ||
+        (per_layer_fed && !per_layer.has_value())) {
+      if (!feed_.pending) {
+        LITERT_LOG(
+            LITERT_INFO,
+            "NVIDIA dispatch %s: the step feed awaits the runtime's%s%s",
+            bytecode_.function_name.c_str(),
+            runtime_table && !registered.has_value() ? " token table" : "",
+            per_layer_fed && !per_layer.has_value() ? " per-layer tables" : "");
       }
+      feed_.pending = true;
+      return {};
+    }
+    if (per_layer_fed) {
+      feed_.per_layer_table = static_cast<const uint8_t*>(per_layer->table);
+      feed_.per_layer_scales = static_cast<const float*>(per_layer->scales);
+      feed_.per_layer_bits = per_layer->bits;
+      feed_.per_layer_multiplier = per_layer->multiplier;
+    }
+    if (runtime_table) {
+      // The embedder's table, registered by the runtime.
       feed_.pending = false;
       feed_.owns_table = false;
       feed_.table = registered->table;
+      feed_.bits = registered->bits;
       if (registered->scale_block == 0) {
         feed_.row_scales = static_cast<float*>(registered->scales);
       } else {
@@ -3209,6 +3487,7 @@ class LiteRtDispatchInvocationContextT {
         return {};
       }
       feed_.owns_table = true;
+      feed_.bits = 4;
       feed_.multiplier = feed.multiplier;
       status = cudaMalloc(&feed_.table, table_bytes);
       if (status != cudaSuccess) return fail("table", status);
@@ -3250,10 +3529,13 @@ class LiteRtDispatchInvocationContextT {
       if (status != cudaSuccess) return fail("handoff", status);
     }
     // A slot's mirrors: the token, the embeddings, the positions, the
-    // parameter (up to 16 values), the local mask.
-    const size_t mirror_bytes =
-        16 + static_cast<size_t>(feed.dim) * sizeof(float) + 16 +
-        16 * sizeof(int32_t) + static_cast<size_t>(feed.ring) + 64;
+    // parameter (up to 16 values), the per-layer embeddings, the local mask.
+    const size_t per_layer_bytes = static_cast<size_t>(feed.per_layer_count) *
+                                   feed.per_layer_width * sizeof(float);
+    const size_t mirror_bytes = 16 +
+                                static_cast<size_t>(feed.dim) * sizeof(float) +
+                                16 + 16 * sizeof(int32_t) + per_layer_bytes +
+                                static_cast<size_t>(feed.ring) + 64;
     for (StepFeedSlot& slot : feed_.slots) {
       status = cudaHostAlloc(&slot.mirror, mirror_bytes,
                              cudaHostAllocMapped | cudaHostAllocPortable);
@@ -3268,6 +3550,8 @@ class LiteRtDispatchInvocationContextT {
       cursor += 16;
       slot.param_mirror = reinterpret_cast<int32_t*>(cursor);
       cursor += 16 * sizeof(int32_t);
+      slot.per_layer_mirror = reinterpret_cast<float*>(cursor);
+      cursor += per_layer_bytes;
       slot.local_mask_mirror = cursor;
       // With timing: the profile reports a step ahead's device time.
       status = cudaEventCreateWithFlags(&slot.feed_done, cudaEventDefault);
@@ -3291,13 +3575,121 @@ class LiteRtDispatchInvocationContextT {
     const std::string scales_text =
         feed_.scale_block == 0 ? "row"
                                : "block " + std::to_string(feed_.scale_block);
+    const std::string per_layer_text =
+        feed.per_layer_port == litert::nvidia::kTensorRtStepFeedNoPort
+            ? "no per-layer embeddings"
+            : std::to_string(feed.per_layer_count) + " per-layer tables of [" +
+                  std::to_string(feed.vocab) + ", " +
+                  std::to_string(feed.per_layer_width) + "] INT" +
+                  std::to_string(feed_.per_layer_bits);
     LITERT_LOG(LITERT_INFO,
-               "NVIDIA dispatch %s: step feed ready (table [%u, %u] %zu bytes "
-               "from %s, %s scales, multiplier %g, ring %u, window %u, %d "
-               "steps ahead)",
+               "NVIDIA dispatch %s: step feed ready (table [%u, %u] INT%u %zu "
+               "bytes from %s, %s scales, multiplier %g, %s, ring %u, window "
+               "%u, %d steps ahead)",
                bytecode_.function_name.c_str(), feed.vocab, feed.dim,
-               table_bytes, table_source.c_str(), scales_text.c_str(),
-               feed_.multiplier, feed.ring, feed.window, kStepFeedDepth);
+               feed_.bits,
+               static_cast<size_t>(feed.vocab) * feed.dim * feed_.bits / 8,
+               table_source.c_str(), scales_text.c_str(), feed_.multiplier,
+               per_layer_text.c_str(), feed.ring, feed.window, kStepFeedDepth);
+    return {};
+  }
+
+  // The in-place cache outputs with a ring-sized axis, their row within a
+  // slab and the slabs (K [1, ring, heads, dim]: one slab of heads * dim; the
+  // transposed value cache, logical [1, heads, dim, ring] stored as
+  // [1, heads, ring, dim]: heads slabs of dim), from the records bound now.
+  Expected<void> FindCacheRows() {
+    const auto& feed = *bytecode_.step_feed;
+    feed_.cache_rows.clear();
+    feed_.backup_bytes = 0;
+    for (size_t i = 0; i < output_handles_.size(); ++i) {
+      if (output_handles_[i] == 0 || i >= aliased_input_of_output_.size() ||
+          aliased_input_of_output_[i] < 0) {
+        continue;
+      }
+      LITERT_ASSIGN_OR_RETURN(auto* record,
+                              device_context_->GetRecord(output_handles_[i]));
+      if (!record->direct_cuda_buffer || record->device_ptr == nullptr ||
+          record->size == 0) {
+        continue;
+      }
+      LiteRtRankedTensorType type;
+      if (runtime_context_->get_tensor_buffer_tensor_type(
+              record->tensor_buffer, &type) != kLiteRtStatusOk ||
+          type.layout.rank != 4 || type.layout.dimensions[0] != 1) {
+        continue;
+      }
+      size_t dims[4] = {1, static_cast<size_t>(type.layout.dimensions[1]),
+                        static_cast<size_t>(type.layout.dimensions[2]),
+                        static_cast<size_t>(type.layout.dimensions[3])};
+      if (record->transposed_value_cache_layout) std::swap(dims[2], dims[3]);
+      const size_t volume = dims[1] * dims[2] * dims[3];
+      if (volume == 0 || record->size % volume != 0) continue;
+      const size_t elem = record->size / volume;
+      int axis = 0;
+      for (int k = 1; k < 4 && axis == 0; ++k) {
+        if (dims[k] == feed.ring) axis = k;
+      }
+      if (axis == 0) continue;
+      StepFeed::CacheRow row;
+      row.port = i;
+      row.outer = 1;
+      for (int k = 1; k < axis; ++k) row.outer *= dims[k];
+      row.inner_bytes = elem;
+      for (int k = axis + 1; k < 4; ++k) row.inner_bytes *= dims[k];
+      row.backup_offset = feed_.backup_bytes;
+      feed_.backup_bytes += row.outer * row.inner_bytes;
+      feed_.cache_rows.push_back(row);
+    }
+    for (StepFeedSlot& slot : feed_.slots) {
+      if (slot.backup != nullptr) cudaFree(slot.backup);
+      slot.backup = nullptr;
+      slot.backed_up = false;
+      if (feed_.backup_bytes != 0) {
+        LITERT_RETURN_IF_ERROR(
+            CudaOk(cudaMalloc(&slot.backup, feed_.backup_bytes),
+                   "cudaMalloc step feed cache rows"));
+      }
+    }
+    feed_.cache_rows_found = true;
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA dispatch %s: the step feed saves %zu ring cache rows "
+               "(%zu bytes) before each step ahead: the ring of %u is within "
+               "the window",
+               bytecode_.function_name.c_str(), feed_.cache_rows.size(),
+               feed_.backup_bytes, feed.ring);
+    return {};
+  }
+
+  // The rows a step ahead at `slot.position` overwrites, to the slot's
+  // backup; and back, after a drop. Both on the stream, in order.
+  Expected<void> CopyCacheRows(StepFeedSlot& slot, bool restore) {
+    const auto& feed = *bytecode_.step_feed;
+    const size_t ring = feed.ring;
+    const size_t row =
+        static_cast<size_t>(((slot.position % static_cast<int32_t>(ring)) +
+                             static_cast<int32_t>(ring)) %
+                            static_cast<int32_t>(ring));
+    for (const StepFeed::CacheRow& cache : feed_.cache_rows) {
+      LITERT_ASSIGN_OR_RETURN(auto* record, device_context_->GetRecord(
+                                                output_handles_[cache.port]));
+      char* in_cache =
+          static_cast<char*>(record->device_ptr) + row * cache.inner_bytes;
+      char* backup = static_cast<char*>(slot.backup) + cache.backup_offset;
+      const size_t pitch = ring * cache.inner_bytes;
+      const cudaError_t copied =
+          restore
+              ? cudaMemcpy2DAsync(in_cache, pitch, backup, cache.inner_bytes,
+                                  cache.inner_bytes, cache.outer,
+                                  cudaMemcpyDeviceToDevice, stream_)
+              : cudaMemcpy2DAsync(backup, cache.inner_bytes, in_cache, pitch,
+                                  cache.inner_bytes, cache.outer,
+                                  cudaMemcpyDeviceToDevice, stream_);
+      LITERT_RETURN_IF_ERROR(
+          CudaOk(copied, restore ? "cudaMemcpy2DAsync cache rows back"
+                                 : "cudaMemcpy2DAsync cache rows"));
+    }
+    slot.backed_up = !restore;
     return {};
   }
 
@@ -3334,8 +3726,13 @@ class LiteRtDispatchInvocationContextT {
       for (void* staging : slot.staging) {
         if (staging != nullptr) cudaFreeHost(staging);
       }
+      if (slot.backup != nullptr) cudaFree(slot.backup);
       slot = StepFeedSlot();
     }
+    feed_.cache_rows.clear();
+    feed_.backup_bytes = 0;
+    feed_.cache_rows_found = false;
+    feed_.restores_rows = false;
     feed_.sampler.stream =
         nullptr;  // the context's stream is not the sampler's to destroy
     DestroyNvidiaGreedySamplerResources(&feed_.sampler);
@@ -3500,12 +3897,14 @@ class LiteRtDispatchInvocationContextT {
         return false;
       }
     }
+    std::vector<void*> verified;  // confirmed once every input matched
     const auto verify = [&](const char* what, uint32_t port, const void* mirror,
                             size_t bytes, size_t element) -> Expected<bool> {
       LITERT_ASSIGN_OR_RETURN(auto* record, FeedRecord(port));
       if (record == nullptr) return true;
       const size_t compared = std::min(bytes, record->size);
       if (registry.VerifyHostWrite(record->cuda_handle, mirror, compared)) {
+        verified.push_back(record->cuda_handle);
         return true;
       }
       std::vector<uint8_t> host(compared);
@@ -3517,7 +3916,7 @@ class LiteRtDispatchInvocationContextT {
         for (size_t i = 0; i < compared; ++i) {
           if (host[i] == expected[i]) continue;
           at = i - i % element;
-          if (element == 4 && what[0] == 'e') {
+          if (element == 4 && (what[0] == 'e' || what[0] == 'p')) {
             float h = 0.0f, m = 0.0f;
             std::memcpy(&h, host.data() + at, 4);
             std::memcpy(&m, expected + at, 4);
@@ -3561,16 +3960,42 @@ class LiteRtDispatchInvocationContextT {
         ok, verify("global mask", feed.global_mask_port,
                    slot.global_mask_mirror, feed_.global_bytes, 1));
     if (!ok) return false;
+    LITERT_ASSIGN_OR_RETURN(ok,
+                            verify("per-layer embeddings", feed.per_layer_port,
+                                   slot.per_layer_mirror,
+                                   static_cast<size_t>(feed.per_layer_count) *
+                                       feed.per_layer_width * sizeof(float),
+                                   4));
+    if (!ok) return false;
     for (size_t i = 0; i < input_handles_.size(); ++i) {
       if (input_handles_[i] == 0) continue;
       auto record = device_context_->GetRecord(input_handles_[i]);
       if (record.HasValue() && (*record)->direct_cuda_buffer &&
+          std::find(verified.begin(), verified.end(), (*record)->cuda_handle) ==
+              verified.end() &&
           registry.AnyHostNewer((*record)->cuda_handle)) {
         LogStepFeedMiss("other input (written by the host)",
                         static_cast<uint32_t>(i), 0, 0, 0);
         return false;
       }
     }
+    if (const uint64_t every = StepFeedForcedMissEvery();
+        every != 0 && (feed_.hits + feed_.misses + 1) % every == 0) {
+      if (feed_.misses < 8) {
+        LITERT_LOG(
+            LITERT_INFO,
+            "NVIDIA dispatch %s: the step ahead at position %d is "
+            "declared a miss (LITERT_NVIDIA_DISPATCH_STEP_FEED_FORCE_MISS"
+            "=%llu)",
+            bytecode_.function_name.c_str(),
+            feed_.slots[feed_.head].positions_mirror[0],
+            static_cast<unsigned long long>(every));
+      }
+      return false;
+    }
+    // Every fed input the host wrote is what the step ahead used: nothing
+    // to upload for this step.
+    for (void* handle : verified) registry.ConfirmHostWrite(handle);
     return true;
   }
 
@@ -3676,7 +4101,8 @@ class LiteRtDispatchInvocationContextT {
     const StepFeed::Handoff& handoff = feed_.handoff[set];
     StepHandoffRegistry::Get().Set(
         (*record)->device_ptr,
-        StepHandoff{handoff.ids, handoff.values, handoff.flags, handoff.k});
+        StepHandoff{handoff.ids, handoff.values, handoff.flags, handoff.k,
+                    LastStepAheadEvent()});
   }
   void ClearHandoff() {
     if (!bytecode_.step_feed.has_value() || output_handles_.empty()) return;
@@ -3811,11 +4237,15 @@ class LiteRtDispatchInvocationContextT {
     LITERT_ASSIGN_OR_RETURN(auto* local_mask, FeedRecord(feed.local_mask_port));
     LITERT_ASSIGN_OR_RETURN(auto* global_mask,
                             FeedRecord(feed.global_mask_port));
+    LITERT_ASSIGN_OR_RETURN(auto* per_layer, FeedRecord(feed.per_layer_port));
+    const size_t per_layer_bytes = static_cast<size_t>(feed.per_layer_count) *
+                                   feed.per_layer_width * sizeof(float);
     if (embeddings == nullptr || positions == nullptr ||
         embeddings->size < static_cast<size_t>(feed.dim) * sizeof(float) ||
         positions->size < sizeof(int32_t) ||
         (param != nullptr && param->size < 3 * sizeof(int32_t)) ||
-        (local_mask != nullptr && local_mask->size < feed.ring)) {
+        (local_mask != nullptr && local_mask->size < feed.ring) ||
+        (per_layer != nullptr && per_layer->size < per_layer_bytes)) {
       LITERT_LOG(LITERT_WARNING,
                  "NVIDIA dispatch %s: the step feed's inputs are not the "
                  "sizes the bytecode describes; the feed stops",
@@ -3873,7 +4303,34 @@ class LiteRtDispatchInvocationContextT {
       }
       window = feed_.learned_window != 0 ? feed_.learned_window : feed.ring;
     }
-    while (feed_.in_flight < kStepFeedDepth) {
+    {
+      // The host reads the step's outputs from their prefetched host copies
+      // while the steps ahead overwrite the buffers: the logits' copy is
+      // pinned, or the feed stays off.
+      LITERT_ASSIGN_OR_RETURN(
+          auto* logits,
+          device_context_->GetRecord(output_handles_[feed.logits_output_port]));
+      if (logits->direct_cuda_buffer &&
+          !CudaTensorBufferRegistry::Get().EnsurePinnedHostCache(
+              logits->cuda_handle)) {
+        feed_.stopped = true;
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA dispatch %s: the step feed needs a pinned host copy "
+                   "of the logits and has none: off",
+                   bytecode_.function_name.c_str());
+        return {};
+      }
+    }
+    feed_.restores_rows = local_mask != nullptr && feed.ring != 0 &&
+                          window != 0 && feed.ring <= window;
+    if (feed_.restores_rows && !feed_.cache_rows_found) {
+      LITERT_RETURN_IF_ERROR(FindCacheRows());
+    }
+    // No more steps ahead than the host will ask for (the budget it told
+    // before its invocation): a bounded response's end leaves none in flight.
+    const uint32_t budget = StepFeedBudget().load();
+    while (feed_.in_flight < kStepFeedDepth &&
+           static_cast<uint32_t>(feed_.in_flight) < budget) {
       StepFeedSlot& slot =
           feed_.slots[(feed_.head + feed_.in_flight) % kStepFeedDepth];
       const int32_t base =
@@ -3899,10 +4356,21 @@ class LiteRtDispatchInvocationContextT {
       LiteRtNvidiaStepFeedParams params{};
       params.token = feed_.sampler.device_result;
       params.table = static_cast<const uint8_t*>(feed_.table);
+      params.bits = static_cast<int32_t>(feed_.bits);
       params.row_scales = feed_.row_scales;
       params.block_scales = feed_.block_scales;
       params.scale_block = static_cast<int32_t>(feed_.scale_block);
       params.multiplier = feed_.multiplier;
+      if (per_layer != nullptr) {
+        params.per_layer = static_cast<float*>(per_layer->device_ptr);
+        params.per_layer_table = feed_.per_layer_table;
+        params.per_layer_scales = feed_.per_layer_scales;
+        params.per_layer_count = static_cast<int32_t>(feed.per_layer_count);
+        params.per_layer_width = static_cast<int32_t>(feed.per_layer_width);
+        params.per_layer_bits = static_cast<int32_t>(feed_.per_layer_bits);
+        params.per_layer_multiplier = feed_.per_layer_multiplier;
+        params.per_layer_mirror = slot.per_layer_mirror;
+      }
       params.vocab = static_cast<int32_t>(feed.vocab);
       params.dim = static_cast<int32_t>(feed.dim);
       params.embeddings = static_cast<float*>(embeddings->device_ptr);
@@ -3931,6 +4399,9 @@ class LiteRtDispatchInvocationContextT {
           LiteRtNvidiaLaunchStepFeed(&params, stream_), "LaunchStepFeed"));
       LITERT_RETURN_IF_ERROR(CudaOk(cudaEventRecord(slot.feed_done, stream_),
                                     "cudaEventRecord step feed"));
+      if (feed_.restores_rows && !feed_.cache_rows.empty()) {
+        LITERT_RETURN_IF_ERROR(CopyCacheRows(slot, /*restore=*/false));
+      }
       if (!aux_streams_.empty()) {
         execution_context_->setAuxStreams(
             aux_streams_.data(), static_cast<int32_t>(aux_streams_.size()));
@@ -3979,12 +4450,15 @@ class LiteRtDispatchInvocationContextT {
     LITERT_RETURN_IF_ERROR(WaitStepAheadDone(slot.step_done));
     profile_metrics.cpu_sync_ms = sync_timer.ElapsedMs();
     TakePrefetched(slot);
-    PublishHandoff(slot.handoff);
+    slot.backed_up = false;  // its cache rows are the real ones now
+    const int handoff = slot.handoff;
     feed_.head = (feed_.head + 1) % kStepFeedDepth;
     --feed_.in_flight;
     if (feed_.in_flight == 0) device_context_->ClearStepAhead(this);
     ++feed_.hits;
-    return SpeculateNextStep();
+    LITERT_RETURN_IF_ERROR(SpeculateNextStep());
+    PublishHandoff(handoff);  // after the refill: the newest step ahead
+    return {};
   }
 
   // The host's inputs are not the oldest step ahead's: every step ahead ran
@@ -3993,10 +4467,30 @@ class LiteRtDispatchInvocationContextT {
     if (cudaEvent_t last = LastStepAheadEvent(); last != nullptr) {
       LITERT_RETURN_IF_ERROR(WaitStepAheadDone(last));
     }
+    // The ring cache rows the steps ahead overwrote go back, oldest first,
+    // before the real step on the stream.
+    for (int k = 0; k < feed_.in_flight; ++k) {
+      StepFeedSlot& slot = feed_.slots[(feed_.head + k) % kStepFeedDepth];
+      if (slot.backed_up) {
+        LITERT_RETURN_IF_ERROR(CopyCacheRows(slot, /*restore=*/true));
+      }
+    }
     for (StepFeedSlot& slot : feed_.slots) slot.prefetched.clear();
     feed_.in_flight = 0;
     feed_.head = 0;
     device_context_->ClearStepAhead(this);
+    // The steps ahead wrote the fed inputs in place: the device holds the
+    // newest step ahead's values, not the host's. The host's copies go up
+    // again before the real step, whether the host rewrote them or not.
+    const auto& feed = *bytecode_.step_feed;
+    for (uint32_t port :
+         {feed.embeddings_port, feed.positions_port, feed.param_port,
+          feed.local_mask_port, feed.global_mask_port, feed.per_layer_port}) {
+      LITERT_ASSIGN_OR_RETURN(auto* record, FeedRecord(port));
+      if (record != nullptr) {
+        CudaTensorBufferRegistry::Get().MarkHostStale(record->cuda_handle);
+      }
+    }
     return {};
   }
 
@@ -5963,13 +6457,20 @@ extern "C" LiteRtStatus LiteRtDispatchNvidiaStepFeedSetLocalWindow(
   return kLiteRtStatusOk;
 }
 
+extern "C" LiteRtStatus LiteRtDispatchNvidiaStepFeedSetBudget(
+    uint32_t remaining) {
+  StepFeedBudget().store(remaining);
+  return kLiteRtStatusOk;
+}
+
 extern "C" LiteRtStatus LiteRtDispatchNvidiaRegisterTokenTable(
     const LiteRtDispatchNvidiaTokenTable* table) {
   if (table == nullptr || (table->table == nullptr && table->table_fd < 0) ||
       table->scales == nullptr || table->vocab == 0 || table->dim == 0 ||
-      table->dim % 2 != 0 ||
+      (table->bits != 4 && table->bits != 2) ||
+      (table->dim * table->bits) % 8 != 0 ||
       table->table_bytes !=
-          static_cast<size_t>(table->vocab) * table->dim / 2 ||
+          static_cast<size_t>(table->vocab) * table->dim * table->bits / 8 ||
       !std::isfinite(table->multiplier) || table->multiplier == 0.0f) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -5986,20 +6487,18 @@ extern "C" LiteRtStatus LiteRtDispatchNvidiaRegisterTokenTable(
   if (static_runtime_context == nullptr) {
     return kLiteRtStatusErrorUnsupported;
   }
-  auto& registry = GetTokenTableRegistry();
-  std::lock_guard<std::mutex> lock(registry.mutex);
-  const std::pair<uint32_t, uint32_t> key(table->vocab, table->dim);
-  if (std::find(registry.awaited.begin(), registry.awaited.end(), key) ==
-      registry.awaited.end()) {
+  RegisteredTokenTable registered;
+  registered.kind = 0;
+  registered.vocab = table->vocab;
+  registered.dim = table->dim;
+  registered.bits = table->bits;
+  registered.scale_block = table->scale_block;
+  registered.multiplier = table->multiplier;
+  if (!TokenTableAwaited(AwaitedTokenTable{0, table->vocab, table->dim, 0})) {
     LITERT_LOG(LITERT_INFO,
                "NVIDIA dispatch: no decode step awaits a token table [%u, %u]",
                table->vocab, table->dim);
     return kLiteRtStatusErrorNotFound;
-  }
-  for (const auto& registered : registry.tables) {
-    if (registered.vocab == table->vocab && registered.dim == table->dim) {
-      return kLiteRtStatusOk;  // the first registration stands
-    }
   }
   // The table's bytes: given, or read from the file.
   const void* table_bytes = table->table;
@@ -6024,41 +6523,53 @@ extern "C" LiteRtStatus LiteRtDispatchNvidiaRegisterTokenTable(
     }
     table_bytes = read_table.data();
   }
+  return TakeTokenTable(registered, {table_bytes}, table->table_bytes,
+                        {table->scales}, scales_bytes);
+}
+
+extern "C" LiteRtStatus LiteRtDispatchNvidiaRegisterPerLayerTokenTables(
+    const LiteRtDispatchNvidiaPerLayerTokenTables* tables) {
+  if (tables == nullptr || tables->tables == nullptr ||
+      tables->row_scales == nullptr || tables->vocab == 0 ||
+      tables->width == 0 || tables->layers == 0 ||
+      (tables->bits != 4 && tables->bits != 2) ||
+      (tables->width * tables->bits) % 8 != 0 ||
+      tables->table_bytes != static_cast<size_t>(tables->vocab) *
+                                 tables->width * tables->bits / 8 ||
+      !std::isfinite(tables->multiplier) || tables->multiplier == 0.0f) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  std::vector<const void*> table_parts(tables->layers);
+  std::vector<const void*> scale_parts(tables->layers);
+  for (uint32_t i = 0; i < tables->layers; ++i) {
+    if (tables->tables[i] == nullptr || tables->row_scales[i] == nullptr) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    table_parts[i] = tables->tables[i];
+    scale_parts[i] = tables->row_scales[i];
+  }
+  if (static_runtime_context == nullptr) {
+    return kLiteRtStatusErrorUnsupported;
+  }
   RegisteredTokenTable registered;
-  registered.vocab = table->vocab;
-  registered.dim = table->dim;
-  registered.scale_block = table->scale_block;
-  registered.multiplier = table->multiplier;
-  cudaError_t status = cudaMalloc(&registered.table, table->table_bytes);
-  if (status == cudaSuccess) {
-    status = cudaMemcpy(registered.table, table_bytes, table->table_bytes,
-                        cudaMemcpyHostToDevice);
+  registered.kind = 1;
+  registered.vocab = tables->vocab;
+  registered.dim = tables->width;
+  registered.layers = tables->layers;
+  registered.bits = tables->bits;
+  registered.scale_block = 0;
+  registered.multiplier = tables->multiplier;
+  if (!TokenTableAwaited(
+          AwaitedTokenTable{1, tables->vocab, tables->width, tables->layers})) {
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA dispatch: no decode step awaits %u per-layer tables "
+               "[%u, %u]",
+               tables->layers, tables->vocab, tables->width);
+    return kLiteRtStatusErrorNotFound;
   }
-  if (status == cudaSuccess) {
-    status = cudaMalloc(&registered.scales, scales_bytes);
-  }
-  if (status == cudaSuccess) {
-    status = cudaMemcpy(registered.scales, table->scales, scales_bytes,
-                        cudaMemcpyHostToDevice);
-  }
-  if (status != cudaSuccess) {
-    LITERT_LOG(
-        LITERT_WARNING,
-        "NVIDIA dispatch: the token table [%u, %u] is not registered: %s",
-        table->vocab, table->dim, cudaGetErrorString(status));
-    if (registered.scales != nullptr) cudaFree(registered.scales);
-    if (registered.table != nullptr) cudaFree(registered.table);
-    return status == cudaErrorMemoryAllocation
-               ? kLiteRtStatusErrorMemoryAllocationFailure
-               : kLiteRtStatusErrorRuntimeFailure;
-  }
-  registry.tables.push_back(registered);
-  LITERT_LOG(LITERT_INFO,
-             "NVIDIA dispatch: token table [%u, %u] registered (%zu bytes, "
-             "%s scales, multiplier %g) for the step feed",
-             table->vocab, table->dim, table->table_bytes + scales_bytes,
-             table->scale_block == 0 ? "row" : "block", table->multiplier);
-  return kLiteRtStatusOk;
+  return TakeTokenTable(registered, table_parts, tables->table_bytes,
+                        scale_parts,
+                        static_cast<size_t>(tables->vocab) * sizeof(float));
 }
 
 extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(

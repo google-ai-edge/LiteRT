@@ -45,6 +45,7 @@ LiteRtDispatchNvidiaTokenTable ValidRecord(const std::vector<uint8_t>& table,
   LiteRtDispatchNvidiaTokenTable record{};
   record.vocab = 4;
   record.dim = 8;
+  record.bits = 4;
   record.table = table.data();
   record.table_bytes = table.size();
   record.table_fd = -1;
@@ -86,6 +87,38 @@ TEST(TokenTableCApiTest, RefusesMalformedRecordsBeforeAnything) {
   record.multiplier = 0.0f;
   EXPECT_EQ(LiteRtDispatchNvidiaRegisterTokenTable(&record),
             kLiteRtStatusErrorInvalidArgument);
+  record = ValidRecord(table, scales);
+  record.bits = 3;  // 4 or 2
+  EXPECT_EQ(LiteRtDispatchNvidiaRegisterTokenTable(&record),
+            kLiteRtStatusErrorInvalidArgument);
+  record = ValidRecord(table, scales);
+  record.bits = 2;  // then half the bytes
+  EXPECT_EQ(LiteRtDispatchNvidiaRegisterTokenTable(&record),
+            kLiteRtStatusErrorInvalidArgument);
+  // Per-layer tables: the same contract.
+  const void* tables[2] = {table.data(), table.data()};
+  const float* row_scales[2] = {scales.data(), scales.data()};
+  LiteRtDispatchNvidiaPerLayerTokenTables per_layer{};
+  per_layer.vocab = 4;
+  per_layer.width = 8;
+  per_layer.layers = 2;
+  per_layer.bits = 4;
+  per_layer.tables = tables;
+  per_layer.table_bytes = table.size();
+  per_layer.row_scales = row_scales;
+  per_layer.multiplier = 1.0f;
+  EXPECT_EQ(LiteRtDispatchNvidiaRegisterPerLayerTokenTables(nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  LiteRtDispatchNvidiaPerLayerTokenTables bad = per_layer;
+  bad.table_bytes = 15;
+  EXPECT_EQ(LiteRtDispatchNvidiaRegisterPerLayerTokenTables(&bad),
+            kLiteRtStatusErrorInvalidArgument);
+  bad = per_layer;
+  bad.layers = 0;
+  EXPECT_EQ(LiteRtDispatchNvidiaRegisterPerLayerTokenTables(&bad),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtDispatchNvidiaRegisterPerLayerTokenTables(&per_layer),
+            kLiteRtStatusErrorUnsupported);
   // Well formed, but the dispatch is not initialized.
   record = ValidRecord(table, scales);
   EXPECT_EQ(LiteRtDispatchNvidiaRegisterTokenTable(&record),
@@ -116,6 +149,19 @@ TEST(TokenTableCApiTest, TakesOnlyAwaitedTables) {
   record.scales_bytes = block_scales.size() * sizeof(uint16_t);
   record.scale_block = 4;
   EXPECT_EQ(LiteRtDispatchNvidiaRegisterTokenTable(&record),
+            kLiteRtStatusErrorNotFound);
+  const void* tables[2] = {table.data(), table.data()};
+  const float* row_scales[2] = {scales.data(), scales.data()};
+  LiteRtDispatchNvidiaPerLayerTokenTables per_layer{};
+  per_layer.vocab = 4;
+  per_layer.width = 8;
+  per_layer.layers = 2;
+  per_layer.bits = 4;
+  per_layer.tables = tables;
+  per_layer.table_bytes = table.size();
+  per_layer.row_scales = row_scales;
+  per_layer.multiplier = 1.0f;
+  EXPECT_EQ(LiteRtDispatchNvidiaRegisterPerLayerTokenTables(&per_layer),
             kLiteRtStatusErrorNotFound);
   EXPECT_EQ(interface->initialize(nullptr, nullptr, nullptr), kLiteRtStatusOk);
 }
