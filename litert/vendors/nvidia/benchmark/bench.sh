@@ -155,6 +155,7 @@ meta = {
   'iterations': int(os.environ['NB_ITERATIONS']), 'warmups': int(os.environ['NB_WARMUPS']),
   'build_id': os.environ['NB_BUILD_ID'], 'pool': os.environ['NB_POOL'], 'command': command, 'exit_code': int(rc),
   'host_mode': os.environ.get('CI_HOST_MODE', 'unspecified'),
+  'host_clock': json.loads(os.environ['NB_HOST_CLOCK']) if os.environ.get('NB_HOST_CLOCK') else None,
   'start': start, 'end': end, 'gpu_baseline_mib': int(baseline),
   'environment': {k: v for k, v in os.environ.items() if k.startswith('LITERT_NVIDIA_')},
   'binaries': {n: sha(os.path.realpath(os.path.join(libs, n))) for n in ('libLiteRtCompilerPlugin_Nvidia.so', 'libLiteRtDispatch_Nvidia.so', 'litert_lm_advanced_main')},
@@ -169,6 +170,16 @@ PY
 export NB_LABEL=$label NB_PROFILE=$profile NB_MODEL=$model NB_WORKLOAD=$workload NB_METRIC=$metric NB_MTP=$mtp
 export NB_PROMPT_FILE=$prompt_file NB_INPUT=$input NB_OUTPUT=$output NB_CONTEXT=$context NB_ITERATIONS=$iterations
 export NB_WARMUPS=$warmups NB_BUILD_ID=$build_id NB_POOL=$pool
+# The host's clocks (clock_check.py: the kernel tick and frequency, the monotonic clock's rate against
+# the real-time clock over 3 s): recorded with the run; a formal or idle-verified run refuses a clock
+# that is not fit, since the CLI's rates are read on the monotonic clock.
+NB_HOST_CLOCK=$(python3 "$BENCH/clock_check.py" 3) || {
+  case ${CI_HOST_MODE:-unspecified} in
+    formal|idle-verified) nb_die "The host's clock is not fit for a $CI_HOST_MODE run: $NB_HOST_CLOCK" ;;
+    *) echo "Warning: the host's clock is not fit: $NB_HOST_CLOCK" >&2 ;;
+  esac
+}
+export NB_HOST_CLOCK
 
 # A pool without AOT artifacts compiles in its first run; that run is kept apart as "prepare"
 # so the measured runs read warm caches (the cold metric is that first run itself).

@@ -3039,6 +3039,20 @@ class TensorRtGraphBuilder {
         q.scales == nullptr) {
       return;
     }
+    // The feed dequantizes the table as symmetric: a head with a zero point
+    // that is not zero gets no tied table (the runtime may register one).
+    if (q.zero_points != nullptr) {
+      for (uint64_t i = 0; i < q.num_channels; ++i) {
+        if (q.zero_points[i] != 0) {
+          LITERT_LOG(
+              LITERT_INFO,
+              "NVIDIA TensorRT-RTX step feed: the head's weights have a "
+              "zero point that is not zero (channel %llu): no tied table",
+              static_cast<unsigned long long>(i));
+          return;
+        }
+      }
+    }
     const absl::Span<const uint8_t> bytes = weights.Weights().Bytes();
     if (bytes.size() != static_cast<size_t>(feed.vocab) * feed.dim / 2 ||
         weight_store_ == nullptr) {
