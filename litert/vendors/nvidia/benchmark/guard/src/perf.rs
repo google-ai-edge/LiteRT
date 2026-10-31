@@ -270,7 +270,21 @@ pub struct PerfComparison {
     pub base: f64,
     pub cand: f64,
     pub ratio: f64,
+    /// The spread (max - min) / mean of the measured iterations, baseline and
+    /// candidate: a change inside the larger spread is noise, not a verdict.
+    pub base_spread: Option<f64>,
+    pub cand_spread: Option<f64>,
     pub verdict: Verdict,
+}
+
+fn spread(values: &[f64]) -> Option<f64> {
+    if values.len() < 2 {
+        return None;
+    }
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    (mean > 0.0).then(|| (max - min) / mean)
 }
 
 pub fn perf_verdict(ratio: f64, thresholds: &PerfThresholds) -> Verdict {
@@ -293,25 +307,42 @@ pub fn compare_points(
         let Some(b) = base.iter().find(|b| b.label == c.label && b.model == c.model) else {
             continue;
         };
-        let metrics: [(&str, Option<f64>, Option<f64>); 4] = [
-            ("decode", b.decode_tps, c.decode_tps),
-            ("prefill", b.prefill_tps, c.prefill_tps),
-            ("acceptance", b.acceptance, c.acceptance),
-            ("tokens/round", b.tokens_per_round, c.tokens_per_round),
+        let metrics: [(&str, Option<f64>, Option<f64>, Option<f64>, Option<f64>); 4] = [
+            (
+                "decode",
+                b.decode_tps,
+                c.decode_tps,
+                spread(&b.decode_tps_values),
+                spread(&c.decode_tps_values),
+            ),
+            (
+                "prefill",
+                b.prefill_tps,
+                c.prefill_tps,
+                spread(&b.prefill_tps_values),
+                spread(&c.prefill_tps_values),
+            ),
+            ("acceptance", b.acceptance, c.acceptance, None, None),
+            ("tokens/round", b.tokens_per_round, c.tokens_per_round, None, None),
         ];
-        for (metric, bv, cv) in metrics {
+        for (metric, bv, cv, bs, cs) in metrics {
             if let (Some(bv), Some(cv)) = (bv, cv) {
                 if bv <= 0.0 {
                     continue;
                 }
                 let ratio = cv / bv;
                 // Acceptance and tokens per round depend on the text the
-                // sampler produces; they are reported, not judged.
-                let verdict = if metric == "decode" || metric == "prefill" {
+                // sampler produces; they are reported, not judged. A change
+                // within the iterations' own spread is noise: at most a warning.
+                let mut verdict = if metric == "decode" || metric == "prefill" {
                     perf_verdict(ratio, thresholds)
                 } else {
                     Verdict::Pass
                 };
+                let noise = bs.unwrap_or(0.0).max(cs.unwrap_or(0.0));
+                if verdict == Verdict::Fail && (1.0 - ratio) <= noise {
+                    verdict = Verdict::Warn;
+                }
                 rows.push(PerfComparison {
                     model: c.model.clone(),
                     workload: c.workload.clone(),
@@ -321,6 +352,8 @@ pub fn compare_points(
                     base: bv,
                     cand: cv,
                     ratio,
+                    base_spread: bs,
+                    cand_spread: cs,
                     verdict,
                 });
             }

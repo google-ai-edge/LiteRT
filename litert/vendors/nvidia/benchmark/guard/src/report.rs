@@ -261,7 +261,7 @@ pub fn render_comparison(c: &Comparison) -> String {
         s.push('\n');
     }
     if !c.perf.is_empty() {
-        s.push_str("## Performance (measured)\n\n| Model | Workload | Mode | Metric | Baseline | Candidate | Change | Verdict |\n|---|---|---|---|---:|---:|---:|---|\n");
+        s.push_str("## Performance (measured)\n\nSpread: (max - min) / mean of the measured iterations; a change within the spread is noise.\n\n| Model | Workload | Mode | Metric | Baseline | Candidate | Change | Spread (base, cand) | Verdict |\n|---|---|---|---|---:|---:|---:|---|---|\n");
         for p in &c.perf {
             let mode = format!(
                 "{}{}",
@@ -275,8 +275,11 @@ pub fn render_comparison(c: &Comparison) -> String {
             } else {
                 1
             };
+            let spread = |v: Option<f64>| {
+                v.map(|x| format!("{:.1}%", x * 100.0)).unwrap_or_else(|| "-".into())
+            };
             s.push_str(&format!(
-                "| {} | {} | {} | {} | {:.digits$} | {:.digits$} | {} | {} |\n",
+                "| {} | {} | {} | {} | {:.digits$} | {:.digits$} | {} | {}, {} | {} |\n",
                 p.model,
                 p.workload,
                 mode,
@@ -284,13 +287,15 @@ pub fn render_comparison(c: &Comparison) -> String {
                 p.base,
                 p.cand,
                 pct(p.ratio),
+                spread(p.base_spread),
+                spread(p.cand_spread),
                 p.verdict.label()
             ));
         }
         s.push('\n');
     }
     if !c.predictions.is_empty() {
-        s.push_str("## Performance (predicted at unmeasured contexts)\n\nCost models: decode step time a + b·context, prefill time per token u + v·prompt, fitted on the measured workloads; the expected candidate value applies the measured change ratio, interpolated in context, to the record where one is given (else to the baseline's model).\n\n| Model | Workload | Metric | Baseline model | Candidate model | Record | Expected candidate | Change |\n|---|---|---|---:|---:|---:|---:|---:|\n");
+        s.push_str("## Performance (predicted at unmeasured contexts)\n\nCost models: decode step time a + b·context, prefill time c0 + c1·N + c2·N², fitted on the measured workloads; the expected candidate value applies the measured change ratio, interpolated in context, to the record where one is given (else to the baseline's model).\n\n| Model | Workload | Metric | Baseline model | Candidate model | Record | Expected candidate | Change |\n|---|---|---|---:|---:|---:|---:|---:|\n");
         for p in &c.predictions {
             s.push_str(&format!(
                 "| {} | {} | {} | {} | {} | {} | {} | {} |\n",

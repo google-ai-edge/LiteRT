@@ -120,7 +120,7 @@ fn default_workloads() -> Vec<String> {
 }
 
 fn default_iterations() -> BTreeMap<String, u32> {
-    BTreeMap::from([("short".to_string(), 5), ("8k".to_string(), 2), ("16k".to_string(), 2)])
+    BTreeMap::from([("short".to_string(), 5), ("8k".to_string(), 3), ("16k".to_string(), 3)])
 }
 
 fn default_predict() -> Vec<String> {

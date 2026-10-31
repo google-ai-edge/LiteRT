@@ -76,8 +76,8 @@ predict = ["30k", "128k"]
 
 [perf.iterations]
 short = 5
-8k = 2
-16k = 2
+8k = 3
+16k = 3
 
 [perf.thresholds]
 warn_ratio = 0.97
