@@ -24,8 +24,8 @@ limitations under the License.
 #include <memory>
 #include <vector>
 
-#include "Eigen/Core"  // from @eigen_archive
-#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "Eigen/Core"                      // from @eigen_archive
+#include "flatbuffers/flexbuffers.h"       // from @flatbuffers
 #include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/c_api_types.h"
@@ -1338,15 +1338,29 @@ TfLiteStatus EvalBlockwise4Bit(
   const auto quantization_params =
       static_cast<const TfLiteBlockwiseQuantization*>(
           filter->quantization.params);
+  TF_LITE_ENSURE(context, quantization_params != nullptr);
+  TF_LITE_ENSURE(context, quantization_params->blocksize > 0);
+  TF_LITE_ENSURE(context,
+                 quantization_params->scale >= 0 &&
+                     quantization_params->scale < context->tensors_size);
 
   const size_t blocksize = quantization_params->blocksize;
   const size_t input_channels = filter->dims->data[1];
   const size_t output_channels = filter->dims->data[0];
+  TF_LITE_ENSURE(context,
+                 input_channels > 0 && input_channels % blocksize == 0);
   const size_t batch_size = NumElements(input) / input_channels;
   const size_t num_blocks = input_channels / blocksize;
   const TfLiteTensor& scale = context->tensors[quantization_params->scale];
-  int num_scales = NumElements(&scale);
-  std::vector<float> dequantized_scale(num_scales, 0);
+  TF_LITE_ENSURE_TYPES_EQ(context, scale.type, kTfLiteFloat16);
+  const int64_t num_scales = NumElements(&scale);
+  const int64_t required_scales =
+      static_cast<int64_t>(output_channels) * static_cast<int64_t>(num_blocks);
+  TF_LITE_ENSURE(context, num_scales >= required_scales);
+  TF_LITE_ENSURE(context,
+                 static_cast<uint64_t>(num_scales) <=
+                     std::numeric_limits<size_t>::max() / sizeof(float));
+  std::vector<float> dequantized_scale(static_cast<size_t>(num_scales), 0);
   const Eigen::half* half_data = reinterpret_cast<const Eigen::half*>(
       GetTensorData<TfLiteFloat16>(&scale));
   reference_ops::Dequantize(GetTensorShape(&scale), half_data,
@@ -1481,6 +1495,7 @@ TfLiteStatus EvalHybridDense4Bit(
     } else {
       TF_LITE_ENSURE_EQ(context, filter_params->quantized_dimension, 0);
       TF_LITE_ENSURE_EQ(context, filter_params->scale->size, output_depth);
+      TF_LITE_ENSURE(context, filter_params->scale->size <= lhs_layout_rows);
       for (int i = 0; i < filter_params->scale->size; i++) {
         filter_scales[i] = filter_params->scale->data[i];
       }
