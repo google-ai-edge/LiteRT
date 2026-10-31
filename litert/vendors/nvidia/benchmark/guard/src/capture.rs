@@ -283,7 +283,20 @@ pub fn run_capture(
     }
     save(&capture)?;
 
+    // A probe dumps or writes GBs: stop before one when the disk is short.
+    let ensure_space = || -> Result<()> {
+        let free = BenchEnv::free_gib(&dir)?;
+        if free < config.disk.min_free_gib {
+            bail!(
+                "{} has {free:.1} GiB free, less than [disk] min_free_gib ({}): free space and resume the capture",
+                dir.display(),
+                config.disk.min_free_gib
+            );
+        }
+        Ok(())
+    };
     for model in &opts.models {
+        ensure_space()?;
         if opts.numerics {
             for prompt in config.prompts_for(model, &opts.tier)? {
                 let modes: Vec<bool> = if opts.mtp { vec![false, true] } else { vec![false] };
@@ -301,6 +314,7 @@ pub fn run_capture(
                             run
                         }
                         None => {
+                            ensure_space()?;
                             eprintln!(
                                 "numerics {model} {}{}: running",
                                 prompt.name,

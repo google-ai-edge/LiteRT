@@ -212,6 +212,25 @@ printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_
 
     /// Whether another CUDA compute process holds the GPU (bench.sh refuses to
     /// measure beside one).
+    /// The space free on the filesystem that holds `path`, GiB (df -Pk).
+    pub fn free_gib(path: &Path) -> Result<f64> {
+        let output = Command::new("df").arg("-Pk").arg(path).output().context("running df")?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        let available = text
+            .lines()
+            .nth(1)
+            .and_then(|line| line.split_whitespace().nth(3))
+            .and_then(|v| v.parse::<f64>().ok());
+        match available {
+            Some(kib) if output.status.success() => Ok(kib / 1048576.0),
+            _ => bail!(
+                "df -Pk {} gave no available space: {}",
+                path.display(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        }
+    }
+
     pub fn gpu_busy(&self) -> Result<bool> {
         let output = Command::new(&self.smi)
             .args(["--query-compute-apps=pid", "--format=csv,noheader"])

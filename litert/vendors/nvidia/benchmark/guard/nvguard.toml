@@ -79,6 +79,13 @@ fail_min_overlap = 0.8
 fail_diverge_before = 8
 fail_loopiness = 0.25
 
+# The space a capture needs: below this many GiB free on the guard root's
+# filesystem a capture stops before its next probe (and resumes later). A
+# quick-tier capture of two models with --mtp dumped 14 GB (numerics.full_steps)
+# and filled the disk on 2026-10-29.
+[disk]
+min_free_gib = 20
+
 # MTP acceptance (accepted over drafted tokens) of the greedy MTP numerics
 # probes, pooled per model across the prompts and judged on the pool and on
 # how many prompts fell: one prompt's acceptance moves with its text, which

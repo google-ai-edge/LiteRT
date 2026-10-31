@@ -25,6 +25,23 @@ pub struct Config {
     pub probes: ProbesConfig,
     #[serde(default)]
     pub acceptance: AcceptanceThresholds,
+    #[serde(default)]
+    pub disk: DiskConfig,
+}
+
+/// The space a capture needs free: its numerics probes dump whole outputs
+/// (numerics.full_steps), GBs per model.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskConfig {
+    /// Below this many GiB free on the guard root's filesystem, a capture
+    /// stops before its next probe (it resumes later).
+    pub min_free_gib: f64,
+}
+
+impl Default for DiskConfig {
+    fn default() -> Self {
+        Self { min_free_gib: 20.0 }
+    }
 }
 
 /// The MTP acceptance of the greedy MTP numerics probes, pooled per model

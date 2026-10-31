@@ -107,6 +107,12 @@ cache. Known failing case: the step feed's tables under MTP before
 LiteRT-LM 12ed7c4b, 1,254 MiB and 1.15 GiB on the E2B. About 15 to 40
 seconds per model and mode; `--no-memory` skips it.
 
+**Disk.** A capture stops before its next probe when the guard root's
+filesystem has less than `[disk] min_free_gib` (20) free, and resumes later:
+the numerics probes dump whole outputs (`numerics.full_steps`), and a
+quick-tier capture of two models with `--mtp` wrote 14 GB and filled the disk
+on 2026-10-29. `--config` with `full_steps = 0` keeps only the top-K logits.
+
 **MTP acceptance.** With `--mtp` each numerics prompt also decodes greedily
 with the drafter, and the run keeps its accepted and drafted tokens. `check`
 and `compare` pool them per model (accepted over drafted, across the
