@@ -146,7 +146,14 @@ fn capture_options(probe: &ProbeArgs, env: &BenchEnv, config: &Config) -> Result
         bail!("no models to probe");
     }
     config::tier_rank(&probe.tier)?;
-    let name = probe.name.clone().unwrap_or_else(|| env.build_id.clone());
+    let name = match &probe.name {
+        Some(name) => name.clone(),
+        None if capture::dirty_build_id(&env.build_id) => bail!(
+            "the build id {} is a dirty tree's (uncommitted tracked changes): it does not identify the code, so name the capture with --name, a new name after each edit",
+            env.build_id
+        ),
+        None => env.build_id.clone(),
+    };
     capture::validate_name(&name)?;
     Ok(CaptureOptions {
         name,
@@ -280,15 +287,23 @@ fn main() -> Result<()> {
                 &comparison,
             )?;
             if comparison.verdict != numerics::Verdict::Pass {
-                let localization = report::localize_captures(&base, &cand)?;
-                let local = report::render_localization(&localization);
-                write_report(
-                    &cand.dir,
-                    &format!("localize_{}", base.manifest.name),
-                    &local,
-                    &localization,
-                )?;
-                markdown.push_str(&local);
+                match report::localize_captures(&base, &cand) {
+                    Ok(localization) => {
+                        let local = report::render_localization(&localization);
+                        write_report(
+                            &cand.dir,
+                            &format!("localize_{}", base.manifest.name),
+                            &local,
+                            &localization,
+                        )?;
+                        markdown.push_str(&local);
+                    }
+                    Err(error) => {
+                        let line = format!("The localization could not be built: {error:#}\n\n");
+                        eprintln!("{line}");
+                        markdown.push_str(&line);
+                    }
+                }
             }
             print!("{markdown}");
             println!(

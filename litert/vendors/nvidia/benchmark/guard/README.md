@@ -179,10 +179,11 @@ first use); a numerics probe of a model runs before its performance probes.
   chunk 4 rows 3071 to 4094, so chunk 2's write position is under the gate
   and chunk 3's, 2047, is the first at or past it.
 - A build against the one before it (the dump's index fields only): every
-  tensor identical, none differing of the 76 to 334 paired per probe (76 for
-  the short prompts, 286 for the 8k document, more for the MTP runs), the
-  three constraint variants (device, host, immediate) identical and matching
-  the regex, the sampled texts identical.
+  tensor identical, none differing of the 76 to 334 paired per probe (136
+  for each of the three code prompts, whose prefill takes three chunks; 76
+  for `reason`, one chunk; 286 for the 8k document; 184, 184, 184, 124 and
+  334 for their MTP runs), the three constraint variants (device, host,
+  immediate) identical and matching the regex, the sampled texts identical.
 - The functions in the dumps are the invocation contexts' (`c<context>
   tensorrt_partition_<n>`), with the step's input tokens beside them: a
   prefill chunk's 1024, a decode step's 1, a verify step's few. The
@@ -192,7 +193,10 @@ first use); a numerics probe of a model runs before its performance probes.
 ## Rules of thumb
 
 - Keep both trees clean while a capture runs: the pool key goes dirty ("+")
-  with uncommitted tracked changes and later probes compile new pools.
+  with uncommitted tracked changes and later probes compile new pools. A
+  dirty build id is the same string for every edit of the same heads, so it
+  is refused as the default capture name: name a dirty tree's capture, and
+  use a new name after each edit, or the earlier edit's probes are kept.
 - Never run `build.sh` or GPU unit tests beside a capture (bench.sh refuses
   another CUDA process; a rebuilt library under a running capture mixes builds).
 - Host mode: timings compare within one mode (`CI_HOST_MODE=formal` after

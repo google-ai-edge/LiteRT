@@ -74,6 +74,14 @@ pub fn capture_dir(env: &BenchEnv, name: &str) -> PathBuf {
     guard_root(env).join(name)
 }
 
+/// A build id with '+' is a dirty tree's: env.sh marks any uncommitted
+/// tracked change so, hashing nothing of the diff, so the id is the same
+/// string for every edit of the same heads and cannot name a capture by
+/// itself.
+pub fn dirty_build_id(build_id: &str) -> bool {
+    build_id.contains('+')
+}
+
 /// A capture name is one path component of letters, digits, '.', '_', '-'
 /// and '+' (a dirty tree's build id carries one), not starting with '.': it
 /// becomes the capture's directory and the dumps' `<dir>:<steps>:<mb>` spec,
@@ -140,6 +148,12 @@ pub fn run_capture(
     let dir = capture_dir(env, &opts.name);
     let mut capture = match load_capture(env, &opts.name) {
         Ok(existing) => {
+            if dirty_build_id(&env.build_id) {
+                eprintln!(
+                    "capture {} resumes under the dirty build id {}: an edit since its probes ran is not told apart (use a new name after each edit)",
+                    opts.name, env.build_id
+                );
+            }
             if existing.manifest.build_id != env.build_id {
                 bail!(
                     "capture {} holds build {} but the trees are at {}; use another --name",
@@ -436,7 +450,14 @@ pub fn run_capture(
 
 #[cfg(test)]
 mod tests {
-    use super::validate_name;
+    use super::{dirty_build_id, validate_name};
+
+    #[test]
+    fn a_dirty_build_id_is_told_apart() {
+        assert!(dirty_build_id("44cdec619+-95cd9c0b"));
+        assert!(dirty_build_id("44cdec619-95cd9c0b+"));
+        assert!(!dirty_build_id("44cdec619-95cd9c0b"));
+    }
 
     #[test]
     fn capture_names_are_one_plain_path_component() {

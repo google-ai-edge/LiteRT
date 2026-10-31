@@ -305,9 +305,16 @@ pub fn localize(base_dir: &Path, cand_dir: &Path) -> Result<Localization> {
     let mut out = Localization::default();
     out.unpaired = base.iter().filter(|l| !cand_by_key.contains_key(&l.key())).count()
         + cand.iter().filter(|l| !base_keys.contains(&l.key())).count();
-    out.above_cap = base.iter().chain(cand.iter()).filter(|l| !l.skipped.is_empty()).count();
-    out.above_cap_state =
-        base.iter().chain(cand.iter()).filter(|l| !l.skipped.is_empty() && l.state).count();
+    // Outputs above the cap on either side, each output once (both captures
+    // at one cap skip the same outputs).
+    let capped: BTreeMap<(u32, String, u32, u32), bool> = base
+        .iter()
+        .chain(cand.iter())
+        .filter(|l| !l.skipped.is_empty())
+        .map(|l| (l.key(), l.state))
+        .collect();
+    out.above_cap = capped.len();
+    out.above_cap_state = capped.values().filter(|state| **state).count();
     let mut first_step: Option<(u32, u32)> = None;
     for line in &base {
         let Some(other) = cand_by_key.get(&line.key()) else { continue };
@@ -402,6 +409,10 @@ pub fn full_row_kls(base_dir: &Path, cand_dir: &Path) -> Result<Vec<RowKl>> {
     let mut out = Vec::new();
     for line in base.iter().filter(|l| l.is_logits() && l.is_comparable()) {
         let Some(other) = cand_by_key.get(&line.key()) else { continue };
+        if !other.is_comparable() {
+            // Capped or unreadable on the candidate's side: not a row.
+            continue;
+        }
         let b = read_tensor(base_dir, line)?;
         let c = read_tensor(cand_dir, other)?;
         let columns = line.columns() as usize;
@@ -526,6 +537,13 @@ mod tests {
         let capped_localization = localize(&a, &b).unwrap();
         assert_eq!((capped_localization.above_cap, capped_localization.above_cap_state), (1, 1));
         assert_eq!(capped_localization.pairs, 2, "the capped line pairs with nothing");
+        // The same output capped on both sides is one output above the cap.
+        let mut other_index = std::fs::read_to_string(b.join("index.jsonl")).unwrap();
+        other_index.push_str(&serde_json::to_string(&capped).unwrap());
+        other_index.push('\n');
+        std::fs::write(b.join("index.jsonl"), &other_index).unwrap();
+        let both = localize(&a, &b).unwrap();
+        assert_eq!((both.above_cap, both.above_cap_state, both.pairs), (1, 1, 2));
         assert_eq!(
             read_tensor(&a, &index[0]).unwrap(),
             vec![1.0, -2.0, 3.0, 4.0, 5.0, 6.0, 7.0, -128.0]
@@ -597,6 +615,29 @@ mod tests {
         assert_eq!(l.first_step.len(), 1, "only the prefill output differs at that step");
         let largest = l.largest.unwrap();
         assert_eq!(largest.function, "prefill");
+    }
+
+    #[test]
+    fn a_capped_logits_line_on_the_candidate_side_is_no_row_and_no_error() {
+        let a = temp_dir("k");
+        let b = temp_dir("l");
+        let columns = LOGITS_COLUMNS as usize;
+        let row: Vec<f32> = (0..columns).map(|i| (i % 5) as f32).collect();
+        let dims: Vec<i64> = vec![1, 1, columns as i64];
+        write_dump(&a, &[(0, "decode", 1, 0, ELEMENT_FLOAT32, &dims, &row)]);
+        let line = load_index(&a).unwrap().remove(0);
+        let capped = IndexLine { skipped: "size".into(), file: String::new(), ..line.clone() };
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(
+            b.join("index.jsonl"),
+            format!("{}\n", serde_json::to_string(&capped).unwrap()),
+        )
+        .unwrap();
+        assert!(full_row_kls(&a, &b).unwrap().is_empty());
+        let l = localize(&a, &b).unwrap();
+        assert_eq!((l.pairs, l.above_cap, l.above_cap_state), (0, 1, 0));
+        // And the other way round.
+        assert!(full_row_kls(&b, &a).unwrap().is_empty());
     }
 
     #[test]
