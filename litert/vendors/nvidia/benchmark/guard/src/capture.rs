@@ -117,13 +117,30 @@ pub fn overridden(extra: &[(String, String)], names: &[&str]) -> Vec<String> {
     extra.iter().filter(|(k, _)| names.contains(&k.as_str())).map(|(k, _)| k.clone()).collect()
 }
 
-/// Adds a note, replacing an earlier one of the same kind (its text up to the
-/// first ':' or '('): a resumed capture keeps one note per kind, the latest.
+/// The notes about one invocation start with this: every invocation removes
+/// the previous one's (a resume describes itself; each timed run keeps its own
+/// clock, PerfPoint and Autopsy clock_fit).
+pub const INVOCATION_NOTE: &str = "the last invocation";
+
+/// Drops the previous invocation's notes (and the forms notes took before
+/// INVOCATION_NOTE: they described one invocation too).
+pub fn clear_invocation_notes(notes: &mut Vec<String>) {
+    notes.retain(|n| {
+        !(n.starts_with(INVOCATION_NOTE)
+            || n.starts_with("timed probes skipped")
+            || n.starts_with("timed probes ran on an unfit clock")
+            || n.starts_with("timed probes on an unfit clock")
+            || n.starts_with("the host's clock was not checked")
+            || n.starts_with("text probes:")
+            || n.starts_with("the autopsy:"))
+    });
+}
+
+/// Adds a note about this invocation (INVOCATION_NOTE first), once.
 pub fn push_note(notes: &mut Vec<String>, note: String) {
-    let kind = |n: &str| n.split([':', '(']).next().unwrap_or(n).trim().to_string();
-    let key = kind(&note);
-    notes.retain(|n| kind(n) != key);
-    notes.push(note);
+    if !notes.contains(&note) {
+        notes.push(note);
+    }
 }
 
 pub fn guard_root(env: &BenchEnv) -> PathBuf {
@@ -280,18 +297,17 @@ pub fn run_capture(
     capture.manifest.binaries_build_id = stamp;
     // The host's clock: the timed probes (performance, autopsy) need it fit.
     let mut timed_ok = true;
+    clear_invocation_notes(&mut capture.manifest.notes);
     match env.host_clock(3) {
         Ok((report, fit)) => {
             if !fit {
                 let reasons = report.get("reasons").map(|r| r.to_string()).unwrap_or_default();
                 if opts.allow_unfit_clock {
-                    let note = format!(
-                        "timed probes on an unfit clock: ({reasons}) their numbers are diagnostic"
-                    );
+                    let note = format!("{INVOCATION_NOTE} ran its timed probes on an unfit clock ({reasons}): their runs are diagnostic");
                     eprintln!("warning: {note}");
                     push_note(&mut capture.manifest.notes, note);
                 } else if opts.perf || opts.autopsy {
-                    let note = format!("timed probes on an unfit clock: skipped ({reasons}); --allow-unfit-clock runs them as diagnostic");
+                    let note = format!("{INVOCATION_NOTE} skipped the timed probes: the host's clock is unfit ({reasons}); --allow-unfit-clock runs them as diagnostic");
                     eprintln!("{note}");
                     push_note(&mut capture.manifest.notes, note);
                     timed_ok = false;
@@ -301,7 +317,7 @@ pub fn run_capture(
             capture.manifest.clock_fit = Some(fit);
         }
         Err(error) => {
-            let note = format!("the host's clock was not checked: {error}");
+            let note = format!("{INVOCATION_NOTE} did not check the host's clock: {error}");
             eprintln!("warning: {note}");
             push_note(&mut capture.manifest.notes, note);
         }
@@ -309,17 +325,14 @@ pub fn run_capture(
     let text_conflict = overridden(&env.extra_env, &TEXT_PROBE_NAMES);
     let texts_ok = text_conflict.is_empty();
     if opts.texts && !texts_ok {
-        let note = format!("text probes: skipped, the extra environment sets {} (their variants set it themselves)", text_conflict.join(", "));
+        let note = format!("{INVOCATION_NOTE} skipped the text probes: the extra environment sets {} (their variants set it themselves)", text_conflict.join(", "));
         eprintln!("{note}");
         push_note(&mut capture.manifest.notes, note);
     }
     let autopsy_conflict = overridden(&env.extra_env, &AUTOPSY_NAMES);
     let autopsy_ok = autopsy_conflict.is_empty();
     if opts.autopsy && !autopsy_ok {
-        let note = format!(
-            "the autopsy: skipped, the extra environment sets {} (it runs its own step graph)",
-            autopsy_conflict.join(", ")
-        );
+        let note = format!("{INVOCATION_NOTE} skipped the autopsy: the extra environment sets {} (it runs its own step graph)", autopsy_conflict.join(", "));
         eprintln!("{note}");
         push_note(&mut capture.manifest.notes, note);
     }

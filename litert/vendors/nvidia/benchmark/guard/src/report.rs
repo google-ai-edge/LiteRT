@@ -786,6 +786,24 @@ pub fn compare(
         reasons
             .push("no text probe compared: the candidate ran none of the baseline's".to_string());
     }
+    let memory_paired = cand
+        .memory
+        .iter()
+        .any(|c| base.memory.iter().any(|b| b.model == c.model && b.mtp == c.mtp));
+    if !base.memory.is_empty() && !memory_paired {
+        reasons
+            .push("no memory probe compared: the candidate ran none of the baseline's".to_string());
+    }
+    let conversations_paired = cand.conversations.iter().any(|c| {
+        base.conversations
+            .iter()
+            .any(|b| b.model == c.model && b.prompt == c.prompt && b.mtp == c.mtp)
+    });
+    if !base.conversations.is_empty() && !conversations_paired {
+        reasons.push(
+            "no conversation probe compared: the candidate ran none of the baseline's".to_string(),
+        );
+    }
     if base.numerics.is_empty()
         && base.perf.is_empty()
         && base.texts.is_empty()
@@ -795,24 +813,30 @@ pub fn compare(
     {
         reasons.push("the baseline holds no probe".to_string());
     }
-    // Each timed run's own clock (bench.sh's report when it ran): a resumed capture keeps runs
-    // of earlier invocations, whose clock the manifest's last sample does not describe.
-    let unfit_runs = |capture: &Capture| {
-        capture
-            .perf
-            .iter()
-            .filter(|p| p.clock_fit.or(capture.manifest.clock_fit) == Some(false))
-            .count()
-            + capture
-                .autopsies
-                .iter()
-                .filter(|a| a.clock_fit.or(capture.manifest.clock_fit) == Some(false))
-                .count()
-    };
-    let (base_unfit, cand_unfit) = (unfit_runs(base), unfit_runs(cand));
-    if (!perf.is_empty() || !autopsies.is_empty()) && base_unfit + cand_unfit > 0 {
+    // Each compared timed run's own clock (bench.sh's report when it ran, else the manifest's):
+    // a resumed capture keeps runs of earlier invocations, whose clock the last sample does not
+    // describe. The rows named are diagnostic; the others are not.
+    let unfit =
+        |fit: Option<bool>, capture: &Capture| fit.or(capture.manifest.clock_fit) == Some(false);
+    let mut unfit_rows: Vec<String> = Vec::new();
+    for c in &cand.perf {
+        if let Some(b) = base.perf.iter().find(|b| b.label == c.label && b.model == c.model) {
+            if unfit(b.clock_fit, base) || unfit(c.clock_fit, cand) {
+                unfit_rows.push(format!("{} {}", c.model, c.label));
+            }
+        }
+    }
+    for c in &cand.autopsies {
+        if let Some(b) = base.autopsies.iter().find(|b| b.model == c.model) {
+            if unfit(b.clock_fit, base) || unfit(c.clock_fit, cand) {
+                unfit_rows.push(format!("{} autopsy", c.model));
+            }
+        }
+    }
+    if !unfit_rows.is_empty() {
         reasons.push(format!(
-            "timed runs on a clock clock_check.py found unfit (baseline {base_unfit}, candidate {cand_unfit}): the performance rows and the autopsy are diagnostic"
+            "compared timed runs on a clock clock_check.py found unfit, diagnostic: {}",
+            unfit_rows.join(", ")
         ));
     }
     let verdict = numerics
@@ -892,7 +916,7 @@ pub fn render_comparison(c: &Comparison) -> String {
         None => "not checked",
     };
     s.push_str(&format!(
-        "Host clock (clock_check.py): baseline {}, candidate {}.\n\n",
+        "Host clock (clock_check.py, at each capture's last invocation; a timed run is judged by its own): baseline {}, candidate {}.\n\n",
         clock_text(c.base_clock_fit),
         clock_text(c.cand_clock_fit)
     ));
@@ -1694,7 +1718,7 @@ pub fn render_capture(capture: &Capture) -> String {
         }
     }
     if !capture.perf.is_empty() {
-        s.push_str("## Performance probes\n\n| Model | Workload | Mode | Iterations | Decode tok/s | Prefill tok/s | Acceptance | Tokens/round | Init s |\n|---|---|---|---:|---:|---:|---:|---:|---:|\n");
+        s.push_str("## Performance probes\n\n| Model | Workload | Mode | Iterations | Decode tok/s | Prefill tok/s | Acceptance | Tokens/round | Init s | Clock |\n|---|---|---|---:|---:|---:|---:|---:|---:|---|\n");
         for p in &capture.perf {
             let mode = format!(
                 "{}{}",
@@ -1702,7 +1726,7 @@ pub fn render_capture(capture: &Capture) -> String {
                 if p.text { " text" } else { "" }
             );
             s.push_str(&format!(
-                "| {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
                 p.model,
                 p.workload,
                 mode,
@@ -1711,7 +1735,12 @@ pub fn render_capture(capture: &Capture) -> String {
                 opt(p.prefill_tps, 0),
                 p.acceptance.map(|a| format!("{:.0}%", a * 100.0)).unwrap_or_else(|| "-".into()),
                 opt(p.tokens_per_round, 2),
-                opt(p.init_total_s, 1)
+                opt(p.init_total_s, 1),
+                match p.clock_fit {
+                    Some(true) => "fit",
+                    Some(false) => "UNFIT",
+                    None => "-",
+                }
             ));
         }
         s.push('\n');
@@ -2102,10 +2131,23 @@ mod tests {
         kept.perf.push(perf_point(Some(false)));
         let c = compare(&kept, &kept, &config, &[]);
         assert!(
-            c.reasons.iter().any(|r| r.contains("unfit (baseline 1, candidate 1)")),
+            c.reasons
+                .iter()
+                .any(|r| r.contains("found unfit, diagnostic: e2b e2b_short_plain_latency")),
             "{:?}",
             c.reasons
         );
+        // An unfit run without a counterpart judges nothing (round 2's F09).
+        let mut base = capture_of("base", Vec::new(), &[]);
+        base.perf.push(perf_point(Some(true)));
+        let mut only_base = perf_point(Some(false));
+        only_base.model = "12b".into();
+        only_base.label = "12b_short_plain_latency".into();
+        base.perf.push(only_base);
+        let mut cand = capture_of("cand", Vec::new(), &[]);
+        cand.perf.push(perf_point(Some(true)));
+        let c = compare(&base, &cand, &config, &[]);
+        assert!(!c.reasons.iter().any(|r| r.contains("unfit")), "{:?}", c.reasons);
         // The opposite: the last invocation unfit, every timed run fit.
         let mut fit = capture_of("fit", Vec::new(), &[]);
         fit.manifest.clock_fit = Some(false);
@@ -2117,6 +2159,40 @@ mod tests {
         old.manifest.clock_fit = Some(false);
         old.perf.push(perf_point(None));
         assert!(compare(&old, &old, &config, &[]).reasons.iter().any(|r| r.contains("unfit")));
+    }
+
+    #[test]
+    fn a_comparison_that_compared_no_memory_or_conversation_probe_warns() {
+        // Round 2's F08: a memory-only baseline against another model's memory runs.
+        let config = Config::load(None).unwrap();
+        let base = memory_capture(
+            "e2b_only",
+            &[("e2b", false, 1054.0, 0.97, false), ("e2b", true, 1120.0, 1.08, false)],
+        );
+        let cand = memory_capture(
+            "e4b_only",
+            &[("e4b", false, 3550.0, 1.91, false), ("e4b", true, 2726.0, 1.23, false)],
+        );
+        let c = compare(&base, &cand, &config, &[]);
+        assert!(c.memory.is_empty());
+        assert_eq!(c.verdict, Verdict::Warn, "{:?}", c.reasons);
+        assert!(c.reasons.iter().any(|r| r.contains("no memory probe compared")));
+        let mut conv = capture_of("conv", Vec::new(), &[]);
+        conv.conversations.push(crate::conversations::ConversationRun {
+            model: "e2b".into(),
+            prompt: "doc_8k".into(),
+            mtp: false,
+            build_id: "b".into(),
+            exit_code: 0,
+            wall_s: 1.0,
+            texts: vec!["a".into(), "a".into()],
+        });
+        let c = compare(&conv, &capture_of("empty", Vec::new(), &[]), &config, &[]);
+        assert!(
+            c.reasons.iter().any(|r| r.contains("no conversation probe compared")),
+            "{:?}",
+            c.reasons
+        );
     }
 
     #[test]
@@ -2149,13 +2225,25 @@ mod tests {
         capture.manifest.env = vec![("LITERT_NVIDIA_DISPATCH_STEP_FEED".into(), "0".into())];
         capture.manifest.pool_suffix = "-envabc".into();
         capture.manifest.clock_fit = Some(false);
+        // Each invocation replaces the last one's notes (round 2's F10): an earlier
+        // invocation's diagnostic note and the old forms go, this one's stays.
+        capture.manifest.notes = vec![
+            "the last invocation ran its timed probes on an unfit clock (tick 10545): their runs are diagnostic".into(),
+            "timed probes skipped: the host's clock is unfit".into(),
+            "a note of another kind".into(),
+        ];
+        crate::capture::clear_invocation_notes(&mut capture.manifest.notes);
+        assert_eq!(capture.manifest.notes, vec!["a note of another kind".to_string()]);
+        capture.manifest.notes.clear();
         crate::capture::push_note(
             &mut capture.manifest.notes,
-            "timed probes on an unfit clock: skipped (tick 10545)".into(),
+            "the last invocation skipped the timed probes: the host's clock is unfit (tick 10550)"
+                .into(),
         );
         crate::capture::push_note(
             &mut capture.manifest.notes,
-            "timed probes on an unfit clock: skipped (tick 10550)".into(),
+            "the last invocation skipped the timed probes: the host's clock is unfit (tick 10550)"
+                .into(),
         );
         assert_eq!(capture.manifest.notes.len(), 1);
         capture.conversations.push(crate::conversations::ConversationRun {
@@ -2168,15 +2256,7 @@ mod tests {
             texts: vec!["a".into(), "b".into()],
         });
         let r = render_capture(&capture);
-        for part in [
-            "Extra environment: LITERT_NVIDIA_DISPATCH_STEP_FEED=0",
-            "UNFIT",
-            "- Note: timed probes on an unfit clock: skipped (tick 10550)",
-            "## Conversation probes",
-            "conversation 2 at char 0",
-            "## Memory probes",
-            "| e2b | mtp | short | 0 | 1120 | 1.078 | no |",
-        ] {
+        for part in ["Extra environment: LITERT_NVIDIA_DISPATCH_STEP_FEED=0", "UNFIT", "- Note: the last invocation skipped the timed probes: the host's clock is unfit (tick 10550)", "## Conversation probes", "conversation 2 at char 0", "## Memory probes", "| e2b | mtp | short | 0 | 1120 | 1.078 | no |"] {
             assert!(r.contains(part), "{part} missing from:\n{r}");
         }
         assert_eq!(

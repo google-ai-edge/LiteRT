@@ -159,8 +159,11 @@ fn resolve(cli: &Cli) -> Result<(BenchEnv, Config, PathBuf)> {
     Ok((env, config, guard_dir))
 }
 
-/// The probes' extra environment from --env NAME=VALUE: names the probes set
-/// themselves, or env.sh's pool variables, are refused.
+/// The probes' extra environment from --env NAME=VALUE: the names the numerics
+/// and memory probes set themselves (OWN: the dumps, the memory profile) and
+/// env.sh's pool variables are refused; a name the text probes or the autopsy
+/// set themselves passes, and run_capture skips those probes with a note
+/// (capture::TEXT_PROBE_NAMES, capture::AUTOPSY_NAMES).
 fn extra_env(probe: &ProbeArgs) -> Result<Vec<(String, String)>> {
     const OWN: [&str; 8] = [
         "LITERT_NVIDIA_DISPATCH_DUMP_IO",
