@@ -82,6 +82,24 @@ struct LiteRtNvidiaStepFeedParams {
   float* per_layer_mirror;     // [per_layer_count * per_layer_width]
 };
 
+// A strided copy, as cudaMemcpy2D takes it: `height` runs of `width` bytes,
+// the source's `src_pitch` bytes apart, the destination's `dst_pitch`.
+struct LiteRtNvidiaRowCopy {
+  const void* src;
+  void* dst;
+  uint32_t src_pitch;
+  uint32_t dst_pitch;
+  uint32_t width;
+  uint32_t height;
+};
+
+// Enqueues the copies on `stream`, a block per copy, in as few launches as
+// they need: the ring cache rows a step ahead saves and a drop puts back. The
+// pointers, widths and pitches are multiples of 16 bytes, or the launch is
+// cudaErrorInvalidValue and nothing is copied.
+extern "C" cudaError_t LiteRtNvidiaLaunchRowCopies(
+    const LiteRtNvidiaRowCopy* copies, int count, cudaStream_t stream);
+
 // Enqueues the feed on `stream`, one launch. An out-of-range token (negative
 // or at least vocab) gives zero embeddings and is mirrored as is. Exactly one
 // of row_scales and block_scales is given; dim is a multiple of scale_block;

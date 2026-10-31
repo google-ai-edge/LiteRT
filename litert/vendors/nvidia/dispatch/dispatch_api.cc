@@ -25,6 +25,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -2044,6 +2045,28 @@ bool LazyAotEnginesEnabled() {
 
 }  // namespace
 
+// The bytes of an engine tensor's element, 0 for a type without a whole
+// byte per element.
+size_t BytesOfDataType(nvinfer1::DataType type) {
+  switch (type) {
+    case nvinfer1::DataType::kFLOAT:
+    case nvinfer1::DataType::kINT32:
+      return 4;
+    case nvinfer1::DataType::kHALF:
+    case nvinfer1::DataType::kBF16:
+      return 2;
+    case nvinfer1::DataType::kINT8:
+    case nvinfer1::DataType::kUINT8:
+    case nvinfer1::DataType::kBOOL:
+    case nvinfer1::DataType::kFP8:
+      return 1;
+    case nvinfer1::DataType::kINT64:
+      return 8;
+    default:
+      return 0;
+  }
+}
+
 class LiteRtDispatchDeviceContextT {
  public:
   explicit LiteRtDispatchDeviceContextT(
@@ -2267,14 +2290,20 @@ class LiteRtDispatchDeviceContextT {
   // of the other contexts of this device wait for it before they run, so a
   // prefill on another stream never races its cache rows. LiteRT-LM runs its
   // steps from one thread; this is not synchronized.
-  void SetStepAhead(const void* owner, cudaEvent_t done) {
+  // `yield`, when given, is called in WaitStepAhead's place for another
+  // context: the owner puts back what its steps ahead overwrote (the ring
+  // cache rows) and makes the other context's stream wait for that.
+  void SetStepAhead(const void* owner, cudaEvent_t done,
+                    std::function<Expected<void>(cudaStream_t)> yield = {}) {
     step_ahead_owner_ = owner;
     step_ahead_done_ = done;
+    step_ahead_yield_ = std::move(yield);
   }
   void ClearStepAhead(const void* owner) {
     if (step_ahead_owner_ == owner) {
       step_ahead_owner_ = nullptr;
       step_ahead_done_ = nullptr;
+      step_ahead_yield_ = {};
     }
   }
   Expected<void> WaitStepAhead(const void* caller, cudaStream_t stream) {
@@ -2282,6 +2311,7 @@ class LiteRtDispatchDeviceContextT {
         step_ahead_done_ == nullptr) {
       return {};
     }
+    if (step_ahead_yield_) return step_ahead_yield_(stream);
     return CudaOk(cudaStreamWaitEvent(stream, step_ahead_done_, 0),
                   "cudaStreamWaitEvent step ahead");
   }
@@ -2291,6 +2321,7 @@ class LiteRtDispatchDeviceContextT {
   std::shared_ptr<AotEngineResidency> aot_residency_;
   const void* step_ahead_owner_ = nullptr;
   cudaEvent_t step_ahead_done_ = nullptr;
+  std::function<Expected<void>(cudaStream_t)> step_ahead_yield_;
   LiteRtTensorBufferHandle next_handle_ = 1;
   std::unordered_map<LiteRtTensorBufferHandle, Record> records_;
   void* arena_ptr_ = nullptr;
@@ -2612,6 +2643,13 @@ class LiteRtDispatchInvocationContextT {
     if (feed_.pending) {
       // The runtime may have registered the token table since.
       LITERT_RETURN_IF_ERROR(InitStepFeed());
+    }
+    if (feed_.in_flight != 0 && feed_.yielded) {
+      // Another context ran since the steps ahead (their ring rows went
+      // back for it): they are stale whatever the host's inputs say. Not a
+      // miss of the feed's own.
+      feed_.yielded = false;
+      LITERT_RETURN_IF_ERROR(DropStepsAhead());
     }
     if (feed_.in_flight != 0) {
       // Steps ran ahead of this call. The host's inputs for it must be the
@@ -3344,6 +3382,13 @@ class LiteRtDispatchInvocationContextT {
     size_t backup_bytes = 0;
     bool restores_rows = false;
     bool cache_rows_found = false;
+    bool rows_vectorized = false;      // the rows copy as one launch
+    cudaEvent_t yield_done = nullptr;  // the rows put back for another context
+    uint64_t yields = 0;
+    // Another context ran after the steps ahead: they are dropped at the
+    // next invocation whatever the host's inputs, their rows being gone.
+    bool yielded = false;
+    int budget_stops = 0;         // launches the budget declined, logged
     int32_t queued_position = 0;  // the newest step ahead's position
     // The feed's own token from the logits: the argmax, or the session's
     // sampling on the device (EnqueueFeedToken); the host samples on its
@@ -3561,6 +3606,9 @@ class LiteRtDispatchInvocationContextT {
       slot.staging.assign(output_handles_.size(), nullptr);
       slot.staging_bytes.assign(output_handles_.size(), 0);
     }
+    status =
+        cudaEventCreateWithFlags(&feed_.yield_done, cudaEventDisableTiming);
+    if (status != cudaSuccess) return fail("event", status);
     int device = -1;
     status = cudaGetDevice(&device);
     if (status != cudaSuccess) return fail("device", status);
@@ -3624,8 +3672,11 @@ class LiteRtDispatchInvocationContextT {
                         static_cast<size_t>(type.layout.dimensions[3])};
       if (record->transposed_value_cache_layout) std::swap(dims[2], dims[3]);
       const size_t volume = dims[1] * dims[2] * dims[3];
-      if (volume == 0 || record->size % volume != 0) continue;
-      const size_t elem = record->size / volume;
+      // The engine's element, not the buffer's: a buffer may be larger than
+      // the engine's storage of the tensor.
+      const size_t elem = BytesOfDataType(
+          engine_->getTensorDataType(bytecode_.output_names[i].c_str()));
+      if (volume == 0 || elem == 0 || record->size < elem * volume) continue;
       int axis = 0;
       for (int k = 1; k < 4 && axis == 0; ++k) {
         if (dims[k] == feed.ring) axis = k;
@@ -3640,6 +3691,12 @@ class LiteRtDispatchInvocationContextT {
       row.backup_offset = feed_.backup_bytes;
       feed_.backup_bytes += row.outer * row.inner_bytes;
       feed_.cache_rows.push_back(row);
+    }
+    feed_.rows_vectorized = true;
+    for (const StepFeed::CacheRow& cache : feed_.cache_rows) {
+      if (cache.inner_bytes % 16 != 0 || cache.backup_offset % 16 != 0) {
+        feed_.rows_vectorized = false;
+      }
     }
     for (StepFeedSlot& slot : feed_.slots) {
       if (slot.backup != nullptr) cudaFree(slot.backup);
@@ -3662,7 +3719,9 @@ class LiteRtDispatchInvocationContextT {
   }
 
   // The rows a step ahead at `slot.position` overwrites, to the slot's
-  // backup; and back, after a drop. Both on the stream, in order.
+  // backup; and back, after a drop. Both on the stream, in order: one launch
+  // (LiteRtNvidiaLaunchRowCopies) when the rows are 16-byte aligned, a
+  // cudaMemcpy2DAsync per row otherwise.
   Expected<void> CopyCacheRows(StepFeedSlot& slot, bool restore) {
     const auto& feed = *bytecode_.step_feed;
     const size_t ring = feed.ring;
@@ -3670,26 +3729,70 @@ class LiteRtDispatchInvocationContextT {
         static_cast<size_t>(((slot.position % static_cast<int32_t>(ring)) +
                              static_cast<int32_t>(ring)) %
                             static_cast<int32_t>(ring));
+    std::vector<LiteRtNvidiaRowCopy> copies;
+    copies.reserve(feed_.cache_rows.size());
     for (const StepFeed::CacheRow& cache : feed_.cache_rows) {
       LITERT_ASSIGN_OR_RETURN(auto* record, device_context_->GetRecord(
                                                 output_handles_[cache.port]));
       char* in_cache =
           static_cast<char*>(record->device_ptr) + row * cache.inner_bytes;
       char* backup = static_cast<char*>(slot.backup) + cache.backup_offset;
-      const size_t pitch = ring * cache.inner_bytes;
-      const cudaError_t copied =
-          restore
-              ? cudaMemcpy2DAsync(in_cache, pitch, backup, cache.inner_bytes,
-                                  cache.inner_bytes, cache.outer,
-                                  cudaMemcpyDeviceToDevice, stream_)
-              : cudaMemcpy2DAsync(backup, cache.inner_bytes, in_cache, pitch,
-                                  cache.inner_bytes, cache.outer,
-                                  cudaMemcpyDeviceToDevice, stream_);
-      LITERT_RETURN_IF_ERROR(
-          CudaOk(copied, restore ? "cudaMemcpy2DAsync cache rows back"
-                                 : "cudaMemcpy2DAsync cache rows"));
+      const uint32_t pitch = static_cast<uint32_t>(ring * cache.inner_bytes);
+      const uint32_t width = static_cast<uint32_t>(cache.inner_bytes);
+      const uint32_t height = static_cast<uint32_t>(cache.outer);
+      if (restore) {
+        copies.push_back({backup, in_cache, width, pitch, width, height});
+      } else {
+        copies.push_back({in_cache, backup, pitch, width, width, height});
+      }
     }
+    cudaError_t copied = cudaErrorInvalidValue;
+    if (feed_.rows_vectorized) {
+      copied = LiteRtNvidiaLaunchRowCopies(
+          copies.data(), static_cast<int>(copies.size()), stream_);
+    }
+    if (copied == cudaErrorInvalidValue) {
+      feed_.rows_vectorized = false;
+      for (const LiteRtNvidiaRowCopy& copy : copies) {
+        copied = cudaMemcpy2DAsync(copy.dst, copy.dst_pitch, copy.src,
+                                   copy.src_pitch, copy.width, copy.height,
+                                   cudaMemcpyDeviceToDevice, stream_);
+        if (copied != cudaSuccess) break;
+      }
+    }
+    LITERT_RETURN_IF_ERROR(
+        CudaOk(copied, restore ? "cache rows back" : "cache rows"));
     slot.backed_up = !restore;
+    return {};
+  }
+
+  // Another context of this device is about to run (a prefill, or a step of
+  // another signature) while steps ahead are in flight: the ring rows they
+  // overwrote go back first, on this context's stream, and the other
+  // context's stream waits for that. The steps ahead stay in flight until
+  // this context's next invocation, which verifies and drops them (another
+  // position by then, after the other context's work).
+  Expected<void> YieldStepsAhead(cudaStream_t other) {
+    bool restored = false;
+    for (int k = 0; k < feed_.in_flight; ++k) {
+      StepFeedSlot& slot = feed_.slots[(feed_.head + k) % kStepFeedDepth];
+      if (slot.backed_up) {
+        LITERT_RETURN_IF_ERROR(CopyCacheRows(slot, /*restore=*/true));
+        restored = true;
+      }
+    }
+    cudaEvent_t done = LastStepAheadEvent();
+    if (restored && feed_.yield_done != nullptr) {
+      LITERT_RETURN_IF_ERROR(CudaOk(cudaEventRecord(feed_.yield_done, stream_),
+                                    "cudaEventRecord rows put back"));
+      done = feed_.yield_done;
+    }
+    if (done != nullptr) {
+      LITERT_RETURN_IF_ERROR(CudaOk(cudaStreamWaitEvent(other, done, 0),
+                                    "cudaStreamWaitEvent steps ahead yielded"));
+    }
+    feed_.yielded = true;
+    ++feed_.yields;
     return {};
   }
 
@@ -3709,11 +3812,13 @@ class LiteRtDispatchInvocationContextT {
     if (feed_.enabled || feed_.speculated != 0) {
       LITERT_LOG(LITERT_INFO,
                  "NVIDIA dispatch %s: step feed ran %llu steps ahead: %llu "
-                 "taken, %llu missed, %llu sampled on the device%s",
+                 "taken, %llu missed, %llu yielded to another context, %llu "
+                 "sampled on the device%s",
                  bytecode_.function_name.c_str(),
                  static_cast<unsigned long long>(feed_.speculated),
                  static_cast<unsigned long long>(feed_.hits),
                  static_cast<unsigned long long>(feed_.misses),
+                 static_cast<unsigned long long>(feed_.yields),
                  static_cast<unsigned long long>(feed_.sampled),
                  feed_.stopped ? " (stopped)" : "");
     }
@@ -3733,6 +3838,9 @@ class LiteRtDispatchInvocationContextT {
     feed_.backup_bytes = 0;
     feed_.cache_rows_found = false;
     feed_.restores_rows = false;
+    if (feed_.yield_done != nullptr) cudaEventDestroy(feed_.yield_done);
+    feed_.yield_done = nullptr;
+    feed_.yielded = false;
     feed_.sampler.stream =
         nullptr;  // the context's stream is not the sampler's to destroy
     DestroyNvidiaGreedySamplerResources(&feed_.sampler);
@@ -4329,6 +4437,15 @@ class LiteRtDispatchInvocationContextT {
     // No more steps ahead than the host will ask for (the budget it told
     // before its invocation): a bounded response's end leaves none in flight.
     const uint32_t budget = StepFeedBudget().load();
+    if (feed_.in_flight < kStepFeedDepth &&
+        static_cast<uint32_t>(feed_.in_flight) >= budget &&
+        feed_.budget_stops < 4) {
+      ++feed_.budget_stops;
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: the step feed launches nothing past the "
+                 "budget of %u (%d in flight)",
+                 bytecode_.function_name.c_str(), budget, feed_.in_flight);
+    }
     while (feed_.in_flight < kStepFeedDepth &&
            static_cast<uint32_t>(feed_.in_flight) < budget) {
       StepFeedSlot& slot =
@@ -4415,7 +4532,9 @@ class LiteRtDispatchInvocationContextT {
       ++feed_.in_flight;
       feed_.queued_position = slot.position;
       ++feed_.speculated;
-      device_context_->SetStepAhead(this, slot.step_done);
+      device_context_->SetStepAhead(
+          this, slot.step_done,
+          [this](cudaStream_t other) { return YieldStepsAhead(other); });
     }
     // The host goes on to its own work now: the queued launches must reach
     // the device without waiting for the next synchronization (on WSL the
@@ -6459,6 +6578,11 @@ extern "C" LiteRtStatus LiteRtDispatchNvidiaStepFeedSetLocalWindow(
 
 extern "C" LiteRtStatus LiteRtDispatchNvidiaStepFeedSetBudget(
     uint32_t remaining) {
+  static std::atomic<int> logged{0};
+  if (remaining <= 2 && logged.fetch_add(1) < 4) {
+    LITERT_LOG(LITERT_INFO, "NVIDIA dispatch: the step feed's budget is %u",
+               remaining);
+  }
   StepFeedBudget().store(remaining);
   return kLiteRtStatusOk;
 }

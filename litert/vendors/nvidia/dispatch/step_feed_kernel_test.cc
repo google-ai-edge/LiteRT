@@ -224,6 +224,73 @@ TEST(StepFeedKernelTest, FeedsTheNextStepLikeTheHost) {
   }
 }
 
+TEST(StepFeedKernelTest, RowCopiesMoveStridedRowsLikeMemcpy2D) {
+  // A K-like row (one run of 4096 bytes) and a V-like column (8 runs of 512
+  // bytes, 1024 rows apart), each into a packed backup, then back into a
+  // cleared copy of the cache: the bytes return where they were.
+  constexpr uint32_t kRing = 1024;
+  const size_t k_bytes = static_cast<size_t>(kRing) * 4096;
+  const size_t v_bytes = static_cast<size_t>(8) * kRing * 512;
+  std::vector<uint8_t> k_host(k_bytes), v_host(v_bytes);
+  uint32_t state = 12345u;
+  for (auto& byte : k_host) {
+    state = state * 1664525u + 1013904223u;
+    byte = static_cast<uint8_t>(state >> 24);
+  }
+  for (auto& byte : v_host) {
+    state = state * 1664525u + 1013904223u;
+    byte = static_cast<uint8_t>(state >> 24);
+  }
+  auto k_device = AllocateCuda(k_bytes);
+  auto v_device = AllocateCuda(v_bytes);
+  auto backup = AllocateCuda(4096 + 8 * 512);
+  ASSERT_EQ(cudaMemcpy(k_device.get(), k_host.data(), k_bytes,
+                       cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(v_device.get(), v_host.data(), v_bytes,
+                       cudaMemcpyHostToDevice),
+            cudaSuccess);
+  const uint32_t row = 777;
+  char* k_row =
+      static_cast<char*>(k_device.get()) + static_cast<size_t>(row) * 4096;
+  char* v_row =
+      static_cast<char*>(v_device.get()) + static_cast<size_t>(row) * 512;
+  char* k_backup = static_cast<char*>(backup.get());
+  char* v_backup = k_backup + 4096;
+  const LiteRtNvidiaRowCopy save[2] = {
+      {k_row, k_backup, 4096, 4096, 4096, 1},
+      {v_row, v_backup, kRing * 512, 512, 512, 8}};
+  ASSERT_EQ(LiteRtNvidiaLaunchRowCopies(save, 2, nullptr), cudaSuccess);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  // Clear the rows on the device, then put the backup back.
+  ASSERT_EQ(cudaMemset(k_row, 0, 4096), cudaSuccess);
+  for (int h = 0; h < 8; ++h) {
+    ASSERT_EQ(cudaMemset(v_row + static_cast<size_t>(h) * kRing * 512, 0, 512),
+              cudaSuccess);
+  }
+  const LiteRtNvidiaRowCopy restore[2] = {
+      {k_backup, k_row, 4096, 4096, 4096, 1},
+      {v_backup, v_row, 512, kRing * 512, 512, 8}};
+  ASSERT_EQ(LiteRtNvidiaLaunchRowCopies(restore, 2, nullptr), cudaSuccess);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  std::vector<uint8_t> k_back(k_bytes), v_back(v_bytes);
+  ASSERT_EQ(cudaMemcpy(k_back.data(), k_device.get(), k_bytes,
+                       cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(v_back.data(), v_device.get(), v_bytes,
+                       cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  EXPECT_EQ(k_back, k_host);
+  EXPECT_EQ(v_back, v_host);
+  // Misaligned work is refused before anything is enqueued.
+  const LiteRtNvidiaRowCopy odd = {k_row + 8, k_backup, 4096, 4096, 4096, 1};
+  EXPECT_EQ(LiteRtNvidiaLaunchRowCopies(&odd, 1, nullptr),
+            cudaErrorInvalidValue);
+  const LiteRtNvidiaRowCopy narrow = {k_row, k_backup, 4096, 4096, 24, 1};
+  EXPECT_EQ(LiteRtNvidiaLaunchRowCopies(&narrow, 1, nullptr),
+            cudaErrorInvalidValue);
+}
+
 TEST(StepFeedKernelTest, OutOfRangeTokenGivesZeros) {
   constexpr int kVocab = 4;
   constexpr int kDim = 8;

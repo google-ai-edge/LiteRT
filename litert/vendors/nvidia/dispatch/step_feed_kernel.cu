@@ -120,7 +120,52 @@ __global__ void StepFeedKernel(LiteRtNvidiaStepFeedParams p) {
   }
 }
 
+constexpr int kRowCopiesPerLaunch = 32;
+struct RowCopyBatch {
+  LiteRtNvidiaRowCopy copies[kRowCopiesPerLaunch];
+};
+
+// Block b copies batch.copies[b], 16 bytes per thread per step.
+__global__ void RowCopiesKernel(RowCopyBatch batch) {
+  const LiteRtNvidiaRowCopy copy = batch.copies[blockIdx.x];
+  const uint32_t vectors_per_row = copy.width / 16;
+  const uint32_t total = vectors_per_row * copy.height;
+  for (uint32_t i = threadIdx.x; i < total; i += blockDim.x) {
+    const uint32_t row = i / vectors_per_row;
+    const uint32_t column = i - row * vectors_per_row;
+    const int4 value = *reinterpret_cast<const int4*>(
+        static_cast<const char*>(copy.src) + row * copy.src_pitch + column * 16);
+    *reinterpret_cast<int4*>(static_cast<char*>(copy.dst) + row * copy.dst_pitch +
+                             column * 16) = value;
+  }
+}
+
 }  // namespace
+
+extern "C" cudaError_t LiteRtNvidiaLaunchRowCopies(
+    const LiteRtNvidiaRowCopy* copies, int count, cudaStream_t stream) {
+  if (count < 0 || (count > 0 && copies == nullptr)) return cudaErrorInvalidValue;
+  for (int i = 0; i < count; ++i) {
+    const LiteRtNvidiaRowCopy& copy = copies[i];
+    if (copy.src == nullptr || copy.dst == nullptr || copy.width == 0 ||
+        copy.height == 0 || copy.width % 16 != 0 || copy.src_pitch % 16 != 0 ||
+        copy.dst_pitch % 16 != 0 ||
+        reinterpret_cast<uintptr_t>(copy.src) % 16 != 0 ||
+        reinterpret_cast<uintptr_t>(copy.dst) % 16 != 0 ||
+        (copy.height > 1 && (copy.src_pitch < copy.width || copy.dst_pitch < copy.width))) {
+      return cudaErrorInvalidValue;
+    }
+  }
+  for (int first = 0; first < count; first += kRowCopiesPerLaunch) {
+    RowCopyBatch batch;
+    const int n = count - first < kRowCopiesPerLaunch ? count - first : kRowCopiesPerLaunch;
+    for (int i = 0; i < n; ++i) batch.copies[i] = copies[first + i];
+    RowCopiesKernel<<<n, kThreads, 0, stream>>>(batch);
+    const cudaError_t status = cudaPeekAtLastError();
+    if (status != cudaSuccess) return status;
+  }
+  return cudaSuccess;
+}
 
 extern "C" cudaError_t LiteRtNvidiaLaunchStepFeed(
     const LiteRtNvidiaStepFeedParams* params, cudaStream_t stream) {
