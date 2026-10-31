@@ -15,6 +15,7 @@ limitations under the License.
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #include "tflite/array.h"
@@ -232,19 +233,80 @@ struct DilationContext {
   TfLiteTensor* output_tensor;
 };
 
-// Computes the new length of a dimension given its dilation factor.
-int DilateDim(int dim, int dilate_factor) {
-  return (dim - 1) * dilate_factor + 1;
+TfLiteStatus ValidateTensors(const DilationContext& ctx) {
+  TfLiteContext* context = ctx.context;
+  TF_LITE_ENSURE(context, ctx.input_tensor != nullptr &&
+                              ctx.dilations_tensor != nullptr &&
+                              ctx.padding_value_tensor != nullptr &&
+                              ctx.output_tensor != nullptr);
+  TF_LITE_ENSURE(context, ctx.input_tensor->dims != nullptr);
+  TF_LITE_ENSURE(context, ctx.input_tensor->dims->size > 0);
+  TF_LITE_ENSURE_EQ(context, ctx.input_tensor->type, ctx.output_tensor->type);
+  TF_LITE_ENSURE_EQ(context, ctx.input_tensor->type,
+                    ctx.padding_value_tensor->type);
+  TF_LITE_ENSURE_EQ(context, ctx.dilations_tensor->type, kTfLiteInt32);
+  TF_LITE_ENSURE(context, ctx.dilations_tensor->dims != nullptr);
+  TF_LITE_ENSURE_EQ(context, ctx.dilations_tensor->dims->size, 1);
+  TF_LITE_ENSURE_EQ(context, ctx.dilations_tensor->dims->data[0],
+                    ctx.input_tensor->dims->size);
+  TF_LITE_ENSURE(context, ctx.padding_value_tensor->dims != nullptr);
+  // A single element may be scalar or have any number of unit dimensions.
+  for (int i = 0; i < ctx.padding_value_tensor->dims->size; ++i) {
+    TF_LITE_ENSURE_EQ(context, ctx.padding_value_tensor->dims->data[i], 1);
+  }
+  TF_LITE_ENSURE_EQ(context, NumElements(ctx.padding_value_tensor), 1);
+  return kTfLiteOk;
+}
+
+// Validate the dimensions and all byte strides before resizing or running.
+// output_shape may be null when only validation is required by Eval.
+TfLiteStatus ValidateDimensions(const DilationContext& ctx,
+                                TfLiteIntArray* output_shape) {
+  TfLiteContext* context = ctx.context;
+  const TfLiteIntArray& input_shape = *ctx.input_tensor->dims;
+  const int32_t* dilations = ctx.dilations_tensor->data.i32;
+  TF_LITE_ENSURE(context, dilations != nullptr);
+  bool empty = false;
+  for (int i = 0; i < ctx.dilations_tensor->dims->data[0]; ++i) {
+    TF_LITE_ENSURE(context, dilations[i] >= 1);
+    TF_LITE_ENSURE(context, input_shape.data[i] >= 0);
+    empty |= input_shape.data[i] == 0;
+  }
+  size_t element_size;
+  TF_LITE_ENSURE_OK(
+      context, GetSizeOfType(context, ctx.input_tensor->type, &element_size));
+  constexpr int64_t kMaxBytes = std::numeric_limits<int32_t>::max();
+  TF_LITE_ENSURE(context, element_size > 0 && element_size <= kMaxBytes);
+  int64_t input_bytes = element_size;
+  int64_t output_bytes = element_size;
+  for (int i = input_shape.size - 1; i >= 0; --i) {
+    const int64_t output_dim =
+        input_shape.data[i] == 0
+            ? 0
+            : (static_cast<int64_t>(input_shape.data[i]) - 1) *
+                      static_cast<int64_t>(dilations[i]) +
+                  1;
+    TF_LITE_ENSURE(context, output_dim <= kMaxBytes);
+    if (output_shape != nullptr) {
+      output_shape->data[i] = static_cast<int32_t>(output_dim);
+    }
+    // Empty tensors never reach DilationRunner and need no byte strides.
+    if (empty) continue;
+    TF_LITE_ENSURE(context, input_bytes <= kMaxBytes / input_shape.data[i]);
+    input_bytes *= input_shape.data[i];
+    // The runner also computes this stride for dimensions of length one.
+    TF_LITE_ENSURE(context, output_bytes <= kMaxBytes / dilations[i]);
+    TF_LITE_ENSURE(context, output_bytes <= kMaxBytes / output_dim);
+    output_bytes *= output_dim;
+  }
+  return kTfLiteOk;
 }
 
 // Computes the output tensor shape and resizes it.
 TfLiteStatus SetupOutputTensor(const DilationContext& ctx) {
   const TfLiteIntArray& input_shape = *(ctx.input_tensor->dims);
-  const int32_t* dilations = ctx.dilations_tensor->data.i32;
   IntArrayUniquePtr output_shape = BuildTfLiteArray(input_shape.size);
-  for (int i = 0; i < output_shape->size; ++i) {
-    output_shape->data[i] = DilateDim(input_shape.data[i], dilations[i]);
-  }
+  TF_LITE_ENSURE_OK(ctx.context, ValidateDimensions(ctx, output_shape.get()));
   return ctx.context->ResizeTensor(ctx.context, ctx.output_tensor,
                                    output_shape.release());
 }
@@ -257,11 +319,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
                     DilationContext::kNumOutputTensors);
 
   const DilationContext ctx(context, node);
-  TF_LITE_ENSURE(context, ctx.input_tensor->dims != nullptr);
-  TF_LITE_ENSURE(context, ctx.input_tensor->dims->size > 0);
-  TF_LITE_ENSURE_EQ(context, ctx.input_tensor->type, ctx.output_tensor->type);
-  TF_LITE_ENSURE_EQ(context, ctx.input_tensor->type,
-                    ctx.padding_value_tensor->type);
+  TF_LITE_ENSURE_OK(context, ValidateTensors(ctx));
   if (!IsConstantTensor(ctx.dilations_tensor)) {
     SetTensorToDynamic(ctx.output_tensor);
     return kTfLiteOk;
@@ -271,17 +329,25 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
 // Runs the dilate operation.
 TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
+  TF_LITE_ENSURE_EQ(context, NumInputs(node),
+                    DilationContext::kNumInputTensors);
+  TF_LITE_ENSURE_EQ(context, NumOutputs(node),
+                    DilationContext::kNumOutputTensors);
   const DilationContext ctx(context, node);
-  TF_LITE_ENSURE_EQ(context, ctx.dilations_tensor->type, kTfLiteInt32);
-  TF_LITE_ENSURE(context, ctx.dilations_tensor->dims != nullptr);
-  TF_LITE_ENSURE_EQ(context, ctx.dilations_tensor->dims->size, 1);
-  TF_LITE_ENSURE_EQ(context, ctx.dilations_tensor->dims->data[0],
-                    ctx.input_tensor->dims->size);
-  for (int i = 0; i < ctx.dilations_tensor->dims->size; ++i) {
-    TF_LITE_ENSURE(context, ctx.dilations_tensor->data.i32[i] >= 1);
-  }
+  TF_LITE_ENSURE_OK(context, ValidateTensors(ctx));
   if (!IsConstantTensor(ctx.dilations_tensor)) {
     TF_LITE_ENSURE_OK(context, SetupOutputTensor(ctx));
+  } else {
+    TF_LITE_ENSURE_OK(context, ValidateDimensions(ctx, nullptr));
+  }
+  // Check zero dimensions before NumElements, whose intermediate products
+  // need not fit for an empty shape with large dimensions preceding the zero.
+  for (int i = 0; i < ctx.input_tensor->dims->size; ++i) {
+    if (ctx.input_tensor->dims->data[i] == 0) return kTfLiteOk;
+  }
+  if (NumElements(ctx.input_tensor) == 0 ||
+      NumElements(ctx.output_tensor) == 0) {
+    return kTfLiteOk;
   }
   size_t element_size;
   TF_LITE_ENSURE_OK(

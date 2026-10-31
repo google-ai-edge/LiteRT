@@ -15,6 +15,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <numeric>
 #include <type_traits>
 #include <vector>
@@ -140,7 +141,7 @@ class DilateOpModel : public SingleOpModel {
     SetBuiltinOp(BuiltinOperator_DILATE, BuiltinOptions2_DilateOptions,
                  CreateDilateOptions(builder_).Union());
     BuildInterpreter({input_shape_});
-    PopulateTensor(input_, input_data_);
+    if (!input_data_.empty()) PopulateTensor(input_, input_data_);
     if (!IsDilationTensorConst) {
       PopulateTensor(dilations_, dilations_data_);
     }
@@ -355,6 +356,158 @@ TYPED_TEST(DilateTest, RankSeven) {
   EXPECT_THAT(model.GetOutputShape(), ElementsAreArray({3, 1, 3, 1, 2, 1, 3}));
   EXPECT_THAT(model.GetOutputData(), ElementsAreArray(expected));
 }
+
+TYPED_TEST(DilateTest, EmptyLeadingDimension) {
+  this->model_.SetInput({0, 2});
+  this->model_.SetDilations({2, 3});
+  ASSERT_EQ(this->model_.BuildAndInvoke(), kTfLiteOk);
+  EXPECT_THAT(this->model_.GetOutputShape(), ElementsAre(0, 4));
+  EXPECT_TRUE(this->model_.GetOutputData().empty());
+}
+
+TYPED_TEST(DilateTest, EmptyTrailingDimension) {
+  this->model_.SetInput({2, 0});
+  this->model_.SetDilations({2, 3});
+  ASSERT_EQ(this->model_.BuildAndInvoke(), kTfLiteOk);
+  EXPECT_THAT(this->model_.GetOutputShape(), ElementsAre(3, 0));
+  EXPECT_TRUE(this->model_.GetOutputData().empty());
+}
+
+// Deferred allocation lets tests inspect Prepare failures as status values.
+class DilateValidationOpModel : public SingleOpModel {
+ public:
+  DilateValidationOpModel(bool constant, const std::vector<int>& input_shape,
+                          const std::vector<int32_t>& dilations,
+                          const std::vector<int>& dilation_shape,
+                          TensorType dilation_type = TensorType_INT32,
+                          const std::vector<int>& padding_shape = {1})
+      : constant_(constant), dilations_data_(dilations) {
+    input_ = AddInput({TensorType_INT32, input_shape});
+    if (constant) {
+      dilations_ = AddConstInput({dilation_type, dilation_shape}, dilations);
+    } else {
+      dilations_ = AddInput({dilation_type, dilation_shape});
+    }
+    padding_ = AddInput({TensorType_INT32, padding_shape});
+    output_ = AddOutput(TensorType_INT32);
+    SetBuiltinOp(BuiltinOperator_DILATE, BuiltinOptions2_DilateOptions,
+                 CreateDilateOptions(builder_).Union());
+    BuildInterpreter({input_shape}, /*num_threads=*/-1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false, /*allocate_and_delegate=*/false);
+  }
+
+  TfLiteStatus AllocateAndInvoke() {
+    const TfLiteStatus status = AllocateTensors();
+    if (status != kTfLiteOk) return status;
+    if (!constant_) PopulateTensor<int32_t>(dilations_, dilations_data_);
+    PopulateTensor<int32_t>(input_, {1, 2, 3, 4});
+    PopulateTensor<int32_t>(padding_, {9});
+    return Invoke();
+  }
+
+  int output() const { return output_; }
+
+ private:
+  bool constant_;
+  std::vector<int32_t> dilations_data_;
+  int input_;
+  int dilations_;
+  int padding_;
+  int output_;
+};
+
+class DilateValidationTest : public testing::TestWithParam<bool> {};
+
+TEST_P(DilateValidationTest, RejectsDilationType) {
+  DilateValidationOpModel model(GetParam(), {2, 2}, {1, 1}, {2},
+                                 TensorType_FLOAT32);
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+TEST_P(DilateValidationTest, RejectsScalarDilations) {
+  DilateValidationOpModel model(GetParam(), {2}, {1}, {});
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+TEST_P(DilateValidationTest, RejectsMatrixDilations) {
+  DilateValidationOpModel model(GetParam(), {2, 2}, {1, 1}, {1, 2});
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+TEST_P(DilateValidationTest, RejectsShortDilations) {
+  DilateValidationOpModel model(GetParam(), {2, 2}, {1}, {1});
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+TEST_P(DilateValidationTest, RejectsLongDilations) {
+  DilateValidationOpModel model(GetParam(), {2, 2}, {1, 1, 1}, {3});
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+TEST_P(DilateValidationTest, RejectsEmptyPadding) {
+  DilateValidationOpModel model(GetParam(), {2, 2}, {1, 1}, {2},
+                                 TensorType_INT32, {0});
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+TEST_P(DilateValidationTest, RejectsMultiplePaddingValues) {
+  DilateValidationOpModel model(GetParam(), {2, 2}, {1, 1}, {2},
+                                 TensorType_INT32, {2});
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+TEST_P(DilateValidationTest, AcceptsScalarPadding) {
+  DilateValidationOpModel model(GetParam(), {2, 2}, {2, 3}, {2},
+                                 TensorType_INT32, {});
+  ASSERT_EQ(model.AllocateAndInvoke(), kTfLiteOk);
+  EXPECT_THAT(model.ExtractVector<int32_t>(model.output()),
+              ElementsAre(1, 9, 9, 2, 9, 9, 9, 9, 3, 9, 9, 4));
+}
+
+TEST_P(DilateValidationTest, RejectsZeroDilationOnEveryAxis) {
+  for (int axis = 0; axis < 2; ++axis) {
+    std::vector<int32_t> dilations = {1, 1};
+    dilations[axis] = 0;
+    DilateValidationOpModel model(GetParam(), {2, 2}, dilations, {2});
+    EXPECT_EQ(model.AllocateAndInvoke(), kTfLiteError);
+  }
+}
+
+TEST_P(DilateValidationTest, RejectsNegativeDilationOnEveryAxis) {
+  for (int axis = 0; axis < 2; ++axis) {
+    std::vector<int32_t> dilations = {1, 1};
+    dilations[axis] = -1;
+    DilateValidationOpModel model(GetParam(), {2, 2}, dilations, {2});
+    EXPECT_EQ(model.AllocateAndInvoke(), kTfLiteError);
+  }
+}
+
+TEST_P(DilateValidationTest, RejectsOutputDimensionOverflow) {
+  DilateValidationOpModel model(GetParam(), {2, 2},
+                                 {1, std::numeric_limits<int32_t>::max()}, {2});
+  EXPECT_EQ(model.AllocateAndInvoke(), kTfLiteError);
+}
+
+TEST_P(DilateValidationTest, RejectsOutputByteOverflow) {
+  DilateValidationOpModel model(
+      GetParam(), {2, 2}, {1, std::numeric_limits<int32_t>::max() / 4}, {2});
+  EXPECT_EQ(model.AllocateAndInvoke(), kTfLiteError);
+}
+
+TEST_P(DilateValidationTest, RejectsOutputByteProductOverflow) {
+  DilateValidationOpModel model(GetParam(), {2, 2}, {32768, 32768}, {2});
+  EXPECT_EQ(model.AllocateAndInvoke(), kTfLiteError);
+}
+
+TEST(DilateValidationTest, RejectsSingletonStrideOverflow) {
+  DilateValidationOpModel model(true, {1},
+                                 {std::numeric_limits<int32_t>::max()}, {1});
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+INSTANTIATE_TEST_SUITE_P(ConstantAndDynamic, DilateValidationTest,
+                         testing::Bool());
 
 }  // namespace
 }  // namespace tflite
