@@ -3844,18 +3844,22 @@ class TensorRtGraphBuilder {
     float multiplier = 1.0f;
   };
 
-  // A cast between float types, whose input the fusion reads instead.
-  // LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS=0 stops the fusion at a cast,
-  // as it stopped before it read through them: the projections behind the
-  // Gemma 4 exports' casts then take TensorRT's norm, for a comparison.
+  // A cast between float types, whose input the fusion reads instead, with
+  // LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS=1. By default the fusion stops
+  // at a cast: the projections behind the Gemma 4 12B's casts take
+  // TensorRT's norm and the casts, as the model's graph has them. Through
+  // the casts the 12B passed fewer LiveCodeBench v6 problems under greedy
+  // decoding (with the int8 GEMM 96 against 103, the fp16 GEMM 92 against
+  // 101, of 175). Of the four Gemma 4 models only the 12B has casts between
+  // float types, so only its engines depend on the switch. It is part of the
+  // AOT cache key (kCompileEnvironmentVariables in compiler_plugin.cc), which
+  // needs LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR, as every variable in that
+  // list does.
   static bool IsFloatCast(const Op& op) {
-    static const bool through_casts = [] {
-      const char* value =
-          std::getenv("LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS");
-      return value == nullptr || std::strcmp(value, "0") != 0;
-    }();
-    return through_casts && op.Code() == kLiteRtOpCodeTflCast &&
-           op.Inputs().size() == 1 && op.Outputs().size() == 1 &&
+    return EnvEnabled("LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS",
+                      /*default_value=*/false) &&
+           op.Code() == kLiteRtOpCodeTflCast && op.Inputs().size() == 1 &&
+           op.Outputs().size() == 1 &&
            IsFloatLike(op.Inputs()[0].ElementType()) &&
            IsFloatLike(op.Outputs()[0].ElementType());
   }
@@ -3863,8 +3867,10 @@ class TensorRtGraphBuilder {
   // rms_norm(x, w) -> mul(c1) -> ... -> `tensor` with constant scalars c_i
   // and casts between float types: the fusion the projection reading
   // `tensor` can take, if its weights are INT4 (the fused kernels) and x has
-  // `columns` dims. The Gemma 4 12B and E4B wrap their norms in casts
-  // (float16 to float32 and back); the kernel reads the norm's input.
+  // `columns` dims. The Gemma 4 12B wraps its norms in casts (float16 to
+  // float32 and back; the E2B, E4B and 26B have none), which the fusion
+  // reads through only when IsFloatCast says so; the kernel then reads the
+  // norm's input.
   Expected<std::optional<NormFusion>> FindNormFusion(const Tensor& tensor,
                                                      int32_t columns) {
     if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_FUSE_NORM_GEMV",

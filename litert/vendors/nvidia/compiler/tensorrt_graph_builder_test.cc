@@ -1339,6 +1339,176 @@ TEST(TensorRtGraphBuilderTest, CudaGemmReadsThePrefillPositions) {
   }
 }
 
+TEST(TensorRtGraphBuilderTest, NormBehindCastsFusesOnlyWhenAsked) {
+  // The Gemma 4 12B wraps each RMS norm in casts (float16 to float32 and
+  // back) before an INT4 projection. By default the fusion stops at the
+  // cast and the engine keeps TensorRT's norm; with
+  // LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS=1 the GEMV plugin reads the
+  // norm's input and applies the norm itself, and TensorRT drops its own.
+  // Either way the projection is the normed input's.
+  constexpr int32_t kK = 256;
+  constexpr int32_t kN = 64;
+  std::vector<float> gains(kK);
+  for (int32_t k = 0; k < kK; ++k) gains[k] = 1.0f + 0.0625f * (k % 5);
+  std::vector<int8_t> values(static_cast<size_t>(kN) * kK);
+  for (size_t i = 0; i < values.size(); ++i) {
+    values[i] = static_cast<int8_t>((i * 7 + i / 13) % 16) - 8;
+  }
+  const std::vector<uint8_t> packed = PackInt4(values);
+  std::vector<float> scales(kN);
+  for (int32_t n = 0; n < kN; ++n) scales[n] = 0.01f * (1 + n % 3);
+  const std::vector<int64_t> zero_points(kN, 0);
+  // BF16-exact activations, one of them loud.
+  std::vector<float> activations(kK);
+  for (int32_t k = 0; k < kK; ++k) {
+    activations[k] = 0.25f * ((k % 9) - 4) + (k == 17 ? 24.0f : 0.0f);
+  }
+  double sum_squares = 0.0;
+  for (const float a : activations) {
+    sum_squares += static_cast<double>(a) * a;
+  }
+  const double inverse_rms = 1.0 / std::sqrt(sum_squares / kK + 1e-6);
+  std::vector<double> expected(kN, 0.0);
+  for (int32_t n = 0; n < kN; ++n) {
+    for (int32_t k = 0; k < kK; ++k) {
+      expected[n] += activations[k] * inverse_rms * gains[k] *
+                     values[static_cast<size_t>(n) * kK + k] * scales[n];
+    }
+  }
+  for (const bool through : {false, true}) {
+    SCOPED_TRACE(testing::Message() << "through=" << through);
+    LiteRtModelT model;
+    auto& graph = model.EmplaceSubgraph();
+    const auto tensor =
+        [&](const char* name, LiteRtElementType type,
+            const std::vector<int32_t>& dims) -> LiteRtTensorT& {
+      auto& value = graph.EmplaceTensor();
+      value.SetName(name);
+      value.SetType(MakeRankedTensorType(type, dims));
+      return value;
+    };
+    const auto cast = [&](LiteRtTensorT& from, LiteRtTensorT& to) {
+      auto& op = graph.EmplaceOp();
+      op.SetOpCode(kLiteRtOpCodeTflCast);
+      litert::internal::AttachInput(&from, op);
+      litert::internal::AttachOutput(&to, op);
+    };
+    auto& input = tensor("input", kLiteRtElementTypeFloat16, {1, kK});
+    graph.Inputs().push_back(&input);
+    auto& wide = tensor("wide", kLiteRtElementTypeFloat32, {1, kK});
+    cast(input, wide);
+    auto& gain = tensor("gain", kLiteRtElementTypeFloat32, {kK});
+    SetWeightsFromUnownedBuffer(
+        gain.Weights(), litert::BufferRef<uint8_t>(
+                            reinterpret_cast<const uint8_t*>(gains.data()),
+                            gains.size() * sizeof(float)));
+    auto& normed = tensor("normed", kLiteRtElementTypeFloat32, {1, kK});
+    auto& norm = graph.EmplaceOp();
+    norm.SetOpCode(kLiteRtOpCodeShloComposite);
+    tflite::StableHLOCompositeOptionsT composite;
+    composite.name = "odml.rms_norm";
+    flexbuffers::Builder attributes;
+    const auto map = attributes.StartMap();
+    attributes.Float("epsilon", 1e-6f);
+    attributes.EndMap(map);
+    attributes.Finish();
+    composite.composite_attributes = attributes.GetBuffer();
+    tflite::BuiltinOptions2Union norm_options;
+    norm_options.Set(std::move(composite));
+    litert::internal::SetTflOptions2(norm, std::move(norm_options));
+    litert::internal::AttachInput(&wide, norm);
+    litert::internal::AttachInput(&gain, norm);
+    litert::internal::AttachOutput(&normed, norm);
+    auto& narrow = tensor("narrow", kLiteRtElementTypeFloat16, {1, kK});
+    cast(normed, narrow);
+    auto& weights = tensor("weights", kLiteRtElementTypeInt4, {kN, kK});
+    SetWeightsFromUnownedBuffer(
+        weights.Weights(),
+        litert::BufferRef<uint8_t>(packed.data(), packed.size()));
+    weights.SetQarams(MakePerChannelQuantization(scales, zero_points,
+                                                 /*quantized_dim=*/0, weights));
+    auto& output = tensor("output", kLiteRtElementTypeFloat16, {1, kN});
+    graph.Outputs().push_back(&output);
+    auto& fc = graph.EmplaceOp();
+    fc.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+    tflite::FullyConnectedOptionsT fc_options;
+    fc_options.keep_num_dims = true;
+    tflite::BuiltinOptionsUnion fc_union;
+    fc_union.Set(std::move(fc_options));
+    litert::internal::SetTflOptions(fc, std::move(fc_union));
+    litert::internal::AttachInput(&narrow, fc);
+    litert::internal::AttachInput(&weights, fc);
+    litert::internal::AttachOutput(&output, fc);
+
+    if (through) {
+      setenv("LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS", "1", 1);
+    } else {
+      unsetenv("LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS");
+    }
+    setenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS", "cuda_gemv", 1);
+    auto built = litert::nvidia::BuildTensorRtEngine(
+        litert::compiler::Subgraph(LrtGetCompilerContext(), &graph));
+    unsetenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS");
+    unsetenv("LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS");
+    ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+    litert::nvidia::TensorRtLogger logger;
+    std::unique_ptr<nvinfer1::IRuntime> runtime(
+        nvinfer1::createInferRuntime(logger));
+    ASSERT_NE(runtime, nullptr);
+    std::unique_ptr<nvinfer1::ICudaEngine> engine(
+        runtime->deserializeCudaEngine(built->engine.data(),
+                                       built->engine.size()));
+    ASSERT_NE(engine, nullptr);
+    std::unique_ptr<nvinfer1::IEngineInspector> inspector(
+        engine->createEngineInspector());
+    ASSERT_NE(inspector, nullptr);
+    const std::string layers = inspector->getEngineInformation(
+        nvinfer1::LayerInformationFormat::kONELINE);
+    EXPECT_NE(layers.find("cuda_subbyte_gemv_"), std::string::npos) << layers;
+    // TensorRT's norm becomes a node named after its ops (a Myelin
+    // "CastMulMeanAddSqrtDivMulMul"); the fused GEMV takes the mean itself.
+    EXPECT_EQ(layers.find("Mean") == std::string::npos, through) << layers;
+
+    std::unique_ptr<nvinfer1::IExecutionContext> context(
+        engine->createExecutionContext());
+    ASSERT_NE(context, nullptr);
+    std::vector<uint16_t> half_input(kK);
+    for (int32_t k = 0; k < kK; ++k) {
+      half_input[k] = Fp16Bits(activations[k]);
+    }
+    std::vector<uint16_t> half_output(kN);
+    void* device_input = nullptr;
+    void* device_output = nullptr;
+    ASSERT_EQ(cudaMalloc(&device_input, kK * sizeof(uint16_t)), cudaSuccess);
+    ASSERT_EQ(cudaMalloc(&device_output, kN * sizeof(uint16_t)), cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(device_input, half_input.data(), kK * sizeof(uint16_t),
+                         cudaMemcpyHostToDevice),
+              cudaSuccess);
+    EXPECT_TRUE(
+        context->setTensorAddress(built->input_names[0].c_str(), device_input));
+    EXPECT_TRUE(context->setTensorAddress(built->output_names[0].c_str(),
+                                          device_output));
+    cudaStream_t stream = nullptr;
+    ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+    EXPECT_TRUE(context->enqueueV3(stream));
+    EXPECT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(half_output.data(), device_output,
+                         kN * sizeof(uint16_t), cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+    EXPECT_EQ(cudaFree(device_input), cudaSuccess);
+    EXPECT_EQ(cudaFree(device_output), cudaSuccess);
+    double error = 0.0;
+    double norm2 = 0.0;
+    for (int32_t n = 0; n < kN; ++n) {
+      const double delta = Fp16ToFloat(half_output[n]) - expected[n];
+      error += delta * delta;
+      norm2 += expected[n] * expected[n];
+    }
+    EXPECT_LE(std::sqrt(error), 2.0e-2 * std::sqrt(norm2));
+  }
+}
+
 TEST(TensorRtGraphBuilderTest, Fp16SoftCapAfterCudaSubbyteGemv) {
   // Gemma 4 12B's vocabulary soft cap: an FP16-typed div/tanh/mul chain
   // consuming the BF16-only CUDA GEMV plugin output next to Float16 scalar

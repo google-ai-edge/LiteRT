@@ -480,6 +480,10 @@ std::string BuildCompilerSdkVersion() {
       "." + std::to_string(NV_TENSORRT_MINOR) + "." +
       std::to_string(NV_TENSORRT_PATCH) +
       " cache-schema=" + std::to_string(kNvidiaCompilerCacheSchemaVersion);
+  // Without an AOT directory the version names no configuration: LiteRT's
+  // own compilation cache (its compiler cache directory) then sees none of
+  // the variables below, so one such cache must not serve two NVIDIA
+  // configurations.
   const char* aot_cache_dir =
       std::getenv("LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR");
   if (aot_cache_dir == nullptr || aot_cache_dir[0] == '\0') {
@@ -525,6 +529,7 @@ std::string BuildCompilerSdkVersion() {
       "LITERT_NVIDIA_TENSORRT_MIN_SUBGRAPH_OPS",
       "LITERT_NVIDIA_TENSORRT_NATIVE_COMPOSITES",
       "LITERT_NVIDIA_TENSORRT_NATIVE_KV_CACHE_UPDATE",
+      "LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS",
       "LITERT_NVIDIA_TENSORRT_PARTITION_POLICY",
       "LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS",
       "LITERT_NVIDIA_TENSORRT_RUNTIME_BMM_PRECISION",

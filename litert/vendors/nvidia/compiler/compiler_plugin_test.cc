@@ -311,6 +311,31 @@ TEST_F(CompilerAotTest, ReadOnlyValueCacheLayoutSeparatesDirectAotCache) {
   EXPECT_NE(first_locators[0], first_locators[1]);
 }
 
+TEST_F(CompilerAotTest, TheNormThroughCastsSwitchIsPartOfTheCacheKey) {
+  // LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS changes the 12B's engines: an
+  // engine compiled under one value must not be found under another.
+  const auto sdk_version = [&]() -> std::string {
+    LiteRtCompilerPlugin plugin = nullptr;
+    EXPECT_EQ(api_->create_compiler_plugin(LrtGetCompilerContext(), &plugin,
+                                           nullptr, nullptr),
+              kLiteRtStatusOk);
+    if (plugin == nullptr) return "";
+    const char* sdk = nullptr;
+    EXPECT_EQ(api_->get_compiler_plugin_sdk_version(plugin, &sdk),
+              kLiteRtStatusOk);
+    std::string version = sdk == nullptr ? "" : sdk;
+    api_->destroy_compiler_plugin(plugin);
+    return version;
+  };
+  ASSERT_EQ(unsetenv("LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS"), 0);
+  const std::string unset = sdk_version();
+  ASSERT_EQ(setenv("LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS", "1", 1), 0);
+  const std::string through = sdk_version();
+  ASSERT_EQ(unsetenv("LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS"), 0);
+  EXPECT_FALSE(unset.empty());
+  EXPECT_NE(unset, through);
+}
+
 TEST_F(CompilerAotTest, ReadOnlyValueCacheOptionsAreCanonicalAndValidated) {
   std::vector<std::string> sdk_versions;
   for (const auto& names : std::vector<std::vector<std::string>>{
