@@ -25,6 +25,12 @@ limitations under the License.
 
 namespace tflite {
 
+namespace ops {
+namespace builtin {
+TfLiteRegistration* Register_CALL_ONCE();
+}  // namespace builtin
+}  // namespace ops
+
 using subgraph_test_util::ControlFlowOpTest;
 
 namespace {
@@ -110,6 +116,32 @@ TEST_F(CallOnceTest, TestInvokeOnceAcrossMultipleEntryPoints) {
   ASSERT_EQ(output->type, kTfLiteInt32);
   ASSERT_EQ(NumElements(output), 1);
   ASSERT_EQ(output->data.i32[0], value + 1);
+}
+
+// Adds a CALL_ONCE node that runs subgraph `init_index` to `subgraph`.
+void AddCallOnceNode(Subgraph* subgraph, int init_index) {
+  auto* params = reinterpret_cast<TfLiteCallOnceParams*>(
+      malloc(sizeof(TfLiteCallOnceParams)));
+  params->init_subgraph_index = init_index;
+  auto* reg = ops::builtin::Register_CALL_ONCE();
+  reg->builtin_code = kTfLiteBuiltinCallOnce;
+  int node_index;
+  ASSERT_EQ(subgraph->AddNodeWithParameters({}, {}, {}, nullptr, 0, params, reg,
+                                            &node_index),
+            kTfLiteOk);
+}
+
+class CallOnceCycleTest : public ControlFlowOpTest {};
+
+TEST_F(CallOnceCycleTest, RejectsCyclicInitSubgraphs) {
+  // Subgraph 1 initializes subgraph 2, which initializes subgraph 1 again
+  // before subgraph 1 has been marked initialized.
+  AddSubgraphs(2);
+  AddCallOnceNode(&interpreter_->primary_subgraph(), 1);
+  AddCallOnceNode(interpreter_->subgraph(1), 2);
+  AddCallOnceNode(interpreter_->subgraph(2), 1);
+  ASSERT_EQ(interpreter_->AllocateTensors(), kTfLiteOk);
+  EXPECT_EQ(interpreter_->Invoke(), kTfLiteError);
 }
 
 }  // namespace
