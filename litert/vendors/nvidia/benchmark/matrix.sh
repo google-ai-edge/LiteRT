@@ -44,8 +44,10 @@ for model in "${models[@]}"; do
         for wl in "${workloads[@]}"; do
           prompt=$BENCH/prompts/$(prompt_of "$wl").txt
           # Three iterations: the first of a process is slow, and acceptance varies with the text.
+          # The MTP run takes four: its second conversation carries the decode engine's graph
+          # capture (bench.sh skips two), so two measured conversations remain, as for the plain run.
           bench --model "$model" --workload "$wl" --metric latency --prompt-file "$prompt" --iterations 3 --label "${model}_${wl}_plain_text"
-          bench --model "$model" --workload "$wl" --metric latency --prompt-file "$prompt" --iterations 3 --mtp --label "${model}_${wl}_mtp_text"
+          bench --model "$model" --workload "$wl" --metric latency --prompt-file "$prompt" --iterations 4 --mtp --label "${model}_${wl}_mtp_text"
         done ;;
     esac
   done

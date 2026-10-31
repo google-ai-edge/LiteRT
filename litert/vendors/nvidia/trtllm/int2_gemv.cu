@@ -61,12 +61,19 @@ constexpr int kLongInputThreshold = 4096;
 // small-M GEMV mapping. Accumulation and the block reduction stay FP32 for
 // BF16 accuracy. Rows is the batch of activation rows (1 for decode, the
 // draft tokens plus one for a verify step).
-template <int BitWidth, int Rows, int BlockSize>
+// With kNormed the product includes an RMS norm of each activation row:
+// y = (x * rsqrt(mean(x^2) + norm_eps) * norm_scale * norm_multiplier) . w,
+// as the blockwise kernels' fused norm (int4_block_gemv.cuh): activation k
+// is multiplied by norm_scale[k] on the way in, the raw sum of squares is
+// reduced over the block, and the row's factor multiplies the sums.
+template <int BitWidth, int Rows, int BlockSize, bool kNormed>
 __global__ void Bf16SubbytePerChannelGemvKernel(
     const __nv_bfloat16* __restrict__ activation,
     const uint8_t* __restrict__ packed_weights,
     const __nv_bfloat16* __restrict__ scales,
-    __nv_bfloat16* __restrict__ output, int input_size, int output_size) {
+    const float* __restrict__ norm_scale, float norm_eps,
+    float norm_multiplier, __nv_bfloat16* __restrict__ output, int input_size,
+    int output_size) {
   const int lane = threadIdx.x % kWarpSize;
   const int warp = threadIdx.x / kWarpSize;
   const int first_output_channel = blockIdx.x * kOutputsPerBlock;
@@ -79,6 +86,7 @@ __global__ void Bf16SubbytePerChannelGemvKernel(
   constexpr uint32_t kSignBit = 1u << (BitWidth - 1);
   const int packed_words_per_row = input_size / kWeightsPerWord;
   float accumulators[Rows][kOutputsPerBlock] = {};
+  float squares[Rows] = {};
 
   for (int packed_word = threadIdx.x; packed_word < packed_words_per_row;
        packed_word += blockDim.x) {
@@ -108,6 +116,20 @@ __global__ void Bf16SubbytePerChannelGemvKernel(
       for (int r = 0; r < Rows; ++r) {
         values[r] = __bfloat1622float2(__ldg(activation_pairs[r] + pair_index));
       }
+      if constexpr (kNormed) {
+        const float2 norm_pair = __ldg(
+            reinterpret_cast<const float2*>(
+                norm_scale +
+                static_cast<int64_t>(packed_word) * kWeightsPerWord) +
+            pair_index);
+#pragma unroll
+        for (int r = 0; r < Rows; ++r) {
+          squares[r] = fmaf(values[r].x, values[r].x, squares[r]);
+          squares[r] = fmaf(values[r].y, values[r].y, squares[r]);
+          values[r].x *= norm_pair.x;
+          values[r].y *= norm_pair.y;
+        }
+      }
 #pragma unroll
       for (int row = 0; row < kOutputsPerBlock; ++row) {
         const uint32_t bits0 = weights[row] & kMask;
@@ -131,6 +153,7 @@ __global__ void Bf16SubbytePerChannelGemvKernel(
 
   constexpr int kWarpsPerBlock = BlockSize / kWarpSize;
   __shared__ float warp_sums[Rows][kOutputsPerBlock][kWarpsPerBlock];
+  __shared__ float warp_squares[Rows][kWarpsPerBlock];
 #pragma unroll
   for (int offset = kWarpSize / 2; offset > 0; offset /= 2) {
 #pragma unroll
@@ -140,6 +163,9 @@ __global__ void Bf16SubbytePerChannelGemvKernel(
         accumulators[r][row] +=
             __shfl_down_sync(kFullWarpMask, accumulators[r][row], offset);
       }
+      if constexpr (kNormed) {
+        squares[r] += __shfl_down_sync(kFullWarpMask, squares[r], offset);
+      }
     }
   }
   if (lane == 0) {
@@ -148,6 +174,9 @@ __global__ void Bf16SubbytePerChannelGemvKernel(
 #pragma unroll
       for (int row = 0; row < kOutputsPerBlock; ++row) {
         warp_sums[r][row][warp] = accumulators[r][row];
+      }
+      if constexpr (kNormed) {
+        warp_squares[r][warp] = squares[r];
       }
     }
   }
@@ -165,37 +194,58 @@ __global__ void Bf16SubbytePerChannelGemvKernel(
              ++source_warp) {
           accumulator += warp_sums[r][lane][source_warp];
         }
+        float value = accumulator * scale;
+        if constexpr (kNormed) {
+          float sum_squares = 0.0f;
+#pragma unroll
+          for (int source_warp = 0; source_warp < kWarpsPerBlock;
+               ++source_warp) {
+            sum_squares += warp_squares[r][source_warp];
+          }
+          value *= rsqrtf(sum_squares / static_cast<float>(input_size) +
+                          norm_eps) *
+                   norm_multiplier;
+        }
         output[static_cast<int64_t>(r) * output_size + output_channel] =
-            __float2bfloat16_rn(accumulator * scale);
+            __float2bfloat16_rn(value);
       }
     }
   }
 }
 
-template <int BitWidth, int Rows, int BlockSize>
+// The fused norm's inputs: null norm_scale is the plain product.
+struct Norm {
+  const float* scale = nullptr;
+  float eps = 0.0f;
+  float multiplier = 1.0f;
+};
+
+template <int BitWidth, int Rows, int BlockSize, bool kNormed>
 cudaError_t Launch(const __nv_bfloat16* activation,
                    const uint8_t* packed_weights,
-                   const __nv_bfloat16* scales, __nv_bfloat16* output,
-                   int input_size, int output_size, cudaStream_t stream) {
+                   const __nv_bfloat16* scales, const Norm& norm,
+                   __nv_bfloat16* output, int input_size, int output_size,
+                   cudaStream_t stream) {
   const int blocks = (output_size + kOutputsPerBlock - 1) / kOutputsPerBlock;
-  Bf16SubbytePerChannelGemvKernel<BitWidth, Rows, BlockSize>
-      <<<blocks, BlockSize, 0, stream>>>(
-          activation, packed_weights, scales, output, input_size, output_size);
+  Bf16SubbytePerChannelGemvKernel<BitWidth, Rows, BlockSize, kNormed>
+      <<<blocks, BlockSize, 0, stream>>>(activation, packed_weights, scales,
+                                         norm.scale, norm.eps, norm.multiplier,
+                                         output, input_size, output_size);
   return cudaPeekAtLastError();
 }
 
-template <int BitWidth, int BlockSize>
+template <int BitWidth, int BlockSize, bool kNormed>
 cudaError_t LaunchRows(const __nv_bfloat16* activation,
                        const uint8_t* packed_weights,
-                       const __nv_bfloat16* scales, __nv_bfloat16* output,
-                       int rows, int input_size, int output_size,
-                       cudaStream_t stream) {
+                       const __nv_bfloat16* scales, const Norm& norm,
+                       __nv_bfloat16* output, int rows, int input_size,
+                       int output_size, cudaStream_t stream) {
   switch (rows) {
 #define LITERT_NVIDIA_GEMV_ROWS_CASE(n)                                  \
   case n:                                                                \
-    return Launch<BitWidth, n, BlockSize>(activation, packed_weights,    \
-                                          scales, output, input_size,    \
-                                          output_size, stream);
+    return Launch<BitWidth, n, BlockSize, kNormed>(                      \
+        activation, packed_weights, scales, norm, output, input_size,    \
+        output_size, stream);
     LITERT_NVIDIA_GEMV_ROWS_CASE(1)
     LITERT_NVIDIA_GEMV_ROWS_CASE(2)
     LITERT_NVIDIA_GEMV_ROWS_CASE(3)
@@ -254,34 +304,66 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRows(
   const auto* typed_activation = static_cast<const __nv_bfloat16*>(activation);
   const auto* typed_scales = static_cast<const __nv_bfloat16*>(scales);
   auto* typed_output = static_cast<__nv_bfloat16*>(output);
+  const Norm norm;
   if (input_size >= kLongInputThreshold) {
     switch (bit_width) {
       case 2:
-        return LaunchRows<2, 256>(typed_activation, packed_weights,
-                                  typed_scales, typed_output, rows, input_size,
-                                  output_size, stream);
+        return LaunchRows<2, 256, false>(typed_activation, packed_weights,
+                                         typed_scales, norm, typed_output,
+                                         rows, input_size, output_size, stream);
       case 4:
-        return LaunchRows<4, 256>(typed_activation, packed_weights,
-                                  typed_scales, typed_output, rows, input_size,
-                                  output_size, stream);
+        return LaunchRows<4, 256, false>(typed_activation, packed_weights,
+                                         typed_scales, norm, typed_output,
+                                         rows, input_size, output_size, stream);
       default:
-        return LaunchRows<8, 256>(typed_activation, packed_weights,
-                                  typed_scales, typed_output, rows, input_size,
-                                  output_size, stream);
+        return LaunchRows<8, 256, false>(typed_activation, packed_weights,
+                                         typed_scales, norm, typed_output,
+                                         rows, input_size, output_size, stream);
     }
   }
   switch (bit_width) {
     case 2:
-      return LaunchRows<2, 128>(typed_activation, packed_weights, typed_scales,
-                                typed_output, rows, input_size, output_size,
-                                stream);
+      return LaunchRows<2, 128, false>(typed_activation, packed_weights,
+                                       typed_scales, norm, typed_output, rows,
+                                       input_size, output_size, stream);
     case 4:
-      return LaunchRows<4, 128>(typed_activation, packed_weights, typed_scales,
-                                typed_output, rows, input_size, output_size,
-                                stream);
+      return LaunchRows<4, 128, false>(typed_activation, packed_weights,
+                                       typed_scales, norm, typed_output, rows,
+                                       input_size, output_size, stream);
     default:
-      return LaunchRows<8, 128>(typed_activation, packed_weights, typed_scales,
-                                typed_output, rows, input_size, output_size,
-                                stream);
+      return LaunchRows<8, 128, false>(typed_activation, packed_weights,
+                                       typed_scales, norm, typed_output, rows,
+                                       input_size, output_size, stream);
   }
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRowsNormed(
+    const void* activation, const uint8_t* packed_weights, const void* scales,
+    const float* norm_scale, float norm_eps, float norm_multiplier,
+    void* output, int bit_width, int rows, int input_size, int output_size,
+    cudaStream_t stream) {
+  if (norm_scale == nullptr) {
+    return LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRows(
+        activation, packed_weights, scales, output, bit_width, rows,
+        input_size, output_size, stream);
+  }
+  // The fused norm is instantiated for the INT4 weights the models' norms
+  // feed.
+  if (InvalidArguments(activation, packed_weights, scales, output, bit_width,
+                       rows, input_size, output_size) ||
+      bit_width != 4 || norm_eps < 0.0f) {
+    return cudaErrorInvalidValue;
+  }
+  const auto* typed_activation = static_cast<const __nv_bfloat16*>(activation);
+  const auto* typed_scales = static_cast<const __nv_bfloat16*>(scales);
+  auto* typed_output = static_cast<__nv_bfloat16*>(output);
+  const Norm norm{norm_scale, norm_eps, norm_multiplier};
+  if (input_size >= kLongInputThreshold) {
+    return LaunchRows<4, 256, true>(typed_activation, packed_weights,
+                                    typed_scales, norm, typed_output, rows,
+                                    input_size, output_size, stream);
+  }
+  return LaunchRows<4, 128, true>(typed_activation, packed_weights,
+                                  typed_scales, norm, typed_output, rows,
+                                  input_size, output_size, stream);
 }

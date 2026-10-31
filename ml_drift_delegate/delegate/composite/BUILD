@@ -265,6 +265,7 @@ cc_library(
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:types",
         "@ml_drift//ml_drift/common/kernels/special:conv_softmax_conv",
+        "@ml_drift//ml_drift/common/task:compiler_options",
         "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/task:tuning_type",

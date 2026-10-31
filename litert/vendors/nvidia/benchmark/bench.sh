@@ -76,9 +76,23 @@ if [[ -n $context_override ]]; then
   context=$context_override
 fi
 iterations=${iterations:-$default_iterations}
+# Under MTP the decode engine runs once per conversation (the priming step), so its second run,
+# where TensorRT-RTX captures its CUDA graph (a one-time cost that grows with the context), is
+# the second conversation: the report skips two.
+[[ $mtp == false || $warmups -ge 2 ]] || warmups=2
 [[ $metric != memory && $metric != cold ]] || { iterations=1; warmups=0; }
 mode=plain; [[ $mtp == false ]] || mode=mtp
 label=${label:-${profile}_${workload}_${mode}_${metric}}
+# The host's clocks (clock_check.py beside this script: the kernel tick and frequency, the monotonic
+# clock's rate against the raw clock over 3 s): recorded with the run; a formal or idle-verified run
+# refuses a clock that is not fit, since the CLI's rates are read on the monotonic clock.
+NB_HOST_CLOCK=$(python3 "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/clock_check.py" 3) || {
+  case ${CI_HOST_MODE:-unspecified} in
+    formal|idle-verified) nb_die "The host's clock is not fit for a $CI_HOST_MODE run: $NB_HOST_CLOCK" ;;
+    *) echo "Warning: the host's clock is not fit: $NB_HOST_CLOCK" >&2 ;;
+  esac
+}
+export NB_HOST_CLOCK
 run=$out/$label
 mkdir -p "$run"
 build_id=$(nb_build_id)
@@ -151,9 +165,12 @@ meta = {
   'iterations': int(os.environ['NB_ITERATIONS']), 'warmups': int(os.environ['NB_WARMUPS']),
   'build_id': os.environ['NB_BUILD_ID'], 'pool': os.environ['NB_POOL'], 'command': command, 'exit_code': int(rc),
   'host_mode': os.environ.get('CI_HOST_MODE', 'unspecified'),
+  'host_clock': json.loads(os.environ['NB_HOST_CLOCK']) if os.environ.get('NB_HOST_CLOCK') else None,
   'start': start, 'end': end, 'gpu_baseline_mib': int(baseline),
   'environment': {k: v for k, v in os.environ.items() if k.startswith('LITERT_NVIDIA_')},
   'binaries': {n: sha(os.path.realpath(os.path.join(libs, n))) for n in ('libLiteRtCompilerPlugin_Nvidia.so', 'libLiteRtDispatch_Nvidia.so', 'litert_lm_advanced_main')},
+  # The build the binaries came from (build.sh's stamp), beside the checkout's build_id.
+  'binaries_build_id': open(os.path.join(libs, 'BUILD_ID')).read().strip() if os.path.exists(os.path.join(libs, 'BUILD_ID')) else None,
   'sources': {k: os.environ[k] for k in ('NB_RT', 'NB_LM')},
 }
 json.dump(meta, open(meta_path, 'w'), indent=1)

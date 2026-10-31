@@ -64,7 +64,15 @@ statistics where applicable. There are no timing regression thresholds yet.
 Host preparation is external: on cuda-wsl use `zsh -lic benchmark` before a
 formal measurement and set `CI_HOST_MODE=formal`. Without formal preparation,
 leave the default `CI_HOST_MODE=diagnostic` and label timings accordingly.
-The runners refuse competing CUDA compute processes. Do not drop global OS
+The runners refuse competing CUDA compute processes. Every run records the
+host's clocks in its `meta.json` (`host_clock`, from `clock_check.py`: the
+kernel tick and frequency, the monotonic clock's rate against the raw clock),
+since the CLI's rates are read on the monotonic clock; a formal or
+idle-verified run is refused, with the reasons, when the tick is not 10,000 us
+or that rate is off by more than 0.1%, and a diagnostic run warns and records.
+A refusal is the host's clock to fix (root: the kernel tick, or the
+clocksource), not the benchmark's; `python3 clock_check.py 10` shows the
+state. Do not drop global OS
 caches or stop unrelated applications. Model-file cache, compiled artifacts,
 process warm-up and prompt/KV reuse are distinct states; “hot” describes the
 preparation above, not every possible cache combination.

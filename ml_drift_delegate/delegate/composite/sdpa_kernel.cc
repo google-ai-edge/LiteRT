@@ -37,6 +37,7 @@
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/task/compiler_options.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/tuning_type.h"  // from @ml_drift
@@ -131,16 +132,27 @@ FlashSdpaConfig GetFlashSdpaConfig(const ::ml_drift::GpuInfo& gpu_info,
   //   (`H <= 64` uses `s_splits = 1`; `64 < H <= 128` uses `s_splits = 2`).
   // - FP32 (`float4`, 4 32-bit registers per slice): `max_block_s = 8` slices
   //   (`H <= 32` uses `s_splits = 1`; `32 < H <= 64` uses `s_splits = 2`;
-  //   `64 < H <= 128` uses `s_splits = 4`).
-  // On Mali Valhall (64 32-bit registers per thread), also stage `Q` in
-  // `__local` SRAM so `Q` consumes 0 general-purpose registers.
-  const int max_block_s = config.use_fp16 ? 16 : 8;
+  //   `64 < H <= 128` uses `s_splits = 4`), except on Adreno Gen 8 (`8xx`) in
+  //   FP32 where `max_block_s = 4` (`s_splits = 4, b_r = 16, threads = 64` for
+  //   `H = 64`) keeps `q_0..q_3` (16 regs) + `acc_0..acc_3` (16 regs) = 32
+  //   32-bit registers in GPRs (`q_in_local = false`) and `__local` SRAM at
+  //   `10.1 KB` (`<= 16 KB`), avoiding both 48-register single-wave spilling
+  //   and 64-lane `q_local` bank conflicts.
+  // - On Mali Valhall (16-lane warp, 64 32-bit registers per thread), stage `Q`
+  //   in `__local` SRAM (`q_in_local = true`) so `Q` consumes 0 general-purpose
+  //   registers while preserving `b_r = 32` in FP32 and `b_r = 64` in FP16.
+  const bool is_adreno8xx_fp32 = gpu_info.IsAdreno() &&
+                                 gpu_info.adreno_info.IsAdreno8xx() &&
+                                 !config.use_fp16;
+  const int max_block_s = config.use_fp16 ? 16 : (is_adreno8xx_fp32 ? 4 : 8);
   const int s_splits =
       (slices <= max_block_s) ? 1 : ((slices <= 2 * max_block_s) ? 2 : 4);
   const int block_s = (slices + s_splits - 1) / s_splits;
-  const bool q_in_local = gpu_info.IsMali();
+  const bool q_in_local =
+      gpu_info.IsMali() || (is_adreno8xx_fp32 && block_s > 4);
 
-  int b_r = (s_splits == 4) ? 32 : std::max(1, 64 / s_splits);
+  int b_r =
+      (s_splits == 4 && !is_adreno8xx_fp32) ? 32 : std::max(1, 64 / s_splits);
   const int max_work_group_size = gpu_info.GetMaxWorkGroupTotalSize();
   if (max_work_group_size > 0) {
     while (b_r > 1 && s_splits * b_r > max_work_group_size) {
@@ -508,6 +520,10 @@ std::string GenerateFlashSdpaCode(const ::ml_drift::GpuInfo& gpu_info,
   if (gpu_info.IsApiOpenCl()) {
     c = absl::StrCat("__attribute__((reqd_work_group_size(", threads,
                      ", 1, 1)))\n");
+    if (gpu_info.IsAdreno() && gpu_info.adreno_info.IsAdreno8xx() &&
+        !gpu_info.opencl_info.IsCLVK() && !config.use_fp16) {
+      absl::StrAppend(&c, "__attribute__((qcom_wave_pair_mode(1)))\n");
+    }
   }
   absl::StrAppend(&c, R"(MAIN_FUNCTION($0) {
   int tid = ucl::GetLocalId<0>();
@@ -842,6 +858,10 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashSdpa(
   op.AddDstTensor("dst", dst_desc);
 
   const bool has_batch = q_desc.HasAxis(::ml_drift::Axis::kBatch);
+  if (gpu_info.IsApiOpenCl() && gpu_info.IsMali()) {
+    op.compiler_options_.push_back(
+        ::ml_drift::CompilerOptions::kClRegisterAllocation64);
+  }
   op.code_ = GenerateFlashSdpaCode(gpu_info, config, gqa_ratio, has_batch,
                                    has_mask, is_bool_mask, mask_has_batch);
   return std::make_unique<FusedFlashSdpaOp>(std::move(op));

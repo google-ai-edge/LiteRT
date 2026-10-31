@@ -59,11 +59,19 @@ namespace litert::nvidia {
 // vector [columns], and x * rsqrt(mean(x^2) + norm_eps) * scale *
 // norm_multiplier replaces x. With a gate the blockwise GEMV also takes a
 // few rows (gemm false): gelu(gate) * up in one launch.
+//
+// `row_positions` (gemm only) adds a last input, the INT32 token positions of
+// the activation rows, one per row: the int8 tensor-core path then chooses its
+// outlier dims over the rows whose position continues the first row's, not
+// over the padding a runtime appends to a prefill chunk
+// (LiteRtNvidiaLaunchBf16Int4GemmInt8Normed).
+// LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=0 ignores the input: every row chooses, as
+// without it.
 nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(
     int32_t bit_width, int32_t rows, int32_t columns, int32_t gate = 0,
     bool gemm = false, int64_t weight_offset = 0, int64_t holder_granule = 0,
     int32_t scale_block = 0, int64_t scale_offset = -1, float norm_eps = -1.0f,
-    float norm_multiplier = 1.0f) noexcept;
+    float norm_multiplier = 1.0f, bool row_positions = false) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
 // retained when linking the shared library used for engine deserialization.

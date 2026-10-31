@@ -2757,6 +2757,7 @@ class TensorRtGraphBuilder {
     result.input_names = input_names_;
     result.output_names = output_names_;
     result.trtllm_head = std::move(trtllm_head);
+    LITERT_ASSIGN_OR_RETURN(result.step_feed, MatchStepFeed(subgraph));
     result.is_stripped_plan = strip_plan;
     result.weight_holders = std::move(weight_holders_);
     // TensorRT-RTX has consumed every network constant at this point. Destroy
@@ -2782,6 +2783,296 @@ class TensorRtGraphBuilder {
   }
 
  private:
+  // Whether a signature tensor's name carries `key`: the tensors carry the
+  // signature's key behind the signature's name (decode_embeddings,
+  // prefill_1024_input_pos, decode_logits_output), some models with an output
+  // index after it (decode_input_pos:0).
+  static bool HasSignatureKey(std::string name, const char* key) {
+    const size_t colon = name.rfind(':');
+    if (colon != std::string::npos && colon + 1 < name.size() &&
+        name.find_first_not_of("0123456789", colon + 1) == std::string::npos) {
+      name.erase(colon);
+    }
+    const std::string suffix = std::string("_") + key;
+    return name == key || (name.size() > suffix.size() &&
+                           name.compare(name.size() - suffix.size(),
+                                        suffix.size(), suffix) == 0);
+  }
+
+  // A decode step that feeds itself (TensorRtStepFeed): one token's
+  // embeddings in, the logits out, the vocabulary head an INT4 per-channel
+  // fully connected op whose weights the weight store maps (Gemma ties them
+  // to the embedder's table; the embedder's multiplier is sqrt(dim), and the
+  // dispatch verifies every embedding the host feeds against what it ran, so
+  // an untied table only costs the speculation). Nothing when the signature
+  // is not that shape. LITERT_NVIDIA_TENSORRT_STEP_FEED=0 records none.
+  Expected<std::optional<TensorRtStepFeedBuildData>> MatchStepFeed(
+      const Subgraph& subgraph) {
+    const auto none = [] { return std::optional<TensorRtStepFeedBuildData>(); };
+    // A signature the feed cannot follow: the line that saw why.
+    const auto refuse = [&none](int line) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX step feed: not this signature "
+                 "(tensorrt_graph_builder.cc:%d)",
+                 line);
+      return none();
+    };
+    if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_STEP_FEED",
+                    /*default_value=*/true)) {
+      return none();
+    }
+    const auto is_key = &HasSignatureKey;
+    TensorRtStepFeedBuildData feed;
+    const auto inputs = subgraph.Inputs();
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      const Tensor& input = inputs[i];
+      const std::string name(input.Name());
+      auto type = input.RankedTensorType();
+      if (!type) continue;
+      const auto dims = type->Layout().Dimensions();
+      const uint32_t port = static_cast<uint32_t>(i);
+      const auto all_ones_but_last = [&] {
+        for (size_t d = 0; d + 1 < dims.size(); ++d) {
+          if (dims[d] != 1) return false;
+        }
+        return !dims.empty();
+      };
+      if (is_key(name, "per_layer_embeddings")) {
+        // [.., layers, width], the per-layer embedder's lookups of the token.
+        if (input.ElementType() != litert::ElementType::Float32 ||
+            dims.size() < 2 || dims[dims.size() - 2] <= 0 || dims.back() <= 0) {
+          return refuse(__LINE__);
+        }
+        for (size_t d = 0; d + 2 < dims.size(); ++d) {
+          if (dims[d] != 1) return refuse(__LINE__);
+        }
+        feed.per_layer_port = port;
+        feed.per_layer_count = static_cast<uint32_t>(dims[dims.size() - 2]);
+        feed.per_layer_width = static_cast<uint32_t>(dims.back());
+      } else if (is_key(name, "embeddings")) {
+        if (input.ElementType() != litert::ElementType::Float32 ||
+            !all_ones_but_last() || dims.back() <= 0 || dims.back() % 2 != 0) {
+          return refuse(__LINE__);
+        }
+        feed.embeddings_port = port;
+        feed.dim = static_cast<uint32_t>(dims.back());
+      } else if (is_key(name, "positions") || is_key(name, "input_pos")) {
+        if (input.ElementType() != litert::ElementType::Int32 ||
+            !all_ones_but_last() || dims.back() != 1) {
+          return refuse(__LINE__);
+        }
+        feed.positions_port = port;
+      } else if (is_key(name, "param_tensor")) {
+        if (input.ElementType() != litert::ElementType::Int32 ||
+            !all_ones_but_last() || dims.back() < 3) {
+          return refuse(__LINE__);
+        }
+        feed.param_port = port;
+      } else if (is_key(name, "local_mask") ||
+                 is_key(name, "attn_mask_local") ||
+                 is_key(name, "local_attn_mask")) {
+        if (input.ElementType() != litert::ElementType::Bool ||
+            !all_ones_but_last() || dims.back() <= 0) {
+          return refuse(__LINE__);
+        }
+        feed.local_mask_port = port;
+        feed.ring = static_cast<uint32_t>(dims.back());
+      } else if (is_key(name, "attn_mask") || is_key(name, "global_mask") ||
+                 is_key(name, "mask")) {
+        if (input.ElementType() != litert::ElementType::Bool ||
+            !all_ones_but_last()) {
+          return refuse(__LINE__);
+        }
+        feed.global_mask_port = port;
+      }
+    }
+    if (feed.embeddings_port == kTensorRtStepFeedNoPort ||
+        feed.positions_port == kTensorRtStepFeedNoPort) {
+      std::string names;
+      for (size_t i = 0; i < inputs.size() && i < 8; ++i) {
+        names += (i == 0 ? "" : ", ") + std::string(inputs[i].Name());
+      }
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX step feed: no embeddings and positions "
+                 "inputs among %zu (%s%s)",
+                 inputs.size(), names.c_str(),
+                 inputs.size() > 8 ? ", ..." : "");
+      return none();
+    }
+    // The logits output, one row: by its key, or, where the outputs carry
+    // the exporter's names (StatefulPartitionedCall:49), the one row output
+    // a fully connected op from the embedding dim to its width produces,
+    // through the elementwise tail (the head).
+    const auto outputs = subgraph.Outputs();
+    std::optional<Tensor> logits;
+    for (size_t i = 0; i < outputs.size(); ++i) {
+      const std::string name(outputs[i].Name());
+      const bool named =
+          is_key(name, "logits") || is_key(name, "logits_output");
+      auto type = outputs[i].RankedTensorType();
+      if (!type) {
+        if (named) return refuse(__LINE__);
+        continue;
+      }
+      const auto dims = type->Layout().Dimensions();
+      bool one_row = !dims.empty() && dims.back() > 0;
+      for (size_t d = 0; d + 1 < dims.size(); ++d) {
+        if (dims[d] != 1) one_row = false;
+      }
+      if (!one_row) {
+        if (named) return refuse(__LINE__);
+        continue;
+      }
+      if (!named) {
+        auto head = FindHeadBehind(outputs[i]);
+        if (!head.has_value() || head->Inputs().size() < 2) continue;
+        auto weights_type = head->Inputs()[1].RankedTensorType();
+        if (!weights_type || weights_type->Layout().Rank() != 2 ||
+            weights_type->Layout().Dimensions()[0] != dims.back() ||
+            weights_type->Layout().Dimensions()[1] !=
+                static_cast<int32_t>(feed.dim)) {
+          continue;
+        }
+      }
+      feed.logits_output_port = static_cast<uint32_t>(i);
+      feed.vocab = static_cast<uint32_t>(dims.back());
+      logits = outputs[i];
+      if (named) break;
+    }
+    if (!logits.has_value()) return refuse(__LINE__);
+    // The token table: the head's weights when they are an INT4 per-channel
+    // [vocab, dim] view of the model file (the embedder's table is tied to
+    // them, with the multiplier sqrt(dim)); otherwise the runtime registers
+    // the embedder's own table (an external head, a blockwise embedder).
+    feed.table_offset = kTensorRtStepFeedNoTable;
+    feed.multiplier =
+        static_cast<float>(std::sqrt(static_cast<double>(feed.dim)));
+    MatchTiedHeadTable(*logits, feed);
+    if (feed.local_mask_port != kTensorRtStepFeedNoPort) {
+      // The sliding window is the runtime's (the model's metadata); the
+      // graph shows it only where a block reads its cache through a window.
+      // Unknown (0), the dispatch learns it from the host's masks.
+      for (const auto& read : windowed_reads_) {
+        feed.window = std::max(feed.window, static_cast<uint32_t>(read.window));
+      }
+      if (feed.window > feed.ring) feed.window = 0;
+    }
+    const std::string table_text =
+        feed.table_offset == kTensorRtStepFeedNoTable
+            ? "from the runtime"
+            : "at " + std::to_string(feed.table_offset);
+    const std::string per_layer_text =
+        feed.per_layer_port == kTensorRtStepFeedNoPort
+            ? "-"
+            : std::to_string(feed.per_layer_port) + " [" +
+                  std::to_string(feed.per_layer_count) + ", " +
+                  std::to_string(feed.per_layer_width) + "]";
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX step feed: embeddings port %u, positions "
+               "%u, param %s, local mask %s (ring %u, window %u), global mask "
+               "%s, per-layer %s, logits output %u, table [%u, %u] %s, "
+               "multiplier %g",
+               feed.embeddings_port, feed.positions_port,
+               feed.param_port == kTensorRtStepFeedNoPort
+                   ? "-"
+                   : std::to_string(feed.param_port).c_str(),
+               feed.local_mask_port == kTensorRtStepFeedNoPort
+                   ? "-"
+                   : std::to_string(feed.local_mask_port).c_str(),
+               feed.ring, feed.window,
+               feed.global_mask_port == kTensorRtStepFeedNoPort
+                   ? "-"
+                   : std::to_string(feed.global_mask_port).c_str(),
+               per_layer_text.c_str(), feed.logits_output_port, feed.vocab,
+               feed.dim, table_text.c_str(), feed.multiplier);
+    return std::optional<TensorRtStepFeedBuildData>(std::move(feed));
+  }
+
+  // The fully connected op behind a tensor through the elementwise tail
+  // (the soft cap, casts, reshapes), or none.
+  static std::optional<Op> FindHeadBehind(const Tensor& tensor) {
+    Tensor value = tensor;
+    for (int hops = 0; hops < 12; ++hops) {
+      auto producer = value.GetDefiningOp();
+      if (!producer) return std::nullopt;
+      switch (producer->Code()) {
+        case kLiteRtOpCodeTflFullyConnected:
+          return *producer;
+        case kLiteRtOpCodeTflCast:
+        case kLiteRtOpCodeTflReshape:
+        case kLiteRtOpCodeTflTanh:
+          if (producer->Inputs().empty()) return std::nullopt;
+          value = producer->Inputs()[0];
+          break;
+        case kLiteRtOpCodeTflMul:
+        case kLiteRtOpCodeTflDiv:
+          if (producer->Inputs().size() != 2) return std::nullopt;
+          // The other input is the scalar.
+          value =
+              producer
+                  ->Inputs()[ReadFloatScalar(producer->Inputs()[0]) ? 1 : 0];
+          break;
+        default:
+          return std::nullopt;
+      }
+    }
+    return std::nullopt;
+  }
+
+  // The head's weights as the feed's table when they are the tied
+  // embedder's: INT4 per-channel [vocab, dim] in the model file.
+  void MatchTiedHeadTable(const Tensor& logits,
+                          TensorRtStepFeedBuildData& feed) {
+    auto head = FindHeadBehind(logits);
+    if (!head.has_value() || head->Inputs().size() < 2) return;
+    const Tensor weights = head->Inputs()[1];
+    auto weights_type = weights.RankedTensorType();
+    if (!weights_type || weights.ElementType() != litert::ElementType::Int4 ||
+        !weights.HasWeights() || weights_type->Layout().Rank() != 2 ||
+        weights_type->Layout().Dimensions()[0] !=
+            static_cast<int32_t>(feed.vocab) ||
+        weights_type->Layout().Dimensions()[1] !=
+            static_cast<int32_t>(feed.dim) ||
+        weights.QTypeId() != kLiteRtQuantizationPerChannel) {
+      return;
+    }
+    const auto q = weights.PerChannelQuantization();
+    if (q.quantized_dimension != 0 || q.num_channels != feed.vocab ||
+        q.scales == nullptr) {
+      return;
+    }
+    // The feed dequantizes the table as symmetric: a head with a zero point
+    // that is not zero gets no tied table (the runtime may register one).
+    if (q.zero_points != nullptr) {
+      for (uint64_t i = 0; i < q.num_channels; ++i) {
+        if (q.zero_points[i] != 0) {
+          LITERT_LOG(
+              LITERT_INFO,
+              "NVIDIA TensorRT-RTX step feed: the head's weights have a "
+              "zero point that is not zero (channel %llu): no tied table",
+              static_cast<unsigned long long>(i));
+          return;
+        }
+      }
+    }
+    const absl::Span<const uint8_t> bytes = weights.Weights().Bytes();
+    if (bytes.size() != static_cast<size_t>(feed.vocab) * feed.dim / 2 ||
+        weight_store_ == nullptr) {
+      return;  // without a weight store the table has no place in the file
+    }
+    auto offset = weight_store_->SourceOffset(bytes);
+    if (!offset) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX step feed: the head's weights are not a "
+                 "view of the model file (%s)",
+                 offset.Error().Message().c_str());
+      return;
+    }
+    feed.table_offset = *offset;
+    feed.row_scales.resize(static_cast<size_t>(feed.vocab) * sizeof(float));
+    std::memcpy(feed.row_scales.data(), q.scales, feed.row_scales.size());
+  }
+
   // FP16-activation mode: activations flow through the network as FP16 real
   // values; int8 activation quantization survives only at island boundaries
   // (one dequantize per input, one quantize per output) and weights keep
@@ -2948,6 +3239,17 @@ class TensorRtGraphBuilder {
                      "Failed to add TensorRT input");
       }
       raw_input_map_[input.Get()] = tensor;
+      // The token positions of a prefill's rows: the CUDA GEMM's int8 path
+      // takes them to tell a chunk's rows from its padding
+      // (AddSubbyteGemvPlugin). Two such inputs leave both out.
+      if (type.ElementType() == litert::ElementType::Int32 &&
+          (HasSignatureKey(std::string(input.Name()), "input_pos") ||
+           HasSignatureKey(std::string(input.Name()), "positions"))) {
+        int64_t count = 1;
+        for (int d = 0; d < dims.nbDims; ++d) count *= dims.d[d];
+        row_positions_ = row_positions_count_ == 0 ? tensor : nullptr;
+        row_positions_count_ = row_positions_count_ == 0 ? count : -1;
+      }
       nvinfer1::ITensor* value = tensor;
       if (value_view) {
         LITERT_ASSIGN_OR_RETURN(value, ReshapeTensor(tensor, dims));
@@ -3542,9 +3844,27 @@ class TensorRtGraphBuilder {
     float multiplier = 1.0f;
   };
 
-  // rms_norm(x, w) -> mul(c1) -> ... -> `tensor` with constant scalars c_i:
-  // the fusion the projection reading `tensor` can take, if its weights are
-  // blockwise (the fused kernels) and x has `columns` dims.
+  // A cast between float types, whose input the fusion reads instead.
+  // LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS=0 stops the fusion at a cast,
+  // as it stopped before it read through them: the projections behind the
+  // Gemma 4 exports' casts then take TensorRT's norm, for a comparison.
+  static bool IsFloatCast(const Op& op) {
+    static const bool through_casts = [] {
+      const char* value =
+          std::getenv("LITERT_NVIDIA_TENSORRT_NORM_THROUGH_CASTS");
+      return value == nullptr || std::strcmp(value, "0") != 0;
+    }();
+    return through_casts && op.Code() == kLiteRtOpCodeTflCast &&
+           op.Inputs().size() == 1 && op.Outputs().size() == 1 &&
+           IsFloatLike(op.Inputs()[0].ElementType()) &&
+           IsFloatLike(op.Outputs()[0].ElementType());
+  }
+
+  // rms_norm(x, w) -> mul(c1) -> ... -> `tensor` with constant scalars c_i
+  // and casts between float types: the fusion the projection reading
+  // `tensor` can take, if its weights are INT4 (the fused kernels) and x has
+  // `columns` dims. The Gemma 4 12B and E4B wrap their norms in casts
+  // (float16 to float32 and back); the kernel reads the norm's input.
   Expected<std::optional<NormFusion>> FindNormFusion(const Tensor& tensor,
                                                      int32_t columns) {
     if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_FUSE_NORM_GEMV",
@@ -3553,9 +3873,13 @@ class TensorRtGraphBuilder {
     }
     float multiplier = 1.0f;
     Tensor value = tensor;
-    for (int hops = 0; hops < 4; ++hops) {
+    for (int hops = 0; hops < 6; ++hops) {
       auto producer = value.GetDefiningOp();
       if (!producer) return std::optional<NormFusion>();
+      if (IsFloatCast(*producer)) {
+        value = producer->Inputs()[0];
+        continue;
+      }
       if (producer->Code() == kLiteRtOpCodeTflMul &&
           producer->Inputs().size() == 2 && HasNoFusedActivation(*producer)) {
         std::optional<float> scalar;
@@ -3599,8 +3923,16 @@ class TensorRtGraphBuilder {
           !options.attributes_map.value()["epsilon"].IsNull()) {
         eps = options.attributes_map.value()["epsilon"].AsFloat();
       }
+      // The norm's input, before the casts that feed it (the kernel reads the
+      // mode's float type either way).
+      Tensor source = x;
+      for (int casts = 0; casts < 2; ++casts) {
+        auto cast = source.GetDefiningOp();
+        if (!cast || !IsFloatCast(*cast)) break;
+        source = cast->Inputs()[0];
+      }
       NormFusion fusion;
-      LITERT_ASSIGN_OR_RETURN(fusion.input, GetTensor(x));
+      LITERT_ASSIGN_OR_RETURN(fusion.input, GetTensor(source));
       LITERT_ASSIGN_OR_RETURN(fusion.input,
                               AddCastTensor(fusion.input, ModeFloatType()));
       // The norm output keeps its own TensorRT lowering for other readers;
@@ -3723,9 +4055,9 @@ class TensorRtGraphBuilder {
     // The blockwise GEMV has a gate mode; the per-channel one needs the GEMM.
     const bool gemm =
         !BatchedGemvTakes(activation_rows) || (gate != 0 && !blockwise);
-    if (norm != nullptr && !blockwise) {
+    if (norm != nullptr && info.bit_width != 4) {
       return Error(kLiteRtStatusErrorUnsupported,
-                   "A fused norm needs blockwise weights");
+                   "A fused norm needs INT4 weights");
     }
     size_t packed_bytes = 0;
     for (const auto& member : members) {
@@ -3868,13 +4200,24 @@ class TensorRtGraphBuilder {
                                          "cuda_subbyte_gemv_scales" + suffix,
                                          nvinfer1::DataType::kBF16));
     }
+    // A GEMM over a prefill chunk's rows reads their token positions when
+    // its int8 path can take the product: with them that path chooses the
+    // outlier dims over the chunk's rows, not over the padding past them,
+    // whose attention averaged whatever the cache held
+    // (LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=0 returns to every row).
+    const LiteRtNvidiaGemmShape int8_shape = {
+        static_cast<int32_t>(activation_rows), info.columns,
+        gate != 0 ? info.rows / 2 : info.rows, gate, info.scale_block};
+    const bool row_positions = gemm && row_positions_ != nullptr &&
+                               row_positions_count_ == activation_rows &&
+                               LiteRtNvidiaInt8GemmSupports(&int8_shape);
     TrtPtr<nvinfer1::IPluginV3> plugin(CreateSubbyteGemvPlugin(
         info.bit_width, info.rows, info.columns, gate, gemm,
         location.has_value() ? static_cast<int64_t>(location->offset) : 0,
         location.has_value() ? static_cast<int64_t>(weight_store_->granule())
                              : 0,
         info.scale_block, scale_offset, norm != nullptr ? norm->eps : -1.0f,
-        norm != nullptr ? norm->multiplier : 1.0f));
+        norm != nullptr ? norm->multiplier : 1.0f, row_positions));
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create CUDA subbyte GEMV plugin");
@@ -3883,6 +4226,9 @@ class TensorRtGraphBuilder {
                                               scale_tensor};
     if (norm != nullptr) {
       inputs.push_back(norm->scale);
+    }
+    if (row_positions) {
+      inputs.push_back(row_positions_);
     }
     auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(*network_, inputs.data(),
                                                      inputs.size(), *plugin);
@@ -7631,10 +7977,11 @@ class TensorRtGraphBuilder {
     // The few rows of a verify step run on the batched GEMV like decode.
     const bool cuda_batched_gemv =
         !static_m_is_one && rows > 1 && BatchedGemvTakes(rows);
-    // Blockwise projections read their RMS norm's input and apply the norm
-    // in the kernel (FindNormFusion).
+    // INT4 projections read their RMS norm's input and apply the norm in
+    // the kernel (FindNormFusion).
     std::optional<NormFusion> norm;
-    if (blockwise && Fp16ActivationsEnabled() &&
+    if (op.Inputs()[1].ElementType() == litert::ElementType::Int4 &&
+        Fp16ActivationsEnabled() &&
         predequant_mode == PredequantMode::kCudaGemv) {
       const auto in_dims = input->getDimensions();
       LITERT_ASSIGN_OR_RETURN(
@@ -7668,8 +8015,16 @@ class TensorRtGraphBuilder {
            (cuda_gemm &&
             (GetCudaGemmMode() == CudaGemmMode::kAll || blockwise)))) ||
          (byte_weights && (static_m_is_one || cuda_batched_gemv)))) {
-      LITERT_ASSIGN_OR_RETURN(input, AddCastTensor(gemv_input, compute_type));
-      auto fused = AddCudaSubbyteGemvGroup(op, input, compute_type, norm_ptr);
+      LITERT_ASSIGN_OR_RETURN(input, AddCastTensor(input, compute_type));
+      // The fused norm's kernel reads the norm's input; a product the CUDA
+      // path declines falls back to TensorRT's lowering over the normed one.
+      nvinfer1::ITensor* gemv_activation = input;
+      if (norm.has_value()) {
+        LITERT_ASSIGN_OR_RETURN(gemv_activation,
+                                AddCastTensor(gemv_input, compute_type));
+      }
+      auto fused =
+          AddCudaSubbyteGemvGroup(op, gemv_activation, compute_type, norm_ptr);
       if (fused.HasValue()) {
         return FinishFullyConnected(op, *fused, compute_type);
       }
@@ -9532,6 +9887,10 @@ class TensorRtGraphBuilder {
   // Network inputs in their boundary (pre-FP16-conversion) form; used by
   // in-place style ops (cache updates) that operate on the raw int8 data.
   std::unordered_map<LiteRtTensor, nvinfer1::ITensor*> raw_input_map_;
+  // The prefill's token positions input and its element count (0: none, -1:
+  // more than one), for the CUDA GEMM (AddSubbyteGemvPlugin).
+  nvinfer1::ITensor* row_positions_ = nullptr;
+  int64_t row_positions_count_ = 0;
   // Produced tensors that already carry the boundary format (e.g. int8 cache
   // scatter results); MarkOutputs prefers these over the FP16 view.
   std::unordered_map<LiteRtTensor, nvinfer1::ITensor*> raw_output_map_;

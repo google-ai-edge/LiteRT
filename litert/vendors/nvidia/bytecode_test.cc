@@ -389,6 +389,199 @@ TEST(TensorRtBytecodeTest, WeightStoreRoundTripsInAShard) {
   }
 }
 
+TEST(TensorRtBytecodeTest, StepFeedRoundTripsInAShardAsVersionSeven) {
+  const std::vector<uint8_t> run_data = {1, 2, 3};
+  const TensorRtWeightStore store = MakeWeightStore(run_data);
+  const std::vector<uint8_t> engine = {4, 5};
+  // Three rows' FP32 scales as little-endian bytes.
+  const std::vector<uint8_t> scales = {0, 0,    0x80, 0x3f, 0,    0,
+                                       0, 0x40, 0,    0,    0x40, 0x40};
+  TensorRtStepFeed feed;
+  feed.embeddings_port = 0;
+  feed.positions_port = 1;
+  feed.param_port = 2;
+  feed.local_mask_port = 3;
+  feed.logits_output_port = 1;
+  feed.vocab = 3;
+  feed.dim = 8;
+  feed.ring = 1152;
+  feed.window = 1024;
+  feed.table_offset = 5591923696ull;
+  feed.multiplier = 61.967735f;
+  feed.row_scales = scales.data();
+  feed.row_scales_size = scales.size();
+  feed.per_layer_port = 4;
+  feed.per_layer_count = 42;
+  feed.per_layer_width = 256;
+  TensorRtBundleEntry entry;
+  entry.function_name = "decode";
+  entry.input_names = {
+      "embeddings",           "positions", "param", "local_mask",
+      "per_layer_embeddings", "cache"};
+  entry.output_names = {"cache_out", "logits"};
+  entry.engine_data = engine.data();
+  entry.engine_size = engine.size();
+  entry.weight_store = &store;
+  entry.step_feed = &feed;
+
+  auto shard = PackTensorRtSharedWeightShard({}, entry);
+  ASSERT_TRUE(shard.HasValue()) << shard.Error().Message();
+  auto parsed = ParseTensorRtBytecode(shard->data(), shard->size(), "decode");
+  ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
+  EXPECT_EQ(parsed->version, kTensorRtBytecodeVersionWithPerLayerFeed);
+  ASSERT_TRUE(parsed->weight_store.has_value());
+  ASSERT_TRUE(parsed->step_feed.has_value());
+  const TensorRtStepFeed& read = *parsed->step_feed;
+  EXPECT_EQ(read.per_layer_port, 4u);
+  EXPECT_EQ(read.per_layer_count, 42u);
+  EXPECT_EQ(read.per_layer_width, 256u);
+  EXPECT_EQ(read.embeddings_port, 0u);
+  EXPECT_EQ(read.positions_port, 1u);
+  EXPECT_EQ(read.param_port, 2u);
+  EXPECT_EQ(read.local_mask_port, 3u);
+  EXPECT_EQ(read.global_mask_port, kTensorRtStepFeedNoPort);
+  EXPECT_EQ(read.logits_output_port, 1u);
+  EXPECT_EQ(read.vocab, 3u);
+  EXPECT_EQ(read.dim, 8u);
+  EXPECT_EQ(read.ring, 1152u);
+  EXPECT_EQ(read.window, 1024u);
+  EXPECT_EQ(read.table_offset, feed.table_offset);
+  EXPECT_EQ(read.multiplier, feed.multiplier);
+  EXPECT_EQ(std::vector<uint8_t>(read.row_scales,
+                                 read.row_scales + read.row_scales_size),
+            scales);
+  // The scales alias the bytecode buffer.
+  EXPECT_GE(read.row_scales, shard->data());
+  EXPECT_LT(read.row_scales, shard->data() + shard->size());
+  for (size_t size = shard->size() - 1; size > shard->size() - 48; --size) {
+    EXPECT_FALSE(
+        ParseTensorRtBytecode(shard->data(), size, "decode").HasValue());
+  }
+
+  // An entry without a feed in the same bundle parses with none; an entry
+  // without a store stays store-less.
+  TensorRtBundleEntry plain;
+  plain.function_name = "prefill";
+  plain.engine_data = engine.data();
+  plain.engine_size = engine.size();
+  auto bundle = PackTensorRtSharedWeightBundle({}, {entry, plain});
+  ASSERT_TRUE(bundle.HasValue()) << bundle.Error().Message();
+  auto second =
+      ParseTensorRtBytecode(bundle->data(), bundle->size(), "prefill");
+  ASSERT_TRUE(second.HasValue()) << second.Error().Message();
+  EXPECT_EQ(second->version, kTensorRtBytecodeVersionWithPerLayerFeed);
+  EXPECT_FALSE(second->step_feed.has_value());
+  EXPECT_FALSE(second->weight_store.has_value());
+}
+
+TEST(TensorRtBytecodeTest, StepFeedWithoutATableRoundTrips) {
+  const std::vector<uint8_t> run_data = {1, 2, 3};
+  const TensorRtWeightStore store = MakeWeightStore(run_data);
+  const std::vector<uint8_t> engine = {4, 5};
+  TensorRtStepFeed feed;
+  feed.embeddings_port = 0;
+  feed.positions_port = 1;
+  feed.global_mask_port = 2;
+  feed.logits_output_port = 0;
+  feed.vocab = 262144;
+  feed.dim = 2816;
+  feed.table_offset = kTensorRtStepFeedNoTable;
+  feed.multiplier = 53.066f;
+  TensorRtBundleEntry entry;
+  entry.function_name = "decode";
+  entry.input_names = {"embeddings", "positions", "mask"};
+  entry.output_names = {"logits"};
+  entry.engine_data = engine.data();
+  entry.engine_size = engine.size();
+  entry.weight_store = &store;
+  entry.step_feed = &feed;
+  auto shard = PackTensorRtSharedWeightShard({}, entry);
+  ASSERT_TRUE(shard.HasValue()) << shard.Error().Message();
+  auto parsed = ParseTensorRtBytecode(shard->data(), shard->size(), "decode");
+  ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
+  ASSERT_TRUE(parsed->step_feed.has_value());
+  const TensorRtStepFeed& read = *parsed->step_feed;
+  EXPECT_EQ(read.table_offset, kTensorRtStepFeedNoTable);
+  EXPECT_EQ(read.row_scales_size, 0u);
+  EXPECT_EQ(read.vocab, 262144u);
+  EXPECT_EQ(read.dim, 2816u);
+  EXPECT_EQ(read.global_mask_port, 2u);
+  EXPECT_EQ(read.local_mask_port, kTensorRtStepFeedNoPort);
+  EXPECT_EQ(read.ring, 0u);
+  EXPECT_EQ(read.multiplier, feed.multiplier);
+  EXPECT_EQ(read.per_layer_port, kTensorRtStepFeedNoPort);
+  EXPECT_EQ(read.per_layer_count, 0u);
+}
+
+TEST(TensorRtBytecodeTest, StepFeedRejectsInvalidRecords) {
+  const std::vector<uint8_t> engine = {4, 5};
+  const std::vector<uint8_t> scales(8, 0);
+  const auto packs = [&](const TensorRtStepFeed& feed) {
+    TensorRtBundleEntry entry;
+    entry.function_name = "decode";
+    entry.input_names = {"embeddings", "positions", "local_mask"};
+    entry.output_names = {"logits"};
+    entry.engine_data = engine.data();
+    entry.engine_size = engine.size();
+    entry.step_feed = &feed;
+    return PackTensorRtSharedWeightShard({}, entry).HasValue();
+  };
+  TensorRtStepFeed feed;
+  feed.embeddings_port = 0;
+  feed.positions_port = 1;
+  feed.local_mask_port = 2;
+  feed.vocab = 2;
+  feed.dim = 4;
+  feed.ring = 16;
+  feed.window = 8;
+  feed.multiplier = 2.0f;
+  feed.row_scales = scales.data();
+  feed.row_scales_size = scales.size();
+  EXPECT_TRUE(packs(feed));
+  TensorRtStepFeed bad = feed;
+  bad.embeddings_port = kTensorRtStepFeedNoPort;  // the embeddings are required
+  EXPECT_FALSE(packs(bad));
+  bad = feed;
+  bad.positions_port = 3;  // past the inputs
+  EXPECT_FALSE(packs(bad));
+  bad = feed;
+  bad.table_offset = kTensorRtStepFeedNoTable;  // no table: no scales either
+  EXPECT_FALSE(packs(bad));
+  bad.row_scales = nullptr;
+  bad.row_scales_size = 0;
+  EXPECT_TRUE(packs(bad));
+  bad = feed;
+  bad.row_scales_size = 0;  // a table in the file needs its scales
+  EXPECT_FALSE(packs(bad));
+  bad = feed;
+  bad.per_layer_count = 3;  // per-layer dims need their port
+  EXPECT_FALSE(packs(bad));
+  bad = feed;
+  bad.per_layer_port = 1;  // and the port its dims
+  EXPECT_FALSE(packs(bad));
+  bad.per_layer_count = 3;
+  bad.per_layer_width = 8;
+  EXPECT_TRUE(packs(bad));
+  bad = feed;
+  bad.logits_output_port = 1;  // past the outputs
+  EXPECT_FALSE(packs(bad));
+  bad = feed;
+  bad.row_scales_size = 4;  // not one scale per row
+  EXPECT_FALSE(packs(bad));
+  bad = feed;
+  bad.dim = 3;  // nibbles pair up
+  EXPECT_FALSE(packs(bad));
+  bad = feed;
+  bad.window = 17;  // within the ring
+  EXPECT_FALSE(packs(bad));
+  bad = feed;
+  bad.local_mask_port = kTensorRtStepFeedNoPort;  // a ring needs a mask port
+  EXPECT_FALSE(packs(bad));
+  bad = feed;
+  bad.multiplier = 0.0f;
+  EXPECT_FALSE(packs(bad));
+}
+
 TEST(TensorRtBytecodeTest, BundleWithoutAWeightStoreKeepsVersionFour) {
   const std::vector<TensorRtSharedWeight> shared_weights = {
       {TensorRtWeightDataType::kInt8, 1, {7}}};

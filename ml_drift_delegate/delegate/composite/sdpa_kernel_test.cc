@@ -46,6 +46,8 @@ namespace litert::ml_drift {
 namespace {
 
 using ::testing::Combine;
+using ::testing::HasSubstr;
+using ::testing::Not;
 using ::testing::TestParamInfo;
 using ::testing::ValuesIn;
 
@@ -491,6 +493,33 @@ TEST_P(SdpaKernelExecuteTest, MaliGemma4VisionAndMultiTailSliceSplit) {
   EXPECT_TRUE(status_h68.ok()) << status_h68.message();
 }
 
+TEST_P(SdpaKernelExecuteTest, Adreno8xxCodegenAndExecute) {
+  ::ml_drift::GpuInfo adreno8xx_gpu_info = exec_env->GetGpuInfo();
+  adreno8xx_gpu_info.vendor = ::ml_drift::GpuVendor::kQualcomm;
+  adreno8xx_gpu_info.adreno_info.generation =
+      ::ml_drift::AdrenoInfo::Generation::kGen8;
+  // On non-Qualcomm OpenCL drivers (e.g. host x86 or Mali OpenCL), set
+  // `is_clvk` so the Qualcomm-proprietary `qcom_wave_pair_mode(1)` attribute is
+  // omitted while still executing the Adreno 8xx `max_block_s = 4`
+  // (`s_splits = 4, b_r = 16`) tiling. On physical Qualcomm Adreno OpenCL
+  // drivers, `is_clvk` remains false so `qcom_wave_pair_mode(1)` is also
+  // compiled and executed on device.
+  if (adreno8xx_gpu_info.IsApiOpenCl() && !exec_env->GetGpuInfo().IsAdreno()) {
+    adreno8xx_gpu_info.opencl_info.platform_version = "clvk";
+  }
+  auto status_h64 = RunSdpaKernelTest(
+      *exec_env, precision(), storage(), /*B=*/1, /*T=*/35, /*S=*/37,
+      /*N_q=*/4, /*N_kv=*/4, /*H=*/64, mask_mode(), /*mask_B=*/1, /*mask_N=*/1,
+      /*mask_T=*/35, adreno8xx_gpu_info);
+  EXPECT_TRUE(status_h64.ok()) << status_h64.message();
+
+  auto status_h68 = RunSdpaKernelTest(
+      *exec_env, precision(), storage(), /*B=*/1, /*T=*/35, /*S=*/37,
+      /*N_q=*/4, /*N_kv=*/2, /*H=*/68, mask_mode(), /*mask_B=*/1, /*mask_N=*/1,
+      /*mask_T=*/35, adreno8xx_gpu_info);
+  EXPECT_TRUE(status_h68.ok()) << status_h68.message();
+}
+
 INSTANTIATE_TEST_SUITE_P(
     SdpaKernelExecuteTestSuite, SdpaKernelExecuteTest,
     Combine(ValuesIn({::ml_drift::CalculationsPrecision::kF32,
@@ -524,6 +553,44 @@ TEST(IsSupportedFlashSdpaTest, SupportsGemma4VisionAndRejectsInvalidConfigs) {
 
   EXPECT_TRUE(IsSupportedFlashSdpa(gpu_info, q_desc, k_desc, v_desc,
                                    /*mask_desc=*/nullptr, dst_desc));
+  EXPECT_TRUE(IsSupportedFlashSdpa(gpu_info, q_desc, k_desc, v_desc,
+                                   /*mask_desc=*/nullptr, dst_desc,
+                                   /*use_f32_accum=*/true));
+
+  // Verify Adreno Gen 8 (e.g. S26 Ultra Adreno 840), Mali (e.g. Pixel 8 Pro),
+  // Apple Metal, and Nvidia WebGPU support across FP16 and FP32.
+  ::ml_drift::TensorDescriptor fp32_q_desc(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::TensorStorageType::kBuffer,
+      ::ml_drift::Layout::kBHWC);
+  fp32_q_desc.SetBHWCShape(::ml_drift::BHWC(1, 10080, 12, 64));
+
+  ::ml_drift::GpuInfo adreno8xx_info;
+  ::ml_drift::GetGpuInfoFromDeviceDescription(
+      "Adreno (TM) 840", ::ml_drift::GpuApi::kOpenCl, &adreno8xx_info);
+  EXPECT_TRUE(adreno8xx_info.adreno_info.IsAdreno8xx());
+  EXPECT_TRUE(IsSupportedFlashSdpa(adreno8xx_info, q_desc, k_desc, v_desc,
+                                   /*mask_desc=*/nullptr, dst_desc));
+  EXPECT_TRUE(IsSupportedFlashSdpa(adreno8xx_info, fp32_q_desc, fp32_q_desc,
+                                   fp32_q_desc, /*mask_desc=*/nullptr,
+                                   fp32_q_desc, /*use_f32_accum=*/true));
+
+  ::ml_drift::GpuInfo metal_info;
+  ::ml_drift::GetGpuInfoFromDeviceDescription(
+      "Apple M3", ::ml_drift::GpuApi::kMetal, &metal_info);
+  EXPECT_TRUE(IsSupportedFlashSdpa(metal_info, q_desc, k_desc, v_desc,
+                                   /*mask_desc=*/nullptr, dst_desc));
+  EXPECT_TRUE(IsSupportedFlashSdpa(metal_info, fp32_q_desc, fp32_q_desc,
+                                   fp32_q_desc, /*mask_desc=*/nullptr,
+                                   fp32_q_desc, /*use_f32_accum=*/true));
+
+  ::ml_drift::GpuInfo webgpu_info;
+  ::ml_drift::GetGpuInfoFromDeviceDescription(
+      "NVIDIA GeForce RTX 4090", ::ml_drift::GpuApi::kWebGpu, &webgpu_info);
+  EXPECT_TRUE(IsSupportedFlashSdpa(webgpu_info, q_desc, k_desc, v_desc,
+                                   /*mask_desc=*/nullptr, dst_desc));
+  EXPECT_TRUE(IsSupportedFlashSdpa(webgpu_info, fp32_q_desc, fp32_q_desc,
+                                   fp32_q_desc, /*mask_desc=*/nullptr,
+                                   fp32_q_desc, /*use_f32_accum=*/true));
 
   // Unsupported GPU APIs (e.g. Vulkan, OpenGL) should return false and fall
   // back to ML Drift's default SDPA lowering.
@@ -602,6 +669,154 @@ TEST(IsSupportedFlashSdpaTest, SupportsGemma4VisionAndRejectsInvalidConfigs) {
   int_mask_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 10080, 10080));
   EXPECT_FALSE(IsSupportedFlashSdpa(gpu_info, q_desc, k_desc, v_desc,
                                     &int_mask_desc, dst_desc));
+}
+
+TEST(IsSupportedFlashSdpaTest, AssemblesCrossBackendAndVendorCode) {
+  auto assemble_flash_sdpa = [](const ::ml_drift::GpuInfo& gpu_info,
+                                ::ml_drift::CalculationsPrecision precision,
+                                MaskMode mask_mode,
+                                std::string* out_code) -> absl::Status {
+    const ::ml_drift::DataType datatype =
+        ::ml_drift::DeduceDataTypeFromPrecision(precision);
+    ::ml_drift::GpuModelBuilder builder(gpu_info, {}, precision,
+                                        ::ml_drift::TensorStorageType::kBuffer);
+    const ::ml_drift::BHWC qkv_shape(1, 10080, 12, 64);
+    const ::ml_drift::BHWC mask_shape(1, 1, 10080, 10080);
+
+    auto q = builder.AddTensor(qkv_shape, datatype);
+    auto k = builder.AddTensor(qkv_shape, datatype);
+    auto v = builder.AddTensor(qkv_shape, datatype);
+    auto out = builder.AddTensor(qkv_shape, datatype);
+
+    std::vector<uint32_t> input_ids = {q.id, k.id, v.id};
+    std::vector<std::pair<uint32_t, uint32_t>> model_inputs = {
+        {q.id, 0}, {k.id, 1}, {v.id, 2}};
+    if (mask_mode == MaskMode::kBool) {
+      auto mask = builder.AddTensor(mask_shape, ::ml_drift::DataType::kBool);
+      input_ids.push_back(mask.id);
+      model_inputs.push_back({mask.id, 3});
+    } else if (mask_mode == MaskMode::kFloatAdditive) {
+      auto mask = builder.AddTensor(mask_shape, datatype);
+      input_ids.push_back(mask.id);
+      model_inputs.push_back({mask.id, 3});
+    }
+
+    ::ml_drift::ScaledDotProductAttentionAttributes attr;
+    attr.scale = 0.125f;
+    ABSL_RETURN_IF_ERROR(BuildSdpaGpuGraph(input_ids, out.id, attr, &builder));
+
+    ::ml_drift::GpuModel gpu_model;
+    ABSL_RETURN_IF_ERROR(
+        builder.GetGpuModel(model_inputs, {{out.id, 0}}, &gpu_model));
+    for (const auto& node : gpu_model.nodes) {
+      if (node.name == "flash_sdpa" && node.gpu_operation != nullptr) {
+        *out_code = node.gpu_operation->code_;
+        return absl::OkStatus();
+      }
+    }
+    return absl::NotFoundError("flash_sdpa node not found in GpuModel");
+  };
+
+  // 1. S26 Ultra (Adreno 840, OpenCL): FP32 uses `max_block_s = 4`
+  // (`s_splits = 4, block_s = 4, b_r = 16`, `q_0..q_3` + `acc_0..acc_3` = 32
+  // registers in GPRs) and emits `__attribute__((qcom_wave_pair_mode(1)))`;
+  // FP16 uses `s_splits = 1, block_s = 16, b_r = 64` and does not emit
+  // `qcom_wave_pair_mode`.
+  ::ml_drift::GpuInfo s26u_info;
+  ::ml_drift::GetGpuInfoFromDeviceDescription(
+      "Adreno (TM) 840", ::ml_drift::GpuApi::kOpenCl, &s26u_info);
+  s26u_info.opencl_info.supports_fp16 = true;
+  std::string s26u_fp32;
+  ASSERT_OK(assemble_flash_sdpa(s26u_info,
+                                ::ml_drift::CalculationsPrecision::kF32,
+                                MaskMode::kNone, &s26u_fp32));
+  EXPECT_THAT(s26u_fp32, HasSubstr("__attribute__((qcom_wave_pair_mode(1)))"));
+  EXPECT_THAT(s26u_fp32, HasSubstr("int s_grp = tid % 4;"));
+  EXPECT_THAT(s26u_fp32, HasSubstr("int q_idx = q_tile * 16 + q_grp;"));
+  EXPECT_THAT(s26u_fp32, HasSubstr("float4 acc_3 ="));
+  EXPECT_THAT(s26u_fp32, Not(HasSubstr("acc_4")));
+  EXPECT_THAT(s26u_fp32, Not(HasSubstr("q_local[")));
+
+  std::string s26u_fp16;
+  ASSERT_OK(assemble_flash_sdpa(s26u_info,
+                                ::ml_drift::CalculationsPrecision::kF16,
+                                MaskMode::kNone, &s26u_fp16));
+  EXPECT_THAT(s26u_fp16,
+              Not(HasSubstr("__attribute__((qcom_wave_pair_mode(1)))")));
+  EXPECT_THAT(s26u_fp16, Not(HasSubstr("q_local[")));
+
+  // 2. S24 Ultra (Adreno 750, OpenCL): FP32 uses `max_block_s = 8`
+  // (`s_splits = 2, block_s = 8, b_r = 32`) with `Q` in registers and without
+  // `qcom_wave_pair_mode`; FP16 uses `s_splits = 1, block_s = 16, b_r = 64`.
+  ::ml_drift::GpuInfo s24u_info;
+  ::ml_drift::GetGpuInfoFromDeviceDescription(
+      "Adreno (TM) 750", ::ml_drift::GpuApi::kOpenCl, &s24u_info);
+  s24u_info.opencl_info.supports_fp16 = true;
+  std::string s24u_fp32;
+  ASSERT_OK(assemble_flash_sdpa(s24u_info,
+                                ::ml_drift::CalculationsPrecision::kF32,
+                                MaskMode::kBool, &s24u_fp32));
+  EXPECT_THAT(s24u_fp32,
+              Not(HasSubstr("__attribute__((qcom_wave_pair_mode(1)))")));
+  EXPECT_THAT(s24u_fp32, HasSubstr("int s_grp = tid % 2;"));
+  EXPECT_THAT(s24u_fp32, HasSubstr("int q_idx = q_tile * 32 + q_grp;"));
+  EXPECT_THAT(s24u_fp32, HasSubstr("float4 acc_7 ="));
+  EXPECT_THAT(s24u_fp32, Not(HasSubstr("q_local[")));
+
+  std::string s24u_fp16;
+  ASSERT_OK(assemble_flash_sdpa(s24u_info,
+                                ::ml_drift::CalculationsPrecision::kF16,
+                                MaskMode::kFloatAdditive, &s24u_fp16));
+  EXPECT_THAT(s24u_fp16, Not(HasSubstr("q_local[")));
+
+  // 3. Pixel 8 Pro (Mali-G715, OpenCL): stages `Q` in `__local` in both FP32
+  // and FP16.
+  ::ml_drift::GpuInfo p8pro_info;
+  ::ml_drift::GetGpuInfoFromDeviceDescription(
+      "Mali-G715", ::ml_drift::GpuApi::kOpenCl, &p8pro_info);
+  p8pro_info.opencl_info.supports_fp16 = true;
+  std::string p8pro_fp32;
+  ASSERT_OK(assemble_flash_sdpa(p8pro_info,
+                                ::ml_drift::CalculationsPrecision::kF32,
+                                MaskMode::kNone, &p8pro_fp32));
+  EXPECT_THAT(p8pro_fp32, HasSubstr("__local float4 q_local[512];"));
+
+  std::string p8pro_fp16;
+  ASSERT_OK(assemble_flash_sdpa(p8pro_info,
+                                ::ml_drift::CalculationsPrecision::kF16,
+                                MaskMode::kNone, &p8pro_fp16));
+  EXPECT_THAT(p8pro_fp16, HasSubstr("__local half4 q_local[1024];"));
+
+  // 4. Apple Metal (`GpuApi::kMetal`): assembles cleanly in FP32 and FP16 with
+  // boolean and float masks.
+  ::ml_drift::GpuInfo metal_info;
+  ::ml_drift::GetGpuInfoFromDeviceDescription(
+      "Apple M3", ::ml_drift::GpuApi::kMetal, &metal_info);
+  for (auto prec : {::ml_drift::CalculationsPrecision::kF32,
+                    ::ml_drift::CalculationsPrecision::kF16}) {
+    for (auto mask :
+         {MaskMode::kNone, MaskMode::kBool, MaskMode::kFloatAdditive}) {
+      std::string metal_code;
+      ASSERT_OK(assemble_flash_sdpa(metal_info, prec, mask, &metal_code));
+      EXPECT_THAT(metal_code,
+                  HasSubstr("threadgroup_barrier(mem_flags::mem_threadgroup)"));
+    }
+  }
+
+  // 5. Nvidia WebGPU (`GpuApi::kWebGpu`): assembles cleanly in FP32 and FP16
+  // with boolean and float masks within the 16 KB workgroup storage cap.
+  ::ml_drift::GpuInfo webgpu_info;
+  ::ml_drift::GetGpuInfoFromDeviceDescription(
+      "NVIDIA GeForce RTX 4090", ::ml_drift::GpuApi::kWebGpu, &webgpu_info);
+  for (auto prec : {::ml_drift::CalculationsPrecision::kF32,
+                    ::ml_drift::CalculationsPrecision::kF16}) {
+    for (auto mask :
+         {MaskMode::kNone, MaskMode::kBool, MaskMode::kFloatAdditive}) {
+      std::string webgpu_code;
+      ASSERT_OK(assemble_flash_sdpa(webgpu_info, prec, mask, &webgpu_code));
+      EXPECT_THAT(webgpu_code, HasSubstr("workgroupBarrier()"));
+    }
+  }
 }
 
 }  // namespace

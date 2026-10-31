@@ -401,6 +401,55 @@ cc_test(
 )
 
 cc_test(
+    name = "tensorrt_graph_builder_real_rows_off_test",
+    srcs = ["tensorrt_graph_builder_test.cc"],
+    # The int8 GEMM's outlier dims over every row of a chunk, padding included:
+    # the rollback the switch keeps (read once per process, hence a target).
+    # The define gives the test its expectation; a filter that selects no
+    # test fails.
+    args = [
+        "--gtest_fail_if_no_test_selected",
+        "--gtest_filter=TensorRtGraphBuilderTest.CudaGemmReadsThePrefillPositions",
+    ],
+    env = {
+        "LITERT_NVIDIA_GEMM_INT8_REAL_ROWS": "0",
+        "LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS": "bf16",
+        "LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS": "0",
+    },
+    local_defines = ["LITERT_NVIDIA_TEST_REAL_ROWS_OFF"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":tensorrt_graph_builder",
+        ":weight_holder_calibration",
+        ":weight_store_builder",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/compiler/cc:litert_model",
+        "//litert/core/model",
+        "//litert/vendors/nvidia:cache_layout",
+        "//litert/vendors/nvidia:tensorrt_logger",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
+    ],
+)
+
+cc_test(
     name = "compiler_plugin_test",
     srcs = ["compiler_plugin_test.cc"],
     env = {

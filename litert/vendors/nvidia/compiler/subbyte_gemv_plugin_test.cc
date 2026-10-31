@@ -738,5 +738,17 @@ TEST(SubbyteGemvPluginTest, RejectsInvalidGatesAndGemmShapes) {
   EXPECT_EQ(create(4, 128, 256, /*gate=*/1, /*gemm=*/false), nullptr);
 }
 
+TEST(SubbyteGemvPluginTest, RowPositionsAreTheGemms) {
+  const auto create = [](bool gemm, bool row_positions) {
+    return std::unique_ptr<nvinfer1::IPluginV3>(CreateSubbyteGemvPlugin(
+        /*bit_width=*/4, /*rows=*/128, /*columns=*/256, /*gate=*/0, gemm,
+        /*weight_offset=*/0, /*holder_granule=*/0, /*scale_block=*/0,
+        /*scale_offset=*/-1, /*norm_eps=*/-1.0f, /*norm_multiplier=*/1.0f,
+        row_positions));
+  };
+  EXPECT_NE(create(/*gemm=*/true, /*row_positions=*/true), nullptr);
+  EXPECT_EQ(create(/*gemm=*/false, /*row_positions=*/true), nullptr);
+}
+
 }  // namespace
 }  // namespace litert::nvidia

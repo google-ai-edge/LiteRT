@@ -130,6 +130,27 @@ cc_test(
 )
 
 cc_test(
+    name = "int2_gemv_test",
+    srcs = ["int2_gemv_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
     name = "gemma4_head_kernels_test",
     srcs = ["gemma4_head_kernels_test.cc"],
     tags = [
