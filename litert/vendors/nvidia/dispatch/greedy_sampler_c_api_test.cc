@@ -18,15 +18,20 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <vector>
 
 #include "cuda_fp16.h"
 #include <gtest/gtest.h>
 #include "cuda_runtime_api.h"
+#include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/nvidia/cache_layout.h"
 
@@ -337,6 +342,66 @@ TEST_F(GreedySamplerCApiTest,
   // A rejected request must not poison the sampler's next valid call.
   ASSERT_EQ(Sample(1, 4, &id), kLiteRtStatusOk);
   EXPECT_EQ(id, 1);
+}
+
+// A constraint's mask reaches CUDA logits through a host lock, and the
+// dispatch uploads such a write only when an invocation next reads the
+// buffer: the sampler has to upload it itself before its kernel reads (the
+// fused argmax of an invocation is stale after such a write too).
+TEST_F(GreedySamplerCApiTest, SeesHostWritesMadeThroughTheBufferHandlers) {
+  LiteRtInterface raw_handlers = nullptr;
+  ASSERT_EQ(
+      LiteRtDispatchQueryInterface(
+          kLiteRtInterfaceCustomTensorBufferHandlers,
+          {LITERT_DISPATCH_ABI_VERSION_MAJOR, LITERT_DISPATCH_ABI_VERSION_MINOR,
+           LITERT_DISPATCH_ABI_VERSION_PATCH},
+          &raw_handlers),
+      kLiteRtStatusOk);
+  const auto* handlers =
+      static_cast<const LiteRtCustomTensorBufferHandlersDef_V1*>(raw_handlers);
+  ASSERT_NE(handlers, nullptr);
+  // The default; set so that an environment uploading at unlock still tests
+  // the deferred upload.
+  ASSERT_EQ(setenv("LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD", "1", 1), 0);
+  constexpr int kVocab = 4096;
+  const size_t bytes = kVocab * sizeof(float);
+  LiteRtRankedTensorType type{};
+  type.element_type = kLiteRtElementTypeFloat32;
+  type.layout = LiteRtLayout{3, false, {1, 1, kVocab}, {}};
+  HwMemoryInfoPtr info = nullptr;
+  ASSERT_EQ(
+      handlers->create_func(nullptr, nullptr, &type,
+                            kNvidiaCudaTensorBufferType, bytes, bytes, &info),
+      kLiteRtStatusOk);
+  ASSERT_NE(info, nullptr);
+  ASSERT_EQ(handlers->clear_func(info), kLiteRtStatusOk);
+  logits_ = {};
+  logits_.tensor_type = type;
+  logits_.allocation = info->memory_handle;
+  logits_.allocation_size = bytes;
+  logits_.packed_size = bytes;
+  const auto write_favorite = [&](int favorite) {
+    void* host = nullptr;
+    ASSERT_EQ(
+        handlers->lock_func(info, kLiteRtTensorBufferLockModeWrite, &host),
+        kLiteRtStatusOk);
+    std::vector<float> values(kVocab, 0.0f);
+    values[favorite] = 5.0f;
+    std::memcpy(host, values.data(), bytes);
+    ASSERT_EQ(handlers->unlock_func(info), kLiteRtStatusOk);
+  };
+  int32_t id = -1;
+  write_favorite(300);
+  ASSERT_FALSE(HasFatalFailure());
+  ASSERT_EQ(Sample(1, kVocab, &id), kLiteRtStatusOk);
+  EXPECT_EQ(id, 300);
+  write_favorite(7);
+  ASSERT_FALSE(HasFatalFailure());
+  ASSERT_EQ(Sample(1, kVocab, &id), kLiteRtStatusOk);
+  EXPECT_EQ(id, 7);
+  // The handlers own the allocation; the fixture must not free it.
+  logits_.allocation = nullptr;
+  ASSERT_EQ(handlers->destroy_func(info), kLiteRtStatusOk);
 }
 
 TEST_F(GreedySamplerCApiTest, RejectsInvalidArgumentsWithoutWritingIds) {

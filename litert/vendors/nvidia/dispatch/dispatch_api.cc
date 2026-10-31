@@ -976,6 +976,14 @@ LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
   LiteRtStatus status = EnsureNvidiaGreedySamplerResources(
       context, attributes.device, count, rows);
   if (status == kLiteRtStatusOk) {
+    // What the host wrote to the logits since the device last had them (a
+    // constraint's mask, applied through a host lock) reaches the device in
+    // stream order before the kernel reads them, as it would before an
+    // invocation read them.
+    status = CudaTensorBufferRegistry::Get().Upload(handle, context->stream,
+                                                    nullptr);
+  }
+  if (status == kLiteRtStatusOk) {
     // Every row in one launch pair; only the small ID array is copied back.
     const cudaError_t launch_status =
         fp16 ? LiteRtNvidiaLaunchF16ArgMaxRows(
