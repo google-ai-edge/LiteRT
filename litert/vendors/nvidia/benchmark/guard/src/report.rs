@@ -194,6 +194,63 @@ pub struct Prediction {
     pub ratio: Option<f64>,
 }
 
+/// A model's conversation probe (conversations.rs): whether a later
+/// conversation parts from the first in the candidate, and in the baseline.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationCheck {
+    pub model: String,
+    pub prompt: String,
+    pub conversations: usize,
+    /// The candidate's first parting conversation (from 1) and character.
+    pub cand_parting: Option<(usize, usize)>,
+    /// Whether the baseline ran the probe, and where it parted.
+    pub base_ran: bool,
+    pub base_parting: Option<(usize, usize)>,
+    pub verdict: Verdict,
+    pub reason: String,
+}
+
+/// The candidate's conversation probes: a later conversation that parts from
+/// the first FAILs, unless the baseline's parted too (a dependence the
+/// baseline already had: WARN); a run that did not give every conversation
+/// FAILs.
+pub fn check_conversations(base: &Capture, cand: &Capture) -> Vec<ConversationCheck> {
+    let mut out = Vec::new();
+    for c in &cand.conversations {
+        let b = base
+            .conversations
+            .iter()
+            .find(|b| b.model == c.model && b.prompt == c.prompt && b.mtp == c.mtp);
+        let cand_parting = c.parting();
+        let base_parting = b.and_then(|b| b.parting());
+        let (verdict, reason) = if c.exit_code != 0 || c.texts.len() < 2 {
+            (
+                Verdict::Fail,
+                format!("exit {}, {} conversations' texts captured", c.exit_code, c.texts.len()),
+            )
+        } else if let Some((i, at)) = cand_parting {
+            if base_parting.is_some() {
+                (Verdict::Warn, format!("conversation {i} parts from the first at character {at}, as the baseline's did: a dependence on an earlier conversation the baseline had already"))
+            } else {
+                (Verdict::Fail, format!("conversation {i} parts from the first at character {at}: the run depends on what an earlier conversation left behind"))
+            }
+        } else {
+            (Verdict::Pass, format!("{} conversations identical", c.texts.len()))
+        };
+        out.push(ConversationCheck {
+            model: c.model.clone(),
+            prompt: c.prompt.clone(),
+            conversations: c.texts.len(),
+            cand_parting,
+            base_ran: b.is_some(),
+            base_parting,
+            verdict,
+            reason,
+        });
+    }
+    out
+}
+
 /// One prompt's MTP acceptance in both captures (greedy MTP numerics probes).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcceptanceProbe {
@@ -326,6 +383,8 @@ pub struct Comparison {
     pub workloads: Vec<WorkloadLegend>,
     #[serde(default)]
     pub acceptance: Vec<AcceptanceCheck>,
+    #[serde(default)]
+    pub conversations: Vec<ConversationCheck>,
     /// The extra environment of each capture (capture --env).
     #[serde(default)]
     pub base_env: Vec<(String, String)>,
@@ -395,6 +454,15 @@ fn not_compared(base: &Capture, cand: &Capture) -> Vec<String> {
     for c in &cand.texts {
         if text_run(&base.texts, &c.model, &c.kind, &c.variant).is_none() {
             out.push(format!("text {} {} {}: not in the baseline", c.model, c.kind, c.variant));
+        }
+    }
+    for b in &base.conversations {
+        if !cand
+            .conversations
+            .iter()
+            .any(|c| c.model == b.model && c.prompt == b.prompt && c.mtp == b.mtp)
+        {
+            out.push(format!("conversations {} {}: not in the candidate", b.model, b.prompt));
         }
     }
     for b in &base.autopsies {
@@ -550,6 +618,7 @@ pub fn compare(
     let texts = check_texts(base, cand);
     let autopsies = autopsy_diffs(base, cand);
     let acceptance = check_acceptance(base, cand, &config.acceptance);
+    let conversations = check_conversations(base, cand);
     let mut names: Vec<String> = config.perf.workloads.clone();
     names.extend(config.perf.predict.iter().cloned());
     names.push(config.probes.autopsy.workload.clone());
@@ -584,6 +653,7 @@ pub fn compare(
         .chain(perf.iter().map(|p| p.verdict))
         .chain(texts.iter().map(|t| t.verdict))
         .chain(acceptance.iter().map(|a| a.verdict))
+        .chain(conversations.iter().map(|c| c.verdict))
         .chain(reasons.iter().map(|_| Verdict::Warn))
         .max()
         .unwrap_or(Verdict::Pass);
@@ -601,6 +671,7 @@ pub fn compare(
         autopsies,
         workloads,
         acceptance,
+        conversations,
         base_env: base.manifest.env.clone(),
         cand_env: cand.manifest.env.clone(),
         base_clock_fit: base.manifest.clock_fit,
@@ -662,6 +733,29 @@ pub fn render_comparison(c: &Comparison) -> String {
         s.push_str(&format!("- WARN: {reason}\n"));
     }
     if !c.reasons.is_empty() {
+        s.push('\n');
+    }
+    if !c.conversations.is_empty() {
+        s.push_str("## Conversations (one prompt decoded greedily in several conversations of one process)\n\n");
+        s.push_str("| Model | Prompt | Conversations | Candidate parts | Baseline parts | Verdict |\n|---|---|---:|---|---|---|\n");
+        let parting = |p: Option<(usize, usize)>| {
+            p.map(|(i, at)| format!("conversation {i} at char {at}")).unwrap_or_else(|| "no".into())
+        };
+        for v in &c.conversations {
+            let base = if v.base_ran { parting(v.base_parting) } else { "not run".into() };
+            s.push_str(&format!(
+                "| {} | {} | {} | {} | {} | {} |\n",
+                v.model,
+                v.prompt,
+                v.conversations,
+                parting(v.cand_parting),
+                base,
+                v.verdict.label()
+            ));
+        }
+        for v in c.conversations.iter().filter(|v| v.verdict != Verdict::Pass) {
+            s.push_str(&format!("- {}: {}\n", v.model, v.reason));
+        }
         s.push('\n');
     }
     if !c.acceptance.is_empty() {
@@ -1494,6 +1588,53 @@ mod tests {
             capture.numerics.push(run);
         }
         capture
+    }
+
+    /// A capture whose conversation probes gave these texts, by model.
+    fn conversation_capture(name: &str, runs: &[(&str, i32, &[&str])]) -> Capture {
+        let mut capture = capture_of(name, Vec::new(), &[]);
+        for (model, exit_code, texts) in runs {
+            capture.conversations.push(crate::conversations::ConversationRun {
+                model: model.to_string(),
+                prompt: "doc_8k".into(),
+                mtp: false,
+                build_id: "b".into(),
+                exit_code: *exit_code,
+                wall_s: 1.0,
+                texts: texts.iter().map(|t| t.to_string()).collect(),
+            });
+        }
+        capture
+    }
+
+    #[test]
+    fn a_conversation_that_parts_fails_unless_the_baseline_parted_too() {
+        // The INT8 GEMM's dependence on an earlier conversation (the 12B at 8k,
+        // LITERT_NVIDIA_GEMM_INT8_REAL_ROWS unset) against the fixed build.
+        let fixed = conversation_capture(
+            "fixed",
+            &[("12b", 0, &["same text", "same text"]), ("e4b", 0, &["a", "a"])],
+        );
+        let parting = conversation_capture(
+            "parting",
+            &[("12b", 0, &["same text", "same tex!"]), ("e4b", 0, &["a", "a"]), ("e2b", 1, &["x"])],
+        );
+        let checks = check_conversations(&fixed, &parting);
+        let verdict = |model: &str| checks.iter().find(|c| c.model == model).unwrap().verdict;
+        assert_eq!(verdict("12b"), Verdict::Fail);
+        assert_eq!(checks.iter().find(|c| c.model == "12b").unwrap().cand_parting, Some((2, 8)));
+        assert_eq!(verdict("e4b"), Verdict::Pass);
+        assert_eq!(verdict("e2b"), Verdict::Fail);
+        // Both part: a dependence the baseline already had.
+        let checks = check_conversations(&parting, &parting);
+        assert_eq!(checks.iter().find(|c| c.model == "12b").unwrap().verdict, Verdict::Warn);
+        // The fixed build against the parting one passes; the comparison carries the checks.
+        let checks = check_conversations(&parting, &fixed);
+        assert!(checks.iter().all(|c| c.verdict == Verdict::Pass));
+        let config = Config::load(None).unwrap();
+        let comparison = compare(&fixed, &parting, &config, &[]);
+        assert_eq!(comparison.verdict, Verdict::Fail);
+        assert!(render_comparison(&comparison).contains("## Conversations"));
     }
 
     #[test]

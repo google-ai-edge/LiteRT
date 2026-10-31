@@ -14,9 +14,10 @@ use serde_json::json;
 
 use crate::autopsy::{load_autopsy_dir, Autopsy};
 use crate::config::PromptSpec;
+use crate::conversations::ConversationRun;
 use crate::env::BenchEnv;
 use crate::numerics::{loopiness, NumericsRun, StepLogits};
-use crate::parse::{parse_cli_log, parse_logits_jsonl};
+use crate::parse::{captured_outputs, parse_cli_log, parse_logits_jsonl};
 use crate::perf::{summarize_run, PerfPoint};
 use crate::texts::{session_output, TextRun};
 
@@ -454,6 +455,113 @@ pub fn load_text_run(out_dir: &Path) -> Option<TextRun> {
 
 pub fn text_dir(capture_dir: &Path, model: &str, kind: &str, variant: &str) -> PathBuf {
     capture_dir.join("texts").join(model).join(format!("{kind}_{variant}"))
+}
+
+/// The conversation probe of one model (conversations.rs).
+pub struct ConversationProbe<'a> {
+    pub model: &'a str,
+    pub prompt: &'a PromptSpec,
+    pub prompt_path: &'a Path,
+    pub max_output_tokens: u32,
+    pub conversations: u32,
+    pub mtp: bool,
+    pub out_dir: &'a Path,
+}
+
+/// Runs the conversation probe: the CLI's benchmark mode, one iteration per
+/// conversation, greedy, without the dumps (which change the decode path).
+pub fn run_conversation_probe(
+    env: &BenchEnv,
+    probe: &ConversationProbe,
+) -> Result<ConversationRun> {
+    if !env.built() {
+        bail!("no built CLI under {} (run build.sh)", env.runtime_libs.display());
+    }
+    if !probe.prompt_path.is_file() {
+        bail!("prompt file missing: {}", probe.prompt_path.display());
+    }
+    if env.gpu_busy()? {
+        bail!("another GPU compute process is running");
+    }
+    std::fs::create_dir_all(probe.out_dir)?;
+    let model_file = env.model_file(probe.model)?;
+    let pool = env.pool(probe.model);
+    let mut envs = env.runtime_env(&pool, &model_file)?;
+    envs.retain(|(k, _)| {
+        k != "LITERT_NVIDIA_DISPATCH_DUMP_IO"
+            && k != "LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS"
+            && k != "LITERT_NVIDIA_MEMORY_PROFILE"
+    });
+    envs.push(("LITERT_NVIDIA_MEMORY_PROFILE".into(), "0".into()));
+    let mut args: Vec<String> = vec![
+        format!("--model_path={}", model_file.display()),
+        "--backend=npu".into(),
+        "--prefill_batch_sizes=1024".into(),
+        format!("--max_num_tokens={}", probe.prompt.context),
+        format!("--cache_dir={}", pool.join("compiler").display()),
+        format!("--litert_dispatch_lib_dir={}", env.runtime_libs.display()),
+        "--min_log_severity=0".into(),
+    ];
+    if let Some(selected) = selected_signatures(probe.model, probe.mtp) {
+        args.push(selected.into());
+    }
+    args.extend([
+        format!("--enable_speculative_decoding={}", probe.mtp),
+        "--benchmark=true".into(),
+        "--benchmark_prefill_tokens=0".into(),
+        "--benchmark_decode_tokens=0".into(),
+        format!("--num_iterations={}", probe.conversations),
+        format!("--max_output_tokens={}", probe.max_output_tokens),
+        format!("--input_prompt_file={}", probe.prompt_path.display()),
+        "--sampler_top_k=1".into(),
+        "--sampler_top_p=0".into(),
+        "--sampler_temperature=1".into(),
+    ]);
+    let stdout = File::create(probe.out_dir.join("stdout.txt"))?;
+    let stderr = File::create(probe.out_dir.join("cli.log"))?;
+    let start = Instant::now();
+    let status = Command::new(env.cli())
+        .args(&args)
+        .current_dir(&env.lm)
+        .env_clear()
+        .envs(envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+        .stdin(Stdio::null())
+        .stdout(stdout)
+        .stderr(stderr)
+        .status()
+        .with_context(|| format!("running {}", env.cli().display()))?;
+    let wall_s = start.elapsed().as_secs_f64();
+    let exit_code = status.code().unwrap_or(-1);
+    let log_text = std::fs::read_to_string(probe.out_dir.join("cli.log")).unwrap_or_default();
+    let run = ConversationRun {
+        model: probe.model.to_string(),
+        prompt: probe.prompt.name.clone(),
+        mtp: probe.mtp,
+        build_id: env.build_id.clone(),
+        exit_code,
+        wall_s,
+        texts: captured_outputs(&log_text),
+    };
+    let meta = json!({
+        "command": std::iter::once(env.cli().display().to_string()).chain(args.iter().cloned()).collect::<Vec<_>>(),
+        "environment": envs.iter().filter(|(k, _)| k.starts_with("LITERT_NVIDIA_")).cloned().collect::<std::collections::BTreeMap<_, _>>(),
+        "build_id": env.build_id,
+        "pool": pool.display().to_string(),
+        "exit_code": exit_code,
+        "wall_s": wall_s,
+    });
+    std::fs::write(probe.out_dir.join("meta.json"), serde_json::to_string_pretty(&meta)?)?;
+    std::fs::write(probe.out_dir.join("summary.json"), serde_json::to_string_pretty(&run)?)?;
+    Ok(run)
+}
+
+pub fn load_conversation_run(out_dir: &Path) -> Option<ConversationRun> {
+    let text = std::fs::read_to_string(out_dir.join("summary.json")).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+pub fn conversation_dir(capture_dir: &Path, model: &str) -> PathBuf {
+    capture_dir.join("conversations").join(model)
 }
 
 /// The per-kernel autopsy of a workload: bench.sh in the dispatch's own-graph

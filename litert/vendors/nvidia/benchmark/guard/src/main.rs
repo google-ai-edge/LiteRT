@@ -8,6 +8,7 @@
 mod autopsy;
 mod capture;
 mod config;
+mod conversations;
 mod dumps;
 mod env;
 mod numerics;
@@ -65,6 +66,10 @@ struct ProbeArgs {
     /// MTP verifier sampling on the device and on the host).
     #[arg(long)]
     no_texts: bool,
+    /// Skip the conversation probe (one prompt decoded greedily in two
+    /// conversations of one process; their texts must agree).
+    #[arg(long)]
+    no_conversations: bool,
     /// Skip the per-kernel autopsy.
     #[arg(long)]
     no_autopsy: bool,
@@ -229,6 +234,7 @@ fn capture_options(probe: &ProbeArgs, env: &BenchEnv, config: &Config) -> Result
         numerics: !probe.no_numerics,
         perf: !probe.no_perf,
         texts: !probe.no_texts,
+        conversations: !probe.no_conversations,
         autopsy: !probe.no_autopsy,
         mtp: probe.mtp,
         allow_unfit_clock: probe.allow_unfit_clock,

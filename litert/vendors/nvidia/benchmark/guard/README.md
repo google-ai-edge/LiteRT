@@ -81,6 +81,20 @@ record's full curve to say what the candidate would measure there. `predict
 NAME --record FILE` also reports the predictor's own error on the record
 (fitted on the record's measured workloads, predicting its other contexts).
 
+**Conversations.** One numerics prompt (`doc_8k`, 256 tokens) decoded
+greedily in two conversations of one process, the CLI's benchmark
+iterations, without the dumps; every conversation's text must be the first
+one's. A later conversation that parts depends on what an earlier one left
+behind (a cache's stale rows, a workspace, a buffer read before it is
+written), which no probe of one conversation sees: `check` fails it, or
+warns when the baseline's parted too (a dependence the baseline had
+already). Known failing case: the INT8 GEMM chose its outlier dims over a
+prefill chunk's padding rows, whose attention averages the cache, a
+previous conversation's included; on 413f8dfda the 12B's second text parted
+at character 158 and the E4B's at 736, and with
+`LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=1` (962697400) every conversation agrees.
+About 15 to 25 seconds per model; `--no-conversations` skips it.
+
 **MTP acceptance.** With `--mtp` each numerics prompt also decodes greedily
 with the drafter, and the run keeps its accepted and drafted tokens. `check`
 and `compare` pool them per model (accepted over drafted, across the
@@ -174,10 +188,12 @@ first use); a numerics probe of a model runs before its performance probes.
   dispatch turns the feed off under the dumps, so the plain decode path
   the feed serves (the default) is not in the numerics; the text probes run
   MTP, where the feed is inert.
-- Across conversations: every probe decodes one conversation in a fresh
-  process; a second conversation of one process can part from the first
-  (greedy, at 8k on the E4B and the 12B, 2026-10-29), which the benchmark's
-  measured conversations are.
+- Across conversations, beyond the conversation probe: it decodes one
+  prompt, greedily, in two conversations, plain decoding only, and compares
+  texts, not logits; a dependence that parts the text after 256 tokens,
+  needs a third conversation, or shows only in sampled or MTP decoding is
+  not seen. The other probes each decode one conversation in a fresh
+  process, while the benchmark measures later ones.
 
 ## What the gates showed (2026-10-27, E2B)
 

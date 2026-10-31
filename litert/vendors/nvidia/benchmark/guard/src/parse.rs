@@ -203,6 +203,33 @@ pub fn parse_cli_log(text: &str) -> CliLog {
     log
 }
 
+/// Every model output the CLI captured, in order (one per conversation of a
+/// benchmark run): an output runs from its "Captured model output:" record to
+/// the next log record, and may span lines.
+pub fn captured_outputs(text: &str) -> Vec<String> {
+    static RECORD: OnceLock<Regex> = OnceLock::new();
+    let record = re(&RECORD, r"^([IWEF]\d{4} |INFO: \[|WARNING: \[|ERROR: \[|VERBOSE: )");
+    const MARK: &str = "Captured model output: ";
+    let mut out = Vec::new();
+    let mut lines = text.lines().peekable();
+    while let Some(line) = lines.next() {
+        let Some(at) = line.find(MARK) else { continue };
+        if !record.is_match(line) {
+            continue;
+        }
+        let mut parts = vec![&line[at + MARK.len()..]];
+        while let Some(next) = lines.peek() {
+            if record.is_match(next) {
+                break;
+            }
+            parts.push(next);
+            lines.next();
+        }
+        out.push(parts.join("\n"));
+    }
+    out
+}
+
 /// Mean over the measured iterations (after the warm-ups, or the last one when
 /// a run has no more iterations than warm-ups), the rule of report.py.
 pub fn measured<'a>(iterations: &'a [Iteration], warmups: usize) -> &'a [Iteration] {
@@ -266,6 +293,24 @@ pub fn parse_time(text: &str) -> (Option<f64>, Option<f64>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn captured_outputs_are_every_conversations_whole_text() {
+        let log = "I1029 17:22:48.1 litert_lm_lib.cc:181] Captured model output: First line
+second line
+
+I1029 17:22:48.2 litert_lm_lib.cc:431] BenchmarkInfo:
+  Prefill Turn 1: Processed 10 tokens
+I1029 17:22:49.0 litert_lm_lib.cc:181] Captured model output: Other
+W1029 17:22:49.1 x.cc:1] done
+not a record: Captured model output: ignored
+";
+        assert_eq!(
+            captured_outputs(log),
+            vec!["First line\nsecond line\n".to_string(), "Other".to_string()]
+        );
+        assert!(captured_outputs("nothing").is_empty());
+    }
 
     #[test]
     fn device_sampler_lines_count_the_greedy_and_the_candidate_paths() {

@@ -9,13 +9,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::autopsy::Autopsy;
 use crate::config::{workload_prompt, Config};
+use crate::conversations::ConversationRun;
 use crate::env::BenchEnv;
 use crate::numerics::NumericsRun;
 use crate::perf::PerfPoint;
 use crate::runner::{
-    autopsy_dir, load_autopsy, load_numerics_run, load_text_run, numerics_dir, perf_label,
-    perf_run_complete, rescan_numerics_run, run_autopsy_probe, run_numerics_probe, run_perf_probe,
-    run_text_probe, text_dir, AutopsyProbe, NumericsProbe, PerfProbe, TextProbe,
+    autopsy_dir, conversation_dir, load_autopsy, load_conversation_run, load_numerics_run,
+    load_text_run, numerics_dir, perf_label, perf_run_complete, rescan_numerics_run,
+    run_autopsy_probe, run_conversation_probe, run_numerics_probe, run_perf_probe, run_text_probe,
+    text_dir, AutopsyProbe, ConversationProbe, NumericsProbe, PerfProbe, TextProbe,
 };
 use crate::texts::TextRun;
 
@@ -69,6 +71,9 @@ pub struct Capture {
     /// The per-kernel autopsies, one per model.
     #[serde(default)]
     pub autopsies: Vec<Autopsy>,
+    /// The conversation probes, one per model.
+    #[serde(default)]
+    pub conversations: Vec<ConversationRun>,
     #[serde(skip)]
     pub dir: PathBuf,
 }
@@ -80,6 +85,7 @@ pub struct CaptureOptions {
     pub numerics: bool,
     pub perf: bool,
     pub texts: bool,
+    pub conversations: bool,
     pub autopsy: bool,
     pub mtp: bool,
     /// Run the timed probes (performance, autopsy) on a clock clock_check.py
@@ -227,6 +233,7 @@ pub fn run_capture(
             perf: Vec::new(),
             texts: Vec::new(),
             autopsies: Vec::new(),
+            conversations: Vec::new(),
             dir: dir.clone(),
         },
     };
@@ -411,6 +418,47 @@ pub fn run_capture(
                     save(&capture)?;
                 }
             }
+        }
+        if opts.conversations {
+            let spec = &config.probes.conversations;
+            let prompt = config.prompt(&spec.prompt)?;
+            let prompt_path = config.prompt_path(guard_dir, prompt);
+            let out_dir = conversation_dir(&dir, model);
+            let run = match load_conversation_run(&out_dir)
+                .filter(|r| r.exit_code == 0 && r.build_id == env.build_id)
+            {
+                Some(run) => {
+                    eprintln!("conversations {model}: kept");
+                    run
+                }
+                None => {
+                    eprintln!(
+                        "conversations {model}: running ({} conversations of {})",
+                        spec.conversations, spec.prompt
+                    );
+                    let run = run_conversation_probe(
+                        env,
+                        &ConversationProbe {
+                            model,
+                            prompt,
+                            prompt_path: &prompt_path,
+                            max_output_tokens: spec.max_output_tokens,
+                            conversations: spec.conversations,
+                            mtp: spec.mtp,
+                            out_dir: &out_dir,
+                        },
+                    )?;
+                    match run.parting() {
+                        Some((i, at)) => eprintln!("  exit {} in {:.0} s: conversation {i} PARTS from the first at char {at}", run.exit_code, run.wall_s),
+                        None => eprintln!("  exit {} in {:.0} s: {} conversations identical", run.exit_code, run.wall_s, run.texts.len()),
+                    }
+                    run
+                }
+            };
+            capture.conversations.retain(|r| r.model != run.model);
+            capture.conversations.push(run);
+            capture.manifest.updated = now();
+            save(&capture)?;
         }
         if opts.autopsy && timed_ok {
             let out_dir = autopsy_dir(&dir, model);

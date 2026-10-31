@@ -136,3 +136,14 @@ seed = 1
 [probes.autopsy]
 workload = "short"
 mtp = false
+
+# The conversation probe: a numerics prompt (its context) decoded greedily in
+# several conversations of one process; every text must be the first one's.
+# A long prompt, so that a prefill chunk carries padding rows; 256 tokens,
+# enough for the INT8 GEMM's dependence on an earlier conversation to part the
+# E4B's text (at about 150 tokens) and the 12B's (about 35).
+[probes.conversations]
+prompt = "doc_8k"
+max_output_tokens = 256
+conversations = 2
+mtp = false

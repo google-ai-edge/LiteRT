@@ -58,6 +58,8 @@ pub struct ProbesConfig {
     pub constraint: ConstraintProbeConfig,
     #[serde(default)]
     pub autopsy: AutopsyProbeConfig,
+    #[serde(default)]
+    pub conversations: ConversationsProbeConfig,
 }
 
 /// A sampled decode (top-k / top-p, a fixed seed) of a numerics prompt, run
@@ -131,6 +133,23 @@ pub struct AutopsyProbeConfig {
 impl Default for AutopsyProbeConfig {
     fn default() -> Self {
         Self { workload: "short".into(), mtp: false }
+    }
+}
+
+/// The conversation probe: a numerics prompt decoded greedily in
+/// `conversations` conversations of one process (the CLI's benchmark
+/// iterations), whose texts must all be the first one's.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationsProbeConfig {
+    pub prompt: String,
+    pub max_output_tokens: u32,
+    pub conversations: u32,
+    pub mtp: bool,
+}
+
+impl Default for ConversationsProbeConfig {
+    fn default() -> Self {
+        Self { prompt: "doc_8k".into(), max_output_tokens: 256, conversations: 2, mtp: false }
     }
 }
 
@@ -393,6 +412,10 @@ impl Config {
         }
         workload(&config.probes.autopsy.workload)?;
         config.prompt(&config.probes.sampled.prompt)?;
+        config.prompt(&config.probes.conversations.prompt)?;
+        if config.probes.conversations.conversations < 2 {
+            anyhow::bail!("the conversation probe needs at least 2 conversations");
+        }
         regex::Regex::new(&format!("^(?:{})$", config.probes.constraint.regex))
             .context("the constraint probe's regex")?;
         Ok(config)
