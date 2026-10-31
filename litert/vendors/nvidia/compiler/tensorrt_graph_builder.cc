@@ -3542,9 +3542,19 @@ class TensorRtGraphBuilder {
     float multiplier = 1.0f;
   };
 
-  // rms_norm(x, w) -> mul(c1) -> ... -> `tensor` with constant scalars c_i:
-  // the fusion the projection reading `tensor` can take, if its weights are
-  // blockwise (the fused kernels) and x has `columns` dims.
+  // A cast between float types, whose input the fusion reads instead.
+  static bool IsFloatCast(const Op& op) {
+    return op.Code() == kLiteRtOpCodeTflCast && op.Inputs().size() == 1 &&
+           op.Outputs().size() == 1 &&
+           IsFloatLike(op.Inputs()[0].ElementType()) &&
+           IsFloatLike(op.Outputs()[0].ElementType());
+  }
+
+  // rms_norm(x, w) -> mul(c1) -> ... -> `tensor` with constant scalars c_i
+  // and casts between float types: the fusion the projection reading
+  // `tensor` can take, if its weights are INT4 (the fused kernels) and x has
+  // `columns` dims. The Gemma 4 12B and E4B wrap their norms in casts
+  // (float16 to float32 and back); the kernel reads the norm's input.
   Expected<std::optional<NormFusion>> FindNormFusion(const Tensor& tensor,
                                                      int32_t columns) {
     if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_FUSE_NORM_GEMV",
@@ -3553,9 +3563,13 @@ class TensorRtGraphBuilder {
     }
     float multiplier = 1.0f;
     Tensor value = tensor;
-    for (int hops = 0; hops < 4; ++hops) {
+    for (int hops = 0; hops < 6; ++hops) {
       auto producer = value.GetDefiningOp();
       if (!producer) return std::optional<NormFusion>();
+      if (IsFloatCast(*producer)) {
+        value = producer->Inputs()[0];
+        continue;
+      }
       if (producer->Code() == kLiteRtOpCodeTflMul &&
           producer->Inputs().size() == 2 && HasNoFusedActivation(*producer)) {
         std::optional<float> scalar;
@@ -3599,8 +3613,16 @@ class TensorRtGraphBuilder {
           !options.attributes_map.value()["epsilon"].IsNull()) {
         eps = options.attributes_map.value()["epsilon"].AsFloat();
       }
+      // The norm's input, before the casts that feed it (the kernel reads the
+      // mode's float type either way).
+      Tensor source = x;
+      for (int casts = 0; casts < 2; ++casts) {
+        auto cast = source.GetDefiningOp();
+        if (!cast || !IsFloatCast(*cast)) break;
+        source = cast->Inputs()[0];
+      }
       NormFusion fusion;
-      LITERT_ASSIGN_OR_RETURN(fusion.input, GetTensor(x));
+      LITERT_ASSIGN_OR_RETURN(fusion.input, GetTensor(source));
       LITERT_ASSIGN_OR_RETURN(fusion.input,
                               AddCastTensor(fusion.input, ModeFloatType()));
       // The norm output keeps its own TensorRT lowering for other readers;
@@ -3723,9 +3745,9 @@ class TensorRtGraphBuilder {
     // The blockwise GEMV has a gate mode; the per-channel one needs the GEMM.
     const bool gemm =
         !BatchedGemvTakes(activation_rows) || (gate != 0 && !blockwise);
-    if (norm != nullptr && !blockwise) {
+    if (norm != nullptr && info.bit_width != 4) {
       return Error(kLiteRtStatusErrorUnsupported,
-                   "A fused norm needs blockwise weights");
+                   "A fused norm needs INT4 weights");
     }
     size_t packed_bytes = 0;
     for (const auto& member : members) {
@@ -7631,10 +7653,11 @@ class TensorRtGraphBuilder {
     // The few rows of a verify step run on the batched GEMV like decode.
     const bool cuda_batched_gemv =
         !static_m_is_one && rows > 1 && BatchedGemvTakes(rows);
-    // Blockwise projections read their RMS norm's input and apply the norm
-    // in the kernel (FindNormFusion).
+    // INT4 projections read their RMS norm's input and apply the norm in
+    // the kernel (FindNormFusion).
     std::optional<NormFusion> norm;
-    if (blockwise && Fp16ActivationsEnabled() &&
+    if (op.Inputs()[1].ElementType() == litert::ElementType::Int4 &&
+        Fp16ActivationsEnabled() &&
         predequant_mode == PredequantMode::kCudaGemv) {
       const auto in_dims = input->getDimensions();
       LITERT_ASSIGN_OR_RETURN(
@@ -7668,8 +7691,16 @@ class TensorRtGraphBuilder {
            (cuda_gemm &&
             (GetCudaGemmMode() == CudaGemmMode::kAll || blockwise)))) ||
          (byte_weights && (static_m_is_one || cuda_batched_gemv)))) {
-      LITERT_ASSIGN_OR_RETURN(input, AddCastTensor(gemv_input, compute_type));
-      auto fused = AddCudaSubbyteGemvGroup(op, input, compute_type, norm_ptr);
+      LITERT_ASSIGN_OR_RETURN(input, AddCastTensor(input, compute_type));
+      // The fused norm's kernel reads the norm's input; a product the CUDA
+      // path declines falls back to TensorRT's lowering over the normed one.
+      nvinfer1::ITensor* gemv_activation = input;
+      if (norm.has_value()) {
+        LITERT_ASSIGN_OR_RETURN(gemv_activation,
+                                AddCastTensor(gemv_input, compute_type));
+      }
+      auto fused =
+          AddCudaSubbyteGemvGroup(op, gemv_activation, compute_type, norm_ptr);
       if (fused.HasValue()) {
         return FinishFullyConnected(op, *fused, compute_type);
       }

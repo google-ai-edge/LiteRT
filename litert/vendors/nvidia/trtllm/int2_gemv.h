@@ -48,4 +48,14 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRows(
     void* output, int bit_width, int rows, int input_size, int output_size,
     cudaStream_t stream);
 
+// The same with an RMS norm of each activation row fused in: row x becomes
+// x * rsqrt(mean(x^2) + norm_eps) * norm_scale[k] * norm_multiplier
+// (norm_scale an FP32 vector of input_size values; null is the plain
+// product). INT4 weights only.
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRowsNormed(
+    const void* activation, const uint8_t* packed_weights, const void* scales,
+    const float* norm_scale, float norm_eps, float norm_multiplier,
+    void* output, int bit_width, int rows, int input_size, int output_size,
+    cudaStream_t stream);
+
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_INT2_GEMV_H_

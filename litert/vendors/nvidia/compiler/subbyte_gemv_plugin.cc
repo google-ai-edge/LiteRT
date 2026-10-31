@@ -270,6 +270,11 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
             inputs[0], weights, scales, norm_scale, norm_eps_, norm_multiplier_,
             outputs[0], static_cast<int>(rows), columns_, OutputChannels(),
             gate_, stream);
+      } else if (norm_scale != nullptr) {
+        status = LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRowsNormed(
+            inputs[0], weights, scales, norm_scale, norm_eps_, norm_multiplier_,
+            outputs[0], bit_width_, static_cast<int>(rows), columns_, rows_,
+            stream);
       } else {
         status = LiteRtNvidiaLaunchBf16SubbytePerChannelGemvRows(
             inputs[0], weights, scales, outputs[0], bit_width_,
@@ -548,9 +553,10 @@ nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(
   if (bit_width == 8 && (gemm || gate != 0 || scale_block != 0)) {
     return nullptr;
   }
-  // A fused norm needs the blockwise kernels and a finite multiplier.
+  // A fused norm needs INT4 weights (the blockwise kernels, or the
+  // per-channel GEMV and GEMMs) and a finite multiplier.
   if (norm_eps >= 0.0f &&
-      (scale_block == 0 || !(norm_multiplier == norm_multiplier))) {
+      (bit_width != 4 || !(norm_multiplier == norm_multiplier))) {
     return nullptr;
   }
   // Blockwise scales: INT4 weights, whole blocks, and scales in the holder
