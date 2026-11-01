@@ -542,7 +542,8 @@ void RunBlockwiseQuantizationTest(::litert::ml_drift::SharedVulkanEnv* env,
                 BHWC(1, 1, 25, 8));
     }
   }
-  EXPECT_EQ(params_found, 2);
+  // Without a bias input, an all-zero zero point is left out (scale only).
+  EXPECT_EQ(params_found, use_invalid_zp ? 1 : 2);
 
   TfLiteIntArrayFree(tensors[0].dims);
   delete quant_params;

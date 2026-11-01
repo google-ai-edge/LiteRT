@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_MEMORY_MANAGER_GRAPH_ADAPTER_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_MEMORY_MANAGER_GRAPH_ADAPTER_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -82,6 +83,9 @@ class GraphAdapter {
 
   // Returns whether `op_id` has at least one input value.
   virtual bool OpHasInputs(uint32_t op_id) const = 0;
+
+  // Returns the number of input values of `op_id`.
+  virtual size_t GetOpInputCount(uint32_t op_id) const = 0;
 
   // Returns the shape of `op_id`'s first input value.
   // Precondition: OpHasInputs(op_id) is true.

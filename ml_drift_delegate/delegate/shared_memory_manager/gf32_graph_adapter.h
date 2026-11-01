@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_MEMORY_MANAGER_GF32_GRAPH_ADAPTER_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_MEMORY_MANAGER_GF32_GRAPH_ADAPTER_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -46,6 +47,7 @@ class GraphFloat32Adapter : public GraphAdapter {
   std::vector<uint32_t> FindConsumerOps(uint32_t value_id) const override;
   std::string GetOpTypeName(uint32_t op_id) const override;
   bool OpHasInputs(uint32_t op_id) const override;
+  size_t GetOpInputCount(uint32_t op_id) const override;
   BHWC GetOpFirstInputShape(uint32_t op_id) const override;
   DataType GetOpFirstInputType(uint32_t op_id) const override;
 

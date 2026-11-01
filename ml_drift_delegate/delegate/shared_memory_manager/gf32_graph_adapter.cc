@@ -108,6 +108,10 @@ bool GraphFloat32Adapter::OpHasInputs(uint32_t op_id) const {
   return !graph_.FindInputs(op_id).empty();
 }
 
+size_t GraphFloat32Adapter::GetOpInputCount(uint32_t op_id) const {
+  return graph_.FindInputs(op_id).size();
+}
+
 BHWC GraphFloat32Adapter::GetOpFirstInputShape(uint32_t op_id) const {
   return graph_.FindInputs(op_id)[0]->tensor.shape;
 }
