@@ -40,3 +40,26 @@ Install CMake 4.0.1 from: https://github.com/kitware/cmake/releases
 
 Artifacts such as static libraries will be emitted under
 `litert_cc_sdk_build`.
+
+## Using with Coding Agents (Claude Code / Gemini CLI)
+
+`litert_cc_sdk` bundles an agent skill under
+`skills/litert-cc-sdk-prebuilt-onboarding/` that guides coding agents through
+CMake integration, dynamic linking against `libLiteRt.so`, offline Qualcomm NPU
+AOT compilation (`apply_plugin_main`), on-device JIT compilation, and GPU/NPU
+runtime library placement across Linux, Android, and Qualcomm IoT.
+
+- **Claude Code (auto-discovered project skill):** Symlink or copy the skill
+  folder into `.claude/skills/` in your project root:
+
+  ```bash
+  mkdir -p .claude/skills
+  ln -s "$PWD/litert_cc_sdk/skills/litert-cc-sdk-prebuilt-onboarding" .claude/skills/
+  ```
+
+- **Direct prompt reference:** Reference the skill directly in your prompt:
+
+  ```text
+  @litert_cc_sdk/skills/litert-cc-sdk-prebuilt-onboarding/SKILL.md
+  Build a C++ CompiledModel app using this prebuilt archive for Android CPU, GPU, and Qualcomm NPU.
+  ```
