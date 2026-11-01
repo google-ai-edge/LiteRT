@@ -1543,5 +1543,111 @@ TEST(ShapeInferenceTest, TransposeWithNegativePerm) {
       /*expected=*/{3, 2}, /*wrong=*/{2, 3});
 }
 
+TEST(ShapeInferenceTest, ReshapeWithoutShapeOperandOrOptionsIsScalar) {
+  // Neither a shape operand nor ReshapeOptions: TFLite reshapes to a scalar.
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflReshape);
+        auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {1, 1});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{}, /*wrong=*/{1});
+}
+
+TEST(ShapeInferenceTest, ReshapeWithLegacyZeroNewShapeOption) {
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflReshape);
+        auto reshape_opts = std::make_unique<tflite::ReshapeOptionsT>();
+        reshape_opts->new_shape = {0};
+        TflOptions opts;
+        opts.type = tflite::BuiltinOptions_ReshapeOptions;
+        opts.value = reshape_opts.release();
+        SetTflOptions(op, std::move(opts));
+        auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {1, 1});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{}, /*wrong=*/{1});
+
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflReshape);
+    auto reshape_opts = std::make_unique<tflite::ReshapeOptionsT>();
+    reshape_opts->new_shape = {0};
+    TflOptions opts;
+    opts.type = tflite::BuiltinOptions_ReshapeOptions;
+    opts.value = reshape_opts.release();
+    SetTflOptions(op, std::move(opts));
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {});
+    AttachInput(&input, op);
+    AttachOutput(&output, op);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
+}
+
+TEST(ShapeInferenceTest, ReshapeWithoutShapeOperandOrOptionsNeedsOneElement) {
+  // The declared output shape is not a fallback target: like TFLite, a
+  // multi-element input cannot be reshaped to the implicit scalar.
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflReshape);
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {6});
+    AttachInput(&input, op);
+    AttachOutput(&output, op);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
+}
+
+TEST(ShapeInferenceTest,
+     ReshapeDynamicShapeOperandTakesPrecedenceOverLegacyZeroNewShapeOption) {
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflReshape);
+    auto reshape_opts = std::make_unique<tflite::ReshapeOptionsT>();
+    reshape_opts->new_shape = {0};
+    TflOptions opts;
+    opts.type = tflite::BuiltinOptions_ReshapeOptions;
+    opts.value = reshape_opts.release();
+    SetTflOptions(op, std::move(opts));
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {1});
+    auto& shape_tensor = AddTensor(subgraph, kLiteRtElementTypeInt32, {1});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {1});
+    AttachInput(&input, op);
+    AttachInput(&shape_tensor, op);
+    AttachOutput(&output, op);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorShapeInferenceFailed);
+    EXPECT_EQ(TensorDims(output), Dims({1}));
+  }
+}
+
 }  // namespace
 }  // namespace litert::internal

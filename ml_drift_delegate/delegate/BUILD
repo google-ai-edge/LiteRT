@@ -695,10 +695,7 @@ cc_library(
 cc_library(
     name = "unowned_tensor_desc",
     hdrs = ["unowned_tensor_desc.h"],
-    visibility = [
-        "//ml_drift_delegate:__subpackages__",
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
-    ],
+    visibility = ["//ml_drift_delegate:__subpackages__"],
     deps = [
         "@com_google_absl//absl/types:span",
         "@ml_drift//ml_drift/common/task:tensor_desc",
@@ -1249,7 +1246,9 @@ objc_library(
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/cleanup",
 #         "@com_google_absl//absl/status",
+#         "@com_google_absl//absl/strings",
 #         "@com_google_absl//absl/types:span",
+#         "@flatbuffers",
 #         "@ml_drift//ml_drift/cl:environment",
 #         "@ml_drift//ml_drift/cl:opencl_wrapper",
 #         "@ml_drift//ml_drift/common:data_type",
@@ -1257,12 +1256,21 @@ objc_library(
 #         "//litert/c:litert_common",
 #         "//litert/c:litert_environment",
 #         "//litert/c/internal:litert_runtime_context_header",
+#         "//litert/cc:litert_buffer_ref",
+#         "//litert/cc:litert_common",
+#         "//litert/cc:litert_compiled_model",
+#         "//litert/cc:litert_environment",
+#         "//litert/cc:litert_options",
+#         "//litert/cc/options:litert_gpu_options",
 #         "//litert/runtime:external_litert_buffer_context",
 #         "//litert/runtime:tensor_identifier",
 #         "//litert/runtime:tfl_utils",
+#         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",
 #         "//tflite:framework",
+#         "//tflite:version",
 #         "//tflite/c:common",
 #         "//tflite/kernels:builtin_ops",
+#         "//tflite/schema:schema_fbs",
 #     ],
 # )
 # copybara:uncomment_end(google-only)
