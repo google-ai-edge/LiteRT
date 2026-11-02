@@ -68,6 +68,7 @@
 #include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_webgpu.h"
+#include "ml_drift_delegate/delegate/shared_webgpu_env.h"
 #include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "tflite/c/common.h"
 
@@ -421,6 +422,7 @@ GpuInferenceContextWebGpu::~GpuInferenceContextWebGpu() {
   if (next_command_buffers_thread_) {
     next_command_buffers_thread_->join();
   }
+  SharedWebGpuEnv::Get().ClearLastContextIfMatched(&backend_->wgpu_env(), this);
 }
 
 absl::StatusOr<::ml_drift::webgpu::SpatialTensor*>
@@ -517,8 +519,6 @@ absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffers(
   return absl::OkStatus();
 }
 
-GpuInferenceContextWebGpu* GpuInferenceContextWebGpu::last_ctx_ = nullptr;
-
 absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffersFromCached(
     std::vector<wgpu::CommandBuffer>& command_buffers) {
   if (next_command_buffers_.empty()) {
@@ -530,8 +530,10 @@ absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffersFromCached(
     next_command_buffers_thread_->join();
   }
 
-  if (last_ctx_ != this) {
-    last_ctx_ = this;
+  SharedWebGpuEnv& shared_env = SharedWebGpuEnv::Get();
+  const ::ml_drift::webgpu::ExecutionEnvironment* env = &backend_->wgpu_env();
+  if (shared_env.GetLastContext(env) != this) {
+    shared_env.SetLastContext(env, this);
     // The next_command_buffers_ must be invalidated since the last Dispatch()
     // call was done by a different context. next_command_buffers_ is valid only
     // when Dispatch() is called by the same context continuously.

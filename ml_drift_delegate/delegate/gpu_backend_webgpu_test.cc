@@ -34,6 +34,7 @@
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
 #include "ml_drift/webgpu/spatial_tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/gpu_backend.h"
+#include "ml_drift_delegate/delegate/shared_webgpu_env.h"
 
 namespace litert::ml_drift {
 namespace {
@@ -177,6 +178,111 @@ TEST_F(GpuBackendWebGpuTest,
     EXPECT_THAT(ctx_2->GetSpatialTensor(in_id_2), IsOkAndHolds(&in_tensor_2));
     ASSERT_THAT(ctx_2->Dispatch(), IsOk());
   }
+  // Destroy ctx_2 while it is the environment's last context and verify ctx_1
+  // can still bind and dispatch cleanly, i.e. the last context does not dangle.
+  ctx_2.reset();
+  EXPECT_EQ(SharedWebGpuEnv::Get().GetLastContext(&env), nullptr);
+  ASSERT_THAT(ctx_1->BindSpatialTensor(in_id_1, &in_tensor_1), IsOk());
+  ASSERT_THAT(ctx_1->BindSpatialTensor(out_id_1, &out_tensor_1), IsOk());
+  ASSERT_THAT(ctx_1->Dispatch(), IsOk());
+  ASSERT_THAT(backend_.WaitForCompletion(), IsOk());
+}
+
+TEST_F(GpuBackendWebGpuTest,
+       MultipleBackendsSharingExecutionEnvironmentShareLastContext) {
+  backend_.set_num_steps_of_command_buffer_preparations(2);
+  const auto& env = backend_.wgpu_env();
+
+  ::ml_drift::CreateGpuModelInfo main_create_info;
+  ::ml_drift::GpuModel main_gpu_model;
+  auto [main_in_id, main_out_id] =
+      BuildMultiNodeModel(main_create_info, main_gpu_model);
+  const ::ml_drift::TensorDescriptor main_in_desc =
+      main_gpu_model.tensors.at(main_in_id);
+  const ::ml_drift::TensorDescriptor main_out_desc =
+      main_gpu_model.tensors.at(main_out_id);
+
+  ::ml_drift::webgpu::SpatialTensor main_in_tensor;
+  ::ml_drift::webgpu::SpatialTensor main_out_tensor;
+  ASSERT_THAT(CreateTensor(env.device(), main_in_desc, &main_in_tensor),
+              IsOk());
+  ASSERT_THAT(CreateTensor(env.device(), main_out_desc, &main_out_tensor),
+              IsOk());
+
+  ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<GpuInferenceContext> main_ctx,
+      backend_.CreateInferenceContext(main_create_info, main_gpu_model,
+                                      /*serialized_model=*/nullptr,
+                                      /*may_share_memory_manager=*/true));
+
+  // Simulate an auxiliary runner (such as LiteRtLogitMaskRunner) that creates
+  // its own GpuBackendWebGpu on the same ExecutionEnvironment* with
+  // num_steps_of_command_buffer_preparations == 0 and dispatches in between
+  // main_ctx's dispatches, while main_ctx's background command-buffer
+  // preparation thread is in flight. The last context is tracked per
+  // environment, so a backend wrapping a different environment must not
+  // observe it.
+  GpuBackendWebGpu other_env_backend;
+  SharedWebGpuEnv& shared_env = SharedWebGpuEnv::Get();
+  for (int round = 0; round < 5; ++round) {
+    ASSERT_THAT(main_ctx->BindSpatialTensor(main_in_id, &main_in_tensor),
+                IsOk());
+    ASSERT_THAT(main_ctx->BindSpatialTensor(main_out_id, &main_out_tensor),
+                IsOk());
+    ASSERT_THAT(main_ctx->Dispatch(), IsOk());
+    EXPECT_EQ(shared_env.GetLastContext(&env), main_ctx.get());
+    EXPECT_EQ(shared_env.GetLastContext(&other_env_backend.wgpu_env()),
+              nullptr);
+
+    GpuBackendWebGpu aux_backend(&backend_.wgpu_env());
+    ::ml_drift::CreateGpuModelInfo aux_create_info;
+    ::ml_drift::GpuModel aux_gpu_model;
+    auto [aux_in_id, aux_out_id] =
+        BuildMultiNodeModel(aux_create_info, aux_gpu_model);
+    const ::ml_drift::TensorDescriptor aux_in_desc =
+        aux_gpu_model.tensors.at(aux_in_id);
+    const ::ml_drift::TensorDescriptor aux_out_desc =
+        aux_gpu_model.tensors.at(aux_out_id);
+
+    ::ml_drift::webgpu::SpatialTensor aux_in_tensor;
+    ::ml_drift::webgpu::SpatialTensor aux_out_tensor;
+    ASSERT_THAT(CreateTensor(env.device(), aux_in_desc, &aux_in_tensor),
+                IsOk());
+    ASSERT_THAT(CreateTensor(env.device(), aux_out_desc, &aux_out_tensor),
+                IsOk());
+
+    ASSERT_OK_AND_ASSIGN(
+        std::unique_ptr<GpuInferenceContext> aux_ctx,
+        aux_backend.CreateInferenceContext(aux_create_info, aux_gpu_model,
+                                           /*serialized_model=*/nullptr,
+                                           /*may_share_memory_manager=*/true));
+
+    for (int step = 0; step < 4; ++step) {
+      ASSERT_THAT(main_ctx->BindSpatialTensor(main_in_id, &main_in_tensor),
+                  IsOk());
+      ASSERT_THAT(main_ctx->BindSpatialTensor(main_out_id, &main_out_tensor),
+                  IsOk());
+      ASSERT_THAT(main_ctx->Dispatch(), IsOk());
+
+      ASSERT_THAT(aux_ctx->BindSpatialTensor(aux_in_id, &aux_in_tensor),
+                  IsOk());
+      ASSERT_THAT(aux_ctx->BindSpatialTensor(aux_out_id, &aux_out_tensor),
+                  IsOk());
+      ASSERT_THAT(aux_ctx->Dispatch(), IsOk());
+    }
+
+    // Dispatch main_ctx once more so its background thread is active when
+    // aux_backend releases tensors and is destroyed.
+    ASSERT_THAT(main_ctx->BindSpatialTensor(main_in_id, &main_in_tensor),
+                IsOk());
+    ASSERT_THAT(main_ctx->BindSpatialTensor(main_out_id, &main_out_tensor),
+                IsOk());
+    ASSERT_THAT(main_ctx->Dispatch(), IsOk());
+    ASSERT_THAT(aux_backend.ReleaseSpatialTensorMemory(&aux_in_tensor), IsOk());
+    ASSERT_THAT(aux_backend.ReleaseSpatialTensorMemory(&aux_out_tensor),
+                IsOk());
+  }
+
   ASSERT_THAT(backend_.WaitForCompletion(), IsOk());
 }
 
