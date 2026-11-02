@@ -23,8 +23,28 @@ import * as tf from '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-core/dist/public/chained_ops/register_all_chained_ops';
 // Placeholder for internal dependency on trusted resource url
 
+/**
+ * Waits until a WebGPU adapter is available. On Forge GPU machines, the
+ * browser's GPU process can take a few seconds to come up (or may restart),
+ * during which `navigator.gpu.requestAdapter()` returns null. LiteRT.js
+ * silently falls back to no WebGPU device in that case, so wait before loading.
+ */
+async function waitForWebGpuAdapter(maxAttempts = 10, delayMs = 2000) {
+  for (let attempt = 1; attempt <= maxAttempts; ++attempt) {
+    if (await navigator.gpu.requestAdapter()) {
+      return;
+    }
+    console.log(
+        `WebGPU adapter not available yet (attempt ${attempt} of ` +
+        `${maxAttempts}); retrying in ${delayMs}ms.`);
+    await new Promise((resolve) => void setTimeout(resolve, delayMs));
+  }
+  console.log('WebGPU adapter still unavailable; proceeding anyway.');
+}
+
 describe('TFJS Interop', () => {
   async function resetLiteRt() {
+    await waitForWebGpuAdapter();
     litert.unloadLiteRt();
     await litert.loadLiteRt('/wasm');
 
@@ -46,7 +66,7 @@ describe('TFJS Interop', () => {
   beforeAll(async () => {
     jasmine.DEFAULT_TIMEOUT_INTERVAL = 10000;
     await resetLiteRt();
-  });
+  }, 30000);  // Allow time for waitForWebGpuAdapter() on a cold GPU process.
 
   describe('tfjsToLitert', () => {
     it('throws when LiteRT and TFJS are using different WebGPU devices',
