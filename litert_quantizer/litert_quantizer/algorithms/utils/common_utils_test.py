@@ -497,11 +497,20 @@ class MinMaxQuantizeUtilsTest(parameterized.TestCase):
             op_name, op_quant_config, _DEFAULT_CONFIG_CHECK_POLICY
         )
 
-  def test_check_multi_axis_config_custom_op_succeeds(self):
+  @parameterized.product(
+      num_bits=[8, 4],
+      granularity=[
+          qtyping.QuantGranularity.CHANNELWISE,
+          qtyping.QuantGranularity.BLOCKWISE_32,
+      ],
+  )
+  def test_check_multi_axis_config_custom_op_succeeds(
+      self, num_bits, granularity
+  ):
     op_quant_config = _OpQuantConfig(
         weight_tensor_config=_TensorQuantConfig(
-            num_bits=8,
-            granularity=qtyping.QuantGranularity.CHANNELWISE,
+            num_bits=num_bits,
+            granularity=granularity,
             quantized_dimensions=(0, 1),
         ),
     )
@@ -521,7 +530,9 @@ class MinMaxQuantizeUtilsTest(parameterized.TestCase):
           op_name=_TFLOpName.CUSTOM_OP,
           symmetric=True,
           granularity=qtyping.QuantGranularity.TENSORWISE,
-          error_regex="can only be set when granularity is CHANNELWISE",
+          error_regex=(
+              "can only be set when granularity is CHANNELWISE or BLOCKWISE"
+          ),
       ),
       dict(
           testcase_name="unsupported_op",

@@ -611,7 +611,11 @@ class BaseQuantizeTest(parameterized.TestCase):
       # Test correctness of quantization parameters.
       if tensor_data is not None:
         expected_quantized_data = uniform_quantize_tensor.uniform_quantize(
-            tensor_data, quantization_params
+            tensor_data,
+            quantization_params,
+            is_blockwise_quant=uniform_quantize_tensor.is_blockwise(
+                tensor_quant_config.granularity
+            ),
         )
         self.assertSequenceEqual(
             np.ravel(expected_quantized_data).tolist(),

@@ -65,8 +65,24 @@ class MoeTest(op_test_utils.BaseQuantizeTest):
         buffers=self._op_test_info.test_model.buffers,
     )
 
-  @parameterized.parameters(8, 4)
-  def test_materialize_moe_succeeds(self, num_bits):
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="int8_channelwise",
+          num_bits=8,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+      ),
+      dict(
+          testcase_name="int4_channelwise",
+          num_bits=4,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+      ),
+      dict(
+          testcase_name="int4_blockwise_32",
+          num_bits=4,
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+      ),
+  )
+  def test_materialize_moe_succeeds(self, num_bits, granularity):
     subgraph0 = self._op_test_info.test_model.subgraphs[0]
     subgraph_op_id = 0
     moe_op = subgraph0.operators[subgraph_op_id]
@@ -79,7 +95,7 @@ class MoeTest(op_test_utils.BaseQuantizeTest):
             weight_tensor_config=_TensorQuantConfig(
                 num_bits=num_bits,
                 symmetric=True,
-                granularity=qtyping.QuantGranularity.CHANNELWISE,
+                granularity=granularity,
                 quantized_dimensions=[0, 1],
             ),
             compute_precision=_ComputePrecision.INTEGER,

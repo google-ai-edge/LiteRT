@@ -1346,11 +1346,17 @@ def init_tensor_min_max(
       )
       keep_dims = True
     elif uniform_quantize_tensor.is_blockwise(granularity):
+      quantized_dim = (
+          tensor_data.ndim - 1
+          if weight_tensor_config.quantized_dimensions is not None
+          else None
+      )
       tensor_data, reduce_dims = (
           uniform_quantize_tensor.reshape_data_for_blockwise(
               tensor_data,
               op_info.op_name,
               granularity,
+              quantized_dim=quantized_dim,
           )
       )
       keep_dims = False
