@@ -924,6 +924,10 @@ class Delegate {
   // dequantizing or unpacking static buffers.
   // One map per subgraph is stored.
   std::vector<std::unordered_map<int, Buffer>> static_unpacked_data_;
+  // FP32 copies of the static INT8 filters of dynamic-range DEPTHWISE_CONV_2D
+  // operators (FP32 input, INT8 filter), which are delegated as FP32
+  // depthwise convolutions. One map per subgraph is stored.
+  std::vector<std::unordered_map<int, Buffer>> dequantized_dwconv_filters_;
   // Set of indices of nodes which unpack static data, e.g. Dequantize
   // operators which convert FP16 static weights to FP32. These nodes are simply
   // ignored in the delegate implementation, because their outputs are
@@ -1443,6 +1447,24 @@ class Subgraph {
       const uint32_t f16_xnnpack_id = tflite_tensor_to_xnnpack[f16_input_id];
       tflite_tensor_to_xnnpack[f32_output_id] = f16_xnnpack_id;
       execution_map[f32_output_id] = execution_map[f16_input_id];
+    }
+
+    for (const auto& [t, dequantized_filter] :
+         delegate.dequantized_dwconv_filters_[subgraph_index]) {
+      const TfLiteTensor& filter_tensor = context->tensors[t];
+      const std::vector<size_t> dims(
+          &filter_tensor.dims->data[0],
+          &filter_tensor.dims->data[NumDimensions(&filter_tensor)]);
+      uint32_t fp32_id = XNN_INVALID_VALUE_ID;
+      if (xnn_define_tensor_value(
+              subgraph.get(), xnn_datatype_fp32, dims.size(), dims.data(),
+              dequantized_filter.data(), XNN_INVALID_VALUE_ID, /*flags=*/0,
+              &fp32_id) != xnn_status_success) {
+        TF_LITE_KERNEL_LOG(
+            context, "failed to create FP32 XNNPACK Value for tensor %d", t);
+        return nullptr;
+      }
+      fp32_weight_tensors[t] = fp32_id;
     }
 
     // Create a set of quasi-static tensors for VisitNode function
@@ -4287,8 +4309,23 @@ class Subgraph {
         logging_context, output_tensor, 4, node->outputs->data[0],
         BuiltinOperator_DEPTHWISE_CONV_2D, node_index));
 
-    if (input_tensor.type != output_tensor.type ||
-        input_tensor.type != filter_tensor.type) {
+    // Dynamic-range operators (FP32 input, static INT8 filter) run as FP32
+    // depthwise convolutions with the filter dequantized in DelegatePrepare.
+    const bool dynamic_range = input_tensor.type == kTfLiteFloat32 &&
+                               output_tensor.type == kTfLiteFloat32 &&
+                               filter_tensor.type == kTfLiteInt8;
+    if (dynamic_range) {
+      if (delegate.force_fp16() ||
+          filter_tensor.allocation_type != kTfLiteMmapRo ||
+          bias_tensor.type != kTfLiteFloat32) {
+        TF_LITE_MAYBE_KERNEL_LOG(
+            logging_context,
+            "unsupported dynamic-range DEPTHWISE_CONV_2D operator #%d",
+            node_index);
+        return kTfLiteError;
+      }
+    } else if (input_tensor.type != output_tensor.type ||
+               input_tensor.type != filter_tensor.type) {
       TF_LITE_MAYBE_KERNEL_LOG(
           logging_context,
           "unsupported mixed types in DEPTHWISE_CONV_2D operator #%d",
@@ -4315,6 +4352,14 @@ class Subgraph {
 
     if (subgraph != nullptr) {
       auto filter_it = fp32_weight_tensors.find(filter_tensor_id);
+      if (dynamic_range && filter_it == fp32_weight_tensors.end()) {
+        TF_LITE_KERNEL_LOG(logging_context,
+                           "missing dequantized filter for %s node #%d",
+                           EnumNameBuiltinOperator(
+                               BuiltinOperator_DEPTHWISE_CONV_2D),
+                           node_index);
+        return kTfLiteError;
+      }
       const uint32_t filter_xnn_id =
           filter_it != fp32_weight_tensors.end()
               ? filter_it->second
@@ -7277,6 +7322,12 @@ TfLiteIntArray* Delegate::PrepareOpsToDelegate(
   std::unordered_map<int, Buffer>& static_unpacked_data =
       static_unpacked_data_[subgraph_index];
   static_unpacked_data.clear();
+  if (subgraph_index >= dequantized_dwconv_filters_.size()) {
+    dequantized_dwconv_filters_.resize(subgraph_index + 1);
+  }
+  std::unordered_map<int, Buffer>& dequantized_dwconv_filters =
+      dequantized_dwconv_filters_[subgraph_index];
+  dequantized_dwconv_filters.clear();
   static_unpack_nodes_.clear();
   static_sparse_weights_.clear();
   f16_input_tensor_for_dequant_f32_tensor_.clear();
@@ -7481,6 +7532,27 @@ TfLiteIntArray* Delegate::PrepareOpsToDelegate(
       if (quasi_static_tensors.count(node->inputs->data[j]) != 0) {
         quasi_static_tensors_to_unpack.insert(node->inputs->data[j]);
       }
+    }
+
+    if (registration->builtin_code == kTfLiteBuiltinDepthwiseConv2d &&
+        context->tensors[node->inputs->data[0]].type == kTfLiteFloat32 &&
+        context->tensors[node->inputs->data[1]].type == kTfLiteInt8 &&
+        dequantized_dwconv_filters.count(node->inputs->data[1]) == 0) {
+      const TfLiteTensor& filter_tensor =
+          context->tensors[node->inputs->data[1]];
+      const auto* quant_params = static_cast<const TfLiteAffineQuantization*>(
+          filter_tensor.quantization.params);
+      Buffer& dequantized_filter =
+          dequantized_dwconv_filters[node->inputs->data[1]];
+      dequantized_filter = Buffer(NumElements(&filter_tensor) * sizeof(float) +
+                                  XNN_EXTRA_BYTES);
+      PerChannelDequantizeInt8(
+          filter_tensor.data.int8,
+          reinterpret_cast<float*>(dequantized_filter.data()),
+          GetTensorShape(&filter_tensor), quant_params->zero_point->data,
+          quant_params->scale->data, quant_params->quantized_dimension);
+      weight_cache_provider_->RemapDataBuffer(filter_tensor.data.raw_const,
+                                              dequantized_filter.data());
     }
 
     nodes_to_delegate->data[nodes_to_delegate->size++] = node_index;

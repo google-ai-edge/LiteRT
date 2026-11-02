@@ -451,6 +451,57 @@ TEST_F(DepthwiseConv2D, ChannelWiseQuantizedInt8Weights) {
   tester.Test(xnnpack_delegate.get());
 }
 
+TEST_F(DepthwiseConv2D, DynamicRangeQuantizedInt8Weights) {
+  std::random_device random_device;
+  auto rng = std::mt19937(random_device());
+  auto batch_rng =
+      std::bind(std::uniform_int_distribution<int32_t>(2, 4), std::ref(rng));
+  auto input_rng =
+      std::bind(std::uniform_int_distribution<int32_t>(10, 25), std::ref(rng));
+  auto kernel_rng =
+      std::bind(std::uniform_int_distribution<int32_t>(3, 5), std::ref(rng));
+  auto stride_rng =
+      std::bind(std::uniform_int_distribution<int32_t>(1, 2), std::ref(rng));
+  auto channel_rng =
+      std::bind(std::uniform_int_distribution<int32_t>(3, 32), std::ref(rng));
+
+  DepthwiseConv2DTester tester;
+  tester.BatchSize(batch_rng())
+      .InputHeight(input_rng())
+      .InputWidth(input_rng())
+      .InputChannels(channel_rng())
+      .KernelHeight(kernel_rng())
+      .KernelWidth(kernel_rng())
+      .StrideHeight(stride_rng())
+      .StrideWidth(stride_rng())
+      .SamePadding()
+      .DynamicRangeQuantizedInt8Weights()
+      .ReuseGeneratedModel(true);
+  tester.Test(xnnpack_delegate.get());
+  // Second run to test cache lookup runs.
+  tester.Test(xnnpack_delegate.get());
+}
+
+TEST_F(DepthwiseConv2D, DynamicRangeQuantizedInt8WeightsWithDepthMultiplier) {
+  std::random_device random_device;
+  auto rng = std::mt19937(random_device());
+  auto input_rng =
+      std::bind(std::uniform_int_distribution<int32_t>(10, 25), std::ref(rng));
+  auto channel_rng =
+      std::bind(std::uniform_int_distribution<int32_t>(3, 16), std::ref(rng));
+
+  DepthwiseConv2DTester()
+      .InputHeight(input_rng())
+      .InputWidth(input_rng())
+      .InputChannels(channel_rng())
+      .DepthMultiplier(2)
+      .KernelHeight(3)
+      .KernelWidth(3)
+      .ReluActivation()
+      .DynamicRangeQuantizedInt8Weights()
+      .Test(xnnpack_delegate.get());
+}
+
 TEST_F(DepthwiseConv2D, SparseWeights) {
   std::random_device random_device;
   auto rng = std::mt19937(random_device());
