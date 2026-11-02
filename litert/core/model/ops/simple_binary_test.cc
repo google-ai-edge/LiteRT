@@ -90,6 +90,41 @@ TEST(SimpleBinaryOpTest, SubBroadcast) {
   EXPECT_THAT(output_shapes[0], ElementsAre(1, 2, 3));
 }
 
+TEST(SimpleBinaryOpTest, FloorModSameShape) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{1, 630, 2}, {1, 630, 2}};
+  std::vector<Dims> output_shapes(1);
+  ASSERT_EQ(InferFloorMod(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_THAT(output_shapes[0], ElementsAre(1, 630, 2));
+}
+
+TEST(SimpleBinaryOpTest, FloorModBroadcastScalarAndRank2) {
+  LiteRtOpT op;
+  {
+    std::vector<Dims> input_shapes = {{1, 630, 2}, {}};
+    std::vector<Dims> output_shapes(1);
+    ASSERT_EQ(InferFloorMod(op, absl::MakeSpan(input_shapes), output_shapes),
+              kLiteRtStatusOk);
+    EXPECT_THAT(output_shapes[0], ElementsAre(1, 630, 2));
+  }
+  {
+    std::vector<Dims> input_shapes = {{1, 630, 2}, {1, 1}};
+    std::vector<Dims> output_shapes(1);
+    ASSERT_EQ(InferFloorMod(op, absl::MakeSpan(input_shapes), output_shapes),
+              kLiteRtStatusOk);
+    EXPECT_THAT(output_shapes[0], ElementsAre(1, 630, 2));
+  }
+}
+
+TEST(SimpleBinaryOpTest, FloorModIncompatibleShapesFailure) {
+  LiteRtOpT op;
+  std::vector<Dims> input_shapes = {{1, 630, 2}, {1, 5, 3}};
+  std::vector<Dims> output_shapes(1);
+  EXPECT_EQ(InferFloorMod(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
 TEST(SimpleBinaryOpTest, ReferenceAddWithActivation) {
   std::vector<float> a = {1.0f, -5.0f, 10.0f};
   std::vector<float> b = {2.0f, 2.0f, 2.0f};
