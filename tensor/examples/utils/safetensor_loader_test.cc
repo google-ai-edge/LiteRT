@@ -15,9 +15,14 @@ limitations under the License.
 
 #include "tensor/examples/utils/safetensor_loader.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
+#include <ios>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -26,6 +31,7 @@ limitations under the License.
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/utils/safetensor_test_util.h"
+#include "tensor/examples/utils/safetensors.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
 
@@ -501,6 +507,231 @@ TEST(SafetensorLoaderTest, LoadsHeaderNotSortedByOffset) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle b, loader.LoadTensor("b"));
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, b.GetBuffer());
   EXPECT_THAT(buffer.Lock().As<const float>(), ElementsAre(1.0f, 2.0f));
+}
+
+SafetensorFileGuard WriteRawSafetensorFile(
+    std::string_view header_json, const std::vector<uint8_t>& payload) {
+  SafetensorFileGuard file = SafetensorFileGuard::CreateTemp();
+  std::string padded_header(header_json);
+  while ((8 + padded_header.size() + payload.size()) < 16 ||
+         (padded_header.size() % 8) != 0) {
+    padded_header.push_back(' ');
+  }
+  const uint64_t header_size = padded_header.size();
+  std::ofstream out(file.GetPath(), std::ios::binary);
+  out.write(reinterpret_cast<const char*>(&header_size), sizeof(header_size));
+  out.write(padded_header.data(),
+            static_cast<std::streamsize>(padded_header.size()));
+  if (!payload.empty()) {
+    out.write(reinterpret_cast<const char*>(payload.data()),
+              static_cast<std::streamsize>(payload.size()));
+  }
+  return file;
+}
+
+TEST(SafetensorLoaderTest, RejectsShapeProductOverflow) {
+  // 2^32 * 2^32 wraps around to 0 in 64-bit unsigned arithmetic.
+  constexpr std::string_view kHeader = R"({
+    "overflow_tensor": {
+      "dtype": "I32",
+      "shape": [4294967296, 4294967296],
+      "data_offsets": [64, 128]
+    },
+    "anchor": {
+      "dtype": "F32",
+      "shape": [16],
+      "data_offsets": [0, 64]
+    }
+  })";
+  SafetensorFileGuard file =
+      WriteRawSafetensorFile(kHeader, std::vector<uint8_t>(64, 0));
+  EXPECT_THAT(SafetensorLoader::Load(file.GetPath()), Not(IsOk()));
+
+  safetensors::tensor_t t;
+  t.dtype = safetensors::dtype::kINT32;
+  if constexpr (sizeof(size_t) >= 8) {
+    const size_t two_pow_32 = size_t{1} << 32;
+    t.shape = {two_pow_32, two_pow_32};
+  } else {
+    t.shape = {65536, 65536};
+  }
+  bool ok = true;
+  EXPECT_EQ(safetensors::get_shape_size(t, &ok), 0u);
+  EXPECT_FALSE(ok);
+}
+
+TEST(SafetensorLoaderTest, RejectsByteSizeMultiplicationOverflow) {
+  // For F32 (4 bytes): 4 * 2^62 == 2^64 (wraps to 0).
+  SafetensorFileGuard zero_wrap = WriteRawSafetensorFile(
+      R"({
+        "t": {
+          "dtype": "F32",
+          "shape": [4611686018427387904],
+          "data_offsets": [0, 64]
+        }
+      })",
+      std::vector<uint8_t>(64, 0));
+  EXPECT_THAT(SafetensorLoader::Load(zero_wrap.GetPath()), Not(IsOk()));
+
+  // For F32 (4 bytes): 4 * (2^62 + 1) wraps to 4 bytes, matching data_offsets!
+  // Note: 2^62 + 1 is not exact in IEEE-754 double, so test with I64 (8 bytes)
+  // and shape [2305843009213693952, 1] (wraps to 0) plus direct C++ struct
+  // validation for exact non-zero wraparound (4 * (2^62 + 1) == 4).
+  if constexpr (sizeof(size_t) >= 8) {
+    safetensors::safetensors_t st;
+    st.storage.resize(4, 0);
+    safetensors::tensor_t tensor;
+    tensor.dtype = safetensors::dtype::kFLOAT32;
+    tensor.shape = {(size_t{1} << 62) + 1};
+    tensor.data_offsets = {0, 4};
+    st.tensors.insert("t", tensor);
+    std::string err;
+    EXPECT_FALSE(safetensors::validate_data_offsets(st, err));
+  }
+}
+
+TEST(SafetensorLoaderTest, Validates8DTensorAndRejects9DTensor) {
+  std::vector<uint8_t> payload(sizeof(float), 0);
+  const float value = 42.5f;
+  std::memcpy(payload.data(), &value, sizeof(float));
+
+  // Valid 8-D tensor (rank == kMaxDim) must load and validate its offsets.
+  SafetensorFileGuard valid_8d = WriteRawSafetensorFile(
+      R"({
+        "t": {
+          "dtype": "F32",
+          "shape": [1, 1, 1, 1, 1, 1, 1, 1],
+          "data_offsets": [0, 4]
+        }
+      })",
+      payload);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(SafetensorLoader loader,
+                                  SafetensorLoader::Load(valid_8d.GetPath()));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle t, loader.LoadTensor("t"));
+  EXPECT_THAT(t.GetShape(), ElementsAre(1, 1, 1, 1, 1, 1, 1, 1));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, t.GetBuffer());
+  EXPECT_THAT(buffer.Lock().As<const float>(), ElementsAre(FloatEq(42.5f)));
+
+  // 8-D tensor with out-of-bounds data_offsets must be rejected.
+  SafetensorFileGuard oob_8d = WriteRawSafetensorFile(
+      R"({
+        "t": {
+          "dtype": "F32",
+          "shape": [1, 1, 1, 1, 1, 1, 1, 1],
+          "data_offsets": [0, 4096]
+        }
+      })",
+      payload);
+  EXPECT_THAT(SafetensorLoader::Load(oob_8d.GetPath()), Not(IsOk()));
+
+  // 9-D tensor (rank > kMaxDim) must be rejected.
+  SafetensorFileGuard invalid_9d = WriteRawSafetensorFile(
+      R"({
+        "t": {
+          "dtype": "F32",
+          "shape": [1, 1, 1, 1, 1, 1, 1, 1, 1],
+          "data_offsets": [0, 4]
+        }
+      })",
+      payload);
+  EXPECT_THAT(SafetensorLoader::Load(invalid_9d.GetPath()), Not(IsOk()));
+}
+
+TEST(SafetensorLoaderTest, RejectsInvalidJsonNumbersInShapeAndOffsets) {
+  const std::vector<std::string_view> invalid_headers = {
+      R"({"t": {"dtype": "F32", "shape": [-1, 4], "data_offsets": [0, 16]}})",
+      R"({"t": {"dtype": "F32", "shape": [1.5], "data_offsets": [0, 4]}})",
+      R"({"t": {"dtype": "F32", "shape": [18446744073709551616], "data_offsets": [0, 0]}})",
+      R"({"t": {"dtype": "F32", "shape": [1e30], "data_offsets": [0, 0]}})",
+      R"({"t": {"dtype": "F32", "shape": [1], "data_offsets": [-4, 0]}})",
+      R"({"t": {"dtype": "F32", "shape": [1], "data_offsets": [0, 4.5]}})",
+      R"({"t": {"dtype": "F32", "shape": [1], "data_offsets": [0, 1e30]}})",
+  };
+
+  for (std::string_view header : invalid_headers) {
+    SafetensorFileGuard file =
+        WriteRawSafetensorFile(header, std::vector<uint8_t>(16, 0));
+    EXPECT_THAT(SafetensorLoader::Load(file.GetPath()), Not(IsOk())) << header;
+  }
+}
+
+TEST(SafetensorLoaderTest, ValidatesEmptyTensorsAndRejectsInvalidEmptyOffsets) {
+  // Valid empty tensor alongside a non-empty tensor (HuggingFace format
+  // includes `data_offsets` with begin == end for empty tensors).
+  SafetensorFileGuard valid_mixed = WriteRawSafetensorFile(
+      R"({
+        "w": {"dtype": "F32", "shape": [4], "data_offsets": [0, 16]},
+        "empty": {"dtype": "F32", "shape": [0, 4], "data_offsets": [16, 16]}
+      })",
+      std::vector<uint8_t>(16, 0));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      SafetensorLoader mixed_loader,
+      SafetensorLoader::Load(valid_mixed.GetPath()));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle empty_tensor,
+                                  mixed_loader.LoadTensor("empty"));
+  EXPECT_THAT(empty_tensor.GetShape(), ElementsAre(0, 4));
+
+  // Valid file containing only an empty tensor and 0-byte payload.
+  SafetensorFileGuard valid_only_empty = WriteRawSafetensorFile(
+      R"({"empty": {"dtype": "F32", "shape": [0, 4], "data_offsets": [0, 0]}})",
+      {});
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      SafetensorLoader empty_loader,
+      SafetensorLoader::Load(valid_only_empty.GetPath()));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle only_empty,
+                                  empty_loader.LoadTensor("empty"));
+  EXPECT_THAT(only_empty.GetShape(), ElementsAre(0, 4));
+
+  // Empty tensor claiming non-zero data range must fail.
+  SafetensorFileGuard nonzero_empty = WriteRawSafetensorFile(
+      R"({"empty": {"dtype": "F32", "shape": [0, 4], "data_offsets": [0, 16]}})",
+      std::vector<uint8_t>(16, 0));
+  EXPECT_THAT(SafetensorLoader::Load(nonzero_empty.GetPath()), Not(IsOk()));
+
+  // Empty tensor with out-of-bounds offset must fail.
+  SafetensorFileGuard oob_empty = WriteRawSafetensorFile(
+      R"({
+        "w": {"dtype": "F32", "shape": [4], "data_offsets": [0, 16]},
+        "empty": {"dtype": "F32", "shape": [0, 4], "data_offsets": [64, 64]}
+      })",
+      std::vector<uint8_t>(16, 0));
+  EXPECT_THAT(SafetensorLoader::Load(oob_empty.GetPath()), Not(IsOk()));
+
+  // Empty-only tensor with unreferenced trailing payload bytes must fail.
+  SafetensorFileGuard trailing_bytes = WriteRawSafetensorFile(
+      R"({"empty": {"dtype": "F32", "shape": [0, 4], "data_offsets": [0, 0]}})",
+      std::vector<uint8_t>(16, 0));
+  EXPECT_THAT(SafetensorLoader::Load(trailing_bytes.GetPath()), Not(IsOk()));
+}
+
+TEST(SafetensorLoaderTest, RejectsHeaderSizeWraparoundAndNonObjectRoot) {
+  // Craft a 16-byte buffer where `8 + header_size` wraps in uint64_t to 4.
+  std::vector<uint8_t> wrapped_header(16, ' ');
+  const uint64_t huge_header_size = ~uint64_t{0} - 3;
+  std::memcpy(wrapped_header.data(), &huge_header_size,
+              sizeof(huge_header_size));
+  safetensors::safetensors_t st;
+  std::string warn, err;
+  EXPECT_FALSE(safetensors::load_from_memory(
+      wrapped_header.data(), wrapped_header.size(), "mem", &st, &warn, &err));
+  EXPECT_FALSE(safetensors::mmap_from_memory(
+      wrapped_header.data(), wrapped_header.size(), "mem", &st, &warn, &err));
+
+  // JSON root that is an array rather than an object must be rejected.
+  SafetensorFileGuard array_root = WriteRawSafetensorFile("[]", {});
+  EXPECT_THAT(SafetensorLoader::Load(array_root.GetPath()), Not(IsOk()));
+}
+
+TEST(SafetensorLoaderTest, RejectsShapeDimensionExceedingIntMax) {
+  // Shape [0, 2147483648] has 0 elements (0 bytes on disk), so it passes file
+  // offset validation on 64-bit platforms, but 2147483648 exceeds INT_MAX and
+  // must be rejected when constructing TensorHandle's `int` shape.
+  SafetensorFileGuard file = WriteRawSafetensorFile(
+      R"({"t": {"dtype": "U8", "shape": [0, 2147483648], "data_offsets": [0, 0]}})",
+      {});
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(SafetensorLoader loader,
+                                  SafetensorLoader::Load(file.GetPath()));
+  EXPECT_THAT(loader.LoadTensor("t"), Not(IsOk()));
 }
 
 }  // namespace
