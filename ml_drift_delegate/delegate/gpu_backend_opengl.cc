@@ -356,11 +356,8 @@ GpuInferenceContextOpenGl::GetSizeOfMemoryAllocatedForExternalTensors() const {
 
 absl::Status GpuInferenceContextOpenGl::ReportMemoryBenchmarkIfEnabled(
     const ::ml_drift::CreateGpuModelInfo& create_info) {
-#ifdef ML_DRIFT_MEM_STATS
-  std::cout << ml_drift_delegate::GetMemoryBenchmarkReport(ctx_, create_info)
-            << std::endl;
-#endif
-  return absl::OkStatus();
+  return absl::UnimplementedError(
+      "ReportMemoryBenchmarkIfEnabled is not implemented for OpenGL.");
 }
 
 absl::Status GpuInferenceContextOpenGl::SetCommandBufferHint(
