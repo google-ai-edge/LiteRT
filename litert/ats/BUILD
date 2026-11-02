@@ -104,6 +104,7 @@ XNNPACK_DONT_REGISTER = [
     "GroupNorm",  # XNNPACK does not support GroupNorm composite op
     "LayerNorm",  # XNNPACK does not support LayerNorm composite op
     "MoeExperts",  # XNNPACK does not support MoeExperts composite op
+    "TflMoe",  # XNNPACK does not support TflMoe custom op
     "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
     "QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
     "RmsNorm",  # XNNPACK does not support RmsNorm composite op
@@ -191,6 +192,7 @@ YNNPACK_DONT_REGISTER = [
     "Pad.*<([0-9]+x)*1(x[0-9]+)*>",  # YNNPACK does not support padding on extent-1 dimensions
     "RuntimeBmm.*(f16|i4)",  # YNNPACK does not support mixed fp32_fp16_fp32 dot in f16 RuntimeBmm or int4 Dequantize in decomposition subgraph
     "SdpaTransposed",  # SdpaTransposed generator does not yet set logit_cap attribute for YNNPACK
+    "TflMoe",  # YNNPACK does not support ML Drift GPU custom "moe" op
     "FullyConnected.*(i4|u8)",  # YNNPACK delegate requires even output dims for INT4 weights and does not support UINT8 FullyConnected
     "Transpose.*[(][1-8]d_(i1|i16|u16|u32|i64|u64)<",  # YNNPACK Transpose supports FP32, FP16, INT4, INT8, UINT8, and INT32 types
 ]
@@ -264,6 +266,7 @@ GPU_MODELS_DONT_REGISTER = [
 BUILTIN_DONT_REGISTER = [
     "_f16",  # TFLite built-in kernels do not support FLOAT16 tensors
     "wf=SHUFFLED4x16INT8",  # Built-in FC needs a 2nd workspace output for this format
+    "TflMoe",  # TFLite built-in CPU kernels do not support ML Drift GPU custom "moe" op
 ]
 
 BUILTIN_EXTRA_FLAGS = [
@@ -615,6 +618,7 @@ litert_define_ats(
         "GroupNorm",  # XNNPACK does not support GroupNorm composite op
         "LayerNorm",  # XNNPACK does not support LayerNorm composite op
         "MoeExperts",  # XNNPACK does not support MoeExperts composite op
+        "TflMoe",  # XNNPACK does not support TflMoe custom op
         "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
         "QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
         "RmsNorm",  # XNNPACK does not support RmsNorm composite op
@@ -998,6 +1002,7 @@ cc_library(
         ":register_sdpa",
         ":register_sdpa_transposed",
         ":register_swiglu",
+        ":register_tfl_moe",
     ],
 )
 
@@ -1312,6 +1317,24 @@ cc_library(
         ":register",
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators:moe_experts",
+        "//tensor:datatypes",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_tfl_moe",
+    testonly = True,
+    srcs = ["register_tfl_moe.cc"],
+    hdrs = ["register_tfl_moe.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:tfl_moe",
         "//tensor:datatypes",
         "//tflite/types:half",
     ],

@@ -175,11 +175,11 @@ class AtsInferenceTest : public RngTest {
 
   Expected<CompiledModelExecutor::Ptr> MakeExecutor() {
     auto& env = conf_.GetEnvironment();
+    LITERT_ASSIGN_OR_RETURN(auto options, conf_.CreateTargetOptions());
+    LITERT_RETURN_IF_ERROR(graph_->ConfigureOptions(options));
 
-    CompiledModelExecutor::Ptr exec;
     if (conf_.IsNpu()) {
-      auto exec =
-          NpuCompiledModelExecutor::Create(Graph(), conf_.TargetOptions(), env);
+      auto exec = NpuCompiledModelExecutor::Create(Graph(), options, env);
       cap_.compilation.SetFields(conf_, Graph(), !exec.HasValue());
       if (!exec) {
         return exec.Error();
@@ -188,15 +188,13 @@ class AtsInferenceTest : public RngTest {
       return res;
     }
     if (conf_.IsCpu()) {
-      LITERT_ASSIGN_OR_RETURN(auto exec,
-                              CpuCompiledModelExecutor::Create(
-                                  Graph(), conf_.TargetOptions(), env));
+      LITERT_ASSIGN_OR_RETURN(
+          auto exec, CpuCompiledModelExecutor::Create(Graph(), options, env));
       return std::make_unique<CompiledModelExecutor>(std::move(exec));
     }
     if (conf_.IsGpu()) {
-      LITERT_ASSIGN_OR_RETURN(auto exec,
-                              GpuCompiledModelExecutor::Create(
-                                  Graph(), conf_.TargetOptions(), env));
+      LITERT_ASSIGN_OR_RETURN(
+          auto exec, GpuCompiledModelExecutor::Create(Graph(), options, env));
       return std::make_unique<CompiledModelExecutor>(std::move(exec));
     }
 

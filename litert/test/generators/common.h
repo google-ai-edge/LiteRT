@@ -38,6 +38,7 @@
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_options.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -403,6 +404,11 @@ class TestGraph {
   // Detect if this graph container implements its own custom reference
   // impl.
   virtual bool HasReference() const = 0;
+
+  // Allows a generator to customize target compilation options per graph.
+  virtual Expected<void> ConfigureOptions(Options& /*options*/) const {
+    return {};
+  }
 
   // Materializes the underlying graph if it is lazily loaded.
   virtual Expected<void> EnsureLoaded() { return {}; }

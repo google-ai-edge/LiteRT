@@ -287,6 +287,9 @@ class AtsConf {
   // Litert options to use for the target backend.
   const Options& TargetOptions() const { return target_options_; }
 
+  // Creates a fresh copy of the target options for the configured backend.
+  Expected<Options> CreateTargetOptions() const;
+
   // Litert options to use for the reference backend.
   const Options& ReferenceOptions() const { return reference_options_; }
 

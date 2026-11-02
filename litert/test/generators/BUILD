@@ -33,6 +33,7 @@ cc_library(
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_options",
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_rng",
         "//litert/core/model",
@@ -979,6 +980,33 @@ cc_library(
 )
 
 cc_library(
+    name = "tfl_moe",
+    testonly = True,
+    hdrs = ["tfl_moe.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        ":reference_evaluator",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_rng",
+        "//litert/cc/options:litert_gpu_options",
+        "//litert/core/model",
+        "//litert/test:simple_buffer",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:datatypes",
+        "//tensor/backends/tflite:arithmetic_tflite",
+        "//tflite/types:half",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_library(
     name = "generators",
     testonly = True,
     hdrs = ["generators.h"],
@@ -1011,6 +1039,7 @@ cc_library(
         ":slice",
         ":softmax",
         ":swiglu",
+        ":tfl_moe",
         ":transformer_layer",
         ":transpose",
         ":unary",

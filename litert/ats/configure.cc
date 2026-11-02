@@ -422,4 +422,8 @@ bool AtsConf::ShouldRegister(absl::string_view name) const {
   return !exclude;
 }
 
+Expected<Options> AtsConf::CreateTargetOptions() const {
+  return ParseOptions(backend_);
+}
+
 }  // namespace litert::testing
