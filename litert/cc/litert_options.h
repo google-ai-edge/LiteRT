@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -327,6 +328,34 @@ class Options {
             return kLiteRtStatusErrorRuntimeFailure;
           }
           options_impl->scoped_weight_source.reset(scoped_weight_source_ptr);
+          return kLiteRtStatusOk;
+        });
+    return {};
+  }
+
+  /// Hints the runtime to prefetch the embedding table rows for `tokens`
+  /// across all CPU `EMBEDDING_LOOKUP` ops in the signature when this
+  /// `Options` object is passed to `CompiledModel::Run`.
+  ///
+  /// Advisory only: issues an OS page-cache readahead hint
+  /// (`madvise(MADV_WILLNEED)` on Linux/Android, `PrefetchVirtualMemory` on
+  /// Windows; no-op on other platforms). Only constant (`kTfLiteMmapRo`)
+  /// tables with rank >= 2 whose rows are a whole number of bytes
+  /// (`bytes % dims[0] == 0`, covering float32, float16, int8, and packed
+  /// int4/int2 with byte-aligned rows) are hinted; blockwise-quantized scale
+  /// tensors are not hinted. Negative or out-of-bounds token IDs are ignored.
+  /// If the signature has no CPU `EMBEDDING_LOOKUP` ops (e.g. delegated to
+  /// GPU or NPU), the hint is a no-op and `CompiledModel::Run` still succeeds.
+  Expected<void> SetPrefetchEmbeddingTokenIds(Span<const int32_t> tokens) {
+    std::vector<int32_t> token_ids(tokens.begin(), tokens.end());
+    build_actions_.push_back(
+        [token_ids = std::move(token_ids)](internal::RuntimeProxy* runtime,
+                                           LiteRtOptions options) {
+          auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(options);
+          if (!options_impl) {
+            return kLiteRtStatusErrorRuntimeFailure;
+          }
+          options_impl->prefetch_embedding_token_ids = token_ids;
           return kLiteRtStatusOk;
         });
     return {};
