@@ -39,9 +39,23 @@ litert_test(
     ungrte = True,
     use_sys_malloc = True,
     deps = [
+        ":qnn_model_test_instantiation",
         ":test_utils",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/utils:test_main",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_library(
+    name = "qnn_model_test_instantiation",
+    testonly = True,
+    srcs = ["qnn_model_test_instantiation.cc"],
+    # The source only contributes GoogleTest registration through a static
+    # initializer. Keep it when linking each standalone test executable.
+    alwayslink = True,
+    deps = [
+        ":test_utils",
         "@com_google_googletest//:gtest",
     ],
 )
