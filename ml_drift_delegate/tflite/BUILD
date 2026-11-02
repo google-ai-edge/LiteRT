@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@ml_drift//ml_drift/common:build_config.bzl", "mld_platform_alias")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
@@ -355,24 +354,7 @@ cc_library(
         ":object_reader",
         ":operation_parser",
         ":shared_const_tensor_map",
-        "//tflite:framework",
-        "//tflite:kernel_api",
-        "//tflite:util",
-        "//tflite/c:c_api_types",
-        "//tflite/c:common",
-        "//tflite/core:framework",
-        "//tflite/core/api",
-        "//tflite/core/c:private_c_api_without_op_resolver",
-        "//tflite/core/c:private_common",
-        "//tflite/delegates:utils",
-        "//tflite/kernels:kernel_util",
-        "//tflite/kernels:lstm_shared",
-        "//tflite/kernels/internal:optimized_base",
-        "//tflite/kernels/internal:reference_base",
-        "//tflite/kernels/internal:tensor",
-        "//tflite/kernels/internal:tensor_utils_no_eigen",
-        "//tflite/tools/versioning:gpu_compatibility",
-        "//tflite/tools/versioning:op_signature",
+        ":unimplemented_operation_parser",
         "@FP16",
         "@XNNPACK",
         "@com_google_absl//absl/base:core_headers",
@@ -397,7 +379,28 @@ cc_library(
         "@ml_drift//ml_drift/common/kernels:fully_connected",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/transformations:model_transformations",
-    ] + mld_platform_alias("custom_parsers", "@ml_drift//ml_drift/common/"),
+        "//tflite:framework",
+        "//tflite:kernel_api",
+        "//tflite:util",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/core:framework",
+        "//tflite/core/api",
+        "//tflite/core/c:private_c_api_without_op_resolver",
+        "//tflite/core/c:private_common",
+        "//tflite/delegates:utils",
+        "//tflite/kernels:kernel_util",
+        "//tflite/kernels:lstm_shared",
+        "//tflite/kernels/internal:optimized_base",
+        "//tflite/kernels/internal:reference_base",
+        "//tflite/kernels/internal:tensor",
+        "//tflite/kernels/internal:tensor_utils_no_eigen",
+        "//tflite/tools/versioning:gpu_compatibility",
+        "//tflite/tools/versioning:op_signature",
+        # copybara:uncomment_begin(google-only)
+        # "@ml_drift//ml_drift/common/google:custom_parsers",
+        # copybara:uncomment_end
+    ],
 )
 
 # copybara:uncomment_begin(google-only)
