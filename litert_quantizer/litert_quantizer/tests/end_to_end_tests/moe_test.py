@@ -37,22 +37,39 @@ class MoeTest(test_utils.BaseOpTestCase):
 
   @parameterized.named_parameters(
       dict(
-          testcase_name='int8_channelwise',
+          testcase_name='min_max_int8_channelwise',
+          algorithm_key=_QuantAlgo.MIN_MAX_UNIFORM_QUANT,
           num_bits=8,
           granularity=qtyping.QuantGranularity.CHANNELWISE,
       ),
       dict(
-          testcase_name='int4_channelwise',
+          testcase_name='min_max_int4_channelwise',
+          algorithm_key=_QuantAlgo.MIN_MAX_UNIFORM_QUANT,
           num_bits=4,
           granularity=qtyping.QuantGranularity.CHANNELWISE,
       ),
       dict(
-          testcase_name='int4_blockwise_32',
+          testcase_name='min_max_int4_blockwise_32',
+          algorithm_key=_QuantAlgo.MIN_MAX_UNIFORM_QUANT,
           num_bits=4,
           granularity=qtyping.QuantGranularity.BLOCKWISE_32,
       ),
+      dict(
+          testcase_name='weight_recovery_int8_channelwise',
+          algorithm_key=_QuantAlgo.DEQUANTIZED_WEIGHT_RECOVERY,
+          num_bits=8,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+      ),
+      dict(
+          testcase_name='weight_recovery_int4_channelwise',
+          algorithm_key=_QuantAlgo.DEQUANTIZED_WEIGHT_RECOVERY,
+          num_bits=4,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+      ),
   )
-  def test_quantization_accuracy_within_tolerance(self, num_bits, granularity):
+  def test_quantization_accuracy_within_tolerance(
+      self, algorithm_key, num_bits, granularity
+  ):
     model_filename = 'single_moe_multiaxis.tflite'
     model_path = pathlib.Path(_TEST_MODEL_FOLDER) / model_filename
     op_config = qtyping.OpQuantizationConfig(
@@ -65,7 +82,7 @@ class MoeTest(test_utils.BaseOpTestCase):
         compute_precision=qtyping.ComputePrecision.INTEGER,
     )
     self.assert_quantization_accuracy(
-        algorithm_key=_QuantAlgo.MIN_MAX_UNIFORM_QUANT,
+        algorithm_key=algorithm_key,
         model_path=model_path,
         op_name=self._op_name,
         op_config=op_config,

@@ -20,6 +20,7 @@ from typing import Any, Union
 import numpy as np
 
 from litert_quantizer import qtyping
+from litert_quantizer.utils import histogram_utils
 
 
 def _update_moving_average(
@@ -168,4 +169,34 @@ def oscar_and_moving_average_update(
   merged_mu2, total_samples = _oscar_merge_mu2(qsv, new_qsv)
   updated_qsv["mu2"] = merged_mu2
   updated_qsv["num_samples"] = total_samples
+  return updated_qsv
+
+
+def histogram_and_moving_average_update(
+    qsv: qtyping.QSV, new_qsv: qtyping.QSV
+) -> qtyping.QSV:
+  """Updates the QSV by merging DynamicHistograms and applying EMA to min/max."""
+  if not qsv:
+    return new_qsv
+  if not new_qsv:
+    return qsv
+
+  updated_qsv = moving_average_update(qsv, new_qsv)
+  if "num_samples" in qsv or "num_samples" in new_qsv:
+    updated_qsv["num_samples"] = qsv.get("num_samples", 0) + new_qsv.get(
+        "num_samples", 0
+    )
+
+  has_old_hist = bool(qsv.get("histogram"))
+  has_new_hist = bool(new_qsv.get("histogram"))
+  if has_old_hist and has_new_hist:
+    hist = histogram_utils.DynamicHistogram.from_dict(qsv["histogram"])
+    new_hist = histogram_utils.DynamicHistogram.from_dict(new_qsv["histogram"])
+    hist.merge(new_hist)
+    updated_qsv["histogram"] = hist.to_dict()
+  elif has_old_hist:
+    updated_qsv["histogram"] = qsv["histogram"]
+  elif has_new_hist:
+    updated_qsv["histogram"] = new_qsv["histogram"]
+
   return updated_qsv

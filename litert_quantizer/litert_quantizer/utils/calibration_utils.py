@@ -27,6 +27,7 @@ from ai_edge_litert.tools import flatbuffer_utils
 from litert_quantizer import qtyping
 from litert_quantizer.algorithms.utils import common_utils
 from litert_quantizer.utils import constrained_ops_utils
+from litert_quantizer.utils import histogram_utils
 from litert_quantizer.utils import tfl_flatbuffer_utils
 from litert_quantizer.utils import tfl_interpreter_utils
 
@@ -77,6 +78,12 @@ def load_calibration_results(
       qsv["min"] = np.array(qsv["min"])
     if "max" in qsv:
       qsv["max"] = np.array(qsv["max"])
+    if "num_samples" in qsv:
+      qsv["num_samples"] = np.array(qsv["num_samples"])
+    if qsv.get("histogram"):
+      qsv["histogram"] = histogram_utils.DynamicHistogram.from_dict(
+          qsv["histogram"]
+      ).to_dict()
 
   return model_qsvs, metadata
 
@@ -311,10 +318,29 @@ class CalibrationQsvAlignmentUtils:
     # Find min and max values accross all tensors.
     min_value, max_value = _find_overall_min_max(qsv, tensor_names)
 
-    # Overwrite the min and max values in the QSV.
+    # Merge histograms across all aligned tensors when present.
+    merged_hist: histogram_utils.DynamicHistogram | None = None
+    for tensor_name in tensor_names:
+      hist_dict = qsv[tensor_name].get("histogram")
+      if hist_dict:
+        tensor_hist = histogram_utils.DynamicHistogram.from_dict(hist_dict)
+        if merged_hist is None:
+          merged_hist = tensor_hist
+        else:
+          merged_hist.merge(tensor_hist)
+
+    merged_hist_dict = (
+        merged_hist.to_dict()
+        if merged_hist is not None and merged_hist.initialized
+        else None
+    )
+
+    # Overwrite the min, max, and aligned histogram in the QSV.
     for tensor_name in tensor_names:
       qsv[tensor_name]["min"] = min_value
       qsv[tensor_name]["max"] = max_value
+      if merged_hist_dict is not None:
+        qsv[tensor_name]["histogram"] = copy.deepcopy(merged_hist_dict)
 
     return min_value, max_value
 
@@ -324,6 +350,7 @@ class CalibrationQsvAlignmentUtils:
       signature_data: _SignatureData,
       min_value: np.ndarray,
       max_value: np.ndarray,
+      histogram: dict[str, Any] | None = None,
   ) -> None:
     """Updates quantization statistics for tensors associated with the given signatures.
 
@@ -356,6 +383,9 @@ class CalibrationQsvAlignmentUtils:
       signature_data: Mapping from signature keys to lists of signature names.
       min_value: The global minimum value to apply.
       max_value: The global maximum value to apply.
+      histogram: Optional pre-aligned histogram dictionary to apply. If None,
+        any existing unaligned histogram on the target tensors is removed so
+        they fall back to the aligned min/max.
     """
     # Go over all signature info and find the corresponding tensor names.
     tensor_names = []
@@ -366,7 +396,11 @@ class CalibrationQsvAlignmentUtils:
         )
         tensor_names.extend(tensor_name)
 
-    # Overwrite the min and max values in the QSV.
+    # Overwrite the min and max values (and optional histogram) in the QSV.
     for tensor_name in tensor_names:
       qsv[tensor_name]["min"] = min_value
       qsv[tensor_name]["max"] = max_value
+      if histogram is not None:
+        qsv[tensor_name]["histogram"] = copy.deepcopy(histogram)
+      else:
+        qsv[tensor_name].pop("histogram", None)

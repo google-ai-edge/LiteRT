@@ -17,9 +17,6 @@ namespace {
 using testing::FloatNear;
 using testing::Pointwise;
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 // Mirrors tflite/kernels/split_v_test.cc TwoDimensional:
 //   Input shape: {4, 3}, axis=0, size_splits=[1, 1, 2]
 //   Outputs: {1, 3}, {1, 3}, {2, 3}

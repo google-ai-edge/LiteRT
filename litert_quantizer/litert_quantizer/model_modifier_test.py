@@ -320,6 +320,15 @@ class ModelModifierTestWithSignature(BaseModelModifierTest):
     )
     self.assertIsNotNone(updated_model)
 
+  def test_update_signature_defs_without_signatures_returns_model(self):
+    model = flatbuffer_utils.read_model_from_bytearray(self._model_content)
+    model.signatureDefs = None
+    updated_model = self._model_modifier._update_signature_defs(
+        model, '_quantized'
+    )
+    self.assertIs(updated_model, model)
+    self.assertIsNone(updated_model.signatureDefs)
+
 
 class ModelModifierTestMoe(BaseModelModifierTest):
 

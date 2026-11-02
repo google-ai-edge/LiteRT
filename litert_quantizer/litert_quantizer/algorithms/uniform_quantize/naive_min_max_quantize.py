@@ -26,6 +26,7 @@ from litert_quantizer.algorithms.utils import common_utils
 from litert_quantizer.utils import tfl_flatbuffer_utils
 
 ALGORITHM_KEY = "min_max_uniform_quantize"
+DEFAULT_VALID_RANGE = (-3e38, 3e38)
 _TFLOpName = qtyping.TFLOperationName
 _QuantTransformation = qtyping.QuantTransformation
 _IntType = uniform_quantize_tensor.IntType
@@ -189,7 +190,7 @@ def min_max_calibrate(
     tensor_content_map: MutableMapping[str, np.ndarray],
     inputs_to_ignore: Sequence[int] | None = None,
     outputs_to_ignore: Sequence[int] | None = None,
-    valid_range: tuple[float, float] = (-3e38, 3e38),
+    valid_range: tuple[float, float] = DEFAULT_VALID_RANGE,
     **kwargs,
 ) -> dict[str, qtyping.QSV]:
   """Collect quantization statistics variable (QSV, e.g., min/max) for the op.

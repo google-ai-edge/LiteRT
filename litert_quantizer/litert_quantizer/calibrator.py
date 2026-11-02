@@ -15,7 +15,7 @@
 
 """Quantization Calibration."""
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sized
 import copy
 import enum
 import json
@@ -31,7 +31,13 @@ from litert_quantizer import default_policy as policy
 from litert_quantizer import qtyping
 from litert_quantizer import recipe
 from litert_quantizer import recipe_manager
+from litert_quantizer.algorithms.nonlinear_quantize import float_casting
+from litert_quantizer.algorithms.uniform_quantize import common_quantize
+from litert_quantizer.algorithms.uniform_quantize import dequantized_weight_recovery
+from litert_quantizer.algorithms.uniform_quantize import histogram_quantize
+from litert_quantizer.algorithms.uniform_quantize import naive_min_max_quantize
 from litert_quantizer.utils import calibration_utils
+from litert_quantizer.utils import histogram_utils
 from litert_quantizer.utils import progress_utils
 from litert_quantizer.utils import qsv_utils
 from litert_quantizer.utils import tfl_flatbuffer_utils
@@ -381,7 +387,7 @@ class Calibrator:
     with open(file_path, "w") as f:
       json.dump(
           {
-              "model_qsvs": self._model_qsvs,
+              "model_qsvs": self.get_model_qsvs(),
               "metadata": {**self._metadata, **(extra_metadata or {})},
           },
           f,
@@ -420,10 +426,65 @@ class Calibrator:
       updated_tensor_names.add(tensor_name)
     return updated_tensor_names
 
+  def _iter_quantizable_ops(
+      self,
+      subgraph_idx: int,
+      model_recipe_manager: recipe_manager.RecipeManager,
+      on_subgraph: Callable[[int], None] | None = None,
+      pbar: progress_utils.ProgressBar | None = None,
+  ) -> Iterable[
+      tuple[int, qtyping.GraphInfo, Any, qtyping.TFLOperationName, str]
+  ]:
+    """Yields quantizable ops across the subgraph and side-effect subgraphs."""
+    op_codes = self._flatbuffer_model.operatorCodes
+    subgraphs_inds = [subgraph_idx]
+    while subgraphs_inds:
+      subgraph_ind = subgraphs_inds.pop()
+      if on_subgraph is not None:
+        on_subgraph(subgraph_ind)
+      subgraph = self._flatbuffer_model.subgraphs[subgraph_ind]
+      graph_info = qtyping.GraphInfo(
+          subgraph.tensors, self._flatbuffer_model.buffers
+      )
+      if not any(
+          isinstance(op, qtyping.IOOperator) for op in subgraph.operators
+      ):
+        subgraph.operators += (
+            tfl_flatbuffer_utils.get_subgraph_input_output_operators(subgraph)
+        )
+      for op in subgraph.operators:
+        if pbar is not None:
+          pbar.update_single_step()
+        if isinstance(op, qtyping.IOOperator):
+          op_code_obj = None
+          op_key = op.op_key
+        else:
+          op_code_obj = op_codes[op.opcodeIndex]
+          op_code = op_code_obj.builtinCode
+          if op_code not in tfl_flatbuffer_utils.TFL_OP_CODE_TO_NAME:
+            continue
+          op_key = tfl_flatbuffer_utils.TFL_OP_CODE_TO_NAME[op_code]
+        op_scope = tfl_flatbuffer_utils.get_op_scope(op, subgraph.tensors)
+        algorithm_name, _ = model_recipe_manager.get_quantization_configs(
+            op_key, op_scope
+        )
+        if algorithm_name == algorithm_manager.AlgorithmName.NO_QUANTIZE:
+          continue
+        if (
+            policy.is_non_quantizable_composite_op(op)
+            or policy.is_non_quantizable_custom_op(op_code_obj)
+        ):
+          continue
+        yield subgraph_ind, graph_info, op, op_key, algorithm_name
+        subgraphs_inds.extend(
+            tfl_flatbuffer_utils.get_op_side_effect_subgraphs(op)
+        )
+
   def _get_total_operations(self, calibration_dataset) -> int:
     """Get the total number of OPs to go through while calibrating the model."""
     data_sizes = {
-        key: len(list(dataset)) for key, dataset in calibration_dataset.items()
+        key: len(dataset) if isinstance(dataset, Sized) else 0
+        for key, dataset in calibration_dataset.items()
     }
     total_ops = 0
     for key, value in data_sizes.items():
@@ -506,7 +567,6 @@ class _PreserveAllTensorsCalibrator(Calibrator):
       cache_output: bool,
       pbar: progress_utils.ProgressBar,
   ) -> None:
-    op_codes = self._flatbuffer_model.operatorCodes
     # Step0: get subgraph index.
     subgraph_idx = tfl_interpreter_utils.get_signature_main_subgraph_index(
         self._tfl_interpreter, signature_key
@@ -523,85 +583,81 @@ class _PreserveAllTensorsCalibrator(Calibrator):
 
     # Step2: go through each op in subgraph to update quantization
     # statistic values.
-    subgraphs_inds = [subgraph_idx]
-    while subgraphs_inds:
-      subgraph_ind = subgraphs_inds.pop()
+    def _update_subgraph_tensors(subgraph_ind: int) -> None:
       self._tensor_content_map.update(
           tfl_interpreter_utils.get_tensor_name_to_content_map(
               self._tfl_interpreter, subgraph_ind
           )
       )
-      subgraph = self._flatbuffer_model.subgraphs[subgraph_ind]
-      graph_info = qtyping.GraphInfo(
-          subgraph.tensors, self._flatbuffer_model.buffers
+
+    for _, graph_info, op, op_key, algorithm_name in self._iter_quantizable_ops(
+        subgraph_idx,
+        model_recipe_manager,
+        on_subgraph=_update_subgraph_tensors,
+        pbar=pbar,
+    ):
+      # Step2.2: query algorithm_manager to get/call the related
+      # calibration function.
+      calibrate_func = algorithm_manager.get_quantization_func(
+          algorithm_name, op_key, qtyping.QuantizeMode.CALIBRATE
       )
-      # Add input/output operators if they are not in the subgraph.
-      if not any(
-          isinstance(op, qtyping.IOOperator) for op in subgraph.operators
-      ):
-        subgraph.operators += (
-            tfl_flatbuffer_utils.get_subgraph_input_output_operators(subgraph)
+      op_qsvs = calibrate_func(op, graph_info, self._tensor_content_map)
+      # Step3: Update tensor qsvs with the new values. Ignore the tensor
+      # names that are already updated in this round of calibration.
+      if not self._is_custom_qsv_update_func:
+        qsvs_update_func = algorithm_manager.get_update_qsv_func(
+            algorithm_name, op_key
         )
-      for op in subgraph.operators:
-        pbar.update_single_step()
-        if isinstance(op, qtyping.IOOperator):
-          op_code_obj = None
-          op_key = op.op_key
-        else:
-          op_code_obj = op_codes[op.opcodeIndex]
-          op_code = op_code_obj.builtinCode
-          if op_code not in tfl_flatbuffer_utils.TFL_OP_CODE_TO_NAME:
-            continue
-          op_key = tfl_flatbuffer_utils.TFL_OP_CODE_TO_NAME[op_code]
-        # Step2.1: query the quantization_recipe to get op quantization
-        # settings.
-        op_scope = tfl_flatbuffer_utils.get_op_scope(op, subgraph.tensors)
-        algorithm_name, _ = model_recipe_manager.get_quantization_configs(
-            op_key, op_scope
-        )
-        if algorithm_name == algorithm_manager.AlgorithmName.NO_QUANTIZE:
-          continue
-        if (
-            policy.is_non_quantizable_composite_op(op)
-            or policy.is_non_quantizable_custom_op(op_code_obj)
-        ):
-          continue
+      else:
+        qsvs_update_func = self._qsv_update_func
+      op_updated_tensor_name = self._update_qsvs(
+          op_qsvs, updated_tensor_names, qsvs_update_func
+      )
+      updated_tensor_names.update(op_updated_tensor_name)
 
-        # Step2.2: query algorithm_manager to get/call the related
-        # calibration function.
-        calibrate_func = algorithm_manager.get_quantization_func(
-            algorithm_name, op_key, qtyping.QuantizeMode.CALIBRATE
-        )
-        op_qsvs = calibrate_func(op, graph_info, self._tensor_content_map)
-        # Step3: Update tensor qsvs with the new values. Ignore the tensor
-        # names that are already updated in this round of calibration.
-        if not self._is_custom_qsv_update_func:
-          qsvs_update_func = algorithm_manager.get_update_qsv_func(
-              algorithm_name, op_key
-          )
-        else:
-          qsvs_update_func = self._qsv_update_func
-        op_updated_tensor_name = self._update_qsvs(
-            op_qsvs, updated_tensor_names, qsvs_update_func
-        )
-        updated_tensor_names.update(op_updated_tensor_name)
 
-        # Step4: Invoke any subgraphs invoked as a side effect of the op.
-        subgraphs_inds.extend(
-            tfl_flatbuffer_utils.get_op_side_effect_subgraphs(op)
-        )
+def _get_profiler_supported_calibration_funcs() -> (
+    frozenset[Callable[..., Any]]
+):
+  """Returns the set of calibration functions supported in profiler mode."""
+  funcs = {
+      naive_min_max_quantize.min_max_calibrate,
+      dequantized_weight_recovery.calibrate,
+      float_casting.calibrate,
+  }
+  if hasattr(_pywrap_tfl_calibration, "CalibrationSession"):
+    funcs.add(histogram_quantize.histogram_calibrate)
+  return frozenset(funcs)
 
 
 class _ProfilerBasedCalibrator(Calibrator):
   """Calibrator using the profiler-based calibration mode.
 
-  1. It runs the model using _pywrap_tfl_calibration.InvokeWithCalibration()
-  2. The C++ engine tracks the min/max values internally during execution.
-  3. After execution, the python wrapper retrieves the statistics (tensor_stats)
-  and updates self._model_qsvs.
-  4. This mode only supports min/max tracking and cannot be used for algorithms
-  that require custom statistics.
+  1. It runs the model using _pywrap_tfl_calibration.CalibrationSession (or
+  InvokeWithCalibration on older packages).
+  2. The C++ engine tracks min/max values and optional dynamic histograms
+  internally during execution.
+  3. After execution, the python wrapper retrieves the statistics and updates
+  self._model_qsvs.
   """
+
+  @override
+  def __init__(
+      self,
+      float_tflite: str | bytes,
+      num_threads: int = 16,
+      mode: CalibrationMode = CalibrationMode.CALIBRATION_PROFILER_BASED,
+      qsv_update_func: Callable[
+          [qtyping.QSV, qtyping.QSV],
+          qtyping.QSV,
+      ] = _MISSING_FUNC,
+  ):
+    super().__init__(float_tflite, num_threads, mode, qsv_update_func)
+    self._session: Any = None
+    self._session_hist_tensor_names: set[str] | None = None
+    self._cached_recipe_key: tuple[Any, ...] | None = None
+    self._base_histograms: dict[str, dict[str, Any]] = {}
+    self._histograms_synced: bool = True
 
   @override
   def _create_interpreter(
@@ -618,6 +674,144 @@ class _ProfilerBasedCalibrator(Calibrator):
         force_delegate_node_profiling=True,
     )
 
+  def _validate_recipe_for_profiler_mode(
+      self, model_recipe_manager: recipe_manager.RecipeManager
+  ) -> None:
+    """Validates that all algorithms in the recipe are supported in profiler mode."""
+    supported_funcs = _get_profiler_supported_calibration_funcs()
+    for op_recipe in model_recipe_manager.get_quantization_recipe():
+      algorithm_key = op_recipe["algorithm_key"]
+      if algorithm_key == algorithm_manager.AlgorithmName.NO_QUANTIZE:
+        continue
+      operation = op_recipe["operation"]
+      if operation == qtyping.TFLOperationName.ALL_SUPPORTED:
+        ops = algorithm_manager.get_supported_ops(algorithm_key)
+      else:
+        ops = [operation]
+      for op in ops:
+        if not algorithm_manager.is_op_registered(algorithm_key, op):
+          continue
+        calibrate_func = algorithm_manager.get_quantization_func(
+            algorithm_key, op, qtyping.QuantizeMode.CALIBRATE
+        )
+        if calibrate_func not in supported_funcs:
+          if calibrate_func is histogram_quantize.histogram_calibrate:
+            raise ValueError(
+                f"Algorithm '{algorithm_key}' requires"
+                " _pywrap_tfl_calibration.CalibrationSession in"
+                " CALIBRATION_PROFILER_BASED mode, which is unavailable in your"
+                " ai-edge-litert package. Please upgrade ai-edge-litert or use"
+                " CALIBRATION_PRESERVE_ALL_TENSORS instead."
+            )
+          raise ValueError(
+              f"Algorithm '{algorithm_key}' is not supported by"
+              " CALIBRATION_PROFILER_BASED mode because it requires custom"
+              " calibration statistics. Please use"
+              " CALIBRATION_PRESERVE_ALL_TENSORS instead."
+          )
+
+  def _collect_histogram_tensor_names(
+      self,
+      signature_keys: Iterable[str | None],
+      model_recipe_manager: recipe_manager.RecipeManager,
+  ) -> set[str]:
+    """Collects names of activation tensors whose owning op uses histogram calibration."""
+    hist_tensor_names: set[str] = set()
+    for signature_key in signature_keys:
+      subgraph_idx = tfl_interpreter_utils.get_signature_main_subgraph_index(
+          self._tfl_interpreter, signature_key
+      )
+      visited_tensor_names: set[str] = set()
+      for _, graph_info, op, op_key, algorithm_name in (
+          self._iter_quantizable_ops(subgraph_idx, model_recipe_manager)
+      ):
+        calibrate_func = algorithm_manager.get_quantization_func(
+            algorithm_name, op_key, qtyping.QuantizeMode.CALIBRATE
+        )
+        is_hist_op = calibrate_func is histogram_quantize.histogram_calibrate
+        tensor_ids = common_quantize.get_tensor_indices_requiring_calibration(
+            op, graph_info
+        )
+        for tensor_idx in tensor_ids:
+          tensor = graph_info.subgraph_tensors[tensor_idx]
+          if graph_info.buffers[tensor.buffer].data is not None:
+            continue
+          tensor_name = tfl_flatbuffer_utils.get_tensor_name(tensor)
+          if tensor_name in visited_tensor_names:
+            continue
+          visited_tensor_names.add(tensor_name)
+          if is_hist_op:
+            hist_tensor_names.add(tensor_name)
+    return hist_tensor_names
+
+  def _ensure_calibration_session(self, hist_tensor_names: set[str]) -> None:
+    """Creates or updates the native CalibrationSession if available."""
+    if not hasattr(_pywrap_tfl_calibration, "CalibrationSession"):
+      self._session = None
+      self._session_hist_tensor_names = None
+      return
+
+    if (
+        self._session is not None
+        and self._session_hist_tensor_names == hist_tensor_names
+    ):
+      return
+
+    if self._session is not None:
+      # Sync any previously collected histograms before recreating the session.
+      self.get_model_qsvs()
+      self._base_histograms = {
+          name: copy.deepcopy(qsv["histogram"])
+          for name, qsv in self._model_qsvs.items()
+          if "histogram" in qsv
+      }
+
+    valid_min, valid_max = naive_min_max_quantize.DEFAULT_VALID_RANGE
+    options = _pywrap_tfl_calibration.CalibrationOptions(
+        valid_min=valid_min,
+        valid_max=valid_max,
+        collect_histogram=bool(hist_tensor_names),
+        num_bins=histogram_quantize.DEFAULT_NUM_BINS,
+        histogram_tensor_names=hist_tensor_names if hist_tensor_names else None,
+    )
+    self._session = _pywrap_tfl_calibration.CalibrationSession(options)
+    self._session_hist_tensor_names = set(hist_tensor_names)
+
+  @override
+  def calibrate(
+      self,
+      calibration_dataset: Mapping[str, Iterable[_SignatureInput]],
+      model_recipe_manager: recipe_manager.RecipeManager,
+      cache_output: bool = False,
+  ) -> None:
+    sig_key_set = frozenset(calibration_dataset.keys())
+    recipe_key = (
+        sig_key_set,
+        hasattr(_pywrap_tfl_calibration, "CalibrationSession"),
+        tuple(
+            (
+                r.get("regex"),
+                r.get("operation"),
+                r.get("algorithm_key"),
+                repr(r.get("op_config")),
+            )
+            for r in model_recipe_manager.get_quantization_recipe()
+        ),
+    )
+    if (
+        self._cached_recipe_key != recipe_key
+        or self._session_hist_tensor_names is None
+    ):
+      self._validate_recipe_for_profiler_mode(model_recipe_manager)
+      hist_tensor_names = self._collect_histogram_tensor_names(
+          sig_key_set, model_recipe_manager
+      )
+      self._cached_recipe_key = recipe_key
+    else:
+      hist_tensor_names = self._session_hist_tensor_names
+    self._ensure_calibration_session(hist_tensor_names)
+    super().calibrate(calibration_dataset, model_recipe_manager, cache_output)
+
   @override
   def _calibrate_step(
       self,
@@ -627,25 +821,34 @@ class _ProfilerBasedCalibrator(Calibrator):
       cache_output: bool,
       pbar: progress_utils.ProgressBar,
   ) -> None:
-    del model_recipe_manager  # Unused.
+    del model_recipe_manager  # Handled in calibrate().
     del pbar  # Can't do per-op progress bar in this mode.
 
     signature_defs = self._tfl_interpreter._get_full_signature_list()  # pylint: disable=protected-access
-    if signature_key is None:
-      if not signature_defs:
-        raise ValueError(
-            "No signature key provided and no signature list found."
-        )
-      # Using the default signature.
-      signature_key = next(iter(signature_defs))
-
     cpp_interpreter = self._tfl_interpreter._interpreter  # pylint: disable=protected-access
-    subgraph_index = cpp_interpreter.GetSubgraphIndexFromSignature(
-        signature_key
-    )
-    signature_def = signature_defs[signature_key]
-    inputs = signature_def["inputs"]
-    outputs = signature_def["outputs"]
+    if tfl_interpreter_utils.is_signatureless_default(
+        self._tfl_interpreter, signature_key
+    ):
+      subgraph_index = 0
+      inputs = {}
+      for d in self._tfl_interpreter.get_input_details():
+        inputs[d["name"]] = d["index"]
+        inputs[d["name"].split(":")[0]] = d["index"]
+      outputs = {
+          d["name"]: d["index"]
+          for d in self._tfl_interpreter.get_output_details()
+      }
+    else:
+      if signature_key is None:
+        # Using the default signature.
+        signature_key = next(iter(signature_defs))
+
+      subgraph_index = cpp_interpreter.GetSubgraphIndexFromSignature(
+          signature_key
+      )
+      signature_def = signature_defs[signature_key]
+      inputs = signature_def["inputs"]
+      outputs = signature_def["outputs"]
 
     # Resize and allocate input tensors.
     for input_name, value in data.items():
@@ -663,10 +866,19 @@ class _ProfilerBasedCalibrator(Calibrator):
       cpp_interpreter.SetTensor(inputs[input_name], value, subgraph_index)
 
     # Invoke the interpreter with calibration.
-    tensor_stats = _pywrap_tfl_calibration.InvokeWithCalibration(
-        self._tfl_interpreter._native_handle(),  # pylint: disable=protected-access
-        subgraph_index,
-    )
+    if self._session is not None:
+      tensor_stats = self._session.invoke(
+          self._tfl_interpreter._native_handle(),  # pylint: disable=protected-access
+          subgraph_index,
+      )
+      self._histograms_synced = False
+    else:
+      # Older ai-edge-litert packages without CalibrationSession only accept
+      # (interpreter_handle, subgraph_index).
+      tensor_stats = _pywrap_tfl_calibration.InvokeWithCalibration(
+          self._tfl_interpreter._native_handle(),  # pylint: disable=protected-access
+          subgraph_index,
+      )
 
     # Get inference result.
     inference_result = {
@@ -688,3 +900,67 @@ class _ProfilerBasedCalibrator(Calibrator):
         self._model_qsvs[tensor_name] = qsv
       else:
         self._model_qsvs[tensor_name] = self._qsv_update_func(existing_qsv, qsv)
+
+  @override
+  def get_model_qsvs(self) -> dict[str, qtyping.QSV]:
+    if not self._histograms_synced:
+      session_hists = (
+          self._session.get_histograms() if self._session is not None else {}
+      )
+      all_hist_names = set(self._base_histograms) | set(session_hists)
+      for tensor_name in all_hist_names:
+        base_dict = self._base_histograms.get(tensor_name)
+        c_hist = session_hists.get(tensor_name)
+        if c_hist is not None:
+          session_hist_dict = {
+              "axis": None,
+              "min": np.array([c_hist.min], dtype=np.float32),
+              "max": np.array([c_hist.max], dtype=np.float32),
+              "channels": [{
+                  "hist_counts": np.array(c_hist.counts, dtype=np.int64),
+                  "bin_width": float(c_hist.bin_width),
+                  "lower_bound": float(c_hist.lower_bound),
+                  "min": np.array([c_hist.min], dtype=np.float32),
+                  "max": np.array([c_hist.max], dtype=np.float32),
+              }],
+          }
+          session_hist = histogram_utils.DynamicHistogram.from_dict(
+              session_hist_dict,
+              max_tensor_bins=histogram_quantize.DEFAULT_NUM_BINS,
+          )
+          if base_dict is not None:
+            merged_hist = histogram_utils.DynamicHistogram.from_dict(
+                base_dict,
+                max_tensor_bins=histogram_quantize.DEFAULT_NUM_BINS,
+            )
+            merged_hist.merge(session_hist)
+            final_hist_dict = merged_hist.to_dict()
+          else:
+            final_hist_dict = session_hist.to_dict()
+        else:
+          assert base_dict is not None
+          final_hist_dict = copy.deepcopy(base_dict)
+        if tensor_name in self._model_qsvs:
+          self._model_qsvs[tensor_name]["histogram"] = final_hist_dict
+      self._histograms_synced = True
+    return self._model_qsvs
+
+  @override
+  def reset_model_qsvs(self) -> None:
+    super().reset_model_qsvs()
+    self._base_histograms = {}
+    if self._session is not None:
+      self._session.reset()
+    self._histograms_synced = True
+
+  @override
+  def load_model_qsvs(self, model_qsvs: str | dict[str, qtyping.QSV]) -> None:
+    super().load_model_qsvs(model_qsvs)
+    self._base_histograms = {
+        name: copy.deepcopy(qsv["histogram"])
+        for name, qsv in self._model_qsvs.items()
+        if "histogram" in qsv
+    }
+    if self._session is not None:
+      self._session.reset()
+    self._histograms_synced = False

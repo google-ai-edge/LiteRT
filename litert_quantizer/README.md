@@ -314,13 +314,14 @@ calibration.
 * **`CALIBRATION_PRESERVE_ALL_TENSORS` (Default)**: Preserves all intermediate
   tensors in memory, allowing Python-level tensor inspection and collecting
   arbitrary statistics across all layers. Recommended when using algorithms that
-  require custom activation statistics (such as GPTQ) or when inspecting
-  intermediate activations.
-* **`CALIBRATION_PROFILER_BASED` (Recommended, except for GPTQ)**: Uses TFLite's
-  internal C++ profiler-based calibration. It executes directly in C++ with
-  lower memory overhead and is significantly faster. Currently, only min/max
-  collection is supported by this mode, so it can be utilized for all
-  quantization algorithms except GPTQ.
+  require custom activation statistics (such as GPTQ or OSCAR) or when
+  inspecting intermediate activations.
+* **`CALIBRATION_PROFILER_BASED` (Recommended, except for GPTQ/OSCAR)**: Uses
+  TFLite's internal C++ profiler-based calibration. It executes directly in C++
+  with lower memory overhead and is significantly faster. It supports both
+  min/max and dynamic histogram (`HISTOGRAM_PERCENTILE`, `HISTOGRAM_MSE`)
+  collection natively in C++, so it can be utilized for all quantization
+  algorithms except GPTQ and OSCAR.
 
 #### Calibration API: `Quantizer.calibrate()`
 
@@ -382,6 +383,30 @@ for samples in dataset:
 
 # 3. Extract accumulated calibration statistics.
 calibration_result = interpreter.get_calibration_results()
+```
+
+#### Histogram-Based Activation Calibration
+
+For models with heavy-tailed activation distributions or outliers,
+`HISTOGRAM_MSE` and `HISTOGRAM_PERCENTILE` collect bounded dynamic histograms
+during calibration and choose clipping ranges that minimize quantization MSE or
+clip extreme tail percentiles. Both algorithms work in
+`CALIBRATION_PROFILER_BASED` and `CALIBRATION_PRESERVE_ALL_TENSORS` modes:
+
+```python
+from litert_quantizer import algorithm_manager, calibrator, quantizer, recipe
+
+qt = quantizer.Quantizer("path/to/model.tflite")
+qt.load_quantization_recipe(
+    recipe.static_wi8_ai8(
+        algorithm_key=algorithm_manager.AlgorithmName.HISTOGRAM_MSE
+    )
+)
+calibration_result = qt.calibrate(
+    calibration_data,
+    mode=calibrator.CalibrationMode.CALIBRATION_PROFILER_BASED,
+)
+quantized_model = qt.quantize(calibration_result=calibration_result)
 ```
 
 ### Step 4: Quantize & Export the Model

@@ -26,11 +26,16 @@ import numpy as np
 
 import os
 import io
+from ai_edge_litert.tools import flatbuffer_utils
 from litert_quantizer import calibrator
 from litert_quantizer import qtyping
+from litert_quantizer import recipe
 from litert_quantizer import recipe_manager
+from litert_quantizer.utils import histogram_range_utils
+from litert_quantizer.utils import histogram_utils
 from litert_quantizer.utils import test_utils
 from litert_quantizer.utils import tfl_interpreter_utils
+from ai_edge_litert import _pywrap_tfl_calibration  # pylint: disable=g-direct-tensorflow-import
 
 _ComputePrecision = qtyping.ComputePrecision
 _AlgorithmName = recipe_manager.AlgorithmName
@@ -62,6 +67,12 @@ def _get_calibration_data(
       tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: calibration_samples,
   }
   return calibration_data
+
+
+def _read_model_without_signatures(model_path: str) -> bytes:
+  model = flatbuffer_utils.read_model(model_path)
+  model.signatureDefs = []
+  return bytes(flatbuffer_utils.convert_object_to_bytearray(model))
 
 
 def _add_default_int8xint8_integer_recipe(recipe_manager_object):
@@ -351,13 +362,127 @@ class CalibratorTestBase(absltest.TestCase):
     self._calibrator.reset_model_qsvs()
     self.assertEqual(self._calibrator._metadata["num_samples_calibrated"], 0)
 
+  def test_calibrate_with_generator_dataset_succeeds(self):
+    self._single_fc_model_init()
+    _add_default_int8xint8_integer_recipe(self._recipe_manager)
+    gen_dataset = {
+        tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: (
+            _representative_dataset_gen(num_samples=5)
+        ),
+    }
+    self._calibrator.calibrate(gen_dataset, self._recipe_manager)
+    self.assertEqual(self._calibrator._metadata["num_samples_calibrated"], 5)
+    self.assertNotEmpty(self._calibrator.get_model_qsvs())
+
+  def test_calibrate_filters_inf_and_out_of_range_values(self):
+    if (
+        self.mode == _CalibrationMode.CALIBRATION_PROFILER_BASED
+        and not hasattr(_pywrap_tfl_calibration, "CalibrationSession")
+    ):
+      self.skipTest(
+          "Requires updated _pywrap_tfl_calibration with valid-range filtering."
+      )
+    self._single_fc_model_init()
+    _add_default_int8xint8_integer_recipe(self._recipe_manager)
+    vals = np.array(
+        [[-np.inf, np.inf, -3.1e38, 3.1e38, -2.0, 0.0, 1.5, 3.0]],
+        dtype=np.float32,
+    )
+    dataset = {
+        tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: [{"input_1": vals}],
+    }
+    self._calibrator.calibrate(dataset, self._recipe_manager)
+    input_qsv = self._calibrator.get_model_qsvs()["serving_default_input_1:0"]
+    self.assertSequenceAlmostEqual(
+        input_qsv["min"].flatten(), [-2.0], delta=1e-5
+    )
+    self.assertSequenceAlmostEqual(
+        input_qsv["max"].flatten(), [3.0], delta=1e-5
+    )
+
 
 class CalibratorPreserveAllTensorsTest(CalibratorTestBase):
   mode = _CalibrationMode.CALIBRATION_PRESERVE_ALL_TENSORS
 
 
-class CalibratorProfilerBasedTest(CalibratorTestBase):
+class CalibratorProfilerBasedTest(CalibratorTestBase, parameterized.TestCase):
   mode = _CalibrationMode.CALIBRATION_PROFILER_BASED
+
+  @parameterized.parameters(
+      (_AlgorithmName.GPTQ,),
+      (_AlgorithmName.OSCAR,),
+  )
+  def test_profiler_mode_rejects_unsupported_algorithms(self, algorithm_key):
+    self._single_fc_model_init()
+    self._recipe_manager.add_quantization_config(
+        regex=".*",
+        operation_name=qtyping.TFLOperationName.FULLY_CONNECTED,
+        algorithm_key=algorithm_key,
+        op_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=_TENSOR_QUANT_CONFIG(
+                num_bits=8, symmetric=True
+            ),
+            compute_precision=_ComputePrecision.INTEGER,
+        ),
+    )
+    with self.assertRaisesRegex(
+        ValueError, "is not supported by CALIBRATION_PROFILER_BASED mode"
+    ):
+      self._calibrator.calibrate(
+          self._representative_dataset, self._recipe_manager
+      )
+
+  @parameterized.parameters(
+      (_AlgorithmName.MIN_MAX_UNIFORM_QUANT,),
+      (_AlgorithmName.OCTAV,),
+      (_AlgorithmName.MSE,),
+      (_AlgorithmName.HADAMARD_ROTATION,),
+      (_AlgorithmName.DECOMPOSED_HADAMARD_ROTATION,),
+      (_AlgorithmName.DEQUANTIZED_WEIGHT_RECOVERY,),
+  )
+  def test_profiler_mode_accepts_supported_algorithms(self, algorithm_key):
+    self._single_fc_model_init()
+    self._recipe_manager.add_quantization_config(
+        regex=".*",
+        operation_name=qtyping.TFLOperationName.FULLY_CONNECTED,
+        algorithm_key=algorithm_key,
+        op_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=_TENSOR_QUANT_CONFIG(
+                num_bits=8, symmetric=True
+            ),
+            compute_precision=_ComputePrecision.INTEGER,
+        ),
+    )
+    self._calibrator.calibrate(
+        self._representative_dataset, self._recipe_manager
+    )
+    self.assertNotEmpty(self._calibrator.get_model_qsvs())
+
+  def test_profiler_mode_inplace_recipe_mutation_revalidates(self):
+    self._single_fc_model_init()
+    _add_default_int8xint8_integer_recipe(self._recipe_manager)
+    self._calibrator.calibrate(
+        self._representative_dataset, self._recipe_manager
+    )
+    # Overwrite the single rule on the same RecipeManager instance in-place.
+    self._recipe_manager.add_quantization_config(
+        regex=".*",
+        operation_name=qtyping.TFLOperationName.ALL_SUPPORTED,
+        algorithm_key=_AlgorithmName.GPTQ,
+        op_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=_TENSOR_QUANT_CONFIG(
+                num_bits=8, symmetric=True
+            ),
+            compute_precision=_ComputePrecision.INTEGER,
+        ),
+    )
+    self.assertLen(self._recipe_manager.get_quantization_recipe(), 1)
+    with self.assertRaisesRegex(
+        ValueError, "is not supported by CALIBRATION_PROFILER_BASED mode"
+    ):
+      self._calibrator.calibrate(
+          self._representative_dataset, self._recipe_manager
+      )
 
 
 class CalibratorAlreadyQuantizedModelTest(parameterized.TestCase):
@@ -672,6 +797,401 @@ class CalibrationModesComparisonTest(parameterized.TestCase):
         interpreter_preserve.get_calibration_results(),
         interpreter_profiler.get_calibration_results(),
     )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="single_fc_mse",
+          model_name="single_fc.tflite",
+          algorithm_key=_AlgorithmName.HISTOGRAM_MSE,
+      ),
+      dict(
+          testcase_name="conv_mnist_mse",
+          model_name="conv_fc_mnist.tflite",
+          algorithm_key=_AlgorithmName.HISTOGRAM_MSE,
+      ),
+      dict(
+          testcase_name="two_signatures_percentile",
+          model_name="two_signatures.tflite",
+          algorithm_key=_AlgorithmName.HISTOGRAM_PERCENTILE,
+      ),
+  )
+  @absltest.skipIf(
+      not hasattr(_pywrap_tfl_calibration, "CalibrationSession"),
+      "Requires _pywrap_tfl_calibration.CalibrationSession",
+  )
+  def test_histogram_modes_results_match_with_calibrator_api(
+      self, model_name: str, algorithm_key: _AlgorithmName
+  ) -> None:
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / "tests/models" / model_name
+    )
+    rm = recipe_manager.RecipeManager()
+    rm.load_quantization_recipe(
+        recipe.static_wi8_ai8(algorithm_key=algorithm_key)
+    )
+    calib_preserve = calibrator.Calibrator(
+        model_path, mode=_CalibrationMode.CALIBRATION_PRESERVE_ALL_TENSORS
+    )
+    calib_profiler = calibrator.Calibrator(
+        model_path, mode=_CalibrationMode.CALIBRATION_PROFILER_BASED
+    )
+    input_data_map = self._get_random_input_data(model_path)
+    calib_preserve.calibrate(input_data_map, rm)
+    calib_profiler.calibrate(input_data_map, rm)
+
+    qsvs_preserve = calib_preserve.get_model_qsvs()
+    qsvs_profiler = calib_profiler.get_model_qsvs()
+    self._compare_qsvs(qsvs_preserve, qsvs_profiler)
+
+    for tensor_name, qsv_preserve in qsvs_preserve.items():
+      qsv_profiler = qsvs_profiler[tensor_name]
+      self.assertIn("histogram", qsv_preserve)
+      self.assertIn("histogram", qsv_profiler)
+
+      hist_preserve = histogram_utils.DynamicHistogram.from_dict(
+          qsv_preserve["histogram"]
+      )
+      hist_profiler = histogram_utils.DynamicHistogram.from_dict(
+          qsv_profiler["histogram"]
+      )
+      self.assertEqual(
+          int(np.sum(hist_preserve.counts)),
+          int(np.sum(hist_profiler.counts)),
+      )
+      l1_diff = int(np.sum(np.abs(hist_preserve.counts - hist_profiler.counts)))
+      self.assertLessEqual(
+          l1_diff,
+          max(1, int(0.001 * np.sum(hist_preserve.counts))),
+      )
+
+      lo_preserve, hi_preserve = (
+          histogram_range_utils.mse_range_from_histogram(
+              hist_preserve, num_bits=8, symmetric=False
+          )
+      )
+      lo_profiler, hi_profiler = (
+          histogram_range_utils.mse_range_from_histogram(
+              hist_profiler, num_bits=8, symmetric=False
+          )
+      )
+      assert hist_preserve.bin_width is not None
+      bin_width = float(hist_preserve.bin_width)
+      self.assertAlmostEqual(lo_preserve, lo_profiler, delta=bin_width + 1e-5)
+      self.assertAlmostEqual(hi_preserve, hi_profiler, delta=bin_width + 1e-5)
+
+  @absltest.skipIf(
+      not hasattr(_pywrap_tfl_calibration, "CalibrationSession"),
+      "Requires _pywrap_tfl_calibration.CalibrationSession",
+  )
+  def test_profiler_mode_mixed_recipe_collects_histograms_selectively(self):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH)
+        / "tests/models/conv_fc_mnist.tflite"
+    )
+    rm = recipe_manager.RecipeManager()
+    # CONV_2D uses MIN_MAX; FULLY_CONNECTED uses HISTOGRAM_MSE.
+    rm.add_quantization_config(
+        regex=".*",
+        operation_name=qtyping.TFLOperationName.CONV_2D,
+        algorithm_key=_AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+        op_config=qtyping.OpQuantizationConfig(
+            activation_tensor_config=_TENSOR_QUANT_CONFIG(
+                num_bits=8, symmetric=False
+            ),
+            weight_tensor_config=_TENSOR_QUANT_CONFIG(
+                num_bits=8, symmetric=True
+            ),
+            compute_precision=_ComputePrecision.INTEGER,
+        ),
+    )
+    rm.add_quantization_config(
+        regex=".*",
+        operation_name=qtyping.TFLOperationName.FULLY_CONNECTED,
+        algorithm_key=_AlgorithmName.HISTOGRAM_MSE,
+        op_config=qtyping.OpQuantizationConfig(
+            activation_tensor_config=_TENSOR_QUANT_CONFIG(
+                num_bits=8, symmetric=False
+            ),
+            weight_tensor_config=_TENSOR_QUANT_CONFIG(
+                num_bits=8, symmetric=True
+            ),
+            compute_precision=_ComputePrecision.INTEGER,
+        ),
+    )
+
+    calib_preserve = calibrator.Calibrator(
+        model_path, mode=_CalibrationMode.CALIBRATION_PRESERVE_ALL_TENSORS
+    )
+    calib_profiler = calibrator.Calibrator(
+        model_path, mode=_CalibrationMode.CALIBRATION_PROFILER_BASED
+    )
+    input_data_map = self._get_random_input_data(model_path)
+    calib_preserve.calibrate(input_data_map, rm)
+    calib_profiler.calibrate(input_data_map, rm)
+
+    qsvs_preserve = calib_preserve.get_model_qsvs()
+    qsvs_profiler = calib_profiler.get_model_qsvs()
+
+    hist_tensors_preserve = {
+        name for name, qsv in qsvs_preserve.items() if "histogram" in qsv
+    }
+    hist_tensors_profiler = {
+        name for name, qsv in qsvs_profiler.items() if "histogram" in qsv
+    }
+    self.assertNotEmpty(hist_tensors_profiler)
+    self.assertLess(len(hist_tensors_profiler), len(qsvs_profiler))
+    self.assertEqual(hist_tensors_preserve, hist_tensors_profiler)
+
+  @absltest.skipIf(
+      not hasattr(_pywrap_tfl_calibration, "CalibrationSession"),
+      "Requires _pywrap_tfl_calibration.CalibrationSession",
+  )
+  def test_profiler_mode_save_load_and_resume_with_histograms(self):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / "tests/models/single_fc.tflite"
+    )
+    rm = recipe_manager.RecipeManager()
+    rm.load_quantization_recipe(
+        recipe.static_wi8_ai8(algorithm_key=_AlgorithmName.HISTOGRAM_MSE)
+    )
+    with open(model_path, "rb") as f:
+      tflite_model = f.read()
+    full_data = tfl_interpreter_utils.create_random_normal_input_data(
+        tflite_model, num_samples=4, random_seed=7
+    )
+    sig_key = next(iter(full_data))
+    part1_data = {sig_key: full_data[sig_key][:2]}
+    part2_data = {sig_key: full_data[sig_key][2:]}
+
+    calib_part1 = calibrator.Calibrator(
+        model_path, mode=_CalibrationMode.CALIBRATION_PROFILER_BASED
+    )
+    calib_part1.calibrate(part1_data, rm)
+    saved_path = str(
+        pathlib.Path(self.create_tempdir().full_path) / "part1_qsvs.json"
+    )
+    calib_part1.save_calibration_result(saved_path)
+
+    calib_resumed = calibrator.Calibrator(
+        model_path, mode=_CalibrationMode.CALIBRATION_PROFILER_BASED
+    )
+    calib_resumed.load_model_qsvs(saved_path)
+    calib_resumed.calibrate(part2_data, rm)
+    resumed_qsvs = calib_resumed.get_model_qsvs()
+
+    calib_single = calibrator.Calibrator(
+        model_path, mode=_CalibrationMode.CALIBRATION_PROFILER_BASED
+    )
+    calib_single.calibrate(full_data, rm)
+    single_qsvs = calib_single.get_model_qsvs()
+
+    for tensor_name, single_qsv in single_qsvs.items():
+      resumed_qsv = resumed_qsvs[tensor_name]
+      self.assertIn("histogram", resumed_qsv)
+      single_hist = histogram_utils.DynamicHistogram.from_dict(
+          single_qsv["histogram"]
+      )
+      resumed_hist = histogram_utils.DynamicHistogram.from_dict(
+          resumed_qsv["histogram"]
+      )
+      self.assertAlmostEqual(
+          int(np.sum(resumed_hist.counts)),
+          int(np.sum(single_hist.counts)),
+          delta=2,
+      )
+      self.assertAlmostEqual(
+          float(resumed_hist.global_min[0]),
+          float(single_hist.global_min[0]),
+          places=5,
+      )
+      self.assertAlmostEqual(
+          float(resumed_hist.global_max[0]),
+          float(single_hist.global_max[0]),
+          places=5,
+      )
+
+  @absltest.skipIf(
+      not hasattr(_pywrap_tfl_calibration, "CalibrationSession"),
+      "Requires _pywrap_tfl_calibration.CalibrationSession",
+  )
+  def test_pybind_calibration_session_smoke(self):
+    options = _pywrap_tfl_calibration.CalibrationOptions(
+        valid_min=-1e30,
+        valid_max=1e30,
+        collect_histogram=True,
+        num_bins=64,
+        histogram_tensor_names={"serving_default_input_1:0"},
+    )
+    self.assertTrue(options.collect_histogram)
+    self.assertEqual(options.num_bins, 64)
+    session = _pywrap_tfl_calibration.CalibrationSession(options)
+    self.assertEmpty(session.get_histograms())
+
+  def test_profiler_mode_old_wheel_without_calibration_session(self):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / "tests/models/single_fc.tflite"
+    )
+    input_data_map = self._get_random_input_data(model_path)
+
+    had_session = hasattr(_pywrap_tfl_calibration, "CalibrationSession")
+    orig_session = getattr(_pywrap_tfl_calibration, "CalibrationSession", None)
+    try:
+      if had_session:
+        delattr(_pywrap_tfl_calibration, "CalibrationSession")
+
+      # Histogram recipe should fail with a clear upgrade message.
+      hist_rm = recipe_manager.RecipeManager()
+      hist_rm.load_quantization_recipe(
+          recipe.static_wi8_ai8(algorithm_key=_AlgorithmName.HISTOGRAM_MSE)
+      )
+      calib_hist = calibrator.Calibrator(
+          model_path, mode=_CalibrationMode.CALIBRATION_PROFILER_BASED
+      )
+      with self.assertRaisesRegex(
+          ValueError, "CalibrationSession.*ai-edge-litert"
+      ):
+        calib_hist.calibrate(input_data_map, hist_rm)
+
+      # Min/max recipe should still work via InvokeWithCalibration fallback.
+      calib_minmax = calibrator.Calibrator(
+          model_path, mode=_CalibrationMode.CALIBRATION_PROFILER_BASED
+      )
+      calib_minmax.calibrate(input_data_map, self._recipe_manager)
+    finally:
+      if had_session:
+        setattr(_pywrap_tfl_calibration, "CalibrationSession", orig_session)
+
+    if had_session:
+      calib_session = calibrator.Calibrator(
+          model_path, mode=_CalibrationMode.CALIBRATION_PROFILER_BASED
+      )
+      calib_session.calibrate(input_data_map, self._recipe_manager)
+      self._compare_qsvs(
+          calib_session.get_model_qsvs(), calib_minmax.get_model_qsvs()
+      )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="preserve_all_tensors",
+          mode=_CalibrationMode.CALIBRATION_PRESERVE_ALL_TENSORS,
+      ),
+      dict(
+          testcase_name="profiler_based",
+          mode=_CalibrationMode.CALIBRATION_PROFILER_BASED,
+      ),
+  )
+  def test_signatureless_model_matches_signature_model(self, mode):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / "tests/models/single_fc.tflite"
+    )
+    signatureless_model = _read_model_without_signatures(model_path)
+    self.assertEmpty(
+        tfl_interpreter_utils.create_tfl_interpreter(
+            signatureless_model
+        ).get_signature_list()
+    )
+    input_data = np.random.rand(1, 8).astype(np.float32)
+
+    calib_sig = calibrator.Calibrator(model_path, mode=mode)
+    calib_sig.calibrate(
+        {
+            tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: [
+                {"input_1": input_data}
+            ]
+        },
+        self._recipe_manager,
+    )
+    calib_nosig = calibrator.Calibrator(signatureless_model, mode=mode)
+    # Without signatures, inputs are keyed by tensor name (":0" optional).
+    calib_nosig.calibrate(
+        {
+            tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: [
+                {"serving_default_input_1": input_data}
+            ]
+        },
+        self._recipe_manager,
+        cache_output=True,
+    )
+
+    self._compare_qsvs(calib_sig.get_model_qsvs(), calib_nosig.get_model_qsvs())
+    cached_output = calib_nosig.get_cached_output()
+    self.assertLen(cached_output, 1)
+    self.assertEqual(list(cached_output[0]), ["StatefulPartitionedCall:0"])
+
+  @absltest.skipIf(
+      not hasattr(_pywrap_tfl_calibration, "CalibrationSession"),
+      "Requires _pywrap_tfl_calibration.CalibrationSession",
+  )
+  def test_profiler_mode_recreates_session_when_histogram_tensors_change(self):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / "tests/models/single_fc.tflite"
+    )
+    data = tfl_interpreter_utils.create_random_normal_input_data(
+        model_path, num_samples=4, random_seed=3
+    )
+    sig_key = next(iter(data))
+    part1 = {sig_key: data[sig_key][:2]}
+    part2 = {sig_key: data[sig_key][2:]}
+    hist_rm = recipe_manager.RecipeManager()
+    hist_rm.load_quantization_recipe(
+        recipe.static_wi8_ai8(algorithm_key=_AlgorithmName.HISTOGRAM_MSE)
+    )
+
+    def hist_counts(calib: calibrator.Calibrator) -> dict[str, int]:
+      return {
+          name: int(
+              np.sum(
+                  histogram_utils.DynamicHistogram.from_dict(
+                      qsv["histogram"]
+                  ).counts
+              )
+          )
+          for name, qsv in calib.get_model_qsvs().items()
+          if "histogram" in qsv
+      }
+
+    reference = calibrator.Calibrator(
+        model_path, mode=_CalibrationMode.CALIBRATION_PROFILER_BASED
+    )
+    reference.calibrate(part2, hist_rm)
+    expected_counts = hist_counts(reference)
+    self.assertNotEmpty(expected_counts)
+
+    calib = calibrator.Calibrator(
+        model_path, mode=_CalibrationMode.CALIBRATION_PROFILER_BASED
+    )
+    mutable_rm = recipe_manager.RecipeManager()
+    mutable_rm.load_quantization_recipe(
+        recipe.static_wi8_ai8(
+            algorithm_key=_AlgorithmName.MIN_MAX_UNIFORM_QUANT
+        )
+    )
+    calib.calibrate(part1, mutable_rm)
+    self.assertEmpty(hist_counts(calib))
+
+    # Mutating the same RecipeManager in-place to a histogram recipe recreates
+    # the session; only part2 is histogrammed.
+    mutable_rm.load_quantization_recipe(
+        recipe.static_wi8_ai8(algorithm_key=_AlgorithmName.HISTOGRAM_MSE)
+    )
+    calib.calibrate(part2, mutable_rm)
+    self.assertEqual(hist_counts(calib), expected_counts)
+
+    # Mutating back to min/max recreates the session again; the histograms
+    # collected so far are kept but not extended.
+    mutable_rm.load_quantization_recipe(
+        recipe.static_wi8_ai8(
+            algorithm_key=_AlgorithmName.MIN_MAX_UNIFORM_QUANT
+        )
+    )
+    calib.calibrate(part1, mutable_rm)
+    self.assertEqual(hist_counts(calib), expected_counts)
+
+    # Reset drops the carried-over histograms.
+    calib.reset_model_qsvs()
+    self.assertEmpty(calib.get_model_qsvs())
+    calib.calibrate(part2, hist_rm)
+    self.assertEqual(hist_counts(calib), expected_counts)
 
 
 class CalibrationInterpreterInferenceModeTest(absltest.TestCase):
