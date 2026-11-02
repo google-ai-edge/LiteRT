@@ -1,0 +1,107 @@
+--- a/generator/templates/api_cpp.h
++++ b/generator/templates/api_cpp.h
+@@ -47,7 +47,12 @@
+ #include <memory>
+ #include <optional>
+ #include <functional>
++#if __cplusplus >= 202002L
+ #include <span>
++#else
++#include "absl/types/span.h"
++namespace std { template <typename T> using span = absl::Span<T>; }
++#endif
+ #include <string_view>
+ #include <type_traits>
+ #include <utility>
+@@ -735,6 +740,15 @@
+ //   - The |Untyped| struct is only used to differentiate whether |T| is a user specified type
+ //     in which case we need to strip the type from the callback arguments for speecialization
+ //     deduction.
++template <size_t N, typename Tuple, typename Seq = std::make_index_sequence<N>>
++struct take_tuple;
++template <size_t N, typename... Args, size_t... Is>
++struct take_tuple<N, std::tuple<Args...>, std::index_sequence<Is...>> {
++    using type = std::tuple<std::tuple_element_t<Is, std::tuple<Args...>>...>;
++};
++template <size_t N, typename... Args>
++using take_tuple_t = typename take_tuple<N, std::tuple<Args...>>::type;
++
+ template <typename CppFT, typename CppFPtr, typename T>
+ struct CppFTraitsImpl;
+ // Specialization for raw function pointers.
+@@ -745,10 +759,7 @@
+     static constexpr bool capturing = false;
+ 
+     static constexpr size_t NumCppArgs = sizeof...(CppArgs);
+-    using BaseArgsTuple = decltype([]<std::size_t... Is>(std::index_sequence<Is...>) {
+-        return std::type_identity<std::tuple<std::tuple_element_t<Is, std::tuple<CppArgs...>>...>>{};
+-    }(std::make_index_sequence<std::is_same_v<T, Untyped> ? NumCppArgs : NumCppArgs - 1>{})
+-    )::type;
++    using BaseArgsTuple = take_tuple_t<std::is_same_v<T, Untyped> ? NumCppArgs : NumCppArgs - 1, CppArgs...>;
+ };
+ // Specialization for noexcept raw function pointers.
+ template <typename CppFT, typename R, typename... CppArgs, typename T>
+@@ -758,10 +769,7 @@
+     static constexpr bool capturing = false;
+ 
+     static constexpr size_t NumCppArgs = sizeof...(CppArgs);
+-    using BaseArgsTuple = decltype([]<std::size_t... Is>(std::index_sequence<Is...>) {
+-        return std::type_identity<std::tuple<std::tuple_element_t<Is, std::tuple<CppArgs...>>...>>{};
+-    }(std::make_index_sequence<std::is_same_v<T, Untyped> ? NumCppArgs : NumCppArgs - 1>{})
+-    )::type;
++    using BaseArgsTuple = take_tuple_t<std::is_same_v<T, Untyped> ? NumCppArgs : NumCppArgs - 1, CppArgs...>;
+ };
+ // Specialization for member function pointers (lambdas);
+ template <typename CppFT, typename R, typename C, typename... CppArgs, typename T>
+@@ -771,10 +779,7 @@
+     static constexpr bool capturing = !std::is_convertible_v<CppFT, PtrT>;
+ 
+     static constexpr size_t NumCppArgs = sizeof...(CppArgs);
+-    using BaseArgsTuple = decltype([]<std::size_t... Is>(std::index_sequence<Is...>) {
+-        return std::type_identity<std::tuple<std::tuple_element_t<Is, std::tuple<CppArgs...>>...>>{};
+-    }(std::make_index_sequence<std::is_same_v<T, Untyped> ? NumCppArgs : NumCppArgs - 1>{})
+-    )::type;
++    using BaseArgsTuple = take_tuple_t<std::is_same_v<T, Untyped> ? NumCppArgs : NumCppArgs - 1, CppArgs...>;
+ };
+ // Specialization for noexcept member function pointers (noexcept lambdas);
+ template <typename CppFT, typename R, typename C, typename... CppArgs, typename T>
+@@ -784,10 +789,7 @@
+     static constexpr bool capturing = !std::is_convertible_v<CppFT, PtrT>;
+ 
+     static constexpr size_t NumCppArgs = sizeof...(CppArgs);
+-    using BaseArgsTuple = decltype([]<std::size_t... Is>(std::index_sequence<Is...>) {
+-        return std::type_identity<std::tuple<std::tuple_element_t<Is, std::tuple<CppArgs...>>...>>{};
+-    }(std::make_index_sequence<std::is_same_v<T, Untyped> ? NumCppArgs : NumCppArgs - 1>{})
+-    )::type;
++    using BaseArgsTuple = take_tuple_t<std::is_same_v<T, Untyped> ? NumCppArgs : NumCppArgs - 1, CppArgs...>;
+ };
+ template <typename CppFT, typename T = Untyped>
+ struct CppFTraits : CppFTraitsImpl<CppFT, decltype(&CppFT::operator()), T> {};
+@@ -952,12 +954,16 @@
+ // The CallbackInfoHelper provides a utility to create a C CallbackInfo struct type from a C++
+ // callback. This allows us to de-duplicates the logic used for WebGPU structs that have
+ // CallbackInfo members and WebGPU API functions that return a Future.
++template <typename T, typename = void>
++struct has_mode : std::false_type {};
++template <typename T>
++struct has_mode<T, std::void_t<decltype(std::declval<T>().mode)>> : std::true_type {};
+ template <typename CInfoT, typename F>
+ struct CallbackInfoHelper {
+     static CInfoT Create(F lambda) {
+         CInfoT info = {};
+         if constexpr (CppFTraits<F>::capturing) {
+-            if constexpr (requires(CInfoT x) { x.mode; }) {
++            if constexpr (has_mode<CInfoT>::value) {
+                 // If we have a mode argument, then the callback is guaranteed to be called only
+                 // once so we can support it by moving it and making an allocation for it.
+                 std::unique_ptr<F> alloc = std::make_unique<F>(std::move(lambda));
+@@ -980,8 +986,7 @@
+         return info;
+     }
+ 
+-    template <typename T>
+-    requires (!CppFTraits<F>::capturing)
++    template <typename T, typename F_ = F, typename = std::enable_if_t<!CppFTraits<F_>::capturing>>
+     static CInfoT Create(F lambda, T userdata) {
+         CInfoT info = {};
+         info.callback = CallbackHelper<CInfoT, F, decltype(CInfoT::callback)>::template Call<T>;
