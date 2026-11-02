@@ -638,6 +638,7 @@ cc_library(
         "transforms/cast_bf16_ops_to_f32_pass.h",
         "transforms/cleanup_optimization_barrier_pass.h",
         "transforms/large_constant_fold_pass.h",
+        "transforms/optimization_region_passes.h",
         "transforms/optimize_batch_matmul_pass.h",
         "transforms/optimize_broadcast_like_pass.h",
         "transforms/optimize_pass.h",
@@ -664,6 +665,7 @@ cc_library(
         ":elements_attr_roundtrip_pass",
         ":large_constant_fold",
         ":large_constant_fold_pass_options",
+        ":optimization_region_passes",
         ":optimize_broadcast_like_pass",
         ":optimize_broadcast_like_pass_options",
         ":optimize_pass_options",
@@ -1529,6 +1531,36 @@ cc_library(
 )
 
 cc_library(
+    name = "tfl_carrier",
+    srcs = ["transforms/tfl_carrier.cc"],
+    hdrs = ["transforms/tfl_carrier.h"],
+    deps = [
+        "@llvm-project//mlir:AsmParser",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
+    ],
+)
+
+cc_library(
+    name = "optimization_region_passes",
+    srcs = ["transforms/optimization_region_passes.cc"],
+    hdrs = ["transforms/optimization_region_passes.h"],
+    deps = [
+        ":pass",
+        ":pass_options",
+        ":tensorflow_lite_ops",
+        ":tfl_carrier",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Support",
+        "@stablehlo//:stablehlo_ops",
+        "@xla//xla/mlir_hlo",
+    ],
+)
+
+cc_library(
     name = "tensorflow_lite_push_transpose_through_ewise_pass",
     srcs = [
         "transforms/push_transpose_through_ewise_pass.cc",
@@ -2168,6 +2200,7 @@ cc_library(
         ":converter_pass_options_setter",
         ":downcast_x64",
         ":fake_quant_utils",
+        ":optimization_region_passes",
         ":optimize_broadcast_like_pass",
         ":pass",
         ":pass_registry_utils",
@@ -2356,6 +2389,34 @@ cc_library(
     visibility = [
         "//litert/compiler/mlir:__pkg__",
         "//tflite/converter/experimental/remat:__pkg__",
+    ],
+)
+
+tf_cc_test(
+    name = "optimization_regions_v1_test",
+    srcs = ["optimization_regions_v1_test.cc"],
+    deps = [
+        ":common",
+        ":converter_flags_proto_cc",
+        ":tensorflow_lite",
+        ":tf_to_tfl_flatbuffer",
+        "//tflite/converter/quantization/common/quantization_lib:quantization_config",
+        "//tflite/converter/schema:schema_fbs",
+        "//tflite/converter/schema:schema_utils",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:FuncExtensions",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Parser",
+        "@llvm-project//mlir:QuantOps",
+        "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
+        "@org_tensorflow//tensorflow/compiler/tf2xla/kernels:xla_ops",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@stablehlo//:chlo_ops",
+        "@stablehlo//:stablehlo_ops",
+        "@xla//xla/mlir_hlo",
     ],
 )
 

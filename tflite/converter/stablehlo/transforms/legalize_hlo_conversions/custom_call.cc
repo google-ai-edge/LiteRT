@@ -24,8 +24,8 @@ limitations under the License.
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "mlir/AsmParser/AsmParser.h"  // from @llvm-project
 #include "mlir/Dialect/Arith/IR/Arith.h"  // from @llvm-project
+#include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
 #include "mlir/Dialect/Quant/IR/Quant.h"  // from @llvm-project
 #include "mlir/Dialect/Quant/IR/QuantTypes.h"  // from @llvm-project
 #include "mlir/IR/Builders.h"  // from @llvm-project
@@ -38,6 +38,8 @@ limitations under the License.
 #include "mlir/Transforms/DialectConversion.h"  // from @llvm-project
 #include "tflite/converter/ir/tfl_ops.h"  // IWYU pragma: keep
 #include "tflite/converter/transforms/lower_quant_annotations_helper.h"
+#include "tflite/converter/transforms/optimization_region_passes.h"
+#include "tflite/converter/transforms/tfl_carrier.h"
 #include "xla/mlir_hlo/mhlo/IR/hlo_ops.h"
 
 namespace mlir {
@@ -53,26 +55,7 @@ class ConvertCustomCallOp : public OpConversionPattern<mhlo::CustomCallOp> {
       ConversionPatternRewriter& rewriter) const final;
 };
 
-// TFL op on StableHLO CustomCall carrier must serialize its attributes in
-// the CustomCallOp's backend_config StringAttr, following MLIR
-// DictionaryAttr serialization format. If no attributes are specified,
-// the backend_config should be the serialized empty DictionaryAttr.
-mlir::DictionaryAttr ParseSerializedTFLOpAttributes(
-    std::optional<mlir::Attribute> backend_config, MLIRContext* ctx) {
-  if (!backend_config) {
-    return nullptr;
-  }
-
-  auto serialized_attributes =
-      mlir::dyn_cast_or_null<mlir::StringAttr>(*backend_config);
-  if (!serialized_attributes) {
-    return nullptr;
-  }
-
-  auto dict_attribute = mlir::dyn_cast_or_null<mlir::DictionaryAttr>(
-      parseAttribute(serialized_attributes.getValue(), ctx));
-  return dict_attribute;
-}
+using ::mlir::TFL::ParseSerializedTFLOpAttributes;
 
 // Quantization parameters carried in the backend_config of a `tfl.quantize` /
 // `tfl.dequantize` custom call.
@@ -462,6 +445,23 @@ class PropagateQuantizedTypeToCustomCallOp
 
 std::optional<bool> IsCustomCallLegal(mhlo::CustomCallOp op) {
   auto call_target_name = op.getCallTargetName();
+  // Inside an `odml.optimization_region` with optimize = "none" (body function
+  // stamped `odml.optimization = {optimize = "none"}`, see
+  // transforms/optimization_region_passes.h) a TFL op stays on the opaque
+  // CustomCall carrier through the whole TFL pipeline, so that no pass can
+  // rewrite it, and is materialized by MaterializeOptimizationRegionsPass at
+  // the end. `tfl.quantize` / `tfl.dequantize` are exempt: their legalization
+  // builds the quantized result type (and `tfl.pseudo_qconst` for constant
+  // inputs) from the parameters in backend_config, which the generic
+  // materialization cannot reproduce, so they always take the normal path.
+  if (call_target_name.starts_with("tfl.") &&
+      call_target_name != "tfl.quantize" &&
+      call_target_name != "tfl.dequantize") {
+    if (auto func = op->getParentOfType<func::FuncOp>();
+        func && TFL::IsOptimizeNoneRegion(func)) {
+      return true;
+    }
+  }
   if (call_target_name.starts_with("custom_call.")) {
     auto bc = op.getBackendConfig();
     if (!bc || mlir::isa<mlir::StringAttr>(*bc)) {
