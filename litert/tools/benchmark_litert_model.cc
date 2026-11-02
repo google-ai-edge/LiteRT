@@ -48,6 +48,7 @@ limitations under the License.
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/runtime/compiled_model.h"
 #include "litert/tools/flags/options_parser_registry.h"
+#include "litert/tools/partition_report.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
@@ -58,6 +59,7 @@ using ::litert::CompiledModelNext;
 using ::litert::Options;
 using ::litert::RuntimeOptions;
 using ::litert::TensorBuffer;
+using ::litert::tools::GeneratePartitionReport;
 
 HwAcceleratorSet GetRequestedHardwareAccelerators(
     const BenchmarkParams& params) {
@@ -399,6 +401,11 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
   }
   LITERT_ASSIGN_OR_RETURN(interpreter_, GetInterpreter(compiled_model_ptr),
                           AsTfLiteStatus(_ << "Failed to get interpreter."));
+
+  if (params_.Get<bool>("print_partition_report")) {
+    const std::string report = GeneratePartitionReport(*interpreter_);
+    LITERT_LOG(LITERT_INFO, "\n%s", report.c_str());
+  }
 
   if (!params_.Get<std::string>("model_runtime_info_output_file").empty()) {
     model_runtime_info_listener_ =

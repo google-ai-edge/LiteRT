@@ -533,10 +533,41 @@ cc_library(
 )
 
 cc_library(
+    name = "partition_report",
+    srcs = ["partition_report.cc"],
+    hdrs = ["partition_report.h"],
+    deps = [
+        "//tflite:framework",
+        "//tflite:kernel_api",
+        "//tflite:util",
+        "//tflite/c:c_api",
+        "//tflite/c:common",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "partition_report_test",
+    srcs = ["partition_report_test.cc"],
+    deps = [
+        ":partition_report",
+        "//tflite:framework",
+        "//tflite:kernel_api",
+        "//tflite/c:common",
+        "//tflite/delegates/xnnpack:xnnpack_delegate",
+        "//tflite/kernels:builtin_ops",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "benchmark_litert_model",
     srcs = ["benchmark_litert_model.cc"],
     hdrs = ["benchmark_litert_model.h"],
     deps = [
+        ":partition_report",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_mediatek_options",

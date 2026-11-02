@@ -255,6 +255,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("use_profiler",
                             BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("print_partition_report",
+                            BenchmarkParam::Create<bool>(false));
     default_params.AddParam("enable_perfetto",
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("gpu_backend",
@@ -435,6 +437,13 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
         "Whether to require full delegation."));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "use_profiler", &params_, "Whether to use profiler."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "print_partition_report", &params_,
+        "Print how the primary subgraph is split between accelerator "
+        "partitions and CPU fallback nodes after compilation: one line per "
+        "execution-plan entry, fallback islands with an opcode histogram, "
+        "bytes crossing each CPU<->accelerator boundary, and a single "
+        "PARTITION_REPORT summary line."));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "enable_perfetto", &params_, "Whether to enable perfetto tracing."));
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
