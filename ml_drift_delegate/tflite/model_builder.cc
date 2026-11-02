@@ -488,6 +488,7 @@ bool IsIntSupportedOp(int32_t builtin_code) {
   return builtin_code == kTfLiteBuiltinAbs ||
          builtin_code == kTfLiteBuiltinAdd ||
          builtin_code == kTfLiteBuiltinAtan2 ||
+         builtin_code == kTfLiteBuiltinBroadcastTo ||
          builtin_code == kTfLiteBuiltinCos ||
          builtin_code == kTfLiteBuiltinDiv ||
          builtin_code == kTfLiteBuiltinFloorDiv ||
@@ -547,6 +548,7 @@ bool IsBoolSupportedCompositeOp(
 
 bool SupportAllPrecisionOp(int32_t builtin_code) {
   return builtin_code == kTfLiteBuiltinStablehloBroadcastInDim ||
+         builtin_code == kTfLiteBuiltinBroadcastTo ||
          builtin_code == kTfLiteBuiltinBitcast ||
          builtin_code == kTfLiteBuiltinCast ||
          builtin_code == kTfLiteBuiltinConcatenation ||
@@ -1057,6 +1059,118 @@ class BroadcastInDimOperationParser : public TFLiteOperationParser {
       return absl::InvalidArgumentError("Index values must be unique");
     }
     return absl::OkStatus();
+  }
+};
+
+class BroadcastToOperationParser : public TFLiteOperationParser {
+ public:
+  absl::Status IsSupported(const TfLiteContext* context,
+                           const TfLiteNode* tflite_node,
+                           const TfLiteRegistration* registration) final {
+    ABSL_RETURN_IF_ERROR(ValidateSupport(
+        context, tflite_node, registration,
+        {.max_version = 3,
+         .min_inputs = 2,
+         .max_inputs = 2,
+         .num_outputs = 1,
+         .check_gpu_compatibility = false}));
+    const TfLiteTensor* input_tensor = nullptr;
+    const TfLiteTensor* shape_tensor = nullptr;
+    TfLiteTensor* output_tensor = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 0, &input_tensor));
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 1, &shape_tensor));
+    ABSL_RETURN_IF_ERROR(
+        PreGetOutputTensor(context, tflite_node, 0, &output_tensor));
+    if (!tflite::IsConstantTensor(shape_tensor)) {
+      return absl::InvalidArgumentError(
+          "BROADCAST_TO shape tensor must be constant.");
+    }
+    if (input_tensor->dims->size < 1 || input_tensor->dims->size > 4 ||
+        output_tensor->dims->size < 1 || output_tensor->dims->size > 4 ||
+        input_tensor->dims->size > output_tensor->dims->size) {
+      return absl::InvalidArgumentError(
+          "BROADCAST_TO only supports 1D-4D tensors with rank(input) <= "
+          "rank(output).");
+    }
+    if (!IsBroadcastable(input_tensor->dims, output_tensor->dims)) {
+      return absl::InvalidArgumentError(
+          "BROADCAST_TO input shape is not broadcastable to output shape.");
+    }
+    if (tflite::IsConstantTensor(input_tensor)) {
+      const bool supported_const_type =
+          input_tensor->type == kTfLiteFloat32 ||
+          input_tensor->type == kTfLiteFloat16 ||
+          input_tensor->type == kTfLiteInt32 ||
+          input_tensor->type == kTfLiteBool ||
+          input_tensor->type == kTfLiteInt8 ||
+          input_tensor->type == kTfLiteUInt8 ||
+          input_tensor->type == kTfLiteInt4;
+      if (!supported_const_type || input_tensor->sparsity != nullptr) {
+        return absl::InvalidArgumentError(
+            "BROADCAST_TO unsupported constant input tensor.");
+      }
+    } else {
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+    }
+    ABSL_RETURN_IF_ERROR(PreCheckTensorShape(*output_tensor));
+    return absl::OkStatus();
+  }
+
+  void Parse(const TfLiteNode* tflite_node, const TfLiteRegistration*,
+             ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
+    const TfLiteTensor* input_tensor = reader->GetInputTensor(0);
+    const TfLiteTensor* output_tensor = reader->GetOutputTensor(0);
+    ::ml_drift::Value* input_val =
+        reader->IsConstantTensor(0)
+            ? reader->AddConstInput(0, /*layout=*/{})
+            : reader->ReadValue(0);
+
+    // Align lower-rank input shape with right-aligned TFLite broadcast shape if
+    // needed before tiling.
+    const ::ml_drift::BHWC broadcast_input_shape =
+        ExtractTensorShapeWithTfLiteBroadcast(input_tensor);
+    if (input_val->tensor.shape != broadcast_input_shape) {
+      ::ml_drift::Node* reshape_node = graph->NewNode();
+      reshape_node->operation.type =
+          ToString(::ml_drift::OperationType::kReshape);
+      ::ml_drift::ReshapeAttributes reshape_attr;
+      reshape_attr.new_shape = broadcast_input_shape;
+      reshape_node->operation.attributes = std::move(reshape_attr);
+      graph->AddConsumer(reshape_node->id, input_val->id);
+      ::ml_drift::Value* reshaped_val = graph->NewValue();
+      reshaped_val->tensor.type = input_val->tensor.type;
+      reshaped_val->tensor.shape = broadcast_input_shape;
+      graph->SetProducer(reshape_node->id, reshaped_val->id);
+      input_val = reshaped_val;
+    }
+
+    const ::ml_drift::BHWC output_shape = ExtractTensorShape(output_tensor);
+    ::ml_drift::Node* node = graph->NewNode();
+    if (input_val->tensor.shape != output_shape) {
+      node->operation.type = ToString(::ml_drift::OperationType::kTile);
+    } else {
+      node->operation.type = ToString(::ml_drift::OperationType::kCopy);
+    }
+    graph->AddConsumer(node->id, input_val->id);
+    reader->AddOutputs(node);
+  }
+
+ private:
+  static ::ml_drift::BHWC ExtractTensorShapeWithTfLiteBroadcast(
+      const TfLiteTensor* tflite_tensor) {
+    const TfLiteIntArray* dims = tflite_tensor->dims;
+    if (dims->size == 0) return ::ml_drift::BHWC(1, 1, 1, 1);
+    if (dims->size == 1) return ::ml_drift::BHWC(1, 1, 1, dims->data[0]);
+    if (dims->size == 2) {
+      return ::ml_drift::BHWC(1, 1, dims->data[0], dims->data[1]);
+    }
+    if (dims->size == 3) {
+      return ::ml_drift::BHWC(1, dims->data[0], dims->data[1], dims->data[2]);
+    }
+    return ::ml_drift::BHWC(dims->data[0], dims->data[1], dims->data[2],
+                            dims->data[3]);
   }
 };
 
@@ -7033,6 +7147,8 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
     case kTfLiteBuiltinBitwiseXor:
       return std::make_unique<ElementwiseOperationParser>(
           ::ml_drift::OperationType::kLogicalXor);
+    case kTfLiteBuiltinBroadcastTo:
+      return std::make_unique<BroadcastToOperationParser>();
     case kTfLiteBuiltinStablehloBroadcastInDim:
       return std::make_unique<BroadcastInDimOperationParser>();
     case kTfLiteBuiltinCast:

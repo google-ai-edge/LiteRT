@@ -5402,5 +5402,67 @@ TEST(CompositeGroupNormParserTest,
                                 context->registration()));
 }
 
+TEST(BroadcastToOperationParserTest, SupportsConstantInput4DTo4D) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinBroadcastTo,
+      /*op_version=*/3,
+      /*num_inputs=*/2,
+      /*shape=*/std::vector<int>({1, 4, 4, 1}));
+  context->SetTensorType(1, kTfLiteFloat32, kTfLiteMmapRo);
+  context->ChangeTensorShape(2, {4});
+  context->SetTensorType(2, kTfLiteInt32, kTfLiteMmapRo);
+  const int32_t shape_data[4] = {1, 4, 4, 256};
+  for (int i = 0; i < 4; ++i) context->tensor(2)->data.i32[i] = shape_data[i];
+  context->ChangeTensorShape(3, {1, 4, 4, 256});
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  ASSERT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+  ASSERT_EQ(graph.nodes().size(), 2);
+  EXPECT_EQ(graph.nodes()[0]->operation.type,
+            ToString(::ml_drift::OperationType::kConstant));
+  EXPECT_EQ(graph.nodes()[1]->operation.type,
+            ToString(::ml_drift::OperationType::kTile));
+  EXPECT_EQ(graph.FindInputs(graph.nodes()[1]->id)[0]->tensor.shape,
+            ::ml_drift::BHWC(1, 4, 4, 1));
+  EXPECT_EQ(graph.FindOutputs(graph.nodes()[1]->id)[0]->tensor.shape,
+            ::ml_drift::BHWC(1, 4, 4, 256));
+}
+
+TEST(BroadcastToOperationParserTest, SupportsRuntimeInput1DTo4D) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinBroadcastTo,
+      /*op_version=*/3,
+      /*num_inputs=*/2,
+      /*shape=*/std::vector<int>({256}));
+  context->ChangeTensorShape(2, {4});
+  context->SetTensorType(2, kTfLiteInt32, kTfLiteMmapRo);
+  const int32_t shape_data[4] = {1, 4, 4, 256};
+  for (int i = 0; i < 4; ++i) context->tensor(2)->data.i32[i] = shape_data[i];
+  context->ChangeTensorShape(3, {1, 4, 4, 256});
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  ASSERT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+  ASSERT_EQ(graph.nodes().size(), 2);
+  EXPECT_EQ(graph.nodes()[0]->operation.type,
+            ToString(::ml_drift::OperationType::kReshape));
+  EXPECT_EQ(graph.nodes()[1]->operation.type,
+            ToString(::ml_drift::OperationType::kTile));
+  EXPECT_EQ(graph.FindInputs(graph.nodes()[1]->id)[0]->tensor.shape,
+            ::ml_drift::BHWC(1, 1, 1, 256));
+  EXPECT_EQ(graph.FindOutputs(graph.nodes()[1]->id)[0]->tensor.shape,
+            ::ml_drift::BHWC(1, 4, 4, 256));
+}
 }  // namespace
 }  // namespace litert::ml_drift

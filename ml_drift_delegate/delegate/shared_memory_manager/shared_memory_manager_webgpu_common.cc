@@ -65,7 +65,8 @@ constexpr size_t kAlignment = 4096;
 // internal WebGPU lock.
 wgpu::Buffer CreateOwnedDataBuffer(const wgpu::Device& device,
                                    absl::Span<const uint8_t> data,
-                                   size_t min_size) {
+                                   size_t min_size, uint32_t bytes_per_row,
+                                   uint32_t bytes_per_row_aligned) {
   size_t size = std::max(data.size(), min_size);
   // BufferHostMappedPointer requires aligned buffers.
   size_t aligned_size = AlignByN(size, kAlignment);
@@ -79,7 +80,16 @@ wgpu::Buffer CreateOwnedDataBuffer(const wgpu::Device& device,
                 0);
   uint8_t* data_copy = static_cast<uint8_t*>(data_copy_void_ptr);
 #endif
-  memcpy(data_copy, data.data(), data.size());
+  if (min_size > data.size() && bytes_per_row > 0 &&
+      bytes_per_row_aligned > bytes_per_row) {
+    const size_t num_rows = data.size() / bytes_per_row;
+    for (size_t r = 0; r < num_rows; ++r) {
+      memcpy(data_copy + r * bytes_per_row_aligned,
+             data.data() + r * bytes_per_row, bytes_per_row);
+    }
+  } else {
+    memcpy(data_copy, data.data(), data.size());
+  }
   wgpu::BufferHostMappedPointer host_mapped_desc;
   host_mapped_desc.pointer = data_copy;
   host_mapped_desc.disposeCallback = [](void* userdata) {
@@ -152,7 +162,8 @@ absl::Status UploadPrepackedTensor(const webgpu::ExecutionEnvironment& env,
   // need to copy it to a buffer on the main thread.
   bool copy_buffer_on_main_thread = !has_prepacked_tflite_tensors;
   if (copy_buffer_on_main_thread) {
-    buffer = CreateOwnedDataBuffer(device, weights_data, min_owned_buffer_size);
+    buffer = CreateOwnedDataBuffer(device, weights_data, min_owned_buffer_size,
+                                   bytes_per_row, bytes_per_row_aligned);
   }
 
   auto fn = [=] {
@@ -161,7 +172,8 @@ absl::Status UploadPrepackedTensor(const webgpu::ExecutionEnvironment& env,
       owned_buffer = std::move(buffer);
     } else {
       owned_buffer =
-          CreateOwnedDataBuffer(device, weights_data, min_owned_buffer_size);
+          CreateOwnedDataBuffer(device, weights_data, min_owned_buffer_size,
+                                bytes_per_row, bytes_per_row_aligned);
       ::ml_drift::MadviseData(const_cast<uint8_t*>(weights_data.data()),
                               weights_data.size());
     }
