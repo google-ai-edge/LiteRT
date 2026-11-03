@@ -14,8 +14,11 @@
 
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_python//python:py_test.bzl", "py_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -29,6 +32,11 @@ proto_library(
 
 cc_proto_library(
     name = "evaluation_cc_proto",
+    deps = [":evaluation_proto"],
+)
+
+py_proto_library(
+    name = "evaluation_py_proto",
     deps = [":evaluation_proto"],
 )
 
@@ -51,6 +59,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@com_google_protobuf//:protobuf",
         "@stblib//:stb_image_hdrs",
     ],
@@ -68,6 +77,77 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "execution",
+    srcs = ["execution.cc"],
+    hdrs = ["execution.h"],
+    copts = ["-fno-exceptions"],
+    deps = [
+        ":data",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c/options:litert_cpu_options",
+        "//litert/c/options:litert_intel_openvino_options",
+        "//litert/cc:litert_buffer_ref",  # buildcleaner: keep
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model_types",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/options:litert_arm_vulkan_ml_options",
+        "//litert/cc/options:litert_cpu_options",
+        "//litert/cc/options:litert_gpu_options",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/container:btree",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "run_lock",
+    srcs = ["run_lock.cc"],
+    hdrs = ["run_lock.h"],
+    copts = ["-fno-exceptions"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+    ],
+)
+
+cc_library(
+    name = "runner",
+    srcs = ["runner.cc"],
+    hdrs = ["runner.h"],
+    copts = ["-fno-exceptions"],
+    deps = [
+        ":data",
+        ":evaluation_cc_proto",
+        ":execution",
+        ":metrics",
+        ":run_lock",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:btree",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/numeric:bits",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
 cc_test(
     name = "image_test",
     size = "small",
@@ -79,6 +159,7 @@ cc_test(
         "//tflite/kernels/internal:reference_base",
         "//tflite/kernels/internal:types",
         "@XNNPACK",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -104,5 +185,107 @@ cc_test(
         ":data",
         ":metrics",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "execution_test",
+    size = "small",
+    srcs = ["execution_test.cc"],
+    copts = ["-fno-exceptions"],
+    deps = [
+        ":data",
+        ":execution",
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_cpu_options",
+        "//litert/c/options:litert_gpu_options",
+        "//litert/c/options:litert_intel_openvino_options",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc/options:litert_arm_vulkan_ml_options",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/container:btree",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_protobuf//:protobuf",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_test(
+    name = "run_lock_test",
+    size = "small",
+    srcs = ["run_lock_test.cc"],
+    copts = ["-fno-exceptions"],
+    deps = [
+        ":data",
+        ":run_lock",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "runner_test_util",
+    testonly = True,
+    srcs = ["runner_test_util.cc"],
+    hdrs = ["runner_test_util.h"],
+    copts = ["-fno-exceptions"],
+    deps = [
+        ":data",
+        ":evaluation_cc_proto",
+        ":runner",
+        "//litert/cc:litert_expected",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/functional:function_ref",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest",
+        "@com_google_protobuf//:protobuf",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_test(
+    name = "runner_test",
+    size = "small",
+    srcs = ["runner_test.cc"],
+    copts = ["-fno-exceptions"],
+    deps = [
+        ":data",
+        ":evaluation_cc_proto",
+        ":run_lock",
+        ":runner",
+        ":runner_test_util",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_binary(
+    name = "vision_eval_for_test",
+    testonly = True,
+    srcs = ["//litert/tools:vision_eval_main.cc"],
+    copts = ["-fno-exceptions"],
+    deps = [":runner"],
+)
+
+# The NumPy implementation is a test oracle for the original dense-task
+# protocols. It is not linked or invoked by the evaluator.
+py_test(
+    name = "metrics_parity_test",
+    size = "small",
+    srcs = [
+        "metrics_parity_test.py",
+        "metrics_reference.py",
+    ],
+    data = [":vision_eval_for_test"],
+    env = {"LITERT_VISION_EVAL_BIN": "$(rootpath :vision_eval_for_test)"},
+    deps = [
+        ":evaluation_py_proto",
+        "//third_party/py/numpy",
+        "@absl_py//absl/testing:absltest",
+        "@com_google_protobuf//:protobuf_python",
     ],
 )
