@@ -163,7 +163,7 @@ def litert_define_ats(
       extra_models: A list of labels to directories or files containing .tflite models,
           CNS paths to .tflite models, or .tar.gz URLs (https://...) to
           download .tflite models from. Cannot mix source types.
-      platform: Target OS platform ("android" or "macos").
+      platform: Target OS platform ("android", "macos", or "windows").
       aot_shard_count: Optional shard_count for the host compile-only sh_test target.
       aot_tags: Additional tags for the host compile-only sh_test target.
     """
@@ -180,7 +180,7 @@ def litert_define_ats(
         version_suffix = "_" + version_target_suffix(b) if version_target_suffix(b) else ""
 
         init_run_args = []
-        if platform != "macos" and resolved_models.device_paths:
+        if platform not in ("macos", "windows") and resolved_models.device_paths:
             init_run_args.append("--extra_models={}".format(",".join(resolved_models.device_paths)))
 
         if is_npu_backend(b):
@@ -207,6 +207,7 @@ def litert_define_ats(
                 exec_args = run_args,
                 backend_id = b,
                 platform = platform,
+                enable_ynnpack = "--enable_ynnpack=true" in extra_flags,
                 model_providers = resolved_models.model_providers,
                 extra_models = resolved_models.cns_models,
                 data = resolved_models.data,
