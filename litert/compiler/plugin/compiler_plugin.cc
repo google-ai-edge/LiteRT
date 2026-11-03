@@ -826,7 +826,15 @@ Expected<PartitionResult> PartitionModel(
 
   ABSL_DCHECK_EQ(dispatch_ops.size(), model.NumSubgraphs() - input_num_sgs);
 
+  std::sort(selected_composite_subgraph_indexes.begin(),
+            selected_composite_subgraph_indexes.end());
+  selected_composite_subgraph_indexes.erase(
+      std::unique(selected_composite_subgraph_indexes.begin(),
+                  selected_composite_subgraph_indexes.end()),
+      selected_composite_subgraph_indexes.end());
+
   // Update input_num_sgs to account for removed decomposition subgraphs.
+  ABSL_DCHECK_LE(selected_composite_subgraph_indexes.size(), input_num_sgs);
   input_num_sgs -= selected_composite_subgraph_indexes.size();
   // Remove all decomposition subgraphs from the model.
   model.Yank(std::move(selected_composite_subgraph_indexes));
