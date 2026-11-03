@@ -32,7 +32,7 @@ FFT2D_SRCS = [
 
 config_setting(
     name = "windows",
-    values = {"cpu": "x64_windows"},
+    constraint_values = ["@platforms//os:windows"],
 )
 
 # This is the main 2D FFT library.  The 2D FFTs in this library call

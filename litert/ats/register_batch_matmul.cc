@@ -41,7 +41,22 @@ void RegisterBatchMatmulImpl(const AtsConf& options, size_t& test_id,
       TypeList<TypeTuple<float, float>,
                TypeTuple<tflite::half, tflite::half>>,
       TypeList<std::true_type, std::false_type>,
-      TypeList<std::true_type, std::false_type>>
+      TypeList<std::true_type, std::false_type>,
+      TypeList<std::true_type>>
+    (iters, test_id, options, cap);
+
+  // Constant 2D RHS weights (exercises linear-layer / kFullyConnected lowering
+  // across 2D/3D/4D LHS and all adj_x/adj_y combinations).
+  RegisterCombinations<
+      Fixture,
+      BatchMatmul,
+      SizeListC<2, 3, 4>,
+      SizeListC<2>,
+      TypeList<TypeTuple<float, float>,
+               TypeTuple<tflite::half, tflite::half>>,
+      TypeList<std::true_type, std::false_type>,
+      TypeList<std::true_type, std::false_type>,
+      TypeList<std::false_type>>
     (iters, test_id, options, cap);
   // clang-format on
 }
