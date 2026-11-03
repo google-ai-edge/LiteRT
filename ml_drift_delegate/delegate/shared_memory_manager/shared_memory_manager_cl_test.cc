@@ -604,8 +604,9 @@ void RunBlockwiseQuantizationTest(cl::Environment& env, TfLiteType zp_type,
 
   ASSERT_OK(status);
 
+  const size_t expected_params = use_invalid_zp ? 1 : 2;
   EXPECT_EQ(buffer_id_to_spatial_tensor.size(), 1);
-  EXPECT_EQ(quant_param_tensors.size(), 2);
+  EXPECT_EQ(quant_param_tensors.size(), expected_params);
 
   int params_found = 0;
   for (auto& [_, global_id] : local_to_global_id_map) {
@@ -620,7 +621,7 @@ void RunBlockwiseQuantizationTest(cl::Environment& env, TfLiteType zp_type,
                 BHWC(1, 1, 25, 8));
     }
   }
-  EXPECT_EQ(params_found, 2);
+  EXPECT_EQ(params_found, static_cast<int>(expected_params));
 
   TfLiteIntArrayFree(tensors[0].dims);
   delete quant_params;
