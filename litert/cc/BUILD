@@ -745,6 +745,7 @@ cc_test(
     ],
     deps = [
         ":litert_api_types",
+        ":litert_buffer_ref",
         ":litert_common",
         ":litert_compiled_model",
         ":litert_element_type",
