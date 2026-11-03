@@ -33,6 +33,7 @@ limitations under the License.
 #include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -298,6 +299,62 @@ TEST_F(BenchmarkLiteRtModelTest,
                 &serialize_program_cache, gpu_options->Get()),
             kLiteRtStatusOk);
   EXPECT_TRUE(serialize_program_cache);
+}
+
+TEST_F(BenchmarkLiteRtModelTest, NpuOptionsDefaultToBurstAndLogOff) {
+  using ::litert::google_tensor::GoogleTensorOptions;
+  using ::litert::mediatek::MediatekOptions;
+  using ::litert::qualcomm::QualcommOptions;
+
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<bool>("use_cpu", false);
+  params.Set<bool>("use_npu", true);
+
+  Options options = CreateCompiledModelOptions(params);
+
+  auto qnn_opts = options.GetOptions<QualcommOptions>();
+  ASSERT_TRUE(qnn_opts.HasValue());
+  EXPECT_EQ(qnn_opts->GetLogLevel(), QualcommOptions::LogLevel::kOff);
+  EXPECT_EQ(qnn_opts->GetHtpPerformanceMode(),
+            QualcommOptions::HtpPerformanceMode::kBurst);
+  EXPECT_FALSE(qnn_opts->GetUseFoldReLU());
+  EXPECT_TRUE(qnn_opts->GetUseConvHMX());
+  EXPECT_EQ(qnn_opts->GetOptimizationLevel(),
+            QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
+
+  auto mtk_opts = options.GetOptions<MediatekOptions>();
+  ASSERT_TRUE(mtk_opts.HasValue());
+  EXPECT_EQ(mtk_opts->GetPerformanceMode(),
+            MediatekOptions::PerformanceMode::kTurboBoost);
+  EXPECT_TRUE(mtk_opts->GetEnableL1CacheOptimizations());
+
+  auto google_tensor_opts = options.GetOptions<GoogleTensorOptions>();
+  ASSERT_TRUE(google_tensor_opts.HasValue());
+  EXPECT_EQ(google_tensor_opts->GetPerformanceMode(),
+            GoogleTensorOptions::PerformanceMode::kBurst);
+}
+
+TEST_F(BenchmarkLiteRtModelTest, NpuOptionsRespectExplicitQualcommFlags) {
+  using ::litert::qualcomm::QualcommOptions;
+
+  absl::SetFlag(&FLAGS_qualcomm_htp_performance_mode,
+                QualcommOptions::HtpPerformanceMode::kSustainedHighPerformance);
+  absl::SetFlag(&FLAGS_qualcomm_log_level, QualcommOptions::LogLevel::kWarn);
+
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<bool>("use_cpu", false);
+  params.Set<bool>("use_npu", true);
+
+  Options options = CreateCompiledModelOptions(params);
+  auto qnn_opts = options.GetOptions<QualcommOptions>();
+  ASSERT_TRUE(qnn_opts.HasValue());
+  EXPECT_EQ(qnn_opts->GetHtpPerformanceMode(),
+            QualcommOptions::HtpPerformanceMode::kSustainedHighPerformance);
+  EXPECT_EQ(qnn_opts->GetLogLevel(), QualcommOptions::LogLevel::kWarn);
+
+  absl::SetFlag(&FLAGS_qualcomm_htp_performance_mode,
+                QualcommOptions::HtpPerformanceMode::kDefault);
+  absl::SetFlag(&FLAGS_qualcomm_log_level, QualcommOptions::LogLevel::kInfo);
 }
 
 }  // namespace
