@@ -21,9 +21,11 @@ from absl.testing import absltest
 from absl.testing import parameterized
 import numpy as np
 
+from litert_quantizer import algorithm_manager
 from litert_quantizer import algorithm_manager_api
 from litert_quantizer import default_policy
 from litert_quantizer import qtyping
+from litert_quantizer.algorithms.uniform_quantize import histogram_quantize
 from litert_quantizer.algorithms.utils import common_utils
 from litert_quantizer.utils import qsv_utils
 
@@ -275,6 +277,29 @@ class AlgorithmManagerApiTest(parameterized.TestCase):
         algorithm_key, tfl_op
     )
     self.assertEqual(update_qsv_func, _sample_update_qsv_func)
+
+  @parameterized.parameters(
+      algorithm_manager.AlgorithmName.HISTOGRAM_PERCENTILE,
+      algorithm_manager.AlgorithmName.HISTOGRAM_MSE,
+  )
+  def test_histogram_algorithms_registered_for_all_min_max_ops(self, alg_name):
+    self.assertTrue(algorithm_manager.is_algorithm_registered(alg_name))
+    min_max_ops = algorithm_manager.get_supported_ops(
+        algorithm_manager.AlgorithmName.MIN_MAX_UNIFORM_QUANT
+    )
+    hist_ops = algorithm_manager.get_supported_ops(alg_name)
+    self.assertCountEqual(hist_ops, min_max_ops)
+    for op_name in hist_ops:
+      self.assertIs(
+          algorithm_manager.get_quantization_func(
+              alg_name, op_name, qtyping.QuantizeMode.CALIBRATE
+          ),
+          histogram_quantize.histogram_calibrate,
+      )
+      self.assertIs(
+          algorithm_manager.get_update_qsv_func(alg_name, op_name),
+          histogram_quantize.histogram_update_qsv,
+      )
 
 
 if __name__ == "__main__":

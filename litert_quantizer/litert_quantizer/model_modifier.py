@@ -261,6 +261,8 @@ class ModelModifier:
     Returns:
       The updated TFlite ModelT object.
     """
+    if not model.signatureDefs:
+      return model
     for signature_def in model.signatureDefs:
       signature_key = signature_def.signatureKey.decode("utf-8")
       logging.info("Signature = %s", signature_key)

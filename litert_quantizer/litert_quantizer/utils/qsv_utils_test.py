@@ -17,6 +17,7 @@ from absl.testing import absltest
 from absl.testing import parameterized
 import numpy as np
 
+from litert_quantizer.utils import histogram_utils
 from litert_quantizer.utils import qsv_utils
 
 
@@ -239,6 +240,71 @@ class QsvUtilsTest(parameterized.TestCase):
     else:
       np.testing.assert_array_equal(updated["mu2"], expected_mu2)
     self.assertEqual(updated["num_samples"], expected_samples)
+
+  def test_histogram_and_moving_average_update(self):
+    h1 = histogram_utils.DynamicHistogram(max_tensor_bins=64)
+    h1.add(np.array([-1.0, 0.0, 1.0, 2.0]))
+    h2 = histogram_utils.DynamicHistogram(max_tensor_bins=64)
+    h2.add(np.array([-2.0, 0.5, 1.5, 3.0]))
+
+    qsv1 = {
+        "min": np.array([-1.0]),
+        "max": np.array([2.0]),
+        "num_samples": 4,
+        "histogram": h1.to_dict(),
+    }
+    qsv2 = {
+        "min": np.array([-2.0]),
+        "max": np.array([3.0]),
+        "num_samples": 4,
+        "histogram": h2.to_dict(),
+    }
+
+    updated = qsv_utils.histogram_and_moving_average_update(qsv1, qsv2)
+    np.testing.assert_allclose(
+        updated["min"], np.array([0.95 * -1.0 + 0.05 * -2.0])
+    )
+    np.testing.assert_allclose(
+        updated["max"], np.array([0.95 * 2.0 + 0.05 * 3.0])
+    )
+    self.assertEqual(updated["num_samples"], 8)
+    merged_hist = histogram_utils.DynamicHistogram.from_dict(
+        updated["histogram"]
+    )
+    self.assertEqual(np.sum(merged_hist.counts), 8)
+    self.assertAlmostEqual(float(merged_hist.global_min[0]), -2.0)
+    self.assertAlmostEqual(float(merged_hist.global_max[0]), 3.0)
+
+  def test_histogram_and_moving_average_update_missing_histogram(self):
+    h1 = histogram_utils.DynamicHistogram(max_tensor_bins=32)
+    h1.add(np.array([1.0, 2.0]))
+    qsv_with_hist = {
+        "min": np.array([1.0]),
+        "max": np.array([2.0]),
+        "histogram": h1.to_dict(),
+    }
+    qsv_without_hist = {
+        "min": np.array([0.0]),
+        "max": np.array([3.0]),
+    }
+
+    self.assertEqual(
+        qsv_utils.histogram_and_moving_average_update({}, qsv_with_hist),
+        qsv_with_hist,
+    )
+    self.assertEqual(
+        qsv_utils.histogram_and_moving_average_update(qsv_with_hist, {}),
+        qsv_with_hist,
+    )
+    updated_left = qsv_utils.histogram_and_moving_average_update(
+        qsv_with_hist, qsv_without_hist
+    )
+    self.assertIs(updated_left["histogram"], qsv_with_hist["histogram"])
+    self.assertNotIn("num_samples", updated_left)
+    updated_right = qsv_utils.histogram_and_moving_average_update(
+        qsv_without_hist, qsv_with_hist
+    )
+    self.assertIs(updated_right["histogram"], qsv_with_hist["histogram"])
 
 
 if __name__ == "__main__":

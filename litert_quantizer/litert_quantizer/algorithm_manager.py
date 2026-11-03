@@ -26,6 +26,7 @@ from litert_quantizer.algorithms.uniform_quantize import common_quantize
 from litert_quantizer.algorithms.uniform_quantize import dequantized_weight_recovery
 from litert_quantizer.algorithms.uniform_quantize import gptq
 from litert_quantizer.algorithms.uniform_quantize import hadamard_rotation
+from litert_quantizer.algorithms.uniform_quantize import histogram_quantize
 from litert_quantizer.algorithms.uniform_quantize import mse
 from litert_quantizer.algorithms.uniform_quantize import naive_min_max_quantize
 from litert_quantizer.algorithms.uniform_quantize import octav
@@ -63,6 +64,8 @@ check_op_quantization_config = (
 
 # Quantization algorithms.
 class AlgorithmName(str, enum.Enum):
+  """Supported quantization and calibration algorithm names."""
+
   NO_QUANTIZE = "no_quantize"
   MIN_MAX_UNIFORM_QUANT = naive_min_max_quantize.ALGORITHM_KEY
   FLOAT_CASTING = float_casting.ALGORITHM_KEY
@@ -73,6 +76,8 @@ class AlgorithmName(str, enum.Enum):
   MSE = mse.ALGORITHM_KEY
   GPTQ = gptq.ALGORITHM_KEY
   OSCAR = oscar.ALGORITHM_KEY
+  HISTOGRAM_PERCENTILE = histogram_quantize.PERCENTILE_ALGORITHM_KEY
+  HISTOGRAM_MSE = histogram_quantize.MSE_ALGORITHM_KEY
 
 
 ### MIN/MAX_UNIFORM_QUANT ###
@@ -217,6 +222,7 @@ DEQUANTIZED_WEIGHT_RECOVERY_OP_NAME_MATERIALIZE_FUNC_DICT = {
     _TFLOpName.FULLY_CONNECTED: common_quantize.materialize_fc_conv,
     _TFLOpName.CONV_2D: common_quantize.materialize_fc_conv,
     _TFLOpName.EMBEDDING_LOOKUP: common_quantize.materialize_embedding_lookup,
+    _TFLOpName.CUSTOM_OP: common_quantize.materialize_moe,
 }
 
 for (
@@ -481,3 +487,38 @@ for (
       materialize_func=materialize_func,  # pyrefly: ignore[bad-argument-type]
       update_qsv_func=qsv_utils.oscar_and_moving_average_update,  # pyrefly: ignore[bad-argument-type]
   )
+
+# Register HISTOGRAM_PERCENTILE and HISTOGRAM_MSE algorithms.
+for _hist_alg_name, _hist_get_params_func in (
+    (
+        AlgorithmName.HISTOGRAM_PERCENTILE,
+        histogram_quantize.get_tensor_quant_params_percentile,
+    ),
+    (
+        AlgorithmName.HISTOGRAM_MSE,
+        histogram_quantize.get_tensor_quant_params_mse,
+    ),
+):
+  register_op_quant_config_validation_func(
+      _hist_alg_name,
+      common_quantize.check_op_quantization_config,
+  )
+  register_config_check_policy_func(
+      _hist_alg_name,
+      default_policy.DEFAULT_CONFIG_CHECK_POLICY,
+  )
+  for (
+      op_name,
+      materialize_func,
+  ) in MIN_MAX_OP_NAME_MATERIALIZE_FUNC_DICT.items():
+    register_quantized_op(
+        _hist_alg_name,
+        op_name,
+        histogram_quantize.init_qsvs,
+        calibration_func=histogram_quantize.histogram_calibrate,
+        materialize_func=functools.partial(
+            materialize_func,
+            _hist_get_params_func,
+        ),
+        update_qsv_func=histogram_quantize.histogram_update_qsv,  # pyrefly: ignore[bad-argument-type]
+    )

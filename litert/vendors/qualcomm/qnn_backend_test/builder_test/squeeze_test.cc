@@ -16,9 +16,6 @@
 namespace litert::qnn {
 namespace {
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 //   Input shape: {1, 2, 1, 3}, axes=[0, 2]
 //   Output shape: {2, 3}
 TEST_P(QnnModelTest, SqueezeRemovesMultipleDims) {
