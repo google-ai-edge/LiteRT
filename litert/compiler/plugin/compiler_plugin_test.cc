@@ -949,6 +949,102 @@ TEST(PartitionTest, MappedCompositeOp) {
   ASSERT_EQ(model.NumSubgraphs(), 1);
 }
 
+TEST(PartitionTest, SharedDecompositionSubgraphMultipleComposites) {
+  // Build a model with 2 subgraphs (main + 1 shared decomposition subgraph) and
+  // 3 composite ops in the main subgraph that all reference decomposition
+  // subgraph 1 (so composite op count 3 > input_num_sgs 2).
+  LiteRtModelT model;
+  auto& main_subgraph = model.EmplaceSubgraph();
+  auto& decomp_subgraph = model.EmplaceSubgraph();
+
+  auto make_tensor = [](LiteRtSubgraphT& sg) {
+    auto& t = sg.EmplaceTensor();
+    t.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+    return &t;
+  };
+
+  auto* d_in = make_tensor(decomp_subgraph);
+  auto* d_out = make_tensor(decomp_subgraph);
+  decomp_subgraph.Inputs().push_back(d_in);
+  decomp_subgraph.Outputs().push_back(d_out);
+  auto& decomp_mul = decomp_subgraph.EmplaceOp();
+  decomp_mul.SetOpCode(kLiteRtOpCodeTflMul);
+  AttachInput(d_in, decomp_mul);
+  AttachInput(d_in, decomp_mul);
+  AttachOutput(d_out, decomp_mul);
+
+  auto* t0 = make_tensor(main_subgraph);
+  auto* t1 = make_tensor(main_subgraph);
+  auto* t2 = make_tensor(main_subgraph);
+  auto* t3 = make_tensor(main_subgraph);
+  main_subgraph.Inputs().push_back(t0);
+  main_subgraph.Outputs().push_back(t3);
+
+  auto add_rms_norm_composite = [&](LiteRtTensor in, LiteRtTensor out) {
+    auto& op = main_subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeShloComposite);
+    AttachInput(in, op);
+    AttachOutput(out, op);
+
+    tflite::StableHLOCompositeOptionsT options;
+    options.name = "odml.rms_norm";
+    options.decomposition_subgraph_index = 1;
+    internal::TflOptions2 tfl_options;
+    tfl_options.type = ::tflite::BuiltinOptions2_StableHLOCompositeOptions;
+    tfl_options.Set(std::move(options));
+    litert::internal::SetTflOptions2(op, std::move(tfl_options));
+  };
+
+  add_rms_norm_composite(t0, t1);
+  add_rms_norm_composite(t1, t2);
+  add_rms_norm_composite(t2, t3);
+
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_EQ(plugins->size(), 1);
+
+  auto partition_result = PartitionModel(plugins->front(), model);
+  ASSERT_TRUE(partition_result);
+
+  // Only the main subgraph remains in the model (shared decomp subgraph removed
+  // and outlined NPU partition yanked into partition_result).
+  EXPECT_EQ(model.NumSubgraphs(), 1);
+  ASSERT_EQ(model.MainSubgraph()->Ops().size(), 1);
+  EXPECT_EQ(model.MainSubgraph()->Op(0).OpCode(), kLiteRtOpCodeTflCustom);
+
+  const auto& [ops, new_model] = *partition_result;
+  EXPECT_EQ(ops.size(), 1);
+  ASSERT_EQ(new_model.NumSubgraphs(), 1);
+  EXPECT_EQ(new_model.MainSubgraph()->Ops().size(), 3);
+}
+
+TEST(PartitionTest, MappedCompositeOpsSharedDecompositionSubgraph) {
+  auto model_wrap =
+      testing::LoadTestFileModel("rms_norm_composite_shared_decomp.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+  ASSERT_EQ(model.NumSubgraphs(), 2);
+  ASSERT_EQ(model.MainSubgraph()->Ops().size(), 3);
+
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_EQ(plugins->size(), 1);
+
+  auto partition_result = PartitionModel(plugins->front(), model);
+  ASSERT_TRUE(partition_result);
+
+  // Only the main subgraph remains in the model (shared decomp subgraph removed
+  // and outlined NPU partition yanked into partition_result).
+  EXPECT_EQ(model.NumSubgraphs(), 1);
+  ASSERT_EQ(model.MainSubgraph()->Ops().size(), 1);
+  EXPECT_EQ(model.MainSubgraph()->Op(0).OpCode(), kLiteRtOpCodeTflCustom);
+
+  const auto& [ops, new_model] = *partition_result;
+  EXPECT_EQ(ops.size(), 1);
+  ASSERT_EQ(new_model.NumSubgraphs(), 1);
+  EXPECT_EQ(new_model.MainSubgraph()->Ops().size(), 3);
+}
+
 TEST(PartitionTest, InlineDecomposition) {
   auto model_wrap = testing::LoadTestFileModel("unsupported_composite.tflite");
   ASSERT_TRUE(model_wrap);

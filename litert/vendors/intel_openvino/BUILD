@@ -45,6 +45,11 @@ package(
 cc_library(
     name = "ov_utils",
     hdrs = ["utils.h"],
+    copts = select({
+        "//litert/runtime/dispatch:windows_msvc": ["/EHsc"],
+        "//conditions:default": ["-fexceptions"],
+    }),
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         "//litert/c:litert_model_types",
         "@intel_openvino//:openvino",
