@@ -20,6 +20,23 @@ package(
     default_visibility = ["//litert:__subpackages__"],
 )
 
+# copybara:uncomment_begin(google-only)
+# # End-to-end NPU compilation only works on Linux x86_64 for now; the default
+# # branch is kept for Android/Windows build compatibility and will not work e2e.
+# _OPENVINO_DEPS = select({
+#     "//litert:linux_x86_64": [
+#         "@intel_openvino//:openvino_headers",
+#         "//third_party/openvino_npu_compiler:openvino_runtime",
+#     ],
+#     "//conditions:default": [
+#         "@intel_openvino//:openvino",
+#     ],
+# })
+# copybara:uncomment_end
+# copybara:comment_begin(oss-only)
+_OPENVINO_DEPS = ["@intel_openvino//:openvino"]
+# copybara:comment_end
+
 litert_lib(
     name = "openvino_soc_config",
     srcs = ["openvino_soc_config.cc"],
@@ -31,8 +48,7 @@ litert_lib(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings:string_view",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_lib(
@@ -44,8 +60,7 @@ litert_lib(
     deps = [
         ":weight_bank_attributes",
         "//litert/c/internal:litert_logging",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_test(
@@ -60,8 +75,7 @@ litert_test(
     ],
     deps = [
         ":npu_optimizer",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_lib(
@@ -101,8 +115,7 @@ litert_test(
         "//litert/test:common",
         "//litert/test:load_test_model",
         "//litert/test:test_models",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_lib(
@@ -142,8 +155,7 @@ litert_lib(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         ":weight_bank",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_test(
@@ -172,8 +184,7 @@ litert_test(
         "//litert/test:common",
         "//litert/test:load_test_model",
         "//litert/test:test_models",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_lib(
@@ -181,9 +192,7 @@ litert_lib(
     hdrs = ["weight_bank_attributes.h"],
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
-    deps = [
-        "@intel_openvino//:openvino",
-    ],
+    deps = _OPENVINO_DEPS,
 )
 
 litert_lib(
@@ -203,8 +212,7 @@ litert_lib(
         ":weight_bank_attributes",
         "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/types:span",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_test(
@@ -237,8 +245,7 @@ litert_test(
         "//litert/test:load_test_model",
         "//litert/test:test_models",
         "@com_google_absl//absl/types:span",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_lib(
@@ -255,8 +262,7 @@ litert_lib(
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_intel_openvino_options",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_dynamic_lib(
@@ -317,8 +323,7 @@ litert_dynamic_lib(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_bin(
@@ -372,8 +377,7 @@ litert_bin(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_lib(
@@ -412,8 +416,7 @@ litert_lib(
         "//litert/cc:litert_ranked_tensor_type",
         "//litert/compiler/cc:litert_model",
         "//litert/vendors/intel_openvino:ov_utils",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_lib(
@@ -436,8 +439,7 @@ litert_lib(
         "//litert/compiler/cc:litert_op_options",
         "//litert/vendors/intel_openvino:ov_utils",
         "//tflite/schema:schema_fbs",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_test(
@@ -469,8 +471,7 @@ litert_test(
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_test(
@@ -496,8 +497,7 @@ litert_test(
         "//litert/cc/internal:litert_extended_model",
         "//litert/compiler/cc:litert_model",
         "//litert/test:load_test_model",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_test(
@@ -551,8 +551,7 @@ litert_test(
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 sh_test(
