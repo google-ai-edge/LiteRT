@@ -28,9 +28,13 @@
 #include "testing/base/public/gunit.h"
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/convert/convert_testing_utils.h"
 #include "ml_drift_delegate/tflite/convert/stub_delegate.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
+#include "ml_drift_delegate/tflite/ir_model_builder.h"
+#include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
+#include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/common.h"
 #include "tflite/core/c/builtin_op_data.h"
@@ -41,6 +45,7 @@ namespace {
 
 using ::testing::Eq;
 using ::testing::SizeIs;
+using ::testing::UnorderedElementsAre;
 
 TfLiteCustomAllocation CreateMoeExpertsParams(
     int num_experts, int num_active_experts, int model_dim, int hidden_dim,
@@ -156,6 +161,54 @@ class ConvertMoeExpertsTest : public ::testing::Test {
     builder.AddOutput(kTfLiteFloat32, {1, 1, kNumTokens, kModelDim});
   }
 
+  std::unique_ptr<::ml_drift::ir::IrModel> BuildIrModelWithSharedConstants(
+      ::tflite::Interpreter& interpreter,
+      const TensorIndexToBufferIdMap& internal_buffer_map,
+      SharedConstTensorsMap* shared_tensors) {
+    struct DelegateState {
+      const TensorIndexToBufferIdMap* internal_buffer_map;
+      SharedConstTensorsMap* shared_tensors;
+      CustomIrOpMap custom_parsers;
+      std::unique_ptr<::ml_drift::ir::IrModel> ir_model;
+    } state{
+        .internal_buffer_map = &internal_buffer_map,
+        .shared_tensors = shared_tensors,
+    };
+    state.custom_parsers["moe"] = GetMoeExpertsParser();
+
+    TfLiteDelegate delegate = TfLiteDelegateCreate();
+    delegate.data_ = &state;
+    delegate.Prepare = [](TfLiteContext* context,
+                          TfLiteDelegate* delegate) -> TfLiteStatus {
+      auto* s = static_cast<DelegateState*>(delegate->data_);
+      TfLiteNode* node = nullptr;
+      TfLiteRegistration* registration = nullptr;
+      if (context->GetNodeAndRegistration(context, 0, &node, &registration) !=
+          kTfLiteOk) {
+        return kTfLiteError;
+      }
+      TfLiteIntArray* nodes_to_replace = TfLiteIntArrayCreate(1);
+      nodes_to_replace->data[0] = 0;
+
+      TfLiteDelegateParams delegate_params = {};
+      delegate_params.delegate = delegate;
+      delegate_params.nodes_to_replace = nodes_to_replace;
+      delegate_params.input_tensors = node->inputs;
+      delegate_params.output_tensors = node->outputs;
+
+      s->ir_model.reset(BuildIrModel(
+          *context, delegate_params, /*options=*/{}, &s->custom_parsers,
+          s->shared_tensors, s->internal_buffer_map));
+      TfLiteIntArrayFree(nodes_to_replace);
+      return s->ir_model ? kTfLiteOk : kTfLiteError;
+    };
+
+    if (interpreter.ModifyGraphWithDelegate(&delegate) != kTfLiteOk) {
+      return nullptr;
+    }
+    return std::move(state.ir_model);
+  }
+
   TfLiteDelegate* delegate_;
   // A deque, because growing it never moves the buffers already handed out.
   std::deque<std::vector<uint8_t>> const_buffers_;
@@ -203,11 +256,17 @@ TEST_F(ConvertMoeExpertsTest, Fp32Basic) {
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
   ASSERT_TRUE(ir_model);
 
-  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  // 1 moe_experts op + 4 constant ops (gate_weight, ff1_weight, linear_weight,
+  // per_expert_scale).
+  ASSERT_THAT(ir_model->ops(), SizeIs(5));
   const auto& op = ir_model->ops()[0];
   EXPECT_THAT(op->name, Eq("moe_experts"));
   EXPECT_THAT(op->inputs, SizeIs(7));
   EXPECT_THAT(op->outputs, SizeIs(1));
+  for (int i = 1; i <= 4; ++i) {
+    EXPECT_THAT(ir_model->ops()[i]->name,
+                Eq(ToString(::ml_drift::OperationType::kConstant)));
+  }
 
   const auto* attr =
       std::any_cast<::litert::ml_drift::ir::MoeExpertsAttributes>(&op->attr);
@@ -274,11 +333,14 @@ TEST_F(ConvertMoeExpertsTest, Int8Basic) {
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
   ASSERT_TRUE(ir_model);
 
-  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  // 1 moe_experts op + 1 constant op (per_expert_scale).
+  ASSERT_THAT(ir_model->ops(), SizeIs(2));
   const auto& op = ir_model->ops()[0];
   EXPECT_THAT(op->name, Eq("moe_experts"));
   EXPECT_THAT(op->inputs, SizeIs(7));  // Int8 scale tensors are stripped!
   EXPECT_THAT(op->outputs, SizeIs(1));
+  EXPECT_THAT(ir_model->ops()[1]->name,
+              Eq(ToString(::ml_drift::OperationType::kConstant)));
 
   const auto* attr = std::any_cast<MoeExpertsAttributes>(&op->attr);
   ASSERT_NE(attr, nullptr);
@@ -346,11 +408,14 @@ TEST_F(ConvertMoeExpertsTest, Int4Basic) {
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
   ASSERT_TRUE(ir_model);
 
-  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  // 1 moe_experts op + 1 constant op (per_expert_scale).
+  ASSERT_THAT(ir_model->ops(), SizeIs(2));
   const auto& op = ir_model->ops()[0];
   EXPECT_THAT(op->name, Eq("moe_experts"));
   EXPECT_THAT(op->inputs, SizeIs(7));  // Int4 scale tensors are stripped!
   EXPECT_THAT(op->outputs, SizeIs(1));
+  EXPECT_THAT(ir_model->ops()[1]->name,
+              Eq(ToString(::ml_drift::OperationType::kConstant)));
 
   const auto* attr = std::any_cast<MoeExpertsAttributes>(&op->attr);
   ASSERT_NE(attr, nullptr);
@@ -521,7 +586,7 @@ TEST_F(ConvertMoeExpertsTest, Int8BlockwiseScales) {
 
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
   ASSERT_TRUE(ir_model);
-  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  ASSERT_THAT(ir_model->ops(), SizeIs(2));
   const auto* attr =
       std::any_cast<MoeExpertsAttributes>(&ir_model->ops()[0]->attr);
   ASSERT_NE(attr, nullptr);
@@ -748,6 +813,94 @@ TEST_F(ConvertMoeExpertsTest, AcceptsGeluTanhActivation) {
   auto status = parser.is_supported(interpreter->primary_subgraph().context(),
                                     &pair->first, &pair->second);
   EXPECT_TRUE(status.ok()) << status.message();
+}
+
+TEST_F(ConvertMoeExpertsTest,
+       ExcludesFp32WeightsAndPerExpertScaleFromSharedTensors) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("moe");
+  builder.AddInput(kTfLiteFloat32, {1, 1, 4, 64});  // src
+  builder.AddInput(kTfLiteFloat32, {1, 1, 4, 2});   // top_weights
+  builder.AddInput(kTfLiteInt32, {1, 1, 4, 2});     // top_indices
+
+  std::vector<uint8_t> gate_weight_data(128 * 4 * 1 * 64 * sizeof(float), 0);
+  builder.AddConstInput(kTfLiteFloat32, {128, 4, 1, 64},
+                        gate_weight_data);  // gate_weight
+  std::vector<uint8_t> ff1_weight_data(128 * 4 * 1 * 64 * sizeof(float), 0);
+  builder.AddConstInput(kTfLiteFloat32, {128, 4, 1, 64},
+                        ff1_weight_data);  // ff1_weight
+  std::vector<uint8_t> linear_weight_data(64 * 4 * 1 * 128 * sizeof(float), 0);
+  builder.AddConstInput(kTfLiteFloat32, {64, 4, 1, 128},
+                        linear_weight_data);  // linear_weight
+  std::vector<uint8_t> scale_data(1 * 1 * 1 * 4 * sizeof(float), 0);
+  builder.AddConstInput(kTfLiteFloat32, {1, 1, 1, 4},
+                        scale_data);  // per_expert_scale
+
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 4, 64});  // output
+
+  TfLiteCustomAllocation custom_alloc =
+      CreateMoeExpertsParams(4, 2, 64, 128, "fp32");
+  builder.SetCustomData(custom_alloc.data, custom_alloc.bytes);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+
+  const TfLiteNode& node = interpreter->node_and_registration(0)->first;
+  TensorIndexToBufferIdMap internal_buffer_map;
+  for (int i = 3; i < node.inputs->size; ++i) {
+    internal_buffer_map[node.inputs->data[i]] = 100 + i;
+  }
+
+  SharedConstTensorsMap shared_tensors;
+  auto ir_model = BuildIrModelWithSharedConstants(
+      *interpreter, internal_buffer_map, &shared_tensors);
+  ASSERT_NE(ir_model, nullptr);
+  EXPECT_TRUE(shared_tensors.empty());
+  ASSERT_THAT(ir_model->ops(), SizeIs(5));
+  for (int i = 1; i <= 4; ++i) {
+    EXPECT_THAT(ir_model->ops()[i]->name,
+                Eq(ToString(::ml_drift::OperationType::kConstant)));
+  }
+}
+
+TEST_F(ConvertMoeExpertsTest,
+       SharesQuantizedWeightsAndExcludesScalesFromSharedTensors) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("moe");
+  AddInt8MoeInputs(builder, /*gate_blocks=*/1, /*ff1_blocks=*/1,
+                   /*linear_blocks=*/1);
+
+  TfLiteCustomAllocation custom_alloc = CreateMoeExpertsParams(
+      kNumExperts, kNumActiveExperts, kModelDim, kHiddenDim, "int8");
+  builder.SetCustomData(custom_alloc.data, custom_alloc.bytes);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+
+  const TfLiteNode& node = interpreter->node_and_registration(0)->first;
+  TensorIndexToBufferIdMap internal_buffer_map;
+  for (int i = 3; i < node.inputs->size; ++i) {
+    internal_buffer_map[node.inputs->data[i]] = 200 + i;
+  }
+
+  SharedConstTensorsMap shared_tensors;
+  auto ir_model = BuildIrModelWithSharedConstants(
+      *interpreter, internal_buffer_map, &shared_tensors);
+  ASSERT_NE(ir_model, nullptr);
+
+  // Only the 3 quantized expert weight tensors (inputs 3, 5, 7) remain in
+  // shared_tensors; the 3 block-scale tensors (inputs 4, 6, 8) and
+  // per_expert_scale (input 9) are excluded.
+  std::vector<int> shared_tflite_tensor_ids;
+  for (const auto& [ir_tensor_id, shared_info] : shared_tensors) {
+    shared_tflite_tensor_ids.push_back(shared_info.tflite_tensor_id);
+  }
+  EXPECT_THAT(shared_tflite_tensor_ids,
+              UnorderedElementsAre(node.inputs->data[3], node.inputs->data[5],
+                                   node.inputs->data[7]));
+  ASSERT_THAT(ir_model->ops(), SizeIs(2));
+  EXPECT_THAT(ir_model->ops()[1]->name,
+              Eq(ToString(::ml_drift::OperationType::kConstant)));
 }
 
 }  // namespace
