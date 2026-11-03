@@ -23,9 +23,6 @@ using testing::ElementsAre; // NOLINT
 using testing::FloatNear;   // NOLINT
 using testing::Pointwise;   // NOLINT
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 // Builds a flexbuffer custom_options blob matching TFLite's
 // TFLite_Detection_PostProcess custom op metadata.
 std::vector<uint8_t> BuildCustomOptions(int num_classes, int max_detections,
