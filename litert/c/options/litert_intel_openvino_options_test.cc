@@ -111,6 +111,30 @@ TEST(IntelOpenVinoOptions, SetAndGetPerformanceMode) {
   LrtDestroyIntelOpenVinoOptions(payload);
 }
 
+TEST(IntelOpenVinoOptions, SetAndGetDumpOvirDir) {
+  LrtIntelOpenVinoOptions payload = nullptr;
+  LITERT_ASSERT_OK(LrtIntelOpenVinoOptionsCreate(&payload));
+
+  const char* dir = nullptr;
+  LITERT_EXPECT_OK(LrtIntelOpenVinoOptionsGetDumpOvirDir(payload, &dir));
+  EXPECT_STREQ(dir, "");
+
+  LITERT_EXPECT_OK(
+      LrtIntelOpenVinoOptionsSetDumpOvirDir(payload, "/tmp/ov_dump"));
+  LITERT_EXPECT_OK(LrtIntelOpenVinoOptionsGetDumpOvirDir(payload, &dir));
+  EXPECT_STREQ(dir, "/tmp/ov_dump");
+
+  LrtIntelOpenVinoOptions payload_from_toml = nullptr;
+  SerializeAndParse(payload, &payload_from_toml);
+  const char* dir_from_toml = nullptr;
+  LITERT_EXPECT_OK(
+      LrtIntelOpenVinoOptionsGetDumpOvirDir(payload_from_toml, &dir_from_toml));
+  EXPECT_STREQ(dir_from_toml, "/tmp/ov_dump");
+
+  LrtDestroyIntelOpenVinoOptions(payload_from_toml);
+  LrtDestroyIntelOpenVinoOptions(payload);
+}
+
 TEST(IntelOpenVinoOptions, SetAndGetEnableWeightSharing) {
   LrtIntelOpenVinoOptions payload = nullptr;
   LITERT_ASSERT_OK(LrtIntelOpenVinoOptionsCreate(&payload));

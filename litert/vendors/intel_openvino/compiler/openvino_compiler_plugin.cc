@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>  // NOLINT
 #include <ios>
 #include <limits>
 #include <map>
@@ -521,9 +522,22 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         std::make_shared<ov::frontend::tensorflow_lite::FrontEnd>();
 
     bool enable_weight_sharing = true;
+    std::string dump_ovir_dir;
     if (const auto& options = compiler_plugin->GetIntelOpenVinoOptions();
         options.HasValue()) {
       enable_weight_sharing = options.Value().GetEnableWeightSharing();
+      dump_ovir_dir = options.Value().GetDumpOvirDir();
+    }
+    if (!dump_ovir_dir.empty()) {
+      std::error_code ec;
+      std::filesystem::create_directories(dump_ovir_dir, ec);
+      if (ec) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Failed to create OV IR dump dir '%s': %s; dumping "
+                   "disabled.",
+                   dump_ovir_dir.c_str(), ec.message().c_str());
+        dump_ovir_dir.clear();
+      }
     }
 
     // Cross-partition weight sharing: all partitions' distinct weights are
@@ -706,6 +720,21 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                                                      context.Device().c_str());
         LITERT_LOG(LITERT_INFO, "Compiling partition %d for device %s",
                    partition_idx, context.Device().c_str());
+        if (!dump_ovir_dir.empty()) {
+          const std::filesystem::path base =
+              std::filesystem::path(dump_ovir_dir) / graph_name;
+          const std::string xml_path = base.string() + ".xml";
+          const std::string bin_path = base.string() + ".bin";
+          try {
+            ov::serialize(ov_model, xml_path, bin_path);
+            LITERT_LOG(LITERT_INFO, "Dumped OV IR for partition %d to %s",
+                       partition_idx, xml_path.c_str());
+          } catch (const ov::Exception& e) {
+            LITERT_LOG(LITERT_WARNING,
+                       "Failed to dump OV IR for partition %d: %s",
+                       partition_idx, e.what());
+          }
+        }
         auto compiled_model =
             core.compile_model(ov_model, context.Device(), configs);
         ov_model.reset();  // graph unused after compile; free before export +

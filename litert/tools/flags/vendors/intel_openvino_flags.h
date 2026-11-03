@@ -35,6 +35,8 @@ ABSL_DECLARE_FLAG(std::string, intel_openvino_configs_map);
 
 ABSL_DECLARE_FLAG(bool, intel_openvino_enable_weight_sharing);
 
+ABSL_DECLARE_FLAG(std::string, intel_openvino_dump_ovir_dir);
+
 ABSL_DECLARE_FLAG(std::string, intel_openvino_graph_backends);
 
 ABSL_DECLARE_FLAG(std::string, intel_openvino_graph_configs_map);
