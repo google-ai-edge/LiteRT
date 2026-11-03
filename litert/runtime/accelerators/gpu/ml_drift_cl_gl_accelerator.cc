@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <memory>
+#include <utility>
 
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include "litert/c/internal/litert_accelerator_def.h"
@@ -23,6 +24,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/options.h"
 #include "litert/runtime/accelerators/gpu/ml_drift_delegate_create.h"
 #include "ml_drift_delegate/delegate/buffer_handler_opencl.h"
 #if defined(LITERT_USE_STATIC_LINKED_GPU_ACCELERATOR)
@@ -124,10 +126,19 @@ class GpuAccelerator {
           litert::ml_drift::MlDriftOpenGlDelegateDefaultOptionsPtr(),
           litert::ml_drift::CreateMlDriftOpenGlDelegate, delegate_ptr);
     }
+    auto delegate_options =
+        litert::ml_drift::MlDriftClDelegateDefaultOptionsPtr();
+    if (delegate_options && options) {
+      delegate_options->weight_loader =
+          reinterpret_cast<LiteRtOptionsT*>(options)->weight_loader;
+    }
+    if (delegate_options && delegate_options->weight_loader != nullptr) {
+      delegate_options->enable_constant_tensors_sharing = true;
+    }
     return litert::ml_drift::CreateDelegate(
         runtime_context, env, accelerator, gpu_options_payload,
-        litert::ml_drift::MlDriftClDelegateDefaultOptionsPtr(),
-        litert::ml_drift::CreateMlDriftClDelegate, delegate_ptr);
+        std::move(delegate_options), litert::ml_drift::CreateMlDriftClDelegate,
+        delegate_ptr);
   }
 
   LiteRtHwAcceleratorSet hardware_support_;

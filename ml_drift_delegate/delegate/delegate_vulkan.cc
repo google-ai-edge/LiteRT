@@ -21,16 +21,21 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/base/const_init.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/functional/function_ref.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/syrtis/environment.h"  // from @ml_drift
+#include "ml_drift/syrtis/queue.h"  // from @ml_drift
+#include "ml_drift/syrtis/vulkan_device.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_wrapper.h"  // from @ml_drift
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_any.h"
@@ -57,6 +62,28 @@ using ::litert::ml_drift::DelegateKernelLiteRt;
 using ::litert::ml_drift::MlDriftDelegateData;
 
 namespace {
+
+class ExternalVulkanQueue final : public ml_drift::syrtis::Queue {
+ public:
+  ExternalVulkanQueue(VkQueue queue, uint32_t queue_family_index)
+      : queue_(queue), queue_family_index_(queue_family_index) {}
+  ~ExternalVulkanQueue() final = default;
+
+  uint32_t QueueFamilyIndex() final { return queue_family_index_; }
+  absl::Status WithQueue(
+      absl::FunctionRef<absl::Status(VkQueue)> action) final {
+    return action(queue_);
+  }
+
+ private:
+  VkQueue queue_;
+  uint32_t queue_family_index_;
+};
+
+struct ExternalSharedVulkanEnv {
+  std::unique_ptr<ml_drift::syrtis::Queue> external_queue;
+  litert::ml_drift::SharedVulkanEnv shared_env;
+};
 
 absl::Mutex g_vulkan_env_mutex(absl::kConstInit);
 litert::ml_drift::SharedVulkanEnv* g_vulkan_env = nullptr;
@@ -90,6 +117,95 @@ std::unique_ptr<litert::ml_drift::SharedVulkanEnv> CreateSharedVulkanEnv() {
   return env;
 }
 
+absl::Status GetComputeQueueFamilyIndex(VkPhysicalDevice physical_device,
+                                        uint32_t* queue_family_index) {
+  uint32_t count = 0;
+  ml_drift::syrtis::vkGetPhysicalDeviceQueueFamilyProperties(
+      physical_device, &count, /*pQueueFamilyProperties=*/nullptr);
+  std::vector<VkQueueFamilyProperties> props(count);
+  ml_drift::syrtis::vkGetPhysicalDeviceQueueFamilyProperties(
+      physical_device, &count, props.data());
+  for (uint32_t i = 0; i < count; ++i) {
+    if (props[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+      *queue_family_index = i;
+      return absl::OkStatus();
+    }
+  }
+  return absl::NotFoundError("No Vulkan queue family with compute support.");
+}
+
+std::unique_ptr<ExternalSharedVulkanEnv> CreateExternalSharedVulkanEnv(
+    VkInstance instance, VkPhysicalDevice physical_device, VkDevice device,
+    VkQueue queue, int64_t queue_family_index) {
+  if (physical_device == VK_NULL_HANDLE || device == VK_NULL_HANDLE ||
+      queue == VK_NULL_HANDLE) {
+    ABSL_LOG(ERROR) << "External Vulkan physical_device, device, and queue "
+                       "must be non-null.";
+    return nullptr;
+  }
+  if (ml_drift::syrtis::InitVulkan() == 0) {
+    ABSL_LOG(ERROR) << "Failed to locate Vulkan library.";
+    return nullptr;
+  }
+  if (instance != VK_NULL_HANDLE) {
+    ml_drift::syrtis::LoadInstanceFunctions(instance);
+  }
+
+  uint32_t resolved_queue_family_index = 0;
+  if (queue_family_index >= 0) {
+    resolved_queue_family_index = static_cast<uint32_t>(queue_family_index);
+  } else if (absl::Status status = GetComputeQueueFamilyIndex(
+                 physical_device, &resolved_queue_family_index);
+             !status.ok()) {
+    ABSL_LOG(ERROR) << status;
+    return nullptr;
+  }
+
+  uint32_t extension_count = 0;
+  ml_drift::syrtis::vkEnumerateDeviceExtensionProperties(
+      physical_device, /*pLayerName=*/nullptr, &extension_count,
+      /*pProperties=*/nullptr);
+  std::vector<VkExtensionProperties> ext_props(extension_count);
+  ml_drift::syrtis::vkEnumerateDeviceExtensionProperties(
+      physical_device, /*pLayerName=*/nullptr, &extension_count,
+      ext_props.data());
+  std::vector<std::string> enabled_extensions;
+  enabled_extensions.reserve(extension_count);
+  for (const VkExtensionProperties& ext : ext_props) {
+    enabled_extensions.emplace_back(ext.extensionName);
+  }
+
+  auto external_shared_vulkan_env = std::make_unique<ExternalSharedVulkanEnv>();
+  external_shared_vulkan_env->external_queue =
+      std::make_unique<ExternalVulkanQueue>(queue, resolved_queue_family_index);
+  ml_drift::syrtis::VulkanDevice vk_device(device, physical_device,
+                                           enabled_extensions,
+                                           /*owns_device=*/false);
+  external_shared_vulkan_env->shared_env.vulkan_env() =
+      ml_drift::syrtis::Environment(
+          std::move(vk_device),
+          external_shared_vulkan_env->external_queue.get(), VK_NULL_HANDLE);
+
+  const VkCommandPoolCreateInfo command_pool_create_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .queueFamilyIndex = resolved_queue_family_index};
+  if (VkResult result = ml_drift::syrtis::vkCreateCommandPool(
+          device, &command_pool_create_info, /*pAllocator=*/nullptr,
+          &external_shared_vulkan_env->shared_env.command_pool());
+      result != VK_SUCCESS) {
+    ABSL_LOG(ERROR) << "Failed to create Vulkan command pool: " << result;
+    return nullptr;
+  }
+
+  ABSL_LOG(INFO) << "Created a Vulkan environment from external handles.";
+  return external_shared_vulkan_env;
+}
+
+void DestroyExternalSharedVulkanEnv(void* vulkan_env) {
+  delete reinterpret_cast<ExternalSharedVulkanEnv*>(vulkan_env);
+  ABSL_LOG(INFO) << "Destroyed external Vulkan environment.";
+}
+
 void DestroySharedVulkanEnv(void* vulkan_env) {
   {
     absl::MutexLock lock(g_vulkan_env_mutex);
@@ -111,9 +227,91 @@ void DestroySharedVulkanEnv(void* vulkan_env) {
   ABSL_LOG(INFO) << "Destroyed the Vulkan environment.";
 }
 
-litert::Expected<litert::ml_drift::SharedVulkanEnv*>
-GetSingletonSharedVulkanEnv(LiteRtEnvironment env,
-                            const LiteRtRuntimeContext* runtime_context) {
+litert::Expected<litert::ml_drift::SharedVulkanEnv*> GetOrCreateSharedVulkanEnv(
+    LiteRtEnvironment env, const LiteRtRuntimeContext* runtime_context) {
+  LiteRtEnvironmentOptions env_options = nullptr;
+  LITERT_RETURN_IF_ERROR(
+      runtime_context->get_environment_options(env, &env_options));
+
+  LiteRtAny existing_vulkan_env;
+  if (runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagVulkanEnvironment,
+          &existing_vulkan_env) == kLiteRtStatusOk &&
+      existing_vulkan_env.int_value != 0) {
+    return reinterpret_cast<litert::ml_drift::SharedVulkanEnv*>(
+        existing_vulkan_env.int_value);
+  }
+
+  LiteRtAny vk_physical_device_any;
+  LiteRtAny vk_device_any;
+  LiteRtAny vk_queue_any;
+  const bool has_external_vulkan_options =
+      runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagVulkanPhysicalDevice,
+          &vk_physical_device_any) == kLiteRtStatusOk &&
+      runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagVulkanDevice, &vk_device_any) ==
+          kLiteRtStatusOk &&
+      runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagVulkanQueue, &vk_queue_any) ==
+          kLiteRtStatusOk;
+
+  if (has_external_vulkan_options) {
+    VkInstance vk_instance = VK_NULL_HANDLE;
+    LiteRtAny vk_instance_any;
+    if (runtime_context->get_environment_options_value(
+            env_options, kLiteRtEnvOptionTagVulkanInstance, &vk_instance_any) ==
+        kLiteRtStatusOk) {
+      vk_instance = reinterpret_cast<VkInstance>(vk_instance_any.int_value);
+    }
+    int64_t queue_family_index = -1;
+    LiteRtAny vk_queue_family_index_any;
+    if (runtime_context->get_environment_options_value(
+            env_options, kLiteRtEnvOptionTagVulkanQueueFamilyIndex,
+            &vk_queue_family_index_any) == kLiteRtStatusOk) {
+      queue_family_index = vk_queue_family_index_any.int_value;
+    }
+
+    std::unique_ptr<ExternalSharedVulkanEnv> external_env =
+        CreateExternalSharedVulkanEnv(
+            vk_instance,
+            reinterpret_cast<VkPhysicalDevice>(
+                vk_physical_device_any.int_value),
+            reinterpret_cast<VkDevice>(vk_device_any.int_value),
+            reinterpret_cast<VkQueue>(vk_queue_any.int_value),
+            queue_family_index);
+    if (!external_env) {
+      return litert::Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          "Failed to create Vulkan environment from external handles");
+    }
+
+    litert::ml_drift::SharedVulkanEnv* shared_env_ptr =
+        &external_env->shared_env;
+    LITERT_ASSIGN_OR_RETURN(
+        LiteRtAny vulkan_env,
+        litert::ToLiteRtAny(reinterpret_cast<int64_t>(shared_env_ptr)));
+    LITERT_ASSIGN_OR_RETURN(LiteRtAny callback,
+                            litert::ToLiteRtAny(reinterpret_cast<const void*>(
+                                DestroyExternalSharedVulkanEnv)));
+    LITERT_ASSIGN_OR_RETURN(
+        LiteRtAny user_data,
+        litert::ToLiteRtAny(reinterpret_cast<const void*>(external_env.get())));
+    std::array<LiteRtEnvOption, 3> options = {
+        LiteRtEnvOption{.tag = kLiteRtEnvOptionTagVulkanEnvironment,
+                        .value = vulkan_env},
+        LiteRtEnvOption{.tag = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
+                        .value = callback},
+        LiteRtEnvOption{
+            .tag = kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
+            .value = user_data},
+    };
+    LITERT_RETURN_IF_ERROR(runtime_context->gpu_environment_create(
+        env, options.size(), options.data()));
+    external_env.release();
+    return shared_env_ptr;
+  }
+
   {
     absl::MutexLock lock(g_vulkan_env_mutex);
     if (g_vulkan_env == nullptr) {
@@ -340,8 +538,9 @@ TfLiteDelegatePtr CreateMlDriftVulkanDelegate(MlDriftDelegateOptionsPtr options,
     delegate_data->model_token = delegate_data->options->model_token;
   }
 
-  // Use the shared Vulkan environment in LiteRT runtime.
-  auto env = GetSingletonSharedVulkanEnv(litert_env, runtime_context);
+  // Use the shared or externally provided Vulkan environment in LiteRT runtime.
+  litert::Expected<SharedVulkanEnv*> env =
+      GetOrCreateSharedVulkanEnv(litert_env, runtime_context);
   if (!env) {
     ABSL_LOG(ERROR) << "Failed to get Vulkan environment: " << env.Error();
     return {nullptr, LiteRtDeleteMlDriftVulkanDelegate};
