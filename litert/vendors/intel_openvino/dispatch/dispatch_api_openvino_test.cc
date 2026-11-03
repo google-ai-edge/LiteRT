@@ -33,6 +33,7 @@
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/core/filesystem.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -299,6 +300,35 @@ TEST(OpenVino, DispatchApi) {
   LiteRtDestroyTensorBuffer(input_0_tensor_buffer);
   EXPECT_EQ(LiteRtDispatchInvocationContextDestroy(invocation_context),
             kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtDispatchDeviceContextDestroy(device_context),
+            kLiteRtStatusOk);
+}
+
+TEST(OpenVino, DispatchApiWithOptions) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, ::litert::Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto intel_ov_opts,
+      ::litert::intel_openvino::IntelOpenVinoOptions::Create());
+  intel_ov_opts.SetPerformanceMode(
+      kLiteRtIntelOpenVinoPerformanceModeThroughput);
+  intel_ov_opts.SetConfigsMapOption("NPU_TURBO", "YES");
+  LITERT_ASSERT_OK(options.SetOptions(std::move(intel_ov_opts)));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_opts,
+                              litert::internal::LiteRtOptionsPtrBuilder::Build(
+                                  options, env.GetHolder()));
+
+  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(),
+                                     env.GetHolder().handle, litert_opts.get()),
+            kLiteRtStatusOk);
+
+  LiteRtDispatchDeviceContext device_context = nullptr;
+  EXPECT_EQ(LiteRtDispatchDeviceContextCreate(
+                LrtGetRuntimeContext(), litert_opts.get(), &device_context),
+            kLiteRtStatusOk);
+  EXPECT_NE(device_context, nullptr);
+
   EXPECT_EQ(LiteRtDispatchDeviceContextDestroy(device_context),
             kLiteRtStatusOk);
 }

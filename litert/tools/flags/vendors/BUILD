@@ -18,7 +18,7 @@ load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_internal_users"],
+    default_visibility = ["//visibility:public"],
 )
 
 # QUALCOMM #########################################################################################

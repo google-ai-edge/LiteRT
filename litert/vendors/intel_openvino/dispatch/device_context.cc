@@ -61,8 +61,10 @@
 
 litert::Expected<LiteRtDispatchDeviceContextT::Ptr>
 LiteRtDispatchDeviceContextT::Create(
-    const LiteRtRuntimeContext* runtime_context) {
-  return Ptr(new LiteRtDispatchDeviceContextT(runtime_context));
+    const LiteRtRuntimeContext* runtime_context,
+    std::unique_ptr<IntelOpenVinoOptions> intel_openvino_options) {
+  return Ptr(new LiteRtDispatchDeviceContextT(
+      runtime_context, std::move(intel_openvino_options)));
 }
 
 #if LITERT_HAS_AHWB_SUPPORT
