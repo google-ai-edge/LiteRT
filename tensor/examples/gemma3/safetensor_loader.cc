@@ -12,7 +12,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#define SAFETENSORS_CPP_IMPLEMENTATION
 #include "tensor/examples/gemma3/safetensor_loader.h"
 
 #include <algorithm>
@@ -36,7 +35,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
-#include "tensor/examples/gemma3/safetensors.h"
+#include "tensor/examples/utils/safetensors.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
 
@@ -110,6 +109,20 @@ absl::StatusOr<size_t> NumElements(const std::vector<int64_t>& shape) {
   return num_elements;
 }
 
+absl::StatusOr<Shape> ToTensorShape(const std::vector<int64_t>& shape,
+                                    absl::string_view name) {
+  Shape result;
+  result.reserve(shape.size());
+  for (int64_t dim : shape) {
+    if (dim < 0 || dim > std::numeric_limits<int>::max()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Tensor `", name, "` has invalid shape dimension: ", dim));
+    }
+    result.push_back(static_cast<int>(dim));
+  }
+  return result;
+}
+
 absl::Status ValidateTensorRange(const SafetensorTensorInfo& info,
                                  size_t data_size, absl::string_view name) {
   if (info.data_end < info.data_start) {
@@ -119,6 +132,20 @@ absl::Status ValidateTensorRange(const SafetensorTensorInfo& info,
   if (info.data_end > data_size) {
     return absl::DataLossError(
         absl::StrCat("Tensor data out of range for: ", name));
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const size_t num_elements,
+                              NumElements(info.shape));
+  const size_t dtype_bytes = safetensors::get_dtype_bytes(info.dtype);
+  if (num_elements != 0 &&
+      dtype_bytes > std::numeric_limits<size_t>::max() / num_elements) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Tensor byte size overflows for: ", name));
+  }
+  const size_t expected_bytes = num_elements * dtype_bytes;
+  if (expected_bytes != info.data_end - info.data_start) {
+    return absl::DataLossError(absl::StrCat(
+        "Tensor byte size mismatch for ", name, ": expected ", expected_bytes,
+        " bytes from shape/dtype, got ", info.data_end - info.data_start));
   }
   return absl::OkStatus();
 }
@@ -388,7 +415,14 @@ absl::Status SafetensorLoader::AddSafetensorFile(const std::string& path) {
     info.dtype = tensor_info.dtype;
 
     // Convert shape
-    info.shape.assign(tensor_info.shape.begin(), tensor_info.shape.end());
+    info.shape.reserve(tensor_info.shape.size());
+    for (size_t dim : tensor_info.shape) {
+      if (dim > static_cast<size_t>(std::numeric_limits<int64_t>::max())) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "Tensor `", name, "` shape dimension exceeds int64_t max: ", dim));
+      }
+      info.shape.push_back(static_cast<int64_t>(dim));
+    }
 
     info.data_start = tensor_info.data_offsets[0];
     info.data_end = tensor_info.data_offsets[1];
@@ -644,12 +678,13 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
           absl::StrCat("Unsupported type for loading: ", ToString(type)));
   }
 
-  return TensorHandle(
-      {.name = name,
-       .type = type,
-       .shape = std::vector<int>(info.shape.begin(), info.shape.end()),
-       .buffer = buffer,
-       .quantization = quantization});
+  LRT_TENSOR_ASSIGN_OR_RETURN(Shape tensor_shape,
+                              ToTensorShape(info.shape, name));
+  return TensorHandle({.name = name,
+                       .type = type,
+                       .shape = std::move(tensor_shape),
+                       .buffer = buffer,
+                       .quantization = quantization});
 }
 
 absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>

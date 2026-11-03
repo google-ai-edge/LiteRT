@@ -117,6 +117,20 @@ absl::StatusOr<size_t> NumElements(const std::vector<int64_t>& shape) {
   return num_elements;
 }
 
+absl::StatusOr<Shape> ToTensorShape(const std::vector<int64_t>& shape,
+                                    absl::string_view name) {
+  Shape result;
+  result.reserve(shape.size());
+  for (int64_t dim : shape) {
+    if (dim < 0 || dim > std::numeric_limits<int>::max()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Tensor `", name, "` has invalid shape dimension: ", dim));
+    }
+    result.push_back(static_cast<int>(dim));
+  }
+  return result;
+}
+
 absl::Status ValidateTensorRange(const SafetensorTensorInfo& info) {
   if (!info.storage) {
     return absl::FailedPreconditionError("No storage is set for tensor.");
@@ -128,6 +142,21 @@ absl::Status ValidateTensorRange(const SafetensorTensorInfo& info) {
   if (info.data_end > info.storage->data_size) {
     return absl::DataLossError(
         absl::StrCat("Tensor data out of range for: ", info.name));
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const size_t num_elements,
+                              NumElements(info.shape));
+  const size_t dtype_bytes = safetensors::get_dtype_bytes(info.dtype);
+  if (num_elements != 0 &&
+      dtype_bytes > std::numeric_limits<size_t>::max() / num_elements) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Tensor byte size overflows for: ", info.name));
+  }
+  const size_t expected_bytes = num_elements * dtype_bytes;
+  if (expected_bytes != info.data_end - info.data_start) {
+    return absl::DataLossError(absl::StrCat(
+        "Tensor byte size mismatch for ", info.name, ": expected ",
+        expected_bytes, " bytes from shape/dtype, got ",
+        info.data_end - info.data_start));
   }
   return absl::OkStatus();
 }
@@ -729,7 +758,14 @@ absl::Status SafetensorLoader::AddSafetensorFile(const std::string& path) {
     info.dtype = tensor_info.dtype;
 
     // Convert shape
-    info.shape.assign(tensor_info.shape.begin(), tensor_info.shape.end());
+    info.shape.reserve(tensor_info.shape.size());
+    for (size_t dim : tensor_info.shape) {
+      if (dim > static_cast<size_t>(std::numeric_limits<int64_t>::max())) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "Tensor `", name, "` shape dimension exceeds int64_t max: ", dim));
+      }
+      info.shape.push_back(static_cast<int64_t>(dim));
+    }
 
     info.data_start = tensor_info.data_offsets[0];
     info.data_end = tensor_info.data_offsets[1];
@@ -1002,10 +1038,25 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
       // Nibble-packed weights hold two elements per byte, so the shape on disk
       // is half as wide as the weight it represents.
       if (num_bits == 4 && info.shape.size() == 2) {
-        const size_t d_out = info.shape[0];
-        const size_t d_in_packed = info.shape[1];
+        if (info.shape[0] < 0 || info.shape[1] < 0) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("Tensor `", name, "` has negative shape dimension"));
+        }
+        const size_t d_out = static_cast<size_t>(info.shape[0]);
+        const size_t d_in_packed = static_cast<size_t>(info.shape[1]);
         const size_t packed_element_count = BufferSize(type, 1) * 2;
+        if (packed_element_count != 0 &&
+            d_in_packed >
+                std::numeric_limits<size_t>::max() / packed_element_count) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("Tensor `", name, "` unpacked dimension overflows"));
+        }
         const size_t d_in = d_in_packed * packed_element_count;
+        if (d_out > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+            d_in > static_cast<size_t>(std::numeric_limits<int>::max())) {
+          return absl::InvalidArgumentError(absl::StrCat(
+              "Tensor `", name, "` unpacked shape exceeds int max"));
+        }
 
         return TensorHandle(TensorInit{
             .name = std::string(name),
@@ -1033,12 +1084,13 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
           absl::StrCat("Unsupported type for loading: ", ToString(type)));
   }
 
-  return TensorHandle(TensorInit{
-      .name = std::string(name),
-      .type = type,
-      .shape = std::vector<int>(info.shape.begin(), info.shape.end()),
-      .buffer = buffer,
-      .quantization = quantization});
+  LRT_TENSOR_ASSIGN_OR_RETURN(Shape tensor_shape,
+                              ToTensorShape(info.shape, name));
+  return TensorHandle(TensorInit{.name = std::string(name),
+                                 .type = type,
+                                 .shape = std::move(tensor_shape),
+                                 .buffer = buffer,
+                                 .quantization = quantization});
 }
 
 absl::StatusOr<std::shared_ptr<Quantization>>
@@ -1123,10 +1175,18 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadPackedTensor(
 
   LRT_TENSOR_ASSIGN_OR_RETURN(const size_t container_bits,
                               PackedContainerBits(info.dtype));
+  const int64_t fields_per_container =
+      static_cast<int64_t>(container_bits) / scheme->num_bits;
+  if (info.shape[0] < 0 || info.shape[0] > std::numeric_limits<int>::max() ||
+      info.shape[1] < 0 ||
+      info.shape[1] > std::numeric_limits<int>::max() / fields_per_container) {
+    return absl::InvalidArgumentError(
+        absl::StrCat(packed_name, ": packed shape exceeds supported bounds"));
+  }
   const int64_t num_rows = info.shape[0];
-  const int64_t packed_row_bytes = info.shape[1] * container_bits / 8;
-  const int64_t unpacked_cols =
-      info.shape[1] * static_cast<int64_t>(container_bits) / scheme->num_bits;
+  const int64_t packed_row_bytes =
+      info.shape[1] * static_cast<int64_t>(container_bits / 8);
+  const int64_t unpacked_cols = info.shape[1] * fields_per_container;
 
   // The packed shape rounds the weight up to a whole number of containers;
   // `weight_shape` records the shape before that padding.
@@ -1142,7 +1202,8 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadPackedTensor(
       return absl::InvalidArgumentError(absl::StrCat(
           shape_name, ": expected 2 dimensions, got ", logical_shape.size()));
     }
-    if (logical_shape[0] != num_rows || logical_shape[1] > unpacked_cols) {
+    if (logical_shape[0] != num_rows || logical_shape[1] < 0 ||
+        logical_shape[1] > unpacked_cols) {
       return absl::InvalidArgumentError(
           absl::StrCat(shape_name, ": logical shape [", logical_shape[0], ", ",
                        logical_shape[1], "] does not fit the packed shape [",
