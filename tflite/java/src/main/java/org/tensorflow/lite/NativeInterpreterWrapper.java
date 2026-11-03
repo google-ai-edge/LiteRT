@@ -153,17 +153,20 @@ class NativeInterpreterWrapper implements AutoCloseable {
         outputTensors[i] = null;
       }
     }
-    // Close the delegates first as they may reference the model.
+    // Delete the interpreter first as its subgraph destructor accesses attached delegates
+    // (e.g. delegate kernel OpFree and FreeBufferHandle callbacks); see c_api.h.
+    delete(/* errorHandle= */ 0, /* modelHandle= */ 0, interpreterHandle);
+    interpreterHandle = 0;
+    // Close the delegates next before deleting the model and error reporter.
     delegates.clear();
     for (Delegate ownedDelegate : ownedDelegates) {
       ownedDelegate.close();
     }
     ownedDelegates.clear();
-    delete(errorHandle, modelHandle, interpreterHandle);
+    delete(errorHandle, modelHandle, /* interpreterHandle= */ 0);
     deleteCancellationFlag(cancellationFlagHandle);
     errorHandle = 0;
     modelHandle = 0;
-    interpreterHandle = 0;
     cancellationFlagHandle = 0;
     modelByteBuffer = null;
     inputsIndexes = null;
