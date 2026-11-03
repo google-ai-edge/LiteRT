@@ -3,12 +3,25 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_internal_users"],
+)
+
+cc_library(
+    name = "vulkan_invocation",
+    srcs = ["vulkan_invocation.cc"],
+    hdrs = ["vulkan_invocation.h"],
+    linkopts = ["-ldl"],
+    visibility = ["//litert:__subpackages__"],
+    deps = [
+        "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
+        "@arm_vulkan_ml_dep_vulkan_headers//:vulkan_headers",
+    ],
 )
 
 litert_dynamic_lib(
@@ -31,9 +44,11 @@ litert_dynamic_lib(
     so_name = "libLiteRtDispatch_ArmVulkanML.so",
     visibility = ["//litert:litert_public"],
     deps = [
+        ":vulkan_invocation",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_requirements",
+        "//litert/c/internal:litert_runtime_context",
         "//litert/c/internal:litert_scheduling_info",
         "//litert/vendors/c:litert_dispatch_c_api",
     ],
