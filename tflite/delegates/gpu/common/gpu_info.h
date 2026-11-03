@@ -426,6 +426,7 @@ struct OpenClInfo {
   std::string device_name;
   std::string vendor_name;
   std::string opencl_c_version;
+  std::string platform_name;
   std::string platform_version;
   std::string driver_version;
 
@@ -483,6 +484,7 @@ struct OpenClInfo {
   bool IsImage2dFromBufferSupported() const;
 
   bool IsCLVK() const { return absl::StrContains(platform_version, "clvk"); }
+  bool IsRusticl() const { return platform_name == "rusticl"; }
 };
 
 enum class MetalLanguageVersion {
