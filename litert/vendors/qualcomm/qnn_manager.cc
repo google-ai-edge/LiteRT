@@ -473,6 +473,14 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::QnnBackend& qnn_backend,
                "bypassed.");
     return kLiteRtStatusOk;
   }
+  // Bypass INT16 LayerNorm OP validation.
+  if (op.IsOpCode(::qnn::QnnOpCode::kLayerNorm) &&
+      op.GetInputTensor(0).IsQuantI16() &&
+      op.GetOutputTensor(0).IsQuantI16()) {
+    LITERT_LOG(LITERT_WARNING,
+               "INT16 LayerNorm OP validation is bypassed.");
+    return kLiteRtStatusOk;
+  }
   // Bypass L2Norm OP validation.
   if (SdkVersion{2, 39, 0} <= sdk_version &&
       sdk_version < SdkVersion{2, 43, 0} &&
