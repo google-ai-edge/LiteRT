@@ -872,6 +872,23 @@ TEST_P(SdpaTransposedKernelExecuteTest,
   EXPECT_TRUE(status.ok()) << status.message();
 }
 
+// Qwen3.5 full-attention decode: head dim 256, 8 query heads sharing 2 KV
+// heads, flattened [1, 1, 1, 2048] output.
+TEST_P(SdpaTransposedKernelExecuteTest, SingleTokenDecodeQwen35HeadDim256) {
+  for (bool from_cache_update : {true, false}) {
+    const int s = from_cache_update ? 600 : 64;
+    const int q_start = from_cache_update ? 560 : 0;
+    const int active_tokens =
+        from_cache_update ? FilledCacheEntries(mask_mode(), 561, 600) : 0;
+    auto status = RunSdpaTransposedTest(
+        *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/s,
+        /*H=*/256, mask_mode(), /*KV=*/2, q_start, from_cache_update,
+        /*is_causal=*/false, /*flatten_output=*/true, active_tokens);
+    EXPECT_TRUE(status.ok()) << "from_cache_update=" << from_cache_update
+                             << ": " << status.message();
+  }
+}
+
 // Gemma 4 global-attention decode: head dim 512 (128 channel slices) with 4
 // query heads per KV head and a flattened output.
 TEST_P(SdpaTransposedKernelExecuteTest,

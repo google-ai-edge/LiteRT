@@ -33,6 +33,7 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/core/options.h"
+#include "litert/experimental/custom_ops/gated_delta_net/gated_delta_update_impl.h"
 #include "litert/experimental/custom_ops/gated_delta_net/gated_delta_update_tflite_op.h"
 #include "ml_drift_delegate/delegate/gated_delta_update_test_util.h"
 #include "tflite/c/common.h"
@@ -689,6 +690,93 @@ TEST(GatedDeltaUpdateGpuTest, MultiStepDecodeStateCarryover) {
     CompareBuffers(actual_out, golden_out, 1e-3f);
     CompareBuffers(actual_final_state, golden_next_state, 1e-3f);
   }
+}
+
+void RunGatedDeltaUpdateBlockTest(int T, int H_k, int H_v, int D_k, int D_v,
+                                  const std::vector<float>& valid_mask,
+                                  bool use_fp32, float tolerance) {
+  std::srand(42);
+  const int K_dim = H_k * D_k;
+  const int V_dim = H_v * D_v;
+  auto a_log = GenerateRandom(H_v, -2.0f, -0.2f);
+  auto dt_bias = GenerateRandom(H_v, -0.3f, 0.3f);
+  auto norm_weight = GenerateRandom(D_v, 0.5f, 1.5f);
+  const bool has_mask = !valid_mask.empty();
+
+  auto model_buf = CreateGatedDeltaUpdateBlockModelBuffer(
+      T, H_k, H_v, D_k, D_v, a_log, dt_bias, norm_weight, /*eps=*/1e-6f,
+      /*norm_eps=*/1e-5f, has_mask);
+
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+  auto options = CreateGpuOptions(use_fp32);
+  ASSERT_TRUE(options);
+  auto compiled_model = CompiledModel::Create(
+      *env, litert::BufferRef<uint8_t>(model_buf.data(), model_buf.size()),
+      *options);
+  ASSERT_TRUE(compiled_model);
+
+  auto input_buffers = compiled_model->CreateInputBuffers();
+  ASSERT_TRUE(input_buffers);
+  auto output_buffers = compiled_model->CreateOutputBuffers();
+  ASSERT_TRUE(output_buffers);
+  ASSERT_EQ(input_buffers->size(), has_mask ? 4 : 3);
+  ASSERT_EQ(output_buffers->size(), 2);
+
+  auto conv_data = GenerateRandom(T * (2 * K_dim + V_dim), -0.5f, 0.5f);
+  auto zba_data = GenerateRandom(T * (V_dim + 2 * H_v), -0.5f, 0.5f);
+  auto state_data = GenerateRandom(H_v * D_k * D_v, -0.3f, 0.3f);
+
+  ASSERT_TRUE((*input_buffers)[0].Write<float>(absl::MakeConstSpan(conv_data)));
+  ASSERT_TRUE((*input_buffers)[1].Write<float>(absl::MakeConstSpan(zba_data)));
+  ASSERT_TRUE(
+      (*output_buffers)[1].Write<float>(absl::MakeConstSpan(state_data)));
+  if (has_mask) {
+    ASSERT_TRUE(
+        (*input_buffers)[3].Write<float>(absl::MakeConstSpan(valid_mask)));
+  }
+
+  ::litert::gated_delta_net::GatedDeltaBlockParams params;
+  params.num_k_heads = H_k;
+  params.num_v_heads = H_v;
+  params.head_k_dim = D_k;
+  params.head_v_dim = D_v;
+  params.eps = 1e-6f;
+  params.norm_eps = 1e-5f;
+  std::vector<float> golden_out(T * V_dim);
+  std::vector<float> golden_state(H_v * D_k * D_v);
+  ::litert::gated_delta_net::ComputeGatedDeltaUpdateBlock(
+      conv_data.data(), zba_data.data(), a_log.data(), dt_bias.data(),
+      norm_weight.data(), state_data.data(),
+      has_mask ? valid_mask.data() : nullptr, golden_out.data(),
+      golden_state.data(), /*B=*/1, T, params);
+
+  ASSERT_TRUE(compiled_model->Run(*input_buffers, *output_buffers));
+
+  std::vector<float> actual_out(T * V_dim);
+  std::vector<float> actual_state(H_v * D_k * D_v);
+  ASSERT_TRUE((*output_buffers)[0].Read<float>(absl::MakeSpan(actual_out)));
+  ASSERT_TRUE((*output_buffers)[1].Read<float>(absl::MakeSpan(actual_state)));
+
+  CompareBuffers(actual_out, golden_out, tolerance);
+  CompareBuffers(actual_state, golden_state, 1e-3f);
+}
+
+// 31. Fused post-conv GatedDeltaNet block mode single-token decode in FP16
+// (verifies FP16 activation + FP32 recurrent state preservation).
+TEST(GatedDeltaUpdateGpuTest, BlockModeSingleTokenDecodeFP16) {
+  RunGatedDeltaUpdateBlockTest(/*T=*/1, /*H_k=*/4, /*H_v=*/8, /*D_k=*/128,
+                               /*D_v=*/128, /*valid_mask=*/{},
+                               /*use_fp32=*/false, /*tolerance=*/1e-2f);
+}
+
+// 32. Fused post-conv GatedDeltaNet block mode multi-token prefill with
+// right-padding valid_mask.
+TEST(GatedDeltaUpdateGpuTest, BlockModeMultiTokenPrefillWithPadding) {
+  RunGatedDeltaUpdateBlockTest(
+      /*T=*/6, /*H_k=*/4, /*H_v=*/8, /*D_k=*/128, /*D_v=*/128,
+      /*valid_mask=*/{1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
+      /*use_fp32=*/true, /*tolerance=*/1e-3f);
 }
 
 }  // namespace

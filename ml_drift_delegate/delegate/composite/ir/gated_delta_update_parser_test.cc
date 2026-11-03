@@ -150,5 +150,144 @@ TEST_F(ConvertGatedDeltaUpdateTest, RejectInvalidGqaHeadRatio) {
   EXPECT_EQ(ir_model, nullptr);
 }
 
+TEST_F(ConvertGatedDeltaUpdateTest, BlockCustomOpConversion) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("gated_delta_update");
+
+  int B = 1, T = 4, H_k = 4, H_v = 8, D_k = 128, D_v = 128;
+  int K_dim = H_k * D_k;
+  int V_dim = H_v * D_v;
+  builder.AddInput(kTfLiteFloat32, {B, T, 2 * K_dim + V_dim});  // conv_out
+  builder.AddInput(kTfLiteFloat32, {B, T, V_dim + 2 * H_v});    // zba
+  builder.AddInput(kTfLiteFloat32, {H_v});                      // a_log
+  builder.AddInput(kTfLiteFloat32, {H_v});                      // dt_bias
+  builder.AddInput(kTfLiteFloat32, {D_v});                      // norm_weight
+  builder.AddInput(kTfLiteFloat32, {B, H_v, D_k, D_v});         // state
+  builder.AddInput(kTfLiteFloat32, {B, T});                     // valid_mask
+  builder.AddOutput(kTfLiteFloat32, {B, T, V_dim});             // output
+  builder.AddOutput(kTfLiteFloat32, {B, H_v, D_k, D_v});        // final_state
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("mode", 0);
+    fbb.Int("num_k_heads", H_k);
+    fbb.Int("num_v_heads", H_v);
+    fbb.Int("head_k_dim", D_k);
+    fbb.Int("head_v_dim", D_v);
+    fbb.Float("eps", 1e-6f);
+    fbb.Float("norm_eps", 1e-5f);
+  });
+  fbb.Finish();
+  auto fbb_buf = fbb.GetBuffer();
+  void* custom_data = malloc(fbb_buf.size());
+  memcpy(custom_data, fbb_buf.data(), fbb_buf.size());
+  builder.SetCustomData(custom_data, fbb_buf.size());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("gated_delta_update"));
+  // Input 5 (recurrent_state) is skipped; compacted inputs have 6 tensors.
+  EXPECT_THAT(op->inputs, SizeIs(6));
+  EXPECT_THAT(op->outputs, SizeIs(2));
+
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::GatedDeltaUpdateAttributes>(&op->attr);
+  ASSERT_NE(attr, nullptr);
+  ASSERT_TRUE(attr->block.has_value());
+  EXPECT_EQ(attr->block->num_k_heads, H_k);
+  EXPECT_EQ(attr->block->num_v_heads, H_v);
+  EXPECT_EQ(attr->block->head_k_dim, D_k);
+  EXPECT_EQ(attr->block->head_v_dim, D_v);
+  EXPECT_FLOAT_EQ(attr->block->norm_eps, 1e-5f);
+}
+
+TEST_F(ConvertGatedDeltaUpdateTest, RejectInvalidBlockDimensions) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("gated_delta_update");
+
+  int B = 1, T = 1, H_k = 4, H_v = 8, D_k = 128, D_v = 128;
+  int K_dim = H_k * D_k;
+  int V_dim = H_v * D_v;
+  // Mismatched conv_out channel dim (+16).
+  builder.AddInput(kTfLiteFloat32, {B, T, 2 * K_dim + V_dim + 16});
+  builder.AddInput(kTfLiteFloat32, {B, T, V_dim + 2 * H_v});
+  builder.AddInput(kTfLiteFloat32, {H_v});
+  builder.AddInput(kTfLiteFloat32, {H_v});
+  builder.AddInput(kTfLiteFloat32, {D_v});
+  builder.AddInput(kTfLiteFloat32, {B, H_v, D_k, D_v});
+  builder.AddOutput(kTfLiteFloat32, {B, T, V_dim});
+  builder.AddOutput(kTfLiteFloat32, {B, H_v, D_k, D_v});
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("num_k_heads", H_k);
+    fbb.Int("num_v_heads", H_v);
+    fbb.Int("head_k_dim", D_k);
+    fbb.Int("head_v_dim", D_v);
+  });
+  fbb.Finish();
+  auto fbb_buf = fbb.GetBuffer();
+  void* custom_data = malloc(fbb_buf.size());
+  memcpy(custom_data, fbb_buf.data(), fbb_buf.size());
+  builder.SetCustomData(custom_data, fbb_buf.size());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  EXPECT_EQ(ir_model, nullptr);
+}
+
+TEST_F(ConvertGatedDeltaUpdateTest, BlockCustomOpFusedQkvzbaConversion) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("gated_delta_update");
+
+  int B = 1, T = 4, H_k = 4, H_v = 8, D_k = 128, D_v = 128;
+  int K_dim = H_k * D_k;
+  int V_dim = H_v * D_v;
+  int conv_dim = 2 * K_dim + V_dim;
+  int zba_dim = V_dim + 2 * H_v;
+  builder.AddInput(kTfLiteFloat32, {B, T, conv_dim});            // conv_out
+  builder.AddInput(kTfLiteFloat32, {B, T, conv_dim + zba_dim});  // fused qkvzba
+  builder.AddInput(kTfLiteFloat32, {H_v});                       // a_log
+  builder.AddInput(kTfLiteFloat32, {H_v});                       // dt_bias
+  builder.AddInput(kTfLiteFloat32, {D_v});                       // norm_weight
+  builder.AddInput(kTfLiteFloat32, {B, H_v, D_k, D_v});          // state
+  builder.AddInput(kTfLiteFloat32, {B, T});                      // valid_mask
+  builder.AddOutput(kTfLiteFloat32, {B, T, V_dim});              // output
+  builder.AddOutput(kTfLiteFloat32, {B, H_v, D_k, D_v});         // final_state
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("mode", 0);
+    fbb.Int("num_k_heads", H_k);
+    fbb.Int("num_v_heads", H_v);
+    fbb.Int("head_k_dim", D_k);
+    fbb.Int("head_v_dim", D_v);
+    fbb.Float("eps", 1e-6f);
+    fbb.Float("norm_eps", 1e-5f);
+  });
+  fbb.Finish();
+  auto fbb_buf = fbb.GetBuffer();
+  void* custom_data = malloc(fbb_buf.size());
+  memcpy(custom_data, fbb_buf.data(), fbb_buf.size());
+  builder.SetCustomData(custom_data, fbb_buf.size());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  EXPECT_THAT(ir_model->ops()[0]->name, Eq("gated_delta_update"));
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir
