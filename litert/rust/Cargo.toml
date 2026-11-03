@@ -43,3 +43,8 @@ reqwest = { version = "0.11", features = ["blocking"] }
 zip = "0.6"
 anyhow = "1.0" # For easy error handling in build script
 build-print = "1"
+cc = "1"
+object = { version = "0.36", default-features = false, features = ["read", "pe"] }
+
+[target.'cfg(windows)'.dependencies]
+libloading = "0.8"
