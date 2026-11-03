@@ -14,13 +14,14 @@ limitations under the License.
 ==============================================================================*/
 // Unit test for TFLite Bidirectional LSTM op.
 
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
 #include <cstdint>
 #include <tuple>
 #include <utility>
 #include <vector>
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/kernels/test_util.h"
 #include "tflite/schema/schema_generated.h"
@@ -3650,6 +3651,200 @@ TEST_P(LSTMOpTest, TestWithAuxInputNoAuxWeightsMismatchedBatchSize) {
           asymmetric_quantize_inputs,
           /*use_aux_input_weights=*/false),
       "Cannot allocate tensors");
+}
+
+class MalformedBidirectionalLSTMOpModel : public SingleOpModel {
+ public:
+  MalformedBidirectionalLSTMOpModel(
+      const std::vector<int>& fw_out_weights_shape,
+      bool omit_fw_input_gate_bias) {
+    input_ = AddInput(TensorType_FLOAT32);
+    fw_input_to_input_weights_ = AddInput(TensorType_FLOAT32);
+    fw_input_to_forget_weights_ = AddInput(TensorType_FLOAT32);
+    fw_input_to_cell_weights_ = AddInput(TensorType_FLOAT32);
+    fw_input_to_output_weights_ = AddInput(TensorType_FLOAT32);
+    fw_recurrent_to_input_weights_ = AddInput(TensorType_FLOAT32);
+    fw_recurrent_to_forget_weights_ = AddInput(TensorType_FLOAT32);
+    fw_recurrent_to_cell_weights_ = AddInput(TensorType_FLOAT32);
+    fw_recurrent_to_output_weights_ = AddInput(TensorType_FLOAT32);
+    fw_cell_to_input_weights_ = AddNullInput();
+    fw_cell_to_forget_weights_ = AddNullInput();
+    fw_cell_to_output_weights_ = AddNullInput();
+    if (omit_fw_input_gate_bias) {
+      fw_input_gate_bias_ = AddNullInput();
+    } else {
+      fw_input_gate_bias_ = AddInput(TensorType_FLOAT32);
+    }
+    fw_forget_gate_bias_ = AddInput(TensorType_FLOAT32);
+    fw_cell_gate_bias_ = AddInput(TensorType_FLOAT32);
+    fw_output_gate_bias_ = AddInput(TensorType_FLOAT32);
+    fw_projection_weights_ = AddNullInput();
+    fw_projection_bias_ = AddNullInput();
+
+    bw_input_to_input_weights_ = AddInput(TensorType_FLOAT32);
+    bw_input_to_forget_weights_ = AddInput(TensorType_FLOAT32);
+    bw_input_to_cell_weights_ = AddInput(TensorType_FLOAT32);
+    bw_input_to_output_weights_ = AddInput(TensorType_FLOAT32);
+    bw_recurrent_to_input_weights_ = AddInput(TensorType_FLOAT32);
+    bw_recurrent_to_forget_weights_ = AddInput(TensorType_FLOAT32);
+    bw_recurrent_to_cell_weights_ = AddInput(TensorType_FLOAT32);
+    bw_recurrent_to_output_weights_ = AddInput(TensorType_FLOAT32);
+    bw_cell_to_input_weights_ = AddNullInput();
+    bw_cell_to_forget_weights_ = AddNullInput();
+    bw_cell_to_output_weights_ = AddNullInput();
+    bw_input_gate_bias_ = AddInput(TensorType_FLOAT32);
+    bw_forget_gate_bias_ = AddInput(TensorType_FLOAT32);
+    bw_cell_gate_bias_ = AddInput(TensorType_FLOAT32);
+    bw_output_gate_bias_ = AddInput(TensorType_FLOAT32);
+    bw_projection_weights_ = AddNullInput();
+    bw_projection_bias_ = AddNullInput();
+
+    fw_activation_state_ =
+        AddVariableInput(TensorData{TensorType_FLOAT32, {1, 4}});
+    fw_cell_state_ = AddVariableInput(TensorData{TensorType_FLOAT32, {1, 4}});
+    bw_activation_state_ =
+        AddVariableInput(TensorData{TensorType_FLOAT32, {1, 4}});
+    bw_cell_state_ = AddVariableInput(TensorData{TensorType_FLOAT32, {1, 4}});
+
+    fw_output_ = AddOutput(TensorType_FLOAT32);
+    bw_output_ = AddOutput(TensorType_FLOAT32);
+
+    aux_input_ = AddNullInput();
+    fw_aux_input_to_input_weights_ = AddNullInput();
+    fw_aux_input_to_forget_weights_ = AddNullInput();
+    fw_aux_input_to_cell_weights_ = AddNullInput();
+    fw_aux_input_to_output_weights_ = AddNullInput();
+    bw_aux_input_to_input_weights_ = AddNullInput();
+    bw_aux_input_to_forget_weights_ = AddNullInput();
+    bw_aux_input_to_cell_weights_ = AddNullInput();
+    bw_aux_input_to_output_weights_ = AddNullInput();
+
+    SetBuiltinOp(BuiltinOperator_BIDIRECTIONAL_SEQUENCE_LSTM,
+                 BuiltinOptions_BidirectionalSequenceLSTMOptions,
+                 CreateBidirectionalSequenceLSTMOptions(
+                     builder_, ActivationFunctionType_TANH, 0.0f, 0.0f,
+                     /*merge_outputs=*/false, /*time_major=*/true,
+                     /*asymmetric_quantize_inputs=*/false)
+                     .Union());
+
+    std::vector<std::vector<int>> shapes;
+    shapes.push_back({2, 1, 2});             // input
+    shapes.push_back({4, 2});                // fw_input_to_input
+    shapes.push_back({4, 2});                // fw_input_to_forget
+    shapes.push_back({4, 2});                // fw_input_to_cell
+    shapes.push_back(fw_out_weights_shape);  // fw_input_to_output
+    shapes.push_back({4, 4});                // fw_recurrent_to_input
+    shapes.push_back({4, 4});                // fw_recurrent_to_forget
+    shapes.push_back({4, 4});                // fw_recurrent_to_cell
+    shapes.push_back({4, 4});                // fw_recurrent_to_output
+    shapes.push_back({0});                   // fw_cell_to_input
+    shapes.push_back({0});                   // fw_cell_to_forget
+    shapes.push_back({0});                   // fw_cell_to_output
+    shapes.push_back({4});                   // fw_input_gate_bias
+    shapes.push_back({4});                   // fw_forget_gate_bias
+    shapes.push_back({4});                   // fw_cell_gate_bias
+    shapes.push_back({4});                   // fw_output_gate_bias
+    shapes.push_back({0, 0});                // fw_proj_weights
+    shapes.push_back({0});                   // fw_proj_bias
+
+    shapes.push_back({4, 2});  // bw_input_to_input
+    shapes.push_back({4, 2});  // bw_input_to_forget
+    shapes.push_back({4, 2});  // bw_input_to_cell
+    shapes.push_back({4, 2});  // bw_input_to_output
+    shapes.push_back({4, 4});  // bw_recurrent_to_input
+    shapes.push_back({4, 4});  // bw_recurrent_to_forget
+    shapes.push_back({4, 4});  // bw_recurrent_to_cell
+    shapes.push_back({4, 4});  // bw_recurrent_to_output
+    shapes.push_back({0});     // bw_cell_to_input
+    shapes.push_back({0});     // bw_cell_to_forget
+    shapes.push_back({0});     // bw_cell_to_output
+    shapes.push_back({4});     // bw_input_gate_bias
+    shapes.push_back({4});     // bw_forget_gate_bias
+    shapes.push_back({4});     // bw_cell_gate_bias
+    shapes.push_back({4});     // bw_output_gate_bias
+    shapes.push_back({0, 0});  // bw_proj_weights
+    shapes.push_back({0});     // bw_proj_bias
+
+    shapes.push_back({1, 4});  // fw_act_state
+    shapes.push_back({1, 4});  // fw_cell_state
+    shapes.push_back({1, 4});  // bw_act_state
+    shapes.push_back({1, 4});  // bw_cell_state
+
+    shapes.push_back({0});  // aux_input
+    for (int i = 0; i < 8; ++i) shapes.push_back({0});
+
+    BuildInterpreter(shapes, /*num_threads=*/1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false,
+                     /*allocate_and_delegate=*/false);
+  }
+
+  using SingleOpModel::AllocateTensors;
+
+ private:
+  int input_;
+  int fw_input_to_input_weights_;
+  int fw_input_to_forget_weights_;
+  int fw_input_to_cell_weights_;
+  int fw_input_to_output_weights_;
+  int fw_recurrent_to_input_weights_;
+  int fw_recurrent_to_forget_weights_;
+  int fw_recurrent_to_cell_weights_;
+  int fw_recurrent_to_output_weights_;
+  int fw_cell_to_input_weights_;
+  int fw_cell_to_forget_weights_;
+  int fw_cell_to_output_weights_;
+  int fw_input_gate_bias_;
+  int fw_forget_gate_bias_;
+  int fw_cell_gate_bias_;
+  int fw_output_gate_bias_;
+  int fw_projection_weights_;
+  int fw_projection_bias_;
+  int bw_input_to_input_weights_;
+  int bw_input_to_forget_weights_;
+  int bw_input_to_cell_weights_;
+  int bw_input_to_output_weights_;
+  int bw_recurrent_to_input_weights_;
+  int bw_recurrent_to_forget_weights_;
+  int bw_recurrent_to_cell_weights_;
+  int bw_recurrent_to_output_weights_;
+  int bw_cell_to_input_weights_;
+  int bw_cell_to_forget_weights_;
+  int bw_cell_to_output_weights_;
+  int bw_input_gate_bias_;
+  int bw_forget_gate_bias_;
+  int bw_cell_gate_bias_;
+  int bw_output_gate_bias_;
+  int bw_projection_weights_;
+  int bw_projection_bias_;
+  int fw_activation_state_;
+  int fw_cell_state_;
+  int bw_activation_state_;
+  int bw_cell_state_;
+  int fw_output_;
+  int bw_output_;
+  int aux_input_;
+  int fw_aux_input_to_input_weights_;
+  int fw_aux_input_to_forget_weights_;
+  int fw_aux_input_to_cell_weights_;
+  int fw_aux_input_to_output_weights_;
+  int bw_aux_input_to_input_weights_;
+  int bw_aux_input_to_forget_weights_;
+  int bw_aux_input_to_cell_weights_;
+  int bw_aux_input_to_output_weights_;
+};
+
+TEST(MalformedBidirectionalLSTMOpTest, Rank0InputToOutputWeightsRejected) {
+  MalformedBidirectionalLSTMOpModel model(
+      /*fw_out_weights_shape=*/{}, /*omit_fw_input_gate_bias=*/false);
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+TEST(MalformedBidirectionalLSTMOpTest,
+     MissingInputGateBiasWhenNotCifgRejected) {
+  MalformedBidirectionalLSTMOpModel model(
+      /*fw_out_weights_shape=*/{4, 2}, /*omit_fw_input_gate_bias=*/true);
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
 }
 
 }  // namespace

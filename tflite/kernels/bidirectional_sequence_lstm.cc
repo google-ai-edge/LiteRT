@@ -321,6 +321,7 @@ TfLiteStatus CheckLstmTensorDimensionsAndTypes(
   if (use_cifg) {
     TF_LITE_ENSURE(context, input_gate_bias == nullptr);
   } else {
+    TF_LITE_ENSURE(context, input_gate_bias != nullptr);
     TF_LITE_ENSURE_EQ(context, input_gate_bias->dims->size, 1);
     TF_LITE_ENSURE_EQ(context, input_gate_bias->dims->data[0], n_cell);
     TF_LITE_ENSURE_TYPES_EQ(context, input_gate_bias->type, kTfLiteFloat32);
@@ -527,8 +528,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_OK(context,
                     GetInputSafe(context, node, kFwInputToOutputWeightsTensor,
                                  &fw_input_to_output_weights));
-  const int n_fw_cell = fw_input_to_output_weights->dims->data[0];
   TF_LITE_ENSURE_EQ(context, fw_input_to_output_weights->dims->size, 2);
+  const int n_fw_cell = fw_input_to_output_weights->dims->data[0];
   TF_LITE_ENSURE_EQ(context, fw_input_to_output_weights->dims->data[1],
                     n_input);
 
@@ -536,8 +537,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_OK(context,
                     GetInputSafe(context, node, kBwInputToOutputWeightsTensor,
                                  &bw_input_to_output_weights));
-  const int n_bw_cell = bw_input_to_output_weights->dims->data[0];
   TF_LITE_ENSURE_EQ(context, bw_input_to_output_weights->dims->size, 2);
+  const int n_bw_cell = bw_input_to_output_weights->dims->data[0];
   TF_LITE_ENSURE_EQ(context, bw_input_to_output_weights->dims->data[1],
                     n_input);
   TF_LITE_ENSURE_EQ(context, bw_input_to_output_weights->type,

@@ -12,15 +12,16 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
+#include <gtest/gtest.h>
 #include <stdint.h>
 
 #include <memory>
 #include <utility>
 #include <vector>
 
-#include <gtest/gtest.h>
 #include "tflite/core/interpreter.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
+#include "tflite/kernels/control_flow_common.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/subgraph_test_util.h"
 #include "tflite/profiling/memory_info.h"
@@ -37,6 +38,28 @@ using subgraph_test_util::FillScalarStringTensor;
 namespace {
 
 class WhileTest : public ControlFlowOpTest {};
+
+TEST_F(WhileTest, RejectsOutOfRangeTensorIndices) {
+  int child_index = -1;
+  AddSubgraphs(1, &child_index);
+  Subgraph* src = interpreter_->subgraph(0);
+  Subgraph* dst = interpreter_->subgraph(child_index);
+  ASSERT_NE(src, nullptr);
+  ASSERT_NE(dst, nullptr);
+
+  int first_tensor = -1;
+  ASSERT_EQ(src->AddTensors(1, &first_tensor), kTfLiteOk);
+  ASSERT_EQ(dst->AddTensors(1, &first_tensor), kTfLiteOk);
+
+  EXPECT_EQ(ops::builtin::CopyTensorsShapeAndType(dst->context(), src,
+                                                  std::vector<int>{1}, dst,
+                                                  std::vector<int>{0}, false),
+            kTfLiteError);
+  EXPECT_EQ(ops::builtin::CopyTensorsShapeAndType(dst->context(), src,
+                                                  std::vector<int>{0}, dst,
+                                                  std::vector<int>{1}, false),
+            kTfLiteError);
+}
 
 TEST_F(WhileTest, TestWithXNNPACK) {
   interpreter_ = std::make_unique<Interpreter>();
