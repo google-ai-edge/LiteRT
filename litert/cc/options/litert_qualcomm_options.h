@@ -553,6 +553,18 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  void SetHtpContextInitAcceleration(bool enabled) {
+    LrtQualcommOptionsSetHtpContextInitAcceleration(options_, enabled);
+  }
+  bool GetHtpContextInitAcceleration() {
+    bool val = false;
+    if (LrtQualcommOptionsGetHtpContextInitAcceleration(options_, &val) !=
+        kLiteRtStatusOk) {
+      return false;
+    }
+    return val;
+  }
+
   void SetNumHvxThreads(std::uint32_t num_hvx_threads) {
     LrtQualcommOptionsSetNumHvxThreads(options_, num_hvx_threads);
   }
