@@ -1431,12 +1431,12 @@ absl::Status VerifyModel(const void* buf, size_t len,
       }
       if (status != kLiteRtStatusOk) {
         // Check if this is a RESHAPE op with a runtime-dynamic 1D shape tensor
-        // (no constant buffer and no ReshapeOptions new_shape).
-        const auto* reshape_opts =
-            internal::GetTflOptions(*op).AsReshapeOptions();
+        // (no constant buffer). In TFLite's GetOutputShape
+        // (kernels/reshape.cc), a 1D INT32 second input always takes
+        // precedence over ReshapeOptions.
         if (op->OpCode() == kLiteRtOpCodeTflReshape &&
-            (!reshape_opts || reshape_opts->new_shape.empty()) &&
-            op->NumInputs() >= 2 && op->Inputs()[1] != nullptr &&
+            op->NumInputs() == 2 && op->NumOutputs() == 1 &&
+            op->Inputs()[1] != nullptr &&
             op->Input(1).Weights().Buffer().Size() == 0 &&
             op->Input(1).Type().first == kLiteRtRankedTensorType) {
           const auto& shape_layout =
