@@ -62,9 +62,11 @@ absl::Status RunShortConvStepTest(::ml_drift::TestExecutionEnvironment& env,
                                   ::ml_drift::TensorStorageType storage,
                                   int hidden_size, bool with_bias,
                                   int conv_L_cache = 3, bool is_gated = true,
-                                  bool use_silu = false) {
+                                  bool use_silu = false,
+                                  int extra_in_channels = 0) {
   const int state_len = conv_L_cache - 1;
-  const int in_channels = is_gated ? (3 * hidden_size) : hidden_size;
+  const int in_channels =
+      (is_gated ? (3 * hidden_size) : hidden_size) + extra_in_channels;
   const int num_slices = (hidden_size + 3) / 4;
   ::ml_drift::DataType data_type =
       ::ml_drift::DeduceDataTypeFromPrecision(precision);
@@ -104,8 +106,8 @@ absl::Status RunShortConvStepTest(::ml_drift::TestExecutionEnvironment& env,
                                      next_state_desc, num_slices, hidden_size,
                                      conv_L_cache, is_gated, use_silu);
 
-  // Synthesize input data
-  std::vector<float> in_proj_data(in_channels);
+  // Synthesize input data (extra trailing channels hold large sentinels).
+  std::vector<float> in_proj_data(in_channels, 99.0f);
   if (is_gated) {
     for (int i = 0; i < hidden_size; ++i) {
       in_proj_data[i] = 0.5f + 0.1f * (i % 7);                     // b
@@ -236,6 +238,7 @@ struct ShortConvPrefillTestCase {
   bool with_bias;
   bool is_gated = true;
   bool use_silu = false;
+  int extra_in_channels = 0;
 };
 
 ::ml_drift::TensorDescriptor MakeTensorDesc(
@@ -268,7 +271,9 @@ absl::Status RunShortConvPrefillTest(
   const int conv_L_cache = test_case.conv_l_cache;
   const int num_state_taps = conv_L_cache - 1;
   const int num_slices = (hidden_size + 3) / 4;
-  const int in_channels = test_case.is_gated ? (3 * hidden_size) : hidden_size;
+  const int in_channels =
+      (test_case.is_gated ? (3 * hidden_size) : hidden_size) +
+      test_case.extra_in_channels;
   const ::ml_drift::DataType data_type =
       ::ml_drift::DeduceDataTypeFromPrecision(precision);
 
@@ -303,8 +308,9 @@ absl::Status RunShortConvPrefillTest(
       test_case.is_gated, test_case.use_silu, num_valid_tokens_desc.get());
 
   // The inputs vary with both the token and the channel, so that reading the
-  // wrong token, channel or tap changes the result.
-  std::vector<float> in_proj_data(seq_len * in_channels);
+  // wrong token, channel or tap changes the result; extra trailing channels
+  // hold large sentinel values.
+  std::vector<float> in_proj_data(seq_len * in_channels, 99.0f);
   for (int t = 0; t < seq_len; ++t) {
     float* row = &in_proj_data[t * in_channels];
     if (test_case.is_gated) {
@@ -621,6 +627,52 @@ TEST_P(ShortConvStepFloatTest, PrefillHiddenSizeAndConvLengthCornerCases) {
     }
   }
 }
+TEST_P(ShortConvStepFloatTest, DecodeUngatedWithExtraTrailingChannels) {
+  for (int conv_l_cache : {2, 3, 4}) {
+    for (bool use_silu : {false, true}) {
+      for (bool with_bias : {false, true}) {
+        ASSERT_OK(RunShortConvStepTest(*exec_env, precision(), storage(),
+                                       /*hidden_size=*/16, with_bias,
+                                       conv_l_cache, /*is_gated=*/false,
+                                       use_silu, /*extra_in_channels=*/12));
+      }
+    }
+  }
+  // Qwen3.5-0.8B fused in_proj_qkvzba dimensions: [6144 + 2080 = 8224].
+  ASSERT_OK(RunShortConvStepTest(*exec_env, precision(), storage(),
+                                 /*hidden_size=*/6144, /*with_bias=*/false,
+                                 /*conv_L_cache=*/4, /*is_gated=*/false,
+                                 /*use_silu=*/true,
+                                 /*extra_in_channels=*/2080));
+}
+
+TEST_P(ShortConvStepFloatTest, PrefillUngatedWithExtraTrailingChannels) {
+  for (int conv_l_cache : {2, 3, 4}) {
+    for (bool use_silu : {false, true}) {
+      for (bool with_bias : {false, true}) {
+        ASSERT_OK(RunShortConvPrefillTest(*exec_env, precision(), storage(),
+                                          {.hidden_size = 16,
+                                           .seq_len = 8,
+                                           .num_valid_tokens = 5,
+                                           .conv_l_cache = conv_l_cache,
+                                           .with_bias = with_bias,
+                                           .is_gated = false,
+                                           .use_silu = use_silu,
+                                           .extra_in_channels = 12}));
+      }
+    }
+  }
+  ASSERT_OK(RunShortConvPrefillTest(*exec_env, precision(), storage(),
+                                    {.hidden_size = 6144,
+                                     .seq_len = 6,
+                                     .num_valid_tokens = 4,
+                                     .conv_l_cache = 4,
+                                     .with_bias = false,
+                                     .is_gated = false,
+                                     .use_silu = true,
+                                     .extra_in_channels = 2080}));
+}
+
 INSTANTIATE_TEST_SUITE_P(
     ShortConvStepFloatTestSuite, ShortConvStepFloatTest,
     Combine(ValuesIn({::ml_drift::CalculationsPrecision::kF32,

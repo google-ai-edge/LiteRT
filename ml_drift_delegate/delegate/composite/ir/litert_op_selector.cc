@@ -14,9 +14,11 @@
 
 #include "ml_drift_delegate/delegate/composite/ir/litert_op_selector.h"
 
+#include <any>
 #include <cstddef>
 #include <memory>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -28,12 +30,16 @@
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/model_hints.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/selectors/operation_selector.h"  // from @ml_drift
 #include "ml_drift/common/selectors/special_selector.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_kernel.h"
 #include "ml_drift_delegate/delegate/composite/gated_delta_update_kernel.h"
@@ -46,6 +52,86 @@
 #include "ml_drift_delegate/delegate/composite/short_conv_step_kernel.h"
 
 namespace litert::ml_drift::ir {
+
+namespace {
+
+template <typename AttrT>
+absl::Status CreateQuantizedFullyConnectedNoZeroPoint(
+    const ::ml_drift::GpuInfo& gpu_info,
+    const ::ml_drift::CreateGpuModelInfo& create_info,
+    ::ml_drift::OperationType op_type, const AttrT& attr,
+    const ::ml_drift::OHWI& weights_shape_ohwi,
+    const std::vector<const ::ml_drift::ir::IrTensor*>& inputs,
+    const std::vector<const ::ml_drift::ir::IrTensor*>& outputs,
+    ::ml_drift::GpuModelBuilder* model_builder) {
+  if (outputs.size() != 1) {
+    return absl::InvalidArgumentError(
+        "Quantized FullyConnected expects 1 output.");
+  }
+  ABSL_ASSIGN_OR_RETURN(auto src, model_builder->GetTensor(inputs[0]->id));
+  ABSL_ASSIGN_OR_RETURN(auto weights, model_builder->GetTensor(inputs[1]->id));
+
+  ::ml_drift::GpuModelBuilder::TensorHandle scale;
+  ::ml_drift::GpuModelBuilder::TensorHandle bias;
+  ::ml_drift::GpuModelBuilder::TensorHandle* bias_ptr = nullptr;
+  if (inputs.size() == 3) {
+    ABSL_ASSIGN_OR_RETURN(scale, model_builder->GetTensor(inputs[2]->id));
+    if (!attr.bias.data.empty()) {
+      bias =
+          model_builder->AddConstantTensor(attr.bias, src.tensor_desc.GetDataType());
+      bias_ptr = &bias;
+    }
+  } else if (inputs.size() == 4) {
+    ABSL_ASSIGN_OR_RETURN(bias, model_builder->GetTensor(inputs[2]->id));
+    ABSL_ASSIGN_OR_RETURN(scale, model_builder->GetTensor(inputs[3]->id));
+    bias_ptr = &bias;
+  } else {
+    return absl::InvalidArgumentError(
+        "Symmetric external-weight Quantized FullyConnected expects 3 or 4 "
+        "inputs.");
+  }
+
+  const bool prefer_textures =
+      create_info.hints.Check(::ml_drift::ModelHints::kPreferTextureWeights);
+  ::ml_drift::GpuModelBuilder::TensorHandle out;
+  switch (op_type) {
+    case ::ml_drift::OperationType::kFullyConnectedInt8: {
+      const auto weights_desc = ::ml_drift::GetFullyConnectedInt8WeightsDesc(
+          gpu_info, weights_shape_ohwi, prefer_textures);
+      const auto external_weights = ::ml_drift::CreateExternalWeights(
+          weights, weights_desc, weights_shape_ohwi, attr.scale.shape, &scale,
+          /*zero_point=*/nullptr, /*sum_i=*/nullptr);
+      out = model_builder->FullyConnectedInt8ExternalWeights(
+          src, external_weights, bias_ptr);
+      break;
+    }
+    case ::ml_drift::OperationType::kFullyConnectedInt4: {
+      const auto weights_desc = ::ml_drift::GetFullyConnectedInt4WeightsDesc(
+          gpu_info, weights_shape_ohwi, prefer_textures);
+      const auto external_weights = ::ml_drift::CreateExternalWeights(
+          weights, weights_desc, weights_shape_ohwi, attr.scale.shape, &scale,
+          /*zero_point=*/nullptr, /*sum_i=*/nullptr);
+      out = model_builder->FullyConnectedInt4ExternalWeights(
+          src, external_weights, bias_ptr);
+      break;
+    }
+    case ::ml_drift::OperationType::kFullyConnectedInt2: {
+      const auto weights_desc = ::ml_drift::GetFullyConnectedInt2WeightsDesc(
+          gpu_info, weights_shape_ohwi, prefer_textures);
+      const auto external_weights = ::ml_drift::CreateExternalWeights(
+          weights, weights_desc, weights_shape_ohwi, attr.scale.shape, &scale,
+          /*zero_point=*/nullptr, /*sum_i=*/nullptr);
+      out = model_builder->FullyConnectedInt2ExternalWeights(
+          src, external_weights, bias_ptr);
+      break;
+    }
+    default:
+      return absl::InternalError("Unsupported quantized FC operation type.");
+  }
+  return model_builder->UpdateOutputTensor(out, outputs[0]->id);
+}
+
+}  // namespace
 
 LiteRtOpSelector::LiteRtOpSelector(
     const ::ml_drift::CreateGpuModelInfo* create_info,
@@ -202,6 +288,41 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
         CreateSdpaFromIrOp(sdpa_inputs, outputs, op, model_builder);
     if (!absl::IsUnimplemented(status)) {
       return status;
+    }
+  }
+
+  if (inputs.size() >= 3 && op.attr.has_value()) {
+    if (op.name == ToString(::ml_drift::OperationType::kFullyConnectedInt8)) {
+      if (const auto* attr =
+              std::any_cast<::ml_drift::FullyConnectedInt8Attributes>(&op.attr);
+          attr != nullptr && attr->zero_point.shape.o == 0) {
+        return CreateQuantizedFullyConnectedNoZeroPoint(
+            gpu_info_, create_info_,
+            ::ml_drift::OperationType::kFullyConnectedInt8, *attr,
+            attr->weights.shape, inputs, outputs, model_builder);
+      }
+    } else if (op.name ==
+               ToString(::ml_drift::OperationType::kFullyConnectedInt4)) {
+      if (const auto* attr =
+              std::any_cast<::ml_drift::FullyConnectedInt4Attributes>(&op.attr);
+          attr != nullptr && attr->zero_point.shape.o == 0) {
+        return CreateQuantizedFullyConnectedNoZeroPoint(
+            gpu_info_, create_info_,
+            ::ml_drift::OperationType::kFullyConnectedInt4, *attr,
+            std::visit([](const auto& w) { return w.shape; }, attr->weights),
+            inputs, outputs, model_builder);
+      }
+    } else if (op.name ==
+               ToString(::ml_drift::OperationType::kFullyConnectedInt2)) {
+      if (const auto* attr =
+              std::any_cast<::ml_drift::FullyConnectedInt2Attributes>(&op.attr);
+          attr != nullptr && attr->zero_point.shape.o == 0) {
+        return CreateQuantizedFullyConnectedNoZeroPoint(
+            gpu_info_, create_info_,
+            ::ml_drift::OperationType::kFullyConnectedInt2, *attr,
+            std::visit([](const auto& w) { return w.shape; }, attr->weights),
+            inputs, outputs, model_builder);
+      }
     }
   }
 

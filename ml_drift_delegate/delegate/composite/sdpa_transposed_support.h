@@ -226,7 +226,8 @@ bool UsesFlashDecodeForShape(const ::ml_drift::GpuInfo& gpu_info,
 struct FlashDecodeConfig {
   // Whether to use the 32-lane wave-SIMD reduction kernel (`ucl::WaveSum` /
   // `ucl::WaveMax` across `tuning.num_simd_groups` waves of 32 lanes) or the
-  // work-group reduction kernel with GQA head grouping and split-K.
+  // work-group local-memory reduction kernel. Both kernels support GQA sibling
+  // head grouping (`heads`) and split-K (`splits`).
   bool use_wave_simd = false;
   // Device-dependent launch parameters.
   FlashDecodeTuning tuning;

@@ -242,6 +242,14 @@ bool ConfigSharedQuantizedFullyConnected(
                             ? reinterpret_cast<const TfLiteAffineQuantization*>(
                                   weights_tensor.quantization.params)
                             : nullptr;
+  bool has_zero_point = true;
+  if (weights_tensor.quantization.type == kTfLiteBlockwiseQuantization) {
+    const auto* block_qparams =
+        reinterpret_cast<const TfLiteBlockwiseQuantization*>(
+            weights_tensor.quantization.params);
+    has_zero_point =
+        block_qparams != nullptr && block_qparams->zero_point >= 0;
+  }
 
   auto populate_quant_attrs = [&](auto& attr) {
     attr.scale.shape = scale_shape;
@@ -254,16 +262,18 @@ bool ConfigSharedQuantizedFullyConnected(
         attr.scale.data.resize(num_scales, attr.scale.data[0]);
       }
     }
-    attr.zero_point.shape = scale_shape;
-    if (qparams && qparams->zero_point && qparams->zero_point->size > 0) {
-      attr.zero_point.data = std::vector<int32_t>(
-          qparams->zero_point->data,
-          qparams->zero_point->data + qparams->zero_point->size);
-      if (attr.zero_point.data.size() == 1 && num_scales > 1) {
-        attr.zero_point.data.resize(num_scales, attr.zero_point.data[0]);
+    if (has_zero_point) {
+      attr.zero_point.shape = scale_shape;
+      if (qparams && qparams->zero_point && qparams->zero_point->size > 0) {
+        attr.zero_point.data = std::vector<int32_t>(
+            qparams->zero_point->data,
+            qparams->zero_point->data + qparams->zero_point->size);
+        if (attr.zero_point.data.size() == 1 && num_scales > 1) {
+          attr.zero_point.data.resize(num_scales, attr.zero_point.data[0]);
+        }
+      } else if (has_quant) {
+        attr.zero_point.data.resize(num_scales, 0);
       }
-    } else {
-      attr.zero_point.data.resize(num_scales, 0);
     }
   };
 

@@ -13,8 +13,10 @@
 // limitations under the License.
 
 #include <cctype>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,8 +26,11 @@
 #include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_custom_op_kernel.h"
@@ -39,6 +44,7 @@
 #include "litert/cc/litert_string_util.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
+#include "litert/core/filesystem.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_custom_op_test_vectors.h"
@@ -148,6 +154,62 @@ TEST(CompiledModelTest, CustomOp) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  }
+}
+
+// Same op, with the second input as a constant [10, 20] in the model.
+constexpr absl::string_view kConstInputModelFileName =
+    "simple_model_custom_op_const_input.tflite";
+
+// Constant tensors point into the model's FlatBuffer, which only guarantees
+// 16-byte alignment, while host memory tensor buffers need
+// LITERT_HOST_MEMORY_BUFFER_ALIGNMENT. Load the model at each 16-byte offset
+// from a 64-byte boundary, so the custom op's constant input is misaligned in
+// some of the runs.
+TEST(CompiledModelTest, CustomOpWithConstantInputAtAnyAlignment) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(OwningBufferRef<uint8_t> model_file,
+                              internal::LoadBinaryFile(testing::GetTestFilePath(
+                                  kConstInputModelFileName)));
+
+  for (size_t offset = 0; offset < LITERT_HOST_MEMORY_BUFFER_ALIGNMENT;
+       offset += 16) {
+    SCOPED_TRACE(
+        absl::StrCat("Model offset from a 64-byte boundary: ", offset));
+    std::vector<uint8_t> storage(model_file.Size() +
+                                 2 * LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
+    void* aligned = storage.data();
+    size_t space = storage.size();
+    ASSERT_NE(std::align(LITERT_HOST_MEMORY_BUFFER_ALIGNMENT,
+                         model_file.Size() + offset, aligned, space),
+              nullptr);
+    uint8_t* model_data = static_cast<uint8_t*>(aligned) + offset;
+    std::memcpy(model_data, model_file.Data(), model_file.Size());
+
+    LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
+    options.SetHardwareAccelerators(HwAccelerators::kCpu);
+    MyCustomOpKernel my_custom_op_kernel;
+    ASSERT_TRUE(options.AddCustomOpKernel(my_custom_op_kernel));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        CompiledModel compiled_model,
+        CompiledModel::Create(
+            env, BufferRef<uint8_t>(model_data, model_file.Size()), options));
+    LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                                compiled_model.CreateInputBuffers());
+    LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                                compiled_model.CreateOutputBuffers());
+    ASSERT_TRUE(input_buffers[0].Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+
+    LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr,
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
+    EXPECT_THAT(absl::MakeSpan(lock_and_addr.second, kTestOutputSize),
+                Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
 }
 
