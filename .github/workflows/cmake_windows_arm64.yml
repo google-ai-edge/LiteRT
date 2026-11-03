@@ -299,8 +299,8 @@ jobs:
           $expectedArtifacts = @(
             "$env:LITERT_BUILD_DIR\c\LiteRt.dll",
             "$env:LITERT_BUILD_DIR\c\LiteRt.lib",
-            "$env:LITERT_BUILD_DIR\vendors\qualcomm\dispatch\LiteRtDispatch_Qualcomm.dll",
-            "$env:LITERT_BUILD_DIR\vendors\qualcomm\compiler\LiteRtCompilerPlugin_Qualcomm.dll",
+            "$env:LITERT_BUILD_DIR\vendors\qualcomm\dispatch\libLiteRtDispatch_Qualcomm.dll",
+            "$env:LITERT_BUILD_DIR\vendors\qualcomm\compiler\libLiteRtCompilerPlugin_Qualcomm.dll",
             "$env:LITERT_BUILD_DIR\tools\run_model.exe",
             "$env:LITERT_BUILD_DIR\tools\apply_plugin_main.exe"
           )

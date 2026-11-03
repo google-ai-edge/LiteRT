@@ -286,6 +286,18 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
 
   set(TGT "dispatch_api_${VENDOR}_so")
   add_library(${TGT} SHARED ${DISPATCH_SRCS})
+  if(WIN32)
+    # These libraries define the LiteRT dispatch C API entry points. Without
+    # this, LITERT_CAPI_EXPORT resolves to __declspec(dllimport) (see
+    # litert/c/litert_common.h) and defining them is a hard error:
+    #   error: dllimport cannot be applied to non-inline function definition
+    # The Bazel build passes the same define.
+    target_compile_definitions(${TGT} PRIVATE LITERT_COMPILE_LIBRARY)
+    # FindLiteRtDispatchSharedLibs() matches on a "libLiteRtDispatch" name
+    # prefix (litert/core/dynamic_loading.h), but CMAKE_SHARED_LIBRARY_PREFIX
+    # is empty on Windows, so the default output name would never be found.
+    set_target_properties(${TGT} PROPERTIES PREFIX "lib")
+  endif()
   if(VENDOR STREQUAL "MediaTek")
     add_dependencies(${TGT} mediatek_schema_gen)
     target_include_directories(${TGT} PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
@@ -334,7 +346,14 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
 endfunction()
 
 # Google Tensor
-if(LITERT_ENABLE_GOOGLE_TENSOR)
+#
+# Not available on Windows: this dispatch back-end includes <dlfcn.h> and
+# <sys/mman.h>, and its sb_api.h lives in-tree, so the EXISTS check below is
+# always true and it would otherwise always be built. Qualcomm is the NPU
+# back-end that works on Windows.
+if(WIN32)
+  message(STATUS "Skipping Google Tensor dispatch: not supported on Windows")
+elseif(LITERT_ENABLE_GOOGLE_TENSOR)
   set(GOOGLE_TENSOR_SB_API_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/google_tensor/dispatch/sb_api.h")
   if(EXISTS "${GOOGLE_TENSOR_SB_API_HEADER}")
     _litert_add_dispatch_so(GoogleTensor "google_tensor/dispatch" "GoogleTensor")
@@ -344,8 +363,10 @@ if(LITERT_ENABLE_GOOGLE_TENSOR)
 else()
   message(STATUS "Skipping Google Tensor dispatch: LITERT_ENABLE_GOOGLE_TENSOR is OFF")
 endif()
-# MediaTek
-if(LITERT_ENABLE_MEDIATEK)
+# MediaTek -- POSIX-only, as above.
+if(WIN32)
+  message(STATUS "Skipping MediaTek dispatch: not supported on Windows")
+elseif(LITERT_ENABLE_MEDIATEK)
   check_include_file_cxx("neuron/api/NeuronAdapter.h" HAVE_MEDIATEK_NEURON_HDR)
   if(NEUROPILOT_HEADERS_DIR AND EXISTS "${NEUROPILOT_HEADERS_DIR}/neuron/api/NeuronAdapter.h")
     set(HAVE_MEDIATEK_NEURON_HDR TRUE)
