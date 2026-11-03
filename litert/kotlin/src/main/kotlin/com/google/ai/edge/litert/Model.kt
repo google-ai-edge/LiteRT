@@ -210,6 +210,7 @@ private constructor(
     val htpDlbc: Boolean? = null,
     val htpDlbcWeights: Boolean? = null,
     val graphPriority: GraphPriority? = null,
+    val enableJustInTime: Boolean? = null,
   ) {
     /** Log level for Qualcomm options. */
     enum class LogLevel constructor(val value: Int) {
@@ -263,6 +264,7 @@ private constructor(
     internal fun writeTo(builder: NativeOptionsBuilder) {
       logLevel?.let { builder.writeInt("log_level", it.value.toLong()) }
       enableWeightSharing?.let { builder.writeBool("enable_weight_sharing", it) }
+      enableJustInTime?.let { builder.writeBool("enable_just_in_time", it) }
       dumpTensorIds?.let { ids ->
         builder.writeStringArray("dump_tensor_ids", ids.map { it.toString() })
       }
