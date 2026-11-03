@@ -24,12 +24,28 @@ std::vector<OpWrapper> BuildLayerNormOp(
     const std::vector<TensorWrapperRef>& outputs, float epsilon) {
   std::vector<OpWrapper> res;
 
+  // HTP LayerNorm has no int16 kernel, only uint16: bracket it with converts
+  // (signed and unsigned 16-bit differ only by the zero point).
+  TensorWrapper* input = &inputs[kInputIndex].get();
+  TensorWrapper* output = &outputs[0].get();
+  const bool convert_i16 = input->IsQuantI16() && output->IsQuantI16();
+  if (convert_i16) {
+    input = &tensor_pool.CloneNativeTensorFrom(*input);
+    input->ConvertFromQuantI16ToQuantU16();
+    auto& convert_in = CreateOpWrapper(res, QNN_OP_CONVERT);
+    convert_in.AddInputTensor(inputs[kInputIndex]);
+    convert_in.AddOutputTensor(*input);
+    output = &tensor_pool.CloneNativeTensorFrom(*output);
+    output->ConvertFromQuantI16ToQuantU16();
+  }
+
   auto& layer_norm_op = CreateOpWrapper(res, QNN_OP_LAYER_NORM);
   // inputs: input, gamma, beta, axes
-  for (size_t i = 0; i < kAxesIndex && i < inputs.size(); ++i) {
+  layer_norm_op.AddInputTensor(*input);
+  for (size_t i = 1; i < kAxesIndex && i < inputs.size(); ++i) {
     layer_norm_op.AddInputTensor(inputs[i]);
   }
-  layer_norm_op.AddOutputTensor(outputs[0]);
+  layer_norm_op.AddOutputTensor(*output);
 
   layer_norm_op.AddScalarParam<float>(QNN_OP_LAYER_NORM_PARAM_EPSILON, epsilon);
   if (inputs.size() > kAxesIndex) {
@@ -45,6 +61,11 @@ std::vector<OpWrapper> BuildLayerNormOp(
     layer_norm_op.AddTensorParam(QNN_OP_LAYER_NORM_PARAM_AXES, axis_tensor);
   }
 
+  if (convert_i16) {
+    auto& convert_out = CreateOpWrapper(res, QNN_OP_CONVERT);
+    convert_out.AddInputTensor(*output);
+    convert_out.AddOutputTensor(outputs[0]);
+  }
   return res;
 }
 
