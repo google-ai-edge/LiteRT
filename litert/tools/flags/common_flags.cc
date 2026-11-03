@@ -35,7 +35,9 @@ ABSL_FLAG(
                               "litert/vendors/mediatek/"
                               "compiler",
                               "litert/vendors/"
-                              "google_tensor/compiler"}),
+                              "google_tensor/compiler",
+                              "litert/vendors/"
+                              "intel_openvino/compiler"}),
     "List of directories in which to search for suitable "
     "shared libraries.");
 
