@@ -203,7 +203,7 @@ class DequantizedWeightRecoveryTest(parameterized.TestCase):
   ):
     dequant_vals = self._dummy_quantized_weights * 1.02
     with self.assertRaisesRegex(
-        ValueError, "quantized_dimension must be 0, 1, or None. Got"
+        ValueError, "quantized_dimension must be 0, 1, a sequence, or None. Got"
     ):
       dequantized_weight_recovery.get_zp_scale_from_dequantized_symmetric_weights(
           dequant_vals, quantized_dimension
@@ -234,19 +234,44 @@ class DequantizedWeightRecoveryTest(parameterized.TestCase):
           ),
           scale=np.array([0.1875, 1e-4, 12.3]).reshape(3, 1),
       ),
+      dict(
+          testcase_name="multiaxis-channel-recovery",
+          tensor_quant_config=qtyping.TensorQuantizationConfig(
+              num_bits=4,
+              granularity=qtyping.QuantGranularity.CHANNELWISE,
+              quantized_dimensions=[0, 1],
+          ),
+          scale=np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]).reshape(2, 3, 1),
+      ),
   )
   def test_get_tensor_quant_params_success_with_dequantized_weights(
       self, tensor_quant_config, scale
   ):
     dequant_vals = scale * self._dummy_quantized_weights
+    op_info = qtyping.OpInfo(
+        op=None,
+        op_name=_TFLOpName.FULLY_CONNECTED,
+        subgraph_op_index=0,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=tensor_quant_config
+        ),
+    )
     tensor_quant_params = dequantized_weight_recovery.get_tensor_quant_params(
-        self._dummy_op_info, tensor_quant_config, dequant_vals
+        op_info, tensor_quant_config, dequant_vals
     )
 
     if tensor_quant_config.granularity is qtyping.QuantGranularity.TENSORWISE:
       self.assertIsNone(tensor_quant_params.quantized_dimension)
+      self.assertIsNone(tensor_quant_params.quantized_dimensions)
+    elif tensor_quant_config.quantized_dimensions is not None:
+      self.assertIsNone(tensor_quant_params.quantized_dimension)
+      self.assertEqual(
+          tensor_quant_params.quantized_dimensions,
+          tuple(tensor_quant_config.quantized_dimensions),
+      )
     else:
       self.assertEqual(tensor_quant_params.quantized_dimension, 0)
+      self.assertIsNone(tensor_quant_params.quantized_dimensions)
 
     recovered_scale = tensor_quant_params.scale
     self.assertEqual(recovered_scale.shape, scale.shape)
@@ -366,6 +391,18 @@ class DequantizedWeightRecoveryTest(parameterized.TestCase):
           ),
       ),
       dict(
+          testcase_name="insufficient_bits_multiaxis",
+          tensor_quant_config=qtyping.TensorQuantizationConfig(
+              num_bits=2,
+              granularity=qtyping.QuantGranularity.CHANNELWISE,
+              quantized_dimensions=[0, 1],
+          ),
+          scale=np.array([0.1875, 1e-2, 12.3]).reshape(3, 1, 1),
+          expected_error_pattern=(
+              "Max unique values in any group is 4 \\(limit: 4\\)"
+          ),
+      ),
+      dict(
           testcase_name="exceed_limit_tensorwise",
           tensor_quant_config=qtyping.TensorQuantizationConfig(
               num_bits=2,
@@ -381,10 +418,18 @@ class DequantizedWeightRecoveryTest(parameterized.TestCase):
   def test_get_tensor_quant_params_raises_error_big_recovery_error(
       self, tensor_quant_config, scale, expected_error_pattern
   ):
+    op_info = qtyping.OpInfo(
+        op=None,
+        op_name=_TFLOpName.FULLY_CONNECTED,
+        subgraph_op_index=0,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=tensor_quant_config
+        ),
+    )
     dequant_vals = scale * self._dummy_quantized_weights
     with self.assertRaisesRegex(RuntimeError, expected_error_pattern):
       dequantized_weight_recovery.get_tensor_quant_params(
-          self._dummy_op_info, tensor_quant_config, dequant_vals
+          op_info, tensor_quant_config, dequant_vals
       )
 
   def test_get_tensor_transformation_params_wrapper_adds_tensor_name_on_error(
