@@ -55,12 +55,9 @@ litert_dynamic_lib(
         "//litert/compiler/cc:litert_model",
         "//litert/vendors/arm_vulkan_ml:capabilities",
         "//litert/vendors/c:litert_compiler_plugin_api",
-        # copybara:comment_begin(oss-only)
-        "@ai_ml_sdk_vgf_library//:vgf",  # TODO: Placeholder include. Review when mature.
-        "@ai_ml_sdk_vgf_library//:vgf_utils",  # TODO: Placeholder include. Review when mature.
-        "@arm_vulkan_ml_dep_vulkan_headers//:vulkan_headers",  # TODO: Placeholder include. Review when mature.
-        "@tosa_for_spirv_codegen",  # TODO: Placeholder include. Review when mature.
-        # copybara:comment_end
+        "@ai_ml_sdk_vgf_library//:vgf_utils",  # buildcleaner: keep
+        "@arm_vulkan_ml_dep_vulkan_headers//:vulkan_headers",  # buildcleaner: keep
+        "@tosa_for_spirv_codegen",  # buildcleaner: keep
     ],
 )
 
