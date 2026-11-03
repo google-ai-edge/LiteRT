@@ -217,6 +217,7 @@ DEQUANTIZED_WEIGHT_RECOVERY_OP_NAME_MATERIALIZE_FUNC_DICT = {
     _TFLOpName.FULLY_CONNECTED: common_quantize.materialize_fc_conv,
     _TFLOpName.CONV_2D: common_quantize.materialize_fc_conv,
     _TFLOpName.EMBEDDING_LOOKUP: common_quantize.materialize_embedding_lookup,
+    _TFLOpName.CUSTOM_OP: common_quantize.materialize_moe,
 }
 
 for (

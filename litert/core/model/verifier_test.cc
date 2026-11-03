@@ -2318,5 +2318,55 @@ TEST(VerifierTest,
                  HasSubstr("block dimension at level 2 must be positive")));
   }
 }
+
+TEST(VerifierTest,
+     DynamicReshapeShapeOperandTakesPrecedenceOverLegacyReshapeOption) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(builder),
+      tflite::CreateBuffer(builder),
+  };
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      tflite::CreateTensor(
+          builder, builder.CreateVector(std::vector<int32_t>{1}),
+          tflite::TensorType_FLOAT32, /*buffer=*/1, builder.CreateString("in")),
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{1}),
+                           tflite::TensorType_INT32, /*buffer=*/2,
+                           builder.CreateString("shape")),
+      tflite::CreateTensor(builder,
+                           builder.CreateVector(std::vector<int32_t>{1}),
+                           tflite::TensorType_FLOAT32, /*buffer=*/3,
+                           builder.CreateString("out")),
+  };
+  auto opcode =
+      tflite::CreateOperatorCode(builder, tflite::BuiltinOperator_RESHAPE);
+  std::vector<int32_t> op_inputs = {0, 1};
+  std::vector<int32_t> op_outputs = {2};
+  auto reshape_opts = tflite::CreateReshapeOptions(
+      builder, builder.CreateVector(std::vector<int32_t>{0}));
+  auto op = tflite::CreateOperator(
+      builder, /*opcode_index=*/0, builder.CreateVector(op_inputs),
+      builder.CreateVector(op_outputs), tflite::BuiltinOptions_ReshapeOptions,
+      reshape_opts.Union());
+  std::vector<int32_t> model_inputs = {0, 1};
+  std::vector<int32_t> model_outputs = {2};
+  auto subgraph = tflite::CreateSubGraph(builder, builder.CreateVector(tensors),
+                                         builder.CreateVector(model_inputs),
+                                         builder.CreateVector(model_outputs),
+                                         builder.CreateVector(&op, 1));
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, builder.CreateVector(&opcode, 1),
+      builder.CreateVector(&subgraph, 1),
+      builder.CreateString("dynamic_reshape_legacy_opt"),
+      builder.CreateVector(buffers));
+  tflite::FinishModelBuffer(builder, model);
+
+  EXPECT_THAT(VerifyModel(builder.GetBufferPointer(), builder.GetSize()),
+              IsOk());
+  EXPECT_TRUE(Verify(builder.GetBufferPointer(), builder.GetSize()));
+}
 }  // namespace
 }  // namespace litert
