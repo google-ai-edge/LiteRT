@@ -60,26 +60,28 @@ std::unique_ptr<QnnBackend> CreateBackend(const QnnApi* api,
   }
 
   const auto& custom_op_package = options.GetCustomOpPackage();
-  if (custom_op_package.name.empty()) {
-    return backend;
-  }
-  if (options.GetBackendType() != BackendType::kHtpBackend) {
+  if (!custom_op_package.name.empty() &&
+      options.GetBackendType() != BackendType::kHtpBackend) {
     QNN_LOG_INFO("Custom op package is only supported on HtpBackend. Ignore.");
-    return backend;
-  }
-  const auto& package_path = is_compiler
-                                 ? custom_op_package.compile_package_path
-                                 : custom_op_package.dispatch_package_path;
-  const auto& target =
-      is_compiler ? kCustomOpPackageCompileTarget : custom_op_package.target;
-  if (auto status = api->backendRegisterOpPackage(
-          backend->GetBackendHandle(), package_path.c_str(),
-          custom_op_package.interface_provider.c_str(), target.c_str());
-      status != QNN_SUCCESS) {
-    QNN_LOG_ERROR("Failed to register op package. Error code: %d", status);
-    return nullptr;
+  } else if (!custom_op_package.name.empty()) {
+    const auto& package_path = is_compiler
+                                   ? custom_op_package.compile_package_path
+                                   : custom_op_package.dispatch_package_path;
+    const auto& target =
+        is_compiler ? kCustomOpPackageCompileTarget : custom_op_package.target;
+    if (auto status = api->backendRegisterOpPackage(
+            backend->GetBackendHandle(), package_path.c_str(),
+            custom_op_package.interface_provider.c_str(), target.c_str());
+        status != QNN_SUCCESS) {
+      QNN_LOG_ERROR("Failed to register op package. Error code: %d", status);
+      return nullptr;
+    }
   }
 
+  if (!is_compiler && options.GetBackendType() == BackendType::kHtpBackend) {
+    static_cast<HtpBackend*>(backend.get())
+        ->StartQuickResponse(options.GetEnableHtpQuickResponse());
+  }
   return backend;
 }
 

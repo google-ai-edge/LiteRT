@@ -236,6 +236,8 @@ private constructor(
     val htpDlbc: Boolean? = null,
     val htpDlbcWeights: Boolean? = null,
     val graphPriority: GraphPriority? = null,
+    val enableJustInTime: Boolean? = null,
+    val enableHtpQuickResponse: Boolean? = null,
   ) {
     /** Log level for Qualcomm options. */
     enum class LogLevel constructor(val value: Int) {
@@ -305,6 +307,8 @@ private constructor(
       HTP_DLBC(14),
       HTP_DLBC_WEIGHTS(15),
       GRAPH_PRIORITY(16),
+      ENABLE_JUST_IN_TIME(17),
+      ENABLE_HTP_QUICK_RESPONSE(18),
     }
 
     // Converts the options to a map, with all values converted to strings.
@@ -315,6 +319,9 @@ private constructor(
       }
       if (enableWeightSharing != null) {
         map[Key.ENABLE_WEIGHT_SHARING] = enableWeightSharing.toString()
+      }
+      if (enableJustInTime != null) {
+        map[Key.ENABLE_JUST_IN_TIME] = enableJustInTime.toString()
       }
       if (dumpTensorIds != null) {
         map[Key.DUMP_TENSOR_IDS] = dumpTensorIds.joinToString(",")
@@ -330,6 +337,9 @@ private constructor(
       }
       if (htpDlbcWeights != null) {
         map[Key.HTP_DLBC_WEIGHTS] = htpDlbcWeights.toString()
+      }
+      if (enableHtpQuickResponse != null) {
+        map[Key.ENABLE_HTP_QUICK_RESPONSE] = enableHtpQuickResponse.toString()
       }
       if (htpPerformanceMode != null) {
         map[Key.HTP_PERFORMANCE_MODE] = htpPerformanceMode.value.toString()

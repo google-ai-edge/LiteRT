@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 #include "absl/flags/flag.h"  // from @com_google_absl
+#include "absl/flags/reflection.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -807,6 +808,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
             QualcommOptions::HtpPerfCtrlMode::kManual);
   EXPECT_EQ(options.Value().GetHtpPdSession(),
             QualcommOptions::HtpPdSession::kUnsigned);
+  EXPECT_FALSE(options.Value().GetEnableHtpQuickResponse());
   EXPECT_EQ(options.Value().GetDspPerfCtrlMode(),
             QualcommOptions::DspPerfCtrlMode::kManual);
   EXPECT_EQ(options.Value().GetDspPdSession(),
@@ -882,6 +884,16 @@ TEST(QualcommOptionsFromFlagsTest, DlbcFlags) {
 
   absl::SetFlag(&FLAGS_qualcomm_htp_dlbc, false);
   absl::SetFlag(&FLAGS_qualcomm_htp_dlbc_weights, false);
+}
+
+TEST(QualcommOptionsFromFlagsTest, EnableHtpQuickResponse) {
+  absl::FlagSaver flag_saver;
+  absl::SetFlag(&FLAGS_qualcomm_enable_htp_quick_response, true);
+
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_TRUE(options.Value().GetEnableHtpQuickResponse());
 }
 
 }  // namespace
