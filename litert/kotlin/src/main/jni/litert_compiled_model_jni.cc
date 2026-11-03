@@ -119,6 +119,7 @@ enum QualcommOptionsKey {
   kHtpDlbc = 14,
   kHtpDlbcWeights = 15,
   kGraphPriority = 16,
+  kEnableJustInTime = 17,
 };
 
 // Input shape addressing modes for compiler options, the values should match
@@ -427,6 +428,10 @@ Expected<void> PopulateQualcommOptions(JNIEnv* env,
         break;
       case QualcommOptionsKey::kEnableWeightSharing:
         qualcomm_options.SetEnableWeightSharing(
+            strcmp(qualcomm_options_values_vector[i], "true") == 0);
+        break;
+      case QualcommOptionsKey::kEnableJustInTime:
+        qualcomm_options.SetEnableJustInTime(
             strcmp(qualcomm_options_values_vector[i], "true") == 0);
         break;
       case QualcommOptionsKey::kDumpTensorIds: {
