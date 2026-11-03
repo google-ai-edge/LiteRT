@@ -182,6 +182,32 @@ elseif(APPLE)
             Threads::Threads
             litert_tensor_utils
     )
+elseif(WIN32)
+    target_link_libraries(litert_npu_numerics_check
+        PRIVATE
+            litert_tool_display
+            litert_tool_flags_google_tensor
+            litert_tool_flags_intel_openvino
+            litert_tool_flags_mediatek
+            litert_tool_flags_qualcomm
+            litert_tool_flags_samsung
+            ${LITERT_TOOL_COMMON_LIBS}
+            tensorflow-lite
+            ${ABSEIL_TOOL_LIBS}
+            Threads::Threads
+            litert_tensor_utils
+    )
+    if(MSVC)
+        foreach(_litert_tool_flag_lib
+                litert_tool_flags_google_tensor
+                litert_tool_flags_intel_openvino
+                litert_tool_flags_mediatek
+                litert_tool_flags_qualcomm
+                litert_tool_flags_samsung)
+            target_link_options(litert_npu_numerics_check PRIVATE
+                "/WHOLEARCHIVE:$<TARGET_FILE:${_litert_tool_flag_lib}>")
+        endforeach()
+    endif()
 else()
     target_link_libraries(litert_npu_numerics_check
         PRIVATE
@@ -254,6 +280,32 @@ elseif(APPLE)
             Threads::Threads
             litert_tensor_utils
     )
+elseif(WIN32)
+    target_link_libraries(run_model
+        PRIVATE
+            litert_tool_display
+            litert_tool_flags_google_tensor
+            litert_tool_flags_intel_openvino
+            litert_tool_flags_mediatek
+            litert_tool_flags_qualcomm
+            litert_tool_flags_samsung
+            ${LITERT_TOOL_COMMON_LIBS}
+            tensorflow-lite
+            ${ABSEIL_TOOL_LIBS}
+            Threads::Threads
+            litert_tensor_utils
+    )
+    if(MSVC)
+        foreach(_litert_tool_flag_lib
+                litert_tool_flags_google_tensor
+                litert_tool_flags_intel_openvino
+                litert_tool_flags_mediatek
+                litert_tool_flags_qualcomm
+                litert_tool_flags_samsung)
+            target_link_options(run_model PRIVATE
+                "/WHOLEARCHIVE:$<TARGET_FILE:${_litert_tool_flag_lib}>")
+        endforeach()
+    endif()
 else()
     target_link_libraries(run_model
         PRIVATE
@@ -288,7 +340,7 @@ target_include_directories(analyze_model
 )
 
 # Platform-aware linking for analyze_model
-if(ANDROID OR APPLE)
+if(ANDROID OR APPLE OR WIN32)
     target_link_libraries(analyze_model
         PRIVATE
             litert_dump
@@ -367,6 +419,37 @@ elseif(APPLE)
             ${ABSEIL_TOOL_LIBS}
             Threads::Threads
         )
+elseif(WIN32)
+    target_link_libraries(apply_plugin_main
+        PRIVATE
+            litert_tool_display
+            litert_apply_plugin
+            litert_dump
+            litert_tool_flags_apply_plugin
+            litert_tool_flags_common
+            litert_tool_flags_google_tensor
+            litert_tool_flags_intel_openvino
+            litert_tool_flags_mediatek
+            litert_tool_flags_qualcomm
+            litert_tool_flags_samsung
+            ${LITERT_TOOL_COMMON_LIBS}
+            tensorflow-lite
+            ${ABSEIL_TOOL_LIBS}
+            Threads::Threads
+        )
+    if(MSVC)
+        foreach(_litert_tool_flag_lib
+                litert_tool_flags_apply_plugin
+                litert_tool_flags_common
+                litert_tool_flags_google_tensor
+                litert_tool_flags_intel_openvino
+                litert_tool_flags_mediatek
+                litert_tool_flags_qualcomm
+                litert_tool_flags_samsung)
+            target_link_options(apply_plugin_main PRIVATE
+                "/WHOLEARCHIVE:$<TARGET_FILE:${_litert_tool_flag_lib}>")
+        endforeach()
+    endif()
 else()
     target_link_libraries(apply_plugin_main
         PRIVATE
@@ -403,7 +486,7 @@ target_include_directories(extract_bytecode
         ${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
 
-if(ANDROID OR APPLE)
+if(ANDROID OR APPLE OR WIN32)
     target_link_libraries(extract_bytecode
         PRIVATE
             litert_tool_display
@@ -438,7 +521,7 @@ target_include_directories(npu_numerics_check
 )
 
 # Platform-aware linking
-if(ANDROID OR APPLE)
+if(ANDROID OR APPLE OR WIN32)
     target_link_libraries(npu_numerics_check
         PRIVATE
             litert_tool_flags_qualcomm
@@ -451,6 +534,16 @@ if(ANDROID OR APPLE)
             Threads::Threads
             litert_tensor_utils
     )
+    if(MSVC)
+        foreach(_litert_tool_flag_lib
+                litert_tool_flags_qualcomm
+                litert_tool_flags_google_tensor
+                litert_tool_flags_intel_openvino
+                litert_tool_flags_mediatek)
+            target_link_options(npu_numerics_check PRIVATE
+                "/WHOLEARCHIVE:$<TARGET_FILE:${_litert_tool_flag_lib}>")
+        endforeach()
+    endif()
 else()
     target_link_libraries(npu_numerics_check
         PRIVATE
