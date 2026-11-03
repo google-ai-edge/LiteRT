@@ -121,6 +121,32 @@ TEST(ModelTest, Signature) {
   EXPECT_EQ(found_signature->get(), signature);
 }
 
+TEST(ModelTest, DefaultSignatureAliasesHandleEmptyDuplicateAndReservedNames) {
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  for (const auto* name : {"", "", "input_0", "duplicate", "duplicate"}) {
+    auto& tensor = graph.EmplaceTensor();
+    tensor.SetName(name);
+    graph.Inputs().push_back(&tensor);
+    graph.Outputs().push_back(&tensor);
+  }
+  auto signature = MakeDefaultSignature(&graph);
+  const auto& inputs = signature.InputNames();
+  const auto& outputs = signature.OutputNames();
+  ASSERT_EQ(inputs.size(), 5);
+  ASSERT_EQ(outputs.size(), 5);
+  EXPECT_EQ(inputs[0], "input_0_");
+  EXPECT_EQ(inputs[1], "input_1");
+  EXPECT_EQ(inputs[2], "input_0");
+  EXPECT_EQ(inputs[3], "duplicate");
+  EXPECT_EQ(inputs[4], "input_4");
+  EXPECT_EQ(outputs[0], "output_0");
+  EXPECT_EQ(outputs[1], "output_1");
+  EXPECT_EQ(outputs[2], "input_0");
+  EXPECT_EQ(outputs[3], "duplicate");
+  EXPECT_EQ(outputs[4], "output_4");
+}
+
 TEST(ModelTest, SignatureDNE) {
   static constexpr absl::string_view kSignatureName = "MY_SIGNATURE";
   LiteRtModelT model;
@@ -589,6 +615,40 @@ TEST(ModelTest, TransferSubgraphToReindexCompositeMultiple) {
   EXPECT_THAT(
       dest.Elements(),
       ElementsAreArray({&other_subgraph, &other_subgraph3, &other_subgraph4}));
+
+  const auto& new_opts = litert::internal::GetTflOptions2(composite);
+  const auto new_decomp_ind =
+      new_opts.AsStableHLOCompositeOptions()->decomposition_subgraph_index;
+  EXPECT_EQ(new_decomp_ind, 2);
+}
+
+TEST(ModelTest, TransferSubgraphToReindexCompositeDuplicateIndices) {
+  LiteRtModelT model;
+
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& other_subgraph = model.EmplaceSubgraph();
+  auto& other_subgraph2 = model.EmplaceSubgraph();
+  auto& other_subgraph3 = model.EmplaceSubgraph();
+  auto& decomp_subgraph = model.EmplaceSubgraph();
+
+  auto& composite = subgraph.EmplaceOp();
+  composite.SetOpCode(kLiteRtOpCodeShloComposite);
+  ::tflite::StableHLOCompositeOptionsT opts;
+  opts.name = "composite";
+  opts.decomposition_subgraph_index = 4;
+  TflOptions2 options;
+  options.type = tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  options.Set(std::move(opts));
+  litert::internal::SetTflOptions2(composite, std::move(options));
+
+  LiteRtSubgraphT::Alloc dest;
+  std::vector<size_t> indices = {1, 1, 3};
+  model.TransferSubgraphTo(dest, std::move(indices));
+
+  EXPECT_THAT(model.Subgraphs(), ElementsAreArray({&subgraph, &other_subgraph2,
+                                                   &decomp_subgraph}));
+  EXPECT_THAT(dest.Elements(),
+              ElementsAreArray({&other_subgraph, &other_subgraph3}));
 
   const auto& new_opts = litert::internal::GetTflOptions2(composite);
   const auto new_decomp_ind =
