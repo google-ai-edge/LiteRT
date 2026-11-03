@@ -20,9 +20,6 @@ namespace {
 using testing::ElementsAre; // NOLINT
 using testing::FloatNear;  // NOLINT
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 TEST_P(QnnModelTest, FullyConnectedFp32CastsAroundFp16FullyConnected) {
   static constexpr float kWeightScale = 1.0f;
   static constexpr std::int32_t kWeightZeroPoint = 0;
