@@ -40,6 +40,7 @@
 #include "litert/c/litert_tensor_buffer.h"  // NOLINT
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"  // NOLINT
+#include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
 #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
@@ -49,10 +50,12 @@ class LiteRtDispatchInvocationContextT;
 class LiteRtDispatchDeviceContextT {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
+  using IntelOpenVinoOptions = ::litert::intel_openvino::IntelOpenVinoOptions;
 
   ~LiteRtDispatchDeviceContextT() = default;
   static litert::Expected<Ptr> Create(
-      const LiteRtRuntimeContext* runtime_context);
+      const LiteRtRuntimeContext* runtime_context,
+      std::unique_ptr<IntelOpenVinoOptions> intel_openvino_options);
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer);
 
@@ -78,6 +81,10 @@ class LiteRtDispatchDeviceContextT {
 
   const LiteRtRuntimeContext* runtime_context() const {
     return runtime_context_;
+  }
+
+  const IntelOpenVinoOptions* intel_openvino_options() const {
+    return intel_openvino_options_.get();
   }
 
   // --- Deferred-import eviction -------------------------------------------
@@ -165,9 +172,13 @@ class LiteRtDispatchDeviceContextT {
   }
 
   explicit LiteRtDispatchDeviceContextT(
-      const LiteRtRuntimeContext* runtime_context)
-      : runtime_context_(runtime_context), next_handle_(0) {}
+      const LiteRtRuntimeContext* runtime_context,
+      std::unique_ptr<IntelOpenVinoOptions> intel_openvino_options)
+      : runtime_context_(runtime_context),
+        intel_openvino_options_(std::move(intel_openvino_options)),
+        next_handle_(0) {}
   const LiteRtRuntimeContext* runtime_context_;
+  std::unique_ptr<IntelOpenVinoOptions> intel_openvino_options_;
   // Guards `tensor_handle_map_` and `next_handle_`, which are mutated by
   // Register/Unregister and read by getOVTensor from potentially concurrent
   // host threads. `mutable` so the const getOVTensor accessor can lock it.
