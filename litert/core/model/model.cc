@@ -109,21 +109,36 @@ Quantization MakePerTensorQuantization(float scale, int64_t zero_point) {
 }
 
 LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph) {
-  std::vector<std::string> input_names;
+  // TFLite tensor names are optional and need not be unique. Signature aliases
+  // must be unique, or serializing a model can lose input/output mappings.
+  auto names = [](auto tensors, const char* prefix) {
+    absl::flat_hash_set<std::string> reserved, used;
+    for (const auto* tensor : tensors)
+      reserved.insert(std::string(tensor->Name()));
+    std::vector<std::string> result;
+    result.reserve(tensors.size());
+    for (const auto* tensor : tensors) {
+      std::string name(tensor->Name());
+      if (name.empty() || used.contains(name)) {
+        name = absl::StrCat(prefix, result.size());
+        while (reserved.contains(name) || used.contains(name)) name += '_';
+      }
+      used.insert(name);
+      result.push_back(std::move(name));
+    }
+    return result;
+  };
+  auto input_names = names(subgraph->Inputs(), "input_");
   std::vector<LiteRtTensor> input_tensors;
-  input_names.reserve(subgraph->NumInputs());
   input_tensors.reserve(subgraph->NumInputs());
   for (auto* tensor : subgraph->Inputs()) {
-    input_names.push_back(std::string(tensor->Name()));
     input_tensors.push_back(tensor);
   }
 
-  std::vector<std::string> output_names;
+  auto output_names = names(subgraph->Outputs(), "output_");
   std::vector<LiteRtTensor> output_tensors;
-  output_names.reserve(subgraph->NumOutputs());
   output_tensors.reserve(subgraph->NumOutputs());
   for (auto* tensor : subgraph->Outputs()) {
-    output_names.push_back(std::string(tensor->Name()));
     output_tensors.push_back(tensor);
   }
 
@@ -279,6 +294,7 @@ void LiteRtModelT::TransferSubgraphTo(LiteRtSubgraphT::Alloc& dest,
     return;
   }
   std::sort(indices.begin(), indices.end());
+  indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
   std::vector<int> new_inds(subgraphs_.Size(), 0);
   auto num_removed = 0;
   auto i = indices.begin();

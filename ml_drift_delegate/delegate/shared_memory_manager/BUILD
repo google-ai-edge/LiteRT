@@ -125,10 +125,7 @@ cc_library(
 cc_library(
     name = "shared_memory_manager_cl",
     hdrs = ["shared_memory_manager_cl.h"],
-    visibility = [
-        "//ml_drift_delegate/delegate:__subpackages__",
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
-    ],
+    visibility = ["//ml_drift_delegate/delegate:__subpackages__"],
     deps = [
         ":graph_adapter",
         ":shared_memory_manager",
@@ -148,10 +145,7 @@ cc_library(
     name = "shared_memory_manager_cl_litert",
     srcs = ["shared_memory_manager_cl_litert.cc"],
     hdrs = ["shared_memory_manager_cl_litert.h"],
-    visibility = [
-        "//ml_drift_delegate/delegate:__subpackages__",
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
-    ],
+    visibility = ["//ml_drift_delegate/delegate:__subpackages__"],
     deps = [
         ":graph_adapter",
         ":shared_memory_manager",
@@ -240,10 +234,7 @@ cc_library(
     name = "shared_memory_manager_webgpu_common",
     srcs = ["shared_memory_manager_webgpu_common.cc"],
     hdrs = ["shared_memory_manager_webgpu_common.h"],
-    visibility = [
-        "//ml_drift_delegate/delegate:__subpackages__",
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
-    ],
+    visibility = ["//ml_drift_delegate/delegate:__subpackages__"],
     deps = [
         ":shared_memory_manager",
         "//ml_drift_delegate/delegate:unowned_tensor_desc",
@@ -269,10 +260,7 @@ cc_library(
     name = "shared_memory_manager_webgpu",
     srcs = ["shared_memory_manager_webgpu.cc"],
     hdrs = ["shared_memory_manager_webgpu.h"],
-    visibility = [
-        "//ml_drift_delegate/delegate:__subpackages__",
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
-    ],
+    visibility = ["//ml_drift_delegate/delegate:__subpackages__"],
     deps = [
         ":graph_adapter",
         ":shared_memory_manager",
@@ -296,10 +284,7 @@ cc_library(
     name = "shared_memory_manager_webgpu_litert",
     srcs = ["shared_memory_manager_webgpu_litert.cc"],
     hdrs = ["shared_memory_manager_webgpu_litert.h"],
-    visibility = [
-        "//ml_drift_delegate/delegate:__subpackages__",
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
-    ],
+    visibility = ["//ml_drift_delegate/delegate:__subpackages__"],
     deps = [
         ":graph_adapter",
         ":shared_memory_manager",
@@ -339,15 +324,10 @@ cc_test(
         ":shared_memory_manager",
         ":shared_memory_manager_webgpu",
         ":shared_memory_manager_webgpu_common",
-        "//ml_drift_delegate/delegate:unowned_tensor_desc",
-        "//ml_drift_delegate/delegate/serialization_weight_cache",
-        "//ml_drift_delegate/tflite:shared_const_tensor_map",
-        "//tflite/c:common",
-        "//third_party/vulkan_loader",
+        "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:ir_model",
@@ -361,16 +341,18 @@ cc_test(
         "@ml_drift//ml_drift/webgpu:spatial_tensor",
         "@ml_drift//ml_drift/webgpu:webgpu_headers",
         "@ml_drift//ml_drift/webgpu/testing:webgpu_test",
+        "//ml_drift_delegate/delegate:unowned_tensor_desc",
+        "//ml_drift_delegate/delegate/serialization_weight_cache",
+        "//ml_drift_delegate/tflite:shared_const_tensor_map",
+        "//tflite/c:common",
+        # copybara:uncomment "//third_party/vulkan_loader",
     ],
 )
 
 cc_library(
     name = "shared_memory_manager_vulkan",
     hdrs = ["shared_memory_manager_vulkan.h"],
-    visibility = [
-        "//ml_drift_delegate/delegate:__subpackages__",
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
-    ],
+    visibility = ["//ml_drift_delegate/delegate:__subpackages__"],
     deps = [
         ":graph_adapter",
         ":shared_memory_manager",
@@ -399,14 +381,9 @@ cc_test(
         ":ir_graph_adapter",
         ":shared_memory_manager",
         ":shared_memory_manager_vulkan",
-        "//ml_drift_delegate/delegate:shared_vulkan_env",
-        "//ml_drift_delegate/delegate/serialization_weight_cache",
-        "//ml_drift_delegate/tflite:shared_const_tensor_map",
-        "//tflite/c:common",
-        "//third_party/vulkan_loader",
+        "@com_google_googletest//:gtest_main_no_heapcheck",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
-        "@com_google_googletest//:gtest_main_no_heapcheck",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:ir_model",
@@ -416,6 +393,11 @@ cc_test(
         "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/syrtis/testing:vulkan_test",
+        "//ml_drift_delegate/delegate:shared_vulkan_env",
+        "//ml_drift_delegate/delegate/serialization_weight_cache",
+        "//ml_drift_delegate/tflite:shared_const_tensor_map",
+        "//tflite/c:common",
+        # copybara:uncomment "//third_party/vulkan_loader",
     ],
 )
 
@@ -424,10 +406,7 @@ objc_library(
     hdrs = ["shared_memory_manager_metal.h"],
     # copybara:uncomment(//tools/build_defs/swift:no_module is google-only) aspect_hints = ["//tools/build_defs/swift:no_module"],
     copts = ["-ObjC++"],
-    visibility = [
-        "//ml_drift_delegate/delegate:__subpackages__",
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
-    ],
+    visibility = ["//ml_drift_delegate/delegate:__subpackages__"],
     deps = [
         ":graph_adapter",
         ":shared_memory_manager",
