@@ -60,6 +60,7 @@
 #else
 #include <errno.h>
 #include <stdlib.h>  // mkstemp: POSIX, not declared by <cstdlib>.
+#include <sys/syscall.h>  // SYS_memfd_create
 #include <unistd.h>
 #endif
 
@@ -322,6 +323,12 @@ NpuSharedBank::~NpuSharedBank() {
   std::string path;
   {
     absl::MutexLock lock(npu_bank_mutex_);
+#ifndef LITERT_WINDOWS_OS
+    if (mem_fd_ >= 0) {
+      ::close(mem_fd_);
+      mem_fd_ = -1;
+    }
+#endif
     if (!owns_bank_file_) return;
     path = bank_path_;
   }
@@ -474,5 +481,63 @@ std::string NpuSharedBank::EnsureOnDisk(const PoolSource& src) {
              size, bank_path_.c_str(), strategy);
   return bank_path_;
 }
+
+#if !defined(LITERT_WINDOWS_OS) && defined(SYS_memfd_create)
+int NpuSharedBank::EnsureInMemory(const PoolSource& src) {
+  absl::MutexLock lock(npu_bank_mutex_);
+  if (mem_fd_ >= 0) return mem_fd_;  // write once, reuse
+
+  if (src.data == nullptr || src.size == 0) {
+    LITERT_LOG(LITERT_ERROR,
+               "EnsureInMemory: refusing to stage null/empty pool "
+               "(data=%p size=%zu)",
+               src.data, src.size);
+    return -1;
+  }
+
+  // An anonymous in-memory file: no writable directory is needed, and the fd
+  // is handed to OpenVINO directly (NPUW_WEIGHTS_HANDLE_PROVIDER), so nothing
+  // has to open a path. This is what makes NPU weight sharing work in
+  // sandboxed processes such as Android isolated processes, which can neither
+  // create files nor open them by path.
+  const int fd = static_cast<int>(
+      ::syscall(SYS_memfd_create, "litert_ov_bank", /*flags=*/0));
+  if (fd < 0) {
+    LITERT_LOG(LITERT_WARNING, "NPU weight sharing: memfd_create failed: %s",
+               std::strerror(errno));
+    return -1;
+  }
+
+  // Same chunked copy as EnsureOnDisk: with a file-backed model the pool is
+  // read through short-lived per-chunk mappings of the model file, so it is
+  // not faulted into this process beyond the in-memory copy itself.
+  const char* strategy = "memory";
+  int write_err = 0;
+  const bool copied = CopyPoolChunked(
+      src,
+      [fd, &write_err](const void* p, size_t n) {
+        write_err = WriteAll(fd, p, n);
+        return write_err == 0;
+      },
+      &strategy);
+  if (!copied) {
+    LITERT_LOG(LITERT_ERROR,
+               "NPU weight sharing: failed to write in-memory bank (via %s): "
+               "%s",
+               strategy, std::strerror(write_err));
+    ::close(fd);
+    return -1;
+  }
+
+  mem_fd_ = fd;
+  LITERT_LOG(LITERT_INFO,
+             "NPU weight sharing: staged %zu-byte weights bank in memory "
+             "(fd=%d) via %s",
+             src.size, mem_fd_, strategy);
+  return mem_fd_;
+}
+#else
+int NpuSharedBank::EnsureInMemory(const PoolSource& /*src*/) { return -1; }
+#endif
 
 }  // namespace litert::openvino

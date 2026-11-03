@@ -36,13 +36,15 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/compiled_model.hpp"
+#include "openvino/runtime/file_handle.hpp"
 #include "openvino/runtime/intel_npu/properties.hpp"  // NOLINT
 #include "openvino/runtime/properties.hpp"            // NOLINT
 #include "openvino/runtime/tensor.hpp"
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
+#if !defined(LITERT_WINDOWS_OS)
+#include <unistd.h>  // dup
+#endif
 #if defined(__ANDROID__)
-#include <unistd.h>
-
 #include "litert/vendors/intel_openvino/dispatch/npu_hal_wrapper.h"
 #endif
 
@@ -502,9 +504,10 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {
     litert::openvino::LogOpenVINOVersionInfoOnce("OpenVINO Dispatch",
                                                  device.c_str());
     if (npu_shared) {
-      // Stage the deduplicated pool to a temp file once per model, then hand it
-      // to NPUW. The temp file is a byte-for-byte copy of the contiguous pool
-      // span, starting at byte 0, so bin_offset resolves directly. The bank is
+      // Stage the deduplicated pool to a temp file (or, where that is not
+      // possible, to an in-memory file) once per model, then hand it to NPUW.
+      // The staged file is a byte-for-byte copy of the contiguous pool span,
+      // starting at byte 0, so bin_offset resolves directly. The bank is
       // owned by this device context, i.e. by the CompiledModel, and shared by
       // all of its partitions: one CompiledModel per model stages it once.
       // When the model is file-backed (fd >= 0) the bank reads the pool
@@ -524,24 +527,47 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {
                 exec_bytecode_buffer->alloc_base_file_offset) +
             static_cast<uint64_t>(pool_ptr - buf_base);
       }
-      const std::string bank_path =
-          device_context_.NpuBank().EnsureOnDisk(pool_source);
-      if (bank_path.empty()) {
-        return litert::Error(
-            kLiteRtStatusErrorRuntimeFailure,
-            "Failed to stage shared weights bank to a temp file");
-      }
       ov::AnyMap import_properties;
       // NPU_USE_NPUW is required or the plain NPU plugin rejects the NPUW blob;
-      // WEIGHTS_PATH + ENABLE_WEIGHTLESS are required or NPUW asserts "Blob is
-      // weightless but no WEIGHTS_PATH nor MODEL_PTR property is provided!".
+      // a weights source (WEIGHTS_PATH or a handle provider) +
+      // ENABLE_WEIGHTLESS are required or NPUW asserts "Blob is weightless but
+      // no WEIGHTS_PATH nor MODEL_PTR property is provided!".
       import_properties["NPU_USE_NPUW"] = std::string("YES");
-      import_properties[ov::weights_path.name()] = bank_path;
       import_properties[ov::enable_weightless.name()] = true;
-      LITERT_LOG(LITERT_INFO,
-                 "GlobalGraph: importing weightless NPU blob with "
-                 "WEIGHTS_PATH='%s' (%zu byte pool)",
-                 bank_path.c_str(), pool_size);
+      const std::string bank_path =
+          device_context_.NpuBank().EnsureOnDisk(pool_source);
+      if (!bank_path.empty()) {
+        import_properties[ov::weights_path.name()] = bank_path;
+        LITERT_LOG(LITERT_INFO,
+                   "GlobalGraph: importing weightless NPU blob with "
+                   "WEIGHTS_PATH='%s' (%zu byte pool)",
+                   bank_path.c_str(), pool_size);
+      } else {
+        // No temp file could be staged, e.g. in a sandboxed process (Android
+        // isolated processes have no writable directory and may not open files
+        // by path). Stage the pool in an anonymous in-memory file instead and
+        // hand NPUW dup()s of its fd, so nothing has to open a path.
+        const int bank_fd =
+            device_context_.NpuBank().EnsureInMemory(pool_source);
+        if (bank_fd < 0) {
+          return litert::Error(
+              kLiteRtStatusErrorRuntimeFailure,
+              "Failed to stage shared weights bank to a temp file or memory");
+        }
+#if !defined(LITERT_WINDOWS_OS)
+        // NPUW takes ownership of (and closes) each handle it gets, and may
+        // ask more than once, so hand out a fresh dup() every time.
+        // NPUW_WEIGHTS_HANDLE_PROVIDER is declared only in OpenVINO's private
+        // NPUW headers, so use the key string.
+        import_properties["NPUW_WEIGHTS_HANDLE_PROVIDER"] =
+            ov::FileHandleProvider(
+                [bank_fd]() -> ov::FileHandle { return ::dup(bank_fd); });
+#endif
+        LITERT_LOG(LITERT_INFO,
+                   "GlobalGraph: importing weightless NPU blob with in-memory "
+                   "weights bank (fd=%d, %zu byte pool)",
+                   bank_fd, pool_size);
+      }
       compiled_model =
           core->import_model(model_stream, device, import_properties);
     } else {
