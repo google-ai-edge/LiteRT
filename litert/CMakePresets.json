@@ -74,6 +74,23 @@
       }
     },
     {
+      "name": "windows-arm64",
+      "displayName": "Windows ARM64 Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/cmake_build_windows_arm64",
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "Windows",
+        "CMAKE_SYSTEM_PROCESSOR": "ARM64",
+        "CMAKE_BUILD_TYPE": "Release",
+        "LITERT_ENABLE_GPU": "OFF",
+        "TFLITE_ENABLE_GPU": "OFF",
+        "LITERT_ENABLE_ALL_VENDORS": "OFF",
+        "LITERT_ENABLE_QUALCOMM": "ON",
+        "LITERT_AUTO_BUILD_TFLITE": "ON",
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5"
+      }
+    },
+    {
       "name": "custom-toolchain",
       "displayName": "Custom toolchain file",
       "generator": "Unix Makefiles",

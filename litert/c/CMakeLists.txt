@@ -260,10 +260,21 @@ set_target_properties(litert_runtime_c_api_shared_lib PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 set_target_properties(litert_runtime_c_api_shared_lib PROPERTIES INTERFACE_LINK_LIBRARIES "")
-target_compile_options(litert_runtime_c_api_shared_lib PRIVATE
-    -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables
-    -ffunction-sections -fdata-sections
-)
+if(MSVC)
+    # An MSVC-style driver rejects the GCC/Clang flags below outright. /Gy and
+    # /Gw are the equivalents of -ffunction-sections and -fdata-sections, so
+    # the linker can still drop unused functions and data. There is
+    # deliberately no counterpart to -fno-exceptions here: this library is
+    # assembled from archives built with the project's default /EHsc, and
+    # compiling only this target without exceptions would be inconsistent
+    # with them.
+    target_compile_options(litert_runtime_c_api_shared_lib PRIVATE /Gy /Gw)
+else()
+    target_compile_options(litert_runtime_c_api_shared_lib PRIVATE
+        -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables
+        -ffunction-sections -fdata-sections
+    )
+endif()
 target_include_directories(litert_runtime_c_api_shared_lib
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
@@ -387,6 +398,14 @@ if(APPLE)
         ${_litert_runtime_c_api_private_archives}
         ${_litert_runtime_c_api_public_deps})
   target_link_options(litert_runtime_c_api_shared_lib PRIVATE -Wl,-all_load)
+elseif(WIN32)
+  target_sources(litert_runtime_c_api_shared_lib
+      PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/windows_exported_symbols.def)
+  target_link_libraries(litert_runtime_c_api_shared_lib
+      PRIVATE
+        ${_litert_runtime_c_api_private_archives}
+        ${_litert_runtime_c_api_public_deps})
 else()
   target_link_libraries(litert_runtime_c_api_shared_lib
       PRIVATE
