@@ -260,10 +260,21 @@ set_target_properties(litert_runtime_c_api_shared_lib PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 set_target_properties(litert_runtime_c_api_shared_lib PROPERTIES INTERFACE_LINK_LIBRARIES "")
-target_compile_options(litert_runtime_c_api_shared_lib PRIVATE
-    -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables
-    -ffunction-sections -fdata-sections
-)
+if(MSVC)
+    # An MSVC-style driver rejects the GCC/Clang flags below outright. /Gy and
+    # /Gw are the equivalents of -ffunction-sections and -fdata-sections, so
+    # the linker can still drop unused functions and data. There is
+    # deliberately no counterpart to -fno-exceptions here: this library is
+    # assembled from archives built with the project's default /EHsc, and
+    # compiling only this target without exceptions would be inconsistent
+    # with them.
+    target_compile_options(litert_runtime_c_api_shared_lib PRIVATE /Gy /Gw)
+else()
+    target_compile_options(litert_runtime_c_api_shared_lib PRIVATE
+        -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables
+        -ffunction-sections -fdata-sections
+    )
+endif()
 target_include_directories(litert_runtime_c_api_shared_lib
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
@@ -387,6 +398,32 @@ if(APPLE)
         ${_litert_runtime_c_api_private_archives}
         ${_litert_runtime_c_api_public_deps})
   target_link_options(litert_runtime_c_api_shared_lib PRIVATE -Wl,-all_load)
+elseif(WIN32)
+  # A PE DLL exports nothing unless told to, and with nothing exported the
+  # linker emits no import library -- so every consumer then fails with
+  # "cannot open input file c\LiteRt.lib". The C API is annotated for
+  # __declspec only when LITERT_COMPILE_LIBRARY is set while compiling the
+  # library itself, which does not hold for the static archives this DLL is
+  # assembled from, so let CMake generate the export table instead.
+  set_target_properties(litert_runtime_c_api_shared_lib PROPERTIES
+      WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
+  target_link_libraries(litert_runtime_c_api_shared_lib
+      PRIVATE
+        ${_litert_runtime_c_api_private_archives}
+        ${_litert_runtime_c_api_public_deps})
+  # /WHOLEARCHIVE is the MSVC-style --whole-archive; both link.exe and
+  # lld-link accept it. Applied per archive, as it takes a single library.
+  foreach(_litert_capi_archive IN LISTS _litert_runtime_c_api_private_archives)
+    if(TARGET ${_litert_capi_archive})
+      get_target_property(_litert_capi_kind ${_litert_capi_archive} TYPE)
+      # The list also carries interface targets such as Threads::Threads,
+      # which have no file to whole-archive.
+      if(_litert_capi_kind STREQUAL "STATIC_LIBRARY")
+        target_link_options(litert_runtime_c_api_shared_lib PRIVATE
+            "/WHOLEARCHIVE:$<TARGET_FILE:${_litert_capi_archive}>")
+      endif()
+    endif()
+  endforeach()
 else()
   target_link_libraries(litert_runtime_c_api_shared_lib
       PRIVATE

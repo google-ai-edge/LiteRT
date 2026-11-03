@@ -53,7 +53,25 @@ set_target_properties(qnn_compiler_plugin PROPERTIES
     INSTALL_RPATH "\$ORIGIN"
 )
 
-if(APPLE)
+if(WIN32)
+    # LITERT_CAPI_EXPORT resolves to __declspec(dllimport) unless the library
+    # being built says so, which makes defining the plugin's own entry points a
+    # hard error (C2491). The Bazel build passes the same define.
+    target_compile_definitions(qnn_compiler_plugin PRIVATE LITERT_COMPILE_LIBRARY)
+
+    # Same dependencies as the other platforms; no --start-group/--end-group,
+    # which is a GNU ld option, and the MSVC-style linkers revisit archives
+    # anyway.
+    target_link_libraries(qnn_compiler_plugin PRIVATE
+        litert_runtime_c_api_shared_lib
+        litert_logging
+        tensorflow-lite
+        Threads::Threads
+        litert_compiler_plugin
+        litert_cc_api
+        litert_cc_options
+    )
+elseif(APPLE)
     target_link_libraries(qnn_compiler_plugin PRIVATE
         litert_runtime_c_api_shared_lib
         litert_logging
