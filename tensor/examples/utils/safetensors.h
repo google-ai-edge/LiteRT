@@ -191,7 +191,7 @@ bool save_to_file(const safetensors_t& st, const std::string& filename,
 // message)
 //
 // @return true upon success. `err` will be filled when false.
-bool save_to_memory(const std::string& filename, std::vector<uint8_t>* data_out,
+bool save_to_memory(const safetensors_t& st, std::vector<uint8_t>* data_out,
                     std::string* warn, std::string* err);
 
 //
@@ -201,7 +201,9 @@ bool save_to_memory(const std::string& filename, std::vector<uint8_t>* data_out,
 // Returns shape[0] * shape[1] * ...
 // Empty Tensor(any shape[i] is 0) returns 0.
 // Zero-rank tensor([]) return 1.
-size_t get_shape_size(const tensor_t& t);
+// If `ok` is non-null, `*ok` is set to false when `t.shape.size() > kMaxDim`
+// or the element count overflows `size_t`, and true otherwise.
+size_t get_shape_size(const tensor_t& t, bool* ok = nullptr);
 
 // Returns dtype size in bytes.
 size_t get_dtype_bytes(safetensors::dtype dtype);

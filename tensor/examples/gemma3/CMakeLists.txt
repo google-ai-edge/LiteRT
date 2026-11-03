@@ -241,6 +241,8 @@ if(NOT _litert_gemma3_sentencepiece_available)
 endif()
 
 add_executable(litert_main EXCLUDE_FROM_ALL
+    ../utils/minijson.cc
+    ../utils/safetensors.cc
     graph_helpers.cc
     litert_main.cc
     safetensor_loader.cc
