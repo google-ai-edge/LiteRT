@@ -635,8 +635,9 @@
 
   XCTAssertTrue(status.ok());
 
+  const size_t expected_params = useInvalidZp ? 1 : 2;
   XCTAssertEqual(buffer_id_to_spatial_tensor.size(), 1);
-  XCTAssertEqual(quant_param_tensors.size(), 2);
+  XCTAssertEqual(quant_param_tensors.size(), expected_params);
 
   int params_found = 0;
   for (auto& [_, global_id] : local_to_global_id_map) {
@@ -650,7 +651,7 @@
       XCTAssertEqual(external_tensor->GetDescriptor().GetBHWCShape(), ml_drift::BHWC(1, 1, 25, 8));
     }
   }
-  XCTAssertEqual(params_found, 2);
+  XCTAssertEqual(params_found, static_cast<int>(expected_params));
 
   TfLiteIntArrayFree(tensors[0].dims);
   delete quant_params;

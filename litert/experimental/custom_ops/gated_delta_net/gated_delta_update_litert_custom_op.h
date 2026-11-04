@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_EXPERIMENTAL_CUSTOM_OPS_GATED_DELTA_NET_GATED_DELTA_UPDATE_LITERT_CUSTOM_OP_H_
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -24,6 +25,7 @@
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/experimental/custom_ops/gated_delta_net/gated_delta_update_impl.h"
 
 namespace litert {
 namespace gated_delta_net {
@@ -59,6 +61,7 @@ class GatedDeltaUpdateCustomOpKernel : public CustomOpKernel {
  private:
   const std::string kOpName = "gated_delta_update";
   int mode_ = 0;  // 0: recurrent, 1: chunked
+  std::optional<GatedDeltaBlockParams> block_;
 };
 
 // Registers Gated Delta Net custom op kernels (gated_delta_update and
