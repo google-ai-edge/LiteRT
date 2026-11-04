@@ -17,11 +17,13 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
+#include "litert/c/litert_op_resolver.h"
 #include "litert/cc/internal/scoped_weight_source.h"
 
 namespace weight_loader {
@@ -75,7 +77,7 @@ struct LiteRtOptionsT {
   // Note: Only changes to version.major invalidate the CompilationCache;
   // minor updates do not impact cache keys. Changing a default value does not
   // impact the version.
-  LiteRtApiVersion version = {.major = 1, .minor = 0, .patch = 0};
+  LiteRtApiVersion version = {.major = 1, .minor = 1, .patch = 0};
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
   LiteRtOpaqueOptions options = nullptr;
   std::vector<CustomOpOption> custom_op_options;
@@ -104,6 +106,10 @@ struct LiteRtOptionsT {
   // The initial implementation does not expand the active set to transitively
   // referenced callee subgraphs.
   std::vector<std::string> selected_signature_keys;
+  // Optional C API representation of an application-provided TFLite OpResolver.
+  // When set, CompiledModel wraps these callbacks into an OpResolver instead of
+  // creating the default builtin op resolver.
+  std::optional<LiteRtOpResolverCApi> op_resolver_c_api;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
