@@ -399,12 +399,33 @@ cc_library(
     srcs = ["shared_vulkan_env.cc"],
     hdrs = ["shared_vulkan_env.h"],
     deps = [
+        "@com_google_absl//absl/functional:function_ref",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
         "@ml_drift//ml_drift/syrtis:command_buffer",
         "@ml_drift//ml_drift/syrtis:environment",
+        "@ml_drift//ml_drift/syrtis:queue",
+        "@ml_drift//ml_drift/syrtis:vulkan_device",
         "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
+    ],
+)
+
+cc_test(
+    name = "shared_vulkan_env_test",
+    srcs = ["shared_vulkan_env_test.cc"],
+    tags = ["requires-gpu-sm90-full"],  # Vulkan/WebGPU: no driver on MIG
+    deps = [
+        ":shared_vulkan_env",
+        "@com_google_googletest//:gtest_main_no_heapcheck",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@ml_drift//ml_drift/syrtis:command_buffer",
+        "@ml_drift//ml_drift/syrtis:environment",
+        "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
+        # copybara:uncomment "//third_party/vulkan_loader",
     ],
 )
 
@@ -1123,14 +1144,10 @@ cc_library(
     deps = [
         ":buffer_handler_utils",
         ":shared_vulkan_env",
-        "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_environment_header",
-        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:tensor_buffer_lockstate",
         "@com_google_absl//absl/cleanup",
@@ -1142,6 +1159,65 @@ cc_library(
         "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
     ],
 )
+
+cc_test(
+    name = "buffer_handler_vulkan_test",
+    srcs = ["buffer_handler_vulkan_test.cc"],
+    tags = ["requires-gpu-sm90-full"],  # Vulkan/WebGPU: no driver on MIG
+    deps = [
+        ":buffer_handler_vulkan",
+        ":shared_vulkan_env",
+        "@com_google_googletest//:gtest_main_no_heapcheck",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/types:span",
+        "@ml_drift//ml_drift/syrtis:environment",
+        "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_types",
+        # copybara:uncomment "//third_party/vulkan_loader",
+    ],
+)
+
+# copybara:uncomment_begin(google-only)
+# cc_test(
+#     name = "delegate_vulkan_test",
+#     srcs = ["delegate_vulkan_test.cc"],
+#     tags = ["requires-gpu-sm90-full"],  # Vulkan/WebGPU: no driver on MIG
+#     deps = [
+#         ":delegate_options",
+#         ":delegate_types",
+#         ":delegate_vulkan",
+#         ":precision",
+#         ":shared_vulkan_env",
+#         "@com_google_googletest//:gtest_main_no_heapcheck",
+#         "@com_google_absl//absl/cleanup",
+#         "@com_google_absl//absl/status",
+#         "@com_google_absl//absl/status:status_matchers",
+#         "@com_google_absl//absl/types:span",
+#         "@ml_drift//ml_drift/syrtis:environment",
+#         "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
+#         "//third_party/odml/infra/ml_drift_delegate/testdata:simple_add",
+#         "//litert/c:litert_any",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_environment",
+#         "//litert/c:litert_environment_options",
+#         "//litert/c/internal:litert_runtime_context_header",
+#         "//litert/cc:litert_expected",
+#         "//litert/runtime:external_litert_buffer_context",
+#         "//litert/runtime:tensor_identifier",
+#         "//litert/runtime:tfl_utils",
+#         "//litert/runtime/accelerators/gpu:ml_drift_vulkan_accelerator",
+#         "//tflite:framework",
+#         "//tflite/c:common",
+#         "//tflite/kernels:builtin_ops",
+#         "//third_party/vulkan_loader",
+#     ],
+# )
+# copybara:uncomment_end(google-only)
 
 cc_library(
     name = "task_executor",

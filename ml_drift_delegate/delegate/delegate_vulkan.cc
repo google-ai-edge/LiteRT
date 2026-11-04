@@ -111,9 +111,26 @@ void DestroySharedVulkanEnv(void* vulkan_env) {
   ABSL_LOG(INFO) << "Destroyed the Vulkan environment.";
 }
 
-litert::Expected<litert::ml_drift::SharedVulkanEnv*>
-GetSingletonSharedVulkanEnv(LiteRtEnvironment env,
-                            const LiteRtRuntimeContext* runtime_context) {
+litert::Expected<litert::ml_drift::SharedVulkanEnv*> GetOrCreateSharedVulkanEnv(
+    LiteRtEnvironment env, const LiteRtRuntimeContext* runtime_context) {
+  LiteRtEnvironmentOptions env_options = nullptr;
+  LITERT_RETURN_IF_ERROR(
+      runtime_context->get_environment_options(env, &env_options));
+
+  LiteRtAny existing_vulkan_env;
+  if (runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagVulkanEnvironment,
+          &existing_vulkan_env) == kLiteRtStatusOk &&
+      existing_vulkan_env.int_value != 0) {
+    auto* vulkan_env = reinterpret_cast<litert::ml_drift::SharedVulkanEnv*>(
+        existing_vulkan_env.int_value);
+    if (!vulkan_env->EnsureVulkanInitialized()) {
+      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                "Failed to initialize Vulkan library");
+    }
+    return vulkan_env;
+  }
+
   {
     absl::MutexLock lock(g_vulkan_env_mutex);
     if (g_vulkan_env == nullptr) {
@@ -340,8 +357,9 @@ TfLiteDelegatePtr CreateMlDriftVulkanDelegate(MlDriftDelegateOptionsPtr options,
     delegate_data->model_token = delegate_data->options->model_token;
   }
 
-  // Use the shared Vulkan environment in LiteRT runtime.
-  auto env = GetSingletonSharedVulkanEnv(litert_env, runtime_context);
+  // Use the shared or externally provided Vulkan environment in LiteRT runtime.
+  litert::Expected<SharedVulkanEnv*> env =
+      GetOrCreateSharedVulkanEnv(litert_env, runtime_context);
   if (!env) {
     ABSL_LOG(ERROR) << "Failed to get Vulkan environment: " << env.Error();
     return {nullptr, LiteRtDeleteMlDriftVulkanDelegate};

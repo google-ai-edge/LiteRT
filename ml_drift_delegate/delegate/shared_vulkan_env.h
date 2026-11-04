@@ -15,12 +15,15 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_VULKAN_ENV_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_VULKAN_ENV_H_
 
+#include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/syrtis/command_buffer.h"  // from @ml_drift
 #include "ml_drift/syrtis/environment.h"  // from @ml_drift
+#include "ml_drift/syrtis/queue.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_wrapper.h"  // from @ml_drift
 
 namespace litert::ml_drift {
@@ -29,6 +32,18 @@ class SharedVulkanEnv {
  public:
   SharedVulkanEnv();
   ~SharedVulkanEnv();
+
+  // Creates a SharedVulkanEnv wrapping caller-provided external Vulkan
+  // handles without taking ownership of the underlying VkInstance,
+  // VkPhysicalDevice, VkDevice, or VkQueue. If `queue_family_index < 0`,
+  // queries `physical_device` for the first compute-capable queue family.
+  // Returns nullptr on failure.
+  static std::unique_ptr<SharedVulkanEnv> CreateFromExternalHandles(
+      VkInstance instance, VkPhysicalDevice physical_device, VkDevice device,
+      VkQueue queue, int64_t queue_family_index);
+
+  // Ensures Vulkan function pointers are initialized in the current DSO.
+  bool EnsureVulkanInitialized() const;
 
   // Gets the command buffer. If no command buffers are ready for use, creates
   // one.
@@ -66,7 +81,9 @@ class SharedVulkanEnv {
   }
 
  private:
+  std::unique_ptr<::ml_drift::syrtis::Queue> external_queue_;
   ::ml_drift::syrtis::Environment vulkan_env_;
+  VkInstance instance_ = VK_NULL_HANDLE;
   // A command pool used for every data transfer and compute works.
   VkCommandPool command_pool_ = VK_NULL_HANDLE;
   ::ml_drift::syrtis::CommandBuffer current_command_buffer_;
