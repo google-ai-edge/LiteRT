@@ -1284,55 +1284,74 @@ def get_bmm_weight_quantized_dim(
   return rank - 1
 
 
+def _get_blockwise_dim(
+    ndim: int, quantized_dimension: int | Sequence[int]
+) -> int:
+  """Returns the dimension split into blocks (the last one for multi-axis)."""
+  return (
+      ndim - 1
+      if isinstance(quantized_dimension, Sequence)
+      else quantized_dimension
+  )
+
+
 def get_blockwise_shape(
-    shape: Sequence[int], quantized_dimension: int, block_size: int
+    shape: Sequence[int],
+    quantized_dimension: int | Sequence[int],
+    block_size: int,
 ) -> tuple[int, ...]:
   """Gets the shape of the scale/zero_point tensor for blockwise quantization.
 
   Args:
     shape: The shape of the original tensor.
     quantized_dimension: The dimension along which blockwise quantization is
-      performed.
+      performed. For multi-axis quantization (a sequence of dimensions), the
+      last dimension is split into blocks.
     block_size: The size of each block.
 
   Returns:
     The shape of the scale/zero_point tensor.
 
   Raises:
-    ValueError: If the dimension along quantized_dimension is not divisible by
+    ValueError: If the dimension split into blocks is not divisible by
       block_size.
   """
+  blockwise_dim = _get_blockwise_dim(len(shape), quantized_dimension)
   target_shape = list(shape)
-  dim = target_shape[quantized_dimension]
+  dim = target_shape[blockwise_dim]
   if dim % block_size != 0:
     raise ValueError(
-        f"Dimension {dim} along axis {quantized_dimension} is not"
+        f"Dimension {dim} along axis {blockwise_dim} is not"
         f" divisible by block size {block_size}"
     )
-  target_shape[quantized_dimension] //= block_size
+  target_shape[blockwise_dim] //= block_size
   return tuple(target_shape)
 
 
 def reshape_to_blocks(
-    tensor: np.ndarray, quantized_dimension: int | None, block_size: int
+    tensor: np.ndarray,
+    quantized_dimension: int | Sequence[int] | None,
+    block_size: int,
 ) -> np.ndarray:
   """Reshapes a tensor to 2D where each row corresponds to a block.
 
-  The block dimension (inserted at quantized_dimension + 1) is moved to the end
-  so that it remains contiguous when the other dimensions are flattened.
+  The block dimension (inserted after the dimension split into blocks) is moved
+  to the end so that it remains contiguous when the other dimensions are
+  flattened.
 
   Args:
     tensor: The input tensor.
     quantized_dimension: The dimension along which blockwise quantization is
-      performed. Must not be None.
+      performed. For multi-axis quantization (a sequence of dimensions), the
+      last dimension is split into blocks. Must not be None.
     block_size: The size of each block.
 
   Returns:
     A 2D tensor of shape (NumBlocks, block_size).
 
   Raises:
-    ValueError: If quantized_dimension is None or the dimension is not divisible
-      by block_size.
+    ValueError: If quantized_dimension is None or the dimension split into
+      blocks is not divisible by block_size.
   """
   if quantized_dimension is None:
     raise ValueError(
@@ -1341,17 +1360,18 @@ def reshape_to_blocks(
   # Validate shape and divisibility.
   _ = get_blockwise_shape(tensor.shape, quantized_dimension, block_size)
 
+  blockwise_dim = _get_blockwise_dim(tensor.ndim, quantized_dimension)
   expanded_shape = []
   for i, dim in enumerate(tensor.shape):
-    if i == quantized_dimension:
+    if i == blockwise_dim:
       expanded_shape.append(dim // block_size)
       expanded_shape.append(block_size)
     else:
       expanded_shape.append(dim)
   reshaped_vals = tensor.reshape(expanded_shape)
   ndim = tensor.ndim
-  perm = [i for i in range(ndim + 1) if i != quantized_dimension + 1] + [
-      quantized_dimension + 1
+  perm = [i for i in range(ndim + 1) if i != blockwise_dim + 1] + [
+      blockwise_dim + 1
   ]
   transposed_vals = np.transpose(reshaped_vals, perm)
   return transposed_vals.reshape(-1, block_size)

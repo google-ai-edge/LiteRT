@@ -694,8 +694,13 @@ class CommonUtilsTest(parameterized.TestCase):
     )
     np.testing.assert_array_equal(actual, expected)
 
-  def test_reshape_to_blocks_3d(self):
-    # Shape (2, 2, 4), quantized_dimension=2, block_size=2.
+  @parameterized.named_parameters(
+      dict(testcase_name="single_axis", quantized_dimension=2),
+      # Multi-axis quantization splits the last dimension into blocks.
+      dict(testcase_name="multi_axis", quantized_dimension=(0, 1)),
+  )
+  def test_reshape_to_blocks_3d(self, quantized_dimension):
+    # Shape (2, 2, 4), block_size=2.
     # Result shape should be (8, 2).
     tensor = np.arange(16, dtype=np.float32).reshape(2, 2, 4)
     expected = np.array(
@@ -703,7 +708,7 @@ class CommonUtilsTest(parameterized.TestCase):
         dtype=np.float32,
     )
     actual = common_utils.reshape_to_blocks(
-        tensor, quantized_dimension=2, block_size=2
+        tensor, quantized_dimension=quantized_dimension, block_size=2
     )
     np.testing.assert_array_equal(actual, expected)
 

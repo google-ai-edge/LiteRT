@@ -395,24 +395,26 @@ def uniform_dequantize(
     The dequantized tensor.
   """
   if quantization_params.block_size != 0:
-    # b/443830202: The quantized dimension is currently increased by 1 because
-    # AEQ expects 1 and XNNPack expects 0.
-    # We only increment it if it is XNNPack style (0) to avoid double increment
-    # if the caller already passed the actual AEQ style dimension (1).
-    if quantization_params.quantized_dimension == 0:
+    if quantization_params.quantized_dimension is not None:
+      # b/443830202: The quantized dimension is currently increased by 1 because
+      # LiteRTQ expects 1 and XNNPack expects 0.
+      # We only increment it if it is XNNPack style (0) to avoid double
+      # increment if the caller already passed the actual LiteRTQ style
+      # dimension (1).
+      if quantization_params.quantized_dimension == 0:
+        quantization_params = dataclasses.replace(
+            quantization_params,
+            quantized_dimension=quantization_params.quantized_dimension + 1,
+        )
+      scale_shape = list(tensor_data.shape)
+      scale_shape[quantization_params.quantized_dimension] = (  # pyrefly: ignore[unsupported-operation]
+          scale_shape[quantization_params.quantized_dimension]  # pyrefly: ignore[bad-index]
+          // quantization_params.block_size
+      )
       quantization_params = dataclasses.replace(
           quantization_params,
-          quantized_dimension=quantization_params.quantized_dimension + 1,
+          scale=quantization_params.scale.reshape(scale_shape),
       )
-    scale_shape = list(tensor_data.shape)
-    scale_shape[quantization_params.quantized_dimension] = (  # pyrefly: ignore[unsupported-operation]
-        scale_shape[quantization_params.quantized_dimension]  # pyrefly: ignore[bad-index]
-        // quantization_params.block_size
-    )
-    quantization_params = dataclasses.replace(
-        quantization_params,
-        scale=quantization_params.scale.reshape(scale_shape),
-    )
     quantization_params = _broadcast_scale_zp_for_blockwise(
         tensor_data, quantization_params
     )

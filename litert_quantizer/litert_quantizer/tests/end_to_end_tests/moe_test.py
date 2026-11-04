@@ -66,6 +66,12 @@ class MoeTest(test_utils.BaseOpTestCase):
           num_bits=4,
           granularity=qtyping.QuantGranularity.CHANNELWISE,
       ),
+      dict(
+          testcase_name='weight_recovery_int4_blockwise_32',
+          algorithm_key=_QuantAlgo.DEQUANTIZED_WEIGHT_RECOVERY,
+          num_bits=4,
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+      ),
   )
   def test_quantization_accuracy_within_tolerance(
       self, algorithm_key, num_bits, granularity

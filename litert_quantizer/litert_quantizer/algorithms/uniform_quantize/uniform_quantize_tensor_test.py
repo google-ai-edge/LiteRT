@@ -357,6 +357,23 @@ class TensorUtilsTest(parameterized.TestCase):
         expected_output_tensor.flatten(), dequantized_tensor.flatten(), places=4
     )
 
+  def test_uniform_dequantize_multiaxis_blockwise_succeeds(self):
+    quantized_tensor = np.array([[[2, 4, 2, 4]]], dtype=np.int8)
+    quant_params = qtyping.UniformQuantParams(
+        quantized_dimension=None,
+        quantized_dimensions=(0, 1),
+        block_size=2,
+        num_bits=4,
+        scale=np.array([[[0.5, 2.0]]], dtype=np.float32),
+        zero_point=np.zeros((1, 1, 2), dtype=np.int32),
+    )
+    dequantized_tensor = uniform_quantize_tensor.uniform_dequantize(
+        quantized_tensor, quant_params
+    )
+    np.testing.assert_array_equal(
+        dequantized_tensor, np.array([[[1.0, 2.0, 4.0, 8.0]]], dtype=np.float32)
+    )
+
   @parameterized.parameters(
       (8, 8, True, True),
       (8, 4, False, True),

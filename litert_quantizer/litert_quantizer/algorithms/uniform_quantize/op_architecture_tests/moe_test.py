@@ -107,6 +107,14 @@ class MoeTest(op_test_utils.BaseQuantizeTest):
           num_bits=4,
           granularity=qtyping.QuantGranularity.CHANNELWISE,
       ),
+      dict(
+          testcase_name="weight_recovery_int4_blockwise_32",
+          get_tensor_quant_params_fn=(
+              dequantized_weight_recovery.get_tensor_quant_params
+          ),
+          num_bits=4,
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+      ),
   )
   def test_materialize_moe_succeeds(
       self, get_tensor_quant_params_fn, num_bits, granularity

@@ -282,49 +282,82 @@ class DequantizedWeightRecoveryTest(parameterized.TestCase):
     self.assertEqual(np.sum(recovered_zp), 0)
     self.assertEqual(recovered_zp.shape, scale.shape)
 
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="single_axis",
+          quantized_dimensions=None,
+          weight_shape=(2, 32),
+          # FULLY_CONNECTED blockwise quantized dim is 1. Weight shape (2, 32)
+          # with block_size=32 -> 1 block per row -> scale shape (2, 1).
+          scale=np.array([[0.1], [0.5]], dtype=np.float32),
+          expected_quantized_dimension=1,
+      ),
+      dict(
+          testcase_name="multiaxis",
+          quantized_dimensions=(0, 1),
+          weight_shape=(2, 3, 1, 64),
+          # Weight shape (2, 3, 1, 64) with block_size=32 -> 2 blocks per row
+          # -> scale shape (2, 3, 1, 2).
+          scale=np.array(
+              [
+                  [[[0.1, 0.2]], [[0.3, 0.4]], [[0.5, 0.6]]],
+                  [[[0.7, 0.8]], [[0.9, 1.0]], [[1.1, 1.2]]],
+              ],
+              dtype=np.float32,
+          ),
+          expected_quantized_dimension=None,
+      ),
+  )
   def test_get_tensor_quant_params_success_with_blockwise_dequantized_weights(
       self,
+      quantized_dimensions,
+      weight_shape,
+      scale,
+      expected_quantized_dimension,
   ):
-    # Use block size 32. Weight shape (2, 32).
-    # FULLY_CONNECTED quantized dim is 1.
-    # Scale shape should be (2, 1).
     block_size = 32
-    quantized_dimension = 1
-
-    # Generate dummy quantized weights.
-    # Use a deterministic pattern of length 32 (block_size).
+    # Generate dummy quantized weights: a deterministic pattern of length 32
+    # (block_size), repeated to fill `weight_shape`.
     pattern = np.array([1, -2, 3, -4] * 8, dtype=np.float32)
-    # Stack it to match the target shape (2, 32).
-    quantized_weights = np.vstack([pattern, pattern])
-
-    scale = np.array([[0.1], [0.5]])  # shape (2, 1)
-
+    quantized_weights = np.resize(pattern, weight_shape)
     dequant_vals = _construct_blockwise_dequantized_weights(
         quantized_weights,
         scale,
-        quantized_dimension,
+        quantized_weights.ndim - 1,  # Blocks are along the last dimension.
         block_size,
     )
-
     tensor_quant_config = qtyping.TensorQuantizationConfig(
         num_bits=4,
         granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+        quantized_dimensions=quantized_dimensions,
     )
-
+    op_info = qtyping.OpInfo(
+        op=None,
+        op_name=_TFLOpName.FULLY_CONNECTED,
+        subgraph_op_index=0,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=tensor_quant_config
+        ),
+    )
     tensor_quant_params = dequantized_weight_recovery.get_tensor_quant_params(
-        self._dummy_op_info, tensor_quant_config, dequant_vals
+        op_info, tensor_quant_config, dequant_vals
     )
 
     with self.subTest(name="metadata_match"):
       self.assertEqual(
-          tensor_quant_params.quantized_dimension, quantized_dimension
+          tensor_quant_params.quantized_dimension, expected_quantized_dimension
+      )
+      self.assertEqual(
+          tensor_quant_params.quantized_dimensions, quantized_dimensions
       )
       self.assertEqual(tensor_quant_params.block_size, block_size)
 
     with self.subTest(name="scale_match"):
       recovered_scale = tensor_quant_params.scale
       self.assertEqual(recovered_scale.shape, scale.shape)
-      self.assertSequenceAlmostEqual(recovered_scale.flatten(), scale.flatten())
+      self.assertSequenceAlmostEqual(
+          recovered_scale.flatten(), scale.flatten(), places=5
+      )
 
     with self.subTest(name="zero_point_match"):
       recovered_zp = tensor_quant_params.zero_point

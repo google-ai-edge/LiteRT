@@ -118,7 +118,7 @@ def _check_unique_values(
         break
     return max_found, limit
 
-  if isinstance(quantized_dimension, Sequence):
+  if isinstance(quantized_dimension, Sequence) and block_size == 0:
     # Multi-axis channelwise quantization: flatten the quantized dimensions
     # into rows so each row contains all elements of one quantization channel.
     num_channels = int(
@@ -177,11 +177,27 @@ def get_zp_scale_from_dequantized_symmetric_weights(
     scales = np.array([[scales]])
     return np.zeros_like(scales, dtype=np.int32), scales
 
+  if not isinstance(quantized_dimension, Sequence) and (
+      quantized_dimension not in (0, 1)
+  ):
+    raise ValueError(
+        "quantized_dimension must be 0, 1, a sequence, or None. Got"
+        f" {quantized_dimension}"
+    )
+
   # Reshape `dequant_vals` into a 2D array `(num_groups, elements_per_group)` so
   # each row is one quantization group (channel or block) sharing a single
   # scale, and compute `target_shape` to reshape the recovered 1D scales back to
   # match `dequant_vals.ndim`.
-  if isinstance(quantized_dimension, Sequence):
+  if block_size > 0:
+    # Blockwise quantization: single and multi-axis.
+    reshaped_2d = common_utils.reshape_to_blocks(
+        dequant_vals, quantized_dimension, block_size
+    )
+    target_shape = common_utils.get_blockwise_shape(
+        dequant_vals.shape, quantized_dimension, block_size
+    )
+  elif isinstance(quantized_dimension, Sequence):
     # Multi-axis channelwise quantization.
     num_channels = int(
         np.prod([dequant_vals.shape[d] for d in quantized_dimension])
@@ -190,18 +206,6 @@ def get_zp_scale_from_dequantized_symmetric_weights(
     target_shape = tuple(
         dequant_vals.shape[d] if d in quantized_dimension else 1
         for d in range(dequant_vals.ndim)
-    )
-  elif quantized_dimension not in (0, 1):
-    raise ValueError(
-        "quantized_dimension must be 0, 1, a sequence, or None. Got"
-        f" {quantized_dimension}"
-    )
-  elif block_size > 0:
-    reshaped_2d = common_utils.reshape_to_blocks(
-        dequant_vals, quantized_dimension, block_size
-    )
-    target_shape = common_utils.get_blockwise_shape(
-        dequant_vals.shape, quantized_dimension, block_size
     )
   else:
     # Per-channel: Move quantized_dimension to axis 0.
