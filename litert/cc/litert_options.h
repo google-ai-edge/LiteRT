@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -24,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/internal/litert_runtime_builtin.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/cc/internal/litert_runtime_proxy.h"
@@ -332,6 +334,31 @@ class Options {
     return {};
   }
 
+  /// Hints the runtime to prefetch the embedding table rows for `tokens`
+  /// across all CPU `EMBEDDING_LOOKUP` ops in the signature when this
+  /// `Options` object is passed to `CompiledModel::Run`.
+  ///
+  /// Advisory only: issues an OS page-cache readahead hint
+  /// (`madvise(MADV_WILLNEED)` on Linux/Android, `PrefetchVirtualMemory` on
+  /// Windows; no-op on other platforms). Only constant (`kTfLiteMmapRo`)
+  /// tables with rank >= 2 whose rows are a whole number of bytes
+  /// (`bytes % dims[0] == 0`, covering float32, float16, int8, and packed
+  /// int4/int2 with byte-aligned rows) are hinted; blockwise-quantized scale
+  /// tensors are not hinted. Negative or out-of-bounds token IDs are ignored.
+  /// If the signature has no CPU `EMBEDDING_LOOKUP` ops (e.g. delegated to
+  /// GPU or NPU), the hint is a no-op and `CompiledModel::Run` still succeeds.
+  ///
+  /// Each call replaces the token IDs of the previous one, so one `Options`
+  /// object can be reused across runs. Builtin runtime only: the IDs are
+  /// written into the runtime's options object, whose layout an external
+  /// runtime (`EnvironmentOptions::Tag::kSystemRuntimeHandle`, e.g. LiteRT in
+  /// Google Play services) may not share, so with an external runtime they
+  /// are dropped and the hint is a no-op.
+  Expected<void> SetPrefetchEmbeddingTokenIds(Span<const int32_t> tokens) {
+    prefetch_embedding_token_ids_.assign(tokens.begin(), tokens.end());
+    return {};
+  }
+
   /// Retrieves or lazy-creates the specified option type.
   ///
   /// This template method allows configuring any Option type without
@@ -426,6 +453,20 @@ class Options {
       LITERT_RETURN_IF_ERROR(action(runtime, litert_options));
     }
 
+    // Written straight into LiteRtOptionsT, so only for the builtin runtime,
+    // whose layout matches this header; an external runtime may predate the
+    // field. See SetPrefetchEmbeddingTokenIds().
+    if (!options.prefetch_embedding_token_ids_.empty() &&
+        runtime->runtime_c_api_ == GetLiteRtRuntimeBuiltin()) {
+      auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(litert_options);
+      if (!options_impl) {
+        return Unexpected(Status::kErrorRuntimeFailure,
+                          "Failed to create runtime options");
+      }
+      options_impl->prefetch_embedding_token_ids =
+          options.prefetch_embedding_token_ids_;
+    }
+
     for (const auto& [_, option_ptr] : options.option_slots_) {
       const char* identifier = nullptr;
       void* payload = nullptr;
@@ -449,6 +490,9 @@ class Options {
   std::vector<
       std::function<LiteRtStatus(internal::RuntimeProxy*, LiteRtOptions)>>
       build_actions_;
+  // Replaced by every SetPrefetchEmbeddingTokenIds() call; applied once in
+  // Build(). Empty means no hint.
+  std::vector<int32_t> prefetch_embedding_token_ids_;
   FlatHashMap<internal::OptionTypeId, std::unique_ptr<ConcreteOptionsBase>>
       option_slots_;
 };
