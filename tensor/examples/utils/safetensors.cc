@@ -18,6 +18,7 @@ limitations under the License.
 #include <array>
 #include <cassert>
 #include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -276,6 +277,19 @@ bool parse_dtype(const ::minijson::value& v, safetensors::dtype& dtype,
   return true;
 }
 
+bool parse_size_t(double val, size_t* out) {
+  if (!std::isfinite(val) || val < 0.0 || std::trunc(val) != val) {
+    return false;
+  }
+  constexpr double kMaxExclusive =
+      static_cast<double>(size_t{1} << (sizeof(size_t) * 8 - 1)) * 2.0;
+  if (val >= kMaxExclusive) {
+    return false;
+  }
+  *out = static_cast<size_t>(val);
+  return true;
+}
+
 bool parse_shape(const ::minijson::value& v, std::vector<size_t>& dst,
                  std::string* err) {
   // NOTE:
@@ -288,14 +302,23 @@ bool parse_shape(const ::minijson::value& v, std::vector<size_t>& dst,
       if (auto pn = i->as<::minijson::number>()) {
         if (dst.size() >= kMaxDim) {
           if (err) {
-            (*err) += "`shape` length must be less than " +
-                      std::to_string(kMaxDim) + " but got " +
-                      std::to_string(dst.size()) + ".\n";
+            (*err) += "`shape` length must be at most " +
+                      std::to_string(kMaxDim) + ".\n";
           }
           return false;
         }
 
-        dst.push_back(size_t(*pn));
+        size_t dim = 0;
+        if (!parse_size_t(*pn, &dim)) {
+          if (err) {
+            (*err) +=
+                "Array item in `shape` must be a non-negative integer fitting "
+                "in size_t.\n";
+          }
+          return false;
+        }
+
+        dst.push_back(dim);
 
       } else {
         if (err) {
@@ -331,7 +354,17 @@ bool parse_data_offsets(const ::minijson::value& v, std::array<size_t, 2>& dst,
           return false;
         }
 
-        dst[cnt] = size_t(*pn);
+        size_t offset = 0;
+        if (!parse_size_t(*pn, &offset)) {
+          if (err) {
+            (*err) +=
+                "Array item in `data_offsets` must be a non-negative integer "
+                "fitting in size_t.\n";
+          }
+          return false;
+        }
+
+        dst[cnt] = offset;
 
         cnt++;
 
@@ -446,26 +479,11 @@ bool parse_tensor(const std::string& name, const ::minijson::value& v,
       }
     }
 
-    if (is_empty_tensor) {
-      // They are not storing any data in the databuffer, yet retaining size in
-      // the header. So ignore data_offsets
-      if (data_offsets_found) {
-        // TODO: make this warn instead of err?
-        if (err) {
-          (*err) +=
-              "`" + name +
-              "` is empty tensors(tensors with 1 dimension being 0), and no "
-              "data in databuffer, but `data_offsets` item is provided.\n";
-        }
-        return false;
+    if (!is_empty_tensor && !data_offsets_found) {
+      if (err) {
+        (*err) += "`" + name + "` does not have `data_offsets` item.\n";
       }
-    } else {
-      if (!data_offsets_found) {
-        if (err) {
-          (*err) += "`" + name + "` does not have `data_offsets` item.\n";
-        }
-        return false;
-      }
+      return false;
     }
 
     tensor.dtype = dtype;
@@ -754,18 +772,18 @@ bool parse_safetensors_header(const uint8_t* addr, const size_t nbytes,
     return false;
   }
 
-  if ((8 + header_size) > nbytes) {
-    if (err) {
-      (*err) += "Header size " + std::to_string(header_size) +
-                " + 8 exceeds input size " + std::to_string(nbytes) + " .\n";
-    }
-    return false;
-  }
-
   if (header_size > kMaxJSONSize) {
     if (err) {
       (*err) += "Header JSON size exceeds the limit(" +
                 std::to_string(kMaxJSONSize) + ").\n";
+    }
+    return false;
+  }
+
+  if (header_size > nbytes - 8) {
+    if (err) {
+      (*err) += "Header size " + std::to_string(header_size) +
+                " + 8 exceeds input size " + std::to_string(nbytes) + " .\n";
     }
     return false;
   }
@@ -836,6 +854,7 @@ bool parse_safetensors_header(const uint8_t* addr, const size_t nbytes,
     if (err) {
       (*err) += "JSON root elements must be object(dict)\n";
     }
+    return false;
   }
 
   st->tensors = std::move(tensors);
@@ -1091,21 +1110,37 @@ std::string get_dtype_str(const safetensors::dtype dtype) {
 
 // Empty Tensor returns 0.
 // Zero-rank Tensor reuturns 1(scalar)
-size_t get_shape_size(const tensor_t& t) {
-  if (t.shape.empty()) {
-    return 1;
+size_t get_shape_size(const tensor_t& t, bool* ok) {
+  if (t.shape.size() > kMaxDim) {  // invalid ndim
+    if (ok) {
+      *ok = false;
+    }
+    return 0;
   }
 
-  if (t.shape.size() >= kMaxDim) {  // invalid ndim
-    return 0;
+  if (t.shape.empty()) {
+    if (ok) {
+      *ok = true;
+    }
+    return 1;
   }
 
   size_t sz = 1;
 
   for (size_t i = 0; i < t.shape.size(); i++) {
+    if (t.shape[i] != 0 &&
+        sz > std::numeric_limits<size_t>::max() / t.shape[i]) {
+      if (ok) {
+        *ok = false;
+      }
+      return 0;
+    }
     sz *= t.shape[i];
   }
 
+  if (ok) {
+    *ok = true;
+  }
   return sz;
 }
 
@@ -1122,7 +1157,7 @@ bool validate_data_offsets(const safetensors_t& st, std::string& err) {
   }
 
   size_t max_end = 0;
-  bool has_data = false;
+  bool has_tensors = false;
   for (size_t i = 0; i < st.tensors.size(); i++) {
     std::string key = st.tensors.keys()[i];
 
@@ -1132,18 +1167,13 @@ bool validate_data_offsets(const safetensors_t& st, std::string& err) {
       valid = false;
       continue;
     }
+    has_tensors = true;
 
     if (tensor.data_offsets[0] > tensor.data_offsets[1]) {
       ss << key << ".data_offsets.BEGIN " << tensor.data_offsets[0]
          << " must be less than or equal to data_offsets.END "
          << tensor.data_offsets[1] << "\n";
       valid = false;
-    }
-
-    size_t tensor_size = get_dtype_bytes(tensor.dtype) * get_shape_size(tensor);
-
-    if (tensor_size == 0) {
-      continue;
     }
 
     // data_offsets are absolute offset from the databuffer(file)
@@ -1160,20 +1190,39 @@ bool validate_data_offsets(const safetensors_t& st, std::string& err) {
       valid = false;
     }
 
-    size_t data_size = tensor.data_offsets[1] - tensor.data_offsets[0];
+    max_end = std::max(max_end, tensor.data_offsets[1]);
 
-    if (tensor_size != data_size) {
-      ss << "Data size mismatch. The size in Tensor `" << key << "` is "
-         << tensor_size << ", but the size from data_offsets is " << data_size
-         << "\n";
+    bool shape_ok = false;
+    const size_t shape_size = get_shape_size(tensor, &shape_ok);
+    if (!shape_ok) {
+      ss << "Tensor `" << key
+         << "` has invalid shape (rank exceeds maximum or element count "
+            "overflows).\n";
       valid = false;
+      continue;
     }
 
-    has_data = true;
-    max_end = std::max(max_end, tensor.data_offsets[1]);
+    const size_t dtype_bytes = get_dtype_bytes(tensor.dtype);
+    if (shape_size != 0 &&
+        dtype_bytes > std::numeric_limits<size_t>::max() / shape_size) {
+      ss << "Tensor `" << key << "` byte size overflows size_t.\n";
+      valid = false;
+      continue;
+    }
+    const size_t tensor_size = dtype_bytes * shape_size;
+
+    if (tensor.data_offsets[0] <= tensor.data_offsets[1]) {
+      const size_t data_size = tensor.data_offsets[1] - tensor.data_offsets[0];
+      if (tensor_size != data_size) {
+        ss << "Data size mismatch. The size in Tensor `" << key << "` is "
+           << tensor_size << ", but the size from data_offsets is " << data_size
+           << "\n";
+        valid = false;
+      }
+    }
   }
 
-  if (has_data && max_end != databuffersize) {
+  if ((has_tensors || databuffersize > 0) && max_end != databuffersize) {
     ss << "The largest data_offsets.END(" << max_end
        << ") must be equal to databufer size " << databuffersize << ".\n";
     valid = false;
@@ -1186,7 +1235,7 @@ bool validate_data_offsets(const safetensors_t& st, std::string& err) {
   return valid;
 }
 
-bool save_to_memory(const safetensors_t& st, std::vector<uint8_t>* dst,
+bool save_to_memory(const safetensors_t& st, std::vector<uint8_t>* data_out,
                     std::string* warn, std::string* err) {
   // directly serialize JSON string.
   std::stringstream ss;
@@ -1284,18 +1333,18 @@ bool save_to_memory(const safetensors_t& st, std::vector<uint8_t>* dst,
   // printf("header_size = %d\n", static_cast<int>(header_size));
   // printf("pad_bytes = %d\n", static_cast<int>(pad_bytes));
   size_t padded_header_size = header_size + pad_bytes;
-  dst->resize(8 + padded_header_size + databuffer_size);
+  data_out->resize(8 + padded_header_size + databuffer_size);
 
   // write padded header_size
-  memcpy(dst->data(), &padded_header_size, 8);
+  memcpy(data_out->data(), &padded_header_size, 8);
 
   // write header
-  memcpy(dst->data() + 8, header_str.data(), header_size);
+  memcpy(data_out->data() + 8, header_str.data(), header_size);
 
   // Use whitespace for trailing padding.
-  memset(dst->data() + 8 + header_size, 0x20, pad_bytes);
+  memset(data_out->data() + 8 + header_size, 0x20, pad_bytes);
 
-  memcpy(dst->data() + 8 + padded_header_size, databuffer_addr,
+  memcpy(data_out->data() + 8 + padded_header_size, databuffer_addr,
          databuffer_size);
 
   return true;
