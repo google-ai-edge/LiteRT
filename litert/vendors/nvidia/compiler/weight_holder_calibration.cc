@@ -14,7 +14,9 @@
 
 #include "litert/vendors/nvidia/compiler/weight_holder_calibration.h"
 
+#ifndef _WIN32
 #include <sys/mman.h>
+#endif
 
 #include <algorithm>
 #include <cstddef>
@@ -35,6 +37,17 @@
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
 #include "NvInferRuntime.h"
+#include "litert/vendors/nvidia/windows_compat.h"
+
+#ifdef _WIN32
+#define fstat NvidiaFstat
+#define open NvidiaOpen
+#define close _close
+#define unlink NvidiaUnlink
+#define fsync _commit
+#define getpid _getpid
+#define fdopen _fdopen
+#endif
 
 namespace litert::nvidia {
 

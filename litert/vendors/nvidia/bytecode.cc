@@ -19,6 +19,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#ifdef _WIN32
+#include <filesystem>
+#endif
 #include <limits>
 #include <optional>
 #include <string>
@@ -36,6 +39,14 @@
 
 namespace litert::nvidia {
 namespace {
+
+bool IsAbsoluteFilePath(const std::string& path) {
+#ifdef _WIN32
+  return std::filesystem::path(path).is_absolute();
+#else
+  return !path.empty() && path.front() == '/';
+#endif
+}
 
 constexpr uint32_t kMagic = 0x4e52544c;  // "LTRN", little endian.
 constexpr uint32_t kAotLocatorMagic =
@@ -373,7 +384,7 @@ Expected<TensorRtStepFeed> ReadStepFeed(
 
 Expected<void> ValidateWeightStore(const TensorRtWeightStore& store) {
   const uint64_t granule = store.granule;
-  if (store.source_path.empty() || store.source_path.front() != '/' ||
+  if (!IsAbsoluteFilePath(store.source_path) ||
       absl::StrContains(store.source_path, '\0') || granule == 0 ||
       (granule & (granule - 1)) != 0 || store.weight_data_size == 0 ||
       store.weight_data_size % granule != 0 || store.segments.empty()) {
@@ -1111,7 +1122,7 @@ TensorRtArtifactFingerprint FingerprintTensorRtAotArtifact(const void* data,
 
 Expected<std::vector<uint8_t>> PackTensorRtAotLocator(
     const TensorRtAotLocator& locator) {
-  if (locator.path.empty() || locator.path.front() != '/' ||
+  if (!IsAbsoluteFilePath(locator.path) ||
       absl::StrContains(locator.path, '\0') || locator.artifact_size == 0 ||
       locator.version != kTensorRtAotLocatorVersion ||
       locator.path.size() > std::numeric_limits<uint32_t>::max()) {
@@ -1187,7 +1198,7 @@ Expected<std::optional<TensorRtAotLocator>> TryParseTensorRtAotLocator(
       locator.file_identity = identity;
     }
   }
-  if (locator.path.empty() || locator.path.front() != '/' ||
+  if (!IsAbsoluteFilePath(locator.path) ||
       absl::StrContains(locator.path, '\0') || locator.artifact_size == 0 ||
       cur != end) {
     return Error(kLiteRtStatusErrorInvalidArgument,

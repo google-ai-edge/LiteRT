@@ -15,9 +15,13 @@
 #include "litert/vendors/nvidia/dispatch/aot_artifact.h"
 
 #include <fcntl.h>
+#ifndef _WIN32
 #include <sys/mman.h>
+#endif
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <cerrno>
@@ -31,6 +35,17 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/vendors/nvidia/windows_compat.h"
+
+#ifdef _WIN32
+#define fstat NvidiaFstat
+#define open NvidiaOpen
+#define close _close
+#define unlink NvidiaUnlink
+#define fsync _commit
+#define getpid _getpid
+#define fdopen _fdopen
+#endif
 
 namespace litert::nvidia {
 namespace {
@@ -41,7 +56,7 @@ struct ValidatedAotArtifact {
   TensorRtArtifactFingerprint fingerprint;
 };
 
-TensorRtAotFileIdentity FileIdentity(const struct stat& stat_buffer) {
+TensorRtAotFileIdentity FileIdentity(const NvidiaFileStat& stat_buffer) {
   return {static_cast<uint64_t>(stat_buffer.st_dev),
           static_cast<uint64_t>(stat_buffer.st_ino),
           static_cast<int64_t>(stat_buffer.st_mtim.tv_sec),
@@ -76,7 +91,7 @@ Expected<TensorRtArtifactFingerprint> FingerprintOpenArtifact(
     while (received < requested) {
       const ssize_t result =
           pread(fd, buffer.data() + received, requested - received,
-                static_cast<off_t>(offset + received));
+                static_cast<int64_t>(offset + received));
       if (result < 0 && errno == EINTR) {
         continue;
       }
@@ -89,8 +104,8 @@ Expected<TensorRtArtifactFingerprint> FingerprintOpenArtifact(
       received += static_cast<size_t>(result);
     }
     builder.Add(buffer.data(), received);
-    posix_fadvise(fd, static_cast<off_t>(offset), static_cast<off_t>(received),
-                  POSIX_FADV_DONTNEED);
+    posix_fadvise(fd, static_cast<int64_t>(offset),
+                  static_cast<int64_t>(received), POSIX_FADV_DONTNEED);
     offset += received;
   }
   return builder.Finish();
@@ -123,7 +138,7 @@ Expected<std::unique_ptr<MappedAotArtifact>> MappedAotArtifact::Open(
                  "Failed to open TensorRT AOT artifact " + locator.path + ": " +
                      std::strerror(errno));
   }
-  struct stat stat_buffer{};
+  NvidiaFileStat stat_buffer{};
   if (fstat(fd, &stat_buffer) != 0) {
     const int saved_errno = errno;
     close(fd);
@@ -182,7 +197,7 @@ Expected<std::unique_ptr<MappedAotArtifact>> MappedAotArtifact::Open(
     close(fd);
     return actual_fingerprint.Error();
   }
-  struct stat validated_stat{};
+  NvidiaFileStat validated_stat{};
   if (fstat(fd, &validated_stat) != 0) {
     const int saved_errno = errno;
     munmap(data, size);

@@ -114,6 +114,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -162,6 +163,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -212,6 +214,7 @@ cc_library(
     hdrs = ["moe_plugin.h"],
     tags = ["manual"],
     deps = [
+        "//litert/vendors/nvidia:windows_compat",
         "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",
@@ -258,6 +261,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -278,6 +282,7 @@ cc_library(
     hdrs = ["weight_store_builder.h"],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -286,6 +291,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/vendors/nvidia:bytecode",
+        "//litert/vendors/nvidia:windows_compat",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -296,6 +302,7 @@ cc_test(
     tags = ["no_oss"],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -354,6 +361,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/vendors/nvidia:tensorrt_features",
         "//litert/vendors/nvidia:tensorrt_logger",
+        "//litert/vendors/nvidia:windows_compat",
         "@com_google_absl//absl/types:span",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",
@@ -375,6 +383,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -424,6 +433,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -462,6 +472,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -489,15 +500,23 @@ litert_dynamic_lib(
     srcs = ["compiler_plugin.cc"],
     hdrs = ["//litert/vendors/c:litert_compiler_plugin.h"],
     export_litert_only = True,
-    linkopts = [
-        "-Wl,-rpath,$$ORIGIN",
-        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
-    ],
+    linkopts = select({
+        "//litert:windows": [],
+        "//conditions:default": [
+            "-Wl,-rpath,$$ORIGIN",
+            "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        ],
+    }),
+    local_defines = select({
+        "//litert:windows": ["LITERT_COMPILE_LIBRARY"],
+        "//conditions:default": [],
+    }),
     shared_lib_name = "compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_Nvidia.so",
     tags = ["manual"],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -529,6 +548,7 @@ litert_dynamic_lib(
         "//litert/vendors/nvidia:cache_layout",
         "//litert/vendors/nvidia:cuda_vmm",
         "//litert/vendors/nvidia:memory_profile",
+        "//litert/vendors/nvidia:windows_compat",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:string_view",

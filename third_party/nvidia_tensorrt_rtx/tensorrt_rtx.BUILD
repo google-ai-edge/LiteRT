@@ -19,12 +19,22 @@ package(default_visibility = ["//visibility:public"])
 
 cc_import(
     name = "tensorrt_rtx_shared",
-    shared_library = "lib/libtensorrt_rtx.so",
+    interface_library = select({
+        "@platforms//os:windows": "lib/tensorrt_rtx_1_7.lib",
+        "//conditions:default": None,
+    }),
+    shared_library = select({
+        "@platforms//os:windows": "bin/tensorrt_rtx_1_7.dll",
+        "//conditions:default": "lib/libtensorrt_rtx.so",
+    }),
 )
 
 cc_library(
     name = "tensorrt_rtx_headers",
-    hdrs = glob(["include/Nv*.h"]),
+    hdrs = glob([
+        "include/Nv*.h",
+        "include/impl/**",
+    ]),
     includes = ["include"],
     deps = ["@local_cuda//:cuda_headers"],
 )

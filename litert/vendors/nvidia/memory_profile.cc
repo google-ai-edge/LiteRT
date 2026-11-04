@@ -24,6 +24,16 @@
 #include "driver_types.h"
 #include "litert/c/internal/litert_logging.h"
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+// psapi.h needs the declarations of windows.h.
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib")
+#endif
+
 namespace litert::nvidia {
 
 bool MemoryProfilingEnabled() {
@@ -34,6 +44,14 @@ bool MemoryProfilingEnabled() {
 MemoryProfileSnapshot CaptureMemoryProfileSnapshot() {
   MemoryProfileSnapshot snapshot;
 
+#ifdef _WIN32
+  PROCESS_MEMORY_COUNTERS counters{};
+  if (GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters))) {
+    snapshot.cpu_rss_bytes = counters.WorkingSetSize;
+    snapshot.cpu_peak_rss_bytes = counters.PeakWorkingSetSize;
+    snapshot.cpu_available = true;
+  }
+#else
   if (std::FILE* status = std::fopen("/proc/self/status", "r");
       status != nullptr) {
     char line[256];
@@ -50,6 +68,8 @@ MemoryProfileSnapshot CaptureMemoryProfileSnapshot() {
     snapshot.cpu_peak_rss_bytes = peak_rss_kb << 10;
     snapshot.cpu_available = rss_kb != 0 || peak_rss_kb != 0;
   }
+
+#endif
 
   snapshot.cuda_available =
       cudaMemGetInfo(&snapshot.cuda_device_free_bytes,

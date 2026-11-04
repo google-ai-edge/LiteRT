@@ -51,9 +51,13 @@ cc_library(
     name = "cuda_vmm",
     srcs = ["cuda_vmm.cc"],
     hdrs = ["cuda_vmm.h"],
-    linkopts = ["-ldl"],
+    linkopts = select({
+        "//litert:windows": [],
+        "//conditions:default": ["-ldl"],
+    }),
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -75,6 +79,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -112,6 +117,7 @@ cc_test(
     tags = ["manual"],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -135,4 +141,21 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "@local_tensorrt_rtx//:tensorrt_rtx_headers",
     ],
+)
+
+cc_library(
+    name = "windows_compat",
+    hdrs = ["windows_compat.h"],
+)
+
+cc_test(
+    name = "windows_compat_test",
+    srcs = ["windows_compat_test.cc"],
+    tags = [
+        "nobuilder",
+        "notap",
+        "windows",
+    ],
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = [":windows_compat"],
 )

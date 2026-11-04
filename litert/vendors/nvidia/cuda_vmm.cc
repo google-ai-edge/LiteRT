@@ -14,7 +14,14 @@
 
 #include "litert/vendors/nvidia/cuda_vmm.h"
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 
 #include <cstdint>
 #include <memory>
@@ -49,17 +56,26 @@ struct DriverApi {
 
 const DriverApi* GetDriverApi() {
   static const DriverApi* const api = []() -> const DriverApi* {
+#ifdef _WIN32
+    HMODULE library =
+        LoadLibraryExW(L"nvcuda.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+#else
     void* library = dlopen("libcuda.so.1", RTLD_NOW | RTLD_LOCAL);
     if (library == nullptr) {
       library = dlopen("libcuda.so", RTLD_NOW | RTLD_LOCAL);
     }
+#endif
     if (library == nullptr) {
       return nullptr;
     }
     auto* loaded = new DriverApi();
     const auto resolve = [&](auto& function, const char* name) {
       function = reinterpret_cast<std::decay_t<decltype(function)>>(
+#ifdef _WIN32
+          GetProcAddress(library, name));
+#else
           dlsym(library, name));
+#endif
       return function != nullptr;
     };
     if (!resolve(loaded->get_allocation_granularity,

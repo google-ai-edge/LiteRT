@@ -16,7 +16,9 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -39,6 +41,17 @@
 #include "driver_types.h"
 #include "NvInferRuntime.h"
 #include "litert/vendors/nvidia/trtllm/int4_block_gemv.h"
+#include "litert/vendors/nvidia/windows_compat.h"
+
+#ifdef _WIN32
+#define fstat NvidiaFstat
+#define open NvidiaOpen
+#define close _close
+#define unlink NvidiaUnlink
+#define fsync _commit
+#define getpid _getpid
+#define fdopen _fdopen
+#endif
 
 namespace litert::nvidia {
 namespace {
@@ -312,7 +325,7 @@ class FileReader {
       *error = "cannot open " + source.model_path + ": " + std::strerror(errno);
       return false;
     }
-    struct stat info{};
+    NvidiaFileStat info{};
     if (fstat(fd_, &info) != 0 || !S_ISREG(info.st_mode)) {
       *error = "cannot inspect " + source.model_path;
       return false;
@@ -328,7 +341,7 @@ class FileReader {
     auto* out = static_cast<uint8_t*>(buffer);
     for (size_t done = 0; done < bytes;) {
       const ssize_t result = pread(fd_, out + done, bytes - done,
-                                   static_cast<off_t>(offset + done));
+                                   static_cast<int64_t>(offset + done));
       if (result < 0 && errno == EINTR) continue;
       if (result <= 0) {
         *error =

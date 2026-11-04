@@ -14,7 +14,9 @@
 
 #include "litert/vendors/nvidia/dispatch/runtime_cache.h"
 
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 #include <cerrno>
 #include <cstdio>
@@ -26,6 +28,17 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "NvInferRuntime.h"
+#include "litert/vendors/nvidia/windows_compat.h"
+
+#ifdef _WIN32
+#define fstat NvidiaFstat
+#define open NvidiaOpen
+#define close _close
+#define unlink NvidiaUnlink
+#define fsync _commit
+#define getpid _getpid
+#define fdopen _fdopen
+#endif
 
 namespace litert::nvidia {
 namespace {
@@ -85,7 +98,7 @@ Expected<void> PersistValidatedRuntimeCache(nvinfer1::IRuntimeConfig& config,
     unlink(temporary_path.c_str());
     return error;
   }
-  if (std::rename(temporary_path.c_str(), path.c_str()) != 0) {
+  if (NvidiaRename(temporary_path.c_str(), path.c_str()) != 0) {
     const Error error = FileError("Replacing TensorRT runtime cache");
     unlink(temporary_path.c_str());
     return error;
