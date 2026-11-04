@@ -25,6 +25,7 @@
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
+#include "ml_drift/common/access_type.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
@@ -248,6 +249,16 @@ TEST(MoeExpertsKernelTest,
       /*model_dim=*/16, /*hidden_dim=*/32,
       ir::MoeExpertsAttributes::WeightType::kInt4, /*num_blocks=*/2, &gpu_model,
       gpu_info);
+
+  // `GpuModelBuilder` leaves `GPUObjectDescriptor::access_type_` uninitialized
+  // on model-level tensors, but `Encode` serializes it. Set it explicitly so
+  // the round trip does not read uninitialized memory (MSan).
+  for (auto& [id, desc] : gpu_model.tensors) {
+    desc.SetAccess(::ml_drift::AccessType::kReadWrite);
+  }
+  for (auto& [id, desc] : gpu_model.const_tensors) {
+    desc.SetAccess(::ml_drift::AccessType::kRead);
+  }
 
   flatbuffers::FlatBufferBuilder builder;
   builder.Finish(::ml_drift::Encode(gpu_model, &builder));
