@@ -97,6 +97,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -118,6 +119,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -139,6 +141,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -160,6 +163,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -182,6 +186,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -203,6 +208,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -224,6 +230,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -245,6 +252,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -266,6 +274,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -287,6 +296,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),

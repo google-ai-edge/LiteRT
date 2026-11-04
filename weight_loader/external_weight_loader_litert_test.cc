@@ -14,6 +14,10 @@
 
 #include "weight_loader/external_weight_loader_litert.h"
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -183,7 +187,7 @@ ModelBuffer BuildModel(absl::string_view group_name) {
 }
 
 ModelBuffer BuildModelWithDuplicateExternalBuffers(
-    absl::string_view group_name) {
+    absl::string_view group_name, uint64_t second_offset = kSliceOffset) {
   flatbuffers::FlatBufferBuilder builder;
 
   const std::vector<int32_t> tensor_shape = {
@@ -234,7 +238,7 @@ ModelBuffer BuildModelWithDuplicateExternalBuffers(
       builder, kExternalBufferId, kGroupId, kSliceOffset, kSliceLengthBytes,
       builder.CreateString(""));
   auto ext_buffer_1 = tflite::CreateExternalBuffer(
-      builder, kDuplicateExternalBufferId, kGroupId, kSliceOffset,
+      builder, kDuplicateExternalBufferId, kGroupId, second_offset,
       kSliceLengthBytes, builder.CreateString(""));
   auto ext_buffers_vec = builder.CreateVector(
       std::vector<flatbuffers::Offset<tflite::ExternalBuffer>>{ext_buffer_0,
@@ -462,6 +466,94 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromScopedFile) {
   auto expected = ExpectedSlice(payload);
   ExpectHostBufferEquals(access, expected);
 }
+
+#if defined(_WIN32)
+TEST(ExternalWeightLoaderTest, ScopedSlicesShareZeroOffsetViewOnWindows) {
+  constexpr uint64_t kSectionOffset = 65536 + 128;
+  constexpr uint64_t kSecondOffset = 65536;
+  constexpr absl::string_view kGroupName = "mapped_group";
+  std::string payload(3 * 65536, 'x');
+  payload.replace(kSectionOffset, 8, "first123");
+  payload.replace(kSectionOffset + kSecondOffset, 8, "second12");
+  auto model =
+      BuildModelWithDuplicateExternalBuffers(kGroupName, kSecondOffset);
+  auto file = ScopedFile::Open(WriteWeightsFile("whole_mapping.bin", payload));
+  ASSERT_TRUE(file.ok());
+  ScopedWeightSource::SectionMap sections;
+  sections.emplace(std::string(kGroupName),
+                   ScopedWeightSection{.offset = kSectionOffset,
+                                       .length = kSecondOffset + 8});
+  auto source = std::make_unique<ScopedWeightSource>(std::move(*file),
+                                                     std::move(sections));
+  auto loader = CreateLiteRtWeightLoader(LrtGetRuntimeContext(), model.model(),
+                                         std::nullopt, std::move(source));
+  WeightAccessRequest request;
+  request.cpu = true;
+  ASSERT_EQ(loader->PrepareAccess(request, nullptr), kLiteRtStatusOk);
+  void* allocation_base = nullptr;
+  for (auto [id, offset] : {std::pair<uint32_t, uint64_t>{kExternalBufferId, 0},
+                            {kDuplicateExternalBufferId, kSecondOffset}}) {
+    const auto* access = loader->GetExternalWeightByBuffer(id);
+    ASSERT_NE(access, nullptr);
+    void* data = nullptr;
+    ASSERT_EQ(
+        LrtGetRuntimeContext()->lock_tensor_buffer(
+            access->GetHostBuffer(), &data, kLiteRtTensorBufferLockModeRead),
+        kLiteRtStatusOk);
+    MEMORY_BASIC_INFORMATION region{};
+    ASSERT_NE(VirtualQuery(data, &region, sizeof(region)), 0);
+    EXPECT_EQ(region.Type, MEM_MAPPED);
+    EXPECT_EQ(
+        static_cast<char*>(data) - static_cast<char*>(region.AllocationBase),
+        kSectionOffset + offset);
+    MEMORY_BASIC_INFORMATION whole_view{};
+    ASSERT_NE(
+        VirtualQuery(region.AllocationBase, &whole_view, sizeof(whole_view)),
+        0);
+    EXPECT_GE(whole_view.RegionSize, payload.size());
+    if (allocation_base) EXPECT_EQ(region.AllocationBase, allocation_base);
+    allocation_base = region.AllocationBase;
+    EXPECT_EQ(std::memcmp(data, payload.data() + kSectionOffset + offset, 8),
+              0);
+    ASSERT_EQ(
+        LrtGetRuntimeContext()->unlock_tensor_buffer(access->GetHostBuffer()),
+        kLiteRtStatusOk);
+  }
+  ASSERT_EQ(loader->ReleaseExternalWeightByBuffer(kExternalBufferId),
+            kLiteRtStatusOk);
+  ExpectHostBufferEquals(
+      loader->GetExternalWeightByBuffer(kDuplicateExternalBufferId),
+      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>("second12"), 8));
+  ASSERT_EQ(loader->PrepareAccessForBuffer(kExternalBufferId, request, nullptr),
+            kLiteRtStatusOk);
+  ExpectHostBufferEquals(
+      loader->GetExternalWeightByBuffer(kExternalBufferId),
+      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>("first123"), 8));
+  loader.reset();
+  MEMORY_BASIC_INFORMATION released{};
+  ASSERT_NE(VirtualQuery(allocation_base, &released, sizeof(released)), 0);
+  EXPECT_EQ(released.State, MEM_FREE);
+}
+
+TEST(ExternalWeightLoaderTest, RejectsScopedSectionPastWindowsFileEnd) {
+  constexpr absl::string_view kGroupName = "truncated_group";
+  auto model = BuildModel(kGroupName);
+  auto file =
+      ScopedFile::Open(WriteWeightsFile("truncated_mapping.bin", "12345678"));
+  ASSERT_TRUE(file.ok());
+  ScopedWeightSource::SectionMap sections;
+  sections.emplace(std::string(kGroupName),
+                   ScopedWeightSection{.offset = 65536, .length = 8});
+  auto source = std::make_unique<ScopedWeightSource>(std::move(*file),
+                                                     std::move(sections));
+  auto loader = CreateLiteRtWeightLoader(LrtGetRuntimeContext(), model.model(),
+                                         std::nullopt, std::move(source));
+  WeightAccessRequest request;
+  request.cpu = true;
+  EXPECT_EQ(loader->PrepareAccess(request, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+}
+#endif
 
 TEST(ExternalWeightLoaderTest, ReleasesAndReloadsSingleBufferAccess) {
   constexpr absl::string_view kGroupName = "weights.bin";

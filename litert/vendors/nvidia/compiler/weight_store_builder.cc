@@ -16,7 +16,9 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <cerrno>
@@ -35,6 +37,22 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/nvidia/bytecode.h"
+#include "litert/vendors/nvidia/windows_compat.h"
+
+#ifdef _WIN32
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib")
+#endif
+
+#ifdef _WIN32
+#define fstat NvidiaFstat
+#define open NvidiaOpen
+#define close _close
+#define unlink NvidiaUnlink
+#define fsync _commit
+#define getpid _getpid
+#define fdopen _fdopen
+#endif
 
 namespace litert::nvidia {
 namespace {
@@ -64,9 +82,9 @@ TensorRtWeightStoreBuilder::Create(const std::string& model_path,
                  "Failed to resolve TensorRT weight source " + model_path +
                      ": " + std::strerror(errno));
   }
-  struct stat stat_buffer{};
-  if (stat(resolved, &stat_buffer) != 0 || !S_ISREG(stat_buffer.st_mode) ||
-      stat_buffer.st_size <= 0) {
+  NvidiaFileStat stat_buffer{};
+  if (NvidiaStat(resolved, &stat_buffer) != 0 ||
+      !S_ISREG(stat_buffer.st_mode) || stat_buffer.st_size <= 0) {
     return Error(kLiteRtStatusErrorFileIO,
                  "TensorRT weight source is not a readable regular file: " +
                      std::string(resolved));
@@ -91,6 +109,47 @@ TensorRtWeightStoreBuilder::Create(const std::string& model_path,
   builder->granule_ = granule;
   builder->segment_bytes_ = RoundUp(segment_bytes, granule);
 
+#ifdef _WIN32
+  // LiteRT maps whole model files at offset zero. Require a full-size view;
+  // then verify every weight range against the source in SourceOffset. This
+  // preserves COW correctness without Linux /proc/self/pagemap.
+  char source_name[PATH_MAX];
+  if (!GetFinalPathNameByHandleA(
+          reinterpret_cast<HANDLE>(_get_osfhandle(builder->source_fd_)),
+          source_name, PATH_MAX, FILE_NAME_NORMALIZED | VOLUME_NAME_NT)) {
+    return Error(kLiteRtStatusErrorFileIO, "Cannot resolve mapped source name");
+  }
+  uintptr_t cursor = 0;
+  MEMORY_BASIC_INFORMATION region{};
+  while (
+      VirtualQuery(reinterpret_cast<void*>(cursor), &region, sizeof(region))) {
+    const uintptr_t next =
+        reinterpret_cast<uintptr_t>(region.BaseAddress) + region.RegionSize;
+    if (region.Type == MEM_MAPPED &&
+        region.BaseAddress == region.AllocationBase) {
+      char name[PATH_MAX];
+      if (GetMappedFileNameA(GetCurrentProcess(), region.BaseAddress, name,
+                             PATH_MAX) &&
+          _stricmp(name, source_name) == 0) {
+        uintptr_t view_end = next;
+        MEMORY_BASIC_INFORMATION tail{};
+        while (VirtualQuery(reinterpret_cast<void*>(view_end), &tail,
+                            sizeof(tail)) &&
+               tail.AllocationBase == region.AllocationBase) {
+          view_end =
+              reinterpret_cast<uintptr_t>(tail.BaseAddress) + tail.RegionSize;
+        }
+        const uintptr_t base =
+            reinterpret_cast<uintptr_t>(region.AllocationBase);
+        if (view_end - base >= builder->source_size_) {
+          builder->mappings_.push_back({base, base + builder->source_size_, 0});
+        }
+      }
+    }
+    if (next <= cursor) break;
+    cursor = next;
+  }
+#else
   // The mappings of the file in this process: "begin-end perms offset
   // major:minor inode path". The device numbers of the listing can differ
   // from st_dev (overlay and btrfs mounts), so the mappings are matched by
@@ -124,6 +183,7 @@ TensorRtWeightStoreBuilder::Create(const std::string& model_path,
         {static_cast<uintptr_t>(begin), static_cast<uintptr_t>(end), offset});
   }
   std::fclose(maps);
+#endif
   if (builder->mappings_.empty()) {
     return Error(kLiteRtStatusErrorNotFound,
                  "The model file is not memory-mapped in this process: " +
@@ -144,7 +204,7 @@ bool TensorRtWeightStoreBuilder::EqualsSource(absl::Span<const uint8_t> bytes,
   for (size_t read = 0; read < file.size();) {
     const ssize_t result =
         pread(source_fd_, file.data() + read, file.size() - read,
-              static_cast<off_t>(offset + read));
+              static_cast<int64_t>(offset + read));
     if (result < 0 && errno == EINTR) {
       continue;
     }
@@ -182,6 +242,48 @@ Expected<uint64_t> TensorRtWeightStoreBuilder::SourceOffset(
   // swapped out. A written page can still hold what the file holds, when
   // other bytes of the page were written or the same bytes were written
   // back, so its part of the weights is compared with the file.
+#ifdef _WIN32
+  // Resident shared pages still belong to the file. Private or nonresident
+  // pages need comparison: Windows does not expose the paged-out COW state.
+  bool unmodified = true;
+  const uintptr_t page_size = static_cast<uintptr_t>(sysconf(_SC_PAGESIZE));
+  const uintptr_t first_page = begin / page_size;
+  const uintptr_t last_page = (end - 1) / page_size;
+  std::vector<PSAPI_WORKING_SET_EX_INFORMATION> pages(
+      std::min<uintptr_t>(last_page - first_page + 1, 1 << 15));
+  for (uintptr_t page = first_page; page <= last_page && unmodified;) {
+    const size_t count =
+        std::min<uintptr_t>(last_page - page + 1, pages.size());
+    for (size_t i = 0; i < count; ++i) {
+      pages[i] = {};
+      pages[i].VirtualAddress = reinterpret_cast<void*>((page + i) * page_size);
+    }
+    const bool queried =
+        QueryWorkingSetEx(GetCurrentProcess(), pages.data(),
+                          static_cast<DWORD>(count * sizeof(pages[0]))) != 0;
+    for (size_t i = 0; i < count && unmodified;) {
+      const auto shared = [&](size_t at) {
+        return queried && pages[at].VirtualAttributes.Valid &&
+               pages[at].VirtualAttributes.Shared;
+      };
+      if (shared(i)) {
+        ++i;
+        continue;
+      }
+      size_t through = i + 1;
+      while (through < count && (through - i) * page_size < (1 << 20) &&
+             !shared(through))
+        ++through;
+      const uintptr_t part_begin = std::max((page + i) * page_size, begin);
+      const uintptr_t part_end = std::min((page + through) * page_size, end);
+      unmodified = EqualsSource(
+          {reinterpret_cast<const uint8_t*>(part_begin), part_end - part_begin},
+          offset + part_begin - begin);
+      i = through;
+    }
+    page += count;
+  }
+#else
   const int pagemap = open("/proc/self/pagemap", O_RDONLY | O_CLOEXEC);
   if (pagemap < 0) {
     return Error(kLiteRtStatusErrorNotFound,
@@ -201,7 +303,7 @@ Expected<uint64_t> TensorRtWeightStoreBuilder::SourceOffset(
         std::min<uint64_t>(last_page - page + 1, entries.size());
     const ssize_t wanted = static_cast<ssize_t>(count * sizeof(uint64_t));
     if (pread(pagemap, entries.data(), wanted,
-              static_cast<off_t>(page * sizeof(uint64_t))) != wanted) {
+              static_cast<int64_t>(page * sizeof(uint64_t))) != wanted) {
       unmodified = false;
       break;
     }
@@ -224,6 +326,7 @@ Expected<uint64_t> TensorRtWeightStoreBuilder::SourceOffset(
     page += count;
   }
   close(pagemap);
+#endif
   if (!unmodified) {
     return Error(kLiteRtStatusErrorNotFound,
                  "The weights were modified after the model file was mapped");

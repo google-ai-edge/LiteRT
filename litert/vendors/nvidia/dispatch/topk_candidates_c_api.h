@@ -25,12 +25,12 @@ extern "C" {
 typedef void* LiteRtDispatchNvidiaTopKCandidates;
 
 // The largest k a selector takes (1024).
-int32_t LiteRtDispatchNvidiaTopKCandidatesMaxK(void);
+LITERT_CAPI_EXPORT int32_t LiteRtDispatchNvidiaTopKCandidatesMaxK(void);
 
-LiteRtStatus LiteRtDispatchNvidiaTopKCandidatesCreate(
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchNvidiaTopKCandidatesCreate(
     LiteRtDispatchNvidiaTopKCandidates* selector);
 
-void LiteRtDispatchNvidiaTopKCandidatesDestroy(
+LITERT_CAPI_EXPORT void LiteRtDispatchNvidiaTopKCandidatesDestroy(
     LiteRtDispatchNvidiaTopKCandidates selector);
 
 // Row flags of LiteRtDispatchNvidiaTopKCandidatesSelect: the row holds a
@@ -50,7 +50,7 @@ void LiteRtDispatchNvidiaTopKCandidatesDestroy(
 // padded layouts) return kLiteRtStatusErrorUnsupported, so a caller can keep
 // its host sampler; a selection that fails an internal check returns
 // kLiteRtStatusErrorRuntimeFailure. No logits are modified.
-LiteRtStatus LiteRtDispatchNvidiaTopKCandidatesSelect(
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchNvidiaTopKCandidatesSelect(
     LiteRtDispatchNvidiaTopKCandidates selector, LiteRtTensorBuffer logits,
     size_t rows, size_t vocab_size, int32_t k, int32_t* ids, float* values,
     int32_t* row_flags);

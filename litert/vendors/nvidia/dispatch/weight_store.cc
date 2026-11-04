@@ -16,7 +16,9 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -41,6 +43,17 @@
 #include "litert/vendors/nvidia/cuda_vmm.h"
 #include "litert/vendors/nvidia/tensorrt_features.h"
 #include "NvInferRuntime.h"
+#include "litert/vendors/nvidia/windows_compat.h"
+
+#ifdef _WIN32
+#define fstat NvidiaFstat
+#define open NvidiaOpen
+#define close _close
+#define unlink NvidiaUnlink
+#define fsync _commit
+#define getpid _getpid
+#define fdopen _fdopen
+#endif
 
 namespace litert::nvidia {
 namespace {
@@ -111,8 +124,9 @@ class Uploader {
           static_cast<size_t>(std::min<uint64_t>(size - done, kChunkBytes));
       LITERT_ASSIGN_OR_RETURN(uint8_t* buffer, Next());
       for (size_t read = 0; read < bytes;) {
-        const ssize_t result = pread(fd, buffer + read, bytes - read,
-                                     static_cast<off_t>(offset + done + read));
+        const ssize_t result =
+            pread(fd, buffer + read, bytes - read,
+                  static_cast<int64_t>(offset + done + read));
         if (result < 0 && errno == EINTR) {
           continue;
         }
@@ -128,8 +142,8 @@ class Uploader {
       // page cache drop its own. Keeping it would save the next process a
       // read of the file, but a host that is short of memory pages a guest's
       // cache out (WSL2), and getting it back is slower than the read.
-      posix_fadvise(fd, static_cast<off_t>(offset + done),
-                    static_cast<off_t>(bytes), POSIX_FADV_DONTNEED);
+      posix_fadvise(fd, static_cast<int64_t>(offset + done),
+                    static_cast<int64_t>(bytes), POSIX_FADV_DONTNEED);
       LITERT_RETURN_IF_ERROR(Send(target + done, bytes));
       done += bytes;
     }
@@ -209,7 +223,7 @@ class SourceFile {
                    "Failed to open the weight source " + store.source_path +
                        ": " + std::strerror(errno));
     }
-    struct stat stat_buffer{};
+    NvidiaFileStat stat_buffer{};
     if (fstat(fd_, &stat_buffer) != 0 || !S_ISREG(stat_buffer.st_mode)) {
       return Error(kLiteRtStatusErrorFileIO,
                    "Failed to inspect the weight source " + store.source_path);

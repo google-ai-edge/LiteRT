@@ -33,6 +33,14 @@ def cuda_library(name, srcs, hdrs = [], deps = [], linkstatic = True, **kwargs):
         name = name,
         srcs = srcs + hdrs,
         outs = [archive],
+        cmd_bat = " ".join([
+            "$(execpath @local_cuda//:bin/nvcc.exe) --lib -std=c++17 -O3 -Xcompiler=/MD",
+            "-gencode=arch=compute_80,code=sm_87 -gencode=arch=compute_80,code=compute_80",
+            "-gencode=arch=compute_120,code=sm_120",
+            "-I. -Iexternal/litert -Iexternal/local_cuda/include",
+            source_locations,
+            '-o "$@"',
+        ]),
         cmd = " ".join([
             "NVCC=\"$$(readlink -f $(location @local_cuda//:bin/nvcc))\";",
             "ARCH_FLAGS=\"-gencode=arch=compute_80,code=sm_87 -gencode=arch=compute_80,code=compute_80\";",
@@ -45,7 +53,6 @@ def cuda_library(name, srcs, hdrs = [], deps = [], linkstatic = True, **kwargs):
         tools = deps + [
             "@local_cuda//:headers",
             "@local_cuda//:nvcc_tools",
-            "@local_cuda//:bin/nvcc",
-        ],
+        ] + select({"@platforms//os:windows": ["@local_cuda//:bin/nvcc.exe"], "//conditions:default": ["@local_cuda//:bin/nvcc"]}),
         **kwargs
     )

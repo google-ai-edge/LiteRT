@@ -26,6 +26,15 @@
 namespace litert::nvidia {
 namespace {
 
+// The platform's absolute form of a POSIX absolute path: Windows needs a drive.
+std::string NativeAbsolutePath(const std::string& posix_path) {
+#ifdef _WIN32
+  return "C:" + posix_path;
+#else
+  return posix_path;
+#endif
+}
+
 void AppendLe32(std::vector<uint8_t>& bytes, uint32_t value) {
   for (int shift = 0; shift < 32; shift += 8) {
     bytes.push_back(static_cast<uint8_t>(value >> shift));
@@ -302,7 +311,7 @@ TEST(TensorRtBytecodeTest, SharedWeightShardRejectsInvalidReferences) {
 TensorRtWeightStore MakeWeightStore(const std::vector<uint8_t>& run_data) {
   constexpr uint64_t kGranule = 2 << 20;
   TensorRtWeightStore store;
-  store.source_path = "/models/gemma.litertlm";
+  store.source_path = NativeAbsolutePath("/models/gemma.litertlm");
   store.source_size = 1 << 30;
   store.source_identity = {11, 22, 33, 44, 55, 66};
   store.granule = kGranule;
@@ -324,6 +333,44 @@ TensorRtWeightStore MakeWeightStore(const std::vector<uint8_t>& run_data) {
                         {3 * kGranule + 4096, run_data.data(), 4}};
   return store;
 }
+
+#ifdef _WIN32
+TEST(TensorRtBytecodeTest, WindowsAbsolutePathsRoundTrip) {
+  const std::vector<uint8_t> run_data = {1, 2, 3, 4, 5, 6, 7};
+  const std::vector<uint8_t> engine = {9, 8, 7};
+  for (const std::string path :
+       {"C:/models/gemma.litertlm", R"(\\?\C:\models\gemma.litertlm)",
+        "//?/C:/models/gemma.litertlm", R"(\\server\share\gemma.litertlm)"}) {
+    auto store = MakeWeightStore(run_data);
+    store.source_path = path;
+    TensorRtBundleEntry entry;
+    entry.function_name = "partition_0";
+    entry.input_names = {"input"};
+    entry.output_names = {"output"};
+    entry.engine_data = engine.data();
+    entry.engine_size = engine.size();
+    entry.weight_store = &store;
+    auto shard = PackTensorRtSharedWeightShard({}, entry);
+    ASSERT_TRUE(shard.HasValue()) << shard.Error().Message();
+    auto parsed =
+        ParseTensorRtBytecode(shard->data(), shard->size(), "partition_0");
+    ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
+    ASSERT_TRUE(parsed->weight_store.has_value());
+    EXPECT_EQ(parsed->weight_store->source_path, path);
+    TensorRtAotLocator locator{path, 123, {7, 11}};
+    auto packed = PackTensorRtAotLocator(locator);
+    ASSERT_TRUE(packed.HasValue()) << packed.Error().Message();
+    auto restored = TryParseTensorRtAotLocator(packed->data(), packed->size());
+    ASSERT_TRUE(restored.HasValue()) << restored.Error().Message();
+    ASSERT_TRUE(restored->has_value());
+    EXPECT_EQ(restored->value().path, path);
+  }
+  EXPECT_FALSE(
+      PackTensorRtAotLocator({"relative/file.bin", 1, {2, 3}}).HasValue());
+  EXPECT_FALSE(
+      PackTensorRtAotLocator({"C:relative.bin", 1, {2, 3}}).HasValue());
+}
+#endif
 
 TEST(TensorRtBytecodeTest, WeightStoreRoundTripsInAShard) {
   const std::vector<uint8_t> run_data = {1, 2, 3, 4, 5, 6, 7};
@@ -723,7 +770,7 @@ TEST(TensorRtBytecodeTest, SharedWeightBundleRejectsOverflowingInt4Count) {
 TEST(TensorRtBytecodeTest, AotLocatorRoundTrips) {
   const std::vector<uint8_t> artifact = {1, 3, 5, 7, 9};
   TensorRtAotLocator locator{
-      "/tmp/tensorrt/artifact.trt_aot", artifact.size(),
+      NativeAbsolutePath("/tmp/tensorrt/artifact.trt_aot"), artifact.size(),
       FingerprintTensorRtArtifact(artifact.data(), artifact.size()),
       TensorRtAotFileIdentity{/*device=*/3,
                               /*inode=*/5,
@@ -747,7 +794,7 @@ TEST(TensorRtBytecodeTest, AotLocatorRoundTrips) {
 
 TEST(TensorRtBytecodeTest, LegacyAotLocatorStillParsesWithoutFileIdentity) {
   constexpr uint32_t kAotLocatorMagic = 0x414e524c;
-  const std::string path = "/tmp/legacy.trt_aot";
+  const std::string path = NativeAbsolutePath("/tmp/legacy.trt_aot");
   std::vector<uint8_t> packed;
   AppendLe32(packed, kAotLocatorMagic);
   AppendLe32(packed, 1);  // Legacy locator version.
@@ -795,7 +842,8 @@ TEST(TensorRtBytecodeTest, AotLocatorRejectsRelativeAndTruncatedData) {
   TensorRtAotLocator relative{"artifact.trt_aot", 1, {2, 3}};
   EXPECT_FALSE(PackTensorRtAotLocator(relative).HasValue());
 
-  TensorRtAotLocator locator{"/tmp/artifact.trt_aot", 1, {2, 3}};
+  TensorRtAotLocator locator{
+      NativeAbsolutePath("/tmp/artifact.trt_aot"), 1, {2, 3}};
   auto packed = PackTensorRtAotLocator(locator);
   ASSERT_TRUE(packed.HasValue()) << packed.Error().Message();
   packed->pop_back();
@@ -813,7 +861,8 @@ TEST(TensorRtBytecodeTest, ArtifactFingerprintDependsOnAllBytes) {
 }
 
 TEST(TensorRtBytecodeTest, AotManifestRoundTrips) {
-  TensorRtAotLocator locator{"/tmp/artifact.trt_aot", 123, {7, 11}};
+  TensorRtAotLocator locator{
+      NativeAbsolutePath("/tmp/artifact.trt_aot"), 123, {7, 11}};
   auto packed_locator = PackTensorRtAotLocator(locator);
   ASSERT_TRUE(packed_locator.HasValue()) << packed_locator.Error().Message();
   TensorRtAotManifest manifest{
@@ -829,7 +878,8 @@ TEST(TensorRtBytecodeTest, AotManifestRoundTrips) {
 }
 
 TEST(TensorRtBytecodeTest, AotManifestRejectsInvalidIndexAndTruncation) {
-  TensorRtAotLocator locator{"/tmp/artifact.trt_aot", 123, {7, 11}};
+  TensorRtAotLocator locator{
+      NativeAbsolutePath("/tmp/artifact.trt_aot"), 123, {7, 11}};
   auto packed_locator = PackTensorRtAotLocator(locator);
   ASSERT_TRUE(packed_locator.HasValue()) << packed_locator.Error().Message();
   TensorRtAotManifest invalid{

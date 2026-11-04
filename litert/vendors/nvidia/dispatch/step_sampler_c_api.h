@@ -30,23 +30,28 @@ extern "C" {
 // with the temperature, its top-p prefix and its draw. k of 1 (or no call)
 // leaves the steps ahead on the argmax. Process-wide, for the one session a
 // process decodes with.
-LiteRtStatus LiteRtDispatchNvidiaStepSamplerSet(int32_t k, float p,
-                                                float temperature);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchNvidiaStepSamplerSet(int32_t k, float p, float temperature);
 
 // The uniform values in [0, 1) the host's generator will produce for its
 // next samples, in order: the first for the logits of the step the host
 // invokes next, and so on. The host pushes them after each sample it takes,
 // from a copy of its generator; up to 8 are kept. A step ahead whose draw is
 // not among them samples the argmax.
-LiteRtStatus LiteRtDispatchNvidiaStepSamplerPushUniforms(const double* uniforms,
-                                                         int32_t count);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchNvidiaStepSamplerPushUniforms(
+    const double* uniforms, int32_t count);
 
 // The decode invocations the host will still make after the one it makes
 // next (a bounded response: its output limit less the tokens decoded so
 // far, less one), told before each invocation: the steps ahead stop at that
 // count, so a response's end leaves none in flight for the next prefill to
-// wait on. UINT32_MAX, or no call, is no bound. Process-wide.
-LiteRtStatus LiteRtDispatchNvidiaStepFeedSetBudget(uint32_t remaining);
+// wait on. The invocation that follows takes the budget: one told nothing
+// is not bounded (UINT32_MAX is no bound). Process-wide, for the one session
+// a process decodes with at a time: two decoding at once share it, and a step
+// feed may then stop early or run past a response's end (its steps ahead are
+// still checked against the host's inputs).
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchNvidiaStepFeedSetBudget(uint32_t remaining);
 
 #ifdef __cplusplus
 }  // extern "C"
