@@ -3741,6 +3741,9 @@ class LiteRtDispatchInvocationContextT {
                  bytecode_.function_name.c_str(), what,
                  cudaGetErrorString(status));
       DestroyStepFeed();
+      // A setup at an invocation precedes the step's own launches, which
+      // check for an error left behind (the setup's, or its cleanup's).
+      static_cast<void>(cudaGetLastError());
       return Expected<void>();
     };
     std::string table_source;
