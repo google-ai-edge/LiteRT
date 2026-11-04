@@ -11,6 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 #include <cstdint>
 #include <initializer_list>
@@ -30,6 +33,7 @@
 #include "litert/core/model/model.h"
 #include "litert/vendors/qualcomm/compiler/transformations/attention_chunk_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/entry_embedding_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/gqa_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/legalize_int32_ops_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/mlp_quant_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
@@ -543,6 +547,20 @@ void SetConstWeights(LiteRtTensorT& tensor, absl::Span<const T> values) {
 }
 
 template <typename Opts>
+void SetOpOptionsForTest(const LiteRtCompilerContext* ctx, LiteRtOpT& op,
+                         Opts opts) {
+  LiteRtBuilderT setup_impl;
+  Builder setup(ctx, &setup_impl);
+  auto tmp_op = setup.BuildOp(op.OpCode(), {}, {});
+  EXPECT_TRUE(tmp_op.HasValue());
+  EXPECT_TRUE(setup.SetOpOptions(*tmp_op, std::move(opts)).HasValue());
+  litert::internal::SetTflOptions(
+      op, litert::internal::GetTflOptions(*tmp_op->Get()));
+  litert::internal::SetTflOptions2(
+      op, litert::internal::GetTflOptions2(*tmp_op->Get()));
+}
+
+template <typename Opts>
 LiteRtOpT& BuildOpWithOptions(const LiteRtCompilerContext* ctx,
                               LiteRtSubgraphT& subgraph, LiteRtOpCode code,
                               std::initializer_list<LiteRtTensor> ins,
@@ -552,16 +570,7 @@ LiteRtOpT& BuildOpWithOptions(const LiteRtCompilerContext* ctx,
   dest.SetOpCode(code);
   for (auto* t : ins) AttachInput(t, dest);
   for (auto* t : outs) AttachOutput(t, dest);
-
-  LiteRtBuilderT setup_impl;
-  Builder setup(ctx, &setup_impl);
-  auto tmp_op = setup.BuildOp(code, {}, {});
-  EXPECT_TRUE(tmp_op.HasValue());
-  EXPECT_TRUE(setup.SetOpOptions(*tmp_op, std::move(opts)).HasValue());
-  litert::internal::SetTflOptions(
-      dest, litert::internal::GetTflOptions(*tmp_op->Get()));
-  litert::internal::SetTflOptions2(
-      dest, litert::internal::GetTflOptions2(*tmp_op->Get()));
+  SetOpOptionsForTest(ctx, dest, std::move(opts));
   return dest;
 }
 
@@ -1707,6 +1716,363 @@ TEST(MLPInt8QuantTest, PositiveResidualNorm4DFolding) {
   EXPECT_EQ(rms_4d_count, 2);
   EXPECT_EQ(add_4d_count, 1);
 }
+
+//===----------------------------------------------------------------------===//
+// GqaTransformation Tests
+//===----------------------------------------------------------------------===//
+
+enum class GqaPhase {
+  kDecode,
+  kPrefill,
+};
+
+struct GqaTestConfig {
+  const char* name;
+  int32_t sequence_length;
+  GqaPhase phase;
+};
+
+constexpr GqaTestConfig kDecodeConfig = {"Decode", 1, GqaPhase::kDecode};
+constexpr GqaTestConfig kPrefillConfig = {"Prefill", 2, GqaPhase::kPrefill};
+
+class GqaTransformationTest : public ::testing::TestWithParam<GqaTestConfig> {};
+
+TEST_P(GqaTransformationTest, PositiveMatch) {
+  ResetOrphanRegistry();
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::internal::BufferManager buffer_manager;
+  LiteRtSubgraphT subgraph(&buffer_manager);
+  LiteRtBuilderT builder_impl;
+
+  constexpr int32_t kQHeads = 4;
+  constexpr int32_t kKvHeads = 2;
+  constexpr int32_t kGroupSize = kQHeads / kKvHeads;
+  constexpr int32_t kHeadDim = 8;
+  constexpr int32_t kCacheLength = 15;
+  const GqaTestConfig& config = GetParam();
+  const int32_t sequence_length = config.sequence_length;
+  const int32_t grouped_sequence_length = kGroupSize * sequence_length;
+  const int32_t slice_length = sequence_length;
+  const int32_t context_length = kCacheLength + slice_length;
+
+  // Generic grouped-query attention with H_q = 4, H_kv = 2, G = 2, D = 8.
+  // S = 1 exercises grouped decode; S > 1 exercises per-query-head prefill.
+  auto& q_in = subgraph.EmplaceTensor();
+  q_in.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16,
+                                    {1, kQHeads, sequence_length, kHeadDim}));
+  q_in.SetQarams(MakePerTensorQuantization(0.01f, 0));
+
+  auto& q_shape = subgraph.EmplaceTensor();
+  q_shape.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
+  const int32_t kQGroupedShape[4] = {1, kKvHeads, grouped_sequence_length,
+                                     kHeadDim};
+  SetConstWeights<int32_t>(q_shape, kQGroupedShape);
+
+  auto& q_grouped = subgraph.EmplaceTensor();
+  q_grouped.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt16,
+                           {1, kKvHeads, grouped_sequence_length, kHeadDim}));
+  q_grouped.SetQarams(MakePerTensorQuantization(0.01f, 0));
+
+  auto& rq_op = subgraph.EmplaceOp();
+  rq_op.SetOpCode(kLiteRtOpCodeTflReshape);
+  AttachInput(&q_in, rq_op);
+  AttachInput(&q_shape, rq_op);
+  AttachOutput(&q_grouped, rq_op);
+
+  auto& k_cache = subgraph.EmplaceTensor();
+  k_cache.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16,
+                                       {1, kKvHeads, kHeadDim, kCacheLength}));
+  k_cache.SetQarams(MakePerTensorQuantization(0.01f, 0));
+
+  auto& k_slice = subgraph.EmplaceTensor();
+  k_slice.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16,
+                                       {1, kKvHeads, kHeadDim, slice_length}));
+  k_slice.SetQarams(MakePerTensorQuantization(0.01f, 0));
+
+  BatchMatmulOptions bmm_opts{};
+  bmm_opts.adj_x = false;
+  bmm_opts.adj_y = false;
+  bmm_opts.asymmetric_quantize_input = false;
+
+  auto& bmm_k0_out = subgraph.EmplaceTensor();
+  bmm_k0_out.SetType(MakeRankedTensorType(
+      kLiteRtElementTypeInt16,
+      {1, kKvHeads, grouped_sequence_length, kCacheLength}));
+  bmm_k0_out.SetQarams(MakePerTensorQuantization(0.01f, 0));
+  auto& bmm_k0 =
+      BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflBatchMatmul,
+                         {&q_grouped, &k_cache}, {&bmm_k0_out}, bmm_opts);
+
+  auto& bmm_k1_out = subgraph.EmplaceTensor();
+  bmm_k1_out.SetType(MakeRankedTensorType(
+      kLiteRtElementTypeInt16,
+      {1, kKvHeads, grouped_sequence_length, slice_length}));
+  bmm_k1_out.SetQarams(MakePerTensorQuantization(0.01f, 0));
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflBatchMatmul,
+                     {&q_grouped, &k_slice}, {&bmm_k1_out}, bmm_opts);
+
+  auto& concat_qk_out = subgraph.EmplaceTensor();
+  concat_qk_out.SetType(MakeRankedTensorType(
+      kLiteRtElementTypeInt16,
+      {1, kKvHeads, grouped_sequence_length, context_length}));
+  concat_qk_out.SetQarams(MakePerTensorQuantization(0.01f, 0));
+  ConcatenationOptions concat_opts{};
+  concat_opts.axis = 3;
+  concat_opts.fused_activation_function = 0;
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflConcatenation,
+                     {&bmm_k0_out, &bmm_k1_out}, {&concat_qk_out}, concat_opts);
+
+  auto& base_mask = subgraph.EmplaceTensor();
+  base_mask.SetType(MakeRankedTensorType(
+      kLiteRtElementTypeInt16, {1, 1, sequence_length, context_length}));
+  base_mask.SetQarams(MakePerTensorQuantization(0.01f, 0));
+
+  auto& repeated_mask = subgraph.EmplaceTensor();
+  repeated_mask.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt16,
+                           {1, 1, grouped_sequence_length, context_length}));
+  repeated_mask.SetQarams(MakePerTensorQuantization(0.01f, 0));
+  auto mask_concat_opts = concat_opts;
+  mask_concat_opts.axis = 2;
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflConcatenation,
+                     {&base_mask, &base_mask}, {&repeated_mask},
+                     mask_concat_opts);
+
+  auto& sm_in = subgraph.EmplaceTensor();
+  sm_in.SetType(MakeRankedTensorType(
+      kLiteRtElementTypeInt16,
+      {1, kKvHeads, grouped_sequence_length, context_length}));
+  sm_in.SetQarams(MakePerTensorQuantization(0.01f, 0));
+  AddOptions add_opts{};
+  add_opts.fused_activation_function = 0;
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflAdd,
+                     {&concat_qk_out, &repeated_mask}, {&sm_in}, add_opts);
+
+  auto& sm_out = subgraph.EmplaceTensor();
+  sm_out.SetType(MakeRankedTensorType(
+      kLiteRtElementTypeInt16,
+      {1, kKvHeads, grouped_sequence_length, context_length}));
+  sm_out.SetQarams(MakePerTensorQuantization(0.01f, 0));
+  SoftmaxOptions sm_opts{};
+  sm_opts.beta = 1.0f;
+  auto& softmax = BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflSoftmax,
+                                     {&sm_in}, {&sm_out}, sm_opts);
+
+  auto& b0 = subgraph.EmplaceTensor();
+  b0.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
+  const int32_t kBegin0[4] = {0, 0, 0, 0};
+  SetConstWeights<int32_t>(b0, kBegin0);
+  auto& s0 = subgraph.EmplaceTensor();
+  s0.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
+  const int32_t kSize0[4] = {1, kKvHeads, grouped_sequence_length,
+                             kCacheLength};
+  SetConstWeights<int32_t>(s0, kSize0);
+  auto& sl0_out = subgraph.EmplaceTensor();
+  sl0_out.SetType(MakeRankedTensorType(
+      kLiteRtElementTypeInt16,
+      {1, kKvHeads, grouped_sequence_length, kCacheLength}));
+  sl0_out.SetQarams(MakePerTensorQuantization(0.01f, 0));
+  auto& sl0_op = subgraph.EmplaceOp();
+  sl0_op.SetOpCode(kLiteRtOpCodeTflSlice);
+  AttachInput(&sm_out, sl0_op);
+  AttachInput(&b0, sl0_op);
+  AttachInput(&s0, sl0_op);
+  AttachOutput(&sl0_out, sl0_op);
+
+  auto& b1 = subgraph.EmplaceTensor();
+  b1.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
+  const int32_t kBegin1[4] = {0, 0, 0, kCacheLength};
+  SetConstWeights<int32_t>(b1, kBegin1);
+  auto& s1 = subgraph.EmplaceTensor();
+  s1.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {4}));
+  const int32_t kSize1[4] = {1, kKvHeads, grouped_sequence_length,
+                             slice_length};
+  SetConstWeights<int32_t>(s1, kSize1);
+  auto& sl1_out = subgraph.EmplaceTensor();
+  sl1_out.SetType(MakeRankedTensorType(
+      kLiteRtElementTypeInt16,
+      {1, kKvHeads, grouped_sequence_length, slice_length}));
+  sl1_out.SetQarams(MakePerTensorQuantization(0.01f, 0));
+  auto& sl1_op = subgraph.EmplaceOp();
+  sl1_op.SetOpCode(kLiteRtOpCodeTflSlice);
+  AttachInput(&sm_out, sl1_op);
+  AttachInput(&b1, sl1_op);
+  AttachInput(&s1, sl1_op);
+  AttachOutput(&sl1_out, sl1_op);
+
+  auto& v_cache = subgraph.EmplaceTensor();
+  v_cache.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16,
+                                       {1, kKvHeads, kCacheLength, kHeadDim}));
+  v_cache.SetQarams(MakePerTensorQuantization(0.01f, 0));
+  auto& v_slice = subgraph.EmplaceTensor();
+  v_slice.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16,
+                                       {1, kKvHeads, slice_length, kHeadDim}));
+  v_slice.SetQarams(MakePerTensorQuantization(0.01f, 0));
+
+  auto& bmm_v0_out = subgraph.EmplaceTensor();
+  bmm_v0_out.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt16,
+                           {1, kKvHeads, grouped_sequence_length, kHeadDim}));
+  bmm_v0_out.SetQarams(MakePerTensorQuantization(0.01f, 0));
+  auto& bmm_v0 =
+      BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflBatchMatmul,
+                         {&sl0_out, &v_cache}, {&bmm_v0_out}, bmm_opts);
+
+  auto& bmm_v1_out = subgraph.EmplaceTensor();
+  bmm_v1_out.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt16,
+                           {1, kKvHeads, grouped_sequence_length, kHeadDim}));
+  bmm_v1_out.SetQarams(MakePerTensorQuantization(0.01f, 0));
+  BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflBatchMatmul,
+                     {&sl1_out, &v_slice}, {&bmm_v1_out}, bmm_opts);
+
+  auto& attn_out = subgraph.EmplaceTensor();
+  attn_out.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeInt16,
+                           {1, kKvHeads, grouped_sequence_length, kHeadDim}));
+  attn_out.SetQarams(MakePerTensorQuantization(0.01f, 0));
+  auto& pv_add =
+      BuildOpWithOptions(ctx, subgraph, kLiteRtOpCodeTflAdd,
+                         {&bmm_v0_out, &bmm_v1_out}, {&attn_out}, add_opts);
+
+  auto& final_shape = subgraph.EmplaceTensor();
+  final_shape.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {3}));
+  const int32_t kFinalShape[3] = {1, sequence_length, kQHeads * kHeadDim};
+  SetConstWeights<int32_t>(final_shape, kFinalShape);
+  auto& final_out = subgraph.EmplaceTensor();
+  final_out.SetType(MakeRankedTensorType(
+      kLiteRtElementTypeInt16, {1, sequence_length, kQHeads * kHeadDim}));
+  final_out.SetQarams(MakePerTensorQuantization(0.01f, 0));
+  auto& final_reshape = subgraph.EmplaceOp();
+  final_reshape.SetOpCode(kLiteRtOpCodeTflReshape);
+  AttachInput(&attn_out, final_reshape);
+  AttachInput(&final_shape, final_reshape);
+  AttachOutput(&final_out, final_reshape);
+
+  const std::vector<LiteRtOp> original_ops(subgraph.Ops().begin(),
+                                           subgraph.Ops().end());
+
+  EXPECT_EQ(GqaTransformation(ctx, &builder_impl, &final_reshape),
+            kLiteRtStatusPatternNoMatch);
+
+  auto set_qk_head_dim = [&](int32_t head_dim) {
+    q_in.SetType(MakeRankedTensorType(kLiteRtElementTypeInt16,
+                                      {1, kQHeads, sequence_length, head_dim}));
+    const int32_t q_grouped_shape[4] = {1, kKvHeads, grouped_sequence_length,
+                                        head_dim};
+    SetConstWeights<int32_t>(q_shape, q_grouped_shape);
+    q_grouped.SetType(
+        MakeRankedTensorType(kLiteRtElementTypeInt16,
+                             {1, kKvHeads, grouped_sequence_length, head_dim}));
+    k_cache.SetType(MakeRankedTensorType(
+        kLiteRtElementTypeInt16, {1, kKvHeads, head_dim, kCacheLength}));
+    k_slice.SetType(MakeRankedTensorType(
+        kLiteRtElementTypeInt16, {1, kKvHeads, head_dim, slice_length}));
+  };
+  set_qk_head_dim(4);
+  EXPECT_EQ(GqaTransformation(ctx, &builder_impl, &softmax),
+            kLiteRtStatusPatternNoMatch);
+  set_qk_head_dim(8);
+
+  auto asymmetric_bmm_opts = bmm_opts;
+  asymmetric_bmm_opts.asymmetric_quantize_input = true;
+  SetOpOptionsForTest(ctx, bmm_k0, asymmetric_bmm_opts);
+  EXPECT_EQ(GqaTransformation(ctx, &builder_impl, &softmax),
+            kLiteRtStatusPatternNoMatch);
+  SetOpOptionsForTest(ctx, bmm_k0, bmm_opts);
+
+  SetOpOptionsForTest(ctx, bmm_v0, asymmetric_bmm_opts);
+  EXPECT_EQ(GqaTransformation(ctx, &builder_impl, &softmax),
+            kLiteRtStatusPatternNoMatch);
+  SetOpOptionsForTest(ctx, bmm_v0, bmm_opts);
+
+  EXPECT_EQ(GqaTransformation(ctx, &builder_impl, &softmax), kLiteRtStatusOk);
+  builder_impl.ApplyChanges(&subgraph);
+
+  // Decode is decomposed per KV head with G stacked query heads. Prefill is
+  // decomposed per query head with S query rows.
+  const bool is_grouped_decode = config.phase == GqaPhase::kDecode;
+  const int32_t rewritten_attention_count =
+      is_grouped_decode ? kKvHeads : kQHeads;
+  const int32_t attention_rows =
+      is_grouped_decode ? kGroupSize : sequence_length;
+  int split_count = 0;
+  int softmax_count = 0;
+  int bmm_count = 0;
+  int qk_cache_count = 0;
+  int qk_slice_count = 0;
+  int pv_count = 0;
+  for (const auto& op : subgraph.Ops()) {
+    if (op->OpCode() == kLiteRtOpCodeTflSplit) {
+      split_count++;
+    } else if (op->OpCode() == kLiteRtOpCodeTflBatchMatmul) {
+      // The original [1, H_kv, ...] matmuls remain as orphans until
+      // OrphanCleanupTransformation runs; only count the per-KV-head ones.
+      const auto& d = op->Output(0).Type().second.ranked_tensor_type.layout;
+      if (d.rank == 4 && d.dimensions[1] == 1) {
+        bmm_count++;
+        if (d.dimensions[3] == kCacheLength) {
+          qk_cache_count++;
+        } else if (d.dimensions[3] == slice_length) {
+          qk_slice_count++;
+        } else if (d.dimensions[3] == kHeadDim) {
+          pv_count++;
+        }
+      }
+    } else if (op->OpCode() == kLiteRtOpCodeTflSoftmax) {
+      const auto& d = op->Output(0).Type().second.ranked_tensor_type.layout;
+      if (d.rank == 4 && d.dimensions[1] == 1 &&
+          d.dimensions[2] == attention_rows &&
+          d.dimensions[3] == context_length) {
+        softmax_count++;
+      }
+    }
+  }
+  EXPECT_EQ(split_count, 5);
+  EXPECT_EQ(softmax_count, rewritten_attention_count);
+  EXPECT_EQ(bmm_count, rewritten_attention_count * 4);
+  EXPECT_EQ(qk_cache_count, rewritten_attention_count);
+  EXPECT_EQ(qk_slice_count, rewritten_attention_count);
+  EXPECT_EQ(pv_count, rewritten_attention_count * 2);
+
+  // The attention output is still produced by a Reshape into final_out.
+  const LiteRtOp final_def = final_out.DefiningOp();
+  ASSERT_NE(final_def, nullptr);
+  EXPECT_EQ(final_def->OpCode(), kLiteRtOpCodeTflReshape);
+  const auto& concat_dims =
+      final_def->Input(0).Type().second.ranked_tensor_type.layout;
+  ASSERT_EQ(concat_dims.rank, 4);
+  if (is_grouped_decode) {
+    EXPECT_EQ(concat_dims.dimensions[1], kKvHeads);
+    EXPECT_EQ(concat_dims.dimensions[2], kGroupSize);
+    EXPECT_EQ(concat_dims.dimensions[3], kHeadDim);
+  } else {
+    EXPECT_EQ(concat_dims.dimensions[1], 1);
+    EXPECT_EQ(concat_dims.dimensions[2], sequence_length);
+    EXPECT_EQ(concat_dims.dimensions[3], kQHeads * kHeadDim);
+  }
+
+  LiteRtBuilderT cleanup_builder_impl;
+  EXPECT_EQ(OrphanCleanupTransformation(ctx, &cleanup_builder_impl, &pv_add),
+            kLiteRtStatusOk);
+  cleanup_builder_impl.ApplyChanges(&subgraph);
+  for (LiteRtOp original_op : original_ops) {
+    bool remains = false;
+    for (LiteRtOp op : subgraph.Ops()) {
+      remains |= op == original_op;
+    }
+    EXPECT_FALSE(remains);
+  }
+  ResetOrphanRegistry();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Phases, GqaTransformationTest,
+    ::testing::Values(kDecodeConfig, kPrefillConfig),
+    [](const ::testing::TestParamInfo<GqaTestConfig>& info) {
+      return info.param.name;
+    });
 
 }  // namespace
 }  // namespace litert::compiler
