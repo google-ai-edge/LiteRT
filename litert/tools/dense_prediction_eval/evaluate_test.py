@@ -20,6 +20,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -78,8 +79,8 @@ class EvaluationTest(unittest.TestCase):
   def test_resume_after_partial_failure_and_reject_changed_model(self):
     # The first invocation completes one sample and then fails. The second
     # must receive only the remaining input, not silently repeat the first.
-    runner = self.root / 'runner'
-    runner.write_text(f'#!{sys.executable}\n' + '''
+    runner = self.root / 'runner.py'
+    runner.write_text('''
 from pathlib import Path
 import json, struct, sys
 args = dict(a[2:].split('=', 1) for a in sys.argv[1:])
@@ -94,7 +95,16 @@ for i, line in enumerate(lines):
   (out/'depth.raw').write_bytes(struct.pack('<f', 1))
   (out/'metrics.json').write_text(json.dumps(dict(inference_us=1, run_and_output_us=2)))
 ''')
-    runner.chmod(0o755)
+    # Launch the fixture explicitly through the hermetic interpreter. Shebangs
+    # do not work on Windows and can exceed Linux's limit in Bazel runfiles.
+    subprocess_run = run.subprocess.run
+
+    def invoke_fixture(command, **kwargs):
+      return subprocess_run([sys.executable, *command], **kwargs)
+
+    patch = mock.patch.object(run.subprocess, 'run', side_effect=invoke_fixture)
+    patch.start()
+    self.addCleanup(patch.stop)
     model = self.root / 'model.tflite'
     model.write_bytes(b'fake model')
     args = argparse.Namespace(manifest=self.manifest,
@@ -131,6 +141,15 @@ for i, line in enumerate(lines):
                                      'A=y'], ['LD_LIBRARY_PATH=x'], ['A']):
       with self.assertRaises(ValueError):
         run.environment_options(entries)
+
+  def test_lock_rejects_overlap_and_releases_on_close(self):
+    path = self.root / 'device.lock'
+    with run.exclusive_lock(path):
+      with self.assertRaises(OSError):
+        with run.exclusive_lock(path):
+          self.fail('Overlapping device lock was acquired')
+    with run.exclusive_lock(path):
+      pass
 
 
 if __name__ == '__main__':

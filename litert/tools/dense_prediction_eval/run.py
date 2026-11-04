@@ -13,7 +13,7 @@
 # limitations under the License.
 """Resumable host/adb evaluation using LiteRT's C++ run_model input-list mode."""
 import argparse
-import fcntl
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -23,6 +23,23 @@ import shutil
 import subprocess
 
 from litert.tools.dense_prediction_eval.evaluate import digest, load_manifest, read_outputs, write_json
+
+
+@contextlib.contextmanager
+def exclusive_lock(path):
+  """Hold a nonblocking host lock until the file handle is closed."""
+  with path.open('a+b') as lock:
+    if os.name == 'nt':
+      import msvcrt
+      if lock.tell() == 0:
+        lock.write(b'\0')
+        lock.flush()
+      lock.seek(0)
+      msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+      import fcntl
+      fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    yield
 
 
 def execute(command, **kwargs):
@@ -285,8 +302,7 @@ def main():
   import hashlib
   identity = args.device or str(args.output.resolve())
   lock_name = hashlib.sha256(identity.encode()).hexdigest() + '.lock'
-  with (lock_root / lock_name).open('w') as lock:
-    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+  with exclusive_lock(lock_root / lock_name):
     run(args)
 
 
