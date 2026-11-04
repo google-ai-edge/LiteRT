@@ -85,7 +85,15 @@ inline void* DlOpen(const char* filename, int flags) {
     fallback_name.replace(pos, 3, ".dll");
   }
 
-  const auto load_with_search_path = [](const std::string& path) {
+  const auto load_with_search_path = [flags](const std::string& path) {
+    if (flags & RTLD_NOLOAD) {
+      // Match dlopen(RTLD_NOLOAD): acquire a reference only if this exact
+      // library is already loaded. DlClose releases the reference as usual.
+      HMODULE module = nullptr;
+      if (!GetModuleHandleExA(0, path.c_str(), &module))
+        return HMODULE(nullptr);
+      return module;
+    }
     if (IsAbsolutePath(path)) {
       return LoadLibraryExA(path.c_str(), nullptr,
                             LOAD_WITH_ALTERED_SEARCH_PATH);
