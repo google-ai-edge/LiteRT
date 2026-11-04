@@ -18,6 +18,8 @@
 
 #include <utility>
 
+#include "litert/c/internal/litert_delegate_wrapper.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
@@ -28,6 +30,8 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/environment.h"
+#include "litert/runtime/accelerator.h"
 #include "litert/runtime/tensor_buffer_registry.h"
 
 namespace litert {
@@ -57,6 +61,29 @@ Expected<std::pair<void*, void*>> GetCustomGpuResource(
       LiteRtGetEnvironmentOptionsValue(options, handlers.device_tag,
                                        &device_val) == kLiteRtStatusOk) {
     device_id = reinterpret_cast<void*>(device_val.int_value);
+  }
+  if (handlers.device_tag == kLiteRtEnvOptionTagVulkanEnvironment &&
+      device_id == nullptr && env != nullptr) {
+    for (auto& accelerator : env->GetAcceleratorRegistry()) {
+      LiteRtHwAcceleratorSet supported_hardware = 0;
+      if (accelerator->GetHardwareSupport(
+              accelerator.get(), &supported_hardware) != kLiteRtStatusOk ||
+          !(supported_hardware & kLiteRtHwAcceleratorGpu) ||
+          accelerator->CreateDelegate == nullptr) {
+        continue;
+      }
+      LiteRtDelegateWrapper delegate_wrapper = nullptr;
+      if (accelerator->CreateDelegate(LrtGetRuntimeContext(), env,
+                                      accelerator.get(), /*options=*/nullptr,
+                                      &delegate_wrapper) == kLiteRtStatusOk &&
+          delegate_wrapper != nullptr) {
+        LiteRtDestroyDelegateWrapper(delegate_wrapper);
+      }
+    }
+    if (LiteRtGetEnvironmentOptionsValue(options, handlers.device_tag,
+                                         &device_val) == kLiteRtStatusOk) {
+      device_id = reinterpret_cast<void*>(device_val.int_value);
+    }
   }
 
   LiteRtAny queue_val;

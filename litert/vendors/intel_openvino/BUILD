@@ -45,9 +45,19 @@ package(
 cc_library(
     name = "ov_utils",
     hdrs = ["utils.h"],
+    copts = select({
+        "//litert/runtime/dispatch:windows_msvc": ["/EHsc"],
+        "//conditions:default": ["-fexceptions"],
+    }),
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         "//litert/c:litert_model_types",
+        # copybara:uncomment_begin(google-only)
+        # "@intel_openvino//:openvino_headers",
+        # copybara:uncomment_end
+        # copybara:comment_begin(oss-only)
         "@intel_openvino//:openvino",
+        # copybara:comment_end
     ],
 )
 
@@ -61,11 +71,16 @@ cc_library(
     }),
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        # copybara:uncomment_begin(google-only)
+        # "@intel_openvino//:openvino_headers",
+        # copybara:uncomment_end
+        # copybara:comment_begin(oss-only)
         "@intel_openvino//:openvino",
+        # copybara:comment_end
     ],
 )
 

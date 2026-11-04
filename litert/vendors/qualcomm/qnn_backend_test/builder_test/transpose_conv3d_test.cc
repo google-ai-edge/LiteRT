@@ -21,9 +21,6 @@ using testing::FloatNear;  // NOLINT
 using testing::Pointwise;  // NOLINT
 
 
-INSTANTIATE_TEST_SUITE_P(, QnnModelTest, GetDefaultQnnModelParams(),
-                         QnnTestPrinter);
-
 TEST_P(QnnModelTest, TransposeConv3dSimpleFloat32) {
   const std::vector<std::uint32_t> kInputDims{1, 2, 2, 4, 2};
   const std::vector<std::uint32_t> kFilterDims{2, 2, 2, 2, 2};

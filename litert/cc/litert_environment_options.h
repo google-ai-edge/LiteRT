@@ -64,6 +64,16 @@ class EnvironmentOptions {
     kMetalCommandQueue = kLiteRtEnvOptionTagMetalCommandQueue,
     /// Vulkan environment (experimental).
     kVulkanEnvironment = kLiteRtEnvOptionTagVulkanEnvironment,
+    /// Vulkan instance (experimental).
+    kVulkanInstance = kLiteRtEnvOptionTagVulkanInstance,
+    /// Vulkan physical device (experimental).
+    kVulkanPhysicalDevice = kLiteRtEnvOptionTagVulkanPhysicalDevice,
+    /// Vulkan logical device (experimental).
+    kVulkanDevice = kLiteRtEnvOptionTagVulkanDevice,
+    /// Vulkan queue (experimental).
+    kVulkanQueue = kLiteRtEnvOptionTagVulkanQueue,
+    /// Vulkan compute queue family index (experimental).
+    kVulkanQueueFamilyIndex = kLiteRtEnvOptionTagVulkanQueueFamilyIndex,
     /// Callback to be invoked on GPU environment destruction.
     kCallbackOnGpuEnvDestroy = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
     /// User data for the GPU environment destruction callback.

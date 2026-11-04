@@ -28,11 +28,6 @@ package(
 )
 
 cc_library(
-    name = "safetensors",
-    hdrs = ["safetensors.h"],
-)
-
-cc_library(
     name = "tokenizer",
     srcs = ["tokenizer.cc"],
     hdrs = ["tokenizer.h"],
@@ -55,10 +50,10 @@ cc_library(
     srcs = ["safetensor_loader.cc"],
     hdrs = ["safetensor_loader.h"],
     deps = [
-        ":safetensors",
         "//tensor",
         "//tensor:buffer",
         "//tensor:datatypes",
+        "//tensor/examples/utils:safetensors",
         "//tensor/utils:macros",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
