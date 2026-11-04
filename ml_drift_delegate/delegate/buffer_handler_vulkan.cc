@@ -28,13 +28,10 @@
 #include "ml_drift/syrtis/memory.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_spatial_tensor.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_wrapper.h"  // from @ml_drift
-#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
-#include "litert/c/litert_environment.h"
-#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/tensor_buffer_lockstate.h"
 #include "ml_drift_delegate/delegate/buffer_handler_utils.h"
@@ -97,6 +94,8 @@ LiteRtStatus LiteRtCreateVulkanMemory(LiteRtGpuDeviceId device_id,
 
   // Returns `VulkanSpatialTensor*` as the `memory_handle`.
   memory_info->memory_handle = &memory_info->vk_tensor;
+  memory_info->raw_handle =
+      reinterpret_cast<void*>(memory_info->vk_tensor.GetBufferHandle());
 
   *vulkan_memory_info = memory_info.release();
   return kLiteRtStatusOk;
@@ -158,6 +157,8 @@ LiteRtStatus LiteRtUnlockVulkanMemory(HwMemoryInfoPtr hw_memory_info) {
         vk_env->vulkan_env().GetDevice(), vk_env->vulkan_env().GetQueue(),
         gpu_tensor.GetBufferHandle(), memory_info->packed_bytes,
         memory_info->host_memory, &memory_info->staging_buffer));
+    LITERT_RETURN_IF_ERROR(
+        vk_env->SubmitCommandBuffer(/*wait_for_completion=*/true));
     return kLiteRtStatusOk;
   }
 
@@ -173,6 +174,8 @@ LiteRtStatus LiteRtUnlockVulkanMemory(HwMemoryInfoPtr hw_memory_info) {
     ABSL_LOG(ERROR) << "Failed to upload data to tensor: " << status;
     return kLiteRtStatusErrorRuntimeFailure;
   }
+  LITERT_RETURN_IF_ERROR(
+      vk_env->SubmitCommandBuffer(/*wait_for_completion=*/true));
   return kLiteRtStatusOk;
 }
 
@@ -274,6 +277,8 @@ LiteRtStatus LiteRtClearVulkanMemory(HwMemoryInfoPtr hw_memory_info) {
     ::ml_drift::syrtis::vkCmdFillBuffer(
         command_buffer->VkCB(), gpu_tensor.GetBufferHandle(), /*offset=*/0,
         VK_WHOLE_SIZE, /*data=*/0);
+    LITERT_RETURN_IF_ERROR(
+        vk_env->SubmitCommandBuffer(/*wait_for_completion=*/true));
   } else if (gpu_tensor.GetImageHandle() != VK_NULL_HANDLE) {
     // Use a temporary buffer to copy zeros as the texture is not configured as
     // a rendering target.
