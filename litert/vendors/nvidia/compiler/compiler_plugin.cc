@@ -15,7 +15,9 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -64,6 +66,17 @@
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "NvInferRuntime.h"
 #include "NvInferVersion.h"
+#include "litert/vendors/nvidia/windows_compat.h"
+
+#ifdef _WIN32
+#define fstat NvidiaFstat
+#define open NvidiaOpen
+#define close _close
+#define unlink NvidiaUnlink
+#define fsync _commit
+#define getpid _getpid
+#define fdopen _fdopen
+#endif
 
 namespace {
 
@@ -660,7 +673,7 @@ Expected<std::string> CanonicalAotCacheDir(const std::string& cache_dir) {
 }
 
 litert::nvidia::TensorRtAotFileIdentity AotFileIdentity(
-    const struct stat& stat_buffer) {
+    const NvidiaFileStat& stat_buffer) {
   return {static_cast<uint64_t>(stat_buffer.st_dev),
           static_cast<uint64_t>(stat_buffer.st_ino),
           static_cast<int64_t>(stat_buffer.st_mtim.tv_sec),
@@ -671,7 +684,7 @@ litert::nvidia::TensorRtAotFileIdentity AotFileIdentity(
 
 Expected<litert::nvidia::TensorRtAotFileIdentity> SealAndDescribeAotArtifactFd(
     int fd, const std::string& path, size_t expected_size) {
-  struct stat stat_buffer{};
+  NvidiaFileStat stat_buffer{};
   if (fstat(fd, &stat_buffer) != 0) {
     return Error(kLiteRtStatusErrorFileIO,
                  "Failed to describe TensorRT AOT artifact " + path + ": " +
@@ -715,7 +728,7 @@ ExistingArtifactIdentity(const std::string& path, const uint8_t* data,
                      std::strerror(errno));
   }
   *exists = true;
-  struct stat stat_buffer{};
+  NvidiaFileStat stat_buffer{};
   if (fstat(fd, &stat_buffer) != 0) {
     const int saved_errno = errno;
     close(fd);
@@ -742,7 +755,7 @@ ExistingArtifactIdentity(const std::string& path, const uint8_t* data,
     while (received < requested) {
       const ssize_t result =
           pread(fd, buffer.data() + received, requested - received,
-                static_cast<off_t>(offset + received));
+                static_cast<int64_t>(offset + received));
       if (result < 0 && errno == EINTR) {
         continue;
       }
@@ -761,8 +774,8 @@ ExistingArtifactIdentity(const std::string& path, const uint8_t* data,
       close(fd);
       return std::optional<litert::nvidia::TensorRtAotFileIdentity>();
     }
-    posix_fadvise(fd, static_cast<off_t>(offset), static_cast<off_t>(received),
-                  POSIX_FADV_DONTNEED);
+    posix_fadvise(fd, static_cast<int64_t>(offset),
+                  static_cast<int64_t>(received), POSIX_FADV_DONTNEED);
     offset += received;
   }
   auto identity = SealAndDescribeAotArtifactFd(fd, path, size);
@@ -783,7 +796,12 @@ Expected<void> WriteAll(int fd, const uint8_t* data, size_t size,
   size_t written = 0;
   while (written < size) {
     const size_t chunk = std::min<size_t>(size - written, size_t{1} << 30);
+#ifdef _WIN32
+    const ssize_t result =
+        _write(fd, data + written, static_cast<unsigned>(chunk));
+#else
     const ssize_t result = write(fd, data + written, chunk);
+#endif
     if (result < 0) {
       if (errno == EINTR) {
         continue;
@@ -1120,9 +1138,9 @@ BuildAotCacheKey(const std::string& sdk_version,
                  "Failed to resolve TensorRT AOT source model " + source_path +
                      ": " + std::strerror(errno));
   }
-  struct stat stat_buffer{};
-  if (stat(resolved, &stat_buffer) != 0 || !S_ISREG(stat_buffer.st_mode) ||
-      stat_buffer.st_size < 0) {
+  NvidiaFileStat stat_buffer{};
+  if (NvidiaStat(resolved, &stat_buffer) != 0 ||
+      !S_ISREG(stat_buffer.st_mode) || stat_buffer.st_size < 0) {
     return Error(kLiteRtStatusErrorFileIO,
                  "TensorRT AOT source model is not a readable regular file: " +
                      std::string(resolved));
@@ -1186,8 +1204,8 @@ Expected<std::optional<litert::nvidia::TensorRtAotManifest>> TryLoadAotManifest(
     if (!locator.has_value()) {
       return std::optional<litert::nvidia::TensorRtAotManifest>();
     }
-    struct stat artifact_stat{};
-    if (stat(locator->path.c_str(), &artifact_stat) != 0 ||
+    NvidiaFileStat artifact_stat{};
+    if (NvidiaStat(locator->path.c_str(), &artifact_stat) != 0 ||
         !S_ISREG(artifact_stat.st_mode) || artifact_stat.st_size < 0 ||
         static_cast<uint64_t>(artifact_stat.st_size) !=
             locator->artifact_size) {
@@ -1236,7 +1254,7 @@ Expected<void> ReplaceSmallFileAtomically(const std::string& path,
                  "Failed to close TensorRT AOT index " + temporary_path + ": " +
                      std::strerror(saved_errno));
   }
-  if (rename(temporary_path.c_str(), path.c_str()) != 0) {
+  if (NvidiaRename(temporary_path.c_str(), path.c_str()) != 0) {
     const int saved_errno = errno;
     unlink(temporary_path.c_str());
     return Error(kLiteRtStatusErrorFileIO,

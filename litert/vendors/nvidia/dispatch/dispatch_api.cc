@@ -13,8 +13,12 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#ifndef _WIN32
 #include <sys/mman.h>
+#endif
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -25,6 +29,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -32,6 +37,7 @@
 #include <new>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -86,6 +92,17 @@
 #include "NvInferVersion.h"
 #include "litert/vendors/nvidia/trtllm/head_kernels.h"
 #include "litert/vendors/nvidia/trtllm/int2_gemv.h"
+#include "litert/vendors/nvidia/windows_compat.h"
+
+#ifdef _WIN32
+#define fstat NvidiaFstat
+#define open NvidiaOpen
+#define close _close
+#define unlink NvidiaUnlink
+#define fsync _commit
+#define getpid _getpid
+#define fdopen _fdopen
+#endif
 
 namespace {
 
@@ -3570,7 +3587,7 @@ class LiteRtDispatchInvocationContextT {
       for (size_t done = 0; done < table_bytes;) {
         const ssize_t result =
             pread(fd, table.data() + done, table_bytes - done,
-                  static_cast<off_t>(feed.table_offset + done));
+                  static_cast<int64_t>(feed.table_offset + done));
         if (result < 0 && errno == EINTR) continue;
         if (result <= 0) {
           read_ok = false;
@@ -5922,7 +5939,8 @@ class LiteRtDispatchInvocationContextT {
         JoinPath(JoinPath(JoinPath(dir, "c" + std::to_string(dump_context_id_)),
                           function),
                  "step" + std::to_string(dump_outputs_step_));
-    (void)std::system(("mkdir -p '" + step_dir + "'").c_str());
+    std::error_code directory_error;
+    std::filesystem::create_directories(step_dir, directory_error);
     if (!skipped) {
       std::vector<unsigned char> bytes(size);
       cudaStreamSynchronize(stream_);
@@ -5982,7 +6000,8 @@ class LiteRtDispatchInvocationContextT {
     const std::string step_dir =
         JoinPath(JoinPath(dir, SanitizeCacheComponent(bytecode_.function_name)),
                  "step" + std::to_string(dump_step_));
-    (void)std::system(("mkdir -p '" + step_dir + "'").c_str());
+    std::error_code directory_error;
+    std::filesystem::create_directories(step_dir, directory_error);
     std::vector<unsigned char> bytes(size);
     cudaStreamSynchronize(stream_);
     if (cudaMemcpy(bytes.data(), device_ptr, size, cudaMemcpyDeviceToHost) !=
@@ -6330,6 +6349,30 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
   snprintf(build_id, sizeof(build_id),
            "NVIDIA TensorRT-RTX via NvInfer headers %d.%d.%d",
            NV_TENSORRT_MAJOR, NV_TENSORRT_MINOR, NV_TENSORRT_PATCH);
+#if defined(_WIN32)
+  // MSVC can take the address of an import thunk in this dispatch DLL rather
+  // than the target function. Query the already loaded dependency itself.
+  HMODULE sdk_module = GetModuleHandleA("tensorrt_rtx_1_7.dll");
+  char sdk_path[32768] = {};
+  if (!sdk_module ||
+      !GetModuleFileNameA(sdk_module, sdk_path, sizeof(sdk_path))) {
+    LITERT_LOG(LITERT_ERROR, "Cannot identify loaded TensorRT-RTX DLL");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  const int runtime_version = getInferLibVersion();
+  const int runtime_build = getInferLibBuildVersion();
+  LITERT_LOG(LITERT_INFO,
+             "NVIDIA TensorRT-RTX Windows SDK headers=%d.%d.%d.%d "
+             "runtime_version=%d runtime_build=%d loaded_dll=%s",
+             NV_TENSORRT_MAJOR, NV_TENSORRT_MINOR, NV_TENSORRT_PATCH,
+             NV_TENSORRT_BUILD, runtime_version, runtime_build, sdk_path);
+  if (runtime_version != (NV_TENSORRT_MAJOR * 100 + NV_TENSORRT_MINOR) * 100 +
+                             NV_TENSORRT_PATCH ||
+      runtime_build != NV_TENSORRT_BUILD) {
+    LITERT_LOG(LITERT_ERROR, "TensorRT-RTX DLL does not match build headers");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+#endif
   return kLiteRtStatusOk;
 }
 
@@ -6805,7 +6848,7 @@ extern "C" LiteRtStatus LiteRtDispatchNvidiaRegisterTokenTable(
     for (size_t done = 0; done < read_table.size();) {
       const ssize_t result = pread(
           table->table_fd, read_table.data() + done, read_table.size() - done,
-          static_cast<off_t>(table->table_offset + done));
+          static_cast<int64_t>(table->table_offset + done));
       if (result < 0 && errno == EINTR) continue;
       if (result <= 0) {
         LITERT_LOG(LITERT_WARNING,

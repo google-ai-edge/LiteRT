@@ -28,13 +28,13 @@ extern "C" {
 // A sampler is bound to its first CUDA device and is not thread-safe.
 typedef void* LiteRtDispatchNvidiaGreedySampler;
 
-LiteRtStatus LiteRtDispatchNvidiaGreedySamplerCreate(
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchNvidiaGreedySamplerCreate(
     LiteRtDispatchNvidiaGreedySampler* sampler);
 
-void LiteRtDispatchNvidiaGreedySamplerDestroy(
+LITERT_CAPI_EXPORT void LiteRtDispatchNvidiaGreedySamplerDestroy(
     LiteRtDispatchNvidiaGreedySampler sampler);
 
-LiteRtStatus LiteRtDispatchNvidiaGreedySamplerSampleF32(
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchNvidiaGreedySamplerSampleF32(
     LiteRtDispatchNvidiaGreedySampler sampler, LiteRtTensorBuffer logits,
     size_t count, int32_t* token_id);
 
@@ -48,7 +48,7 @@ LiteRtStatus LiteRtDispatchNvidiaGreedySamplerSampleF32(
 // kernel reads it. Unsupported buffer types, element types, or layouts
 // return kLiteRtStatusErrorUnsupported. No logits or caller-owned buffers are
 // modified.
-LiteRtStatus LiteRtDispatchNvidiaGreedySamplerSampleBatched(
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchNvidiaGreedySamplerSampleBatched(
     LiteRtDispatchNvidiaGreedySampler sampler, LiteRtTensorBuffer logits,
     size_t rows, size_t vocab_size, int32_t* token_ids);
 

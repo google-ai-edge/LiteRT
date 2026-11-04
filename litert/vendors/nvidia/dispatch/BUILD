@@ -76,6 +76,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/vendors/nvidia:bytecode",
+        "//litert/vendors/nvidia:windows_compat",
         "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/synchronization",
     ],
@@ -88,12 +89,14 @@ cc_library(
     tags = ["manual"],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
+        "//litert/vendors/nvidia:windows_compat",
         "@local_cuda//:cuda_headers",
         "@local_tensorrt_rtx//:tensorrt_rtx_headers",
     ],
@@ -106,6 +109,7 @@ cc_library(
     tags = ["manual"],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -116,6 +120,7 @@ cc_library(
         "//litert/vendors/nvidia:bytecode",
         "//litert/vendors/nvidia:cuda_vmm",
         "//litert/vendors/nvidia:tensorrt_features",
+        "//litert/vendors/nvidia:windows_compat",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",
         "@local_tensorrt_rtx//:tensorrt_rtx_headers",
@@ -132,6 +137,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -173,6 +179,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -192,12 +199,14 @@ cc_test(
     srcs = ["aot_artifact_test.cc"],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
         ":aot_artifact",
         "//litert/vendors/nvidia:bytecode",
+        "//litert/vendors/nvidia:windows_compat",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -315,17 +324,25 @@ litert_dispatch_api(
         "//litert/vendors/c:litert_dispatch.h",
     ],
     export_litert_only = True,
-    linkopts = [
-        "-Wl,-soname=libLiteRtDispatch_Nvidia.so",
-        "-Wl,--no-warn-backrefs",
-        "-Wl,-rpath,$$ORIGIN",
-        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
-    ],
+    linkopts = select({
+        "//litert:windows": [],
+        "//conditions:default": [
+            "-Wl,-soname=libLiteRtDispatch_Nvidia.so",
+            "-Wl,--no-warn-backrefs",
+            "-Wl,-rpath,$$ORIGIN",
+            "-Wl,-rpath,/usr/lib/x86_64-linux-gnu",
+        ],
+    }),
+    local_defines = select({
+        "//litert:windows": ["LITERT_COMPILE_LIBRARY"],
+        "//conditions:default": [],
+    }),
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_Nvidia.so",
     tags = ["manual"],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -372,6 +389,7 @@ litert_dispatch_api(
         "//litert/vendors/nvidia:cache_layout",
         "//litert/vendors/nvidia:memory_profile",
         "//litert/vendors/nvidia:tensorrt_logger",
+        "//litert/vendors/nvidia:windows_compat",
         "//litert/vendors/nvidia/compiler:cache_update_plugin",
         "//litert/vendors/nvidia/compiler:decode_attention_plugin",
         "//litert/vendors/nvidia/compiler:int8_cache_write_plugin",
@@ -422,6 +440,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -456,6 +475,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -477,6 +497,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -498,6 +519,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -519,6 +541,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -542,6 +565,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -572,6 +596,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -593,6 +618,7 @@ cc_test(
     ],
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
+        "//litert:windows": [],
         "//litert:linux_aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),

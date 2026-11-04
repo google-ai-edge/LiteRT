@@ -55,7 +55,7 @@ typedef struct {
 // kLiteRtStatusErrorNotFound when no step awaits such a table (nothing is
 // copied), kLiteRtStatusErrorInvalidArgument for a malformed record,
 // kLiteRtStatusErrorUnsupported before the dispatch is initialized.
-LiteRtStatus LiteRtDispatchNvidiaRegisterTokenTable(
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchNvidiaRegisterTokenTable(
     const LiteRtDispatchNvidiaTokenTable* table);
 
 // The per-layer embedder's tables (the Gemma E models): `layers` tables
@@ -78,7 +78,7 @@ typedef struct {
 // the device during the call (one buffer of the tables, one of the scales),
 // kept as long as the process; kLiteRtStatusErrorNotFound when no step
 // awaits them.
-LiteRtStatus LiteRtDispatchNvidiaRegisterPerLayerTokenTables(
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchNvidiaRegisterPerLayerTokenTables(
     const LiteRtDispatchNvidiaPerLayerTokenTables* tables);
 
 // The local attention's sliding window (keys a position reads), for the
@@ -86,7 +86,8 @@ LiteRtStatus LiteRtDispatchNvidiaRegisterPerLayerTokenTables(
 // told before the first decode step, the feed's first mask past the window
 // is right; otherwise the feed learns it from the host's masks, one step
 // late. Process-wide; 0 forgets it.
-LiteRtStatus LiteRtDispatchNvidiaStepFeedSetLocalWindow(uint32_t window);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchNvidiaStepFeedSetLocalWindow(uint32_t window);
 
 #ifdef __cplusplus
 }  // extern "C"
