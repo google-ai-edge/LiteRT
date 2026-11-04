@@ -1034,9 +1034,10 @@ std::string GenerateWorkGroupFlashDecodeCode(
 //    kernel, and the output accumulators are reduced across key groups through
 //    the score buffer when it is large enough
 //    (`SimdWorkGroupAccumulatorsReuseScores`).
-// With half precision query slices, this needs about a third of the local
-// memory of the portable kernel (`FlashDecodeLocalMemoryBytes`), so more work
-// groups fit on a GPU core.
+// Keeping `q_local` in `float4` avoids overflowing F32 queries whose channels
+// exceed the F16 maximum while still needing only half the local memory of the
+// portable kernel (`FlashDecodeLocalMemoryBytes`), so two work groups fit in
+// 32 KB on an Apple GPU core.
 std::string GenerateSimdWorkGroupFlashDecodeCode(
     const FlashDecodeConfig& config, int slices, int group_size,
     int k_stride_head, int k_stride_slice, int v_stride_head,
@@ -1069,7 +1070,7 @@ std::string GenerateSimdWorkGroupFlashDecodeCode(
                                splits, R"(;
   int split = ucl::GetGroupId<2>() % )",
                                splits, R"(;
-  __local half4 q_local[)",
+  __local float4 q_local[)",
                                heads * slices, R"(];
   __local float p_local[)",
                                heads * chunk, R"(];
@@ -1082,7 +1083,7 @@ std::string GenerateSimdWorkGroupFlashDecodeCode(
   }
   absl::StrAppend(&c, "  for (int i = tid; i < ", heads * slices,
                   "; i += ", threads, R"() {
-    q_local[i] = ucl::Convert<half4>(args.q.Read(X, head0 + i / )",
+    q_local[i] = ucl::Convert<float4>(args.q.Read(X, head0 + i / )",
                   slices, ", i % ", slices, R"());
   }
   int active_tokens = args.cache_size;
@@ -1125,23 +1126,22 @@ std::string GenerateSimdWorkGroupFlashDecodeCode(
   // `key_part` of the key reads channel slices [key_part * part_slices,
   // (key_part + 1) * part_slices).
   for (int r = 0; r < lanes_per_key; ++r) {
-    absl::StrAppend(
-        &c, "    {\n      int key = base + ", r * keys_per_pass,
-        " + key_lane;\n", per_head("      float d$g = 0.0f;\n"),
-        R"(      bool valid = key < key_end;
+    absl::StrAppend(&c, "    {\n      int key = base + ", r * keys_per_pass,
+                    " + key_lane;\n", per_head("      float d$g = 0.0f;\n"),
+                    R"(      bool valid = key < key_end;
       if (valid) {
         int k_idx = k_head + key + key_part * )",
-        part_slices * k_stride_slice, R"(;
+                    part_slices * k_stride_slice, R"(;
         int q_idx = key_part * )",
-        part_slices, R"(;
+                    part_slices, R"(;
         for (int sl = 0; sl < )",
-        part_slices, R"(; ++sl) {
+                    part_slices, R"(; ++sl) {
           float4 kv = ucl::Convert<float4>(args.k.Read(k_idx));
 )",
-        per_head(absl::StrCat("          d$g += dot(ucl::Convert<float4>("
-                              "q_local[$g * ",
-                              slices, " + q_idx + sl]), kv);\n")),
-        "          k_idx += ", k_stride_slice, ";\n        }\n      }\n");
+                    per_head(absl::StrCat("          d$g += dot(q_local[$g * ",
+                                          slices, " + q_idx + sl], kv);\n")),
+                    "          k_idx += ", k_stride_slice,
+                    ";\n        }\n      }\n");
     for (int offset = 1; offset < lanes_per_key; offset *= 2) {
       absl::StrAppend(
           &c, per_head(absl::StrCat("      d$g += ucl::WaveShuffleXor(d$g, ",

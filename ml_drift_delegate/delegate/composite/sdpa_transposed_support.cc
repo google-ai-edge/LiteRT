@@ -80,8 +80,7 @@ int FlashDecodeLocalMemoryBytes(const FlashDecodeTuning& tuning, int heads,
   constexpr int kFloatBytes = static_cast<int>(sizeof(float));
   const int threads = tuning.threads;
   if (tuning.simd_work_group) {
-    constexpr int kHalfBytes = 2;
-    const int q_local = heads * slices * 4 * kHalfBytes;
+    const int q_local = heads * slices * 4 * kFloatBytes;
     const int p_local = heads * threads * kFloatBytes;
     const int red_local = 2 * heads * (threads / 32) * kFloatBytes;
     // The output accumulators reuse `p_local` when it holds a float4 for every

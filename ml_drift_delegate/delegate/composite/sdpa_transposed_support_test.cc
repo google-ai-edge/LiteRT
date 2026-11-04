@@ -135,16 +135,16 @@ TEST(SdpaTransposedSupportTest, SimdWorkGroupSplitsKeysAcrossDividingLanes) {
 TEST(SdpaTransposedSupportTest, SimdWorkGroupLocalMemoryBytes) {
   FlashDecodeTuning tuning = GetFlashDecodeTuning(AppleMetalGpuInfo());
   ASSERT_EQ(tuning.threads, 256);
-  // 4 heads of head dim 512: half query slices (4 * 128 * 8 B), the scores of
-  // 256 keys (4 * 256 * 4 B) and 2 * 4 * 8 SIMD-group values. The output
+  // 4 heads of head dim 512: float4 query slices (4 * 128 * 16 B), the scores
+  // of 256 keys (4 * 256 * 4 B) and 2 * 4 * 8 SIMD-group values. The output
   // accumulators reuse the score buffer.
   EXPECT_TRUE(SimdWorkGroupAccumulatorsReuseScores(4));
   EXPECT_EQ(FlashDecodeLocalMemoryBytes(tuning, /*heads=*/4, /*slices=*/128),
-            4096 + 4096 + 256);
+            8192 + 4096 + 256);
   // 2 heads of head dim 256 need separate float4 accumulators (256 * 16 B).
   EXPECT_FALSE(SimdWorkGroupAccumulatorsReuseScores(2));
   EXPECT_EQ(FlashDecodeLocalMemoryBytes(tuning, /*heads=*/2, /*slices=*/64),
-            1024 + 2048 + 128 + 4096);
+            2048 + 2048 + 128 + 4096);
   // The portable kernel needs 25,088 B for the first config.
   tuning.simd_work_group = false;
   EXPECT_EQ(FlashDecodeLocalMemoryBytes(tuning, /*heads=*/4, /*slices=*/128),

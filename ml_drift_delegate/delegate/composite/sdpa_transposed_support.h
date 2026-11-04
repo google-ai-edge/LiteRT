@@ -57,10 +57,11 @@ struct FlashDecodeTuning {
   // (`GenerateSimdWorkGroupFlashDecodeCode`), for GPUs with fixed 32-lane SIMD
   // groups: the dot product of each key is split across `lanes_per_key`
   // adjacent lanes and combined with shuffles, the chunk maxima and softmax
-  // sums use SIMD-group reductions, the query slices are half precision and
-  // each chunk holds `threads` keys whose scores go straight to local memory.
-  // It needs about a third of the local memory of the portable kernel, so more
-  // work groups fit on a GPU core.
+  // sums use SIMD-group reductions, the query slices stay in float4 so F32
+  // queries exceeding the F16 range do not overflow, and each chunk holds
+  // `threads` keys whose scores go straight to local memory. It needs half the
+  // local memory of the portable kernel, so two work groups fit in 32 KB on a
+  // GPU core.
   bool simd_work_group = false;
   // Adjacent SIMD lanes that share the dot product of one key in the
   // SIMD-group variant: a power of two that divides 32 and the channel slices.
@@ -96,7 +97,7 @@ int MaxFlashDecodeKeysPerThread(int heads, int threads);
 // - Portable kernel (`GenerateWorkGroupFlashDecodeCode`), assuming the largest
 //   chunk of probabilities: the float4 query slices, the probabilities of a
 //   chunk, the two reduction stages and the float4 output accumulators.
-// - SIMD-group variant (`tuning.simd_work_group`): the half4 query slices, the
+// - SIMD-group variant (`tuning.simd_work_group`): the float4 query slices, the
 //   scores of a chunk of `threads` keys, two per-SIMD-group reduction arrays,
 //   and the float4 output accumulators unless they fit in the score buffer.
 int FlashDecodeLocalMemoryBytes(const FlashDecodeTuning& tuning, int heads,

@@ -352,7 +352,9 @@ absl::Status RunSdpaTransposedTest(
     bool force_work_group_flash_prefill = false,
     uint64_t max_decomposed_score_chunk_bytes =
         kMaxDecomposedSdpaScoreChunkBytes,
-    int expected_score_chunks = 0) {
+    int expected_score_chunks = 0,
+    std::optional<bool> is_prefill_override = std::nullopt,
+    float q_multiplier = 1.0f) {
   if (KV <= 0) KV = BK;
   if (active_tokens <= 0) active_tokens = S;
   if (decode_mask_keys <= 0) decode_mask_keys = active_tokens;
@@ -425,7 +427,7 @@ absl::Status RunSdpaTransposedTest(
   SdpaTransposedAttributes attr;
   attr.runtime_check.src_end_ch_index = 2;
   attr.from_cache_update = from_cache_update;
-  attr.is_prefill = (T > 1);
+  attr.is_prefill = is_prefill_override.value_or(T > 1);
   attr.is_causal = is_causal;
 
   auto k_weights_shape = ::ml_drift::OHWI(
@@ -484,7 +486,8 @@ absl::Status RunSdpaTransposedTest(
   ABSL_RETURN_IF_ERROR(
       CheckDecomposedSdpaScoreChunks(gpu_model, expected_score_chunks));
 
-  const float q_scale = 1.0f / std::sqrt(static_cast<float>(H));
+  const float q_scale = q_multiplier / std::sqrt(static_cast<float>(H));
+  const float inv_q_multiplier = 1.0f / q_multiplier;
 
   std::vector<float> q_data(BK * T * H, 0.0f);
   for (int bk = 0; bk < BK; ++bk) {
@@ -502,8 +505,8 @@ absl::Status RunSdpaTransposedTest(
     for (int s = 0; s < S; ++s) {
       for (int h = 0; h < H; ++h) {
         int idx = (kvh * S + s) * H + h;
-        k_data[idx] =
-            0.05f * (kvh + 1) + 0.02f * (s + 1) - 0.01f * ((h % 8) + 1);
+        k_data[idx] = inv_q_multiplier * (0.05f * (kvh + 1) + 0.02f * (s + 1) -
+                                          0.01f * ((h % 8) + 1));
       }
     }
   }
@@ -916,6 +919,49 @@ TEST_P(SdpaTransposedKernelExecuteTest,
     EXPECT_TRUE(status.ok())
         << "head_dim=" << head_dim << ": " << status.message();
   }
+}
+
+// Speculative-decoding MTP verifier (`T = 2`, `attr.is_prefill = false` as set
+// by `sdpa_transposed_parser.cc` for `q_shape.w <= 2`) on Gemma 4 26B global
+// (head dim 512, 8 query heads per KV head) and sliding (head dim 256, 2 query
+// heads per KV head) attention across multiple key splits.
+TEST_P(SdpaTransposedKernelExecuteTest, TwoTokenVerifierDecodeGemma4HeadDims) {
+  for (const auto& [head_dim, kv_heads] :
+       {std::pair{512, 2}, std::pair{256, 8}}) {
+    auto status = RunSdpaTransposedTest(
+        *exec_env, precision(), storage(), /*BK=*/16, /*T=*/2, /*S=*/1024,
+        /*H=*/head_dim, mask_mode(), /*KV=*/kv_heads, /*q_start=*/600,
+        /*from_cache_update=*/true, /*is_causal=*/false,
+        /*flatten_output=*/false,
+        /*active_tokens=*/FilledCacheEntries(mask_mode(), 602, 1024),
+        /*decode_mask_keys=*/0, /*param_active_tokens=*/std::nullopt,
+        /*force_work_group_flash_prefill=*/false,
+        /*max_decomposed_score_chunk_bytes=*/kMaxDecomposedSdpaScoreChunkBytes,
+        /*expected_score_chunks=*/0, /*is_prefill_override=*/false);
+    EXPECT_TRUE(status.ok())
+        << "head_dim=" << head_dim << ": " << status.message();
+  }
+}
+
+// F32 query channels exceeding the F16 maximum (65,504): downcasting `q_local`
+// to `half4` overflows to +/-Inf and produces NaNs, whereas keeping `q_local`
+// in `float4` preserves the F32 dynamic range.
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeFloat32QueryExceedingFp16Max) {
+  if (precision() != ::ml_drift::CalculationsPrecision::kF32) {
+    GTEST_SKIP() << "Requires F32 input tensors.";
+  }
+  auto status = RunSdpaTransposedTest(
+      *exec_env, precision(), storage(), /*BK=*/16, /*T=*/1, /*S=*/600,
+      /*H=*/512, mask_mode(), /*KV=*/2, /*q_start=*/560,
+      /*from_cache_update=*/true, /*is_causal=*/false, /*flatten_output=*/true,
+      /*active_tokens=*/FilledCacheEntries(mask_mode(), 561, 600),
+      /*decode_mask_keys=*/0, /*param_active_tokens=*/std::nullopt,
+      /*force_work_group_flash_prefill=*/false,
+      /*max_decomposed_score_chunk_bytes=*/kMaxDecomposedSdpaScoreChunkBytes,
+      /*expected_score_chunks=*/0, /*is_prefill_override=*/std::nullopt,
+      /*q_multiplier=*/2.0e7f);
+  EXPECT_TRUE(status.ok()) << status.message();
 }
 
 // Gemma 4 chunked prefill at head dims 256 (sliding window) and 512 (global
