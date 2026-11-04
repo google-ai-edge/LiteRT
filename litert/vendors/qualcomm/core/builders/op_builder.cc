@@ -3,6 +3,7 @@
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -53,6 +54,17 @@ std::pair<std::uint32_t, std::uint32_t> ComputePaddingBeforeAfter(
   result.first = total_padding / 2;
   result.second = result.first + total_padding % 2;
   return result;
+}
+
+bool ShouldUseGroupedConv2d(const TensorWrapper& filter_tensor,
+                            std::uint32_t stride_h, std::uint32_t stride_w) {
+  constexpr size_t kHeightIndex = 1;
+  constexpr size_t kWidthIndex = 2;
+  constexpr std::uint32_t kConv2dMinStride = 4;
+  constexpr std::uint32_t kConv2dMinFilterSize = 4;
+  return stride_h >= kConv2dMinStride && stride_w >= kConv2dMinStride &&
+         filter_tensor.GetDimension(kHeightIndex) >= kConv2dMinFilterSize &&
+         filter_tensor.GetDimension(kWidthIndex) >= kConv2dMinFilterSize;
 }
 
 std::string GetUniqueOpName(const char* op_type) {
