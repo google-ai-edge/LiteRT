@@ -58,13 +58,23 @@ struct LiteRtOptionsT {
     LiteRtCustomOpKernel op_kernel;
   };
 
-  // This should be updated every time a field is added/edited.
+  // Schema version of compilation options, used by CompilationCache as part of
+  // the cache key fingerprint (see compilation_cache.cc).
   //
+  // Note: While LiteRtOptionsT is represented as an opaque handle in public C
+  // APIs, fields accessed directly by inline methods in cc/litert_options.h
+  // (such as weight_loader, scoped_weight_source, and weight_in_memory_map)
+  // must keep stable offsets across client SDK and runtime builds.
+  //
+  // This should be updated every time a field is added/edited:
   // - Renaming a field: increment patch;
   // - Adding or deprecating a field: set patch to 0, increment minor.
-  // - Breaking layout compatibility: set patch and minor to 0, increment major.
+  // - Breaking layout compatibility or invalidating cached compiled models:
+  //   set patch and minor to 0, increment major.
   //
-  // Note: Changing a default value does not impact the version.
+  // Note: Only changes to version.major invalidate the CompilationCache;
+  // minor updates do not impact cache keys. Changing a default value does not
+  // impact the version.
   LiteRtApiVersion version = {.major = 1, .minor = 0, .patch = 0};
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
   LiteRtOpaqueOptions options = nullptr;
