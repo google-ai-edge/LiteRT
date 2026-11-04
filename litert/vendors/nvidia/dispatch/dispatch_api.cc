@@ -237,7 +237,9 @@ std::atomic<uint32_t>& StepFeedLocalWindow() {
 }
 
 // The decode invocations the host will still make after its next one
-// (step_sampler_c_api.h, StepFeedSetBudget): the steps ahead stop there.
+// (step_sampler_c_api.h, StepFeedSetBudget): the steps ahead stop there. A
+// budget is for the invocation it was told before: a step feed's invocation
+// takes it when it starts (UINT32_MAX, no bound, stays for one not told).
 std::atomic<uint32_t>& StepFeedBudget() {
   static std::atomic<uint32_t> budget{UINT32_MAX};
   return budget;
@@ -2898,6 +2900,11 @@ class LiteRtDispatchInvocationContextT {
     // This context's invocations in a row on its device, this one included.
     consecutive_invocations_ =
         device_context_->InvokedAgain(this) ? consecutive_invocations_ + 1 : 1;
+    // The budget the host told before this invocation is this invocation's,
+    // whether or not its step feed launches anything.
+    if (bytecode_.step_feed.has_value()) {
+      step_budget_ = StepFeedBudget().exchange(UINT32_MAX);
+    }
     if (memory_profile) {
       memory_profiler_.Log("invoke_begin", bytecode_.function_name.c_str());
     }
@@ -4859,8 +4866,10 @@ class LiteRtDispatchInvocationContextT {
       LITERT_RETURN_IF_ERROR(FindCacheRows());
     }
     // No more steps ahead than the host will ask for (the budget it told
-    // before its invocation): a bounded response's end leaves none in flight.
-    const uint32_t budget = StepFeedBudget().load();
+    // before this invocation; a decode the host bounds by nothing, such as
+    // another session's, is not bounded by a stale one): a bounded
+    // response's end leaves none in flight.
+    const uint32_t budget = step_budget_;
     if (feed_.in_flight < kStepFeedDepth &&
         static_cast<uint32_t>(feed_.in_flight) >= budget &&
         feed_.budget_stops < 4) {
@@ -6606,6 +6615,8 @@ class LiteRtDispatchInvocationContextT {
   uint64_t bound_arena_version_ = 0;
   uint64_t invocation_count_ = 0;
   uint64_t consecutive_invocations_ = 0;
+  // The decode budget this invocation took (StepFeedBudget).
+  uint32_t step_budget_ = UINT32_MAX;
   std::string runtime_cache_path_;
 
   // The outputs copied to their host caches by the step on the stream.

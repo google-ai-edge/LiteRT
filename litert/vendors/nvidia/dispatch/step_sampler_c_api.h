@@ -45,7 +45,11 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchNvidiaStepSamplerPushUniforms(
 // next (a bounded response: its output limit less the tokens decoded so
 // far, less one), told before each invocation: the steps ahead stop at that
 // count, so a response's end leaves none in flight for the next prefill to
-// wait on. UINT32_MAX, or no call, is no bound. Process-wide.
+// wait on. The invocation that follows takes the budget: one told nothing
+// is not bounded (UINT32_MAX is no bound). Process-wide, for the one session
+// a process decodes with at a time: two decoding at once share it, and a step
+// feed may then stop early or run past a response's end (its steps ahead are
+// still checked against the host's inputs).
 LITERT_CAPI_EXPORT LiteRtStatus
 LiteRtDispatchNvidiaStepFeedSetBudget(uint32_t remaining);
 
