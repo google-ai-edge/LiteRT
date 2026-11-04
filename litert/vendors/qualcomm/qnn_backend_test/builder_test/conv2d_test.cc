@@ -16,10 +16,8 @@ namespace litert::qnn {
 namespace {
 
 TEST(Conv2dOpBuilderTest, SharedFilterAxisNotCorruptedOnSecondBuild) {
-  // Regression test: when the same static filter tensor is passed to
-  // BuildConv2dOp() twice (shared weights), the second call must not
-  // re-remap the already-remapped axis (3 → 2), which would cause
-  // QNN HTP op validation error 3110.
+  // Regression: shared static filter must not have its axis double-remapped
+  // (0→3→2) when passed to BuildConv2dOp() twice (QNN error 3110).
   ::qnn::TensorPool tensor_pool;
   const ::qnn::ScaleOffsetQuantizeParamsWrapper activation_quant{0.5f, 0};
   const ::qnn::AxisScaleOffsetQuantizeParamsWrapper filter_quant{
@@ -72,9 +70,8 @@ TEST(Conv2dOpBuilderTest, SharedFilterAxisNotCorruptedOnSecondBuild) {
 
 TEST(Conv2dOpBuilderTest,
      SharedFilterBwAxisNotCorruptedOnSecondBuild) {
-  // Regression test: same as SharedFilterAxisNotCorruptedOnSecondBuild but for
-  // BwAxisScaleOffsetQuantizeParamsWrapper. The second call must not re-remap
-  // the already-remapped axis (3 → 2).
+  // Regression: same as SharedFilterAxisNotCorruptedOnSecondBuild for the
+  // BwAxisScaleOffsetQuantizeParamsWrapper axis double-remap (0→3→2).
   ::qnn::TensorPool tensor_pool;
   const ::qnn::ScaleOffsetQuantizeParamsWrapper activation_quant{0.5f, 0};
   const ::qnn::BwAxisScaleOffsetQuantizeParamsWrapper filter_quant{
@@ -168,17 +165,8 @@ TEST(Conv2dOpBuilderTest, RemapsBwAxisQuantizationAfterFilterTranspose) {
 
 TEST(Conv2dOpBuilderTest,
      NativeFilterTransposeOpOutputAxisRemappedAndOriginalUntouched) {
-  // Regression test for the CloneNativeTensorFrom (else) branch.
-  // A non-static filter bypasses the static int8/uint8 paths and causes
-  // BuildConv2dOp to emit a QNN_OP_TRANSPOSE node:
-  //
-  //   filter ──► Transpose ──► transposed_filter ──► Conv
-  //
-  // Before the fix, CloneNativeTensorFrom(src, dims) read src.quantize_params_
-  // directly, so the Transpose op's output tensor kept axis=0 (OHWI) instead
-  // of the remapped axis=3 (HWIO).  The test also reuses the same filter for a
-  // second build to confirm neither the original tensor nor the second
-  // Transpose output is corrupted.
+  // Regression (else branch): before the fix, CloneNativeTensorFrom(src, dims)
+  // read src.quantize_params_ directly, leaving the Transpose output at axis=0.
   ::qnn::TensorPool tensor_pool;
   const ::qnn::ScaleOffsetQuantizeParamsWrapper activation_quant{0.5f, 0};
   const ::qnn::AxisScaleOffsetQuantizeParamsWrapper filter_quant{
