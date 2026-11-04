@@ -2329,6 +2329,15 @@ class LiteRtDispatchDeviceContextT {
     step_ahead_done_ = done;
     step_ahead_yield_ = std::move(yield);
   }
+  // Whether `caller` also made this device's previous invocation: a decode
+  // loop invokes its context back to back, while a speculative decoding round
+  // invokes the verifier between two plain decode steps. Not synchronized,
+  // like the step ahead's owner.
+  bool InvokedAgain(const void* caller) {
+    const bool again = last_invoker_ == caller;
+    last_invoker_ = caller;
+    return again;
+  }
   void ClearStepAhead(const void* owner) {
     if (step_ahead_owner_ == owner) {
       step_ahead_owner_ = nullptr;
@@ -2350,6 +2359,7 @@ class LiteRtDispatchDeviceContextT {
   const LiteRtRuntimeContext* runtime_context_;
   std::shared_ptr<AotEngineResidency> aot_residency_;
   const void* step_ahead_owner_ = nullptr;
+  const void* last_invoker_ = nullptr;
   cudaEvent_t step_ahead_done_ = nullptr;
   std::function<Expected<void>(cudaStream_t)> step_ahead_yield_;
   LiteRtTensorBufferHandle next_handle_ = 1;
@@ -2663,6 +2673,9 @@ class LiteRtDispatchInvocationContextT {
     const bool memory_profile =
         memory_profiler_.enabled() && invocation_count_ == 0;
     ++invocation_count_;
+    // This context's invocations in a row on its device, this one included.
+    consecutive_invocations_ =
+        device_context_->InvokedAgain(this) ? consecutive_invocations_ + 1 : 1;
     if (memory_profile) {
       memory_profiler_.Log("invoke_begin", bytecode_.function_name.c_str());
     }
@@ -2873,6 +2886,24 @@ class LiteRtDispatchInvocationContextT {
           aux_streams_.data(), static_cast<int32_t>(aux_streams_.size()));
     }
     LITERT_RETURN_IF_ERROR(EnqueueStep());
+    if (invocation_count_ == 1 && whole_graph_capture_ &&
+        bytecode_.step_feed.has_value() &&
+        execution_context_->isStreamCapturable(stream_)) {
+      // TensorRT-RTX captures an engine's CUDA graph at its second
+      // execution. A decode engine (the bytecode's step-feed record marks
+      // one) that runs once per conversation, as speculative decoding's
+      // priming step does, reaches it in the next conversation, where the
+      // capture can cost seconds (native Windows, MTP: E4B 1.4 s at 8K, 12B
+      // 2.6 s at 30K and 30 s at 128K); within the first conversation it
+      // costs about 0.3 s at 30K (12B). The same inputs give the same
+      // outputs and cache rows, so the first step runs twice, where
+      // TensorRT-RTX can capture it, with the aux streams the enqueue takes.
+      if (!aux_streams_.empty()) {
+        execution_context_->setAuxStreams(
+            aux_streams_.data(), static_cast<int32_t>(aux_streams_.size()));
+      }
+      LITERT_RETURN_IF_ERROR(EnqueueStep());
+    }
     profile_metrics.cpu_enqueue_call_ms = enqueue_call_timer.ElapsedMs();
     if (profile) {
       LITERT_RETURN_IF_ERROR(invocation_profiler_.RecordEnqueued(stream_));
@@ -3264,6 +3295,7 @@ class LiteRtDispatchInvocationContextT {
             device_memory_bytes_ = engine_->getDeviceMemorySizeV2();
           }
           own_graph_enabled_ = own_graph;
+          whole_graph_capture_ = !own_graph;
           LITERT_LOG(LITERT_INFO,
                      "NVIDIA dispatch context %s uses %s "
                      "(device_memory_bytes=%lld)",
@@ -4479,6 +4511,13 @@ class LiteRtDispatchInvocationContextT {
       std::lock_guard<std::mutex> lock(state.mutex);
       if (!state.told && invocation_count_ <= 2) return {};
     }
+    // A step ahead pays only in a decode loop, where the host asks for this
+    // context's next step right after this one. Always-on speculative
+    // decoding runs the verifier between two plain steps: no step ahead would
+    // be taken, and the first one launched there costs seconds (12B MTP:
+    // 2.4 s at 30K, 26 s at 128K). None until the context ran twice in a
+    // row, as it does in adaptive speculative decoding's plain stretches.
+    if (consecutive_invocations_ < 2) return {};
     const auto& feed = *bytecode_.step_feed;
     for (const uint32_t port :
          {feed.embeddings_port, feed.positions_port, feed.param_port,
@@ -6298,6 +6337,8 @@ class LiteRtDispatchInvocationContextT {
   cudaStream_t stream_ = nullptr;
   std::vector<cudaStream_t> aux_streams_;
   bool own_graph_enabled_ = false;
+  // TensorRT-RTX captures this context's CUDA graph (kWHOLE_GRAPH_CAPTURE).
+  bool whole_graph_capture_ = false;
   cudaStreamCaptureMode own_graph_mode_ = cudaStreamCaptureModeThreadLocal;
   std::vector<OwnGraph> own_graphs_;
   int64_t own_graph_captures_ = 0;
@@ -6321,6 +6362,7 @@ class LiteRtDispatchInvocationContextT {
   void* bound_arena_ptr_ = nullptr;
   uint64_t bound_arena_version_ = 0;
   uint64_t invocation_count_ = 0;
+  uint64_t consecutive_invocations_ = 0;
   std::string runtime_cache_path_;
 
   // The outputs copied to their host caches by the step on the stream.

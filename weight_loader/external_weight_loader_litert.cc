@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #if !defined(_WIN32)
 #include <sys/types.h>
 #endif  // !defined(_WIN32)
@@ -1118,9 +1119,56 @@ class LiteRtWeightLoader : public WeightLoader {
                           ? group_sections_.find(info.group_id)
                           : group_sections_.end();
     if (section_it != group_sections_.end()) {
+#if defined(_WIN32)
+      // A zero-offset view lets the NVIDIA weight store recover file offsets
+      // from pointers. Per-tensor views hide their offsets on Windows and make
+      // the compiler embed separate weight copies in every engine. Keep one
+      // read-only view per loader; mapping does not eagerly read the file.
+      if (!scoped_file_view_) {
+        if (!scoped_weight_source_->file.IsValid()) {
+          return litert::Unexpected(kLiteRtStatusErrorFailedPrecondition,
+                                    "Scoped weight source is not available");
+        }
+        HANDLE file = scoped_weight_source_->file.file();
+        LARGE_INTEGER size;
+        if (!GetFileSizeEx(file, &size) || size.QuadPart <= 0 ||
+            static_cast<uint64_t>(size.QuadPart) >
+                std::numeric_limits<size_t>::max()) {
+          return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                    "Invalid scoped weight file size");
+        }
+        HANDLE mapping =
+            CreateFileMappingA(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
+        if (!mapping) {
+          return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                    "CreateFileMappingA failed on Windows");
+        }
+        void* view = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
+        CloseHandle(mapping);
+        if (!view) {
+          return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                    "MapViewOfFile failed on Windows");
+        }
+        scoped_file_view_.reset(view);
+        scoped_file_size_ = static_cast<size_t>(size.QuadPart);
+      }
+      const auto& section = section_it->second;
+      if (section.offset > scoped_file_size_ ||
+          section.length > scoped_file_size_ - section.offset) {
+        return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                  "Scoped weight section exceeds file size");
+      }
+      return WeightSource{
+          .kind = WeightSource::Kind::kHostMemory,
+          .host_memory = absl::MakeConstSpan(
+              static_cast<const std::byte*>(scoped_file_view_.get()) +
+                  section.offset,
+              static_cast<size_t>(section.length))};
+#else
       return WeightSource{.kind = WeightSource::Kind::kScopedFile,
                           .section = &section_it->second,
                           .scoped_source = scoped_weight_source_.get()};
+#endif
     }
 
     LITERT_ASSIGN_OR_RETURN(
@@ -1137,6 +1185,11 @@ class LiteRtWeightLoader : public WeightLoader {
   absl::flat_hash_map<uint32_t, uint32_t> canonical_external_buffer_ids_;
   absl::flat_hash_map<uint32_t, std::string> group_paths_;
   std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source_;
+#if defined(_WIN32)
+  std::unique_ptr<void, decltype(&UnmapViewOfFile)> scoped_file_view_{
+      nullptr, &UnmapViewOfFile};
+  size_t scoped_file_size_ = 0;
+#endif
   absl::flat_hash_map<uint32_t, litert::ScopedWeightSection> group_sections_;
   const WeightInMemoryMap* weight_in_memory_map_;  // Client provided, not owned
 
