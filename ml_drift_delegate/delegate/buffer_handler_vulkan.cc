@@ -28,13 +28,10 @@
 #include "ml_drift/syrtis/memory.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_spatial_tensor.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_wrapper.h"  // from @ml_drift
-#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
-#include "litert/c/litert_environment.h"
-#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/tensor_buffer_lockstate.h"
 #include "ml_drift_delegate/delegate/buffer_handler_utils.h"
@@ -85,6 +82,9 @@ LiteRtStatus LiteRtCreateVulkanMemory(LiteRtGpuDeviceId device_id,
     return kLiteRtStatusErrorInvalidArgument;
   }
   auto* vk_env = static_cast<::litert::ml_drift::SharedVulkanEnv*>(device_id);
+  if (!vk_env->EnsureVulkanInitialized()) {
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
 
   auto memory_info = std::make_unique<VulkanMemoryInfo>(
       VulkanMemoryInfo{.tensor_type = *tensor_type,
@@ -97,6 +97,8 @@ LiteRtStatus LiteRtCreateVulkanMemory(LiteRtGpuDeviceId device_id,
 
   // Returns `VulkanSpatialTensor*` as the `memory_handle`.
   memory_info->memory_handle = &memory_info->vk_tensor;
+  memory_info->raw_handle =
+      reinterpret_cast<void*>(memory_info->vk_tensor.GetBufferHandle());
 
   *vulkan_memory_info = memory_info.release();
   return kLiteRtStatusOk;
