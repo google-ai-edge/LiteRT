@@ -224,7 +224,7 @@ def reshape_data_for_blockwise(
   return tensor_data.reshape(new_shape), quantized_dim + 1
 
 
-def _broadcast_scale_zp_for_blockwise(
+def broadcast_scale_zp_for_blockwise(
     tensor_content: np.ndarray,
     quant_params: qtyping.UniformQuantParams,
 ) -> qtyping.UniformQuantParams:
@@ -303,7 +303,7 @@ def uniform_quantize(
   # The reshaping for blockwise quantization is unique hence we do this here
   # to avoid unexpected broadcast behavior downstream.
   if is_blockwise_quant:
-    quantization_params = _broadcast_scale_zp_for_blockwise(
+    quantization_params = broadcast_scale_zp_for_blockwise(
         tensor_data, quantization_params
     )
 
@@ -415,7 +415,7 @@ def uniform_dequantize(
           quantization_params,
           scale=quantization_params.scale.reshape(scale_shape),
       )
-    quantization_params = _broadcast_scale_zp_for_blockwise(
+    quantization_params = broadcast_scale_zp_for_blockwise(
         tensor_data, quantization_params
     )
 

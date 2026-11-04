@@ -220,6 +220,29 @@ class TensorUtilsTest(parameterized.TestCase):
         quantized_tensor, np.array([[[2, 4, 2, 4]]], dtype=np.int8)
     )
 
+  def test_broadcast_scale_zp_for_blockwise(self):
+    tensor = np.zeros((2, 4), dtype=np.float32)
+    quant_params = qtyping.UniformQuantParams(
+        quantized_dimension=1,
+        block_size=2,
+        num_bits=4,
+        scale=np.array([[0.5, 1.5], [2.0, 3.0]], dtype=np.float32),
+        zero_point=np.array([[0, 1], [-1, 2]], dtype=np.int32),
+    )
+    broadcasted = uniform_quantize_tensor.broadcast_scale_zp_for_blockwise(
+        tensor, quant_params
+    )
+    np.testing.assert_array_equal(
+        broadcasted.scale,
+        np.array(
+            [[0.5, 0.5, 1.5, 1.5], [2.0, 2.0, 3.0, 3.0]], dtype=np.float32
+        ),
+    )
+    np.testing.assert_array_equal(
+        broadcasted.zero_point,
+        np.array([[0, 0, 1, 1], [-1, -1, 2, 2]], dtype=np.int32),
+    )
+
   @parameterized.named_parameters(
       dict(
           testcase_name="single_axis",

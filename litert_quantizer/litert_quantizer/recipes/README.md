@@ -45,6 +45,18 @@ class, with the following exceptions:
 *   `algorithm_key` is desired quantization algorithm as defined by
     `AlgorithmName` in `algorithm_manager.py`.
 
+*   `algorithm_params` is an optional dictionary of algorithm-specific options
+    on `weight_tensor_config` (or `activation_tensor_config`), such as:
+
+    *   `"int2_in_int4"` (`bool`, default `false`): Supported when
+        `algorithm_key` is `"OCTAV"` (or an algorithm that delegates weight
+        quantization to OCTAV, such as `"HADAMARD_ROTATION"` or
+        `"DECOMPOSED_HADAMARD_ROTATION"`), `num_bits` is `4`, and `symmetric` is
+        `true`. Quantizes weights to the 4-level 2-bit mid-riser codebook `{-3,
+        -1, 1, 3} * scale` stored in a signed `INT4` container for evaluating or
+        executing 2-bit-quantized weights on `INT4` kernels (does not reduce
+        FlatBuffer storage size below `INT4`).
+
 ## Customizing Input/Output Precision
 
 If your hardware requires a specific data type (e.g., `uint8`, `int16`) for
