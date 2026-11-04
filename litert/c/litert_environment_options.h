@@ -76,6 +76,12 @@ typedef enum {
   /// \internal This is for internal use only, for a custom GPU accelerator
   /// handle.
   kLiteRtEnvOptionTagSystemGpuAcceleratorHandle = 30,
+  // External Vulkan handles for sharing a caller-managed Vulkan device/queue.
+  kLiteRtEnvOptionTagVulkanInstance = 31,
+  kLiteRtEnvOptionTagVulkanPhysicalDevice = 32,
+  kLiteRtEnvOptionTagVulkanDevice = 33,
+  kLiteRtEnvOptionTagVulkanQueue = 34,
+  kLiteRtEnvOptionTagVulkanQueueFamilyIndex = 35,
   // Internal use only. Virtual null tag for option that is not defined.
   kLiteRtEnvOptionTagNull = 255,
 } LiteRtEnvOptionTag;
