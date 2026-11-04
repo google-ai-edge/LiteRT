@@ -168,6 +168,45 @@ class TensorUtilsTest(parameterized.TestCase):
 
     self.assertSequenceAlmostEqual(expected_tensor, quantized_tensor)
 
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="3d",
+          shape=(2, 3, 1500000),
+          scales_shape=(2, 3, 1),
+      ),
+      dict(
+          testcase_name="4d",
+          shape=(2, 3, 1, 1500000),
+          scales_shape=(2, 3, 1, 1),
+      ),
+  )
+  def test_uniform_quantize_multiaxis_large_tensor_succeeds(
+      self, shape, scales_shape
+  ):
+    # 2 * 3 * 1500000 float32 values are about 34 MiB, so `uniform_quantize`
+    # takes its chunked path (used above 32 MiB).
+    tensor_data = np.full(shape, 4.0, dtype=np.float32)
+    # One scale per index of the quantized dimensions 0 and 1.
+    quantized_dimensions = (0, 1)
+    scales = np.array(
+        [1.0, 2.0, 4.0, 0.5, 1.0, 2.0], dtype=np.float32
+    ).reshape(scales_shape)
+    # 4.0 / scale, where 4.0 / 0.5 = 8 is clipped to the int4 max of 7.
+    expected = np.broadcast_to(
+        np.array([4, 2, 1, 7, 4, 2], dtype=np.int8).reshape(scales_shape), shape
+    )
+    quant_params = qtyping.UniformQuantParams(
+        scale=scales,
+        zero_point=np.zeros(scales_shape, dtype=np.int32),
+        num_bits=4,
+        quantized_dimension=None,
+        quantized_dimensions=quantized_dimensions,
+    )
+    quantized = uniform_quantize_tensor.uniform_quantize(
+        tensor_data, quant_params
+    )
+    np.testing.assert_array_equal(quantized, expected)
+
   def test_uniform_quantize_wrong_shape(self):
     tensor = [-3.0, 1.3, 2.4, 16.0]
 
