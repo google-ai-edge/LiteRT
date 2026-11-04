@@ -15,6 +15,7 @@
 
 import json
 import pathlib
+from unittest import mock
 
 from absl import flags
 from absl.testing import absltest
@@ -224,6 +225,32 @@ class ComparisonResultTest(absltest.TestCase):
       self.assertLen(output_tensors, 1)
       self.assertEmpty(constant_tensors)
       self.assertEmpty(intermediate_tensors)
+
+  def test_get_model_size_reduction_non_posix_paths(self):
+    ref_path = '/remote_fs/ref_model.tflite'
+    targ_path = pathlib.Path('/remote_fs/targ_model.tflite')
+    sizes = {
+        ref_path: 1000,
+        str(targ_path): 250,
+    }
+    comparison_result = model_validator.ComparisonResult(ref_path, targ_path)
+    gfile_module = getattr(model_validator, 'gfile', None)
+    if gfile_module is not None:
+      patcher = mock.patch.object(
+          gfile_module,
+          'Stat',
+          side_effect=lambda path: mock.Mock(length=sizes[path]),
+      )
+    else:
+      patcher = mock.patch.object(
+          getattr(model_validator, 'os').path,
+          'getsize',
+          side_effect=sizes.__getitem__,
+      )
+    with patcher:
+      reduced_bytes, reduced_perc = comparison_result.get_model_size_reduction()
+    self.assertEqual(reduced_bytes, 750)
+    self.assertAlmostEqual(reduced_perc, 75.0)
 
 
 class ModelValidatorCompareTest(absltest.TestCase):

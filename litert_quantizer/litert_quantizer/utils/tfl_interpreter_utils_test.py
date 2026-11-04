@@ -14,6 +14,7 @@
 # ==============================================================================
 
 import pathlib
+from unittest import mock
 
 from absl.testing import absltest
 import numpy as np
@@ -39,6 +40,88 @@ class TflUtilsSingleSignatureModelTest(absltest.TestCase):
         self._test_model_path
     )
     self.assertIsNotNone(tfl_interpreter)
+
+  def test_create_tfl_interpreter_with_pathlib_path(self):
+    with mock.patch.object(
+        tfl_interpreter_utils.tfl,
+        "Interpreter",
+        wraps=tfl_interpreter_utils.tfl.Interpreter,
+    ) as mock_interpreter:
+      tfl_interpreter = tfl_interpreter_utils.create_tfl_interpreter(
+          pathlib.Path(self._test_model_path)
+      )
+    mock_interpreter.assert_called_once()
+    self.assertEqual(
+        mock_interpreter.call_args.kwargs["model_path"], self._test_model_path
+    )
+    self.assertIsNone(mock_interpreter.call_args.kwargs["model_content"])
+    tfl_interpreter_utils.invoke_interpreter_once(
+        tfl_interpreter, [self._input_data]
+    )
+    output_details = tfl_interpreter.get_output_details()[0]
+    output_data = tfl_interpreter.get_tensor(output_details["index"])
+    self.assertAlmostEqual(output_data[0][0], 0.0031010755)
+
+  def test_create_tfl_interpreter_with_bytes(self):
+    model_bytes = bytes(
+        tfl_interpreter_utils.mmap_utils.get_file_contents(
+            self._test_model_path
+        )
+    )
+    with mock.patch.object(
+        tfl_interpreter_utils.tfl,
+        "Interpreter",
+        wraps=tfl_interpreter_utils.tfl.Interpreter,
+    ) as mock_interpreter:
+      tfl_interpreter = tfl_interpreter_utils.create_tfl_interpreter(
+          model_bytes
+      )
+    mock_interpreter.assert_called_once()
+    self.assertIsNone(mock_interpreter.call_args.kwargs["model_path"])
+    self.assertEqual(
+        mock_interpreter.call_args.kwargs["model_content"], model_bytes
+    )
+    tfl_interpreter_utils.invoke_interpreter_once(
+        tfl_interpreter, [self._input_data]
+    )
+    output_details = tfl_interpreter.get_output_details()[0]
+    output_data = tfl_interpreter.get_tensor(output_details["index"])
+    self.assertAlmostEqual(output_data[0][0], 0.0031010755)
+
+  def test_create_tfl_interpreter_with_non_local_path(self):
+    model_bytes = bytes(
+        tfl_interpreter_utils.mmap_utils.get_file_contents(
+            self._test_model_path
+        )
+    )
+    remote_path = "/remote_fs/conv_fc_mnist.tflite"
+    with (
+        mock.patch.object(
+            tfl_interpreter_utils.mmap_utils,
+            "get_file_contents",
+            return_value=memoryview(model_bytes),
+        ) as mock_get_contents,
+        mock.patch.object(
+            tfl_interpreter_utils.tfl,
+            "Interpreter",
+            wraps=tfl_interpreter_utils.tfl.Interpreter,
+        ) as mock_interpreter,
+    ):
+      tfl_interpreter = tfl_interpreter_utils.create_tfl_interpreter(
+          remote_path
+      )
+    mock_get_contents.assert_called_once_with(remote_path)
+    mock_interpreter.assert_called_once()
+    self.assertIsNone(mock_interpreter.call_args.kwargs["model_path"])
+    self.assertEqual(
+        mock_interpreter.call_args.kwargs["model_content"], model_bytes
+    )
+    tfl_interpreter_utils.invoke_interpreter_once(
+        tfl_interpreter, [self._input_data]
+    )
+    output_details = tfl_interpreter.get_output_details()[0]
+    output_data = tfl_interpreter.get_tensor(output_details["index"])
+    self.assertAlmostEqual(output_data[0][0], 0.0031010755)
 
   def test_invoke_interpreter_once(self):
     tfl_interpreter = tfl_interpreter_utils.create_tfl_interpreter(

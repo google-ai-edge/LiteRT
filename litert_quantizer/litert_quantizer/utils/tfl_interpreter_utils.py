@@ -15,6 +15,7 @@
 
 """Util functions for TFL interpreter."""
 
+import pathlib
 from typing import Any, Optional, Union
 
 import ml_dtypes
@@ -31,7 +32,7 @@ _Numeric = Union[int, float]
 
 
 def create_tfl_interpreter(
-    tflite_model: Union[str, bytes],
+    tflite_model: Union[str, pathlib.Path, bytes],
     allocate_tensors: bool = True,
     use_xnnpack: bool = True,
     num_threads: int = 16,
@@ -42,7 +43,7 @@ def create_tfl_interpreter(
   """Creates a TFLite interpreter from a model file.
 
   Args:
-    tflite_model: Model file path or bytes.
+    tflite_model: Model file path (`str` or `pathlib.Path`) or bytes.
     allocate_tensors: Whether to allocate tensors.
     use_xnnpack: Whether to use the XNNPACK delegate for the interpreter.
     num_threads: The number of threads to use for the interpreter.
@@ -54,15 +55,25 @@ def create_tfl_interpreter(
   Returns:
     A TFLite interpreter.
   """
-  if isinstance(tflite_model, str):
-    tflite_model = mmap_utils.get_file_contents(tflite_model)  # pyrefly: ignore[bad-assignment]
-
   if use_xnnpack:
     op_resolver = tfl.OpResolverType.BUILTIN
   else:
     op_resolver = tfl.OpResolverType.BUILTIN_WITHOUT_DEFAULT_DELEGATES
+  model_path: Optional[str] = None
+  model_content: Optional[bytes] = None
+  if isinstance(tflite_model, (str, pathlib.Path)):
+    if pathlib.Path(tflite_model).exists():
+      model_path = str(tflite_model)
+    else:
+      # Non-local/virtual filesystem paths are not visible to `pathlib` or
+      # `CreateWrapperFromFile`; read via `mmap_utils` instead.
+      model_content = bytes(mmap_utils.get_file_contents(tflite_model))
+  else:
+    model_content = bytes(tflite_model)
+
   tflite_interpreter = tfl.Interpreter(
-      model_content=bytes(tflite_model),  # pyrefly: ignore[bad-argument-type]
+      model_path=model_path,
+      model_content=model_content,
       num_threads=num_threads,
       experimental_op_resolver_type=op_resolver,
       experimental_preserve_all_tensors=preserve_all_tensors,
@@ -249,12 +260,13 @@ def get_tensor_name_to_details_map(
 
 
 def get_input_tensor_names(
-    tflite_model: Union[str, bytes], signature_name: Optional[str] = None
+    tflite_model: Union[str, pathlib.Path, bytes],
+    signature_name: Optional[str] = None,
 ) -> list[str]:
   """Gets input tensor names from a TFLite model for a signature.
 
   Args:
-    tflite_model: Model file path or bytes.
+    tflite_model: Model file path (`str` or `pathlib.Path`) or bytes.
     signature_name: The signature name that the input tensors belong to.
 
   Returns:
@@ -270,12 +282,13 @@ def get_input_tensor_names(
 
 
 def get_output_tensor_names(
-    tflite_model: Union[str, bytes], signature_name: Optional[str] = None
+    tflite_model: Union[str, pathlib.Path, bytes],
+    signature_name: Optional[str] = None,
 ) -> list[str]:
   """Gets output tensor names from a TFLite model for a signature.
 
   Args:
-    tflite_model: Model file path or bytes.
+    tflite_model: Model file path (`str` or `pathlib.Path`) or bytes.
     signature_name: The signature name that the output tensors belong to.
 
   Returns:
@@ -290,7 +303,7 @@ def get_output_tensor_names(
 
 
 def get_constant_tensor_names(
-    tflite_model: Union[str, bytes],
+    tflite_model: Union[str, pathlib.Path, bytes],
     subgraph_index: int = 0,
     min_constant_size: int = 1,
 ) -> list[str]:
@@ -301,7 +314,7 @@ def get_constant_tensor_names(
   running it.
 
   Args:
-    tflite_model: Model file path or bytes.
+    tflite_model: Model file path (`str` or `pathlib.Path`) or bytes.
     subgraph_index: The index of the subgraph that the tensor belongs to.
     min_constant_size: The minimum size of a constant tensor.
 
@@ -441,7 +454,7 @@ def create_random_dataset(
 
 
 def create_random_normal_input_data(
-    tflite_model: Union[str, bytes],
+    tflite_model: Union[str, pathlib.Path, bytes],
     num_samples: int = 4,
     random_seed: int = 666,
     min_max_range: Optional[tuple[_Numeric, _Numeric]] = None,
@@ -449,7 +462,7 @@ def create_random_normal_input_data(
   """Creates a random normal dataset for a signature runner.
 
   Args:
-    tflite_model: TFLite model path or bytearray.
+    tflite_model: TFLite model path (`str` or `pathlib.Path`) or bytes.
     num_samples: Number of input samples to be generated.
     random_seed: Random seed to be used for function.
     min_max_range: The min and max of the input range.

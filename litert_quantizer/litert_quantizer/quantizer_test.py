@@ -425,6 +425,29 @@ class QuantizerTest(parameterized.TestCase):
         'sequential/dense_1/MatMul', validation_result.intermediate_tensors
     )
 
+  def test_validate_with_quantized_model_path_succeeds(self):
+    quant_result = self._quantizer.quantize()
+    quantized_model_path = str(
+        pathlib.Path(self._tmp_save_path) / 'quantized_model.tflite'
+    )
+    quant_result.export_model(quantized_model_path)
+    expected_size_reduction = (
+        self._quantizer.validate().get_model_size_reduction()
+    )
+
+    new_quantizer = quantizer.Quantizer(
+        self._test_model_path, previous_quantized_model=quantized_model_path
+    )
+    validation_result = new_quantizer.validate()
+
+    self.assertEqual(
+        validation_result.get_model_size_reduction(), expected_size_reduction
+    )
+    self.assertIn(
+        'sequential/dense_1/MatMul',
+        validation_result.get_signature_comparison_result().intermediate_tensors,
+    )
+
   def test_load_custom_policies_succeeds(self):
 
     test_op_config = qtyping.OpQuantizationConfig(

@@ -60,12 +60,18 @@ class ComparisonResult:
     comparison_results: A dictionary of signature key and its comparison result.
   """
 
-  def __init__(self, reference_model: bytes, target_model: bytes):
+  def __init__(
+      self,
+      reference_model: bytes | str | pathlib.Path,
+      target_model: bytes | str | pathlib.Path,
+  ):
     """Initialize the ComparisonResult object.
 
     Args:
-      reference_model: Model which will be used as the reference.
-      target_model: Target model which will be compared against the reference.
+      reference_model: Model which will be used as the reference, as model
+        content or a path (`str` or `pathlib.Path`) to the model file.
+      target_model: Target model which will be compared against the reference,
+        as model content or a path (`str` or `pathlib.Path`) to the model file.
         We expect target_model and reference_model to have the same graph
         structure.
     """
@@ -177,8 +183,18 @@ class ComparisonResult:
 
   def get_model_size_reduction(self) -> tuple[int, float]:
     """Get the model size reduction in bytes and percentage."""
-    reduced_model_size = len(self._reference_model) - len(self._target_model)
-    reduction_perc = reduced_model_size / len(self._reference_model) * 100
+    ref_size = (
+        os.path.getsize(str(self._reference_model))
+        if isinstance(self._reference_model, (str, pathlib.Path))
+        else len(self._reference_model)
+    )
+    targ_size = (
+        os.path.getsize(str(self._target_model))
+        if isinstance(self._target_model, (str, pathlib.Path))
+        else len(self._target_model)
+    )
+    reduced_model_size = ref_size - targ_size
+    reduction_perc = reduced_model_size / ref_size * 100
     return reduced_model_size, reduction_perc
 
   def save(self, save_folder: str, model_name: str) -> None:
@@ -234,7 +250,7 @@ class ComparisonResult:
 
 
 def _setup_validation_interpreter(
-    model: bytes,
+    model: bytes | str | pathlib.Path,
     signature_input: dict[str, Any],
     signature_key: Optional[str],
     use_xnnpack: bool,
@@ -244,7 +260,8 @@ def _setup_validation_interpreter(
   """Setup the interpreter for validation given a signature key.
 
   Args:
-    model: The model to be validated.
+    model: The model to be validated, as model content or a path to the model
+      file.
     signature_input: A dictionary of input tensor name and its value.
     signature_key: The signature key to be used for invoking the models. If the
       model only has one signature, this can be set to None.
@@ -278,8 +295,8 @@ def _setup_validation_interpreter(
 
 # TODO: b/330797129 - Enable multi-threaded evaluation.
 def compare_model(
-    reference_model: bytes,
-    target_model: bytes,
+    reference_model: bytes | str | pathlib.Path,
+    target_model: bytes | str | pathlib.Path,
     test_data: dict[str, Iterable[dict[str, Any]]],
     error_metrics: Optional[
         Sequence[validation_utils.ValidationErrorMetric]
@@ -296,8 +313,10 @@ def compare_model(
   difference).
 
   Args:
-    reference_model: Model which will be used as the reference
-    target_model: Target model which will be compared against the reference. We
+    reference_model: Model which will be used as the reference, as model content
+      or a path (`str` or `pathlib.Path`) to the model file.
+    target_model: Target model which will be compared against the reference, as
+      model content or a path (`str` or `pathlib.Path`) to the model file. We
       expect reference_model and target_model have the inputs and outputs
       signature.
     test_data: A mapping from the model's signature keys to their corresponding
