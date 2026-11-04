@@ -426,6 +426,32 @@ TEST(TensorPoolCreateTensorWithNameTest, CreateUniqueNamesForEmptyNames) {
   EXPECT_STREQ(output.GetQnnTensor().v1.name, "1_qnn");
 }
 
+TEST(TensorPoolCloneNativeTensorTest, CloneWithNewQuantAndDimensions) {
+  // Verifies that the quant and dims args override src's own fields — the key
+  // invariant of this overload vs CloneNativeTensorFrom(src, dims).
+  TensorPool tensor_pool;
+  const ScaleOffsetQuantizeParamsWrapper src_quant{1.0f, 0};
+  auto& src = tensor_pool.CreateNativeTensor(QNN_DATATYPE_SFIXED_POINT_8,
+                                             src_quant, {2, 3});
+
+  const AxisScaleOffsetQuantizeParamsWrapper new_quant{
+      /*axis=*/3, /*scales=*/{0.5f, 0.5f}, /*zero_points=*/{0, 0}};
+  const std::vector<std::uint32_t> new_dims{1, 1, 1, 2};
+  auto& cloned = tensor_pool.CloneNativeTensorFrom(src, new_quant, new_dims);
+
+  EXPECT_EQ(cloned.GetQnnTensor().v1.type, QNN_TENSOR_TYPE_NATIVE);
+  EXPECT_EQ(cloned.GetQnnTensor().v1.dataType, QNN_DATATYPE_SFIXED_POINT_8);
+  EXPECT_EQ(cloned.GetDimensions(), new_dims);
+  const auto& got_quant =
+      std::get<AxisScaleOffsetQuantizeParamsWrapper>(cloned.GetQuantParams());
+  EXPECT_EQ(got_quant.GetAxis(), 3);
+
+  // Source tensor must be unchanged.
+  EXPECT_EQ(src.GetDimensions(), (std::vector<std::uint32_t>{2, 3}));
+  EXPECT_TRUE(std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
+      src.GetQuantParams()));
+}
+
 }  // namespace
 
 }  // namespace qnn
