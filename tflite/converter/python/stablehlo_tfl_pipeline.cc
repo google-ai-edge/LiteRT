@@ -152,6 +152,7 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   // func.call boundaries that cause func.call result type mismatches when
   // quantized types are introduced.
   pass_manager.addPass(mlir::createInlinerPass());
+  pass_manager.addPass(mlir::odml::createLiftCallSiteLocCallerPass());
   pass_manager.addPass(mlir::TFL::CreateFoldStablehloConstantTransformsPass());
   pass_manager.addPass(mlir::TFL::CreateLowerQuantAnnotationsPass());
   pass_manager.addPass(mlir::createSymbolDCEPass());
@@ -166,8 +167,8 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   // legalization
   pass_manager.addPass(mlir::odml::CreateLegalizeVhloQuantCustomCallsPass());
 
-  // VHLO -> StableHLO
-  pass_manager.addPass(mlir::stablehlo::createVhloLegalizeToStablehloPass());
+  // VHLO -> StableHLO, upgrading VHLO to the current version first.
+  mlir::stablehlo::createStablehloDeserializePipeline(pass_manager);
 
   // Decompose newer StableHLO ops into equivalent older ops for baseline
   // compatibility with the TFLite legalization backend.
@@ -193,6 +194,7 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   pass_manager.addNestedPass<mlir::func::FuncOp>(mlir::createCSEPass());
   pass_manager.addPass(mlir::createSymbolDCEPass());
   pass_manager.addPass(mlir::createInlinerPass());
+  pass_manager.addPass(mlir::odml::createLiftCallSiteLocCallerPass());
 
   // Import cleanup (Tuple flattening)
   // Defaulting to "main" for the entry function name for now.
@@ -209,6 +211,7 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   // Build StableHLO composite from PyTorch mark_tensor ops before MHLO bridge
   pass_manager.addPass(mlir::odml::createBuildStableHLOCompositePass());
   pass_manager.addPass(mlir::createInlinerPass());
+  pass_manager.addPass(mlir::odml::createLiftCallSiteLocCallerPass());
 
   // StableHLO -> MHLO bridge
   pass_manager.addPass(mlir::mhlo::createStablehloLegalizeToHloPass());
@@ -304,6 +307,11 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   pass_manager.addPass(CreatePruneDeadResourcesPass());
   pass_manager.addNestedPass<mlir::func::FuncOp>(
       mlir::TFL::CreateFuseA4W2DRQFullyConnectedPass());
+  // Blockwise dequantizes of constants that no fusion above claimed (e.g.
+  // weight-only blockwise quantization) move their parameters onto the tensor
+  // type so that they can be exported.
+  pass_manager.addNestedPass<mlir::func::FuncOp>(
+      mlir::TFL::CreateLowerBlockwiseDequantizePass());
   if (pass_config.fold_fp16_casts_into_fully_connected) {
     pass_manager.addNestedPass<mlir::func::FuncOp>(
         mlir::TFL::CreateFoldFp16CastsIntoFullyConnectedPass());
