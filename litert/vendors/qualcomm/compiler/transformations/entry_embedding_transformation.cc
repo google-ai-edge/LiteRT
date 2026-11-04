@@ -18,7 +18,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <initializer_list>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -39,6 +38,7 @@
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/transformation_utils.h"
 
 namespace {
 
@@ -70,6 +70,9 @@ using litert::compiler::OneHotOptions;
 using litert::compiler::Op;
 using litert::compiler::RankedTensorSpecBuilder;
 using litert::compiler::Tensor;
+using litert::qnn::BuildAdd;
+using litert::qnn::ConstI32;
+using litert::qnn::HasDims;
 
 // Returns the dimensions of a ranked tensor, or an empty vector on failure.
 std::vector<int32_t> Dims(const Tensor& t) {
@@ -79,10 +82,6 @@ std::vector<int32_t> Dims(const Tensor& t) {
   }
   auto dims = type->Layout().Dimensions();
   return std::vector<int32_t>(dims.begin(), dims.end());
-}
-
-bool HasDims(const Tensor& t, std::initializer_list<int32_t> expected) {
-  return Dims(t) == std::vector<int32_t>(expected);
 }
 
 bool HasSingleUse(const Tensor& t) { return t.Uses().size() == 1; }
@@ -447,16 +446,6 @@ Expected<Tensor> BuildLookup(Builder& builder, const Branch& b, int32_t seq_len,
   return sel_t;
 }
 
-Expected<Tensor> BuildInt32Vector(Builder& builder,
-                                  const std::vector<int32_t>& values) {
-  LITERT_ASSIGN_OR_RETURN(
-      auto t, BuildTensorOfType(builder, ElementType::Int32,
-                                {static_cast<int32_t>(values.size())}));
-  LITERT_RETURN_IF_ERROR(
-      builder.BuildWeights<int32_t>(absl::MakeConstSpan(values), t));
-  return t;
-}
-
 bool CanUsePaddedLookup(const Branch& b) {
   return !b.select || b.mask_ops.has_value();
 }
@@ -475,16 +464,11 @@ Expected<Tensor> BuildClampedIndex(Builder& builder, const Tensor& c,
   LITERT_ASSIGN_OR_RETURN(auto zero_t, BuildScalarConst(builder, 0));
   LITERT_ASSIGN_OR_RETURN(auto hi_t, BuildScalarConst(builder, depth + 2));
   LITERT_ASSIGN_OR_RETURN(auto shifted,
-                          BuildTensorOfType(builder, ElementType::Int32, dims));
+                          BuildAdd(builder, c, two_t, c, dims));
   LITERT_ASSIGN_OR_RETURN(auto lower,
                           BuildTensorOfType(builder, ElementType::Int32, dims));
   LITERT_ASSIGN_OR_RETURN(auto idx,
                           BuildTensorOfType(builder, ElementType::Int32, dims));
-  LITERT_ASSIGN_OR_RETURN(
-      auto add, builder.BuildOp(kLiteRtOpCodeTflAdd, {c, two_t}, {shifted}));
-  AddOptions add_opts;
-  add_opts.fused_activation_function = 0;
-  LITERT_RETURN_IF_ERROR(builder.SetOpOptions(add, std::move(add_opts)));
   LITERT_RETURN_IF_ERROR(
       builder.BuildOp(kLiteRtOpCodeTflMaximum, {shifted, zero_t}, {lower}));
   LITERT_RETURN_IF_ERROR(
@@ -541,8 +525,8 @@ Expected<Tensor> BuildPaddedLookup(Builder& builder, const Branch& b,
 Expected<void> BuildSliceInto(Builder& builder, const Tensor& in,
                               const std::vector<int32_t>& begin,
                               const Tensor& out) {
-  LITERT_ASSIGN_OR_RETURN(auto begin_t, BuildInt32Vector(builder, begin));
-  LITERT_ASSIGN_OR_RETURN(auto size_t_, BuildInt32Vector(builder, Dims(out)));
+  LITERT_ASSIGN_OR_RETURN(auto begin_t, ConstI32(builder, begin));
+  LITERT_ASSIGN_OR_RETURN(auto size_t_, ConstI32(builder, Dims(out)));
   LITERT_RETURN_IF_ERROR(
       builder.BuildOp(kLiteRtOpCodeTflSlice, {in, begin_t, size_t_}, {out}));
   return {};

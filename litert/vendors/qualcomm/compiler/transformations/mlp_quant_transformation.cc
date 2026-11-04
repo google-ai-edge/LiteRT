@@ -14,7 +14,6 @@
 
 #include "litert/vendors/qualcomm/compiler/transformations/mlp_quant_transformation.h"
 
-#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -34,14 +33,12 @@
 #include "litert/compiler/cc/litert_matchers.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/compiler/cc/litert_op_options.h"
+#include "litert/vendors/qualcomm/compiler/transformations/transformation_utils.h"
 
 namespace {
 
-using litert::BuildLayout;
 using litert::ElementType;
 using litert::Expected;
-using litert::Layout;
-using litert::RankedTensorType;
 using litert::compiler::AddOptions;
 using litert::compiler::Builder;
 using litert::compiler::CompositeOptions;
@@ -57,10 +54,12 @@ using litert::compiler::m_Shape;
 using litert::compiler::Match;
 using litert::compiler::MulOptions;
 using litert::compiler::Op;
-using litert::compiler::RankedTensorSpecBuilder;
-using litert::compiler::ReshapeOptions;
 using litert::compiler::RmsNormOpts;
 using litert::compiler::Tensor;
+using litert::qnn::BuildReshape;
+using litert::qnn::BuildReshapeInto;
+using litert::qnn::HasDims;
+using litert::qnn::NewLike;
 
 constexpr int32_t kMinSequenceFor4DFolding = 600;
 
@@ -80,61 +79,6 @@ std::optional<std::pair<int32_t, int32_t>> BestCroutonSpatialDims(int32_t s) {
   return best;
 }
 
-bool HasShape(const Tensor& t, const std::vector<int32_t>& expected) {
-  auto rtt = t.RankedTensorType();
-  if (!rtt) return false;
-  auto dims = rtt->Layout().Dimensions();
-  if (dims.size() != expected.size()) return false;
-  for (size_t i = 0; i < expected.size(); ++i) {
-    if (dims[i] != expected[i]) return false;
-  }
-  return true;
-}
-
-Expected<Tensor> NewLike(Builder& builder, const Tensor& like,
-                         const std::vector<int32_t>& dims) {
-  RankedTensorType type(
-      like.ElementType(),
-      Layout(BuildLayout(dims.data(), dims.data() + dims.size())));
-  auto spec = RankedTensorSpecBuilder(type);
-  if (like.QTypeId() == kLiteRtQuantizationPerTensor) {
-    spec =
-        std::move(spec).WithPerTensorQuantization(like.PerTensorQuantization());
-  }
-  return builder.BuildTensor(std::move(spec).Build());
-}
-
-Expected<Tensor> ConstI32(Builder& builder, const std::vector<int32_t>& data) {
-  const std::vector<int32_t> dims = {static_cast<int32_t>(data.size())};
-  RankedTensorType type(ElementType::Int32,
-                        Layout(BuildLayout(dims.data(), dims.data() + 1)));
-  LITERT_ASSIGN_OR_RETURN(
-      auto t, builder.BuildTensor(RankedTensorSpecBuilder(type).Build()));
-  LITERT_RETURN_IF_ERROR(
-      builder.BuildWeights<int32_t>(absl::MakeConstSpan(data), t));
-  return t;
-}
-
-Expected<void> BuildReshapeInto(Builder& builder, const Tensor& in,
-                                const std::vector<int32_t>& dims,
-                                const Tensor& out) {
-  LITERT_ASSIGN_OR_RETURN(auto shape, ConstI32(builder, dims));
-  LITERT_ASSIGN_OR_RETURN(
-      auto op, builder.BuildOp(kLiteRtOpCodeTflReshape, {in, shape}, {out}));
-  ReshapeOptions opts;
-  opts.new_shape = dims;
-  LITERT_RETURN_IF_ERROR(builder.SetOpOptions(op, std::move(opts)));
-  return {};
-}
-
-Expected<Tensor> BuildReshape(Builder& builder, const Tensor& in,
-                              const Tensor& like,
-                              const std::vector<int32_t>& dims) {
-  LITERT_ASSIGN_OR_RETURN(auto out, NewLike(builder, like, dims));
-  LITERT_RETURN_IF_ERROR(BuildReshapeInto(builder, in, dims, out));
-  return out;
-}
-
 // Peeks through an existing 4D->3D Reshape if its source tensor already has
 // `dims_4d`, avoiding an extra Reshape pair and keeping `splice_index` local
 // while `ApplyChanges` DCE cleans up the dead 4D->3D Reshape.
@@ -143,7 +87,7 @@ Expected<Tensor> As4D(Builder& builder, const Tensor& t_3d,
   auto def = t_3d.GetDefiningOp();
   if (def && def->Code() == kLiteRtOpCodeTflReshape && !def->Inputs().empty()) {
     Tensor src = def->Inputs()[0];
-    if (HasShape(src, dims_4d) && src.ElementType() == t_3d.ElementType()) {
+    if (HasDims(src, dims_4d) && src.ElementType() == t_3d.ElementType()) {
       return src;
     }
   }

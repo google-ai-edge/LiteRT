@@ -36,6 +36,7 @@
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/transformation_utils.h"
 
 namespace {
 
@@ -66,6 +67,7 @@ using litert::compiler::Op;
 using litert::compiler::RankedTensorSpecBuilder;
 using litert::compiler::SubOptions;
 using litert::compiler::Tensor;
+using litert::qnn::BuildConcat;
 
 std::vector<int32_t> Dims(const Tensor& t) {
   auto type = t.RankedTensorType();
@@ -257,19 +259,6 @@ Expected<Tensor> NewTensor(Builder& builder, const std::vector<int32_t>& dims) {
   return builder.BuildTensor(RankedTensorSpecBuilder(type).Build());
 }
 
-Expected<Tensor> BuildConcat(Builder& builder, const std::vector<Tensor>& ins,
-                             const std::vector<int32_t>& out_dims,
-                             int32_t axis = -1) {
-  LITERT_ASSIGN_OR_RETURN(auto out, NewTensor(builder, out_dims));
-  LITERT_ASSIGN_OR_RETURN(
-      auto op, builder.BuildOp(kLiteRtOpCodeTflConcatenation, ins, {out}));
-  ConcatenationOptions opts;
-  opts.axis = axis >= 0 ? axis : static_cast<int32_t>(out_dims.size()) - 1;
-  opts.fused_activation_function = 0;
-  LITERT_RETURN_IF_ERROR(builder.SetOpOptions(op, std::move(opts)));
-  return out;
-}
-
 Expected<void> BuildBinary(Builder& builder, LiteRtOpCode code, const Tensor& a,
                            const Tensor& b, const Tensor& out) {
   LITERT_ASSIGN_OR_RETURN(auto op, builder.BuildOp(code, {a, b}, {out}));
@@ -341,10 +330,12 @@ Expected<std::pair<Tensor, Tensor>> GetOrBuildTables(
                             BuildMul(builder, hi.sin, minus_one, g.Trig()));
     LITERT_ASSIGN_OR_RETURN(
         base_cos,
-        BuildConcat(builder, {lo.cos, lo.cos, hi.cos, hi.cos}, g.Table()));
+        BuildConcat(builder, {lo.cos, lo.cos, hi.cos, hi.cos}, /*axis=*/3,
+                    lo.cos, g.Table()));
     LITERT_ASSIGN_OR_RETURN(
         base_sin,
-        BuildConcat(builder, {neg_lo, lo.sin, neg_hi, hi.sin}, g.Table()));
+        BuildConcat(builder, {neg_lo, lo.sin, neg_hi, hi.sin}, /*axis=*/3,
+                    lo.sin, g.Table()));
     Tables().push_back({key, base_cos->Get(), base_sin->Get()});
   }
   Tensor cos_tab = *base_cos;
@@ -353,9 +344,11 @@ Expected<std::pair<Tensor, Tensor>> GetOrBuildTables(
     std::vector<Tensor> cos_ins(g.h, cos_tab);
     std::vector<Tensor> sin_ins(g.h, sin_tab);
     LITERT_ASSIGN_OR_RETURN(
-        cos_tab, BuildConcat(builder, cos_ins, g.Full(), /*axis=*/2));
+        cos_tab,
+        BuildConcat(builder, cos_ins, /*axis=*/2, cos_tab, g.Full()));
     LITERT_ASSIGN_OR_RETURN(
-        sin_tab, BuildConcat(builder, sin_ins, g.Full(), /*axis=*/2));
+        sin_tab,
+        BuildConcat(builder, sin_ins, /*axis=*/2, sin_tab, g.Full()));
   }
   return std::make_pair(cos_tab, sin_tab);
 }
@@ -409,7 +402,8 @@ LiteRtStatus RopeTransformation(const LiteRtCompilerContext* context,
   if (!tables) return tables.Error().Status();
   auto [cos_tab, sin_tab] = *tables;
 
-  auto in_rot = BuildConcat(builder, {lo->b, lo->a, hi->b, hi->a}, g.Full());
+  auto in_rot = BuildConcat(builder, {lo->b, lo->a, hi->b, hi->a},
+                            /*axis=*/3, in, g.Full());
   if (!in_rot) return in_rot.Error().Status();
   auto term1 = BuildMul(builder, in, cos_tab, g.Full());
   if (!term1) return term1.Error().Status();
