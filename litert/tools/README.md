@@ -236,6 +236,11 @@ parameters
 Note: These flags are only available when the tool is built with the
 corresponding vendor support enabled.
 
+For dataset evaluation with `run_model`, see
+[Dense prediction evaluation](dense_prediction_eval/README.md). It supports
+resumable input-list execution on the host or Android, named output collection,
+and depth, surface-normal, and segmentation scoring.
+
 ## `run_model_simple`
 
 This is simpler version of `run_model` that only has basic CompiledModel usage.

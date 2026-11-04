@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>  // NOLINT
+#include <fstream>
 #include <numeric>
 #include <string>
 #include <system_error>  // NOLINT
@@ -28,7 +29,6 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
-#include <fstream>
 #include <unordered_map>
 
 #include "absl/strings/ascii.h"  // from @com_google_absl
@@ -87,6 +87,15 @@ ABSL_FLAG(size_t, sample_size, 5,
           "of tensor.");
 ABSL_FLAG(size_t, iterations, 1,
           "The number of iterations the graph will execute.");
+ABSL_FLAG(size_t, warmup_iterations, 0,
+          "Warmup runs excluded from timing statistics. Not used with input_list.");
+ABSL_FLAG(uint64_t, minimum_duration_ms, 0,
+          "Continue timed runs until both iterations and this duration are met. "
+          "Not used with input_list.");
+ABSL_FLAG(std::string, timing_output, "",
+          "Write per-run inference times in microseconds as a JSON array. "
+          "Excludes input preparation and output serialization. "
+          "Not used with input_list.");
 ABSL_FLAG(bool, language_model, false,
           "Whether the model is a language model,"
           " so that the input tensors will be reasonable.");
@@ -114,6 +123,11 @@ ABSL_FLAG(bool, quantize_inputs, false,
 ABSL_FLAG(std::string, output_dir, "",
           "An output folder to write .raw files with model output signatures "
           "as their file names.");
+ABSL_FLAG(bool, write_sample_metrics, false,
+          "Write metrics.json after all outputs of each input-list sample have "
+          "been saved. Requires --input_list and --output_dir.");
+ABSL_FLAG(bool, require_full_acceleration, false,
+          "Fail if any model operations fall back to CPU.");
 
 ABSL_FLAG(std::string, scoped_weight_file, "",
           "Optional path to a scoped external weight file.");
@@ -622,6 +636,20 @@ Expected<uint64_t> RunOnceAndMaybeWriteOutputs(
     }
     LITERT_RETURN_IF_ERROR(tensor_utils::WriteOutputBuffersToFiles(
         compiled_model, signature_index, output_buffers, result_output_dir));
+    if (absl::GetFlag(FLAGS_write_sample_metrics)) {
+      const uint64_t output_end = tflite::profiling::time::NowMicros();
+      // Written last: the evaluator only resumes samples with this marker and
+      // validated output files. run_and_output_us includes host transfer and IO.
+      std::ofstream metrics(std::filesystem::path(result_output_dir) /
+                            "metrics.json");
+      metrics << "{\"inference_us\":" << end - start
+              << ",\"run_and_output_us\":" << output_end - start << "}\n";
+      metrics.close();
+      if (!metrics) {
+        return Error(kLiteRtStatusErrorRuntimeFailure,
+                     "Failed to write per-sample timing metrics.");
+      }
+    }
   }
   return end - start;
 }
@@ -682,6 +710,18 @@ Expected<void> RunModel() {
   }
   const std::string input_dir = absl::GetFlag(FLAGS_input_dir);
   const std::string input_list = absl::GetFlag(FLAGS_input_list);
+  if (absl::GetFlag(FLAGS_write_sample_metrics) &&
+      (input_list.empty() || absl::GetFlag(FLAGS_output_dir).empty())) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "--write_sample_metrics requires --input_list and --output_dir");
+  }
+  if (!input_list.empty() &&
+      (absl::GetFlag(FLAGS_warmup_iterations) != 0 ||
+       absl::GetFlag(FLAGS_minimum_duration_ms) != 0 ||
+       !absl::GetFlag(FLAGS_timing_output).empty())) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Benchmark timing options require single-input mode.");
+  }
   if (!input_dir.empty() && !input_list.empty()) {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  "--input_dir and --input_list are mutually exclusive.");
@@ -694,6 +734,15 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(
       auto compiled_model,
       CompiledModel::Create(env, absl::GetFlag(FLAGS_graph), options));
+  if (absl::GetFlag(FLAGS_require_full_acceleration)) {
+    LITERT_ASSIGN_OR_RETURN(const bool accelerated,
+                           compiled_model.IsNonCpuFullyAccelerated());
+    if (!accelerated) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Model is not fully accelerated without CPU fallback.");
+    }
+    ABSL_LOG(INFO) << "Model fully accelerated: true";
+  }
 
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
@@ -754,15 +803,38 @@ Expected<void> RunModel() {
   }
 
   ABSL_LOG(INFO) << "Run model for " << iterations << " times";
-  litert::Expected<void> status;
-  std::vector<uint64_t> timers(iterations, 0);
-  for (auto& timer : timers) {
-    uint64_t start = tflite::profiling::time::NowMicros();
-    status = compiled_model.Run(signature_index, input_buffers, output_buffers);
-    uint64_t end = tflite::profiling::time::NowMicros();
-    timer = end - start;
+  for (size_t i = 0; i < absl::GetFlag(FLAGS_warmup_iterations); ++i) {
+    LITERT_RETURN_IF_ERROR(
+        compiled_model.Run(signature_index, input_buffers, output_buffers));
   }
+  const uint64_t benchmark_start = tflite::profiling::time::NowMicros();
+  std::vector<uint64_t> timers;
+  do {
+    uint64_t start = tflite::profiling::time::NowMicros();
+    LITERT_RETURN_IF_ERROR(
+        compiled_model.Run(signature_index, input_buffers, output_buffers));
+    uint64_t end = tflite::profiling::time::NowMicros();
+    timers.push_back(end - start);
+  } while (timers.size() < iterations ||
+           (tflite::profiling::time::NowMicros() - benchmark_start) / 1000 <
+               absl::GetFlag(FLAGS_minimum_duration_ms));
   LogTimingStats(absl::MakeConstSpan(timers));
+  if (!absl::GetFlag(FLAGS_timing_output).empty()) {
+    std::ofstream timing(absl::GetFlag(FLAGS_timing_output));
+    timing << "[";
+    for (size_t i = 0; i < timers.size(); ++i) {
+      if (i) {
+        timing << ",";
+      }
+      timing << timers[i];
+    }
+    timing << "]\n";
+    timing.close();
+    if (!timing) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to write benchmark timing output.");
+    }
+  }
 
   // Print output tensor information and values if requested
   if (absl::GetFlag(FLAGS_print_tensors)) {
@@ -783,7 +855,7 @@ Expected<void> RunModel() {
 
   ABSL_LOG(INFO) << "Model run completed";
 
-  return status;
+  return {};
 }
 
 }  // namespace

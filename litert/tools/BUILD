@@ -728,6 +728,7 @@ litert_bin(
     srcs = ["run_model.cc"],
     copts = [
         "-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+        "-DABSL_FLAGS_STRIP_NAMES=0",
     ],
     data = litert_gpu_accelerator_prebuilts(),
     ungrte = True,
