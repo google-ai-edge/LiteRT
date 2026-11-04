@@ -49,11 +49,27 @@ typedef struct {
 } LiteRtDispatchNvidiaTokenTable;
 
 // Registers a token table for the decode steps that await one of its vocab
-// and dim. The table and the scales are copied to the device before the call
-// returns; the caller's memory and descriptor are not read afterwards, and
-// the device copy lives as long as the process. Returns
-// kLiteRtStatusErrorNotFound when no step awaits such a table (nothing is
-// copied), kLiteRtStatusErrorInvalidArgument for a malformed record,
+// and dim in the model the calling thread created last: a runtime registers a
+// model's tables on the thread that created the model, right after creating
+// it and before it creates another. Nothing is copied to the device during
+// the call. Such a step copies its registrations, all or none, once every
+// table it awaits is registered and it runs in a long decode loop (32
+// invocations of its context in a row): speculative decoding runs the decode
+// step once per response, and plainly only for a few steps at the end of the
+// context window or an adaptive policy's bootstrap, so the table takes no
+// device memory there. The caller's
+// table and scales memory must stay valid as long as that model (a runtime
+// passes its model resources' memory, which outlives the model); a table
+// given by descriptor is read during the call into the dispatch's memory, and
+// the descriptor is not read afterwards. A copy that fails leaves that step
+// without its feed and is not tried again for it. The device copy lives as
+// long as the process; the first copy of a vocab and dim serves every decode
+// step that awaits one. Returns kLiteRtStatusErrorNotFound when no decode step
+// of that model wants such a table (none awaits one, one is registered for it
+// already, its copy failed, or such a table is on the device: nothing is
+// kept), kLiteRtStatusErrorMemoryAllocationFailure when the host has no memory
+// to read the table, kLiteRtStatusErrorRuntimeFailure when it cannot be read,
+// kLiteRtStatusErrorInvalidArgument for a malformed record,
 // kLiteRtStatusErrorUnsupported before the dispatch is initialized.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchNvidiaRegisterTokenTable(
     const LiteRtDispatchNvidiaTokenTable* table);
@@ -74,10 +90,11 @@ typedef struct {
 } LiteRtDispatchNvidiaPerLayerTokenTables;
 
 // Registers the per-layer tables for the decode steps that await them, as
-// LiteRtDispatchNvidiaRegisterTokenTable registers a token table: copied to
-// the device during the call (one buffer of the tables, one of the scales),
-// kept as long as the process; kLiteRtStatusErrorNotFound when no step
-// awaits them.
+// LiteRtDispatchNvidiaRegisterTokenTable registers a token table: for the
+// decode steps of the model the calling thread created last, copied to the
+// device (one buffer of the tables, one of the scales) in a long decode loop,
+// the caller's memory valid as long as that model, kept as long as the
+// process; kLiteRtStatusErrorNotFound when no such step wants them.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchNvidiaRegisterPerLayerTokenTables(
     const LiteRtDispatchNvidiaPerLayerTokenTables* tables);
 
