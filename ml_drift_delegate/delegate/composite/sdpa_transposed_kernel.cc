@@ -636,6 +636,164 @@ MAIN_FUNCTION($0) {
       {{"$NSG", absl::StrCat(num_simd_groups)}, {"$MROW", mask_row}});
 }
 
+// Repeats `code` once per query head of a work-group Flash-Decode kernel, with
+// "$g" replaced by the index of the head within the work group.
+std::string RepeatPerHead(int heads, absl::string_view code) {
+  std::string out;
+  for (int g = 0; g < heads; ++g) {
+    absl::StrAppend(&out, absl::StrReplaceAll(code, {{"$g", absl::StrCat(g)}}));
+  }
+  return out;
+}
+
+// Code of the work-group Flash-Decode kernels that reads the active token count
+// from `params` (component `args.src_end_ch_index`) and, when it is in range,
+// stores it in `active_tokens` and sets `has_active_tokens`.
+constexpr absl::string_view kFlashDecodeActiveTokensFromParamsCode = R"(
+  {
+    int param_slice = args.src_end_ch_index / 4;
+    int param_comp = args.src_end_ch_index % 4;
+    float4 p_vec = ucl::Convert<float4>(args.params.Read(0, 0, param_slice, 0));
+    float p_raw = p_vec.x;
+    if (param_comp == 1) {
+      p_raw = p_vec.y;
+    } else if (param_comp == 2) {
+      p_raw = p_vec.z;
+    } else if (param_comp == 3) {
+      p_raw = p_vec.w;
+    }
+    int param_val = ucl::Convert<int>(p_raw);
+    has_active_tokens = param_val > 0 && param_val <= args.cache_size;
+    if (has_active_tokens) {
+      active_tokens = param_val;
+    }
+  }
+)";
+
+// Code of the work-group Flash-Decode kernels that applies the softcap and the
+// mask, if any, to the scores `d$g` of key `key` of every query head.
+std::string FlashDecodeScoreEpilogueCode(int heads, bool has_softcap,
+                                         bool has_mask, bool is_bool_mask,
+                                         int mask_width) {
+  std::string c;
+  if (has_softcap) {
+    absl::StrAppend(
+        &c,
+        RepeatPerHead(
+            heads, "        d$g = args.softcap * tanh(d$g / args.softcap);\n"));
+  }
+  if (!has_mask) {
+    return c;
+  }
+  const std::string mask_row = mask_width == 1 ? "0" : "X";
+  if (is_bool_mask) {
+    // Masked keys get the score of the keys outside the split. Comparing the
+    // mask converted to float and clearing `valid` instead attended to the
+    // masked keys on Adreno 830.
+    absl::StrAppend(
+        &c, "        bool4 mask_vec = args.mask.Read<bool>(", mask_row,
+        R"(, 0, key / 4);
+        int mask_comp = key % 4;
+        int mask_val = ucl::Convert<int>(mask_vec.x);
+        if (mask_comp == 1) {
+          mask_val = ucl::Convert<int>(mask_vec.y);
+        } else if (mask_comp == 2) {
+          mask_val = ucl::Convert<int>(mask_vec.z);
+        } else if (mask_comp == 3) {
+          mask_val = ucl::Convert<int>(mask_vec.w);
+        }
+)",
+        RepeatPerHead(heads, "        if (mask_val == 0) d$g = -1.0e30f;\n"));
+  } else {
+    absl::StrAppend(&c,
+                    "        float4 mask_vec = "
+                    "ucl::Convert<float4>(args.mask.Read(",
+                    mask_row, R"(, 0, key / 4));
+        int mask_comp = key % 4;
+        float mask_val = mask_vec.x;
+        if (mask_comp == 1) {
+          mask_val = mask_vec.y;
+        } else if (mask_comp == 2) {
+          mask_val = mask_vec.z;
+        } else if (mask_comp == 3) {
+          mask_val = mask_vec.w;
+        }
+)",
+                    RepeatPerHead(heads, "        d$g += mask_val;\n"));
+  }
+  return c;
+}
+
+// Code of the work-group Flash-Decode kernels that adds the values of the keys
+// of the current chunk, weighted by their probabilities `p_local[$g * chunk +
+// key - base]`, to the output accumulators `acc$g`. Work item `tid` handles
+// channel slice `slice` of every `key_groups`-th block of 4 keys starting at
+// block `key_group`.
+std::string FlashDecodeValueAccumulationCode(int heads, int chunk,
+                                             int v_stride_block,
+                                             int key_groups) {
+  return absl::StrCat(
+      R"(
+    // Probability-weighted values, 4 keys per block.
+    int n_blocks = (min()",
+      chunk, R"(, key_end - base) + 3) / 4;
+    int v_idx = v_head + (base / 4 + key_group) * )",
+      v_stride_block, R"(;
+    for (int b = key_group; b < n_blocks; b += )",
+      key_groups, R"() {
+      float4 v0 = ucl::Convert<float4>(args.v.Read(v_idx));
+      float4 v1 = ucl::Convert<float4>(args.v.Read(v_idx + 1));
+      float4 v2 = ucl::Convert<float4>(args.v.Read(v_idx + 2));
+      float4 v3 = ucl::Convert<float4>(args.v.Read(v_idx + 3));
+      // Cache entries past active_tokens may be unwritten; their probability
+      // is 0, but 0 * NaN would still poison the accumulator.
+      int block_key = base + b * 4;
+      if (block_key + 4 > active_tokens) {
+        if (block_key + 1 >= active_tokens) v1 = ucl::Init<float4>(0.0f);
+        if (block_key + 2 >= active_tokens) v2 = ucl::Init<float4>(0.0f);
+        if (block_key + 3 >= active_tokens) v3 = ucl::Init<float4>(0.0f);
+      }
+)",
+      RepeatPerHead(heads,
+                    absl::StrCat("      {\n        int p_idx = $g * ", chunk,
+                                 " + b * 4;\n        acc$g += p_local[p_idx] * "
+                                 "v0 + p_local[p_idx + 1] * v1 + p_local[p_idx "
+                                 "+ 2] * v2 + p_local[p_idx + 3] * v3;\n      "
+                                 "}\n")),
+      "      v_idx += ", key_groups * v_stride_block, ";\n    }\n");
+}
+
+// Code of the work-group Flash-Decode kernels that writes the key-group sum
+// `sum` of channel slice `tid` of head `g` of the work group: with one split,
+// normalized by `l_total<g>`; otherwise unnormalized, plus the running maximum
+// `m_run<g>` and normalizer `l_total<g>` of the split, which
+// `FusedFlashDecodeCombineOp` merges.
+std::string FlashDecodeResultWriteCode(int g, int splits, int slices,
+                                       bool is_flattened_dst) {
+  const std::string head = absl::StrCat("head0 + ", g);
+  if (splits > 1) {
+    const std::string part_row =
+        absl::StrCat("X * ", splits, " + split, ", head);
+    return absl::StrCat(
+        "    args.dst.Write(ucl::Convert<args.dst::type>(sum), ", part_row,
+        ", tid);\n", "    if (tid == 0) {\n",
+        "      float4 ml = ucl::Init<float4>(m_run", g, ", l_total", g,
+        ", 0.0f, 0.0f);\n",
+        "      args.dst.Write(ucl::Convert<args.dst::type>(ml), ", part_row,
+        ", ", slices, ");\n", "    }\n");
+  }
+  return absl::StrCat(
+      "    float inv_l = l_total", g, " > 0.0f ? 1.0f / l_total", g,
+      " : 0.0f;\n    float4 res = sum * inv_l;\n",
+      is_flattened_dst
+          ? absl::StrCat("    args.dst.Write(ucl::Convert<args.dst::type>("
+                         "res), X, 0, (",
+                         head, ") * ", slices, " + tid);\n")
+          : absl::StrCat("    args.dst.Write(ucl::Convert<args.dst::type>("
+                         "res), X, ",
+                         head, ", tid);\n"));
+}
+
 // Generates the work-group local-memory reduction and GQA split-K Flash-Decode
 // kernel source.
 //
@@ -678,15 +836,8 @@ std::string GenerateWorkGroupFlashDecodeCode(
       std::clamp((split_keys + threads - 1) / threads, 1, max_keys_per_thread);
   const int chunk = threads * keys_per_thread;
 
-  // Repeats `code` once per query head of the work group, with "$g" replaced
-  // by the index of the head within the work group.
   auto per_head = [heads](absl::string_view code) {
-    std::string out;
-    for (int g = 0; g < heads; ++g) {
-      absl::StrAppend(&out,
-                      absl::StrReplaceAll(code, {{"$g", absl::StrCat(g)}}));
-    }
-    return out;
+    return RepeatPerHead(heads, code);
   };
   // Reduces the per-work-item `<value>$g` over the work group into
   // `<result>$g`, which the caller declares and every work item can read
@@ -759,26 +910,7 @@ std::string GenerateWorkGroupFlashDecodeCode(
 )");
 
   if (has_param) {
-    absl::StrAppend(&c, R"(
-  {
-    int param_slice = args.src_end_ch_index / 4;
-    int param_comp = args.src_end_ch_index % 4;
-    float4 p_vec = ucl::Convert<float4>(args.params.Read(0, 0, param_slice, 0));
-    float p_raw = p_vec.x;
-    if (param_comp == 1) {
-      p_raw = p_vec.y;
-    } else if (param_comp == 2) {
-      p_raw = p_vec.z;
-    } else if (param_comp == 3) {
-      p_raw = p_vec.w;
-    }
-    int param_val = ucl::Convert<int>(p_raw);
-    has_active_tokens = param_val > 0 && param_val <= args.cache_size;
-    if (has_active_tokens) {
-      active_tokens = param_val;
-    }
-  }
-)");
+    absl::StrAppend(&c, kFlashDecodeActiveTokensFromParamsCode);
   }
   if (!has_mask && is_causal) {
     absl::StrAppend(
@@ -810,64 +942,23 @@ std::string GenerateWorkGroupFlashDecodeCode(
 )");
   // Scores of the keys base + r * threads + tid.
   for (int r = 0; r < keys_per_thread; ++r) {
-    absl::StrAppend(&c, per_head(absl::StrCat("    float s", r, "_$g;\n")),
-                    "    {\n      int key = base + ", r * threads, " + tid;\n",
-                    per_head("      float d$g = 0.0f;\n"), R"(
+    absl::StrAppend(
+        &c, per_head(absl::StrCat("    float s", r, "_$g;\n")),
+        "    {\n      int key = base + ", r * threads, " + tid;\n",
+        per_head("      float d$g = 0.0f;\n"), R"(
       bool valid = key < key_end;
       if (valid) {
         int k_idx = k_head + key;
         for (int sl = 0; sl < )",
-                    slices, R"(; ++sl) {
+        slices, R"(; ++sl) {
           float4 kv = ucl::Convert<float4>(args.k.Read(k_idx));
 )",
-                    per_head(absl::StrCat("          d$g += dot(q_local[$g * ",
-                                          slices, " + sl], kv);\n")),
-                    "          k_idx += ", k_stride_slice, ";\n        }\n");
-    if (has_softcap) {
-      absl::StrAppend(
-          &c,
-          per_head("        d$g = args.softcap * tanh(d$g / args.softcap);\n"));
-    }
-    if (has_mask) {
-      const std::string mask_row = mask_width == 1 ? "0" : "X";
-      if (is_bool_mask) {
-        // Masked keys get the score of the keys outside the split. Comparing
-        // the mask converted to float and clearing `valid` instead attended
-        // to the masked keys on Adreno 830.
-        absl::StrAppend(
-            &c, "        bool4 mask_vec = args.mask.Read<bool>(", mask_row,
-            R"(, 0, key / 4);
-        int mask_comp = key % 4;
-        int mask_val = ucl::Convert<int>(mask_vec.x);
-        if (mask_comp == 1) {
-          mask_val = ucl::Convert<int>(mask_vec.y);
-        } else if (mask_comp == 2) {
-          mask_val = ucl::Convert<int>(mask_vec.z);
-        } else if (mask_comp == 3) {
-          mask_val = ucl::Convert<int>(mask_vec.w);
-        }
-)",
-            per_head("        if (mask_val == 0) d$g = -1.0e30f;\n"));
-      } else {
-        absl::StrAppend(&c,
-                        "        float4 mask_vec = "
-                        "ucl::Convert<float4>(args.mask.Read(",
-                        mask_row, R"(, 0, key / 4));
-        int mask_comp = key % 4;
-        float mask_val = mask_vec.x;
-        if (mask_comp == 1) {
-          mask_val = mask_vec.y;
-        } else if (mask_comp == 2) {
-          mask_val = mask_vec.z;
-        } else if (mask_comp == 3) {
-          mask_val = mask_vec.w;
-        }
-)",
-                        per_head("        d$g += mask_val;\n"));
-      }
-    }
-    absl::StrAppend(
-        &c, "      }\n",
+        per_head(absl::StrCat("          d$g += dot(q_local[$g * ", slices,
+                              " + sl], kv);\n")),
+        "          k_idx += ", k_stride_slice, ";\n        }\n",
+        FlashDecodeScoreEpilogueCode(heads, has_softcap, has_mask, is_bool_mask,
+                                     mask_width),
+        "      }\n",
         per_head(absl::StrCat("      s", r, "_$g = valid ? d$g : -1.0e30f;\n")),
         "    }\n");
   }
@@ -894,79 +985,245 @@ std::string GenerateWorkGroupFlashDecodeCode(
   }
   absl::StrAppend(&c, per_head("    l_part$g = l_part$g * alpha$g + psum$g;\n"),
                   "    ucl::SyncThreads<WorkGroup, Local>();\n",
-                  per_head("    acc$g *= alpha$g;\n"), R"(
-    // Probability-weighted values, 4 keys per block.
-    int n_blocks = (min()",
-                  chunk, R"(, key_end - base) + 3) / 4;
-    int v_idx = v_head + (base / 4 + key_group) * )",
-                  v_stride_block, R"(;
-    for (int b = key_group; b < n_blocks; b += )",
-                  key_groups, R"() {
-      float4 v0 = ucl::Convert<float4>(args.v.Read(v_idx));
-      float4 v1 = ucl::Convert<float4>(args.v.Read(v_idx + 1));
-      float4 v2 = ucl::Convert<float4>(args.v.Read(v_idx + 2));
-      float4 v3 = ucl::Convert<float4>(args.v.Read(v_idx + 3));
-      // Cache entries past active_tokens may be unwritten; their probability
-      // is 0, but 0 * NaN would still poison the accumulator.
-      int block_key = base + b * 4;
-      if (block_key + 4 > active_tokens) {
-        if (block_key + 1 >= active_tokens) v1 = ucl::Init<float4>(0.0f);
-        if (block_key + 2 >= active_tokens) v2 = ucl::Init<float4>(0.0f);
-        if (block_key + 3 >= active_tokens) v3 = ucl::Init<float4>(0.0f);
-      }
-)",
-                  per_head(absl::StrCat(
-                      "      {\n        int p_idx = $g * ", chunk,
-                      " + b * 4;\n        acc$g += p_local[p_idx] * v0 + "
-                      "p_local[p_idx + 1] * v1 + p_local[p_idx + 2] * v2 + "
-                      "p_local[p_idx + 3] * v3;\n      }\n")),
-                  "      v_idx += ", key_groups * v_stride_block, R"(;
-    }
-  }
-
-  // Softmax normalizer.
-)",
+                  per_head("    acc$g *= alpha$g;\n"),
+                  FlashDecodeValueAccumulationCode(heads, chunk, v_stride_block,
+                                                   key_groups),
+                  "  }\n\n  // Softmax normalizer.\n",
                   per_head("  float l_total$g;\n"),
                   reduce("l_part", "l_total", /*is_sum=*/true));
 
   // Key-group reduction and output.
   for (int g = 0; g < heads; ++g) {
-    const std::string head = absl::StrCat("head0 + ", g);
-    std::string write;
-    if (splits > 1) {
-      const std::string part_row =
-          absl::StrCat("X * ", splits, " + split, ", head);
-      write = absl::StrCat(
-          "    args.dst.Write(ucl::Convert<args.dst::type>(sum), ", part_row,
-          ", tid);\n", "    if (tid == 0) {\n",
-          "      float4 ml = ucl::Init<float4>(m_run", g, ", l_total", g,
-          ", 0.0f, 0.0f);\n",
-          "      args.dst.Write(ucl::Convert<args.dst::type>(ml), ", part_row,
-          ", ", slices, ");\n", "    }\n");
-    } else {
-      write = absl::StrCat(
-          "    float inv_l = l_total", g, " > 0.0f ? 1.0f / l_total", g,
-          " : 0.0f;\n    float4 res = sum * inv_l;\n",
-          is_flattened_dst
-              ? absl::StrCat("    args.dst.Write(ucl::Convert<args.dst::type>("
-                             "res), X, 0, (",
-                             head, ") * ", slices, " + tid);\n")
-              : absl::StrCat("    args.dst.Write(ucl::Convert<args.dst::type>("
-                             "res), X, ",
-                             head, ", tid);\n"));
-    }
-    absl::StrAppend(&c, "  acc_local[tid] = acc", g, R"(;
+    absl::StrAppend(
+        &c, "  acc_local[tid] = acc", g, R"(;
   ucl::SyncThreads<WorkGroup, Local>();
   if (tid < )",
-                    slices, R"() {
+        slices, R"() {
     float4 sum = acc_local[tid];
     for (int i = 1; i < )",
-                    key_groups, R"(; ++i) {
+        key_groups, R"(; ++i) {
       sum += acc_local[i * )",
-                    slices, R"( + tid];
+        slices, R"( + tid];
     }
 )",
-                    write, "  }\n");
+        FlashDecodeResultWriteCode(g, splits, slices, is_flattened_dst),
+        "  }\n");
+    if (g + 1 < heads) {
+      absl::StrAppend(&c, "  ucl::SyncThreads<WorkGroup, Local>();\n");
+    }
+  }
+  absl::StrAppend(&c, "}\n");
+  return c;
+}
+
+// Generates the SIMD-group variant of the work-group Flash-Decode kernel
+// (`FlashDecodeTuning::simd_work_group`), for GPUs with fixed 32-lane SIMD
+// groups. Like `GenerateWorkGroupFlashDecodeCode`, one work group handles one
+// query token, `heads` query heads that share a K/V head and one split of the
+// keys, and walks the keys in chunks with an online softmax. It differs in
+// how it uses the work items and local memory:
+// 1. Each chunk holds `threads` keys. Every key is scored by `lanes_per_key`
+//    adjacent lanes, each over 1 / `lanes_per_key` of the channel slices,
+//    whose partial dot products are combined with shuffles, which shortens the
+//    serial chain of K reads of a work item. The raw scores go straight to
+//    local memory instead of registers.
+// 2. The chunk maximum and the softmax normalizer use SIMD-group reductions
+//    and a local array of one value per SIMD group and head, and every work
+//    item then turns one score per head into a probability.
+// 3. The probability-weighted values are accumulated as in the portable
+//    kernel, and the output accumulators are reduced across key groups through
+//    the score buffer when it is large enough
+//    (`SimdWorkGroupAccumulatorsReuseScores`).
+// With half precision query slices, this needs about a third of the local
+// memory of the portable kernel (`FlashDecodeLocalMemoryBytes`), so more work
+// groups fit on a GPU core.
+std::string GenerateSimdWorkGroupFlashDecodeCode(
+    const FlashDecodeConfig& config, int slices, int group_size,
+    int k_stride_head, int k_stride_slice, int v_stride_head,
+    int v_stride_block, bool has_mask, bool is_bool_mask, int mask_width,
+    bool has_param, bool is_causal, bool is_single_query, bool has_softcap,
+    bool is_flattened_dst) {
+  const int threads = config.tuning.threads;
+  const int lanes_per_key = config.tuning.lanes_per_key;
+  const int heads = config.heads;
+  const int splits = config.splits;
+  const int key_groups = threads / slices;
+  const int chunk = threads;
+  const int simd_groups = threads / 32;
+  const int keys_per_pass = threads / lanes_per_key;
+  const int part_slices = slices / lanes_per_key;
+  const bool reuse_scores = SimdWorkGroupAccumulatorsReuseScores(heads);
+  auto per_head = [heads](absl::string_view code) {
+    return RepeatPerHead(heads, code);
+  };
+
+  std::string c = absl::StrCat(R"(MAIN_FUNCTION($0) {
+  int tid = ucl::GetLocalId<0>();
+  int lane = tid % 32;
+  int simd_group = tid / 32;
+  int head0 = ucl::GetGroupId<1>() * )",
+                               heads, R"(;
+  int kv_head = head0 / )",
+                               group_size, R"(;
+  int X = ucl::GetGroupId<2>() / )",
+                               splits, R"(;
+  int split = ucl::GetGroupId<2>() % )",
+                               splits, R"(;
+  __local half4 q_local[)",
+                               heads * slices, R"(];
+  __local float p_local[)",
+                               heads * chunk, R"(];
+  __local float max_local[)",
+                               heads * simd_groups, R"(];
+  __local float sum_local[)",
+                               heads * simd_groups, "];\n");
+  if (!reuse_scores) {
+    absl::StrAppend(&c, "  __local float4 acc_local[", threads, "];\n");
+  }
+  absl::StrAppend(&c, "  for (int i = tid; i < ", heads * slices,
+                  "; i += ", threads, R"() {
+    q_local[i] = ucl::Convert<half4>(args.q.Read(X, head0 + i / )",
+                  slices, ", i % ", slices, R"());
+  }
+  int active_tokens = args.cache_size;
+  bool has_active_tokens = false;
+)");
+  if (has_param) {
+    absl::StrAppend(&c, kFlashDecodeActiveTokensFromParamsCode);
+  }
+  if (!has_mask && is_causal) {
+    absl::StrAppend(
+        &c, GenerateImplicitCausalBoundCode(has_param, is_single_query));
+  }
+  absl::StrAppend(&c, per_head(R"(
+  float m_run$g = -1.0e30f;
+  float l_part$g = 0.0f;
+  float4 acc$g = ucl::Init<float4>(0.0f);)"),
+                  R"(
+  int slice = tid % )",
+                  slices, R"(;
+  int key_group = tid / )",
+                  slices, R"(;
+  int k_head = kv_head * )",
+                  k_stride_head, R"(;
+  int v_head = kv_head * )",
+                  v_stride_head, R"( + slice * 4;
+  int key_part = tid % )",
+                  lanes_per_key, R"(;
+  int key_lane = tid / )",
+                  lanes_per_key, R"(;
+  // Keys of this split, in whole blocks of 4 keys.
+  int split_keys = ((active_tokens + )",
+                  splits - 1, ") / ", splits, R"( + 3) / 4 * 4;
+  int key_begin = split * split_keys;
+  int key_end = min(active_tokens, key_begin + split_keys);
+  ucl::SyncThreads<WorkGroup, Local>();
+
+  for (int base = key_begin; base < key_end; base += )",
+                  chunk, ") {\n", per_head("    float tmax$g = -1.0e30f;\n"));
+  // Pass r scores keys base + r * keys_per_pass + key_lane: lane part
+  // `key_part` of the key reads channel slices [key_part * part_slices,
+  // (key_part + 1) * part_slices).
+  for (int r = 0; r < lanes_per_key; ++r) {
+    absl::StrAppend(
+        &c, "    {\n      int key = base + ", r * keys_per_pass,
+        " + key_lane;\n", per_head("      float d$g = 0.0f;\n"),
+        R"(      bool valid = key < key_end;
+      if (valid) {
+        int k_idx = k_head + key + key_part * )",
+        part_slices * k_stride_slice, R"(;
+        int q_idx = key_part * )",
+        part_slices, R"(;
+        for (int sl = 0; sl < )",
+        part_slices, R"(; ++sl) {
+          float4 kv = ucl::Convert<float4>(args.k.Read(k_idx));
+)",
+        per_head(absl::StrCat("          d$g += dot(ucl::Convert<float4>("
+                              "q_local[$g * ",
+                              slices, " + q_idx + sl]), kv);\n")),
+        "          k_idx += ", k_stride_slice, ";\n        }\n      }\n");
+    for (int offset = 1; offset < lanes_per_key; offset *= 2) {
+      absl::StrAppend(
+          &c, per_head(absl::StrCat("      d$g += ucl::WaveShuffleXor(d$g, ",
+                                    offset, ");\n")));
+    }
+    absl::StrAppend(
+        &c, "      if (valid) {\n",
+        FlashDecodeScoreEpilogueCode(heads, has_softcap, has_mask, is_bool_mask,
+                                     mask_width),
+        "      }\n",
+        per_head("      float s$g = valid ? d$g : -1.0e30f;\n"
+                 "      tmax$g = max(tmax$g, s$g);\n"),
+        "      if (key_part == 0) {\n",
+        per_head(absl::StrCat("        p_local[$g * ", chunk, " + ",
+                              r * keys_per_pass, " + key_lane] = s$g;\n")),
+        "      }\n    }\n");
+  }
+  // Chunk maximum, rescaling and probabilities. The barrier after `max_local`
+  // also makes the scores in `p_local` visible to every work item.
+  absl::StrAppend(
+      &c, per_head("    tmax$g = ucl::WaveMax(tmax$g);\n"),
+      "    if (lane == 0) {\n",
+      per_head(absl::StrCat("      max_local[$g * ", simd_groups,
+                            " + simd_group] = tmax$g;\n")),
+      "    }\n    ucl::SyncThreads<WorkGroup, Local>();\n",
+      per_head(absl::StrCat(
+          "    float cmax$g = max_local[$g * ", simd_groups, "];\n",
+          "    for (int i = 1; i < ", simd_groups, "; ++i) {\n",
+          "      cmax$g = max(cmax$g, max_local[$g * ", simd_groups,
+          " + i]);\n", "    }\n", "    float m_new$g = max(m_run$g, cmax$g);\n",
+          "    float alpha$g = exp(m_run$g - m_new$g);\n",
+          "    m_run$g = m_new$g;\n", "    {\n",
+          "      float s = p_local[$g * ", chunk, " + tid];\n",
+          "      float p = s > -1.0e29f ? exp(s - m_new$g) : 0.0f;\n",
+          "      p_local[$g * ", chunk, " + tid] = p;\n",
+          "      l_part$g = l_part$g * alpha$g + p;\n", "    }\n")),
+      "    ucl::SyncThreads<WorkGroup, Local>();\n",
+      per_head("    acc$g *= alpha$g;\n"),
+      FlashDecodeValueAccumulationCode(heads, chunk, v_stride_block,
+                                       key_groups),
+      R"(    // The next chunk overwrites p_local and max_local.
+    ucl::SyncThreads<WorkGroup, Local>();
+  }
+
+  // Softmax normalizer.
+)",
+      per_head("  l_part$g = ucl::WaveSum(l_part$g);\n"),
+      "  if (lane == 0) {\n",
+      per_head(absl::StrCat("    sum_local[$g * ", simd_groups,
+                            " + simd_group] = l_part$g;\n")),
+      "  }\n  ucl::SyncThreads<WorkGroup, Local>();\n",
+      per_head(absl::StrCat("  float l_total$g = sum_local[$g * ", simd_groups,
+                            "];\n", "  for (int i = 1; i < ", simd_groups,
+                            "; ++i) {\n", "    l_total$g += sum_local[$g * ",
+                            simd_groups, " + i];\n", "  }\n")));
+
+  // Key-group reduction and output, one head at a time.
+  for (int g = 0; g < heads; ++g) {
+    if (reuse_scores) {
+      absl::StrAppend(&c, "  p_local[tid * 4] = acc", g, ".x;\n",
+                      "  p_local[tid * 4 + 1] = acc", g, ".y;\n",
+                      "  p_local[tid * 4 + 2] = acc", g, ".z;\n",
+                      "  p_local[tid * 4 + 3] = acc", g, ".w;\n",
+                      "  ucl::SyncThreads<WorkGroup, Local>();\n",
+                      "  if (tid < ", slices, ") {\n",
+                      "    float4 sum = ucl::Init<float4>(0.0f);\n",
+                      "    for (int i = 0; i < ", key_groups, "; ++i) {\n",
+                      "      int a = (i * ", slices, " + tid) * 4;\n",
+                      "      sum += ucl::Init<float4>(p_local[a], "
+                      "p_local[a + 1], p_local[a + 2], p_local[a + 3]);\n",
+                      "    }\n");
+    } else {
+      absl::StrAppend(
+          &c, "  acc_local[tid] = acc", g, ";\n",
+          "  ucl::SyncThreads<WorkGroup, Local>();\n", "  if (tid < ", slices,
+          ") {\n", "    float4 sum = acc_local[tid];\n",
+          "    for (int i = 1; i < ", key_groups, "; ++i) {\n",
+          "      sum += acc_local[i * ", slices, " + tid];\n", "    }\n");
+    }
+    absl::StrAppend(
+        &c, FlashDecodeResultWriteCode(g, splits, slices, is_flattened_dst),
+        "  }\n");
     if (g + 1 < heads) {
       absl::StrAppend(&c, "  ucl::SyncThreads<WorkGroup, Local>();\n");
     }
@@ -1068,6 +1325,12 @@ CreateFusedFlashDecodeSdpa(const ::ml_drift::GpuInfo& gpu_info,
         config.tuning.num_simd_groups, slices, group_size, k_stride_head,
         k_stride_slice, v_stride_head, v_stride_block, has_mask, is_bool_mask,
         mask_width, has_param, attr.is_causal, is_single_query, has_softcap,
+        is_flattened_dst);
+  } else if (config.tuning.simd_work_group) {
+    op.code_ = GenerateSimdWorkGroupFlashDecodeCode(
+        config, slices, group_size, k_stride_head, k_stride_slice,
+        v_stride_head, v_stride_block, has_mask, is_bool_mask, mask_width,
+        has_param, attr.is_causal, is_single_query, has_softcap,
         is_flattened_dst);
   } else {
     op.code_ = GenerateWorkGroupFlashDecodeCode(

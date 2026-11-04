@@ -884,9 +884,10 @@ TEST_P(SdpaTransposedKernelExecuteTest,
 }
 
 // Gemma 4 26B global-attention decode: head dim 512 with 8 query heads per KV
-// head. 8 heads per work group would need 37,888 B of local memory, more than
-// the 32 KB Apple GPUs allow, so the work-group Flash-Decode kernel processes
-// 4 heads per work group.
+// head. The work-group Flash-Decode kernels process 4 heads per work group:
+// the portable kernel because 8 heads would need 37,888 B of local memory, more
+// than the 32 KB Apple GPUs allow, and its SIMD-group variant on Apple GPUs by
+// tuning.
 TEST_P(SdpaTransposedKernelExecuteTest,
        SingleTokenDecodeGemma4GlobalHeadDim512GroupSizeEight) {
   auto status = RunSdpaTransposedTest(
@@ -895,6 +896,26 @@ TEST_P(SdpaTransposedKernelExecuteTest,
       /*from_cache_update=*/true, /*is_causal=*/false, /*flatten_output=*/true,
       /*active_tokens=*/FilledCacheEntries(mask_mode(), 561, 600));
   EXPECT_TRUE(status.ok()) << status.message();
+}
+
+// Gemma 4 26B decode deep into a long cache: 3,001 of 4,096 entries are filled,
+// so the global (head dim 512, 8 query heads per KV head) and sliding (head dim
+// 256, 2 query heads per KV head) attention split the keys across up to 10 work
+// groups of several chunks each, which exercises the online softmax rescaling
+// across chunks and the combine kernel.
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeGemma4LongCacheManySplits) {
+  for (const auto& [head_dim, kv_heads] :
+       {std::pair{512, 2}, std::pair{256, 8}}) {
+    auto status = RunSdpaTransposedTest(
+        *exec_env, precision(), storage(), /*BK=*/16, /*T=*/1, /*S=*/4096,
+        /*H=*/head_dim, mask_mode(), /*KV=*/kv_heads, /*q_start=*/3000,
+        /*from_cache_update=*/true, /*is_causal=*/false,
+        /*flatten_output=*/true,
+        /*active_tokens=*/FilledCacheEntries(mask_mode(), 3001, 4096));
+    EXPECT_TRUE(status.ok())
+        << "head_dim=" << head_dim << ": " << status.message();
+  }
 }
 
 // Gemma 4 chunked prefill at head dims 256 (sliding window) and 512 (global

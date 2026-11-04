@@ -87,5 +87,69 @@ TEST(SdpaTransposedSupportTest, ThreadsAreClampedToTheDeviceLimit) {
   EXPECT_EQ(GetFlashDecodeTuning(gpu_info).threads, 128);
 }
 
+::ml_drift::GpuInfo AppleMetalGpuInfo() {
+  ::ml_drift::GpuInfo gpu_info;
+  gpu_info.vendor = ::ml_drift::GpuVendor::kApple;
+  gpu_info.gpu_api = ::ml_drift::GpuApi::kMetal;
+  gpu_info.supported_wave_sizes = {32};
+  return gpu_info;
+}
+
+TEST(SdpaTransposedSupportTest, AppleMetalUsesTheSimdWorkGroupKernel) {
+  const ::ml_drift::GpuInfo gpu_info = AppleMetalGpuInfo();
+  const FlashDecodeTuning tuning = GetFlashDecodeTuning(gpu_info);
+  EXPECT_TRUE(tuning.simd_work_group);
+  EXPECT_EQ(tuning.max_heads_per_work_group, 4);
+  EXPECT_EQ(tuning.lanes_per_key, 4);
+
+  // Gemma 4 26B-A4B global attention: 16 query heads share 2 K/V heads of head
+  // dim 512 in a 32K cache. 4 heads per work group and 10 splits give 40 work
+  // groups.
+  const ::ml_drift::BHWC q_shape(1, 16, 1, 512);
+  const ::ml_drift::BHWC k_shape(1, 2, 32768, 512);
+  const FlashDecodeConfig config =
+      GetFlashDecodeConfig(gpu_info, q_shape, k_shape);
+  EXPECT_FALSE(config.use_wave_simd);
+  EXPECT_TRUE(config.tuning.simd_work_group);
+  EXPECT_EQ(config.heads, 4);
+  EXPECT_EQ(config.splits, 10);
+  EXPECT_TRUE(IsSupportedFlashSdpaShape(gpu_info, q_shape, k_shape));
+
+  // Head dim 128 keeps the wave-SIMD kernel.
+  EXPECT_TRUE(GetFlashDecodeConfig(gpu_info, ::ml_drift::BHWC(1, 16, 1, 128),
+                                   ::ml_drift::BHWC(1, 8, 1280, 128))
+                  .use_wave_simd);
+}
+
+TEST(SdpaTransposedSupportTest, SimdWorkGroupSplitsKeysAcrossDividingLanes) {
+  const ::ml_drift::GpuInfo gpu_info = AppleMetalGpuInfo();
+  for (const auto& [head_dim, lanes] :
+       {std::pair{4, 1}, std::pair{8, 2}, std::pair{16, 4}, std::pair{24, 2},
+        std::pair{256, 4}}) {
+    const FlashDecodeConfig config = GetFlashDecodeConfig(
+        gpu_info, QueryShape(head_dim), CacheShape(1024, head_dim));
+    EXPECT_EQ(config.tuning.lanes_per_key, lanes) << "head_dim=" << head_dim;
+  }
+}
+
+TEST(SdpaTransposedSupportTest, SimdWorkGroupLocalMemoryBytes) {
+  FlashDecodeTuning tuning = GetFlashDecodeTuning(AppleMetalGpuInfo());
+  ASSERT_EQ(tuning.threads, 256);
+  // 4 heads of head dim 512: half query slices (4 * 128 * 8 B), the scores of
+  // 256 keys (4 * 256 * 4 B) and 2 * 4 * 8 SIMD-group values. The output
+  // accumulators reuse the score buffer.
+  EXPECT_TRUE(SimdWorkGroupAccumulatorsReuseScores(4));
+  EXPECT_EQ(FlashDecodeLocalMemoryBytes(tuning, /*heads=*/4, /*slices=*/128),
+            4096 + 4096 + 256);
+  // 2 heads of head dim 256 need separate float4 accumulators (256 * 16 B).
+  EXPECT_FALSE(SimdWorkGroupAccumulatorsReuseScores(2));
+  EXPECT_EQ(FlashDecodeLocalMemoryBytes(tuning, /*heads=*/2, /*slices=*/64),
+            1024 + 2048 + 128 + 4096);
+  // The portable kernel needs 25,088 B for the first config.
+  tuning.simd_work_group = false;
+  EXPECT_EQ(FlashDecodeLocalMemoryBytes(tuning, /*heads=*/4, /*slices=*/128),
+            25088);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift

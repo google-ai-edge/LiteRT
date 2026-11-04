@@ -55,6 +55,16 @@ FlashDecodeTuning GetFlashDecodeTuning(const ::ml_drift::GpuInfo& gpu_info) {
     tuning.local_memory_bytes =
         gpu_info.webgpu_info.max_compute_workgroup_storage_size;
   }
+  if (SupportsWave32Vec4SimdReduce(gpu_info) && tuning.threads % 32 == 0) {
+    // The SIMD-group variant of the work-group kernel needs less local memory,
+    // so more work groups fit on a GPU core. Those with 4 query heads read
+    // each K/V head twice for a GQA group of 8, but the second read mostly
+    // hits the GPU cache: on M4 Pro, Gemma 4 26B-A4B global attention takes
+    // 686 us per layer at a 31.8K context with 4 heads and 671 us with 8,
+    // while at 1K 4 heads take 53 us and 8 heads 83 us.
+    tuning.simd_work_group = true;
+    tuning.max_heads_per_work_group = 4;
+  }
   // TODO(b/553029558): Use the local memory size of OpenCL
   // (`CL_DEVICE_LOCAL_MEM_SIZE`), Metal (`maxThreadgroupMemoryLength`) and
   // Vulkan (`maxComputeSharedMemorySize`) devices once `GpuInfo` reports it.
@@ -69,6 +79,18 @@ int FlashDecodeLocalMemoryBytes(const FlashDecodeTuning& tuning, int heads,
                                 int slices) {
   constexpr int kFloatBytes = static_cast<int>(sizeof(float));
   const int threads = tuning.threads;
+  if (tuning.simd_work_group) {
+    constexpr int kHalfBytes = 2;
+    const int q_local = heads * slices * 4 * kHalfBytes;
+    const int p_local = heads * threads * kFloatBytes;
+    const int red_local = 2 * heads * (threads / 32) * kFloatBytes;
+    // The output accumulators reuse `p_local` when it holds a float4 for every
+    // work item (`SimdWorkGroupAccumulatorsReuseScores`).
+    const int acc_local = SimdWorkGroupAccumulatorsReuseScores(heads)
+                              ? 0
+                              : threads * 4 * kFloatBytes;
+    return q_local + p_local + red_local + acc_local;
+  }
   const int chunk = threads * MaxFlashDecodeKeysPerThread(heads, threads);
   const int q_local = heads * slices * 4 * kFloatBytes;
   const int p_local = heads * chunk * kFloatBytes;
@@ -77,6 +99,8 @@ int FlashDecodeLocalMemoryBytes(const FlashDecodeTuning& tuning, int heads,
   const int acc_local = threads * 4 * kFloatBytes;
   return q_local + p_local + red_local + red2_local + acc_local;
 }
+
+bool SimdWorkGroupAccumulatorsReuseScores(int heads) { return heads >= 4; }
 
 bool SupportsWave32Vec4SimdReduce(const ::ml_drift::GpuInfo& gpu_info) {
   return gpu_info.IsWaveSizeEqualTo32() && gpu_info.IsApiMetal();
@@ -106,12 +130,20 @@ FlashDecodeConfig GetFlashDecodeConfig(const ::ml_drift::GpuInfo& gpu_info,
   }
   // Process as many query heads of the GQA group per work group as divide the
   // group and keep the kernel within the local memory budget of the device.
-  // With head dim 512 (128 slices), 8 heads need 37,888 B but 4 heads only
-  // 25,088 B. If not even one head fits, `heads` stays 1 and
-  // `IsSupportedFlashSdpaShape` rejects the config, so the op falls back to the
-  // decomposed graph.
+  // With head dim 512 (128 slices), the portable kernel needs 37,888 B for 8
+  // heads but only 25,088 B for 4. If not even one head fits, `heads` stays 1
+  // and `IsSupportedFlashSdpaShape` rejects the config, so the op falls back to
+  // the decomposed graph.
   const int group_size = q_shape.h / k_shape.h;
   const int slices = q_shape.c / 4;
+  if (config.tuning.simd_work_group) {
+    // Split the dot product of a key across as many lanes as divide its
+    // channel slices, e.g. a single lane for head dim 4.
+    while (config.tuning.lanes_per_key > 1 &&
+           slices % config.tuning.lanes_per_key != 0) {
+      config.tuning.lanes_per_key /= 2;
+    }
+  }
   for (int h = std::min(group_size, config.tuning.max_heads_per_work_group);
        h >= 1; --h) {
     if (group_size % h == 0 &&

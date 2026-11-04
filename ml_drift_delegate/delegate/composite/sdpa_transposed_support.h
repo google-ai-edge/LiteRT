@@ -53,6 +53,18 @@ struct FlashDecodeTuning {
   // and most OpenCL devices report at least 32 KB of local memory. WebGPU
   // devices report their limit (see `GetFlashDecodeTuning`).
   int local_memory_bytes = 32 * 1024;
+  // Whether the work-group kernel uses its SIMD-group variant
+  // (`GenerateSimdWorkGroupFlashDecodeCode`), for GPUs with fixed 32-lane SIMD
+  // groups: the dot product of each key is split across `lanes_per_key`
+  // adjacent lanes and combined with shuffles, the chunk maxima and softmax
+  // sums use SIMD-group reductions, the query slices are half precision and
+  // each chunk holds `threads` keys whose scores go straight to local memory.
+  // It needs about a third of the local memory of the portable kernel, so more
+  // work groups fit on a GPU core.
+  bool simd_work_group = false;
+  // Adjacent SIMD lanes that share the dot product of one key in the
+  // SIMD-group variant: a power of two that divides 32 and the channel slices.
+  int lanes_per_key = 4;
 };
 
 // Returns the Flash-Decode tuning for `gpu_info`.
@@ -63,21 +75,38 @@ struct FlashDecodeTuning {
 // On Adreno (OpenCL) at most 2 query heads share a work group: with 4 heads the
 // compiler limits the kernel to fewer work items than it is launched with
 // (b/578633071). The wave-SIMD kernel uses 16 waves on Apple GPUs.
+//
+// On Apple GPUs (Metal) the work-group kernel uses its SIMD-group variant with
+// at most 4 query heads per work group. Measured on M4 Pro with Gemma 4
+// 26B-A4B decode, the global attention layers (head dim 512, 8 query heads per
+// K/V head) take 53 us at 1K and 686 us at a 31.8K context, compared with 103
+// us and 899 us for the portable kernel. With 8 heads per work group, which
+// reads K/V only once, they take 83 us and 671 us.
 // TODO(b/553029558): Tune for Mali, Intel, Nvidia and AMD GPUs.
 FlashDecodeTuning GetFlashDecodeTuning(const ::ml_drift::GpuInfo& gpu_info);
 
-// Keys scored by each work item per chunk of the work-group Flash-Decode
-// kernel: at most as many as keep the probabilities of a chunk within 8 KB of
-// local memory.
+// Keys scored by each work item per chunk of the portable work-group
+// Flash-Decode kernel: at most as many as keep the probabilities of a chunk
+// within 8 KB of local memory.
 int MaxFlashDecodeKeysPerThread(int heads, int threads);
 
 // Upper bound of the local memory in bytes used by the work-group Flash-Decode
 // kernel for `heads` query heads per work group and `slices` channel slices
-// (head_dim / 4), assuming the largest chunk of probabilities: the float4 query
-// slices, the probabilities of a chunk, the two reduction stages and the float4
-// output accumulators (see `GenerateWorkGroupFlashDecodeCode`).
+// (head_dim / 4).
+// - Portable kernel (`GenerateWorkGroupFlashDecodeCode`), assuming the largest
+//   chunk of probabilities: the float4 query slices, the probabilities of a
+//   chunk, the two reduction stages and the float4 output accumulators.
+// - SIMD-group variant (`tuning.simd_work_group`): the half4 query slices, the
+//   scores of a chunk of `threads` keys, two per-SIMD-group reduction arrays,
+//   and the float4 output accumulators unless they fit in the score buffer.
 int FlashDecodeLocalMemoryBytes(const FlashDecodeTuning& tuning, int heads,
                                 int slices);
+
+// Whether the SIMD-group variant of the work-group Flash-Decode kernel reduces
+// its float4 output accumulators across key groups through the score buffer of
+// its `heads` query heads, instead of a separate local array. The buffer holds
+// `heads` floats per work item, so it fits a float4 per work item from 4 heads.
+bool SimdWorkGroupAccumulatorsReuseScores(int heads);
 
 // Whether the GPU supports fixed 32-lane wave-SIMD vector reductions
 // (`ucl::WaveSum` on `half4` / `ucl::WaveMax`).
