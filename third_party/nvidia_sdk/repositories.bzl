@@ -23,7 +23,12 @@ def _local_sdk_repository_impl(repository_ctx):
     root_path = repository_ctx.path(root)
     if not root_path.exists:
         fail("SDK root does not exist: %s" % root)
-    for directory in repository_ctx.attr.directories:
+    directories = list(repository_ctx.attr.directories)
+    if repository_ctx.attr.env_var == "CUDA_HOME":
+        directories.append("lib" if "windows" in repository_ctx.os.name.lower() else "lib64")
+    elif "windows" in repository_ctx.os.name.lower():
+        directories.append("bin")
+    for directory in directories:
         source = root_path.get_child(directory)
         if not source.exists:
             fail("SDK directory does not exist: %s" % source)
@@ -45,16 +50,16 @@ _local_sdk_repository = repository_rule(
 def local_cuda_repository(name):
     _local_sdk_repository(
         name = name,
-        build_file = "//third_party/nvidia_cuda:cuda.BUILD",
+        build_file = Label("//third_party/nvidia_cuda:cuda.BUILD"),
         default_root = "/usr/local/cuda",
-        directories = ["bin", "include", "lib64", "nvvm"],
+        directories = ["bin", "include", "nvvm"],
         env_var = "CUDA_HOME",
     )
 
 def local_tensorrt_rtx_repository(name):
     _local_sdk_repository(
         name = name,
-        build_file = "//third_party/nvidia_tensorrt_rtx:tensorrt_rtx.BUILD",
+        build_file = Label("//third_party/nvidia_tensorrt_rtx:tensorrt_rtx.BUILD"),
         directories = ["include", "lib"],
         env_var = "TENSORRT_RTX_ROOT",
     )

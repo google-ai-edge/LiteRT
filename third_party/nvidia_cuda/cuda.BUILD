@@ -17,7 +17,10 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["bin/nvcc"])
+exports_files(glob([
+    "bin/nvcc",
+    "bin/nvcc.exe",
+]))
 
 filegroup(
     name = "headers",
@@ -28,14 +31,22 @@ filegroup(
 # CUDA archive rule compatible with Bazel's sandbox.
 filegroup(
     name = "nvcc_tools",
-    srcs = [
-        "bin/cudafe++",
-        "bin/fatbinary",
-        "bin/nvcc",
-        "bin/ptxas",
-        "nvvm/bin/cicc",
-        "nvvm/libdevice/libdevice.10.bc",
-    ] + glob(["bin/crt/**"]),
+    srcs = select({
+        "@platforms//os:windows": glob([
+            "bin/*.exe",
+            "bin/*.dll",
+            "bin/crt/**",
+            "nvvm/**",
+        ]),
+        "//conditions:default": [
+            "bin/cudafe++",
+            "bin/fatbinary",
+            "bin/nvcc",
+            "bin/ptxas",
+            "nvvm/bin/cicc",
+            "nvvm/libdevice/libdevice.10.bc",
+        ] + glob(["bin/crt/**"]),
+    }),
 )
 
 cc_library(
@@ -46,7 +57,14 @@ cc_library(
 
 cc_import(
     name = "cudart_shared",
-    shared_library = "lib64/libcudart.so",
+    interface_library = select({
+        "@platforms//os:windows": "lib/x64/cudart.lib",
+        "//conditions:default": None,
+    }),
+    shared_library = select({
+        "@platforms//os:windows": "bin/cudart64_12.dll",
+        "//conditions:default": "lib64/libcudart.so",
+    }),
 )
 
 cc_library(
