@@ -15,6 +15,7 @@
 #include "ml_drift_delegate/delegate/composite/moe_experts_kernel.h"
 
 #include <any>
+#include <cstddef>
 #include <string>
 #include <utility>
 #include <vector>
@@ -22,19 +23,43 @@
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "absl/strings/match.h"  // from @com_google_absl
+#include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
+#include "ml_drift/common/gpu_model_generated.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
+#include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/ir/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 
 namespace litert::ml_drift {
 namespace {
+
+class FixedShapeTensor : public ::ml_drift::GpuSpatialTensor {
+ public:
+  explicit FixedShapeTensor(const ::ml_drift::TensorDescriptor& desc)
+      : desc_(desc), shape_(desc.GetBHWDCShape()) {}
+  int Width() const override { return shape_.w; }
+  int Height() const override { return shape_.h; }
+  int Depth() const override { return shape_.d; }
+  int Channels() const override { return shape_.c; }
+  int Slices() const override { return ::ml_drift::DivideRoundUp(shape_.c, 4); }
+  int Batch() const override { return shape_.b; }
+  ::ml_drift::TensorDescriptor GetDescriptor() const override { return desc_; }
+
+ private:
+  ::ml_drift::TensorDescriptor desc_;
+  ::ml_drift::BHWDC shape_;
+};
 
 MoeScaleTensor MakeMoeScale(int out_channels, int num_experts, int num_blocks) {
   MoeScaleTensor scale;
@@ -208,6 +233,71 @@ TEST(MoeExpertsKernelTest,
   EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "gather"));
   EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "batched_matmul"));
   EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids"));
+}
+
+TEST(MoeExpertsKernelTest,
+     PrefillPackedGroupsPreservesGridsAfterDeserialization) {
+  const ::ml_drift::GpuInfo gpu_info = MakeTestGpuInfo();
+  ::ml_drift::GpuModel gpu_model;
+
+  // sequence_size = 8, num_active_experts = 2, num_experts = 4 (8 * 2 > 4)
+  // exercises the packed-groups path including `experts_remap_from` (where
+  // `src[0]` has shape [1, 1, 16, 16] and `dst[0]` has shape [1, 2, 8, 16]).
+  BuildAndVerifyMoeGpuModel(
+      /*sequence_size=*/8, /*num_experts=*/4, /*num_active_experts=*/2,
+      /*model_dim=*/16, /*hidden_dim=*/32,
+      ir::MoeExpertsAttributes::WeightType::kInt4, /*num_blocks=*/2, &gpu_model,
+      gpu_info);
+
+  flatbuffers::FlatBufferBuilder builder;
+  builder.Finish(::ml_drift::Encode(gpu_model, &builder));
+  ::ml_drift::GpuModel restored_model;
+  ASSERT_OK(::ml_drift::Decode(flatbuffers::GetRoot<::ml_drift::data::GpuModel>(
+                                   builder.GetBufferPointer()),
+                               &restored_model));
+  ASSERT_EQ(restored_model.nodes.size(), gpu_model.nodes.size());
+
+  bool saw_remap_from = false;
+  for (size_t i = 0; i < gpu_model.nodes.size(); ++i) {
+    const ::ml_drift::GpuNode& orig_node = gpu_model.nodes[i];
+    const ::ml_drift::GpuNode& rest_node = restored_model.nodes[i];
+
+    auto bind_and_recalculate = [](const ::ml_drift::GpuModel& model,
+                                   const ::ml_drift::GpuNode& node) {
+      std::vector<FixedShapeTensor> srcs;
+      srcs.reserve(node.inputs.size());
+      for (size_t j = 0; j < node.inputs.size(); ++j) {
+        const ::ml_drift::ValueId id = node.inputs[j];
+        const ::ml_drift::TensorDescriptor& desc =
+            model.const_tensors.contains(id) ? model.const_tensors.at(id)
+                                             : model.tensors.at(id);
+        srcs.emplace_back(desc);
+        node.gpu_operation->SetSrc(&srcs.back(), j);
+      }
+      std::vector<FixedShapeTensor> dsts;
+      dsts.reserve(node.outputs.size());
+      for (size_t j = 0; j < node.outputs.size(); ++j) {
+        dsts.emplace_back(model.tensors.at(node.outputs[j]));
+        node.gpu_operation->SetDst(&dsts.back(), j);
+      }
+      node.gpu_operation->RecalculateGridSize();
+      node.gpu_operation->RecalculateWorkGroupsCount();
+    };
+
+    bind_and_recalculate(gpu_model, orig_node);
+    bind_and_recalculate(restored_model, rest_node);
+
+    EXPECT_EQ(rest_node.gpu_operation->GetWorkGroupsCount(),
+              orig_node.gpu_operation->GetWorkGroupsCount())
+        << "Deserialized work-group count mismatch on node " << i << " ("
+        << orig_node.name << ")";
+    if (absl::StrContains(orig_node.name, "experts_remap_from")) {
+      saw_remap_from = true;
+      EXPECT_EQ(rest_node.gpu_operation->tensor_to_grid_,
+                ::ml_drift::TensorToGrid::kCustom);
+    }
+  }
+  EXPECT_TRUE(saw_remap_from);
 }
 
 TEST(MoeExpertsKernelTest,
