@@ -4863,7 +4863,16 @@ class LiteRtDispatchInvocationContextT {
     feed_.restores_rows = local_mask != nullptr && feed.ring != 0 &&
                           window != 0 && feed.ring <= window;
     if (feed_.restores_rows && !feed_.cache_rows_found) {
-      LITERT_RETURN_IF_ERROR(FindCacheRows());
+      if (auto found = FindCacheRows(); !found) {
+        // The ring rows cannot be saved before a step ahead (no memory for
+        // their backups): the feed stops; the step is as it is.
+        static_cast<void>(cudaGetLastError());
+        LITERT_LOG(
+            LITERT_WARNING, "NVIDIA dispatch %s: the step feed stops: %s",
+            bytecode_.function_name.c_str(), found.Error().Message().c_str());
+        feed_.stopped = true;
+        return {};
+      }
     }
     // No more steps ahead than the host will ask for (the budget it told
     // before this invocation; a decode the host bounds by nothing, such as
