@@ -136,3 +136,20 @@ cc_library(
         "@local_tensorrt_rtx//:tensorrt_rtx_headers",
     ],
 )
+
+cc_library(
+    name = "windows_compat",
+    hdrs = ["windows_compat.h"],
+)
+
+cc_test(
+    name = "windows_compat_test",
+    srcs = ["windows_compat_test.cc"],
+    tags = [
+        "nobuilder",
+        "notap",
+        "windows",
+    ],
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = [":windows_compat"],
+)
