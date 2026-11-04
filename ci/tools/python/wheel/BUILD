@@ -132,6 +132,7 @@ ALL_PY_SRC_MODULES = [
     "//litert/python/aot/vendors/samsung:target",
     "//litert/python/aot/vendors/intel_openvino:intel_openvino_backend",
     "//litert/python/aot/vendors/intel_openvino:target",
+    "//litert/python/litert_model",
     "//litert/python/tools:flatbuffer_utils",
     "//litert/python/tools:benchmark_litert_model",
 ]
