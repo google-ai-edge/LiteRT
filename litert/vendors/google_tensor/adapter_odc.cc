@@ -26,12 +26,14 @@
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/google_tensor/adapter.h"
+#include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
 #include "litert/vendors/google_tensor/edgetpu_compiler_api.h"
 #include "litert/vendors/google_tensor/edgetpu_compiler_options.pb.h"
 
@@ -87,8 +89,23 @@ litert::Expected<void> AdapterOdc::LoadSymbols() {
 // Create EdgeTpuCompilerOptions from the opaque options.
 Expected<EdgeTpuCompilerOptions> CreateEdgeTpuCompilerOptions(
     const char* options, size_t options_size) {
+  if (options == nullptr || options_size == 0) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Options cannot be null or empty");
+  }
+  // TODO(b/568255926): Pass ODC opaque options here instead of the AOT
+  // `GoogleTensorOptions` proto and populate `EdgeTpuCompilerOptions` from
+  // them.
+  ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+      GoogleTensorOptions google_tensor_options;
+  if (!google_tensor_options.ParseFromString(
+          absl::string_view(options, options_size))) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Failed to parse GoogleTensorOptions");
+  }
   EdgeTpuCompilerOptions edgetpu_compiler_options;
-  // TODO: b/467884692 - Parse options from the opaque options.
+  edgetpu_compiler_options.set_litert_version(
+      google_tensor_options.compiler_config().litert_version());
   return edgetpu_compiler_options;
 }
 

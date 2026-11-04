@@ -25,5 +25,8 @@ message EdgeTpuCompilerOptions {
   // Internal options for the EdgeTPU ODC compiler.
   bytes internal_options = 1;
 
-  // TODO: b/467884692 - Add all the supported options for the ODC.
+  // The version of LiteRT in format `<major>.<minor>.<patch>`.
+  string litert_version = 2;
+
+  // TODO(b/568255926): Add all the supported options for the ODC.
 }
