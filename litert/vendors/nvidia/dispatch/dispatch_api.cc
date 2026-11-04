@@ -1811,12 +1811,17 @@ LiteRtStatus SelectNvidiaTopKCandidates(NvidiaTopKCandidatesContext* context,
       StepHandoffRegistry::Get().Find(resolved.device_logits, &handoff);
   if (fed && rows == 1 &&
       !CudaTensorBufferRegistry::Get().AnyHostNewer(resolved.handle) &&
-      handoff.k == k) {
+      handoff.k == k &&
+      (handoff.flags[0] & kLiteRtNvidiaTopKCandidatesInconsistent) == 0) {
     // The decode step that feeds itself selected these for the host already
     // (its own sampling of the step's logits), and the step is synchronized.
+    // A selection that failed its check is made again below, which reports
+    // it as this call's own would be.
     std::copy_n(handoff.ids, k, ids);
     std::copy_n(handoff.values, k, values);
-    row_flags[0] = handoff.flags[0];
+    row_flags[0] = (handoff.flags[0] & kLiteRtNvidiaTopKCandidatesNaN)
+                       ? LITERT_DISPATCH_NVIDIA_TOPK_CANDIDATES_NAN
+                       : 0;
     ++context->calls;
     return kLiteRtStatusOk;
   }
