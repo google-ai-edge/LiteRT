@@ -22,6 +22,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -48,6 +49,9 @@ limitations under the License.
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/runtime/compiled_model.h"
 #include "litert/tools/flags/options_parser_registry.h"
+#include "litert/tools/flags/vendors/google_tensor_flags.h"
+#include "litert/tools/flags/vendors/mediatek_flags.h"
+#include "litert/tools/flags/vendors/qualcomm_flags.h"
 #include "litert/tools/partition_report.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
@@ -78,6 +82,28 @@ HwAcceleratorSet GetRequestedHardwareAccelerators(
 }
 
 }  // namespace
+
+void SetBenchmarkNpuFlagDefaults() {
+  // Qualcomm.
+  absl::SetFlag(&FLAGS_qualcomm_log_level,
+                qualcomm::QualcommOptions::LogLevel::kOff);
+  absl::SetFlag(&FLAGS_qualcomm_htp_performance_mode,
+                qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
+  absl::SetFlag(&FLAGS_qualcomm_use_fold_relu, false);
+  absl::SetFlag(&FLAGS_qualcomm_use_conv_hmx, true);
+  absl::SetFlag(
+      &FLAGS_qualcomm_optimization_level,
+      qualcomm::QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
+
+  // MediaTek.
+  absl::SetFlag(&FLAGS_mediatek_performance_mode_type,
+                mediatek::MediatekOptions::PerformanceMode::kTurboBoost);
+  absl::SetFlag(&FLAGS_mediatek_enable_l1_cache_optimizations, true);
+
+  // Google Tensor.
+  absl::SetFlag(&FLAGS_google_tensor_performance_mode,
+                google_tensor::GoogleTensorOptions::PerformanceMode::kBurst);
+}
 
 Options BenchmarkLiteRtModel::CreateCompiledModelOptions(
     const BenchmarkParams& params) {
@@ -125,46 +151,27 @@ Options BenchmarkLiteRtModel::CreateCompiledModelOptions(
       GetRequestedHardwareAccelerators(params);
 
   if (use_npu) {
-    // Set default QNN options
-    LITERT_ASSIGN_OR_ABORT(
-        auto& qnn_opts,
-        compilation_options.GetOptions<litert::qualcomm::QualcommOptions>());
-    qnn_opts.SetLogLevel(litert::qualcomm::QualcommOptions::LogLevel::kOff);
-    qnn_opts.SetHtpPerformanceMode(
-        litert::qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
-    qnn_opts.SetUseFoldReLU(false);
-    qnn_opts.SetUseConvHMX(true);
-    qnn_opts.SetOptimizationLevel(
-        litert::qualcomm::QualcommOptions::OptimizationLevel::
-            kOptimizeForInferenceO3);
-
-    // Set default MTK options
-    LITERT_ASSIGN_OR_ABORT(
-        auto& mtk_opts,
-        compilation_options.GetOptions<litert::mediatek::MediatekOptions>());
-    if (mediatek_nerun_pilot_version == "version9") {
-      mtk_opts.SetNeronSDKVersionType(
-          litert::mediatek::MediatekOptions::NeronSDKVersion::kVersion9);
-    }
-    mtk_opts.SetPerformanceMode(
-        litert::mediatek::MediatekOptions::PerformanceMode::kTurboBoost);
-    mtk_opts.SetEnableL1CacheOptimizations(true);
-
-    // Google Tensor options
-    LITERT_ASSIGN_OR_ABORT(
-        auto& google_tensor_opts,
-        compilation_options
-            .GetOptions<litert::google_tensor::GoogleTensorOptions>());
-    google_tensor_opts.SetPerformanceMode(
-        google_tensor::GoogleTensorOptions::PerformanceMode::kBurst);
-
-    // Parser user provided NPU options
+    // NPU vendor options are built from the vendor flags only, as in
+    // run_model. Benchmark-specific defaults (burst mode, logging off, ...) are
+    // applied to the flags themselves by SetBenchmarkNpuFlagDefaults() before
+    // the command line is parsed, so explicitly passed flags always win.
     auto status = tools::OptionsParserRegistry::GetInstance().RunAllParsers(
         compilation_options);
     if (!status) {
       LITERT_LOG(LITERT_ERROR, "Failed to run options parsers: %s",
                  status.Error().Message().c_str());
       std::abort();
+    }
+
+    // Legacy `--mediatek_nerun_pilot_version` benchmark flag. It is applied
+    // after the vendor flags so that it keeps working, and therefore takes
+    // precedence over `--mediatek_sdk_version_type`, which should be preferred.
+    if (mediatek_nerun_pilot_version == "version9") {
+      LITERT_ASSIGN_OR_ABORT(
+          auto& mtk_opts,
+          compilation_options.GetOptions<litert::mediatek::MediatekOptions>());
+      mtk_opts.SetNeronSDKVersionType(
+          litert::mediatek::MediatekOptions::NeronSDKVersion::kVersion9);
     }
   }
 

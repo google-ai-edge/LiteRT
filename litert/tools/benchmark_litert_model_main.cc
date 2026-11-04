@@ -17,6 +17,7 @@ limitations under the License.
 #include <iostream>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/flags/reflection.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
@@ -24,72 +25,100 @@ limitations under the License.
 #include "absl/strings/strip.h"  // from @com_google_absl
 #include "litert/tools/benchmark_litert_model.h"
 #include "tflite/c/c_api_types.h"
+#include "tflite/tools/command_line_flags.h"
 #include "tflite/tools/logging.h"
 
 namespace litert::benchmark {
+namespace {
+
+// Returns the name of a `--name[=value]` or `-name[=value]` argument, or an
+// empty string if `arg` is not a flag.
+absl::string_view FlagName(absl::string_view arg) {
+  if (!absl::ConsumePrefix(&arg, "--") && !absl::ConsumePrefix(&arg, "-")) {
+    return "";
+  }
+  return arg.substr(0, arg.find('='));
+}
+
+// Returns true if Abseil flag parsing consumes a flag argument named
+// `flag_name`, using the same lookup as Abseil: `name` or, for `noname`, the
+// negation of `name`.
+bool IsAbseilFlag(absl::string_view flag_name) {
+  return absl::FindCommandLineFlag(flag_name) != nullptr ||
+         (absl::ConsumePrefix(&flag_name, "no") &&
+          absl::FindCommandLineFlag(flag_name) != nullptr);
+}
+
+// Returns the arguments of `argv` that are meant for the TFLite benchmark flag
+// parser, i.e. everything that Abseil flag parsing did not consume: flags that
+// are not Abseil flags (whether or not they are listed in `--undefok`) and
+// leftover positional arguments, which the TFLite parser reports as
+// unconsumed.
+std::vector<char*> GetTfLiteBenchmarkArgs(
+    int argc, char** argv, const std::vector<char*>& positional_args) {
+  // `positional_args` points into `argv`; its first element is the program
+  // name.
+  absl::flat_hash_set<const char*> positional(positional_args.begin() + 1,
+                                              positional_args.end());
+  std::vector<char*> tflite_argv = {argv[0]};
+  for (int i = 1; i < argc; ++i) {
+    const absl::string_view flag_name = FlagName(argv[i]);
+    const bool is_tflite_flag = !flag_name.empty() && !IsAbseilFlag(flag_name);
+    if (is_tflite_flag || positional.contains(argv[i])) {
+      tflite_argv.push_back(argv[i]);
+    }
+  }
+  return tflite_argv;
+}
+
+// Prints the usage of the NPU vendor flags and of the TFLite benchmark flags.
+void PrintUsage(const char* program_name, BenchmarkLiteRtModel& benchmark) {
+  // Called before the command line is parsed, so that the current values are
+  // the effective defaults (library defaults overridden by the
+  // benchmark-specific defaults) rather than values passed on the command
+  // line.
+  std::cout << "\n  NPU Vendor Flags from LiteRT:\n";
+  for (const auto& [name, flag] : absl::GetAllFlags()) {
+    if (absl::StrContains(flag->Filename(), "flags/vendors/")) {
+      std::cout << "    --" << flag->Name() << " (" << flag->Help()
+                << "); default: " << flag->CurrentValue() << ";\n";
+    }
+  }
+  std::cout << "\n"
+            << tflite::Flags::Usage(program_name, benchmark.GetFlags())
+            << std::endl;
+}
+
+}  // namespace
 
 int Main(int argc, char** argv) {
-  // Parse Abseil flags first (vendor flags are defined as Abseil flags).
-  std::vector<char*> positional_args;
-  std::vector<absl::UnrecognizedFlag> unrecognized_flags;
-  absl::ParseAbseilFlagsOnly(argc, argv, positional_args, unrecognized_flags);
+  // Benchmark-specific NPU defaults are set before parsing so that flags given
+  // on the command line take precedence over them.
+  SetBenchmarkNpuFlagDefaults();
 
-  // We filter out known vendor flags to avoid unrecognized flag warnings
-  // from the TFLite benchmark runner.
-  std::vector<char*> new_argv;
-  new_argv.push_back(argv[0]);
-  for (int i = 1; i < argc; ++i) {
-    absl::string_view arg(argv[i]);
-    if (arg == "--" || arg == "-") {
-      new_argv.push_back(argv[i]);
-      continue;
-    }
-    if (absl::ConsumePrefix(&arg, "--") || absl::ConsumePrefix(&arg, "-")) {
-      size_t eq_pos = arg.find('=');
-      absl::string_view flag_name =
-          (eq_pos == absl::string_view::npos) ? arg : arg.substr(0, eq_pos);
-      if (
-          absl::StartsWith(flag_name, "qualcomm_") ||
-          absl::StartsWith(flag_name, "mediatek_") ||
-          absl::StartsWith(flag_name, "google_tensor_") ||
-          absl::StartsWith(flag_name, "intel_openvino_") ||
-          absl::StartsWith(flag_name, "samsung_")) {
-        continue;
-      }
-    }
-    new_argv.push_back(argv[i]);
-  }
-  int new_argc = static_cast<int>(new_argv.size());
-
-  bool has_help = false;
+  BenchmarkLiteRtModel benchmark;
+  // `--help` is handled here rather than by Abseil, which would print only the
+  // Abseil usage and exit.
   for (int i = 1; i < argc; ++i) {
     if (absl::string_view(argv[i]) == "--help" ||
         absl::string_view(argv[i]) == "-h") {
-      has_help = true;
-      break;
-    }
-  }
-
-  if (has_help) {
-    std::cout << "\n  NPU Vendor Flags from LiteRT:\n";
-    auto flags = absl::GetAllFlags();
-    for (const auto& [name, flag] : flags) {
-      if (absl::StrContains(flag->Filename(), "flags/vendors/")) {
-        std::cout << "    --" << flag->Name() << " (" << flag->Help()
-                  << "); default: " << flag->DefaultValue() << ";\n";
-      }
-    }
-    std::cout << std::endl;
-  }
-
-  TFLITE_LOG(INFO) << "STARTING!";
-  BenchmarkLiteRtModel benchmark;
-  if (benchmark.Run(new_argc, new_argv.data()) != kTfLiteOk) {
-    // If help was requested, tflite benchmark returns kTfLiteError, which is
-    // fine
-    if (has_help) {
+      PrintUsage(argv[0], benchmark);
       return EXIT_SUCCESS;
     }
+  }
+
+  // Abseil flags (e.g. the NPU vendor flags) are parsed first. Whatever Abseil
+  // does not consume is handed to the TFLite benchmark flag parser, so no list
+  // of vendor flag prefixes needs to be maintained here.
+  std::vector<char*> positional_args;
+  std::vector<absl::UnrecognizedFlag> unrecognized_flags;
+  absl::ParseAbseilFlagsOnly(argc, argv, positional_args, unrecognized_flags);
+  std::vector<char*> new_argv =
+      GetTfLiteBenchmarkArgs(argc, argv, positional_args);
+  int new_argc = static_cast<int>(new_argv.size());
+
+  TFLITE_LOG(INFO) << "STARTING!";
+  if (benchmark.Run(new_argc, new_argv.data()) != kTfLiteOk) {
     TFLITE_LOG(ERROR) << "Benchmarking failed.";
     return EXIT_FAILURE;
   }

@@ -26,16 +26,21 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/flags/flag.h"  // from @com_google_absl
+#include "absl/flags/parse.h"  // from @com_google_absl
+#include "absl/flags/reflection.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/tools/flags/vendors/google_tensor_flags.h"
 #include "litert/tools/flags/vendors/mediatek_flags.h"
 #include "litert/tools/flags/vendors/qualcomm_flags.h"
 #include "tflite/core/c/c_api_types.h"
@@ -46,6 +51,11 @@ namespace litert {
 namespace benchmark {
 namespace {
 using ::litert::benchmark::BenchmarkLiteRtModel;
+using ::litert::google_tensor::GoogleTensorOptions;
+using ::litert::mediatek::MediatekOptions;
+using ::litert::qualcomm::QualcommOptions;
+using ::testing::HasSubstr;
+using ::testing::IsEmpty;
 using ::tflite::benchmark::BenchmarkListener;
 using ::tflite::benchmark::BenchmarkParams;
 using ::tflite::benchmark::BenchmarkResults;
@@ -300,6 +310,102 @@ TEST_F(BenchmarkLiteRtModelTest,
   EXPECT_TRUE(serialize_program_cache);
 }
 
+BenchmarkParams NpuParams() {
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<bool>("use_cpu", false);
+  params.Set<bool>("use_npu", true);
+  return params;
+}
+
+// Parses `args` (without the program name) as Abseil flags, like the
+// benchmark binary does.
+void ParseVendorFlags(std::vector<const char*> args) {
+  args.insert(args.begin(), "benchmark_model");
+  std::vector<char*> positional_args;
+  std::vector<absl::UnrecognizedFlag> unrecognized_flags;
+  absl::ParseAbseilFlagsOnly(static_cast<int>(args.size()),
+                             const_cast<char**>(args.data()), positional_args,
+                             unrecognized_flags);
+  ASSERT_THAT(unrecognized_flags, IsEmpty());
+}
+
+TEST_F(BenchmarkLiteRtModelTest, NpuOptionsUseBenchmarkDefaults) {
+  absl::FlagSaver flag_saver;
+  SetBenchmarkNpuFlagDefaults();
+
+  Options options = CreateCompiledModelOptions(NpuParams());
+
+  auto qnn_opts = options.GetOptions<QualcommOptions>();
+  ASSERT_TRUE(qnn_opts.HasValue());
+  EXPECT_EQ(qnn_opts->GetLogLevel(), QualcommOptions::LogLevel::kOff);
+  EXPECT_EQ(qnn_opts->GetHtpPerformanceMode(),
+            QualcommOptions::HtpPerformanceMode::kBurst);
+  EXPECT_FALSE(qnn_opts->GetUseFoldReLU());
+  EXPECT_TRUE(qnn_opts->GetUseConvHMX());
+  EXPECT_EQ(qnn_opts->GetOptimizationLevel(),
+            QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
+
+  auto mtk_opts = options.GetOptions<MediatekOptions>();
+  ASSERT_TRUE(mtk_opts.HasValue());
+  EXPECT_EQ(mtk_opts->GetPerformanceMode(),
+            MediatekOptions::PerformanceMode::kTurboBoost);
+  EXPECT_TRUE(mtk_opts->GetEnableL1CacheOptimizations());
+
+  auto google_tensor_opts = options.GetOptions<GoogleTensorOptions>();
+  ASSERT_TRUE(google_tensor_opts.HasValue());
+  EXPECT_EQ(google_tensor_opts->GetPerformanceMode(),
+            GoogleTensorOptions::PerformanceMode::kBurst);
+}
+
+TEST_F(BenchmarkLiteRtModelTest, NpuOptionsPreferExplicitFlags) {
+  absl::FlagSaver flag_saver;
+  SetBenchmarkNpuFlagDefaults();
+  // Explicitly request the library defaults, which differ from the benchmark
+  // defaults. Bare boolean flags must keep working.
+  ParseVendorFlags({
+      "--qualcomm_htp_performance_mode=default",
+      "--qualcomm_log_level=info",
+      "--qualcomm_use_fold_relu",
+      "--mediatek_performance_mode_type=sustained_speed",
+      "--nomediatek_enable_l1_cache_optimizations",
+      "--google_tensor_performance_mode=balanced",
+  });
+
+  Options options = CreateCompiledModelOptions(NpuParams());
+
+  auto qnn_opts = options.GetOptions<QualcommOptions>();
+  ASSERT_TRUE(qnn_opts.HasValue());
+  EXPECT_EQ(qnn_opts->GetHtpPerformanceMode(),
+            QualcommOptions::HtpPerformanceMode::kDefault);
+  EXPECT_EQ(qnn_opts->GetLogLevel(), QualcommOptions::LogLevel::kInfo);
+  EXPECT_TRUE(qnn_opts->GetUseFoldReLU());
+
+  auto mtk_opts = options.GetOptions<MediatekOptions>();
+  ASSERT_TRUE(mtk_opts.HasValue());
+  EXPECT_EQ(mtk_opts->GetPerformanceMode(),
+            MediatekOptions::PerformanceMode::kSustainedSpeed);
+  EXPECT_FALSE(mtk_opts->GetEnableL1CacheOptimizations());
+
+  auto google_tensor_opts = options.GetOptions<GoogleTensorOptions>();
+  ASSERT_TRUE(google_tensor_opts.HasValue());
+  EXPECT_EQ(google_tensor_opts->GetPerformanceMode(),
+            GoogleTensorOptions::PerformanceMode::kBalanced);
+}
+
+TEST_F(BenchmarkLiteRtModelTest, LegacyMediatekNerunPilotVersionIsApplied) {
+  absl::FlagSaver flag_saver;
+  SetBenchmarkNpuFlagDefaults();
+  BenchmarkParams params = NpuParams();
+  params.Set<std::string>("mediatek_nerun_pilot_version", "version9");
+
+  Options options = CreateCompiledModelOptions(params);
+
+  auto mtk_opts = options.GetOptions<MediatekOptions>();
+  ASSERT_TRUE(mtk_opts.HasValue());
+  EXPECT_EQ(mtk_opts->GetNeronSDKVersionType(),
+            MediatekOptions::NeronSDKVersion::kVersion9);
+}
+
 }  // namespace
 
 int Main(int argc, char** argv);
@@ -307,8 +413,7 @@ int Main(int argc, char** argv);
 namespace {
 
 TEST(BenchmarkLiteRtModelMainTest, MainFunctionParseFlags) {
-  using litert::mediatek::MediatekOptions;
-  using litert::qualcomm::QualcommOptions;
+  absl::FlagSaver flag_saver;
   std::string graph_flag = std::string("--graph=") + kModelPath;
   const char* argv[] = {
       "benchmark_model",
@@ -337,6 +442,97 @@ TEST(BenchmarkLiteRtModelMainTest, MainFunctionParseFlags) {
             MediatekOptions::PerformanceMode::kTurboBoost);
   EXPECT_EQ(absl::GetFlag(FLAGS_qualcomm_htp_performance_mode),
             QualcommOptions::HtpPerformanceMode::kBurst);
+}
+
+TEST(BenchmarkLiteRtModelMainTest, MainAppliesBenchmarkDefaultsBeforeParsing) {
+  absl::FlagSaver flag_saver;
+  std::string graph_flag = std::string("--graph=") + kModelPath;
+  const char* argv[] = {
+      "benchmark_model",
+      graph_flag.c_str(),
+      "--use_cpu=true",
+      "--num_runs=1",
+      "--warmup_runs=0",
+      // Explicitly passing the library default must win over the benchmark
+      // default (burst).
+      "--qualcomm_htp_performance_mode=default",
+  };
+  int argc = sizeof(argv) / sizeof(argv[0]);
+
+  EXPECT_EQ(Main(argc, const_cast<char**>(argv)), EXIT_SUCCESS);
+
+  EXPECT_EQ(absl::GetFlag(FLAGS_qualcomm_htp_performance_mode),
+            QualcommOptions::HtpPerformanceMode::kDefault);
+  // Flags that were not passed keep the benchmark defaults.
+  EXPECT_EQ(absl::GetFlag(FLAGS_qualcomm_log_level),
+            QualcommOptions::LogLevel::kOff);
+  EXPECT_EQ(absl::GetFlag(FLAGS_google_tensor_performance_mode),
+            GoogleTensorOptions::PerformanceMode::kBurst);
+}
+
+TEST(BenchmarkLiteRtModelMainTest, HelpPrintsUsageWithBenchmarkDefaults) {
+  absl::FlagSaver flag_saver;
+  // No `--graph`: the benchmark must not run.
+  const char* argv[] = {
+      "benchmark_model",
+      "--help",
+      "--qualcomm_log_level=info",
+  };
+  int argc = sizeof(argv) / sizeof(argv[0]);
+
+  ::testing::internal::CaptureStdout();
+  EXPECT_EQ(Main(argc, const_cast<char**>(argv)), EXIT_SUCCESS);
+  const std::string output = ::testing::internal::GetCapturedStdout();
+
+  // The vendor flag listing shows the benchmark default, not the value passed
+  // on the command line.
+  EXPECT_THAT(output, HasSubstr("--qualcomm_log_level (Log level for "
+                                "Qualcomm.); default: off;"));
+  // The TFLite benchmark flags are listed too.
+  EXPECT_THAT(output, HasSubstr("usage: benchmark_model"));
+  EXPECT_THAT(output, HasSubstr("--graph"));
+  EXPECT_THAT(output, HasSubstr("--num_runs"));
+}
+
+TEST(BenchmarkLiteRtModelMainTest, ShortHelpPrintsUsage) {
+  absl::FlagSaver flag_saver;
+  const char* argv[] = {"benchmark_model", "-h"};
+  int argc = sizeof(argv) / sizeof(argv[0]);
+
+  ::testing::internal::CaptureStdout();
+  EXPECT_EQ(Main(argc, const_cast<char**>(argv)), EXIT_SUCCESS);
+  const std::string output = ::testing::internal::GetCapturedStdout();
+
+  EXPECT_THAT(output, HasSubstr("NPU Vendor Flags from LiteRT"));
+  EXPECT_THAT(output, HasSubstr("usage: benchmark_model"));
+}
+
+TEST(BenchmarkLiteRtModelMainTest, MainSplitsAbseilAndTfLiteFlags) {
+  absl::FlagSaver flag_saver;
+  std::string graph_flag = std::string("--graph=") + kModelPath;
+  const char* argv[] = {
+      "benchmark_model",
+      // TFLite benchmark flags. `--graph` is required, so the benchmark fails
+      // unless it is forwarded to the TFLite parser, even if it is listed in
+      // `--undefok`.
+      graph_flag.c_str(),
+      "--undefok=graph",
+      "--use_cpu=true",
+      "--num_runs=1",
+      "--warmup_runs=0",
+      // Abseil flags, including a value given as a separate argument and a
+      // negated boolean flag, are applied by Abseil.
+      "--qualcomm_log_level",
+      "warn",
+      "--noqualcomm_use_conv_hmx",
+  };
+  int argc = sizeof(argv) / sizeof(argv[0]);
+
+  EXPECT_EQ(Main(argc, const_cast<char**>(argv)), EXIT_SUCCESS);
+
+  EXPECT_EQ(absl::GetFlag(FLAGS_qualcomm_log_level),
+            QualcommOptions::LogLevel::kWarn);
+  EXPECT_FALSE(absl::GetFlag(FLAGS_qualcomm_use_conv_hmx));
 }
 
 }  // namespace

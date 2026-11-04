@@ -537,6 +537,20 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   friend class BenchmarkLiteRtModelTest;
 };
 
+// Replaces the values of selected NPU vendor flags (e.g.
+// `--qualcomm_htp_performance_mode`) with benchmark-specific defaults such as
+// burst performance mode and vendor logging turned off.
+//
+// NPU vendor options are always built from the vendor flags through
+// `OptionsParserRegistry`, the same way as in `run_model`. To keep explicitly
+// passed flags in control, call this function *before* the command line is
+// parsed: values given on the command line (including values that equal the
+// library defaults) then override these defaults.
+//
+// Vendor flags are process-global state. Call this only from a binary's `main`
+// or from tests that restore the flags (e.g. with `absl::FlagSaver`).
+void SetBenchmarkNpuFlagDefaults();
+
 }  // namespace benchmark
 }  // namespace litert
 
