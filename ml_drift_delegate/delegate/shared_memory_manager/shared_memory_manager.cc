@@ -917,7 +917,9 @@ absl::Status SharedMemoryManager::CreateBlockwiseQuantizationParams(
   }
   RewriteDenormalScales(gpu_info_, create_info_, scale_data, scale_size);
 
-  // Prepare zero point data.
+  // Prepare zero point data when an explicit zero-point tensor is provided.
+  // Symmetric blockwise weights set `zero_point < 0`, in which case downstream
+  // kernels consume `weights_zero_point = nullptr` without a zero buffer.
   std::vector<int> zero_points;
   const int* zero_point_data = nullptr;
   if (quant_params->zero_point < context_->tensors_size &&
@@ -945,11 +947,6 @@ absl::Status SharedMemoryManager::CreateBlockwiseQuantizationParams(
                        ", expected 1 or ", scale_size));
     }
     zero_point_data = zero_points.data();
-  } else {
-    // Currently, the underlying call stacks always require zero point for
-    // quantized weights.
-    zero_points.assign(scale_size, 0);
-    zero_point_data = zero_points.data();
   }
 
   shared_tensor->scale_global_tensor_id = ++next_const_tensor_id_;
@@ -962,15 +959,17 @@ absl::Status SharedMemoryManager::CreateBlockwiseQuantizationParams(
   (*external_tensors)[scale_value_id] =
       GlobalId::BuildParamId(shared_tensor->scale_global_tensor_id.value());
 
-  shared_tensor->zero_point_global_tensor_id = ++next_const_tensor_id_;
-  ABSL_ASSIGN_OR_RETURN(
-      ValueId zero_point_value_id,
-      AddScaleNodeWithData(shared_tensor->zero_point_global_tensor_id.value(),
-                           fc_op_id, zero_point_data, data_type, num_channels,
-                           num_blocks));
-  shared_tensor = &buffer_id_to_spatial_tensor_.at(global_tensor_id);
-  (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
-      shared_tensor->zero_point_global_tensor_id.value());
+  if (zero_point_data != nullptr) {
+    shared_tensor->zero_point_global_tensor_id = ++next_const_tensor_id_;
+    ABSL_ASSIGN_OR_RETURN(
+        ValueId zero_point_value_id,
+        AddScaleNodeWithData(shared_tensor->zero_point_global_tensor_id.value(),
+                             fc_op_id, zero_point_data, data_type, num_channels,
+                             num_blocks));
+    shared_tensor = &buffer_id_to_spatial_tensor_.at(global_tensor_id);
+    (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
+        shared_tensor->zero_point_global_tensor_id.value());
+  }
 
   return absl::OkStatus();
 }
@@ -1233,9 +1232,6 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
   if (!shared_tensor.scale_global_tensor_id.has_value()) {
     return absl::InternalError("Expected scale tensor id to be set.");
   }
-  if (!shared_tensor.zero_point_global_tensor_id.has_value()) {
-    return absl::InternalError("Expected zero point tensor id to be set.");
-  }
   DataType data_type = data_type_;
   if (data_type_ == DataType::kFloat32) {
     if (graph_adapter_->OpHasInputs(fc_op_id)) {
@@ -1259,6 +1255,9 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
 
   if (tflite_tensor.quantization.type ==
       TfLiteQuantizationType::kTfLiteAffineQuantization) {
+    if (!shared_tensor.zero_point_global_tensor_id.has_value()) {
+      return absl::InternalError("Expected zero point tensor id to be set.");
+    }
     TfLiteAffineQuantization* quant_params =
         static_cast<TfLiteAffineQuantization*>(
             tflite_tensor.quantization.params);
@@ -1373,12 +1372,14 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
     (*external_tensors)[scale_value_id] =
         GlobalId::BuildParamId(shared_tensor.scale_global_tensor_id.value());
 
-    ABSL_ASSIGN_OR_RETURN(
-        ValueId zero_point_value_id,
-        AddInputNode(shared_tensor.zero_point_global_tensor_id.value(),
-                     bhwc_shape, fc_op_id, data_type));
-    (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
-        shared_tensor.zero_point_global_tensor_id.value());
+    if (shared_tensor.zero_point_global_tensor_id.has_value()) {
+      ABSL_ASSIGN_OR_RETURN(
+          ValueId zero_point_value_id,
+          AddInputNode(shared_tensor.zero_point_global_tensor_id.value(),
+                       bhwc_shape, fc_op_id, data_type));
+      (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
+          shared_tensor.zero_point_global_tensor_id.value());
+    }
   } else {
     return absl::UnimplementedError(
         "Only affine quantization is supported for the shared tensors.");

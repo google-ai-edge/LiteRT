@@ -59,8 +59,8 @@ class CustomOpDispatcher {
                                      TfLiteOpaqueNode* node);
 
   Expected<LiteRtTensorBufferPtr> GetTensorBuffer(
-      TfLiteOpaqueContext* context,
-      const TfLiteOpaqueTensor* tfl_opaque_tensor);
+      TfLiteOpaqueContext* context, const TfLiteOpaqueTensor* tfl_opaque_tensor,
+      bool is_input = false);
 
   LiteRtCustomOpKernel op_kernel_;
   void* user_data_;

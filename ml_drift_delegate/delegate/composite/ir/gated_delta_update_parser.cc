@@ -57,36 +57,7 @@ void GatedDeltaUpdateConvert(
     ir_model.SetProducer(tensor_map[tflite_node.outputs->data[i]], op->id);
   }
 
-  const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
-      tflite_node.builtin_data);
-  ::litert::ml_drift::GatedDeltaUpdateAttributes attr;
-  if (params && params->attributes && params->attributes_size > 0) {
-    const flexbuffers::Map flexbuffer_map =
-        flexbuffers::GetRoot(
-            reinterpret_cast<const uint8_t*>(params->attributes),
-            params->attributes_size)
-            .AsMap();
-    if (!flexbuffer_map["mode"].IsNull()) {
-      attr.mode = flexbuffer_map["mode"].AsInt32();
-    }
-    if (!flexbuffer_map["state_dtype"].IsNull()) {
-      attr.state_dtype = flexbuffer_map["state_dtype"].AsString().str();
-    }
-  } else if (tflite_node.custom_initial_data &&
-             tflite_node.custom_initial_data_size > 0) {
-    const flexbuffers::Map flexbuffer_map =
-        flexbuffers::GetRoot(
-            reinterpret_cast<const uint8_t*>(tflite_node.custom_initial_data),
-            tflite_node.custom_initial_data_size)
-            .AsMap();
-    if (!flexbuffer_map["mode"].IsNull()) {
-      attr.mode = flexbuffer_map["mode"].AsInt32();
-    }
-    if (!flexbuffer_map["state_dtype"].IsNull()) {
-      attr.state_dtype = flexbuffer_map["state_dtype"].AsString().str();
-    }
-  }
-  op->attr = attr;
+  op->attr = ::litert::ml_drift::ParseGatedDeltaUpdateAttributes(tflite_node);
 }
 
 }  // namespace

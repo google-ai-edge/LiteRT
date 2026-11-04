@@ -1365,6 +1365,7 @@ cc_test(
         "//litert/cc:litert_options",
         "//litert/cc/options:litert_gpu_options",
         "//litert/core:options",
+        "//litert/experimental/custom_ops/gated_delta_net:gated_delta_update_impl",
         "//litert/experimental/custom_ops/gated_delta_net:gated_delta_update_tflite_op",
         "//tflite/c:common",
         "@com_google_absl//absl/types:span",
