@@ -16,118 +16,75 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA3_SAFETENSOR_LOADER_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA3_SAFETENSOR_LOADER_H_
 
-#include <cstddef>
-#include <cstdint>
-#include <memory>
 #include <string>
-#include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "tensor/datatypes.h"
-#include "tensor/examples/utils/safetensors.h"
+#include "tensor/examples/utils/safetensor_loader.h"
 #include "tensor/tensor.h"
 
 namespace litert::tensor::examples {
 
-struct TensorStorageInfo {
-  std::shared_ptr<void> file_data;
-  const std::byte* data_base = nullptr;
-  size_t data_size = 0;
-};
-
-// Tensor metadata from safetensor file.
-struct SafetensorTensorInfo {
-  std::string name;
-  safetensors::dtype dtype;
-  std::vector<int64_t> shape;
-  size_t data_start;  // Offset in data section
-  size_t data_end;    // End offset in data section
-  std::shared_ptr<TensorStorageInfo> storage;
-};
-
-// SafeTensor file loader using safetensors-cpp library.
-// Supports loading tensors from HuggingFace safetensor format.
-class SafetensorLoader {
- public:
-  enum class QuantizedLoadMode {
-    // Convert INT8 tensors with quantization side tensors (.scale/.zero_point)
-    // to FP32 immediately.
-    kDequantizeToFp32,
-    // Keep quantized tensors as INT8 and attach Tensor API quantization
-    // metadata.
-    kPreserveQuantized,
-  };
-
-  // Loads a safetensor file or a directory of safetensor files.
-  static absl::StatusOr<SafetensorLoader> Load(const std::string& path);
-
-  // Gets list of all tensor names.
-  std::vector<std::string> GetTensorNames() const;
-
-  // Gets tensor info by name.
-  absl::StatusOr<SafetensorTensorInfo> GetTensorInfo(
-      const std::string& name) const;
-
-  // Loads a tensor.
-  //
-  // BF16 tensors are automatically converted to FP32.
-  absl::StatusOr<TensorHandle> LoadTensor(
-      const std::string& name, QuantizedLoadMode quantized_load_mode) const;
-
-  // Loads all tensors into a map.
-  absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>> LoadAllTensors(
-      QuantizedLoadMode quantized_load_mode) const;
-
-  // Loads weights with name mapping.
-  // Converts HuggingFace weight names to model weight names.
-  absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
-  LoadWeightsWithMapping(
-      const absl::flat_hash_map<std::string, std::string>& name_mapping,
-      QuantizedLoadMode quantized_load_mode) const;
-
- private:
-  SafetensorLoader() = default;
-
-  // Loads a single safetensor file and appends its tensors.
-  absl::Status AddSafetensorFile(const std::string& path);
-
-  // Convert safetensor dtype enum to Type enum.
-  static absl::StatusOr<Type> DtypeToType(safetensors::dtype dtype);
-
-  // Map of tensor name to metadata.
-  absl::flat_hash_map<std::string, SafetensorTensorInfo> tensor_infos_;
+enum class Gemma3QuantizedLoadMode {
+  // Convert INT8 tensors with quantization metadata or side tensors
+  // (.scale/.zero_point) to FP32 immediately.
+  kDequantizeToFp32,
+  // Keep quantized tensors in their quantized storage type and attach Tensor
+  // API quantization metadata.
+  kPreserveQuantized,
 };
 
 inline bool AbslParseFlag(absl::string_view text,
-                          SafetensorLoader::QuantizedLoadMode* mode,
+                          Gemma3QuantizedLoadMode* mode,
                           std::string* error) {
   if (text == "fp32" || text == "float") {
-    *mode = SafetensorLoader::QuantizedLoadMode::kDequantizeToFp32;
+    *mode = Gemma3QuantizedLoadMode::kDequantizeToFp32;
     return true;
   }
   if (text == "preserve" || text == "quantized") {
-    *mode = SafetensorLoader::QuantizedLoadMode::kPreserveQuantized;
+    *mode = Gemma3QuantizedLoadMode::kPreserveQuantized;
     return true;
   }
   *error = "unknown value for enumeration";
   return false;
 }
 
-// AbslUnparseFlag converts from an OutputMode to a string.
-// Must be in same namespace as OutputMode.
-
-// Returns a textual flag value corresponding to the OutputMode `mode`.
-inline std::string AbslUnparseFlag(SafetensorLoader::QuantizedLoadMode mode) {
+// Returns a textual flag value corresponding to `mode`.
+inline std::string AbslUnparseFlag(Gemma3QuantizedLoadMode mode) {
   switch (mode) {
-    case SafetensorLoader::QuantizedLoadMode::kDequantizeToFp32:
+    case Gemma3QuantizedLoadMode::kDequantizeToFp32:
       return "fp32";
-    case SafetensorLoader::QuantizedLoadMode::kPreserveQuantized:
+    case Gemma3QuantizedLoadMode::kPreserveQuantized:
       return "preserve";
   }
+  return "unknown";
 }
+
+// Loads a single Gemma3 tensor from `loader`, applying Gemma3 checkpoint
+// conventions:
+// - BF16 and FP16 tensors are converted to FP32.
+// - Zero-centered RMSNorm weights (`*layernorm*`, `*norm.weight`) receive a
+//   +1.0f offset.
+// - Legacy INT8 side tensors (`.scale`/`.scales`/`.weight_scales` and optional
+//   `.zero_point`) are attached or dequantized according to
+//   `quantized_load_mode`.
+absl::StatusOr<TensorHandle> LoadGemma3Tensor(
+    const SafetensorLoader& loader, absl::string_view name,
+    Gemma3QuantizedLoadMode quantized_load_mode);
+
+// Loads all tensors into a map using `LoadGemma3Tensor`.
+absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
+LoadAllGemma3Tensors(const SafetensorLoader& loader,
+                     Gemma3QuantizedLoadMode quantized_load_mode);
+
+// Loads weights with HuggingFace-to-model name mapping using
+// `LoadGemma3Tensor`.
+absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
+LoadGemma3WeightsWithMapping(
+    const SafetensorLoader& loader,
+    const absl::flat_hash_map<std::string, std::string>& name_mapping,
+    Gemma3QuantizedLoadMode quantized_load_mode);
 
 // Creates the HuggingFace to model weight name mapping for Gemma3.
 absl::flat_hash_map<std::string, std::string> GetGemma3WeightMapping(

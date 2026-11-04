@@ -118,6 +118,7 @@ cc_library(
     name = "safetensor_loader",
     srcs = ["safetensor_loader.cc"],
     hdrs = ["safetensor_loader.h"],
+    local_defines = ["LITERT_TENSOR_ENABLE_PERFETTO"],
     deps = [
         ":minijson",
         ":perfetto_session",

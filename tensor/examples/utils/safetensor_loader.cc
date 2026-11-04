@@ -17,6 +17,7 @@ limitations under the License.
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>  // NOLINT
 #include <fstream>
 #include <initializer_list>
@@ -41,22 +42,35 @@ limitations under the License.
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/utils/minijson.h"
-#include "tensor/examples/utils/perfetto_session.h"
 #include "tensor/examples/utils/safetensors.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
+
+#if defined(LITERT_TENSOR_ENABLE_PERFETTO)
+#include "tensor/examples/utils/perfetto_session.h"
 #include "perfetto/tracing/track_event.h"  // from @perfetto
+#else
+#define TRACE_EVENT(...) ((void)0)
+#endif
 
 namespace litert::tensor::examples {
 
 namespace {
 
-// Creates a `SpanCpuBuffer` over the given data and wraps it in a `shared_ptr`.
+// Creates a `SpanCpuBuffer` over the given data and wraps it in a `shared_ptr`
+// when `data` satisfies `alignment`, or copies into an aligned
+// `OwningCpuBuffer` when contiguous safetensors packing leaves `data`
+// misaligned for its element type.
 //
 // `owner` is kept around in the `shared_ptr` to keep the data and the span
 // lifetimes in sync.
 std::shared_ptr<Buffer> MakeMappedBuffer(const std::shared_ptr<void>& owner,
-                                         const std::byte* data, size_t bytes) {
+                                         const std::byte* data, size_t bytes,
+                                         size_t alignment) {
+  if (bytes > 0 && alignment > 1 &&
+      reinterpret_cast<uintptr_t>(data) % alignment != 0) {
+    return OwningCpuBuffer::Copy(reinterpret_cast<const char*>(data), bytes);
+  }
   return std::shared_ptr<Buffer>(new SpanCpuBuffer(data, bytes),
                                  [owner](Buffer* buffer) {
                                    static_cast<void>(owner);
@@ -206,6 +220,9 @@ struct HasBoundCheck<From, To,
     };                                                                    \
   }
 
+inline float BoolByteToFloat(uint8_t val) { return val != 0 ? 1.0f : 0.0f; }
+inline int64_t BoolByteToInt64(uint8_t val) { return val != 0 ? 1 : 0; }
+
 CONVERT_INFO(FLOAT32, float, float, static_cast<float>);
 CONVERT_INFO(BFLOAT16, float, uint16_t, safetensors::bfloat16_to_float);
 CONVERT_INFO(FLOAT16, float, uint16_t, safetensors::fp16_to_float);
@@ -217,7 +234,7 @@ CONVERT_INFO(UINT8, float, uint8_t, static_cast<float>);
 CONVERT_INFO(UINT16, float, uint16_t, static_cast<float>);
 CONVERT_INFO(UINT32, float, uint32_t, static_cast<float>);
 CONVERT_INFO(UINT64, float, uint64_t, static_cast<float>);
-CONVERT_INFO(BOOL, float, bool, static_cast<float>);
+CONVERT_INFO(BOOL, float, uint8_t, BoolByteToFloat);
 
 CONVERT_INFO(INT8, int64_t, int8_t, static_cast<int64_t>);
 CONVERT_INFO(INT16, int64_t, int16_t, static_cast<int64_t>);
@@ -228,7 +245,7 @@ CONVERT_INFO(UINT16, int64_t, uint16_t, static_cast<int64_t>);
 CONVERT_INFO(UINT32, int64_t, uint32_t, static_cast<int64_t>);
 CONVERT_INFO(UINT64, int64_t, uint64_t, static_cast<int64_t>);
 CHECK_INFO(UINT64, int64_t, val <= std::numeric_limits<int64_t>::max());
-CONVERT_INFO(BOOL, int64_t, bool, static_cast<int64_t>);
+CONVERT_INFO(BOOL, int64_t, uint8_t, BoolByteToInt64);
 
 template <class Container>
 absl::StatusOr<Container> ConvertTensorTo(const SafetensorTensorInfo& info) {
@@ -249,26 +266,22 @@ absl::StatusOr<Container> ConvertTensorTo(const SafetensorTensorInfo& info) {
   case safetensors::dtype::k##ST_TYPE: {                                       \
     if constexpr (CanConvert<safetensors::dtype::k##ST_TYPE, T>::value) {      \
       using Info = ConvertInfo<safetensors::dtype::k##ST_TYPE, T>;             \
-      if (bytes != num_elements * sizeof(typename Info::Storage)) {            \
+      using Storage = typename Info::Storage;                                  \
+      if (bytes != num_elements * sizeof(Storage)) {                           \
         return absl::InvalidArgumentError(#ST_TYPE                             \
                                           " tensor byte size mismatch");       \
       }                                                                        \
-      if (reinterpret_cast<uintptr_t>(data_ptr) %                              \
-          alignof(typename Info::Storage)) {                                   \
-        return absl::InvalidArgumentError(                                     \
-            absl::StrCat("Mapped data at offset ", info.data_start,            \
-                         " is not correctly aligned for " #ST_TYPE));          \
-      }                                                                        \
-      const typename Info::Storage* src =                                      \
-          reinterpret_cast<const typename Info::Storage*>(data_ptr);           \
       for (size_t i = 0; i < num_elements; ++i) {                              \
+        Storage src_val;                                                       \
+        std::memcpy(&src_val, data_ptr + i * sizeof(Storage),                  \
+                    sizeof(Storage));                                          \
         if constexpr (HasBoundCheck<safetensors::dtype::k##ST_TYPE,            \
                                     T>::value) {                               \
           LRT_TENSOR_RETURN_IF_ERROR(                                          \
               (ConvertBoundCheck<safetensors::dtype::k##ST_TYPE, T>::Check(    \
-                  src[i])));                                                   \
+                  src_val)));                                                  \
         }                                                                      \
-        values_data[i] = Info::Convert(src[i]);                                \
+        values_data[i] = Info::Convert(src_val);                               \
       }                                                                        \
     } else {                                                                   \
       return absl::InvalidArgumentError(                                       \
@@ -952,13 +965,15 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
 
   const std::byte* data_ptr = storage.data_base + info.data_start;
   size_t data_size = info.data_end - info.data_start;
+  const size_t dtype_alignment = safetensors::get_dtype_bytes(info.dtype);
   std::shared_ptr<Buffer> buffer;
   std::shared_ptr<Quantization> quantization;
   switch (type) {
     case Type::kU8:
     case Type::kI8:
     case Type::kI32: {
-      buffer = MakeMappedBuffer(storage.file_data, data_ptr, data_size);
+      buffer = MakeMappedBuffer(storage.file_data, data_ptr, data_size,
+                                dtype_alignment);
 
       if (!quant_config_.has_value()) {
         break;
@@ -1077,7 +1092,8 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
     case Type::kU32:
     case Type::kU64:
     case Type::kBOOL:
-      buffer = MakeMappedBuffer(storage.file_data, data_ptr, data_size);
+      buffer = MakeMappedBuffer(storage.file_data, data_ptr, data_size,
+                                dtype_alignment);
       break;
     default:
       return absl::UnimplementedError(
@@ -1092,6 +1108,20 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
                                  .buffer = buffer,
                                  .quantization = quantization});
 }
+
+template <typename T>
+absl::StatusOr<std::vector<T>> SafetensorLoader::ReadTensorAs(
+    absl::string_view name) const {
+  LRT_TENSOR_ASSIGN_OR_RETURN(const SafetensorTensorInfo& info,
+                              GetTensorInfo(name));
+  LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(info));
+  return ConvertTensorTo<std::vector<T>>(info);
+}
+
+template absl::StatusOr<std::vector<float>>
+SafetensorLoader::ReadTensorAs<float>(absl::string_view name) const;
+template absl::StatusOr<std::vector<int64_t>>
+SafetensorLoader::ReadTensorAs<int64_t>(absl::string_view name) const;
 
 absl::StatusOr<std::shared_ptr<Quantization>>
 SafetensorLoader::LoadQuantizationParams(

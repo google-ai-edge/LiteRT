@@ -63,6 +63,8 @@ safetensors::dtype SafetensorDtype(Type type) {
       return safetensors::dtype::kINT8;
     case Type::kI64:
       return safetensors::dtype::kINT64;
+    case Type::kFP16:
+      return safetensors::dtype::kFLOAT16;
     case Type::kFP32:
       return safetensors::dtype::kFLOAT32;
     case Type::kBF16:

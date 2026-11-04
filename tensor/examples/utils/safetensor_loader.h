@@ -181,6 +181,10 @@ class SafetensorLoader {
   // `<module>.weight` will detect and load that triplet.
   absl::StatusOr<TensorHandle> LoadTensor(absl::string_view name) const;
 
+  // Reads a tensor and converts its elements to `T` (`float` or `int64_t`).
+  template <typename T>
+  absl::StatusOr<std::vector<T>> ReadTensorAs(absl::string_view name) const;
+
  private:
   // Loads a single safetensor file and appends its tensors.
   absl::Status AddSafetensorFile(const std::string& path);

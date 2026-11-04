@@ -734,5 +734,75 @@ TEST(SafetensorLoaderTest, RejectsShapeDimensionExceedingIntMax) {
   EXPECT_THAT(loader.LoadTensor("t"), Not(IsOk()));
 }
 
+TEST(SafetensorLoaderTest, LoadsAndReadsUnalignedContiguousTensors) {
+  // Safetensors packs tensor payloads contiguously with no inter-tensor
+  // padding: `aligned_f32` occupies [0, 8], `odd_i8` occupies [8, 11] (3
+  // bytes), leaving `unaligned_f32` at [11, 19] and `unaligned_i64` at
+  // [19, 35].
+  SafetensorFileGuard file = CreateTempSafetensor(
+      {
+          {.name = "aligned_f32",
+           .type = Type::kFP32,
+           .shape = {2},
+           .buffer = OwningCpuBuffer::Copy<Type::kFP32>({1.25f, -2.5f})},
+          {.name = "odd_i8",
+           .type = Type::kI8,
+           .shape = {3},
+           .buffer = OwningCpuBuffer::Copy<Type::kI8>({-3, 0, 7})},
+          {.name = "unaligned_f32",
+           .type = Type::kFP32,
+           .shape = {2},
+           .buffer = OwningCpuBuffer::Copy<Type::kFP32>({3.5f, -4.75f})},
+          {.name = "unaligned_i64",
+           .type = Type::kI64,
+           .shape = {2},
+           .buffer = OwningCpuBuffer::Copy<Type::kI64>(
+               {int64_t{10000000000}, int64_t{-42}})},
+      },
+      /*quant_config_json=*/"");
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(SafetensorLoader loader,
+                                  SafetensorLoader::Load(file.GetPath()));
+
+  // Aligned tensors remain zero-copy SpanCpuBuffers over the mmap'ed file.
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle aligned,
+                                  loader.LoadTensor("aligned_f32"));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & aligned_buf, aligned.GetBuffer());
+  EXPECT_TRUE(aligned_buf.IsA(SpanCpuBuffer::TypeId()));
+  EXPECT_THAT(aligned_buf.Lock().As<const float>(),
+              ElementsAre(FloatEq(1.25f), FloatEq(-2.5f)));
+
+  // Unaligned multi-byte tensors are copied into an aligned OwningCpuBuffer so
+  // typed span access never forms a misaligned pointer.
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle unaligned_f32,
+                                  loader.LoadTensor("unaligned_f32"));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & unaligned_f32_buf,
+                                  unaligned_f32.GetBuffer());
+  EXPECT_TRUE(unaligned_f32_buf.IsA(OwningCpuBuffer::TypeId()));
+  EXPECT_THAT(unaligned_f32_buf.Lock().As<const float>(),
+              ElementsAre(FloatEq(3.5f), FloatEq(-4.75f)));
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle unaligned_i64,
+                                  loader.LoadTensor("unaligned_i64"));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & unaligned_i64_buf,
+                                  unaligned_i64.GetBuffer());
+  EXPECT_TRUE(unaligned_i64_buf.IsA(OwningCpuBuffer::TypeId()));
+  EXPECT_THAT(unaligned_i64_buf.Lock().As<const int64_t>(),
+              ElementsAre(10000000000LL, -42LL));
+
+  // ReadTensorAs converts both aligned and unaligned payloads cleanly.
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<float> read_f32,
+                                  loader.ReadTensorAs<float>("unaligned_f32"));
+  EXPECT_THAT(read_f32, ElementsAre(FloatEq(3.5f), FloatEq(-4.75f)));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      std::vector<int64_t> read_i64,
+      loader.ReadTensorAs<int64_t>("unaligned_i64"));
+  EXPECT_THAT(read_i64, ElementsAre(10000000000LL, -42LL));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<float> read_i8_as_f32,
+                                  loader.ReadTensorAs<float>("odd_i8"));
+  EXPECT_THAT(read_i8_as_f32,
+              ElementsAre(FloatEq(-3.0f), FloatEq(0.0f), FloatEq(7.0f)));
+}
+
 }  // namespace
 }  // namespace litert::tensor::examples

@@ -242,6 +242,7 @@ endif()
 
 add_executable(litert_main EXCLUDE_FROM_ALL
     ../utils/minijson.cc
+    ../utils/safetensor_loader.cc
     ../utils/safetensors.cc
     graph_helpers.cc
     litert_main.cc
@@ -276,6 +277,7 @@ target_link_libraries(litert_main
         "-Wl,--end-group"
         absl::algorithm_container
         absl::flat_hash_map
+        absl::flat_hash_set
         absl::flags
         absl::flags_parse
         absl::log

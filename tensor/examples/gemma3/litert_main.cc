@@ -55,6 +55,7 @@ limitations under the License.
 #include "tensor/examples/gemma3/safetensor_loader.h"
 #include "tensor/examples/gemma3/tokenizer.h"
 #include "tensor/examples/gemma3/util.h"
+#include "tensor/examples/utils/safetensor_loader.h"
 #include "tensor/runners/litert/litert_dynamic_runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
@@ -95,9 +96,8 @@ ABSL_FLAG(bool, gpu_external_tensors, true,
 ABSL_FLAG(bool, allow_cpu_fallback, false,
           "When using --accelerator=gpu or --accelerator=npu, also allow CPU "
           "execution for ops that the hardware delegate did not claim.");
-ABSL_FLAG(::litert::tensor::examples::SafetensorLoader::QuantizedLoadMode,
-          weight_mode,
-          ::litert::tensor::examples::SafetensorLoader::QuantizedLoadMode::
+ABSL_FLAG(::litert::tensor::examples::Gemma3QuantizedLoadMode, weight_mode,
+          ::litert::tensor::examples::Gemma3QuantizedLoadMode::
               kPreserveQuantized,
           "Weight mode (quantized or float)");
 
@@ -108,8 +108,7 @@ namespace {
 absl::StatusOr<std::vector<int64_t>> TensorShape(
     const ::litert::tensor::examples::SafetensorLoader& loader,
     absl::string_view name) {
-  LRT_TENSOR_ASSIGN_OR_RETURN(auto info,
-                              loader.GetTensorInfo(std::string(name)));
+  LRT_TENSOR_ASSIGN_OR_RETURN(const auto& info, loader.GetTensorInfo(name));
   return info.shape;
 }
 
@@ -585,8 +584,7 @@ absl::Status SetInputOptional(::litert::tensor::LitertDynamicRunner& runner,
 absl::Status RunGemma3Inference(
     const std::string& weights_path, const std::string& tokenizer_path,
     const std::string& prompt_text, size_t max_tokens,
-    ::litert::tensor::examples::SafetensorLoader::QuantizedLoadMode
-        weight_mode) {
+    ::litert::tensor::examples::Gemma3QuantizedLoadMode weight_mode) {
   ::litert::tensor::examples::gemma3::Config config;
   config.vocab_size = 262144;
 
@@ -608,7 +606,8 @@ absl::Status RunGemma3Inference(
   LRT_TENSOR_RETURN_IF_ERROR(
       ::litert::tensor::examples::gemma3::InferConfigFromWeights(loader,
                                                                  &config));
-  auto weights_res = loader.LoadAllTensors(weight_mode);
+  auto weights_res =
+      ::litert::tensor::examples::LoadAllGemma3Tensors(loader, weight_mode);
   if (!weights_res.ok()) {
     return absl::InternalError("Failed to load tensors from safetensors!");
   }
@@ -1202,7 +1201,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  ::litert::tensor::examples::SafetensorLoader::QuantizedLoadMode weight_mode =
+  ::litert::tensor::examples::Gemma3QuantizedLoadMode weight_mode =
       absl::GetFlag(FLAGS_weight_mode);
 
   absl::Status status = RunGemma3Inference(weights_path, tokenizer_path, prompt,

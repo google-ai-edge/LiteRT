@@ -14,15 +14,11 @@ limitations under the License.
 ==============================================================================*/
 #include "tensor/examples/gemma3/safetensor_loader.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>  // NOLINT
-#include <limits>
+#include <cstring>
 #include <memory>
 #include <string>
-#include <system_error>  // NOLINT
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -35,6 +31,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
+#include "tensor/examples/utils/safetensor_loader.h"
 #include "tensor/examples/utils/safetensors.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
@@ -43,252 +40,84 @@ namespace litert::tensor::examples {
 
 namespace {
 
-// Creates a `SpanCpuBuffer` over the given data and wraps it in a `shared_ptr`.
-//
-// `owner` is kept around in the `shared_ptr` to keep the data and the span
-// lifetimes in sync.
-std::shared_ptr<Buffer> MakeMappedBuffer(const std::shared_ptr<void>& owner,
-                                         const std::byte* data, size_t bytes) {
-  return std::shared_ptr<Buffer>(new SpanCpuBuffer(data, bytes),
-                                 [owner](Buffer* buffer) {
-                                   static_cast<void>(owner);
-                                   delete buffer;
-                                 });
-}
-
-const char* ToString(safetensors::dtype dtype) {
-  switch (dtype) {
-    case safetensors::dtype::kBFLOAT16:
-      return "BF16";
-    case safetensors::dtype::kFLOAT16:
-      return "F16";
-    case safetensors::dtype::kFLOAT32:
-      return "F32";
-    case safetensors::dtype::kFLOAT64:
-      return "F64";
-    case safetensors::dtype::kINT32:
-      return "I32";
-    case safetensors::dtype::kINT64:
-      return "I64";
-    case safetensors::dtype::kINT16:
-      return "I16";
-    case safetensors::dtype::kINT8:
-      return "I8";
-    case safetensors::dtype::kUINT8:
-      return "U8";
-    case safetensors::dtype::kUINT16:
-      return "U16";
-    case safetensors::dtype::kUINT32:
-      return "U32";
-    case safetensors::dtype::kUINT64:
-      return "U64";
-    case safetensors::dtype::kBOOL:
-      return "BOOL";
-    default:
-      return "UNKNOWN";
-  }
-}
-
-absl::StatusOr<size_t> NumElements(const std::vector<int64_t>& shape) {
-  size_t num_elements = 1;
-  for (int64_t dim : shape) {
-    if (dim < 0) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Negative shape dimension: ", dim));
+size_t ElementCount(const Shape& shape) {
+  size_t count = 1;
+  for (int32_t dim : shape) {
+    if (dim <= 0) {
+      return 0;
     }
-    if (dim == 0) {
-      return static_cast<size_t>(0);
-    }
-    if (num_elements >
-        std::numeric_limits<size_t>::max() / static_cast<size_t>(dim)) {
-      return absl::InvalidArgumentError(
-          "Tensor shape overflows total element count");
-    }
-    num_elements *= static_cast<size_t>(dim);
+    count *= static_cast<size_t>(dim);
   }
-  return num_elements;
+  return count;
 }
 
-absl::StatusOr<Shape> ToTensorShape(const std::vector<int64_t>& shape,
-                                    absl::string_view name) {
-  Shape result;
-  result.reserve(shape.size());
-  for (int64_t dim : shape) {
-    if (dim < 0 || dim > std::numeric_limits<int>::max()) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Tensor `", name, "` has invalid shape dimension: ", dim));
+bool IsZeroCenteredNormWeight(absl::string_view name) {
+  return absl::StrContains(name, "layernorm") ||
+         absl::EndsWith(name, "norm.weight");
+}
+
+absl::StatusOr<std::shared_ptr<OwningCpuBuffer>> ConvertToFp32Buffer(
+    absl::string_view name, const TensorHandle& tensor, bool add_unit_offset) {
+  const size_t num_elements = ElementCount(tensor.GetShape());
+  LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & src_buffer, tensor.GetBuffer());
+  LockedBufferSpan<const std::byte> locked = src_buffer.Lock();
+
+  std::shared_ptr<OwningCpuBuffer> out =
+      OwningCpuBuffer::Allocate<Type::kFP32>(num_elements);
+  if (out == nullptr) {
+    return absl::ResourceExhaustedError(
+        absl::StrCat("Failed to allocate FP32 buffer for ", name));
+  }
+  float* dst = out->Span<float>().data();
+  const std::byte* src = locked.data();
+
+  switch (tensor.GetType()) {
+    case Type::kBF16: {
+      if (locked.size() != num_elements * sizeof(uint16_t)) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("BF16 tensor byte size mismatch for: ", name));
+      }
+      for (size_t i = 0; i < num_elements; ++i) {
+        uint16_t raw = 0;
+        std::memcpy(&raw, src + i * sizeof(uint16_t), sizeof(raw));
+        dst[i] = safetensors::bfloat16_to_float(raw);
+      }
+      break;
     }
-    result.push_back(static_cast<int>(dim));
-  }
-  return result;
-}
-
-absl::Status ValidateTensorRange(const SafetensorTensorInfo& info,
-                                 size_t data_size, absl::string_view name) {
-  if (info.data_end < info.data_start) {
-    return absl::DataLossError(
-        absl::StrCat("Invalid tensor data range for: ", name));
-  }
-  if (info.data_end > data_size) {
-    return absl::DataLossError(
-        absl::StrCat("Tensor data out of range for: ", name));
-  }
-  LRT_TENSOR_ASSIGN_OR_RETURN(const size_t num_elements,
-                              NumElements(info.shape));
-  const size_t dtype_bytes = safetensors::get_dtype_bytes(info.dtype);
-  if (num_elements != 0 &&
-      dtype_bytes > std::numeric_limits<size_t>::max() / num_elements) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Tensor byte size overflows for: ", name));
-  }
-  const size_t expected_bytes = num_elements * dtype_bytes;
-  if (expected_bytes != info.data_end - info.data_start) {
-    return absl::DataLossError(absl::StrCat(
-        "Tensor byte size mismatch for ", name, ": expected ", expected_bytes,
-        " bytes from shape/dtype, got ", info.data_end - info.data_start));
-  }
-  return absl::OkStatus();
-}
-
-// Type trait specialized for types that we know how to convert.
-template <safetensors::dtype From, class To>
-struct ConvertInfo;
-
-// Type trait to find out whether `ConvertInfo` has been specialized or not.
-template <safetensors::dtype From, class To, class SFINAE = void>
-struct CanConvert : std::false_type {};
-
-template <safetensors::dtype From, class To>
-struct CanConvert<From, To, std::void_t<decltype(ConvertInfo<From, To>{})>>
-    : std::true_type {};
-
-// Helper specialized to provide bound checking when converting values.
-template <safetensors::dtype From, class To>
-struct ConvertBoundCheck;
-
-// Type trait to find out whether `ConvertBoundCheck` has been specialized or
-// not.
-template <safetensors::dtype From, class To, class SFINAE = void>
-struct HasBoundCheck : std::false_type {};
-
-template <safetensors::dtype From, class To>
-struct HasBoundCheck<From, To,
-                     std::void_t<decltype(ConvertBoundCheck<From, To>{})>>
-    : std::true_type {};
-
-#define CONVERT_INFO(ST_TYPE, TARGET_TYPE, STORAGE, CONVERT_FUNC)         \
-  template <>                                                             \
-  struct ConvertInfo<safetensors::dtype::k##ST_TYPE, TARGET_TYPE> {       \
-    using Storage = STORAGE;                                              \
-    static TARGET_TYPE Convert(STORAGE val) { return CONVERT_FUNC(val); } \
-  }
-
-#define CHECK_INFO(ST_TYPE, TARGET_TYPE, CHECK_EXPR)                      \
-  template <>                                                             \
-  struct ConvertBoundCheck<safetensors::dtype::k##ST_TYPE, TARGET_TYPE> { \
-    template <class T>                                                    \
-    static absl::Status Check(T val) {                                    \
-      if (!(CHECK_EXPR)) {                                                \
-        return absl::InvalidArgumentError(#CHECK_EXPR " is false.");      \
-      }                                                                   \
-      return absl::OkStatus();                                            \
-    };                                                                    \
-  }
-
-CONVERT_INFO(FLOAT32, float, float, static_cast<float>);
-CONVERT_INFO(BFLOAT16, float, uint16_t, safetensors::bfloat16_to_float);
-CONVERT_INFO(FLOAT16, float, uint16_t, safetensors::fp16_to_float);
-CONVERT_INFO(INT8, float, int8_t, static_cast<float>);
-CONVERT_INFO(INT16, float, int16_t, static_cast<float>);
-CONVERT_INFO(INT32, float, int32_t, static_cast<float>);
-CONVERT_INFO(INT64, float, int64_t, static_cast<float>);
-CONVERT_INFO(UINT8, float, uint8_t, static_cast<float>);
-CONVERT_INFO(UINT16, float, uint16_t, static_cast<float>);
-CONVERT_INFO(UINT32, float, uint32_t, static_cast<float>);
-CONVERT_INFO(UINT64, float, uint64_t, static_cast<float>);
-CONVERT_INFO(BOOL, float, bool, static_cast<float>);
-
-CONVERT_INFO(INT8, int64_t, int8_t, static_cast<int64_t>);
-CONVERT_INFO(INT16, int64_t, int16_t, static_cast<int64_t>);
-CONVERT_INFO(INT32, int64_t, int32_t, static_cast<int64_t>);
-CONVERT_INFO(INT64, int64_t, int64_t, static_cast<int64_t>);
-CONVERT_INFO(UINT8, int64_t, uint8_t, static_cast<int64_t>);
-CONVERT_INFO(UINT16, int64_t, uint16_t, static_cast<int64_t>);
-CONVERT_INFO(UINT32, int64_t, uint32_t, static_cast<int64_t>);
-CONVERT_INFO(UINT64, int64_t, uint64_t, static_cast<int64_t>);
-CHECK_INFO(UINT64, int64_t, val <= std::numeric_limits<int64_t>::max());
-CONVERT_INFO(BOOL, int64_t, bool, static_cast<int64_t>);
-
-template <Type type>
-struct TypedOwningBuffer {
-  using value_type = typename NativeStorage<type>::type;
-  void resize(size_t count) { buffer = OwningCpuBuffer::Allocate<type>(count); }
-  value_type* data() const noexcept {
-    return reinterpret_cast<value_type*>(buffer->data());
-  }
-
-  std::shared_ptr<OwningCpuBuffer> buffer;
-};
-
-template <class Container>
-absl::StatusOr<Container> ConvertTensorTo(const SafetensorTensorInfo& info,
-                                          const std::byte* data_base) {
-  using T = typename Container::value_type;
-  LRT_TENSOR_ASSIGN_OR_RETURN(const size_t num_elements,
-                              NumElements(info.shape));
-  const size_t bytes = info.data_end - info.data_start;
-  const std::byte* data_ptr = data_base + info.data_start;
-
-  Container values;
-  values.resize(num_elements);
-  auto* values_data = values.data();
-
-#define CONVERT_CASE(ST_TYPE)                                                  \
-  case safetensors::dtype::k##ST_TYPE: {                                       \
-    if constexpr (CanConvert<safetensors::dtype::k##ST_TYPE, T>::value) {      \
-      using Info = ConvertInfo<safetensors::dtype::k##ST_TYPE, T>;             \
-      if (bytes != num_elements * sizeof(typename Info::Storage)) {            \
-        return absl::InvalidArgumentError(#ST_TYPE                             \
-                                          " tensor byte size mismatch");       \
-      }                                                                        \
-      const typename Info::Storage* src =                                      \
-          reinterpret_cast<const typename Info::Storage*>(data_ptr);           \
-      for (size_t i = 0; i < num_elements; ++i) {                              \
-        if constexpr (HasBoundCheck<safetensors::dtype::k##ST_TYPE,            \
-                                    T>::value) {                               \
-          LRT_TENSOR_RETURN_IF_ERROR(                                          \
-              (ConvertBoundCheck<safetensors::dtype::k##ST_TYPE, T>::Check(    \
-                  src[i])));                                                   \
-        }                                                                      \
-        values_data[i] = Info::Convert(src[i]);                                \
-      }                                                                        \
-    } else {                                                                   \
-      return absl::InvalidArgumentError(                                       \
-          absl::StrCat("Unsupported conversion from ", ToString(info.dtype))); \
-    }                                                                          \
-    break;                                                                     \
-  }
-
-  switch (info.dtype) {
-    CONVERT_CASE(FLOAT32);
-    CONVERT_CASE(BFLOAT16);
-    CONVERT_CASE(FLOAT16);
-    CONVERT_CASE(INT8);
-    CONVERT_CASE(INT16);
-    CONVERT_CASE(INT32);
-    CONVERT_CASE(INT64);
-    CONVERT_CASE(UINT8);
-    CONVERT_CASE(UINT16);
-    CONVERT_CASE(UINT32);
-    CONVERT_CASE(UINT64);
-    CONVERT_CASE(BOOL);
+    case Type::kFP16: {
+      if (locked.size() != num_elements * sizeof(uint16_t)) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("FP16 tensor byte size mismatch for: ", name));
+      }
+      for (size_t i = 0; i < num_elements; ++i) {
+        uint16_t raw = 0;
+        std::memcpy(&raw, src + i * sizeof(uint16_t), sizeof(raw));
+        dst[i] = safetensors::fp16_to_float(raw);
+      }
+      break;
+    }
+    case Type::kFP32: {
+      if (locked.size() != num_elements * sizeof(float)) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("FP32 tensor byte size mismatch for: ", name));
+      }
+      if (num_elements > 0) {
+        std::memcpy(dst, src, locked.size());
+      }
+      break;
+    }
     default:
       return absl::InvalidArgumentError(
-          absl::StrCat("Unsupported conversion dtype: ", ToString(info.dtype)));
+          absl::StrCat("Unsupported type for FP32 conversion: ",
+                       ToString(tensor.GetType())));
   }
-#undef CONVERT_CASE
 
-  return values;
+  if (add_unit_offset) {
+    for (size_t i = 0; i < num_elements; ++i) {
+      dst[i] += 1.0f;
+    }
+  }
+  return out;
 }
 
 enum class QuantParamMode {
@@ -298,7 +127,7 @@ enum class QuantParamMode {
 };
 
 absl::StatusOr<QuantParamMode> DetermineQuantParamMode(
-    size_t param_size, const std::vector<int64_t>& shape, size_t num_elements,
+    size_t param_size, const Shape& shape, size_t num_elements,
     absl::string_view param_name) {
   if (param_size == 1) {
     return QuantParamMode::kScalar;
@@ -306,8 +135,6 @@ absl::StatusOr<QuantParamMode> DetermineQuantParamMode(
   if (param_size == num_elements) {
     return QuantParamMode::kPerElement;
   }
-  // Limitation: Tensor API quantizatoin metadata is is exported as
-  // per-channel along dim0 for this loader.
   if (!shape.empty() && shape[0] > 0 &&
       param_size == static_cast<size_t>(shape[0])) {
     if (num_elements % param_size != 0) {
@@ -333,365 +160,204 @@ size_t QuantParamIndex(QuantParamMode mode, size_t element_index,
   return 0;
 }
 
-}  // namespace
-
-// static
-absl::StatusOr<Type> SafetensorLoader::DtypeToType(safetensors::dtype dtype) {
-  switch (dtype) {
-    case safetensors::dtype::kBFLOAT16:
-      return Type::kBF16;
-    case safetensors::dtype::kFLOAT16:
-      return Type::kFP16;
-    case safetensors::dtype::kFLOAT32:
-      return Type::kFP32;
-    case safetensors::dtype::kFLOAT64:
-      return Type::kFP64;
-    case safetensors::dtype::kINT16:
-      return Type::kI16;
-    case safetensors::dtype::kINT32:
-      return Type::kI32;
-    case safetensors::dtype::kINT64:
-      return Type::kI64;
-    case safetensors::dtype::kINT8:
-      return Type::kI8;
-    case safetensors::dtype::kUINT8:
-      return Type::kU8;
-    case safetensors::dtype::kUINT16:
-      return Type::kU16;
-    case safetensors::dtype::kUINT32:
-      return Type::kU32;
-    case safetensors::dtype::kUINT64:
-      return Type::kU64;
-    case safetensors::dtype::kBOOL:
-      return Type::kBOOL;
-    default:
+absl::Status AttachLegacySideTensorQuantization(const SafetensorLoader& loader,
+                                                absl::string_view name,
+                                                TensorHandle& tensor) {
+  std::string scale_name;
+  for (absl::string_view suffix : {".scale", ".scales", ".weight_scales"}) {
+    std::string candidate = absl::StrCat(name, suffix);
+    if (loader.GetTensorInfo(candidate).ok()) {
+      scale_name = std::move(candidate);
       break;
+    }
   }
-  return absl::InvalidArgumentError(
-      absl::StrCat("Unsupported dtype: ", ToString(dtype)));
-}
+  if (scale_name.empty()) {
+    return absl::OkStatus();
+  }
 
-absl::Status SafetensorLoader::AddSafetensorFile(const std::string& path) {
-  auto st = std::make_shared<safetensors::safetensors_t>();
-  std::string warn, err;
-  bool ret = safetensors::mmap_from_file(path, st.get(), &warn, &err);
-  if (!ret) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(std::vector<float> scales,
+                              loader.ReadTensorAs<float>(scale_name));
+  if (scales.empty()) {
     return absl::InvalidArgumentError(
-        absl::StrCat("Failed to parse safetensor file: ", err));
+        absl::StrCat("Scale tensor is empty for: ", name));
   }
 
-  if (!warn.empty()) {
-    ABSL_LOG(WARNING) << "Safetensor warning: " << warn;
-  }
-
-  // Validate data offsets
-  if (!safetensors::validate_data_offsets(*st, err)) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Invalid data offsets: ", err));
-  }
-
-  const auto* data_base =
-      reinterpret_cast<const std::byte*>(st->databuffer_addr);
-  const size_t data_size = st->databuffer_size;
-
-  auto storage_info = std::make_shared<TensorStorageInfo>(TensorStorageInfo{
-      .file_data = st, .data_base = data_base, .data_size = data_size});
-
-  // Convert safetensors-cpp tensor info to our format.
-  const auto& tensor_keys = st->tensors.keys();
-  for (const auto& name : tensor_keys) {
-    if (tensor_infos_.contains(name)) {
-      return absl::AlreadyExistsError(absl::StrCat(
-          "Duplicate tensor name across safetensor files: ", name));
+  std::vector<int64_t> zero_points(1, 0);
+  const std::string zp_name = absl::StrCat(name, ".zero_point");
+  if (loader.GetTensorInfo(zp_name).ok()) {
+    LRT_TENSOR_ASSIGN_OR_RETURN(zero_points,
+                                loader.ReadTensorAs<int64_t>(zp_name));
+    if (zero_points.empty()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Zero-point tensor is empty for: ", name));
     }
-
-    safetensors::tensor_t tensor_info;
-    if (!st->tensors.at(name, &tensor_info)) {
-      continue;
-    }
-
-    SafetensorTensorInfo info;
-    info.name = name;
-    info.dtype = tensor_info.dtype;
-
-    // Convert shape
-    info.shape.reserve(tensor_info.shape.size());
-    for (size_t dim : tensor_info.shape) {
-      if (dim > static_cast<size_t>(std::numeric_limits<int64_t>::max())) {
-        return absl::InvalidArgumentError(absl::StrCat(
-            "Tensor `", name, "` shape dimension exceeds int64_t max: ", dim));
-      }
-      info.shape.push_back(static_cast<int64_t>(dim));
-    }
-
-    info.data_start = tensor_info.data_offsets[0];
-    info.data_end = tensor_info.data_offsets[1];
-    info.storage = storage_info;
-
-    tensor_infos_[name] = std::move(info);
   }
 
-  ABSL_LOG(INFO) << "Loaded safetensor file: " << path
-                 << " tensors: " << tensor_keys.size();
+  // Limitation: Tensor API quantization metadata is exported as per-channel
+  // along dim0 for this loader.
+  tensor.SetQuantization(std::make_shared<PerChannelAffineQuantization>(
+      std::move(scales), std::move(zero_points), /*quantized_dimension=*/0));
   return absl::OkStatus();
 }
 
-absl::StatusOr<SafetensorLoader> SafetensorLoader::Load(
-    const std::string& path) {
-  namespace fs = std::filesystem;
-  SafetensorLoader loader;
-
-  std::error_code ec;
-  const fs::path input_path(path);
-  const bool is_directory = fs::is_directory(input_path, ec);
-  if (ec) {
+absl::Status DequantizeInt8ToFp32(absl::string_view name,
+                                  TensorHandle& tensor) {
+  const Shape& shape = tensor.GetShape();
+  const size_t num_elements = ElementCount(shape);
+  LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & src_buffer, tensor.GetBuffer());
+  LockedBufferSpan<const std::byte> locked = src_buffer.Lock();
+  if (locked.size() != num_elements * sizeof(int8_t)) {
     return absl::InvalidArgumentError(
-        absl::StrCat("Failed to inspect path ", path, ": ", ec.message()));
+        absl::StrCat("I8 tensor byte size mismatch for: ", name));
   }
 
-  if (is_directory) {
-    std::vector<std::string> safetensor_files;
-    for (const auto& entry : fs::directory_iterator(input_path, ec)) {
-      if (ec) {
-        return absl::InvalidArgumentError(absl::StrCat(
-            "Failed to read directory ", path, ": ", ec.message()));
-      }
-      if (!entry.is_regular_file()) {
-        continue;
-      }
-      const std::string filename = entry.path().filename().string();
-      if (!absl::EndsWith(filename, ".safetensors")) {
-        continue;
-      }
-      safetensor_files.push_back(entry.path().string());
+  std::shared_ptr<OwningCpuBuffer> out =
+      OwningCpuBuffer::Allocate<Type::kFP32>(num_elements);
+  if (out == nullptr) {
+    return absl::ResourceExhaustedError(
+        absl::StrCat("Failed to allocate FP32 buffer for ", name));
+  }
+  float* dst = out->Span<float>().data();
+  const int8_t* quantized_data = reinterpret_cast<const int8_t*>(locked.data());
+
+  const std::shared_ptr<const Quantization> quant = tensor.GetQuantization();
+  if (auto pcq = quant->As<PerChannelAffineQuantization>(); pcq.ok()) {
+    const std::vector<float>& scales = pcq->scales;
+    if (scales.empty()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Scale tensor is empty for: ", name));
     }
-    if (safetensor_files.empty()) {
-      return absl::NotFoundError(
-          absl::StrCat("No .safetensors files found in directory: ", path));
+    const std::vector<int64_t> default_zp(1, 0);
+    const std::vector<int64_t>& zero_points =
+        pcq->zero_points.empty() ? default_zp : pcq->zero_points;
+
+    size_t channel_size = 0;
+    if (!shape.empty() && shape[0] > 0) {
+      channel_size = num_elements / static_cast<size_t>(shape[0]);
     }
-    std::sort(safetensor_files.begin(), safetensor_files.end());
-    for (const auto& file : safetensor_files) {
-      auto status = loader.AddSafetensorFile(file);
-      if (!status.ok()) {
-        return status;
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        const QuantParamMode scale_mode,
+        DetermineQuantParamMode(scales.size(), shape, num_elements, "scale"));
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        const QuantParamMode zp_mode,
+        DetermineQuantParamMode(zero_points.size(), shape, num_elements,
+                                "zero_point"));
+
+    for (size_t i = 0; i < num_elements; ++i) {
+      const size_t channel_index = channel_size == 0 ? 0 : i / channel_size;
+      const size_t scale_index =
+          QuantParamIndex(scale_mode, i, channel_index);
+      const size_t zp_index = QuantParamIndex(zp_mode, i, channel_index);
+      const int32_t q = static_cast<int32_t>(quantized_data[i]);
+      const int32_t zp = static_cast<int32_t>(zero_points[zp_index]);
+      dst[i] = static_cast<float>(q - zp) * scales[scale_index];
+    }
+  } else if (auto bq = quant->As<BlockwiseQuantization>(); bq.ok()) {
+    if (shape.size() != 2 || shape[0] <= 0 || shape[1] <= 0 ||
+        bq->block_size <= 0 || shape[1] % bq->block_size != 0) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Invalid shape or block_size for blockwise dequantization of ",
+          name));
+    }
+    const size_t rows = static_cast<size_t>(shape[0]);
+    const size_t cols = static_cast<size_t>(shape[1]);
+    const size_t block_size = static_cast<size_t>(bq->block_size);
+    const size_t blocks_per_row = cols / block_size;
+    const size_t total_blocks = rows * blocks_per_row;
+    if (bq->scales.size() != total_blocks) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Blockwise scale count mismatch for: ", name));
+    }
+    if (!bq->zero_points.empty() && bq->zero_points.size() != 1 &&
+        bq->zero_points.size() != total_blocks) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Blockwise zero-point count mismatch for: ", name));
+    }
+    for (size_t r = 0; r < rows; ++r) {
+      for (size_t c = 0; c < cols; ++c) {
+        const size_t idx = r * cols + c;
+        const size_t block_idx = r * blocks_per_row + (c / block_size);
+        const int64_t zp64 =
+            bq->zero_points.empty()
+                ? 0
+                : (bq->zero_points.size() == 1 ? bq->zero_points[0]
+                                               : bq->zero_points[block_idx]);
+        const int32_t q = static_cast<int32_t>(quantized_data[idx]);
+        const int32_t zp = static_cast<int32_t>(zp64);
+        dst[idx] = static_cast<float>(q - zp) * bq->scales[block_idx];
       }
     }
-    ABSL_LOG(INFO) << "Loaded " << safetensor_files.size()
-                   << " safetensor files from directory " << path << " with "
-                   << loader.tensor_infos_.size() << " tensors";
-    return loader;
+  } else {
+    return absl::UnimplementedError(absl::StrCat(
+        "Unsupported quantization metadata for FP32 dequantization of ", name));
   }
 
-  auto status = loader.AddSafetensorFile(path);
-  if (!status.ok()) {
-    return status;
-  }
-  ABSL_LOG(INFO) << "Loaded safetensor file with "
-                 << loader.tensor_infos_.size()
-                 << " tensors using safetensors-cpp";
-  return loader;
+  tensor.SetType(Type::kFP32);
+  tensor.SetBuffer(std::move(out));
+  tensor.SetQuantization(nullptr);
+  return absl::OkStatus();
 }
 
-std::vector<std::string> SafetensorLoader::GetTensorNames() const {
-  std::vector<std::string> names;
-  names.reserve(tensor_infos_.size());
-  for (const auto& [name, info] : tensor_infos_) {
-    names.push_back(name);
-  }
-  return names;
-}
+}  // namespace
 
-absl::StatusOr<SafetensorTensorInfo> SafetensorLoader::GetTensorInfo(
-    const std::string& name) const {
-  auto it = tensor_infos_.find(name);
-  if (it == tensor_infos_.end()) {
-    return absl::NotFoundError(absl::StrCat("Tensor not found: ", name));
-  }
-  return it->second;
-}
+absl::StatusOr<TensorHandle> LoadGemma3Tensor(
+    const SafetensorLoader& loader, absl::string_view name,
+    Gemma3QuantizedLoadMode quantized_load_mode) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(TensorHandle tensor, loader.LoadTensor(name));
+  const bool is_layernorm = IsZeroCenteredNormWeight(name);
 
-absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
-    const std::string& name, QuantizedLoadMode quantized_load_mode) const {
-  ABSL_LOG(INFO) << "Loading tensor " << name;
-  LRT_TENSOR_ASSIGN_OR_RETURN(SafetensorTensorInfo info, GetTensorInfo(name));
-  LRT_TENSOR_ASSIGN_OR_RETURN(Type type, DtypeToType(info.dtype));
-
-  const TensorStorageInfo& storage = *info.storage;
-  if (storage.data_base == nullptr || storage.file_data == nullptr) {
-    return absl::FailedPreconditionError("Safetensor storage is invalid");
-  }
-
-  LRT_TENSOR_RETURN_IF_ERROR(
-      ValidateTensorRange(info, storage.data_size, name));
-
-  auto ReadTensor =
-      [&](absl::flat_hash_map<std::string, SafetensorTensorInfo>::const_iterator
-              tensor_info_it,
-          auto as) -> absl::StatusOr<std::vector<decltype(as)>> {
-    absl::string_view tensor_name = tensor_info_it->first;
-    LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(
-        tensor_info_it->second, tensor_info_it->second.storage->data_size,
-        tensor_name));
-    return ConvertTensorTo<std::vector<decltype(as)>>(
-        tensor_info_it->second, tensor_info_it->second.storage->data_base);
-  };
-
-  const bool is_layernorm = absl::StrContains(name, "layernorm") ||
-                            absl::EndsWith(name, "norm.weight");
-
-  const std::byte* data_ptr = storage.data_base + info.data_start;
-  size_t data_size = info.data_end - info.data_start;
-  std::shared_ptr<Buffer> buffer;
-  std::shared_ptr<Quantization> quantization;
-  switch (type) {
+  switch (tensor.GetType()) {
     case Type::kBF16:
     case Type::kFP16: {
       LRT_TENSOR_ASSIGN_OR_RETURN(
-          TypedOwningBuffer<Type::kFP32> values,
-          ConvertTensorTo<TypedOwningBuffer<Type::kFP32>>(info,
-                                                          storage.data_base));
-      buffer = std::move(values.buffer);
-      if (is_layernorm) {
-        auto lock = buffer->LockMutable();
-        float* p = reinterpret_cast<float*>(lock.data());
-        size_t count = lock.size() / sizeof(float);
-        for (size_t i = 0; i < count; ++i) {
-          p[i] += 1.0f;
-        }
-      }
-      type = Type::kFP32;
-      break;
-    }
-    case Type::kI8: {
-      auto tensor_info_it = [&]() {
-        for (absl::string_view suffix :
-             {".scale", ".scales", ".weight_scales"}) {
-          if (auto it = tensor_infos_.find(absl::StrCat(name, suffix));
-              it != tensor_infos_.end()) {
-            return it;
-          }
-        }
-        return tensor_infos_.end();
-      }();
-
-      buffer = MakeMappedBuffer(storage.file_data, data_ptr, data_size);
-
-      if (tensor_info_it == tensor_infos_.end()) {
-        break;
-      }
-
-      LRT_TENSOR_ASSIGN_OR_RETURN(std::vector<float> scales,
-                                  ReadTensor(tensor_info_it, /*as=*/float{}));
-      if (scales.empty()) {
-        return absl::InvalidArgumentError(
-            absl::StrCat("Scale tensor is empty for: ", name));
-      }
-
-      std::vector<int64_t> zero_points(1, 0);
-      if (auto zp_it = tensor_infos_.find(absl::StrCat(name, ".zero_point"));
-          zp_it != tensor_infos_.end()) {
-        LRT_TENSOR_ASSIGN_OR_RETURN(zero_points,
-                                    ReadTensor(zp_it, /*as=*/int64_t{}));
-        if (zero_points.empty()) {
-          return absl::InvalidArgumentError(
-              absl::StrCat("Zero-point tensor is empty for: ", name));
-        }
-      }
-
-      LRT_TENSOR_ASSIGN_OR_RETURN(const size_t num_elements,
-                                  NumElements(info.shape));
-      if (num_elements * sizeof(int8_t) != data_size) {
-        return absl::InvalidArgumentError(
-            absl::StrCat("I8 tensor byte size mismatch for: ", name));
-      }
-
-      // Limitation: Tensor API quantization metadata is exported as per-channel
-      // along dim0 for this loader.
-      if (quantized_load_mode == QuantizedLoadMode::kPreserveQuantized) {
-        quantization = std::make_shared<PerChannelAffineQuantization>(
-            std::move(scales), std::move(zero_points),
-            /*quantized_dimension=*/0);
-        break;
-      }
-
-      size_t channel_size = 0;
-      if (!info.shape.empty() && info.shape[0] > 0) {
-        channel_size = num_elements / static_cast<size_t>(info.shape[0]);
-      }
-
-      LRT_TENSOR_ASSIGN_OR_RETURN(
-          const QuantParamMode scale_mode,
-          DetermineQuantParamMode(scales.size(), info.shape, num_elements,
-                                  "scale"));
-      LRT_TENSOR_ASSIGN_OR_RETURN(
-          const QuantParamMode zp_mode,
-          DetermineQuantParamMode(zero_points.size(), info.shape, num_elements,
-                                  "zero_point"));
-
-      std::vector<float> values(num_elements);
-      const int8_t* quantized_data = reinterpret_cast<const int8_t*>(data_ptr);
-      for (size_t i = 0; i < num_elements; ++i) {
-        const size_t channel_index = channel_size == 0 ? 0 : i / channel_size;
-        const size_t scale_index =
-            QuantParamIndex(scale_mode, i, channel_index);
-        const size_t zp_index = QuantParamIndex(zp_mode, i, channel_index);
-        const int32_t q = static_cast<int32_t>(quantized_data[i]);
-        const int32_t zp = static_cast<int32_t>(zero_points[zp_index]);
-        values[i] = static_cast<float>(q - zp) * scales[scale_index];
-      }
-
-      buffer = OwningCpuBuffer::Copy<Type::kFP32>(values);
-      type = Type::kFP32;
-      break;
+          std::shared_ptr<OwningCpuBuffer> fp32_buffer,
+          ConvertToFp32Buffer(name, tensor, is_layernorm));
+      tensor.SetType(Type::kFP32);
+      tensor.SetBuffer(std::move(fp32_buffer));
+      return tensor;
     }
     case Type::kFP32: {
       if (is_layernorm) {
         LRT_TENSOR_ASSIGN_OR_RETURN(
-            TypedOwningBuffer<Type::kFP32> values,
-            ConvertTensorTo<TypedOwningBuffer<Type::kFP32>>(info,
-                                                            storage.data_base));
-        buffer = std::move(values.buffer);
-        auto lock = buffer->LockMutable();
-        float* p = reinterpret_cast<float*>(lock.data());
-        size_t count = lock.size() / sizeof(float);
-        for (size_t i = 0; i < count; ++i) {
-          p[i] += 1.0f;
-        }
-      } else {
-        buffer = MakeMappedBuffer(storage.file_data, data_ptr, data_size);
+            std::shared_ptr<OwningCpuBuffer> fp32_buffer,
+            ConvertToFp32Buffer(name, tensor, /*add_unit_offset=*/true));
+        tensor.SetBuffer(std::move(fp32_buffer));
       }
-      break;
+      return tensor;
     }
-    case Type::kFP64:
-    case Type::kI32:
-    case Type::kI64:
-    case Type::kI16:
-    case Type::kU8:
-    case Type::kU16:
-    case Type::kU32:
-    case Type::kU64:
-    case Type::kBOOL:
-      buffer = MakeMappedBuffer(storage.file_data, data_ptr, data_size);
-      break;
-    default:
+    case Type::kI8: {
+      if (tensor.GetQuantization() == nullptr) {
+        LRT_TENSOR_RETURN_IF_ERROR(
+            AttachLegacySideTensorQuantization(loader, name, tensor));
+      }
+      if (tensor.GetQuantization() == nullptr ||
+          quantized_load_mode == Gemma3QuantizedLoadMode::kPreserveQuantized) {
+        return tensor;
+      }
+      LRT_TENSOR_RETURN_IF_ERROR(DequantizeInt8ToFp32(name, tensor));
+      return tensor;
+    }
+    case Type::kI4:
+    case Type::kI2: {
+      if (quantized_load_mode == Gemma3QuantizedLoadMode::kPreserveQuantized) {
+        return tensor;
+      }
       return absl::UnimplementedError(
-          absl::StrCat("Unsupported type for loading: ", ToString(type)));
+          absl::StrCat("Dequantizing ", ToString(tensor.GetType()),
+                       " tensor to FP32 is not supported for: ", name));
+    }
+    default:
+      return tensor;
   }
-
-  LRT_TENSOR_ASSIGN_OR_RETURN(Shape tensor_shape,
-                              ToTensorShape(info.shape, name));
-  return TensorHandle({.name = name,
-                       .type = type,
-                       .shape = std::move(tensor_shape),
-                       .buffer = buffer,
-                       .quantization = quantization});
 }
 
 absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
-SafetensorLoader::LoadAllTensors(QuantizedLoadMode quantized_load_mode) const {
+LoadAllGemma3Tensors(const SafetensorLoader& loader,
+                     Gemma3QuantizedLoadMode quantized_load_mode) {
   absl::flat_hash_map<std::string, TensorHandle> tensors;
-  for (const auto& [name, info] : tensor_infos_) {
-    auto tensor_or = LoadTensor(name, quantized_load_mode);
+  for (const std::string& name : loader.GetTensorNames()) {
+    absl::StatusOr<TensorHandle> tensor_or =
+        LoadGemma3Tensor(loader, name, quantized_load_mode);
     if (!tensor_or.ok()) {
       ABSL_LOG(WARNING) << "Failed to load tensor " << name << ": "
                         << tensor_or.status();
@@ -703,12 +369,14 @@ SafetensorLoader::LoadAllTensors(QuantizedLoadMode quantized_load_mode) const {
 }
 
 absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
-SafetensorLoader::LoadWeightsWithMapping(
+LoadGemma3WeightsWithMapping(
+    const SafetensorLoader& loader,
     const absl::flat_hash_map<std::string, std::string>& name_mapping,
-    QuantizedLoadMode quantized_load_mode) const {
+    Gemma3QuantizedLoadMode quantized_load_mode) {
   absl::flat_hash_map<std::string, TensorHandle> tensors;
   for (const auto& [hf_name, model_name] : name_mapping) {
-    auto tensor_or = LoadTensor(hf_name, quantized_load_mode);
+    absl::StatusOr<TensorHandle> tensor_or =
+        LoadGemma3Tensor(loader, hf_name, quantized_load_mode);
     if (!tensor_or.ok()) {
       ABSL_LOG(WARNING) << "Failed to load tensor " << hf_name << ": "
                         << tensor_or.status();
