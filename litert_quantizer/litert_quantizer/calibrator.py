@@ -524,6 +524,7 @@ class _PreserveAllTensorsCalibrator(Calibrator):
     # Step2: go through each op in subgraph to update quantization
     # statistic values.
     subgraphs_inds = [subgraph_idx]
+    subgraph_algorithms: dict[int, str] = {}
     while subgraphs_inds:
       subgraph_ind = subgraphs_inds.pop()
       self._tensor_content_map.update(
@@ -559,6 +560,11 @@ class _PreserveAllTensorsCalibrator(Calibrator):
         algorithm_name, _ = model_recipe_manager.get_quantization_configs(
             op_key, op_scope
         )
+        if (
+            algorithm_name == algorithm_manager.AlgorithmName.NO_QUANTIZE
+            and subgraph_ind in subgraph_algorithms
+        ):
+          algorithm_name = subgraph_algorithms[subgraph_ind]
         if algorithm_name == algorithm_manager.AlgorithmName.NO_QUANTIZE:
           continue
         if (
@@ -587,9 +593,12 @@ class _PreserveAllTensorsCalibrator(Calibrator):
         updated_tensor_names.update(op_updated_tensor_name)
 
         # Step4: Invoke any subgraphs invoked as a side effect of the op.
-        subgraphs_inds.extend(
+        side_effect_subgraphs = (
             tfl_flatbuffer_utils.get_op_side_effect_subgraphs(op)
         )
+        for side_effect_sg_ind in side_effect_subgraphs:
+          subgraph_algorithms[side_effect_sg_ind] = algorithm_name
+        subgraphs_inds.extend(side_effect_subgraphs)
 
 
 class _ProfilerBasedCalibrator(Calibrator):

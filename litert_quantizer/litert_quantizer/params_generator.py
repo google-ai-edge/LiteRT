@@ -98,6 +98,7 @@ class ParamsGenerator:
       model_qsvs = {}
 
     skip_subgraphs = set()
+    subgraph_configs: dict[int, tuple[str, qtyping.OpQuantizationConfig]] = {}
     op_codes = self.float_model.operatorCodes
 
     total_ops = self._get_total_operations()
@@ -140,6 +141,11 @@ class ParamsGenerator:
           algorithm_name, op_quant_config = (
               model_recipe_manager.get_quantization_configs(op_key, op_scope)
           )
+          if (
+              algorithm_name == algorithm_manager.AlgorithmName.NO_QUANTIZE
+              and sg_ind in subgraph_configs
+          ):
+            algorithm_name, op_quant_config = subgraph_configs[sg_ind]
 
           if (
               sg_ind in skip_subgraphs
@@ -148,10 +154,10 @@ class ParamsGenerator:
           ):
             algorithm_name = algorithm_manager.AlgorithmName.NO_QUANTIZE
 
+          side_effect_subgraphs = (
+              tfl_flatbuffer_utils.get_op_side_effect_subgraphs(op)
+          )
           if algorithm_name == algorithm_manager.AlgorithmName.NO_QUANTIZE:
-            side_effect_subgraphs = (
-                tfl_flatbuffer_utils.get_op_side_effect_subgraphs(op)
-            )
             skip_subgraphs.update(side_effect_subgraphs)
 
             op_quant_results = self._get_params_for_no_quant_op(
@@ -159,6 +165,11 @@ class ParamsGenerator:
             )
 
           else:
+            for side_effect_sg_ind in side_effect_subgraphs:
+              subgraph_configs[side_effect_sg_ind] = (
+                  algorithm_name,
+                  op_quant_config,
+              )
             op_info = qtyping.OpInfo(
                 op, op_key, subgraph_op_id, op_quant_config
             )
