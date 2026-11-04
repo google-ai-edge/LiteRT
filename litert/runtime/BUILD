@@ -496,7 +496,21 @@ cc_library(
         "//litert/cc:litert_any",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
-    ] + litert_metal_deps(),
+    ] + select({
+        "//litert/build_common:android_gpu_enabled": [
+            "//ml_drift_delegate/delegate:shared_vulkan_env",
+            "@ml_drift//ml_drift/common:gpu_info",
+            "@ml_drift//ml_drift/syrtis:environment",
+            "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
+        ],
+        "//litert/build_common:linux_gpu_enabled": [
+            "//ml_drift_delegate/delegate:shared_vulkan_env",
+            "@ml_drift//ml_drift/common:gpu_info",
+            "@ml_drift//ml_drift/syrtis:environment",
+            "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
+        ],
+        "//conditions:default": [],
+    }) + litert_metal_deps(),
 )
 
 # copybara:uncomment_begin(google-only)
@@ -504,17 +518,25 @@ cc_library(
 #     name = "gpu_environment_test",
 #     srcs = ["gpu_environment_test.cc"],
 #     linkopts = litert_android_linkopts(),
-#     tags = ["requires-gpu-sm90"],  # OpenCL/MIG-compatible
+#     tags = ["requires-gpu-sm90-full"],
 #     deps = [
 #         ":gpu_environment",
 #         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/cleanup",
+#         "@com_google_absl//absl/debugging:leak_check",
+#         "@com_google_absl//absl/status",
 #         "@ml_drift//ml_drift/cl:environment",
 #         "@ml_drift//ml_drift/cl:opencl_wrapper",
+#         "@ml_drift//ml_drift/syrtis:environment",
+#         "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
 #         "//litert/c:litert_any",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_environment",
 #         "//litert/c:litert_environment_options",
 #         "//litert/cc:litert_any",
 #         "//litert/core:environment",
 #         "//litert/test:matchers",
+#         "//third_party/vulkan_loader",
 #     ],
 # )
 # copybara:uncomment_end

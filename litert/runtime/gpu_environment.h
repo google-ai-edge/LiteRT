@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_GPU_ENVIRONMENT_H_
 #define ODML_LITERT_LITERT_RUNTIME_GPU_ENVIRONMENT_H_
 
+#include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -45,6 +46,14 @@
 typedef struct WGPUDeviceImpl* WGPUDevice;
 typedef struct WGPUQueueImpl* WGPUQueue;
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if !defined(LITERT_HAS_VULKAN_ENV_SUPPORT)
+#if LITERT_HAS_VULKAN_SUPPORT && (defined(__ANDROID__) || defined(__linux__))
+#define LITERT_HAS_VULKAN_ENV_SUPPORT 1
+#else
+#define LITERT_HAS_VULKAN_ENV_SUPPORT 0
+#endif
+#endif  // !defined(LITERT_HAS_VULKAN_ENV_SUPPORT)
 
 namespace litert::internal {
 
@@ -125,7 +134,21 @@ struct GpuEnvironmentOptions {
 
 #if LITERT_HAS_VULKAN_SUPPORT
   void* vulkan_env = nullptr;
+  int64_t vulkan_instance = 0;
+  int64_t vulkan_physical_device = 0;
+  int64_t vulkan_device = 0;
+  int64_t vulkan_queue = 0;
+  int64_t vulkan_queue_family_index = -1;
+  bool has_external_vulkan_options = false;
 #endif  // LITERT_HAS_VULKAN_SUPPORT
+
+  bool HasVulkanOptions() const {
+#if LITERT_HAS_VULKAN_SUPPORT
+    return vulkan_env != nullptr || has_external_vulkan_options;
+#else
+    return false;
+#endif  // LITERT_HAS_VULKAN_SUPPORT
+  }
 };
 
 // A class for storing the MLD global environment and kept in Environment.
@@ -244,6 +267,10 @@ class GpuEnvironment {
   Expected<void> InitializeMetal();
 #endif  // LITERT_HAS_METAL_SUPPORT
 
+#if LITERT_HAS_VULKAN_ENV_SUPPORT
+  Expected<void> InitializeVulkan();
+#endif  // LITERT_HAS_VULKAN_ENV_SUPPORT
+
   // EGL must be declared before OpenCL so it initializes first and is destroyed
   // last (reverse declaration order), preventing driver crashes during cleanup.
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -259,6 +286,10 @@ class GpuEnvironment {
 #if LITERT_HAS_METAL_SUPPORT
   MetalInfoPtr metal_info_;
 #endif  // LITERT_HAS_METAL_SUPPORT
+
+#if LITERT_HAS_VULKAN_ENV_SUPPORT
+  void* vulkan_env_ = nullptr;
+#endif  // LITERT_HAS_VULKAN_ENV_SUPPORT
 
   GpuEnvironmentOptions options_;
   GpuEnvironmentProperties properties_;

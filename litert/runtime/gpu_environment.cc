@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <cstdlib>  // NOLINT
+#include <memory>
 #include <string>   // NOLINT
 #include <vector>
 
@@ -53,6 +54,13 @@
 #include "ml_drift/cl/gl_interop.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 #endif  // LITERT_HAS_OPENGL_SUPPORT
+
+#if LITERT_HAS_VULKAN_ENV_SUPPORT
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
+#include "ml_drift/syrtis/environment.h"  // from @ml_drift
+#include "ml_drift/syrtis/vulkan_wrapper.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/shared_vulkan_env.h"
+#endif  // LITERT_HAS_VULKAN_ENV_SUPPORT
 
 namespace litert {
 namespace internal {
@@ -159,12 +167,27 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
 #endif  // LITERT_HAS_METAL_SUPPORT
 
 #if LITERT_HAS_VULKAN_SUPPORT
-  auto vulkan_env_option =
-      environment_options.GetOption(kLiteRtEnvOptionTagVulkanEnvironment);
-  if (vulkan_env_option.HasValue() &&
-      vulkan_env_option->type == kLiteRtAnyTypeInt) {
-    options.vulkan_env = reinterpret_cast<void*>(vulkan_env_option->int_value);
+  auto get_int_option = [&](LiteRtEnvOptionTag tag, int64_t* out) {
+    Expected<LiteRtAny> option = environment_options.GetOption(tag);
+    if (option.HasValue() && option->type == kLiteRtAnyTypeInt) {
+      *out = option->int_value;
+      return true;
+    }
+    return false;
+  };
+  int64_t vulkan_env_int = 0;
+  if (get_int_option(kLiteRtEnvOptionTagVulkanEnvironment, &vulkan_env_int)) {
+    options.vulkan_env = reinterpret_cast<void*>(vulkan_env_int);
   }
+  get_int_option(kLiteRtEnvOptionTagVulkanInstance, &options.vulkan_instance);
+  options.has_external_vulkan_options |= get_int_option(
+      kLiteRtEnvOptionTagVulkanPhysicalDevice, &options.vulkan_physical_device);
+  options.has_external_vulkan_options |=
+      get_int_option(kLiteRtEnvOptionTagVulkanDevice, &options.vulkan_device);
+  options.has_external_vulkan_options |=
+      get_int_option(kLiteRtEnvOptionTagVulkanQueue, &options.vulkan_queue);
+  get_int_option(kLiteRtEnvOptionTagVulkanQueueFamilyIndex,
+                 &options.vulkan_queue_family_index);
 #endif  // LITERT_HAS_VULKAN_SUPPORT
 
   return options;
@@ -232,6 +255,9 @@ GpuEnvironment::~GpuEnvironment() {
 #if LITERT_HAS_METAL_SUPPORT
   LiteRtDeleteMetalInfo(metal_info_);
 #endif  // LITERT_HAS_METAL_SUPPORT
+#if LITERT_HAS_VULKAN_ENV_SUPPORT
+  delete static_cast<::litert::ml_drift::SharedVulkanEnv*>(vulkan_env_);
+#endif  // LITERT_HAS_VULKAN_ENV_SUPPORT
 }
 
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -502,6 +528,39 @@ Expected<void> GpuEnvironment::InitializeMetal() {
 }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
+#if LITERT_HAS_VULKAN_ENV_SUPPORT
+Expected<void> GpuEnvironment::InitializeVulkan() {
+  if (options_.vulkan_env == nullptr) {
+    if (!options_.has_external_vulkan_options) {
+      return {};
+    }
+    std::unique_ptr<::litert::ml_drift::SharedVulkanEnv> shared_vulkan_env =
+        ::litert::ml_drift::SharedVulkanEnv::CreateFromExternalHandles(
+            reinterpret_cast<VkInstance>(options_.vulkan_instance),
+            reinterpret_cast<VkPhysicalDevice>(options_.vulkan_physical_device),
+            reinterpret_cast<VkDevice>(options_.vulkan_device),
+            reinterpret_cast<VkQueue>(options_.vulkan_queue),
+            options_.vulkan_queue_family_index);
+    if (!shared_vulkan_env) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to create Vulkan environment.");
+    }
+    vulkan_env_ = shared_vulkan_env.release();
+    LITERT_ASSIGN_OR_RETURN(
+        LiteRtAny vulkan_env_any,
+        ToLiteRtAny(LiteRtVariant(reinterpret_cast<int64_t>(vulkan_env_))));
+    generated_options_.push_back(LiteRtEnvOption{
+        .tag = kLiteRtEnvOptionTagVulkanEnvironment, .value = vulkan_env_any});
+    options_.vulkan_env = vulkan_env_;
+  }
+  auto* vk_env =
+      static_cast<::litert::ml_drift::SharedVulkanEnv*>(options_.vulkan_env);
+  properties_.is_fp16_supported =
+      vk_env->vulkan_env().GetInfo().SupportsFP16();
+  return {};
+}
+#endif  // LITERT_HAS_VULKAN_ENV_SUPPORT
+
 Expected<void> GpuEnvironment::Initialize(
     const LiteRtEnvironmentOptionsT& environment_options) {
   absl::MutexLock lock(init_opencl_mutex_);
@@ -521,11 +580,12 @@ Expected<void> GpuEnvironment::Initialize(
   bool disable_opengl =
       disable_opengl_env && std::string(disable_opengl_env) == "1";
   if (!disable_opengl) {
-    // Only create a LiteRT-owned default EGL environment when no OpenCL/EGL
-    // options are set and no external owner (indicated by
+    // Only create a LiteRT-owned default EGL environment when no OpenCL/EGL/
+    // Vulkan options are set and no external owner (indicated by
     // `callback_on_destroy`, e.g. DelegateEnvironment) is managing the GPU
     // environment lifecycle.
     if (!options_.HasOpenClOptions() && !options_.IsGlAware() &&
+        !options_.HasVulkanOptions() &&
         options_.callback_on_destroy == nullptr) {
       LITERT_RETURN_IF_ERROR(InitializeDefaultEglEnvironment());
     }
@@ -538,6 +598,12 @@ Expected<void> GpuEnvironment::Initialize(
 #if LITERT_HAS_METAL_SUPPORT
   LITERT_RETURN_IF_ERROR(InitializeMetal());
 #endif  // LITERT_HAS_METAL_SUPPORT
+
+#if LITERT_HAS_VULKAN_ENV_SUPPORT
+  if (options_.HasVulkanOptions()) {
+    LITERT_RETURN_IF_ERROR(InitializeVulkan());
+  }
+#endif  // LITERT_HAS_VULKAN_ENV_SUPPORT
 
   return {};
 }
