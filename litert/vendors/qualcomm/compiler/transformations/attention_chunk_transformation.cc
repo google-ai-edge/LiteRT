@@ -35,17 +35,14 @@
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/transformation_utils.h"
 
 namespace {
 
-using litert::BuildLayout;
 using litert::ElementType;
 using litert::Expected;
-using litert::Layout;
-using litert::RankedTensorType;
 using litert::compiler::BatchMatmulOptions;
 using litert::compiler::Builder;
-using litert::compiler::ConcatenationOptions;
 using litert::compiler::GetOptionsAs;
 using litert::compiler::m_AllOf;
 using litert::compiler::m_Any;
@@ -55,11 +52,21 @@ using litert::compiler::m_HasOneUse;
 using litert::compiler::m_Op;
 using litert::compiler::m_Shape;
 using litert::compiler::Op;
-using litert::compiler::RankedTensorSpecBuilder;
-using litert::compiler::ReshapeOptions;
 using litert::compiler::SoftmaxOptions;
 using litert::compiler::SplitOptions;
 using litert::compiler::Tensor;
+using litert::qnn::BuildBatchMatmul;
+using litert::qnn::BuildConcatInto;
+using litert::qnn::BuildReshape;
+using litert::qnn::BuildReshapeInto;
+using litert::qnn::BuildSlice;
+using litert::qnn::BuildSoftmax;
+using litert::qnn::ConstI32;
+using litert::qnn::HasDims;
+using litert::qnn::HasPerm;
+using litert::qnn::NewLike;
+using litert::qnn::SingleOutput;
+using litert::qnn::SingleUser;
 
 // Default minimum logits tensor size in bytes to trigger auto-chunking.
 constexpr int64_t kDefaultAutoMinLogitsBytes = 8 << 20;
@@ -111,36 +118,6 @@ Kind KindOf(const Tensor& t) {
   return Kind::kUnsupported;
 }
 
-bool HasPerm(const Op& transpose, const std::vector<int32_t>& expected) {
-  if (transpose.Code() != kLiteRtOpCodeTflTranspose ||
-      transpose.Inputs().size() != 2) {
-    return false;
-  }
-  Tensor perm = transpose.Inputs()[1];
-  if (!perm.IsConstant()) return false;
-  auto perm_data = perm.WeightsData<int32_t>();
-  return perm_data &&
-         std::vector<int32_t>(perm_data->begin(), perm_data->end()) == expected;
-}
-
-// Returns the single user of `t` if it has exactly one use, with opcode
-// `code`, consuming `t` as its `arg`-th input.
-std::optional<Op> SingleUser(const Tensor& t, LiteRtOpCode code,
-                             LiteRtParamIndex arg) {
-  auto uses = t.Uses();
-  if (uses.size() != 1 || uses[0].user.Code() != code ||
-      uses[0].user_arg_ind != arg) {
-    return std::nullopt;
-  }
-  return uses[0].user;
-}
-
-std::optional<Tensor> SingleOutput(const Op& op) {
-  auto outs = op.Outputs();
-  if (outs.size() != 1) return std::nullopt;
-  return outs[0];
-}
-
 bool IsPlainBatchMatmul(const Op& op) {
   if (op.Code() != kLiteRtOpCodeTflBatchMatmul || op.Inputs().size() != 2 ||
       op.Outputs().size() != 1) {
@@ -168,23 +145,22 @@ std::optional<Match> MatchAttention(const LiteRtCompilerContext* ctx,
   Tensor logits = bmm1.Outputs()[0];
   const auto qd = Dims(q);
   const auto ktd = Dims(kt);
-  const auto ld = Dims(logits);
-  if (qd.size() != 3 || ktd.size() != 3 || ld.size() != 3) return std::nullopt;
+  if (qd.size() != 3 || ktd.size() != 3) return std::nullopt;
   const int32_t h = qd[0], s = qd[1], d = qd[2], k = ktd[2];
-  if (ktd[0] != h || ktd[1] != d || ld != std::vector<int32_t>{h, s, k}) {
+  if (ktd[0] != h || ktd[1] != d || !HasDims(logits, {h, s, k})) {
     return std::nullopt;
   }
 
   auto reshape1 = SingleUser(logits, kLiteRtOpCodeTflReshape, 0);
   if (!reshape1) return std::nullopt;
   auto r1_out = SingleOutput(*reshape1);
-  if (!r1_out || Dims(*r1_out) != std::vector<int32_t>{1, h, s, k}) {
+  if (!r1_out || !HasDims(*r1_out, {1, h, s, k})) {
     return std::nullopt;
   }
   auto softmax = SingleUser(*r1_out, kLiteRtOpCodeTflSoftmax, 0);
   if (!softmax || softmax->Inputs().size() != 1) return std::nullopt;
   auto sm_out = SingleOutput(*softmax);
-  if (!sm_out || Dims(*sm_out) != std::vector<int32_t>{1, h, s, k}) {
+  if (!sm_out || !HasDims(*sm_out, {1, h, s, k})) {
     return std::nullopt;
   }
   auto sm_opts = GetOptionsAs<SoftmaxOptions>(ctx, softmax->Get());
@@ -192,7 +168,7 @@ std::optional<Match> MatchAttention(const LiteRtCompilerContext* ctx,
   auto reshape2 = SingleUser(*sm_out, kLiteRtOpCodeTflReshape, 0);
   if (!reshape2) return std::nullopt;
   auto r2_out = SingleOutput(*reshape2);
-  if (!r2_out || Dims(*r2_out) != std::vector<int32_t>{h, s, k}) {
+  if (!r2_out || !HasDims(*r2_out, {h, s, k})) {
     return std::nullopt;
   }
   // P must be the LHS of the second BatchMatmul.
@@ -203,7 +179,7 @@ std::optional<Match> MatchAttention(const LiteRtCompilerContext* ctx,
   const auto vd = Dims(v);
   if (vd.size() != 3 || vd[0] != h || vd[1] != k) return std::nullopt;
   const int32_t dv = vd[2];
-  if (Dims(out) != std::vector<int32_t>{h, s, dv}) return std::nullopt;
+  if (!HasDims(out, {h, s, dv})) return std::nullopt;
 
   // Both BatchMatmuls must use the same input quantization mode.
   auto bmm1_opts = GetOptionsAs<BatchMatmulOptions>(ctx, bmm1.Get());
@@ -305,19 +281,19 @@ std::optional<Tail> MatchTail(const Match& m) {
   auto reshape = SingleUser(m.out, kLiteRtOpCodeTflReshape, 0);
   if (!reshape) return std::nullopt;
   auto r_out = SingleOutput(*reshape);
-  if (!r_out || Dims(*r_out) != std::vector<int32_t>{1, m.h, m.s, m.dv}) {
+  if (!r_out || !HasDims(*r_out, {1, m.h, m.s, m.dv})) {
     return std::nullopt;
   }
   auto transpose = SingleUser(*r_out, kLiteRtOpCodeTflTranspose, 0);
   if (!transpose || !HasPerm(*transpose, {0, 2, 1, 3})) return std::nullopt;
   auto t_out = SingleOutput(*transpose);
-  if (!t_out || Dims(*t_out) != std::vector<int32_t>{1, m.s, m.h, m.dv}) {
+  if (!t_out || !HasDims(*t_out, {1, m.s, m.h, m.dv})) {
     return std::nullopt;
   }
   auto quantize = SingleUser(*t_out, kLiteRtOpCodeTflQuantize, 0);
   if (!quantize || quantize->Inputs().size() != 1) return std::nullopt;
   auto q_out = SingleOutput(*quantize);
-  if (!q_out || Dims(*q_out) != std::vector<int32_t>{1, m.s, m.h, m.dv}) {
+  if (!q_out || !HasDims(*q_out, {1, m.s, m.h, m.dv})) {
     return std::nullopt;
   }
   const Kind kind = KindOf(m.out);
@@ -329,7 +305,7 @@ std::optional<Tail> MatchTail(const Match& m) {
             *q_out,   false,      *reshape,  *q_out};
   if (auto flat_r = SingleUser(*q_out, kLiteRtOpCodeTflReshape, 0)) {
     if (auto f_out = SingleOutput(*flat_r)) {
-      if (Dims(*f_out) == std::vector<int32_t>{1, m.s, m.h * m.dv} &&
+      if (HasDims(*f_out, {1, m.s, m.h * m.dv}) &&
           KindOf(*f_out) == Kind::kQuant) {
         tail.has_flat_reshape = true;
         tail.flat_reshape = *flat_r;
@@ -366,87 +342,6 @@ std::optional<std::pair<int, int>> AutoSelect(const Match& m,
     }
   }
   return std::nullopt;
-}
-
-Expected<Tensor> NewLike(Builder& builder, const Tensor& like,
-                         const std::vector<int32_t>& dims) {
-  RankedTensorType type(
-      like.ElementType(),
-      Layout(BuildLayout(dims.data(), dims.data() + dims.size())));
-  auto spec = RankedTensorSpecBuilder(type);
-  if (like.QTypeId() == kLiteRtQuantizationPerTensor) {
-    spec =
-        std::move(spec).WithPerTensorQuantization(like.PerTensorQuantization());
-  }
-  return builder.BuildTensor(std::move(spec).Build());
-}
-
-Expected<Tensor> ConstI32(Builder& builder, const std::vector<int32_t>& data) {
-  const std::vector<int32_t> dims = {static_cast<int32_t>(data.size())};
-  RankedTensorType type(ElementType::Int32,
-                        Layout(BuildLayout(dims.data(), dims.data() + 1)));
-  LITERT_ASSIGN_OR_RETURN(
-      auto t, builder.BuildTensor(RankedTensorSpecBuilder(type).Build()));
-  LITERT_RETURN_IF_ERROR(
-      builder.BuildWeights<int32_t>(absl::MakeConstSpan(data), t));
-  return t;
-}
-
-Expected<Tensor> BuildSlice(Builder& builder, const Tensor& in,
-                            const std::vector<int32_t>& begin,
-                            const std::vector<int32_t>& size) {
-  LITERT_ASSIGN_OR_RETURN(auto out, NewLike(builder, in, size));
-  LITERT_ASSIGN_OR_RETURN(auto b, ConstI32(builder, begin));
-  LITERT_ASSIGN_OR_RETURN(auto s, ConstI32(builder, size));
-  LITERT_RETURN_IF_ERROR(
-      builder.BuildOp(kLiteRtOpCodeTflSlice, {in, b, s}, {out}));
-  return out;
-}
-
-Expected<void> BuildBatchMatmul(Builder& builder, const Tensor& a,
-                                const Tensor& b, const Tensor& out,
-                                bool asymmetric_quantize_input,
-                                bool adj_y = false, LiteRtOp* built = nullptr) {
-  LITERT_ASSIGN_OR_RETURN(
-      auto op, builder.BuildOp(kLiteRtOpCodeTflBatchMatmul, {a, b}, {out}));
-  BatchMatmulOptions opts;
-  opts.adj_x = false;
-  opts.adj_y = adj_y;
-  opts.asymmetric_quantize_input = asymmetric_quantize_input;
-  LITERT_RETURN_IF_ERROR(builder.SetOpOptions(op, std::move(opts)));
-  if (built != nullptr) *built = op.Get();
-  return {};
-}
-
-Expected<void> BuildReshapeInto(Builder& builder, const Tensor& in,
-                                const std::vector<int32_t>& dims,
-                                const Tensor& out) {
-  LITERT_ASSIGN_OR_RETURN(auto shape, ConstI32(builder, dims));
-  LITERT_ASSIGN_OR_RETURN(
-      auto op, builder.BuildOp(kLiteRtOpCodeTflReshape, {in, shape}, {out}));
-  ReshapeOptions opts;
-  opts.new_shape = dims;
-  LITERT_RETURN_IF_ERROR(builder.SetOpOptions(op, std::move(opts)));
-  return {};
-}
-
-Expected<Tensor> BuildReshape(Builder& builder, const Tensor& in,
-                              const Tensor& like,
-                              const std::vector<int32_t>& dims) {
-  LITERT_ASSIGN_OR_RETURN(auto out, NewLike(builder, like, dims));
-  LITERT_RETURN_IF_ERROR(BuildReshapeInto(builder, in, dims, out));
-  return out;
-}
-
-Expected<void> BuildConcat(Builder& builder, const std::vector<Tensor>& ins,
-                           int32_t axis, const Tensor& out) {
-  LITERT_ASSIGN_OR_RETURN(
-      auto op, builder.BuildOp(kLiteRtOpCodeTflConcatenation, ins, {out}));
-  ConcatenationOptions opts;
-  opts.axis = axis;
-  opts.fused_activation_function = 0;
-  LITERT_RETURN_IF_ERROR(builder.SetOpOptions(op, std::move(opts)));
-  return {};
 }
 
 Expected<std::vector<Tensor>> BuildSplit3D(Builder& builder,
@@ -587,28 +482,23 @@ Expected<void> BuildQualcommMhaToSha(Builder& builder, const Match& m,
       std::vector<Tensor> q_outs;
       q_outs.reserve(query_chunks);
       for (int32_t qi = 0; qi < query_chunks; ++qi) {
-        LITERT_ASSIGN_OR_RETURN(auto logits,
-                                NewLike(builder, m.logits, {1, h_s, wc, m.k}));
-        LiteRtOp bmm1 = nullptr;
-        LITERT_RETURN_IF_ERROR(BuildBatchMatmul(
-            builder, q_chunks_vec[qi], k_heads[hi], logits,
-            m.asymmetric_quantize_input, /*adj_y=*/true, &bmm1));
-        produced.push_back(bmm1);
-
-        LITERT_ASSIGN_OR_RETURN(auto sm,
-                                NewLike(builder, m.sm_out, {1, h_s, wc, m.k}));
         LITERT_ASSIGN_OR_RETURN(
-            auto sm_op,
-            builder.BuildOp(kLiteRtOpCodeTflSoftmax, {logits}, {sm}));
-        SoftmaxOptions sm_opts;
-        sm_opts.beta = m.beta;
-        LITERT_RETURN_IF_ERROR(builder.SetOpOptions(sm_op, std::move(sm_opts)));
+            auto logits,
+            BuildBatchMatmul(builder, q_chunks_vec[qi], k_heads[hi], m.logits,
+                             {1, h_s, wc, m.k},
+                             m.asymmetric_quantize_input, /*adj_y=*/true));
+        LITERT_ASSIGN_OR_RETURN(auto bmm1, logits.GetDefiningOp());
+        produced.push_back(bmm1.Get());
 
-        LITERT_ASSIGN_OR_RETURN(auto o,
-                                NewLike(builder, m.out, {1, h_s, wc, m.dv}));
-        LITERT_RETURN_IF_ERROR(BuildBatchMatmul(builder, sm, v_heads[hi], o,
-                                                m.asymmetric_quantize_input,
-                                                /*adj_y=*/false));
+        LITERT_ASSIGN_OR_RETURN(
+            auto sm, BuildSoftmax(builder, logits, m.beta, m.sm_out,
+                                  {1, h_s, wc, m.k}));
+
+        LITERT_ASSIGN_OR_RETURN(
+            auto o,
+            BuildBatchMatmul(builder, sm, v_heads[hi], m.out,
+                             {1, h_s, wc, m.dv},
+                             m.asymmetric_quantize_input));
         if (tail != nullptr) {
           LITERT_ASSIGN_OR_RETURN(
               auto o_q, NewLike(builder, tail->q_out, {1, h_s, wc, m.dv}));
@@ -627,7 +517,7 @@ Expected<void> BuildQualcommMhaToSha(Builder& builder, const Match& m,
         LITERT_ASSIGN_OR_RETURN(auto head_out,
                                 NewLike(builder, like_t, {1, h_s, w_s, m.dv}));
         LITERT_RETURN_IF_ERROR(
-            BuildConcat(builder, q_outs, /*axis=*/2, head_out));
+            BuildConcatInto(builder, q_outs, /*axis=*/2, head_out));
         sha_outs.push_back(head_out);
       }
     }
@@ -637,7 +527,7 @@ Expected<void> BuildQualcommMhaToSha(Builder& builder, const Match& m,
           auto concat_out,
           NewLike(builder, tail->q_out, {1, h_s, w_s, m.h * m.dv}));
       LITERT_RETURN_IF_ERROR(
-          BuildConcat(builder, sha_outs, /*axis=*/3, concat_out));
+          BuildConcatInto(builder, sha_outs, /*axis=*/3, concat_out));
       if (tail->has_flat_reshape) {
         LITERT_RETURN_IF_ERROR(BuildReshapeInto(
             builder, concat_out, {1, m.s, m.h * m.dv}, tail->flat_out));
@@ -649,7 +539,7 @@ Expected<void> BuildQualcommMhaToSha(Builder& builder, const Match& m,
       LITERT_ASSIGN_OR_RETURN(
           auto concat_out, NewLike(builder, m.out, {1, h_s, w_s, m.h * m.dv}));
       LITERT_RETURN_IF_ERROR(
-          BuildConcat(builder, sha_outs, /*axis=*/3, concat_out));
+          BuildConcatInto(builder, sha_outs, /*axis=*/3, concat_out));
       LITERT_RETURN_IF_ERROR(
           BuildReshapeInto(builder, concat_out, {m.h, m.s, m.dv}, m.out));
     }
@@ -679,26 +569,22 @@ Expected<void> BuildQualcommMhaToSha(Builder& builder, const Match& m,
     std::vector<Tensor> q_outs;
     q_outs.reserve(query_chunks);
     for (int32_t qi = 0; qi < query_chunks; ++qi) {
-      LITERT_ASSIGN_OR_RETURN(auto logits,
-                              NewLike(builder, m.logits, {1, qc, m.k}));
-      LiteRtOp bmm1 = nullptr;
-      LITERT_RETURN_IF_ERROR(
-          BuildBatchMatmul(builder, q_chunks_vec[qi], k_heads[hi], logits,
-                           m.asymmetric_quantize_input, /*adj_y=*/true, &bmm1));
-      produced.push_back(bmm1);
-
-      LITERT_ASSIGN_OR_RETURN(auto sm,
-                              NewLike(builder, m.sm_out, {1, qc, m.k}));
       LITERT_ASSIGN_OR_RETURN(
-          auto sm_op, builder.BuildOp(kLiteRtOpCodeTflSoftmax, {logits}, {sm}));
-      SoftmaxOptions sm_opts;
-      sm_opts.beta = m.beta;
-      LITERT_RETURN_IF_ERROR(builder.SetOpOptions(sm_op, std::move(sm_opts)));
+          auto logits,
+          BuildBatchMatmul(builder, q_chunks_vec[qi], k_heads[hi], m.logits,
+                           {1, qc, m.k}, m.asymmetric_quantize_input,
+                           /*adj_y=*/true));
+      LITERT_ASSIGN_OR_RETURN(auto bmm1, logits.GetDefiningOp());
+      produced.push_back(bmm1.Get());
 
-      LITERT_ASSIGN_OR_RETURN(auto o, NewLike(builder, m.out, {1, qc, m.dv}));
-      LITERT_RETURN_IF_ERROR(BuildBatchMatmul(builder, sm, v_heads[hi], o,
-                                              m.asymmetric_quantize_input,
-                                              /*adj_y=*/false));
+      LITERT_ASSIGN_OR_RETURN(
+          auto sm,
+          BuildSoftmax(builder, logits, m.beta, m.sm_out, {1, qc, m.k}));
+
+      LITERT_ASSIGN_OR_RETURN(
+          auto o, BuildBatchMatmul(builder, sm, v_heads[hi], m.out,
+                                   {1, qc, m.dv},
+                                   m.asymmetric_quantize_input));
       if (tail != nullptr) {
         LITERT_ASSIGN_OR_RETURN(auto o_q,
                                 NewLike(builder, tail->q_out, {1, qc, m.dv}));
@@ -717,7 +603,7 @@ Expected<void> BuildQualcommMhaToSha(Builder& builder, const Match& m,
       LITERT_ASSIGN_OR_RETURN(auto head_out,
                               NewLike(builder, like_t, {1, m.s, m.dv}));
       LITERT_RETURN_IF_ERROR(
-          BuildConcat(builder, q_outs, /*axis=*/1, head_out));
+          BuildConcatInto(builder, q_outs, /*axis=*/1, head_out));
       sha_outs.push_back(head_out);
     }
   }
@@ -725,17 +611,18 @@ Expected<void> BuildQualcommMhaToSha(Builder& builder, const Match& m,
   if (tail != nullptr) {
     if (tail->has_flat_reshape) {
       LITERT_RETURN_IF_ERROR(
-          BuildConcat(builder, sha_outs, /*axis=*/2, tail->flat_out));
+          BuildConcatInto(builder, sha_outs, /*axis=*/2, tail->flat_out));
     } else {
       LITERT_ASSIGN_OR_RETURN(
           auto concat_out, NewLike(builder, tail->q_out, {1, m.s, m.h * m.dv}));
       LITERT_RETURN_IF_ERROR(
-          BuildConcat(builder, sha_outs, /*axis=*/2, concat_out));
+          BuildConcatInto(builder, sha_outs, /*axis=*/2, concat_out));
       LITERT_RETURN_IF_ERROR(BuildReshapeInto(
           builder, concat_out, {1, m.s, m.h, m.dv}, tail->q_out));
     }
   } else {
-    LITERT_RETURN_IF_ERROR(BuildConcat(builder, sha_outs, /*axis=*/0, m.out));
+    LITERT_RETURN_IF_ERROR(
+        BuildConcatInto(builder, sha_outs, /*axis=*/0, m.out));
   }
   return {};
 }
@@ -754,36 +641,32 @@ Expected<void> BuildChunks(Builder& builder, const Match& m, int head_chunks,
     Tensor v = m.v;
     if (head_chunks > 1) {
       LITERT_ASSIGN_OR_RETURN(
-          kt, BuildSlice(builder, m.kt, {h0, 0, 0}, {hc, m.d, m.k}));
+          kt, BuildSlice(builder, m.kt, {h0, 0, 0}, {hc, m.d, m.k}, m.kt));
       LITERT_ASSIGN_OR_RETURN(
-          v, BuildSlice(builder, m.v, {h0, 0, 0}, {hc, m.k, m.dv}));
+          v, BuildSlice(builder, m.v, {h0, 0, 0}, {hc, m.k, m.dv}, m.v));
     }
     std::vector<Tensor> query_outs;
     for (int qi = 0; qi < query_chunks; ++qi) {
       const int32_t q0 = qi * qc;
       LITERT_ASSIGN_OR_RETURN(
-          auto q, BuildSlice(builder, m.q, {h0, q0, 0}, {hc, qc, m.d}));
-      LITERT_ASSIGN_OR_RETURN(auto logits,
-                              NewLike(builder, m.logits, {hc, qc, m.k}));
-      LiteRtOp bmm1 = nullptr;
-      LITERT_RETURN_IF_ERROR(BuildBatchMatmul(builder, q, kt, logits,
-                                              m.asymmetric_quantize_input,
-                                              /*adj_y=*/false, &bmm1));
-      produced.push_back(bmm1);
+          auto q,
+          BuildSlice(builder, m.q, {h0, q0, 0}, {hc, qc, m.d}, m.q));
+      LITERT_ASSIGN_OR_RETURN(
+          auto logits,
+          BuildBatchMatmul(builder, q, kt, m.logits, {hc, qc, m.k},
+                           m.asymmetric_quantize_input, /*adj_y=*/false));
+      LITERT_ASSIGN_OR_RETURN(auto bmm1, logits.GetDefiningOp());
+      produced.push_back(bmm1.Get());
       LITERT_ASSIGN_OR_RETURN(
           auto r1, BuildReshape(builder, logits, m.r1_out, {1, hc, qc, m.k}));
-      LITERT_ASSIGN_OR_RETURN(auto sm,
-                              NewLike(builder, m.sm_out, {1, hc, qc, m.k}));
       LITERT_ASSIGN_OR_RETURN(
-          auto sm_op, builder.BuildOp(kLiteRtOpCodeTflSoftmax, {r1}, {sm}));
-      SoftmaxOptions sm_opts;
-      sm_opts.beta = m.beta;
-      LITERT_RETURN_IF_ERROR(builder.SetOpOptions(sm_op, std::move(sm_opts)));
+          auto sm, BuildSoftmax(builder, r1, m.beta, m.sm_out,
+                                {1, hc, qc, m.k}));
       LITERT_ASSIGN_OR_RETURN(
           auto p, BuildReshape(builder, sm, m.r2_out, {hc, qc, m.k}));
-      LITERT_ASSIGN_OR_RETURN(auto o, NewLike(builder, m.out, {hc, qc, m.dv}));
-      LITERT_RETURN_IF_ERROR(
-          BuildBatchMatmul(builder, p, v, o, m.asymmetric_quantize_input));
+      LITERT_ASSIGN_OR_RETURN(
+          auto o, BuildBatchMatmul(builder, p, v, m.out, {hc, qc, m.dv},
+                                   m.asymmetric_quantize_input));
       if (tail != nullptr) {
         LITERT_ASSIGN_OR_RETURN(
             auto r, BuildReshape(builder, o, tail->r_out, {1, hc, qc, m.dv}));
@@ -810,12 +693,13 @@ Expected<void> BuildChunks(Builder& builder, const Match& m, int head_chunks,
                           : std::vector<int32_t>{hc, m.s, m.dv};
       LITERT_ASSIGN_OR_RETURN(head_out, NewLike(builder, target, dims));
     }
-    LITERT_RETURN_IF_ERROR(BuildConcat(builder, query_outs, 1, head_out));
+    LITERT_RETURN_IF_ERROR(
+        BuildConcatInto(builder, query_outs, 1, head_out));
     head_outs.push_back(head_out);
   }
   if (head_chunks > 1) {
-    LITERT_RETURN_IF_ERROR(
-        BuildConcat(builder, head_outs, tail != nullptr ? 2 : 0, target));
+    LITERT_RETURN_IF_ERROR(BuildConcatInto(
+        builder, head_outs, tail != nullptr ? 2 : 0, target));
   }
   return {};
 }
