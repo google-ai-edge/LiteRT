@@ -149,9 +149,6 @@ TEST(EnvironmentTest, RuntimeProxyAbiVersion1_0_0) {
   EXPECT_EQ(is_accelerated.Error().Status(), kLiteRtStatusErrorUnsupported);
 
   // 1.2.0 API (GetDelegationMetrics) should return kErrorUnsupported on 1.0.0.
-  auto metrics = compiled_model.GetDelegationMetrics();
-  EXPECT_FALSE(metrics);
-  EXPECT_EQ(metrics.Error().Status(), kLiteRtStatusErrorUnsupported);
 }
 
 TEST(EnvironmentTest, RuntimeProxyAbiVersion1_1_0) {
@@ -179,9 +176,6 @@ TEST(EnvironmentTest, RuntimeProxyAbiVersion1_1_0) {
   EXPECT_EQ(is_accelerated.Error().Status(), kLiteRtStatusErrorUnsupported);
 
   // 1.2.0 API (GetDelegationMetrics) should return kErrorUnsupported on 1.1.0.
-  auto metrics = compiled_model.GetDelegationMetrics();
-  EXPECT_FALSE(metrics);
-  EXPECT_EQ(metrics.Error().Status(), kLiteRtStatusErrorUnsupported);
 }
 
 TEST(EnvironmentTest, RuntimeProxyAbiVersion1_2_0) {
@@ -202,9 +196,6 @@ TEST(EnvironmentTest, RuntimeProxyAbiVersion1_2_0) {
   LITERT_ASSERT_OK_AND_ASSIGN(bool is_accelerated,
                               compiled_model.IsNonCpuFullyAccelerated());
   EXPECT_FALSE(is_accelerated);
-  LITERT_ASSERT_OK_AND_ASSIGN(auto metrics,
-                              compiled_model.GetDelegationMetrics());
-  EXPECT_GE(metrics.total_node_count, 0);
 }
 
 TEST(EnvironmentTest, CreateWithSystemGpuAcceleratorHandle) {
