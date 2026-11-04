@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -41,10 +42,14 @@
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "third_party/odml/infra/ml_drift_delegate/testdata/simple_add.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -54,7 +59,10 @@
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
+#include "ml_drift_delegate/delegate/cache/simple_cache.h"
+#include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/gpu_backend_opencl.h"
+#include "ml_drift_delegate/delegate/gpu_backend_opencl_litert.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
 #include "tflite/interpreter_builder.h"
@@ -574,6 +582,120 @@ TEST(DelegateOpenClTest, BatchMatMulAdjXAndAdjYConst2dRhsMatchesCpu) {
         }
       }
     }
+  }
+}
+
+TEST(DelegateOpenClTest, HostMemoryZeroCopyWrappingAndCaching) {
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+  if (!::ml_drift::cl::LoadOpenCL().ok()) {
+    GTEST_SKIP() << "OpenCL not loaded for ml_drift";
+  }
+  ::ml_drift::cl::Environment env;
+  if (!::ml_drift::cl::CreateEnvironment(&env).ok()) {
+    GTEST_SKIP() << "Unable to create OpenCL environment";
+  }
+
+  GpuBackendOpenClLitert backend(&env, /*egl_display=*/nullptr, SimpleCache(),
+                                 LrtGetRuntimeContext());
+
+  // 1. When zero-copy host ptr is forced, verify buffer requirements advertise
+  // HostMemory for both external and non-external tensors.
+  backend.SetForceHostPtrIOBuffer(true);
+  auto req = backend.GetGpuBufferRequirements(
+      ::ml_drift::TensorStorageType::kBuffer, ::ml_drift::DataType::kFloat32);
+  ASSERT_TRUE(req.ok());
+  bool has_host_mem = false;
+  for (auto type : req->buffer_types) {
+    if (type == kLiteRtTensorBufferTypeHostMemory) {
+      has_host_mem = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_host_mem);
+
+  auto non_ext_req = backend.GetGpuBufferRequirementsForNonExternalTensors();
+  ASSERT_TRUE(non_ext_req.ok());
+  bool non_ext_has_host_mem = false;
+  for (auto type : non_ext_req->buffer_types) {
+    if (type == kLiteRtTensorBufferTypeHostMemory) {
+      non_ext_has_host_mem = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(non_ext_has_host_mem);
+
+  // 2. Test wrapping an external host pointer and caching behavior.
+  const size_t alignment =
+      std::max(backend.GetHostPtrAlignment(),
+               static_cast<size_t>(LITERT_HOST_MEMORY_BUFFER_ALIGNMENT));
+  constexpr size_t kBufferSize = 64;
+  void* host_ptr = nullptr;
+  ASSERT_EQ(posix_memalign(&host_ptr, alignment, kBufferSize), 0);
+  absl::Cleanup free_ptr = [host_ptr]() { free(host_ptr); };
+
+  LiteRtRankedTensorType tensor_type;
+  tensor_type.layout.rank = 1;
+  tensor_type.layout.dimensions[0] = 16;
+  tensor_type.element_type = kLiteRtElementTypeFloat32;
+
+  LiteRtTensorBuffer tensor_buffer = nullptr;
+  ASSERT_EQ(LiteRtCreateTensorBufferFromHostMemory(
+                &tensor_type, host_ptr, kBufferSize, /*deallocator=*/nullptr,
+                &tensor_buffer),
+            kLiteRtStatusOk);
+  GpuTensorBufferPtr tb_ptr(tensor_buffer,
+                            GpuTensorBufferDeleter{LiteRtDestroyTensorBuffer});
+
+  EXPECT_EQ(backend.num_wrapped_host_buffers(), 0);
+
+  auto handle_or = backend.GetGpuMemoryAllocated(tb_ptr);
+  ASSERT_TRUE(handle_or.ok());
+  EXPECT_NE(*handle_or, nullptr);
+  EXPECT_EQ(backend.num_wrapped_host_buffers(), 1);
+
+  // Second call with the same buffer returns the cached handle.
+  auto cached_handle_or = backend.GetGpuMemoryAllocated(tb_ptr);
+  ASSERT_TRUE(cached_handle_or.ok());
+  EXPECT_EQ(*handle_or, *cached_handle_or);
+  EXPECT_EQ(backend.num_wrapped_host_buffers(), 1);
+
+  // 3. Test that the cache is bounded when exceeding kMaxWrappedHostBuffers.
+  std::vector<void*> allocated_ptrs;
+  absl::Cleanup free_allocated = [&allocated_ptrs]() {
+    for (void* ptr : allocated_ptrs) {
+      free(ptr);
+    }
+  };
+
+  std::vector<GpuTensorBufferPtr> tensor_buffers;
+  tensor_buffers.reserve(GpuBackendOpenClLitert::kMaxWrappedHostBuffers);
+  for (size_t i = 0; i < GpuBackendOpenClLitert::kMaxWrappedHostBuffers; ++i) {
+    void* ptr = nullptr;
+    ASSERT_EQ(posix_memalign(&ptr, alignment, kBufferSize), 0);
+    allocated_ptrs.push_back(ptr);
+
+    LiteRtTensorBuffer tb = nullptr;
+    ASSERT_EQ(LiteRtCreateTensorBufferFromHostMemory(
+                  &tensor_type, ptr, kBufferSize, /*deallocator=*/nullptr, &tb),
+              kLiteRtStatusOk);
+    tensor_buffers.push_back(GpuTensorBufferPtr(
+        tb, GpuTensorBufferDeleter{LiteRtDestroyTensorBuffer}));
+    auto h_or = backend.GetGpuMemoryAllocated(tensor_buffers.back());
+    ASSERT_TRUE(h_or.ok());
+    EXPECT_NE(*h_or, nullptr);
+  }
+  // Cache reached cap and evicted; newest buffer is cached.
+  EXPECT_EQ(backend.num_wrapped_host_buffers(), 1);
+
+  // 4. Test error handling when zero-copy host pointer is not supported.
+  backend.SetForceHostPtrIOBuffer(false);
+  if (!backend.SupportsZeroCopyHostPtr(/*input=*/true) ||
+      !backend.SupportsZeroCopyHostPtr(/*input=*/false)) {
+    auto unsupported_or = backend.GetGpuMemoryAllocated(tb_ptr);
+    EXPECT_EQ(unsupported_or.status().code(),
+              absl::StatusCode::kFailedPrecondition);
   }
 }
 
