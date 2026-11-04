@@ -29,6 +29,10 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_samsung_options.h"
+#include "litert/cc/internal/litert_context_wrapper.h"
+#include "litert/cc/internal/litert_opaque_options_wrapper.h"
+#include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
@@ -577,6 +581,38 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
                          "Buffers not committed. Attach all buffers first.");
   }
 
+  // Activate per-invocation ENN Spot Preference when configured and supported
+  // by the runtime library, and deactivate it automatically when `Invoke()`
+  // returns.
+  struct ScopedSpotPref {
+    const ::litert::samsung::EnnManager::PublicApi& api;
+    uint32_t handle_id = 0;
+    bool active = false;
+
+    ScopedSpotPref(
+        const ::litert::samsung::EnnManager::PublicApi& enn_api,
+        const std::optional<::litert::samsung::PerfConfig>& perf_config)
+        : api(enn_api) {
+      if (perf_config.has_value() && api.EnnActivateSpotPref != nullptr &&
+          api.EnnDeactivateSpotPref != nullptr) {
+        const ::litert::samsung::EnnSpotPrefConfig spot_config{
+            .config_id = perf_config->configId,
+            .pref_mode = static_cast<uint32_t>(perf_config->mode),
+        };
+        if (api.EnnActivateSpotPref(spot_config, &handle_id) ==
+            ENN_RET_SUCCESS) {
+          active = true;
+        }
+      }
+    }
+
+    ~ScopedSpotPref() {
+      if (active && api.EnnDeactivateSpotPref != nullptr) {
+        api.EnnDeactivateSpotPref(handle_id);
+      }
+    }
+  } scoped_spot_pref(enn_manager_->Api(), perf_config_);
+
   // Execute model (no memcpy needed)
   if (enn_manager_->Api().EnnExecuteModel(model_id_) != ENN_RET_SUCCESS) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure, "Fail to execute");
@@ -592,6 +628,59 @@ void LiteRtDispatchInvocationContextT::SetSchedulingInfo(
   } else {
     scheduling_info_.reset();
   }
+}
+
+litert::Expected<void> LiteRtDispatchInvocationContextT::SetOptions(
+    LiteRtOptions options) {
+  if (options == nullptr) {
+    perf_config_.reset();
+    auto status =
+        ::litert::samsung::SetGenAiPerfConfigFromSoc(enn_manager_->Api());
+    if (status != kLiteRtStatusOk) {
+      return litert::Error(status,
+                           "Failed to reset Samsung ENN performance mode");
+    }
+    return {};
+  }
+
+  const auto* runtime_context = device_context_->runtime_context();
+  litert::internal::OptionsWrapper internal_options(
+      litert::internal::ContextWrapper(runtime_context), options);
+  auto opaque_options = internal_options.GetOpaqueOptions();
+  if (!opaque_options) {
+    return litert::Error(opaque_options.Error().Status(),
+                         "Failed to get opaque options");
+  }
+
+  auto payload =
+      opaque_options->FindOpaqueOptions(LrtSamsungOptionsGetIdentifier());
+  if (!payload || payload.Value() == nullptr) {
+    return {};
+  }
+
+  LrtSamsungOptions samsung_opts = nullptr;
+  auto create_status = LrtCreateSamsungOptionsFromToml(
+      reinterpret_cast<const char*>(payload.Value()), &samsung_opts);
+  if (create_status != kLiteRtStatusOk) {
+    return litert::Error(create_status,
+                         "Failed to parse Samsung options from TOML payload");
+  }
+
+  LrtSamsungOptionsPerformanceMode performance_mode =
+      kLrtSamsungOptionsPerformanceModePerformance;
+  uint32_t performance_config_id = ::litert::samsung::PERF_CONFIG_ID_DEFAULT;
+  LrtSamsungOptionsGetPerformanceMode(samsung_opts, &performance_mode);
+  LrtSamsungOptionsGetPerformanceConfigId(samsung_opts, &performance_config_id);
+  LrtDestroySamsungOptions(samsung_opts);
+
+  perf_config_ = ::litert::samsung::ResolveRuntimePerfConfig(
+      static_cast<PerfModePreference>(performance_mode), performance_config_id);
+  auto status = ::litert::samsung::SetGenAiPerfConfig(
+      enn_manager_->Api(), perf_config_->mode, perf_config_->configId);
+  if (status != kLiteRtStatusOk) {
+    return litert::Error(status, "Failed to set Samsung ENN performance mode");
+  }
+  return {};
 }
 
 // SetInputBuffers and SetOutputBuffers removed - no longer needed with commit

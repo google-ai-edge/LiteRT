@@ -61,6 +61,11 @@ class EnnManager {
   std::unique_ptr<PublicApi> api_;
 };
 
+struct EnnSpotPrefConfig {
+  uint32_t config_id;
+  uint32_t pref_mode;
+};
+
 struct EnnManager::PublicApi {
   EnnReturn (*EnnInitialize)(void);
   EnnReturn (*EnnOpenModelFromMemory)(const char* va, const uint32_t size,
@@ -85,6 +90,9 @@ struct EnnManager::PublicApi {
                                                EnnBufferPtr* out);
   EnnReturn (*EnnSetPreferencePerfMode)(const uint32_t val);
   EnnReturn (*EnnSetPreferencePerfConfigId)(uint32_t val);
+  EnnReturn (*EnnActivateSpotPref)(EnnSpotPrefConfig config,
+                                   uint32_t* pref_handle_id);
+  EnnReturn (*EnnDeactivateSpotPref)(uint32_t pref_handle_id);
   EnnReturn (*EnnCreateBufferCache)(const uint32_t req_size, EnnBufferPtr* out);
   EnnReturn (*EnnAllocateAllBuffers)(const EnnModelId model_id,
                                      EnnBufferPtr** out_buffers,
@@ -196,11 +204,65 @@ inline LiteRtStatus SetGenAiPerfConfig(
   if (ret_mode != ENN_RET_SUCCESS) {
     return kLiteRtStatusErrorRuntimeFailure;
   }
-  EnnReturn ret_config = api.EnnSetPreferencePerfConfigId(configId);
-  if (ret_config != ENN_RET_SUCCESS) {
-    return kLiteRtStatusErrorRuntimeFailure;
+  if (mode == ENN_PREF_MODE_CUSTOM && configId != PERF_CONFIG_ID_DEFAULT) {
+    EnnReturn ret_config = api.EnnSetPreferencePerfConfigId(configId);
+    if (ret_config != ENN_RET_SUCCESS) {
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
   }
   return kLiteRtStatusOk;
+}
+
+// Resolves a requested performance mode and optional custom config ID into the
+// concrete ENN `PerfConfig` for the active Exynos SoC.
+// On Exynos 2600 ("9965") and Exynos 2500 ("9955"), runtime spot performance
+// hints use `ENN_PREF_MODE_CUSTOM` with SoC-specific config IDs (matching
+// `aicore_backend/slsi/nano_v4/spot_perf_hint_handle.cc` and
+// `aicore_backend/slsi/nano_v3/perf_hint_handle.cc`).
+inline PerfConfig ResolveRuntimePerfConfig(
+    PerfModePreference requested_mode,
+    uint32_t requested_config_id = PERF_CONFIG_ID_DEFAULT) {
+  if (requested_mode == ENN_PREF_MODE_CUSTOM &&
+      requested_config_id != PERF_CONFIG_ID_DEFAULT) {
+    return {ENN_PREF_MODE_CUSTOM, requested_config_id};
+  }
+
+  std::string soc_key = GetHwName();
+  if (!soc_key.empty()) {
+    GetTrimNumber(soc_key);
+  }
+  if (soc_key.empty()) {
+    soc_key = GetSocName();
+    if (!soc_key.empty()) {
+      GetTrimNumber(soc_key);
+    }
+  }
+
+  if (soc_key == "9965") {
+    switch (requested_mode) {
+      case ENN_PREF_MODE_PERFORMANCE:
+        return {ENN_PREF_MODE_CUSTOM, 1211};
+      case ENN_PREF_MODE_BALANCED:
+        return {ENN_PREF_MODE_CUSTOM, 1290};
+      case ENN_PREF_MODE_LOW_POWER:
+        return {ENN_PREF_MODE_CUSTOM, 1291};
+      default:
+        break;
+    }
+  } else if (soc_key == "9955") {
+    switch (requested_mode) {
+      case ENN_PREF_MODE_PERFORMANCE:
+        return {ENN_PREF_MODE_CUSTOM, 1255};
+      case ENN_PREF_MODE_BALANCED:
+        return {ENN_PREF_MODE_CUSTOM, 1290};
+      case ENN_PREF_MODE_LOW_POWER:
+        return {ENN_PREF_MODE_CUSTOM, 1291};
+      default:
+        break;
+    }
+  }
+
+  return {requested_mode, requested_config_id};
 }
 
 LiteRtStatus SetGenAiPerfConfigFromSoc(const EnnManager::PublicApi& api);
