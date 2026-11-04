@@ -403,6 +403,7 @@ export interface LiteRtSignatureGraphSpec {
  * Interface for the C++ LiteRt bindings.
  */
 export declare interface LiteRtWasm extends WasmModule {
+  hasWebGpuSupport?(): boolean;
   setupLogging(): void;
   LiteRtEnvironment: LiteRtEnvironmentConstructor;
   loadModel(
