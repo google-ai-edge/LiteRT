@@ -29,9 +29,12 @@ package(
 )
 
 cc_library(
-    name = "active_functions",
-    hdrs = ["active_functions.h"],
+    name = "context_graph_registry",
+    hdrs = ["context_graph_registry.h"],
     deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -39,10 +42,11 @@ cc_library(
 )
 
 cc_test(
-    name = "active_functions_test",
-    srcs = ["active_functions_test.cc"],
+    name = "context_graph_registry_test",
+    srcs = ["context_graph_registry_test.cc"],
     deps = [
-        ":active_functions",
+        ":context_graph_registry",
+        "//litert/test:matchers",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_googletest//:gtest_main",
     ],
@@ -78,7 +82,7 @@ litert_dispatch_api(
     so_name = "libLiteRtDispatch_Qualcomm.so",
     visibility = ["//litert:litert_public"],
     deps = [
-        ":active_functions",
+        ":context_graph_registry",
         "//litert/cc/internal:litert_context_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
         "@com_google_absl//absl/base:no_destructor",
@@ -124,7 +128,7 @@ litert_dispatch_api(
 litert_bin(
     name = "LiteRtDispatch_Qualcomm",
     srcs = [
-        "active_functions.h",
+        "context_graph_registry.h",
         "dispatch_api.cc",
         "litert_dispatch_device_context.cc",
         "litert_dispatch_device_context.h",

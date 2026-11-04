@@ -32,6 +32,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
+#include "litert/vendors/qualcomm/dispatch/context_graph_registry.h"
 #include "litert/vendors/qualcomm/dispatch/registry.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
@@ -81,13 +82,13 @@ class LiteRtDispatchDeviceContextT {
   }
 
   // Returns a QNN context, created from the given context binary, in which
-  // graph `function_name` is enabled. `binary_graphs` are the names of all the
-  // graphs stored in the context binary. Contexts are cached and shared by all
-  // the functions of the same binary.
+  // graph `required_graph` is enabled. `available_graphs` are the names of all
+  // the graphs stored in the context binary. Contexts are cached and shared by
+  // all the functions of the same binary.
   litert::Expected<const litert::qnn::QnnManager::ContextHandle&>
   GetOrCreateContext(const void* bytecode_ptr, size_t bytecode_size,
-                     absl::Span<const std::string> binary_graphs,
-                     absl::string_view function_name,
+                     absl::Span<const std::string> available_graphs,
+                     absl::string_view required_graph,
                      Qnn_ProfileHandle_t profile_handle);
 
   const LiteRtRuntimeContext* runtime_context() const {
@@ -138,16 +139,11 @@ class LiteRtDispatchDeviceContextT {
       return H::combine(std::move(h), k.ptr, k.size);
     }
   };
-  struct CachedContext {
-    std::unique_ptr<litert::qnn::QnnManager::ContextHandle> handle;
-    // Graphs enabled in the context. Empty means that all graphs are enabled.
-    absl::flat_hash_set<std::string> enabled_graphs;
-  };
-  // Lifetime of the context cache is the same as the device context. There is
-  // normally a single context per binary. An extra context is only created if
-  // a function that was not declared active gets invoked.
-  absl::flat_hash_map<ContextCacheKey, std::vector<CachedContext>>
-      context_cache_;
+  // Each registry owns the QNN contexts created from one context binary.
+  absl::flat_hash_map<
+      ContextCacheKey,
+      litert::qnn::ContextGraphRegistry<litert::qnn::QnnManager::ContextHandle>>
+      context_registries_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_

@@ -44,7 +44,6 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/dispatch/active_functions.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
@@ -62,7 +61,7 @@ LiteRtDispatchDeviceContextT::Create(
 
 Expected<void> LiteRtDispatchDeviceContextT::SetActiveFunctions(
     absl::flat_hash_set<std::string> active_functions) {
-  if (!context_cache_.empty()) {
+  if (!context_registries_.empty()) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Active functions must be set before any QNN context "
                       "is created");
@@ -252,41 +251,22 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 Expected<const litert::qnn::QnnManager::ContextHandle&>
 LiteRtDispatchDeviceContextT::GetOrCreateContext(
     const void* bytecode_ptr, size_t bytecode_size,
-    absl::Span<const std::string> binary_graphs,
-    absl::string_view function_name, Qnn_ProfileHandle_t profile_handle) {
+    absl::Span<const std::string> available_graphs,
+    absl::string_view required_graph, Qnn_ProfileHandle_t profile_handle) {
   ContextCacheKey key{bytecode_ptr, bytecode_size};
-  std::vector<CachedContext>& contexts = context_cache_[key];
-  for (const CachedContext& context : contexts) {
-    if (context.enabled_graphs.empty() ||
-        context.enabled_graphs.contains(function_name)) {
-      LITERT_LOG(LITERT_INFO,
-                 "Reusing cached QNN context for bytecode %p (size %zu)",
-                 bytecode_ptr, bytecode_size);
-      return *context.handle;
-    }
+  auto registry_it =
+      context_registries_.try_emplace(key, available_graphs, active_functions_)
+          .first;
+  auto& registry = registry_it->second;
+  if (auto* context = registry.FindContext(required_graph)) {
+    LITERT_LOG(LITERT_INFO,
+               "Reusing cached QNN context for bytecode %p (size %zu)",
+               bytecode_ptr, bytecode_size);
+    return *context;
   }
 
-  std::vector<std::string> graphs_to_enable;
-  if (contexts.empty()) {
-    if (!active_functions_.empty() &&
-        !active_functions_.contains(function_name)) {
-      LITERT_LOG(LITERT_WARNING,
-                 "Function %s was not reported as active, enabling it in "
-                 "the QNN context",
-                 std::string(function_name).c_str());
-    }
-    graphs_to_enable = litert::qnn::SelectGraphsToEnable(
-        binary_graphs, active_functions_, function_name);
-  } else {
-    // The existing context does not include `function_name`, which means that
-    // the function was not reported as active. Load it in its own context
-    // rather than failing.
-    LITERT_LOG(LITERT_WARNING,
-               "Function %s was not reported as active, creating a separate "
-               "QNN context for it",
-               std::string(function_name).c_str());
-    graphs_to_enable = {std::string(function_name)};
-  }
+  LITERT_ASSIGN_OR_RETURN(std::vector<std::string> graphs_to_enable,
+                          registry.PlanAdditionalGraphsToEnable(required_graph));
 
   const auto bytecode =
       absl::MakeSpan(static_cast<const uint8_t*>(bytecode_ptr), bytecode_size);
@@ -296,7 +276,7 @@ LiteRtDispatchDeviceContextT::GetOrCreateContext(
                "Creating new QNN context for bytecode %p (size %zu) with %zu "
                "of %zu graphs enabled: %s",
                bytecode_ptr, bytecode_size, graphs_to_enable.size(),
-               binary_graphs.size(),
+               available_graphs.size(),
                absl::StrJoin(graphs_to_enable, ", ").c_str());
     std::vector<const char*> graph_names;
     graph_names.reserve(graphs_to_enable.size() + 1);
@@ -307,7 +287,8 @@ LiteRtDispatchDeviceContextT::GetOrCreateContext(
     QnnContext_Config_t enable_graphs_config = QNN_CONTEXT_CONFIG_INIT;
     enable_graphs_config.option = QNN_CONTEXT_CONFIG_ENABLE_GRAPHS;
     enable_graphs_config.enableGraphs = graph_names.data();
-    const QnnContext_Config_t* configs[] = {&enable_graphs_config, nullptr};
+    std::array<const QnnContext_Config_t*, 2> configs = {
+        &enable_graphs_config, nullptr};
     if (auto handle = qnn_manager_.CreateContextHandle(
             qnn_backend_, absl::MakeSpan(configs), bytecode, profile_handle);
         handle) {
@@ -334,11 +315,11 @@ LiteRtDispatchDeviceContextT::GetOrCreateContext(
         std::make_unique<QnnManager::ContextHandle>(std::move(handle));
   }
 
-  contexts.push_back(
-      CachedContext{std::move(context_handle),
-                    absl::flat_hash_set<std::string>(graphs_to_enable.begin(),
-                                                     graphs_to_enable.end())});
-  return *contexts.back().handle;
+  if (graphs_to_enable.empty()) {
+    return registry.RegisterContextWithAllAvailableGraphs(
+        std::move(context_handle));
+  }
+  return registry.RegisterContext(std::move(context_handle), graphs_to_enable);
 }
 
 litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
