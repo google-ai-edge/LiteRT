@@ -446,6 +446,7 @@ cc_library(
 #         "@tsl//tsl/profiler/lib:scoped_memory_debug_annotation",
 #         "@tsl//tsl/profiler/lib:traceme",
 #         "@tsl//tsl/profiler/lib:traceme_encode",
+#         "@org_tensorflow//third_party/tcmalloc:malloc_hook",
 #     ],
 #     alwayslink = 1,
 # )
