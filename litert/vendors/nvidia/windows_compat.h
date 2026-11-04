@@ -21,6 +21,7 @@
 #include <cstring>
 #include <limits>
 #include <random>
+#include <string>
 
 using ssize_t = intptr_t;
 #ifndef PATH_MAX
@@ -43,6 +44,13 @@ using ssize_t = intptr_t;
 #define POSIX_FADV_DONTNEED 4
 #define _SC_PAGESIZE 1
 
+// Join() produces generic slash-separated paths, including extended paths.
+// Win32 extended-length paths require native backslashes throughout.
+inline std::string NvidiaNativePath(const char* path) {
+  std::string result(path);
+  std::replace(result.begin(), result.end(), '/', '\\');
+  return result;
+}
 inline int NvidiaWindowsError() {
   switch (GetLastError()) {
     case ERROR_FILE_NOT_FOUND:
@@ -81,9 +89,10 @@ inline int NvidiaOpen(const char* path, int flags, int mode = 0600) {
   if (flags & _O_CREAT) creation = (flags & _O_EXCL) ? CREATE_NEW : OPEN_ALWAYS;
   DWORD attributes = FILE_ATTRIBUTE_NORMAL;
   if (flags & O_NOFOLLOW) attributes |= FILE_FLAG_OPEN_REPARSE_POINT;
-  HANDLE handle = CreateFileA(
-      path, access, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-      nullptr, creation, attributes, nullptr);
+  HANDLE handle =
+      CreateFileA(NvidiaNativePath(path).c_str(), access,
+                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                  nullptr, creation, attributes, nullptr);
   if (handle == INVALID_HANDLE_VALUE) return NvidiaWindowsError();
   FILE_ATTRIBUTE_TAG_INFO tag{};
   if ((flags & O_NOFOLLOW) &&
@@ -182,7 +191,7 @@ inline ssize_t pread(int fd, void* out, size_t bytes, int64_t offset) {
 }
 inline char* realpath(const char* path, char* out) {
   HANDLE h =
-      CreateFileA(path, FILE_READ_ATTRIBUTES,
+      CreateFileA(NvidiaNativePath(path).c_str(), FILE_READ_ATTRIBUTES,
                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                   nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
   if (h == INVALID_HANDLE_VALUE) {
@@ -222,20 +231,25 @@ inline int fchmod(int fd, int mode) {
   return ok ? 0 : NvidiaWindowsError();
 }
 inline int link(const char* source, const char* destination) {
-  return CreateHardLinkA(destination, source, nullptr) ? 0
-                                                       : NvidiaWindowsError();
+  return CreateHardLinkA(NvidiaNativePath(destination).c_str(),
+                         NvidiaNativePath(source).c_str(), nullptr)
+             ? 0
+             : NvidiaWindowsError();
 }
 inline int NvidiaRename(const char* source, const char* destination) {
-  return MoveFileExA(source, destination, MOVEFILE_REPLACE_EXISTING)
+  return MoveFileExA(NvidiaNativePath(source).c_str(),
+                     NvidiaNativePath(destination).c_str(),
+                     MOVEFILE_REPLACE_EXISTING)
              ? 0
              : NvidiaWindowsError();
 }
 inline int NvidiaUnlink(const char* path) {
   // A read-only temporary hard link must be removable without changing the
   // immutable published file's attributes. POSIX delete semantics support it.
-  HANDLE h = CreateFileA(
-      path, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-      nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+  HANDLE h = CreateFileA(NvidiaNativePath(path).c_str(), DELETE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT,
+                         nullptr);
   if (h == INVALID_HANDLE_VALUE) return NvidiaWindowsError();
   struct Disposition {
     DWORD Flags;

@@ -32,6 +32,13 @@ int main() {
   char path[] = "windows-compat2.XXXXXX";
   int fd = mkstemp(path);
   assert(fd >= 0);
+  char absolute[PATH_MAX];
+  assert(realpath(path, absolute));
+  std::string generic(absolute);
+  std::replace(generic.begin(), generic.end(), '\\', '/');
+  int generic_fd = NvidiaOpen(generic.c_str(), _O_RDONLY);
+  assert(generic_fd >= 0);
+  _close(generic_fd);
   DWORD sparse_result = 0;
   assert(DeviceIoControl(reinterpret_cast<HANDLE>(_get_osfhandle(fd)),
                          FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0,
