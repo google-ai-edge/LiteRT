@@ -70,6 +70,7 @@ cc_test(
         "//litert/test:matchers",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
     ],
 )
 
@@ -84,6 +85,7 @@ cc_library(
         "//tflite/c:common",
         "//tflite/kernels:kernel_util",
         "//tflite/kernels/internal:tensor_ctypes",
+        "@flatbuffers",
     ],
 )
 

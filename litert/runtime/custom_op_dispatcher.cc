@@ -16,6 +16,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -196,15 +198,17 @@ Expected<void> CustomOpDispatcher::InvokeHelper(void* user_data,
 
   for (auto i = 0; i < num_inputs; ++i) {
     auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetInput(context, node, i);
-    LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
-                            self.GetTensorBuffer(context, tfl_opaque_tensor));
+    LITERT_ASSIGN_OR_RETURN(
+        auto tensor_buffer,
+        self.GetTensorBuffer(context, tfl_opaque_tensor, /*is_input=*/true));
     inputs.push_back(tensor_buffer.release());
   }
 
   for (auto i = 0; i < num_outputs; ++i) {
     auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetOutput(context, node, i);
-    LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
-                            self.GetTensorBuffer(context, tfl_opaque_tensor));
+    LITERT_ASSIGN_OR_RETURN(
+        auto tensor_buffer,
+        self.GetTensorBuffer(context, tfl_opaque_tensor, /*is_input=*/false));
     outputs.push_back(tensor_buffer.release());
   }
 
@@ -215,7 +219,8 @@ Expected<void> CustomOpDispatcher::InvokeHelper(void* user_data,
 }
 
 Expected<LiteRtTensorBufferPtr> CustomOpDispatcher::GetTensorBuffer(
-    TfLiteOpaqueContext* context, const TfLiteOpaqueTensor* tfl_opaque_tensor) {
+    TfLiteOpaqueContext* context, const TfLiteOpaqueTensor* tfl_opaque_tensor,
+    bool is_input) {
   // If there is already a tensor buffer associated with the TFL tensor, then
   // return a duplicate. Otherwise create a new one attached to the TFL tensor's
   // data.
@@ -250,6 +255,29 @@ Expected<LiteRtTensorBufferPtr> CustomOpDispatcher::GetTensorBuffer(
         LiteRtTensorBufferT::CreateManaged(
             env, kLiteRtTensorBufferTypeHostMemory, litert_tensor_type,
             kDefaultStringBufferSize));
+    return LiteRtTensorBufferPtr(managed_buffer.release());
+  }
+
+  // Constant tensors embedded in FlatBuffers (kTfLiteMmapRo) are 16-byte
+  // aligned rather than LITERT_HOST_MEMORY_BUFFER_ALIGNMENT (64-byte) aligned.
+  // Copy unaligned input tensors into an aligned managed host buffer.
+  void* host_mem_addr = TfLiteOpaqueTensorData(tfl_opaque_tensor);
+  if (is_input && host_mem_addr != nullptr &&
+      reinterpret_cast<uintptr_t>(host_mem_addr) %
+              LITERT_HOST_MEMORY_BUFFER_ALIGNMENT !=
+          0) {
+    LiteRtRankedTensorType litert_tensor_type =
+        static_cast<LiteRtRankedTensorType>(tensor_type);
+    LiteRtEnvironment env =
+        buffer_context_ ? buffer_context_->GetEnvironment() : nullptr;
+    LITERT_ASSIGN_OR_RETURN(auto managed_buffer,
+                            LiteRtTensorBufferT::CreateManaged(
+                                env, kLiteRtTensorBufferTypeHostMemory,
+                                litert_tensor_type, buffer_size));
+    if (buffer_size > 0) {
+      LITERT_ASSIGN_OR_RETURN(void* dst_addr, managed_buffer->GetHostBuffer());
+      std::memcpy(dst_addr, host_mem_addr, buffer_size);
+    }
     return LiteRtTensorBufferPtr(managed_buffer.release());
   }
 

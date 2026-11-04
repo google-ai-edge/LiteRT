@@ -702,8 +702,10 @@ cc_test(
     data = [
         "//litert/test:testdata/dynamic_string_custom_ops.tflite",
         "//litert/test:testdata/simple_model_custom_op.tflite",
+        "//litert/test:testdata/simple_model_custom_op_const_input.tflite",
     ],
     deps = [
+        ":litert_buffer_ref",
         ":litert_common",
         ":litert_compiled_model",
         ":litert_custom_op_kernel",
@@ -719,6 +721,7 @@ cc_test(
         ":litert_tensor_buffer_types",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/core:filesystem",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model_custom_op",
@@ -729,6 +732,7 @@ cc_test(
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",

@@ -216,5 +216,142 @@ void ComputeGatedDeltaUpdateChunked(const float* q_t, const float* k_t,
   }
 }
 
+// Fused GatedDeltaNet block (math in the header), in three passes:
+//  1. Per token: split `conv_out` and `zba`, L2-normalize q and k, and compute
+//     beta and g into the [B, H, T, D] layout of the recurrence-only op.
+//     Masked tokens get q = beta = g = 0.
+//  2. Run the shared recurrence, ComputeGatedDeltaUpdateRecurrent, up to the
+//     last valid token.
+//  3. Gated RMSNorm: rmsnorm(y) * norm_weight * silu(z).
+void ComputeGatedDeltaUpdateBlock(
+    const float* conv_out, const float* zba, const float* a_log,
+    const float* dt_bias, const float* norm_weight, const float* rec_state,
+    const float* valid_mask, float* output, float* new_rec, int B, int T,
+    const GatedDeltaBlockParams& params, int zba_stride) {
+  const int H_k = params.num_k_heads;
+  const int H_v = params.num_v_heads;
+  const int D_k = params.head_k_dim;
+  const int D_v = params.head_v_dim;
+  const int K_dim = H_k * D_k;
+  const int V_dim = H_v * D_v;
+  const int conv_channels = 2 * K_dim + V_dim;
+  const int zba_channels = V_dim + 2 * H_v;
+  const int actual_zba_stride = (zba_stride > 0) ? zba_stride : zba_channels;
+  const int zba_offset = actual_zba_stride - zba_channels;
+  const float q_scale = 1.0f / std::sqrt(static_cast<float>(D_k));
+  const float inv_head_v_dim = 1.0f / static_cast<float>(D_v);
+
+  std::vector<float> neg_a(H_v);
+  for (int h = 0; h < H_v; ++h) {
+    neg_a[h] = -std::exp(a_log[h]);
+  }
+
+  std::vector<float> q_t(B * H_k * T * D_k);
+  std::vector<float> k_t(B * H_k * T * D_k);
+  std::vector<float> v_t(B * H_v * T * D_v);
+  std::vector<float> beta_t(B * H_v * T);
+  std::vector<float> g_t(B * H_v * T);
+  std::vector<int> valid_len(B, T);
+
+  for (int b = 0; b < B; ++b) {
+    int last_valid = 0;
+    for (int t = 0; t < T; ++t) {
+      const float m = (valid_mask != nullptr) ? valid_mask[b * T + t] : 1.0f;
+      if (m != 0.0f) {
+        last_valid = t + 1;
+      }
+      const float* conv_bt = conv_out + (b * T + t) * conv_channels;
+      const float* zba_bt = zba + (b * T + t) * actual_zba_stride + zba_offset;
+
+      for (int h_k = 0; h_k < H_k; ++h_k) {
+        const float* q_in = conv_bt + h_k * D_k;
+        const float* k_in = conv_bt + K_dim + h_k * D_k;
+        float* q_dst = q_t.data() + ((b * H_k + h_k) * T + t) * D_k;
+        float* k_dst = k_t.data() + ((b * H_k + h_k) * T + t) * D_k;
+
+        if (m == 0.0f) {
+          std::memset(q_dst, 0, D_k * sizeof(float));
+        } else {
+          float q_sumsq = 0.0f;
+          for (int d = 0; d < D_k; ++d) {
+            const float qv = q_in[d] * m;
+            q_sumsq += qv * qv;
+          }
+          const float q_inv = q_scale / std::sqrt(q_sumsq + params.eps);
+          for (int d = 0; d < D_k; ++d) {
+            q_dst[d] = q_in[d] * m * q_inv;
+          }
+        }
+
+        float k_sumsq = 0.0f;
+        for (int d = 0; d < D_k; ++d) {
+          k_sumsq += k_in[d] * k_in[d];
+        }
+        const float k_inv = 1.0f / std::sqrt(k_sumsq + params.eps);
+        for (int d = 0; d < D_k; ++d) {
+          k_dst[d] = k_in[d] * k_inv;
+        }
+      }
+
+      for (int h = 0; h < H_v; ++h) {
+        const float* v_in = conv_bt + 2 * K_dim + h * D_v;
+        float* v_dst = v_t.data() + ((b * H_v + h) * T + t) * D_v;
+        std::memcpy(v_dst, v_in, D_v * sizeof(float));
+
+        const int bt_idx = (b * H_v + h) * T + t;
+        if (m == 0.0f) {
+          beta_t[bt_idx] = 0.0f;
+          g_t[bt_idx] = 0.0f;
+        } else {
+          const float b_raw = zba_bt[V_dim + h];
+          const float a_raw = zba_bt[V_dim + H_v + h];
+          beta_t[bt_idx] = m / (1.0f + std::exp(-b_raw));
+          const float a_in = a_raw + dt_bias[h];
+          const float softplus_a =
+              std::max(a_in, 0.0f) + std::log1pf(std::exp(-std::abs(a_in)));
+          g_t[bt_idx] = neg_a[h] * softplus_a * m;
+        }
+      }
+    }
+    if (valid_mask != nullptr) {
+      valid_len[b] = last_valid;
+    }
+  }
+
+  std::vector<float> core_out(B * H_v * T * D_v);
+  ComputeGatedDeltaUpdateRecurrent(
+      q_t.data(), k_t.data(), v_t.data(), beta_t.data(), g_t.data(), rec_state,
+      core_out.data(), new_rec, B, H_v, T, D_k, D_v, H_k,
+      (valid_mask != nullptr) ? valid_len.data() : nullptr);
+
+  for (int b = 0; b < B; ++b) {
+    for (int t = 0; t < T; ++t) {
+      const float m = (valid_mask != nullptr) ? valid_mask[b * T + t] : 1.0f;
+      const float* zba_bt = zba + (b * T + t) * actual_zba_stride + zba_offset;
+      float* out_bt = output + (b * T + t) * V_dim;
+      if (m == 0.0f) {
+        std::memset(out_bt, 0, V_dim * sizeof(float));
+        continue;
+      }
+      for (int h = 0; h < H_v; ++h) {
+        const float* y_in = core_out.data() + ((b * H_v + h) * T + t) * D_v;
+        const float* z_in = zba_bt + h * D_v;
+        float* out_ptr = out_bt + h * D_v;
+        float sumsq = 0.0f;
+        for (int d = 0; d < D_v; ++d) {
+          sumsq += y_in[d] * y_in[d];
+        }
+        const float inv_rms =
+            1.0f / std::sqrt(sumsq * inv_head_v_dim + params.norm_eps);
+        for (int d = 0; d < D_v; ++d) {
+          const float z_val = z_in[d];
+          const float silu_z = z_val / (1.0f + std::exp(-z_val));
+          out_ptr[d] = y_in[d] * inv_rms * norm_weight[d] * silu_z;
+        }
+      }
+    }
+  }
+}
+
 }  // namespace gated_delta_net
 }  // namespace litert

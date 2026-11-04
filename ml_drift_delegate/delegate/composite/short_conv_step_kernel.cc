@@ -367,7 +367,7 @@ namespace {
 
 absl::Status BuildShortConvStepGpuGraph(
     const std::vector<uint32_t>& input_ids,
-    const std::vector<uint32_t>& output_ids,
+    const std::vector<uint32_t>& output_ids, int dst_channels,
     const ShortConvStepAttributes& attr,
     ::ml_drift::GpuModelBuilder* model_builder) {
   if (input_ids.size() < 2 || input_ids.size() > 4) {
@@ -403,7 +403,14 @@ absl::Status BuildShortConvStepGpuGraph(
   }
 
   auto in_proj_shape = in_proj.tensor_desc.GetBHWCShape();
-  int hidden_size = attr.is_gated ? (in_proj_shape.c / 3) : in_proj_shape.c;
+  int hidden_size = attr.is_gated
+                        ? (in_proj_shape.c / 3)
+                        : (dst_channels > 0 ? dst_channels : in_proj_shape.c);
+  if (!attr.is_gated && in_proj_shape.c < hidden_size) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("ShortConvStep in_proj channels (", in_proj_shape.c,
+                     ") must be >= output channels (", hidden_size, ")."));
+  }
   int num_slices = (hidden_size + 3) / 4;
 
   auto dst_desc = in_proj.tensor_desc;
@@ -449,7 +456,9 @@ absl::Status CreateShortConvStepFromNode(
   std::vector<uint32_t> output_ids;
   output_ids.reserve(outputs.size());
   for (const auto* output : outputs) output_ids.push_back(output->id);
-  return BuildShortConvStepGpuGraph(input_ids, output_ids, attr, model_builder);
+  const int dst_channels = outputs.empty() ? 0 : outputs[0]->tensor.shape.c;
+  return BuildShortConvStepGpuGraph(input_ids, output_ids, dst_channels, attr,
+                                    model_builder);
 }
 
 absl::Status CreateShortConvStepFromIrOp(
@@ -465,7 +474,10 @@ absl::Status CreateShortConvStepFromIrOp(
   std::vector<uint32_t> output_ids;
   output_ids.reserve(outputs.size());
   for (const auto* output : outputs) output_ids.push_back(output->id);
-  return BuildShortConvStepGpuGraph(input_ids, output_ids, attr, model_builder);
+  const int dst_channels =
+      outputs.empty() ? 0 : outputs[0]->desc.GetBHWCShape().c;
+  return BuildShortConvStepGpuGraph(input_ids, output_ids, dst_channels, attr,
+                                    model_builder);
 }
 
 }  // namespace litert::ml_drift
