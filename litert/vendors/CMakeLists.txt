@@ -126,7 +126,7 @@ endif()
 
 if(LITERT_ENABLE_SAMSUNG AND NOT LITECORE_HEADERS_DIR)
   if(NOT LITECORE_HEADERS_URL AND NOT LITECORE_GIT_REPO)
-    set(LITECORE_HEADERS_URL "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/ai-litecore-ubuntu2404-v1.1.0.tar.gz")
+    set(LITECORE_HEADERS_URL "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/ai-litecore-ubuntu2404-v1.2.0.tar.gz")
   endif()
   if(LITECORE_HEADERS_URL)
     set(_litecore_archive "${CMAKE_BINARY_DIR}/_deps/litecore_headers.tar.gz")
@@ -158,6 +158,7 @@ if(LITERT_ENABLE_SAMSUNG AND NOT LITECORE_HEADERS_DIR)
   endif()
   set(_litecore_candidates)
   list(APPEND _litecore_candidates
+    "${LITECORE_HEADERS_DIR}/exynos-ai-litecore-v1.2.0/include"
     "${LITECORE_HEADERS_DIR}/exynos-ai-litecore-v1.1.0/include"
     "${LITECORE_HEADERS_DIR}/include"
     "${LITECORE_HEADERS_DIR}"
