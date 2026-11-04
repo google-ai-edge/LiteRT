@@ -27,14 +27,28 @@ namespace litert::ml_drift {
 
 constexpr const char kShortConvStepType[] = "odml.short_conv_step";
 
+// Attributes of `odml.short_conv_step`. Its conv_state is channels-last
+// [1, L - 1, H] and its conv_weight channels-last [1, L, H], with
+// L = `conv_L_cache` taps and H channels.
 struct ShortConvStepAttributes {
   int32_t conv_L_cache = 3;
   bool is_gated = true;
   bool use_silu = false;
+  // The optional `channels_last` attribute; only channels-last (true or
+  // absent) is supported.
+  bool channels_last = true;
 };
 
 ShortConvStepAttributes ParseShortConvStepAttributes(
     const TfLiteNode& tflite_node);
+
+// Checks that `tflite_node` is a channels-last `odml.short_conv_step` the GPU
+// kernel supports: conv_L_cache in [2, 4], `channels_last` not false,
+// conv_state (input 1) [1, L - 1, H], conv_weight (input 2) [1, L, H] and
+// output 0 with H channels. Channels-first exports ([1, H, L - 1] state) are
+// rejected so they fall back to the CPU decomposition.
+absl::Status CheckShortConvStepSupported(const TfLiteContext* context,
+                                         const TfLiteNode* tflite_node);
 
 class ShortConvStepOperationParser : public TFLiteOperationParser {
  public:

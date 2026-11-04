@@ -38,7 +38,10 @@ absl::Status CreateShortConvStepFromIrOp(
     const ::ml_drift::ir::IrOp& node,
     ::ml_drift::GpuModelBuilder* model_builder);
 
-// Exposed for testing in short_conv_step_kernel_test.
+// Exposed for testing in short_conv_step_kernel_test. `conv_weight_desc` is the
+// channels-last weight BHWC(1, 1, L, H) (TFLite [1, L, H]) and
+// `state_in_out_desc` the channels-last state BHWC(1, 1, L - 1, H) (TFLite
+// [1, L - 1, H]), with L = `conv_L_cache` and H = `hidden_size`.
 std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
     const ::ml_drift::TensorDescriptor& in_proj_desc,
     const ::ml_drift::TensorDescriptor& conv_weight_desc,

@@ -74,11 +74,11 @@ absl::Status RunShortConvStepTest(::ml_drift::TestExecutionEnvironment& env,
                                             ::ml_drift::Layout::kBHWC);
   in_proj_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, in_channels));
 
-  // 2. conv_weight [hidden_size, 1, 1, conv_L_cache]
+  // 2. conv_weight (channels-last) [1, 1, conv_L_cache, hidden_size]
   ::ml_drift::TensorDescriptor conv_weight_desc(data_type, storage,
                                                 ::ml_drift::Layout::kBHWC);
   conv_weight_desc.SetBHWCShape(
-      ::ml_drift::BHWC(hidden_size, 1, 1, conv_L_cache));
+      ::ml_drift::BHWC(1, 1, conv_L_cache, hidden_size));
 
   // 3. conv_bias (optional) [1, 1, 1, hidden_size]
   std::unique_ptr<::ml_drift::TensorDescriptor> conv_bias_desc = nullptr;
@@ -93,10 +93,11 @@ absl::Status RunShortConvStepTest(::ml_drift::TestExecutionEnvironment& env,
                                         ::ml_drift::Layout::kBHWC);
   dst_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, hidden_size));
 
-  // 5. next_state (read and updated in-place) [1, 1, hidden_size, state_len]
+  // 5. next_state (channels-last, read and updated in-place)
+  // [1, 1, state_len, hidden_size]
   ::ml_drift::TensorDescriptor next_state_desc(data_type, storage,
                                                ::ml_drift::Layout::kBHWC);
-  next_state_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, hidden_size, state_len));
+  next_state_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, state_len, hidden_size));
 
   // Create Op
   auto op = CreateFusedShortConvStep(in_proj_desc, conv_weight_desc,
@@ -118,18 +119,23 @@ absl::Status RunShortConvStepTest(::ml_drift::TestExecutionEnvironment& env,
     }
   }
 
+  auto state_val = [](int i, int t) -> float {
+    return 0.1f * (t + 2) * ((i % 11) + 1);
+  };
   std::vector<float> conv_state_data(hidden_size * state_len);
   for (int i = 0; i < hidden_size; ++i) {
     for (int t = 0; t < state_len; ++t) {
-      conv_state_data[i * state_len + t] = 0.1f * (t + 2) * ((i % 11) + 1);
+      conv_state_data[t * hidden_size + i] = state_val(i, t);
     }
   }
 
+  auto weight_val = [](int i, int k) -> float {
+    return 0.1f * (k + 1) + 0.01f * (k + 1) * (i % 13);
+  };
   std::vector<float> conv_weight_data(hidden_size * conv_L_cache);
   for (int i = 0; i < hidden_size; ++i) {
     for (int k = 0; k < conv_L_cache; ++k) {
-      conv_weight_data[i * conv_L_cache + k] =
-          0.1f * (k + 1) + 0.01f * (k + 1) * (i % 13);
+      conv_weight_data[k * hidden_size + i] = weight_val(i, k);
     }
   }
 
@@ -191,10 +197,9 @@ absl::Status RunShortConvStepTest(::ml_drift::TestExecutionEnvironment& env,
 
     float conv_val = 0.0f;
     for (int t = 0; t < state_len; ++t) {
-      conv_val += conv_state_data[i * state_len + t] *
-                  conv_weight_data[i * conv_L_cache + t];
+      conv_val += state_val(i, t) * weight_val(i, t);
     }
-    conv_val += p * conv_weight_data[i * conv_L_cache + state_len];
+    conv_val += p * weight_val(i, state_len);
     if (with_bias) {
       conv_val += conv_bias_data[i];
     }
@@ -213,9 +218,8 @@ absl::Status RunShortConvStepTest(::ml_drift::TestExecutionEnvironment& env,
     }
 
     for (int t = 0; t < state_len; ++t) {
-      float expected_next_s =
-          (t + 1 < state_len) ? conv_state_data[i * state_len + t + 1] : p;
-      float actual_next_s = next_state_result[i * state_len + t];
+      float expected_next_s = (t + 1 < state_len) ? state_val(i, t + 1) : p;
+      float actual_next_s = next_state_result[t * hidden_size + i];
       float max_err_s = std::max(tol, tol * std::abs(expected_next_s));
       if (std::abs(actual_next_s - expected_next_s) > max_err_s) {
         return absl::InternalError(absl::StrCat(
@@ -273,13 +277,14 @@ absl::Status RunShortConvPrefillTest(
       ::ml_drift::DeduceDataTypeFromPrecision(precision);
 
   // The shapes follow how the delegate maps the composite operands to BHWC:
-  // in_proj [1, S, C_in] -> (1, 1, S, C_in), next_state [1, H, L - 1] ->
-  // (1, 1, H, L - 1), conv_weight [H, 1, L] -> (H, 1, 1, L), and 1D
-  // num_valid_tokens [1] and conv_bias [H] -> (N, 1, 1, 1).
+  // in_proj [1, S, C_in] -> (1, 1, S, C_in), channels-last next_state
+  // [1, L - 1, H] -> (1, 1, L - 1, H), channels-last conv_weight [1, L, H] ->
+  // (1, 1, L, H), and 1D num_valid_tokens [1] and conv_bias [H] ->
+  // (N, 1, 1, 1).
   ::ml_drift::TensorDescriptor in_proj_desc = MakeTensorDesc(
       data_type, storage, ::ml_drift::BHWC(1, 1, seq_len, in_channels));
   ::ml_drift::TensorDescriptor conv_weight_desc = MakeTensorDesc(
-      data_type, storage, ::ml_drift::BHWC(hidden_size, 1, 1, conv_L_cache));
+      data_type, storage, ::ml_drift::BHWC(1, 1, conv_L_cache, hidden_size));
   std::unique_ptr<::ml_drift::TensorDescriptor> conv_bias_desc;
   if (test_case.with_bias) {
     conv_bias_desc =
@@ -295,7 +300,7 @@ absl::Status RunShortConvPrefillTest(
   ::ml_drift::TensorDescriptor dst_desc = MakeTensorDesc(
       data_type, storage, ::ml_drift::BHWC(1, 1, seq_len, hidden_size));
   ::ml_drift::TensorDescriptor next_state_desc = MakeTensorDesc(
-      data_type, storage, ::ml_drift::BHWC(1, 1, hidden_size, num_state_taps));
+      data_type, storage, ::ml_drift::BHWC(1, 1, num_state_taps, hidden_size));
 
   auto op = CreateFusedShortConvStep(
       in_proj_desc, conv_weight_desc, conv_bias_desc.get(), dst_desc,
@@ -319,18 +324,22 @@ absl::Status RunShortConvPrefillTest(
       }
     }
   }
+  auto state_val = [](int i, int j) -> float {
+    return -0.5f + 0.1f * ((i + 4 * j) % 11);
+  };
   std::vector<float> conv_state_data(hidden_size * num_state_taps);
   for (int i = 0; i < hidden_size; ++i) {
     for (int j = 0; j < num_state_taps; ++j) {
-      conv_state_data[i * num_state_taps + j] =
-          -0.5f + 0.1f * ((i + 4 * j) % 11);
+      conv_state_data[j * hidden_size + i] = state_val(i, j);
     }
   }
+  auto weight_val = [](int i, int k) -> float {
+    return (k % 2 == 0 ? 1.0f : -1.0f) * (0.1f + 0.03f * ((i + k) % 13));
+  };
   std::vector<float> conv_weight_data(hidden_size * conv_L_cache);
   for (int i = 0; i < hidden_size; ++i) {
     for (int k = 0; k < conv_L_cache; ++k) {
-      conv_weight_data[i * conv_L_cache + k] =
-          (k % 2 == 0 ? 1.0f : -1.0f) * (0.1f + 0.03f * ((i + k) % 13));
+      conv_weight_data[k * hidden_size + i] = weight_val(i, k);
     }
   }
   std::vector<float> conv_bias_data;
@@ -382,7 +391,7 @@ absl::Status RunShortConvPrefillTest(
   // conv_state tap p for p < L - 1 and B * x of token p - (L - 1) otherwise.
   auto padded = [&](int i, int p) {
     if (p < num_state_taps) {
-      return conv_state_data[i * num_state_taps + p];
+      return state_val(i, p);
     }
     const float* row = &in_proj_data[(p - num_state_taps) * in_channels];
     return test_case.is_gated ? (row[i] * row[2 * hidden_size + i]) : row[i];
@@ -393,7 +402,7 @@ absl::Status RunShortConvPrefillTest(
     for (int i = 0; i < hidden_size; ++i) {
       float conv = test_case.with_bias ? conv_bias_data[i] : 0.0f;
       for (int k = 0; k < conv_L_cache; ++k) {
-        conv += conv_weight_data[i * conv_L_cache + k] * padded(i, t + k);
+        conv += weight_val(i, k) * padded(i, t + k);
       }
       if (test_case.use_silu) {
         conv = conv / (1.0f + std::exp(-conv));
@@ -411,7 +420,7 @@ absl::Status RunShortConvPrefillTest(
   for (int i = 0; i < hidden_size; ++i) {
     for (int j = 0; j < num_state_taps; ++j) {
       ABSL_RETURN_IF_ERROR(CheckNear("next_state", i, j, padded(i, n + j),
-                                     next_state_result[i * num_state_taps + j],
+                                     next_state_result[j * hidden_size + i],
                                      tol));
     }
   }
@@ -621,6 +630,34 @@ TEST_P(ShortConvStepFloatTest, PrefillHiddenSizeAndConvLengthCornerCases) {
     }
   }
 }
+
+TEST_P(ShortConvStepFloatTest, PrefillNumValidTokensVariants) {
+  for (int hidden_size : {1, 3, 4, 7, 64}) {
+    for (int conv_l_cache : {2, 3, 4}) {
+      for (std::optional<int> num_valid :
+           {std::optional<int>(0), std::optional<int>(1), std::optional<int>(4),
+            std::optional<int>()}) {
+        ASSERT_OK(RunShortConvPrefillTest(*exec_env, precision(), storage(),
+                                          {.hidden_size = hidden_size,
+                                           .seq_len = 6,
+                                           .num_valid_tokens = num_valid,
+                                           .conv_l_cache = conv_l_cache,
+                                           .with_bias = true,
+                                           .is_gated = false,
+                                           .use_silu = true}));
+      }
+    }
+  }
+  ASSERT_OK(RunShortConvPrefillTest(*exec_env, precision(), storage(),
+                                    {.hidden_size = 6144,
+                                     .seq_len = 6,
+                                     .num_valid_tokens = 4,
+                                     .conv_l_cache = 4,
+                                     .with_bias = false,
+                                     .is_gated = false,
+                                     .use_silu = true}));
+}
+
 INSTANTIATE_TEST_SUITE_P(
     ShortConvStepFloatTestSuite, ShortConvStepFloatTest,
     Combine(ValuesIn({::ml_drift::CalculationsPrecision::kF32,

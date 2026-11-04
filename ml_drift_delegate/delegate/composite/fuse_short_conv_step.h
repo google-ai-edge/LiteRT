@@ -26,13 +26,17 @@ namespace litert::ml_drift {
 
 // Scans the GraphFloat32 graph for short convolution step patterns
 // (slice state -> concat state -> concat window -> mul -> reduce_sum) and
-// fuses them into a single fused odml.short_conv_step node.
+// fuses them into a single fused odml.short_conv_step node. Only channels-last
+// patterns are fused: conv_state / next_state BHWC(1, 1, L - 1, H), the window
+// BHWC(1, 1, L, H) concatenated along W and a BHWC(1, 1, L, H) weight, which is
+// the layout the fused kernel reads. Channels-first patterns are left as is.
 absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph);
 
 namespace ir {
 
 // Scans the IrModel graph for short convolution step patterns and fuses them
-// into a single fused short_conv_step operation.
+// into a single fused short_conv_step operation. As above, only channels-last
+// patterns are fused.
 absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model);
 
 }  // namespace ir

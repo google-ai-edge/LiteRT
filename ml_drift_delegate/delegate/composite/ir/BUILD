@@ -164,7 +164,6 @@ cc_library(
         "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:ir_model",
     ],
 )
@@ -448,6 +447,24 @@ cc_test(
     deps = [
         ":gated_delta_update_parser",
         "//ml_drift_delegate/delegate/composite:gated_delta_update_parser",
+        "//ml_drift_delegate/tflite:custom_ir_operation_parser",
+        "//ml_drift_delegate/tflite/convert:convert_testing_utils",
+        "//ml_drift_delegate/tflite/convert:stub_delegate",
+        "//tflite:builtin_ops",
+        "//tflite:framework_stable",
+        "//tflite/c:common",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:ir_model",
+    ],
+)
+
+cc_test(
+    name = "short_conv_step_parser_test",
+    srcs = ["short_conv_step_parser_test.cc"],
+    deps = [
+        ":short_conv_step_parser",
+        "//ml_drift_delegate/delegate/composite:short_conv_step_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite/convert:convert_testing_utils",
         "//ml_drift_delegate/tflite/convert:stub_delegate",

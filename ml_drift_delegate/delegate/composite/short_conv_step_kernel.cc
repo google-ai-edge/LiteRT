@@ -60,7 +60,7 @@ class FusedShortConvStepOp : public ::ml_drift::GPUOperation {
   FusedShortConvStepOp& operator=(const FusedShortConvStepOp&) = delete;
 };
 
-// Vector component that holds conv tap (or channel lane) `k`.
+// Vector component that holds channel lane `k` of a slice.
 absl::string_view Component(int k) {
   static constexpr absl::string_view kComponents[] = {"x", "y", "z", "w"};
   return kComponents[k];
@@ -155,31 +155,6 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
   custom_op.AddDstTensor("out", dst_desc);
   custom_op.AddDstTensor("state_in_out", state_in_out_desc);
 
-  auto w_shape = conv_weight_desc.GetBHWCShape();
-  std::string weight_read_expr;
-  if (w_shape.b == hidden_size) {
-    weight_read_expr = "args.conv_weight.Read(0, 0, 0, $0)";
-  } else if (w_shape.w == hidden_size) {
-    weight_read_expr = "args.conv_weight.Read($0, 0, 0)";
-  } else {
-    weight_read_expr = "args.conv_weight.Read(0, 0, 0, $0)";
-  }
-
-  auto state_shape = state_in_out_desc.GetBHWCShape();
-  std::string state_read_expr;
-  std::string state_write_expr;
-  if (state_shape.w == hidden_size) {
-    state_read_expr = "args.state_in_out.Read($0, 0, 0)";
-    state_write_expr =
-        "args.state_in_out.Write(ucl::Convert<args.state_in_out::type>($0), "
-        "$1, 0, 0)";
-  } else {
-    state_read_expr = "args.state_in_out.Read(0, 0, 0, $0)";
-    state_write_expr =
-        "args.state_in_out.Write(ucl::Convert<args.state_in_out::type>($0), "
-        "0, 0, 0, $1)";
-  }
-
   const bool has_partial_slice = (hidden_size % 4) != 0;
   auto channel_idx_expr = [&](int i) -> std::string {
     if (!has_partial_slice || i == 0) {
@@ -237,17 +212,12 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
                     ") {\n    return;\n  }\n");
   }
 
-  // Weight w<i>.<k> is tap k of channel i of the slice, and wt<k> holds tap k
-  // of the 4 channels.
-  for (int i = 0; i < 4; ++i) {
-    absl::StrAppend(
-        &c, "  float4 w", i, " = ucl::Convert<float4>(",
-        absl::Substitute(weight_read_expr, channel_idx_expr(i)), ");\n");
-  }
+  // Load `wt<k>` holding tap k across the 4 channels of slice S from the
+  // channels-last weight BHWC(1, 1, L, H).
   for (int k = 0; k < clamped_L_cache; ++k) {
-    const absl::string_view tap = Component(k);
-    absl::StrAppend(&c, "  float4 wt", k, " = ucl::Init<float4>(w0.", tap,
-                    ", w1.", tap, ", w2.", tap, ", w3.", tap, ");\n");
+    absl::StrAppend(&c, "  float4 wt", k,
+                    " = ucl::Convert<float4>(args.conv_weight.Read(", k,
+                    ", 0, S));\n");
   }
   absl::StrAppend(&c, "  float4 bias = ", bias_expr, ";\n");
 
@@ -269,17 +239,13 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
     c += "    return;\n  }\n";
   }
 
-  // Work item 0. State s<i>.<j> is tap j of channel i of the slice, st<j> holds
-  // tap j of the 4 channels, and bx<t> holds B * x of token t.
-  for (int i = 0; i < 4; ++i) {
-    absl::StrAppend(
-        &c, "  float4 s", i, " = ucl::Convert<float4>(",
-        absl::Substitute(state_read_expr, channel_idx_expr(i)), ");\n");
-  }
+  // Work item 0. `st<j>` holds state tap j of the 4 channels, read from the
+  // channels-last state BHWC(1, 1, L - 1, H), and `bx<t>` holds B * x of
+  // token t.
   for (int j = 0; j < num_state_taps; ++j) {
-    const absl::string_view tap = Component(j);
-    absl::StrAppend(&c, "  float4 st", j, " = ucl::Init<float4>(s0.", tap,
-                    ", s1.", tap, ", s2.", tap, ", s3.", tap, ");\n");
+    absl::StrAppend(&c, "  float4 st", j,
+                    " = ucl::Convert<float4>(args.state_in_out.Read(", j,
+                    ", 0, S));\n");
   }
   for (int t = 0; t < num_head_tokens; ++t) {
     absl::StrAppend(&c, "  float4 bx", t, " = ",
@@ -339,23 +305,11 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
                       ";\n  }\n");
     }
   }
-  for (int i = 0; i < 4; ++i) {
-    std::string taps;
-    for (int j = 0; j < 4; ++j) {
-      absl::StrAppend(&taps, j > 0 ? ", " : "",
-                      j < num_state_taps
-                          ? absl::StrCat("ns", j, ".", Component(i))
-                          : std::string("0.0f"));
-    }
-    const std::string write_stmt = absl::Substitute(
-        state_write_expr, absl::StrCat("ucl::Init<float4>(", taps, ")"),
-        absl::StrCat("4 * S + ", i));
-    if (has_partial_slice && i > 0) {
-      absl::StrAppend(&c, "  if (4 * S + ", i, " < args.hidden_size) {\n    ",
-                      write_stmt, ";\n  }\n");
-    } else {
-      absl::StrAppend(&c, "  ", write_stmt, ";\n");
-    }
+  for (int j = 0; j < num_state_taps; ++j) {
+    absl::StrAppend(
+        &c,
+        "  args.state_in_out.Write(ucl::Convert<args.state_in_out::type>(ns", j,
+        "), ", j, ", 0, S);\n");
   }
   c += "}\n";
 
@@ -364,6 +318,28 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
 }
 
 namespace {
+
+// Checks the channels-last weight BHWC(1, 1, L, H) and state
+// BHWC(1, 1, L - 1, H) that the kernel reads.
+absl::Status CheckShortConvStepChannelsLast(const ::ml_drift::BHWC& weight,
+                                            const ::ml_drift::BHWC& state,
+                                            int hidden_size, int conv_L_cache) {
+  if (weight != ::ml_drift::BHWC(1, 1, conv_L_cache, hidden_size)) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "ShortConvStep expects a channels-last conv_weight [1, L, H] = "
+        "BHWC(1, 1, ",
+        conv_L_cache, ", ", hidden_size, "), but got ",
+        ::ml_drift::ToString(weight)));
+  }
+  if (state != ::ml_drift::BHWC(1, 1, conv_L_cache - 1, hidden_size)) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "ShortConvStep expects a channels-last conv_state [1, L - 1, H] = "
+        "BHWC(1, 1, ",
+        conv_L_cache - 1, ", ", hidden_size, "), but got ",
+        ::ml_drift::ToString(state)));
+  }
+  return absl::OkStatus();
+}
 
 absl::Status BuildShortConvStepGpuGraph(
     const std::vector<uint32_t>& input_ids,
@@ -413,6 +389,9 @@ absl::Status BuildShortConvStepGpuGraph(
   ABSL_ASSIGN_OR_RETURN(auto state_in_out_ref,
                         model_builder->GetTensor(output_ids[1]));
   auto state_in_out_desc = state_in_out_ref.tensor_desc;
+  ABSL_RETURN_IF_ERROR(CheckShortConvStepChannelsLast(
+      conv_weight.tensor_desc.GetBHWCShape(), state_in_out_desc.GetBHWCShape(),
+      hidden_size, attr.conv_L_cache));
   auto state_in_out = model_builder->AddTensor(state_in_out_desc);
 
   auto op = CreateFusedShortConvStep(

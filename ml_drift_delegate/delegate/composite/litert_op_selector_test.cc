@@ -15,6 +15,7 @@
 #include "ml_drift_delegate/delegate/composite/litert_op_selector.h"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "testing/base/public/gmock.h"
@@ -422,13 +423,13 @@ TEST(LiteRtOpSelectorTest, ShortConvStepAllOptionCombinationsAndConvLengths) {
         in_proj_desc.SetBHWCShape(BHWC(1, 1, 1, in_channels));
         TensorDescriptor conv_weight_desc(
             DataType::kFloat32, TensorStorageType::kTexture2D, Layout::kHWC);
-        conv_weight_desc.SetBHWCShape(BHWC(1, 1, kHiddenSize, filter_size));
+        conv_weight_desc.SetBHWCShape(BHWC(1, 1, filter_size, kHiddenSize));
         TensorDescriptor out_desc(
             DataType::kFloat32, TensorStorageType::kTexture2D, Layout::kHWC);
         out_desc.SetBHWCShape(BHWC(1, 1, 1, kHiddenSize));
         TensorDescriptor next_state_desc(
             DataType::kFloat32, TensorStorageType::kBuffer, Layout::kHWC);
-        next_state_desc.SetBHWCShape(BHWC(1, 1, kHiddenSize, state_cache_size));
+        next_state_desc.SetBHWCShape(BHWC(1, 1, state_cache_size, kHiddenSize));
 
         auto in_proj = builder.AddTensor(in_proj_desc);
         auto conv_weight = builder.AddTensor(conv_weight_desc);
@@ -439,11 +440,11 @@ TEST(LiteRtOpSelectorTest, ShortConvStepAllOptionCombinationsAndConvLengths) {
             in_proj.id, {DataType::kFloat32, BHWC(1, 1, 1, in_channels)}};
         Value v_conv_weight{
             conv_weight.id,
-            {DataType::kFloat32, BHWC(1, 1, kHiddenSize, filter_size)}};
+            {DataType::kFloat32, BHWC(1, 1, filter_size, kHiddenSize)}};
         Value v_out{out.id, {DataType::kFloat32, BHWC(1, 1, 1, kHiddenSize)}};
         Value v_next_state{
             next_state.id,
-            {DataType::kFloat32, BHWC(1, 1, kHiddenSize, state_cache_size)}};
+            {DataType::kFloat32, BHWC(1, 1, state_cache_size, kHiddenSize)}};
 
         OperationDef op_def;
         op_def.src_tensors = {in_proj.tensor_desc, conv_weight.tensor_desc};
@@ -487,13 +488,78 @@ TEST(LiteRtOpSelectorTest, ShortConvStepAllOptionCombinationsAndConvLengths) {
         } else {
           EXPECT_THAT(code, Not(HasSubstr("exp(-acc0)")));
         }
-        EXPECT_THAT(
-            code,
-            HasSubstr(
-                "args.state_in_out_buffer[(((0) * args.state_in_out_height "
-                "+ (0)) * args.state_in_out_width + (4 * S + 0))] ="));
+        EXPECT_THAT(code, HasSubstr("args.state_in_out_buffer[(((S) * "
+                                    "args.state_in_out_height + (0)) * "
+                                    "args.state_in_out_width + (0))] ="));
       }
     }
+  }
+}
+
+TEST(LiteRtOpSelectorTest, ShortConvStepRejectsChannelsFirstStateOrWeight) {
+  const GpuInfo gpu_info = GetTestGpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kTexture2D;
+
+  constexpr int kHiddenSize = 64;
+  constexpr int kFilterSize = 3;
+  constexpr int kStateCacheSize = kFilterSize - 1;
+  const BHWC channels_last_weight(1, 1, kFilterSize, kHiddenSize);
+  const BHWC channels_last_state(1, 1, kStateCacheSize, kHiddenSize);
+  // Channels-first shapes of older exports: weight [H, 1, L] and state
+  // [1, H, L - 1].
+  const BHWC channels_first_weight(kHiddenSize, 1, 1, kFilterSize);
+  const BHWC channels_first_state(1, 1, kHiddenSize, kStateCacheSize);
+  for (const auto& [weight_shape, state_shape] :
+       {std::pair(channels_first_weight, channels_last_state),
+        std::pair(channels_last_weight, channels_first_state)}) {
+    GpuModelBuilderOptions options;
+    options.storage = TensorStorageType::kTexture2D;
+    GpuModelBuilder builder(gpu_info, options);
+
+    TensorDescriptor in_proj_desc(DataType::kFloat32,
+                                  TensorStorageType::kTexture2D, Layout::kHWC);
+    in_proj_desc.SetBHWCShape(BHWC(1, 1, 1, kHiddenSize));
+    TensorDescriptor conv_weight_desc(
+        DataType::kFloat32, TensorStorageType::kTexture2D, Layout::kHWC);
+    conv_weight_desc.SetBHWCShape(weight_shape);
+    TensorDescriptor out_desc(DataType::kFloat32, TensorStorageType::kTexture2D,
+                              Layout::kHWC);
+    out_desc.SetBHWCShape(BHWC(1, 1, 1, kHiddenSize));
+    TensorDescriptor next_state_desc(DataType::kFloat32,
+                                     TensorStorageType::kBuffer, Layout::kHWC);
+    next_state_desc.SetBHWCShape(state_shape);
+
+    auto in_proj = builder.AddTensor(in_proj_desc);
+    auto conv_weight = builder.AddTensor(conv_weight_desc);
+    auto out = builder.AddTensor(out_desc);
+    auto next_state = builder.AddTensor(next_state_desc);
+
+    Value v_in_proj{in_proj.id,
+                    {DataType::kFloat32, BHWC(1, 1, 1, kHiddenSize)}};
+    Value v_conv_weight{conv_weight.id, {DataType::kFloat32, weight_shape}};
+    Value v_out{out.id, {DataType::kFloat32, BHWC(1, 1, 1, kHiddenSize)}};
+    Value v_next_state{next_state.id, {DataType::kFloat32, state_shape}};
+
+    OperationDef op_def;
+    op_def.src_tensors = {in_proj.tensor_desc, conv_weight.tensor_desc};
+    op_def.dst_tensors = {out.tensor_desc, next_state.tensor_desc};
+
+    GraphFloat32 graph;
+    Node* conv_node = graph.NewNode();
+    conv_node->operation.type = kShortConvStepType;
+    ShortConvStepAttributes attr;
+    attr.conv_L_cache = kFilterSize;
+    attr.is_gated = false;
+    conv_node->operation.attributes = attr;
+
+    LiteRtOpSelector selector(&create_info, &gpu_info);
+    EXPECT_FALSE(selector
+                     .GPUOperationFromNode(op_def, {&v_in_proj, &v_conv_weight},
+                                           {&v_out, &v_next_state}, *conv_node,
+                                           &builder)
+                     .ok());
   }
 }
 

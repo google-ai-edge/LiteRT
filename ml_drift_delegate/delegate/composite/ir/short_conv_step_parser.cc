@@ -16,7 +16,6 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/short_conv_step_parser.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
@@ -27,29 +26,9 @@ namespace litert::ml_drift::ir {
 namespace {
 
 absl::Status ShortConvStepIsSupported(
-    const TfLiteContext* /*context*/, const TfLiteNode* tflite_node,
+    const TfLiteContext* context, const TfLiteNode* tflite_node,
     const TfLiteRegistration* /*registration*/) {
-  if (tflite_node->inputs->size < 3 || tflite_node->inputs->size > 5) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("ShortConvStep expects 3 to 5 inputs, but got ",
-                     tflite_node->inputs->size));
-  }
-
-  if (tflite_node->outputs->size != 2) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("ShortConvStep expects 2 outputs, but got ",
-                     tflite_node->outputs->size));
-  }
-
-  const ::litert::ml_drift::ShortConvStepAttributes attr =
-      ::litert::ml_drift::ParseShortConvStepAttributes(*tflite_node);
-  if (attr.conv_L_cache < 2 || attr.conv_L_cache > 4) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("ShortConvStep supports conv_L_cache in [2, 4], but got ",
-                     attr.conv_L_cache));
-  }
-
-  return absl::OkStatus();
+  return ::litert::ml_drift::CheckShortConvStepSupported(context, tflite_node);
 }
 
 void ShortConvStepConvert(

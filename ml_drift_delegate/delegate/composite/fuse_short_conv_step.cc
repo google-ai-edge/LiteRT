@@ -83,38 +83,17 @@ struct ShortConvStepMatch {
   return value;
 }
 
-int32_t DetermineConvLCache(const ::ml_drift::Value* state_val,
-                           const ::ml_drift::Node* slice_node) {
-  int state_len = 0;
-  if (state_val) {
-    const auto& shape = state_val->tensor.shape;
-    if (shape.c > 1 && shape.c <= 16) {
-      state_len = shape.c;
-    } else if (shape.w > 1 && shape.w <= 16) {
-      state_len = shape.w;
-    } else if (shape.h > 1 && shape.h <= 16) {
-      state_len = shape.h;
-    } else if (shape.b > 1 && shape.b <= 16) {
-      state_len = shape.b;
-    }
+// Returns the filter size L of a channels-last conv_state BHWC(1, 1, L - 1, H)
+// (TFLite [1, L - 1, H]) with H = `hidden_size`, or 0 for any other layout.
+// Only channels-last graphs are fused, since the fused kernel reads and writes
+// the state channels-last.
+int32_t ChannelsLastConvLCache(const ::ml_drift::BHWC& state_shape,
+                               int hidden_size) {
+  if (state_shape.b != 1 || state_shape.h != 1 ||
+      state_shape.c != hidden_size || state_shape.w < 1) {
+    return 0;
   }
-  if (state_len == 0 && slice_node &&
-      slice_node->operation.attributes.has_value()) {
-    if (slice_node->operation.attributes.type() ==
-        typeid(::ml_drift::SliceAttributes)) {
-      const auto& attr = std::any_cast<const ::ml_drift::SliceAttributes&>(
-          slice_node->operation.attributes);
-      if (attr.ends.c > attr.starts.c && attr.ends.c - attr.starts.c <= 16) {
-        state_len = attr.ends.c - attr.starts.c;
-      } else if (attr.ends.w > attr.starts.w &&
-                 attr.ends.w - attr.starts.w <= 16) {
-        state_len = attr.ends.w - attr.starts.w;
-      }
-    }
-  }
-  if (state_len <= 0) state_len = 2;
-  // conv_L_cache represents filter size = state cache length + 1 (e.g. 2+1=3).
-  return state_len + 1;
+  return state_shape.w + 1;
 }
 
 }  // namespace
@@ -274,22 +253,30 @@ absl::Status FuseShortConvStep(::ml_drift::GraphFloat32* graph) {
     int hidden_size = total_c / 3;
     if (hidden_size % 4 != 0) continue;
 
-    int32_t conv_l_cache =
-        DetermineConvLCache(conv_state_val, slice_state_node);
-    // The GPU kernel supports 3-tap convolution filters.
+    // conv_state and next_state are channels-last BHWC(1, 1, L - 1, H), and
+    // the window BHWC(1, 1, L, H) concatenates them with B * x along W.
+    const int32_t conv_l_cache =
+        ChannelsLastConvLCache(conv_state_val->tensor.shape, hidden_size);
+    // The fused pattern is matched for 3-tap convolution filters.
     if (conv_l_cache != 3) continue;
-
-    // Normalize weight shape to [1, 1, hidden_size, conv_l_cache] so it matches
-    // args.conv_weight.Read($0, 0, 0) in the GPU shader.
-    if (!weight_data.empty()) {
-      if (weight_shape.w != hidden_size && weight_shape.b != hidden_size) {
-        if (weight_data.size() == hidden_size * conv_l_cache) {
-          weight_shape = ::ml_drift::BHWC(1, 1, hidden_size, conv_l_cache);
-        } else {
-          continue;
-        }
-      }
+    const ::ml_drift::BHWC channels_last_weight_shape(1, 1, conv_l_cache,
+                                                      hidden_size);
+    if (next_state_val->tensor.shape != conv_state_val->tensor.shape ||
+        win_val->tensor.shape != channels_last_weight_shape) {
+      continue;
     }
+    // The conv weight multiplies the window elementwise, so it is the
+    // channels-last BHWC(1, 1, L, H) the kernel reads.
+    if (!weight_data.empty()) {
+      if (weight_shape != channels_last_weight_shape ||
+          weight_data.size() !=
+              static_cast<size_t>(conv_l_cache * hidden_size)) {
+        continue;
+      }
+    } else if (conv_weight_val->tensor.shape != channels_last_weight_shape) {
+      continue;
+    }
+    weight_shape = channels_last_weight_shape;
 
     auto red_outs = graph->FindOutputs(node->id);
     if (red_outs.empty()) continue;
@@ -546,46 +533,6 @@ struct IrShortConvStepMatch {
   return tid;
 }
 
-int32_t DetermineIrConvLCache(const ::ml_drift::ir::IrTensor* state_tensor,
-                             const ::ml_drift::ir::IrOp* slice_op) {
-  int state_len = 0;
-  if (state_tensor) {
-    auto shape = state_tensor->desc.GetBHWDCShape();
-    if (shape.c > 1 && shape.c <= 16) {
-      state_len = shape.c;
-    } else if (shape.w > 1 && shape.w <= 16) {
-      state_len = shape.w;
-    } else if (shape.h > 1 && shape.h <= 16) {
-      state_len = shape.h;
-    } else if (shape.b > 1 && shape.b <= 16) {
-      state_len = shape.b;
-    }
-  }
-  if (state_len == 0 && slice_op && slice_op->attr.has_value()) {
-    if (slice_op->attr.type() == typeid(::ml_drift::SliceAttributes)) {
-      const auto& attr =
-          std::any_cast<const ::ml_drift::SliceAttributes&>(slice_op->attr);
-      if (attr.ends.c > attr.starts.c && attr.ends.c - attr.starts.c <= 16) {
-        state_len = attr.ends.c - attr.starts.c;
-      } else if (attr.ends.w > attr.starts.w &&
-                 attr.ends.w - attr.starts.w <= 16) {
-        state_len = attr.ends.w - attr.starts.w;
-      }
-    } else if (slice_op->attr.type() == typeid(::ml_drift::Slice3DAttributes)) {
-      const auto& attr =
-          std::any_cast<const ::ml_drift::Slice3DAttributes&>(slice_op->attr);
-      if (attr.ends.c > attr.starts.c && attr.ends.c - attr.starts.c <= 16) {
-        state_len = attr.ends.c - attr.starts.c;
-      } else if (attr.ends.w > attr.starts.w &&
-                 attr.ends.w - attr.starts.w <= 16) {
-        state_len = attr.ends.w - attr.starts.w;
-      }
-    }
-  }
-  if (state_len <= 0) state_len = 2;
-  return state_len + 1;
-}
-
 }  // namespace
 
 absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
@@ -739,43 +686,42 @@ absl::Status FuseShortConvStep(::ml_drift::ir::IrModel* model) {
     int hidden_size = total_c / 3;
     if (hidden_size % 4 != 0) continue;
 
-    int32_t conv_l_cache = DetermineIrConvLCache(
-        model->tensor(conv_state_tid), slice_state_node);
+    // conv_state and next_state are channels-last BHWC(1, 1, L - 1, H), and
+    // the window BHWC(1, 1, L, H) concatenates them with B * x along W.
+    const auto* conv_state_tensor = model->tensor(conv_state_tid);
+    const auto* next_state_tensor = model->tensor(next_state_tid);
+    const auto* win_tensor = model->tensor(win_tid);
+    if (!conv_state_tensor || !next_state_tensor || !win_tensor) continue;
+    const ::ml_drift::BHWC state_shape = conv_state_tensor->desc.GetBHWCShape();
+    const int32_t conv_l_cache =
+        ChannelsLastConvLCache(state_shape, hidden_size);
+    // The fused pattern is matched for 3-tap convolution filters.
     if (conv_l_cache != 3) continue;
+    const ::ml_drift::BHWC channels_last_weight_shape(1, 1, conv_l_cache,
+                                                      hidden_size);
+    if (next_state_tensor->desc.GetBHWCShape() != state_shape ||
+        win_tensor->desc.GetBHWCShape() != channels_last_weight_shape) {
+      continue;
+    }
 
+    // The conv weight multiplies the window elementwise, so it is the
+    // channels-last BHWC(1, 1, L, H) the kernel reads.
     if (!weight_data.empty()) {
-      if (weight_shape.w != hidden_size && weight_shape.b != hidden_size) {
-        if (weight_data.size() == hidden_size * conv_l_cache) {
-          weight_shape = ::ml_drift::BHWC(1, 1, hidden_size, conv_l_cache);
-        } else {
-          continue;
-        }
+      if (weight_shape != channels_last_weight_shape ||
+          weight_data.size() !=
+              static_cast<size_t>(conv_l_cache * hidden_size)) {
+        continue;
       }
     } else if (conv_weight_tid != 0) {
-      auto* w_prod = model->FindProducer(conv_weight_tid);
-      if (w_prod &&
-          (w_prod->name == "constant" ||
-           w_prod->name == ToString(::ml_drift::OperationType::kConstant))) {
-        if (w_prod->attr.type() ==
-            typeid(::ml_drift::ConstTensorAttributes)) {
-          const auto& c_attr =
-              std::any_cast<const ::ml_drift::ConstTensorAttributes&>(
-                  w_prod->attr);
-          if (auto* t_f32 =
-                  std::get_if<::ml_drift::TensorFloat32>(&c_attr.tensor)) {
-            weight_data = t_f32->data;
-            weight_shape = ::ml_drift::BHWC(1, 1, hidden_size, conv_l_cache);
-          } else if (auto* t_f16 = std::get_if<::ml_drift::TensorFloat16>(
-                         &c_attr.tensor)) {
-            weight_data.resize(t_f16->data.size());
-            for (size_t i = 0; i < t_f16->data.size(); ++i) {
-              weight_data[i] = static_cast<float>(t_f16->data[i]);
-            }
-            weight_shape = ::ml_drift::BHWC(1, 1, hidden_size, conv_l_cache);
-          }
-        }
+      const auto* weight_tensor = model->tensor(conv_weight_tid);
+      if (!weight_tensor ||
+          weight_tensor->desc.GetBHWCShape() != channels_last_weight_shape) {
+        continue;
       }
+    } else {
+      continue;
     }
+    weight_shape = channels_last_weight_shape;
 
     ::ml_drift::ir::IrTensorId curr_conv_out =
         PeelForward(model, reduce_sum_op->outputs[0], &intermediate_ops);
