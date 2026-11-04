@@ -31,7 +31,6 @@
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/syrtis/environment.h"  // from @ml_drift
-#include "ml_drift/syrtis/vulkan_wrapper.h"  // from @ml_drift
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
@@ -62,34 +61,6 @@ absl::Mutex g_vulkan_env_mutex(absl::kConstInit);
 litert::ml_drift::SharedVulkanEnv* g_vulkan_env = nullptr;
 int g_vulkan_env_ref_count = 0;
 
-std::unique_ptr<litert::ml_drift::SharedVulkanEnv> CreateSharedVulkanEnv() {
-  if (ml_drift::syrtis::InitVulkan() == 0) {
-    ABSL_LOG(ERROR) << "Failed to locate Vulkan library.";
-    return nullptr;
-  }
-
-  auto env = std::make_unique<litert::ml_drift::SharedVulkanEnv>();
-  if (auto status = ml_drift::syrtis::CreateEnvironment(&env->vulkan_env());
-      !status.ok()) {
-    ABSL_LOG(ERROR) << "Failed to create Vulkan environment: " << status;
-    return nullptr;
-  }
-
-  const VkCommandPoolCreateInfo command_pool_create_info = {
-      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-      .queueFamilyIndex = env->vulkan_env().GetQueue().QueueFamilyIndex()};
-  if (auto result = ml_drift::syrtis::vkCreateCommandPool(
-          env->vulkan_env().GetDevice(), &command_pool_create_info, nullptr,
-          &env->command_pool());
-      result != VK_SUCCESS) {
-    ABSL_LOG(ERROR) << "Failed to create Vulkan command pool: " << result;
-    return nullptr;
-  }
-
-  ABSL_LOG(INFO) << "Created a Vulkan environment.";
-  return env;
-}
-
 void DestroySharedVulkanEnv(void* vulkan_env) {
   {
     absl::MutexLock lock(g_vulkan_env_mutex);
@@ -117,7 +88,7 @@ GetSingletonSharedVulkanEnv(LiteRtEnvironment env,
   {
     absl::MutexLock lock(g_vulkan_env_mutex);
     if (g_vulkan_env == nullptr) {
-      g_vulkan_env = CreateSharedVulkanEnv().release();
+      g_vulkan_env = litert::ml_drift::SharedVulkanEnv::Create().release();
       if (!g_vulkan_env) {
         return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                   "Failed to create Vulkan environment");
