@@ -821,6 +821,11 @@ TEST(TensorBuffer, Vulkan) {
                                       sizeof(kTensorData), &tensor_buffer),
       kLiteRtStatusOk);
 
+  HwMemoryHandle vk_memory_handle = nullptr;
+  ASSERT_EQ(LiteRtGetTensorBufferVulkanMemory(tensor_buffer, &vk_memory_handle),
+            kLiteRtStatusOk);
+  EXPECT_NE(vk_memory_handle, nullptr);
+
   LiteRtTensorBufferType buffer_type;
   ASSERT_EQ(LiteRtGetTensorBufferType(tensor_buffer, &buffer_type),
             kLiteRtStatusOk);
@@ -849,17 +854,14 @@ TEST(TensorBuffer, Vulkan) {
             kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
-  LITERT_ASSERT_OK(vk_env.SubmitCommandBuffer(/*wait_for_completion=*/true));
 
   ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
                                    kLiteRtTensorBufferLockModeRead),
             kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
-  LITERT_ASSERT_OK(vk_env.SubmitCommandBuffer(/*wait_for_completion=*/true));
 
   ASSERT_EQ(LiteRtClearTensorBuffer(tensor_buffer), kLiteRtStatusOk);
-  LITERT_ASSERT_OK(vk_env.SubmitCommandBuffer(/*wait_for_completion=*/true));
 
   ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr,
                                    kLiteRtTensorBufferLockModeRead),
@@ -867,7 +869,6 @@ TEST(TensorBuffer, Vulkan) {
   std::vector<uint8_t> zero_data(sizeof(kTensorData), 0);
   ASSERT_EQ(std::memcmp(host_mem_addr, zero_data.data(), zero_data.size()), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
-  LITERT_ASSERT_OK(vk_env.SubmitCommandBuffer(/*wait_for_completion=*/true));
 
   LiteRtDestroyTensorBuffer(tensor_buffer);
   LiteRtDestroyEnvironment(env);

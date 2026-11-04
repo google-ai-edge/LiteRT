@@ -1065,12 +1065,15 @@ cc_library(
         "//tflite/core/c:private_common",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/synchronization",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/syrtis:environment",
+        "@ml_drift//ml_drift/syrtis:queue",
+        "@ml_drift//ml_drift/syrtis:vulkan_device",
         "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
     ],
 )
@@ -1123,14 +1126,10 @@ cc_library(
     deps = [
         ":buffer_handler_utils",
         ":shared_vulkan_env",
-        "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_environment_header",
-        "//litert/c:litert_environment_options_header",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:tensor_buffer_lockstate",
         "@com_google_absl//absl/cleanup",
@@ -1274,6 +1273,44 @@ objc_library(
 #     ],
 # )
 # copybara:uncomment_end(google-only)
+
+cc_test(
+    name = "delegate_vulkan_test",
+    srcs = ["delegate_vulkan_test.cc"],
+    tags = [
+        "requires-gpu-sm90-full",  # Vulkan/WebGPU: no driver on MIG
+    ],
+    deps = [
+        ":delegate_options",
+        ":delegate_vulkan",
+        ":precision",
+        ":shared_vulkan_env",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/debugging:leak_check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/types:span",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/syrtis:environment",
+        "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options",
+        "//litert/c/internal:litert_runtime_context_header",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:litert_gpu_options",
+        "//litert/runtime/accelerators/gpu:ml_drift_vulkan_accelerator",  # buildcleaner: keep
+        "//tflite:version",
+        "//tflite/schema:schema_fbs",
+        # copybara:uncomment "//third_party/vulkan_loader",
+    ],
+)
 
 cc_test(
     name = "task_executor_test",
