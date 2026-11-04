@@ -33,7 +33,7 @@ jobs:
       run_build: ${{ steps.check.outputs.run_build }}
     steps:
       - if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.0
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           predicate-quantifier: 'some-with-excludes'
@@ -166,8 +166,23 @@ jobs:
 
           $shortRoot = "C:\t"
           $tempDir = "$shortRoot\_tmp"
+          $homeDir = "$shortRoot\_home"
+          $gitConfigDir = "$homeDir\.config\git"
           $buildDir = "$shortRoot\b_win_arm64"
-          New-Item -ItemType Directory -Force -Path $tempDir, $buildDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $tempDir, $gitConfigDir, $buildDir | Out-Null
+          $gitIgnoreFile = "$gitConfigDir\ignore"
+          $gitAttrFile = "$gitConfigDir\attributes"
+          New-Item -ItemType File -Force -Path $gitIgnoreFile, $gitAttrFile | Out-Null
+          $gitConfigText = @(
+            "[core]",
+            "	excludesFile = C:/t/_home/.config/git/ignore",
+            "	attributesFile = C:/t/_home/.config/git/attributes"
+          )
+          Set-Content -LiteralPath "$homeDir\.gitconfig" -Value $gitConfigText -Encoding ASCII
+          Set-Content -LiteralPath "$gitConfigDir\config" -Value $gitConfigText -Encoding ASCII
+          echo "HOME=$homeDir" >> "$env:GITHUB_ENV"
+          echo "XDG_CONFIG_HOME=C:/t/_home/.config" >> "$env:GITHUB_ENV"
+          echo "GIT_CONFIG_GLOBAL=C:/t/_home/.gitconfig" >> "$env:GITHUB_ENV"
           echo "TMP=$tempDir" >> "$env:GITHUB_ENV"
           echo "TEMP=$tempDir" >> "$env:GITHUB_ENV"
           echo "LITERT_BUILD_DIR=$buildDir" >> "$env:GITHUB_ENV"
@@ -186,10 +201,10 @@ jobs:
 
       - name: Restore and save host flatc cache
         id: flatc-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         env:
           windir: ""
-          PATH: "C:/Program Files/Git/usr/bin;C:/Windows/System32;C:/Windows"
+          PATH: "C:/Program Files/Git/usr/bin;C:/tools/msys64/usr/bin;C:/Windows/System32;C:/Windows"
         with:
           path: host_flatc_build
           key: ${{ steps.cache-keys.outputs.FLATC_CACHE_KEY }}
@@ -207,10 +222,20 @@ jobs:
           set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
           FetchContent_MakeAvailable(flatbuffers)
           "@
-          Set-Content -Path "host_flatc_build\CMakeLists.txt" -Value $cmakeContent -Encoding UTF8
+          Set-Content -Path "host_flatc_build\CMakeLists.txt" -Value $cmakeContent -Encoding ASCII
           $vcvars = Join-Path $env:VS_INSTALL_PATH "VC\Auxiliary\Build\vcvarsall.bat"
-          $cmd = "`"$vcvars`" amd64 && cmake -G Ninja -S host_flatc_build -B host_flatc_build -DCMAKE_BUILD_TYPE=Release && cmake --build host_flatc_build --target flatc --parallel $env:CMAKE_BUILD_PARALLEL_LEVEL"
-          cmd.exe /d /c $cmd
+          $flatcScript = Join-Path $env:TEMP "build_host_flatc.cmd"
+          $flatcLines = @(
+            "@echo off",
+            "call `"$vcvars`" amd64 || exit /b 1",
+            "set `"HOME=C:\t\_home`"",
+            "set `"XDG_CONFIG_HOME=C:/t/_home/.config`"",
+            "set `"GIT_CONFIG_GLOBAL=C:/t/_home/.gitconfig`"",
+            "cmake -G Ninja -S host_flatc_build -B host_flatc_build -DCMAKE_BUILD_TYPE=Release || exit /b 1",
+            "cmake --build host_flatc_build --target flatc --parallel $env:CMAKE_BUILD_PARALLEL_LEVEL || exit /b 1"
+          )
+          Set-Content -LiteralPath $flatcScript -Value $flatcLines -Encoding ASCII
+          & cmd.exe /d /c $flatcScript | Write-Output
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to build host flatc.exe"
           }
@@ -220,10 +245,10 @@ jobs:
 
       - name: Restore and save QAIRT headers cache
         id: qairt-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.0
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         env:
           windir: ""
-          PATH: "C:/Program Files/Git/usr/bin;C:/Windows/System32;C:/Windows"
+          PATH: "C:/Program Files/Git/usr/bin;C:/tools/msys64/usr/bin;C:/Windows/System32;C:/Windows"
         with:
           path: qairt_headers
           key: ${{ steps.cache-keys.outputs.QAIRT_CACHE_KEY }}
@@ -231,50 +256,54 @@ jobs:
       - name: Extract QAIRT headers
         if: steps.qairt-cache.outputs.cache-hit != 'true'
         run: |
-          @'
-          import os
-          import pathlib
-          import re
-          import shutil
-          import urllib.request
-          import zipfile
+          $cmakeText = Get-Content -LiteralPath "litert/vendors/CMakeLists.txt" -Raw
+          if ($cmakeText -notmatch 'set\(QAIRT_HEADERS_URL\s+"([^"]+)"\)') {
+            throw "Could not find QAIRT_HEADERS_URL in litert/vendors/CMakeLists.txt"
+          }
+          $url = $Matches[1]
+          $tmpZip = Join-Path $env:TEMP "qairt_sdk.zip"
+          $outDir = Join-Path $PWD "qairt_headers\include\QNN"
+          if (Test-Path -LiteralPath $outDir) {
+            Remove-Item -LiteralPath $outDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
-          cmake_text = pathlib.Path("litert/vendors/CMakeLists.txt").read_text(encoding="utf-8")
-          match = re.search(r'set\(QAIRT_HEADERS_URL\s+"([^"]+)"\)', cmake_text)
-          if not match:
-              raise RuntimeError("Could not find QAIRT_HEADERS_URL in litert/vendors/CMakeLists.txt")
-          url = match.group(1)
-          tmp_zip = pathlib.Path(os.environ.get("TEMP", ".")) / "qairt_sdk.zip"
-          out_dir = pathlib.Path("qairt_headers/include/QNN")
-          if out_dir.exists():
-              shutil.rmtree(out_dir)
-          out_dir.mkdir(parents=True, exist_ok=True)
-
-          print(f"Downloading QAIRT SDK archive from {url} ...")
-          urllib.request.urlretrieve(url, tmp_zip)
-          try:
-              marker = "/include/QNN/"
-              extracted = 0
-              with zipfile.ZipFile(tmp_zip, "r") as zf:
-                  for member in zf.infolist():
-                      if member.is_dir() or marker not in member.filename:
-                          continue
-                      rel_path = member.filename.split(marker, 1)[1]
-                      if not rel_path:
-                          continue
-                      dest = out_dir / rel_path
-                      dest.parent.mkdir(parents=True, exist_ok=True)
-                      with zf.open(member) as src, open(dest, "wb") as dst:
-                          shutil.copyfileobj(src, dst)
-                      extracted += 1
-              if extracted == 0 or not (out_dir / "QnnCommon.h").is_file():
-                  raise RuntimeError(f"Failed to extract QNN headers (extracted={extracted})")
-              print(f"Extracted {extracted} QNN header files into {out_dir}")
-          finally:
-              tmp_zip.unlink(missing_ok=True)
-          '@ | python -
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to extract QAIRT headers"
+          Write-Host "Downloading QAIRT SDK archive from $url ..."
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri $url -OutFile $tmpZip -MaximumRetryCount 3 -RetryIntervalSec 5
+          try {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($tmpZip)
+            try {
+              $marker = "/include/QNN/"
+              $extracted = 0
+              foreach ($entry in $zip.Entries) {
+                $entryName = $entry.FullName.Replace('\', '/')
+                if ($entryName.EndsWith('/') -or (-not $entryName.Contains($marker))) {
+                  continue
+                }
+                $idx = $entryName.IndexOf($marker)
+                $relPath = $entryName.Substring($idx + $marker.Length)
+                if (-not $relPath) {
+                  continue
+                }
+                $dest = Join-Path $outDir ($relPath.Replace('/', '\'))
+                $destDir = Split-Path -Parent $dest
+                if (-not (Test-Path -LiteralPath $destDir)) {
+                  New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+                }
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $dest, $true)
+                $extracted++
+              }
+              if ($extracted -eq 0 -or (-not (Test-Path -LiteralPath (Join-Path $outDir "QnnCommon.h")))) {
+                throw "Failed to extract QNN headers (extracted=$extracted)"
+              }
+              Write-Host "Extracted $extracted QNN header files into $outDir"
+            } finally {
+              $zip.Dispose()
+            }
+          } finally {
+            Remove-Item -LiteralPath $tmpZip -Force -ErrorAction SilentlyContinue
           }
 
       - name: Cross-build LiteRT for Windows ARM64
@@ -283,15 +312,22 @@ jobs:
           $hostToolsDir = (Resolve-Path "host_flatc_build\_deps\flatbuffers-build").Path.Replace('\', '/')
           $qairtHeadersDir = (Resolve-Path "qairt_headers\include\QNN").Path.Replace('\', '/')
           $buildDir = $env:LITERT_BUILD_DIR.Replace('\', '/')
+          $litertSrcDir = Join-Path $PWD "litert"
+          $buildScript = Join-Path $env:TEMP "build_win_arm64.cmd"
 
-          $cmd = @(
-            "`"$vcvars`" amd64_arm64",
-            "cd /d `"$PWD\litert`"",
-            "cmake --preset windows-arm64 -B `"$buildDir`" -DTFLITE_HOST_TOOLS_DIR=`"$hostToolsDir`" -DQAIRT_HEADERS_DIR=`"$qairtHeadersDir`"",
-            "cmake --build `"$buildDir`" --target litert_runtime_c_api_shared_lib dispatch_api_qualcomm_so qnn_compiler_plugin run_model apply_plugin_main -j $env:CMAKE_BUILD_PARALLEL_LEVEL"
-          ) -join " && "
+          $scriptLines = @(
+            "@echo off",
+            "call `"$vcvars`" amd64_arm64 || exit /b 1",
+            "set `"HOME=C:\t\_home`"",
+            "set `"XDG_CONFIG_HOME=C:/t/_home/.config`"",
+            "set `"GIT_CONFIG_GLOBAL=C:/t/_home/.gitconfig`"",
+            "cd /d `"$litertSrcDir`" || exit /b 1",
+            "cmake --preset windows-arm64 -B `"$buildDir`" -DTFLITE_HOST_TOOLS_DIR=`"$hostToolsDir`" -DCMAKE_HOST_EXECUTABLE_SUFFIX=.exe -DQAIRT_HEADERS_DIR=`"$qairtHeadersDir`" || exit /b 1",
+            "cmake --build `"$buildDir`" --target litert_runtime_c_api_shared_lib dispatch_api_qualcomm_so qnn_compiler_plugin run_model apply_plugin_main -j $env:CMAKE_BUILD_PARALLEL_LEVEL || exit /b 1"
+          )
+          Set-Content -LiteralPath $buildScript -Value $scriptLines -Encoding ASCII
 
-          cmd.exe /d /c $cmd
+          & cmd.exe /d /c $buildScript | Write-Output
           if ($LASTEXITCODE -ne 0) {
             throw "Windows ARM64 CMake build failed with exit code $LASTEXITCODE"
           }

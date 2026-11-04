@@ -152,6 +152,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows"
   endforeach()
 endif()
 
+if(NOT DEFINED CMAKE_HOST_EXECUTABLE_SUFFIX)
+  if(CMAKE_HOST_WIN32)
+    set(CMAKE_HOST_EXECUTABLE_SUFFIX ".exe")
+  else()
+    set(CMAKE_HOST_EXECUTABLE_SUFFIX "")
+  endif()
+endif()
+
 if(CMAKE_CROSSCOMPILING)
   # Build or reuse a host flatc for cross compilation.
   if(NOT TFLITE_HOST_TOOLS_DIR)
