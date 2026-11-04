@@ -114,6 +114,7 @@ target_sources(builder_test
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/conv2d_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/detection_postprocess_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/depthwise_conv2d_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/detection_postprocess_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/elementwise_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/embedding_lookup_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/fully_connected_test.cc
