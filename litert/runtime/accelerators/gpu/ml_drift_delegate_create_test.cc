@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -77,6 +78,7 @@ struct CapturedDelegateOptions {
   bool captured = false;
   bool serialize_program_cache = false;
   bool madvise_original_shared_tensors = false;
+  std::string preferred_device_substr;
 };
 
 CapturedDelegateOptions captured_delegate_options;
@@ -91,6 +93,7 @@ litert::TfLiteDelegatePtr CreateCapturingGpuDelegate(
       .serialize_program_cache = options->serialize_program_cache,
       .madvise_original_shared_tensors =
           options->madvise_original_shared_tensors,
+      .preferred_device_substr = options->preferred_device_substr,
   };
   litert::TfLiteDelegatePtr delegate(new TfLiteDelegate(TfLiteDelegateCreate()),
                                      LiteRtDeleteMockGpuDelegate);
@@ -250,6 +253,32 @@ TEST(MlDriftDelegateCreateTest, ExplicitlyDisabledOptionsOverrideDefaults) {
   ASSERT_TRUE(captured_delegate_options.captured);
   EXPECT_FALSE(captured_delegate_options.serialize_program_cache);
   EXPECT_FALSE(captured_delegate_options.madvise_original_shared_tensors);
+
+  LiteRtDestroyAccelerator(accelerator);
+}
+
+TEST(MlDriftDelegateCreateTest, PreferredDeviceSubstrIsForwarded) {
+  LiteRtAccelerator accelerator;
+  ASSERT_EQ(LiteRtCreateAccelerator(&accelerator), kLiteRtStatusOk);
+
+  LrtGpuOptions* gpu_options_payload = nullptr;
+  ASSERT_EQ(LrtCreateGpuOptions(&gpu_options_payload), kLiteRtStatusOk);
+  ASSERT_EQ(LrtSetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(
+                gpu_options_payload, "NVIDIA"),
+            kLiteRtStatusOk);
+
+  auto gpu_delegate_options = std::make_unique<MlDriftDelegateOptions>();
+  captured_delegate_options = {};
+  litert::TfLiteDelegatePtr delegate_ptr{nullptr, nullptr};
+  LiteRtRuntimeContext* runtime_context = LrtGetRuntimeContext();
+  ASSERT_EQ(litert::ml_drift::CreateDelegate(
+                runtime_context, nullptr, accelerator, gpu_options_payload,
+                std::move(gpu_delegate_options), CreateCapturingGpuDelegate,
+                delegate_ptr),
+            kLiteRtStatusOk);
+
+  ASSERT_TRUE(captured_delegate_options.captured);
+  EXPECT_EQ(captured_delegate_options.preferred_device_substr, "NVIDIA");
 
   LiteRtDestroyAccelerator(accelerator);
 }

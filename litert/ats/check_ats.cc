@@ -36,10 +36,12 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
@@ -69,6 +71,26 @@ Expected<AtsConf> CpuInferenceOptions() {
   absl::FlagSaver saver;
   absl::SetFlag(&FLAGS_backend, "cpu");
   return AtsConf::ParseFlagsAndDoSetup();
+}
+
+Expected<void> CheckGpuInferenceOptions() {
+  absl::FlagSaver saver;
+  absl::SetFlag(&FLAGS_backend, "gpu");
+  absl::SetFlag(&FLAGS_preferred_device_substr, "NVIDIA");
+  LITERT_ASSIGN_OR_RETURN(auto gpu_conf, AtsConf::ParseFlagsAndDoSetup());
+  LITERT_ENSURE(gpu_conf.IsGpu(), Error(kLiteRtStatusErrorRuntimeFailure),
+                "Expected GPU backend.");
+  LITERT_ASSIGN_OR_RETURN(
+      const auto& gpu_opts,
+      const_cast<Options&>(gpu_conf.TargetOptions()).GetGpuOptions());
+  const char* substr = nullptr;
+  LITERT_RETURN_IF_ERROR(
+      LrtGetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr(&substr,
+                                                              gpu_opts.Get()));
+  LITERT_ENSURE(substr != nullptr && absl::string_view(substr) == "NVIDIA",
+                Error(kLiteRtStatusErrorRuntimeFailure),
+                "Unexpected preferred_device_substr.");
+  return {};
 }
 
 Expected<AtsConf> CompileOptions(absl::string_view models_out) {
@@ -153,6 +175,7 @@ Expected<void> CheckExtraModelBoundedInputs() {
 
 Expected<void> CheckAts() {
   LITERT_RETURN_IF_ERROR(CheckExtraModelBoundedInputs());
+  LITERT_RETURN_IF_ERROR(CheckGpuInferenceOptions());
 
   absl::SetFlag(&FLAGS_extra_models, {GetLiteRtPath("test/testdata/")});
 
