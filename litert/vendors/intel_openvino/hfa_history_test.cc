@@ -19,11 +19,23 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <memory>
+#include <string>
 #include <type_traits>
+#include <unordered_set>
 
 #include <gtest/gtest.h>
+#include "openvino/core/model.hpp"
 #include "openvino/core/type/bfloat16.hpp"
 #include "openvino/core/type/float16.hpp"
+#include "openvino/op/assign.hpp"
+#include "openvino/op/constant.hpp"
+#include "openvino/op/parameter.hpp"
+#include "openvino/op/read_value.hpp"
+#include "openvino/op/relu.hpp"
+#include "openvino/op/result.hpp"
+#include "openvino/op/util/variable.hpp"
+#include "openvino/runtime/core.hpp"
 #include "openvino/runtime/tensor.hpp"
 
 namespace litert {
@@ -133,6 +145,77 @@ TEST(HfaHistoryTest, RejectsUnsupportedMasks) {
           .HasValue());
   EXPECT_TRUE(CheckHistoryMask(ov::element::f16, ov::Shape{1, 1, 1024, 17408})
                   .HasValue());
+}
+
+// A CPU model with a [1, 1, q, past + q] mask input, tagged as the HFA
+// history mask when |tagged|, and, when |state_name| is not empty, an i64 [1]
+// variable of that name, which the CPU plugin exposes as a VariableState the
+// way NPUW exposes npuw_history_size.
+ov::CompiledModel CompileMaskModel(size_t q, size_t past, bool tagged,
+                                   const std::string& state_name) {
+  auto mask = std::make_shared<ov::op::v0::Parameter>(
+      ov::element::f32, ov::Shape{1, 1, q, past + q});
+  mask->output(0).get_tensor().set_names(
+      tagged ? std::unordered_set<std::string>{"mask",
+                                               kHfaHistoryMaskTensorName}
+             : std::unordered_set<std::string>{"mask"});
+  ov::ResultVector results{std::make_shared<ov::op::v0::Result>(
+      std::make_shared<ov::op::v0::Relu>(mask))};
+  ov::SinkVector sinks;
+  if (!state_name.empty()) {
+    auto variable = std::make_shared<ov::op::util::Variable>(
+        ov::op::util::VariableInfo{ov::PartialShape{1}, ov::element::i64,
+                                   state_name});
+    auto read = std::make_shared<ov::op::v6::ReadValue>(
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {0}),
+        variable);
+    sinks.push_back(std::make_shared<ov::op::v6::Assign>(read, variable));
+    results.push_back(std::make_shared<ov::op::v0::Result>(read));
+  }
+  auto model = std::make_shared<ov::Model>(results, sinks,
+                                           ov::ParameterVector{mask}, "mask");
+  return ov::Core().compile_model(model, "CPU");
+}
+
+int64_t StateValue(ov::InferRequest& request, const std::string& name) {
+  for (auto& state : request.query_state()) {
+    if (state.get_name() == name) return state.get_state().data<int64_t>()[0];
+  }
+  ADD_FAILURE() << "no state " << name;
+  return -1;
+}
+
+TEST(HfaHistoryReporterTest, WritesHistoryOfBoundMaskToState) {
+  auto compiled = CompileMaskModel(4, 8, /*tagged=*/true,
+                                   kNpuwHistorySizeStateName);
+  auto request = compiled.create_infer_request();
+  auto reporter = HfaHistoryReporter::Find(compiled, request, "prefill");
+  ASSERT_TRUE(reporter.has_value());
+
+  for (const size_t history : {0, 5, 8}) {
+    request.set_input_tensor(0, MakeMask(4, 8, Causal(8, history)));
+    auto reported = reporter->Update(request);
+    ASSERT_TRUE(reported.HasValue()) << reported.Error().Message();
+    EXPECT_EQ(*reported, static_cast<int64_t>(history));
+    EXPECT_EQ(StateValue(request, kNpuwHistorySizeStateName),
+              static_cast<int64_t>(history));
+  }
+}
+
+TEST(HfaHistoryReporterTest, FindsNothingWithoutTagOrState) {
+  // No tag: not a graph enable_hfa decomposed.
+  auto untagged = CompileMaskModel(4, 8, /*tagged=*/false,
+                                   kNpuwHistorySizeStateName);
+  auto untagged_request = untagged.create_infer_request();
+  EXPECT_FALSE(
+      HfaHistoryReporter::Find(untagged, untagged_request, "decode"));
+
+  // A plugin without the npuw_history_size state (e.g. before
+  // openvinotoolkit/openvino#39050).
+  auto stateless = CompileMaskModel(4, 8, /*tagged=*/true, "other_state");
+  auto stateless_request = stateless.create_infer_request();
+  EXPECT_FALSE(
+      HfaHistoryReporter::Find(stateless, stateless_request, "prefill"));
 }
 
 }  // namespace

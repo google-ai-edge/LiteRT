@@ -20,10 +20,13 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <optional>
 #include <string>
+#include <utility>
 
 #include "openvino/core/type/bfloat16.hpp"
 #include "openvino/core/type/float16.hpp"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 
@@ -114,6 +117,77 @@ Expected<int64_t> HistorySizeFromMask(const ov::Tensor& mask) {
   } catch (const std::exception& e) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       std::string("HFA history mask is not readable: ") +
+                          e.what());
+  }
+}
+
+std::optional<HfaHistoryReporter> HfaHistoryReporter::Find(
+    const ov::CompiledModel& compiled_model, ov::InferRequest& infer_request,
+    const std::string& graph_name) {
+  const auto inputs = compiled_model.inputs();
+  const auto mask = std::find_if(
+      inputs.begin(), inputs.end(), [](const ov::Output<const ov::Node>& in) {
+        return in.get_names().count(kHfaHistoryMaskTensorName) > 0;
+      });
+  if (mask == inputs.end()) return std::nullopt;
+  const size_t index = static_cast<size_t>(mask - inputs.begin());
+  if (mask->get_partial_shape().is_dynamic()) {
+    LITERT_LOG(LITERT_WARNING,
+               "HFA: '%s' input %zu has a dynamic shape, not reporting the "
+               "history to NPUW",
+               graph_name.c_str(), index);
+    return std::nullopt;
+  }
+  if (auto valid =
+          CheckHistoryMask(mask->get_element_type(), mask->get_shape());
+      !valid.HasValue()) {
+    LITERT_LOG(LITERT_WARNING,
+               "HFA: '%s' input %zu, not reporting the history to NPUW: %s",
+               graph_name.c_str(), index, valid.Error().Message().c_str());
+    return std::nullopt;
+  }
+  try {
+    for (auto& state : infer_request.query_state()) {
+      if (state.get_name() == kNpuwHistorySizeStateName) {
+        LITERT_LOG(LITERT_INFO,
+                   "HFA: '%s' reports the history to NPUW, read from input "
+                   "%zu %s",
+                   graph_name.c_str(), index,
+                   mask->get_shape().to_string().c_str());
+        return HfaHistoryReporter(index, std::move(state));
+      }
+    }
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_WARNING, "HFA: '%s' query_state() failed: %s",
+               graph_name.c_str(), e.what());
+    return std::nullopt;
+  }
+  LITERT_LOG(LITERT_WARNING,
+             "HFA: '%s' has an HFA history mask, but the OpenVINO plugin does "
+             "not expose the %s state",
+             graph_name.c_str(), kNpuwHistorySizeStateName);
+  return std::nullopt;
+}
+
+HfaHistoryReporter::HfaHistoryReporter(size_t mask_input_index,
+                                       ov::VariableState state)
+    : mask_input_index_(mask_input_index),
+      state_(std::move(state)),
+      value_(ov::element::i64, ov::Shape{1}) {}
+
+Expected<int64_t> HfaHistoryReporter::Update(ov::InferRequest& infer_request) {
+  try {
+    auto history =
+        HistorySizeFromMask(infer_request.get_input_tensor(mask_input_index_));
+    if (!history.HasValue()) return history;
+    value_.data<int64_t>()[0] = *history;
+    state_.set_state(value_);
+    LITERT_LOG(LITERT_DEBUG, "HFA: history %lld",
+               static_cast<long long>(*history));
+    return history;
+  } catch (const std::exception& e) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      std::string("Failed to set the HFA history: ") +
                           e.what());
   }
 }
