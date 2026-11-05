@@ -2446,10 +2446,7 @@ TEST(SerializationTest, CanSerializeBlockwiseQuantization) {
               .buffer = buffer_data,
               .quantization = quantization});
 
-  TensorTf c = Dequantize(a);
-  c.SetName("dequantized_output");
-
-  ASSERT_THAT(Save({c}, model_path), IsOk());
+  ASSERT_THAT(Save({a}, model_path), IsOk());
 
   auto model = tflite::FlatBufferModel::BuildFromFile(model_path.c_str());
   ASSERT_NE(model, nullptr);
@@ -2458,10 +2455,12 @@ TEST(SerializationTest, CanSerializeBlockwiseQuantization) {
   ASSERT_EQ(model_fb->subgraphs()->size(), 1);
   const tflite::SubGraph* subgraph = model_fb->subgraphs()->Get(0);
 
+  int weight_tensor_idx = -1;
   const tflite::Tensor* weight_tensor = nullptr;
   for (int i = 0; i < subgraph->tensors()->size(); ++i) {
     auto t = subgraph->tensors()->Get(i);
     if (t->name() && t->name()->str() == "quantized_weights") {
+      weight_tensor_idx = i;
       weight_tensor = t;
       break;
     }
@@ -2500,6 +2499,19 @@ TEST(SerializationTest, CanSerializeBlockwiseQuantization) {
   ASSERT_EQ(tflite::InterpreterBuilder(*model, resolver)(&interpreter),
             kTfLiteOk);
   ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+
+  const TfLiteTensor* weight_tensor_tflite =
+      interpreter->tensor(weight_tensor_idx);
+  ASSERT_NE(weight_tensor_tflite, nullptr);
+  EXPECT_EQ(weight_tensor_tflite->quantization.type,
+            kTfLiteBlockwiseQuantization);
+  const auto* bwq_tflite = reinterpret_cast<const TfLiteBlockwiseQuantization*>(
+      weight_tensor_tflite->quantization.params);
+  ASSERT_NE(bwq_tflite, nullptr);
+  EXPECT_EQ(bwq_tflite->scale, scale_tensor_idx);
+  EXPECT_EQ(bwq_tflite->zero_point, zero_point_tensor_idx);
+  EXPECT_EQ(bwq_tflite->blocksize, block_size);
+  EXPECT_EQ(bwq_tflite->quantized_dimension, quantized_dimension);
 
   const TfLiteTensor* scale_tensor_tflite =
       interpreter->tensor(scale_tensor_idx);
