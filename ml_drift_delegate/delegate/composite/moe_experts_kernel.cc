@@ -27,7 +27,6 @@
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder_moe_util.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
-#include "ml_drift/common/kernels/special/experts_remap.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
@@ -306,25 +305,11 @@ absl::Status BuildMoeExpertsGpuGraph(
                             linear_shared_scale, hidden_dim, model_dim));
 
   if (use_packed_groups) {
-    const ::ml_drift::BHWC shape = expert_outputs.tensor_desc.GetBHWCShape();
-    auto remapped_dst = model_builder->AddTensor(
-        ::ml_drift::BHWC(shape.b, num_active_experts,
-                         shape.w / num_active_experts, shape.c),
-        expert_outputs.tensor_desc.GetDataType());
-    auto remap_from = ::ml_drift::CreateExpertsRemapFromOp(
-        expert_outputs.tensor_desc, experts_packed_remap.tensor_desc,
-        remapped_dst.tensor_desc);
-    // `CreateExpertsRemapFromOp` computes its grid from `src[0]` (`[S * AE, 1,
-    // D/4]`) via a `GPUOperation` subclass override while setting
-    // `kWBToX_HDToY_SToZ`. Program-cache deserialization drops the subclass and
-    // recomputes non-`kCustom` grids from `dst[0]` (`[S, AE, D/4]`), so mark
-    // the grid `kCustom` to keep the `src[0]` grid stored before serialization.
-    remap_from->tensor_to_grid_ = ::ml_drift::TensorToGrid::kCustom;
-    model_builder->AddGpuOperation({expert_outputs, experts_packed_remap},
-                                   {remapped_dst}, std::move(remap_from),
-                                   "experts_remap_from");
     expert_outputs =
-        model_builder->Transpose(remapped_dst, ::ml_drift::BHWC(0, 2, 1, 3));
+        ::ml_drift::ExpertsRemapFrom(*model_builder, expert_outputs,
+                                     experts_packed_remap, num_active_experts);
+    expert_outputs =
+        model_builder->Transpose(expert_outputs, ::ml_drift::BHWC(0, 2, 1, 3));
   } else {
     expert_outputs = model_builder->Reshape(
         expert_outputs,
