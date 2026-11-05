@@ -362,6 +362,18 @@ struct MlDriftDelegateOptions {
   // If true, forces host pointer I/O buffer allocation regardless of GPU
   // architecture (used for testing and CI validation on heterogeneous devices).
   bool force_host_ptr_io_buffers = false;
+
+  // OpenCL only.
+  //
+  // If true (default), batches multi-tensor non-external input pack and output
+  // unpack layout conversions into reusable OpenCL command buffers when the
+  // device and driver support them.
+  bool enable_convert_command_buffer = true;
+
+  // If true, forces batched command buffer layout conversion even when the
+  // device/driver allowlist check would otherwise disable it (used for testing
+  // and validation).
+  bool force_convert_command_buffer = false;
 };
 
 namespace litert::ml_drift {

@@ -78,6 +78,10 @@ class GpuIOBuffer;
 class GpuTensorWrapper;
 class Tensor2BufferConverter;
 class Buffer2TensorConverter;
+struct InputPackItem;
+class GpuPackBatch;
+struct OutputUnpackItem;
+class GpuUnpackBatch;
 
 // Backend-specific memory handles. The actual type is determined by the
 // backend, for example, cl_mem for OpenCL backend.
@@ -386,6 +390,26 @@ class GpuBackend {
   // [OPTIONAL] Only when backend supports memory management.
   virtual absl::StatusOr<uint64_t>
   GetSizeOfMemoryAllocatedForConstantTensors() const = 0;
+
+  // Checks if the backend supports pre-recording layout converter kernels into
+  // a command buffer.
+  virtual bool SupportsConvertCommandBuffer() const { return false; }
+
+  // Forces converter command buffer creation regardless of GPU architecture
+  // (used for automated testing and CI coverage across heterogeneous devices).
+  virtual void SetForceConvertCommandBuffer(bool force) {}
+
+  // Pre-records or batches multiple input pack conversions to minimize
+  // CPU enqueue overhead and avoid driver bubbles between pack kernels.
+  // Returns nullptr if batching is not supported by the backend or empty.
+  virtual absl::StatusOr<std::unique_ptr<GpuPackBatch>> CreatePackBatch(
+      absl::Span<const InputPackItem> items);
+
+  // Pre-records or batches multiple output unpack conversions to minimize
+  // CPU enqueue overhead and avoid driver bubbles between unpack kernels.
+  // Returns nullptr if batching is not supported by the backend or empty.
+  virtual absl::StatusOr<std::unique_ptr<GpuUnpackBatch>> CreateUnpackBatch(
+      absl::Span<const OutputUnpackItem> items);
 };
 
 // Inference context of a GPU backend initialized with a GPU model. It's a
@@ -621,6 +645,44 @@ class Buffer2TensorConverter {
   virtual absl::Status Convert(GpuIOBuffer& src_buffer,
                                ::ml_drift::GpuSpatialTensor& dst_tensor) = 0;
 };
+
+// Binding description for an input pack conversion.
+struct InputPackItem {
+  Buffer2TensorConverter* converter = nullptr;
+  GpuIOBuffer* src_buffer = nullptr;
+  ::ml_drift::GpuSpatialTensor* dst_tensor = nullptr;
+};
+
+// Batched / pre-recorded input pack execution.
+class GpuPackBatch {
+ public:
+  virtual ~GpuPackBatch() = default;
+  virtual absl::Status Dispatch() = 0;
+};
+
+inline absl::StatusOr<std::unique_ptr<GpuPackBatch>>
+GpuBackend::CreatePackBatch(absl::Span<const InputPackItem> items) {
+  return nullptr;
+}
+
+// Binding description for an output unpack conversion.
+struct OutputUnpackItem {
+  Tensor2BufferConverter* converter = nullptr;
+  ::ml_drift::GpuSpatialTensor* src_tensor = nullptr;
+  GpuIOBuffer* dst_buffer = nullptr;
+};
+
+// Batched / pre-recorded output unpack execution.
+class GpuUnpackBatch {
+ public:
+  virtual ~GpuUnpackBatch() = default;
+  virtual absl::Status Dispatch() = 0;
+};
+
+inline absl::StatusOr<std::unique_ptr<GpuUnpackBatch>>
+GpuBackend::CreateUnpackBatch(absl::Span<const OutputUnpackItem> items) {
+  return nullptr;
+}
 
 }  // namespace litert::ml_drift
 

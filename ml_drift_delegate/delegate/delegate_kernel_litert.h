@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_KERNEL_LITERT_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_KERNEL_LITERT_H_
 
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -240,6 +241,20 @@ class DelegateKernelLiteRt : public DelegateKernel {
   // Returns true if the tensor buffer is an AHardwareBuffer.
   bool IsAhwbTensorBuffer(const GpuTensorBufferPtr& tensor_buffer) const;
 
+  // Returns true if convert command buffers should be used.
+  bool IsConvertCommandBufferSupported() const;
+
+  template <typename BatchT, typename ItemT, typename ConverterT,
+            typename CreateBatchFn, typename MakeItemFn, typename ConvertItemFn>
+  absl::Status ConvertNonExternalTensors(
+      TfLiteContext* context, bool is_input,
+      const std::vector<int64_t>& indices,
+      const std::vector<::ml_drift::ValueId>& ids,
+      const std::vector<std::unique_ptr<ConverterT>>& converters,
+      std::vector<GpuMemoryHandle>& bound_memories,
+      std::unique_ptr<BatchT>& batch, CreateBatchFn create_batch,
+      MakeItemFn make_item, ConvertItemFn convert_item);
+
   // Tensor descriptors for I/O tensors.
   // The size and order of these vectors should be the same as input_indices_
   // and output_indices_ of the base class.
@@ -254,6 +269,14 @@ class DelegateKernelLiteRt : public DelegateKernel {
   // NoExternalTensorsMode.
   std::vector<std::unique_ptr<Buffer2TensorConverter>> input_converters_;
   std::vector<std::unique_ptr<Tensor2BufferConverter>> output_converters_;
+
+  // Command buffer batching for input pack converters.
+  std::vector<GpuMemoryHandle> bound_input_memories_;
+  std::unique_ptr<GpuPackBatch> pack_batch_;
+
+  // Command buffer batching for output unpack converters.
+  std::vector<GpuMemoryHandle> bound_output_memories_;
+  std::unique_ptr<GpuUnpackBatch> unpack_batch_;
 
   // Set of tensors that need to be flushed from the cache and buffer context
   // during `FlushBufferCacheIfNeeded`.

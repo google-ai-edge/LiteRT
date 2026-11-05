@@ -154,12 +154,24 @@ class GpuBackendOpenCl : public GpuBackend {
     return memory_manager_.GetConstantTensorsSize();
   }
 
+  bool SupportsConvertCommandBuffer() const override;
+  void SetForceConvertCommandBuffer(bool force) override {
+    force_convert_command_buffer_ = force;
+  }
+
+  absl::StatusOr<std::unique_ptr<GpuPackBatch>> CreatePackBatch(
+      absl::Span<const InputPackItem> items) override;
+
+  absl::StatusOr<std::unique_ptr<GpuUnpackBatch>> CreateUnpackBatch(
+      absl::Span<const OutputUnpackItem> items) override;
+
   // Underlying OpenCL environment.
   ::ml_drift::cl::Environment* cl_env() const { return env_; }
 
   ::ml_drift::cl::MemoryManager& memory_manager() { return memory_manager_; }
 
  private:
+  bool force_convert_command_buffer_ = false;
   std::unique_ptr<::ml_drift::cl::Environment> env_owned_;
   ::ml_drift::cl::Environment* const env_;
   ::ml_drift::cl::MemoryManager memory_manager_;
@@ -314,6 +326,10 @@ class Tensor2BufferConverterOpenCl : public Tensor2BufferConverter {
   absl::Status Convert(::ml_drift::GpuSpatialTensor& src_tensor,
                        GpuIOBuffer& dst_buffer) override;
 
+  absl::Status AddToCommandBuffer(::ml_drift::cl::CommandBuffer* cb,
+                                  ::ml_drift::GpuSpatialTensor& src_tensor,
+                                  GpuIOBuffer& dst_buffer);
+
  private:
   ::ml_drift::cl::Environment* const env_;
   const std::unique_ptr<::ml_drift::cl::TensorToBHWCBufferConverter> converter_;
@@ -329,6 +345,10 @@ class Buffer2TensorConverterOpenCl : public Buffer2TensorConverter {
   // Implementation of Buffer2TensorConverter.
   absl::Status Convert(GpuIOBuffer& src_buffer,
                        ::ml_drift::GpuSpatialTensor& dst_tensor) override;
+
+  absl::Status AddToCommandBuffer(::ml_drift::cl::CommandBuffer* cb,
+                                  GpuIOBuffer& src_buffer,
+                                  ::ml_drift::GpuSpatialTensor& dst_tensor);
 
  private:
   ::ml_drift::cl::Environment* const env_;
