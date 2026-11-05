@@ -78,8 +78,7 @@ LiteRtStatus ParseNamedShapeEntry(absl::string_view raw,
   absl::string_view shape_spec;
   if (first_at != last_at) {
     entry->signature_key = std::string(raw.substr(0, first_at));
-    entry->name =
-        std::string(raw.substr(first_at + 1, last_at - first_at - 1));
+    entry->name = std::string(raw.substr(first_at + 1, last_at - first_at - 1));
     shape_spec = raw.substr(last_at + 1);
   } else {
     entry->name = std::string(raw.substr(0, first_at));
@@ -89,6 +88,36 @@ LiteRtStatus ParseNamedShapeEntry(absl::string_view raw,
     return kLiteRtStatusErrorInvalidArgument;
   }
   return ParseDimsSpec(shape_spec, &entry->dims);
+}
+
+LiteRtStatus ParseShapeSpecializationEntry(
+    absl::string_view raw,
+    LiteRtCompilerOptionsShapeSpecializationEntry* entry) {
+  // Format: "<source_key>@<new_key>@<input_name>@<d0>:<d1>:...". Signature
+  // keys may not contain '@'; `input_name` may, so split the first two '@'
+  // from the left and the shape spec on the last '@'.
+  const size_t first_at = raw.find('@');
+  if (first_at == absl::string_view::npos) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const size_t second_at = raw.find('@', first_at + 1);
+  const size_t last_at = raw.rfind('@');
+  if (second_at == absl::string_view::npos || last_at <= second_at) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  entry->source_signature_key = std::string(raw.substr(0, first_at));
+  entry->new_signature_key =
+      std::string(raw.substr(first_at + 1, second_at - first_at - 1));
+  entry->input_name =
+      std::string(raw.substr(second_at + 1, last_at - second_at - 1));
+  if (entry->new_signature_key.empty() || entry->input_name.empty()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(ParseDimsSpec(raw.substr(last_at + 1), &entry->dims));
+  for (int32_t d : entry->dims) {
+    if (d <= 0) return kLiteRtStatusErrorInvalidArgument;
+  }
+  return kLiteRtStatusOk;
 }
 
 }  // namespace
@@ -128,6 +157,13 @@ LiteRtStatus ParseLiteRtCompilerOptions(const void* data, size_t size,
             LiteRtCompilerOptionsInputShapeEntry entry;
             LITERT_RETURN_IF_ERROR(ParseNamedShapeEntry(item, &entry));
             options->signature_input_shapes.push_back(std::move(entry));
+          }
+        } else if (key == "shape_specializations") {
+          LITERT_ASSIGN_OR_RETURN(auto arr, ParseTomlStringArray(value));
+          for (const auto& item : arr) {
+            LiteRtCompilerOptionsShapeSpecializationEntry entry;
+            LITERT_RETURN_IF_ERROR(ParseShapeSpecializationEntry(item, &entry));
+            options->shape_specializations.push_back(std::move(entry));
           }
         }
         return kLiteRtStatusOk;

@@ -35,6 +35,7 @@ struct LrtCompilerOptions {
   std::vector<std::string> positional_input_shapes;
   std::vector<std::string> tensor_input_shapes;
   std::vector<std::string> signature_input_shapes;
+  std::vector<std::string> shape_specializations;
 };
 
 namespace {
@@ -104,6 +105,10 @@ LiteRtStatus LrtGetOpaqueCompilerOptionsData(const LrtCompilerOptions* options,
   if (!options->signature_input_shapes.empty()) {
     LITERT_RETURN_IF_ERROR(encoder.EncodeStringArray(
         "signature_input_shapes", options->signature_input_shapes));
+  }
+  if (!options->shape_specializations.empty()) {
+    LITERT_RETURN_IF_ERROR(encoder.EncodeStringArray(
+        "shape_specializations", options->shape_specializations));
   }
 
   *identifier = LrtGetCompilerOptionsIdentifier();
@@ -220,5 +225,30 @@ LiteRtStatus LrtAddCompilerOptionsSignatureInputShape(
   }
   options->signature_input_shapes.push_back(
       absl::StrCat(sig, "@", name, "@", FormatDims(dims, rank)));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtAddCompilerOptionsShapeSpecializationInputShape(
+    LrtCompilerOptions* options, const char* source_signature_key,
+    const char* new_signature_key, const char* input_name, const int32_t* dims,
+    size_t rank) {
+  if (!options || !new_signature_key || new_signature_key[0] == '\0' ||
+      !input_name || input_name[0] == '\0' || (rank > 0 && !dims)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const absl::string_view src =
+      source_signature_key ? source_signature_key : "";
+  const absl::string_view dst(new_signature_key);
+  const absl::string_view name(input_name);
+  if (HasInvalidTomlChars(src) || absl::StrContains(src, '@') ||
+      HasInvalidTomlChars(dst) || absl::StrContains(dst, '@') ||
+      HasInvalidTomlChars(name)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  for (size_t i = 0; i < rank; ++i) {
+    if (dims[i] <= 0) return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->shape_specializations.push_back(
+      absl::StrCat(src, "@", dst, "@", name, "@", FormatDims(dims, rank)));
   return kLiteRtStatusOk;
 }
