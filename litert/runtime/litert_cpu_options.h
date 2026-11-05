@@ -34,6 +34,8 @@ struct LiteRtYnnpackOptionsT {
   bool consistent_arithmetic = false;
   // Whether to avoid using excess precision in floating-point calculations.
   bool no_excess_precision = false;
+  // Comma-separated list of allowed op names.
+  std::string allowed_ops;
 };
 
 // Internal LiteRt CPU options struct. This data structure is used to

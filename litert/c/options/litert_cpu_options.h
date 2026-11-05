@@ -74,6 +74,14 @@ LiteRtStatus LrtSetCpuOptionsEnableYNNPack(LrtCpuOptions* options,
 LiteRtStatus LrtGetCpuOptionsEnableYNNPack(const LrtCpuOptions* options,
                                            bool* enable_ynnpack);
 
+// Sets allowed ops for YNNPACK delegate (comma-separated list).
+LiteRtStatus LrtSetCpuOptionsYNNPackAllowedOps(LrtCpuOptions* options,
+                                               const char* allowed_ops);
+
+// Gets allowed ops for YNNPACK delegate.
+LiteRtStatus LrtGetCpuOptionsYNNPackAllowedOps(const LrtCpuOptions* options,
+                                               const char** allowed_ops);
+
 // Sets the number of CPU threads used by the CPU accelerator.
 LiteRtStatus LrtSetCpuOptionsNumThread(LrtCpuOptions* options, int num_threads);
 
