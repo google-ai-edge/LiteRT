@@ -198,9 +198,13 @@ YNNPACK_DONT_REGISTER = [
 ]
 
 BUILTIN_MODELS_DONT_REGISTER = [
+    "hf_mbart_large_50",  # TODO(b/576864700): OOMs on 8 GB devices prior to executor lifetime fix.
 ]
 
 YNNPACK_FALLBACK_MODELS_DONT_REGISTER = [
+    "hf_mbart_large_50",  # TODO(b/576864700): OOMs on 8 GB devices prior to executor lifetime fix.
+    "torchvision_video_resnet3d_18",  # TODO(b/576864700): Reference Conv3D fallback (~10m) causes target timeout.
+    "torchvision_video_resnetmc3_18",  # TODO(b/576864700): Reference Conv3D fallback (~12m) causes target timeout.
 ]
 
 GPU_MODELS_DONT_REGISTER = [
