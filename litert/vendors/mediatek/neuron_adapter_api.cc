@@ -134,11 +134,16 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
   }
   so_paths.push_back(absl::StrCat(sdk_path, "/", kLibNeuronAdapterLib));
 #else
-  (void)sdk_version;
-  so_paths.push_back("libneuron_adapter_mgvi.so");
+  // Check if user options request a specific version of usdk.
+  if (sdk_version == kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9) {
+    so_paths.push_back("libneuronusdk_adapter.9.mtk.so");
+  }
+
+  // User-installed usdk.
+  so_paths.push_back("libneuronusdk_adapter.so");
 
   // Add preinstalled libraries for system partition applications.
-  // Check if the device need to use higher version of usdk.
+  // Check if the device needs to use higher version of usdk.
   auto magic_number = GetNeuroPilotMagicNumber();
   if (magic_number && magic_number.Value() >= kMinMagicNumberForNP10) {
     so_paths.push_back("libneuronusdk_adapter.10.mtk.so");
@@ -146,11 +151,11 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
              magic_number.Value() >= kMinMagicNumberForNeuronService) {
     so_paths.push_back("libneuronusdk_adapter.9.mtk.so");
   } else {
+    so_paths.push_back("libneuronusdk_adapter.8.mtk.so");
     so_paths.push_back("libneuronusdk_adapter.mtk.so");
   }
 
-  // User-installed usdk
-  so_paths.push_back("libneuronusdk_adapter.so");
+  so_paths.push_back("libneuron_adapter_mgvi.so");
 
   // Some platforms have non-usdk non-mgvi build
   so_paths.push_back(kLibNeuronAdapterLib);
