@@ -18,9 +18,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "openvino/core/type/element_type.hpp"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -28,7 +30,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/compiler/cc/litert_model.h"
-#include "litert/vendors/intel_openvino/compiler/i2_u2_convert.h"
+#include "litert/vendors/intel_openvino/compiler/encoded_weights_store.h"
 #include "litert/vendors/intel_openvino/utils.h"
 
 namespace litert {
@@ -118,13 +120,20 @@ bool fill_tensor_meta(
 void GraphIteratorDelegate::ConvertI2WeightsToU2(
     const litert::compiler::Tensor& tensor,
     ov::frontend::tensorflow_lite::TensorMetaInfo& tensor_meta_info) const {
-  // The byte rewrite and zero-point offset are defined in i2_u2_convert.h,
-  // shared with WeightBank so the NPU shared pool holds exactly these bytes.
   constexpr int64_t zp_offset = kI2ToU2ZeroPointOffset;
 
-  auto& buf = converted_weight_buffers_.emplace_back(
-      ConvertI2BytesToU2(tensor.Weights().Bytes()));
-  tensor_meta_info.m_tensor_data = buf.data();
+  std::optional<absl::Span<const uint8_t>> shared;
+  if (encoded_weights_) {
+    shared = encoded_weights_->GetOrEncode(tensor, WeightEncoding::kI2ToU2);
+  }
+  if (shared) {
+    tensor_meta_info.m_tensor_data = shared->data();
+  } else {
+    auto& buf = converted_weight_buffers_.emplace_back(
+        EncodedWeightStore::Encode(WeightEncoding::kI2ToU2,
+                                   tensor.Weights().Bytes()));
+    tensor_meta_info.m_tensor_data = buf.data();
+  }
   tensor_meta_info.m_element_type = ov::element::u2;
 
   auto adjusted_qi =

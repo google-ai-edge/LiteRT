@@ -26,14 +26,12 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
-#include "litert/c/litert_model_types.h"
 #include "litert/compiler/cc/litert_model.h"
-#include "litert/vendors/intel_openvino/compiler/i2_u2_convert.h"
+#include "litert/vendors/intel_openvino/compiler/encoded_weights_store.h"
 
 namespace litert::openvino {
 
-void WeightBank::AddSubgraph(const litert::compiler::Subgraph& subgraph,
-                             bool convert_i2_to_u2) {
+void WeightBank::AddSubgraph(const litert::compiler::Subgraph& subgraph) {
   for (const auto& op : subgraph.Ops()) {
     for (const auto& input : op.Inputs()) {
       if (!input.HasWeights()) {
@@ -50,23 +48,15 @@ void WeightBank::AddSubgraph(const litert::compiler::Subgraph& subgraph,
       if (buffer_id < 0) {
         continue;
       }
-      // Mirrors GraphIteratorDelegate::get_decoder(): only quantized int2
-      // weights are rewritten to u2 on the NPU/CPU path.
-      const bool needs_u2 =
-          convert_i2_to_u2 &&
-          static_cast<LiteRtElementType>(input.ElementType()) ==
-              kLiteRtElementTypeInt2 &&
-          input.QTypeId() != kLiteRtQuantizationNone;
-      if (needs_u2) {
-        if (converted_ids_.insert(buffer_id).second) {
-          auto& converted = converted_buffers_.emplace_back(
-              ConvertI2BytesToU2(weights.Bytes()));
-          buffer_bytes_[buffer_id] = absl::MakeConstSpan(converted);
+      absl::Span<const uint8_t> bytes = weights.Bytes();
+      if (encoded_weights_) {
+        if (auto encoding = EncodedWeightStore::EncodingFor(input)) {
+          if (auto encoded = encoded_weights_->GetOrEncode(input, *encoding)) {
+            bytes = *encoded;
+          }
         }
-      } else if (!converted_ids_.count(buffer_id)) {
-        // Never overwrite an already-converted buffer with its raw bytes.
-        buffer_bytes_[buffer_id] = weights.Bytes();
       }
+      buffer_bytes_[buffer_id] = bytes;
       // Record this tensor's name so the matching OpenVINO weight (which takes
       // the tensor name as its friendly_name) can be resolved back to its
       // buffer. Distinct names sharing a buffer all point at the same id.
