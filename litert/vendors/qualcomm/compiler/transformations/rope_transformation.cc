@@ -35,8 +35,8 @@
 #include "litert/compiler/cc/litert_matchers.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/compiler/cc/litert_op_options.h"
+#include "litert/compiler/cc/transformation_utils.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
-#include "litert/vendors/qualcomm/compiler/transformations/transformation_utils.h"
 
 namespace {
 
@@ -46,6 +46,7 @@ using litert::Expected;
 using litert::Layout;
 using litert::RankedTensorType;
 using litert::compiler::AddOptions;
+using litert::compiler::BuildConcat;
 using litert::compiler::Builder;
 using litert::compiler::ConcatenationOptions;
 using litert::compiler::GetOptionsAs;
@@ -67,7 +68,6 @@ using litert::compiler::Op;
 using litert::compiler::RankedTensorSpecBuilder;
 using litert::compiler::SubOptions;
 using litert::compiler::Tensor;
-using litert::qnn::BuildConcat;
 
 std::vector<int32_t> Dims(const Tensor& t) {
   auto type = t.RankedTensorType();
