@@ -285,6 +285,18 @@ class Builder {
     return {};
   }
 
+  /// @brief Replaces the tensor at input_index of op with new_tensor,
+  /// updating use-def chains on both tensors.
+  Expected<void> SetOpInput(const Op& op, LiteRtParamIndex input_index,
+                            const Tensor& new_tensor) const {
+    if (!ctx_->set_op_input) {
+      return Unexpected(kLiteRtStatusErrorUnsupported);
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx_->set_op_input(builder_, op.Get(), input_index, new_tensor.Get()));
+    return {};
+  }
+
   // --- Extended API ---
 
   /// @brief Create an Op with the given code, inputs, and output types.

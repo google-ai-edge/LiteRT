@@ -765,7 +765,7 @@ TEST(TestQnnPlugin, TransformationsEnableAll) {
   LiteRtParamIndex num_transformations = 0;
   LITERT_ASSERT_OK(plugin.Api()->register_all_transformations(
       plugin.Get(), &transformations, &num_transformations));
-  EXPECT_EQ(num_transformations, 8);
+  EXPECT_EQ(num_transformations, 9);
 }
 
 TEST(TestQnnPlugin, TransformationsEnableLegalizeTransforms) {
@@ -823,7 +823,7 @@ TEST(TestQnnPlugin, TransformationsSelectiveEnableAndDisable) {
   auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
   ASSERT_TRUE(qnn_opts);
   qnn_opts->SetGraphTransform(
-      "experimental_all,-rope,-mlp_quant,-attention_chunk");
+      "experimental_all,-rope,-mlp_quant,-attention_chunk,-fold_const_dequantize");
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(
