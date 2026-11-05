@@ -112,32 +112,6 @@ Tensor<Mixins...> GetWeight(
       {.name = std::move(name), .type = type, .shape = shape});
 }
 
-// Returns the `KvCache` for `layer_idx`, or `std::nullopt` if either cache is
-// uninitialized or zero-length.
-template <class... Mixins>
-std::optional<KvCache<Mixins...>> LayerKvCache(
-    const std::vector<Tensor<Mixins...>>& key_caches,
-    const std::vector<Tensor<Mixins...>>& value_caches, size_t layer_idx,
-    std::optional<Tensor<Mixins...>> cache_params = std::nullopt,
-    std::optional<int> local_cache_size = std::nullopt) {
-  auto valid = [](const std::vector<Tensor<Mixins...>>& caches, size_t idx) {
-    if (idx >= caches.size() || !caches[idx].GetStatus().ok()) {
-      return false;
-    }
-    const Shape& shape = caches[idx].GetShape();
-    return shape.size() == 4 && shape[2] > 0;
-  };
-  if (!valid(key_caches, layer_idx) || !valid(value_caches, layer_idx)) {
-    return std::nullopt;
-  }
-  return KvCache<Mixins...>{
-      .k = key_caches[layer_idx],
-      .v = value_caches[layer_idx],
-      .params = std::move(cache_params),
-      .local_cache_size = local_cache_size,
-  };
-}
-
 template <class... Mixins>
 TransformerBlockWeights<Mixins...> BuildGemma3BlockWeights(
     const absl::flat_hash_map<std::string, Tensor<Mixins...>>& weights,
