@@ -47,6 +47,28 @@ class CastIntegerSignToFloat : public ov::pass::MatcherPass {
   CastIntegerSignToFloat();
 };
 
+// Rewrites one-hot table lookups of the form
+//   OneHot(..., on=1, off=0, axis=-1) -> [Convert] -> [Select(cond, {0|NaN})]
+//     -> [Convert] -> [Reshape] -> MatMul(..., table)
+// into a Gather over a [depth, D] lookup table:
+//   in_bounds = (0 <= indices) && (indices < depth)
+//   safe_idx  = Select(in_bounds, indices, 0)
+//   rows      = Gather(table_2d, safe_idx, axis=0)
+//   masked    = Select(Unsqueeze(in_bounds, -1), rows, 0)
+// followed by any matched row-level Select (for example, NaN propagation on
+// out-of-range non-padding indices) and leading-dimension Reshape (emitted by
+// TFLite FULLY_CONNECTED when `keep_num_dims` is false).
+//
+// Models exported for cross-backend TFLite compatibility often express
+// coordinate or token table lookups as `ONE_HOT` + `FULLY_CONNECTED`, which
+// otherwise materializes a `[..., depth]` intermediate tensor and executes a
+// dense `MatMul` on the NPU.
+class FoldOneHotMatMulToGather : public ov::pass::MatcherPass {
+ public:
+  OPENVINO_MATCHER_PASS_RTTI("FoldOneHotMatMulToGather");
+  FoldOneHotMatMulToGather();
+};
+
 // Fuses the "split-attention" sub-graph produced by some Gemma-style models
 // (attention computed separately against the persistent KV cache and the
 // current step's KV, merged via Concat) into a single
@@ -192,6 +214,15 @@ class NpuOptimizer {
     return *this;
   }
 
+  // Toggles the FoldOneHotMatMulToGather pass. Enabled by default because
+  // folding `OneHot + MatMul` into `Gather` is an exact algebraic equivalence
+  // that avoids materializing `[..., depth]` one-hot tensors on the NPU;
+  // override via config key "fold_one_hot_matmul_to_gather" = "false".
+  NpuOptimizer& SetFoldOneHotMatMulToGather(bool enable) {
+    fold_one_hot_matmul_to_gather_ = enable;
+    return *this;
+  }
+
   // Toggles the FuseSplitAttentionToSDPA pass. Disabled by default; enable
   // via config key "fuse_split_attention_to_sdpa" = "true" to collapse the
   // Gemma-style split-attention pattern into a single SDPA op.
@@ -240,6 +271,7 @@ class NpuOptimizer {
   bool constant_fold_ = false;
   bool eliminate_matmul_fq_ = false;
   bool cast_integer_sign_to_float_ = true;
+  bool fold_one_hot_matmul_to_gather_ = true;
   bool fuse_split_attention_to_sdpa_ = false;
   bool sdpa_pad_kv_to_alignment_ = true;
   bool enable_moe_gather_ = false;

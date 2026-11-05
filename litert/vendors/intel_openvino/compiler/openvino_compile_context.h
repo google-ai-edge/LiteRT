@@ -95,6 +95,7 @@ class OpenVinoCompileContext {
   std::string device_ = "NPU";
   ov::AnyMap configs_map_;
   bool eliminate_fq_after_matmul_ = false;
+  bool fold_one_hot_matmul_to_gather_ = true;
   bool fuse_split_attention_to_sdpa_ = false;
 
   // Enables MoEGatherRewrite: turns Gemma4's dense masked MoE into gather-based

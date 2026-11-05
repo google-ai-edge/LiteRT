@@ -19,8 +19,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <numeric>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -35,20 +37,29 @@
 #include "openvino/op/equal.hpp"
 #include "openvino/op/gather.hpp"
 #include "openvino/op/gelu.hpp"
+#include "openvino/op/greater_eq.hpp"
+#include "openvino/op/less.hpp"
+#include "openvino/op/logical_and.hpp"
+#include "openvino/op/logical_or.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
+#include "openvino/op/not_equal.hpp"
+#include "openvino/op/one_hot.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/reduce_sum.hpp"
 #include "openvino/op/reshape.hpp"
 #include "openvino/op/result.hpp"
 #include "openvino/op/scaled_dot_product_attention.hpp"
+#include "openvino/op/select.hpp"
 #include "openvino/op/slice.hpp"
 #include "openvino/op/softmax.hpp"
 #include "openvino/op/topk.hpp"
+#include "openvino/op/unsqueeze.hpp"
 #include "openvino/pass/manager.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
+#include "litert/vendors/intel_openvino/compiler/weight_bank_attributes.h"
 
 namespace litert {
 namespace openvino {
@@ -935,6 +946,346 @@ TEST(UnfoldGqaSequenceFoldTest, LeavesNonReplicatedMaskAlone) {
 
   EXPECT_EQ(CountOps<ov::op::v0::Concat>(model), 1u);
   EXPECT_EQ(CountOps<ov::op::v3::Broadcast>(model), 0u);
+}
+
+// Evaluates a primitive OpenVINO model directly via built-in `Node::evaluate`
+// reference kernels without loading a runtime plugin DSO.
+ov::Tensor EvaluateOneHotModel(const std::shared_ptr<ov::Model>& model,
+                               const ov::TensorVector& inputs) {
+  ov::TensorVector outputs;
+  for (const auto& out : model->outputs()) {
+    outputs.emplace_back(out.get_element_type(), out.get_shape());
+  }
+  EXPECT_TRUE(model->evaluate(outputs, inputs));
+  return outputs.at(0);
+}
+
+// Builds the TFLite FULLY_CONNECTED (`keep_num_dims = false`, `transpose_b =
+// true`) lowering of a 2-axis one-hot coordinate lookup:
+//   coord [1, S] -> OneHot [1, S, depth] -> [Select(nan_mask, NaN, one_hot)]
+//     -> Reshape [-1, depth] -> MatMul(W [D, depth], transpose_b=true)
+//     -> Reshape [1, 1, S, D]
+// summed across X and Y branches.
+std::shared_ptr<ov::Model> BuildTwoAxisOneHotLookupModel(
+    int64_t seq_len, int64_t depth, int64_t emb_dim, bool with_nan_select) {
+  using ov::op::v0::Concat;
+  using ov::op::v0::Constant;
+  using ov::op::v0::MatMul;
+  using ov::op::v0::Parameter;
+  using ov::op::v0::Unsqueeze;
+  using ov::op::v1::GreaterEqual;
+  using ov::op::v1::Less;
+  using ov::op::v1::LogicalAnd;
+  using ov::op::v1::LogicalOr;
+  using ov::op::v1::NotEqual;
+  using ov::op::v1::OneHot;
+  using ov::op::v1::ReduceSum;
+  using ov::op::v1::Reshape;
+  using ov::op::v1::Select;
+
+  auto coord_x = std::make_shared<Parameter>(
+      ov::element::i32, ov::Shape{1, static_cast<size_t>(seq_len)});
+  auto coord_y = std::make_shared<Parameter>(
+      ov::element::i32, ov::Shape{1, static_cast<size_t>(seq_len)});
+
+  auto build_branch = [&](const std::shared_ptr<Parameter>& coord,
+                          const std::string& weight_name,
+                          float scale) -> ov::Output<ov::Node> {
+    auto depth_c = Constant::create(ov::element::i32, ov::Shape{}, {depth});
+    auto on_c = Constant::create(ov::element::f32, ov::Shape{}, {1.0f});
+    auto off_c = Constant::create(ov::element::f32, ov::Shape{}, {0.0f});
+    ov::Output<ov::Node> cur =
+        std::make_shared<OneHot>(coord, depth_c, on_c, off_c, /*axis=*/-1)
+            ->output(0);
+
+    if (with_nan_select) {
+      auto zero_i32 = Constant::create(ov::element::i32, ov::Shape{}, {0});
+      auto neg1_i32 = Constant::create(ov::element::i32, ov::Shape{}, {-1});
+      auto lt_zero = std::make_shared<Less>(coord, zero_i32);
+      auto ge_depth = std::make_shared<GreaterEqual>(coord, depth_c);
+      auto oob = std::make_shared<LogicalOr>(lt_zero, ge_depth);
+      auto not_pad = std::make_shared<NotEqual>(coord, neg1_i32);
+      auto is_nan = std::make_shared<LogicalAnd>(oob, not_pad);
+      auto unsq_axis = Constant::create(ov::element::i64, ov::Shape{1}, {-1});
+      auto nan_mask = std::make_shared<Unsqueeze>(is_nan, unsq_axis);
+      auto nan_fill = Constant::create(
+          ov::element::f32, ov::Shape{},
+          {std::numeric_limits<float>::quiet_NaN()});
+      cur = std::make_shared<Select>(nan_mask, nan_fill, cur)->output(0);
+    }
+
+    auto fc_flat_shape = Constant::create(
+        ov::element::i64, ov::Shape{2}, std::vector<int64_t>{-1, depth});
+    auto flat_in =
+        std::make_shared<Reshape>(cur, fc_flat_shape, /*special_zero=*/false);
+
+    std::vector<float> weights(static_cast<size_t>(emb_dim) *
+                               static_cast<size_t>(depth));
+    for (int64_t d = 0; d < emb_dim; ++d) {
+      for (int64_t c = 0; c < depth; ++c) {
+        weights[static_cast<size_t>(d) * static_cast<size_t>(depth) +
+                static_cast<size_t>(c)] =
+            scale * static_cast<float>((c + 1) * 10 + d + 1);
+      }
+    }
+    auto w_const = Constant::create(
+        ov::element::f32,
+        ov::Shape{static_cast<size_t>(emb_dim), static_cast<size_t>(depth)},
+        weights);
+    w_const->set_friendly_name(weight_name);
+
+    auto fc_mm = std::make_shared<MatMul>(flat_in, w_const,
+                                          /*transpose_a=*/false,
+                                          /*transpose_b=*/true);
+    auto stack_shape =
+        Constant::create(ov::element::i64, ov::Shape{4},
+                         std::vector<int64_t>{1, 1, seq_len, emb_dim});
+    return std::make_shared<Reshape>(fc_mm, stack_shape,
+                                     /*special_zero=*/false)
+        ->output(0);
+  };
+
+  auto branch_x = build_branch(coord_x, "coord_table_x", 0.1f);
+  auto branch_y = build_branch(coord_y, "coord_table_y", 0.01f);
+  auto stacked = std::make_shared<Concat>(ov::OutputVector{branch_x, branch_y},
+                                          /*axis=*/0);
+  auto sum_axis = Constant::create(ov::element::i64, ov::Shape{1}, {0});
+  auto summed =
+      std::make_shared<ReduceSum>(stacked, sum_axis, /*keep_dims=*/false);
+  return std::make_shared<ov::Model>(
+      ov::ResultVector{std::make_shared<ov::op::v0::Result>(summed)},
+      ov::ParameterVector{coord_x, coord_y}, "two_axis_one_hot_lookup");
+}
+
+TEST(FoldOneHotMatMulToGatherTest,
+     FoldsPlainOneHotFullyConnectedAndTagsGeneratedTable) {
+  auto reference = BuildTwoAxisOneHotLookupModel(
+      /*seq_len=*/6, /*depth=*/8, /*emb_dim=*/4, /*with_nan_select=*/false);
+  auto rewritten = reference->clone();
+
+  ASSERT_EQ(CountOps<ov::op::util::OneHotBase>(rewritten), 2u);
+  ASSERT_EQ(CountOps<ov::op::v0::MatMul>(rewritten), 2u);
+  ASSERT_EQ(CountOps<ov::op::v8::Gather>(rewritten), 0u);
+
+  NpuOptimizer().SetConstantFold(true).Run(rewritten);
+
+  EXPECT_EQ(CountOps<ov::op::util::OneHotBase>(rewritten), 0u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(rewritten), 0u);
+  EXPECT_EQ(CountOps<ov::op::v8::Gather>(rewritten), 2u);
+
+  size_t tagged_gather_tables = 0;
+  for (const auto& node : rewritten->get_ops()) {
+    auto cnst = ov::as_type_ptr<ov::op::v0::Constant>(node);
+    if (!cnst || cnst->get_shape() != (ov::Shape{8, 4})) {
+      continue;
+    }
+    const auto& rt = cnst->get_rt_info();
+    auto it =
+        rt.find(LiteRtGeneratedConstantAttribute::get_type_info_static());
+    ASSERT_NE(it, rt.end()) << cnst->get_friendly_name();
+    EXPECT_EQ(it->second.as<LiteRtGeneratedConstantAttribute>().source_key,
+              cnst->get_friendly_name());
+    ++tagged_gather_tables;
+  }
+  EXPECT_EQ(tagged_gather_tables, 2u);
+
+  // Exercise valid (0, 3, 7), padding (-1), negative (-4), and >= depth (8, 12)
+  // coordinates across both axes.
+  ov::Tensor tx(ov::element::i32, ov::Shape{1, 6});
+  ov::Tensor ty(ov::element::i32, ov::Shape{1, 6});
+  const std::vector<int32_t> x_vals{0, 3, 7, -1, -4, 8};
+  const std::vector<int32_t> y_vals{7, -1, 0, -1, 2, 12};
+  std::copy(x_vals.begin(), x_vals.end(), tx.data<int32_t>());
+  std::copy(y_vals.begin(), y_vals.end(), ty.data<int32_t>());
+
+  const ov::Tensor ref_out = EvaluateOneHotModel(reference, {tx, ty});
+  const ov::Tensor new_out = EvaluateOneHotModel(rewritten, {tx, ty});
+  ASSERT_EQ(ref_out.get_shape(), (ov::Shape{1, 6, 4}));
+  ASSERT_EQ(new_out.get_shape(), ref_out.get_shape());
+
+  const float* ref_data = ref_out.data<float>();
+  const float* new_data = new_out.data<float>();
+  for (size_t i = 0; i < ref_out.get_size(); ++i) {
+    EXPECT_FLOAT_EQ(new_data[i], ref_data[i]) << "mismatch at index " << i;
+  }
+}
+
+TEST(FoldOneHotMatMulToGatherTest,
+     FoldsMaskedOneHotSelectV2AndMatchesReferenceSemantics) {
+  auto reference = BuildTwoAxisOneHotLookupModel(
+      /*seq_len=*/6, /*depth=*/8, /*emb_dim=*/4, /*with_nan_select=*/true);
+  auto rewritten = reference->clone();
+
+  NpuOptimizer().SetConstantFold(true).Run(rewritten);
+
+  EXPECT_EQ(CountOps<ov::op::util::OneHotBase>(rewritten), 0u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(rewritten), 0u);
+  EXPECT_EQ(CountOps<ov::op::v8::Gather>(rewritten), 2u);
+
+  // Token 0: valid (0, 7) -> finite sum
+  // Token 1: single-axis -1 padding (3, -1) -> finite x-only contribution
+  // Token 2: full padding (-1, -1) -> exact 0.0f
+  // Token 3: negative non-padding (-2, 1) -> NaN
+  // Token 4: upper OOB (2, 8) -> NaN
+  // Token 5: valid (7, 4) -> finite sum
+  ov::Tensor tx(ov::element::i32, ov::Shape{1, 6});
+  ov::Tensor ty(ov::element::i32, ov::Shape{1, 6});
+  const std::vector<int32_t> x_vals{0, 3, -1, -2, 2, 7};
+  const std::vector<int32_t> y_vals{7, -1, -1, 1, 8, 4};
+  std::copy(x_vals.begin(), x_vals.end(), tx.data<int32_t>());
+  std::copy(y_vals.begin(), y_vals.end(), ty.data<int32_t>());
+
+  const ov::Tensor ref_out = EvaluateOneHotModel(reference, {tx, ty});
+  const ov::Tensor new_out = EvaluateOneHotModel(rewritten, {tx, ty});
+  ASSERT_EQ(new_out.get_shape(), (ov::Shape{1, 6, 4}));
+
+  const float* ref_data = ref_out.data<float>();
+  const float* new_data = new_out.data<float>();
+  for (size_t i = 0; i < ref_out.get_size(); ++i) {
+    if (std::isnan(ref_data[i])) {
+      EXPECT_TRUE(std::isnan(new_data[i])) << "expected NaN at index " << i;
+    } else {
+      EXPECT_FLOAT_EQ(new_data[i], ref_data[i]) << "mismatch at index " << i;
+    }
+  }
+}
+
+TEST(FoldOneHotMatMulToGatherTest,
+     FoldsUntransposedTableWithConvertAndThenSlotSelect) {
+  using ov::op::v0::Constant;
+  using ov::op::v0::Convert;
+  using ov::op::v0::MatMul;
+  using ov::op::v0::Parameter;
+  using ov::op::v0::Unsqueeze;
+  using ov::op::v1::GreaterEqual;
+  using ov::op::v1::OneHot;
+  using ov::op::v1::Select;
+
+  auto indices = std::make_shared<Parameter>(ov::element::i64, ov::Shape{2, 3});
+  auto table = std::make_shared<Parameter>(ov::element::f32, ov::Shape{5, 4});
+
+  auto depth = Constant::create(ov::element::i32, ov::Shape{}, {5});
+  auto on_val = Constant::create(ov::element::i32, ov::Shape{}, {1});
+  auto off_val = Constant::create(ov::element::i32, ov::Shape{}, {0});
+  auto oh_i32 =
+      std::make_shared<OneHot>(indices, depth, on_val, off_val, /*axis=*/-1);
+  auto oh_f32 = std::make_shared<Convert>(oh_i32, ov::element::f32);
+
+  // Valid-mask Select where `one_hot` is the `then` input (input 1) and `0.0f`
+  // is the `else` input (input 2).
+  auto zero_i64 = Constant::create(ov::element::i64, ov::Shape{}, {0});
+  auto non_neg = std::make_shared<GreaterEqual>(indices, zero_i64);
+  auto unsq_axis = Constant::create(ov::element::i64, ov::Shape{1}, {-1});
+  auto mask = std::make_shared<Unsqueeze>(non_neg, unsq_axis);
+  auto zero_f32 = Constant::create(ov::element::f32, ov::Shape{}, {0.0f});
+  auto masked_oh = std::make_shared<Select>(mask, oh_f32, zero_f32);
+
+  auto mm = std::make_shared<MatMul>(masked_oh, table,
+                                     /*transpose_a=*/false,
+                                     /*transpose_b=*/false);
+  auto reference = std::make_shared<ov::Model>(
+      ov::ResultVector{std::make_shared<ov::op::v0::Result>(mm)},
+      ov::ParameterVector{indices, table}, "untransposed_one_hot_mm");
+  auto rewritten = reference->clone();
+
+  NpuOptimizer().Run(rewritten);
+
+  EXPECT_EQ(CountOps<ov::op::util::OneHotBase>(rewritten), 0u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(rewritten), 0u);
+  EXPECT_EQ(CountOps<ov::op::v8::Gather>(rewritten), 1u);
+
+  ov::Tensor idx_t(ov::element::i64, ov::Shape{2, 3});
+  const std::vector<int64_t> idx_vals{0, 4, -1, 2, 5, -3};
+  std::copy(idx_vals.begin(), idx_vals.end(), idx_t.data<int64_t>());
+  ov::Tensor tbl_t(ov::element::f32, ov::Shape{5, 4});
+  FillRandom(tbl_t, /*seed=*/42);
+
+  const ov::Tensor ref_out = EvaluateOneHotModel(reference, {idx_t, tbl_t});
+  const ov::Tensor new_out = EvaluateOneHotModel(rewritten, {idx_t, tbl_t});
+  ASSERT_EQ(new_out.get_shape(), (ov::Shape{2, 3, 4}));
+  for (size_t i = 0; i < ref_out.get_size(); ++i) {
+    EXPECT_FLOAT_EQ(new_out.data<float>()[i], ref_out.data<float>()[i])
+        << "at " << i;
+  }
+}
+
+TEST(FoldOneHotMatMulToGatherTest, DoesNothingWhenDisabled) {
+  auto model = BuildTwoAxisOneHotLookupModel(
+      /*seq_len=*/4, /*depth=*/6, /*emb_dim=*/3, /*with_nan_select=*/false);
+
+  NpuOptimizer()
+      .SetConstantFold(true)
+      .SetFoldOneHotMatMulToGather(false)
+      .Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::util::OneHotBase>(model), 2u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(model), 2u);
+  EXPECT_EQ(CountOps<ov::op::v8::Gather>(model), 0u);
+}
+
+// Contracting over the token axis (`transpose_a = true`) rather than the
+// OneHot class axis (`weights [B, L, l]^T @ x [B, L, D]`) aggregates multiple
+// input tokens per output bin and is NOT a table lookup. Leave it untouched.
+TEST(FoldOneHotMatMulToGatherTest, LeavesTransposedOneHotAggregationAlone) {
+  using ov::op::v0::Constant;
+  using ov::op::v0::MatMul;
+  using ov::op::v0::Parameter;
+  using ov::op::v1::OneHot;
+
+  auto bin_idxs =
+      std::make_shared<Parameter>(ov::element::i32, ov::Shape{1, 9});
+  auto features =
+      std::make_shared<Parameter>(ov::element::f32, ov::Shape{1, 9, 4});
+  auto num_bins = Constant::create(ov::element::i32, ov::Shape{}, {3});
+  auto on_val = Constant::create(ov::element::f32, ov::Shape{}, {1.0f});
+  auto off_val = Constant::create(ov::element::f32, ov::Shape{}, {0.0f});
+  auto weights = std::make_shared<OneHot>(bin_idxs, num_bins, on_val, off_val,
+                                          /*axis=*/-1);
+  auto pooled = std::make_shared<MatMul>(weights, features,
+                                         /*transpose_a=*/true,
+                                         /*transpose_b=*/false);
+  auto model = std::make_shared<ov::Model>(
+      ov::ResultVector{std::make_shared<ov::op::v0::Result>(pooled)},
+      ov::ParameterVector{bin_idxs, features}, "transposed_one_hot_pooling");
+
+  NpuOptimizer().Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::util::OneHotBase>(model), 1u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(model), 1u);
+  EXPECT_EQ(CountOps<ov::op::v8::Gather>(model), 0u);
+}
+
+// A non-zero finite Select fill `c` computes `[c, ..., c] @ Table =
+// c * sum_rows(Table)`, NOT `[c, ..., c]`, so commuting Select past MatMul
+// would change the result. Leave such graphs untouched.
+TEST(FoldOneHotMatMulToGatherTest, LeavesNonZeroFiniteSelectFillAlone) {
+  using ov::op::v0::Constant;
+  using ov::op::v0::MatMul;
+  using ov::op::v0::Parameter;
+  using ov::op::v1::OneHot;
+  using ov::op::v1::Select;
+
+  auto indices = std::make_shared<Parameter>(ov::element::i32, ov::Shape{1, 4});
+  auto cond =
+      std::make_shared<Parameter>(ov::element::boolean, ov::Shape{1, 4, 1});
+  auto table = std::make_shared<Parameter>(ov::element::f32, ov::Shape{6, 3});
+  auto depth = Constant::create(ov::element::i32, ov::Shape{}, {6});
+  auto on_val = Constant::create(ov::element::f32, ov::Shape{}, {1.0f});
+  auto off_val = Constant::create(ov::element::f32, ov::Shape{}, {0.0f});
+  auto oh =
+      std::make_shared<OneHot>(indices, depth, on_val, off_val, /*axis=*/-1);
+  auto one_fill = Constant::create(ov::element::f32, ov::Shape{}, {1.0f});
+  auto sel = std::make_shared<Select>(cond, one_fill, oh);
+  auto mm = std::make_shared<MatMul>(sel, table, false, false);
+  auto model = std::make_shared<ov::Model>(
+      ov::ResultVector{std::make_shared<ov::op::v0::Result>(mm)},
+      ov::ParameterVector{indices, cond, table}, "non_zero_select_fill");
+
+  NpuOptimizer().Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::util::OneHotBase>(model), 1u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(model), 1u);
+  EXPECT_EQ(CountOps<ov::op::v8::Gather>(model), 0u);
 }
 
 }  // namespace
