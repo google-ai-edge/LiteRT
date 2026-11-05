@@ -47,12 +47,12 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
   static constexpr absl::string_view kGpuAcceleratorLibs[] = {
       "libLiteRtGpuAccelerator" SO_EXT,
 #ifdef __ANDROID__
-#if LITERT_HAS_OPENCL_SUPPORT
-      "libLiteRtClGlAccelerator" SO_EXT,   "libLiteRtOpenClAccelerator" SO_EXT,
-#endif  // LITERT_HAS_OPENCL_SUPPORT
 #if LITERT_HAS_WEBGPU_SUPPORT
       "libLiteRtWebGpuAccelerator" SO_EXT,
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
+#if LITERT_HAS_OPENCL_SUPPORT
+      "libLiteRtClGlAccelerator" SO_EXT,   "libLiteRtOpenClAccelerator" SO_EXT,
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #elif TARGET_OS_IPHONE
 #if LITERT_HAS_METAL_SUPPORT
@@ -148,7 +148,7 @@ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
         break;
       }
       if (registration.Error().Status() == kLiteRtStatusErrorUnsupported) {
-        return kLiteRtStatusErrorUnsupported;
+        continue;
       }
       // Try to load a GPU accelerator using `LiteRtRegisterGpuAccelerator`
       // symbol.
