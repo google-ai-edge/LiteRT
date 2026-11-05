@@ -17,6 +17,7 @@
 import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, cumsum, depthToSpace, depthwiseConv2d, div, elu, embeddingLookup, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gather, gatherNd, gelu, greater, greaterEqual, hardSwish, initFromWasmModule, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, maxPool2d, mean, minimum, mul, neg, nonMaxSuppression, notEqual, oneHot, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, reverse, round, rsqrt, select, sin, slice, softmax, spaceToDepth, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, topK, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
+import {unwrapWasmResult} from './wasm_binding_types';
 
 declare global {
   interface ArrayConstructor {
@@ -284,15 +285,15 @@ describe('LiteRt', () => {
         wasmModule.HEAPU8.set(modelData, ptr);
 
         const environment = liteRt.getDefaultEnvironment();
-        const wasmModel = wasmModule.loadModel(
-            environment.liteRtEnvironment, ptr, modelData.byteLength);
+        const wasmModel = unwrapWasmResult(wasmModule.loadModel(
+            environment.liteRtEnvironment, ptr, modelData.byteLength));
 
         const compileOptions = {};
         const result = wasmModule.compileModel(
             environment.liteRtEnvironment, wasmModel, compileOptions);
 
         expect(result).toBeInstanceOf(Promise);
-        const compiledModel = await result;
+        const compiledModel = unwrapWasmResult(await result);
         expect(compiledModel).toBeDefined();
 
         compiledModel.delete();
@@ -318,8 +319,8 @@ describe('LiteRt', () => {
       wasmModule.HEAPU8.set(modelData, ptr);
 
       const environment = liteRt.getDefaultEnvironment();
-      const wasmModel = wasmModule.loadModel(
-          environment.liteRtEnvironment, ptr, modelData.byteLength);
+      const wasmModel = unwrapWasmResult(wasmModule.loadModel(
+          environment.liteRtEnvironment, ptr, modelData.byteLength));
 
       const compileOptions = {};
       const result = wasmModule.compileModel(
@@ -723,6 +724,32 @@ describe('LiteRt', () => {
 
       await expectAsync(loadAndCompile(badModel))
           .toBeRejectedWithError(/Failed to load model from buffer/);
+    });
+
+    it('fails many times without corrupting the Wasm module', async () => {
+      // Errors from C++ bindings used to be thrown as JS exceptions from inside
+      // Wasm. That skipped C++ destructors and never restored the Wasm stack
+      // pointer, so each error leaked Wasm stack until it overflowed.
+      const badModel =
+          new TextEncoder().encode('****BADM and some extra data here.');
+      let unexpected: unknown = undefined;
+      for (let i = 0; i < 5000 && unexpected === undefined; ++i) {
+        try {
+          const model = await loadAndCompile(badModel);
+          model.delete();
+          unexpected = `Iteration ${i}: loadAndCompile did not throw.`;
+        } catch (e) {
+          if (!(e instanceof Error) ||
+              !/Failed to load model from buffer/.test(e.message)) {
+            unexpected = e;
+          }
+        }
+      }
+      expect(unexpected).toBeUndefined();
+
+      const model = await loadAndCompile(modelPath);
+      expect(model).toBeDefined();
+      model.delete();
     });
 
     it('loads two models', async () => {
@@ -3325,7 +3352,8 @@ describe('LiteRt', () => {
          const data = new Float32Array([1.234, 2.345, 3.456]);
          const tensor = new Tensor(data);
          const gpuTensor = await tensor.moveTo('webgpu');
-         const bufferPtr = gpuTensor.liteRtTensorHandle.getWebGpuBuffer();
+         const bufferPtr =
+             unwrapWasmResult(gpuTensor.liteRtTensorHandle.getWebGpuBuffer());
 
          // This is a private property of the WebGPU module, but we need to
          // access it to test that the buffer is removed from the map when the

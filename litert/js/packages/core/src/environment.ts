@@ -16,7 +16,7 @@
 
 import {getGlobalLiteRt} from './global_litert';
 import type {LiteRt} from './litert_web';
-import {Deletable, LiteRtEnvironment} from './wasm_binding_types';
+import {Deletable, LiteRtEnvironment, unwrapWasmResult} from './wasm_binding_types';
 
 /**
  * Options for creating a LiteRT.js Environment.
@@ -67,7 +67,8 @@ export class Environment implements Deletable, EnvironmentOptions {
       ...options,
       webGpuDevice,
     };
-    this.liteRtEnvironment = wasm.LiteRtEnvironment.create(webGpuDevice);
+    this.liteRtEnvironment =
+        unwrapWasmResult(wasm.LiteRtEnvironment.create(webGpuDevice));
   }
 
   static async create(

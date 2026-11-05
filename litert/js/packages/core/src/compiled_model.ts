@@ -18,7 +18,7 @@ import {Model} from './model';
 import {CompileOptions, TensorInputs} from './model_types';
 import {CompiledModelSignatureRunner, SignatureRunner, TensorDetails} from './signature_runner';
 import {Tensor} from './tensor';
-import {Deletable, LiteRtCompiledModel} from './wasm_binding_types';
+import {Deletable, LiteRtCompiledModel, unwrapWasmResult} from './wasm_binding_types';
 
 /**
  * Represents a compiled LiteRt model.
@@ -145,7 +145,7 @@ export class CompiledModel implements Deletable, SignatureRunner {
 
   get isFullyAccelerated(): boolean {
     this.ensureNotDeleted();
-    return this.liteRtCompiledModel.isFullyAccelerated();
+    return unwrapWasmResult(this.liteRtCompiledModel.isFullyAccelerated());
   }
 
   delete() {

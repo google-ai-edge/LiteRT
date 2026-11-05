@@ -38,6 +38,24 @@ export declare interface Deletable {
 }
 
 /**
+ * The result of a Wasm binding that can fail: either the value or an `Error`.
+ *
+ * Bindings return errors instead of throwing them because throwing from C++
+ * leaks memory and Wasm stack. Use `unwrapWasmResult` to get the value.
+ */
+export type WasmResult<T> = T|Error;
+
+/**
+ * Returns the value of a `WasmResult`, or throws its error.
+ */
+export function unwrapWasmResult<T>(result: WasmResult<T>): T {
+  if (result instanceof Error) {
+    throw result;
+  }
+  return result;
+}
+
+/**
  * A C++ vector of elements.
  */
 export declare interface EmscriptenVector<T> extends Deletable {
@@ -73,7 +91,7 @@ export declare interface LiteRtEnvironmentConstructor {
   // Do not use this constructor. It is only here to allow checking
   // `instanceof LiteRtEnvironment` in TS. Use `create` instead.
   new(...args: never[]): LiteRtEnvironment;
-  create(webGpuDevice: GPUDevice|null): LiteRtEnvironment;
+  create(webGpuDevice: GPUDevice|null): WasmResult<LiteRtEnvironment>;
 }
 
 /**
@@ -127,7 +145,7 @@ export declare interface LiteRtLayout extends Deletable {
   dimensions(): EmscriptenVector<number>;
   hasStrides(): boolean;
   strides(): EmscriptenVector<number>;
-  numElements(): number;
+  numElements(): WasmResult<number>;
 }
 
 /**
@@ -145,7 +163,7 @@ export declare interface LiteRtRankedTensorTypeConstructor {
 export declare interface LiteRtRankedTensorType extends Deletable {
   elementType(): EmscriptenEnumElement<ElementType>;
   layout(): LiteRtLayout;
-  bytes(): number;
+  bytes(): WasmResult<number>;
 }
 
 /**
@@ -154,11 +172,11 @@ export declare interface LiteRtRankedTensorType extends Deletable {
 export declare interface LiteRtModel extends Deletable {
   [liteRtModelBrand]: void;
   getNumSignatures(): number;
-  getSignature(signatureIndex: number): LiteRtSimpleSignature;
+  getSignature(signatureIndex: number): WasmResult<LiteRtSimpleSignature>;
   getInputTensorType(signatureIndex: number, inputIndex: number):
-      LiteRtRankedTensorType;
+      WasmResult<LiteRtRankedTensorType>;
   getOutputTensorType(signatureIndex: number, outputIndex: number):
-      LiteRtRankedTensorType;
+      WasmResult<LiteRtRankedTensorType>;
 }
 
 /**
@@ -174,7 +192,7 @@ export declare interface LiteRtSimpleSignature extends Deletable {
  * A C++ litert::TensorBufferRequirements in Wasm.
  */
 export declare interface LiteRtTensorBufferRequirements extends Deletable {
-  supportedTypes(): EmscriptenVector<LiteRtTensorBufferType>;
+  supportedTypes(): WasmResult<EmscriptenVector<LiteRtTensorBufferType>>;
 }
 
 declare const liteRtCompiledModelBrand: unique symbol;
@@ -185,12 +203,13 @@ declare const liteRtCompiledModelBrand: unique symbol;
 export declare interface LiteRtCompiledModel extends Deletable {
   [liteRtCompiledModelBrand]: void;
   getInputBufferRequirements(signatureIndex: number, inputIndex: number):
-      LiteRtTensorBufferRequirements;
+      WasmResult<LiteRtTensorBufferRequirements>;
   getOutputBufferRequirements(signatureIndex: number, outputIndex: number):
-      LiteRtTensorBufferRequirements;
+      WasmResult<LiteRtTensorBufferRequirements>;
   run(signatureIndex: number, inputTensors: LiteRtTensorHandle[]):
-      LiteRtTensorHandle[]|Promise<LiteRtTensorHandle[]>;
-  isFullyAccelerated(): boolean;
+      WasmResult<LiteRtTensorHandle[]>|
+      Promise<WasmResult<LiteRtTensorHandle[]>>;
+  isFullyAccelerated(): WasmResult<boolean>;
 }
 
 /**
@@ -357,7 +376,7 @@ export declare interface LiteRtTensorHandleConstructor {
       bufferType: LiteRtTensorBufferType,
       tensorType: LiteRtRankedTensorType,
       bufferSize: number,
-      ): LiteRtTensorHandle;
+      ): WasmResult<LiteRtTensorHandle>;
 
   createFromWebGpuBuffer(
       environment: LiteRtEnvironment,
@@ -365,22 +384,24 @@ export declare interface LiteRtTensorHandleConstructor {
       tensorBufferType: LiteRtTensorBufferType,
       webGpuBufferPtr: number, /* use wasm.WebGPU.importJsBuffer() */
       size: number,
-      ): LiteRtTensorHandle;
+      ): WasmResult<LiteRtTensorHandle>;
 }
 
 /**
  * An instance of the C++ litert::tensor::TensorHandle class in Wasm.
  */
 export declare interface LiteRtTensorHandle extends Deletable {
-  lock(mode: LiteRtTensorBufferLockMode): number;  // Returns the pointer to the locked buffer.
-  unlock(): void;
-  bufferType(): LiteRtTensorBufferType;
-  tensorType(): LiteRtRankedTensorType;
-  isWebGpuMemory(): boolean;
-  getWebGpuBuffer(): number;  // Use wasm.WebGPU.getJsObject() to get GPUBuffer.
-  size(): number;
-  packedSize(): number;
-  offset(): number;
+  // Returns the pointer to the locked buffer.
+  lock(mode: LiteRtTensorBufferLockMode): WasmResult<number>;
+  unlock(): WasmResult<void>;
+  bufferType(): WasmResult<LiteRtTensorBufferType>;
+  tensorType(): WasmResult<LiteRtRankedTensorType>;
+  isWebGpuMemory(): WasmResult<boolean>;
+  // Use wasm.WebGPU.getJsObject() to get GPUBuffer.
+  getWebGpuBuffer(): WasmResult<number>;
+  size(): WasmResult<number>;
+  packedSize(): WasmResult<number>;
+  offset(): WasmResult<number>;
 }
 
 /** @deprecated Use LiteRtTensorHandle instead. */
@@ -410,19 +431,20 @@ export declare interface LiteRtWasm extends WasmModule {
       environment: LiteRtEnvironment,
       modelDataPtr: number,
       modelSize: number,
-      ): LiteRtModel;
+      ): WasmResult<LiteRtModel>;
   createModelDataFromTensorGraph(
       signatures: LiteRtSignatureGraphSpec[],
-      ): {modelDataPtr: number; modelSize: number};
+      ): WasmResult<{modelDataPtr: number; modelSize: number}>;
   createModelDataFromTensorGraph(
       inputHandles: LiteRtTensorHandle[],
       outputHandles: LiteRtTensorHandle[],
-      ): {modelDataPtr: number; modelSize: number};
+      ): WasmResult<{modelDataPtr: number; modelSize: number}>;
   compileModel(
       environment: LiteRtEnvironment,
       model: LiteRtModel,
       options?: LiteRtCompileOptions,
-      ): LiteRtCompiledModel|Promise<LiteRtCompiledModel>;
+      ): WasmResult<LiteRtCompiledModel>|
+      Promise<WasmResult<LiteRtCompiledModel>>;
   wgpuBufferRelease(bufferPtr: number): void;
   LiteRtTensorHandle: LiteRtTensorHandleConstructor;
   LiteRtTensorBufferType: LiteRtTensorBufferTypeEnum;
@@ -430,13 +452,14 @@ export declare interface LiteRtWasm extends WasmModule {
   LiteRtLayout: LiteRtLayoutConstructor;
   LiteRtRankedTensorType: LiteRtRankedTensorTypeConstructor;
   VectorInt32: EmscriptenVectorInt32Constructor;
-  liteRtGetByteWidth(elementType: EmscriptenEnumElement<ElementType>): number;
+  liteRtGetByteWidth(elementType: EmscriptenEnumElement<ElementType>):
+      WasmResult<number>;
   WebGPU: WasmWebGpuObjectInterface;
   checkTensorBufferCompatible(
       tensorHandle: LiteRtTensorHandle,
       expectedRankedTensorType: LiteRtRankedTensorType,
       requirements: LiteRtTensorBufferRequirements,
-      ): void;
+      ): WasmResult<void>;
   registerStreamWeightsCallback(
       callback:
           | ((
@@ -492,7 +515,7 @@ export declare interface LiteRtWasm extends WasmModule {
   concatenation(
     inputs: LiteRtTensorHandle[],
     axis: number,
-  ): LiteRtTensorHandle;
+  ): WasmResult<LiteRtTensorHandle>;
   slice(
     input: LiteRtTensorHandle,
     begin: number[],

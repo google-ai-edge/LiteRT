@@ -17,7 +17,7 @@
 import {Environment} from './environment';
 import {getGlobalLiteRt} from './global_litert';
 import {Tensor} from './tensor';
-import {LiteRtTensorHandle, TensorBufferType} from './wasm_binding_types';
+import {LiteRtTensorHandle, TensorBufferType, unwrapWasmResult} from './wasm_binding_types';
 
 /**
  * Copies a tensor from host memory to host memory.
@@ -37,39 +37,40 @@ export async function copyHostMemoryToHostMemory(
   const environment = options.environment ?? cpuTensor.environment;
   const liteRtWasm = getGlobalLiteRt().liteRtWasm;
   const srcTensorHandle = cpuTensor.liteRtTensorHandle;
-  const bufferType = srcTensorHandle.bufferType();
+  const bufferType = unwrapWasmResult(srcTensorHandle.bufferType());
   if (bufferType.value !== TensorBufferType.HOST_MEMORY) {
     throw new Error(
         'Source tensor is not in host memory. Cannot copy to host memory.');
   }
 
-  const srcTensorMemoryPtr = srcTensorHandle.lock(
+  const srcTensorMemoryPtr = unwrapWasmResult(srcTensorHandle.lock(
       liteRtWasm.LiteRtTensorBufferLockMode.READ,
-  );
+      ));
   let destTensorHandle: LiteRtTensorHandle|undefined;
   try {
-    destTensorHandle = liteRtWasm.LiteRtTensorHandle.createManaged(
-        environment.liteRtEnvironment,
-        liteRtWasm.LiteRtTensorBufferType.HOST_MEMORY,
-        srcTensorHandle.tensorType(),
-        srcTensorHandle.size(),
-    );
+    destTensorHandle =
+        unwrapWasmResult(liteRtWasm.LiteRtTensorHandle.createManaged(
+            environment.liteRtEnvironment,
+            liteRtWasm.LiteRtTensorBufferType.HOST_MEMORY,
+            unwrapWasmResult(srcTensorHandle.tensorType()),
+            unwrapWasmResult(srcTensorHandle.size()),
+            ));
 
-    const destMemoryPointer = destTensorHandle.lock(
+    const destMemoryPointer = unwrapWasmResult(destTensorHandle.lock(
         liteRtWasm.LiteRtTensorBufferLockMode.WRITE,
-    );
+        ));
     try {
       const srcTensorMemoryView = new Uint8Array(
           liteRtWasm.HEAPU8.buffer,
           srcTensorMemoryPtr,
-          srcTensorHandle.size(),
+          unwrapWasmResult(srcTensorHandle.size()),
       );
       liteRtWasm.HEAPU8.set(srcTensorMemoryView, destMemoryPointer);
     } finally {
-      destTensorHandle.unlock();
+      unwrapWasmResult(destTensorHandle.unlock());
     }
   } finally {
-    srcTensorHandle.unlock();
+    unwrapWasmResult(srcTensorHandle.unlock());
   }
   if (!destTensorHandle) {
     throw new Error('Failed to create destination tensor handle.');

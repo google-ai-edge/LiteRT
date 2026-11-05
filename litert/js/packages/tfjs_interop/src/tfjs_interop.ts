@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {CompiledModel, type DType, getDefaultEnvironment, SignatureRunner, Tensor, TensorBufferType, TensorDetails, type TypedArray} from '@litertjs/core';
+import {CompiledModel, type DType, getDefaultEnvironment, SignatureRunner, Tensor, TensorBufferType, TensorDetails, type TypedArray, unwrapWasmResult} from '@litertjs/core';
 import {type WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';
 
@@ -184,7 +184,8 @@ function litertToTfjsWebGpu(tensor: Tensor): tf.Tensor {
   }
 
   const litertBuffer = tensor.toGpuBuffer();
-  const requiredSizeInBytes = tensor.liteRtTensorHandle.size();
+  const requiredSizeInBytes =
+      unwrapWasmResult(tensor.liteRtTensorHandle.size());
 
   let buffer: GPUBuffer;
   if (litertBuffer.size === requiredSizeInBytes) {

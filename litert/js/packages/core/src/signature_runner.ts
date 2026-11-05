@@ -18,7 +18,7 @@ import {DType, getDataType} from './datatypes';
 import {getGlobalLiteRt} from './global_litert';
 import {CompileOptions, TensorInputs} from './model_types';
 import {Tensor} from './tensor';
-import {LiteRtCompiledModel, LiteRtModel, LiteRtRankedTensorType, LiteRtSimpleSignature, LiteRtTensorBufferRequirements, TensorBufferType} from './wasm_binding_types';
+import {LiteRtCompiledModel, LiteRtModel, LiteRtRankedTensorType, LiteRtSimpleSignature, LiteRtTensorBufferRequirements, TensorBufferType, unwrapWasmResult} from './wasm_binding_types';
 import {emscriptenVectorToArray} from './wasm_utils';
 
 /**
@@ -71,7 +71,8 @@ export class CompiledModelSignatureRunner implements SignatureRunner {
       private readonly liteRtModel: LiteRtModel,
       private readonly liteRtCompiledModel: LiteRtCompiledModel,
       readonly options: Required<CompileOptions>) {
-    this.liteRtSimpleSignature = liteRtModel.getSignature(signatureIndex);
+    this.liteRtSimpleSignature =
+        unwrapWasmResult(liteRtModel.getSignature(signatureIndex));
 
     // Input details
     const inputNames =
@@ -79,9 +80,10 @@ export class CompiledModelSignatureRunner implements SignatureRunner {
     const inputDetails: TensorDetails[] = [];
     for (let i = 0; i < inputNames.length; i++) {
       const name = inputNames[i];
-      const tensorType = liteRtModel.getInputTensorType(signatureIndex, i);
-      const requirements =
-          liteRtCompiledModel.getInputBufferRequirements(signatureIndex, i);
+      const tensorType =
+          unwrapWasmResult(liteRtModel.getInputTensorType(signatureIndex, i));
+      const requirements = unwrapWasmResult(
+          liteRtCompiledModel.getInputBufferRequirements(signatureIndex, i));
       inputDetails.push(makeTensorDetails(name, i, tensorType, requirements));
     }
     this.inputDetails = Object.freeze(inputDetails);
@@ -92,9 +94,10 @@ export class CompiledModelSignatureRunner implements SignatureRunner {
     const outputDetails: TensorDetails[] = [];
     for (let i = 0; i < outputNames.length; i++) {
       const name = outputNames[i];
-      const tensorType = liteRtModel.getOutputTensorType(signatureIndex, i);
-      const requirements =
-          liteRtCompiledModel.getOutputBufferRequirements(signatureIndex, i);
+      const tensorType =
+          unwrapWasmResult(liteRtModel.getOutputTensorType(signatureIndex, i));
+      const requirements = unwrapWasmResult(
+          liteRtCompiledModel.getOutputBufferRequirements(signatureIndex, i));
       outputDetails.push(makeTensorDetails(name, i, tensorType, requirements));
     }
     this.outputDetails = Object.freeze(outputDetails);
@@ -263,21 +266,32 @@ export class CompiledModelSignatureRunner implements SignatureRunner {
     // b/458345985: When on WebGPU, will need to check stride & alignment
     for (let i = 0; i < input.length; i++) {
       const inputTensor = input[i];
-      const expectedRankedTensorType =
-          this.liteRtModel.getInputTensorType(this.signatureIndex, i);
+      const expectedRankedTensorType = unwrapWasmResult(
+          this.liteRtModel.getInputTensorType(this.signatureIndex, i));
       const inputRequirements =
           this.liteRtCompiledModel.getInputBufferRequirements(
               this.signatureIndex, i);
-      getGlobalLiteRt().liteRtWasm.checkTensorBufferCompatible(
-          inputTensor.liteRtTensorHandle, expectedRankedTensorType,
-          inputRequirements);
+      // Check for an error before using `inputRequirements`. An `Error` is a
+      // plain JS object, not a Wasm object, so it has no `.delete()` method.
+      // Delete `expectedRankedTensorType` before throwing so it isn't leaked.
+      if (inputRequirements instanceof Error) {
+        expectedRankedTensorType.delete();
+        throw inputRequirements;
+      }
+      const compatibility =
+          getGlobalLiteRt().liteRtWasm.checkTensorBufferCompatible(
+              inputTensor.liteRtTensorHandle, expectedRankedTensorType,
+              inputRequirements);
 
       expectedRankedTensorType.delete();
       inputRequirements.delete();
+      unwrapWasmResult(compatibility);
     }
 
-    const outputTensorHandles = await this.liteRtCompiledModel.run(
-        this.signatureIndex, input.map((tensor) => tensor.liteRtTensorHandle));
+    const outputTensorHandles =
+        unwrapWasmResult(await this.liteRtCompiledModel.run(
+            this.signatureIndex,
+            input.map((tensor) => tensor.liteRtTensorHandle)));
     return outputTensorHandles.map(
         (tensorHandle) => new Tensor(tensorHandle, this.options.environment));
   }
@@ -314,9 +328,9 @@ function makeTensorDetails(
   const layout = tensorType.layout();
   const dimensions = emscriptenVectorToArray(layout.dimensions());
   layout.delete();
-  const supportedBufferTypes =
-      new Set(emscriptenVectorToArray(requirements.supportedTypes())
-                  .map(({value}) => value));
+  const supportedBufferTypes = new Set(
+      emscriptenVectorToArray(unwrapWasmResult(requirements.supportedTypes()))
+          .map(({value}) => value));
 
   const details: TensorDetails = {
     name,

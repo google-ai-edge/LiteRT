@@ -196,12 +196,23 @@ export class LiteRt {
           `for the model.`);
     }
     this.liteRtWasm.HEAPU8.set(modelData, ptr);
-    const wasmModel = this.liteRtWasm.loadModel(
+    const wasmModelResult = this.liteRtWasm.loadModel(
         filledCompileOptions.environment.liteRtEnvironment, ptr,
         modelData.byteLength);
-    const wasmCompiledModel = await this.liteRtWasm.compileModel(
+    if (wasmModelResult instanceof Error) {
+      this.liteRtWasm._free(ptr);
+      throw wasmModelResult;
+    }
+    const wasmModel = wasmModelResult;
+    const wasmCompiledModelResult = await this.liteRtWasm.compileModel(
         filledCompileOptions.environment.liteRtEnvironment, wasmModel,
         filledCompileOptions);
+    if (wasmCompiledModelResult instanceof Error) {
+      wasmModel.delete();
+      this.liteRtWasm._free(ptr);
+      throw wasmCompiledModelResult;
+    }
+    const wasmCompiledModel = wasmCompiledModelResult;
     const loadedModel = new Model(wasmModel, () => {
       this.liteRtWasm._free(ptr);
     });

@@ -25,7 +25,7 @@ export {Environment, type EnvironmentOptions} from './environment';
 export {type DType, type TypedArray, type NumberTypedArray, type BigIntTypedArray} from './datatypes';
 export {type Accelerator} from './accelerator_types';
 export * from './load_litert';
-export {TensorBufferType} from './wasm_binding_types';
+export {TensorBufferType, unwrapWasmResult, type WasmResult} from './wasm_binding_types';
 export {supportsFeature} from './wasm_feature_detect';
 export * from './streamed_loading';
 export {type WasmModule} from '@litertjs/wasm-utils';

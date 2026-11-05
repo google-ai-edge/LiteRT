@@ -24,6 +24,7 @@ import {
   Deletable,
   LiteRtCompiledModel,
   LiteRtSignatureGraphSpec,
+  unwrapWasmResult,
 } from './wasm_binding_types';
 
 // tslint:disable:no-any
@@ -413,8 +414,9 @@ export class AuthoredModel implements Deletable {
       }
 
       // Generate a FlatBuffer via ModelFactory (multi-signature if multiple specs provided)
-      const modelData =
-        liteRtWasm.createModelDataFromTensorGraph(wasmSignatureSpecs);
+      const modelData = unwrapWasmResult(
+        liteRtWasm.createModelDataFromTensorGraph(wasmSignatureSpecs),
+      );
       modelDataPtr = modelData.modelDataPtr;
       modelSize = modelData.modelSize;
     } finally {
@@ -428,11 +430,16 @@ export class AuthoredModel implements Deletable {
     }
 
     // Load and compile the model
-    const wasmModel = liteRtWasm.loadModel(
+    const wasmModelResult = liteRtWasm.loadModel(
       environment.liteRtEnvironment,
       modelDataPtr,
       modelSize,
     );
+    if (wasmModelResult instanceof Error) {
+      liteRtWasm._free(modelDataPtr);
+      throw wasmModelResult;
+    }
+    const wasmModel = wasmModelResult;
 
     const filledCompileOptions = fillCompileOptions(
       this.options,
@@ -442,10 +449,12 @@ export class AuthoredModel implements Deletable {
 
     let wasmCompiledModel: LiteRtCompiledModel;
     try {
-      wasmCompiledModel = await liteRtWasm.compileModel(
-        environment.liteRtEnvironment,
-        wasmModel,
-        filledCompileOptions,
+      wasmCompiledModel = unwrapWasmResult(
+        await liteRtWasm.compileModel(
+          environment.liteRtEnvironment,
+          wasmModel,
+          filledCompileOptions,
+        ),
       );
     } catch (e) {
       liteRtWasm._free(modelDataPtr);

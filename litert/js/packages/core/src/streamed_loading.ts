@@ -18,7 +18,7 @@ import {CompiledModel} from './compiled_model';
 import {getGlobalLiteRt} from './global_litert';
 import {Model} from './model';
 import {CompileOptions, fillCompileOptions} from './model_types';
-import {EmscriptenVector, WebWeightUploadRequest} from './wasm_binding_types';
+import {EmscriptenVector, unwrapWasmResult, WebWeightUploadRequest} from './wasm_binding_types';
 
 /**
  * A global lock to ensure only one model is being compiled at a time.
@@ -168,8 +168,13 @@ export async function loadModelAndWeights(
             `for the model.`);
       }
       wasm.HEAPU8.set(modelData, ptr);
-      const wasmModel =
+      const wasmModelResult =
           wasm.loadModel(env.liteRtEnvironment, ptr, modelData.byteLength);
+      if (wasmModelResult instanceof Error) {
+        wasm._free(ptr);
+        throw wasmModelResult;
+      }
+      const wasmModel = wasmModelResult;
 
       const loadedModel = new Model(wasmModel, () => {
         wasm._free(ptr);
@@ -180,8 +185,8 @@ export async function loadModelAndWeights(
       // This compilation call triggers the WebGPU delegate which will
       // eventually invoke our callback, see the EM_ASYNC_JS block in
       // external_weight_loader_litert.cc for more details.
-      const wasmCompiledModel = await wasm.compileModel(
-          env.liteRtEnvironment, wasmModel, fullOptions);
+      const wasmCompiledModel = unwrapWasmResult(await wasm.compileModel(
+          env.liteRtEnvironment, wasmModel, fullOptions));
 
       const compiledModel = new CompiledModel(
           loadedModel, wasmCompiledModel, fullOptions, () => {
