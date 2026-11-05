@@ -307,7 +307,7 @@ absl::StatusOr<LockedBufferSpan<const std::byte>> NnpackRunner::ReadOutput(
   if (buffer_it == external_buffers_.end() || buffer_it->second == nullptr) {
     return absl::FailedPreconditionError("Output buffer not found");
   }
-  return buffer_it->second->Lock();
+  return buffer_it->second->Lock().SubSpan(0, ByteSize(value.info));
 }
 
 }  // namespace litert::tensor

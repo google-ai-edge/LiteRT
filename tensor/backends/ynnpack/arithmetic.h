@@ -406,6 +406,14 @@ class OpMixin<GatherOperation, YnnpackMixinTag> : public YnnpackOperation {
 };
 
 template <>
+class OpMixin<EmbeddingLookupOperation, YnnpackMixinTag>
+    : public YnnpackOperation {
+ public:
+  absl::Status ToYnnpack(const graph::Operation& op,
+                         YnnpackBuildContext& ctx) const override;
+};
+
+template <>
 class OpMixin<SpaceToDepthOperation, YnnpackMixinTag>
     : public YnnpackOperation {
  public:
@@ -430,6 +438,20 @@ class OpMixin<SplitOperation, YnnpackMixinTag> : public YnnpackOperation {
 
 template <>
 class OpMixin<RopeOperation, YnnpackMixinTag> : public YnnpackOperation {
+ public:
+  absl::Status ToYnnpack(const graph::Operation& op,
+                         YnnpackBuildContext& ctx) const override;
+};
+
+template <>
+class OpMixin<SelectOperation, YnnpackMixinTag> : public YnnpackOperation {
+ public:
+  absl::Status ToYnnpack(const graph::Operation& op,
+                         YnnpackBuildContext& ctx) const override;
+};
+
+template <>
+class OpMixin<SelectV2Operation, YnnpackMixinTag> : public YnnpackOperation {
  public:
   absl::Status ToYnnpack(const graph::Operation& op,
                          YnnpackBuildContext& ctx) const override;

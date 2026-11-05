@@ -16,6 +16,7 @@ limitations under the License.
 #include "tensor/runners/ml_drift/compiled_ml_drift_model_runner.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -46,6 +47,7 @@ limitations under the License.
 #include "tensor/datatypes.h"
 #include "tensor/internal/compile.h"
 #include "tensor/internal/graph.h"
+#include "tensor/internal/type_id.h"
 #include "tensor/runners/ml_drift/ml_drift_cl_model_runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
@@ -1238,6 +1240,209 @@ TEST(CompiledMlDriftModelRunnerTest,
     EXPECT_THAT(buf_decode_logits,
                 testing::Pointwise(testing::FloatNear(1e-3f), expected_last));
   }
+}
+
+// Mirrors `LazyConcatBuffer` + `BlockwiseQuantization::CreateLazy` where the
+// lazy `BlockwiseQuantization` holds only a `weak_ptr` to the lazy `Buffer` and
+// `ReleaseMaterializedData()` clears both the buffer and `bq`.
+class LazyFusedBlockwiseTestBuffer final : public Buffer {
+ public:
+  LazyFusedBlockwiseTestBuffer(std::shared_ptr<OwningCpuBuffer> payload,
+                               std::vector<float> scales,
+                               std::vector<float> float_zps,
+                               std::atomic<int>* materialize_count)
+      : payload_(std::move(payload)),
+        scales_(std::move(scales)),
+        float_zps_(std::move(float_zps)),
+        materialize_count_(materialize_count) {}
+
+  static internal::TypeId TypeId() {
+    return internal::TypeId::Get<LazyFusedBlockwiseTestBuffer>();
+  }
+  internal::TypeId GetTypeId() const override { return TypeId(); }
+  bool IsA(internal::TypeId id) const override { return id == TypeId(); }
+  absl::StatusOr<size_t> ByteSize() const override { return payload_->size(); }
+
+  void BindQuantization(const std::shared_ptr<BlockwiseQuantization>& bq) {
+    weak_bq_ = bq;
+  }
+
+  void PopulateParams(std::vector<float>* out_scales,
+                      std::vector<float>* out_zps) {
+    if (!materialized_.exchange(true, std::memory_order_acq_rel)) {
+      materialize_count_->fetch_add(1, std::memory_order_relaxed);
+      cached_ = payload_;
+    }
+    *out_scales = scales_;
+    *out_zps = float_zps_;
+  }
+
+  LockedBufferSpan<const std::byte> Lock() override {
+    if (!materialized_.exchange(true, std::memory_order_acq_rel)) {
+      materialize_count_->fetch_add(1, std::memory_order_relaxed);
+      cached_ = payload_;
+    }
+    if (auto bq = weak_bq_.lock()) {
+      bq->SetMaterializedParams(scales_, float_zps_);
+    }
+    return cached_->Lock();
+  }
+
+  void ReleaseMaterializedData() override {
+    cached_.reset();
+    materialized_.store(false, std::memory_order_release);
+    if (auto bq = weak_bq_.lock()) {
+      bq->ReleaseMaterializedData();
+    }
+  }
+
+ private:
+  std::shared_ptr<OwningCpuBuffer> payload_;
+  std::shared_ptr<OwningCpuBuffer> cached_;
+  std::vector<float> scales_;
+  std::vector<float> float_zps_;
+  std::atomic<int>* materialize_count_ = nullptr;
+  std::atomic<bool> materialized_{false};
+  std::weak_ptr<BlockwiseQuantization> weak_bq_;
+};
+
+TEST(CompiledMlDriftModelRunnerTest,
+     ReleasesLazyFusedBlockwiseHostBuffersOnlyAfterScaleLowering) {
+  constexpr int kPrefillLen = 2;
+  constexpr int kOut = 8;
+  constexpr int kIn = 64;
+  constexpr int kBlockSize = 32;
+  constexpr int kBlocksPerRow = kIn / kBlockSize;
+  constexpr int kNumBlocks = kOut * kBlocksPerRow;
+
+  auto payload = OwningCpuBuffer::Allocate<Type::kI4>(kOut * kIn);
+  int4_t* packed = payload->Span<int4_t>().data();
+  std::vector<float> scales(kNumBlocks);
+  std::vector<float> float_zps(kNumBlocks);
+  std::vector<float> ref_weights(kOut * kIn);
+  for (int o = 0; o < kOut; ++o) {
+    for (int b = 0; b < kBlocksPerRow; ++b) {
+      const int blk = o * kBlocksPerRow + b;
+      scales[blk] = 0.0625f * static_cast<float>((blk % 4) + 1);
+      float_zps[blk] = (blk % 2 == 0) ? -1.5f : 1.0f;
+      for (int j = 0; j < kBlockSize; j += 2) {
+        const int idx = o * kIn + b * kBlockSize + j;
+        const int qa = ((idx * 3 + 1) % 15) - 7;
+        const int qb = ((idx * 5 + 2) % 15) - 7;
+        packed[idx / 2].a = static_cast<int8_t>(qa);
+        packed[idx / 2].b = static_cast<int8_t>(qb);
+        ref_weights[idx] =
+            scales[blk] * (static_cast<float>(qa) - float_zps[blk]);
+        ref_weights[idx + 1] =
+            scales[blk] * (static_cast<float>(qb) - float_zps[blk]);
+      }
+    }
+  }
+
+  std::atomic<int> materialize_count{0};
+  auto make_lazy_fused_weight =
+      [&](std::shared_ptr<BlockwiseQuantization>* out_bq) {
+        auto lazy_buf = std::make_shared<LazyFusedBlockwiseTestBuffer>(
+            payload, scales, float_zps, &materialize_count);
+        std::weak_ptr<LazyFusedBlockwiseTestBuffer> weak_buf = lazy_buf;
+        auto lazy_bq = BlockwiseQuantization::CreateLazily(
+            kBlockSize, /*quantized_dimension=*/0, kNumBlocks,
+            [weak_buf]() -> BlockwiseQuantization::MaterializedBlockwiseParams {
+              BlockwiseQuantization::MaterializedBlockwiseParams params;
+              if (auto locked_buf = weak_buf.lock()) {
+                locked_buf->PopulateParams(&params.scales,
+                                           &params.float_zero_points);
+              }
+              return params;
+            },
+            BlockwiseQuantization::LazyOptions{
+                .zero_points =
+                    BlockwiseQuantization::ZeroPointPresence::kMayHaveFloat,
+            });
+        lazy_buf->BindQuantization(lazy_bq);
+        if (out_bq != nullptr) *out_bq = lazy_bq;
+        return TensorMLD({.name = "attn_q.weight+attn_k.weight",
+                          .type = Type::kI4,
+                          .shape = {kOut, kIn},
+                          .buffer = std::move(lazy_buf),
+                          .quantization = std::move(lazy_bq)});
+      };
+
+  MlDriftClBackend::Environment shared_env;
+  ASSERT_THAT(MlDriftClBackend::InitEnvironment(&shared_env), IsOk());
+  Runner::SharedWeightsCache shared_weights;
+  shared_weights.release_fused_host_buffers = true;
+
+  std::shared_ptr<BlockwiseQuantization> prefill_bq;
+  TensorMLD w_prefill = make_lazy_fused_weight(&prefill_bq);
+  TensorMLD x_prefill(
+      {.name = "x", .type = Type::kFP32, .shape = {1, kPrefillLen, kIn}});
+  TensorMLD y_prefill = FullyConnected(x_prefill, w_prefill);
+  y_prefill.SetName("y");
+
+  Runner prefill_runner({x_prefill}, {y_prefill},
+                        ml_drift::CalculationsPrecision::kF32, &shared_env,
+                        &shared_weights);
+  ASSERT_THAT(prefill_runner.BuildModel(), IsOk());
+  EXPECT_EQ(materialize_count.load(std::memory_order_relaxed), 1);
+  // After `Prepare()`/`BuildModel()`, both the `+` fused host buffer and the
+  // materialized blockwise scales must be released.
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto& prefill_w_info,
+                                  graph::GetInfo(w_prefill.GetRaw()));
+  EXPECT_EQ(prefill_w_info.buffer, nullptr);
+  EXPECT_FALSE(prefill_bq->IsMaterialized());
+
+  // Second pass (`decode`) builds a fresh graph with the same fused weight name
+  // and must hit `shared_weights` with zero lazy materializations.
+  std::shared_ptr<BlockwiseQuantization> decode_bq;
+  TensorMLD w_decode = make_lazy_fused_weight(&decode_bq);
+  TensorMLD x_decode({.name = "x", .type = Type::kFP32, .shape = {1, 1, kIn}});
+  TensorMLD y_decode = FullyConnected(x_decode, w_decode);
+  y_decode.SetName("y");
+
+  Runner decode_runner({x_decode}, {y_decode},
+                       ml_drift::CalculationsPrecision::kF32, &shared_env,
+                       &shared_weights);
+  ASSERT_THAT(decode_runner.BuildModel(), IsOk());
+  EXPECT_EQ(materialize_count.load(std::memory_order_relaxed), 1);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto& decode_w_info,
+                                  graph::GetInfo(w_decode.GetRaw()));
+  EXPECT_EQ(decode_w_info.buffer, nullptr);
+
+  std::vector<float> input(kPrefillLen * kIn);
+  for (int i = 0; i < static_cast<int>(input.size()); ++i) {
+    input[i] = 0.05f * static_cast<float>((i % 9) - 4);
+  }
+  std::vector<float> last_input(input.end() - kIn, input.end());
+
+  TensorMLD fed_prefill({.name = "x",
+                         .type = Type::kFP32,
+                         .shape = {1, kPrefillLen, kIn},
+                         .buffer = input});
+  ASSERT_THAT(prefill_runner.SetInput("x", fed_prefill), IsOk());
+  ASSERT_THAT(prefill_runner.Run(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<float> prefill_out,
+                                  prefill_runner.GetFloatOutput("y"));
+
+  TensorMLD fed_decode({.name = "x",
+                        .type = Type::kFP32,
+                        .shape = {1, 1, kIn},
+                        .buffer = last_input});
+  ASSERT_THAT(decode_runner.SetInput("x", fed_decode), IsOk());
+  ASSERT_THAT(decode_runner.Run(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<float> decode_out,
+                                  decode_runner.GetFloatOutput("y"));
+
+  std::vector<float> expected_last(kOut, 0.0f);
+  for (int o = 0; o < kOut; ++o) {
+    for (int i = 0; i < kIn; ++i) {
+      expected_last[o] += last_input[i] * ref_weights[o * kIn + i];
+    }
+  }
+  EXPECT_THAT(absl::MakeConstSpan(prefill_out).last(kOut),
+              testing::Pointwise(testing::FloatNear(1e-3f), expected_last));
+  EXPECT_THAT(decode_out,
+              testing::Pointwise(testing::FloatNear(1e-3f), expected_last));
 }
 
 }  // namespace

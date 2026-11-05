@@ -19,10 +19,12 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "ynnpack/include/ynnpack.h"  // from @XNNPACK
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -54,6 +56,20 @@ class YnnpackOperation : public graph::BackendExtension {
 //
 // Returns `ynn_type_invalid` for types YNNPACK doesn't handle.
 ynn_type ToYnnType(Type type);
+
+struct YnnpackGraphOptions {
+  // When true, external inputs declare their `TensorInformation::shape` extents
+  // as static YNNPACK tensor dimensions except for axes listed in
+  // `dynamic_external_input_axes`. This enables compile-time `should_pack_b`
+  // elision, `static_slice` / `broadcast` folding, and faster Slinky pipeline
+  // simplification for fixed-shape prefill/decode graphs.
+  bool static_external_inputs = false;
+  // Per-external-input list of axis indices (`0 <= axis < rank`) that may still
+  // be reshaped at runtime (e.g. KV-cache sequence length axis `2` and
+  // attention-mask key length axis `3`).
+  absl::flat_hash_map<graph::Tensor, std::vector<int32_t>>
+      dynamic_external_input_axes;
+};
 
 class YnnpackBuildContext : public NnpackBuildContext {
  public:
@@ -145,6 +161,40 @@ class YnnpackBuildContext : public NnpackBuildContext {
   // `type` isn't an integer type the quantized lowerings support.
   static size_t ElementsPerByte(ynn_type type);
 
+  // Records per-activation multiple-of-16 block sizes across quantized dots
+  // (0 marks an activation consumed by dots with distinct multiple-of-16 block
+  // sizes, e.g. block-32 alongside block-16).
+  void SetInputBlockSizes(
+      absl::flat_hash_map<graph::Tensor, size_t> input_block_sizes) {
+    input_block_sizes_ = std::move(input_block_sizes);
+  }
+
+  // Returns true when `input` feeds blockwise quantized dots with distinct
+  // multiple-of-16 block sizes and therefore must canonicalize to block-16.
+  bool ShouldCanonicalizeToBlock16(const graph::Tensor& input) const;
+
+  void SetGraphOptions(YnnpackGraphOptions options) {
+    options_ = std::move(options);
+  }
+
+  void SetStaticShapeTensors(
+      absl::flat_hash_set<graph::Tensor> static_shape_tensors) {
+    static_shape_tensors_ = std::move(static_shape_tensors);
+  }
+
+  // Returns true if every dimension of `tensor` is static for the lifetime of
+  // the subgraph (either a constant buffer or derived exclusively from static
+  // external inputs).
+  bool HasStaticShape(const graph::Tensor& tensor) const;
+
+  bool IsExternalOutput(const graph::Tensor& tensor) const {
+    return graph_->external_outputs().contains(tensor);
+  }
+
+  bool IsDefined(const graph::Tensor& tensor) const {
+    return graph_->tensor_index().contains(tensor);
+  }
+
  protected:
   absl::Status EnsureInitialized() override;
   std::unique_ptr<NnpackGraph> CreateEmptyGraph() override;
@@ -181,11 +231,15 @@ class YnnpackBuildContext : public NnpackBuildContext {
 
   // The integer data of quantized tensors, see `FindQuantizedDataId`.
   absl::flat_hash_map<graph::Tensor, uint32_t> quantized_data_ids_;
+  // Root input tensor -> multiple-of-16 block size (or 0 if mixed).
+  absl::flat_hash_map<graph::Tensor, size_t> input_block_sizes_;
+  YnnpackGraphOptions options_;
+  absl::flat_hash_set<graph::Tensor> static_shape_tensors_;
 };
 
 // Builds a YNNPACK graph from the given outputs.
 absl::StatusOr<std::unique_ptr<YnnpackGraph>> BuildYnnpackGraph(
-    std::vector<TensorHandle> outputs);
+    std::vector<TensorHandle> outputs, const YnnpackGraphOptions& options = {});
 
 }  // namespace litert::tensor
 

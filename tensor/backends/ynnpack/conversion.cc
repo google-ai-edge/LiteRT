@@ -25,6 +25,7 @@ limitations under the License.
 
 #include "ynnpack/include/ynnpack.h"  // from @XNNPACK
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -68,6 +69,22 @@ const void* KeepAlive(NnpackGraph& graph, absl::Span<const T> values) {
   graph.constant_buffers().emplace_back(begin,
                                         begin + values.size() * sizeof(T));
   return graph.constant_buffers().back().data();
+}
+
+graph::Tensor UnwrapViewInput(graph::Tensor t) {
+  while (true) {
+    absl::StatusOr<std::shared_ptr<graph::Operation>> prod =
+        graph::GetProducer(t);
+    if (!prod.ok() || *prod == nullptr || (*prod)->inputs.empty()) {
+      break;
+    }
+    const absl::string_view name = (*prod)->GetName();
+    if (name != "Reshape" && name != "Squeeze" && name != "ExpandDims") {
+      break;
+    }
+    t = (*prod)->inputs[0];
+  }
+  return t;
 }
 
 }  // namespace
@@ -169,18 +186,18 @@ absl::Span<const float> YnnpackBuildContext::GetScales(
 absl::StatusOr<std::vector<int32_t>> YnnpackBuildContext::GetZeroPoints(
     const Quantization& quantization) {
   const size_t num_scales = GetScales(quantization).size();
-  if (absl::StatusOr<const ZeroPoints&> zp_obj =
+  if (absl::StatusOr<const ZeroPoints&> zero_points =
           GetZeroPointsObject(quantization);
-      zp_obj.ok()) {
-    return zp_obj->CopyAs<int32_t>(num_scales);
+      zero_points.ok()) {
+    return zero_points->CopyAs<int32_t>(num_scales);
   }
   return std::vector<int32_t>(num_scales, 0);
 }
 
 bool YnnpackBuildContext::IsSymmetric(const Quantization& quantization) {
-  absl::StatusOr<const ZeroPoints&> zp_obj =
+  absl::StatusOr<const ZeroPoints&> zero_points =
       GetZeroPointsObject(quantization);
-  return !zp_obj.ok() || zp_obj->IsSymmetric();
+  return !zero_points.ok() || zero_points->IsSymmetric();
 }
 
 size_t YnnpackBuildContext::ElementsPerByte(ynn_type type) {
@@ -243,7 +260,7 @@ absl::Status YnnpackBuildContext::ValidateQuantization(
           ") doesn't match the expected block count (", channels * num_blocks,
           ")."));
     }
-    return bwq->zero_points.Validate<int32_t>(bwq->scales.size());
+    return bwq->zero_points.Validate<float>(bwq->scales.size());
   }
 
   if (absl::StatusOr<const PerChannelAffineQuantization&> pcq =
@@ -326,14 +343,27 @@ absl::Status YnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
     ynn_flags &= ~FlagExternalOutput();
   }
 
-  // An extent declared here is static for the lifetime of the subgraph, so
-  // every dimension of an external input is declared dynamic (0) to let the
-  // runner reshape it. Operations that broadcast one of those dimensions mark
-  // it as a broadcast dimension explicitly (see `DefineBroadcastOperand` in
-  // arithmetic.cc). The extents of every other value are inferred from the
-  // nodes producing them.
-  const std::vector<size_t> external_input_dims(dims.size(), 0);
+  // An extent declared here is static for the lifetime of the subgraph. By
+  // default every dimension of an external input is declared dynamic (0) to let
+  // the runner reshape it; when `options_.static_external_inputs` is enabled,
+  // external input dimensions use `info.shape` except for axes explicitly
+  // listed in `options_.dynamic_external_input_axes`.
+  std::vector<size_t> external_input_dims;
   if (is_external_input) {
+    if (options_.static_external_inputs) {
+      external_input_dims = dims;
+      if (auto it = options_.dynamic_external_input_axes.find(tensor);
+          it != options_.dynamic_external_input_axes.end()) {
+        for (int32_t axis : it->second) {
+          if (axis >= 0 &&
+              static_cast<size_t>(axis) < external_input_dims.size()) {
+            external_input_dims[axis] = 0;
+          }
+        }
+      }
+    } else {
+      external_input_dims.assign(dims.size(), 0);
+    }
     dims_ptr =
         external_input_dims.empty() ? nullptr : external_input_dims.data();
   }
@@ -464,8 +494,6 @@ absl::StatusOr<uint32_t> YnnpackBuildContext::DefineBlockwiseDequantize(
   const size_t channels = info.shape[quantized_dimension];
   const size_t num_blocks = info.shape[1 - quantized_dimension] / block_size;
   const absl::Span<const float> scales = GetScales(quantization);
-  LRT_TENSOR_ASSIGN_OR_RETURN(const std::vector<int32_t> zero_points,
-                              GetZeroPoints(quantization));
   const absl::string_view name = info.name;
   ynn_subgraph_t sg = subgraph();
 
@@ -527,19 +555,51 @@ absl::StatusOr<uint32_t> YnnpackBuildContext::DefineBlockwiseDequantize(
   LRT_TENSOR_ASSIGN_OR_RETURN(uint32_t scale_id,
                               DefineQuantizationScales(scales, param_dims));
   LRT_TENSOR_ASSIGN_OR_RETURN(scale_id, to_param_layout(scale_id));
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      uint32_t zero_point_id,
-      DefineQuantizationZeroPoints(absl::MakeConstSpan(zero_points),
-                                   param_dims));
-  LRT_TENSOR_ASSIGN_OR_RETURN(zero_point_id, to_param_layout(zero_point_id));
 
   uint32_t dequantized_id = kInferredValueId;
-  LRT_TENSOR_RETURN_IF_ERROR(
-      ynn_define_dequantize(sg, split_id, zero_point_id, scale_id,
-                            ynn_type_fp32, &dequantized_id, /*flags=*/0))
-      << name
-      << ": could not define the dequantize node of a blockwise quantized "
-         "tensor.";
+  if (absl::StatusOr<const BlockwiseQuantization&> bwq =
+          quantization.As<const BlockwiseQuantization>();
+      bwq.ok() && !bwq->zero_points.IsSymmetric() &&
+      bwq->zero_points.Data<float>().ok()) {
+    std::vector<float> mins(scales.size());
+    LRT_TENSOR_RETURN_IF_ERROR(
+        bwq->zero_points.Visit(scales.size(), [&](auto zp_view) {
+          for (size_t i = 0; i < scales.size(); ++i) {
+            mins[i] = -scales[i] * static_cast<float>(zp_view[i]);
+          }
+        }));
+    LRT_TENSOR_ASSIGN_OR_RETURN(uint32_t min_id,
+                                DefineQuantizationScales(mins, param_dims));
+    LRT_TENSOR_ASSIGN_OR_RETURN(min_id, to_param_layout(min_id));
+    uint32_t scaled_id = kInferredValueId;
+    LRT_TENSOR_RETURN_IF_ERROR(ynn_define_dequantize(
+        sg, split_id, /*zero_point_id=*/YNN_INVALID_VALUE_ID, scale_id,
+        ynn_type_fp32, &scaled_id, /*flags=*/0))
+        << name
+        << ": could not define the dequantize node of a blockwise quantized "
+           "tensor.";
+    LRT_TENSOR_RETURN_IF_ERROR(ynn_define_binary(sg, ynn_binary_add, scaled_id,
+                                                 min_id, &dequantized_id,
+                                                 /*flags=*/0))
+        << name
+        << ": could not add floating-point zero-point offsets for blockwise "
+           "dequantize.";
+  } else {
+    LRT_TENSOR_ASSIGN_OR_RETURN(const std::vector<int32_t> zero_points,
+                                GetZeroPoints(quantization));
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        uint32_t zero_point_id,
+        DefineQuantizationZeroPoints(absl::MakeConstSpan(zero_points),
+                                     param_dims));
+    LRT_TENSOR_ASSIGN_OR_RETURN(zero_point_id, to_param_layout(zero_point_id));
+
+    LRT_TENSOR_RETURN_IF_ERROR(
+        ynn_define_dequantize(sg, split_id, zero_point_id, scale_id,
+                              ynn_type_fp32, &dequantized_id, /*flags=*/0))
+        << name
+        << ": could not define the dequantize node of a blockwise quantized "
+           "tensor.";
+  }
 
   LRT_TENSOR_RETURN_IF_ERROR(ynn_define_fuse_dim(sg, blocked_axis,
                                                  /*axes_count=*/2,
@@ -573,8 +633,22 @@ absl::Status YnnpackBuildContext::LowerOp(const graph::Operation& op) {
   return op_ext->ToYnnpack(op, *this);
 }
 
+bool YnnpackBuildContext::ShouldCanonicalizeToBlock16(
+    const graph::Tensor& input) const {
+  const auto it = input_block_sizes_.find(UnwrapViewInput(input));
+  return it != input_block_sizes_.end() && it->second == 0;
+}
+
+bool YnnpackBuildContext::HasStaticShape(const graph::Tensor& tensor) const {
+  if (static_shape_tensors_.contains(tensor)) {
+    return true;
+  }
+  absl::StatusOr<graph::TensorInformation> info = graph::GetInfo(tensor);
+  return info.ok() && info->buffer != nullptr;
+}
+
 absl::StatusOr<std::unique_ptr<YnnpackGraph>> BuildYnnpackGraph(
-    std::vector<TensorHandle> outputs) {
+    std::vector<TensorHandle> outputs, const YnnpackGraphOptions& options) {
   uint32_t next_id = 0;
   absl::flat_hash_map<graph::Tensor, uint32_t> external_ids;
   for (const TensorHandle& out : outputs) {
@@ -584,23 +658,74 @@ absl::StatusOr<std::unique_ptr<YnnpackGraph>> BuildYnnpackGraph(
 
   LRT_TENSOR_ASSIGN_OR_RETURN(std::vector<const graph::Operation*> plan,
                               GetExecutionPlan(outputs));
+  absl::flat_hash_map<graph::Tensor, size_t> input_block_sizes;
+  absl::flat_hash_set<graph::Tensor> static_shape_tensors;
   for (const graph::Operation* op : plan) {
+    const absl::string_view op_name = op->GetName();
+    if ((op_name == "FullyConnected" || op_name == "BatchMatMul") &&
+        op->inputs.size() >= 2) {
+      if (absl::StatusOr<graph::TensorInformation> w_info =
+              graph::GetInfo(op->inputs[1]);
+          w_info.ok() && w_info->quantization != nullptr) {
+        const size_t bs =
+            YnnpackBuildContext::GetBlockSize(*w_info->quantization);
+        if (bs > 0 && bs % 16 == 0) {
+          const graph::Tensor root = UnwrapViewInput(op->inputs[0]);
+          auto [it, inserted] = input_block_sizes.insert({root, bs});
+          if (!inserted && it->second != bs) {
+            it->second = 0;
+          }
+        }
+      }
+    }
+    bool all_inputs_static = options.static_external_inputs;
     for (const graph::Tensor& t : op->inputs) {
-      if (absl::StatusOr<graph::TensorInformation> info_or = graph::GetInfo(t);
-          !info_or.ok() || info_or->buffer != nullptr) {
+      if (!graph::GetStatus(t).ok()) {
+        continue;
+      }
+      absl::StatusOr<graph::TensorInformation> info = graph::GetInfo(t);
+      if (!info.ok()) {
+        all_inputs_static = false;
+        continue;
+      }
+      if (info->buffer != nullptr) {
         continue;
       }
       if (absl::StatusOr<std::shared_ptr<graph::Operation>> producer_or =
               graph::GetProducer(t);
           producer_or.ok() && *producer_or != nullptr) {
+        if (!static_shape_tensors.contains(t)) {
+          all_inputs_static = false;
+        }
         continue;
       }
       auto [it, inserted] = external_ids.insert({t, next_id});
       next_id += inserted;
+      if (options.static_external_inputs) {
+        const auto dyn_it = options.dynamic_external_input_axes.find(t);
+        if (dyn_it == options.dynamic_external_input_axes.end() ||
+            dyn_it->second.empty()) {
+          static_shape_tensors.insert(t);
+        } else {
+          all_inputs_static = false;
+        }
+      }
+    }
+    if (all_inputs_static) {
+      if (absl::StatusOr<std::vector<graph::Tensor>> op_outputs =
+              graph::GetOutputs(*op);
+          op_outputs.ok()) {
+        for (const graph::Tensor& out_t : *op_outputs) {
+          static_shape_tensors.insert(out_t);
+        }
+      }
     }
   }
 
   YnnpackBuildContext ctx(std::move(outputs), std::move(external_ids));
+  ctx.SetInputBlockSizes(std::move(input_block_sizes));
+  ctx.SetGraphOptions(options);
+  ctx.SetStaticShapeTensors(std::move(static_shape_tensors));
   LRT_TENSOR_RETURN_IF_ERROR(BuildNnpackGraph(ctx));
   LRT_TENSOR_ASSIGN_OR_RETURN(std::unique_ptr<NnpackGraph> graph,
                               ctx.Finalize());
