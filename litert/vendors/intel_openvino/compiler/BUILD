@@ -75,6 +75,7 @@ litert_test(
     ],
     deps = [
         ":npu_optimizer",
+        ":weight_bank_attributes",
     ] + _OPENVINO_DEPS,
 )
 
@@ -532,6 +533,8 @@ litert_test(
     ungrte = True,
     use_sys_malloc = True,
     deps = [
+        ":npu_optimizer",
+        ":openvino_compile_context",
         ":openvino_compiler_plugin",  # buildcleaner: keep
         ":openvino_soc_config",
         "//litert/c:litert_common",
@@ -543,6 +546,7 @@ litert_test(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_extended_model",
         "//litert/cc/internal:litert_model_predicates",
+        "//litert/cc/options:litert_intel_openvino_options",
         "//litert/test:common",
         "//litert/test:load_test_model",
         "//litert/test:matchers_oss",
