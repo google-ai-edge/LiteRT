@@ -437,7 +437,7 @@ TEST(TensorRtBytecodeTest, WeightStoreRoundTripsInAShard) {
 }
 
 TEST(TensorRtBytecodeTest, StepFeedRoundTripsInAShardAsVersionSeven) {
-  const std::vector<uint8_t> run_data = {1, 2, 3};
+  const std::vector<uint8_t> run_data = {1, 2, 3, 4};
   const TensorRtWeightStore store = MakeWeightStore(run_data);
   const std::vector<uint8_t> engine = {4, 5};
   // Three rows' FP32 scales as little-endian bytes.
@@ -522,7 +522,7 @@ TEST(TensorRtBytecodeTest, StepFeedRoundTripsInAShardAsVersionSeven) {
 }
 
 TEST(TensorRtBytecodeTest, StepFeedWithoutATableRoundTrips) {
-  const std::vector<uint8_t> run_data = {1, 2, 3};
+  const std::vector<uint8_t> run_data = {1, 2, 3, 4};
   const TensorRtWeightStore store = MakeWeightStore(run_data);
   const std::vector<uint8_t> engine = {4, 5};
   TensorRtStepFeed feed;
