@@ -254,13 +254,47 @@ cc_library(
 #     hdrs = ["model_config.h"],
 #     deps = [
 #         ":gemma3_config",
-#         ":tflite_loader",
+#         "@com_google_absl//absl/status",
+#         "@com_google_absl//absl/status:statusor",
+#         "@com_google_absl//absl/strings",
+#         "@com_google_absl//absl/strings:string_view",
+#     ],
+# )
+#
+# cc_library(
+#     name = "safetensor_model_config",
+#     srcs = ["safetensor_model_config.cc"],
+#     hdrs = ["safetensor_model_config.h"],
+#     deps = [
+#         ":gemma3_config",
+#         ":model_config",
 #         "@com_google_absl//absl/log:absl_log",
 #         "@com_google_absl//absl/status",
 #         "@com_google_absl//absl/status:statusor",
 #         "@com_google_absl//absl/strings",
 #         "@com_google_absl//absl/strings:string_view",
 #         "//tensor/examples/utils:safetensor_loader",
+#     ],
+# )
+#
+# cc_test(
+#     name = "model_config_test",
+#     srcs = ["model_config_test.cc"],
+#     deps = [
+#         ":gemma3_config",
+#         ":model_config",
+#         ":safetensor_model_config",
+#         ":tflite_loader",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/status",
+#         "@com_google_absl//absl/status:statusor",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@flatbuffers",
+#         "//tensor:datatypes",
+#         "//tensor/examples/utils:safetensor_loader",
+#         "//tensor/examples/utils:safetensor_test_util",
+#         "//tensor/utils:matchers",
+#         "//tflite/schema:schema_fbs",
 #     ],
 # )
 # copybara:uncomment_end
@@ -371,6 +405,7 @@ litert_bin(
 #         ":graph_helpers",
 #         ":model_config",
 #         ":safetensor_loader",
+#         ":safetensor_model_config",
 #         ":tokenizer",
 #         ":util",
 #         "//base",
@@ -401,6 +436,7 @@ litert_bin(
 #         ":gemma3_graph",
 #         ":model_config",
 #         ":safetensor_loader",
+#         ":safetensor_model_config",
 #         ":tokenizer",
 #         "//base",
 #         "@com_google_absl//absl/container:flat_hash_map",
@@ -437,6 +473,7 @@ litert_bin(
 #         ":gemma3_graph",
 #         ":model_config",
 #         ":safetensor_loader",
+#         ":safetensor_model_config",
 #         ":tokenizer",
 #         "@com_google_absl//absl/algorithm:container",
 #         "@com_google_absl//absl/container:flat_hash_map",
