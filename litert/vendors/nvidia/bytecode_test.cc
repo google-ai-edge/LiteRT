@@ -307,7 +307,8 @@ TEST(TensorRtBytecodeTest, SharedWeightShardRejectsInvalidReferences) {
 }
 
 // A store with a private run, a segment of two pieces, a gap and a second
-// segment, for an engine whose weight data is five granules.
+// segment, for an engine whose weight data is five granules. The second run
+// reads the first four bytes of `run_data`, so it must hold at least four.
 TensorRtWeightStore MakeWeightStore(const std::vector<uint8_t>& run_data) {
   constexpr uint64_t kGranule = 2 << 20;
   TensorRtWeightStore store;
