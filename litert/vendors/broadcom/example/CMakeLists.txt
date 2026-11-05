@@ -21,7 +21,7 @@ add_executable(bstorm_example_next
 
 target_link_libraries(bstorm_example_next PRIVATE
   bstorm_example_tensors
-  litert_runtime_c_api_shared_lib
+  litert_cc_api_with_dynamic_runtime
   absl::die_if_null
   dl
 )
