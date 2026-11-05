@@ -23,7 +23,9 @@
 //! compile it, create input and output buffers, and run the model for inference.
 //!
 //! ```rust,no_run
-//! use litert::{CompiledModel, EnvironmentBuilder, LiteRtHwAccelerator, Model, Options, SignatureIndex};
+//! use litert::{
+//!     CompiledModel, EnvironmentBuilder, LiteRtHwAccelerator, Model, Options, SignatureIndex,
+//! };
 //!
 //! // 1. Create an environment.
 //! let environment = EnvironmentBuilder::build_default().expect("Failed to create environment");
@@ -76,18 +78,25 @@
 //! ```rust,no_run
 //! # #[cfg(async_support)]
 //! # async fn run_async_example() -> Result<(), litert::Error> {
-//! # use litert::{CompiledModel, EnvironmentBuilder, LiteRtHwAccelerator, Model, Options, SignatureIndex};
+//! # use litert::{
+//! #     CompiledModel, EnvironmentBuilder, LiteRtHwAccelerator, Model, Options, SignatureIndex,
+//! # };
 //! # let environment = EnvironmentBuilder::build_default().unwrap();
 //! # let model = Model::create_model_from_file(&environment, "/path/to/model.tflite").unwrap();
 //! # // Note: async is not available on all platforms.
 //! # let options = Options::create_with_accelerator(LiteRtHwAccelerator::Gpu).unwrap();
 //! # let compiled_model = CompiledModel::create(&environment, &model, &options).unwrap();
 //! let signature_index = SignatureIndex::DEFAULT;
-//! # let input_buffers = compiled_model.create_input_tensor_buffers(&environment, &model, signature_index).unwrap();
-//! # let output_buffers = compiled_model.create_output_tensor_buffers(&environment, &model, signature_index).unwrap();
+//! # let input_buffers = compiled_model
+//! #     .create_input_tensor_buffers(&environment, &model, signature_index)
+//! #     .unwrap();
+//! # let output_buffers = compiled_model
+//! #     .create_output_tensor_buffers(&environment, &model, signature_index)
+//! #     .unwrap();
 //! // 1. Run inference asynchronously.
 //! // This starts execution in a parallel thread if supported.
-//! let running_parallel = compiled_model.run_async(signature_index, &input_buffers, &output_buffers)?;
+//! let running_parallel =
+//!     compiled_model.run_async(signature_index, &input_buffers, &output_buffers)?;
 //!
 //! if running_parallel {
 //!   // ... do other stuff ...
@@ -109,6 +118,7 @@ pub mod error;
 mod helper_funs;
 pub mod model;
 pub mod tensor_buffer;
+pub mod tensor_buffer_lock;
 #[macro_use]
 mod macros;
 
@@ -131,3 +141,6 @@ pub use tensor_buffer::ReadAsync;
 pub use tensor_buffer::TensorBuffer;
 pub use tensor_buffer::TensorBufferRequirements;
 pub use tensor_buffer::TensorBufferType;
+pub use tensor_buffer_lock::TensorBufferReadLock;
+pub use tensor_buffer_lock::TensorBufferWriteLock;
+pub use tensor_buffer_lock::TensorElement;

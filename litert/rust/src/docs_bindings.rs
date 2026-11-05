@@ -780,6 +780,10 @@ pub fn LiteRtIsEventSignaled(event: LiteRtEvent, is_signaled: *mut bool) -> Lite
     unimplemented!()
 }
 
+pub fn LiteRtWaitEvent(event: LiteRtEvent, timeout_in_ms: i64) -> LiteRtStatus {
+    unimplemented!()
+}
+
 pub fn LiteRtDestroyEvent(event: LiteRtEvent) {
     unimplemented!()
 }
