@@ -33,6 +33,7 @@ Y = X * W^T = (X * H) * (W * H)^T
 
 import dataclasses
 from typing import Any, Optional
+import ml_dtypes
 import numpy as np
 from litert_quantizer import qtyping
 from litert_quantizer.algorithms.uniform_quantize import octav
@@ -318,11 +319,155 @@ def _rotate_with_diagonal_hadamard(
   )
 
 
+# Motivation for `int2_in_int4` (temporary 4-level 2-bit mid-riser emulation in
+# INT4):
+# Standard symmetric 2-bit quantization (`num_bits=2, symmetric=True`) in
+# LiteRT/TFLite uses a 3-level mid-tread codebook `{-1, 0, +1} * scale`
+# (discarding `-2` to preserve `zero_point=0`), which wastes one of the 4
+# available 2-bit states and incurs high quantization error on continuous
+# Hadamard/Kronecker-rotated weight distributions that peak near zero (~30%
+# higher Relative RMSE / ~2x higher MSE than a 4-level symmetric grid). A
+# 4-level symmetric mid-riser codebook `{-1.5, -0.5, +0.5, +1.5} * delta` uses
+# all 4 states symmetrically around zero without a zero bin.
+#
+# Because TFLite/LiteRT FlatBuffers and runtime kernels (`XNNPACK`, CPU, GPU)
+# do not yet implement native 2-bit mid-riser unpacking and dequantization,
+# `int2_in_int4=True` is a temporary evaluation/emulation mode that encodes the
+# 4 mid-riser levels as odd integers `{-3, -1, +1, +3}` with half-step scale
+# `scale = delta / 2 = clip / 4` (`{-3, -1, +1, +3} * scale =
+# {-1.5, -0.5, +0.5, +1.5} * delta`) inside a standard signed `INT4` container
+# (`num_bits=4, symmetric=True, zero_point=0`). This enables end-to-end
+# accuracy evaluation and mixed-precision (`W2`/`W4`/`W8`) bit-allocation recipe
+# prototyping on existing `INT4` kernels before dedicated 2-bit mid-riser
+# kernels land. Because weights remain stored in `INT4` containers during this
+# emulation, `int2_in_int4=True` provides no FlatBuffer file size or runtime
+# memory reduction over `INT4`.
+
+
+def _validate_int2_in_int4(
+    int2_in_int4: Any, num_bits: int, symmetric: bool
+) -> bool:
+  """Validates `int2_in_int4` against `num_bits` and `symmetric`."""
+  if not isinstance(int2_in_int4, bool):
+    raise ValueError(f"int2_in_int4 must be a boolean, got {int2_in_int4!r}.")
+  if int2_in_int4 and (num_bits != 4 or not symmetric):
+    raise ValueError(
+        "int2_in_int4 requires symmetric 4-bit quantization (num_bits=4,"
+        f" symmetric=True), got num_bits={num_bits}, symmetric={symmetric}."
+    )
+  return int2_in_int4
+
+
+def _ensure_int2_in_int4_codebook(
+    w_rotated: np.ndarray, qparams: qtyping.UniformQuantParams
+) -> qtyping.UniformQuantParams:
+  """Projects `qparams` onto `{-3, -1, 1, 3}` if not already in codebook.
+
+  When `hadamard_rotation.get_tensor_quant_params` delegates to `octav`, `octav`
+  already produces `{-3, -1, 1, 3}` codes with `scale = clip / 4`. This helper
+  ensures direct callers of `_refine_quant_params_mse(..., int2_in_int4=True)`
+  whose initial `qparams` were quantized on the 15-level `[-7, 7]` grid (`scale
+  = clip / 7`) are first rescaled by `7 / 4` (`clip / 4`) and rounded onto the
+  4-level odd codebook `{-3, -1, 1, 3}` before MSE refinement.
+
+  Args:
+    w_rotated: Rotated weight tensor.
+    qparams: Initial uniform quantization parameters.
+
+  Returns:
+    `UniformQuantParams` whose `quantized_data` is in `{-3, -1, 1, 3}`.
+  """
+  if (
+      not qparams.symmetric
+      or qparams.quantized_data is None
+      or np.all(np.isin(qparams.quantized_data, (-3, -1, 1, 3)))
+  ):
+    return qparams
+  new_scale = qparams.scale.astype(np.float32) * (7.0 / 4.0)
+  if qparams.block_size > 0:
+    new_scale = np.minimum(new_scale, np.float32(65280.0))
+    new_scale = (
+        new_scale.astype(ml_dtypes.bfloat16)
+        .astype(np.float16)
+        .astype(np.float32)
+    )
+  if qparams.block_size > 0 and qparams.quantized_dimension is not None:
+    expanded_scale = np.repeat(
+        new_scale, qparams.block_size, axis=qparams.quantized_dimension
+    )
+  else:
+    bcast_shape = [1] * w_rotated.ndim
+    if new_scale.size > 1 and qparams.quantized_dimension is not None:
+      bcast_shape[qparams.quantized_dimension] = new_scale.size
+    expanded_scale = new_scale.reshape(bcast_shape)
+  s_2bit = 2.0 * np.maximum(expanded_scale, 1e-9)
+  w_f32 = w_rotated.astype(np.float32, copy=False)
+  new_q = (
+      2.0 * np.clip(np.rint(w_f32 / s_2bit - 0.5), -2.0, 1.0) + 1.0
+  ).astype(qparams.quantized_data.dtype)
+  return dataclasses.replace(
+      qparams,
+      scale=new_scale.astype(qparams.scale.dtype),
+      quantized_data=new_q,
+  )
+
+
+def _quantize_mse_chunk(
+    w_chunk: np.ndarray,
+    s_chunk: np.ndarray,
+    qmin: float,
+    qmax: float,
+    int2_in_int4: bool,
+) -> np.ndarray:
+  """Quantizes a weight chunk during MSE scale refinement.
+
+  When `int2_in_int4=True`, candidate scales must be evaluated on the 4-level
+  odd mid-riser codebook `{-3, -1, 1, 3}` (step `2 * s_chunk`) rather than the
+  full 15-level `[-7, 7]` `INT4` grid; otherwise `scale_refinement="mse_grid"`
+  would overwrite the 2-bit emulation with 4-bit codes.
+
+  Args:
+    w_chunk: Float32 rotated weight chunk `[rows, cols]`.
+    s_chunk: Candidate per-row scale `[rows, 1]`.
+    qmin: Minimum integer code for standard uniform rounding.
+    qmax: Maximum integer code for standard uniform rounding.
+    int2_in_int4: Whether to restrict codes to `{-3, -1, 1, 3}`.
+
+  Returns:
+    Quantized float32 codes matching `w_chunk` shape.
+  """
+  if int2_in_int4:
+    s_2bit = 2.0 * np.maximum(s_chunk, 1e-9)
+    return 2.0 * np.clip(np.rint(w_chunk / s_2bit - 0.5), -2.0, 1.0) + 1.0
+  return np.clip(np.rint(w_chunk / s_chunk), qmin, qmax)
+
+
 def _refine_quant_params_mse(
     w_rotated: np.ndarray,
     qparams: qtyping.UniformQuantParams,
+    int2_in_int4: bool = False,
 ) -> qtyping.UniformQuantParams:
-  """Refines per-channel symmetric scale and quantized_data to minimize L2 MSE."""
+  """Refines per-channel symmetric scale and quantized_data for L2 MSE.
+
+  When `int2_in_int4=True` (temporary 4-level 2-bit mid-riser emulation inside
+  an `INT4` container), both the multiplier grid search and the 2-step
+  alternating least-squares (ALS) update round candidate scales onto the odd
+  codebook `{-3, -1, 1, 3}` instead of `[-7, 7]` so the 2-bit emulation is
+  preserved.
+
+  Args:
+    w_rotated: Rotated weight tensor `[m_rows, d_cols]`.
+    qparams: Initial quantization parameters from OCTAV.
+    int2_in_int4: Whether to preserve the 4-level `{-3, -1, 1, 3}` codebook.
+
+  Returns:
+    Refined `UniformQuantParams`.
+  """
+  int2_in_int4 = _validate_int2_in_int4(
+      int2_in_int4, qparams.num_bits, qparams.symmetric
+  )
+  if int2_in_int4:
+    qparams = _ensure_int2_in_int4_codebook(w_rotated, qparams)
   if (
       not qparams.symmetric
       or qparams.block_size != 0
@@ -358,13 +503,13 @@ def _refine_quant_params_mse(
     end = min(start + chunk_size, m_rows)
     w_chunk = w_rotated[start:end].astype(np.float32, copy=False)
     s_cur = best_scale[start:end].copy()
+    s_base_chunk = base_scale[start:end]
     q_cur = best_q[start:end].astype(np.float32)
     err_cur = np.sum((w_chunk - q_cur * s_cur) ** 2, axis=1, keepdims=True)
 
-    s_base_chunk = base_scale[start:end]
     for alpha in alphas:
       s_cand = np.maximum(s_base_chunk * alpha, 1e-9)
-      q_cand = np.clip(np.rint(w_chunk / s_cand), qmin, qmax)
+      q_cand = _quantize_mse_chunk(w_chunk, s_cand, qmin, qmax, int2_in_int4)
       err_cand = np.sum((w_chunk - q_cand * s_cand) ** 2, axis=1, keepdims=True)
       improved = err_cand < err_cur
       err_cur = np.where(improved, err_cand, err_cur)
@@ -378,7 +523,7 @@ def _refine_quant_params_mse(
       wq = np.sum(w_chunk * q_cur, axis=1, keepdims=True)
       s_cand = np.where(qq > 0.0, wq / np.maximum(qq, 1e-12), s_cand)
       s_cand = np.maximum(s_cand, 1e-9)
-      q_cand = np.clip(np.rint(w_chunk / s_cand), qmin, qmax)
+      q_cand = _quantize_mse_chunk(w_chunk, s_cand, qmin, qmax, int2_in_int4)
       err_cand = np.sum((w_chunk - q_cand * s_cand) ** 2, axis=1, keepdims=True)
       improved = err_cand < err_cur
       err_cur = np.where(improved, err_cand, err_cur)
@@ -420,6 +565,8 @@ def get_tensor_quant_params(
       must be provided so that they can be inferred.
     ValueError: If the reduction dimension is odd or `max_hadamard_size` is
       less than 2.
+    ValueError: If `int2_in_int4` is not a boolean or is enabled without
+      symmetric 4-bit quantization.
   """
   if tensor_content is None:
     raise ValueError("Hadamard rotation is only supported for weight tensors.")
@@ -439,6 +586,11 @@ def get_tensor_quant_params(
   # axis.
   reduce_axis = tensor_content.ndim - 1
   alg_params = tensor_quant_config.algorithm_params or {}
+  int2_in_int4 = _validate_int2_in_int4(
+      alg_params.get("int2_in_int4", False),
+      tensor_quant_config.num_bits,
+      tensor_quant_config.symmetric,
+  )
 
   # Rotate the tensor with a Hadamard (or Kronecker) orthogonal transformation.
   (
@@ -460,6 +612,8 @@ def get_tensor_quant_params(
   qparams = octav.get_tensor_quant_params(
       op_info, tensor_quant_config, w_rotated, tensor_qsv
   )
+  if int2_in_int4:
+    qparams = _ensure_int2_in_int4_codebook(w_rotated, qparams)
 
   scale_refinement = alg_params.get("scale_refinement", "none")
   if scale_refinement not in VALID_SCALE_REFINEMENTS:
@@ -468,7 +622,9 @@ def get_tensor_quant_params(
         f" {VALID_SCALE_REFINEMENTS}."
     )
   if scale_refinement == "mse_grid":
-    qparams = _refine_quant_params_mse(w_rotated, qparams)
+    qparams = _refine_quant_params_mse(
+        w_rotated, qparams, int2_in_int4=int2_in_int4
+    )
 
   return qtyping.UniformQuantParams(
       quantized_dimension=qparams.quantized_dimension,
