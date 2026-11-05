@@ -24,6 +24,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "litert/vendors/intel_openvino/hfa_history.h"
 #include "openvino/core/model.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/op/add.hpp"
@@ -1300,6 +1301,84 @@ TEST(DecomposeSDPAForHFATest, ReadsTokenCountFromTiledMaskWithoutFold) {
           << "tokens=" << tokens << " padded=" << padded;
     }
   }
+}
+
+// Indices of |model|'s inputs tagged as the HFA history mask.
+std::vector<size_t> HistoryMaskInputs(const std::shared_ptr<ov::Model>& model) {
+  std::vector<size_t> tagged;
+  for (size_t i = 0; i < model->inputs().size(); ++i) {
+    if (model->input(i).get_names().count(kHfaHistoryMaskTensorName)) {
+      tagged.push_back(i);
+    }
+  }
+  return tagged;
+}
+
+// The mask input of the decomposed prefill attention is tagged for dispatch,
+// also when the fusion reaches it through the KV-alignment Pad.
+TEST(DecomposeSDPAForHFATest, TagsMaskInputForHistory) {
+  for (const int64_t s_past : {12, 8}) {  // 8 + 4 is padded to 16
+    auto model = BuildFoldedSplitCacheAttention(/*hkv=*/2, /*r=*/4, s_past,
+                                                /*s=*/4, /*head_dim=*/8);
+    Gemma4AttentionPasses(/*decompose=*/true).Run(model);
+    EXPECT_EQ(HistoryMaskInputs(model), std::vector<size_t>{5})
+        << "s_past=" << s_past;
+  }
+}
+
+// With a global and a sliding-window mask, only the one spanning the whole
+// cache is tagged.
+TEST(DecomposeSDPAForHFATest, TagsWidestMaskOnly) {
+  using ov::op::v0::Parameter;
+  const auto f = ov::element::f32;
+  ov::ParameterVector params;
+  ov::OutputVector outputs;
+  for (const size_t kv : {8, 16}) {
+    auto q = std::make_shared<Parameter>(f, ov::Shape{1, 2, 4, 4});
+    auto k = std::make_shared<Parameter>(f, ov::Shape{1, 2, kv, 4});
+    auto v = std::make_shared<Parameter>(f, ov::Shape{1, 2, kv, 4});
+    auto mask = std::make_shared<Parameter>(f, ov::Shape{1, 1, 4, kv});
+    auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
+        ov::OutputVector{q, k, v, mask}, /*causal=*/false);
+    params.insert(params.end(), {q, k, v, mask});
+    outputs.push_back(sdpa->output(0));
+  }
+  auto model = std::make_shared<ov::Model>(outputs, params, "two_masks");
+  const auto result = NpuOptimizer()
+                          .SetCastIntegerSignToFloat(false)
+                          .SetDecomposeSDPAForHFA(true)
+                          .Run(model);
+  EXPECT_EQ(result.num_sdpa_decomposed_for_hfa, 2u);
+  EXPECT_EQ(HistoryMaskInputs(model), std::vector<size_t>{7});
+}
+
+// Nothing is tagged when no prefill attention is decomposed, or when its mask
+// is computed in the graph rather than read from an input.
+TEST(DecomposeSDPAForHFATest, TagsNothingWithoutDecomposedMaskInput) {
+  auto decode = BuildFoldedSplitCacheAttention(/*hkv=*/2, /*r=*/4,
+                                               /*s_past=*/15, /*s=*/1,
+                                               /*head_dim=*/8);
+  Gemma4AttentionPasses(/*decompose=*/true).Run(decode);
+  EXPECT_TRUE(HistoryMaskInputs(decode).empty());
+
+  using ov::op::v0::Parameter;
+  const auto f = ov::element::f32;
+  auto q = std::make_shared<Parameter>(f, ov::Shape{1, 2, 4, 4});
+  auto k = std::make_shared<Parameter>(f, ov::Shape{1, 2, 12, 4});
+  auto v = std::make_shared<Parameter>(f, ov::Shape{1, 2, 12, 4});
+  auto bias = std::make_shared<Parameter>(f, ov::Shape{1, 1, 4, 12});
+  auto mask = std::make_shared<ov::op::v1::Add>(bias, bias);
+  auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
+      ov::OutputVector{q, k, v, mask}, /*causal=*/false);
+  auto computed =
+      std::make_shared<ov::Model>(ov::OutputVector{sdpa->output(0)},
+                                  ov::ParameterVector{q, k, v, bias}, "sdpa");
+  const auto result = NpuOptimizer()
+                          .SetCastIntegerSignToFloat(false)
+                          .SetDecomposeSDPAForHFA(true)
+                          .Run(computed);
+  EXPECT_EQ(result.num_sdpa_decomposed_for_hfa, 1u);
+  EXPECT_TRUE(HistoryMaskInputs(computed).empty());
 }
 
 }  // namespace

@@ -101,6 +101,45 @@ litert_test(
     ],
 )
 
+# Reads the HFA history (tokens already in the KV cache) from a prefill
+# graph's attention mask for NPUW; shared by the compiler and dispatch.
+cc_library(
+    name = "hfa_history",
+    srcs = ["hfa_history.cc"],
+    hdrs = ["hfa_history.h"],
+    copts = select({
+        "//litert/runtime/dispatch:windows_msvc": ["/EHsc"],
+        "//conditions:default": ["-fexceptions"],
+    }),
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        # copybara:uncomment_begin(google-only)
+        # "@intel_openvino//:openvino_headers",
+        # copybara:uncomment_end
+        # copybara:comment_begin(oss-only)
+        "@intel_openvino//:openvino",
+        # copybara:comment_end
+    ],
+)
+
+litert_test(
+    name = "hfa_history_test",
+    srcs = ["hfa_history_test.cc"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":hfa_history",
+        "@intel_openvino//:openvino",
+    ],
+)
+
 cc_library(
     name = "bytecode_header",
     hdrs = ["bytecode_header.h"],

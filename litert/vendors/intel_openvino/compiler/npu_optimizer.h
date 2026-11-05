@@ -124,6 +124,10 @@ class UnfoldGqaSequenceFold : public ov::pass::ModelPass {
 // Transpose (any GQA head repeat is rebuilt beneath it). Decode steps, causal
 // SDPAs and boolean masks stay fused.
 //
+// The graph input holding the widest of the decomposed SDPAs' masks gets the
+// tensor name kHfaHistoryMaskTensorName, from which dispatch reads the
+// history NPUW's HFA needs (see hfa_history.h).
+//
 // Must run after UnfoldGqaSequenceFold. Enabled by config key "enable_hfa";
 // see SetDecomposeSDPAForHFA.
 class DecomposeSDPAForHFA : public ov::pass::ModelPass {
