@@ -293,5 +293,163 @@ TEST(TopKV2OpEdgeTest, IntermediateRowProductOverflowRejected) {
   EXPECT_EQ(ops::builtin::topk_v2::Eval(&context, &node), kTfLiteError);
 }
 
+TEST(TopKV2OpEdgeTest, StaticEvalValidControlSucceeds) {
+  auto input_dims = MakeTfLiteIntArray({1, 3});
+  auto top_k_dims = MakeTfLiteIntArray({1});
+  auto output_dims = MakeTfLiteIntArray({1, 2});
+  auto inputs = MakeTfLiteIntArray({0, 1});
+  auto outputs = MakeTfLiteIntArray({2, 3});
+
+  float input_data[3] = {1.0f, 3.0f, 2.0f};
+  int32_t top_k = 2;
+  float output_values[2] = {0.0f, 0.0f};
+  int32_t output_indexes[2] = {0, 0};
+  TfLiteTensor tensors[4] = {};
+  tensors[0].type = kTfLiteFloat32;
+  tensors[0].data.f = input_data;
+  tensors[0].bytes = sizeof(input_data);
+  tensors[0].dims = input_dims.get();
+  tensors[0].allocation_type = kTfLiteArenaRw;
+  tensors[1].type = kTfLiteInt32;
+  tensors[1].data.i32 = &top_k;
+  tensors[1].bytes = sizeof(top_k);
+  tensors[1].dims = top_k_dims.get();
+  tensors[1].allocation_type = kTfLiteArenaRw;
+  tensors[2].type = kTfLiteFloat32;
+  tensors[2].data.f = output_values;
+  tensors[2].bytes = sizeof(output_values);
+  tensors[2].dims = output_dims.get();
+  tensors[2].allocation_type = kTfLiteArenaRw;
+  tensors[3].type = kTfLiteInt32;
+  tensors[3].data.i32 = output_indexes;
+  tensors[3].bytes = sizeof(output_indexes);
+  tensors[3].dims = output_dims.get();
+  tensors[3].allocation_type = kTfLiteArenaRw;
+
+  TfLiteContext context = {};
+  context.tensors = tensors;
+  context.tensors_size = 4;
+  context.ReportError = NoOpErrorReporter;
+
+  TfLiteNode node = {};
+  node.inputs = inputs.get();
+  node.outputs = outputs.get();
+
+  ASSERT_EQ(ops::builtin::topk_v2::Eval(&context, &node), kTfLiteOk);
+  EXPECT_THAT(output_values, ElementsAreArray(ArrayFloatNear({3.0f, 2.0f})));
+  EXPECT_THAT(output_indexes, ElementsAreArray({1, 2}));
+}
+
+TEST(TopKV2OpEdgeTest, StaticEvalRejectsInvalidTopKAndOutputBounds) {
+  auto input_dims = MakeTfLiteIntArray({1, 2});
+  auto non_scalar_top_k_dims = MakeTfLiteIntArray({2});
+  auto overflowing_top_k_dims = MakeTfLiteIntArray({46341, 46341});
+  auto scalar_top_k_dims = MakeTfLiteIntArray({1});
+  auto scalar_input_dims = MakeTfLiteIntArray({});
+  auto output_dims_one = MakeTfLiteIntArray({1, 1});
+  auto output_dims_two = MakeTfLiteIntArray({1, 2});
+  auto output_dims_zero = MakeTfLiteIntArray({0});
+  auto negative_output_dims = MakeTfLiteIntArray({-1, 2});
+  auto overflowing_output_dims = MakeTfLiteIntArray({46341, 46341});
+  auto two_rows_input_dims = MakeTfLiteIntArray({2, 2});
+  auto inputs = MakeTfLiteIntArray({0, 1});
+  auto outputs = MakeTfLiteIntArray({2, 3});
+
+  float input_data[4] = {1.0f, 2.0f, 3.0f, 4.0f};
+  int32_t top_k_pair[2] = {1, 1};
+  float output_values[2] = {0.0f, 0.0f};
+  int32_t output_indexes[2] = {0, 0};
+  TfLiteTensor tensors[4] = {};
+  tensors[0].type = kTfLiteFloat32;
+  tensors[0].data.f = input_data;
+  tensors[0].bytes = sizeof(input_data);
+  tensors[0].dims = input_dims.get();
+  tensors[0].allocation_type = kTfLiteArenaRw;
+  tensors[1].type = kTfLiteInt32;
+  tensors[1].data.i32 = top_k_pair;
+  tensors[1].bytes = sizeof(top_k_pair);
+  tensors[1].dims = non_scalar_top_k_dims.get();
+  tensors[1].allocation_type = kTfLiteArenaRw;
+  tensors[2].type = kTfLiteFloat32;
+  tensors[2].data.f = output_values;
+  tensors[2].bytes = sizeof(output_values);
+  tensors[2].dims = output_dims_one.get();
+  tensors[2].allocation_type = kTfLiteArenaRw;
+  tensors[3].type = kTfLiteInt32;
+  tensors[3].data.i32 = output_indexes;
+  tensors[3].bytes = sizeof(output_indexes);
+  tensors[3].dims = output_dims_one.get();
+  tensors[3].allocation_type = kTfLiteArenaRw;
+
+  TfLiteContext context = {};
+  context.tensors = tensors;
+  context.tensors_size = 4;
+  context.ReportError = NoOpErrorReporter;
+
+  TfLiteNode node = {};
+  node.inputs = inputs.get();
+  node.outputs = outputs.get();
+
+  // Case 1: top_k tensor with 2 elements or overflowing dims must be rejected.
+  EXPECT_EQ(ops::builtin::topk_v2::Eval(&context, &node), kTfLiteError);
+  tensors[1].dims = overflowing_top_k_dims.get();
+  EXPECT_EQ(ops::builtin::topk_v2::Eval(&context, &node), kTfLiteError);
+
+  // Case 2: k > row_size on static tensors must be rejected.
+  int32_t k_too_large = 2;
+  tensors[0].dims = output_dims_one.get();
+  tensors[1].data.i32 = &k_too_large;
+  tensors[1].dims = scalar_top_k_dims.get();
+  tensors[2].dims = output_dims_two.get();
+  tensors[3].dims = output_dims_two.get();
+  EXPECT_EQ(ops::builtin::topk_v2::Eval(&context, &node), kTfLiteError);
+
+  // Case 3: output tensor element count smaller than num_rows * k, negative, or
+  // overflowing int must be rejected.
+  int32_t k_one = 1;
+  tensors[0].dims = two_rows_input_dims.get();
+  tensors[1].data.i32 = &k_one;
+  tensors[2].dims = output_dims_one.get();
+  tensors[3].dims = output_dims_one.get();
+  EXPECT_EQ(ops::builtin::topk_v2::Eval(&context, &node), kTfLiteError);
+  tensors[2].dims = negative_output_dims.get();
+  tensors[3].dims = negative_output_dims.get();
+  EXPECT_EQ(ops::builtin::topk_v2::Eval(&context, &node), kTfLiteError);
+  tensors[2].dims = overflowing_output_dims.get();
+  tensors[3].dims = overflowing_output_dims.get();
+  EXPECT_EQ(ops::builtin::topk_v2::Eval(&context, &node), kTfLiteError);
+
+  // Case 4: rank-0 scalar input tensor must be rejected.
+  int32_t k_zero = 0;
+  tensors[0].dims = scalar_input_dims.get();
+  tensors[1].data.i32 = &k_zero;
+  tensors[2].dims = output_dims_zero.get();
+  tensors[3].dims = output_dims_zero.get();
+  EXPECT_EQ(ops::builtin::topk_v2::Eval(&context, &node), kTfLiteError);
+}
+
+TEST(TopKV2OpEdgeTest, PostPrepareTopKOrOutputMutationRejectedByInvoke) {
+  // Through SingleOpModel::Invoke(), constant top_k leaves output_values
+  // non-dynamic in Prepare(), so Eval() skips ResizeOutput() and relies on
+  // TopKImpl() to enforce that runtime k and output metadata still match.
+  TopKV2OpModel<float> m(2, {2, 3}, {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f},
+                         TestType::kConst);
+  TfLiteTensor* top_k_tensor = m.GetInputTensor(1);
+  *GetTensorData<int32_t>(top_k_tensor) = 1;
+  EXPECT_EQ(m.Invoke(), kTfLiteError);
+  *GetTensorData<int32_t>(top_k_tensor) = 2;
+
+  TfLiteTensor* out_values = m.GetOutputTensor(0);
+  const size_t orig_bytes = out_values->bytes;
+  out_values->bytes = sizeof(float);
+  EXPECT_EQ(m.Invoke(), kTfLiteError);
+  out_values->bytes = orig_bytes;
+
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetIndexes(), ElementsAreArray({2, 1, 2, 1}));
+  EXPECT_THAT(m.GetValues(),
+              ElementsAreArray(ArrayFloatNear({3.0f, 2.0f, 6.0f, 5.0f})));
+}
+
 }  // namespace
 }  // namespace tflite
