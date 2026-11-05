@@ -119,7 +119,8 @@ void LogGpuProperties(ov::Core& core, const std::string& dev,
 
 // Log specific NPU device/backend properties.
 void LogNpuProperties(ov::Core& core, const std::string& dev,
-                      const char* context_tag, bool is_device_instance) {
+                      const char* context_tag, bool is_device_instance,
+                      const ov::AnyMap& compile_properties) {
   const char* type_label = is_device_instance ? "Device" : "Backend";
   try {
     std::string full_name = core.get_property(dev, ov::device::full_name);
@@ -138,10 +139,15 @@ void LogNpuProperties(ov::Core& core, const std::string& dev,
   }
 
   try {
-    std::string platform = core.get_property(dev, ov::intel_npu::platform);
+    const std::string platform = ResolveNpuPlatformForLog(
+        compile_properties, core.get_property(dev, ov::intel_npu::platform));
     if (!platform.empty()) {
       LITERT_LOG(LITERT_INFO, "[%s]   %s '%s' NPU platform: %s",
                  context_tag, type_label, dev.c_str(), platform.c_str());
+    } else {
+      LITERT_LOG(LITERT_INFO,
+                 "[%s]   %s '%s' NPU platform: not specified (AUTO_DETECT)",
+                 context_tag, type_label, dev.c_str());
     }
   } catch (const ov::Exception& e) {
     LITERT_LOG(LITERT_DEBUG,
@@ -207,13 +213,15 @@ void LogNpuProperties(ov::Core& core, const std::string& dev,
 // Log general device properties (full name, etc.).
 void LogGeneralDeviceProperties(ov::Core& core, const std::string& dev,
                                 const char* context_tag,
-                                bool is_device_instance) {
+                                bool is_device_instance,
+                                const ov::AnyMap& compile_properties) {
   if (absl::StrContains(dev, "CPU")) {
     LogCpuProperties(core, dev, context_tag, is_device_instance);
   } else if (absl::StrContains(dev, "GPU")) {
     LogGpuProperties(core, dev, context_tag, is_device_instance);
   } else if (absl::StrContains(dev, "NPU")) {
-    LogNpuProperties(core, dev, context_tag, is_device_instance);
+    LogNpuProperties(core, dev, context_tag, is_device_instance,
+                     compile_properties);
   } else {
     const char* type_label = is_device_instance ? "Device" : "Backend";
     try {
@@ -258,8 +266,27 @@ std::string GetOpenVINOVersionString() {
   }
 }
 
+std::string ResolveNpuPlatformForLog(const ov::AnyMap& compile_properties,
+                                     const std::string& global_platform) {
+  // The plugin-wide default; it is not a platform.
+  const std::string kAutoDetect = "AUTO_DETECT";
+  try {
+    const auto it = compile_properties.find(ov::intel_npu::platform.name());
+    if (it != compile_properties.end()) {
+      const std::string platform = it->second.as<std::string>();
+      if (!platform.empty() && platform != kAutoDetect) {
+        return platform;
+      }
+    }
+  } catch (const std::exception&) {
+    // A malformed value falls back to the plugin-wide platform.
+  }
+  return global_platform == kAutoDetect ? std::string() : global_platform;
+}
+
 void LogOpenVINOVersionInfoOnce(const char* context_tag,
-                                const char* target_device) {
+                                const char* target_device,
+                                const ov::AnyMap& compile_properties) {
   static auto* const mutex = new absl::Mutex();
   static auto* const logged_targets =
       new std::set<std::pair<std::string, std::string>>();
@@ -269,7 +296,9 @@ void LogOpenVINOVersionInfoOnce(const char* context_tag,
 
   {
     absl::MutexLock lock(mutex);
-    if (!logged_targets->emplace(ctx, target).second) {
+    const std::string key =
+        target + "|" + ResolveNpuPlatformForLog(compile_properties, "");
+    if (!logged_targets->emplace(ctx, key).second) {
       return;
     }
   }
@@ -303,7 +332,8 @@ void LogOpenVINOVersionInfoOnce(const char* context_tag,
           LITERT_LOG(LITERT_INFO, "[%s] Found device: %s", ctx.c_str(),
                      dev.c_str());
           LogGeneralDeviceProperties(core, dev, ctx.c_str(),
-                                     /*is_device_instance=*/true);
+                                     /*is_device_instance=*/true,
+                                     compile_properties);
         }
       }
 
@@ -311,7 +341,8 @@ void LogOpenVINOVersionInfoOnce(const char* context_tag,
       // properties directly.
       if (!found_device) {
         LogGeneralDeviceProperties(core, target, ctx.c_str(),
-                                   /*is_device_instance=*/false);
+                                   /*is_device_instance=*/false,
+                                   compile_properties);
       }
       return;
     }
@@ -350,7 +381,8 @@ void LogOpenVINOVersionInfoOnce(const char* context_tag,
 
         // Query device specific properties
         LogGeneralDeviceProperties(core, dev, ctx.c_str(),
-                                   /*is_device_instance=*/true);
+                                   /*is_device_instance=*/true,
+                                   compile_properties);
       }
     } else {
       LITERT_LOG(
@@ -371,7 +403,8 @@ void LogOpenVINOVersionInfoOnce(const char* context_tag,
     for (const auto& [backend_name, already_found] : candidate_backends) {
       if (!already_found) {
         LogGeneralDeviceProperties(core, backend_name, ctx.c_str(),
-                                   /*is_device_instance=*/false);
+                                   /*is_device_instance=*/false,
+                                   compile_properties);
       }
     }
   } catch (const ov::Exception& e) {
