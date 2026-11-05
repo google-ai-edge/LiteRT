@@ -858,7 +858,8 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashSdpa(
   op.AddDstTensor("dst", dst_desc);
 
   const bool has_batch = q_desc.HasAxis(::ml_drift::Axis::kBatch);
-  if (gpu_info.IsApiOpenCl() && gpu_info.IsMali()) {
+  if (gpu_info.IsApiOpenCl() && gpu_info.IsMali() &&
+      gpu_info.opencl_info.supports_register_allocation_arm) {
     op.compiler_options_.push_back(
         ::ml_drift::CompilerOptions::kClRegisterAllocation64);
   }
