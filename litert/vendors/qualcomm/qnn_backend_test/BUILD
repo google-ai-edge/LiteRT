@@ -10,6 +10,47 @@ package(
 )
 
 litert_test(
+    name = "htp_platform_info_test",
+    srcs = [
+        "htp_platform_info_test.cc",
+    ],
+    linkopts = select({
+        "//litert:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
+    linkstatic = True,
+    no_main = True,
+    tags = [
+        "manual",
+        # Don't build/test in OS until qnn is available.
+        "no-remote-exec",
+        "nobuilder",
+        "notap",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    ungrte = True,
+    use_sys_malloc = True,
+    deps = [
+        "//litert/vendors/qualcomm:qnn_manager",
+        "//litert/vendors/qualcomm:common",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:test_main",
+        "//litert/vendors/qualcomm/core/utils:test_utils",
+        "@com_google_googletest//:gtest",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+litert_test(
     name = "qnn_model_test",
     srcs = [
         "qnn_model_test.cc",
