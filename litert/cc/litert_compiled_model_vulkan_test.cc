@@ -12,25 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <array>
 #include <cstdint>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_environment_options.h"
+#include "ml_drift/syrtis/environment.h"  // from @ml_drift
+#include "ml_drift/syrtis/vulkan_wrapper.h"  // from @ml_drift
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -41,6 +50,8 @@ using testing::Pointwise;
 
 namespace litert {
 namespace {
+
+constexpr float kTolerance = 1e-5;
 
 struct TestParams {
   using TupleT =
@@ -145,7 +156,7 @@ TEST_P(ParameterizedTest, Basic) {
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
     }
-    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+    EXPECT_THAT(output, Pointwise(FloatNear(kTolerance), kTestOutputTensor));
   }
 }
 
@@ -185,7 +196,7 @@ TEST(CompiledModelVulkanTest, GpuEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto vulkan_env_1,
-      env_options_1.GetOption(kLiteRtEnvOptionTagVulkanEnvironment));
+      env_options_1.GetOption(EnvironmentOptions::Tag::kVulkanEnvironment));
   ABSL_LOG(INFO) << "Vulkan env: "
                  << reinterpret_cast<void*>(std::get<int64_t>(vulkan_env_1));
 
@@ -206,8 +217,118 @@ TEST(CompiledModelVulkanTest, GpuEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto vulkan_env_2,
-      env_options_2.GetOption(kLiteRtEnvOptionTagVulkanEnvironment));
+      env_options_2.GetOption(EnvironmentOptions::Tag::kVulkanEnvironment));
   EXPECT_EQ(std::get<int64_t>(vulkan_env_1), std::get<int64_t>(vulkan_env_2));
+}
+
+TEST(CompiledModelVulkanTest, ExternalVulkanEnvironment) {
+  // To workaround the memory leak in Nvidia's driver
+  absl::LeakCheckDisabler disable_leak_check;
+
+  ASSERT_EQ(::ml_drift::syrtis::InitVulkan(), 1);
+  ::ml_drift::syrtis::Environment vk_env;
+  ASSERT_OK(::ml_drift::syrtis::CreateEnvironment(&vk_env));
+  VkQueue vk_queue = VK_NULL_HANDLE;
+  ASSERT_OK(vk_env.GetQueue().WithQueue([&](VkQueue queue) {
+    vk_queue = queue;
+    return absl::OkStatus();
+  }));
+
+  const std::array<EnvironmentOptions::Option, 3> external_options = {
+      EnvironmentOptions::Option{
+          EnvironmentOptions::Tag::kVulkanPhysicalDevice,
+          reinterpret_cast<int64_t>(vk_env.GetPhysicalDevice())},
+      EnvironmentOptions::Option{EnvironmentOptions::Tag::kVulkanDevice,
+                                 reinterpret_cast<int64_t>(vk_env.GetDevice())},
+      EnvironmentOptions::Option{EnvironmentOptions::Tag::kVulkanQueue,
+                                 reinterpret_cast<int64_t>(vk_queue)},
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment external_env,
+      litert::Environment::Create(EnvironmentOptions(external_options)));
+
+  // Verify TensorBuffer::CreateManaged works on external_env before
+  // CompiledModel::Create is called.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer pre_model_buffer,
+      TensorBuffer::CreateManaged(
+          external_env, TensorBufferType::kVulkanBufferPacked,
+          RankedTensorType(ElementType::Float32,
+                           Layout(Dimensions({kTestInput0Size}))),
+          kTestInput0Size * sizeof(float)));
+  LITERT_ASSERT_OK_AND_ASSIGN(void* vk_buffer,
+                              pre_model_buffer.GetVulkanMemory());
+  EXPECT_NE(vk_buffer, nullptr);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Options model_options,
+      CreateGpuOptions(TestParams({true, GpuOptions::Precision::kFp32,
+                                   GpuOptions::BufferStorageType::kBuffer})));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(external_env,
+                            testing::GetTestFilePath(kModelFileName),
+                            model_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  ASSERT_TRUE(compiled_model.Run(input_buffers, output_buffers));
+
+  Expected<std::pair<TensorBufferScopedLock, const float*>> lock_and_address =
+      litert::TensorBufferScopedLock::Create<const float>(
+          output_buffers[0], TensorBuffer::LockMode::kRead);
+  ASSERT_TRUE(lock_and_address);
+  EXPECT_THAT(absl::MakeSpan(lock_and_address->second, kTestOutputSize),
+              Pointwise(FloatNear(kTolerance), kTestOutputTensor));
+
+  // Also verify creating an external Vulkan environment with an explicit
+  // VulkanQueueFamilyIndex option.
+  const std::array<EnvironmentOptions::Option, 4> explicit_qfi_options = {
+      EnvironmentOptions::Option{
+          EnvironmentOptions::Tag::kVulkanPhysicalDevice,
+          reinterpret_cast<int64_t>(vk_env.GetPhysicalDevice())},
+      EnvironmentOptions::Option{EnvironmentOptions::Tag::kVulkanDevice,
+                                 reinterpret_cast<int64_t>(vk_env.GetDevice())},
+      EnvironmentOptions::Option{EnvironmentOptions::Tag::kVulkanQueue,
+                                 reinterpret_cast<int64_t>(vk_queue)},
+      EnvironmentOptions::Option{
+          EnvironmentOptions::Tag::kVulkanQueueFamilyIndex,
+          static_cast<int64_t>(vk_env.GetQueue().QueueFamilyIndex())},
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Environment explicit_queue_family_index_env,
+      litert::Environment::Create(EnvironmentOptions(explicit_qfi_options)));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel explicit_queue_family_index_model,
+      CompiledModel::Create(explicit_queue_family_index_env,
+                            testing::GetTestFilePath(kModelFileName),
+                            model_options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<TensorBuffer> queue_family_index_inputs,
+      explicit_queue_family_index_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<TensorBuffer> queue_family_index_outputs,
+      explicit_queue_family_index_model.CreateOutputBuffers());
+  ASSERT_TRUE(queue_family_index_inputs[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(queue_family_index_inputs[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+  ASSERT_TRUE(explicit_queue_family_index_model.Run(
+      queue_family_index_inputs, queue_family_index_outputs));
+  auto queue_family_index_lock =
+      litert::TensorBufferScopedLock::Create<const float>(
+          queue_family_index_outputs[0], TensorBuffer::LockMode::kRead);
+  ASSERT_TRUE(queue_family_index_lock);
+  EXPECT_THAT(absl::MakeSpan(queue_family_index_lock->second, kTestOutputSize),
+              Pointwise(FloatNear(kTolerance), kTestOutputTensor));
 }
 
 }  // namespace

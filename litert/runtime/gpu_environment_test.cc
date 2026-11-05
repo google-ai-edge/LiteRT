@@ -19,9 +19,16 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/debugging/leak_check.h"  // from @com_google_absl
+#include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
+#include "ml_drift/syrtis/environment.h"  // from @ml_drift
+#include "ml_drift/syrtis/vulkan_wrapper.h"  // from @ml_drift
 #include "litert/c/litert_any.h"
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_any.h"
 #include "litert/core/environment.h"
@@ -160,6 +167,77 @@ TEST(EnvironmentSingletonTest,
   EXPECT_EQ(gpu_env->GetContext()->context(), env.context().context());
   EXPECT_EQ(gpu_env->GetCommandQueue()->queue(), env.queue()->queue());
 }
+
+#if LITERT_HAS_VULKAN_ENV_SUPPORT
+TEST(EnvironmentSingletonTest, VulkanEnvironmentFromExternalHandles) {
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN/TSAN";
+#endif
+  absl::LeakCheckDisabler disable_leak_check;
+
+  if (::ml_drift::syrtis::InitVulkan() == 0) {
+    GTEST_SKIP() << "Vulkan not available";
+  }
+  ::ml_drift::syrtis::Environment vk_env;
+  if (!::ml_drift::syrtis::CreateEnvironment(&vk_env).ok()) {
+    GTEST_SKIP() << "Vulkan device not available";
+  }
+  VkQueue vk_queue = VK_NULL_HANDLE;
+  ASSERT_OK(vk_env.GetQueue().WithQueue([&](VkQueue queue) {
+    vk_queue = queue;
+    return absl::OkStatus();
+  }));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny physical_device_any,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(vk_env.GetPhysicalDevice()))));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny device_any,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(vk_env.GetDevice()))));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny queue_any,
+      litert::ToLiteRtAny(
+          litert::LiteRtVariant(reinterpret_cast<int64_t>(vk_queue))));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny queue_family_index_any,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          static_cast<int64_t>(vk_env.GetQueue().QueueFamilyIndex()))));
+
+  const std::array<LiteRtEnvOption, 4> environment_options = {
+      LiteRtEnvOption{kLiteRtEnvOptionTagVulkanPhysicalDevice,
+                      physical_device_any},
+      LiteRtEnvOption{kLiteRtEnvOptionTagVulkanDevice, device_any},
+      LiteRtEnvOption{kLiteRtEnvOptionTagVulkanQueue, queue_any},
+      LiteRtEnvOption{kLiteRtEnvOptionTagVulkanQueueFamilyIndex,
+                      queue_family_index_any},
+  };
+
+  LiteRtEnvironment c_env = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateEnvironment(
+      environment_options.size(), environment_options.data(), &c_env));
+  absl::Cleanup env_cleanup = [&]() {
+    if (c_env) LiteRtDestroyEnvironment(c_env);
+  };
+
+  bool has_gpu_env = false;
+  LiteRtEnvironmentHasGpuEnvironment(c_env, &has_gpu_env);
+  EXPECT_TRUE(has_gpu_env);
+
+  LiteRtEnvironmentOptions c_options = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetEnvironmentOptions(c_env, &c_options));
+  LiteRtAny vulkan_env_val;
+  LITERT_ASSERT_OK(LiteRtGetEnvironmentOptionsValue(
+      c_options, kLiteRtEnvOptionTagVulkanEnvironment, &vulkan_env_val));
+  EXPECT_NE(vulkan_env_val.int_value, 0);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(litert::internal::GpuEnvironment* gpu_env,
+                              c_env->GetGpuEnvironment());
+  EXPECT_EQ(reinterpret_cast<int64_t>(gpu_env->GetVulkanEnvironment()),
+            vulkan_env_val.int_value);
+}
+#endif  // LITERT_HAS_VULKAN_ENV_SUPPORT
 
 }  // namespace
 }  // namespace litert
