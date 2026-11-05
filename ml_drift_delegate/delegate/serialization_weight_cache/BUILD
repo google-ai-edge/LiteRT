@@ -23,10 +23,7 @@ cc_library(
     name = "file_util",
     srcs = ["file_util.cc"],
     hdrs = ["file_util.h"],
-    visibility = [
-        "//ml_drift_delegate:__subpackages__",
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
-    ],
+    visibility = ["//ml_drift_delegate:__subpackages__"],
     deps = ["//tflite:minimal_logging"],
 )
 
@@ -43,10 +40,7 @@ cc_library(
     name = "mmap_handle",
     srcs = ["mmap_handle.cc"],
     hdrs = ["mmap_handle.h"],
-    visibility = [
-        "//ml_drift_delegate:__subpackages__",
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
-    ],
+    visibility = ["//ml_drift_delegate:__subpackages__"],
     deps = [
         ":file_util",
         ":windows_util",
@@ -194,10 +188,7 @@ cc_library(
     name = "serialization_weight_cache",
     srcs = ["serialization_weight_cache.cc"],
     hdrs = ["serialization_weight_cache.h"],
-    visibility = [
-        "//ml_drift_delegate:__subpackages__",
-        "//third_party/odml/infra:__subpackages__",
-    ],
+    visibility = ["//ml_drift_delegate:__subpackages__"],
     deps = [
         ":build_identifier",
         ":cache_builder",
