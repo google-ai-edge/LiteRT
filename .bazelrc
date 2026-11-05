@@ -340,6 +340,24 @@ build:cross_compile_linux_arm64 --cpu=aarch64
 build:cross_compile_linux_arm64 --host_cpu=k8
 build:cross_compile_linux_arm64 --define=tensorflow_mkldnn_contraction_kernel=0
 
+# Windows ARM64 (e.g. Snapdragon X series) cross-compilation from an x86_64
+# Windows host with MSVC (Hostx64\arm64 cl.exe). Use with --config=windows; see
+# ci/setup_windows_arm64_toolchain.ps1 for the required MSVC ARM64 build tools.
+#
+# --cpu is still needed by deps that select on it, e.g. XNNPACK's
+# build_config:windows_arm64, which disables the fp16-scalar, bf16, SVE2,
+# KleidiAI and assembly kernels. cl.exe has no ACLE support for the
+# fp16-vector and SME kernels either (see litert/CMakeLists.txt), nor for the
+# BF16 intrinsics used by the i8mm kernels.
+build:cross_compile_windows_arm64 --cpu=arm64_windows
+build:cross_compile_windows_arm64 --host_cpu=x64_windows
+build:cross_compile_windows_arm64 --platforms=//platforms:windows_arm64
+build:cross_compile_windows_arm64 --extra_toolchains=@local_config_cc//:cc-toolchain-arm64_windows
+build:cross_compile_windows_arm64 --define=xnn_enable_arm_fp16_vector=false
+build:cross_compile_windows_arm64 --define=xnn_enable_arm_i8mm=false
+build:cross_compile_windows_arm64 --define=xnn_enable_arm_sme=false
+build:cross_compile_windows_arm64 --define=xnn_enable_arm_sme2=false
+
 # Windows pthreadpool configuration
 # On Windows, set /std:c11 and /experimental:c11atomics for pthreadpool.
 build:windows --conlyopt=/std:c11
