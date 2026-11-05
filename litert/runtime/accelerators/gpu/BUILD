@@ -261,6 +261,7 @@ macos_dylib(
     linkopts = [
         "-undefined dynamic_lookup",
         "-install_name @rpath/libLiteRtWebGpuAccelerator.dylib",
+        "-headerpad_max_install_names",
     ],
     minimum_os_version = "14.0",
     visibility = ["//visibility:private"],
@@ -417,6 +418,7 @@ macos_dylib(
     linkopts = [
         "-undefined dynamic_lookup",
         "-install_name @rpath/libLiteRtMetalAccelerator.dylib",
+        "-headerpad_max_install_names",
     ],
     minimum_os_version = "14.0",
     deps = [":ml_drift_metal_accelerator_runtimecapi"],
@@ -448,6 +450,7 @@ ios_framework(
     linkopts = [
         "-undefined dynamic_lookup",
         "-install_name @rpath/libLiteRtMetalAccelerator.dylib",
+        "-headerpad_max_install_names",
     ],
     minimum_os_version = "15.0",
     deps = [":ml_drift_metal_accelerator_runtimecapi"],

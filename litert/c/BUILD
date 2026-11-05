@@ -979,6 +979,7 @@ macos_dylib(
     exported_symbols_lists = export_lrt_runtime_only_script(),
     linkopts = [
         "-install_name @rpath/libLiteRt.dylib",
+        "-headerpad_max_install_names",
     ] + LITERT_RUNTIME_C_API_DARWIN_FORCE_LINKOPTS,
     minimum_os_version = LITERT_MIN_MACOS_VERSION,
     deps = LITERT_C_API_COMMON_DEPS,
@@ -1003,6 +1004,7 @@ ios_framework(
     infoplists = ["LiteRtInfo.plist"],
     linkopts = [
         "-install_name @rpath/libLiteRt.dylib",
+        "-headerpad_max_install_names",
     ] + LITERT_RUNTIME_C_API_DARWIN_FORCE_LINKOPTS,
     minimum_os_version = LITERT_MIN_IOS_VERSION,
     tags = ["notap"],
