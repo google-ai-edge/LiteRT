@@ -29,9 +29,14 @@ from litert.python.aot.core import components
 from litert.python.aot.vendors import import_vendor
 from litert.python.aot.vendors.qualcomm import target as target_lib
 
-COMPILER_PLUGIN_LIB_PATH = pathlib.Path(
-    "vendors/qualcomm/compiler/libLiteRtCompilerPlugin_Qualcomm.so"
-)
+if sys.platform == "win32":
+  COMPILER_PLUGIN_LIB_PATH = pathlib.Path(
+      "vendors/qualcomm/compiler/LiteRtCompilerPlugin_Qualcomm.dll"
+  )
+else:
+  COMPILER_PLUGIN_LIB_PATH = pathlib.Path(
+      "vendors/qualcomm/compiler/libLiteRtCompilerPlugin_Qualcomm.so"
+  )
 
 
 @import_vendor.register_backend
@@ -111,6 +116,7 @@ _QNN_HOST_LIB_SUBDIRS_AARCH64 = (
     "aarch64-oe-linux-gcc9.3",
 )
 _QNN_HOST_LIB_SUBDIR_X86_64 = "x86_64-linux-clang"
+_QNN_HOST_LIB_SUBDIR_WINDOWS_ARM64 = "aarch64-windows-msvc"
 
 
 def _resolve_sdk_libs_path(backend: QualcommBackend) -> str | None:
@@ -118,8 +124,8 @@ def _resolve_sdk_libs_path(backend: QualcommBackend) -> str | None:
 
   Resolution order: backend config `sdk_libs_path`, `$QAIRT_LIB_PATH`, the
   `ai_edge_litert_sdk_qualcomm` package, then
-  `$QNN_SDK_ROOT/lib/<host-arch subdir>` (Linux only). Only existing
-  directories are returned.
+  `$QNN_SDK_ROOT/lib/<host-arch subdir>` (Linux and Windows ARM64). Only
+  existing directories are returned.
 
   Args:
     backend: The Qualcomm backend whose config may override the path.
@@ -142,16 +148,23 @@ def _resolve_sdk_libs_path(backend: QualcommBackend) -> str | None:
   except (ImportError, NotImplementedError):
     pass
   qnn_sdk_root = os.environ.get("QNN_SDK_ROOT")
-  if qnn_sdk_root and sys.platform == "linux":
+  if not qnn_sdk_root:
+    return None
+  machine = platform.machine()
+  if sys.platform == "linux":
     subdirs = (
         _QNN_HOST_LIB_SUBDIRS_AARCH64
-        if platform.machine() in ("aarch64", "arm64")
+        if machine in ("aarch64", "arm64")
         else (_QNN_HOST_LIB_SUBDIR_X86_64,)
     )
-    for subdir in subdirs:
-      candidate = pathlib.Path(qnn_sdk_root) / "lib" / subdir
-      if candidate.is_dir():
-        return str(candidate)
+  elif sys.platform == "win32" and machine.lower() in ("arm64", "aarch64"):
+    subdirs = (_QNN_HOST_LIB_SUBDIR_WINDOWS_ARM64,)
+  else:
+    subdirs = ()
+  for subdir in subdirs:
+    candidate = pathlib.Path(qnn_sdk_root) / "lib" / subdir
+    if candidate.is_dir():
+      return str(candidate)
   return None
 
 

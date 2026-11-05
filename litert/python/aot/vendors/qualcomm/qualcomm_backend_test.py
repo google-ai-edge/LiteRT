@@ -133,6 +133,7 @@ class QualcommBackendTest(test_common.TestWithTfliteModels):
 _SDK_MODULE = "ai_edge_litert_sdk_qualcomm"
 _AARCH64_SUBDIR = "aarch64-oe-linux-gcc11.2"
 _X86_SUBDIR = "x86_64-linux-clang"
+_WINDOWS_ARM64_SUBDIR = "aarch64-windows-msvc"
 
 
 class _RecordingApplyPlugin(components.ApplyPluginT):
@@ -317,6 +318,27 @@ class ResolveSdkLibsPathTest(googletest.TestCase):
         self.mock_machine.return_value = machine
         with mock.patch.object(qualcomm_backend.sys, "platform", plat):
           self.assertIsNone(self._resolve())
+
+  def test_qnn_sdk_root_selects_windows_arm64_subdir(self):
+    root = self._make_sdk_root(
+        _AARCH64_SUBDIR, _X86_SUBDIR, _WINDOWS_ARM64_SUBDIR
+    )
+    os.environ["QNN_SDK_ROOT"] = str(root)
+    for machine in ("ARM64", "arm64", "aarch64"):
+      with self.subTest(machine=machine):
+        self.mock_machine.return_value = machine
+        with mock.patch.object(qualcomm_backend.sys, "platform", "win32"):
+          self.assertEqual(
+              self._resolve(), str(root / "lib" / _WINDOWS_ARM64_SUBDIR)
+          )
+
+  def test_qnn_sdk_root_windows_arm64_does_not_use_linux_libs(self):
+    os.environ["QNN_SDK_ROOT"] = str(
+        self._make_sdk_root(_AARCH64_SUBDIR, _X86_SUBDIR)
+    )
+    self.mock_machine.return_value = "ARM64"
+    with mock.patch.object(qualcomm_backend.sys, "platform", "win32"):
+      self.assertIsNone(self._resolve())
 
   def test_qnn_sdk_root_selects_host_arch_subdir(self):
     root = self._make_sdk_root(_AARCH64_SUBDIR, _X86_SUBDIR)

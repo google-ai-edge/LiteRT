@@ -41,6 +41,10 @@ IS_LINUX = sys.platform == 'linux'
 IS_SUPPORTED_ARCHITECTURE = platform.machine() in (
     'x86_64', 'i386', 'i686', 'aarch64', 'arm64'
 )
+IS_WINDOWS_ARM64 = sys.platform == 'win32' and platform.machine().lower() in (
+    'arm64',
+    'aarch64',
+)
 
 
 # --- Configuration for Qualcomm SDK Download ---
@@ -64,15 +68,38 @@ QAIRT_VERSION = (
 QAIRT_SHORT_VERSION = '.'.join(QAIRT_VERSION.split('.')[:3])
 # ---
 
+# On Windows ARM64 only the on-device QNN runtime, the Hexagon skeletons and the
+# top-level SDK files (license and notices) are extracted. The full QAIRT
+# archive is several GB and contains paths deeper than the default Windows
+# MAX_PATH limit.
+_WINDOWS_ARM64_LIB_PREFIX = 'lib/aarch64-windows-msvc/'
+_HEXAGON_LIB_PREFIX = 'lib/hexagon-v'
+
+
+def _should_extract(path_inside_subdir: str) -> bool:
+  """Returns whether an archive member (relative to the SDK root) is needed."""
+  if not IS_WINDOWS_ARM64:
+    return True
+  posix_path = path_inside_subdir.replace('\\', '/')
+  if not posix_path:
+    return False
+  if '/' not in posix_path:
+    return True
+  posix_path = posix_path.rstrip('/')
+  if posix_path.startswith(_HEXAGON_LIB_PREFIX):
+    # Only the unsigned skeletons are used at runtime on Windows.
+    return '/unsigned' in posix_path
+  return (posix_path + '/').startswith(_WINDOWS_ARM64_LIB_PREFIX)
+
 
 def _download_and_extract(
     tarball_url: str, prefix_to_strip: str, target_dir: str
 ):
   """Download archive, extracts and copy."""
-  if not (IS_LINUX and IS_SUPPORTED_ARCHITECTURE):
+  if not ((IS_LINUX and IS_SUPPORTED_ARCHITECTURE) or IS_WINDOWS_ARM64):
     print(
         'IGNORED: Currently LiteRT NPU for Qualcomm is only supported on'
-        ' Linux x86_64 and aarch64.'
+        ' Linux x86_64, Linux aarch64 and Windows ARM64.'
     )
     return
 
@@ -130,6 +157,9 @@ def _download_and_extract(
                 )
                 continue
 
+              if not _should_extract(path_inside_subdir):
+                continue
+
               target_path_for_member = os.path.join(target_dir, normalized_path)
 
               if member_info.is_dir():
@@ -165,6 +195,9 @@ def _download_and_extract(
                     f' {member.name}',
                     file=sys.stderr,
                 )
+                continue
+
+              if not _should_extract(path_inside_subdir):
                 continue
 
               member_copy = tar.getmember(member.name)
@@ -237,6 +270,11 @@ setuptools.setup(
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
+        'Programming Language :: Python :: 3.14',
+        'Operating System :: POSIX :: Linux',
+        'Operating System :: Microsoft :: Windows',
         'Topic :: Scientific/Engineering',
         'Topic :: Scientific/Engineering :: Mathematics',
         'Topic :: Scientific/Engineering :: Artificial Intelligence',
