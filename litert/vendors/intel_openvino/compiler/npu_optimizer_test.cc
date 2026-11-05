@@ -37,6 +37,7 @@
 #include "openvino/op/gelu.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
+#include "openvino/op/pad.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/reduce_sum.hpp"
 #include "openvino/op/reshape.hpp"
@@ -1255,6 +1256,49 @@ TEST(DecomposeSDPAForHFATest, LeavesDecodeStepFused) {
                             .Run(model);
     EXPECT_EQ(result.num_sdpa_decomposed_for_hfa, 0u);
     EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(model), 1u);
+  }
+}
+
+// With Hkv == 1 the decode step's token-major Q fold is the identity and is
+// gone from the graph, so Q is [1,1,Hq,D]; the r-way tiled one-row mask still
+// says one token, also behind the KV alignment Pad. A multi-token chunk with
+// the same tiling is decomposed.
+TEST(DecomposeSDPAForHFATest, ReadsTokenCountFromTiledMaskWithoutFold) {
+  using ov::op::v0::Constant;
+  using ov::op::v0::Parameter;
+  const auto h = ov::element::f16;
+  const size_t r = 4;
+  for (const bool padded : {false, true}) {
+    for (const size_t tokens : {1, 4}) {
+      const size_t kv = padded ? 14 : 16;
+      auto q = std::make_shared<Parameter>(h, ov::Shape{1, 1, r * tokens, 8});
+      auto k = std::make_shared<Parameter>(h, ov::Shape{1, 1, 16, 8});
+      auto v = std::make_shared<Parameter>(h, ov::Shape{1, 1, 16, 8});
+      auto mask = std::make_shared<Parameter>(h, ov::Shape{1, 1, tokens, kv});
+      ov::Output<ov::Node> tiled = std::make_shared<ov::op::v0::Concat>(
+          ov::OutputVector(r, mask->output(0)), /*axis=*/2);
+      if (padded) {
+        tiled = std::make_shared<ov::op::v1::Pad>(
+            tiled,
+            Constant::create(ov::element::i64, ov::Shape{4},
+                             std::vector<int64_t>{0, 0, 0, 0}),
+            Constant::create(ov::element::i64, ov::Shape{4},
+                             std::vector<int64_t>{0, 0, 0, 2}),
+            Constant::create(h, ov::Shape{}, {-30000.0f}),
+            ov::op::PadMode::CONSTANT);
+      }
+      auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
+          ov::OutputVector{q, k, v, tiled}, /*causal=*/false);
+      auto model = std::make_shared<ov::Model>(
+          ov::OutputVector{sdpa->output(0)},
+          ov::ParameterVector{q, k, v, mask}, "sdpa");
+      const auto result = NpuOptimizer()
+                              .SetCastIntegerSignToFloat(false)
+                              .SetDecomposeSDPAForHFA(true)
+                              .Run(model);
+      EXPECT_EQ(result.num_sdpa_decomposed_for_hfa, tokens > 1 ? 1u : 0u)
+          << "tokens=" << tokens << " padded=" << padded;
+    }
   }
 }
 

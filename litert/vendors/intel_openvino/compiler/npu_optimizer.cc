@@ -1776,12 +1776,62 @@ bool IsSingleTokenGqaFoldReshape(const std::shared_ptr<ov::Node>& node) {
          (*out)[2] == hq / hkv;
 }
 
+// If |out| is a Pad that only grows the last (KV) axis, at its end, returns
+// the Pad's input; nullopt otherwise. FuseSplitAttentionToSDPA adds such a Pad
+// to align a mask's KV length. It moves no column.
+std::optional<ov::Output<ov::Node>> ThroughKvAlignmentPad(
+    const ov::Output<ov::Node>& out) {
+  const auto pad =
+      std::dynamic_pointer_cast<ov::op::v1::Pad>(out.get_node_shared_ptr());
+  if (!pad) return std::nullopt;
+  auto begin = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+      pad->get_input_node_shared_ptr(1));
+  auto end = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+      pad->get_input_node_shared_ptr(2));
+  if (!begin || !end) return std::nullopt;
+  const auto b = begin->cast_vector<int64_t>();
+  auto e = end->cast_vector<int64_t>();
+  if (e.empty()) return std::nullopt;
+  e.pop_back();
+  const auto zero = [](int64_t v) { return v == 0; };
+  if (!std::all_of(b.begin(), b.end(), zero) ||
+      !std::all_of(e.begin(), e.end(), zero)) {
+    return std::nullopt;
+  }
+  return pad->input_value(0);
+}
+
+// Rows of one copy when |mask| is n >= 2 copies of one 4-D source tiled on
+// axis 2 (the GQA row tiling, see MatchTiledMask) with n * rows == |q_rows|,
+// looking through the KV alignment Pad; nullopt otherwise.
+std::optional<size_t> TiledMaskRows(ov::Output<ov::Node> mask, size_t q_rows) {
+  if (const auto unpadded = ThroughKvAlignmentPad(mask)) mask = *unpadded;
+  const auto copies =
+      static_cast<int64_t>(mask.get_node_shared_ptr()->get_input_size());
+  if (copies < 2) return std::nullopt;
+  const auto source = MatchTiledMask(mask, copies);
+  if (!source) return std::nullopt;
+  const auto shape = StaticShape4D(*source);
+  if (!shape || (*shape)[2] * static_cast<size_t>(copies) != q_rows) {
+    return std::nullopt;
+  }
+  return (*shape)[2];
+}
+
 // Number of query tokens |sdpa| attends for, given its static Q shape
 // [B,H,S,D]. A Q folded by the GQA ratio r into the sequence axis counts S / r.
 size_t QueryTokenCount(const ov::op::v13::ScaledDotProductAttention& sdpa,
                        const ov::Shape& q_shape) {
   const auto q = sdpa.get_input_node_shared_ptr(0);
   if (IsSingleTokenGqaFoldReshape(q)) return 1;
+  // With Hkv == 1 a decode step's token-major fold [1,1,Hq,D] -> [1,1,Hq,D]
+  // is the identity, so the graph no longer has it; the mask still has one
+  // row per token, tiled once per query head.
+  if (sdpa.get_input_size() >= 4) {
+    if (const auto rows = TiledMaskRows(sdpa.input_value(3), q_shape[2])) {
+      return *rows;
+    }
+  }
   const auto r = MatchGqaFoldReshape(q);
   return r ? q_shape[2] / static_cast<size_t>(*r) : q_shape[2];
 }
