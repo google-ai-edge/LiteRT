@@ -32,25 +32,9 @@ _TRANSFORMATION_COPTS = select({
     ],
 })
 
-cc_library(
+alias(
     name = "transformation_utils",
-    srcs = ["transformation_utils.cc"],
-    hdrs = ["transformation_utils.h"],
-    copts = _TRANSFORMATION_COPTS,
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_op_code",
-        "//litert/cc:litert_element_type",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_layout",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_ranked_tensor_type",
-        "//litert/compiler/cc:litert_builder",
-        "//litert/compiler/cc:litert_model",
-        "//litert/compiler/cc:litert_op_options",
-        "@com_google_absl//absl/types:span",
-    ],
+    actual = "//litert/compiler/cc:transformation_utils",
 )
 
 cc_library(

@@ -21,6 +21,53 @@ package(
 )
 
 cc_library(
+    name = "transformation_utils",
+    srcs = ["transformation_utils.cc"],
+    hdrs = ["transformation_utils.h"],
+    deps = [
+        ":litert_builder",
+        ":litert_model",
+        ":litert_op_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+alias(
+    name = "litert_transformation_utils",
+    actual = ":transformation_utils",
+)
+
+cc_test(
+    name = "transformation_utils_test",
+    srcs = ["transformation_utils_test.cc"],
+    deps = [
+        ":litert_builder",
+        ":litert_op_options",
+        ":transformation_utils",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/core/model",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "litert_model",
     hdrs = ["litert_model.h"],
     deps = [

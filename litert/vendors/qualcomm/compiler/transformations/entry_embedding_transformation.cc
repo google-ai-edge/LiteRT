@@ -37,8 +37,8 @@
 #include "litert/compiler/cc/litert_matchers.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/compiler/cc/litert_op_options.h"
+#include "litert/compiler/cc/transformation_utils.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
-#include "litert/vendors/qualcomm/compiler/transformations/transformation_utils.h"
 
 namespace {
 
@@ -48,10 +48,13 @@ using litert::Expected;
 using litert::Layout;
 using litert::RankedTensorType;
 using litert::compiler::AddOptions;
+using litert::compiler::BuildAdd;
 using litert::compiler::Builder;
+using litert::compiler::ConstI32;
 using litert::compiler::FullyConnectedOptions;
 using litert::compiler::GatherOptions;
 using litert::compiler::GetOptionsAs;
+using litert::compiler::HasDims;
 using litert::compiler::m_AllOf;
 using litert::compiler::m_Any;
 using litert::compiler::m_AnyOf;
@@ -70,9 +73,6 @@ using litert::compiler::OneHotOptions;
 using litert::compiler::Op;
 using litert::compiler::RankedTensorSpecBuilder;
 using litert::compiler::Tensor;
-using litert::qnn::BuildAdd;
-using litert::qnn::ConstI32;
-using litert::qnn::HasDims;
 
 // Returns the dimensions of a ranked tensor, or an empty vector on failure.
 std::vector<int32_t> Dims(const Tensor& t) {

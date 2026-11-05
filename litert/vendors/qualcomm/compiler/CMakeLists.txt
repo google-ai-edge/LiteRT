@@ -19,7 +19,7 @@ add_library(qnn_compiler_plugin SHARED
     transformations/mlp_quant_transformation.cc
     transformations/orphan_cleanup_transformation.cc
     transformations/rope_transformation.cc
-    transformations/transformation_utils.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../compiler/cc/transformation_utils.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/../../cc/namespace_heuristics.cc
 )
 
