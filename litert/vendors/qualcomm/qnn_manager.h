@@ -149,6 +149,8 @@ class QnnManager {
 
   const ::qnn::Options& GetOptions() const { return options_; }
 
+  void SetOptions(const ::qnn::Options& options) { options_ = options; }
+
   ::qnn::SdkVersion GetSdkVersion() const { return sdk_version_; }
 
  private:

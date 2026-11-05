@@ -54,13 +54,8 @@ class LiteRtDispatchDeviceContextT {
       LiteRtTensorBufferHandle tensor_buffer_handle);
 
   litert::Expected<Qnn_MemHandle_t> GetMemHandle(
-      LiteRtTensorBufferHandle tensor_buffer_handle,
-      const Qnn_Tensor_t& tensor);
-
-  void SetInvocationContext(
-      LiteRtDispatchInvocationContextT* invocation_context) {
-    invocation_context_ = invocation_context;
-  }
+      LiteRtTensorBufferHandle tensor_buffer_handle, const Qnn_Tensor_t& tensor,
+      Qnn_ContextHandle_t context_handle);
 
   litert::Expected<const litert::qnn::QnnManager::ContextHandle&>
   GetOrCreateContext(const void* bytecode_ptr, size_t bytecode_size,
@@ -73,7 +68,7 @@ class LiteRtDispatchDeviceContextT {
  private:
   struct TensorBufferRegistryEntry {
     LiteRtTensorBuffer tensor_buffer;
-    Qnn_MemHandle_t qnn_mem_handle = nullptr;
+    absl::flat_hash_map<Qnn_ContextHandle_t, Qnn_MemHandle_t> qnn_mem_handles;
     explicit TensorBufferRegistryEntry(LiteRtTensorBuffer tensor_buffer_)
         : tensor_buffer(tensor_buffer_) {}
     bool operator==(const TensorBufferRegistryEntry& other) const {
@@ -92,13 +87,29 @@ class LiteRtDispatchDeviceContextT {
         qnn_backend_(qnn_backend) {}
 
   litert::Expected<Qnn_MemHandle_t> RegisterTensorBuffer(
-      LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor);
+      LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor,
+      Qnn_ContextHandle_t context_handle);
 
   const LiteRtRuntimeContext* runtime_context_;
   litert::qnn::QnnManager& qnn_manager_;
   ::qnn::QnnBackend& qnn_backend_;
   TensorBufferRegistry tensor_buffer_registry_;
-  LiteRtDispatchInvocationContextT* invocation_context_ = nullptr;
+
+  struct MemHandleCacheKey {
+    Qnn_ContextHandle_t context_handle;
+    int fd;
+    size_t offset;
+
+    bool operator==(const MemHandleCacheKey& other) const {
+      return context_handle == other.context_handle && fd == other.fd &&
+             offset == other.offset;
+    }
+    template <typename H>
+    friend H AbslHashValue(H h, const MemHandleCacheKey& k) {
+      return H::combine(std::move(h), k.context_handle, k.fd, k.offset);
+    }
+  };
+  absl::flat_hash_map<MemHandleCacheKey, Qnn_MemHandle_t> mem_handle_cache_;
 
   struct ContextCacheKey {
     const void* ptr;
