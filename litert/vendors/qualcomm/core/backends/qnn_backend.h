@@ -53,6 +53,8 @@ class QnnBackend {
 
   virtual bool SetPerformanceMode(const Options& options) { return true; }
 
+  virtual void UpVote() { return; }
+
   // In auto mode, the update is deferred until before and after inference.
   virtual void ScheduleUpVote() { return; }
   virtual void ScheduleDownVote() { return; }

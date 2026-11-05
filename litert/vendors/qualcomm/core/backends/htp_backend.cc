@@ -698,6 +698,15 @@ bool HtpBackend::SetPerformanceMode(const Options& options) {
   return true;
 }
 
+void HtpBackend::UpVote() {
+  if (htp_perf_control_) {
+    htp_perf_control_->UpVote();
+  } else {
+    QNN_LOG_WARNING(
+        "UpVote called but HTP performance control is not initialized.");
+  }
+}
+
 void HtpBackend::ScheduleUpVote() {
   if (htp_perf_control_) {
     htp_perf_control_->ScheduleUpVote();
