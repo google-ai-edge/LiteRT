@@ -30,6 +30,7 @@ extern "C" {
 
 // Primitive types for elements in a tensor.
 // Matched to tensorflow/compiler/mlir/lite/core/c/tflite_types.h
+// LINT.IfChange(element_types)
 typedef enum {
   kLiteRtElementTypeNone = 0,           // kTfLiteNoType,
   kLiteRtElementTypeBool = 6,           // kTfLiteBool,
@@ -56,6 +57,7 @@ typedef enum {
   kLiteRtElementTypeTfString = 5,       // kTfLiteString,
   kLiteRtElementTypeTfVariant = 15,     // kTfLiteVariant,
 } LiteRtElementType;
+// LINT.ThenChange(../python/litert_model/_pywrap_litert_model.cc:element_types)
 
 /// Tensor type when its rank is dynamic.
 ///
