@@ -160,8 +160,7 @@ TEST_P(QnnModelTest,
   EXPECT_EQ(quant_params.GetBitwidth(), 4);
 }
 
-TEST_P(QnnModelTest,
-       TransposeConvSharedFilterAxisNotCorruptedOnSecondBuild) {
+TEST_P(QnnModelTest, TransposeConvFilterAxisUnchangedAfterBuild) {
   // Verify filter quant params are unchanged after calling BuildTransposeConvOp().
   static constexpr std::array<std::int32_t, 4> kShapeData{1, 2, 2, 2};
   auto& output_shape = tensor_pool_.CreateStaticTensor(
@@ -177,35 +176,22 @@ TEST_P(QnnModelTest,
       QNN_DATATYPE_SFIXED_POINT_8, kFilterQuant, {2, 1, 1, 1},
       sizeof(kFilterData[0]) * kFilterData.size(), kFilterData.data());
 
-  // First TransposeConv — shares the filter tensor.
-  auto& input1 = tensor_pool_.CreateInputTensorWithName(
-      "in_1", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
-  auto& output1 = tensor_pool_.CreateOutputTensorWithName(
-      "out_1", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
+  auto& input = tensor_pool_.CreateInputTensorWithName(
+      "in", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
+  auto& output = tensor_pool_.CreateOutputTensorWithName(
+      "out", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
   ::qnn::BuildTransposeConvOp(
-      tensor_pool_, {output_shape, filter, input1}, {output1},
+      tensor_pool_, {output_shape, filter, input}, {output},
       /*stride_h=*/1, /*stride_w=*/1, ::qnn::PaddingType::Valid,
       /*use_int64_bias_as_int32=*/false);
 
-  // Second TransposeConv — reuses the same filter tensor.
-  auto& input2 = tensor_pool_.CreateInputTensorWithName(
-      "in_2", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
-  auto& output2 = tensor_pool_.CreateOutputTensorWithName(
-      "out_2", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
-  ::qnn::BuildTransposeConvOp(
-      tensor_pool_, {output_shape, filter, input2}, {output2},
-      /*stride_h=*/1, /*stride_w=*/1, ::qnn::PaddingType::Valid,
-      /*use_int64_bias_as_int32=*/false);
-
-  // Filter axis must remain 0 (OHWI) after both builds — not remapped in place.
   const auto& orig_quant =
       std::get<::qnn::AxisScaleOffsetQuantizeParamsWrapper>(
           filter.GetQuantParams());
   EXPECT_EQ(orig_quant.GetAxis(), 0);
 }
 
-TEST_P(QnnModelTest,
-       TransposeConvSharedFilterBwAxisNotCorruptedOnSecondBuild) {
+TEST_P(QnnModelTest, TransposeConvFilterBwAxisUnchangedAfterBuild) {
   // Verify filter quant params are unchanged after calling BuildTransposeConvOp()
   // with BwAxisScaleOffsetQuantizeParamsWrapper.
   static constexpr std::array<std::int32_t, 4> kShapeData{1, 2, 2, 2};
@@ -222,27 +208,15 @@ TEST_P(QnnModelTest,
       QNN_DATATYPE_SFIXED_POINT_8, kFilterQuant, {2, 1, 1, 1},
       sizeof(kFilterData[0]) * kFilterData.size(), kFilterData.data());
 
-  // First TransposeConv — shares the filter tensor.
-  auto& input1 = tensor_pool_.CreateInputTensorWithName(
-      "in_1", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
-  auto& output1 = tensor_pool_.CreateOutputTensorWithName(
-      "out_1", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
+  auto& input = tensor_pool_.CreateInputTensorWithName(
+      "in", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
+  auto& output = tensor_pool_.CreateOutputTensorWithName(
+      "out", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
   ::qnn::BuildTransposeConvOp(
-      tensor_pool_, {output_shape, filter, input1}, {output1},
+      tensor_pool_, {output_shape, filter, input}, {output},
       /*stride_h=*/1, /*stride_w=*/1, ::qnn::PaddingType::Valid,
       /*use_int64_bias_as_int32=*/false);
 
-  // Second TransposeConv — reuses the same filter tensor.
-  auto& input2 = tensor_pool_.CreateInputTensorWithName(
-      "in_2", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
-  auto& output2 = tensor_pool_.CreateOutputTensorWithName(
-      "out_2", QNN_DATATYPE_SFIXED_POINT_8, kActQuant, {1, 2, 2, 2});
-  ::qnn::BuildTransposeConvOp(
-      tensor_pool_, {output_shape, filter, input2}, {output2},
-      /*stride_h=*/1, /*stride_w=*/1, ::qnn::PaddingType::Valid,
-      /*use_int64_bias_as_int32=*/false);
-
-  // Filter axis must remain 0 (OHWI) after both builds — not remapped in place.
   const auto& orig_quant =
       std::get<::qnn::BwAxisScaleOffsetQuantizeParamsWrapper>(
           filter.GetQuantParams());

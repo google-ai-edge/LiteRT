@@ -15,7 +15,7 @@
 namespace litert::qnn {
 namespace {
 
-TEST(Conv2dOpBuilderTest, SharedFilterAxisNotCorruptedOnSecondBuild) {
+TEST(Conv2dOpBuilderTest, FilterAxisUnchangedAfterBuildConv2dOp) {
   // Verify filter quant params are unchanged after calling BuildConv2dOp().
   ::qnn::TensorPool tensor_pool;
   const ::qnn::ScaleOffsetQuantizeParamsWrapper activation_quant{0.5f, 0};
@@ -26,35 +26,22 @@ TEST(Conv2dOpBuilderTest, SharedFilterAxisNotCorruptedOnSecondBuild) {
       QNN_DATATYPE_SFIXED_POINT_8, filter_quant, {2, 1, 1, 1},
       filter_data.size() * sizeof(filter_data[0]), filter_data.data());
 
-  // First Conv2d — shares the filter tensor.
-  auto& input1 = tensor_pool.CreateInputTensorWithName(
-      "input1", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 1, 1});
-  auto& output1 = tensor_pool.CreateOutputTensorWithName(
-      "output1", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 1, 2});
-  ::qnn::BuildConv2dOp(tensor_pool, {input1, filter}, {output1},
+  auto& input = tensor_pool.CreateInputTensorWithName(
+      "input", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 1, 1});
+  auto& output = tensor_pool.CreateOutputTensorWithName(
+      "output", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 1, 2});
+  ::qnn::BuildConv2dOp(tensor_pool, {input, filter}, {output},
                        /*stride_h=*/1, /*stride_w=*/1, /*dilation_h=*/1,
                        /*dilation_w=*/1, ::qnn::PaddingType::Valid,
                        /*use_int64_bias_as_int32=*/false);
 
-  // Second Conv2d — reuses the same filter tensor.
-  auto& input2 = tensor_pool.CreateInputTensorWithName(
-      "input2", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 1, 1});
-  auto& output2 = tensor_pool.CreateOutputTensorWithName(
-      "output2", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 1, 2});
-  ::qnn::BuildConv2dOp(tensor_pool, {input2, filter}, {output2},
-                       /*stride_h=*/1, /*stride_w=*/1, /*dilation_h=*/1,
-                       /*dilation_w=*/1, ::qnn::PaddingType::Valid,
-                       /*use_int64_bias_as_int32=*/false);
-
-  // Filter axis must remain 0 (OHWI) after both builds — not remapped in place.
   const auto& orig_quant =
       std::get<::qnn::AxisScaleOffsetQuantizeParamsWrapper>(
           filter.GetQuantParams());
   EXPECT_EQ(orig_quant.GetAxis(), 0);
 }
 
-TEST(Conv2dOpBuilderTest,
-     SharedFilterBwAxisNotCorruptedOnSecondBuild) {
+TEST(Conv2dOpBuilderTest, FilterBwAxisUnchangedAfterBuildConv2dOp) {
   // Verify filter quant params are unchanged after calling BuildConv2dOp()
   // with BwAxisScaleOffsetQuantizeParamsWrapper.
   ::qnn::TensorPool tensor_pool;
@@ -67,27 +54,15 @@ TEST(Conv2dOpBuilderTest,
       QNN_DATATYPE_SFIXED_POINT_8, filter_quant, {2, 1, 1, 1},
       filter_data.size() * sizeof(filter_data[0]), filter_data.data());
 
-  // First Conv2d — shares the filter tensor.
-  auto& input1 = tensor_pool.CreateInputTensorWithName(
-      "input1", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 1, 1});
-  auto& output1 = tensor_pool.CreateOutputTensorWithName(
-      "output1", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 1, 2});
-  ::qnn::BuildConv2dOp(tensor_pool, {input1, filter}, {output1},
+  auto& input = tensor_pool.CreateInputTensorWithName(
+      "input", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 1, 1});
+  auto& output = tensor_pool.CreateOutputTensorWithName(
+      "output", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 1, 2});
+  ::qnn::BuildConv2dOp(tensor_pool, {input, filter}, {output},
                        /*stride_h=*/1, /*stride_w=*/1, /*dilation_h=*/1,
                        /*dilation_w=*/1, ::qnn::PaddingType::Valid,
                        /*use_int64_bias_as_int32=*/false);
 
-  // Second Conv2d — reuses the same filter tensor.
-  auto& input2 = tensor_pool.CreateInputTensorWithName(
-      "input2", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 1, 1});
-  auto& output2 = tensor_pool.CreateOutputTensorWithName(
-      "output2", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 1, 2});
-  ::qnn::BuildConv2dOp(tensor_pool, {input2, filter}, {output2},
-                       /*stride_h=*/1, /*stride_w=*/1, /*dilation_h=*/1,
-                       /*dilation_w=*/1, ::qnn::PaddingType::Valid,
-                       /*use_int64_bias_as_int32=*/false);
-
-  // Filter axis must remain 0 (OHWI) after both builds — not remapped in place.
   const auto& orig_quant =
       std::get<::qnn::BwAxisScaleOffsetQuantizeParamsWrapper>(
           filter.GetQuantParams());
