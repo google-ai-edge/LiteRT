@@ -626,6 +626,44 @@ class TensorUtilsTest(parameterized.TestCase):
     with self.subTest(name="CheckScaleValue"):
       self.assertEqual(scale[0], expected_scale)
 
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="channelwise_zero_clipping",
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          clipping_values=np.array([[0.0], [1e-5], [1.0]], dtype=np.float32),
+          expected_scales=[1.4285714e-10, 1.4285714e-6, 0.14285715],
+      ),
+      dict(
+          testcase_name="blockwise_no_clipping",
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+          clipping_values=None,
+          expected_scales=[6.1035156e-5, 6.1035156e-5, 0.14257812],
+      ),
+      dict(
+          testcase_name="blockwise_zero_clipping",
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+          clipping_values=np.array([[0.0], [1e-5], [1.0]], dtype=np.float32),
+          expected_scales=[6.1035156e-5, 6.1035156e-5, 0.14257812],
+      ),
+  )
+  def test_tensor_zp_scale_from_min_max_tiny_and_zero_bounds(
+      self, granularity, clipping_values, expected_scales
+  ):
+    max_val = np.array([[0.0], [1e-5], [1.0]], dtype=np.float32)
+    min_val = -max_val
+    zp, scale = uniform_quantize_tensor.tensor_zp_scale_from_min_max(
+        min_val,
+        max_val,
+        num_bits=4,
+        symmetric=True,
+        granularity=granularity,
+        clipping_values=clipping_values,
+    )
+    np.testing.assert_array_equal(zp, np.zeros((3, 1), dtype=np.int8))
+    np.testing.assert_allclose(
+        scale, np.array(expected_scales, dtype=np.float32).reshape(3, 1)
+    )
+
 
 if __name__ == "__main__":
   absltest.main()
