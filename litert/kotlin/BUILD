@@ -177,6 +177,15 @@ cc_library(
 #         "//tflite/java/src/main/native",  # TFLite JNI
 #     ],
 # )
+#
+# # Invalid native library with no JNI methods for testing failure modes.
+# android_jni_library(
+#     name = "litert_invalid_impl_jni_lib",
+#     testonly = True,
+#     binary_name = "invalid/libLiteRt.so",
+#     lds = ":litert_version_script.lds",
+#     linkopts = litert_jni_linkopts() + litert_linkopts_no_undefined() + litert_android_linkopts(),
+# )
 # copybara:uncomment_end
 
 # copybara:comment_begin(oss-only)
@@ -225,6 +234,20 @@ tflite_jni_binary(
 cc_library(
     name = "litert_impl_jni_lib",
     srcs = [":LiteRt"],
+)
+
+tflite_jni_binary(
+    name = "invalid/LiteRt",
+    testonly = True,
+    linkopts = litert_jni_linkopts() + litert_linkopts_no_undefined() + litert_android_linkopts(),
+    linkscript = ":litert_version_script.lds",
+    stamp = 0,
+)
+
+cc_library(
+    name = "litert_invalid_impl_jni_lib",
+    testonly = True,
+    srcs = [":invalid/LiteRt"],
 )
 # copybara:comment_end
 
@@ -288,6 +311,19 @@ android_library(
     tags = ["keep_dep"],
     exports = [
         ":litert_impl_jni_lib",
+    ],
+)
+
+android_library(
+    name = "litert_invalid_impl_jni",
+    testonly = True,
+    # Prevent build_cleaner from removing this dependency as it's a JNI runtime dependency.
+    tags = ["keep_dep"],
+    visibility = [
+        "//litert/kotlin/src/tests:__subpackages__",
+    ],
+    exports = [
+        ":litert_invalid_impl_jni_lib",
     ],
 )
 
@@ -544,6 +580,27 @@ android_library(
     deps = [
         ":litert_api",
         ":litert_impl_jni",  # libLiteRt.so
+        "@org_checkerframework_qual",
+    ],
+)
+
+# Android library for testing the litert package without native JNI dependencies.
+android_library(
+    name = "litert_no_jni",
+    testonly = True,
+    srcs = TFLITE_JAVA_SRCS_IMPL,
+    exports_manifest = 1,
+    javacopts = JAVACOPTS,
+    manifest = "src/main/AndroidManifestImpl.xml",
+    proguard_specs = ["//tflite/java:proguard.flags"],
+    visibility = [
+        "//litert/kotlin/src/tests:__subpackages__",
+    ],
+    exports = [
+        ":litert_api_no_jni",
+    ],
+    deps = [
+        ":litert_api_no_jni",
         "@org_checkerframework_qual",
     ],
 )

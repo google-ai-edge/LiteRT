@@ -52,3 +52,30 @@ android_local_test(
         "//third_party/java/truth",
     ],
 )
+
+android_local_test(
+    name = "tensorflow_lite_no_native_lib_test",
+    size = "small",
+    srcs = ["copied_from_tflite/java/org/tensorflow/lite/TensorFlowLiteNoNativeLibTest.java"],
+    manifest = "AndroidManifest.xml",
+    test_class = "org.tensorflow.lite.TensorFlowLiteNoNativeLibTest",
+    deps = [
+        "//litert/kotlin:litert_no_jni",
+        "//third_party/java/junit",
+        "//third_party/java/truth",
+    ],
+)
+
+android_local_test(
+    name = "tensorflow_lite_invalid_native_lib_test",
+    size = "small",
+    srcs = ["copied_from_tflite/java/org/tensorflow/lite/TensorFlowLiteInvalidNativeLibTest.java"],
+    manifest = "AndroidManifest.xml",
+    test_class = "org.tensorflow.lite.TensorFlowLiteInvalidNativeLibTest",
+    deps = [
+        "//litert/kotlin:litert_invalid_impl_jni",  # unuseddeps: keep
+        "//litert/kotlin:litert_no_jni",
+        "//third_party/java/junit",
+        "//third_party/java/truth",
+    ],
+)
