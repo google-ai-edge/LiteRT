@@ -114,6 +114,7 @@ cc_library(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         # copybara:uncomment_begin(google-only)
         # "@intel_openvino//:openvino_headers",

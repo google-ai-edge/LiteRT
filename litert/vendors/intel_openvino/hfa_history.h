@@ -16,11 +16,17 @@
 #ifndef LITERT_VENDORS_INTEL_OPENVINO_HFA_HISTORY_H_
 #define LITERT_VENDORS_INTEL_OPENVINO_HFA_HISTORY_H_
 
+#include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <string>
 
 #include "openvino/core/shape.hpp"
 #include "openvino/core/type/element_type.hpp"
+#include "openvino/runtime/compiled_model.hpp"
+#include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
+#include "openvino/runtime/variable_state.hpp"
 #include "litert/cc/litert_expected.h"
 
 namespace litert {
@@ -34,8 +40,9 @@ namespace openvino {
 // so the history is read from their attention mask instead:
 //   - the compiler (enable_hfa) adds kHfaHistoryMaskTensorName to the tensor
 //     names of the graph input holding the mask of the SDPAs it decomposed;
-//   - dispatch reads that input with HistorySizeFromMask() before each
-//     inference and writes the result to the state.
+//   - dispatch (HfaHistoryReporter) reads that input with
+//     HistorySizeFromMask() before each inference and writes the result to
+//     the state.
 inline constexpr char kHfaHistoryMaskTensorName[] = "litert_hfa_history_mask";
 inline constexpr char kNpuwHistorySizeStateName[] = "npuw_history_size";
 
@@ -52,6 +59,31 @@ Expected<void> CheckHistoryMask(const ov::element::Type& type,
 // a single value is fully masked if that value is negative (e.g. a padding
 // row) and fully visible otherwise.
 Expected<int64_t> HistorySizeFromMask(const ov::Tensor& mask);
+
+// Reports the HFA history of one infer request to NPUW.
+class HfaHistoryReporter {
+ public:
+  // Finds the input of |compiled_model| tagged kHfaHistoryMaskTensorName and
+  // the npuw_history_size state of |infer_request|, which must have been
+  // created from |compiled_model|. Returns nullopt for a graph without the
+  // tag, and also (with a warning naming |graph_name|) when the tagged input
+  // is unreadable or the plugin does not expose the state.
+  static std::optional<HfaHistoryReporter> Find(
+      const ov::CompiledModel& compiled_model, ov::InferRequest& infer_request,
+      const std::string& graph_name);
+
+  // Reads the history from the mask currently bound to the request Find()
+  // was given and writes it to the state. Call before every inference.
+  Expected<int64_t> Update(ov::InferRequest& infer_request);
+
+ private:
+  HfaHistoryReporter(size_t mask_input_index, ov::VariableState state);
+
+  size_t mask_input_index_;
+  ov::VariableState state_;
+  // The state's i64 [1] value. set_state() copies it, so one is enough.
+  ov::Tensor value_;
+};
 
 }  // namespace openvino
 }  // namespace litert
