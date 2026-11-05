@@ -618,10 +618,10 @@ def build_conversion_flags(
       in the flatbuffer model to reduce size.
     fold_fp16_resource_casts: Whether to fold 16-bit float (fp16/bf16) resource
       casts.
-    fold_fp16_casts_into_fully_connected: Whether to fold
-      `cast(f32 -> f16)(fully_connected(cast(f16 -> f32)(x), ...))` into a
-      fully_connected with f16 activations (StableHLO -> TFLite pipeline used
-      for MLIR bytecode conversion only; needs runtime support).
+    fold_fp16_casts_into_fully_connected: Whether to fold `cast(f32 ->
+      f16)(fully_connected(cast(f16 -> f32)(x), ...))` into a fully_connected
+      with f16 activations (StableHLO -> TFLite pipeline used for MLIR bytecode
+      conversion only; needs runtime support).
     supported_backends: List of TFLite backends which needs to check
       compatibility.
     disable_per_channel_quantization: Disable per-channel quantized weights for
@@ -630,7 +630,7 @@ def build_conversion_flags(
       If False, the old converter dynamic range quantizer is used.
     tf_quantization_mode: Indicates the mode of TF Quantization when the output
       model is used for TF Quantization.
-    disable_infer_tensor_range: Disable infering tensor ranges.
+    disable_infer_tensor_range: Disable inferring tensor ranges.
     use_fake_quant_num_bits: Allow quantization parameters to be calculated from
       num_bits attribute.
     enable_dynamic_update_slice: Enable to convert to DynamicUpdateSlice op.
