@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <string>
 #include <thread>
 #pragma comment(lib, "psapi.lib")
 #undef assert
@@ -75,17 +76,36 @@ int main() {
   a.join();
   b.join();
   assert(_lseeki64(fd, 0, SEEK_CUR) == 777);
-  assert(pread(fd, &info, 1, at + 8) == 0);
+  char eof_probe;
+  assert(pread(fd, &eof_probe, 1, at + 8) == 0);
   assert(_chsize_s(fd, 65536) == 0);
   void* mapped = mmap(nullptr, 65536, PROT_READ, MAP_PRIVATE, fd, 0);
   assert(mapped != MAP_FAILED);
-  char source_name[PATH_MAX], mapped_name[PATH_MAX];
-  assert(GetFinalPathNameByHandleA(reinterpret_cast<HANDLE>(_get_osfhandle(fd)),
-                                   source_name, PATH_MAX,
-                                   FILE_NAME_NORMALIZED | VOLUME_NAME_NT));
+  char mapped_name[PATH_MAX];
   assert(
       GetMappedFileNameA(GetCurrentProcess(), mapped, mapped_name, PATH_MAX));
-  assert(_stricmp(source_name, mapped_name) == 0);
+  // Path spellings vary (junctions, mount points, 8.3 names); compare the file
+  // identity behind the mapping instead.
+  NvidiaFileStat mapped_info{};
+  const int mapped_stat =
+      NvidiaStat(("\\\\?\\GLOBALROOT" + std::string(mapped_name)).c_str(),
+                 &mapped_info);
+  const int stat_errno = errno;
+  const DWORD stat_winerr = GetLastError();
+  if (mapped_stat != 0 || mapped_info.st_dev != info.st_dev ||
+      mapped_info.st_ino != info.st_ino) {
+    fprintf(stderr,
+            "mapped=%s stat=%d errno=%d winerr=%lu dev=%llu/%llu "
+            "ino=%llu/%llu\n",
+            mapped_name, mapped_stat, stat_errno, stat_winerr,
+            static_cast<unsigned long long>(mapped_info.st_dev),
+            static_cast<unsigned long long>(info.st_dev),
+            static_cast<unsigned long long>(mapped_info.st_ino),
+            static_cast<unsigned long long>(info.st_ino));
+  }
+  assert(mapped_stat == 0);
+  assert(mapped_info.st_dev == info.st_dev &&
+         mapped_info.st_ino == info.st_ino);
   assert(munmap(mapped, 65536) == 0);
   mapped = mmap(nullptr, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
   assert(mapped != MAP_FAILED);
