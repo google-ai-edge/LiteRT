@@ -228,6 +228,15 @@ config_setting(
 )
 
 config_setting(
+    name = "windows_arm64",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:windows",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
     name = "emscripten",
     constraint_values = ["@platforms//os:emscripten"],
     visibility = ["//visibility:public"],

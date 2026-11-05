@@ -210,7 +210,15 @@ setuptools.setup(
             # TODO(weiyiw): Update to non-nightly
             # (ai-edge-litert-sdk-intel~=0.2.0) once it is released.
             'ai-edge-litert-sdk-intel-nightly',
-            'ai-edge-litert-sdk-qualcomm~=0.2.0',
+            (
+                'ai-edge-litert-sdk-qualcomm~=0.2.0; sys_platform != "win32" or'
+                ' platform_machine != "ARM64"'
+            ),
+            # Windows ARM64 (Snapdragon) support starts at 2.4.0.
+            (
+                'ai-edge-litert-sdk-qualcomm>=2.4.0; sys_platform == "win32"'
+                ' and platform_machine == "ARM64"'
+            ),
             'ai-edge-litert-sdk-mediatek~=0.2.0',
         ],
         'model-utils': [
