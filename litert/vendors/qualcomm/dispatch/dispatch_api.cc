@@ -18,6 +18,7 @@
 
 #include <cstdio>
 #include <memory>
+#include <mutex>  // NOLINT(build/c++11)
 #include <optional>
 #include <string>
 #include <utility>
@@ -80,6 +81,11 @@ static std::unique_ptr<::qnn::QnnBackend>& QnnBackendStorage() {
 
 ::qnn::QnnBackend& QnnBackend() { return *QnnBackendStorage(); }
 
+static std::mutex& InitMutex() {  // NOLINT(build/c++11)
+  static absl::NoDestructor<std::mutex> mutex;  // NOLINT(build/c++11)
+  return *mutex;
+}
+
 LiteRtEnvironmentOptions TheEnvironmentOptions = nullptr;
 
 LiteRtOptions TheOptions = nullptr;
@@ -92,7 +98,15 @@ char BuildId[256];
 
 LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
                         LiteRtEnvironment environment, LiteRtOptions options) {
-  LiteRtEnvironmentOptions environment_options;
+  std::lock_guard<std::mutex> lock(InitMutex());  // NOLINT(build/c++11)
+  if (QnnManagerStorage() != nullptr && QnnBackendStorage() != nullptr) {
+    LITERT_LOG(LITERT_WARNING,
+               "Qualcomm Dispatch API is already initialized; new options may "
+               "not be applied to QnnManager and QnnBackend.");
+    return kLiteRtStatusOk;
+  }
+
+  LiteRtEnvironmentOptions environment_options = nullptr;
   if (runtime_context->get_environment_options(
           environment, &environment_options) == kLiteRtStatusOk) {
     LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
@@ -315,7 +329,6 @@ LiteRtStatus InvocationContextCreate(
     return context.Error().Status();
   }
   *invocation_context = context->release();
-  device_context->SetInvocationContext(*invocation_context);
   return kLiteRtStatusOk;
 }
 
