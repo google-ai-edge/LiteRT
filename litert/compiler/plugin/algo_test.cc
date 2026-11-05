@@ -796,5 +796,94 @@ TEST(TestCompositeInlining, NonMatchingTensorTypeInlining) {
             kLiteRtStatusErrorInvalidArgument);
 }
 
+// Builds a model whose main subgraph has a single composite op
+// `comp(main_in0, main_in0, main_in1) -> main_out` decomposed into
+// `Add(d_in0, d_in1)`. The composite reads `main_in0` twice and passes
+// `main_in1` to a decomposition input (`d_in2`) that is never used.
+struct DuplicateAndUnusedInputComposite {
+  LiteRtModelT model;
+  LiteRtSubgraphT* main_sg;
+  LiteRtSubgraphT* decomp_sg;
+  LiteRtOpT* comp_op;
+  LiteRtTensorT* main_in0;
+  LiteRtTensorT* main_in1;
+
+  DuplicateAndUnusedInputComposite() {
+    main_sg = &model.EmplaceSubgraph();
+    decomp_sg = &model.EmplaceSubgraph();
+    const auto type = MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 4});
+
+    main_in0 = &main_sg->EmplaceTensor();
+    main_in0->SetType(type);
+    main_in1 = &main_sg->EmplaceTensor();
+    main_in1->SetType(type);
+    auto& main_out = main_sg->EmplaceTensor();
+    main_out.SetType(type);
+    main_sg->Inputs().assign({main_in0, main_in1});
+    main_sg->Outputs().assign({&main_out});
+
+    comp_op = &main_sg->EmplaceOp();
+    comp_op->SetOpCode(kLiteRtOpCodeShloComposite);
+    AttachInput(main_in0, *comp_op);
+    AttachInput(main_in0, *comp_op);
+    AttachInput(main_in1, *comp_op);
+    AttachOutput(&main_out, *comp_op);
+
+    auto& d_in0 = decomp_sg->EmplaceTensor();
+    d_in0.SetType(type);
+    auto& d_in1 = decomp_sg->EmplaceTensor();
+    d_in1.SetType(type);
+    auto& d_in2 = decomp_sg->EmplaceTensor();
+    d_in2.SetType(type);
+    auto& d_out = decomp_sg->EmplaceTensor();
+    d_out.SetType(type);
+    decomp_sg->Inputs().assign({&d_in0, &d_in1, &d_in2});
+    decomp_sg->Outputs().assign({&d_out});
+
+    auto& add_op = decomp_sg->EmplaceOp();
+    add_op.SetOpCode(kLiteRtOpCodeTflAdd);
+    AttachInput(&d_in0, add_op);
+    AttachInput(&d_in1, add_op);
+    AttachOutput(&d_out, add_op);
+  }
+};
+
+TEST(TestCompositeInlining, SetsDefiningOpOnClonedOutputs) {
+  DuplicateAndUnusedInputComposite g;
+  ASSERT_TRUE(InlineSubgraph(g.model, *g.comp_op, g.decomp_sg));
+
+  ASSERT_EQ(g.main_sg->Ops().size(), 1);
+  auto* inlined_add = g.main_sg->Ops().front();
+  ASSERT_EQ(inlined_add->OpCode(), kLiteRtOpCodeTflAdd);
+  ASSERT_EQ(inlined_add->Outputs().size(), 1);
+  auto* cloned_out = inlined_add->Outputs().front();
+  EXPECT_EQ(cloned_out->DefiningOp(), inlined_add);
+  EXPECT_EQ(cloned_out->DefiningOpOutInd(), 0);
+  EXPECT_EQ(g.main_sg->Outputs().front(), cloned_out);
+}
+
+TEST(TestCompositeInlining, RemovesAllCompositeUsesOfDuplicatedInput) {
+  DuplicateAndUnusedInputComposite g;
+  ASSERT_TRUE(InlineSubgraph(g.model, *g.comp_op, g.decomp_sg));
+
+  ASSERT_EQ(g.main_sg->Ops().size(), 1);
+  auto* inlined_add = g.main_sg->Ops().front();
+  // Exactly the two uses by the inlined op remain; none point at the composite.
+  // Guards that each input slot's cleanup is self-contained rather than relying
+  // on a later slot to remove a leftover composite use.
+  ASSERT_EQ(g.main_in0->NumUses(), 2);
+  EXPECT_EQ(g.main_in0->GetUse(0).first, inlined_add);
+  EXPECT_EQ(g.main_in0->GetUse(0).second, 0);
+  EXPECT_EQ(g.main_in0->GetUse(1).first, inlined_add);
+  EXPECT_EQ(g.main_in0->GetUse(1).second, 1);
+}
+
+TEST(TestCompositeInlining, RemovesCompositeUseOfInputUnusedByDecomposition) {
+  DuplicateAndUnusedInputComposite g;
+  ASSERT_TRUE(InlineSubgraph(g.model, *g.comp_op, g.decomp_sg));
+
+  EXPECT_EQ(g.main_in1->NumUses(), 0);
+}
+
 }  // namespace
 }  // namespace litert::internal

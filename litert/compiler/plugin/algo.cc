@@ -594,7 +594,8 @@ Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
 
     for (auto& decomp_output : decomp_op->Outputs()) {
       auto cloned_output = tensor_map_.Find(decomp_output)->get().second;
-      cloned_op->Outputs().push_back(cloned_output);
+      // `CloneTo` does not copy the defining op, so attach it explicitly.
+      AttachOutput(cloned_output, *cloned_op);
     }
   }
 
@@ -605,25 +606,21 @@ Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
     auto& decomp_input_tensor = source_subgraph->Input(input_ind);
     auto users = decomp_input_tensor.Users();
     auto user_args = decomp_input_tensor.UserArgInds();
+    // The composite op is removed after inlining, so drop every use it holds
+    // on this input, even if the decomposition never reads it. Iterate
+    // backwards because `RemoveUse` shifts later uses.
+    auto& composite_input = destination_op.Input(input_ind);
+    for (size_t use_ind = composite_input.NumUses(); use_ind-- > 0;) {
+      if (composite_input.Users().at(use_ind) == &destination_op) {
+        composite_input.RemoveUse(use_ind);
+      }
+    }
     for (int user_ind = 0; user_ind < users.size(); ++user_ind) {
       auto& cloned_op = op_map_.Find(users.at(user_ind))->get().second;
-      cloned_op->Inputs().at(user_args.at(user_ind)) =
-          &destination_op.Input(input_ind);
-      // For each input tensor of the original composite op, remove
-      // the use of the original composite op input, since the composite op
-      // will be removed.
-      for (int input_user_ind = 0;
-           input_user_ind < destination_op.Input(input_ind).NumUses();
-           ++input_user_ind) {
-        if (destination_op.Input(input_ind).Users().at(input_user_ind) ==
-            &destination_op) {
-          destination_op.Input(input_ind).RemoveUse(input_user_ind);
-        }
-      }
+      cloned_op->Inputs().at(user_args.at(user_ind)) = &composite_input;
       // Update the user list of the original composite op input tensors.
-      destination_op.Input(input_ind).Users().push_back(cloned_op);
-      destination_op.Input(input_ind).UserArgInds().push_back(
-          user_args.at(user_ind));
+      composite_input.Users().push_back(cloned_op);
+      composite_input.UserArgInds().push_back(user_args.at(user_ind));
     }
   }
 
