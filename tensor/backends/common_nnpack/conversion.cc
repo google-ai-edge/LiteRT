@@ -26,7 +26,6 @@ limitations under the License.
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/backends/common_nnpack/graph.h"
 #include "tensor/datatypes.h"
@@ -36,48 +35,6 @@ limitations under the License.
 #include "tensor/utils/macros.h"
 
 namespace litert::tensor {
-
-absl::StatusOr<std::vector<float>> DequantizeInt8ConstantTensor(
-    const graph::TensorInformation& info,
-    absl::Span<const std::byte> raw_data) {
-  if (info.quantization == nullptr) {
-    return absl::InvalidArgumentError("Missing quantization parameters");
-  }
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      const auto& pcq,
-      info.quantization->As<const graph::PerChannelAffineQuantization>());
-
-  if (info.shape.size() != 2) {
-    return absl::InvalidArgumentError("Only 2D weights currently supported");
-  }
-  const size_t out_channels = info.shape[0];
-  const size_t in_channels = info.shape[1];
-  const size_t num_elements = out_channels * in_channels;
-
-  if (raw_data.size() < num_elements) {
-    return absl::InvalidArgumentError(
-        absl::StrFormat("Raw data size %zu is smaller than expected %zu",
-                        raw_data.size(), num_elements));
-  }
-
-  std::vector<float> dequantized(num_elements);
-  const int8_t* quantized_data =
-      reinterpret_cast<const int8_t*>(raw_data.data());
-
-  for (size_t o = 0; o < out_channels; ++o) {
-    const float scale = pcq.scales[o];
-    const int32_t zero_point =
-        pcq.zero_points.empty() ? 0 : static_cast<int32_t>(pcq.zero_points[o]);
-    const size_t row_offset = o * in_channels;
-    for (size_t i = 0; i < in_channels; ++i) {
-      const size_t idx = row_offset + i;
-      dequantized[idx] =
-          static_cast<float>(quantized_data[idx] - zero_point) * scale;
-    }
-  }
-
-  return dequantized;
-}
 
 absl::Status TopologicalSort(
     graph::Tensor output,

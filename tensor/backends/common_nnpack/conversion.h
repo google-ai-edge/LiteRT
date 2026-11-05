@@ -35,9 +35,6 @@ limitations under the License.
 
 namespace litert::tensor {
 
-absl::StatusOr<std::vector<float>> DequantizeInt8ConstantTensor(
-    const graph::TensorInformation& info, absl::Span<const std::byte> raw_data);
-
 // Order operations in topological execution order.
 //
 // Parameters:
