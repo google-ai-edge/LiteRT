@@ -19,9 +19,11 @@
 #include <memory>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "ml_drift/cl/buffer.h"  // from @ml_drift
 #include "ml_drift/cl/cl_event.h"  // from @ml_drift
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -58,6 +60,7 @@ class GpuBackendOpenClLitert : public GpuBackendOpenCl {
       const GpuTensorBufferPtr& tensor_buffer) override;
   absl::Status AssociateGpuEvent(GpuEventHandle event, LiteRtEnvironment env,
                                  GpuTensorBufferPtr& tensor_buffer) override;
+  absl::Status WaitForCompletion() override;
   absl::StatusOr<GpuBufferRequirements> GetGpuBufferRequirements(
       ::ml_drift::TensorStorageType used_storage_type,
       ::ml_drift::DataType data_type) override;
@@ -86,7 +89,44 @@ class GpuBackendOpenClLitert : public GpuBackendOpenCl {
     kernel_batch_size_ = kernel_batch_size;
   }
 
+  // Maximum number of cached wrapped host memory buffers before eviction.
+  // TODO(b/557440642): Clean up or bound wrapped_host_buffers_ when
+  // LiteRtTensorBuffer instances are destroyed to avoid unbounded growth with
+  // per-frame allocations.
+  static constexpr size_t kMaxWrappedHostBuffers = 64;
+
+  size_t num_wrapped_host_buffers() const {
+    return wrapped_host_buffers_.size();
+  }
+
+  size_t num_fallback_buffers() const { return fallback_buffers_.size(); }
+
+  void ClearTransientWrappedBuffers() {
+    wrapped_host_buffers_.clear();
+    fallback_buffers_.clear();
+  }
+
+  // Test-only helpers.
+  const GpuIOBuffer* GetWrappedHostBufferForTesting(
+      const LiteRtTensorBufferT* tensor_buffer) const {
+    auto it = wrapped_host_buffers_.find(tensor_buffer);
+    return it != wrapped_host_buffers_.end() ? it->second.get() : nullptr;
+  }
+
+  void AddFallbackBufferForTesting(const LiteRtTensorBufferT* tensor_buffer,
+                                   ::ml_drift::cl::Buffer device_buffer,
+                                   void* host_addr, size_t buffer_size) {
+    fallback_buffers_[tensor_buffer] =
+        FallbackBuffer{std::move(device_buffer), host_addr, buffer_size};
+  }
+
  private:
+  struct FallbackBuffer {
+    ::ml_drift::cl::Buffer device_buffer;
+    void* host_addr = nullptr;
+    size_t buffer_size = 0;
+  };
+
   absl::Status UploadCompiledCache();
 
   const LiteRtEglDisplay egl_display_;
@@ -105,6 +145,14 @@ class GpuBackendOpenClLitert : public GpuBackendOpenCl {
   int invoke_count_to_flush_compiled_cache_;
   // If > 0, specifies the kernel (op) batch size, for a flush.
   int kernel_batch_size_ = 0;
+
+  // Cache of wrapped external host memory buffers (CL_MEM_USE_HOST_PTR).
+  absl::flat_hash_map<const LiteRtTensorBufferT*, std::unique_ptr<GpuIOBuffer>>
+      wrapped_host_buffers_;
+
+  // Staging device buffers allocated for unaligned host memory buffers.
+  absl::flat_hash_map<const LiteRtTensorBufferT*, FallbackBuffer>
+      fallback_buffers_;
 };
 
 class GpuInferenceContextOpenClLitert : public GpuInferenceContextOpenCl {
