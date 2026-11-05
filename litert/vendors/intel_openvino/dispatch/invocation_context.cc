@@ -721,7 +721,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::BindOutput(
   return {};
 }
 
-#if defined(__ANDROID__)
+#if defined(LITERT_INTEL_OPENVINO_NPU_HAL)
 namespace {
 
 // State shared with the NPU HAL hook's callbacks for one inference. The hook
@@ -777,14 +777,14 @@ int GatedWait(void* user, uint64_t /*timeout_ns*/) {
 }
 
 }  // namespace
-#endif  // defined(__ANDROID__)
+#endif  // defined(LITERT_INTEL_OPENVINO_NPU_HAL)
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
   // Normally a no-op: AttachInput/AttachOutput already imported. Kept so a
   // graph with no attachable I/O still works.
   absl::ReaderMutexLock use(use_mutex_);
   LITERT_RETURN_IF_ERROR(EnsureImported());
-#if defined(__ANDROID__)
+#if defined(LITERT_INTEL_OPENVINO_NPU_HAL)
   const LiteRtSchedulingInfo* scheduling_info = GetSchedulingInfo();
   const bool has_job_priority =
       scheduling_info != nullptr &&
@@ -895,7 +895,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
                rc);
     // Falls through to the direct path below.
   }
-#endif
+#endif  // defined(LITERT_INTEL_OPENVINO_NPU_HAL)
   infer_request_.start_async();
   if (!infer_request_.wait_for(
           std::chrono::milliseconds(kInferRequestTimeoutMs)))

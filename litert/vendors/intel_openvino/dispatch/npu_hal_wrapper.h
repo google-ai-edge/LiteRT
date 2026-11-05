@@ -16,7 +16,14 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_NPU_HAL_WRAPPER_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_NPU_HAL_WRAPPER_H_
 
-#if defined(__ANDROID__)
+// Defined when the NPU HAL integration is built in. Build with
+// -DLITERT_INTEL_OPENVINO_DISABLE_NPU_HAL (the dispatch BUILD's
+// `enable_npu_hal=false`) to leave it out.
+#if defined(__ANDROID__) && !defined(LITERT_INTEL_OPENVINO_DISABLE_NPU_HAL)
+#define LITERT_INTEL_OPENVINO_NPU_HAL 1
+#endif
+
+#if defined(LITERT_INTEL_OPENVINO_NPU_HAL)
 #include <dlfcn.h>
 
 #include <cstddef>
@@ -173,6 +180,6 @@ inline std::optional<ov::hint::Priority> ResolveOvModelPriority(
 }
 
 }  // namespace litert::openvino
-#endif  // defined(__ANDROID__)
+#endif  // defined(LITERT_INTEL_OPENVINO_NPU_HAL)
 
 #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_NPU_HAL_WRAPPER_H_
