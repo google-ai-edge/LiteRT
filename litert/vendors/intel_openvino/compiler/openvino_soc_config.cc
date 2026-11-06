@@ -32,7 +32,7 @@ namespace litert::openvino {
 const std::unordered_map<std::string, const char*>& GetSocModelConfigs() {
   static const auto* const kSocModelConfigs =
       new std::unordered_map<std::string, const char*>(
-          {{"LNL", "NPU4000"}, {"PTL", "NPU5010"}});
+          {{"LNL", "NPU4000"}, {"PTL", "NPU5010"}, {"WCL", "NPU5020"}});
   return *kSocModelConfigs;
 }
 
