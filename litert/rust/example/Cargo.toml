@@ -31,6 +31,10 @@ name = "segmentation"
 path = "segmentation_main.rs"
 
 [[bin]]
+name = "segmentation_executor"
+path = "segmentation_executor_main.rs"
+
+[[bin]]
 name = "segmentation_async"
 path = "segmentation_async_main.rs"
 rustflags = ["--cfg", "async_support"]
