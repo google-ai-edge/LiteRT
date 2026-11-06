@@ -52,6 +52,13 @@ constexpr absl::string_view kSharedLibExtensions[] = {
 #if defined(__APPLE__)
     ".dylib",
 #endif  // defined(__APPLE__)
+#if defined(_WIN32)
+    // Without this, FindLiteRtDispatchSharedLibs() and
+    // FindLiteRtCompilerPluginSharedLibs() match nothing on Windows: the
+    // dispatch and compiler-plugin libraries are built as DLLs, and no
+    // extension in this list ever matches one.
+    ".dll",
+#endif  // defined(_WIN32)
 };
 
 bool EnvPathContains(absl::string_view path, absl::string_view var_value) {

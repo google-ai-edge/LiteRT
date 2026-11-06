@@ -46,6 +46,13 @@ if(WIN32)
     target_compile_definitions(dispatch_api_qualcomm_so PRIVATE
         LITERT_COMPILE_LIBRARY)
 
+    # FindLiteRtDispatchSharedLibs() matches on a "libLiteRtDispatch" name
+    # prefix (litert/core/dynamic_loading.h), but CMAKE_SHARED_LIBRARY_PREFIX is
+    # empty on Windows, so the default output would be
+    # LiteRtDispatch_Qualcomm.dll and the runtime would never find it. Keep the
+    # "lib" prefix the other platforms get for free.
+    set_target_properties(dispatch_api_qualcomm_so PROPERTIES PREFIX "lib")
+
     # Windows has no rpath; LiteRt.dll is found via the loader search path,
     # which includes the directory of the module being loaded.
     target_link_libraries(dispatch_api_qualcomm_so PRIVATE
