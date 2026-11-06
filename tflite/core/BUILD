@@ -57,6 +57,7 @@ cc_library(
         "model.h",
         "model_builder.h",
         "signature_runner.h",
+        "tensor_identifier.h",
     ],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts() + tflite_copts_warnings(),
@@ -192,6 +193,7 @@ cc_library(
         "model.h",
         "model_builder.h",
         "signature_runner.h",
+        "tensor_identifier.h",
     ],
     compatible_with = get_compatible_with_portable(),
     visibility = [
