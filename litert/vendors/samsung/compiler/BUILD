@@ -95,6 +95,7 @@ cc_library(
         "//litert/vendors/samsung/compiler/builders:conv2d_op_builder",
         "//litert/vendors/samsung/compiler/builders:conv3d_op_builder",
         "//litert/vendors/samsung/compiler/builders:cumsum_op_builder",
+        "//litert/vendors/samsung/compiler/builders:depth_to_space_op_builder",
         "//litert/vendors/samsung/compiler/builders:dequantize_op_builder",
         "//litert/vendors/samsung/compiler/builders:elementwise_op_builder",
         "//litert/vendors/samsung/compiler/builders:fully_connected_op_builder",
