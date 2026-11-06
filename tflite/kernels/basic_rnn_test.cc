@@ -344,5 +344,63 @@ TEST_P(HybridRnnOpTest, BlackBoxTestInt8) {
 INSTANTIATE_TEST_SUITE_P(HybridRnnOpTest, HybridRnnOpTest,
                          ::testing::ValuesIn({false, true}));
 
+
+// RNN op with explicitly given operand shapes, used to check that Prepare()
+// rejects operands of the wrong rank. An empty shape leaves the operand at
+// rank 0.
+class RNNRankOpModel : public SingleOpModel {
+ public:
+  explicit RNNRankOpModel(const std::vector<std::vector<int>>& shapes) {
+    AddInput(TensorType_FLOAT32);          // input
+    AddInput(TensorType_FLOAT32);          // weights
+    AddInput(TensorType_FLOAT32);          // recurrent weights
+    AddInput(TensorType_FLOAT32);          // bias
+    AddVariableInput(TensorType_FLOAT32);  // hidden state
+    AddOutput(TensorType_FLOAT32);
+    SetBuiltinOp(
+        BuiltinOperator_RNN, BuiltinOptions_RNNOptions,
+        CreateRNNOptions(builder_, ActivationFunctionType_RELU).Union());
+    BuildInterpreter(shapes, /*num_threads=*/-1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false,
+                     /*allocate_and_delegate=*/false);
+  }
+};
+
+TEST(RnnOpTest, PrepareAcceptsWellFormedRanks) {
+  RNNRankOpModel m({{2, 3}, {4, 3}, {4, 4}, {4}, {2, 4}});
+  EXPECT_EQ(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(RnnOpTest, PrepareRejectsRank1Input) {
+  RNNRankOpModel m({{3}, {4, 3}, {4, 4}, {4}, {2, 4}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(RnnOpTest, PrepareRejectsRank3Input) {
+  RNNRankOpModel m({{2, 3, 1}, {4, 3}, {4, 4}, {4}, {2, 4}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(RnnOpTest, PrepareRejectsRank1Weights) {
+  RNNRankOpModel m({{2, 3}, {4}, {4, 4}, {4}, {2, 4}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(RnnOpTest, PrepareRejectsRank1RecurrentWeights) {
+  RNNRankOpModel m({{2, 3}, {4, 3}, {4}, {4}, {2, 4}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(RnnOpTest, PrepareRejectsRank0Bias) {
+  RNNRankOpModel m({{2, 3}, {4, 3}, {4, 4}, {}, {2, 4}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(RnnOpTest, PrepareRejectsRank2Bias) {
+  RNNRankOpModel m({{2, 3}, {4, 3}, {4, 4}, {4, 1}, {2, 4}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
 }  // namespace
 }  // namespace tflite
