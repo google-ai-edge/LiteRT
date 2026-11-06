@@ -51,8 +51,8 @@
 #include "litert/cc/internal/litert_options_wrapper.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
-#include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/context_binary_info.h"
@@ -339,7 +339,7 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     num_supported_tensor_buffer_types = kRawTensorBufferTypes.size();
   }
 
-  auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
+  auto buffer_size = litert::RankedTensorType(tensor_type).Bytes();
   if (!buffer_size) {
     return Unexpected(buffer_size.Error());
   }
