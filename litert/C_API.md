@@ -191,3 +191,52 @@ runtime's `LiteRtRuntimeCApiStruct`.
         `kLiteRtStatusErrorUnsupported`.
     *   Verify the symbol export test passes:
         `bazel test //litert/c:litert_runtime_c_api_so_symbol_test`.
+
+### 7. (If Needed) Expose via `LiteRtRuntimeContext` or `LiteRtCompilerContext`
+
+If external components need to call the new C API without linking against
+`libLiteRt.so`, expose it in the corresponding ABI-stable context table:
+
+*   **`LiteRtRuntimeContext`**
+    ([`c/internal/litert_runtime_context.h`](c/internal/litert_runtime_context.h)
+    /
+    [`c/internal/litert_runtime_context.cc`](c/internal/litert_runtime_context.cc)):
+    for hardware accelerators, delegates, and Dispatch API implementations.
+*   **`LiteRtCompilerContext`**
+    ([`c/internal/litert_compiler_context.h`](c/internal/litert_compiler_context.h)
+    /
+    [`c/internal/litert_compiler_context.cc`](c/internal/litert_compiler_context.cc)):
+    for Compiler Plugins and C++ compiler wrappers in `compiler/cc/`.
+
+When extending either context struct:
+
+1.  **Append and Bump Minor Version**:
+    *   Append the new function pointer at the **very end** of the struct with
+        an `// Added in version 1.<minor>.0` comment, and update the `sizeof`
+        and `offsetof` `static_assert`s.
+    *   Populate the pointer in `LrtGetRuntimeContext()` or
+        `LrtGetCompilerContext()` and increment `abi_header.minor_version`.
+2.  **Always Guard Call Sites with `LITERT_ABI_HAS_API`**:
+    *   Consumers calling any `LiteRtRuntimeContext` or `LiteRtCompilerContext`
+        function added after `1.0.0` (including C++ helpers in `compiler/cc/`)
+        **must** guard the call using
+        `LITERT_ABI_HAS_API(ctx, /*req_major=*/1, <member_name>)` from
+        [`c/internal/litert_abi_header.h`](c/internal/litert_abi_header.h)
+        (BUILD dep `//litert/c/internal:litert_abi_header`).
+    *   **Never** check `ctx-><member_name> != nullptr` directly: if an older
+        runtime or compiler host (with a smaller `abi_header.struct_size`)
+        passes the context pointer to a newer plugin or accelerator binary,
+        reading the field without first checking `abi_header.struct_size`
+        causes an out-of-bounds memory read.
+
+    ```cpp
+    if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1, <member_name>)) {
+      // Fall back to an existing 1.0 API if possible, or return unsupported.
+      return kLiteRtStatusErrorUnsupported;
+    }
+    return ctx-><member_name>(...);
+    ```
+
+    *   Add unit tests covering both `<member_name> == nullptr` and a truncated
+        `abi_header.struct_size = offsetof(<ContextStruct>, <member_name>)`
+        (with a non-null slot in memory) to verify backward compatibility.
