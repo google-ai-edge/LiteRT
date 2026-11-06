@@ -162,6 +162,13 @@ class GpuAccelerator {
       }
     }
     if (backend == kLiteRtGpuBackendWebGpu) {
+      if (!litert::ml_drift::IsWebGpuSupported(runtime_context, env)) {
+        LITERT_LOG(LITERT_ERROR,
+                   "WebGPU backend selected, but WebGPU Dawn runtime is not "
+                   "available.");
+        LrtDestroyGpuOptions(gpu_options_payload);
+        return kLiteRtStatusErrorUnsupported;
+      }
       active_backend_ = kLiteRtGpuBackendWebGpu;
       auto delegate_options =
           litert::ml_drift::MlDriftWebGpuDelegateDefaultOptionsPtr();
