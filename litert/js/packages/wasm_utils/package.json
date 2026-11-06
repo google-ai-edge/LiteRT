@@ -22,6 +22,7 @@
     "build": "tsup src/index.ts --format esm --dts --sourcemap --metafile && npm run bundle",
     "bundle": "esbuild --bundle src/index.ts --outfile=dist/bundle.js --format=esm --sourcemap --metafile=dist/bundle-metafile.json",
     "lint": "eslint .",
+    "test": "node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc",
     "clean": "rm -rf .turbo && rm -rf node_modules && rm -rf dist",
     "pack": "npm pack"

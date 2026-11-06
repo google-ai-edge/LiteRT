@@ -21,11 +21,42 @@
 declare function importScripts(...urls: Array<string|URL>): void;
 
 /**
+ * Fetches the script at `scriptUrl` and runs it as a classic script in the
+ * global scope, so that its top-level declarations (e.g. the `ModuleFactory`
+ * of an Emscripten loader script) become globals, as with `importScripts`.
+ */
+async function fetchAndRunScript(scriptUrl: string) {
+  const response = await fetch(scriptUrl);
+  if (!response.ok) {
+    throw new Error(
+        `Failed to fetch ${scriptUrl}: ${response.status} ${
+            response.statusText}`);
+  }
+  const source = await response.text();
+  // An indirect eval runs the code as a sloppy-mode global script, unlike a
+  // dynamic import(), which would run it as a strict-mode module whose
+  // declarations stay private to it. The script is the same one importScripts
+  // would have run; pages with a Content Security Policy must allow
+  // 'unsafe-eval' for this fallback.
+  (0, eval)(`${source}\n//# sourceURL=${scriptUrl}`);
+}
+
+/**
  * Load a script from the given URL.
  */
 export async function runScript(scriptUrl: string) {
   if (typeof importScripts === 'function') {
-    importScripts(scriptUrl.toString());
+    try {
+      importScripts(scriptUrl.toString());
+    } catch (e) {
+      // Module workers (`new Worker(url, {type: 'module'})`, the default for
+      // bundlers such as Vite) define importScripts, but calling it throws a
+      // TypeError, and they have no document to add a script element to.
+      if (!(e instanceof TypeError)) {
+        throw e;
+      }
+      await fetchAndRunScript(scriptUrl.toString());
+    }
   } else {
     const script = document.createElement('script');
     (script as {src:string}).src = scriptUrl.toString();
