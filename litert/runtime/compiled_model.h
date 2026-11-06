@@ -403,9 +403,14 @@ class LiteRtCompiledModelT {
   // If the signature key is not found, returns nullptr.
   tflite::SignatureRunner* GetSignatureRunner(absl::string_view signature_key);
 
-  // Resolves selected signatures to their deduplicated root subgraphs. The
-  // initial implementation intentionally defines the active set to be exactly
-  // this root set and does not add transitively referenced callees.
+  // Resolves the entry subgraph index for `signature_key` (or 0 for the
+  // synthetic default signature when the model has no signature defs).
+  int GetSignatureSubgraphIndex(absl::string_view signature_key) const;
+
+  // Computes the active subgraph set: all subgraphs when no signatures are
+  // selected, otherwise the selected signatures' entry subgraphs plus every
+  // subgraph reachable from them (see
+  // tflite::Interpreter::GetReachableSubgraphIndices).
   litert::Expected<void> InitializeActiveSubgraphs(LiteRtOptions options);
 
   // Marks signature subgraph input and output tensors as kTfLiteNonCpu to
@@ -584,8 +589,9 @@ class LiteRtCompiledModelT {
   // is destroyed.
 
   std::vector<const std::string*> signature_keys_;
-  // All subgraphs when no signature selection is configured; otherwise the
-  // deduplicated signature root set. Transitive expansion is a follow-up.
+  // Sorted subgraph indices to delegate and account for: all subgraphs when no
+  // signature selection is configured; otherwise the selected signatures'
+  // entry subgraphs and their transitive callees.
   std::vector<int> active_subgraph_indices_;
   // Empty means every signature is active.
   absl::flat_hash_set<std::string> selected_signature_keys_;
