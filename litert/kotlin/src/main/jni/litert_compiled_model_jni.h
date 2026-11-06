@@ -25,23 +25,44 @@ extern "C" {
 JNIEXPORT jlong JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromAsset(
     JNIEnv* env, jclass clazz, jlong env_handle, jobject asset_manager,
-    jstring asset_name, jintArray accelerators, jintArray cpu_options_keys,
-    jobjectArray cpu_options_values, jintArray gpu_options_keys,
-    jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
-    jobjectArray qualcomm_options_values, jintArray input_shape_modes,
-    jobjectArray input_shape_signatures, jobjectArray input_shape_names,
-    jobjectArray input_shape_dimensions);
+    jstring asset_name, jlong options_handle);
 #endif  // __ANDROID__
 
 JNIEXPORT jlong JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromFile(
     JNIEnv* env, jclass clazz, jlong env_handle, jstring file_path,
-    jintArray accelerators, jintArray cpu_options_keys,
-    jobjectArray cpu_options_values, jintArray gpu_options_keys,
-    jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
-    jobjectArray qualcomm_options_values, jintArray input_shape_modes,
-    jobjectArray input_shape_signatures, jobjectArray input_shape_names,
-    jobjectArray input_shape_dimensions);
+    jlong options_handle);
+
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeCreateOptions(
+    JNIEnv* env, jclass clazz, jintArray accelerators);
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeDestroyOptions(
+    JNIEnv* env, jclass clazz, jlong options_handle);
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeWriteBoolOption(
+    JNIEnv* env, jclass clazz, jlong options_handle, jstring key,
+    jboolean value);
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeWriteIntOption(
+    JNIEnv* env, jclass clazz, jlong options_handle, jstring key, jlong value);
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeWriteStringOption(
+    JNIEnv* env, jclass clazz, jlong options_handle, jstring key,
+    jstring value);
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeWriteStringArrayOption(
+    JNIEnv* env, jclass clazz, jlong options_handle, jstring key,
+    jobjectArray values);
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeFlushOpaqueOptions(
+    JNIEnv* env, jclass clazz, jlong options_handle, jstring identifier);
 
 JNIEXPORT jlong JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffer(
