@@ -33,6 +33,7 @@
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
@@ -654,6 +655,70 @@ TEST(LiteRtOpSelectorTest,
   for (const auto& node : gpu_model.nodes) {
     EXPECT_NE(node.name, "flash_sdpa");
   }
+}
+
+TEST(LiteRtOpSelectorTest,
+     FullyConnectedInt4SymmetricExternalWeightsOmitsZeroPoint) {
+  const GpuInfo gpu_info = GetTestGpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
+
+  GpuModelBuilderOptions options;
+  options.storage = TensorStorageType::kBuffer;
+  GpuModelBuilder builder(gpu_info, options);
+
+  TensorDescriptor act_desc(DataType::kFloat16, TensorStorageType::kBuffer,
+                            Layout::kHWC);
+  act_desc.SetBHWCShape(BHWC(1, 1, 1, 64));
+  auto src = builder.AddTensor(act_desc);
+
+  TensorDescriptor out_desc(DataType::kFloat16, TensorStorageType::kBuffer,
+                            Layout::kHWC);
+  out_desc.SetBHWCShape(BHWC(1, 1, 1, 16));
+  auto out = builder.AddTensor(out_desc);
+
+  TensorDescriptor weights_desc(DataType::kUint32, TensorStorageType::kBuffer,
+                                Layout::kHWC);
+  weights_desc.SetBHWCShape(BHWC(1, 1, 4, 32));
+  auto weights = builder.AddTensor(weights_desc);
+
+  TensorDescriptor scale_desc(DataType::kFloat16, TensorStorageType::kBuffer,
+                              Layout::kHWC);
+  scale_desc.SetBHWCShape(BHWC(1, 1, 4, 8));
+  auto scale = builder.AddTensor(scale_desc);
+
+  Value v_src{src.id, {DataType::kFloat16, BHWC(1, 1, 1, 64)}};
+  Value v_weights{weights.id, {DataType::kUint32, BHWC(1, 1, 4, 32)}};
+  Value v_scale{scale.id, {DataType::kFloat16, BHWC(1, 1, 4, 8)}};
+  Value v_out{out.id, {DataType::kFloat16, BHWC(1, 1, 1, 16)}};
+
+  OperationDef op_def;
+  op_def.src_tensors = {src.tensor_desc, weights.tensor_desc,
+                        scale.tensor_desc};
+  op_def.dst_tensors = {out.tensor_desc};
+
+  GraphFloat32 graph;
+  Node* fc_node = graph.NewNode();
+  fc_node->operation.type =
+      ToString(::ml_drift::OperationType::kFullyConnectedInt4);
+  ::ml_drift::FullyConnectedInt4Attributes attr;
+  ::ml_drift::Tensor<OHWI, DataType::kInt4> w_tensor;
+  w_tensor.shape = OHWI(16, 1, 1, 64);
+  attr.weights = w_tensor;
+  attr.scale.shape = OHWI(16, 1, 1, 2);
+  attr.zero_point.shape = OHWI(0, 0, 0, 0);
+  fc_node->operation.attributes = attr;
+
+  LiteRtOpSelector selector(&create_info, &gpu_info);
+  ASSERT_OK(selector.GPUOperationFromNode(
+      op_def, {&v_src, &v_weights, &v_scale}, {&v_out}, *fc_node, &builder));
+
+  GpuModel gpu_model;
+  ASSERT_OK(builder.GetGpuModel({src.id, weights.id, scale.id}, {out.id},
+                                &gpu_model));
+  ASSERT_EQ(gpu_model.nodes.size(), 1);
+  EXPECT_EQ(gpu_model.nodes[0].inputs.size(), 3);
 }
 }  // namespace
 }  // namespace litert::ml_drift

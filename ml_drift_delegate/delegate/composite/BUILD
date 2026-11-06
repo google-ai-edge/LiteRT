@@ -1106,6 +1106,45 @@ cc_test(
 )
 
 cc_library(
+    name = "symmetric_quantized_fully_connected",
+    srcs = ["symmetric_quantized_fully_connected.cc"],
+    hdrs = ["symmetric_quantized_fully_connected.h"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings:string_view",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:model_hints",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+cc_test(
+    name = "symmetric_quantized_fully_connected_test",
+    srcs = ["symmetric_quantized_fully_connected_test.cc"],
+    deps = [
+        ":symmetric_quantized_fully_connected",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+    ],
+)
+
+cc_library(
     name = "litert_op_selector",
     srcs = ["litert_op_selector.cc"],
     hdrs = ["litert_op_selector.h"],
@@ -1129,6 +1168,7 @@ cc_library(
         ":sdpa_transposed_parser",
         ":short_conv_step_kernel",
         ":short_conv_step_parser",
+        ":symmetric_quantized_fully_connected",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
@@ -1165,6 +1205,7 @@ cc_test(
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common/kernels:fully_connected",
         "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",

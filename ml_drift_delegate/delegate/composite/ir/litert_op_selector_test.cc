@@ -38,6 +38,7 @@
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 
@@ -303,6 +304,33 @@ TEST_F(LiteRtOpSelectorIrTest,
   for (const auto& node : gpu_model.nodes) {
     EXPECT_NE(node.name, "flash_sdpa");
   }
+}
+
+TEST_F(LiteRtOpSelectorIrTest,
+       FullyConnectedInt4SymmetricExternalWeightsOmitsZeroPoint) {
+  const IrTensor* src = AddTensor(BHWC(1, 1, 1, 64), DataType::kFloat16,
+                                  TensorStorageType::kBuffer);
+  const IrTensor* weights = AddTensor(BHWC(1, 1, 4, 32), DataType::kUint32,
+                                      TensorStorageType::kBuffer);
+  const IrTensor* scale = AddTensor(BHWC(1, 1, 4, 8), DataType::kFloat16,
+                                    TensorStorageType::kBuffer);
+  const IrTensor* out = AddTensor(BHWC(1, 1, 1, 16), DataType::kFloat16,
+                                  TensorStorageType::kBuffer);
+
+  ::ml_drift::FullyConnectedInt4Attributes attr;
+  ::ml_drift::Tensor<OHWI, DataType::kInt4> w_tensor;
+  w_tensor.shape = OHWI(16, 1, 1, 64);
+  attr.weights = w_tensor;
+  attr.scale.shape = OHWI(16, 1, 1, 2);
+  attr.zero_point.shape = OHWI(0, 0, 0, 0);
+
+  ASSERT_OK(SelectOp(ToString(::ml_drift::OperationType::kFullyConnectedInt4),
+                     attr, {src, weights, scale}, {out}));
+
+  GpuModel gpu_model;
+  ASSERT_OK(BuildModel({src, weights, scale}, {out}, &gpu_model));
+  ASSERT_EQ(gpu_model.nodes.size(), 1);
+  EXPECT_EQ(gpu_model.nodes[0].inputs.size(), 3);
 }
 
 }  // namespace

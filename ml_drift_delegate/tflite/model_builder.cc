@@ -345,10 +345,17 @@ void ConfigSharedWeightFullyConnectedNode(
                        input->tensor.shape.w, input->tensor.shape.c);
 
   ::ml_drift::OHWI scale_shape = ::ml_drift::OHWI(shape.o, 1, 1, 1);
+  bool has_blockwise_zero_point = false;
   if (weights_tensor->quantization.type == kTfLiteBlockwiseQuantization) {
-    const auto* qparams = reinterpret_cast<const TfLiteBlockwiseQuantization*>(
-        weights_tensor->quantization.params);
-    scale_shape.i = shape.i / qparams->blocksize;
+    const auto* block_qparams =
+        reinterpret_cast<const TfLiteBlockwiseQuantization*>(
+            weights_tensor->quantization.params);
+    if (block_qparams != nullptr) {
+      if (block_qparams->blocksize > 0) {
+        scale_shape.i = shape.i / block_qparams->blocksize;
+      }
+      has_blockwise_zero_point = block_qparams->zero_point >= 0;
+    }
   }
 
   const bool has_quant =
@@ -377,6 +384,8 @@ void ConfigSharedWeightFullyConnectedNode(
         attr.zero_point.data.resize(qparams->scale->size, 0);
       }
       attr.zero_point.shape = ::ml_drift::OHWI(qparams->scale->size, 1, 1, 1);
+    } else if (has_quant || has_blockwise_zero_point) {
+      attr.zero_point.shape = scale_shape;
     }
   };
 

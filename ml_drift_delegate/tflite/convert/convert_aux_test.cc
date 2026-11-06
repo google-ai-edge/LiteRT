@@ -918,5 +918,61 @@ TEST(ConvertAuxTest, ConfigSharedQuantizedFullyConnectedInt2) {
   TfLiteFloatArrayFree(quant_params.scale);
 }
 
+TEST(ConvertAuxTest,
+     ConfigSharedQuantizedFullyConnectedInt4BlockwiseSymmetricOmitsZeroPoint) {
+  TfLiteTensor weights_tensor = {};
+  weights_tensor.type = kTfLiteInt4;
+  weights_tensor.quantization.type = kTfLiteBlockwiseQuantization;
+  TfLiteBlockwiseQuantization block_qparams = {};
+  block_qparams.scale = 1;
+  block_qparams.zero_point = -1;
+  block_qparams.blocksize = 32;
+  weights_tensor.quantization.params = &block_qparams;
+
+  ::ml_drift::OHWI weights_shape(16, 1, 1, 64);
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias;
+  ::ml_drift::ir::IrOp fc_op(0);
+
+  EXPECT_TRUE(ConfigSharedQuantizedFullyConnected(weights_tensor, weights_shape,
+                                                  std::move(bias), &fc_op));
+
+  EXPECT_EQ(fc_op.name, "fully_connected_int4");
+  ASSERT_TRUE(fc_op.attr.has_value());
+  const auto& attr =
+      std::any_cast<const ::ml_drift::FullyConnectedInt4Attributes&>(
+          fc_op.attr);
+  EXPECT_EQ(attr.scale.shape, ::ml_drift::OHWI(16, 1, 1, 2));
+  EXPECT_EQ(attr.zero_point.shape, ::ml_drift::OHWI(0, 0, 0, 0));
+  EXPECT_TRUE(attr.zero_point.data.empty());
+}
+
+TEST(ConvertAuxTest,
+     ConfigSharedQuantizedFullyConnectedInt4BlockwiseAsymmetricSetsZeroPoint) {
+  TfLiteTensor weights_tensor = {};
+  weights_tensor.type = kTfLiteInt4;
+  weights_tensor.quantization.type = kTfLiteBlockwiseQuantization;
+  TfLiteBlockwiseQuantization block_qparams = {};
+  block_qparams.scale = 1;
+  block_qparams.zero_point = 2;
+  block_qparams.blocksize = 32;
+  weights_tensor.quantization.params = &block_qparams;
+
+  ::ml_drift::OHWI weights_shape(16, 1, 1, 64);
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias;
+  ::ml_drift::ir::IrOp fc_op(0);
+
+  EXPECT_TRUE(ConfigSharedQuantizedFullyConnected(weights_tensor, weights_shape,
+                                                  std::move(bias), &fc_op));
+
+  EXPECT_EQ(fc_op.name, "fully_connected_int4");
+  ASSERT_TRUE(fc_op.attr.has_value());
+  const auto& attr =
+      std::any_cast<const ::ml_drift::FullyConnectedInt4Attributes&>(
+          fc_op.attr);
+  EXPECT_EQ(attr.scale.shape, ::ml_drift::OHWI(16, 1, 1, 2));
+  EXPECT_EQ(attr.zero_point.shape, ::ml_drift::OHWI(16, 1, 1, 2));
+  EXPECT_TRUE(attr.zero_point.data.empty());
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir
