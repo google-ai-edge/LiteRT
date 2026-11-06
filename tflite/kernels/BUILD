@@ -2275,6 +2275,23 @@ cc_test(
 )
 
 cc_test(
+    name = "embedding_lookup_nd_blockwise_test",
+    size = "small",
+    srcs = ["embedding_lookup_nd_blockwise_test.cc"],
+    deps = [
+        ":reference_ops",
+        ":test_main",
+        "//tflite/core:framework_stable",
+        "//tflite/core/c:common",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest",
+        "@eigen_archive//:eigen3",
+        "@flatbuffers",
+    ],
+)
+
+cc_test(
     name = "embedding_lookup_sparse_test",
     size = "small",
     srcs = ["embedding_lookup_sparse_test.cc"],
