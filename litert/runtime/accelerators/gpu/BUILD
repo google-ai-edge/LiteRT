@@ -217,6 +217,7 @@ litert_accelerator_library(
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_accelerator_def",
+        "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/internal:litert_tensor_buffer_registry_header",
         "//litert/cc:litert_macros",
@@ -250,6 +251,80 @@ litert_accelerator_library(
 #         ":ml_drift_vulkan_accelerator_so",
 #         ":ml_drift_webgpu_accelerator_so",
 #     ],
+# )
+#
+# cc_binary(
+#     name = "libEGL.so.1",
+#     testonly = 1,
+#     linkopts = ["-Wl,-soname,libEGL.so.1"],
+#     linkshared = 1,
+#     tags = [
+#         "noandroid",
+#         "noios",
+#         "nomacos",
+#         "notap",
+#         "nowindows",
+#     ],
+# )
+#
+# cc_binary(
+#     name = "libGLESv2.so.2",
+#     testonly = 1,
+#     linkopts = ["-Wl,-soname,libGLESv2.so.2"],
+#     linkshared = 1,
+#     tags = [
+#         "noandroid",
+#         "noios",
+#         "nomacos",
+#         "notap",
+#         "nowindows",
+#     ],
+# )
+#
+# cc_test(
+#     name = "ml_drift_gpu_accelerator_optional_dawn_test",
+#     srcs = ["ml_drift_gpu_accelerator_optional_dawn_test.cc"],
+#     data = [
+#         ":libEGL.so.1",
+#         ":libGLESv2.so.2",
+#         ":ml_drift_gpu_accelerator_so",
+#         "//ml_drift_delegate/delegate:libfake_webgpu_dawn.so",
+#     ],
+#     linkopts = ["-ldl"],
+#     local_defines = select({
+#         "//litert:litert_runtime_link_mode_dynamic": [
+#             "LITERT_WEBGPU_DAWN_DYNAMIC_LOADER",
+#         ],
+#         "//conditions:default": [],
+#     }),
+#     tags = [
+#         "no_oss",
+#         "noandroid",
+#         "noios",
+#         "nomacos",
+#         "nowindows",
+#     ],
+#     deps = [
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/cleanup",
+#         "@com_google_absl//absl/strings",
+#         "//litert/c:litert_any",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_environment",
+#         "//litert/c:litert_environment_options_header",  # buildcleaner: keep
+#         "//litert/c:litert_opaque_options",
+#         "//litert/c:litert_options",
+#         "//litert/c/internal:litert_accelerator_def",
+#         "//litert/c/internal:litert_accelerator_registration",
+#         "//litert/c/internal:litert_delegate_wrapper",
+#         "//litert/c/internal:litert_runtime_context_testonly",
+#         "//litert/c/options:litert_gpu_options",
+#     ] + select({
+#         "//litert:litert_runtime_link_mode_dynamic": [
+#             "//litert/c:litert_runtime_c_api_shared_lib",
+#         ],
+#         "//conditions:default": [],
+#     }),
 # )
 # copybara:uncomment_end
 
