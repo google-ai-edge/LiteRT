@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/backends/backend_factory.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
+#include "litert/vendors/qualcomm/context_config_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/qnn_model.h"
@@ -67,10 +68,14 @@ void QnnModelTest::SetUpQnnModel(const ::qnn::Options& options,
       ::qnn::CreateBackend((**qnn_manager).Api(), options, soc_info, true);
   ASSERT_TRUE(qnn_backend);
 
-  auto context_configs = QnnManager::DefaultContextConfigs();
-  auto context_handle = (**qnn_manager)
-                            .CreateContextHandle(*qnn_backend, context_configs,
-                                                 options.GetProfiling());
+  const auto context_configs = ::qnn::BuildCompileContextConfigs(
+      options, /*enable_effective_weight_sharing=*/false);
+  auto context_handle =
+      (**qnn_manager)
+          .CreateContextHandle(*qnn_backend,
+                               absl::MakeSpan(context_configs.Data(),
+                                              context_configs.Size() + 1),
+                               options.GetProfiling());
   ASSERT_TRUE(context_handle) << context_handle.Error();
 
   std::swap(qnn_manager_ptr_, *qnn_manager);

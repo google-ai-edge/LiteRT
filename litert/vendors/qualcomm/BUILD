@@ -75,6 +75,7 @@ litert_cc_lib_with_qnn(
     ungrte = True,
     deps = [
         ":common",
+        ":context_config_builder",
         ":qnn_saver_utils",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
@@ -97,6 +98,28 @@ litert_cc_lib_with_qnn(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "context_config_builder",
+    srcs = ["context_config_builder.cc"],
+    hdrs = ["context_config_builder.h"],
+    deps = [
+        "//litert/c/internal:litert_logging",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/backends:backend_utils",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_test(
+    name = "context_config_builder_test",
+    srcs = ["context_config_builder_test.cc"],
+    deps = [
+        ":context_config_builder",
+        "@com_google_googletest//:gtest_main",
         "@qairt//:qnn_lib_headers",
     ],
 )

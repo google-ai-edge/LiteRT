@@ -39,6 +39,7 @@
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
+#include "litert/vendors/qualcomm/context_config_builder.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
 using litert::Expected;
@@ -246,8 +247,11 @@ LiteRtDispatchDeviceContextT::GetOrCreateContext(
 
   LITERT_LOG(LITERT_INFO, "Creating new QNN context for bytecode %p (size %zu)",
              bytecode_ptr, bytecode_size);
+  const auto context_configs =
+      ::qnn::BuildDispatchContextConfigs(qnn_manager_.GetOptions());
   auto context_handle_expected = qnn_manager_.CreateContextHandle(
-      qnn_backend_, QnnManager::DefaultContextConfigs(),
+      qnn_backend_,
+      absl::MakeSpan(context_configs.Data(), context_configs.Size() + 1),
       absl::MakeSpan(static_cast<const uint8_t*>(bytecode_ptr), bytecode_size),
       profile_handle);
 

@@ -26,7 +26,6 @@
 #include <utility>
 #include <vector>
 
-#include "HTP/QnnHtpContext.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnContext.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
@@ -74,17 +73,6 @@ std::string Dump(const QnnManager& qnn);
 
 }  // namespace internal
 
-struct HtpContextConfigs {
-  QnnContext_Config_t priority = QNN_CONTEXT_CONFIG_INIT;
-  QnnHtpContext_CustomConfig_t budget_custom =
-      QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
-  QnnContext_Config_t budget = QNN_CONTEXT_CONFIG_INIT;
-  QnnHtpContext_CustomConfig_t init_acceleration_custom =
-      QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
-  QnnContext_Config_t init_acceleration = QNN_CONTEXT_CONFIG_INIT;
-  std::vector<const QnnContext_Config_t*> ptrs;
-};
-
 class QnnManager {
   friend std::string internal::Dump(const QnnManager& qnn);
 
@@ -98,16 +86,6 @@ class QnnManager {
   static Expected<Ptr> Create(
       const ::qnn::Options& options,
       std::optional<std::string> shared_library_dir = std::nullopt);
-
-  static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
-  static absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs();
-  static absl::Span<const QnnContext_Config_t*> GpuPerformanceContextConfigs(
-      ::qnn::GpuPerformanceMode performance_mode);
-
-  static absl::Span<const QnnContext_Config_t*> BuildHtpContextConfigs(
-      const ::qnn::Options& options,
-      absl::Span<const QnnContext_Config_t*> configs,
-      HtpContextConfigs& storage);
 
   // Get resolved function pointers for qnn sdk calls. Nullptr if functions
   // have not been resolved yet.
@@ -127,13 +105,13 @@ class QnnManager {
   // Create a context handle for compilation.
   Expected<ContextHandle> CreateContextHandle(
       ::qnn::QnnBackend& qnn_backend,
-      absl::Span<const QnnContext_Config_t*> configs,
+      absl::Span<const QnnContext_Config_t* const> configs,
       ::qnn::Profiling profiling_level);
 
   // Create a context handle for inference, from a given bytecode.
   Expected<ContextHandle> CreateContextHandle(
       ::qnn::QnnBackend& qnn_backend,
-      absl::Span<const QnnContext_Config_t*> configs,
+      absl::Span<const QnnContext_Config_t* const> configs,
       absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle);
 
   //
