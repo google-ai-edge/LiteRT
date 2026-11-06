@@ -918,6 +918,7 @@ cc_test(
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",

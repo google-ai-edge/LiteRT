@@ -1212,6 +1212,9 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
       .partitions = 0,
   };
   int cpu_delegated_node_count = 0;
+  // Hardware supported by any accelerator registered in the environment, used
+  // to explain a compilation failure when a requested accelerator is missing.
+  LiteRtHwAcceleratorSet registered_hardware = kLiteRtHwAcceleratorNone;
 
   // Apply accelerators matching the requested hardware support to the
   // model in the order they were registered.
@@ -1224,6 +1227,7 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
     LiteRtHwAcceleratorSet accelerator_supported_hardware;
     LITERT_RETURN_IF_ERROR(accelerator->GetHardwareSupport(
         accelerator.get(), &accelerator_supported_hardware));
+    registered_hardware |= accelerator_supported_hardware;
 
     // We don't apply the delegate if:
     //   - the delegate is responsible for JIT compilation
@@ -1333,6 +1337,43 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
 
   if (!(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
       prev_counts.undelegated_nodes > 0) {
+    // If none of the requested accelerators is registered in the environment,
+    // e.g. because the device is not on the GPU compatibility list, no op was
+    // delegated. Say so instead of suggesting a CPU fallback for "some" ops.
+    // When at least one requested accelerator is registered, the failure is a
+    // real partial delegation and is reported as such below.
+    const LiteRtHwAcceleratorSet requested_hardware =
+        hardware_accelerators &
+        (kLiteRtHwAcceleratorGpu | kLiteRtHwAcceleratorNpu);
+    if (requested_hardware != kLiteRtHwAcceleratorNone &&
+        (requested_hardware & registered_hardware) ==
+            kLiteRtHwAcceleratorNone) {
+      std::string names;
+      std::string hints;
+      if (requested_hardware & kLiteRtHwAcceleratorGpu) {
+        absl::StrAppend(&names, "GPU");
+        absl::StrAppend(&hints,
+                        " The GPU accelerator is not registered on devices "
+                        "that are not on the GPU compatibility list.");
+      }
+      if (requested_hardware & kLiteRtHwAcceleratorNpu) {
+        absl::StrAppend(&names, names.empty() ? "" : " or ", "NPU");
+        absl::StrAppend(&hints,
+                        " The NPU accelerator is not registered when no vendor "
+                        "dispatch library is found (see the DispatchLibraryDir "
+                        "environment option).");
+      }
+      return Error(
+          kLiteRtStatusErrorCompilation,
+          absl::StrCat(
+              "No ", names,
+              " accelerator is registered in the LiteRT environment, so the "
+              "model cannot run on it. The accelerator may be unavailable on "
+              "this device or disabled by the environment options.",
+              hints,
+              " Add kLiteRtHwAcceleratorCpu to the compilation accelerator set "
+              "to fall back to the CPU."));
+    }
     return Error(
         kLiteRtStatusErrorCompilation,
         "Some ops are not accelerated. Add kLiteRtHwAcceleratorCpu to the "
