@@ -83,6 +83,11 @@ class Environment {
     MetalCommandQueue = kLiteRtEnvOptionTagMetalCommandQueue,
     /// @warning Vulkan support is experimental.
     VulkanEnvironment = kLiteRtEnvOptionTagVulkanEnvironment,
+    VulkanInstance = kLiteRtEnvOptionTagVulkanInstance,
+    VulkanPhysicalDevice = kLiteRtEnvOptionTagVulkanPhysicalDevice,
+    VulkanDevice = kLiteRtEnvOptionTagVulkanDevice,
+    VulkanQueue = kLiteRtEnvOptionTagVulkanQueue,
+    VulkanQueueFamilyIndex = kLiteRtEnvOptionTagVulkanQueueFamilyIndex,
     CallbackOnGpuEnvDestroy = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
     CallbackUserDataOnGpuEnvDestry =
         kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
@@ -374,7 +379,7 @@ class Environment {
   Expected<EnvironmentOptions> FromCOptions(
       LiteRtEnvironmentOptions options) const {
     std::vector<EnvironmentOptions::Option> env_options;
-    for (int i = 0; i <= kLiteRtEnvOptionTagSystemGpuAcceleratorHandle; ++i) {
+    for (int i = 0; i <= kLiteRtEnvOptionTagVulkanQueueFamilyIndex; ++i) {
       LiteRtAny value;
       if (runtime_->GetEnvironmentOptionsValue(
               options, static_cast<LiteRtEnvOptionTag>(i), &value) ==
