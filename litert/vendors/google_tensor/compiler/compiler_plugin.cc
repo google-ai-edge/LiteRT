@@ -39,10 +39,10 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
@@ -57,15 +57,11 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/cc/litert_model.h"
-#include "litert/core/model/model.h"
-#include "litert/core/model/model_serialize.h"
-#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/google_tensor/adapter.h"
 #include "litert/vendors/google_tensor/compiler/google_tensor_options.pb.h"
 #include "google/protobuf/text_format.h"  // from @com_google_protobuf
 #include "re2/re2.h"  // from @com_googlesource_code_re2
-#include "tflite/converter/schema/schema_generated.h"
 
 //
 // Configurations
@@ -713,9 +709,6 @@ bool IsOpSupported(const litert::compiler::Op& op, const OpFilters& op_filters,
 
 namespace {
 
-using OpCodeMap =
-    absl::flat_hash_map<std::pair<LiteRtOpCode, std::string>, int32_t>;
-
 // Populates the compiler configuration within GoogleTensorOptions.
 LiteRtStatus PopulateCompilerConfig(
     LiteRtCompilerPlugin compiler_plugin, absl::string_view soc_model,
@@ -769,140 +762,6 @@ LiteRtStatus PopulateCompilerConfig(
   return kLiteRtStatusOk;
 }
 
-// Inserts a new operator code (opcode + custom name) into the global
-// OperatorCode list, or returns its index if it has already been registered.
-int32_t GetOrInsertOpCode(
-    LiteRtOpCode op_code, absl::string_view custom_code,
-    std::vector<litert::internal::TflOpCodePtr>& new_op_codes,
-    OpCodeMap& op_code_to_index) {
-  std::pair<LiteRtOpCode, std::string> key =
-      std::make_pair(op_code, std::string(custom_code));
-  OpCodeMap::const_iterator it = op_code_to_index.find(key);
-  if (it != op_code_to_index.end()) {
-    return it->second;
-  }
-
-  auto new_code = std::make_unique<tflite::OperatorCodeT>();
-  new_code->builtin_code = static_cast<tflite::BuiltinOperator>(op_code);
-  if (!custom_code.empty()) {
-    new_code->custom_code = std::string(custom_code);
-  }
-  new_code->version = 1;
-  new_op_codes.push_back(std::move(new_code));
-  int32_t new_index = new_op_codes.size() - 1;
-  op_code_to_index[key] = new_index;
-  return new_index;
-}
-
-// Scans all operations in the model's main subgraph, rebuilds the global
-// OperatorCode list, and updates each operation's internal opcode index to
-// reference the new list.
-void ReconstructTflOpCodes(LiteRtModelT& temp_model) {
-  std::vector<litert::internal::TflOpCodePtr> new_op_codes;
-  OpCodeMap op_code_to_index;
-
-  LiteRtSubgraph subgraph = temp_model.MainSubgraph();
-  for (LiteRtOpT* op : subgraph->Ops()) {
-    std::string custom_code_str = "";
-    if (op->OpCode() == kLiteRtOpCodeTflCustom) {
-      if (litert::Expected<absl::string_view> custom_code = op->CustomCode()) {
-        custom_code_str = std::string(*custom_code);
-      }
-    }
-    int32_t new_index = GetOrInsertOpCode(op->OpCode(), custom_code_str,
-                                          new_op_codes, op_code_to_index);
-    litert::internal::SetTflOpCodeInd(*op, new_index);
-  }
-
-  litert::internal::SetTflOpCodes(temp_model, std::move(new_op_codes));
-}
-
-// Clones the given subgraph's operations, tensors, and connectivity into a
-// temporary model container and serializes it to a FlatBuffer byte stream.
-litert::Expected<litert::OwningBufferRef<uint8_t>> SerializeSubgraph(
-    LiteRtSubgraph subgraph) {
-  LiteRtModelT temp_model;
-  LiteRtSubgraphT& dest_subgraph = temp_model.EmplaceSubgraph();
-  absl::flat_hash_map<const LiteRtTensorT*, LiteRtTensorT*> tensor_map;
-
-  // Clone all subgraph inputs.
-  for (const LiteRtTensorT* src_input : subgraph->Inputs()) {
-    auto dest_input_expected =
-        litert::internal::MakeClone(dest_subgraph, *src_input);
-    if (!dest_input_expected.HasValue()) {
-      return dest_input_expected.Error();
-    }
-    LiteRtTensorT* dest_input = *dest_input_expected;
-    dest_subgraph.Inputs().push_back(dest_input);
-    tensor_map[src_input] = dest_input;
-  }
-
-  // Clone all ops.
-  for (const LiteRtOpT* src_op : subgraph->Ops()) {
-    LiteRtOpT& dest_op = litert::internal::MakeClone(dest_subgraph, *src_op);
-
-    // Attach inputs.
-    for (const LiteRtTensorT* src_input : src_op->Inputs()) {
-      LiteRtTensorT*& dest_input = tensor_map[src_input];
-      if (dest_input == nullptr) {
-        auto dest_input_expected =
-            litert::internal::MakeClone(dest_subgraph, *src_input);
-        if (!dest_input_expected.HasValue()) {
-          return dest_input_expected.Error();
-        }
-        dest_input = *dest_input_expected;
-      }
-      litert::internal::AttachInput(dest_input, dest_op);
-    }
-
-    // Attach outputs.
-    for (const LiteRtTensorT* src_output : src_op->Outputs()) {
-      auto dest_output_expected =
-          litert::internal::MakeClone(dest_subgraph, *src_output);
-      if (!dest_output_expected.HasValue()) {
-        return dest_output_expected.Error();
-      }
-      LiteRtTensorT* dest_output = *dest_output_expected;
-      tensor_map[src_output] = dest_output;
-      litert::internal::AttachOutput(dest_output, dest_op);
-    }
-
-    if (dest_op.OpCode() == kLiteRtOpCodeShloComposite) {
-      tflite::BuiltinOptions2Union new_opts =
-          litert::internal::GetTflOptions2(dest_op);
-      if (new_opts.type == tflite::BuiltinOptions2_StableHLOCompositeOptions) {
-        tflite::StableHLOCompositeOptionsT* stablehlo_opts =
-            new_opts.AsStableHLOCompositeOptions();
-        stablehlo_opts->decomposition_subgraph_index = -1;
-        litert::internal::SetTflOptions2(dest_op, std::move(new_opts));
-      }
-    }
-  }
-
-  // Populate subgraph outputs.
-  for (const LiteRtTensorT* src_output : subgraph->Outputs()) {
-    absl::flat_hash_map<const LiteRtTensorT*, LiteRtTensorT*>::const_iterator
-        it = tensor_map.find(src_output);
-    if (it == tensor_map.end()) {
-      return litert::Unexpected(kLiteRtStatusErrorNotFound,
-                                "Output tensor not found in map");
-    }
-    dest_subgraph.Outputs().push_back(it->second);
-  }
-
-  ReconstructTflOpCodes(temp_model);
-
-  // Serialize the temp_model
-  auto serialized = litert::internal::SerializeModel(std::move(temp_model),
-                                                     /*bytecode_alignment=*/1);
-  if (!serialized.HasValue()) {
-    return litert::Unexpected(serialized.Error().Status(),
-                              "Failed to serialize temporary model");
-  }
-
-  return std::move(*serialized);
-}
-
 // Gets and converts options from the compiler plugin.
 litert::Expected<GoogleTensorOptions> GetGoogleTensorOptions(
     LiteRtCompilerPlugin compiler_plugin) {
@@ -928,7 +787,7 @@ litert::Expected<GoogleTensorOptions> GetGoogleTensorOptions(
 // Gets unsupported op indices and reasons dynamically using the adapter.
 litert::Expected<absl::flat_hash_map<int32_t, std::string>>
 GetUnsupportedOpsDynamic(litert::google_tensor::Adapter* adapter,
-                         LiteRtSubgraph subgraph,
+                         const litert::compiler::Subgraph& subgraph,
                          const GoogleTensorOptions& google_tensor_options) {
   std::string options_str;
   if (!google_tensor_options.SerializeToString(&options_str)) {
@@ -936,7 +795,7 @@ GetUnsupportedOpsDynamic(litert::google_tensor::Adapter* adapter,
                               "Failed to serialize GoogleTensorOptions");
   }
 
-  auto serialize_expected = SerializeSubgraph(subgraph);
+  auto serialize_expected = subgraph.Serialize();
   if (!serialize_expected.HasValue()) {
     return serialize_expected.Error();
   }
@@ -1153,8 +1012,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                  "did not run. Falling back to static mapping.");
     } else {
       litert::Expected<absl::flat_hash_map<int32_t, std::string>>
-          unsupported_ops_expected = GetUnsupportedOpsDynamic(
-              adapter, subgraph, google_tensor_options);
+          unsupported_ops_expected =
+              GetUnsupportedOpsDynamic(adapter, graph, google_tensor_options);
       if (unsupported_ops_expected.HasValue()) {
         unsupported_ops_map = std::move(*unsupported_ops_expected);
         use_static_fallback = false;
@@ -1225,8 +1084,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   return kLiteRtStatusOk;
 }
 
-void MakeUniqueSignatureKeysPerSubgraph(LiteRtModelT* model,
-                                        size_t num_subgraphs,
+void MakeUniqueSignatureKeysPerSubgraph(size_t num_subgraphs,
                                         char** signature_keys) {
   for (size_t i = 0; i < num_subgraphs; ++i) {
     signature_keys[i] = strdup(absl::StrCat("subgraph_", i, "_fn").c_str());
@@ -1298,7 +1156,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     FreeSignatureKeys(num_partitions, signatures);
   };
 
-  MakeUniqueSignatureKeysPerSubgraph(model.Get(), num_partitions, signatures);
+  MakeUniqueSignatureKeysPerSubgraph(num_partitions, signatures);
   LITERT_RETURN_IF_ERROR(
       compiler_plugin->ctx()->serialize_model_with_signatures(
           partitions, &data, &size, &offset, false, signatures, num_partitions,

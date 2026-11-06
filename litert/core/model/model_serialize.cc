@@ -37,8 +37,10 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -575,6 +577,54 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
   return final_model;
 }
 
+using OpCodeMap =
+    absl::flat_hash_map<std::pair<LiteRtOpCode, std::string>, int32_t>;
+
+int32_t GetOrInsertOpCode(LiteRtOpCode op_code, absl::string_view custom_code,
+                          std::vector<TflOpCodePtr>& new_op_codes,
+                          OpCodeMap& op_code_to_index) {
+  std::pair<LiteRtOpCode, std::string> key(op_code, std::string(custom_code));
+  if (auto it = op_code_to_index.find(key); it != op_code_to_index.end()) {
+    return it->second;
+  }
+
+  auto new_code = std::make_unique<TflOpCode>();
+  new_code->builtin_code = static_cast<::tflite::BuiltinOperator>(op_code);
+  const int32_t code = static_cast<int32_t>(op_code);
+  constexpr int32_t kPlaceholderCode = static_cast<int32_t>(
+      ::tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES);
+  new_code->deprecated_builtin_code =
+      static_cast<int8_t>(code < kPlaceholderCode ? code : kPlaceholderCode);
+  if (!custom_code.empty()) {
+    new_code->custom_code = std::string(custom_code);
+  }
+  new_code->version = 1;
+  new_op_codes.push_back(std::move(new_code));
+  const int32_t new_index = new_op_codes.size() - 1;
+  op_code_to_index.emplace(std::move(key), new_index);
+  return new_index;
+}
+
+void ReconstructTflOpCodes(LiteRtModelT& temp_model) {
+  std::vector<TflOpCodePtr> new_op_codes;
+  OpCodeMap op_code_to_index;
+
+  LiteRtSubgraph subgraph = temp_model.MainSubgraph();
+  for (LiteRtOpT* op : subgraph->Ops()) {
+    absl::string_view custom_code;
+    if (op->OpCode() == kLiteRtOpCodeTflCustom) {
+      if (Expected<absl::string_view> code = op->CustomCode()) {
+        custom_code = *code;
+      }
+    }
+    const int32_t new_index = GetOrInsertOpCode(op->OpCode(), custom_code,
+                                                new_op_codes, op_code_to_index);
+    litert::internal::SetTflOpCodeInd(*op, new_index);
+  }
+
+  litert::internal::SetTflOpCodes(temp_model, std::move(new_op_codes));
+}
+
 }  // namespace
 
 Expected<OwningBufferRef<uint8_t>> SerializeModel(LiteRtModelT&& model,
@@ -624,6 +674,67 @@ Expected<OwningBufferRef<uint8_t>> SerializeModel(LiteRtModelT&& model,
   }
 
   return serialized_with_buffers;
+}
+
+Expected<OwningBufferRef<uint8_t>> SerializeSubgraph(
+    const LiteRtSubgraphT& subgraph, size_t bytecode_alignment) {
+  LiteRtModelT temp_model;
+  LiteRtSubgraphT& dest_subgraph = temp_model.EmplaceSubgraph();
+  if (!subgraph.Name().empty()) {
+    dest_subgraph.SetName(std::string(subgraph.Name()));
+  }
+  absl::flat_hash_map<const LiteRtTensorT*, LiteRtTensorT*> tensor_map;
+
+  auto get_or_clone_tensor =
+      [&](const LiteRtTensorT* src) -> Expected<LiteRtTensorT*> {
+    LiteRtTensorT*& dest = tensor_map[src];
+    if (dest == nullptr) {
+      LITERT_ASSIGN_OR_RETURN(dest, MakeClone(dest_subgraph, *src));
+    }
+    return dest;
+  };
+
+  for (const LiteRtTensorT* src_input : subgraph.Inputs()) {
+    LITERT_ASSIGN_OR_RETURN(LiteRtTensorT * dest_input,
+                            get_or_clone_tensor(src_input));
+    dest_subgraph.Inputs().push_back(dest_input);
+  }
+
+  for (const LiteRtOpT* src_op : subgraph.Ops()) {
+    LiteRtOpT& dest_op = MakeClone(dest_subgraph, *src_op);
+
+    for (const LiteRtTensorT* src_input : src_op->Inputs()) {
+      LITERT_ASSIGN_OR_RETURN(LiteRtTensorT * dest_input,
+                              get_or_clone_tensor(src_input));
+      AttachInput(dest_input, dest_op);
+    }
+
+    for (const LiteRtTensorT* src_output : src_op->Outputs()) {
+      LITERT_ASSIGN_OR_RETURN(LiteRtTensorT * dest_output,
+                              get_or_clone_tensor(src_output));
+      AttachOutput(dest_output, dest_op);
+    }
+
+    if (dest_op.OpCode() == kLiteRtOpCodeShloComposite) {
+      TflOptions2 new_opts = GetTflOptions2(dest_op);
+      if (new_opts.type ==
+          ::tflite::BuiltinOptions2_StableHLOCompositeOptions) {
+        new_opts.AsStableHLOCompositeOptions()->decomposition_subgraph_index =
+            -1;
+        SetTflOptions2(dest_op, std::move(new_opts));
+      }
+    }
+  }
+
+  for (const LiteRtTensorT* src_output : subgraph.Outputs()) {
+    LITERT_ASSIGN_OR_RETURN(LiteRtTensorT * dest_output,
+                            get_or_clone_tensor(src_output));
+    dest_subgraph.Outputs().push_back(dest_output);
+  }
+
+  ReconstructTflOpCodes(temp_model);
+
+  return SerializeModel(std::move(temp_model), bytecode_alignment);
 }
 
 }  // namespace litert::internal

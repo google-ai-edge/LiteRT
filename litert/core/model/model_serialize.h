@@ -15,6 +15,9 @@
 #ifndef ODML_LITERT_LITERT_CORE_MODEL_MODEL_SERIALIZE_H_
 #define ODML_LITERT_LITERT_CORE_MODEL_MODEL_SERIALIZE_H_
 
+#include <cstddef>
+#include <cstdint>
+
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -23,6 +26,9 @@ namespace litert::internal {
 
 Expected<OwningBufferRef<uint8_t>> SerializeModel(
     LiteRtModelT&& model, size_t bytecode_alignment = 1);
+
+Expected<OwningBufferRef<uint8_t>> SerializeSubgraph(
+    const LiteRtSubgraphT& subgraph, size_t bytecode_alignment = 1);
 
 }  // namespace litert::internal
 

@@ -167,6 +167,7 @@ cc_library(
     visibility = ["//litert:litert_internal_users"],
     deps = [
         ":litert_abi_header",
+        "//litert/build_common:build_config",
         "//litert/c:litert_any",
         "//litert/c:litert_builder_impl",
         "//litert/c:litert_common",
@@ -177,7 +178,13 @@ cc_library(
         "//litert/c:litert_op_options_impl",
         "//litert/c:litert_opaque_options_impl",
         "//litert/c:litert_options_impl",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_npu_enabled": [
+            "//litert/cc:litert_common",
+            "//litert/core/model:model_serialize",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(

@@ -760,5 +760,44 @@ TEST(TestCallGoogleTensorPlugin, PartitionWithInputValidator) {
   EXPECT_GT(selected_ops.size(), 0);
 }
 
+TEST(TestCallGoogleTensorPlugin,
+     PartitionWithInputValidatorFallsBackWhenSerializeSubgraphUnavailable) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetOptions<GoogleTensorOptions>());
+  google_tensor_options.SetExperimentalEnableInputValidator(true);
+  google_tensor_options.SetFloatTruncationType(
+      kLiteRtGoogleTensorFloatTruncationTypeNoTruncation);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  LiteRtCompilerContext legacy_ctx = *LrtGetCompilerContext();
+  legacy_ctx.abi_header.minor_version = 5;
+  legacy_ctx.abi_header.struct_size =
+      offsetof(LiteRtCompilerContext, serialize_subgraph);
+
+  auto plugin_or = StaticallyLinkedPlugin::Create(&legacy_ctx, /*env=*/nullptr,
+                                                  litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
+  ExtendedModel model = testing::LoadTestFileModel(kFloatReduceMaxModel);
+  LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/"Tensor_G5", subgraph.Get(),
+      &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  // When serialize_subgraph is absent from an older LiteRtCompilerContext,
+  // dynamic input validation gracefully falls back to static op support.
+  ASSERT_EQ(selected_ops.size(), 1);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeTflReduceMax);
+}
+
 }  // namespace
 }  // namespace litert
