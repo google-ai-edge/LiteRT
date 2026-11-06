@@ -50,6 +50,11 @@ ABSL_FLAG(bool, intel_openvino_enable_weight_sharing, true,
           "OpenVINO. Disable this to emit standalone per-partition bytecode "
           "instead of a shared GlobalGraph container.");
 
+ABSL_FLAG(std::string, intel_openvino_dump_ovir_dir, "",
+          "Debug: if set, the Intel OpenVINO compiler plugin dumps each "
+          "partition's final OpenVINO IR (Partition_<idx>.xml/.bin) into "
+          "this directory before compiling it.");
+
 ABSL_FLAG(std::string, intel_openvino_graph_backends, "",
           "Per-graph (per-partition) OpenVINO target device.  Accepts either "
           "a bare backend name to apply to all graphs (e.g. 'npu' or 'gpu'), "
@@ -142,6 +147,11 @@ Expected<void> UpdateIntelOpenVinoOptionsFromFlags(
       absl::GetFlag(FLAGS_intel_openvino_performance_mode));
   options.SetEnableWeightSharing(
       absl::GetFlag(FLAGS_intel_openvino_enable_weight_sharing));
+  const std::string dump_ovir_dir =
+      absl::GetFlag(FLAGS_intel_openvino_dump_ovir_dir);
+  if (!dump_ovir_dir.empty()) {
+    options.SetDumpOvirDir(dump_ovir_dir);
+  }
 
   // Parse configs map options from the flag (comma-separated key=value pairs)
   const std::string configs_map_str =

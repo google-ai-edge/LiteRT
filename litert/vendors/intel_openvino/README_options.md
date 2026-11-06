@@ -54,6 +54,15 @@ backends:
     regardless. Set to `false` to force standalone per-partition bytecode with
     baked-in weights.
 
+### Debug: OpenVINO IR Dump
+
+-   **`dump_ovir_dir`** (default empty = disabled): When set, the compiler
+    plugin serializes each partition's final OpenVINO model (after
+    optimization passes, right before `compile_model`) as OpenVINO IR
+    (`Partition_<idx>.xml` / `Partition_<idx>.bin`) into this directory. The
+    directory is created if missing. CLI flag:
+    `--intel_openvino_dump_ovir_dir=/path/to/dir`.
+
 ### Configuration Map
 
 Allows setting arbitrary OpenVINO configuration properties as key-value pairs.
