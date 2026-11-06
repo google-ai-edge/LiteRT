@@ -317,22 +317,89 @@ bool IsLogicalOp(tflite::gpu::OperationType op_type) {
          op_type == tflite::gpu::OperationType::NOT_EQUAL;
 }
 
+absl::Status ReadBatchedMatMulInput(ObjectReader* reader, int index,
+                                    bool adjoint, GraphFloat32* graph,
+                                    Value** output) {
+  RETURN_IF_ERROR(reader->ReadValue(index, output));
+  if (!adjoint) {
+    return absl::OkStatus();
+  }
+
+  TransposeAttributes attr;
+  const int input_rank = reader->GetInputTensor(index)->dims->size;
+  if (input_rank == 2) {
+    // A rank-2 tensor [M, K] is represented internally as
+    // BHWC(M, 1, 1, K).
+    attr.perm = BHWC(3, 1, 2, 0);
+  } else if (input_rank == 3 || input_rank == 4) {
+    // Rank-3 [B, M, K] and rank-4 [B, H, M, K] tensors map their
+    // matrix dimensions to WIDTH and CHANNELS.
+    attr.perm = BHWC(0, 1, 3, 2);
+  } else {
+    return absl::UnavailableError(
+        "Batched matmul adjoints require rank 2, 3, or 4 tensors.");
+  }
+
+  Node* transpose = graph->NewNode();
+  transpose->operation.type = ToString(OperationType::TRANSPOSE);
+  transpose->operation.attributes = attr;
+  RETURN_IF_ERROR(graph->AddConsumer(transpose->id, (*output)->id));
+
+  Value* transposed = graph->NewValue();
+  transposed->tensor.type = (*output)->tensor.type;
+  transposed->tensor.shape =
+      CalculateOutputShape((*output)->tensor.shape, attr);
+  transposed->quant_params = (*output)->quant_params;
+  RETURN_IF_ERROR(graph->SetProducer(transpose->id, transposed->id));
+  *output = transposed;
+  return absl::OkStatus();
+}
+
 class BatchedMatMulOperationParser : public TFLiteOperationParser {
  public:
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    return CheckGpuDelegateCompatibility(context, tflite_node, registration);
+    RETURN_IF_ERROR(
+        CheckGpuDelegateCompatibility(context, tflite_node, registration));
+
+    const TfLiteBatchMatMulParams* tf_options;
+    RETURN_IF_ERROR(RetrieveBuiltinData(tflite_node, &tf_options));
+    const TfLiteTensor& lhs =
+        context->tensors[tflite_node->inputs->data[0]];
+    const TfLiteTensor& rhs =
+        context->tensors[tflite_node->inputs->data[1]];
+    const auto adjoint_rank_is_supported = [](bool adjoint,
+                                              const TfLiteTensor& tensor) {
+      return !adjoint ||
+             (tensor.dims->size >= 2 && tensor.dims->size <= 4);
+    };
+    if (!adjoint_rank_is_supported(tf_options->adj_x, lhs) ||
+        !adjoint_rank_is_supported(tf_options->adj_y, rhs)) {
+      return absl::UnavailableError(
+          "Batched matmul adjoints require rank 2, 3, or 4 inputs.");
+    }
+    return absl::OkStatus();
   }
 
   absl::Status Parse(const TfLiteNode* tflite_node,
                      const TfLiteRegistration* registration,
                      GraphFloat32* graph, ObjectReader* reader) final {
+    const TfLiteBatchMatMulParams* tf_options;
+    RETURN_IF_ERROR(RetrieveBuiltinData(tflite_node, &tf_options));
+
     if (reader->GetNumberOfRuntimeInputs() == 2) {
+      Value* lhs;
+      Value* rhs;
+      RETURN_IF_ERROR(ReadBatchedMatMulInput(
+          reader, 0, tf_options->adj_x, graph, &lhs));
+      RETURN_IF_ERROR(ReadBatchedMatMulInput(
+          reader, 1, tf_options->adj_y, graph, &rhs));
+
       Node* node = graph->NewNode();
       node->operation.type = ToString(OperationType::BATCHED_MATMUL);
-      RETURN_IF_ERROR(reader->AddInput(node, 0));
-      RETURN_IF_ERROR(reader->AddInput(node, 1));
+      RETURN_IF_ERROR(graph->AddConsumer(node->id, lhs->id));
+      RETURN_IF_ERROR(graph->AddConsumer(node->id, rhs->id));
       RETURN_IF_ERROR(reader->AddOutputs(node));
       return absl::OkStatus();
     } else if (reader->GetNumberOfRuntimeInputs() == 1) {
@@ -342,26 +409,39 @@ class BatchedMatMulOperationParser : public TFLiteOperationParser {
         // first input must be runtime and second is 2d constant tensor
         return absl::UnavailableError("Not supported batched mat mul case");
       }
+
+      Value* lhs;
+      RETURN_IF_ERROR(ReadBatchedMatMulInput(
+          reader, 0, tf_options->adj_x, graph, &lhs));
       Node* node = graph->NewNode();
       node->operation.type = ToString(OperationType::CONVOLUTION_2D);
-      RETURN_IF_ERROR(reader->AddInput(node, 0));
+      RETURN_IF_ERROR(graph->AddConsumer(node->id, lhs->id));
       RETURN_IF_ERROR(reader->AddOutputs(node));
 
       Tensor<HW, DataType::FLOAT32> weights;
       RETURN_IF_ERROR(reader->ReadTensor(1, &weights));
       Convolution2DAttributes attr;
-      attr.weights.data.resize(weights.shape.w * weights.shape.h);
-      for (int i = 0; i < weights.shape.w; ++i) {
-        for (int j = 0; j < weights.shape.h; ++j) {
-          attr.weights.data[i * weights.shape.h + j] =
-              weights.data[j * weights.shape.w + i];
+      if (tf_options->adj_y) {
+        // rhs is [N, K]. Treat its rows directly as N convolution filters,
+        // which is equivalent to lhs * transpose(rhs).
+        attr.weights.data = std::move(weights.data);
+      } else {
+        // rhs is [K, N]. Convert its columns into N convolution filters.
+        attr.weights.data.resize(weights.shape.w * weights.shape.h);
+        for (int i = 0; i < weights.shape.w; ++i) {
+          for (int j = 0; j < weights.shape.h; ++j) {
+            attr.weights.data[i * weights.shape.h + j] =
+                weights.data[j * weights.shape.w + i];
+          }
         }
       }
       attr.weights.id = weights.id;
       attr.weights.shape.h = 1;
       attr.weights.shape.w = 1;
-      attr.weights.shape.o = weights.shape.w;
-      attr.weights.shape.i = weights.shape.h;
+      attr.weights.shape.o =
+          tf_options->adj_y ? weights.shape.h : weights.shape.w;
+      attr.weights.shape.i =
+          tf_options->adj_y ? weights.shape.w : weights.shape.h;
       attr.strides = HW(1, 1);
       attr.dilations = HW(1, 1);
       attr.padding.appended = HW(0, 0);
