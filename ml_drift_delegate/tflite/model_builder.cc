@@ -3280,6 +3280,21 @@ class EmbeddingLookupOperationParser : public TFLiteOperationParser {
           GetTensorId(context, node, kInputWeightsId, &weights_tensor_idx));
       ABSL_RETURN_IF_ERROR(
           PreCheckReadQuantizedValueByTensorIdx(context, weights_tensor_idx));
+      if (weights_tensor->quantization.type == kTfLiteBlockwiseQuantization) {
+        const auto* subgraph =
+            static_cast<const ::tflite::Subgraph*>(context->impl_);
+        const bool is_shared =
+            subgraph != nullptr &&
+            (subgraph->GetTensorBufferIdentifiers().count(weights_tensor_idx) >
+                 0 ||
+             subgraph->GetExternalTensorBufferIdentifiers().count(
+                 weights_tensor_idx) > 0);
+        if (!is_shared) {
+          return absl::InvalidArgumentError(
+              "EMBEDDING_LOOKUP: Use external weights for blockwise "
+              "quantization.");
+        }
+      }
     } else if (weights_tensor->type != kTfLiteFloat32) {
       return absl::InvalidArgumentError(
           "EMBEDDING_LOOKUP: Unsupported weights type.");
