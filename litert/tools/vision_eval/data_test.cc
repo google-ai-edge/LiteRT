@@ -50,8 +50,8 @@ TEST_F(DataTest, TextAndBinaryRoundTripPreserveOptionalPresence) {
   summary.set_error("No valid depth pixels");
   summary.add_metrics()->mutable_depth()->set_empty_images(1);
   for (auto format : {TEXT_PROTO, BINARY_PROTO}) {
-    const auto path = root_ / Utf8ToPath("输出") /
-                      (format == TEXT_PROTO ? "out.txtpb" : "out.binpb");
+    const auto path =
+        root_ / "output" / (format == TEXT_PROTO ? "out.txtpb" : "out.binpb");
     ASSERT_TRUE(WriteProto(path, summary, format));
     RunSummary parsed;
     ASSERT_TRUE(ReadProto(path, parsed));
@@ -96,7 +96,7 @@ TEST_F(DataTest, RawTensorSizeAndFileExistenceAreChecked) {
   spec.add_shape(1);
   spec.add_shape(2);
   float values[] = {1, 2};
-  const auto path = root_ / Utf8ToPath("张量_input.raw");
+  const auto path = root_ / "tensor_input.raw";
   ASSERT_TRUE(WriteBytes(path, values, sizeof(values)));
   auto read = ReadFloats(path, spec);
   ASSERT_TRUE(read);

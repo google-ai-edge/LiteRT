@@ -39,6 +39,7 @@ package(
 exports_files([
     "run_model.cc",
     "gpu_numerics_check.cc",
+    "vision_eval_main.cc",
 ])
 
 # copybara:uncomment_begin(google-only)
@@ -1178,4 +1179,26 @@ cc_binary(
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
     ],
+)
+
+litert_bin(
+    name = "litert_vision_eval",
+    srcs = ["vision_eval_main.cc"],
+    copts = ["-fno-exceptions"],
+    export_litert_only = True,
+    ungrte = True,
+    deps = ["//litert/tools/vision_eval:runner"] + litert_gpu_accelerator_deps(),
+)
+
+# Build with --define=litert_runtime_link_mode=dynamic.
+litert_bin(
+    name = "litert_vision_eval_dynamic_runtime",
+    srcs = ["vision_eval_main.cc"],
+    copts = ["-fno-exceptions"],
+    data = ["//litert/c:libLiteRt.so"] + litert_gpu_accelerator_prebuilts(),
+    # Allow LD_LIBRARY_PATH to select a pinned runtime.
+    enable_new_dtags = True,
+    linkopts = ["-lm"],
+    ungrte = True,
+    deps = ["//litert/tools/vision_eval:runner"],
 )
