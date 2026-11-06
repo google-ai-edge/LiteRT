@@ -1170,6 +1170,13 @@ TfLiteStatus Subgraph::AddNodeWithParameters(
   TF_LITE_ENSURE_OK(
       &context_,
       CheckTensorIndices("node outputs", outputs.data(), outputs.size()));
+  // Intermediate tensors are indexed into the subgraph's tensor array by
+  // kernels (e.g. LSTM Prepare), so validate them the same way as inputs
+  // and outputs instead of storing an out-of-range index that is
+  // dereferenced later.
+  TF_LITE_ENSURE_OK(
+      &context_, CheckTensorIndices("node intermediates", intermediates.data(),
+                                    intermediates.size()));
 
   // For builtin ops, inputs and outputs must not overlap. Custom ops must do
   // this check by themselves if they don't support overlapping tensors. This
