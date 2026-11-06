@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "tflite/delegates/gpu/common/operations.h"
