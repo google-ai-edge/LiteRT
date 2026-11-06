@@ -2250,6 +2250,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/kernels/internal:common",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
@@ -2480,6 +2481,7 @@ cc_test(
         ":lstm_eval",
         ":test_main",
         "//tflite/core/c:common",
+        "//tflite/kernels/internal:common",
         "@com_google_googletest//:gtest",
     ],
 )
