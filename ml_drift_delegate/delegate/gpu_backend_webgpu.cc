@@ -422,10 +422,15 @@ GpuInferenceContextWebGpu::GpuInferenceContextWebGpu(
       num_nodes_per_command_encoder_(kNumNodesPerCommandEncoder) {}
 
 GpuInferenceContextWebGpu::~GpuInferenceContextWebGpu() {
+  JoinNextCommandBuffersThread();
+  SharedWebGpuEnv::Get().ClearLastContextIfMatched(&backend_->wgpu_env(), this);
+}
+
+void GpuInferenceContextWebGpu::JoinNextCommandBuffersThread() {
   if (next_command_buffers_thread_) {
     next_command_buffers_thread_->join();
+    next_command_buffers_thread_.reset();
   }
-  SharedWebGpuEnv::Get().ClearLastContextIfMatched(&backend_->wgpu_env(), this);
 }
 
 absl::StatusOr<::ml_drift::webgpu::SpatialTensor*>
@@ -448,6 +453,7 @@ GpuInferenceContextWebGpu::GetSpatialTensor(::ml_drift::ValueId id) {
 
 absl::Status GpuInferenceContextWebGpu::BindSpatialTensor(
     ::ml_drift::ValueId id, ::ml_drift::GpuSpatialTensor* tensor) {
+  JoinNextCommandBuffersThread();
   absl::MutexLock lock(backend_->memory_manager_mutex());
   return ctx_->SetTensor(
       id, static_cast<::ml_drift::webgpu::SpatialTensor*>(tensor));
@@ -455,12 +461,14 @@ absl::Status GpuInferenceContextWebGpu::BindSpatialTensor(
 
 absl::Status GpuInferenceContextWebGpu::WriteDataToWeightTensor(
     ::ml_drift::ValueId id, absl::Span<const uint8_t> data) {
+  JoinNextCommandBuffersThread();
   ABSL_ASSIGN_OR_RETURN(auto* wgpu_tensor, GetSpatialTensorInternal(id));
   return wgpu_tensor->WriteDataViaStaging(backend_->wgpu_env(), data.data());
 }
 
 absl::Status GpuInferenceContextWebGpu::ReadWeightTensorToDescriptor(
     ::ml_drift::ValueId id, ::ml_drift::TensorDescriptor& desc) {
+  JoinNextCommandBuffersThread();
   ABSL_ASSIGN_OR_RETURN(auto* wgpu_tensor, GetSpatialTensorInternal(id));
   return wgpu_tensor->ToDescriptor(backend_->wgpu_env().device(), &desc);
 }
@@ -529,9 +537,7 @@ absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffersFromCached(
                                  /*submit_command_buffers=*/true);
   }
 
-  if (next_command_buffers_thread_) {
-    next_command_buffers_thread_->join();
-  }
+  JoinNextCommandBuffersThread();
 
   SharedWebGpuEnv& shared_env = SharedWebGpuEnv::Get();
   const ::ml_drift::webgpu::ExecutionEnvironment* env = &backend_->wgpu_env();
@@ -674,7 +680,15 @@ absl::Status GpuInferenceContextWebGpu::ReportMemoryBenchmarkIfEnabled(
 
 absl::Status GpuInferenceContextWebGpu::SetCommandBufferHint(
     int num_nodes_per_command_encoder) {
-  num_nodes_per_command_encoder_ = num_nodes_per_command_encoder;
+  if (num_nodes_per_command_encoder_ != num_nodes_per_command_encoder) {
+    JoinNextCommandBuffersThread();
+    next_command_buffers_index_ = 0;
+    next_command_buffers_ready_ = false;
+    for (auto& buffers : next_command_buffers_) {
+      buffers.clear();
+    }
+    num_nodes_per_command_encoder_ = num_nodes_per_command_encoder;
+  }
   return absl::OkStatus();
 }
 

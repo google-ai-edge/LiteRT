@@ -267,6 +267,7 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
  private:
   absl::StatusOr<::ml_drift::webgpu::SpatialTensor*> GetSpatialTensorInternal(
       ::ml_drift::ValueId id);
+  void JoinNextCommandBuffersThread();
   // Prepares command buffers for Dispatch() call.
   absl::Status PrepareCommandBuffers(
       std::vector<wgpu::CommandBuffer>& command_buffers,
@@ -292,10 +293,9 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
   // all next_command_buffers_ are prepared.
   bool next_command_buffers_ready_ = false;
   // Prepares next_command_buffers_ in parallel with the current Dispatch()
-  // call. It is only accessed by the thread calling Dispatch(), which joins it
-  // before touching next_command_buffers_ again, so no synchronization is
-  // needed; see SharedWebGpuEnv for how a Dispatch() by a different context on
-  // the same environment is handled.
+  // call. JoinNextCommandBuffersThread() joins and resets it before mutating
+  // ctx_ or touching next_command_buffers_ again; see SharedWebGpuEnv for how
+  // a Dispatch() by a different context on the same environment is handled.
   std::unique_ptr<std::thread> next_command_buffers_thread_;
 };
 

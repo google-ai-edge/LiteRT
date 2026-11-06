@@ -31,6 +31,7 @@
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
 #include "ml_drift/webgpu/spatial_tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/gpu_backend.h"
@@ -41,6 +42,7 @@ namespace {
 
 using ::absl_testing::IsOk;
 using ::absl_testing::IsOkAndHolds;
+using ::testing::ElementsAre;
 
 class GpuBackendWebGpuTest : public ::testing::Test {
  protected:
@@ -90,13 +92,32 @@ TEST_F(GpuBackendWebGpuTest,
   const ::ml_drift::TensorDescriptor in_desc = gpu_model.tensors.at(in_id);
   const ::ml_drift::TensorDescriptor out_desc = gpu_model.tensors.at(out_id);
 
+  // Initialize input tensors with distinct values so each ping-pong slot
+  // produces a different output (8 steps of x * 2 + 1 => x * 256 + 255):
+  //   in_tensor_a = 0.0 -> 255.0 (step 0, uncached), updated to 2.0 -> 767.0
+  //                        before cached command buffers are used in step >= 2
+  //   in_tensor_b = 1.0 -> 511.0
+  ::ml_drift::TensorFloat32 in_cpu_a;
+  in_cpu_a.shape = ::ml_drift::BHWC(1, 1, 1, 4);
+  in_cpu_a.data = {0.0f, 0.0f, 0.0f, 0.0f};
+  ::ml_drift::TensorDescriptor in_desc_a = in_desc;
+  in_desc_a.UploadData(in_cpu_a);
+
+  ::ml_drift::TensorFloat32 in_cpu_b;
+  in_cpu_b.shape = ::ml_drift::BHWC(1, 1, 1, 4);
+  in_cpu_b.data = {1.0f, 1.0f, 1.0f, 1.0f};
+  ::ml_drift::TensorDescriptor in_desc_b = in_desc;
+  in_desc_b.UploadData(in_cpu_b);
+
   ::ml_drift::webgpu::SpatialTensor in_tensor_a;
   ::ml_drift::webgpu::SpatialTensor out_tensor_a;
   ::ml_drift::webgpu::SpatialTensor in_tensor_b;
   ::ml_drift::webgpu::SpatialTensor out_tensor_b;
-  ASSERT_THAT(CreateTensor(env.device(), in_desc, &in_tensor_a), IsOk());
+  ASSERT_THAT(in_tensor_a.CreateFromDescriptor(env.device(), in_desc_a),
+              IsOk());
   ASSERT_THAT(CreateTensor(env.device(), out_desc, &out_tensor_a), IsOk());
-  ASSERT_THAT(CreateTensor(env.device(), in_desc, &in_tensor_b), IsOk());
+  ASSERT_THAT(in_tensor_b.CreateFromDescriptor(env.device(), in_desc_b),
+              IsOk());
   ASSERT_THAT(CreateTensor(env.device(), out_desc, &out_tensor_b), IsOk());
 
   ASSERT_OK_AND_ASSIGN(
@@ -109,9 +130,18 @@ TEST_F(GpuBackendWebGpuTest,
   // num_steps_of_command_buffer_preparations > 1, Dispatch() spawns a
   // background thread that calls CreateCommandBuffers() while the next
   // iteration's BindSpatialTensor() and GetSpatialTensor() run on the calling
-  // thread. Note that this test only verifies that there is no crash, not
-  // output correctness.
+  // thread.
   for (int step = 0; step < 20; ++step) {
+    if (step == 2) {
+      // Update in_tensor_a before cached command buffer slot 0 is replayed so
+      // we can distinguish slot 0 re-executing on in_tensor_a -> out_tensor_a
+      // (output 767.0) from a stale output of step 0 (255.0) if slot 0 had
+      // erroneously recorded step 1's bindings (in_tensor_b -> out_tensor_b).
+      in_cpu_a.data = {2.0f, 2.0f, 2.0f, 2.0f};
+      in_desc_a.UploadData(in_cpu_a);
+      ASSERT_THAT(in_tensor_a.UploadDescriptorData(env.queue(), in_desc_a),
+                  IsOk());
+    }
     auto* in_ptr = (step % 2 == 0) ? &in_tensor_a : &in_tensor_b;
     auto* out_ptr = (step % 2 == 0) ? &out_tensor_a : &out_tensor_b;
 
@@ -122,6 +152,18 @@ TEST_F(GpuBackendWebGpuTest,
     ASSERT_THAT(ctx->Dispatch(), IsOk());
   }
   ASSERT_THAT(backend_.WaitForCompletion(), IsOk());
+
+  ::ml_drift::TensorDescriptor out_desc_a = out_desc;
+  ASSERT_THAT(out_tensor_a.ToDescriptor(env.device(), &out_desc_a), IsOk());
+  ::ml_drift::TensorFloat32 out_cpu_a;
+  out_desc_a.DownloadData(&out_cpu_a);
+  EXPECT_THAT(out_cpu_a.data, ElementsAre(767.0f, 767.0f, 767.0f, 767.0f));
+
+  ::ml_drift::TensorDescriptor out_desc_b = out_desc;
+  ASSERT_THAT(out_tensor_b.ToDescriptor(env.device(), &out_desc_b), IsOk());
+  ::ml_drift::TensorFloat32 out_cpu_b;
+  out_desc_b.DownloadData(&out_cpu_b);
+  EXPECT_THAT(out_cpu_b.data, ElementsAre(511.0f, 511.0f, 511.0f, 511.0f));
 }
 
 TEST_F(GpuBackendWebGpuTest,

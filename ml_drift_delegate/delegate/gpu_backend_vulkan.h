@@ -237,6 +237,8 @@ class GpuInferenceContextVulkan : public GpuInferenceContext {
   }
 
  private:
+  void JoinNextCommandBuffersThread();
+
   GpuBackendVulkan* const backend_;
   absl::Mutex ctx_mutex_;
   ::ml_drift::syrtis::VulkanInferenceContext ctx_;
@@ -251,6 +253,9 @@ class GpuInferenceContextVulkan : public GpuInferenceContext {
   // Whether next_command_buffers_ is ready to use. It's set to true when
   // all next_command_buffers_ are prepared.
   bool next_command_buffers_ready_ = false;
+  // Prepares next_command_buffers_ in parallel with the current Dispatch()
+  // call. JoinNextCommandBuffersThread() joins and resets it before mutating
+  // ctx_ or touching next_command_buffers_ again.
   std::unique_ptr<std::thread> next_command_buffers_thread_;
 
   // Static member var indicating the last context which built the command
