@@ -47,7 +47,7 @@ flowchart TB
     subgraph ROW1[" "]
         direction LR
         BOTH["🌐 Both<br/><div style='text-align:left'>─────────────────<br/>log_level<br/>backend<br/>custom_op_package<br/>profiling<br/>htp_device_id</div>"]
-        DISPATCH["🚀 Dispatch<br/><div style='text-align:left'>────────────────────────<br/>HTP: htp_performance_mode, htp_pd_session, htp_context_init_acceleration<br/>DSP: dsp_performance_mode, dsp_pd_session</div>"]
+        DISPATCH["🚀 Dispatch<br/><div style='text-align:left'>────────────────────────<br/>HTP: htp_performance_mode, htp_perf_ctrl_mode, htp_pd_session, htp_context_init_acceleration<br/>DSP: dsp_performance_mode, dsp_perf_ctrl_mode, dsp_pd_session</div>"]
         BOTH ~~~ DISPATCH
     end
     subgraph ROW2[" "]
@@ -63,8 +63,8 @@ flowchart TB
 | Category | Options |
 |----------|---------|
 | **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling`, `op_name_format` |
-| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_dlbc`, `htp_dlbc_weights`, `htp_p_point`, `htp_weight_sharing_channel_tile_size`, `htp_performance_mode`, `htp_pd_session`, `htp_context_init_acceleration`, `htp_device_id`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
-| **DSP** | `dsp_performance_mode`, `dsp_pd_session` |
+| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_dlbc`, `htp_dlbc_weights`, `htp_p_point`, `htp_weight_sharing_channel_tile_size`, `htp_performance_mode`, `htp_perf_ctrl_mode`, `htp_pd_session`, `htp_context_init_acceleration`, `htp_device_id`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
+| **DSP** | `dsp_performance_mode`, `dsp_perf_ctrl_mode`, `dsp_pd_session` |
 | **LPAI** | `lpai_target`, `lpai_fps`, `lpai_ftrt_ratio`, `lpai_client_perf_type`, `lpai_core_affinity_type`, `lpai_core_selection` |
 | **IR** | `dlc_dir` |
 | **SAVER** | `saver_output_dir` |
@@ -132,6 +132,7 @@ target:HTP"
 | P-point | `htp_p_point` | `0` | compile | **Experimental** (HTP + `O3` only). Predefined configs trading latency vs. DRAM bandwidth. |
 | Optimization level | `optimization_level` | `O3` | compile | `O1` (inference) · `O2` (prepare) · `O3` (inference, aggressive). |
 | HTP perf mode | `htp_performance_mode` | `default` | dispatch | `default` · `sustained_high_performance` · `burst` · `high_performance` · `power_saver` · `low_power_saver` · `high_power_saver` · `low_balanced` · `balanced` · `extreme_power_saver`. |
+| HTP perf ctrl mode | `htp_perf_ctrl_mode` | `manual` | dispatch | `manual` keeps the vote for a non-default perf mode until it is reset or the context is destroyed. `auto` votes around context load and inference. Serialized execution only. See below. |
 | HTP PD session | `htp_pd_session` | `unsigned` | dispatch | `unsigned` preserves the existing device configuration. `signed` enables QNN SignedPD. `adaptive` uses unsigned PD only when QNN reports support, otherwise it enables SignedPD. |
 | HTP device ID | `htp_device_id` | `0` | both | A nonzero value selects the matching platform-reported HTP `deviceId`; it requires QNN platform information. `0` leaves device selection to QNN's default configuration. |
 | HTP context init acceleration | `htp_context_init_acceleration` | `false` | dispatch | Uses all HTP hardware threads while deserializing a context binary. It can contend with concurrent HTP graph execution. |
@@ -160,6 +161,22 @@ run_model --graph=model.tflite --accelerator=npu \
     --qualcomm_htp_file_read_memory_budget_mb=16
 ```
 
+### HTP perf control mode
+
+`htp_perf_ctrl_mode` controls how the HTP power vote for a non-default
+`htp_performance_mode` is managed:
+
+- `manual` is the default. LiteRT up-votes when it applies the performance
+  mode and keeps that vote until the mode is reset or the context is destroyed.
+- `auto` up-votes around each inference and schedules a down-vote afterwards.
+  For `burst` and `sustained_high_performance`, the down-vote is debounced by
+  300 ms to avoid thrashing between back-to-back inferences. Auto mode also
+  synchronously up-votes while an HTP context binary is loaded, then schedules
+  the down-vote after loading completes.
+
+Auto mode supports serialized execution only. Concurrent inferences share a
+device-level power vote and can interfere with each other.
+
 ---
 
 ## 5. DSP options
@@ -167,7 +184,15 @@ run_model --graph=model.tflite --accelerator=npu \
 | Option | CLI flag (`--qualcomm_…`) | Default | Phase | Notes |
 |--------|------|---------|-------|----------------|
 | DSP perf mode | `dsp_performance_mode` | `default` | dispatch | `default` · `sustained_high_performance` · `burst` · `high_performance` · `power_saver` · `low_power_saver` · `high_power_saver` · `low_balanced` · `balanced`. |
+| DSP perf ctrl mode | `dsp_perf_ctrl_mode` | `manual` | dispatch | `manual` keeps the vote for a non-default perf mode until it is reset or the context is destroyed. `auto` votes around each inference. Serialized execution only. See below. |
 | DSP PD session | `dsp_pd_session` | `unsigned` | dispatch | `unsigned` preserves the existing backend configuration. `signed` requests SignedPD. `adaptive` requests unsigned PD only when QNN reports unsigned-PD support, otherwise it requests SignedPD. |
+
+### DSP perf control mode
+
+`dsp_perf_ctrl_mode` follows the same `manual` and `auto` model as HTP.
+In auto mode, LiteRT votes around each inference and schedules the down-vote
+afterwards. The 300 ms debounce applies to `burst` and
+`sustained_high_performance`. Auto mode supports serialized execution only.
 
 ---
 
