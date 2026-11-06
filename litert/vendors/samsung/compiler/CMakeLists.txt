@@ -65,6 +65,7 @@ add_library(samsung_compiler_plugin SHARED
     builders/tanh_op_builder.cc
     builders/transpose_conv_op_builder.cc
     builders/transpose_op_builder.cc
+    builders/unpack_op_builder.cc
     builders/utils.cc
 )
 

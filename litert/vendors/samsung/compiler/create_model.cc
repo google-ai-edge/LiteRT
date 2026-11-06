@@ -78,6 +78,7 @@
 #include "litert/vendors/samsung/compiler/builders/tanh_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/unpack_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
@@ -524,6 +525,9 @@ Expected<std::vector<char>> CreateModel(
         break;
       case kLiteRtOpCodeTflTransposeConv:
         op_wrapper = BuildTransposeConvOp(compiler_context, op);
+        break;
+      case kLiteRtOpCodeTflUnpack:
+        op_wrapper = BuildUnpackOp(compiler_context, op);
         break;
       case kLiteRtOpCodeShloComposite: {
         const char* composite_name = nullptr;

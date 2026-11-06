@@ -597,3 +597,16 @@ cc_library(
         "//litert/compiler/cc:litert_model",
     ],
 )
+
+cc_library(
+    name = "unpack_op_builder",
+    srcs = ["unpack_op_builder.cc"],
+    hdrs = ["unpack_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/cc:litert_expected",
+        "//litert/compiler/cc:litert_model",
+    ],
+)
