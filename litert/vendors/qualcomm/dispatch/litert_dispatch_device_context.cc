@@ -14,11 +14,13 @@
 
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "HTP/QnnHtpMem.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
@@ -38,7 +40,6 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
-#include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
 using litert::Expected;
@@ -53,6 +54,36 @@ LiteRtDispatchDeviceContextT::Create(
       new LiteRtDispatchDeviceContextT(runtime_context, qnn, qnn_backend));
 }
 
+LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() {
+  // The QNN contexts in context_cache_ are freed right after this body runs.
+  // Deregister the memory handles still registered against them first. Memory
+  // handles of contexts that this device context does not own (JIT contexts)
+  // are left alone.
+  tensor_buffer_registry_.ForEach([this](TensorBufferRegistryEntry& entry) {
+    std::vector<Qnn_ContextHandle_t> owned_contexts;
+    for (const auto& handle : entry.qnn_mem_handles) {
+      if (handle.owned && OwnsContext(handle.context_handle)) {
+        owned_contexts.push_back(handle.context_handle);
+      }
+    }
+    for (auto context_handle : owned_contexts) {
+      if (auto status = DeregisterMemHandles(entry, context_handle); !status) {
+        LITERT_LOG(LITERT_WARNING, "%s", status.Error().Message().c_str());
+      }
+    }
+  });
+}
+
+bool LiteRtDispatchDeviceContextT::OwnsContext(
+    Qnn_ContextHandle_t context_handle) const {
+  for (const auto& [key, handle] : context_cache_) {
+    if (handle && handle->Get() == context_handle) {
+      return true;
+    }
+  }
+  return false;
+}
+
 Expected<LiteRtTensorBuffer> LiteRtDispatchDeviceContextT::GetTensorBuffer(
     LiteRtTensorBufferHandle tensor_buffer_handle) {
   auto registry_entry = tensor_buffer_registry_.Get(tensor_buffer_handle);
@@ -64,27 +95,99 @@ Expected<LiteRtTensorBuffer> LiteRtDispatchDeviceContextT::GetTensorBuffer(
 }
 
 Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::GetMemHandle(
-    LiteRtTensorBufferHandle tensor_buffer_handle, const Qnn_Tensor_t& tensor) {
+    LiteRtTensorBufferHandle tensor_buffer_handle, const Qnn_Tensor_t& tensor,
+    Qnn_ContextHandle_t context_handle) {
   auto registry_entry = tensor_buffer_registry_.Get(tensor_buffer_handle);
   if (!registry_entry) {
     return Unexpected(registry_entry.Error());
   }
+  TensorBufferRegistryEntry& entry = **registry_entry;
 
-  if (!(*registry_entry)->qnn_mem_handle) {
-    auto qnn_mem_handle =
-        RegisterTensorBuffer((*registry_entry)->tensor_buffer, tensor);
-    if (!qnn_mem_handle) {
-      return Unexpected(qnn_mem_handle.Error());
+  for (const auto& handle : entry.qnn_mem_handles) {
+    if (handle.context_handle == context_handle) {
+      return handle.mem_handle;
     }
-    (*registry_entry)->qnn_mem_handle = *qnn_mem_handle;
   }
 
-  return (*registry_entry)->qnn_mem_handle;
+  auto qnn_mem_handle =
+      RegisterTensorBuffer(entry.tensor_buffer, tensor, context_handle);
+  if (qnn_mem_handle) {
+    entry.qnn_mem_handles.push_back(
+        {context_handle, *qnn_mem_handle, /*owned=*/true});
+    return *qnn_mem_handle;
+  }
+
+  // Registering with this context failed. If the buffer is already registered
+  // with another context, fall back to that memory handle. This only works
+  // when both contexts live in the same HTP PD.
+  for (const auto& handle : entry.qnn_mem_handles) {
+    if (!handle.owned) {
+      continue;
+    }
+    const QnnMemHandleEntry reused{context_handle, handle.mem_handle,
+                                   /*owned=*/false};
+    LITERT_LOG(LITERT_WARNING,
+               "Failed to register tensor buffer %p with QNN context %p (%s); "
+               "reusing its memory handle %p of QNN context %p",
+               entry.tensor_buffer, context_handle,
+               qnn_mem_handle.Error().Message().c_str(), handle.mem_handle,
+               handle.context_handle);
+    entry.qnn_mem_handles.push_back(reused);
+    return reused.mem_handle;
+  }
+
+  return Unexpected(qnn_mem_handle.Error());
+}
+
+Expected<void> LiteRtDispatchDeviceContextT::DeregisterMemHandles(
+    TensorBufferRegistryEntry& entry, Qnn_ContextHandle_t context_handle) {
+  Qnn_ErrorHandle_t first_error = QNN_SUCCESS;
+  std::vector<Qnn_MemHandle_t> deregistered;
+  auto& handles = entry.qnn_mem_handles;
+  for (auto it = handles.begin(); it != handles.end();) {
+    if (context_handle != nullptr && it->context_handle != context_handle) {
+      ++it;
+      continue;
+    }
+    if (it->owned) {
+      Qnn_MemHandle_t mem_handle = it->mem_handle;
+      LITERT_LOG(LITERT_DEBUG,
+                 "Deregistering tensor buffer %p from QNN context %p",
+                 entry.tensor_buffer, it->context_handle);
+      if (auto status = qnn_manager_.Api()->memDeRegister(&mem_handle, 1UL);
+          status != QNN_SUCCESS && first_error == QNN_SUCCESS) {
+        first_error = status;
+      }
+      deregistered.push_back(it->mem_handle);
+    }
+    it = handles.erase(it);
+  }
+
+  // Drop the entries that reuse a memory handle which is gone now.
+  handles.erase(std::remove_if(
+                    handles.begin(), handles.end(),
+                    [&deregistered](const QnnMemHandleEntry& h) {
+                      return !h.owned &&
+                             std::find(deregistered.begin(), deregistered.end(),
+                                       h.mem_handle) != deregistered.end();
+                    }),
+                handles.end());
+
+  if (first_error != QNN_SUCCESS) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat(
+            "Failed to unregister tensor buffer, QNN error code: %d",
+            first_error));
+  }
+  return {};
 }
 
 Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
-    LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor) {
-  LITERT_LOG(LITERT_DEBUG, "Registering tensor buffer %p", tensor_buffer);
+    LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor,
+    Qnn_ContextHandle_t context_handle) {
+  LITERT_LOG(LITERT_DEBUG, "Registering tensor buffer %p with QNN context %p",
+             tensor_buffer, context_handle);
   LiteRtTensorBufferType tensor_buffer_type;
   if (auto status = runtime_context_->get_tensor_buffer_type(
           tensor_buffer, &tensor_buffer_type);
@@ -206,12 +309,10 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       break;
   }
 
-  if (invocation_context_ == nullptr) {
+  if (context_handle == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Missing invocation context");
+                      "Missing QNN context handle");
   }
-
-  Qnn_ContextHandle_t context_handle = invocation_context_->GetContextHandle();
 
   Qnn_MemHandle_t mem_handle = nullptr;
   if (auto status = qnn_manager_.Api()->memRegister(
@@ -266,20 +367,11 @@ litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
                           tensor_buffer_registry_.Get(tensor_buffer_handle));
   LITERT_LOG(LITERT_DEBUG, "Unregistering tensor buffer %p",
              registry_entry->tensor_buffer);
-  // Cleared first, so that unregistering the buffer again releases nothing.
-  Qnn_MemHandle_t mem_handle =
-      std::exchange(registry_entry->qnn_mem_handle, nullptr);
+  // The memory handles are removed from the entry, so that unregistering the
+  // buffer again releases nothing.
+  auto deregistered =
+      DeregisterMemHandles(*registry_entry, /*context_handle=*/nullptr);
   LITERT_RETURN_IF_ERROR(
       tensor_buffer_registry_.Unregister(tensor_buffer_handle));
-  if (mem_handle == nullptr) {
-    return {};
-  }
-  if (auto status = qnn_manager_.Api()->memDeRegister(&mem_handle, 1UL);
-      status != QNN_SUCCESS) {
-    return Unexpected(
-        kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat(
-            "Failed to unregister tensor buffer, QNN error code: %d", status));
-  }
-  return {};
+  return deregistered;
 }
