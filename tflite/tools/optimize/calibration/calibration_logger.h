@@ -15,7 +15,9 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_TOOLS_OPTIMIZE_CALIBRATION_CALIBRATION_LOGGER_H_
 #define TENSORFLOW_LITE_TOOLS_OPTIMIZE_CALIBRATION_CALIBRATION_LOGGER_H_
 
+#include <cstdint>
 #include <limits>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"
 #include "tflite/core/api/error_reporter.h"
@@ -32,17 +34,24 @@ class MinMax {
 
   bool HasValues() const { return has_values_; }
 
-  TfLiteStatus Get(float* min_val, float* max_val) const {
-    if (!has_values_) return kTfLiteError;
-    *min_val = min_;
-    *max_val = max_;
-    return kTfLiteOk;
-  }
+  void InitializeHistogram(int num_bins = 1024, double lower_p = 0.05,
+                           double upper_p = 99.95);
+
+  TfLiteStatus Get(float* min_val, float* max_val) const;
 
  private:
   bool has_values_ = false;
   float min_ = std::numeric_limits<float>::max();
-  float max_ = std::numeric_limits<float>::min();
+  float max_ = std::numeric_limits<float>::lowest();
+
+  // Histogram fields for two-pass percentile calibration
+  bool histogram_enabled_ = false;
+  int num_bins_ = 1024;
+  float bin_width_ = 0.0f;
+  double lower_percentile_ = 0.05;
+  double upper_percentile_ = 99.95;
+  std::vector<uint64_t> bins_;
+  uint64_t total_samples_ = 0;
 };
 
 // Captures min max values for tensors.
@@ -55,6 +64,15 @@ class Logger {
     std::tuple<int, int> key{subgraph_index, tensor_index};
     return tensor_id_to_stats_map_[key].Update(tensor_values, tensor_size,
                                                error_reporter);
+  }
+
+  // Initializes histograms across all logged tensors for Pass 2 percentile
+  // calibration.
+  void InitializeHistograms(int num_bins = 1024, double lower_p = 0.05,
+                            double upper_p = 99.95) {
+    for (auto& entry : tensor_id_to_stats_map_) {
+      entry.second.InitializeHistogram(num_bins, lower_p, upper_p);
+    }
   }
 
   // Returns a map from tensor_index -> observed min max values.

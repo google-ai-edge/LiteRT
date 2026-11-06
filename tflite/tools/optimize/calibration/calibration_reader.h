@@ -50,7 +50,11 @@ class CalibrationReader {
   // being overwritten.
   virtual TfLiteStatus AddCalibrationToModel(ModelT* model, bool update) const;
 
-  virtual ~CalibrationReader() {}
+  // Enables Pass 2 histogram accumulation with specified percentiles.
+  virtual void EnableHistogramPass(double lower_p, double upper_p,
+                                   int num_bins) const;
+
+  virtual ~CalibrationReader() = default;
 
  private:
   const Logger* logger_;

@@ -75,6 +75,15 @@ TfLiteStatus CalibrationReader::AddCalibrationToModel(ModelT* model,
 
   return kTfLiteOk;
 }
+
+void CalibrationReader::EnableHistogramPass(double lower_p, double upper_p,
+                                            int num_bins) const {
+  if (logger_) {
+    const_cast<Logger*>(logger_)->InitializeHistograms(num_bins, lower_p,
+                                                       upper_p);
+  }
+}
+
 }  // namespace calibration
 }  // namespace optimize
 }  // namespace tflite

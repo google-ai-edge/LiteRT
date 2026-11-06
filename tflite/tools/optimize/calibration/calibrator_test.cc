@@ -37,6 +37,7 @@ limitations under the License.
 #include "tflite/model_builder.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/string_type.h"
+#include "tflite/tools/optimize/calibration/calibration_logger.h"
 #include "tflite/tools/optimize/calibration/calibration_reader.h"
 
 namespace {
@@ -760,6 +761,35 @@ TEST(CalibratorTest, NonVariableInputsNotReLoggedPostInvocation) {
   }
   interpreter->tensor(5)->data.raw = original_output_data;
 }
+
+TEST(CalibratorTest, HistogramCalibrationTest) {
+  MinMax minmax;
+  const float data[] = {-10.0f, -5.0f, 0.0f, 5.0f, 10.0f};
+  // Pass 1: Global range discovery
+  EXPECT_EQ(kTfLiteOk, minmax.Update(data, 5, nullptr));
+
+  float min_val, max_val;
+  EXPECT_EQ(kTfLiteOk, minmax.Get(&min_val, &max_val));
+  EXPECT_NEAR(min_val, -10.0f, 1e-5f);
+  EXPECT_NEAR(max_val, 10.0f, 1e-5f);
+
+  // Enable histogram with 10 bins, 25% lower percentile and 75% upper
+  // percentile
+  minmax.InitializeHistogram(10, 25.0, 75.0);
+  // Pass 2: Accumulate samples
+  for (int i = 0; i < 10; ++i) {
+    EXPECT_EQ(kTfLiteOk, minmax.Update(data, 5, nullptr));
+  }
+
+  EXPECT_EQ(kTfLiteOk, minmax.Get(&min_val, &max_val));
+  // With 25% and 75% percentile cutoffs, extreme tails (-10 and +10) are
+  // trimmed
+  EXPECT_GT(min_val, -10.0f);
+  EXPECT_LT(max_val, 10.0f);
+  EXPECT_LE(min_val, 0.0f);
+  EXPECT_GE(max_val, 0.0f);
+}
+
 }  // namespace
 }  // namespace calibration
 }  // namespace optimize

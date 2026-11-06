@@ -112,6 +112,7 @@ tf_cc_test(
         "tflite_not_portable_ios",
     ],
     deps = [
+        ":calibration_logger",
         ":calibration_reader",
         ":calibrator_lib",
         "//tflite:framework",
