@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <algorithm>
 #include <string>
+#include <vector>
 
 #include "tflite/delegates/gpu/common/status.h"
 #include "tflite/delegates/gpu/common/task/work_group_picking.h"
