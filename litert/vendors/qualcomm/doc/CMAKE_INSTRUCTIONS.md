@@ -46,7 +46,7 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 |---|---|
 | `LITERT_HOST_C_COMPILER` / `LITERT_HOST_CXX_COMPILER` | Host compiler used to build the host-side `flatc`. Only set if the auto-detect (`clang`→`cc`→`gcc`) picks the wrong one. |
 
-## Example: Qualcomm aarch64 (oe-linux)
+## Example: Custom Qualcomm aarch64 (oe-linux) toolchain
 
 A minimal toolchain file for a Qualcomm aarch64 target built from a Qualcomm
 eSDK. Adjust the three paths to your eSDK install:
@@ -69,6 +69,11 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 A ready-to-edit copy lives at
 [../toolchain/linux_aarch64_example_toolchain.cmake](../toolchain/linux_aarch64_example_toolchain.cmake).
 
-For the fully-supported OpenEmbedded / Yocto Linux path with eSDK setup, see
-[HTP_INSTRUCTIONS.md](./HTP_INSTRUCTIONS.md) — the `linux-aarch64-oe-gcc11.2` preset
-wraps [../toolchain/linux_aarch64_oe_gcc11_2.toolchain.cmake](../toolchain/linux_aarch64_oe_gcc11_2.toolchain.cmake).
+The example above is for users who need their own toolchain file. LiteRT also
+provides the `linux-aarch64-oe-gcc11.2` preset, which wraps
+[../toolchain/linux_aarch64_oe_gcc11_2.toolchain.cmake](../toolchain/linux_aarch64_oe_gcc11_2.toolchain.cmake).
+
+For Qualcomm eSDK setup and build commands for IoT devices, such as QCS8275,
+including the recommended environment-setup flow and the
+`LINUX_AARCH64_ESDK` alternative, see
+[Build with CMake for an IoT oe-linux device](./HTP_INSTRUCTIONS.md#run-on-device-iot-device-with-oe-linux).

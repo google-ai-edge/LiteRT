@@ -270,16 +270,34 @@ umask a+rx
 sh ./qcs8275-iq-8275-evk-pro-sku/sdk/qcom-wayland-x86_64-qcom-multimedia-image-armv8-2a-qcs8275-iq-8275-evk-pro-sku-toolchain-ext-1.8-ver.1.0.sh
 ```
 
-Build required targets with ESDK.
+Build required targets with ESDK using one of the following flows.
+
+The recommended flow sources the environment script installed by the Qualcomm
+eSDK. It sets the matching `CC`, `CXX`, and sysroot.
+
+```bash
+source ${ESDK}/environment-setup-armv8-2a-qcom-linux
+cd ${LITERT}/litert
+cmake --preset linux-aarch64-oe-gcc11.2
+cmake --build cmake_build_linux_aarch64_oe_gcc11_2/ --target run_model litert_runtime_c_api_shared_lib dispatch_api_qualcomm_so -j8
+```
+
+Alternatively, set `LINUX_AARCH64_ESDK` and let CMake discover paths under the
+eSDK root. This works only when the eSDK has one unambiguous non-musl compiler
+and sysroot candidate.
 
 ```bash
 export LINUX_AARCH64_ESDK=${ESDK}
 cd ${LITERT}/litert
-
-# This takes a while to build flatc and download tensorflow
 cmake --preset linux-aarch64-oe-gcc11.2
 cmake --build cmake_build_linux_aarch64_oe_gcc11_2/ --target run_model litert_runtime_c_api_shared_lib dispatch_api_qualcomm_so -j8
 ```
+
+For an eSDK with another glibc target triple, source its matching
+`environment-setup-*` script instead. If the eSDK contains more than one
+target ABI and cannot be sourced, pass matching `CMAKE_C_COMPILER`,
+`CMAKE_CXX_COMPILER`, and `CMAKE_SYSROOT` explicitly as described in
+[CMake Toolchain Instructions](./CMAKE_INSTRUCTIONS.md#recommended-openembedded-esdk-flow).
 
 The built files are located in:
 
