@@ -117,17 +117,34 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedQkvNormRoPE(
     cos_func_name = "native_cos";
   }
 
-  std::string reduction_code;
-  for (int offset = half_slices / 2; offset > 0; offset >>= 1) {
-    absl::StrAppend(&reduction_code, "  if (tid < ", offset,
-                    ") { shared_sum[tid] += shared_sum[tid + ", offset,
-                    "]; }\n  ucl::SyncThreads<WorkGroup, Local>();\n");
+  const bool use_metal_simd_sum = gpu_info.IsApiMetal() &&
+                                  gpu_info.IsWaveSizeEqualTo32() &&
+                                  half_slices <= 32;
+  std::string sum_sq_code;
+  if (use_metal_simd_sum) {
+    sum_sq_code =
+        "  float sum_sq = simd_sum(dot(val0, val0) + dot(val1, val1));\n";
+  } else {
+    std::string reduction_code;
+    for (int offset = half_slices / 2; offset > 0; offset >>= 1) {
+      absl::StrAppend(&reduction_code, "  if (tid < ", offset,
+                      ") { shared_sum[tid] += shared_sum[tid + ", offset,
+                      "]; }\n  ucl::SyncThreads<WorkGroup, Local>();\n");
+    }
+    sum_sq_code =
+        absl::StrCat(R"(  int tid = ucl::GetLocalId<2>();
+  __local float shared_sum[)",
+                     half_slices, R"(];
+  shared_sum[tid] = dot(val0, val0) + dot(val1, val1);
+  ucl::SyncThreads<WorkGroup, Local>();
+)",
+                     reduction_code, "  float sum_sq = shared_sum[0];\n");
   }
 
   std::string v_norm_code;
   if (attr.has_v_norm) {
     v_norm_code = R"(
-    float inv_std = rsqrt(shared_sum[0] / ucl::Convert<float>(args.head_dim) + args.epsilon);
+    float inv_std = rsqrt(sum_sq / ucl::Convert<float>(args.head_dim) + args.epsilon);
     val0 = val0 * inv_std;
     val1 = val1 * inv_std;
 )";
@@ -182,13 +199,11 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedQkvNormRoPE(
     Type out1 = v1 * cos_val + v0 * sin_val;)");
   }
 
-  std::string op_code =
-      absl::StrCat(R"(
+  std::string op_code = absl::StrCat(R"(
 MAIN_FUNCTION($0) {
   int X = ucl::GetGlobalId<0>();
   int Y = ucl::GetGlobalId<1>();
   int S = ucl::GetGlobalId<2>();
-  int tid = ucl::GetLocalId<2>();
   bool is_active = (X < args.q_out.Width() && Y < args.total_heads && S < args.half_slices);
 
   float4 val0 = ucl::Init<float4>(0.0f);
@@ -199,19 +214,15 @@ MAIN_FUNCTION($0) {
     val1 = ucl::Convert<float4>(args.qkv.Read(X, 0, base_slice + S + args.half_slices, 0));
   }
 
-  __local float shared_sum[)",
-                   half_slices, R"(];
-  shared_sum[tid] = dot(val0, val0) + dot(val1, val1);
-  ucl::SyncThreads<WorkGroup, Local>();
 )",
-                   reduction_code, R"(
+                                     sum_sq_code, R"(
   if (!is_active) {
     return;
   }
 
   if (Y < args.num_heads) {
     // === QUERY HEAD ===
-    float inv_std = rsqrt(shared_sum[0] / ucl::Convert<float>(args.head_dim) + args.epsilon);
+    float inv_std = rsqrt(sum_sq / ucl::Convert<float>(args.head_dim) + args.epsilon);
     float w0_x = args.q_weight.Read<float>(0, 0, 0, S * 4 + 0).x;
     float w0_y = args.q_weight.Read<float>(0, 0, 0, S * 4 + 1).x;
     float w0_z = args.q_weight.Read<float>(0, 0, 0, S * 4 + 2).x;
@@ -228,17 +239,18 @@ MAIN_FUNCTION($0) {
     val0 = val0 * inv_std * w0;
     val1 = val1 * inv_std * w1;
 )",
-                   rope_code, R"(
+                                     rope_code, R"(
 
     args.q_out.Write(out0, X, Y, S);
     args.q_out.Write(out1, X, Y, S + args.half_slices);
   })");
 
   if (!is_q_only) {
-    absl::StrAppend(&op_code, R"( else if (Y < args.num_heads + args.num_kv_heads) {
+    absl::StrAppend(&op_code,
+                    R"( else if (Y < args.num_heads + args.num_kv_heads) {
     // === KEY HEAD ===
     int kv_head = Y - args.num_heads;
-    float inv_std = rsqrt(shared_sum[0] / ucl::Convert<float>(args.head_dim) + args.epsilon);
+    float inv_std = rsqrt(sum_sq / ucl::Convert<float>(args.head_dim) + args.epsilon);
     float w0_x = args.k_weight.Read<float>(0, 0, 0, S * 4 + 0).x;
     float w0_y = args.k_weight.Read<float>(0, 0, 0, S * 4 + 1).x;
     float w0_z = args.k_weight.Read<float>(0, 0, 0, S * 4 + 2).x;
