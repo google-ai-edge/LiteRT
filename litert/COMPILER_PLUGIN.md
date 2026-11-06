@@ -435,3 +435,37 @@ if (NegotiateInterface(query_fn, kLiteRtCompilerPluginInterfaceBasic,
   }
 }
 ```
+
+### Extending and Calling `LiteRtCompilerContext`
+
+In the reverse direction (plugin calling back into the LiteRT compiler host),
+`LiteRtCreateCompilerPlugin` receives a `const LiteRtCompilerContext*`
+([`c/internal/litert_compiler_context.h`](c/internal/litert_compiler_context.h)),
+which also begins with `LiteRtAbiHeader abi_header` at byte offset `0`:
+
+1.  **Adding a New Function to `LiteRtCompilerContext`:**
+    *   Append the new function pointer at the **very end** of
+        `LiteRtCompilerContext` in
+        [`c/internal/litert_compiler_context.h`](c/internal/litert_compiler_context.h)
+        with an `// Added in version 1.<minor>.0` comment, and update the
+        `sizeof` and `offsetof` `static_assert`s.
+    *   Assign the implementation in `LrtGetCompilerContext()` in
+        [`c/internal/litert_compiler_context.cc`](c/internal/litert_compiler_context.cc)
+        and increment `abi_header.minor_version`.
+2.  **Guarding Plugin Call Sites with `LITERT_ABI_HAS_API`:**
+    *   Plugins and C++ compiler wrappers (such as `compiler/cc/`) calling any
+        `LiteRtCompilerContext` function added after `1.0.0` **must** check
+        `LITERT_ABI_HAS_API(ctx, /*req_major=*/1, <member_name>)` before
+        invoking it.
+    *   **Never** check `ctx-><member_name> != nullptr` directly: when an older
+        host passes a `LiteRtCompilerContext*` with a smaller
+        `abi_header.struct_size` to a newer plugin, dereferencing the field
+        without checking `struct_size` causes an out-of-bounds memory read.
+
+```cpp
+if (!LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                        get_conv_3d_transpose_padding_option)) {
+  return kLiteRtStatusErrorUnsupported;
+}
+return ctx->get_conv_3d_transpose_padding_option(op, &padding);
+```
