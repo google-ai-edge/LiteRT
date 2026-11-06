@@ -185,14 +185,59 @@ cc_library(
     }),
 )
 
+genrule(
+    name = "generate_dawn_version",
+    outs = ["include/dawn/dawn_version.h"],
+    cmd = "printf '%s\\n' " +
+          "'#ifndef INCLUDE_DAWN_DAWN_VERSION_H_' " +
+          "'#define INCLUDE_DAWN_DAWN_VERSION_H_' " +
+          "'#include <array>' " +
+          "'#include <cstdint>' " +
+          "'namespace dawn {' " +
+          "'static constexpr std::array<uint8_t, 20> kDawnVersion = {};' " +
+          "'}  // namespace dawn' " +
+          "'#endif  // INCLUDE_DAWN_DAWN_VERSION_H_' > $@",
+)
+
+genrule(
+    name = "generate_dawn_proc",
+    srcs = glob([
+        "generator/templates/**/*",
+    ]) + [
+        "src/dawn/dawn.json",
+        "src/dawn/dawn_wire.json",
+    ],
+    outs = [
+        "src/dawn/dawn_proc.cpp",
+        "src/dawn/dawn_thread_dispatch_proc.cpp",
+    ],
+    cmd = "$(location :dawn_json_generator) " +
+          "--dawn-json $(location src/dawn/dawn.json) " +
+          "--wire-json $(location src/dawn/dawn_wire.json) " +
+          "--template-dir $$(dirname $(location generator/templates/dawn_proc.cpp)) " +
+          "--targets proc " +
+          "--output-dir $(RULEDIR)",
+    tools = [":dawn_json_generator"],
+)
+
 cc_library(
     name = "libdawn_proc",
+    srcs = [
+        "src/utils/log.cc",
+        ":generate_dawn_proc",
+        ":generate_dawn_version",
+    ],
     hdrs = [
+        "src/dawn/common/Compiler.h",
         ":generate_webgpu",
     ] + glob([
         "include/**/*.h",
+        "src/utils/*.h",
     ]),
+    copts = ["-DDAWN_DISABLE_LOGGING"],
     includes = [
+        ".",
         "include",
+        "src",
     ],
 )
