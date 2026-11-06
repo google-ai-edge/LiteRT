@@ -358,7 +358,7 @@ bool IsNodeSupported(const TfLiteContext* absl_nonnull context,
     case kTfLiteBuiltinFullyConnected:          return fully_connected();
     case kTfLiteBuiltinGather:                  return gather();
     case kTfLiteBuiltinGelu:                    return arith1(3);
-    case kTfLiteBuiltinGreater:                 return logic2(2);
+    case kTfLiteBuiltinGreater:                 return logic2(3);
     case kTfLiteBuiltinGreaterEqual:            return logic2(2);
     case kTfLiteBuiltinHardSwish:               return arith1(1);
     case kTfLiteBuiltinLeakyRelu:               return relu(2);
