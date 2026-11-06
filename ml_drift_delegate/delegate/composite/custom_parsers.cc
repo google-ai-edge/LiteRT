@@ -61,6 +61,10 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
   if (op_name == "gated_delta_update") {
     return std::make_unique<GatedDeltaUpdateOperationParser>();
   }
+  if (op_name == kGatedDeltaBlockCompositeName) {
+    return std::make_unique<GatedDeltaUpdateOperationParser>(
+        /*block_form=*/true);
+  }
   if (op_name == kFusedSdpaCacheUpdateCompositeName) {
     return std::make_unique<FusedSdpaCacheUpdateOperationParser>();
   }
@@ -73,6 +77,7 @@ bool CustomOperationParserFactory::SupportsIntegerTypes(
              op_name == "moe" || op_name == "odml.rope" ||
              op_name == "odml.sdpa_transposed" || op_name == "odml.swiglu" ||
              op_name == "gated_delta_update" ||
+             op_name == kGatedDeltaBlockCompositeName ||
              op_name == kQkvNormRopeType || op_name == kShortConvStepType ||
              op_name == kFusedSdpaCacheUpdateCompositeName;
   return res;

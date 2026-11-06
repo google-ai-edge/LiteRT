@@ -15,26 +15,87 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_GATED_DELTA_UPDATE_PARSER_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_GATED_DELTA_UPDATE_PARSER_H_
 
+#include <optional>
 #include <string>
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
+#include "tflite/c/common.h"
 
 namespace litert::ml_drift {
 
 constexpr const char kGatedDeltaUpdateType[] = "gated_delta_update";
+
+// StableHLO composite of the fused post-conv GatedDeltaNet block. Its
+// decomposition (standard ops around the recurrence-only `gated_delta_update`
+// custom op) runs wherever the composite is not delegated, e.g. on CPU.
+constexpr const char kGatedDeltaBlockCompositeName[] = "odml.gated_delta_block";
+
+// Attributes of the `odml.gated_delta_block` composite (Qwen3.5 linear
+// attention after the short conv), which runs as the block mode of the
+// `gated_delta_update` GPU kernel. Inputs:
+//   0: conv_out [1, T, 2 * H_k * D_k + H_v * D_v]
+//   1: zba (fused [z | b | a] projection) [1, T, H_v * D_v + 2 * H_v]
+//   2: a_log [H_v]
+//   3: dt_bias [H_v]
+//   4: norm_weight [D_v]
+//   5: recurrent_state [1, H_v, D_k, D_v] (float32, updated in place)
+//   6: optional valid_mask [1, T]
+// Outputs:
+//   0: gated RMSNorm output [1, T, H_v * D_v]
+//   1: new recurrent state [1, H_v, D_k, D_v]
+// The composite attributes carry `mode`, `eps` and `norm_eps`; the head counts
+// and head dims are derived from the shapes of inputs 0 and 5 by
+// SetGatedDeltaNetDims.
+struct GatedDeltaNetAttributes {
+  int num_k_heads = 0;
+  int num_v_heads = 0;
+  int head_k_dim = 0;
+  int head_v_dim = 0;
+  // Epsilon of the q / k L2 norms.
+  float eps = 1e-6f;
+  // Epsilon of the gated RMSNorm.
+  float norm_eps = 1e-6f;
+};
 
 // TODO(kimishpatel): Get rid of the mode flag and make recurrent vs. chunked
 // an internal implementation detail of the kernel rather than an attribute.
 struct GatedDeltaUpdateAttributes {
   int mode = 0;  // 0: recurrent, 1: chunked
   std::string state_dtype = "float32";
+  // Set for the `odml.gated_delta_block` composite, which wraps the full
+  // post-conv GatedDeltaNet block.
+  std::optional<GatedDeltaNetAttributes> block;
 };
 
+// Reads the custom options of a `gated_delta_update` node or, with
+// `block_form`, the attributes of an `odml.gated_delta_block` composite. For
+// the block form, the head counts and head dims of `block` are left unset;
+// fill them in with SetGatedDeltaNetDims.
+GatedDeltaUpdateAttributes ParseGatedDeltaUpdateAttributes(
+    const TfLiteNode& tflite_node, bool block_form);
+
+// Sets the head counts and head dims of `attr` from the block-form input
+// shapes conv_out [1, T, conv_dim] and recurrent_state [1, H_v, D_k, D_v]:
+//   K_dim = (conv_dim - H_v * D_v) / 2, H_k = K_dim / D_k.
+// Returns an error (leaving `attr` unchanged) if the shapes are inconsistent.
+absl::Status SetGatedDeltaNetDims(const TfLiteIntArray& conv_out_dims,
+                                  const TfLiteIntArray& state_dims,
+                                  GatedDeltaNetAttributes* attr);
+
+// Checks that the GPU kernel supports `attr`: D_k = 128, D_v a multiple of 16
+// up to 128 (at most 8 subgroups per workgroup) and H_v a multiple of H_k.
+absl::Status CheckGatedDeltaNetAttributes(const GatedDeltaNetAttributes& attr);
+
+// Parses the `gated_delta_update` custom op or, with `block_form`, the
+// `odml.gated_delta_block` composite.
 class GatedDeltaUpdateOperationParser : public TFLiteOperationParser {
  public:
+  explicit GatedDeltaUpdateOperationParser(bool block_form = false)
+      : block_form_(block_form) {}
+
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) override;
@@ -42,6 +103,9 @@ class GatedDeltaUpdateOperationParser : public TFLiteOperationParser {
   void Parse(const TfLiteNode* tflite_node,
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) override;
+
+ private:
+  const bool block_form_;
 };
 
 }  // namespace litert::ml_drift

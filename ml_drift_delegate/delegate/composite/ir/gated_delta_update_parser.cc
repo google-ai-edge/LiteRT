@@ -15,6 +15,7 @@
 #include "ml_drift_delegate/delegate/composite/ir/gated_delta_update_parser.h"
 
 #include <cstdint>
+#include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
@@ -29,15 +30,17 @@
 namespace litert::ml_drift::ir {
 namespace {
 
+template <bool kBlockForm>
 absl::Status GatedDeltaUpdateIsSupported(
     const TfLiteContext* context, const TfLiteNode* tflite_node,
     const TfLiteRegistration* registration) {
-  return ::litert::ml_drift::GatedDeltaUpdateOperationParser().IsSupported(
-      context, tflite_node, registration);
+  return ::litert::ml_drift::GatedDeltaUpdateOperationParser(kBlockForm)
+      .IsSupported(context, tflite_node, registration);
 }
 
+template <bool kBlockForm>
 void GatedDeltaUpdateConvert(
-    const TfLiteContext& /*context*/, const TfLiteNode& tflite_node,
+    const TfLiteContext& context, const TfLiteNode& tflite_node,
     const TfLiteRegistration& /*registration*/,
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     const IrModelBuilderOptions& /*options*/,
@@ -57,42 +60,34 @@ void GatedDeltaUpdateConvert(
     ir_model.SetProducer(tensor_map[tflite_node.outputs->data[i]], op->id);
   }
 
-  const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
-      tflite_node.builtin_data);
-  ::litert::ml_drift::GatedDeltaUpdateAttributes attr;
-  if (params && params->attributes && params->attributes_size > 0) {
-    const flexbuffers::Map flexbuffer_map =
-        flexbuffers::GetRoot(
-            reinterpret_cast<const uint8_t*>(params->attributes),
-            params->attributes_size)
-            .AsMap();
-    if (!flexbuffer_map["mode"].IsNull()) {
-      attr.mode = flexbuffer_map["mode"].AsInt32();
-    }
-    if (!flexbuffer_map["state_dtype"].IsNull()) {
-      attr.state_dtype = flexbuffer_map["state_dtype"].AsString().str();
-    }
-  } else if (tflite_node.custom_initial_data &&
-             tflite_node.custom_initial_data_size > 0) {
-    const flexbuffers::Map flexbuffer_map =
-        flexbuffers::GetRoot(
-            reinterpret_cast<const uint8_t*>(tflite_node.custom_initial_data),
-            tflite_node.custom_initial_data_size)
-            .AsMap();
-    if (!flexbuffer_map["mode"].IsNull()) {
-      attr.mode = flexbuffer_map["mode"].AsInt32();
-    }
-    if (!flexbuffer_map["state_dtype"].IsNull()) {
-      attr.state_dtype = flexbuffer_map["state_dtype"].AsString().str();
+  ::litert::ml_drift::GatedDeltaUpdateAttributes attr =
+      ::litert::ml_drift::ParseGatedDeltaUpdateAttributes(tflite_node,
+                                                          kBlockForm);
+  if (attr.block.has_value()) {
+    // IsSupported has validated the shapes.
+    const TfLiteIntArray* conv_out_dims =
+        context.tensors[tflite_node.inputs->data[0]].dims;
+    const TfLiteIntArray* state_dims =
+        context.tensors[tflite_node.inputs->data[5]].dims;
+    if (conv_out_dims != nullptr && state_dims != nullptr) {
+      ::litert::ml_drift::SetGatedDeltaNetDims(*conv_out_dims, *state_dims,
+                                               &*attr.block)
+          .IgnoreError();
     }
   }
-  op->attr = attr;
+  op->attr = std::move(attr);
 }
 
 }  // namespace
 
 CustomIrOpParser GetGatedDeltaUpdateParser() {
-  return {GatedDeltaUpdateIsSupported, GatedDeltaUpdateConvert};
+  return {GatedDeltaUpdateIsSupported</*kBlockForm=*/false>,
+          GatedDeltaUpdateConvert</*kBlockForm=*/false>};
+}
+
+CustomIrOpParser GetGatedDeltaBlockParser() {
+  return {GatedDeltaUpdateIsSupported</*kBlockForm=*/true>,
+          GatedDeltaUpdateConvert</*kBlockForm=*/true>};
 }
 
 }  // namespace litert::ml_drift::ir

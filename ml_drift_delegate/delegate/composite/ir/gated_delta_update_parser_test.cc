@@ -44,6 +44,7 @@ class ConvertGatedDeltaUpdateTest : public ::testing::Test {
   void SetUp() override {
     CustomIrOpMap custom_parsers;
     custom_parsers["gated_delta_update"] = GetGatedDeltaUpdateParser();
+    custom_parsers["odml.gated_delta_block"] = GetGatedDeltaBlockParser();
     delegate_ = CreateStubDelegate(/*options=*/{}, std::move(custom_parsers));
     ASSERT_TRUE(delegate_);
   }
@@ -148,6 +149,118 @@ TEST_F(ConvertGatedDeltaUpdateTest, RejectInvalidGqaHeadRatio) {
   ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
   EXPECT_EQ(ir_model, nullptr);
+}
+
+// Adds the inputs and outputs of an `odml.gated_delta_block` node with B = 1
+// and the given conv_out channel count.
+void AddBlockTensors(SingleOpInterpreterBuilder& builder, int T, int conv_dim,
+                     int H_v, int D_k, int D_v, bool has_valid_mask) {
+  const int B = 1;
+  const int V_dim = H_v * D_v;
+  builder.AddInput(kTfLiteFloat32, {B, T, conv_dim});         // conv_out
+  builder.AddInput(kTfLiteFloat32, {B, T, V_dim + 2 * H_v});  // zba
+  builder.AddInput(kTfLiteFloat32, {H_v});                    // a_log
+  builder.AddInput(kTfLiteFloat32, {H_v});                    // dt_bias
+  builder.AddInput(kTfLiteFloat32, {D_v});                    // norm_weight
+  builder.AddInput(kTfLiteFloat32, {B, H_v, D_k, D_v});       // state
+  if (has_valid_mask) {
+    builder.AddInput(kTfLiteFloat32, {B, T});  // valid_mask
+  }
+  builder.AddOutput(kTfLiteFloat32, {B, T, V_dim});       // output
+  builder.AddOutput(kTfLiteFloat32, {B, H_v, D_k, D_v});  // final_state
+}
+
+void SetCustomOptions(SingleOpInterpreterBuilder& builder,
+                      flexbuffers::Builder& fbb) {
+  auto fbb_buf = fbb.GetBuffer();
+  void* custom_data = malloc(fbb_buf.size());
+  memcpy(custom_data, fbb_buf.data(), fbb_buf.size());
+  builder.SetCustomData(custom_data, fbb_buf.size());
+}
+
+TEST_F(ConvertGatedDeltaUpdateTest, BlockCompositeConversion) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("odml.gated_delta_block");
+
+  int T = 4, H_k = 4, H_v = 8, D_k = 128, D_v = 128;
+  AddBlockTensors(builder, T, 2 * H_k * D_k + H_v * D_v, H_v, D_k, D_v,
+                  /*has_valid_mask=*/true);
+
+  // The head counts and head dims are derived from the input shapes.
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("mode", 0);
+    fbb.Float("eps", 1e-6f);
+    fbb.Float("norm_eps", 1e-5f);
+  });
+  fbb.Finish();
+  SetCustomOptions(builder, fbb);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("gated_delta_update"));
+  // Input 5 (recurrent_state) is skipped; compacted inputs have 6 tensors.
+  EXPECT_THAT(op->inputs, SizeIs(6));
+  EXPECT_THAT(op->outputs, SizeIs(2));
+
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::GatedDeltaUpdateAttributes>(&op->attr);
+  ASSERT_NE(attr, nullptr);
+  ASSERT_TRUE(attr->block.has_value());
+  EXPECT_EQ(attr->block->num_k_heads, H_k);
+  EXPECT_EQ(attr->block->num_v_heads, H_v);
+  EXPECT_EQ(attr->block->head_k_dim, D_k);
+  EXPECT_EQ(attr->block->head_v_dim, D_v);
+  EXPECT_FLOAT_EQ(attr->block->norm_eps, 1e-5f);
+}
+
+TEST_F(ConvertGatedDeltaUpdateTest, RejectInvalidBlockDimensions) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("odml.gated_delta_block");
+
+  int T = 1, H_k = 4, H_v = 8, D_k = 128, D_v = 128;
+  // conv_out channel dim +16: the derived q / k width (K_dim + 8) is not a
+  // multiple of D_k.
+  AddBlockTensors(builder, T, 2 * H_k * D_k + H_v * D_v + 16, H_v, D_k, D_v,
+                  /*has_valid_mask=*/false);
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() { fbb.Int("mode", 0); });
+  fbb.Finish();
+  SetCustomOptions(builder, fbb);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  EXPECT_EQ(ir_model, nullptr);
+}
+
+TEST_F(ConvertGatedDeltaUpdateTest, RejectBlockWithHvNotMultipleOfHk) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("odml.gated_delta_block");
+
+  // conv_out width 2 * 3 * 128 + 4 * 128 derives H_k = 3, which does not
+  // divide H_v = 4.
+  int T = 1, H_v = 4, D_k = 128, D_v = 128;
+  AddBlockTensors(builder, T, 2 * 3 * D_k + H_v * D_v, H_v, D_k, D_v,
+                  /*has_valid_mask=*/false);
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() { fbb.Int("mode", 0); });
+  fbb.Finish();
+  SetCustomOptions(builder, fbb);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+  EXPECT_EQ(GetIrModel(delegate_), nullptr);
 }
 
 }  // namespace

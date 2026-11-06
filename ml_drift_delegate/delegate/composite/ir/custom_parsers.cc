@@ -42,6 +42,7 @@ CustomIrOpMap GetCustomParsers() {
   parsers["odml.qkv_norm_rope"] = GetQkvNormRopeParser();
   parsers["odml.short_conv_step"] = GetShortConvStepParser();
   parsers["gated_delta_update"] = GetGatedDeltaUpdateParser();
+  parsers["odml.gated_delta_block"] = GetGatedDeltaBlockParser();
 
   return parsers;
 }

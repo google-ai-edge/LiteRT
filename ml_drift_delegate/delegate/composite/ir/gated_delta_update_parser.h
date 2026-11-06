@@ -19,7 +19,12 @@
 
 namespace litert::ml_drift::ir {
 
+// Parser of the `gated_delta_update` custom op.
 CustomIrOpParser GetGatedDeltaUpdateParser();
+
+// Parser of the `odml.gated_delta_block` composite, the block mode of the
+// `gated_delta_update` kernel.
+CustomIrOpParser GetGatedDeltaBlockParser();
 
 }  // namespace litert::ml_drift::ir
 
