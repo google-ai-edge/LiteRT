@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -243,7 +244,18 @@ class ExampleGlobalGraph {
   std::map<std::string, ExampleGraph> subgraphs_;
   std::map<uint32_t, ExampleTensor> buffers_;
 
-  static Expected<ExampleGlobalGraph> Parse(BufferRef<uint8_t> serialized);
+  // Parses a serialized global graph. When `expected_subgraphs` is non-empty,
+  // only subgraphs in `expected_subgraphs` and the constant buffers referenced
+  // by those subgraphs are loaded.
+  static Expected<ExampleGlobalGraph> Parse(
+      BufferRef<uint8_t> serialized,
+      const absl::flat_hash_set<std::string>& expected_subgraphs = {});
+
+  // Returns a filtered copy containing only `expected_subgraphs` (or all
+  // subgraphs when `expected_subgraphs` is empty) and the constant buffers
+  // referenced by those subgraphs.
+  ExampleGlobalGraph Filter(
+      const absl::flat_hash_set<std::string>& expected_subgraphs) const;
 
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const ExampleGlobalGraph& g) {

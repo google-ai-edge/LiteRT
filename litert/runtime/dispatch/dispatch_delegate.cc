@@ -28,10 +28,14 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_profiler_types.h"
 #include "litert/cc/internal/litert_dispatch_delegate.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_opaque_options.h"
 #include "litert/core/build_stamp.h"
+#include "litert/core/options.h"
 #include "litert/runtime/dispatch/dispatch_kernel_facade.h"
+#include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/dispatch/shared_kernel_resources.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -248,6 +252,28 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
   LITERT_RETURN_IF_ERROR(LiteRtDispatchDeviceContextCreate(
       LrtGetRuntimeContext(), options_, &device_context));
   device_context_ = device_context;
+
+  // If CompiledModel selected a subset of signatures, let the Dispatch API
+  // know which functions will be used. This must happen before any invocation
+  // context is created.
+  if (options_) {
+    auto opaque_options = litert::OpaqueOptions::WrapCObject(
+        options_->options, litert::OwnHandle::kNo);
+    if (auto dispatch_options = litert::FindOpaqueOptions<
+            litert::internal::DispatchDelegateOptions>(opaque_options)) {
+      LITERT_ASSIGN_OR_RETURN(auto expected_functions,
+                              dispatch_options->GetExpectedFunctionNames());
+      if (!expected_functions.empty()) {
+        std::vector<const char*> names;
+        names.reserve(expected_functions.size());
+        for (const auto& name : expected_functions) {
+          names.push_back(name.c_str());
+        }
+        LITERT_RETURN_IF_ERROR(LiteRtDispatchDeviceContextSetExpectedFunctions(
+            device_context_, names.data(), static_cast<int>(names.size())));
+      }
+    }
+  }
 
   return {};
 }

@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -36,6 +38,13 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/examples/example_common.h"
+
+extern "C" LiteRtStatus LiteRtDispatchExampleIsSubgraphLoaded(
+    LiteRtDispatchDeviceContext device_context, const char* subgraph_name,
+    bool* out_is_loaded);
+extern "C" LiteRtStatus LiteRtDispatchExampleIsBufferLoaded(
+    LiteRtDispatchDeviceContext device_context, uint32_t buffer_id,
+    bool* out_is_loaded);
 
 namespace litert::example {
 namespace {
@@ -413,6 +422,112 @@ ops:mul(0,1)(2)
 
   run_partition("partition_0");
   run_partition("partition_1");
+}
+
+TEST_F(ExampleDispatchTest,
+       SetExpectedFunctionsFiltersLoadedSubgraphsAndBuffers) {
+  static constexpr absl::string_view kSchema = R"(BUFFER 1
+[2x2]
+DATA:1,2,3,4
+BUFFER 2
+[2x2]
+DATA:5,6,7,8
+SUBGRAPH partition_0
+version:1
+inputs:0,1
+outputs:2
+const_map:1:1
+tensors:[2x2],[2x2],[2x2]
+ops:mul(0,1)(2)
+SUBGRAPH partition_1
+version:1
+inputs:0,1
+outputs:2
+const_map:1:2
+tensors:[2x2],[2x2],[2x2]
+ops:mul(0,1)(2)
+)";
+
+  LiteRtMemBuffer exec_bytecode_buffer;
+  exec_bytecode_buffer.base_addr = kSchema.data();
+  exec_bytecode_buffer.size = kSchema.size();
+  exec_bytecode_buffer.fd = -1;
+  exec_bytecode_buffer.offset = 0;
+
+  LiteRtDispatchDeviceContext device_context;
+  LITERT_ASSERT_OK(Api().device_context_create(LrtGetRuntimeContext(),
+                                               /*options=*/nullptr,
+                                               &device_context));
+  auto device_context_ptr = CreateDevicePtr(Api(), device_context);
+
+  ASSERT_NE(Api().device_context_set_expected_functions, nullptr);
+  const char* expected_fn = "partition_0";
+  LITERT_ASSERT_OK(Api().device_context_set_expected_functions(
+      device_context, &expected_fn, 1));
+
+  LiteRtDispatchInvocationContext invocation_context_0;
+  LITERT_ASSERT_OK(Api().invocation_context_create(
+      LrtGetRuntimeContext(), device_context,
+      kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer,
+      "partition_0", 2, 1, &invocation_context_0));
+  auto invocation_context_0_ptr =
+      CreateInvocationContextPtr(Api(), invocation_context_0);
+
+  bool is_loaded = false;
+  LITERT_ASSERT_OK(LiteRtDispatchExampleIsSubgraphLoaded(
+      device_context, "partition_0", &is_loaded));
+  EXPECT_TRUE(is_loaded);
+  LITERT_ASSERT_OK(LiteRtDispatchExampleIsSubgraphLoaded(
+      device_context, "partition_1", &is_loaded));
+  EXPECT_FALSE(is_loaded);
+  LITERT_ASSERT_OK(
+      LiteRtDispatchExampleIsBufferLoaded(device_context, 1, &is_loaded));
+  EXPECT_TRUE(is_loaded);
+  LITERT_ASSERT_OK(
+      LiteRtDispatchExampleIsBufferLoaded(device_context, 2, &is_loaded));
+  EXPECT_FALSE(is_loaded);
+
+  // Setting expected functions after an invocation context is created fails.
+  EXPECT_EQ(Api().device_context_set_expected_functions(device_context,
+                                                        &expected_fn, 1),
+            kLiteRtStatusErrorRuntimeFailure);
+
+  // Fallback: creating an invocation context for an unexpected function still
+  // succeeds and loads its subgraph and constant buffer on demand.
+  LiteRtDispatchInvocationContext invocation_context_1;
+  LITERT_ASSERT_OK(Api().invocation_context_create(
+      LrtGetRuntimeContext(), device_context,
+      kLiteRtDispatchExecutableTypeMlModel, &exec_bytecode_buffer,
+      "partition_1", 2, 1, &invocation_context_1));
+  auto invocation_context_1_ptr =
+      CreateInvocationContextPtr(Api(), invocation_context_1);
+
+  LITERT_ASSERT_OK(LiteRtDispatchExampleIsSubgraphLoaded(
+      device_context, "partition_1", &is_loaded));
+  EXPECT_TRUE(is_loaded);
+  LITERT_ASSERT_OK(
+      LiteRtDispatchExampleIsBufferLoaded(device_context, 2, &is_loaded));
+  EXPECT_TRUE(is_loaded);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input1,
+      SimpleBuffer::Create<float>({2, 2}, {10.0f, 20.0f, 30.0f, 40.0f}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_tb1, input1.SpawnTensorBuffer());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output, SimpleBuffer::Create<float>({2, 2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_tb, output.SpawnTensorBuffer());
+
+  LiteRtTensorBufferHandle handle1, handle3;
+  LITERT_ASSERT_OK(
+      Api().register_tensor_buffer(device_context, input_tb1.Get(), &handle1));
+  LITERT_ASSERT_OK(
+      Api().register_tensor_buffer(device_context, output_tb.Get(), &handle3));
+  LITERT_ASSERT_OK(Api().attach_input(invocation_context_1, 0, handle1));
+  LITERT_ASSERT_OK(Api().attach_output(invocation_context_1, 0, handle3));
+  LITERT_ASSERT_OK(Api().invoke(invocation_context_1));
+
+  std::vector<float> out(4);
+  LITERT_ASSERT_OK(output_tb.Read(absl::MakeSpan(out)));
+  EXPECT_THAT(out, ElementsAre(50.0f, 120.0f, 210.0f, 320.0f));
 }
 
 #if !defined(_WIN32)

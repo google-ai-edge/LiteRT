@@ -65,6 +65,9 @@ sequenceDiagram
     Delegate->>Dispatch: LiteRtDispatchGetCapabilities()
     Delegate->>Dispatch: LiteRtDispatchDeviceContextCreate()
     Dispatch-->>Delegate: LiteRtDispatchDeviceContext
+    opt Selected signatures specified
+        Delegate->>Dispatch: LiteRtDispatchDeviceContextSetExpectedFunctions()
+    end
     Delegate->>Dispatch: LiteRtDispatchInvocationContextCreate(device_context)
     Dispatch-->>Delegate: LiteRtDispatchInvocationContext
     Delegate->>Dispatch: LiteRtDispatchGetInputRequirements()
@@ -132,6 +135,29 @@ Check [LiteRT OpaqueOptions with TOML](https://github.com/google-ai-edge/LiteRT/
 ### LiteRtDispatchDeviceContextCreate
 
 This is a function that creates an opaque `LiteRtDispatchDeviceContext` object. Each NPU vendor will use their own SDK to create a mapped object that is used for inference of each model. That object type is `LiteRtDispatchDeviceContextT` which is a concrete type inside of the vendor's Dispatch API implementation. And returned as an opaque object `LiteRtDispatchDeviceContext`.
+
+### LiteRtDispatchDeviceContextSetExpectedFunctions (optional)
+
+```c
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchDeviceContextSetExpectedFunctions(
+    LiteRtDispatchDeviceContext device_context,
+    const char* const* function_names, int num_function_names);
+```
+
+Informs the Dispatch API runtime that only the given functions (corresponding to
+`function_name` in `LiteRtDispatchInvocationContextCreate()`) will be used with
+`device_context`, for example when only a subset of the model signatures is
+selected via `Options::SetSignatures()`.
+
+If used, this function must be called after
+`LiteRtDispatchDeviceContextCreate()` and before any
+`LiteRtDispatchInvocationContextCreate()` call on `device_context`. This is only
+a hint: vendor runtimes may use it to avoid deserializing or loading unused
+functions from an executable that holds multiple functions, and must still
+accept invocation contexts for other functions. Runtimes that do not implement
+`device_context_set_expected_functions` in `LiteRtDispatchInterface_V1` ignore
+the call.
 
 ### LiteRtDispatchInvocationContextCreate
 

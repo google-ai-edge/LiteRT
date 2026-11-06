@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
@@ -236,7 +237,8 @@ Expected<ExampleGraph> ExampleGraph::Parse(absl::string_view serialized) {
 }
 
 Expected<ExampleGlobalGraph> ExampleGlobalGraph::Parse(
-    BufferRef<uint8_t> serialized) {
+    BufferRef<uint8_t> serialized,
+    const absl::flat_hash_set<std::string>& expected_subgraphs) {
   ExampleGlobalGraph global_graph;
   const std::vector<std::string> lines =
       absl::StrSplit(serialized.StrView(), '\n');
@@ -247,9 +249,12 @@ Expected<ExampleGlobalGraph> ExampleGlobalGraph::Parse(
 
   auto flush_accumulator = [&]() -> Expected<void> {
     if (current_mode == "SUBGRAPH") {
-      std::string content = absl::StrJoin(buffer_accumulator, "\n");
-      LITERT_ASSIGN_OR_RETURN(auto graph, ExampleGraph::Parse(content));
-      global_graph.subgraphs_[current_key] = std::move(graph);
+      if (expected_subgraphs.empty() ||
+          expected_subgraphs.contains(current_key)) {
+        std::string content = absl::StrJoin(buffer_accumulator, "\n");
+        LITERT_ASSIGN_OR_RETURN(auto graph, ExampleGraph::Parse(content));
+        global_graph.subgraphs_[current_key] = std::move(graph);
+      }
     } else if (current_mode == "BUFFER") {
       if (buffer_accumulator.size() < 2) {
         return Error(kLiteRtStatusErrorInvalidArgument);
@@ -288,7 +293,47 @@ Expected<ExampleGlobalGraph> ExampleGlobalGraph::Parse(
   }
   LITERT_RETURN_IF_ERROR(flush_accumulator());
 
+  if (!expected_subgraphs.empty()) {
+    absl::flat_hash_set<uint32_t> referenced_buffers;
+    for (const auto& [name, subgraph] : global_graph.subgraphs_) {
+      for (const auto& [tensor_idx, buf_id] : subgraph.ConstMap()) {
+        referenced_buffers.insert(buf_id);
+      }
+    }
+    for (auto it = global_graph.buffers_.begin();
+         it != global_graph.buffers_.end();) {
+      if (!referenced_buffers.contains(it->first)) {
+        it = global_graph.buffers_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
   return global_graph;
+}
+
+ExampleGlobalGraph ExampleGlobalGraph::Filter(
+    const absl::flat_hash_set<std::string>& expected_subgraphs) const {
+  if (expected_subgraphs.empty()) {
+    return *this;
+  }
+  ExampleGlobalGraph filtered;
+  absl::flat_hash_set<uint32_t> referenced_buffers;
+  for (const auto& [name, subgraph] : subgraphs_) {
+    if (expected_subgraphs.contains(name)) {
+      filtered.subgraphs_.emplace(name, subgraph);
+      for (const auto& [tensor_idx, buf_id] : subgraph.ConstMap()) {
+        referenced_buffers.insert(buf_id);
+      }
+    }
+  }
+  for (const auto& [buf_id, buffer] : buffers_) {
+    if (referenced_buffers.contains(buf_id)) {
+      filtered.buffers_.emplace(buf_id, buffer);
+    }
+  }
+  return filtered;
 }
 
 Expected<std::vector<Data>> Execute(const ExampleGraph& graph,

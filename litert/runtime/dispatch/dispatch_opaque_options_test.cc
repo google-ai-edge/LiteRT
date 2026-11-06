@@ -15,6 +15,8 @@
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 
 #include <cstddef>
+#include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
@@ -121,6 +123,33 @@ TEST(DispatchDelegateOptionsTest, SetAllocBaseFileRegion) {
   auto has_alloc_base_file_region = options->HasAllocBaseFileRegion();
   ASSERT_TRUE(has_alloc_base_file_region);
   ASSERT_TRUE(*has_alloc_base_file_region);
+}
+
+TEST(DispatchDelegateOptionsTest, ExpectedFunctionNamesDefaultEmpty) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  auto expected_functions = options->GetExpectedFunctionNames();
+  ASSERT_TRUE(expected_functions);
+  EXPECT_TRUE(expected_functions->empty());
+}
+
+TEST(DispatchDelegateOptionsTest, SetAndGetExpectedFunctionNames) {
+  auto options = DispatchDelegateOptions::Create();
+  ASSERT_TRUE(options);
+
+  const std::vector<std::string> expected = {"func_a", "func_b", "func_c"};
+  ASSERT_TRUE(options->SetExpectedFunctionNames(expected));
+
+  auto expected_functions = options->GetExpectedFunctionNames();
+  ASSERT_TRUE(expected_functions);
+  EXPECT_EQ(*expected_functions, expected);
+
+  // Clearing back to empty
+  ASSERT_TRUE(options->SetExpectedFunctionNames({}));
+  expected_functions = options->GetExpectedFunctionNames();
+  ASSERT_TRUE(expected_functions);
+  EXPECT_TRUE(expected_functions->empty());
 }
 
 }  // namespace

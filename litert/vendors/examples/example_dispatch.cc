@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_runtime_context.h"
@@ -70,11 +71,130 @@ class LiteRtDispatchDeviceContextT {
     return registered_buffers_[handle];
   }
 
+  ::litert::Expected<void> SetExpectedFunctions(
+      absl::flat_hash_set<std::string> expected_functions) {
+    if (!loaded_graphs_.empty()) {
+      return ::litert::Error(
+          kLiteRtStatusErrorRuntimeFailure,
+          "Expected functions must be set before any invocation context is "
+          "created");
+    }
+    expected_functions_ = std::move(expected_functions);
+    return {};
+  }
+
+  ::litert::Expected<::litert::example::ExampleGlobalGraph*>
+  GetOrLoadGlobalGraph(LiteRtDispatchExecutableType exec_type,
+                       const LiteRtMemBuffer* exec_bytecode_buffer,
+                       absl::string_view function_name) {
+    BytecodeCacheKey key{exec_type, exec_bytecode_buffer->base_addr,
+                         exec_bytecode_buffer->offset,
+                         exec_bytecode_buffer->size};
+    auto& cached_graphs = loaded_graphs_[key];
+    for (const auto& graph : cached_graphs) {
+      if (graph->subgraphs_.find(std::string(function_name)) !=
+          graph->subgraphs_.end()) {
+        return graph.get();
+      }
+    }
+
+    absl::flat_hash_set<std::string> subgraphs_to_load;
+    if (!expected_functions_.empty()) {
+      if (cached_graphs.empty()) {
+        subgraphs_to_load = expected_functions_;
+        subgraphs_to_load.insert(std::string(function_name));
+      } else {
+        subgraphs_to_load.insert(std::string(function_name));
+      }
+    }
+
+    ::litert::example::ExampleGlobalGraph global_graph;
+    if (exec_type == kLiteRtDispatchExecutableTypeJitHandle) {
+      const auto* handle_graph =
+          reinterpret_cast<const ::litert::example::ExampleGlobalGraph*>(
+              exec_bytecode_buffer->base_addr);
+      if (!handle_graph) {
+        return ::litert::Error(kLiteRtStatusErrorInvalidArgument,
+                               "Invalid JIT handle");
+      }
+      global_graph = handle_graph->Filter(subgraphs_to_load);
+    } else {
+      LITERT_ASSIGN_OR_RETURN(
+          global_graph,
+          ::litert::example::ExampleGlobalGraph::Parse(
+              ::litert::BufferRef<uint8_t>(
+                  exec_bytecode_buffer->base_addr,
+                  exec_bytecode_buffer->offset + exec_bytecode_buffer->size,
+                  exec_bytecode_buffer->offset),
+              subgraphs_to_load));
+    }
+
+    auto subgraph_it = global_graph.subgraphs_.find(std::string(function_name));
+    if (subgraph_it == global_graph.subgraphs_.end()) {
+      return ::litert::Error(kLiteRtStatusErrorNotFound, "Subgraph not found");
+    }
+    if (subgraph_it->second.version() != "1") {
+      return ::litert::Error(kLiteRtStatusErrorUnsupportedCompilerVersion,
+                             "Bytecode version is not compatible");
+    }
+
+    cached_graphs.push_back(
+        std::make_unique<::litert::example::ExampleGlobalGraph>(
+            std::move(global_graph)));
+    return cached_graphs.back().get();
+  }
+
+  bool IsSubgraphLoaded(absl::string_view subgraph_name) const {
+    for (const auto& [key, graphs] : loaded_graphs_) {
+      for (const auto& graph : graphs) {
+        if (graph->subgraphs_.find(std::string(subgraph_name)) !=
+            graph->subgraphs_.end()) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  bool IsBufferLoaded(uint32_t buffer_id) const {
+    for (const auto& [key, graphs] : loaded_graphs_) {
+      for (const auto& graph : graphs) {
+        if (graph->buffers_.find(buffer_id) != graph->buffers_.end()) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
  private:
+  struct BytecodeCacheKey {
+    LiteRtDispatchExecutableType exec_type;
+    const void* base_addr;
+    size_t offset;
+    size_t size;
+
+    bool operator==(const BytecodeCacheKey& other) const {
+      return exec_type == other.exec_type && base_addr == other.base_addr &&
+             offset == other.offset && size == other.size;
+    }
+
+    template <typename H>
+    friend H AbslHashValue(H h, const BytecodeCacheKey& k) {
+      return H::combine(std::move(h), k.exec_type, k.base_addr, k.offset,
+                        k.size);
+    }
+  };
+
   using RegistredBuffers =
       absl::flat_hash_map<BufferHandle, LiteRtTensorBuffer>;
   std::list<Buffer> buffers_;
   RegistredBuffers registered_buffers_;
+  absl::flat_hash_set<std::string> expected_functions_;
+  absl::flat_hash_map<
+      BytecodeCacheKey,
+      std::vector<std::unique_ptr<::litert::example::ExampleGlobalGraph>>>
+      loaded_graphs_;
 };
 
 class LiteRtDispatchInvocationContextT {
@@ -92,49 +212,21 @@ class LiteRtDispatchInvocationContextT {
                              "Inputs are null");
     }
 
-    ::litert::example::ExampleGlobalGraph global_graph;
-
-    if (exec_type == kLiteRtDispatchExecutableTypeJitHandle) {
-      auto* handle_graph =
-          reinterpret_cast<const ::litert::example::ExampleGlobalGraph*>(
-              exec_bytecode_buffer->base_addr);
-      if (!handle_graph) {
-        return litert::Error(kLiteRtStatusErrorInvalidArgument,
-                             "Invalid JIT handle");
-      }
-      global_graph = *handle_graph;
-    } else {
-      LITERT_ASSIGN_OR_RETURN(
-          global_graph,
-          ::litert::example::ExampleGlobalGraph::Parse(
-              ::litert::BufferRef<uint8_t>(
-                  exec_bytecode_buffer->base_addr,
-                  exec_bytecode_buffer->offset + exec_bytecode_buffer->size,
-                  exec_bytecode_buffer->offset)));
-    }
-
-    // Find the subgraph.
-    if (global_graph.subgraphs_.find(function_name) ==
-        global_graph.subgraphs_.end()) {
-      return litert::Error(kLiteRtStatusErrorNotFound, "Subgraph not found");
-    }
-    auto& example_graph = global_graph.subgraphs_.at(function_name);
-
-    if (example_graph.version() != "1") {
-      return litert::Error(kLiteRtStatusErrorUnsupportedCompilerVersion,
-                           "Bytecode version is not compatible");
-    }
+    LITERT_ASSIGN_OR_RETURN(
+        auto* global_graph,
+        device_context->GetOrLoadGlobalGraph(exec_type, exec_bytecode_buffer,
+                                             function_name));
 
     auto context = Ptr(new LiteRtDispatchInvocationContextT(
         runtime_context, device_context, exec_type,
-        absl::string_view(function_name), std::move(global_graph)));
+        absl::string_view(function_name), global_graph));
     context->Initialize();
     return context;
   }
 
   void Initialize() {
     auto& example_graph =
-        global_graph_.subgraphs_.at(std::string(function_name_));
+        global_graph_->subgraphs_.at(std::string(function_name_));
     example_graph_ptr_ = &example_graph;
     // Build map from Tensor Index to Input Index
     absl::flat_hash_map<int, int> tensor_to_input_idx;
@@ -145,8 +237,8 @@ class LiteRtDispatchInvocationContextT {
 
     // Pre-load constants.
     for (const auto& [tensor_idx, buf_id] : example_graph_ptr_->ConstMap()) {
-      if (global_graph_.buffers_.count(buf_id)) {
-        const auto& buffer_tensor = global_graph_.buffers_[buf_id];
+      if (global_graph_->buffers_.count(buf_id)) {
+        const auto& buffer_tensor = global_graph_->buffers_[buf_id];
         if (tensor_to_input_idx.contains(tensor_idx)) {
           int input_idx = tensor_to_input_idx[tensor_idx];
           constant_buffers_.push_back(buffer_tensor.data);
@@ -265,17 +357,17 @@ class LiteRtDispatchInvocationContextT {
       const LiteRtRuntimeContext* runtime_context,
       LiteRtDispatchDeviceContext device_context,
       LiteRtDispatchExecutableType exec_type, absl::string_view function_name,
-      ::litert::example::ExampleGlobalGraph global_graph)
+      ::litert::example::ExampleGlobalGraph* global_graph)
       : runtime_context_(runtime_context),
         device_context_(device_context),
         exec_type_(exec_type),
         function_name_(function_name),
-        global_graph_(std::move(global_graph)) {
+        global_graph_(global_graph) {
     // We cannot access example_graph_ptr_ yet as it points into global_graph_.
     // Initialize() sets it up.
     // Use the subgraph from global_graph_ to size inputs/outputs.
     const auto& example_graph =
-        global_graph_.subgraphs_.at(std::string(function_name_));
+        global_graph_->subgraphs_.at(std::string(function_name_));
     inputs_.resize(example_graph.Inputs().size());
     outputs_.resize(example_graph.Outputs().size());
   }
@@ -286,7 +378,7 @@ class LiteRtDispatchInvocationContextT {
   absl::string_view function_name_;
   std::vector<BufferHandle> inputs_;
   std::vector<BufferHandle> outputs_;
-  ::litert::example::ExampleGlobalGraph global_graph_;
+  ::litert::example::ExampleGlobalGraph* global_graph_ = nullptr;
   const ::litert::example::ExampleGraph* example_graph_ptr_ = nullptr;
   std::list<Buffer> constant_buffers_;
 
@@ -340,6 +432,26 @@ LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime_context,
 
 LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
   delete device_context;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DeviceContextSetExpectedFunctions(
+    LiteRtDispatchDeviceContext device_context,
+    const char* const* function_names, int num_function_names) {
+  if (!device_context || num_function_names < 0 ||
+      (num_function_names > 0 && !function_names)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  absl::flat_hash_set<std::string> expected_functions;
+  expected_functions.reserve(num_function_names);
+  for (int i = 0; i < num_function_names; ++i) {
+    if (!function_names[i]) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    expected_functions.insert(function_names[i]);
+  }
+  LITERT_RETURN_IF_ERROR(
+      device_context->SetExpectedFunctions(std::move(expected_functions)));
   return kLiteRtStatusOk;
 }
 
@@ -570,6 +682,11 @@ static const LiteRtDispatchInterface_V1 ExampleInterface = {
     /*.destroy_metrics=*/nullptr,
     /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
     /*.invocation_context_set_options=*/InvocationContextSetOptions,
+    /*.get_hooks=*/nullptr,
+    /*.attach_edge_buffer=*/nullptr,
+    /*.detach_edge_buffer=*/nullptr,
+    /*.device_context_set_expected_functions=*/
+    DeviceContextSetExpectedFunctions,
 };
 
 }  // namespace
@@ -604,5 +721,26 @@ extern "C" LiteRtStatus LiteRtDispatchExampleGetLastSchedulingInfo(
     return kLiteRtStatusErrorNotFound;
   }
   *out = *LastSchedulingInfo;
+  return kLiteRtStatusOk;
+}
+
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchExampleIsSubgraphLoaded(
+    LiteRtDispatchDeviceContext device_context, const char* subgraph_name,
+    bool* out_is_loaded) {
+  if (!device_context || !subgraph_name || !out_is_loaded) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *out_is_loaded = device_context->IsSubgraphLoaded(subgraph_name);
+  return kLiteRtStatusOk;
+}
+
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchExampleIsBufferLoaded(LiteRtDispatchDeviceContext device_context,
+                                    uint32_t buffer_id, bool* out_is_loaded) {
+  if (!device_context || !out_is_loaded) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *out_is_loaded = device_context->IsBufferLoaded(buffer_id);
   return kLiteRtStatusOk;
 }

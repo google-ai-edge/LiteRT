@@ -152,5 +152,56 @@ TEST(ExecuteTest, MultipleOps) {
   EXPECT_THAT(outputs.front(), Each(Eq(0.0f)));
 }
 
+TEST(ParseExampleGlobalGraphTest, FiltersByExpectedSubgraphs) {
+  static constexpr absl::string_view kGlobalGraph = R"(BUFFER 1
+[2x2]
+DATA:1,2,3,4
+BUFFER 2
+[2x2]
+DATA:5,6,7,8
+SUBGRAPH partition_0
+version:1
+inputs:0,1
+outputs:2
+const_map:1:1
+tensors:[2x2],[2x2],[2x2]
+ops:mul(0,1)(2)
+SUBGRAPH partition_1
+version:1
+inputs:0,1
+outputs:2
+const_map:1:2
+tensors:[2x2],[2x2],[2x2]
+ops:mul(0,1)(2)
+)";
+
+  const BufferRef<uint8_t> serialized(kGlobalGraph.data(), kGlobalGraph.size());
+
+  // Parsing with expected_subgraphs={"partition_0"} loads only partition_0 and
+  // BUFFER 1.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto filtered_parse,
+      ExampleGlobalGraph::Parse(serialized, {"partition_0"}));
+  EXPECT_EQ(filtered_parse.subgraphs_.size(), 1);
+  EXPECT_EQ(filtered_parse.subgraphs_.count("partition_0"), 1);
+  EXPECT_EQ(filtered_parse.subgraphs_.count("partition_1"), 0);
+  EXPECT_EQ(filtered_parse.buffers_.size(), 1);
+  EXPECT_EQ(filtered_parse.buffers_.count(1), 1);
+  EXPECT_EQ(filtered_parse.buffers_.count(2), 0);
+
+  // Filter() on a full global graph retains only the requested subgraph and
+  // its referenced buffers.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto full_graph,
+                              ExampleGlobalGraph::Parse(serialized));
+  EXPECT_EQ(full_graph.subgraphs_.size(), 2);
+  EXPECT_EQ(full_graph.buffers_.size(), 2);
+
+  ExampleGlobalGraph filtered = full_graph.Filter({"partition_1"});
+  EXPECT_EQ(filtered.subgraphs_.size(), 1);
+  EXPECT_EQ(filtered.subgraphs_.count("partition_1"), 1);
+  EXPECT_EQ(filtered.buffers_.size(), 1);
+  EXPECT_EQ(filtered.buffers_.count(2), 1);
+}
+
 }  // namespace
 }  // namespace litert::example
