@@ -1,9 +1,13 @@
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 load("@build_bazel_rules_apple//apple:macos.bzl", "macos_unit_test")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("//litert/build_common:litert_build_defs.bzl", "if_oss")
 load("//litert/build_common:special_rule.bzl", "gles_deps", "litert_gpu_accelerator_deps", "litert_metal_opts")
+load("//litert/python:pytype.bzl", "pytype_strict_binary")
+load("//ml_drift_delegate/delegate:webgpu_dawn_loader.bzl", "generate_webgpu_dawn_loader_inc")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -819,6 +823,154 @@ objc_library(
         "//litert/cc:litert_any",
         "//litert/core:environment",
         "//litert/runtime:gpu_environment",
+    ],
+)
+
+pytype_strict_binary(
+    name = "webgpu_dawn_loader_gen",
+    srcs = ["webgpu_dawn_loader_gen.py"],
+    tags = ["notap"],
+)
+
+generate_webgpu_dawn_loader_inc(
+    name = "webgpu_dawn_procs_inc",
+    out = "webgpu_dawn_procs.inc",
+    dawn_headers = "@dawn//:dawn_headers",
+)
+
+cc_library(
+    name = "webgpu_dawn_loader",
+    srcs = ["webgpu_dawn_loader.cc"],
+    hdrs = ["webgpu_dawn_loader.h"],
+    linkopts = select({
+        "//litert:emscripten": [],
+        "//litert:windows": [],
+        "//conditions:default": ["-ldl"],
+    }),
+    linkstatic = 1,
+    local_defines = if_oss(
+        select({
+            "@ml_drift//ml_drift/webgpu:ml_drift_use_dawn_proc": [],
+            "//litert:emscripten": [],
+            "//conditions:default": ["LITERT_WEBGPU_DAWN_DYNAMIC_LOADER"],
+        }),
+        select({
+            "//litert:emscripten": [],
+            "//litert:litert_runtime_link_mode_dynamic": [
+                "LITERT_WEBGPU_DAWN_DYNAMIC_LOADER",
+            ],
+            "//conditions:default": [],
+        }),
+    ),
+    textual_hdrs = if_oss(
+        select({
+            "@ml_drift//ml_drift/webgpu:ml_drift_use_dawn_proc": [],
+            "//litert:emscripten": [],
+            "//conditions:default": [":webgpu_dawn_procs_inc"],
+        }),
+        select({
+            "//litert:emscripten": [],
+            "//litert:litert_runtime_link_mode_dynamic": [
+                ":webgpu_dawn_procs_inc",
+            ],
+            "//conditions:default": [],
+        }),
+    ),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/synchronization",
+    ] + if_oss(
+        select({
+            "@ml_drift//ml_drift/webgpu:ml_drift_use_dawn_proc": [
+                "@dawn//:dawn_headers",
+            ],
+            "//litert:emscripten": [],
+            "//conditions:default": [
+                "@dawn//:dawn_headers",
+                "@dawn//:libdawn_proc",
+            ],
+        }),
+        select({
+            "//litert:emscripten": [],
+            "//litert:litert_runtime_link_mode_dynamic": [
+                "@dawn//:dawn_headers",
+                "@dawn//:libdawn_proc",
+            ],
+            "//conditions:default": [
+                "@dawn//:dawn_headers",
+            ],
+        }),
+    ),
+    alwayslink = 1,
+)
+
+cc_binary(
+    name = "libfake_webgpu_dawn.so",
+    testonly = 1,
+    srcs = ["fake_webgpu_dawn.cc"],
+    linkshared = 1,
+    tags = [
+        "noandroid",
+        "noios",
+        "nomacos",
+        "notap",
+        "nowindows",
+    ],
+    visibility = ["//visibility:public"],
+    deps = ["@dawn//:dawn_headers"],
+)
+
+cc_binary(
+    name = "libincomplete_webgpu_dawn.so",
+    testonly = 1,
+    linkshared = 1,
+    tags = [
+        "noandroid",
+        "noios",
+        "nomacos",
+        "notap",
+        "nowindows",
+    ],
+)
+
+cc_test(
+    name = "webgpu_dawn_loader_test",
+    srcs = [
+        "webgpu_dawn_loader.cc",
+        "webgpu_dawn_loader.h",
+        "webgpu_dawn_loader_test.cc",
+        ":webgpu_dawn_procs_inc",
+    ],
+    data = [
+        ":libfake_webgpu_dawn.so",
+        ":libincomplete_webgpu_dawn.so",
+    ],
+    linkopts = select({
+        "//litert:emscripten": [],
+        "//litert:windows": [],
+        "//conditions:default": ["-ldl"],
+    }),
+    linkstatic = 1,
+    local_defines = ["LITERT_WEBGPU_DAWN_DYNAMIC_LOADER"],
+    tags = [
+        "noandroid",
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+    deps = [
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_googletest//:gtest_main",
+        "@dawn//:dawn_headers",
+        "@dawn//:libdawn_proc",
     ],
 )
 
