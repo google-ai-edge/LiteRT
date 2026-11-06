@@ -35,6 +35,7 @@
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/litert_options_encoder.h"
 #include "litert/core/litert_toml_parser.h"
 
 struct LrtIntelOpenVinoOptionsT {
@@ -78,32 +79,35 @@ LiteRtStatus LrtGetOpaqueIntelOpenVinoOptionsData(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  std::string toml_str;
+  litert::internal::OptionsEncoder encoder;
   if (options->performance_mode.has_value()) {
-    absl::StrAppend(&toml_str, "performance_mode = ",
-                    static_cast<int>(options->performance_mode.value()), "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("performance_mode",
+                          static_cast<int>(options->performance_mode.value())));
   }
   if (options->enable_weight_sharing.has_value()) {
-    absl::StrAppend(&toml_str, "enable_weight_sharing = ",
-                    (*options->enable_weight_sharing ? "true" : "false"), "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeBool("enable_weight_sharing",
+                                              *options->enable_weight_sharing));
   }
   for (const auto& pair : options->configs_map_options) {
-    absl::StrAppend(&toml_str, "configs_map.", pair.first, " = \"", pair.second,
-                    "\"\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeString(
+        absl::StrCat("configs_map.", pair.first), pair.second));
   }
   for (const auto& [graph_index, override] : options->graph_overrides) {
     if (override.graph_backend.has_value()) {
-      absl::StrAppend(&toml_str, "graph.", graph_index, ".graph_backend = ",
-                      static_cast<int>(override.graph_backend.value()), "\n");
+      LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+          absl::StrCat("graph.", graph_index, ".graph_backend"),
+          static_cast<int>(override.graph_backend.value())));
     }
     for (const auto& pair : override.configs_map_options) {
-      absl::StrAppend(&toml_str, "graph.", graph_index, ".configs_map.",
-                      pair.first, " = \"", pair.second, "\"\n");
+      LITERT_RETURN_IF_ERROR(encoder.EncodeString(
+          absl::StrCat("graph.", graph_index, ".configs_map.", pair.first),
+          pair.second));
     }
   }
 
   *identifier = LrtGetIntelOpenVinoOptionsIdentifier();
-  litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
+  litert::internal::MakeCStringPayload(encoder.Str(), payload, payload_deleter);
 
   return kLiteRtStatusOk;
 }

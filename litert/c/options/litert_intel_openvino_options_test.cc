@@ -39,6 +39,7 @@ void SerializeAndParse(LrtIntelOpenVinoOptions payload,
 }
 
 using ::testing::Eq;
+using ::testing::IsNull;
 using ::testing::NotNull;
 using ::testing::StrEq;
 using ::testing::litert::IsError;
@@ -182,6 +183,48 @@ TEST(IntelOpenVinoOptions, TomlSerializationWithConfigsMap) {
   payload_deleter(opaque_payload);
   LrtDestroyIntelOpenVinoOptions(payload);
   LrtDestroyIntelOpenVinoOptions(payload_from_toml);
+}
+
+TEST(IntelOpenVinoOptions, OpaqueDataRejectsUnencodableConfigsMapKey) {
+  LrtIntelOpenVinoOptions payload = nullptr;
+  LITERT_ASSERT_OK(LrtIntelOpenVinoOptionsCreate(&payload));
+
+  LITERT_EXPECT_OK(LrtIntelOpenVinoOptionsSetConfigsMapOption(
+      payload, "INVALID KEY", "f16"));
+
+  const char* identifier = nullptr;
+  void* opaque_payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+
+  EXPECT_EQ(LrtGetOpaqueIntelOpenVinoOptionsData(
+                payload, &identifier, &opaque_payload, &payload_deleter),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_THAT(identifier, IsNull());
+  EXPECT_THAT(opaque_payload, IsNull());
+  EXPECT_THAT(payload_deleter, IsNull());
+
+  LrtDestroyIntelOpenVinoOptions(payload);
+}
+
+TEST(IntelOpenVinoOptions, OpaqueDataRejectsUnencodableConfigsMapValue) {
+  LrtIntelOpenVinoOptions payload = nullptr;
+  LITERT_ASSERT_OK(LrtIntelOpenVinoOptionsCreate(&payload));
+
+  LITERT_EXPECT_OK(LrtIntelOpenVinoOptionsSetConfigsMapOption(
+      payload, "CACHE_DIR", "/tmp/\"ov_cache\""));
+
+  const char* identifier = nullptr;
+  void* opaque_payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+
+  EXPECT_EQ(LrtGetOpaqueIntelOpenVinoOptionsData(
+                payload, &identifier, &opaque_payload, &payload_deleter),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_THAT(identifier, IsNull());
+  EXPECT_THAT(opaque_payload, IsNull());
+  EXPECT_THAT(payload_deleter, IsNull());
+
+  LrtDestroyIntelOpenVinoOptions(payload);
 }
 
 }  // namespace

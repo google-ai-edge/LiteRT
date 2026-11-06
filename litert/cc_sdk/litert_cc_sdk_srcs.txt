@@ -13,4 +13,5 @@ litert/c/options/litert_qualcomm_options.cc
 litert/c/options/litert_runtime_options.cc
 litert/c/options/litert_samsung_options.cc
 litert/c/options/litert_webnn_options.cc
+litert/core/litert_options_encoder.cc
 litert/core/litert_toml_parser.cc

@@ -371,6 +371,8 @@ cc_test(
 filegroup(
     name = "litert_cc_sdk_files",
     srcs = [
+        "litert_options_encoder.cc",
+        "litert_options_encoder.h",
         "litert_toml_parser.cc",
         "litert_toml_parser.h",
         "options.h",

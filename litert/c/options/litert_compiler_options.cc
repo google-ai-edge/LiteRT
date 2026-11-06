@@ -25,6 +25,8 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/core/litert_options_encoder.h"
 
 struct LrtCompilerOptions {
   std::optional<LiteRtCompilerOptionsPartitionStrategy> partition_strategy;
@@ -44,17 +46,6 @@ std::string FormatDims(const int32_t* dims, size_t rank) {
     absl::StrAppend(&out, dims[i]);
   }
   return out;
-}
-
-void WriteTomlStringArray(std::string& toml_str, absl::string_view key,
-                          const std::vector<std::string>& values) {
-  if (values.empty()) return;
-  absl::StrAppend(&toml_str, key, " = [");
-  for (size_t i = 0; i < values.size(); ++i) {
-    if (i > 0) absl::StrAppend(&toml_str, ", ");
-    absl::StrAppend(&toml_str, "\"", values[i], "\"");
-  }
-  absl::StrAppend(&toml_str, "]\n");
 }
 
 bool HasInvalidTomlChars(absl::string_view s) {
@@ -88,29 +79,35 @@ LiteRtStatus LrtGetOpaqueCompilerOptionsData(const LrtCompilerOptions* options,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  std::string toml_str;
+  litert::internal::OptionsEncoder encoder;
   if (options->partition_strategy.has_value()) {
-    absl::StrAppend(&toml_str, "partition_strategy = ",
-                    static_cast<int>(options->partition_strategy.value()),
-                    "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "partition_strategy",
+        static_cast<int>(options->partition_strategy.value())));
   }
   if (options->dummy_option.has_value()) {
-    absl::StrAppend(&toml_str, "dummy_option = ",
-                    options->dummy_option.value() ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("dummy_option", options->dummy_option.value()));
   }
   if (options->max_partitions.has_value()) {
-    absl::StrAppend(&toml_str,
-                    "max_partitions = ", options->max_partitions.value(), "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "max_partitions", static_cast<int64_t>(*options->max_partitions)));
   }
-  WriteTomlStringArray(toml_str, "positional_input_shapes",
-                       options->positional_input_shapes);
-  WriteTomlStringArray(toml_str, "tensor_input_shapes",
-                       options->tensor_input_shapes);
-  WriteTomlStringArray(toml_str, "signature_input_shapes",
-                       options->signature_input_shapes);
+  if (!options->positional_input_shapes.empty()) {
+    LITERT_RETURN_IF_ERROR(encoder.EncodeStringArray(
+        "positional_input_shapes", options->positional_input_shapes));
+  }
+  if (!options->tensor_input_shapes.empty()) {
+    LITERT_RETURN_IF_ERROR(encoder.EncodeStringArray(
+        "tensor_input_shapes", options->tensor_input_shapes));
+  }
+  if (!options->signature_input_shapes.empty()) {
+    LITERT_RETURN_IF_ERROR(encoder.EncodeStringArray(
+        "signature_input_shapes", options->signature_input_shapes));
+  }
 
   *identifier = LrtGetCompilerOptionsIdentifier();
-  litert::internal::MakeCStringPayload(toml_str, payload, payload_deleter);
+  litert::internal::MakeCStringPayload(encoder.Str(), payload, payload_deleter);
 
   return kLiteRtStatusOk;
 }

@@ -19,10 +19,10 @@
 #include <optional>
 #include <string>
 
-#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/litert_options_encoder.h"
 
 struct LrtCpuOptions {
   std::optional<LiteRtCpuKernelMode> kernel_mode;
@@ -81,38 +81,39 @@ LiteRtStatus LrtGetOpaqueCpuOptionsData(const LrtCpuOptions* options,
   LITERT_ENSURE(payload_deleter != nullptr, kLiteRtStatusErrorInvalidArgument,
                 "payload_deleter is null.");
 
-  std::string toml_data;
+  litert::internal::OptionsEncoder encoder;
   if (options->kernel_mode.has_value()) {
-    absl::StrAppend(&toml_data, "kernel_mode = \"",
-                    CpuKernelModeToString(*options->kernel_mode), "\"\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeString(
+        "kernel_mode", CpuKernelModeToString(*options->kernel_mode)));
   }
   if (options->enable_ynnpack.has_value()) {
-    absl::StrAppend(&toml_data, "enable_ynnpack = ",
-                    *options->enable_ynnpack ? "true" : "false", "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("enable_ynnpack", *options->enable_ynnpack));
   }
   if (options->num_threads.has_value()) {
-    absl::StrAppend(&toml_data, "num_threads = ", *options->num_threads, "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("num_threads", *options->num_threads));
   }
   if (options->flags.has_value()) {
-    absl::StrAppend(&toml_data, "flags = ", *options->flags, "\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt("flags", *options->flags));
   }
   if (options->hint_fully_delegated_to_single_delegate.has_value()) {
-    absl::StrAppend(
-        &toml_data, "hint_fully_delegated_to_single_delegate = ",
-        *options->hint_fully_delegated_to_single_delegate ? "true" : "false",
-        "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("hint_fully_delegated_to_single_delegate",
+                           *options->hint_fully_delegated_to_single_delegate));
   }
   if (options->weight_cache_file_path.has_value()) {
-    absl::StrAppend(&toml_data, "weight_cache_file_path = \"",
-                    *options->weight_cache_file_path, "\"\n");
+    LITERT_RETURN_IF_ERROR(encoder.EncodeString(
+        "weight_cache_file_path", *options->weight_cache_file_path));
   }
   if (options->weight_cache_file_descriptor.has_value()) {
-    absl::StrAppend(&toml_data, "weight_cache_file_descriptor = ",
-                    *options->weight_cache_file_descriptor, "\n");
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeInt("weight_cache_file_descriptor",
+                          *options->weight_cache_file_descriptor));
   }
 
   *identifier = LrtGetCpuOptionsIdentifier();
-  litert::internal::MakeCStringPayload(toml_data, payload, payload_deleter);
+  litert::internal::MakeCStringPayload(encoder.Str(), payload, payload_deleter);
 
   return kLiteRtStatusOk;
 }

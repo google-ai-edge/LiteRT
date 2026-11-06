@@ -38,8 +38,8 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
+        "//litert/core:litert_options_encoder",
         "//litert/core:litert_toml_parser",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -52,7 +52,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
-        "@com_google_absl//absl/strings",
+        "//litert/core:litert_options_encoder",
     ],
 )
 
@@ -77,6 +77,8 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
+        "//litert/cc:litert_macros",
+        "//litert/core:litert_options_encoder",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -105,6 +107,8 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_common",
+        "//litert/cc:litert_macros",
+        "//litert/core:litert_options_encoder",
         "//litert/core:litert_toml_parser",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
@@ -136,6 +140,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
+        "//litert/core:litert_options_encoder",
         "//litert/core:litert_toml_parser",
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/strings",
@@ -167,8 +172,8 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
+        "//litert/core:litert_options_encoder",
         "//litert/core:litert_toml_parser",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -185,6 +190,7 @@ cc_library(
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/core:litert_options_encoder",
         "//litert/core:litert_toml_parser",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
@@ -210,9 +216,10 @@ cc_library(
     hdrs = ["litert_samsung_options.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
+        "//litert/core:litert_options_encoder",
         "//litert/core:litert_toml_parser",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -253,8 +260,8 @@ cc_library(
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/core:litert_options_encoder",
         "//litert/core:litert_toml_parser",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -267,8 +274,8 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
+        "//litert/core:litert_options_encoder",
         "//litert/core:litert_toml_parser",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -291,8 +298,9 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
+        "//litert/cc:litert_macros",
+        "//litert/core:litert_options_encoder",
         "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/strings",
     ],
 )
 

@@ -18,13 +18,11 @@
 
 #include "litert/c/options/litert_arm_vulkan_ml_options.h"
 
-#include <string>
-
-#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_options_helper.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/litert_options_encoder.h"
 #include "litert/core/litert_toml_parser.h"
 
 struct LrtArmVulkanMLOptionsT {
@@ -85,13 +83,12 @@ LiteRtStatus LrtGetOpaqueArmVulkanMLOptionsData(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
+  litert::internal::OptionsEncoder encoder;
+  LITERT_RETURN_IF_ERROR(
+      encoder.EncodeBool("enable_just_in_time", options->enable_just_in_time));
+
   *identifier = LrtArmVulkanMLOptionsGetIdentifier();
-
-  std::string toml = absl::StrCat(
-      "enable_just_in_time = ",
-      (options->enable_just_in_time ? "true" : "false"), "\n");
-
-  litert::internal::MakeCStringPayload(toml, payload, payload_deleter);
+  litert::internal::MakeCStringPayload(encoder.Str(), payload, payload_deleter);
   return kLiteRtStatusOk;
 }
 
