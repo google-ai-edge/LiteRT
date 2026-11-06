@@ -987,10 +987,6 @@ cc_library(
 cc_library(
     name = "litert_model",
     hdrs = [":litert_model.h"],
-    defines = select({
-        "//litert:litert_runtime_link_mode_dynamic": ["LITERT_DYNAMIC_RUNTIME"],
-        "//conditions:default": [],
-    }),
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_cc_users_static_link",
@@ -999,25 +995,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
-        ":litert_api_types",
-        ":litert_buffer_ref",
-        ":litert_common",
-        ":litert_element_type",
-        ":litert_environment",
-        ":litert_expected",
-        ":litert_macros",
-        ":litert_model_types",
-        ":litert_ranked_tensor_type",
-        "//litert/c:litert_common",
-        "//litert/c:litert_model",
-        "//litert/c:litert_model_types",
-        "//litert/cc/internal:litert_consts",
-        "//litert/cc/internal:litert_detail",
-        "//litert/cc/internal:litert_handle",
-        "//litert/core/model:model_load",
-        "//tflite/converter:allocation",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
+        "//litert/cc/internal:litert_model",
     ],
 )
 
@@ -1075,6 +1053,8 @@ cc_test(
         ":litert_ranked_tensor_type",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
+        "//litert/c:litert_model",
+        "//litert/c:litert_model_types",
         "//litert/cc/internal:litert_extended_model",
         "//litert/cc/internal:scoped_file",
         "//litert/core/model",
@@ -1423,7 +1403,6 @@ filegroup(
         "litert_expected.h",
         "litert_layout.h",
         "litert_macros.h",
-        "litert_model.h",
         "litert_model_types.h",
         "litert_opaque_options.h",
         "litert_options.h",

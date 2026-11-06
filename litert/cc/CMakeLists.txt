@@ -33,7 +33,6 @@ set(LITERT_CC_PUBLIC_HEADERS
     litert_expected.h
     litert_layout.h
     litert_macros.h
-    litert_model.h
     litert_model_types.h
     litert_opaque_options.h
     litert_options.h
@@ -64,7 +63,6 @@ set(LITERT_CC_REQUIRED_INTERNAL_HEADERS
     internal/litert_detail.h
     internal/litert_handle.h
     internal/litert_logging.h
-    internal/litert_model_predicates.h
     internal/litert_numerics.h
     internal/litert_op_options.h
     internal/litert_platform_support.h
@@ -85,6 +83,8 @@ file(GLOB LITERT_CC_DISCOVERED_PUBLIC_HEADERS
     "*.h"
     "options/*.h"
 )
+# litert_model.h is a transitional forwarding header to internal/litert_model.h.
+list(REMOVE_ITEM LITERT_CC_DISCOVERED_PUBLIC_HEADERS "litert_model.h")
 list(SORT LITERT_CC_DISCOVERED_PUBLIC_HEADERS)
 set(_litert_cc_expected_public_headers ${LITERT_CC_PUBLIC_HEADERS})
 list(SORT _litert_cc_expected_public_headers)
