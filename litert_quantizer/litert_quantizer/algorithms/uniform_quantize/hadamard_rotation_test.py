@@ -465,20 +465,20 @@ class HadamardRotationFullyConnectedTest(parameterized.TestCase):
 
   def test_auto_selects_hadamard_rademacher_or_polar_svd_by_m(self):
     # Power-of-2 m=8 resolves to exact Sylvester Hadamard H_8.
-    q_pow2 = hadamard_rotation._make_cross_block_matrix(8, "auto", seed=11)
+    q_pow2 = hadamard_rotation.make_cross_block_matrix(8, "auto", seed=11)
     np.testing.assert_array_equal(
         q_pow2, hadamard_rotation._make_hadamard_matrix(8).astype(np.float32)
     )
 
     # Non-power-of-2 m=48 (`<= 48`) resolves to Rademacher Cayley.
-    q_small = hadamard_rotation._make_cross_block_matrix(48, "auto", seed=11)
+    q_small = hadamard_rotation.make_cross_block_matrix(48, "auto", seed=11)
     q_rad = hadamard_rotation._make_rademacher_cayley_matrix(
         48, np.random.default_rng(11)
     )
     np.testing.assert_array_equal(q_small, q_rad)
 
     # Non-power-of-2 m=50 (`> 48`) resolves to Polar SVD.
-    q_large = hadamard_rotation._make_cross_block_matrix(50, "auto", seed=11)
+    q_large = hadamard_rotation.make_cross_block_matrix(50, "auto", seed=11)
     q_svd = hadamard_rotation._make_polar_svd_matrix(
         50, np.random.default_rng(11)
     )
@@ -486,7 +486,7 @@ class HadamardRotationFullyConnectedTest(parameterized.TestCase):
 
   def test_invalid_q_init_mode_raises(self):
     with self.assertRaisesRegex(ValueError, "Unsupported q_init_mode"):
-      hadamard_rotation._make_cross_block_matrix(8, "invalid_mode")
+      hadamard_rotation.make_cross_block_matrix(8, "invalid_mode")
 
   def test_kronecker_max_power_of_two_sizing_mode(self):
     rng = np.random.default_rng(42)
@@ -572,6 +572,379 @@ class HadamardRotationFullyConnectedTest(parameterized.TestCase):
       hadamard_rotation.get_tensor_quant_params(
           self._op_info, qconfig, weight, None
       )
+
+  def test_mse_grid_int2_in_int4_keeps_codebook(self):
+    rng = np.random.default_rng(2027)
+    w_rot = rng.standard_normal((16, 64)).astype(np.float32)
+    init_scale = (np.max(np.abs(w_rot), axis=1) / 4.5).astype(np.float32)
+    s_2bit = 2.0 * init_scale.reshape(-1, 1)
+    init_q = (
+        2.0 * np.clip(np.rint(w_rot / s_2bit - 0.5), -2.0, 1.0) + 1.0
+    ).astype(np.int8)
+    init_qparams = qtyping.UniformQuantParams(
+        num_bits=4,
+        quantized_dimension=0,
+        scale=init_scale,
+        zero_point=np.zeros(16, dtype=np.int64),
+        symmetric=True,
+        quantized_data=init_q,
+        block_size=0,
+    )
+    refined = hadamard_rotation._refine_quant_params_mse(
+        w_rot, init_qparams, int2_in_int4=True
+    )
+    assert refined.quantized_data is not None
+    self.assertEqual(
+        set(np.unique(refined.quantized_data).tolist()), {-3, -1, 1, 3}
+    )
+    mse_init = float(
+        np.mean((w_rot - init_q.astype(np.float32) * init_scale[:, None]) ** 2)
+    )
+    mse_refined = float(
+        np.mean(
+            (
+                w_rot
+                - refined.quantized_data.astype(np.float32)
+                * refined.scale.reshape(-1, 1)
+            )
+            ** 2
+        )
+    )
+    self.assertLess(mse_refined, mse_init)
+
+    # Verify end-to-end parameter plumbing via get_tensor_quant_params for both
+    # scale_refinement="none" and scale_refinement="mse_grid".
+    weight = rng.standard_normal((16, 64)).astype(np.float32)
+    qconfig_no_refine = _TensorQuantConfig(
+        num_bits=4,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "max_hadamard_size": 64,
+            "randomize": False,
+            "int2_in_int4": True,
+            "scale_refinement": "none",
+        },
+    )
+    qp_no_refine = hadamard_rotation.get_tensor_quant_params(
+        self._op_info, qconfig_no_refine, weight, None
+    )
+    assert qp_no_refine.quantized_data is not None
+    self.assertEqual(
+        set(np.unique(qp_no_refine.quantized_data).tolist()), {-3, -1, 1, 3}
+    )
+
+    qconfig = _TensorQuantConfig(
+        num_bits=4,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "max_hadamard_size": 64,
+            "randomize": False,
+            "int2_in_int4": True,
+            "scale_refinement": "mse_grid",
+        },
+    )
+    qp_e2e = hadamard_rotation.get_tensor_quant_params(
+        self._op_info, qconfig, weight, None
+    )
+    assert qp_e2e.quantized_data is not None
+    self.assertEqual(
+        set(np.unique(qp_e2e.quantized_data).tolist()), {-3, -1, 1, 3}
+    )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="non_bool_value",
+          num_bits=4,
+          int2_in_int4=1,
+          expected_error="int2_in_int4 must be a boolean",
+      ),
+      dict(
+          testcase_name="non_4bit",
+          num_bits=8,
+          int2_in_int4=True,
+          expected_error="int2_in_int4 requires symmetric 4-bit quantization",
+      ),
+      dict(
+          testcase_name="asymmetric_4bit",
+          num_bits=4,
+          symmetric=False,
+          int2_in_int4=True,
+          expected_error="int2_in_int4 requires symmetric 4-bit quantization",
+      ),
+  )
+  def test_invalid_int2_in_int4_raises(
+      self, num_bits, int2_in_int4, expected_error, symmetric=True
+  ):
+    weight = np.ones((4, 8), dtype=np.float32)
+    qconfig = _TensorQuantConfig(
+        num_bits=num_bits,
+        symmetric=symmetric,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "int2_in_int4": int2_in_int4,
+            "scale_refinement": "mse_grid",
+        },
+    )
+    with self.assertRaisesRegex(ValueError, expected_error):
+      hadamard_rotation.get_tensor_quant_params(
+          self._op_info, qconfig, weight, None
+      )
+
+  def test_ensure_int2_in_int4_codebook_blockwise_clamps_and_rounds_scale(self):
+    w_rot = np.zeros((1, 64), dtype=np.float32)
+    # Block 0: 1.01 * (7/4) = 1.7675 -> bfloat16 -> float16 = 1.765625; 3.533 is
+    # above 2 * 1.765625 (3.53125 -> +3) and below 2 * 1.7675 (3.535 -> +1).
+    w_rot[0, :32] = np.linspace(-6.0, 6.0, 32, dtype=np.float32)
+    w_rot[0, 0] = 3.533
+    # Block 1: 50000.0 * (7/4) = 87500.0 -> clamped to 65280.0.
+    w_rot[0, 32:] = np.linspace(-200000.0, 200000.0, 32, dtype=np.float32)
+
+    init_scale = np.array([[1.01, 50000.0]], dtype=np.float32)
+    init_q = np.zeros((1, 64), dtype=np.int8)
+    init_qparams = qtyping.UniformQuantParams(
+        num_bits=4,
+        quantized_dimension=1,
+        scale=init_scale,
+        zero_point=np.zeros((1, 2), dtype=np.int8),
+        symmetric=True,
+        quantized_data=init_q,
+        block_size=32,
+    )
+    projected = hadamard_rotation._ensure_int2_in_int4_codebook(
+        w_rot, init_qparams
+    )
+    np.testing.assert_array_equal(
+        projected.scale, np.array([[1.765625, 65280.0]], dtype=np.float32)
+    )
+    assert projected.quantized_data is not None
+    self.assertEqual(
+        set(np.unique(projected.quantized_data).tolist()), {-3, -1, 1, 3}
+    )
+    self.assertEqual(int(projected.quantized_data[0, 0]), 3)
+
+  def test_invalid_int2_in_int4_asymmetric_refine_raises(self):
+    w_rot = np.ones((4, 8), dtype=np.float32)
+    asym_qparams = qtyping.UniformQuantParams(
+        num_bits=4,
+        quantized_dimension=0,
+        scale=np.ones(4, dtype=np.float32),
+        zero_point=np.zeros(4, dtype=np.int64),
+        symmetric=False,
+        quantized_data=np.ones((4, 8), dtype=np.int8),
+        block_size=0,
+    )
+    with self.assertRaisesRegex(
+        ValueError, "int2_in_int4 requires symmetric 4-bit quantization"
+    ):
+      hadamard_rotation._refine_quant_params_mse(
+          w_rot, asym_qparams, int2_in_int4=True
+      )
+
+  def test_get_hadamard_block_size_modes(self):
+    # q_init_mode="none" uses largest power-of-2 divisor regardless of
+    # sizing_mode, and treats max_hadamard_size=0 as uncapped.
+    self.assertEqual(
+        hadamard_rotation.get_hadamard_block_size(2560, q_init_mode="none"),
+        512,
+    )
+    self.assertEqual(
+        hadamard_rotation.get_hadamard_block_size(
+            2560, max_hadamard_size=0, q_init_mode="none"
+        ),
+        512,
+    )
+    self.assertEqual(
+        hadamard_rotation.get_hadamard_block_size(
+            2560,
+            max_hadamard_size=256,
+            q_init_mode="none",
+            sizing_mode="min_compute",
+        ),
+        256,
+    )
+    # q_init_mode="auto" honors sizing_mode ("min_compute" vs
+    # "max_power_of_two").
+    self.assertEqual(
+        hadamard_rotation.get_hadamard_block_size(
+            2560,
+            max_hadamard_size=256,
+            q_init_mode="auto",
+            sizing_mode="min_compute",
+        ),
+        64,
+    )
+    self.assertEqual(
+        hadamard_rotation.get_hadamard_block_size(
+            2560,
+            max_hadamard_size=256,
+            q_init_mode="auto",
+            sizing_mode="max_power_of_two",
+        ),
+        256,
+    )
+    # NumPy integer scalars succeed without AttributeError on bit_length().
+    self.assertEqual(
+        hadamard_rotation.get_hadamard_block_size(
+            np.int64(384),
+            max_hadamard_size=np.int64(256),
+            q_init_mode="auto",
+        ),
+        16,
+    )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="odd_dim",
+          dim=7,
+          max_hadamard_size=None,
+          q_init_mode="none",
+          sizing_mode="min_compute",
+          expected_error="dim=7, max_hadamard_size=None",
+      ),
+      dict(
+          testcase_name="zero_dim",
+          dim=0,
+          max_hadamard_size=None,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="dim=0, max_hadamard_size=None",
+      ),
+      dict(
+          testcase_name="negative_dim",
+          dim=-8,
+          max_hadamard_size=None,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="dim=-8, max_hadamard_size=None",
+      ),
+      dict(
+          testcase_name="max_hadamard_size_one",
+          dim=8,
+          max_hadamard_size=1,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="dim=8, max_hadamard_size=1",
+      ),
+      dict(
+          testcase_name="negative_max_hadamard_size",
+          dim=8,
+          max_hadamard_size=-4,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="dim=8, max_hadamard_size=-4",
+      ),
+      dict(
+          testcase_name="bool_dim",
+          dim=True,
+          max_hadamard_size=None,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="must be an integer, not bool",
+      ),
+      dict(
+          testcase_name="bool_max_hadamard_size",
+          dim=8,
+          max_hadamard_size=True,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="must be an integer, not bool",
+      ),
+      dict(
+          testcase_name="bool_false_max_hadamard_size",
+          dim=8,
+          max_hadamard_size=False,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="must be an integer, not bool",
+      ),
+      dict(
+          testcase_name="invalid_q_init_mode",
+          dim=8,
+          max_hadamard_size=None,
+          q_init_mode="invalid",
+          sizing_mode="min_compute",
+          expected_error="Unsupported q_init_mode",
+      ),
+      dict(
+          testcase_name="invalid_sizing_mode",
+          dim=8,
+          max_hadamard_size=None,
+          q_init_mode="none",
+          sizing_mode="invalid",
+          expected_error="Unsupported sizing_mode",
+      ),
+  )
+  def test_get_hadamard_block_size_invalid_args_raise(
+      self, dim, max_hadamard_size, q_init_mode, sizing_mode, expected_error
+  ):
+    with self.assertRaisesRegex(ValueError, expected_error):
+      hadamard_rotation.get_hadamard_block_size(
+          dim,
+          max_hadamard_size=max_hadamard_size,
+          q_init_mode=q_init_mode,
+          sizing_mode=sizing_mode,
+      )
+
+  def test_make_cross_block_matrix_public_api(self):
+    self.assertIsNone(hadamard_rotation.make_cross_block_matrix(8, "none"))
+    self.assertIsNone(hadamard_rotation.make_cross_block_matrix(1, "auto"))
+
+    # Power-of-2 Sylvester Hadamard (m=8).
+    q_sylvester = hadamard_rotation.make_cross_block_matrix(8, "auto", seed=5)
+    assert q_sylvester is not None
+    self.assertFalse(q_sylvester.flags.writeable)
+    np.testing.assert_array_equal(
+        q_sylvester,
+        hadamard_rotation._make_hadamard_matrix(8).astype(np.float32),
+    )
+
+    # Cached non-power-of-2 matrix (m=6) is read-only and accepts np.integer.
+    q_cached = hadamard_rotation.make_cross_block_matrix(
+        np.int64(6), "auto", seed=np.int64(0)
+    )
+    assert q_cached is not None
+    self.assertFalse(q_cached.flags.writeable)
+    with self.assertRaises(ValueError):
+      q_cached[0, 0] = 99.0
+
+    # Rademacher Cayley for non-power-of-2 m <= 48 (m=48).
+    q_cayley = hadamard_rotation.make_cross_block_matrix(48, "auto", seed=5)
+    assert q_cayley is not None
+    self.assertFalse(q_cayley.flags.writeable)
+    np.testing.assert_allclose(
+        q_cayley.T @ q_cayley, np.eye(48, dtype=np.float32), atol=1e-5
+    )
+    np.testing.assert_array_equal(
+        q_cayley,
+        hadamard_rotation._make_rademacher_cayley_matrix(
+            48, np.random.default_rng(5)
+        ),
+    )
+
+    # Polar SVD for non-power-of-2 m > 48 (m=50).
+    q_polar = hadamard_rotation.make_cross_block_matrix(50, "auto", seed=5)
+    assert q_polar is not None
+    self.assertFalse(q_polar.flags.writeable)
+    np.testing.assert_allclose(
+        q_polar.T @ q_polar, np.eye(50, dtype=np.float32), atol=1e-5
+    )
+    np.testing.assert_array_equal(
+        q_polar,
+        hadamard_rotation._make_polar_svd_matrix(50, np.random.default_rng(5)),
+    )
+
+    with self.assertRaisesRegex(ValueError, "Unsupported q_init_mode"):
+      hadamard_rotation.make_cross_block_matrix(8, "invalid")
+    with self.assertRaisesRegex(ValueError, "m must be >= 1"):
+      hadamard_rotation.make_cross_block_matrix(0, "auto")
+    with self.assertRaisesRegex(ValueError, "m must be >= 1"):
+      hadamard_rotation.make_cross_block_matrix(-3, "auto")
+    with self.assertRaisesRegex(ValueError, "must be an integer, not bool"):
+      hadamard_rotation.make_cross_block_matrix(True, "auto")
+    with self.assertRaisesRegex(ValueError, "must be an integer, not bool"):
+      hadamard_rotation.make_cross_block_matrix(6, "auto", seed=True)
 
 
 class HadamardRotationEmbeddingLookupTest(parameterized.TestCase):
