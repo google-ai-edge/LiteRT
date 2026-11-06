@@ -15,7 +15,10 @@
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 #include <cstdint>
+#include <optional>
+#include <vector>
 
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "tflite/schema/schema_generated.h"
@@ -44,6 +47,35 @@ absl::InlinedVector<int32_t, kExpectedMaxTensorRank> GetDimensions(
   //  Have no idea why get incorrect dimensions when use Span.
   return absl::InlinedVector<int32_t, kExpectedMaxTensorRank>(
       dimensions.begin(), dimensions.end());
+}
+
+std::optional<QuantizationParams> GetQuantizationParams(
+    const litert::compiler::Tensor& tensor) {
+  if (!tensor.HasQuantization()) {
+    return std::nullopt;
+  }
+
+  QuantizationParams params;
+  if (tensor.QTypeId() == kLiteRtQuantizationPerTensor) {
+    const auto q = tensor.PerTensorQuantization();
+    params.scales = {q.scale};
+    params.zero_points = {static_cast<int32_t>(q.zero_point)};
+  } else if (tensor.QTypeId() == kLiteRtQuantizationPerChannel) {
+    const auto q = tensor.PerChannelQuantization();
+    if (q.num_channels == 0 || q.scales == nullptr ||
+        q.zero_points == nullptr) {
+      return std::nullopt;
+    }
+    params.scales.assign(q.scales, q.scales + q.num_channels);
+    params.zero_points.reserve(q.num_channels);
+    for (uint64_t i = 0; i < q.num_channels; ++i) {
+      params.zero_points.push_back(static_cast<int32_t>(q.zero_points[i]));
+    }
+  } else {
+    return std::nullopt;
+  }
+
+  return params;
 }
 
 Expected<const char*> MapToElementTypeStr(ElementType element_type) {

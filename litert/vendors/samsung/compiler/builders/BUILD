@@ -35,6 +35,7 @@ cc_library(
     hdrs = ["utils.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",
         "//tflite/schema:schema_fbs",
@@ -568,7 +569,7 @@ cc_library(
     hdrs = ["quantize_op_builder.h"],
     deps = [
         ":op_wrapper",
-        "//litert/c:litert_common",
+        ":utils",
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",
     ],
@@ -580,7 +581,7 @@ cc_library(
     hdrs = ["dequantize_op_builder.h"],
     deps = [
         ":op_wrapper",
-        "//litert/c:litert_common",
+        ":utils",
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",
     ],
