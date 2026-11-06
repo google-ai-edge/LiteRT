@@ -53,6 +53,9 @@ ABSL_DECLARE_FLAG(bool, enable_ynnpack);
 // Whether to use the IR model for the GPU accelerator.
 ABSL_DECLARE_FLAG(bool, gpu_use_ir_model);
 
+// GPU priority when --backend=gpu: default, low, normal, or high.
+ABSL_DECLARE_FLAG(std::string, gpu_priority);
+
 // CPU kernel mode for the "actual" backend: delegate, builtin or reference.
 ABSL_DECLARE_FLAG(std::string, cpu_kernel_mode);
 
