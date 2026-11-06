@@ -1,0 +1,281 @@
+// Copyright 2026 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto2";
+package litert.vision;
+
+// File formats belong to the evaluation tools, not the LiteRT runtime ABI.
+enum ElementType {
+  FLOAT32 = 0;
+  INT8 = 1;
+  UINT8 = 2;
+  INT32 = 3;
+  BOOL = 4;
+}
+enum Layout {
+  NCHW = 0;
+  NHWC = 1;
+}
+enum Task {
+  AUTO = 0;
+  CLASSIFICATION = 1;
+  SEGMENTATION = 2;
+  DEPTH = 3;
+  NORMALS = 4;
+}
+enum ProtoFormat {
+  TEXT_PROTO = 0;
+  BINARY_PROTO = 1;
+}
+enum Status {
+  RUNNING = 0;
+  PASSED = 1;
+  FAILED = 2;
+}
+message FileIdentity {
+  optional string path = 1;
+}
+message TensorSpec {
+  optional string name = 1;
+  repeated int32 shape = 2 [packed = true];
+  optional ElementType type = 3 [default = FLOAT32];
+  optional Layout layout = 4 [default = NCHW];
+  optional float scale = 5;
+  optional int64 zero_point = 6;
+  optional string binding_name = 7; // Model signature name; name is a filename-safe dataset alias.
+}
+message Preprocessing {
+  optional string interpolation = 1 [default = "bilinear"];
+  optional int32 resize = 2 [default = 232];
+  optional int32 crop_h = 3 [default = 224];
+  optional int32 crop_w = 4 [default = 224];
+  optional bool antialias = 5 [default = true];
+  repeated float mean = 6 [packed = true]; // Omitted: TorchVision defaults.
+  repeated float stddev = 7 [packed = true];
+}
+message BackendOptions {
+  optional string accelerator = 1 [default = "cpu"];
+  optional int32 num_threads = 2 [default = 0];
+  optional bool xnnpack_only = 3 [default = false];
+  optional string runtime_library_dir = 4;
+  optional string dispatch_library_dir = 5;
+  optional string compiler_plugin_library_dir = 6;
+  optional bool arm_vulkan_ml_enable_jit = 7 [default = false];
+  optional string openvino_device = 8;
+  optional string gpu_backend = 9 [default = "automatic"];
+  optional string gpu_precision = 10 [default = "default"];
+  optional string gpu_use_ir_model = 11 [default = "default"];
+  optional bool gpu_benchmark_mode = 12 [default = false];
+  optional bool require_full_acceleration = 13 [default = false];
+}
+message EvaluationConfig {
+  optional string model = 1;
+  optional string baseline_model = 2;
+  optional string manifest = 3;
+  optional string image_root = 4;
+  optional string output_dir = 5;
+  optional Task task = 6 [default = AUTO];
+  optional BackendOptions backend = 7;
+  optional string baseline_accelerator = 8 [default = "inherit"];
+  optional int32 baseline_num_threads = 9 [default = 1];
+  optional int32 signature_index = 10 [default = 0];
+  optional Preprocessing preprocessing = 11;
+  optional int32 warmup_runs = 12 [default = 0];
+  optional int32 start_sample = 13 [default = 0];
+  optional int32 max_samples = 14 [default = 0];
+  optional bool require_output_parity = 15 [default = false];
+  optional bool require_prediction_agreement = 16 [default = false];
+  optional double atol = 17 [default = 0.0001];
+  optional double rtol = 18 [default = 0.001];
+  optional bool dump_predictions = 19 [default = false];
+  optional bool dump_inputs = 20 [default = false];
+  optional ProtoFormat summary_format = 21 [default = TEXT_PROTO];
+  optional bool score_only = 22 [default = false];
+  optional string predictions_dir = 23;
+  optional string reference_dir = 24;
+  optional string runtime_version = 25;
+  optional bool compare_int8_codes = 26 [default = false];
+  optional double max_code_error = 27 [default = 4];
+  optional double mean_code_error = 28 [default = 0.5];
+}
+message TaskOptions {
+  optional Task task = 1 [default = CLASSIFICATION];
+  optional int32 classes = 2 [default = 150];
+  optional int32 ignore_label = 3 [default = 255];
+  optional double min_depth = 4 [default = 0.001];
+  optional double max_depth = 5 [default = 10];
+}
+message OutputSpec {
+  optional TensorSpec tensor = 1;
+  optional TaskOptions scoring = 2;
+}
+message InputFile {
+  optional string name = 1;
+  optional FileIdentity file = 2;
+}
+message TargetFile {
+  optional string name = 1;
+  optional FileIdentity file = 2;
+  optional TensorSpec tensor = 3;
+  optional FileIdentity mask = 4; // Contiguous HW bool/uint8, nonzero means valid.
+}
+message Sample {
+  optional string id = 1;
+  optional string image = 2;
+  optional int32 label = 3;
+  repeated InputFile inputs = 4;
+  repeated TargetFile targets = 5;
+  optional string source_file = 6;
+  optional int64 source_row = 7;
+}
+message DatasetSource {
+  optional string repository = 1;
+  optional string revision = 2;
+  optional string split = 3;
+  optional int64 seed = 4;
+  optional string preprocessing = 5;
+  optional string protocol = 6;
+  repeated int32 normal_axis_order = 7 [packed = true];
+}
+message DatasetManifest {
+  optional uint32 version = 1 [default = 1];
+  repeated TensorSpec inputs = 2;
+  repeated OutputSpec outputs = 3;
+  repeated Sample samples = 4;
+  optional DatasetSource source = 5;
+}
+message ClassificationMetrics {
+  optional uint64 images = 1;
+  optional uint64 correct_top1 = 2;
+  optional uint64 correct_top5 = 3;
+  optional double top1 = 4;
+  optional double top5 = 5;
+  repeated int32 ranked_classes = 6 [packed = true];
+}
+message SegmentationMetrics {
+  optional uint64 images = 1;
+  optional uint64 valid_pixels = 2;
+  optional uint32 classes = 3;
+  repeated uint64 confusion = 4 [packed = true];
+  optional uint32 evaluated_classes = 5;
+  optional double miou = 6;
+}
+message DepthMetrics {
+  optional uint64 images = 1;
+  optional uint64 empty_images = 2;
+  optional uint64 valid_pixels = 3;
+  optional double abs_rel = 4;
+  optional double rmse = 5;
+  optional double delta1 = 6;
+}
+message NormalMetrics {
+  optional uint64 images = 1;
+  optional uint64 empty_images = 2;
+  optional uint64 valid_pixels = 3;
+  optional double mean_degrees = 4;
+  optional double median_degrees = 5;
+  optional double within_11_25_degrees = 6;
+  optional double within_22_5_degrees = 7;
+  optional double within_30_degrees = 8;
+}
+message OutputMetrics {
+  optional string name = 1;
+  oneof metrics {
+    ClassificationMetrics classification = 2;
+    SegmentationMetrics segmentation = 3;
+    DepthMetrics depth = 4;
+    NormalMetrics normals = 5;
+  }
+  // Checkpoint state used to compute an exact global normals median on resume.
+  optional FileIdentity normal_errors = 6;
+}
+message OutputComparison {
+  optional string name = 1;
+  optional uint64 elements = 2;
+  optional bool allclose = 3;
+  optional double max_abs = 4;
+  optional double mean_abs = 5;
+  optional bool prediction_agreement = 6;
+  optional double max_code_error = 7;
+  optional double mean_code_error = 8;
+}
+// A nonempty file path identifies a raw tensor dump. Predictions are stored as
+// dequantized FLOAT32.
+message TensorArtifact {
+  optional TensorSpec tensor = 1;
+  optional FileIdentity file = 2;
+}
+message SampleResult {
+  optional uint32 version = 1 [default = 1];
+  optional string id = 2;
+  repeated FileIdentity sources = 3;
+  repeated TensorArtifact model_inputs = 4;
+  repeated TensorArtifact predictions = 5;
+  repeated OutputMetrics metrics = 6;
+  repeated OutputMetrics baseline_metrics = 7;
+  repeated OutputComparison comparisons = 8;
+  optional double inference_ms = 9;
+  optional double baseline_inference_ms = 10;
+  optional bool complete = 11 [default = false];
+  repeated TensorArtifact baseline_predictions = 12;
+}
+message AcceleratorMetrics {
+  optional string name = 1;
+  optional uint64 delegated_ops = 2;
+  optional uint64 partitions = 3;
+  optional int32 hardware_type = 4;
+}
+message ExecutionIdentity {
+  optional FileIdentity model = 1;
+  optional BackendOptions options = 2;
+  optional bool fully_accelerated = 3;
+  optional double setup_ms = 4;
+  optional uint64 total_runtime_ops = 5;
+  repeated AcceleratorMetrics accelerators = 6;
+  repeated TensorSpec inputs = 7;
+  repeated TensorSpec outputs = 8;
+}
+message DeviceIdentity {
+  optional string operating_system = 1;
+  optional string architecture = 2;
+  optional string model = 3;
+  optional string build_fingerprint = 4;
+  optional string hardware = 5;
+}
+message RunIdentity {
+  optional uint32 version = 1 [default = 1];
+  optional EvaluationConfig config = 2;
+  optional FileIdentity manifest = 3;
+  optional FileIdentity binary = 4;
+  optional ExecutionIdentity candidate = 5;
+  optional ExecutionIdentity baseline = 6;
+  repeated FileIdentity libraries = 7;
+  repeated string sample_ids = 8;
+  optional DeviceIdentity device = 9;
+}
+message RunSummary {
+  optional uint32 version = 1 [default = 1];
+  optional Status status = 2 [default = RUNNING];
+  optional string error = 3;
+  optional RunIdentity identity = 4;
+  optional uint64 requested = 5;
+  optional uint64 completed = 6;
+  optional uint64 resumed = 7;
+  repeated OutputMetrics metrics = 8;
+  repeated OutputMetrics baseline_metrics = 9;
+  optional double inference_ms = 10;
+  optional double baseline_inference_ms = 11;
+  optional double elapsed_seconds = 12;
+  repeated OutputComparison comparisons = 13;
+}

@@ -456,3 +456,57 @@ A powerful debugging tool to identify the specific operator ("culprit") in a
 model that causes issues (e.g., crashes, numerical errors) when using hardware
 acceleration. It performs a binary search over the model's operators to isolate
 the problematic one. Please see the subdirectory for more detailed information.
+
+## `litert_vision_eval`
+
+Evaluate static-shape LiteRT vision models across CPU, GPU, and NPU backends
+with resumable per-sample checkpoints, task accuracy metrics, and optional
+reference baseline parity comparison. Supported tasks include image
+classification, semantic segmentation, metric depth estimation, and surface
+normal estimation.
+
+Use `litert_vision_eval_dynamic_runtime` (built with
+`--define=litert_runtime_link_mode=dynamic`) when loading a pinned
+`libLiteRt.so` via `LD_LIBRARY_PATH` or `--runtime_library_dir`.
+
+### Basic Usage
+
+```bash
+litert_vision_eval \
+  --model=<model_path> \
+  --manifest=<manifest_path> \
+  --output_dir=<output_dir>
+```
+
+### Parameter Reference
+
+-   **`--model`** (string, required unless `--score_only=true`): Path to the
+    candidate `.tflite` model.
+-   **`--manifest`** (string, required): Path to a `.tsv` classification
+    manifest (`id\tlabel\tpath`) or a `.txtpb` / `.binpb` `DatasetManifest`.
+-   **`--output_dir`** (string, required): Directory where run provenance
+    (`identity.binpb`), per-sample checkpoints (`samples/<id>/result.binpb`),
+    and the aggregated `RunSummary` (`summary.txtpb` or `summary.binpb`) are
+    written. Re-running with an identical configuration resumes completed
+    samples.
+-   **`--config`** (string, optional): Path to an `EvaluationConfig` `.txtpb` or
+    `.binpb` file. Explicit command-line flags override fields loaded from
+    `--config`.
+-   **`--task`** (string, default: `"auto"`): Evaluation task override (`auto`,
+    `classification`, `segmentation`, `depth`, `normals`).
+-   **`--accelerator`** (string, default: `"cpu"`): Comma-separated hardware
+    accelerators (`cpu`, `gpu`, `npu`), with optional
+    `--require_full_acceleration=true`, `--dispatch_library_dir`,
+    `--compiler_plugin_library_dir`, and `--runtime_library_dir`.
+-   **`--baseline_model`** / **`--baseline_accelerator`** (string, optional):
+    Compare candidate outputs against a reference model (`inherit` or `cpu`) and
+    optionally gate on `--require_output_parity=true`,
+    `--require_prediction_agreement=true`, or `--compare_int8_codes=true`.
+-   **`--score_only`** / **`--predictions_dir`** / **`--reference_dir`**
+    (optional): Score previously dumped raw prediction tensors offline without
+    invoking the LiteRT runtime.
+-   **`--start_sample`** / **`--max_samples`** / **`--warmup_runs`**: Slice the
+    manifest sample range or run untimed warmup invocations before timing.
+
+Please see the `vision_eval` subdirectory for dataset manifest contracts,
+preprocessing parameters, and dataset preparation utilities.
