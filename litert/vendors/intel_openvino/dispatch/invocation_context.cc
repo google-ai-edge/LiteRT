@@ -64,6 +64,7 @@
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
 #include "litert/vendors/intel_openvino/dispatch/mapped_pages.h"
 #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
+#include "litert/vendors/intel_openvino/hfa_history.h"
 #include "litert/vendors/intel_openvino/openvino_version_info.h"
 #include "litert/vendors/intel_openvino/utils.h"
 
@@ -268,6 +269,7 @@ void LiteRtDispatchInvocationContextT::ReleaseImportedLocked() {
   // Dropping the infer request drops the last reference to this node's
   // ov::CompiledModel. bound_weights_ are views the request borrowed, so they
   // go with it. attached_inputs_/attached_outputs_ are kept on purpose.
+  hfa_history_.reset();
   infer_request_ = {};
   bound_weights_.clear();
   imported_ = false;
@@ -603,6 +605,9 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {
                                                      exec_bytecode_size);
 
   infer_request_ = compiled_model.create_infer_request();
+  hfa_history_ = litert::openvino::HfaHistoryReporter::Find(
+      compiled_model, infer_request_,
+      function_name_.empty() ? "<unnamed>" : function_name_);
 
   // Bind the shared weights onto the infer request and hold the views for its
   // lifetime (set_input_tensor does not take ownership). GPU only: NPU weights
@@ -727,6 +732,9 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
   // graph with no attachable I/O still works.
   absl::ReaderMutexLock use(use_mutex_);
   LITERT_RETURN_IF_ERROR(EnsureImported());
+  if (hfa_history_) {
+    LITERT_RETURN_IF_ERROR(hfa_history_->Update(infer_request_));
+  }
 #if defined(__ANDROID__)
   const LiteRtSchedulingInfo* scheduling_info = GetSchedulingInfo();
   const bool has_job_priority =

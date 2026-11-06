@@ -60,6 +60,7 @@ litert_lib(
     deps = [
         ":weight_bank_attributes",
         "//litert/c/internal:litert_logging",
+        "//litert/vendors/intel_openvino:hfa_history",
     ] + _OPENVINO_DEPS,
 )
 
@@ -75,6 +76,7 @@ litert_test(
     ],
     deps = [
         ":npu_optimizer",
+        "//litert/vendors/intel_openvino:hfa_history",
     ] + _OPENVINO_DEPS,
 )
 
@@ -260,6 +262,23 @@ litert_lib(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_intel_openvino_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc/options:litert_intel_openvino_options",
+    ] + _OPENVINO_DEPS,
+)
+
+litert_test(
+    name = "openvino_compile_context_test",
+    srcs = ["openvino_compile_context_test.cc"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":openvino_compile_context",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_intel_openvino_options",
     ] + _OPENVINO_DEPS,

@@ -38,6 +38,7 @@
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
+#include "litert/vendors/intel_openvino/hfa_history.h"
 
 class LiteRtDispatchDeviceContextT;
 
@@ -168,6 +169,9 @@ class LiteRtDispatchInvocationContextT {
   // inputs; held for the infer request's lifetime (set_input_tensor does not
   // take ownership).
   std::vector<ov::Tensor> bound_weights_;
+  // Set on a prefill graph whose attention enable_hfa decomposed: writes
+  // NPUW's HFA history before every inference. Belongs to infer_request_.
+  std::optional<litert::openvino::HfaHistoryReporter> hfa_history_;
 
   // The import inputs, kept verbatim so EnsureImported() can do the whole job
   // later. Nothing derived from them is cached: the container parse and device
