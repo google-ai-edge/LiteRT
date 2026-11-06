@@ -98,7 +98,8 @@ TEST(OpOptionsTest, GetUnsupportedOptions) {
 TEST(OpOptionsTest, CompositeOptionsGetNameVersionAndAttributes) {
   auto model = testing::LoadTestFileModel("simple_shlo_composite.tflite");
   auto subgraph = model.MainSubgraph();
-  auto stablehlo_add_n_op = subgraph->Ops().front().Get();
+  std::vector<Op> ops = subgraph->Ops();
+  auto stablehlo_add_n_op = ops.front().Get();
   auto info = GetOptionsAs<CompositeOptions>(stablehlo_add_n_op);
   ASSERT_TRUE(info);
 
@@ -113,7 +114,8 @@ TEST(OpOptionsTest, CompositeOptionsGetNameVersionAndAttributes) {
 TEST(OpOptionsTest, GetRmsNormEpsilon) {
   auto model = testing::LoadTestFileModel("rms_norm_composite.tflite");
   auto subgraph = model.MainSubgraph();
-  auto rms_norm_composite_op = subgraph->Ops().front().Get();
+  std::vector<Op> ops = subgraph->Ops();
+  auto rms_norm_composite_op = ops.front().Get();
   auto info = GetOptionsAs<RmsNormOpts>(rms_norm_composite_op);
 
   ASSERT_TRUE(info);
@@ -125,7 +127,8 @@ TEST(OpOptionsTest, GetRmsNormEpsilon) {
 TEST(OpOptionsTest, GetRmsNormEpsilonFromSimpleComposite) {
   auto model = testing::LoadTestFileModel("simple_shlo_composite.tflite");
   auto subgraph = model.MainSubgraph();
-  auto rms_norm_composite_op = subgraph->Ops().front().Get();
+  std::vector<Op> ops = subgraph->Ops();
+  auto rms_norm_composite_op = ops.front().Get();
   litert::Expected<RmsNormOpts> info =
       GetOptionsAs<RmsNormOpts>(rms_norm_composite_op);
 
