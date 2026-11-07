@@ -937,6 +937,22 @@ TEST(UnfoldGqaSequenceFoldTest, LeavesNonReplicatedMaskAlone) {
   EXPECT_EQ(CountOps<ov::op::v3::Broadcast>(model), 0u);
 }
 
+TEST(NpuOptimizerModelPassRttiTest, ModelPassesAreCastableViaDiscreteTypeInfo) {
+  // On Android (`#if defined(__ANDROID__)` in `openvino/core/type.hpp`),
+  // `ov::as_type_ptr<ov::pass::ModelPass>` uses `DiscreteTypeInfo::is_castable`
+  // rather than `std::dynamic_pointer_cast`. `ov::is_type<T>` exercises the
+  // same `DiscreteTypeInfo::is_castable` chain on all platforms.
+  std::shared_ptr<ov::pass::PassBase> unfold =
+      std::make_shared<UnfoldGqaSequenceFold>();
+  std::shared_ptr<ov::pass::PassBase> split_consts =
+      std::make_shared<SplitSharedConstants>();
+  std::shared_ptr<ov::pass::PassBase> moe_gather =
+      std::make_shared<MoEGatherRewrite>();
+
+  EXPECT_TRUE(ov::is_type<ov::pass::ModelPass>(unfold));
+  EXPECT_TRUE(ov::is_type<ov::pass::ModelPass>(split_consts));
+  EXPECT_TRUE(ov::is_type<ov::pass::ModelPass>(moe_gather));
+}
 }  // namespace
 }  // namespace openvino
 }  // namespace litert
