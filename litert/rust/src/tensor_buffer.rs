@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Managed [`TensorBuffer`] allocation, host memory locking, and asynchronous event
+//! synchronization.
+
 #![allow(non_upper_case_globals)]
 
-use std::any::TypeId;
 use std::ffi::c_void;
 #[cfg(async_support)]
 use std::future::Future;
@@ -22,6 +24,7 @@ use std::marker::PhantomData;
 use std::mem;
 #[cfg(async_support)]
 use std::pin::Pin;
+use std::sync::{Mutex, MutexGuard};
 #[cfg(async_support)]
 use std::task::{Context, Poll};
 
@@ -29,22 +32,35 @@ use crate::bindings::*;
 use crate::call_check_status;
 use crate::environment::Environment;
 use crate::error::{Error, ErrorCause};
+use crate::tensor_buffer_lock::{TensorBufferReadLock, TensorBufferWriteLock, TensorElement};
 
 /// Requirements for a tensor buffer.
 ///
 /// This struct represents the requirements for a tensor buffer. It is used to determine the
 /// supported buffer types and the buffer size.
 pub struct TensorBufferRequirements<'a> {
+    /// Underlying C `LiteRtTensorBufferRequirements` handle borrowed from the compiled model.
     raw_requirements: LiteRtTensorBufferRequirements,
+    /// Binds the lifetime of these requirements to the parent compiled model.
     _phantom: PhantomData<&'a LiteRtTensorBufferRequirements>,
 }
 
 impl<'a> TensorBufferRequirements<'a> {
+    /// Wraps a raw `LiteRtTensorBufferRequirements` handle.
     pub(crate) fn new(raw_requirements: LiteRtTensorBufferRequirements) -> Self {
-        Self { raw_requirements: raw_requirements, _phantom: PhantomData {} }
+        Self { raw_requirements, _phantom: PhantomData {} }
     }
 
     /// Returns the size of the buffer in bytes.
+    ///
+    /// # Returns
+    ///
+    /// The required buffer size in bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] (`ErrorCause::GetTensorBufferRequirementsBufferSize`) if querying the
+    /// buffer size fails.
     pub fn buffer_size(&self) -> Result<usize, Error> {
         let mut buffer_size: usize = 0;
         call_check_status!(
@@ -59,6 +75,15 @@ impl<'a> TensorBufferRequirements<'a> {
     }
 
     /// Returns the supported tensor buffer types.
+    ///
+    /// # Returns
+    ///
+    /// A vector of [`TensorBufferType`]s supported by this tensor.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if querying the count or values of supported buffer types fails, or if an
+    /// unrecognized buffer type enum value is returned.
     pub fn supported_types(&self) -> Result<Vec<TensorBufferType>, Error> {
         let mut num_supported_types: i32 = 0;
         call_check_status!(
@@ -76,8 +101,8 @@ impl<'a> TensorBufferRequirements<'a> {
         for i in 0..num_supported_types {
             let mut ttype = LiteRtTensorBufferType_kLiteRtTensorBufferTypeUnknown;
             call_check_status!(
-                // SAFETY: self.raw_requirements is always valid, it's guaranteed to be initialized by
-                // a wrapper function.
+                // SAFETY: self.raw_requirements is always valid, it's guaranteed to be initialized
+                // by a wrapper function.
                 unsafe {
                     LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
                         self.raw_requirements,
@@ -94,33 +119,55 @@ impl<'a> TensorBufferRequirements<'a> {
 }
 
 /// The element type of a tensor buffer.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ElementType {
+    /// Unspecified element type.
     None,
+    /// 8-bit boolean (`bool`).
     Bool,
+    /// 4-bit signed integer.
     Int4,
+    /// 8-bit signed integer (`i8`).
     Int8,
+    /// 16-bit signed integer (`i16`).
     Int16,
+    /// 32-bit signed integer (`i32`).
     Int32,
+    /// 64-bit signed integer (`i64`).
     Int64,
+    /// 8-bit unsigned integer (`u8`).
     UInt8,
+    /// 16-bit unsigned integer (`u16`).
     UInt16,
+    /// 32-bit unsigned integer (`u32`).
     UInt32,
+    /// 64-bit unsigned integer (`u64`).
     UInt64,
+    /// 16-bit IEEE 754 half-precision floating-point.
     Float16,
+    /// 16-bit brain floating-point (`bfloat16`).
     BFloat16,
+    /// 32-bit IEEE 754 single-precision floating-point (`f32`).
     Float32,
+    /// 64-bit IEEE 754 double-precision floating-point (`f64`).
     Float64,
+    /// 64-bit complex number (two 32-bit floats).
     Complex64,
+    /// 128-bit complex number (two 64-bit floats).
     Complex128,
+    /// TensorFlow resource handle.
     TfResource,
+    /// TensorFlow variable-length string.
     TfString,
+    /// TensorFlow dynamic variant type.
     TfVariant,
 }
 
 impl ElementType {
+    /// Converts the [`ElementType`] into its corresponding `LiteRtElementType` C enum constant.
     #[allow(dead_code)]
-    pub(crate) fn to_c_enum(&self) -> LiteRtElementType {
+    #[must_use]
+    pub(crate) fn to_c_enum(self) -> LiteRtElementType {
         match self {
             Self::None => LiteRtElementType_kLiteRtElementTypeNone,
             Self::Bool => LiteRtElementType_kLiteRtElementTypeBool,
@@ -145,6 +192,7 @@ impl ElementType {
         }
     }
 
+    /// Converts a `LiteRtElementType` C enum constant into an [`ElementType`].
     pub(crate) fn from_c_enum(enum_value: LiteRtElementType) -> Result<ElementType, Error> {
         match enum_value {
             LiteRtElementType_kLiteRtElementTypeNone => Ok(Self::None),
@@ -174,44 +222,58 @@ impl ElementType {
         }
     }
 
-    fn is_compatible<T: 'static>(self) -> bool {
-        let type_id = TypeId::of::<T>();
-        if TypeId::of::<bool>() == type_id {
-            self == Self::Bool
-        } else if TypeId::of::<i8>() == type_id || TypeId::of::<i8>() == type_id {
-            self == Self::Int8 || self == Self::UInt8
-        } else if TypeId::of::<i16>() == type_id || TypeId::of::<i16>() == type_id {
-            self == Self::Int16 || self == Self::UInt16
-        } else if TypeId::of::<i32>() == type_id || TypeId::of::<i32>() == type_id {
-            self == Self::Int32 || self == Self::UInt32
-        } else if TypeId::of::<f32>() == type_id {
-            self == Self::Float32
-        } else if TypeId::of::<f64>() == type_id {
-            self == Self::Float64
-        } else {
-            // TODO: Add support for other types.
-            false
-        }
+    /// Returns `true` if `T` is layout-compatible with `self`.
+    ///
+    /// # Returns
+    ///
+    /// `true` if `T` can be safely read from or written to a [`TensorBuffer`] of element type
+    /// `self`, `false` otherwise.
+    #[must_use]
+    pub fn is_compatible<T: TensorElement>(self) -> bool {
+        T::is_compatible(self)
     }
 }
 
+/// Backing memory type of a [`TensorBuffer`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TensorBufferType {
+    /// Unknown or unspecified buffer type.
     Unknown,
+    /// Standard CPU host memory.
     HostMemory,
+    /// Android Hardware Buffer (`AHardwareBuffer`).
     Ahwb,
+    /// Android ION memory buffer.
     Ion,
+    /// Linux DMA-BUF memory buffer.
     DmaBuf,
+    /// Qualcomm `FastRPC` memory buffer.
     FastRpc,
+    /// OpenGL buffer object.
     GlBuffer,
+    /// OpenGL texture object.
     GlTexture,
+    /// `OpenCL` buffer object.
     OpenClBuffer,
+    /// `OpenCL` FP16 buffer object.
     OpenClBufferFp16,
+    /// `OpenCL` texture object.
     OpenClTexture,
+    /// `OpenCL` FP16 texture object.
     OpenClTextureFp16,
+    /// Packed `OpenCL` buffer object.
     OpenClBufferPacked,
 }
 
 impl TensorBufferType {
+    /// Converts the tensor buffer type variant into its corresponding `LiteRtTensorBufferType` C
+    /// enum constant.
+    ///
+    /// # Returns
+    ///
+    /// The `LiteRtTensorBufferType` C enum value corresponding to `self`.
+    #[allow(clippy::wrong_self_convention)]
+    #[must_use]
     pub fn to_c_enum(&self) -> LiteRtTensorBufferType {
         match self {
             Self::Unknown => LiteRtTensorBufferType_kLiteRtTensorBufferTypeUnknown,
@@ -235,6 +297,21 @@ impl TensorBufferType {
             }
         }
     }
+
+    /// Converts a `LiteRtTensorBufferType` C enum value into a [`TensorBufferType`].
+    ///
+    /// # Arguments
+    ///
+    /// * `enum_value` - The raw `LiteRtTensorBufferType` C enum value.
+    ///
+    /// # Returns
+    ///
+    /// The matching [`TensorBufferType`] variant.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] (`ErrorCause::InvalidTensorBufferTypeEnumValue`) if `enum_value` is not
+    /// recognized.
     pub fn from_c_enum(enum_value: LiteRtTensorBufferType) -> Result<TensorBufferType, Error> {
         match enum_value {
             LiteRtTensorBufferType_kLiteRtTensorBufferTypeUnknown => Ok(Self::Unknown),
@@ -264,29 +341,27 @@ impl TensorBufferType {
     }
 }
 
+/// A managed tensor buffer holding input or output tensor data for model execution.
 pub struct TensorBuffer<'a> {
+    /// Underlying C `LiteRtTensorBuffer` handle owned by this struct.
     pub(crate) raw_tensor_buffer: LiteRtTensorBuffer,
+    /// Scalar element type of this tensor buffer.
     element_type: ElementType,
+    /// Shape dimensions of this tensor buffer.
     dimensions: Vec<i32>,
+    /// Serializes host-memory lock/unlock transitions on `raw_tensor_buffer`.
+    lock_mutex: Mutex<()>,
+    /// Optional lifetime marker for borrowed buffer contexts.
     _phantom: PhantomData<&'a LiteRtTensorBuffer>,
 }
 
-struct TensorBufferLock<'a, T> {
-    buffer: &'a TensorBuffer<'a>,
-    raw_data: *mut T,
-}
-
-impl<T> Drop for TensorBufferLock<'_, T> {
-    fn drop(&mut self) {
-        // SAFETY: self.buffer.raw_tensor_buffer is always valid, it's guaranteed to be initialized by
-        // a wrapper function.
-        unsafe {
-            LiteRtUnlockTensorBuffer(self.buffer.raw_tensor_buffer);
-        }
-    }
-}
-
 impl<'a> TensorBuffer<'a> {
+    /// Acquires the internal mutex serializing lock/unlock calls on `self.raw_tensor_buffer`.
+    pub(crate) fn lock_state_mutex(&self) -> MutexGuard<'_, ()> {
+        self.lock_mutex.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Allocates and zero-initializes a new managed [`TensorBuffer`] in the given [`Environment`].
     pub(crate) fn new(
         environment: &Environment,
         tensor_type: &LiteRtRankedTensorType,
@@ -296,8 +371,8 @@ impl<'a> TensorBuffer<'a> {
     ) -> Result<TensorBuffer<'a>, Error> {
         let mut buffer_ptr: *mut LiteRtTensorBufferT = std::ptr::null_mut();
         call_check_status!(
-            // SAFETY: environment.raw_environment is always valid, it's guaranteed to be initialized by
-            // a wrapper function.
+            // SAFETY: `environment.raw_environment` is a valid `LiteRtEnvironment`, `tensor_type`
+            // is a valid `LiteRtRankedTensorType` reference, and `buffer_ptr` is a valid out-ptr.
             unsafe {
                 LiteRtCreateManagedTensorBuffer(
                     environment.raw_environment,
@@ -309,64 +384,186 @@ impl<'a> TensorBuffer<'a> {
             },
             ErrorCause::CreateManagedTensorBuffer
         );
-        let dimensions =
-            tensor_type.layout.dimensions[..tensor_type.layout.rank().try_into().unwrap()]
-                .to_vec();
+        // Zero-initialize managed buffers on creation so forming `&[T]` / `&mut [T]` over a newly
+        // created buffer (especially `T = bool`, which requires `0x00` or `0x01`) is never UB.
+        // SAFETY: `buffer_ptr` is a valid `LiteRtTensorBuffer` returned by
+        // `LiteRtCreateManagedTensorBuffer`.
+        let clear_status = unsafe { LiteRtClearTensorBuffer(buffer_ptr) };
+        if clear_status != LiteRtStatus_kLiteRtStatusOk
+            && clear_status != LiteRtStatus_kLiteRtStatusErrorUnsupported
+        {
+            // SAFETY: `buffer_ptr` was just created above and has not been wrapped in
+            // `TensorBuffer` yet, so destroying it on error cleanup cannot double-free.
+            unsafe {
+                LiteRtDestroyTensorBuffer(buffer_ptr);
+            }
+            return Err(Error::new(ErrorCause::CreateManagedTensorBuffer, clear_status));
+        }
+        let rank = usize::try_from(tensor_type.layout.rank())
+            .unwrap_or(0)
+            .min(tensor_type.layout.dimensions.len());
+        let dimensions = tensor_type.layout.dimensions[..rank].to_vec();
         Ok(TensorBuffer {
             raw_tensor_buffer: buffer_ptr,
             dimensions,
             element_type,
+            lock_mutex: Mutex::new(()),
             _phantom: PhantomData {},
         })
     }
 
     /// Returns the element type of the tensor buffer.
+    ///
+    /// # Returns
+    ///
+    /// The [`ElementType`] of elements stored in this buffer.
+    #[must_use]
     pub fn element_type(&self) -> ElementType {
         self.element_type
     }
 
     /// Returns dimensions of the tensor buffer.
+    ///
+    /// # Returns
+    ///
+    /// A slice of dimension sizes (`&[i32]`) for this buffer's layout.
+    #[must_use]
     pub fn dimensions(&self) -> &[i32] {
         &self.dimensions
     }
 
-    fn lock_read<T>(&'a self) -> Result<TensorBufferLock<'a, T>, Error> {
+    /// Locks the tensor buffer in read mode and returns a zero-copy RAII guard implementing
+    /// `Deref<Target = [T]>`.
+    ///
+    /// Note that the underlying `LiteRT` runtime enforces exclusive lock semantics on a
+    /// `LiteRtTensorBuffer`: attempting to call `lock_read` or `lock_write` while a lock guard on
+    /// the same buffer is still alive returns `Err` (`ErrorCause::LockTensorBufferRead`).
+    ///
+    /// # Returns
+    ///
+    /// A [`TensorBufferReadLock`] guard dereferencing to `&[T]`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if `T` is incompatible with `self.element_type()`
+    /// (`ErrorCause::IncompatibleReadType`) or if locking the underlying buffer fails
+    /// (`ErrorCause::LockTensorBufferRead`).
+    pub fn lock_read<T: TensorElement>(&self) -> Result<TensorBufferReadLock<'_, T>, Error> {
+        if !T::is_compatible(self.element_type) {
+            return Err(Error::new(
+                ErrorCause::IncompatibleReadType,
+                LiteRtStatus_kLiteRtStatusErrorInvalidArgument,
+            ));
+        }
+        let byte_size = self.packed_size()?;
+        let len = byte_size / mem::size_of::<T>();
         let mut data: *mut c_void = std::ptr::null_mut();
-        call_check_status!(
-            // SAFETY: self.raw_tensor_buffer is always valid, it's guaranteed to be initialized by
-            // a wrapper function.
-            // We assume that the output is valid if the return status is OK or don't use the output pointer.
-            unsafe {
-                LiteRtLockTensorBuffer(
-                    self.raw_tensor_buffer,
-                    &mut data,
-                    LiteRtTensorBufferLockMode_kLiteRtTensorBufferLockModeRead,
-                )
-            },
-            ErrorCause::LockTensorBufferRead
-        );
-        Ok(TensorBufferLock { buffer: self, raw_data: data as *mut T })
+        {
+            let _guard = self.lock_state_mutex();
+            call_check_status!(
+                // SAFETY:
+                // - `self.raw_tensor_buffer` is a valid, non-null `LiteRtTensorBuffer` owned by
+                //   `self`.
+                // - `_guard` serializes `LiteRtLockTensorBuffer` / `LiteRtUnlockTensorBuffer`
+                //   calls on this buffer across threads.
+                // - `&mut data` is a valid stack out-pointer populated with the mapped host memory
+                //   address when `LiteRtLockTensorBuffer` returns `kLiteRtStatusOk`.
+                unsafe {
+                    LiteRtLockTensorBuffer(
+                        self.raw_tensor_buffer,
+                        &mut data,
+                        LiteRtTensorBufferLockMode_kLiteRtTensorBufferLockModeRead,
+                    )
+                },
+                ErrorCause::LockTensorBufferRead
+            );
+            if len > 0 && (data.is_null() || !(data as usize).is_multiple_of(mem::align_of::<T>()))
+            {
+                // SAFETY: `self.raw_tensor_buffer` was just locked above while holding `_guard`.
+                unsafe {
+                    let _ = LiteRtUnlockTensorBuffer(self.raw_tensor_buffer);
+                }
+                return Err(Error::new(
+                    ErrorCause::LockTensorBufferRead,
+                    LiteRtStatus_kLiteRtStatusErrorRuntimeFailure,
+                ));
+            }
+        }
+        let ptr = if len == 0 { std::ptr::NonNull::dangling().as_ptr() } else { data as *const T };
+        Ok(TensorBufferReadLock { buffer: self, ptr, len })
     }
 
-    fn lock_write<T>(&'a self) -> Result<TensorBufferLock<'a, T>, Error> {
+    /// Locks the tensor buffer in write mode and returns a zero-copy RAII guard implementing
+    /// `DerefMut<Target = [T]>`.
+    ///
+    /// Note that the underlying `LiteRT` runtime enforces exclusive lock semantics on a
+    /// `LiteRtTensorBuffer`: attempting to call `lock_read` or `lock_write` while a lock guard on
+    /// the same buffer is still alive returns `Err` (`ErrorCause::LockTensorBufferWrite`).
+    ///
+    /// # Returns
+    ///
+    /// A [`TensorBufferWriteLock`] guard dereferencing to `&mut [T]`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if `T` is incompatible with `self.element_type()`
+    /// (`ErrorCause::IncompatibleWriteType`) or if locking the underlying buffer fails
+    /// (`ErrorCause::LockTensorBufferWrite`).
+    pub fn lock_write<T: TensorElement>(&self) -> Result<TensorBufferWriteLock<'_, T>, Error> {
+        if !T::is_compatible(self.element_type) {
+            return Err(Error::new(
+                ErrorCause::IncompatibleWriteType,
+                LiteRtStatus_kLiteRtStatusErrorInvalidArgument,
+            ));
+        }
+        let byte_size = self.packed_size()?;
+        let len = byte_size / mem::size_of::<T>();
         let mut data: *mut c_void = std::ptr::null_mut();
-        call_check_status!(
-            // SAFETY: self.raw_tensor_buffer is always valid, it's guaranteed to be initialized by
-            // a wrapper function.
-            // We assume that the output is valid if the return status is OK or don't use the output pointer.
-            unsafe {
-                LiteRtLockTensorBuffer(
-                    self.raw_tensor_buffer,
-                    &mut data,
-                    LiteRtTensorBufferLockMode_kLiteRtTensorBufferLockModeWrite,
-                )
-            },
-            ErrorCause::LockTensorBufferWrite
-        );
-        Ok(TensorBufferLock { buffer: self, raw_data: data as *mut T })
+        {
+            let _guard = self.lock_state_mutex();
+            call_check_status!(
+                // SAFETY:
+                // - `self.raw_tensor_buffer` is a valid, non-null `LiteRtTensorBuffer` owned by
+                //   `self`.
+                // - `_guard` serializes `LiteRtLockTensorBuffer` / `LiteRtUnlockTensorBuffer`
+                //   calls on this buffer across threads.
+                // - `&mut data` is a valid stack out-pointer populated with the mapped host memory
+                //   address when `LiteRtLockTensorBuffer` returns `kLiteRtStatusOk`.
+                unsafe {
+                    LiteRtLockTensorBuffer(
+                        self.raw_tensor_buffer,
+                        &mut data,
+                        LiteRtTensorBufferLockMode_kLiteRtTensorBufferLockModeWrite,
+                    )
+                },
+                ErrorCause::LockTensorBufferWrite
+            );
+            if len > 0 && (data.is_null() || !(data as usize).is_multiple_of(mem::align_of::<T>()))
+            {
+                // SAFETY: `self.raw_tensor_buffer` was just locked above while holding `_guard`.
+                unsafe {
+                    let _ = LiteRtUnlockTensorBuffer(self.raw_tensor_buffer);
+                }
+                return Err(Error::new(
+                    ErrorCause::LockTensorBufferWrite,
+                    LiteRtStatus_kLiteRtStatusErrorRuntimeFailure,
+                ));
+            }
+        }
+        let ptr = if len == 0 { std::ptr::NonNull::dangling().as_ptr() } else { data as *mut T };
+        Ok(TensorBufferWriteLock { buffer: self, ptr, len })
     }
 
-    /// Returns the size of the tensor buffer in bytes.
+    /// Returns the packed size of the tensor buffer in bytes.
+    ///
+    /// # Returns
+    ///
+    /// The packed byte size of the tensor buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] (`ErrorCause::GetTensorBufferPackedSize`) if querying the packed size
+    /// fails.
     pub fn packed_size(&self) -> Result<usize, Error> {
         let mut size: usize = 0;
         call_check_status!(
@@ -378,78 +575,76 @@ impl<'a> TensorBuffer<'a> {
         Ok(size)
     }
 
-    /// Writes data to the tensor buffer.
+    /// Writes data from `data` into the tensor buffer.
     ///
-    /// The data must be compatible with the element type of the tensor buffer.
-    /// The data must be big enough to fill the tensor buffer.
+    /// # Arguments
     ///
-    /// Returns the number of bytes written to the tensor buffer.
-    pub fn write<T: 'static>(&self, data: &[T]) -> Result<usize, Error> {
-        if !self.element_type.is_compatible::<T>() {
-            return Err(Error::new(
-                ErrorCause::IncompatibleWriteType,
-                LiteRtStatus_kLiteRtStatusErrorInvalidArgument,
-            ));
-        }
-        let lock = self.lock_write()?;
-        let dst_size = self.packed_size()?;
-        let src_size = mem::size_of_val(data);
-        if dst_size < src_size {
+    /// * `data` - Slice of elements to copy into the tensor buffer. `T` must be compatible with
+    ///   [`Self::element_type`], and `data.len()` must not exceed the buffer's element capacity.
+    ///
+    /// # Returns
+    ///
+    /// The number of bytes written to the tensor buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if `T` is incompatible (`ErrorCause::IncompatibleWriteType`), `data`
+    /// exceeds the buffer capacity (`ErrorCause::TensorBufferTooSmall`), or locking the buffer
+    /// fails.
+    pub fn write<T: TensorElement>(&self, data: &[T]) -> Result<usize, Error> {
+        let mut lock = self.lock_write::<T>()?;
+        if lock.len() < data.len() {
             return Err(Error::new(
                 ErrorCause::TensorBufferTooSmall,
                 LiteRtStatus_kLiteRtStatusErrorRuntimeFailure,
             ));
         }
-        // TODO(mgubin): Do something when input data is smaller that the tensor buffer.
-        // SAFETY: lock.raw_data is always valid, it's guaranteed to be initialized by
-        // lock_write function.
-        // data is a pointer to the start of the data buffer, it's valid as provided by safe
-        // Rust code.
-        // src_size / std::mem::size_of::<T>() is the number of elements to copy, it's
-        // guaranteed that it won't overwrite the output buffer of read after the end of the input data.
-        unsafe {
-            std::ptr::copy(data.as_ptr(), lock.raw_data, src_size / std::mem::size_of::<T>());
-        }
-
-        Ok(src_size)
+        lock[..data.len()].copy_from_slice(data);
+        Ok(mem::size_of_val(data))
     }
 
-    /// Reads data from the tensor buffer.
+    /// Reads data from the tensor buffer into `data`.
     ///
-    /// The data must be compatible with the element type of the tensor buffer.
-    /// The data must be big enough.
+    /// # Arguments
     ///
-    /// Returns the number of bytes read from the tensor buffer.
-    pub fn read<T: 'static>(&self, data: &mut [T]) -> Result<usize, Error> {
-        if !self.element_type.is_compatible::<T>() {
+    /// * `data` - Destination slice to receive the tensor buffer elements. `T` must be compatible
+    ///   with [`Self::element_type`], and `data.len()` must be at least the number of elements in
+    ///   the tensor buffer.
+    ///
+    /// # Returns
+    ///
+    /// The number of elements read from the tensor buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if `T` is incompatible (`ErrorCause::IncompatibleReadType`), `data` is
+    /// smaller than the buffer's element count (`ErrorCause::ReadBufferTooSmall`), or locking the
+    /// buffer fails.
+    pub fn read<T: TensorElement>(&self, data: &mut [T]) -> Result<usize, Error> {
+        let lock = self.lock_read::<T>()?;
+        if data.len() < lock.len() {
             return Err(Error::new(
-                ErrorCause::IncompatibleReadType,
-                LiteRtStatus_kLiteRtStatusErrorInvalidArgument,
-            ));
-        }
-        let lock = self.lock_read()?;
-        let src_size = self.packed_size()?;
-        let dst_size = mem::size_of_val(data);
-        if dst_size < src_size {
-            return Err(Error::new(
-                ErrorCause::TensorBufferTooSmall,
+                ErrorCause::ReadBufferTooSmall,
                 LiteRtStatus_kLiteRtStatusErrorRuntimeFailure,
             ));
         }
-        let to_copy = std::cmp::min(src_size, dst_size) / std::mem::size_of::<T>();
-        // SAFETY: lock.raw_data is always valid, it's guaranteed to be initialized by
-        // lock_read function.
-        // data is a pointer to the start of the data buffer, it's valid as provided by safe
-        // Rust code.
-        // to_copy is the number of elements to copy, it's guaranteed that it won't overwrite
-        // the output buffer of read after the end of the input data.
-        unsafe {
-            std::ptr::copy(lock.raw_data, data.as_mut_ptr(), to_copy);
-        }
+        let to_copy = lock.len();
+        data[..to_copy].copy_from_slice(&lock[..to_copy]);
         Ok(to_copy)
     }
 
-    /// Returns true if the tensor buffer has an event attached.
+    /// Clears any synchronization event attached to the tensor buffer.
+    #[cfg(async_support)]
+    pub(crate) fn clear_event(&self) -> Result<(), Error> {
+        call_check_status!(
+            // SAFETY: `self.raw_tensor_buffer` is a valid `LiteRtTensorBuffer` owned by `self`.
+            unsafe { LiteRtClearTensorBufferEvent(self.raw_tensor_buffer) },
+            ErrorCause::SetTensorBufferEvent
+        );
+        Ok(())
+    }
+
+    /// Returns `true` if the tensor buffer has a synchronization event attached.
     #[cfg(async_support)]
     fn has_event(&self) -> Result<bool, Error> {
         let mut has_event = false;
@@ -461,9 +656,9 @@ impl<'a> TensorBuffer<'a> {
         Ok(has_event)
     }
 
-    /// Returns the event attached to the tensor buffer, if any.
+    /// Returns the synchronization event attached to the tensor buffer, if any.
     #[cfg(async_support)]
-    fn event(&self) -> Result<Option<Event<'_>>, Error> {
+    pub(crate) fn event(&self) -> Result<Option<Event<'_>>, Error> {
         if !self.has_event()? {
             return Ok(None);
         }
@@ -480,6 +675,38 @@ impl<'a> TensorBuffer<'a> {
         }
     }
 
+    /// Returns a future that resolves once any synchronization event attached to this buffer is
+    /// signaled.
+    #[cfg(async_support)]
+    #[allow(dead_code)]
+    pub(crate) fn wait_event(&self) -> WaitEvent<'_> {
+        WaitEvent { buffer: self }
+    }
+
+    /// Blocks the current thread until any synchronization event attached to this buffer is
+    /// signaled, and clears the event so the buffer can be reused in subsequent runs.
+    #[cfg(async_support)]
+    #[allow(dead_code)]
+    pub(crate) fn wait_event_blocking(&self) -> Result<(), Error> {
+        if let Some(event) = self.event()? {
+            if !event.is_signaled()? {
+                call_check_status!(
+                    // SAFETY:
+                    // - `event.raw_event` is a valid, non-null `LiteRtEvent` borrowed from `self`
+                    //   for the duration of this call.
+                    // - `timeout_in_ms = -1` instructs the LiteRT runtime to block indefinitely
+                    //   until the event signals.
+                    unsafe { LiteRtWaitEvent(event.raw_event, -1) },
+                    ErrorCause::WaitEvent
+                );
+            }
+            drop(event);
+            self.clear_event()?;
+        }
+        Ok(())
+    }
+
+    /// Attaches a synchronization [`Event`] to this tensor buffer (used in unit tests).
     #[cfg(all(test, async_support))]
     fn set_event(&self, mut event: Event<'_>) -> Result<(), Error> {
         call_check_status!(
@@ -491,21 +718,33 @@ impl<'a> TensorBuffer<'a> {
         Ok(())
     }
 
-    /// Reads data from the tensor buffer asynchronously.
+    /// Reads data from the tensor buffer asynchronously into `data`.
     ///
-    /// If the buffer has an event attached, it waits for the event to be signaled
-    /// before reading.
+    /// If the buffer has a synchronization event attached, the returned future waits for the event
+    /// to signal (and clears it) before reading the buffer into `data`.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - Destination slice to receive the tensor buffer elements.
+    ///
+    /// # Returns
+    ///
+    /// A [`ReadAsync`] future that resolves to `Result<usize, Error>` with the number of elements
+    /// read.
     #[cfg(async_support)]
-    pub fn read_async<'b, T: 'static>(&self, data: &'b mut [T]) -> ReadAsync<'_, 'b, T> {
+    pub fn read_async<'b, T: TensorElement>(&self, data: &'b mut [T]) -> ReadAsync<'_, 'b, T> {
         ReadAsync { buffer: self, data: Some(data) }
     }
 }
 
-/// A synchronization event.
+/// A synchronization event attached to or managed by a [`TensorBuffer`].
 #[cfg(async_support)]
-pub struct Event<'a> {
+pub(crate) struct Event<'a> {
+    /// Underlying C `LiteRtEvent` handle.
     pub(crate) raw_event: LiteRtEvent,
+    /// Whether this wrapper owns `raw_event` and should destroy it on drop.
     owned: bool,
+    /// Binds this event's lifetime to the parent [`TensorBuffer`] when borrowed.
     _phantom: PhantomData<&'a LiteRtEvent>,
 }
 
@@ -523,7 +762,7 @@ impl Drop for Event<'_> {
 
 #[cfg(async_support)]
 impl<'a> Event<'a> {
-    /// Returns true if the event is signaled.
+    /// Returns `true` if the synchronization event has signaled.
     fn is_signaled(&self) -> Result<bool, Error> {
         let mut is_signaled = false;
         call_check_status!(
@@ -535,14 +774,51 @@ impl<'a> Event<'a> {
     }
 }
 
+/// Future returned by [`TensorBuffer::wait_event`] that resolves when the buffer's event signals.
 #[cfg(async_support)]
-pub struct ReadAsync<'a, 'b, T> {
+pub(crate) struct WaitEvent<'a> {
+    /// Reference to the [`TensorBuffer`] whose attached event is being awaited.
     buffer: &'a TensorBuffer<'a>,
+}
+
+#[cfg(async_support)]
+impl Future for WaitEvent<'_> {
+    type Output = Result<(), Error>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let event = match self.buffer.event() {
+            Ok(Some(e)) => e,
+            Ok(None) => return Poll::Ready(Ok(())),
+            Err(e) => return Poll::Ready(Err(e)),
+        };
+
+        match event.is_signaled() {
+            Ok(true) => {
+                drop(event);
+                Poll::Ready(self.buffer.clear_event())
+            }
+            Ok(false) => {
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+            Err(e) => Poll::Ready(Err(e)),
+        }
+    }
+}
+
+/// Future returned by [`TensorBuffer::read_async`] that awaits any attached synchronization event
+/// before copying tensor data into the caller's slice.
+#[cfg(async_support)]
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+pub struct ReadAsync<'a, 'b, T> {
+    /// Reference to the [`TensorBuffer`] being read.
+    buffer: &'a TensorBuffer<'a>,
+    /// Destination slice consumed once the read completes.
     data: Option<&'b mut [T]>,
 }
 
 #[cfg(async_support)]
-impl<'a, 'b, T: 'static> Future for ReadAsync<'a, 'b, T> {
+impl<'a, 'b, T: TensorElement> Future for ReadAsync<'a, 'b, T> {
     type Output = Result<usize, Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -557,6 +833,10 @@ impl<'a, 'b, T: 'static> Future for ReadAsync<'a, 'b, T> {
 
         match event.is_signaled() {
             Ok(true) => {
+                drop(event);
+                if let Err(e) = self.buffer.clear_event() {
+                    return Poll::Ready(Err(e));
+                }
                 let data = self.data.take().expect("Future polled after completion");
                 Poll::Ready(self.buffer.read(data))
             }
@@ -571,13 +851,24 @@ impl<'a, 'b, T: 'static> Future for ReadAsync<'a, 'b, T> {
 
 impl Drop for TensorBuffer<'_> {
     fn drop(&mut self) {
-        // SAFETY: self.raw_tensor_buffer is always valid, it's guaranteed to be initialized by
-        // a wrapper function.
+        // SAFETY: `self.raw_tensor_buffer` is a valid, non-null `LiteRtTensorBuffer` owned by
+        // `self`, and all `TensorBufferReadLock` / `TensorBufferWriteLock` guards borrow `&self` so
+        // the buffer cannot be locked when dropped.
         unsafe {
             LiteRtDestroyTensorBuffer(self.raw_tensor_buffer);
         }
     }
 }
+
+// SAFETY: `TensorBuffer` uniquely owns its `LiteRtTensorBuffer` handle and has no thread-local
+// affinity, so transferring ownership across threads is safe.
+unsafe impl Send for TensorBuffer<'_> {}
+
+// SAFETY: Shared references `&TensorBuffer` serialize `LiteRtLockTensorBuffer` and
+// `LiteRtUnlockTensorBuffer` calls through `self.lock_mutex`, and the underlying C++
+// `LiteRtTensorBufferT` rejects concurrent locks with an error rather than allowing aliased host
+// slices.
+unsafe impl Sync for TensorBuffer<'_> {}
 
 #[cfg(test)]
 mod tests {
@@ -616,8 +907,117 @@ mod tests {
     #[test]
     fn test_element_type_compatibility() {
         assert!(ElementType::Bool.is_compatible::<bool>());
+        assert!(ElementType::Int8.is_compatible::<i8>());
+        assert!(ElementType::UInt8.is_compatible::<u8>());
+        assert!(ElementType::Int16.is_compatible::<i16>());
+        assert!(ElementType::UInt16.is_compatible::<u16>());
+        assert!(ElementType::Int32.is_compatible::<i32>());
+        assert!(ElementType::UInt32.is_compatible::<u32>());
+        assert!(ElementType::Int64.is_compatible::<i64>());
+        assert!(ElementType::UInt64.is_compatible::<u64>());
+        assert!(ElementType::Float32.is_compatible::<f32>());
+        assert!(ElementType::Float64.is_compatible::<f64>());
         assert!(!ElementType::Bool.is_compatible::<u32>());
         assert!(!ElementType::Float32.is_compatible::<u32>());
+        assert!(ElementType::Int32.is_compatible::<u32>());
+        assert!(ElementType::UInt32.is_compatible::<i32>());
+        assert!(!ElementType::Int32.is_compatible::<i16>());
+        assert!(!ElementType::Int64.is_compatible::<i32>());
+    }
+
+    #[test]
+    fn test_tensor_buffer_lock_read_write() {
+        let env = crate::EnvironmentBuilder::build_default().unwrap();
+        // SAFETY: layout is a C struct with pod fields.
+        let mut layout: LiteRtLayout = unsafe { std::mem::zeroed() };
+        layout.set_rank(1);
+        layout.dimensions[0] = 4;
+
+        let tensor_type = LiteRtRankedTensorType {
+            element_type: LiteRtElementType_kLiteRtElementTypeFloat32,
+            layout,
+        };
+
+        let buffer = TensorBuffer::new(
+            &env,
+            &tensor_type,
+            &TensorBufferType::HostMemory,
+            16,
+            ElementType::Float32,
+        )
+        .unwrap();
+
+        {
+            let mut write_lock = buffer.lock_write::<f32>().unwrap();
+            assert_eq!(write_lock.len(), 4);
+            for (i, v) in write_lock.iter_mut().enumerate() {
+                *v = (i as f32) * 2.5;
+            }
+        }
+
+        {
+            let read_lock = buffer.lock_read::<f32>().unwrap();
+            assert_eq!(&*read_lock, &[0.0f32, 2.5, 5.0, 7.5]);
+        }
+
+        assert!(buffer.lock_read::<i32>().is_err());
+        assert!(buffer.lock_write::<i32>().is_err());
+
+        // Double-lock attempts while a lock is held return an error instead of UB or deadlock.
+        {
+            let read_lock = buffer.lock_read::<f32>().unwrap();
+            let err_read = buffer.lock_read::<f32>().err().expect("Expected double-lock error");
+            assert_eq!(err_read.cause(), ErrorCause::LockTensorBufferRead);
+            let err_write = buffer.lock_write::<f32>().err().expect("Expected double-lock error");
+            assert_eq!(err_write.cause(), ErrorCause::LockTensorBufferWrite);
+            assert_eq!(&*read_lock, &[0.0f32, 2.5, 5.0, 7.5]);
+        }
+
+        // Write buffer too small vs read buffer too small.
+        let err_write_small = buffer.write(&[1.0f32; 5]).unwrap_err();
+        assert_eq!(err_write_small.cause(), ErrorCause::TensorBufferTooSmall);
+
+        let mut short_out = [0.0f32; 2];
+        let err_read_small = buffer.read(&mut short_out).unwrap_err();
+        assert_eq!(err_read_small.cause(), ErrorCause::ReadBufferTooSmall);
+    }
+
+    #[test]
+    fn test_bool_tensor_buffer_zero_initialized_and_read_write() {
+        let env = crate::EnvironmentBuilder::build_default().unwrap();
+        // SAFETY: `LiteRtLayout` is a plain-old-data C struct.
+        let mut layout: LiteRtLayout = unsafe { std::mem::zeroed() };
+        layout.set_rank(1);
+        layout.dimensions[0] = 4;
+
+        let tensor_type = LiteRtRankedTensorType {
+            element_type: LiteRtElementType_kLiteRtElementTypeBool,
+            layout,
+        };
+
+        let buffer = TensorBuffer::new(
+            &env,
+            &tensor_type,
+            &TensorBufferType::HostMemory,
+            4,
+            ElementType::Bool,
+        )
+        .unwrap();
+        assert_eq!(buffer.element_type(), ElementType::Bool);
+        assert_eq!(buffer.dimensions(), &[4]);
+
+        // Newly created `bool` buffer is zero-initialized (`false`), so locking immediately is
+        // well-defined.
+        {
+            let initial_lock = buffer.lock_read::<bool>().unwrap();
+            assert_eq!(&*initial_lock, &[false, false, false, false]);
+        }
+
+        buffer.write(&[true, false, true, false]).unwrap();
+        let mut out = [false; 4];
+        let count = buffer.read(&mut out).unwrap();
+        assert_eq!(count, 4);
+        assert_eq!(out, [true, false, true, false]);
     }
 
     #[test]

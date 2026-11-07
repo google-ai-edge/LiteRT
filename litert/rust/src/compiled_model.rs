@@ -19,28 +19,36 @@ use crate::call_check_status;
 use crate::environment::Environment;
 use crate::error::{Error, ErrorCause};
 use crate::model::{InputOutputIndex, Model, SignatureIndex, Tensor};
-use crate::tensor_buffer::{TensorBuffer, TensorBufferRequirements};
+use crate::tensor_buffer::{ElementType, TensorBuffer, TensorBufferRequirements};
+use std::sync::{Mutex, MutexGuard};
 
 /// Options for compiling a model.
 pub struct Options {
+    /// Underlying C `LiteRtOptions` handle owned by this struct.
     raw_options: LiteRtOptions,
 }
 
 /// Hardware accelerators that can be used for inference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiteRtHwAccelerator {
+    /// No hardware acceleration.
     None,
+    /// CPU execution.
     Cpu,
+    /// GPU acceleration.
     Gpu,
+    /// NPU (Neural Processing Unit) acceleration.
     Npu,
 }
 
 impl LiteRtHwAccelerator {
-    /// Converts the hardware accelerator enum variant into its corresponding LiteRT C enum value.
+    /// Converts the hardware accelerator enum variant into its corresponding `LiteRT` C enum value.
     ///
     /// # Returns
     ///
     /// The `LiteRtHwAccelerators` C enum constant matching `self`.
+    #[allow(clippy::wrong_self_convention)]
+    #[must_use]
     pub fn to_c_enum(&self) -> LiteRtHwAccelerators {
         match self {
             Self::None => LiteRtHwAccelerators_kLiteRtHwAcceleratorNone,
@@ -56,8 +64,13 @@ impl Options {
     ///
     /// # Returns
     ///
-    /// * `Ok(Options)` - A newly initialized `Options` instance with default settings.
-    /// * `Err(Error)` - If the underlying LiteRT C API fails to create the options object.
+    /// A newly initialized [`Options`] instance with default settings.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] (`ErrorCause::CreateOptions`) if the underlying `LiteRT` C API fails to
+    /// create the options object.
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Result<Self, Error> {
         let mut raw_options_ptr: *mut LiteRtOptionsT = std::ptr::null_mut();
         call_check_status!(
@@ -73,13 +86,16 @@ impl Options {
     ///
     /// # Arguments
     ///
-    /// * `accelerator` - The hardware accelerator (`LiteRtHwAccelerator`) to target during
+    /// * `accelerator` - The hardware accelerator ([`LiteRtHwAccelerator`]) to target during
     ///   compilation and inference.
     ///
     /// # Returns
     ///
-    /// * `Ok(Options)` - A newly initialized `Options` instance configured for `accelerator`.
-    /// * `Err(Error)` - If creating the options or setting the hardware accelerator fails.
+    /// A newly initialized [`Options`] instance configured for `accelerator`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if creating the options or setting the hardware accelerator fails.
     pub fn create_with_accelerator(accelerator: LiteRtHwAccelerator) -> Result<Self, Error> {
         let accelerator_c_enum = accelerator.to_c_enum();
         let options = Self::default()?;
@@ -107,31 +123,49 @@ impl Drop for Options {
 
 /// A compiled model that can be used to run inference.
 pub struct CompiledModel {
+    /// Underlying C `LiteRtCompiledModel` handle owned by this struct.
     pub(crate) raw_compiled_model: LiteRtCompiledModel,
+    /// Serializes all C API operations on `raw_compiled_model` so `CompiledModel` is `Sync`
+    /// (`LiteRtCompiledModelT` in C++ owns a single `tflite::Interpreter` and unguarded caches).
+    mutex: Mutex<()>,
 }
 
 impl CompiledModel {
+    /// Acquires the internal mutex serializing C API access to `self.raw_compiled_model`.
+    pub(crate) fn lock_model(&self) -> MutexGuard<'_, ()> {
+        self.mutex.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Compiles a [`Model`] within the given [`Environment`] using the specified [`Options`].
     ///
     /// # Arguments
     ///
-    /// * `environment` - The LiteRT [`Environment`] used to manage runtime resources and
+    /// * `environment` - The `LiteRT` [`Environment`] used to manage runtime resources and
     ///   accelerators. Must outlive the `CompiledModel` and any executions running on it.
     /// * `model` - The [`Model`] to compile. Must outlive the `CompiledModel`.
     /// * `options` - Compilation [`Options`] specifying hardware accelerators and other settings.
     ///
     /// # Returns
     ///
-    /// * `Ok(CompiledModel)` - The compiled model ready for buffer creation and inference.
-    /// * `Err(Error)` - If model compilation fails in the underlying LiteRT runtime.
+    /// The compiled [`CompiledModel`] ready for buffer creation and inference.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] (`ErrorCause::CreateCompiledModel`) if model compilation fails in the
+    /// underlying `LiteRT` runtime.
     pub fn create(
         environment: &Environment,
         model: &Model<'_>,
         options: &Options,
     ) -> Result<Self, Error> {
+        let _model_guard = model.compile_mutex.lock().unwrap_or_else(|e| e.into_inner());
         let mut raw_compiled_model_ptr: *mut LiteRtCompiledModelT = std::ptr::null_mut();
         call_check_status!(
-            // SAFETY: All input pointers are initalized before and point to valid objects.
+            // SAFETY:
+            // - `environment.raw_environment`, `model.raw_model`, and `options.raw_options` are
+            //   valid, non-null handles owned by their respective wrapper structs.
+            // - `_model_guard` serializes C++ model initialization on `model.raw_model`.
+            // - `&mut raw_compiled_model_ptr` is a valid, aligned, non-null stack out-pointer.
             unsafe {
                 LiteRtCreateCompiledModel(
                     environment.raw_environment,
@@ -142,7 +176,87 @@ impl CompiledModel {
             },
             ErrorCause::CreateCompiledModel
         );
-        Ok(CompiledModel { raw_compiled_model: raw_compiled_model_ptr })
+        Ok(CompiledModel { raw_compiled_model: raw_compiled_model_ptr, mutex: Mutex::new(()) })
+    }
+
+    /// Returns `true` if this compiled model was created with `environment`.
+    #[allow(dead_code)]
+    pub(crate) fn has_same_environment(&self, environment: &Environment) -> Result<bool, Error> {
+        let mut compiled_env: LiteRtEnvironment = std::ptr::null_mut();
+        let _guard = self.lock_model();
+        call_check_status!(
+            // SAFETY:
+            // - `self.raw_compiled_model` is a valid, non-null `LiteRtCompiledModel` handle owned
+            //   by `self`, and `_guard` serializes concurrent C API calls on the compiled model.
+            // - `&mut compiled_env` is a valid, aligned, non-null stack out-pointer.
+            unsafe {
+                LiteRtGetCompiledModelEnvironment(self.raw_compiled_model, &mut compiled_env)
+            },
+            ErrorCause::GetCompiledModelEnvironment
+        );
+        Ok(compiled_env == environment.raw_environment)
+    }
+
+    /// Queries the current runtime layout of the input tensor at `input_index` in
+    /// `signature_index`.
+    #[allow(dead_code)]
+    pub(crate) fn input_tensor_layout(
+        &self,
+        signature_index: SignatureIndex,
+        input_index: LiteRtParamIndex,
+    ) -> Result<LiteRtLayout, Error> {
+        let mut runtime_layout = LiteRtLayout::default();
+        let _guard = self.lock_model();
+        call_check_status!(
+            // SAFETY:
+            // - `self.raw_compiled_model` is a valid, non-null `LiteRtCompiledModel` handle owned
+            //   by `self`, and `_guard` serializes concurrent C API calls on the compiled model.
+            // - `&mut runtime_layout` is a valid, aligned, non-null stack out-pointer.
+            unsafe {
+                LiteRtGetCompiledModelInputTensorLayout(
+                    self.raw_compiled_model,
+                    signature_index.value(),
+                    input_index,
+                    &mut runtime_layout,
+                )
+            },
+            ErrorCause::ResizeCompiledModelInputBuffer
+        );
+        Ok(runtime_layout)
+    }
+
+    /// Queries the current runtime layouts of all `num_outputs` output tensors in
+    /// `signature_index` (updating tensor allocations in the underlying interpreter).
+    #[allow(dead_code)]
+    pub(crate) fn output_tensor_layouts(
+        &self,
+        signature_index: SignatureIndex,
+        num_outputs: usize,
+    ) -> Result<Vec<LiteRtLayout>, Error> {
+        if num_outputs == 0 {
+            return Ok(Vec::new());
+        }
+        let mut output_layouts = vec![LiteRtLayout::default(); num_outputs];
+        let _guard = self.lock_model();
+        call_check_status!(
+            // SAFETY:
+            // - `self.raw_compiled_model` is a valid, non-null `LiteRtCompiledModel` handle owned
+            //   by `self`, and `_guard` serializes concurrent C API calls on the compiled model.
+            // - `output_layouts` is a pre-allocated mutable slice of `num_outputs > 0` initialized
+            //   `LiteRtLayout` structs, so `output_layouts.as_mut_ptr()` is non-null, aligned, and
+            //   valid for writing `num_outputs` elements.
+            unsafe {
+                LiteRtGetCompiledModelOutputTensorLayouts(
+                    self.raw_compiled_model,
+                    signature_index.value(),
+                    num_outputs,
+                    output_layouts.as_mut_ptr(),
+                    true,
+                )
+            },
+            ErrorCause::ResizeCompiledModelInputBuffer
+        );
+        Ok(output_layouts)
     }
 
     /// Queries the buffer requirements for a specific input tensor in a signature.
@@ -157,15 +271,19 @@ impl CompiledModel {
     /// * `Ok(TensorBufferRequirements)` - The buffer requirements (supported buffer types, size,
     ///   alignment) for the specified input tensor.
     /// * `Err(Error)` - If the signature or input index is invalid or querying requirements fails.
-    fn input_buffer_requirements(
+    pub(crate) fn input_buffer_requirements(
         &self,
         signature_index: SignatureIndex,
         input_index: LiteRtParamIndex,
     ) -> Result<TensorBufferRequirements<'_>, Error> {
+        let _guard = self.lock_model();
         let mut requirements_ptr: *mut LiteRtTensorBufferRequirementsT = std::ptr::null_mut();
         call_check_status!(
-            // SAFETY: self.raw_compiled_model is valid because it's created by calling the
-            // create() function.
+            // SAFETY:
+            // - `self.raw_compiled_model` is a valid, non-null handle for the lifetime of `self`,
+            //   and `_guard` serializes concurrent C API calls on the compiled model.
+            // - `&mut requirements_ptr` is a valid, aligned, non-null stack out-pointer; the
+            //   returned requirements handle borrows from `self` for `'_`.
             unsafe {
                 LiteRtGetCompiledModelInputBufferRequirements(
                     self.raw_compiled_model,
@@ -191,15 +309,19 @@ impl CompiledModel {
     /// * `Ok(TensorBufferRequirements)` - The buffer requirements (supported buffer types, size,
     ///   alignment) for the specified output tensor.
     /// * `Err(Error)` - If the signature or output index is invalid or querying requirements fails.
-    fn output_buffer_requirements(
+    pub(crate) fn output_buffer_requirements(
         &self,
         signature_index: SignatureIndex,
         output_index: LiteRtParamIndex,
     ) -> Result<TensorBufferRequirements<'_>, Error> {
+        let _guard = self.lock_model();
         let mut requirements_ptr: *mut LiteRtTensorBufferRequirementsT = std::ptr::null_mut();
         call_check_status!(
-            // SAFETY: self.raw_compiled_model is valid because it's created by calling the
-            // create() function.
+            // SAFETY:
+            // - `self.raw_compiled_model` is a valid, non-null handle for the lifetime of `self`,
+            //   and `_guard` serializes concurrent C API calls on the compiled model.
+            // - `&mut requirements_ptr` is a valid, aligned, non-null stack out-pointer; the
+            //   returned requirements handle borrows from `self` for `'_`.
             unsafe {
                 LiteRtGetCompiledModelOutputBufferRequirements(
                     self.raw_compiled_model,
@@ -223,10 +345,12 @@ impl CompiledModel {
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<TensorBuffer>)` - A vector of allocated input [`TensorBuffer`]s ordered by the
-    ///   signature's input indices.
-    /// * `Err(Error)` - If the signature index is invalid, buffer requirements cannot be queried,
-    ///   or buffer allocation fails.
+    /// A vector of allocated input [`TensorBuffer`]s ordered by the signature's input indices.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if the signature index is invalid, buffer requirements cannot be queried,
+    /// or buffer allocation fails.
     pub fn create_input_tensor_buffers(
         &self,
         environment: &Environment,
@@ -237,10 +361,9 @@ impl CompiledModel {
         let num_inputs = signature.num_inputs()?;
         let mut result = Vec::with_capacity(num_inputs);
         for i in 0..num_inputs {
-            let input_requirements = self.input_buffer_requirements(signature_index, i)?;
             let tensor = signature.input_tensor_by_index(i)?;
             let buffer =
-                CompiledModel::create_buffer_impl(environment, &input_requirements, &tensor)?;
+                self.create_input_buffer_for_tensor(environment, signature_index, i, &tensor)?;
             result.push(buffer);
         }
         Ok(result)
@@ -256,10 +379,12 @@ impl CompiledModel {
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<TensorBuffer>)` - A vector of allocated output [`TensorBuffer`]s ordered by the
-    ///   signature's output indices.
-    /// * `Err(Error)` - If the signature index is invalid, buffer requirements cannot be queried,
-    ///   or buffer allocation fails.
+    /// A vector of allocated output [`TensorBuffer`]s ordered by the signature's output indices.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if the signature index is invalid, buffer requirements cannot be queried,
+    /// or buffer allocation fails.
     pub fn create_output_tensor_buffers(
         &self,
         environment: &Environment,
@@ -268,15 +393,158 @@ impl CompiledModel {
     ) -> Result<Vec<TensorBuffer<'_>>, Error> {
         let signature = model.signature(signature_index)?;
         let num_outputs = signature.num_outputs()?;
+        let mut runtime_layouts: Option<Vec<LiteRtLayout>> = None;
         let mut result = Vec::with_capacity(num_outputs);
         for i in 0..num_outputs {
-            let output_requirements = self.output_buffer_requirements(signature_index, i)?;
             let tensor = signature.output_tensor_by_index(i)?;
-            let buffer =
-                CompiledModel::create_buffer_impl(environment, &output_requirements, &tensor)?;
+            let buffer = self.create_output_buffer_for_tensor(
+                environment,
+                signature_index,
+                i,
+                num_outputs,
+                &tensor,
+                &mut runtime_layouts,
+            )?;
             result.push(buffer);
         }
         Ok(result)
+    }
+
+    /// Allocates a managed input [`TensorBuffer`] for `input_index`, querying the compiled
+    /// model's runtime input layout if the static tensor shape contains dynamic (`< 0`)
+    /// dimensions.
+    ///
+    /// # Arguments
+    ///
+    /// * `environment` - The [`Environment`] used to allocate the managed buffer.
+    /// * `signature_index` - The index of the model signature.
+    /// * `input_index` - The zero-based index of the input tensor within the signature.
+    /// * `tensor` - The input [`Tensor`] metadata from the model signature.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(TensorBuffer)` - The allocated input [`TensorBuffer`].
+    /// * `Err(Error)` - If querying tensor metadata, buffer requirements, or allocating the buffer
+    ///   fails.
+    pub(crate) fn create_input_buffer_for_tensor<'a>(
+        &self,
+        environment: &Environment,
+        signature_index: SignatureIndex,
+        input_index: LiteRtParamIndex,
+        tensor: &Tensor<'_>,
+    ) -> Result<TensorBuffer<'a>, Error> {
+        let mut tensor_type = tensor.ranked_tensor_type()?;
+        let rank = usize::try_from(tensor_type.layout.rank())
+            .unwrap_or(0)
+            .min(tensor_type.layout.dimensions.len());
+        if tensor_type.layout.dimensions[..rank].iter().any(|&d| d < 0) {
+            let mut runtime_layout = tensor_type.layout;
+            let status = {
+                let _guard = self.lock_model();
+                // SAFETY:
+                // - `self.raw_compiled_model` is a valid, non-null handle for the lifetime of
+                //   `self`, and `_guard` serializes concurrent C API calls on the compiled model.
+                // - `&mut runtime_layout` is a valid, aligned, non-null stack out-pointer.
+                unsafe {
+                    LiteRtGetCompiledModelInputTensorLayout(
+                        self.raw_compiled_model,
+                        signature_index.value(),
+                        input_index,
+                        &mut runtime_layout,
+                    )
+                }
+            };
+            if status == LiteRtStatus_kLiteRtStatusOk {
+                tensor_type.layout = runtime_layout;
+            }
+            let new_rank = usize::try_from(tensor_type.layout.rank())
+                .unwrap_or(0)
+                .min(tensor_type.layout.dimensions.len());
+            for dim in &mut tensor_type.layout.dimensions[..new_rank] {
+                if *dim < 0 {
+                    *dim = 1;
+                }
+            }
+        }
+        let requirements = self.input_buffer_requirements(signature_index, input_index)?;
+        let element_type = tensor.element_type()?;
+        Self::create_buffer_with_type(environment, &requirements, &tensor_type, element_type)
+    }
+
+    /// Allocates a managed output [`TensorBuffer`] for `output_index`, lazily querying and
+    /// caching the compiled model's runtime output layouts if the static tensor shape contains
+    /// dynamic (`< 0`) dimensions.
+    ///
+    /// # Arguments
+    ///
+    /// * `environment` - The [`Environment`] used to allocate the managed buffer.
+    /// * `signature_index` - The index of the model signature.
+    /// * `output_index` - The zero-based index of the output tensor within the signature.
+    /// * `num_outputs` - The total number of outputs in the signature.
+    /// * `tensor` - The output [`Tensor`] metadata from the model signature.
+    /// * `cached_layouts` - Lazily populated cache of runtime output layouts for the signature.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(TensorBuffer)` - The allocated output [`TensorBuffer`].
+    /// * `Err(Error)` - If querying tensor metadata, buffer requirements, or allocating the buffer
+    ///   fails.
+    pub(crate) fn create_output_buffer_for_tensor<'a>(
+        &self,
+        environment: &Environment,
+        signature_index: SignatureIndex,
+        output_index: LiteRtParamIndex,
+        num_outputs: usize,
+        tensor: &Tensor<'_>,
+        cached_layouts: &mut Option<Vec<LiteRtLayout>>,
+    ) -> Result<TensorBuffer<'a>, Error> {
+        let mut tensor_type = tensor.ranked_tensor_type()?;
+        let rank = usize::try_from(tensor_type.layout.rank())
+            .unwrap_or(0)
+            .min(tensor_type.layout.dimensions.len());
+        if tensor_type.layout.dimensions[..rank].iter().any(|&d| d < 0) {
+            if cached_layouts.is_none() && num_outputs > 0 {
+                let mut layouts = vec![LiteRtLayout::default(); num_outputs];
+                let status = {
+                    let _guard = self.lock_model();
+                    // SAFETY:
+                    // - `self.raw_compiled_model` is a valid, non-null handle for the lifetime of
+                    //   `self`, and `_guard` serializes concurrent C API calls on the compiled
+                    //   model.
+                    // - `layouts` has `num_outputs > 0` initialized `LiteRtLayout` elements, so
+                    //   `layouts.as_mut_ptr()` is non-null, aligned, and valid for writing
+                    //   `num_outputs` elements.
+                    unsafe {
+                        LiteRtGetCompiledModelOutputTensorLayouts(
+                            self.raw_compiled_model,
+                            signature_index.value(),
+                            num_outputs,
+                            layouts.as_mut_ptr(),
+                            true,
+                        )
+                    }
+                };
+                if status == LiteRtStatus_kLiteRtStatusOk {
+                    *cached_layouts = Some(layouts);
+                }
+            }
+            if let Some(layouts) = cached_layouts.as_ref() {
+                if let Some(&runtime_layout) = layouts.get(output_index) {
+                    tensor_type.layout = runtime_layout;
+                }
+            }
+            let new_rank = usize::try_from(tensor_type.layout.rank())
+                .unwrap_or(0)
+                .min(tensor_type.layout.dimensions.len());
+            for dim in &mut tensor_type.layout.dimensions[..new_rank] {
+                if *dim < 0 {
+                    *dim = 1;
+                }
+            }
+        }
+        let requirements = self.output_buffer_requirements(signature_index, output_index)?;
+        let element_type = tensor.element_type()?;
+        Self::create_buffer_with_type(environment, &requirements, &tensor_type, element_type)
     }
 
     /// Allocates a single managed [`TensorBuffer`] given its requirements and tensor metadata.
@@ -293,23 +561,48 @@ impl CompiledModel {
     /// * `Ok(TensorBuffer)` - The newly allocated [`TensorBuffer`].
     /// * `Err(Error)` - If no supported buffer types exist, tensor metadata cannot be retrieved, or
     ///   buffer creation fails.
-    fn create_buffer_impl<'a>(
+    #[allow(dead_code)]
+    pub(crate) fn create_buffer_impl<'a>(
         environment: &Environment,
         requirements: &TensorBufferRequirements,
         tensor: &Tensor,
     ) -> Result<TensorBuffer<'a>, Error> {
+        let tensor_type = tensor.ranked_tensor_type()?;
+        let element_type = tensor.element_type()?;
+        Self::create_buffer_with_type(environment, requirements, &tensor_type, element_type)
+    }
+
+    /// Allocates a managed [`TensorBuffer`] using the first supported buffer type from
+    /// `requirements` and the provided ranked tensor type and element type.
+    ///
+    /// # Arguments
+    ///
+    /// * `environment` - The [`Environment`] used to allocate the managed buffer.
+    /// * `requirements` - The [`TensorBufferRequirements`] specifying supported buffer types and
+    ///   byte size.
+    /// * `tensor_type` - The resolved `LiteRtRankedTensorType` describing layout and element type.
+    /// * `element_type` - The [`ElementType`] of the tensor buffer.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(TensorBuffer)` - The newly allocated [`TensorBuffer`].
+    /// * `Err(Error)` - If `requirements` supports no buffer types or buffer creation fails.
+    pub(crate) fn create_buffer_with_type<'a>(
+        environment: &Environment,
+        requirements: &TensorBufferRequirements,
+        tensor_type: &LiteRtRankedTensorType,
+        element_type: ElementType,
+    ) -> Result<TensorBuffer<'a>, Error> {
         let supported_types = requirements.supported_types()?;
         // For simplicity we just pick the first supported tensor buffer type.
-        let Some(buffer_type) = supported_types.get(0) else {
+        let Some(buffer_type) = supported_types.first() else {
             return Err(Error::new(
                 ErrorCause::InputDoesntSupportAnyTensorBufferTypes,
                 LiteRtStatus_kLiteRtStatusErrorInvalidArgument,
             ));
         };
-        let tensor_type = tensor.ranked_tensor_type()?;
-        let element_type = tensor.element_type()?;
         let buffer_size = requirements.buffer_size()?;
-        TensorBuffer::new(environment, &tensor_type, buffer_type, buffer_size, element_type)
+        TensorBuffer::new(environment, tensor_type, buffer_type, buffer_size, element_type)
     }
 
     /// Resizes the specified input tensor to support dynamic shapes at runtime.
@@ -326,18 +619,24 @@ impl CompiledModel {
     ///
     /// # Returns
     ///
-    /// * `Ok(())` - If the input tensor was successfully resized.
-    /// * `Err(Error)` - If the parameters are invalid, dynamic shapes are unsupported, or resizing
-    ///   fails.
+    /// `Ok(())` if the input tensor was successfully resized.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] (`ErrorCause::ResizeCompiledModelInputBuffer`) if the parameters are
+    /// invalid, dynamic shapes are unsupported, or resizing fails.
     pub fn resize_input_tensor_buffer(
         &self,
         signature_index: SignatureIndex,
         input_index: impl Into<InputOutputIndex>,
         dimensions: &[i32],
     ) -> Result<(), Error> {
+        let _guard = self.lock_model();
         call_check_status!(
-            // SAFETY: self.raw_compiled_model is valid because it's created by calling the
-            // create() function. dimensions is a valid slice provided by the caller.
+            // SAFETY:
+            // - `self.raw_compiled_model` is a valid, non-null handle for the lifetime of `self`,
+            //   and `_guard` serializes concurrent C API calls on the compiled model.
+            // - `dimensions.as_ptr()` is a valid pointer to `dimensions.len()` `i32` elements.
             unsafe {
                 LiteRtCompiledModelResizeInputTensor(
                     self.raw_compiled_model,
@@ -364,21 +663,39 @@ impl CompiledModel {
     ///
     /// # Returns
     ///
-    /// * `Ok(())` - If inference completed successfully.
-    /// * `Err(Error)` - If model execution fails.
+    /// `Ok(())` if inference completed successfully.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] (`ErrorCause::RunCompiledModel`) if model execution fails.
     pub fn run(
         &self,
         signature_index: SignatureIndex,
         input: &[TensorBuffer<'_>],
         output: &[TensorBuffer<'_>],
     ) -> Result<(), Error> {
-        let mut input_ptrs: Vec<_> = input.iter().map(|tensor| tensor.raw_tensor_buffer).collect();
+        self.run_with_iter(signature_index, input.iter(), output.iter())
+    }
+
+    /// Runs inference synchronously on the compiled model using iterators of borrowed
+    /// [`TensorBuffer`] references.
+    pub(crate) fn run_with_iter<'a, 'b>(
+        &self,
+        signature_index: SignatureIndex,
+        input: impl IntoIterator<Item = &'a TensorBuffer<'a>>,
+        output: impl IntoIterator<Item = &'b TensorBuffer<'b>>,
+    ) -> Result<(), Error> {
+        let mut input_ptrs: Vec<_> =
+            input.into_iter().map(|tensor| tensor.raw_tensor_buffer).collect();
         let mut output_ptrs: Vec<_> =
-            output.iter().map(|tensor| tensor.raw_tensor_buffer).collect();
+            output.into_iter().map(|tensor| tensor.raw_tensor_buffer).collect();
+        let _guard = self.lock_model();
         call_check_status!(
-            // SAFETY: self.raw_compiled_model is valid because it's created by calling the
-            // create() function. input_ptrs and output_ptrs are valid because they are
-            // created in the function.
+            // SAFETY:
+            // - `self.raw_compiled_model` is a valid, non-null handle for the lifetime of `self`,
+            //   and `_guard` serializes concurrent C API calls on the compiled model.
+            // - `input_ptrs` and `output_ptrs` are valid contiguous arrays of live
+            //   `LiteRtTensorBuffer` handles borrowed from `input` and `output`.
             unsafe {
                 LiteRtRunCompiledModel(
                     self.raw_compiled_model,
@@ -409,9 +726,12 @@ impl CompiledModel {
     ///
     /// # Returns
     ///
-    /// * `Ok(true)` - If inference was scheduled to run asynchronously.
-    /// * `Ok(false)` - If inference was executed synchronously.
-    /// * `Err(Error)` - If model execution fails.
+    /// `true` if inference was scheduled to run asynchronously, or `false` if inference was
+    /// executed synchronously.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] (`ErrorCause::RunCompiledModel`) if model execution fails.
     #[cfg(async_support)]
     pub fn run_async(
         &self,
@@ -419,14 +739,29 @@ impl CompiledModel {
         input: &[TensorBuffer<'_>],
         output: &[TensorBuffer<'_>],
     ) -> Result<bool, Error> {
-        let mut input_ptrs: Vec<_> = input.iter().map(|tensor| tensor.raw_tensor_buffer).collect();
+        self.run_async_with_iter(signature_index, input.iter(), output.iter())
+    }
+
+    /// Runs inference asynchronously on the compiled model using iterators of borrowed
+    /// [`TensorBuffer`] references.
+    #[cfg(async_support)]
+    pub(crate) fn run_async_with_iter<'a, 'b>(
+        &self,
+        signature_index: SignatureIndex,
+        input: impl IntoIterator<Item = &'a TensorBuffer<'a>>,
+        output: impl IntoIterator<Item = &'b TensorBuffer<'b>>,
+    ) -> Result<bool, Error> {
+        let mut input_ptrs: Vec<_> =
+            input.into_iter().map(|tensor| tensor.raw_tensor_buffer).collect();
         let mut output_ptrs: Vec<_> =
-            output.iter().map(|tensor| tensor.raw_tensor_buffer).collect();
+            output.into_iter().map(|tensor| tensor.raw_tensor_buffer).collect();
         let mut ran_in_parallel_thread: bool = false;
+        let _guard = self.lock_model();
         call_check_status!(
-            // SAFETY: self.raw_compiled_model is valid because it's created by calling the
-            // create() function. input_ptrs, output_ptrs, and ran_in_parallel_thread
-            // are valid because they are created in the function.
+            // SAFETY:
+            // - `self.raw_compiled_model` is a valid, non-null handle for the lifetime of `self`,
+            //   and `_guard` serializes concurrent C API calls on the compiled model.
+            // - `input_ptrs`, `output_ptrs`, and `&mut ran_in_parallel_thread` are valid pointers.
             unsafe {
                 LiteRtRunCompiledModelAsync(
                     self.raw_compiled_model,
@@ -450,15 +785,21 @@ impl CompiledModel {
     ///
     /// # Returns
     ///
-    /// * `Ok(bool)` - `true` if the model is fully accelerated across the selected hardware
-    ///   accelerators, `false` otherwise.
-    /// * `Err(Error)` - If querying the acceleration status fails.
+    /// `true` if the model is fully accelerated across the selected hardware accelerators, `false`
+    /// otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] (`ErrorCause::IsCompiledModelFullyAccelerated`) if querying the
+    /// acceleration status fails.
     pub fn is_fully_accelerated(&self) -> Result<bool, Error> {
         let mut fully_accelerated = false;
+        let _guard = self.lock_model();
         call_check_status!(
             // SAFETY:
             // - `self.raw_compiled_model` is guaranteed non-null and valid for the lifetime of
-            //   `self`, managed by `CompiledModel` and only destroyed in `Drop`.
+            //   `self`, managed by `CompiledModel` and only destroyed in `Drop`. `_guard`
+            //   serializes concurrent C API calls on the compiled model.
             // - `&mut fully_accelerated` is a valid, aligned, non-null pointer to local stack
             //   memory with exclusive write permission for a single `bool`.
             unsafe {
@@ -477,15 +818,21 @@ impl CompiledModel {
     ///
     /// # Returns
     ///
-    /// * `Ok(bool)` - `true` if 100% of the model is delegated to non-CPU hardware accelerators,
-    ///   `false` otherwise.
-    /// * `Err(Error)` - If querying the non-CPU acceleration status fails.
+    /// `true` if 100% of the model is delegated to non-CPU hardware accelerators, `false`
+    /// otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] (`ErrorCause::IsCompiledModelNonCpuFullyAccelerated`) if querying the
+    /// non-CPU acceleration status fails.
     pub fn is_non_cpu_fully_accelerated(&self) -> Result<bool, Error> {
         let mut non_cpu_fully_accelerated = false;
+        let _guard = self.lock_model();
         call_check_status!(
             // SAFETY:
             // - `self.raw_compiled_model` is guaranteed non-null and valid for the lifetime of
-            //   `self`, managed by `CompiledModel` and only destroyed in `Drop`.
+            //   `self`, managed by `CompiledModel` and only destroyed in `Drop`. `_guard`
+            //   serializes concurrent C API calls on the compiled model.
             // - `&mut non_cpu_fully_accelerated` is a valid, aligned, non-null pointer to local
             //   stack memory with exclusive write permission for a single `bool`.
             unsafe {
@@ -502,13 +849,22 @@ impl CompiledModel {
 
 impl Drop for CompiledModel {
     fn drop(&mut self) {
-        // SAFETY: self.raw_compiled_model is always valid, it's guaranteed to be initialized by
-        // create function.
+        // SAFETY:
+        // - `self.raw_compiled_model` is a valid, non-null handle initialized by
+        //   `LiteRtCreateCompiledModel` and uniquely owned by `self`.
         unsafe {
             LiteRtDestroyCompiledModel(self.raw_compiled_model);
         }
     }
 }
+
+// SAFETY: `CompiledModel` owns its `LiteRtCompiledModel` handle and can be safely moved across
+// threads.
+unsafe impl Send for CompiledModel {}
+
+// SAFETY: All C API operations on `self.raw_compiled_model` are serialized by `self.mutex`, making
+// concurrent access across threads via `&CompiledModel` race-free.
+unsafe impl Sync for CompiledModel {}
 
 #[cfg(test)]
 mod tests {
