@@ -50,6 +50,7 @@ dev = [
     "colorama",
     "isort",
     "parameterized",
+    "pillow",
     "pyink",
     "pytest",
     "pytest-xdist",
