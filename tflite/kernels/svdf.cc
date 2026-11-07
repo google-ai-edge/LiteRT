@@ -258,23 +258,41 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
                                                      output_temp_size_array));
 
     // Calculate effective scales.
-    TF_LITE_ENSURE(context, input->quantization.type != kTfLiteNoQuantization);
+    TF_LITE_ENSURE_EQ(context, input->quantization.type,
+                      kTfLiteAffineQuantization);
     auto* input_params =
         reinterpret_cast<TfLiteAffineQuantization*>(input->quantization.params);
-    TF_LITE_ENSURE(context,
-                   weights_feature->quantization.type != kTfLiteNoQuantization);
+    TF_LITE_ENSURE_EQ(context, weights_feature->quantization.type,
+                      kTfLiteAffineQuantization);
     auto* weights_feature_params = reinterpret_cast<TfLiteAffineQuantization*>(
         weights_feature->quantization.params);
-    TF_LITE_ENSURE(context, state->quantization.type != kTfLiteNoQuantization);
+    TF_LITE_ENSURE_EQ(context, state->quantization.type,
+                      kTfLiteAffineQuantization);
     auto* state_params =
         reinterpret_cast<TfLiteAffineQuantization*>(state->quantization.params);
-    TF_LITE_ENSURE(context,
-                   weights_time->quantization.type != kTfLiteNoQuantization);
+    TF_LITE_ENSURE_EQ(context, weights_time->quantization.type,
+                      kTfLiteAffineQuantization);
     auto* weight_time_params = reinterpret_cast<TfLiteAffineQuantization*>(
         weights_time->quantization.params);
-    TF_LITE_ENSURE(context, output->quantization.type != kTfLiteNoQuantization);
+    TF_LITE_ENSURE_EQ(context, output->quantization.type,
+                      kTfLiteAffineQuantization);
     auto* output_params = reinterpret_cast<TfLiteAffineQuantization*>(
         output->quantization.params);
+    TF_LITE_ENSURE(context, input_params != nullptr &&
+                                input_params->scale != nullptr &&
+                                input_params->scale->size > 0);
+    TF_LITE_ENSURE(context, weights_feature_params != nullptr &&
+                                weights_feature_params->scale != nullptr &&
+                                weights_feature_params->scale->size > 0);
+    TF_LITE_ENSURE(context, state_params != nullptr &&
+                                state_params->scale != nullptr &&
+                                state_params->scale->size > 0);
+    TF_LITE_ENSURE(context, weight_time_params != nullptr &&
+                                weight_time_params->scale != nullptr &&
+                                weight_time_params->scale->size > 0);
+    TF_LITE_ENSURE(context, output_params != nullptr &&
+                                output_params->scale != nullptr &&
+                                output_params->scale->size > 0);
     const double effective_scale_1 =
         static_cast<double>(input_params->scale->data[0]) *
         static_cast<double>(weights_feature_params->scale->data[0]) /
