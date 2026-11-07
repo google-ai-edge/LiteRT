@@ -15,6 +15,7 @@
 #include "litert/vendors/intel_openvino/compiler/npu_optimizer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -30,10 +31,13 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/vendors/intel_openvino/compiler/weight_bank_attributes.h"
+#include "openvino/core/dimension.hpp"
 #include "openvino/core/graph_util.hpp"
 #include "openvino/core/model.hpp"
 #include "openvino/core/node.hpp"
 #include "openvino/core/node_output.hpp"
+#include "openvino/core/node_vector.hpp"
+#include "openvino/core/partial_shape.hpp"
 #include "openvino/core/rt_info.hpp"
 #include "openvino/core/shape.hpp"
 #include "openvino/core/type.hpp"
@@ -47,13 +51,18 @@
 #include "openvino/op/fake_quantize.hpp"
 #include "openvino/op/gather.hpp"
 #include "openvino/op/gelu.hpp"
+#include "openvino/op/greater_eq.hpp"
+#include "openvino/op/less.hpp"
+#include "openvino/op/logical_and.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
+#include "openvino/op/one_hot.hpp"
 #include "openvino/op/pad.hpp"
 #include "openvino/op/reduce_sum.hpp"
 #include "openvino/op/reshape.hpp"
 #include "openvino/op/scaled_dot_product_attention.hpp"
 #include "openvino/op/scatter_elements_update.hpp"
+#include "openvino/op/select.hpp"
 #include "openvino/op/shape_of.hpp"
 #include "openvino/op/sign.hpp"
 #include "openvino/op/slice.hpp"
@@ -65,6 +74,7 @@
 #include "openvino/op/transpose.hpp"
 #include "openvino/op/unsqueeze.hpp"
 #include "openvino/op/util/attr_types.hpp"
+#include "openvino/op/util/one_hot_base.hpp"
 #include "openvino/pass/constant_folding.hpp"
 #include "openvino/pass/manager.hpp"
 #include "openvino/pass/matcher_pass.hpp"
@@ -112,6 +122,123 @@ ov::Output<ov::Node> PadEndOfAxis(const ov::Output<ov::Node>& input,
   return std::make_shared<ov::op::v1::Pad>(input, pads_begin, pads_end, value,
                                            ov::op::PadMode::CONSTANT)
       ->output(0);
+}
+
+// If |out| is a single-element floating-point Constant whose value is 0.0 or
+// NaN, stores that value in |fill_value| and returns the Constant; otherwise
+// returns nullptr. Only 0.0 and NaN commute unchanged past a table MatMul
+// (`[0, ..., 0] @ Table == 0` and `[NaN, ..., NaN] @ Table == NaN` for
+// `depth >= 1`); any non-zero finite scalar `c` would scale the sum of all
+// table rows (`c * sum(Table)`), not fill the output with `c`.
+std::shared_ptr<ov::op::v0::Constant> TryGetScalarFillZeroOrNan(
+    const ov::Output<ov::Node>& out, double& fill_value) {
+  auto cnst = ov::as_type_ptr<ov::op::v0::Constant>(out.get_node_shared_ptr());
+  if (!cnst || !cnst->get_element_type().is_real() ||
+      ov::shape_size(cnst->get_shape()) != 1) {
+    return nullptr;
+  }
+  const std::vector<double> vals = cnst->cast_vector<double>();
+  if (vals.empty() || (vals[0] != 0.0 && !std::isnan(vals[0]))) {
+    return nullptr;
+  }
+  fill_value = vals[0];
+  return cnst;
+}
+
+// Returns a 2-D `[depth, emb_dim]` lookup table for `Gather(..., axis=0)` from
+// MatMul's |rhs| input (`[depth, emb_dim]` when |transpose_b| is false, or
+// `[emb_dim, depth]` when |transpose_b| is true, as emitted by TFLite
+// FULLY_CONNECTED). When |transpose_b| is true and |rhs| is a byte-aligned
+// Constant, transposes the buffer at compile time and tags it with
+// LiteRtGeneratedConstantAttribute so NPU weight sharing deduplicates and
+// aliases the derived table across partitions while eliminating any runtime
+// Transpose.
+ov::Output<ov::Node> BuildGatherTable2D(const ov::Output<ov::Node>& rhs,
+                                        bool transpose_b, int64_t depth,
+                                        int64_t emb_dim,
+                                        ov::NodeVector& created) {
+  if (!transpose_b) {
+    return rhs;
+  }
+  if (auto w_const =
+          ov::as_type_ptr<ov::op::v0::Constant>(rhs.get_node_shared_ptr())) {
+    const ov::element::Type elem_type = w_const->get_element_type();
+    const ov::Shape expected_shape{static_cast<size_t>(emb_dim),
+                                   static_cast<size_t>(depth)};
+    if (elem_type.bitwidth() >= 8 && elem_type.bitwidth() % 8 == 0 &&
+        w_const->get_shape() == expected_shape) {
+      const size_t elem_bytes = elem_type.size();
+      std::vector<uint8_t> transposed(static_cast<size_t>(depth) *
+                                      static_cast<size_t>(emb_dim) *
+                                      elem_bytes);
+      const auto* src = static_cast<const uint8_t*>(w_const->get_data_ptr());
+      for (int64_t r = 0; r < emb_dim; ++r) {
+        for (int64_t c = 0; c < depth; ++c) {
+          std::memcpy(
+              transposed.data() +
+                  (static_cast<size_t>(c) * static_cast<size_t>(emb_dim) +
+                   static_cast<size_t>(r)) *
+                      elem_bytes,
+              src +
+                  (static_cast<size_t>(r) * static_cast<size_t>(depth) +
+                   static_cast<size_t>(c)) *
+                      elem_bytes,
+              elem_bytes);
+        }
+      }
+      const std::string table_name =
+          w_const->get_friendly_name() + "_gather_table";
+      auto table_const = std::make_shared<ov::op::v0::Constant>(
+          elem_type,
+          ov::Shape{static_cast<size_t>(depth), static_cast<size_t>(emb_dim)},
+          transposed.data());
+      table_const->set_friendly_name(table_name);
+      table_const->get_rt_info()
+          [LiteRtGeneratedConstantAttribute::get_type_info_static()] =
+          LiteRtGeneratedConstantAttribute(table_name);
+      created.push_back(table_const);
+      return table_const->output(0);
+    }
+  }
+  auto perm =
+      ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {1, 0});
+  auto transposed_node = std::make_shared<ov::op::v1::Transpose>(rhs, perm);
+  created.insert(created.end(), {perm, transposed_node});
+  return transposed_node->output(0);
+}
+
+// Validates and captures the target shape vector + `special_zero` flag needed
+// to reapply a leading-dimension Reshape (`[...idx_dims..., depth]` ->
+// `[...mm_dims..., depth]`) onto a `[...idx_dims..., emb_dim]` Gather output.
+// Returns nullopt if |matmul_out_ps| is dynamic and the Reshape's target
+// pattern is not a 1-D Constant ending in |depth|.
+struct PostGatherReshapeSpec {
+  std::vector<int64_t> target_dims;
+  bool special_zero = false;
+};
+
+std::optional<PostGatherReshapeSpec> ComputePostGatherReshapeSpec(
+    const std::shared_ptr<ov::op::v1::Reshape>& flattening_reshape,
+    const ov::PartialShape& matmul_out_ps, int64_t depth, int64_t emb_dim) {
+  if (matmul_out_ps.is_static()) {
+    const ov::Shape mm_shape = matmul_out_ps.to_shape();
+    return PostGatherReshapeSpec{
+        std::vector<int64_t>(mm_shape.begin(), mm_shape.end()),
+        /*special_zero=*/false};
+  }
+  auto pattern_const = ov::as_type_ptr<ov::op::v0::Constant>(
+      flattening_reshape->input_value(1).get_node_shared_ptr());
+  if (!pattern_const || pattern_const->get_shape().size() != 1 ||
+      !pattern_const->get_element_type().is_integral_number()) {
+    return std::nullopt;
+  }
+  std::vector<int64_t> dims = pattern_const->cast_vector<int64_t>();
+  if (dims.empty() || dims.back() != depth) {
+    return std::nullopt;
+  }
+  dims.back() = emb_dim;
+  return PostGatherReshapeSpec{std::move(dims),
+                               flattening_reshape->get_special_zero()};
 }
 
 }  // namespace
@@ -173,6 +300,316 @@ CastIntegerSignToFloat::CastIntegerSignToFloat() {
 
   auto m = std::make_shared<pattern::Matcher>(sign_pattern,
                                               "CastIntegerSignToFloat");
+  register_matcher(m, callback);
+}
+
+FoldOneHotMatMulToGather::FoldOneHotMatMulToGather() {
+  namespace pattern = ov::pass::pattern;
+  auto matmul_pattern = pattern::wrap_type<ov::op::v0::MatMul>(
+      {pattern::any_input(), pattern::any_input()},
+      [](const ov::Output<ov::Node>& output) {
+        auto mm = ov::as_type_ptr<ov::op::v0::MatMul>(
+            output.get_node_shared_ptr());
+        return mm && !mm->get_transpose_a() &&
+               output.get_element_type().is_real();
+      });
+
+  ov::matcher_pass_callback callback = [](pattern::Matcher& m) {
+    auto matmul =
+        std::dynamic_pointer_cast<ov::op::v0::MatMul>(m.get_match_root());
+    if (!matmul || matmul->get_transpose_a()) {
+      return false;
+    }
+    const ov::element::Type out_elem_type = matmul->get_output_element_type(0);
+    if (!out_elem_type.is_real()) {
+      return false;
+    }
+
+    const ov::Output<ov::Node> rhs = matmul->input_value(1);
+    const auto& rhs_ps = rhs.get_partial_shape();
+    if (rhs_ps.rank().is_dynamic() || rhs_ps.rank().get_length() != 2) {
+      return false;
+    }
+    const bool transpose_b = matmul->get_transpose_b();
+    const ov::Dimension& depth_dim = transpose_b ? rhs_ps[1] : rhs_ps[0];
+    const ov::Dimension& emb_dim_d = transpose_b ? rhs_ps[0] : rhs_ps[1];
+    if (depth_dim.is_dynamic() || emb_dim_d.is_dynamic()) {
+      return false;
+    }
+    const int64_t depth = depth_dim.get_length();
+    const int64_t emb_dim = emb_dim_d.get_length();
+    if (depth <= 0 || emb_dim <= 0) {
+      return false;
+    }
+
+    ov::Output<ov::Node> cur = matmul->input_value(0);
+    const auto& lhs_ps = cur.get_partial_shape();
+    if (lhs_ps.rank().is_dynamic() || lhs_ps.rank().get_length() < 1) {
+      return false;
+    }
+    const int64_t lhs_rank = lhs_ps.rank().get_length();
+    if (lhs_ps[lhs_rank - 1].is_dynamic() ||
+        lhs_ps[lhs_rank - 1].get_length() != depth) {
+      return false;
+    }
+
+    // 1. Optional leading-dimension Reshape (e.g. TFLite FULLY_CONNECTED with
+    //    `keep_num_dims == false`, which flattens `[1, S, depth]` ->
+    //    `[S, depth]` before MatMul). Any Reshape preserving the trailing
+    //    `depth` axis acts purely on the leading token axes in row-major order.
+    std::optional<PostGatherReshapeSpec> reshape_spec;
+    if (auto reshape =
+            ov::as_type_ptr<ov::op::v1::Reshape>(cur.get_node_shared_ptr())) {
+      const auto& pre_ps = reshape->get_input_partial_shape(0);
+      if (pre_ps.rank().is_dynamic() || pre_ps.rank().get_length() < 1) {
+        return false;
+      }
+      const int64_t pre_rank = pre_ps.rank().get_length();
+      if (pre_ps[pre_rank - 1].is_dynamic() ||
+          pre_ps[pre_rank - 1].get_length() != depth) {
+        return false;
+      }
+      reshape_spec = ComputePostGatherReshapeSpec(
+          reshape, matmul->get_output_partial_shape(0), depth, emb_dim);
+      if (!reshape_spec) {
+        return false;
+      }
+      cur = reshape->input_value(0);
+    }
+
+    // 2. Optional element-type Convert before MatMul/Reshape.
+    if (auto conv =
+            ov::as_type_ptr<ov::op::v0::Convert>(cur.get_node_shared_ptr())) {
+      cur = conv->input_value(0);
+    }
+
+    // 3. Optional row-level Select(cond, fill, branch) or
+    //    Select(cond, branch, fill) with scalar fill in {0.0, NaN} and |cond|
+    //    broadcast-invariant across the contracted `depth` axis (size 1 on its
+    //    last axis, or scalar), e.g. propagating NaN on invalid non-padding
+    //    indices.
+    std::shared_ptr<ov::op::v1::Select> matched_select;
+    ov::Output<ov::Node> matched_cond;
+    std::shared_ptr<ov::op::v0::Constant> matched_fill_const;
+    double matched_fill_val = 0.0;
+    bool fill_in_then = true;
+    if (auto sel =
+            ov::as_type_ptr<ov::op::v1::Select>(cur.get_node_shared_ptr())) {
+      const ov::Output<ov::Node> in1 = sel->input_value(1);
+      const ov::Output<ov::Node> in2 = sel->input_value(2);
+      ov::Output<ov::Node> branch;
+      if (auto c1 = TryGetScalarFillZeroOrNan(in1, matched_fill_val)) {
+        matched_fill_const = c1;
+        fill_in_then = true;
+        branch = in2;
+      } else if (auto c2 = TryGetScalarFillZeroOrNan(in2, matched_fill_val)) {
+        matched_fill_const = c2;
+        fill_in_then = false;
+        branch = in1;
+      } else {
+        return false;
+      }
+      const auto& sel_ps = sel->get_output_partial_shape(0);
+      const auto& branch_ps = branch.get_partial_shape();
+      if (sel_ps.rank().is_dynamic() || branch_ps.rank().is_dynamic() ||
+          sel_ps.rank().get_length() != branch_ps.rank().get_length()) {
+        return false;
+      }
+      const int64_t branch_rank = branch_ps.rank().get_length();
+      if (branch_rank < 1 || branch_ps[branch_rank - 1].is_dynamic() ||
+          branch_ps[branch_rank - 1].get_length() != depth) {
+        return false;
+      }
+      const ov::Output<ov::Node> cond = sel->input_value(0);
+      const auto& cond_ps = cond.get_partial_shape();
+      if (cond_ps.rank().is_dynamic()) {
+        return false;
+      }
+      const int64_t cond_rank = cond_ps.rank().get_length();
+      if (cond_rank > branch_rank ||
+          (cond_rank > 0 && (cond_ps[cond_rank - 1].is_dynamic() ||
+                             cond_ps[cond_rank - 1].get_length() != 1))) {
+        return false;
+      }
+      matched_select = sel;
+      matched_cond = cond;
+      cur = branch;
+    }
+
+    // 4. Optional Convert immediately following OneHot (e.g.
+    //    `jax.nn.one_hot(x, depth).astype(dtype)`).
+    if (auto conv =
+            ov::as_type_ptr<ov::op::v0::Convert>(cur.get_node_shared_ptr())) {
+      cur = conv->input_value(0);
+    }
+
+    // 5. Match OneHot(..., on_value=1, off_value=0, axis=-1).
+    auto one_hot = std::dynamic_pointer_cast<ov::op::util::OneHotBase>(
+        cur.get_node_shared_ptr());
+    if (!one_hot) {
+      return false;
+    }
+    if (auto v16_oh = ov::as_type_ptr<ov::op::v16::OneHot>(one_hot)) {
+      if (v16_oh->get_negative_indices_mode() !=
+          ov::op::v16::OneHot::NegativeIndicesMode::IGNORE_NEGATIVE) {
+        return false;
+      }
+    }
+    const auto& oh_ps = one_hot->get_output_partial_shape(0);
+    if (oh_ps.rank().is_dynamic() || oh_ps.rank().get_length() < 1) {
+      return false;
+    }
+    const int64_t oh_rank = oh_ps.rank().get_length();
+    int64_t axis = one_hot->get_axis();
+    if (axis < 0) {
+      axis += oh_rank;
+    }
+    if (axis != oh_rank - 1) {
+      return false;
+    }
+
+    ov::Output<ov::Node> indices = one_hot->input_value(0);
+    const ov::element::Type raw_idx_type = indices.get_element_type();
+    if (!raw_idx_type.is_integral_number() ||
+        raw_idx_type == ov::element::boolean ||
+        raw_idx_type == ov::element::u64) {
+      return false;
+    }
+    const auto& idx_ps = indices.get_partial_shape();
+    if (idx_ps.rank().is_dynamic() ||
+        idx_ps.rank().get_length() != oh_rank - 1) {
+      return false;
+    }
+
+    auto depth_const = ov::as_type_ptr<ov::op::v0::Constant>(
+        one_hot->input_value(1).get_node_shared_ptr());
+    auto on_const = ov::as_type_ptr<ov::op::v0::Constant>(
+        one_hot->input_value(2).get_node_shared_ptr());
+    auto off_const = ov::as_type_ptr<ov::op::v0::Constant>(
+        one_hot->input_value(3).get_node_shared_ptr());
+    if (!depth_const || !on_const || !off_const ||
+        !depth_const->get_element_type().is_integral_number() ||
+        ov::shape_size(depth_const->get_shape()) != 1 ||
+        ov::shape_size(on_const->get_shape()) != 1 ||
+        ov::shape_size(off_const->get_shape()) != 1) {
+      return false;
+    }
+    if (depth_const->cast_vector<int64_t>()[0] != depth) {
+      return false;
+    }
+    const double on_val = on_const->cast_vector<double>()[0];
+    const double off_val = off_const->cast_vector<double>()[0];
+    if (std::isnan(on_val) || std::isnan(off_val) || on_val != 1.0 ||
+        off_val != 0.0) {
+      return false;
+    }
+
+    // Build replacement subgraph:
+    //   in_bounds = (indices >= 0) && (indices < depth)
+    //   safe_idx  = Select(in_bounds, indices, 0)
+    //   rows      = Gather(table_2d, safe_idx, axis=0)
+    //   out       = Select(Unsqueeze(in_bounds, -1), rows, 0.0)
+    //   [optional row-level Select]
+    //   [optional leading-dimension Reshape]
+    ov::NodeVector created;
+    const ov::element::Type idx_type =
+        (raw_idx_type == ov::element::i64 || raw_idx_type == ov::element::u32)
+            ? ov::element::i64
+            : ov::element::i32;
+    if (raw_idx_type != idx_type) {
+      auto idx_conv = std::make_shared<ov::op::v0::Convert>(indices, idx_type);
+      created.push_back(idx_conv);
+      indices = idx_conv->output(0);
+    }
+
+    auto zero_idx =
+        ov::op::v0::Constant::create(idx_type, ov::Shape{}, {int64_t{0}});
+    auto depth_idx =
+        ov::op::v0::Constant::create(idx_type, ov::Shape{}, {depth});
+    auto ge_zero =
+        std::make_shared<ov::op::v1::GreaterEqual>(indices, zero_idx);
+    auto lt_depth = std::make_shared<ov::op::v1::Less>(indices, depth_idx);
+    auto in_bounds =
+        std::make_shared<ov::op::v1::LogicalAnd>(ge_zero, lt_depth);
+    auto safe_indices =
+        std::make_shared<ov::op::v1::Select>(in_bounds, indices, zero_idx);
+    created.insert(created.end(), {zero_idx, depth_idx, ge_zero, lt_depth,
+                                   in_bounds, safe_indices});
+
+    ov::Output<ov::Node> table_2d =
+        BuildGatherTable2D(rhs, transpose_b, depth, emb_dim, created);
+    auto gather_axis =
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {0});
+    auto gathered = std::make_shared<ov::op::v8::Gather>(table_2d, safe_indices,
+                                                         gather_axis);
+    auto unsq_axis =
+        ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {-1});
+    auto in_bounds_bcast =
+        std::make_shared<ov::op::v0::Unsqueeze>(in_bounds, unsq_axis);
+    auto zero_val =
+        ov::op::v0::Constant::create(out_elem_type, ov::Shape{}, {0.0f});
+    auto zero_masked = std::make_shared<ov::op::v1::Select>(
+        in_bounds_bcast, gathered, zero_val);
+    created.insert(created.end(), {gather_axis, gathered, unsq_axis,
+                                   in_bounds_bcast, zero_val, zero_masked});
+    ov::Output<ov::Node> out = zero_masked->output(0);
+
+    if (matched_select) {
+      std::shared_ptr<ov::op::v0::Constant> fill_scalar;
+      if (matched_fill_const->get_element_type() == out_elem_type) {
+        fill_scalar = std::make_shared<ov::op::v0::Constant>(
+            out_elem_type, ov::Shape{}, matched_fill_const->get_data_ptr());
+      } else {
+        fill_scalar = ov::op::v0::Constant::create(out_elem_type, ov::Shape{},
+                                                   {matched_fill_val});
+      }
+      auto row_select =
+          fill_in_then ? std::make_shared<ov::op::v1::Select>(matched_cond,
+                                                              fill_scalar, out)
+                       : std::make_shared<ov::op::v1::Select>(matched_cond, out,
+                                                              fill_scalar);
+      created.insert(created.end(), {fill_scalar, row_select});
+      out = row_select->output(0);
+    }
+
+    if (reshape_spec) {
+      auto target_shape = ov::op::v0::Constant::create(
+          ov::element::i64, ov::Shape{reshape_spec->target_dims.size()},
+          reshape_spec->target_dims);
+      auto out_reshape = std::make_shared<ov::op::v1::Reshape>(
+          out, target_shape, reshape_spec->special_zero);
+      created.insert(created.end(), {target_shape, out_reshape});
+      out = out_reshape->output(0);
+    }
+
+    if (out.get_element_type() != out_elem_type ||
+        !out.get_partial_shape().compatible(
+            matmul->get_output_partial_shape(0))) {
+      return false;
+    }
+
+    std::shared_ptr<ov::Node> replacement = out.get_node_shared_ptr();
+    replacement->set_friendly_name(matmul->get_friendly_name());
+    replacement->get_output_tensor(0).set_names(
+        matmul->get_output_tensor(0).get_names());
+    ov::copy_runtime_info(matmul, created);
+    ov::replace_node(matmul, replacement);
+
+    LITERT_LOG(LITERT_DEBUG,
+               "FoldOneHotMatMulToGather: folded OneHot '%s' + MatMul '%s' "
+               "(depth=%lld, dim=%lld, transpose_b=%d, has_select=%d, "
+               "has_reshape=%d)",
+               one_hot->get_friendly_name().c_str(),
+               matmul->get_friendly_name().c_str(),
+               static_cast<long long>(depth), static_cast<long long>(emb_dim),
+               static_cast<int>(transpose_b),
+               static_cast<int>(matched_select != nullptr),
+               static_cast<int>(reshape_spec.has_value()));
+    return true;
+  };
+
+  auto m = std::make_shared<pattern::Matcher>(matmul_pattern,
+                                              "FoldOneHotMatMulToGather");
   register_matcher(m, callback);
 }
 
@@ -1811,6 +2248,9 @@ NpuOptimizer::Result NpuOptimizer::Run(
   }
   if (eliminate_matmul_fq_) {
     pass_manager.register_pass<EliminateMatMulFakeQuantize>();
+  }
+  if (fold_one_hot_matmul_to_gather_) {
+    pass_manager.register_pass<FoldOneHotMatMulToGather>();
   }
   std::shared_ptr<MoEGatherRewrite> moe_gather_pass;
   if (enable_moe_gather_) {
