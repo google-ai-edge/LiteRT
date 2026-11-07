@@ -16,6 +16,7 @@
 #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
@@ -59,6 +60,7 @@
 #include <windows.h>
 #else
 #include <errno.h>
+#include <fcntl.h>
 #include <stdlib.h>  // mkstemp: POSIX, not declared by <cstdlib>.
 #include <unistd.h>
 #endif
@@ -246,6 +248,57 @@ int WriteAll(int fd, const void* data, size_t size) {
   }
   return 0;
 }
+
+// Opens a second descriptor on the file |fd| refers to.
+//
+// Preferred over dup(): dup() returns a descriptor that SHARES the open file
+// description, hence the seek position, with |fd|. Since the fd handed to
+// NPUW is seeked to the pool offset, a dup would move the position of the
+// model descriptor the LiteRT runtime owns as well. Reopening through
+// /proc/self/fd (Linux and Android) yields an independent description with
+// its own position, leaving the caller's untouched. Where /proc is not
+// mounted we fall back to dup() and accept the shared position -- benign in
+// practice, every seek we issue writes the same constant offset -- but log
+// it. Returns -1 on failure.
+int OpenIndependently(int fd) {
+  char link[64];
+  std::snprintf(link, sizeof(link), "/proc/self/fd/%d", fd);
+  const int reopened = ::open(link, O_RDONLY | O_CLOEXEC);
+  if (reopened >= 0) return reopened;
+  const int reopen_errno = errno;
+  const int dup_fd = ::dup(fd);
+  if (dup_fd >= 0) {
+    // Once: NPUW calls the provider once per weight.
+    static std::atomic<bool> warned{false};
+    if (!warned.exchange(true)) {
+      LITERT_LOG(LITERT_WARNING,
+                 "NPU weight sharing: cannot reopen fd %d via '%s' (%s); using "
+                 "dup(), which shares the seek position with the model's own "
+                 "descriptor",
+                 fd, link, std::strerror(reopen_errno));
+    }
+  }
+  return dup_fd;
+}
+
+// Reads |size| bytes at |offset| into |buf| without using or moving the seek
+// position of |fd| (pread, not read): the position is what carries the pool
+// offset to NPUW and must not be disturbed. Returns false on short read.
+bool ReadAtOffset(int fd, uint64_t offset, void* buf, size_t size) {
+  auto* p = static_cast<char*>(buf);
+  while (size > 0) {
+    const ssize_t got = ::pread(fd, p, size, static_cast<off_t>(offset));
+    if (got < 0) {
+      if (errno == EINTR) continue;
+      return false;
+    }
+    if (got == 0) return false;  // EOF before the requested range ended
+    p += got;
+    offset += static_cast<uint64_t>(got);
+    size -= static_cast<size_t>(got);
+  }
+  return true;
+}
 #endif  // !LITERT_WINDOWS_OS
 
 }  // namespace
@@ -322,6 +375,14 @@ NpuSharedBank::~NpuSharedBank() {
   std::string path;
   {
     absl::MutexLock lock(npu_bank_mutex_);
+#ifndef LITERT_WINDOWS_OS
+    // Closing the bank's descriptor does not invalidate NPUW's mappings:
+    // mmap keeps its own reference to the file.
+    if (model_fd_ >= 0) {
+      ::close(model_fd_);
+      model_fd_ = -1;
+    }
+#endif
     if (!owns_bank_file_) return;
     path = bank_path_;
   }
@@ -332,6 +393,96 @@ NpuSharedBank::~NpuSharedBank() {
 #else
   ::unlink(path.c_str());
 #endif
+}
+
+ov::FileHandleProvider NpuSharedBank::MakeHandleProvider(const PoolSource& src) {
+#ifdef LITERT_WINDOWS_OS
+  // src.fd is a CRT descriptor of the module that loaded the model, not of
+  // this DLL (see CopyPoolChunked): _get_osfhandle() on it would either
+  // fail-fast the process or return an unrelated handle. No way to obtain the
+  // OS handle NPUW needs, so the caller stages the pool instead.
+  (void)src;
+  return nullptr;
+#else
+  absl::MutexLock lock(npu_bank_mutex_);
+  if (handle_resolved_) {
+    if (model_fd_ < 0) return nullptr;
+    return MakeProviderLocked();
+  }
+  handle_resolved_ = true;
+
+  // A deployment that pins a pre-staged bank wants that file, not the model.
+  if (const char* override_path = std::getenv("LITERT_OV_WEIGHTS_PATH");
+      override_path != nullptr && override_path[0] != '\0') {
+    return nullptr;
+  }
+  if (src.fd < 0 || src.data == nullptr || src.size == 0) {
+    LITERT_LOG(LITERT_INFO,
+               "NPU weight sharing: model is not file-backed (fd=%d); falling "
+               "back to staging the pool on disk",
+               src.fd);
+    return nullptr;
+  }
+
+  const int fd = OpenIndependently(src.fd);
+  if (fd < 0) {
+    LITERT_LOG(LITERT_WARNING,
+               "NPU weight sharing: cannot reopen model fd %d (%s); falling "
+               "back to staging the pool on disk",
+               src.fd, std::strerror(errno));
+    return nullptr;
+  }
+
+  // Same cheap guard as staging: a wrong alloc_base_file_offset would shift
+  // every weight without any crash, so compare the first bytes at the claimed
+  // file offset against the pool we already have mapped in memory.
+  char probe[kProbeBytes];
+  const size_t probe_bytes = std::min(kProbeBytes, src.size);
+  if (!ReadAtOffset(fd, src.file_offset, probe, probe_bytes) ||
+      std::memcmp(probe, src.data, probe_bytes) != 0) {
+    LITERT_LOG(LITERT_WARNING,
+               "NPU weight sharing: model fd %d at offset %llu does not match "
+               "the in-memory pool (bad alloc_base_file_offset?); falling back "
+               "to staging the pool on disk",
+               src.fd, static_cast<unsigned long long>(src.file_offset));
+    ::close(fd);
+    return nullptr;
+  }
+
+  model_fd_ = fd;
+  pool_file_offset_ = src.file_offset;
+  LITERT_LOG(LITERT_INFO,
+             "NPU weight sharing: serving the %zu-byte weights pool straight "
+             "from the model file (fd %d, pool at offset %llu); no staging",
+             src.size, model_fd_,
+             static_cast<unsigned long long>(pool_file_offset_));
+  return MakeProviderLocked();
+#endif  // LITERT_WINDOWS_OS
+}
+
+ov::FileHandleProvider NpuSharedBank::MakeProviderLocked() {
+#ifdef LITERT_WINDOWS_OS
+  return nullptr;
+#else
+  // Captured by value: the bank owns model_fd_ and outlives every model
+  // imported from this device context, and a plain int keeps the lambda free
+  // of any lock of ours -- NPUW calls it lazily, once per weight, from its own
+  // threads.
+  return [fd = model_fd_, offset = pool_file_offset_]() -> ov::FileHandle {
+    // NPUW takes ownership of what we return (ov::MappedMemory closes it), so
+    // hand out a fresh descriptor every time and never model_fd_ itself.
+    const int handle = OpenIndependently(fd);
+    if (handle < 0) return -1;
+    // The seek position IS the message: NPUW maps from here to EOF, making
+    // the pool start the mapping base so the blob's pool-relative weight
+    // offsets resolve unchanged.
+    if (::lseek(handle, static_cast<off_t>(offset), SEEK_SET) < 0) {
+      ::close(handle);
+      return -1;
+    }
+    return handle;
+  };
+#endif  // LITERT_WINDOWS_OS
 }
 
 std::string NpuSharedBank::Path() const {
