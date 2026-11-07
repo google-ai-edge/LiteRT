@@ -105,6 +105,60 @@ absl::StatusOr<TfLiteTensor&> GetOutputTensor(
   return GetTensor(name, interpreter, interpreter.outputs());
 }
 
+// Limits of TFLite's builtin kernels. The converter writes valid flatbuffers
+// for these graphs, which other TFLite runtimes (e.g. delegates) may run, but
+// the builtin interpreter used by these tests rejects them when it prepares
+// the ops. Each check returns Unimplemented for its limit, so that the tests
+// skip these cases and still fail on any other interpreter error.
+
+// Returns the type of the `index`-th input of `op`.
+absl::StatusOr<Type> GetInputType(const graph::Operation& op, size_t index) {
+  if (op.inputs.size() <= index) {
+    return absl::InvalidArgumentError("Missing operation input.");
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& info,
+                              graph::GetInfo(op.inputs[index]));
+  return info.type;
+}
+
+// The builtin FullyConnected kernel doesn't run int4 and int2 weights.
+absl::Status CheckFullyConnectedWeightsAreNotSubByte(
+    const graph::Operation& op) {
+  if (op.GetTypeId() !=
+      internal::TypeId::Get<graph::FullyConnectedOperation>()) {
+    return absl::OkStatus();
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const Type weights_type, GetInputType(op, 1));
+  if (BitSize(weights_type) < 8) {
+    return absl::UnimplementedError(
+        "TFLite's builtin FullyConnected kernel doesn't support int4 and int2 "
+        "weights.");
+  }
+  return absl::OkStatus();
+}
+
+// The builtin BatchMatMul kernel only takes float, int8 and int16 right-hand
+// sides.
+absl::Status CheckBatchMatMulRhsIsNotSubByte(const graph::Operation& op) {
+  if (op.GetTypeId() != internal::TypeId::Get<graph::BatchMatMulOperation>()) {
+    return absl::OkStatus();
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const Type rhs_type, GetInputType(op, 1));
+  if (BitSize(rhs_type) < 8) {
+    return absl::UnimplementedError(
+        "TFLite's builtin BatchMatMul kernel doesn't support int4 and int2 "
+        "right-hand sides.");
+  }
+  return absl::OkStatus();
+}
+
+// Returns Unimplemented if the builtin interpreter can't run `op`.
+absl::Status CheckBuiltinInterpreterLimits(const graph::Operation& op) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckFullyConnectedWeightsAreNotSubByte(op));
+  LRT_TENSOR_RETURN_IF_ERROR(CheckBatchMatMulRhsIsNotSubByte(op));
+  return absl::OkStatus();
+}
+
 class TfLiteTestBackendBridge : public TestBackendBridge {
  public:
   ~TfLiteTestBackendBridge() override = default;
@@ -115,16 +169,7 @@ class TfLiteTestBackendBridge : public TestBackendBridge {
                           absl::Span<const TensorHandle> outputs) override {
     LRT_TENSOR_ASSIGN_OR_RETURN(auto execution_plan, GetExecutionPlan(outputs));
     for (const auto* op : execution_plan) {
-      if (op->GetTypeId() ==
-          internal::TypeId::Get<graph::FullyConnectedOperation>()) {
-        const auto& weights_tensor = op->inputs[1];
-        LRT_TENSOR_ASSIGN_OR_RETURN(auto info, graph::GetInfo(weights_tensor));
-        if (info.type == Type::kI4 || info.type == Type::kI2) {
-          return absl::UnimplementedError(
-              "TfLite built-in interpreter does not support INT4/INT2 "
-              "execution natively.");
-        }
-      }
+      LRT_TENSOR_RETURN_IF_ERROR(CheckBuiltinInterpreterLimits(*op));
     }
 
     std::vector<TensorHandle> output_handles(outputs.begin(), outputs.end());
@@ -210,19 +255,13 @@ struct TfLiteTraits {
       // The interpreter rejects empty zero points, and single ones shared by
       // several scales.
       "FullyConnectedPerTensorAndAsymmetricOp",
-      // The interpreter rejects empty zero points, and batch matmuls reject
-      // int4 right-hand sides.
+      // The interpreter rejects empty zero points.
       "BatchMatMulQuantizedRhsOp",
-      // The interpreter rejects empty zero points, and batch matmuls reject
-      // int4 right-hand sides.
+      // The interpreter rejects empty zero points.
       "TransposedQuantizedWeightsIntoBatchMatMulOp",
-      // The interpreter rejects empty zero points, and blockwise
-      // dequantizations compute zeros.
+      // The interpreter rejects empty zero points.
       "TransposedQuantizedWeightsIntoAddOp",
-      // Batch matmuls reject int4 right-hand sides.
-      "BatchMatMulAdjXQuantizedRhsOp",
-      // The interpreter rejects empty zero points, and blockwise
-      // dequantizations compute zeros.
+      // The interpreter rejects empty zero points.
       "QuantizedWeightsSharedByDotAndAddOp",
       // The interpreter rejects empty zero points.
       "DequantizePerChannelOp",
@@ -2446,7 +2485,12 @@ TEST(SerializationTest, CanSerializeBlockwiseQuantization) {
               .buffer = buffer_data,
               .quantization = quantization});
 
-  ASSERT_THAT(Save({a}, model_path), IsOk());
+  // TFLite can't dequantize blockwise tensors, but a transpose only moves
+  // them.
+  TensorTf c = Transpose(a, {1, 0});
+  c.SetName("transposed_output");
+
+  ASSERT_THAT(Save({c}, model_path), IsOk());
 
   auto model = tflite::FlatBufferModel::BuildFromFile(model_path.c_str());
   ASSERT_NE(model, nullptr);
