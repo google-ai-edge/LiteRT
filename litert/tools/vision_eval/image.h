@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 
@@ -71,7 +72,7 @@ Expected<std::vector<ImageSample>> ReadSamples(
 // `quantization.zero_point`.
 template <typename T>
 std::vector<T> QuantizePerTensor(
-    const std::vector<float>& values,
+    absl::Span<const float> values,
     const LiteRtQuantizationPerTensor& quantization) {
   const int64_t q_min = std::numeric_limits<T>::min();
   const int64_t q_max = std::numeric_limits<T>::max();
