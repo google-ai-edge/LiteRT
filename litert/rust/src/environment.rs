@@ -199,7 +199,53 @@ impl Environment {
     }
 
     /// Returns the list of hardware accelerators available in this environment.
+    /// Returns an unsupported status when the Windows runtime omits the optional discovery exports.
     pub fn get_available_accelerators(&self) -> Result<Vec<LiteRtHwAccelerator>, Error> {
+        #[cfg(not(windows))]
+        use crate::bindings::{
+            LiteRtGetAccelerator as get_accelerator,
+            LiteRtGetAcceleratorHardwareSupport as get_support,
+            LiteRtGetNumAccelerators as get_num,
+        };
+        // Some published Windows runtimes omit these internal exports. Resolve them from the same loaded
+        // runtime so discovery remains available when supported, without preventing all model execution.
+        #[cfg(windows)]
+        let runtime = libloading::os::windows::Library::open_already_loaded("libLiteRt.dll")
+            .map_err(|_| {
+                Error::new(
+                    ErrorCause::GetNumAccelerators,
+                    LiteRtStatus_kLiteRtStatusErrorUnsupported,
+                )
+            })?;
+        #[cfg(windows)]
+        let get_num = unsafe {
+            runtime.get::<unsafe extern "C" fn(LiteRtEnvironment, *mut LiteRtParamIndex) -> LiteRtStatus>(
+                b"LiteRtGetNumAccelerators\0")
+        }.map_err(|_| Error::new(ErrorCause::GetNumAccelerators, LiteRtStatus_kLiteRtStatusErrorUnsupported))?;
+        #[cfg(windows)]
+        let get_accelerator = unsafe {
+            runtime.get::<unsafe extern "C" fn(
+                LiteRtEnvironment,
+                LiteRtParamIndex,
+                *mut LiteRtAccelerator,
+            ) -> LiteRtStatus>(b"LiteRtGetAccelerator\0")
+        }
+        .map_err(|_| {
+            Error::new(ErrorCause::GetAccelerator, LiteRtStatus_kLiteRtStatusErrorUnsupported)
+        })?;
+        #[cfg(windows)]
+        let get_support = unsafe {
+            runtime.get::<unsafe extern "C" fn(
+                LiteRtAcceleratorConst,
+                *mut LiteRtHwAcceleratorSet,
+            ) -> LiteRtStatus>(b"LiteRtGetAcceleratorHardwareSupport\0")
+        }
+        .map_err(|_| {
+            Error::new(
+                ErrorCause::GetAcceleratorHardwareSupport,
+                LiteRtStatus_kLiteRtStatusErrorUnsupported,
+            )
+        })?;
         let mut num_accelerators: LiteRtParamIndex = 0;
         call_check_status!(
             // SAFETY:
@@ -208,7 +254,7 @@ impl Environment {
             //   dropped.
             // - `&mut num_accelerators` is a valid, properly aligned, non-null pointer to local
             //   stack memory with exclusive write permission to receive the accelerator count.
-            unsafe { LiteRtGetNumAccelerators(self.raw_environment, &mut num_accelerators) },
+            unsafe { get_num(self.raw_environment, &mut num_accelerators) },
             ErrorCause::GetNumAccelerators
         );
 
@@ -225,7 +271,7 @@ impl Environment {
                 //   stack memory with exclusive write permission to receive the unowned
                 //   accelerator handle borrowing from `self.raw_environment` (which does not
                 //   require manual destruction).
-                unsafe { LiteRtGetAccelerator(self.raw_environment, i, &mut accelerator) },
+                unsafe { get_accelerator(self.raw_environment, i, &mut accelerator) },
                 ErrorCause::GetAccelerator
             );
 
@@ -237,20 +283,26 @@ impl Environment {
                 //   whose lifetime is bound to `self.raw_environment`.
                 // - `&mut hardware_support` is a valid, properly aligned, non-null pointer to
                 //   local stack memory with exclusive write permission to receive the bitfield.
-                unsafe { LiteRtGetAcceleratorHardwareSupport(accelerator, &mut hardware_support) },
+                unsafe { get_support(accelerator, &mut hardware_support) },
                 ErrorCause::GetAcceleratorHardwareSupport
             );
 
             if (hardware_support
-                & (LiteRtHwAccelerators_kLiteRtHwAcceleratorCpu as LiteRtHwAcceleratorSet)) != 0 {
+                & (LiteRtHwAccelerators_kLiteRtHwAcceleratorCpu as LiteRtHwAcceleratorSet))
+                != 0
+            {
                 accelerators.push(LiteRtHwAccelerator::Cpu);
             }
             if (hardware_support
-                & (LiteRtHwAccelerators_kLiteRtHwAcceleratorGpu as LiteRtHwAcceleratorSet)) != 0 {
+                & (LiteRtHwAccelerators_kLiteRtHwAcceleratorGpu as LiteRtHwAcceleratorSet))
+                != 0
+            {
                 accelerators.push(LiteRtHwAccelerator::Gpu);
             }
             if (hardware_support
-                & (LiteRtHwAccelerators_kLiteRtHwAcceleratorNpu as LiteRtHwAcceleratorSet)) != 0 {
+                & (LiteRtHwAccelerators_kLiteRtHwAcceleratorNpu as LiteRtHwAcceleratorSet))
+                != 0
+            {
                 accelerators.push(LiteRtHwAccelerator::Npu);
             }
         }
@@ -293,8 +345,16 @@ mod tests {
     fn test_get_available_accelerators() {
         let environment =
             EnvironmentBuilder::build_default().expect("Failed to create environment");
-        let accelerators =
-            environment.get_available_accelerators().expect("Failed to get available accelerators");
+        let result = environment.get_available_accelerators();
+        #[cfg(windows)]
+        if result
+            .as_ref()
+            .is_err_and(|error| error.litert_status() == LiteRtStatus_kLiteRtStatusErrorUnsupported)
+        {
+            // The published Windows runtime omits the discovery exports; the integration test verifies this case.
+            return;
+        }
+        let accelerators = result.expect("Failed to get available accelerators");
         // CPU accelerator is always available by default.
         assert!(!accelerators.is_empty());
         assert!(accelerators.contains(&LiteRtHwAccelerator::Cpu));

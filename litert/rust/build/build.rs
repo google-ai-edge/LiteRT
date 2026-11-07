@@ -333,6 +333,17 @@ fn download_and_build_cpp_sdk(
     }
 
     let build_dir = out_dir.join("litert_cc_sdk_build");
+    if target_platform.platform == Platform::WindowsX86 {
+        // Rust calls the C API directly. The C++ archive is unnecessary, and the SDK's CMake import target
+        // has no Windows import library. Build that library from the published DLL instead.
+        fs::create_dir_all(&build_dir)?;
+        let include = build_dir.join("include/litert/build_common");
+        fs::create_dir_all(&include)?;
+        fs::write(include.join("build_config.h"),
+            "#pragma once\n#define LITERT_BUILD_CONFIG_DISABLE_GPU 0\n#define LITERT_BUILD_CONFIG_DISABLE_NPU 0\n")?;
+        windows_import_library(&sdk_root, &target_platform.runtime_name(), "LiteRt")?;
+        return Ok(LiteRTSdk::new(sdk_root, build_dir));
+    }
     info!("Building C++ SDK with CMake in {}", build_dir.display());
 
     let status = Command::new("cmake")
@@ -357,6 +368,36 @@ fn download_and_build_cpp_sdk(
     Ok(LiteRTSdk::new(sdk_root, build_dir))
 }
 
+fn windows_import_library(
+    directory: &Path,
+    dll: &str,
+    link_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use object::Object;
+    let data = fs::read(directory.join(dll))?;
+    let exports = object::read::pe::PeFile64::parse(&*data)?.exports()?;
+    let mut definition = format!("LIBRARY {dll}\nEXPORTS\n");
+    for export in exports {
+        definition.push_str(std::str::from_utf8(export.name())?);
+        definition.push('\n');
+    }
+    let def = directory.join(format!("{link_name}.def"));
+    fs::write(&def, definition)?;
+    let target = env::var("TARGET")?;
+    let mut librarian = cc::windows_registry::find(&target, "lib.exe")
+        .ok_or("MSVC lib.exe is required to create LiteRT's import library")?;
+    let status = librarian
+        .arg("/nologo")
+        .arg("/machine:x64")
+        .arg(format!("/def:{}", def.display()))
+        .arg(format!("/out:{}", directory.join(format!("{link_name}.lib")).display()))
+        .status()?;
+    if !status.success() {
+        return Err(format!("Creating the import library failed: {status}").into());
+    }
+    Ok(())
+}
+
 // The wrapper.h is moved to output directory, to avoid include of local files when
 // cargo is called from the source tree.
 fn copy_wrapper_h(out_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -379,7 +420,7 @@ fn dump_all_env_vars() {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     dump_all_env_vars();
-    println!("cargo::rustc-check-cfg=cfg(bazel_bindgen, cargo_bindgen, docsrs, async_support)");
+    println!("cargo::rustc-check-cfg=cfg(bazel_bindgen, cargo_bindgen, docsrs, async_support, litert_has_failed_precondition)");
     // Check if we are currently generating documentation
     let is_doc_gen = env::var(CARGO_DOCS_RS).is_ok();
 
@@ -402,7 +443,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let target_platform = TargetPlatform::from_cargo_env()?;
 
-    check_tool_installed("cmake")?;
+    if target_platform.platform != Platform::WindowsX86 {
+        check_tool_installed("cmake")?;
+    }
     check_tool_installed("clang")?;
 
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
@@ -413,10 +456,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo::rustc-link-search=native={}", litert_sdk.sdk_root_dir.display());
     println!("cargo::rustc-link-lib=dylib={}", target_platform.runtime_link_name());
     println!("cargo::rustc-link-search=native={}", litert_sdk.sdk_build_dir.display());
-    println!("cargo::rustc-link-lib=static=litert_cc_api");
+    if target_platform.platform != Platform::WindowsX86 {
+        println!("cargo::rustc-link-lib=static=litert_cc_api");
+    }
 
     if let Some(accel_runtime_name) = target_platform.accelerator_runtime_name() {
-        println!("cargo::rustc-link-lib=dylib={}", accel_runtime_name);
+        // The runtime loads the accelerator dynamically; Windows does not link directly against a DLL filename.
+        if target_platform.platform != Platform::WindowsX86 {
+            println!("cargo::rustc-link-lib=dylib={}", accel_runtime_name);
+        }
     }
 
     let wrapper_h_path = copy_wrapper_h(&out_dir)?;
@@ -431,6 +479,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .derive_default(true)
         .generate()
         .expect("Unable to generate bindings");
+
+    // The pinned SDK may predate a status added to the source tree. An unqualified missing constant in a
+    // match pattern becomes a catch-all binding, which would mislabel every later status.
+    if bindings.to_string().contains("pub const LiteRtStatus_kLiteRtStatusErrorFailedPrecondition:")
+    {
+        println!("cargo::rustc-cfg=litert_has_failed_precondition");
+    }
 
     // Write the bindings to the $OUT_DIR/bindings.rs file.
     // Get the output directory where cargo wants us to build things

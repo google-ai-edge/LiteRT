@@ -209,6 +209,13 @@ pub enum TensorBufferType {
     OpenClTexture,
     OpenClTextureFp16,
     OpenClBufferPacked,
+    WebGpuBuffer,
+    WebGpuBufferFp16,
+    WebGpuTexture,
+    WebGpuTextureFp16,
+    WebGpuImageBuffer,
+    WebGpuImageBufferFp16,
+    WebGpuBufferPacked,
 }
 
 impl TensorBufferType {
@@ -233,6 +240,23 @@ impl TensorBufferType {
             Self::OpenClBufferPacked => {
                 LiteRtTensorBufferType_kLiteRtTensorBufferTypeOpenClBufferPacked
             }
+            Self::WebGpuBuffer => LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuBuffer,
+            Self::WebGpuBufferFp16 => {
+                LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuBufferFp16
+            }
+            Self::WebGpuTexture => LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuTexture,
+            Self::WebGpuTextureFp16 => {
+                LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuTextureFp16
+            }
+            Self::WebGpuImageBuffer => {
+                LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuImageBuffer
+            }
+            Self::WebGpuImageBufferFp16 => {
+                LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuImageBufferFp16
+            }
+            Self::WebGpuBufferPacked => {
+                LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuBufferPacked
+            }
         }
     }
     pub fn from_c_enum(enum_value: LiteRtTensorBufferType) -> Result<TensorBufferType, Error> {
@@ -255,6 +279,23 @@ impl TensorBufferType {
             }
             LiteRtTensorBufferType_kLiteRtTensorBufferTypeOpenClBufferPacked => {
                 Ok(Self::OpenClBufferPacked)
+            }
+            LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuBuffer => Ok(Self::WebGpuBuffer),
+            LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuBufferFp16 => {
+                Ok(Self::WebGpuBufferFp16)
+            }
+            LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuTexture => Ok(Self::WebGpuTexture),
+            LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuTextureFp16 => {
+                Ok(Self::WebGpuTextureFp16)
+            }
+            LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuImageBuffer => {
+                Ok(Self::WebGpuImageBuffer)
+            }
+            LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuImageBufferFp16 => {
+                Ok(Self::WebGpuImageBufferFp16)
+            }
+            LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuBufferPacked => {
+                Ok(Self::WebGpuBufferPacked)
             }
             _ => Err(Error::new(
                 ErrorCause::InvalidTensorBufferTypeEnumValue,
@@ -310,8 +351,7 @@ impl<'a> TensorBuffer<'a> {
             ErrorCause::CreateManagedTensorBuffer
         );
         let dimensions =
-            tensor_type.layout.dimensions[..tensor_type.layout.rank().try_into().unwrap()]
-                .to_vec();
+            tensor_type.layout.dimensions[..tensor_type.layout.rank().try_into().unwrap()].to_vec();
         Ok(TensorBuffer {
             raw_tensor_buffer: buffer_ptr,
             dimensions,
