@@ -32,8 +32,8 @@ using ::testing::ElementsAreArray;
 template <typename T>
 class MatrixSetDiagOpModel : public SingleOpModel {
  public:
-  explicit MatrixSetDiagOpModel(const TensorData& input,
-                                const TensorData& diag) {
+  explicit MatrixSetDiagOpModel(const TensorData& input, const TensorData& diag,
+                                bool allocate_and_delegate = true) {
     input_ = AddInput(input);
     diag_ = AddInput(diag);
     output_ = AddOutput({input.type, {}});
@@ -41,7 +41,9 @@ class MatrixSetDiagOpModel : public SingleOpModel {
     SetBuiltinOp(BuiltinOperator_MATRIX_SET_DIAG,
                  BuiltinOptions_MatrixSetDiagOptions,
                  CreateMatrixSetDiagOptions(builder_).Union());
-    BuildInterpreter({GetShape(input_), GetShape(diag_)});
+    BuildInterpreter({GetShape(input_), GetShape(diag_)}, /*num_threads=*/-1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/true, allocate_and_delegate);
   }
 
   int input() { return input_; }
@@ -126,6 +128,65 @@ TEST(MatrixSetDiagTest, Int32TestTwoDimDiag) {
                                                    1, 1, 7, 1,  //
                                                    1, 1, 1, 8}));
   EXPECT_THAT(model.GetOutputType(), TfLiteType::kTfLiteInt32);
+}
+
+TEST(MatrixSetDiagTest, RejectsMismatchedDiagonalType) {
+  MatrixSetDiagOpModel<float> model({TensorType_FLOAT32, {2, 2}},
+                                    {TensorType_INT32, {2}}, false);
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+}
+
+TEST(MatrixSetDiagTest, RejectsMismatchedDiagonalRank) {
+  for (const std::vector<int>& shape :
+       {std::vector<int>{}, std::vector<int>{1, 2}}) {
+    MatrixSetDiagOpModel<int32_t> model({TensorType_INT32, {2, 2}},
+                                        {TensorType_INT32, shape}, false);
+    EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+  }
+}
+
+TEST(MatrixSetDiagTest, RejectsMismatchedDiagonalBatchShape) {
+  for (const std::vector<int>& shape :
+       {std::vector<int>{1, 3, 4}, std::vector<int>{2, 2, 4}}) {
+    MatrixSetDiagOpModel<int32_t> model({TensorType_INT32, {2, 3, 4, 5}},
+                                        {TensorType_INT32, shape}, false);
+    EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+  }
+}
+
+TEST(MatrixSetDiagTest, RejectsMismatchedDiagonalLength) {
+  for (int length : {1, 3}) {
+    SCOPED_TRACE(length);
+    MatrixSetDiagOpModel<int32_t> model({TensorType_INT32, {2, 3}},
+                                        {TensorType_INT32, {length}}, false);
+    EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+  }
+}
+
+TEST(MatrixSetDiagTest, RejectsUnsupportedTypes) {
+  for (TensorType type : {TensorType_BOOL, TensorType_FLOAT16}) {
+    SCOPED_TRACE(type);
+    MatrixSetDiagOpModel<uint8_t> model({type, {2, 2}}, {type, {2}});
+    EXPECT_EQ(model.Invoke(), kTfLiteError);
+  }
+}
+
+TEST(MatrixSetDiagTest, MoreRowsThanColumns) {
+  MatrixSetDiagOpModel<int32_t> model({TensorType_INT32, {3, 2}},
+                                      {TensorType_INT32, {2}});
+  model.PopulateTensor<int32_t>(model.input(), {1, 2, 3, 4, 5, 6});
+  model.PopulateTensor<int32_t>(model.diag(), {7, 8});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+  EXPECT_THAT(model.GetOutputShape(), ElementsAre(3, 2));
+  EXPECT_THAT(model.GetOutput(), ElementsAreArray({7, 2, 3, 8, 5, 6}));
+}
+
+TEST(MatrixSetDiagTest, EmptyDiagonal) {
+  MatrixSetDiagOpModel<float> model({TensorType_FLOAT32, {2, 0, 3}},
+                                    {TensorType_FLOAT32, {2, 0}});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+  EXPECT_THAT(model.GetOutputShape(), ElementsAre(2, 0, 3));
+  EXPECT_THAT(model.GetOutput(), ElementsAre());
 }
 
 }  // namespace
