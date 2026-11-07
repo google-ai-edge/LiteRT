@@ -534,7 +534,12 @@ def split_dep_platform(
 
             # copybara:uncomment_begin(google-only)
             # # Prebuilt QAIRT host libraries require GLIBC >= 2.34 rather than GRTE v5 (glibc 2.27).
-            # host_platform = "//litert/integration_test:host_cots_linux" if "qualcomm" in backend_id else host_platform
+            # host_platform = (
+            # "//litert/integration_test:host_cots_linux" if "qualcomm" in backend_id else select({
+            # "//litert:linux_aarch64": "//litert/integration_test:host_arm64",
+            # "//conditions:default": host_platform,
+            # })
+            # )
             #
             # copybara:uncomment_end
             platform_data(

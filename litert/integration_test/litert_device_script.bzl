@@ -158,7 +158,7 @@ _device_script_lib = rule(
             mandatory = False,
             default = None,
             executable = True,
-            cfg = "exec",
+            cfg = "target",
             doc = "The binary for host to package with the script.",
         ),
         "device_bin": attr.label(
