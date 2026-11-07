@@ -702,8 +702,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         }
 
         // Compile using the per-partition device and properties.
-        litert::openvino::LogOpenVINOVersionInfoOnce("OpenVINO Compiler",
-                                                     context.Device().c_str());
+        litert::openvino::LogOpenVINOVersionInfoOnce(
+            "OpenVINO Compiler", context.Device().c_str(), configs);
         LITERT_LOG(LITERT_INFO, "Compiling partition %d for device %s",
                    partition_idx, context.Device().c_str());
         auto compiled_model =
