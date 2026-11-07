@@ -480,6 +480,84 @@ TEST(VerifyModel, StringTensorIsLargerThanRequired) {
                   "String tensor input buffer last offset must be 19"));
 }
 
+TEST(VerifyModel, StringTensorNonMonotonicOffsets) {
+  TfLiteFlatbufferModelBuilder builder;
+  builder.AddTensor({3}, TensorType_STRING,
+                    {3,  0, 0, 0, 20, 0, 0, 0, 24,  0,   0,   0,
+                     20, 0, 0, 0, 24, 0, 0, 0, 'A', 'B', 'C', 'D'},
+                    "input");
+  builder.FinishModel({}, {});
+  ASSERT_FALSE(builder.Verify());
+  ASSERT_FALSE(builder.VerifyWithOpResolver());
+  EXPECT_THAT(builder.GetErrorString(),
+              ::testing::ContainsRegex(
+                  "String tensor input buffer is invalid: index 2"));
+}
+
+TEST(VerifyModel, StringTensorCountMismatchWithShape) {
+  TfLiteFlatbufferModelBuilder builder;
+  builder.AddTensor({4}, TensorType_STRING,
+                    {1, 0, 0, 0, 12, 0, 0, 0, 16, 0, 0, 0, 'T', 'E', 'S', 'T'},
+                    "input");
+  builder.FinishModel({}, {});
+  ASSERT_FALSE(builder.Verify());
+  ASSERT_FALSE(builder.VerifyWithOpResolver());
+  EXPECT_THAT(
+      builder.GetErrorString(),
+      ::testing::ContainsRegex(
+          "String tensor input buffer has 1 strings, but shape requires 4"));
+}
+
+TEST(VerifyModel, StringTensorScalarEmptyAndDynamicShapes) {
+  {
+    // Scalar shape {} requires 1 string.
+    TfLiteFlatbufferModelBuilder builder;
+    builder.AddTensor({}, TensorType_STRING,
+                      {1, 0, 0, 0, 12, 0, 0, 0, 14, 0, 0, 0, 'O', 'K'},
+                      "scalar_str");
+    builder.FinishModel({}, {});
+    ASSERT_TRUE(builder.Verify());
+    ASSERT_TRUE(builder.VerifyWithOpResolver());
+  }
+  {
+    // Zero-element shape {0} requires 0 strings.
+    TfLiteFlatbufferModelBuilder builder;
+    builder.AddTensor({0}, TensorType_STRING, {0, 0, 0, 0, 8, 0, 0, 0},
+                      "zero_str");
+    builder.FinishModel({}, {});
+    ASSERT_TRUE(builder.Verify());
+    ASSERT_TRUE(builder.VerifyWithOpResolver());
+  }
+  {
+    // Equal adjacent offsets for empty strings are valid.
+    TfLiteFlatbufferModelBuilder builder;
+    builder.AddTensor({2}, TensorType_STRING,
+                      {2, 0, 0, 0, 16, 0, 0, 0, 16, 0, 0, 0, 16, 0, 0, 0},
+                      "empty_strs");
+    builder.FinishModel({}, {});
+    ASSERT_TRUE(builder.Verify());
+    ASSERT_TRUE(builder.VerifyWithOpResolver());
+  }
+  {
+    // Dynamic shape {-1, 2} with positive string count is accepted, while {0,
+    // -1} with nonzero strings is rejected.
+    TfLiteFlatbufferModelBuilder dyn_ok;
+    dyn_ok.AddTensor(
+        {-1, 2}, TensorType_STRING,
+        {2, 0, 0, 0, 16, 0, 0, 0, 17, 0, 0, 0, 18, 0, 0, 0, 'A', 'B'},
+        "dyn_str");
+    dyn_ok.FinishModel({}, {});
+    ASSERT_TRUE(dyn_ok.Verify());
+
+    TfLiteFlatbufferModelBuilder zero_dyn_bad;
+    zero_dyn_bad.AddTensor({0, -1}, TensorType_STRING,
+                           {1, 0, 0, 0, 12, 0, 0, 0, 13, 0, 0, 0, 'A'},
+                           "zero_dyn_str");
+    zero_dyn_bad.FinishModel({}, {});
+    ASSERT_FALSE(zero_dyn_bad.Verify());
+  }
+}
+
 TEST(VerifyModel, AllOpsAreSupported) {
   TfLiteFlatbufferModelBuilder builder({BuiltinOperator_ADD}, {"CustomOp"});
   builder.AddTensor({2, 2}, TensorType_UINT8, {1, 2, 3, 4}, "input1");
