@@ -161,7 +161,7 @@ class SegmentationPipeline {
     options_ = std::make_shared<litert::Options>(std::move(*options_or));
     options_->SetHardwareAccelerators(litert::HwAccelerators::kGpu);
 
-    auto span = absl::MakeConstSpan(model_buffer_.data(), model_buffer_.size());
+    auto span = absl::MakeConstSpan(model_buffer_);
     auto core_runner_or = LitertDynamicRunner::Create(*env_, span, *options_);
     if (!core_runner_or.ok()) return core_runner_or.status();
     core_runner_ =
