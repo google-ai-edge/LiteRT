@@ -84,6 +84,7 @@ litert_dynamic_lib(
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/compiler/transformations:attention_chunk_transformation",
         "//litert/vendors/qualcomm/compiler/transformations:entry_embedding_transformation",
+        "//litert/vendors/qualcomm/compiler/transformations:gqa_transformation",
         "//litert/vendors/qualcomm/compiler/transformations:legalize_int32_ops_transformation",
         "//litert/vendors/qualcomm/compiler/transformations:mlp_quant_transformation",
         "//litert/vendors/qualcomm/compiler/transformations:orphan_cleanup_transformation",
