@@ -79,8 +79,10 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   if (value->quantization.type == kTfLiteAffineQuantization) {
     const auto qparams = static_cast<const TfLiteAffineQuantization*>(
         value->quantization.params);
+    TF_LITE_ENSURE(context, qparams != nullptr);
     TF_LITE_ENSURE(context, qparams->scale != nullptr);
     TF_LITE_ENSURE(context, qparams->zero_point != nullptr);
+    TF_LITE_ENSURE(context, qparams->zero_point->size > 0);
     TfLiteTensor* output;
     TF_LITE_ENSURE_OK(context, GetOutputSafe(context, node, 0, &output));
     if ((value->type == kTfLiteUInt8 || value->type == kTfLiteInt8 ||
@@ -237,8 +239,23 @@ TfLiteStatus EvalBlockwise(TfLiteContext* context, TfLiteNode* node,
   const auto quantization_params =
       reinterpret_cast<const TfLiteBlockwiseQuantization*>(
           value->quantization.params);
+  TF_LITE_ENSURE(context, quantization_params != nullptr);
+  TF_LITE_ENSURE(context, quantization_params->scale >= 0 &&
+                              quantization_params->scale <
+                                  static_cast<int>(context->tensors_size));
   const TfLiteTensor& scale = context->tensors[quantization_params->scale];
+  TF_LITE_ENSURE_TYPES_EQ(context, scale.type, kTfLiteFloat16);
+  const half* scale_data = GetTensorData<half>(&scale);
+  TF_LITE_ENSURE(context, scale_data != nullptr);
+  const int64_t scale_elements_i64 = NumElements(&scale);
+  TF_LITE_ENSURE(context, scale_elements_i64 >= 0);
+  const CheckedInt<size_t> scale_elements(scale_elements_i64);
+  const CheckedInt<size_t> required_scale_bytes = scale_elements * sizeof(half);
+  TF_LITE_ENSURE(context, !scale_elements.Overflow() &&
+                              !required_scale_bytes.Overflow() &&
+                              required_scale_bytes.Value() <= scale.bytes);
   const int blocksize = quantization_params->blocksize;
+  TF_LITE_ENSURE(context, blocksize > 0);
   const int dimension_size = SizeOfDimension(lookup, 0);
 
   float* output_fp32_ptr = GetTensorData<float>(output);
@@ -259,15 +276,20 @@ TfLiteStatus EvalBlockwise(TfLiteContext* context, TfLiteNode* node,
     TF_LITE_ENSURE_OK(context, ValidateLookupIndex(context, idx, row_size));
     CheckedInt<size_t> output_row_offset = CheckedInt<size_t>(i) * col_size;
     CheckedInt<size_t> scale_offset = CheckedInt<size_t>(idx) * num_blocks;
+    CheckedInt<size_t> scale_end = scale_offset + num_blocks;
     CheckedInt<size_t> value_offset = CheckedInt<size_t>(idx) * col_size;
     if (output_row_offset.Overflow() || scale_offset.Overflow() ||
-        value_offset.Overflow()) {
+        scale_end.Overflow() || value_offset.Overflow()) {
       TF_LITE_KERNEL_LOG(context, "Embedding Lookup: offset overflow.");
       return kTfLiteError;
     }
+    if (scale_end.Value() > scale_elements.Value()) {
+      TF_LITE_KERNEL_LOG(context,
+                         "Embedding Lookup: scale tensor is too small.");
+      return kTfLiteError;
+    }
     for (size_t j = 0; j < num_blocks; ++j) {
-      float scaling_factor =
-          GetTensorData<half>(&scale)[scale_offset.Value() + j];
+      float scaling_factor = scale_data[scale_offset.Value() + j];
       CheckedInt<size_t> val_off =
           value_offset + CheckedInt<size_t>(j) * blocksize;
       CheckedInt<size_t> out_off =
