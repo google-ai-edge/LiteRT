@@ -17,6 +17,8 @@ limitations under the License.
 #include <stddef.h>
 #include <stdint.h>
 
+#include <limits>
+
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/compatibility.h"
@@ -58,6 +60,22 @@ struct OpData {
   int32_t output_multiplier;
   int output_shift;
 };
+
+template <typename T>
+TfLiteStatus ValidateZeroPoints(TfLiteContext* context,
+                                const TfLiteTensor* input1,
+                                const TfLiteTensor* input2,
+                                const TfLiteTensor* output) {
+  constexpr int32_t kMin = std::numeric_limits<T>::min();
+  constexpr int32_t kMax = std::numeric_limits<T>::max();
+  const auto in_range = [=](int32_t zero_point) {
+    return zero_point >= kMin && zero_point <= kMax;
+  };
+  TF_LITE_ENSURE(context, in_range(input1->params.zero_point));
+  TF_LITE_ENSURE(context, in_range(input2->params.zero_point));
+  TF_LITE_ENSURE(context, in_range(output->params.zero_point));
+  return kTfLiteOk;
+}
 
 void* Init(TfLiteContext* context, const char* buffer, size_t length) {
   auto* data = new OpData;
@@ -101,6 +119,22 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   if (output->type == kTfLiteInt8 || output->type == kTfLiteUInt8 ||
       output->type == kTfLiteInt16) {
+    switch (output->type) {
+      case kTfLiteUInt8:
+        TF_LITE_ENSURE_OK(context, ValidateZeroPoints<uint8_t>(
+                                       context, input1, input2, output));
+        break;
+      case kTfLiteInt8:
+        TF_LITE_ENSURE_OK(context, ValidateZeroPoints<int8_t>(
+                                       context, input1, input2, output));
+        break;
+      case kTfLiteInt16:
+        TF_LITE_ENSURE_OK(context, ValidateZeroPoints<int16_t>(
+                                       context, input1, input2, output));
+        break;
+      default:
+        break;
+    }
     TF_LITE_ENSURE_STATUS(CalculateActivationRangeQuantized(
         context, params->activation, output, &data->output_activation_min,
         &data->output_activation_max));
@@ -115,9 +149,13 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 }
 
 template <KernelType kernel_type>
-void EvalDiv(TfLiteContext* context, TfLiteNode* node, TfLiteDivParams* params,
-             const OpData* data, const TfLiteTensor* input1,
-             const TfLiteTensor* input2, TfLiteTensor* output) {
+TfLiteStatus EvalDiv(TfLiteContext* context, TfLiteNode* node,
+                     TfLiteDivParams* params, const OpData* data,
+                     const TfLiteTensor* input1, const TfLiteTensor* input2,
+                     TfLiteTensor* output) {
+  if (NumElements(output) == 0) {
+    return kTfLiteOk;
+  }
 #define TF_LITE_DIV(type, opname, data_type)                             \
   tflite::ArithmeticParams op_params;                                    \
   data_type output_activation_min, output_activation_max;                \
@@ -159,6 +197,7 @@ void EvalDiv(TfLiteContext* context, TfLiteNode* node, TfLiteDivParams* params,
     }
   }
 #undef TF_LITE_DIV
+  return kTfLiteOk;
 }
 
 template <KernelType kernel_type>
@@ -168,6 +207,9 @@ TfLiteStatus EvalQuantized(TfLiteContext* context, TfLiteNode* node,
                            const TfLiteTensor* input2, TfLiteTensor* output) {
   if (output->type == kTfLiteInt8 || output->type == kTfLiteUInt8 ||
       output->type == kTfLiteInt16) {
+    if (NumElements(output) == 0) {
+      return kTfLiteOk;
+    }
     tflite::ArithmeticParams op_params;
     SetActivationParams(data->output_activation_min,
                         data->output_activation_max, &op_params);
@@ -284,10 +326,14 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     // Div by zero seems ok in this case, we don't do a check at this point.
     // However, unlike in TF where infinities are returned, here we return an
     // activation min/max value if any or std::numeric_limits<float>::min/max.
-    EvalDiv<kernel_type>(context, node, params, data, input1, input2, output);
+    TF_LITE_ENSURE_OK(
+        context, EvalDiv<kernel_type>(context, node, params, data, input1,
+                                      input2, output));
   } else if (output->type == kTfLiteInt32) {
     TF_LITE_ENSURE_OK(context, CheckNonZero<int32_t>(context, input2));
-    EvalDiv<kernel_type>(context, node, params, data, input1, input2, output);
+    TF_LITE_ENSURE_OK(
+        context, EvalDiv<kernel_type>(context, node, params, data, input1,
+                                      input2, output));
   } else if (output->type == kTfLiteUInt8) {
     TF_LITE_ENSURE_OK(context, CheckNonZero<uint8_t>(context, input2));
     TF_LITE_ENSURE_OK(
