@@ -741,7 +741,8 @@ MAIN_FUNCTION($0) {
     SIMD_REDUCE_ATTN_OUT
 
     if (k_lane == 0) {
-      args.output.Write(ucl::Convert<ActivationType>(my_attn_out), t, h, v_slice, b);
+      ActivationType my_attn_out_act = ucl::Convert<ActivationType>(my_attn_out);
+      args.output.Write(my_attn_out_act, t, h, v_slice, b);
     }
   }
 
@@ -1283,11 +1284,13 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
                                scratch_kq[3] + scratch_kq[4] + scratch_kq[5] +
                                scratch_kq[6] + scratch_kq[7];
       StateType out_sum = sq_sum + delta_slice * ucl::Init<StateType>(kq_sum);
-      args.output.Write(ucl::Convert<ActivationType>(out_sum), t, h, v_slice, b);
+      ActivationType out_sum_act = ucl::Convert<ActivationType>(out_sum);
+      args.output.Write(out_sum_act, t, h, v_slice, b);
     })"
                                                         : R"(if (k_slice == 0) {
       StateType out_sum = scratch_out[0] + delta_slice * ucl::Init<StateType>(scratch_kq[0]);
-      args.output.Write(ucl::Convert<ActivationType>(out_sum), t, h, v_slice, b);
+      ActivationType out_sum_act = ucl::Convert<ActivationType>(out_sum);
+      args.output.Write(out_sum_act, t, h, v_slice, b);
     })";
 
   std::string valid_len_init =
@@ -1303,8 +1306,9 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
           ? "if (" + zero_pad_lane_cond +
                 ") {\n"
                 "    for (int t = valid_len; t < SEQ_LEN_EXPR; ++t) {\n"
-                "      args.output.Write(ucl::Init<ActivationType>(0.0), t, h, "
-                "v_slice, b);\n"
+                "      ActivationType zero_act = "
+                "ucl::Init<ActivationType>(0.0);\n"
+                "      args.output.Write(zero_act, t, h, v_slice, b);\n"
                 "    }\n"
                 "  }"
           : "";
@@ -1477,7 +1481,8 @@ STATE_WRITE_OUT_STEP
     float4 z_vec = ucl::Convert<float4>(args.zba.Read(0, 0, out_slice, b));
     float4 z_gate = z_vec / (ucl::Init<float4>(1.0f) + exp(-z_vec));
     float4 gated_out = my_attn_out * ucl::Init<float4>(inv_rms) * norm_w * z_gate;
-    args.output.Write(ucl::Convert<ActivationType>(gated_out), 0, 0, out_slice, b);
+    ActivationType gated_out_act = ucl::Convert<ActivationType>(gated_out);
+    args.output.Write(gated_out_act, 0, 0, out_slice, b);
   }
 }
 )";
@@ -1600,7 +1605,8 @@ GDN_SCALAR_GATES
     float4 z_vec = ucl::Convert<float4>(args.zba.Read(0, 0, out_slice, b));
     float4 z_gate = z_vec / (ucl::Init<float4>(1.0f) + exp(-z_vec));
     float4 gated_out = head_out[v_slice] * ucl::Init<float4>(inv_rms) * norm_w * z_gate;
-    args.output.Write(ucl::Convert<ActivationType>(gated_out), 0, 0, out_slice, b);
+    ActivationType gated_out_act = ucl::Convert<ActivationType>(gated_out);
+    args.output.Write(gated_out_act, 0, 0, out_slice, b);
   }
 }
 )";
@@ -1837,7 +1843,8 @@ MAIN_FUNCTION($0) {
     float4 z_vec = ucl::Convert<float4>(args.zba.Read(t, 0, out_slice, b));
     float4 z_gate = z_vec / (ucl::Init<float4>(1.0f) + exp(-z_vec));
     float4 gated_out = o * ucl::Init<float4>(inv_rms) * norm_w * z_gate;
-    args.output.Write(ucl::Convert<ActivationType>(gated_out), t, 0, out_slice, b);
+    ActivationType gated_out_act = ucl::Convert<ActivationType>(gated_out);
+    args.output.Write(gated_out_act, t, 0, out_slice, b);
   }
 }
 )";
