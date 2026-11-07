@@ -114,6 +114,12 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
         context.unfold_gqa_sequence_fold_ = (value == "true");
         continue;
       }
+      if (key == "enable_hfa") {
+        LITERT_LOG(LITERT_INFO, "Custom config: enable_hfa = %s",
+                   value.c_str());
+        context.enable_hfa_ = (value == "true");
+        continue;
+      }
       if (key == "split_shared_constants") {
         LITERT_LOG(LITERT_INFO, "Custom config: split_shared_constants = %s",
                    value.c_str());
@@ -172,6 +178,10 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
         context.unfold_gqa_sequence_fold_ = (value == "true");
         continue;
       }
+      if (key == "enable_hfa") {
+        context.enable_hfa_ = (value == "true");
+        continue;
+      }
       if (key == "sdpa_pad_kv_to_alignment") {
         context.sdpa_pad_kv_to_alignment_ = (value == "true");
         continue;
@@ -202,8 +212,9 @@ LiteRtStatus OpenVinoCompileContext::ConfigureForSoc(const char* soc_model) {
 }
 
 void OpenVinoCompileContext::ConfigureForNpuWeightSharing(
-    bool moe_multi_token_chunk) {
+    const OptimizeModelResult& result) {
   if (device_ != "NPU") return;
+  const bool moe_multi_token_chunk = result.moe_is_multi_token_chunk;
   // NPUW private properties, set by literal key because
   // npuw_private_properties.hpp is not shipped in the runtime SDK.
   configs_map_["NPU_USE_NPUW"] = "YES";
@@ -228,23 +239,52 @@ void OpenVinoCompileContext::ConfigureForNpuWeightSharing(
              "NPU weight sharing: enabled NPUW weightless compile knobs (%s "
              "chunk pipeline)",
              moe_multi_token_chunk ? "multi-token" : "single-token");
+
+  // Ask NPUW for HFA on exactly the graphs whose prefill SDPAs were
+  // decomposed into the form it converts. An explicit NPUW_ATTN wins.
+  if (result.num_sdpa_decomposed_for_hfa > 0 &&
+      configs_map_.try_emplace("NPUW_ATTN", std::string("HFA")).second) {
+    LITERT_LOG(LITERT_INFO,
+               "enable_hfa: NPUW_ATTN=HFA (%zu SDPA op(s) decomposed for it)",
+               result.num_sdpa_decomposed_for_hfa);
+    if (!moe_multi_token_chunk) {
+      LITERT_LOG(LITERT_WARNING,
+                 "enable_hfa: HFA needs NPUW's REP pipeline, which NPU weight "
+                 "sharing selects only for a multi-token MoE chunk; this "
+                 "graph gets NPUW_ONLINE_PIPELINE=NONE, so NPUW will not "
+                 "attach HFA");
+    }
+  }
+  // HFA converts only the decomposed form, which enable_hfa produces.
+  const auto attn = configs_map_.find("NPUW_ATTN");
+  if (!enable_hfa_ && attn != configs_map_.end() &&
+      attn->second.as<std::string>() == "HFA") {
+    LITERT_LOG(LITERT_WARNING,
+               "NPUW_ATTN=HFA without enable_hfa=true: attention stays fused, "
+               "so NPUW will not attach HFA");
+  }
 }
 
 OpenVinoCompileContext::OptimizeModelResult
 OpenVinoCompileContext::OptimizeModel(
     const std::shared_ptr<ov::Model>& model) const {
   if (device_ != "NPU") return {};
+  // HFA is built on the fused, head-parallel SDPA, so enable_hfa implies the
+  // fusion and the GQA unfold.
   const NpuOptimizer::Result result =
       NpuOptimizer()
           .SetConstantFold(true)
           .SetEliminateMatMulFakeQuantize(eliminate_fq_after_matmul_)
-          .SetFuseSplitAttentionToSDPA(fuse_split_attention_to_sdpa_)
-          .SetUnfoldGqaSequenceFold(unfold_gqa_sequence_fold_)
+          .SetFuseSplitAttentionToSDPA(fuse_split_attention_to_sdpa_ ||
+                                       enable_hfa_)
+          .SetUnfoldGqaSequenceFold(unfold_gqa_sequence_fold_ || enable_hfa_)
+          .SetDecomposeSDPAForHFA(enable_hfa_)
           .SetSdpaPadKvToAlignment(sdpa_pad_kv_to_alignment_)
           .SetEnableMoeGather(enable_moe_gather_)
           .SetSplitSharedConstants(split_shared_constants_)
           .Run(model);
-  return {.moe_is_multi_token_chunk = result.moe_is_multi_token_chunk};
+  return {.moe_is_multi_token_chunk = result.moe_is_multi_token_chunk,
+          .num_sdpa_decomposed_for_hfa = result.num_sdpa_decomposed_for_hfa};
 }
 
 }  // namespace openvino
