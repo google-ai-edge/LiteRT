@@ -25,6 +25,21 @@ namespace tflite {
 namespace ops {
 namespace builtin {
 namespace bitcast {
+namespace {
+
+int PackedBitWidth(TfLiteType type) {
+  switch (type) {
+    case kTfLiteInt4:
+    case kTfLiteUInt4:
+      return 4;
+    case kTfLiteInt2:
+      return 2;
+    default:
+      return 0;
+  }
+}
+
+}  // namespace
 
 constexpr int kInputTensor = 0;
 constexpr int kOutputTensor = 0;
@@ -36,6 +51,10 @@ TfLiteStatus CalculateShape(TfLiteContext* context, const TfLiteTensor* input,
 
   auto input_type = input->type;
   auto output_type = output->type;
+  // Packed sub-byte types have non-integral byte width per element, so only
+  // equal-bit-width packed bitcasts preserve shape and byte count here.
+  TF_LITE_ENSURE_EQ(context, PackedBitWidth(input_type),
+                    PackedBitWidth(output_type));
   size_t input_type_size, output_type_size;
   TF_LITE_ENSURE_STATUS(GetSizeOfType(context, input_type, &input_type_size));
   TF_LITE_ENSURE_STATUS(GetSizeOfType(context, output_type, &output_type_size));
@@ -53,6 +72,7 @@ TfLiteStatus CalculateShape(TfLiteContext* context, const TfLiteTensor* input,
     // If T is smaller than type, the operator requires that the rightmost
     // dimension be equal to sizeof(type)/sizeof(T). The shape then goes from
     // [..., sizeof(type)/sizeof(T)] to [...].
+    TF_LITE_ENSURE(context, dims > 0);
     TF_LITE_ENSURE_EQ(context, input->dims->data[dims - 1],
                       output_type_size / input_type_size);
     shape = TfLiteIntArrayCreate(dims - 1);
@@ -88,9 +108,10 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_OK(context,
                     GetOutputSafe(context, node, kOutputTensor, &output));
 
+  TF_LITE_ENSURE_EQ(context, input->bytes, output->bytes);
   // Only copy data if input and output do not share a buffer.
   if (output->data.data != input->data.data) {
-    memcpy(output->data.data, input->data.data, input->bytes);
+    memcpy(output->data.data, input->data.data, output->bytes);
   }
   return kTfLiteOk;
 }
