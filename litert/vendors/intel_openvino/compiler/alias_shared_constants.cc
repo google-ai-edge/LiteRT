@@ -25,15 +25,17 @@
 #include <utility>
 #include <vector>
 
+#include "openvino/core/graph_util.hpp"
+#include "openvino/core/model.hpp"
+#include "openvino/core/type.hpp"
+#include "openvino/op/constant.hpp"
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/vendors/intel_openvino/compiler/weight_bank.h"
 #include "litert/vendors/intel_openvino/compiler/weight_bank_attributes.h"
 #include "litert/vendors/intel_openvino/compiler/weightless_caching_attributes.hpp"
-#include "openvino/core/graph_util.hpp"
-#include "openvino/core/model.hpp"
-#include "openvino/core/type.hpp"
-#include "openvino/op/constant.hpp"
+#include "farmhash.h"
 
 namespace litert::openvino {
 
@@ -43,6 +45,21 @@ std::map<int32_t, size_t> PoolLayout::OffsetMap() const {
     offsets.emplace(entry.buffer_id, entry.pool_offset);
   }
   return offsets;
+}
+
+std::string PoolLayout::WeightsBankName() const {
+  std::vector<uint64_t> per_buffer_fingerprints;
+  per_buffer_fingerprints.reserve(2 * buffers.size());
+  for (const auto& entry : buffers) {
+    const uint32_t buffer_id = static_cast<uint32_t>(entry.buffer_id);
+    per_buffer_fingerprints.push_back(buffer_id);
+    per_buffer_fingerprints.push_back(util::Fingerprint64(
+        reinterpret_cast<const char*>(entry.bytes.data()), entry.bytes.size()));
+  }
+  const uint64_t pool_fingerprint = util::Fingerprint64(
+      reinterpret_cast<const char*>(per_buffer_fingerprints.data()),
+      per_buffer_fingerprints.size() * sizeof(uint64_t));
+  return absl::StrFormat("litert_npuw_%016x", pool_fingerprint);
 }
 
 void HarvestSharedConstants(const std::shared_ptr<ov::Model>& ov_model,
