@@ -1842,5 +1842,114 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.test_name;
     });
 
+TEST(ModelSerializeTest, SerializeSubgraphPreservesWeightsAndCustomOps) {
+  static constexpr absl::string_view kWeightBytes = "\x01\x02\x03\x04";
+
+  LiteRtModelT root;
+  auto& unused_sg = root.EmplaceSubgraph();
+  unused_sg.SetName("unused");
+
+  auto& target_sg = root.EmplaceSubgraph();
+  target_sg.SetName("extracted_sg");
+
+  auto& input = target_sg.EmplaceTensor();
+  input.SetName("in");
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+  target_sg.Inputs().push_back(&input);
+
+  auto& weight = target_sg.EmplaceTensor();
+  weight.SetName("const_weight");
+  weight.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+  weight.Weights().SetBufferManager(root.Buffers());
+  SetWeightsFromOwnedBuffer(weight.Weights(),
+                            OwningBufferRef<uint8_t>(kWeightBytes));
+
+  auto& mid = target_sg.EmplaceTensor();
+  mid.SetName("mid");
+  mid.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+
+  auto& out = target_sg.EmplaceTensor();
+  out.SetName("out");
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1}));
+  target_sg.Outputs().push_back(&out);
+
+  auto& add_op = target_sg.EmplaceOp();
+  add_op.SetOpCode(kLiteRtOpCodeTflAdd);
+  AttachInput(&input, add_op);
+  AttachInput(&weight, add_op);
+  AttachOutput(&mid, add_op);
+
+  auto& custom_op = target_sg.EmplaceOp();
+  custom_op.SetOpCode(kLiteRtOpCodeTflCustom);
+  custom_op.SetCustomCode("my_custom_op");
+  AttachInput(&mid, custom_op);
+  AttachOutput(&out, custom_op);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(OwningBufferRef<uint8_t> serialized,
+                              SerializeSubgraph(target_sg));
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtModelT::Ptr reloaded,
+                              LoadModelFromBuffer(serialized));
+
+  ASSERT_EQ(reloaded->NumSubgraphs(), 1);
+  const auto& sg = reloaded->Subgraph(0);
+  EXPECT_EQ(sg.Name(), "extracted_sg");
+  ASSERT_EQ(sg.NumInputs(), 1);
+  EXPECT_EQ(sg.Input(0).Name(), "in");
+  ASSERT_EQ(sg.NumOutputs(), 1);
+  EXPECT_EQ(sg.Output(0).Name(), "out");
+  ASSERT_EQ(sg.Ops().size(), 2);
+  EXPECT_EQ(sg.Op(0).OpCode(), kLiteRtOpCodeTflAdd);
+  EXPECT_EQ(sg.Op(0).Input(1).Weights().Buffer().StrView(), kWeightBytes);
+  EXPECT_EQ(sg.Op(1).OpCode(), kLiteRtOpCodeTflCustom);
+  LITERT_ASSERT_OK_AND_ASSIGN(absl::string_view custom_code,
+                              sg.Op(1).CustomCode());
+  EXPECT_EQ(custom_code, "my_custom_op");
+}
+
+TEST(ModelSerializeTest, SerializeSubgraphResetsCompositeDecompositionIndex) {
+  LiteRtModelT root;
+  auto& main_sg = root.EmplaceSubgraph();
+  root.EmplaceSubgraph();  // Decomposition subgraph at index 1.
+
+  auto& in = main_sg.EmplaceTensor();
+  in.SetName("in");
+  in.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2}));
+  main_sg.Inputs().push_back(&in);
+
+  auto& out = main_sg.EmplaceTensor();
+  out.SetName("out");
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2}));
+  main_sg.Outputs().push_back(&out);
+
+  auto& composite = main_sg.EmplaceOp();
+  composite.SetOpCode(kLiteRtOpCodeShloComposite);
+  tflite::StableHLOCompositeOptionsT composite_opts;
+  composite_opts.name = "odml.rms_norm";
+  composite_opts.decomposition_subgraph_index = 1;
+  TflOptions2 opts2;
+  opts2.type = tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  opts2.Set(std::move(composite_opts));
+  SetTflOptions2(composite, std::move(opts2));
+  AttachInput(&in, composite);
+  AttachOutput(&out, composite);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(OwningBufferRef<uint8_t> serialized,
+                              SerializeSubgraph(main_sg));
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtModelT::Ptr reloaded,
+                              LoadModelFromBuffer(serialized));
+
+  ASSERT_EQ(reloaded->NumSubgraphs(), 1);
+  ASSERT_EQ(reloaded->Subgraph(0).Ops().size(), 1);
+  const auto& reloaded_op = reloaded->Subgraph(0).Op(0);
+  EXPECT_EQ(reloaded_op.OpCode(), kLiteRtOpCodeShloComposite);
+  const TflOptions2& reloaded_opts = GetTflOptions2(reloaded_op);
+  ASSERT_EQ(reloaded_opts.type,
+            tflite::BuiltinOptions2_StableHLOCompositeOptions);
+  EXPECT_EQ(reloaded_opts.AsStableHLOCompositeOptions()->name, "odml.rms_norm");
+  EXPECT_EQ(
+      reloaded_opts.AsStableHLOCompositeOptions()->decomposition_subgraph_index,
+      -1);
+}
+
 }  // namespace
 }  // namespace litert::internal

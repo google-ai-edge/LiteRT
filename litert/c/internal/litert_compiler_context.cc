@@ -14,12 +14,48 @@
 
 #include "litert/c/internal/litert_compiler_context.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <tuple>
+
 #include "litert/c/litert_builder.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
+#if !defined(LITERT_DISABLE_NPU)
+#include "litert/cc/litert_common.h"
+#include "litert/core/model/model_serialize.h"
+#endif  // !defined(LITERT_DISABLE_NPU)
+
+namespace {
+
+// Serializes a single subgraph into standalone tflite flatbuffer bytes without
+// mutating the owning model. Only reachable through
+// `LiteRtCompilerContext::serialize_subgraph`; intentionally not public C API.
+LiteRtStatus SerializeSubgraph(LiteRtSubgraph subgraph, uint8_t** buf,
+                               size_t* size, size_t* offset,
+                               LiteRtModelSerializationOptions options) {
+  if (!subgraph || !buf || !size || !offset) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+#if defined(LITERT_DISABLE_NPU)
+  return kLiteRtStatusErrorUnsupported;
+#else
+  auto serialized = litert::internal::SerializeSubgraph(
+      *subgraph, options.bytecode_alignment);
+  if (!serialized) {
+    return litert::ToLiteRtStatus(serialized.Error().StatusCC());
+  }
+  std::tie(*buf, *size, *offset) = serialized->Release();
+  return kLiteRtStatusOk;
+#endif  // !defined(LITERT_DISABLE_NPU)
+}
+
+}  // namespace
 
 LiteRtCompilerContext* LrtGetCompilerContext() {
   static LiteRtCompilerContext ctx = {
@@ -28,7 +64,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
               .struct_size = sizeof(LiteRtCompilerContext),
               // LINT.IfChange(compiler_context_version)
               .major_version = 1,
-              .minor_version = 5,
+              .minor_version = 6,
               .reserved = 0,
               // LINT.ThenChange(./litert_compiler_context.h:compiler_context_table)
           },
@@ -315,6 +351,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
           LiteRtGetConv3dTransposeDilationHOption,
       .build_conv_3d_transpose_op_option =
           LiteRtBuilderBuildConv3dTransposeOpOption,
+      .serialize_subgraph = SerializeSubgraph,
   };
   return &ctx;
 }
