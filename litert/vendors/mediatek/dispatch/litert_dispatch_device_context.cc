@@ -15,8 +15,12 @@
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
 
 #include <sys/mman.h>
+#include <unistd.h>
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 
 #include "neuron/api/NeuronAdapter.h"
@@ -27,7 +31,20 @@
 
 using litert::Error;
 
-LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() = default;
+LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() {
+  for (const auto& [weight_ptr, handle] : shared_weight_cache_) {
+    (void)weight_ptr;
+    (void)neuron_memory_registry_.Unregister(handle);
+  }
+  if (runtime_context_ != nullptr &&
+      runtime_context_->destroy_tensor_buffer != nullptr) {
+    for (LiteRtTensorBuffer tb : owned_weight_tensor_buffers_) {
+      if (tb != nullptr) {
+        runtime_context_->destroy_tensor_buffer(tb);
+      }
+    }
+  }
+}
 
 litert::Expected<LiteRtDispatchDeviceContextT::Ptr>
 LiteRtDispatchDeviceContextT::Create(
@@ -135,6 +152,104 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
                  tensor_buffer_type);
       return litert::Unexpected(kLiteRtStatusErrorUnsupported);
   }
+}
+
+litert::Expected<LiteRtDispatchDeviceContextT::NeuronMemoryInfo>
+LiteRtDispatchDeviceContextT::GetOrCreateSharedWeightMemory(
+    const void* weight_data, size_t weight_size, size_t padded_size) {
+  if (weight_data == nullptr || weight_size == 0) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Invalid shared weight buffer");
+  }
+  auto it = shared_weight_cache_.find(weight_data);
+  if (it != shared_weight_cache_.end()) {
+    return GetNeuronMemoryInfo(it->second);
+  }
+
+  const size_t alloc_size = std::max(weight_size, padded_size);
+  LiteRtRankedTensorType weight_tensor_type = {};
+  weight_tensor_type.element_type = kLiteRtElementTypeUInt8;
+  weight_tensor_type.layout.rank = 1;
+  weight_tensor_type.layout.dimensions[0] = 0;
+
+  LiteRtTensorBuffer tensor_buffer = nullptr;
+  LiteRtStatus alloc_status = runtime_context_->create_managed_tensor_buffer(
+      /*env=*/nullptr, kLiteRtTensorBufferTypeAhwb, &weight_tensor_type,
+      alloc_size, &tensor_buffer);
+  if (alloc_status != kLiteRtStatusOk || tensor_buffer == nullptr) {
+    alloc_status = runtime_context_->create_managed_tensor_buffer(
+        /*env=*/nullptr, kLiteRtTensorBufferTypeDmaBuf, &weight_tensor_type,
+        alloc_size, &tensor_buffer);
+  }
+  if (alloc_status != kLiteRtStatusOk || tensor_buffer == nullptr) {
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "Failed to allocate DMA-BUF/AHWB tensor buffer for shared "
+                 "weights");
+  }
+
+  void* host_mem_addr = nullptr;
+  if (auto lock_status = runtime_context_->lock_tensor_buffer(
+          tensor_buffer, &host_mem_addr, kLiteRtTensorBufferLockModeWrite);
+      lock_status != kLiteRtStatusOk || host_mem_addr == nullptr) {
+    runtime_context_->destroy_tensor_buffer(tensor_buffer);
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "Failed to lock shared weight tensor buffer");
+  }
+
+  constexpr size_t kChunkSize = 4 * 1024 * 1024;  // 4 MiB
+  const auto* src_bytes = static_cast<const uint8_t*>(weight_data);
+  auto* dst_bytes = static_cast<uint8_t*>(host_mem_addr);
+
+  const int64_t page_size = sysconf(_SC_PAGESIZE);
+  uintptr_t mask = 0;
+  uintptr_t start = reinterpret_cast<uintptr_t>(src_bytes);
+  uintptr_t evicted_up_to = 0;
+  if (page_size > 0) {
+    mask = static_cast<uintptr_t>(page_size) - 1;
+    evicted_up_to = (start + mask) & ~mask;
+#if defined(MADV_NOHUGEPAGE)
+    const uintptr_t outer_start = start & ~mask;
+    const uintptr_t outer_end = (start + weight_size + mask) & ~mask;
+    if (outer_end > outer_start) {
+      madvise(reinterpret_cast<void*>(outer_start), outer_end - outer_start,
+              MADV_NOHUGEPAGE);
+    }
+#endif
+  }
+
+  for (size_t offset = 0; offset < weight_size; offset += kChunkSize) {
+    const size_t chunk = std::min(kChunkSize, weight_size - offset);
+    std::memcpy(dst_bytes + offset, src_bytes + offset, chunk);
+    if (page_size > 0) {
+      const uintptr_t aligned_end = (start + offset + chunk) & ~mask;
+      if (aligned_end > evicted_up_to) {
+        madvise(reinterpret_cast<void*>(evicted_up_to),
+                aligned_end - evicted_up_to, MADV_DONTNEED);
+        evicted_up_to = aligned_end;
+      }
+    }
+  }
+  if (alloc_size > weight_size) {
+    std::memset(dst_bytes + weight_size, 0, alloc_size - weight_size);
+  }
+
+  if (auto unlock_status =
+          runtime_context_->unlock_tensor_buffer(tensor_buffer);
+      unlock_status != kLiteRtStatusOk) {
+    runtime_context_->destroy_tensor_buffer(tensor_buffer);
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "Failed to unlock shared weight tensor buffer");
+  }
+
+  auto handle = RegisterTensorBuffer(tensor_buffer);
+  if (!handle) {
+    runtime_context_->destroy_tensor_buffer(tensor_buffer);
+    return handle.Error();
+  }
+
+  owned_weight_tensor_buffers_.push_back(tensor_buffer);
+  shared_weight_cache_.emplace(weight_data, *handle);
+  return GetNeuronMemoryInfo(*handle);
 }
 
 LiteRtDispatchDeviceContextT::NeuronMemoryRegistry::~NeuronMemoryRegistry() {

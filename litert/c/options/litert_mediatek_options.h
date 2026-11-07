@@ -208,6 +208,16 @@ LiteRtStatus LrtSetMediatekOptionsAotCompilationOptions(
 LiteRtStatus LrtGetMediatekOptionsAotCompilationOptions(
     const LrtMediatekOptions* options, const char** aot_compilation_options);
 
+// enable_weight_sharing ----------------------------------------------
+// When true, static weights are extracted into separate FlatBuffer buffers
+// and loaded via DMA-BUF at runtime to reduce process RSS.
+// Defaults to false.
+LiteRtStatus LrtSetMediatekOptionsEnableWeightSharing(
+    LrtMediatekOptions* options, bool enable_weight_sharing);
+
+LiteRtStatus LrtGetMediatekOptionsEnableWeightSharing(
+    const LrtMediatekOptions* options, bool* enable_weight_sharing);
+
 #ifdef __cplusplus
 
 }  // extern "C"
