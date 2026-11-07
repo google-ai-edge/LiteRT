@@ -27,6 +27,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/intel_openvino/compiler/encoded_weights_store.h"
 
 namespace litert::openvino {
 
@@ -47,7 +48,15 @@ void WeightBank::AddSubgraph(const litert::compiler::Subgraph& subgraph) {
       if (buffer_id < 0) {
         continue;
       }
-      buffer_bytes_[buffer_id] = weights.Bytes();
+      absl::Span<const uint8_t> bytes = weights.Bytes();
+      if (encoded_weights_) {
+        if (auto encoding = EncodedWeightStore::EncodingFor(input)) {
+          if (auto encoded = encoded_weights_->GetOrEncode(input, *encoding)) {
+            bytes = *encoded;
+          }
+        }
+      }
+      buffer_bytes_[buffer_id] = bytes;
       // Record this tensor's name so the matching OpenVINO weight (which takes
       // the tensor name as its friendly_name) can be resolved back to its
       // buffer. Distinct names sharing a buffer all point at the same id.

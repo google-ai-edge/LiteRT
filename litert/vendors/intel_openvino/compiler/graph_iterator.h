@@ -29,6 +29,7 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/intel_openvino/compiler/decoder.h"
+#include "litert/vendors/intel_openvino/compiler/encoded_weights_store.h"
 namespace litert {
 namespace openvino {
 
@@ -49,8 +50,12 @@ class GraphIteratorDelegate
  public:
   GraphIteratorDelegate(const LiteRtCompilerContext* ctx,
                         const litert::compiler::Subgraph* graph,
-                        std::string device = "NPU")
-      : ctx_(ctx), subgraph_ptr_(graph), device_(std::move(device)) {
+                        std::string device = "NPU",
+                        EncodedWeightStore* encoded_weights = nullptr)
+      : ctx_(ctx),
+        subgraph_ptr_(graph),
+        device_(std::move(device)),
+        encoded_weights_(encoded_weights) {
     for (const auto& input : subgraph_ptr_->Inputs()) {
       if (input.IsSubgraphInput()) {
         iterator_indices_.input_index_++;
@@ -121,6 +126,9 @@ class GraphIteratorDelegate
   struct OVGraphIndices iterator_indices_;
   // OpenVINO target device string for this partition ("NPU", "GPU", "CPU").
   std::string device_;
+  // Not owned. When set, converted weights come from it instead of a private
+  // copy.
+  EncodedWeightStore* encoded_weights_;
   // Owns converted weight buffers for i2 weight transformations. Each entry
   // holds a copy of the repacked bytes (u2 for NPU/CPU, i4 for GPU) that
   // outlives the decoder returned by get_decoder().
