@@ -83,6 +83,81 @@ TEST(RemoveUnusedInputs, BypassInputsWithoutOp) {
   ASSERT_EQ(subgraph.inputs(), std::vector<int>({0, -1, 2}));
 }
 
+TEST(SubgraphLifecycleTest, FailedKernelInitRemovesPartialNode) {
+  Interpreter interpreter;
+  ASSERT_EQ(interpreter.AddTensors(2), kTfLiteOk);
+  TfLiteQuantizationParams quant = {};
+  ASSERT_EQ(
+      interpreter.SetTensorParametersReadWrite(0, kTfLiteFloat32, "in", {1},
+                                               quant),
+      kTfLiteOk);
+  ASSERT_EQ(
+      interpreter.SetTensorParametersReadWrite(1, kTfLiteFloat32, "out", {1},
+                                               quant),
+      kTfLiteOk);
+
+  TfLiteRegistration ok_reg = {};
+  ok_reg.builtin_code = BuiltinOperator_CUSTOM;
+  ok_reg.custom_name = "ValidCustomOp";
+  ok_reg.init = [](TfLiteContext*, const char*, size_t) -> void* {
+    return reinterpret_cast<void*>(0x1);
+  };
+  ok_reg.free = [](TfLiteContext*, void*) {};
+  ok_reg.invoke = [](TfLiteContext*, TfLiteNode*) -> TfLiteStatus {
+    return kTfLiteOk;
+  };
+  int ok_index = -1;
+  ASSERT_EQ(interpreter.AddNodeWithParameters({0}, {1}, nullptr, 0, nullptr,
+                                              &ok_reg, &ok_index),
+            kTfLiteOk);
+  EXPECT_EQ(ok_index, 0);
+  EXPECT_EQ(interpreter.nodes_size(), 1);
+
+  TfLiteRegistration fail_reg = {};
+  fail_reg.builtin_code = BuiltinOperator_CUSTOM;
+  fail_reg.custom_name = "FailInitCustomOp";
+  fail_reg.init = [](TfLiteContext*, const char*, size_t) -> void* {
+    return TfLiteKernelInitFailed();
+  };
+  int fail_index = -1;
+  EXPECT_EQ(interpreter.AddNodeWithParameters({0}, {1}, nullptr, 0, nullptr,
+                                              &fail_reg, &fail_index),
+            kTfLiteError);
+  EXPECT_EQ(interpreter.nodes_size(), 1);
+  EXPECT_NE(interpreter.node_and_registration(0), nullptr);
+  EXPECT_EQ(interpreter.node_and_registration(1), nullptr);
+}
+
+TEST(SubgraphLifecycleTest, SetTensorParametersReadOnlySameShapeUpdatesBytes) {
+  Interpreter interpreter;
+  ASSERT_EQ(interpreter.AddTensors(2), kTfLiteOk);
+  TfLiteQuantizationParams quant = {};
+  const std::vector<char> large = {1, 0, 0, 0, 12,  0,   0,  0,
+                                   15, 0, 0, 0, 'A', 'B', 'C'};
+  const std::vector<char> small = {1, 0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0};
+
+  ASSERT_EQ(interpreter.SetTensorParametersReadOnly(
+                0, kTfLiteString, "s0", {1}, quant, large.data(), large.size()),
+            kTfLiteOk);
+  EXPECT_EQ(interpreter.tensor(0)->bytes, large.size());
+
+  ASSERT_EQ(interpreter.SetTensorParametersReadOnly(
+                0, kTfLiteString, "s0", {1}, quant, small.data(), small.size()),
+            kTfLiteOk);
+  EXPECT_EQ(interpreter.tensor(0)->bytes, small.size());
+
+  ASSERT_EQ(
+      interpreter.SetTensorParametersReadWrite(1, kTfLiteString, "s1", {1},
+                                               quant),
+      kTfLiteOk);
+  ASSERT_EQ(
+      TfLiteTensorRealloc(interpreter.tensor(0)->bytes, interpreter.tensor(1)),
+      kTfLiteOk);
+  EXPECT_EQ(TfLiteTensorCopy(interpreter.tensor(0), interpreter.tensor(1)),
+            kTfLiteOk);
+  EXPECT_EQ(interpreter.tensor(1)->bytes, small.size());
+}
+
 TEST(GetSubgraphContext, NonConstGetSubgraphContext) {
   Interpreter interpreter;
   auto& subgraph = interpreter.primary_subgraph();
