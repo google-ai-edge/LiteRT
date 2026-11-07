@@ -75,6 +75,8 @@ file(GLOB _litert_source_build_cc_api_public_headers
     "${LITERT_SOURCE_DIR}/cc/*.h"
     "${LITERT_SOURCE_DIR}/cc/options/*.h"
 )
+# cc/litert_model.h is a transitional forwarding header to cc/internal/litert_model.h.
+list(REMOVE_ITEM _litert_source_build_cc_api_public_headers "cc/litert_model.h")
 # The smoke source has a different include root in g3 and OSS. Normalize
 # it before checking the public-header inventory so this guard survives export.
 string(REPLACE "third_party/odml/litert/litert/" "litert/"

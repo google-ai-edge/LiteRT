@@ -21,10 +21,10 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/internal/litert_model.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
