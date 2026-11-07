@@ -43,6 +43,7 @@
 #include "litert/vendors/samsung/compiler/builders/conv2d_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/conv3d_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/cumsum_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/depth_to_space_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/dequantize_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/elementwise_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/fully_connected_op_builder.h"
@@ -77,6 +78,7 @@
 #include "litert/vendors/samsung/compiler/builders/tanh_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/transpose_op_builder.h"
+#include "litert/vendors/samsung/compiler/builders/unpack_op_builder.h"
 #include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
@@ -119,9 +121,17 @@ LiteRtStatus GraphCreator::CreateTensor(const litert::compiler::Tensor& t) {
     return static_cast<LiteRtStatus>(ranked_tensor_type.Error().StatusCC());
   }
 
-  auto dimensions = ranked_tensor_type->Layout().Dimensions();
-  std::vector<DIM_T> tensor_shape(dimensions.size());
-  absl::c_copy(dimensions, tensor_shape.begin());
+  const auto litert_layout = ranked_tensor_type->Layout();
+  std::vector<DIM_T> tensor_shape;
+  tensor_shape.resize(litert_layout.Rank());
+  for (size_t i = 0; i < tensor_shape.size(); ++i) {
+    // "-1" means that dimension size is unknown. It's dynmaic dimension.
+    if (litert_layout.Dimensions()[i] == -1) {
+      tensor_shape[i] = 1;
+    } else {
+      tensor_shape[i] = litert_layout.Dimensions()[i];
+    }
+  }
 
   if (tensor_shape.empty()) {
     // Shape size of tensor couldn't be zero
@@ -341,6 +351,9 @@ Expected<std::vector<char>> CreateModel(
       case kLiteRtOpCodeTflCumsum:
         op_wrapper = BuildCumsumOp(compiler_context, op);
         break;
+      case kLiteRtOpCodeTflDepthToSpace:
+        op_wrapper = BuildDepthToSpaceOp(compiler_context, op);
+        break;
       case kLiteRtOpCodeTflDepthwiseConv2d:
         op_wrapper = BuildDepthwiseConv2dOp(compiler_context, op);
         break;
@@ -512,6 +525,9 @@ Expected<std::vector<char>> CreateModel(
         break;
       case kLiteRtOpCodeTflTransposeConv:
         op_wrapper = BuildTransposeConvOp(compiler_context, op);
+        break;
+      case kLiteRtOpCodeTflUnpack:
+        op_wrapper = BuildUnpackOp(compiler_context, op);
         break;
       case kLiteRtOpCodeShloComposite: {
         const char* composite_name = nullptr;
