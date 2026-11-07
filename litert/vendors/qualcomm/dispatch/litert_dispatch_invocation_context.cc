@@ -462,7 +462,8 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
     return {};
   }
 
-  auto mem_handle = device_context_->GetMemHandle(tensor_buffer_handle, tensor);
+  auto mem_handle = device_context_->GetMemHandle(tensor_buffer_handle, tensor,
+                                                  GetContextHandle());
   if (!mem_handle) {
     return Unexpected(mem_handle.Error());
   }
