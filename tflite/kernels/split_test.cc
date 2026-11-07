@@ -92,6 +92,21 @@ class PrepareOnlySplitOpModel : public SingleOpModel {
                      /*allocate_and_delegate=*/false);
   }
 
+  PrepareOnlySplitOpModel(const TensorData& axis_tensor,
+                          const std::vector<int>& input_shape, int num_splits) {
+    axis_ = AddInput(axis_tensor);
+    input_ = AddInput({TensorType_FLOAT32, input_shape});
+    for (int i = 0; i < num_splits; ++i) {
+      AddOutput(TensorType_FLOAT32);
+    }
+    SetBuiltinOp(BuiltinOperator_SPLIT, BuiltinOptions_SplitOptions,
+                 CreateSplitOptions(builder_, num_splits).Union());
+    BuildInterpreter({GetShape(axis_), GetShape(input_)}, /*num_threads=*/1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false,
+                     /*allocate_and_delegate=*/false);
+  }
+
  private:
   int input_;
   int axis_;
@@ -107,6 +122,16 @@ TEST(SplitAxisRangeTest, RejectsAxisOutsideInt16Range) {
                                   /*num_splits=*/1);
   dynamic_axis_model.SetAxis(/*axis=*/-1);
   EXPECT_EQ(dynamic_axis_model.Invoke(), kTfLiteError);
+}
+
+TEST(SplitAxisRangeTest, RejectsNonInt32OrNonScalarAxis) {
+  PrepareOnlySplitOpModel int8_axis_model({TensorType_INT8, {1}}, {4},
+                                          /*num_splits=*/2);
+  EXPECT_EQ(int8_axis_model.AllocateTensors(), kTfLiteError);
+
+  PrepareOnlySplitOpModel multi_elem_axis_model({TensorType_INT32, {2}}, {4},
+                                                /*num_splits=*/2);
+  EXPECT_EQ(multi_elem_axis_model.AllocateTensors(), kTfLiteError);
 }
 
 template <typename T>

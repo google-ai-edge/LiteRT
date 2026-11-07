@@ -124,6 +124,15 @@ TEST(SplitVAxisRangeTest, RejectsAxisOutsideInt16Range) {
   EXPECT_EQ(dynamic_axis_model.Invoke(), kTfLiteError);
 }
 
+TEST(SplitVAxisRangeTest, RejectsNegativeSizeSplits) {
+  SplitVOpModel m({TensorType_FLOAT32, {4}}, {TensorType_INT32, {2}},
+                  /*num_splits=*/2, kAxisIsATensor, {});
+  m.SetInput<float>({1.0f, 2.0f, 3.0f, 4.0f});
+  m.SetSizeSplits({-2, 6});
+  m.SetAxis(/*axis=*/0);
+  EXPECT_EQ(m.Invoke(), kTfLiteError);
+}
+
 template <typename T>
 void Check(TestType test_type, int axis, std::initializer_list<int> input_shape,
            std::initializer_list<int> size_splits_shape,
