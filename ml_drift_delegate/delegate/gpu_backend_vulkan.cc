@@ -380,11 +380,16 @@ GpuInferenceContextVulkan::GpuInferenceContextVulkan(
       num_nodes_per_command_buffer_(kDefaultMaxNumNodesPerCommandBuffer) {}
 
 GpuInferenceContextVulkan::~GpuInferenceContextVulkan() {
-  if (next_command_buffers_thread_) {
-    next_command_buffers_thread_->join();
-  }
+  JoinNextCommandBuffersThread();
   if (post_dispatch_event_ != nullptr) {
     post_dispatch_event_->Release(post_dispatch_event_);
+  }
+}
+
+void GpuInferenceContextVulkan::JoinNextCommandBuffersThread() {
+  if (next_command_buffers_thread_) {
+    next_command_buffers_thread_->join();
+    next_command_buffers_thread_.reset();
   }
 }
 
@@ -403,6 +408,7 @@ GpuInferenceContextVulkan::GetSpatialTensor(::ml_drift::ValueId id) {
 
 absl::Status GpuInferenceContextVulkan::BindSpatialTensor(
     ::ml_drift::ValueId id, ::ml_drift::GpuSpatialTensor* tensor) {
+  JoinNextCommandBuffersThread();
   absl::MutexLock lock(ctx_mutex_);
   return ctx_.SetTensor(id, static_cast<VulkanSpatialTensor*>(tensor));
 }
@@ -436,9 +442,7 @@ absl::Status GpuInferenceContextVulkan::Dispatch() {
     return shared_env.AddToPendingCommandBuffers(std::move(command_buffers));
   }
 
-  if (next_command_buffers_thread_) {
-    next_command_buffers_thread_->join();
-  }
+  JoinNextCommandBuffersThread();
 
   if (last_ctx_ != this) {
     last_ctx_ = this;
@@ -557,7 +561,15 @@ absl::Status GpuInferenceContextVulkan::ReportMemoryBenchmarkIfEnabled(
 
 absl::Status GpuInferenceContextVulkan::SetCommandBufferHint(
     int num_nodes_per_command_buffer) {
-  num_nodes_per_command_buffer_ = num_nodes_per_command_buffer;
+  if (num_nodes_per_command_buffer_ != num_nodes_per_command_buffer) {
+    JoinNextCommandBuffersThread();
+    next_command_buffers_index_ = 0;
+    next_command_buffers_ready_ = false;
+    for (auto& b : next_command_buffers_) {
+      b = ::ml_drift::syrtis::CommandBuffer();
+    }
+    num_nodes_per_command_buffer_ = num_nodes_per_command_buffer;
+  }
   return absl::OkStatus();
 }
 
