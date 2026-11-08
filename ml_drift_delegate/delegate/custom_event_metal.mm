@@ -16,6 +16,7 @@
 
 #import <Metal/Metal.h>
 
+#include <atomic>
 #include <cstdint>
 
 #include "litert/c/litert_event.h"
@@ -53,12 +54,12 @@ void CustomEventMetal::EncodeWait(id<MTLCommandBuffer> command_buffer) {
 
 void CustomEventMetal::RetainStatic(LiteRtCustomEvent event) {
   auto* self = static_cast<CustomEventMetal*>(event);
-  ++self->ref_count_;
+  self->ref_count_.fetch_add(1, std::memory_order_relaxed);
 }
 
 void CustomEventMetal::ReleaseStatic(LiteRtCustomEvent event) {
   auto* self = static_cast<CustomEventMetal*>(event);
-  if (--self->ref_count_ <= 0) {
+  if (self->ref_count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
     delete self;
   }
 }

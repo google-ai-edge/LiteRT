@@ -18,6 +18,9 @@
 #ifdef __cplusplus
 #import <Metal/Metal.h>
 
+#include <atomic>
+#include <cstdint>
+
 #include "litert/c/litert_event.h"
 
 namespace litert::ml_drift {
@@ -55,6 +58,11 @@ class CustomEventMetal : public LiteRtCustomEventT {
   // released.
   id<MTLSharedEvent> metal_shared_event() const { return metal_shared_event_; }
 
+  // Returns true if the caller holds the sole reference to this custom event.
+  bool IsUnique() const {
+    return ref_count_.load(std::memory_order_acquire) == 1;
+  }
+
  private:
   // Callbacks of litert_custom_event_t.
   static void RetainStatic(LiteRtCustomEvent event);
@@ -65,7 +73,7 @@ class CustomEventMetal : public LiteRtCustomEventT {
   static int IsSignaledStatic(LiteRtCustomEvent event);
   static void* GetNativeStatic(LiteRtCustomEvent event);
 
-  int ref_count_;
+  std::atomic<int> ref_count_;
   id<MTLSharedEvent> metal_shared_event_;
   // GPU-only event signaled together with metal_shared_event_. GPU waits use it
   // since they are resolved much faster than GPU waits on an MTLSharedEvent.

@@ -21,6 +21,7 @@
 #include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 
@@ -71,27 +72,33 @@ GpuBackendMetal::GpuBackendMetal(::ml_drift::metal::MetalDevice* device,
                                  bool enable_residency_set)
     : device_(device), wait_type_(wait_type), command_queue_(command_queue) {
   if (@available(macOS 15.0, iOS 18.0, *)) {
-    InitResidencySet();
-    bool start_thread = false;
-    {
-      absl::MutexLock lock(&residency_mutex_);
-      residency_runtime_enabled_ = enable_residency_set;
-      if (residency_runtime_enabled_ && residency_set_ != nil) {
-        [command_queue_ addResidencySet:residency_set_];
-        [residency_set_ requestResidency];
-        residency_active_ = true;
-        start_thread = true;
-      } else {
-        residency_active_ = false;
+    if (enable_residency_set) {
+      InitResidencySet();
+      bool start_thread = false;
+      {
+        absl::MutexLock lock(&residency_mutex_);
+        residency_runtime_enabled_ = true;
+        if (residency_set_ != nil) {
+          if (command_queue_ != nil) {
+            [command_queue_ addResidencySet:residency_set_];
+          }
+          [residency_set_ requestResidency];
+          residency_active_ = true;
+          start_thread = true;
+        }
       }
-    }
-    if (start_thread) {
-      StartHeartbeat();
+      if (start_thread) {
+        StartHeartbeat();
+      }
     }
   }
 }
 
 GpuBackendMetal::~GpuBackendMetal() {
+  for (GpuInferenceContextMetal* ctx : inference_contexts_) {
+    ctx->OnBackendDestroyed();
+  }
+  inference_contexts_.clear();
   StopHeartbeat();
   @autoreleasepool {
     absl::MutexLock lock(&residency_mutex_);
@@ -102,6 +109,30 @@ GpuBackendMetal::~GpuBackendMetal() {
       }
     }
   }
+}
+
+void GpuBackendMetal::RegisterInferenceContext(GpuInferenceContextMetal* ctx) {
+  inference_contexts_.insert(ctx);
+}
+
+void GpuBackendMetal::UnregisterInferenceContext(GpuInferenceContextMetal* ctx) {
+  inference_contexts_.erase(ctx);
+}
+
+absl::StatusOr<id<MTLComputeCommandEncoder>> GpuBackendMetal::GetOrCreateConversionEncoder() {
+  if (compute_command_encoder_ != nullptr) {
+    return compute_command_encoder_;
+  }
+  if (command_buffer_ == nullptr) {
+    command_buffer_ = [command_queue_ commandBuffer];
+  } else if ([command_buffer_ status] >= MTLCommandBufferStatusCommitted) {
+    return absl::FailedPreconditionError("Command buffer is already committed.");
+  }
+  compute_command_encoder_ = [command_buffer_ computeCommandEncoder];
+  if (compute_command_encoder_ == nullptr) {
+    return absl::InternalError("Failed to create Metal compute command encoder.");
+  }
+  return compute_command_encoder_;
 }
 
 void GpuBackendMetal::InitResidencySet() {
@@ -124,7 +155,30 @@ void GpuBackendMetal::InitResidencySet() {
 absl::string_view GpuBackendMetal::GetBackendName() { return kBackendName; }
 
 void GpuBackendMetal::SetResidencyRuntimeEnabled(bool enabled) {
-  if (residency_set_ == nil) return;
+  if (!enabled && residency_set_ == nil) return;
+
+  if (enabled && residency_set_ == nil) {
+    if (@available(macOS 15.0, iOS 18.0, *)) {
+      InitResidencySet();
+      if (residency_set_ == nil) return;
+      @autoreleasepool {
+        for (GpuInferenceContextMetal* ctx : inference_contexts_) {
+          ctx->metal_ctx().AddConstantsToResidencySet(residency_set_);
+          for (const auto& alloc : ctx->external_immutable_allocations()) {
+            UpdateResidencyAllocation(nil, (id<MTLAllocation>)alloc.buffer);
+            UpdateResidencyAllocation(nil, (id<MTLAllocation>)alloc.texture);
+          }
+          for (const auto& [tensor_id, alloc] : ctx->bound_allocations()) {
+            UpdateResidencyAllocation(nil, (id<MTLAllocation>)alloc.buffer);
+            UpdateResidencyAllocation(nil, (id<MTLAllocation>)alloc.texture);
+          }
+        }
+        CommitResidencySetIfNeeded(/*force_commit=*/true);
+      }
+    } else {
+      return;
+    }
+  }
 
   bool start_thread = false;
   bool stop_thread = false;
@@ -136,6 +190,7 @@ void GpuBackendMetal::SetResidencyRuntimeEnabled(bool enabled) {
     if (enabled) {
       if (!residency_active_) {
         if (@available(macOS 15.0, iOS 18.0, *)) {
+          CommitResidencySetIfNeeded();
           if (command_queue_ != nil) {
             [command_queue_ addResidencySet:residency_set_];
           }
@@ -239,7 +294,7 @@ absl::StatusOr<std::unique_ptr<GpuInferenceContext>> GpuBackendMetal::CreateInfe
   ABSL_RETURN_IF_ERROR(ctx->metal_ctx().InitFromGpuModel(create_info, &gpu_model, device_->device(),
                                                          serialized_model));
   if (@available(macOS 15.0, iOS 18.0, *)) {
-    PopulateResidencySet(create_info, ctx->metal_ctx());
+    PopulateResidencySet(create_info, *ctx);
   }
   return std::move(ctx);
 }
@@ -251,7 +306,7 @@ absl::StatusOr<std::unique_ptr<GpuInferenceContext>> GpuBackendMetal::RestoreInf
   ABSL_RETURN_IF_ERROR(
       ctx->metal_ctx().RestoreDeserialized(serialized_model, device_->device(), &create_info));
   if (@available(macOS 15.0, iOS 18.0, *)) {
-    PopulateResidencySet(create_info, ctx->metal_ctx());
+    PopulateResidencySet(create_info, *ctx);
   }
   return std::move(ctx);
 }
@@ -427,7 +482,32 @@ GpuInferenceContextMetal::GpuInferenceContextMetal(GpuBackendMetal* backend,
     : backend_(backend),
       ctx_(memory_manager != nullptr
                ? std::make_unique<::ml_drift::metal::InferenceContext>(memory_manager)
-               : std::make_unique<::ml_drift::metal::InferenceContext>()) {}
+               : std::make_unique<::ml_drift::metal::InferenceContext>()) {
+  if (backend_ != nullptr) {
+    backend_->RegisterInferenceContext(this);
+  }
+}
+
+GpuInferenceContextMetal::~GpuInferenceContextMetal() {
+  if (backend_ != nullptr) {
+    backend_->UnregisterInferenceContext(this);
+  }
+}
+
+void GpuInferenceContextMetal::RecordExternalImmutableTensors(
+    const ::ml_drift::CreateGpuModelInfo& create_info) {
+  external_immutable_allocations_.clear();
+  external_immutable_allocations_.reserve(create_info.external_immutable_tensors.size());
+  for (const auto& [id, tensor] : create_info.external_immutable_tensors) {
+    auto* metal_tensor = static_cast<::ml_drift::metal::MetalSpatialTensor*>(tensor);
+    if (metal_tensor != nullptr) {
+      external_immutable_allocations_.push_back(BoundAllocation{
+          .buffer = metal_tensor->GetBufferHandle(),
+          .texture = metal_tensor->GetTextureHandle(),
+      });
+    }
+  }
+}
 
 absl::StatusOr<::ml_drift::GpuSpatialTensor*> GpuInferenceContextMetal::GetSpatialTensor(
     ::ml_drift::ValueId id) {
@@ -443,29 +523,28 @@ absl::StatusOr<::ml_drift::GpuSpatialTensor*> GpuInferenceContextMetal::GetSpati
 
 absl::Status GpuInferenceContextMetal::BindSpatialTensor(::ml_drift::ValueId tensor_id,
                                                          ::ml_drift::GpuSpatialTensor* tensor) {
-  auto* old_tensor = ctx_->GetTensor(tensor_id);
-  id<MTLBuffer> old_buffer = old_tensor != nullptr ? old_tensor->GetBufferHandle() : nil;
-  id<MTLTexture> old_texture = old_tensor != nullptr ? old_tensor->GetTextureHandle() : nil;
-
   auto* metal_tensor = static_cast<::ml_drift::metal::MetalSpatialTensor*>(tensor);
+  id<MTLBuffer> new_buffer = metal_tensor != nullptr ? metal_tensor->GetBufferHandle() : nil;
+  id<MTLTexture> new_texture = metal_tensor != nullptr ? metal_tensor->GetTextureHandle() : nil;
+
+  BoundAllocation& prev = bound_allocations_[tensor_id];
+  id<MTLBuffer> old_buffer = (id<MTLBuffer>)prev.buffer;
+  id<MTLTexture> old_texture = (id<MTLTexture>)prev.texture;
+
+  if (ctx_->GetTensor(tensor_id) == metal_tensor && old_buffer == new_buffer &&
+      old_texture == new_texture) {
+    return absl::OkStatus();
+  }
+
   ABSL_RETURN_IF_ERROR(ctx_->SetTensor(tensor_id, metal_tensor));
-  if (@available(macOS 15.0, iOS 18.0, *)) {
-    id<MTLResidencySet> res_set = backend_->residency_set();
-    if (res_set != nil) {
-      @autoreleasepool {
-        id<MTLBuffer> new_buffer = metal_tensor != nullptr ? metal_tensor->GetBufferHandle() : nil;
-        id<MTLTexture> new_texture =
-            metal_tensor != nullptr ? metal_tensor->GetTextureHandle() : nil;
-        bool changed = false;
-        if (backend_->UpdateResidencyAllocation(old_buffer, new_buffer)) {
-          changed = true;
-        }
-        if (backend_->UpdateResidencyAllocation(old_texture, new_texture)) {
-          changed = true;
-        }
-        if (changed) {
-          [res_set commit];
-        }
+  prev.buffer = new_buffer;
+  prev.texture = new_texture;
+
+  if (backend_ != nullptr) {
+    if (@available(macOS 15.0, iOS 18.0, *)) {
+      if (backend_->residency_set() != nil) {
+        backend_->UpdateResidencyAllocation(old_buffer, new_buffer);
+        backend_->UpdateResidencyAllocation(old_texture, new_texture);
       }
     }
   }
@@ -486,6 +565,10 @@ absl::Status GpuInferenceContextMetal::ReadWeightTensorToDescriptor(
 }
 
 absl::Status GpuInferenceContextMetal::Dispatch() {
+  if (@available(macOS 15.0, iOS 18.0, *)) {
+    backend_->CommitResidencySetIfNeeded();
+  }
+
   // If it will be waiting actively, enqueue commands into multiple command buffers.
   if (backend_->wait_type() == kGpuDelegateWaitTypeActive) {
     // Commit the previous command buffer if any.
@@ -508,7 +591,7 @@ absl::Status GpuInferenceContextMetal::Dispatch() {
     return absl::FailedPreconditionError("Command buffer is already committed.");
   }
 
-  ctx_->EncodeWithCommandBuffer(backend_->command_buffer());
+  ctx_->EncodeWithCommandBuffer(backend_->command_buffer(), kFlushPeriodDuringDispatch);
   return absl::OkStatus();
 }
 
@@ -527,18 +610,18 @@ absl::Status GpuInferenceContextMetal::WaitForEventsCompleted(absl::Span<GpuEven
 }
 
 absl::Status GpuInferenceContextMetal::PreConvert(bool input) {
-  if (backend_->command_buffer() == nullptr) {
-    backend_->set_command_buffer([backend_->command_queue() commandBuffer]);
-  } else if ([backend_->command_buffer() status] >= MTLCommandBufferStatusCommitted) {
+  if (backend_->command_buffer() != nullptr &&
+      [backend_->command_buffer() status] >= MTLCommandBufferStatusCommitted) {
     return absl::FailedPreconditionError("Command buffer is already committed.");
   }
-  backend_->set_compute_command_encoder([backend_->command_buffer() computeCommandEncoder]);
   return absl::OkStatus();
 }
 
 absl::Status GpuInferenceContextMetal::PostConvert(bool input) {
-  [backend_->compute_command_encoder() endEncoding];
-  backend_->set_compute_command_encoder(nullptr);
+  if (backend_->compute_command_encoder() != nullptr) {
+    [backend_->compute_command_encoder() endEncoding];
+    backend_->set_compute_command_encoder(nullptr);
+  }
 
   // If output conversion is done, waits for conversion to finish.
   if (!input) {
@@ -601,12 +684,10 @@ Tensor2BufferConverterMetal::Tensor2BufferConverterMetal(
 
 absl::Status Tensor2BufferConverterMetal::Convert(::ml_drift::GpuSpatialTensor& src_tensor,
                                                   GpuIOBuffer& dst_buffer) {
-  if (backend_->compute_command_encoder() == nullptr) {
-    return absl::FailedPreconditionError("Compute command encoder is not set.");
-  }
-
+  ABSL_ASSIGN_OR_RETURN(id<MTLComputeCommandEncoder> encoder,
+                        backend_->GetOrCreateConversionEncoder());
   return converter_->Encode(
-      backend_->compute_command_encoder(),
+      encoder,
       static_cast<::ml_drift::metal::MetalSpatialTensor*>(&src_tensor),
       static_cast<GpuIOBufferMetal&>(dst_buffer).metal_buffer().GetMemoryPtr());
 }
@@ -618,12 +699,10 @@ Buffer2TensorConverterMetal::Buffer2TensorConverterMetal(
 
 absl::Status Buffer2TensorConverterMetal::Convert(GpuIOBuffer& src_buffer,
                                                   ::ml_drift::GpuSpatialTensor& dst_tensor) {
-  if (backend_->compute_command_encoder() == nullptr) {
-    return absl::FailedPreconditionError("Compute command encoder is not set.");
-  }
-
+  ABSL_ASSIGN_OR_RETURN(id<MTLComputeCommandEncoder> encoder,
+                        backend_->GetOrCreateConversionEncoder());
   return converter_->Encode(
-      backend_->compute_command_encoder(),
+      encoder,
       static_cast<GpuIOBufferMetal&>(src_buffer).metal_buffer().GetMemoryPtr(),
       static_cast<::ml_drift::metal::MetalSpatialTensor*>(&dst_tensor));
 }
@@ -635,43 +714,76 @@ bool GpuBackendMetal::UpdateResidencyAllocation(id<MTLAllocation> old_alloc,
   }
   bool changed = false;
   if (new_alloc != nil) {
-    int& count = residency_allocation_ref_counts_[(__bridge const void*)new_alloc];
-    if (count == 0) {
-      [residency_set_ addAllocation:new_alloc];
+    const void* key = (__bridge const void*)new_alloc;
+    ResidencyEntry& entry = residency_entries_[key];
+    entry.alloc = new_alloc;
+    if (entry.ref_count == 0) {
+      dirty_residency_keys_.insert(key);
       changed = true;
     }
-    ++count;
+    ++entry.ref_count;
   }
   if (old_alloc != nil) {
-    auto it = residency_allocation_ref_counts_.find((__bridge const void*)old_alloc);
-    if (it != residency_allocation_ref_counts_.end()) {
-      if (--it->second <= 0) {
-        residency_allocation_ref_counts_.erase(it);
-        [residency_set_ removeAllocation:old_alloc];
-        changed = true;
+    const void* key = (__bridge const void*)old_alloc;
+    auto it = residency_entries_.find(key);
+    if (it != residency_entries_.end()) {
+      if (--it->second.ref_count <= 0) {
+        it->second.ref_count = 0;
+        if (it->second.committed) {
+          dirty_residency_keys_.insert(key);
+          changed = true;
+        } else {
+          dirty_residency_keys_.erase(key);
+          residency_entries_.erase(it);
+        }
       }
-    } else {
-      [residency_set_ removeAllocation:old_alloc];
-      changed = true;
     }
   }
   return changed;
 }
 
+void GpuBackendMetal::CommitResidencySetIfNeeded(bool force_commit) {
+  if (residency_set_ == nil || (dirty_residency_keys_.empty() && !force_commit)) {
+    return;
+  }
+  @autoreleasepool {
+    bool mutated = force_commit;
+    for (const void* key : dirty_residency_keys_) {
+      auto it = residency_entries_.find(key);
+      if (it == residency_entries_.end()) {
+        continue;
+      }
+      if (it->second.ref_count > 0 && !it->second.committed) {
+        [residency_set_ addAllocation:(id<MTLAllocation>)it->second.alloc];
+        it->second.committed = true;
+        mutated = true;
+      } else if (it->second.ref_count <= 0) {
+        if (it->second.committed) {
+          [residency_set_ removeAllocation:(id<MTLAllocation>)it->second.alloc];
+          mutated = true;
+        }
+        residency_entries_.erase(it);
+      }
+    }
+    dirty_residency_keys_.clear();
+    if (mutated) {
+      [residency_set_ commit];
+    }
+  }
+}
+
 void GpuBackendMetal::PopulateResidencySet(const ::ml_drift::CreateGpuModelInfo& create_info,
-                                           ::ml_drift::metal::InferenceContext& metal_ctx) {
+                                           GpuInferenceContextMetal& ctx) {
+  ctx.RecordExternalImmutableTensors(create_info);
   if (residency_set_ == nil) return;
   if (@available(macOS 15.0, iOS 18.0, *)) {
     @autoreleasepool {
-      metal_ctx.AddConstantsToResidencySet(residency_set_);
-      for (const auto& [id, tensor] : create_info.external_immutable_tensors) {
-        auto* metal_tensor = static_cast<::ml_drift::metal::MetalSpatialTensor*>(tensor);
-        if (metal_tensor != nullptr) {
-          UpdateResidencyAllocation(nil, metal_tensor->GetBufferHandle());
-          UpdateResidencyAllocation(nil, metal_tensor->GetTextureHandle());
-        }
+      ctx.metal_ctx().AddConstantsToResidencySet(residency_set_);
+      for (const auto& alloc : ctx.external_immutable_allocations()) {
+        UpdateResidencyAllocation(nil, (id<MTLAllocation>)alloc.buffer);
+        UpdateResidencyAllocation(nil, (id<MTLAllocation>)alloc.texture);
       }
-      [residency_set_ commit];
+      CommitResidencySetIfNeeded(/*force_commit=*/true);
       bool req_residency = false;
       {
         absl::MutexLock lock(&residency_mutex_);

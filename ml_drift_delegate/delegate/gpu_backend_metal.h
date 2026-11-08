@@ -26,6 +26,7 @@
 
 #include "absl/base/thread_annotations.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -55,6 +56,8 @@
 #include "tflite/c/common.h"
 
 namespace litert::ml_drift {
+
+class GpuInferenceContextMetal;
 
 // GpuBackend for Metal.
 class GpuBackendMetal : public GpuBackend {
@@ -156,11 +159,15 @@ class GpuBackendMetal : public GpuBackend {
   id<MTLCommandQueue> command_queue() const { return command_queue_; }
   id<MTLResidencySet> residency_set() const { return residency_set_; }
   // Updates reference counts in the Metal residency set when a tensor binding
-  // changes from `old_alloc` to `new_alloc`. Returns true if the residency set
-  // membership changed and needs to be committed.
+  // changes from `old_alloc` to `new_alloc`. Changes are staged and flushed
+  // lazily in `CommitResidencySetIfNeeded()` so ping-pong state swaps coalesce.
   API_AVAILABLE(macos(15.0), ios(18.0))
   bool UpdateResidencyAllocation(id<MTLAllocation> old_alloc,
                                  id<MTLAllocation> new_alloc);
+  API_AVAILABLE(macos(15.0), ios(18.0))
+  void CommitResidencySetIfNeeded(bool force_commit = false);
+  void RegisterInferenceContext(GpuInferenceContextMetal* ctx);
+  void UnregisterInferenceContext(GpuInferenceContextMetal* ctx);
   // Set up a new command queue to the underying Metal command queue.
   void set_command_queue(id<MTLCommandQueue> command_queue) {
     command_queue_ = command_queue;
@@ -179,12 +186,19 @@ class GpuBackendMetal : public GpuBackend {
   void set_compute_command_encoder(id<MTLComputeCommandEncoder> encoder) {
     compute_command_encoder_ = encoder;
   }
+  absl::StatusOr<id<MTLComputeCommandEncoder>> GetOrCreateConversionEncoder();
 
  protected:
   void PopulateResidencySet(const ::ml_drift::CreateGpuModelInfo& create_info,
-                            ::ml_drift::metal::InferenceContext& metal_ctx);
+                            GpuInferenceContextMetal& ctx);
 
  private:
+  struct ResidencyEntry {
+    id alloc = nil;
+    int ref_count = 0;
+    bool committed = false;
+  };
+
   absl::Mutex residency_mutex_;
 
   void InitResidencySet();
@@ -204,7 +218,9 @@ class GpuBackendMetal : public GpuBackend {
   id<MTLComputeCommandEncoder> compute_command_encoder_ = nullptr;
   ::ml_drift::metal::MemoryManager memory_manager_;
   id<MTLResidencySet> residency_set_ = nil;
-  absl::flat_hash_map<const void*, int> residency_allocation_ref_counts_;
+  absl::flat_hash_map<const void*, ResidencyEntry> residency_entries_;
+  absl::flat_hash_set<const void*> dirty_residency_keys_;
+  absl::flat_hash_set<GpuInferenceContextMetal*> inference_contexts_;
   std::thread heartbeat_thread_ ABSL_GUARDED_BY(residency_mutex_);
   std::unique_ptr<absl::Notification> stop_heartbeat_
       ABSL_GUARDED_BY(residency_mutex_);
@@ -215,10 +231,15 @@ class GpuBackendMetal : public GpuBackend {
 
 class GpuInferenceContextMetal : public GpuInferenceContext {
  public:
+  struct BoundAllocation {
+    id buffer = nil;
+    id texture = nil;
+  };
+
   explicit GpuInferenceContextMetal(
       GpuBackendMetal* backend,
       ::ml_drift::metal::MemoryManager* memory_manager = nullptr);
-  ~GpuInferenceContextMetal() override = default;
+  ~GpuInferenceContextMetal() override;
 
   // Implementation of GpuInferenceContext.
   absl::StatusOr<::ml_drift::GpuSpatialTensor*> GetSpatialTensor(
@@ -264,10 +285,22 @@ class GpuInferenceContextMetal : public GpuInferenceContext {
   const ::ml_drift::metal::InferenceContext& metal_ctx() const { return *ctx_; }
 
   GpuBackendMetal* metal_backend() const { return backend_; }
+  void RecordExternalImmutableTensors(
+      const ::ml_drift::CreateGpuModelInfo& create_info);
+  const std::vector<BoundAllocation>& external_immutable_allocations() const {
+    return external_immutable_allocations_;
+  }
+  const absl::flat_hash_map<::ml_drift::ValueId, BoundAllocation>&
+  bound_allocations() const {
+    return bound_allocations_;
+  }
+  void OnBackendDestroyed() { backend_ = nullptr; }
 
  private:
-  GpuBackendMetal* const backend_;
+  GpuBackendMetal* backend_;
   std::unique_ptr<::ml_drift::metal::InferenceContext> ctx_;
+  std::vector<BoundAllocation> external_immutable_allocations_;
+  absl::flat_hash_map<::ml_drift::ValueId, BoundAllocation> bound_allocations_;
 };
 
 class GpuTensorWrapperMetal : public GpuTensorWrapper {
