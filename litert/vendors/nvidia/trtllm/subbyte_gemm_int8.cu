@@ -21,8 +21,11 @@
 // kOutliers input dims with the largest magnitude over the rows (a model's
 // massive activations sit in fixed channels) leave the int8 path and come
 // back exactly through one fp16 MMA chunk, so an outlier does not coarsen its
-// block's quantization. Per-channel weight scales only (the blockwise models
-// stay on the fp16 kernel); the workspace holds the quantized rows, their
+// block's quantization. Per-channel weight scales apply once, in the epilogue.
+// Blockwise ones (an fp16 scale per 32 input dims) apply per 32-dim slice: the
+// slice's MMAs start from an int32 bias that turns their sums into the bits of
+// an exact float, and two FMAs per sum take the bias out with the rows' scale
+// and apply the weights'. The workspace holds the quantized rows, their
 // scales, the column maxima, the outlier set (with the rows' fp16 scaling)
 // and its gathered weights.
 
@@ -63,11 +66,22 @@ constexpr int kWarpColGroups = 4;  // 8 channels each: 32 channels
 // int8 path (their activations are zero there) and come back exactly through one fp16 MMA chunk.
 constexpr int kOutliers = 32;
 constexpr int kOutlierRowBytes = kOutliers * 2 + 16;  // fp16, padded for ldmatrix
+// Blockwise weights: the fp16 scales of a chunk's four slices for each of the block's 128 weight
+// rows, staged with the operands after the activation scales.
+constexpr int kWeightScaleRowBytes = kSlices * 2;
+constexpr int kWeightScaleStageBytes = kBlockCols * kWeightScaleRowBytes;
+constexpr size_t kBlockwiseSharedBytes = kSharedBytes + static_cast<size_t>(kStages) * kWeightScaleStageBytes;
+// A blockwise slice's MMAs accumulate onto this int32: their sums come out as the bits of the float
+// kSumBiasValue + sum, exactly (|sum| <= 32 * 127 * 128 < 2^22, so the bias's exponent holds).
+constexpr int32_t kSumBias = 0x4B400000;
+constexpr float kSumBiasValue = 12582912.0f;  // 1.5 * 2^23
+// The input dims the outlier selection holds in shared memory (96 KB of maxima).
+constexpr int kMaxInputSize = 24576;
 
 __device__ __forceinline__ void MmaF16F32(float& d0, float& d1, float& d2, float& d3, uint32_t a0,
                                           uint32_t a1, uint32_t a2, uint32_t a3, uint32_t b0,
                                           uint32_t b1) {
-  asm volatile(
+  asm(
       "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, "
       "{%0,%1,%2,%3};\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3)
@@ -77,11 +91,22 @@ __device__ __forceinline__ void MmaF16F32(float& d0, float& d1, float& d2, float
 __device__ __forceinline__ void MmaS8(int32_t& d0, int32_t& d1, int32_t& d2, int32_t& d3,
                                       uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
                                       uint32_t b0, uint32_t b1) {
-  asm volatile(
+  asm(
       "mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, "
       "{%0,%1,%2,%3};\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
+}
+
+// d = bias + a * b: a blockwise slice's sums, each on its own.
+__device__ __forceinline__ void MmaS8Biased(int32_t& d0, int32_t& d1, int32_t& d2, int32_t& d3,
+                                            uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
+                                            uint32_t b0, uint32_t b1, int32_t bias) {
+  asm(
+      "mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, "
+      "{%10,%10,%10,%10};\n"
+      : "=r"(d0), "=r"(d1), "=r"(d2), "=r"(d3)
+      : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1), "r"(bias));
 }
 
 __device__ __forceinline__ void LoadMatrixX4(uint32_t& r0, uint32_t& r1, uint32_t& r2, uint32_t& r3,
@@ -100,6 +125,10 @@ __device__ __forceinline__ void CopyAsync4(void* shared_pointer, const void* glo
   const uint32_t address = static_cast<uint32_t>(__cvta_generic_to_shared(shared_pointer));
   asm volatile("cp.async.ca.shared.global [%0], [%1], 4;\n" : : "r"(address), "l"(global_pointer) : "memory");
 }
+__device__ __forceinline__ void CopyAsync8(void* shared_pointer, const void* global_pointer) {
+  const uint32_t address = static_cast<uint32_t>(__cvta_generic_to_shared(shared_pointer));
+  asm volatile("cp.async.ca.shared.global [%0], [%1], 8;\n" : : "r"(address), "l"(global_pointer) : "memory");
+}
 __device__ __forceinline__ void CommitAsync() { asm volatile("cp.async.commit_group;\n" ::: "memory"); }
 __device__ __forceinline__ void WaitAsyncButOne() { asm volatile("cp.async.wait_group 1;\n" ::: "memory"); }
 __device__ __forceinline__ void WaitAsyncAll() { asm volatile("cp.async.wait_group 0;\n" ::: "memory"); }
@@ -115,7 +144,11 @@ __device__ __forceinline__ uint32_t WidenNibbles(uint32_t x) {
   return result;
 }
 
+// The gate's activation: GELU (tanh or erf) or SiLU.
 __device__ __forceinline__ float Gelu(float x, int gate) {
+  if (gate == kLiteRtNvidiaGemmGateSilu) {
+    return x / (1.0f + __expf(-x));
+  }
   if (gate == kLiteRtNvidiaGemmGateGeluTanh) {
     return 0.5f * x * (1.0f + tanhf(0.7978845608028654f * (x + 0.044715f * x * x * x)));
   }
@@ -281,11 +314,14 @@ __global__ void __launch_bounds__(kSelectThreads) OutlierDimsKernel(const float*
 }
 
 // The weights' columns of the outlier dims as fp16 values, [channel][kOutliers]: the nibbles'
-// two's-complement values, exact.
+// two's-complement values, exact. With blockwise scales (block_scales non-null) the values times
+// their block's scale, exact in fp32, as the fp16 pair gathered + gathered_lo.
 __global__ void __launch_bounds__(256) GatherOutlierWeightsKernel(const uint8_t* __restrict__ weights,
                                                                   int channels, int input_size,
                                                                   const int32_t* __restrict__ dims,
-                                                                  __half* __restrict__ gathered) {
+                                                                  const __half* __restrict__ block_scales,
+                                                                  __half* __restrict__ gathered,
+                                                                  __half* __restrict__ gathered_lo) {
   __shared__ int32_t dims_s[kOutliers];
   if (threadIdx.x < kOutliers) dims_s[threadIdx.x] = dims[threadIdx.x];
   __syncthreads();
@@ -295,17 +331,28 @@ __global__ void __launch_bounds__(256) GatherOutlierWeightsKernel(const uint8_t*
   const int k = dims_s[index % kOutliers];
   const uint8_t byte = weights[static_cast<size_t>(channel) * (input_size / 2) + k / 2];
   const int nibble = (byte >> ((k & 1) * 4)) & 15;
-  gathered[index] = __float2half(static_cast<float>((nibble ^ 8) - 8));
+  const float value = static_cast<float>((nibble ^ 8) - 8);
+  if (block_scales == nullptr) {
+    gathered[index] = __float2half(value);
+    return;
+  }
+  const float scaled = value * __half2float(block_scales[static_cast<size_t>(channel) * (input_size / 32) + k / 32]);
+  const __half hi = __float2half_rn(scaled);
+  gathered[index] = hi;
+  gathered_lo[index] = __float2half_rn(scaled - __half2float(hi));
 }
 
 // Per row: BF16 activations (optionally RMS-normed) to int8 per block of kActivationBlock dims
 // with a float scale (max / 127, round to nearest), laid out tile-major like the fp16 path:
 // quantized[row tile][chunk][row of the tile][kChunk bytes]; scales[row tile][chunk][row][block].
+// round_scales (blockwise weights) rounds the scales up to 16 significant bits, so that the GEMM's
+// kSumBiasValue times them is exact.
 __global__ void __launch_bounds__(kThreads) QuantizeRowsKernel(
     const __nv_bfloat16* __restrict__ activation, int input_size, const float* __restrict__ norm_scale,
     float norm_eps, float norm_multiplier, const uint8_t* __restrict__ outlier_flags,
     const int32_t* __restrict__ outlier_dims, int8_t* __restrict__ quantized,
-    float* __restrict__ scales, __half* __restrict__ outliers, int32_t* __restrict__ outlier_shift) {
+    float* __restrict__ scales, __half* __restrict__ outliers, int32_t* __restrict__ outlier_shift,
+    bool round_scales) {
   __shared__ float squares_s[kWarps];
   const int row = blockIdx.x;
   const __nv_bfloat162* src = reinterpret_cast<const __nv_bfloat162*>(activation + static_cast<size_t>(row) * input_size);
@@ -374,7 +421,8 @@ __global__ void __launch_bounds__(kThreads) QuantizeRowsKernel(
     }
 #pragma unroll
     for (int offset = 16; offset > 0; offset >>= 1) largest = fmaxf(largest, __shfl_xor_sync(0xffffffffu, largest, offset));
-    const float scale = largest > 0.0f && largest < INFINITY ? largest / 127.0f : 0.0f;
+    float scale = largest > 0.0f && largest < INFINITY ? largest / 127.0f : 0.0f;
+    if (round_scales) scale = __uint_as_float((__float_as_uint(scale) + 0xFFu) & ~0xFFu);
     const float inverse = scale > 0.0f ? 1.0f / scale : 0.0f;
     const int chunk = b * kActivationBlock / kChunk;
     const int in_chunk = b * kActivationBlock % kChunk;
@@ -392,17 +440,21 @@ __global__ void __launch_bounds__(kThreads) QuantizeRowsKernel(
 }
 
 // grid (rows / kBlockRows, column tiles). A block multiplies 128 activation rows by 128 weight
-// rows (64 gate + 64 up with a gate). Warp w: rows 64 (w / 4), channels 32 (w % 4).
+// rows (64 gate + 64 up with a gate). Warp w: rows 64 (w / 4), channels 32 (w % 4). The weight
+// scales are BF16 per channel, or with kBlockwise fp16 [channel][input_size / 32].
+template <bool kBlockwise>
 __global__ void __launch_bounds__(kThreads, 1) Int8GemmKernel(
     const int8_t* __restrict__ quantized, const float* __restrict__ quant_scales,
-    const uint8_t* __restrict__ weights, const __nv_bfloat16* __restrict__ channel_scales,
+    const uint8_t* __restrict__ weights, const void* __restrict__ weight_scales,
     const __half* __restrict__ outliers, const int32_t* __restrict__ outlier_shift,
-    const __half* __restrict__ outlier_weights, int input_size, int output_size, int gate,
-    __nv_bfloat16* __restrict__ output) {
+    const __half* __restrict__ outlier_weights, const __half* __restrict__ outlier_weights_lo,
+    int input_size, int output_size, int gate, __nv_bfloat16* __restrict__ output) {
   extern __shared__ __align__(16) unsigned char smem[];
   unsigned char* activation_s = smem;
   unsigned char* packed_s = smem + kStages * kActivationStageBytes;
   float* scales_s = reinterpret_cast<float*>(smem + kStages * (kActivationStageBytes + kPackedStageBytes));
+  unsigned char* weight_scales_s = smem + kSharedBytes;  // kBlockwise only
+  const __nv_bfloat16* channel_scales = static_cast<const __nv_bfloat16*>(weight_scales);
   const int tid = threadIdx.x;
   const int warp = tid >> 5;
   const int lane = tid & 31;
@@ -431,22 +483,47 @@ __global__ void __launch_bounds__(kThreads, 1) Int8GemmKernel(
   };
   const uint8_t* weight_row = weight_row_of(w_row);
   const uint8_t* weight_row_2 = weight_row_of(w_row + 64);
-  auto copy_stage = [&](int chunk, int stage, int scale_stage) {
+  // Blockwise: thread tid < 128 copies weight row tid's four slice scales of a chunk (8 bytes).
+  const __half* weight_scale_row = nullptr;
+  if (kBlockwise) {
+    const int row = min(tid, kBlockCols - 1);
+    const int channel = min(n0 + row % block_channels, output_size - 1) + (row / block_channels != 0 ? output_size : 0);
+    weight_scale_row = static_cast<const __half*>(weight_scales) + static_cast<size_t>(channel) * (input_size / 32);
+  }
+  // The copies of a chunk, in four parts (one activation row group each; the scales with the
+  // first, a weight row with the second and third, the weight scales with the fourth) or all at
+  // once (part -1). Issued all at once by every warp as a chunk starts, they queue up behind each
+  // other for a tenth of the chunk's time while the tensor pipe idles; the blockwise loop issues
+  // one part per slice instead, between a slice's MMAs and its rescale.
+  auto copy_stage_part = [&](int chunk, int stage, int scale_stage, int part) {
     unsigned char* a = activation_s + stage * kActivationStageBytes;
     const int8_t* src = activation_tile + static_cast<size_t>(chunk) * (kBlockRows * kChunk);
 #pragma unroll
     for (int r = 0; r < 4; ++r) {
-      CopyAsync16(a + (a_row + r * 32) * kActivationRowBytes + a_vector * 16, src + (a_row + r * 32) * kChunk + a_vector * 16);
+      if (part < 0 || part == r) {
+        CopyAsync16(a + (a_row + r * 32) * kActivationRowBytes + a_vector * 16, src + (a_row + r * 32) * kChunk + a_vector * 16);
+      }
     }
-    for (int i = tid; i < kBlockRows * kBlocksPerChunk; i += kThreads) {
-      CopyAsync4(scales_s + scale_stage * (kBlockRows * kBlocksPerChunk) + i,
-                 scale_tile + static_cast<size_t>(chunk) * (kBlockRows * kBlocksPerChunk) + i);
+    if (part <= 0) {
+      for (int i = tid; i < kBlockRows * kBlocksPerChunk; i += kThreads) {
+        CopyAsync4(scales_s + scale_stage * (kBlockRows * kBlocksPerChunk) + i,
+                   scale_tile + static_cast<size_t>(chunk) * (kBlockRows * kBlocksPerChunk) + i);
+      }
     }
-    CopyAsync16(packed_s + stage * kPackedStageBytes + w_row * kPackedRowBytes + w_vector * 16,
-                weight_row + static_cast<size_t>(chunk) * (kChunk / 2));
-    CopyAsync16(packed_s + stage * kPackedStageBytes + (w_row + 64) * kPackedRowBytes + w_vector * 16,
-                weight_row_2 + static_cast<size_t>(chunk) * (kChunk / 2));
+    if (part < 0 || part == 1) {
+      CopyAsync16(packed_s + stage * kPackedStageBytes + w_row * kPackedRowBytes + w_vector * 16,
+                  weight_row + static_cast<size_t>(chunk) * (kChunk / 2));
+    }
+    if (part < 0 || part == 2) {
+      CopyAsync16(packed_s + stage * kPackedStageBytes + (w_row + 64) * kPackedRowBytes + w_vector * 16,
+                  weight_row_2 + static_cast<size_t>(chunk) * (kChunk / 2));
+    }
+    if (kBlockwise && tid < kBlockCols && (part < 0 || part == 3)) {
+      CopyAsync8(weight_scales_s + stage * kWeightScaleStageBytes + tid * kWeightScaleRowBytes,
+                 weight_scale_row + static_cast<size_t>(chunk) * kSlices);
+    }
   };
+  auto copy_stage = [&](int chunk, int stage, int scale_stage) { copy_stage_part(chunk, stage, scale_stage, -1); };
 
   const int warp_row = (warp / 4) * 64;
   const int warp_col = (warp % 4) * 32;
@@ -472,32 +549,6 @@ __global__ void __launch_bounds__(kThreads, 1) Int8GemmKernel(
   WaitAsyncButOne();
   __syncthreads();
 
-  // Two sets of int32 sums: a chunk's flush into the fp32 accumulators runs while the next
-  // chunk's MMAs fill the other set, so the tensor pipe does not drain at the chunk's end.
-  int32_t sums[2][kWarpRowGroups][kWarpColGroups][4];
-#pragma unroll
-  for (int b = 0; b < 2; ++b)
-#pragma unroll
-    for (int rg = 0; rg < kWarpRowGroups; ++rg)
-#pragma unroll
-      for (int cg = 0; cg < kWarpColGroups; ++cg)
-        sums[b][rg][cg][0] = sums[b][rg][cg][1] = sums[b][rg][cg][2] = sums[b][rg][cg][3] = 0;
-  static_assert(kActivationBlock == kChunk, "one flush per chunk");
-  auto flush = [&](int32_t (&set)[kWarpRowGroups][kWarpColGroups][4], const float* s_stage) {
-#pragma unroll
-    for (int rg = 0; rg < kWarpRowGroups; ++rg) {
-      const float s_lo = s_stage[(warp_row + rg * 16 + g) * kBlocksPerChunk];
-      const float s_hi = s_stage[(warp_row + rg * 16 + g + 8) * kBlocksPerChunk];
-#pragma unroll
-      for (int cg = 0; cg < kWarpColGroups; ++cg) {
-        acc[rg][cg][0] = fmaf(static_cast<float>(set[rg][cg][0]), s_lo, acc[rg][cg][0]);
-        acc[rg][cg][1] = fmaf(static_cast<float>(set[rg][cg][1]), s_lo, acc[rg][cg][1]);
-        acc[rg][cg][2] = fmaf(static_cast<float>(set[rg][cg][2]), s_hi, acc[rg][cg][2]);
-        acc[rg][cg][3] = fmaf(static_cast<float>(set[rg][cg][3]), s_hi, acc[rg][cg][3]);
-        set[rg][cg][0] = set[rg][cg][1] = set[rg][cg][2] = set[rg][cg][3] = 0;
-      }
-    }
-  };
   struct Operands {
     uint32_t a[kWarpRowGroups][4];
     uint32_t b[kWarpColGroups][2];
@@ -517,66 +568,168 @@ __global__ void __launch_bounds__(kThreads, 1) Int8GemmKernel(
       o.b[cg][1] = WidenNibbles(hi);
     }
   };
-  auto mma_slice = [&](int32_t (&set)[kWarpRowGroups][kWarpColGroups][4], const Operands& o) {
-#pragma unroll
-    for (int rg = 0; rg < kWarpRowGroups; ++rg) {
-#pragma unroll
-      for (int cg = 0; cg < kWarpColGroups; ++cg) {
-        MmaS8(set[rg][cg][0], set[rg][cg][1], set[rg][cg][2], set[rg][cg][3],
-              o.a[rg][0], o.a[rg][1], o.a[rg][2], o.a[rg][3], o.b[cg][0], o.b[cg][1]);
-      }
-    }
-  };
-
   int stage = 0;
   int scale_stage = 0;
-  // The scales of the previous chunk, for its deferred flush.
-  const float* previous_scales = scales_s;
-  for (int chunk = 0; chunk < chunks; chunk += 2) {
-#pragma unroll
-    for (int buffer = 0; buffer < 2; ++buffer) {
-      const int current = chunk + buffer;
-      if (current < chunks) {
-        const int next_stage = stage + 1 == kStages ? 0 : stage + 1;
-        const int after_stage = next_stage + 1 == kStages ? 0 : next_stage + 1;
-        const int after_scale_stage = (scale_stage + 2) % kScaleStages;
-        if (current + 2 < chunks) copy_stage(current + 2, after_stage, after_scale_stage);
-        CommitAsync();
-        const unsigned char* a_stage = activation_s + stage * kActivationStageBytes;
-        const unsigned char* p_stage = packed_s + stage * kPackedStageBytes;
-        const float* s_stage = scales_s + scale_stage * (kBlockRows * kBlocksPerChunk);
-#pragma unroll
-        for (int slice = 0; slice < kSlices; ++slice) {
-          Operands operands;
-          load_operands(a_stage, p_stage, slice, operands);
-          mma_slice(sums[buffer], operands);
-          if (slice == 0 && current > 0) {
-            // The previous chunk's sums, while this chunk's first MMAs run.
-            flush(sums[buffer ^ 1], previous_scales);
-          }
+  if constexpr (!kBlockwise) {
+    static_assert(kActivationBlock == kChunk, "one flush per chunk");
+    auto flush = [&](int32_t (&set)[kWarpRowGroups][kWarpColGroups][4], const float* s_stage) {
+  #pragma unroll
+      for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+        const float s_lo = s_stage[(warp_row + rg * 16 + g) * kBlocksPerChunk];
+        const float s_hi = s_stage[(warp_row + rg * 16 + g + 8) * kBlocksPerChunk];
+  #pragma unroll
+        for (int cg = 0; cg < kWarpColGroups; ++cg) {
+          acc[rg][cg][0] = fmaf(static_cast<float>(set[rg][cg][0]), s_lo, acc[rg][cg][0]);
+          acc[rg][cg][1] = fmaf(static_cast<float>(set[rg][cg][1]), s_lo, acc[rg][cg][1]);
+          acc[rg][cg][2] = fmaf(static_cast<float>(set[rg][cg][2]), s_hi, acc[rg][cg][2]);
+          acc[rg][cg][3] = fmaf(static_cast<float>(set[rg][cg][3]), s_hi, acc[rg][cg][3]);
+          set[rg][cg][0] = set[rg][cg][1] = set[rg][cg][2] = set[rg][cg][3] = 0;
         }
-        previous_scales = s_stage;
-        WaitAsyncButOne();
-        __syncthreads();
-        stage = next_stage;
-        scale_stage = scale_stage + 1 == kScaleStages ? 0 : scale_stage + 1;
+      }
+    };
+    auto mma_slice = [&](int32_t (&set)[kWarpRowGroups][kWarpColGroups][4], const Operands& o) {
+  #pragma unroll
+      for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+  #pragma unroll
+        for (int cg = 0; cg < kWarpColGroups; ++cg) {
+          MmaS8(set[rg][cg][0], set[rg][cg][1], set[rg][cg][2], set[rg][cg][3],
+                o.a[rg][0], o.a[rg][1], o.a[rg][2], o.a[rg][3], o.b[cg][0], o.b[cg][1]);
+        }
+      }
+    };
+    // Two sets of int32 sums: a chunk's flush into the fp32 accumulators runs while the next
+    // chunk's MMAs fill the other set, so the tensor pipe does not drain at the chunk's end.
+    int32_t sums[2][kWarpRowGroups][kWarpColGroups][4];
+#pragma unroll
+    for (int b = 0; b < 2; ++b)
+#pragma unroll
+      for (int rg = 0; rg < kWarpRowGroups; ++rg)
+#pragma unroll
+        for (int cg = 0; cg < kWarpColGroups; ++cg)
+          sums[b][rg][cg][0] = sums[b][rg][cg][1] = sums[b][rg][cg][2] = sums[b][rg][cg][3] = 0;
+    // The scales of the previous chunk, for its deferred flush.
+    const float* previous_scales = scales_s;
+    for (int chunk = 0; chunk < chunks; chunk += 2) {
+#pragma unroll
+      for (int buffer = 0; buffer < 2; ++buffer) {
+        const int current = chunk + buffer;
+        if (current < chunks) {
+          const int next_stage = stage + 1 == kStages ? 0 : stage + 1;
+          const int after_stage = next_stage + 1 == kStages ? 0 : next_stage + 1;
+          const int after_scale_stage = (scale_stage + 2) % kScaleStages;
+          if (current + 2 < chunks) copy_stage(current + 2, after_stage, after_scale_stage);
+          CommitAsync();
+          const unsigned char* a_stage = activation_s + stage * kActivationStageBytes;
+          const unsigned char* p_stage = packed_s + stage * kPackedStageBytes;
+          const float* s_stage = scales_s + scale_stage * (kBlockRows * kBlocksPerChunk);
+#pragma unroll
+          for (int slice = 0; slice < kSlices; ++slice) {
+            Operands operands;
+            load_operands(a_stage, p_stage, slice, operands);
+            mma_slice(sums[buffer], operands);
+            if (slice == 0 && current > 0) {
+              // The previous chunk's sums, while this chunk's first MMAs run.
+              flush(sums[buffer ^ 1], previous_scales);
+            }
+          }
+          previous_scales = s_stage;
+          WaitAsyncButOne();
+          __syncthreads();
+          stage = next_stage;
+          scale_stage = scale_stage + 1 == kScaleStages ? 0 : scale_stage + 1;
+        }
       }
     }
-  }
-  // The last chunk's sums (a static index: a dynamic one would put the sums in local memory).
-  if (((chunks - 1) & 1) == 0) {
-    flush(sums[0], previous_scales);
+    // The last chunk's sums (a static index: a dynamic one would put the sums in local memory).
+    if (((chunks - 1) & 1) == 0) {
+      flush(sums[0], previous_scales);
+    } else {
+      flush(sums[1], previous_scales);
+    }
   } else {
-    flush(sums[1], previous_scales);
+    // Blockwise: a slice's sums leave the int32 domain at once. A sum comes out of the biased MMA
+    // as the float v = kSumBiasValue + sum; fma(v, s, -kSumBiasValue * s) is sum * s rounded once
+    // (the row's scale s has 16 significant bits, so its product with the bias is exact), and a
+    // second fma applies the weight's scale.
+    for (int chunk = 0; chunk < chunks; ++chunk) {
+      const int next_stage = stage + 1 == kStages ? 0 : stage + 1;
+      const int after_stage = next_stage + 1 == kStages ? 0 : next_stage + 1;
+      const int after_scale_stage = (scale_stage + 2) % kScaleStages;
+      const unsigned char* a_stage = activation_s + stage * kActivationStageBytes;
+      const unsigned char* p_stage = packed_s + stage * kPackedStageBytes;
+      const float* s_stage = scales_s + scale_stage * (kBlockRows * kBlocksPerChunk);
+      const unsigned char* w_stage = weight_scales_s + stage * kWeightScaleStageBytes;
+      float row_scale[kWarpRowGroups][2];
+      float row_bias[kWarpRowGroups][2];
+#pragma unroll
+      for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+#pragma unroll
+        for (int h = 0; h < 2; ++h) {
+          row_scale[rg][h] = s_stage[(warp_row + rg * 16 + g + h * 8) * kBlocksPerChunk];
+          row_bias[rg][h] = -kSumBiasValue * row_scale[rg][h];
+        }
+      }
+      // The thread's channels 2t and 2t + 1 of each column group: their four slices' scales,
+      // [channel 2t: slices 0-3][channel 2t + 1: slices 0-3] as fp16.
+      uint4 channel_scale[kWarpColGroups];
+#pragma unroll
+      for (int cg = 0; cg < kWarpColGroups; ++cg) {
+        channel_scale[cg] =
+            *reinterpret_cast<const uint4*>(w_stage + (warp_col + cg * 8 + 2 * t) * kWeightScaleRowBytes);
+      }
+#pragma unroll
+      for (int slice = 0; slice < kSlices; ++slice) {
+        Operands operands;
+        load_operands(a_stage, p_stage, slice, operands);
+        int32_t sum[kWarpRowGroups][kWarpColGroups][4];
+#pragma unroll
+        for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+#pragma unroll
+          for (int cg = 0; cg < kWarpColGroups; ++cg) {
+            MmaS8Biased(sum[rg][cg][0], sum[rg][cg][1], sum[rg][cg][2], sum[rg][cg][3], operands.a[rg][0],
+                        operands.a[rg][1], operands.a[rg][2], operands.a[rg][3], operands.b[cg][0],
+                        operands.b[cg][1], kSumBias);
+          }
+        }
+        // A quarter of the chunk after next's copies, while the MMAs run; one group per chunk.
+        if (chunk + 2 < chunks) copy_stage_part(chunk + 2, after_stage, after_scale_stage, slice);
+        if (slice == kSlices - 1) CommitAsync();
+#pragma unroll
+        for (int cg = 0; cg < kWarpColGroups; ++cg) {
+          const uint32_t first = slice < 2 ? channel_scale[cg].x : channel_scale[cg].y;
+          const uint32_t second = slice < 2 ? channel_scale[cg].z : channel_scale[cg].w;
+          const int shift = (slice & 1) * 16;
+          const float w0 = __half2float(__ushort_as_half(static_cast<unsigned short>(first >> shift)));
+          const float w1 = __half2float(__ushort_as_half(static_cast<unsigned short>(second >> shift)));
+#pragma unroll
+          for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+            acc[rg][cg][0] = fmaf(fmaf(__int_as_float(sum[rg][cg][0]), row_scale[rg][0], row_bias[rg][0]), w0,
+                                  acc[rg][cg][0]);
+            acc[rg][cg][1] = fmaf(fmaf(__int_as_float(sum[rg][cg][1]), row_scale[rg][0], row_bias[rg][0]), w1,
+                                  acc[rg][cg][1]);
+            acc[rg][cg][2] = fmaf(fmaf(__int_as_float(sum[rg][cg][2]), row_scale[rg][1], row_bias[rg][1]), w0,
+                                  acc[rg][cg][2]);
+            acc[rg][cg][3] = fmaf(fmaf(__int_as_float(sum[rg][cg][3]), row_scale[rg][1], row_bias[rg][1]), w1,
+                                  acc[rg][cg][3]);
+          }
+        }
+      }
+      WaitAsyncButOne();
+      __syncthreads();
+      stage = next_stage;
+      scale_stage = scale_stage + 1 == kScaleStages ? 0 : scale_stage + 1;
+    }
   }
 
   // The outlier dims: the rows' fp16 values [128][kOutliers] and the channels' [128][kOutliers]
-  // staged in the (now free) operand stages, one fp16 MMA chunk of 32 dims.
+  // staged in the (now free) operand stages, one fp16 MMA chunk of 32 dims; blockwise weights
+  // (scaled by their blocks' scales) as the pair w_s + w_lo_s, two MMAs.
   {
     WaitAsyncAll();
     __syncthreads();  // every warp is done with the operand stages
     unsigned char* x_s = smem;
     unsigned char* w_s = smem + kBlockRows * kOutlierRowBytes;
+    unsigned char* w_lo_s = w_s + kBlockCols * kOutlierRowBytes;
     for (int i = tid; i < kBlockRows * (kOutliers / 8); i += kThreads) {
       const int r = i / (kOutliers / 8);
       const int v = i % (kOutliers / 8);
@@ -585,6 +738,10 @@ __global__ void __launch_bounds__(kThreads, 1) Int8GemmKernel(
       const int channel = min(n0 + r % block_channels, output_size - 1) + (r / block_channels != 0 ? output_size : 0);
       *reinterpret_cast<int4*>(w_s + r * kOutlierRowBytes + v * 16) =
           *reinterpret_cast<const int4*>(outlier_weights + static_cast<size_t>(channel) * kOutliers + v * 8);
+      if (kBlockwise) {
+        *reinterpret_cast<int4*>(w_lo_s + r * kOutlierRowBytes + v * 16) =
+            *reinterpret_cast<const int4*>(outlier_weights_lo + static_cast<size_t>(channel) * kOutliers + v * 8);
+      }
     }
     __syncthreads();
     // A row whose outliers were stored scaled down by 2^shift (QuantizeRowsKernel): its
@@ -632,6 +789,17 @@ __global__ void __launch_bounds__(kThreads, 1) Int8GemmKernel(
           MmaF16F32(acc[rg][2 * pair + 1][0], acc[rg][2 * pair + 1][1], acc[rg][2 * pair + 1][2],
                     acc[rg][2 * pair + 1][3], a[rg][0], a[rg][1], a[rg][2], a[rg][3], b[2], b[3]);
         }
+        if (kBlockwise) {
+          LoadMatrixX4(b[0], b[1], b[2], b[3],
+                       w_lane + (w_lo_s - w_s) + pair * 16 * kOutlierRowBytes + slice * 32);
+#pragma unroll
+          for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+            MmaF16F32(acc[rg][2 * pair][0], acc[rg][2 * pair][1], acc[rg][2 * pair][2], acc[rg][2 * pair][3],
+                      a[rg][0], a[rg][1], a[rg][2], a[rg][3], b[0], b[1]);
+            MmaF16F32(acc[rg][2 * pair + 1][0], acc[rg][2 * pair + 1][1], acc[rg][2 * pair + 1][2],
+                      acc[rg][2 * pair + 1][3], a[rg][0], a[rg][1], a[rg][2], a[rg][3], b[2], b[3]);
+          }
+        }
       }
     }
 #pragma unroll
@@ -647,7 +815,8 @@ __global__ void __launch_bounds__(kThreads, 1) Int8GemmKernel(
     __syncthreads();  // the stages are reused by the gate below
   }
 
-  // Epilogue as the fp16 kernel's: the per-channel scales, the gate through shared memory.
+  // Epilogue as the fp16 kernel's: the per-channel scales (blockwise ones are in already), the
+  // gate through shared memory.
   float* gate_s = reinterpret_cast<float*>(smem);
   if (gate != 0 && warp_col < block_channels) {
 #pragma unroll
@@ -674,11 +843,16 @@ __global__ void __launch_bounds__(kThreads, 1) Int8GemmKernel(
       const int column = (gate != 0 ? warp_col - block_channels : warp_col) + cg * 8 + 2 * t;
       const int n = n0 + column;
       if (n >= output_size) continue;
-      const float2 scale = __bfloat1622float2(*reinterpret_cast<const __nv_bfloat162*>(channel_scales + (gate != 0 ? output_size : 0) + n));
+      const float2 scale =
+          kBlockwise ? make_float2(1.0f, 1.0f)
+                     : __bfloat1622float2(*reinterpret_cast<const __nv_bfloat162*>(
+                           channel_scales + (gate != 0 ? output_size : 0) + n));
       float2 lo = make_float2(acc[rg][cg][0] * scale.x, acc[rg][cg][1] * scale.y);
       float2 hi = make_float2(acc[rg][cg][2] * scale.x, acc[rg][cg][3] * scale.y);
       if (gate != 0) {
-        const float2 gate_scale = __bfloat1622float2(*reinterpret_cast<const __nv_bfloat162*>(channel_scales + n));
+        const float2 gate_scale =
+            kBlockwise ? make_float2(1.0f, 1.0f)
+                       : __bfloat1622float2(*reinterpret_cast<const __nv_bfloat162*>(channel_scales + n));
         const float2 gate_lo = *reinterpret_cast<const float2*>(gate_s + row * block_channels + column);
         const float2 gate_hi = *reinterpret_cast<const float2*>(gate_s + (row + 8) * block_channels + column);
         lo.x *= Gelu(gate_lo.x * gate_scale.x, gate);
@@ -696,7 +870,8 @@ __global__ void __launch_bounds__(kThreads, 1) Int8GemmKernel(
 
 namespace litert::nvidia::int8_gemm {
 struct Workspace {
-  size_t scales, quantized, column_max, row_factor, dims, flags, outliers, outlier_shift, outlier_weights, total;
+  size_t scales, quantized, column_max, row_factor, dims, flags, outliers, outlier_shift, outlier_weights,
+      outlier_weights_lo, total;
 };
 Workspace Layout(const LiteRtNvidiaGemmShape* shape) {
   const size_t rows = shape->rows;
@@ -712,15 +887,16 @@ Workspace Layout(const LiteRtNvidiaGemmShape* shape) {
   w.outliers = align(w.flags + shape->input_size);
   w.outlier_shift = align(w.outliers + rows * kOutliers * sizeof(__half));
   w.outlier_weights = align(w.outlier_shift + rows * sizeof(int32_t));
-  w.total = align(w.outlier_weights + channels * kOutliers * sizeof(__half));
+  w.outlier_weights_lo = align(w.outlier_weights + channels * kOutliers * sizeof(__half));
+  w.total = align(w.outlier_weights_lo + (shape->scale_block != 0 ? channels * kOutliers * sizeof(__half) : 0));
   return w;
 }
 }  // namespace litert::nvidia::int8_gemm
 
 extern "C" bool LiteRtNvidiaInt8GemmSupports(const LiteRtNvidiaGemmShape* shape) {
   using namespace litert::nvidia::int8_gemm;
-  return LiteRtNvidiaSubbyteGemmSupports(shape) && shape->scale_block == 0 &&
-         shape->input_size % kChunk == 0 && shape->input_size <= 16384;
+  return LiteRtNvidiaSubbyteGemmSupports(shape) && (shape->scale_block == 0 || shape->scale_block == 32) &&
+         shape->input_size % kChunk == 0 && shape->input_size <= kMaxInputSize;
 }
 
 extern "C" size_t LiteRtNvidiaInt8GemmWorkspaceBytes(const LiteRtNvidiaGemmShape* shape) {
@@ -740,14 +916,18 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmInt8Normed(
   }
   static bool attribute_set = false;
   if (!attribute_set) {
-    cudaError_t status = cudaFuncSetAttribute(Int8GemmKernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
+    cudaError_t status = cudaFuncSetAttribute(Int8GemmKernel<false>, cudaFuncAttributeMaxDynamicSharedMemorySize,
                                               static_cast<int>(kSharedBytes));
     if (status != cudaSuccess) return status;
+    status = cudaFuncSetAttribute(Int8GemmKernel<true>, cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                  static_cast<int>(kBlockwiseSharedBytes));
+    if (status != cudaSuccess) return status;
     status = cudaFuncSetAttribute(OutlierDimsKernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                  16384 * static_cast<int>(sizeof(float)));
+                                  kMaxInputSize * static_cast<int>(sizeof(float)));
     if (status != cudaSuccess) return status;
     attribute_set = true;
   }
+  const bool blockwise = shape->scale_block != 0;
   const Workspace w = Layout(shape);
   char* base = static_cast<char*>(workspace);
   float* quant_scales = reinterpret_cast<float*>(base + w.scales);
@@ -759,6 +939,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmInt8Normed(
   __half* outliers = reinterpret_cast<__half*>(base + w.outliers);
   int32_t* outlier_shift = reinterpret_cast<int32_t*>(base + w.outlier_shift);
   __half* outlier_weights = reinterpret_cast<__half*>(base + w.outlier_weights);
+  __half* outlier_weights_lo = reinterpret_cast<__half*>(base + w.outlier_weights_lo);
   const int channels = (shape->gate != 0 ? 2 : 1) * shape->output_size;
   const __nv_bfloat16* typed_activation = static_cast<const __nv_bfloat16*>(activation);
   if (norm_scale != nullptr) {
@@ -773,17 +954,25 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmInt8Normed(
   OutlierDimsKernel<<<1, kSelectThreads, shape->input_size * sizeof(float), stream>>>(
       column_max, shape->input_size, dims, flags);
   GatherOutlierWeightsKernel<<<(channels * kOutliers + 255) / 256, 256, 0, stream>>>(
-      weights, channels, shape->input_size, dims, outlier_weights);
+      weights, channels, shape->input_size, dims, blockwise ? static_cast<const __half*>(scales) : nullptr,
+      outlier_weights, outlier_weights_lo);
   QuantizeRowsKernel<<<shape->rows, kThreads, 0, stream>>>(
       typed_activation, shape->input_size, norm_scale, norm_eps, norm_multiplier, flags, dims,
-      quantized, quant_scales, outliers, outlier_shift);
+      quantized, quant_scales, outliers, outlier_shift, /*round_scales=*/blockwise);
   status = cudaGetLastError();
   if (status != cudaSuccess) return status;
   const int block_channels = shape->gate != 0 ? kBlockCols / 2 : kBlockCols;
   const dim3 grid(shape->rows / kBlockRows, (shape->output_size + block_channels - 1) / block_channels);
-  Int8GemmKernel<<<grid, kThreads, kSharedBytes, stream>>>(
-      quantized, quant_scales, weights, static_cast<const __nv_bfloat16*>(scales), outliers,
-      outlier_shift, outlier_weights, shape->input_size, shape->output_size, shape->gate,
-      static_cast<__nv_bfloat16*>(output));
+  if (blockwise) {
+    Int8GemmKernel<true><<<grid, kThreads, kBlockwiseSharedBytes, stream>>>(
+        quantized, quant_scales, weights, scales, outliers, outlier_shift, outlier_weights,
+        outlier_weights_lo, shape->input_size, shape->output_size, shape->gate,
+        static_cast<__nv_bfloat16*>(output));
+  } else {
+    Int8GemmKernel<false><<<grid, kThreads, kSharedBytes, stream>>>(
+        quantized, quant_scales, weights, scales, outliers, outlier_shift, outlier_weights,
+        outlier_weights_lo, shape->input_size, shape->output_size, shape->gate,
+        static_cast<__nv_bfloat16*>(output));
+  }
   return cudaGetLastError();
 }

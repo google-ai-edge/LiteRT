@@ -43,6 +43,21 @@ pub struct PerfPoint {
     /// this run (its meta.json's host_clock; None: not recorded).
     #[serde(default)]
     pub clock_fit: Option<bool>,
+    /// When bench.sh started the run (its meta.json's start, RFC 3339; None:
+    /// a point made before this field). A comparison of two runs measured
+    /// hours apart (a resumed capture's kept cells against the other's new
+    /// ones) is not the interleaved measurement the thresholds assume.
+    #[serde(default)]
+    pub measured_at: Option<String>,
+}
+
+/// Seconds between two runs' starts, when both are recorded and parse.
+pub fn seconds_apart(a: &PerfPoint, b: &PerfPoint) -> Option<f64> {
+    let parse = |s: &Option<String>| {
+        s.as_deref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+    };
+    let (a, b) = (parse(&a.measured_at)?, parse(&b.measured_at)?);
+    Some((a - b).num_milliseconds().abs() as f64 / 1000.0)
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,6 +75,8 @@ struct BenchMeta {
     exit_code: i32,
     #[serde(default)]
     host_clock: Option<serde_json::Value>,
+    #[serde(default)]
+    start: Option<String>,
 }
 
 /// Reads a bench.sh run directory (meta.json, cli.log, time.txt).
@@ -104,6 +121,7 @@ pub fn summarize_run(run_dir: &Path) -> Result<PerfPoint> {
         max_rss_gib,
         exit_code: meta.exit_code,
         clock_fit: meta.host_clock.as_ref().and_then(|c| c.get("fit")).and_then(|f| f.as_bool()),
+        measured_at: meta.start,
     })
 }
 
@@ -403,7 +421,20 @@ mod tests {
             max_rss_gib: None,
             exit_code: 0,
             clock_fit: None,
+            measured_at: None,
         }
+    }
+
+    #[test]
+    fn runs_hours_apart_are_told() {
+        let mut a = point("e2b", "short", 100.0, 5000.0);
+        let mut b = a.clone();
+        assert_eq!(seconds_apart(&a, &b), None);
+        a.measured_at = Some("2026-11-04T17:54:26.529696900Z".into());
+        b.measured_at = Some("2026-11-04T21:10:00Z".into());
+        assert!((seconds_apart(&a, &b).unwrap() - 11733.47).abs() < 1.0);
+        b.measured_at = Some("not a time".into());
+        assert_eq!(seconds_apart(&a, &b), None);
     }
 
     #[test]

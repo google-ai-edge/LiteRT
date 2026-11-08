@@ -34,9 +34,9 @@ def cuda_library(name, srcs, hdrs = [], deps = [], linkstatic = True, **kwargs):
         srcs = srcs + hdrs,
         outs = [archive],
         cmd_bat = " ".join([
-            "$(execpath @local_cuda//:bin/nvcc.exe) --lib -std=c++17 -O3 -Xcompiler=/MD",
+            "$(execpath @local_cuda//:bin/nvcc.exe) --lib -std=c++17 -O3 -Xcompiler=/MD -Xcompiler=/EHsc",
             "-gencode=arch=compute_80,code=sm_87 -gencode=arch=compute_80,code=compute_80",
-            "-gencode=arch=compute_120,code=sm_120",
+            "-gencode=arch=compute_120,code=sm_120 -gencode=arch=compute_121,code=sm_121",
             "-I. -Iexternal/litert -Iexternal/local_cuda/include",
             source_locations,
             '-o "$@"',

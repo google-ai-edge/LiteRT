@@ -45,7 +45,17 @@ pub struct StepLogits {
     pub function: String,
     pub step: u32,
     pub row: usize,
+    /// serde_json writes a non-finite value as null: a summary of a run whose
+    /// logits went non-finite reads back with NaN there.
+    #[serde(deserialize_with = "nan_tolerant_pairs")]
     pub top: Vec<(u32, f64)>,
+}
+
+fn nan_tolerant_pairs<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<(u32, f64)>, D::Error> {
+    let pairs: Vec<(u32, Option<f64>)> = Vec::deserialize(deserializer)?;
+    Ok(pairs.into_iter().map(|(index, value)| (index, value.unwrap_or(f64::NAN))).collect())
 }
 
 impl StepLogits {

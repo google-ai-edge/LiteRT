@@ -1,0 +1,107 @@
+{
+  "_": "The model registry of the tables: profile -> name, family, table, MTP drafter, the sampler LiteRT-LM uses for the file (greedy: E2B/E4B carry no sampler parameters; model: top-k 64, top-p 0.95, temperature 1.0), the synthetic workloads of the matrix, and the real-text-only long-context workloads. plain_selected_signatures: a plain run of the model compiles only prefill_1024 and decode (bench.sh's rule for the larger models).",
+  "e2b": {
+    "name": "E2B",
+    "family": "gemma4",
+    "table": "dense",
+    "mtp": true,
+    "sampler": "greedy",
+    "workloads": [
+      "short",
+      "8k",
+      "16k",
+      "30k"
+    ],
+    "long_context": []
+  },
+  "e4b": {
+    "name": "E4B",
+    "family": "gemma4",
+    "table": "dense",
+    "mtp": true,
+    "sampler": "greedy",
+    "workloads": [
+      "short",
+      "8k",
+      "16k",
+      "30k"
+    ],
+    "long_context": []
+  },
+  "12b": {
+    "name": "12B",
+    "family": "gemma4",
+    "table": "dense",
+    "mtp": true,
+    "sampler": "model",
+    "workloads": [
+      "short",
+      "8k",
+      "16k",
+      "30k",
+      "128k"
+    ],
+    "long_context": [],
+    "plain_selected_signatures": true
+  },
+  "26b": {
+    "name": "26B-A4B",
+    "family": "gemma4",
+    "table": "moe",
+    "mtp": true,
+    "sampler": "model",
+    "workloads": [
+      "short",
+      "8k",
+      "16k",
+      "30k"
+    ],
+    "long_context": [
+      "128k",
+      "256k"
+    ],
+    "plain_selected_signatures": true
+  },
+  "qwen27b": {
+    "name": "Qwen 3.8 27B",
+    "family": "qwen3_8",
+    "table": "qwen",
+    "mtp": false,
+    "sampler": "model",
+    "partition_policy": "qwen3_5",
+    "workloads": [
+      "short",
+      "8k",
+      "16k",
+      "30k",
+      "128k"
+    ],
+    "long_context": [],
+    "plain_selected_signatures": true
+  },
+  "tables": {
+    "dense": {
+      "file": "gemma4_dense.md",
+      "title": "Gemma 4 E2B, E4B and 12B",
+      "models": [
+        "e2b",
+        "e4b",
+        "12b"
+      ]
+    },
+    "moe": {
+      "file": "gemma4_moe.md",
+      "title": "Gemma 4 26B-A4B",
+      "models": [
+        "26b"
+      ]
+    },
+    "qwen": {
+      "file": "qwen3_8_27b.md",
+      "title": "Qwen 3.8 27B",
+      "models": [
+        "qwen27b"
+      ]
+    }
+  }
+}

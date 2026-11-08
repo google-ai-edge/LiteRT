@@ -66,7 +66,8 @@ constexpr char kScaleOffsetField[] = "scale_offset";
 constexpr char kNormEpsField[] = "norm_eps";
 constexpr char kNormMultiplierField[] = "norm_multiplier";
 constexpr char kRowPositionsField[] = "row_positions";
-constexpr int kFields = 12;
+constexpr char kInt8BlockwiseField[] = "int8_blockwise";
+constexpr int kFields = 13;
 
 // The activation rows [..., columns] of a descriptor, or 0.
 int64_t ActivationRows(const nvinfer1::Dims& dims, int32_t columns) {
@@ -93,7 +94,7 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
                     int32_t gate, int32_t gemm, int64_t weight_offset,
                     int64_t holder_granule, int32_t scale_block,
                     int64_t scale_offset, float norm_eps, float norm_multiplier,
-                    int32_t row_positions) noexcept
+                    int32_t row_positions, int32_t int8_blockwise) noexcept
       : bit_width_(bit_width),
         rows_(rows),
         columns_(columns),
@@ -106,6 +107,7 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
         norm_eps_(norm_eps),
         norm_multiplier_(norm_multiplier),
         row_positions_(row_positions),
+        int8_blockwise_(int8_blockwise),
         fields_{
             {{kBitWidthField, &bit_width_, nvinfer1::PluginFieldType::kINT32,
               1},
@@ -126,6 +128,8 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
              {kNormMultiplierField, &norm_multiplier_,
               nvinfer1::PluginFieldType::kFLOAT32, 1},
              {kRowPositionsField, &row_positions_,
+              nvinfer1::PluginFieldType::kINT32, 1},
+             {kInt8BlockwiseField, &int8_blockwise_,
               nvinfer1::PluginFieldType::kINT32, 1}}},
         field_collection_{static_cast<int32_t>(fields_.size()),
                           fields_.data()} {}
@@ -147,7 +151,7 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
     return new (std::nothrow) SubbyteGemvPlugin(
         bit_width_, rows_, columns_, gate_, gemm_, weight_offset_,
         holder_granule_, scale_block_, scale_offset_, norm_eps_,
-        norm_multiplier_, row_positions_);
+        norm_multiplier_, row_positions_, int8_blockwise_);
   }
 
   const char* getPluginName() const noexcept override { return kPluginName; }
@@ -238,7 +242,7 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
     const LiteRtNvidiaGemmShape shape =
         GemmShape(ActivationRows(inputs[0].max, columns_));
     // Whichever kernel runs at enqueue: the fp16 one, or the int8 one on
-    // per-channel weights.
+    // the weights it takes.
     return std::max(LiteRtNvidiaSubbyteGemmWorkspaceBytes(&shape),
                     LiteRtNvidiaInt8GemmWorkspaceBytes(&shape));
   }
@@ -292,9 +296,11 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
     } else {
       const LiteRtNvidiaGemmShape shape = GemmShape(rows);
       if (LiteRtNvidiaSubbyteGemmWeightBytes(&shape) == WeightBytes()) {
-        // The int8 tensor cores take the per-channel products
+        // The int8 tensor cores take the per-channel products, and the
+        // blockwise ones with LITERT_NVIDIA_GEMM_INT8_BLOCKWISE=1
         // (LITERT_NVIDIA_GEMM_INT8=0 keeps the fp16 kernel for every product).
-        if (Int8GemmEnabled() && LiteRtNvidiaInt8GemmSupports(&shape)) {
+        if (Int8GemmEnabled() && LiteRtNvidiaInt8GemmSupports(&shape) &&
+            (scale_block_ == 0 || Int8BlockwiseEnabled(int8_blockwise_))) {
           status = LiteRtNvidiaLaunchBf16Int4GemmInt8Normed(
               &shape, inputs[0], positions, norm_scale, norm_eps_,
               norm_multiplier_, weights, scales, outputs[0], workspace, stream);
@@ -339,6 +345,19 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
       return value == nullptr || std::strcmp(value, "0") != 0;
     }();
     return enabled;
+  }
+
+  // Whether a blockwise product (an fp16 scale per 32 input dims) takes the
+  // int8 tensor cores too: as compiled (the int8_blockwise field), unless
+  // LITERT_NVIDIA_GEMM_INT8_BLOCKWISE=0 or =1 says otherwise; read once per
+  // process.
+  static bool Int8BlockwiseEnabled(int32_t compiled) noexcept {
+    static const int forced = [] {
+      const char* value = std::getenv("LITERT_NVIDIA_GEMM_INT8_BLOCKWISE");
+      if (value == nullptr || value[0] == '\0') return -1;
+      return std::strcmp(value, "0") == 0 ? 0 : 1;
+    }();
+    return forced < 0 ? compiled != 0 : forced != 0;
   }
 
   // Whether the int8 path chooses its outlier dims over the chunk's rows
@@ -476,6 +495,7 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
   float norm_eps_;  // < 0: no fused norm
   float norm_multiplier_;
   int32_t row_positions_;  // 1: the rows' positions are the last input
+  int32_t int8_blockwise_;  // 1: blockwise products take the int8 kernel
   std::array<nvinfer1::PluginField, kFields> fields_;
   nvinfer1::PluginFieldCollection field_collection_;
 };
@@ -499,6 +519,8 @@ class SubbyteGemvPluginCreator final : public nvinfer1::IPluginCreatorV3One {
              {kNormMultiplierField, nullptr,
               nvinfer1::PluginFieldType::kFLOAT32, 1},
              {kRowPositionsField, nullptr, nvinfer1::PluginFieldType::kINT32,
+              1},
+             {kInt8BlockwiseField, nullptr, nvinfer1::PluginFieldType::kINT32,
               1}}},
         field_collection_{static_cast<int32_t>(fields_.size()),
                           fields_.data()} {}
@@ -523,6 +545,7 @@ class SubbyteGemvPluginCreator final : public nvinfer1::IPluginCreatorV3One {
     float norm_eps = -1.0f;
     float norm_multiplier = 1.0f;
     int32_t row_positions = 0;
+    int32_t int8_blockwise = 0;
     for (int32_t i = 0; i < fields->nbFields; ++i) {
       const auto& field = fields->fields[i];
       if (field.name == nullptr || field.data == nullptr ||
@@ -567,16 +590,19 @@ class SubbyteGemvPluginCreator final : public nvinfer1::IPluginCreatorV3One {
         scale_block = value;
       } else if (std::strcmp(field.name, kRowPositionsField) == 0) {
         row_positions = value;
+      } else if (std::strcmp(field.name, kInt8BlockwiseField) == 0) {
+        int8_blockwise = value;
       }
     }
     if ((gemm != 0 && gemm != 1) ||
-        (row_positions != 0 && row_positions != 1)) {
+        (row_positions != 0 && row_positions != 1) ||
+        (int8_blockwise != 0 && int8_blockwise != 1)) {
       return nullptr;
     }
     return CreateSubbyteGemvPlugin(bit_width, rows, columns, gate, gemm != 0,
                                    weight_offset, holder_granule, scale_block,
                                    scale_offset, norm_eps, norm_multiplier,
-                                   row_positions != 0);
+                                   row_positions != 0, int8_blockwise != 0);
   }
 
   const nvinfer1::PluginFieldCollection* getFieldNames() noexcept override {
@@ -601,7 +627,7 @@ nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(
     int32_t bit_width, int32_t rows, int32_t columns, int32_t gate, bool gemm,
     int64_t weight_offset, int64_t holder_granule, int32_t scale_block,
     int64_t scale_offset, float norm_eps, float norm_multiplier,
-    bool row_positions) noexcept {
+    bool row_positions, bool int8_blockwise) noexcept {
   if ((bit_width != 2 && bit_width != 4 && bit_width != 8) || rows <= 0 ||
       columns <= 0 || columns % 16 != 0) {
     return nullptr;
@@ -642,7 +668,8 @@ nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(
   // A gate needs the GEMM or the blockwise GEMV, which has a gate mode.
   if (gate != 0 && ((!gemm && scale_block == 0) || rows % 2 != 0 ||
                     (gate != kLiteRtNvidiaGemmGateGeluTanh &&
-                     gate != kLiteRtNvidiaGemmGateGeluErf))) {
+                     gate != kLiteRtNvidiaGemmGateGeluErf &&
+                     gate != kLiteRtNvidiaGemmGateSilu))) {
     return nullptr;
   }
   if (gemm) {
@@ -656,7 +683,8 @@ nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(
   return new (std::nothrow) SubbyteGemvPlugin(
       bit_width, rows, columns, gate, gemm ? 1 : 0, weight_offset,
       holder_granule, scale_block, scale_offset, norm_eps, norm_multiplier,
-      row_positions ? 1 : 0);
+      row_positions ? 1 : 0,
+      int8_blockwise && gemm && scale_block != 0 ? 1 : 0);
 }
 
 void EnsureSubbyteGemvPluginRegistered() noexcept {}
