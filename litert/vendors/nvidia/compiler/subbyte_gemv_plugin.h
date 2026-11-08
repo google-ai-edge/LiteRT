@@ -67,11 +67,16 @@ namespace litert::nvidia {
 // (LiteRtNvidiaLaunchBf16Int4GemmInt8Normed).
 // LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=0 ignores the input: every row chooses, as
 // without it.
+//
+// `int8_blockwise` (gemm with blockwise scales) runs the product on the int8
+// tensor cores like the per-channel ones; LITERT_NVIDIA_GEMM_INT8_BLOCKWISE=0
+// or =1 overrides the choice at run time.
 nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(
     int32_t bit_width, int32_t rows, int32_t columns, int32_t gate = 0,
     bool gemm = false, int64_t weight_offset = 0, int64_t holder_granule = 0,
     int32_t scale_block = 0, int64_t scale_offset = -1, float norm_eps = -1.0f,
-    float norm_multiplier = 1.0f, bool row_positions = false) noexcept;
+    float norm_multiplier = 1.0f, bool row_positions = false,
+    bool int8_blockwise = false) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
 // retained when linking the shared library used for engine deserialization.

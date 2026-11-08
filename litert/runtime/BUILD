@@ -620,6 +620,7 @@ cc_library(
     srcs = ["magic_number_utils.cc"],
     hdrs = ["magic_number_utils.h"],
     deps = [
+        ":model_buffer_writes",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
@@ -636,6 +637,26 @@ cc_library(
         "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/strings",
         "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_library(
+    name = "model_buffer_writes",
+    srcs = ["model_buffer_writes.cc"],
+    hdrs = ["model_buffer_writes.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+    ],
+)
+
+cc_test(
+    name = "model_buffer_writes_test",
+    srcs = ["model_buffer_writes_test.cc"],
+    deps = [
+        ":model_buffer_writes",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -756,6 +777,7 @@ cc_library(
         ":external_litert_buffer_context",
         ":litert_runtime_options",
         ":metrics",
+        ":model_buffer_writes",
         ":profiler",
         ":tensor_buffer",
         ":tensor_buffer_requirements",

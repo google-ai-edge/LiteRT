@@ -243,43 +243,69 @@ Expected<uint64_t> TensorRtWeightStoreBuilder::SourceOffset(
   // other bytes of the page were written or the same bytes were written
   // back, so its part of the weights is compared with the file.
 #ifdef _WIN32
-  // Resident shared pages still belong to the file. Private or nonresident
-  // pages need comparison: Windows does not expose the paged-out COW state.
+  // A copy-on-write view may hold pages the process wrote to. The working
+  // set information tells which without touching the weights: a page that
+  // still is the file's is shared, resident or not, and a written one is a
+  // private copy, wherever it was moved to. Pages under a page table that
+  // was never made, most of a large view that nothing touched, come without
+  // any information; one of them could only have been written if its page
+  // table was paged out since, and a written page reads PAGE_READWRITE (or
+  // whatever the view gave it, for a view mapped writable), so the
+  // protection of those pages is checked instead: a page that still reads as
+  // its view gave it, or read-only or copy-on-write, is the file's. LiteRT
+  // makes the unwritten pages of a copy-on-write model view read-only and
+  // turns the ones it writes to copy-on-write again
+  // (litert/runtime/model_buffer_writes.h). A written page can still hold what
+  // the file holds, when other bytes of the page were written or the same bytes
+  // were written back, so its part of the weights is compared with the file.
+  // Without the information every page is compared.
+  const uint64_t page_size = static_cast<uint64_t>(sysconf(_SC_PAGESIZE));
+  const uint64_t first_page = begin / page_size;
+  const uint64_t last_page = (end - 1) / page_size;
+  std::vector<PSAPI_WORKING_SET_EX_INFORMATION> entries(
+      std::min<uint64_t>(last_page - first_page + 1, 1 << 15));
+  // The region of pages with the same protection that the last page without
+  // working set information was in.
+  MEMORY_BASIC_INFORMATION region{};
+  uintptr_t region_end = 0;
   bool unmodified = true;
-  const uintptr_t page_size = static_cast<uintptr_t>(sysconf(_SC_PAGESIZE));
-  const uintptr_t first_page = begin / page_size;
-  const uintptr_t last_page = (end - 1) / page_size;
-  std::vector<PSAPI_WORKING_SET_EX_INFORMATION> pages(
-      std::min<uintptr_t>(last_page - first_page + 1, 1 << 15));
-  for (uintptr_t page = first_page; page <= last_page && unmodified;) {
-    const size_t count =
-        std::min<uintptr_t>(last_page - page + 1, pages.size());
-    for (size_t i = 0; i < count; ++i) {
-      pages[i] = {};
-      pages[i].VirtualAddress = reinterpret_cast<void*>((page + i) * page_size);
+  for (uint64_t page = first_page; page <= last_page && unmodified;) {
+    const uint64_t count =
+        std::min<uint64_t>(last_page - page + 1, entries.size());
+    for (uint64_t i = 0; i < count; ++i) {
+      entries[i].VirtualAddress =
+          reinterpret_cast<void*>((page + i) * page_size);
     }
     const bool queried =
-        QueryWorkingSetEx(GetCurrentProcess(), pages.data(),
-                          static_cast<DWORD>(count * sizeof(pages[0]))) != 0;
-    for (size_t i = 0; i < count && unmodified;) {
-      const auto shared = [&](size_t at) {
-        return queried && pages[at].VirtualAttributes.Valid &&
-               pages[at].VirtualAttributes.Shared;
-      };
-      if (shared(i)) {
-        ++i;
+        QueryWorkingSetEx(GetCurrentProcess(), entries.data(),
+                          static_cast<DWORD>(count * sizeof(entries[0])));
+    for (uint64_t i = 0; i < count && unmodified; ++i) {
+      const uintptr_t address = (page + i) * page_size;
+      const PSAPI_WORKING_SET_EX_BLOCK& attributes =
+          entries[i].VirtualAttributes;
+      if (queried &&
+          (attributes.Valid ? attributes.Shared : attributes.Invalid.Shared)) {
         continue;
       }
-      size_t through = i + 1;
-      while (through < count && (through - i) * page_size < (1 << 20) &&
-             !shared(through))
-        ++through;
-      const uintptr_t part_begin = std::max((page + i) * page_size, begin);
-      const uintptr_t part_end = std::min((page + through) * page_size, end);
+      if (queried && attributes.Flags == 0) {
+        if (address >= region_end &&
+            VirtualQuery(reinterpret_cast<const void*>(address), &region,
+                         sizeof(region)) != 0) {
+          region_end = reinterpret_cast<uintptr_t>(region.BaseAddress) +
+                       region.RegionSize;
+        }
+        if (address < region_end && region.Type == MEM_MAPPED &&
+            (region.Protect == region.AllocationProtect ||
+             region.Protect == PAGE_READONLY ||
+             region.Protect == PAGE_WRITECOPY)) {
+          continue;
+        }
+      }
+      const uintptr_t part_begin = std::max<uintptr_t>(address, begin);
+      const uintptr_t part_end = std::min<uintptr_t>(address + page_size, end);
       unmodified = EqualsSource(
           {reinterpret_cast<const uint8_t*>(part_begin), part_end - part_begin},
-          offset + part_begin - begin);
-      i = through;
+          offset + (part_begin - begin));
     }
     page += count;
   }

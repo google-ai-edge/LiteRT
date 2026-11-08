@@ -27,7 +27,9 @@ compared step by step while their argmax tokens agree (the inputs of those
 steps are identical): the largest |Δlogit| among the top-K, the KL divergence
 of the top-K distributions, the top-K set overlap, and where the greedy texts
 part. A divergence after a few sentences is a near-tie and only warns; one
-within the first eight tokens, non-finite logits and a repetition loop fail.
+within the first eight tokens, non-finite logits and a repetition loop fail
+(a dump holding the C library's `nan` or `inf` is read as such, so the run is
+summarized and its comparison fails for that reason, and the capture goes on).
 The KL over the first four steps warns at 1e-3 and fails at 1e-2, the mean KL
 warns at 1e-3 and fails at 1e-1, a |Δlogit| warns at 1.0 and fails at 8.0, the
 top-K overlap warns under 0.95 and fails under 0.8 (`nvguard.toml`).
@@ -68,12 +70,20 @@ and host texts must agree (a parting warns: a tie at the k-th logit, or a
 sampler change), the constrained text must match its regex and both runs
 must end without parser errors (a violation or a bad exit fails). The
 greedy probes cannot see any of this: the samplers and the masks are what
-`--sampler_top_k=1` bypasses.
+`--sampler_top_k=1` bypasses. The device run must show the verifier's device
+path (the candidate selection at k > 1); a LiteRT-LM whose verifier has no
+such path shows none on both sides, which the check notes as the baseline's
+condition too and does not count against the candidate.
 
 **Performance.** `bench.sh` latency runs of the `short` (the record's 1k),
 `8k` and `16k` workloads with few iterations, per model; `--mtp` adds the
 plain and MTP text runs of those workloads (acceptance, tokens per round).
-Candidate/baseline ratios below 0.97 warn, below 0.93 fail. From the measured
+Candidate/baseline ratios below 0.97 warn, below 0.93 fail; the comparison
+also says when paired runs were measured more than two hours apart (a
+resumed capture's kept cells against the other's new ones), since the
+thresholds assume runs interleaved on one host state: on the RTX Spark the
+12B lost 22 to 34 percent between two sessions of one build (2026-11-04),
+every cell of its own numerics identical. From the measured
 contexts a cost model per model (decode step time a + b·context; prefill time
 c0 + c1·N + c2·N²) predicts the other contexts (30k, 128k); with `--record`
 the measured change ratio, interpolated in context, is applied to the
@@ -115,6 +125,16 @@ filesystem has less than `[disk] min_free_gib` (20) free, and resumes later:
 the numerics probes dump whole outputs (`numerics.full_steps`), and a
 quick-tier capture of two models with `--mtp` wrote 14 GB and filled the disk
 on 2026-10-29. `--config` with `full_steps = 0` keeps only the top-K logits.
+
+**Failed probes.** A probe that cannot run or be summarized (bench.sh
+failing, the CLI crashing, an unreadable dump) is recorded under the
+capture's "Failed probes" with its error, and the capture goes on to its next
+probe; `capture` then exits 2, and a resume runs the failed probes again. A
+comparison fails a probe the candidate lost; one lost in both captures, or in
+the baseline alone, is reported and not compared. The 26B's first run of
+the dependent GEMV launch (2026-11-04) is the case: its decode logits went
+non-finite and the capture of the day stopped at that probe, before the
+other models' probes and the baseline's 26B performance runs.
 
 **MTP acceptance.** With `--mtp` each numerics prompt also decodes greedily
 with the drafter, and the run keeps its accepted and drafted tokens. `check`
@@ -186,6 +206,54 @@ The probes use the model's standard cache pool of the build (compiling it on
 first use); a numerics probe of a model runs before its performance probes.
 `cargo test` covers the parsers, the metrics and the cost model.
 
+## Windows
+
+The guard runs natively on Windows ARM64 (the RTX Spark N1X) from Git Bash
+with the same scripts: `cargo build --release` with the MSVC Rust toolchain
+(`rustup`'s `aarch64-pc-windows-msvc` host) gives `target/release/nvguard.exe`.
+What differs there:
+
+- `env.sh` resolves its paths in their mixed form (`C:/...`), which the shell
+  and the native binaries both read. `env.local.sh` sets `LITERT_LM_DIR`,
+  `LITERT_BENCH_ROOT`, `LITERT_BENCH_MODELS`, `TENSORRT_RTX_ROOT`, `CUDA_HOME`
+  and `LITERT_BENCH_PYTHON` (a bare `python3` can be the Store's stub).
+- There is no `build.sh`: the binaries are a staged directory of the PE files
+  (`litert_lm_advanced_main.exe`, `libLiteRtCompilerPlugin_Nvidia.dll`,
+  `libLiteRtDispatch_Nvidia.dll`) named by `LITERT_BENCH_RUNTIME_LIBS`, which
+  carries a `BUILD_ID` written by hand: the build id `env.sh` computes in the
+  trees it was built from. A capture of an older runtime points
+  `LITERT_RT_DIR` and `LITERT_LM_DIR` at worktrees of its sources (its
+  recorded heads with its patches applied), so the stamp and the trees agree.
+- The CLI finds the SDK's DLLs through PATH (`nb_runtime_env` puts the runtime
+  directory and the TensorRT-RTX and CUDA `bin` directories first, and exports
+  the list as `NB_DLL_PATH`), and gets this process's environment with the
+  pool's settings over it: the shell's own environment is in POSIX form.
+- `bench.sh` runs through bash (`NVGUARD_BASH` names it when another bash.exe
+  comes first on PATH) and times the CLI with `process_time.py`, which writes
+  GNU time's lines (the peak working set, the wall time), since there is no
+  `/usr/bin/time`. `nvidia-smi` lists every process with a context on the GPU
+  there, the desktop's included, so another instance of the CLI is what
+  refuses a run.
+- The dumps' spec (`<dir>:<steps>:<mb>`) splits at its first colon, a drive
+  letter's: the numerics probe gives the dispatch a directory relative to the
+  probe's, the CLI's working directory for that run. A dispatch built before
+  2026-11-04 made the dumps' directories with a shell `mkdir -p`, which does
+  nothing on Windows, so such a runtime writes no whole-output dumps: capture
+  it with a configuration whose `numerics.full_steps` is 0 (the Gemma
+  measurements' runtime is one).
+- `c++filt` is absent, so the autopsy keeps the kernels' names as the DOT has
+  them; a tree without `clock_check.py` records no clock report (a note in
+  the manifest; the timed probes run, in the diagnostic host mode).
+- `--record` also reads the RTX Spark snapshot's `results.json`
+  (`litert_records`, narrowed to its `selected_runs`); a cell with several
+  retained runs is their mean.
+- A CLI built without constrained decoding (LiteRT-LM's
+  `enable_constrained_decoding=false`, the Windows ARM64 build here) refuses
+  the constraint probe ("Constrained decoding is disabled in this build"):
+  the run is kept with that reason, left out of the text checks and listed
+  under "not compared". `rescan` recomputes the text summaries of an earlier
+  capture, so one made before this rule gets it.
+
 ## What it caught on its first day
 
 - A build against the wrong SDK headers (1.5 instead of 1.7): no weight store,
@@ -198,6 +266,16 @@ first use); a numerics probe of a model runs before its performance probes.
   in the decode attention): a capture of the same build twice, compared, is
   the test (`capture --name a`, `capture --name b`, `compare a b`); the other
   models are bit-identical.
+- The dense GEMVs' programmatic dependent launch (2026-11-04, on the RTX
+  Spark): the 26B's decode logits non-finite from its first captured step
+  under TensorRT-RTX's whole-graph capture, while the dense models stayed
+  bit-identical (their GEMVs are the per-channel kernel, untouched).
+  `--env LITERT_NVIDIA_GEMV_DEPENDENT_LAUNCH=0` cleared it, and a standalone
+  harness of the kernels showed that a programmatic edge in a captured graph
+  starts the next kernel at the trigger without its wait holding it there.
+  The launch is off by default now (an interleaved burst A/B on Qwen 3.5 27B
+  found no gain from it), and when enabled its trigger follows the block's
+  writes whenever the stream is being captured.
 
 ## What it does not probe
 
@@ -288,3 +366,9 @@ first use); a numerics probe of a model runs before its performance probes.
 - Host mode: timings compare within one mode (`CI_HOST_MODE=formal` after
   `zsh -lic benchmark`, else diagnostic); the manifest records it.
 - A failing performance cell within the iterations' spread is noise; rerun it.
+- When one capture's performance cells are kept from an earlier session,
+  re-measure both sides: remove the stale run directories
+  (`guard/<name>/perf/<model>/<label>` and their `.bench.log`) of both
+  captures and resume them interleaved per model, as a campaign script
+  does; the comparison's "measured more than two hours apart" line is the
+  sign.

@@ -37,7 +37,7 @@ while (($#)); do
     --workload) workload=$2; shift 2 ;;
     --metric) metric=$2; shift 2 ;;
     --mtp) mtp=true; shift ;;
-    --prompt-file) prompt_file=$(realpath "$2"); shift 2 ;;
+    --prompt-file) prompt_file=$(nb_native_path "$(realpath "$2")"); shift 2 ;;
     --iterations) iterations=$2; shift 2 ;;
     --context) context_override=$2; shift 2 ;;
     --label) label=$2; shift 2 ;;
@@ -56,9 +56,17 @@ fi
 [[ $metric =~ ^(latency|memory|verify|cold)$ ]] || nb_die "Invalid metric"
 model=$(nb_model_file "$model_arg")
 profile=$model_arg; [[ $profile =~ ^(e2b|e4b|12b|26b)$ ]] || profile=$(basename "${model%.litertlm}")
-engine=$NB_RUNTIME_LIBS/litert_lm_advanced_main
-[[ -x $engine && -f $NB_RUNTIME_LIBS/libLiteRtDispatch_Nvidia.so ]] || nb_die "Run build.sh first ($NB_RUNTIME_LIBS)"
-[[ -x /usr/bin/time ]] || nb_die "GNU time is required at /usr/bin/time"
+engine=$NB_RUNTIME_LIBS/$NB_CLI
+[[ -x $engine && -f $NB_RUNTIME_LIBS/$NB_DISPATCH_LIB ]] || nb_die "Run build.sh first ($NB_RUNTIME_LIBS)"
+here=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
+# The CLI's accounting (its peak RSS, the wall time): GNU time, or on Windows process_time.py,
+# which writes the same lines from the process's peak working set.
+if nb_windows; then
+  timer=("$NB_PYTHON" "$here/process_time.py" -o)
+else
+  [[ -x /usr/bin/time ]] || nb_die "GNU time is required at /usr/bin/time"
+  timer=(/usr/bin/time -v -o)
+fi
 smi=$(command -v nvidia-smi || echo /usr/lib/wsl/lib/nvidia-smi)
 
 # Workload presets: prefill tokens, decode tokens, context, iterations, warm-ups, prefill batch.
@@ -83,15 +91,24 @@ iterations=${iterations:-$default_iterations}
 [[ $metric != memory && $metric != cold ]] || { iterations=1; warmups=0; }
 mode=plain; [[ $mtp == false ]] || mode=mtp
 label=${label:-${profile}_${workload}_${mode}_${metric}}
-# The host's clocks (clock_check.py beside this script: the kernel tick and frequency, the monotonic
+# The host's clocks (clock_check.tool beside this script: the kernel tick and frequency, the monotonic
 # clock's rate against the raw clock over 3 s): recorded with the run; a formal or idle-verified run
 # refuses a clock that is not fit, since the CLI's rates are read on the monotonic clock.
-NB_HOST_CLOCK=$(python3 "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/clock_check.py" 3) || {
+if [[ -f $here/clock_check.tool ]]; then
+  NB_HOST_CLOCK=$("$NB_PYTHON" "$here/clock_check.tool" 3) || {
+    case ${CI_HOST_MODE:-unspecified} in
+      formal|idle-verified) nb_die "The host's clock is not fit for a $CI_HOST_MODE run: $NB_HOST_CLOCK" ;;
+      *) echo "Warning: the host's clock is not fit: $NB_HOST_CLOCK" >&2 ;;
+    esac
+  }
+else
+  # A tree without the checker: the run records no clock report (meta.json's host_clock is null).
   case ${CI_HOST_MODE:-unspecified} in
-    formal|idle-verified) nb_die "The host's clock is not fit for a $CI_HOST_MODE run: $NB_HOST_CLOCK" ;;
-    *) echo "Warning: the host's clock is not fit: $NB_HOST_CLOCK" >&2 ;;
+    formal|idle-verified) nb_die "No clock_check.tool beside bench.sh: a $CI_HOST_MODE run needs the host's clock checked" ;;
+    *) echo "Warning: no clock_check.tool beside bench.sh: the host's clock is not checked" >&2 ;;
   esac
-}
+  NB_HOST_CLOCK=
+fi
 export NB_HOST_CLOCK
 run=$out/$label
 mkdir -p "$run"
@@ -135,7 +152,14 @@ invoke() {
   args+=("$@" "${extra[@]}")  # --cli-arg flags last, so they override the workload's
   export LITERT_NVIDIA_MEMORY_PROFILE=$([[ $sample == 1 ]] && echo 1 || echo 0)
   local baseline; baseline=$("$smi" --query-gpu=memory.used --format=csv,noheader,nounits | head -1 | tr -d ' ')
-  local busy; busy=$("$smi" --query-compute-apps=pid --format=csv,noheader | wc -l)
+  local busy
+  if nb_windows; then
+    # nvidia-smi lists every process with a context on the GPU here, the desktop's included:
+    # another instance of the CLI is what counts.
+    busy=$("$smi" --query-compute-apps=pid,process_name --format=csv,noheader | grep -c "$NB_CLI" || true)
+  else
+    busy=$("$smi" --query-compute-apps=pid --format=csv,noheader | wc -l)
+  fi
   [[ $busy == 0 ]] || nb_die "Another GPU compute process is running"
   local sampler=
   if [[ $sample == 1 ]]; then
@@ -145,10 +169,10 @@ invoke() {
   local start end rc=0
   start=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
   echo "$label${name:+ ($name)}: ${args[*]}" | cut -c1-240
-  (cd "$NB_LM" && /usr/bin/time -v -o "${prefix}time.txt" "${args[@]}" > "${prefix}cli.log" 2>&1) || rc=$?
+  (cd "$NB_LM" && "${timer[@]}" "${prefix}time.txt" "${args[@]}" > "${prefix}cli.log" 2>&1) || rc=$?
   end=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
   [[ -z $sampler ]] || { kill "$sampler" 2>/dev/null; wait "$sampler" 2>/dev/null || true; }
-  python3 - "${prefix}meta.json" "$rc" "$start" "$end" "$baseline" "${args[@]}" <<'PY'
+  "$NB_PYTHON" - "${prefix}meta.json" "$rc" "$start" "$end" "$baseline" "${args[@]}" <<'PY'
 import json, os, sys, hashlib
 meta_path, rc, start, end, baseline, *command = sys.argv[1:]
 def sha(p):
@@ -168,7 +192,7 @@ meta = {
   'host_clock': json.loads(os.environ['NB_HOST_CLOCK']) if os.environ.get('NB_HOST_CLOCK') else None,
   'start': start, 'end': end, 'gpu_baseline_mib': int(baseline),
   'environment': {k: v for k, v in os.environ.items() if k.startswith('LITERT_NVIDIA_')},
-  'binaries': {n: sha(os.path.realpath(os.path.join(libs, n))) for n in ('libLiteRtCompilerPlugin_Nvidia.so', 'libLiteRtDispatch_Nvidia.so', 'litert_lm_advanced_main')},
+  'binaries': {n: sha(os.path.realpath(os.path.join(libs, n))) for n in (os.environ['NB_COMPILER_LIB'], os.environ['NB_DISPATCH_LIB'], os.environ['NB_CLI'])},
   # The build the binaries came from (build.sh's stamp), beside the checkout's build_id.
   'binaries_build_id': open(os.path.join(libs, 'BUILD_ID')).read().strip() if os.path.exists(os.path.join(libs, 'BUILD_ID')) else None,
   'sources': {k: os.environ[k] for k in ('NB_RT', 'NB_LM')},

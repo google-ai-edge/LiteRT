@@ -20,7 +20,7 @@ use crate::memory::{summarize_memory_run, MemoryRun};
 use crate::numerics::{loopiness, NumericsRun, StepLogits};
 use crate::parse::{captured_outputs, parse_cli_log, parse_logits_jsonl};
 use crate::perf::{summarize_run, PerfPoint};
-use crate::texts::{session_output, TextRun};
+use crate::texts::{session_output, unsupported_reason, TextRun};
 
 /// Plain runs of the larger models compile only the signatures they run; an
 /// MTP run compiles every signature (bench.sh's rule).
@@ -29,6 +29,19 @@ fn selected_signatures(model: &str, mtp: bool) -> Option<&'static str> {
         Some("--selected_signatures=prefill_1024,decode")
     } else {
         None
+    }
+}
+
+/// bench.sh as a command: through bash on Windows, where a script is not a
+/// program.
+fn bench_sh(env: &BenchEnv) -> Command {
+    let script = env.bench_dir.join("bench.sh");
+    if cfg!(windows) {
+        let mut command = Command::new(crate::env::bash_program());
+        command.arg(script);
+        command
+    } else {
+        Command::new(script)
     }
 }
 
@@ -82,10 +95,23 @@ pub fn run_numerics_probe(env: &BenchEnv, probe: &NumericsProbe) -> Result<Numer
     envs.push(("LITERT_NVIDIA_MEMORY_PROFILE".into(), "0".into()));
     let outputs = outputs_dir(probe.out_dir);
     let _ = std::fs::remove_dir_all(&outputs);
+    // The dumps' spec splits at its first ':', which on Windows is the drive
+    // letter's: there the dispatch gets the outputs' directory relative to the
+    // probe's directory, the CLI's working directory for the run.
+    let (cwd, outputs_spec) = if cfg!(windows) {
+        (probe.out_dir.to_path_buf(), PathBuf::from("outputs"))
+    } else {
+        (env.lm.clone(), outputs.clone())
+    };
     if probe.full_steps > 0 {
         envs.push((
             "LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS".into(),
-            format!("{}:{}:{}", outputs.display(), probe.full_steps, probe.outputs_max_mb.max(1)),
+            format!(
+                "{}:{}:{}",
+                outputs_spec.display(),
+                probe.full_steps,
+                probe.outputs_max_mb.max(1)
+            ),
         ));
     }
     let mut args: Vec<String> = vec![
@@ -124,7 +150,7 @@ pub fn run_numerics_probe(env: &BenchEnv, probe: &NumericsProbe) -> Result<Numer
     let start = Instant::now();
     let status = Command::new(env.cli())
         .args(&args)
-        .current_dir(&env.lm)
+        .current_dir(&cwd)
         .env_clear()
         .envs(envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .stdin(Stdio::null())
@@ -290,7 +316,7 @@ pub fn run_perf_probe(env: &BenchEnv, probe: &PerfProbe) -> Result<PerfPoint> {
     }
     args.extend(env.bench_args(probe.model));
     let bench_log = File::create(probe.out_dir.join(format!("{}.bench.log", probe.label)))?;
-    let status = Command::new(env.bench_dir.join("bench.sh"))
+    let status = bench_sh(env)
         .args(&args)
         .env("LITERT_RT_DIR", &env.rt)
         .stdin(Stdio::null())
@@ -414,28 +440,21 @@ pub fn run_text_probe(env: &BenchEnv, probe: &TextProbe) -> Result<TextRun> {
     let wall_s = start.elapsed().as_secs_f64();
     let exit_code = status.code().unwrap_or(-1);
     let log_text = std::fs::read_to_string(probe.out_dir.join("cli.log")).unwrap_or_default();
-    let log = parse_cli_log(&log_text);
     let text = session_output(&std::fs::read_to_string(&stdout_path).unwrap_or_default());
     std::fs::write(probe.out_dir.join("response.txt"), &text)?;
-    let regex_ok = probe.regex.map(|r| {
-        regex::Regex::new(&format!("^(?:{r})$")).map(|re| re.is_match(&text)).unwrap_or(false)
-    });
-    let run = TextRun {
-        model: probe.model.to_string(),
-        kind: probe.kind.to_string(),
-        variant: probe.variant.to_string(),
-        build_id: env.build_id.clone(),
+    let run = summarize_text(
+        probe.model,
+        probe.kind,
+        probe.variant,
+        &env.build_id,
         exit_code,
         wall_s,
-        text_len: text.chars().count(),
-        text,
-        regex_ok,
-        device_samplers: log.device_samplers,
-        device_candidates: log.device_candidates,
-        top_k: probe.top_k,
+        probe.top_k,
         immediate_upload,
-        parser_errors: log_text.matches("Parser Error").count(),
-    };
+        probe.regex,
+        &log_text,
+        text,
+    );
     let meta = json!({
         "command": std::iter::once(env.cli().display().to_string()).chain(args.iter().cloned()).collect::<Vec<_>>(),
         "environment": envs.iter().filter(|(k, _)| k.starts_with("LITERT_NVIDIA_")).cloned().collect::<std::collections::BTreeMap<_, _>>(),
@@ -447,6 +466,67 @@ pub fn run_text_probe(env: &BenchEnv, probe: &TextProbe) -> Result<TextRun> {
     std::fs::write(probe.out_dir.join("meta.json"), serde_json::to_string_pretty(&meta)?)?;
     std::fs::write(probe.out_dir.join("summary.json"), serde_json::to_string_pretty(&run)?)?;
     Ok(run)
+}
+
+/// A text probe's summary from what it left behind (also used to rescan a run).
+#[allow(clippy::too_many_arguments)]
+pub fn summarize_text(
+    model: &str,
+    kind: &str,
+    variant: &str,
+    build_id: &str,
+    exit_code: i32,
+    wall_s: f64,
+    top_k: u32,
+    immediate_upload: bool,
+    regex: Option<&str>,
+    log_text: &str,
+    text: String,
+) -> TextRun {
+    let log = parse_cli_log(log_text);
+    let regex_ok = regex.map(|r| {
+        regex::Regex::new(&format!("^(?:{r})$")).map(|re| re.is_match(&text)).unwrap_or(false)
+    });
+    TextRun {
+        model: model.to_string(),
+        kind: kind.to_string(),
+        variant: variant.to_string(),
+        build_id: build_id.to_string(),
+        exit_code,
+        wall_s,
+        text_len: text.chars().count(),
+        text,
+        regex_ok,
+        device_samplers: log.device_samplers,
+        device_candidates: log.device_candidates,
+        top_k,
+        immediate_upload,
+        parser_errors: log_text.matches("Parser Error").count(),
+        unsupported: unsupported_reason(log_text),
+    }
+}
+
+/// Recomputes a text run's summary from its files (after a change of the
+/// metrics); `regex` is the constraint probe's, None for the sampled one.
+pub fn rescan_text_run(out_dir: &Path, regex: Option<&str>) -> Result<Option<TextRun>> {
+    let Some(previous) = load_text_run(out_dir) else { return Ok(None) };
+    let log_text = std::fs::read_to_string(out_dir.join("cli.log")).unwrap_or_default();
+    let text = std::fs::read_to_string(out_dir.join("response.txt")).unwrap_or_default();
+    let run = summarize_text(
+        &previous.model,
+        &previous.kind,
+        &previous.variant,
+        &previous.build_id,
+        previous.exit_code,
+        previous.wall_s,
+        previous.top_k,
+        previous.immediate_upload,
+        regex,
+        &log_text,
+        text,
+    );
+    std::fs::write(out_dir.join("summary.json"), serde_json::to_string_pretty(&run)?)?;
+    Ok(Some(run))
 }
 
 pub fn load_text_run(out_dir: &Path) -> Option<TextRun> {
@@ -502,7 +582,7 @@ pub fn run_memory_probe(env: &BenchEnv, probe: &MemoryProbe) -> Result<MemoryRun
         let _ = std::fs::remove_dir_all(&run_dir);
         let log_path = probe.out_dir.join(format!("{label}.bench.log"));
         let bench_log = File::create(&log_path)?;
-        let status = Command::new(env.bench_dir.join("bench.sh"))
+        let status = bench_sh(env)
             .args(&args)
             .env("LITERT_RT_DIR", &env.rt)
             .stdin(Stdio::null())
@@ -713,7 +793,7 @@ pub fn run_autopsy_probe(env: &BenchEnv, probe: &AutopsyProbe) -> Result<Autopsy
     }
     std::fs::create_dir_all(probe.out_dir.join("dot"))?;
     let bench_log = File::create(probe.out_dir.join(format!("{label}.bench.log")))?;
-    let status = Command::new(env.bench_dir.join("bench.sh"))
+    let status = bench_sh(env)
         .args(&args)
         .env("LITERT_RT_DIR", &env.rt)
         .stdin(Stdio::null())

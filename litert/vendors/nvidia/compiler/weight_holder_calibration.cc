@@ -33,6 +33,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_graph_builder.h"
+#include "litert/vendors/nvidia/cuda_vmm.h"
 #include "litert/vendors/nvidia/tensorrt_features.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
@@ -161,11 +162,6 @@ class WeightDataScanner final : public nvinfer1::IStreamWriter {
   bool failed_ = false;
 };
 
-struct Unmap {
-  size_t size;
-  void operator()(void* pointer) const { munmap(pointer, size); }
-};
-
 struct StreamDeleter {
   void operator()(cudaStream_t stream) const { cudaStreamDestroy(stream); }
 };
@@ -216,15 +212,6 @@ Expected<TensorRtWeightHolderCalibration> CalibrateTensorRtWeightHolders(
                  "Unexpected TensorRT weight data size");
   }
 
-  // The refit source: zero pages that cost no memory until they are written,
-  // which only the page with a holder's marker is.
-  void* const mapped = mmap(nullptr, source_bytes, PROT_READ | PROT_WRITE,
-                            MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-  if (mapped == MAP_FAILED) {
-    return Error(kLiteRtStatusErrorMemoryAllocationFailure,
-                 "Failed to reserve the calibration refit source");
-  }
-  const std::unique_ptr<void, Unmap> zeros(mapped, Unmap{source_bytes});
   cudaStream_t raw_stream = nullptr;
   if (cudaStreamCreate(&raw_stream) != cudaSuccess) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -233,40 +220,76 @@ Expected<TensorRtWeightHolderCalibration> CalibrateTensorRtWeightHolders(
   const std::unique_ptr<std::remove_pointer_t<cudaStream_t>, StreamDeleter>
       stream(raw_stream);
   {
+    // The refit source, on the device: the first granule of a holder is a
+    // block of its own that starts with the holder's marker, and the other
+    // granules of every holder map one block of zeros, so that the source
+    // costs a granule per holder whatever the size of the holders.
+    LITERT_ASSIGN_OR_RETURN(auto zeros, CudaVmmBlock::Create(granule));
+    LITERT_ASSIGN_OR_RETURN(auto source, CudaVmmRange::Create(source_bytes));
+    std::vector<std::unique_ptr<CudaVmmBlock>> markers;
+    markers.reserve(holders.size());
+    uint64_t source_offset = 0;
+    for (const auto& holder : holders) {
+      LITERT_ASSIGN_OR_RETURN(auto marker, CudaVmmBlock::Create(granule));
+      LITERT_RETURN_IF_ERROR(source->Map(source_offset, *marker));
+      for (uint64_t at = granule; at < holder.bytes; at += granule) {
+        LITERT_RETURN_IF_ERROR(source->Map(source_offset + at, *zeros));
+      }
+      markers.push_back(std::move(marker));
+      source_offset += holder.bytes;
+    }
+    LITERT_RETURN_IF_ERROR(source->EnableAccess());
+    // A marker block holds the marker, the index of its holder, then zeros.
+    std::vector<uint64_t> heads(2 * holders.size());
+    bool filled = cudaMemsetAsync(zeros->address(), 0, granule, stream.get()) ==
+                  cudaSuccess;
+    for (size_t i = 0; i < markers.size() && filled; ++i) {
+      heads[2 * i] = kMarker;
+      heads[2 * i + 1] = i;
+      filled = cudaMemsetAsync(markers[i]->address(), 0, granule,
+                               stream.get()) == cudaSuccess &&
+               cudaMemcpyAsync(markers[i]->address(), &heads[2 * i],
+                               2 * sizeof(uint64_t), cudaMemcpyHostToDevice,
+                               stream.get()) == cudaSuccess;
+    }
+    // Whatever was queued completes before the blocks can be unmapped.
+    if (cudaStreamSynchronize(stream.get()) != cudaSuccess || !filled) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to fill the calibration refit source");
+    }
+
     std::unique_ptr<nvinfer1::IRefitter> refitter(
         nvinfer1::createInferRefitter(*engine, logger));
     if (!refitter) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Failed to create a TensorRT refitter for calibration");
     }
-    uint64_t source_offset = 0;
-    for (size_t i = 0; i < holders.size(); ++i) {
-      auto* source = static_cast<uint8_t*>(mapped) + source_offset;
-      const uint64_t index = i;
-      std::memcpy(source, &kMarker, sizeof(kMarker));
-      std::memcpy(source + sizeof(kMarker), &index, sizeof(index));
+    source_offset = 0;
+    for (const auto& holder : holders) {
       const int64_t count =
-          static_cast<int64_t>(holders[i].bytes / sizeof(int64_t));
+          static_cast<int64_t>(holder.bytes / sizeof(int64_t));
       const nvinfer1::Weights prototype =
-          refitter->getWeightsPrototype(holders[i].name.c_str());
+          refitter->getWeightsPrototype(holder.name.c_str());
       if (prototype.type != nvinfer1::DataType::kINT64 ||
           prototype.count != count ||
           !refitter->setNamedWeights(
-              holders[i].name.c_str(),
-              nvinfer1::Weights{nvinfer1::DataType::kINT64, source, count},
-              nvinfer1::TensorLocation::kHOST)) {
-        return Error(
-            kLiteRtStatusErrorRuntimeFailure,
-            "The plan does not hold the weight holder " + holders[i].name);
+              holder.name.c_str(),
+              nvinfer1::Weights{
+                  nvinfer1::DataType::kINT64,
+                  static_cast<uint8_t*>(source->address()) + source_offset,
+                  count},
+              nvinfer1::TensorLocation::kDEVICE)) {
+        return Error(kLiteRtStatusErrorRuntimeFailure,
+                     "The plan does not hold the weight holder " + holder.name);
       }
-      source_offset += holders[i].bytes;
+      source_offset += holder.bytes;
     }
     if (refitter->getMissingWeights(0, nullptr) != 0) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "The plan has stripped weights besides its weight holders");
     }
-    if (!refitter->refitCudaEngineAsync(stream.get()) ||
-        cudaStreamSynchronize(stream.get()) != cudaSuccess) {
+    const bool refitted = refitter->refitCudaEngineAsync(stream.get());
+    if (cudaStreamSynchronize(stream.get()) != cudaSuccess || !refitted) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Failed to refit the weight holders for calibration");
     }
