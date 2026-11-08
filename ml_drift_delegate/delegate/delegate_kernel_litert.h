@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_KERNEL_LITERT_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_KERNEL_LITERT_H_
 
+#include <array>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -224,12 +225,18 @@ class DelegateKernelLiteRt : public DelegateKernel {
     std::unique_ptr<GpuTensorWrapper> gpu_tensor;
   };
 
+  // 2-slot MRU cache per ValueId so kPingPong state buffers reuse wrapped
+  // SpatialTensors across alternating steps without reallocating.
+  struct BoundGpuTensorCache {
+    std::array<BoundGpuTensor, 2> slots;
+  };
+
   // Binds the GPU memory to the inference context.
   absl::Status BindGpuMemoryToInferenceContext(
       ::ml_drift::ValueId tensor_id,
       const ::ml_drift::TensorDescriptor& tensor_desc,
       GpuMemoryHandle gpu_memory,
-      absl::flat_hash_map<::ml_drift::ValueId, BoundGpuTensor>& tensors);
+      absl::flat_hash_map<::ml_drift::ValueId, BoundGpuTensorCache>& tensors);
 
   // Marks the tensor to be flushed from the cache and buffer context if it is
   // a GL buffer.
@@ -247,8 +254,8 @@ class DelegateKernelLiteRt : public DelegateKernel {
   std::vector<::ml_drift::TensorDescriptor> output_tensor_descriptors_;
 
   // SpatialTensor wrappers for currently bound I/O tensors, keyed by ValueId.
-  absl::flat_hash_map<::ml_drift::ValueId, BoundGpuTensor> input_tensors_;
-  absl::flat_hash_map<::ml_drift::ValueId, BoundGpuTensor> output_tensors_;
+  absl::flat_hash_map<::ml_drift::ValueId, BoundGpuTensorCache> input_tensors_;
+  absl::flat_hash_map<::ml_drift::ValueId, BoundGpuTensorCache> output_tensors_;
 
   // Converter to sync input and output tensors. These are used only in
   // NoExternalTensorsMode.
