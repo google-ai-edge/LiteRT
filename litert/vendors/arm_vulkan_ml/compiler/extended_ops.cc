@@ -1,0 +1,637 @@
+// Copyright 2026 The LiteRT Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "litert/vendors/arm_vulkan_ml/compiler/extended_ops.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <functional>
+#include <limits>
+#include <numeric>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "litert/c/litert_op_code.h"
+#include "tosa-for-spirv-codegen/tosa/Tensor.hpp"  // from @tosa_for_spirv_codegen
+#include "tosa-for-spirv-codegen/tosa/Graph.hpp"  // from @tosa_for_spirv_codegen
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_op_options.h"
+#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/conv2d.h"
+#include "litert/cc/litert_model_types.h"
+#include "litert/cc/litert_element_type.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/emission.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/quantization.h"
+
+namespace litert::arm_vulkan_ml {
+namespace {
+using tfsc::tosa::Attribute;
+using tfsc::tosa::DataType;
+using tfsc::tosa::ResId;
+using TosaTensor = tfsc::tosa::Tensor;
+uint64_t Count(const std::vector<uint32_t>& shape) {
+  return std::accumulate(shape.begin(), shape.end(), uint64_t{1},
+                         std::multiplies<uint64_t>());
+}
+bool Ints(const Tensor& tensor, std::vector<int32_t>& values, int rank = -1) {
+  auto type = tensor.RankedTensorType();
+  if (!type || type->ElementType() != ElementType::Int32 ||
+      type->Layout().HasStrides())
+    return false;
+  if (rank >= 0 &&
+      type->Layout().Dimensions().size() != static_cast<size_t>(rank))
+    return false;
+  auto data = tensor.WeightsData<int32_t>();
+  if (!data) return false;
+  uint64_t count = 1;
+  for (auto dim : type->Layout().Dimensions()) {
+    if (dim <= 0 || count > uint64_t{INT32_MAX} / dim) return false;
+    count *= dim;
+  }
+  if (count != data->size()) return false;
+  values.assign(data->begin(), data->end());
+  return true;
+}
+template <typename T>
+ResId Constant(tfsc::tosa::Graph& graph, const std::vector<T>& data,
+               const std::vector<uint32_t>& shape,
+               GraphConstantPool& constants) {
+  TosaTensor type(tfsc::tosa::GetDataType<T>(), shape);
+  GraphConstant constant{type, std::vector<uint8_t>(data.size() * sizeof(T))};
+  std::memcpy(constant.bytes.data(), data.data(), constant.bytes.size());
+  return AddGraphConstant(graph, type, std::move(constant.bytes), constants);
+}
+}  // namespace
+
+bool AnalyzeExtendedOperation(const Op& op, OperationPlan& p,
+                              std::string& reason) {
+  auto reject = [&](const char* message) {
+    reason = message;
+    return false;
+  };
+  const auto in = op.Inputs();
+  const auto& input = p.inputs[0];
+  const auto& output = p.output;
+  if (input.floating != output.floating)
+    return reject("Extended op requires matching element types");
+  if (!input.floating && p.code != kLiteRtOpCodeTflTransposeConv &&
+      (input.scale != output.scale || input.zero_point != output.zero_point))
+    return reject("Extended op requires preserved quantization");
+  if (p.code == kLiteRtOpCodeTflScatterNd) {
+    std::vector<int32_t> indices, shape;
+    if (in.size() != 3 || !input.floating || !Ints(in[0], indices) ||
+        !Ints(in[2], shape, 1) || shape.size() != output.shape.size() ||
+        !std::equal(shape.begin(), shape.end(), output.shape.begin()))
+      return reject(
+          "SCATTER_ND requires FP32 updates, constant indices and shape");
+    auto it = in[0].RankedTensorType();
+    auto dims = it->Layout().Dimensions();
+    if (dims.empty() || dims.back() <= 0 || dims.back() > output.shape.size())
+      return reject("Invalid SCATTER_ND index depth");
+    size_t depth = static_cast<size_t>(dims.back());
+    uint64_t width = indices.size() / depth, k = 1, c = 1;
+    uint64_t declared = 1;
+    for (size_t i = 0; i + 1 < dims.size(); ++i) {
+      if (dims[i] <= 0 || declared > 8192 / static_cast<uint64_t>(dims[i]))
+        return reject("Invalid SCATTER_ND index shape");
+      declared *= static_cast<uint64_t>(dims[i]);
+    }
+    if (declared != width || !width || width > 8192 || indices.size() % depth)
+      return reject("Invalid SCATTER_ND index count");
+    std::vector<uint32_t> expected;
+    for (size_t i = 0; i + 1 < dims.size(); ++i)
+      expected.push_back(static_cast<uint32_t>(dims[i]));
+    for (size_t i = depth; i < output.shape.size(); ++i)
+      expected.push_back(output.shape[i]);
+    if (expected != input.shape)
+      return reject("SCATTER_ND update shape mismatch");
+    for (size_t i = 0; i < output.shape.size(); ++i)
+      (i < depth ? k : c) *= output.shape[i];
+    if (k > 8192 || c > 8192 || k * c > 64 * 1024 * 1024)
+      return reject("SCATTER_ND materialization limit");
+    std::set<int32_t> seen;
+    for (size_t i = 0; i < width; ++i) {
+      int32_t flat = 0;
+      for (size_t a = 0; a < depth; ++a) {
+        int32_t x = indices[i * depth + a];
+        if (x < 0 || x >= output.shape[a])
+          return reject("SCATTER_ND index out of range");
+        flat = flat * static_cast<int32_t>(output.shape[a]) + x;
+      }
+      if (!seen.insert(flat).second)
+        return reject("Duplicate SCATTER_ND indices require accumulation");
+      p.parameters.push_back(flat);
+    }
+    p.kernel = {static_cast<int32_t>(k), static_cast<int32_t>(c),
+                static_cast<int32_t>(width)};
+  } else if (p.code == kLiteRtOpCodeTflGather) {
+    int32_t batch_dims;
+    if (in.size() != 2 || !Ints(in[1], p.parameters) ||
+        LiteRtGetGatherAxisOption(op.Get(), &p.axis) != kLiteRtStatusOk ||
+        LiteRtGetGatherBatchDimsOption(op.Get(), &batch_dims) !=
+            kLiteRtStatusOk ||
+        batch_dims != 0)
+      return reject("GATHER requires constant INT32 indices and batch_dims=0");
+    if (p.axis < 0) p.axis += static_cast<int32_t>(input.shape.size());
+    if (p.axis < 0 || p.axis >= input.shape.size())
+      return reject("Invalid GATHER axis");
+    for (int32_t index : p.parameters)
+      if (index < 0 || index >= input.shape[p.axis])
+        return reject("GATHER index out of range");
+    auto indices = in[1].RankedTensorType();
+    std::vector<uint32_t> shape(input.shape.begin(),
+                                input.shape.begin() + p.axis);
+    for (auto dim : indices->Layout().Dimensions())
+      shape.push_back(static_cast<uint32_t>(dim));
+    shape.insert(shape.end(), input.shape.begin() + p.axis + 1,
+                 input.shape.end());
+    if (shape != output.shape) return reject("GATHER output shape mismatch");
+  } else if (p.code == kLiteRtOpCodeTflReduceMax ||
+             p.code == kLiteRtOpCodeTflReduceMin ||
+             p.code == kLiteRtOpCodeTflSum) {
+    bool keep;
+    auto get_keep = p.code == kLiteRtOpCodeTflSum ? LiteRtGetSumKeepDimsOption
+                    : p.code == kLiteRtOpCodeTflReduceMax
+                        ? LiteRtGetReduceMaxKeepDimsOption
+                        : LiteRtGetReduceMinKeepDimsOption;
+    if (in.size() != 2 || !Ints(in[1], p.parameters) || p.parameters.empty() ||
+        get_keep(op.Get(), &keep) != kLiteRtStatusOk)
+      return reject("Reduction requires constant nonempty INT32 axes");
+    std::set<int32_t> axes;
+    for (auto axis : p.parameters) {
+      if (axis < 0) axis += static_cast<int32_t>(input.shape.size());
+      if (axis < 0 || axis >= input.shape.size())
+        return reject("Reduction axis out of range");
+      axes.insert(axis);
+    }
+    p.parameters.assign(axes.begin(), axes.end());
+    std::vector<uint32_t> shape;
+    for (size_t axis = 0; axis < input.shape.size(); ++axis) {
+      if (!axes.count(static_cast<int32_t>(axis)))
+        shape.push_back(input.shape[axis]);
+      else if (keep)
+        shape.push_back(1);
+    }
+    if (shape != output.shape) return reject("Reduction output shape mismatch");
+  } else if (p.code == kLiteRtOpCodeTflResizeNearestNeighbor ||
+             p.code == kLiteRtOpCodeTflResizeBilinear) {
+    const bool nearest = p.code == kLiteRtOpCodeTflResizeNearestNeighbor;
+    bool align, half;
+    auto get_align = nearest ? LiteRtGetResizeNearestNeighborAlignCornersOption
+                             : LiteRtGetResizeBilinearAlignCornersOption;
+    auto get_half = nearest
+                        ? LiteRtGetResizeNearestNeighborHalfPixelCenterOption
+                        : LiteRtGetResizeBilinearHalfPixelCenterOption;
+    if (in.size() != 2 || input.shape.size() != 4 || output.shape.size() != 4 ||
+        !Ints(in[1], p.parameters, 1) || p.parameters.size() != 2 ||
+        get_align(op.Get(), &align) != kLiteRtStatusOk ||
+        get_half(op.Get(), &half) != kLiteRtStatusOk || (align && half))
+      return reject("RESIZE requires static NHWC sizes");
+    if (input.shape[0] != output.shape[0] ||
+        input.shape[3] != output.shape[3] ||
+        p.parameters[0] != output.shape[1] ||
+        p.parameters[1] != output.shape[2])
+      return reject("RESIZE shape mismatch");
+    p.parameters.clear();
+    p.padding.clear();
+    p.kernel.clear();
+    for (int axis : {1, 2}) {
+      const int32_t source = static_cast<int32_t>(input.shape[axis]);
+      const int32_t target = static_cast<int32_t>(output.shape[axis]);
+      if (align && (source == 1 || target == 1))
+        return reject("Aligned resize singleton dimensions not supported");
+      if (!nearest && !input.floating) {
+        const int32_t divisor = align && target > 1 ? target - 1 : target;
+        const int32_t numerator = align && target > 1 ? source - 1 : source;
+        const int32_t d = (1024 * numerator + divisor / 2) / divisor, n = 1024;
+        const int32_t offset = half ? d / 2 - 512 : 0;
+        const int64_t border =
+            int64_t{target - 1} * d - int64_t{source - 1} * n + offset;
+        if (d <= 0 || n > 256 * d || d >= 16 * n || offset < -n ||
+            offset >= 16 * n || border < -16 * n || border >= n)
+          return reject("Integer RESIZE Q10 coordinates outside TOSA limits");
+        p.parameters.push_back(n);
+        p.parameters.push_back(d);
+        p.padding.push_back(offset);
+        p.kernel.push_back(static_cast<int32_t>(border));
+        continue;
+      }
+      int32_t n = align ? target - 1 : target;
+      int32_t d = align ? source - 1 : source;
+      const int32_t divisor = std::gcd(n, d);
+      n = 2 * (n / divisor);
+      d = 2 * (d / divisor);
+      int32_t offset = half ? (d - n) / 2 : 0;
+      if (nearest && !align) offset = (half ? d / 2 : 0) - n / 2;
+      const int64_t border =
+          int64_t{target - 1} * d - int64_t{source - 1} * n + offset;
+      if (n > 2048 || n > 256 * d || d >= 16 * n || offset < -n ||
+          offset >= 16 * n || border < -16 * n || border >= n)
+        return reject("RESIZE scale/offset/border outside TOSA limits");
+      p.parameters.push_back(n);
+      p.parameters.push_back(d);
+      p.padding.push_back(offset);
+      p.kernel.push_back(static_cast<int32_t>(border));
+    }
+  } else if (p.code == kLiteRtOpCodeTflFullyConnected) {
+    if (in.size() != 3 || !input.floating || !output.floating)
+      return reject("FP32 FULLY_CONNECTED requires constant weights and bias");
+    auto weight_type = in[1].RankedTensorType();
+    auto bias_type = in[2].RankedTensorType();
+    if (!weight_type || !bias_type ||
+        weight_type->ElementType() != ElementType::Float32 ||
+        bias_type->ElementType() != ElementType::Float32 ||
+        weight_type->Layout().HasStrides() ||
+        bias_type->Layout().HasStrides() ||
+        weight_type->Layout().Dimensions().size() != 2 ||
+        bias_type->Layout().Dimensions().size() != 1)
+      return reject(
+          "FP32 FULLY_CONNECTED requires dense matrix weights and vector bias");
+    for (auto dim : weight_type->Layout().Dimensions()) {
+      if (dim <= 0 || dim > 8192)
+        return reject("Invalid FULLY_CONNECTED weight dimensions");
+      p.weight_shape.push_back(static_cast<uint32_t>(dim));
+    }
+    const uint32_t channels = p.weight_shape[0], depth = p.weight_shape[1];
+    if (Count(input.shape) % depth ||
+        bias_type->Layout().Dimensions()[0] != channels ||
+        output.shape !=
+            std::vector<uint32_t>{
+                static_cast<uint32_t>(Count(input.shape) / depth), channels})
+      return reject("FP32 FULLY_CONNECTED shapes disagree");
+    uint32_t format;
+    bool keep;
+    if (LiteRtGetFullyConnectedWeightsFormatOption(op.Get(), &format) !=
+            kLiteRtStatusOk ||
+        format ||
+        LiteRtGetFullyConnectedKeepNumDimsOption(op.Get(), &keep) !=
+            kLiteRtStatusOk ||
+        keep ||
+        LiteRtGetFullyConnectedFusedActivationOption(
+            op.Get(), &p.float_activation) != kLiteRtStatusOk ||
+        (p.float_activation != 0 && p.float_activation != 1 &&
+         p.float_activation != 3))
+      return reject("Unsupported FP32 FULLY_CONNECTED options");
+    auto weights = in[1].WeightsData<float>();
+    auto bias = in[2].WeightsData<float>();
+    if (!weights || !bias || weights->size() != Count(p.weight_shape) ||
+        bias->size() != channels)
+      return reject("Invalid FP32 FULLY_CONNECTED constant sizes");
+    p.float_weights.assign(weights->begin(), weights->end());
+    p.float_bias.assign(bias->begin(), bias->end());
+    for (float value : p.float_weights)
+      if (!std::isfinite(value))
+        return reject("Nonfinite FULLY_CONNECTED weights");
+    for (float value : p.float_bias)
+      if (!std::isfinite(value))
+        return reject("Nonfinite FULLY_CONNECTED bias");
+  } else if (!input.floating) {
+    if (in.size() < 3 || in.size() > 4 || input.shape.size() != 4 ||
+        output.shape.size() != 4 || !Ints(in[0], p.parameters, 1) ||
+        p.parameters.size() != 4 ||
+        !std::equal(p.parameters.begin(), p.parameters.end(),
+                    output.shape.begin()))
+      return reject("INT8 TRANSPOSE_CONV requires static NHWC output shape");
+    auto wt = in[1].RankedTensorType();
+    auto data = in[1].WeightsData<int8_t>();
+    if (!wt || wt->ElementType() != ElementType::Int8 ||
+        wt->Layout().HasStrides() || wt->Layout().Dimensions().size() != 4 ||
+        !data)
+      return reject("TRANSPOSE_CONV requires constant INT8 OHWI weights");
+    for (auto d : wt->Layout().Dimensions()) {
+      if (d <= 0 || d > 8192)
+        return reject("Invalid transpose convolution weights");
+      p.weight_shape.push_back(static_cast<uint32_t>(d));
+    }
+    if (data->size() != Count(p.weight_shape) ||
+        p.weight_shape[0] != output.shape[3] ||
+        p.weight_shape[3] != input.shape[3] ||
+        input.shape[0] != output.shape[0])
+      return reject("Transpose convolution channel mismatch");
+    const uint32_t channels = output.shape[3];
+    auto scales = [&](const Tensor& tensor, std::vector<double>& values) {
+      if (tensor.QTypeId() == QuantizationTypeId::PerTensor) {
+        auto q = tensor.PerTensorQuantization();
+        if (q.zero_point != 0 || !std::isfinite(q.scale) || q.scale <= 0)
+          return false;
+        values.assign(channels, q.scale);
+        return true;
+      }
+      if (tensor.QTypeId() != QuantizationTypeId::PerChannel) return false;
+      auto q = tensor.PerChannelQuantization();
+      if (q.quantized_dimension != 0 || q.num_channels != channels)
+        return false;
+      for (uint32_t c = 0; c < channels; ++c) {
+        if (q.zero_points[c] != 0 || !std::isfinite(q.scales[c]) ||
+            q.scales[c] <= 0)
+          return false;
+        values.push_back(q.scales[c]);
+      }
+      return true;
+    };
+    std::vector<double> weight_scales, bias_scales;
+    if (!scales(in[1], weight_scales))
+      return reject(
+          "Transpose convolution requires symmetric weight quantization");
+    p.convolution.emplace();
+    auto& spec = p.convolution->spec;
+    spec.weights.assign(data->begin(), data->end());
+    spec.bias.assign(channels, 0);
+    if (in.size() == 4) {
+      auto bt = in[3].RankedTensorType();
+      auto bias = in[3].WeightsData<int32_t>();
+      if (!bt || bt->ElementType() != ElementType::Int32 ||
+          bt->Layout().HasStrides() || bt->Layout().Dimensions().size() != 1 ||
+          bt->Layout().Dimensions()[0] != channels || !bias ||
+          bias->size() != channels || !scales(in[3], bias_scales))
+        return reject(
+            "Transpose convolution requires constant symmetric INT32 bias");
+      spec.bias.assign(bias->begin(), bias->end());
+    }
+    for (uint32_t c = 0; c < channels; ++c) {
+      double bs = input.scale * weight_scales[c];
+      if (!std::isfinite(bs) || bs <= 0 ||
+          (!bias_scales.empty() && std::abs(bias_scales[c] - bs) > bs * 1e-5))
+        return reject("Transpose convolution bias scale mismatch");
+      auto scale = MakeScale32(bs / output.scale);
+      auto range =
+          DotProductRange(spec.weights.data() + c * (data->size() / channels),
+                          static_cast<int64_t>(data->size() / channels),
+                          input.zero_point, 0, spec.bias[c]);
+      if (!scale || !range ||
+          !IsScale32RangeValid(*scale, range->minimum, range->maximum))
+        return reject(
+            "Transpose convolution accumulator/rescale range not proven");
+      p.scales.push_back(*scale);
+      p.ranges.push_back(*range);
+    }
+    uint32_t padding;
+    p.stride.resize(2);
+    if (LiteRtGetTransposeConvPaddingOption(op.Get(), &padding) !=
+            kLiteRtStatusOk ||
+        padding > 1 ||
+        LiteRtGetTransposeConvStrideHOption(op.Get(), &p.stride[0]) !=
+            kLiteRtStatusOk ||
+        LiteRtGetTransposeConvStrideWOption(op.Get(), &p.stride[1]) !=
+            kLiteRtStatusOk ||
+        LiteRtGetTransposeConvFusedActivationOption(
+            op.Get(), &p.float_activation) != kLiteRtStatusOk ||
+        (p.float_activation != 0 && p.float_activation != 1 &&
+         p.float_activation != 3))
+      return reject("Unsupported transpose convolution options");
+    auto activation =
+        ActivationRange(p.float_activation == 1   ? Activation::kRelu
+                        : p.float_activation == 3 ? Activation::kRelu6
+                                                  : Activation::kNone,
+                        output.scale, output.zero_point);
+    if (!activation) return reject("Invalid transpose convolution activation");
+    p.activation = *activation;
+    for (size_t a = 0; a < 2; ++a) {
+      int64_t k = p.weight_shape[a + 1], st = p.stride[a];
+      if (st <= 0 || st > k)
+        return reject("Transpose convolution requires stride <= kernel");
+      int64_t full = (input.shape[a + 1] - 1) * st + k,
+              expected = padding == 0 ? input.shape[a + 1] * st : full;
+      if (output.shape[a + 1] != expected)
+        return reject("Transpose convolution output geometry mismatch");
+      int32_t crop = static_cast<int32_t>(full - expected);
+      p.padding.push_back(-crop / 2);
+      p.padding.push_back(-(crop - crop / 2));
+    }
+  } else {
+    if (!input.floating || in.size() < 3 || in.size() > 4 ||
+        input.shape.size() != 4 || output.shape.size() != 4)
+      return reject(
+          "TRANSPOSE_CONV currently requires FP32 NHWC input and constant "
+          "weights");
+    if (!Ints(in[0], p.parameters, 1) || p.parameters.size() != 4 ||
+        !std::equal(p.parameters.begin(), p.parameters.end(),
+                    output.shape.begin()))
+      return reject("TRANSPOSE_CONV requires constant matching output shape");
+    auto weights = in[1].RankedTensorType();
+    auto data = in[1].WeightsData<float>();
+    if (!weights || weights->ElementType() != ElementType::Float32 ||
+        weights->Layout().HasStrides() ||
+        weights->Layout().Dimensions().size() != 4 || !data)
+      return reject("Invalid TRANSPOSE_CONV weights");
+    for (auto dim : weights->Layout().Dimensions()) {
+      if (dim <= 0 || dim > 8192)
+        return reject("Invalid TRANSPOSE_CONV weight dimensions");
+      p.weight_shape.push_back(static_cast<uint32_t>(dim));
+    }
+    if (Count(p.weight_shape) != data->size() ||
+        p.weight_shape[0] != output.shape[3] ||
+        p.weight_shape[3] != input.shape[3] ||
+        input.shape[0] != output.shape[0])
+      return reject("TRANSPOSE_CONV channels/batch mismatch");
+    p.float_weights.assign(data->begin(), data->end());
+    p.float_bias.assign(output.shape[3], 0.0f);
+    if (in.size() == 4) {
+      auto bias_type = in[3].RankedTensorType();
+      auto bias = in[3].WeightsData<float>();
+      if (!bias_type || bias_type->ElementType() != ElementType::Float32 ||
+          bias_type->Layout().HasStrides() ||
+          bias_type->Layout().Dimensions().size() != 1 ||
+          bias_type->Layout().Dimensions()[0] != output.shape[3] || !bias ||
+          bias->size() != output.shape[3])
+        return reject("Invalid TRANSPOSE_CONV bias");
+      p.float_bias.assign(bias->begin(), bias->end());
+    }
+    for (float value : p.float_weights)
+      if (!std::isfinite(value))
+        return reject("Nonfinite TRANSPOSE_CONV weights");
+    for (float value : p.float_bias)
+      if (!std::isfinite(value)) return reject("Nonfinite TRANSPOSE_CONV bias");
+    uint32_t padding;
+    p.stride.resize(2);
+    if (LiteRtGetTransposeConvPaddingOption(op.Get(), &padding) !=
+            kLiteRtStatusOk ||
+        padding > 1 ||
+        LiteRtGetTransposeConvStrideHOption(op.Get(), &p.stride[0]) !=
+            kLiteRtStatusOk ||
+        LiteRtGetTransposeConvStrideWOption(op.Get(), &p.stride[1]) !=
+            kLiteRtStatusOk ||
+        LiteRtGetTransposeConvFusedActivationOption(
+            op.Get(), &p.float_activation) != kLiteRtStatusOk ||
+        (p.float_activation != 0 && p.float_activation != 1 &&
+         p.float_activation != 3))
+      return reject("Unsupported TRANSPOSE_CONV options");
+    for (int axis = 0; axis < 2; ++axis) {
+      const int64_t k = p.weight_shape[axis + 1], stride = p.stride[axis];
+      if (stride <= 0 || stride > k)
+        return reject("TRANSPOSE_CONV requires stride <= kernel");
+      const int64_t full = (input.shape[axis + 1] - 1) * stride + k;
+      const int64_t expected =
+          padding == 0 ? input.shape[axis + 1] * stride : full;
+      if (output.shape[axis + 1] != expected)
+        return reject("TRANSPOSE_CONV output geometry mismatch");
+      const int32_t crop = static_cast<int32_t>(full - expected);
+      p.padding.push_back(-crop / 2);
+      p.padding.push_back(-(crop - crop / 2));
+    }
+  }
+  reason.clear();
+  return true;
+}
+
+ResId EmitExtendedOperation(tfsc::tosa::Graph& g, ResId input,
+                            const OperationPlan& p,
+                            GraphConstantPool& constants) {
+  const auto type =
+      p.inputs[0].floating ? DataType::float32_t : DataType::int8_t;
+  TosaTensor output(type, p.output.shape);
+  auto reshape = [&](ResId value, const std::vector<uint32_t>& shape) {
+    return ReshapeTensor(g, value, g.AddTensorConstant(Attribute(shape)),
+                         TosaTensor(type, shape));
+  };
+  if (p.code == kLiteRtOpCodeTflScatterNd) {
+    uint32_t k = p.kernel[0], c = p.kernel[1], w = p.kernel[2];
+    auto zero = Constant(g, std::vector<float>(static_cast<size_t>(k) * c, 0),
+                         {1, k, c}, constants);
+    auto idx = Constant(g, p.parameters, {1, w}, constants);
+    auto updates = reshape(input, {1, w, c});
+    return reshape(
+        g.AddScatterOperator(zero, idx, updates, TosaTensor(type, {1, k, c})),
+        p.output.shape);
+  }
+  if (p.code == kLiteRtOpCodeTflGather) {
+    uint32_t batches = 1, channels = 1;
+    const auto& shape = p.inputs[0].shape;
+    for (int i = 0; i < p.axis; ++i) batches *= shape[i];
+    for (size_t i = p.axis + 1; i < shape.size(); ++i) channels *= shape[i];
+    const auto width = static_cast<uint32_t>(p.parameters.size());
+    std::vector<int32_t> indices;
+    for (uint32_t batch = 0; batch < batches; ++batch)
+      indices.insert(indices.end(), p.parameters.begin(), p.parameters.end());
+    input = reshape(input, {batches, shape[p.axis], channels});
+    auto result = g.AddGatherOperator(
+        input, Constant(g, indices, {batches, width}, constants),
+        TosaTensor(type, {batches, width, channels}));
+    return reshape(result, p.output.shape);
+  }
+  if (p.code == kLiteRtOpCodeTflReduceMax ||
+      p.code == kLiteRtOpCodeTflReduceMin || p.code == kLiteRtOpCodeTflSum) {
+    auto shape = p.inputs[0].shape;
+    for (auto axis : p.parameters) {
+      shape[axis] = 1;
+      input = p.code == kLiteRtOpCodeTflSum
+                  ? g.AddReduceSumOperator(input, Attribute(axis),
+                                           TosaTensor(type, shape))
+              : p.code == kLiteRtOpCodeTflReduceMax
+                  ? g.AddReduceMaxOperator(input, Attribute(axis),
+                                           Attribute(int32_t{1}),
+                                           TosaTensor(type, shape))
+                  : g.AddReduceMinOperator(input, Attribute(axis),
+                                           Attribute(int32_t{1}),
+                                           TosaTensor(type, shape));
+    }
+    return reshape(input, p.output.shape);
+  }
+  if (p.code == kLiteRtOpCodeTflResizeNearestNeighbor ||
+      p.code == kLiteRtOpCodeTflResizeBilinear) {
+    if (p.code == kLiteRtOpCodeTflResizeBilinear && !p.inputs[0].floating) {
+      auto acc_type = TosaTensor(DataType::int32_t, p.output.shape);
+      auto value = g.AddResizeOperator(
+          input, g.AddTensorConstant(Attribute(p.parameters)),
+          g.AddTensorConstant(Attribute(p.padding)),
+          g.AddTensorConstant(Attribute(p.kernel)), Attribute(int32_t{2}),
+          acc_type);
+      auto scalar = [&](int32_t x) {
+        return Constant(g, std::vector<int32_t>{x},
+                        std::vector<uint32_t>(p.output.shape.size(), 1),
+                        constants);
+      };
+#if !TFLITE_SINGLE_ROUNDING
+      // LiteRT's default signed integer resize rounds halfway away from zero.
+      auto negative = g.AddGreaterOperator(
+          scalar(0), value, TosaTensor(DataType::bool_t, p.output.shape));
+      value = g.AddSelectOperator(negative,
+                                  g.AddSubOperator(value, scalar(1), acc_type),
+                                  value, acc_type);
+#endif
+      value = g.AddArithmeticRightShiftOperator(value, scalar(20),
+                                                Attribute(true), acc_type);
+      return g.AddCastOperator(value, output);
+    }
+    return g.AddResizeOperator(
+        input, g.AddTensorConstant(Attribute(p.parameters)),
+        g.AddTensorConstant(Attribute(p.padding)),
+        g.AddTensorConstant(Attribute(p.kernel)),
+        Attribute(
+            int32_t{p.code == kLiteRtOpCodeTflResizeNearestNeighbor ? 1 : 2}),
+        output);
+  }
+  if (p.code == kLiteRtOpCodeTflFullyConnected) {
+    const uint32_t batch = p.output.shape[0], channels = p.weight_shape[0],
+                   depth = p.weight_shape[1];
+    auto weights =
+        Constant(g, p.float_weights, {1, channels, depth}, constants);
+    weights = g.AddTransposeOperator(weights,
+                                     Attribute(std::vector<int32_t>{0, 2, 1}),
+                                     TosaTensor(type, {1, depth, channels}));
+    auto zero = g.AddTensorConstant(Attribute(0.0f));
+    auto result =
+        g.AddMatmulOperator(reshape(input, {1, batch, depth}), weights, zero,
+                            zero, TosaTensor(type, {1, batch, channels}));
+    result = g.AddAddOperator(
+        result, Constant(g, p.float_bias, {1, 1, channels}, constants),
+        TosaTensor(type, {1, batch, channels}));
+    result = reshape(result, p.output.shape);
+    if (p.float_activation)
+      result = g.AddClampOperator(
+          result, Attribute(0.0f),
+          Attribute(p.float_activation == 3
+                        ? 6.0f
+                        : std::numeric_limits<float>::infinity()),
+          Attribute(int32_t{1}), output);
+    return result;
+  }
+  if (!p.inputs[0].floating) {
+    const auto& spec = p.convolution->spec;
+    auto value = g.AddTransposeConv2dOperator(
+        input, Constant(g, spec.weights, p.weight_shape, constants),
+        Constant(g, spec.bias, {p.output.shape[3]}, constants),
+        g.AddTensorConstant(
+            Attribute(static_cast<int8_t>(p.inputs[0].zero_point))),
+        g.AddTensorConstant(Attribute(int8_t{0})), Attribute(p.padding),
+        Attribute(p.stride), Attribute(int32_t{1}), Attribute(false),
+        TosaTensor(DataType::int32_t, p.output.shape));
+    value = EmitRescale(g, value, p.output.shape, p.output.zero_point, p.scales,
+                        p.ranges, constants);
+    return g.AddClampOperator(
+        value, Attribute(static_cast<int8_t>(p.activation.minimum)),
+        Attribute(static_cast<int8_t>(p.activation.maximum)),
+        Attribute(int32_t{1}), output);
+  }
+  auto zero = g.AddTensorConstant(Attribute(0.0f));
+  auto result = g.AddTransposeConv2dOperator(
+      input, Constant(g, p.float_weights, p.weight_shape, constants),
+      Constant(g, p.float_bias, {p.output.shape[3]}, constants), zero, zero,
+      Attribute(p.padding), Attribute(p.stride), Attribute(int32_t{3}),
+      Attribute(false), output);
+  if (p.float_activation)
+    result = g.AddClampOperator(
+        result, Attribute(0.0f),
+        Attribute(p.float_activation == 3
+                      ? 6.0f
+                      : std::numeric_limits<float>::infinity()),
+        Attribute(int32_t{1}), output);
+  return result;
+}
+}  // namespace litert::arm_vulkan_ml

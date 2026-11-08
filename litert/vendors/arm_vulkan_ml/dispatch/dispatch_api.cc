@@ -1,35 +1,143 @@
-/*
- * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
- * <open-source-office@arm.com> SPDX-License-Identifier: Apache-2.0
- */
+// Copyright 2026 The LiteRT Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_arm_vulkan_ml_options.h"
+#include "litert/vendors/arm_vulkan_ml/common/arm_vulkan_ml_jit_executable.h"
+#include "litert/vendors/arm_vulkan_ml/dispatch/buffer_events.h"
+#include "litert/vendors/arm_vulkan_ml/dispatch/external_buffer.h"
+#include "litert/vendors/arm_vulkan_ml/dispatch/vulkan_invocation.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 
-class LiteRtDispatchDeviceContextT {};
-class LiteRtDispatchInvocationContextT {};
+namespace {
+struct RegisteredBuffer {
+  std::shared_ptr<litert::arm_vulkan_ml::ExternalBuffer> external;
+  LiteRtTensorBuffer buffer;
+  LiteRtRankedTensorType type;
+  size_t size;
+  size_t offset;
+  LiteRtTensorBufferHandle handle;
+};
+struct DeviceState {
+  const LiteRtRuntimeContext* runtime;
+  bool dump_op_timings = false;
+  absl::Mutex mutex;
+  uint64_t next_handle = 1;
+  absl::flat_hash_map<LiteRtTensorBufferHandle,
+                     std::shared_ptr<RegisteredBuffer>>
+      buffers;
+};
+
+bool ParseDumpOpTimings(const LiteRtRuntimeContext* runtime,
+                        LiteRtOptions options) {
+  if (!runtime || !options || !runtime->get_opaque_options ||
+      !runtime->find_opaque_options_data) {
+    return false;
+  }
+  LiteRtOpaqueOptions opaque_options = nullptr;
+  if (runtime->get_opaque_options(options, &opaque_options) !=
+          kLiteRtStatusOk ||
+      !opaque_options) {
+    return false;
+  }
+  void* payload = nullptr;
+  if (runtime->find_opaque_options_data(
+          opaque_options, LrtArmVulkanMLOptionsGetIdentifier(), &payload) !=
+          kLiteRtStatusOk ||
+      !payload) {
+    return false;
+  }
+  LrtArmVulkanMLOptions arm_options = nullptr;
+  if (LrtCreateArmVulkanMLOptionsFromToml(static_cast<const char*>(payload),
+                                          &arm_options) != kLiteRtStatusOk ||
+      !arm_options) {
+    return false;
+  }
+  bool dump_op_timings = false;
+  LrtArmVulkanMLOptionsGetDumpOpTimings(arm_options, &dump_op_timings);
+  LrtDestroyArmVulkanMLOptions(arm_options);
+  return dump_op_timings;
+}
+using litert::arm_vulkan_ml::TensorDescriptor;
+using litert::arm_vulkan_ml::TensorElement;
+using litert::arm_vulkan_ml::TensorElementBytes;
+bool Matches(const TensorDescriptor& desc, const LiteRtRankedTensorType& type) {
+  const bool complex = desc.logical_element == kLiteRtElementTypeComplex64;
+  if (complex && (desc.element != TensorElement::kFloat32 ||
+                  desc.shape.empty() || desc.shape.back() != 2))
+    return false;
+  const size_t rank = desc.shape.size() - (complex ? 1 : 0);
+  if (type.element_type != desc.logical_element || type.layout.has_strides ||
+      type.layout.rank != (desc.logical_scalar ? 0 : rank))
+    return false;
+  if (desc.logical_scalar)
+    return desc.shape ==
+           (complex ? std::vector<uint32_t>{2} : std::vector<uint32_t>{1});
+  for (size_t i = 0; i < rank; ++i)
+    if (type.layout.dimensions[i] <= 0 ||
+        static_cast<uint32_t>(type.layout.dimensions[i]) != desc.shape[i])
+      return false;
+  return true;
+}
+size_t Bytes(const TensorDescriptor& tensor) {
+  size_t size = TensorElementBytes(tensor.element);
+  for (auto dim : tensor.shape) {
+    if (!dim || size > SIZE_MAX / dim) return 0;
+    size *= dim;
+  }
+  return size;
+}
+}  // namespace
+
+struct LiteRtDispatchDeviceContextT {
+  std::shared_ptr<DeviceState> state;
+};
+struct LiteRtDispatchInvocationContextT {
+  absl::Mutex mutex;
+  std::shared_ptr<DeviceState> state;
+  std::shared_ptr<const litert::arm_vulkan_ml::CompiledPartition> artifact;
+  std::unique_ptr<litert::arm_vulkan_ml::VulkanInvocation> invocation;
+  std::vector<std::shared_ptr<RegisteredBuffer>> inputs, outputs;
+};
 
 namespace litert::arm_vulkan_ml {
-
-LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
-                        LiteRtEnvironment environment, LiteRtOptions options) {
-  (void)runtime_context;
-  (void)environment;
-  (void)options;
+LiteRtStatus Initialize(const LiteRtRuntimeContext*, LiteRtEnvironment,
+                        LiteRtOptions) {
   return kLiteRtStatusOk;
 }
-
-LiteRtStatus GetVendorId(const char** vendor_id) {
-  if (vendor_id == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  *vendor_id = "ArmVulkanML";
+LiteRtStatus GetVendorId(const char** value) {
+  if (!value) return kLiteRtStatusErrorInvalidArgument;
+  *value = "ArmVulkanML";
   return kLiteRtStatusOk;
 }
-
 LiteRtStatus GetBuildId(const char** build_id) {
   if (build_id == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -37,180 +145,329 @@ LiteRtStatus GetBuildId(const char** build_id) {
   *build_id = "1.0";
   return kLiteRtStatusOk;
 }
-
-LiteRtStatus GetCapabilities(int* capabilities) {
-  if (capabilities == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  *capabilities = kLiteRtDispatchCapabilitiesBasic;
+LiteRtStatus GetCapabilities(int* value) {
+  if (!value) return kLiteRtStatusErrorInvalidArgument;
+  *value = kLiteRtDispatchCapabilitiesBasic;
   return kLiteRtStatusOk;
 }
-
-LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime_context,
+LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime,
                                  LiteRtOptions options,
-                                 LiteRtDispatchDeviceContext* device_context) {
-  (void)runtime_context;
-  (void)options;
-  if (device_context == nullptr) {
+                                 LiteRtDispatchDeviceContext* output) {
+  if (!output) return kLiteRtStatusErrorInvalidArgument;
+  *output = nullptr;
+  if (!runtime || !runtime->create_tensor_buffer_requirements ||
+      !runtime->get_tensor_buffer_type ||
+      !runtime->get_tensor_buffer_tensor_type ||
+      !runtime->get_tensor_buffer_size || !runtime->get_tensor_buffer_offset ||
+      !runtime->lock_tensor_buffer || !runtime->unlock_tensor_buffer)
     return kLiteRtStatusErrorInvalidArgument;
-  }
-  *device_context = new LiteRtDispatchDeviceContextT;
+  auto context = std::make_unique<LiteRtDispatchDeviceContextT>();
+  context->state = std::make_shared<DeviceState>();
+  context->state->runtime = runtime;
+  context->state->dump_op_timings = ParseDumpOpTimings(runtime, options);
+  *output = context.release();
   return kLiteRtStatusOk;
 }
-
-LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
-  if (device_context == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  delete device_context;
+LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext context) {
+  if (!context) return kLiteRtStatusErrorInvalidArgument;
+  delete context;
   return kLiteRtStatusOk;
 }
-
-LiteRtStatus GetInputRequirements(
-    LiteRtDispatchInvocationContext invocation_context, int input_index,
-    const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
-  (void)tensor_type;
-  (void)tensor_buffer_requirements;
-  if (invocation_context == nullptr || input_index < 0) {
+LiteRtStatus Requirements(LiteRtDispatchInvocationContext context, int index,
+                          const LiteRtRankedTensorType* type,
+                          LiteRtTensorBufferRequirements* output, bool input) {
+  if (!context || !type || !output || index < 0)
     return kLiteRtStatusErrorInvalidArgument;
-  }
-  return kLiteRtStatusErrorUnsupported;
+  *output = nullptr;
+  const auto& descriptors =
+      input ? context->artifact->inputs : context->artifact->outputs;
+  if (static_cast<size_t>(index) >= descriptors.size() ||
+      !Matches(descriptors[index], *type))
+    return kLiteRtStatusErrorInvalidArgument;
+  auto bytes = Bytes(descriptors[index]);
+  if (!bytes) return kLiteRtStatusErrorInvalidArgument;
+  VulkanInvocation::BufferRequirements r;
+  std::string error;
+  size_t slot =
+      input ? static_cast<size_t>(index)
+            : context->artifact->inputs.size() + static_cast<size_t>(index);
+  if (!context->invocation->Requirements(slot, r, error))
+    return kLiteRtStatusErrorRuntimeFailure;
+  std::vector<LiteRtTensorBufferType> types;
+  if (r.ahb && context->state->runtime->get_tensor_buffer_ahwb)
+    types.push_back(kLiteRtTensorBufferTypeAhwb);
+  if (r.dma_buf && context->state->runtime->get_tensor_buffer_dma_buf_buffer)
+    types.push_back(kLiteRtTensorBufferTypeDmaBuf);
+  types.push_back(kLiteRtTensorBufferTypeHostMemory);
+  return context->state->runtime->create_tensor_buffer_requirements(
+      static_cast<int>(types.size()), types.data(), r.bytes, 0, nullptr,
+      output);
+}
+LiteRtStatus GetInputRequirements(LiteRtDispatchInvocationContext c, int i,
+                                  const LiteRtRankedTensorType* t,
+                                  LiteRtTensorBufferRequirements* r) {
+  return Requirements(c, i, t, r, true);
+}
+LiteRtStatus GetOutputRequirements(LiteRtDispatchInvocationContext c, int i,
+                                   const LiteRtRankedTensorType* t,
+                                   LiteRtTensorBufferRequirements* r) {
+  return Requirements(c, i, t, r, false);
 }
 
-LiteRtStatus GetOutputRequirements(
-    LiteRtDispatchInvocationContext invocation_context, int output_index,
-    const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
-  (void)tensor_type;
-  (void)tensor_buffer_requirements;
-  if (invocation_context == nullptr || output_index < 0) {
+LiteRtStatus RegisterTensorBuffer(LiteRtDispatchDeviceContext context,
+                                  LiteRtTensorBuffer buffer,
+                                  LiteRtTensorBufferHandle* output) {
+  if (!context || !buffer || !output) return kLiteRtStatusErrorInvalidArgument;
+  auto& state = *context->state;
+  absl::MutexLock lock(&state.mutex);
+  const auto* api = state.runtime;
+  LiteRtTensorBufferType type;
+  if (api->get_tensor_buffer_type(buffer, &type) != kLiteRtStatusOk ||
+      (type != kLiteRtTensorBufferTypeHostMemory &&
+       type != kLiteRtTensorBufferTypeDmaBuf &&
+       type != kLiteRtTensorBufferTypeAhwb))
+    return kLiteRtStatusErrorUnsupported;
+  auto registration = std::make_shared<RegisteredBuffer>();
+  if (api->get_tensor_buffer_tensor_type(buffer, &registration->type) !=
+          kLiteRtStatusOk ||
+      api->get_tensor_buffer_size(buffer, &registration->size) !=
+          kLiteRtStatusOk ||
+      api->get_tensor_buffer_offset(buffer, &registration->offset) !=
+          kLiteRtStatusOk ||
+      registration->offset > registration->size || !state.next_handle)
     return kLiteRtStatusErrorInvalidArgument;
+  std::string error;
+  if (type == kLiteRtTensorBufferTypeDmaBuf) {
+    void* address = nullptr;
+    int fd = -1;
+    if (!api->get_tensor_buffer_dma_buf_buffer ||
+        api->get_tensor_buffer_dma_buf_buffer(buffer, &address, &fd) !=
+            kLiteRtStatusOk)
+      return kLiteRtStatusErrorUnsupported;
+    registration->external = ExternalBuffer::DmaBuf(
+        fd, registration->size, registration->offset, error);
+    if (!registration->external) return kLiteRtStatusErrorInvalidArgument;
+  } else if (type == kLiteRtTensorBufferTypeAhwb) {
+#if defined(__ANDROID__)
+    AHardwareBuffer* ahb = nullptr;
+    if (!api->get_tensor_buffer_ahwb ||
+        api->get_tensor_buffer_ahwb(buffer, &ahb) != kLiteRtStatusOk)
+      return kLiteRtStatusErrorUnsupported;
+    registration->external =
+        ExternalBuffer::Ahb(ahb, registration->size, registration->offset,
+                            AndroidHardwareBufferApi(), error);
+    if (!registration->external) return kLiteRtStatusErrorInvalidArgument;
+#else
+    return kLiteRtStatusErrorUnsupported;
+#endif
   }
-  return kLiteRtStatusErrorUnsupported;
-}
-
-LiteRtStatus RegisterTensorBuffer(
-    LiteRtDispatchDeviceContext device_context,
-    LiteRtTensorBuffer tensor_buffer,
-    LiteRtTensorBufferHandle* tensor_buffer_handle) {
-  (void)tensor_buffer;
-  (void)tensor_buffer_handle;
-  if (device_context == nullptr || tensor_buffer_handle == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  return kLiteRtStatusErrorUnsupported;
-}
-
-LiteRtStatus UnregisterTensorBuffer(
-    LiteRtDispatchDeviceContext device_context,
-    LiteRtTensorBufferHandle tensor_buffer_handle) {
-  (void)tensor_buffer_handle;
-  if (device_context == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  return kLiteRtStatusErrorUnsupported;
-}
-
-LiteRtStatus InvocationContextCreate(
-    const LiteRtRuntimeContext* runtime_context,
-    LiteRtDispatchDeviceContext device_context,
-    LiteRtDispatchExecutableType exec_type,
-    const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
-    int num_inputs, int num_outputs,
-    LiteRtDispatchInvocationContext* invocation_context) {
-  (void)runtime_context;
-  (void)exec_type;
-  (void)exec_bytecode_buffer;
-  (void)function_name;
-  if (device_context == nullptr || invocation_context == nullptr ||
-      num_inputs < 0 || num_outputs < 0) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  *invocation_context = nullptr;
-  return kLiteRtStatusErrorUnsupported;
-}
-
-LiteRtStatus InvocationContextDestroy(
-    LiteRtDispatchInvocationContext invocation_context) {
-  if (invocation_context == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  delete invocation_context;
+  registration->buffer = buffer;
+  registration->handle = state.next_handle++;
+  *output = registration->handle;
+  state.buffers.emplace(*output, std::move(registration));
   return kLiteRtStatusOk;
 }
-
+LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext context,
+                                    LiteRtTensorBufferHandle handle) {
+  if (!context) return kLiteRtStatusErrorInvalidArgument;
+  auto& state = *context->state;
+  absl::MutexLock lock(&state.mutex);
+  auto found = state.buffers.find(handle);
+  if (found == state.buffers.end() || found->second.use_count() != 1)
+    return kLiteRtStatusErrorInvalidArgument;
+  state.buffers.erase(found);
+  return kLiteRtStatusOk;
+}
+LiteRtStatus InvocationContextCreate(const LiteRtRuntimeContext*,
+                                     LiteRtDispatchDeviceContext device,
+                                     LiteRtDispatchExecutableType type,
+                                     const LiteRtMemBuffer* buffer,
+                                     const char* function_name, int num_inputs,
+                                     int num_outputs,
+                                     LiteRtDispatchInvocationContext* output) {
+  if (!output) return kLiteRtStatusErrorInvalidArgument;
+  *output = nullptr;
+  if (!device || !buffer || !buffer->base_addr || !function_name ||
+      num_inputs < 0 || num_outputs < 0)
+    return kLiteRtStatusErrorInvalidArgument;
+  if (type != kLiteRtDispatchExecutableTypeJitHandle)
+    return kLiteRtStatusErrorUnsupported;
+  if (buffer->offset != 0 || buffer->size != 0)
+    return kLiteRtStatusErrorInvalidArgument;
+  const auto* executable =
+      static_cast<const ArmVulkanMLJitExecutable*>(buffer->base_addr);
+  auto artifact = executable->partition;
+  if (!artifact || artifact->inputs.size() != static_cast<size_t>(num_inputs) ||
+      artifact->outputs.size() != static_cast<size_t>(num_outputs))
+    return kLiteRtStatusErrorInvalidArgument;
+  auto context = std::make_unique<LiteRtDispatchInvocationContextT>();
+  context->state = device->state;
+  context->artifact = std::move(artifact);
+  context->inputs.resize(num_inputs);
+  context->outputs.resize(num_outputs);
+  const char* option = std::getenv("LITERT_ARM_VULKAN_ML_ALLOW_EMULATION");
+  bool allow_emulation = option && !std::strcmp(option, "1");
+  const bool dump_timings = device->state->dump_op_timings;
+  VulkanInvocation::CreateOptions invocation_options;
+  invocation_options.allow_emulation = allow_emulation;
+  invocation_options.dump_timings = dump_timings;
+  std::string error;
+  context->invocation = VulkanInvocation::Create(
+      context->artifact, invocation_options, error);
+  if (!context->invocation) {
+    std::fprintf(stderr, "ArmVulkanML: %s\n", error.c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  if (dump_timings) {
+    const VulkanInvocation::InitStatistics init_stats =
+        context->invocation->InitStats();
+    std::fprintf(
+        stderr,
+        "[ArmVulkanML][Timing][VulkanInvocation::DeviceSetup] total=%.3f ms | "
+        "dlopen+vkCreateInstance=%.3f ms | QueryCapabilities=%.3f ms | "
+        "vkCreateDevice=%.3f ms\n"
+        "[ArmVulkanML][Timing][VulkanInvocation::Build] total=%.3f ms | "
+        "vkCreateShaderModule=%.3f ms | DescriptorsAndConstants=%.3f ms | "
+        "vkCreateDataGraphPipelinesARM=%.3f ms | "
+        "vkCreateDataGraphPipelineSessionARM=%.3f ms | "
+        "SessionMemoryAllocBind=%.3f ms (%zu objs, %zu bytes) | "
+        "CommandPoolAndFence=%.3f ms\n",
+        init_stats.device_setup_total_ms, init_stats.dlopen_and_instance_ms,
+        init_stats.query_capabilities_ms, init_stats.create_device_ms,
+        init_stats.build_total_ms, init_stats.create_shader_module_ms,
+        init_stats.descriptors_and_constants_ms,
+        init_stats.create_data_graph_pipeline_ms, init_stats.create_session_ms,
+        init_stats.session_memory_alloc_bind_ms,
+        init_stats.session_memory_objects, init_stats.session_memory_bytes,
+        init_stats.cmd_pool_and_fence_ms);
+    std::fflush(stderr);
+  }
+  *output = context.release();
+  return kLiteRtStatusOk;
+}
+LiteRtStatus InvocationContextDestroy(LiteRtDispatchInvocationContext context) {
+  if (!context) return kLiteRtStatusErrorInvalidArgument;
+  // Destruction must not race an invocation on the same context (API contract).
+  delete context;
+  return kLiteRtStatusOk;
+}
 LiteRtStatus InvocationContextSetSchedulingInfo(
-    LiteRtDispatchInvocationContext invocation_context,
-    const LiteRtSchedulingInfo* scheduling_info) {
-  (void)scheduling_info;
-  if (invocation_context == nullptr) {
+    LiteRtDispatchInvocationContext c, const LiteRtSchedulingInfo*) {
+  return c ? kLiteRtStatusOk : kLiteRtStatusErrorInvalidArgument;
+}
+LiteRtStatus InvocationContextSetOptions(LiteRtDispatchInvocationContext c,
+                                         LiteRtOptions) {
+  return c ? kLiteRtStatusOk : kLiteRtStatusErrorInvalidArgument;
+}
+LiteRtStatus Attach(LiteRtDispatchInvocationContext context, int index,
+                    LiteRtTensorBufferHandle handle, bool input, bool detach) {
+  if (!context || index < 0) return kLiteRtStatusErrorInvalidArgument;
+  absl::MutexLock invocation_lock(&context->mutex);
+  absl::MutexLock lock(&context->state->mutex);
+  auto& slots = input ? context->inputs : context->outputs;
+  const auto& descriptors =
+      input ? context->artifact->inputs : context->artifact->outputs;
+  if (static_cast<size_t>(index) >= slots.size())
     return kLiteRtStatusErrorInvalidArgument;
+  if (detach) {
+    if (!slots[index] || slots[index]->handle != handle)
+      return kLiteRtStatusErrorInvalidArgument;
+    context->invocation->DetachExternal(
+        input ? static_cast<size_t>(index)
+              : context->artifact->inputs.size() + static_cast<size_t>(index));
+    slots[index].reset();
+    return kLiteRtStatusOk;
   }
+  auto found = context->state->buffers.find(handle);
+  if (found == context->state->buffers.end())
+    return kLiteRtStatusErrorInvalidArgument;
+  const auto& registration = found->second;
+  if (!Matches(descriptors[index], registration->type) ||
+      Bytes(descriptors[index]) > registration->size - registration->offset)
+    return kLiteRtStatusErrorInvalidArgument;
+  std::string error;
+  if (!context->invocation->AttachExternal(
+          input ? static_cast<size_t>(index)
+                : context->artifact->inputs.size() + static_cast<size_t>(index),
+          registration->external, error)) {
+    std::fprintf(stderr, "ArmVulkanML buffer attachment: %s\n", error.c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  slots[index] = registration;
   return kLiteRtStatusOk;
 }
-
-LiteRtStatus InvocationContextSetOptions(
-    LiteRtDispatchInvocationContext invocation_context, LiteRtOptions options) {
-  (void)options;
-  if (invocation_context == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
+LiteRtStatus AttachInput(LiteRtDispatchInvocationContext c, int i,
+                         LiteRtTensorBufferHandle h) {
+  return Attach(c, i, h, true, false);
+}
+LiteRtStatus AttachOutput(LiteRtDispatchInvocationContext c, int i,
+                          LiteRtTensorBufferHandle h) {
+  return Attach(c, i, h, false, false);
+}
+LiteRtStatus DetachInput(LiteRtDispatchInvocationContext c, int i,
+                         LiteRtTensorBufferHandle h) {
+  return Attach(c, i, h, true, true);
+}
+LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext c, int i,
+                          LiteRtTensorBufferHandle h) {
+  return Attach(c, i, h, false, true);
+}
+LiteRtStatus Invoke(LiteRtDispatchInvocationContext context) {
+  if (!context) return kLiteRtStatusErrorInvalidArgument;
+  absl::MutexLock lock(&context->mutex);
+  const auto* api = context->state->runtime;
+  struct Locks {
+    const LiteRtRuntimeContext* api;
+    absl::flat_hash_map<LiteRtTensorBuffer, void*> addresses;
+    ~Locks() {
+      for (auto& entry : addresses) api->unlock_tensor_buffer(entry.first);
+    }
+  } locks{api, {}};
+  auto address = [&](const std::shared_ptr<RegisteredBuffer>& r) -> void* {
+    if (!r) return nullptr;
+    auto found = locks.addresses.find(r->buffer);
+    if (found == locks.addresses.end()) {
+      void* base = nullptr;
+      if (api->lock_tensor_buffer(r->buffer, &base,
+                                  kLiteRtTensorBufferLockModeReadWrite) !=
+          kLiteRtStatusOk)
+        return nullptr;
+      found = locks.addresses.emplace(r->buffer, base).first;
+    }
+    return found->second ? static_cast<uint8_t*>(found->second) + r->offset
+                         : nullptr;
+  };
+  std::vector<const void*> inputs;
+  std::vector<void*> outputs;
+  for (const auto& r : context->inputs)
+    if (!r || !WaitForBufferEvent(api, r->buffer))
+      return kLiteRtStatusErrorRuntimeFailure;
+  for (const auto& r : context->outputs)
+    if (!r || !WaitForBufferEvent(api, r->buffer))
+      return kLiteRtStatusErrorRuntimeFailure;
+  for (const auto& r : context->inputs) {
+    auto p = r->external ? nullptr : address(r);
+    if (!p && !r->external) return kLiteRtStatusErrorRuntimeFailure;
+    inputs.push_back(p);
+  }
+  for (const auto& r : context->outputs) {
+    auto p = r->external ? nullptr : address(r);
+    if (!p && !r->external) return kLiteRtStatusErrorRuntimeFailure;
+    outputs.push_back(p);
+  }
+  std::string error;
+  if (!context->invocation->Run(inputs, outputs, error)) {
+    std::fprintf(stderr, "ArmVulkanML: %s\n", error.c_str());
+    return kLiteRtStatusErrorRuntimeFailure;
   }
   return kLiteRtStatusOk;
-}
-
-LiteRtStatus AttachInput(LiteRtDispatchInvocationContext invocation_context,
-                         int graph_input_index,
-                         LiteRtTensorBufferHandle tensor_buffer_handle) {
-  (void)tensor_buffer_handle;
-  if (invocation_context == nullptr || graph_input_index < 0) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  return kLiteRtStatusErrorUnsupported;
-}
-
-LiteRtStatus AttachOutput(LiteRtDispatchInvocationContext invocation_context,
-                          int graph_output_index,
-                          LiteRtTensorBufferHandle tensor_buffer_handle) {
-  (void)tensor_buffer_handle;
-  if (invocation_context == nullptr || graph_output_index < 0) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  return kLiteRtStatusErrorUnsupported;
-}
-
-LiteRtStatus DetachInput(LiteRtDispatchInvocationContext invocation_context,
-                         int graph_input_index,
-                         LiteRtTensorBufferHandle tensor_buffer_handle) {
-  (void)tensor_buffer_handle;
-  if (invocation_context == nullptr || graph_input_index < 0) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  return kLiteRtStatusErrorUnsupported;
-}
-
-LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext invocation_context,
-                          int graph_output_index,
-                          LiteRtTensorBufferHandle tensor_buffer_handle) {
-  (void)tensor_buffer_handle;
-  if (invocation_context == nullptr || graph_output_index < 0) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  return kLiteRtStatusErrorUnsupported;
-}
-
-LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
-  if (invocation_context == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  return kLiteRtStatusErrorUnsupported;
 }
 
 LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
                                        LiteRtEnvironmentOptions env,
                                        LiteRtOptions options) {
-  (void)env;
-  (void)options;
+  static_cast<void>(env);
+  static_cast<void>(options);
   if (api_version.major != LITERT_API_VERSION_MAJOR ||
       api_version.minor < LITERT_API_VERSION_MINOR) {
     return kLiteRtStatusErrorWrongVersion;

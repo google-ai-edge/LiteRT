@@ -1,0 +1,75 @@
+// Copyright 2026 The LiteRT Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#ifndef LITERT_ARM_VULKAN_ML_DEVTOOL_H_
+#define LITERT_ARM_VULKAN_ML_DEVTOOL_H_
+#include <map>
+#include <string>
+#include <vector>
+
+#define JSON_NOEXCEPTION 1
+#include "nlohmann/json.hpp"  // from @com_github_nlohmann_json
+#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_options.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/graph_ir.h"
+#include "litert/vendors/arm_vulkan_ml/dispatch/device_capabilities.h"
+#include "tflite/interpreter.h"
+#include "tflite/schema/schema_generated.h"
+namespace litert::arm_vulkan_ml::tool {
+using Json = nlohmann::json;
+struct Options {
+  std::string command;
+  std::map<std::string, std::string> values;
+  std::map<std::string, std::vector<std::string>> repeated;
+  std::string Get(const std::string& key,
+                  const std::string& fallback = "") const;
+  Expected<SoftmaxLutType> SoftmaxLut() const;
+  Expected<int> RescaleMultiplierBits() const;
+  Expected<int> Integer(const std::string& key, int fallback) const;
+  Expected<double> Number(const std::string& key, double fallback) const;
+};
+Expected<Json> ReadJson(const std::string& path);
+Expected<void> WriteJson(const std::string& path, const Json& value);
+Expected<std::string> HashFile(const std::string& path);
+std::string CompilerDirectory(const Options& options);
+Expected<litert::Options> RuntimeOptions(const Options& options);
+Expected<Options> ParseOptions(int argc, char** argv);
+Expected<std::unique_ptr<tflite::ModelT>> LoadModel(const std::string& path);
+Expected<std::vector<uint8_t>> PackModel(const tflite::ModelT& model);
+Expected<void> Inspect(const Options& options, Json& report, bool compile);
+Expected<void> Capabilities(const Options& options, Json& report);
+Expected<void> Validate(const Options& options, Json& report);
+Expected<std::vector<int8_t>> SoftmaxReference(const std::vector<int8_t>& input,
+                                               size_t channels,
+                                               double input_scale, double beta,
+                                               const std::string& reference);
+Expected<std::vector<int8_t>> QuantizedReference(
+    const tflite::ModelT& model, const std::vector<int8_t>& input);
+Expected<void> Trace(const Options& options, Json& report);
+Expected<void> Compare(const void* actual, const void* expected, size_t count,
+                       bool floating, const Options& options, Json& result);
+Expected<void> QueryTosa(const Json& db, const Options& options,
+                         Json& result);
+Expected<void> ExportVgf(const CompiledPartition&, const std::string& name,
+                         const std::string& path);
+Expected<void> TosaQuery(const Options& options, Json& report);
+Expected<void> Coverage(Json& report, const std::string& op_set = "tosa");
+void PrintCoverage(const Json& report);
+void PrintTosaQuery(const Json& report);
+Expected<void> Run(const Options& options, Json& report);
+Expected<void> CollectValidationLogs(const std::string& directory,
+                                     const std::string& mode, Json& result);
+int Main(int argc, char** argv);
+}  // namespace litert::arm_vulkan_ml::tool
+#endif

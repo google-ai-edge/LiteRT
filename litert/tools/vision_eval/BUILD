@@ -14,12 +14,17 @@
 
 load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
+# copybara:uncomment load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:__subpackages__"],
+    default_visibility = ["//litert:litert_internal_users"],
 )
 
 proto_library(
@@ -29,6 +34,11 @@ proto_library(
 
 cc_proto_library(
     name = "evaluation_cc_proto",
+    deps = [":evaluation_proto"],
+)
+
+py_proto_library(
+    name = "evaluation_py_proto",
     deps = [":evaluation_proto"],
 )
 
@@ -256,3 +266,144 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_binary(
+    name = "vision_eval_for_test",
+    testonly = True,
+    srcs = ["//litert/tools:vision_eval_main.cc"],
+    copts = ["-fno-exceptions"],
+    deps = [":runner"],
+)
+
+# The NumPy implementation is a test oracle for the original dense-task
+# protocols. It is not linked or invoked by the evaluator.
+py_library(
+    name = "metrics_reference",
+    testonly = True,
+    srcs = ["metrics_reference.py"],
+    deps = ["//third_party/py/numpy"],
+)
+
+py_test(
+    name = "metrics_parity_test",
+    size = "small",
+    srcs = ["metrics_parity_test.py"],
+    data = [":vision_eval_for_test"],
+    env = {"LITERT_VISION_EVAL_BIN": "$(rootpath :vision_eval_for_test)"},
+    deps = [
+        ":evaluation_py_proto",
+        ":metrics_reference",
+        "//third_party/py/numpy",
+        "@absl_py//absl/testing:absltest",
+        "@com_google_protobuf//:protobuf_python",
+    ],
+)
+
+# copybara:uncomment_begin(google-only)
+# py_library(
+#     name = "export_imagenet_val_jpegs",
+#     srcs = ["export_imagenet_val_jpegs.py"],
+#     deps = [
+#         "@absl_py//absl:app",
+#         "@absl_py//absl/flags",
+#         "//third_party/py/pyarrow",
+#     ],
+# )
+#
+# py_test(
+#     name = "export_imagenet_val_jpegs_test",
+#     size = "small",
+#     srcs = ["export_imagenet_val_jpegs_test.py"],
+#     deps = [
+#         ":export_imagenet_val_jpegs",
+#         "@absl_py//absl/testing:absltest",
+#         "//third_party/py/pyarrow",
+#     ],
+# )
+#
+# py_library(
+#     name = "prepare_coco2017",
+#     srcs = ["prepare_coco2017.py"],
+#     deps = [
+#         ":evaluation_py_proto",
+#         "//third_party/py/PIL:pil",
+#         "@absl_py//absl:app",
+#         "@absl_py//absl/flags",
+#         "@com_google_protobuf//:protobuf_python",
+#         "//third_party/py/numpy",
+#         "//third_party/py/pycocotools",
+#     ],
+# )
+#
+# py_test(
+#     name = "prepare_coco2017_test",
+#     size = "small",
+#     srcs = ["prepare_coco2017_test.py"],
+#     deps = [
+#         ":evaluation_py_proto",
+#         ":prepare_coco2017",
+#         "@absl_py//absl/testing:absltest",
+#         "//third_party/py/PIL:pil",
+#         "@com_google_protobuf//:protobuf_python",
+#         "//third_party/py/numpy",
+#     ],
+# )
+#
+# py_library(
+#     name = "prepare_voc2012",
+#     srcs = ["prepare_voc2012.py"],
+#     deps = [
+#         ":evaluation_py_proto",
+#         "//third_party/py/PIL:pil",
+#         "@absl_py//absl:app",
+#         "@absl_py//absl/flags",
+#         "@com_google_protobuf//:protobuf_python",
+#         "//third_party/py/numpy",
+#         "//third_party/py/pyarrow",
+#     ],
+# )
+#
+# py_test(
+#     name = "prepare_voc2012_test",
+#     size = "small",
+#     srcs = ["prepare_voc2012_test.py"],
+#     deps = [
+#         ":evaluation_py_proto",
+#         ":prepare_voc2012",
+#         "@absl_py//absl/testing:absltest",
+#         "//third_party/py/PIL:pil",
+#         "@com_google_protobuf//:protobuf_python",
+#         "//third_party/py/numpy",
+#         "//third_party/py/pyarrow",
+#     ],
+# )
+#
+# py_library(
+#     name = "prepare_tipsv2",
+#     srcs = ["prepare_tipsv2.py"],
+#     deps = [
+#         ":evaluation_py_proto",
+#         "//third_party/py/PIL:pil",
+#         "@absl_py//absl:app",
+#         "@absl_py//absl/flags",
+#         "@com_google_protobuf//:protobuf_python",
+#         "//third_party/py/numpy",
+#         "//third_party/py/pyarrow",
+#     ],
+# )
+#
+# py_test(
+#     name = "prepare_tipsv2_test",
+#     size = "small",
+#     srcs = ["prepare_tipsv2_test.py"],
+#     deps = [
+#         ":evaluation_py_proto",
+#         ":prepare_tipsv2",
+#         "@absl_py//absl/testing:absltest",
+#         "//third_party/py/PIL:pil",
+#         "@com_google_protobuf//:protobuf_python",
+#         "//third_party/py/numpy",
+#         "//third_party/py/pyarrow",
+#     ],
+# )
+# copybara:uncomment_end
