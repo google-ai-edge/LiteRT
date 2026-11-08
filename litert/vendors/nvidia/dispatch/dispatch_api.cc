@@ -5832,34 +5832,41 @@ class LiteRtDispatchInvocationContextT {
       ok = cudaGraphAddEventRecordNode(&event_node, clone, nullptr, 0,
                                        events[count]) == cudaSuccess;
     }
-    // The edges of TensorRT-RTX's graphs carry edge data: the legacy
-    // dependency calls refuse them (cudaErrorLossyQuery), the _v2 calls
-    // read them. The edges added here are plain ones.
+    // Preserve edge data. CUDA 13 promoted the CUDA 12 _v2 entry points to
+    // the unsuffixed names; the signatures are otherwise identical.
+#if CUDART_VERSION >= 13000
+    constexpr auto get_dependencies = cudaGraphNodeGetDependencies;
+    constexpr auto get_dependents = cudaGraphNodeGetDependentNodes;
+    constexpr auto add_dependencies = cudaGraphAddDependencies;
+#else
+    constexpr auto get_dependencies = cudaGraphNodeGetDependencies_v2;
+    constexpr auto get_dependents = cudaGraphNodeGetDependentNodes_v2;
+    constexpr auto add_dependencies = cudaGraphAddDependencies_v2;
+#endif
     for (size_t i = 0; ok && i < count; ++i) {
       size_t dependencies = 0;
-      ok = cudaGraphNodeGetDependencies_v2(in_clone[i], nullptr, nullptr,
-                                           &dependencies) == cudaSuccess;
+      ok = get_dependencies(in_clone[i], nullptr, nullptr, &dependencies) ==
+           cudaSuccess;
       if (ok && dependencies == 0) {
-        ok = cudaGraphAddDependencies_v2(clone, &event_node, &in_clone[i],
-                                         nullptr, 1) == cudaSuccess;
+        ok = add_dependencies(clone, &event_node, &in_clone[i], nullptr, 1) ==
+             cudaSuccess;
       }
     }
     for (size_t i = 0; ok && i < count; ++i) {
       size_t dependents = 0;
-      ok = cudaGraphNodeGetDependentNodes_v2(in_clone[i], nullptr, nullptr,
-                                             &dependents) == cudaSuccess;
+      ok = get_dependents(in_clone[i], nullptr, nullptr, &dependents) ==
+           cudaSuccess;
       std::vector<cudaGraphNode_t> next(dependents);
       std::vector<cudaGraphEdgeData> edges(dependents);
       if (ok && dependents > 0) {
-        ok = cudaGraphNodeGetDependentNodes_v2(in_clone[i], next.data(),
-                                               edges.data(),
-                                               &dependents) == cudaSuccess;
+        ok = get_dependents(in_clone[i], next.data(), edges.data(),
+                            &dependents) == cudaSuccess;
       }
       cudaGraphNode_t after = nullptr;
       ok = ok && cudaGraphAddEventRecordNode(&after, clone, &in_clone[i], 1,
                                              events[i]) == cudaSuccess;
       for (size_t d = 0; ok && d < dependents; ++d) {
-        ok = cudaGraphAddDependencies_v2(clone, &after, &next[d], nullptr, 1) ==
+        ok = add_dependencies(clone, &after, &next[d], nullptr, 1) ==
              cudaSuccess;
       }
     }
