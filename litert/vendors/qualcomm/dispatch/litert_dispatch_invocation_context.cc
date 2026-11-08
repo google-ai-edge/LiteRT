@@ -311,6 +311,22 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
                       "Tensor strides are not supported by QNN");
   }
 
+  auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
+  if (!buffer_size) {
+    return Unexpected(buffer_size.Error());
+  }
+
+  return GetTensorBufferRequirements(tensor_type, *buffer_size);
+}
+
+Expected<LiteRtTensorBufferRequirements>
+LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
+    const LiteRtRankedTensorType& tensor_type, size_t buffer_size) {
+  if (tensor_type.layout.has_strides) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Tensor strides are not supported by QNN");
+  }
+
   static constexpr std::array<const LiteRtTensorBufferType, 1>
       kRawTensorBufferTypes = {kLiteRtTensorBufferTypeHostMemory};
   static constexpr std::array<const LiteRtTensorBufferType, 2>
@@ -339,16 +355,11 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     num_supported_tensor_buffer_types = kRawTensorBufferTypes.size();
   }
 
-  auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
-  if (!buffer_size) {
-    return Unexpected(buffer_size.Error());
-  }
-
   LiteRtTensorBufferRequirements requirements;
   if (auto status =
           device_context_->runtime_context()->create_tensor_buffer_requirements(
               num_supported_tensor_buffer_types, supported_tensor_buffer_types,
-              *buffer_size,
+              buffer_size,
               /*num_strides=*/0,
               /*strides=*/nullptr, &requirements);
       status != kLiteRtStatusOk) {
@@ -367,6 +378,12 @@ LiteRtDispatchInvocationContextT::GetInputRequirements(
 Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetOutputRequirements(
     int output_index, const LiteRtRankedTensorType& tensor_type) {
+  if (output_index >= 0 && output_index < static_cast<int>(outputs_.size())) {
+    size_t qnn_bytes = outputs_[output_index].GetTensorBytes();
+    if (qnn_bytes > 0) {
+      return GetTensorBufferRequirements(tensor_type, qnn_bytes);
+    }
+  }
   return GetTensorBufferRequirements(tensor_type);
 }
 
