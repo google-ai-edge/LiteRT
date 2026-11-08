@@ -580,7 +580,6 @@ REGISTER_SIMPLE_OP_BUILDER(BuildTransposeOp, BuildTransposeOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildTileOp, BuildTileOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildDynamicUpdateSliceOp, BuildDynamicUpdateSliceOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildHardSwishOp, BuildElementwiseHardSwishOp)
-REGISTER_SIMPLE_OP_BUILDER(BuildConstantPadOp, BuildConstantPadOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildGatherNdOp, BuildGatherNdOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildPowOp, BuildElementwisePowerOp)
 REGISTER_SIMPLE_OP_BUILDER(BuildLessEqualOp, BuildElementwiseLessEqualOp)
@@ -1540,11 +1539,23 @@ LiteRtStatus BuildResizeNearestNeighborOp(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus BuildConstantPadOp(
+    const litert::compiler::Op&, ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers,
+    ::qnn::BackendType backend_type) {
+  op_wrappers = ::qnn::BuildConstantPadOp(tensor_pool, input_tensors,
+                                          output_tensors, backend_type);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus BuildMirrorPadOp(
     const litert::compiler::Op& litert_op, ::qnn::TensorPool& tensor_pool,
     std::vector<::qnn::TensorWrapperRef>& input_tensors,
     std::vector<::qnn::TensorWrapperRef>& output_tensors,
-    std::vector<::qnn::OpWrapper>& op_wrappers) {
+    std::vector<::qnn::OpWrapper>& op_wrappers,
+    ::qnn::BackendType backend_type) {
   auto options =
       litert::compiler::GetOptionsAs<litert::compiler::MirrorPadOptions>(
           litert_op.ctx(), litert_op.Get());
@@ -1552,8 +1563,8 @@ LiteRtStatus BuildMirrorPadOp(
     return kLiteRtStatusErrorInvalidArgument;
   }
   uint32_t mode = static_cast<uint32_t>(options->mode);
-  op_wrappers =
-      ::qnn::BuildMirrorPadOp(tensor_pool, input_tensors, output_tensors, mode);
+  op_wrappers = ::qnn::BuildMirrorPadOp(tensor_pool, input_tensors,
+                                        output_tensors, mode, backend_type);
   return kLiteRtStatusOk;
 }
 

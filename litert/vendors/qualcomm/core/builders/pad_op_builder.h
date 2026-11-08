@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -15,11 +16,13 @@ namespace qnn {
 
 std::vector<OpWrapper> BuildConstantPadOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs);
+    const std::vector<TensorWrapperRef>& outputs,
+    BackendType backend_type = BackendType::kHtpBackend);
 
 std::vector<OpWrapper> BuildMirrorPadOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs, const std::uint32_t mode);
+    const std::vector<TensorWrapperRef>& outputs, const std::uint32_t mode,
+    BackendType backend_type = BackendType::kHtpBackend);
 
 }  // namespace qnn
 
