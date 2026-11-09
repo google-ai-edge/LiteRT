@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynamic_lib", "litert_lib")
@@ -21,6 +22,26 @@ package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_internal_users"],
 )
+
+# Reporting inference to the NPU HAL through libnpu_hal_hook.so and applying the
+# NPU HAL-resolved model priority. On by default. Build with
+# `--//litert/vendors/intel_openvino/dispatch:enable_npu_hal=false` for a
+# dispatch library that never loads or calls the hook, e.g. one that is used
+# behind a service that does the scheduling itself.
+bool_flag(
+    name = "enable_npu_hal",
+    build_setting_default = True,
+)
+
+config_setting(
+    name = "npu_hal_disabled",
+    flag_values = {":enable_npu_hal": "False"},
+)
+
+NPU_HAL_COPTS = select({
+    ":npu_hal_disabled": ["-DLITERT_INTEL_OPENVINO_DISABLE_NPU_HAL"],
+    "//conditions:default": [],
+})
 
 litert_dynamic_lib(
     name = "dispatch_api",
@@ -63,7 +84,7 @@ litert_dynamic_lib(
             "-Wno-sign-compare",
         ],
         "//conditions:default": [],
-    }),
+    }) + NPU_HAL_COPTS,
     export_litert_only = True,
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     linkopts = litert_android_linkopts() + [
@@ -138,7 +159,7 @@ litert_bin(
             "-Wno-sign-compare",
         ],
         "//conditions:default": [],
-    }),
+    }) + NPU_HAL_COPTS,
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     linkopts = litert_android_linkopts(),
     linkshared = 1,
