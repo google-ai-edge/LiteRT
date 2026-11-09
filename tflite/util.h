@@ -74,6 +74,12 @@ size_t CombineHashes(std::initializer_list<size_t> hashes);
 
 // Populates the size in bytes of a type into `bytes`. Returns kTfLiteOk for
 // valid types, and kTfLiteError otherwise.
+//
+// Note: this is the "unpacked" size of a single element, i.e. the number of
+// bytes it occupies when addressed on its own. Sub-byte types are bit-packed
+// in the tensor buffer (kTfLiteInt4/kTfLiteUInt4: 2 elements per byte,
+// kTfLiteInt2: 4 elements per byte), so multiplying this value by the element
+// count does not yield the buffer size; use BytesRequired for that.
 TfLiteStatus GetSizeOfType(TfLiteContext* context, const TfLiteType type,
                            size_t* bytes);
 

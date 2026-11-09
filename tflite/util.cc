@@ -262,7 +262,8 @@ TfLiteStatus BytesRequired(TfLiteType type, const int* dims, size_t dims_size,
       // GetSizeOfType doesn't work for kTfLiteInt4/kTfLiteUInt4 due to 2 values
       // being packed into 1 byte, so the output of GetSizeOfType is the same as
       // int8 (1 byte). Divide by 2 with ceiling rounding without overflowing
-      // size_t when '*bytes' is near SIZE_MAX.
+      // size_t when '*bytes' is near SIZE_MAX. Keep this rounding rule in
+      // sync with VerifyNumericTensorBuffer in core/tools/verifier.cc.
       *bytes = (*bytes / 2) + (*bytes % 2);
       return kTfLiteOk;
     case kTfLiteInt2:
@@ -272,6 +273,8 @@ TfLiteStatus BytesRequired(TfLiteType type, const int* dims, size_t dims_size,
       // To get the actual number of bytes needed for the packed representation,
       // we need to divide the total number of elements by 4 with ceiling
       // rounding without overflowing size_t when '*bytes' is near SIZE_MAX.
+      // Keep this rounding rule in sync with VerifyNumericTensorBuffer in
+      // core/tools/verifier.cc.
       *bytes = (*bytes / 4) + (*bytes % 4 != 0 ? 1 : 0);
       return kTfLiteOk;
     case kTfLiteFloat32:
