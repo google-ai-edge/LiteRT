@@ -278,9 +278,12 @@ __device__ __forceinline__ void ReduceRows(float values[Rows], float* scratch) {
   }
 }
 
-// Gate activations of a gated feed-forward: gelu(gate) * up, with the tanh
-// approximation (1) or the exact erf form (2) of GELU.
+// Gate activations of a gated feed-forward: act(gate) * up, with the tanh
+// approximation (1) or the exact erf form (2) of GELU, or SiLU (3).
 __device__ __forceinline__ float Gelu(float x, int gate) {
+  if (gate == 3) {
+    return x / (1.0f + __expf(-x));
+  }
   if (gate == 1) {
     const float inner = 0.7978845608028654f * (x + 0.044715f * x * x * x);
     return 0.5f * x * (1.0f + tanhf(inner));

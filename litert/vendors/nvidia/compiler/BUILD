@@ -209,6 +209,19 @@ cc_library(
 )
 
 cc_library(
+    name = "gated_delta_plugin",
+    srcs = ["gated_delta_plugin.cc"],
+    hdrs = ["gated_delta_plugin.h"],
+    tags = ["manual"],
+    deps = [
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_library(
     name = "moe_plugin",
     srcs = ["moe_plugin.cc"],
     hdrs = ["moe_plugin.h"],
@@ -280,6 +293,10 @@ cc_library(
     name = "weight_store_builder",
     srcs = ["weight_store_builder.cc"],
     hdrs = ["weight_store_builder.h"],
+    linkopts = select({
+        "//litert:windows": ["psapi.lib"],
+        "//conditions:default": [],
+    }),
     target_compatible_with = select({
         "//litert:linux_x86_64": [],
         "//litert:windows": [],
@@ -323,6 +340,7 @@ cc_library(
     deps = [
         ":cache_update_plugin",
         ":decode_attention_plugin",
+        ":gated_delta_plugin",
         ":int8_cache_write_plugin",
         ":moe_plugin",
         ":qkv_norm_rope_plugin",

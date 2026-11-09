@@ -160,6 +160,10 @@ cudaError_t LaunchDenseGate(const __nv_bfloat16* activation,
       return LaunchDense<Rows, Threads, 2>(activation, weights, scales, norm,
                                            output, input_size, output_size,
                                            stream);
+    case 3:
+      return LaunchDense<Rows, Threads, 3>(activation, weights, scales, norm,
+                                           output, input_size, output_size,
+                                           stream);
     default:
       return cudaErrorInvalidValue;
   }
@@ -1362,7 +1366,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
   if (activation == nullptr || packed_weights == nullptr ||
       scales == nullptr || output == nullptr || rows <= 0 ||
       rows > kLiteRtNvidiaInt4BlockGemvMaxRows || input_size <= 0 ||
-      input_size % kBlock != 0 || output_size <= 0 || gate < 0 || gate > 2 ||
+      input_size % kBlock != 0 || output_size <= 0 || gate < 0 || gate > 3 ||
       (norm_scale != nullptr && norm_eps < 0.0f)) {
     return cudaErrorInvalidValue;
   }
