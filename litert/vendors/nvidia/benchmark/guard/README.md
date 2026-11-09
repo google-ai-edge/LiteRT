@@ -78,7 +78,12 @@ condition too and does not count against the candidate.
 **Performance.** `bench.sh` latency runs of the `short` (the record's 1k),
 `8k` and `16k` workloads with few iterations, per model; `--mtp` adds the
 plain and MTP text runs of those workloads (acceptance, tokens per round).
-Candidate/baseline ratios below 0.97 warn, below 0.93 fail. From the measured
+Candidate/baseline ratios below 0.97 warn, below 0.93 fail; the comparison
+also says when paired runs were measured more than two hours apart (a
+resumed capture's kept cells against the other's new ones), since the
+thresholds assume runs interleaved on one host state: on the RTX Spark the
+12B lost 22 to 34 percent between two sessions of one build (2026-11-04),
+every cell of its own numerics identical. From the measured
 contexts a cost model per model (decode step time a + b·context; prefill time
 c0 + c1·N + c2·N²) predicts the other contexts (30k, 128k); with `--record`
 the measured change ratio, interpolated in context, is applied to the
@@ -361,3 +366,9 @@ What differs there:
 - Host mode: timings compare within one mode (`CI_HOST_MODE=formal` after
   `zsh -lic benchmark`, else diagnostic); the manifest records it.
 - A failing performance cell within the iterations' spread is noise; rerun it.
+- When one capture's performance cells are kept from an earlier session,
+  re-measure both sides: remove the stale run directories
+  (`guard/<name>/perf/<model>/<label>` and their `.bench.log`) of both
+  captures and resume them interleaved per model, as a campaign script
+  does; the comparison's "measured more than two hours apart" line is the
+  sign.

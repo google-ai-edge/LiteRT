@@ -973,6 +973,30 @@ pub fn compare(
             unfit_rows.join(", ")
         ));
     }
+    // Paired performance runs measured hours apart (a resumed capture's kept cells against the
+    // other capture's later ones) are not the interleaved measurement the thresholds assume: the
+    // host's clocks and heat differ between sessions (the 12B lost 22 to 34% between two sessions
+    // of one build on the RTX Spark, 2026-11-04).
+    let mut pairs = 0usize;
+    let mut apart = 0usize;
+    let mut widest = 0.0f64;
+    for c in &cand.perf {
+        if let Some(b) = base.perf.iter().find(|b| b.label == c.label && b.model == c.model) {
+            pairs += 1;
+            if let Some(gap) = crate::perf::seconds_apart(b, c) {
+                widest = widest.max(gap);
+                if gap > 2.0 * 3600.0 {
+                    apart += 1;
+                }
+            }
+        }
+    }
+    if apart > 0 {
+        reasons.push(format!(
+            "{apart} of {pairs} performance pairs were measured more than two hours apart (up to {:.1} h; one capture's kept runs against the other's later ones): the thresholds assume runs interleaved on one host state, so re-measure both sides before judging them",
+            widest / 3600.0
+        ));
+    }
     let verdict = numerics
         .iter()
         .map(|n| n.verdict)
@@ -2622,6 +2646,7 @@ pub fn validate_predictor(record: &[RecordPoint], fit_workloads: &[String]) -> S
                     max_rss_gib: None,
                     exit_code: 0,
                     clock_fit: None,
+                    measured_at: None,
                 })
             })
             .collect();
