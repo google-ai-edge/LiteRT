@@ -37,6 +37,22 @@ target_link_libraries(litert_test_load_test_model PUBLIC
     absl::string_view
 )
 
+# Context graph registry test
+add_executable(context_graph_registry_test)
+
+target_sources(context_graph_registry_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../dispatch/context_graph_registry_test.cc
+)
+
+target_link_libraries(context_graph_registry_test
+    PRIVATE
+        qnn_context_graph_registry
+        litert_runtime_c_api_static
+        GTest::gmock
+        GTest::gtest_main
+)
+
 # Compiler plugin test
 add_executable(qnn_compiler_plugin_test)
 
