@@ -835,6 +835,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetLpaiCoreAffinityType(),
             QualcommOptions::LpaiCoreAffinityType::kDefault);
   EXPECT_EQ(options.Value().GetLpaiCoreSelection(), 0);
+  EXPECT_EQ(options.Value().GetLpaiPrepareConfig(), "");
   EXPECT_EQ(options.Value().GetQnnLibDir(), "");
   EXPECT_EQ(options.Value().GetDspSkelDir(), "");
 }
@@ -851,6 +852,19 @@ TEST(QualcommOptionsFromFlagsTest, CustomQnnLibAndDspSkelDirs) {
 
   absl::SetFlag(&FLAGS_qualcomm_qnn_lib_dir, "");
   absl::SetFlag(&FLAGS_qualcomm_dsp_skel_dir, "");
+}
+
+TEST(QualcommOptionsFromFlagsTest, CustomLpaiPrepareConfig) {
+  absl::SetFlag(&FLAGS_qualcomm_lpai_prepare_config,
+                "dump_dir:/tmp/lpai_dump;eaix_dump:true");
+
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_EQ(options.Value().GetLpaiPrepareConfig(),
+            "dump_dir:/tmp/lpai_dump;eaix_dump:true");
+
+  absl::SetFlag(&FLAGS_qualcomm_lpai_prepare_config, "");
 }
 
 TEST(QualcommOptionsFromFlagsTest, HtpDeviceId) {

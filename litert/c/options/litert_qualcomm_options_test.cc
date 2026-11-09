@@ -374,6 +374,20 @@ TEST(LiteRtQualcommOptionsTest, DlcDir) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, LpaiPrepareConfig) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetLpaiPrepareConfig(
+      qualcomm_options, "dump_dir:/tmp/lpai_dump;eaix_dump:true"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetLpaiPrepareConfig(),
+            "dump_dir:/tmp/lpai_dump;eaix_dump:true");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, GraphTransform) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -665,6 +679,11 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetDlcDir(), "");
   options->SetDlcDir("tmp");
   EXPECT_EQ(options->GetDlcDir(), "tmp");
+
+  EXPECT_EQ(options->GetLpaiPrepareConfig(), "");
+  options->SetLpaiPrepareConfig("dump_dir:tmp/lpai_dump;eaix_dump:true");
+  EXPECT_EQ(options->GetLpaiPrepareConfig(),
+            "dump_dir:tmp/lpai_dump;eaix_dump:true");
 
   EXPECT_EQ(options->GetGraphTransform(), "");
   options->SetGraphTransform("option1,option2");

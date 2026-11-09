@@ -3,7 +3,10 @@
 
 #include "litert/vendors/qualcomm/core/backends/lpai_backend.h"
 
+#include <filesystem>
+#include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -13,8 +16,11 @@
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "nlohmann/json.hpp"  // from @com_github_nlohmann_json
+#include "litert/vendors/qualcomm/core/backends/backend_utils.h"
 #include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
@@ -22,6 +28,72 @@
 #include "litert/vendors/qualcomm/core/utils/log.h"
 
 namespace qnn {
+
+class LpaiBackend::PrepareConfig {
+ public:
+  ~PrepareConfig() {
+    if (path_.has_value()) {
+      std::error_code error;
+      std::filesystem::remove(*path_, error);
+    }
+  }
+
+  const std::string* CreateFile(absl::string_view raw_config) {
+    const auto parsed = ParseConfig(raw_config);
+    if (!parsed.has_value()) return nullptr;
+    path_ = WriteTemporaryFile(ToJson(*parsed));
+    if (!path_.has_value()) return nullptr;
+    return &*path_;
+  }
+
+ private:
+  struct ParsedConfig {
+    std::optional<std::string> dump_dir;
+    std::optional<bool> eaix_dump;
+    std::optional<bool> aix_dump;
+  };
+
+  static std::optional<ParsedConfig> ParseConfig(absl::string_view config) {
+    ParsedConfig parsed;
+    for (absl::string_view token :
+         absl::StrSplit(config, ';', absl::SkipEmpty())) {
+      const std::vector<absl::string_view> kv =
+          absl::StrSplit(token, absl::MaxSplits(':', 1));
+      if (kv.size() != 2) return std::nullopt;
+
+      const absl::string_view key = kv[0];
+      const absl::string_view value = kv[1];
+      if (key == "dump_dir" && !value.empty() &&
+          !parsed.dump_dir.has_value()) {
+        parsed.dump_dir = std::string(value);
+      } else if ((key == "eaix_dump" || key == "aix_dump") &&
+                 (value == "true" || value == "false")) {
+        const bool enabled = value == "true";
+        auto& dump = key == "eaix_dump" ? parsed.eaix_dump : parsed.aix_dump;
+        if (dump.has_value()) return std::nullopt;
+        dump = enabled;
+      } else {
+        return std::nullopt;
+      }
+    }
+    if (!parsed.dump_dir.has_value() && !parsed.eaix_dump.has_value() &&
+        !parsed.aix_dump.has_value()) {
+      return std::nullopt;
+    }
+    return parsed;
+  }
+
+  static std::string ToJson(const ParsedConfig& config) {
+    nlohmann::json json;
+    if (config.dump_dir.has_value()) json["dump_dir"] = *config.dump_dir;
+    if (config.eaix_dump.has_value()) json["eaix_dump"] = *config.eaix_dump;
+    if (config.aix_dump.has_value()) json["aix_dump"] = *config.aix_dump;
+    return json.dump(2);
+  }
+
+  std::optional<std::string> path_;
+};
+
 namespace {
 
 // Cores allowed for the prepare config. Hardcoded until the SDK exposes a
@@ -84,21 +156,11 @@ QnnLpaiGraph_CoreAffinityType_t ToQnnCoreAffinity(
 LpaiBackend::LpaiBackend(const QNN_INTERFACE_VER_TYPE* qnn_api)
     : QnnBackend(qnn_api) {}
 
-bool LpaiBackend::Init(const Options& options,
-                       [[maybe_unused]] std::optional<SocInfo> soc_info) {
-  // TODO (chunhsue-qti): Remove after backend fix this issue.
-  QNN_LOG_WARNING(
-      "LPAI backend: the QAIRT SDK will generate an .eaix file regardless of "
-      "the requested output. This is a known limitation and will be fixed in a "
-      "future version.");
+LpaiBackend::~LpaiBackend() = default;
 
-  // Log Handle.
-  auto local_log_handle = CreateLogHandle(options.GetLogLevel());
-  if (!local_log_handle && options.GetLogLevel() != LogLevel::kOff) {
-    QNN_LOG_ERROR("Failed to create log handle.");
-    return false;
-  }
-
+std::optional<std::vector<const QnnBackend_Config_t*>>
+LpaiBackend::CreateBackendConfigs(const Options& options,
+                                  std::optional<SocInfo> soc_info) {
   std::vector<const QnnBackend_Config_t*> backend_configs;
 #if defined(__ANDROID__)
   QNN_LOG_INFO(
@@ -117,28 +179,67 @@ bool LpaiBackend::Init(const Options& options,
         "(soc_model %u); cannot initialize the LPAI backend.",
         static_cast<int>(soc_info_.soc_name.size()), soc_info_.soc_name.data(),
         soc_info_.soc_model);
-    return false;
+    return std::nullopt;
   }
 
-  // Backend HW-info custom config.
   auto& hw_info = lpai_hw_infos_.emplace_back();
   hw_info.hwVersion = ToQnnHwVersion(hw_version);
   hw_info.lpaiTarget = ToQnnTarget(options.GetLpaiTarget());
-
-  auto& custom_config = lpai_backend_custom_configs_.emplace_back();
-  custom_config.option = QNN_LPAI_BACKEND_CUSTOM_CFG_HW_INFO;
-  custom_config.config = &hw_info;
-
-  auto& backend_config = AllocateBackendConfig();
-  backend_config.option = QNN_BACKEND_CONFIG_OPTION_CUSTOM;
-  backend_config.customConfig = &custom_config;
-
-  backend_configs.emplace_back(&backend_config);
+  auto& hw_custom_config = lpai_backend_custom_configs_.emplace_back();
+  hw_custom_config.option = QNN_LPAI_BACKEND_CUSTOM_CFG_HW_INFO;
+  hw_custom_config.config = &hw_info;
+  auto& hw_backend_config = AllocateBackendConfig();
+  hw_backend_config.option = QNN_BACKEND_CONFIG_OPTION_CUSTOM;
+  hw_backend_config.customConfig = &hw_custom_config;
+  backend_configs.emplace_back(&hw_backend_config);
 #endif  // defined(__ANDROID__)
+
+#if (QNN_LPAI_API_VERSION_MAJOR > 2) || \
+    (QNN_LPAI_API_VERSION_MAJOR == 2 && QNN_LPAI_API_VERSION_MINOR >= 35)
+  if (!options.GetLpaiPrepareConfig().empty()) {
+    if (!prepare_config_) prepare_config_ = std::make_unique<PrepareConfig>();
+    const std::string* prepare_config_file =
+        prepare_config_->CreateFile(options.GetLpaiPrepareConfig());
+    if (prepare_config_file == nullptr) {
+      QNN_LOG_ERROR("Invalid LPAI prepare config. Expected key:value pairs "
+                    "for dump_dir, eaix_dump, and aix_dump.");
+      return std::nullopt;
+    }
+    auto& prepare_custom_config = lpai_backend_custom_configs_.emplace_back();
+    prepare_custom_config.option = QNN_LPAI_BACKEND_CUSTOM_CFG_PREPARE_CFG;
+    prepare_custom_config.config =
+        const_cast<char*>(prepare_config_file->c_str());
+    auto& prepare_backend_config = AllocateBackendConfig();
+    prepare_backend_config.option = QNN_BACKEND_CONFIG_OPTION_CUSTOM;
+    prepare_backend_config.customConfig = &prepare_custom_config;
+    backend_configs.emplace_back(&prepare_backend_config);
+  }
+#else
+  if (!options.GetLpaiPrepareConfig().empty()) {
+    QNN_LOG_ERROR(
+        "LPAI prepare config needs QAIRT SDK v2.53.0+: older SDKs ignore "
+        "dump_dir (.eaix lands in cwd) and lack aix_dump.");
+    return std::nullopt;
+  }
+#endif
   backend_configs.emplace_back(nullptr);
+  return backend_configs;
+}
+
+bool LpaiBackend::Init(const Options& options,
+                       std::optional<SocInfo> soc_info) {
+  // Log Handle.
+  auto local_log_handle = CreateLogHandle(options.GetLogLevel());
+  if (!local_log_handle && options.GetLogLevel() != LogLevel::kOff) {
+    QNN_LOG_ERROR("Failed to create log handle.");
+    return false;
+  }
+
+  auto backend_configs = CreateBackendConfigs(options, soc_info);
+  if (!backend_configs.has_value()) return false;
 
   auto local_backend_handle = CreateBackendHandle(
-      local_log_handle.get(), absl::MakeSpan(backend_configs));
+      local_log_handle.get(), absl::MakeSpan(*backend_configs));
   if (!local_backend_handle) {
     QNN_LOG_ERROR("Failed to create backend handle.");
     return false;

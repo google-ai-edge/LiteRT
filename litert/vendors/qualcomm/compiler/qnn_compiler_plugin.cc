@@ -112,6 +112,32 @@ LiteRtStatus ResolveTargetSocInfo(const ::qnn::Options& options,
   return kLiteRtStatusOk;
 }
 
+// Per-feature hard-error check: unlike the baseline floor above, an old
+// SDK here would silently ignore the option rather than erroring.
+LiteRtStatus ValidateBackendOptionsForSdkVersion(
+    const ::qnn::Options& options, const ::qnn::SdkVersion& sdk_version) {
+  switch (options.GetBackendType()) {
+    case ::qnn::BackendType::kLpaiBackend:
+      if (options.GetLpaiPrepareConfig().empty() ||
+          sdk_version >= ::qnn::SdkVersion{2, 53, 0}) {
+        return kLiteRtStatusOk;
+      }
+      LITERT_LOG(
+          LITERT_ERROR,
+          "--qualcomm_lpai_prepare_config needs QAIRT SDK v2.53.0+: older "
+          "SDKs ignore dump_dir (.eaix lands in cwd) and lack aix_dump. "
+          "Loaded SDK v%d.%d.%d.",
+          sdk_version.major, sdk_version.minor, sdk_version.patch);
+      return kLiteRtStatusErrorUnsupportedCompilerVersion;
+    case ::qnn::BackendType::kGpuBackend:
+    case ::qnn::BackendType::kHtpBackend:
+    case ::qnn::BackendType::kDspBackend:
+    case ::qnn::BackendType::kIrBackend:
+    case ::qnn::BackendType::kUndefinedBackend:
+      return kLiteRtStatusOk;
+  }
+}
+
 bool IsWeightSharingSupported() {
 #if defined(__x86_64__) || defined(_M_X64)
   // TODO(jiunkaiy): Enable weight sharing only on SoCs v73 and later.
@@ -967,6 +993,8 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
                sdk_version.major, sdk_version.minor, sdk_version.patch);
     return kLiteRtStatusErrorUnsupportedCompilerVersion;
   }
+  LITERT_RETURN_IF_ERROR(ValidateBackendOptionsForSdkVersion(
+      compiler_plugin->Options(), sdk_version));
   return kLiteRtStatusOk;
 }
 

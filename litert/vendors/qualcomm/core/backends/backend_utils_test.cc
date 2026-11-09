@@ -6,6 +6,10 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -14,6 +18,20 @@
 
 namespace qnn {
 namespace {
+
+TEST(BackendUtilsTest, WriteTemporaryFileRoundTrips) {
+  const auto path = WriteTemporaryFile("hello world");
+  ASSERT_TRUE(path.has_value());
+
+  std::ifstream file(*path);
+  ASSERT_TRUE(file.good());
+  const std::string contents((std::istreambuf_iterator<char>(file)),
+                             std::istreambuf_iterator<char>());
+  EXPECT_EQ(contents, "hello world");
+
+  std::filesystem::remove(*path);
+}
+
 TEST(BackendUtilsTest, SetNullTermPtrArrayTest) {
   std::vector<int> src = {1, 2, 3};
   std::array<const int*, 5> dst{};
