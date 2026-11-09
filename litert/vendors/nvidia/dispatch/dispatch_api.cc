@@ -5443,11 +5443,13 @@ class LiteRtDispatchInvocationContextT {
 
   // LITERT_NVIDIA_DISPATCH_CUDA_GRAPH=own|own-relaxed: TensorRT-RTX's graph
   // strategy stays off and this context captures its own step graph around
-  // enqueueV3 and the external head (EnqueueStep). TensorRT-RTX's whole-graph
-  // capture leaves plugin layers out, so each of their launches pays WSL's
-  // launch latency every step; a capture around the whole enqueue takes them
-  // all. `own` captures in thread-local mode (an unsafe CUDA call during the
-  // capture fails it, loudly); `own-relaxed` lets such calls through.
+  // enqueueV3 and the external head (EnqueueStep), the external head
+  // included, which TensorRT-RTX's whole-graph capture cannot take (that
+  // capture does take the plugin layers' launches: a plugin's kernel launched
+  // as a programmatic dependent is in its graph, which is where the dense
+  // GEMV's early trigger broke the 26B's decode on 2026-11-04). `own`
+  // captures in thread-local mode (an unsafe CUDA call during the capture
+  // fails it, loudly); `own-relaxed` lets such calls through.
   static bool OwnCudaGraph(cudaStreamCaptureMode* mode) {
     if (litert::nvidia::DispatchLayerProfilingEnabled()) {
       return false;

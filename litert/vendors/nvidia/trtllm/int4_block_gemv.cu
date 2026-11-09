@@ -16,11 +16,14 @@
 
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
+#include <cuda_runtime.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <type_traits>
 
@@ -37,6 +40,17 @@ namespace {
 // . w.
 // TileRows output channels per CTA: eight for wide projections, fewer for
 // narrow ones so that enough CTAs are in flight to cover memory latency.
+// Launched, when LITERT_NVIDIA_GEMV_DEPENDENT_LAUNCH asks for it, as a
+// programmatic dependent of the kernel before it (LaunchDense): a CTA lets
+// the next kernel launch as soon as it has started (trigger 0) or once its
+// output is written (1), so the next kernel's blocks fill the multiprocessors
+// this one's last wave leaves idle, and it asks for its first weights before
+// it waits for the activations. The early trigger is for a stream run
+// eagerly: in a captured CUDA graph the kernel after this one starts at the
+// trigger and its own wait does not hold it until this one completes (the
+// RTX Spark, CUDA 13.4), so a capture gets the late one. Off by default: in
+// TensorRT-RTX's captured steps the launch measured no faster with the early
+// trigger and 1.5% slower with the late one (Qwen 3.5 27B, 2026-11-04).
 template <int Rows, int Threads, int Gate, int TileRows>
 __global__ void __launch_bounds__(Threads)
     DenseKernel(const __nv_bfloat16* __restrict__ activation,
@@ -44,12 +58,15 @@ __global__ void __launch_bounds__(Threads)
                 const __half* __restrict__ scales,
                 const float* __restrict__ norm_scale, float norm_eps,
                 float norm_multiplier, __nv_bfloat16* __restrict__ output,
-                int input_size, int output_size) {
+                int input_size, int output_size, int trigger) {
   constexpr int kWarps = Threads / kWarpSize;
   __shared__ float warp_sums[Rows * TileRows * kWarps];
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+  if (trigger == 0) cudaTriggerProgrammaticLaunchCompletion();
+#endif
   const int n0 = blockIdx.x * TileRows;
   if (n0 >= output_size) {
-    return;
+    return;  // an exited block counts as triggered
   }
   const int blocks = input_size / kBlock;
   const size_t row_bytes = static_cast<size_t>(input_size) / 2;
@@ -62,8 +79,9 @@ __global__ void __launch_bounds__(Threads)
   const WeightTile tile{weights + n0 * row_bytes, row_bytes,
                         scales + static_cast<size_t>(n0) * blocks,
                         static_cast<size_t>(blocks), valid};
-  AccumulateTile<__nv_bfloat16, Rows, Threads, TileRows>(
-      tile, act, input_size, acc, norm_scale, squares);
+  AccumulateTile<__nv_bfloat16, Rows, Threads, TileRows, /*kCompact=*/false,
+                 /*kDependentLaunch=*/true>(tile, act, input_size, acc,
+                                            norm_scale, squares);
   ReduceTile<Rows, Threads, TileRows>(acc, warp_sums);
   float up[Rows][TileRows] = {};
   if constexpr (Gate != 0) {
@@ -108,6 +126,14 @@ __global__ void __launch_bounds__(Threads)
       }
     }
   }
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+  if (trigger != 0) {
+    // The block's output is in before the next kernel may launch.
+    if (threadIdx.x == 0) __threadfence();
+    __syncthreads();
+    cudaTriggerProgrammaticLaunchCompletion();
+  }
+#endif
 }
 
 struct DenseNorm {
@@ -119,6 +145,40 @@ struct DenseNorm {
 // Enough CTAs to keep the device's memory system busy.
 constexpr int kDenseMinCtas = 1024;
 
+// LITERT_NVIDIA_GEMV_DEPENDENT_LAUNCH: unset or 0, the dense kernels are
+// launched in plain stream order (the default: in TensorRT-RTX's captured
+// steps the dependent launch measured no faster with the early trigger and
+// 1.5% slower with the late one, Qwen 3.5 27B, 2026-11-04); 1 or `auto`,
+// they are launched as programmatic dependents of the kernel before them,
+// and a block lets the kernel after it launch as soon as it has started when
+// the stream runs eagerly, or once its output is written when the stream is
+// being captured into a CUDA graph (where the next kernel starts at the
+// trigger and its wait does not hold it: Gemma 4 26B's decode went
+// non-finite under TensorRT-RTX's whole-graph capture with the early
+// trigger); `early` and `late` force one trigger (diagnostics).
+enum class DependentLaunch { kOff, kAuto, kEarly, kLate };
+
+DependentLaunch DependentLaunchMode() {
+  static const DependentLaunch mode = [] {
+    const char* value = std::getenv("LITERT_NVIDIA_GEMV_DEPENDENT_LAUNCH");
+    if (value == nullptr || value[0] == '\0' || std::strcmp(value, "0") == 0) {
+      return DependentLaunch::kOff;
+    }
+    if (std::strcmp(value, "early") == 0) return DependentLaunch::kEarly;
+    if (std::strcmp(value, "late") == 0) return DependentLaunch::kLate;
+    return DependentLaunch::kAuto;
+  }();
+  return mode;
+}
+
+// Whether the stream is being captured into a CUDA graph (a stream joined to
+// a capture through an event counts).
+bool StreamCapturing(cudaStream_t stream) {
+  cudaStreamCaptureStatus status = cudaStreamCaptureStatusNone;
+  return cudaStreamIsCapturing(stream, &status) == cudaSuccess &&
+         status != cudaStreamCaptureStatusNone;
+}
+
 template <int Rows, int Threads, int Gate>
 cudaError_t LaunchDense(const __nv_bfloat16* activation,
                         const uint8_t* weights, const __half* scales,
@@ -127,10 +187,27 @@ cudaError_t LaunchDense(const __nv_bfloat16* activation,
   const auto launch = [&](auto tile_rows) {
     constexpr int kRows = decltype(tile_rows)::value;
     const int grid = (output_size + kRows - 1) / kRows;
-    DenseKernel<Rows, Threads, Gate, kRows><<<grid, Threads, 0, stream>>>(
-        activation, weights, scales, norm.scale, norm.eps, norm.multiplier,
-        output, input_size, output_size);
-    return cudaPeekAtLastError();
+    cudaLaunchConfig_t config{};
+    config.gridDim = dim3(grid);
+    config.blockDim = dim3(Threads);
+    config.stream = stream;
+    cudaLaunchAttribute attribute{};
+    attribute.id = cudaLaunchAttributeProgrammaticStreamSerialization;
+    attribute.val.programmaticStreamSerializationAllowed = 1;
+    const DependentLaunch mode = DependentLaunchMode();
+    if (mode != DependentLaunch::kOff) {
+      config.attrs = &attribute;
+      config.numAttrs = 1;
+    }
+    const int trigger =
+        mode == DependentLaunch::kLate ||
+                (mode == DependentLaunch::kAuto && StreamCapturing(stream))
+            ? 1
+            : 0;
+    return cudaLaunchKernelEx(&config, DenseKernel<Rows, Threads, Gate, kRows>,
+                              activation, weights, scales, norm.scale, norm.eps,
+                              norm.multiplier, output, input_size, output_size,
+                              trigger);
   };
   if (output_size >= kDenseMinCtas * kTileRows) {
     return launch(std::integral_constant<int, kTileRows>());
