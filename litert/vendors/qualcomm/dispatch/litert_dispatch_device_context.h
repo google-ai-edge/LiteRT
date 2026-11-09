@@ -17,16 +17,22 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
+#include "litert/vendors/qualcomm/dispatch/context_graph_registry.h"
 #include "litert/vendors/qualcomm/dispatch/registry.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
@@ -40,13 +46,19 @@ class LiteRtDispatchDeviceContextT {
       const LiteRtRuntimeContext* runtime_context,
       litert::qnn::QnnManager& qnn_manager, ::qnn::QnnBackend& qnn_backend);
 
+  // Sets the functions expected to run on this device context. An empty set
+  // means all functions are expected. Must be called before creating a QNN
+  // context.
+  litert::Expected<void> SetExpectedFunctions(
+      absl::flat_hash_set<std::string> expected_functions);
+
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer) {
     return tensor_buffer_registry_.Register(
         TensorBufferRegistryEntry(tensor_buffer));
   }
 
-  // Unregisters the tensor buffer and releases its QNN memory handle, if any.
+  // Unregisters the tensor buffer and its QNN memory registration, if any.
   litert::Expected<void> UnregisterTensorBuffer(
       LiteRtTensorBufferHandle tensor_buffer_handle);
 
@@ -62,8 +74,13 @@ class LiteRtDispatchDeviceContextT {
     invocation_context_ = invocation_context;
   }
 
+  // Returns a cached QNN context containing `required_graph`, or creates one
+  // from the context binary. `available_graphs` must contain every graph in the
+  // binary and remain consistent for the same bytecode buffer.
   litert::Expected<const litert::qnn::QnnManager::ContextHandle&>
   GetOrCreateContext(const void* bytecode_ptr, size_t bytecode_size,
+                     absl::Span<const std::string> available_graphs,
+                     absl::string_view required_graph,
                      Qnn_ProfileHandle_t profile_handle);
 
   const LiteRtRuntimeContext* runtime_context() const {
@@ -97,6 +114,7 @@ class LiteRtDispatchDeviceContextT {
   const LiteRtRuntimeContext* runtime_context_;
   litert::qnn::QnnManager& qnn_manager_;
   ::qnn::QnnBackend& qnn_backend_;
+  absl::flat_hash_set<std::string> expected_functions_;
   TensorBufferRegistry tensor_buffer_registry_;
   LiteRtDispatchInvocationContextT* invocation_context_ = nullptr;
 
@@ -112,10 +130,11 @@ class LiteRtDispatchDeviceContextT {
       return H::combine(std::move(h), k.ptr, k.size);
     }
   };
-  using UniqueContextHandle =
-      std::unique_ptr<litert::qnn::QnnManager::ContextHandle>;
-  // Lifetime of the context cache is the same as the device context.
-  absl::flat_hash_map<ContextCacheKey, UniqueContextHandle> context_cache_;
+  // One registry per context binary; each registry owns its QNN contexts.
+  absl::flat_hash_map<
+      ContextCacheKey,
+      litert::qnn::ContextGraphRegistry<litert::qnn::QnnManager::ContextHandle>>
+      context_registries_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
