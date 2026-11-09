@@ -11,6 +11,18 @@ _ARM_VULKAN_ML_LLVM_ANDROID_COMPAT_COPTS = [
     "-UHAVE_PTHREAD_GETNAME_NP",
 ]
 
+def _arm_vulkan_ml_is_android(settings):
+    android_platforms = [
+        Label("//platforms:armeabi-v7a"),
+        Label("//platforms:arm64-v8a"),
+        Label("//platforms:x86"),
+        Label("//platforms:x86_64"),
+    ]
+    for platform in settings["//command_line_option:platforms"]:
+        if platform in android_platforms or "android" in str(platform):
+            return True
+    return False
+
 def _arm_vulkan_ml_llvm_android_compat_copts(settings):
     for platform in settings["//command_line_option:platforms"]:
         if "android" in str(platform):
@@ -34,9 +46,8 @@ _TCFT_RELEASE_COPTS = [
 
 def _arm_vulkan_ml_llvm_compat_transition_impl(settings, _attr):
     return {
-        # Both compiler dependencies are shared libraries. Reuse PIC objects
-        # instead of compiling a second set for their static archives.
-        "//command_line_option:force_pic": True,
+        # The pinned Android toolchain emits PIC but lacks supports_pic.
+        "//command_line_option:force_pic": not _arm_vulkan_ml_is_android(settings),
         "//command_line_option:copt": (
             settings["//command_line_option:copt"] +
             _arm_vulkan_ml_llvm_android_compat_copts(settings)
@@ -61,7 +72,7 @@ def _tcft_release_transition_impl(settings, _attr):
         features = features + ["-thin_lto"]
     return {
         "//command_line_option:compilation_mode": "opt",
-        "//command_line_option:force_pic": True,
+        "//command_line_option:force_pic": not _arm_vulkan_ml_is_android(settings),
         "//command_line_option:copt": (
             settings["//command_line_option:copt"] +
             _TCFT_RELEASE_COPTS +
