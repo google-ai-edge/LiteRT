@@ -428,14 +428,18 @@ bool VerifyNumericTensorBuffer(const Tensor& tensor, const Buffer& buffer,
     case TensorType_UINT32:
       bytes_required *= sizeof(uint32_t);
       break;
+    // Sub-byte types are bit-packed in the tensor buffer: 2 int4/uint4
+    // elements or 4 int2 elements per byte. Round the final partial byte up
+    // with the same divide-remainder form as BytesRequired in util.cc, so the
+    // size accepted here cannot drift from the size the interpreter allocates.
+    // The element count above is already bounded by UINT_MAX, so the result
+    // cannot overflow.
     case TensorType_INT2:
-      bytes_required = (bytes_required + 3) / 4;
+      bytes_required = (bytes_required / 4) + (bytes_required % 4 != 0 ? 1 : 0);
       break;
     case TensorType_UINT4:
-      bytes_required = (bytes_required + 1) / 2;
-      break;
     case TensorType_INT4:
-      bytes_required = (bytes_required + 1) / 2;
+      bytes_required = (bytes_required / 2) + (bytes_required % 2);
       break;
     case TensorType_UINT8:
       bytes_required *= sizeof(uint8_t);
