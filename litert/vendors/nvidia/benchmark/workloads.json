@@ -1,0 +1,11 @@
+{
+  "_": "The workload presets of litert/vendors/nvidia/benchmark/bench.sh: synthetic prefill tokens, decode tokens, context capacity, benchmark iterations, warm-ups the report discards, prefill batch. A real-text run keeps the preset's decode tokens as its output limit; the MTP report discards at least two conversations (the decode engine's CUDA-graph capture falls in the second). Memory and cold runs use one iteration.",
+  "short": {"input": 1024, "output": 256, "context": 2048, "iterations": 8, "warmups": 2, "prefill": 1024},
+  "8k": {"input": 8192, "output": 256, "context": 9216, "iterations": 4, "warmups": 1, "prefill": 1024},
+  "16k": {"input": 16384, "output": 256, "context": 17408, "iterations": 4, "warmups": 1, "prefill": 1024},
+  "30k": {"input": 30720, "output": 256, "context": 31744, "iterations": 4, "warmups": 1, "prefill": 1024},
+  "32k": {"input": 32768, "output": 256, "context": 33792, "iterations": 4, "warmups": 1, "prefill": 1024},
+  "128k": {"input": 128001, "output": 128, "context": 130048, "iterations": 4, "warmups": 1, "prefill": 1024},
+  "256k": {"input": 256001, "output": 128, "context": 262144, "iterations": 4, "warmups": 1, "prefill": 1024},
+  "text": {"plain_iterations": 3, "mtp_iterations": 4, "prompts": {"short": "prompt_1024", "8k": "prompt_8k", "16k": "prompt_16k", "30k": "prompt_30k", "128k": "prompt_128k"}}
+}
