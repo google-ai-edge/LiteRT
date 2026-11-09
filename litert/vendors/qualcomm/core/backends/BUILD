@@ -31,9 +31,11 @@ cc_library(
 
 cc_library(
     name = "backend_utils",
+    srcs = ["backend_utils.cc"],
     hdrs = ["backend_utils.h"],
     deps = [
         "//litert/vendors/qualcomm/core:common",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
@@ -140,11 +142,14 @@ cc_library(
     hdrs = ["lpai_backend.h"],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
+        ":backend_utils",
         ":graph_config_builder",
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:log",
+        "@com_github_nlohmann_json//:json",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",

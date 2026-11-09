@@ -40,6 +40,7 @@
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
 namespace litert {
@@ -495,6 +496,31 @@ TEST(TestQnnPlugin, LpaiCompatibilityResolvesHardwareVersionTarget) {
   EXPECT_EQ(kLiteRtStatusErrorInvalidArgument,
             plugin.Api()->check_compiler_compatibility(
                 kApiVersion, plugin.Get(), nullptr, nullptr, "v7"));
+}
+
+TEST(TestQnnPlugin, LpaiPrepareConfigDoesNotBlockCompilerCompatibility) {
+  static constexpr LiteRtApiVersion kApiVersion{LITERT_API_VERSION_MAJOR,
+                                                LITERT_API_VERSION_MINOR,
+                                                LITERT_API_VERSION_PATCH};
+  auto opts = Options::Create();
+  ASSERT_TRUE(opts);
+  auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
+  ASSERT_TRUE(qnn_opts);
+  qnn_opts->SetBackend(qualcomm::QualcommOptions::Backend::kLpai);
+  qnn_opts->SetLpaiPrepareConfig("eaix_dump:true");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(*opts, env.GetHolder()));
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
+
+  const auto status = plugin.Api()->check_compiler_compatibility(
+      kApiVersion, plugin.Get(), nullptr, nullptr, "v5");
+  EXPECT_EQ(status, kLiteRtStatusOk);
 }
 
 class QnnPlyginSupportedSocCompilationTest

@@ -601,6 +601,11 @@ ABSL_FLAG(std::string, qualcomm_dsp_skel_dir, "",
           "FastRPC. If not set, falls back to qualcomm_qnn_lib_dir, then to "
           "the plugin directory (shared_library_dir).");
 
+ABSL_FLAG(std::string, qualcomm_lpai_prepare_config, "",
+          "LPAI prepare settings as key:value pairs separated by ';'. "
+          "Supported keys: dump_dir, eaix_dump, aix_dump. Example: "
+          "\"dump_dir:/tmp/lpai_dump;eaix_dump:true;aix_dump:true\".");
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -1157,6 +1162,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto lpai_core_selection =
       absl::GetFlag(FLAGS_qualcomm_lpai_core_selection);
   opts.SetLpaiCoreSelection(lpai_core_selection);
+
+  const std::string lpai_prepare_config =
+      absl::GetFlag(FLAGS_qualcomm_lpai_prepare_config);
+  opts.SetLpaiPrepareConfig(lpai_prepare_config);
 
   return {};
 }

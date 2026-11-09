@@ -452,6 +452,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetDspEncoding(), DspEncoding::kStatic);
   EXPECT_TRUE(options.GetIrJsonDir().empty());
   EXPECT_TRUE(options.GetDlcDir().empty());
+  EXPECT_TRUE(options.GetLpaiPrepareConfig().empty());
   EXPECT_TRUE(options.GetGraphTransform().empty());
   EXPECT_EQ(options.GetVtcmSize(), 0);
   EXPECT_EQ(options.GetHtpDeviceId(), 0);
@@ -499,6 +500,10 @@ TEST(QnnOptionTest, LpaiOptions) {
 
   options.SetLpaiCoreSelection(0x01);
   EXPECT_EQ(options.GetLpaiCoreSelection(), 0x01u);
+
+  options.SetLpaiPrepareConfig("dump_dir:/tmp/lpai_dump;eaix_dump:true");
+  EXPECT_EQ(options.GetLpaiPrepareConfig(),
+            "dump_dir:/tmp/lpai_dump;eaix_dump:true");
 }
 
 struct SdkVersionTest : public ::testing::Test {

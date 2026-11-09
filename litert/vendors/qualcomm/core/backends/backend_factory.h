@@ -17,7 +17,8 @@ namespace qnn {
 std::unique_ptr<QnnBackend> CreateBackend(const QnnApi* api,
                                           const Options& options,
                                           std::optional<SocInfo> soc_info,
-                                          bool is_compiler);
+                                          bool is_compiler,
+                                          const SdkVersion& sdk_version);
 
 }  // namespace qnn
 

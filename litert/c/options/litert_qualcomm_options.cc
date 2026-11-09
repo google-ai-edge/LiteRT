@@ -114,6 +114,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::vector<std::int32_t>> dump_tensor_ids;
   std::optional<std::string> ir_json_dir;
   std::optional<std::string> dlc_dir;
+  std::optional<std::string> lpai_prepare_config;
   std::optional<std::string> graph_transform;
   std::optional<std::uint32_t> vtcm_size;
   std::optional<std::uint32_t> htp_device_id;
@@ -278,6 +279,9 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
         } else if (key == "dlc_dir") {
           status = LrtQualcommOptionsSetDlcDir(parsed_options,
                                                std::string(value).c_str());
+        } else if (key == "lpai_prepare_config") {
+          status = LrtQualcommOptionsSetLpaiPrepareConfig(
+              parsed_options, std::string(value).c_str());
         } else if (key == "graph_transform") {
           status = LrtQualcommOptionsSetGraphTransform(
               parsed_options, std::string(value).c_str());
@@ -593,6 +597,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->lpai_core_selection.has_value()) {
     LITERT_RETURN_IF_ERROR(encoder.EncodeInt("lpai_core_selection",
                                              *options->lpai_core_selection));
+  }
+  if (options->lpai_prepare_config.has_value()) {
+    LITERT_RETURN_IF_ERROR(encoder.EncodeString("lpai_prepare_config",
+                                                *options->lpai_prepare_config));
   }
   if (options->qnn_lib_dir.has_value()) {
     LITERT_RETURN_IF_ERROR(
@@ -1297,6 +1305,28 @@ LiteRtStatus LrtQualcommOptionsGetDlcDir(LrtQualcommOptions options,
 
   *dlc_dir = options->dlc_dir.has_value() ? options->dlc_dir->c_str() : "";
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetLpaiPrepareConfig(
+    LrtQualcommOptions options, const char* lpai_prepare_config) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->lpai_prepare_config = lpai_prepare_config;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetLpaiPrepareConfig(
+    LrtQualcommOptions options, const char** lpai_prepare_config) {
+  if (options == nullptr || lpai_prepare_config == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *lpai_prepare_config = options->lpai_prepare_config.has_value()
+                             ? options->lpai_prepare_config->c_str()
+                             : "";
   return kLiteRtStatusOk;
 }
 

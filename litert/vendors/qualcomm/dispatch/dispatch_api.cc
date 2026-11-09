@@ -166,8 +166,9 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();
   } else {
-    auto qnn_backend = ::qnn::CreateBackend((*qnn_manager)->Api(), qnn_options,
-                                            std::nullopt, false);
+    auto qnn_backend = ::qnn::CreateBackend(
+        (*qnn_manager)->Api(), qnn_options, std::nullopt, false,
+        (*qnn_manager)->GetSdkVersion());
     if (!qnn_backend) {
       LITERT_LOG(LITERT_ERROR, "Failed to initialize QNN backend");
       return kLiteRtStatusErrorRuntimeFailure;

@@ -820,6 +820,19 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  void SetLpaiPrepareConfig(const std::string& lpai_prepare_config) {
+    LrtQualcommOptionsSetLpaiPrepareConfig(options_,
+                                           lpai_prepare_config.c_str());
+  }
+  absl::string_view GetLpaiPrepareConfig() {
+    const char* val;
+    auto status = LrtQualcommOptionsGetLpaiPrepareConfig(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
   // Sets the directory where CPU host QNN SDK shared libraries
   // (libQnnSystem.so, libQnnHtp.so, etc.) are located. When set, this directory
   // takes top priority when loading QNN host libraries. If not set (or if

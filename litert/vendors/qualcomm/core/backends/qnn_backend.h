@@ -51,6 +51,10 @@ class QnnBackend {
   virtual bool Init(const Options& options,
                     std::optional<::qnn::SocInfo> soc_info) = 0;
 
+  // Warns (doesn't fail) if the loaded SDK doesn't fully support `options`.
+  virtual void CheckOptionsForSdkVersion(const Options& /*options*/,
+                                         const SdkVersion& /*sdk_version*/) {}
+
   virtual bool SetPerformanceMode(const Options& options) { return true; }
 
   virtual void UpVote() { return; }
