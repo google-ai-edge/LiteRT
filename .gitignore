@@ -28,3 +28,6 @@ cmake_build/
 .vscode/
 *.whl
 /.litert_configure.bazelrc
+
+# Prebuilt xcframework archives that the development Package.swift resolves.
+/prebuilt/
