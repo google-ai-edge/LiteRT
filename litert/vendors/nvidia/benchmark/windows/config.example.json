@@ -1,0 +1,33 @@
+{
+  "_": "This machine's paths for the native Windows runners (copy to config.json; config.json is not tracked). Forward slashes work everywhere.",
+  "platform": "5080",
+  "host_mode": "diagnostic",
+  "runtime_dir": "C:/path/to/runtime",
+  "cli": "litert_lm_advanced_main.exe",
+  "sdk_bin_dirs": ["C:/path/to/TensorRT-RTX-1.7.1.116/bin", "C:/path/to/cuda-12.9/bin"],
+  "state_root": "C:/path/to/litert-nvidia-benchmark",
+  "litert_dir": "C:/path/to/LiteRT",
+  "litert_lm_dir": "C:/path/to/LiteRT-LM",
+  "prompts_dir": null,
+  "models": {
+    "e2b": "C:/path/to/gemma-4-E2B-it.litertlm",
+    "e4b": "C:/path/to/gemma-4-E4B-it.litertlm",
+    "12b": "C:/path/to/gemma-4-12B-it.litertlm",
+    "26b": "C:/path/to/gemma-4-26B-moe-mtp.external.litertlm",
+    "qwen27b": "C:/path/to/qwen.litertlm"
+  },
+  "host": {"require_ac": false, "overlay_ac_scheme": null},
+  "llama": {
+    "bin": "C:/path/to/llama.cpp/bin",
+    "release_tag": "v0.8.0",
+    "commit": "8642541b255bfb5dc39cd351a178be09013a55d6",
+    "threads": 20,
+    "models": {
+      "e2b": {"main": "C:/path/to/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf", "draft": "C:/path/to/mtp-gemma-4-E2B-it.gguf"},
+      "e4b": {"main": "C:/path/to/gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf", "draft": "C:/path/to/mtp-gemma-4-E4B-it.gguf"},
+      "12b": {"main": "C:/path/to/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf", "draft": "C:/path/to/mtp-gemma-4-12B-it-Q8_0.gguf"},
+      "26b": {"main": "C:/path/to/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf", "draft": "C:/path/to/mtp-gemma-4-26B-A4B-it-Q8_0.gguf"},
+      "qwen27b": {"main": "C:/path/to/Qwen3.8-27B-Q4_0.gguf", "draft": null}
+    }
+  }
+}
