@@ -17,18 +17,44 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>  // NOLINT(build/c++17)
-#include <fstream>
-#include <ios>
 #include <iostream>
 #include <set>
 #include <string>
 #include <system_error>  // NOLINT(build/c++11)
+#include <utility>
 #include <vector>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#ifdef ERROR
+#undef ERROR
+#endif
+#ifdef FAILED
+#undef FAILED
+#endif
+#ifdef GetMessage
+#undef GetMessage
+#endif
+#else
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <cerrno>
+#endif
+
 #include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -91,18 +117,361 @@ Error Invalid(const std::string& message) {
   return Error(kLiteRtStatusErrorInvalidArgument, message);
 }
 
+namespace {
+
+void CloseNativeHandle(intptr_t& handle) {
+#if defined(_WIN32)
+  if (handle != -1) {
+    CloseHandle(reinterpret_cast<HANDLE>(handle));
+    handle = -1;
+  }
+#else
+  // NOMUTANTS(ROR,SBR): Valid test fds are >= 3 because stdio occupies 0..2.
+  if (handle >= 0) {
+    close(static_cast<int>(handle));
+    handle = -1;
+  }
+#endif
+}
+
+Expected<size_t> ReadRawChunk(intptr_t handle, uint8_t* dst, size_t max_len) {
+#if defined(_WIN32)
+  constexpr DWORD kMaxChunk = 1u << 30;
+  const DWORD to_read =
+      static_cast<DWORD>(std::min<size_t>(max_len, kMaxChunk));
+  DWORD bytes_read = 0;
+  if (!ReadFile(reinterpret_cast<HANDLE>(handle), dst, to_read, &bytes_read,
+                nullptr)) {
+    return Invalid("Cannot read file");
+  }
+  return static_cast<size_t>(bytes_read);
+#else
+  constexpr size_t kMaxChunk = 1u << 30;
+  const size_t to_read = std::min(max_len, kMaxChunk);
+  ssize_t n = 0;
+  // NOMUTANTS(LCR): Signal-interrupted read() retry is not deterministically
+  // triggerable in unit tests.
+  do {
+    n = read(static_cast<int>(handle), dst, to_read);
+  } while (n < 0 && errno == EINTR);
+  // NOMUTANTS(ROR): OS read() failure on an open regular-file fd requires fault
+  // injection.
+  if (n < 0) return Invalid("Cannot read file");
+  return static_cast<size_t>(n);
+#endif
+}
+
+Expected<void> WriteRawAll(intptr_t handle, const uint8_t* src, size_t size) {
+  size_t total = 0;
+  while (total < size) {
+#if defined(_WIN32)
+    constexpr DWORD kMaxChunk = 1u << 30;
+    const DWORD to_write =
+        static_cast<DWORD>(std::min<size_t>(size - total, kMaxChunk));
+    DWORD written = 0;
+    if (!WriteFile(reinterpret_cast<HANDLE>(handle), src + total, to_write,
+                   &written, nullptr) ||
+        written == 0) {
+      return Invalid("Cannot write file");
+    }
+    total += written;
+#else
+    constexpr size_t kMaxChunk = 1u << 30;
+    const size_t to_write = std::min(size - total, kMaxChunk);
+    ssize_t n = 0;
+    // NOMUTANTS(LCR): Signal-interrupted write() retry is not deterministically
+    // triggerable in unit tests.
+    do {
+      n = write(static_cast<int>(handle), src + total, to_write);
+    } while (n < 0 && errno == EINTR);
+    // NOMUTANTS(ROR): OS write() failure on an open regular-file fd requires
+    // disk-full or fault injection.
+    if (n <= 0) return Invalid("Cannot write file");
+    total += static_cast<size_t>(n);
+#endif
+  }
+  return {};
+}
+
+}  // namespace
+
+FileReader::FileReader(FileReader&& other) noexcept
+    : handle_(other.handle_),
+      buffer_(std::move(other.buffer_)),
+      pos_(other.pos_),
+      end_(other.end_) {
+  other.handle_ = -1;
+  other.pos_ = 0;
+  other.end_ = 0;
+}
+
+FileReader& FileReader::operator=(FileReader&& other) noexcept {
+  // NOMUTANTS(ROR): Self-move guard; Clang rejects literal self-move in tests.
+  if (this != &other) {
+    CloseNativeHandle(handle_);
+    handle_ = other.handle_;
+    buffer_ = std::move(other.buffer_);
+    pos_ = other.pos_;
+    end_ = other.end_;
+    other.handle_ = -1;
+    other.pos_ = 0;
+    other.end_ = 0;
+  }
+  return *this;
+}
+
+FileReader::~FileReader() { CloseNativeHandle(handle_); }
+
+Expected<FileReader> FileReader::Open(const std::filesystem::path& path) {
+  FileReader reader;
+#if defined(_WIN32)
+  HANDLE handle =
+      CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                  OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (handle == INVALID_HANDLE_VALUE) {
+    return Invalid("Cannot open file: " + PathToUtf8(path));
+  }
+  BY_HANDLE_FILE_INFORMATION info;
+  if (!GetFileInformationByHandle(handle, &info) ||
+      (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+    CloseHandle(handle);
+    return Invalid("Cannot open directory as file: " + PathToUtf8(path));
+  }
+  reader.handle_ = reinterpret_cast<intptr_t>(handle);
+#else
+  int fd = -1;
+  // NOMUTANTS(LCR): Signal-interrupted open() retry is not deterministically
+  // triggerable in unit tests.
+  do {
+    fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+  } while (fd < 0 && errno == EINTR);
+  if (fd < 0) {
+    return Invalid("Cannot open file: " + PathToUtf8(path));
+  }
+  struct stat st;
+  // NOMUTANTS(LCR): fstat() failure on an open fd requires kernel/FS fault
+  // injection.
+  if (fstat(fd, &st) != 0 || S_ISDIR(st.st_mode)) {
+    close(fd);
+    return Invalid("Cannot open directory as file: " + PathToUtf8(path));
+  }
+  reader.handle_ = fd;
+#endif
+  reader.buffer_.resize(kBufferSize);
+  return reader;
+}
+
+Expected<size_t> FileReader::Read(void* data, size_t size) {
+  if (handle_ == -1) return Invalid("FileReader is not open");
+  if (size == 0) return 0;
+  if (!data) return Invalid("Null buffer for non-empty read");
+  auto* out = static_cast<uint8_t*>(data);
+  size_t copied = 0;
+  while (copied < size) {
+    const size_t buffered = end_ - pos_;
+    if (buffered > 0) {
+      const size_t take = std::min(size - copied, buffered);
+      std::memcpy(out + copied, buffer_.data() + pos_, take);
+      pos_ += take;
+      copied += take;
+      continue;
+    }
+    LITERT_ASSIGN_OR_RETURN(
+        const size_t n, ReadRawChunk(handle_, buffer_.data(), buffer_.size()));
+    pos_ = 0;
+    end_ = n;
+    if (n == 0) break;
+  }
+  return copied;
+}
+
+FileWriter::FileWriter(FileWriter&& other) noexcept
+    : handle_(other.handle_), buffer_(std::move(other.buffer_)) {
+  other.handle_ = -1;
+}
+
+FileWriter& FileWriter::operator=(FileWriter&& other) noexcept {
+  // NOMUTANTS(ROR): Self-move guard; Clang rejects literal self-move in tests.
+  if (this != &other) {
+    CloseNativeHandle(handle_);
+    handle_ = other.handle_;
+    buffer_ = std::move(other.buffer_);
+    other.handle_ = -1;
+  }
+  return *this;
+}
+
+FileWriter::~FileWriter() { CloseNativeHandle(handle_); }
+
+Expected<FileWriter> FileWriter::Open(const std::filesystem::path& path) {
+  FileWriter writer;
+#if defined(_WIN32)
+  HANDLE handle = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+                              CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (handle == INVALID_HANDLE_VALUE) {
+    return Invalid("Cannot write: " + PathToUtf8(path));
+  }
+  writer.handle_ = reinterpret_cast<intptr_t>(handle);
+#else
+  int fd = -1;
+  // NOMUTANTS(LCR): Signal-interrupted open() retry is not deterministically
+  // triggerable in unit tests.
+  do {
+    fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
+  } while (fd < 0 && errno == EINTR);
+  if (fd < 0) {
+    return Invalid("Cannot write: " + PathToUtf8(path));
+  }
+  writer.handle_ = fd;
+#endif
+  writer.buffer_.reserve(kBufferSize);
+  return writer;
+}
+
+Expected<void> FileWriter::FlushBuffer() {
+  if (buffer_.empty()) return {};
+  const auto status = WriteRawAll(handle_, buffer_.data(), buffer_.size());
+  buffer_.clear();
+  return status;
+}
+
+Expected<void> FileWriter::Write(const void* data, size_t size) {
+  if (handle_ == -1) return Invalid("FileWriter is not open");
+  if (size == 0) return {};
+  if (!data) return Invalid("Null data for non-empty write");
+  const auto* bytes = static_cast<const uint8_t*>(data);
+  // NOMUTANTS(ROR): Direct-write threshold is a buffering optimization; output
+  // bytes are identical.
+  if (size >= kBufferSize) {
+    LITERT_RETURN_IF_ERROR(FlushBuffer());
+    return WriteRawAll(handle_, bytes, size);
+  }
+  // NOMUTANTS(AOR,ROR): Buffer flush threshold is a buffering optimization;
+  // output bytes are identical.
+  if (buffer_.size() + size > kBufferSize) {
+    LITERT_RETURN_IF_ERROR(FlushBuffer());
+  }
+  buffer_.insert(buffer_.end(), bytes, bytes + size);
+  return {};
+}
+
+Expected<void> FileWriter::Close() {
+  if (handle_ == -1) return Invalid("FileWriter is not open");
+  const auto flush_status = FlushBuffer();
+#if defined(_WIN32)
+  const bool closed = CloseHandle(reinterpret_cast<HANDLE>(handle_)) != 0;
+  handle_ = -1;
+  if (!flush_status) return flush_status;
+  if (!closed) return Invalid("Cannot close file");
+#else
+  const int rc = close(static_cast<int>(handle_));
+  handle_ = -1;
+  if (!flush_status) return flush_status;
+  // NOMUTANTS(LCR): close() failure on a regular-file fd requires kernel/NFS
+  // fault injection.
+  if (rc != 0 && errno != EINTR) return Invalid("Cannot close file");
+#endif
+  return {};
+}
+
+Expected<std::vector<uint8_t>> ReadFileBytes(const std::filesystem::path& path,
+                                             size_t max_bytes) {
+#if defined(_WIN32)
+  HANDLE handle =
+      CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                  OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (handle == INVALID_HANDLE_VALUE) {
+    return Invalid("Cannot open file: " + PathToUtf8(path));
+  }
+  intptr_t guard_handle = reinterpret_cast<intptr_t>(handle);
+  struct Guard {
+    intptr_t& h;
+    ~Guard() { CloseNativeHandle(h); }
+  } guard{guard_handle};
+  BY_HANDLE_FILE_INFORMATION info;
+  if (GetFileType(handle) != FILE_TYPE_DISK ||
+      !GetFileInformationByHandle(handle, &info) ||
+      (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+    return Invalid("Not a regular file: " + PathToUtf8(path));
+  }
+  const uint64_t file_size =
+      (static_cast<uint64_t>(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
+  if (file_size > max_bytes) {
+    return Invalid("File exceeds size limit: " + PathToUtf8(path));
+  }
+  std::vector<uint8_t> buffer(static_cast<size_t>(file_size));
+  size_t total = 0;
+  while (total < buffer.size()) {
+    LITERT_ASSIGN_OR_RETURN(const size_t n,
+                            ReadRawChunk(guard_handle, buffer.data() + total,
+                                         buffer.size() - total));
+    if (n == 0) return Invalid("Cannot read file: " + PathToUtf8(path));
+    total += n;
+  }
+  return buffer;
+#else
+  int fd = -1;
+  // NOMUTANTS(LCR): Signal-interrupted open() retry is not deterministically
+  // triggerable in unit tests.
+  do {
+    fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+  } while (fd < 0 && errno == EINTR);
+  if (fd < 0) {
+    return Invalid("Cannot open file: " + PathToUtf8(path));
+  }
+  intptr_t guard_handle = fd;
+  struct Guard {
+    intptr_t& h;
+    ~Guard() { CloseNativeHandle(h); }
+  } guard{guard_handle};
+  struct stat st;
+  // NOMUTANTS(LCR): fstat() failure and negative st_size on an open fd require
+  // kernel/FS fault injection.
+  if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size < 0) {
+    return Invalid("Not a regular file: " + PathToUtf8(path));
+  }
+  if (static_cast<uint64_t>(st.st_size) > max_bytes) {
+    return Invalid("File exceeds size limit: " + PathToUtf8(path));
+  }
+  std::vector<uint8_t> buffer(static_cast<size_t>(st.st_size));
+  size_t total = 0;
+  while (total < buffer.size()) {
+    LITERT_ASSIGN_OR_RETURN(const size_t n,
+                            ReadRawChunk(guard_handle, buffer.data() + total,
+                                         buffer.size() - total));
+    // NOMUTANTS(ROR): Concurrent truncation at EOF mid-read requires a racing
+    // writer.
+    if (n == 0) return Invalid("Cannot read file: " + PathToUtf8(path));
+    total += n;
+  }
+  return buffer;
+#endif
+}
+
+Expected<std::string> ReadFileUntilEof(const std::filesystem::path& path,
+                                       size_t max_bytes) {
+  LITERT_ASSIGN_OR_RETURN(FileReader reader, FileReader::Open(path));
+  std::string out;
+  char chunk[4096];
+  while (true) {
+    LITERT_ASSIGN_OR_RETURN(const size_t n, reader.Read(chunk, sizeof(chunk)));
+    if (n == 0) return out;
+    if (n > max_bytes - out.size()) {
+      return Invalid("File exceeds size limit: " + PathToUtf8(path));
+    }
+    out.append(chunk, n);
+  }
+}
+
 Expected<void> ReadProto(const std::filesystem::path& path,
                          google::protobuf::Message& message) {
-  std::ifstream input(path, std::ios::binary | std::ios::ate);
-  if (!input || input.tellg() < 0 || input.tellg() > 64 * 1024 * 1024) {
+  auto raw = ReadFileBytes(path, 64u * 1024u * 1024u);
+  if (!raw) {
     return Invalid("Cannot read proto or file exceeds 64 MiB: " +
                    PathToUtf8(path));
   }
-  std::string bytes(static_cast<size_t>(input.tellg()), '\0');
-  input.seekg(0);
-  if (!input.read(bytes.data(), bytes.size())) {
-    return Invalid("Cannot read proto: " + PathToUtf8(path));
-  }
+  const absl::string_view bytes(reinterpret_cast<const char*>(raw->data()),
+                                raw->size());
   bool parsed = false;
   const auto ext = path.extension();
   if (ext == ".binpb") {
@@ -135,13 +504,20 @@ Expected<void> WriteBytes(const std::filesystem::path& path, const void* data,
   auto temporary = path;
   temporary += ".tmp";
   {
-    std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
-    if (size > 0) {
-      out.write(static_cast<const char*>(data),
-                static_cast<std::streamsize>(size));
+    LITERT_ASSIGN_OR_RETURN(FileWriter out, FileWriter::Open(temporary));
+    // NOMUTANTS(UOI): Mid-write OS I/O failure after open() requires disk-full
+    // or fault injection.
+    if (!out.Write(data, size)) {
+      (void)out.Close();
+      std::filesystem::remove(temporary, ec);
+      return Invalid("Cannot write: " + PathToUtf8(temporary));
     }
-    out.flush();
-    if (!out) return Invalid("Cannot write: " + PathToUtf8(temporary));
+    // NOMUTANTS(UOI): OS flush/close failure after open() requires disk-full or
+    // fault injection.
+    if (!out.Close()) {
+      std::filesystem::remove(temporary, ec);
+      return Invalid("Cannot write: " + PathToUtf8(temporary));
+    }
   }
   std::filesystem::rename(temporary, path, ec);
   if (ec) {
@@ -201,17 +577,9 @@ Expected<size_t> TensorBytes(const TensorSpec& spec) {
 Expected<std::vector<uint8_t>> ReadTensor(const std::filesystem::path& path,
                                           const TensorSpec& spec) {
   LITERT_ASSIGN_OR_RETURN(auto count, TensorBytes(spec));
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file || file.tellg() != static_cast<std::streamoff>(count)) {
+  auto bytes = ReadFileBytes(path, count);
+  if (!bytes || bytes->size() != count) {
     return Invalid("Tensor byte count mismatch: " + PathToUtf8(path));
-  }
-  std::string raw(count, '\0');
-  file.seekg(0);
-  file.read(raw.data(), static_cast<std::streamsize>(count));
-  if (!file) return Invalid("Cannot read tensor: " + PathToUtf8(path));
-  std::vector<uint8_t> bytes(count);
-  if (count > 0) {
-    std::memcpy(bytes.data(), raw.data(), count);
   }
   return bytes;
 }

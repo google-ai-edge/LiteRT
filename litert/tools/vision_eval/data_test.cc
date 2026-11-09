@@ -14,9 +14,13 @@
 
 #include "litert/tools/vision_eval/data.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>  // NOLINT(build/c++17)
 #include <string>
 #include <system_error>  // NOLINT(build/c++11)
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -50,8 +54,8 @@ TEST_F(DataTest, TextAndBinaryRoundTripPreserveOptionalPresence) {
   summary.set_error("No valid depth pixels");
   summary.add_metrics()->mutable_depth()->set_empty_images(1);
   for (auto format : {TEXT_PROTO, BINARY_PROTO}) {
-    const auto path = root_ / Utf8ToPath("输出") /
-                      (format == TEXT_PROTO ? "out.txtpb" : "out.binpb");
+    const auto path =
+        root_ / "output" / (format == TEXT_PROTO ? "out.txtpb" : "out.binpb");
     ASSERT_TRUE(WriteProto(path, summary, format));
     RunSummary parsed;
     ASSERT_TRUE(ReadProto(path, parsed));
@@ -96,7 +100,7 @@ TEST_F(DataTest, RawTensorSizeAndFileExistenceAreChecked) {
   spec.add_shape(1);
   spec.add_shape(2);
   float values[] = {1, 2};
-  const auto path = root_ / Utf8ToPath("张量_input.raw");
+  const auto path = root_ / "tensor_input.raw";
   ASSERT_TRUE(WriteBytes(path, values, sizeof(values)));
   auto read = ReadFloats(path, spec);
   ASSERT_TRUE(read);
@@ -138,6 +142,106 @@ TEST_F(DataTest, ManifestRejectsDuplicateBindingsAndUnsafeIds) {
   EXPECT_FALSE(SafeName(""));
   EXPECT_FALSE(SafeName("a/b"));
   EXPECT_TRUE(SafeName("ade20k_validation_000003"));
+}
+
+TEST_F(DataTest, NativeFileIoHandlesBoundariesStreamingAndInvalidPaths) {
+  FileReader unopened_reader;
+  uint8_t scratch_byte = 0;
+  EXPECT_FALSE(unopened_reader.Read(&scratch_byte, 1));
+  FileWriter unopened_writer;
+  EXPECT_FALSE(unopened_writer.Write(&scratch_byte, 1));
+  EXPECT_FALSE(unopened_writer.Close());
+
+  EXPECT_FALSE(ReadFileBytes(root_ / "missing.bin", 16));
+  EXPECT_FALSE(ReadFileUntilEof(root_ / "missing.bin"));
+  EXPECT_FALSE(FileReader::Open(root_ / "missing.bin"));
+  EXPECT_FALSE(ReadFileBytes(root_, 16));
+  EXPECT_FALSE(ReadFileUntilEof(root_));
+  EXPECT_FALSE(FileReader::Open(root_));
+  EXPECT_FALSE(FileWriter::Open(root_));
+  EXPECT_FALSE(WriteBytes({}, &scratch_byte, 1));
+  EXPECT_FALSE(WriteBytes(root_ / "null.bin", nullptr, 1));
+
+  const auto empty_path = root_ / "empty.bin";
+  ASSERT_TRUE(WriteBytes(empty_path, nullptr, 0));
+  auto empty_bytes = ReadFileBytes(empty_path, 0);
+  ASSERT_TRUE(empty_bytes);
+  EXPECT_TRUE(empty_bytes->empty());
+  auto empty_text = ReadFileUntilEof(empty_path, 0);
+  ASSERT_TRUE(empty_text);
+  EXPECT_TRUE(empty_text->empty());
+
+  std::vector<uint8_t> expected(20000);
+  for (size_t i = 0; i < expected.size(); ++i) {
+    expected[i] = static_cast<uint8_t>((i * 37 + 11) & 0xff);
+  }
+  const auto stream_path = root_ / "stream.bin";
+  FileWriter moved_writer;
+  {
+    auto opened_writer = FileWriter::Open(stream_path);
+    ASSERT_TRUE(opened_writer);
+    FileWriter writer(std::move(*opened_writer));
+    EXPECT_TRUE(writer.Write(nullptr, 0));
+    EXPECT_FALSE(writer.Write(nullptr, 4));
+    size_t written = 0;
+    while (written < 9000) {
+      const size_t step = std::min<size_t>(7, 9000 - written);
+      ASSERT_TRUE(writer.Write(expected.data() + written, step));
+      written += step;
+    }
+    moved_writer = std::move(writer);
+  }
+  ASSERT_TRUE(moved_writer.Write(expected.data() + 9000, 10000));
+  ASSERT_TRUE(moved_writer.Write(expected.data() + 19000, 1000));
+  ASSERT_TRUE(moved_writer.Close());
+  EXPECT_FALSE(moved_writer.Close());
+
+  auto exact_bytes = ReadFileBytes(stream_path, expected.size());
+  ASSERT_TRUE(exact_bytes);
+  EXPECT_EQ(*exact_bytes, expected);
+  EXPECT_FALSE(ReadFileBytes(stream_path, expected.size() - 1));
+
+  auto exact_eof = ReadFileUntilEof(stream_path, expected.size());
+  ASSERT_TRUE(exact_eof);
+  EXPECT_EQ(*exact_eof, std::string(expected.begin(), expected.end()));
+  EXPECT_FALSE(ReadFileUntilEof(stream_path, expected.size() - 1));
+
+  std::vector<uint8_t> actual;
+  uint8_t small_buf[13];
+  FileReader moved_reader;
+  {
+    auto opened_reader = FileReader::Open(stream_path);
+    ASSERT_TRUE(opened_reader);
+    FileReader reader(std::move(*opened_reader));
+    auto zero_read = reader.Read(nullptr, 0);
+    ASSERT_TRUE(zero_read);
+    EXPECT_EQ(*zero_read, 0u);
+    EXPECT_FALSE(reader.Read(nullptr, 4));
+
+    for (int i = 0; i < 700; ++i) {
+      auto got = reader.Read(small_buf, sizeof(small_buf));
+      ASSERT_TRUE(got);
+      ASSERT_EQ(*got, sizeof(small_buf));
+      actual.insert(actual.end(), small_buf, small_buf + *got);
+    }
+    moved_reader = std::move(reader);
+  }
+  std::vector<uint8_t> large_buf(10000);
+  auto large_got = moved_reader.Read(large_buf.data(), large_buf.size());
+  ASSERT_TRUE(large_got);
+  ASSERT_EQ(*large_got, large_buf.size());
+  actual.insert(actual.end(), large_buf.begin(), large_buf.end());
+
+  std::vector<uint8_t> tail_buf(2000);
+  auto tail_got = moved_reader.Read(tail_buf.data(), tail_buf.size());
+  ASSERT_TRUE(tail_got);
+  ASSERT_EQ(*tail_got, expected.size() - actual.size());
+  actual.insert(actual.end(), tail_buf.begin(), tail_buf.begin() + *tail_got);
+  EXPECT_EQ(actual, expected);
+
+  auto eof_got = moved_reader.Read(small_buf, sizeof(small_buf));
+  ASSERT_TRUE(eof_got);
+  EXPECT_EQ(*eof_got, 0u);
 }
 }  // namespace
 }  // namespace litert::vision

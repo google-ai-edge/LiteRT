@@ -19,9 +19,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>  // NOLINT(build/c++17)
-#include <fstream>
 #include <functional>
-#include <ios>
 #include <limits>
 #include <queue>
 #include <string>
@@ -172,28 +170,30 @@ Expected<uint64_t> MergeRuns(
     uint64_t limit = std::numeric_limits<uint64_t>::max()) {
   using Entry = std::pair<float, size_t>;
   std::priority_queue<Entry, std::vector<Entry>, std::greater<Entry>> heap;
-  std::vector<std::ifstream> inputs(paths.size());
+  std::vector<FileReader> inputs;
+  inputs.reserve(paths.size());
   auto advance = [&](size_t index) -> Expected<void> {
-    char raw[sizeof(float)];
-    if (inputs[index].read(raw, sizeof(raw))) {
-      float value;
-      std::memcpy(&value, raw, sizeof(value));
-      heap.push({value, index});
-    } else if (!inputs[index].eof() || inputs[index].gcount()) {
+    float value = 0.0f;
+    auto got = inputs[index].Read(&value, sizeof(value));
+    if (!got || (*got != 0 && *got != sizeof(value))) {
       return Invalid("Median merge read failed");
+    }
+    if (*got == sizeof(value)) {
+      heap.push({value, index});
     }
     return {};
   };
   for (size_t i = 0; i < paths.size(); ++i) {
-    inputs[i].open(paths[i], std::ios::binary);
-    if (!inputs[i]) return Invalid("Cannot open median run");
+    auto reader = FileReader::Open(paths[i]);
+    if (!reader) return Invalid("Cannot open median run");
+    inputs.push_back(std::move(*reader));
     LITERT_RETURN_IF_ERROR(advance(i));
   }
   uint64_t count = 0;
   while (!heap.empty() && count < limit) {
     const auto [value, index] = heap.top();
     heap.pop();
-    consume(value, count++);
+    LITERT_RETURN_IF_ERROR(consume(value, count++));
     LITERT_RETURN_IF_ERROR(advance(index));
   }
   return count;
@@ -431,12 +431,17 @@ Expected<double> ExactMedian(const std::vector<FileIdentity>& files,
   };
   for (const auto& file : files) {
     LITERT_RETURN_IF_ERROR(VerifyFile(file));
-    std::ifstream input(Utf8ToPath(file.path()), std::ios::binary);
+    auto input = FileReader::Open(Utf8ToPath(file.path()));
     if (!input) return Invalid("Cannot open normals error spool");
-    char raw[sizeof(float)];
-    while (input.read(raw, sizeof(raw))) {
-      float value;
-      std::memcpy(&value, raw, sizeof(value));
+    while (true) {
+      float value = 0.0f;
+      auto got = input->Read(&value, sizeof(value));
+      // NOMUTANTS(UOI): Mid-stream OS read failure requires fault injection.
+      if (!got) return Invalid("Cannot read normals error spool");
+      if (*got == 0) break;
+      if (*got != sizeof(value)) {
+        return Invalid("Truncated normals error spool");
+      }
       if (!std::isfinite(value) || value < 0 || value > 180) {
         return Invalid("Corrupt normals error spool");
       }
@@ -444,7 +449,6 @@ Expected<double> ExactMedian(const std::vector<FileIdentity>& files,
       ++count;
       if (chunk.size() == chunk_values) LITERT_RETURN_IF_ERROR(flush());
     }
-    if (!input.eof() || input.gcount()) return Invalid("Truncated normals error spool");
   }
   LITERT_RETURN_IF_ERROR(flush());
   if (!count) return Invalid("Median of empty input");
@@ -457,16 +461,20 @@ Expected<double> ExactMedian(const std::vector<FileIdentity>& files,
       const auto filename =
           "merge_" + std::to_string(runs.size()) + "_" + std::to_string(start);
       const auto path = scratch / filename;
-      std::ofstream output(path, std::ios::binary);
+      auto output = FileWriter::Open(path);
       if (!output) return Invalid("Cannot create median merge run");
-      LITERT_RETURN_IF_ERROR(MergeRuns(group, [&](float v, uint64_t) {
-        char raw[sizeof(float)];
-        std::memcpy(raw, &v, sizeof(raw));
-        output.write(raw, sizeof(raw));
-      }));
-      output.flush();
-      if (!output) return Invalid("Median merge write failed");
-      output.close();
+      LITERT_RETURN_IF_ERROR(
+          MergeRuns(group, [&](float v, uint64_t) -> Expected<void> {
+            // NOMUTANTS(UOI): Mid-merge OS write failure requires disk-full or
+            // fault injection.
+            if (!output->Write(&v, sizeof(v))) {
+              return Invalid("Median merge write failed");
+            }
+            return {};
+          }));
+      // NOMUTANTS(UOI): OS flush/close failure requires disk-full or fault
+      // injection.
+      if (!output->Close()) return Invalid("Median merge write failed");
       for (const auto& old : group) {
         std::filesystem::remove(old, ec);
         if (ec) return Invalid("Cannot remove temporary median run");
@@ -476,10 +484,15 @@ Expected<double> ExactMedian(const std::vector<FileIdentity>& files,
     runs = std::move(next);
   }
   double lower = 0, upper = 0;
-  LITERT_ASSIGN_OR_RETURN(auto consumed, MergeRuns(runs, [&](float v, uint64_t i) {
-    if (i == (count - 1) / 2) lower = v;
-    if (i == count / 2) upper = v;
-  }, count / 2 + 1));
+  LITERT_ASSIGN_OR_RETURN(auto consumed,
+                          MergeRuns(
+                              runs,
+                              [&](float v, uint64_t i) -> Expected<void> {
+                                if (i == (count - 1) / 2) lower = v;
+                                if (i == count / 2) upper = v;
+                                return {};
+                              },
+                              count / 2 + 1));
   if (consumed != count / 2 + 1) return Invalid("Incomplete median merge");
   return (lower + upper) / 2;
 }

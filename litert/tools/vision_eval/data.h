@@ -31,6 +31,76 @@ namespace litert::vision {
 // Returns a `kLiteRtStatusErrorInvalidArgument` error with `message`.
 Error Invalid(const std::string& message);
 
+// Buffered sequential binary reader backed by a native OS file descriptor or
+// handle.
+class FileReader {
+ public:
+  FileReader() = default;
+  FileReader(const FileReader&) = delete;
+  FileReader& operator=(const FileReader&) = delete;
+  FileReader(FileReader&& other) noexcept;
+  FileReader& operator=(FileReader&& other) noexcept;
+
+  // Closes any open OS file descriptor or handle.
+  ~FileReader();
+
+  // Opens `path` for sequential binary reading, rejecting directories.
+  static Expected<FileReader> Open(const std::filesystem::path& path);
+
+  // Reads up to `size` bytes into `data`, returning `size` unless end-of-file
+  // is reached first (returns 0 when already at end-of-file).
+  Expected<size_t> Read(void* data, size_t size);
+
+ private:
+  static constexpr size_t kBufferSize = 8192;
+  intptr_t handle_ = -1;
+  std::vector<uint8_t> buffer_;
+  size_t pos_ = 0;
+  size_t end_ = 0;
+};
+
+// Buffered sequential binary writer backed by a native OS file descriptor or
+// handle. Callers must check `Close()` to ensure buffered bytes are flushed;
+// the destructor closes any still-open handle during error unwinding.
+class FileWriter {
+ public:
+  FileWriter() = default;
+  FileWriter(const FileWriter&) = delete;
+  FileWriter& operator=(const FileWriter&) = delete;
+  FileWriter(FileWriter&& other) noexcept;
+  FileWriter& operator=(FileWriter&& other) noexcept;
+
+  // Closes any still-open OS file descriptor or handle.
+  ~FileWriter();
+
+  // Creates or truncates `path` for sequential binary writing.
+  static Expected<FileWriter> Open(const std::filesystem::path& path);
+
+  // Appends `size` bytes from `data` to the output stream.
+  Expected<void> Write(const void* data, size_t size);
+
+  // Flushes buffered bytes and closes the underlying OS file descriptor or
+  // handle.
+  Expected<void> Close();
+
+ private:
+  static constexpr size_t kBufferSize = 8192;
+  Expected<void> FlushBuffer();
+
+  intptr_t handle_ = -1;
+  std::vector<uint8_t> buffer_;
+};
+
+// Reads an existing regular file at `path` (up to `max_bytes` bytes) into a
+// contiguous byte buffer using native OS file APIs.
+Expected<std::vector<uint8_t>> ReadFileBytes(const std::filesystem::path& path,
+                                             size_t max_bytes);
+
+// Sequentially reads `path` until EOF (up to `max_bytes` bytes) into a string,
+// supporting pseudo-files such as `/proc/cpuinfo` whose `stat` size is zero.
+Expected<std::string> ReadFileUntilEof(const std::filesystem::path& path,
+                                       size_t max_bytes = 64u * 1024u * 1024u);
+
 // Reads and initializes `message` from a `.txtpb` or `.binpb` file at `path`
 // (up to 64 MiB).
 Expected<void> ReadProto(const std::filesystem::path& path,

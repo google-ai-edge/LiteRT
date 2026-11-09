@@ -21,9 +21,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>  // NOLINT(build/c++17)
-#include <fstream>
-#include <ios>
-#include <iosfwd>
 #include <memory>
 #include <numeric>
 #include <set>
@@ -33,10 +30,14 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/tools/vision_eval/data.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"  // from @stblib
@@ -55,24 +56,24 @@ Expected<std::vector<ImageSample>> ReadSamples(
     const std::filesystem::path& image_root, int start, int limit) {
   LITERT_RETURN_IF_ERROR(
       Require(start >= 0 && limit >= 0, "Negative sample range"));
-  std::ifstream file(manifest);
+  auto raw = ReadFileBytes(manifest, 64u * 1024u * 1024u);
   LITERT_RETURN_IF_ERROR(
-      Require(static_cast<bool>(file),
-              "Cannot open manifest: " + PathToUtf8(manifest)));
+      Require(raw.HasValue(), "Cannot open manifest: " + PathToUtf8(manifest)));
+  const absl::string_view content(reinterpret_cast<const char*>(raw->data()),
+                                  raw->size());
   std::vector<ImageSample> rows;
   std::set<int> ids;
-  std::string line;
   bool first = true;
   const std::filesystem::path manifest_root = manifest.parent_path();
   const std::filesystem::path& root =
       image_root.empty() ? manifest_root : image_root;
-  auto integer = [](const std::string& text, int& value) {
+  auto integer = [](absl::string_view text, int& value) {
     const auto parsed =
         std::from_chars(text.data(), text.data() + text.size(), value);
     return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
   };
-  while (std::getline(file, line)) {
-    if (!line.empty() && line.back() == '\r') line.pop_back();
+  for (absl::string_view line : absl::StrSplit(content, '\n')) {
+    if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
     if (line.empty() || line[0] == '#') continue;
     if (first && line == "id\tlabel\tpath") {
       first = false;
@@ -81,17 +82,17 @@ Expected<std::vector<ImageSample>> ReadSamples(
     first = false;
     const auto tab = line.find('\t');
     const auto second =
-        tab == std::string::npos ? tab : line.find('\t', tab + 1);
+        tab == absl::string_view::npos ? tab : line.find('\t', tab + 1);
     LITERT_RETURN_IF_ERROR(
-        Require(second != std::string::npos &&
-                    line.find('\t', second + 1) == std::string::npos,
-                "Bad manifest row: " + line));
+        Require(second != absl::string_view::npos &&
+                    line.find('\t', second + 1) == absl::string_view::npos,
+                absl::StrCat("Bad manifest row: ", line)));
     ImageSample row{};
     LITERT_RETURN_IF_ERROR(
         Require(integer(line.substr(0, tab), row.id) &&
                     integer(line.substr(tab + 1, second - tab - 1), row.label),
-                "Invalid manifest ID or label: " + line));
-    const std::string raw_path = line.substr(second + 1);
+                absl::StrCat("Invalid manifest ID or label: ", line)));
+    const absl::string_view raw_path = line.substr(second + 1);
     LITERT_RETURN_IF_ERROR(
         Require(!raw_path.empty() && ids.insert(row.id).second,
                 "Empty image path or duplicate sample ID"));
@@ -99,8 +100,6 @@ Expected<std::vector<ImageSample>> ReadSamples(
     row.path = root.empty() ? sample_path : (root / sample_path);
     rows.push_back(std::move(row));
   }
-  LITERT_RETURN_IF_ERROR(
-      Require(file.eof(), "Failed to read manifest: " + PathToUtf8(manifest)));
   LITERT_RETURN_IF_ERROR(
       Require(static_cast<size_t>(start) < rows.size(), "No selected samples"));
   rows.erase(rows.begin(), rows.begin() + start);
@@ -346,23 +345,14 @@ Expected<std::vector<float>> PreprocessRgb(const uint8_t* src, int w, int h,
 }
 Expected<std::vector<float>> DecodePreprocess(
     const std::filesystem::path& path, const ImagePreprocessing& c, bool nchw) {
-  std::ifstream input(path, std::ios::binary | std::ios::ate);
-  const auto end = input ? input.tellg() : std::streampos(-1);
-  LITERT_RETURN_IF_ERROR(Require(
-      input && end > 0 && static_cast<uint64_t>(end) <= kImageLimit,
-      "Cannot read image: " + PathToUtf8(path)));
-  std::vector<stbi_uc> encoded(static_cast<size_t>(end));
-  input.seekg(0);
-  LITERT_RETURN_IF_ERROR(Require(
-      static_cast<bool>(
-          input.read(reinterpret_cast<char*>(encoded.data()),
-                     static_cast<std::streamsize>(encoded.size()))),
-      "Cannot read image: " + PathToUtf8(path)));
+  auto encoded = ReadFileBytes(path, kImageLimit);
+  LITERT_RETURN_IF_ERROR(Require(encoded.HasValue() && !encoded->empty(),
+                                 "Cannot read image: " + PathToUtf8(path)));
   int w = 0;
   int h = 0;
   int channels = 0;
   auto* data = stbi_load_from_memory(
-      encoded.data(), static_cast<int>(encoded.size()), &w, &h, &channels, 3);
+      encoded->data(), static_cast<int>(encoded->size()), &w, &h, &channels, 3);
   LITERT_RETURN_IF_ERROR(
       Require(data != nullptr, "Cannot decode image: " + PathToUtf8(path)));
   std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> image(data,

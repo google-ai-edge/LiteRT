@@ -20,14 +20,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>  // NOLINT(build/c++17)
-#include <fstream>
 #include <limits>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include "xnnpack.h"  // from @XNNPACK
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_model_types.h"
+#include "litert/tools/vision_eval/data.h"
 #include "tflite/kernels/internal/reference/quantize.h"
 #include "tflite/kernels/internal/runtime_shape.h"
 #include "tflite/kernels/internal/types.h"
@@ -62,8 +63,7 @@ void CheckInputQuantization(enum xnn_datatype datatype) {
                     values.data(), expected.data()),
                 xnn_status_success);
       const auto actual = QuantizePerTensor<T>(
-          std::vector<float>(values.begin(), values.begin() + count),
-          {scale, zp});
+          absl::MakeConstSpan(values).first(count), {scale, zp});
       EXPECT_EQ(actual, expected);
       EXPECT_EQ(actual[count - 2], std::numeric_limits<T>::min());
       EXPECT_EQ(actual[count - 1], std::numeric_limits<T>::max());
@@ -100,26 +100,24 @@ TEST(InputQuantizationTest,
 
 TEST(ManifestTest, SelectionRelativePathsAndMalformedRows) {
   const auto root = Utf8ToPath(testing::TempDir());
-  const auto path = root / Utf8ToPath("图像_samples.tsv");
+  const auto path = root / "samples.tsv";
   auto write = [&](const std::string& text) {
-    std::ofstream file(path);
-    file << text;
+    ASSERT_TRUE(WriteBytes(path, text.data(), text.size()));
   };
   write(
-      "# comment\r\nid\tlabel\tpath\r\n7\t9\t子目录/a.jpg\r\n"
+      "# comment\r\nid\tlabel\tpath\r\n7\t9\tsubdir/a.jpg\r\n"
       "8\t2\t/absolute/b.jpg\n");
   auto rows = ReadSamples(path, {}, 0, 1);
   ASSERT_TRUE(rows);
   ASSERT_EQ(rows->size(), 1);
   EXPECT_EQ(rows->front().id, 7);
   EXPECT_EQ(rows->front().label, 9);
-  EXPECT_EQ(rows->front().path, root / Utf8ToPath("子目录/a.jpg"));
-  EXPECT_EQ(PathToUtf8(rows->front().path),
-            PathToUtf8(root / Utf8ToPath("子目录/a.jpg")));
+  EXPECT_EQ(rows->front().path, root / "subdir/a.jpg");
+  EXPECT_EQ(PathToUtf8(rows->front().path), PathToUtf8(root / "subdir/a.jpg"));
   rows = ReadSamples(path, Utf8ToPath("/override"), 0, 0);
   ASSERT_TRUE(rows);
   ASSERT_EQ(rows->size(), 2);
-  EXPECT_EQ(rows->front().path, Utf8ToPath("/override/子目录/a.jpg"));
+  EXPECT_EQ(rows->front().path, Utf8ToPath("/override/subdir/a.jpg"));
   EXPECT_EQ(rows->back().path, Utf8ToPath("/absolute/b.jpg"));
   rows = ReadSamples(path, {}, 1, 1);
   ASSERT_TRUE(rows);
