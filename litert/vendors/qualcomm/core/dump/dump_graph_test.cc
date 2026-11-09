@@ -110,24 +110,6 @@ TEST(IrJsonDump, SerializeQuantParamToJson) {
   EXPECT_FLOAT_EQ(signed_info["scale_offset"]["maximum"].get<float>(),
                   0.003f * 127);
 
-  // Unsigned 2-bit quantization covers [0, 3].
-  nlohmann::json unsigned_2bit_info =
-      SerializeQuantParamToJson(quant_params, QNN_DATATYPE_UFIXED_POINT_2);
-  EXPECT_EQ(unsigned_2bit_info["scale_offset"]["bitwidth"], 2u);
-  EXPECT_FLOAT_EQ(unsigned_2bit_info["scale_offset"]["minimum"].get<float>(),
-                  0.0f);
-  EXPECT_FLOAT_EQ(unsigned_2bit_info["scale_offset"]["maximum"].get<float>(),
-                  0.003f * 3);
-
-  // Signed 2-bit quantization covers [-2, 1].
-  nlohmann::json signed_2bit_info =
-      SerializeQuantParamToJson(quant_params, QNN_DATATYPE_SFIXED_POINT_2);
-  EXPECT_EQ(signed_2bit_info["scale_offset"]["bitwidth"], 2u);
-  EXPECT_FLOAT_EQ(signed_2bit_info["scale_offset"]["minimum"].get<float>(),
-                  0.003f * (-2));
-  EXPECT_FLOAT_EQ(signed_2bit_info["scale_offset"]["maximum"].get<float>(),
-                  0.003f);
-
   // Signed 4-bit quantization covers [-8, 7].
   nlohmann::json signed_4bit_info =
       SerializeQuantParamToJson(quant_params, QNN_DATATYPE_SFIXED_POINT_4);

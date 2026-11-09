@@ -25,9 +25,6 @@ namespace {
 
 std::optional<uint32_t> GetBitwidthFromDataType(Qnn_DataType_t data_type) {
   switch (data_type) {
-    case QNN_DATATYPE_SFIXED_POINT_2:
-    case QNN_DATATYPE_UFIXED_POINT_2:
-      return 2;
     case QNN_DATATYPE_SFIXED_POINT_4:
     case QNN_DATATYPE_UFIXED_POINT_4:
       return 4;
@@ -47,12 +44,10 @@ std::optional<uint32_t> GetBitwidthFromDataType(Qnn_DataType_t data_type) {
 
 bool IsFixedPointType(Qnn_DataType_t data_type) {
   switch (data_type) {
-    case QNN_DATATYPE_SFIXED_POINT_2:
     case QNN_DATATYPE_SFIXED_POINT_4:
     case QNN_DATATYPE_SFIXED_POINT_8:
     case QNN_DATATYPE_SFIXED_POINT_16:
     case QNN_DATATYPE_SFIXED_POINT_32:
-    case QNN_DATATYPE_UFIXED_POINT_2:
     case QNN_DATATYPE_UFIXED_POINT_4:
     case QNN_DATATYPE_UFIXED_POINT_8:
     case QNN_DATATYPE_UFIXED_POINT_16:
@@ -65,7 +60,6 @@ bool IsFixedPointType(Qnn_DataType_t data_type) {
 
 bool IsSignedFixedPointType(Qnn_DataType_t data_type) {
   switch (data_type) {
-    case QNN_DATATYPE_SFIXED_POINT_2:
     case QNN_DATATYPE_SFIXED_POINT_4:
     case QNN_DATATYPE_SFIXED_POINT_8:
     case QNN_DATATYPE_SFIXED_POINT_16:
