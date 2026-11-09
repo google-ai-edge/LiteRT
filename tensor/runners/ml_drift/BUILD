@@ -174,6 +174,7 @@ cc_library(
         "//tensor/utils:macros",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
@@ -194,6 +195,26 @@ cc_library(
         "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/common/task:profiling_info",
         "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:weights_conversion",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+# Host-only (no GPU) checks of the INT4 FullyConnected weight preparation.
+cc_test(
+    name = "compiled_ml_drift_model_runner_int4_test",
+    srcs = ["compiled_ml_drift_model_runner_int4_test.cc"],
+    deps = [
+        ":compiled_ml_drift_model_runner",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/common/task:weights_conversion",
         "@ml_drift//ml_drift/common/task:weights_layout",
     ],

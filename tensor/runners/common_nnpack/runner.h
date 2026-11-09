@@ -248,6 +248,7 @@ class NnpackRunner {
   absl::flat_hash_map<uint32_t, std::shared_ptr<Buffer>> external_buffers_;
   size_t num_threads_ = 1;
   bool runtime_prepared_ = false;
+  bool shapes_dirty_ = true;
 };
 
 }  // namespace litert::tensor

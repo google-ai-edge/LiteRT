@@ -151,7 +151,49 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
                  info.quantization->As<PerChannelAffineQuantization>();
              maybe_pcq.ok()) {
     const auto& pcq = maybe_pcq.value();
-    if (pcq.scales.size() == 1) {
+    // The per-channel scales of a channelwise XNNPACK value: `pcq.scales`, or
+    // its single scale repeated for every channel.
+    const auto channel_scales = [&]() -> absl::StatusOr<const float*> {
+      if (pcq.quantized_dimension < 0 ||
+          static_cast<size_t>(pcq.quantized_dimension) >= dims.size()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat(info.name, ": invalid quantized dimension ",
+                         pcq.quantized_dimension));
+      }
+      const size_t channels = dims[pcq.quantized_dimension];
+      if (pcq.scales.size() == 1 && channels != 1) {
+        graph_->dequantized_buffers().push_back(
+            std::vector<float>(channels, pcq.scales[0]));
+        return graph_->dequantized_buffers().back().data();
+      }
+      if (pcq.scales.size() != channels) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            info.name, ": per-channel scale count (", pcq.scales.size(),
+            ") doesn't match the channel dimension size (", channels, ")"));
+      }
+      return pcq.scales.data();
+    };
+    if (info.type == Type::kI2) {
+      LRT_TENSOR_ASSIGN_OR_RETURN(const float* scales, channel_scales());
+      const float* channelwise_zp_ptr = nullptr;
+      if (pcq.HasNonZeroZeroPoints()) {
+        const size_t channels = dims[pcq.quantized_dimension];
+        std::vector<float> channelwise_zps(channels);
+        for (size_t c = 0; c < channels; ++c) {
+          channelwise_zps[c] = pcq.ZeroPointAt(c);
+        }
+        graph_->dequantized_buffers().push_back(std::move(channelwise_zps));
+        channelwise_zp_ptr = graph_->dequantized_buffers().back().data();
+      }
+      LRT_TENSOR_RETURN_IF_ERROR(
+          xnn_define_channelwise_quantized_tensor_value_v3(
+              sg, GetXnnpackType(value), /*zero_point=*/0, scales, dims.size(),
+              pcq.quantized_dimension, dims.empty() ? nullptr : dims.data(),
+              data_ptr, external_id, value.flags, &value.id,
+              channelwise_zp_ptr))
+          << "Could not define a new channelwise quantized int2 tensor value.";
+    } else if (pcq.scales.size() == 1 && info.type != Type::kI4 &&
+               !pcq.HasNonZeroFloatZeroPoints()) {
       LRT_TENSOR_RETURN_IF_ERROR(xnn_define_quantized_tensor_value(
           sg, GetXnnpackType(value),
           pcq.zero_points.empty() ? 0 : pcq.zero_points[0], pcq.scales[0],
@@ -159,14 +201,13 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
           external_id, value.flags, &value.id))
           << "Could not define a new quantized tensor value.";
     } else {
-      bool all_zeros = true;
-      for (int64_t zp : pcq.zero_points) {
-        if (zp != 0) {
-          all_zeros = false;
-          break;
-        }
+      if (info.type == Type::kI4 && pcq.HasNonZeroZeroPoints()) {
+        return absl::UnimplementedError(absl::StrCat(
+            info.name,
+            ": INT4 weights with non-zero zero points are not supported on "
+            "XNNPACK."));
       }
-      if (!all_zeros) {
+      if (pcq.HasNonZeroZeroPoints()) {
         LRT_TENSOR_ASSIGN_OR_RETURN(
             std::vector<float> f32_data,
             DequantizeInt8ConstantTensor(
@@ -179,21 +220,10 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
             value.flags, &value.id))
             << "Could not define a new tensor value after dequantization.";
       } else {
-        if (pcq.quantized_dimension < 0 ||
-            static_cast<size_t>(pcq.quantized_dimension) >= dims.size() ||
-            pcq.scales.size() < dims[pcq.quantized_dimension]) {
-          return absl::InvalidArgumentError(absl::StrCat(
-              info.name, ": per-channel scale count (", pcq.scales.size(),
-              ") is smaller than the channel dimension size (",
-              pcq.quantized_dimension >= 0 &&
-                      static_cast<size_t>(pcq.quantized_dimension) < dims.size()
-                  ? dims[pcq.quantized_dimension]
-                  : static_cast<size_t>(0),
-              ")"));
-        }
+        LRT_TENSOR_ASSIGN_OR_RETURN(const float* scales, channel_scales());
         LRT_TENSOR_RETURN_IF_ERROR(
             xnn_define_channelwise_quantized_tensor_value_v3(
-                sg, GetXnnpackType(value), /*zero_point=*/0, pcq.scales.data(),
+                sg, GetXnnpackType(value), /*zero_point=*/0, scales,
                 dims.size(), pcq.quantized_dimension,
                 dims.empty() ? nullptr : dims.data(), data_ptr, external_id,
                 value.flags, &value.id, /*channelwise_zero_point=*/nullptr))
@@ -203,6 +233,11 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
   } else if (auto maybe_bwq = info.quantization->As<BlockwiseQuantization>();
              maybe_bwq.ok()) {
     const auto& bwq = maybe_bwq.value();
+    if (bwq.HasNonZeroFloatZeroPoints()) {
+      return absl::UnimplementedError(absl::StrCat(
+          info.name,
+          ": XNNPACK does not support floating-point blockwise zero points."));
+    }
     if (dims.size() < 2) {
       return absl::InvalidArgumentError(absl::StrCat(
           info.name,

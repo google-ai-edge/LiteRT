@@ -129,6 +129,7 @@ class MlDriftMetalEnvironment {
   struct ErrorState;
 
   std::unique_ptr<ml_drift::metal::Environment> metal_env_;
+  ml_drift::GpuInfo gpu_info_;
   id<MTLCommandQueue> queue_ = nil;
   id<MTLCommandBuffer> open_command_buffer_ = nil;
   id<MTLCommandBuffer> last_committed_command_buffer_ = nil;

@@ -16,7 +16,9 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_ML_DRIFT_ML_DRIFT_HELPERS_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_ML_DRIFT_ML_DRIFT_HELPERS_H_
 
+#include <cstdlib>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "absl/base/nullability.h"  // from @com_google_absl
@@ -28,6 +30,7 @@ limitations under the License.
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
+#include "ml_drift/common/model_hints.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "tensor/datatypes.h"
@@ -65,7 +68,42 @@ struct MlDriftBuildContext {
   // decode) to skip redundant CPU weight unpacking and rearrangement.
   absl::flat_hash_map<std::string, ml_drift::TensorDescriptor>*
       shared_weight_descriptors = nullptr;
+
+  // True when the GpuModelBuilder may run large quantized FullyConnected /
+  // convolutions with dynamically INT8-quantized activations (i.e. it was
+  // created without `ModelHints::kDisallow8bitConvs`).
+  bool allow_8bit_convs = false;
+
+  // The hints `gpu_model_builder` was created with (for ops that select ML
+  // Drift kernels themselves, e.g. to produce their weights in the kernel's
+  // layout).
+  ml_drift::ModelHints hints;
+
+  // Per-output-channel sums of the signed quantized values of per-channel
+  // quantized constant FullyConnected weights (`sum_i`), keyed by the weights
+  // tensor. Only populated when `allow_8bit_convs`: ML Drift needs them to run
+  // large FullyConnected layers with INT8-quantized activations.
+  absl::flat_hash_map<graph::Tensor, ml_drift::GpuModelBuilder::TensorHandle>
+      weight_sum_i;
 };
+
+// `LRT_ALLOW_8BIT_CONVS=1`: let ML Drift run large quantized FullyConnected /
+// convolutions with dynamically INT8-quantized activations and INT8 dot
+// products.
+inline bool Allow8BitConvsFromEnv() {
+  const char* env = std::getenv("LRT_ALLOW_8BIT_CONVS");
+  return env != nullptr && std::string_view(env) == "1";
+}
+
+// The additive float zero points `-scale * zero_point` of the `num_channels`
+// output channels of per-channel quantized FullyConnected weights, as ML
+// Drift's INT8 convolution dequantization takes them. As in the subtractive
+// zero point tensor of the other FullyConnected kernels, all-zero
+// `float_zero_points` don't override the integer `zero_points`. Fails unless
+// `num_channels >= 0` and the scales and the zero points used each have one
+// value or one per channel (no integer zero points means zero).
+absl::StatusOr<std::vector<float>> AdditiveZeroPoints(
+    const graph::PerChannelAffineQuantization& pcq, int num_channels);
 
 inline ml_drift::TensorDescriptor CopyDescriptorWithoutData(
     const ml_drift::TensorDescriptor& src) {

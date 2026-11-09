@@ -16,22 +16,28 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_COMPILED_ML_DRIFT_MODEL_RUNNER_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_COMPILED_ML_DRIFT_MODEL_RUNNER_H_
 
+#include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>  // NOLINT(build/c++11)
 #include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/container/node_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -63,6 +69,94 @@ limitations under the License.
 
 namespace litert::tensor {
 
+namespace ml_drift_runner_internal {
+
+// `sum_i` (per output channel, the sum of the signed quantized values over the
+// input channels) of the unpacked INT4 FullyConnected weights `values` (OHWI).
+inline std::vector<int32_t> ComputeWeightsSumI(
+    const ml_drift::OHWI& weights_ohwi, absl::Span<const int8_t> values) {
+  const int out_channels = weights_ohwi.o;
+  const size_t row =
+      static_cast<size_t>(weights_ohwi.h) * weights_ohwi.w * weights_ohwi.i;
+  std::vector<int32_t> sum_i(out_channels, 0);
+  for (int o = 0; o < out_channels; ++o) {
+    int32_t s = 0;
+    const int8_t* r = values.data() + static_cast<size_t>(o) * row;
+    for (size_t k = 0; k < row; ++k) s += r[k];
+    sum_i[o] = s;
+  }
+  return sum_i;
+}
+
+// INT4 weights in the kernel layout `desc` (`elements_count` elements), and
+// their `sum_i` when requested.
+struct RearrangedInt4Weights {
+  std::vector<uint8_t> data;
+  std::optional<std::vector<int32_t>> sum_i;
+};
+
+// Rearranges the dense signed INT4 weights `packed` (two per byte, OHWI
+// `ohwi`) into the kernel layout `desc`. The I4O4 layouts rearrange straight
+// from the packed values (and accumulate `sum_i` in the same pass), like
+// `GpuModelBuilder` does for packed INT4 FullyConnected weights: one copy of
+// the packed bytes instead of three full-size INT8 intermediates (~1.9 GB for
+// a 262144 x 2048 tied head). Other layouts unpack to INT8 first.
+inline absl::StatusOr<RearrangedInt4Weights> RearrangeInt4Weights(
+    absl::Span<const int8_t> packed, const ml_drift::OHWI& ohwi,
+    const ml_drift::WeightsDescription& desc, int elements_count,
+    bool want_sum_i) {
+  if (desc.type != ml_drift::DataType::kUint4 &&
+      desc.type != ml_drift::DataType::kInt4) {
+    return absl::UnimplementedError(
+        "Only INT4 weight rearrangement is supported in pre-rearrange for "
+        "now.");
+  }
+  const size_t num_elements = ohwi.DimensionsProduct();
+  const size_t packed_bytes = (num_elements + 1) / 2;
+  if (packed.size() < packed_bytes) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "INT4 weights buffer has ", packed.size(), " bytes, expected ",
+        packed_bytes, " for ", num_elements, " values."));
+  }
+  RearrangedInt4Weights out;
+  out.data.resize((static_cast<size_t>(elements_count) *
+                       ml_drift::SizeInBitsOf(desc.type) +
+                   7) /
+                  8);
+  if (desc.layout == ml_drift::WeightsLayout::kOSpatialIOGroupI4O4 ||
+      desc.layout == ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4) {
+    ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kUint8> bytes;
+    bytes.shape = ohwi;
+    bytes.data.assign(reinterpret_cast<const uint8_t*>(packed.data()),
+                      reinterpret_cast<const uint8_t*>(packed.data()) +
+                          packed_bytes);
+    // The converter always writes `sum_i`, 4 output channels at a time.
+    std::vector<int32_t> sum_i((ohwi.o + 3) / 4 * 4, 0);
+    LRT_TENSOR_RETURN_IF_ERROR(ml_drift::RearrangeWeightsUInt4Packed(
+        bytes, desc, absl::MakeSpan(out.data), absl::MakeSpan(sum_i),
+        /*pad_value=*/8, /*swap_dims=*/false));
+    if (want_sum_i) {
+      sum_i.resize(ohwi.o);
+      out.sum_i = std::move(sum_i);
+    }
+    return out;
+  }
+  ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kInt8> unpacked;
+  unpacked.shape = ohwi;
+  unpacked.data.assign(num_elements + 64, 0);
+  ml_drift::UnpackDenseInt4IntoInt8(packed.data(), num_elements,
+                                    unpacked.data.data());
+  if (want_sum_i) {
+    out.sum_i = ComputeWeightsSumI(
+        ohwi, absl::MakeConstSpan(unpacked.data).first(num_elements));
+  }
+  ml_drift::RearrangeWeightsInt8AsUint4(unpacked, desc,
+                                        absl::MakeSpan(out.data), 8, 8u);
+  return out;
+}
+
+}  // namespace ml_drift_runner_internal
+
 template <typename Backend>
 class CompiledMlDriftModelRunner {
  public:
@@ -93,10 +187,12 @@ class CompiledMlDriftModelRunner {
                              ml_drift::CalculationsPrecision precision =
                                  ml_drift::CalculationsPrecision::kF32,
                              Environment* shared_env = nullptr,
-                             SharedWeightsCache* shared_weights = nullptr)
+                             SharedWeightsCache* shared_weights = nullptr,
+                             bool allow_8bit_convs = false)
       : flat_inputs_(std::move(flat_inputs)),
         flat_outputs_(std::move(flat_outputs)),
-        shared_weights_(shared_weights) {
+        shared_weights_(shared_weights),
+        allow_8bit_convs_(allow_8bit_convs || Allow8BitConvsFromEnv()) {
     if (shared_env != nullptr) {
       env_ptr_ = shared_env;
       env_initialized_ = true;
@@ -115,7 +211,12 @@ class CompiledMlDriftModelRunner {
     }
     gpu_model_info_.hints.Add(ml_drift::ModelHints::kPreferTextureWeights);
     gpu_model_info_.hints.Add(ml_drift::ModelHints::kEnableHostMappedPointer);
-    gpu_model_info_.hints.Add(ml_drift::ModelHints::kDisallow8bitConvs);
+    // `LRT_ALLOW_8BIT_CONVS=1` lets ML Drift run large quantized
+    // FullyConnected / convolutions with dynamically INT8-quantized
+    // activations and INT8 dot products.
+    if (!allow_8bit_convs_) {
+      gpu_model_info_.hints.Add(ml_drift::ModelHints::kDisallow8bitConvs);
+    }
     gpu_model_info_.hints.Add(ml_drift::ModelHints::kAllowSpecialKernels);
     const char* allow_cb_env = std::getenv("LRT_ALLOW_COMMAND_BUFFER");
     gpu_model_info_.hints.allow_cl_khr_command_buffer =
@@ -141,6 +242,8 @@ class CompiledMlDriftModelRunner {
         gpu_info, gpu_model_info_.hints, gpu_model_info_.precision,
         gpu_model_info_.storage_type);
     conversion_ctx_.gpu_model_builder = model_builder_.get();
+    conversion_ctx_.allow_8bit_convs = allow_8bit_convs_;
+    conversion_ctx_.hints = gpu_model_info_.hints;
     conversion_ctx_.default_float_type =
         ml_drift::DeduceDataTypeFromPrecision(gpu_model_info_.precision);
     conversion_ctx_.shared_weight_descriptors =
@@ -158,10 +261,16 @@ class CompiledMlDriftModelRunner {
     if (prepared_) return absl::OkStatus();
     conversion_ctx_.external_weight_names = external_weights;
     name_to_tensor_map_.clear();
+    const absl::Time rearrange_start = absl::Now();
     LRT_TENSOR_RETURN_IF_ERROR(RearrangeAndMapConstantWeights());
+    const absl::Time append_start = absl::Now();
     LRT_TENSOR_ASSIGN_OR_RETURN(
         auto tensor_to_handle,
         AppendGpuModelBuilder(conversion_ctx_, flat_outputs_));
+    ABSL_LOG(INFO) << "LRT_COMPILE_TIMING rearrange_weights_ms="
+                   << absl::ToDoubleMilliseconds(append_start - rearrange_start)
+                   << " convert_ops_ms="
+                   << absl::ToDoubleMilliseconds(absl::Now() - append_start);
 
     conversion_ctx_.graph_tensor_to_handle = std::move(tensor_to_handle);
 
@@ -256,11 +365,17 @@ class CompiledMlDriftModelRunner {
       }
     }
 
+    const absl::Time init_start = absl::Now();
     LRT_TENSOR_RETURN_IF_ERROR(Backend::InitInferenceContext(
         &inference_context_, gpu_model_info_, &gpu_model_, env_ptr_,
         combined_external_tensors));
 
     compilation_time_ = absl::Now() - compilation_start;
+    ABSL_LOG(INFO) << "LRT_COMPILE_TIMING build_model_ms="
+                   << absl::ToDoubleMilliseconds(compilation_time_)
+                   << " init_inference_context_ms="
+                   << absl::ToDoubleMilliseconds(absl::Now() - init_start)
+                   << " nodes=" << gpu_model_.nodes.size();
     return absl::OkStatus();
   }
 
@@ -519,16 +634,204 @@ class CompiledMlDriftModelRunner {
   }
 
  private:
+  static std::string WeightsSumIName(absl::string_view weights_name) {
+    return absl::StrCat(weights_name, ".sum_i");
+  }
+
+  // Registers `sum_i` (per output channel, the sum of the signed quantized
+  // values over the input channels) of per-channel quantized INT4
+  // FullyConnected weights `values` (OHWI), with which ML Drift runs long
+  // prefill FullyConnected layers as INT8 convolutions on dynamically
+  // INT8-quantized activations. Only when 8-bit convolutions are allowed.
+  bool WantsWeightsSumI(const graph::TensorInformation& info) const {
+    return allow_8bit_convs_ && info.quantization != nullptr &&
+           info.quantization->As<const graph::PerChannelAffineQuantization>()
+               .ok();
+  }
+
+
+  absl::Status AddWeightsSumI(const graph::Tensor& weights_tensor,
+                              const graph::TensorInformation& info,
+                              std::vector<int32_t> sums) {
+    ml_drift::Tensor<ml_drift::Linear, ml_drift::DataType::kInt32> sum_i;
+    sum_i.shape = ml_drift::Linear(static_cast<int>(sums.size()));
+    sum_i.data = std::move(sums);
+    ml_drift::TensorDescriptor desc =
+        ml_drift::CreateConstantLinearTensorDescriptor(
+            model_builder_->gpu_info(), sum_i);
+    ml_drift::GpuModelBuilder::TensorHandle handle;
+    if (!info.name.empty() &&
+        conversion_ctx_.shared_weight_descriptors != nullptr) {
+      auto [it, _] = conversion_ctx_.shared_weight_descriptors->emplace(
+          WeightsSumIName(info.name), std::move(desc));
+      handle = model_builder_->AddConstantTensor(
+          CopyDescriptorWithoutData(it->second));
+    } else {
+      handle = model_builder_->AddConstantTensor(std::move(desc));
+    }
+    conversion_ctx_.weight_sum_i[weights_tensor] = handle;
+    if (!info.name.empty()) {
+      conversion_ctx_.weight_name_to_handle.insert(
+          {WeightsSumIName(info.name), handle});
+    }
+    return absl::OkStatus();
+  }
+
+  // `MaybeAddWeightsSumI` for weights found in the shared weights cache.
+  void ReuseSharedWeightsSumI(const graph::Tensor& weights_tensor,
+                              const std::string& weights_name) {
+    if (!allow_8bit_convs_) return;
+    const std::string name = WeightsSumIName(weights_name);
+    auto it = conversion_ctx_.shared_weight_descriptors->find(name);
+    if (it == conversion_ctx_.shared_weight_descriptors->end()) return;
+    auto handle = model_builder_->AddConstantTensor(
+        CopyDescriptorWithoutData(it->second));
+    conversion_ctx_.weight_sum_i[weights_tensor] = handle;
+    conversion_ctx_.weight_name_to_handle.insert({name, handle});
+  }
+
+  // Host-side INT4 weight preparation (unpacking, rearranging into the
+  // kernel's packed layout, `sum_i`), computed in parallel ahead of the
+  // (serial) GPU tensor registration.
+  struct PreparedInt4Weights {
+    ml_drift::WeightsDescription desc;
+    ml_drift::OHWI ohwi;
+    int elements_count = 0;
+    std::vector<uint8_t> rearranged;
+    std::optional<std::vector<int32_t>> sum_i;
+    absl::Status status;
+  };
+
+  absl::node_hash_map<graph::Tensor, PreparedInt4Weights> PrepareInt4Weights(
+      absl::Span<const graph::Operation* const> execution_plan) {
+    // `node_hash_map`: the jobs keep pointers to the entries.
+    struct Job {
+      graph::Tensor tensor;
+      bool fc = false;
+      LockedBufferSpan<const int8_t> raw;
+      PreparedInt4Weights* out = nullptr;
+    };
+    absl::node_hash_map<graph::Tensor, PreparedInt4Weights> prepared;
+    std::vector<Job> jobs;
+    // The index in `jobs` of each prepared tensor, or -1 if it is skipped.
+    absl::flat_hash_map<graph::Tensor, int> job_index;
+    for (const graph::Operation* op : execution_plan) {
+      const bool fc = op->GetName() == "FullyConnected";
+      if (!fc && op->GetName() != "EmbeddingLookup") continue;
+      graph::Tensor weights_tensor = op->inputs[1];
+      if (auto it = job_index.find(weights_tensor); it != job_index.end()) {
+        // Weights tied between an EmbeddingLookup and a FullyConnected (e.g.
+        // an LM head) need `sum_i` if any FullyConnected consumer does.
+        if (fc && it->second >= 0 && !jobs[it->second].fc) {
+          const auto info = graph::GetInfo(weights_tensor);
+          jobs[it->second].fc = info.ok() && WantsWeightsSumI(*info);
+        }
+        continue;
+      }
+      job_index[weights_tensor] = -1;
+      if (conversion_ctx_.graph_tensor_to_handle.contains(weights_tensor)) {
+        continue;
+      }
+      const auto info = graph::GetInfo(weights_tensor);
+      if (!info.ok()) continue;
+      if (info->type != Type::kI4 || info->buffer == nullptr ||
+          conversion_ctx_.external_weight_names.contains(info->name)) {
+        continue;
+      }
+      if (!info->name.empty() &&
+          conversion_ctx_.shared_weight_descriptors != nullptr &&
+          conversion_ctx_.shared_weight_descriptors->contains(info->name)) {
+        continue;
+      }
+      auto bhwc = ShapeToBHWC(info->shape);
+      if (!bhwc.ok()) continue;
+      PreparedInt4Weights& p = prepared[weights_tensor];
+      p.ohwi = ml_drift::OHWI(bhwc->b, bhwc->h, bhwc->w, bhwc->c);
+      p.desc = model_builder_->GetFullyConnectedInt4WeightsDesc(p.ohwi);
+      p.elements_count =
+          ml_drift::GetTotalElementsCountForLayout(p.desc, p.ohwi);
+      job_index[weights_tensor] = static_cast<int>(jobs.size());
+      jobs.push_back(Job{.tensor = weights_tensor,
+                         .fc = fc && WantsWeightsSumI(*info),
+                         .raw = info->buffer->Lock().As<const int8_t>(),
+                         .out = &p});
+    }
+    // Largest first, so the big tensors (e.g. the tied head) start early.
+    std::sort(jobs.begin(), jobs.end(), [](const Job& a, const Job& b) {
+      return a.out->ohwi.DimensionsProduct() > b.out->ohwi.DimensionsProduct();
+    });
+    std::atomic<size_t> next{0};
+    auto worker = [&] {
+      for (size_t j = next.fetch_add(1, std::memory_order_relaxed);
+           j < jobs.size(); j = next.fetch_add(1, std::memory_order_relaxed)) {
+        Job& job = jobs[j];
+        PreparedInt4Weights& p = *job.out;
+        absl::StatusOr<ml_drift_runner_internal::RearrangedInt4Weights>
+            rearranged = ml_drift_runner_internal::RearrangeInt4Weights(
+                absl::MakeConstSpan(job.raw.data(), job.raw.size()), p.ohwi,
+                p.desc, p.elements_count, /*want_sum_i=*/job.fc);
+        if (!rearranged.ok()) {
+          p.status = rearranged.status();
+          continue;
+        }
+        p.rearranged = std::move(rearranged->data);
+        p.sum_i = std::move(rearranged->sum_i);
+      }
+    };
+    int num_threads = std::max(
+        1, std::min<int>(
+               4, static_cast<int>(std::thread::hardware_concurrency())));
+    if (const char* e = std::getenv("LRT_WEIGHT_PREP_THREADS"); e != nullptr) {
+      int parsed = 0;
+      if (absl::SimpleAtoi(e, &parsed)) num_threads = std::max(1, parsed);
+    }
+    std::vector<std::thread> threads;
+    for (int t = 1; t < num_threads; ++t) threads.emplace_back(worker);
+    worker();
+    for (std::thread& t : threads) t.join();
+    return prepared;
+  }
+
+  // Registers the `sum_i` of FullyConnected weights that are already mapped to
+  // a GPU tensor (by an EmbeddingLookup with the same weights): the prepared
+  // `sum_i`, or the one of the shared weights cache.
+  absl::Status AddSumIOfMappedWeights(
+      const graph::Tensor& weights_tensor,
+      absl::node_hash_map<graph::Tensor, PreparedInt4Weights>& prepared_int4) {
+    LRT_TENSOR_ASSIGN_OR_RETURN(const auto& info,
+                                graph::GetInfo(weights_tensor));
+    if (auto it = prepared_int4.find(weights_tensor);
+        it != prepared_int4.end() && it->second.sum_i.has_value()) {
+      std::vector<int32_t> sum_i = std::move(*it->second.sum_i);
+      it->second.sum_i.reset();
+      return AddWeightsSumI(weights_tensor, info, std::move(sum_i));
+    }
+    if (!info.name.empty() &&
+        conversion_ctx_.shared_weight_descriptors != nullptr) {
+      ReuseSharedWeightsSumI(weights_tensor, info.name);
+    }
+    return absl::OkStatus();
+  }
+
   absl::Status RearrangeAndMapConstantWeights() {
     LRT_TENSOR_ASSIGN_OR_RETURN(
         std::vector<const graph::Operation*> execution_plan,
         GetExecutionPlan(flat_outputs_));
+    absl::node_hash_map<graph::Tensor, PreparedInt4Weights> prepared_int4 =
+        PrepareInt4Weights(execution_plan);
 
     for (const graph::Operation* op : execution_plan) {
       if (op->GetName() == "FullyConnected" ||
           op->GetName() == "EmbeddingLookup") {
         auto weights_tensor = op->inputs[1];
         if (conversion_ctx_.graph_tensor_to_handle.contains(weights_tensor)) {
+          // Weights mapped by an earlier EmbeddingLookup can still need the
+          // `sum_i` of a tied FullyConnected.
+          if (op->GetName() == "FullyConnected" &&
+              !conversion_ctx_.weight_sum_i.contains(weights_tensor)) {
+            LRT_TENSOR_RETURN_IF_ERROR(
+                AddSumIOfMappedWeights(weights_tensor, prepared_int4));
+          }
           continue;
         }
         LRT_TENSOR_ASSIGN_OR_RETURN(auto& info,
@@ -554,6 +857,9 @@ class CompiledMlDriftModelRunner {
             name_to_tensor_map_[info.name] = weights_tensor;
             conversion_ctx_.weight_name_to_handle.insert(
                 {info.name, gpu_handle});
+            if (op->GetName() == "FullyConnected") {
+              ReuseSharedWeightsSumI(weights_tensor, info.name);
+            }
             MaybeReleaseFusedHostBuffer(weights_tensor, info);
             continue;
           }
@@ -622,41 +928,20 @@ class CompiledMlDriftModelRunner {
           continue;
         }
 
-        LRT_TENSOR_ASSIGN_OR_RETURN(auto bhwc_shape, ShapeToBHWC(info.shape));
-        ml_drift::OHWI weights_ohwi;
-        weights_ohwi.o = bhwc_shape.b;
-        weights_ohwi.h = bhwc_shape.h;
-        weights_ohwi.w = bhwc_shape.w;
-        weights_ohwi.i = bhwc_shape.c;
-
-        ml_drift::WeightsDescription desc =
-            model_builder_->GetFullyConnectedInt4WeightsDesc(weights_ohwi);
-
-        size_t num_elements = weights_ohwi.DimensionsProduct();
-        std::vector<int8_t> unpacked_data(num_elements + 64, 0);
-
-        ml_drift::UnpackDenseInt4IntoInt8(raw_span.data(), num_elements,
-                                          unpacked_data.data());
-
-        ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kInt8>
-            weights_tensor_mld;
-        weights_tensor_mld.shape = weights_ohwi;
-        weights_tensor_mld.data = std::move(unpacked_data);
-
-        int elements_count =
-            ml_drift::GetTotalElementsCountForLayout(desc, weights_ohwi);
-        size_t rearranged_data_size =
-            (elements_count * ml_drift::SizeInBitsOf(desc.type) + 7) / 8;
-        std::vector<uint8_t> rearranged_data(rearranged_data_size);
-
-        if (desc.type == ml_drift::DataType::kUint4 ||
-            desc.type == ml_drift::DataType::kInt4) {
-          ml_drift::RearrangeWeightsInt8AsUint4(
-              weights_tensor_mld, desc, absl::MakeSpan(rearranged_data), 8, 8u);
-        } else {
-          return absl::UnimplementedError(
-              "Only INT4 weight rearrangement is supported in pre-rearrange "
-              "for now.");
+        auto prepared_it = prepared_int4.find(weights_tensor);
+        if (prepared_it == prepared_int4.end()) {
+          return absl::InternalError(absl::StrCat("INT4 weights '", info.name,
+                                                  "' were not prepared."));
+        }
+        PreparedInt4Weights& prepared = prepared_it->second;
+        LRT_TENSOR_RETURN_IF_ERROR(prepared.status);
+        const ml_drift::OHWI weights_ohwi = prepared.ohwi;
+        const ml_drift::WeightsDescription desc = prepared.desc;
+        const int elements_count = prepared.elements_count;
+        std::vector<uint8_t> rearranged_data = std::move(prepared.rearranged);
+        if (op->GetName() == "FullyConnected" && prepared.sum_i.has_value()) {
+          LRT_TENSOR_RETURN_IF_ERROR(
+              AddWeightsSumI(weights_tensor, info, std::move(*prepared.sum_i)));
         }
 
         ml_drift::TensorDescriptor weights_td;
@@ -741,6 +1026,9 @@ class CompiledMlDriftModelRunner {
   ml_drift::GpuModel gpu_model_;
   InferenceContext inference_context_;
   MlDriftBuildContext conversion_ctx_;
+  // ML Drift may use INT8-activation convolutions (constructor argument or
+  // `LRT_ALLOW_8BIT_CONVS=1`).
+  bool allow_8bit_convs_ = false;
   ml_drift::CreateGpuModelInfo gpu_model_info_;
 
   std::vector<ml_drift::ValueId> graph_input_ids_;

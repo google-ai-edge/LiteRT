@@ -692,14 +692,8 @@ absl::Status OpMixin<FullyConnectedOperation, XnnpackMixinTag>::ToXnnpack(
     if (auto pcq =
             weights_info->quantization->As<PerChannelAffineQuantization>();
         pcq.ok()) {
-      bool all_zeros = true;
-      for (int64_t zp : pcq->zero_points) {
-        if (zp != 0) {
-          all_zeros = false;
-          break;
-        }
-      }
-      weights_are_quantized = all_zeros;
+      weights_are_quantized =
+          weights_info->type == Type::kI2 || !pcq->HasNonZeroZeroPoints();
     } else {
       weights_are_quantized = true;
     }

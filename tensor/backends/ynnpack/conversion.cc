@@ -191,9 +191,17 @@ std::vector<int32_t> YnnpackBuildContext::GetZeroPoints(
 }
 
 bool YnnpackBuildContext::IsSymmetric(const Quantization& quantization) {
-  const absl::Span<const int64_t> zero_points = GetRawZeroPoints(quantization);
-  return std::all_of(zero_points.begin(), zero_points.end(),
-                     [](int64_t zp) { return zp == 0; });
+  if (absl::StatusOr<const BlockwiseQuantization&> bwq =
+          quantization.As<const BlockwiseQuantization>();
+      bwq.ok()) {
+    return !bwq->HasNonZeroZeroPoints();
+  }
+  if (absl::StatusOr<const PerChannelAffineQuantization&> pcq =
+          quantization.As<const PerChannelAffineQuantization>();
+      pcq.ok()) {
+    return !pcq->HasNonZeroZeroPoints();
+  }
+  return true;
 }
 
 size_t YnnpackBuildContext::ElementsPerByte(ynn_type type) {
@@ -255,6 +263,12 @@ absl::Status YnnpackBuildContext::ValidateQuantization(
           ") doesn't match the expected block count (", channels * num_blocks,
           ")."));
     }
+    if (bwq->HasNonZeroFloatZeroPoints()) {
+      return absl::UnimplementedError(
+          absl::StrCat(info.name,
+                       ": floating-point zero points are not supported by the "
+                       "YNNPACK backend."));
+    }
     return CheckZeroPointCount(bwq->zero_points.size(), bwq->scales.size(),
                                info.name);
   }
@@ -277,6 +291,12 @@ absl::Status YnnpackBuildContext::ValidateQuantization(
             ") doesn't match the quantized dimension size (",
             dims[quantized_dimension], ")."));
       }
+    }
+    if (pcq->HasNonZeroFloatZeroPoints()) {
+      return absl::UnimplementedError(
+          absl::StrCat(info.name,
+                       ": floating-point zero points are not supported by the "
+                       "YNNPACK backend."));
     }
     return CheckZeroPointCount(pcq->zero_points.size(), pcq->scales.size(),
                                info.name);
