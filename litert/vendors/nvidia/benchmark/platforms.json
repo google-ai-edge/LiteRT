@@ -1,0 +1,6 @@
+{
+  "_": "The measured platforms: the directory under google/ that holds a platform's tables, how it is named in them, and what its host-memory counter is (GNU time's peak RSS on Linux, the process's peak working set on Windows).",
+  "5080": {"name": "NVIDIA GeForce RTX 5080, native Windows x64", "cpu_memory": "peak working set"},
+  "5080_wsl": {"name": "NVIDIA GeForce RTX 5080, WSL2 Linux on the same host", "cpu_memory": "peak RSS"},
+  "rtx_spark": {"name": "NVIDIA RTX Spark N1X, native Windows ARM64", "cpu_memory": "peak working set"}
+}

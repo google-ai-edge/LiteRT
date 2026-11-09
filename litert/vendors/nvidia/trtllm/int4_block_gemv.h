@@ -34,8 +34,9 @@
 //
 // `gate` selects a gated feed-forward: the weights and scales then hold
 // 2 * output_size rows, the gate projection followed by the up projection,
-// and output[r][n] = gelu(y_gate[r][n]) * y_up[r][n] with the tanh
-// approximation (1) or the exact erf form (2) of GELU; 0 is a plain GEMV.
+// and output[r][n] = act(y_gate[r][n]) * y_up[r][n] with the tanh
+// approximation (1) or the exact erf form (2) of GELU, or SiLU (3, Qwen 3.5's
+// SwiGLU); 0 is a plain GEMV.
 constexpr int kLiteRtNvidiaInt4BlockGemvMaxRows = 8;
 
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRows(

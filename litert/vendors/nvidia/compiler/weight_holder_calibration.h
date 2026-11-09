@@ -55,7 +55,9 @@ bool TensorRtWeightHoldersSupported();
 // the rest from here and their segments from memory the application maps, so
 // they need no refit.
 //
-// The device holds the weight data of the engine while this runs.
+// The device holds the weight data of the engine while this runs, and a
+// granule of CUDA virtual memory per holder for the zeros; host memory holds
+// none of them.
 Expected<TensorRtWeightHolderCalibration> CalibrateTensorRtWeightHolders(
     const void* plan, size_t plan_size,
     absl::Span<const TensorRtWeightHolderBuildData> holders, uint64_t granule);

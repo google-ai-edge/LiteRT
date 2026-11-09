@@ -69,6 +69,7 @@
 #include "litert/vendors/nvidia/cache_layout.h"
 #include "litert/vendors/nvidia/compiler/cache_update_plugin.h"
 #include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
+#include "litert/vendors/nvidia/compiler/gated_delta_plugin.h"
 #include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
 #include "litert/vendors/nvidia/compiler/moe_plugin.h"
 #include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
@@ -3461,6 +3462,7 @@ class LiteRtDispatchInvocationContextT {
     litert::nvidia::EnsureSubbyteGemvPluginRegistered();
     litert::nvidia::EnsureDecodeAttentionPluginRegistered();
     litert::nvidia::EnsureCacheUpdatePluginRegistered();
+    litert::nvidia::EnsureGatedDeltaPluginsRegistered();
     litert::nvidia::EnsureInt8CacheWritePluginRegistered();
     litert::nvidia::EnsureMoePluginRegistered();
     litert::nvidia::EnsureQkvNormRopePluginRegistered();
@@ -5441,11 +5443,13 @@ class LiteRtDispatchInvocationContextT {
 
   // LITERT_NVIDIA_DISPATCH_CUDA_GRAPH=own|own-relaxed: TensorRT-RTX's graph
   // strategy stays off and this context captures its own step graph around
-  // enqueueV3 and the external head (EnqueueStep). TensorRT-RTX's whole-graph
-  // capture leaves plugin layers out, so each of their launches pays WSL's
-  // launch latency every step; a capture around the whole enqueue takes them
-  // all. `own` captures in thread-local mode (an unsafe CUDA call during the
-  // capture fails it, loudly); `own-relaxed` lets such calls through.
+  // enqueueV3 and the external head (EnqueueStep), the external head
+  // included, which TensorRT-RTX's whole-graph capture cannot take (that
+  // capture does take the plugin layers' launches: a plugin's kernel launched
+  // as a programmatic dependent is in its graph, which is where the dense
+  // GEMV's early trigger broke the 26B's decode on 2026-11-04). `own`
+  // captures in thread-local mode (an unsafe CUDA call during the capture
+  // fails it, loudly); `own-relaxed` lets such calls through.
   static bool OwnCudaGraph(cudaStreamCaptureMode* mode) {
     if (litert::nvidia::DispatchLayerProfilingEnabled()) {
       return false;
@@ -5832,34 +5836,41 @@ class LiteRtDispatchInvocationContextT {
       ok = cudaGraphAddEventRecordNode(&event_node, clone, nullptr, 0,
                                        events[count]) == cudaSuccess;
     }
-    // The edges of TensorRT-RTX's graphs carry edge data: the legacy
-    // dependency calls refuse them (cudaErrorLossyQuery), the _v2 calls
-    // read them. The edges added here are plain ones.
+    // Preserve edge data. CUDA 13 promoted the CUDA 12 _v2 entry points to
+    // the unsuffixed names; the signatures are otherwise identical.
+#if CUDART_VERSION >= 13000
+    constexpr auto get_dependencies = cudaGraphNodeGetDependencies;
+    constexpr auto get_dependents = cudaGraphNodeGetDependentNodes;
+    constexpr auto add_dependencies = cudaGraphAddDependencies;
+#else
+    constexpr auto get_dependencies = cudaGraphNodeGetDependencies_v2;
+    constexpr auto get_dependents = cudaGraphNodeGetDependentNodes_v2;
+    constexpr auto add_dependencies = cudaGraphAddDependencies_v2;
+#endif
     for (size_t i = 0; ok && i < count; ++i) {
       size_t dependencies = 0;
-      ok = cudaGraphNodeGetDependencies_v2(in_clone[i], nullptr, nullptr,
-                                           &dependencies) == cudaSuccess;
+      ok = get_dependencies(in_clone[i], nullptr, nullptr, &dependencies) ==
+           cudaSuccess;
       if (ok && dependencies == 0) {
-        ok = cudaGraphAddDependencies_v2(clone, &event_node, &in_clone[i],
-                                         nullptr, 1) == cudaSuccess;
+        ok = add_dependencies(clone, &event_node, &in_clone[i], nullptr, 1) ==
+             cudaSuccess;
       }
     }
     for (size_t i = 0; ok && i < count; ++i) {
       size_t dependents = 0;
-      ok = cudaGraphNodeGetDependentNodes_v2(in_clone[i], nullptr, nullptr,
-                                             &dependents) == cudaSuccess;
+      ok = get_dependents(in_clone[i], nullptr, nullptr, &dependents) ==
+           cudaSuccess;
       std::vector<cudaGraphNode_t> next(dependents);
       std::vector<cudaGraphEdgeData> edges(dependents);
       if (ok && dependents > 0) {
-        ok = cudaGraphNodeGetDependentNodes_v2(in_clone[i], next.data(),
-                                               edges.data(),
-                                               &dependents) == cudaSuccess;
+        ok = get_dependents(in_clone[i], next.data(), edges.data(),
+                            &dependents) == cudaSuccess;
       }
       cudaGraphNode_t after = nullptr;
       ok = ok && cudaGraphAddEventRecordNode(&after, clone, &in_clone[i], 1,
                                              events[i]) == cudaSuccess;
       for (size_t d = 0; ok && d < dependents; ++d) {
-        ok = cudaGraphAddDependencies_v2(clone, &after, &next[d], nullptr, 1) ==
+        ok = add_dependencies(clone, &after, &next[d], nullptr, 1) ==
              cudaSuccess;
       }
     }

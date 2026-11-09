@@ -102,15 +102,26 @@ __device__ __forceinline__ float Nibble(uint32_t word, int index) {
   return static_cast<float>(static_cast<int>((bits ^ 8u) - 8u));
 }
 
+// With programmatic dependent launch, the point before which a kernel may
+// not read what the kernel before it wrote: a no-op for a kernel launched
+// without the dependency.
+__device__ __forceinline__ void WaitForKernelBefore() {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+  cudaGridDependencySynchronize();
+#endif
+}
+
 // Accumulates, for every activation row r and tile row i, the dot products
 // over the input blocks this thread owns (blockIdx-independent: block b for
 // b = threadIdx.x, threadIdx.x + Threads, ...) into acc[r][i]. With
 // `norm_scale` (an RMS norm fused into the product), activation k is
 // multiplied by norm_scale[k] and the thread's sum of squares of the raw
 // activations of each row goes to squares[r]; the caller divides by the
-// row's RMS after the reduction.
+// row's RMS after the reduction. With kDependentLaunch, the thread's first
+// weights are asked for before the wait on the kernel before: the weights
+// are not its output, the activations are.
 template <typename T, int Rows, int Threads, int TileRows = kTileRows,
-          bool kCompact = false>
+          bool kCompact = false, bool kDependentLaunch = false>
 __device__ __forceinline__ void AccumulateTile(const WeightTile& tile,
                                                const ActivationRows<T>& act,
                                                int input_size,
@@ -153,6 +164,9 @@ __device__ __forceinline__ void AccumulateTile(const WeightTile& tile,
         words[i] = make_uint4(0, 0, 0, 0);
         scales[i] = 0.0f;
       }
+    }
+    if constexpr (kDependentLaunch) {
+      if (b == threadIdx.x) WaitForKernelBefore();
     }
 #pragma unroll
     for (int w = 0; w < 4; ++w) {
@@ -278,9 +292,12 @@ __device__ __forceinline__ void ReduceRows(float values[Rows], float* scratch) {
   }
 }
 
-// Gate activations of a gated feed-forward: gelu(gate) * up, with the tanh
-// approximation (1) or the exact erf form (2) of GELU.
+// Gate activations of a gated feed-forward: act(gate) * up, with the tanh
+// approximation (1) or the exact erf form (2) of GELU, or SiLU (3).
 __device__ __forceinline__ float Gelu(float x, int gate) {
+  if (gate == 3) {
+    return x / (1.0f + __expf(-x));
+  }
   if (gate == 1) {
     const float inner = 0.7978845608028654f * (x + 0.044715f * x * x * x);
     return 0.5f * x * (1.0f + tanhf(inner));

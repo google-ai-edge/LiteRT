@@ -19,7 +19,7 @@
 //   bazel test //litert/vendors/nvidia/trtllm:subbyte_gemm_benchmark_test \
 //     --test_output=all   (needs a GPU)
 // GEMM_BENCH_ITERS=N for more samples; GEMM_VARIANT=int8 runs the int8
-// tensor-core kernel on the per-channel shapes; GEMM_OUTLIERS=channel gives
+// tensor-core kernel on the shapes it takes; GEMM_OUTLIERS=channel gives
 // sixteen input dims forty times larger (massive activations), GEMM_OUTLIERS=1
 // one activation in 997 forty times larger.
 
@@ -90,6 +90,23 @@ const Shape kShapes[] = {
     {"e2b gate+up 1024x1536->6144 gelu",
      {1024, 1536, 6144, kLiteRtNvidiaGemmGateGeluTanh, 32}},
     {"12b down 128 rows", {128, 15360, 3840, kLiteRtNvidiaGemmGateNone, 32}},
+    // Qwen 3.5 27B: the linear-attention in-projection, the full-attention
+    // q/gate/k/v projection, the output projections, the SwiGLU MLP and its
+    // down projection; then the per-channel forms the int8 kernel takes.
+    {"qwen qkv 1024x5120->10240",
+     {1024, 5120, 10240, kLiteRtNvidiaGemmGateNone, 32}},
+    {"qwen attn 1024x5120->14336",
+     {1024, 5120, 14336, kLiteRtNvidiaGemmGateNone, 32}},
+    {"qwen out 1024x6144->5120",
+     {1024, 6144, 5120, kLiteRtNvidiaGemmGateNone, 32}},
+    {"qwen gate+up 1024x5120->17408 silu",
+     {1024, 5120, 17408, kLiteRtNvidiaGemmGateSilu, 32}},
+    {"qwen down 1024x17408->5120",
+     {1024, 17408, 5120, kLiteRtNvidiaGemmGateNone, 32}},
+    {"qwen qkv per-channel", {1024, 5120, 10240, kLiteRtNvidiaGemmGateNone, 0}},
+    {"qwen gate+up per-channel",
+     {1024, 5120, 17408, kLiteRtNvidiaGemmGateSilu, 0}},
+    {"qwen out per-channel", {1024, 6144, 5120, kLiteRtNvidiaGemmGateNone, 0}},
 };
 
 uint64_t Checksum(const std::vector<uint16_t>& values) {
@@ -108,18 +125,23 @@ TEST(SubbyteGemmBenchmark, PrefillShapes) {
   ASSERT_EQ(cudaGetDeviceProperties(&properties, device), cudaSuccess);
   int shared_optin = 0;
   int shared_per_sm = 0;
+  int clock_khz = 0;
+  int memory_clock_khz = 0;
   cudaDeviceGetAttribute(&shared_optin, cudaDevAttrMaxSharedMemoryPerBlockOptin,
                          device);
   cudaDeviceGetAttribute(&shared_per_sm,
                          cudaDevAttrMaxSharedMemoryPerMultiprocessor, device);
+  // CUDA 13 dropped the clock fields of cudaDeviceProp.
+  cudaDeviceGetAttribute(&clock_khz, cudaDevAttrClockRate, device);
+  cudaDeviceGetAttribute(&memory_clock_khz, cudaDevAttrMemoryClockRate, device);
   std::printf(
       "device %s: sm_%d%d, %d multiprocessors, %d KB shared per block "
       "(opt-in), %d KB per multiprocessor, %d registers per block, clock %d "
       "MHz, memory clock %d MHz, bus %d bits\n",
       properties.name, properties.major, properties.minor,
       properties.multiProcessorCount, shared_optin / 1024, shared_per_sm / 1024,
-      properties.regsPerBlock, properties.clockRate / 1000,
-      properties.memoryClockRate / 1000, properties.memoryBusWidth);
+      properties.regsPerBlock, clock_khz / 1000, memory_clock_khz / 1000,
+      properties.memoryBusWidth);
   const char* iters_env = std::getenv("GEMM_BENCH_ITERS");
   const int iters = iters_env != nullptr ? std::atoi(iters_env) : 20;
   std::printf("%-40s %10s %10s %10s %18s\n", "shape", "us/launch", "TFLOPS",
@@ -253,8 +275,11 @@ TEST(SubbyteGemmBenchmark, PrefillShapes) {
         };
         const double x = dot(n);
         const double gelu =
-            0.5 * x *
-            (1.0 + std::tanh(0.7978845608028654 * (x + 0.044715 * x * x * x)));
+            shape.gate == kLiteRtNvidiaGemmGateSilu
+                ? x / (1.0 + std::exp(-x))
+                : 0.5 * x *
+                      (1.0 + std::tanh(0.7978845608028654 *
+                                       (x + 0.044715 * x * x * x)));
         const double expected = shape.gate != 0 ? gelu * dot(output + n) : x;
         const uint32_t w =
             static_cast<uint32_t>(result[static_cast<size_t>(row) * output + n])

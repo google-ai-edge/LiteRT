@@ -17,9 +17,9 @@ use crate::perf::PerfPoint;
 use crate::runner::{
     autopsy_dir, conversation_dir, load_autopsy, load_conversation_run, load_memory_run,
     load_numerics_run, load_text_run, memory_dir, numerics_dir, perf_label, perf_run_complete,
-    rescan_numerics_run, run_autopsy_probe, run_conversation_probe, run_memory_probe,
-    run_numerics_probe, run_perf_probe, run_text_probe, text_dir, AutopsyProbe, ConversationProbe,
-    MemoryProbe, NumericsProbe, PerfProbe, TextProbe,
+    rescan_numerics_run, rescan_text_run, run_autopsy_probe, run_conversation_probe,
+    run_memory_probe, run_numerics_probe, run_perf_probe, run_text_probe, text_dir, AutopsyProbe,
+    ConversationProbe, MemoryProbe, NumericsProbe, PerfProbe, TextProbe,
 };
 use crate::texts::TextRun;
 
@@ -79,8 +79,40 @@ pub struct Capture {
     /// The memory probes, plain and MTP per model.
     #[serde(default)]
     pub memory: Vec<MemoryRun>,
+    /// The probes that could not run or be summarized, kept until a resume
+    /// runs them whole; a comparison fails a probe the candidate lost.
+    #[serde(default)]
+    pub failures: Vec<ProbeFailure>,
     #[serde(skip)]
     pub dir: PathBuf,
+}
+
+/// A probe that did not run whole: the capture went on to the next one.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProbeFailure {
+    /// numerics | text | conversations | memory | autopsy | performance
+    pub family: String,
+    pub model: String,
+    /// The probe within its family (a prompt and mode, a kind and variant, a
+    /// performance label); empty where a model has one probe.
+    pub label: String,
+    pub error: String,
+    pub when: String,
+}
+
+impl ProbeFailure {
+    pub fn same_probe(&self, other: &ProbeFailure) -> bool {
+        self.family == other.family && self.model == other.model && self.label == other.label
+    }
+
+    /// "numerics 26b code_grid plain", "autopsy 26b".
+    pub fn name(&self) -> String {
+        if self.label.is_empty() {
+            format!("{} {}", self.family, self.model)
+        } else {
+            format!("{} {} {}", self.family, self.model, self.label)
+        }
+    }
 }
 
 pub struct CaptureOptions {
@@ -177,6 +209,32 @@ pub fn validate_name(name: &str) -> Result<()> {
 
 fn now() -> String {
     chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+/// Records a probe that did not run whole (replacing an earlier record of the
+/// same probe) and says so; the capture goes on to its next probe.
+fn note_failure(
+    capture: &mut Capture,
+    family: &str,
+    model: &str,
+    label: &str,
+    error: &anyhow::Error,
+) {
+    let failure = ProbeFailure {
+        family: family.to_string(),
+        model: model.to_string(),
+        label: label.to_string(),
+        error: format!("{error:#}"),
+        when: now(),
+    };
+    eprintln!("  FAILED ({}): {}", failure.name(), failure.error);
+    capture.failures.retain(|f| !f.same_probe(&failure));
+    capture.failures.push(failure);
+}
+
+/// Drops the record of a probe that has now run whole.
+fn clear_failure(capture: &mut Capture, family: &str, model: &str, label: &str) {
+    capture.failures.retain(|f| !(f.family == family && f.model == model && f.label == label));
 }
 
 pub fn load_capture(env: &BenchEnv, name: &str) -> Result<Capture> {
@@ -296,6 +354,7 @@ pub fn run_capture(
             autopsies: Vec::new(),
             conversations: Vec::new(),
             memory: Vec::new(),
+            failures: Vec::new(),
             dir: dir.clone(),
         },
     };
@@ -371,8 +430,17 @@ pub fn run_capture(
                 let modes: Vec<bool> = if opts.mtp { vec![false, true] } else { vec![false] };
                 for mtp in modes {
                     let out_dir = numerics_dir(&dir, model, &prompt.name, mtp);
-                    let existing = load_numerics_run(&out_dir)
-                        .filter(|r| r.exit_code == 0 && !r.steps.is_empty());
+                    let label = format!("{} {}", prompt.name, if mtp { "mtp" } else { "plain" });
+                    // A probe is kept when it ran whole: its steps, and its dumps when the
+                    // configuration asks for them (a run whose dispatch wrote none is run again).
+                    let existing = load_numerics_run(&out_dir).filter(|r| {
+                        r.exit_code == 0
+                            && !r.steps.is_empty()
+                            && (config.numerics.full_steps == 0
+                                || crate::runner::outputs_dir(&out_dir)
+                                    .join("index.jsonl")
+                                    .is_file())
+                    });
                     let run = match existing {
                         Some(run) => {
                             eprintln!(
@@ -390,31 +458,39 @@ pub fn run_capture(
                                 if mtp { " (mtp)" } else { "" }
                             );
                             let prompt_path = config.prompt_path(guard_dir, prompt);
-                            let run = run_numerics_probe(
-                                env,
-                                &NumericsProbe {
-                                    model,
-                                    prompt,
-                                    prompt_path: &prompt_path,
-                                    mtp,
-                                    top_k: config.numerics.top_k,
-                                    full_steps: config.numerics.full_steps,
-                                    outputs_max_mb: config.numerics.outputs_max_mb,
-                                    out_dir: &out_dir,
-                                },
-                            )?;
-                            eprintln!(
-                                "  exit {} in {:.0} s: {} steps, {} decode tokens at {:.1} tok/s{}",
-                                run.exit_code,
-                                run.wall_s,
-                                run.steps.len(),
-                                run.decode_tokens,
-                                run.decode_tps.unwrap_or(0.0),
-                                if run.loopiness >= 0.25 { ", LOOPS" } else { "" }
-                            );
-                            run
+                            let probe = NumericsProbe {
+                                model,
+                                prompt,
+                                prompt_path: &prompt_path,
+                                mtp,
+                                top_k: config.numerics.top_k,
+                                full_steps: config.numerics.full_steps,
+                                outputs_max_mb: config.numerics.outputs_max_mb,
+                                out_dir: &out_dir,
+                            };
+                            match run_numerics_probe(env, &probe) {
+                                Ok(run) => {
+                                    eprintln!(
+                                        "  exit {} in {:.0} s: {} steps, {} decode tokens at {:.1} tok/s{}{}",
+                                        run.exit_code,
+                                        run.wall_s,
+                                        run.steps.len(),
+                                        run.decode_tokens,
+                                        run.decode_tps.unwrap_or(0.0),
+                                        if run.loopiness >= 0.25 { ", LOOPS" } else { "" },
+                                        if run.nonfinite { ", NON-FINITE LOGITS" } else { "" }
+                                    );
+                                    run
+                                }
+                                Err(error) => {
+                                    note_failure(&mut capture, "numerics", model, &label, &error);
+                                    save(&capture)?;
+                                    continue;
+                                }
+                            }
                         }
                     };
+                    clear_failure(&mut capture, "numerics", model, &label);
                     capture.numerics.retain(|r| {
                         !(r.model == run.model && r.prompt == run.prompt && r.mtp == run.mtp)
                     });
@@ -484,22 +560,32 @@ pub fn run_capture(
                                     out_dir: &out_dir,
                                 }
                             };
-                            let run = run_text_probe(env, &probe)?;
-                            eprintln!(
-                                "  exit {} in {:.0} s: {} chars, device samplers {}{}",
-                                run.exit_code,
-                                run.wall_s,
-                                run.text_len,
-                                run.device_samplers,
-                                match run.regex_ok {
-                                    Some(true) => ", regex ok",
-                                    Some(false) => ", REGEX VIOLATED",
-                                    None => "",
+                            match run_text_probe(env, &probe) {
+                                Ok(run) => {
+                                    eprintln!(
+                                        "  exit {} in {:.0} s: {} chars, device samplers {}{}",
+                                        run.exit_code,
+                                        run.wall_s,
+                                        run.text_len,
+                                        run.device_samplers,
+                                        match run.regex_ok {
+                                            Some(true) => ", regex ok",
+                                            Some(false) => ", REGEX VIOLATED",
+                                            None => "",
+                                        }
+                                    );
+                                    run
                                 }
-                            );
-                            run
+                                Err(error) => {
+                                    let label = format!("{kind} {variant}");
+                                    note_failure(&mut capture, "text", model, &label, &error);
+                                    save(&capture)?;
+                                    continue;
+                                }
+                            }
                         }
                     };
+                    clear_failure(&mut capture, "text", model, &format!("{kind} {variant}"));
                     capture.texts.retain(|r| {
                         !(r.model == run.model && r.kind == run.kind && r.variant == run.variant)
                     });
@@ -523,34 +609,42 @@ pub fn run_capture(
             }) {
                 Some(run) => {
                     eprintln!("conversations {model}: kept");
-                    run
+                    Some(run)
                 }
                 None => {
                     eprintln!(
                         "conversations {model}: running ({} conversations of {})",
                         spec.conversations, spec.prompt
                     );
-                    let run = run_conversation_probe(
-                        env,
-                        &ConversationProbe {
-                            model,
-                            prompt,
-                            prompt_path: &prompt_path,
-                            max_output_tokens: spec.max_output_tokens,
-                            conversations: spec.conversations,
-                            mtp: spec.mtp,
-                            out_dir: &out_dir,
-                        },
-                    )?;
-                    match run.parting() {
-                        Some((i, at)) => eprintln!("  exit {} in {:.0} s: conversation {i} PARTS from the first at char {at}", run.exit_code, run.wall_s),
-                        None => eprintln!("  exit {} in {:.0} s: {} conversations identical", run.exit_code, run.wall_s, run.texts.len()),
+                    let probe = ConversationProbe {
+                        model,
+                        prompt,
+                        prompt_path: &prompt_path,
+                        max_output_tokens: spec.max_output_tokens,
+                        conversations: spec.conversations,
+                        mtp: spec.mtp,
+                        out_dir: &out_dir,
+                    };
+                    match run_conversation_probe(env, &probe) {
+                        Ok(run) => {
+                            match run.parting() {
+                                Some((i, at)) => eprintln!("  exit {} in {:.0} s: conversation {i} PARTS from the first at char {at}", run.exit_code, run.wall_s),
+                                None => eprintln!("  exit {} in {:.0} s: {} conversations identical", run.exit_code, run.wall_s, run.texts.len()),
+                            }
+                            Some(run)
+                        }
+                        Err(error) => {
+                            note_failure(&mut capture, "conversations", model, "", &error);
+                            None
+                        }
                     }
-                    run
                 }
             };
-            capture.conversations.retain(|r| r.model != run.model);
-            capture.conversations.push(run);
+            if let Some(run) = run {
+                clear_failure(&mut capture, "conversations", model, "");
+                capture.conversations.retain(|r| r.model != run.model);
+                capture.conversations.push(run);
+            }
             capture.manifest.updated = now();
             save(&capture)?;
         }
@@ -577,33 +671,40 @@ pub fn run_capture(
                         } else {
                             None
                         };
-                        let run = run_memory_probe(
-                            env,
-                            &MemoryProbe {
-                                model,
-                                workload: &spec.workload,
-                                mtp,
-                                prompt_file: prompt_file.as_deref(),
-                                out_dir: &out_dir,
-                            },
-                        )?;
-                        let fmt = |v: Option<f64>, d: usize| {
-                            v.map(|v| format!("{v:.d$}")).unwrap_or_else(|| "-".into())
+                        let probe = MemoryProbe {
+                            model,
+                            workload: &spec.workload,
+                            mtp,
+                            prompt_file: prompt_file.as_deref(),
+                            out_dir: &out_dir,
                         };
-                        eprintln!(
-                            "  exit {}: device {} MiB, RSS {} GiB{}",
-                            run.exit_code,
-                            fmt(run.gpu_mib, 0),
-                            fmt(run.rss_gib, 3),
-                            if run.compiled {
-                                " (compiled twice: the peaks are the compiler's)"
-                            } else {
-                                ""
+                        match run_memory_probe(env, &probe) {
+                            Ok(run) => {
+                                let fmt = |v: Option<f64>, d: usize| {
+                                    v.map(|v| format!("{v:.d$}")).unwrap_or_else(|| "-".into())
+                                };
+                                eprintln!(
+                                    "  exit {}: device {} MiB, RSS {} GiB{}",
+                                    run.exit_code,
+                                    fmt(run.gpu_mib, 0),
+                                    fmt(run.rss_gib, 3),
+                                    if run.compiled {
+                                        " (compiled twice: the peaks are the compiler's)"
+                                    } else {
+                                        ""
+                                    }
+                                );
+                                run
                             }
-                        );
-                        run
+                            Err(error) => {
+                                note_failure(&mut capture, "memory", model, mode, &error);
+                                save(&capture)?;
+                                continue;
+                            }
+                        }
                     }
                 };
+                clear_failure(&mut capture, "memory", model, mode);
                 capture.memory.retain(|r| !(r.model == run.model && r.mtp == run.mtp));
                 capture.memory.push(run);
                 capture.manifest.updated = now();
@@ -615,7 +716,7 @@ pub fn run_capture(
             let autopsy = match load_autopsy(&out_dir) {
                 Some(a) => {
                     eprintln!("autopsy {model}: kept");
-                    a
+                    Some(a)
                 }
                 None => {
                     let spec = &config.probes.autopsy;
@@ -630,30 +731,38 @@ pub fn run_capture(
                     } else {
                         None
                     };
-                    let autopsy = run_autopsy_probe(
-                        env,
-                        &AutopsyProbe {
-                            model,
-                            workload: &spec.workload,
-                            mtp: spec.mtp,
-                            prompt_file: prompt_file.as_deref(),
-                            out_dir: &out_dir,
-                        },
-                    )?;
-                    for f in &autopsy.functions {
-                        eprintln!(
-                            "  {}: {} kernels, warm {:.0} us, cold {:.0} us",
-                            f.function,
-                            f.kernels.len(),
-                            f.warm_us,
-                            f.cold_us
-                        );
+                    let probe = AutopsyProbe {
+                        model,
+                        workload: &spec.workload,
+                        mtp: spec.mtp,
+                        prompt_file: prompt_file.as_deref(),
+                        out_dir: &out_dir,
+                    };
+                    match run_autopsy_probe(env, &probe) {
+                        Ok(autopsy) => {
+                            for f in &autopsy.functions {
+                                eprintln!(
+                                    "  {}: {} kernels, warm {:.0} us, cold {:.0} us",
+                                    f.function,
+                                    f.kernels.len(),
+                                    f.warm_us,
+                                    f.cold_us
+                                );
+                            }
+                            Some(autopsy)
+                        }
+                        Err(error) => {
+                            note_failure(&mut capture, "autopsy", model, "", &error);
+                            None
+                        }
                     }
-                    autopsy
                 }
             };
-            capture.autopsies.retain(|a| a.model != autopsy.model);
-            capture.autopsies.push(autopsy);
+            if let Some(autopsy) = autopsy {
+                clear_failure(&mut capture, "autopsy", model, "");
+                capture.autopsies.retain(|a| a.model != autopsy.model);
+                capture.autopsies.push(autopsy);
+            }
             capture.manifest.updated = now();
             save(&capture)?;
         }
@@ -686,30 +795,37 @@ pub fn run_capture(
                     }
                     None => {
                         eprintln!("perf {label}: running ({iterations} iterations)");
-                        let point = run_perf_probe(
-                            env,
-                            &PerfProbe {
-                                model,
-                                workload: &workload,
-                                mtp,
-                                prompt_file: prompt_file.as_deref(),
-                                iterations,
-                                out_dir: &perf_dir,
-                                label: &label,
-                            },
-                        )?;
-                        eprintln!(
-                            "  decode {:.1} tok/s, prefill {:.0} tok/s{}",
-                            point.decode_tps.unwrap_or(0.0),
-                            point.prefill_tps.unwrap_or(0.0),
-                            point
-                                .acceptance
-                                .map(|a| format!(", acceptance {:.0}%", a * 100.0))
-                                .unwrap_or_default()
-                        );
-                        point
+                        let probe = PerfProbe {
+                            model,
+                            workload: &workload,
+                            mtp,
+                            prompt_file: prompt_file.as_deref(),
+                            iterations,
+                            out_dir: &perf_dir,
+                            label: &label,
+                        };
+                        match run_perf_probe(env, &probe) {
+                            Ok(point) => {
+                                eprintln!(
+                                    "  decode {:.1} tok/s, prefill {:.0} tok/s{}",
+                                    point.decode_tps.unwrap_or(0.0),
+                                    point.prefill_tps.unwrap_or(0.0),
+                                    point
+                                        .acceptance
+                                        .map(|a| format!(", acceptance {:.0}%", a * 100.0))
+                                        .unwrap_or_default()
+                                );
+                                point
+                            }
+                            Err(error) => {
+                                note_failure(&mut capture, "performance", model, &label, &error);
+                                save(&capture)?;
+                                continue;
+                            }
+                        }
                     }
                 };
+                clear_failure(&mut capture, "performance", model, &label);
                 capture.perf.retain(|p| !(p.model == point.model && p.label == point.label));
                 capture.perf.push(point);
                 capture.manifest.updated = now();
@@ -749,8 +865,8 @@ mod tests {
     }
 }
 
-/// Recomputes every numerics summary of a capture from its files.
-pub fn rescan_capture(env: &BenchEnv, name: &str) -> Result<Capture> {
+/// Recomputes every numerics and text summary of a capture from its files.
+pub fn rescan_capture(env: &BenchEnv, config: &Config, name: &str) -> Result<Capture> {
     let mut capture = load_capture(env, name)?;
     let mut rescanned = Vec::new();
     for run in &capture.numerics {
@@ -761,6 +877,16 @@ pub fn rescan_capture(env: &BenchEnv, name: &str) -> Result<Capture> {
         }
     }
     capture.numerics = rescanned;
+    let mut rescanned = Vec::new();
+    for run in &capture.texts {
+        let dir = text_dir(&capture.dir, &run.model, &run.kind, &run.variant);
+        let regex = (run.kind == "constraint").then_some(config.probes.constraint.regex.as_str());
+        match rescan_text_run(&dir, regex)? {
+            Some(updated) => rescanned.push(updated),
+            None => rescanned.push(run.clone()),
+        }
+    }
+    capture.texts = rescanned;
     capture.manifest.updated = now();
     save(&capture)?;
     Ok(capture)

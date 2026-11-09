@@ -100,7 +100,11 @@ __device__ __forceinline__ uint32_t PackHalves(float lo, float hi) {
   return *reinterpret_cast<const uint32_t*>(&packed);
 }
 
+// The gate's activation: GELU (tanh or erf) or SiLU.
 __device__ __forceinline__ float Gelu(float x, int gate) {
+  if (gate == kLiteRtNvidiaGemmGateSilu) {
+    return x / (1.0f + __expf(-x));
+  }
   if (gate == kLiteRtNvidiaGemmGateGeluTanh) {
     return 0.5f * x *
            (1.0f + tanhf(0.7978845608028654f * (x + 0.044715f * x * x * x)));
@@ -616,7 +620,7 @@ extern "C" bool LiteRtNvidiaSubbyteGemmSupports(
          shape->input_size % kChunk == 0 && shape->output_size > 0 &&
          shape->output_size % 2 == 0 &&
          shape->gate >= kLiteRtNvidiaGemmGateNone &&
-         shape->gate <= kLiteRtNvidiaGemmGateGeluErf &&
+         shape->gate <= kLiteRtNvidiaGemmGateSilu &&
          (shape->scale_block == 0 || shape->scale_block == 32);
 }
 

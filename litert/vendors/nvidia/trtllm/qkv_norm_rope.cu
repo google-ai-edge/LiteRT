@@ -93,11 +93,14 @@ __global__ void __launch_bounds__(kThreads)
   }
   __syncthreads();
   if (rotate) {
+    // Proportional RoPE: the timescales are spaced over all depth / 2 pairs
+    // (i, i + depth / 2) and only the first rotary / 2 pairs turn, as in the
+    // composite's decomposition. Equal to the plain RoPE when rotary = depth.
     const int half = params.rotary / 2;
     const float position = static_cast<float>(positions[token]);
     const float log_step =
         logf(params.max_timescale / params.min_timescale) /
-        static_cast<float>(half);
+        static_cast<float>(depth / 2);
     for (int i = threadIdx.x; i < half; i += kThreads) {
       const float inv_timescale =
           expf(-static_cast<float>(i) * log_step) / params.min_timescale;
