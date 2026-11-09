@@ -254,7 +254,9 @@ MAIN_FUNCTION($0) {
     int S = s;
 )" + read_past + R"(
     float4 p = exp(v - row_max) * inv_sum;
-    args.probs_past.Write(ucl::Convert<args.probs_past::type>(p), X, Y, s);
+    args.probs_past::type prob_val =
+        ucl::Convert<args.probs_past::type>(p);
+    args.probs_past.Write(prob_val, X, Y, s);
   }
   // The bounded P.V product steps over its input in blocks of slices that
   // divide the bound alignment, and its do-while loop reads one block even
@@ -262,14 +264,17 @@ MAIN_FUNCTION($0) {
   // explicit probability of 0; later slices are never read.
   int zero_end = min(past_end + args.zero_slices, args.past_slices);
   for (int s = past_end + lz; s < zero_end; s += THREADS_PER_ROW) {
-    args.probs_past.Write(ucl::Init<args.probs_past::type>(0.0f), X, Y, s);
+    args.probs_past::type zero_prob =
+        ucl::Init<args.probs_past::type>(0.0f);
+    args.probs_past.Write(zero_prob, X, Y, s);
   }
 )";
   if (defer_new) {
     code += R"(
   if (lz == 0) {
     float4 stats = ucl::Init<float4>(1.0f / partial.x, partial.y, 0.0f, 0.0f);
-    args.stats.Write(ucl::Convert<args.stats::type>(stats), X, Y, 0);
+    args.stats::type stats_val = ucl::Convert<args.stats::type>(stats);
+    args.stats.Write(stats_val, X, Y, 0);
   }
 }
 )";
@@ -280,7 +285,9 @@ MAIN_FUNCTION($0) {
 )" + read_new +
             R"(
     float4 p = exp(v - row_max) * inv_sum;
-    args.probs_new.Write(ucl::Convert<args.probs_new::type>(p), X, Y, s);
+    args.probs_new::type prob_val =
+        ucl::Convert<args.probs_new::type>(p);
+    args.probs_new.Write(prob_val, X, Y, s);
   }
 }
 )";

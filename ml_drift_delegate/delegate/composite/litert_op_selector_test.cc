@@ -21,6 +21,8 @@
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
@@ -34,8 +36,10 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
+#include "ml_drift/common/tensor_handle.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
+#include "ml_drift_delegate/delegate/composite/gated_delta_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/short_conv_step_parser.h"
 
@@ -656,7 +660,6 @@ TEST(LiteRtOpSelectorTest,
     EXPECT_NE(node.name, "flash_sdpa");
   }
 }
-
 TEST(LiteRtOpSelectorTest,
      FullyConnectedInt4SymmetricExternalWeightsOmitsZeroPoint) {
   const GpuInfo gpu_info = GetTestGpuInfo();
@@ -719,6 +722,401 @@ TEST(LiteRtOpSelectorTest,
                                 &gpu_model));
   ASSERT_EQ(gpu_model.nodes.size(), 1);
   EXPECT_EQ(gpu_model.nodes[0].inputs.size(), 3);
+}
+
+GpuInfo GetApple10Metal4GpuInfo() {
+  GpuInfo gpu_info;
+  gpu_info.gpu_api = GpuApi::kMetal;
+  gpu_info.vendor = ::ml_drift::GpuVendor::kApple;
+  gpu_info.apple_info = ::ml_drift::AppleInfo("Apple M5 Max");
+  gpu_info.apple_info.gpu_family = ::ml_drift::AppleInfo::Family::kApple10;
+  gpu_info.apple_info.SetComputeUnits(40);
+  gpu_info.supported_wave_sizes = {32};
+  gpu_info.metal_info.language_version =
+      ::ml_drift::MetalLanguageVersion::kMetal4_0;
+  gpu_info.metal_info.max_work_group_size_x = 1024;
+  gpu_info.metal_info.max_work_group_size_y = 1024;
+  gpu_info.metal_info.max_work_group_size_z = 1024;
+  gpu_info.metal_info.buffer_max_size = 256 * 1024 * 1024;
+  return gpu_info;
+}
+
+// Adds a `FullyConnectedExternalWeights` projection (`out_proj`) consuming
+// `src`. When `total_spatial_size > GetRecommendedMaxTotalSpatialSize` (16) and
+// `gpu_info` satisfies `SupportsConvAppleMPP` (`Apple10` + `Metal 4.0` with
+// `DivideRoundUp(c, 4) % 8 == 0`), `GpuModelBuilder` inserts a linkable
+// `ToDHWBCC4` (`to_dhwbcc4`) layout copy immediately after `src`, which
+// `LinkNodes` fuses into the preceding composite kernel's `.Write(...)`
+// expression via `ResolveLinking`.
+absl::StatusOr<::ml_drift::TensorHandle> AppendOutProj(
+    GpuModelBuilder* builder, const ::ml_drift::TensorHandle& src) {
+  const int in_ch = src.tensor_desc.GetBHWCShape().c;
+  const OHWI w_shape(32, 1, 1, in_ch);
+  const auto w_desc =
+      builder->GetFullyConnectedWeightsDesc(DataType::kFloat16, w_shape);
+  TensorDescriptor w_td(w_desc.type, TensorStorageType::kBuffer, Layout::kHWC);
+  w_td.SetBHWCShape(BHWC(1, 1, 1, w_shape.DimensionsProduct()));
+  GpuModelBuilder::Weights weights;
+  weights.weights = builder->AddTensor(w_td);
+  weights.desc = w_desc;
+  weights.shape = w_shape;
+  return builder->FullyConnectedExternalWeights(src, weights);
+}
+
+// Regression test for Apple10 + Metal 4.0 (A19 Pro / M5):
+// `FullyConnectedExternalWeights` inserts a linkable `ToDHWBCC4` layout copy
+// immediately after `sdpa_transposed` when `SupportsConvAppleMPP` holds, which
+// `LinkNodes` fuses into the SDPA kernel's `args.dst.Write(...)`. Passing an
+// inline `ucl::Convert<...>(...)` expression as the first argument to `Write`
+// previously caused `ResolveLinking` to emit invalid Metal
+// (`half4 half4(res)_final;`).
+TEST(LiteRtOpSelectorTest,
+     Apple10Metal4SdpaTransposedDecodePostOpLinksValidIdentifier) {
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
+
+  auto build_sdpa_model = [&](const GpuInfo& gpu_info, int head_dim,
+                              GpuModel* gpu_model) {
+    GpuModelBuilderOptions options;
+    options.storage = TensorStorageType::kBuffer;
+    GpuModelBuilder builder(gpu_info, options);
+
+    auto add_buf = [&](DataType dtype, const BHWC& shape) {
+      TensorDescriptor desc(dtype, TensorStorageType::kBuffer, Layout::kHWC);
+      desc.SetBHWCShape(shape);
+      return builder.AddTensor(desc);
+    };
+
+    const int q_heads = 24;
+    const int kv_heads = 4;
+    const int cache_size = 2048;
+    auto q = add_buf(DataType::kFloat16, BHWC(1, q_heads, 1, head_dim));
+    auto k =
+        add_buf(DataType::kFloat16, BHWC(1, kv_heads, cache_size, head_dim));
+    auto v =
+        add_buf(DataType::kFloat16, BHWC(1, kv_heads, head_dim, cache_size));
+    auto param = add_buf(DataType::kInt32, BHWC(1, 1, 1, 4));
+    auto sdpa_out = add_buf(DataType::kFloat16, BHWC(1, q_heads, 1, head_dim));
+
+    Value v_q{q.id, {DataType::kFloat16, BHWC(1, q_heads, 1, head_dim)}};
+    Value v_k{k.id,
+              {DataType::kFloat16, BHWC(1, kv_heads, cache_size, head_dim)}};
+    Value v_v{v.id,
+              {DataType::kFloat16, BHWC(1, kv_heads, head_dim, cache_size)}};
+    Value v_param{param.id, {DataType::kInt32, BHWC(1, 1, 1, 4)}};
+    Value v_sdpa_out{sdpa_out.id,
+                     {DataType::kFloat16, BHWC(1, q_heads, 1, head_dim)}};
+
+    OperationDef op_def;
+    op_def.src_tensors = {q.tensor_desc, k.tensor_desc, v.tensor_desc,
+                          param.tensor_desc};
+    op_def.dst_tensors = {sdpa_out.tensor_desc};
+
+    GraphFloat32 graph;
+    Node* sdpa_node = graph.NewNode();
+    sdpa_node->operation.type = kSdpaTransposedType;
+    SdpaTransposedAttributes attr;
+    attr.from_cache_update = true;
+    attr.is_causal = true;
+    attr.is_prefill = false;
+    attr.runtime_check.src_end_ch_index = 0;
+    sdpa_node->operation.attributes = attr;
+
+    LiteRtOpSelector selector(&create_info, &gpu_info);
+    ASSERT_OK(
+        selector.GPUOperationFromNode(op_def, {&v_q, &v_k, &v_v, &v_param},
+                                      {&v_sdpa_out}, *sdpa_node, &builder));
+    ASSERT_OK_AND_ASSIGN(auto proj_out, AppendOutProj(&builder, sdpa_out));
+    ASSERT_OK(builder.GetGpuModel({q.id, k.id, v.id, param.id}, {proj_out.id},
+                                  gpu_model));
+  };
+
+  const GpuInfo apple10_info = GetApple10Metal4GpuInfo();
+  for (int head_dim : {256, 128}) {
+    GpuModel gpu_model;
+    build_sdpa_model(apple10_info, head_dim, &gpu_model);
+    bool found_linked_sdpa = false;
+    for (auto& node : gpu_model.nodes) {
+      if (node.name == "flash_decode_sdpa_combine -> to_dhwbcc4" ||
+          node.name == "flash_decode_sdpa -> to_dhwbcc4") {
+        found_linked_sdpa = true;
+        ASSERT_OK(node.gpu_operation->AssembleCode(apple10_info));
+        EXPECT_THAT(node.gpu_operation->code_, HasSubstr("res_value_final"));
+        EXPECT_THAT(node.gpu_operation->code_, Not(HasSubstr(")_final")));
+      }
+    }
+    EXPECT_TRUE(found_linked_sdpa) << "head_dim=" << head_dim;
+  }
+
+  // Confirm that on pre-Apple10 / pre-Metal 4.0 GPUs, `SupportsConvAppleMPP` is
+  // false and `to_dhwbcc4` is not emitted.
+  GpuInfo apple9_info = apple10_info;
+  apple9_info.apple_info.gpu_family = ::ml_drift::AppleInfo::Family::kApple9;
+  apple9_info.metal_info.language_version =
+      ::ml_drift::MetalLanguageVersion::kMetal3_2;
+  GpuModel apple9_model;
+  build_sdpa_model(apple9_info, 128, &apple9_model);
+  for (const auto& node : apple9_model.nodes) {
+    EXPECT_THAT(node.name, Not(HasSubstr("to_dhwbcc4")));
+  }
+}
+
+TEST(LiteRtOpSelectorTest,
+     Apple10Metal4GatedDeltaBlockPostOpLinksValidIdentifier) {
+  const GpuInfo gpu_info = GetApple10Metal4GpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
+
+  for (int seq_len : {1, 32}) {
+    GpuModelBuilderOptions options;
+    options.storage = TensorStorageType::kBuffer;
+    GpuModelBuilder builder(gpu_info, options);
+
+    auto add_buf = [&](DataType dtype, const BHWC& shape) {
+      TensorDescriptor desc(dtype, TensorStorageType::kBuffer, Layout::kHWC);
+      desc.SetBHWCShape(shape);
+      return builder.AddTensor(desc);
+    };
+
+    const int num_k_heads = 16;
+    const int num_v_heads = 16;
+    const int head_k_dim = 128;
+    const int head_v_dim = 128;
+    const int conv_dim =
+        2 * num_k_heads * head_k_dim + num_v_heads * head_v_dim;
+    const int zba_dim = num_v_heads * head_v_dim + 2 * num_v_heads;
+    const int value_dim = num_v_heads * head_v_dim;
+
+    auto conv_out = add_buf(DataType::kFloat16, BHWC(1, 1, seq_len, conv_dim));
+    auto zba = add_buf(DataType::kFloat16, BHWC(1, 1, seq_len, zba_dim));
+    auto a_log = add_buf(DataType::kFloat32, BHWC(1, 1, num_v_heads, 1));
+    auto dt_bias = add_buf(DataType::kFloat32, BHWC(1, 1, num_v_heads, 1));
+    auto norm_w = add_buf(DataType::kFloat32, BHWC(1, 1, head_v_dim, 1));
+    auto gdn_out = add_buf(DataType::kFloat16, BHWC(1, 1, seq_len, value_dim));
+    auto state_out = add_buf(DataType::kFloat32,
+                             BHWC(1, num_v_heads, head_k_dim, head_v_dim));
+
+    Value v_conv{conv_out.id,
+                 {DataType::kFloat16, BHWC(1, 1, seq_len, conv_dim)}};
+    Value v_zba{zba.id, {DataType::kFloat16, BHWC(1, 1, seq_len, zba_dim)}};
+    Value v_a_log{a_log.id, {DataType::kFloat32, BHWC(1, 1, num_v_heads, 1)}};
+    Value v_dt_bias{dt_bias.id,
+                    {DataType::kFloat32, BHWC(1, 1, num_v_heads, 1)}};
+    Value v_norm_w{norm_w.id, {DataType::kFloat32, BHWC(1, 1, head_v_dim, 1)}};
+    Value v_gdn_out{gdn_out.id,
+                    {DataType::kFloat16, BHWC(1, 1, seq_len, value_dim)}};
+    Value v_state_out{
+        state_out.id,
+        {DataType::kFloat32, BHWC(1, num_v_heads, head_k_dim, head_v_dim)}};
+
+    OperationDef op_def;
+    op_def.src_tensors = {conv_out.tensor_desc, zba.tensor_desc,
+                          a_log.tensor_desc, dt_bias.tensor_desc,
+                          norm_w.tensor_desc};
+    op_def.dst_tensors = {gdn_out.tensor_desc, state_out.tensor_desc};
+
+    GraphFloat32 graph;
+    Node* gdn_node = graph.NewNode();
+    gdn_node->operation.type = kGatedDeltaUpdateType;
+    GatedDeltaUpdateAttributes attr;
+    GatedDeltaNetAttributes block;
+    block.num_k_heads = num_k_heads;
+    block.num_v_heads = num_v_heads;
+    block.head_k_dim = head_k_dim;
+    block.head_v_dim = head_v_dim;
+    attr.block = block;
+    gdn_node->operation.attributes = attr;
+
+    LiteRtOpSelector selector(&create_info, &gpu_info);
+    ASSERT_OK(selector.GPUOperationFromNode(
+        op_def, {&v_conv, &v_zba, &v_a_log, &v_dt_bias, &v_norm_w},
+        {&v_gdn_out, &v_state_out}, *gdn_node, &builder));
+    ::ml_drift::TensorHandle final_out;
+    std::string expected_suffix;
+    if (seq_len > 16) {
+      // Prefill (`total_spatial_size > 16`) triggers Apple10 + Metal 4.0
+      // `SupportsConvAppleMPP` -> `to_dhwbcc4` post-op fusion.
+      ASSERT_OK_AND_ASSIGN(final_out, AppendOutProj(&builder, gdn_out));
+      expected_suffix = " -> to_dhwbcc4";
+    } else {
+      // Single-token decode (`seq_len == 1`) links any downstream elementwise
+      // post-op into the decode specialization's `.Write(...)`.
+      final_out = add_buf(DataType::kFloat16, BHWC(1, 1, seq_len, value_dim));
+      builder.Copy(gdn_out, final_out);
+      expected_suffix = " -> copy";
+    }
+
+    GpuModel gpu_model;
+    ASSERT_OK(builder.GetGpuModel(
+        {conv_out.id, zba.id, a_log.id, dt_bias.id, norm_w.id},
+        {final_out.id, state_out.id}, &gpu_model));
+    bool found_linked_gdn = false;
+    for (auto& node : gpu_model.nodes) {
+      if (node.name == "gated_delta_update" + expected_suffix ||
+          node.name == "gated_delta_update_norm" + expected_suffix) {
+        found_linked_gdn = true;
+        ASSERT_OK(node.gpu_operation->AssembleCode(gpu_info));
+        EXPECT_THAT(node.gpu_operation->code_,
+                    HasSubstr("gated_out_act_final"));
+        EXPECT_THAT(node.gpu_operation->code_, Not(HasSubstr(")_final")));
+      }
+    }
+    EXPECT_TRUE(found_linked_gdn) << "seq_len=" << seq_len;
+  }
+}
+
+TEST(LiteRtOpSelectorTest,
+     Apple10Metal4ShortConvStepPostOpLinksValidIdentifier) {
+  const GpuInfo gpu_info = GetApple10Metal4GpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
+
+  GpuModelBuilderOptions options;
+  options.storage = TensorStorageType::kBuffer;
+  GpuModelBuilder builder(gpu_info, options);
+
+  auto add_buf = [&](DataType dtype, const BHWC& shape) {
+    TensorDescriptor desc(dtype, TensorStorageType::kBuffer, Layout::kHWC);
+    desc.SetBHWCShape(shape);
+    return builder.AddTensor(desc);
+  };
+
+  const int seq_len = 32;
+  const int filter_size = 4;
+  const int hidden_size = 32;
+  auto in_proj = add_buf(DataType::kFloat16, BHWC(1, 1, seq_len, hidden_size));
+  auto conv_weight =
+      add_buf(DataType::kFloat16, BHWC(1, 1, filter_size, hidden_size));
+  auto conv_state =
+      add_buf(DataType::kFloat16, BHWC(1, 1, filter_size - 1, hidden_size));
+  auto conv_out = add_buf(DataType::kFloat16, BHWC(1, 1, seq_len, hidden_size));
+  auto next_state =
+      add_buf(DataType::kFloat16, BHWC(1, 1, filter_size - 1, hidden_size));
+
+  Value v_in{in_proj.id,
+             {DataType::kFloat16, BHWC(1, 1, seq_len, hidden_size)}};
+  Value v_w{conv_weight.id,
+            {DataType::kFloat16, BHWC(1, 1, filter_size, hidden_size)}};
+  Value v_st{conv_state.id,
+             {DataType::kFloat16, BHWC(1, 1, filter_size - 1, hidden_size)}};
+  Value v_out{conv_out.id,
+              {DataType::kFloat16, BHWC(1, 1, seq_len, hidden_size)}};
+  Value v_nst{next_state.id,
+              {DataType::kFloat16, BHWC(1, 1, filter_size - 1, hidden_size)}};
+
+  OperationDef op_def;
+  op_def.src_tensors = {in_proj.tensor_desc, conv_weight.tensor_desc,
+                        conv_state.tensor_desc};
+  op_def.dst_tensors = {conv_out.tensor_desc, next_state.tensor_desc};
+
+  GraphFloat32 graph;
+  Node* conv_node = graph.NewNode();
+  conv_node->operation.type = kShortConvStepType;
+  ShortConvStepAttributes attr;
+  attr.conv_L_cache = filter_size;
+  attr.is_gated = false;
+  conv_node->operation.attributes = attr;
+
+  LiteRtOpSelector selector(&create_info, &gpu_info);
+  ASSERT_OK(selector.GPUOperationFromNode(
+      op_def, {&v_in, &v_w, &v_st}, {&v_out, &v_nst}, *conv_node, &builder));
+  ASSERT_OK_AND_ASSIGN(auto proj_out, AppendOutProj(&builder, conv_out));
+
+  GpuModel gpu_model;
+  ASSERT_OK(builder.GetGpuModel({in_proj.id, conv_weight.id, conv_state.id},
+                                {proj_out.id, next_state.id}, &gpu_model));
+  bool found_linked_conv = false;
+  for (auto& node : gpu_model.nodes) {
+    if (node.name == "short_conv_step -> to_dhwbcc4") {
+      found_linked_conv = true;
+      ASSERT_OK(node.gpu_operation->AssembleCode(gpu_info));
+      EXPECT_THAT(node.gpu_operation->code_, HasSubstr("out_val_final"));
+      EXPECT_THAT(node.gpu_operation->code_, HasSubstr("out_val0_final"));
+      EXPECT_THAT(node.gpu_operation->code_, HasSubstr("out_val1_final"));
+      EXPECT_THAT(node.gpu_operation->code_, HasSubstr("out_val2_final"));
+      EXPECT_THAT(node.gpu_operation->code_, Not(HasSubstr(")_final")));
+    }
+  }
+  EXPECT_TRUE(found_linked_conv);
+}
+
+TEST(LiteRtOpSelectorTest,
+     Apple10Metal4FusedSdpaCacheUpdatePrefillLinksValidIdentifier) {
+  const GpuInfo gpu_info = GetApple10Metal4GpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
+
+  GpuModelBuilderOptions options;
+  options.storage = TensorStorageType::kBuffer;
+  GpuModelBuilder builder(gpu_info, options);
+
+  auto add_buf = [&](DataType dtype, const BHWC& shape) {
+    TensorDescriptor desc(dtype, TensorStorageType::kBuffer, Layout::kHWC);
+    desc.SetBHWCShape(shape);
+    return builder.AddTensor(desc);
+  };
+
+  const int Hkv = 2, G = 1, T = 32, W = 64, D = 64;
+  auto q = add_buf(DataType::kFloat16, BHWC(1, Hkv, G * T, D));
+  auto kc = add_buf(DataType::kFloat16, BHWC(1, Hkv, W, D));
+  auto vc = add_buf(DataType::kFloat16, BHWC(1, Hkv, D, W));
+  auto kn = add_buf(DataType::kFloat16, BHWC(1, Hkv, T, D));
+  auto vn = add_buf(DataType::kFloat16, BHWC(1, Hkv, D, T));
+  auto mask = add_buf(DataType::kFloat16, BHWC(1, 1, T, W + T));
+  auto param = add_buf(DataType::kInt32, BHWC(1, 1, 1, 7));
+  auto attn_out = add_buf(DataType::kFloat16, BHWC(1, Hkv, G * T, D));
+  auto kc_out = add_buf(DataType::kFloat16, BHWC(1, Hkv, W, D));
+  auto vc_out = add_buf(DataType::kFloat16, BHWC(1, Hkv, D, W));
+
+  Value v_q{q.id, {DataType::kFloat16, BHWC(1, Hkv, G * T, D)}};
+  Value v_kc{kc.id, {DataType::kFloat16, BHWC(1, Hkv, W, D)}};
+  Value v_vc{vc.id, {DataType::kFloat16, BHWC(1, Hkv, D, W)}};
+  Value v_kn{kn.id, {DataType::kFloat16, BHWC(1, Hkv, T, D)}};
+  Value v_vn{vn.id, {DataType::kFloat16, BHWC(1, Hkv, D, T)}};
+  Value v_mask{mask.id, {DataType::kFloat16, BHWC(1, 1, T, W + T)}};
+  Value v_param{param.id, {DataType::kInt32, BHWC(1, 1, 1, 7)}};
+  Value v_attn{attn_out.id, {DataType::kFloat16, BHWC(1, Hkv, G * T, D)}};
+  Value v_kc_out{kc_out.id, {DataType::kFloat16, BHWC(1, Hkv, W, D)}};
+  Value v_vc_out{vc_out.id, {DataType::kFloat16, BHWC(1, Hkv, D, W)}};
+
+  OperationDef op_def;
+  op_def.src_tensors = {q.tensor_desc,    kc.tensor_desc, vc.tensor_desc,
+                        kn.tensor_desc,   vn.tensor_desc, mask.tensor_desc,
+                        param.tensor_desc};
+  op_def.dst_tensors = {attn_out.tensor_desc, kc_out.tensor_desc,
+                        vc_out.tensor_desc};
+
+  GraphFloat32 graph;
+  Node* sdpa_node = graph.NewNode();
+  sdpa_node->operation.type = kFusedSdpaCacheUpdateType;
+  FusedSdpaCacheUpdateAttributes attr;
+  attr.update_cache = true;
+  sdpa_node->operation.attributes = attr;
+
+  LiteRtOpSelector selector(&create_info, &gpu_info);
+  ASSERT_OK(selector.GPUOperationFromNode(
+      op_def, {&v_q, &v_kc, &v_vc, &v_kn, &v_vn, &v_mask, &v_param},
+      {&v_attn, &v_kc_out, &v_vc_out}, *sdpa_node, &builder));
+
+  GpuModel gpu_model;
+  ASSERT_OK(
+      builder.GetGpuModel({q.id, kc.id, vc.id, kn.id, vn.id, mask.id, param.id},
+                          {attn_out.id, kc_out.id, vc_out.id}, &gpu_model));
+  bool found_linked_softmax = false;
+  for (auto& node : gpu_model.nodes) {
+    if (absl::StrContains(node.name, "fused_sdpa_masked_softmax ->")) {
+      found_linked_softmax = true;
+      ASSERT_OK(node.gpu_operation->AssembleCode(gpu_info));
+      EXPECT_THAT(node.gpu_operation->code_, HasSubstr("prob_val_final"));
+      EXPECT_THAT(node.gpu_operation->code_, HasSubstr("zero_prob_final"));
+      EXPECT_THAT(node.gpu_operation->code_, Not(HasSubstr(")_final")));
+    }
+  }
+  EXPECT_TRUE(found_linked_softmax);
 }
 }  // namespace
 }  // namespace litert::ml_drift

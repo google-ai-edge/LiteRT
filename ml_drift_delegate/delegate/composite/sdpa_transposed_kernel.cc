@@ -618,13 +618,15 @@ MAIN_FUNCTION($0) {
                   is_flattened_dst ? absl::StrFormat(R"(
     if (tid < args.slices) {
       int out_slice = Y * %d + tid;
-      args.dst.Write(ucl::Convert<args.dst::type>(final_acc), X, 0, out_slice);
+      args.dst::type res_value = ucl::Convert<args.dst::type>(final_acc);
+      args.dst.Write(res_value, X, 0, out_slice);
     }
 )",
                                                      slices)
                                    : R"(
     if (tid < args.slices) {
-      args.dst.Write(ucl::Convert<args.dst::type>(final_acc), X, Y, tid);
+      args.dst::type res_value = ucl::Convert<args.dst::type>(final_acc);
+      args.dst.Write(res_value, X, Y, tid);
     }
 )",
                   R"(
@@ -775,23 +777,23 @@ std::string FlashDecodeResultWriteCode(int g, int splits, int slices,
     const std::string part_row =
         absl::StrCat("X * ", splits, " + split, ", head);
     return absl::StrCat(
-        "    args.dst.Write(ucl::Convert<args.dst::type>(sum), ", part_row,
-        ", tid);\n", "    if (tid == 0) {\n",
+        "    args.dst::type part_sum = ucl::Convert<args.dst::type>(sum);\n"
+        "    args.dst.Write(part_sum, ",
+        part_row, ", tid);\n", "    if (tid == 0) {\n",
         "      float4 ml = ucl::Init<float4>(m_run", g, ", l_total", g,
-        ", 0.0f, 0.0f);\n",
-        "      args.dst.Write(ucl::Convert<args.dst::type>(ml), ", part_row,
-        ", ", slices, ");\n", "    }\n");
+        ", 0.0f, 0.0f);\n"
+        "      args.dst::type part_ml = ucl::Convert<args.dst::type>(ml);\n"
+        "      args.dst.Write(part_ml, ",
+        part_row, ", ", slices, ");\n", "    }\n");
   }
   return absl::StrCat(
       "    float inv_l = l_total", g, " > 0.0f ? 1.0f / l_total", g,
-      " : 0.0f;\n    float4 res = sum * inv_l;\n",
-      is_flattened_dst
-          ? absl::StrCat("    args.dst.Write(ucl::Convert<args.dst::type>("
-                         "res), X, 0, (",
-                         head, ") * ", slices, " + tid);\n")
-          : absl::StrCat("    args.dst.Write(ucl::Convert<args.dst::type>("
-                         "res), X, ",
-                         head, ", tid);\n"));
+      " : 0.0f;\n    float4 res = sum * inv_l;\n"
+      "    args.dst::type res_value = ucl::Convert<args.dst::type>(res);\n",
+      is_flattened_dst ? absl::StrCat("    args.dst.Write(res_value, X, 0, (",
+                                      head, ") * ", slices, " + tid);\n")
+                       : absl::StrCat("    args.dst.Write(res_value, X, ", head,
+                                      ", tid);\n"));
 }
 
 // Generates the work-group local-memory reduction and GQA split-K Flash-Decode
@@ -1390,12 +1392,12 @@ MAIN_FUNCTION($0) {
   }
   float inv_l = l_sum > 0.0f ? 1.0f / l_sum : 0.0f;
   float4 res = acc * inv_l;
+  args.dst::type res_value = ucl::Convert<args.dst::type>(res);
 )",
-      is_flattened_dst ? absl::StrCat("  args.dst.Write(ucl::Convert<args.dst::"
-                                      "type>(res), X, 0, head * ",
-                                      slices, " + slice);\n")
-                       : "  args.dst.Write(ucl::Convert<args.dst::type>"
-                         "(res), X, head, slice);\n",
+      is_flattened_dst
+          ? absl::StrCat("  args.dst.Write(res_value, X, 0, head * ", slices,
+                         " + slice);\n")
+          : "  args.dst.Write(res_value, X, head, slice);\n",
       "}\n");
   return std::make_unique<FusedFlashDecodeCombineOp>(std::move(op));
 }
@@ -1588,8 +1590,9 @@ MAIN_FUNCTION($0) {
     if (lane_id < args.slices && Y_warp < dst_h) {
       for (int r = 0; r < 8; ++r) {
         if (X_warp + r < dst_w) {
-          args.dst.Write(ucl::Convert<args.dst::type>(float4(0.0f)),
-                         X_warp + r, Y_warp, lane_id);
+          args.dst::type zero_value =
+              ucl::Convert<args.dst::type>(float4(0.0f));
+          args.dst.Write(zero_value, X_warp + r, Y_warp, lane_id);
         }
       }
     }
@@ -1921,11 +1924,12 @@ MAIN_FUNCTION($0) {
         half4 out_v = *reinterpret_cast<const __local half4*>(
             &warp_smem[r * )",
                   ldq, R"( + lane_id * 4]);
-        args.dst.Write(ucl::Convert<args.dst::type>(out_v), out_x, Y_warp,
-                       lane_id);
+        args.dst::type res_value = ucl::Convert<args.dst::type>(out_v);
+        args.dst.Write(res_value, out_x, Y_warp, lane_id);
       } else if (out_x < dst_w) {
-        args.dst.Write(ucl::Convert<args.dst::type>(float4(0.0f)), out_x,
-                       Y_warp, lane_id);
+        args.dst::type zero_value =
+            ucl::Convert<args.dst::type>(float4(0.0f));
+        args.dst.Write(zero_value, out_x, Y_warp, lane_id);
       }
     }
   }
