@@ -305,6 +305,21 @@ TEST(WeightStoreWindowsTest, TakesPagesThatHaveNoPageTableWithoutReadingThem) {
                    ->SourceOffset({const_cast<uint8_t*>(written) - 100, 200})
                    .HasValue());
   EXPECT_TRUE((*builder)->SourceOffset({untouched, 64 << 10}).HasValue());
+  // The unwritten pages made read-only, as LiteRT does to a model view before
+  // it writes to one: still taken without being read, and the written page
+  // still found.
+  DWORD previous;
+  ASSERT_TRUE(VirtualProtect(reinterpret_cast<void*>(span), kTableSpan,
+                             PAGE_READONLY, &previous));
+  auto lowered = (*builder)->SourceOffset({untouched, 64 << 10});
+  ASSERT_TRUE(lowered.HasValue()) << lowered.Error().Message();
+  EXPECT_EQ(*lowered, static_cast<uint64_t>(untouched - view));
+  for (uint64_t at = 0; at < (64 << 10); at += 4096) {
+    EXPECT_EQ(flags(untouched + at) & 1, 0u) << "read at " << at;
+  }
+  EXPECT_FALSE((*builder)
+                   ->SourceOffset({const_cast<uint8_t*>(written) - 100, 200})
+                   .HasValue());
   ASSERT_EQ(munmap(view, kBytes), 0);
   builder = Unexpected(kLiteRtStatusErrorNotFound);
   NvidiaUnlink(path.c_str());

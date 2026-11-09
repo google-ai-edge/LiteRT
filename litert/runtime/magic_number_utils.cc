@@ -40,6 +40,7 @@
 #include "litert/core/environment.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "litert/runtime/model_buffer_writes.h"
 #include "tflite/converter/schema/schema_generated.h"
 #include "tflite/model_builder.h"
 
@@ -233,6 +234,12 @@ Expected<void> ResizeConstantBufferToTensorShape(LiteRtTensorT& tensor) {
   return {};
 }
 
+// The flatbuffer may be a file view of the model that is read-only until a
+// range of it is written to (MakeModelBufferWritable).
+Expected<void> MakeWritable(const void* data, size_t size) {
+  return MakeModelBufferWritable(data, size);
+}
+
 // Updates the dimensions of a given tensor whose number is a magic number.
 // Returns the number of dimensions updated.
 Expected<int> UpdateMagicNumberInDimensions(
@@ -262,8 +269,11 @@ Expected<int> UpdateMagicNumberInDimensions(
     ++num_updated;
 
     // Update the flatbuffer accordingly.
-    const_cast<::flatbuffers::Vector<int32_t>*>(tflite_tensor->shape())
-        ->Mutate(i, layout.dimensions[i]);
+    auto* shape =
+        const_cast<::flatbuffers::Vector<int32_t>*>(tflite_tensor->shape());
+    LITERT_RETURN_IF_ERROR(
+        MakeWritable(shape->data(), shape->size() * sizeof(int32_t)));
+    shape->Mutate(i, layout.dimensions[i]);
   }
 
   if (num_updated > 0) {
@@ -276,8 +286,9 @@ Expected<int> UpdateMagicNumberInDimensions(
 // A util template to update magic number in the flatbuffer for a given type.
 // Returns the number of elements updated.
 template <typename T>
-int UpdateMagicNumber(T magic_number, T target_number, LiteRtOpCode op_code,
-                      unsigned char* data, const unsigned char* data_end) {
+Expected<int> UpdateMagicNumber(T magic_number, T target_number,
+                                LiteRtOpCode op_code, unsigned char* data,
+                                const unsigned char* data_end) {
   int num_updated = 0;
   for (int i = 0; data < data_end; i += sizeof(T), data += sizeof(T)) {
     T value = 0;
@@ -292,6 +303,9 @@ int UpdateMagicNumber(T magic_number, T target_number, LiteRtOpCode op_code,
                "Update param data[%d] of op=%d from %" PRId64 " to %" PRId64
                ", factor=%" PRId64,
                i, op_code, magic_number, target_number, factor);
+    if (num_updated == 0) {
+      LITERT_RETURN_IF_ERROR(MakeWritable(data, data_end - data));
+    }
     memcpy(data, &value, sizeof(T));
     ++num_updated;
   }
@@ -404,6 +418,8 @@ Expected<int> UpdateMagicNumberInCompositeAttributes(
             ->composite_attributes();
     // Overwrite the composite_attributes entirely as it's not easy to
     // get the start offset of the given entry.
+    LITERT_RETURN_IF_ERROR(
+        MakeWritable(tflite_opts->data(), opts->composite_attributes.size()));
     memcpy(const_cast<unsigned char*>(tflite_opts->data()),
            opts->composite_attributes.data(),
            opts->composite_attributes.size());

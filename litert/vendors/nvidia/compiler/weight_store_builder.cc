@@ -249,12 +249,16 @@ Expected<uint64_t> TensorRtWeightStoreBuilder::SourceOffset(
   // private copy, wherever it was moved to. Pages under a page table that
   // was never made, most of a large view that nothing touched, come without
   // any information; one of them could only have been written if its page
-  // table was paged out since, and a written page has another protection
-  // than its view gave it, so the protection of those pages is checked
-  // instead. A written page can still hold what the file holds, when other
-  // bytes of the page were written or the same bytes were written back, so
-  // its part of the weights is compared with the file. Without the
-  // information every page is compared.
+  // table was paged out since, and a written page reads PAGE_READWRITE (or
+  // whatever the view gave it, for a view mapped writable), so the
+  // protection of those pages is checked instead: a page that still reads as
+  // its view gave it, or read-only or copy-on-write, is the file's. LiteRT
+  // makes the unwritten pages of a copy-on-write model view read-only and
+  // turns the ones it writes to copy-on-write again
+  // (litert/runtime/model_buffer_writes.h). A written page can still hold what
+  // the file holds, when other bytes of the page were written or the same bytes
+  // were written back, so its part of the weights is compared with the file.
+  // Without the information every page is compared.
   const uint64_t page_size = static_cast<uint64_t>(sysconf(_SC_PAGESIZE));
   const uint64_t first_page = begin / page_size;
   const uint64_t last_page = (end - 1) / page_size;
@@ -291,7 +295,9 @@ Expected<uint64_t> TensorRtWeightStoreBuilder::SourceOffset(
                        region.RegionSize;
         }
         if (address < region_end && region.Type == MEM_MAPPED &&
-            region.Protect == region.AllocationProtect) {
+            (region.Protect == region.AllocationProtect ||
+             region.Protect == PAGE_READONLY ||
+             region.Protect == PAGE_WRITECOPY)) {
           continue;
         }
       }
