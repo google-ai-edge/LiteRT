@@ -1,0 +1,1752 @@
+[
+ {
+  "question_id": "abc397_a",
+  "title": "Thermometer",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-03-15T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": true
+ },
+ {
+  "question_id": "abc400_a",
+  "title": "ABC400 Party",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-04-05T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": true
+ },
+ {
+  "question_id": "abc399_b",
+  "title": "Ranking with Ties",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-03-29T00:00:00",
+  "tests": 44,
+  "test_type": "stdin",
+  "smoke": true
+ },
+ {
+  "question_id": "abc395_a",
+  "title": "Strictly Increasing?",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-03-01T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc389_b",
+  "title": "tcaF",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-01-18T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc398_a",
+  "title": "Doors in the Center",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-03-22T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc389_a",
+  "title": "9x9",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-01-18T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc399_a",
+  "title": "Hamming Distance",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-03-29T00:00:00",
+  "tests": 44,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc395_b",
+  "title": "Make Target",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-03-01T00:00:00",
+  "tests": 44,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc391_a",
+  "title": "Lucky Direction",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-02-01T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc391_b",
+  "title": "Seek Grid",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-02-01T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc393_a",
+  "title": "Poisonous Oyster",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-02-15T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc392_b",
+  "title": "Who is Missing?",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-02-08T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc400_b",
+  "title": "Sum of Geometric Series",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-04-05T00:00:00",
+  "tests": 44,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc387_a",
+  "title": "Happy New Year 2025",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-01-04T00:00:00",
+  "tests": 44,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc388_a",
+  "title": "?UPC",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-01-11T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc390_b",
+  "title": "Geometric Sequence",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-01-25T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc387_b",
+  "title": "9x9 Sum",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-01-04T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc393_b",
+  "title": "A..B..C",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-02-15T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc388_b",
+  "title": "Heavy Snake",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-01-11T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc394_b",
+  "title": "cat",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-02-22T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc392_a",
+  "title": "Shuffled Equation",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-02-08T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc396_a",
+  "title": "Triple Four",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-03-08T00:00:00",
+  "tests": 45,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc390_a",
+  "title": "12435",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-01-25T00:00:00",
+  "tests": 44,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc394_a",
+  "title": "22222",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-02-22T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc396_b",
+  "title": "Card Pile",
+  "platform": "atcoder",
+  "difficulty": "easy",
+  "contest_date": "2025-03-08T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc395_f",
+  "title": "Smooth Occlusion",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-01T00:00:00",
+  "tests": 44,
+  "test_type": "stdin",
+  "smoke": true
+ },
+ {
+  "question_id": "arc196_c",
+  "title": "Strongly Connected",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-04-06T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": true
+ },
+ {
+  "question_id": "abc394_e",
+  "title": "Palindromic Shortest Path",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-22T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": true
+ },
+ {
+  "question_id": "abc390_e",
+  "title": "Vitamin Balance",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-25T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc195_d",
+  "title": "Swap and Erase",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-23T00:00:00",
+  "tests": 2,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc398_g",
+  "title": "Not Only Tree Game",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-22T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc391_e",
+  "title": "Hierarchical Majority Vote",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-01T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc399_e",
+  "title": "Replace",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-29T00:00:00",
+  "tests": 44,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc389_f",
+  "title": "Rated Range",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-18T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc191_c",
+  "title": "A^n",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-26T00:00:00",
+  "tests": 2,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc389_g",
+  "title": "Odd Even Graph",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-18T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc194_e",
+  "title": "Swap 0^X and 1^Y",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-09T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc396_e",
+  "title": "Min of Restricted Sum",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-08T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc391_g",
+  "title": "Many LCS",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-01T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc195_b",
+  "title": "Uniform Sum",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-23T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc392_f",
+  "title": "Insert",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-08T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc399_f",
+  "title": "Range Power Sum",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-29T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc393_e",
+  "title": "GCD of Subset",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-15T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc389_e",
+  "title": "Square Price",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-18T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc190_d",
+  "title": "Matrix Pow Sum",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-12T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc393_f",
+  "title": "Prefix LIS Query",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-15T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc398_f",
+  "title": "ABCBA",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-22T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc196_d",
+  "title": "Roadway",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-04-06T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc193_b",
+  "title": "Broken Wheel",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-23T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc195_e",
+  "title": "Random Tree Distance",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-23T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc397_f",
+  "title": "Variety Split Hard",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-15T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc388_e",
+  "title": "Simultaneous Kagamimochi",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-11T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc396_f",
+  "title": "Rotated Inversions",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-08T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc194_d",
+  "title": "Reverse Brackets",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-09T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc192_b",
+  "title": "Fennec VS. Snuke 2",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-09T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc388_g",
+  "title": "Simultaneous Kagamimochi 2",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-11T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc400_g",
+  "title": "Patisserie ABC 3",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-04-05T00:00:00",
+  "tests": 6,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc194_b",
+  "title": "Minimum Cost Sort",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-09T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc390_g",
+  "title": "Permutation Concatenation",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-25T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc387_f",
+  "title": "Count Arrays",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-04T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc394_f",
+  "title": "Alkane",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-22T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc393_d",
+  "title": "Swap to Gather",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-15T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc194_c",
+  "title": "Cost to Flip",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-09T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc397_g",
+  "title": "Maximize Distance",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-15T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc397_e",
+  "title": "Path Decomposition of a Tree",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-15T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc191_d",
+  "title": "Moving Pieces on Graph",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-26T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc192_e",
+  "title": "Snuke's Kyoto Trip",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-09T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc400_e",
+  "title": "Ringo's Favorite Numbers 3",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-04-05T00:00:00",
+  "tests": 5,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc195_c",
+  "title": "Hamiltonian Pieces",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-23T00:00:00",
+  "tests": 5,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc398_d",
+  "title": "Bonfire",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-22T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc193_a",
+  "title": "Complement Interval Graph",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-23T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc395_e",
+  "title": "Flip Edge",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-01T00:00:00",
+  "tests": 44,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc196_a",
+  "title": "Adjacent Delete",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-04-06T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc397_d",
+  "title": "Cubes",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-15T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc396_g",
+  "title": "Flip Row or Col",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-03-08T00:00:00",
+  "tests": 36,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc394_g",
+  "title": "Dense Buildings",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-22T00:00:00",
+  "tests": 41,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc193_d",
+  "title": "Magnets",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-23T00:00:00",
+  "tests": 2,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc190_c",
+  "title": "Basic Grid Problem with Updates",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-12T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc190_a",
+  "title": "Inside or Outside",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-12T00:00:00",
+  "tests": 44,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc391_f",
+  "title": "K",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-01T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc392_g",
+  "title": "Fine Triplets",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-08T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc196_b",
+  "title": "Torus Loop",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-04-06T00:00:00",
+  "tests": 2,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc192_d",
+  "title": "Fraction Line",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-02-09T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc390_f",
+  "title": "Double Sum 3",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-25T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc388_f",
+  "title": "Dangerous Sugoroku",
+  "platform": "atcoder",
+  "difficulty": "hard",
+  "contest_date": "2025-01-11T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc400_c",
+  "title": "2^a b^2",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-04-05T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": true
+ },
+ {
+  "question_id": "abc399_c",
+  "title": "Make it Forest",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-03-29T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": true
+ },
+ {
+  "question_id": "abc392_c",
+  "title": "Bib",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-02-08T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": true
+ },
+ {
+  "question_id": "arc195_a",
+  "title": "Twice Subsequence",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-03-23T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc191_a",
+  "title": "Replace Digits",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-01-26T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc389_d",
+  "title": "Squares in Circle",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-01-18T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc390_d",
+  "title": "Stone XOR",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-01-25T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc387_c",
+  "title": "Snake Numbers",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-01-04T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc392_d",
+  "title": "Doubles",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-02-08T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc194_a",
+  "title": "Operations on a Stack",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-03-09T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc394_d",
+  "title": "Colorful Bracket Sequence",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-02-22T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc388_d",
+  "title": "Coming of Age Celebration",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-01-11T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc399_d",
+  "title": "Switch Seats",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-03-29T00:00:00",
+  "tests": 2,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc396_d",
+  "title": "Minimum XOR Path",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-03-08T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc397_c",
+  "title": "Variety Split Easy",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-03-15T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc396_c",
+  "title": "Buy Balls",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-03-08T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc395_c",
+  "title": "Shortest Duplicate Subarray",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-03-01T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc398_c",
+  "title": "Uniqueness",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-03-22T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc400_d",
+  "title": "Takahashi the Wall Breaker",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-04-05T00:00:00",
+  "tests": 44,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc397_b",
+  "title": "Ticket Gate Log",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-03-15T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc398_b",
+  "title": "Full House 3",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-03-22T00:00:00",
+  "tests": 44,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc390_c",
+  "title": "Paint to make a rectangle",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-01-25T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc394_c",
+  "title": "Debug",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-02-22T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc391_d",
+  "title": "Gravity",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-02-01T00:00:00",
+  "tests": 42,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "abc388_c",
+  "title": "Various Kagamimochi",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-01-11T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "arc192_a",
+  "title": "ARC Arc",
+  "platform": "atcoder",
+  "difficulty": "medium",
+  "contest_date": "2025-02-09T00:00:00",
+  "tests": 43,
+  "test_type": "stdin",
+  "smoke": false
+ },
+ {
+  "question_id": "3705",
+  "title": "find-the-largest-almost-missing-integer",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-03-01T18:30:00",
+  "tests": 34,
+  "test_type": "functional",
+  "smoke": true
+ },
+ {
+  "question_id": "3778",
+  "title": "transform-array-by-parity",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-03-01T06:30:00",
+  "tests": 33,
+  "test_type": "functional",
+  "smoke": true
+ },
+ {
+  "question_id": "3799",
+  "title": "unique-3-digit-even-numbers",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-03-15T07:30:00",
+  "tests": 35,
+  "test_type": "functional",
+  "smoke": true
+ },
+ {
+  "question_id": "3708",
+  "title": "zigzag-grid-traversal-with-skip",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-01-11T18:30:00",
+  "tests": 34,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3704",
+  "title": "count-partitions-with-even-sum-difference",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-01-25T18:30:00",
+  "tests": 34,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3736",
+  "title": "find-valid-pair-of-adjacent-digits-in-string",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-02-01T06:30:00",
+  "tests": 34,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3832",
+  "title": "minimum-cost-to-reach-every-position",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-03-29T19:30:00",
+  "tests": 33,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3747",
+  "title": "maximum-difference-between-adjacent-elements-in-a-circular-array",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-01-18T06:30:00",
+  "tests": 33,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3788",
+  "title": "maximum-unique-subarray-sum-after-deletion",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-03-15T19:30:00",
+  "tests": 34,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3753",
+  "title": "maximum-difference-between-even-and-odd-frequency-i",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-02-01T18:30:00",
+  "tests": 33,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3817",
+  "title": "maximum-containers-on-a-ship",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-03-22T19:30:00",
+  "tests": 33,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3723",
+  "title": "sum-of-good-numbers",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-02-15T06:30:00",
+  "tests": 33,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3731",
+  "title": "sum-of-variable-length-subarrays",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-01-18T18:30:00",
+  "tests": 33,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3768",
+  "title": "check-if-digits-are-equal-in-string-after-operations-i",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-02-22T18:30:00",
+  "tests": 33,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3773",
+  "title": "minimum-pair-removal-to-sort-array-i",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-04-05T19:30:00",
+  "tests": 33,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3811",
+  "title": "reverse-degree-of-a-string",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-03-29T07:30:00",
+  "tests": 33,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3709",
+  "title": "find-special-substring-of-length-k",
+  "platform": "leetcode",
+  "difficulty": "easy",
+  "contest_date": "2025-02-15T18:30:00",
+  "tests": 33,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3717",
+  "title": "minimum-operations-to-make-elements-within-k-subarrays-equal",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-03-29T19:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": true
+ },
+ {
+  "question_id": "3801",
+  "title": "count-beautiful-numbers",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-03-15T19:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": true
+ },
+ {
+  "question_id": "3674",
+  "title": "count-non-decreasing-subarrays-after-k-operations",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-01-11T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": true
+ },
+ {
+  "question_id": "3770",
+  "title": "lexicographically-smallest-generated-string",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-03-01T18:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3777",
+  "title": "maximum-product-of-subsequences-with-an-alternating-sum-equal-to-k",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-04-05T19:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3781",
+  "title": "maximize-the-distance-between-points-on-a-square",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-02-22T18:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3687",
+  "title": "longest-special-path",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-01-18T06:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3696",
+  "title": "count-substrings-divisible-by-last-digit",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-02-08T18:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3697",
+  "title": "minimum-increments-for-target-multiples-in-an-array",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-02-01T18:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3744",
+  "title": "minimum-operations-to-make-array-elements-zero",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-03-22T19:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3765",
+  "title": "minimum-cost-to-divide-array-into-subarrays",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-03-29T07:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3701",
+  "title": "minimum-cost-good-caption",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-02-01T06:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3784",
+  "title": "longest-common-prefix-of-k-strings-after-removal",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-03-15T07:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3692",
+  "title": "shortest-matching-substring",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-02-15T06:30:00",
+  "tests": 44,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3789",
+  "title": "maximize-subarrays-after-removing-one-conflicting-pair",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-03-08T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3783",
+  "title": "permutations-iv",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-03-01T06:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3733",
+  "title": "length-of-longest-v-shaped-diagonal-segment",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-02-15T18:30:00",
+  "tests": 44,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3739",
+  "title": "manhattan-distances-of-all-arrangements-of-pieces",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-01-18T06:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3762",
+  "title": "maximize-the-minimum-game-score",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-02-08T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3725",
+  "title": "maximum-and-minimum-sums-of-at-most-size-k-subarrays",
+  "platform": "leetcode",
+  "difficulty": "hard",
+  "contest_date": "2025-01-18T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3714",
+  "title": "maximum-and-minimum-sums-of-at-most-size-k-subsequences",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-01-18T18:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": true
+ },
+ {
+  "question_id": "3722",
+  "title": "sum-of-k-subarrays-with-length-at-least-m",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-03-01T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": true
+ },
+ {
+  "question_id": "3763",
+  "title": "separate-squares-i",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-02-15T06:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": true
+ },
+ {
+  "question_id": "3743",
+  "title": "reschedule-meetings-for-maximum-free-time-i",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-02-01T06:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3795",
+  "title": "zero-array-transformation-iv",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-03-15T19:30:00",
+  "tests": 44,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3771",
+  "title": "select-k-disjoint-special-substrings",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-02-15T18:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3791",
+  "title": "fruits-into-baskets-iii",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-03-08T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3751",
+  "title": "maximum-frequency-after-subarray-operation",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-01-25T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3776",
+  "title": "find-minimum-cost-to-remove-array-elements",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-03-01T06:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3793",
+  "title": "longest-palindrome-after-substring-concatenation-i",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-03-29T19:30:00",
+  "tests": 44,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3737",
+  "title": "paint-house-iv",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-01-18T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3805",
+  "title": "maximize-active-section-with-trade-i",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-03-29T07:30:00",
+  "tests": 44,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3786",
+  "title": "longest-palindromic-subsequence-after-at-most-k-operations",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-03-01T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3809",
+  "title": "properties-graph",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-03-22T19:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3785",
+  "title": "find-the-number-of-copy-arrays",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-03-01T06:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3759",
+  "title": "choose-k-elements-with-maximum-sum",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-03-08T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3760",
+  "title": "assign-elements-to-groups-with-constraints",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-02-08T18:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3764",
+  "title": "maximum-sum-with-at-most-k-elements",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-02-22T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3750",
+  "title": "closest-equal-element-queries",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-03-15T19:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3720",
+  "title": "minimize-the-maximum-edge-weight-of-graph",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-01-11T18:30:00",
+  "tests": 44,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3779",
+  "title": "eat-pizzas",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-02-15T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3754",
+  "title": "maximum-manhattan-distance-after-k-changes",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-02-01T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3721",
+  "title": "count-mentions-per-user",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-01-25T18:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3677",
+  "title": "maximum-amount-of-money-robot-can-earn",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-01-11T18:30:00",
+  "tests": 42,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3794",
+  "title": "find-the-minimum-amount-of-time-to-brew-potions",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-03-22T19:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ },
+ {
+  "question_id": "3748",
+  "title": "sort-matrix-by-diagonals",
+  "platform": "leetcode",
+  "difficulty": "medium",
+  "contest_date": "2025-02-08T18:30:00",
+  "tests": 43,
+  "test_type": "functional",
+  "smoke": false
+ }
+]

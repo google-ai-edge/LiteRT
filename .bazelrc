@@ -371,7 +371,6 @@ build:windows --per_file_copt=external/pthreadpool/_*@/D_CRT_SECURE_NO_WARNINGS
 # Force include MSVC compatibility header for litert files
 build:windows --per_file_copt=external/litert/.*@/FI"C:/BuildTools/LiteRT-LM/msvc_compat.h"
 
-
 # On Windows, `__cplusplus` is wrongly defined without this switch
 # See https://devblogs.microsoft.com/cppblog/msvc-now-correctly-reports-__cplusplus/
 build:windows --copt=/Zc:__cplusplus
@@ -629,3 +628,6 @@ test:bulk_test_cpu --build_tests_only
 # TODO: b/397625618 Enable bzlmod
 common --noenable_bzlmod
 
+
+build:windows_arm64 --cpu=arm64_windows
+build:windows_arm64 --host_cpu=arm64_windows

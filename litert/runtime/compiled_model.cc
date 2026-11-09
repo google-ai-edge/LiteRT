@@ -109,6 +109,7 @@
 #include "litert/runtime/magic_number_utils.h"
 #endif  // !defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/metrics.h"
+#include "litert/runtime/model_buffer_writes.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/runtime/tensor_identifier.h"
@@ -946,6 +947,10 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
     LiteRtOptions options, LiteRtEnvironmentT& env) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Graph Loading");
+  // Windows charges a copy-on-write view of the model file in full; the model
+  // is written to only through MakeModelBufferWritable.
+  litert::internal::KeepModelBufferReadOnlyUntilWritten(
+      litert::internal::GetTflFlatbuffer(model).Buf().Data());
 #if !defined(LITERT_NO_BUILTIN_OPS)
   LITERT_RETURN_IF_ERROR(
       litert::internal::ReplaceMagicNumbersIfAny(env, model));

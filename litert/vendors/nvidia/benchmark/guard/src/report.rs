@@ -82,9 +82,10 @@ fn text_run<'a>(
 
 /// Every device-side text run of the candidate judged against its host run:
 /// the texts must agree, the device run must show the verifier's device path
-/// (the candidate selection at k > 1, the greedy sampler at k = 1), the host
-/// run must show none, the constrained texts must match the regex, and both
-/// runs must end well.
+/// (the candidate selection at k > 1, the greedy sampler at k = 1) unless the
+/// baseline's run of the same probe lacks it too (noted, not a change), the
+/// host run must show none, the constrained texts must match the regex, and
+/// both runs must end well.
 pub fn check_texts(base: &Capture, cand: &Capture) -> Vec<TextCheck> {
     let mut out = Vec::new();
     let keys: BTreeSet<(String, String, String)> = cand
@@ -100,22 +101,31 @@ pub fn check_texts(base: &Capture, cand: &Capture) -> Vec<TextCheck> {
         ) else {
             continue;
         };
+        // A probe the CLI cannot run (a build without constrained decoding)
+        // is not judged: not_compared says so.
+        if device.unsupported.is_some() && host.unsupported.is_some() {
+            continue;
+        }
         let comparison = compare_texts(device, host);
+        let base_device = text_run(&base.texts, &model, &kind, &variant);
         let mut verdict = Verdict::Pass;
         let mut reasons = Vec::new();
-        let mut raise = |v: Verdict, reason: String| {
-            verdict = verdict.max(v);
+        // A reason without a verdict is a note: a condition the baseline's own run shares.
+        let mut raise = |v: Option<Verdict>, reason: String| {
+            if let Some(v) = v {
+                verdict = verdict.max(v);
+            }
             reasons.push(reason);
         };
         if device.exit_code != 0 || host.exit_code != 0 {
             raise(
-                Verdict::Fail,
+                Some(Verdict::Fail),
                 format!("exit codes {variant} {} host {}", device.exit_code, host.exit_code),
             );
         }
         if device.parser_errors > 0 || host.parser_errors > 0 {
             raise(
-                Verdict::Fail,
+                Some(Verdict::Fail),
                 format!(
                     "parser errors {variant} {} host {}",
                     device.parser_errors, host.parser_errors
@@ -123,28 +133,40 @@ pub fn check_texts(base: &Capture, cand: &Capture) -> Vec<TextCheck> {
             );
         }
         if device.regex_ok == Some(false) {
-            raise(Verdict::Fail, format!("the {variant} text violates the regex"));
+            raise(Some(Verdict::Fail), format!("the {variant} text violates the regex"));
         }
         if host.regex_ok == Some(false) {
-            raise(Verdict::Fail, "the host text violates the regex".to_string());
+            raise(Some(Verdict::Fail), "the host text violates the regex".to_string());
         }
+        // The verifier's device path missing is a change only when the baseline's run had it:
+        // a LiteRT-LM without the candidate selection at k > 1 shows the same on both sides.
         if device.top_k > 1 && device.device_candidates == 0 {
-            raise(
-                Verdict::Warn,
-                format!("the {variant} run shows no candidate selection at k {}: the verifier sampled on the host", device.top_k),
-            );
+            let reason = format!("the {variant} run shows no candidate selection at k {}: the verifier sampled on the host", device.top_k);
+            match base_device {
+                Some(b) if b.top_k == device.top_k && b.device_candidates == 0 => raise(
+                    None,
+                    format!("{reason}, as in the baseline (this LiteRT-LM has no device candidate selection: not a change)"),
+                ),
+                _ => raise(Some(Verdict::Warn), reason),
+            }
         } else if device.device_samplers == 0 {
-            raise(Verdict::Warn, format!("the {variant} run reports no device sampler"));
+            let reason = format!("the {variant} run reports no device sampler");
+            match base_device {
+                Some(b) if b.device_samplers == 0 => {
+                    raise(None, format!("{reason}, as in the baseline"))
+                }
+                _ => raise(Some(Verdict::Warn), reason),
+            }
         }
         if host.device_samplers > 0 {
             raise(
-                Verdict::Warn,
+                Some(Verdict::Warn),
                 format!("the host run reports {} device sampler line(s): LITERT_NVIDIA_MTP_GPU_SAMPLING=0 was not honored", host.device_samplers),
             );
         }
         if !comparison.identical {
             raise(
-                Verdict::Warn,
+                Some(Verdict::Warn),
                 format!(
                     "{variant} and host texts part at char {} ({} words in common; a tie at the k-th logit, or a sampler change)",
                     comparison.parted_char.unwrap_or(0),
@@ -152,8 +174,7 @@ pub fn check_texts(base: &Capture, cand: &Capture) -> Vec<TextCheck> {
                 ),
             );
         }
-        let same_as_baseline =
-            text_run(&base.texts, &model, &kind, &variant).map(|b| b.text == device.text);
+        let same_as_baseline = base_device.map(|b| b.text == device.text);
         out.push(TextCheck {
             model,
             kind,
@@ -540,6 +561,17 @@ pub struct Comparison {
 fn not_compared(base: &Capture, cand: &Capture) -> Vec<String> {
     let mut out = Vec::new();
     let mode = |mtp: bool| if mtp { "mtp" } else { "plain" };
+    // The text probes a CLI could not run (check_texts leaves them out).
+    for (side, capture) in [("the candidate", cand), ("the baseline", base)] {
+        for t in capture.texts.iter().filter(|t| t.variant != "host") {
+            if let Some(reason) = &t.unsupported {
+                out.push(format!(
+                    "text {} {} {}: not judged in {side}, {reason}",
+                    t.model, t.kind, t.variant
+                ));
+            }
+        }
+    }
     for b in &base.numerics {
         if !cand
             .numerics
@@ -662,38 +694,79 @@ pub struct RecordPoint {
     pub prefill_tps: Option<f64>,
 }
 
-/// Reads measurements' bench/results.json (`records[].parts.main`) or a
-/// report.py --json document (a list of run reports).
+/// Reads measurements' bench/results.json (`records[].parts.main`), the RTX
+/// Spark snapshot's results.json (`litert_records[]`, the runs themselves,
+/// narrowed to the ones its `selected_runs` put in the tables when it has
+/// them) or a report.py --json document (a list of run reports). A cell with
+/// several runs is their mean.
 pub fn load_record(path: &std::path::Path) -> Result<Vec<RecordPoint>> {
     let text = std::fs::read_to_string(path)?;
     let value: serde_json::Value = serde_json::from_str(&text)?;
-    let mut points = Vec::new();
+    let mut selected: Option<BTreeSet<String>> = None;
     let runs: Vec<&serde_json::Value> = match &value {
         serde_json::Value::Object(map) if map.contains_key("records") => map["records"]
             .as_array()
             .map(|a| a.iter().filter_map(|r| r.get("parts").and_then(|p| p.get("main"))).collect())
             .unwrap_or_default(),
+        serde_json::Value::Object(map) if map.contains_key("litert_records") => {
+            selected = map.get("selected_runs").and_then(|s| s.as_object()).map(|s| {
+                s.values().filter_map(|v| v.as_str()).map(|v| v.replace('\\', "/")).collect()
+            });
+            map["litert_records"].as_array().map(|a| a.iter().collect()).unwrap_or_default()
+        }
         serde_json::Value::Array(items) => items.iter().collect(),
         _ => Vec::new(),
     };
+    let mut cells: Vec<(RecordPoint, Vec<f64>, Vec<f64>)> = Vec::new();
     for run in runs {
         let (Some(meta), Some(summary)) = (run.get("meta"), run.get("summary")) else { continue };
         if meta.get("metric").and_then(|m| m.as_str()) != Some("latency") {
             continue;
         }
+        if let Some(selected) = &selected {
+            let dir = run
+                .get("run_directory")
+                .and_then(|v| v.as_str())
+                .map(|v| v.replace('\\', "/"))
+                .unwrap_or_default();
+            if !selected.contains(&dir) {
+                continue;
+            }
+        }
         let tps = |key: &str| {
             summary.get(key).and_then(|v| v.get("mean").or(Some(v))).and_then(|v| v.as_f64())
         };
-        points.push(RecordPoint {
+        let point = RecordPoint {
             model: meta.get("profile").and_then(|v| v.as_str()).unwrap_or("").to_string(),
             workload: meta.get("workload").and_then(|v| v.as_str()).unwrap_or("").to_string(),
             mtp: meta.get("mtp").and_then(|v| v.as_bool()).unwrap_or(false),
             text: meta.get("prompt_file").map(|v| !v.is_null()).unwrap_or(false),
             decode_tps: tps("decode_tokens_per_second"),
             prefill_tps: tps("prefill_tokens_per_second"),
-        });
+        };
+        let cell = match cells.iter_mut().find(|(c, _, _)| {
+            c.model == point.model
+                && c.workload == point.workload
+                && c.mtp == point.mtp
+                && c.text == point.text
+        }) {
+            Some(cell) => cell,
+            None => {
+                cells.push((point.clone(), Vec::new(), Vec::new()));
+                cells.last_mut().expect("just pushed")
+            }
+        };
+        cell.1.extend(point.decode_tps);
+        cell.2.extend(point.prefill_tps);
     }
-    Ok(points)
+    Ok(cells
+        .into_iter()
+        .map(|(mut point, decode, prefill)| {
+            point.decode_tps = crate::parse::mean(decode.iter().cloned());
+            point.prefill_tps = crate::parse::mean(prefill.iter().cloned());
+            point
+        })
+        .collect())
 }
 
 fn plain_points<'a>(points: &'a [PerfPoint], model: &str) -> Vec<&'a PerfPoint> {
@@ -798,6 +871,28 @@ pub fn compare(
     let workloads = workload_legend(&names);
     let not_compared = not_compared(base, cand);
     let mut reasons = Vec::new();
+    // A probe that did not run whole: lost in the candidate alone, it fails the comparison; lost
+    // in both captures, or in the baseline alone, it is reported and not compared.
+    let mut failed = Verdict::Pass;
+    for f in &cand.failures {
+        if base.failures.iter().any(|b| b.same_probe(f)) {
+            reasons.push(format!(
+                "{} failed in both captures and is not compared (the candidate's error: {})",
+                f.name(),
+                f.error
+            ));
+        } else {
+            reasons.push(format!("{} failed in the candidate: {}", f.name(), f.error));
+            failed = Verdict::Fail;
+        }
+    }
+    for f in base.failures.iter().filter(|b| !cand.failures.iter().any(|c| c.same_probe(b))) {
+        reasons.push(format!(
+            "{} failed in the baseline and is not compared: {}",
+            f.name(),
+            f.error
+        ));
+    }
     if !base.numerics.is_empty() && numerics.is_empty() {
         reasons.push(
             "no numerics probe compared: the candidate ran none of the baseline's".to_string(),
@@ -878,6 +973,30 @@ pub fn compare(
             unfit_rows.join(", ")
         ));
     }
+    // Paired performance runs measured hours apart (a resumed capture's kept cells against the
+    // other capture's later ones) are not the interleaved measurement the thresholds assume: the
+    // host's clocks and heat differ between sessions (the 12B lost 22 to 34% between two sessions
+    // of one build on the RTX Spark, 2026-11-04).
+    let mut pairs = 0usize;
+    let mut apart = 0usize;
+    let mut widest = 0.0f64;
+    for c in &cand.perf {
+        if let Some(b) = base.perf.iter().find(|b| b.label == c.label && b.model == c.model) {
+            pairs += 1;
+            if let Some(gap) = crate::perf::seconds_apart(b, c) {
+                widest = widest.max(gap);
+                if gap > 2.0 * 3600.0 {
+                    apart += 1;
+                }
+            }
+        }
+    }
+    if apart > 0 {
+        reasons.push(format!(
+            "{apart} of {pairs} performance pairs were measured more than two hours apart (up to {:.1} h; one capture's kept runs against the other's later ones): the thresholds assume runs interleaved on one host state, so re-measure both sides before judging them",
+            widest / 3600.0
+        ));
+    }
     let verdict = numerics
         .iter()
         .map(|n| n.verdict)
@@ -887,6 +1006,7 @@ pub fn compare(
         .chain(conversations.iter().map(|c| c.verdict))
         .chain(memory.iter().map(|m| m.verdict))
         .chain(reasons.iter().map(|_| Verdict::Warn))
+        .chain(std::iter::once(failed))
         .max()
         .unwrap_or(Verdict::Pass);
     Comparison {
@@ -1675,6 +1795,13 @@ pub fn render_capture(capture: &Capture) -> String {
     if !m.notes.is_empty() {
         s.push('\n');
     }
+    if !capture.failures.is_empty() {
+        s.push_str("## Failed probes (not run whole; a resume runs them again)\n\n");
+        for f in &capture.failures {
+            s.push_str(&format!("- {}: {} ({})\n", f.name(), f.error, f.when));
+        }
+        s.push('\n');
+    }
     if !capture.conversations.is_empty() {
         s.push_str("## Conversation probes\n\n| Model | Prompt | Mode | Exit | Conversations | Parts from the first | Wall s |\n|---|---|---|---:|---:|---|---:|\n");
         for c in &capture.conversations {
@@ -2119,6 +2246,7 @@ mod tests {
             top_k,
             immediate_upload: variant == "immediate",
             parser_errors: 0,
+            unsupported: None,
         }
     }
 
@@ -2156,6 +2284,53 @@ mod tests {
             "{:?}",
             checks[0].reasons
         );
+    }
+
+    #[test]
+    fn a_device_path_the_baseline_lacks_too_is_noted_not_warned() {
+        let host = text("host", "abc", 0, 0, 64);
+        let device = text("device", "abc", 1, 0, 64);
+        let base = capture_of("base", vec![host.clone(), device.clone()], &[]);
+        let cand = capture_of("cand", vec![host, device], &[]);
+        let checks = check_texts(&base, &cand);
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].verdict, Verdict::Pass, "{:?}", checks[0].reasons);
+        assert!(
+            checks[0].reasons.iter().any(|r| r.contains("as in the baseline")),
+            "{:?}",
+            checks[0].reasons
+        );
+    }
+
+    #[test]
+    fn a_probe_the_candidate_lost_fails_the_comparison() {
+        let failure = crate::capture::ProbeFailure {
+            family: "numerics".into(),
+            model: "26b".into(),
+            label: "code_grid plain".into(),
+            error: "logits line 2: expected ident".into(),
+            when: "t".into(),
+        };
+        let base = capture_of("base", Vec::new(), &[]);
+        let mut cand = capture_of("cand", Vec::new(), &[]);
+        cand.failures.push(failure.clone());
+        let config = Config::load(None).unwrap();
+        let c = compare(&base, &cand, &config, &[]);
+        assert_eq!(c.verdict, Verdict::Fail, "{:?}", c.reasons);
+        assert!(
+            c.reasons
+                .iter()
+                .any(|r| r.contains("numerics 26b code_grid plain failed in the candidate")),
+            "{:?}",
+            c.reasons
+        );
+        assert!(render_capture(&cand).contains("## Failed probes"));
+        // Lost in both captures: reported and not compared, not failed.
+        let mut both = base.clone();
+        both.failures.push(failure);
+        let c = compare(&both, &cand, &config, &[]);
+        assert_eq!(c.verdict, Verdict::Warn, "{:?}", c.reasons);
+        assert!(c.reasons.iter().any(|r| r.contains("failed in both captures")), "{:?}", c.reasons);
     }
 
     fn perf_point(clock_fit: Option<bool>) -> PerfPoint {
@@ -2471,6 +2646,7 @@ pub fn validate_predictor(record: &[RecordPoint], fit_workloads: &[String]) -> S
                     max_rss_gib: None,
                     exit_code: 0,
                     clock_fit: None,
+                    measured_at: None,
                 })
             })
             .collect();

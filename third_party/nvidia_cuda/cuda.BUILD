@@ -22,6 +22,14 @@ exports_files(glob([
     "bin/nvcc.exe",
 ]))
 
+config_setting(
+    name = "windows_arm64",
+    constraint_values = [
+        "@platforms//os:windows",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
 filegroup(
     name = "headers",
     srcs = glob(["include/**"]),
@@ -33,9 +41,7 @@ filegroup(
     name = "nvcc_tools",
     srcs = select({
         "@platforms//os:windows": glob([
-            "bin/*.exe",
-            "bin/*.dll",
-            "bin/crt/**",
+            "bin/**",
             "nvvm/**",
         ]),
         "//conditions:default": [
@@ -58,10 +64,12 @@ cc_library(
 cc_import(
     name = "cudart_shared",
     interface_library = select({
+        ":windows_arm64": "lib/arm64/cudart.lib",
         "@platforms//os:windows": "lib/x64/cudart.lib",
         "//conditions:default": None,
     }),
     shared_library = select({
+        ":windows_arm64": "bin/arm64/cudart64_13.dll",
         "@platforms//os:windows": "bin/cudart64_12.dll",
         "//conditions:default": "lib64/libcudart.so",
     }),
