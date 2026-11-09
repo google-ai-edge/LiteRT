@@ -58,8 +58,10 @@ def find_runs(roots):
     root = pathlib.Path(root)
     if not root.is_dir():
       continue
+    seen = set()
     for path in sorted(root.rglob('*meta.json')):
-      if path.name.endswith('meta.json') and path.parent.name != 'prepare':
+      if path.parent.name != 'prepare' and path.parent not in seen:  # one run per directory, whatever its parts
+        seen.add(path.parent)
         yield path.parent
 
 

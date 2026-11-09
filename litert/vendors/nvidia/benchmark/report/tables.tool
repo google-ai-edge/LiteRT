@@ -122,7 +122,7 @@ class Tables:
     if r is None:
       return None
     self.sources[f'litert / {profile} / verify'] = r['run']
-    answers = {name: p.get('summary', {}).get('answer', '') for name, p in r['parts'].items()}
+    answers = {name: p.get('summary', {}).get('answer', '') for name, p in r['parts'].items() if name != 'prepare'}
     return {name: 'paris' in answer.lower() for name, answer in answers.items()}
 
   def workloads(self, profile):

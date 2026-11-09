@@ -123,6 +123,7 @@ class SelectionTest(unittest.TestCase):
     (run / 'prepare.meta.json').write_text(json.dumps({**json.loads((run / 'meta.json').read_text()), 'name': 'prepare', 'iterations': 1}))
     litert_run(self.root, 'e2b_short_plain_text', [100, 150, 150], prompt='/p.txt')
     litert_run(self.root, 'e2b_short_plain_memory', [100], metric='memory', warmups=0)
+    self.assertEqual(len(list(RUNS.find_runs([self.root]))), 3)  # a run with several parts is one run
     chosen = RUNS.select(self.records())
     self.assertEqual({k[3] for k in chosen}, {'text_mtp', 'text_plain', 'memory'})
     self.assertAlmostEqual(RUNS.summary(chosen[('litert', 'e2b', 'short', 'text_mtp')])['decode_tokens_per_second']['mean'], 215.0)
