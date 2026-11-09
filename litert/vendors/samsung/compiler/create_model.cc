@@ -309,242 +309,7 @@ Expected<std::vector<char>> CreateModel(
   auto ops = partition.Ops();
   for (int op_idx = 0; op_idx < ops.size(); ++op_idx) {
     const auto& op = ops[op_idx];
-    Expected<OpWrapper> op_wrapper =
-        Error(litert::Status::kErrorInvalidArgument, "Invalid op wrapper");
-    switch (op.Code()) {
-      case kLiteRtOpCodeTflAbs:
-        op_wrapper = BuildAbsOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflAdd:
-        op_wrapper = BuildAddOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflArgMax:
-        op_wrapper = BuildArgMaxOp(op);
-        break;
-      case kLiteRtOpCodeTflAveragePool2d:
-        op_wrapper = BuildAvgPool2dOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflBatchMatmul:
-        op_wrapper = BuildBatchMatMulOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflBroadcastTo:
-        op_wrapper = BuildBroadcastToOp(op);
-        break;
-      case kLiteRtOpCodeTflCast:
-        op_wrapper = BuildCastOp(op);
-        break;
-      case kLiteRtOpCodeTflCeil:
-        op_wrapper = BuildCeilOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflConcatenation:
-        op_wrapper = BuildConcatOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflConv2d:
-        op_wrapper = BuildConv2dOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflConv3d:
-        op_wrapper = BuildConv3dOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflCos:
-        op_wrapper = BuildCosOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflCumsum:
-        op_wrapper = BuildCumsumOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflDepthToSpace:
-        op_wrapper = BuildDepthToSpaceOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflDepthwiseConv2d:
-        op_wrapper = BuildDepthwiseConv2dOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflDequantize:
-        op_wrapper = BuildDequantizeOp(op);
-        break;
-      case kLiteRtOpCodeTflDiv:
-        op_wrapper = BuildDivOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflEmbeddingLookup:
-        op_wrapper = BuildEmbeddingLookupOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflEqual:
-        op_wrapper = BuildEqualOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflExp:
-        op_wrapper = BuildExpOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflFloor:
-        op_wrapper = BuildFloorOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflFloorDiv:
-        op_wrapper = BuildFloorDivOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflFullyConnected:
-        op_wrapper = BuildFullyConnectedOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflGather:
-        op_wrapper = BuildGatherOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflGatherNd:
-        op_wrapper = BuildGatherNdOp(op);
-        break;
-      case kLiteRtOpCodeTflGelu:
-        op_wrapper = BuildGeluOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflGreater:
-        op_wrapper = BuildGreaterOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflGreaterEqual:
-        op_wrapper = BuildGreaterEqualOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflHardSwish:
-        op_wrapper = BuildHardSwishOp(op);
-        break;
-      case kLiteRtOpCodeTflL2Normalization:
-        op_wrapper = BuildL2NormalizationOp(op);
-        break;
-      case kLiteRtOpCodeTflLeakyRelu:
-        op_wrapper = BuildLeakyReluOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflLess:
-        op_wrapper = BuildLessOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflLog:
-        op_wrapper = BuildLogOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflLogicalAnd:
-        op_wrapper = BuildLogicalAndOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflLogistic:
-        op_wrapper = BuildLogisticOp(op);
-        break;
-      case kLiteRtOpCodeTflMaximum:
-        op_wrapper = BuildMaxOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflMinimum:
-        op_wrapper = BuildMinOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflMirrorPad:
-        op_wrapper = BuildMirrorPadOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflMaxPool2d:
-        op_wrapper = BuildMaxPool2dOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflMean:
-        op_wrapper = BuildReduceMeanOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflMul:
-        op_wrapper = BuildMulOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflNotEqual:
-        op_wrapper = BuildNotEqualOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflPad:
-      case kLiteRtOpCodeTflPadv2:
-        op_wrapper = BuildPadOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflPow:
-        op_wrapper = BuildPowOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflQuantize:
-        op_wrapper = BuildQuantizeOp(op);
-        break;
-      case kLiteRtOpCodeTflRelu:
-        op_wrapper = BuildReLUOp(op);
-        break;
-      case kLiteRtOpCodeTflRelu0To1:
-        op_wrapper = BuildRelu1Op(op);
-        break;
-      case kLiteRtOpCodeTflReluN1To1:
-        op_wrapper = BuildReluN1To1(op);
-        break;
-      case kLiteRtOpCodeTflRelu6:
-        op_wrapper = BuildRelu6Op(op);
-        break;
-      case kLiteRtOpCodeTflReshape:
-        op_wrapper = BuildReshapeOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflReduceMax:
-        op_wrapper = BuildReduceMaxOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflReduceMin:
-        op_wrapper = BuildReduceMinOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflResizeBilinear:
-        op_wrapper = BuildResizeBilinearOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflResizeNearestNeighbor:
-        op_wrapper = BuildResizeNearestNeighborOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflReverseV2:
-        op_wrapper = BuildReverseV2Op(op);
-        break;
-      case kLiteRtOpCodeTflRsqrt:
-        op_wrapper = BuildRsqrtOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflSelect:
-        op_wrapper = BuildSelectOp(op);
-        break;
-      case kLiteRtOpCodeTflSelectV2:
-        op_wrapper = BuildSelectV2Op(op);
-        break;
-      case kLiteRtOpCodeTflSin:
-        op_wrapper = BuildSinOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflSlice:
-        op_wrapper = BuildSliceOp(op);
-        break;
-      case kLiteRtOpCodeTflSoftmax:
-        op_wrapper = BuildSoftmaxOp(op);
-        break;
-      case kLiteRtOpCodeTflSpaceToDepth:
-        op_wrapper = BuildSpaceToDepthOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflSplit:
-        op_wrapper = BuildSplitOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflSqrt:
-        op_wrapper = BuildSqrtOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflSquaredDifference:
-        op_wrapper = BuildSquaredDifferenceOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflSub:
-        op_wrapper = BuildSubOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflSum:
-        op_wrapper = BuildReduceSumOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflStridedSlice:
-        op_wrapper = BuildStridedSliceOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflTanh:
-        op_wrapper = BuildTanhOp(op);
-        break;
-      case kLiteRtOpCodeTflTranspose:
-        op_wrapper = BuildTransposeOp(op);
-        break;
-      case kLiteRtOpCodeTflTransposeConv:
-        op_wrapper = BuildTransposeConvOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeTflUnpack:
-        op_wrapper = BuildUnpackOp(compiler_context, op);
-        break;
-      case kLiteRtOpCodeShloComposite: {
-        const char* composite_name = nullptr;
-        LITERT_RETURN_IF_ERROR(compiler_context->get_shlo_composite_op_name(
-            op.Get(), &composite_name));
-        if (composite_name &&
-            absl::string_view(composite_name) == "odml.rms_norm") {
-          op_wrapper = BuildRmsNormOp(compiler_context, op);
-        } else {
-          LITERT_LOG(LITERT_ERROR, "Unsupported composite operator : ",
-                     composite_name ? composite_name : "nullptr");
-        }
-        break;
-      }
-      default:
-        LITERT_LOG(LITERT_ERROR, "Unsupported op: %d", op.Code());
-    }
+    Expected<OpWrapper> op_wrapper = CreateOp(compiler_context, op);
     if (!op_wrapper) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Fail to parse op's options.");
@@ -561,6 +326,247 @@ Expected<std::vector<char>> CreateModel(
   }
 
   return graph_crt.Release();
+}
+
+Expected<OpWrapper> CreateOp(const LiteRtCompilerContext* compiler_context,
+                             const litert::compiler::Op& op) {
+  Expected<OpWrapper> op_wrapper =
+      Error(litert::Status::kErrorInvalidArgument, "Invalid op wrapper");
+  switch (op.Code()) {
+    case kLiteRtOpCodeTflAbs:
+      op_wrapper = BuildAbsOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflAdd:
+      op_wrapper = BuildAddOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflArgMax:
+      op_wrapper = BuildArgMaxOp(op);
+      break;
+    case kLiteRtOpCodeTflAveragePool2d:
+      op_wrapper = BuildAvgPool2dOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflBatchMatmul:
+      op_wrapper = BuildBatchMatMulOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflBroadcastTo:
+      op_wrapper = BuildBroadcastToOp(op);
+      break;
+    case kLiteRtOpCodeTflCast:
+      op_wrapper = BuildCastOp(op);
+      break;
+    case kLiteRtOpCodeTflCeil:
+      op_wrapper = BuildCeilOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflConcatenation:
+      op_wrapper = BuildConcatOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflConv2d:
+      op_wrapper = BuildConv2dOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflConv3d:
+      op_wrapper = BuildConv3dOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflCos:
+      op_wrapper = BuildCosOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflCumsum:
+      op_wrapper = BuildCumsumOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflDepthToSpace:
+      op_wrapper = BuildDepthToSpaceOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflDepthwiseConv2d:
+      op_wrapper = BuildDepthwiseConv2dOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflDequantize:
+      op_wrapper = BuildDequantizeOp(op);
+      break;
+    case kLiteRtOpCodeTflDiv:
+      op_wrapper = BuildDivOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflEmbeddingLookup:
+      op_wrapper = BuildEmbeddingLookupOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflEqual:
+      op_wrapper = BuildEqualOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflExp:
+      op_wrapper = BuildExpOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflFloor:
+      op_wrapper = BuildFloorOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflFloorDiv:
+      op_wrapper = BuildFloorDivOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflFullyConnected:
+      op_wrapper = BuildFullyConnectedOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflGather:
+      op_wrapper = BuildGatherOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflGatherNd:
+      op_wrapper = BuildGatherNdOp(op);
+      break;
+    case kLiteRtOpCodeTflGelu:
+      op_wrapper = BuildGeluOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflGreater:
+      op_wrapper = BuildGreaterOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflGreaterEqual:
+      op_wrapper = BuildGreaterEqualOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflHardSwish:
+      op_wrapper = BuildHardSwishOp(op);
+      break;
+    case kLiteRtOpCodeTflL2Normalization:
+      op_wrapper = BuildL2NormalizationOp(op);
+      break;
+    case kLiteRtOpCodeTflLeakyRelu:
+      op_wrapper = BuildLeakyReluOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflLess:
+      op_wrapper = BuildLessOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflLog:
+      op_wrapper = BuildLogOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflLogicalAnd:
+      op_wrapper = BuildLogicalAndOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflLogistic:
+      op_wrapper = BuildLogisticOp(op);
+      break;
+    case kLiteRtOpCodeTflMaximum:
+      op_wrapper = BuildMaxOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflMinimum:
+      op_wrapper = BuildMinOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflMirrorPad:
+      op_wrapper = BuildMirrorPadOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflMaxPool2d:
+      op_wrapper = BuildMaxPool2dOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflMean:
+      op_wrapper = BuildReduceMeanOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflMul:
+      op_wrapper = BuildMulOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflNotEqual:
+      op_wrapper = BuildNotEqualOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflPad:
+    case kLiteRtOpCodeTflPadv2:
+      op_wrapper = BuildPadOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflPow:
+      op_wrapper = BuildPowOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflQuantize:
+      op_wrapper = BuildQuantizeOp(op);
+      break;
+    case kLiteRtOpCodeTflRelu:
+      op_wrapper = BuildReLUOp(op);
+      break;
+    case kLiteRtOpCodeTflRelu0To1:
+      op_wrapper = BuildRelu1Op(op);
+      break;
+    case kLiteRtOpCodeTflReluN1To1:
+      op_wrapper = BuildReluN1To1(op);
+      break;
+    case kLiteRtOpCodeTflRelu6:
+      op_wrapper = BuildRelu6Op(op);
+      break;
+    case kLiteRtOpCodeTflReshape:
+      op_wrapper = BuildReshapeOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflReduceMax:
+      op_wrapper = BuildReduceMaxOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflReduceMin:
+      op_wrapper = BuildReduceMinOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflResizeBilinear:
+      op_wrapper = BuildResizeBilinearOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflResizeNearestNeighbor:
+      op_wrapper = BuildResizeNearestNeighborOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflReverseV2:
+      op_wrapper = BuildReverseV2Op(op);
+      break;
+    case kLiteRtOpCodeTflRsqrt:
+      op_wrapper = BuildRsqrtOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflSelect:
+      op_wrapper = BuildSelectOp(op);
+      break;
+    case kLiteRtOpCodeTflSelectV2:
+      op_wrapper = BuildSelectV2Op(op);
+      break;
+    case kLiteRtOpCodeTflSin:
+      op_wrapper = BuildSinOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflSlice:
+      op_wrapper = BuildSliceOp(op);
+      break;
+    case kLiteRtOpCodeTflSoftmax:
+      op_wrapper = BuildSoftmaxOp(op);
+      break;
+    case kLiteRtOpCodeTflSpaceToDepth:
+      op_wrapper = BuildSpaceToDepthOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflSplit:
+      op_wrapper = BuildSplitOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflSqrt:
+      op_wrapper = BuildSqrtOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflSquaredDifference:
+      op_wrapper = BuildSquaredDifferenceOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflSub:
+      op_wrapper = BuildSubOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflSum:
+      op_wrapper = BuildReduceSumOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflStridedSlice:
+      op_wrapper = BuildStridedSliceOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflTanh:
+      op_wrapper = BuildTanhOp(op);
+      break;
+    case kLiteRtOpCodeTflTranspose:
+      op_wrapper = BuildTransposeOp(op);
+      break;
+    case kLiteRtOpCodeTflTransposeConv:
+      op_wrapper = BuildTransposeConvOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeTflUnpack:
+      op_wrapper = BuildUnpackOp(compiler_context, op);
+      break;
+    case kLiteRtOpCodeShloComposite: {
+      const char* composite_name = nullptr;
+      LITERT_RETURN_IF_ERROR(compiler_context->get_shlo_composite_op_name(
+          op.Get(), &composite_name));
+      if (composite_name &&
+          absl::string_view(composite_name) == "odml.rms_norm") {
+        op_wrapper = BuildRmsNormOp(compiler_context, op);
+      } else {
+        LITERT_LOG(LITERT_ERROR, "Unsupported composite operator : ",
+                   composite_name ? composite_name : "nullptr");
+      }
+      break;
+    }
+    default:
+      LITERT_LOG(LITERT_ERROR, "Unsupported op: %d", op.Code());
+  }
+  return op_wrapper;
 }
 
 }  // namespace litert::samsung
