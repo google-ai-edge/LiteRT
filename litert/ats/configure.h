@@ -104,6 +104,9 @@ ABSL_DECLARE_FLAG(bool, compile_mode);
 // Where to put any side effect serialized models from the test.
 ABSL_DECLARE_FLAG(std::string, models_out);
 
+// Directory containing pre-compiled AOT .tflite models to execute on device.
+ABSL_DECLARE_FLAG(std::string, aot_models_dir);
+
 // Limit the number of tests registered.
 ABSL_DECLARE_FLAG(int32_t, limit);
 
@@ -241,6 +244,13 @@ class AtsConf {
   // Whether to run the AOT compilation flow.
   bool CompileMode() const { return compile_mode_; }
 
+  // Directory containing pre-compiled AOT .tflite models.
+  const std::string& AotModelsDir() const { return aot_models_dir_; }
+
+  // Loads a pre-compiled AOT model corresponding to `name` (`report_id`) from
+  // `AotModelsDir()`.
+  Expected<LiteRtModelT::Ptr> LoadAotModel(absl::string_view name) const;
+
   // Saves a model to the user provided directory.
   Expected<void> SaveModel(const std::string& name,
                            LiteRtModelT&& model) const {
@@ -248,14 +258,22 @@ class AtsConf {
       return {};
     }
     std::string file_name = name;
+    if (const auto pos = file_name.find_last_of('/');
+        pos != std::string::npos) {
+      file_name = file_name.substr(pos + 1);
+    }
     if (!EndsWith(file_name, ".tflite")) {
       file_name += ".tflite";
     }
     LITERT_RETURN_IF_ERROR(internal::MkDir(models_out_));
     LITERT_ASSIGN_OR_RETURN(auto serialized,
                             internal::SerializeModel(std::move(model)));
-    std::ofstream out(internal::Join({models_out_, file_name}));
+    std::ofstream out(internal::Join({models_out_, file_name}),
+                      std::ios::binary);
     out.write(serialized.StrData(), serialized.Size());
+    if (!out) {
+      return Error(kLiteRtStatusErrorFileIO, "Failed to write model file");
+    }
     return {};
   }
 
@@ -307,11 +325,11 @@ class AtsConf {
                    std::vector<std::regex> neg_re,
                    std::vector<std::regex> pos_re,
                    std::vector<std::string> extra_models,
-                   std::optional<int> data_seed,
-                   size_t iters_per_test, int warmup_runs,
-                   std::chrono::milliseconds max_ms_per_test,
+                   std::optional<int> data_seed, size_t iters_per_test,
+                   int warmup_runs, std::chrono::milliseconds max_ms_per_test,
                    bool fail_on_timeout, bool dump_report, std::string csv,
-                   bool compile_mode, std::string models_out, int32_t limit,
+                   bool compile_mode, std::string models_out,
+                   std::string aot_models_dir, int32_t limit,
                    std::optional<internal::CompilerPlugin> plugin,
                    std::string soc_manufacturer, std::string soc_model,
                    Options&& target_options, Options&& reference_options,
@@ -334,6 +352,7 @@ class AtsConf {
         csv_(std::move(csv)),
         compile_mode_(compile_mode),
         models_out_(std::move(models_out)),
+        aot_models_dir_(std::move(aot_models_dir)),
         limit_(limit),
         plugin_(std::move(plugin)),
         soc_manufacturer_(std::move(soc_manufacturer)),
@@ -365,6 +384,7 @@ class AtsConf {
   std::string csv_;
   bool compile_mode_;
   std::string models_out_;
+  std::string aot_models_dir_;
   int32_t limit_;
   std::optional<internal::CompilerPlugin> plugin_;
   std::string soc_manufacturer_;

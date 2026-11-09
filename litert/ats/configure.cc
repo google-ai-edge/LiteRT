@@ -16,7 +16,6 @@
 
 #include <algorithm>
 #include <chrono>  // NOLINT
-#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <optional>
@@ -27,13 +26,16 @@
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_cpu_options.h"
+#include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
@@ -46,6 +48,7 @@
 #include "litert/cc/options/litert_samsung_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/filesystem.h"
+#include "litert/core/model/model_load.h"
 #include "litert/tools/flags/vendors/mediatek_flags.h"
 #include "litert/tools/flags/vendors/qualcomm_flags.h"
 #include "litert/tools/flags/vendors/samsung_flags.h"
@@ -134,6 +137,10 @@ ABSL_FLAG(bool, compile_mode, false,
 
 ABSL_FLAG(std::string, models_out, "",
           "Where to save any side effect model artifacts.");
+
+ABSL_FLAG(std::string, aot_models_dir, "",
+          "Directory containing pre-compiled AOT .tflite models to execute on "
+          "device.");
 
 ABSL_FLAG(int32_t, limit, -1,
           "Limit the number of tests registered. -1 means no limit.");
@@ -298,6 +305,7 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   auto dump_report = absl::GetFlag(FLAGS_dump_report);
   auto compile_mode = absl::GetFlag(FLAGS_compile_mode);
   auto models_out = absl::GetFlag(FLAGS_models_out);
+  auto aot_models_dir = absl::GetFlag(FLAGS_aot_models_dir);
   auto limit = absl::GetFlag(FLAGS_limit);
   auto soc_manufacturer = absl::GetFlag(FLAGS_soc_manufacturer);
   auto soc_model = absl::GetFlag(FLAGS_soc_model);
@@ -382,13 +390,27 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
               std::move(neg_re), std::move(pos_re), std::move(extra_models),
               data_seed, iters_per_test, warmup_runs,
               std::move(max_ms_per_test_opt), fail_on_timeout, dump_report,
-              std::move(csv), compile_mode, std::move(models_out), limit,
-              std::move(plugin), std::move(soc_manufacturer),
-              std::move(soc_model), std::move(target_options),
-              std::move(reference_options), std::move(target_options_handle),
-              std::move(*environment));
+              std::move(csv), compile_mode, std::move(models_out),
+              std::move(aot_models_dir), limit, std::move(plugin),
+              std::move(soc_manufacturer), std::move(soc_model),
+              std::move(target_options), std::move(reference_options),
+              std::move(target_options_handle), std::move(*environment));
   Setup(res);
   return res;
+}
+
+Expected<LiteRtModelT::Ptr> AtsConf::LoadAotModel(
+    absl::string_view name) const {
+  if (const size_t pos = name.rfind('/'); pos != absl::string_view::npos) {
+    name.remove_prefix(pos + 1);
+  }
+  std::string file_name =
+      absl::StrReplaceAll(name, {{"_inference_", "_compile_"}});
+  if (!EndsWith(file_name, ".tflite")) {
+    absl::StrAppend(&file_name, ".tflite");
+  }
+  return internal::LoadModelFromFile(
+      internal::Join({aot_models_dir_, file_name}));
 }
 
 int AtsConf::GetSeedForParams(absl::string_view name) const {

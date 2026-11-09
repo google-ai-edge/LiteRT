@@ -82,6 +82,15 @@ Expected<AtsConf> CompileOptions(absl::string_view models_out) {
   return AtsConf::ParseFlagsAndDoSetup();
 }
 
+Expected<AtsConf> AotNpuInferenceOptions(absl::string_view aot_models_dir) {
+  absl::FlagSaver saver;
+  absl::SetFlag(&FLAGS_dispatch_dir, GetLiteRtPath("vendors/examples/"));
+  absl::SetFlag(&FLAGS_plugin_dir, "");
+  absl::SetFlag(&FLAGS_backend, "npu");
+  absl::SetFlag(&FLAGS_aot_models_dir, std::string(aot_models_dir));
+  return AtsConf::ParseFlagsAndDoSetup();
+}
+
 Expected<void> CheckExtraModelBoundedInputs() {
   auto model = std::make_unique<LiteRtModelT>();
   auto& sg = model->EmplaceSubgraph();
@@ -166,6 +175,17 @@ Expected<void> CheckAts() {
   LITERT_ASSIGN_OR_RETURN(auto cpu_inference_options, CpuInferenceOptions());
   LITERT_ASSIGN_OR_RETURN(auto compile_options, CompileOptions(dir.Str()));
   LITERT_ASSIGN_OR_RETURN(auto npu_inference_options, NpuInferenceOptions());
+  LITERT_ASSIGN_OR_RETURN(auto aot_npu_inference_options,
+                          AotNpuInferenceOptions(dir.Str()));
+
+  // Compile first so GTest registers and runs the CoreSingleOp_compile_*
+  // suite before CoreSingleOp_inference_* suites that load its output.
+  const size_t compile_test_id = test_id;
+  {
+    RegisterCombinations<AtsCompileTest, BinaryNoBroadcast, SizeListC<1>,
+                         TypeList<float>, OpCodeListC<kLiteRtOpCodeTflSub>>(
+        /*iters=*/1, test_id, compile_options, c_cap);
+  }
 
   // CPU
   {
@@ -181,27 +201,29 @@ Expected<void> CheckAts() {
         /*iters=*/1, test_id, cpu_inference_options, i_cap);
   }
 
-  // NPU
+  // NPU (JIT + Mode 3 AOT Inference)
 
   {
     RegisterCombinations<AtsInferenceTest, BinaryNoBroadcast, SizeListC<1>,
                          TypeList<float>, OpCodeListC<kLiteRtOpCodeTflSub>>(
         /*iters=*/1, test_id, npu_inference_options, i_cap);
   }
-
-  // Compile
-
   {
-    RegisterCombinations<AtsCompileTest, BinaryNoBroadcast, SizeListC<1>,
+    size_t aot_test_id = compile_test_id;
+    RegisterCombinations<AtsInferenceTest, BinaryNoBroadcast, SizeListC<1>,
                          TypeList<float>, OpCodeListC<kLiteRtOpCodeTflSub>>(
-        /*iters=*/1, test_id, compile_options, c_cap);
+        /*iters=*/1, aot_test_id, aot_npu_inference_options, i_cap);
   }
 
   const auto* ut = ::testing::UnitTest::GetInstance();
-  LITERT_ENSURE((ut->total_test_count() == test_id),
+  // Note: the Mode 3 AOT inference test shares the same (suite, test) GTest
+  // name as the NPU JIT test only if they share the same AtsConf pointer; since
+  // it uses aot_npu_inference_options, it registers a distinct TestGroup.
+  LITERT_ENSURE((ut->total_test_count() == test_id + 1),
                 Error(kLiteRtStatusErrorRuntimeFailure),
                 "Unexpected number of tests.");
 
+  GTEST_FLAG_SET(shuffle, false);
   LITERT_ENSURE(!RUN_ALL_TESTS(), Error(kLiteRtStatusErrorRuntimeFailure),
                 "Failed to run all tests.");
 
@@ -212,14 +234,18 @@ Expected<void> CheckAts() {
           return row.numerics.reference_type == ReferenceType::kCpu;
         });
 
+    const auto num_precompiled =
+        std::count_if(i_cap.Rows().begin(), i_cap.Rows().end(),
+                      [](const auto& row) { return row.model.precompiled; });
+
     const auto i_cap_ok = std::all_of(
         i_cap.Rows().begin(), i_cap.Rows().end(),
         [](const auto& row) { return row.run.status != RunStatus::kError; });
 
-    LITERT_ENSURE(
-        i_cap_ok && i_cap.Rows().size() == test_id - 1 && num_extra_models == 2,
-        Error(kLiteRtStatusErrorRuntimeFailure),
-        "Status capture contains errors.");
+    LITERT_ENSURE(i_cap_ok && i_cap.Rows().size() == test_id &&
+                      num_extra_models == 2 && num_precompiled == 1,
+                  Error(kLiteRtStatusErrorRuntimeFailure),
+                  "Status capture contains errors.");
   }
 
   // Check compile capture.
@@ -266,6 +292,9 @@ Expected<void> CheckAts() {
         auto inputs, SimpleBuffer::LikeSignature(subgraph.Inputs().begin(),
                                                  subgraph.Inputs().end()));
     LITERT_RETURN_IF_ERROR(exec.Run(inputs));
+    LITERT_ENSURE(!aot_npu_inference_options.LoadAotModel("nonexistent_model"),
+                  Error(kLiteRtStatusErrorRuntimeFailure),
+                  "Expected error loading nonexistent AOT model.");
   }
 
   return {};

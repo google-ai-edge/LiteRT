@@ -369,20 +369,16 @@ BUILTIN_EXTRA_FLAGS = [
 litert_define_ats(
     name = "cpu_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     dont_register = XNNPACK_DONT_REGISTER,
-    jit_suffix = "",
 )
 
 litert_define_ats(
     name = "ynnpack_cpu_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     dont_register = YNNPACK_DONT_REGISTER,
     extra_flags = [
         "--enable_ynnpack=true",
     ],
-    jit_suffix = "",
 )
 
 # Runs the TFLite built-in CPU kernels (no delegate) against the generator
@@ -390,16 +386,13 @@ litert_define_ats(
 litert_define_ats(
     name = "builtin_cpu_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     dont_register = BUILTIN_DONT_REGISTER,
     extra_flags = BUILTIN_EXTRA_FLAGS,
-    jit_suffix = "",
 )
 
 litert_define_ats(
     name = "cpu_models_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = XNNPACK_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -407,13 +400,11 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
 )
 
 litert_define_ats(
     name = "ynnpack_cpu_models_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = YNNPACK_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -422,13 +413,11 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
 )
 
 litert_define_ats(
     name = "ynnpack_fallback_cpu_models_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = YNNPACK_FALLBACK_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -438,13 +427,11 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
 )
 
 litert_define_ats(
     name = "builtin_cpu_models_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = BUILTIN_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -453,13 +440,11 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
 )
 
 litert_define_ats(
     name = "gpu_models_ats",
     backend = "gpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = GPU_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -467,147 +452,243 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
 )
 
+EXAMPLE_DO_REGISTER = [
+    "tfl[.]sub.*f32",
+    "tfl[.]mul.*f32",
+]
+
 litert_define_ats(
-    name = "example_ats",
+    name = "example_compile_ats",
     backend = "example",
-    compile_only_suffix = "_aot",
-    do_register = [
-        "tfl[.]sub.*f32",
-        "tfl[.]mul.*f32",
-    ],
-    dont_register = [
-    ],
-    jit_suffix = "",
+    do_register = EXAMPLE_DO_REGISTER,
+    mode = "compile_only",
 )
 
 litert_define_ats(
-    name = "qualcomm_ats",
+    name = "example_jit_ats",
+    backend = "example",
+    do_register = EXAMPLE_DO_REGISTER,
+    mode = "jit",
+)
+
+litert_define_ats(
+    name = "example_aot_ats",
+    backend = "example",
+    do_register = EXAMPLE_DO_REGISTER,
+    mode = "aot",
+)
+
+QUALCOMM_DONT_REGISTER = [
+    "CompositeOp",
+    "Transformer",
+    "hf_all_minilm_l6_v2",
+    "whisper_tiny_decoder",
+    "5d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+    "6d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+    "7d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+    "8d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
+    "Binary.*i32",  # Qualcomm QNN does not support int32 binary arithmetic
+    "OneHot",  # Qualcomm QNN compiler does not support dynamic depth/axis OneHot
+    "tfl[.]zeros_like",  # Qualcomm QNN compiler does not support ZerosLike
+    "tfl[.]reduce_prod",  # Qualcomm QNN reduce_prod exhibits numerical accumulation divergence
+    "tfl[.]ceil.*f32",  # Qualcomm QNN ceil exhibits -0.0/-1.0 negative zero boundary mismatch on f32
+    "Transpose.*[(]1d_",  # Qualcomm QNN Transpose requires multidimensional tensors (rank >= 2)
+    "Transpose.*i4",  # Qualcomm QNN MemHandle registration does not support int4 graph I/O buffers
+    "Transpose.*[(][1-8]d_(i32|u32|i64|u64)<",  # Qualcomm QNN Transpose does not support 32-bit and 64-bit integer I/O buffers
+    "Transpose.*f32",  # Qualcomm QNN executes Transpose in FP16 precision
+    "Pooling.*filter_height=14",  # Qualcomm QNN max pool filter size exceeds 11x11 hardware limit
+    "Reduction.*sum.*->[(]0d",  # Qualcomm QNN does not support full reduction to 0D scalar
+    "Pad.*4d_f32<4x1x5x5>",  # Boundary Pad permutation
+    "FullyConnected.*u8",  # Qualcomm QNN does not support quantized UINT8 GEMM
+    "FullyConnected.*,2d_f32[^c]",  # Qualcomm QNN does not support dynamic weights for FP32 FC
+    "FullyConnected.*_cst.*,1d_f32[^c]",  # Qualcomm QNN does not support dynamic bias for FP32 FC
+]
+
+QUALCOMM_RUN_DONT_REGISTER = [
+    "tfl[.]floor_div.*f32",  # Qualcomm QNN executes f32 floor_div in FP16 precision
+    "Comparison.*f32",  # Qualcomm QNN executes f32 comparisons in FP16 precision, rounding close f32 inputs under kExact
+    "SelectV2.*f32",  # Qualcomm QNN executes f32 SelectV2 in FP16 precision, failing kExact byte comparison
+    "Slice.*f32",  # Qualcomm QNN executes f32 Slice in FP16 precision, failing kExact byte comparison
+]
+
+QUALCOMM_SOC_MODELS = {"sm8650": "SM8650"}
+
+QUALCOMM_EXTRA_FLAGS = [
+    "--data_seed=42",
+    "--qualcomm_optimization_level=O3",
+    "--qualcomm_htp_performance_mode=burst",
+    "--qualcomm_log_level=info",
+    "--qualcomm_use_fold_relu=true",
+    "--qualcomm_use_conv_hmx=true",
+]
+
+litert_define_ats(
+    name = "qualcomm_compile_ats",
     aot_shard_count = 32,
     backend = "qualcomm",
-    compile_only_suffix = "_aot",
-    dont_register = [
-        "CompositeOp",
-        "Transformer",
-        "hf_all_minilm_l6_v2",
-        "whisper_tiny_decoder",
-        "5d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
-        "6d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
-        "7d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
-        "8d",  # Qualcomm QNN HTP only supports up to 4D/6D tensor layouts
-        "Binary.*i32",  # Qualcomm QNN does not support int32 binary arithmetic
-        "OneHot",  # Qualcomm QNN compiler does not support dynamic depth/axis OneHot
-        "tfl[.]zeros_like",  # Qualcomm QNN compiler does not support ZerosLike
-        "tfl[.]reduce_prod",  # Qualcomm QNN reduce_prod exhibits numerical accumulation divergence
-        "tfl[.]ceil.*f32",  # Qualcomm QNN ceil exhibits -0.0/-1.0 negative zero boundary mismatch on f32
-        "Transpose.*[(]1d_",  # Qualcomm QNN Transpose requires multidimensional tensors (rank >= 2)
-        "Transpose.*i4",  # Qualcomm QNN MemHandle registration does not support int4 graph I/O buffers
-        "Transpose.*[(][1-8]d_(i32|u32|i64|u64)<",  # Qualcomm QNN Transpose does not support 32-bit and 64-bit integer I/O buffers
-        "Transpose.*f32",  # Qualcomm QNN executes Transpose in FP16 precision
-        "Pooling.*filter_height=14",  # Qualcomm QNN max pool filter size exceeds 11x11 hardware limit
-        "Reduction.*sum.*->[(]0d",  # Qualcomm QNN does not support full reduction to 0D scalar
-        "Pad.*4d_f32<4x1x5x5>",  # Boundary Pad permutation
-        "FullyConnected.*u8",  # Qualcomm QNN does not support quantized UINT8 GEMM
-        "FullyConnected.*,2d_f32[^c]",  # Qualcomm QNN does not support dynamic weights for FP32 FC
-        "FullyConnected.*_cst.*,1d_f32[^c]",  # Qualcomm QNN does not support dynamic bias for FP32 FC
-    ],
-    extra_flags = [
-        "--soc_model=SM8650",
-        "--data_seed=42",
-        "--qualcomm_optimization_level=O3",
-        "--qualcomm_htp_performance_mode=burst",
-        "--qualcomm_log_level=info",
-        "--qualcomm_use_fold_relu=true",
-        "--qualcomm_use_conv_hmx=true",
-    ],
-    jit_suffix = "",
+    dont_register = QUALCOMM_DONT_REGISTER,
+    extra_flags = QUALCOMM_EXTRA_FLAGS,
+    mode = "compile_only",
+    soc_models = QUALCOMM_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "qualcomm_jit_ats",
+    backend = "qualcomm",
+    dont_register = QUALCOMM_DONT_REGISTER + QUALCOMM_RUN_DONT_REGISTER,
+    extra_flags = QUALCOMM_EXTRA_FLAGS,
+    mode = "jit",
+    soc_models = QUALCOMM_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "qualcomm_aot_ats",
+    aot_shard_count = 32,
+    backend = "qualcomm",
+    dont_register = QUALCOMM_DONT_REGISTER + QUALCOMM_RUN_DONT_REGISTER,
+    extra_flags = QUALCOMM_EXTRA_FLAGS,
+    mode = "aot",
+    soc_models = QUALCOMM_SOC_MODELS,
 )
 
 # copybara:uncomment_begin(google-only)
+# GOOGLE_TENSOR_DONT_REGISTER = [
+#     "CompositeOp",
+#     "Transformer",
+#     "hf_all_minilm_l6_v2",
+#     "whisper_tiny_decoder",
+#     "5d",
+#     "6d",
+#     "7d",
+#     "8d",
+#     "OneHot",  # Google Tensor compiler does not support OneHot
+#     "tfl[.]prelu",  # Google Tensor compiler requires PRelu alpha to be statically allocated
+#     "tfl[.]reduce_prod",  # Google Tensor compiler does not support ReduceProd
+#     "Conv2d.*f16",  # Google Tensor compiler does not support FP16 Conv2d/DepthwiseConv2d
+#     "FullyConnected.*(f16|i4|u8|SHUFFLED)",  # Google Tensor compiler does not support FP16, INT4, UINT8, or SHUFFLED FullyConnected
+#     "FullyConnected.*,2d_f32<[^>]+>(?!_cst)",  # Google Tensor compiler does not support dynamic weights for FP32 FullyConnected
+#     "FullyConnected.*,1d_f32<[^>]+>(?!_cst)",  # Google Tensor compiler does not support dynamic bias for FP32 FullyConnected
+#     "LogSoftmax.*f16",  # Google Tensor compiler does not support FP16 LogSoftmax
+#     "Pad.*f16",  # Google Tensor compiler does not support FP16 Pad
+#     "average_pool_2d.*fa=RELU",  # Google Tensor compiler does not support fused RELU on AveragePool2d
+#     "Transpose.*[(][1-8]d_(i1|i4|i64|u64)<",  # Google Tensor Transpose does not support i1, i4, i64, or u64 types
+# ]
+#
+# GOOGLE_TENSOR_SOC_MODELS = {"g5": "Tensor_G5"}
+#
 # litert_define_ats(
-#     name = "google_tensor_ats",
+#     name = "google_tensor_compile_ats",
 #     aot_shard_count = 50,
 #     backend = "google_tensor",
-#     compile_only_suffix = "_aot",
-#     dont_register = [
-#         "CompositeOp",
-#         "Transformer",
-#         "hf_all_minilm_l6_v2",
-#         "whisper_tiny_decoder",
-#         "5d",
-#         "6d",
-#         "7d",
-#         "8d",
-#         "OneHot",  # Google Tensor compiler does not support OneHot
-#         "tfl[.]prelu",  # Google Tensor compiler requires PRelu alpha to be statically allocated
-#         "tfl[.]reduce_prod",  # Google Tensor compiler does not support ReduceProd
-#         "Conv2d.*f16",  # Google Tensor compiler does not support FP16 Conv2d/DepthwiseConv2d
-#         "FullyConnected.*(f16|i4|u8|SHUFFLED)",  # Google Tensor compiler does not support FP16, INT4, UINT8, or SHUFFLED FullyConnected
-#         "FullyConnected.*,2d_f32<[^>]+>(?!_cst)",  # Google Tensor compiler does not support dynamic weights for FP32 FullyConnected
-#         "FullyConnected.*,1d_f32<[^>]+>(?!_cst)",  # Google Tensor compiler does not support dynamic bias for FP32 FullyConnected
-#         "LogSoftmax.*f16",  # Google Tensor compiler does not support FP16 LogSoftmax
-#         "Pad.*f16",  # Google Tensor compiler does not support FP16 Pad
-#         "average_pool_2d.*fa=RELU",  # Google Tensor compiler does not support fused RELU on AveragePool2d
-#         "Transpose.*[(][1-8]d_(i1|i4|i64|u64)<",  # Google Tensor Transpose does not support i1, i4, i64, or u64 types
-#     ],
-#     extra_flags = ["--soc_model=Tensor_G5"],
-#     jit_suffix = "",
+#     dont_register = GOOGLE_TENSOR_DONT_REGISTER,
+#     mode = "compile_only",
+#     soc_models = GOOGLE_TENSOR_SOC_MODELS,
+# )
+#
+# litert_define_ats(
+#     name = "google_tensor_jit_ats",
+#     backend = "google_tensor",
+#     dont_register = GOOGLE_TENSOR_DONT_REGISTER,
+#     mode = "jit",
+#     soc_models = GOOGLE_TENSOR_SOC_MODELS,
+# )
+#
+# litert_define_ats(
+#     name = "google_tensor_aot_ats",
+#     aot_shard_count = 50,
+#     backend = "google_tensor",
+#     dont_register = GOOGLE_TENSOR_DONT_REGISTER,
+#     mode = "aot",
+#     soc_models = GOOGLE_TENSOR_SOC_MODELS,
+# )
+#
+# alias(
+#     name = "google_tensor_ats",
+#     actual = ":google_tensor_g5_jit_ats",
+# )
+#
+# alias(
+#     name = "google_tensor_ats_aot",
+#     actual = ":google_tensor_g5_compile_ats",
 # )
 # copybara:uncomment_end
 
+MEDIATEK_DONT_REGISTER = [
+    "CompositeOp",
+    "Transformer",
+    "5d",
+    "6d",
+    "7d",
+    "8d",
+    "Binary.*i32",  # MediaTek NeuroPilot does not support int32 binary arithmetic
+    "BinaryBroadcast.*[234]d_",  # MediaTek NeuroPilot rejects ATS bidirectional/rank-mismatched broadcasts
+    "BatchMatmul.*[34]d",  # MediaTek NeuroPilot rejects ATS 1xB batch broadcasts on 3D/4D BatchMatmul
+    "Comparison",  # MediaTek NeuroPilot does not support Comparison ops
+    "OneHot",  # MediaTek NeuroPilot does not support OneHot
+    "SelectV2",  # MediaTek NeuroPilot does not support SelectV2
+    "LogSoftmax",  # MediaTek NeuroPilot does not support LogSoftmax
+    "tfl[.]floor_div",  # MediaTek NeuroPilot does not support FloorDiv
+    "tfl[.]pow",  # MediaTek NeuroPilot does not support Pow
+    "tfl[.]prelu",  # MediaTek NeuroPilot requires static PRelu alpha
+    "tfl[.]reduce_min",  # MediaTek NeuroPilot does not support ReduceMin
+    "tfl[.]reduce_prod",  # MediaTek NeuroPilot does not support ReduceProd
+    "tfl[.](cos|sin|ceil|elu|exp|floor|log|neg|relu6|relu_0_to_1|relu_n1_to_1|round|sign|square|zeros_like)[{]",  # Unsupported Unary ops in MediaTek plugin
+    "FullyConnected.*,1d_f32(?:<[^>]+>)?(?!_cst)",  # MediaTek NeuroPilot does not support dynamic bias for FP32 FullyConnected
+    "FullyConnected.*f32(?:<[^>]+>)?,2d_i[48]",  # MediaTek NeuroPilot does not support hybrid FP32 activation with INT4/INT8 weights
+    "FullyConnected.*2d_f16(?:<[^>]+>)?_cst[)]",  # MediaTek NeuroPilot requires bias tensor for FP16 FullyConnected
+    "Slice.*4d_i32",  # MediaTek NeuroPilot does not support 4D INT32 Slice
+    "Transpose.*[(][1-8]d_(i1|i4|i32|u32|i64|u64)",  # MediaTek NeuroPilot Transpose does not support i1, i4, 32-bit, or 64-bit integer tensors
+    "Pooling.*(filter_width=(10|14)|filter_height=(12|14)|stride_h=3,filter_width=2)",  # MediaTek NeuroPilot pooling kernel size/stride hardware limits
+    "average_pool_2d.*(filter_width=12|fa=RELU,padding=SAME,stride_w=3,stride_h=2)",  # MediaTek NeuroPilot AveragePool2d kernel size/fused activation limits
+    "whisper_tiny_decoder",
+    "whisper_tiny_encoder",
+    "hf_all_minilm_l6_v2",
+    "qai_hub_real_esrgan_x4plus",
+]
+
+MEDIATEK_SOC_MODELS = {"mt6989": "mt6989"}
+
+MEDIATEK_EXTRA_FLAGS = [
+    "--data_seed=42",
+    "--mediatek_performance_mode_type=turbo_boost",
+    "--mediatek_optimization_hint=low_latency",
+    "--mediatek_enable_l1_cache_optimizations=true",
+]
+
 litert_define_ats(
-    name = "mediatek_ats",
+    name = "mediatek_compile_ats",
     aot_shard_count = 32,
     backend = "mediatek",
-    compile_only_suffix = "_aot",
-    dont_register = [
-        "CompositeOp",
-        "Transformer",
-        "5d",
-        "6d",
-        "7d",
-        "8d",
-        "Binary.*i32",  # MediaTek NeuroPilot does not support int32 binary arithmetic
-        "BinaryBroadcast.*[234]d_",  # MediaTek NeuroPilot rejects ATS bidirectional/rank-mismatched broadcasts
-        "BatchMatmul.*[34]d",  # MediaTek NeuroPilot rejects ATS 1xB batch broadcasts on 3D/4D BatchMatmul
-        "Comparison",  # MediaTek NeuroPilot does not support Comparison ops
-        "OneHot",  # MediaTek NeuroPilot does not support OneHot
-        "SelectV2",  # MediaTek NeuroPilot does not support SelectV2
-        "LogSoftmax",  # MediaTek NeuroPilot does not support LogSoftmax
-        "tfl[.]floor_div",  # MediaTek NeuroPilot does not support FloorDiv
-        "tfl[.]pow",  # MediaTek NeuroPilot does not support Pow
-        "tfl[.]prelu",  # MediaTek NeuroPilot requires static PRelu alpha
-        "tfl[.]reduce_min",  # MediaTek NeuroPilot does not support ReduceMin
-        "tfl[.]reduce_prod",  # MediaTek NeuroPilot does not support ReduceProd
-        "tfl[.](cos|sin|ceil|elu|exp|floor|log|neg|relu6|relu_0_to_1|relu_n1_to_1|round|sign|square|zeros_like)[{]",  # Unsupported Unary ops in MediaTek plugin
-        "FullyConnected.*,1d_f32(?:<[^>]+>)?(?!_cst)",  # MediaTek NeuroPilot does not support dynamic bias for FP32 FullyConnected
-        "FullyConnected.*f32(?:<[^>]+>)?,2d_i[48]",  # MediaTek NeuroPilot does not support hybrid FP32 activation with INT4/INT8 weights
-        "FullyConnected.*2d_f16(?:<[^>]+>)?_cst[)]",  # MediaTek NeuroPilot requires bias tensor for FP16 FullyConnected
-        "Slice.*4d_i32",  # MediaTek NeuroPilot does not support 4D INT32 Slice
-        "Transpose.*[(][1-8]d_(i1|i4|i32|u32|i64|u64)",  # MediaTek NeuroPilot Transpose does not support i1, i4, 32-bit, or 64-bit integer tensors
-        "Pooling.*(filter_width=(10|14)|filter_height=(12|14)|stride_h=3,filter_width=2)",  # MediaTek NeuroPilot pooling kernel size/stride hardware limits
-        "average_pool_2d.*(filter_width=12|fa=RELU,padding=SAME,stride_w=3,stride_h=2)",  # MediaTek NeuroPilot AveragePool2d kernel size/fused activation limits
-        "whisper_tiny_decoder",
-        "whisper_tiny_encoder",
-        "hf_all_minilm_l6_v2",
-        "qai_hub_real_esrgan_x4plus",
-    ],
-    extra_flags = [
-        "--data_seed=42",
-        "--soc_model=mt6989",
-        "--mediatek_performance_mode_type=turbo_boost",
-        "--mediatek_optimization_hint=low_latency",
-        "--mediatek_enable_l1_cache_optimizations=true",
-    ],
-    jit_suffix = "",
+    dont_register = MEDIATEK_DONT_REGISTER,
+    extra_flags = MEDIATEK_EXTRA_FLAGS,
+    mode = "compile_only",
+    soc_models = MEDIATEK_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "mediatek_jit_ats",
+    backend = "mediatek",
+    dont_register = MEDIATEK_DONT_REGISTER,
+    extra_flags = MEDIATEK_EXTRA_FLAGS,
+    mode = "jit",
+    soc_models = MEDIATEK_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "mediatek_aot_ats",
+    aot_shard_count = 32,
+    backend = "mediatek",
+    dont_register = MEDIATEK_DONT_REGISTER,
+    extra_flags = MEDIATEK_EXTRA_FLAGS,
+    mode = "aot",
+    soc_models = MEDIATEK_SOC_MODELS,
 )
 
 litert_define_ats(
     name = "gpu_ats",
     backend = "gpu",
-    compile_only_suffix = None,
     dont_register = [
         "Transformer",
         "scaled_dot_product_attention",
@@ -650,13 +731,11 @@ litert_define_ats(
     extra_flags = [
         "--data_seed=42",
     ],
-    jit_suffix = "",
 )
 
 litert_define_ats(
-    name = "intel_openvino_ats",
+    name = "intel_openvino_jit_ats",
     backend = "intel_openvino",
-    compile_only_suffix = None,
     dont_register = [
         "CompositeOp",
         "Transformer",
@@ -665,42 +744,62 @@ litert_define_ats(
         "whisper_tiny_decoder",
         "qai_hub_real_esrgan_x4plus",
     ],
-    jit_suffix = "",
+    mode = "jit",
 )
 
+SAMSUNG_DONT_REGISTER = [
+    "whisper_tiny_decoder",
+    "hf_all_minilm_l6_v2",
+    "hf_mobilevit_small",
+    "5d",
+    "6d",
+    "tfl.elu",
+    "tfl.neg",
+    "tfl.square",
+    "tfl.zeros_like",
+    "tfl.round",
+    "tfl.sign",
+]
+
+SAMSUNG_SOC_MODELS = {"e9955": "E9955"}
+
 litert_define_ats(
-    name = "samsung_ats",
+    name = "samsung_compile_ats",
     aot_shard_count = 32,
     aot_tags = [
         "manual",
         "notap",
     ],
     backend = "samsung",
-    compile_only_suffix = "_aot",
-    do_register = [
+    dont_register = SAMSUNG_DONT_REGISTER,
+    mode = "compile_only",
+    soc_models = SAMSUNG_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "samsung_jit_ats",
+    backend = "samsung",
+    dont_register = SAMSUNG_DONT_REGISTER,
+    mode = "jit",
+    soc_models = SAMSUNG_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "samsung_aot_ats",
+    aot_shard_count = 32,
+    aot_tags = [
+        "manual",
+        "notap",
     ],
-    dont_register = [
-        "whisper_tiny_decoder",
-        "hf_all_minilm_l6_v2",
-        "hf_mobilevit_small",
-        "5d",
-        "6d",
-        "tfl.elu",
-        "tfl.neg",
-        "tfl.square",
-        "tfl.zeros_like",
-        "tfl.round",
-        "tfl.sign",
-    ],
-    extra_flags = [
-    ],
-    jit_suffix = "",
+    backend = "samsung",
+    dont_register = SAMSUNG_DONT_REGISTER,
+    mode = "aot",
+    soc_models = SAMSUNG_SOC_MODELS,
 )
 
 litert_define_ats(
     name = "cpu_macos_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     dont_register = [
         "(_i32<[^>]+>(?!_cst)|->[(][^)]*_i32)",  # XNNPACK does not support dynamic int32 math (allows int32 static constants)
         "Comparison",  # XNNPACK does not support Comparison ops
@@ -743,63 +842,53 @@ litert_define_ats(
     extra_flags = [
         "--data_seed=42",
     ],
-    jit_suffix = "",
     platform = "macos",
 )
 
 litert_define_ats(
     name = "ynnpack_cpu_macos_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     dont_register = YNNPACK_DONT_REGISTER,
     extra_flags = [
         "--enable_ynnpack=true",
     ],
-    jit_suffix = "",
     platform = "macos",
 )
 
 litert_define_ats(
     name = "cpu_windows_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     dont_register = XNNPACK_DONT_REGISTER,
     extra_flags = [
         "--max_ms_per_test=2000",
     ],
-    jit_suffix = "",
     platform = "windows",
 )
 
 litert_define_ats(
     name = "ynnpack_cpu_windows_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     dont_register = YNNPACK_DONT_REGISTER,
     extra_flags = [
         "--enable_ynnpack=true",
         "--max_ms_per_test=2000",
     ],
-    jit_suffix = "",
     platform = "windows",
 )
 
 litert_define_ats(
     name = "builtin_cpu_windows_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     dont_register = BUILTIN_DONT_REGISTER + ["CompositeOp"],
     extra_flags = BUILTIN_EXTRA_FLAGS + [
         "--max_ms_per_test=2000",
     ],
-    jit_suffix = "",
     platform = "windows",
 )
 
 litert_define_ats(
     name = "metal_macos_ats",
     backend = "metal",
-    compile_only_suffix = None,
     dont_register = [
         "Binary.*i32",
         "Comparison.*f32",  # Metal executes f32 graphs in FP16 precision, rounding close f32 inputs to equal under kExact
@@ -832,14 +921,12 @@ litert_define_ats(
     extra_flags = [
         "--data_seed=42",
     ],
-    jit_suffix = "",
     platform = "macos",
 )
 
 litert_define_ats(
     name = "webgpu_macos_ats",
     backend = "webgpu",
-    compile_only_suffix = None,
     dont_register = [
         "Binary.*i32",
         "Comparison.*f32",  # WebGPU executes f32 graphs in FP16 precision, rounding close f32 inputs to equal under kExact
@@ -872,14 +959,12 @@ litert_define_ats(
     extra_flags = [
         "--data_seed=42",
     ],
-    jit_suffix = "",
     platform = "macos",
 )
 
 litert_define_ats(
     name = "cpu_macos_models_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = XNNPACK_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -887,14 +972,12 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
     platform = "macos",
 )
 
 litert_define_ats(
     name = "ynnpack_cpu_macos_models_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = YNNPACK_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -903,14 +986,12 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
     platform = "macos",
 )
 
 litert_define_ats(
     name = "ynnpack_fallback_cpu_macos_models_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = YNNPACK_FALLBACK_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -920,14 +1001,12 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
     platform = "macos",
 )
 
 litert_define_ats(
     name = "builtin_cpu_macos_models_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = BUILTIN_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -936,14 +1015,12 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
     platform = "macos",
 )
 
 litert_define_ats(
     name = "cpu_windows_models_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = XNNPACK_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -951,14 +1028,12 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
     platform = "windows",
 )
 
 litert_define_ats(
     name = "ynnpack_cpu_windows_models_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = YNNPACK_MODELS_DONT_REGISTER + YNNPACK_WINDOWS_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -967,14 +1042,12 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
     platform = "windows",
 )
 
 litert_define_ats(
     name = "ynnpack_fallback_cpu_windows_models_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = YNNPACK_FALLBACK_MODELS_DONT_REGISTER + YNNPACK_FALLBACK_WINDOWS_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -984,14 +1057,12 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
     platform = "windows",
 )
 
 litert_define_ats(
     name = "builtin_cpu_windows_models_ats",
     backend = "cpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = BUILTIN_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -1000,14 +1071,12 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
     platform = "windows",
 )
 
 litert_define_ats(
     name = "metal_macos_models_ats",
     backend = "metal",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = GPU_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -1015,14 +1084,12 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
     platform = "macos",
 )
 
 litert_define_ats(
     name = "webgpu_macos_models_ats",
     backend = "webgpu",
-    compile_only_suffix = None,
     do_register = ["ExtraModel"],
     dont_register = GPU_MODELS_DONT_REGISTER,
     extra_flags = [
@@ -1030,7 +1097,6 @@ litert_define_ats(
         "--max_ms_per_test=20000",
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
-    jit_suffix = "",
     platform = "macos",
 )
 
@@ -1786,12 +1852,14 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_cpu_options",
+        "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_options",
+        "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_rng",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc/options:litert_mediatek_options",
@@ -1799,6 +1867,7 @@ cc_library(
         "//litert/cc/options:litert_samsung_options",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core:filesystem_testonly",
+        "//litert/core/model:model_load",
         "//litert/core/model:model_serialize",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
@@ -2232,7 +2301,10 @@ cc_library(
 #     ],
 # )
 #
-# QUALCOMM_S24_ATS_GUITAR_TARGETS = ANDROID_ATS_GUITAR_TARGETS
+# QUALCOMM_S24_ATS_GUITAR_TARGETS = ANDROID_ATS_GUITAR_TARGETS + [
+#     ":qualcomm_sm8650_jit_ats_remote",
+#     ":qualcomm_sm8650_aot_ats_remote",
+# ]
 #
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_qualcomm_s24",
@@ -2756,10 +2828,10 @@ cc_library(
 # )
 #
 # NPU_AOT_ATS_GUITAR_TARGETS = [
-#     ":google_tensor_ats_aot",
-#     ":qualcomm_ats_aot",
-#     ":mediatek_ats_aot",
-#     ":example_ats_aot",
+#     ":google_tensor_compile_ats",
+#     ":qualcomm_compile_ats",
+#     ":mediatek_compile_ats",
+#     ":example_compile_ats",
 # ]
 #
 # guitar_workflow_test(
