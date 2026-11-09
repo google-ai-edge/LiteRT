@@ -309,6 +309,7 @@ cc_test(
     deps = [
         ":weight_store_builder",
         "//litert/c:litert_common",
+        "//litert/vendors/nvidia:windows_compat",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -359,6 +360,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/vendors/nvidia:cuda_vmm",
         "//litert/vendors/nvidia:tensorrt_features",
         "//litert/vendors/nvidia:tensorrt_logger",
         "//litert/vendors/nvidia:windows_compat",

@@ -15,8 +15,18 @@
 #include "litert/vendors/nvidia/compiler/weight_store_builder.h"
 
 #include <fcntl.h>
+#ifdef _WIN32
+#include <io.h>
+#include <windows.h>
+// psapi.h needs the declarations of windows.h.
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib")
+
+#include "litert/vendors/nvidia/windows_compat.h"
+#else
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
 
 #include <cstdint>
 #include <cstdlib>
@@ -243,6 +253,63 @@ TEST_F(WeightStoreBuilderTest, NeedsAMappedFileAndAValidGranule) {
   EXPECT_EQ(unmapped.Error().Status(), kLiteRtStatusErrorNotFound);
   unlink(other.c_str());
 }
+
+#ifdef _WIN32
+// Most pages of a large view that nothing touched are under page tables that
+// were never made, and come without working set information: they are taken
+// without being read, and a written page among them is still found.
+TEST(WeightStoreWindowsTest, TakesPagesThatHaveNoPageTableWithoutReadingThem) {
+  constexpr uint64_t kBytes = 16 << 20;
+  // What one page table maps, on x64 and ARM64 alike.
+  constexpr uintptr_t kTableSpan = 2 << 20;
+  std::string path = ::testing::TempDir() + "/weight_store_untouched.XXXXXX";
+  const int fd = mkstemp(path.data());
+  ASSERT_GE(fd, 0);
+  std::vector<uint8_t> bytes(kBytes);
+  for (size_t i = 0; i < bytes.size(); ++i) {
+    bytes[i] = static_cast<uint8_t>(i * 13 + (i >> 12));
+  }
+  ASSERT_EQ(_write(fd, bytes.data(), static_cast<unsigned>(bytes.size())),
+            static_cast<int>(bytes.size()));
+  auto* view = static_cast<uint8_t*>(
+      mmap(nullptr, kBytes, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0));
+  _close(fd);
+  ASSERT_NE(view, MAP_FAILED);
+  auto builder = TensorRtWeightStoreBuilder::Create(path, kGranule, kGranule);
+  ASSERT_TRUE(builder.HasValue()) << builder.Error().Message();
+  const auto flags = [](const uint8_t* address) {
+    PSAPI_WORKING_SET_EX_INFORMATION page{};
+    page.VirtualAddress = const_cast<uint8_t*>(address);
+    EXPECT_TRUE(QueryWorkingSetEx(GetCurrentProcess(), &page, sizeof(page)));
+    return static_cast<uint64_t>(page.VirtualAttributes.Flags);
+  };
+  // The middle of the second page table span that lies wholly in the view.
+  const uintptr_t span =
+      (reinterpret_cast<uintptr_t>(view) + 2 * kTableSpan - 1) / kTableSpan *
+      kTableSpan;
+  const auto* untouched =
+      reinterpret_cast<const uint8_t*>(span + kTableSpan / 2);
+  ASSERT_EQ(flags(untouched), 0u) << "the page has a page table already";
+  auto offset = (*builder)->SourceOffset({untouched, 64 << 10});
+  ASSERT_TRUE(offset.HasValue()) << offset.Error().Message();
+  EXPECT_EQ(*offset, static_cast<uint64_t>(untouched - view));
+  for (uint64_t at = 0; at < (64 << 10); at += 4096) {
+    EXPECT_EQ(flags(untouched + at), 0u) << "read at " << at;
+  }
+  // A page written in another span, then moved out of the working set.
+  volatile uint8_t* written =
+      reinterpret_cast<uint8_t*>(span + 2 * kTableSpan + 12345);
+  *written ^= 1;
+  ASSERT_TRUE(EmptyWorkingSet(GetCurrentProcess()));
+  EXPECT_FALSE((*builder)
+                   ->SourceOffset({const_cast<uint8_t*>(written) - 100, 200})
+                   .HasValue());
+  EXPECT_TRUE((*builder)->SourceOffset({untouched, 64 << 10}).HasValue());
+  ASSERT_EQ(munmap(view, kBytes), 0);
+  builder = Unexpected(kLiteRtStatusErrorNotFound);
+  NvidiaUnlink(path.c_str());
+}
+#endif  // _WIN32
 
 }  // namespace
 }  // namespace litert::nvidia
