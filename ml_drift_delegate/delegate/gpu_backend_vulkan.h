@@ -228,6 +228,7 @@ class GpuInferenceContextVulkan : public GpuInferenceContext {
       const override;
   absl::Status ReportMemoryBenchmarkIfEnabled(
       const ::ml_drift::CreateGpuModelInfo& create_info) override;
+  // Must be called before any Dispatch() call.
   absl::Status SetCommandBufferHint(int num_nodes_per_command_buffer) override;
 
   // Underlying Vulkan inference context.
@@ -237,9 +238,17 @@ class GpuInferenceContextVulkan : public GpuInferenceContext {
   }
 
  private:
+  void JoinNextCommandBuffersThread();
+  absl::Status FlushPendingSpatialTensors();
+
   GpuBackendVulkan* const backend_;
   absl::Mutex ctx_mutex_;
   ::ml_drift::syrtis::VulkanInferenceContext ctx_;
+  // Spatial tensor bindings staged while background command buffer preparation
+  // is enabled, applied to ctx_ once next_command_buffers_thread_ finishes.
+  absl::flat_hash_map<::ml_drift::ValueId,
+                      ::ml_drift::syrtis::VulkanSpatialTensor*>
+      pending_spatial_tensors_;
 
   // Command buffers prepared ahead to reduce the overhead of command buffer
   // preparation.
@@ -251,6 +260,9 @@ class GpuInferenceContextVulkan : public GpuInferenceContext {
   // Whether next_command_buffers_ is ready to use. It's set to true when
   // all next_command_buffers_ are prepared.
   bool next_command_buffers_ready_ = false;
+  // Prepares next_command_buffers_ in parallel with the current Dispatch()
+  // call. JoinNextCommandBuffersThread() joins and resets it before flushing
+  // staged bindings to ctx_ or touching next_command_buffers_ again.
   std::unique_ptr<std::thread> next_command_buffers_thread_;
 
   // Static member var indicating the last context which built the command

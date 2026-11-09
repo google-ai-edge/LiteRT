@@ -422,14 +422,40 @@ GpuInferenceContextWebGpu::GpuInferenceContextWebGpu(
       num_nodes_per_command_encoder_(kNumNodesPerCommandEncoder) {}
 
 GpuInferenceContextWebGpu::~GpuInferenceContextWebGpu() {
+  JoinNextCommandBuffersThread();
+  SharedWebGpuEnv::Get().ClearLastContextIfMatched(&backend_->wgpu_env(), this);
+}
+
+void GpuInferenceContextWebGpu::JoinNextCommandBuffersThread() {
   if (next_command_buffers_thread_) {
     next_command_buffers_thread_->join();
+    next_command_buffers_thread_.reset();
   }
-  SharedWebGpuEnv::Get().ClearLastContextIfMatched(&backend_->wgpu_env(), this);
+}
+
+absl::Status GpuInferenceContextWebGpu::FlushPendingSpatialTensors() {
+  if (pending_spatial_tensors_.empty()) {
+    return absl::OkStatus();
+  }
+  auto pending = std::move(pending_spatial_tensors_);
+  pending_spatial_tensors_.clear();
+  absl::MutexLock lock(backend_->memory_manager_mutex());
+  for (const auto& [id, tensor] : pending) {
+    ABSL_RETURN_IF_ERROR(ctx_->SetTensor(id, tensor));
+  }
+  return absl::OkStatus();
 }
 
 absl::StatusOr<::ml_drift::webgpu::SpatialTensor*>
 GpuInferenceContextWebGpu::GetSpatialTensorInternal(::ml_drift::ValueId id) {
+  if (auto it = pending_spatial_tensors_.find(id);
+      it != pending_spatial_tensors_.end()) {
+    if (it->second == nullptr) {
+      return absl::NotFoundError(
+          absl::StrCat("No GPU tensor allocated for tensor id ", id, "."));
+    }
+    return it->second;
+  }
   absl::MutexLock lock(backend_->memory_manager_mutex());
   auto* tensor = ctx_->GetTensor(id);
   if (tensor == nullptr) {
@@ -448,9 +474,13 @@ GpuInferenceContextWebGpu::GetSpatialTensor(::ml_drift::ValueId id) {
 
 absl::Status GpuInferenceContextWebGpu::BindSpatialTensor(
     ::ml_drift::ValueId id, ::ml_drift::GpuSpatialTensor* tensor) {
+  auto* wgpu_tensor = static_cast<::ml_drift::webgpu::SpatialTensor*>(tensor);
+  if (!next_command_buffers_.empty()) {
+    pending_spatial_tensors_[id] = wgpu_tensor;
+    return absl::OkStatus();
+  }
   absl::MutexLock lock(backend_->memory_manager_mutex());
-  return ctx_->SetTensor(
-      id, static_cast<::ml_drift::webgpu::SpatialTensor*>(tensor));
+  return ctx_->SetTensor(id, wgpu_tensor);
 }
 
 absl::Status GpuInferenceContextWebGpu::WriteDataToWeightTensor(
@@ -529,9 +559,8 @@ absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffersFromCached(
                                  /*submit_command_buffers=*/true);
   }
 
-  if (next_command_buffers_thread_) {
-    next_command_buffers_thread_->join();
-  }
+  JoinNextCommandBuffersThread();
+  ABSL_RETURN_IF_ERROR(FlushPendingSpatialTensors());
 
   SharedWebGpuEnv& shared_env = SharedWebGpuEnv::Get();
   const ::ml_drift::webgpu::ExecutionEnvironment* env = &backend_->wgpu_env();
@@ -674,6 +703,11 @@ absl::Status GpuInferenceContextWebGpu::ReportMemoryBenchmarkIfEnabled(
 
 absl::Status GpuInferenceContextWebGpu::SetCommandBufferHint(
     int num_nodes_per_command_encoder) {
+  // Must be called before any Dispatch() call.
+  if (next_command_buffers_thread_ != nullptr) {
+    return absl::FailedPreconditionError(
+        "SetCommandBufferHint must be called before any Dispatch() call.");
+  }
   num_nodes_per_command_encoder_ = num_nodes_per_command_encoder;
   return absl::OkStatus();
 }
