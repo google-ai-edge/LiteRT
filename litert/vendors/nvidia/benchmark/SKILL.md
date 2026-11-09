@@ -173,3 +173,13 @@ not override the output budget. Real-text runs honor stop tokens. A successful
 check requires a populated long prefix followed by decode and a positive host
 arena count. Initialization alone does not validate long-context execution.
 Treat timings as diagnostic unless the host passed formal preparation.
+
+## Measurements against llama.cpp, and the tables
+
+[README.md](README.md) is the method and manual of the comparison tables under `google/`
+(the RTX 5080 on native Windows and WSL, the RTX Spark): `windows/bench.tool` and
+`windows/matrix.tool` are bench.sh and matrix.sh on native Windows (`windows/config.json`
+names the machine), `llama/` measures llama.cpp the same way, `eval/` runs LiveCodeBench and
+GPQA, and `report/tables.tool` / `report/eval.tool` rewrite `google/` from the machine's
+cached runs, the newest valid run per cell. The `.tool` files are Python
+(`python3 file.tool`); `test_tables.tool` tests the processing on synthetic runs.
