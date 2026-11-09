@@ -28,6 +28,7 @@ def load(path, name):
 
 RUNS = load(ROOT / 'report/runs.tool', 'runs')
 LITERT, LLAMA = RUNS.parsers()
+MODELS = json.loads((ROOT / 'models.json').read_text())
 
 BENCHMARK = """BenchmarkInfo:
   Init Phases (7):
@@ -62,13 +63,14 @@ def litert_run(root, label, speeds, *, profile='e2b', workload='short', metric='
   return run
 
 
-def llama_run(root, label, pp, tg, *, start='2026-11-01T00:00:00Z', load_mode='mmap'):
+def llama_run(root, label, pp, tg, *, start='2026-11-01T00:00:00Z', load_mode='mmap',
+              model='/models/gemma-4-E2B-it-qat-UD-Q2_K_XL-cuda-Q2_0-repacked.gguf'):
   run = root / label
   run.mkdir(parents=True)
   (run / 'meta.json').write_text(json.dumps({
       'label': label, 'runtime': 'llama.cpp', 'profile': 'e2b', 'workload': 'short', 'metric': 'latency',
       'mtp': False, 'prompt_file': None, 'iterations': 3, 'warmups': 0, 'exit_code': 0, 'start': start,
-      'build_id': 'b1', 'release_tag': 'v0.8.0', 'load_mode': load_mode, 'gpu_baseline_mib': 100}))
+      'build_id': 'b1', 'release_tag': 'v0.8.0', 'load_mode': load_mode, 'gpu_baseline_mib': 100, 'model': model}))
   (run / 'pp.json').write_text(json.dumps([{'n_prompt': 1024, 'n_gen': 0, 'n_depth': 0, 'avg_ts': pp, 'samples_ts': [pp] * 3}]))
   (run / 'tg.json').write_text(json.dumps([{'n_prompt': 0, 'n_gen': 256, 'n_depth': 1024, 'avg_ts': tg, 'samples_ts': [tg] * 3}]))
   return run
@@ -84,7 +86,18 @@ class SelectionTest(unittest.TestCase):
     self.tmp.cleanup()
 
   def records(self):
-    return [RUNS.load(run, LITERT, LLAMA) for run in RUNS.find_runs([self.root])]
+    return [RUNS.load(run, LITERT, LLAMA, MODELS) for run in RUNS.find_runs([self.root])]
+
+  def test_llama_run_of_another_model_is_not_a_cell(self):
+    llama_run(self.root / 'q4', 'e2b_short_plain_latency', 20000.0, 250.0, start='2026-11-02T00:00:00Z',
+              model='C:\\models\\gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf')
+    llama_run(self.root / 'mobile', 'e2b_short_plain_latency', 21000.0, 260.0, start='2026-11-01T00:00:00Z')
+    records = self.records()
+    self.assertEqual([r['errors'] for r in records if r['run'].endswith('q4' + os.sep + 'e2b_short_plain_latency')],
+                     [["llama.cpp model gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf is not the profile's comparison model "
+                       "(gemma-4-E2B-it-qat-UD-Q2_K_XL-cuda-Q2_0-repacked.gguf)"]])
+    chosen = RUNS.select(records)
+    self.assertTrue(chosen[('llama', 'e2b', 'short', 'latency')]['run'].endswith('mobile' + os.sep + 'e2b_short_plain_latency'))
 
   def test_newest_valid_run_wins(self):
     litert_run(self.root / 'a', 'e2b_short_plain_latency', [300, 310], start='2026-11-01T00:00:00Z')

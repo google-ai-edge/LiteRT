@@ -227,7 +227,7 @@ def main():
   if args.platform not in platforms:
     raise SystemExit(f'Unknown platform {args.platform}; platforms.json names ' + ', '.join(k for k in platforms if k != '_'))
   litert_report, llama_report = RUNS.parsers(args.bench_dir)
-  records = [RUNS.load(run, litert_report, llama_report) for run in RUNS.find_runs(args.runs)]
+  records = [RUNS.load(run, litert_report, llama_report, models) for run in RUNS.find_runs(args.runs)]
   chosen = RUNS.select(records)
   invalid = [(r['run'], r['errors']) for r in records if r['errors']]
   out = pathlib.Path(args.out) / args.platform

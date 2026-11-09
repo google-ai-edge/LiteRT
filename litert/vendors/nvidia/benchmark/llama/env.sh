@@ -4,8 +4,11 @@
 # go in the benchmark's env.local.sh (sourced through ../env.sh): LLAMA_CPP_DIR (the checkout;
 # its build in LLAMA_BIN), LLAMA_LOCAL_MODELS and LLAMA_HF_HUB (where the GGUFs are).
 #
-# The models are the GGUF counterparts of the LiteRT models: unsloth's QAT UD-Q4_K_XL files
-# with the matching MTP drafter GGUFs (llama.cpp's --spec-type draft-mtp).
+# The models are the GGUF counterparts of the LiteRT models (models.json's llama entries): for
+# E2B and E4B Google's mobile-QAT checkpoints, unsloth's UD-Q2_K_XL GGUFs repacked from TQ2_0 to
+# Q2_0 for the CUDA backend (llama/repack_mobile_qat.tool writes the -cuda-Q2_0-repacked file
+# beside the download); for the larger models unsloth's QAT UD-Q4_K_XL files; each with its MTP
+# drafter GGUF (llama.cpp's --spec-type draft-mtp).
 source "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../env.sh"
 export LLAMA_CPP_DIR=${LLAMA_CPP_DIR:-$HOME/odml/llama.cpp}
 export LLAMA_BIN=${LLAMA_BIN:-$LLAMA_CPP_DIR/build/bin}
@@ -40,8 +43,8 @@ lb_hf() {
 # lb_model_file e2b|e4b|12b|26b|PATH -> the main GGUF; lb_draft_file PROFILE -> its MTP drafter.
 lb_model_file() {
   case "$1" in
-    e2b) echo "$LLAMA_LOCAL_MODELS/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf" ;;
-    e4b) echo "$LLAMA_LOCAL_MODELS/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf" ;;
+    e2b) echo "$LLAMA_LOCAL_MODELS/gemma-4-E2B-it-qat-mobile-GGUF/gemma-4-E2B-it-qat-UD-Q2_K_XL-cuda-Q2_0-repacked.gguf" ;;
+    e4b) echo "$LLAMA_LOCAL_MODELS/gemma-4-E4B-it-qat-mobile-GGUF/gemma-4-E4B-it-qat-UD-Q2_K_XL-cuda-Q2_0-repacked.gguf" ;;
     12b) lb_hf unsloth/gemma-4-12B-it-qat-GGUF gemma-4-12B-it-qat-UD-Q4_K_XL.gguf ;;
     26b) lb_hf unsloth/gemma-4-26B-A4B-it-qat-GGUF gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf ;;
     *) [[ -f $1 ]] || lb_die "Model is neither a profile name (e2b, e4b, 12b, 26b) nor a file: $1"; realpath "$1" ;;
@@ -49,8 +52,8 @@ lb_model_file() {
 }
 lb_draft_file() {
   case "$1" in
-    e2b) echo "$LLAMA_LOCAL_MODELS/gemma-4-E2B-it-GGUF/mtp-gemma-4-E2B-it.gguf" ;;
-    e4b) echo "$LLAMA_LOCAL_MODELS/gemma-4-E4B-it-GGUF/mtp-gemma-4-E4B-it.gguf" ;;
+    e2b) echo "$LLAMA_LOCAL_MODELS/gemma-4-E2B-it-qat-mobile-GGUF/MTP/mtp-gemma-4-E2B-it-Q8_0.gguf" ;;
+    e4b) echo "$LLAMA_LOCAL_MODELS/gemma-4-E4B-it-qat-mobile-GGUF/MTP/mtp-gemma-4-E4B-it-Q8_0.gguf" ;;
     12b) lb_hf unsloth/gemma-4-12B-it-qat-GGUF MTP/mtp-gemma-4-12B-it-Q8_0.gguf ;;
     26b) lb_hf unsloth/gemma-4-26B-A4B-it-qat-GGUF MTP/mtp-gemma-4-26B-A4B-it-Q8_0.gguf ;;
     *) lb_die "No MTP drafter known for $1 (give a profile name)" ;;

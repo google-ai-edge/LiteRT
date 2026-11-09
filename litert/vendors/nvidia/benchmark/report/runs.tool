@@ -94,9 +94,10 @@ def nvidia_execution(text):
   return errors
 
 
-def load(run, litert_report, llama_report):
+def load(run, litert_report, llama_report, models=None):
   """One record: {'run', 'runtime', 'meta', 'parts', 'errors'} in the shape of the parsers'
-  records, with the Windows time.json folded into parts[*]['time']."""
+  records, with the Windows time.json folded into parts[*]['time']. With models (models.json),
+  a llama.cpp run of a file other than its profile's comparison model is invalid."""
   run = pathlib.Path(run)
   metas = sorted(run.glob('*meta.json'))
   main_meta = json.loads(next((m for m in metas if m.name == 'meta.json'), metas[0]).read_text())
@@ -106,6 +107,11 @@ def load(run, litert_report, llama_report):
     part = record['parts']['main']
     part['time'] = part.get('time') or read_time_json(run)
     errors = [] if main_meta.get('exit_code', 0) == 0 else [f"exit {main_meta.get('exit_code')}"]
+    expected = (models or {}).get(main_meta.get('profile'), {}).get('llama', {}).get('files')
+    if expected:
+      name = re.split(r'[\\/]', str(main_meta.get('model') or ''))[-1]
+      if name not in expected:
+        errors.append(f"llama.cpp model {name} is not the profile's comparison model ({expected[0]})")
   else:
     record = litert_report.load_run(run)
     record['runtime'] = 'litert'

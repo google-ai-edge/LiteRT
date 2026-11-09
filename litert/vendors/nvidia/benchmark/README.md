@@ -23,10 +23,11 @@ Two parts, kept apart:
 |---|---|
 | `models.json`, `workloads.json`, `platforms.json` | the models, the workload presets (bench.sh's), the measured platforms |
 | `report/runs.tool`, `report/tables.tool`, `report/eval.tool` | processing |
-| `windows/common.tool`, `windows/bench.tool`, `windows/matrix.tool`, `windows/config.example.json` | native Windows generation (x64 and ARM64) |
+| `windows/build.ps1`, `windows/common.tool`, `windows/bench.tool`, `windows/matrix.tool`, `windows/config.example.json` | native Windows: the build and the generation (x64 and ARM64) |
 | `llama/env.sh`, `llama/bench.sh`, `llama/serve.sh`, `llama/matrix.sh`, `llama/client.tool` | llama.cpp generation on Linux |
 | `llama/bench.tool`, `llama/matrix.tool` | llama.cpp generation on native Windows |
 | `llama/report.tool` | the llama.cpp run parser (LiteRT's `report.py` parses LiteRT runs) |
+| `llama/repack_mobile_qat.tool` | the E2B/E4B comparison GGUFs: TQ2_0 repacked to Q2_0 for the CUDA backend |
 | `eval/lcb/*`, `eval/gpqa/*` | LiveCodeBench v6 and GPQA Diamond: fetch, select, run, grade |
 | `google/<platform>/*.md`, `google/lcb/*.md`, `google/gpqa/*.md` | the generated tables |
 | `test_tables.tool` | tests of the processing on synthetic runs (`python3 test_tables.tool`) |
@@ -53,8 +54,11 @@ the runtime directory (the CLI and the two NVIDIA plugin libraries, `.dll` or `.
 `BUILD_ID` file there names the build, else the binaries' digest does), the SDK `bin`
 directories (TensorRT-RTX, the CUDA runtime), the state root, the checkouts, the model files
 and the llama.cpp release. `python windows/common.tool check` prints the host's state and fails
-when another benchmark runs (or, with `host.require_ac`, off AC power). The machine builds its
-binaries with its own scripts for now ([Open items](#open-items)).
+when another benchmark runs (or, with `host.require_ac`, off AC power). `powershell -ExecutionPolicy
+Bypass -File windows\build.ps1` is `build.sh`: it builds the two plugins and the CLI with Bazel from
+the configured checkouts (the `build` section names the machine's Bazel, its MSVC environment
+script and architecture, the SDKs and each tree's Bazel arguments; `config.example.json` shows an
+x64 machine) and stages them into `runtime_dir` with `BUILD_ID` and a `build.json` record.
 
 Host preparation stays outside the runners: on the 5080 the owner's `benchmark` shell
 preparation (High Performance, ASUS Profile 1, the cleanup allowlist) before a formal batch;
@@ -77,7 +81,8 @@ llama/matrix.sh    "$LITERT_BENCH_ROOT/measured/llama_$(date -u +%Y%m%dT%H%M%S)"
 ```
 
 ```powershell
-# Windows: LiteRT and llama.cpp
+# Windows: build once per change of the trees, then LiteRT and llama.cpp
+powershell -ExecutionPolicy Bypass -File windows\build.ps1
 python windows/matrix.tool C:\state\measured\matrix_20261108 e2b e4b 12b 26b --llama --cooldown 55
 ```
 
@@ -157,10 +162,16 @@ synthetic latency process as the warm start (its whole-process time includes its
 iterations). Model files are read into the OS file cache before a model's group, so neither
 is a cold disk read. **Answer check**: the CLI's Paris question on the NPU and on the CPU.
 
-**llama.cpp settings** everywhere: `-fa on -ngl 99 -t 20 -b 2048`, `-ncmoe 0` for the 26B,
-GGUFs with the matching MTP drafter GGUFs (`--spec-type draft-mtp --spec-draft-n-max 3 -ngld
-99`). The GGUF and the LiteRT export of a model are different quantizations; speed ratios
-do not establish equal accuracy.
+**llama.cpp models and settings** (`models.json`'s `llama` entries): E2B and E4B are Google's
+mobile-QAT checkpoints, the quantization of their LiteRT exports, as Unsloth's `UD-Q2_K_XL`
+GGUFs repacked from TQ2_0 to Q2_0 (`llama/repack_mobile_qat.tool`; v0.8.0's CUDA backend has
+no TQ2_0 kernels and would compute those tensors on the CPU); 12B and 26B are Unsloth's QAT
+`UD-Q4_K_XL` GGUFs; Qwen 3.8 27B is `Q4_0`; each with its Q8_0 MTP drafter GGUF. A run of
+another file is not a cell: the E2B/E4B llama.cpp cells of `5080` and `5080_wsl` stay empty
+until those machines measure the mobile-QAT files (`rtx_spark`'s rows are them). Settings
+everywhere: `-fa on -ngl 99 -t 20 -b 2048`, `-ncmoe 0` for the 26B, `--spec-type draft-mtp
+--spec-draft-n-max 3 -ngld 99` under MTP. A GGUF and a LiteRT export are different files even at
+the same quantization recipe; speed ratios do not establish equal accuracy.
 
 **Platform notes.** On native Windows the figures include the desktop's GPU use; the 5080's
 Smart App Control blocked freshly built unsigned DLLs until it was turned off (2026-11-03);
@@ -225,8 +236,7 @@ those runs: `~/.local/state/litert-nvidia-benchmark-wl/measured` and `eval/` on 
 
 ## Open items
 
-- The Windows builds still run through each machine's own scripts (the 5080's
-  `build_litert_rtx.ps1`, the Spark's `build-rt.ps1` / `build-lm.ps1`, in the history above); a
-  `windows/build.ps1` with the architecture in `config.json` would complete the Windows side.
-- The RTX Spark's mobile-QAT llama.cpp comparison and 31B attempt, and the 5080's mobile-QAT
-  comparison, are not part of the tables; their records are in the history.
+- The 5080's and WSL's E2B/E4B llama.cpp rows against the mobile-QAT files are not measured yet
+  (the 5080's earlier mobile-QAT batches are in the retired `windows_5080/runs`, in the old capture
+  format). The RTX Spark's Gemma 4 31B attempt (a weights-only export LiteRT cannot run) is a
+  record in the history, not a table.
