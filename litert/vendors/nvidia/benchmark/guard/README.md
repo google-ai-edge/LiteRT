@@ -231,7 +231,11 @@ What differs there:
   refuses a run.
 - The dumps' spec (`<dir>:<steps>:<mb>`) splits at its first colon, a drive
   letter's: the numerics probe gives the dispatch a directory relative to the
-  probe's, the CLI's working directory for that run.
+  probe's, the CLI's working directory for that run. A dispatch built before
+  2026-11-04 made the dumps' directories with a shell `mkdir -p`, which does
+  nothing on Windows, so such a runtime writes no whole-output dumps: capture
+  it with a configuration whose `numerics.full_steps` is 0 (the Gemma
+  measurements' runtime is one).
 - `c++filt` is absent, so the autopsy keeps the kernels' names as the DOT has
   them; a tree without `clock_check.py` records no clock report (a note in
   the manifest; the timed probes run, in the diagnostic host mode).
@@ -257,6 +261,16 @@ What differs there:
   in the decode attention): a capture of the same build twice, compared, is
   the test (`capture --name a`, `capture --name b`, `compare a b`); the other
   models are bit-identical.
+- The dense GEMVs' programmatic dependent launch (2026-11-04, on the RTX
+  Spark): the 26B's decode logits non-finite from its first captured step
+  under TensorRT-RTX's whole-graph capture, while the dense models stayed
+  bit-identical (their GEMVs are the per-channel kernel, untouched).
+  `--env LITERT_NVIDIA_GEMV_DEPENDENT_LAUNCH=0` cleared it, and a standalone
+  harness of the kernels showed that a programmatic edge in a captured graph
+  starts the next kernel at the trigger without its wait holding it there.
+  The launch is off by default now (an interleaved burst A/B on Qwen 3.5 27B
+  found no gain from it), and when enabled its trigger follows the block's
+  writes whenever the stream is being captured.
 
 ## What it does not probe
 
