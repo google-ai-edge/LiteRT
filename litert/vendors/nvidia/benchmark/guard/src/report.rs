@@ -100,6 +100,11 @@ pub fn check_texts(base: &Capture, cand: &Capture) -> Vec<TextCheck> {
         ) else {
             continue;
         };
+        // A probe the CLI cannot run (a build without constrained decoding)
+        // is not judged: not_compared says so.
+        if device.unsupported.is_some() && host.unsupported.is_some() {
+            continue;
+        }
         let comparison = compare_texts(device, host);
         let mut verdict = Verdict::Pass;
         let mut reasons = Vec::new();
@@ -540,6 +545,17 @@ pub struct Comparison {
 fn not_compared(base: &Capture, cand: &Capture) -> Vec<String> {
     let mut out = Vec::new();
     let mode = |mtp: bool| if mtp { "mtp" } else { "plain" };
+    // The text probes a CLI could not run (check_texts leaves them out).
+    for (side, capture) in [("the candidate", cand), ("the baseline", base)] {
+        for t in capture.texts.iter().filter(|t| t.variant != "host") {
+            if let Some(reason) = &t.unsupported {
+                out.push(format!(
+                    "text {} {} {}: not judged in {side}, {reason}",
+                    t.model, t.kind, t.variant
+                ));
+            }
+        }
+    }
     for b in &base.numerics {
         if !cand
             .numerics
@@ -662,38 +678,79 @@ pub struct RecordPoint {
     pub prefill_tps: Option<f64>,
 }
 
-/// Reads measurements' bench/results.json (`records[].parts.main`) or a
-/// report.py --json document (a list of run reports).
+/// Reads measurements' bench/results.json (`records[].parts.main`), the RTX
+/// Spark snapshot's results.json (`litert_records[]`, the runs themselves,
+/// narrowed to the ones its `selected_runs` put in the tables when it has
+/// them) or a report.py --json document (a list of run reports). A cell with
+/// several runs is their mean.
 pub fn load_record(path: &std::path::Path) -> Result<Vec<RecordPoint>> {
     let text = std::fs::read_to_string(path)?;
     let value: serde_json::Value = serde_json::from_str(&text)?;
-    let mut points = Vec::new();
+    let mut selected: Option<BTreeSet<String>> = None;
     let runs: Vec<&serde_json::Value> = match &value {
         serde_json::Value::Object(map) if map.contains_key("records") => map["records"]
             .as_array()
             .map(|a| a.iter().filter_map(|r| r.get("parts").and_then(|p| p.get("main"))).collect())
             .unwrap_or_default(),
+        serde_json::Value::Object(map) if map.contains_key("litert_records") => {
+            selected = map.get("selected_runs").and_then(|s| s.as_object()).map(|s| {
+                s.values().filter_map(|v| v.as_str()).map(|v| v.replace('\\', "/")).collect()
+            });
+            map["litert_records"].as_array().map(|a| a.iter().collect()).unwrap_or_default()
+        }
         serde_json::Value::Array(items) => items.iter().collect(),
         _ => Vec::new(),
     };
+    let mut cells: Vec<(RecordPoint, Vec<f64>, Vec<f64>)> = Vec::new();
     for run in runs {
         let (Some(meta), Some(summary)) = (run.get("meta"), run.get("summary")) else { continue };
         if meta.get("metric").and_then(|m| m.as_str()) != Some("latency") {
             continue;
         }
+        if let Some(selected) = &selected {
+            let dir = run
+                .get("run_directory")
+                .and_then(|v| v.as_str())
+                .map(|v| v.replace('\\', "/"))
+                .unwrap_or_default();
+            if !selected.contains(&dir) {
+                continue;
+            }
+        }
         let tps = |key: &str| {
             summary.get(key).and_then(|v| v.get("mean").or(Some(v))).and_then(|v| v.as_f64())
         };
-        points.push(RecordPoint {
+        let point = RecordPoint {
             model: meta.get("profile").and_then(|v| v.as_str()).unwrap_or("").to_string(),
             workload: meta.get("workload").and_then(|v| v.as_str()).unwrap_or("").to_string(),
             mtp: meta.get("mtp").and_then(|v| v.as_bool()).unwrap_or(false),
             text: meta.get("prompt_file").map(|v| !v.is_null()).unwrap_or(false),
             decode_tps: tps("decode_tokens_per_second"),
             prefill_tps: tps("prefill_tokens_per_second"),
-        });
+        };
+        let cell = match cells.iter_mut().find(|(c, _, _)| {
+            c.model == point.model
+                && c.workload == point.workload
+                && c.mtp == point.mtp
+                && c.text == point.text
+        }) {
+            Some(cell) => cell,
+            None => {
+                cells.push((point.clone(), Vec::new(), Vec::new()));
+                cells.last_mut().expect("just pushed")
+            }
+        };
+        cell.1.extend(point.decode_tps);
+        cell.2.extend(point.prefill_tps);
     }
-    Ok(points)
+    Ok(cells
+        .into_iter()
+        .map(|(mut point, decode, prefill)| {
+            point.decode_tps = crate::parse::mean(decode.iter().cloned());
+            point.prefill_tps = crate::parse::mean(prefill.iter().cloned());
+            point
+        })
+        .collect())
 }
 
 fn plain_points<'a>(points: &'a [PerfPoint], model: &str) -> Vec<&'a PerfPoint> {
@@ -2119,6 +2176,7 @@ mod tests {
             top_k,
             immediate_upload: variant == "immediate",
             parser_errors: 0,
+            unsupported: None,
         }
     }
 

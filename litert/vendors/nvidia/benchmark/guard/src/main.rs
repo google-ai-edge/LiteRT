@@ -134,8 +134,8 @@ enum Command {
         /// The candidate capture's name.
         name: String,
     },
-    /// Recompute a capture's numerics summaries from its files (after a
-    /// change of the metrics).
+    /// Recompute a capture's numerics and text summaries from its files
+    /// (after a change of the metrics).
     Rescan { name: String },
     /// The captures under $LITERT_BENCH_ROOT/guard.
     List,
@@ -337,8 +337,8 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::Rescan { name } => {
-            let (env, _, _) = resolve(&cli)?;
-            let capture = capture::rescan_capture(&env, name)?;
+            let (env, config, _) = resolve(&cli)?;
+            let capture = capture::rescan_capture(&env, &config, name)?;
             let markdown = report::render_capture(&capture);
             write_report(&capture.dir, "capture", &markdown, &capture)?;
             print!("{markdown}");

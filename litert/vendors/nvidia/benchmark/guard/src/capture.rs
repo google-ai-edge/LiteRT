@@ -17,9 +17,9 @@ use crate::perf::PerfPoint;
 use crate::runner::{
     autopsy_dir, conversation_dir, load_autopsy, load_conversation_run, load_memory_run,
     load_numerics_run, load_text_run, memory_dir, numerics_dir, perf_label, perf_run_complete,
-    rescan_numerics_run, run_autopsy_probe, run_conversation_probe, run_memory_probe,
-    run_numerics_probe, run_perf_probe, run_text_probe, text_dir, AutopsyProbe, ConversationProbe,
-    MemoryProbe, NumericsProbe, PerfProbe, TextProbe,
+    rescan_numerics_run, rescan_text_run, run_autopsy_probe, run_conversation_probe,
+    run_memory_probe, run_numerics_probe, run_perf_probe, run_text_probe, text_dir, AutopsyProbe,
+    ConversationProbe, MemoryProbe, NumericsProbe, PerfProbe, TextProbe,
 };
 use crate::texts::TextRun;
 
@@ -371,8 +371,16 @@ pub fn run_capture(
                 let modes: Vec<bool> = if opts.mtp { vec![false, true] } else { vec![false] };
                 for mtp in modes {
                     let out_dir = numerics_dir(&dir, model, &prompt.name, mtp);
-                    let existing = load_numerics_run(&out_dir)
-                        .filter(|r| r.exit_code == 0 && !r.steps.is_empty());
+                    // A probe is kept when it ran whole: its steps, and its dumps when the
+                    // configuration asks for them (a run whose dispatch wrote none is run again).
+                    let existing = load_numerics_run(&out_dir).filter(|r| {
+                        r.exit_code == 0
+                            && !r.steps.is_empty()
+                            && (config.numerics.full_steps == 0
+                                || crate::runner::outputs_dir(&out_dir)
+                                    .join("index.jsonl")
+                                    .is_file())
+                    });
                     let run = match existing {
                         Some(run) => {
                             eprintln!(
@@ -749,8 +757,8 @@ mod tests {
     }
 }
 
-/// Recomputes every numerics summary of a capture from its files.
-pub fn rescan_capture(env: &BenchEnv, name: &str) -> Result<Capture> {
+/// Recomputes every numerics and text summary of a capture from its files.
+pub fn rescan_capture(env: &BenchEnv, config: &Config, name: &str) -> Result<Capture> {
     let mut capture = load_capture(env, name)?;
     let mut rescanned = Vec::new();
     for run in &capture.numerics {
@@ -761,6 +769,16 @@ pub fn rescan_capture(env: &BenchEnv, name: &str) -> Result<Capture> {
         }
     }
     capture.numerics = rescanned;
+    let mut rescanned = Vec::new();
+    for run in &capture.texts {
+        let dir = text_dir(&capture.dir, &run.model, &run.kind, &run.variant);
+        let regex = (run.kind == "constraint").then_some(config.probes.constraint.regex.as_str());
+        match rescan_text_run(&dir, regex)? {
+            Some(updated) => rescanned.push(updated),
+            None => rescanned.push(run.clone()),
+        }
+    }
+    capture.texts = rescanned;
     capture.manifest.updated = now();
     save(&capture)?;
     Ok(capture)

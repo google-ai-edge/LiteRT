@@ -186,6 +186,50 @@ The probes use the model's standard cache pool of the build (compiling it on
 first use); a numerics probe of a model runs before its performance probes.
 `cargo test` covers the parsers, the metrics and the cost model.
 
+## Windows
+
+The guard runs natively on Windows ARM64 (the RTX Spark N1X) from Git Bash
+with the same scripts: `cargo build --release` with the MSVC Rust toolchain
+(`rustup`'s `aarch64-pc-windows-msvc` host) gives `target/release/nvguard.exe`.
+What differs there:
+
+- `env.sh` resolves its paths in their mixed form (`C:/...`), which the shell
+  and the native binaries both read. `env.local.sh` sets `LITERT_LM_DIR`,
+  `LITERT_BENCH_ROOT`, `LITERT_BENCH_MODELS`, `TENSORRT_RTX_ROOT`, `CUDA_HOME`
+  and `LITERT_BENCH_PYTHON` (a bare `python3` can be the Store's stub).
+- There is no `build.sh`: the binaries are a staged directory of the PE files
+  (`litert_lm_advanced_main.exe`, `libLiteRtCompilerPlugin_Nvidia.dll`,
+  `libLiteRtDispatch_Nvidia.dll`) named by `LITERT_BENCH_RUNTIME_LIBS`, which
+  carries a `BUILD_ID` written by hand: the build id `env.sh` computes in the
+  trees it was built from. A capture of an older runtime points
+  `LITERT_RT_DIR` and `LITERT_LM_DIR` at worktrees of its sources (its
+  recorded heads with its patches applied), so the stamp and the trees agree.
+- The CLI finds the SDK's DLLs through PATH (`nb_runtime_env` puts the runtime
+  directory and the TensorRT-RTX and CUDA `bin` directories first, and exports
+  the list as `NB_DLL_PATH`), and gets this process's environment with the
+  pool's settings over it: the shell's own environment is in POSIX form.
+- `bench.sh` runs through bash (`NVGUARD_BASH` names it when another bash.exe
+  comes first on PATH) and times the CLI with `process_time.tool`, which writes
+  GNU time's lines (the peak working set, the wall time), since there is no
+  `/usr/bin/time`. `nvidia-smi` lists every process with a context on the GPU
+  there, the desktop's included, so another instance of the CLI is what
+  refuses a run.
+- The dumps' spec (`<dir>:<steps>:<mb>`) splits at its first colon, a drive
+  letter's: the numerics probe gives the dispatch a directory relative to the
+  probe's, the CLI's working directory for that run.
+- `c++filt` is absent, so the autopsy keeps the kernels' names as the DOT has
+  them; a tree without `clock_check.py` records no clock report (a note in
+  the manifest; the timed probes run, in the diagnostic host mode).
+- `--record` also reads the RTX Spark snapshot's `results.json`
+  (`litert_records`, narrowed to its `selected_runs`); a cell with several
+  retained runs is their mean.
+- A CLI built without constrained decoding (LiteRT-LM's
+  `enable_constrained_decoding=false`, the Windows ARM64 build here) refuses
+  the constraint probe ("Constrained decoding is disabled in this build"):
+  the run is kept with that reason, left out of the text checks and listed
+  under "not compared". `rescan` recomputes the text summaries of an earlier
+  capture, so one made before this rule gets it.
+
 ## What it caught on its first day
 
 - A build against the wrong SDK headers (1.5 instead of 1.7): no weight store,

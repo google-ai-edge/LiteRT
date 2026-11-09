@@ -138,6 +138,15 @@ pub fn parse_cli_log(text: &str) -> CliLog {
     let captured = re(&CAPTURED, r"Captured model output:\s*(.*)");
     let partitions = re(&PARTITIONS, r"compiling partition \d+/\d+");
 
+    // A log written on Windows ends its lines with CRLF, which the block split
+    // and the line anchors below would miss.
+    let normalized;
+    let text = if text.contains('\r') {
+        normalized = text.replace("\r\n", "\n");
+        normalized.as_str()
+    } else {
+        text
+    };
     let mut log = CliLog::default();
     let blocks: Vec<&str> = text.split("BenchmarkInfo:\n").collect();
     for block in blocks.iter().skip(1) {
