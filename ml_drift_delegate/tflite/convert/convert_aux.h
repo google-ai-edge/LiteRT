@@ -292,6 +292,14 @@ void PopulateBlockwiseQuantizedFullyConnected(
                                         ::ml_drift::ir::IrModel& ir_model,
                                         const SizedLayout& layout);
 
+// Wires all non-optional inputs of `node` as consumers of `op`, materializing
+// non-shared constant inputs via `AddConstInput`.
+void AddNodeInputs(
+    const TfLiteContext& context, const TfLiteNode& node,
+    absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
+    const SizedLayout& layout, ::ml_drift::ir::IrModel& ir_model,
+    ::ml_drift::ir::IrOp* op);
+
 // Adds a float16 constant input as a float32 IR tensor, converting the data
 // on the host.
 ::ml_drift::ir::IrTensor* AddFloat16ConstAsFloat32Input(
