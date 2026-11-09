@@ -49,7 +49,7 @@ if [[ $mode == plain && ( $profile == 12b || $profile == 26b ) ]]; then
 fi
 spec=false; [[ $mode == plain ]] || spec=true
 context=$((max_tokens + 2048)); ((context % 1024 == 0)) || context=$(( (context / 1024 + 1) * 1024 ))
-EVAL_HOST_CLOCK=; [[ -f $BENCH/clock_check.py ]] && { EVAL_HOST_CLOCK=$(python3 "$BENCH/clock_check.py" 3) || echo "Warning: the host's clock is not fit: $EVAL_HOST_CLOCK" >&2; }
+EVAL_HOST_CLOCK=; [[ -f $here/../../clock_check.tool ]] && { EVAL_HOST_CLOCK=$(python3 "$here/../../clock_check.tool" 3) || echo "Warning: the host's clock is not fit: $EVAL_HOST_CLOCK" >&2; }
 export EVAL_HOST_CLOCK
 python3 - "$runs/run.json" "$profile" "$mode" "$max_tokens" "$context" "$(nb_build_id)" "$model" "$engine" "$expansion" "$here" "$BENCH" "${sampler_args[@]}" <<'PY'
 import hashlib, json, os, pathlib, sys
@@ -65,7 +65,7 @@ config = {'profile': profile, 'mode': mode, 'max_output_tokens': int(budget),
           'binaries_build_id': (pathlib.Path(engine).parent / 'BUILD_ID').read_text().strip()
           if (pathlib.Path(engine).parent / 'BUILD_ID').exists() else None,
           'environment': {k: v for k, v in sorted(os.environ.items()) if k.startswith('LITERT_NVIDIA_')},
-          # The host's clocks at the run's start (clock_check.py in LiteRT's benchmark): the decode
+          # The host's clocks at the run's start (clock_check.tool in this tree): the decode
           # speeds are read on the monotonic clock. None when the check is not there.
           'host_clock': json.loads(os.environ['EVAL_HOST_CLOCK']) if os.environ.get('EVAL_HOST_CLOCK') else None}
 prompt_paths = sorted((pathlib.Path(here) / 'prompts').glob('*.txt'))

@@ -91,11 +91,11 @@ iterations=${iterations:-$default_iterations}
 [[ $metric != memory && $metric != cold ]] || { iterations=1; warmups=0; }
 mode=plain; [[ $mtp == false ]] || mode=mtp
 label=${label:-${profile}_${workload}_${mode}_${metric}}
-# The host's clocks (clock_check.py beside this script: the kernel tick and frequency, the monotonic
+# The host's clocks (clock_check.tool beside this script: the kernel tick and frequency, the monotonic
 # clock's rate against the raw clock over 3 s): recorded with the run; a formal or idle-verified run
 # refuses a clock that is not fit, since the CLI's rates are read on the monotonic clock.
-if [[ -f $here/clock_check.py ]]; then
-  NB_HOST_CLOCK=$("$NB_PYTHON" "$here/clock_check.py" 3) || {
+if [[ -f $here/clock_check.tool ]]; then
+  NB_HOST_CLOCK=$("$NB_PYTHON" "$here/clock_check.tool" 3) || {
     case ${CI_HOST_MODE:-unspecified} in
       formal|idle-verified) nb_die "The host's clock is not fit for a $CI_HOST_MODE run: $NB_HOST_CLOCK" ;;
       *) echo "Warning: the host's clock is not fit: $NB_HOST_CLOCK" >&2 ;;
@@ -104,8 +104,8 @@ if [[ -f $here/clock_check.py ]]; then
 else
   # A tree without the checker: the run records no clock report (meta.json's host_clock is null).
   case ${CI_HOST_MODE:-unspecified} in
-    formal|idle-verified) nb_die "No clock_check.py beside bench.sh: a $CI_HOST_MODE run needs the host's clock checked" ;;
-    *) echo "Warning: no clock_check.py beside bench.sh: the host's clock is not checked" >&2 ;;
+    formal|idle-verified) nb_die "No clock_check.tool beside bench.sh: a $CI_HOST_MODE run needs the host's clock checked" ;;
+    *) echo "Warning: no clock_check.tool beside bench.sh: the host's clock is not checked" >&2 ;;
   esac
   NB_HOST_CLOCK=
 fi

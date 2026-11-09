@@ -213,12 +213,11 @@ if [[ $model_before != '{}' ]]; then
   fi
 fi
 printf '%s\n' "${commands[@]}" > "$run/commands.txt"
-# The host's clocks (clock_check.py in LiteRT's benchmark, through BENCH or LITERT_RT_DIR: the kernel
-# tick and frequency, the monotonic clock's rate against the real-time clock): recorded with the run;
-# a formal or idle-verified run refuses a clock that is not fit, since llama-bench's timer is the
-# monotonic clock. Without the check (no LiteRT tree named), host_clock is null.
-LB_HOST_CLOCK=
-clock_check=${BENCH:-${LITERT_RT_DIR:-/nonexistent}/litert/vendors/nvidia/benchmark}/clock_check.py
+# The host's clocks (clock_check.tool in this tree: the kernel tick and frequency, the monotonic clock's
+# rate against the raw clock over 3 s): recorded with the run; a formal or idle-verified run refuses a
+# clock that is not fit, since llama-bench's timers read the monotonic clock. A tree without the
+# check records none.
+clock_check=$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../clock_check.tool
 if [[ -f $clock_check ]]; then
   LB_HOST_CLOCK=$(python3 "$clock_check" 3) || case ${CI_HOST_MODE:-unspecified} in
     formal|idle-verified) echo "The host's clock is not fit for a $CI_HOST_MODE run: $LB_HOST_CLOCK" >&2; exit 1 ;;

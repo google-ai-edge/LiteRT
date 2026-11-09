@@ -170,9 +170,9 @@ whose GPU is power-capped under sustained load (clocks fall from about 2.4 to 1.
 so sustained rates sit below first-iteration ones; one LiteRT process launched from an SSH
 session there failed once with `0xC0000142` and succeeded on repeat. The WSL tables
 (`5080_wsl`) were measured on a host whose monotonic clock ran 1–5% fast between 2026-10-20
-and 2026-10-28 (the kernel tick above 10,000 µs): their tokens/s read low by that much; LiteRT's
-`clock_check.py` now records the clock with every Linux run and refuses an unfit one for a
-formal run.
+and 2026-10-28 (the kernel tick above 10,000 µs): their tokens/s read low by that much.
+`clock_check.tool` (`python3 clock_check.tool 3` prints the state) records the host's clocks with
+every Linux run and refuses an unfit one for a formal run; the Windows runners do not call it.
 
 ## Evaluate
 
