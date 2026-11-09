@@ -1057,7 +1057,10 @@ PyObject* InterpreterWrapper::GetTensor(int tensor_index,
         free(data);
         return nullptr;
       }
-      sparse_buffer_dims[0] = tensor->bytes / size_of_type;
+      // Numpy has no sub-byte dtypes, so int4/int2 values are expanded above to
+      // one byte per element: `numpy_bytes` is the size of the expanded buffer,
+      // while `tensor->bytes` is the packed one.
+      sparse_buffer_dims[0] = numpy_bytes / size_of_type;
       np_array = PyArray_SimpleNewFromData(
           sparse_buffer_dims.size(), sparse_buffer_dims.data(), type_num, data);
     }
