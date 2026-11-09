@@ -27,7 +27,9 @@ compared step by step while their argmax tokens agree (the inputs of those
 steps are identical): the largest |Δlogit| among the top-K, the KL divergence
 of the top-K distributions, the top-K set overlap, and where the greedy texts
 part. A divergence after a few sentences is a near-tie and only warns; one
-within the first eight tokens, non-finite logits and a repetition loop fail.
+within the first eight tokens, non-finite logits and a repetition loop fail
+(a dump holding the C library's `nan` or `inf` is read as such, so the run is
+summarized and its comparison fails for that reason, and the capture goes on).
 The KL over the first four steps warns at 1e-3 and fails at 1e-2, the mean KL
 warns at 1e-3 and fails at 1e-1, a |Δlogit| warns at 1.0 and fails at 8.0, the
 top-K overlap warns under 0.95 and fails under 0.8 (`nvguard.toml`).
@@ -68,7 +70,10 @@ and host texts must agree (a parting warns: a tie at the k-th logit, or a
 sampler change), the constrained text must match its regex and both runs
 must end without parser errors (a violation or a bad exit fails). The
 greedy probes cannot see any of this: the samplers and the masks are what
-`--sampler_top_k=1` bypasses.
+`--sampler_top_k=1` bypasses. The device run must show the verifier's device
+path (the candidate selection at k > 1); a LiteRT-LM whose verifier has no
+such path shows none on both sides, which the check notes as the baseline's
+condition too and does not count against the candidate.
 
 **Performance.** `bench.sh` latency runs of the `short` (the record's 1k),
 `8k` and `16k` workloads with few iterations, per model; `--mtp` adds the
@@ -115,6 +120,16 @@ filesystem has less than `[disk] min_free_gib` (20) free, and resumes later:
 the numerics probes dump whole outputs (`numerics.full_steps`), and a
 quick-tier capture of two models with `--mtp` wrote 14 GB and filled the disk
 on 2026-10-29. `--config` with `full_steps = 0` keeps only the top-K logits.
+
+**Failed probes.** A probe that cannot run or be summarized (bench.sh
+failing, the CLI crashing, an unreadable dump) is recorded under the
+capture's "Failed probes" with its error, and the capture goes on to its next
+probe; `capture` then exits 2, and a resume runs the failed probes again. A
+comparison fails a probe the candidate lost; one lost in both captures, or in
+the baseline alone, is reported and not compared. The 26B's first run of
+the dependent GEMV launch (2026-11-04) is the case: its decode logits went
+non-finite and the capture of the day stopped at that probe, before the
+other models' probes and the baseline's 26B performance runs.
 
 **MTP acceptance.** With `--mtp` each numerics prompt also decodes greedily
 with the drafter, and the run keeps its accepted and drafted tokens. `check`

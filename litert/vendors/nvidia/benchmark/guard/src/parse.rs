@@ -273,15 +273,45 @@ pub struct LogitsLine {
     pub top: Vec<Vec<(u32, f64)>>,
 }
 
+/// The dispatch prints a non-finite logit as its C library spells it (`nan`,
+/// `-nan(ind)`, `inf`), which is not JSON: those read as NaN, so a run whose
+/// logits went non-finite is summarized (and fails its comparison) rather than
+/// refused with its capture.
 pub fn parse_logits_jsonl(text: &str) -> Result<Vec<LogitsLine>> {
+    #[derive(Deserialize)]
+    struct RawLine {
+        context: u32,
+        function: String,
+        step: u32,
+        output: String,
+        rows: usize,
+        columns: usize,
+        top: Vec<Vec<(u32, Option<f64>)>>,
+    }
+    static NON_FINITE: OnceLock<Regex> = OnceLock::new();
+    let non_finite =
+        re(&NON_FINITE, r"(?i)([,\[]\s*)-?(?:nan(?:\(ind\))?|inf(?:inity)?)(\s*[,\]])");
     let mut lines = Vec::new();
     for (number, line) in text.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
         }
-        let parsed: LogitsLine =
-            serde_json::from_str(line).with_context(|| format!("logits line {}", number + 1))?;
-        lines.push(parsed);
+        let json = non_finite.replace_all(line, "${1}null${2}");
+        let raw: RawLine =
+            serde_json::from_str(&json).with_context(|| format!("logits line {}", number + 1))?;
+        lines.push(LogitsLine {
+            context: raw.context,
+            function: raw.function,
+            step: raw.step,
+            output: raw.output,
+            rows: raw.rows,
+            columns: raw.columns,
+            top: raw
+                .top
+                .into_iter()
+                .map(|row| row.into_iter().map(|(i, v)| (i, v.unwrap_or(f64::NAN))).collect())
+                .collect(),
+        });
     }
     Ok(lines)
 }
@@ -319,6 +349,38 @@ not a record: Captured model output: ignored
             vec!["First line\nsecond line\n".to_string(), "Other".to_string()]
         );
         assert!(captured_outputs("nothing").is_empty());
+    }
+
+    #[test]
+    fn non_finite_logits_are_read_as_nan_and_survive_a_summary() {
+        let text = concat!(
+            r#"{"context":1,"function":"f","step":2,"output":"o","rows":1,"columns":4,"top":[[[18,nan],[22,-nan(ind)],[10,inf],[16,-inf]]]}"#,
+            "\n",
+            r#"{"context":1,"function":"f","step":3,"output":"o","rows":1,"columns":4,"top":[[[1,2.5],[2,1.0]]]}"#,
+            "\n"
+        );
+        let lines = parse_logits_jsonl(text).unwrap();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].top[0].iter().all(|(_, v)| !v.is_finite()));
+        assert_eq!(
+            lines[0].top[0].iter().map(|(i, _)| *i).collect::<Vec<_>>(),
+            vec![18, 22, 10, 16]
+        );
+        assert_eq!(lines[1].top[0], vec![(1, 2.5), (2, 1.0)]);
+        assert!(parse_logits_jsonl(r#"{"context":1}"#).is_err());
+        // serde_json writes the NaN as null; the summary reads back with NaN.
+        let step = crate::numerics::StepLogits {
+            context: 1,
+            function: "f".into(),
+            step: 2,
+            row: 0,
+            top: lines[0].top[0].clone(),
+        };
+        let json = serde_json::to_string(&step).unwrap();
+        assert!(json.contains("null"), "{json}");
+        let back: crate::numerics::StepLogits = serde_json::from_str(&json).unwrap();
+        assert!(back.top.iter().all(|(_, v)| v.is_nan()));
+        assert_eq!(back.argmax(), Some(18));
     }
 
     #[test]

@@ -382,6 +382,13 @@ fn main() -> Result<()> {
             write_report(&capture.dir, "capture", &markdown, &capture)?;
             print!("{markdown}");
             println!("Capture: {}", capture.dir.display());
+            if !capture.failures.is_empty() {
+                eprintln!(
+                    "{} probe(s) did not run whole (the capture's \"Failed probes\"); resume the capture to run them again",
+                    capture.failures.len()
+                );
+                std::process::exit(2);
+            }
             Ok(())
         }
         Command::Check { probe, baseline, record } => {

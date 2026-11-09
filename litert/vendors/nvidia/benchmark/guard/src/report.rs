@@ -82,9 +82,10 @@ fn text_run<'a>(
 
 /// Every device-side text run of the candidate judged against its host run:
 /// the texts must agree, the device run must show the verifier's device path
-/// (the candidate selection at k > 1, the greedy sampler at k = 1), the host
-/// run must show none, the constrained texts must match the regex, and both
-/// runs must end well.
+/// (the candidate selection at k > 1, the greedy sampler at k = 1) unless the
+/// baseline's run of the same probe lacks it too (noted, not a change), the
+/// host run must show none, the constrained texts must match the regex, and
+/// both runs must end well.
 pub fn check_texts(base: &Capture, cand: &Capture) -> Vec<TextCheck> {
     let mut out = Vec::new();
     let keys: BTreeSet<(String, String, String)> = cand
@@ -106,21 +107,25 @@ pub fn check_texts(base: &Capture, cand: &Capture) -> Vec<TextCheck> {
             continue;
         }
         let comparison = compare_texts(device, host);
+        let base_device = text_run(&base.texts, &model, &kind, &variant);
         let mut verdict = Verdict::Pass;
         let mut reasons = Vec::new();
-        let mut raise = |v: Verdict, reason: String| {
-            verdict = verdict.max(v);
+        // A reason without a verdict is a note: a condition the baseline's own run shares.
+        let mut raise = |v: Option<Verdict>, reason: String| {
+            if let Some(v) = v {
+                verdict = verdict.max(v);
+            }
             reasons.push(reason);
         };
         if device.exit_code != 0 || host.exit_code != 0 {
             raise(
-                Verdict::Fail,
+                Some(Verdict::Fail),
                 format!("exit codes {variant} {} host {}", device.exit_code, host.exit_code),
             );
         }
         if device.parser_errors > 0 || host.parser_errors > 0 {
             raise(
-                Verdict::Fail,
+                Some(Verdict::Fail),
                 format!(
                     "parser errors {variant} {} host {}",
                     device.parser_errors, host.parser_errors
@@ -128,28 +133,40 @@ pub fn check_texts(base: &Capture, cand: &Capture) -> Vec<TextCheck> {
             );
         }
         if device.regex_ok == Some(false) {
-            raise(Verdict::Fail, format!("the {variant} text violates the regex"));
+            raise(Some(Verdict::Fail), format!("the {variant} text violates the regex"));
         }
         if host.regex_ok == Some(false) {
-            raise(Verdict::Fail, "the host text violates the regex".to_string());
+            raise(Some(Verdict::Fail), "the host text violates the regex".to_string());
         }
+        // The verifier's device path missing is a change only when the baseline's run had it:
+        // a LiteRT-LM without the candidate selection at k > 1 shows the same on both sides.
         if device.top_k > 1 && device.device_candidates == 0 {
-            raise(
-                Verdict::Warn,
-                format!("the {variant} run shows no candidate selection at k {}: the verifier sampled on the host", device.top_k),
-            );
+            let reason = format!("the {variant} run shows no candidate selection at k {}: the verifier sampled on the host", device.top_k);
+            match base_device {
+                Some(b) if b.top_k == device.top_k && b.device_candidates == 0 => raise(
+                    None,
+                    format!("{reason}, as in the baseline (this LiteRT-LM has no device candidate selection: not a change)"),
+                ),
+                _ => raise(Some(Verdict::Warn), reason),
+            }
         } else if device.device_samplers == 0 {
-            raise(Verdict::Warn, format!("the {variant} run reports no device sampler"));
+            let reason = format!("the {variant} run reports no device sampler");
+            match base_device {
+                Some(b) if b.device_samplers == 0 => {
+                    raise(None, format!("{reason}, as in the baseline"))
+                }
+                _ => raise(Some(Verdict::Warn), reason),
+            }
         }
         if host.device_samplers > 0 {
             raise(
-                Verdict::Warn,
+                Some(Verdict::Warn),
                 format!("the host run reports {} device sampler line(s): LITERT_NVIDIA_MTP_GPU_SAMPLING=0 was not honored", host.device_samplers),
             );
         }
         if !comparison.identical {
             raise(
-                Verdict::Warn,
+                Some(Verdict::Warn),
                 format!(
                     "{variant} and host texts part at char {} ({} words in common; a tie at the k-th logit, or a sampler change)",
                     comparison.parted_char.unwrap_or(0),
@@ -157,8 +174,7 @@ pub fn check_texts(base: &Capture, cand: &Capture) -> Vec<TextCheck> {
                 ),
             );
         }
-        let same_as_baseline =
-            text_run(&base.texts, &model, &kind, &variant).map(|b| b.text == device.text);
+        let same_as_baseline = base_device.map(|b| b.text == device.text);
         out.push(TextCheck {
             model,
             kind,
@@ -855,6 +871,28 @@ pub fn compare(
     let workloads = workload_legend(&names);
     let not_compared = not_compared(base, cand);
     let mut reasons = Vec::new();
+    // A probe that did not run whole: lost in the candidate alone, it fails the comparison; lost
+    // in both captures, or in the baseline alone, it is reported and not compared.
+    let mut failed = Verdict::Pass;
+    for f in &cand.failures {
+        if base.failures.iter().any(|b| b.same_probe(f)) {
+            reasons.push(format!(
+                "{} failed in both captures and is not compared (the candidate's error: {})",
+                f.name(),
+                f.error
+            ));
+        } else {
+            reasons.push(format!("{} failed in the candidate: {}", f.name(), f.error));
+            failed = Verdict::Fail;
+        }
+    }
+    for f in base.failures.iter().filter(|b| !cand.failures.iter().any(|c| c.same_probe(b))) {
+        reasons.push(format!(
+            "{} failed in the baseline and is not compared: {}",
+            f.name(),
+            f.error
+        ));
+    }
     if !base.numerics.is_empty() && numerics.is_empty() {
         reasons.push(
             "no numerics probe compared: the candidate ran none of the baseline's".to_string(),
@@ -944,6 +982,7 @@ pub fn compare(
         .chain(conversations.iter().map(|c| c.verdict))
         .chain(memory.iter().map(|m| m.verdict))
         .chain(reasons.iter().map(|_| Verdict::Warn))
+        .chain(std::iter::once(failed))
         .max()
         .unwrap_or(Verdict::Pass);
     Comparison {
@@ -1732,6 +1771,13 @@ pub fn render_capture(capture: &Capture) -> String {
     if !m.notes.is_empty() {
         s.push('\n');
     }
+    if !capture.failures.is_empty() {
+        s.push_str("## Failed probes (not run whole; a resume runs them again)\n\n");
+        for f in &capture.failures {
+            s.push_str(&format!("- {}: {} ({})\n", f.name(), f.error, f.when));
+        }
+        s.push('\n');
+    }
     if !capture.conversations.is_empty() {
         s.push_str("## Conversation probes\n\n| Model | Prompt | Mode | Exit | Conversations | Parts from the first | Wall s |\n|---|---|---|---:|---:|---|---:|\n");
         for c in &capture.conversations {
@@ -2214,6 +2260,53 @@ mod tests {
             "{:?}",
             checks[0].reasons
         );
+    }
+
+    #[test]
+    fn a_device_path_the_baseline_lacks_too_is_noted_not_warned() {
+        let host = text("host", "abc", 0, 0, 64);
+        let device = text("device", "abc", 1, 0, 64);
+        let base = capture_of("base", vec![host.clone(), device.clone()], &[]);
+        let cand = capture_of("cand", vec![host, device], &[]);
+        let checks = check_texts(&base, &cand);
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].verdict, Verdict::Pass, "{:?}", checks[0].reasons);
+        assert!(
+            checks[0].reasons.iter().any(|r| r.contains("as in the baseline")),
+            "{:?}",
+            checks[0].reasons
+        );
+    }
+
+    #[test]
+    fn a_probe_the_candidate_lost_fails_the_comparison() {
+        let failure = crate::capture::ProbeFailure {
+            family: "numerics".into(),
+            model: "26b".into(),
+            label: "code_grid plain".into(),
+            error: "logits line 2: expected ident".into(),
+            when: "t".into(),
+        };
+        let base = capture_of("base", Vec::new(), &[]);
+        let mut cand = capture_of("cand", Vec::new(), &[]);
+        cand.failures.push(failure.clone());
+        let config = Config::load(None).unwrap();
+        let c = compare(&base, &cand, &config, &[]);
+        assert_eq!(c.verdict, Verdict::Fail, "{:?}", c.reasons);
+        assert!(
+            c.reasons
+                .iter()
+                .any(|r| r.contains("numerics 26b code_grid plain failed in the candidate")),
+            "{:?}",
+            c.reasons
+        );
+        assert!(render_capture(&cand).contains("## Failed probes"));
+        // Lost in both captures: reported and not compared, not failed.
+        let mut both = base.clone();
+        both.failures.push(failure);
+        let c = compare(&both, &cand, &config, &[]);
+        assert_eq!(c.verdict, Verdict::Warn, "{:?}", c.reasons);
+        assert!(c.reasons.iter().any(|r| r.contains("failed in both captures")), "{:?}", c.reasons);
     }
 
     fn perf_point(clock_fit: Option<bool>) -> PerfPoint {
