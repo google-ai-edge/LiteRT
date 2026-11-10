@@ -226,6 +226,37 @@ class FlatbufferUtilsTest(absltest.TestCase):
     weight.quantization.details = qtyping.BlockwiseQuantizationT()
     self.assertFalse(tfl_flatbuffer_utils.is_float_model(self._test_model))
 
+  def test_is_quantized(self):
+    unquantized = qtyping.TensorT()
+    self.assertFalse(tfl_flatbuffer_utils.is_quantized(unquantized))
+
+    empty_quant = qtyping.TensorT()
+    empty_quant.quantization = qtyping.QuantizationParametersT()
+    self.assertFalse(tfl_flatbuffer_utils.is_quantized(empty_quant))
+
+    empty_scale_list_quant = qtyping.TensorT()
+    empty_scale_list_quant.quantization = qtyping.QuantizationParametersT()
+    empty_scale_list_quant.quantization.scale = []
+    self.assertFalse(tfl_flatbuffer_utils.is_quantized(empty_scale_list_quant))
+
+    empty_scale_array_quant = qtyping.TensorT()
+    empty_scale_array_quant.quantization = qtyping.QuantizationParametersT()
+    empty_scale_array_quant.quantization.scale = np.array([], dtype=np.float32)
+    self.assertFalse(tfl_flatbuffer_utils.is_quantized(empty_scale_array_quant))
+
+    scale_quant = qtyping.TensorT()
+    scale_quant.quantization = qtyping.QuantizationParametersT()
+    scale_quant.quantization.scale = [0.5]
+    self.assertTrue(tfl_flatbuffer_utils.is_quantized(scale_quant))
+
+    blockwise_quant = qtyping.TensorT()
+    blockwise_quant.quantization = qtyping.QuantizationParametersT()
+    blockwise_quant.quantization.detailsType = (
+        qtyping.QuantizationDetails.BlockwiseQuantization
+    )
+    blockwise_quant.quantization.details = qtyping.BlockwiseQuantizationT()
+    self.assertTrue(tfl_flatbuffer_utils.is_quantized(blockwise_quant))
+
   def test_get_subgraph_input_output_operators(self):
     subgraph = self._test_model.subgraphs[0]
     input_op, output_op = (

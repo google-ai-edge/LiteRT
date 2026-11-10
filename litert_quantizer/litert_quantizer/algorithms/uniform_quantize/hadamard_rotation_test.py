@@ -692,6 +692,24 @@ class HadamardRotationFullyConnectedTest(parameterized.TestCase):
           self._op_info, qconfig, weight, None
       )
 
+  def test_mse_grid_rejects_centered_int2(self):
+    weight = np.ones((4, 8), dtype=np.float32)
+    qconfig = _TensorQuantConfig(
+        num_bits=2,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "centered": True,
+            "scale_refinement": "mse_grid",
+        },
+    )
+    with self.assertRaisesRegex(
+        ValueError,
+        'scale_refinement="mse_grid" does not support centered INT2 yet.',
+    ):
+      hadamard_rotation.get_tensor_quant_params(
+          self._op_info, qconfig, weight, None
+      )
+
   @parameterized.named_parameters(
       dict(
           testcase_name="none_uncapped",
