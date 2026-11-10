@@ -216,13 +216,11 @@ struct TfLiteTraits {
       // The interpreter rejects empty zero points, and batch matmuls reject
       // int4 right-hand sides.
       "TransposedQuantizedWeightsIntoBatchMatMulOp",
-      // The interpreter rejects empty zero points, and blockwise
-      // dequantizations compute zeros.
+      // The interpreter rejects empty zero points.
       "TransposedQuantizedWeightsIntoAddOp",
       // Batch matmuls reject int4 right-hand sides.
       "BatchMatMulAdjXQuantizedRhsOp",
-      // The interpreter rejects empty zero points, and blockwise
-      // dequantizations compute zeros.
+      // The interpreter rejects empty zero points.
       "QuantizedWeightsSharedByDotAndAddOp",
       // The interpreter rejects empty zero points.
       "DequantizePerChannelOp",
@@ -2446,7 +2444,12 @@ TEST(SerializationTest, CanSerializeBlockwiseQuantization) {
               .buffer = buffer_data,
               .quantization = quantization});
 
-  ASSERT_THAT(Save({a}, model_path), IsOk());
+  // TFLite can't dequantize blockwise tensors, but a transpose only moves
+  // them.
+  TensorTf c = Transpose(a, {1, 0});
+  c.SetName("transposed_output");
+
+  ASSERT_THAT(Save({c}, model_path), IsOk());
 
   auto model = tflite::FlatBufferModel::BuildFromFile(model_path.c_str());
   ASSERT_NE(model, nullptr);

@@ -128,6 +128,18 @@ absl::StatusOr<tflite::TensorType> ToTfLiteArgMaxOutputTensorType(Type type) {
   }
 }
 
+// Returns an error if `tensor` is quantized blockwise.
+absl::Status CheckIsNotBlockwise(const Tensor& tensor,
+                                 absl::string_view op_name) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(const TensorInformation& info, GetInfo(tensor));
+  if (info.quantization != nullptr &&
+      info.quantization->As<const BlockwiseQuantization>().ok()) {
+    return absl::UnimplementedError(absl::StrFormat(
+        "TFLite %s doesn't support blockwise quantization.", op_name));
+  }
+  return absl::OkStatus();
+}
+
 }  // namespace
 
 absl::StatusOr<TfLiteOpBuildInfo> OpMixin<
@@ -529,6 +541,9 @@ OpMixin<BatchMatMulOperation, TfLiteMixinTag>::ToTfLite(
     const graph::Operation& op) const {
   LRT_TENSOR_ASSIGN_OR_RETURN(const BatchMatMulOperation& data,
                               op.As<BatchMatMulOperation>());
+  for (const Tensor& input : op.inputs) {
+    LRT_TENSOR_RETURN_IF_ERROR(CheckIsNotBlockwise(input, "BatchMatMul"));
+  }
   return TfLiteOpBuildInfo(::tflite::BuiltinOperator_BATCH_MATMUL,
                            tflite::BatchMatMulOptionsT{
                                .adj_x = data.adj_x,
@@ -836,6 +851,9 @@ OpMixin<QuantizeOperation, TfLiteMixinTag>::ToTfLite(
 absl::StatusOr<TfLiteOpBuildInfo>
 OpMixin<DequantizeOperation, TfLiteMixinTag>::ToTfLite(
     const graph::Operation& op) const {
+  for (const Tensor& input : op.inputs) {
+    LRT_TENSOR_RETURN_IF_ERROR(CheckIsNotBlockwise(input, "Dequantize"));
+  }
   return TfLiteOpBuildInfo(::tflite::BuiltinOperator_DEQUANTIZE);
 }
 
