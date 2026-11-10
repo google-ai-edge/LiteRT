@@ -508,6 +508,254 @@ class QuantizeTensorTest(parameterized.TestCase):
     np.testing.assert_array_equal(quant_param.zeroPoint, [1])
     self.assertEqual(quant_param.quantizedDimension, 0)
 
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="per_tensor_2d",
+          tensor_shape=[4, 8],
+          quantized_dimension=None,
+          quantized_dimensions=None,
+          block_size=0,
+          scale=np.array([[0.5]], dtype=np.float32),
+          expected_scale_shape=[1, 1],
+          expected_zp_shape=[1, 1],
+          expected_block_shape=[4, 8],
+          expected_block_size=0,
+      ),
+      dict(
+          testcase_name="per_channel_2d",
+          tensor_shape=[4, 8],
+          quantized_dimension=0,
+          quantized_dimensions=None,
+          block_size=0,
+          scale=np.array([[0.25], [0.5], [0.75], [1.0]], dtype=np.float32),
+          expected_scale_shape=[4, 1],
+          expected_zp_shape=[1, 1],
+          expected_block_shape=[1, 8],
+          expected_block_size=8,
+      ),
+      dict(
+          testcase_name="per_channel_1d_scale",
+          tensor_shape=[4, 8],
+          quantized_dimension=0,
+          quantized_dimensions=None,
+          block_size=0,
+          scale=np.array([0.25, 0.5, 0.75, 1.0], dtype=np.float32),
+          expected_scale_shape=[4, 1],
+          expected_zp_shape=[1, 1],
+          expected_block_shape=[1, 8],
+          expected_block_size=8,
+      ),
+      dict(
+          testcase_name="blockwise_2d",
+          tensor_shape=[4, 8],
+          quantized_dimension=1,
+          quantized_dimensions=None,
+          block_size=4,
+          scale=np.ones((4, 2), dtype=np.float32),
+          expected_scale_shape=[4, 2],
+          expected_zp_shape=[1, 1],
+          expected_block_shape=[1, 4],
+          expected_block_size=4,
+      ),
+      dict(
+          testcase_name="per_tensor_0d_scale",
+          tensor_shape=[4, 8],
+          quantized_dimension=None,
+          quantized_dimensions=None,
+          block_size=0,
+          scale=np.array(0.5, dtype=np.float32),
+          expected_scale_shape=[1, 1],
+          expected_zp_shape=[1, 1],
+          expected_block_shape=[4, 8],
+          expected_block_size=0,
+      ),
+      dict(
+          testcase_name="zero_sized_dim",
+          tensor_shape=[4, 0],
+          quantized_dimension=0,
+          quantized_dimensions=None,
+          block_size=0,
+          scale=np.zeros((4, 0), dtype=np.float32),
+          expected_scale_shape=[4, 0],
+          expected_zp_shape=[1, 1],
+          expected_block_shape=[1, 1],
+          expected_block_size=1,
+      ),
+      dict(
+          testcase_name="multi_axis_3d",
+          tensor_shape=[2, 2, 4],
+          quantized_dimension=None,
+          quantized_dimensions=(0, 1),
+          block_size=2,
+          scale=np.ones((2, 2, 2), dtype=np.float32),
+          expected_scale_shape=[2, 2, 2],
+          expected_zp_shape=[1, 1, 1],
+          expected_block_shape=[1, 1, 2],
+          expected_block_size=2,
+      ),
+  )
+  def test_quantize_centered_int2_emits_nd_blockwise_quantization(
+      self,
+      tensor_shape,
+      quantized_dimension,
+      quantized_dimensions,
+      block_size,
+      scale,
+      expected_scale_shape,
+      expected_zp_shape,
+      expected_block_shape,
+      expected_block_size,
+  ):
+    subgraph = self._model.subgraphs[0]
+    model = self._model
+    tensor_id = 7
+    subgraph.tensors[tensor_id].shape = np.array(tensor_shape, dtype=np.int32)
+    data = np.tile(
+        np.array([-2, -1, 0, 1], dtype=np.int8), int(np.prod(tensor_shape)) // 4
+    ).reshape(tensor_shape)
+    zp = np.full((1,) * len(tensor_shape), -0.5, dtype=np.float32)
+
+    quantize_tensor.quantize_tensor(
+        transformation_utils.TransformationInput(
+            tensor_id=tensor_id,
+            model=model,
+            subgraph=subgraph,
+            producer=-1,
+            consumers=[4],
+            quant_params=qtyping.UniformQuantParams(
+                num_bits=2,
+                quantized_dimension=quantized_dimension,
+                quantized_dimensions=quantized_dimensions,
+                scale=scale,
+                zero_point=zp,
+                quantized_data=data,
+                block_size=block_size,
+            ),
+        )
+    )
+
+    weight_tensor = subgraph.tensors[tensor_id]
+    self.assertEqual(weight_tensor.type, qtyping.TensorType.INT2)
+    packed_bytes = model.buffers[weight_tensor.buffer].data
+    np.testing.assert_array_equal(
+        packed_bytes,
+        np.full(int(np.prod(tensor_shape)) // 4, 0x4E, dtype=np.uint8),
+    )
+
+    quant_param = weight_tensor.quantization
+    self.assertEqual(
+        quant_param.detailsType,
+        qtyping.QuantizationDetails.BlockwiseQuantization,
+    )
+    details = quant_param.details
+    self.assertSequenceEqual(list(details.blockShape), expected_block_shape)
+    self.assertEqual(details.blockSize, expected_block_size)
+
+    scales_tensor = subgraph.tensors[details.scales]
+    self.assertEqual(scales_tensor.type, qtyping.TensorType.FLOAT32)
+    self.assertSequenceEqual(list(scales_tensor.shape), expected_scale_shape)
+    np.testing.assert_array_equal(
+        tfl_flatbuffer_utils.get_tensor_data(scales_tensor, model.buffers),
+        scale.reshape(expected_scale_shape).astype(np.float32),
+    )
+
+    zp_tensor = subgraph.tensors[details.zeroPoints]
+    self.assertEqual(zp_tensor.type, qtyping.TensorType.FLOAT32)
+    self.assertSequenceEqual(list(zp_tensor.shape), expected_zp_shape)
+    np.testing.assert_array_equal(
+        tfl_flatbuffer_utils.get_tensor_data(zp_tensor, model.buffers),
+        np.full(expected_zp_shape, -0.5, dtype=np.float32),
+    )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="fc_drq_float32_input",
+          builtin_code=qtyping.BuiltinOperator.FULLY_CONNECTED,
+          input_type=qtyping.TensorType.FLOAT32,
+          expected_version=17,
+      ),
+      dict(
+          testcase_name="fc_srq_int8_input",
+          builtin_code=qtyping.BuiltinOperator.FULLY_CONNECTED,
+          input_type=qtyping.TensorType.INT8,
+          expected_version=16,
+      ),
+      dict(
+          testcase_name="embedding_lookup",
+          builtin_code=qtyping.BuiltinOperator.EMBEDDING_LOOKUP,
+          input_type=qtyping.TensorType.INT32,
+          expected_version=6,
+      ),
+      dict(
+          testcase_name="dequantize",
+          builtin_code=qtyping.BuiltinOperator.DEQUANTIZE,
+          input_type=qtyping.TensorType.INT2,
+          expected_version=10,
+      ),
+      dict(
+          testcase_name="batch_matmul",
+          builtin_code=qtyping.BuiltinOperator.BATCH_MATMUL,
+          input_type=qtyping.TensorType.FLOAT32,
+          expected_version=5,
+      ),
+  )
+  def test_quantize_centered_int2_updates_consumer_op_version(
+      self, builtin_code, input_type, expected_version
+  ):
+    subgraph = self._model.subgraphs[0]
+    model = self._model
+    tensor_id = 7
+    subgraph.tensors[tensor_id].shape = np.array([4, 8], dtype=np.int32)
+    consumer_op = subgraph.operators[4]
+    subgraph.tensors[consumer_op.inputs[0]].type = input_type
+    opcode_idx = transformation_utils.add_op_code(
+        builtin_code, model.operatorCodes
+    )
+    consumer_op.opcodeIndex = opcode_idx
+    model.operatorCodes[opcode_idx].version = 1
+
+    quantize_tensor.quantize_tensor(
+        transformation_utils.TransformationInput(
+            tensor_id=tensor_id,
+            model=model,
+            subgraph=subgraph,
+            producer=-1,
+            consumers=[4],
+            quant_params=qtyping.UniformQuantParams(
+                num_bits=2,
+                quantized_dimension=0,
+                scale=np.ones((4, 1), dtype=np.float32),
+                zero_point=np.array([[-0.5]], dtype=np.float32),
+                quantized_data=np.zeros((4, 8), dtype=np.int8),
+            ),
+        )
+    )
+    self.assertEqual(model.operatorCodes[opcode_idx].version, expected_version)
+
+  def test_quantize_centered_int2_blockwise_without_quantized_dim_raises(self):
+    subgraph = self._model.subgraphs[0]
+    subgraph.tensors[7].shape = np.array([4, 8], dtype=np.int32)
+    with self.assertRaisesRegex(
+        ValueError, "quantized_dimension must be specified when block_size > 0"
+    ):
+      quantize_tensor.quantize_tensor(
+          transformation_utils.TransformationInput(
+              tensor_id=7,
+              model=self._model,
+              subgraph=subgraph,
+              producer=-1,
+              consumers=[4],
+              quant_params=qtyping.UniformQuantParams(
+                  num_bits=2,
+                  quantized_dimension=None,
+                  scale=np.ones((4, 2), dtype=np.float32),
+                  zero_point=np.array([[-0.5]], dtype=np.float32),
+                  quantized_data=np.zeros((4, 8), dtype=np.int8),
+                  block_size=4,
+              ),
+          )
+      )
+
 
 if __name__ == "__main__":
   absltest.main()

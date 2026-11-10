@@ -41,8 +41,9 @@ _TensorTransformationParams = qtyping.TensorTransformationParams
 
 def check_if_quantized(tensor: Any) -> bool:
   """Checks if the tensor is quantized."""
-  return (
-      tensor.quantization is not None and tensor.quantization.scale is not None
+  return tensor.quantization is not None and (
+      tensor.quantization.scale is not None
+      or tensor.quantization.detailsType != qtyping.QuantizationDetails.NONE
   )
 
 
@@ -323,6 +324,12 @@ def _materialize_bias_for_fc_conv_ops(
     op_input_index: Index for the input tensor in the op.
     op_weight_index: Index for the weight tensor in the op.
     op_bias_index: Index for the bias tensor in the op.
+
+  Raises:
+    ValueError: If `weight_tensor_config` is `None` for a quantized weight, if
+      a `BlockwiseQuantization` weight scale buffer is missing or uses
+      sub-channel blocks, `zero_points` does not match `scale`, or if bias
+      quantization fails.
   """
   _, weight_tensor, bias_tensor, _ = (
       tfl_flatbuffer_utils.parse_fc_bmm_conv_tensors(
@@ -358,11 +365,71 @@ def _materialize_bias_for_fc_conv_ops(
               "weight_tensor_config cannot be None when weight tensor is"
               " quantized."
           )
+        weight_scale = quant_params.scale
+        weight_zp = quant_params.zeroPoint
+        quantized_dim = quant_params.quantizedDimension
+        if (
+            weight_scale is None
+            and quant_params.detailsType
+            == qtyping.QuantizationDetails.BlockwiseQuantization
+            and quant_params.details is not None
+        ):
+          scale_tensor = graph_info.subgraph_tensors[
+              quant_params.details.scales
+          ]
+          raw_scale = tfl_flatbuffer_utils.get_tensor_data(
+              scale_tensor, graph_info.buffers
+          )
+          if raw_scale is None:
+            raise ValueError(
+                "BlockwiseQuantization scale tensor has no buffer."
+            )
+          if raw_scale.size == 1:
+            weight_scale = raw_scale.astype(np.float32).reshape(1)
+            quantized_dim = None
+          elif (
+              bias_content is not None
+              and raw_scale.shape[0] == bias_content.size
+              and raw_scale.size == bias_content.size
+          ):
+            weight_scale = raw_scale.astype(np.float32).reshape(-1)
+            quantized_dim = 0
+          else:
+            bias_shape = None if bias_content is None else bias_content.shape
+            raise ValueError(
+                "SRQ bias materialization requires per-tensor or per-channel"
+                " weight scales, got BlockwiseQuantization scale shape"
+                f" {raw_scale.shape} for bias shape {bias_shape}."
+            )
+          if (
+              quant_params.details.zeroPoints is not None
+              and quant_params.details.zeroPoints >= 0
+          ):
+            zp_tensor = graph_info.subgraph_tensors[
+                quant_params.details.zeroPoints
+            ]
+            raw_zp = tfl_flatbuffer_utils.get_tensor_data(
+                zp_tensor, graph_info.buffers
+            )
+            if raw_zp is None:
+              weight_zp = np.zeros(1, dtype=np.int8)
+            elif raw_zp.size == weight_scale.size:
+              weight_zp = raw_zp.reshape(weight_scale.shape)
+            elif raw_zp.size == 1:
+              weight_zp = raw_zp.reshape(1)
+            else:
+              raise ValueError(
+                  "BlockwiseQuantization zero_points shape"
+                  f" {raw_zp.shape} does not match weight scale shape"
+                  f" {weight_scale.shape}."
+              )
+          else:
+            weight_zp = np.zeros(1, dtype=np.int8)
         weight_consumer_params = qtyping.UniformQuantParams(
             num_bits=op_info.op_quant_config.weight_tensor_config.num_bits,
-            scale=quant_params.scale,
-            zero_point=quant_params.zeroPoint,
-            quantized_dimension=quant_params.quantizedDimension,
+            scale=weight_scale,
+            zero_point=weight_zp,
+            quantized_dimension=quantized_dim,
         )
       try:
         # Bias quantization is using fixed quantization scale:
