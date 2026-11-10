@@ -79,6 +79,7 @@ TEST(UpdateMediatekOptionsFromFlagsTest, DefaultValue) {
       options.Value().GetPerformanceMode(),
       MediatekOptions::PerformanceMode::kSustainedSpeed);
   EXPECT_EQ(options.Value().GetMediatekDlaDir(), "");
+  EXPECT_FALSE(options.Value().GetEnableWeightSharing());
 }
 
 TEST(UpdateMediatekOptionsFromFlagsTest, SetFlagToVersion7) {
@@ -324,6 +325,24 @@ TEST(UpdateMediatekOptionsFromFlagsTest, SetAotCompilationOptions) {
   EXPECT_EQ(options.Value().GetAotCompilationOptions(), test_options);
   // Reset flag to default to avoid affecting other tests
   absl::SetFlag(&FLAGS_mediatek_aot_compilation_options, "");
+}
+
+TEST(UpdateMediatekOptionsFromFlagsTest, SetEnableWeightSharingToTrue) {
+  absl::SetFlag(&FLAGS_mediatek_enable_weight_sharing, true);
+  Expected<MediatekOptions> options = MediatekOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_TRUE(options.Value().GetEnableWeightSharing());
+  // Reset flag to default to avoid affecting other tests
+  absl::SetFlag(&FLAGS_mediatek_enable_weight_sharing, false);
+}
+
+TEST(UpdateMediatekOptionsFromFlagsTest, SetEnableWeightSharingToFalse) {
+  absl::SetFlag(&FLAGS_mediatek_enable_weight_sharing, false);
+  Expected<MediatekOptions> options = MediatekOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateMediatekOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_FALSE(options.Value().GetEnableWeightSharing());
 }
 
 }  // namespace

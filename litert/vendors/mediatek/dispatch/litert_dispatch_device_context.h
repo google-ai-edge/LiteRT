@@ -15,7 +15,10 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
+#include <cstddef>
 #include <memory>
+#include <unordered_map>
+#include <vector>
 
 #include "neuron/api/NeuronAdapter.h"
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
@@ -57,6 +60,9 @@ class LiteRtDispatchDeviceContextT {
     }
   }
 
+  litert::Expected<NeuronMemoryInfo> GetOrCreateSharedWeightMemory(
+      const void* weight_data, size_t weight_size, size_t padded_size);
+
   const LiteRtRuntimeContext* runtime_context() const {
     return runtime_context_;
   }
@@ -90,6 +96,9 @@ class LiteRtDispatchDeviceContextT {
   const LiteRtRuntimeContext* runtime_context_;
   const litert::mediatek::NeuronAdapterApi& neuron_adapter_api_;
   NeuronMemoryRegistry neuron_memory_registry_;
+  std::unordered_map<const void*, LiteRtTensorBufferHandle>
+      shared_weight_cache_;
+  std::vector<LiteRtTensorBuffer> owned_weight_tensor_buffers_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
