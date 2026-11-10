@@ -573,6 +573,125 @@ class HadamardRotationFullyConnectedTest(parameterized.TestCase):
           self._op_info, qconfig, weight, None
       )
 
+  def test_mse_grid_int2_in_int4_keeps_codebook(self):
+    rng = np.random.default_rng(2027)
+    w_rot = rng.standard_normal((16, 64)).astype(np.float32)
+    init_scale = (np.max(np.abs(w_rot), axis=1) / 4.5).astype(np.float32)
+    s_2bit = 2.0 * init_scale.reshape(-1, 1)
+    init_q = (
+        2.0 * np.clip(np.rint(w_rot / s_2bit - 0.5), -2.0, 1.0) + 1.0
+    ).astype(np.int8)
+    init_qparams = qtyping.UniformQuantParams(
+        num_bits=4,
+        quantized_dimension=0,
+        scale=init_scale,
+        zero_point=np.zeros(16, dtype=np.int64),
+        symmetric=True,
+        quantized_data=init_q,
+        block_size=0,
+    )
+    refined = hadamard_rotation._refine_quant_params_mse(
+        w_rot, init_qparams, int2_in_int4=True
+    )
+    assert refined.quantized_data is not None
+    self.assertEqual(
+        set(np.unique(refined.quantized_data).tolist()), {-3, -1, 1, 3}
+    )
+    mse_init = float(
+        np.mean((w_rot - init_q.astype(np.float32) * init_scale[:, None]) ** 2)
+    )
+    mse_refined = float(
+        np.mean(
+            (
+                w_rot
+                - refined.quantized_data.astype(np.float32)
+                * refined.scale.reshape(-1, 1)
+            )
+            ** 2
+        )
+    )
+    self.assertLess(mse_refined, mse_init)
+
+    # Verify end-to-end parameter plumbing via get_tensor_quant_params for both
+    # scale_refinement="none" and scale_refinement="mse_grid".
+    weight = rng.standard_normal((16, 64)).astype(np.float32)
+    qconfig_no_refine = _TensorQuantConfig(
+        num_bits=4,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "max_hadamard_size": 64,
+            "randomize": False,
+            "int2_in_int4": True,
+            "scale_refinement": "none",
+        },
+    )
+    qp_no_refine = hadamard_rotation.get_tensor_quant_params(
+        self._op_info, qconfig_no_refine, weight, None
+    )
+    assert qp_no_refine.quantized_data is not None
+    self.assertEqual(
+        set(np.unique(qp_no_refine.quantized_data).tolist()), {-3, -1, 1, 3}
+    )
+
+    qconfig = _TensorQuantConfig(
+        num_bits=4,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "max_hadamard_size": 64,
+            "randomize": False,
+            "int2_in_int4": True,
+            "scale_refinement": "mse_grid",
+        },
+    )
+    qp_e2e = hadamard_rotation.get_tensor_quant_params(
+        self._op_info, qconfig, weight, None
+    )
+    assert qp_e2e.quantized_data is not None
+    self.assertEqual(
+        set(np.unique(qp_e2e.quantized_data).tolist()), {-3, -1, 1, 3}
+    )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="non_bool_value",
+          num_bits=4,
+          int2_in_int4=1,
+          expected_error="int2_in_int4 must be a boolean",
+      ),
+      dict(
+          testcase_name="non_4bit",
+          num_bits=8,
+          int2_in_int4=True,
+          expected_error="int2_in_int4 requires num_bits=4",
+      ),
+      dict(
+          testcase_name="asymmetric_4bit",
+          num_bits=4,
+          symmetric=False,
+          int2_in_int4=True,
+          expected_error="Unsupported symmetry",
+      ),
+  )
+  def test_invalid_int2_in_int4_raises(
+      self, num_bits, int2_in_int4, expected_error, symmetric=True
+  ):
+    weight = np.ones((4, 8), dtype=np.float32)
+    qconfig = _TensorQuantConfig(
+        num_bits=num_bits,
+        symmetric=symmetric,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "int2_in_int4": int2_in_int4,
+            "scale_refinement": "mse_grid",
+        },
+    )
+    with self.assertRaisesRegex(ValueError, expected_error):
+      hadamard_rotation.get_tensor_quant_params(
+          self._op_info, qconfig, weight, None
+      )
+
 
 class HadamardRotationEmbeddingLookupTest(parameterized.TestCase):
 
