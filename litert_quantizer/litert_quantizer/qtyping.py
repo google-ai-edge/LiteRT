@@ -212,7 +212,8 @@ class UniformQuantParams:
     quantized_dimension: The dimension to quantize.
     scale: The scale of the quantization.
     zero_point: The zero point of the quantization.
-    symmetric: Whether the quantization is symmetric (force zero_point to be 0).
+    symmetric: Whether the quantization is symmetric (typically forces
+      `zero_point` to 0, except centered signed INT2 where `zero_point = -0.5`).
     quantized_data: The quantized data.
     block_size: The block size for blockwise quantization, block_size=0 meaning
       no blockwise quantization.
@@ -413,8 +414,9 @@ class TensorQuantizationConfig:
 
   Attributes:
     num_bits: Number of bits to quantize to (e.g. 8 for int8).
-    symmetric: Whether to perform symmetric or asymmetric quantization. In the
-      symmetric quantization mode, the zero point is always 0.
+    symmetric: Whether to perform symmetric or asymmetric quantization
+      (typically forces `zero_point` to 0, except centered signed INT2 where
+      `zero_point = -0.5`).
     granularity: Whether to perform per-tensor, per-channel or per-block
       quantization.
     dtype: The data type of the tensor.
