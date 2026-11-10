@@ -44,6 +44,7 @@
 #include "litert/test/generators/qkv_norm_rope.h"  // IWYU pragma: export
 #include "litert/test/generators/comparison.h"  // IWYU pragma: export
 #include "litert/test/generators/rms_norm.h"  // IWYU pragma: export
+#include "litert/test/generators/rope.h"  // IWYU pragma: export
 #include "litert/test/generators/group_norm.h"  // IWYU pragma: export
 #include "litert/test/generators/layer_norm.h"  // IWYU pragma: export
 #include "litert/test/generators/moe_experts.h"  // IWYU pragma: export

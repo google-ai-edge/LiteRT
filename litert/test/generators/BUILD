@@ -837,6 +837,31 @@ cc_library(
 )
 
 cc_library(
+    name = "rope",
+    testonly = True,
+    hdrs = ["rope.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        ":reference_evaluator",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_rng",
+        "//litert/core/model",
+        "//litert/test:simple_buffer",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:datatypes",
+        "//tensor/backends/tflite:arithmetic_tflite",
+        "@com_google_absl//absl/strings:string_view",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_library(
     name = "swiglu",
     testonly = True,
     hdrs = ["swiglu.h"],
@@ -1033,6 +1058,7 @@ cc_library(
         ":reduction",
         ":reshape",
         ":rms_norm",
+        ":rope",
         ":runtime_bmm",
         ":sdpa",
         ":sdpa_transposed",

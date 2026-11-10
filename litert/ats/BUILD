@@ -108,6 +108,7 @@ XNNPACK_DONT_REGISTER = [
     "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
     "QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
     "RmsNorm",  # XNNPACK does not support RmsNorm composite op
+    "Rope",  # XNNPACK does not support Rope composite op
     "RuntimeBmm",  # XNNPACK does not support RuntimeBmm composite op
     "Swiglu",  # XNNPACK does not support SwiGLU op
     "SelectV2",  # XNNPACK does not support SelectV2
@@ -191,6 +192,7 @@ YNNPACK_DONT_REGISTER = [
     "tfl\\.tile",  # YNNPACK does not support Tile (used in MQA TransformerLayer)
     "Pad.*<([0-9]+x)*1(x[0-9]+)*>",  # YNNPACK does not support padding on extent-1 dimensions
     "RuntimeBmm.*(f16|i4)",  # YNNPACK does not support mixed fp32_fp16_fp32 dot in f16 RuntimeBmm or int4 Dequantize in decomposition subgraph
+    "Rope.*_i32<[^>]+>_cst",  # YNNPACK Convert (Cast) does not support constant int32 position input in Rope decomposition subgraph
     "SdpaTransposed",  # SdpaTransposed generator does not yet set logit_cap attribute for YNNPACK
     "TflMoe",  # YNNPACK does not support ML Drift GPU custom "moe" op
     "FullyConnected.*(i4|u8)",  # YNNPACK delegate requires even output dims for INT4 weights and does not support UINT8 FullyConnected
@@ -659,6 +661,8 @@ litert_define_ats(
         "Slice",  # OpenCL Slice uses kExact byte comparison on FP16-rounded f32 buffers
         "RuntimeBmm.*(i4|i8)",  # GPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
         "MoeExperts",  # ML Drift GPU delegate expects tfl.custom "moe" with 4D OHWI weights rather than shlo.composite "odml.moe_experts"
+        # TODO(b/583887564): Enable once IrModel constant pos lowering lands.
+        "Rope.*_i32<[^>]+>_cst",
         # TODO(b/576190160): Investigate GroupNorm numerical mismatch and SIGKILL on Qualcomm S26 (Adreno 840).
         "GroupNorm",
         "hf_all_minilm_l6_v2",
@@ -751,6 +755,7 @@ litert_define_ats(
         "SdpaTransposed",  # XNNPACK does not support SdpaTransposed composite op
         "QkvNormRope",  # XNNPACK does not support QkvNormRope composite op
         "RmsNorm",  # XNNPACK does not support RmsNorm composite op
+        "Rope",  # XNNPACK does not support Rope composite op
         "RuntimeBmm",  # XNNPACK does not support RuntimeBmm composite op
         "Swiglu",  # XNNPACK does not support SwiGLU op
         "SelectV2",  # XNNPACK does not support SelectV2
@@ -1203,6 +1208,7 @@ cc_library(
         ":register_moe_experts",
         ":register_qkv_norm_rope",
         ":register_rms_norm",
+        ":register_rope",
         ":register_runtime_bmm",
         ":register_sdpa",
         ":register_sdpa_transposed",
@@ -1575,6 +1581,23 @@ cc_library(
         ":register",
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators:rms_norm",
+        "//tflite/types:half",
+    ],
+)
+
+cc_library(
+    name = "register_rope",
+    testonly = True,
+    srcs = ["register_rope.cc"],
+    hdrs = ["register_rope.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:rope",
         "//tflite/types:half",
     ],
 )
