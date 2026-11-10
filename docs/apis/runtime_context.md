@@ -65,7 +65,10 @@ acts as a structural adapter containing pointers for operations including:
 -   **Event Synchronization:** Creating, polling, and waiting on custom
     execution events (e.g., `LiteRtClEvent`).
 
-Note: The structure will be ABI stable. b/498295744 - Add details.
+Note: Both `LiteRtRuntimeContext` and `LiteRtCompilerContext` are ABI-stable,
+versioned function tables. See
+[ABI Stability and Extending Context Tables](#abi-stability-and-extending-context-tables)
+for rules on adding and calling new functions safely.
 
 ### Decoupling Mechanism
 
@@ -155,3 +158,85 @@ To break a known circular dependency, the core TensorBuffer component does
 (`//litert/c:litert_tensor_buffer`), they **must** explicitly link the
 Environment dependency (`//litert/c:litert_environment`) to satisfy the
 underlying runtime context requirements.
+
+## ABI Stability and Extending Context Tables
+
+Both `LiteRtRuntimeContext` (for accelerators, delegates, and Dispatch API
+implementations) and `LiteRtCompilerContext` (for Compiler Plugins and C++
+compiler wrappers in `litert/compiler/cc/`) cross shared library boundaries
+with the core LiteRT library (`libLiteRt.so`). Because a plugin or accelerator
+built against newer headers may run against an older LiteRT binary (or vice
+versa), both structs embed `LiteRtAbiHeader`
+(`litert/c/internal/litert_abi_header.h`) at byte offset `0` to guarantee
+binary compatibility.
+
+### Adding a New Function to `LiteRtRuntimeContext` or `LiteRtCompilerContext`
+
+1.  **Append Only:** Add the new function pointer at the **very end** of
+    `struct LiteRtRuntimeContext` (`litert/c/internal/litert_runtime_context.h`)
+    or `struct LiteRtCompilerContext`
+    (`litert/c/internal/litert_compiler_context.h`) with a version comment
+    (e.g., `// Added in version 1.3.0`). Never reorder, remove, or modify
+    existing function pointer fields.
+2.  **Update Layout Assertions:** Update `static_assert(sizeof(...) == ...)` and
+    add a `static_assert(offsetof(..., <new_fn>) == ...)` entry in the
+    corresponding context header.
+3.  **Populate and Bump Minor Version:** Assign the implementation in
+    `LrtGetRuntimeContext()` (`litert/c/internal/litert_runtime_context.cc`) or
+    `LrtGetCompilerContext()` (`litert/c/internal/litert_compiler_context.cc`)
+    and increment `abi_header.minor_version` (while keeping `major_version`
+    unchanged for append-only additions). Because `abi_header` in the `.cc` file
+    is linked to the struct definition via `LINT.IfChange` / `LINT.ThenChange`,
+    this version update is required whenever the context table changes.
+4.  **ABI Compatibility Review:** Per the header comments in
+    `litert_runtime_context.h` and `litert_compiler_context.h`, request review
+    from the LiteRT ABI compatibility team whenever making changes to either
+    context struct.
+
+### Calling Newly Added Functions (`LITERT_ABI_HAS_API` Required)
+
+Any code calling a function added to `LiteRtRuntimeContext` or
+`LiteRtCompilerContext` after version `1.0.0` **must** guard the call with
+`LITERT_ABI_HAS_API` (from `//litert/c/internal:litert_abi_header`) instead of
+checking `ctx->new_fn != nullptr` directly.
+
+*   **Why direct null checks are unsafe:** When an older runtime or compiler
+    host (whose `abi_header.struct_size` is smaller) passes a
+    `LiteRtRuntimeContext*` or `LiteRtCompilerContext*` to a delegate, dispatch
+    library, or compiler plugin compiled against newer headers, dereferencing
+    `ctx->new_fn` reads past the end of the allocated struct (out-of-bounds
+    read).
+*   **What `LITERT_ABI_HAS_API` checks:**
+    `LITERT_ABI_HAS_API(ctx, /*req_major=*/1, new_fn)` verifies in order that
+    `ctx` is non-null, `abi_header.major_version == 1`,
+    `abi_header.struct_size` is large enough to contain `new_fn`, and
+    `ctx->new_fn != NULL`.
+
+```cpp
+#include "litert/c/internal/litert_abi_header.h"
+
+// Example with LiteRtRuntimeContext:
+if (LITERT_ABI_HAS_API(runtime_context, /*req_major=*/1,
+                       create_tensor_buffer_requirements_with_alignment)) {
+  return runtime_context->create_tensor_buffer_requirements_with_alignment(
+      num_types, types, buffer_size, num_strides, strides, alignment,
+      out_requirements);
+}
+return runtime_context->create_tensor_buffer_requirements(
+    num_types, types, buffer_size, num_strides, strides, out_requirements);
+
+// Example with LiteRtCompilerContext (e.g., in a plugin or litert/compiler/cc):
+if (!LITERT_ABI_HAS_API(compiler_context, /*req_major=*/1,
+                        get_conv_3d_transpose_padding_option)) {
+  return kLiteRtStatusErrorUnsupported;
+}
+return compiler_context->get_conv_3d_transpose_padding_option(op, &padding);
+```
+
+When adding unit tests for a newly added `LiteRtRuntimeContext` or
+`LiteRtCompilerContext` function, test both:
+
+1.  The function pointer being `nullptr` on a full-sized context.
+2.  A truncated `abi_header.struct_size = offsetof(<ContextStruct>, <new_fn>)`
+    where the function pointer slot in memory remains non-null, confirming
+    `LITERT_ABI_HAS_API` prevents reading or calling the out-of-bounds slot.

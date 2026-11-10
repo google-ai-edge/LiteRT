@@ -435,3 +435,20 @@ if (NegotiateInterface(query_fn, kLiteRtCompilerPluginInterfaceBasic,
   }
 }
 ```
+
+### Extending and Calling `LiteRtCompilerContext`
+
+In the reverse direction (plugin calling back into the LiteRT compiler host),
+`LiteRtCreateCompilerPlugin` receives a `const LiteRtCompilerContext*`
+([`c/internal/litert_compiler_context.h`](c/internal/litert_compiler_context.h)),
+which also begins with `LiteRtAbiHeader abi_header` at byte offset `0`. When
+extending `LiteRtCompilerContext`, append new function pointers at the end,
+update the layout `static_assert`s and `abi_header.minor_version` (via
+`LINT.ThenChange`), get review from the LiteRT ABI compatibility team, and guard
+call sites in plugins and `compiler/cc/` with
+`LITERT_ABI_HAS_API(ctx, /*req_major=*/1, <member_name>)` (never check
+`ctx-><member_name> != nullptr` directly).
+
+See the full checklist, `LITERT_ABI_HAS_API` examples, and
+backward-compatibility testing requirements in
+[RuntimeContext ABI Stability](https://github.com/google-ai-edge/LiteRT/blob/main/docs/apis/runtime_context.md#abi-stability-and-extending-context-tables).
