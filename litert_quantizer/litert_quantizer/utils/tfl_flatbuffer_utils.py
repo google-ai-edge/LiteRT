@@ -321,16 +321,27 @@ def has_same_quantization(
   )
 
 
+def is_quantized(tensor: qtyping.TensorT) -> bool:
+  """Checks whether `tensor` has quantization parameters.
+
+  Args:
+    tensor: FlatBuffer tensor to inspect.
+
+  Returns:
+    `True` if `tensor` has a scale or non-empty quantization details.
+  """
+  quantization = tensor.quantization
+  return quantization is not None and (
+      (quantization.scale is not None and np.size(quantization.scale) > 0)
+      or quantization.detailsType != qtyping.QuantizationDetails.NONE
+  )
+
+
 def is_float_model(flatbuffer_model: qtyping.ModelT) -> bool:
   """Checks that the model is float and not already quantized."""
   for subgraph in flatbuffer_model.subgraphs:
     for tensor in subgraph.tensors:
-      if tensor.quantization is None:
-        continue
-      if (
-          tensor.quantization.scale is not None
-          or tensor.quantization.detailsType != qtyping.QuantizationDetails.NONE
-      ):
+      if is_quantized(tensor):
         return False
   return True
 
