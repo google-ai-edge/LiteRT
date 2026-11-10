@@ -342,12 +342,17 @@ foreach p = [[TF_EqualOp, MHLO_ComparisonDirectionValue<"EQ">],
             [(IsTFStyleBroadcast $broadcast_dimensions, $output)]>;
 }
 
+// tf.Greater / tf.GreaterEqual / tf.Less / tf.LessEqual only accept integer or
+// floating-point operands, so the ordered compare patterns below do not match
+// boolean (i1) operands. Both compare operands have the same element type, so
+// constraining one of them is sufficient.
 foreach p = [[TF_GreaterEqualOp, CHLO_ComparisonDirectionValue<"GE">],
              [TF_GreaterOp, CHLO_ComparisonDirectionValue<"GT">],
              [TF_LessEqualOp, CHLO_ComparisonDirectionValue<"LE">],
              [TF_LessOp, CHLO_ComparisonDirectionValue<"LT">]] in {
-  def : Pat<(CHLO_BroadcastCompareOp $l, $r, $broadcast_dimensions,
-                                          p[1], IsChloTFCompareType:$type),
+  def : Pat<(CHLO_BroadcastCompareOp TF_IntOrFpTensor:$l, $r,
+                                     $broadcast_dimensions, p[1],
+                                     IsChloTFCompareType:$type),
             (p[0] $l, $r),
             [(IsLegalNumpyRankedBroadcast $l, $r, $broadcast_dimensions)]>;
 }
@@ -356,17 +361,18 @@ foreach p = [[TF_GreaterEqualOp, MHLO_ComparisonDirectionValue<"GE">],
              [TF_GreaterOp, MHLO_ComparisonDirectionValue<"GT">],
              [TF_LessEqualOp, MHLO_ComparisonDirectionValue<"LE">],
              [TF_LessOp, MHLO_ComparisonDirectionValue<"LT">]] in {
-  def : Pat<(MHLO_CompareOp $l, $r, p[1], IsMhloTFCompareType:$type),
+  def : Pat<(MHLO_CompareOp TF_IntOrFpTensor:$l, $r, p[1],
+                            IsMhloTFCompareType:$type),
             (p[0] $l, $r)>;
   def : Pat<(MHLO_CompareOp (MHLO_BroadcastInDimOp:$output
                               $bcast_operand,
                               $broadcast_dimensions),
-                            $r,
+                            TF_IntOrFpTensor:$r,
                             p[1],
                             IsMhloTFCompareType:$type),
             (p[0] $bcast_operand, $r),
             [(IsTFStyleBroadcast $broadcast_dimensions, $output)]>;
-  def : Pat<(MHLO_CompareOp $l,
+  def : Pat<(MHLO_CompareOp TF_IntOrFpTensor:$l,
                             (MHLO_BroadcastInDimOp:$output
                               $bcast_operand,
                               $broadcast_dimensions),
@@ -375,6 +381,65 @@ foreach p = [[TF_GreaterEqualOp, MHLO_ComparisonDirectionValue<"GE">],
             (p[0] $l, $bcast_operand),
             [(IsTFStyleBroadcast $broadcast_dimensions, $output)]>;
 }
+
+// Ordered compares on boolean (i1) operands are emulated with logical ops,
+// using the unsigned interpretation false < true that JAX uses for bool:
+//
+//   a >  b  ->  a && !b
+//   a >= b  ->  a || !b
+//   a <  b  ->  !a && b
+//   a <= b  ->  !a || b
+//
+// A SIGNED i1 compare reads true as -1 and is left unconverted.
+def IsMhloUnsignedOrUnsetCompareType : AttrConstraint<
+   Or<[CPred<"!$_self">,
+       HasMhloCompareType<"::mlir::mhlo::ComparisonType::UNSIGNED">,
+       HasMhloCompareType<"::mlir::mhlo::ComparisonType::NOTYPE">]>,
+   "unsigned or unspecified compare type">;
+
+def IsChloUnsignedOrUnsetCompareType : AttrConstraint<
+   Or<[CPred<"!$_self">,
+       HasChloCompareType<"::mlir::chlo::ComparisonType::UNSIGNED">,
+       HasChloCompareType<"::mlir::chlo::ComparisonType::NOTYPE">]>,
+   "unsigned or unspecified compare type">;
+
+def : Pat<(MHLO_CompareOp TF_BoolTensor:$l, $r,
+                          MHLO_ComparisonDirectionValue<"GT">,
+                          IsMhloUnsignedOrUnsetCompareType:$type),
+          (TF_LogicalAndOp $l, (TF_LogicalNotOp $r))>;
+def : Pat<(MHLO_CompareOp TF_BoolTensor:$l, $r,
+                          MHLO_ComparisonDirectionValue<"GE">,
+                          IsMhloUnsignedOrUnsetCompareType:$type),
+          (TF_LogicalOrOp $l, (TF_LogicalNotOp $r))>;
+def : Pat<(MHLO_CompareOp TF_BoolTensor:$l, $r,
+                          MHLO_ComparisonDirectionValue<"LT">,
+                          IsMhloUnsignedOrUnsetCompareType:$type),
+          (TF_LogicalAndOp (TF_LogicalNotOp $l), $r)>;
+def : Pat<(MHLO_CompareOp TF_BoolTensor:$l, $r,
+                          MHLO_ComparisonDirectionValue<"LE">,
+                          IsMhloUnsignedOrUnsetCompareType:$type),
+          (TF_LogicalOrOp (TF_LogicalNotOp $l), $r)>;
+
+def : Pat<(CHLO_BroadcastCompareOp TF_BoolTensor:$l, $r, $broadcast_dimensions,
+                                   CHLO_ComparisonDirectionValue<"GT">,
+                                   IsChloUnsignedOrUnsetCompareType:$type),
+          (TF_LogicalAndOp $l, (TF_LogicalNotOp $r)),
+          [(IsLegalNumpyRankedBroadcast $l, $r, $broadcast_dimensions)]>;
+def : Pat<(CHLO_BroadcastCompareOp TF_BoolTensor:$l, $r, $broadcast_dimensions,
+                                   CHLO_ComparisonDirectionValue<"GE">,
+                                   IsChloUnsignedOrUnsetCompareType:$type),
+          (TF_LogicalOrOp $l, (TF_LogicalNotOp $r)),
+          [(IsLegalNumpyRankedBroadcast $l, $r, $broadcast_dimensions)]>;
+def : Pat<(CHLO_BroadcastCompareOp TF_BoolTensor:$l, $r, $broadcast_dimensions,
+                                   CHLO_ComparisonDirectionValue<"LT">,
+                                   IsChloUnsignedOrUnsetCompareType:$type),
+          (TF_LogicalAndOp (TF_LogicalNotOp $l), $r),
+          [(IsLegalNumpyRankedBroadcast $l, $r, $broadcast_dimensions)]>;
+def : Pat<(CHLO_BroadcastCompareOp TF_BoolTensor:$l, $r, $broadcast_dimensions,
+                                   CHLO_ComparisonDirectionValue<"LE">,
+                                   IsChloUnsignedOrUnsetCompareType:$type),
+          (TF_LogicalOrOp (TF_LogicalNotOp $l), $r),
+          [(IsLegalNumpyRankedBroadcast $l, $r, $broadcast_dimensions)]>;
 
 def ConvertDotOp : NativeCodeCall<"ConvertDotOp($_builder, "
                                                "$0.getDefiningOp())">;
