@@ -76,6 +76,10 @@ ABSL_FLAG(bool, enable_ynnpack, false,
 ABSL_FLAG(bool, gpu_use_ir_model, true,
           "Whether to use the IR model for the GPU accelerator.");
 
+ABSL_FLAG(std::string, gpu_priority, "default",
+          "GPU priority when --backend=gpu. One of: default, low, normal, "
+          "high.");
+
 ABSL_FLAG(std::string, cpu_kernel_mode, "delegate",
           "CPU kernel mode for the \"actual\" backend when --backend=cpu. One "
           "of: delegate (XNNPACK, default), builtin (TFLite builtin kernels "
@@ -216,6 +220,22 @@ Expected<LiteRtCpuKernelMode> ParseCpuKernelMode() {
       absl::StrFormat("Unknown cpu_kernel_mode: %s", mode_flag.c_str()));
 }
 
+Expected<GpuOptions::Priority> ParseGpuPriority() {
+  const auto priority_flag = absl::GetFlag(FLAGS_gpu_priority);
+  if (priority_flag == "default") {
+    return GpuOptions::Priority::kDefault;
+  } else if (priority_flag == "low") {
+    return GpuOptions::Priority::kLow;
+  } else if (priority_flag == "normal") {
+    return GpuOptions::Priority::kNormal;
+  } else if (priority_flag == "high") {
+    return GpuOptions::Priority::kHigh;
+  }
+  return Error(
+      kLiteRtStatusErrorInvalidArgument,
+      absl::StrFormat("Unknown gpu_priority: %s", priority_flag.c_str()));
+}
+
 Expected<Options> ParseOptions(ExecutionBackend backend) {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   if (backend == ExecutionBackend::kNpu) {
@@ -250,6 +270,8 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
     if (absl::GetFlag(FLAGS_iters_per_test) > 1) {
       LITERT_RETURN_IF_ERROR(gpu_opts.EnableBenchmarkMode(true));
     }
+    LITERT_ASSIGN_OR_RETURN(auto gpu_priority, ParseGpuPriority());
+    LITERT_RETURN_IF_ERROR(gpu_opts.SetPriority(gpu_priority));
     LITERT_RETURN_IF_ERROR(test::GpuOptionsTestPeer::SetUseIrModel(
         gpu_opts, absl::GetFlag(FLAGS_gpu_use_ir_model)));
   }

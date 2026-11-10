@@ -36,10 +36,13 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
@@ -69,6 +72,45 @@ Expected<AtsConf> CpuInferenceOptions() {
   absl::FlagSaver saver;
   absl::SetFlag(&FLAGS_backend, "cpu");
   return AtsConf::ParseFlagsAndDoSetup();
+}
+
+Expected<void> CheckGpuInferenceOptions() {
+  struct PriorityCase {
+    absl::string_view flag_value;
+    LiteRtGpuPriority expected;
+  };
+  constexpr PriorityCase kCases[] = {
+      {"default", kLiteRtGpuPriorityDefault},
+      {"low", kLiteRtGpuPriorityLow},
+      {"normal", kLiteRtGpuPriorityNormal},
+      {"high", kLiteRtGpuPriorityHigh},
+  };
+  for (const auto& tc : kCases) {
+    absl::FlagSaver saver;
+    absl::SetFlag(&FLAGS_backend, "gpu");
+    absl::SetFlag(&FLAGS_gpu_priority, std::string(tc.flag_value));
+    LITERT_ASSIGN_OR_RETURN(auto conf, AtsConf::ParseFlagsAndDoSetup());
+    LITERT_ASSIGN_OR_RETURN(auto opts, conf.CreateTargetOptions());
+    LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, opts.GetGpuOptions());
+    LiteRtGpuPriority priority = kLiteRtGpuPriorityDefault;
+    LITERT_RETURN_IF_ERROR(
+        LrtGetGpuOptionsGpuPriority(&priority, gpu_opts.Get()));
+    LITERT_ENSURE(priority == tc.expected,
+                  Error(kLiteRtStatusErrorRuntimeFailure),
+                  "Unexpected GPU priority parsed from --gpu_priority.");
+  }
+  {
+    absl::FlagSaver saver;
+    absl::SetFlag(&FLAGS_backend, "gpu");
+    absl::SetFlag(&FLAGS_gpu_priority, "invalid");
+    auto conf = AtsConf::ParseFlagsAndDoSetup();
+    LITERT_ENSURE(
+        !conf.HasValue() &&
+            conf.Error().Status() == kLiteRtStatusErrorInvalidArgument,
+        Error(kLiteRtStatusErrorRuntimeFailure),
+        "Expected invalid --gpu_priority to fail with InvalidArgument.");
+  }
+  return {};
 }
 
 Expected<AtsConf> CompileOptions(absl::string_view models_out) {
@@ -161,6 +203,7 @@ Expected<void> CheckExtraModelBoundedInputs() {
 }
 
 Expected<void> CheckAts() {
+  LITERT_RETURN_IF_ERROR(CheckGpuInferenceOptions());
   LITERT_RETURN_IF_ERROR(CheckExtraModelBoundedInputs());
 
   absl::SetFlag(&FLAGS_extra_models, {GetLiteRtPath("test/testdata/")});
