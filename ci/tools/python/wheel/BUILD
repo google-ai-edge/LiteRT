@@ -146,7 +146,8 @@ PACKAGE_DATA = select({
         "//litert/vendors/intel_openvino/dispatch:dispatch_api_so",
         "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
-        "//litert/vendors/samsung/compiler:compiler_plugin_so",
+        # The Samsung compiler plugin is intentionally not packaged: LiteRT does
+        # not publish Samsung (Exynos) NPU binaries to PyPI.
     ],
     "//litert:linux_aarch64": [
         "//litert/tools:apply_plugin_main",

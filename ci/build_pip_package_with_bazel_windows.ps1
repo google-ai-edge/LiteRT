@@ -654,8 +654,9 @@ if ($env:CUSTOM_BAZEL_FLAGS) { $SdkArgs += $env:CUSTOM_BAZEL_FLAGS.Split(' ') }
 $SdkTargets = @(
   @{ Name = 'Qualcomm'; Target = '//ci/tools/python/vendor_sdk/qualcomm:ai_edge_litert_sdk_qualcomm_sdist'; Glob = 'qualcomm' },
   @{ Name = 'MediaTek'; Target = '//ci/tools/python/vendor_sdk/mediatek:ai_edge_litert_sdk_mediatek_sdist'; Glob = 'mediatek' },
-  @{ Name = 'Intel';    Target = '//ci/tools/python/vendor_sdk/intel:ai_edge_litert_sdk_intel_sdist';       Glob = 'intel' },
-  @{ Name = 'Samsung';  Target = '//ci/tools/python/vendor_sdk/samsung:ai_edge_litert_sdk_samsung_sdist';   Glob = 'samsung' }
+  @{ Name = 'Intel';    Target = '//ci/tools/python/vendor_sdk/intel:ai_edge_litert_sdk_intel_sdist';       Glob = 'intel' }
+  # Samsung is intentionally not built: ai-edge-litert-sdk-samsung is not
+  # published to PyPI.
 )
 
 foreach ($Sdk in $SdkTargets) {
