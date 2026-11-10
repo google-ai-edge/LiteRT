@@ -562,6 +562,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     // the SAME ascending-id order Serialize() lays out, so a Constant's WLCA
     // bin_offset equals its position in the temp file staged at dispatch.
     std::map<int32_t, size_t> pool_offset_of;
+    // Content-derived NPUW weights-bank name for the NPU shared path (stays
+    // empty for the GPU path / non-shared compiles).
+    // ConfigureForNpuWeightSharing bakes this into the blob; it MUST be unique
+    // per distinct weight pool or NPUW's global, name-keyed BankManager
+    // collides across models at import.
+    std::string npu_weights_bank_name;
 
     // Phase 1: build the shared pool. On the NPU path every partition is also
     // converted and optimized once to learn which constants survive
@@ -616,6 +622,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         global_graph.buffers.push_back({static_cast<uint32_t>(entry.buffer_id),
                                         entry.pool_offset, entry.bytes});
       }
+      npu_weights_bank_name = layout.WeightsBankName();
     }
 
     // Phase 2: rebuild each partition, alias its weights against the now-final
@@ -655,7 +662,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           // Must run after OptimizeModel: it configures NPUW from what the
           // passes classified, which is knowable only once they have run.
           context.ConfigureForNpuWeightSharing(
-              optimize_result.moe_is_multi_token_chunk);
+              npu_weights_bank_name, optimize_result.moe_is_multi_token_chunk);
         }
 
         ov::AnyMap configs = context.ConfigsMap();
