@@ -465,28 +465,28 @@ class HadamardRotationFullyConnectedTest(parameterized.TestCase):
 
   def test_auto_selects_hadamard_rademacher_or_polar_svd_by_m(self):
     # Power-of-2 m=8 resolves to exact Sylvester Hadamard H_8.
-    q_pow2 = hadamard_rotation._make_cross_block_matrix(8, "auto", seed=11)
+    q_pow2 = hadamard_rotation.make_cross_block_matrix(8, "auto", seed=11)
     np.testing.assert_array_equal(
         q_pow2, hadamard_rotation._make_hadamard_matrix(8).astype(np.float32)
     )
 
     # Non-power-of-2 m=48 (`<= 48`) resolves to Rademacher Cayley.
-    q_small = hadamard_rotation._make_cross_block_matrix(48, "auto", seed=11)
+    q_small = hadamard_rotation.make_cross_block_matrix(48, "auto", seed=11)
     q_rad = hadamard_rotation._make_rademacher_cayley_matrix(
         48, np.random.default_rng(11)
     )
     np.testing.assert_array_equal(q_small, q_rad)
 
     # Non-power-of-2 m=50 (`> 48`) resolves to Polar SVD.
-    q_large = hadamard_rotation._make_cross_block_matrix(50, "auto", seed=11)
+    q_large = hadamard_rotation.make_cross_block_matrix(50, "auto", seed=11)
     q_svd = hadamard_rotation._make_polar_svd_matrix(
         50, np.random.default_rng(11)
     )
     np.testing.assert_array_equal(q_large, q_svd)
 
   def test_invalid_q_init_mode_raises(self):
-    with self.assertRaisesRegex(ValueError, "Unsupported q_init_mode"):
-      hadamard_rotation._make_cross_block_matrix(8, "invalid_mode")
+    with self.assertRaisesRegex(ValueError, "is not a valid QInitMode"):
+      hadamard_rotation.make_cross_block_matrix(8, "invalid_mode")
 
   def test_kronecker_max_power_of_two_sizing_mode(self):
     rng = np.random.default_rng(42)
@@ -515,7 +515,7 @@ class HadamardRotationFullyConnectedTest(parameterized.TestCase):
     )
 
   def test_invalid_sizing_mode_raises(self):
-    with self.assertRaisesRegex(ValueError, "Unsupported sizing_mode"):
+    with self.assertRaisesRegex(ValueError, "is not a valid SizingMode"):
       hadamard_rotation._select_kronecker_hadamard_size(
           1280, max_size=256, sizing_mode="invalid_sizing"
       )
@@ -691,6 +691,281 @@ class HadamardRotationFullyConnectedTest(parameterized.TestCase):
       hadamard_rotation.get_tensor_quant_params(
           self._op_info, qconfig, weight, None
       )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="none_uncapped",
+          dim=2560,
+          max_hadamard_size=None,
+          q_init_mode=hadamard_rotation.QInitMode.NONE,
+          sizing_mode=hadamard_rotation.SizingMode.MIN_COMPUTE,
+          expected_block_size=512,
+      ),
+      dict(
+          testcase_name="none_zero_cap_treated_as_uncapped",
+          dim=2560,
+          max_hadamard_size=0,
+          q_init_mode="none",
+          sizing_mode="min_compute",
+          expected_block_size=512,
+      ),
+      dict(
+          testcase_name="none_capped_ignores_sizing_mode",
+          dim=2560,
+          max_hadamard_size=256,
+          q_init_mode="none",
+          sizing_mode="min_compute",
+          expected_block_size=256,
+      ),
+      dict(
+          testcase_name="auto_min_compute",
+          dim=2560,
+          max_hadamard_size=256,
+          q_init_mode=hadamard_rotation.QInitMode.AUTO,
+          sizing_mode=hadamard_rotation.SizingMode.MIN_COMPUTE,
+          expected_block_size=64,
+      ),
+      dict(
+          testcase_name="auto_max_power_of_two",
+          dim=2560,
+          max_hadamard_size=256,
+          q_init_mode=hadamard_rotation.QInitMode.AUTO,
+          sizing_mode=hadamard_rotation.SizingMode.MAX_POWER_OF_TWO,
+          expected_block_size=256,
+      ),
+      dict(
+          testcase_name="numpy_int64_scalars",
+          dim=np.int64(384),
+          max_hadamard_size=np.int64(256),
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_block_size=16,
+      ),
+  )
+  def test_get_hadamard_block_size_modes(
+      self,
+      dim,
+      max_hadamard_size,
+      q_init_mode,
+      sizing_mode,
+      expected_block_size,
+  ):
+    self.assertEqual(
+        hadamard_rotation.get_hadamard_block_size(
+            dim,
+            max_hadamard_size=max_hadamard_size,
+            q_init_mode=q_init_mode,
+            sizing_mode=sizing_mode,
+        ),
+        expected_block_size,
+    )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="odd_dim",
+          dim=7,
+          max_hadamard_size=None,
+          q_init_mode="none",
+          sizing_mode="min_compute",
+          expected_error="dim=7, max_hadamard_size=None",
+      ),
+      dict(
+          testcase_name="zero_dim",
+          dim=0,
+          max_hadamard_size=None,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="dim=0, max_hadamard_size=None",
+      ),
+      dict(
+          testcase_name="negative_dim",
+          dim=-8,
+          max_hadamard_size=None,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="dim=-8, max_hadamard_size=None",
+      ),
+      dict(
+          testcase_name="max_hadamard_size_one",
+          dim=8,
+          max_hadamard_size=1,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="dim=8, max_hadamard_size=1",
+      ),
+      dict(
+          testcase_name="negative_max_hadamard_size",
+          dim=8,
+          max_hadamard_size=-4,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="dim=8, max_hadamard_size=-4",
+      ),
+      dict(
+          testcase_name="bool_dim",
+          dim=True,
+          max_hadamard_size=None,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="must be a non-boolean integer",
+      ),
+      dict(
+          testcase_name="bool_max_hadamard_size",
+          dim=8,
+          max_hadamard_size=True,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="must be a non-boolean integer",
+      ),
+      dict(
+          testcase_name="bool_false_max_hadamard_size",
+          dim=8,
+          max_hadamard_size=False,
+          q_init_mode="auto",
+          sizing_mode="min_compute",
+          expected_error="must be a non-boolean integer",
+      ),
+      dict(
+          testcase_name="invalid_q_init_mode",
+          dim=8,
+          max_hadamard_size=None,
+          q_init_mode="invalid",
+          sizing_mode="min_compute",
+          expected_error="is not a valid QInitMode",
+      ),
+      dict(
+          testcase_name="invalid_sizing_mode",
+          dim=8,
+          max_hadamard_size=None,
+          q_init_mode="none",
+          sizing_mode="invalid",
+          expected_error="is not a valid SizingMode",
+      ),
+  )
+  def test_get_hadamard_block_size_invalid_args_raise(
+      self, dim, max_hadamard_size, q_init_mode, sizing_mode, expected_error
+  ):
+    with self.assertRaisesRegex(ValueError, expected_error):
+      hadamard_rotation.get_hadamard_block_size(
+          dim,
+          max_hadamard_size=max_hadamard_size,
+          q_init_mode=q_init_mode,
+          sizing_mode=sizing_mode,
+      )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="q_init_mode_none",
+          m=8,
+          q_init_mode=hadamard_rotation.QInitMode.NONE,
+      ),
+      dict(
+          testcase_name="single_block_m1",
+          m=1,
+          q_init_mode=hadamard_rotation.QInitMode.AUTO,
+      ),
+  )
+  def test_make_cross_block_matrix_returns_none(self, m, q_init_mode):
+    self.assertIsNone(hadamard_rotation.make_cross_block_matrix(m, q_init_mode))
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="sylvester_hadamard_m8",
+          m=8,
+          seed=5,
+          expected_kind="hadamard",
+      ),
+      dict(
+          testcase_name="cached_np_int64_m6",
+          m=np.int64(6),
+          seed=np.int64(0),
+          expected_kind="rademacher",
+      ),
+      dict(
+          testcase_name="rademacher_cayley_m48",
+          m=48,
+          seed=5,
+          expected_kind="rademacher",
+      ),
+      dict(
+          testcase_name="polar_svd_m50",
+          m=50,
+          seed=5,
+          expected_kind="polar_svd",
+      ),
+  )
+  def test_make_cross_block_matrix_orthogonal_modes(
+      self, m, seed, expected_kind
+  ):
+    q1 = hadamard_rotation.make_cross_block_matrix(
+        m, hadamard_rotation.QInitMode.AUTO, seed=seed
+    )
+    assert q1 is not None
+    m_int = int(m)
+    seed_int = int(seed)
+    self.assertEqual(q1.shape, (m_int, m_int))
+    self.assertFalse(q1.flags.writeable)
+    with self.assertRaises(ValueError):
+      q1[0, 0] = 99.0
+    np.testing.assert_allclose(
+        q1.T @ q1, np.eye(m_int, dtype=np.float32), atol=1e-5
+    )
+    if expected_kind == "hadamard":
+      expected_q1 = hadamard_rotation._make_hadamard_matrix(m_int).astype(
+          np.float32
+      )
+    elif expected_kind == "rademacher":
+      expected_q1 = hadamard_rotation._make_rademacher_cayley_matrix(
+          m_int, np.random.default_rng(seed_int)
+      )
+    else:
+      expected_q1 = hadamard_rotation._make_polar_svd_matrix(
+          m_int, np.random.default_rng(seed_int)
+      )
+    np.testing.assert_array_equal(q1, expected_q1)
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="invalid_q_init_mode",
+          m=8,
+          q_init_mode="invalid",
+          seed=0,
+          expected_error="is not a valid QInitMode",
+      ),
+      dict(
+          testcase_name="zero_m",
+          m=0,
+          q_init_mode="auto",
+          seed=0,
+          expected_error="m must be >= 1",
+      ),
+      dict(
+          testcase_name="negative_m",
+          m=-3,
+          q_init_mode="auto",
+          seed=0,
+          expected_error="m must be >= 1",
+      ),
+      dict(
+          testcase_name="bool_m",
+          m=True,
+          q_init_mode="auto",
+          seed=0,
+          expected_error="must be a non-boolean integer",
+      ),
+      dict(
+          testcase_name="bool_seed",
+          m=6,
+          q_init_mode="auto",
+          seed=True,
+          expected_error="must be a non-boolean integer",
+      ),
+  )
+  def test_make_cross_block_matrix_invalid_args_raise(
+      self, m, q_init_mode, seed, expected_error
+  ):
+    with self.assertRaisesRegex(ValueError, expected_error):
+      hadamard_rotation.make_cross_block_matrix(m, q_init_mode, seed=seed)
 
 
 class HadamardRotationEmbeddingLookupTest(parameterized.TestCase):
