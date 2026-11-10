@@ -18,7 +18,7 @@
 import collections
 import dataclasses
 import re
-from typing import Mapping, Optional
+from typing import Any, Mapping, Optional
 from absl import logging
 from litert_quantizer import algorithm_manager
 from litert_quantizer import qtyping
@@ -365,6 +365,7 @@ class RecipeManager:
       weight_num_bits: int,
       weight_granularity: qtyping.QuantGranularity = qtyping.QuantGranularity.CHANNELWISE,
       algorithm_key: str = algorithm_manager.AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+      activation_algorithm_params: Optional[Mapping[str, Any]] = None,
   ):
     """Adds a static range quantization configuration to the recipe.
 
@@ -385,6 +386,10 @@ class RecipeManager:
       weight_num_bits: Number of bits for weight quantization.
       weight_granularity: Granularity of weight quantization.
       algorithm_key: Algorithm key to be applied.
+      activation_algorithm_params: Optional algorithm parameters for the
+        activation tensors, e.g. `{"range_method": "histogram_mse"}` to derive
+        activation ranges from calibration histograms. See
+        `naive_min_max_quantize.ActivationRangeMethod`.
     """
     if activation_num_bits not in [16, 8]:
       raise ValueError(
@@ -394,7 +399,9 @@ class RecipeManager:
     # limitations.
     activation_symmetric = activation_num_bits == 16
     activation_config = qtyping.TensorQuantizationConfig(
-        num_bits=activation_num_bits, symmetric=activation_symmetric
+        num_bits=activation_num_bits,
+        symmetric=activation_symmetric,
+        algorithm_params=activation_algorithm_params or {},
     )
     weight_config = qtyping.TensorQuantizationConfig(
         num_bits=weight_num_bits,

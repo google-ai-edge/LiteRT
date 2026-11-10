@@ -21,6 +21,7 @@ import numpy as np
 
 import os
 import io
+from ai_edge_litert.tools import flatbuffer_utils
 from litert_quantizer import algorithm_manager
 from litert_quantizer import calibrator
 from litert_quantizer import default_policy
@@ -860,6 +861,35 @@ class QuantizerFullyConnectedTest(parameterized.TestCase):
         _is_all_signature_defs_outputs_float(quant_result.quantized_model)
     )
 
+  @parameterized.parameters(
+      ('histogram_percentile', 8),
+      ('histogram_mse', 8),
+      ('histogram_mse', 16),
+  )
+  def test_quantize_with_histogram_range_preserve_mode_succeeds(
+      self, range_method, activation_num_bits
+  ):
+    self._quantizer.add_static_config(
+        regex='.*',
+        operation_name=_TFLOpName.ALL_SUPPORTED,
+        activation_num_bits=activation_num_bits,
+        weight_num_bits=8,
+        activation_algorithm_params={'range_method': range_method},
+    )
+    calib_data = tfl_interpreter_utils.create_random_normal_input_data(
+        self._test_model_path, num_samples=4
+    )
+    calib_result = self._quantizer.calibrate(
+        calib_data,
+        mode=_CalibrationMode.CALIBRATION_PRESERVE_ALL_TENSORS,
+    )
+    self.assertTrue(
+        any('histogram' in qsv for qsv in calib_result.values()),
+        'Expected at least one activation QSV to contain a histogram.',
+    )
+    quant_result = self._quantizer.quantize(calib_result)
+    self.assertIsNotNone(quant_result.quantized_model)
+
 
 class CalibrationModesParityTest(parameterized.TestCase):
 
@@ -909,6 +939,128 @@ class CalibrationModesParityTest(parameterized.TestCase):
             1e-10,
             f'Output mismatch for {sig_key}:{output_name}',
         )
+
+  @parameterized.parameters(
+      ('single_fc.tflite', 'histogram_mse', 1, 1e-10),
+      ('conv_fc_mnist.tflite', 'histogram_mse', 1, 1e-10),
+      ('two_signatures.tflite', 'histogram_percentile', 1, 1e-10),
+      ('single_fc.tflite', 'histogram_mse', 4, 1e-4),
+      ('conv_fc_mnist.tflite', 'histogram_mse', 4, 1e-4),
+      ('two_signatures.tflite', 'histogram_percentile', 4, 1e-4),
+  )
+  @absltest.skipIf(
+      not hasattr(calibrator._pywrap_tfl_calibration, 'TensorHistogram'),
+      'Requires _pywrap_tfl_calibration.TensorHistogram',
+  )
+  def test_parity_between_calibration_modes_with_histogram_range(
+      self, model_name, range_method, num_samples, mse_tol
+  ):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / 'tests/models' / model_name
+    )
+    input_data = tfl_interpreter_utils.create_random_normal_input_data(
+        model_path, num_samples=num_samples, random_seed=0
+    )
+    qt = quantizer.Quantizer(model_path)
+    qt.add_static_config(
+        regex='.*',
+        operation_name=_TFLOpName.ALL_SUPPORTED,
+        activation_num_bits=8,
+        weight_num_bits=8,
+        activation_algorithm_params={'range_method': range_method},
+    )
+    self.assertTrue(qt.need_calibration)
+
+    calib_preserve = qt.calibrate(
+        input_data, mode=_CalibrationMode.CALIBRATION_PRESERVE_ALL_TENSORS
+    )
+    model_preserve = qt.quantize(calib_preserve).quantized_model
+
+    calib_profiler = qt.calibrate(
+        input_data, mode=_CalibrationMode.CALIBRATION_PROFILER_BASED
+    )
+    model_profiler = qt.quantize(calib_profiler).quantized_model
+
+    validation_result = model_validator.compare_model(
+        model_preserve,
+        model_profiler,
+        input_data,
+        error_metrics=[quantizer.ValidationErrorMetric.MSE],
+    )
+
+    for sig_key in validation_result.available_signature_keys():
+      sig_result = validation_result.get_signature_comparison_result(sig_key)
+      for output_name, errors in sig_result.output_tensors.items():
+        self.assertLess(
+            errors[quantizer.ValidationErrorMetric.MSE.value],
+            mse_tol,
+            f'Output mismatch for {sig_key}:{output_name}',
+        )
+
+  @parameterized.parameters(
+      _CalibrationMode.CALIBRATION_PRESERVE_ALL_TENSORS,
+      _CalibrationMode.CALIBRATION_PROFILER_BASED,
+  )
+  def test_signatureless_model_matches_signature_model(self, mode):
+    if mode == _CalibrationMode.CALIBRATION_PROFILER_BASED and not hasattr(
+        calibrator._pywrap_tfl_calibration, 'TensorHistogram'
+    ):
+      self.skipTest('Requires _pywrap_tfl_calibration.TensorHistogram')
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / 'tests/models/single_fc.tflite'
+    )
+    model = flatbuffer_utils.read_model(model_path)
+    model.signatureDefs = []
+    signatureless_model = bytes(
+        flatbuffer_utils.convert_object_to_bytearray(model)
+    )
+    samples = [
+        _RNG.uniform(-1.0, 1.0, size=(1, 8)).astype(np.float32)
+        for _ in range(4)
+    ]
+
+    def calibrate_and_quantize(float_model, input_name):
+      qt = quantizer.Quantizer(float_model)
+      qt.add_static_config(
+          regex='.*',
+          operation_name=_TFLOpName.ALL_SUPPORTED,
+          activation_num_bits=8,
+          weight_num_bits=8,
+          activation_algorithm_params={'range_method': 'histogram_mse'},
+      )
+      calib_result = qt.calibrate(
+          {
+              tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: [
+                  {input_name: x} for x in samples
+              ]
+          },
+          mode=mode,
+      )
+      self.assertTrue(any('histogram' in qsv for qsv in calib_result.values()))
+      return qt.quantize(calib_result).quantized_model
+
+    expected_model = calibrate_and_quantize(model_path, 'input_1')
+    # Without signatures, inputs are keyed by tensor name.
+    actual_model = calibrate_and_quantize(
+        signatureless_model, 'serving_default_input_1'
+    )
+
+    actual_interpreter = tfl_interpreter_utils.create_tfl_interpreter(
+        actual_model
+    )
+    self.assertEmpty(actual_interpreter.get_signature_list())
+    expected_output = tfl_interpreter_utils.invoke_interpreter_signature(
+        tfl_interpreter_utils.create_tfl_interpreter(expected_model),
+        {'input_1': samples[0]},
+    )
+    actual_output = tfl_interpreter_utils.invoke_interpreter_signature(
+        actual_interpreter, {'serving_default_input_1': samples[0]}
+    )
+    self.assertEqual(list(actual_output), ['StatefulPartitionedCall:0'])
+    np.testing.assert_array_equal(
+        actual_output['StatefulPartitionedCall:0'],
+        next(iter(expected_output.values())),
+    )
 
 
 if __name__ == '__main__':

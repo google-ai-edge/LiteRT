@@ -15,17 +15,155 @@
 
 """Performs naive min/max uniform quantization."""
 
-from collections.abc import MutableMapping, Sequence
+from collections.abc import Mapping, MutableMapping, Sequence
 import dataclasses
+import enum
 from typing import Any, Optional
+from absl import logging
 import numpy as np
 from litert_quantizer import qtyping
 from litert_quantizer.algorithms.uniform_quantize import common_quantize
 from litert_quantizer.algorithms.uniform_quantize import uniform_quantize_tensor
 from litert_quantizer.algorithms.utils import common_utils
+from litert_quantizer.utils import histogram_range_utils
+from litert_quantizer.utils import histogram_utils
 from litert_quantizer.utils import tfl_flatbuffer_utils
 
 ALGORITHM_KEY = "min_max_uniform_quantize"
+DEFAULT_VALID_RANGE = (-3e38, 3e38)
+DEFAULT_NUM_BINS = 2048
+
+# Key in an activation `TensorQuantizationConfig.algorithm_params` that selects
+# how the activation range is derived from calibration statistics.
+RANGE_METHOD_KEY = "range_method"
+# Optional percentile keys for `ActivationRangeMethod.HISTOGRAM_PERCENTILE`, in
+# [0, 100].
+MIN_PERCENTILE_KEY = "min_percentile"
+MAX_PERCENTILE_KEY = "max_percentile"
+
+
+class ActivationRangeMethod(str, enum.Enum):
+  """Methods to derive an activation range from calibration statistics.
+
+  Attributes:
+    MIN_MAX: Observed min/max (default).
+    HISTOGRAM_PERCENTILE: Percentiles of the calibration histogram.
+    HISTOGRAM_MSE: Range of the calibration histogram that minimizes the
+      expected quantization MSE.
+  """
+
+  MIN_MAX = "min_max"
+  HISTOGRAM_PERCENTILE = "histogram_percentile"
+  HISTOGRAM_MSE = "histogram_mse"
+
+
+def get_activation_range_method(
+    algorithm_params: Mapping[str, Any] | None,
+) -> ActivationRangeMethod:
+  """Returns the activation range method set in `algorithm_params`.
+
+  Args:
+    algorithm_params: `algorithm_params` of an activation tensor config.
+
+  Returns:
+    The activation range method, `MIN_MAX` if unset.
+
+  Raises:
+    ValueError: If the range method is not supported.
+  """
+  return ActivationRangeMethod(
+      (algorithm_params or {}).get(
+          RANGE_METHOD_KEY, ActivationRangeMethod.MIN_MAX
+      )
+  )
+
+
+def _extract_histogram(
+    op_info: qtyping.OpInfo, tensor_qsv: Mapping[str, Any]
+) -> histogram_utils.DynamicHistogram | None:
+  """Returns the usable histogram in `tensor_qsv`, or None."""
+  # Ops with a fixed output scale (e.g. SOFTMAX, LOGISTIC) replace the QSV
+  # min/max with 0-D scalars; their range must not change.
+  if (
+      np.asarray(tensor_qsv["min"]).ndim == 0
+      or np.asarray(tensor_qsv["max"]).ndim == 0
+  ):
+    return None
+  hist = histogram_utils.DynamicHistogram.from_dict(
+      tensor_qsv.get("histogram") or {}
+  )
+  if not hist.initialized:
+    logging.warning(
+        "No histogram in QSV for op %s (index %d); falling back to min/max.",
+        op_info.op_name,
+        op_info.subgraph_op_index,
+    )
+    return None
+  return hist
+
+
+def _get_histogram_range(
+    op_info: qtyping.OpInfo,
+    tensor_quant_config: qtyping.TensorQuantizationConfig,
+    tensor_qsv: Mapping[str, Any],
+) -> Mapping[str, Any]:
+  """Returns `tensor_qsv` with min/max set by the activation range method.
+
+  The selected range is clipped to the QSV min/max, so a histogram range can
+  only tighten the min/max range, never widen it. QSVs without a usable
+  histogram are returned unchanged.
+
+  Args:
+    op_info: Aggregated information about the op.
+    tensor_quant_config: The activation quantization config.
+    tensor_qsv: The activation QSV with min, max, and optionally histogram.
+
+  Returns:
+    A QSV with the selected min/max.
+  """
+  params = tensor_quant_config.algorithm_params
+  method = get_activation_range_method(params)
+  if method == ActivationRangeMethod.MIN_MAX:
+    return tensor_qsv
+  hist = _extract_histogram(op_info, tensor_qsv)
+  if hist is None:
+    return tensor_qsv
+
+  qsv_min = np.asarray(tensor_qsv["min"])
+  qsv_max = np.asarray(tensor_qsv["max"])
+  bound_min = float(np.min(qsv_min))
+  bound_max = float(np.max(qsv_max))
+  if method == ActivationRangeMethod.HISTOGRAM_PERCENTILE:
+    clip_min, clip_max = histogram_range_utils.percentile_range_from_histogram(
+        hist,
+        min_percentile=params.get(
+            MIN_PERCENTILE_KEY, histogram_range_utils.DEFAULT_MIN_PERCENTILE
+        ),
+        max_percentile=params.get(
+            MAX_PERCENTILE_KEY, histogram_range_utils.DEFAULT_MAX_PERCENTILE
+        ),
+        fallback_min=bound_min,
+        fallback_max=bound_max,
+    )
+  else:
+    clip_min, clip_max = histogram_range_utils.mse_range_from_histogram(
+        hist,
+        num_bits=tensor_quant_config.num_bits,
+        symmetric=tensor_quant_config.symmetric,
+        signed=tensor_quant_config.dtype != qtyping.TensorDataType.UINT,
+        fallback_min=bound_min,
+        fallback_max=bound_max,
+    )
+  new_min = max(float(clip_min), bound_min)
+  new_max = min(float(clip_max), bound_max)
+  if new_min > new_max:
+    new_min, new_max = bound_min, bound_max
+  return {
+      "min": np.full(qsv_min.shape, new_min, dtype=np.float64),
+      "max": np.full(qsv_max.shape, new_max, dtype=np.float64),
+  }
+
+
 _TFLOpName = qtyping.TFLOperationName
 _QuantTransformation = qtyping.QuantTransformation
 _IntType = uniform_quantize_tensor.IntType
@@ -75,6 +213,10 @@ def get_tensor_quant_params(
         "min and max must be provided to produce tensor quantization"
         " parameters. Check if the correct calibration results are passed into"
         " the ParamsGenerator."
+    )
+  if tensor_content is None:
+    tensor_min_max = _get_histogram_range(
+        op_info, tensor_quant_config, tensor_min_max
     )
   clipping_values = None
   signed = tensor_quant_config.dtype != qtyping.TensorDataType.UINT
@@ -189,7 +331,7 @@ def min_max_calibrate(
     tensor_content_map: MutableMapping[str, np.ndarray],
     inputs_to_ignore: Sequence[int] | None = None,
     outputs_to_ignore: Sequence[int] | None = None,
-    valid_range: tuple[float, float] = (-3e38, 3e38),
+    valid_range: tuple[float, float] = DEFAULT_VALID_RANGE,
     **kwargs,
 ) -> dict[str, qtyping.QSV]:
   """Collect quantization statistics variable (QSV, e.g., min/max) for the op.
@@ -229,3 +371,61 @@ def min_max_calibrate(
       op_qsvs[tensor_name] = tensor_qsvs
 
   return op_qsvs
+
+
+def collect_activation_histograms(
+    tfl_op: qtyping.OperatorT,
+    graph_info: qtyping.GraphInfo,
+    tensor_content_map: Mapping[str, np.ndarray],
+    valid_range: tuple[float, float] = DEFAULT_VALID_RANGE,
+    num_bins: int = DEFAULT_NUM_BINS,
+) -> dict[str, dict[str, Any]]:
+  """Builds a histogram of each activation tensor of the op.
+
+  Only finite float values strictly inside `valid_range` are counted (all
+  values if none are in range); integer tensors are counted as is. Other dtypes
+  are skipped.
+
+  Args:
+    tfl_op: The tfl operation.
+    graph_info: Graph information needed to perform quantization for the op.
+    tensor_content_map: A map of tensor name to tensor content.
+    valid_range: The valid range for float tensor content, excluding the
+      boundaries.
+    num_bins: Maximum number of bins per histogram.
+
+  Returns:
+    A dictionary from tensor name to histogram in `DynamicHistogram.to_dict`
+    format.
+  """
+  min_val, max_val = valid_range
+  histograms = {}
+  for tensor_idx in common_quantize.get_tensor_indices_requiring_calibration(
+      tfl_op, graph_info
+  ):
+    tensor = graph_info.subgraph_tensors[tensor_idx]
+    if (
+        tfl_flatbuffer_utils.get_tensor_data(tensor, graph_info.buffers)
+        is not None
+    ):
+      continue
+    tensor_name = tfl_flatbuffer_utils.get_tensor_name(tensor)
+    content = tensor_content_map.get(tensor_name)
+    if content is None:
+      continue
+    is_float = (
+        np.issubdtype(content.dtype, np.floating)
+        or content.dtype.name == "bfloat16"
+    )
+    if not is_float and not np.issubdtype(content.dtype, np.integer):
+      continue
+    values = np.asarray(content, dtype=np.float64)
+    if is_float:
+      in_range = values[(values > min_val) & (values < max_val)]
+      if in_range.size:
+        values = in_range
+    hist = histogram_utils.DynamicHistogram(max_tensor_bins=num_bins)
+    hist.add(values)
+    if hist.initialized:
+      histograms[tensor_name] = hist.to_dict()
+  return histograms

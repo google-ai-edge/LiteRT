@@ -23,12 +23,18 @@ import numpy as np
 
 from litert_quantizer import qtyping
 from litert_quantizer.algorithms.uniform_quantize import naive_min_max_quantize
+from litert_quantizer.utils import histogram_utils
 from litert_quantizer.utils import test_utils
 from litert_quantizer.utils import tfl_flatbuffer_utils
 
 _TEST_DATA_PREFIX_PATH = test_utils.get_path_to_datafile("../../tests/models")
 _TFLOpName = qtyping.TFLOperationName
 _TensorQuantConfig = qtyping.TensorQuantizationConfig
+_RangeMethod = naive_min_max_quantize.ActivationRangeMethod
+_FC_INPUT_NAME = "sequential/flatten/Reshape"
+_FC_OUTPUT_NAME = (
+    "sequential/dense/MatMul;sequential/dense/Relu;sequential/dense/BiasAdd"
+)
 
 
 class NaiveMinMaxQuantizeTest(parameterized.TestCase):
@@ -384,6 +390,210 @@ class NaiveMinMaxQuantizeTest(parameterized.TestCase):
     self.assertIn(output_tensor_name, op_qsvs)
     self.assertEqual(op_qsvs[output_tensor_name]["min"], 6.0)
     self.assertEqual(op_qsvs[output_tensor_name]["max"], 9.0)
+
+
+class ActivationRangeMethodTest(parameterized.TestCase):
+  """Tests for histogram-based activation ranges."""
+
+  def setUp(self):
+    super().setUp()
+    test_model = tfl_flatbuffer_utils.read_model(
+        str(pathlib.Path(_TEST_DATA_PREFIX_PATH) / "conv_fc_mnist.tflite")
+    )
+    self._graph_info = qtyping.GraphInfo(
+        subgraph_tensors=test_model.subgraphs[0].tensors,
+        buffers=test_model.buffers,
+    )
+    self._fc_op = test_model.subgraphs[0].operators[3]
+    self._op_info = qtyping.OpInfo(
+        op=self._fc_op,
+        op_name=_TFLOpName.FULLY_CONNECTED,
+        subgraph_op_index=3,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            activation_tensor_config=_TensorQuantConfig(
+                num_bits=8, symmetric=False
+            ),
+            weight_tensor_config=_TensorQuantConfig(num_bits=8, symmetric=True),
+            compute_precision=qtyping.ComputePrecision.INTEGER,
+        ),
+    )
+
+  def _activation_config(self, range_method, num_bits=8, **params):
+    return _TensorQuantConfig(
+        num_bits=num_bits,
+        symmetric=num_bits == 16,
+        algorithm_params={"range_method": range_method, **params},
+    )
+
+  def _get_scale(self, tensor_quant_config, tensor_qsv):
+    params = naive_min_max_quantize.get_tensor_quant_params(
+        self._op_info, tensor_quant_config, tensor_qsv=tensor_qsv
+    )
+    return float(np.squeeze(params.scale))
+
+  def _outlier_qsv(self):
+    rng = np.random.default_rng(99)
+    hist = histogram_utils.DynamicHistogram(max_tensor_bins=512)
+    hist.add(rng.uniform(-5.0, 5.0, size=500_000))
+    hist.add(np.array([-8.0, 8.0]))
+    return {
+        "min": np.array([[-8.0]]),
+        "max": np.array([[8.0]]),
+        "histogram": hist.to_dict(),
+    }
+
+  @parameterized.named_parameters(
+      ("none", None),
+      ("empty", {}),
+      ("min_max", {"range_method": "min_max"}),
+  )
+  def test_get_activation_range_method_defaults_to_min_max(self, params):
+    self.assertEqual(
+        naive_min_max_quantize.get_activation_range_method(params),
+        _RangeMethod.MIN_MAX,
+    )
+
+  def test_get_activation_range_method_rejects_unknown_method(self):
+    with self.assertRaisesRegex(ValueError, "not a valid"):
+      naive_min_max_quantize.get_activation_range_method(
+          {"range_method": "bad"}
+      )
+
+  @parameterized.parameters("histogram_percentile", "histogram_mse")
+  def test_histogram_range_clips_outliers(self, range_method):
+    qsv = self._outlier_qsv()
+    hist_scale = self._get_scale(self._activation_config(range_method), qsv)
+    min_max_scale = self._get_scale(self._activation_config("min_max"), qsv)
+    self.assertLess(hist_scale, min_max_scale)
+
+  def test_percentile_params_are_used(self):
+    hist = histogram_utils.DynamicHistogram(max_tensor_bins=256)
+    hist.add(np.linspace(0.0, 10.0, 10_001))
+    qsv = {
+        "min": np.array([[0.0]]),
+        "max": np.array([[10.0]]),
+        "histogram": hist.to_dict(),
+    }
+    default_scale = self._get_scale(
+        self._activation_config("histogram_percentile"), qsv
+    )
+    narrow_scale = self._get_scale(
+        self._activation_config("histogram_percentile", max_percentile=50.0),
+        qsv,
+    )
+    self.assertLess(narrow_scale, 0.6 * default_scale)
+
+  @parameterized.parameters("histogram_percentile", "histogram_mse")
+  def test_weights_ignore_range_method(self, range_method):
+    weights = np.random.default_rng(77).normal(size=(16, 32)).astype(np.float32)
+    weight_config = _TensorQuantConfig(
+        num_bits=8,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={"range_method": range_method},
+    )
+    hist_params = naive_min_max_quantize.get_tensor_quant_params(
+        self._op_info, weight_config, tensor_content=weights
+    )
+    min_max_params = naive_min_max_quantize.get_tensor_quant_params(
+        self._op_info,
+        _TensorQuantConfig(
+            num_bits=8,
+            symmetric=True,
+            granularity=qtyping.QuantGranularity.CHANNELWISE,
+        ),
+        tensor_content=weights,
+    )
+    np.testing.assert_array_equal(hist_params.scale, min_max_params.scale)
+    np.testing.assert_array_equal(
+        hist_params.quantized_data, min_max_params.quantized_data
+    )
+
+  @parameterized.named_parameters(
+      ("missing", None),
+      ("uninitialized", {"axis": None, "channels": [{}]}),
+  )
+  def test_missing_histogram_falls_back_to_min_max(self, hist_dict):
+    qsv = {"min": np.array([[-3.0]]), "max": np.array([[5.0]])}
+    if hist_dict is not None:
+      qsv["histogram"] = hist_dict
+    with self.assertLogs(level="WARNING") as logs:
+      mse_scale = self._get_scale(
+          self._activation_config("histogram_mse"), qsv
+      )
+    self.assertIn("No histogram in QSV", logs.output[0])
+    self.assertAlmostEqual(
+        mse_scale, self._get_scale(self._activation_config("min_max"), qsv)
+    )
+
+  @parameterized.parameters("histogram_percentile", "histogram_mse")
+  def test_fixed_output_scale_range_is_unchanged(self, range_method):
+    hist = histogram_utils.DynamicHistogram(max_tensor_bins=512)
+    hist.add(np.random.default_rng(123).uniform(0.0, 0.12, size=10_000))
+    # Ops with a fixed output scale (e.g. SOFTMAX) replace min/max with 0-D
+    # scalars.
+    qsv = {
+        "min": np.float64(0.0),
+        "max": np.float64(255.0 / 256.0),
+        "histogram": hist.to_dict(),
+    }
+    self.assertAlmostEqual(
+        self._get_scale(self._activation_config(range_method), qsv),
+        self._get_scale(self._activation_config("min_max"), qsv),
+    )
+
+  def test_histogram_range_never_widens_qsv_range(self):
+    # The QSV min/max ([-5.5, 5.5], e.g. a moving average) is narrower than the
+    # histogram ([-10, 10]). Histogram ranges only tighten the QSV range, so
+    # the MSE range must not exceed it.
+    rng = np.random.default_rng(2026)
+    hist = histogram_utils.DynamicHistogram(max_tensor_bins=512)
+    hist.add(rng.uniform(-1.0, 1.0, size=1_000))
+    hist.add(rng.uniform(-10.0, 10.0, size=100_000))
+    qsv = {
+        "min": np.array([[-5.5]]),
+        "max": np.array([[5.5]]),
+        "histogram": hist.to_dict(),
+    }
+    mse_scale = self._get_scale(
+        self._activation_config("histogram_mse", 16), qsv
+    )
+    min_max_scale = self._get_scale(self._activation_config("min_max", 16), qsv)
+    self.assertLessEqual(mse_scale, min_max_scale + 1e-12)
+
+  def test_collect_activation_histograms(self):
+    tensor_content_map = {
+        _FC_INPUT_NAME: np.array(
+            [[-np.inf, 1.0, 2.0, 5.0, np.inf, 3.39e38]], dtype=np.float32
+        ),
+        _FC_OUTPUT_NAME: np.array([[True, False]]),
+    }
+    histograms = naive_min_max_quantize.collect_activation_histograms(
+        self._fc_op, self._graph_info, tensor_content_map
+    )
+    # Constant weights/bias and boolean tensors have no histogram.
+    self.assertEqual(list(histograms), [_FC_INPUT_NAME])
+    hist = histogram_utils.DynamicHistogram.from_dict(
+        histograms[_FC_INPUT_NAME]
+    )
+    self.assertEqual(np.sum(hist.counts), 3)
+    self.assertAlmostEqual(float(hist.global_min[0]), 1.0)
+    self.assertAlmostEqual(float(hist.global_max[0]), 5.0)
+
+  @parameterized.named_parameters(
+      ("bfloat16", np.array([[-1.0, 2.0, 8.0]], dtype=ml_dtypes.bfloat16)),
+      ("int32", np.array([[-3, 0, 7]], dtype=np.int32)),
+  )
+  def test_collect_activation_histograms_dtypes(self, content):
+    histograms = naive_min_max_quantize.collect_activation_histograms(
+        self._fc_op, self._graph_info, {_FC_INPUT_NAME: content}
+    )
+    hist = histogram_utils.DynamicHistogram.from_dict(
+        histograms[_FC_INPUT_NAME]
+    )
+    self.assertEqual(np.sum(hist.counts), 3)
+    self.assertAlmostEqual(float(hist.global_min[0]), float(np.min(content)))
+    self.assertAlmostEqual(float(hist.global_max[0]), float(np.max(content)))
 
 
 if __name__ == "__main__":

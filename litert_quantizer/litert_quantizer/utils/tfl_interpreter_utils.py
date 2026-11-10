@@ -98,6 +98,29 @@ def has_quantization_params(tensor_detail: dict[str, Any]) -> bool:
   return bool(len(quant_params["scales"]))
 
 
+def is_signatureless_default(
+    tflite_interpreter: tfl.Interpreter,
+    signature_key: str | None = None,
+) -> bool:
+  """Checks whether to run a signatureless model by tensor names.
+
+  Signatureless models are run through subgraph 0 with inputs and outputs keyed
+  by tensor name when `signature_key` is None or `DEFAULT_SIGNATURE_KEY`.
+
+  Args:
+    tflite_interpreter: The TFLite interpreter.
+    signature_key: The requested signature key.
+
+  Returns:
+    True if the model has no signatures and `signature_key` is None or
+    `DEFAULT_SIGNATURE_KEY`.
+  """
+  return not tflite_interpreter.get_signature_list() and signature_key in (
+      None,
+      DEFAULT_SIGNATURE_KEY,
+  )
+
+
 def invoke_interpreter_signature(
     tflite_interpreter: tfl.Interpreter,
     signature_input_data: dict[str, Any],
@@ -115,6 +138,27 @@ def invoke_interpreter_signature(
   Returns:
     The output data of the signature.
   """
+  if is_signatureless_default(tflite_interpreter, signature_key):
+    input_data_list = []
+    for input_detail in tflite_interpreter.get_input_details():
+      name = input_detail["name"]
+      key = name if name in signature_input_data else name.split(":")[0]
+      if key not in signature_input_data:
+        raise ValueError(
+            f"Input tensor '{name}' not found in signature_input_data keys: "
+            f"{list(signature_input_data.keys())}"
+        )
+      input_data_list.append(signature_input_data[key])
+    invoke_interpreter_once(
+        tflite_interpreter, input_data_list, quantize_input=quantize_input
+    )
+    return {
+        output_detail["name"]: get_tensor_data(
+            tflite_interpreter, output_detail, dequantize=False
+        )
+        for output_detail in tflite_interpreter.get_output_details()
+    }
+
   # Make a copy to avoid in-place modification.
   signature_input = signature_input_data.copy()
   signature_runner = tflite_interpreter.get_signature_runner(signature_key)
@@ -274,6 +318,8 @@ def get_input_tensor_names(
   """
 
   tfl_interpreter = create_tfl_interpreter(tflite_model, allocate_tensors=False)
+  if is_signatureless_default(tfl_interpreter, signature_name):
+    return [d["name"] for d in tfl_interpreter.get_input_details()]
   signature_runner = tfl_interpreter.get_signature_runner(signature_name)
   input_tensor_names = []
   for _, input_detail in signature_runner.get_input_details().items():
@@ -295,6 +341,8 @@ def get_output_tensor_names(
     A list of output tensor names.
   """
   tfl_interpreter = create_tfl_interpreter(tflite_model, allocate_tensors=False)
+  if is_signatureless_default(tfl_interpreter, signature_name):
+    return [d["name"] for d in tfl_interpreter.get_output_details()]
   signature_runner = tfl_interpreter.get_signature_runner(signature_name)
   output_tensor_names = []
   for _, output_detail in signature_runner.get_output_details().items():
@@ -351,6 +399,8 @@ def get_signature_main_subgraph_index(
   Returns:
     The main subgraph index of the signature.
   """
+  if is_signatureless_default(tflite_interpreter, signature_key):
+    return 0
   signature_runner = tflite_interpreter.get_signature_runner(signature_key)
   return signature_runner._subgraph_index  # pylint:disable=protected-access
 
