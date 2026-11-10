@@ -52,8 +52,8 @@ ABSL_FLAG(bool, intel_openvino_enable_weight_sharing, true,
 
 ABSL_FLAG(std::string, intel_openvino_dump_ovir_dir, "",
           "Debug: if set, the Intel OpenVINO compiler plugin dumps each "
-          "partition's final OpenVINO IR (Partition_<idx>.xml/.bin) into "
-          "this directory before compiling it.");
+          "partition's OpenVINO IR with weights (Partition_<idx>.xml/.bin) "
+          "into this directory.");
 
 ABSL_FLAG(std::string, intel_openvino_graph_backends, "",
           "Per-graph (per-partition) OpenVINO target device.  Accepts either "

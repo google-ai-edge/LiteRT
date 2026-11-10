@@ -94,8 +94,8 @@ LiteRtStatus LrtIntelOpenVinoOptionsGetEnableWeightSharing(
 
 // dump_ovir_dir --------------------------------------------------------------
 // Debug option. When non-empty, the compiler plugin serializes each
-// partition's final OpenVINO model (the one passed to compile_model) as
-// OpenVINO IR (`Partition_<idx>.xml` / `.bin`) into this directory. Empty
+// partition's optimized OpenVINO model, with its weights, as OpenVINO IR
+// (`Partition_<idx>.xml` / `.bin`) into this directory. Empty
 // (default) disables dumping. The returned string is owned by `options`.
 LiteRtStatus LrtIntelOpenVinoOptionsSetDumpOvirDir(
     LrtIntelOpenVinoOptions options, const char* dump_ovir_dir);

@@ -16,7 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <filesystem>  // NOLINT
+#include <exception>
 #include <ios>
 #include <limits>
 #include <map>
@@ -249,6 +249,18 @@ class CustomOStreamBuf : public std::streambuf {
   std::string target_;
   size_t pos_;
 };
+
+void DumpOvIr(const std::shared_ptr<ov::Model>& model,
+              const std::string& dump_dir, const std::string& graph_name) {
+  const std::string base = absl::StrCat(dump_dir, "/", graph_name);
+  try {
+    ov::serialize(model, base + ".xml", base + ".bin");
+    LITERT_LOG(LITERT_INFO, "Dumped OV IR to %s.xml", base.c_str());
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_ERROR, "Failed to dump OV IR to %s.xml: %s",
+               base.c_str(), e.what());
+  }
+}
 
 }  // namespace
 
@@ -529,15 +541,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       dump_ovir_dir = options.Value().GetDumpOvirDir();
     }
     if (!dump_ovir_dir.empty()) {
-      std::error_code ec;
-      std::filesystem::create_directories(dump_ovir_dir, ec);
-      if (ec) {
-        LITERT_LOG(LITERT_WARNING,
-                   "Failed to create OV IR dump dir '%s': %s; dumping "
-                   "disabled.",
-                   dump_ovir_dir.c_str(), ec.message().c_str());
-        dump_ovir_dir.clear();
-      }
+      LITERT_LOG(LITERT_WARNING,
+                 "OV IR dump enabled: full model weights will be written "
+                 "unencrypted to '%s'",
+                 dump_ovir_dir.c_str());
     }
 
     // Cross-partition weight sharing: all partitions' distinct weights are
@@ -665,6 +672,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
         // Run NPU-specific optimization passes.
         const auto optimize_result = context.OptimizeModel(ov_model);
+        // Dump before weight-sharing rewrites so the IR is self-contained.
+        if (!dump_ovir_dir.empty()) {
+          DumpOvIr(ov_model, dump_ovir_dir, graph_name);
+        }
         if (share_npu) {
           // Must run after OptimizeModel: it configures NPUW from what the
           // passes classified, which is knowable only once they have run.
@@ -720,21 +731,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                                                      context.Device().c_str());
         LITERT_LOG(LITERT_INFO, "Compiling partition %d for device %s",
                    partition_idx, context.Device().c_str());
-        if (!dump_ovir_dir.empty()) {
-          const std::filesystem::path base =
-              std::filesystem::path(dump_ovir_dir) / graph_name;
-          const std::string xml_path = base.string() + ".xml";
-          const std::string bin_path = base.string() + ".bin";
-          try {
-            ov::serialize(ov_model, xml_path, bin_path);
-            LITERT_LOG(LITERT_INFO, "Dumped OV IR for partition %d to %s",
-                       partition_idx, xml_path.c_str());
-          } catch (const ov::Exception& e) {
-            LITERT_LOG(LITERT_WARNING,
-                       "Failed to dump OV IR for partition %d: %s",
-                       partition_idx, e.what());
-          }
-        }
         auto compiled_model =
             core.compile_model(ov_model, context.Device(), configs);
         ov_model.reset();  // graph unused after compile; free before export +

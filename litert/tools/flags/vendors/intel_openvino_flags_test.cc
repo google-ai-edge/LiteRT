@@ -155,6 +155,25 @@ TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, SetEnableWeightSharing) {
   absl::SetFlag(&FLAGS_intel_openvino_enable_weight_sharing, true);
 }
 
+TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, DumpOvirDirUnsetByDefault) {
+  LITERT_ASSERT_OK_AND_ASSIGN(IntelOpenVinoOptions options,
+                              IntelOpenVinoOptions::Create());
+
+  ASSERT_TRUE(UpdateIntelOpenVinoOptionsFromFlags(options).HasValue());
+  EXPECT_EQ(options.GetDumpOvirDir(), "");
+}
+
+TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, SetDumpOvirDir) {
+  absl::SetFlag(&FLAGS_intel_openvino_dump_ovir_dir, "/tmp/ov_dump");
+  LITERT_ASSERT_OK_AND_ASSIGN(IntelOpenVinoOptions options,
+                              IntelOpenVinoOptions::Create());
+
+  ASSERT_TRUE(UpdateIntelOpenVinoOptionsFromFlags(options).HasValue());
+  EXPECT_EQ(options.GetDumpOvirDir(), "/tmp/ov_dump");
+
+  absl::SetFlag(&FLAGS_intel_openvino_dump_ovir_dir, "");
+}
+
 TEST(UpdateIntelOpenVinoOptionsFromFlagsTest, ConfigsMapSingleOption) {
   absl::SetFlag(&FLAGS_intel_openvino_configs_map,
                 "INFERENCE_PRECISION_HINT=f16");

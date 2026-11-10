@@ -57,11 +57,11 @@ backends:
 ### Debug: OpenVINO IR Dump
 
 -   **`dump_ovir_dir`** (default empty = disabled): When set, the compiler
-    plugin serializes each partition's final OpenVINO model (after
-    optimization passes, right before `compile_model`) as OpenVINO IR
+    plugin serializes each partition's OpenVINO model as OpenVINO IR
     (`Partition_<idx>.xml` / `Partition_<idx>.bin`) into this directory. The
-    directory is created if missing. CLI flag:
-    `--intel_openvino_dump_ovir_dir=/path/to/dir`.
+    model is dumped right after the optimization passes and before any
+    weight-sharing rewrites, so every IR is self-contained with its own
+    weights. CLI flag: `--intel_openvino_dump_ovir_dir=/path/to/dir`.
 
 ### Configuration Map
 
