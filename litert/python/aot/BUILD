@@ -12,12 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/python:pytype.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
+load(
+    "//litert/python:pytype.bzl",
+    "pytype_strict_binary",
+    "pytype_strict_contrib_test",
+    "pytype_strict_library",
+)
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_python_internal_users"],
 )
+
+_NON_WINDOWS = select({
+    "//litert:windows": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
 
 pytype_strict_library(
     name = "aot_compile",
@@ -30,6 +40,62 @@ pytype_strict_library(
         "//litert/python/aot/core:components",
         "//litert/python/aot/core:mlir_transforms",
         "//litert/python/aot/vendors:import_vendor",
+    ],
+)
+
+pytype_strict_library(
+    name = "aot_compile_main_lib",
+    srcs = ["aot_compile_main.py"],
+    target_compatible_with = _NON_WINDOWS,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aot_compile",
+        "//litert/python/aot/core:aot_types",
+        "//litert/python/aot/vendors",  # buildcleaner: keep
+        "//litert/python/aot/vendors:fallback_backend",
+        "//litert/python/aot/vendors:import_vendor",
+        "//litert/python/aot/vendors/google_tensor:target",
+        "//litert/python/aot/vendors/intel_openvino:target",
+        "//litert/python/aot/vendors/mediatek:target",
+        "//litert/python/aot/vendors/qualcomm:target",
+        "//litert/python/aot/vendors/samsung:target",
+        "@absl_py//absl:app",
+        "@absl_py//absl/flags",
+    ],
+)
+
+pytype_strict_binary(
+    name = "aot_compile_main",
+    srcs = ["aot_compile_main.py"],
+    main = "aot_compile_main.py",
+    target_compatible_with = _NON_WINDOWS,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aot_compile_main_lib",
+    ],
+)
+
+pytype_strict_contrib_test(
+    name = "aot_compile_main_test",
+    srcs = ["aot_compile_main_test.py"],
+    data = [
+        "//litert/test:testdata/add_simple.tflite",
+    ],
+    # San builds result in too large of a build (vendor data deps).
+    tags = [
+        "noasan",
+        "nosan",
+    ],
+    target_compatible_with = _NON_WINDOWS,
+    deps = [
+        ":aot_compile_main_lib",
+        "//litert/python/aot/core:common",
+        "//litert/python/aot/vendors:fallback_backend",
+        "//litert/python/aot/vendors:import_vendor",
+        "@absl_py//absl:app",
+        "@absl_py//absl/testing:absltest",
+        "@absl_py//absl/testing:flagsaver",
+        "@absl_py//absl/testing:parameterized",
     ],
 )
 
