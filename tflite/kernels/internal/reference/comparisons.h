@@ -29,49 +29,48 @@ namespace tflite {
 namespace reference_ops {
 
 template <typename T>
-struct EqualFn {
-  bool operator()(T lhs, T rhs) const { return lhs == rhs; }
-};
+inline bool EqualFn(T lhs, T rhs) {
+  return lhs == rhs;
+}
 
 template <typename T>
-struct NotEqualFn {
-  bool operator()(T lhs, T rhs) const { return lhs != rhs; }
-};
+inline bool NotEqualFn(T lhs, T rhs) {
+  return lhs != rhs;
+}
 
 template <typename T>
-struct GreaterFn {
-  bool operator()(T lhs, T rhs) const { return lhs > rhs; }
-};
+inline bool GreaterFn(T lhs, T rhs) {
+  return lhs > rhs;
+}
+template <typename T>
+inline bool GreaterEqualFn(T lhs, T rhs) {
+  return lhs >= rhs;
+}
+template <typename T>
+inline bool LessFn(T lhs, T rhs) {
+  return lhs < rhs;
+}
+template <typename T>
+inline bool LessEqualFn(T lhs, T rhs) {
+  return lhs <= rhs;
+}
 
 template <typename T>
-struct GreaterEqualFn {
-  bool operator()(T lhs, T rhs) const { return lhs >= rhs; }
-};
+using ComparisonFn = bool (*)(T, T);
 
-template <typename T>
-struct LessFn {
-  bool operator()(T lhs, T rhs) const { return lhs < rhs; }
-};
-
-template <typename T>
-struct LessEqualFn {
-  bool operator()(T lhs, T rhs) const { return lhs <= rhs; }
-};
-
-template <typename T, typename F>
+template <typename T, ComparisonFn<T> F>
 inline void ComparisonImpl(
     const ComparisonParams& op_params, const RuntimeShape& input1_shape,
     const T* input1_data, const RuntimeShape& input2_shape,
     const T* input2_data, const RuntimeShape& output_shape, bool* output_data) {
   const int64_t flatsize =
       MatchingFlatSize(input1_shape, input2_shape, output_shape);
-  F op;
   for (int64_t i = 0; i < flatsize; ++i) {
-    output_data[i] = op(input1_data[i], input2_data[i]);
+    output_data[i] = F(input1_data[i], input2_data[i]);
   }
 }
 
-template <typename F>
+template <ComparisonFn<float> F>
 inline void Comparison(const ComparisonParams& op_params,
                        const RuntimeShape& input1_shape,
                        const float* input1_data,
@@ -82,7 +81,7 @@ inline void Comparison(const ComparisonParams& op_params,
                            input2_data, output_shape, output_data);
 }
 
-template <typename T, typename F>
+template <typename T, ComparisonFn<int32_t> F>
 inline void ComparisonWithScaling(
     const ComparisonParams& op_params, const RuntimeShape& input1_shape,
     const T* input1_data, const RuntimeShape& input2_shape,
@@ -97,7 +96,6 @@ inline void ComparisonWithScaling(
 
   const int64_t flatsize =
       MatchingFlatSize(input1_shape, input2_shape, output_shape);
-  F op;
   for (int64_t i = 0; i < flatsize; ++i) {
     const int32_t input1_val = input1_offset + input1_data[i];
     const int32_t input2_val = input2_offset + input2_data[i];
@@ -109,23 +107,22 @@ inline void ComparisonWithScaling(
     const int32_t scaled_input2_val =
         MultiplyByQuantizedMultiplierSmallerThanOneExp(
             shifted_input2_val, input2_multiplier, input2_shift);
-    output_data[i] = op(scaled_input1_val, scaled_input2_val);
+    output_data[i] = F(scaled_input1_val, scaled_input2_val);
   }
 }
 
-template <typename T, typename F>
+template <typename T, ComparisonFn<T> F>
 inline void BroadcastComparison4DSlowImpl(
     const ComparisonParams& op_params,
     const RuntimeShape& unextended_input1_shape, const T* input1_data,
     const RuntimeShape& unextended_input2_shape, const T* input2_data,
     const RuntimeShape& unextended_output_shape, bool* output_data) {
-  F op;
   BroadcastBinaryOpSimple(unextended_input1_shape, input1_data,
                           unextended_input2_shape, input2_data,
-                          unextended_output_shape, output_data, op);
+                          unextended_output_shape, output_data, F);
 }
 
-template <typename F>
+template <ComparisonFn<float> F>
 inline void BroadcastComparison4DSlow(const ComparisonParams& op_params,
                                       const RuntimeShape& input1_shape,
                                       const float* input1_data,
@@ -138,7 +135,7 @@ inline void BroadcastComparison4DSlow(const ComparisonParams& op_params,
                                           output_shape, output_data);
 }
 
-template <typename T, typename F>
+template <typename T, ComparisonFn<int32_t> F>
 inline void BroadcastComparison4DSlowWithScaling(
     const ComparisonParams& op_params,
     const RuntimeShape& unextended_input1_shape, const T* input1_data,
@@ -152,7 +149,6 @@ inline void BroadcastComparison4DSlowWithScaling(
   int32_t input2_multiplier = op_params.input2_multiplier;
   int input2_shift = op_params.input2_shift;
 
-  F op_fn;
   auto op = [=](T a, T b) {
     const int32_t input1_val = input1_offset + a;
     const int32_t input2_val = input2_offset + b;
@@ -164,7 +160,7 @@ inline void BroadcastComparison4DSlowWithScaling(
     const int32_t scaled_input2_val =
         MultiplyByQuantizedMultiplierSmallerThanOneExp(
             shifted_input2_val, input2_multiplier, input2_shift);
-    return op_fn(scaled_input1_val, scaled_input2_val);
+    return F(scaled_input1_val, scaled_input2_val);
   };
 
   BroadcastBinaryOpSimple(unextended_input1_shape, input1_data,
@@ -177,9 +173,8 @@ inline void BroadcastComparison4DSlowWithScaling(
                    const RuntimeShape& input1_shape, const float* input1_data, \
                    const RuntimeShape& input2_shape, const float* input2_data, \
                    const RuntimeShape& output_shape, bool* output_data) {      \
-    Comparison<name##Fn<float>>(op_params, input1_shape, input1_data,          \
-                                input2_shape, input2_data, output_shape,       \
-                                output_data);                                  \
+    Comparison<name##Fn>(op_params, input1_shape, input1_data, input2_shape,   \
+                         input2_data, output_shape, output_data);              \
   }                                                                            \
   template <typename T>                                                        \
   inline void name##NoScaling(                                                 \
@@ -187,9 +182,9 @@ inline void BroadcastComparison4DSlowWithScaling(
       const T* input1_data, const RuntimeShape& input2_shape,                  \
       const T* input2_data, const RuntimeShape& output_shape,                  \
       bool* output_data) {                                                     \
-    ComparisonImpl<T, name##Fn<T>>(op_params, input1_shape, input1_data,       \
-                                   input2_shape, input2_data, output_shape,    \
-                                   output_data);                               \
+    ComparisonImpl<T, name##Fn>(op_params, input1_shape, input1_data,          \
+                                input2_shape, input2_data, output_shape,       \
+                                output_data);                                  \
   }                                                                            \
   template <typename T>                                                        \
   inline void name##WithScaling(                                               \
@@ -197,9 +192,9 @@ inline void BroadcastComparison4DSlowWithScaling(
       const T* input1_data, const RuntimeShape& input2_shape,                  \
       const T* input2_data, const RuntimeShape& output_shape,                  \
       bool* output_data) {                                                     \
-    ComparisonWithScaling<T, name##Fn<int32_t>>(                               \
-        op_params, input1_shape, input1_data, input2_shape, input2_data,       \
-        output_shape, output_data);                                            \
+    ComparisonWithScaling<T, name##Fn>(op_params, input1_shape, input1_data,   \
+                                       input2_shape, input2_data,              \
+                                       output_shape, output_data);             \
   }                                                                            \
   template <typename T>                                                        \
   inline void Broadcast4DSlow##name##NoScaling(                                \
@@ -207,7 +202,7 @@ inline void BroadcastComparison4DSlowWithScaling(
       const T* input1_data, const RuntimeShape& input2_shape,                  \
       const T* input2_data, const RuntimeShape& output_shape,                  \
       bool* output_data) {                                                     \
-    BroadcastComparison4DSlowImpl<T, name##Fn<T>>(                             \
+    BroadcastComparison4DSlowImpl<T, name##Fn>(                                \
         op_params, input1_shape, input1_data, input2_shape, input2_data,       \
         output_shape, output_data);                                            \
   }                                                                            \
@@ -216,9 +211,9 @@ inline void BroadcastComparison4DSlowWithScaling(
       const float* input1_data, const RuntimeShape& input2_shape,              \
       const float* input2_data, const RuntimeShape& output_shape,              \
       bool* output_data) {                                                     \
-    BroadcastComparison4DSlow<name##Fn<float>>(                                \
-        op_params, input1_shape, input1_data, input2_shape, input2_data,       \
-        output_shape, output_data);                                            \
+    BroadcastComparison4DSlow<name##Fn>(op_params, input1_shape, input1_data,  \
+                                        input2_shape, input2_data,             \
+                                        output_shape, output_data);            \
   }                                                                            \
   template <typename T>                                                        \
   inline void Broadcast4DSlow##name##WithScaling(                              \
@@ -226,7 +221,7 @@ inline void BroadcastComparison4DSlowWithScaling(
       const T* input1_data, const RuntimeShape& input2_shape,                  \
       const T* input2_data, const RuntimeShape& output_shape,                  \
       bool* output_data) {                                                     \
-    BroadcastComparison4DSlowWithScaling<T, name##Fn<int32_t>>(                \
+    BroadcastComparison4DSlowWithScaling<T, name##Fn>(                         \
         op_params, input1_shape, input1_data, input2_shape, input2_data,       \
         output_shape, output_data);                                            \
   }
