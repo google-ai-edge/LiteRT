@@ -209,6 +209,15 @@ Or programmatically:
 LrtQualcommOptionsSetEnableJustInTime(options, true);
 ```
 
+From Kotlin, set the option through the compiled model's Qualcomm options:
+
+```kotlin
+val options =
+  CompiledModel.Options(Accelerator.NPU).apply {
+    qualcommOptions = CompiledModel.QualcommOptions(enableJustInTime = true)
+  }
+```
+
 ### Interaction with Caching
 
 Since JIT compilation relies on in-memory handles that exist only during the
