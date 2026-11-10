@@ -385,6 +385,119 @@ class NaiveMinMaxQuantizeTest(parameterized.TestCase):
     self.assertEqual(op_qsvs[output_tensor_name]["min"], 6.0)
     self.assertEqual(op_qsvs[output_tensor_name]["max"], 9.0)
 
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="channelwise_default_centered",
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          alg_params={},
+          expected_scale=[[1.0], [2.0]],
+          expected_zp=[[-0.5]],
+          expected_q=[[-2, -1, 0, 1], [1, 0, -1, -2]],
+      ),
+      dict(
+          testcase_name="tensorwise_default_centered",
+          granularity=qtyping.QuantGranularity.TENSORWISE,
+          alg_params={},
+          expected_scale=[[2.0]],
+          expected_zp=[[-0.5]],
+          expected_q=[[-1, -1, 0, 0], [1, 0, -1, -2]],
+      ),
+      dict(
+          testcase_name="channelwise_explicit_mid_tread",
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          alg_params={"centered": False},
+          expected_scale=[[1.5], [3.0]],
+          expected_zp=[[0], [0]],
+          expected_q=[[-1, 0, 0, 1], [1, 0, 0, -1]],
+      ),
+  )
+  def test_get_tensor_quant_params_int2_weights(
+      self, granularity, alg_params, expected_scale, expected_zp, expected_q
+  ):
+    fc_op = self._test_model.subgraphs[0].operators[3]
+    tensor_config = _TensorQuantConfig(
+        num_bits=2,
+        granularity=granularity,
+        algorithm_params=alg_params,
+    )
+    op_info = qtyping.OpInfo(
+        op=fc_op,
+        op_name=_TFLOpName.FULLY_CONNECTED,
+        subgraph_op_index=3,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=tensor_config
+        ),
+    )
+    test_data = np.array(
+        [[-1.5, -0.5, 0.5, 1.5], [3.0, 1.0, -1.0, -3.0]], dtype=np.float32
+    )
+    quant_params = naive_min_max_quantize.get_tensor_quant_params(
+        op_info=op_info,
+        tensor_quant_config=tensor_config,
+        tensor_content=test_data,
+    )
+    np.testing.assert_allclose(
+        quant_params.scale,
+        np.array(expected_scale, dtype=np.float32),
+        rtol=1e-6,
+        atol=1e-6,
+    )
+    np.testing.assert_array_equal(quant_params.zero_point, expected_zp)
+    np.testing.assert_array_equal(
+        cast(np.ndarray, quant_params.quantized_data),
+        np.array(expected_q, dtype=np.int8),
+    )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="non_bool_centered",
+          num_bits=2,
+          alg_params={"centered": "true"},
+          expected_error="centered must be a boolean",
+      ),
+      dict(
+          testcase_name="int4_centered",
+          num_bits=4,
+          alg_params={"centered": True},
+          expected_error=(
+              "Centered quantization requires signed symmetric 2-bit"
+          ),
+      ),
+  )
+  def test_get_tensor_quant_params_rejects_invalid_centered(
+      self, num_bits, alg_params, expected_error
+  ):
+    fc_op = self._test_model.subgraphs[0].operators[3]
+    tensor_config = _TensorQuantConfig(
+        num_bits=num_bits,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params=alg_params,
+    )
+    op_info = qtyping.OpInfo(
+        op=fc_op,
+        op_name=_TFLOpName.FULLY_CONNECTED,
+        subgraph_op_index=3,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=tensor_config
+        ),
+    )
+    with self.assertRaisesRegex(ValueError, expected_error):
+      naive_min_max_quantize.get_tensor_quant_params(
+          op_info=op_info,
+          tensor_quant_config=tensor_config,
+          tensor_content=np.ones((2, 4), dtype=np.float32),
+      )
+
+  def test_check_if_quantized_recognizes_blockwise_quantization(self):
+    tensor = qtyping.TensorT()
+    tensor.quantization = qtyping.QuantizationParametersT()
+    self.assertFalse(naive_min_max_quantize.check_if_quantized(tensor))
+    tensor.quantization.detailsType = (
+        qtyping.QuantizationDetails.BlockwiseQuantization
+    )
+    tensor.quantization.details = qtyping.BlockwiseQuantizationT()
+    self.assertTrue(naive_min_max_quantize.check_if_quantized(tensor))
+
 
 if __name__ == "__main__":
   absltest.main()
