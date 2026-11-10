@@ -18,13 +18,19 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "HTP/QnnHtpMem.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
+#include "QnnContext.h"  // from @qairt
 #include "QnnMem.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
@@ -51,6 +57,17 @@ LiteRtDispatchDeviceContextT::Create(
     ::qnn::QnnBackend& qnn_backend) {
   return Ptr(
       new LiteRtDispatchDeviceContextT(runtime_context, qnn, qnn_backend));
+}
+
+Expected<void> LiteRtDispatchDeviceContextT::SetExpectedFunctions(
+    absl::flat_hash_set<std::string> expected_functions) {
+  if (!context_registries_.empty()) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Expected functions must be set before any QNN context "
+                      "is created");
+  }
+  expected_functions_ = std::move(expected_functions);
+  return {};
 }
 
 Expected<LiteRtTensorBuffer> LiteRtDispatchDeviceContextT::GetTensorBuffer(
@@ -234,30 +251,68 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 Expected<const litert::qnn::QnnManager::ContextHandle&>
 LiteRtDispatchDeviceContextT::GetOrCreateContext(
     const void* bytecode_ptr, size_t bytecode_size,
-    Qnn_ProfileHandle_t profile_handle) {
+    absl::Span<const std::string> available_graphs,
+    absl::string_view required_graph, Qnn_ProfileHandle_t profile_handle) {
   ContextCacheKey key{bytecode_ptr, bytecode_size};
-  auto it = context_cache_.find(key);
-  if (it != context_cache_.end()) {
+  auto registry_it =
+      context_registries_
+          .try_emplace(key, available_graphs, expected_functions_)
+          .first;
+  auto& registry = registry_it->second;
+  if (auto* context = registry.FindContext(required_graph)) {
     LITERT_LOG(LITERT_INFO,
                "Reusing cached QNN context for bytecode %p (size %zu)",
                bytecode_ptr, bytecode_size);
-    return *(it->second);
+    return *context;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      std::vector<std::string> graphs_to_enable,
+      registry.PlanAdditionalGraphsToEnable(required_graph));
+
+  const auto bytecode =
+      absl::MakeSpan(static_cast<const uint8_t*>(bytecode_ptr), bytecode_size);
+  if (!graphs_to_enable.empty() &&
+      graphs_to_enable.size() < available_graphs.size()) {
+    LITERT_LOG(LITERT_INFO,
+               "Creating new QNN context for bytecode %p (size %zu) with %zu "
+               "of %zu graphs enabled: %s",
+               bytecode_ptr, bytecode_size, graphs_to_enable.size(),
+               available_graphs.size(),
+               absl::StrJoin(graphs_to_enable, ", ").c_str());
+    std::vector<const char*> graph_names;
+    graph_names.reserve(graphs_to_enable.size() + 1);
+    for (const std::string& name : graphs_to_enable) {
+      graph_names.emplace_back(name.c_str());
+    }
+    graph_names.emplace_back(nullptr);
+    QnnContext_Config_t enable_graphs_config = QNN_CONTEXT_CONFIG_INIT;
+    enable_graphs_config.option = QNN_CONTEXT_CONFIG_ENABLE_GRAPHS;
+    enable_graphs_config.enableGraphs = graph_names.data();
+    std::array<const QnnContext_Config_t*, 2> configs = {&enable_graphs_config,
+                                                         nullptr};
+    if (auto handle = qnn_manager_.CreateContextHandle(
+            qnn_backend_, absl::MakeSpan(configs), bytecode, profile_handle);
+        handle) {
+      return registry.RegisterContext(
+          std::make_unique<QnnManager::ContextHandle>(std::move(*handle)),
+          graphs_to_enable);
+    } else {
+      LITERT_LOG(LITERT_WARNING,
+                 "Failed to create QNN context with selected graphs, "
+                 "falling back to enabling all graphs: %s",
+                 handle.Error().Message().c_str());
+    }
   }
 
   LITERT_LOG(LITERT_INFO, "Creating new QNN context for bytecode %p (size %zu)",
              bytecode_ptr, bytecode_size);
-  auto context_handle_expected = qnn_manager_.CreateContextHandle(
-      qnn_backend_, QnnManager::DefaultContextConfigs(),
-      absl::MakeSpan(static_cast<const uint8_t*>(bytecode_ptr), bytecode_size),
-      profile_handle);
-
-  if (!context_handle_expected) {
-    return Unexpected(context_handle_expected.Error());
-  }
-
-  context_cache_[key] = std::make_unique<QnnManager::ContextHandle>(
-      std::move(*context_handle_expected));
-  return *(context_cache_[key]);
+  LITERT_ASSIGN_OR_RETURN(auto handle,
+                          qnn_manager_.CreateContextHandle(
+                              qnn_backend_, QnnManager::DefaultContextConfigs(),
+                              bytecode, profile_handle));
+  return registry.RegisterContextWithAllAvailableGraphs(
+      std::make_unique<QnnManager::ContextHandle>(std::move(handle)));
 }
 
 litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(

@@ -25,6 +25,7 @@
 #include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 #include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
@@ -236,6 +237,32 @@ LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime_context,
 LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
   delete device_context;
   PurgeNativeHeap();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DeviceContextSetExpectedFunctions(
+    LiteRtDispatchDeviceContext device_context,
+    const char* const* function_names, int num_function_names) {
+  if (!device_context || num_function_names < 0 ||
+      (num_function_names > 0 && !function_names)) {
+    LITERT_LOG(LITERT_ERROR,
+               "Invalid argument in DeviceContextSetExpectedFunctions");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  absl::flat_hash_set<std::string> expected_functions;
+  for (int i = 0; i < num_function_names; ++i) {
+    if (function_names[i] != nullptr) {
+      expected_functions.emplace(function_names[i]);
+    }
+  }
+  LITERT_LOG(LITERT_INFO, "Expected dispatch functions: %zu",
+             expected_functions.size());
+  if (auto status =
+          device_context->SetExpectedFunctions(std::move(expected_functions));
+      !status) {
+    LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
+    return status.Error().Status();
+  }
   return kLiteRtStatusOk;
 }
 
@@ -459,6 +486,11 @@ static const LiteRtDispatchInterface_V1 TheInterface = {
     /*.destroy_metrics=*/nullptr,
     /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
     /*.invocation_context_set_options=*/InvocationContextSetOptions,
+    /*.get_hooks=*/nullptr,
+    /*.attach_edge_buffer=*/nullptr,
+    /*.detach_edge_buffer=*/nullptr,
+    /*.device_context_set_expected_functions=*/
+    DeviceContextSetExpectedFunctions,
 };
 }  // namespace
 
