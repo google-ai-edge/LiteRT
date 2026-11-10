@@ -659,7 +659,13 @@ TEST(MatchersTest, OpVariadicMatching) {
   AttachInput(&in2, op);
   AttachInput(&in3, op);
 
+  auto& out = subgraph.EmplaceTensor();
+  AttachOutput(&out, op);
+  auto& subgraph_input = subgraph.EmplaceTensor();
+
   Op cc_op(ctx, &op);
+  Tensor cc_out(ctx, &out);
+  Tensor cc_subgraph_input(ctx, &subgraph_input);
 
   // Match prefix 2 inputs
   EXPECT_TRUE(Match(
@@ -676,6 +682,16 @@ TEST(MatchersTest, OpVariadicMatching) {
   // Match 4 inputs (fail)
   EXPECT_FALSE(Match(cc_op, m_OpVariadic<kLiteRtOpCodeTflConcatenation>(
                                 m_Any(), m_Any(), m_Any(), m_Any())));
+
+  // Match through a tensor's defining op.
+  EXPECT_TRUE(Match(
+      cc_out, m_OpVariadic<kLiteRtOpCodeTflConcatenation>(m_Any(), m_Any())));
+  EXPECT_FALSE(
+      Match(cc_out, m_OpVariadic<kLiteRtOpCodeTflAdd>(m_Any(), m_Any())));
+
+  EXPECT_FALSE(Match(
+      cc_subgraph_input,
+      m_OpVariadic<kLiteRtOpCodeTflConcatenation>(m_Any(), m_Any())));
 }
 
 TEST(MatchersTest, CommutativeMatching) {
