@@ -59,7 +59,7 @@
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/core/util/tensor_type_util.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/bytecode_header.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
@@ -653,7 +653,7 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
   int num_supported_tensor_buffer_types =
       sizeof(supported_tensor_buffer_types) /
       sizeof(supported_tensor_buffer_types[0]);
-  auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
+  auto buffer_size = litert::RankedTensorType(tensor_type).Bytes();
   if (!buffer_size) {
     return litert::Unexpected(buffer_size.Error());
   }
