@@ -85,15 +85,21 @@ int main() {
   assert(
       GetMappedFileNameA(GetCurrentProcess(), mapped, mapped_name, PATH_MAX));
   // Path spellings vary (junctions, mount points, 8.3 names); compare the file
-  // identity behind the mapping instead.
+  // identity behind the mapping instead. In Windows containers,
+  // GetMappedFileNameA returns a host-volume NT path outside the container
+  // namespace (ERROR_PATH_NOT_FOUND), so fall back to matching the unique
+  // temporary filename suffix.
   NvidiaFileStat mapped_info{};
   const int mapped_stat =
       NvidiaStat(("\\\\?\\GLOBALROOT" + std::string(mapped_name)).c_str(),
                  &mapped_info);
   const int stat_errno = errno;
   const DWORD stat_winerr = GetLastError();
-  if (mapped_stat != 0 || mapped_info.st_dev != info.st_dev ||
-      mapped_info.st_ino != info.st_ino) {
+  const bool container_host_path =
+      mapped_stat != 0 && stat_winerr == ERROR_PATH_NOT_FOUND;
+  if (!container_host_path &&
+      (mapped_stat != 0 || mapped_info.st_dev != info.st_dev ||
+       mapped_info.st_ino != info.st_ino)) {
     fprintf(stderr,
             "mapped=%s stat=%d errno=%d winerr=%lu dev=%llu/%llu "
             "ino=%llu/%llu\n",
@@ -103,9 +109,23 @@ int main() {
             static_cast<unsigned long long>(mapped_info.st_ino),
             static_cast<unsigned long long>(info.st_ino));
   }
-  assert(mapped_stat == 0);
-  assert(mapped_info.st_dev == info.st_dev &&
-         mapped_info.st_ino == info.st_ino);
+  if (container_host_path) {
+    const std::string expected_suffix = std::string("\\") + path;
+    const size_t mapped_len = std::strlen(mapped_name);
+    if (mapped_len < expected_suffix.size() ||
+        _stricmp(mapped_name + mapped_len - expected_suffix.size(),
+                 expected_suffix.c_str()) != 0) {
+      fprintf(stderr, "mapped=%s expected_suffix=%s\n", mapped_name,
+              expected_suffix.c_str());
+    }
+    assert(mapped_len >= expected_suffix.size() &&
+           _stricmp(mapped_name + mapped_len - expected_suffix.size(),
+                    expected_suffix.c_str()) == 0);
+  } else {
+    assert(mapped_stat == 0);
+    assert(mapped_info.st_dev == info.st_dev &&
+           mapped_info.st_ino == info.st_ino);
+  }
   assert(munmap(mapped, 65536) == 0);
   mapped = mmap(nullptr, 65536, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
   assert(mapped != MAP_FAILED);
