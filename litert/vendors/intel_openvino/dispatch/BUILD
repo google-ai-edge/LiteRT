@@ -43,6 +43,13 @@ NPU_HAL_COPTS = select({
     "//conditions:default": [],
 })
 
+# MSVC-style compilers (cl.exe, clang-cl) enable C++ exceptions with /EHsc;
+# -fexceptions is not an MSVC flag.
+_EXCEPTIONS_COPTS = select({
+    "//litert/runtime/dispatch:windows_msvc": ["/EHsc"],
+    "//conditions:default": ["-fexceptions"],
+})
+
 litert_dynamic_lib(
     name = "dispatch_api",
     srcs = [
@@ -149,7 +156,7 @@ litert_bin(
         "@platforms//os:windows": ["mapped_pages_win.cc"],
         "//conditions:default": ["mapped_pages_linux.cc"],
     }),
-    copts = ["-fexceptions"] + select({
+    copts = _EXCEPTIONS_COPTS + select({
         "//litert/runtime/dispatch:windows_msvc": [
             "/DLITERT_COMPILE_LIBRARY",
             "/wd4018",  # -Wno-sign-compare
@@ -227,7 +234,7 @@ litert_lib(
         "openvino_tensor_buffer.h",
         "weight_bank_runtime.h",
     ],
-    copts = ["-fexceptions"],
+    copts = _EXCEPTIONS_COPTS,
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         "//litert/c:litert_common",

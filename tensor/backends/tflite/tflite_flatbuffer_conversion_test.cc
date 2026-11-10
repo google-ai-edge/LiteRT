@@ -61,6 +61,7 @@ using ::litert::tensor::IsOk;
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::Eq;
+using ::testing::HasSubstr;
 using ::testing::IsNull;
 using ::testing::Lt;
 using ::testing::Not;
@@ -2530,6 +2531,213 @@ TEST(SerializationTest, CanSerializeBlockwiseQuantization) {
       reinterpret_cast<const int64_t*>(zp_tensor_tflite->data.raw);
   EXPECT_EQ(zp_data[0], 12);
   EXPECT_EQ(zp_data[1], 34);
+}
+
+TEST(SerializationTest, CanSerializeBlockwiseQuantizationWithNamedScales) {
+  const std::string model_path =
+      testing::TempDir() + "/blockwise_quant_named_scales.tflite";
+  // Expert weights laid out [out, experts, 1, in] with one float32 scale per
+  // (output row, expert, block of 4 inputs). The scales are a tensor of the
+  // graph, e.g. the scale input of a custom op that consumes the weights.
+  const std::vector<float> scale_data = {0.5f, 1.0f, 1.5f, 2.0f,
+                                         2.5f, 3.0f, 3.5f, 4.0f};
+  TensorTf scales({.name = "expert_scales",
+                   .type = Type::kFP32,
+                   .shape = {2, 2, 1, 2},
+                   .buffer = scale_data});
+
+  auto quantization = std::make_shared<BlockwiseQuantization>(
+      std::vector<float>{}, std::vector<int64_t>{}, /*block_size=*/4,
+      /*quantized_dimension=*/0);
+  quantization->block_shape = {1, 1, 1, 4};
+  quantization->scales_tensor_name = "expert_scales";
+  TensorTf weights({.name = "expert_weights",
+                    .type = Type::kI8,
+                    .shape = {2, 2, 1, 8},
+                    .buffer = std::vector<int8_t>(32, 1),
+                    .quantization = quantization});
+
+  ASSERT_THAT(Save({weights, scales}, model_path), IsOk());
+
+  auto model = tflite::FlatBufferModel::BuildFromFile(model_path.c_str());
+  ASSERT_NE(model, nullptr);
+  const tflite::Model* model_fb = model->GetModel();
+  ASSERT_NE(model_fb, nullptr);
+  ASSERT_EQ(model_fb->subgraphs()->size(), 1);
+  const tflite::SubGraph* subgraph = model_fb->subgraphs()->Get(0);
+
+  // No scale tensor is added: the subgraph holds the weights and the scales.
+  ASSERT_EQ(subgraph->tensors()->size(), 2);
+  int weight_tensor_idx = -1;
+  int scale_tensor_idx = -1;
+  for (int i = 0; i < subgraph->tensors()->size(); ++i) {
+    const tflite::Tensor* t = subgraph->tensors()->Get(i);
+    if (t->name() && t->name()->str() == "expert_weights") {
+      weight_tensor_idx = i;
+    } else if (t->name() && t->name()->str() == "expert_scales") {
+      scale_tensor_idx = i;
+    }
+  }
+  ASSERT_GE(weight_tensor_idx, 0);
+  ASSERT_GE(scale_tensor_idx, 0);
+  EXPECT_EQ(subgraph->tensors()->Get(scale_tensor_idx)->type(),
+            tflite::TensorType_FLOAT32);
+
+  const tflite::QuantizationParameters* q_params =
+      subgraph->tensors()->Get(weight_tensor_idx)->quantization();
+  ASSERT_NE(q_params, nullptr);
+  EXPECT_EQ(q_params->quantized_dimension(), 0);
+  ASSERT_EQ(q_params->details_type(),
+            tflite::QuantizationDetails_BlockwiseQuantization);
+  const tflite::BlockwiseQuantization* bwq_fb =
+      q_params->details_as_BlockwiseQuantization();
+  ASSERT_NE(bwq_fb, nullptr);
+  EXPECT_EQ(bwq_fb->scales(), scale_tensor_idx);
+  EXPECT_EQ(bwq_fb->zero_points(), -1);
+  EXPECT_EQ(bwq_fb->block_size(), 4);
+  ASSERT_NE(bwq_fb->block_shape(), nullptr);
+  EXPECT_THAT(std::vector<int32_t>(bwq_fb->block_shape()->begin(),
+                                   bwq_fb->block_shape()->end()),
+              ElementsAre(1, 1, 1, 4));
+
+  std::unique_ptr<tflite::Interpreter> interpreter;
+  tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+  ASSERT_EQ(tflite::InterpreterBuilder(*model, resolver)(&interpreter),
+            kTfLiteOk);
+  ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+
+  const TfLiteTensor* weight_tensor_tflite =
+      interpreter->tensor(weight_tensor_idx);
+  ASSERT_NE(weight_tensor_tflite, nullptr);
+  ASSERT_EQ(weight_tensor_tflite->quantization.type,
+            kTfLiteBlockwiseQuantizationV2);
+  const auto* bwq_tflite =
+      reinterpret_cast<const TfLiteBlockwiseQuantizationV2*>(
+          weight_tensor_tflite->quantization.params);
+  ASSERT_NE(bwq_tflite, nullptr);
+  EXPECT_EQ(bwq_tflite->scale, scale_tensor_idx);
+  EXPECT_EQ(bwq_tflite->zero_point, -1);
+  EXPECT_THAT(bwq_tflite->block_shape, TfLiteArrayIs({1, 1, 1, 4}));
+
+  const TfLiteTensor* scale_tensor_tflite =
+      interpreter->tensor(scale_tensor_idx);
+  ASSERT_NE(scale_tensor_tflite, nullptr);
+  EXPECT_EQ(scale_tensor_tflite->type, kTfLiteFloat32);
+  const float* scale_values =
+      reinterpret_cast<const float*>(scale_tensor_tflite->data.raw);
+  EXPECT_THAT(absl::MakeConstSpan(scale_values, scale_data.size()),
+              ElementsAreArray(scale_data));
+}
+
+TEST(SerializationTest, BlockwiseQuantizationWithUnknownScalesTensorFails) {
+  auto quantization = std::make_shared<BlockwiseQuantization>(
+      std::vector<float>{}, std::vector<int64_t>{}, /*block_size=*/4,
+      /*quantized_dimension=*/0);
+  quantization->block_shape = {1, 4};
+  quantization->scales_tensor_name = "missing_scales";
+  TensorTf weights({.name = "weights",
+                    .type = Type::kI8,
+                    .shape = {2, 8},
+                    .buffer = std::vector<int8_t>(16, 1),
+                    .quantization = quantization});
+
+  std::vector<char> flatbuffer;
+  const absl::Status status = Save({weights}, flatbuffer);
+  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(status.message(), HasSubstr("missing_scales"));
+}
+
+TEST(SerializationTest, BlockwiseQuantizationBlockShapeWithInlineScalesFails) {
+  auto quantization = std::make_shared<BlockwiseQuantization>(
+      std::vector<float>{0.5f, 1.5f}, std::vector<int64_t>{}, /*block_size=*/4,
+      /*quantized_dimension=*/0);
+  quantization->block_shape = {1, 4};
+  TensorTf weights({.name = "weights",
+                    .type = Type::kI8,
+                    .shape = {2, 4},
+                    .buffer = std::vector<int8_t>(8, 1),
+                    .quantization = quantization});
+
+  std::vector<char> flatbuffer;
+  const absl::Status status = Save({weights}, flatbuffer);
+  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(status.message(), HasSubstr("scales_tensor_name"));
+}
+
+TEST(SerializationTest, BlockwiseQuantizationNamedScalesWithZeroPointsFails) {
+  auto int_zero_points = std::make_shared<BlockwiseQuantization>(
+      std::vector<float>{}, std::vector<int64_t>{1, 1}, /*block_size=*/4,
+      /*quantized_dimension=*/0);
+  auto float_zero_points = std::make_shared<BlockwiseQuantization>(
+      std::vector<float>{}, std::vector<int64_t>{}, /*block_size=*/4,
+      /*quantized_dimension=*/0,
+      /*float_zero_points=*/std::vector<float>{-0.5f, -0.5f});
+  for (const auto& quantization : {int_zero_points, float_zero_points}) {
+    quantization->block_shape = {1, 4};
+    quantization->scales_tensor_name = "expert_scales";
+    TensorTf scales({.name = "expert_scales",
+                     .type = Type::kFP32,
+                     .shape = {2, 1},
+                     .buffer = std::vector<float>{0.5f, 1.0f}});
+    TensorTf weights({.name = "expert_weights",
+                      .type = Type::kI8,
+                      .shape = {2, 4},
+                      .buffer = std::vector<int8_t>(8, 1),
+                      .quantization = quantization});
+
+    std::vector<char> flatbuffer;
+    const absl::Status status = Save({weights, scales}, flatbuffer);
+    EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+    EXPECT_THAT(status.message(), HasSubstr("zero points"));
+  }
+}
+
+TEST(SerializationTest, BlockwiseQuantizationNamedScalesUseFirstTensorOfName) {
+  const std::string model_path =
+      testing::TempDir() + "/blockwise_quant_duplicate_scales_name.tflite";
+  TensorTf first_scales({.name = "expert_scales",
+                         .type = Type::kFP32,
+                         .shape = {2, 1},
+                         .buffer = std::vector<float>{0.5f, 1.0f}});
+  TensorTf second_scales({.name = "expert_scales",
+                          .type = Type::kFP32,
+                          .shape = {2, 1},
+                          .buffer = std::vector<float>{2.0f, 4.0f}});
+  auto quantization = std::make_shared<BlockwiseQuantization>(
+      std::vector<float>{}, std::vector<int64_t>{}, /*block_size=*/4,
+      /*quantized_dimension=*/0);
+  quantization->block_shape = {1, 4};
+  quantization->scales_tensor_name = "expert_scales";
+  TensorTf weights({.name = "expert_weights",
+                    .type = Type::kI8,
+                    .shape = {2, 4},
+                    .buffer = std::vector<int8_t>(8, 1),
+                    .quantization = quantization});
+
+  ASSERT_THAT(Save({weights, first_scales, second_scales}, model_path), IsOk());
+
+  auto model = tflite::FlatBufferModel::BuildFromFile(model_path.c_str());
+  ASSERT_NE(model, nullptr);
+  const tflite::SubGraph* subgraph = model->GetModel()->subgraphs()->Get(0);
+  int weight_tensor_idx = -1;
+  std::vector<int> scale_tensor_indices;
+  for (int i = 0; i < subgraph->tensors()->size(); ++i) {
+    const tflite::Tensor* t = subgraph->tensors()->Get(i);
+    if (t->name() && t->name()->str() == "expert_weights") {
+      weight_tensor_idx = i;
+    } else if (t->name() && t->name()->str() == "expert_scales") {
+      scale_tensor_indices.push_back(i);
+    }
+  }
+  ASSERT_GE(weight_tensor_idx, 0);
+  ASSERT_EQ(scale_tensor_indices.size(), 2);
+  const tflite::BlockwiseQuantization* bwq_fb =
+      subgraph->tensors()
+          ->Get(weight_tensor_idx)
+          ->quantization()
+          ->details_as_BlockwiseQuantization();
+  ASSERT_NE(bwq_fb, nullptr);
+  EXPECT_EQ(bwq_fb->scales(), scale_tensor_indices.front());
 }
 
 TEST(SerializationTest, CanSerializeCumsum) {

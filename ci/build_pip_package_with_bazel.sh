@@ -149,6 +149,23 @@ if [[ "${LITERT_PACKAGE_MODE:-wheel}" == "prebuilts" ]]; then
     bazel-bin/litert/vendors/qualcomm/compiler/libLiteRtCompilerPlugin_Qualcomm.so \
     bazel-bin/litert/vendors/qualcomm/dispatch/libLiteRtDispatch_Qualcomm.so \
     "${PREBUILTS_ARM64_DIR}/"
+
+  # Cross-compile the Windows x86_64 Intel OpenVINO DLLs against the MSVC
+  # OpenVINO SDK using @llvm18_linux_x86_64 clang-cl + xwin. Omit Linux/GCC
+  # flags (${BAZEL_FLAGS} has -O3 and --cxxopt=-std=gnu++17) because clang-cl
+  # uses MSVC flags (-c opt -> /O2 /DNDEBUG, --cxxopt=/std:c++20).
+  bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
+    --config=cross_compile_windows_x86_64 \
+    ${BAZEL_CONFIG_FLAGS} ${CUSTOM_BAZEL_FLAGS} \
+    //litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin_IntelOpenvino \
+    //litert/vendors/intel_openvino/dispatch:LiteRtDispatch_IntelOpenvino
+
+  PREBUILTS_WIN_X86_DIR="dist/prebuilts/windows_x86_64"
+  mkdir -p "${PREBUILTS_WIN_X86_DIR}"
+  install -m 0755 \
+    bazel-bin/litert/vendors/intel_openvino/compiler/LiteRtCompilerPlugin_IntelOpenvino.dll \
+    bazel-bin/litert/vendors/intel_openvino/dispatch/LiteRtDispatch_IntelOpenvino.dll \
+    "${PREBUILTS_WIN_X86_DIR}/"
   exit 0
 fi
 

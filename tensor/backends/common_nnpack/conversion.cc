@@ -53,6 +53,27 @@ absl::StatusOr<std::vector<float>> DequantizeInt8ConstantTensor(
   const size_t out_channels = info.shape[0];
   const size_t in_channels = info.shape[1];
   const size_t num_elements = out_channels * in_channels;
+  if (info.type != Type::kI8) {
+    return absl::UnimplementedError(
+        absl::StrFormat("Only INT8 weights can be dequantized, got type %d",
+                        static_cast<int>(info.type)));
+  }
+  if (pcq.quantized_dimension != 0) {
+    return absl::UnimplementedError(
+        "Only weights quantized along dimension 0 can be dequantized");
+  }
+  const auto valid_count = [&](size_t count, bool allow_empty) {
+    return (allow_empty && count == 0) || count == 1 || count == out_channels;
+  };
+  if (!valid_count(pcq.scales.size(), /*allow_empty=*/false) ||
+      !valid_count(pcq.zero_points.size(), /*allow_empty=*/true) ||
+      !valid_count(pcq.float_zero_points.size(), /*allow_empty=*/true)) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "%zu scales, %zu zero points and %zu float zero points don't match "
+        "%zu output channels",
+        pcq.scales.size(), pcq.zero_points.size(), pcq.float_zero_points.size(),
+        out_channels));
+  }
 
   if (raw_data.size() < num_elements) {
     return absl::InvalidArgumentError(
@@ -65,14 +86,13 @@ absl::StatusOr<std::vector<float>> DequantizeInt8ConstantTensor(
       reinterpret_cast<const int8_t*>(raw_data.data());
 
   for (size_t o = 0; o < out_channels; ++o) {
-    const float scale = pcq.scales[o];
-    const int32_t zero_point =
-        pcq.zero_points.empty() ? 0 : static_cast<int32_t>(pcq.zero_points[o]);
+    const float scale = pcq.scales.size() == 1 ? pcq.scales[0] : pcq.scales[o];
+    const float zero_point = pcq.ZeroPointAt(o);
     const size_t row_offset = o * in_channels;
     for (size_t i = 0; i < in_channels; ++i) {
       const size_t idx = row_offset + i;
       dequantized[idx] =
-          static_cast<float>(quantized_data[idx] - zero_point) * scale;
+          (static_cast<float>(quantized_data[idx]) - zero_point) * scale;
     }
   }
 
