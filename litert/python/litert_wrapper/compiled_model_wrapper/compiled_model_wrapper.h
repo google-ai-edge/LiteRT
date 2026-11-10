@@ -49,6 +49,7 @@ struct CompilationOptions {
   int qualcomm_dsp_performance_mode = -1;
   int qualcomm_use_int64_bias_as_int32 = -1;
   int qualcomm_enable_weight_sharing = -1;
+  int qualcomm_enable_just_in_time = -1;
   int qualcomm_use_conv_hmx = -1;
   int qualcomm_use_fold_relu = -1;
   int qualcomm_profiling = -1;
@@ -63,6 +64,8 @@ struct CompilationOptions {
   int qualcomm_backend = -1;
   std::string qualcomm_saver_output_dir;
   int qualcomm_graph_io_tensor_mem_type = -1;
+  std::string qualcomm_qnn_lib_dir;
+  std::string qualcomm_dsp_skel_dir;
 
   int intel_openvino_graph_backend = -1;
   int intel_openvino_performance_mode = -1;

@@ -16,9 +16,28 @@
 #include <thread>  // NOLINT
 #include <utility>
 
+#include "QnnTypes.h"  // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/common.h"
 
 namespace qnn {
+
+inline Qnn_Priority_t GetGraphPriorityValue(GraphPriority graph_priority) {
+  switch (graph_priority) {
+    case GraphPriority::kDefault:
+      return QNN_PRIORITY_DEFAULT;
+    case GraphPriority::kLow:
+      return QNN_PRIORITY_LOW;
+    case GraphPriority::kNormal:
+      return QNN_PRIORITY_NORMAL;
+    case GraphPriority::kNormalHigh:
+      return QNN_PRIORITY_NORMAL_HIGH;
+    case GraphPriority::kHigh:
+      return QNN_PRIORITY_HIGH;
+    default:
+      return QNN_PRIORITY_UNDEFINED;
+  }
+}
 
 struct PowerConfig {
   static constexpr uint32_t kSleepMinLatency = 40;

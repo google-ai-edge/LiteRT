@@ -63,6 +63,9 @@ class Latency : public Printable<Microseconds, Microseconds, Microseconds,
     latencies_.push_back(micro.count());
   }
 
+  // Recorded per-iteration latency samples in microseconds.
+  const std::vector<Microseconds>& Samples() const { return latencies_; }
+
   // Average latency.
   Microseconds Avg() const {
     return ::litert::Avg(latencies_.cbegin(), latencies_.cend());

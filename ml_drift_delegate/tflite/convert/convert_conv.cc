@@ -85,7 +85,7 @@ bool TryConvertConvToFullyConnected(
   }
 
   ::ml_drift::ir::IrOp* fc_op = ir_model.add_op();
-  fc_op->name = ToString(::ml_drift::OperationType::FULLY_CONNECTED);
+  fc_op->name = ToString(::ml_drift::OperationType::kFullyConnected);
   ir_model.AddConsumer(input_tensor_id, fc_op->id);
 
   bool configured_quantized = false;
@@ -143,9 +143,9 @@ void ResolveGroupedConvolution(
     ::ml_drift::ir::IrModel& ir_model) {
   // Resolve grouped convolution into Split -> Convs -> Concat
   ::ml_drift::ir::IrOp* split_op = ir_model.add_op();
-  split_op->name = ToString(::ml_drift::OperationType::SPLIT);
+  split_op->name = ToString(::ml_drift::OperationType::kSplit);
   ::ml_drift::SplitAttributes split_attr;
-  split_attr.axis = ::ml_drift::Axis::CHANNELS;
+  split_attr.axis = ::ml_drift::Axis::kChannels;
   split_op->attr = std::move(split_attr);
   ir_model.AddConsumer(tensor_map[input_id], split_op->id);
 
@@ -164,20 +164,20 @@ void ResolveGroupedConvolution(
     split_output_ids[i] = split_out->id;
   }
 
-  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>&
+  ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>&
       orig_weights = GetFloatWeights(attr);
 
   std::vector<::ml_drift::ir::IrTensorId> conv_output_ids(
       split_outputs_count);
   for (int i = 0; i < split_outputs_count; ++i) {
     ::ml_drift::ir::IrOp* grp_conv_op = ir_model.add_op();
-    grp_conv_op->name = ToString(::ml_drift::OperationType::CONVOLUTION_2D);
+    grp_conv_op->name = ToString(::ml_drift::OperationType::kConvolution2D);
 
     ::ml_drift::Convolution2DAttributes grp_conv_attr = attr;
     grp_conv_attr.groups = 1;
 
     auto& grp_weights = grp_conv_attr.weights.emplace<
-        ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
+        ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>();
     grp_weights.shape = ::ml_drift::OHWI(dst_group_size, orig_weights.shape.h,
                                          orig_weights.shape.w, src_group_size);
     grp_weights.data.resize(grp_weights.shape.DimensionsProduct() +
@@ -222,9 +222,9 @@ void ResolveGroupedConvolution(
   }
 
   ::ml_drift::ir::IrOp* concat_op = ir_model.add_op();
-  concat_op->name = ToString(::ml_drift::OperationType::CONCAT);
+  concat_op->name = ToString(::ml_drift::OperationType::kConcat);
   ::ml_drift::ConcatAttributes concat_attr;
-  concat_attr.axis = ::ml_drift::Axis::CHANNELS;
+  concat_attr.axis = ::ml_drift::Axis::kChannels;
   concat_op->attr = std::move(concat_attr);
   for (int i = 0; i < split_outputs_count; ++i) {
     ir_model.AddConsumer(conv_output_ids[i], concat_op->id);
@@ -256,21 +256,21 @@ void ConvertConv(
       !ir_model.tensor(weights_id)->buffer_source.is_shared) {
     if (weights_tensor->type == kTfLiteInt4) {
       auto& weights = attr.weights.emplace<
-          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT4>>();
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt4>>();
       PopulateTensor(weights_tensor, node.inputs->data[1], &weights,
                      PopulateTensorFlags::kExtraBytes,
                      options.enable_spanned_weights, &attr.scale,
                      &attr.zero_point);
     } else if (weights_tensor->type == kTfLiteInt8) {
       auto& weights = attr.weights.emplace<
-          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::INT8>>();
+          ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kInt8>>();
       PopulateTensor(weights_tensor, node.inputs->data[1], &weights,
                      PopulateTensorFlags::kExtraBytes,
                      options.enable_spanned_weights, &attr.scale,
                      &attr.zero_point);
     } else {
       auto& weights = attr.weights.emplace<::ml_drift::Tensor<
-          ::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
+          ::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>();
       PopulateTensor(weights_tensor, node.inputs->data[1], &weights,
                      PopulateTensorFlags::kExtraBytes,
                      options.enable_spanned_weights);
@@ -282,7 +282,7 @@ void ConvertConv(
         std::visit([](const auto& w) { return w.shape; }, attr.weights).i;
   } else {
     auto& weights = attr.weights.emplace<
-        ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>>();
+        ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>();
     const ::ml_drift::BHWC weights_shape =
         ir_model.tensor(weights_id)->desc.GetBHWCShape();
     // For runtime weights, TFLite conv2d weights are OHWI.
@@ -333,7 +333,7 @@ void ConvertConv(
                               ir_model);
   } else {
     ::ml_drift::ir::IrOp* conv_op = ir_model.add_op();
-    conv_op->name = ToString(::ml_drift::OperationType::CONVOLUTION_2D);
+    conv_op->name = ToString(::ml_drift::OperationType::kConvolution2D);
     ir_model.AddConsumer(tensor_map[input_id], conv_op->id);
     if (!tflite::IsConstantTensor(weights_tensor) ||
         ir_model.tensor(weights_id)->buffer_source.is_shared) {

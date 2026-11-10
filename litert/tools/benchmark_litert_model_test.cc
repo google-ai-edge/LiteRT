@@ -29,7 +29,11 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/c/options/litert_gpu_options.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/tools/flags/vendors/mediatek_flags.h"
@@ -69,6 +73,9 @@ class BenchmarkLiteRtModelTest : public ::testing::Test {
   std::vector<litert::TensorBuffer>& GetInputBuffers(
       BenchmarkLiteRtModel& benchmark) {
     return *benchmark.input_buffers_;
+  }
+  Options CreateCompiledModelOptions(const BenchmarkParams& params) {
+    return BenchmarkLiteRtModel::CreateCompiledModelOptions(params);
   }
 };
 
@@ -272,6 +279,25 @@ TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithInputLayerValueRange) {
     EXPECT_GE(data[i], 10.0f);
     EXPECT_LE(data[i], 20.0f);
   }
+}
+
+TEST_F(BenchmarkLiteRtModelTest,
+       GpuSerializationOptionsEnableSerializeProgramCache) {
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<bool>("use_cpu", false);
+  params.Set<bool>("use_gpu", true);
+  params.Set<std::string>("gpu_serialization_dir", "/tmp/gpu_cache");
+  params.Set<std::string>("gpu_model_cache_key", "model_key");
+
+  Options options = CreateCompiledModelOptions(params);
+  auto gpu_options = options.GetGpuOptions();
+  ASSERT_TRUE(gpu_options.HasValue());
+
+  bool serialize_program_cache = false;
+  EXPECT_EQ(LrtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+                &serialize_program_cache, gpu_options->Get()),
+            kLiteRtStatusOk);
+  EXPECT_TRUE(serialize_program_cache);
 }
 
 }  // namespace

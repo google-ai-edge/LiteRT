@@ -15,6 +15,7 @@
 #include <cstddef>
 
 #include <gtest/gtest.h>
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
@@ -25,6 +26,7 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/environment.h"
+#include "litert/runtime/dispatch/litert_dispatch_test_helper.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
@@ -53,10 +55,10 @@ LiteRtStatus DummyUnlock(HwMemoryInfoPtr hw_memory_info) {
   return kLiteRtStatusOk;
 }
 
-LiteRtCustomTensorBufferHandlersDef CustomBufferHandlersDef = {
+const LiteRtCustomTensorBufferHandlersDef_V1 CustomBufferHandlersDef = {
     /*.abi_header=*/
     {
-        /*.struct_size=*/sizeof(LiteRtCustomTensorBufferHandlersDef),
+        /*.struct_size=*/sizeof(LiteRtCustomTensorBufferHandlersDef_V1),
         /*.major_version=*/1,
         /*.minor_version=*/0,
         /*.reserved=*/0,
@@ -73,8 +75,11 @@ LiteRtCustomTensorBufferHandlersDef CustomBufferHandlersDef = {
     /*.supported_buffer_types=*/{kLiteRtTensorBufferTypeUserCustomBuffer},
 };
 
+int InitializeCount = 0;
+
 LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
                         LiteRtEnvironment environment, LiteRtOptions options) {
+  ++InitializeCount;
   return kLiteRtStatusOk;
 }
 
@@ -99,7 +104,14 @@ LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
   return kLiteRtStatusOk;
 }
 
-LiteRtDispatchInterface CustomBufferTestInterface = {
+const LiteRtDispatchInterface_V1 CustomBufferTestInterface = {
+    /*.abi_header=*/
+    {
+        /*.struct_size=*/sizeof(LiteRtDispatchInterface_V1),
+        /*.major_version=*/1,
+        /*.minor_version=*/0,
+        /*.reserved=*/0,
+    },
     /*.initialize=*/Initialize,
     /*.get_vendor_id=*/GetVendorId,
     /*.get_build_id=*/GetBuildId,
@@ -127,50 +139,98 @@ LiteRtDispatchInterface CustomBufferTestInterface = {
     /*.invocation_context_set_options=*/nullptr,
 };
 
-LiteRtDispatchApi CustomBufferTestApi = {
-    /*.abi_header=*/
-    {
-        /*.struct_size=*/sizeof(LiteRtDispatchApi),
-        /*.major_version=*/1,
-        /*.minor_version=*/0,
-        /*.reserved=*/0,
-    },
-    /*.version=*/
-    {/*.major=*/LITERT_API_VERSION_MAJOR,
-     /*.minor=*/LITERT_API_VERSION_MINOR,
-     /*.patch=*/LITERT_API_VERSION_PATCH},
-    /*.interface=*/&CustomBufferTestInterface,
-    /*.async_interface=*/nullptr,
-    /*.graph_interface=*/nullptr,
-    /*.tensor_buffer_handlers_def=*/&CustomBufferHandlersDef,
-};
-
-LiteRtStatus GetCustomBufferTestApi(LiteRtDispatchApi* api) {
-  *api = CustomBufferTestApi;
-  return kLiteRtStatusOk;
+LiteRtStatus QueryCustomBufferTestInterface(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (litert_runtime_version.major >= 1) {
+    if (interface_id == kLiteRtInterfaceBasic) {
+      *out_interface = &CustomBufferTestInterface;
+      return kLiteRtStatusOk;
+    } else if (interface_id == kLiteRtInterfaceCustomTensorBufferHandlers) {
+      *out_interface = &CustomBufferHandlersDef;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
 }
 
 class StaticLinkedDispatchApiScope {
  public:
-  explicit StaticLinkedDispatchApiScope(
-      LiteRtStatus (*get_api)(LiteRtDispatchApi*))
-      : previous_get_api_(LiteRtStaticLinkedDispatchGetApi) {
-    LiteRtStaticLinkedDispatchGetApi = get_api;
+  explicit StaticLinkedDispatchApiScope(LiteRtDispatchQueryInterfaceT query_fn)
+      : previous_query_fn_(LiteRtStaticLinkedDispatchQueryInterface) {
+    internal::ResetDispatchForTest();
+    LiteRtStaticLinkedDispatchQueryInterface = query_fn;
   }
 
   ~StaticLinkedDispatchApiScope() {
-    LiteRtStaticLinkedDispatchGetApi = previous_get_api_;
+    LiteRtStaticLinkedDispatchQueryInterface = previous_query_fn_;
+    internal::ResetDispatchForTest();
   }
 
  private:
-  LiteRtStatus (*previous_get_api_)(LiteRtDispatchApi*);
+  LiteRtDispatchQueryInterfaceT previous_query_fn_;
 };
+
+const LiteRtCustomTensorBufferHandlersDef_V1
+    IncompatibleCustomBufferHandlersDef = {
+        /*.abi_header=*/
+        {
+            /*.struct_size=*/sizeof(LiteRtAbiHeader),
+            /*.major_version=*/1,
+            /*.minor_version=*/0,
+            /*.reserved=*/0,
+        },
+        /*.create_func=*/DummyCreate,
+        /*.destroy_func=*/DummyDestroy,
+        /*.lock_func=*/DummyLock,
+        /*.unlock_func=*/DummyUnlock,
+        /*.clear_func=*/nullptr,
+        /*.import_func=*/nullptr,
+        /*.device_tag=*/kLiteRtEnvOptionTagNull,
+        /*.queue_tag=*/kLiteRtEnvOptionTagNull,
+        /*.num_supported_buffer_types=*/1,
+        /*.supported_buffer_types=*/{kLiteRtTensorBufferTypeUserCustomBuffer},
+    };
+
+LiteRtStatus QueryIncompatibleCustomBufferInterface(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (litert_runtime_version.major >= 1) {
+    if (interface_id == kLiteRtInterfaceBasic) {
+      *out_interface = &CustomBufferTestInterface;
+      return kLiteRtStatusOk;
+    } else if (interface_id == kLiteRtInterfaceCustomTensorBufferHandlers) {
+      *out_interface = &IncompatibleCustomBufferHandlersDef;
+      return kLiteRtStatusOk;
+    }
+  }
+  return kLiteRtStatusErrorUnsupported;
+}
+
+TEST(DispatchDelegateCustomBufferTest,
+     IncompatibleCustomBufferHandlersDefRejected) {
+  StaticLinkedDispatchApiScope static_dispatch_api(
+      QueryIncompatibleCustomBufferInterface);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  EXPECT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(), env.Get(),
+                                     /*options=*/nullptr),
+            kLiteRtStatusErrorWrongVersion);
+}
 
 TEST(DispatchDelegateCustomBufferTest,
      RegistersCustomBufferHandlersOnEveryEnvironment) {
   // This test has its own binary because the dispatch API is cached
   // process-wide after initialization.
-  StaticLinkedDispatchApiScope static_dispatch_api(GetCustomBufferTestApi);
+  StaticLinkedDispatchApiScope static_dispatch_api(
+      QueryCustomBufferTestInterface);
+  InitializeCount = 0;
 
   // 1. First environment: initialize dispatch and verify custom handlers are
   // registered.
@@ -179,6 +239,7 @@ TEST(DispatchDelegateCustomBufferTest,
     ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(), env1.Get(),
                                        /*options=*/nullptr),
               kLiteRtStatusOk);
+    EXPECT_EQ(InitializeCount, 1);
 
     auto handlers_or = env1.Get()->GetTensorBufferRegistry().GetCustomHandlers(
         kLiteRtTensorBufferTypeUserCustomBuffer);
@@ -187,13 +248,14 @@ TEST(DispatchDelegateCustomBufferTest,
 
   // 2. Second environment: env1 was destroyed, so its TensorBufferRegistry was
   // freed. When LiteRtDispatchInitialize is called on env2, it MUST register
-  // the handlers into env2's registry even though IsTheApiInitialized is
-  // already true.
+  // the handlers into env2's registry without re-invoking the process-global
+  // vendor initialize callback.
   {
     LITERT_ASSERT_OK_AND_ASSIGN(auto env2, Environment::Create({}));
     ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(), env2.Get(),
                                        /*options=*/nullptr),
               kLiteRtStatusOk);
+    EXPECT_EQ(InitializeCount, 1);
 
     auto handlers_or = env2.Get()->GetTensorBufferRegistry().GetCustomHandlers(
         kLiteRtTensorBufferTypeUserCustomBuffer);

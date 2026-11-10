@@ -177,7 +177,13 @@ GpuBackendOpenClLitert::GpuBackendOpenClLitert(
   }
 }
 
-GpuBackendOpenClLitert::~GpuBackendOpenClLitert() = default;
+GpuBackendOpenClLitert::~GpuBackendOpenClLitert() {
+  // Flush the compiled cache if it hasn't been flushed yet.
+  if (compiled_cache_.IsValid() && invoke_count_to_flush_compiled_cache_ > 0) {
+    invoke_count_to_flush_compiled_cache_ = 1;
+    FlushCompiledCacheIfNeeded();
+  }
+}
 
 absl::StatusOr<GpuMemoryHandle> GpuBackendOpenClLitert::GetGpuMemoryAllocated(
     const GpuTensorBufferPtr& tensor_buffer) {
@@ -257,15 +263,15 @@ GpuBackendOpenClLitert::GetGpuBufferRequirements(
     ::ml_drift::TensorStorageType used_storage_type,
     ::ml_drift::DataType data_type) {
   GpuBufferRequirements requirements;
-  if (used_storage_type == ::ml_drift::TensorStorageType::TEXTURE_2D) {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+  if (used_storage_type == ::ml_drift::TensorStorageType::kTexture2D) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(
           kLiteRtTensorBufferTypeOpenClTextureFp16);
     } else {
       requirements.buffer_types.push_back(kLiteRtTensorBufferTypeOpenClTexture);
     }
-  } else if (used_storage_type == ::ml_drift::TensorStorageType::IMAGE_BUFFER) {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+  } else if (used_storage_type == ::ml_drift::TensorStorageType::kImageBuffer) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(
           kLiteRtTensorBufferTypeOpenClImageBufferFp16);
     } else {
@@ -273,7 +279,7 @@ GpuBackendOpenClLitert::GetGpuBufferRequirements(
           kLiteRtTensorBufferTypeOpenClImageBuffer);
     }
   } else {
-    if (data_type == ::ml_drift::DataType::FLOAT16) {
+    if (data_type == ::ml_drift::DataType::kFloat16) {
       requirements.buffer_types.push_back(
           kLiteRtTensorBufferTypeOpenClBufferFp16);
     } else {
@@ -294,21 +300,32 @@ GpuBackendOpenClLitert::GetGpuBufferRequirements(
 
 absl::StatusOr<GpuBackend::GpuBufferRequirements>
 GpuBackendOpenClLitert::GetGpuBufferRequirementsForNonExternalTensors() {
-#if LITERT_HAS_OPENGL_SUPPORT
-  if (gl_interop_fabric_) {
-    return GpuBufferRequirements{
-        .buffer_types = {kLiteRtTensorBufferTypeOpenClBufferPacked,
-                         kLiteRtTensorBufferTypeGlBuffer},
-        // No strides for packed buffer.
-        .strides = {0, 0},
-    };
-  }
-#endif
-  return GpuBufferRequirements{
+  GpuBufferRequirements requirements{
       .buffer_types = {kLiteRtTensorBufferTypeOpenClBufferPacked},
       // No strides for packed buffer.
       .strides = {0},
   };
+#if LITERT_HAS_OPENGL_SUPPORT
+  if (gl_interop_fabric_) {
+    requirements.buffer_types.push_back(kLiteRtTensorBufferTypeGlBuffer);
+    requirements.strides.push_back(0);
+  }
+#endif
+#if LITERT_HAS_AHWB_SUPPORT
+  // `cl_arm_import_memory` alone only guarantees the base import API (e.g.
+  // host / dma_buf import types). Importing with
+  // CL_IMPORT_TYPE_ANDROID_HARDWARE_BUFFER_ARM additionally requires
+  // `cl_arm_import_memory_android_hardware_buffer`; drivers such as PowerVR
+  // DXT on Pixel 10 advertise the former but not the latter, and fail
+  // clImportMemoryARM with CL_INVALID_PROPERTY.
+  if (cl_env()->device().GetInfo().SupportsExtension(
+          "cl_arm_import_memory_android_hardware_buffer") &&
+      ::ml_drift::cl::clImportMemoryARM != nullptr) {
+    requirements.buffer_types.push_back(kLiteRtTensorBufferTypeAhwb);
+    requirements.strides.push_back(0);
+  }
+#endif
+  return requirements;
 }
 
 absl::StatusOr<std::unique_ptr<GpuInferenceContext>>
@@ -397,13 +414,14 @@ void GpuBackendOpenClLitert::FlushCompiledCacheIfNeeded() {
     LITERT_LOG(LITERT_WARNING, "Failed to write cache file: %s, status=%s",
                compiled_cache_.ToString().c_str(), s.message());
     return;
-  } else {
-    LITERT_LOG(LITERT_VERBOSE,
-               "Flushed compiled cache file: %s, new=%d, total=%d",
-               compiled_cache_.ToString().c_str(),
-               num_compiled_programs_after - num_compiled_programs_,
-               num_compiled_programs_after);
   }
+
+  LITERT_LOG(LITERT_VERBOSE,
+             "Flushed compiled cache file: %s, new=%d, total=%d",
+             compiled_cache_.ToString().c_str(),
+             num_compiled_programs_after - num_compiled_programs_,
+             num_compiled_programs_after);
+  num_compiled_programs_ = num_compiled_programs_after;
 }
 
 GpuInferenceContextOpenClLitert::GpuInferenceContextOpenClLitert(

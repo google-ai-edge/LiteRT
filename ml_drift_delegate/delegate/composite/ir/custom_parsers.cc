@@ -16,14 +16,15 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "ml_drift_delegate/delegate/composite/ir/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/ir/fused_sdpa_cache_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/gated_delta_update_parser.h"
+#include "ml_drift_delegate/delegate/composite/ir/glu_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/qkv_norm_rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/short_conv_step_parser.h"
-#include "ml_drift_delegate/delegate/composite/ir/swiglu_parser.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 
 namespace litert::ml_drift::ir {
@@ -32,11 +33,12 @@ CustomIrOpMap GetCustomParsers() {
   CustomIrOpMap parsers;
 
   parsers["odml.cache_update"] = GetAddValuesToCacheParser();
+  parsers["odml.fused_sdpa_cache_update"] = GetFusedSdpaCacheUpdateParser();
   parsers["moe"] = GetMoeExpertsParser();
   parsers["odml.runtime_bmm"] = GetRuntimeBatchedMatMulParser();
   parsers["odml.sdpa_transposed"] = GetSdpaTransposedParser();
   parsers["odml.rope"] = GetRopeParser();
-  parsers["odml.swiglu"] = GetSwigluParser();
+  parsers["odml.swiglu"] = GetGluParser();
   parsers["odml.qkv_norm_rope"] = GetQkvNormRopeParser();
   parsers["odml.short_conv_step"] = GetShortConvStepParser();
   parsers["gated_delta_update"] = GetGatedDeltaUpdateParser();

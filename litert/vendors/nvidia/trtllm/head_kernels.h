@@ -32,6 +32,11 @@ cudaError_t LiteRtNvidiaLaunchBf16SoftCapToF32(const void* input, float* output,
                                                size_t count, float soft_cap,
                                                cudaStream_t stream);
 
+// Reads and rewrites `bytes` (a multiple of 16) of `buffer`: with a buffer
+// larger than L2, everything else leaves L2, for cold timings.
+cudaError_t LiteRtNvidiaLaunchL2Flush(void* buffer, size_t bytes,
+                                      cudaStream_t stream);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

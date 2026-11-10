@@ -17,28 +17,28 @@
 #include <cstdarg>
 #include <cstdio>
 #include <string>
+#include <utility>
 
 namespace litert {
 
 int BufferErrorReporter::Report(const char* format, va_list args) {
   char buf[1024];
   int formatted = vsnprintf(buf, sizeof(buf), format, args);
-  buffer_ << buf;
-  if (!buffer_.str().empty() && buffer_.str().back() != '\n') {
-    buffer_ << '\n';
+  buffer_ += buf;
+  if (!buffer_.empty() && buffer_.back() != '\n') {
+    buffer_ += '\n';
   }
   ++num_errors_;
   return formatted;
 }
 
 std::string BufferErrorReporter::message() {
-  std::string value = buffer_.str();
+  std::string value = std::move(buffer_);
   Clear();
   return value;
 }
 
 void BufferErrorReporter::Clear() {
-  buffer_.str("");
   buffer_.clear();
   num_errors_ = 0;
 }

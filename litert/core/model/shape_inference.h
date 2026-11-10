@@ -15,11 +15,16 @@
 #ifndef ODML_LITERT_LITERT_CORE_MODEL_SHAPE_INFERENCE_H_
 #define ODML_LITERT_LITERT_CORE_MODEL_SHAPE_INFERENCE_H_
 
+#include <string>
+#include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
 
@@ -70,12 +75,22 @@ class ShapeInferenceEngine {
                                   absl::Span<Dims> input_shapes,
                                   LiteRtSubgraphT** new_subgraph);
 
+  // Refines input tensor shapes on the subgraph corresponding to
+  // `signature_key` (or the first signature / main subgraph if `signature_key`
+  // is empty) and runs shape inference across that subgraph (including any
+  // nested kLiteRtOpCodeShloComposite decomposition subgraphs).
+  Expected<LiteRtSubgraph> ApplyInputShapes(
+      absl::string_view signature_key, absl::Span<const Dims> positional_inputs,
+      absl::Span<const std::pair<std::string, Dims>> tensor_inputs,
+      absl::Span<const std::pair<std::string, Dims>> signature_inputs);
+
  private:
   void RegisterStandardOps();
 
   LiteRtModelT* model_ = nullptr;
   absl::flat_hash_map<LiteRtOpCode, StatelessOpInferrer> registry_;
   TensorDataMap transient_data_;
+  absl::flat_hash_set<const LiteRtSubgraphT*> active_composite_subgraphs_;
 };
 
 }  // namespace litert::internal

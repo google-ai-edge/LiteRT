@@ -27,6 +27,8 @@
 
 namespace litert::nvidia {
 
+class TensorRtWeightStoreBuilder;
+
 struct TensorRtLlmHeadBuildData {
   uint32_t hidden_output_port = 0;
   uint32_t logits_output_port = 0;
@@ -42,6 +44,29 @@ struct TensorRtLlmHeadBuildData {
   std::vector<uint8_t> bf16_scales;
 };
 
+// A decode step that feeds itself (TensorRtStepFeed): the signature's
+// embeddings, positions, cache parameter and mask inputs by port, the logits
+// output, and the token table (the vocabulary head's INT4 weights in the
+// model file, tied to the embedder's table) with the rows' FP32 scales.
+struct TensorRtStepFeedBuildData {
+  uint32_t embeddings_port = kTensorRtStepFeedNoPort;
+  uint32_t positions_port = kTensorRtStepFeedNoPort;
+  uint32_t param_port = kTensorRtStepFeedNoPort;
+  uint32_t local_mask_port = kTensorRtStepFeedNoPort;
+  uint32_t global_mask_port = kTensorRtStepFeedNoPort;
+  uint32_t per_layer_port = kTensorRtStepFeedNoPort;
+  uint32_t per_layer_count = 0;
+  uint32_t per_layer_width = 0;
+  uint32_t logits_output_port = 0;
+  uint32_t vocab = 0;
+  uint32_t dim = 0;
+  uint32_t ring = 0;
+  uint32_t window = 0;
+  uint64_t table_offset = 0;
+  float multiplier = 1.0f;
+  std::vector<uint8_t> row_scales;  // vocab little-endian FP32 values
+};
+
 struct TensorRtRefitWeightBuildData {
   std::string name;
   TensorRtWeightDataType data_type = TensorRtWeightDataType::kFloat;
@@ -49,13 +74,24 @@ struct TensorRtRefitWeightBuildData {
   std::vector<uint8_t> data;
 };
 
+// A placeholder constant of the plan that stands for a segment of a weight
+// store (weight_store_builder.h): `bytes` is the segment plus one granule.
+struct TensorRtWeightHolderBuildData {
+  std::string name;
+  uint32_t segment = 0;
+  uint64_t bytes = 0;
+};
+
 struct TensorRtBuildResult {
   std::vector<uint8_t> engine;
   std::vector<std::string> input_names;
   std::vector<std::string> output_names;
   std::optional<TensorRtLlmHeadBuildData> trtllm_head;
+  std::optional<TensorRtStepFeedBuildData> step_feed;
   std::vector<TensorRtRefitWeightBuildData> refit_weights;
   bool is_stripped_plan = false;
+  // Not empty when the plan was built without its packed plugin weights.
+  std::vector<TensorRtWeightHolderBuildData> weight_holders;
 };
 
 // Shared-weight mode builds stripped, refittable plans. The compiler plugin
@@ -64,9 +100,17 @@ bool TensorRtSharedWeightsEnabled();
 
 bool IsTensorRtOpSupported(const litert::compiler::Op& op);
 
+// With a `weight_store`, the packed weights of the CUDA subbyte plugins that
+// are views of the model file are not copied into the plan: the plugins read
+// them in placeholder constants that stand for segments of the store.
+// `shared_cache_inputs` names the KV cache inputs another engine of the
+// process keeps in place (LiteRtNvidiaSharedCacheInputs): they get the
+// storage of this graph's own in-place caches.
 Expected<TensorRtBuildResult> BuildTensorRtEngine(
     const litert::compiler::Subgraph& subgraph,
-    absl::Span<const std::string> read_only_value_cache_inputs = {});
+    absl::Span<const std::string> read_only_value_cache_inputs = {},
+    TensorRtWeightStoreBuilder* weight_store = nullptr,
+    absl::Span<const std::string> shared_cache_inputs = {});
 
 }  // namespace litert::nvidia
 

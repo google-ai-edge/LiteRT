@@ -14,8 +14,16 @@
 
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_webgpu.h"
 
+#include <utility>
+
+#if !defined(_WIN32)
+#include <sys/mman.h>
+#endif  // !defined(_WIN32)
+
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -23,6 +31,7 @@
 #include "testing/base/public/gunit.h"
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
@@ -31,11 +40,15 @@
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
+#include "ml_drift/webgpu/spatial_tensor.h"  // from @ml_drift
 #include "ml_drift/webgpu/testing/webgpu_test.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/ir_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
+#include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_webgpu_common.h"
+#include "ml_drift_delegate/delegate/unowned_tensor_desc.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "tflite/c/common.h"
 
@@ -69,8 +82,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF32) {
   ValueIdToSharedTensorMap param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F16;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -131,7 +144,7 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF32) {
                          manager->GetExternalConstantTensor(global_id));
     EXPECT_NE(external_tensor, nullptr);
     EXPECT_EQ(external_tensor->GetDescriptor().GetDataType(),
-              DataType::FLOAT16);
+              DataType::kFloat16);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
@@ -141,8 +154,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF16) {
   ValueIdToSharedTensorMap param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F16;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -190,7 +203,7 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF16FromF16) {
                          manager->GetExternalConstantTensor(global_id));
     EXPECT_NE(external_tensor, nullptr);
     EXPECT_EQ(external_tensor->GetDescriptor().GetDataType(),
-              DataType::FLOAT16);
+              DataType::kFloat16);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
@@ -200,8 +213,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF16) {
   ValueIdToSharedTensorMap param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F32;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -210,7 +223,7 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF16) {
   graph.AddConsumer(node->id, input->id);
   graph.SetProducer(node->id, output->id);
   input->tensor.shape = BHWC(1, 1, 1, 10);
-  input->tensor.type = DataType::FLOAT16;
+  input->tensor.type = DataType::kFloat16;
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
@@ -250,7 +263,7 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF16) {
                          manager->GetExternalConstantTensor(global_id));
     EXPECT_NE(external_tensor, nullptr);
     EXPECT_EQ(external_tensor->GetDescriptor().GetDataType(),
-              DataType::FLOAT16);
+              DataType::kFloat16);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
@@ -260,8 +273,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF32) {
   ValueIdToSharedTensorMap param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F32;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -270,7 +283,7 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF32) {
   graph.AddConsumer(node->id, input->id);
   graph.SetProducer(node->id, output->id);
   input->tensor.shape = BHWC(1, 1, 1, 10);
-  input->tensor.type = DataType::FLOAT32;
+  input->tensor.type = DataType::kFloat32;
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
@@ -310,7 +323,7 @@ TEST_F(SharedMemoryManagerTest, CreateExternalFloatTensorF32FromF32) {
                          manager->GetExternalConstantTensor(global_id));
     EXPECT_NE(external_tensor, nullptr);
     EXPECT_EQ(external_tensor->GetDescriptor().GetDataType(),
-              DataType::FLOAT32);
+              DataType::kFloat32);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
@@ -320,8 +333,8 @@ TEST_F(SharedMemoryManagerTest, CreateExternalQuantizedTensor) {
   ValueIdToSharedTensorMap quant_param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F16;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -405,8 +418,8 @@ TEST_F(SharedMemoryManagerTest, CreateQuantizedTensorMixedPrecision) {
   ValueIdToSharedTensorMap quant_param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F32;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -415,7 +428,7 @@ TEST_F(SharedMemoryManagerTest, CreateQuantizedTensorMixedPrecision) {
   graph.AddConsumer(node->id, input->id);
   graph.SetProducer(node->id, output->id);
   input->tensor.shape = BHWC(1, 1, 1, 10);
-  input->tensor.type = DataType::FLOAT16;
+  input->tensor.type = DataType::kFloat16;
 
   TfLiteContext context;
   auto manager = MakeSharedMemoryManagerWebgpu(
@@ -463,7 +476,7 @@ TEST_F(SharedMemoryManagerTest, CreateQuantizedTensorMixedPrecision) {
                            manager->GetExternalConstantTensor(global_id));
       EXPECT_NE(external_tensor, nullptr);
       EXPECT_EQ(external_tensor->GetDescriptor().GetDataType(),
-                DataType::FLOAT16);
+                DataType::kFloat16);
     }
   }
   EXPECT_TRUE(scale_zp_found);
@@ -483,8 +496,8 @@ void RunBlockwiseQuantizationTest(const webgpu::ExecutionEnvironment& env,
   ValueIdToSharedTensorMap quant_param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F16;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -604,7 +617,7 @@ void RunBlockwiseQuantizationTest(const webgpu::ExecutionEnvironment& env,
                            manager->GetExternalConstantTensor(global_id));
       EXPECT_NE(external_tensor, nullptr);
       EXPECT_EQ(external_tensor->GetDescriptor().GetDataType(),
-                DataType::FLOAT16);
+                DataType::kFloat16);
       EXPECT_EQ(external_tensor->GetDescriptor().GetBHWCShape(),
                 BHWC(1, 1, 25, 8));
     }
@@ -666,8 +679,8 @@ TEST_F(SharedMemoryManagerTest, IrSharedConstantIsMutatedInPlaceWithStableId) {
   ValueIdToSharedTensorMap quant_param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F16;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   ir::IrModel graph;
   ir::IrOp* op = graph.add_op();
@@ -680,7 +693,7 @@ TEST_F(SharedMemoryManagerTest, IrSharedConstantIsMutatedInPlaceWithStableId) {
   graph.AddConsumer(weights, op_id);
   graph.SetProducer(output, op_id);
   graph.GetMutableTensor(weights)->desc.SetBHWCShape(BHWC(1, 1, 1, 10));
-  graph.GetMutableTensor(weights)->desc.SetDataType(DataType::FLOAT32);
+  graph.GetMutableTensor(weights)->desc.SetDataType(DataType::kFloat32);
   const uint32_t original_weights_id = weights;
 
   TfLiteContext context;
@@ -716,7 +729,7 @@ TEST_F(SharedMemoryManagerTest, IrSharedConstantIsMutatedInPlaceWithStableId) {
             original_weights_id);
   ASSERT_NE(graph.tensor(original_weights_id), nullptr);
   EXPECT_EQ(graph.tensor(original_weights_id)->desc.GetDataType(),
-            DataType::FLOAT16);
+            DataType::kFloat16);
 
   // The id map is keyed on the stable id.
   ASSERT_EQ(local_to_global_id_map.size(), 1);
@@ -729,5 +742,83 @@ TEST_F(SharedMemoryManagerTest, IrSharedConstantIsMutatedInPlaceWithStableId) {
 
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
+
+#if !defined(_WIN32)
+// Page-aligned anonymous mapping that stands in for tensor data restored from
+// the weight cache, which is mmap'd and released through the
+// ReleaseDataCallback. 16 KiB covers the largest page size (Apple silicon).
+class MmapRegion {
+ public:
+  explicit MmapRegion(size_t size)
+      : size_(AlignByN(size, 16384)),
+        data_(static_cast<uint8_t*>(mmap(nullptr, size_, PROT_READ | PROT_WRITE,
+                                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0))) {
+  }
+  MmapRegion(const MmapRegion&) = delete;
+  MmapRegion& operator=(const MmapRegion&) = delete;
+  ~MmapRegion() {
+    if (data_ != MAP_FAILED) munmap(data_, size_);
+  }
+  uint8_t* data() const { return data_; }
+
+ private:
+  size_t size_;
+  uint8_t* data_;
+};
+
+class CreateSharedWebGpuTensorTest
+    : public webgpu::WebGpuOperationTest,
+      public ::testing::WithParamInterface<DataType> {};
+
+TEST_P(CreateSharedWebGpuTensorTest, MmapedFloatBufferWithReleaseCallback) {
+  TensorDescriptor desc(GetParam(), TensorStorageType::kBuffer, Layout::kHWC);
+  desc.SetBHWCShape(BHWC(1, 2, 3, 8));
+  const size_t size = desc.GetMemorySizeInBytes();
+  std::vector<uint8_t> expected(size);
+  for (size_t i = 0; i < size; ++i) {
+    expected[i] = static_cast<uint8_t>(i * 7 + 3);
+  }
+  auto region = std::make_shared<MmapRegion>(size);
+  ASSERT_NE(region->data(), MAP_FAILED);
+  std::memcpy(region->data(), expected.data(), size);
+  std::weak_ptr<MmapRegion> weak_region = region;
+  ::litert::ml_drift::UnownedDataTensorDescriptor unowned_desc(
+      desc, absl::MakeConstSpan(region->data(), size));
+  // The callback owns the mapping, like the weight cache's mmap handle.
+  auto release_data_callback = std::make_unique<std::function<void()>>(
+      [region = std::move(region)]() mutable { region.reset(); });
+
+  const webgpu::ExecutionEnvironment& env = exec_env_.GetEnv();
+  std::unique_ptr<GpuSpatialTensor> tensor;
+  ASSERT_OK(webgpu_internal::CreateSharedWebGpuTensor(
+      env, unowned_desc, /*page_adjusted_offset=*/0,
+      std::move(release_data_callback),
+      /*has_prepacked_tflite_tensors=*/false, /*upload_executor=*/nullptr,
+      webgpu_internal::UploadScheduling::kAllowInline, tensor));
+  ASSERT_NE(tensor, nullptr);
+  EXPECT_EQ(tensor->GetDescriptor().GetDataType(), GetParam());
+
+#if defined(__APPLE__)
+  // On Apple integrated GPUs the mmap'd data is wrapped without a copy, so the
+  // mapping must stay alive while the tensor uses it.
+  if (env.device().HasFeature(wgpu::FeatureName::HostMappedPointer) &&
+      env.GetInfo().webgpu_info.is_integrated_gpu) {
+    EXPECT_FALSE(weak_region.expired());
+  }
+#else
+  // Elsewhere float data is copied, and the mapping is released right away.
+  EXPECT_TRUE(weak_region.expired());
+#endif  // defined(__APPLE__)
+
+  TensorDescriptor readback;
+  ASSERT_OK(static_cast<webgpu::SpatialTensor*>(tensor.get())
+                ->ToDescriptor(env.device(), &readback));
+  EXPECT_THAT(readback.GetData(), ::testing::ElementsAreArray(expected));
+}
+
+INSTANTIATE_TEST_SUITE_P(FloatTypes, CreateSharedWebGpuTensorTest,
+                         ::testing::Values(DataType::kFloat16,
+                                           DataType::kFloat32));
+#endif  // !defined(_WIN32)
 
 }  // namespace ml_drift

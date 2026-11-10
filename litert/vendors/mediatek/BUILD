@@ -40,7 +40,7 @@ litert_cc_lib_with_mtk(
         "//litert/cc/internal:litert_shared_library",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
-        "@neuro_pilot//:v8_latest_host_headers",
+        "@neuro_pilot//:neuron_host_headers",
     ],
 )
 

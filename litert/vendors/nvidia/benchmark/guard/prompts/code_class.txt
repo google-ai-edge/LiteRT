@@ -1,0 +1,31 @@
+You are an expert Python programmer. You will be given a question (problem specification) and will generate a correct Python program that matches the specification and passes all tests.
+
+### Question:
+Design a data structure that supports the following operations on a multiset of integers:
+
+add(x): insert the integer x.
+remove(x): remove one occurrence of x; it is guaranteed that x is present.
+kthSmallest(k): return the k-th smallest element (1-indexed); it is guaranteed that the multiset has at least k elements.
+
+All values satisfy 0 <= x <= 10^9 and there are at most 10^5 operations in total. Each operation should run in O(log n) time.
+
+Example:
+
+Input: ["add","add","add","kthSmallest","remove","kthSmallest"], [[5],[2],[5],[2],[5],[2]]
+Output: [null,null,null,5,null,5]
+
+### Format: You will use the following starter code to write the solution to the problem and enclose your code within delimiters.
+```python
+class KthMultiset:
+    def __init__(self):
+        
+    def add(self, x: int) -> None:
+        
+    def remove(self, x: int) -> None:
+        
+    def kthSmallest(self, k: int) -> int:
+        
+```
+
+### Answer: (use the provided format with backticks)
+

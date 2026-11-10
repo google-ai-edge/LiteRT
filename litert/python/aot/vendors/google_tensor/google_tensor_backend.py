@@ -122,9 +122,7 @@ def _apply_plugin(
     lib_dir = os.path.dirname(plugin_path)
 
     try:
-      # pytype: disable=import-error
-      import ai_edge_litert_sdk_google_tensor  # pylint: disable=g-import-not-at-top
-      # pytype: enable=import-error
+      import ai_edge_litert_sdk_google_tensor  # pylint: disable=g-import-not-at-top  # pyrefly: ignore[missing-import]
 
       sdk_libs_path = str(
           ai_edge_litert_sdk_google_tensor.path_to_sdk_libs()

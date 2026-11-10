@@ -122,10 +122,7 @@ struct DelegateEnvironment {
   // cache misses / shader compilations. Once all shader pipelines are compiled
   // and resident in the GPU/Dawn runtime, retaining the serialized cache in RAM
   // is unnecessary, and destroying it reclaims memory footprint.
-  void CacheDetach() ABSL_NO_THREAD_SAFETY_ANALYSIS {
-    if (pipeline_cache == nullptr) {
-      return;
-    }
+  void CacheDetach() {
     absl::MutexLock lock(pipeline_cache_mutex);
     if (pipeline_cache == nullptr) {
       return;
@@ -243,6 +240,31 @@ void DestroyDelegateEnvironment(void* user_data) {
   LITERT_LOG(LITERT_DEBUG, "Destroyed WebGPU delegate environment.");
 }
 
+// Mirrors the device's optional features into `env`'s requested extension list.
+//
+// Only needed when initializing from a client-supplied device: that
+// Initialize() overload derives fp16/subgroup support from the requested
+// extensions rather than from the device, so leaving the list empty silently
+// forces fp32, non-subgroup kernels. Do not call this before the InitParams
+// overload, which rejects "subgroups".
+void RequestSupportedExtensions(ml_drift::webgpu::ExecutionEnvironment& env,
+                                const wgpu::Device& device) {
+  // LINT.IfChange(requested_extensions)
+  if (device.HasFeature(wgpu::FeatureName::ShaderF16)) {
+    env.RequestExtension("shader_f16");
+  }
+  if (device.HasFeature(wgpu::FeatureName::Subgroups)) {
+    env.RequestExtension("subgroups");
+  }
+#ifndef __EMSCRIPTEN__
+  if (device.HasFeature(
+          wgpu::FeatureName::ChromiumExperimentalSubgroupMatrix)) {
+    env.RequestExtension("subgroup_matrix");
+  }
+#endif  // !__EMSCRIPTEN__
+  // LINT.ThenChange()
+}
+
 // Creates a WebGPU environment. If a WebGPU device id is provided via
 // LiteRtEnvironment, the WebGPU environment will be initialized with the
 // provided device id and set `is_webgpu_device_provided` to true.
@@ -298,6 +320,7 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
     wgpu::Device device = wgpu_device;
     wgpu::AdapterInfo adapter_info;
     device.GetAdapterInfo(&adapter_info);
+    RequestSupportedExtensions(*webgpu_env, device);
     webgpu_init_status = webgpu_env->Initialize(device, adapter_info);
     if (webgpu_init_status.ok() && flush_callback) {
       ::ml_drift::webgpu::Instance::SetFlushCallback(wgpu_device,
@@ -310,6 +333,7 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
     auto device = wgpu::Device::Acquire(ems_device);
     wgpu::AdapterInfo adapter_info;
     device.GetAdapterInfo(&adapter_info);
+    RequestSupportedExtensions(*webgpu_env, device);
     webgpu_init_status = webgpu_env->Initialize(device, adapter_info);
     success_message =
         "Created a WebGPU environment with emscripten_webgpu_get_device().";
@@ -750,24 +774,34 @@ TfLiteDelegatePtr CreateMlDriftWebGpuDelegate(MlDriftDelegateOptionsPtr options,
     case kDefault:
       delegate_data->calculation_precision =
           (*delegate_env)->webgpu_env->GetInfo().SupportsFP16()
-              ? ::ml_drift::CalculationsPrecision::F16
-              : ::ml_drift::CalculationsPrecision::F32;
+              ? ::ml_drift::CalculationsPrecision::kF16
+              : ::ml_drift::CalculationsPrecision::kF32;
       break;
     case kFp16:
       delegate_data->calculation_precision =
-          ::ml_drift::CalculationsPrecision::F16;
+          ::ml_drift::CalculationsPrecision::kF16;
       break;
     case kFp32:
       delegate_data->calculation_precision =
-          ::ml_drift::CalculationsPrecision::F32;
+          ::ml_drift::CalculationsPrecision::kF32;
       break;
   }
   if (delegate_data->options->use_f32_accum_for_fp16) {
     delegate_data->calculation_precision =
-        ::ml_drift::CalculationsPrecision::F32_F16;
+        ::ml_drift::CalculationsPrecision::kF32F16;
   }
   bool hint_fully_delegated_to_single_delegate =
       delegate_data->options->hint_fully_delegated_to_single_delegate;
+
+  // The int8 src-quantized fully connected / convolution path (dp4a) produces
+  // corrupted outputs on Intel GPUs with WebGPU (observed on D3D12 with Arc
+  // 140V / B390 for the Gemma 4 12B 128-token prefill graph), so keep the
+  // fp16/fp32 path there.
+  if (delegate_data->options->allow_src_quantized_fc_conv_ops &&
+      (*delegate_env)->webgpu_env->GetInfo().IsIntel()) {
+    ABSL_LOG(INFO) << "Disabling allow_src_quantized_fc_conv_ops on Intel GPU.";
+    delegate_data->options->allow_src_quantized_fc_conv_ops = false;
+  }
 
   // Initialize the ml_drift WebGpu delegate.
   TfLiteDelegatePtr delegate(new TfLiteDelegate(TfLiteDelegateCreate()),

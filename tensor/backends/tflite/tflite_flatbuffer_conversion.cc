@@ -29,9 +29,9 @@ limitations under the License.
 #include <tuple>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
-#include "xnnpack.h"  // from @XNNPACK
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -68,6 +68,37 @@ static constexpr int kTfLiteSchemaVersion = 3;
 static constexpr size_t kFlatbufferPlaceholderValue = 0xfafafafafafafafa;
 
 static constexpr size_t kFlatbufferAppendedDataAlignment = 64;
+
+// Extra trailing bytes to pad after constant tensor buffers to prevent
+// out-of-bounds reads by SIMD kernels (e.g. XNNPACK microkernels require up to
+// 128 bytes on Qualcomm Hexagon DSP).
+static constexpr size_t kFbTailPadding = 128;
+
+absl::Status ValidateShapeSignature(const graph::Tensor& tensor,
+                                    const Shape& signature) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& info,
+                              GetInfo(tensor));
+  if (signature.size() != info.shape.size()) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Shape signature rank differs from concrete shape for ", info.name));
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto producer, GetProducer(tensor));
+  for (size_t axis = 0; axis < signature.size(); ++axis) {
+    if (info.shape[axis] < 0 || signature[axis] < -1 ||
+        (signature[axis] != -1 && signature[axis] != info.shape[axis])) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Invalid shape signature for ", info.name, " at axis ", axis,
+          ": expected -1 or concrete extent ", info.shape[axis], ", got ",
+          signature[axis]));
+    }
+    if (signature[axis] == -1 && producer == nullptr && info.buffer) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Constant tensor cannot have a dynamic shape signature: ",
+          info.name));
+    }
+  }
+  return absl::OkStatus();
+}
 
 }  // namespace
 
@@ -175,7 +206,115 @@ std::string DebugInfo(const graph::Tensor& tensor) {
   return dbg_str;
 }
 
+void WriteU8(std::vector<uint8_t>* out, uint8_t v) { out->push_back(v); }
+
+void WriteU32(std::vector<uint8_t>* out, uint32_t v) {
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(&v);
+  out->insert(out->end(), p, p + sizeof(uint32_t));
+}
+
+void WriteI64(std::vector<uint8_t>* out, int64_t v) {
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(&v);
+  out->insert(out->end(), p, p + sizeof(int64_t));
+}
+
+void WriteF64(std::vector<uint8_t>* out, double v) {
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(&v);
+  out->insert(out->end(), p, p + sizeof(double));
+}
+
+void WriteStr(std::vector<uint8_t>* out, absl::string_view s) {
+  WriteU32(out, static_cast<uint32_t>(s.size()));
+  out->insert(out->end(), reinterpret_cast<const uint8_t*>(s.data()),
+              reinterpret_cast<const uint8_t*>(s.data()) + s.size());
+}
+
 }  // namespace
+
+uint32_t ModelFactory::GetOrRegisterScopeId(
+    const std::shared_ptr<graph::Scope>& scope) {
+  if (scope == nullptr) {
+    return 0xFFFFFFFFu;
+  }
+  if (auto it = scope_to_id_.find(scope.get()); it != scope_to_id_.end()) {
+    return it->second;
+  }
+  const uint32_t parent_id = GetOrRegisterScopeId(scope->parent);
+  const uint32_t id = static_cast<uint32_t>(serialized_scopes_.size());
+  scope_to_id_[scope.get()] = id;
+  SerializedScopeRecord rec;
+  rec.ptr = scope.get();
+  rec.kind = scope->kind;
+  rec.name = scope->name;
+  rec.parent_id = parent_id;
+  rec.attrs = scope->attrs;
+  serialized_scopes_.push_back(std::move(rec));
+  return id;
+}
+
+std::vector<uint8_t> ModelFactory::EncodeScopesMetadata() const {
+  std::vector<uint8_t> out;
+  constexpr char kMagic[8] = {'L', 'R', 'T', 'S', 'C', 'O', 'P', 'E'};
+  out.insert(out.end(), kMagic, kMagic + 8);
+  WriteU32(&out, 1);  // format version 1
+  WriteU32(&out, static_cast<uint32_t>(serialized_scopes_.size()));
+  for (const SerializedScopeRecord& rec : serialized_scopes_) {
+    WriteStr(&out, rec.kind);
+    WriteStr(&out, rec.name);
+    WriteU32(&out, rec.parent_id);
+
+    std::vector<std::string> attr_keys;
+    attr_keys.reserve(rec.attrs.size());
+    for (const auto& [k, _] : rec.attrs) {
+      attr_keys.push_back(k);
+    }
+    std::sort(attr_keys.begin(), attr_keys.end());
+    WriteU32(&out, static_cast<uint32_t>(attr_keys.size()));
+    for (const std::string& k : attr_keys) {
+      WriteStr(&out, k);
+      const graph::ScopeAttrValue& val = rec.attrs.at(k);
+      if (const auto* iv = std::get_if<int64_t>(&val)) {
+        WriteU8(&out, 0);
+        WriteI64(&out, *iv);
+      } else if (const auto* dv = std::get_if<double>(&val)) {
+        WriteU8(&out, 1);
+        WriteF64(&out, *dv);
+      } else if (const auto* sv = std::get_if<std::string>(&val)) {
+        WriteU8(&out, 2);
+        WriteStr(&out, *sv);
+      }
+    }
+
+    std::vector<SerializedBoundaryRef> sorted_boundaries = rec.boundaries;
+    std::sort(
+        sorted_boundaries.begin(), sorted_boundaries.end(),
+        [](const SerializedBoundaryRef& a, const SerializedBoundaryRef& b) {
+          if (a.subgraph_index != b.subgraph_index) {
+            return a.subgraph_index < b.subgraph_index;
+          }
+          return a.role < b.role;
+        });
+    WriteU32(&out, static_cast<uint32_t>(sorted_boundaries.size()));
+    for (const SerializedBoundaryRef& b : sorted_boundaries) {
+      WriteU32(&out, b.subgraph_index);
+      WriteStr(&out, b.role);
+      WriteU32(&out, b.tensor_index);
+    }
+  }
+
+  WriteU32(&out, static_cast<uint32_t>(subgraph_scope_infos_.size()));
+  for (const SubgraphScopeSerializationInfo& sg : subgraph_scope_infos_) {
+    WriteU32(&out, static_cast<uint32_t>(sg.op_scope_ids.size()));
+    for (uint32_t scope_id : sg.op_scope_ids) {
+      WriteU32(&out, scope_id);
+    }
+    WriteU32(&out, static_cast<uint32_t>(sg.auto_named_tensor_indices.size()));
+    for (uint32_t tidx : sg.auto_named_tensor_indices) {
+      WriteU32(&out, tidx);
+    }
+  }
+  return out;
+}
 
 ModelFactory::ModelFactory() {
   model_.version = kTfLiteSchemaVersion;
@@ -229,8 +368,23 @@ absl::Status ModelFactory::Explore(std::vector<TensorHandle> outputs) {
 }
 
 absl::Status ModelFactory::Build() {
+  const uint32_t current_subgraph_idx =
+      static_cast<uint32_t>(model_.subgraphs.size());
   model_.subgraphs.push_back(std::make_unique<tflite::SubGraphT>());
+  if (subgraph_scope_infos_.size() <= current_subgraph_idx) {
+    subgraph_scope_infos_.resize(current_subgraph_idx + 1);
+  }
   tflite::SubGraphT& subgraph = *model_.subgraphs.back();
+
+  absl::flat_hash_map<const graph::Operation*, int> op_ordinal_in_scope;
+  absl::flat_hash_map<const graph::Scope*, int> scope_op_counts;
+  for (const graph::Operation* operation : execution_plan_) {
+    GetOrRegisterScopeId(operation->scope);
+    if (operation->scope != nullptr) {
+      op_ordinal_in_scope[operation] =
+          scope_op_counts[operation->scope.get()]++;
+    }
+  }
 
   std::vector<std::shared_ptr<Buffer>> inline_parameter_buffers;
   for (const graph::Operation* operation : execution_plan_) {
@@ -282,6 +436,12 @@ absl::Status ModelFactory::Build() {
     }
     tflite::TensorT& t = *subgraph.tensors.back();
     t.shape = tensor_info.shape;
+    if (const auto signature = shape_signatures_.find(tensor);
+        signature != shape_signatures_.end()) {
+      LRT_TENSOR_RETURN_IF_ERROR(
+          ValidateShapeSignature(tensor, signature->second));
+      t.shape_signature = signature->second;
+    }
     t.name = tensor_info.name;
     // If the producer isn't null, it means that the buffer was set by and eager
     // execution and we ignore it.
@@ -314,6 +474,10 @@ absl::Status ModelFactory::Build() {
         t.quantization = std::make_unique<tflite::QuantizationParametersT>();
         t.quantization->scale = pcq->scales;
         t.quantization->zero_point = pcq->zero_points;
+        if (pcq->zero_points.size() == 1 && pcq->scales.size() > 1) {
+          t.quantization->zero_point.resize(pcq->scales.size(),
+                                            pcq->zero_points.front());
+        }
         t.quantization->quantized_dimension = pcq->quantized_dimension;
       } else if (auto bwq = tensor_info.quantization
                                 ->As<const BlockwiseQuantization>();
@@ -368,9 +532,63 @@ absl::Status ModelFactory::Build() {
     }
   }
 
+  // Record scope boundary tensor references for this subgraph and assign
+  // hierarchical scope-qualified names to unnamed intermediate tensors in the
+  // FlatBuffer (`t.name`) without mutating `tensor_info.name`.
+  absl::flat_hash_map<graph::Tensor, std::string> scope_boundary_names;
+  for (SerializedScopeRecord& rec : serialized_scopes_) {
+    std::vector<std::string> roles;
+    roles.reserve(rec.ptr->boundary_tensors.size());
+    for (const auto& [role, _] : rec.ptr->boundary_tensors) {
+      roles.push_back(role);
+    }
+    std::sort(roles.begin(), roles.end());
+    for (const std::string& role : roles) {
+      std::optional<graph::Tensor> bt = rec.ptr->GetBoundaryTensor(role);
+      if (!bt.has_value()) continue;
+      auto it = tensors_.find(*bt);
+      if (it == tensors_.end()) continue;
+      const int tidx = it->second.index;
+      if (tidx < 0) continue;
+      rec.boundaries.push_back(SerializedBoundaryRef{
+          .subgraph_index = current_subgraph_idx,
+          .role = role,
+          .tensor_index = static_cast<uint32_t>(tidx),
+      });
+      scope_boundary_names.try_emplace(
+          *bt, absl::StrCat(rec.ptr->FullPath(), "/", role));
+    }
+  }
+  for (const auto& [tensor, build_info] : tensors_) {
+    if (build_info.index < 0 ||
+        static_cast<size_t>(build_info.index) >= subgraph.tensors.size()) {
+      continue;
+    }
+    tflite::TensorT& t = *subgraph.tensors[build_info.index];
+    if (!t.name.empty()) continue;
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        const std::shared_ptr<const graph::Operation> producer,
+        GetProducer(tensor), _ << DebugInfo(tensor));
+    if (producer != nullptr && producer->scope != nullptr) {
+      if (auto bit = scope_boundary_names.find(tensor);
+          bit != scope_boundary_names.end()) {
+        t.name = bit->second;
+      } else {
+        const int ord = op_ordinal_in_scope[producer.get()];
+        t.name = absl::StrCat(producer->scope->FullPath(), "/",
+                              producer->GetName(), "_", ord, ":", tensor.index);
+      }
+      subgraph_scope_infos_[current_subgraph_idx]
+          .auto_named_tensor_indices.push_back(
+              static_cast<uint32_t>(build_info.index));
+    }
+  }
+
   // Maps an operator code to its index in `model.operator_codes`.
   std::unordered_map<tflite::BuiltinOperator, int> operator_codes;
   for (const graph::Operation* operation : execution_plan_) {
+    subgraph_scope_infos_[current_subgraph_idx].op_scope_ids.push_back(
+        GetOrRegisterScopeId(operation->scope));
     // [[maybe_unused]] OpSerializationInfo& build_info =
     // operations_[operation];
 
@@ -522,6 +740,24 @@ absl::Status ModelFactory::UpdateBufferData(
 }
 
 void ModelFactory::PrepareBufferData() {
+  if (!serialized_scopes_.empty() && !scopes_metadata_serialized_) {
+    scopes_metadata_serialized_ = true;
+    const std::vector<uint8_t> encoded = EncodeScopesMetadata();
+    auto meta_buf = OwningCpuBuffer::Copy(
+        reinterpret_cast<const char*>(encoded.data()), encoded.size());
+    auto [it, inserted] =
+        buffers_.insert({meta_buf, BufferSerializationInfo{}});
+    if (inserted) {
+      it->second.index = buffer_list_.size() + 1;
+      it->second.inline_data = true;
+      buffer_list_.push_back(meta_buf);
+      model_.buffers.push_back(std::make_unique<tflite::BufferT>());
+    }
+    auto meta = std::make_unique<tflite::MetadataT>();
+    meta->name = std::string(kLiteRtGraphScopesMetadataKey);
+    meta->buffer = it->second.index;
+    model_.metadata.push_back(std::move(meta));
+  }
   for (const auto& [buffer, build_info] : buffers_) {
     tflite::BufferT& flatbuffer = *model_.buffers[build_info.index];
     if (build_info.external_buffer_id.has_value()) {
@@ -555,11 +791,11 @@ absl::Status ModelFactory::WriteBufferData(std::ofstream& output_file) {
     output_file.seekp(build_info.serialization_offset);
     output_file.write(data.data(), data.size());
   }
-  // Extend the file to make sure that the last buffer has at least
-  // `XNN_EXTRA_BYTES`.
+  // Extend the file to make sure that the last tensor buffer has at least
+  // `kFbTailPadding` extra bytes.
   output_file.seekp(0, std::ios_base::end);
-  const char extra_bytes[XNN_EXTRA_BYTES] = {};
-  output_file.write(extra_bytes, XNN_EXTRA_BYTES);
+  const char extra_bytes[kFbTailPadding] = {};
+  output_file.write(extra_bytes, kFbTailPadding);
   return absl::OkStatus();
 }
 
@@ -646,6 +882,15 @@ absl::Status ModelFactory::AddSignature(std::vector<TensorHandle> inputs,
   return AddSignatureDef(std::move(name), subgraph_index);
 }
 
+absl::Status ModelFactory::SetShapeSignature(const TensorHandle& tensor,
+                                             Shape shape_signature) {
+  LRT_TENSOR_RETURN_IF_ERROR(
+      ValidateShapeSignature(tensor.GetRaw(), shape_signature));
+  shape_signatures_.insert_or_assign(tensor.GetRaw(),
+                                     std::move(shape_signature));
+  return absl::OkStatus();
+}
+
 absl::Status ModelFactory::AddSignatureDef(std::string name,
                                            int subgraph_index) {
   auto signature_def = std::make_unique<tflite::SignatureDefT>();
@@ -723,7 +968,7 @@ absl::StatusOr<std::vector<char>> ModelFactory::CreateFlatbuffer() {
   LRT_TENSOR_RETURN_IF_ERROR(UpdateBufferData(fbb));
 
   std::vector<char> fb;
-  fb.resize(allocation_size_ + XNN_EXTRA_BYTES);
+  fb.resize(allocation_size_ + kFbTailPadding);
   std::memcpy(fb.data(), fbb.GetBufferPointer(), fbb.GetSize());
   for (const auto& [buffer, build_info] : buffers_) {
     if (build_info.external_buffer_id.has_value() || build_info.inline_data) {
@@ -831,12 +1076,13 @@ using TfLiteOps = std::tuple<
     graph::TransposeConvOperation, graph::TransposeConv2DOperation,
     graph::LstmOperation, graph::ArgMaxOperation, graph::LogisticOperation,
     graph::DynamicUpdateSliceOperation, graph::TanhOperation,
-    graph::LessOperation, graph::GreaterOperation, graph::GreaterEqualOperation,
-    graph::NotEqualOperation, graph::EqualOperation, graph::MinimumOperation,
-    graph::MaximumOperation, graph::LogicalAndOperation,
-    graph::LogicalOrOperation, graph::LogicalNotOperation,
-    graph::BitwiseXorOperation, graph::RightShiftOperation, graph::CosOperation,
-    graph::SinOperation, graph::ReshapeOperation, graph::SqueezeOperation,
+    graph::LessOperation, graph::LessEqualOperation, graph::GreaterOperation,
+    graph::GreaterEqualOperation, graph::NotEqualOperation,
+    graph::EqualOperation, graph::MinimumOperation, graph::MaximumOperation,
+    graph::LogicalAndOperation, graph::LogicalOrOperation,
+    graph::LogicalNotOperation, graph::BitwiseXorOperation,
+    graph::RightShiftOperation, graph::CosOperation, graph::SinOperation,
+    graph::ReshapeOperation, graph::SqueezeOperation,
     graph::ExpandDimsOperation, graph::QuantizeOperation,
     graph::ReduceMaxOperation, graph::MeanOperation, graph::ProbeOperation,
     graph::ResizeBilinearOperation, graph::ResizeNearestNeighborOperation,

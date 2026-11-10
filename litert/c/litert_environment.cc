@@ -23,6 +23,7 @@
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_macros.h"
@@ -240,6 +241,15 @@ void LiteRtEnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
     return;
   }
   *has_gpu_environment = environment->HasGpuEnvironment();
+}
+
+LiteRtStatus LiteRtGetRuntimeAbiVersion(const char** abi_version) {
+  LITERT_RETURN_IF_ERROR(
+      abi_version != nullptr,
+      litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+          << "Output pointer is null.");
+  *abi_version = LITERT_RUNTIME_ABI_VERSION;
+  return kLiteRtStatusOk;
 }
 
 #ifdef __cplusplus

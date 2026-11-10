@@ -1,6 +1,12 @@
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>.
+# SPDX-License-Identifier: Apache-2.0
+#
 name: "windows_x86_64"
 on:
   push:
+    branches:
+    - main
     tags:
     - v*..
   pull_request:
@@ -18,6 +24,9 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   check:
@@ -43,11 +52,17 @@ jobs:
               - '!g3doc/**'
               - '!site/**'
               - '!LICENSE'
+              - '!litert/objc/**'
+              - '!litert/swift/**'
+              - '!litert_quantizer/**'
       - name: Determine if build should run
         id: check
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SRC_CHANGED: ${{ steps.filter.outputs.src }}
         run: |
-          if [[ "${{ github.event_name }}" != "pull_request" || "${{ steps.filter.outputs.src }}" == "true" ]]; then
+          if [[ "${EVENT_NAME}" != "pull_request" || "${SRC_CHANGED}" == "true" ]]; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -80,7 +95,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.4.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Configure tensorflow & python path
         run: |
@@ -93,8 +108,10 @@ jobs:
           python configure.py
       - name : Set up cache keys and bazel output base.
         id: cache-keys
+        env:
+          WORKFLOW_NAME: ${{ github.workflow }}
         run: |
-          $CACHE_RESTORE_KEY_2="${{ github.workflow }}"
+          $CACHE_RESTORE_KEY_2="$env:WORKFLOW_NAME"
           $CACHE_RESTORE_KEY_1="$CACHE_RESTORE_KEY_2-${{ hashFiles('**/WORKSPACE', '**/.bazelrc') }}"
           $CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${{ hashFiles('**/BUILD*') }}"
           # If it's not a pull request, then it will be the same as $CACHE_RESTORE_KEY_1-.
@@ -106,7 +123,12 @@ jobs:
           echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$env:GITHUB_OUTPUT"
           echo "CACHE_KEY=$CACHE_KEY" >> "$env:GITHUB_OUTPUT"
           $SHORT_SHA=$("${{ github.sha }}".SubString(0, 8))
-          echo "BAZEL_OUTPUT_BASE=C:/_w/out" >> "$env:GITHUB_ENV"
+          $WorkRoot = if (Test-Path "C:/actions-runner/_work") { "C:/actions-runner/_work" } else { "C:/_w" }
+          echo "BAZEL_OUTPUT_BASE=$WorkRoot/out" >> "$env:GITHUB_ENV"
+          $TempDir = "$WorkRoot/_tmp"
+          New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+          echo "TMP=$TempDir" >> "$env:GITHUB_ENV"
+          echo "TEMP=$TempDir" >> "$env:GITHUB_ENV"
           $CacheDir = Join-Path $env:USERPROFILE (Join-Path ".cache" "bazel-windows")
           echo "BAZEL_DISK_CACHE=$CacheDir" >> "$env:GITHUB_ENV"
 
@@ -133,10 +155,14 @@ jobs:
             ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_2 }}-
 
       - name: Check cache hit
+        env:
+          CACHE_HIT: ${{ steps.bazel-cache.outputs.cache-hit }}
+          CACHE_PRIMARY_KEY: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+          CACHE_MATCHED_KEY: ${{ steps.bazel-cache.outputs.cache-matched-key }}
         run: |
-          echo "Cache Hit: ${{ steps.bazel-cache.outputs.cache-hit }}"
-          echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
-          echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
+          echo "Cache Hit: $env:CACHE_HIT"
+          echo "Cache Primary Key: $env:CACHE_PRIMARY_KEY"
+          echo "Cache Matched Key: $env:CACHE_MATCHED_KEY"
 
       - name: Run bazel test on Windows for litert
         run: |
@@ -151,6 +177,7 @@ jobs:
           )
 
           $LITERT_EXCLUDED_TARGETS = @(
+            "-//litert/kotlin/src/tests/..."
             "-//litert/python:converter_wrapper_test"
             "-//litert/python/aot/..."
             "-//litert/python/tools:mmap_utils_test"
@@ -163,11 +190,45 @@ jobs:
             "-//litert/tools/culprit_finder/..."
             "-//litert/vendors/examples:end_to_end_test"
             "-//litert/vendors/examples:example_plugin_so"
+            "-//litert/vendors/examples:example_plugin_test"
+            "-//litert/vendors/examples:example_dispatch_test"
+            "-//litert/vendors/examples:example_dispatch_so"
+            "-//litert/vendors/examples/compatibility_test/..."
             "-//litert/vendors/intel_openvino/compiler:decoder_test"
             "-//litert/vendors/intel_openvino/dispatch:dispatch_api_openvino_test"
             "-//litert/vendors/intel_openvino/compiler:openvino_compiler_plugin_test"
-            "-//litert/vendors/arm/..."
+            "-//litert/vendors/arm_vulkan_ml/..."
             "-//litert/test/fuzzing/..."
+            # Require TensorFlow. Only Internal CI 'cpu_full' tests them, on Linux
+            # with LITERT_WITH_TENSORFLOW=1. macOS and Windows CI do not test them.
+            "-//litert/compiler/..."
+            "-//litert/python/mlir/..."
+            "-//litert/python/tools/model_utils/..."
+            "-//litert/integration_test/models:single_op"
+            "-//litert/integration_test/models:single_op_files"
+            "-//litert/python:_pywrap_litert_with_converter_0_pywrap"
+            "-//litert/python:_pywrap_litert_with_converter_0_shared_object"
+            "-//litert/python:_pywrap_litert_with_converter_1_pywrap"
+            "-//litert/python:_pywrap_litert_with_converter_1_shared_object"
+            "-//litert/python:_pywrap_litert_with_converter_2_pywrap"
+            "-//litert/python:_pywrap_litert_with_converter_2_shared_object"
+            "-//litert/python:_pywrap_litert_with_converter_3_pywrap"
+            "-//litert/python:_pywrap_litert_with_converter_3_shared_object"
+            "-//litert/python:_pywrap_litert_with_converter_common_split"
+            "-//litert/python:_pywrap_litert_with_converter_info_collector"
+            "-//litert/python:_pywrap_litert_with_converter_linker_input_filters"
+            "-//litert/python:libpywrap_litert_with_converter_common.dylib"
+            "-//litert/python:libpywrap_litert_with_converter_common.so"
+            "-//litert/python:pywrap_litert_with_converter"
+            "-//litert/python:pywrap_litert_with_converter_all_binaries"
+            "-//litert/python:pywrap_litert_with_converter_binaries"
+            "-//litert/python:pywrap_litert_with_converter_binaries.json"
+            "-//litert/python:pywrap_litert_with_converter_common"
+            "-//litert/python:pywrap_litert_with_converter_common.dll"
+            "-//litert/python:pywrap_litert_with_converter_common_binaries"
+            "-//litert/python:pywrap_litert_with_converter_common_cc_library"
+            "-//litert/python:pywrap_litert_with_converter_common_if_lib"
+            "-//litert/python:pywrap_litert_with_converter_common_import"
           )
 
           $BAZEL_ARGS = @(
@@ -197,6 +258,12 @@ jobs:
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows -- `
             //litert/tools:run_model
 
+      - name: Build benchmark_model for Windows
+        run: |
+          bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows `
+            --define=protobuf_allow_msvc=true -- `
+            //litert/tools:benchmark_model
+
       - name: Build example plugin for Windows
         run: |
           bazel --output_base="$env:BAZEL_OUTPUT_BASE" build --disk_cache="$env:BAZEL_DISK_CACHE" --config=windows -- `
@@ -217,7 +284,9 @@ jobs:
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
         continue-on-error: true  # Ignore errors when cache is not found.
-        run: gh cache delete ${{ steps.cache-keys.outputs.CACHE_KEY }}
+        env:
+          CACHE_KEY: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+        run: gh cache delete "$env:CACHE_KEY"
 
       - name: Shutdown bazel server before saving cache.
         run: bazel --output_base="$env:BAZEL_OUTPUT_BASE" shutdown
@@ -231,3 +300,32 @@ jobs:
         with:
           path: ~/.cache/bazel-windows
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+
+  # A PR is accepted only if this check concludes "success" ("skipped" doesn't
+  # count). So this job always runs, and passes if Presubmit-Win passed or was
+  # skipped because the PR has no relevant changes. This check is required by
+  # name, so keep the name unique across workflows.
+  gate:
+    name: "Presubmit-Win-Gate"
+    needs: [check, presubmit]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check results
+        shell: bash
+        env:
+          CHECK_RESULT: ${{ needs.check.result }}
+          RUN_BUILD: ${{ needs.check.outputs.run_build }}
+          BUILD_RESULT: ${{ needs.presubmit.result }}
+        run: |
+          echo "check=${CHECK_RESULT} run_build=${RUN_BUILD} build=${BUILD_RESULT}"
+          if [[ "${CHECK_RESULT}" == "success" ]]; then
+            if [[ "${BUILD_RESULT}" == "success" ]]; then
+              exit 0
+            fi
+            if [[ "${BUILD_RESULT}" == "skipped" && "${RUN_BUILD}" == "false" ]]; then
+              exit 0
+            fi
+          fi
+          exit 1

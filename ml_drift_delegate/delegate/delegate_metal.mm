@@ -180,17 +180,17 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
           void* gpu_payload_data = nullptr;
           const char* identifier = LrtGetGpuOptionsIdentifier();
           if (delegate_kernel->runtime_context()->find_opaque_options_data(
-                  opaque_gpu_options, identifier, &gpu_payload_data) ==
-              kLiteRtStatusOk) {
+                  opaque_gpu_options, identifier, &gpu_payload_data) == kLiteRtStatusOk) {
             LrtGpuOptions* gpu_opts = nullptr;
-            if (LrtCreateGpuOptionsFromToml(
-                    reinterpret_cast<const char*>(gpu_payload_data),
-                    &gpu_opts) == kLiteRtStatusOk) {
-              bool enable_residency = true;
-              if (LrtGetGpuOptionsMetalResidencySet(
-                      gpu_opts, &enable_residency) == kLiteRtStatusOk) {
-                auto* metal_backend = static_cast<litert::ml_drift::GpuBackendMetal*>(
-                    delegate_kernel->backend());
+            if (LrtCreateGpuOptionsFromToml(reinterpret_cast<const char*>(gpu_payload_data),
+                                            &gpu_opts) == kLiteRtStatusOk) {
+              // Keep the backend setting for residency if the GPU option is not set
+              // (returns kLiteRtStatusErrorNotFound in that case).
+              bool enable_residency = false;
+              if (LrtGetGpuOptionsMetalResidencySet(&enable_residency, gpu_opts) ==
+                  kLiteRtStatusOk) {
+                auto* metal_backend =
+                    static_cast<litert::ml_drift::GpuBackendMetal*>(delegate_kernel->backend());
                 metal_backend->SetResidencyRuntimeEnabled(enable_residency);
               }
               LrtDestroyGpuOptions(gpu_opts);
@@ -370,18 +370,18 @@ TfLiteDelegatePtr CreateMlDriftMetalDelegate(MlDriftDelegateOptionsPtr options,
     case kDefault:
       delegate_data->calculation_precision =
           delegate_data->shared_backend->GetInfo()->IsRoundToNearestSupported()
-              ? ::ml_drift::CalculationsPrecision::F16
-              : ::ml_drift::CalculationsPrecision::F32_F16;
+              ? ::ml_drift::CalculationsPrecision::kF16
+              : ::ml_drift::CalculationsPrecision::kF32F16;
       break;
     case kFp16:
-      delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::F16;
+      delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::kF16;
       break;
     case kFp32:
-      delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::F32;
+      delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::kF32;
       break;
   }
   if (delegate_data->options->use_f32_accum_for_fp16) {
-    delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::F32_F16;
+    delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::kF32F16;
   }
   const bool hint_fully_delegated_to_single_delegate =
       delegate_data->options->hint_fully_delegated_to_single_delegate;

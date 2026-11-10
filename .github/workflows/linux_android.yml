@@ -19,6 +19,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   check:
     name: Check Changes
@@ -46,8 +49,11 @@ jobs:
       - name: Determine if build should run
         id: check
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SRC_CHANGED: ${{ steps.filter.outputs.src }}
         run: |
-          if [[ "${{ github.event_name }}" != "pull_request" || "${{ steps.filter.outputs.src }}" == "true" ]]; then
+          if [[ "${EVENT_NAME}" != "pull_request" || "${SRC_CHANGED}" == "true" ]]; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -58,7 +64,7 @@ jobs:
     needs: check
     if: needs.check.outputs.run_build == 'true'
     # Task execution time doesn't exceed 10 minutes, so we don't need to use
-    # "linux-x86-n2-16". Use GitHub-hosted "ubuntu-latest" instead.
+    # "linux-x86-n4-16". Use GitHub-hosted "ubuntu-latest" instead.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -98,7 +104,8 @@ jobs:
       - name: Build Android Artifacts with Bazel
         run: |
           bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/kotlin:litert
-          bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/vendors/arm/...
+          bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/vendors/arm_vulkan_ml/...
+          bazel build --extra_toolchains=@bazel_tools//tools/jdk:all --config=android_arm64 //litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_so
 
       - name: Upload Android Artifacts
         if: github.event_name != 'pull_request'

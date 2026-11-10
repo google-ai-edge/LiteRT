@@ -25,7 +25,6 @@ cc_library(
     hdrs = ["litert_model.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_model_header",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context_header",
@@ -131,10 +130,8 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context",
-        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc/internal:litert_tfl_types",
-        "//litert/test:common",
         "//litert/test:load_test_model",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",

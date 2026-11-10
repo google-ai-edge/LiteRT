@@ -17,6 +17,7 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "tflite/c/common.h"
 
 namespace litert::ml_drift::ir {
@@ -26,7 +27,7 @@ void ConvertConcat(
     const TfLiteContext& context, const TfLiteNode& node,
     const TfLiteRegistration& registration,
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
-    ::ml_drift::ir::IrModel& ir_model);
+    const IrModelBuilderOptions& options, ::ml_drift::ir::IrModel& ir_model);
 
 }  // namespace litert::ml_drift::ir
 

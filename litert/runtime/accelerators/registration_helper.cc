@@ -24,10 +24,12 @@
 #include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
+#include "litert/runtime/accelerators/accelerator_implementation_helper.h"
 
 namespace litert::internal {
 
@@ -49,32 +51,47 @@ LiteRtStatus RegisterAcceleratorFromDef(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  LiteRtAccelerator accelerator;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateAccelerator(&accelerator));
-  LITERT_RETURN_IF_ERROR(
-      LiteRtSetAcceleratorGetName(accelerator, accelerator_def->get_name));
+  LiteRtAccelerator accelerator_handle;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateAccelerator(&accelerator_handle));
+  AcceleratorGuard accelerator(accelerator_handle);
+
+  // If a system runtime handle is provided (e.g. Google Play services), the
+  // accelerator's hardware compatibility allowlist is not applied.
+  if (env == nullptr ||
+      !env->GetOption(kLiteRtEnvOptionTagSystemRuntimeHandle).has_value()) {
+    LiteRtHwAcceleratorSet supported_hardware = kLiteRtHwAcceleratorNone;
+    if (LiteRtStatus status = accelerator_def->get_hardware_support(
+            accelerator.get(), &supported_hardware);
+        status != kLiteRtStatusOk ||
+        supported_hardware == kLiteRtHwAcceleratorNone) {
+      return status != kLiteRtStatusOk ? status : kLiteRtStatusErrorUnsupported;
+    }
+  }
+
+  LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorGetName(
+      accelerator.get(), accelerator_def->get_name));
   LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorGetVersion(
-      accelerator, accelerator_def->get_version));
+      accelerator.get(), accelerator_def->get_version));
   LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorGetHardwareSupport(
-      accelerator, accelerator_def->get_hardware_support));
-  LITERT_RETURN_IF_ERROR(
-      LiteRtSetDelegateFunction(accelerator, accelerator_def->create_delegate));
+      accelerator.get(), accelerator_def->get_hardware_support));
+  LITERT_RETURN_IF_ERROR(LiteRtSetDelegateFunction(
+      accelerator.get(), accelerator_def->create_delegate));
   LITERT_RETURN_IF_ERROR(
       LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
-          accelerator,
+          accelerator.get(),
           accelerator_def->is_tflite_delegate_responsible_for_jit_compilation));
 
   if (accelerator_def->start_metrics_collection != nullptr) {
     LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorStartMetricsCollection(
-        accelerator, accelerator_def->start_metrics_collection));
+        accelerator.get(), accelerator_def->start_metrics_collection));
   }
   if (accelerator_def->stop_metrics_collection != nullptr) {
     LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorStopMetricsCollection(
-        accelerator, accelerator_def->stop_metrics_collection));
+        accelerator.get(), accelerator_def->stop_metrics_collection));
   }
 
   LITERT_RETURN_IF_ERROR(
-      LiteRtRegisterAccelerator(env, accelerator, nullptr, nullptr));
+      LiteRtRegisterAccelerator(env, accelerator.release(), nullptr, nullptr));
 
   for (size_t i = 0;
        i < accelerator_def->buffer_handlers.num_supported_buffer_types; ++i) {

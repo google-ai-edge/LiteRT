@@ -65,7 +65,7 @@ void ConvertSoftmax(const TfLiteContext& context, const TfLiteNode& node,
 
     // Create MAXIMUM op: max(operand, -cap_value)
     IrOp& max_op = *ir_model.add_op();
-    max_op.name = ToString(OperationType::MAXIMUM);
+    max_op.name = ToString(OperationType::kMaximum);
     max_op.attr = ElementwiseAttributes{/*param=*/-cap_value};
     ir_model.AddConsumer(current_tensor_id, max_op.id);
 
@@ -75,7 +75,7 @@ void ConvertSoftmax(const TfLiteContext& context, const TfLiteNode& node,
 
     // Create MINIMUM op: min(operand, cap_value)
     IrOp& min_op = *ir_model.add_op();
-    min_op.name = ToString(OperationType::MINIMUM);
+    min_op.name = ToString(OperationType::kMinimum);
     min_op.attr = ElementwiseAttributes{/*param=*/cap_value};
     ir_model.AddConsumer(current_tensor_id, min_op.id);
 
@@ -85,10 +85,10 @@ void ConvertSoftmax(const TfLiteContext& context, const TfLiteNode& node,
   }
 
   SoftmaxAttributes attr;
-  attr.axis = Axis::CHANNELS;  // Always by channels as per model_builder.cc
+  attr.axis = Axis::kChannels;  // Always by channels as per model_builder.cc
 
   IrOp& op = *ir_model.add_op();
-  op.name = ToString(OperationType::SOFTMAX);
+  op.name = ToString(OperationType::kSoftmax);
   op.attr = attr;
 
   ir_model.AddConsumer(current_tensor_id, op.id);

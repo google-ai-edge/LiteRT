@@ -35,14 +35,20 @@ limitations under the License.
 
 namespace litert::tensor {
 
-absl::Status XnnpackRunner::CreateRuntime(size_t num_threads) {
-  xnn_subgraph_t sg = static_cast<XnnpackGraph&>(*graph_).GetSubgraph();
+absl::Status XnnpackRunner::CreateRuntime() {
+  auto& xnn_graph = static_cast<XnnpackGraph&>(*graph_);
+  xnn_subgraph_t sg = xnn_graph.GetSubgraph();
   xnn_runtime* raw_runtime = nullptr;
-  LRT_TENSOR_RETURN_IF_ERROR(
-      XnnStatusToAbsl(xnn_create_runtime_v3(sg, weights_cache_, threadpool_,
-                                            /*flags=*/0, &raw_runtime),
-                      "xnn_create_runtime_v3"));
+  LRT_TENSOR_RETURN_IF_ERROR(XnnStatusToAbsl(
+      xnn_create_runtime_v4(sg, weights_cache_, workspace_, threadpool_,
+                            /*flags=*/0, &raw_runtime),
+      "xnn_create_runtime_v4"));
   runtime_.reset(raw_runtime);
+  // Blockwise FP16 scale buffers are only consumed when packing weights during
+  // `xnn_create_runtime_v4`; release them now so multi-signature runtimes do
+  // not hold duplicate host copies per pass.
+  xnn_graph.fp16_buffers().clear();
+  xnn_graph.fp16_buffers().shrink_to_fit();
   return absl::OkStatus();
 }
 

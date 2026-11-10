@@ -41,11 +41,15 @@ jobs:
               - '!g3doc/**'
               - '!site/**'
               - '!LICENSE'
+              - '!litert_quantizer/**'
       - name: Determine if build should run
         id: check
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SRC_CHANGED: ${{ steps.filter.outputs.src }}
         run: |
-          if [[ "${{ github.event_name }}" != "pull_request" || "${{ steps.filter.outputs.src }}" == "true" ]]; then
+          if [[ "${EVENT_NAME}" != "pull_request" || "${SRC_CHANGED}" == "true" ]]; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -56,8 +60,8 @@ jobs:
     needs: check
     if: needs.check.outputs.run_build == 'true'
     # Building LiteRT from source with CMake/Ninja on "ubuntu-latest" (2 vCPUs)
-    # takes ~20 minutes. Keep it on "linux-x86-n2-16" to keep runtime under 10 minutes.
-    runs-on: linux-x86-n2-16
+    # takes ~20 minutes. Keep it on "linux-x86-n4-16" to keep runtime under 10 minutes.
+    runs-on: linux-x86-n4-16
     container:
       image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:d6b429665f5269698f88ccd00bcb8a6eb685332c302f08f29fe0738cd6a6610c
     env:
@@ -165,4 +169,33 @@ jobs:
           ctest --test-dir "${CMAKE_BUILD_DIR}" \
             --label-regex '^cc_api$' \
             --output-on-failure
+
+  # A PR is accepted only if this check concludes "success" ("skipped" doesn't
+  # count). So this job always runs, and passes if CMake-C++-API-example passed
+  # or was skipped because the PR has no relevant changes. This check is
+  # required by name, so keep the name unique across workflows.
+  gate:
+    name: "CMake-C++-API-example-Gate"
+    needs: [check, source-build-cc-api]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check results
+        shell: bash
+        env:
+          CHECK_RESULT: ${{ needs.check.result }}
+          RUN_BUILD: ${{ needs.check.outputs.run_build }}
+          BUILD_RESULT: ${{ needs.source-build-cc-api.result }}
+        run: |
+          echo "check=${CHECK_RESULT} run_build=${RUN_BUILD} build=${BUILD_RESULT}"
+          if [[ "${CHECK_RESULT}" == "success" ]]; then
+            if [[ "${BUILD_RESULT}" == "success" ]]; then
+              exit 0
+            fi
+            if [[ "${BUILD_RESULT}" == "skipped" && "${RUN_BUILD}" == "false" ]]; then
+              exit 0
+            fi
+          fi
+          exit 1
 

@@ -72,6 +72,16 @@ interface NpuCompatibilityChecker {
       return false
     }
 
+    private fun isIntelDevice(): Boolean {
+      // The Intel OpenVINO NPU runtime is packaged for x86_64 Android devices.
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val manufacturer = Build.SOC_MANUFACTURER.trim()
+        return "Intel".equals(manufacturer, ignoreCase = true) &&
+          Build.SUPPORTED_ABIS.any { "x86_64".equals(it, ignoreCase = true) }
+      }
+      return false
+    }
+
     /** Qualcomm NPU compatibility checker. */
     val Qualcomm =
       object : NpuCompatibilityChecker {
@@ -96,6 +106,12 @@ interface NpuCompatibilityChecker {
         override fun isDeviceSupported(): Boolean = isSamsungDevice()
       }
 
+    /** Intel NPU compatibility checker. */
+    val Intel =
+      object : NpuCompatibilityChecker {
+        override fun isDeviceSupported(): Boolean = isIntelDevice()
+      }
+
     /** Default NPU compatibility checker for all vendors. */
     val Default =
       object : NpuCompatibilityChecker {
@@ -103,7 +119,8 @@ interface NpuCompatibilityChecker {
           return Qualcomm.isDeviceSupported() ||
             Mediatek.isDeviceSupported() ||
             GoogleTensor.isDeviceSupported() ||
-            Samsung.isDeviceSupported()
+            Samsung.isDeviceSupported() ||
+            Intel.isDeviceSupported()
         }
       }
   }

@@ -78,7 +78,7 @@ TEST_P(ConvertSplitTest, SplitAlongChannel) {
   const ::ml_drift::SplitAttributes* attr =
       std::any_cast<::ml_drift::SplitAttributes>(&split_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::CHANNELS);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kChannels);
 }
 
 TEST_P(ConvertSplitTest, SplitAlongChannel0DScalarAxis) {
@@ -113,7 +113,7 @@ TEST_P(ConvertSplitTest, SplitAlongChannel0DScalarAxis) {
   const ::ml_drift::SplitAttributes* attr =
       std::any_cast<::ml_drift::SplitAttributes>(&split_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::CHANNELS);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kChannels);
 }
 
 TEST_P(ConvertSplitTest, SplitNumSplitsOne) {
@@ -206,7 +206,7 @@ TEST_P(ConvertSplitVTest, SplitVAlongChannel) {
   const ::ml_drift::SplitAttributes* attr =
       std::any_cast<::ml_drift::SplitAttributes>(&split_op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->axis, ::ml_drift::Axis::CHANNELS);
+  EXPECT_EQ(attr->axis, ::ml_drift::Axis::kChannels);
 }
 
 INSTANTIATE_TEST_SUITE_P(ConvertSplitTest, ConvertSplitTest,

@@ -270,6 +270,8 @@ LiteRtStatus LiteRtBuilderBuildPackOpOption(LiteRtBuilder builder, LiteRtOp op,
 //
 //==============================================================================
 LiteRtStatus LiteRtGetOneHotAxisOption(LiteRtOp op, int32_t* axis);
+LiteRtStatus LiteRtBuilderBuildOneHotOpOption(LiteRtBuilder builder,
+                                              LiteRtOp op, int32_t* axis);
 
 //==============================================================================
 //
@@ -329,6 +331,16 @@ LiteRtStatus LiteRtBuilderBuildSplitOpOption(LiteRtBuilder builder, LiteRtOp op,
 //
 //==============================================================================
 LiteRtStatus LiteRtGetSplitVNumSplitsOption(LiteRtOp op, int32_t* num_splits);
+
+//==============================================================================
+//
+// Build option APIs for LiteRt SplitV op.
+//  Options:
+// - num_splits : int32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtBuilderBuildSplitVOpOption(LiteRtBuilder builder,
+                                              LiteRtOp op, int32_t* num_splits);
 
 //==============================================================================
 //
@@ -409,6 +421,42 @@ LiteRtStatus LiteRtGetConv3dDilationWOption(LiteRtOp op,
 LiteRtStatus LiteRtGetConv3dDilationHOption(LiteRtOp op,
                                             int32_t* dilation_h_factor);
 LiteRtStatus LiteRtBuilderBuildConv3dOpOption(
+    LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+    int32_t* stride_h, int32_t* stride_d, int32_t* dilation_w_factor,
+    int32_t* dilation_h_factor, int32_t* dilation_d_factor,
+    uint32_t* fused_activation_function);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt Conv3dTranspose op.
+//  Options:
+// - padding : uint32_t
+// - stride_d : int32_t
+// - stride_w : int32_t
+// - stride_h : int32_t
+// - fused_activation_function : uint32_t
+// - dilation_d_factor : int32_t
+// - dilation_w_factor : int32_t
+// - dilation_h_factor : int32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetConv3dTransposePaddingOption(LiteRtOp op,
+                                                   uint32_t* padding);
+LiteRtStatus LiteRtGetConv3dTransposeStrideDOption(LiteRtOp op,
+                                                   int32_t* stride_d);
+LiteRtStatus LiteRtGetConv3dTransposeStrideWOption(LiteRtOp op,
+                                                   int32_t* stride_w);
+LiteRtStatus LiteRtGetConv3dTransposeStrideHOption(LiteRtOp op,
+                                                   int32_t* stride_h);
+LiteRtStatus LiteRtGetConv3dTransposeFusedActivationOption(
+    LiteRtOp op, uint32_t* fused_activation_function);
+LiteRtStatus LiteRtGetConv3dTransposeDilationDOption(
+    LiteRtOp op, int32_t* dilation_d_factor);
+LiteRtStatus LiteRtGetConv3dTransposeDilationWOption(
+    LiteRtOp op, int32_t* dilation_w_factor);
+LiteRtStatus LiteRtGetConv3dTransposeDilationHOption(
+    LiteRtOp op, int32_t* dilation_h_factor);
+LiteRtStatus LiteRtBuilderBuildConv3dTransposeOpOption(
     LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
     int32_t* stride_h, int32_t* stride_d, int32_t* dilation_w_factor,
     int32_t* dilation_h_factor, int32_t* dilation_d_factor,
@@ -671,6 +719,25 @@ LiteRtStatus LiteRtBuilderBuildSqueezeOpOption(LiteRtBuilder builder,
                                                LiteRtOp op,
                                                const int32_t* squeeze_dims,
                                                int32_t num_squeeze_dims);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt LocalResponseNormalization op.
+//  Options:
+// - radius : int32_t
+// - bias : float
+// - alpha : float
+// - beta : float
+//
+//==============================================================================
+LiteRtStatus LiteRtGetLocalResponseNormalizationRadiusOption(LiteRtOp op,
+                                                             int32_t* radius);
+LiteRtStatus LiteRtGetLocalResponseNormalizationBiasOption(LiteRtOp op,
+                                                           float* bias);
+LiteRtStatus LiteRtGetLocalResponseNormalizationAlphaOption(LiteRtOp op,
+                                                            float* alpha);
+LiteRtStatus LiteRtGetLocalResponseNormalizationBetaOption(LiteRtOp op,
+                                                           float* beta);
 
 #ifdef __cplusplus
 }

@@ -16,7 +16,9 @@
 
 #include <fcntl.h>  // IWYU pragma: keep b/332641196
 
+#include <cerrno>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>  // NOLINT for path manipulation.
 #include <string>
 #include <utility>
@@ -46,9 +48,15 @@ std::string GetCompiledCacheFilePath(absl::string_view serialization_dir,
 
 absl::Status WriteToFd(const ::ml_drift::FileDescriptor& fd,
                        absl::Span<const uint8_t> data) {
-  return fd.IsValid() && fd.Write(data.data(), data.size())
-             ? absl::OkStatus()
-             : absl::InternalError("Failed to write cache file.");
+  if (!fd.IsValid()) {
+    return absl::InternalError(absl::StrCat(
+        "Failed to open cache file for writing: ", strerror(errno)));
+  }
+  if (!fd.Write(data.data(), data.size())) {
+    return absl::InternalError(
+        absl::StrCat("Failed to write data to cache file: ", strerror(errno)));
+  }
+  return absl::OkStatus();
 }
 
 }  // namespace

@@ -366,6 +366,53 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  /// @brief When enabled, detailed op information is omitted from QNN graph
+  /// op names.
+  enum class OpNameFormat : int {
+    kBasic = kLiteRtQualcommOpNameFormatBasic,
+    kDetailed = kLiteRtQualcommOpNameFormatDetailed,
+  };
+
+  void SetOpNameFormat(OpNameFormat op_name_format) {
+    LrtQualcommOptionsSetOpNameFormat(
+        options_,
+        static_cast<LrtQualcommOptionsOpNameFormat>(op_name_format));
+  }
+  OpNameFormat GetOpNameFormat() {
+    LrtQualcommOptionsOpNameFormat val;
+    auto status = LrtQualcommOptionsGetOpNameFormat(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return OpNameFormat::kBasic;
+    }
+    return static_cast<OpNameFormat>(val);
+  }
+
+  /// @brief Enables HTP DLBC input compression.
+  void SetHtpDlbc(bool htp_dlbc) {
+    LrtQualcommOptionsSetHtpDlbc(options_, htp_dlbc);
+  }
+  bool GetHtpDlbc() {
+    bool val;
+    auto status = LrtQualcommOptionsGetHtpDlbc(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
+  /// @brief Enables HTP DLBC weight compression.
+  void SetHtpDlbcWeights(bool htp_dlbc_weights) {
+    LrtQualcommOptionsSetHtpDlbcWeights(options_, htp_dlbc_weights);
+  }
+  bool GetHtpDlbcWeights() {
+    bool val;
+    auto status = LrtQualcommOptionsGetHtpDlbcWeights(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
   /// @brief This option controls P point to change compiler configurations.
   ///
   /// P points are experimental (HTP backend with O3 only) and map to predefined
@@ -376,6 +423,21 @@ class QualcommOptions : public ConcreteOptionsBase {
   std::int32_t GetHtpPPoint() {
     std::int32_t val;
     auto status = LrtQualcommOptionsGetHtpPPoint(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return 0;
+    }
+    return val;
+  }
+
+  /// @brief Controls the channel tile size used by weight sharing during graph
+  /// finalization.
+  void SetHtpWeightSharingChannelTileSize(std::int32_t tile_size) {
+    LrtQualcommOptionsSetHtpWeightSharingChannelTileSize(options_, tile_size);
+  }
+  std::int32_t GetHtpWeightSharingChannelTileSize() {
+    std::int32_t val;
+    auto status =
+        LrtQualcommOptionsGetHtpWeightSharingChannelTileSize(options_, &val);
     if (status == kLiteRtStatusErrorNotFound) {
       return 0;
     }
@@ -463,6 +525,28 @@ class QualcommOptions : public ConcreteOptionsBase {
   std::uint32_t GetVtcmSize() {
     std::uint32_t val;
     auto status = LrtQualcommOptionsGetVtcmSize(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return 0;
+    }
+    return val;
+  }
+
+  void SetHtpDeviceId(std::uint32_t htp_device_id) {
+    LrtQualcommOptionsSetHtpDeviceId(options_, htp_device_id);
+  }
+  std::uint32_t GetHtpDeviceId() {
+    std::uint32_t val;
+    LrtQualcommOptionsGetHtpDeviceId(options_, &val);
+    return val;
+  }
+
+  void SetHtpFileReadMemoryBudgetMB(std::uint32_t budget_mb) {
+    LrtQualcommOptionsSetHtpFileReadMemoryBudgetMB(options_, budget_mb);
+  }
+  std::uint32_t GetHtpFileReadMemoryBudgetMB() {
+    std::uint32_t val;
+    auto status =
+        LrtQualcommOptionsGetHtpFileReadMemoryBudgetMB(options_, &val);
     if (status == kLiteRtStatusErrorNotFound) {
       return 0;
     }
@@ -720,6 +804,57 @@ class QualcommOptions : public ConcreteOptionsBase {
     auto status = LrtQualcommOptionsGetLpaiCoreSelection(options_, &val);
     if (status == kLiteRtStatusErrorNotFound) {
       return 0;
+    }
+    return val;
+  }
+
+  // Sets the directory where CPU host QNN SDK shared libraries
+  // (libQnnSystem.so, libQnnHtp.so, etc.) are located. When set, this directory
+  // takes top priority when loading QNN host libraries. If not set (or if
+  // loading from this path fails), library loading falls back to the plugin
+  // directory (shared_library_dir), and finally to standard system dynamic
+  // loader search paths (preserving backward compatibility). Also acts as a
+  // fallback directory for configuring ADSP_LIBRARY_PATH if dsp_skel_dir is not
+  // explicitly set.
+  void SetQnnLibDir(const std::string& qnn_lib_dir) {
+    LrtQualcommOptionsSetQnnLibDir(options_, qnn_lib_dir.c_str());
+  }
+
+  // Retrieves the configured CPU host QNN shared library directory.
+  // Returns an empty string if not set.
+  // The returned view points into storage owned by the underlying options
+  // object. It is invalidated by a subsequent call to SetQnnLibDir() or by the
+  // destruction of the options object.
+  StringView GetQnnLibDir() const {
+    const char* val;
+    auto status = LrtQualcommOptionsGetQnnLibDir(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
+  // Sets the directory where Hexagon DSP Skel shared libraries
+  // (libQnnHtpV*Skel.so) are located. Used to configure ADSP_LIBRARY_PATH for
+  // FastRPC.
+  // When set, this directory takes top priority for ADSP_LIBRARY_PATH.
+  // If not set, ADSP_LIBRARY_PATH falls back to qnn_lib_dir (if provided), and
+  // finally to the plugin directory (shared_library_dir), preserving backward
+  // compatibility.
+  void SetDspSkelDir(const std::string& dsp_skel_dir) {
+    LrtQualcommOptionsSetDspSkelDir(options_, dsp_skel_dir.c_str());
+  }
+
+  // Retrieves the configured DSP Skel shared library directory.
+  // Returns an empty string if not set.
+  // The returned view points into storage owned by the underlying options
+  // object. It is invalidated by a subsequent call to SetDspSkelDir() or by the
+  // destruction of the options object.
+  StringView GetDspSkelDir() const {
+    const char* val;
+    auto status = LrtQualcommOptionsGetDspSkelDir(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
     }
     return val;
   }

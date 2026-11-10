@@ -14,7 +14,10 @@
 
 #include "litert/core/model/ops/concatenation.h"
 
+#include <cstdint>
+#include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -32,24 +35,21 @@ namespace {
 
 using ::testing::ElementsAre;
 
-// Helper to create options
-std::unique_ptr<tflite::ConcatenationOptionsT> CreateConcatenationOptions(
-    int axis) {
+LiteRtOpT MakeConcatenationOp(int axis) {
+  LiteRtOpT op;
   auto options = std::make_unique<tflite::ConcatenationOptionsT>();
   options->axis = axis;
-  return options;
-}
-
-TEST(ConcatenationOpTest, ThreeDimensionalOneInput) {
-  LiteRtOpT op;
-  std::vector<Dims> input_shapes = {{2, 1, 2}};
-  std::vector<Dims> output_shapes(1);
-
-  auto options = CreateConcatenationOptions(1);
   TflOptions tfl_options;
   tfl_options.type = tflite::BuiltinOptions_ConcatenationOptions;
   tfl_options.value = options.release();
   SetTflOptions(op, std::move(tfl_options));
+  return op;
+}
+
+TEST(ConcatenationOpTest, ThreeDimensionalOneInput) {
+  LiteRtOpT op = MakeConcatenationOp(1);
+  std::vector<Dims> input_shapes = {{2, 1, 2}};
+  std::vector<Dims> output_shapes(1);
 
   ASSERT_EQ(InferConcatenation(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -57,15 +57,9 @@ TEST(ConcatenationOpTest, ThreeDimensionalOneInput) {
 }
 
 TEST(ConcatenationOpTest, FiveDimensionalOneInput) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeConcatenationOp(2);
   std::vector<Dims> input_shapes = {{2, 1, 2, 1, 3}};
   std::vector<Dims> output_shapes(1);
-
-  auto options = CreateConcatenationOptions(2);
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ConcatenationOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   ASSERT_EQ(InferConcatenation(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -73,15 +67,9 @@ TEST(ConcatenationOpTest, FiveDimensionalOneInput) {
 }
 
 TEST(ConcatenationOpTest, FiveDimensionalTwoInput) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeConcatenationOp(0);
   std::vector<Dims> input_shapes = {{2, 1, 2, 1, 3}, {2, 1, 2, 1, 3}};
   std::vector<Dims> output_shapes(1);
-
-  auto options = CreateConcatenationOptions(0);
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ConcatenationOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   ASSERT_EQ(InferConcatenation(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -90,15 +78,9 @@ TEST(ConcatenationOpTest, FiveDimensionalTwoInput) {
 }
 
 TEST(ConcatenationOpTest, FiveDimensionalTwoInputNegativeAxes) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeConcatenationOp(-2);
   std::vector<Dims> input_shapes = {{2, 1, 2, 1, 3}, {2, 1, 2, 1, 3}};
   std::vector<Dims> output_shapes(1);
-
-  auto options = CreateConcatenationOptions(-2);
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ConcatenationOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   ASSERT_EQ(InferConcatenation(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -109,15 +91,9 @@ TEST(ConcatenationOpTest, FiveDimensionalTwoInputNegativeAxes) {
 }
 
 TEST(ConcatenationOpTest, ThreeDimensionalTwoInputsDifferentShapes) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeConcatenationOp(1);
   std::vector<Dims> input_shapes = {{2, 1, 2}, {2, 3, 2}};
   std::vector<Dims> output_shapes(1);
-
-  auto options = CreateConcatenationOptions(1);
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ConcatenationOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   ASSERT_EQ(InferConcatenation(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -126,15 +102,9 @@ TEST(ConcatenationOpTest, ThreeDimensionalTwoInputsDifferentShapes) {
 }
 
 TEST(ConcatenationOpTest, FourInputs) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeConcatenationOp(2);
   std::vector<Dims> input_shapes = {{2, 1, 2}, {2, 1, 2}, {2, 1, 2}, {2, 1, 2}};
   std::vector<Dims> output_shapes(1);
-
-  auto options = CreateConcatenationOptions(2);
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ConcatenationOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   ASSERT_EQ(InferConcatenation(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -142,61 +112,39 @@ TEST(ConcatenationOpTest, FourInputs) {
   EXPECT_THAT(output_shapes[0], ElementsAre(2, 1, 8));
 }
 
-TEST(ConcatenationOpTest, TwoInputsTwoAxesNegativeAxes) {
-  LiteRtOpT op_axis0;
+struct ConcatenationAxisCase {
+  std::string test_name;
+  int axis;
+  Dims expected_output;
+};
+
+using ConcatenationAxisTest = ::testing::TestWithParam<ConcatenationAxisCase>;
+
+TEST_P(ConcatenationAxisTest, TwoInputsTwoAxesAndNegativeAxes) {
+  const auto& param = GetParam();
+  LiteRtOpT op = MakeConcatenationOp(param.axis);
   std::vector<Dims> input_shapes = {{2, 3}, {2, 3}};
   std::vector<Dims> output_shapes(1);
 
-  {
-    auto options = CreateConcatenationOptions(0);
-    TflOptions tfl_options;
-    tfl_options.type = tflite::BuiltinOptions_ConcatenationOptions;
-    tfl_options.value = options.release();
-    SetTflOptions(op_axis0, std::move(tfl_options));
-    ASSERT_EQ(InferConcatenation(op_axis0, absl::MakeSpan(input_shapes),
-                                 output_shapes),
-              kLiteRtStatusOk);
-    EXPECT_THAT(output_shapes[0], ElementsAre(4, 3));
-  }
-
-  {
-    LiteRtOpT op_axis_neg2;
-    auto options = CreateConcatenationOptions(-2);
-    TflOptions tfl_options;
-    tfl_options.type = tflite::BuiltinOptions_ConcatenationOptions;
-    tfl_options.value = options.release();
-    SetTflOptions(op_axis_neg2, std::move(tfl_options));
-    ASSERT_EQ(InferConcatenation(op_axis_neg2, absl::MakeSpan(input_shapes),
-                                 output_shapes),
-              kLiteRtStatusOk);
-    EXPECT_THAT(output_shapes[0], ElementsAre(4, 3));
-  }
-
-  {
-    LiteRtOpT op_axis1;
-    auto options = CreateConcatenationOptions(1);
-    TflOptions tfl_options;
-    tfl_options.type = tflite::BuiltinOptions_ConcatenationOptions;
-    tfl_options.value = options.release();
-    SetTflOptions(op_axis1, std::move(tfl_options));
-    ASSERT_EQ(InferConcatenation(op_axis1, absl::MakeSpan(input_shapes),
-                                 output_shapes),
-              kLiteRtStatusOk);
-    EXPECT_THAT(output_shapes[0], ElementsAre(2, 6));
-  }
+  ASSERT_EQ(InferConcatenation(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusOk);
+  EXPECT_EQ(output_shapes[0], param.expected_output);
 }
 
+INSTANTIATE_TEST_SUITE_P(
+    ConcatenationAxisTests, ConcatenationAxisTest,
+    ::testing::Values(ConcatenationAxisCase{"Axis0", 0, {4, 3}},
+                      ConcatenationAxisCase{"NegativeAxis2", -2, {4, 3}},
+                      ConcatenationAxisCase{"Axis1", 1, {2, 6}}),
+    [](const ::testing::TestParamInfo<ConcatenationAxisCase>& info) {
+      return info.param.test_name;
+    });
+
 TEST(ConcatenationOpTest, DynamicShapeInference) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeConcatenationOp(1);
   // First input has dynamic dimension. Second has static 5.
   std::vector<Dims> input_shapes = {{-1, 10}, {5, 10}};
   std::vector<Dims> output_shapes(1);
-
-  auto options = CreateConcatenationOptions(1);  // Axis 1
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ConcatenationOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   ASSERT_EQ(InferConcatenation(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusOk);
@@ -205,36 +153,57 @@ TEST(ConcatenationOpTest, DynamicShapeInference) {
 }
 
 TEST(ConcatenationOpTest, DynamicShapeMismatch) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeConcatenationOp(1);
   // First input dynamic. Second static 5. Third static 6.
   // This should fail because 5 != 6.
   std::vector<Dims> input_shapes = {{-1, 10}, {5, 10}, {6, 10}};
   std::vector<Dims> output_shapes(1);
-
-  auto options = CreateConcatenationOptions(1);  // Axis 1
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ConcatenationOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   EXPECT_EQ(InferConcatenation(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusErrorShapeInferenceFailed);
 }
 
 TEST(ConcatenationOpTest, OutputShapeSizeMismatch) {
-  LiteRtOpT op;
+  LiteRtOpT op = MakeConcatenationOp(0);
   std::vector<Dims> input_shapes = {{2, 2}, {2, 2}};
   std::vector<Dims> output_shapes;  // Empty
-
-  auto options = CreateConcatenationOptions(0);
-  TflOptions tfl_options;
-  tfl_options.type = tflite::BuiltinOptions_ConcatenationOptions;
-  tfl_options.value = options.release();
-  SetTflOptions(op, std::move(tfl_options));
 
   EXPECT_EQ(InferConcatenation(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusErrorShapeInferenceFailed);
 }
+
+struct ConcatenationErrorCase {
+  std::string test_name;
+  int axis;
+  std::vector<Dims> input_shapes;
+};
+
+using ConcatenationErrorTest = ::testing::TestWithParam<ConcatenationErrorCase>;
+
+TEST_P(ConcatenationErrorTest, RejectsAxisUnderflowInvalidDimsAndSumOverflow) {
+  const auto& param = GetParam();
+  LiteRtOpT op = MakeConcatenationOp(param.axis);
+  std::vector<Dims> input_shapes = param.input_shapes;
+  std::vector<Dims> output_shapes(1);
+
+  EXPECT_EQ(InferConcatenation(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ConcatenationErrorTests, ConcatenationErrorTest,
+    ::testing::Values(
+        ConcatenationErrorCase{"AxisUnderflow",
+                               std::numeric_limits<int32_t>::min(),
+                               {{2, 3}, {2, 3}}},
+        ConcatenationErrorCase{"NegativeInputDimension", 0, {{-2, 3}, {2, 3}}},
+        ConcatenationErrorCase{
+            "AxisDimensionSumOverflow",
+            0,
+            {{std::numeric_limits<int32_t>::max(), 3}, {2, 3}}}),
+    [](const ::testing::TestParamInfo<ConcatenationErrorCase>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace litert::internal

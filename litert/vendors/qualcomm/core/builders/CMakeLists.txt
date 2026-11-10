@@ -34,6 +34,7 @@ target_sources(qnn_builders
         layer_norm_op_builder.cc
         l2_norm_op_builder.cc
         leaky_relu_op_builder.cc
+        local_response_norm_op_builder.cc
         logistic_op_builder.cc
         onehot_op_builder.cc
         matmul_op_builder.cc
@@ -64,6 +65,7 @@ target_sources(qnn_builders
         tanh_op_builder.cc
         tile_op_builder.cc
         transpose_conv_op_builder.cc
+        transpose_conv3d_op_builder.cc
         transpose_op_builder.cc
         unpack_op_builder.cc
         log_softmax_op_builder.cc
@@ -71,11 +73,14 @@ target_sources(qnn_builders
         topk_op_builder.cc
         group_norm_op_builder.cc
         custom_op_builder.cc
+        detection_postprocess_op_builder.cc
 )
 
 target_include_directories(qnn_builders
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    PRIVATE
+        ${CMAKE_BINARY_DIR}/flatbuffers/include
 )
 
 target_link_libraries(qnn_builders

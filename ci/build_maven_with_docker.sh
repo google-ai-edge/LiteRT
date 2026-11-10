@@ -29,13 +29,12 @@ if [ ! -d /root_dir ]; then
     ${https_proxy:+--build-arg https_proxy="$https_proxy"} \
     ${no_proxy:+--build-arg no_proxy="$no_proxy"}
 
-  docker run -v ${SCRIPT_DIR}/../third_party/tensorflow:/third_party_tensorflow \
+  docker run \
     -v ${ROOT_DIR}:/root_dir \
     -v ${SCRIPT_DIR}:/script_dir \
     -e RELEASE_VERSION="${RELEASE_VERSION:-0.0.0-nightly-SNAPSHOT}" \
     -e BAZEL_CONFIG_FLAGS="${BAZEL_CONFIG_FLAGS}" \
     -e BUILD_LITERT_KOTLIN_API="${BUILD_LITERT_KOTLIN_API}" \
-    -e USE_LOCAL_TF="${USE_LOCAL_TF}" \
     -e IS_PRESUBMIT_JOB="${IS_PRESUBMIT_JOB:-false}" \
     --entrypoint /script_dir/build_maven_with_docker.sh tflite-builder
 
@@ -62,7 +61,6 @@ else
   printf '%s\n' "${configs[@]}" | ./configure
   cat .litert_configure.bazelrc
 
-  export TF_LOCAL_SOURCE_PATH="/root_dir/third_party/tensorflow"
   bash /script_dir/build_android_package.sh
 
   # Bundle the Maven package
@@ -87,18 +85,6 @@ else
   LITERT_GPU_API_DIR=${PACKAGE_PATH}/litert-gpu-api/$VERSION
   mkdir -p ${LITERT_GPU_API_DIR}
   cp ./ci/gen/litert-gpu-api-$VERSION/* ${LITERT_GPU_API_DIR}
-
-  LITERT_SUPPORT_API_DIR=${PACKAGE_PATH}/litert-support-api/$VERSION
-  mkdir -p ${LITERT_SUPPORT_API_DIR}
-  cp ./ci/gen/litert-support-api-$VERSION/* ${LITERT_SUPPORT_API_DIR}
-
-  LITERT_SUPPORT_DIR=${PACKAGE_PATH}/litert-support/$VERSION
-  mkdir -p ${LITERT_SUPPORT_DIR}
-  cp ./ci/gen/litert-support-$VERSION/* ${LITERT_SUPPORT_DIR}
-
-  LITERT_METADATA_DIR=${PACKAGE_PATH}/litert-metadata/$VERSION
-  mkdir -p ${LITERT_METADATA_DIR}
-  cp ./ci/gen/litert-metadata-$VERSION/* ${LITERT_METADATA_DIR}
 
   if [[ "$VERSION" == "0.0.0-nightly-SNAPSHOT" && "$IS_PRESUBMIT_JOB" != "true" ]]; then
     # Package debug version of litert, litert-gpu

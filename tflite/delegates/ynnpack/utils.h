@@ -48,6 +48,17 @@ struct NodeInfo {
   std::vector<int> outputs;
   TfLiteFusedActivation activation;
   CompositeOpType composite_op_type = CompositeOpType::kNone;
+  // Op parameters captured from the TfLiteNode/TfLiteRegistration when the
+  // delegate kernel is initialized. `TfLiteContext::GetNodeAndRegistration` is
+  // only available while the delegate is being applied, but the YNNPACK
+  // subgraph may need to be rebuilt later from `Prepare` (e.g. after an input
+  // tensor is resized), so everything needed to define nodes is cached here.
+  // These point at memory owned by the TfLite node (or model), which outlives
+  // the delegate kernel.
+  const void* builtin_data = nullptr;
+  const char* custom_name = nullptr;
+  const void* custom_initial_data = nullptr;
+  int custom_initial_data_size = 0;
 };
 
 struct DummyInputInfo {
@@ -72,9 +83,11 @@ bool IsQuantized(const TfLiteTensor& tensor);
 // is constant between `Prepare` calls.
 bool IsConstant(const TfLiteTensor& tensor, bool allow_prepare = false);
 bool IsSupportedQuantization(const TfLiteTensor& tensor,
-                             bool allow_per_channel = false);
+                             bool allow_per_channel = false,
+                             bool allow_blockwise = false);
 bool IsTensorSupported(const TfLiteTensor& tensor,
-                       bool allow_per_channel = false);
+                       bool allow_per_channel = false,
+                       bool allow_blockwise = false);
 bool QuantizationParamsEqual(const TfLiteTensor& tensor1,
                              const TfLiteTensor& tensor2);
 bool IsActivationSupported(TfLiteFusedActivation activation,
@@ -82,8 +95,9 @@ bool IsActivationSupported(TfLiteFusedActivation activation,
 TfLiteFusedActivation GetFusedActivation(const TfLiteRegistration* registration,
                                          const TfLiteNode* node);
 
-flexbuffers::Map GetFlexBufferMap(const TfLiteRegistration* reg,
-                                  const TfLiteNode* node);
+// Returns the custom/composite op attributes of `node` as a flexbuffer map, or
+// an empty map if there are none.
+flexbuffers::Map GetFlexBufferMap(const NodeInfo& node);
 
 // Find a dummy input we can use for a particular runtime_bmm op. Often, many
 // runtime_bmm ops use the same params tensor, which can share a dummy input.
@@ -112,11 +126,17 @@ TfLiteStatus DefineScalarConstant(TfLiteContext* context,
                                   ynn_subgraph_t subgraph, ynn_type type,
                                   double value, uint32_t* id_out);
 
+// Defines quantization parameters (scale and zero point) for a tensor in the
+// YNNPACK subgraph. Supports per-tensor and per-channel quantization, including
+// kTfLiteMultiAxisQuantization with blocksize == 0. Does not handle blockwise
+// quantization (blocksize > 0), which is handled by op-specific builders like
+// DefineBlockwiseQuantizedMatMul.
+// If the tensor is not quantized, returns `kTfLiteOk` and leaves `scale_id` and
+// `zp_id` set to `YNN_INVALID_VALUE_ID`.
 TfLiteStatus DefineQuantizationParams(TfLiteContext* context,
                                       ynn_subgraph_t subgraph,
                                       const TfLiteTensor& tensor,
-                                      uint32_t* scale_id, uint32_t* zp_id,
-                                      int32_t zp_offset = 0);
+                                      uint32_t* scale_id, uint32_t* zp_id);
 
 TfLiteStatus ApplyActivation(TfLiteContext* context, ynn_subgraph_t subgraph,
                              TfLiteFusedActivation activation,

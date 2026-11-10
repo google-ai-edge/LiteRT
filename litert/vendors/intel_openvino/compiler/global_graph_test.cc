@@ -52,6 +52,7 @@ struct Sample {
     OpenVinoGlobalGraph::Subgraph prefill;
     prefill.name = "Partition_0";
     prefill.device = 2;  // e.g. GPU enum
+    prefill.kv_tier = 8192;
     prefill.const_map = {{"weight_a", 0u}, {"weight_b", 7u}};
     prefill.payload = AsBytes(payload0);
     graph.subgraphs["Partition_0"] = prefill;
@@ -59,6 +60,7 @@ struct Sample {
     OpenVinoGlobalGraph::Subgraph decode;
     decode.name = "Partition_1";
     decode.device = 2;
+    decode.kv_tier = 16383;
     decode.const_map = {{"weight_a", 7u}};
     decode.payload = AsBytes(payload1);
     graph.subgraphs["Partition_1"] = decode;
@@ -116,6 +118,7 @@ TEST(GlobalGraphTest, RoundTrip) {
     const auto& out_sg = out.subgraphs.at(name);
     EXPECT_EQ(out_sg.name, in_sg.name);
     EXPECT_EQ(out_sg.device, in_sg.device);
+    EXPECT_EQ(out_sg.kv_tier, in_sg.kv_tier);
     EXPECT_EQ(out_sg.const_map, in_sg.const_map);
     const std::string got(reinterpret_cast<const char*>(out_sg.payload.data()),
                           out_sg.payload.size());

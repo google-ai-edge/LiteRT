@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-# copybara:uncomment load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
+# copybara:uncomment load("@rules_python//python:py_test.bzl", "py_test")
 # copybara:uncomment load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 
 package(
@@ -32,8 +32,8 @@ cc_library(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_tensor_buffer",
+        "//third_party/py/python_runtime:headers",
         "@com_google_absl//absl/strings:string_view",
-        "@xla//third_party/python_runtime:headers",
     ],
 )
 
@@ -47,7 +47,7 @@ cc_library(
 #         "//litert/cc:litert_ranked_tensor_type",
 #         "//litert/cc:litert_tensor_buffer",
 #         "@pybind11",
-#         "@xla//third_party/python_runtime:headers",
+#         "//third_party/py/python_runtime:headers",
 #     ],
 # )
 #

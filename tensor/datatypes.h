@@ -37,6 +37,7 @@ enum class Type {
   kI16,
   kI32,
   kI64,
+  kU2,
   kU4,
   kU8,
   kU16,
@@ -65,6 +66,24 @@ struct int2_t {
 
 static_assert(sizeof(int2_t) == sizeof(int8_t));
 static_assert(alignof(int2_t) == alignof(int8_t));
+
+struct uint2_t {
+  uint8_t a : 2;
+  uint8_t b : 2;
+  uint8_t c : 2;
+  uint8_t d : 2;
+
+  friend bool operator==(const uint2_t lhs, const uint2_t rhs) {
+    return lhs.a == rhs.a && lhs.b == rhs.b && lhs.c == rhs.c && lhs.d == rhs.d;
+  }
+
+  friend bool operator!=(const uint2_t lhs, const uint2_t rhs) {
+    return !(lhs == rhs);
+  }
+};
+
+static_assert(sizeof(uint2_t) == sizeof(int8_t));
+static_assert(alignof(uint2_t) == alignof(int8_t));
 
 struct int4_t {
   int8_t a : 4;
@@ -175,9 +194,15 @@ struct StorageImpl {
   static_assert((Bits & (Bits - 1)) == 0, "Bits must be a power of 2.");
   static_assert(Bits != 0, "Bits must be non-zero.");
   static_assert(!std::is_same_v<T, void>, "Storage type cannot be void.");
+  // Native type used to store the data.
   using type = T;
+  // `Type` value used to name the data.
   static constexpr Type value = t;
+  // Number of elements stored in a container of type `type`.
   static constexpr uint64_t kNumElements = 8 * sizeof(T) / Bits;
+  // Bit size of an element.
+  static constexpr uint64_t BitSize() { return Bits; }
+  // Buffer size, in bytes, to store `count` elements.
   static constexpr uint64_t BufferSize(size_t count) {
     return (Bits * count + 7) / 8;
   }
@@ -192,6 +217,7 @@ struct NativeStorage<Type::kUnknown> {
   using type = void;
   static constexpr Type value = Type::kUnknown;
   static constexpr uint64_t kNumElements = 0;
+  static constexpr uint64_t BitSize() { return 0; }
   static constexpr uint64_t BufferSize(size_t count) { return 0; }
 };
 
@@ -217,6 +243,10 @@ struct NativeStorage<Type::kI32> : internal::StorageImpl<Type::kI32, int32_t> {
 template <>
 struct NativeStorage<Type::kI64> : internal::StorageImpl<Type::kI64, int64_t> {
 };
+
+template <>
+struct NativeStorage<Type::kU2>
+    : internal::StorageImpl<Type::kU2, uint2_t, /*Bits=*/2> {};
 
 template <>
 struct NativeStorage<Type::kU4>
@@ -278,6 +308,10 @@ struct ApiType<int32_t> : internal::StorageImpl<Type::kI32, int32_t> {};
 
 template <>
 struct ApiType<int64_t> : internal::StorageImpl<Type::kI64, int64_t> {};
+
+template <>
+struct ApiType<uint2_t>
+    : internal::StorageImpl<Type::kU2, uint2_t, /*Bits=*/2> {};
 
 template <>
 struct ApiType<uint4_t>
@@ -408,8 +442,8 @@ void UnrolledConvert(std::ratio<2, 4>, InIt& in, OutIt& out) {
 
 template <class Cvt, class InIt, class OutIt>
 void UnrolledConvert(std::ratio<4, 4>, InIt& in, OutIt& out) {
-  out = {Cvt::Call(in->a), Cvt::Call(in->b), Cvt::Call(in->c),
-         Cvt::Call(in->d)};
+  *out = {Cvt::Call(in->a), Cvt::Call(in->b), Cvt::Call(in->c),
+          Cvt::Call(in->d)};
 }
 
 template <class Cvt, class InIt, class OutIt>
@@ -555,30 +589,34 @@ auto ConvertTo(T value) {
   return Conversion<to, from>::Call(value);
 }
 
-inline const char* ToString(Type t) {
-#define LITERT_TENSOR_TYPE_TO_STRING_CASE(name) \
-  case Type::k##name:                           \
-    return #name
-  switch (t) {
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(Unknown);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(BOOL);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(I2);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(I4);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(I8);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(I16);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(I32);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(I64);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(U4);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(U8);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(U16);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(U32);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(U64);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(FP16);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(FP32);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(FP64);
-    LITERT_TENSOR_TYPE_TO_STRING_CASE(BF16);
+#define LITERT_TENSOR_TYPE_SWITCH(TYPE)      \
+  switch (TYPE) {                            \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(Unknown); \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(BOOL);    \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(I2);      \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(I4);      \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(I8);      \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(I16);     \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(I32);     \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(I64);     \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(U2);      \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(U4);      \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(U8);      \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(U16);     \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(U32);     \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(U64);     \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(FP16);    \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(FP32);    \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(FP64);    \
+    LITERT_TENSOR_TYPE_SWITCH_CASE(BF16);    \
   }
-#undef LITERT_TENSOR_TYPE_TO_STRING_CASE
+
+inline const char* ToString(Type t) {
+#define LITERT_TENSOR_TYPE_SWITCH_CASE(name) \
+  case Type::k##name:                        \
+    return #name
+  LITERT_TENSOR_TYPE_SWITCH(t);
+#undef LITERT_TENSOR_TYPE_SWITCH_CASE
   // This return should never be reached.
   return "ERROR: litert::tensor::ToString(Type) failed.";
 }
@@ -592,32 +630,37 @@ inline std::ostream& operator<<(std::ostream& os, const Type t) {
   return os << ToString(t);
 }
 
-inline constexpr size_t BufferSize(Type t, size_t count) {
-#define LITERT_TENSOR_TYPE_BUFFER_SIZE(name) \
+// Buffer size, in bytes, to store `count` elements.
+constexpr size_t BufferSize(Type t, size_t count) {
+#define LITERT_TENSOR_TYPE_SWITCH_CASE(name) \
   case Type::k##name:                        \
     return NativeStorage<Type::k##name>::BufferSize(count);
-  switch (t) {
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(Unknown);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(BOOL);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(I2);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(I4);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(I8);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(I16);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(I32);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(I64);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(U4);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(U8);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(U16);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(U32);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(U64);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(FP16);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(FP32);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(FP64);
-    LITERT_TENSOR_TYPE_BUFFER_SIZE(BF16);
-  }
-#undef LITERT_TENSOR_TYPE_BUFFER_SIZE
+  LITERT_TENSOR_TYPE_SWITCH(t);
+#undef LITERT_TENSOR_TYPE_SWITCH_CASE
   return 0;
 }
+
+// Bit size of an element of the given type.
+constexpr size_t BitSize(Type t) {
+#define LITERT_TENSOR_TYPE_SWITCH_CASE(name) \
+  case Type::k##name:                        \
+    return NativeStorage<Type::k##name>::BitSize();
+  LITERT_TENSOR_TYPE_SWITCH(t);
+#undef LITERT_TENSOR_TYPE_SWITCH_CASE
+  return 0;
+}
+
+// Number of elements stored in a container for the given type.
+constexpr size_t NumElements(Type t) {
+#define LITERT_TENSOR_TYPE_SWITCH_CASE(name) \
+  case Type::k##name:                        \
+    return NativeStorage<Type::k##name>::kNumElements;
+  LITERT_TENSOR_TYPE_SWITCH(t);
+#undef LITERT_TENSOR_TYPE_SWITCH_CASE
+  return 0;
+}
+
+#undef LITERT_TENSOR_TYPE_SWITCH
 
 }  // namespace litert::tensor
 

@@ -146,6 +146,8 @@ bool HasQualcommOptions(const CompilationOptions& compilation_options) {
              compilation_options.qualcomm_use_int64_bias_as_int32) ||
          TriStateBoolIsSet(
              compilation_options.qualcomm_enable_weight_sharing) ||
+         TriStateBoolIsSet(
+             compilation_options.qualcomm_enable_just_in_time) ||
          TriStateBoolIsSet(compilation_options.qualcomm_use_conv_hmx) ||
          TriStateBoolIsSet(compilation_options.qualcomm_use_fold_relu) ||
          compilation_options.qualcomm_profiling >= 0 ||
@@ -158,7 +160,9 @@ bool HasQualcommOptions(const CompilationOptions& compilation_options) {
          compilation_options.qualcomm_graph_priority >= 0 ||
          compilation_options.qualcomm_backend >= 0 ||
          !compilation_options.qualcomm_saver_output_dir.empty() ||
-         compilation_options.qualcomm_graph_io_tensor_mem_type >= 0;
+         compilation_options.qualcomm_graph_io_tensor_mem_type >= 0 ||
+         !compilation_options.qualcomm_qnn_lib_dir.empty() ||
+         !compilation_options.qualcomm_dsp_skel_dir.empty();
 }
 
 bool HasIntelOpenVinoOptions(const CompilationOptions& compilation_options) {
@@ -273,6 +277,10 @@ bool PopulateCompilationOptions(litert::Options& options,
       qualcomm_options.SetEnableWeightSharing(TriStateBoolValue(
           compilation_options.qualcomm_enable_weight_sharing));
     }
+    if (TriStateBoolIsSet(compilation_options.qualcomm_enable_just_in_time)) {
+      qualcomm_options.SetEnableJustInTime(
+          TriStateBoolValue(compilation_options.qualcomm_enable_just_in_time));
+    }
     if (TriStateBoolIsSet(compilation_options.qualcomm_use_conv_hmx)) {
       qualcomm_options.SetUseConvHMX(
           TriStateBoolValue(compilation_options.qualcomm_use_conv_hmx));
@@ -327,6 +335,12 @@ bool PopulateCompilationOptions(litert::Options& options,
       qualcomm_options.SetGraphIOTensorMemType(
           static_cast<qualcomm::QualcommOptions::GraphIOTensorMemType>(
               compilation_options.qualcomm_graph_io_tensor_mem_type));
+    }
+    if (!compilation_options.qualcomm_qnn_lib_dir.empty()) {
+      qualcomm_options.SetQnnLibDir(compilation_options.qualcomm_qnn_lib_dir);
+    }
+    if (!compilation_options.qualcomm_dsp_skel_dir.empty()) {
+      qualcomm_options.SetDspSkelDir(compilation_options.qualcomm_dsp_skel_dir);
     }
   }
 

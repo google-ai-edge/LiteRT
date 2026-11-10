@@ -39,6 +39,10 @@ inline LiteRtStatus InferBroadcastArgs(const ShapeInferenceContext& ctx,
   if (shape1_buf.empty() || shape2_buf.empty()) {
     return kLiteRtStatusOk;
   }
+  if (shape1_buf.size() % sizeof(int32_t) != 0 ||
+      shape2_buf.size() % sizeof(int32_t) != 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 
   const int32_t* shape1_data =
       reinterpret_cast<const int32_t*>(shape1_buf.data());

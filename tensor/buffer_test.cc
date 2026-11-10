@@ -28,6 +28,7 @@ limitations under the License.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/datatypes.h"
 #include "tensor/internal/matchers.h"
 #include "tensor/internal/type_id.h"
@@ -212,6 +213,48 @@ TEST(OwningCpuBuffer, CopyFromSequence) {
       OwningCpuBuffer::Copy<Type::kI32>(reference_data);
   ASSERT_THAT(buffer, NotNull());
   ASSERT_THAT(buffer->LockMutable().As<int32_t>(),
+              ElementsAreArray(reference_data));
+}
+
+TEST(OwningCpuBuffer, CopyAsFromContiguousSequence) {
+  const std::vector<int32_t> reference_data{1, 2, 3, 4, 5};
+
+  std::shared_ptr<OwningCpuBuffer> buffer =
+      OwningCpuBuffer::CopyAs(Type::kI32, reference_data);
+  ASSERT_THAT(buffer, NotNull());
+  ASSERT_THAT(buffer->LockMutable().As<int32_t>(),
+              ElementsAreArray(reference_data));
+}
+
+TEST(OwningCpuBuffer, CopyAsFromSpan) {
+  const std::vector<int32_t> reference_data{1, 2, 3, 4, 5};
+
+  // Spans are already the narrowed form `CopyAs` dispatches on, so they must
+  // reach the type switch directly instead of being narrowed again.
+  std::shared_ptr<OwningCpuBuffer> buffer =
+      OwningCpuBuffer::CopyAs(Type::kI32, absl::MakeConstSpan(reference_data));
+  ASSERT_THAT(buffer, NotNull());
+  ASSERT_THAT(buffer->LockMutable().As<int32_t>(),
+              ElementsAreArray(reference_data));
+}
+
+TEST(OwningCpuBuffer, CopyAsFromNonContiguousSequence) {
+  const std::list<int32_t> reference_data{1, 2, 3, 4, 5};
+
+  std::shared_ptr<OwningCpuBuffer> buffer =
+      OwningCpuBuffer::CopyAs(Type::kI32, reference_data);
+  ASSERT_THAT(buffer, NotNull());
+  ASSERT_THAT(buffer->LockMutable().As<int32_t>(),
+              ElementsAreArray(reference_data));
+}
+
+TEST(OwningCpuBuffer, CopyAsConvertsFromNonContiguousSequence) {
+  const std::list<int32_t> reference_data{1, 2, 3, 4, 5};
+
+  std::shared_ptr<OwningCpuBuffer> buffer =
+      OwningCpuBuffer::CopyAs(Type::kFP32, reference_data);
+  ASSERT_THAT(buffer, NotNull());
+  ASSERT_THAT(buffer->LockMutable().As<float>(),
               ElementsAreArray(reference_data));
 }
 

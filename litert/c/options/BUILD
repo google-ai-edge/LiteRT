@@ -31,17 +31,17 @@ package(
 )
 
 cc_library(
-    name = "litert_arm_options",
-    srcs = ["litert_arm_options.cc"],
-    hdrs = ["litert_arm_options.h"],
+    name = "litert_arm_vulkan_ml_options",
+    srcs = ["litert_arm_vulkan_ml_options.cc"],
+    hdrs = ["litert_arm_vulkan_ml_options.h"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
-    alwayslink = True,
 )
 
 cc_library(
@@ -53,7 +53,6 @@ cc_library(
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -78,6 +77,8 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -105,10 +106,9 @@ cc_library(
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_common",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
-    # Keep the symbols in libLiteRt.dylib.
-    alwayslink = 1,
 )
 
 cc_test(
@@ -118,7 +118,6 @@ cc_test(
         ":litert_qualcomm_options",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
-        "//litert/cc:litert_opaque_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
@@ -140,7 +139,7 @@ cc_library(
         "//litert/core:litert_toml_parser",
         "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -169,7 +168,7 @@ cc_library(
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -203,6 +202,22 @@ cc_test(
     ],
 )
 
+# AML ##########################################################################################
+
+cc_library(
+    name = "litert_aml_options",
+    srcs = ["litert_aml_options.cc"],
+    hdrs = ["litert_aml_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_macros",
+        "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = 1,
+)
+
 # SAMSUNG ######################################################################################
 
 cc_library(
@@ -213,10 +228,9 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
-    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
-    alwayslink = 1,
 )
 
 cc_test(
@@ -229,20 +243,36 @@ cc_test(
     ],
 )
 
+config_setting(
+    name = "litert_gpu_use_ir_model_true",
+    define_values = {"litert_gpu_use_ir_model": "true"},
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "litert_gpu_use_ir_model_false",
+    define_values = {"litert_gpu_use_ir_model": "false"},
+    visibility = ["//visibility:private"],
+)
+
 cc_library(
     name = "litert_gpu_options",
     srcs = ["litert_gpu_options.cc"],
     hdrs = ["litert_gpu_options.h"],
+    defines = select({
+        ":litert_gpu_use_ir_model_true": ["LITERT_GPU_USE_IR_MODEL=true"],
+        ":litert_gpu_use_ir_model_false": ["LITERT_GPU_USE_IR_MODEL=false"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
-    # Keep the symbols in libLiteRt.dylib.
-    alwayslink = 1,
 )
 
 cc_library(
@@ -254,10 +284,9 @@ cc_library(
         "//litert/c/internal:litert_options_helper",
         "//litert/cc:litert_macros",
         "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
-    # Keep the symbols in libLiteRt.dylib.
-    alwayslink = 1,
 )
 
 cc_test(
@@ -279,23 +308,8 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_options_helper",
         "@com_google_absl//absl/container:flat_hash_set",
-    ],
-    # Keep the symbols in libLiteRt.dylib.
-    alwayslink = 1,
-)
-
-cc_library(
-    name = "litert_aml_options",
-    srcs = ["litert_aml_options.cc"],
-    hdrs = ["litert_aml_options.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/cc:litert_macros",
-        "//litert/core:litert_toml_parser",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
     ],
-    alwayslink = 1,
 )
 
 # copybara:uncomment_begin(google-only)
@@ -370,3 +384,39 @@ filegroup(
 )
 
 exports_files(glob(["litert_*.h"]))
+
+# Files that make up the LiteRT C++ SDK.
+#
+# lint IfChange(litert_cc_sdk_files)
+filegroup(
+    name = "litert_cc_sdk_files",
+    srcs = [
+        "litert_aml_options.cc",
+        "litert_aml_options.h",
+        "litert_arm_vulkan_ml_options.cc",
+        "litert_arm_vulkan_ml_options.h",
+        "litert_compiler_options.cc",
+        "litert_compiler_options.h",
+        "litert_cpu_options.cc",
+        "litert_cpu_options.h",
+        "litert_google_tensor_options.cc",
+        "litert_google_tensor_options.h",
+        "litert_google_tensor_options_type.h",
+        "litert_gpu_options.cc",
+        "litert_gpu_options.h",
+        "litert_intel_openvino_options.cc",
+        "litert_intel_openvino_options.h",
+        "litert_mediatek_options.cc",
+        "litert_mediatek_options.h",
+        "litert_qualcomm_options.cc",
+        "litert_qualcomm_options.h",
+        "litert_runtime_options.cc",
+        "litert_runtime_options.h",
+        "litert_samsung_options.cc",
+        "litert_samsung_options.h",
+        "litert_webnn_options.cc",
+        "litert_webnn_options.h",
+    ],
+    visibility = ["//litert/cc_sdk:__pkg__"],
+)
+# lint ThenChange(litert/cc_sdk/litert_cc_sdk_hdrs.txt, litert/cc_sdk/litert_cc_sdk_srcs.txt)

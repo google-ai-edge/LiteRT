@@ -21,13 +21,35 @@ VERS_1.0 {
 
     LiteRt*CompiledResult*;
 
-    /* RTTI for cross-DSO dynamic_cast / typeid (adla::I*Operator, etc.) */
+    /*
+      RTTI for cross-DSO dynamic_cast of adla:: types only.
+      Do not use _ZTV* / _ZTI* / _ZTS*: those also match libc++ and
+      libstdc++ iostream vtables. libcompiler_adla.so then binds its
+      ostream to this .so and crashes in locale::locale inside Compile().
+    */
 
-    _ZTI*;
-    _ZTS*;
-    _ZTV*;
+    _ZTIN4adla*;
+    _ZTSN4adla*;
+    _ZTVN4adla*;
 
   local:
+
+    /* libc++ (Android std::__ndk1) and libstdc++ iostream / locale. */
+    _ZTVNSt6__ndk1*;
+    _ZTINSt6__ndk1*;
+    _ZTSNSt6__ndk1*;
+    _ZTTNSt6__ndk1*;
+    _ZTVN10__cxxabiv1*;
+    _ZTIN10__cxxabiv1*;
+    _ZTSN10__cxxabiv1*;
+    _ZTVSt*;
+    _ZTISt*;
+    _ZTSSt*;
+    _ZTTSt*;
+    _ZTVNSt7__cxx11*;
+    _ZTINSt7__cxx11*;
+    _ZTSNSt7__cxx11*;
+    _ZTTNSt7__cxx11*;
 
     *;
 };

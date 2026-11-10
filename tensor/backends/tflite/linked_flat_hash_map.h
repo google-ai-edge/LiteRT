@@ -106,6 +106,20 @@ class LinkedFlatHashMap {
 
   bool contains(const K& key) const { return map_.contains(key); }
 
+  // Returns an iterator to the element with the given key, or `end()` if the
+  // key is not present. Does not insert.
+  iterator find(const K& key) {
+    auto map_it = map_.find(key);
+    if (map_it == map_.end()) return end();
+    return {&map_, map_it->second};
+  }
+
+  const_iterator find(const K& key) const {
+    auto map_it = map_.find(key);
+    if (map_it == map_.end()) return cend();
+    return {&map_, map_it->second};
+  }
+
   V& operator[](const K& key) {
     auto map_it = map_.find(key);
     if (map_it == map_.end()) {

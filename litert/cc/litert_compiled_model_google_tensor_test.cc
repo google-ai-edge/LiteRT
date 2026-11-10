@@ -35,7 +35,8 @@
 #include "litert/test/testdata/simple_model_test_vectors.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/gl/egl_environment.h"
+#include "ml_drift/gl/egl_environment.h"  // from @ml_drift
+#include "ml_drift/gl/portable_gl31.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert {
@@ -270,8 +271,8 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
            "GoogleTensor eTPU";
   }
 
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> gl_env;
-  ASSERT_OK(tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&gl_env));
+  std::unique_ptr<::ml_drift::gl::EglEnvironment> gl_env;
+  ASSERT_OK(::ml_drift::gl::EglEnvironment::NewEglEnvironment(&gl_env));
   // Environment setup.
   const std::vector<litert::EnvironmentOptions::Option> environment_options = {
       litert::EnvironmentOptions::Option{

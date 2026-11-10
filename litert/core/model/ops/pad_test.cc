@@ -15,6 +15,8 @@
 #include "litert/core/model/ops/pad.h"
 
 #include <cstdint>
+#include <limits>
+#include <string>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -120,6 +122,51 @@ TEST(PadOpTest, MirrorPad) {
 
   EXPECT_THAT(output_shapes[0], ElementsAre(1, 4, 3));
 }
+
+struct PadErrorCase {
+  std::string test_name;
+  bool omit_inputs;
+  Dims input_shape;
+  std::vector<int32_t> paddings;
+};
+
+using PadErrorTest = ::testing::TestWithParam<PadErrorCase>;
+
+TEST_P(PadErrorTest, RejectsMissingInputsNegativePaddingsAndDimensionOverflow) {
+  const auto& param = GetParam();
+  std::vector<Dims> input_shapes = {param.input_shape, {2, 2}};
+  std::vector<Dims> output_shapes(1);
+
+  LiteRtOpT op;
+  LiteRtTensorT input0;
+  LiteRtTensorT pads;
+  if (!param.omit_inputs) {
+    pads.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2}));
+    SetWeightsFromOwnedBuffer(
+        pads.Weights(),
+        OwningBufferRef<uint8_t>(
+            reinterpret_cast<const uint8_t*>(param.paddings.data()),
+            param.paddings.size() * sizeof(int32_t)));
+    op.Inputs() = {&input0, &pads};
+  }
+
+  EXPECT_EQ(InferPad(op, absl::MakeSpan(input_shapes), output_shapes),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    PadErrorTests, PadErrorTest,
+    ::testing::Values(
+        PadErrorCase{"MissingInputs", /*omit_inputs=*/true, {1, 2}, {}},
+        PadErrorCase{
+            "NegativePadding", /*omit_inputs=*/false, {1, 2}, {0, 0, -1, 1}},
+        PadErrorCase{"PaddedDimensionOverflow",
+                     /*omit_inputs=*/false,
+                     {1, std::numeric_limits<int32_t>::max() - 1},
+                     {0, 0, 2, 2}}),
+    [](const ::testing::TestParamInfo<PadErrorCase>& info) {
+      return info.param.test_name;
+    });
 
 }  // namespace
 }  // namespace litert::internal

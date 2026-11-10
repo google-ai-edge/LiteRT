@@ -14,6 +14,8 @@
 
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -89,26 +91,36 @@ absl::Status ValidateScale(const TfLiteTensor* tensor, int channels,
   return ValidateShape(shape, ::ml_drift::BHWC(1, 1, 1, channels), name);
 }
 
+// The scale tensor is shaped [out_channels, experts, 1, blocks_per_row].
+// `blocks_per_row == 1` is the per-output-channel case; larger values mean the
+// input axis is split into that many equally sized blocks, each with its own
+// scale. The block size is therefore `in_channels / blocks_per_row`, so the
+// block count has to divide the input axis evenly.
 absl::Status ValidateExpertScale(const TfLiteTensor* tensor, int experts,
-                                 int out_channels, absl::string_view name) {
+                                 int out_channels, int in_channels,
+                                 absl::string_view name) {
   if (tensor->type != kTfLiteFloat32 && tensor->type != kTfLiteFloat16) {
     return absl::InvalidArgumentError(absl::StrCat(
         "moe expects ", name, " to be float32 or float16."));
   }
   const ::ml_drift::BHWC shape = ExtractTensorShape(tensor);
-  return ValidateShape(shape, ::ml_drift::BHWC(out_channels, experts, 1, 1),
-                       name);
+  if (shape.b != out_channels || shape.h != experts || shape.w != 1) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "moe expected ", name, " shape [", out_channels, ", ", experts,
+        ", 1, blocks], got [", shape.b, ", ", shape.h, ", ", shape.w, ", ",
+        shape.c, "]."));
+  }
+  if (shape.c < 1 || in_channels % shape.c != 0) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "moe expects the ", name, " block count to divide the input channel "
+        "count evenly; got ", shape.c, " blocks for ", in_channels,
+        " input channels."));
+  }
+  return absl::OkStatus();
 }
 
-absl::Status ValidateInt8ZeroPoint(const TfLiteTensor* tensor,
-                                   absl::string_view name) {
-  if (tensor->quantization.type != kTfLiteAffineQuantization ||
-      tensor->quantization.params == nullptr) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "moe expects affine quantization for ", name, "."));
-  }
-  const auto* quant =
-      static_cast<const TfLiteAffineQuantization*>(tensor->quantization.params);
+absl::Status ValidateAffineInt8ZeroPoint(const TfLiteAffineQuantization* quant,
+                                         absl::string_view name) {
   if (!quant->zero_point) {
     return absl::InvalidArgumentError(
         absl::StrCat("moe missing zero points for ", name, "."));
@@ -122,6 +134,97 @@ absl::Status ValidateInt8ZeroPoint(const TfLiteTensor* tensor,
     }
   }
   return absl::OkStatus();
+}
+
+// Blockwise quantization stores the zero points in a separate tensor rather
+// than inline, so the index has to be resolved against the subgraph. An index
+// below zero follows the tflite optional-tensor convention and means the zero
+// point is 0, i.e. the weights are symmetric.
+absl::Status ValidateBlockwiseInt8ZeroPoint(const TfLiteContext* context,
+                                            int32_t zero_point_index,
+                                            absl::string_view name) {
+  if (zero_point_index < 0) {
+    return absl::OkStatus();
+  }
+  if (context == nullptr || zero_point_index >= context->tensors_size) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "moe zero point tensor index is out of range for ", name, "."));
+  }
+  const TfLiteTensor& zero_point = context->tensors[zero_point_index];
+  if (!tflite::IsConstantTensor(&zero_point)) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "moe expects a constant zero point tensor for ", name, "."));
+  }
+  // Only the types the converter actually emits for zero points are handled.
+  // Anything else is rejected rather than assumed to be symmetric.
+  const int num_elements = tflite::NumElements(&zero_point);
+  switch (zero_point.type) {
+    case kTfLiteInt8:
+      for (int i = 0; i < num_elements; ++i) {
+        if (zero_point.data.int8[i] != 0) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("moe only supports symmetric weights; non-zero "
+                           "zero point in ",
+                           name, "."));
+        }
+      }
+      return absl::OkStatus();
+    case kTfLiteInt32:
+      for (int i = 0; i < num_elements; ++i) {
+        if (zero_point.data.i32[i] != 0) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("moe only supports symmetric weights; non-zero "
+                           "zero point in ",
+                           name, "."));
+        }
+      }
+      return absl::OkStatus();
+    default:
+      return absl::InvalidArgumentError(absl::StrCat(
+          "moe has an unsupported zero point tensor type for ", name, "."));
+  }
+}
+
+absl::Status ValidateInt8ZeroPoint(const TfLiteContext* context,
+                                   const TfLiteTensor* tensor,
+                                   absl::string_view name) {
+  if (tensor->quantization.params == nullptr) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "moe expects affine or blockwise quantization for ", name, "."));
+  }
+  switch (tensor->quantization.type) {
+    case kTfLiteAffineQuantization:
+      return ValidateAffineInt8ZeroPoint(
+          static_cast<const TfLiteAffineQuantization*>(
+              tensor->quantization.params),
+          name);
+    case kTfLiteBlockwiseQuantization:
+      return ValidateBlockwiseInt8ZeroPoint(
+          context,
+          static_cast<const TfLiteBlockwiseQuantization*>(
+              tensor->quantization.params)
+              ->zero_point,
+          name);
+    case kTfLiteMultiAxisQuantization:
+      // Emitted by the converter for per-expert blockwise weights. The block
+      // scales are also passed to the op as the separate *_scale inputs.
+      return ValidateBlockwiseInt8ZeroPoint(
+          context,
+          static_cast<const TfLiteMultiAxisQuantization*>(
+              tensor->quantization.params)
+              ->zero_points,
+          name);
+    case kTfLiteBlockwiseQuantizationV2:
+      return ValidateBlockwiseInt8ZeroPoint(
+          context,
+          static_cast<const TfLiteBlockwiseQuantizationV2*>(
+              tensor->quantization.params)
+              ->zero_point,
+          name);
+    default:
+      return absl::InvalidArgumentError(absl::StrCat(
+          "moe expects affine or blockwise quantization for ", name, "."));
+  }
 }
 
 bool IsMissingCustomOptions(const TfLiteNode *tflite_node,
@@ -160,10 +263,17 @@ absl::StatusOr<MoeExpertsAttributes> ReadAttributes(
           absl::StrCat("moe is missing ", key, "."));
     }
   }
-  if (!IsMissing(map, "activation") &&
-      map["activation"].AsString().str() != "gelu") {
-    return absl::InvalidArgumentError(
-        "moe only supports activation='gelu'.");
+  // The kernel emits the tanh approximation of GELU, which is what Gemma 4's
+  // reference implementation (`F.gelu(..., approximate="tanh")`) uses.
+  // "gelu_tanh" is the accurate label; "gelu" is the legacy spelling emitted by
+  // older exporters for the same math and is still accepted.
+  if (!IsMissing(map, "activation")) {
+    const std::string activation = map["activation"].AsString().str();
+    if (activation != "gelu" && activation != "gelu_tanh") {
+      return absl::InvalidArgumentError(
+          "moe only supports activation='gelu_tanh' (or its legacy spelling "
+          "'gelu').");
+    }
   }
   if (!IsMissing(map, "renormalized_top_weights") &&
       !map["renormalized_top_weights"].AsBool()) {
@@ -303,6 +413,7 @@ void AddQuantizedConstInputPreserveShape(::ml_drift::GraphFloat32* graph,
                                          ObjectReader* reader,
                                          int node_input_index,
                                          ::ml_drift::Node* node) {
+  reader->AllowSharingInput(node_input_index);
   const TfLiteTensor* tensor = reader->GetInputTensor(node_input_index);
   ::ml_drift::Value* input = graph->NewValue();
   input->tensor.type = ToDataType(tensor->type);
@@ -310,6 +421,14 @@ void AddQuantizedConstInputPreserveShape(::ml_drift::GraphFloat32* graph,
   input->tensor.ref = reader->GetTensorId(node_input_index);
   input->tensor.is_variable_input = tensor->is_variable;
   graph->AddConsumer(node->id, input->id);
+  const ObjectReader::ConstantInputSharingInfo share =
+      reader->GetSharingInfoByNodeInputIndex(node_input_index);
+  if (share.IsShared()) {
+    reader->SetSharedTensor(input->id, share.PreferredId(),
+                            reader->GetTensorId(node_input_index),
+                            /*dequant_forced=*/false,
+                            /*layout=*/std::nullopt);
+  }
 }
 
 void AddConstInput(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
@@ -317,6 +436,43 @@ void AddConstInput(::ml_drift::GraphFloat32* graph, ObjectReader* reader,
   const ::ml_drift::Value* input =
       reader->AddConstInput(node_input_index, /*layout=*/{});
   graph->AddConsumer(node->id, input->id);
+}
+
+// Adds a per-expert block-scale tensor as a const input of `node`.
+//
+// Block scales are large for blockwise-quantized experts (one float per 32
+// weights, ~2.7 GB for Gemma 4 26B-A4B), so when the tensor can be shared
+// across subgraphs it is registered with SharedMemoryManager like the expert
+// weights: it is converted to the GPU scale layout once, every subgraph reads
+// the same GPU tensor, and `scale` only records the shape. When sharing is not
+// possible the data is copied into `scale` and uploaded per subgraph.
+void AddBlockScaleConstInput(::ml_drift::GraphFloat32* graph,
+                             ObjectReader* reader, int node_input_index,
+                             ::ml_drift::Node* node,
+                             std::optional<MoeScaleTensor>* scale) {
+  reader->AllowSharingInput(node_input_index);
+  const ObjectReader::ConstantInputSharingInfo share =
+      reader->GetSharingInfoByNodeInputIndex(node_input_index);
+  if (!share.IsShared()) {
+    reader->ReadTensor(node_input_index, &scale->emplace(),
+                       ReadTensorFlags::kNoExtraBytes);
+    AddConstInput(graph, reader, node_input_index, node);
+    return;
+  }
+  const TfLiteTensor* tensor = reader->GetInputTensor(node_input_index);
+  const int tensor_id = reader->GetTensorId(node_input_index);
+  ::ml_drift::Value* input = graph->NewValue();
+  input->tensor.type = ToDataType(tensor->type);
+  input->tensor.shape = ExtractTensorShape(tensor);
+  input->tensor.ref = tensor_id;
+  input->tensor.is_variable_input = tensor->is_variable;
+  graph->AddConsumer(node->id, input->id);
+  reader->SetSharedTensor(input->id, share.PreferredId(), tensor_id,
+                          /*dequant_forced=*/false,
+                          /*layout=*/std::nullopt);
+  MoeScaleTensor& shape_only = scale->emplace();
+  shape_only.id = tensor_id;
+  SetAllDimensions(tensor->dims, &shape_only.shape);
 }
 
 }  // namespace
@@ -432,7 +588,8 @@ absl::Status MoeExpertsOperationParser::IsSupported(
         return absl::InvalidArgumentError(
             absl::StrCat("moe expects ", type_name, " ", weight_names[i], "."));
       }
-      ABSL_RETURN_IF_ERROR(ValidateInt8ZeroPoint(weight, weight_names[i]));
+      ABSL_RETURN_IF_ERROR(
+          ValidateInt8ZeroPoint(context, weight, weight_names[i]));
     }
     const TfLiteTensor* gate_weight = nullptr;
     const TfLiteTensor* ff1_weight = nullptr;
@@ -473,11 +630,14 @@ absl::Status MoeExpertsOperationParser::IsSupported(
           "moe v1 expects constant int8 scales.");
     }
     ABSL_RETURN_IF_ERROR(ValidateExpertScale(gate_scale, attr.num_experts,
-                                             attr.hidden_dim, "ff_gate_scale"));
+                                             attr.hidden_dim, attr.model_dim,
+                                             "ff_gate_scale"));
     ABSL_RETURN_IF_ERROR(ValidateExpertScale(ff1_scale, attr.num_experts,
-                                             attr.hidden_dim, "ff1_scale"));
+                                             attr.hidden_dim, attr.model_dim,
+                                             "ff1_scale"));
     ABSL_RETURN_IF_ERROR(ValidateExpertScale(linear_scale, attr.num_experts,
-                                             attr.model_dim, "linear_scale"));
+                                             attr.model_dim, attr.hidden_dim,
+                                             "linear_scale"));
     ABSL_RETURN_IF_ERROR(
         ValidateScale(per_expert_scale, attr.num_experts, "per_expert_scale"));
   }
@@ -506,21 +666,18 @@ void MoeExpertsOperationParser::Parse(const TfLiteNode* tflite_node,
     AddConstInput(graph, reader, kInputFp32LinearWeight, node);
     AddConstInput(graph, reader, kInputFp32PerExpertScale, node);
   } else {
-    reader->ReadTensor(kInputInt8GateScale, &attr.ff_gate_scale.emplace(),
-                       ReadTensorFlags::kNoExtraBytes);
-    reader->ReadTensor(kInputInt8Ff1Scale, &attr.ff1_scale.emplace(),
-                       ReadTensorFlags::kNoExtraBytes);
-    reader->ReadTensor(kInputInt8LinearScale, &attr.linear_scale.emplace(),
-                       ReadTensorFlags::kNoExtraBytes);
     AddQuantizedConstInputPreserveShape(graph, reader, kInputInt8GateWeight,
                                         node);
-    AddConstInput(graph, reader, kInputInt8GateScale, node);
+    AddBlockScaleConstInput(graph, reader, kInputInt8GateScale, node,
+                            &attr.ff_gate_scale);
     AddQuantizedConstInputPreserveShape(graph, reader, kInputInt8Ff1Weight,
                                         node);
-    AddConstInput(graph, reader, kInputInt8Ff1Scale, node);
+    AddBlockScaleConstInput(graph, reader, kInputInt8Ff1Scale, node,
+                            &attr.ff1_scale);
     AddQuantizedConstInputPreserveShape(graph, reader, kInputInt8LinearWeight,
                                         node);
-    AddConstInput(graph, reader, kInputInt8LinearScale, node);
+    AddBlockScaleConstInput(graph, reader, kInputInt8LinearScale, node,
+                            &attr.linear_scale);
     AddConstInput(graph, reader, kInputInt8PerExpertScale, node);
   }
   reader->AddOutputs(node);

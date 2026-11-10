@@ -1,11 +1,9 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -175,13 +173,11 @@ TEST(MHASHATest, EmbeddingGemma) {
   const size_t sha_size = 5;
   const size_t num_head = 3;
   for (size_t i = 0; i < num_head; ++i) {
-    ASSERT_TRUE(
-        op_wrappers[3 + sha_size * i].IsOpCode(QnnOpCode::kElementWiseBinary));
-    ASSERT_TRUE(IsElementWiseMultiply(op_wrappers[3 + sha_size * i]));
+    ASSERT_TRUE(op_wrappers[3 + sha_size * i].IsOpCode(
+        QnnOpCode::kElementWiseMultiply));
     ASSERT_TRUE(op_wrappers[4 + sha_size * i].IsOpCode(QnnOpCode::kMatMul));
     ASSERT_TRUE(
-        op_wrappers[5 + sha_size * i].IsOpCode(QnnOpCode::kElementWiseBinary));
-    ASSERT_TRUE(IsElementWiseAdd(op_wrappers[5 + sha_size * i]));
+        op_wrappers[5 + sha_size * i].IsOpCode(QnnOpCode::kElementWiseAdd));
     ASSERT_TRUE(op_wrappers[6 + sha_size * i].IsOpCode(QnnOpCode::kSoftmax));
     ASSERT_TRUE(op_wrappers[7 + sha_size * i].IsOpCode(QnnOpCode::kMatMul));
   }

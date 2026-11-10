@@ -21,7 +21,8 @@ use std::process::Command;
 
 // Constansts that are used by the build script.
 
-// The environment variable that contains the output directory where it's possible to write or modify files.
+// The environment variable that contains the output directory where it's possible to write or
+// modify files.
 const OUT_DIR_ENV_VAR: &str = "OUT_DIR";
 // Cargo environment variable to definbe target os and architecture.
 const CARGO_CFG_TARGET_OS_ENV_VAR: &str = "CARGO_CFG_TARGET_OS";
@@ -33,7 +34,7 @@ const CARGO_DOCS_RS: &str = "DOCS_RS";
 // It's defined as a macro, so it can be used inside concat! macros below.
 macro_rules! litert_sdk_version {
     () => {
-        "2.2.0"
+        "2.3.0"
     };
 }
 
@@ -368,8 +369,11 @@ fn copy_wrapper_h(out_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>>
 }
 
 fn dump_all_env_vars() {
-    for (key, value) in env::vars() {
-        info!("Environment: {}: {}", key, value);
+    println!("cargo::rerun-if-env-changed=LITERT_RUST_BUILD_DUMP_ENV_VARS");
+    if env::var("LITERT_RUST_BUILD_DUMP_ENV_VARS").is_ok() {
+        for (key, value) in env::vars() {
+            info!("Environment: {}: {}", key, value);
+        }
     }
 }
 

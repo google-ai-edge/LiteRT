@@ -110,7 +110,7 @@ cc_binary(
 #         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_so",
 #     ],
 #     linkopts = litert_android_linkopts(),
-#     tags = ["requires-gpu-nvidia"],
+#     tags = ["requires-gpu-sm90"],  # OpenCL/MIG-compatible
 #     deps = [
 #         ":image_utils",
 #         "@com_google_absl//absl/container:flat_hash_map",

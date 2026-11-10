@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
@@ -37,7 +38,9 @@ inline LiteRtStatus InferPad(const LiteRtOpT& op,
   constexpr size_t kPairsPerDim = 2;
   constexpr size_t kShapeTensorSize = sizeof(int32_t);
 
-  if (input_shapes.size() < kPadMinArgs) {
+  if (input_shapes.size() < kPadMinArgs || output_shapes.size() != 1 ||
+      op.Inputs().size() < kPadMinArgs ||
+      op.Inputs()[kPaddingsArgIndex] == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];
@@ -71,8 +74,16 @@ inline LiteRtStatus InferPad(const LiteRtOpT& op,
   for (int i = 0; i < input_shape.size(); ++i) {
     int64_t before = paddings[i * kPairsPerDim];
     int64_t after = paddings[i * kPairsPerDim + 1];
+    if (before < 0 || after < 0 || out_shape[i] < -1) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
     if (out_shape[i] != -1) {
-      out_shape[i] += before + after;
+      int32_t padded_dim = 0;
+      if (!SafeAdd(out_shape[i], before, padded_dim) ||
+          !SafeAdd(padded_dim, after, padded_dim)) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
+      out_shape[i] = padded_dim;
     }
   }
 

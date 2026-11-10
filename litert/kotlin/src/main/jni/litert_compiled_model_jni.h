@@ -28,7 +28,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromAsset(
     jstring asset_name, jintArray accelerators, jintArray cpu_options_keys,
     jobjectArray cpu_options_values, jintArray gpu_options_keys,
     jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
-    jobjectArray qualcomm_options_values);
+    jobjectArray qualcomm_options_values, jintArray input_shape_modes,
+    jobjectArray input_shape_signatures, jobjectArray input_shape_names,
+    jobjectArray input_shape_dimensions);
 #endif  // __ANDROID__
 
 JNIEXPORT jlong JNICALL
@@ -37,7 +39,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateFromFile(
     jintArray accelerators, jintArray cpu_options_keys,
     jobjectArray cpu_options_values, jintArray gpu_options_keys,
     jobjectArray gpu_options_values, jintArray qualcomm_options_keys,
-    jobjectArray qualcomm_options_values);
+    jobjectArray qualcomm_options_values, jintArray input_shape_modes,
+    jobjectArray input_shape_signatures, jobjectArray input_shape_names,
+    jobjectArray input_shape_dimensions);
 
 JNIEXPORT jlong JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffer(
@@ -58,6 +62,16 @@ JNIEXPORT jobject JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputBufferRequirements(
     JNIEnv* env, jclass clazz, jlong compiled_model_handle, jstring signature,
     jstring output_name);
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeResizeInputTensor(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle, jstring signature,
+    jstring input_name, jintArray dimensions);
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeResizeInputTensorNonStrict(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle, jstring signature,
+    jstring input_name, jintArray dimensions);
 
 JNIEXPORT jlongArray JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffers(
@@ -106,6 +120,10 @@ JNIEXPORT jobject JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputTensorType(
     JNIEnv* env, jclass clazz, jlong handle, jstring output_name,
     jstring signature);
+
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeGetLastInferenceDurationNanoseconds(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle);
 
 #ifdef __cplusplus
 }  // extern "C"

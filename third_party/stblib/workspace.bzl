@@ -7,5 +7,5 @@ def repo():
         name = "stblib",
         remote = "https://github.com/nothings/stb",
         commit = "c0c982601f40183e74d84a61237e968dca08380e",
-        build_file = "@//third_party/stblib:stblib.BUILD",
+        build_file = Label("//third_party/stblib:stblib.BUILD"),
     )

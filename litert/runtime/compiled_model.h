@@ -36,7 +36,9 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 #include "weight_loader/external_weight_loader_litert.h"
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 #if !defined(LITERT_DISABLE_NPU)
 #include "litert/core/cache/compilation_cache.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
@@ -51,7 +53,6 @@
 #include "litert/runtime/tfl_utils.h"
 #include "tflite/converter/allocation.h"
 #include "tflite/core/api/error_reporter.h"
-#include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
 #include "tflite/model_builder.h"
 
@@ -59,7 +60,19 @@ using TfLiteTensorIdentifier = litert::internal::TfLiteTensorIdentifier;
 using TensorIdentifierHash = litert::internal::TensorIdentifierHash;
 using TensorIdentifierEqual = litert::internal::TensorIdentifierEqual;
 
+class LiteRtAcceleratorDelegationMetricsT {
+ public:
+  const char* accelerator_name = nullptr;
+  LiteRtHwAcceleratorSet hardware_type = kLiteRtHwAcceleratorNone;
+  int delegated_node_count = 0;
+  int partition_count = 0;
+};
 
+class LiteRtDelegationMetricsT {
+ public:
+  int total_node_count = 0;
+  std::vector<LiteRtAcceleratorDelegationMetricsT> accelerators;
+};
 
 // The LiteRtCompiledModelT is internal implementation of CompiledModel C++ API.
 class LiteRtCompiledModelT {
@@ -205,24 +218,15 @@ class LiteRtCompiledModelT {
 
   struct GraphCounts {
     int undelegated_nodes = 0;
-    int npu_partitions = 0;
-    int gpu_partitions = 0;
-    int cpu_partitions = 0;
+    int partitions = 0;
   };
 
   // Counts undelegated nodes and partitions across active subgraphs in a single
   // pass.
   GraphCounts GetGraphCounts() const;
 
-  struct DelegationMetrics {
-    int total_node_count = 0;
-    int npu_delegated_node_count = 0;
-    int npu_partition_count = 0;
-    int gpu_delegated_node_count = 0;
-    int gpu_partition_count = 0;
-    int cpu_delegated_node_count = 0;
-    int cpu_partition_count = 0;
-  };
+  using AcceleratorDelegationMetrics = LiteRtAcceleratorDelegationMetricsT;
+  using DelegationMetrics = LiteRtDelegationMetricsT;
 
   // Returns delegation metrics for the compiled model.
   const DelegationMetrics& GetDelegationMetrics() const {
@@ -257,6 +261,12 @@ class LiteRtCompiledModelT {
 
   // Returns the number of signatures in the model.
   size_t GetNumSignatures() const { return signature_keys_.size(); }
+
+  // Returns the duration of the last native inference in nanoseconds (-1 if
+  // none or failed).
+  int64_t GetLastInferenceDurationNanoseconds() const {
+    return last_inference_duration_nanos_.load(std::memory_order_relaxed);
+  }
 
   // Error reporter APIs
 
@@ -398,6 +408,21 @@ class LiteRtCompiledModelT {
   // this root set and does not add transitively referenced callees.
   litert::Expected<void> InitializeActiveSubgraphs(LiteRtOptions options);
 
+  // Marks signature subgraph input and output tensors as kTfLiteNonCpu to
+  // prevent TFLite's ArenaPlanner from allocating host heap buffers for them.
+  void MarkSignatureIoTensorsNonCpu();
+
+  // Returns the buffer to bind to an input tensor for which the caller passed
+  // nullptr in Run(). Since signature I/O tensors are not allocated by TFLite's
+  // ArenaPlanner (see MarkSignatureIoTensorsNonCpu), such tensors would
+  // otherwise have no backing memory if consumed by CPU ops, so the runtime
+  // binds a zero-filled host buffer it owns, exactly as if the caller had
+  // provided one. Returns nullptr if the tensor is not consumed by CPU ops
+  // (accelerator nodes manage their own buffers) or already has backing memory
+  // (e.g. an external tensor binding) and must be left untouched.
+  litert::Expected<LiteRtTensorBuffer> GetBufferForUnboundInput(
+      TfLiteTensor* tensor);
+
   // Returns NotFound when an explicitly unselected signature is used.
   litert::Expected<void> ValidateSignatureIsActive(
       absl::string_view signature_key) const;
@@ -454,14 +479,27 @@ class LiteRtCompiledModelT {
   litert::Expected<void> MarkSignatureAllocationUpToDate(
       const tflite::SignatureRunner* runner);
 
-  // Returns true if the given signature needs tensor allocation.
+  // Returns true if the given signature needs tensor allocation, including
+  // when it has never been allocated.
   litert::Expected<bool> SignatureNeedsAllocation(
       const tflite::SignatureRunner* runner) const;
 
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
   // Restores external weights into tensor for CPU execution.
   // This is called before delegates are applied so that XNNPack and other
   // CPU delegates can see the weight data in the tensors.
   litert::Expected<void> RestoreExternalWeightsForCpu();
+
+  // Gives the external constants of the litert model their bytes before the
+  // compiler plugins see it: creates the weight loader from the original
+  // flatbuffer, maps every external slice for host access and points each
+  // constant's weights at its mapping. Compiler plugins read weights through
+  // the model, so without this an external constant compiles as an empty
+  // tensor. No-op when the model has no external constants.
+  litert::Expected<void> ResolveExternalWeightsForCompilation(
+      LiteRtModelT& model, LiteRtOptions jit_compilation_options,
+      LiteRtEnvironmentT& env);
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 
 #if !defined(LITERT_DISABLE_NPU)
   // Applies the plugins to the model and caches the compiled model if
@@ -514,11 +552,13 @@ class LiteRtCompiledModelT {
 #endif  // !defined(LITERT_DISABLE_NPU)
 
   std::vector<Delegate> delegates_;
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
   // The loader that manages external weight metadata and bindings.
   std::unique_ptr<weight_loader::WeightLoader> weight_loader_owned_;
   // It may point to weight_loader_owned_ or the weight loader owned by the
   // client. If there are no external weights to use, this will be nullptr.
   weight_loader::WeightLoader* weight_loader_ = nullptr;
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 
   std::vector<std::unique_ptr<litert::internal::CustomOpDispatcher>>
       custom_op_dispatchers_;
@@ -528,6 +568,13 @@ class LiteRtCompiledModelT {
   // Note: The ExternalLiteRtBufferContext must be destroyed after the
   // Interpreter.
   std::unique_ptr<LiteRtExternalLiteRtBufferContextT> buffer_context_;
+
+  // Zero-filled host buffers the runtime binds to input tensors for which the
+  // caller passed nullptr in Run(). See GetBufferForUnboundInput().
+  // Note: These buffers must be destroyed after the Interpreter.
+  absl::flat_hash_map<TfLiteTensorIdentifier, LiteRtTensorBufferPtr,
+                      TensorIdentifierHash, TensorIdentifierEqual>
+      unbound_input_buffers_;
 
   // The TFL interpreter.
   std::unique_ptr<::tflite::Interpreter> interp_;
@@ -556,7 +603,8 @@ class LiteRtCompiledModelT {
   absl::flat_hash_map<absl::string_view, tflite::SignatureRunner*>
       signature_runners_;
 
-  // Map to track which signature needs allocation.
+  // Map to track which signature needs allocation. A signature without an
+  // entry has never been allocated and is treated as needing allocation.
   absl::flat_hash_map<const tflite::SignatureRunner*, bool>
       signature_needs_allocation_;
 
@@ -576,6 +624,12 @@ class LiteRtCompiledModelT {
                       TensorIdentifierEqual>
       cpu_tensors_;
 
+  // The set of tensors that currently have a caller-supplied TensorBuffer
+  // registered in `buffer_context_` via `RegisterBuffer()`.
+  absl::flat_hash_set<TfLiteTensorIdentifier, TensorIdentifierHash,
+                      TensorIdentifierEqual>
+      user_registered_buffers_;
+
   // The profiler used by the compiled model. This is used to forward the
   // profiler events to the TFLite interpreter.
   LiteRtProfilerT* profiler_ = nullptr;
@@ -591,10 +645,14 @@ class LiteRtCompiledModelT {
   bool non_cpu_fully_delegated_ = false;
 
   // Delegation metrics for the compiled model.
-  DelegationMetrics delegation_metrics_;
+  DelegationMetrics delegation_metrics_ = {};
 
   // Owns dynamically created TfLiteRegistration objects for TfLiteOperator.
   std::vector<std::unique_ptr<TfLiteRegistration>> owned_tflite_registrations_;
+
+  // Duration of the last native inference in nanoseconds (-1 if none or
+  // failed).
+  std::atomic<int64_t> last_inference_duration_nanos_{-1};
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_

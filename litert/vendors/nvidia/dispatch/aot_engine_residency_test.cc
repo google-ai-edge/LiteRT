@@ -29,11 +29,14 @@
 
 #include <gtest/gtest.h>
 #include "cuda_runtime_api.h"
+#include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/nvidia/bytecode.h"
 #include "litert/vendors/nvidia/cache_layout.h"
@@ -130,7 +133,28 @@ class TestLogger final : public nvinfer1::ILogger {
 class AotEngineResidencyTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    ASSERT_EQ(LiteRtDispatchGetApi(&api_), kLiteRtStatusOk);
+    LiteRtInterface raw_interface = nullptr;
+    ASSERT_EQ(LiteRtDispatchQueryInterface(
+                  kLiteRtInterfaceBasic,
+                  {LITERT_DISPATCH_ABI_VERSION_MAJOR,
+                   LITERT_DISPATCH_ABI_VERSION_MINOR,
+                   LITERT_DISPATCH_ABI_VERSION_PATCH},
+                  &raw_interface),
+              kLiteRtStatusOk);
+    interface_ = static_cast<const LiteRtDispatchInterface_V1*>(raw_interface);
+    ASSERT_NE(interface_, nullptr);
+    LiteRtInterface raw_handlers = nullptr;
+    ASSERT_EQ(LiteRtDispatchQueryInterface(
+                  kLiteRtInterfaceCustomTensorBufferHandlers,
+                  {LITERT_DISPATCH_ABI_VERSION_MAJOR,
+                   LITERT_DISPATCH_ABI_VERSION_MINOR,
+                   LITERT_DISPATCH_ABI_VERSION_PATCH},
+                  &raw_handlers),
+              kLiteRtStatusOk);
+    tensor_buffer_handlers_def_ =
+        static_cast<const LiteRtCustomTensorBufferHandlersDef_V1*>(
+            raw_handlers);
+    ASSERT_NE(tensor_buffer_handlers_def_, nullptr);
     char directory_template[] = "/tmp/litert_nvidia_residency_test_XXXXXX";
     char* directory = mkdtemp(directory_template);
     ASSERT_NE(directory, nullptr);
@@ -141,12 +165,11 @@ class AotEngineResidencyTest : public ::testing::Test {
 
   void TearDown() override {
     for (auto context : contexts_) {
-      EXPECT_EQ(api_.interface->invocation_context_destroy(context),
+      EXPECT_EQ(interface_->invocation_context_destroy(context),
                 kLiteRtStatusOk);
     }
     if (device_) {
-      EXPECT_EQ(api_.interface->device_context_destroy(device_),
-                kLiteRtStatusOk);
+      EXPECT_EQ(interface_->device_context_destroy(device_), kLiteRtStatusOk);
     }
     if (output_.device_ptr) {
       cudaFree(output_.device_ptr);
@@ -264,14 +287,13 @@ class AotEngineResidencyTest : public ::testing::Test {
   }
 
   void CreateDevice() {
-    ASSERT_EQ(
-        api_.interface->device_context_create(&runtime_, nullptr, &device_),
-        kLiteRtStatusOk);
-    ASSERT_EQ(api_.interface->register_tensor_buffer(device_, input_.handle(),
-                                                     &input_handle_),
+    ASSERT_EQ(interface_->device_context_create(&runtime_, nullptr, &device_),
               kLiteRtStatusOk);
-    ASSERT_EQ(api_.interface->register_tensor_buffer(device_, output_.handle(),
-                                                     &output_handle_),
+    ASSERT_EQ(interface_->register_tensor_buffer(device_, input_.handle(),
+                                                 &input_handle_),
+              kLiteRtStatusOk);
+    ASSERT_EQ(interface_->register_tensor_buffer(device_, output_.handle(),
+                                                 &output_handle_),
               kLiteRtStatusOk);
   }
 
@@ -283,7 +305,7 @@ class AotEngineResidencyTest : public ::testing::Test {
     buffer.fd = -1;
     buffer.base_addr = bytes.data();
     buffer.size = bytes.size();
-    const auto status = api_.interface->invocation_context_create(
+    const auto status = interface_->invocation_context_create(
         &runtime_, device_, kLiteRtDispatchExecutableTypeMlModel, &buffer, name,
         num_inputs, 1, context);
     if (status == kLiteRtStatusOk) {
@@ -296,22 +318,22 @@ class AotEngineResidencyTest : public ::testing::Test {
     // These requirements must remain available while the engine is nonresident.
     auto type = TensorType();
     LiteRtTensorBufferRequirements requirements = nullptr;
-    ASSERT_EQ(api_.interface->get_input_requirements(context, 0, &type,
-                                                     &requirements),
-              kLiteRtStatusOk);
+    ASSERT_EQ(
+        interface_->get_input_requirements(context, 0, &type, &requirements),
+        kLiteRtStatusOk);
     LiteRtTensorBufferType first_type;
     ASSERT_EQ(LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
                   requirements, 0, &first_type),
               kLiteRtStatusOk);
     EXPECT_EQ(first_type, kCudaBufferType);
     LiteRtDestroyTensorBufferRequirements(requirements);
-    ASSERT_EQ(api_.interface->get_output_requirements(context, 0, &type,
-                                                      &requirements),
-              kLiteRtStatusOk);
+    ASSERT_EQ(
+        interface_->get_output_requirements(context, 0, &type, &requirements),
+        kLiteRtStatusOk);
     LiteRtDestroyTensorBufferRequirements(requirements);
-    ASSERT_EQ(api_.interface->attach_input(context, 0, input_handle_),
+    ASSERT_EQ(interface_->attach_input(context, 0, input_handle_),
               kLiteRtStatusOk);
-    ASSERT_EQ(api_.interface->attach_output(context, 0, output_handle_),
+    ASSERT_EQ(interface_->attach_output(context, 0, output_handle_),
               kLiteRtStatusOk);
   }
 
@@ -324,7 +346,7 @@ class AotEngineResidencyTest : public ::testing::Test {
     ASSERT_EQ(cudaMemcpy(input_.device_ptr, input.data(), kBytes,
                          cudaMemcpyHostToDevice),
               cudaSuccess);
-    ASSERT_EQ(api_.interface->invoke(context), kLiteRtStatusOk);
+    ASSERT_EQ(interface_->invoke(context), kLiteRtStatusOk);
     std::array<float, kElements> output;
     ASSERT_EQ(cudaMemcpy(output.data(), output_.device_ptr, kBytes,
                          cudaMemcpyDeviceToHost),
@@ -418,11 +440,11 @@ class AotEngineResidencyTest : public ::testing::Test {
     CreateDevice();
     ASSERT_FALSE(HasFatalFailure());
     LiteRtTensorBufferHandle update_handle = 0, position_handle = 0;
-    ASSERT_EQ(api_.interface->register_tensor_buffer(device_, update_.handle(),
-                                                     &update_handle),
+    ASSERT_EQ(interface_->register_tensor_buffer(device_, update_.handle(),
+                                                 &update_handle),
               kLiteRtStatusOk);
-    ASSERT_EQ(api_.interface->register_tensor_buffer(
-                  device_, position_.handle(), &position_handle),
+    ASSERT_EQ(interface_->register_tensor_buffer(device_, position_.handle(),
+                                                 &position_handle),
               kLiteRtStatusOk);
 
     auto cache_bytes = BuildValueCacheBytecode();
@@ -453,20 +475,20 @@ class AotEngineResidencyTest : public ::testing::Test {
     ++invalid.type.layout.strides[1];
     LiteRtTensorBufferHandle unannotated_handle = 0, native_handle = 0;
     LiteRtTensorBufferHandle invalid_handle = 0;
-    ASSERT_EQ(api_.interface->register_tensor_buffer(
-                  device_, unannotated.handle(), &unannotated_handle),
+    ASSERT_EQ(interface_->register_tensor_buffer(device_, unannotated.handle(),
+                                                 &unannotated_handle),
               kLiteRtStatusOk);
-    ASSERT_EQ(api_.interface->register_tensor_buffer(device_, native.handle(),
-                                                     &native_handle),
+    ASSERT_EQ(interface_->register_tensor_buffer(device_, native.handle(),
+                                                 &native_handle),
               kLiteRtStatusOk);
-    EXPECT_EQ(api_.interface->register_tensor_buffer(device_, invalid.handle(),
-                                                     &invalid_handle),
+    EXPECT_EQ(interface_->register_tensor_buffer(device_, invalid.handle(),
+                                                 &invalid_handle),
               kLiteRtStatusErrorUnsupported);
     for (auto context : {a_, b_}) {
       for (bool output : {false, true}) {
-        const auto get_requirements =
-            output ? api_.interface->get_output_requirements
-                   : api_.interface->get_input_requirements;
+        const auto get_requirements = output
+                                          ? interface_->get_output_requirements
+                                          : interface_->get_input_requirements;
         LiteRtTensorBufferRequirements requirements = nullptr;
         ASSERT_EQ(
             get_requirements(context, 0, &unannotated.type, &requirements),
@@ -489,8 +511,8 @@ class AotEngineResidencyTest : public ::testing::Test {
         requirements = nullptr;
         EXPECT_EQ(get_requirements(context, 0, &native.type, &requirements),
                   kLiteRtStatusErrorUnsupported);
-        const auto attach = output ? api_.interface->attach_output
-                                   : api_.interface->attach_input;
+        const auto attach =
+            output ? interface_->attach_output : interface_->attach_input;
         EXPECT_EQ(attach(context, 0, unannotated_handle),
                   kLiteRtStatusErrorInvalidArgument);
         EXPECT_EQ(attach(context, 0, native_handle),
@@ -498,12 +520,12 @@ class AotEngineResidencyTest : public ::testing::Test {
         ASSERT_EQ(attach(context, 0, output ? output_handle_ : input_handle_),
                   kLiteRtStatusOk);
       }
-      ASSERT_EQ(api_.interface->attach_input(context, 1, update_handle),
+      ASSERT_EQ(interface_->attach_input(context, 1, update_handle),
                 kLiteRtStatusOk);
-      ASSERT_EQ(api_.interface->attach_input(context, 2, position_handle),
+      ASSERT_EQ(interface_->attach_input(context, 2, position_handle),
                 kLiteRtStatusOk);
       // Conversely, a valid SD cache must not bind to a dense update port.
-      EXPECT_EQ(api_.interface->attach_input(context, 1, input_handle_),
+      EXPECT_EQ(interface_->attach_input(context, 1, input_handle_),
                 kLiteRtStatusErrorInvalidArgument);
     }
     if (!lazy) {
@@ -529,10 +551,10 @@ class AotEngineResidencyTest : public ::testing::Test {
       // First exercise distinct buffers (dispatch seeds and rebinds the
       // aliased input), then exercise the same buffer on a reloaded engine.
       const bool same_buffer = round == 2;
-      ASSERT_EQ(api_.interface->attach_output(
+      ASSERT_EQ(interface_->attach_output(
                     context, 0, same_buffer ? input_handle_ : output_handle_),
                 kLiteRtStatusOk);
-      ASSERT_EQ(api_.interface->invoke(context), kLiteRtStatusOk);
+      ASSERT_EQ(interface_->invoke(context), kLiteRtStatusOk);
       std::array<float, kElements> result;
       ASSERT_EQ(cudaMemcpy(result.data(),
                            same_buffer ? input_.device_ptr : output_.device_ptr,
@@ -548,11 +570,10 @@ class AotEngineResidencyTest : public ::testing::Test {
         }
       }
     }
-    EXPECT_EQ(api_.interface->unregister_tensor_buffer(device_, native_handle),
+    EXPECT_EQ(interface_->unregister_tensor_buffer(device_, native_handle),
               kLiteRtStatusOk);
-    EXPECT_EQ(
-        api_.interface->unregister_tensor_buffer(device_, unannotated_handle),
-        kLiteRtStatusOk);
+    EXPECT_EQ(interface_->unregister_tensor_buffer(device_, unannotated_handle),
+              kLiteRtStatusOk);
   }
 
   ScopedEnvironment lazy_{"LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES", "1"};
@@ -565,7 +586,9 @@ class AotEngineResidencyTest : public ::testing::Test {
   ScopedEnvironment layers_{"LITERT_NVIDIA_DISPATCH_LAYER_PROFILE", "0"};
   TestLogger logger_;
   LiteRtRuntimeContext runtime_ = RuntimeContext();
-  LiteRtDispatchApi api_{};
+  const LiteRtDispatchInterface_V1* interface_ = nullptr;
+  const LiteRtCustomTensorBufferHandlersDef_V1* tensor_buffer_handlers_def_ =
+      nullptr;
   LiteRtDispatchDeviceContext device_ = nullptr;
   TestBuffer input_, output_, update_, position_;
   LiteRtTensorBufferHandle input_handle_ = 0, output_handle_ = 0;
@@ -599,7 +622,7 @@ TEST_F(AotEngineResidencyTest,
   const std::string saved = directory_ + "/a.saved";
   paths_.push_back(saved);
   ASSERT_EQ(rename(original.c_str(), saved.c_str()), 0);
-  EXPECT_EQ(api_.interface->invoke(a_), kLiteRtStatusErrorFileIO);
+  EXPECT_EQ(interface_->invoke(a_), kLiteRtStatusErrorFileIO);
   ASSERT_EQ(rename(saved.c_str(), original.c_str()), 0);
   Run(a_, 10.0f, 1.0f);
   Run(b_, 10.0f, 2.0f);
@@ -607,10 +630,109 @@ TEST_F(AotEngineResidencyTest,
   auto changed = a_bytes_;
   changed.back() ^= 1;
   ASSERT_TRUE(Write(original, changed));
-  EXPECT_EQ(api_.interface->invoke(a_), kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(interface_->invoke(a_), kLiteRtStatusErrorInvalidArgument);
   ASSERT_EQ(unlink(original.c_str()), 0);
   ASSERT_EQ(rename(saved.c_str(), original.c_str()), 0);
   Run(a_, 20.0f, 1.0f);
+}
+
+TEST_F(AotEngineResidencyTest, UploadsHostWritesWhenAnInvocationReadsThem) {
+  ScopedEnvironment eager("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES", "0");
+  const auto* handlers = tensor_buffer_handlers_def_;
+  ASSERT_NE(handlers, nullptr);
+  // Input and output are CUDA tensor buffers of the dispatch library.
+  ASSERT_EQ(cudaFree(input_.device_ptr), cudaSuccess);
+  ASSERT_EQ(cudaFree(output_.device_ptr), cudaSuccess);
+  input_.device_ptr = output_.device_ptr = nullptr;
+  auto type = TensorType();
+  HwMemoryInfoPtr input_info = nullptr;
+  HwMemoryInfoPtr output_info = nullptr;
+  ASSERT_EQ(handlers->create_func(nullptr, nullptr, &type, kCudaBufferType,
+                                  kBytes, kBytes, &input_info),
+            kLiteRtStatusOk);
+  ASSERT_EQ(handlers->create_func(nullptr, nullptr, &type, kCudaBufferType,
+                                  kBytes, kBytes, &output_info),
+            kLiteRtStatusOk);
+  input_.device_ptr = input_info->memory_handle;
+  output_.device_ptr = output_info->memory_handle;
+  CreateDevice();
+  ASSERT_FALSE(HasFatalFailure());
+  auto bytes = BuildBytecode("a", 1.0f, false);
+  ASSERT_TRUE(bytes) << bytes.Error().Message();
+  ASSERT_EQ(CreateContext(*bytes, "a", &a_), kLiteRtStatusOk);
+  Bind(a_);
+  ASSERT_FALSE(HasFatalFailure());
+
+  const auto write = [&](HwMemoryInfoPtr info, float base) {
+    void* host = nullptr;
+    ASSERT_EQ(
+        handlers->lock_func(info, kLiteRtTensorBufferLockModeWrite, &host),
+        kLiteRtStatusOk);
+    ASSERT_NE(host, nullptr);
+    for (int i = 0; i < kElements; ++i) {
+      static_cast<float*>(host)[i] = base + i;
+    }
+    ASSERT_EQ(handlers->unlock_func(info), kLiteRtStatusOk);
+  };
+  const auto expect_host = [&](HwMemoryInfoPtr info, float base) {
+    void* host = nullptr;
+    ASSERT_EQ(handlers->lock_func(info, kLiteRtTensorBufferLockModeRead, &host),
+              kLiteRtStatusOk);
+    ASSERT_NE(host, nullptr);
+    for (int i = 0; i < kElements; ++i) {
+      EXPECT_FLOAT_EQ(static_cast<const float*>(host)[i], base + i) << i;
+    }
+    ASSERT_EQ(handlers->unlock_func(info), kLiteRtStatusOk);
+  };
+  const auto expect_device = [&](const void* device_ptr, float base,
+                                 float step) {
+    std::array<float, kElements> device;
+    ASSERT_EQ(
+        cudaMemcpy(device.data(), device_ptr, kBytes, cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    for (int i = 0; i < kElements; ++i) {
+      EXPECT_FLOAT_EQ(device[i], base + step * i) << i;
+    }
+  };
+
+  // Two host writes before the invocation: nothing reaches the device until
+  // the invocation reads the buffer, and the host reads what it wrote.
+  ASSERT_EQ(handlers->clear_func(input_info), kLiteRtStatusOk);
+  write(input_info, 100.0f);
+  write(input_info, 5.0f);
+  ASSERT_FALSE(HasFatalFailure());
+  expect_device(input_.device_ptr, 0.0f, 0.0f);
+  expect_host(input_info, 5.0f);
+  ASSERT_EQ(interface_->invoke(a_), kLiteRtStatusOk);
+  expect_device(input_.device_ptr, 5.0f, 1.0f);
+  expect_host(output_info, 6.0f);
+
+  // The invocation overwrites what the host wrote to its output.
+  write(output_info, 777.0f);
+  write(input_info, 20.0f);
+  ASSERT_EQ(interface_->invoke(a_), kLiteRtStatusOk);
+  expect_host(output_info, 21.0f);
+  expect_host(input_info, 20.0f);
+
+  // Clearing the buffer discards what the host wrote.
+  write(input_info, 50.0f);
+  ASSERT_EQ(handlers->clear_func(input_info), kLiteRtStatusOk);
+  ASSERT_EQ(interface_->invoke(a_), kLiteRtStatusOk);
+  expect_device(output_.device_ptr, 1.0f, 0.0f);
+
+  {
+    ScopedEnvironment immediate("LITERT_NVIDIA_DISPATCH_DEFERRED_UPLOAD", "0");
+    write(input_info, 9.0f);
+    expect_device(input_.device_ptr, 9.0f, 1.0f);
+    ASSERT_EQ(interface_->invoke(a_), kLiteRtStatusOk);
+    expect_host(output_info, 10.0f);
+  }
+
+  EXPECT_EQ(interface_->invocation_context_destroy(a_), kLiteRtStatusOk);
+  contexts_.clear();
+  EXPECT_EQ(handlers->destroy_func(input_info), kLiteRtStatusOk);
+  EXPECT_EQ(handlers->destroy_func(output_info), kLiteRtStatusOk);
+  input_.device_ptr = output_.device_ptr = nullptr;
 }
 
 TEST_F(AotEngineResidencyTest, DefaultEagerModeDoesNotReopenArtifacts) {
@@ -637,7 +759,7 @@ TEST_F(AotEngineResidencyTest, RejectsNonAotBacking) {
 TEST_F(AotEngineResidencyTest, UnusedContextsCanOutliveDeviceContext) {
   PreparePair();
   ASSERT_FALSE(HasFatalFailure());
-  ASSERT_EQ(api_.interface->device_context_destroy(device_), kLiteRtStatusOk);
+  ASSERT_EQ(interface_->device_context_destroy(device_), kLiteRtStatusOk);
   device_ = nullptr;
   // TearDown destroys only metadata-probed, nonresident contexts. Their new
   // residency bookkeeping must not access the now-destroyed device context.
@@ -682,9 +804,9 @@ TEST_F(AotEngineResidencyTest,
   Bind(bad);
   ASSERT_FALSE(HasFatalFailure());
   Run(a_, 0.0f, 1.0f);
-  EXPECT_EQ(api_.interface->invoke(bad), kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(interface_->invoke(bad), kLiteRtStatusErrorInvalidArgument);
   Run(b_, 10.0f, 2.0f);
-  EXPECT_EQ(api_.interface->invoke(bad), kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(interface_->invoke(bad), kLiteRtStatusErrorInvalidArgument);
   Run(a_, 20.0f, 1.0f);
 }
 

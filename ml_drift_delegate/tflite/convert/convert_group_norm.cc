@@ -33,7 +33,7 @@ void ConvertGroupNorm(const TfLiteContext& context, const TfLiteNode& node,
                       ::ml_drift::ir::TensorMap& tensor_map,
                       ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* group_norm_op = ir_model.add_op();
-  group_norm_op->name = ToString(::ml_drift::OperationType::GROUP_NORM);
+  group_norm_op->name = ToString(::ml_drift::OperationType::kGroupNorm);
 
   const int input_id = tensor_map[node.inputs->data[0]];
   ir_model.AddConsumer(input_id, group_norm_op->id);
@@ -41,13 +41,14 @@ void ConvertGroupNorm(const TfLiteContext& context, const TfLiteNode& node,
   ::ml_drift::GroupNormAttributes attr;
 
   if (node.inputs->size > 1) {
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> gamma;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
+        gamma;
     PopulateTensor(&context.tensors[node.inputs->data[1]], node.inputs->data[1],
                    &gamma, PopulateTensorFlags::kNoExtraBytes);
     attr.gamma = std::move(gamma);
   }
   if (node.inputs->size > 2) {
-    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32> beta;
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> beta;
     PopulateTensor(&context.tensors[node.inputs->data[2]], node.inputs->data[2],
                    &beta, PopulateTensorFlags::kNoExtraBytes);
     attr.beta = std::move(beta);

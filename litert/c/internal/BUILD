@@ -40,6 +40,7 @@ package(
         # "//litert/runtime/dispatch:__subpackages__",
         # "//litert/vendors:__subpackages__",
         # "//litert/kotlin:__subpackages__",
+        # "//litert/rust:__subpackages__",
         # "//ml_drift_delegate/delegate:__subpackages__",
         # "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
         # "//third_party/odml/litert/weight_loader:__subpackages__",
@@ -151,7 +152,6 @@ cc_library(
     deps = [
         ":litert_abi_header",
         "//litert/c:litert_any",
-        "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_model_types",
@@ -492,6 +492,7 @@ cc_library(
         # "@mediapipe//mediapipe/tasks/web/genai:__subpackages__",
         # "//litert:__subpackages__",
         # "//ml_drift_delegate:__subpackages__",
+        # "//third_party/odml/litert/weight_loader:__pkg__",
         # "//third_party/odml/litert_lm/c:__pkg__",
         # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
         # "//third_party/odml/infra/fabric:__subpackages__",
@@ -714,6 +715,7 @@ cc_library(
     srcs = ["litert_runtime_builtin.cc"],
     local_defines = ["LITERT_CC_RUNTIME_BUILTIN_NONE"],
     visibility = litert_jni_friends() + [
+        "//litert:litert_friends",
         "//litert/cc/internal:__pkg__",
         "//litert/kotlin:__pkg__",
     ],
@@ -726,3 +728,23 @@ cc_library(
     ],
     alwayslink = True,
 )
+
+# Files that make up the LiteRT C++ SDK.
+#
+# lint IfChange(litert_cc_sdk_files)
+filegroup(
+    name = "litert_cc_sdk_files",
+    srcs = [
+        "litert_accelerator.h",
+        "litert_logging.cc",
+        "litert_logging.h",
+        "litert_options_helper.h",
+        "litert_runtime_api_export.h",
+        "litert_runtime_builtin.cc",
+        "litert_runtime_builtin.h",
+        "litert_runtime_c_api.h",
+        "litert_scheduling_info.h",
+    ],
+    visibility = ["//litert/cc_sdk:__pkg__"],
+)
+# lint ThenChange(litert/cc_sdk/litert_cc_sdk_hdrs.txt, litert/cc_sdk/litert_cc_sdk_srcs.txt)

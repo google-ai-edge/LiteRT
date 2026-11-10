@@ -19,7 +19,7 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 def litert_gpu():
     http_archive(
         name = "litert_gpu",
-        build_file = "@//third_party/litert_gpu:litert_gpu.BUILD",
+        build_file = Label("//third_party/litert_gpu:litert_gpu.BUILD"),
         type = "jar",
         url = "https://dl.google.com/android/maven2/com/google/ai/edge/litert/litert/2.1.1/litert-2.1.1.aar",
     )

@@ -20,7 +20,7 @@ namespace {
 class StaticDispatchInitializer {
  public:
   StaticDispatchInitializer() {
-    LiteRtStaticLinkedDispatchGetApi = LiteRtDispatchGetApi;
+    LiteRtStaticLinkedDispatchQueryInterface = LiteRtDispatchQueryInterface;
   }
 };
 

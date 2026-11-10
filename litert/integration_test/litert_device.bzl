@@ -22,10 +22,16 @@ This module defines various macros which helps to execute a binary target on a d
 #
 # copybara:uncomment_end
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_platform//platform_data:defs.bzl", "platform_data")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
-load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_spec")
+load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_spec", "host_rlocation")
 load("//litert/integration_test:litert_device_script.bzl", "litert_device_script")
+
+# copybara:uncomment_begin(google-only)
+# load("//litert/integration_test/google:mobile_gtest.bzl", "android_device_gtest")
+# copybara:uncomment_end
 
 # MISCELLANEOUS ####################################################################################
 
@@ -54,60 +60,82 @@ def hidden_test_tags():
 #         target,
 #         run_as = "odml-device-lab",
 #         data = [],
+#         libs = [],
 #         exec_args = [],
 #         exec_env_vars = [],
-#         dimensions = {}):
+#         dimensions = {},
+#         platform = "android",
+#         extra_models = []):
 #     """Wraps the mobile harness "mobile_test" macro"""
 #
-#     files = {
-#         "bin": [target],
-#     }
+#     if platform == "macos":
+#         mac_bin_name = name + "_mac_bin"
+#         platform_data(
+#             name = mac_bin_name,
+#             testonly = True,
+#             platform = "@bazel_tools//tools:host_platform",
+#             tags = hidden_test_tags(),
+#             target = target,
+#         )
+#         mac_files = {
+#             "mac_bin": [":" + mac_bin_name],
+#         }
+#         mac_exec_args = list(exec_args)
+#         mac_extra_model_tags = []
+#         for i, m in enumerate(data + extra_models):
+#             tag = "extra_model_{}".format(i)
+#             mac_files[tag] = [m]
+#             mac_extra_model_tags.append("$$({})".format(tag))
+#         if mac_extra_model_tags:
+#             mac_exec_args.append("--extra_models={}".format(",".join(mac_extra_model_tags)))
+#         mac_params = {
+#             "options": " ".join(mac_exec_args).replace("\\'", "'"),
+#         }
+#         if libs:
+#             mac_files["accelerator_dylib"] = [libs[0]]
+#             mac_params["dyld_library_path"] = "$$(accelerator_dylib)"
+#         mobile_test(
+#             tags = hidden_test_tags(),
+#             name = name,
+#             size = "enormous",
+#             files = mac_files,
+#             params = mac_params,
+#             args = [
+#                 "--run_as={}".format(run_as),
+#                 "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
+#                 "--test_timeout_sec=1800",
+#                 "--start_timeout_sec=1800",
+#                 "--job_timeout_sec=3600",
+#             ],
+#             device = "Mac",
+#             driver = "AiEdgeMacModelEval",
+#             visibility = [
+#                 "//litert/integration_test:__subpackages__",
+#                 "//litert/google:__subpackages__",
+#             ],
+#         )
+#         return
 #
-#     push_files_list = []
-#
-#     for data_target in data:
-#         data_target_split = data_target.split(":")
-#         if len(data_target_split) != 2:
-#             # This is required by `mobile_test` for value in `files`.
-#             fail("Data inputs must include a colon even if relative label")
-#         data_id = data_target_split[-1]
-#         files[data_id] = [data_target]
-#
-#         # NOTE: Any non raw file data targets must output a directory with the same name as the
-#         # target (e.g. filegroup "foo" that globs "foo/*"). This may need to be updated later
-#         # but it works for everything in LiteRt for now.
-#         push_files_list.append("{id}:{loc}".format(
-#             id = data_id,
-#             loc = device_rlocation(data_target, get_parent = False),
-#         ))
-#
-#     params = {
-#         "run_dir": device_rlocation(),
-#         "options": " ".join(exec_args),
-#         "prepare_des_dir_when_src_is_file": "true",  # Allows dest to be a dir (parent) when src is a file.
-#         "run_env": " ".join(exec_env_vars),
-#         "remove_files_before_push": "true",
-#     }
-#
-#     if push_files_list:
-#         params["push_files"] = ",".join(push_files_list)
-#
-#     args = [
-#         "--run_as={}".format(run_as),
-#     ]
-#
-#     mobile_test(
-#         tags = hidden_test_tags(),
+#     android_device_gtest(
 #         name = name,
-#         dimensions = dimensions,
-#         files = files,
-#         params = params,
-#         args = args,
-#         device = "AndroidRealDevice",
-#         driver = "AndroidNativeBin",
-#         decorators = [
-#             "AndroidFilePusherDecorator",
+#         bin = target,
+#         device = dimensions,
+#         data = data,
+#         runfiles_prefix = None,
+#         libs = libs,
+#         extra_models = extra_models,
+#         exec_args = exec_args,
+#         exec_env_vars = exec_env_vars,
+#         run_as = run_as,
+#         mh_args = [
+#             "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
+#             "--test_timeout_sec=3600",
+#             "--start_timeout_sec=1800",
+#             "--job_timeout_sec=3600",
 #         ],
+#         decorators = ["AndroidFilePusherDecorator"],
+#         default_shared_pool = False,
+#         tags = hidden_test_tags(),
 #         visibility = [
 #             "//litert/integration_test:__subpackages__",
 #             "//litert/google:__subpackages__",
@@ -129,13 +157,17 @@ def litert_device_exec(
         name,
         target,
         backend_id = "cpu",
+        platform = "android",
         data = [],
         exec_args = [],
         remote_suffix = "",
         local_suffix = "_adb",
         model_providers = [],
+        extra_models = [],
+        dimensions = None,
         testonly = True,
-        tags = []):
+        tags = [],
+        visibility = None):
     """
     Macro to execute a binary target on a device through adb.
 
@@ -145,28 +177,61 @@ def litert_device_exec(
     Args:
         name: Name of the target.
         backend_id: The backend id to use for the test (e.g. QUALCOMM_ID, GOOGLE_TENSOR_ID).
+        platform: Target OS platform ("android" or "macos").
         target: The binary target to execute on device.
         data: List of data files to push to the device.
         exec_args: List of arguments to pass to the executable.
         remote_suffix: Suffix for the target runnin on device cloud if enabled.
         local_suffix: Suffix for the target that runs locally on physical device through adb.
         model_providers: A list of tools dependencies that return tflite models when called.
+        extra_models: A list of extra .tflite model paths or targets to push to the device.
+        dimensions: Optional Mobile Harness device dimensions dict or device target label string
+            overriding backend default.
         testonly: Whether the target is testonly.
         tags: List of tags to apply to the generated targets.
+        visibility: Target visibility for generated local targets.
     """
-    backend = get_spec(backend_id)
+    backend = get_spec(backend_id, platform = platform)
 
-    litert_device_script(
-        name = name + local_suffix,
-        data = data,
-        bin = target,
-        script = "//litert/integration_test:mobile_install.sh",
-        exec_args = exec_args,
-        model_providers = model_providers,
-        testonly = testonly,
-        backend_id = backend_id,
-        tags = hidden_test_tags() + tags,
-    )
+    if local_suffix != None:
+        local_name = name + local_suffix
+        if platform == "macos":
+            local_env = {}
+            if backend.libs:
+                lib_dir = host_rlocation(backend.libs[0], get_parent = True)
+                local_env = {
+                    "DYLD_LIBRARY_PATH": lib_dir,
+                    "LITERT_RUNTIME_LIB_DIR": lib_dir,
+                }
+            sh_test(
+                name = local_name,
+                srcs = ["//litert/integration_test:host_exec.sh"],
+                args = ["./" + host_rlocation(target)] + [a.replace("\\'", "").replace("\"", "") for a in exec_args],
+                data = [target] + backend.libs + data,
+                env = local_env,
+                tags = [
+                    "local",
+                    "manual",
+                ] + tags,
+                target_compatible_with = [
+                    "@platforms//os:macos",
+                ],
+                testonly = testonly,
+                visibility = visibility,
+            )
+        else:
+            litert_device_script(
+                name = local_name,
+                data = data,
+                bin = target,
+                script = "//litert/integration_test:mobile_install.sh",
+                exec_args = exec_args,
+                model_providers = model_providers,
+                testonly = testonly,
+                backend_id = backend_id,
+                tags = hidden_test_tags() + tags,
+                visibility = visibility,
+            )
 
     if remote_suffix != None:
         # Note model providers are not compatible with mobile harness.
@@ -174,10 +239,13 @@ def litert_device_exec(
             name = name + remote_suffix,
             target = target,
             run_as = backend.mh_user,
-            data = data + backend.libs,
+            data = data,
+            libs = backend.libs,
             exec_args = exec_args,
             exec_env_vars = backend.env_paths,
-            dimensions = backend.default_mh_device,
+            dimensions = dimensions if dimensions != None else backend.default_mh_device,
+            platform = platform,
+            extra_models = extra_models,
         )
 
 def litert_device_test(
@@ -202,14 +270,15 @@ def litert_device_test(
         name: Name of the target.
         srcs: The source files for the target to be generated.
         deps: The dependencies for the target to be generated.
+        features: List of features to enable on the target to be generated.
         rule: The rule to use for the target to be generated.
         backend_id: The backend id to use for the test (e.g. QUALCOMM_ID, GOOGLE_TENSOR_ID).
         data: List of data files to push to the device and for the target to be generated.
         exec_args: List of arguments to pass to the executable.
-        exec_env_vars: List of environment variables to set before executing the target.
         tags: List of tags to apply to the target to be generated.
         linkopts: List of linkopts to apply to the target to be generated.
         copts: List of copts to apply to the target to be generated.
+        **kwargs: Additional keyword arguments forwarded to `rule`.
     """
 
     target = "_{}".format(name)

@@ -11,7 +11,11 @@
 
 #include "HTP/QnnHtpCommon.h"  // from @qairt
 #include "HTP/QnnHtpDevice.h"  // from @qairt
+// QAIRT >= 2.47 moves some HTP device definitions from QnnHtpDevice.h to
+// QnnHtpDeviceConfigShared.h.
+#if __has_include("HTP/QnnHtpDeviceConfigShared.h")
 #include "HTP/QnnHtpDeviceConfigShared.h"  // from @qairt
+#endif
 #include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
@@ -65,6 +69,8 @@ class HtpBackend : public QnnBackend {
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
 
   bool SetPerformanceMode(const Options& options) override;
+  void ScheduleUpVote() override;
+  void ScheduleDownVote() override;
 
   GraphConfigBuilder BuildGraphConfigs(
       const Options& options, absl::string_view qnn_graph_name) override;
@@ -86,8 +92,13 @@ class HtpBackend : public QnnBackend {
 
   QnnDevicePlatformInfo CreateDevicePlatformInfo();
 
-  std::vector<const QnnDevice_Config_t*> CreateDeviceConfigs(
-      const Options& options);
+  bool CreateDevicePlatformConfigs(
+      std::uint32_t htp_device_id,
+      std::vector<const QnnDevice_Config_t*>& device_configs);
+
+  bool CreateDeviceConfigs(
+      const Options& options,
+      std::vector<const QnnDevice_Config_t*>& device_configs);
 
   // The qnn_device_platform_info_ is referenced by device configurations
   // managed in the lists below. It must be destructed after the configs to

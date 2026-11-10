@@ -23,7 +23,6 @@
 #include <tuple>
 #include <utility>
 
-#include "platforms/darwinn/tachyon/core/fence/fence.h"
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
@@ -48,7 +47,6 @@
 #include "thread/thread_manager.h"
 
 namespace fence_util = ::platforms::darwinn::fence_util;
-namespace tachyon = ::platforms::darwinn::tachyon;
 
 using ::litert::google_tensor::testing::SimpleModelTest;
 using ::testing::Combine;
@@ -127,9 +125,9 @@ TEST_P(SimpleModelEndToEndTest, Succeeds) {
 
   // A helper struct to hold state that is exclusive to attaching input events.
   struct AttachInputEventsExclusiveState {
-    std::shared_ptr<tachyon::Fence> input_fence_0;
+    std::shared_ptr<fence_util::TestKernelFence> input_fence_0;
     LiteRtEvent input_event_0;
-    std::shared_ptr<tachyon::Fence> input_fence_1;
+    std::shared_ptr<fence_util::TestKernelFence> input_fence_1;
     LiteRtEvent input_event_1;
   };
 
@@ -295,13 +293,15 @@ TEST_P(SimpleModelEndToEndTest, Succeeds) {
       GTEST_SKIP() << "Async API is not supported";
     }
 
-    std::shared_ptr<tachyon::Fence> input_fence_0 = fence_util::CreateFence();
+    std::shared_ptr<fence_util::TestKernelFence> input_fence_0 =
+        fence_util::CreateFence();
     LiteRtEvent input_event_0;
     LITERT_ASSERT_OK(
         LiteRtCreateEventFromSyncFenceFd(env(), input_fence_0->GetFd(),
                                          /*owns_fd=*/false, &input_event_0));
 
-    std::shared_ptr<tachyon::Fence> input_fence_1 = fence_util::CreateFence();
+    std::shared_ptr<fence_util::TestKernelFence> input_fence_1 =
+        fence_util::CreateFence();
     LiteRtEvent input_event_1;
     LITERT_ASSERT_OK(
         LiteRtCreateEventFromSyncFenceFd(env(), input_fence_1->GetFd(),

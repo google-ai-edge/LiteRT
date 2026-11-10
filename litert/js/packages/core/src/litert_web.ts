@@ -24,6 +24,7 @@ import {Model} from './model';
 import {CompileOptions, fillCompileOptions} from './model_types';
 import {Deletable, LiteRtWasm} from './wasm_binding_types';
 import {isJspiSupported} from './wasm_feature_detect';
+import {TensorFunction, AuthoredModel} from './authored_model';
 
 /**
  * Check if the browser supports WebGPU.
@@ -60,6 +61,20 @@ export function loadAndCompile(
     compileOptions?: CompileOptions,
     ): Promise<CompiledModel> {
   return getGlobalLiteRt().loadAndCompile(model, compileOptions);
+}
+
+/**
+ * Authors a tensor arithmetic function into an AuthoredModel.
+ *
+ * @param fn A function containing tensor arithmetic operations.
+ * @param compileOptions Options for compilation (e.g. accelerator, environment).
+ * @return An AuthoredModel instance ready to run or compile.
+ */
+export function author(
+    fn: TensorFunction,
+    compileOptions?: CompileOptions,
+): AuthoredModel {
+  return getGlobalLiteRt().author(fn, compileOptions);
 }
 
 /**
@@ -228,6 +243,17 @@ export class LiteRt {
     }
 
     return compiledModel;
+  }
+
+  /**
+   * Authors a tensor arithmetic function into an AuthoredModel.
+   */
+  author(fn: TensorFunction, compileOptions: CompileOptions = {}): AuthoredModel {
+    const environment =
+        compileOptions.environment ?? this.getDefaultEnvironment();
+    const model = new AuthoredModel(fn, {...compileOptions, environment});
+    this.objectsToDelete.add(model);
+    return model;
   }
 
   delete() {

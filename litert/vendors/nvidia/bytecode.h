@@ -29,6 +29,16 @@ inline constexpr uint32_t kTensorRtBytecodeVersion = 1;
 inline constexpr uint32_t kTensorRtBytecodeVersionWithTrtLlmHead = 2;
 inline constexpr uint32_t kTensorRtBytecodeVersionWithTypedHead = 3;
 inline constexpr uint32_t kTensorRtBytecodeVersionWithSharedWeights = 4;
+// Version 4 plus, per engine, an optional weight store: where the weights
+// the plan was built without come from.
+inline constexpr uint32_t kTensorRtBytecodeVersionWithWeightStore = 5;
+// Version 5 plus, per engine, an optional step feed: how a decode step's
+// inputs follow from its outputs (TensorRtStepFeed), so that the dispatch can
+// run the next step before the host asks for it.
+inline constexpr uint32_t kTensorRtBytecodeVersionWithStepFeed = 6;
+// Version 6 plus, in the step feed, the per-layer embeddings: a second input
+// the feed writes, from the per-layer embedder's tables the runtime registers.
+inline constexpr uint32_t kTensorRtBytecodeVersionWithPerLayerFeed = 7;
 
 // Versioned POD payload behind LiteRtJitExecutable. The compiler plugin owns
 // the bytecode for the lifetime of the compiled result; dispatch reads it
@@ -140,6 +150,45 @@ struct TensorRtLlmHead {
   size_t bf16_scales_size = 0;
 };
 
+inline constexpr uint32_t kTensorRtStepFeedNoPort = 0xffffffffu;
+// A feed without a token table of its own: the runtime registers the
+// embedder's (dispatch/token_table_c_api.h) before the first decode step.
+inline constexpr uint64_t kTensorRtStepFeedNoTable = 0xffffffffffffffffull;
+
+// A decode step feeds itself: given the step's logits, the next step's inputs
+// are the greedy token's embedding (a row of the token table times the
+// embedder's multiplier), the position plus one, the cache parameter
+// {start + 1, end + 1, end + 1} and the local mask of the next position
+// (LiteRT-LM's ring-buffer decode mask). The dispatch runs that step on the
+// device before the host asks for it and verifies the host's inputs against
+// what it ran. The row scales alias the enclosing bytecode buffer.
+struct TensorRtStepFeed {
+  uint32_t embeddings_port = kTensorRtStepFeedNoPort;   // FP32 [1, 1, dim]
+  uint32_t positions_port = kTensorRtStepFeedNoPort;    // INT32 [1]
+  uint32_t param_port = kTensorRtStepFeedNoPort;        // INT32 [.., 7]
+  uint32_t local_mask_port = kTensorRtStepFeedNoPort;   // BOOL [1, 1, 1, ring]
+  uint32_t global_mask_port = kTensorRtStepFeedNoPort;  // BOOL [1, 1, 1, keys]
+  // FP32 [1, 1, per_layer_count, per_layer_width]: the per-layer embedder's
+  // lookups of the token, concatenated (the Gemma 3n and 4 E models).
+  uint32_t per_layer_port = kTensorRtStepFeedNoPort;
+  uint32_t per_layer_count = 0;
+  uint32_t per_layer_width = 0;
+  uint32_t logits_output_port = 0;  // the logits the greedy sampler reads
+  uint32_t vocab = 0;
+  uint32_t dim = 0;
+  // The local mask's keys, and the sliding window the host fills it with.
+  uint32_t ring = 0;
+  uint32_t window = 0;
+  // The token table in the weight store's source file: INT4 row-major
+  // [vocab, dim], the low nibble first, one FP32 scale per row. Or no table
+  // and no scales (kTensorRtStepFeedNoTable): the runtime registers the
+  // embedder's table, scales and multiplier.
+  uint64_t table_offset = 0;
+  float multiplier = 1.0f;
+  const uint8_t* row_scales = nullptr;  // vocab little-endian FP32 values
+  size_t row_scales_size = 0;
+};
+
 // TensorRT weight types are kept independent of NvInfer headers so the
 // bytecode parser remains usable by LiteRT tooling that does not link the
 // TensorRT SDK. The numeric values intentionally match nvinfer1::DataType.
@@ -169,6 +218,61 @@ struct TensorRtRefitWeight {
   size_t size = 0;
 };
 
+// A weight store describes the packed plugin weights that a plan was built
+// without. The plan holds each "segment" of them as one placeholder constant
+// (a "holder") that the plugins read at an offset; the bytes are pieces of the
+// source model file, uploaded once per process and mapped into the weight
+// memory of every engine that holds the same segment
+// (nvinfer1::IWeightsManager::restoreFromVmmAllocation).
+//
+// Bytes of the source model file that a segment copies.
+struct TensorRtWeightPiece {
+  uint64_t source_offset = 0;
+  uint64_t size = 0;
+  uint64_t segment_offset = 0;
+};
+
+struct TensorRtWeightSegment {
+  // The refittable TensorRT constant that stands for the segment. It is one
+  // CUDA virtual memory granule larger than the segment: the segment starts
+  // at the first granule boundary inside the constant.
+  std::string holder_name;
+  // A positive multiple of the granule.
+  uint64_t size = 0;
+  // Where the segment starts in the engine's weight data
+  // (nvinfer1::IWeightsManager): a multiple of the granule.
+  uint64_t payload_offset = 0;
+  // Identifies the source file and the pieces: engines whose segments have
+  // equal keys map the same device memory.
+  TensorRtArtifactFingerprint key;
+  std::vector<TensorRtWeightPiece> pieces;
+};
+
+// Weight data of the engine outside its segments, where it is not zero. The
+// data aliases the enclosing bytecode buffer.
+struct TensorRtWeightRun {
+  uint64_t offset = 0;
+  const uint8_t* data = nullptr;
+  size_t size = 0;
+};
+
+struct TensorRtWeightStore {
+  // The model file the pieces are read from, and its identity when the plan
+  // was built.
+  std::string source_path;
+  uint64_t source_size = 0;
+  TensorRtAotFileIdentity source_identity;
+  // The CUDA virtual memory granule the layout was computed for.
+  uint64_t granule = 0;
+  // nvinfer1::IWeightsManager::getSize() of the engine: a multiple of the
+  // granule.
+  uint64_t weight_data_size = 0;
+  // In increasing payload_offset order, not overlapping.
+  std::vector<TensorRtWeightSegment> segments;
+  // In increasing offset order, not overlapping each other or a segment.
+  std::vector<TensorRtWeightRun> private_runs;
+};
+
 // Owning input used when packing the shared store. Multiple engine entries
 // can reference the same element by index.
 struct TensorRtSharedWeight {
@@ -191,6 +295,8 @@ struct TensorRtBundleEntry {
   size_t engine_size = 0;
   const TensorRtLlmHead* trtllm_head = nullptr;
   std::vector<TensorRtSharedWeightRef> refit_weights;
+  const TensorRtWeightStore* weight_store = nullptr;
+  const TensorRtStepFeed* step_feed = nullptr;
 };
 
 struct TensorRtBytecode {
@@ -202,6 +308,8 @@ struct TensorRtBytecode {
   size_t engine_size = 0;
   std::optional<TensorRtLlmHead> trtllm_head;
   std::vector<TensorRtRefitWeight> refit_weights;
+  std::optional<TensorRtWeightStore> weight_store;
+  std::optional<TensorRtStepFeed> step_feed;
 };
 
 Expected<std::vector<uint8_t>> PackTensorRtBytecode(
@@ -263,7 +371,7 @@ Expected<TensorRtAotManifest> ParseTensorRtAotManifest(const void* data,
                                                        size_t size);
 
 // Legacy bytecodes contain one engine and ignore function_name. Version 4
-// bundles require function_name when they contain more than one engine.
+// and 5 bundles require function_name when they contain more than one engine.
 Expected<TensorRtBytecode> ParseTensorRtBytecode(
     const void* data, size_t size, const char* function_name = nullptr);
 

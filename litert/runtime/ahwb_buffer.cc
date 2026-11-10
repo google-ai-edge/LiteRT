@@ -15,9 +15,11 @@
 #include "litert/runtime/ahwb_buffer.h"
 
 #include <cstddef>
+#include <cstdint>
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_event_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/ahwb_wrapper.h"
@@ -28,6 +30,21 @@ namespace internal {
 
 using ::litert::internal::AndroidHardwareBufferWrapper;
 auto AhwbWrapper = AndroidHardwareBufferWrapper::Instance;
+
+namespace {
+
+// Returns false if `event` is a sync fence event without a fence fd (fd < 0),
+// i.e. there is nothing to wait for. dup() fails for such an fd, so
+// AhwbBuffer::Lock() passes -1 to AHardwareBuffer_lock() instead.
+bool HasFenceToWaitFor(const LiteRtEventT& event) {
+#if LITERT_HAS_SYNC_FENCE_SUPPORT
+  return !(event.type == LiteRtEventTypeSyncFenceFd && event.fd < 0);
+#else
+  return true;
+#endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
+}
+
+}  // namespace
 
 bool AhwbBuffer::IsSupported() { return AhwbWrapper().Supported(); }
 
@@ -98,8 +115,14 @@ Expected<void*> AhwbBuffer::Lock(AHardwareBuffer* ahwb, LiteRtEventT* event) {
                       "AHardwareBuffers are not supported on this platform");
   }
   int fence = -1;
-  if (event != nullptr) {
-    LITERT_ASSIGN_OR_RETURN(fence, event->GetSyncFenceFd());
+  if (event != nullptr && HasFenceToWaitFor(*event)) {
+    // AHardwareBuffer_lock() takes ownership of `fence` and closes it (the
+    // gralloc mapper consumes the acquire fence, even on errors), but `event`
+    // keeps owning its sync fence fd and closes it when it is destroyed. Pass
+    // a duplicate so that the event fd is not closed twice, and stays valid
+    // for later users of the event (e.g. as an input fence of the next
+    // dispatch invocation).
+    LITERT_ASSIGN_OR_RETURN(fence, event->DupFd());
   }
   void* host_addr;
   LITERT_RETURN_IF_ERROR(

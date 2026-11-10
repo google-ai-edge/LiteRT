@@ -17,8 +17,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <random>
@@ -53,8 +55,8 @@
 
 namespace litert::testing {
 
-template <typename Rank, typename T_in, typename T_out, typename OpCode,
-          typename KeepNumDims = std::false_type,
+template <typename Rank, typename T_in, typename T_wt, typename T_out,
+          typename OpCode, typename KeepNumDims = std::false_type,
           typename Fa = FaC<tflite::ActivationFunctionType_NONE>,
           typename HasBias = std::true_type,
           typename AsymmetricQuantizeInputs = std::false_type,
@@ -71,8 +73,15 @@ class FullyConnected : public TestGraph {
   static constexpr bool kKeepNumDims = KeepNumDims::value;
   static constexpr tflite::ActivationFunctionType kFa = Fa::value;
   static constexpr bool kHasBias = HasBias::value;
+  static constexpr bool kIsInt4Weight =
+      std::is_same_v<T_wt, litert::tensor::int4_t>;
+  static constexpr bool kIsQuantizedWeight =
+      std::is_integral_v<T_wt> || kIsInt4Weight;
+  static constexpr bool kIsHybrid =
+      std::is_floating_point_v<T_in> && kIsQuantizedWeight;
 
   static constexpr ElementType kInElementType = GetElementType<T_in>();
+  static constexpr ElementType kWtElementType = GetElementType<T_wt>();
   static constexpr ElementType kOutElementType = GetElementType<T_out>();
   static constexpr TensorNames<3> kInputNames = {"input", "weights", "bias"};
   static constexpr TensorNames<1> kOutputNames = {"output"};
@@ -84,15 +93,15 @@ class FullyConnected : public TestGraph {
     std::array<Layout::Dim, 2> weights_shape;
     std::array<Layout::Dim, 1> bias_shape;
     std::vector<Layout::Dim> output_shape;
-    std::vector<T_in> weights_data;
+    std::vector<T_wt> weights_data;
     std::vector<BiasT> bias_data;
   };
 
  public:
   using InputTypesT = std::conditional_t<
-      DynamicFilter::value && DynamicBias::value, TypeList<T_in, T_in, BiasT>,
+      DynamicFilter::value && DynamicBias::value, TypeList<T_in, T_wt, BiasT>,
       std::conditional_t<
-          DynamicFilter::value, TypeList<T_in, T_in>,
+          DynamicFilter::value, TypeList<T_in, T_wt>,
           std::conditional_t<DynamicBias::value, TypeList<T_in, BiasT>,
                              TypeList<T_in>>>>;
   using Traits = TestLogicTraits<InputTypesT, TypeList<T_out>, Params>;
@@ -106,6 +115,11 @@ class FullyConnected : public TestGraph {
     std::uniform_int_distribution<int> dim_dist(2, 6);
 
     int input_dim = dim_dist(rng);
+    if constexpr (kIsInt4Weight) {
+      if (input_dim % 2 != 0) {
+        ++input_dim;
+      }
+    }
     int output_dim = dim_dist(rng);
 
     for (size_t i = 0; i < kRank - 1; ++i) {
@@ -116,7 +130,27 @@ class FullyConnected : public TestGraph {
     params.weights_shape = {output_dim, input_dim};
     params.bias_shape = {output_dim};
 
-    params.weights_data.assign(output_dim * input_dim, static_cast<T_in>(1.0f));
+    if constexpr (kIsInt4Weight) {
+      const size_t num_elements = output_dim * input_dim;
+      params.weights_data.resize(num_elements / 2);
+      std::uniform_int_distribution<int> wt_dist(-8, 7);
+      for (size_t i = 0; i < params.weights_data.size(); ++i) {
+        params.weights_data[i].a = static_cast<int8_t>(wt_dist(rng));
+        params.weights_data[i].b = static_cast<int8_t>(wt_dist(rng));
+      }
+      // Explicitly exercise the -8 two's complement boundary in both lower and
+      // upper nibbles to catch kernels that assume symmetric [-7, 7] weights
+      // and add +7 during unsigned nibble packing.
+      if (!params.weights_data.empty()) {
+        params.weights_data[0].a = -8;
+        if (params.weights_data.size() > 1) {
+          params.weights_data[1].b = -8;
+        }
+      }
+    } else {
+      params.weights_data.assign(output_dim * input_dim,
+                                 static_cast<T_wt>(1.0f));
+    }
     params.bias_data.assign(output_dim, static_cast<BiasT>(0.0f));
 
     LiteRtOpT op;
@@ -169,8 +203,11 @@ class FullyConnected : public TestGraph {
     } else {
       spec.comparator_kind = ConformanceComparatorKind::kFloatAccumulationAware;
       spec.accumulation_depth = params_.input_shape[kRank - 1];
-      if constexpr (std::is_same_v<T_in, tflite::half> ||
-                    std::is_same_v<T_out, tflite::half>) {
+      if constexpr (kIsHybrid) {
+        spec.relative_tolerance = 5e-2;
+        spec.absolute_tolerance = 1e-2;
+      } else if constexpr (std::is_same_v<T_in, tflite::half> ||
+                           std::is_same_v<T_out, tflite::half>) {
         spec.relative_tolerance = 5e-3;
       } else {
         spec.relative_tolerance = 1e-4;
@@ -196,9 +233,9 @@ class FullyConnected : public TestGraph {
 
     if constexpr (DynamicFilter::value) {
       LITERT_ASSIGN_OR_RETURN(
-          auto weights, SimpleBuffer::Create<T_in>(params_.weights_shape));
+          auto weights, SimpleBuffer::Create<T_wt>(params_.weights_shape));
       LITERT_RETURN_IF_ERROR(
-          (weights.template WriteRandom<T_in>(modified_data_builder, device)));
+          (weights.template WriteRandom<T_wt>(modified_data_builder, device)));
       inputs.push_back(std::move(weights));
     }
 
@@ -233,7 +270,7 @@ class FullyConnected : public TestGraph {
     if constexpr (DynamicFilter::value && DynamicBias::value) {
       auto [input, weights, bias] = ref_inputs;
       std::vector<float> in_f32 = UnpackToFloat(input.data);
-      std::vector<float> wt_f32 = UnpackToFloat(weights.data);
+      std::vector<float> wt_f32 = UnpackWeightsToFloat(weights.data);
       std::vector<float> bs_f32 = UnpackToFloat(bias.data);
       litert::internal::ReferenceFullyConnected(
           in_f32.data(), wt_f32.data(), bs_f32.data(), out_f32.data(),
@@ -241,7 +278,7 @@ class FullyConnected : public TestGraph {
     } else if constexpr (DynamicFilter::value) {
       auto [input, weights] = ref_inputs;
       std::vector<float> in_f32 = UnpackToFloat(input.data);
-      std::vector<float> wt_f32 = UnpackToFloat(weights.data);
+      std::vector<float> wt_f32 = UnpackWeightsToFloat(weights.data);
       if constexpr (kHasBias) {
         std::vector<float> bs_f32 =
             UnpackToFloat(absl::MakeConstSpan(params_.bias_data));
@@ -258,7 +295,7 @@ class FullyConnected : public TestGraph {
       std::vector<float> in_f32 = UnpackToFloat(input.data);
       std::vector<float> bs_f32 = UnpackToFloat(bias.data);
       std::vector<float> wt_f32 =
-          UnpackToFloat(absl::MakeConstSpan(params_.weights_data));
+          UnpackWeightsToFloat(absl::MakeConstSpan(params_.weights_data));
       litert::internal::ReferenceFullyConnected(
           in_f32.data(), wt_f32.data(), bs_f32.data(), out_f32.data(),
           batch_size, input_dim, output_dim, kFa);
@@ -266,7 +303,7 @@ class FullyConnected : public TestGraph {
       auto [input] = ref_inputs;
       std::vector<float> in_f32 = UnpackToFloat(input.data);
       std::vector<float> wt_f32 =
-          UnpackToFloat(absl::MakeConstSpan(params_.weights_data));
+          UnpackWeightsToFloat(absl::MakeConstSpan(params_.weights_data));
       if constexpr (kHasBias) {
         std::vector<float> bs_f32 =
             UnpackToFloat(absl::MakeConstSpan(params_.bias_data));
@@ -289,7 +326,9 @@ class FullyConnected : public TestGraph {
       //         = (x_int * w_int + b_int) * (0.01 * 0.01 / 0.01) = (x_int *
       //         w_int + b_int) * 0.01.
       for (float& v : out_f32) {
-        v *= 0.01f;
+        v = std::clamp(std::round(v * 0.01f),
+                       static_cast<float>(std::numeric_limits<T_out>::min()),
+                       static_cast<float>(std::numeric_limits<T_out>::max()));
       }
     }
 
@@ -301,6 +340,25 @@ class FullyConnected : public TestGraph {
       : TestGraph(std::move(model)), params_(std::move(params)) {}
 
  private:
+  static std::vector<float> UnpackWeightsToFloat(absl::Span<const T_wt> data) {
+    std::vector<float> res;
+    if constexpr (kIsInt4Weight) {
+      res.reserve(data.size() * 2);
+      for (const auto& packed : data) {
+        res.push_back(static_cast<float>(packed.a));
+        res.push_back(static_cast<float>(packed.b));
+      }
+    } else {
+      res = UnpackToFloat(data);
+    }
+    if constexpr (kIsHybrid && !DynamicFilter::value) {
+      for (float& v : res) {
+        v *= 0.01f;
+      }
+    }
+    return res;
+  }
+
   static Expected<LiteRtModelT::Ptr> BuildGraph(const Params& params) {
     using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
     std::vector<int32_t> dims_in(params.input_shape.begin(),
@@ -316,14 +374,14 @@ class FullyConnected : public TestGraph {
     if constexpr (!DynamicFilter::value) {
       auto weights_buf = std::make_shared<litert::tensor::SpanCpuBuffer>(
           reinterpret_cast<const std::byte*>(params.weights_data.data()),
-          params.weights_data.size() * sizeof(T_in));
+          params.weights_data.size() * sizeof(T_wt));
       weights = litert::tensor::Create(std::string(kInputNames[1]),
-                                       litert::tensor::ApiType<T_in>::value,
+                                       litert::tensor::ApiType<T_wt>::value,
                                        dims_wt, std::move(weights_buf));
     } else {
       weights =
           litert::tensor::Create(std::string(kInputNames[1]),
-                                 litert::tensor::ApiType<T_in>::value, dims_wt);
+                                 litert::tensor::ApiType<T_wt>::value, dims_wt);
     }
 
     if constexpr (PerChannel::value && !DynamicFilter::value) {
@@ -332,7 +390,7 @@ class FullyConnected : public TestGraph {
       weights.SetQuantization(
           std::make_shared<litert::tensor::PerChannelAffineQuantization>(
               scales, zero_points, 0));
-    } else if constexpr (std::is_integral_v<T_in> && !DynamicFilter::value) {
+    } else if constexpr (kIsQuantizedWeight && !DynamicFilter::value) {
       weights.SetQuantization(
           std::make_shared<litert::tensor::PerChannelAffineQuantization>(
               std::vector<float>{0.01f}, std::vector<int64_t>{0}, 0));
@@ -355,16 +413,18 @@ class FullyConnected : public TestGraph {
                                       litert::tensor::ApiType<BiasT>::value,
                                       dims_bs);
       }
-      if constexpr (PerChannel::value && !DynamicBias::value) {
-        std::vector<float> scales(dims_bs[0], 0.0001f);
-        std::vector<int64_t> zero_points(dims_bs[0], 0);
-        bias.SetQuantization(
-            std::make_shared<litert::tensor::PerChannelAffineQuantization>(
-                scales, zero_points, 0));
-      } else if constexpr (std::is_integral_v<BiasT> && !DynamicBias::value) {
-        bias.SetQuantization(
-            std::make_shared<litert::tensor::PerChannelAffineQuantization>(
-                std::vector<float>{0.0001f}, std::vector<int64_t>{0}, 0));
+      if constexpr (std::is_integral_v<BiasT> && !DynamicBias::value) {
+        if constexpr (PerChannel::value) {
+          std::vector<float> scales(dims_bs[0], 0.0001f);
+          std::vector<int64_t> zero_points(dims_bs[0], 0);
+          bias.SetQuantization(
+              std::make_shared<litert::tensor::PerChannelAffineQuantization>(
+                  scales, zero_points, 0));
+        } else {
+          bias.SetQuantization(
+              std::make_shared<litert::tensor::PerChannelAffineQuantization>(
+                  std::vector<float>{0.0001f}, std::vector<int64_t>{0}, 0));
+        }
       }
       bias_opt = std::move(bias);
     }

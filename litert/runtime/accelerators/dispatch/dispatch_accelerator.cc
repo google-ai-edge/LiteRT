@@ -50,8 +50,7 @@ struct NpuAcceleratorVersion {
   static constexpr int kMajor = 1;
   static constexpr int kMinor = 0;
   static constexpr int kPatch = 0;
-  static constexpr LiteRtApiVersion version = {kMajor, kMinor,
-                                               kPatch};  // NOLINT
+  static constexpr LiteRtApiVersion kVersion = {kMajor, kMinor, kPatch};
 };
 
 }  // namespace
@@ -150,7 +149,7 @@ LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment) {
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "environment handle is null";
 
-  if (LiteRtStaticLinkedDispatchGetApi == nullptr) {
+  if (LiteRtStaticLinkedDispatchQueryInterface == nullptr) {
     LITERT_LOG(LITERT_DEBUG, "Dispatch API is not statically linked.");
     if (!environment->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir)
              .has_value()) {

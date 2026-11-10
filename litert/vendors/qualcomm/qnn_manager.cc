@@ -18,6 +18,10 @@
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
 #include <stdlib.h>
+#if !defined(_WIN32)
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 #include <array>
 #include <cstdint>
@@ -47,9 +51,9 @@
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/core/dynamic_loading.h"
 #include "litert/core/filesystem.h"
 #include "litert/vendors/qualcomm/common.h"
+#include "litert/vendors/qualcomm/core/backends/backend_utils.h"
 #include "litert/vendors/qualcomm/core/backends/dsp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/gpu_backend.h"
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
@@ -131,36 +135,114 @@ Expected<absl::Span<const QnnSystemInterface_t*>> LoadSystemProvidersFromLib(
   return absl::MakeSpan(interface_providers, num_providers);
 }
 
+struct HtpContextConfigs {
+  QnnContext_Config_t priority = QNN_CONTEXT_CONFIG_INIT;
+  QnnHtpContext_CustomConfig_t budget_custom =
+      QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
+  QnnContext_Config_t budget = QNN_CONTEXT_CONFIG_INIT;
+  std::vector<const QnnContext_Config_t*> ptrs;
+};
+
+absl::Span<const QnnContext_Config_t*> BuildHtpContextConfigs(
+    const ::qnn::Options& options,
+    absl::Span<const QnnContext_Config_t*> configs,
+    HtpContextConfigs& storage) {
+  const uint32_t budget_mb = options.GetHtpFileReadMemoryBudgetMB();
+  const bool apply_budget = budget_mb > 0;
+  const bool apply_priority =
+      options.GetGraphPriority() != ::qnn::GraphPriority::kDefault;
+  if (!apply_budget && !apply_priority) {
+    return {};
+  }
+
+  for (const auto* cfg : configs) {
+    if (cfg != nullptr) {
+      storage.ptrs.push_back(cfg);
+    }
+  }
+  if (apply_priority) {
+    storage.priority.option = QNN_CONTEXT_CONFIG_OPTION_PRIORITY;
+    storage.priority.priority =
+        GetGraphPriorityValue(options.GetGraphPriority());
+    storage.ptrs.push_back(&storage.priority);
+  }
+  if (apply_budget) {
+    storage.budget_custom.option =
+        QNN_HTP_CONTEXT_CONFIG_OPTION_FILE_READ_MEMORY_BUDGET;
+    storage.budget_custom.fileReadMemoryBudgetInMb = budget_mb;
+    storage.budget.option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
+    storage.budget.customConfig = &storage.budget_custom;
+    storage.ptrs.push_back(&storage.budget);
+  }
+  storage.ptrs.push_back(nullptr);
+  return absl::MakeSpan(storage.ptrs);
+}
+
 }  // namespace
 
 QnnManager::~QnnManager() = default;
+
+LiteRtStatus QnnManager::LoadSharedLibHelper(absl::string_view path,
+                                             bool needs_global_symbols,
+                                             SharedLibrary& out_lib) {
+  const auto rtld_flags = GetRtldFlags(needs_global_symbols);
+
+  // 1. Try explicit qnn_lib_dir from Options
+  if (!options_.GetQnnLibDir().empty()) {
+    std::string resolved_path =
+        litert::internal::Join({options_.GetQnnLibDir(), path});
+    LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
+               resolved_path.c_str());
+    auto lib_or = SharedLibrary::Load(resolved_path, rtld_flags);
+    if (lib_or) {
+      out_lib = std::move(lib_or.Value());
+      return kLiteRtStatusOk;
+    }
+    LITERT_LOG(LITERT_INFO, "Falling back from qnn_lib_dir to loading \"%s\"",
+               path.data());
+  }
+
+  // 2. Try shared_library_dir_ (plugin directory)
+  if (shared_library_dir_ && !shared_library_dir_->empty() &&
+      *shared_library_dir_ != options_.GetQnnLibDir()) {
+    std::string resolved_path =
+        litert::internal::Join({*shared_library_dir_, path});
+    LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
+               resolved_path.c_str());
+    auto lib_or = SharedLibrary::Load(resolved_path, rtld_flags);
+    if (lib_or) {
+      out_lib = std::move(lib_or.Value());
+      return kLiteRtStatusOk;
+    }
+    LITERT_LOG(LITERT_INFO,
+               "Falling back from shared_library_dir to loading \"%s\"",
+               path.data());
+  }
+
+  // 3. Fallback to path directly (system loader paths)
+  LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
+             path.data());
+  auto lib_or = SharedLibrary::Load(path, rtld_flags);
+  if (!lib_or) {
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to load qnn shared library from \"%s\": %s", path.data(),
+               lib_or.Error().Message().data());
+    return lib_or.Error().Status();
+  }
+  out_lib = std::move(lib_or.Value());
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
   auto saver_output_dir = options_.GetSaverOutputDir();
   const bool needs_global_symbols = !options_.GetCustomOpPackage().name.empty();
   if (saver_output_dir.empty()) {
-    LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
-               path.data());
-    auto lib_or = SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
-    if (!lib_or) {
-      LITERT_LOG(LITERT_ERROR,
-                 "Failed to load qnn shared library from \"%s\": %s",
-                 path.data(), lib_or.Error().Message().data());
-      return lib_or.Error().Status();
-    }
-    lib_ = std::move(lib_or.Value());
+    LITERT_RETURN_IF_ERROR(
+        LoadSharedLibHelper(path, needs_global_symbols, lib_));
   } else {
     path = kSaverLibraryName;
-    LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
-               path.data());
-    auto lib_or = SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
-    if (!lib_or) {
-      LITERT_LOG(LITERT_ERROR,
-                 "Failed to load qnn shared library from \"%s\": %s",
-                 path.data(), lib_or.Error().Message().data());
-      return lib_or.Error().Status();
-    }
-    lib_ = std::move(lib_or.Value());
+    LITERT_RETURN_IF_ERROR(
+        LoadSharedLibHelper(path, needs_global_symbols, lib_));
     LITERT_RETURN_IF_ERROR(InitSaver(lib_, saver_output_dir));
   }
   LITERT_LOG(LITERT_INFO, "Loaded qnn shared library", "");
@@ -169,32 +251,7 @@ LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
 
 LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
   const bool needs_global_symbols = !options_.GetCustomOpPackage().name.empty();
-  if (shared_library_dir_) {
-    std::string resolved_path =
-        litert::internal::Join({*shared_library_dir_, path});
-    LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
-               resolved_path.c_str());
-    auto lib_system_or =
-        SharedLibrary::Load(resolved_path, GetRtldFlags(needs_global_symbols));
-    if (lib_system_or) {
-      lib_system_ = std::move(lib_system_or.Value());
-      return kLiteRtStatusOk;
-    }
-    LITERT_LOG(LITERT_INFO,
-               "Falling back to loading qnn system shared library from \"%s\"",
-               path.data());
-  }
-  LITERT_LOG(LITERT_INFO, "Loading qnn system shared library from \"%s\"",
-             path.data());
-
-  auto lib_system_or =
-      SharedLibrary::Load(path, GetRtldFlags(needs_global_symbols));
-  if (!lib_system_or) {
-    LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
-    return lib_system_or.Error().Status();
-  }
-  lib_system_ = std::move(lib_system_or.Value());
-  return kLiteRtStatusOk;
+  return LoadSharedLibHelper(path, needs_global_symbols, lib_system_);
 }
 
 const QnnApi* QnnManager::Api() const {
@@ -445,6 +502,17 @@ LiteRtStatus QnnManager::ValidateOp(::qnn::QnnBackend& qnn_backend,
     return kLiteRtStatusOk;
   }
 
+  // Bypass StridedSlice OP validation.
+  if (sdk_version < SdkVersion{2, 52, 0} &&
+      op.IsOpCode(::qnn::QnnOpCode::kStridedSlice) &&
+      op.GetInputTensor(0).GetDataType() == QNN_DATATYPE_BOOL_8 &&
+      op.GetOutputTensor(0).GetDataType() == QNN_DATATYPE_BOOL_8) {
+    LITERT_LOG(LITERT_WARNING,
+               "SDK version is earlier than 2.52.0; bool StridedSlice OP "
+               "validation is bypassed.");
+    return kLiteRtStatusOk;
+  }
+
   if (op.IsOpCode(::qnn::QnnOpCode::kFullyConnected) &&
       op.GetInputTensor(0).IsQuantI8() && op.GetInputTensor(1).IsQuantI8() &&
       op.GetInputTensor(1).IsQuantBitwidth(::qnn::kQuantBitWidth2) &&
@@ -481,57 +549,41 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
   options_ = options;
   auto backend_type = options_.GetBackendType();
 
-  // If shared_library_dir is provided, add it to the path as it may contain
-  // libs to be loaded.
-  // TOOD: This should probably be done upstream in litert_dispatch.
-  if (shared_library_dir) {
-    LITERT_LOG(LITERT_INFO, "Adding shared library dir to path: %s",
-               shared_library_dir->c_str());
+  // Determine ADSP library directory:
+  // 1. Explicit dsp_skel_dir from options
+  // 2. Explicit qnn_lib_dir from options
+  // 3. Fallback shared_library_dir (plugin dir)
+  std::string adsp_dir;
+  if (!options_.GetDspSkelDir().empty()) {
+    adsp_dir = std::string(options_.GetDspSkelDir());
+  } else if (!options_.GetQnnLibDir().empty()) {
+    adsp_dir = std::string(options_.GetQnnLibDir());
+  } else if (shared_library_dir.has_value() && !shared_library_dir->empty()) {
+    adsp_dir = *shared_library_dir;
+  }
 
-    // Always overwrite the environment variable as we want to use the
-    // provided library paths only.
+  if (!adsp_dir.empty()) {
+    LITERT_LOG(LITERT_INFO, "Configuring ADSP_LIBRARY_PATH with dir: %s",
+               adsp_dir.c_str());
     static constexpr char kAdsp[] = "ADSP_LIBRARY_PATH";
     const char* adsp_library_path = getenv(kAdsp);
-    if (adsp_library_path == nullptr) {
-      LITERT_RETURN_IF_ERROR(SetEnvVar(kAdsp, shared_library_dir->c_str()));
+    if (adsp_library_path == nullptr || adsp_library_path[0] == '\0') {
+      LITERT_RETURN_IF_ERROR(SetEnvVar(kAdsp, adsp_dir.c_str()));
     } else {
       bool found = false;
       for (absl::string_view part : absl::StrSplit(adsp_library_path, ';')) {
-        if (part == shared_library_dir.value()) {
+        if (part == adsp_dir) {
           found = true;
           break;
         }
       }
       if (!found) {
         auto new_adsp_library_path =
-            absl::StrCat(shared_library_dir.value(), ";", adsp_library_path);
+            absl::StrCat(adsp_dir, ";", adsp_library_path);
         LITERT_RETURN_IF_ERROR(SetEnvVar(kAdsp, new_adsp_library_path.c_str()));
       }
     }
     LITERT_LOG(LITERT_DEBUG, "ADSP_LIBRARY_PATH: %s", getenv(kAdsp));
-
-    const char* lib_name = nullptr;
-    switch (backend_type) {
-      case ::qnn::BackendType::kHtpBackend:
-        lib_name = ::qnn::HtpBackend::GetLibraryName();
-        break;
-      case ::qnn::BackendType::kIrBackend:
-        lib_name = ::qnn::IrBackend::GetLibraryName();
-        break;
-      case ::qnn::BackendType::kDspBackend:
-        lib_name = ::qnn::DspBackend::GetLibraryName();
-        break;
-      case ::qnn::BackendType::kLpaiBackend:
-        lib_name = ::qnn::LpaiBackend::GetLibraryName();
-        break;
-      default:
-        break;
-    }
-
-    if (lib_name) {
-      // TODO: Put dynamic loading module in cc or vendor/cc.
-      litert::internal::PutLibOnLdPath(*shared_library_dir, lib_name);
-    }
   }
 
   LITERT_RETURN_IF_ERROR(LoadSystemLib(kLibQnnSystemSo));
@@ -659,16 +711,58 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     ::qnn::QnnBackend& qnn_backend,
     absl::Span<const QnnContext_Config_t*> configs,
     absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle) {
+#if !defined(_WIN32)
+  const int64_t page_size = sysconf(_SC_PAGESIZE);
+  uintptr_t aligned_start = 0;
+  uintptr_t aligned_end = 0;
+  if (page_size > 0 && !bytecode.empty()) {
+    const uintptr_t mask = static_cast<uintptr_t>(page_size) - 1;
+    const uintptr_t start = reinterpret_cast<uintptr_t>(bytecode.data());
+    const uintptr_t end = start + bytecode.size();
+    aligned_start = (start + mask) & ~mask;
+    aligned_end = end & ~mask;
+#if defined(MADV_NOHUGEPAGE)
+    const uintptr_t outer_start = start & ~mask;
+    const uintptr_t outer_end = (end + mask) & ~mask;
+    if (outer_end > outer_start) {
+      madvise(reinterpret_cast<void*>(outer_start), outer_end - outer_start,
+              MADV_NOHUGEPAGE);
+    }
+#endif
+  }
+#endif
+
   Qnn_ContextHandle_t context_handle;
-  if (auto status = Api()->contextCreateFromBinary(
-          qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
-          configs.data(), bytecode.data(), bytecode.size(), &context_handle,
-          profile_handle);
-      status != QNN_SUCCESS) {
+  Qnn_ErrorHandle_t status;
+  if (options_.GetBackendType() == ::qnn::BackendType::kHtpBackend) {
+    HtpContextConfigs htp_configs;
+    const auto htp_span =
+        BuildHtpContextConfigs(options_, configs, htp_configs);
+    const auto context_configs =
+        htp_span.empty() ? configs.data() : htp_span.data();
+    status = Api()->contextCreateFromBinary(
+        qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
+        context_configs, bytecode.data(), bytecode.size(), &context_handle,
+        profile_handle);
+  } else {
+    status = Api()->contextCreateFromBinary(
+        qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
+        configs.data(), bytecode.data(), bytecode.size(), &context_handle,
+        profile_handle);
+  }
+  if (status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to create QNN context: %d", status);
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to create QNN context");
   }
+
+#if !defined(_WIN32)
+  if (aligned_end > aligned_start) {
+    madvise(reinterpret_cast<void*>(aligned_start), aligned_end - aligned_start,
+            MADV_DONTNEED);
+  }
+#endif
+
   auto context_deleter = Api()->contextFree;
   auto profile_deleter = Api()->profileFree;
   return ContextHandle{context_handle, profile_handle, context_deleter,

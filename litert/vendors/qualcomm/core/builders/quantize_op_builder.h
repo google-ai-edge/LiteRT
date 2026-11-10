@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -20,7 +21,7 @@ OpWrapper CreateQuantizeOp(const TensorWrapper& input,
 
 std::vector<OpWrapper> BuildQuantizeOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs);
+    const std::vector<TensorWrapperRef>& outputs, BackendType backend_type);
 
 std::vector<OpWrapper> BuildDequantizeOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,

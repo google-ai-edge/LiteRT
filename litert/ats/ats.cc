@@ -100,6 +100,7 @@ int main(int argc, char** argv) {
   std::vector<char*> absl_flags;
   static constexpr absl::string_view kDoRegisterPrefix = "--do_register=";
   static constexpr absl::string_view kDontRegisterPrefix = "--dont_register=";
+  static constexpr absl::string_view kHeapCheckPrefix = "--heap_check=";
   std::vector<std::string> do_register;
   std::vector<std::string> dont_register;
   for (int i = 0; i < argc; ++i) {
@@ -109,6 +110,10 @@ int main(int argc, char** argv) {
     } else if (::litert::StartsWith(argv[i], kDontRegisterPrefix)) {
       dont_register.push_back(std::string(
           absl::string_view(argv[i]).substr(kDontRegisterPrefix.size())));
+    } else if (::litert::StartsWith(argv[i], kHeapCheckPrefix) ||
+               absl::string_view(argv[i]) == "--heap_check") {
+      // Ignored: litert_test with use_sys_malloc appends --heap_check= which is
+      // not an absl flag when //base is not linked.
     } else {
       absl_flags.push_back(argv[i]);
     }

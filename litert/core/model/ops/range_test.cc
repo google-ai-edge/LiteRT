@@ -15,6 +15,7 @@
 #include "litert/core/model/ops/range.h"
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -45,6 +46,42 @@ TEST(RangeOpTest, RangeInt32) {
       reinterpret_cast<const int32_t*>(result.propagated_data[0].data());
   EXPECT_THAT(std::vector<int32_t>(data, data + 5),
               testing::ElementsAre(0, 2, 4, 6, 8));
+}
+
+TEST(RangeOpTest, RejectsShortInputBuffersAndElementCountOverflow) {
+  auto valid = MakeTensorData({}, std::vector<int32_t>{1});
+  MockShapeInferenceContext::TensorData short_buf = {{}, {1, 2}};
+
+  MockShapeInferenceContext short_ctx(kLiteRtOpCodeTflRange,
+                                      {short_buf, valid, valid});
+  InferenceResult short_res;
+  EXPECT_EQ(InferRange(short_ctx, short_res),
+            kLiteRtStatusErrorInvalidArgument);
+
+  // Range count exceeding INT32_MAX (INT32_MIN to INT32_MAX with delta 1) is
+  // rejected without signed integer overflow.
+  auto min_start = MakeTensorData(
+      {}, std::vector<int32_t>{std::numeric_limits<int32_t>::min()});
+  auto max_limit = MakeTensorData(
+      {}, std::vector<int32_t>{std::numeric_limits<int32_t>::max()});
+  auto delta_one = MakeTensorData({}, std::vector<int32_t>{1});
+  MockShapeInferenceContext overflow_ctx(kLiteRtOpCodeTflRange,
+                                         {min_start, max_limit, delta_one});
+  InferenceResult overflow_res;
+  EXPECT_EQ(InferRange(overflow_ctx, overflow_res),
+            kLiteRtStatusErrorShapeInferenceFailed);
+
+  // Range count exceeding kMaxPropagatedRangeElements (1 << 20) infers shape
+  // without allocating huge propagated_data.
+  constexpr int32_t kLargeCount = (1 << 20) + 10;
+  auto zero_start = MakeTensorData({}, std::vector<int32_t>{0});
+  auto large_limit = MakeTensorData({}, std::vector<int32_t>{kLargeCount});
+  MockShapeInferenceContext large_ctx(kLiteRtOpCodeTflRange,
+                                      {zero_start, large_limit, delta_one});
+  InferenceResult large_res;
+  ASSERT_EQ(InferRange(large_ctx, large_res), kLiteRtStatusOk);
+  EXPECT_THAT(large_res.output_shapes[0], testing::ElementsAre(kLargeCount));
+  EXPECT_TRUE(large_res.propagated_data.empty());
 }
 
 }  // namespace

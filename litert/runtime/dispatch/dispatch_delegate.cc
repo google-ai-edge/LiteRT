@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "absl/strings/match.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_dispatch_delegate.h"
 #include "litert/c/internal/litert_logging.h"
@@ -35,6 +35,7 @@
 #include "litert/runtime/dispatch/shared_kernel_resources.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/c/litert_dispatch_api.h"
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
@@ -148,7 +149,7 @@ DispatchDelegate::CreateDelegateKernelInterface() {
   }
 
   std::string dispatch_graph_name =
-      absl::StrFormat("DispatchGraph_%d", dispatch_graph_name_id_++);
+      absl::StrCat("DispatchGraph_", dispatch_graph_name_id_++);
   auto kernel = litert::internal::DispatchKernelFacade::Create(
       std::move(dispatch_graph_name), environment_options_, options_,
       device_context_, kernel_resources_);
@@ -220,11 +221,16 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
   LITERT_LOG(LITERT_DEBUG, "Dispatch API version: %d.%d.%d", api_version.major,
              api_version.minor, api_version.patch);
 
-  // Check if the versions mach.
-  if (api_version.major != LITERT_API_VERSION_MAJOR ||
-      api_version.minor < LITERT_API_VERSION_MINOR) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Found Dispatch API with an unsupported version");
+  // Check if the negotiated Dispatch ABI major version matches the expected
+  // major version.
+  if (api_version.major != LITERT_DISPATCH_ABI_VERSION_MAJOR) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Found Dispatch API with an unsupported ABI version: "
+                     "expected major version ",
+                     LITERT_DISPATCH_ABI_VERSION_MAJOR, ", got ",
+                     api_version.major, ".", api_version.minor, ".",
+                     api_version.patch));
   }
 
   int capabilities = 0;
@@ -234,8 +240,8 @@ litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
   if (!(capabilities & kLiteRtDispatchCapabilitiesBasic)) {
     return Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
-        absl::StrFormat("Dispatch API has insufficient capabilities: %d",
-                        capabilities));
+        absl::StrCat("Dispatch API has insufficient capabilities: ",
+                     capabilities));
   }
 
   LiteRtDispatchDeviceContext device_context = nullptr;

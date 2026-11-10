@@ -23,25 +23,39 @@ limitations under the License.
 
 // IWYU pragma: always_keep
 
+#include <string>
+
 #include "xnnpack.h"  // from @XNNPACK
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "tensor/utils/macros.h"
 
 namespace litert::tensor {
 
-inline absl::Status XnnStatusToAbsl(enum xnn_status status,
-                                    absl::string_view label) {
+// Converts an XNNPACK status to an absl status.
+inline absl::Status XnnStatusToAbsl(
+    enum xnn_status status, absl::string_view label,
+    absl::SourceLocation loc = absl::SourceLocation::current()) {
   if (status == xnn_status_success) {
     return absl::OkStatus();
   }
-  if (label.empty()) {
-    return absl::InternalError(
-        absl::StrCat("xnn_status=", static_cast<int>(status)));
+  std::string message = absl::StrCat("xnn_status=", static_cast<int>(status));
+  if (!label.empty()) {
+    absl::StrAppend(&message, ";", label);
   }
-  return absl::InternalError(
-      absl::StrCat("xnn_status=", static_cast<int>(status), ";", label));
+  switch (status) {
+    case xnn_status_unsupported_parameter:
+    case xnn_status_unsupported_hardware:
+      return absl::UnimplementedError(message, loc);
+    case xnn_status_invalid_parameter:
+      return absl::InvalidArgumentError(message, loc);
+    case xnn_status_out_of_memory:
+      return absl::ResourceExhaustedError(message, loc);
+    default:
+      return absl::InternalError(message, loc);
+  }
 }
 
 template <>
@@ -49,8 +63,23 @@ struct ErrorStatusBuilder::ErrorConversion<xnn_status> {
   static constexpr bool IsError(xnn_status value) {
     return value != xnn_status_success;
   }
-  static absl::Status AsError(xnn_status value) {
-    return XnnStatusToAbsl(value, "");
+  static absl::Status AsError(xnn_status value, absl::SourceLocation loc) {
+    return XnnStatusToAbsl(value, "", loc);
+  }
+  static xnn_status FromError(const absl::Status& status,
+                              absl::SourceLocation /*loc*/) {
+    switch (status.code()) {
+      case absl::StatusCode::kOk:
+        return xnn_status_success;
+      case absl::StatusCode::kInvalidArgument:
+        return xnn_status_invalid_parameter;
+      case absl::StatusCode::kUnimplemented:
+        return xnn_status_unsupported_parameter;
+      case absl::StatusCode::kResourceExhausted:
+        return xnn_status_out_of_memory;
+      default:
+        return xnn_status_invalid_state;
+    }
   }
 };
 

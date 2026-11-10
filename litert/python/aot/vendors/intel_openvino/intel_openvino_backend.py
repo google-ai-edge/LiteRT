@@ -150,7 +150,7 @@ def _call_component(
 def _get_openvino_libs_path() -> str | None:
   """Returns the path to OpenVINO's shared library directory."""
   try:
-    import openvino as _ov  # pytype: disable=import-error  # pylint: disable=g-import-not-at-top
+    import openvino as _ov  # pylint: disable=g-import-not-at-top  # pyrefly: ignore[missing-import]
 
     ov_dir = os.path.dirname(_ov.__file__)
     libs_dir = os.path.join(ov_dir, "libs")
@@ -178,9 +178,7 @@ def _apply_plugin(
 
     sdk_libs_path = _get_openvino_libs_path()
     try:
-      # pytype: disable=import-error
-      import ai_edge_litert_sdk_intel  # pylint: disable=g-import-not-at-top
-      # pytype: enable=import-error
+      import ai_edge_litert_sdk_intel  # pylint: disable=g-import-not-at-top  # pyrefly: ignore[missing-import]
 
       intel_sdk_libs = ai_edge_litert_sdk_intel.path_to_sdk_libs()
       if intel_sdk_libs:

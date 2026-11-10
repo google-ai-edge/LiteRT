@@ -32,9 +32,6 @@ $RepoRoot = Split-Path -Parent $ScriptDir
 $RepoRoot = Convert-WslPathToWindows $RepoRoot
 Set-Location $RepoRoot
 
-if (-not $env:TF_LOCAL_SOURCE_PATH) {
-  $env:TF_LOCAL_SOURCE_PATH = Join-Path $RepoRoot "third_party\tensorflow"
-}
 
 # Get the first instance found in PATH.
 $Bazel = (Get-Command bazel -ErrorAction SilentlyContinue | Select-Object -First 1).Source
@@ -349,36 +346,6 @@ Replace-InFile $ProtoMain '  rust::RustGenerator rust_generator;' '' | Out-Null
 Replace-InFile $ProtoMain '  cli.RegisterGenerator("--rust_out", "--rust_opt", &rust_generator,' '' | Out-Null
 Replace-InFile $ProtoMain '                        "Generate Rust sources.");' '' | Out-Null
 
-$HighwayHash = Join-Path $OutputBase 'external\highwayhash\highwayhash\compiler_specific.h'
-$OldAlign = "#if HH_GCC_VERSION && HH_GCC_VERSION < 408`n#define HH_ALIGNAS(multiple) __attribute__((aligned(multiple)))`n#else`n#define HH_ALIGNAS(multiple) alignas(multiple)  // C++11`n#endif"
-$NewAlign = "#if HH_MSC_VERSION`n#define HH_ALIGNAS(multiple) __declspec(align(multiple))`n#elif HH_GCC_VERSION && HH_GCC_VERSION < 408`n#define HH_ALIGNAS(multiple) __attribute__((aligned(multiple)))`n#else`n#define HH_ALIGNAS(multiple) alignas(multiple)  // C++11`n#endif"
-Replace-InFile $HighwayHash $OldAlign $NewAlign | Out-Null
-
-$HighwayHashDir = Join-Path $OutputBase 'external\highwayhash\highwayhash'
-$PostfixPattern = '^(\s*)([^;]*?)\s+HH_ALIGNAS\((\d+)\)\s*([^;]*;\s*)$'
-Get-ChildItem -Path $HighwayHashDir -Recurse -Include *.h,*.cc | ForEach-Object {
-  $Lines = Get-Content $_.FullName
-  $Changed = $false
-  for ($i = 0; $i -lt $Lines.Count; $i++) {
-    $Line = $Lines[$i]
-    if ($Line -notmatch 'HH_ALIGNAS\(') { continue }
-    if ($Line -match '^\s*HH_ALIGNAS\(') { continue }
-    if ($Line -match '^\s*(//|#)') { continue }
-    if ($Line -match '^\s*(private|public|protected):') { continue }
-    $AlignIndex = $Line.IndexOf('HH_ALIGNAS(')
-    $BraceIndex = $Line.IndexOf('{')
-    if ($BraceIndex -ge 0 -and $BraceIndex -lt $AlignIndex) { continue }
-    $NewLine = $Line -replace $PostfixPattern, '$1HH_ALIGNAS($3) $2$4'
-    if ($NewLine -ne $Line) {
-      $Lines[$i] = $NewLine
-      $Changed = $true
-    }
-  }
-  if ($Changed) {
-    Set-Content -Path $_.FullName -Value $Lines
-  }
-}
-
 $BazelArgs = @(
   'build',
   '-c',
@@ -396,7 +363,6 @@ $BazelArgs = @(
 if ($env:HERMETIC_PYTHON_VERSION) { $BazelArgs += "--repo_env=HERMETIC_PYTHON_VERSION=$($env:HERMETIC_PYTHON_VERSION)" }
 if ($env:BAZEL_CONFIG_FLAGS) { $BazelArgs += $env:BAZEL_CONFIG_FLAGS.Split(' ') }
 if ($env:NIGHTLY_RELEASE_DATE) { $BazelArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
-if ($env:USE_LOCAL_TF -eq 'true') { $BazelArgs += '--config=use_local_tf' }
 if ($env:CUSTOM_BAZEL_FLAGS) { $BazelArgs += $env:CUSTOM_BAZEL_FLAGS.Split(' ') }
 
 Write-Host 'Starting bazel build...'
@@ -421,7 +387,6 @@ $SdkArgs = @(
 )
 if ($env:HERMETIC_PYTHON_VERSION) { $SdkArgs += "--repo_env=HERMETIC_PYTHON_VERSION=$($env:HERMETIC_PYTHON_VERSION)" }
 if ($env:NIGHTLY_RELEASE_DATE) { $SdkArgs += "--//ci/tools/python/wheel:nightly_iso_date=$($env:NIGHTLY_RELEASE_DATE)" }
-if ($env:USE_LOCAL_TF -eq 'true') { $SdkArgs += '--config=use_local_tf' }
 if ($env:CUSTOM_BAZEL_FLAGS) { $SdkArgs += $env:CUSTOM_BAZEL_FLAGS.Split(' ') }
 
 $SdkTargets = @(

@@ -26,7 +26,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
@@ -69,23 +69,23 @@ struct DummyRng {
 
 TEST(LitertRngTestWithStdRng, Seed) {
   RandomDevice<std::mt19937> lite_rng(1234);
-  EXPECT_THAT(absl::StrFormat("%v", lite_rng), HasSubstr("seed=1234,"));
+  EXPECT_THAT(absl::StrCat(lite_rng), HasSubstr("seed=1234,"));
 }
 
 TEST(LitertRngTestWithStdRng, NoSeed) {
   RandomDevice<std::mt19937> lite_rng;
-  EXPECT_THAT(absl::StrFormat("%v", lite_rng), HasSubstr("seed=<default>,"));
+  EXPECT_THAT(absl::StrCat(lite_rng), HasSubstr("seed=<default>,"));
 }
 
 TEST(LitertRngTestWithCustomRng, Seed) {
   RandomDevice<DummyRng> lite_rng(1234);
-  EXPECT_THAT(absl::StrFormat("%v", lite_rng),
+  EXPECT_THAT(absl::StrCat(lite_rng),
               HasSubstr("DummyRng(seed=1234,"));
 }
 
 TEST(LitertRngTestWithCustomRng, NoSeed) {
   RandomDevice<DummyRng> lite_rng;
-  EXPECT_THAT(absl::StrFormat("%v", lite_rng),
+  EXPECT_THAT(absl::StrCat(lite_rng),
               HasSubstr("DummyRng(seed=<default>,"));
 }
 

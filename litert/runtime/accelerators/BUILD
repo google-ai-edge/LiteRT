@@ -55,7 +55,9 @@ cc_library(
     srcs = ["registration_helper.cc"],
     hdrs = ["registration_helper.h"],
     deps = [
+        ":accelerator_implementation_helper",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
         "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_accelerator_registration",
@@ -75,30 +77,30 @@ cc_library(
     hdrs = ["cpu_registry.h"],
     copts = select({
         "//litert/build_common:litert_disable_cpu": [],
-        "//litert/build_common:litert_enable_ynnpack": [
-            "-DLITERT_USE_XNNPACK",
-            "-DLITERT_HAS_YNNPACK",
-        ],
         "//conditions:default": [
             "-DLITERT_USE_XNNPACK",
         ],
+    }) + select({
+        "//litert/build_common:litert_enable_ynnpack": [
+            "-DLITERT_HAS_YNNPACK",
+        ],
+        "//conditions:default": [],
     }),
     deps = [
+        ":registration_helper",
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_accelerator_def",
         "//litert/c/internal:litert_logging",
     ] + select({
         "//litert/build_common:litert_disable_cpu": [],
-        "//litert/build_common:litert_enable_ynnpack": [
-            ":registration_helper",
-            "//litert/c/internal:litert_accelerator_def",
+        "//conditions:default": [
             "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",
+        ],
+    }) + select({
+        "//litert/build_common:litert_enable_ynnpack": [
             "//litert/runtime/accelerators/ynnpack:ynnpack_accelerator",
         ],
-        "//conditions:default": [
-            ":registration_helper",
-            "//litert/c/internal:litert_accelerator_def",
-            "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",
-        ],
+        "//conditions:default": [],
     }),
 )
 
@@ -135,8 +137,12 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
-        "//litert/runtime/accelerators/dispatch:dispatch_accelerator",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_npu_enabled": [
+            "//litert/runtime/accelerators/dispatch:dispatch_accelerator",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(

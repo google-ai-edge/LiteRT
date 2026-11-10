@@ -255,6 +255,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("use_profiler",
                             BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("print_partition_report",
+                            BenchmarkParam::Create<bool>(false));
     default_params.AddParam("enable_perfetto",
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("gpu_backend",
@@ -281,6 +283,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("gpu_madvise_original_shared_tensors",
                             BenchmarkParam::Create<bool>(true));
+    default_params.AddParam("gpu_use_ir_model",
+                            BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("xnnpack_weight_cache_file_path",
                             BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("result_file_path",
@@ -434,6 +438,13 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "use_profiler", &params_, "Whether to use profiler."));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "print_partition_report", &params_,
+        "Print how the primary subgraph is split between accelerator "
+        "partitions and CPU fallback nodes after compilation: one line per "
+        "execution-plan entry, fallback islands with an opcode histogram, "
+        "bytes crossing each CPU<->accelerator boundary, and a single "
+        "PARTITION_REPORT summary line."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "enable_perfetto", &params_, "Whether to enable perfetto tracing."));
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "gpu_backend", &params_,
@@ -486,6 +497,10 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
         "gpu_madvise_original_shared_tensors", &params_,
         "Whether to madvise original shared tensors after use."));
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "gpu_use_ir_model", &params_,
+        "Whether to use IrModel instead of legacy GraphFloat32 for GPU. "
+        "Values: 'true', 'false', or empty for system default."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "xnnpack_weight_cache_file_path", &params_,
         "Path to an XNNPACK packed-weight cache file. Use ':memory' for an "
         "in-memory cache on supported builds."));
@@ -506,6 +521,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   std::unique_ptr<Model> model_;
 
  private:
+  static Options CreateCompiledModelOptions(const BenchmarkParams& params);
+
   std::unique_ptr<litert::Environment> environment_;
   std::unique_ptr<litert::CompiledModelNext> compiled_model_;
   std::unique_ptr<std::vector<litert::TensorBuffer>> input_buffers_;

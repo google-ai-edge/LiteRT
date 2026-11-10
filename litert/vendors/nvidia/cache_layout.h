@@ -32,6 +32,20 @@ typedef struct {
   const char* const* input_names;
 } LiteRtNvidiaReadOnlyValueCacheOptions;
 
+#define LITERT_NVIDIA_SHARED_CACHE_INPUTS_ID "nvidia.shared_cache_inputs.v1"
+
+// Opaque compilation-option payload: the underlying TFLite input tensor names
+// of the KV caches this model only reads, which another compiled model of the
+// process (the producer, compiled with the same settings) keeps in place. The
+// compiler stores a listed cache the way it stores the producer's: a float32
+// cache as FP16 unless LITERT_NVIDIA_TENSORRT_CACHE_STORAGE=native, so both
+// engines read the same bytes. The compiler copies the names when the plugin
+// is created.
+typedef struct {
+  uint32_t num_inputs;
+  const char* const* input_names;
+} LiteRtNvidiaSharedCacheInputs;
+
 #ifdef __cplusplus
 #include <limits>
 #include <string_view>
@@ -75,22 +89,18 @@ inline bool GetTransposedValueCacheStrides(const LiteRtLayout& logical_layout,
   return true;
 }
 
-// Use as OpaqueOptions::SetHash() so LiteRT's outer compilation cache also
-// distinguishes the contract. Sort names for order-independent cache reuse;
-// an unsorted list is still correct but can cause an extra cache miss.
-inline uint64_t HashReadOnlyValueCacheOptions(const void* payload) {
-  const auto* options =
-      static_cast<const LiteRtNvidiaReadOnlyValueCacheOptions*>(payload);
-  if (options == nullptr ||
-      (options->num_inputs != 0 && options->input_names == nullptr)) {
+// The hash of a list of names, 0 for an invalid list.
+inline uint64_t HashCacheInputNames(uint32_t num_inputs,
+                                    const char* const* input_names) {
+  if (num_inputs != 0 && input_names == nullptr) {
     return 0;
   }
   uint64_t hash = 14695981039346656037ULL;
   const auto append = [&hash](uint8_t byte) {
     hash = (hash ^ byte) * 1099511628211ULL;
   };
-  for (uint32_t i = 0; i < options->num_inputs; ++i) {
-    const char* name = options->input_names[i];
+  for (uint32_t i = 0; i < num_inputs; ++i) {
+    const char* name = input_names[i];
     if (name == nullptr || name[0] == '\0') {
       return 0;
     }
@@ -100,6 +110,26 @@ inline uint64_t HashReadOnlyValueCacheOptions(const void* payload) {
     append(0);  // Names cannot contain embedded NUL, so boundaries are unique.
   }
   return hash;
+}
+
+// Use as OpaqueOptions::SetHash() so LiteRT's outer compilation cache also
+// distinguishes the contract. Sort names for order-independent cache reuse;
+// an unsorted list is still correct but can cause an extra cache miss.
+inline uint64_t HashReadOnlyValueCacheOptions(const void* payload) {
+  const auto* options =
+      static_cast<const LiteRtNvidiaReadOnlyValueCacheOptions*>(payload);
+  return options == nullptr
+             ? 0
+             : HashCacheInputNames(options->num_inputs, options->input_names);
+}
+
+// The same for LiteRtNvidiaSharedCacheInputs.
+inline uint64_t HashSharedCacheInputs(const void* payload) {
+  const auto* options =
+      static_cast<const LiteRtNvidiaSharedCacheInputs*>(payload);
+  return options == nullptr
+             ? 0
+             : HashCacheInputNames(options->num_inputs, options->input_names);
 }
 
 }  // namespace litert::nvidia

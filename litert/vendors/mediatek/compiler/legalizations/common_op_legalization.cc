@@ -23,6 +23,7 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/compiler/cc/litert_op_options.h"
 #include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
@@ -57,6 +58,19 @@ bool VerifyCommonOp(const litert::compiler::Op& op, LiteRtOpCode op_code,
         std::string(op_name) == "odml.l2_norm") {
       return true;
     }
+    if (std::string(op_name) == "odml.group_norm") {
+      auto info =
+          litert::compiler::GetOptionsAs<litert::compiler::CompositeOptions>(
+              op.ctx(), op.Get());
+      if (!info || !info->attributes_map.has_value()) {
+        return false;
+      }
+      auto attributes_map = info->attributes_map.value();
+      if (attributes_map["num_groups"].IsNull()) {
+        return false;
+      }
+      return attributes_map["num_groups"].AsInt32() == 1;
+    }
     return false;
   }
 
@@ -66,7 +80,7 @@ bool VerifyCommonOp(const litert::compiler::Op& op, LiteRtOpCode op_code,
 Expected<void> LegalizeCommonOp(const NeuronAdapterApi& neuron_adapter_api,
                                 NeuronModel* model, OperandMap& operand_map,
                                 const litert::compiler::Op& op,
-                                NeuronOperationType mtk_operation_type) {
+                                int32_t mtk_operation_type) {
   LITERT_LOG(LITERT_INFO, "Legalize Op: %d", mtk_operation_type);
   std::vector<uint32_t> input_indices;
   int32_t tensor_flags = 0;

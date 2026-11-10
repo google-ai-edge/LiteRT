@@ -21,6 +21,7 @@
 #endif
 
 #include <algorithm>
+#include <any>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -40,6 +41,7 @@
 #include "absl/synchronization/blocking_counter.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 // copybara:uncomment #include "mediapipe/framework/profiler/perfetto_profiling.h"  // from @mediapipe
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
@@ -64,6 +66,7 @@
 // clang-format on
 #include "ml_drift_delegate/delegate/composite/custom_parsers.h"
 #include "ml_drift_delegate/delegate/composite/custom_transformations.h"
+#include "ml_drift_delegate/delegate/composite/gated_delta_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/custom_parsers.h"
 #include "ml_drift_delegate/delegate/composite/ir/litert_op_selector.h"
 #include "ml_drift_delegate/delegate/composite/litert_op_selector.h"
@@ -100,13 +103,6 @@ constexpr bool kForceCompletion = true;
 #else
 constexpr bool kForceCompletion = false;
 #endif
-
-// The threshold for the total number of tensors in the shared memory
-// serialization cache. If the number of tensors in the cache is smaller than
-// this threshold AND gpu weight rearrangement is enabled, the serialization
-// cache will not be used. Otherwise the gpu weight rearrangement is always
-// preferred.
-constexpr size_t kSharedMemorySerializationCacheSizeThreshold = 100;
 
 }  // namespace
 
@@ -262,10 +258,13 @@ absl::Status DelegateKernel::InitializeGraphFloat32(
   options.enable_infinite_float_capping =
       delegate_data_->options->enable_infinite_float_capping;
   options.enable_reduced_precision = delegate_data_->calculation_precision !=
-                                     ::ml_drift::CalculationsPrecision::F32;
-  // Build GraphFloat32.
+                                     ::ml_drift::CalculationsPrecision::kF32;
+  // Build GraphFloat32. Custom parsers may specialize the graph for the
+  // target device (e.g. the SDPA parser only prunes the causal mask on Metal).
+  ABSL_ASSIGN_OR_RETURN(const ::ml_drift::GpuInfo gpu_info,
+                        backend_->GetInfo());
   ::ml_drift::GraphFloat32 graph;
-  CustomOperationParserFactory custom_parser_factory;
+  CustomOperationParserFactory custom_parser_factory(&gpu_info);
   ABSL_RETURN_IF_ERROR(BuildFinalModel(
       context, delegate_params, options, &graph, &quant_conversion_map_,
       shared_tensors_ptr, tensor_to_buffer_id_map,
@@ -313,7 +312,9 @@ absl::Status DelegateKernel::InitializeGraphFloat32(
       delegate_data_->options->use_metal_argument_buffers;
 #endif  // __APPLE__
 
-  create_info.hints.Add(::ml_drift::ModelHints::kAllowSpecialKernels);
+  if (backend_->GetBackendName() != "OpenGL") {
+    create_info.hints.Add(::ml_drift::ModelHints::kAllowSpecialKernels);
+  }
   if (delegate_data_->options->prefer_texture_weights) {
     create_info.hints.Add(::ml_drift::ModelHints::kPreferTextureWeights);
   }
@@ -330,8 +331,33 @@ absl::Status DelegateKernel::InitializeGraphFloat32(
   }
 
   external_tensor_ids_.reserve(input_indices_.size() + output_indices_.size());
+  absl::flat_hash_set<::ml_drift::ValueId> preserved_fp32_values;
+  for (const auto* node : graph.nodes()) {
+    if (node->operation.type == "gated_delta_update") {
+      bool force_fp32 = true;
+      if (node->operation.attributes.has_value()) {
+        const auto* attr = std::any_cast<GatedDeltaUpdateAttributes>(
+            &node->operation.attributes);
+        if (attr && !attr->state_dtype.empty() &&
+            attr->state_dtype != "float32") {
+          force_fp32 = false;
+        }
+      }
+      if (force_fp32) {
+        // recurrent_state is updated in-place via outputs[1]
+        // (recurrent_state_in is omitted from the GPU graph node inputs by the
+        // parser).
+        auto outputs = graph.FindOutputs(node->id);
+        if (outputs.size() >= 2 &&
+            outputs[1]->tensor.type == ::ml_drift::DataType::kFloat32) {
+          preserved_fp32_values.insert(outputs[1]->id);
+        }
+      }
+    }
+  }
   ABSL_RETURN_IF_ERROR(UpdateCreateInfoWithExternalTensors(
-      context, create_info, input_tensor_refs, output_tensor_refs));
+      context, create_info, input_tensor_refs, output_tensor_refs,
+      preserved_fp32_values));
   if (!external_tensor_ids_.empty()) {
     ABSL_LOG(INFO)
         << "Total " << external_tensor_ids_.size()
@@ -389,10 +415,6 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
       shared_memory_serialization_cache,
       TryInitializingExternalTensorsSerialization(context, delegate_params,
                                                   prepare_weights_in_batches));
-  size_t shared_memory_serialization_cache_size =
-      (shared_memory_serialization_cache
-           ? shared_memory_serialization_cache->GetCurrentSize()
-           : 0);
 
   ABSL_ASSIGN_OR_RETURN(
       auto shared_mem_manager,
@@ -400,13 +422,16 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
                                           context, *delegate_data_,
                                           shared_memory_serialization_cache));
 
+#ifdef __EMSCRIPTEN__
+  if (delegate_data_->weight_loader == nullptr) {
+    delegate_data_->options->convert_weights_on_gpu = false;
+  }
+#endif  // __EMSCRIPTEN__
   if (delegate_data_->options->convert_weights_on_gpu &&
       delegate_data_->options->enable_constant_tensors_sharing) {
     ABSL_ASSIGN_OR_RETURN(auto gpu_info, backend_->GetInfo());
     if (!::ml_drift::WeightsManager::IsGpuWeightsPreparationSupported(
-            gpu_info) ||
-        shared_memory_serialization_cache_size >
-            kSharedMemorySerializationCacheSizeThreshold) {
+            gpu_info)) {
       delegate_data_->options->convert_weights_on_gpu = false;
     } else {
       ABSL_ASSIGN_OR_RETURN(auto weights_manager,
@@ -743,7 +768,9 @@ bool DelegateKernel::ReadFromSerializedData() {
 }
 
 std::string DelegateKernel::ComputeOptionsFingerprint() const {
-  // Generate fingerprints for the relevant delegate data options.
+// Generate fingerprints for the relevant delegate data options.
+// Pack the struct to prevent hashing uninitialized alignment padding bytes.
+#pragma pack(push, 1)
   struct {
     MlDriftDelegatePrecision precision;
     bool convert_weights_on_gpu;
@@ -770,6 +797,7 @@ std::string DelegateKernel::ComputeOptionsFingerprint() const {
     bool use_metal_argument_buffers;
 #endif  // __APPLE__
   } options_to_fingerprint = {};
+#pragma pack(pop)
   options_to_fingerprint.precision = delegate_data_->options->precision;
   options_to_fingerprint.convert_weights_on_gpu =
       delegate_data_->options->convert_weights_on_gpu;
@@ -1027,16 +1055,22 @@ DelegateKernel::TryInitializingExternalTensorsSerialization(
   }
 
   // Create a unique identifier for this subgraph.
+  ::ml_drift::ModelIdentifierOptions identifier_options;
+  identifier_options.precision = delegate_data_->options->precision;
+  identifier_options.prefer_texture_weights =
+      delegate_data_->options->prefer_texture_weights;
+  identifier_options.allow_src_quantized_fc_conv_ops =
+      delegate_data_->options->allow_src_quantized_fc_conv_ops;
+  identifier_options.prepare_weights_in_batches = prepare_weights_in_batches;
+  identifier_options.serialize_external_tensors =
+      delegate_data_->options->serialize_external_tensors;
+  identifier_options.ordered_by_size = true;
+  identifier_options.use_ir_model = delegate_data_->options->use_ir_model;
+
   uint64_t unique_model_identifier =
       ::ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
           delegate_data_->model_token, context, delegate_params,
-          backend_->GetSerializedDataPrefix(),
-          delegate_data_->options->precision,
-          delegate_data_->options->prefer_texture_weights,
-          delegate_data_->options->allow_src_quantized_fc_conv_ops,
-          prepare_weights_in_batches,
-          delegate_data_->options->serialize_external_tensors,
-          /*ordered_by_size=*/true);
+          backend_->GetSerializedDataPrefix(), identifier_options);
 
   // Try loading from the cache.
   absl::Status load_status;
@@ -1104,7 +1138,7 @@ absl::Status DelegateKernel::InitializeIrModel(
   options.enable_infinite_float_capping =
       delegate_data_->options->enable_infinite_float_capping;
   options.enable_reduced_precision = delegate_data_->calculation_precision !=
-                                     ::ml_drift::CalculationsPrecision::F32;
+                                     ::ml_drift::CalculationsPrecision::kF32;
   std::unique_ptr<::ml_drift::ir::IrModel> ir_model;
 
   const TfLiteIntArray* input_tensors = delegate_params->input_tensors;
@@ -1112,10 +1146,15 @@ absl::Status DelegateKernel::InitializeIrModel(
 
   const TfLiteIntArray* output_tensors = delegate_params->output_tensors;
 
-  ::litert::ml_drift::ir::IrModelBuilderOptions ir_options;
-  ir_options.enable_infinite_float_capping =
-      options.enable_infinite_float_capping;
-  ir_options.enable_reduced_precision = options.enable_reduced_precision;
+  // Custom parsers may specialize the graph for the target device (e.g. the
+  // SDPA parser only prunes the causal mask on Metal).
+  ABSL_ASSIGN_OR_RETURN(const ::ml_drift::GpuInfo gpu_info,
+                        backend_->GetInfo());
+  const ::litert::ml_drift::ir::IrModelBuilderOptions ir_options = {
+      .enable_infinite_float_capping = options.enable_infinite_float_capping,
+      .enable_reduced_precision = options.enable_reduced_precision,
+      .gpu_info = &gpu_info,
+  };
 
   auto custom_parsers = ::litert::ml_drift::ir::GetCustomParsers();
 
@@ -1169,12 +1208,12 @@ absl::Status DelegateKernel::InitializeIrModel(
     auto consumers = ir_model->FindConsumers(tensor_id);
     if (producer == nullptr && consumers.empty()) continue;
     const auto* t = ir_model->tensor(tensor_id);
-    if (t != nullptr && t->buffer_source.tflite_tensor_id >= 0) {
+    if (t != nullptr && t->buffer_source.tensor_id >= 0) {
       const TfLiteTensor* tensor =
-          context->tensors + t->buffer_source.tflite_tensor_id;
+          context->tensors + t->buffer_source.tensor_id;
       if (!tflite::IsConstantTensor(tensor)) {
         input_ids_.push_back(tensor_id);
-        input_indices_.push_back(t->buffer_source.tflite_tensor_id);
+        input_indices_.push_back(t->buffer_source.tensor_id);
       }
     }
   }
@@ -1185,9 +1224,9 @@ absl::Status DelegateKernel::InitializeIrModel(
     auto consumers = ir_model->FindConsumers(tensor_id);
     if (producer == nullptr && consumers.empty()) continue;
     const auto* t = ir_model->tensor(tensor_id);
-    if (t != nullptr && t->buffer_source.tflite_tensor_id >= 0) {
+    if (t != nullptr && t->buffer_source.tensor_id >= 0) {
       output_ids_.push_back(tensor_id);
-      output_indices_.push_back(t->buffer_source.tflite_tensor_id);
+      output_indices_.push_back(t->buffer_source.tensor_id);
     }
   }
 
@@ -1200,7 +1239,9 @@ absl::Status DelegateKernel::InitializeIrModel(
       delegate_data_->options->use_metal_argument_buffers;
 #endif  // __APPLE__
 
-  create_info.hints.Add(::ml_drift::ModelHints::kAllowSpecialKernels);
+  if (backend_->GetBackendName() != "OpenGL") {
+    create_info.hints.Add(::ml_drift::ModelHints::kAllowSpecialKernels);
+  }
   if (delegate_data_->options->prefer_texture_weights) {
     create_info.hints.Add(::ml_drift::ModelHints::kPreferTextureWeights);
   }
@@ -1237,8 +1278,33 @@ absl::Status DelegateKernel::InitializeIrModel(
     });
   }
 
+  absl::flat_hash_set<::ml_drift::ValueId> preserved_fp32_values;
+  for (const auto& op : ir_model->ops()) {
+    if (op && op->name == "gated_delta_update") {
+      bool force_fp32 = true;
+      if (op->attr.has_value()) {
+        const auto* attr = std::any_cast<GatedDeltaUpdateAttributes>(&op->attr);
+        if (attr && !attr->state_dtype.empty() &&
+            attr->state_dtype != "float32") {
+          force_fp32 = false;
+        }
+      }
+      if (force_fp32) {
+        // recurrent_state is updated in-place via outputs[1]
+        // (recurrent_state_in is omitted from the IR op inputs by the parser).
+        if (op->outputs.size() >= 2) {
+          const auto* out_tensor = ir_model->tensor(op->outputs[1]);
+          if (out_tensor && out_tensor->desc.GetDataType() ==
+                                ::ml_drift::DataType::kFloat32) {
+            preserved_fp32_values.insert(op->outputs[1]);
+          }
+        }
+      }
+    }
+  }
   ABSL_RETURN_IF_ERROR(UpdateCreateInfoWithExternalTensors(
-      context, create_info, input_tensor_refs, output_tensor_refs));
+      context, create_info, input_tensor_refs, output_tensor_refs,
+      preserved_fp32_values));
   if (!external_tensor_ids_.empty()) {
     ABSL_LOG(INFO)
         << "Total " << external_tensor_ids_.size()

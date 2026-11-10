@@ -64,7 +64,6 @@ cc_library_with_testonly_vis(
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
@@ -97,6 +96,12 @@ cc_library(
     name = "model_load",
     srcs = ["model_load.cc"],
     hdrs = ["model_load.h"],
+    copts = select({
+        "//litert:without_builtin_ops": [
+            "-DLITERT_NO_BUILTIN_OPS",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         ":buffer_manager",
         ":flatbuffer_to_litert",
@@ -108,14 +113,18 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:build_stamp",
-        "//litert/core:dispatch_op_schema",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/converter:allocation",
         "//tflite/converter/core:model_builder_base",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "//litert:without_builtin_ops": [],
+        "//conditions:default": [
+            "//litert/core:dispatch_op_schema",
+        ],
+    }),
 )
 
 cc_test(
@@ -164,7 +173,6 @@ cc_library(
         ":litert_to_flatbuffer",
         ":model",
         "//litert/c:litert_common",
-        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
@@ -174,7 +182,10 @@ cc_library(
         "//litert/core:insert_order_map",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs_with_mutable",
+        "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log:absl_check",
     ],
 )
 
@@ -185,6 +196,7 @@ cc_library(
     deps = [
         ":model",
         "//litert/c:litert_common",
+        "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_common",
@@ -200,6 +212,8 @@ cc_test(
     srcs = ["flatbuffer_to_litert_test.cc"],
     deps = [
         ":flatbuffer_to_litert",
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/converter/schema:schema_fbs",
@@ -255,7 +269,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/core:filesystem",
         "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -345,13 +359,19 @@ cc_library(
         ":ops_unpack",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core/util:flatbuffer_tools",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -364,6 +384,7 @@ cc_test(
         ":shape_inference",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
@@ -456,10 +477,9 @@ cc_library(
     name = "op_shape_inference_utils",
     hdrs = ["ops/op_shape_inference_utils.h"],
     deps = [
-        ":shape_inference_types",
-        "//litert/c:litert_common",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/strings:string_view",
+        "@SafeInt",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -485,7 +505,6 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//tflite/converter/schema:schema_fbs",
-        "//tflite/kernels/internal:reference_base",
         "//tflite/kernels/internal:types",
         "@com_google_absl//absl/types:span",
     ],
@@ -524,6 +543,7 @@ cc_library(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//tflite/converter/schema:schema_fbs",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -538,6 +558,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//tflite/schema:schema_fbs",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -549,6 +570,8 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -560,6 +583,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -572,7 +596,9 @@ cc_library(
         ":ops_simple_binary",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//tflite/converter/schema:schema_fbs",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -584,6 +610,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -609,6 +636,7 @@ cc_library(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//tflite/converter/schema:schema_fbs",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -620,6 +648,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//tflite/kernels/internal:reference_base",
         "//tflite/kernels/internal:types",
         "@com_google_absl//absl/types:span",
@@ -633,6 +662,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -656,6 +686,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -667,6 +698,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -678,6 +710,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -702,6 +735,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "@SafeInt",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -712,6 +746,7 @@ cc_library(
     deps = [
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "@SafeInt",
     ],
 )
 
@@ -721,6 +756,7 @@ cc_library(
     deps = [
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "@SafeInt",
     ],
 )
 
@@ -859,6 +895,7 @@ cc_test(
         ":ops_topk",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/cc:litert_buffer_ref",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -919,6 +956,7 @@ cc_library(
         ":model",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "@SafeInt",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
     ],
@@ -1013,6 +1051,7 @@ cc_test(
         ":ops_simple_unary",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/util:flatbuffer_tools_testonly",
         "//tflite/schema:schema_fbs",
@@ -1058,6 +1097,7 @@ cc_test(
         ":ops_matmul",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
@@ -1091,6 +1131,7 @@ cc_test(
         ":ops_gather",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
@@ -1182,5 +1223,53 @@ cc_test(
         "//litert/c:litert_common",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "verifier",
+    srcs = ["verifier.cc"],
+    hdrs = ["verifier.h"],
+    deps = [
+        ":model",
+        ":model_load",
+        ":shape_inference",
+        ":shape_inference_types",
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite:schema_fbs_version",
+        "//tflite:stderr_reporter",
+        "//tflite/core/api:error_reporter",
+        "//tflite/core/api:verifier",
+        "//tflite/schema:schema_fbs",
+        "@SafeInt",
+        "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/numeric:bits",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_test(
+    name = "verifier_test",
+    srcs = ["verifier_test.cc"],
+    deps = [
+        ":verifier",
+        "//tflite:stderr_reporter",
+        "//tflite:version",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
     ],
 )

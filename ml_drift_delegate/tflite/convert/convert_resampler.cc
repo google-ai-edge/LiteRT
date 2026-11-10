@@ -27,7 +27,7 @@ void ConvertResampler(
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::RESAMPLER);
+  op->name = ToString(::ml_drift::OperationType::kResampler);
 
   const int src_id = node.inputs->data[0];
   const int warp_id = node.inputs->data[1];

@@ -17,6 +17,7 @@
 #include <stddef.h>
 
 #include <cstdarg>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -267,6 +268,15 @@ LiteRtStatus LiteRtRunCompiledModelAsyncWithSchedulingInfo(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetCompiledModelLastInferenceDuration(
+    LiteRtCompiledModelConst compiled_model, int64_t* duration_nanoseconds) {
+  if (!compiled_model || !duration_nanoseconds) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *duration_nanoseconds = compiled_model->GetLastInferenceDurationNanoseconds();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtSetCompiledModelCancellationFunction(
     LiteRtCompiledModel compiled_model, void* data,
     bool (*check_cancelled_func)(void*)) {
@@ -321,6 +331,99 @@ LiteRtStatus LiteRtCompiledModelIsNonCpuFullyAccelerated(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtCompiledModelGetDelegationMetrics(
+    LiteRtCompiledModelConst compiled_model,
+    LiteRtDelegationMetricsConst* delegation_metrics) {
+  LITERT_RETURN_IF_ERROR(
+      compiled_model != nullptr && delegation_metrics != nullptr,
+      kLiteRtStatusErrorInvalidArgument);
+
+  *delegation_metrics = &compiled_model->GetDelegationMetrics();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetDelegationMetricsTotalNodeCount(
+    LiteRtDelegationMetricsConst metrics, int* total_node_count) {
+  LITERT_RETURN_IF_ERROR(metrics != nullptr && total_node_count != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  *total_node_count = metrics->total_node_count;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetNumDelegationMetricsAccelerators(
+    LiteRtDelegationMetricsConst metrics, LiteRtParamIndex* num_accelerators) {
+  LITERT_RETURN_IF_ERROR(metrics != nullptr && num_accelerators != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  *num_accelerators = metrics->accelerators.size();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetDelegationMetricsAccelerator(
+    LiteRtDelegationMetricsConst metrics, LiteRtParamIndex index,
+    LiteRtAcceleratorDelegationMetricsConst* accelerator_metrics) {
+  LITERT_RETURN_IF_ERROR(metrics != nullptr && accelerator_metrics != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  LITERT_RETURN_IF_ERROR(index < metrics->accelerators.size(),
+                         kLiteRtStatusErrorIndexOOB);
+  *accelerator_metrics = &metrics->accelerators[index];
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetAcceleratorDelegationMetricsName(
+    LiteRtAcceleratorDelegationMetricsConst metrics, const char** name) {
+  LITERT_RETURN_IF_ERROR(metrics != nullptr && name != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  *name = metrics->accelerator_name;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetAcceleratorDelegationMetricsHardwareType(
+    LiteRtAcceleratorDelegationMetricsConst metrics,
+    LiteRtHwAcceleratorSet* hardware_type) {
+  LITERT_RETURN_IF_ERROR(metrics != nullptr && hardware_type != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  *hardware_type = metrics->hardware_type;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetAcceleratorDelegationMetricsDelegatedNodeCount(
+    LiteRtAcceleratorDelegationMetricsConst metrics,
+    int* delegated_node_count) {
+  LITERT_RETURN_IF_ERROR(metrics != nullptr && delegated_node_count != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  *delegated_node_count = metrics->delegated_node_count;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetAcceleratorDelegationMetricsPartitionCount(
+    LiteRtAcceleratorDelegationMetricsConst metrics, int* partition_count) {
+  LITERT_RETURN_IF_ERROR(metrics != nullptr && partition_count != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  *partition_count = metrics->partition_count;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelRegisterTensorBuffer(
+    LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer) {
+  LITERT_RETURN_IF_ERROR(compiled_model != nullptr && tensor_buffer != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  auto* buffer_context = compiled_model->GetBufferContext();
+  LITERT_RETURN_IF_ERROR(buffer_context != nullptr,
+                         kLiteRtStatusErrorRuntimeFailure);
+  buffer_context->RegisterBuffer(tensor_buffer);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelUnregisterTensorBuffer(
+    LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer) {
+  LITERT_RETURN_IF_ERROR(compiled_model != nullptr && tensor_buffer != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  auto* buffer_context = compiled_model->GetBufferContext();
+  LITERT_RETURN_IF_ERROR(buffer_context != nullptr,
+                         kLiteRtStatusErrorRuntimeFailure);
+  buffer_context->UnregisterBuffer(tensor_buffer);
+  return kLiteRtStatusOk;
+}
 LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                             LiteRtProfiler* profiler) {
   LITERT_RETURN_IF_ERROR(compiled_model != nullptr && profiler != nullptr,

@@ -15,12 +15,11 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_TFL_UTILS_H_
 #define ODML_LITERT_LITERT_RUNTIME_TFL_UTILS_H_
 
-#include <cstddef>
-#include <functional>
-
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/internal/litert_dispatch_delegate_vendor_options.h"
 #include "litert/core/options.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "tflite/c/c_api_types.h"
@@ -47,11 +46,22 @@ Expected<void> ResizeTensor(const LiteRtLayout& layout,
                             TfLiteOpaqueContext* tfl_context,
                             TfLiteOpaqueTensor* tfl_opaque_tensor);
 
-
 // Returns the TfLiteTensorIdentifier for the given tensor, or nullopt if the
 // tensor is not found in the interpreter.
 litert::Expected<TfLiteTensorIdentifier> GetTensorIdentifier(
     const tflite::Interpreter& interpreter, const TfLiteTensor* target_tensor);
+
+// Inspects the entry subgraphs pointed to by the model's signatures to
+// locate boundary NPU custom operators (kLiteRtDispatchOpCustomName).
+// For each boundary dispatch operator found directly in a signature's entry
+// subgraph, extracts its function entry point name from DispatchOpOptions,
+// maps it to its signature name, and extracts its input and output tensor port
+// mappings into a DispatchDelegateVendorOptions object.
+//
+// Note: Does not traverse child subgraphs invoked via PartitionedCall or other
+// control flow operators.
+Expected<DispatchDelegateVendorOptions> BuildDispatchDelegateVendorOptions(
+    const LiteRtModelT& model);
 
 }  // namespace litert::internal
 

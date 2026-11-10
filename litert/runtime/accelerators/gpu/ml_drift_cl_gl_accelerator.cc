@@ -67,9 +67,8 @@ class GpuAccelerator {
   static LiteRtStatus GetHardwareSupport(
       LiteRtAcceleratorConst accelerator,
       LiteRtHwAcceleratorSet* supported_hardware) {
-    static LiteRtHwAcceleratorSet hardware_support = kLiteRtHwAcceleratorGpu;
-    *supported_hardware = hardware_support;
-    return kLiteRtStatusOk;
+    return litert::ml_drift::GetHardwareSupport(accelerator,
+                                                supported_hardware);
   }
 
   static LiteRtStatus IsTfLiteDelegateResponsibleForJitCompilation(
@@ -112,8 +111,7 @@ class GpuAccelerator {
     LiteRtGpuBackend backend = kLiteRtGpuBackendAutomatic;
     LrtGetGpuOptionsGpuBackend(&backend, gpu_options_payload);
     if (backend == kLiteRtGpuBackendAutomatic) {
-      auto has_opencl = ::ml_drift::cl::LoadOpenCL();
-      if (!has_opencl.ok()) {
+      if (!litert::ml_drift::IsOpenClSupported()) {
         LITERT_LOG(
             LITERT_INFO,
             "OpenCL not supported on this platform. Using OpenGL instead.");

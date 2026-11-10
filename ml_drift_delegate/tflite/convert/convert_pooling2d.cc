@@ -42,7 +42,7 @@ bool IsGlobalPooling(const ::ml_drift::Pooling2DAttributes& attr,
 bool IsGlobalAveragePooling(const ::ml_drift::Pooling2DAttributes& attr,
                             const ::ml_drift::BHWDC& src_shape,
                             const ::ml_drift::BHWDC& dst_shape) {
-  return attr.type == ::ml_drift::PoolingType::AVERAGE &&
+  return attr.type == ::ml_drift::PoolingType::kAverage &&
          attr.output_indices == false &&
          IsGlobalPooling(attr, src_shape, dst_shape);
 }
@@ -63,10 +63,10 @@ bool TryConvertGlobalAveragePoolingToMean(
   }
 
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::MEAN);
+  op->name = ToString(::ml_drift::OperationType::kMean);
 
   ::ml_drift::ReduceAttributes mean_attr;
-  mean_attr.dims = {::ml_drift::Axis::WIDTH, ::ml_drift::Axis::HEIGHT};
+  mean_attr.dims = {::ml_drift::Axis::kWidth, ::ml_drift::Axis::kHeight};
 
   ir_model.AddConsumer(tensor_map[input_id], op->id);
   const int output_id = node.outputs->data[0];
@@ -82,12 +82,12 @@ void ConvertPooling2d(const TfLiteContext& context, const TfLiteNode& node,
                       const TfLiteRegistration& registration,
                       ::ml_drift::ir::TensorMap& tensor_map,
                       ::ml_drift::ir::IrModel& ir_model) {
-  ::ml_drift::PoolingType pooling_type = ::ml_drift::PoolingType::UNDEFINED;
+  ::ml_drift::PoolingType pooling_type = ::ml_drift::PoolingType::kUndefined;
   if (registration.builtin_code == kTfLiteBuiltinAveragePool2d) {
-    pooling_type = ::ml_drift::PoolingType::AVERAGE;
+    pooling_type = ::ml_drift::PoolingType::kAverage;
   } else if (registration.builtin_code == kTfLiteBuiltinMaxPool2d ||
              registration.builtin_code == kTfLiteBuiltinCustom) {
-    pooling_type = ::ml_drift::PoolingType::MAX;
+    pooling_type = ::ml_drift::PoolingType::kMax;
   } else {
     ABSL_LOG(FATAL) << "Unsupported pooling type: "
                     << registration.builtin_code;
@@ -118,7 +118,7 @@ void ConvertPooling2d(const TfLiteContext& context, const TfLiteNode& node,
   }
 
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::POOLING_2D);
+  op->name = ToString(::ml_drift::OperationType::kPooling2D);
 
   ir_model.AddConsumer(tensor_map[input_id], op->id);
   const int output_id = node.outputs->data[0];

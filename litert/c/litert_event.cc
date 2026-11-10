@@ -27,7 +27,7 @@
 #include "litert/runtime/event.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
+#include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #ifdef __cplusplus
@@ -58,7 +58,7 @@ LiteRtStatus LiteRtCreateEventFromOpenClEvent(LiteRtEnvironment env,
     return kLiteRtStatusErrorInvalidArgument;
   }
 #if LITERT_HAS_OPENCL_SUPPORT
-  LiteRtClInt res = tflite::gpu::cl::clRetainEvent(cl_event);
+  LiteRtClInt res = ::ml_drift::cl::clRetainEvent(cl_event);
   if (res != LITE_RT_CL_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to retain OpenCL event: %d", res);
     return kLiteRtStatusErrorRuntimeFailure;

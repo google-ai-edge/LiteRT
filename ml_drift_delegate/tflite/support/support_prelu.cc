@@ -132,7 +132,7 @@ bool IsPReLUSupported(const TfLiteContext* absl_nonnull context,
       return false;
     }
     const absl::Status status =
-        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>(
+        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>(
             &alpha);
     if (!status.ok()) {
       *error = status.message();
@@ -165,7 +165,7 @@ bool IsPReLUSupported(const TfLiteContext* absl_nonnull context,
       return false;
     }
     const absl::Status status =
-        CheckPopulateTensor<::ml_drift::HWC, ::ml_drift::DataType::FLOAT32>(
+        CheckPopulateTensor<::ml_drift::HWC, ::ml_drift::DataType::kFloat32>(
             &alpha);
     if (!status.ok()) {
       *error = status.message();

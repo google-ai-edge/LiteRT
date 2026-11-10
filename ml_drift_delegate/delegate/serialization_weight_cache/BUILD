@@ -15,7 +15,7 @@
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_binary.bzl", "py_binary")
 
 # copybara:uncomment package(default_applicable_licenses = ["//third_party/odml:license"])
 
@@ -118,15 +118,18 @@ genrule(
         "@ml_drift//ml_drift/common/kernels:fully_connected.cc",
     ],
     outs = ["srcs/build_identifier.cc"],
-    cmd = "$(location :generate_build_identifier_py) --output $@ $(SRCS)",
+    cmd = "$(execpath :generate_build_identifier_py) --output $@ $(SRCS)",
     tools = [":generate_build_identifier_py"],
 )
 
 py_binary(
     name = "generate_build_identifier_py",
     srcs = ["generate_build_identifier.py"],
+    # Disable implicit __init__.py creation in OSS runfiles so @jinja2 is not shadowed.
+    # copybara:comment_begin(oss-only)
+    legacy_create_init = 0,
+    # copybara:comment_end
     main = "generate_build_identifier.py",
-    strict_deps = False,
     tags = ["notap"],  # This should only be built as part of the related genrule.
 )
 
@@ -134,7 +137,6 @@ cc_library(
     name = "build_identifier",
     srcs = ["srcs/build_identifier.cc"],
     hdrs = ["build_identifier.h"],
-    hdrs_check = "strict",
     deps = ["@com_google_absl//absl/types:span"],
 )
 
@@ -227,6 +229,7 @@ cc_test(
         ":serialization_schema",
         ":serialization_weight_cache",
         ":testing_util",
+        "//ml_drift_delegate/delegate:precision",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",

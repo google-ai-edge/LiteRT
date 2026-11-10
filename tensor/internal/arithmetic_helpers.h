@@ -17,6 +17,7 @@ limitations under the License.
 #define THIRD_PARTY_ODML_LITERT_TENSOR_INTERNAL_ARITHMETIC_HELPERS_H_
 
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -24,6 +25,7 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
@@ -32,7 +34,6 @@ limitations under the License.
 #include "tensor/internal/utils.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
-#include "tensor/utils/source_location.h"
 
 namespace litert::tensor {
 
@@ -74,7 +75,8 @@ void AddInputs(std::shared_ptr<Op>& operation,
 //
 // `op_loc` should be the location of the creating operation function call.
 template <class Op>
-TensorHandle AddOutput(std::shared_ptr<Op>& operation, source_location op_loc) {
+TensorHandle AddOutput(std::shared_ptr<Op>& operation,
+                       absl::SourceLocation op_loc) {
   static_assert(std::is_base_of_v<graph::Operation, Op>,
                 "The operation is not derived from graph::Operation.");
   std::shared_ptr<graph::TensorGroup> group = operation->outputs_group.lock();
@@ -88,10 +90,28 @@ TensorHandle AddOutput(std::shared_ptr<Op>& operation, source_location op_loc) {
   return TensorHandle(graph::GetTensor(group->tensor_infos.size() - 1, group));
 }
 
+inline absl::Status GetTensorStatus(const TensorHandle& tensor) {
+  return tensor.GetStatus();
+}
+
+template <class T>
+absl::Status GetTensorStatus(const std::optional<T>& tensor) {
+  if (tensor.has_value()) {
+    return GetTensorStatus(*tensor);
+  }
+  return absl::OkStatus();
+}
+
+// Checks that all provided tensors are valid.
+//
+// `Tensors...` may be:
+// - Classes derived from `TensorHandle`.
+// - `std::optional<T>` where `T` is another supported tensor type.
+//   An empty optional is considered valid.
 template <class... Tensors>
-absl::Status CheckTensors(Tensors... tensors) {
+absl::Status CheckTensors(const Tensors&... tensors) {
   absl::Status status = absl::OkStatus();
-  (status.Update(tensors.GetStatus()), ...);
+  (status.Update(GetTensorStatus(tensors)), ...);
   return status;
 }
 
@@ -109,7 +129,7 @@ void RegisterMixins(std::shared_ptr<Op>& operation) {
 }
 
 template <class Op, class... Mixins, class... Tensors>
-TensorHandle ElementwiseOp(source_location loc, TensorHandle a,
+TensorHandle ElementwiseOp(absl::SourceLocation loc, TensorHandle a,
                            Tensors&... tensors) {
   LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(a, tensors...));
   auto operation = std::make_shared<Op>();

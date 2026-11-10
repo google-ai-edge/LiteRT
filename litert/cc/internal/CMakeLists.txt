@@ -22,6 +22,7 @@ set(LITERT_CC_INTERNAL_HEADERS
     litert_consts.h
     litert_detail.h
     litert_dispatch_delegate.h
+    litert_dispatch_delegate_vendor_options.h
     litert_extended_model.h
     litert_handle.h
     litert_logging.h
@@ -83,7 +84,6 @@ target_include_directories(litert_cc_internal
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
 )
 
@@ -109,7 +109,6 @@ target_include_directories(litert_cc_internal_extra
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
 )
 

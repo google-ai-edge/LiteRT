@@ -19,7 +19,6 @@
 #include <memory>
 
 #include "absl/types/span.h"  // from @com_google_absl
-#include "ml_drift_delegate/delegate/precision.h"
 #include "tflite/c/common.h"
 #include "farmhash.h"
 namespace ml_drift {
@@ -482,42 +481,12 @@ uint64_t SerializationWeightCache::GenerateUniqueModelIdentifier(
     absl::string_view model_token, TfLiteContext* context,
     const TfLiteDelegateParams* delegate_params,
     absl::string_view serialization_prefix,
-    const MlDriftDelegatePrecision& precision, bool prefer_texture_weights,
-    bool allow_src_quantized_fc_conv_ops, bool prepare_weights_in_batches,
-    bool serialize_external_tensors, bool ordered_by_size) {
+    const ModelIdentifierOptions& options) {
   // Generate fingerprints for the relevant delegate data options.
-  uint64_t precision_fingerprint = Fingerprint64(
-      reinterpret_cast<const char*>(&precision), sizeof(precision));
-  uint64_t prefer_texture_weights_fingerprint =
-      Fingerprint64(reinterpret_cast<const char*>(&prefer_texture_weights),
-                    sizeof(prefer_texture_weights));
-  uint64_t allow_src_quantized_fc_conv_ops_fingerprint = Fingerprint64(
-      reinterpret_cast<const char*>(&allow_src_quantized_fc_conv_ops),
-      sizeof(allow_src_quantized_fc_conv_ops));
-  uint64_t ordered_by_size_fingerprint = Fingerprint64(
-      reinterpret_cast<const char*>(&ordered_by_size), sizeof(ordered_by_size));
-  uint64_t alignment_fingerprint = Fingerprint64(
-      reinterpret_cast<const char*>(&kMinAlignment), sizeof(kMinAlignment));
-  uint64_t prepare_weights_in_batches_fingerprint =
-      Fingerprint64(reinterpret_cast<const char*>(&prepare_weights_in_batches),
-                    sizeof(prepare_weights_in_batches));
-  uint64_t serialize_external_tensors_fingerprint =
-      Fingerprint64(reinterpret_cast<const char*>(&serialize_external_tensors),
-                    sizeof(serialize_external_tensors));
-  // Combine the fingerprints of the relevant delegate data options into a
-  // single fingerprint.
   uint64_t options_fingerprint = CombineFingerprints(
-      precision_fingerprint, prefer_texture_weights_fingerprint);
-  options_fingerprint = CombineFingerprints(
-      options_fingerprint, allow_src_quantized_fc_conv_ops_fingerprint);
-  options_fingerprint =
-      CombineFingerprints(options_fingerprint, ordered_by_size_fingerprint);
-  options_fingerprint =
-      CombineFingerprints(options_fingerprint, alignment_fingerprint);
-  options_fingerprint = CombineFingerprints(
-      options_fingerprint, prepare_weights_in_batches_fingerprint);
-  options_fingerprint = CombineFingerprints(
-      options_fingerprint, serialize_external_tensors_fingerprint);
+      Fingerprint64(reinterpret_cast<const char*>(&options), sizeof(options)),
+      Fingerprint64(reinterpret_cast<const char*>(&kMinAlignment),
+                    sizeof(kMinAlignment)));
 
   // Add "_external_tensors" to prevent collision with the non-external
   // tensors serialization.

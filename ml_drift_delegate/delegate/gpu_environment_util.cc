@@ -49,6 +49,7 @@ absl::Status UpdateGpuEnvironmentOpenCl(LiteRtEnvironment environment) {
   auto opencl_device_id_any = opencl_device_id_res.Value();
   auto opencl_device_id = reinterpret_cast<cl_device_id>(
       std::get<int64_t>(::litert::ToStdAny(opencl_device_id_any)));
+  if (opencl_device_id == nullptr) return absl::OkStatus();
 
   auto opencl_platform_id_res =
       env_options.GetOption(kLiteRtEnvOptionTagOpenClPlatformId);
@@ -57,12 +58,18 @@ absl::Status UpdateGpuEnvironmentOpenCl(LiteRtEnvironment environment) {
   auto opencl_platform_id = reinterpret_cast<cl_platform_id>(
       std::get<int64_t>(::litert::ToStdAny(opencl_platform_id_any)));
 
-  ::ml_drift::cl::CLDevice cl_device(opencl_device_id, opencl_platform_id);
-  const auto& gpu_info = cl_device.GetInfo();
-
   auto gpu_env_res = environment->GetGpuEnvironment();
   if (gpu_env_res.HasValue()) {
-    gpu_env_res.Value()->SetFP16Supported(gpu_info.SupportsFP16());
+    auto* gpu_env = gpu_env_res.Value();
+#if LITERT_HAS_OPENCL_SUPPORT
+    if (gpu_env->GetDevice()->id() == opencl_device_id &&
+        gpu_env->GetDevice()->platform() == opencl_platform_id) {
+      gpu_env->SetFP16Supported(gpu_env->GetDevice()->GetInfo().SupportsFP16());
+      return absl::OkStatus();
+    }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+    ::ml_drift::cl::CLDevice cl_device(opencl_device_id, opencl_platform_id);
+    gpu_env->SetFP16Supported(cl_device.GetInfo().SupportsFP16());
   }
 
   return absl::OkStatus();

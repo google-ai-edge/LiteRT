@@ -692,6 +692,34 @@ TEST(LiteRtBuilderTest, BuildConv3dOpOption) {
             tflite::ActivationFunctionType_RELU);
 }
 
+TEST(LiteRtBuilderTest, BuildConv3dTransposeOpOption) {
+  LiteRtBuilderT builder;
+
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflConv3dTranspose, {}, {});
+  uint32_t padding = 1;
+  int32_t stride_w = 2;
+  int32_t stride_h = 3;
+  int32_t stride_d = 4;
+  int32_t dilation_w_factor = 5;
+  int32_t dilation_h_factor = 6;
+  int32_t dilation_d_factor = 7;
+  uint32_t fused_activation_function = 1;
+  LITERT_ASSERT_OK(LiteRtBuilderBuildConv3dTransposeOpOption(
+      &builder, &op, &padding, &stride_w, &stride_h, &stride_d,
+      &dilation_w_factor, &dilation_h_factor, &dilation_d_factor,
+      &fused_activation_function));
+  auto* opts = litert::internal::GetTflOptions(op).AsConv3DOptions();
+  EXPECT_EQ(opts->padding, tflite::Padding_VALID);
+  EXPECT_EQ(opts->stride_w, 2);
+  EXPECT_EQ(opts->stride_h, 3);
+  EXPECT_EQ(opts->stride_d, 4);
+  EXPECT_EQ(opts->dilation_w_factor, 5);
+  EXPECT_EQ(opts->dilation_h_factor, 6);
+  EXPECT_EQ(opts->dilation_d_factor, 7);
+  EXPECT_EQ(opts->fused_activation_function,
+            tflite::ActivationFunctionType_RELU);
+}
+
 TEST(LiteRtBuilderTest, BuildDepthwiseConv2dOpOption) {
   LiteRtBuilderT builder;
 
@@ -927,6 +955,45 @@ TEST(LiteRtBuilderTest, BuildSqueezeOpOptionRejectsInvalidDimsArray) {
       &builder, &op, /*squeeze_dims=*/nullptr, /*num_squeeze_dims=*/0));
   auto* opts = litert::internal::GetTflOptions(op).AsSqueezeOptions();
   EXPECT_TRUE(opts->squeeze_dims.empty());
+}
+
+TEST(LiteRtBuilderTest, BuildOneHotOpOption) {
+  LiteRtBuilderT builder;
+
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflOneHot, {}, {});
+  int32_t axis = 2;
+  LITERT_ASSERT_OK(LiteRtBuilderBuildOneHotOpOption(&builder, &op, &axis));
+  auto* opts = litert::internal::GetTflOptions(op).AsOneHotOptions();
+  EXPECT_EQ(opts->axis, 2);
+}
+
+TEST(LiteRtBuilderTest, BuildSplitVOpOption) {
+  LiteRtBuilderT builder;
+
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflSplitV, {}, {});
+  int32_t num_splits = 3;
+  LITERT_ASSERT_OK(
+      LiteRtBuilderBuildSplitVOpOption(&builder, &op, &num_splits));
+  auto* opts = litert::internal::GetTflOptions(op).AsSplitVOptions();
+  EXPECT_EQ(opts->num_splits, 3);
+}
+
+TEST(LiteRtBuilderTest, BuildShloCompositeOpOption) {
+  LiteRtBuilderT builder;
+
+  auto& op = builder.BuildOp(kLiteRtOpCodeShloComposite, {}, {});
+  const char* name = "custom_composite";
+  int32_t subgraph_index = 1;
+  int32_t version = 2;
+  std::vector<uint8_t> attr = {0x01, 0x02};
+  LITERT_ASSERT_OK(LiteRtBuilderBuildShloCompositeOpOption(
+      &builder, &op, name, &subgraph_index, &version, attr.data(),
+      attr.size()));
+  auto* opts =
+      litert::internal::GetTflOptions2(op).AsStableHLOCompositeOptions();
+  EXPECT_EQ(opts->name, name);
+  EXPECT_EQ(opts->decomposition_subgraph_index, 1);
+  EXPECT_EQ(opts->version, 2);
 }
 
 }  // namespace

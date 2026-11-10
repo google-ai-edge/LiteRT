@@ -39,8 +39,7 @@ struct YnnpackAcceleratorVersion {
   static constexpr int kMajor = 1;
   static constexpr int kMinor = 0;
   static constexpr int kPatch = 0;
-  static constexpr LiteRtApiVersion version = {kMajor, kMinor,
-                                               kPatch};  // NOLINT
+  static constexpr LiteRtApiVersion kVersion = {kMajor, kMinor, kPatch};
 };
 
 class YnnpackAccelerator final
@@ -109,6 +108,11 @@ class YnnpackAccelerator final
     LITERT_RETURN_IF_ERROR(ynnpack_delegate != nullptr,
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "YNNPack delegate failed to be created.";
+
+    if (parsed_options.hint_fully_delegated_to_single_delegate) {
+      ynnpack_delegate->flags |=
+          kTfLiteDelegateFlagsHintFullyDelegatedToSingleDelegate;
+    }
 
     auto* opaque_delegate =
         reinterpret_cast<TfLiteOpaqueDelegate*>(ynnpack_delegate);

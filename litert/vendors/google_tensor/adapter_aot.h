@@ -59,6 +59,12 @@ typedef void (*CompilerFreeCompiledCode)(char** compiled_code_data,
                                          size_t num_bytecodes);
 typedef void (*CompilerFreeErrorMessage)(char* error_message);
 
+// Struct matching the C-ABI definition in litert_plugin_compiler.h.
+struct GoogleTensorUnsupportedOp {
+  int32_t op_index;
+  char* reason;
+};
+
 // Type definition for a function pointer to an ABI stable function
 // used to check which operations in the TFLite flatbuffer are unsupported.
 //
@@ -67,12 +73,12 @@ typedef void (*CompilerFreeErrorMessage)(char* error_message);
 // @param tfl_buffer_size Size of the flatbuffer.
 // @param options Pointer to the serialized GoogleTensorOptions proto.
 // @param options_size Size of the serialized GoogleTensorOptions proto.
-// @param unsupported_op_indices On success, will be set to point to a newly
-//        allocated array containing the indices of the unsupported operations.
+// @param unsupported_ops On success, will be set to point to a newly
+//        allocated array containing the unsupported operations and reasons.
 //        The caller takes ownership of this array and is responsible for
 //        freeing it (e.g., using a companion *FreeUnsupportedOps() function).
 // @param num_unsupported_ops On success, will be set to the number of elements
-//        in the array pointed to by *unsupported_op_indices.
+//        in the array pointed to by *unsupported_ops.
 // @param out_error_message On failure, may be set to point to a newly allocated
 //        NULL-terminated string containing an error message. The caller
 //        takes ownership of this string and is responsible for freeing it
@@ -80,16 +86,53 @@ typedef void (*CompilerFreeErrorMessage)(char* error_message);
 // @return bool indicating whether the validation was successful or not.
 typedef bool (*CompilerGetUnsupportedOps)(
     const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
-    size_t options_size, int32_t** unsupported_op_indices,
+    size_t options_size, GoogleTensorUnsupportedOp** unsupported_ops,
     size_t* num_unsupported_ops, char** out_error_message);
 
-typedef void (*CompilerFreeUnsupportedOps)(int32_t* unsupported_op_indices);
+typedef void (*CompilerFreeUnsupportedOps)(
+    GoogleTensorUnsupportedOp* unsupported_ops, size_t num_unsupported_ops);
+
+// Types and function pointers below mirror the C ABI exposed by
+// `liblitert_plugin_compiler.so` (declared in
+// `platforms/darwinn/compiler/external/litert_plugin_compiler.h`) for dynamic
+// loading via `dlsym`.
+
+enum GoogleTensorCompositeValidationCategory {
+  GOOGLE_TENSOR_COMPOSITE_VALIDATION_OK = 0,
+  GOOGLE_TENSOR_COMPOSITE_VALIDATION_UNSUPPORTED_COMPOSITE = 1,
+  GOOGLE_TENSOR_COMPOSITE_VALIDATION_INTERNAL_ERROR = 2,
+};
+
+struct GoogleTensorCompositeOpDescriptor {
+  const char* composite_name;
+};
+
+struct GoogleTensorCompositeOpValidationResult {
+  bool is_supported;
+  GoogleTensorCompositeValidationCategory category;
+  char* failure_reason;
+};
+
+// Function pointer type for `GoogleTensorValidateCompositeOps`.
+// Validates a batch of `num_ops` composite operations described by
+// `op_descriptors` and populates `out_results`.
+typedef bool (*CompilerValidateCompositeOps)(
+    const GoogleTensorCompositeOpDescriptor* op_descriptors,
+    size_t descriptor_struct_size, size_t num_ops,
+    GoogleTensorCompositeOpValidationResult* out_results,
+    size_t result_struct_size);
+
+// Function pointer type for `GoogleTensorFreeCompositeOpValidationResults`.
+// Frees dynamically allocated fields in `results`.
+typedef void (*CompilerFreeCompositeOpValidationResults)(
+    GoogleTensorCompositeOpValidationResult* results, size_t num_results);
 
 // This class adapts the google tensor compiler API for dynamic loading.
 class AdapterAot : public Adapter {
  public:
   // A smart pointer for managing TensorAdapter objects.
   using Ptr = std::unique_ptr<AdapterAot>;
+  using Adapter::AreCompositesSupported;
 
   AdapterAot();
   ~AdapterAot() override;
@@ -104,8 +147,12 @@ class AdapterAot : public Adapter {
                          size_t** compiled_code_sizes,
                          size_t* num_bytecodes) override;
 
-  Expected<std::vector<int32_t>> GetUnsupportedOps(
+  Expected<std::vector<UnsupportedOp>> GetUnsupportedOps(
       const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
+      size_t options_size) override;
+
+  Expected<std::vector<bool>> AreCompositesSupported(
+      absl::Span<const std::string> composite_names, const char* options_data,
       size_t options_size) override;
 
   bool IsAot() const override { return true; }
@@ -121,6 +168,9 @@ class AdapterAot : public Adapter {
     CompilerFreeErrorMessage free_error_message = nullptr;
     CompilerGetUnsupportedOps get_unsupported_ops = nullptr;
     CompilerFreeUnsupportedOps free_unsupported_ops = nullptr;
+    CompilerValidateCompositeOps validate_composite_ops = nullptr;
+    CompilerFreeCompositeOpValidationResults
+        free_composite_op_validation_results = nullptr;
   };
 
   void* dlib_handle_ = nullptr;

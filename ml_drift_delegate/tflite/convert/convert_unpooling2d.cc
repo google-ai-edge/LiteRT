@@ -43,7 +43,7 @@ void ConvertUnpooling2d(const TfLiteContext& context, const TfLiteNode& node,
   UpdatePadding(params->padding, input_tensor->desc.GetBHWDCShape(), &attr);
 
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::MAX_UNPOOLING_2D);
+  op->name = ToString(::ml_drift::OperationType::kMaxUnpooling2D);
 
   // The first input is the tensor to be unpooled
   ir_model.AddConsumer(tensor_map[input_id], op->id);

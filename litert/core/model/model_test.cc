@@ -857,9 +857,26 @@ TEST(PrintingTest, TflOptions) {
 TEST(PrintingTest, TflOptionsNoPrinter) {
   TflOptions opts;
   opts.type = ::tflite::BuiltinOptions_NONE;
-  ::tflite::ConcatenationOptionsT no_opts;
+  ::tflite::CallOptionsT no_opts;
   opts.Set(std::move(no_opts));
   EXPECT_EQ(absl::StrFormat("%v", opts), "{!no_printer}");
+}
+
+TEST(PrintingTest, TflOptionsConcatenation) {
+  TflOptions opts;
+  ::tflite::ConcatenationOptionsT concat_opts;
+  concat_opts.axis = 2;
+  concat_opts.fused_activation_function =
+      ::tflite::ActivationFunctionType_NONE;
+  opts.Set(std::move(concat_opts));
+  EXPECT_EQ(absl::StrFormat("%v", opts), "{fa=NONE,axis=2}");
+}
+
+TEST(PrintingTest, TflOptionsPad) {
+  TflOptions opts;
+  ::tflite::PadOptionsT pad_opts;
+  opts.Set(std::move(pad_opts));
+  EXPECT_EQ(absl::StrFormat("%v", opts), "{}");
 }
 
 TEST(PrintingTest, TflOptionsReshape) {

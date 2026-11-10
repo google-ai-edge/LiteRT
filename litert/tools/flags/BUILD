@@ -34,12 +34,15 @@ cc_library(
     hdrs = ["apply_plugin_flags.h"],
     deps = [
         ":flag_types",
+        "//litert/c:litert_common",
         "//litert/c/options:litert_compiler_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/options:litert_compiler_options",
         "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ],
     alwayslink = 1,
 )
@@ -49,10 +52,12 @@ cc_test(
     srcs = ["apply_plugin_flags_test.cc"],
     deps = [
         ":apply_plugin_flags",
+        "//litert/c:litert_common",
         "//litert/c/options:litert_compiler_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/options:litert_compiler_options",
+        "//litert/test:matchers",
         "@com_google_absl//absl/flags:flag",
         "@com_google_googletest//:gtest_main",
     ],

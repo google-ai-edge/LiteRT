@@ -24,7 +24,7 @@
 namespace litert::ml_drift::ir {
 
 using MoeScaleTensor =
-    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::FLOAT32>;
+    ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>;
 
 struct MoeExpertsAttributes {
   enum class WeightType {

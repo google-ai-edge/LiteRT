@@ -20,13 +20,14 @@
 #include <utility>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "litert/c/litert_common.h"
 #include "litert/core/model/shape_inference_types.h"
 
 namespace litert::internal {
 
 inline LiteRtStatus InferSqueeze(const ShapeInferenceContext& ctx,
-                                InferenceResult& result) {
+                                 InferenceResult& result) {
   if (result.output_shapes.empty()) {
     result.output_shapes.resize(1);
   }
@@ -38,8 +39,8 @@ inline LiteRtStatus InferSqueeze(const ShapeInferenceContext& ctx,
   std::vector<bool> should_squeeze(input_shape.size(), false);
   if (squeeze_opts && !squeeze_opts->squeeze_dims.empty()) {
     for (int32_t axis : squeeze_opts->squeeze_dims) {
-      if (axis < 0) axis += input_shape.size();
-      if (axis < 0 || axis >= (int)input_shape.size()) {
+      if ((axis < 0 && !SafeAdd(axis, input_shape.size(), axis)) || axis < 0 ||
+          static_cast<size_t>(axis) >= input_shape.size()) {
         return kLiteRtStatusErrorInvalidArgument;
       }
       if (input_shape[axis] != 1) {

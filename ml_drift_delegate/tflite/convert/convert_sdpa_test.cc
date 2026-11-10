@@ -99,7 +99,7 @@ TEST_F(ConvertSdpaTest, Basic) {
   const auto& op = ir_model->ops()[0];
   EXPECT_THAT(
       op->name,
-      Eq(ToString(::ml_drift::OperationType::SCALED_DOT_PRODUCT_ATTENTION)));
+      Eq(ToString(::ml_drift::OperationType::kScaledDotProductAttention)));
   EXPECT_THAT(op->inputs, SizeIs(3));
 
   const auto* attr =
@@ -159,10 +159,10 @@ TEST_F(ConvertSdpaTest, WithConstMask) {
   ASSERT_THAT(ir_model->ops(), SizeIs(2));
   EXPECT_THAT(
       ir_model->ops()[0]->name,
-      Eq(ToString(::ml_drift::OperationType::SCALED_DOT_PRODUCT_ATTENTION)));
+      Eq(ToString(::ml_drift::OperationType::kScaledDotProductAttention)));
   EXPECT_THAT(ir_model->ops()[0]->inputs, SizeIs(4));
   EXPECT_THAT(ir_model->ops()[1]->name,
-              Eq(ToString(::ml_drift::OperationType::CONSTANT)));
+              Eq(ToString(::ml_drift::OperationType::kConstant)));
 }
 
 }  // namespace

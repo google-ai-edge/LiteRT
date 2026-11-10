@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-import {add, CompiledModel, div, Environment, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, mul, relu, sub, supportsFeature, Tensor, TensorBufferType, type TypedArray, unloadLiteRt, type NumberTypedArray, type BigIntTypedArray} from '@litertjs/core';
+import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, cumsum, depthToSpace, depthwiseConv2d, div, elu, embeddingLookup, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gather, gatherNd, gelu, greater, greaterEqual, hardSwish, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, maxPool2d, mean, minimum, mul, neg, nonMaxSuppression, notEqual, oneHot, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, reverse, round, rsqrt, select, sin, slice, softmax, spaceToDepth, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, topK, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
+import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 
 declare global {
   interface ArrayConstructor {
@@ -301,75 +302,82 @@ describe('LiteRt', () => {
         await resetLiteRt();
       });
 
-      it('loads and runs a complex model with external weights (per-channel quantized)', async () => {
-        const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) throw new Error('No GPU adapter found.');
-        const device = await adapter.requestDevice();
-        liteRt.setWebGpuDevice(device);
+      // TODO(b/535068067) re-enable once external weights support is re-added.
+      it('loads and runs a complex model with external weights (per-channel quantized)',
+         async () => {
+           pending(
+               'TODO: b/535068067 - re-enable once external weights support is re-added.');
+           const adapter = await navigator.gpu.requestAdapter();
+           if (!adapter) throw new Error('No GPU adapter found.');
+           const device = await adapter.requestDevice();
+           liteRt.setWebGpuDevice(device);
 
-        const writeBufferSpy =
-            spyOn(device.queue, 'writeBuffer').and.callThrough();
+           const writeBufferSpy =
+               spyOn(device.queue, 'writeBuffer').and.callThrough();
 
-        const modelResponse =
-            await fetch('/testdata/complexExtWeight/per_channel/model.tflite');
-        const modelData = new Uint8Array(await modelResponse.arrayBuffer());
+           const modelResponse = await fetch(
+               '/testdata/complexExtWeight/per_channel/model.tflite');
+           const modelData = new Uint8Array(await modelResponse.arrayBuffer());
 
-        const weightsResponse =
-            await fetch('/testdata/complexExtWeight/per_channel/weights.bin');
-        const weightsStream = weightsResponse.body!;
+           const weightsResponse = await fetch(
+               '/testdata/complexExtWeight/per_channel/weights.bin');
+           const weightsStream = weightsResponse.body!;
 
-        const model = await loadModelAndWeights(modelData, weightsStream, {
-          environment: new Environment({webGpuDevice: device}),
-          accelerator: 'webgpu'
-        });
+           const model = await loadModelAndWeights(modelData, weightsStream, {
+             environment: new Environment({webGpuDevice: device}),
+             accelerator: 'webgpu'
+           });
 
-        expect(writeBufferSpy).toHaveBeenCalled();
+           expect(writeBufferSpy).toHaveBeenCalled();
 
-        const inputDetails = model.getInputDetails();
-        const outputDetails = model.getOutputDetails();
+           const inputDetails = model.getInputDetails();
+           const outputDetails = model.getOutputDetails();
 
-        expect(inputDetails.length).toBe(2);
-        expect(outputDetails.length).toBe(1);
+           expect(inputDetails.length).toBe(2);
+           expect(outputDetails.length).toBe(1);
 
-        const input0Data = new Float32Array(32).fill(0.5);
-        const input0 =
-            await (new Tensor(input0Data, Array.from(inputDetails[0].shape)))
-                .moveTo('webgpu');
+           const input0Data = new Float32Array(32).fill(0.5);
+           const input0 =
+               await (new Tensor(input0Data, Array.from(inputDetails[0].shape)))
+                   .moveTo('webgpu');
 
-        const input1Data = new Float32Array(32).fill(0.5);
-        const input1 =
-            await (new Tensor(input1Data, Array.from(inputDetails[1].shape)))
-                .moveTo('webgpu');
+           const input1Data = new Float32Array(32).fill(0.5);
+           const input1 =
+               await (new Tensor(input1Data, Array.from(inputDetails[1].shape)))
+                   .moveTo('webgpu');
 
-        const inputs: {[key: string]: Tensor} = {};
-        inputs[inputDetails[0].name] = input0;
-        inputs[inputDetails[1].name] = input1;
+           const inputs: {[key: string]: Tensor} = {};
+           inputs[inputDetails[0].name] = input0;
+           inputs[inputDetails[1].name] = input1;
 
-        console.log('[Test2] Input Details:', JSON.stringify(inputDetails));
-        console.log('[Test2] Output Details:', JSON.stringify(outputDetails));
-        console.log('[Test2] Starting inference...');
+           console.log('[Test2] Input Details:', JSON.stringify(inputDetails));
+           console.log(
+               '[Test2] Output Details:', JSON.stringify(outputDetails));
+           console.log('[Test2] Starting inference...');
 
-        const result = await model.run(inputs);
-        const output0 = await result[outputDetails[0].name].data();
-        console.log('complex model per-channel output0 values: ', Array.from(output0));
-        expect(output0.length).toBe(64);
+           const result = await model.run(inputs);
+           const output0 = await result[outputDetails[0].name].data();
+           console.log(
+               'complex model per-channel output0 values: ',
+               Array.from(output0));
+           expect(output0.length).toBe(64);
 
-        let allZeros = true;
-        for (let i = 0; i < output0.length; i++) {
-          if (output0[i] !== 0) {
-            allZeros = false;
-            break;
-          }
-        }
-        expect(allZeros).toBe(false);
+           let allZeros = true;
+           for (let i = 0; i < output0.length; i++) {
+             if (output0[i] !== 0) {
+               allZeros = false;
+               break;
+             }
+           }
+           expect(allZeros).toBe(false);
 
-        model.delete();
-        input0.delete();
-        input1.delete();
-        for (const name of Object.keys(result)) {
-          result[name].delete();
-        }
-      });
+           model.delete();
+           input0.delete();
+           input1.delete();
+           for (const name of Object.keys(result)) {
+             result[name].delete();
+           }
+         });
     });
 
     describe('complex models with external weights', () => {
@@ -1208,6 +1216,1850 @@ describe('LiteRt', () => {
 
          tensorB.delete();
        });
+
+    it('authors and executes tensor graph with author(fn)', async () => {
+      await resetLiteRt(true, {threads: false});
+      const dataA = new Float32Array([1.0, 2.0, 3.0]);
+      const dataB = new Float32Array([4.0, 5.0, 6.0]);
+      const tensorA = new Tensor(dataA);
+      const tensorB = new Tensor(dataB);
+
+      // 1. Author tensor function
+      function myGraph(a: Tensor, b: Tensor): Tensor {
+        return a.add(b).mul(
+            a);  // (a + b) * a = [5, 7, 9] * [1, 2, 3] = [5, 14, 27]
+      }
+
+      // 2. Author with author(fn)
+      const authoredModel = author(myGraph, {accelerator: 'wasm'});
+
+      // 3. Execute (amortizes compilation on first run)
+      const result = await authoredModel.run(tensorA, tensorB);
+      expect(result).toBeDefined();
+      expect(Array.from(await result.data())).toEqual([5, 14, 27]);
+
+      // 4. Subsequent run should reuse cached compiled model
+      const result2 = await authoredModel.run(tensorA, tensorB);
+      expect(Array.from(await result2.data())).toEqual([5, 14, 27]);
+
+      tensorA.delete();
+      tensorB.delete();
+      result.delete();
+      result2.delete();
+      authoredModel.delete();
+    });
+
+    it('compiles authored model ahead of time using PlaceholderSpec without executing inference',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const authoredModel =
+             new AuthoredModel((x: Tensor) => x.mul(x), {accelerator: 'wasm'});
+
+         const spec = {shape: [3], dataType: 'float32' as const};
+         expect(authoredModel.hasCompiledSignature(spec)).toBeFalse();
+
+         // Compile ahead of time without running inference
+         await authoredModel.compile(spec);
+         expect(authoredModel.hasCompiledSignature(spec)).toBeTrue();
+
+         // First run should use the compiled signature
+         const inputTensor = new Tensor(new Float32Array([2.0, 3.0, 4.0]));
+         const result = await authoredModel.run(inputTensor);
+         expect(Array.from(await result.data())).toEqual([4, 9, 16]);
+
+         inputTensor.delete();
+         result.delete();
+         authoredModel.delete();
+       });
+
+    it('compiles multi-input authored model with dictionary specs',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const authoredModel = new AuthoredModel(
+             (inputs: Record<string, Tensor>) => inputs['a'].add(inputs['b']),
+             {accelerator: 'wasm'});
+
+         const dictSpec = {
+           a: {shape: [2], dataType: 'float32' as const},
+           b: {shape: [2], dataType: 'float32' as const},
+         };
+         expect(authoredModel.hasCompiledSignature(dictSpec)).toBeFalse();
+
+         await authoredModel.compile(dictSpec);
+         expect(authoredModel.hasCompiledSignature(dictSpec)).toBeTrue();
+
+         const tensorA = new Tensor(new Float32Array([10.0, 20.0]));
+         const tensorB = new Tensor(new Float32Array([1.0, 2.0]));
+         const result = await authoredModel.run({a: tensorA, b: tensorB});
+         expect(Array.from(await result.data())).toEqual([11, 22]);
+
+         tensorA.delete();
+         tensorB.delete();
+         result.delete();
+         authoredModel.delete();
+       });
+
+    it('compiles with concrete dummy tensor and reuses for subsequent run',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const authoredModel =
+             new AuthoredModel((x: Tensor) => x.add(x), {accelerator: 'wasm'});
+
+         const dummy = new Tensor(new Float32Array([0.0, 0.0]));
+         expect(authoredModel.hasCompiledSignature(dummy)).toBeFalse();
+
+         await authoredModel.compile(dummy);
+         expect(authoredModel.hasCompiledSignature(dummy)).toBeTrue();
+         dummy.delete();
+
+         const live = new Tensor(new Float32Array([5.0, 15.0]));
+         const result = await authoredModel.run(live);
+         expect(Array.from(await result.data())).toEqual([10, 30]);
+
+         live.delete();
+         result.delete();
+         authoredModel.delete();
+       });
+
+    it('throws error when compile is called on a deleted model', async () => {
+      await resetLiteRt(true, {threads: false});
+      const authoredModel =
+          new AuthoredModel((x: Tensor) => x, {accelerator: 'wasm'});
+      authoredModel.delete();
+
+      await expectAsync(
+          authoredModel.compile({shape: [1], dataType: 'float32'}),
+          )
+          .toBeRejectedWithError(/AuthoredModel is deleted and cannot be used/);
+    });
+
+    it('compiles multi-signature authored model with shared weights into a single CompiledModel',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const weight = new Tensor(new Float32Array([2.0, 3.0, 5.0]));
+         const authoredModel = new AuthoredModel(
+             (x: Tensor) => x.mul(weight),
+             {accelerator: 'wasm'},
+         );
+
+         // Compile two signatures upfront: shape [1, 3] and shape [2, 3]
+         const spec1 = {shape: [1, 3], dataType: 'float32' as const};
+         const spec2 = {shape: [2, 3], dataType: 'float32' as const};
+         await authoredModel.compile([[spec1], [spec2]]);
+
+         expect(authoredModel.hasCompiledSignature(spec1)).toBeTrue();
+         expect(authoredModel.hasCompiledSignature(spec2)).toBeTrue();
+         expect(authoredModel.compiledModel).toBeDefined();
+
+         // Verify exactly ONE CompiledModel with 2 signatures was created
+         const signatures = authoredModel.compiledModel!.signatures;
+         expect(Object.keys(signatures).length).toBe(2);
+
+         // Run shape 1: [1, 3]
+         const input1 =
+             new Tensor(new Float32Array([10.0, 20.0, 30.0]), [1, 3]);
+         const out1 = await authoredModel.run(input1);
+         expect(Array.from(await out1.data())).toEqual([20.0, 60.0, 150.0]);
+
+         // Run shape 2: [2, 3]
+         const input2 = new Tensor(
+             new Float32Array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+             [2, 3],
+         );
+         const out2 = await authoredModel.run(input2);
+         expect(Array.from(await out2.data())).toEqual([
+           2.0,
+           6.0,
+           15.0,
+           8.0,
+           15.0,
+           30.0,
+         ]);
+
+         // Verify calling compile() a second time succeeds and creates a new
+         // CompiledModel
+         const spec3 = {shape: [3, 3], dataType: 'float32' as const};
+         await authoredModel.compile([[spec3]]);
+         expect(authoredModel.hasCompiledSignature(spec3)).toBeTrue();
+
+         const input3 = new Tensor(
+             new Float32Array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]),
+             [3, 3],
+         );
+         const out3 = await authoredModel.run(input3);
+         expect(Array.from(await out3.data())).toEqual([
+           2.0,
+           6.0,
+           15.0,
+           8.0,
+           15.0,
+           30.0,
+           14.0,
+           24.0,
+           45.0,
+         ]);
+
+         weight.delete();
+         input1.delete();
+         input2.delete();
+         input3.delete();
+         out1.delete();
+         out2.delete();
+         out3.delete();
+         authoredModel.delete();
+       });
+
+    it('compiles named multi-signature authored model', async () => {
+      await resetLiteRt(true, {threads: false});
+      const authoredModel = new AuthoredModel(
+          (x: Tensor) => x.add(x),
+          {accelerator: 'wasm'},
+      );
+
+      const specLow = {shape: [2], dataType: 'float32' as const};
+      const specHigh = {shape: [4], dataType: 'float32' as const};
+      await authoredModel.compile({
+        low: [specLow],
+        high: [specHigh],
+      });
+
+      expect(authoredModel.hasCompiledSignature(specLow)).toBeTrue();
+      expect(authoredModel.hasCompiledSignature(specHigh)).toBeTrue();
+
+      const signatures = authoredModel.compiledModel!.signatures;
+      expect('low' in signatures).toBeTrue();
+      expect('high' in signatures).toBeTrue();
+
+      const inputLow = new Tensor(new Float32Array([3.0, 7.0]), [2]);
+      const outLow = await authoredModel.run(inputLow);
+      expect(Array.from(await outLow.data())).toEqual([6.0, 14.0]);
+
+      const inputHigh = new Tensor(new Float32Array([1.0, 2.0, 3.0, 4.0]), [4]);
+      const outHigh = await authoredModel.run(inputHigh);
+      expect(Array.from(await outHigh.data())).toEqual([2.0, 4.0, 6.0, 8.0]);
+
+      inputLow.delete();
+      inputHigh.delete();
+      outLow.delete();
+      outHigh.delete();
+      authoredModel.delete();
+    });
+
+    it('lazily and silently compiles unseen shapes on run() with console log',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const authoredModel = new AuthoredModel(
+             (x: Tensor) => x.add(x),
+             {accelerator: 'wasm'},
+         );
+
+         const consoleSpy = spyOn(console, 'log').and.callThrough();
+
+         const inputA = new Tensor(new Float32Array([1.0, 2.0]), [2]);
+         const outA = await authoredModel.run(inputA);
+         expect(Array.from(await outA.data())).toEqual([2.0, 4.0]);
+         expect(consoleSpy)
+             .toHaveBeenCalledWith(
+                 jasmine.stringMatching(
+                     /JIT compiling model for input shape\/type 'float32\[2\]' under the hood/),
+             );
+
+         consoleSpy.calls.reset();
+
+         // Running same shape executes without triggering new JIT compile log
+         const inputA2 = new Tensor(new Float32Array([3.0, 4.0]), [2]);
+         const outA2 = await authoredModel.run(inputA2);
+         expect(Array.from(await outA2.data())).toEqual([6.0, 8.0]);
+         expect(consoleSpy).not.toHaveBeenCalled();
+
+         // Running unseen shape silently compiles and logs to console
+         const inputB = new Tensor(new Float32Array([1.0, 2.0, 3.0]), [3]);
+         const outB = await authoredModel.run(inputB);
+         expect(Array.from(await outB.data())).toEqual([2.0, 4.0, 6.0]);
+         expect(consoleSpy)
+             .toHaveBeenCalledWith(
+                 jasmine.stringMatching(
+                     /JIT compiling model for input shape\/type 'float32\[3\]' under the hood/),
+             );
+
+         // Calling compile after lazy run also succeeds
+         const spec4 = {shape: [4], dataType: 'float32' as const};
+         await authoredModel.compile({shape: [4]});
+         expect(authoredModel.hasCompiledSignature(spec4)).toBeTrue();
+
+         inputA.delete();
+         inputA2.delete();
+         inputB.delete();
+         outA.delete();
+         outA2.delete();
+         outB.delete();
+         authoredModel.delete();
+       });
+
+    it('compiles and executes authored tensor graphs returning multiple tensors / records',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const dataA = new Float32Array([10.0, 20.0]);
+         const dataB = new Float32Array([2.0, 5.0]);
+         const tensorA = new Tensor(dataA);
+         const tensorB = new Tensor(dataB);
+
+         function multiOutputGraph(a: Tensor, b: Tensor) {
+           return {
+             sum: a.add(b),
+             diff: a.sub(b),
+           };
+         }
+
+         const authoredModel = author(multiOutputGraph, {accelerator: 'wasm'});
+         const {sum, diff} = await authoredModel.run(tensorA, tensorB);
+
+         expect(Array.from(await sum.data())).toEqual([12, 25]);
+         expect(Array.from(await diff.data())).toEqual([8, 15]);
+
+         tensorA.delete();
+         tensorB.delete();
+         sum.delete();
+         diff.delete();
+         authoredModel.delete();
+       });
+
+    it('compiles and executes authored tensor graphs with dictionary inputs and permuted key ordering',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const dataX = new Float32Array([10.0, 20.0]);
+         const dataY = new Float32Array([2.0, 5.0]);
+         const tensorX = new Tensor(dataX);
+         const tensorY = new Tensor(dataY);
+
+         function dictGraph(inputs: Record<string, Tensor>):
+             Record<string, Tensor> {
+           return {
+             diff: inputs['x'].sub(inputs['y']),
+           };
+         }
+
+         const authoredModel = author(dictGraph, {accelerator: 'wasm'});
+
+         // Run 1: with keys ordered {x, y}
+         const out1 = await authoredModel.run({x: tensorX, y: tensorY});
+         expect(Array.from(await out1['diff'].data())).toEqual([8, 15]);
+         out1['diff'].delete();
+
+         // Run 2: with keys permuted {y, x} -> must not mix up inputs
+         const out2 = await authoredModel.run({y: tensorY, x: tensorX});
+         expect(Array.from(await out2['diff'].data())).toEqual([8, 15]);
+         out2['diff'].delete();
+
+         tensorX.delete();
+         tensorY.delete();
+         authoredModel.delete();
+       });
+
+    it('compiles and executes authored tensor graphs with single tensor input',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const data = new Float32Array([-2.0, 0.0, 3.5]);
+         const tensor = new Tensor(data);
+
+         function reluGraph(x: Tensor): Tensor {
+           return x.relu();
+         }
+
+         const authoredModel = author(reluGraph, {accelerator: 'wasm'});
+         const result = await authoredModel.run(tensor);
+
+         expect(Array.from(await result.data())).toEqual([0, 0, 3.5]);
+
+         tensor.delete();
+         result.delete();
+         authoredModel.delete();
+       });
+
+    it('compiles and executes authored tensor graphs with array input',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const dataA = new Float32Array([1.0, 2.0]);
+         const dataB = new Float32Array([3.0, 4.0]);
+         const tensorA = new Tensor(dataA);
+         const tensorB = new Tensor(dataB);
+
+         function arrayGraph(inputs: Tensor[]): Tensor[] {
+           return [inputs[0].add(inputs[1]), inputs[0].mul(inputs[1])];
+         }
+
+         const authoredModel = author(arrayGraph, {accelerator: 'wasm'});
+         const [sum, prod] = await authoredModel.run([tensorA, tensorB]);
+
+         expect(Array.from(await sum.data())).toEqual([4, 6]);
+         expect(Array.from(await prod.data())).toEqual([3, 8]);
+
+         tensorA.delete();
+         tensorB.delete();
+         sum.delete();
+         prod.delete();
+         authoredModel.delete();
+       });
+
+    it('handles delete on AuthoredModel and prevents subsequent execution',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const data = new Float32Array([1.0, 2.0]);
+         const tensor = new Tensor(data);
+
+         const authoredModel = new AuthoredModel((x: Tensor) => x.add(x), {
+           accelerator: 'wasm',
+         });
+         expect(authoredModel.deleted).toBeFalse();
+
+         const result = await authoredModel.run(tensor);
+         expect(Array.from(await result.data())).toEqual([2, 4]);
+         result.delete();
+
+         authoredModel.delete();
+         expect(authoredModel.deleted).toBeTrue();
+
+         await expectAsync(authoredModel.run(tensor))
+             .toBeRejectedWithError(
+                 'AuthoredModel is deleted and cannot be used.');
+
+         tensor.delete();
+       });
+
+    it('compiles and caches multiple signatures for different input shapes',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const authoredModel =
+             new AuthoredModel((x: Tensor) => x.add(x), {accelerator: 'wasm'});
+
+         const spec2 = {shape: [2], dataType: 'float32' as const};
+         const spec4 = {shape: [4], dataType: 'float32' as const};
+         await authoredModel.compile([[spec2], [spec4]]);
+
+         const tensorShape2 =
+             Tensor.fromTypedArray(new Float32Array([1.0, 2.0]), [2]);
+         const outShape2 = await authoredModel.run(tensorShape2);
+         expect(Array.from(await outShape2.data())).toEqual([2, 4]);
+
+         const tensorShape4 =
+             Tensor.fromTypedArray(new Float32Array([1.0, 2.0, 3.0, 4.0]), [4]);
+         const outShape4 = await authoredModel.run(tensorShape4);
+         expect(Array.from(await outShape4.data())).toEqual([2, 4, 6, 8]);
+
+         // Verify running with shape [2] again correctly uses the cached
+         // signature
+         const outShape2Cached = await authoredModel.run(tensorShape2);
+         expect(Array.from(await outShape2Cached.data())).toEqual([2, 4]);
+
+         tensorShape2.delete();
+         tensorShape4.delete();
+         outShape2.delete();
+         outShape4.delete();
+         outShape2Cached.delete();
+         authoredModel.delete();
+       });
+
+    it('handles concurrent run invocations with matching shapes without redundant compilation',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const authoredModel =
+             new AuthoredModel((x: Tensor) => x.add(x), {accelerator: 'wasm'});
+
+         const tensor1 = new Tensor(new Float32Array([2.0, 3.0]));
+         const tensor2 = new Tensor(new Float32Array([10.0, 20.0]));
+
+         const [res1, res2] = await Promise.all([
+           authoredModel.run(tensor1),
+           authoredModel.run(tensor2),
+         ]);
+
+         expect(Array.from(await res1.data())).toEqual([4, 6]);
+         expect(Array.from(await res2.data())).toEqual([20, 40]);
+
+         tensor1.delete();
+         tensor2.delete();
+         res1.delete();
+         res2.delete();
+         authoredModel.delete();
+       });
+
+    it('compiles and executes authored batchMatMul graph', async () => {
+      await resetLiteRt(true, {threads: false});
+      const dataA = new Float32Array([1, 2, 3, 4, 5, 6]);
+      const dataB = new Float32Array([7, 8, 9, 1, 2, 3]);
+      const tensorA = Tensor.fromTypedArray(dataA, [2, 3]);
+      const tensorB = Tensor.fromTypedArray(dataB, [3, 2]);
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        const model = author(
+            (a: Tensor, b: Tensor) => batchMatMul(a, b).add(a.batchMatMul(b)),
+            {accelerator});
+        const out = await model.run(tensorA, tensorB);
+
+        expect(Array.from(await out.data())).toEqual([62, 38, 170, 110]);
+
+        out.delete();
+        model.delete();
+      }
+
+      tensorA.delete();
+      tensorB.delete();
+    });
+
+    it('compiles and executes authored fullyConnected graph with and without bias',
+       async () => {
+         await resetLiteRt(true, {threads: false});
+         const inputData = new Float32Array([1, 2, 3]);
+         const weightData = new Float32Array([1, 2, 3, 4, 5, 6]);
+         const biasData = new Float32Array([10, 20]);
+
+         const inputTensor = Tensor.fromTypedArray(inputData, [1, 3]);
+         const weightTensor = Tensor.fromTypedArray(weightData, [2, 3]);
+         const biasTensor = Tensor.fromTypedArray(biasData, [2]);
+
+         for (const accelerator of ['wasm', 'webgpu'] as const) {
+           // Without bias: 1*1+2*2+3*3=14, 1*4+2*5+3*6=32
+           const modelNoBias = author(
+               (x: Tensor, w: Tensor) => fullyConnected(x, w),
+               {accelerator});
+           const outNoBias = await modelNoBias.run(inputTensor, weightTensor);
+           expect(Array.from(await outNoBias.data())).toEqual([14, 32]);
+
+           // With bias: [14+10, 32+20] = [24, 52]
+           const modelWithBias = author(
+               (x: Tensor, w: Tensor, b: Tensor) => x.fullyConnected(w, b),
+               {accelerator});
+           const outWithBias =
+               await modelWithBias.run(inputTensor, weightTensor, biasTensor);
+           expect(Array.from(await outWithBias.data())).toEqual([24, 52]);
+
+           outNoBias.delete();
+           outWithBias.delete();
+           modelNoBias.delete();
+           modelWithBias.delete();
+         }
+
+         inputTensor.delete();
+         weightTensor.delete();
+         biasTensor.delete();
+       });
+
+    describe('authored activation graphs', () => {
+      let tensorLogits: Tensor;
+      let tensorZero: Tensor;
+      let tensorGeluInput: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        tensorLogits =
+            Tensor.fromTypedArray(new Float32Array([0.0, 0.0]), [1, 2]);
+        tensorZero = new Tensor(new Float32Array([0.0]));
+        tensorGeluInput =
+            Tensor.fromTypedArray(new Float32Array([0.0, 1.0]), [2]);
+      });
+
+      afterAll(() => {
+        tensorLogits.delete();
+        tensorZero.delete();
+        tensorGeluInput.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes softmax on ${accelerator}`, async () => {
+          const softmaxModel = author(
+              (x: Tensor) => softmax(x).add(x.softmax()), {accelerator});
+          const softmaxOut = await softmaxModel.run(tensorLogits);
+          const softmaxData = Array.from(await softmaxOut.data());
+          expect(softmaxData[0]).toBeCloseTo(1.0, 3);
+          expect(softmaxData[1]).toBeCloseTo(1.0, 3);
+          softmaxOut.delete();
+          softmaxModel.delete();
+        });
+
+        it(`compiles and executes logistic on ${accelerator}`, async () => {
+          const logisticModel = author(
+              (x: Tensor) => logistic(x).add(x.logistic()), {accelerator});
+          const logisticOut = await logisticModel.run(tensorZero);
+          const logisticData = Array.from(await logisticOut.data());
+          expect(logisticData[0]).toBeCloseTo(1.0, 3);
+          logisticOut.delete();
+          logisticModel.delete();
+        });
+
+        it(`compiles and executes tanh on ${accelerator}`, async () => {
+          const tanhModel = author(
+              (x: Tensor) => tanh(x).add(x.tanh()), {accelerator});
+          const tanhOut = await tanhModel.run(tensorGeluInput);
+          const tanhData = Array.from(await tanhOut.data());
+          expect(tanhData[0]).toBeCloseTo(0.0, 3);
+          expect(tanhData[1]).toBeCloseTo(2 * Math.tanh(1.0), 3);
+          tanhOut.delete();
+          tanhModel.delete();
+        });
+
+        it(`compiles and executes gelu on ${accelerator}`, async () => {
+          const geluModel = author(
+              (x: Tensor) => gelu(x).add(x.gelu()), {accelerator});
+          const geluOut = await geluModel.run(tensorGeluInput);
+          const geluData = Array.from(await geluOut.data());
+          expect(geluData[0]).toBeCloseTo(0.0, 3);
+          expect(geluData[1]).toBeCloseTo(2 * 0.8413, 2);
+          geluOut.delete();
+          geluModel.delete();
+        });
+      }
+    });
+
+    describe('authored conv2d and depthwiseConv2d graphs', () => {
+      let inputTensor: Tensor;
+      let filterTensor: Tensor;
+      let biasTensor: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        const inputData = new Float32Array([1, 2, 3, 4]);
+        const filterData = new Float32Array([1, 1, 1, 1]);
+        const biasData = new Float32Array([5]);
+        inputTensor = Tensor.fromTypedArray(inputData, [1, 2, 2, 1]);
+        filterTensor = Tensor.fromTypedArray(filterData, [1, 2, 2, 1]);
+        biasTensor = Tensor.fromTypedArray(biasData, [1]);
+      });
+
+      afterAll(() => {
+        inputTensor.delete();
+        filterTensor.delete();
+        biasTensor.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes conv2d on ${accelerator}`, async () => {
+          const convModel = author(
+              (x: Tensor, f: Tensor, b: Tensor) =>
+                  x.conv2d(f, {padding: 'VALID', bias: b}),
+              {accelerator});
+          const convOut =
+              await convModel.run(inputTensor, filterTensor, biasTensor);
+          expect(Array.from(await convOut.data())).toEqual([15]);
+
+          const convStandaloneModel = author(
+              (x: Tensor, f: Tensor, b: Tensor) =>
+                  conv2d(x, f, {padding: 'VALID', bias: b}),
+              {accelerator});
+          const convStandaloneOut = await convStandaloneModel.run(
+              inputTensor, filterTensor, biasTensor);
+          expect(Array.from(await convStandaloneOut.data())).toEqual([15]);
+
+          convOut.delete();
+          convStandaloneOut.delete();
+          convModel.delete();
+          convStandaloneModel.delete();
+        });
+
+        it(`compiles and executes depthwiseConv2d on ${accelerator}`,
+           async () => {
+             const dwConvModel = author(
+                 (x: Tensor, f: Tensor) =>
+                     x.depthwiseConv2d(f, {padding: 'VALID'}),
+                 {accelerator});
+             const dwConvOut =
+                 await dwConvModel.run(inputTensor, filterTensor);
+             expect(Array.from(await dwConvOut.data())).toEqual([10]);
+
+             const dwConvStandaloneModel = author(
+                 (x: Tensor, f: Tensor) =>
+                     depthwiseConv2d(x, f, {padding: 'VALID'}),
+                 {accelerator});
+             const dwConvStandaloneOut =
+                 await dwConvStandaloneModel.run(inputTensor, filterTensor);
+             expect(Array.from(await dwConvStandaloneOut.data())).toEqual([10]);
+
+             dwConvOut.delete();
+             dwConvStandaloneOut.delete();
+             dwConvModel.delete();
+             dwConvStandaloneModel.delete();
+           });
+      }
+    });
+
+    describe('authored shaping and slicing graphs', () => {
+      let tensorA: Tensor;
+      let tensorC1: Tensor;
+      let tensorC2: Tensor;
+      let padTensor: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        tensorA = Tensor.fromTypedArray(
+            new Float32Array([1, 2, 3, 4, 5, 6]), [2, 3]);
+        tensorC1 = Tensor.fromTypedArray(new Float32Array([1, 2]), [1, 2]);
+        tensorC2 = Tensor.fromTypedArray(new Float32Array([3, 4]), [1, 2]);
+        padTensor = Tensor.fromTypedArray(
+            new Int32Array([0, 0, 1, 1]), [2, 2]);
+      });
+
+      afterAll(() => {
+        tensorA.delete();
+        tensorC1.delete();
+        tensorC2.delete();
+        padTensor.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes reshape on ${accelerator}`, async () => {
+          const reshapeModel =
+              author((x: Tensor) => reshape(x, [3, 2]), {accelerator});
+          const reshapeOut = await reshapeModel.run(tensorA);
+          expect(reshapeOut.shape).toEqual([3, 2]);
+          expect(Array.from(await reshapeOut.data()))
+              .toEqual([1, 2, 3, 4, 5, 6]);
+          reshapeOut.delete();
+          reshapeModel.delete();
+
+          const reshapeMethodModel =
+              author((x: Tensor) => x.reshape([3, 2]), {accelerator});
+          const reshapeMethodOut = await reshapeMethodModel.run(tensorA);
+          expect(reshapeMethodOut.shape).toEqual([3, 2]);
+          expect(Array.from(await reshapeMethodOut.data()))
+              .toEqual([1, 2, 3, 4, 5, 6]);
+          reshapeMethodOut.delete();
+          reshapeMethodModel.delete();
+        });
+
+        it(`compiles and executes transpose on ${accelerator}`, async () => {
+          const transposeModel =
+              author((x: Tensor) => transpose(x, [1, 0]), {accelerator});
+          const transposeOut = await transposeModel.run(tensorA);
+          expect(transposeOut.shape).toEqual([3, 2]);
+          expect(Array.from(await transposeOut.data()))
+              .toEqual([1, 4, 2, 5, 3, 6]);
+          transposeOut.delete();
+          transposeModel.delete();
+
+          const transposeMethodModel =
+              author((x: Tensor) => x.transpose([1, 0]), {accelerator});
+          const transposeMethodOut =
+              await transposeMethodModel.run(tensorA);
+          expect(transposeMethodOut.shape).toEqual([3, 2]);
+          expect(Array.from(await transposeMethodOut.data()))
+              .toEqual([1, 4, 2, 5, 3, 6]);
+          transposeMethodOut.delete();
+          transposeMethodModel.delete();
+        });
+
+        it(`compiles and executes concat on ${accelerator}`, async () => {
+          const concatModel = author(
+              (x: Tensor, y: Tensor) => concat([x, y], 0), {accelerator});
+          const concatOut = await concatModel.run(tensorC1, tensorC2);
+          expect(concatOut.shape).toEqual([2, 2]);
+          expect(Array.from(await concatOut.data())).toEqual([1, 2, 3, 4]);
+          concatOut.delete();
+          concatModel.delete();
+
+          const concatNegAxisModel = author(
+              (x: Tensor, y: Tensor) => x.concat(y, -1), {accelerator});
+          const concatNegAxisOut =
+              await concatNegAxisModel.run(tensorC1, tensorC2);
+          expect(concatNegAxisOut.shape).toEqual([1, 4]);
+          expect(Array.from(await concatNegAxisOut.data()))
+              .toEqual([1, 2, 3, 4]);
+          concatNegAxisOut.delete();
+          concatNegAxisModel.delete();
+        });
+
+        it(`compiles and executes slice on ${accelerator}`, async () => {
+          const sliceModel = author(
+              (x: Tensor) => slice(x, [1, 1], [1, 2]), {accelerator});
+          const sliceOut = await sliceModel.run(tensorA);
+          expect(sliceOut.shape).toEqual([1, 2]);
+          expect(Array.from(await sliceOut.data())).toEqual([5, 6]);
+          sliceOut.delete();
+          sliceModel.delete();
+
+          const sliceMethodModel = author(
+              (x: Tensor) => x.slice([1, 1], [1, 2]), {accelerator});
+          const sliceMethodOut = await sliceMethodModel.run(tensorA);
+          expect(sliceMethodOut.shape).toEqual([1, 2]);
+          expect(Array.from(await sliceMethodOut.data())).toEqual([5, 6]);
+          sliceMethodOut.delete();
+          sliceMethodModel.delete();
+        });
+
+        it(`compiles and executes pad on ${accelerator}`, async () => {
+          const padModel = author(
+              (x: Tensor) => pad(x, padTensor), {accelerator});
+          const padOut = await padModel.run(tensorC1);
+          expect(padOut.shape).toEqual([1, 4]);
+          expect(Array.from(await padOut.data())).toEqual([0, 1, 2, 0]);
+          padOut.delete();
+          padModel.delete();
+
+          const padArrayModel = author(
+              (x: Tensor) => x.pad([[0, 0], [1, 1]]), {accelerator});
+          const padArrayOut = await padArrayModel.run(tensorC1);
+          expect(padArrayOut.shape).toEqual([1, 4]);
+          expect(Array.from(await padArrayOut.data())).toEqual([0, 1, 2, 0]);
+          padArrayOut.delete();
+          padArrayModel.delete();
+        });
+      }
+
+      it('throws error for invalid pad tensor dtype', () => {
+        const invalidFloatPad = Tensor.fromTypedArray(
+            new Float32Array([0, 0, 1, 1]), [2, 2]);
+        expect(() => tensorC1.pad(invalidFloatPad))
+            .toThrowError(/dtype 'int32'/);
+        invalidFloatPad.delete();
+      });
+    });
+
+    describe('authored reduction graphs', () => {
+      let tensorA: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        tensorA = Tensor.fromTypedArray(
+            new Float32Array([1, 2, 3, 4, 5, 6]), [2, 3]);
+      });
+
+      afterAll(() => {
+        tensorA.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes sum on ${accelerator}`, async () => {
+          const sumModel = author(
+              (x: Tensor) => x.sum(1), {accelerator});
+          const sumOut = await sumModel.run(tensorA);
+          expect(Array.from(await sumOut.data())).toEqual([6, 15]);
+
+          const sumStandaloneModel = author(
+              (x: Tensor) => sum(x, 1), {accelerator});
+          const sumStandaloneOut = await sumStandaloneModel.run(tensorA);
+          expect(Array.from(await sumStandaloneOut.data())).toEqual([6, 15]);
+
+          sumOut.delete();
+          sumStandaloneOut.delete();
+          sumModel.delete();
+          sumStandaloneModel.delete();
+        });
+
+        it(`compiles and executes mean on ${accelerator}`, async () => {
+          const meanModel = author(
+              (x: Tensor) => x.mean(0), {accelerator});
+          const meanOut = await meanModel.run(tensorA);
+          expect(Array.from(await meanOut.data())).toEqual([2.5, 3.5, 4.5]);
+
+          const meanStandaloneModel = author(
+              (x: Tensor) => mean(x, 0), {accelerator});
+          const meanStandaloneOut = await meanStandaloneModel.run(tensorA);
+          expect(Array.from(await meanStandaloneOut.data()))
+              .toEqual([2.5, 3.5, 4.5]);
+
+          meanOut.delete();
+          meanStandaloneOut.delete();
+          meanModel.delete();
+          meanStandaloneModel.delete();
+        });
+      }
+    });
+
+    describe('authored elementary math graphs', () => {
+      let input: Tensor;
+      let posInput: Tensor;
+      let expInput: Tensor;
+      let logInput: Tensor;
+      let trigInput: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        input = Tensor.fromTypedArray(
+            new Float32Array([-1.5, 0.0, 1.5, 4.0]), [4]);
+        posInput = Tensor.fromTypedArray(
+            new Float32Array([1.0, 4.0, 9.0, 16.0]), [4]);
+        expInput =
+            Tensor.fromTypedArray(new Float32Array([0.0, 1.0, 2.0]), [3]);
+        logInput = Tensor.fromTypedArray(
+            new Float32Array([1.0, Math.E, Math.exp(2)]), [3]);
+        trigInput = Tensor.fromTypedArray(
+            new Float32Array([0.0, Math.PI / 2, Math.PI]), [3]);
+      });
+
+      afterAll(() => {
+        expInput.delete();
+        logInput.delete();
+        input.delete();
+        posInput.delete();
+        trigInput.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes abs on ${accelerator}`, async () => {
+          const absModel = author((x: Tensor) => abs(x), {accelerator});
+          const absOut = await absModel.run(input);
+          expect(Array.from(await absOut.data())).toEqual([1.5, 0.0, 1.5, 4.0]);
+          absOut.delete();
+          absModel.delete();
+        });
+
+        it(`compiles and executes neg on ${accelerator}`, async () => {
+          const negModel = author((x: Tensor) => neg(x), {accelerator});
+          const negOut = await negModel.run(input);
+          expect(Array.from(await negOut.data()))
+              .toEqual([1.5, -0, -1.5, -4.0]);
+          negOut.delete();
+          negModel.delete();
+        });
+
+        it(`compiles and executes ceil on ${accelerator}`, async () => {
+          const ceilModel = author((x: Tensor) => ceil(x), {accelerator});
+          const ceilOut = await ceilModel.run(input);
+          expect(Array.from(await ceilOut.data())).toEqual([-1, 0, 2, 4]);
+          ceilOut.delete();
+          ceilModel.delete();
+        });
+
+        it(`compiles and executes floor on ${accelerator}`, async () => {
+          const floorModel =
+              author((x: Tensor) => floor(x), {accelerator});
+          const floorOut = await floorModel.run(input);
+          expect(Array.from(await floorOut.data())).toEqual([-2, 0, 1, 4]);
+          floorOut.delete();
+          floorModel.delete();
+        });
+
+        it(`compiles and executes round on ${accelerator}`, async () => {
+          const roundModel =
+              author((x: Tensor) => round(x), {accelerator});
+          const roundOut = await roundModel.run(input);
+          expect(Array.from(await roundOut.data())).toEqual([-2, 0, 2, 4]);
+          roundOut.delete();
+          roundModel.delete();
+        });
+
+        it(`compiles and executes sqrt on ${accelerator}`, async () => {
+          const sqrtModel = author((x: Tensor) => sqrt(x), {accelerator});
+          const sqrtOut = await sqrtModel.run(posInput);
+          expect(Array.from(await sqrtOut.data()))
+              .toEqual([1.0, 2.0, 3.0, 4.0]);
+          sqrtOut.delete();
+          sqrtModel.delete();
+        });
+
+        it(`compiles and executes rsqrt on ${accelerator}`, async () => {
+          const rsqrtModel =
+              author((x: Tensor) => rsqrt(x), {accelerator});
+          const rsqrtOut = await rsqrtModel.run(posInput);
+          const rsqrtData = Array.from(await rsqrtOut.data() as Float32Array);
+          expect(rsqrtData[0]).toBeCloseTo(1.0, 4);
+          expect(rsqrtData[1]).toBeCloseTo(0.5, 4);
+          expect(rsqrtData[2]).toBeCloseTo(1 / 3, 4);
+          expect(rsqrtData[3]).toBeCloseTo(0.25, 4);
+          rsqrtOut.delete();
+          rsqrtModel.delete();
+        });
+
+        it(`compiles and executes exp on ${accelerator}`, async () => {
+          const expModel = author((x: Tensor) => exp(x), {accelerator});
+          const expOut = await expModel.run(expInput);
+          const expData = Array.from(await expOut.data() as Float32Array);
+          expect(expData[0]).toBeCloseTo(1.0, 4);
+          expect(expData[1]).toBeCloseTo(Math.E, 4);
+          expect(expData[2]).toBeCloseTo(Math.exp(2), 4);
+          expOut.delete();
+          expModel.delete();
+        });
+
+        it(`compiles and executes log on ${accelerator}`, async () => {
+          const logModel = author((x: Tensor) => log(x), {accelerator});
+          const logOut = await logModel.run(logInput);
+          const logData = Array.from(await logOut.data() as Float32Array);
+          expect(logData[0]).toBeCloseTo(0.0, 4);
+          expect(logData[1]).toBeCloseTo(1.0, 4);
+          expect(logData[2]).toBeCloseTo(2.0, 4);
+          logOut.delete();
+          logModel.delete();
+        });
+
+        it(`compiles and executes sin on ${accelerator}`, async () => {
+          const sinModel = author((x: Tensor) => sin(x), {accelerator});
+          const sinOut = await sinModel.run(trigInput);
+          const sinData = Array.from(await sinOut.data() as Float32Array);
+          expect(sinData[0]).toBeCloseTo(0.0, 4);
+          expect(sinData[1]).toBeCloseTo(1.0, 4);
+          expect(sinData[2]).toBeCloseTo(0.0, 4);
+          sinOut.delete();
+          sinModel.delete();
+        });
+
+        it(`compiles and executes cos on ${accelerator}`, async () => {
+          const cosModel = author((x: Tensor) => cos(x), {accelerator});
+          const cosOut = await cosModel.run(trigInput);
+          const cosData = Array.from(await cosOut.data() as Float32Array);
+          expect(cosData[0]).toBeCloseTo(1.0, 4);
+          expect(cosData[1]).toBeCloseTo(0.0, 4);
+          expect(cosData[2]).toBeCloseTo(-1.0, 4);
+          cosOut.delete();
+          cosModel.delete();
+        });
+      }
+    });
+
+    describe('authored binary math graphs', () => {
+      let a: Tensor;
+      let b: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        a = Tensor.fromTypedArray(
+            new Float32Array([2.0, 3.0, 7.0, -7.0]), [4]);
+        b = Tensor.fromTypedArray(
+            new Float32Array([3.0, 2.0, 3.0, 3.0]), [4]);
+      });
+
+      afterAll(() => {
+        a.delete();
+        b.delete();
+      });
+
+      it('compiles and executes pow on wasm', async () => {
+        const powModel = author(
+            (x: Tensor, y: Tensor) => pow(x, y), {accelerator: 'wasm'});
+        const powOut = await powModel.run(a, b);
+        expect(Array.from(await powOut.data())).toEqual([8, 9, 343, -343]);
+        powOut.delete();
+        powModel.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes minimum on ${accelerator}`, async () => {
+          const minModel = author(
+              (x: Tensor, y: Tensor) => minimum(x, y), {accelerator});
+          const minOut = await minModel.run(a, b);
+          expect(Array.from(await minOut.data())).toEqual([2, 2, 3, -7]);
+          minOut.delete();
+          minModel.delete();
+        });
+
+        it(`compiles and executes maximum on ${accelerator}`, async () => {
+          const maxModel = author(
+              (x: Tensor, y: Tensor) => maximum(x, y), {accelerator});
+          const maxOut = await maxModel.run(a, b);
+          expect(Array.from(await maxOut.data())).toEqual([3, 3, 7, 3]);
+          maxOut.delete();
+          maxModel.delete();
+        });
+
+        it(`compiles and executes floorDiv on ${accelerator}`, async () => {
+          const floorDivModel = author(
+              (x: Tensor, y: Tensor) => floorDiv(x, y), {accelerator});
+          const floorDivOut = await floorDivModel.run(a, b);
+          expect(Array.from(await floorDivOut.data())).toEqual([0, 1, 2, -3]);
+          floorDivOut.delete();
+          floorDivModel.delete();
+        });
+
+        it(`compiles and executes floorMod on ${accelerator}`, async () => {
+          const floorModModel = author(
+              (x: Tensor, y: Tensor) => floorMod(x, y), {accelerator});
+          const floorModOut = await floorModModel.run(a, b);
+          expect(Array.from(await floorModOut.data())).toEqual([2, 1, 1, 2]);
+          floorModOut.delete();
+          floorModModel.delete();
+        });
+      }
+    });
+
+    describe('authored comparison and logic graphs', () => {
+      let a: Tensor;
+      let b: Tensor;
+      let trueVal: Tensor;
+      let falseVal: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        a = Tensor.fromTypedArray(
+            new Float32Array([1.0, 2.0, 5.0, 4.0]), [4]);
+        b = Tensor.fromTypedArray(
+            new Float32Array([1.0, 3.0, 2.0, 4.0]), [4]);
+        trueVal =
+            Tensor.fromTypedArray(new Float32Array([10, 20, 30, 40]), [4]);
+        falseVal =
+            Tensor.fromTypedArray(new Float32Array([-1, -2, -3, -4]), [4]);
+      });
+
+      afterAll(() => {
+        trueVal.delete();
+        falseVal.delete();
+        a.delete();
+        b.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes equal on ${accelerator}`, async () => {
+          const eqModel = author(
+              (x: Tensor, y: Tensor) => equal(x, y), {accelerator});
+          const eqOut = await eqModel.run(a, b);
+          expect(Array.from(await eqOut.data()).map(Number))
+              .toEqual([1, 0, 0, 1]);
+          eqOut.delete();
+          eqModel.delete();
+        });
+
+        it(`compiles and executes notEqual on ${accelerator}`, async () => {
+          const neqModel = author(
+              (x: Tensor, y: Tensor) => notEqual(x, y), {accelerator});
+          const neqOut = await neqModel.run(a, b);
+          expect(Array.from(await neqOut.data()).map(Number))
+              .toEqual([0, 1, 1, 0]);
+          neqOut.delete();
+          neqModel.delete();
+        });
+
+        it(`compiles and executes less on ${accelerator}`, async () => {
+          const ltModel = author(
+              (x: Tensor, y: Tensor) => less(x, y), {accelerator});
+          const ltOut = await ltModel.run(a, b);
+          expect(Array.from(await ltOut.data()).map(Number))
+              .toEqual([0, 1, 0, 0]);
+          ltOut.delete();
+          ltModel.delete();
+        });
+
+        it(`compiles and executes greater on ${accelerator}`, async () => {
+          const gtModel = author(
+              (x: Tensor, y: Tensor) => greater(x, y), {accelerator});
+          const gtOut = await gtModel.run(a, b);
+          expect(Array.from(await gtOut.data()).map(Number))
+              .toEqual([0, 0, 1, 0]);
+          gtOut.delete();
+          gtModel.delete();
+        });
+
+        it(`compiles and executes lessEqual on ${accelerator}`, async () => {
+          const leModel = author(
+              (x: Tensor, y: Tensor) => lessEqual(x, y), {accelerator});
+          const leOut = await leModel.run(a, b);
+          expect(Array.from(await leOut.data()).map(Number))
+              .toEqual([1, 1, 0, 1]);
+          leOut.delete();
+          leModel.delete();
+        });
+
+        it(`compiles and executes greaterEqual on ${accelerator}`, async () => {
+          const geModel = author(
+              (x: Tensor, y: Tensor) => greaterEqual(x, y), {accelerator});
+          const geOut = await geModel.run(a, b);
+          expect(Array.from(await geOut.data()).map(Number))
+              .toEqual([1, 0, 1, 1]);
+          geOut.delete();
+          geModel.delete();
+        });
+
+        it(`compiles and executes logicalAnd on ${accelerator}`, async () => {
+          const andModel = author(
+              (x: Tensor, y: Tensor) => logicalAnd(equal(x, y), greater(x, y)),
+              {accelerator});
+          const andOut = await andModel.run(a, b);
+          expect(Array.from(await andOut.data()).map(Number))
+              .toEqual([0, 0, 0, 0]);
+          andOut.delete();
+          andModel.delete();
+        });
+
+        it(`compiles and executes logicalOr on ${accelerator}`, async () => {
+          const orModel = author(
+              (x: Tensor, y: Tensor) => logicalOr(equal(x, y), greater(x, y)),
+              {accelerator});
+          const orOut = await orModel.run(a, b);
+          expect(Array.from(await orOut.data()).map(Number))
+              .toEqual([1, 0, 1, 1]);
+          orOut.delete();
+          orModel.delete();
+        });
+
+        it(`compiles and executes logicalNot on ${accelerator}`, async () => {
+          const notModel = author(
+              (x: Tensor, y: Tensor) => logicalNot(equal(x, y)),
+              {accelerator});
+          const notOut = await notModel.run(a, b);
+          expect(Array.from(await notOut.data()).map(Number))
+              .toEqual([0, 1, 1, 0]);
+          notOut.delete();
+          notModel.delete();
+        });
+
+        it(`compiles and executes select on ${accelerator}`, async () => {
+          const selModel = author(
+              (x: Tensor, y: Tensor, t: Tensor, f: Tensor) =>
+                  select(equal(x, y), t, f),
+              {accelerator});
+          const selOut = await selModel.run(a, b, trueVal, falseVal);
+          expect(Array.from(await selOut.data())).toEqual([10, -2, -3, 40]);
+          selOut.delete();
+          selModel.delete();
+        });
+      }
+    });
+
+    describe('authored extended activation graphs', () => {
+      let input: Tensor;
+      let lsInput: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        input = Tensor.fromTypedArray(
+            new Float32Array([-3.0, -1.0, 0.0, 2.0, 8.0]), [5]);
+        lsInput =
+            Tensor.fromTypedArray(new Float32Array([1.0, 2.0, 3.0]), [1, 3]);
+      });
+
+      afterAll(() => {
+        lsInput.delete();
+        input.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes relu6 on ${accelerator}`, async () => {
+          const relu6Model =
+              author((x: Tensor) => relu6(x), {accelerator});
+          const relu6Out = await relu6Model.run(input);
+          expect(Array.from(await relu6Out.data())).toEqual([0, 0, 0, 2, 6]);
+          relu6Out.delete();
+          relu6Model.delete();
+        });
+
+        it(`compiles and executes leakyRelu on ${accelerator}`, async () => {
+          const leakyDefaultModel = author(
+              (x: Tensor) => leakyRelu(x), {accelerator});
+          const leakyDefaultOut = await leakyDefaultModel.run(input);
+          const leakyDefaultData =
+              Array.from(await leakyDefaultOut.data() as Float32Array);
+          expect(leakyDefaultData[0]).toBeCloseTo(-0.6, 4);
+          expect(leakyDefaultData[1]).toBeCloseTo(-0.2, 4);
+          expect(leakyDefaultData[2]).toBeCloseTo(0.0, 4);
+          expect(leakyDefaultData[3]).toBeCloseTo(2.0, 4);
+          expect(leakyDefaultData[4]).toBeCloseTo(8.0, 4);
+          leakyDefaultOut.delete();
+          leakyDefaultModel.delete();
+
+          const leakyModel = author(
+              (x: Tensor) => x.leakyRelu(0.1), {accelerator});
+          const leakyOut = await leakyModel.run(input);
+          const leakyData = Array.from(await leakyOut.data() as Float32Array);
+          expect(leakyData[0]).toBeCloseTo(-0.3, 4);
+          expect(leakyData[1]).toBeCloseTo(-0.1, 4);
+          expect(leakyData[2]).toBeCloseTo(0.0, 4);
+          expect(leakyData[3]).toBeCloseTo(2.0, 4);
+          expect(leakyData[4]).toBeCloseTo(8.0, 4);
+          leakyOut.delete();
+          leakyModel.delete();
+        });
+
+        it(`compiles and executes elu on ${accelerator}`, async () => {
+          const eluModel = author((x: Tensor) => elu(x), {accelerator});
+          const eluOut = await eluModel.run(input);
+          const eluData = Array.from(await eluOut.data() as Float32Array);
+          expect(eluData[0]).toBeCloseTo(Math.exp(-3) - 1, 4);
+          expect(eluData[1]).toBeCloseTo(Math.exp(-1) - 1, 4);
+          expect(eluData[2]).toBeCloseTo(0.0, 4);
+          expect(eluData[3]).toBeCloseTo(2.0, 4);
+          expect(eluData[4]).toBeCloseTo(8.0, 4);
+          eluOut.delete();
+          eluModel.delete();
+        });
+
+        it(`compiles and executes hardSwish on ${accelerator}`, async () => {
+          const hsModel =
+              author((x: Tensor) => hardSwish(x), {accelerator});
+          const hsOut = await hsModel.run(input);
+          const hsData = Array.from(await hsOut.data() as Float32Array);
+          expect(hsData[0]).toBeCloseTo(0.0, 4);
+          expect(hsData[1]).toBeCloseTo(-1 / 3, 4);
+          expect(hsData[2]).toBeCloseTo(0.0, 4);
+          expect(hsData[3]).toBeCloseTo(5 / 3, 4);
+          expect(hsData[4]).toBeCloseTo(8.0, 4);
+          hsOut.delete();
+          hsModel.delete();
+        });
+
+        it(`compiles and executes logSoftmax on ${accelerator}`, async () => {
+          const lsModel =
+              author((x: Tensor) => logSoftmax(x), {accelerator});
+          const lsOut = await lsModel.run(lsInput);
+          const lsData = Array.from(await lsOut.data() as Float32Array);
+          const sumExp = Math.exp(1) + Math.exp(2) + Math.exp(3);
+          expect(lsData[0]).toBeCloseTo(1.0 - Math.log(sumExp), 4);
+          expect(lsData[1]).toBeCloseTo(2.0 - Math.log(sumExp), 4);
+          expect(lsData[2]).toBeCloseTo(3.0 - Math.log(sumExp), 4);
+          lsOut.delete();
+          lsModel.delete();
+        });
+      }
+    });
+
+    describe('authored dimension alignment and partitioning graphs', () => {
+      let mat: Tensor;
+      let sqInput: Tensor;
+      let tileInput: Tensor;
+      let t1: Tensor;
+      let t2: Tensor;
+      let splitInput: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        mat = Tensor.fromTypedArray(
+            new Float32Array([1, 2, 3, 4, 5, 6]), [2, 3]);
+        sqInput = Tensor.fromTypedArray(
+            new Float32Array([1, 2, 3, 4, 5, 6]), [2, 1, 3]);
+        tileInput =
+            Tensor.fromTypedArray(new Float32Array([1, 2, 3, 4]), [2, 2]);
+        t1 = Tensor.fromTypedArray(new Float32Array([1, 2]), [2]);
+        t2 = Tensor.fromTypedArray(new Float32Array([3, 4]), [2]);
+        splitInput =
+            Tensor.fromTypedArray(new Float32Array([10, 20, 30, 40]), [4]);
+      });
+
+      afterAll(() => {
+        sqInput.delete();
+        tileInput.delete();
+        splitInput.delete();
+        t1.delete();
+        t2.delete();
+        mat.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes expandDims on ${accelerator}`, async () => {
+          const expModel = author(
+              (x: Tensor) => expandDims(x, 1), {accelerator});
+          const expOut = await expModel.run(mat);
+          expect(expOut.shape).toEqual([2, 1, 3]);
+          expect(Array.from(await expOut.data())).toEqual([1, 2, 3, 4, 5, 6]);
+          expOut.delete();
+          expModel.delete();
+        });
+
+        it(`compiles and executes squeeze on ${accelerator}`, async () => {
+          const sqModel = author(
+              (x: Tensor) => squeeze(x, [1]), {accelerator});
+          const sqOut = await sqModel.run(sqInput);
+          expect(sqOut.shape).toEqual([2, 3]);
+          expect(Array.from(await sqOut.data())).toEqual([1, 2, 3, 4, 5, 6]);
+          sqOut.delete();
+          sqModel.delete();
+        });
+
+        it(`compiles and executes tile on ${accelerator}`, async () => {
+          const tileModel = author(
+              (x: Tensor) => tile(x, [1, 2]), {accelerator});
+          const tileOut = await tileModel.run(tileInput);
+          expect(tileOut.shape).toEqual([2, 4]);
+          expect(Array.from(await tileOut.data()))
+              .toEqual([1, 2, 1, 2, 3, 4, 3, 4]);
+          tileOut.delete();
+          tileModel.delete();
+        });
+
+        it(`compiles and executes pack on ${accelerator}`, async () => {
+          const packModel = author(
+              (a: Tensor, b: Tensor) => pack([a, b], 0), {accelerator});
+          const packOut = await packModel.run(t1, t2);
+          expect(packOut.shape).toEqual([2, 2]);
+          expect(Array.from(await packOut.data())).toEqual([1, 2, 3, 4]);
+          packOut.delete();
+          packModel.delete();
+
+          const packNegAxisModel = author(
+              (a: Tensor, b: Tensor) => pack([a, b], -1), {accelerator});
+          const packNegAxisOut = await packNegAxisModel.run(t1, t2);
+          expect(packNegAxisOut.shape).toEqual([2, 2]);
+          expect(Array.from(await packNegAxisOut.data()))
+              .toEqual([1, 3, 2, 4]);
+          packNegAxisOut.delete();
+          packNegAxisModel.delete();
+        });
+
+        it(`compiles and executes unpack on ${accelerator}`, async () => {
+          const unpackModel = author(
+              (x: Tensor) => unpack(x, 2, 0), {accelerator});
+          const unpackOuts = await unpackModel.run(mat);
+          expect(Array.isArray(unpackOuts)).toBeTrue();
+          expect(unpackOuts.length).toBe(2);
+          expect(unpackOuts[0].shape).toEqual([3]);
+          expect(Array.from(await unpackOuts[0].data())).toEqual([1, 2, 3]);
+          expect(unpackOuts[1].shape).toEqual([3]);
+          expect(Array.from(await unpackOuts[1].data())).toEqual([4, 5, 6]);
+          unpackOuts[0].delete();
+          unpackOuts[1].delete();
+          unpackModel.delete();
+
+          const unpackNegAxisModel = author(
+              (x: Tensor) => unpack(x, 3, -1), {accelerator});
+          const unpackNegAxisOuts = await unpackNegAxisModel.run(mat);
+          expect(unpackNegAxisOuts.length).toBe(3);
+          expect(unpackNegAxisOuts[0].shape).toEqual([2]);
+          expect(Array.from(await unpackNegAxisOuts[0].data()))
+              .toEqual([1, 4]);
+          expect(Array.from(await unpackNegAxisOuts[1].data()))
+              .toEqual([2, 5]);
+          expect(Array.from(await unpackNegAxisOuts[2].data()))
+              .toEqual([3, 6]);
+          unpackNegAxisOuts[0].delete();
+          unpackNegAxisOuts[1].delete();
+          unpackNegAxisOuts[2].delete();
+          unpackNegAxisModel.delete();
+        });
+
+        it(`compiles and executes split on ${accelerator}`, async () => {
+          const splitModel = author(
+              (x: Tensor) => split(x, 2, 0), {accelerator});
+          const splitOuts = await splitModel.run(splitInput);
+          expect(Array.isArray(splitOuts)).toBeTrue();
+          expect(splitOuts.length).toBe(2);
+          expect(splitOuts[0].shape).toEqual([2]);
+          expect(Array.from(await splitOuts[0].data())).toEqual([10, 20]);
+          expect(splitOuts[1].shape).toEqual([2]);
+          expect(Array.from(await splitOuts[1].data())).toEqual([30, 40]);
+          splitOuts[0].delete();
+          splitOuts[1].delete();
+          splitModel.delete();
+        });
+      }
+    });
+
+    describe('authored extrema and index reduction graphs', () => {
+      let mat: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        mat = Tensor.fromTypedArray(
+            new Float32Array([1.0, 5.0, 2.0, 4.0, 3.0, 6.0]), [2, 3]);
+      });
+
+      afterAll(() => {
+        mat.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes reduceMax on ${accelerator}`, async () => {
+          const rmaxModel = author(
+              (x: Tensor) => reduceMax(x, 1), {accelerator});
+          const rmaxOut = await rmaxModel.run(mat);
+          expect(rmaxOut.shape).toEqual([2]);
+          expect(Array.from(await rmaxOut.data())).toEqual([5.0, 6.0]);
+          rmaxOut.delete();
+          rmaxModel.delete();
+
+          const rmaxKdModel = author(
+              (x: Tensor) => x.reduceMax(0, true), {accelerator});
+          const rmaxKdOut = await rmaxKdModel.run(mat);
+          expect(rmaxKdOut.shape).toEqual([1, 3]);
+          expect(Array.from(await rmaxKdOut.data())).toEqual([4.0, 5.0, 6.0]);
+          rmaxKdOut.delete();
+          rmaxKdModel.delete();
+
+          const rmaxAllModel = author(
+              (x: Tensor) => reduceMax(x), {accelerator});
+          const rmaxAllOut = await rmaxAllModel.run(mat);
+          expect(Array.from(await rmaxAllOut.data())).toEqual([6]);
+          rmaxAllOut.delete();
+          rmaxAllModel.delete();
+        });
+
+        it(`compiles and executes argMax on ${accelerator}`, async () => {
+          const argmaxModel = author(
+              (x: Tensor) => argMax(x, 1), {accelerator});
+          const argmaxOut = await argmaxModel.run(mat);
+          expect(argmaxOut.shape).toEqual([2]);
+          expect(Array.from(await argmaxOut.data()).map(Number))
+              .toEqual([1, 2]);
+          argmaxOut.delete();
+          argmaxModel.delete();
+
+          const argmax0Model = author(
+              (x: Tensor) => x.argMax(0), {accelerator});
+          const argmax0Out = await argmax0Model.run(mat);
+          expect(argmax0Out.shape).toEqual([3]);
+          expect(Array.from(await argmax0Out.data()).map(Number))
+              .toEqual([1, 0, 1]);
+          argmax0Out.delete();
+          argmax0Model.delete();
+        });
+      }
+
+      it('compiles and executes argMax with outputType int64 on wasm',
+         async () => {
+           const amax64Model = author(
+               (x: Tensor) => argMax(x, 1, 'int64'), {accelerator: 'wasm'});
+           const amax64Out = await amax64Model.run(mat);
+           expect(Array.from(await amax64Out.data() as BigInt64Array))
+               .toEqual([1n, 2n]);
+           amax64Out.delete();
+           amax64Model.delete();
+         });
+    });
+
+    describe('authored spatial resizing and pooling graphs', () => {
+      let img: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        img = Tensor.fromTypedArray(
+            new Float32Array([1.0, 2.0, 3.0, 4.0]), [1, 2, 2, 1]);
+      });
+
+      afterAll(() => {
+        img.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes resizeBilinear on ${accelerator}`,
+           async () => {
+          const bilModel = author(
+              (x: Tensor) => resizeBilinear(x, [4, 4]), {accelerator});
+          const bilOut = await bilModel.run(img);
+          expect(bilOut.shape).toEqual([1, 4, 4, 1]);
+          expect(Array.from(await bilOut.data())).toEqual([
+            1, 1.5, 2, 2, 2, 2.5, 3, 3, 3, 3.5, 4, 4, 3, 3.5, 4, 4,
+          ]);
+          bilOut.delete();
+          bilModel.delete();
+        });
+
+        it(`compiles and executes resizeNearestNeighbor on ${accelerator}`,
+           async () => {
+          const nnModel = author(
+              (x: Tensor) => resizeNearestNeighbor(x, [4, 4]), {accelerator});
+          const nnOut = await nnModel.run(img);
+          expect(nnOut.shape).toEqual([1, 4, 4, 1]);
+          expect(Array.from(await nnOut.data())).toEqual([
+            1, 1, 2, 2, 1, 1, 2, 2, 3, 3, 4, 4, 3, 3, 4, 4,
+          ]);
+          nnOut.delete();
+          nnModel.delete();
+        });
+
+        it(`compiles and executes maxPool2d on ${accelerator}`, async () => {
+          const maxPoolModel = author(
+              (x: Tensor) => maxPool2d(
+                  x, {filterSize: [2, 2], strides: [2, 2], padding: 'VALID'}),
+              {accelerator});
+          const maxPoolOut = await maxPoolModel.run(img);
+          expect(maxPoolOut.shape).toEqual([1, 1, 1, 1]);
+          expect(Array.from(await maxPoolOut.data())).toEqual([4.0]);
+          maxPoolOut.delete();
+          maxPoolModel.delete();
+        });
+
+        it(`compiles and executes avgPool2d on ${accelerator}`, async () => {
+          const avgPoolModel = author(
+              (x: Tensor) => avgPool2d(
+                  x, {filterSize: [2, 2], strides: [2, 2], padding: 'VALID'}),
+              {accelerator});
+          const avgPoolOut = await avgPoolModel.run(img);
+          expect(avgPoolOut.shape).toEqual([1, 1, 1, 1]);
+          expect(Array.from(await avgPoolOut.data())).toEqual([2.5]);
+          avgPoolOut.delete();
+          avgPoolModel.delete();
+        });
+      }
+    });
+
+    describe('authored transposeConv2d graphs', () => {
+      let inputTensor: Tensor;
+      let filterTensor: Tensor;
+      let biasTensor: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        inputTensor =
+            Tensor.fromTypedArray(new Float32Array([2.0]), [1, 1, 1, 1]);
+        filterTensor = Tensor.fromTypedArray(
+            new Float32Array([1.0, 1.0, 1.0, 1.0]), [1, 2, 2, 1]);
+        biasTensor = Tensor.fromTypedArray(new Float32Array([1.0]), [1]);
+      });
+
+      afterAll(() => {
+        inputTensor.delete();
+        filterTensor.delete();
+        biasTensor.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(
+            `compiles and executes transposeConv2d with bias on ${accelerator}`,
+            async () => {
+              const tconvModel = author(
+                  (x: Tensor, f: Tensor, b: Tensor) =>
+                      x.transposeConv2d(
+                          f, [1, 2, 2, 1],
+                          {strides: 2, padding: 'SAME', bias: b}),
+                  {accelerator});
+              const tconvOut =
+                  await tconvModel.run(inputTensor, filterTensor, biasTensor);
+              expect(tconvOut.shape).toEqual([1, 2, 2, 1]);
+              expect(Array.from(await tconvOut.data()))
+                  .toEqual([3.0, 3.0, 3.0, 3.0]);
+              tconvOut.delete();
+              tconvModel.delete();
+            });
+
+        it(
+            `compiles and executes transposeConv2d without bias on ` +
+                `${accelerator}`,
+            async () => {
+              const tconvNoBiasModel = author(
+                  (x: Tensor, f: Tensor) =>
+                      transposeConv2d(
+                          x, f, [1, 2, 2, 1], {strides: 2, padding: 'SAME'}),
+                  {accelerator});
+              const tconvNoBiasOut =
+                  await tconvNoBiasModel.run(inputTensor, filterTensor);
+              expect(tconvNoBiasOut.shape).toEqual([1, 2, 2, 1]);
+              expect(Array.from(await tconvNoBiasOut.data()))
+                  .toEqual([2.0, 2.0, 2.0, 2.0]);
+              tconvNoBiasOut.delete();
+              tconvNoBiasModel.delete();
+            });
+      }
+    });
+
+    describe('authored indexing and gathering graphs', () => {
+      let params: Tensor;
+      let indices: Tensor;
+      let mat: Tensor;
+      let ndIndices: Tensor;
+      let catIndices: Tensor;
+      let weights: Tensor;
+      let lookupIds: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        params = Tensor.fromTypedArray(
+            new Float32Array([10.0, 20.0, 30.0, 40.0]), [4]);
+        indices = Tensor.fromTypedArray(new Int32Array([1, 3]), [2]);
+        mat = Tensor.fromTypedArray(
+            new Float32Array([1.0, 2.0, 3.0, 4.0]), [2, 2]);
+        ndIndices =
+            Tensor.fromTypedArray(new Int32Array([0, 1, 1, 0]), [2, 2]);
+        catIndices =
+            Tensor.fromTypedArray(new Int32Array([0, 1, 2]), [3]);
+        weights = Tensor.fromTypedArray(
+            new Float32Array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]), [3, 2]);
+        lookupIds = Tensor.fromTypedArray(new Int32Array([2, 0]), [2]);
+      });
+
+      afterAll(() => {
+        params.delete();
+        indices.delete();
+        mat.delete();
+        ndIndices.delete();
+        catIndices.delete();
+        weights.delete();
+        lookupIds.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes gather on ${accelerator}`, async () => {
+          const gatherModel = author(
+              (p: Tensor, idx: Tensor) => gather(p, idx, 0),
+              {accelerator});
+          const gatherOut = await gatherModel.run(params, indices);
+          expect(gatherOut.shape).toEqual([2]);
+          expect(Array.from(await gatherOut.data())).toEqual([20.0, 40.0]);
+          gatherOut.delete();
+          gatherModel.delete();
+        });
+
+        it(`compiles and executes gatherNd on ${accelerator}`, async () => {
+          const gatherNdModel = author(
+              (m: Tensor, idx: Tensor) => gatherNd(m, idx),
+              {accelerator});
+          const gatherNdOut = await gatherNdModel.run(mat, ndIndices);
+          expect(gatherNdOut.shape).toEqual([2]);
+          expect(Array.from(await gatherNdOut.data())).toEqual([2.0, 3.0]);
+          gatherNdOut.delete();
+          gatherNdModel.delete();
+        });
+
+        it(`compiles and executes oneHot on ${accelerator}`, async () => {
+          const oneHotModel = author(
+              (idx: Tensor) => oneHot(idx, 3), {accelerator});
+          const oneHotOut = await oneHotModel.run(catIndices);
+          expect(oneHotOut.shape).toEqual([3, 3]);
+          expect(Array.from(await oneHotOut.data()))
+              .toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+          oneHotOut.delete();
+          oneHotModel.delete();
+        });
+      }
+
+      it('compiles and executes embeddingLookup on wasm', async () => {
+        const embModel = author(
+            (w: Tensor, ids: Tensor) => embeddingLookup(w, ids),
+            {accelerator: 'wasm'});
+        const embOut = await embModel.run(weights, lookupIds);
+        expect(embOut.shape).toEqual([2, 2]);
+        expect(Array.from(await embOut.data()))
+            .toEqual([5.0, 6.0, 1.0, 2.0]);
+        embOut.delete();
+        embModel.delete();
+      });
+    });
+
+    describe('authored ranking and detection post-processing graphs', () => {
+      let mat: Tensor;
+      let boxes: Tensor;
+      let scores: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        mat = Tensor.fromTypedArray(
+            new Float32Array([10, 50, 20, 40, 15, 35, 65, 25]), [2, 4]);
+        boxes = Tensor.fromTypedArray(
+            new Float32Array([0, 0, 1, 1, 0, 0, 1, 1]), [2, 4]);
+        scores =
+            Tensor.fromTypedArray(new Float32Array([0.9, 0.75]), [2]);
+      });
+
+      afterAll(() => {
+        mat.delete();
+        boxes.delete();
+        scores.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes topK on ${accelerator}`, async () => {
+          const topkModel = author(
+              (x: Tensor) => topK(x, 2), {accelerator});
+          const topkOut = await topkModel.run(mat);
+          expect(topkOut.values.shape).toEqual([2, 2]);
+          expect(topkOut.indices.shape).toEqual([2, 2]);
+          expect(Array.from(await topkOut.values.data()))
+              .toEqual([50, 40, 65, 35]);
+          expect(Array.from(await topkOut.indices.data()).map(Number))
+              .toEqual([1, 3, 2, 1]);
+          topkOut.values.delete();
+          topkOut.indices.delete();
+          topkModel.delete();
+        });
+
+        it(`compiles and executes nonMaxSuppression on ${accelerator}`,
+           async () => {
+             const nmsModel = author(
+                 (b: Tensor, s: Tensor) =>
+                     nonMaxSuppression(b, s, 2, {iouThreshold: 0.5}),
+                 {accelerator});
+             const nmsOut = await nmsModel.run(boxes, scores);
+             expect(Array.from(await nmsOut.validOutputs.data()).map(Number))
+                 .toEqual([1]);
+             const indicesData =
+                 Array.from(await nmsOut.selectedIndices.data()).map(Number);
+             expect(indicesData[0]).toBe(0);
+
+             nmsOut.selectedIndices.delete();
+             nmsOut.selectedScores.delete();
+             nmsOut.validOutputs.delete();
+             nmsModel.delete();
+           });
+      }
+    });
+
+    describe('authored cumulative, spatial layout, and sequence ops', () => {
+      let vec: Tensor;
+      let img: Tensor;
+      let actIn: Tensor;
+      let alpha: Tensor;
+      let update: Tensor;
+      let s2dIn: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        vec = Tensor.fromTypedArray(new Float32Array([1, 2, 3, 4]), [4]);
+        img = Tensor.fromTypedArray(
+            new Float32Array([1, 2, 3, 4]), [1, 2, 2, 1]);
+        actIn = Tensor.fromTypedArray(new Float32Array([-2.0, 3.0]), [2]);
+        alpha = Tensor.fromTypedArray(new Float32Array([0.5, 0.5]), [2]);
+        update = Tensor.fromTypedArray(new Float32Array([9.0, 8.0]), [2]);
+        s2dIn = Tensor.fromTypedArray(
+            new Float32Array([1, 2, 3, 4]), [1, 1, 1, 4]);
+      });
+
+      afterAll(() => {
+        img.delete();
+        actIn.delete();
+        alpha.delete();
+        update.delete();
+        s2dIn.delete();
+        vec.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`compiles and executes cumsum on ${accelerator}`, async () => {
+          if (accelerator === 'webgpu') {
+            pending('cumsum does not work on WebGPU yet');
+            return;
+          }
+          const csModel = author(
+              (x: Tensor) => cumsum(x, 0), {accelerator});
+          const csOut = await csModel.run(vec);
+          expect(csOut.shape).toEqual([4]);
+          expect(Array.from(await csOut.data())).toEqual([1, 3, 6, 10]);
+          csOut.delete();
+          csModel.delete();
+        });
+
+        it(`compiles and executes reverse on ${accelerator}`, async () => {
+          const revModel = author(
+              (x: Tensor) => reverse(x, 0), {accelerator});
+          const revOut = await revModel.run(vec);
+          expect(revOut.shape).toEqual([4]);
+          expect(Array.from(await revOut.data())).toEqual([4, 3, 2, 1]);
+          revOut.delete();
+          revModel.delete();
+        });
+
+        it(`compiles and executes spaceToDepth on ${accelerator}`, async () => {
+          const s2dModel = author(
+              (x: Tensor) => spaceToDepth(x, 2), {accelerator});
+          const s2dOut = await s2dModel.run(img);
+          expect(s2dOut.shape).toEqual([1, 1, 1, 4]);
+          s2dOut.delete();
+          s2dModel.delete();
+        });
+
+        it(`compiles and executes depthToSpace on ${accelerator}`, async () => {
+          const d2sModel = author(
+              (x: Tensor) => depthToSpace(x, 2), {accelerator});
+          const d2sOut = await d2sModel.run(s2dIn);
+          expect(d2sOut.shape).toEqual([1, 2, 2, 1]);
+          expect(Array.from(await d2sOut.data())).toEqual([1, 2, 3, 4]);
+          d2sOut.delete();
+          d2sModel.delete();
+        });
+
+        it(`compiles and executes pRelu on ${accelerator}`, async () => {
+          const preluModel = author(
+              (x: Tensor, a: Tensor) => x.pRelu(a), {accelerator});
+          const preluOut = await preluModel.run(actIn, alpha);
+          expect(Array.from(await preluOut.data())).toEqual([-1.0, 3.0]);
+          preluOut.delete();
+          preluModel.delete();
+        });
+
+        it(`compiles and executes dynamicUpdateSlice on ${accelerator}`,
+           async () => {
+          const dusModel = author(
+              (op: Tensor, up: Tensor) => op.dynamicUpdateSlice(up, [1]),
+              {accelerator});
+          const dusOut = await dusModel.run(vec, update);
+          expect(dusOut.shape).toEqual([4]);
+          expect(Array.from(await dusOut.data())).toEqual([1.0, 9.0, 8.0, 4.0]);
+          dusOut.delete();
+          dusModel.delete();
+        });
+      }
+    });
 
     it('can copy to a different environment', async () => {
       await resetLiteRt(true, {threads: false});

@@ -15,10 +15,12 @@
 #ifndef ODML_LITERT_LITERT_CORE_MODEL_OPS_EXPAND_DIMS_H_
 #define ODML_LITERT_LITERT_CORE_MODEL_OPS_EXPAND_DIMS_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "litert/c/litert_common.h"
 #include "litert/core/model/shape_inference_types.h"
 
@@ -33,16 +35,15 @@ inline LiteRtStatus InferExpandDims(const ShapeInferenceContext& ctx,
   Dims input_shape = ctx.GetInputShape(0);
   auto axis_buf = ctx.GetInputData(1);
 
-  if (axis_buf.empty()) {
+  if (axis_buf.size() < sizeof(int32_t)) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
   int32_t axis = *reinterpret_cast<const int32_t*>(axis_buf.data());
-  if (axis < 0) {
-    axis += input_shape.size() + 1;
-  }
-
-  if (axis < 0 || axis > (int)input_shape.size()) {
+  size_t rank_plus_one = 0;
+  if ((axis < 0 && (!SafeAdd(input_shape.size(), size_t{1}, rank_plus_one) ||
+                    !SafeAdd(axis, rank_plus_one, axis))) ||
+      axis < 0 || static_cast<size_t>(axis) > input_shape.size()) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 

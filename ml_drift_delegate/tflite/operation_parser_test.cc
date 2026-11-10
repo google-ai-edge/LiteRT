@@ -305,7 +305,7 @@ TEST(OperationParserTest, PreCheckCopyDataFloatSrc) {
 TEST(OperationParserTest, PreCheckTensorToTensorWrongShape) {
   float data = 0.0f;
   SimpleConstTensor src(kTfLiteFloat32, {1}, absl::MakeSpan(&data, 1));
-  ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::FLOAT32> dst;
+  ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32> dst;
   EXPECT_THAT(PreCheckTensorToTensor(&src, &dst), Not(IsOk()));
 }
 
@@ -384,7 +384,7 @@ TEST(OperationParserTest, PreCheckMaybeFuseActivationForElementwiseNode) {
     TfLiteNode node;
     node.builtin_data = nullptr;
     EXPECT_OK(PreCheckMaybeFuseActivationForElementwiseNode(
-        ::ml_drift::OperationType::ADD, &node));
+        ::ml_drift::OperationType::kAdd, &node));
   }
   {  // Fails with more than one output.
     TfLiteNode node;
@@ -393,7 +393,7 @@ TEST(OperationParserTest, PreCheckMaybeFuseActivationForElementwiseNode) {
     node.builtin_data = &params;
     node.outputs = TfLiteIntArrayCreate(2);
     EXPECT_THAT(PreCheckMaybeFuseActivationForElementwiseNode(
-                    ::ml_drift::OperationType::ADD, &node),
+                    ::ml_drift::OperationType::kAdd, &node),
                 Not(IsOk()));
     TfLiteIntArrayFree(node.outputs);
   }
@@ -404,7 +404,7 @@ TEST(OperationParserTest, PreCheckMaybeFuseActivationForElementwiseNode) {
     node.builtin_data = &params;
     node.outputs = TfLiteIntArrayCreate(1);
     EXPECT_OK(PreCheckMaybeFuseActivationForElementwiseNode(
-        ::ml_drift::OperationType::ADD, &node));
+        ::ml_drift::OperationType::kAdd, &node));
     TfLiteIntArrayFree(node.outputs);
   }
 }

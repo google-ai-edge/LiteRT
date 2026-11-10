@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -36,7 +37,9 @@ inline LiteRtStatus InferBroadcastTo(const LiteRtOpT& op,
   constexpr size_t kShapeTensorIndex = 1;
   constexpr size_t kShapeTensorSize = sizeof(int32_t);
 
-  if (input_shapes.size() < kBroadcastToMinArgs) {
+  if (input_shapes.size() < kBroadcastToMinArgs ||
+      op.Inputs().size() < kBroadcastToMinArgs ||
+      op.Inputs()[kShapeTensorIndex] == nullptr) {
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
   if (output_shapes.size() != 1) {
@@ -62,7 +65,10 @@ inline LiteRtStatus InferBroadcastTo(const LiteRtOpT& op,
       for (int i = 0; i < rank; ++i) {
         int64_t val;
         std::memcpy(&val, buf.Data() + i * sizeof(int64_t), sizeof(int64_t));
-        out_shape.push_back(val);
+        if (val < -1 || val > std::numeric_limits<int32_t>::max()) {
+          return kLiteRtStatusErrorShapeInferenceFailed;
+        }
+        out_shape.push_back(static_cast<int32_t>(val));
       }
     } else if (element_type == kLiteRtElementTypeInt32 &&
                buf.Size() % sizeof(int32_t) == 0) {
@@ -70,6 +76,9 @@ inline LiteRtStatus InferBroadcastTo(const LiteRtOpT& op,
       for (int i = 0; i < rank; ++i) {
         int32_t val;
         std::memcpy(&val, buf.Data() + i * sizeof(int32_t), sizeof(int32_t));
+        if (val < -1) {
+          return kLiteRtStatusErrorShapeInferenceFailed;
+        }
         out_shape.push_back(val);
       }
     } else {

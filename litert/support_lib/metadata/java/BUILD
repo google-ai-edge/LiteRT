@@ -14,6 +14,15 @@ METADATA_SRCS = glob(
     ["com/google/ai/edge/litert/support/metadata/**/*.java"],
 )
 
+# Pin the released Maven artifact to Java 17 bytecode (class file major 61),
+# matching the "litert-support-api" AAR.
+# See //litert/support_lib/BUILD for why "-source 17 -target 17"
+# is used instead of "--release 17".
+JAVACOPTS = select({
+    "//litert/support_lib:public_maven_build": ["-source 17 -target 17"],
+    "//conditions:default": [],
+})
+
 android_library(
     name = "litert_metadata",
     srcs = METADATA_SRCS,
@@ -29,6 +38,29 @@ android_library(
 alias(
     name = "litert-metadata",
     actual = ":litert_metadata",
+)
+
+# The target backing the "litert-metadata" Maven AAR, which includes the
+# metadata Android library, the metadata schema Java binding, and the TFLite
+# schema Java binding.
+#
+# The bindings have to be compiled in, rather than pulled in through "deps":
+# "aar_without_jni" packages only the given library's own .jar, and the
+# generated bindings aren't published as Maven artifacts.
+android_library(
+    name = "litert-metadata-android-lib",
+    srcs = METADATA_SRCS + [
+        "//litert/support_lib/metadata:metadata_schema_fbs_android_srcjar",
+        "//litert/support_lib/metadata/schema:schema_fbs_android_srcjar",
+    ],
+    javacopts = JAVACOPTS,
+    manifest = "AndroidManifest.xml",
+    deps = [
+        # Need to be consistent as the deps used in flatbuffer_android_library.
+        "@flatbuffers//:runtime_android",
+        "@org_checkerframework_qual",
+        "@litert_maven//:com_google_errorprone_error_prone_annotations",
+    ],
 )
 
 java_library(
@@ -52,12 +84,10 @@ java_library(
         "//litert/support_lib/metadata/schema:schema_fbs_java_srcjar",
     ],
     javacopts = ["--release 8"],
-    # LINT.IfChange(dep)
     deps = [
         # Need to be consistent as the deps used in flatbuffer_java_library.
         "@flatbuffers//:runtime_java",
         "@org_checkerframework_qual",
         "@litert_maven//:com_google_errorprone_error_prone_annotations",
     ],
-    # LINT.ThenChange(//ci/build_android_package.sh)
 )

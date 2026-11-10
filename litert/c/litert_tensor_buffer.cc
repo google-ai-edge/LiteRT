@@ -189,6 +189,22 @@ LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 }
 
+LiteRtStatus LiteRtCreateTensorBufferFromCustomHandle(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, HwMemoryHandle handle,
+    size_t buffer_size, LiteRtTensorBuffer* buffer) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT TensorBuffer Allocation");
+  if (!tensor_type || !buffer) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto created_tensor_buffer,
+      LiteRtTensorBufferT::CreateFromCustomHandle(
+          env, *tensor_type, buffer_type, handle, buffer_size));
+  *buffer = created_tensor_buffer.release();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
                                                LiteRtClMem* cl_mem_addr) {
 #if LITERT_HAS_OPENCL_SUPPORT

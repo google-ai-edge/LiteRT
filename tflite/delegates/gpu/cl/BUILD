@@ -14,13 +14,14 @@
 # ==============================================================================
 
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
-load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_google", "workspace_root")
+load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_google")
 load(
     "@org_tensorflow//tensorflow/core/platform:build_config_root.bzl",
     "tf_gpu_tests_tags",
 )
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//tflite:build_def.bzl", "workspace_root")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],

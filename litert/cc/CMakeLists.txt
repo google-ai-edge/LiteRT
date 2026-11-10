@@ -44,7 +44,7 @@ set(LITERT_CC_PUBLIC_HEADERS
     litert_tensor_buffer_types.h
     litert_tensor_buffer.h
     options/litert_aml_options.h
-    options/litert_arm_options.h
+    options/litert_arm_vulkan_ml_options.h
     options/litert_compiler_options.h
     options/litert_concrete_options_base.h
     options/litert_cpu_options.h
@@ -126,7 +126,6 @@ target_include_directories(litert_cc_api
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -159,7 +158,6 @@ set(_LITERT_CC_API_HEADER_INCLUDE_DIRS
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
     $<BUILD_INTERFACE:${LITERT_GENERATED_INCLUDE_DIR}>
-    $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
     $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/opencl_headers>
 )
@@ -199,11 +197,43 @@ target_compile_definitions(litert_cc_api_no_absl_headers
 
 target_compile_features(litert_cc_api_no_absl_headers INTERFACE cxx_std_20)
 
+# C helpers that the C++ API calls but libLiteRt.so doesn't export (logging,
+# status string, API version and layout). See
+# litert/build_common/export_litert_runtime_cmake_linux.lds. As in the Bazel
+# and cc_sdk builds, consumers of the dynamic runtime link these statically.
+#
+# Keep this library Abseil-free at link time: it's also used by the no-Abseil
+# C++ API. Abseil headers are only needed to compile litert_logging.cc, which
+# uses absl::string_view (an alias of std::string_view).
+add_library(litert_c_api_dynamic_runtime_helpers STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../c/litert_common.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/../c/litert_layout.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/../c/internal/litert_logging.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/../c/internal/litert_runtime_builtin.cc
+)
+
+set_target_properties(litert_c_api_dynamic_runtime_helpers PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)
+
+target_include_directories(litert_c_api_dynamic_runtime_helpers
+    PRIVATE
+        ${_LITERT_CC_API_HEADER_INCLUDE_DIRS}
+        $<TARGET_PROPERTY:absl::strings,INTERFACE_INCLUDE_DIRECTORIES>
+)
+
+target_compile_features(litert_c_api_dynamic_runtime_helpers PRIVATE cxx_std_20)
+
+if(LITERT_PLATFORM_ANDROID)
+    target_link_libraries(litert_c_api_dynamic_runtime_helpers PUBLIC ${LOG_LIB})
+endif()
+
 add_library(litert_cc_api_with_dynamic_runtime INTERFACE)
 
 target_link_libraries(litert_cc_api_with_dynamic_runtime
     INTERFACE
         litert_cc_api_headers
+        litert_c_api_dynamic_runtime_helpers
         litert_runtime_c_api_shared_lib
 )
 
@@ -212,6 +242,7 @@ add_library(litert_cc_api_no_absl_with_dynamic_runtime INTERFACE)
 target_link_libraries(litert_cc_api_no_absl_with_dynamic_runtime
     INTERFACE
         litert_cc_api_no_absl_headers
+        litert_c_api_dynamic_runtime_helpers
         litert_runtime_c_api_shared_lib
 )
 

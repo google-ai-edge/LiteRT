@@ -154,6 +154,74 @@ TEST(LiteRtQualcommOptionsTest, UseFoldReLU) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, OpNameFormat) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetOpNameFormat(
+      qualcomm_options, kLiteRtQualcommOpNameFormatBasic));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetOpNameFormat(),
+            litert::qualcomm::QualcommOptions::OpNameFormat::kBasic);
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetOpNameFormat(
+      qualcomm_options, kLiteRtQualcommOpNameFormatDetailed));
+
+  auto parsed_detailed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed_detailed.GetOpNameFormat(),
+            litert::qualcomm::QualcommOptions::OpNameFormat::kDetailed);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, HtpWeightSharingChannelTileSize) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  std::int32_t default_value;
+  LITERT_ASSERT_OK(LrtQualcommOptionsGetHtpWeightSharingChannelTileSize(
+      qualcomm_options, &default_value));
+  EXPECT_EQ(default_value, 0);
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetHtpWeightSharingChannelTileSize(
+      qualcomm_options, 64));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetHtpWeightSharingChannelTileSize(), 64);
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetHtpWeightSharingChannelTileSize(
+      qualcomm_options, 0));
+  auto parsed_zero = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed_zero.GetHtpWeightSharingChannelTileSize(), 0);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, HtpDlbc) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetHtpDlbc(qualcomm_options, true));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_TRUE(parsed.GetHtpDlbc());
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, HtpDlbcWeights) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetHtpDlbcWeights(qualcomm_options, true));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_TRUE(parsed.GetHtpDlbcWeights());
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, HtpPerformanceMode) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -327,6 +395,37 @@ TEST(LiteRtQualcommOptionsTest, VtcmSize) {
 
   auto parsed = SerializeAndParse(qualcomm_options);
   EXPECT_EQ(parsed.GetVtcmSize(), 4);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, HtpDeviceId) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetHtpDeviceId(qualcomm_options, 1));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetHtpDeviceId(), 1);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, HtpFileReadMemoryBudgetMB) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  // Default is 0 (feature disabled).
+  std::uint32_t default_budget = 123;
+  LITERT_ASSERT_OK(LrtQualcommOptionsGetHtpFileReadMemoryBudgetMB(
+      qualcomm_options, &default_budget));
+  EXPECT_EQ(default_budget, 0);
+
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetHtpFileReadMemoryBudgetMB(qualcomm_options, 16));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetHtpFileReadMemoryBudgetMB(), 16);
 
   LrtDestroyQualcommOptions(qualcomm_options);
 }
@@ -558,6 +657,14 @@ TEST(QualcommOptionsTest, CppWrapper) {
   options->SetVtcmSize(4);
   EXPECT_EQ(options->GetVtcmSize(), 4);
 
+  EXPECT_EQ(options->GetHtpDeviceId(), 0);
+  options->SetHtpDeviceId(1);
+  EXPECT_EQ(options->GetHtpDeviceId(), 1);
+
+  EXPECT_EQ(options->GetHtpFileReadMemoryBudgetMB(), 0);
+  options->SetHtpFileReadMemoryBudgetMB(16);
+  EXPECT_EQ(options->GetHtpFileReadMemoryBudgetMB(), 16);
+
   EXPECT_EQ(options->GetNumHvxThreads(), 0);
   options->SetNumHvxThreads(4);
   EXPECT_EQ(options->GetNumHvxThreads(), 4);
@@ -581,6 +688,31 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_TRUE(options->GetUseFoldReLU());
   options->SetUseFoldReLU(false);
   EXPECT_FALSE(options->GetUseFoldReLU());
+
+  EXPECT_EQ(options->GetOpNameFormat(),
+            litert::qualcomm::QualcommOptions::OpNameFormat::kBasic);
+  options->SetOpNameFormat(
+      litert::qualcomm::QualcommOptions::OpNameFormat::kDetailed);
+  EXPECT_EQ(options->GetOpNameFormat(),
+            litert::qualcomm::QualcommOptions::OpNameFormat::kDetailed);
+
+  EXPECT_EQ(options->GetHtpWeightSharingChannelTileSize(), 0);
+  options->SetHtpWeightSharingChannelTileSize(64);
+  EXPECT_EQ(options->GetHtpWeightSharingChannelTileSize(), 64);
+  options->SetHtpWeightSharingChannelTileSize(0);
+  EXPECT_EQ(options->GetHtpWeightSharingChannelTileSize(), 0);
+
+  EXPECT_FALSE(options->GetHtpDlbc());
+  options->SetHtpDlbc(true);
+  EXPECT_TRUE(options->GetHtpDlbc());
+  options->SetHtpDlbc(false);
+  EXPECT_FALSE(options->GetHtpDlbc());
+
+  EXPECT_FALSE(options->GetHtpDlbcWeights());
+  options->SetHtpDlbcWeights(true);
+  EXPECT_TRUE(options->GetHtpDlbcWeights());
+  options->SetHtpDlbcWeights(false);
+  EXPECT_FALSE(options->GetHtpDlbcWeights());
 
   EXPECT_EQ(options->GetBackend(), QualcommOptions::Backend::kHtp);
   options->SetBackend(QualcommOptions::Backend::kDsp);
@@ -647,6 +779,14 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetLpaiCoreSelection(), 0);
   options->SetLpaiCoreSelection(0x01);
   EXPECT_EQ(options->GetLpaiCoreSelection(), 0x01u);
+
+  EXPECT_EQ(options->GetQnnLibDir(), "");
+  options->SetQnnLibDir("/path/to/qnn/lib");
+  EXPECT_EQ(options->GetQnnLibDir(), "/path/to/qnn/lib");
+
+  EXPECT_EQ(options->GetDspSkelDir(), "");
+  options->SetDspSkelDir("/path/to/dsp/skel");
+  EXPECT_EQ(options->GetDspSkelDir(), "/path/to/dsp/skel");
 }
 
 TEST(LiteRtQualcommOptionsTest, LpaiOptions) {
@@ -673,6 +813,48 @@ TEST(LiteRtQualcommOptionsTest, LpaiOptions) {
   EXPECT_EQ(parsed.GetLpaiCoreAffinityType(),
             QualcommOptions::LpaiCoreAffinityType::kHard);
   EXPECT_EQ(parsed.GetLpaiCoreSelection(), 0x01u);
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, QnnLibDir) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  const char* qnn_lib_dir = nullptr;
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsGetQnnLibDir(qualcomm_options, &qnn_lib_dir));
+  EXPECT_STREQ(qnn_lib_dir, "");
+
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetQnnLibDir(qualcomm_options, "/path/to/qnn/lib"));
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsGetQnnLibDir(qualcomm_options, &qnn_lib_dir));
+  EXPECT_STREQ(qnn_lib_dir, "/path/to/qnn/lib");
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetQnnLibDir(), "/path/to/qnn/lib");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
+TEST(LiteRtQualcommOptionsTest, DspSkelDir) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  const char* dsp_skel_dir = nullptr;
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsGetDspSkelDir(qualcomm_options, &dsp_skel_dir));
+  EXPECT_STREQ(dsp_skel_dir, "");
+
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetDspSkelDir(qualcomm_options, "/path/to/dsp/skel"));
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsGetDspSkelDir(qualcomm_options, &dsp_skel_dir));
+  EXPECT_STREQ(dsp_skel_dir, "/path/to/dsp/skel");
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetDspSkelDir(), "/path/to/dsp/skel");
 
   LrtDestroyQualcommOptions(qualcomm_options);
 }

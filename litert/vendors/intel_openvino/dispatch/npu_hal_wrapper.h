@@ -65,8 +65,10 @@ struct NpuHalHooks {
 inline const NpuHalHooks& GetNpuHalHooks() {
   static NpuHalHooks hooks = []() -> NpuHalHooks {
     NpuHalHooks resolved;
-    void* handle =
-        dlopen("/vendor/lib64/libnpu_hal_hook.so", RTLD_NOW | RTLD_GLOBAL);
+    // Loaded by soname, not by path: the hook is listed in
+    // /vendor/etc/public.libraries.txt, so an app resolves it through the sphal
+    // namespace, and a path would also hard-code the 64-bit lib directory.
+    void* handle = dlopen("libnpu_hal_hook.so", RTLD_NOW | RTLD_GLOBAL);
     if (handle == nullptr) {
       LITERT_LOG(LITERT_WARNING,
                  "libnpu_hal_hook.so not available, NPU HAL priority "

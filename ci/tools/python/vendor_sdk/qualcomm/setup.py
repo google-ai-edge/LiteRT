@@ -38,14 +38,16 @@ SKIP_SDK_DOWNLOAD = os.environ.get('SKIP_SDK_DOWNLOAD', False)
 
 # Platform information
 IS_LINUX = sys.platform == 'linux'
-IS_X86_ARCHITECTURE = platform.machine() in ('x86_64', 'i386', 'i686')
+IS_SUPPORTED_ARCHITECTURE = platform.machine() in (
+    'x86_64', 'i386', 'i686', 'aarch64', 'arm64'
+)
 
 
 # --- Configuration for Qualcomm SDK Download ---
 # Qairt version doesn't not necessarily match the SDK version though.
 # LINT.IfChange(wheel_qairt_sdk_version)
-QAIRT_URL = 'https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.49.0.260730/v2.49.0.260730.zip'
-QAIRT_CONTENT_DIR = 'qairt/2.49.0.260730'
+QAIRT_URL = 'https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.51.1.261002/v2.51.1.261002.zip'
+QAIRT_CONTENT_DIR = 'qairt/2.51.1.261002'
 # LINT.ThenChange(
 # ../../../../../../opensource_only/third_party/qairt/workspace.bzl:bazel_qairt_sdk_version,
 # ../../../../../../litert/google/npu_runtime_libraries/fetch_qualcomm_library.sh:fetch_qairt_sdk_version,
@@ -53,6 +55,13 @@ QAIRT_CONTENT_DIR = 'qairt/2.49.0.260730'
 # ../../../../../../litert/vendors/CMakeLists.txt:qairt_headers_dir,
 # )
 QAIRT_TARGET_DIR = 'ai_edge_litert_sdk_qualcomm/data'
+_QAIRT_PREFIX = 'qairt/'
+QAIRT_VERSION = (
+    QAIRT_CONTENT_DIR[len(_QAIRT_PREFIX) :]
+    if QAIRT_CONTENT_DIR.startswith(_QAIRT_PREFIX)
+    else QAIRT_CONTENT_DIR
+)
+QAIRT_SHORT_VERSION = '.'.join(QAIRT_VERSION.split('.')[:3])
 # ---
 
 
@@ -60,10 +69,10 @@ def _download_and_extract(
     tarball_url: str, prefix_to_strip: str, target_dir: str
 ):
   """Download archive, extracts and copy."""
-  if not (IS_LINUX and IS_X86_ARCHITECTURE):
+  if not (IS_LINUX and IS_SUPPORTED_ARCHITECTURE):
     print(
-        'IGNORED: Currently LiteRT NPU AOT for Qualcomm is only supported on'
-        ' Linux x86 architecture.'
+        'IGNORED: Currently LiteRT NPU for Qualcomm is only supported on'
+        ' Linux x86_64 and aarch64.'
     )
     return
 
@@ -201,10 +210,16 @@ class CustomBuildPy(_build_py):
 setuptools.setup(
     name=PACKAGE_NAME.replace('_', '-'),
     version=PACKAGE_VERSION,
-    description='Qualcomm SDK for AI Edge LiteRT',
-    long_description='Qualcomm SDK for AI Edge LiteRT.',
+    description=(
+        'Qualcomm SDK for AI Edge LiteRT (includes'
+        f' QAIRT-{QAIRT_SHORT_VERSION} ({QAIRT_VERSION}))'
+    ),
+    long_description=(
+        'Qualcomm SDK for AI Edge LiteRT.\n\nThis package includes'
+        f' QAIRT-{QAIRT_SHORT_VERSION} (`{QAIRT_VERSION}`).'
+    ),
     long_description_content_type='text/markdown',
-    url='https://www.tensorflow.org/lite/',
+    url='https://developers.google.com/edge/litert',
     author='Google AI Edge Authors',
     author_email='packages@tensorflow.org',
     license='Apache 2.0',

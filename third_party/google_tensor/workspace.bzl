@@ -19,6 +19,6 @@ load("//litert/sdk_util:repo.bzl", "configurable_repo")
 def google_tensor():
     configurable_repo(
         name = "google_tensor",
-        build_file = "@//third_party/google_tensor:google_tensor.BUILD",
+        build_file = Label("//third_party/google_tensor:google_tensor.BUILD"),
         local_path_env = "GOOGLE_TENSOR_COMPILER_LIB",
     )

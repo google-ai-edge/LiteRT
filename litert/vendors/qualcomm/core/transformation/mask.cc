@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/builders/select_op_builder.h"
+#include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -113,16 +114,13 @@ size_t TransformQuantizeInMask(
     return 1;
   }
 
-  if (!IsElementWiseNot(ops[start_index + 0])) {
-    return 1;
-  }
-
   // Construct the new subgraph.
   QNN_LOG_INFO("[G2G] Transform quant ops in Gemma mask models");
-  std::optional<OpWrapper> select{};
-  if (IsElementWiseMultiply(ops[start_index + 2])) {
+  std::optional<OpWrapper> select;
+  if (ops[start_index + 2].IsOpCode(QnnOpCode::kElementWiseMultiply)) {
     select = CreateGemma4SelectOp(ops, start_index, tensor_pool, pattern_size);
-  } else if (IsElementWiseMultiply(ops[start_index + 3])) {
+  } else if (ops[start_index + 3].IsOpCode(
+                 QnnOpCode::kElementWiseMultiply)) {
     select = CreateGemma3SelectOp(ops, start_index, tensor_pool, pattern_size);
   }
   if (!select) {

@@ -43,7 +43,7 @@ void RegisterBinaryNoBroadcastImpl(const AtsConf& options, size_t& test_id,
       OpCodeListC<kLiteRtOpCodeTflAdd, kLiteRtOpCodeTflSub,
                   kLiteRtOpCodeTflMul, kLiteRtOpCodeTflDiv>,
       FaListC<::tflite::ActivationFunctionType_NONE>>
-    (iters, test_id, options, cap, "CoreSingleOp");
+    (iters, test_id, options, cap);
   // clang-format on
 }
 

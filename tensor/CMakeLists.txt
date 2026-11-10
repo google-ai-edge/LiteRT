@@ -21,7 +21,6 @@ target_include_directories(litert_tensor_api_utils
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/core/model/generated/include>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
 )
 
@@ -30,7 +29,9 @@ target_link_libraries(litert_tensor_api_utils
         litert_cc_internal
         absl::log
         absl::status
+        absl::status_builder
         absl::statusor
+        absl::source_location
 )
 
 add_library(litert_tensor_api_internal STATIC
@@ -45,7 +46,6 @@ target_include_directories(litert_tensor_api_internal
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/core/model/generated/include>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
 )
 
@@ -73,7 +73,6 @@ target_include_directories(litert_tensor_api_core
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/core/model/generated/include>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
 )
 
@@ -100,7 +99,6 @@ target_include_directories(litert_tensor_api_tflite_backend
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/core/model/generated/include>
-        $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
 )
 

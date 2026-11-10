@@ -1121,8 +1121,8 @@ bool validate_data_offsets(const safetensors_t& st, std::string& err) {
     databuffersize = st.storage.size();
   }
 
-  size_t ntensors{0};
-  // Iterate with key insertion order.
+  size_t max_end = 0;
+  bool has_data = false;
   for (size_t i = 0; i < st.tensors.size(); i++) {
     std::string key = st.tensors.keys()[i];
 
@@ -1143,7 +1143,6 @@ bool validate_data_offsets(const safetensors_t& st, std::string& err) {
     size_t tensor_size = get_dtype_bytes(tensor.dtype) * get_shape_size(tensor);
 
     if (tensor_size == 0) {
-      // OK
       continue;
     }
 
@@ -1170,15 +1169,14 @@ bool validate_data_offsets(const safetensors_t& st, std::string& err) {
       valid = false;
     }
 
-    ntensors++;
-    if (ntensors == st.tensors.size()) {
-      // Last element's data_offsets[1] must be equal to databuffer size.
-      if (tensor.data_offsets[1] != databuffersize) {
-        ss << "The last tensor's data_offset.END(" << tensor.data_offsets[1]
-           << ") must be equal to databufer size " << databuffersize << ".\n";
-        valid = false;
-      }
-    }
+    has_data = true;
+    max_end = std::max(max_end, tensor.data_offsets[1]);
+  }
+
+  if (has_data && max_end != databuffersize) {
+    ss << "The largest data_offsets.END(" << max_end
+       << ") must be equal to databufer size " << databuffersize << ".\n";
+    valid = false;
   }
 
   if (!valid) {

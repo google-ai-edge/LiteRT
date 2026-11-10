@@ -23,12 +23,12 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/source_location.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/internal/arithmetic_helpers.h"
 #include "tensor/internal/graph.h"
 #include "tensor/tensor.h"
-#include "tensor/utils/source_location.h"
 
 namespace litert {
 namespace tensor {
@@ -92,7 +92,7 @@ TEST(GetExecutionPlan, DiamondGraph) {
 
 TEST(GetExecutionPlan, MultipleOutputs) {
   auto op_a = std::make_shared<NoOp>();
-  TensorHandle a_handle = AddOutput(op_a, source_location::current());
+  TensorHandle a_handle = AddOutput(op_a, absl::SourceLocation::current());
   Tensor a = TensorHandle(a_handle);
   a.SetName("a");
 
@@ -144,8 +144,8 @@ TEST(GetExecutionPlan, EmptyOutputs) {
 
 TEST(GetExecutionPlan, CycleDetection) {
   // Create a cycle manually.
-  auto tensor_a = graph::NewTensor(source_location::current());
-  auto tensor_b = graph::NewTensor(source_location::current());
+  auto tensor_a = graph::NewTensor(absl::SourceLocation::current());
+  auto tensor_b = graph::NewTensor(absl::SourceLocation::current());
   auto op_a = std::make_shared<NoOp>();
   auto op_b = std::make_shared<NoOp>();
   op_a->inputs = {tensor_b};

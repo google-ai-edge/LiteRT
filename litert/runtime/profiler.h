@@ -24,7 +24,6 @@
 #include <vector>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_profiler_event.h"
@@ -98,10 +97,9 @@ class LiteRtProfilerT : public tflite::Profiler {
           &result, "tag:", event.tag, " type:", event.event_type,
           " source:", event.event_source,
           " start time:", event.start_timestamp_us,
-          " elapsed time:", event.elapsed_time_us, " begin mem usage:",
-          absl::StrFormat("%d", event.begin_mem_usage.total_allocated_bytes),
-          " end mem usage:",
-          absl::StrFormat("%d", event.end_mem_usage.total_allocated_bytes),
+          " elapsed time:", event.elapsed_time_us,
+          " begin mem usage:", event.begin_mem_usage.total_allocated_bytes,
+          " end mem usage:", event.end_mem_usage.total_allocated_bytes,
           " meta1:", event.event_metadata1, " meta2:", event.event_metadata2,
           "\n");
     }

@@ -130,7 +130,7 @@ bool IsConcatSupported(const TfLiteContext* absl_nonnull context,
       ::litert::ml_drift::ir::ExtractTensorShape(output.dims);
   const ::ml_drift::Axis axis =
       ::litert::ml_drift::ir::GetConcatAxis(input_shapes, output_shape);
-  if (axis == ::ml_drift::Axis::UNKNOWN) {
+  if (axis == ::ml_drift::Axis::kUnknown) {
     *error = "Invalid axis";
     return false;
   }
@@ -155,11 +155,11 @@ bool IsConcatSupported(const TfLiteContext* absl_nonnull context,
     return true;
   };
 
-  if (!check_dim(::ml_drift::Axis::BATCH)) return false;
-  if (!check_dim(::ml_drift::Axis::HEIGHT)) return false;
-  if (!check_dim(::ml_drift::Axis::WIDTH)) return false;
-  if (!check_dim(::ml_drift::Axis::DEPTH)) return false;
-  if (!check_dim(::ml_drift::Axis::CHANNELS)) return false;
+  if (!check_dim(::ml_drift::Axis::kBatch)) return false;
+  if (!check_dim(::ml_drift::Axis::kHeight)) return false;
+  if (!check_dim(::ml_drift::Axis::kWidth)) return false;
+  if (!check_dim(::ml_drift::Axis::kDepth)) return false;
+  if (!check_dim(::ml_drift::Axis::kChannels)) return false;
 
   // Check output concat dim is same size as sum of input concat dims.
   int dim_sum = 0;

@@ -15,11 +15,11 @@
 #ifndef ODML_LITERT_LITERT_CORE_MODEL_OPS_RANGE_H_
 #define ODML_LITERT_LITERT_CORE_MODEL_OPS_RANGE_H_
 
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -43,6 +43,11 @@ inline LiteRtStatus InferRange(const ShapeInferenceContext& ctx,
     // TFLite Range is dynamic if inputs are not constant.
     return kLiteRtStatusOk;
   }
+  if (start_buf.size() < sizeof(int32_t) ||
+      limit_buf.size() < sizeof(int32_t) ||
+      delta_buf.size() < sizeof(int32_t)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 
   // Currently supporting Int32 as primary case for meta-ops.
   int32_t start = *reinterpret_cast<const int32_t*>(start_buf.data());
@@ -53,17 +58,32 @@ inline LiteRtStatus InferRange(const ShapeInferenceContext& ctx,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  int32_t num_elements = std::max<int32_t>(
-      0, static_cast<int32_t>(
-             std::ceil(static_cast<float>(limit - start) / delta)));
+  int64_t diff = static_cast<int64_t>(limit) - static_cast<int64_t>(start);
+  int64_t raw_num_elements = 0;
+  if ((delta > 0 && diff > 0) || (delta < 0 && diff < 0)) {
+    int64_t abs_diff = std::abs(diff);
+    int64_t abs_delta = std::abs(static_cast<int64_t>(delta));
+    raw_num_elements = (abs_diff + abs_delta - 1) / abs_delta;
+  }
+  constexpr int64_t kMaxPropagatedRangeElements = 1 << 20;
+  if (raw_num_elements > std::numeric_limits<int32_t>::max()) {
+    return kLiteRtStatusErrorShapeInferenceFailed;
+  }
+  int32_t num_elements = static_cast<int32_t>(raw_num_elements);
 
   result.output_shapes[0] = {num_elements};
+
+  if (num_elements > kMaxPropagatedRangeElements) {
+    return kLiteRtStatusOk;
+  }
 
   // Propagate data.
   std::vector<int32_t> data;
   data.reserve(num_elements);
   for (int32_t i = 0; i < num_elements; ++i) {
-    data.push_back(start + i * delta);
+    data.push_back(static_cast<int32_t>(static_cast<int64_t>(start) +
+                                        static_cast<int64_t>(i) *
+                                            static_cast<int64_t>(delta)));
   }
 
   size_t size = data.size() * sizeof(int32_t);

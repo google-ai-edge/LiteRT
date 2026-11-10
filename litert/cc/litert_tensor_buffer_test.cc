@@ -15,7 +15,9 @@
 #include "litert/c/litert_tensor_buffer.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <memory>  // NOLINT: Used for OpenCL logic.
 #include <utility>
@@ -26,8 +28,11 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -53,15 +58,15 @@
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
-#include "tflite/delegates/gpu/cl/cl_command_queue.h"
-#include "tflite/delegates/gpu/cl/cl_context.h"
-#include "tflite/delegates/gpu/cl/cl_device.h"
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
+#include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
+#include "ml_drift/cl/cl_context.h"  // from @ml_drift
+#include "ml_drift/cl/cl_device.h"  // from @ml_drift
+#include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/cl/gl_interop.h"
-#include "tflite/delegates/gpu/gl/egl_environment.h"
+#include "ml_drift/cl/gl_interop.h"  // from @ml_drift
+#include "ml_drift/gl/egl_environment.h"  // from @ml_drift
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert {
@@ -93,12 +98,12 @@ int GetReferenceCount(const TensorBuffer& tensor_buffer) {
 class GlEnvironment {
  public:
   explicit GlEnvironment(
-      std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env)
+      std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env)
       : egl_env_(std::move(egl_env)) {}
 
   static std::unique_ptr<GlEnvironment> Create() {
-    std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
-    if (tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok()) {
+    std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env;
+    if (::ml_drift::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok()) {
       return std::make_unique<GlEnvironment>(std::move(egl_env));
     }
     return nullptr;
@@ -116,10 +121,10 @@ class GlEnvironment {
     });
     return environment_options;
   }
-  tflite::gpu::gl::EglEnvironment& GetEglEnvironment() { return *egl_env_; }
+  ::ml_drift::gl::EglEnvironment& GetEglEnvironment() { return *egl_env_; }
 
  private:
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;
+  std::unique_ptr<::ml_drift::gl::EglEnvironment> egl_env_;
 };
 #else
 class GlEnvironment {
@@ -135,22 +140,22 @@ class GlEnvironment {
 class ClEnvironment {
  public:
   explicit ClEnvironment(
-      std::unique_ptr<tflite::gpu::cl::CLDevice> device,
-      std::unique_ptr<tflite::gpu::cl::CLContext> context,
-      std::unique_ptr<tflite::gpu::cl::CLCommandQueue> command_queue)
+      std::unique_ptr<::ml_drift::cl::CLDevice> device,
+      std::unique_ptr<::ml_drift::cl::CLContext> context,
+      std::unique_ptr<::ml_drift::cl::CLCommandQueue> command_queue)
       : device_(std::move(device)),
         context_(std::move(context)),
         command_queue_(std::move(command_queue)) {}
 
   static std::unique_ptr<ClEnvironment> Create(GlEnvironment* gl_env) {
-    auto device = std::make_unique<tflite::gpu::cl::CLDevice>();
-    auto context = std::make_unique<tflite::gpu::cl::CLContext>();
-    auto command_queue = std::make_unique<tflite::gpu::cl::CLCommandQueue>();
-    if (tflite::gpu::cl::LoadOpenCL().ok()) {
-      ABSL_CHECK_OK(tflite::gpu::cl::CreateDefaultGPUDevice(device.get()));
+    auto device = std::make_unique<::ml_drift::cl::CLDevice>();
+    auto context = std::make_unique<::ml_drift::cl::CLContext>();
+    auto command_queue = std::make_unique<::ml_drift::cl::CLCommandQueue>();
+    if (::ml_drift::cl::LoadOpenCL().ok()) {
+      ABSL_CHECK_OK(::ml_drift::cl::CreateDefaultGPUDevice(device.get()));
       ABSL_CHECK(CreateContext(gl_env, *device, context.get()));
-      ABSL_CHECK_OK(tflite::gpu::cl::CreateCLCommandQueue(*device, *context,
-                                                          command_queue.get()));
+      ABSL_CHECK_OK(::ml_drift::cl::CreateCLCommandQueue(*device, *context,
+                                                         command_queue.get()));
       return std::make_unique<ClEnvironment>(
           std::move(device), std::move(context), std::move(command_queue));
     }
@@ -180,22 +185,22 @@ class ClEnvironment {
 
  private:
   static Expected<void> CreateContext(GlEnvironment* gl_env,
-                                      tflite::gpu::cl::CLDevice& device,
-                                      tflite::gpu::cl::CLContext* context) {
+                                      ::ml_drift::cl::CLDevice& device,
+                                      ::ml_drift::cl::CLContext* context) {
     if (gl_env == nullptr) {
-      if (!tflite::gpu::cl::CreateCLContext(device, context).ok()) {
+      if (!::ml_drift::cl::CreateCLContext(device, context).ok()) {
         return litert::Unexpected(Status::kErrorInvalidArgument,
                                   "Failed to create CL context");
       }
     } else {
 #if LITERT_HAS_OPENGL_SUPPORT
-      if (!tflite::gpu::cl::IsGlSharingSupported(device)) {
-        if (!tflite::gpu::cl::CreateCLContext(device, context).ok()) {
+      if (!::ml_drift::cl::IsGlSharingSupported(device)) {
+        if (!::ml_drift::cl::CreateCLContext(device, context).ok()) {
           return litert::Unexpected(Status::kErrorInvalidArgument,
                                     "Failed to create CL context");
         }
       } else {
-        if (!tflite::gpu::cl::CreateCLGLContext(
+        if (!::ml_drift::cl::CreateCLGLContext(
                  device,
                  reinterpret_cast<cl_context_properties>(
                      gl_env->GetEglEnvironment().context().context()),
@@ -216,9 +221,9 @@ class ClEnvironment {
     return {};
   }
 
-  std::unique_ptr<tflite::gpu::cl::CLDevice> device_;
-  std::unique_ptr<tflite::gpu::cl::CLContext> context_;
-  std::unique_ptr<tflite::gpu::cl::CLCommandQueue> command_queue_;
+  std::unique_ptr<::ml_drift::cl::CLDevice> device_;
+  std::unique_ptr<::ml_drift::cl::CLContext> context_;
+  std::unique_ptr<::ml_drift::cl::CLCommandQueue> command_queue_;
 };
 #else
 class ClEnvironment {
@@ -359,7 +364,7 @@ TEST(TensorBuffer, CreateManagedFromRequirements) {
 
 bool CanLoadOpenCl() {
 #if LITERT_HAS_OPENCL_SUPPORT
-  return tflite::gpu::cl::LoadOpenCL().ok();
+  return ::ml_drift::cl::LoadOpenCL().ok();
 #else
   return false;
 #endif
@@ -849,6 +854,35 @@ TEST(TensorBuffer, CreateFromAhwb) {
   ReleaseTestAhwb(ahw_buffer);
 }
 
+TEST(TensorBuffer, CreateFromAhwbRetainsReference) {
+  if (!HasAhwbSupport()) {
+    GTEST_SKIP() << "AHardwareBuffers are not supported on this platform; "
+                    "skipping the test";
+  }
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+
+  AHardwareBuffer* ahw_buffer = CreateTestAhwb();
+  ASSERT_NE(ahw_buffer, nullptr);
+
+  const RankedTensorType kTensorType(kTestTensorType);
+  auto tensor_buffer_from_ahwb =
+      TensorBuffer::CreateFromAhwb(env, kTensorType, ahw_buffer,
+                                   /*ahwb_offset=*/0);
+  ASSERT_TRUE(tensor_buffer_from_ahwb);
+
+  // Release the caller's initial reference; TensorBuffer::CreateFromAhwb
+  // should retain its own reference so the underlying AHardwareBuffer remains
+  // valid for the lifetime of tensor_buffer_from_ahwb.
+  ReleaseTestAhwb(ahw_buffer);
+
+  auto lock_and_addr_external_memory = TensorBufferScopedLock::Create(
+      *tensor_buffer_from_ahwb, TensorBuffer::LockMode::kWrite);
+  ASSERT_TRUE(lock_and_addr_external_memory);
+  ASSERT_EQ(std::memcmp(lock_and_addr_external_memory->second, kTensorData,
+                        sizeof(kTensorData)),
+            0);
+}
+
 TEST(TensorBuffer, Duplicate) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LiteRtTensorBuffer litert_tensor_buffer;
@@ -935,14 +969,14 @@ TEST(TensorBuffer, ReadWriteBufferSizeMismatch) {
   {
     // Read with smaller size of buffer.
     float read_data[1];
-    auto read_success = tensor_buffer.Read<float>(absl::MakeSpan(read_data, 1));
+    auto read_success = tensor_buffer.Read<float>(absl::MakeSpan(read_data));
     ASSERT_TRUE(read_success);
     ASSERT_EQ(read_data[0], kTensorData[0]);
   }
   {
     // Read with larger size of buffer.
     float read_data[5];
-    auto read_success = tensor_buffer.Read<float>(absl::MakeSpan(read_data, 5));
+    auto read_success = tensor_buffer.Read<float>(absl::MakeSpan(read_data));
     ASSERT_FALSE(read_success);
   }
 }
@@ -992,18 +1026,14 @@ TEST(TensorBuffer, CreateFromGlTexture) {
   // Create GL texture.
   // TODO: Remove ifdef after managed gl texture is supported.
 #if LITERT_HAS_OPENGL_SUPPORT
-  tflite::gpu::gl::GlTexture gl_texture(GL_TEXTURE_2D, 1, GL_RGBA8, 1, 1,
-                                        /*has_ownership=*/true);
-  ASSERT_TRUE(gl_texture.is_valid());
-
   // Create tensor buffer from existing GL texture (e.g. this could be from
-  // Android Camera API).
+  // Android Camera API). Since deallocator is nullptr, GlTexture takes
+  // ownership of texture id 1 and deletes it upon destruction.
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer tensor_buffer,
       TensorBuffer::CreateFromGlTexture(
           user_gpu_env->GetEnvironment(), RankedTensorType(kTestTensorType),
-          gl_texture.target(), gl_texture.id(), gl_texture.format(),
-          gl_texture.bytes_size(), gl_texture.layer()));
+          GL_TEXTURE_2D, /*id=*/1, GL_RGBA8, /*size_bytes=*/1, /*layer=*/1));
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 }
 
@@ -1396,6 +1426,136 @@ TEST(TensorBuffer, Event) {
   // Clear event.
   LITERT_ASSERT_OK(tensor_buffer.ClearEvent());
   EXPECT_FALSE(tensor_buffer.HasEvent());
+}
+
+// Host-memory backed custom buffer handlers: `import_func` wraps the caller's
+// pointer without taking ownership.
+struct FakeHostMemoryInfo : HwMemoryInfo {
+  void* data;
+  bool owns_data;
+};
+
+LiteRtStatus CreateFakeHostMemory(LiteRtGpuDeviceId, LiteRtGpuQueueId,
+                                  const LiteRtRankedTensorType*,
+                                  LiteRtTensorBufferType, size_t bytes, size_t,
+                                  HwMemoryInfoPtr* hw_memory_info) {
+  auto* info = new FakeHostMemoryInfo();
+  info->data = std::calloc(bytes, 1);
+  info->owns_data = true;
+  info->memory_handle = info->data;
+  *hw_memory_info = info;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus ImportFakeHostMemory(LiteRtGpuDeviceId, LiteRtGpuQueueId,
+                                  const LiteRtRankedTensorType*,
+                                  LiteRtTensorBufferType,
+                                  HwMemoryHandle hw_buffer_handle, size_t,
+                                  size_t, HwMemoryInfoPtr* hw_memory_info) {
+  auto* info = new FakeHostMemoryInfo();
+  info->data = hw_buffer_handle;
+  info->owns_data = false;
+  info->memory_handle = hw_buffer_handle;
+  *hw_memory_info = info;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DestroyFakeHostMemory(HwMemoryInfoPtr hw_memory_info) {
+  auto* info = static_cast<FakeHostMemoryInfo*>(hw_memory_info);
+  if (info->owns_data) {
+    std::free(info->data);
+  }
+  delete info;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LockFakeHostMemory(HwMemoryInfoPtr hw_memory_info,
+                                LiteRtTensorBufferLockMode,
+                                void** host_memory_ptr) {
+  *host_memory_ptr = static_cast<FakeHostMemoryInfo*>(hw_memory_info)->data;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus UnlockFakeHostMemory(HwMemoryInfoPtr) { return kLiteRtStatusOk; }
+
+// Goes through the C++ API, the runtime proxy and the runtime's C API table.
+TEST(TensorBuffer, CreateFromCustomHandleWrapsMemoryWithoutCopy) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  ASSERT_EQ(LiteRtRegisterTensorBufferHandlers(
+                env.Get(), kLiteRtTensorBufferTypeUserCustomBuffer,
+                CreateFakeHostMemory, DestroyFakeHostMemory,
+                LockFakeHostMemory, UnlockFakeHostMemory,
+                /*clear_func=*/nullptr, ImportFakeHostMemory,
+                kLiteRtEnvOptionTagNull, kLiteRtEnvOptionTagNull),
+            kLiteRtStatusOk);
+
+  float data[] = {10, 20, 30, 40};
+  const auto buffer_type =
+      static_cast<TensorBufferType>(kLiteRtTensorBufferTypeUserCustomBuffer);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer tensor_buffer,
+      TensorBuffer::CreateFromCustomHandle(env,
+                                           RankedTensorType(kTestTensorType),
+                                           buffer_type, data, sizeof(data)));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto size, tensor_buffer.Size());
+  EXPECT_EQ(size, sizeof(data));
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr, TensorBufferScopedLock::Create(
+                                tensor_buffer, TensorBuffer::LockMode::kWrite));
+    EXPECT_EQ(lock_and_addr.second, data);
+    static_cast<float*>(lock_and_addr.second)[0] = 99;
+  }
+  EXPECT_EQ(data[0], 99);
+}
+
+// GetCustomHandle() returns the handle CreateFromCustomHandle() accepts, so a
+// smaller view can be created from an existing custom buffer.
+TEST(TensorBuffer, CreateFromCustomHandleOfGetCustomHandleSharesMemory) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  ASSERT_EQ(LiteRtRegisterTensorBufferHandlers(
+                env.Get(), kLiteRtTensorBufferTypeUserCustomBuffer,
+                CreateFakeHostMemory, DestroyFakeHostMemory,
+                LockFakeHostMemory, UnlockFakeHostMemory,
+                /*clear_func=*/nullptr, ImportFakeHostMemory,
+                kLiteRtEnvOptionTagNull, kLiteRtEnvOptionTagNull),
+            kLiteRtStatusOk);
+  const auto buffer_type =
+      static_cast<TensorBufferType>(kLiteRtTensorBufferTypeUserCustomBuffer);
+
+  constexpr int32_t kLargeDimensions[] = {2 * kTensorDimensions[0]};
+  constexpr LiteRtRankedTensorType kLargeTensorType = {
+      kLiteRtElementTypeFloat32, BuildLayout(kLargeDimensions)};
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer large_buffer,
+      TensorBuffer::CreateManaged(env, buffer_type,
+                                  RankedTensorType(kLargeTensorType),
+                                  2 * sizeof(kTensorData)));
+  LITERT_ASSERT_OK_AND_ASSIGN(HwMemoryHandle handle,
+                              large_buffer.GetCustomHandle());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer view,
+      TensorBuffer::CreateFromCustomHandle(env,
+                                           RankedTensorType(kTestTensorType),
+                                           buffer_type, handle,
+                                           sizeof(kTensorData)));
+
+  LITERT_ASSERT_OK(view.Write<float>(absl::MakeConstSpan(kTensorData)));
+  float large_data[2 * kTensorDimensions[0]];
+  LITERT_ASSERT_OK(large_buffer.Read<float>(absl::MakeSpan(large_data)));
+  for (int i = 0; i < kTensorDimensions[0]; ++i) {
+    EXPECT_EQ(large_data[i], kTensorData[i]);
+  }
+}
+
+TEST(TensorBuffer, GetCustomHandleFailsForNonCustomBuffer) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer tensor_buffer,
+      TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory,
+                                  RankedTensorType(kTestTensorType),
+                                  sizeof(kTensorData)));
+  EXPECT_FALSE(tensor_buffer.GetCustomHandle());
 }
 
 }  // namespace

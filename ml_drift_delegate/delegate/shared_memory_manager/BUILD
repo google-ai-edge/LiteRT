@@ -113,12 +113,8 @@ cc_library(
         "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common:types",
         "@ml_drift//ml_drift/common:util",
-        "@ml_drift//ml_drift/common/kernels:conv_apple_mpp",
-        "@ml_drift//ml_drift/common/kernels:conv_generic",
-        "@ml_drift//ml_drift/common/kernels:conv_wave_matrix",
-        "@ml_drift//ml_drift/common/kernels:conv_wave_matrix_mali",
-        "@ml_drift//ml_drift/common/kernels:conv_wave_memory",
         "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/selectors:convolution_selector",
         "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/task:weights_conversion",
@@ -161,6 +157,7 @@ cc_library(
         ":shared_memory_manager",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_runtime_context_header",
+        "//litert/cc:litert_macros",
         "//ml_drift_delegate/delegate:unowned_tensor_desc",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
@@ -186,7 +183,7 @@ cc_library(
 cc_test(
     name = "shared_memory_manager_cl_test",
     srcs = ["shared_memory_manager_cl_test.cc"],
-    tags = ["requires-gpu-nvidia"],
+    tags = ["requires-gpu-sm90"],  # OpenCL/MIG-compatible
     deps = [
         ":gf32_graph_adapter",
         ":graph_adapter",
@@ -215,7 +212,7 @@ cc_test(
 cc_test(
     name = "shared_memory_manager_cl_litert_test",
     srcs = ["shared_memory_manager_cl_litert_test.cc"],
-    tags = ["requires-gpu-nvidia"],
+    tags = ["requires-gpu-sm90"],  # OpenCL/MIG-compatible
     deps = [
         ":gf32_graph_adapter",
         ":graph_adapter",
@@ -310,6 +307,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_runtime_context_header",
+        "//litert/cc:litert_macros",
         "//ml_drift_delegate/delegate:unowned_tensor_desc",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
@@ -332,7 +330,7 @@ cc_test(
     name = "shared_memory_manager_webgpu_test",
     srcs = ["shared_memory_manager_webgpu_test.cc"],
     tags = [
-        "requires-gpu-nvidia",
+        "requires-gpu-sm90-full",  # Vulkan/WebGPU: no driver on MIG
     ],
     deps = [
         ":gf32_graph_adapter",
@@ -340,12 +338,15 @@ cc_test(
         ":ir_graph_adapter",
         ":shared_memory_manager",
         ":shared_memory_manager_webgpu",
+        ":shared_memory_manager_webgpu_common",
+        "//ml_drift_delegate/delegate:unowned_tensor_desc",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
         "//tflite/c:common",
         "//third_party/vulkan_loader",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model",
@@ -353,9 +354,12 @@ cc_test(
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/webgpu:execution_environment",
+        "@ml_drift//ml_drift/webgpu:spatial_tensor",
+        "@ml_drift//ml_drift/webgpu:webgpu_headers",
         "@ml_drift//ml_drift/webgpu/testing:webgpu_test",
     ],
 )
@@ -388,7 +392,7 @@ cc_library(
 cc_test(
     name = "shared_memory_manager_vulkan_test",
     srcs = ["shared_memory_manager_vulkan_test.cc"],
-    tags = ["requires-gpu-nvidia"],
+    tags = ["requires-gpu-sm90-full"],  # Vulkan/WebGPU: no driver on MIG
     deps = [
         ":gf32_graph_adapter",
         ":graph_adapter",
@@ -418,7 +422,7 @@ cc_test(
 objc_library(
     name = "shared_memory_manager_metal",
     hdrs = ["shared_memory_manager_metal.h"],
-    aspect_hints = ["//tools/build_defs/swift:no_module"],
+    # copybara:uncomment(//tools/build_defs/swift:no_module is google-only) aspect_hints = ["//tools/build_defs/swift:no_module"],
     copts = ["-ObjC++"],
     visibility = [
         "//ml_drift_delegate/delegate:__subpackages__",
@@ -432,11 +436,14 @@ objc_library(
         # Dependency placeholder: apple_frameworks Metal,
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/metal:metal_device",
         "@ml_drift//ml_drift/metal:metal_spatial_tensor",
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_runtime_context_header",
+        "//litert/cc:litert_macros",
         "//ml_drift_delegate/delegate:unowned_tensor_desc",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//weight_loader:external_weight_loader",
@@ -463,6 +470,7 @@ objc_library(
         "@com_google_absl//absl/status",
         # Dependency placeholder: apple_frameworks Metal,
         # Dependency placeholder: apple_frameworks XCTest,
+        "@ml_drift//ml_drift/common:access_type",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:ir_model",
@@ -472,6 +480,7 @@ objc_library(
         "@ml_drift//ml_drift/common/task:gpu_tensor",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/metal:metal_device",
+        "@ml_drift//ml_drift/metal:metal_spatial_tensor",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
         "//tflite/c:common",

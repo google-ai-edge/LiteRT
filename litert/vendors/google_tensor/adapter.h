@@ -21,10 +21,17 @@
 #include <string>
 #include <vector>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert::google_tensor {
+
+// Represents an unsupported operation with its index and rejection reason.
+struct UnsupportedOp {
+  int32_t op_index;
+  std::string reason;
+};
 
 // This class adapts the google tensor compiler API for dynamic loading.
 class Adapter {
@@ -54,11 +61,26 @@ class Adapter {
                                 size_t num_bytecodes) = 0;
 
   // Checks which operations in the TFLite flatbuffer are supported/unsupported.
-  // Returns a vector of indices of the unsupported operations in the
-  // flatbuffer.
-  virtual Expected<std::vector<int32_t>> GetUnsupportedOps(
+  // Returns a vector of unsupported operations with indices and reasons.
+  virtual Expected<std::vector<UnsupportedOp>> GetUnsupportedOps(
       const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
       size_t options_size) = 0;
+
+  // Checks if multiple named composite ops are supported.
+  // Returns a vector of booleans corresponding to each composite in
+  // composite_names.
+  virtual Expected<std::vector<bool>> AreCompositesSupported(
+      absl::Span<const std::string> composite_names, const char* options,
+      size_t options_size) {
+    return litert::Unexpected(kLiteRtStatusErrorUnsupported,
+                              "AreCompositesSupported is not supported");
+  }
+
+  // Checks if multiple named composite ops are supported without options.
+  Expected<std::vector<bool>> AreCompositesSupported(
+      absl::Span<const std::string> composite_names) {
+    return AreCompositesSupported(composite_names, nullptr, 0);
+  }
 };
 
 }  // namespace litert::google_tensor

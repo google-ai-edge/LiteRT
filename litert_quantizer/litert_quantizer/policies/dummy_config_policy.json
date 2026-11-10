@@ -1,0 +1,17 @@
+{
+  "configs": {
+    "dummy_dynamic": {
+      "weight_tensor_config": {
+        "num_bits": 18,
+        "symmetric": [true],
+        "granularity": ["CHANNELWISE", "TENSORWISE"],
+        "dtype": "INT"
+      },
+      "explicit_dequantize": false,
+      "compute_precision": "INTEGER"
+    }
+  },
+  "ops_per_config": {
+    "dummy_dynamic": ["GELU"]
+  }
+}

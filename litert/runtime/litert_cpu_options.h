@@ -50,7 +50,7 @@ struct LiteRtCpuOptionsT {
   std::string weight_cache_file_path_buffer;
   bool hint_fully_delegated_to_single_delegate = false;
 
-  static const char* Identifier() { return "cpu_delegate"; }
+  static const char* Identifier() { return LrtGetCpuOptionsIdentifier(); }
 };
 
 namespace litert {

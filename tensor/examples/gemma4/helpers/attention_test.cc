@@ -19,6 +19,8 @@ limitations under the License.
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -26,14 +28,19 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "xnnpack.h"  // from @XNNPACK
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "tensor/backends/xnnpack/arithmetic.h"
+#include "tensor/backends/xnnpack/conversion.h"
+#include "tensor/backends/xnnpack/graph.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
+#include "tensor/examples/gemma4/test_backends.h"
 #include "tensor/examples/ops/transformer/transformer_ops_xnnpack.h"  // IWYU pragma: keep
+#include "tensor/examples/utils/tensor_mapping.h"
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
@@ -43,7 +50,6 @@ namespace {
 
 using ::testing::FloatNear;
 using ::testing::Pointwise;
-using XnnTensor = Tensor<XnnpackMixinTag>;
 
 template <class RetManual = void, class F, class T,
           class Ret = std::conditional_t<
@@ -71,171 +77,172 @@ std::vector<float> GenerateWeights(size_t m, size_t n, float scale = 0.01f,
   return matrix;
 }
 
-absl::flat_hash_map<std::string, XnnTensor> CreateDefaultWeights(
+absl::flat_hash_map<std::string, TensorHandle> CreateDefaultWeights(
     absl::string_view prefix = "attn") {
-  absl::flat_hash_map<std::string, XnnTensor> weights;
+  absl::flat_hash_map<std::string, TensorHandle> weights;
 
-  weights.insert({absl::StrCat(prefix, ".q_proj.weight"),
-                  XnnTensor({.name = "q_proj",
+  weights.emplace(absl::StrCat(prefix, ".q_proj.weight"),
+                  TensorInit{.name = "q_proj",
                              .type = Type::kFP32,
                              .shape = {8, 4},
-                             .buffer = GenerateWeights(8, 4, 0.01f, 0.1f)})});
+                             .buffer = GenerateWeights(8, 4, 0.01f, 0.1f)});
 
-  weights.insert({absl::StrCat(prefix, ".k_proj.weight"),
-                  XnnTensor({.name = "k_proj",
+  weights.emplace(absl::StrCat(prefix, ".k_proj.weight"),
+                  TensorInit{.name = "k_proj",
                              .type = Type::kFP32,
                              .shape = {4, 4},
-                             .buffer = GenerateWeights(4, 4, 0.02f, 0.05f)})});
+                             .buffer = GenerateWeights(4, 4, 0.02f, 0.05f)});
 
-  weights.insert({absl::StrCat(prefix, ".v_proj.weight"),
-                  XnnTensor({.name = "v_proj",
+  weights.emplace(absl::StrCat(prefix, ".v_proj.weight"),
+                  TensorInit{.name = "v_proj",
                              .type = Type::kFP32,
                              .shape = {4, 4},
-                             .buffer = GenerateWeights(4, 4, 0.015f, 0.02f)})});
+                             .buffer = GenerateWeights(4, 4, 0.015f, 0.02f)});
 
-  weights.insert({absl::StrCat(prefix, ".o_proj.weight"),
-                  XnnTensor({.name = "o_proj",
+  weights.emplace(absl::StrCat(prefix, ".o_proj.weight"),
+                  TensorInit{.name = "o_proj",
                              .type = Type::kFP32,
                              .shape = {4, 8},
-                             .buffer = GenerateWeights(4, 8, 0.01f, 0.05f)})});
+                             .buffer = GenerateWeights(4, 8, 0.01f, 0.05f)});
 
-  weights.insert(
-      {absl::StrCat(prefix, ".q_norm.weight"), XnnTensor({.name = "q_norm",
-                                                          .type = Type::kFP32,
-                                                          .shape = {4},
-                                                          .buffer = 1.0f})});
+  weights.emplace(
+      absl::StrCat(prefix, ".q_norm.weight"),
+      TensorInit{
+          .name = "q_norm", .type = Type::kFP32, .shape = {4}, .buffer = 1.0f});
 
-  weights.insert(
-      {absl::StrCat(prefix, ".k_norm.weight"), XnnTensor({.name = "k_norm",
-                                                          .type = Type::kFP32,
-                                                          .shape = {4},
-                                                          .buffer = 1.0f})});
+  weights.emplace(
+      absl::StrCat(prefix, ".k_norm.weight"),
+      TensorInit{
+          .name = "k_norm", .type = Type::kFP32, .shape = {4}, .buffer = 1.0f});
 
   return weights;
 }
 
-absl::flat_hash_map<std::string, XnnTensor> CreateGqaWeights(
+absl::flat_hash_map<std::string, TensorHandle> CreateGqaWeights(
     absl::string_view prefix = "attn") {
-  absl::flat_hash_map<std::string, XnnTensor> weights;
+  absl::flat_hash_map<std::string, TensorHandle> weights;
 
-  weights.insert(
-      {absl::StrCat(prefix, ".q_proj.weight"),
-       XnnTensor({.name = "q_proj",
-                  .type = Type::kFP32,
-                  .shape = {16, 8},
-                  .buffer = GenerateWeights(16, 8, 0.005f, 0.01f)})});
+  weights.emplace(absl::StrCat(prefix, ".q_proj.weight"),
+                  TensorInit{.name = "q_proj",
+                             .type = Type::kFP32,
+                             .shape = {16, 8},
+                             .buffer = GenerateWeights(16, 8, 0.005f, 0.01f)});
 
-  weights.insert({absl::StrCat(prefix, ".k_proj.weight"),
-                  XnnTensor({.name = "k_proj",
+  weights.emplace(absl::StrCat(prefix, ".k_proj.weight"),
+                  TensorInit{.name = "k_proj",
                              .type = Type::kFP32,
                              .shape = {8, 8},
-                             .buffer = GenerateWeights(8, 8, 0.01f, 0.02f)})});
+                             .buffer = GenerateWeights(8, 8, 0.01f, 0.02f)});
 
-  weights.insert({absl::StrCat(prefix, ".v_proj.weight"),
-                  XnnTensor({.name = "v_proj",
+  weights.emplace(absl::StrCat(prefix, ".v_proj.weight"),
+                  TensorInit{.name = "v_proj",
                              .type = Type::kFP32,
                              .shape = {8, 8},
-                             .buffer = GenerateWeights(8, 8, 0.008f, 0.01f)})});
+                             .buffer = GenerateWeights(8, 8, 0.008f, 0.01f)});
 
-  weights.insert(
-      {absl::StrCat(prefix, ".o_proj.weight"),
-       XnnTensor({.name = "o_proj",
-                  .type = Type::kFP32,
-                  .shape = {8, 16},
-                  .buffer = GenerateWeights(8, 16, 0.005f, 0.01f)})});
+  weights.emplace(absl::StrCat(prefix, ".o_proj.weight"),
+                  TensorInit{.name = "o_proj",
+                             .type = Type::kFP32,
+                             .shape = {8, 16},
+                             .buffer = GenerateWeights(8, 16, 0.005f, 0.01f)});
 
-  weights.insert(
-      {absl::StrCat(prefix, ".q_norm.weight"), XnnTensor({.name = "q_norm",
-                                                          .type = Type::kFP32,
-                                                          .shape = {4},
-                                                          .buffer = 1.0f})});
+  weights.emplace(
+      absl::StrCat(prefix, ".q_norm.weight"),
+      TensorInit{
+          .name = "q_norm", .type = Type::kFP32, .shape = {4}, .buffer = 1.0f});
 
-  weights.insert(
-      {absl::StrCat(prefix, ".k_norm.weight"), XnnTensor({.name = "k_norm",
-                                                          .type = Type::kFP32,
-                                                          .shape = {4},
-                                                          .buffer = 1.0f})});
+  weights.emplace(
+      absl::StrCat(prefix, ".k_norm.weight"),
+      TensorInit{
+          .name = "k_norm", .type = Type::kFP32, .shape = {4}, .buffer = 1.0f});
 
   return weights;
 }
 
-absl::flat_hash_map<std::string, XnnTensor> CreateMhaWeights(
+absl::flat_hash_map<std::string, TensorHandle> CreateMhaWeights(
     absl::string_view prefix = "attn") {
-  absl::flat_hash_map<std::string, XnnTensor> weights;
+  absl::flat_hash_map<std::string, TensorHandle> weights;
 
-  weights.insert({absl::StrCat(prefix, ".q_proj.weight"),
-                  XnnTensor({.name = "q_proj",
+  weights.emplace(absl::StrCat(prefix, ".q_proj.weight"),
+                  TensorInit{.name = "q_proj",
                              .type = Type::kFP32,
                              .shape = {8, 4},
-                             .buffer = GenerateWeights(8, 4, 0.01f, 0.1f)})});
+                             .buffer = GenerateWeights(8, 4, 0.01f, 0.1f)});
 
-  weights.insert({absl::StrCat(prefix, ".k_proj.weight"),
-                  XnnTensor({.name = "k_proj",
+  weights.emplace(absl::StrCat(prefix, ".k_proj.weight"),
+                  TensorInit{.name = "k_proj",
                              .type = Type::kFP32,
                              .shape = {8, 4},
-                             .buffer = GenerateWeights(8, 4, 0.02f, 0.05f)})});
+                             .buffer = GenerateWeights(8, 4, 0.02f, 0.05f)});
 
-  weights.insert({absl::StrCat(prefix, ".v_proj.weight"),
-                  XnnTensor({.name = "v_proj",
+  weights.emplace(absl::StrCat(prefix, ".v_proj.weight"),
+                  TensorInit{.name = "v_proj",
                              .type = Type::kFP32,
                              .shape = {8, 4},
-                             .buffer = GenerateWeights(8, 4, 0.015f, 0.02f)})});
+                             .buffer = GenerateWeights(8, 4, 0.015f, 0.02f)});
 
-  weights.insert({absl::StrCat(prefix, ".o_proj.weight"),
-                  XnnTensor({.name = "o_proj",
+  weights.emplace(absl::StrCat(prefix, ".o_proj.weight"),
+                  TensorInit{.name = "o_proj",
                              .type = Type::kFP32,
                              .shape = {4, 8},
-                             .buffer = GenerateWeights(4, 8, 0.01f, 0.05f)})});
+                             .buffer = GenerateWeights(4, 8, 0.01f, 0.05f)});
 
-  weights.insert(
-      {absl::StrCat(prefix, ".q_norm.weight"), XnnTensor({.name = "q_norm",
-                                                          .type = Type::kFP32,
-                                                          .shape = {4},
-                                                          .buffer = 1.0f})});
+  weights.emplace(
+      absl::StrCat(prefix, ".q_norm.weight"),
+      TensorInit{
+          .name = "q_norm", .type = Type::kFP32, .shape = {4}, .buffer = 1.0f});
 
-  weights.insert(
-      {absl::StrCat(prefix, ".k_norm.weight"), XnnTensor({.name = "k_norm",
-                                                          .type = Type::kFP32,
-                                                          .shape = {4},
-                                                          .buffer = 1.0f})});
+  weights.emplace(
+      absl::StrCat(prefix, ".k_norm.weight"),
+      TensorInit{
+          .name = "k_norm", .type = Type::kFP32, .shape = {4}, .buffer = 1.0f});
 
   return weights;
 }
 
-TEST(Gemma4GraphTest, SingleKVHeadAttentionTest) {
+template <class Backend>
+class AttentionTest : public ::testing::Test {};
+TYPED_TEST_SUITE(AttentionTest, TestBackends, TestBackendNames);
+
+TYPED_TEST(AttentionTest, SingleKVHeadAttentionTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
   config.head_dim = 4;
   config.embed_dim = 4;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  LazyTensorMapping weights(CreateDefaultWeights());
 
-  XnnTensor key_cache = XnnTensor::Invalid();
-  XnnTensor value_cache = XnnTensor::Invalid();
-  XnnTensor shared_key = XnnTensor::Invalid();
-  XnnTensor shared_value = XnnTensor::Invalid();
+  Tensor key_cache = Tensor::Invalid();
+  Tensor value_cache = Tensor::Invalid();
+  Tensor shared_key = Tensor::Invalid();
+  Tensor shared_value = Tensor::Invalid();
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<Tag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create({attn_out.output, attn_out.key_cache,
-                             attn_out.value_cache, attn_out.key_for_attn,
-                             attn_out.value_for_attn}));
+      Runner runner,
+      Runner::Create({attn_out.output, attn_out.key_cache, attn_out.value_cache,
+                      attn_out.key_for_attn, attn_out.value_for_attn}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -289,42 +296,102 @@ TEST(Gemma4GraphTest, SingleKVHeadAttentionTest) {
                          0.3003760f, 0.6974834f, 1.0945907f, 1.4916979f}));
 }
 
+TEST(Gemma4GraphTest, SingleKvHeadSupportsConsistentArithmetic) {
+  using XnnTensor = Tensor<XnnpackMixinTag>;
+  Config config = Config::E4B();
+  config.num_heads = 2;
+  config.num_kv_heads = 1;
+  config.head_dim = 4;
+  config.embed_dim = 4;
+  LazyTensorMapping weights(CreateDefaultWeights());
+
+  // Cover one-token and multi-token prefill, then decode with cached history.
+  for (const auto& [seq_len, cache_len] :
+       {std::pair{1, 0}, std::pair{3, 0}, std::pair{1, 2}}) {
+    SCOPED_TRACE(::testing::Message()
+                 << "seq_len=" << seq_len << ", cache_len=" << cache_len);
+    XnnTensor input({.type = Type::kFP32, .shape = {1, seq_len, 4}});
+    XnnTensor mask(
+        {.type = Type::kFP32, .shape = {1, 1, seq_len, seq_len + cache_len}});
+    XnnTensor cos(
+        {.type = Type::kFP32, .shape = {1, 1, seq_len, 4}, .buffer = 1.0f});
+    XnnTensor sin(
+        {.type = Type::kFP32, .shape = {1, 1, seq_len, 4}, .buffer = 0.0f});
+    XnnTensor key_cache = XnnTensor::Invalid();
+    XnnTensor value_cache = XnnTensor::Invalid();
+    if (cache_len > 0) {
+      key_cache =
+          XnnTensor({.type = Type::kFP32, .shape = {1, 1, cache_len, 4}});
+      value_cache =
+          XnnTensor({.type = Type::kFP32, .shape = {1, 1, cache_len, 4}});
+    }
+    XnnTensor eps(
+        {.type = Type::kFP32, .shape = {1}, .buffer = config.rms_norm_eps});
+    const XnnTensor no_shared_kv = TensorHandle::Invalid();
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        AttentionOutput<XnnpackMixinTag> attention,
+        Attention(input, mask, cos, sin, key_cache, value_cache, no_shared_kv,
+                  no_shared_kv, config, weights, "attn",
+                  Config::LayerType::kLocalSliding, eps));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        std::unique_ptr<XnnpackGraph> graph,
+        BuildXnnpackGraph(
+            {attention.output, attention.key_cache, attention.value_cache}));
+
+    // This mode preserves an explicit Tile's broadcast, which fails runtime
+    // creation. Implicit BatchMatMul broadcasting must work without that
+    // optimizer rewrite, as well as in the default runner tests above.
+    xnn_runtime_t raw_runtime = nullptr;
+    const xnn_status status = xnn_create_runtime_v3(
+        graph->GetSubgraph(), /*weights_cache=*/nullptr, /*threadpool=*/nullptr,
+        XNN_FLAG_SLOW_CONSISTENT_ARITHMETIC, &raw_runtime);
+    XnnpackRunner::RuntimePtr runtime(raw_runtime);
+    ASSERT_EQ(status, xnn_status_success);
+    EXPECT_EQ(xnn_reshape_runtime(runtime.get()), xnn_status_success);
+  }
+}
+
 // Grouped-Query Attention: specifically testing the per-head Slice -> Tile ->
 // Concatenation pipeline that duplicates KV heads to match query heads.
-TEST(Gemma4GraphTest, MultiKvHeadsGqaAttentionTest) {
+TYPED_TEST(AttentionTest, MultiKvHeadsGqaAttentionTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 4;
   config.num_kv_heads = 2;
   config.head_dim = 4;
   config.embed_dim = 8;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 8}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 8}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateGqaWeights();
+  LazyTensorMapping weights(CreateGqaWeights());
 
-  XnnTensor key_cache = XnnTensor::Invalid();
-  XnnTensor value_cache = XnnTensor::Invalid();
-  XnnTensor shared_key = XnnTensor::Invalid();
-  XnnTensor shared_value = XnnTensor::Invalid();
+  Tensor key_cache = Tensor::Invalid();
+  Tensor value_cache = Tensor::Invalid();
+  Tensor shared_key = Tensor::Invalid();
+  Tensor shared_value = Tensor::Invalid();
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<Tag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create({attn_out.output, attn_out.key_cache,
-                             attn_out.value_cache, attn_out.key_for_attn,
-                             attn_out.value_for_attn}));
+      Runner runner,
+      Runner::Create({attn_out.output, attn_out.key_cache, attn_out.value_cache,
+                      attn_out.key_for_attn, attn_out.value_for_attn}));
 
   const std::array<float, 16> input_data = {1.0f, 2.0f, 3.0f, 4.0f, 1.0f, 2.0f,
                                             3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f,
@@ -391,40 +458,45 @@ TEST(Gemma4GraphTest, MultiKvHeadsGqaAttentionTest) {
 
 // Multi-Head Attention (MHA): testing standard attention where num_heads ==
 // num_kv_heads (GQA tiling bypassed).
-TEST(Gemma4GraphTest, MultiHeadAttentionTest) {
+TYPED_TEST(AttentionTest, MultiHeadAttentionTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 2;
   config.head_dim = 4;
   config.embed_dim = 4;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateMhaWeights();
+  LazyTensorMapping weights(CreateMhaWeights());
 
-  XnnTensor key_cache = XnnTensor::Invalid();
-  XnnTensor value_cache = XnnTensor::Invalid();
-  XnnTensor shared_key = XnnTensor::Invalid();
-  XnnTensor shared_value = XnnTensor::Invalid();
+  Tensor key_cache = Tensor::Invalid();
+  Tensor value_cache = Tensor::Invalid();
+  Tensor shared_key = Tensor::Invalid();
+  Tensor shared_value = Tensor::Invalid();
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<Tag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create({attn_out.output, attn_out.key_cache,
-                             attn_out.value_cache, attn_out.key_for_attn,
-                             attn_out.value_for_attn}));
+      Runner runner,
+      Runner::Create({attn_out.output, attn_out.key_cache, attn_out.value_cache,
+                      attn_out.key_for_attn, attn_out.value_for_attn}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -486,7 +558,11 @@ TEST(Gemma4GraphTest, MultiHeadAttentionTest) {
 }
 
 // Checks logits soft-capping behavior when attn_logits_soft_cap is specified,
-TEST(Gemma4GraphTest, SoftCappingAttentionTest) {
+TYPED_TEST(AttentionTest, SoftCappingAttentionTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
@@ -494,33 +570,34 @@ TEST(Gemma4GraphTest, SoftCappingAttentionTest) {
   config.embed_dim = 4;
   config.attn_logits_soft_cap = 1.0f;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  LazyTensorMapping weights(CreateDefaultWeights());
 
-  XnnTensor key_cache = XnnTensor::Invalid();
-  XnnTensor value_cache = XnnTensor::Invalid();
-  XnnTensor shared_key = XnnTensor::Invalid();
-  XnnTensor shared_value = XnnTensor::Invalid();
+  Tensor key_cache = Tensor::Invalid();
+  Tensor value_cache = Tensor::Invalid();
+  Tensor shared_key = Tensor::Invalid();
+  Tensor shared_value = Tensor::Invalid();
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<Tag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create({attn_out.output, attn_out.key_cache,
-                             attn_out.value_cache, attn_out.key_for_attn,
-                             attn_out.value_for_attn}));
+      Runner runner,
+      Runner::Create({attn_out.output, attn_out.key_cache, attn_out.value_cache,
+                      attn_out.key_for_attn, attn_out.value_for_attn}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -574,9 +651,14 @@ TEST(Gemma4GraphTest, SoftCappingAttentionTest) {
                          0.3003760f, 0.6974834f, 1.0945907f, 1.4916979f}));
 }
 
-// Verifies Attention layer configured as a Global Layer (is_global = true).
+// Verifies Attention layer configured as a Global Layer
+// (layer_type = kGlobal).
 // `global_key_size` should be used for the key dimension instead of `head_dim`.
-TEST(Gemma4GraphTest, GlobalLayerAttentionTest) {
+TYPED_TEST(AttentionTest, GlobalLayerAttentionTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
@@ -584,34 +666,35 @@ TEST(Gemma4GraphTest, GlobalLayerAttentionTest) {
   config.global_key_size = 4;
   config.embed_dim = 4;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  LazyTensorMapping weights(CreateDefaultWeights());
 
-  XnnTensor key_cache = XnnTensor::Invalid();
-  XnnTensor value_cache = XnnTensor::Invalid();
-  XnnTensor shared_key = XnnTensor::Invalid();
-  XnnTensor shared_value = XnnTensor::Invalid();
+  Tensor key_cache = Tensor::Invalid();
+  Tensor value_cache = Tensor::Invalid();
+  Tensor shared_key = Tensor::Invalid();
+  Tensor shared_value = Tensor::Invalid();
 
-  // is_global=true uses global_key_size (4) instead of head_dim (2)
-  XnnTensor eps_tensor({
+  // kGlobal uses global_key_size (4) instead of head_dim (2)
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/true, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<Tag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kGlobal, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create({attn_out.output, attn_out.key_cache,
-                             attn_out.value_cache, attn_out.key_for_attn,
-                             attn_out.value_for_attn}));
+      Runner runner,
+      Runner::Create({attn_out.output, attn_out.key_cache, attn_out.value_cache,
+                      attn_out.key_for_attn, attn_out.value_for_attn}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -666,43 +749,48 @@ TEST(Gemma4GraphTest, GlobalLayerAttentionTest) {
 }
 
 // Checks pre-populated KV tensors
-TEST(Gemma4GraphTest, KVCacheAttentionTest) {
+TYPED_TEST(AttentionTest, KVCacheAttentionTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
   config.head_dim = 4;
   config.embed_dim = 4;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  XnnTensor key_cache(
+  Tensor key_cache(
       {.name = "key_cache", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor value_cache(
+  Tensor value_cache(
       {.name = "value_cache", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  LazyTensorMapping weights(CreateDefaultWeights());
 
-  XnnTensor shared_key = XnnTensor::Invalid();
-  XnnTensor shared_value = XnnTensor::Invalid();
+  Tensor shared_key = Tensor::Invalid();
+  Tensor shared_value = Tensor::Invalid();
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<Tag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create({attn_out.output, attn_out.key_cache,
-                             attn_out.value_cache, attn_out.key_for_attn,
-                             attn_out.value_for_attn}));
+      Runner runner,
+      Runner::Create({attn_out.output, attn_out.key_cache, attn_out.value_cache,
+                      attn_out.key_for_attn, attn_out.value_for_attn}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -768,43 +856,48 @@ TEST(Gemma4GraphTest, KVCacheAttentionTest) {
 }
 
 // Checks when provided KV cache has sequence length 0 (empty cache fallback).
-TEST(Gemma4GraphTest, EmptyKVCacheAttentionTest) {
+TYPED_TEST(AttentionTest, EmptyKVCacheAttentionTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
   config.head_dim = 4;
   config.embed_dim = 4;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  XnnTensor key_cache(
+  Tensor key_cache(
       {.name = "key_cache", .type = Type::kFP32, .shape = {1, 1, 0, 4}});
-  XnnTensor value_cache(
+  Tensor value_cache(
       {.name = "value_cache", .type = Type::kFP32, .shape = {1, 1, 0, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  LazyTensorMapping weights(CreateDefaultWeights());
 
-  XnnTensor shared_key = XnnTensor::Invalid();
-  XnnTensor shared_value = XnnTensor::Invalid();
+  Tensor shared_key = Tensor::Invalid();
+  Tensor shared_value = Tensor::Invalid();
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<Tag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create({attn_out.output, attn_out.key_cache,
-                             attn_out.value_cache, attn_out.key_for_attn,
-                             attn_out.value_for_attn}));
+      Runner runner,
+      Runner::Create({attn_out.output, attn_out.key_cache, attn_out.value_cache,
+                      attn_out.key_for_attn, attn_out.value_for_attn}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -860,7 +953,11 @@ TEST(Gemma4GraphTest, EmptyKVCacheAttentionTest) {
 // Grouped-Query Attention with dynamic pre-existing KV cache history.
 // Verifies that dynamic sequence slicing (-1) in GQA correctly handles
 // expanding KV cache sequence lengths without static dimension errors.
-TEST(Gemma4GraphTest, MultiKvHeadsGqaDynamicKVCacheAttentionTest) {
+TYPED_TEST(AttentionTest, MultiKvHeadsGqaDynamicKVCacheAttentionTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 4;
   config.num_kv_heads = 2;
@@ -868,39 +965,40 @@ TEST(Gemma4GraphTest, MultiKvHeadsGqaDynamicKVCacheAttentionTest) {
   config.embed_dim = 8;
 
   // 1 token decode step
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 8}});
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 8}});
   // History of 3 cached tokens + 1 new token = 4 sequence length for attention
   // mask
-  XnnTensor attention_mask(
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
 
   // Cached history of 3 tokens for 2 KV heads, head_dim 4 -> 1*2*3*4 = 24
   // floats
-  XnnTensor key_cache(
+  Tensor key_cache(
       {.name = "key_cache", .type = Type::kFP32, .shape = {1, 2, 3, 4}});
-  XnnTensor value_cache(
+  Tensor value_cache(
       {.name = "value_cache", .type = Type::kFP32, .shape = {1, 2, 3, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateGqaWeights();
+  LazyTensorMapping weights(CreateGqaWeights());
 
-  XnnTensor shared_key = XnnTensor::Invalid();
-  XnnTensor shared_value = XnnTensor::Invalid();
+  Tensor shared_key = Tensor::Invalid();
+  Tensor shared_value = Tensor::Invalid();
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<Tag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create(
-          {attn_out.output, attn_out.key_cache, attn_out.value_cache}));
+      Runner runner, Runner::Create({attn_out.output, attn_out.key_cache,
+                                     attn_out.value_cache}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            1.0f, 2.0f, 3.0f, 4.0f};
@@ -944,45 +1042,160 @@ TEST(Gemma4GraphTest, MultiKvHeadsGqaDynamicKVCacheAttentionTest) {
                          0.7441726f, 0.9039949f, 1.0638173f, 1.2236395f}));
 }
 
+// Grouped-Query Attention over two decode steps whose KV cache grows in
+// between. This is the shape incremental decoding produces: the graph is built
+// once and re-run with a longer cache, so every extent derived from the cache
+// length has to stay dynamic rather than be frozen when the graph is built.
+TYPED_TEST(AttentionTest, MultiKvHeadsGqaGrowingKVCacheAttentionTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
+  Config config = Config::E4B();
+  config.num_heads = 4;
+  config.num_kv_heads = 2;
+  config.head_dim = 4;
+  config.embed_dim = 8;
+
+  // 1 token decode step.
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 1, 8}});
+  // The mask covers the cached tokens plus the new one, so it grows with the
+  // cache.
+  Tensor attention_mask(
+      {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
+
+  Tensor key_cache(
+      {.name = "key_cache", .type = Type::kFP32, .shape = {1, 2, 3, 4}});
+  Tensor value_cache(
+      {.name = "value_cache", .type = Type::kFP32, .shape = {1, 2, 3, 4}});
+
+  LazyTensorMapping weights(CreateGqaWeights());
+
+  Tensor shared_key = Tensor::Invalid();
+  Tensor shared_value = Tensor::Invalid();
+
+  Tensor eps_tensor({
+      .type = Type::kFP32,
+      .shape = {1},
+      .buffer = config.rms_norm_eps,
+  });
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<Tag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      Runner runner, Runner::Create({attn_out.output, attn_out.key_cache,
+                                     attn_out.value_cache}));
+
+  const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
+                                           1.0f, 2.0f, 3.0f, 4.0f};
+  ASSERT_THAT(runner.SetInput(input, input_data), IsOk());
+
+  const std::array<float, 4> cos_data = {1.0f, 1.0f, 1.0f, 1.0f};
+  const std::array<float, 4> sin_data = {0.0f, 0.0f, 0.0f, 0.0f};
+  ASSERT_THAT(runner.SetInput(cos, cos_data), IsOk());
+  ASSERT_THAT(runner.SetInput(sin, sin_data), IsOk());
+
+  // The new key and value are only ever the projection of the single new
+  // token, so they do not depend on the cache length.
+  const std::vector<float> expected_kc = {0.2985111f, 0.6965259f, 1.0945408f,
+                                          1.4925557f, 0.7481243f, 0.9056241f,
+                                          1.0631239f, 1.2206237f};
+  const std::vector<float> expected_vc = {0.2701873f, 0.6819012f, 1.0936151f,
+                                          1.5053290f, 0.7441726f, 0.9039949f,
+                                          1.0638173f, 1.2236395f};
+
+  // Expected data computed using the script in `./reference/attention.py`.
+  const std::vector<std::vector<float>> expected_outputs = {
+      {0.5797290f, 1.5080730f, 2.4364171f, 3.3647606f, 4.2931042f, 5.2214484f,
+       6.1497927f, 7.0781364f},
+      {0.5419821f, 1.4119579f, 2.2819335f, 3.1519091f, 4.0218849f, 4.8918605f,
+       5.7618365f, 6.6318121f},
+  };
+
+  for (int32_t cache_len : {3, 4}) {
+    SCOPED_TRACE(absl::StrCat("cache_len=", cache_len));
+
+    const std::array<int32_t, 4> cache_shape = {1, 2, cache_len, 4};
+    ASSERT_THAT(runner.ReshapeInput(key_cache, cache_shape), IsOk());
+    ASSERT_THAT(runner.ReshapeInput(value_cache, cache_shape), IsOk());
+    const std::array<int32_t, 4> mask_shape = {1, 1, 1, cache_len + 1};
+    ASSERT_THAT(runner.ReshapeInput(attention_mask, mask_shape), IsOk());
+
+    const std::vector<float> kc_data(2 * cache_len * 4, 0.5f);
+    const std::vector<float> vc_data(2 * cache_len * 4, 0.2f);
+    const std::vector<float> mask_data(cache_len + 1, 0.0f);
+    ASSERT_THAT(runner.SetInput(key_cache, kc_data), IsOk());
+    ASSERT_THAT(runner.SetInput(value_cache, vc_data), IsOk());
+    ASSERT_THAT(runner.SetInput(attention_mask, mask_data), IsOk());
+
+    ASSERT_THAT(runner.Run(), IsOk());
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LockedBufferSpan<const std::byte> res_out,
+                                    runner.ReadOutput(attn_out.output));
+    EXPECT_THAT(std::move(res_out).As<const float>(),
+                Pointwise(FloatNear(1e-4f), expected_outputs[cache_len - 3]));
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LockedBufferSpan<const std::byte> res_kc,
+                                    runner.ReadOutput(attn_out.key_cache));
+    EXPECT_THAT(std::move(res_kc).As<const float>(),
+                Pointwise(FloatNear(1e-4f), expected_kc));
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LockedBufferSpan<const std::byte> res_vc,
+                                    runner.ReadOutput(attn_out.value_cache));
+    EXPECT_THAT(std::move(res_vc).As<const float>(),
+                Pointwise(FloatNear(1e-4f), expected_vc));
+  }
+}
+
 // Checks when shared_key and shared_value tensors are provided, which should
 // bypass standard projection and cache update logic.
-TEST(Gemma4GraphTest, SharedKVAttentionTest) {
+TYPED_TEST(AttentionTest, SharedKVAttentionTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
   config.head_dim = 4;
   config.embed_dim = 4;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  XnnTensor shared_key(
+  Tensor shared_key(
       {.name = "shared_key", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor shared_value(
+  Tensor shared_value(
       {.name = "shared_value", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  LazyTensorMapping weights(CreateDefaultWeights());
 
-  XnnTensor key_cache = XnnTensor::Invalid();
-  XnnTensor value_cache = XnnTensor::Invalid();
+  Tensor key_cache = Tensor::Invalid();
+  Tensor value_cache = Tensor::Invalid();
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<Tag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create({attn_out.output, attn_out.key_cache,
-                             attn_out.value_cache, attn_out.key_for_attn,
-                             attn_out.value_for_attn}));
+      Runner runner,
+      Runner::Create({attn_out.output, attn_out.key_cache, attn_out.value_cache,
+                      attn_out.key_for_attn, attn_out.value_for_attn}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};
@@ -1041,43 +1254,48 @@ TEST(Gemma4GraphTest, SharedKVAttentionTest) {
 }
 
 // Checks fallback behavior when shared KV shapes mismatch.
-TEST(Gemma4GraphTest, MismatchedSharedKVAttentionTest) {
+TYPED_TEST(AttentionTest, MismatchedSharedKVAttentionTest) {
+  using Tag = typename TypeParam::Tag;
+  using Tensor = typename TypeParam::Tensor;
+  using Runner = typename TypeParam::Runner;
+
   Config config = Config::E4B();
   config.num_heads = 2;
   config.num_kv_heads = 1;
   config.head_dim = 4;
   config.embed_dim = 4;
 
-  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
-  XnnTensor attention_mask(
+  Tensor input({.name = "input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  Tensor attention_mask(
       {.name = "attention_mask", .type = Type::kFP32, .shape = {1, 1, 2, 2}});
-  XnnTensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor cos({.name = "cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor sin({.name = "sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
 
-  XnnTensor shared_key(
+  Tensor shared_key(
       {.name = "shared_key", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
-  XnnTensor shared_value(
+  Tensor shared_value(
       {.name = "shared_value", .type = Type::kFP32, .shape = {1, 1, 3, 4}});
 
-  absl::flat_hash_map<std::string, XnnTensor> weights = CreateDefaultWeights();
+  LazyTensorMapping weights(CreateDefaultWeights());
 
-  XnnTensor key_cache = XnnTensor::Invalid();
-  XnnTensor value_cache = XnnTensor::Invalid();
+  Tensor key_cache = Tensor::Invalid();
+  Tensor value_cache = Tensor::Invalid();
 
-  XnnTensor eps_tensor({
+  Tensor eps_tensor({
       .type = Type::kFP32,
       .shape = {1},
       .buffer = config.rms_norm_eps,
   });
-  AttentionOutput<XnnpackMixinTag> attn_out = Attention(
-      input, attention_mask, cos, sin, key_cache, value_cache, shared_key,
-      shared_value, config, weights, "attn", /*is_global=*/false, eps_tensor);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      AttentionOutput<Tag> attn_out,
+      Attention(input, attention_mask, cos, sin, key_cache, value_cache,
+                shared_key, shared_value, config, weights, "attn",
+                Config::LayerType::kLocalSliding, eps_tensor));
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
-      XnnpackRunner runner,
-      XnnpackRunner::Create({attn_out.output, attn_out.key_cache,
-                             attn_out.value_cache, attn_out.key_for_attn,
-                             attn_out.value_for_attn}));
+      Runner runner,
+      Runner::Create({attn_out.output, attn_out.key_cache, attn_out.value_cache,
+                      attn_out.key_for_attn, attn_out.value_for_attn}));
 
   const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
                                            5.0f, 6.0f, 7.0f, 8.0f};

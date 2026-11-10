@@ -42,6 +42,20 @@ TEST(IrAllocatorTest, EmplaceBack) {
   EXPECT_EQ(ops.Elements().at(0)->OpCode(), kCustomOpCode);
 }
 
+TEST(IrAllocatorTest, EmplaceBackManyElements) {
+  constexpr size_t kNumElements = 20000;
+  IrAllocator<LiteRtOpT> ops;
+  std::vector<LiteRtOpT*> expected;
+  expected.reserve(kNumElements);
+
+  for (size_t i = 0; i < kNumElements; ++i) {
+    expected.push_back(&ops.EmplaceBack());
+  }
+
+  ASSERT_EQ(ops.Size(), kNumElements);
+  EXPECT_THAT(ops.Elements(), ElementsAreArray(expected));
+}
+
 TEST(IrAllocatorTest, EmplaceBackWithIndex) {
   IrAllocator<LiteRtOpT> ops;
 

@@ -32,17 +32,15 @@ namespace {
 absl::Status QkvNormRopeIsSupported(
     const TfLiteContext* context, const TfLiteNode* tflite_node,
     const TfLiteRegistration* /*registration*/) {
-  if (tflite_node->inputs->size != 4) {
+  const int num_inputs = tflite_node->inputs->size;
+  const int num_outputs = tflite_node->outputs->size;
+  const bool is_full_qkv = (num_inputs == 4 && num_outputs == 3);
+  const bool is_q_only = (num_inputs == 3 && num_outputs == 1);
+  if (!is_full_qkv && !is_q_only) {
     return absl::InvalidArgumentError(absl::StrCat(
-        "QkvNormRoPE expects 4 inputs (qkv, position, q_weight, k_weight), "
-        "but got ",
-        tflite_node->inputs->size));
-  }
-
-  if (tflite_node->outputs->size != 3) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("QkvNormRoPE expects 3 outputs (q, k, v), but got ",
-                     tflite_node->outputs->size));
+        "QkvNormRoPE expects (4 inputs, 3 outputs) or (3 inputs, 1 output), "
+        "but got (",
+        num_inputs, ", ", num_outputs, ")"));
   }
 
   return absl::OkStatus();
@@ -96,6 +94,9 @@ void QkvNormRopeConvert(
     if (!flexbuffer_map["epsilon"].IsNull()) {
       attr.epsilon = flexbuffer_map["epsilon"].AsFloat();
     }
+    if (!flexbuffer_map["has_v_norm"].IsNull()) {
+      attr.has_v_norm = flexbuffer_map["has_v_norm"].AsBool();
+    }
   } else if (tflite_node.custom_initial_data &&
              tflite_node.custom_initial_data_size > 0) {
     const flexbuffers::Map flexbuffer_map =
@@ -124,6 +125,12 @@ void QkvNormRopeConvert(
     if (!flexbuffer_map["epsilon"].IsNull()) {
       attr.epsilon = flexbuffer_map["epsilon"].AsFloat();
     }
+    if (!flexbuffer_map["has_v_norm"].IsNull()) {
+      attr.has_v_norm = flexbuffer_map["has_v_norm"].AsBool();
+    }
+  }
+  if (tflite_node.inputs->size == 3) {
+    attr.num_kv_heads = 0;
   }
   op->attr = attr;
 }

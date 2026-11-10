@@ -33,7 +33,6 @@
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
@@ -42,6 +41,7 @@
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/serialization_base_generated.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/precision.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/build_identifier.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/cache_builder.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_schema_generated.h"
@@ -102,12 +102,12 @@ struct SerializationWeightCacheTest : public ::testing::TestWithParam<bool> {
     const int num_external_tensors = 20;
     // Create a few different types of tensors to help verify
     // serialized tensors are matched with their correct ids.
-    static const DataType kDataTypes[] = {DataType::FLOAT32, DataType::INT8};
+    static const DataType kDataTypes[] = {DataType::kFloat32, DataType::kInt8};
     static const TensorStorageType kStorageTypes[] = {
-        TensorStorageType::TEXTURE_2D, TensorStorageType::IMAGE_BUFFER,
-        TensorStorageType::BUFFER};
-    static const Layout kLayouts[] = {Layout::HWC, Layout::BHWDC,
-                                      Layout::LINEAR, Layout::BHWC};
+        TensorStorageType::kTexture2D, TensorStorageType::kImageBuffer,
+        TensorStorageType::kBuffer};
+    static const Layout kLayouts[] = {Layout::kHWC, Layout::kBHWDC,
+                                      Layout::kLinear, Layout::kBHWC};
 
     for (size_t i = 0; i < num_external_tensors; ++i) {
       DataType data_type = kDataTypes[i % 2];
@@ -120,7 +120,7 @@ struct SerializationWeightCacheTest : public ::testing::TestWithParam<bool> {
       for (size_t j = 0; j < i; ++j) {
         data[j] = j;
       }
-      tensor_descs[i].SetAccess(ml_drift::AccessType::READ);
+      tensor_descs[i].SetAccess(ml_drift::AccessType::kRead);
       tensor_descs[i].SetData(std::move(data));
     }
   }
@@ -210,7 +210,7 @@ TEST_P(SerializationWeightCacheTest, LookUpFailsIfKeyDoesntMatch) {
 
   uint32_t global_tensor_id = 12345;
   ml_drift::TensorDescriptor tensor_desc;
-  tensor_desc.SetAccess(ml_drift::AccessType::READ);
+  tensor_desc.SetAccess(ml_drift::AccessType::kRead);
   EXPECT_THAT(
       cache.LookUp(global_tensor_id, GetQuantizationParamTensor(), tensor_desc),
       StatusIs(::util::error::INVALID_ARGUMENT,
@@ -257,7 +257,7 @@ TEST_P(SerializationWeightCacheTest,
       unique_model_identifier));
   uint32_t global_tensor_id = 10;
   ml_drift::TensorDescriptor tensor_desc;
-  tensor_desc.SetAccess(ml_drift::AccessType::READ);
+  tensor_desc.SetAccess(ml_drift::AccessType::kRead);
   ASSERT_OK(cache.Insert(global_tensor_id, GetQuantizationParamTensor(),
                          tensor_desc));
   EXPECT_OK(cache.StopBuild());
@@ -278,7 +278,7 @@ TEST_P(SerializationWeightCacheTest, LookUpIntegerOverflowFails) {
                              unique_model_identifier));
   uint32_t global_tensor_id = 10;
   ml_drift::TensorDescriptor tensor_desc;
-  tensor_desc.SetAccess(ml_drift::AccessType::READ);
+  tensor_desc.SetAccess(ml_drift::AccessType::kRead);
   tensor_desc.SetData({1, 2, 3, 4});
   ASSERT_OK(cache.Insert(global_tensor_id, GetQuantizationParamTensor(),
                          tensor_desc));
@@ -306,7 +306,7 @@ TEST_P(SerializationWeightCacheTest, LookUpOutOfBoundsFails) {
                              unique_model_identifier));
   uint32_t global_tensor_id = 10;
   ml_drift::TensorDescriptor tensor_desc;
-  tensor_desc.SetAccess(ml_drift::AccessType::READ);
+  tensor_desc.SetAccess(ml_drift::AccessType::kRead);
   tensor_desc.SetData({1, 2, 3, 4});
   ASSERT_OK(cache.Insert(global_tensor_id, GetQuantizationParamTensor(),
                          tensor_desc));
@@ -356,7 +356,7 @@ TEST_P(SerializationWeightCacheTest, InsertHandlesOOMGracefully) {
 TEST_P(SerializationWeightCacheTest, ExceedsMaxSupportedSubgraphsFails) {
   const uint64_t unique_model_identifier_base = 1000;
   ml_drift::TensorDescriptor tensor_desc;
-  tensor_desc.SetAccess(ml_drift::AccessType::READ);
+  tensor_desc.SetAccess(ml_drift::AccessType::kRead);
 
   for (int i = 0; i <= ml_drift::kMaxSupportedSubgraphs; ++i) {
     ASSERT_OK(cache.StartBuild(tmp_dir, "exceeds_max_subgraphs",
@@ -398,7 +398,7 @@ TEST_P(SerializationWeightCacheTest, UniqueModelIdentifierIsUsedToRejectCache) {
                              unique_model_identifier));
   uint32_t global_tensor_id = 10;
   ml_drift::TensorDescriptor tensor_desc;
-  tensor_desc.SetAccess(ml_drift::AccessType::READ);
+  tensor_desc.SetAccess(ml_drift::AccessType::kRead);
   ASSERT_OK(cache.Insert(global_tensor_id, GetQuantizationParamTensor(),
                          tensor_desc));
   EXPECT_OK(cache.StopBuild());
@@ -419,7 +419,7 @@ TEST_P(SerializationWeightCacheTest, MultipleSubgraphsShareCacheWorks) {
   ASSERT_OK(cache.StartBuild(tmp_dir, "multiple_subgraphs_share_cache", 111));
   uint32_t id1 = 10;
   ml_drift::TensorDescriptor desc1;
-  desc1.SetAccess(ml_drift::AccessType::READ);
+  desc1.SetAccess(ml_drift::AccessType::kRead);
   ASSERT_OK(cache.Insert(id1, GetQuantizationParamTensor(), desc1));
   EXPECT_OK(cache.StopBuild());
 
@@ -429,7 +429,7 @@ TEST_P(SerializationWeightCacheTest, MultipleSubgraphsShareCacheWorks) {
   ASSERT_OK(cache.StartBuild(tmp_dir, "multiple_subgraphs_share_cache", 222));
   uint32_t id2 = 20;
   ml_drift::TensorDescriptor desc2;
-  desc2.SetAccess(ml_drift::AccessType::WRITE);
+  desc2.SetAccess(ml_drift::AccessType::kWrite);
   ASSERT_OK(cache.Insert(id2, GetQuantizationParamTensor(), desc2));
   EXPECT_OK(cache.StopBuild());
 
@@ -455,7 +455,7 @@ TEST_P(SerializationWeightCacheTest, LoadFailureThenStartBuildSucceeds) {
   ASSERT_OK(cache.StartBuild(tmp_dir, model_token, identifier1));
   uint32_t id1 = 10;
   ml_drift::TensorDescriptor desc1;
-  desc1.SetAccess(ml_drift::AccessType::READ);
+  desc1.SetAccess(ml_drift::AccessType::kRead);
   ASSERT_OK(cache.Insert(id1, GetQuantizationParamTensor(), desc1));
   EXPECT_OK(cache.StopBuild());
 
@@ -473,7 +473,7 @@ TEST_P(SerializationWeightCacheTest, LoadFailureThenStartBuildSucceeds) {
   ASSERT_OK(new_cache.StartBuild(tmp_dir, model_token, identifier2));
   uint32_t id2 = 20;
   ml_drift::TensorDescriptor desc2;
-  desc2.SetAccess(ml_drift::AccessType::WRITE);
+  desc2.SetAccess(ml_drift::AccessType::kWrite);
   ASSERT_OK(new_cache.Insert(id2, GetQuantizationParamTensor(), desc2));
   EXPECT_OK(new_cache.StopBuild());
 
@@ -510,7 +510,7 @@ TEST(SerializationWeightCacheTest, FileDescriptorSupportWorks) {
 
   uint32_t tensor_id = 10;
   ml_drift::TensorDescriptor desc;
-  desc.SetAccess(ml_drift::AccessType::READ);
+  desc.SetAccess(ml_drift::AccessType::kRead);
   std::vector<uint8_t> data = {1, 2, 3, 4};
   desc.SetData(std::move(data));
 
@@ -543,87 +543,77 @@ TEST(SerializationWeightCacheUniqueModelIdentifierTest,
   const MlDriftDelegatePrecision precision = kDefault;
 
   // Base fingerprint with default options.
+  ml_drift::ModelIdentifierOptions default_options;
+  default_options.precision = precision;
+  default_options.prefer_texture_weights = false;
+  default_options.allow_src_quantized_fc_conv_ops = false;
+  default_options.prepare_weights_in_batches = false;
+  default_options.serialize_external_tensors = false;
+  default_options.ordered_by_size = true;
+  default_options.use_ir_model = false;
+
   uint64_t base_fp =
       ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
           model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          precision,
-          /*prefer_texture_weights=*/false,
-          /*allow_src_quantized_fc_conv_ops=*/false,
-          /*prepare_weights_in_batches=*/false,
-          /*serialize_external_tensors=*/false,
-          /*ordered_by_size=*/true);
+          default_options);
 
   // Test precision changes fingerprint.
-  uint64_t fp_precision =
-      ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
-          model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          kFp16,
-          /*prefer_texture_weights=*/false,
-          /*allow_src_quantized_fc_conv_ops=*/false,
-          /*prepare_weights_in_batches=*/false,
-          /*serialize_external_tensors=*/false,
-          /*ordered_by_size=*/true);
-  EXPECT_NE(base_fp, fp_precision);
+  ml_drift::ModelIdentifierOptions fp_precision_options = default_options;
+  fp_precision_options.precision = kFp16;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_precision_options));
 
   // Test prefer_texture_weights changes fingerprint.
-  uint64_t fp_prefer_texture =
-      ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
-          model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          precision,
-          /*prefer_texture_weights=*/true,
-          /*allow_src_quantized_fc_conv_ops=*/false,
-          /*prepare_weights_in_batches=*/false,
-          /*serialize_external_tensors=*/false,
-          /*ordered_by_size=*/true);
-  EXPECT_NE(base_fp, fp_prefer_texture);
+  ml_drift::ModelIdentifierOptions fp_prefer_texture_options = default_options;
+  fp_prefer_texture_options.prefer_texture_weights = true;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_prefer_texture_options));
 
   // Test allow_src_quantized_fc_conv_ops changes fingerprint.
-  uint64_t fp_allow_src_quantized =
-      ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
-          model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          precision,
-          /*prefer_texture_weights=*/false,
-          /*allow_src_quantized_fc_conv_ops=*/true,
-          /*prepare_weights_in_batches=*/false,
-          /*serialize_external_tensors=*/false,
-          /*ordered_by_size=*/true);
-  EXPECT_NE(base_fp, fp_allow_src_quantized);
+  ml_drift::ModelIdentifierOptions fp_allow_src_quantized_options =
+      default_options;
+  fp_allow_src_quantized_options.allow_src_quantized_fc_conv_ops = true;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_allow_src_quantized_options));
 
   // Test prepare_weights_in_batches changes fingerprint.
-  uint64_t fp_prepare_batches =
-      ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
-          model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          precision,
-          /*prefer_texture_weights=*/false,
-          /*allow_src_quantized_fc_conv_ops=*/false,
-          /*prepare_weights_in_batches=*/true,
-          /*serialize_external_tensors=*/false,
-          /*ordered_by_size=*/true);
-  EXPECT_NE(base_fp, fp_prepare_batches);
+  ml_drift::ModelIdentifierOptions fp_prepare_batches_options = default_options;
+  fp_prepare_batches_options.prepare_weights_in_batches = true;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_prepare_batches_options));
 
   // Test serialize_external_tensors changes fingerprint.
-  uint64_t fp_serialize_tensors =
-      ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
-          model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          precision,
-          /*prefer_texture_weights=*/false,
-          /*allow_src_quantized_fc_conv_ops=*/false,
-          /*prepare_weights_in_batches=*/false,
-          /*serialize_external_tensors=*/true,
-          /*ordered_by_size=*/true);
-  EXPECT_NE(base_fp, fp_serialize_tensors);
+  ml_drift::ModelIdentifierOptions fp_serialize_tensors_options =
+      default_options;
+  fp_serialize_tensors_options.serialize_external_tensors = true;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_serialize_tensors_options));
 
   // Test ordered_by_size changes fingerprint.
-  uint64_t fp_ordered_by_size =
-      ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
-          model_token, /*context=*/nullptr, /*delegate_params=*/nullptr, prefix,
-          precision,
-          /*prefer_texture_weights=*/false,
-          /*allow_src_quantized_fc_conv_ops=*/false,
-          /*prepare_weights_in_batches=*/false,
-          /*serialize_external_tensors=*/false,
-          /*ordered_by_size=*/false);
-  EXPECT_NE(base_fp, fp_ordered_by_size);
+  ml_drift::ModelIdentifierOptions fp_ordered_by_size_options = default_options;
+  fp_ordered_by_size_options.ordered_by_size = false;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_ordered_by_size_options));
+
+  // Test use_ir_model changes fingerprint.
+  ml_drift::ModelIdentifierOptions fp_use_ir_model_options = default_options;
+  fp_use_ir_model_options.use_ir_model = true;
+  EXPECT_NE(base_fp,
+            ml_drift::SerializationWeightCache::GenerateUniqueModelIdentifier(
+                model_token, /*context=*/nullptr, /*delegate_params=*/nullptr,
+                prefix, fp_use_ir_model_options));
 }
 
 TEST(SerializationWeightCacheTest, StartBuildClosesFdWhenAlreadyBuilding) {

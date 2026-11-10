@@ -600,6 +600,27 @@ LiteRtStatus LiteRtBuilderBuildPackOpOption(LiteRtBuilder builder, LiteRtOp op,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtBuilderBuildOneHotOpOption(LiteRtBuilder builder,
+                                              LiteRtOp op, int32_t* axis) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(axis)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!builder->IsOpAllocated(op)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (op->OpCode() != kLiteRtOpCodeTflOneHot) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_OneHotOptions;
+  auto options = std::make_unique<tflite::OneHotOptionsT>();
+  options->axis = *axis;
+  tfl_options.value = options.release();
+  litert::internal::SetTflOptions(*op, std::move(tfl_options));
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtBuilderBuildUnpackOpOption(LiteRtBuilder builder,
                                               LiteRtOp op, int32_t* axis,
                                               int32_t* num) {
@@ -689,6 +710,28 @@ LiteRtStatus LiteRtBuilderBuildSplitOpOption(LiteRtBuilder builder, LiteRtOp op,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtBuilderBuildSplitVOpOption(LiteRtBuilder builder,
+                                              LiteRtOp op,
+                                              int32_t* num_splits) {
+  if (builder == nullptr || op == nullptr || HasNullOptionPtr(num_splits)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!builder->IsOpAllocated(op)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (op->OpCode() != kLiteRtOpCodeTflSplitV) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_SplitVOptions;
+  auto options = std::make_unique<tflite::SplitVOptionsT>();
+  options->num_splits = *num_splits;
+  tfl_options.value = options.release();
+  litert::internal::SetTflOptions(*op, std::move(tfl_options));
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtBuilderBuildConv2dOpOption(
     LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
     int32_t* stride_h, int32_t* dilation_w_factor, int32_t* dilation_h_factor,
@@ -735,6 +778,41 @@ LiteRtStatus LiteRtBuilderBuildConv3dOpOption(
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (op->OpCode() != kLiteRtOpCodeTflConv3d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_Conv3DOptions;
+  auto options = std::make_unique<tflite::Conv3DOptionsT>();
+  options->padding = static_cast<tflite::Padding>(*padding);
+  options->stride_w = *stride_w;
+  options->stride_h = *stride_h;
+  options->stride_d = *stride_d;
+  options->dilation_w_factor = *dilation_w_factor;
+  options->dilation_h_factor = *dilation_h_factor;
+  options->dilation_d_factor = *dilation_d_factor;
+  options->fused_activation_function =
+      static_cast<tflite::ActivationFunctionType>(*fused_activation_function);
+  tfl_options.value = options.release();
+  litert::internal::SetTflOptions(*op, std::move(tfl_options));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtBuilderBuildConv3dTransposeOpOption(
+    LiteRtBuilder builder, LiteRtOp op, uint32_t* padding, int32_t* stride_w,
+    int32_t* stride_h, int32_t* stride_d, int32_t* dilation_w_factor,
+    int32_t* dilation_h_factor, int32_t* dilation_d_factor,
+    uint32_t* fused_activation_function) {
+  if (builder == nullptr || op == nullptr ||
+      HasNullOptionPtr(padding, stride_w, stride_h, stride_d, dilation_w_factor,
+                       dilation_h_factor, dilation_d_factor,
+                       fused_activation_function)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!builder->IsOpAllocated(op)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (op->OpCode() != kLiteRtOpCodeTflConv3dTranspose) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 

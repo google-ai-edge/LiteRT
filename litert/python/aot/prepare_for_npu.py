@@ -19,12 +19,10 @@ import pathlib
 from typing import cast
 
 # pylint: disable=g-import-not-at-top
-# pytype: disable=import-error
 try:
   from tqdm import auto as autotqdm
 except ImportError:
-  from tqdm.tqdm import auto as autotqdm
-# pytype: enable=import-error
+  from tqdm.tqdm import auto as autotqdm  # pyrefly: ignore[missing-import]
 
 from litert.python.aot.core import aot_types
 from litert.python.aot.core import common

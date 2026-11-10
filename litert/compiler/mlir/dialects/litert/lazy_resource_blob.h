@@ -60,7 +60,7 @@ class BlobChunkReader {
       // Since we've already unlinked the original file we need to create a new
       // FD from /proc/self/fd.
       std::error_code ec = llvm::sys::fs::openFileForRead(
-          absl::StrCat("/proc/self/fd/", reader_->fd_), fd);
+          absl::StrCat("/proc/self/fd/", reader_->fd_.get()), fd);
       if (ec) {
         LOG(FATAL) << "Failed to open underlying data file: " << ec.message();
       }

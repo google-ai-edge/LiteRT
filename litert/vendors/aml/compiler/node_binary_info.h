@@ -9,7 +9,7 @@
 #ifndef NODE_BINARY_INFO_H
 #define NODE_BINARY_INFO_H
 
-#include "aml_npu/compiler_core/compiler_core_context.h" // from @aml_npu
+#include "aml_npu/compiler_core/compiler_core_context.h" // from @aml_npu_nn_runtime
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"

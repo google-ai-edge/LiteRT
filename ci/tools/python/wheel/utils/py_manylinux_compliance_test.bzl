@@ -1,6 +1,6 @@
 """ Macros for manylinux compliance verification test. """
 
-load("@xla//third_party/rules_python/python:py_test.bzl", "py_test")
+load("@rules_python//python:py_test.bzl", "py_test")
 
 def verify_manylinux_compliance_test(
         name,

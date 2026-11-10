@@ -37,7 +37,7 @@ void ConvertDequantize(
 
   if (tflite::IsConstantTensor(input_tensor)) {
     ::ml_drift::ir::IrOp* op = ir_model.add_op();
-    op->name = ToString(::ml_drift::OperationType::CONSTANT);
+    op->name = ToString(::ml_drift::OperationType::kConstant);
 
     ::ml_drift::ConstTensorAttributes attr;
     ::ml_drift::TensorFloat32 const_tensor;
@@ -52,7 +52,7 @@ void ConvertDequantize(
   }
 
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::QUANTIZE_AND_DEQUANTIZE);
+  op->name = ToString(::ml_drift::OperationType::kQuantizeAndDequantize);
 
   ir_model.AddConsumer(tensor_map[node.inputs->data[0]], op->id);
 

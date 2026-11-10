@@ -43,6 +43,22 @@ def device_rlocation(label = None, get_parent = False):
         return res[:res.rfind("/")]
     return res
 
+def host_rlocation(label, get_parent = False):
+    """Get the host runfiles relative path for a given label.
+
+    Args:
+        label: The label to get the path for.
+        get_parent: If true, get the parent directory of the resolved path.
+
+    Returns:
+        The host runfiles relative path for the given label.
+    """
+    abs_label = absolute_label(label)
+    res = abs_label.replace("@", "external/").replace("//", "").replace(":", "/")
+    if get_parent:
+        return res[:res.rfind("/")]
+    return res
+
 def make_path_args(spec):
     """Formats shell path-like variable assignment exprs from common directories in given labels
 
@@ -94,7 +110,7 @@ def make_path_args(spec):
 
 # COMMON
 
-def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, mh_user = "odml-device-lab", host_libs = [], version_target_suffix = ""):
+def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, mh_user = None, host_libs = [], version_target_suffix = "", platform = "android"):
     """
     Defines a backend specification.
 
@@ -107,14 +123,18 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
         plugin: The compiler plugin library target name.
         mh_user: The "run_as" arg to use in device cloud if it is enabled.
         host_libs: A list of pre-built libraries for the host platform.
+        version_target_suffix: Optional version suffix for generated target names.
+        platform: Target OS platform ("android" or "macos").
 
     Returns:
         A struct representing the backend specification.
     """
-
-    libs = libs + [
-        ("//litert/c:libLiteRt.so", "LD_LIBRARY_PATH"),
-    ]
+    if mh_user == None:
+        mh_user = "odml-eval-users" if platform == "macos" else "odml-device-lab"
+    if platform == "android":
+        libs = libs + [
+            ("//litert/c:libLiteRt.so", "LD_LIBRARY_PATH"),
+        ]
     libs_agg = []
     env_paths = {}
     for lib in libs:
@@ -137,8 +157,9 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
         mh_devices = [{}]
     return struct(
         id = id,
+        platform = platform,
         libs = libs_agg,
-        env_paths = make_path_args(env_paths),
+        env_paths = make_path_args(env_paths) if platform == "android" else [],
         mh_devices = mh_devices,
         default_mh_device = mh_devices[0],
         dispatch = dispatch,
@@ -213,6 +234,11 @@ def _QualcommSpec(version = "V75"):
                 # "//litert/integration_test:libQnnSystem.so",
                 # "//litert/integration_test:libQnnIr.so",
                 # "//litert/integration_test:libQnnSaver.so",
+                # "@qairt//:libatomic",
+                # "@qairt//:libc++",
+                # "@qairt//:libc++abi",
+                # "@qairt//:libgcc-s1",
+                # "@qairt//:libunwind",
                 # copybara:uncomment_end_and_comment_begin
                 "@qairt//:libQnnHtp.so",
                 "@qairt//:libQnnSystem.so",
@@ -240,7 +266,13 @@ def _MediatekSpec():
             }],
             dispatch = "libLiteRtDispatch_MediaTek.so",
             plugin = "libLiteRtCompilerPlugin_MediaTek.so",
-            host_libs = ["@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so"],
+            # Prebuilt libneuron_adapter.so dynamically links against C++/GCC
+            # runtime libraries not present in the hermetic GRTE sysroot on
+            # remote test runners; bundle them from neuro_pilot for hermeticity.
+            host_libs = [
+                "@neuro_pilot//:common_host_libs",
+                "@neuro_pilot//:neuron_host_libs",
+            ],
         ),
     }
 
@@ -256,14 +288,18 @@ def _IntelOpenVinoSpec():
                 # copybara:uncomment_begin(oss openvino)
                 # ("@intel_openvino//:libopenvino_so", "LD_LIBRARY_PATH"),
                 # ("@intel_openvino//:libopenvino_tensorflow_lite_frontend_so", "LD_LIBRARY_PATH"),
+                # ("@intel_openvino//:libopenvino_intel_cpu_plugin_so", "LD_LIBRARY_PATH"),
                 # ("@intel_openvino//:libopenvino_intel_npu_plugin_so", "LD_LIBRARY_PATH"),
                 # copybara:uncomment_end_and_comment_begin
-                ("//third_party/openvino:openvino_android/runtime/lib/intel64/libopenvino.so", "LD_LIBRARY_PATH"),
-                ("//third_party/openvino:openvino_android/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so", "LD_LIBRARY_PATH"),
-                ("//third_party/openvino:openvino_android/runtime/lib/intel64/libopenvino_intel_npu_plugin.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_intel_cpu_plugin.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_intel_npu_plugin.so", "LD_LIBRARY_PATH"),
                 # copybara:comment_end
             ],
             mh_devices = [{
+                "abi": "x86_64",
+                "device": "regex:ruby|moonstone|lapis",
                 "label": "litert-test-intel-ptl",
             }],
             dispatch = "libLiteRtDispatch_IntelOpenvino.so",
@@ -273,8 +309,8 @@ def _IntelOpenVinoSpec():
                 # "@intel_openvino//:libopenvino_so",
                 # "@intel_openvino//:libopenvino_tensorflow_lite_frontend_so",
                 # copybara:uncomment_end_and_comment_begin
-                "//third_party/openvino:openvino/runtime/lib/intel64/libopenvino.so",
-                "//third_party/openvino:openvino/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",
+                "@intel_openvino//:openvino/runtime/lib/intel64/libopenvino.so",
+                "@intel_openvino//:openvino/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",
                 # copybara:comment_end
             ],
         ),
@@ -358,45 +394,83 @@ def _ExampleSpec():
 
 # CPU
 
-def _CpuSpec():
+def _CpuSpec(platform = "android"):
     return {
         "cpu": BackendSpec(
             id = "cpu",
+            platform = platform,
         ),
     }
 
 # GPU
 
-def _GpuSpec():
+def _GpuSpec(accelerator = "cl_gl", platform = "android"):
+    if accelerator == "cl_gl":
+        # Default to "gpu" so existing callers are not broken.
+        id = "gpu"
+        libs = [
+            ("//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_so", "LD_LIBRARY_PATH"),
+        ]
+    elif accelerator == "metal":
+        id = "metal"
+        libs = [
+            ("//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator_dylib", "DYLD_LIBRARY_PATH"),
+        ]
+    elif accelerator == "webgpu":
+        id = "webgpu"
+        libs = [
+            (
+                "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_dylib" if platform == "macos" else "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_so",
+                "DYLD_LIBRARY_PATH" if platform == "macos" else "LD_LIBRARY_PATH",
+            ),
+        ]
+    else:
+        fail("Unsupported GPU accelerator: {}".format(accelerator))
+
     return {
-        "gpu": BackendSpec(
-            id = "gpu",
-            libs = [
-                ("//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_so", "LD_LIBRARY_PATH"),
-            ],
+        id: BackendSpec(
+            id = id,
+            platform = platform,
+            libs = libs,
         ),
     }
 
 # COMMON
 
-def _Specs(name):
-    return (_QualcommSpec() | _QualcommSpec("V79") | _GoogleTensorSpec() | _MediatekSpec() | _IntelOpenVinoSpec() | _SamsungSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
+def _Specs(name, platform = "android"):
+    return (
+        _QualcommSpec() |
+        _QualcommSpec("V79") |
+        _GoogleTensorSpec() |
+        _MediatekSpec() |
+        _IntelOpenVinoSpec() |
+        _SamsungSpec() |
+        _CpuSpec(platform = platform) |
+        _GpuSpec() |
+        _GpuSpec("metal", platform = "macos") |
+        _GpuSpec("webgpu", platform = platform) |
+        _ExampleSpec()
+    )[name]
 
 # Check if the backend maps to an NPU backend.
 def is_npu_backend(name):
     return "qualcomm" in name or name in ["mediatek", "google_tensor", "intel_openvino", "samsung", "example"]
 
+# Check if the backend maps to a GPU backend.
+def is_gpu_backend(name):
+    return name in ["gpu", "metal", "webgpu"]
+
 # Get the libs for the given backend.
-def get_libs(name):
-    return _Specs(name).libs
+def get_libs(name, platform = "android"):
+    return _Specs(name, platform = platform).libs
 
 # Get the spec for the given backend.
-def get_spec(name):
-    return _Specs(name)
+def get_spec(name, platform = "android"):
+    return _Specs(name, platform = platform)
 
 # Get the host libs for the given backend.
-def get_host_libs(name):
-    return _Specs(name).host_libs
+def get_host_libs(name, platform = "android"):
+    return _Specs(name, platform = platform).host_libs
 
 # Public facing functions to get lib locations from a backend id. Can be used in flag creation.
 def dispatch_device_rlocation(backend_id):
@@ -456,10 +530,17 @@ def split_dep_platform(
         device_name = prefix + "_" + lab.name + device_suffix
 
         if not no_host:
+            host_platform = "//litert/integration_test:host"
+
+            # copybara:uncomment_begin(google-only)
+            # # Prebuilt QAIRT host libraries require GLIBC >= 2.34 rather than GRTE v5 (glibc 2.27).
+            # host_platform = "//litert/integration_test:host_cots_linux" if "qualcomm" in backend_id else host_platform
+            #
+            # copybara:uncomment_end
             platform_data(
                 name = host_name,
                 target = targ,
-                platform = "//litert/integration_test:host",
+                platform = host_platform,
                 testonly = testonly,
             )
             host.append(":" + host_name)

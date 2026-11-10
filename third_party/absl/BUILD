@@ -19,4 +19,5 @@ exports_files([
     "build_dll.patch",
     "endian.patch",
     "raw_hash_set.patch",
+    "source_location.patch",
 ])

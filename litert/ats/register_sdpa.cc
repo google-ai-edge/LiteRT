@@ -38,7 +38,7 @@ void RegisterSdpaImpl(const AtsConf& options, size_t& test_id, size_t iters,
       TypeList<float, tflite::half>,
       TypeList<std::false_type, std::true_type>,
       TypeList<std::false_type, std::true_type>>
-    (iters, test_id, options, cap, "CompositeOp");
+    (iters, test_id, options, cap);
   // clang-format on
 }
 

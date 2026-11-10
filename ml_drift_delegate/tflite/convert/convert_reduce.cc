@@ -41,19 +41,19 @@ namespace {
 ::ml_drift::OperationType GetReduceOperationType(int builtin_code) {
   switch (builtin_code) {
     case kTfLiteBuiltinMean:
-      return ::ml_drift::OperationType::MEAN;
+      return ::ml_drift::OperationType::kMean;
     case kTfLiteBuiltinReduceAll:
-      return ::ml_drift::OperationType::REDUCE_ALL;
+      return ::ml_drift::OperationType::kReduceAll;
     case kTfLiteBuiltinReduceAny:
-      return ::ml_drift::OperationType::REDUCE_ANY;
+      return ::ml_drift::OperationType::kReduceAny;
     case kTfLiteBuiltinReduceMax:
-      return ::ml_drift::OperationType::REDUCE_MAXIMUM;
+      return ::ml_drift::OperationType::kReduceMaximum;
     case kTfLiteBuiltinReduceMin:
-      return ::ml_drift::OperationType::REDUCE_MINIMUM;
+      return ::ml_drift::OperationType::kReduceMinimum;
     case kTfLiteBuiltinReduceProd:
-      return ::ml_drift::OperationType::REDUCE_PRODUCT;
+      return ::ml_drift::OperationType::kReduceProduct;
     case kTfLiteBuiltinSum:
-      return ::ml_drift::OperationType::REDUCE_SUM;
+      return ::ml_drift::OperationType::kReduceSum;
     default:
       ABSL_LOG(FATAL) << "Unsupported reduce op builtin code: " << builtin_code;
   }
@@ -104,18 +104,18 @@ void ConvertReduce(
     ::ml_drift::BHWDC reduce_shape = input_desc.GetBHWDCShape();
     // Update reduce_output shape to have 1s in reduced dimensions.
     for (const auto& axis : attr.dims) {
-      if (axis == ::ml_drift::Axis::BATCH) reduce_shape.b = 1;
-      if (axis == ::ml_drift::Axis::HEIGHT) reduce_shape.h = 1;
-      if (axis == ::ml_drift::Axis::WIDTH) reduce_shape.w = 1;
-      if (axis == ::ml_drift::Axis::DEPTH) reduce_shape.d = 1;
-      if (axis == ::ml_drift::Axis::CHANNELS) reduce_shape.c = 1;
+      if (axis == ::ml_drift::Axis::kBatch) reduce_shape.b = 1;
+      if (axis == ::ml_drift::Axis::kHeight) reduce_shape.h = 1;
+      if (axis == ::ml_drift::Axis::kWidth) reduce_shape.w = 1;
+      if (axis == ::ml_drift::Axis::kDepth) reduce_shape.d = 1;
+      if (axis == ::ml_drift::Axis::kChannels) reduce_shape.c = 1;
     }
     ::ml_drift::ir::IrTensor* reduce_output =
         ir_model.add_tensor(dtype, reduce_shape);
     ir_model.SetProducer(reduce_output->id, reduce_op->id);
 
     ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
-    reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+    reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
     if (output_tensor.dims->size <= 4) {
       ::ml_drift::ReshapeAttributes reshape_attr;
       reshape_attr.new_shape.CopyAllDefinedAxis(

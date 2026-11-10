@@ -50,6 +50,7 @@ litert_dynamic_lib(
         "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_compiler_context",
@@ -57,6 +58,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/compiler/cc:litert_model",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -78,7 +80,9 @@ copy_file(
 
 filegroup(
     name = "example_plugin_so_data",
-    srcs = [":example_plugin_so"] + select({
+    srcs = [
+        ":example_plugin_so",
+    ] + select({
         "//litert:windows": [":example_plugin_runtime_dll"],
         "//conditions:default": [":example_plugin_runtime_so"],
     }),
@@ -128,6 +132,17 @@ litert_dynamic_lib(
     ],
 )
 
+filegroup(
+    name = "example_dispatch_so_data",
+    srcs = [
+        ":example_dispatch_so",
+    ] + select({
+        "//litert:windows": [":example_plugin_runtime_dll"],
+        "//conditions:default": [":example_plugin_runtime_so"],
+    }),
+    visibility = ["//litert:litert_public"],
+)
+
 litert_bin(
     name = "LiteRtCompilerPlugin",
     srcs = ["example_plugin.cc"],
@@ -154,6 +169,7 @@ litert_bin(
         ":litert_compiler_plugin_c_api",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_compiler_context",
@@ -162,6 +178,7 @@ litert_bin(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/compiler/cc:litert_model",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -258,6 +275,7 @@ cc_test(
         ":example_plugin",  # buildcleaner: keep
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_compiler_context",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc/internal:litert_extended_model",
@@ -265,6 +283,7 @@ cc_test(
         "//litert/test:common",
         "//litert/test:load_test_model",
         "//litert/test:matchers",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
@@ -275,6 +294,7 @@ cc_library(
     name = "example_common",
     srcs = ["example_common.cc"],
     hdrs = ["example_common.h"],
+    visibility = ["//litert:litert_public"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
@@ -328,6 +348,7 @@ cc_library(
 cc_test(
     name = "example_dispatch_test",
     srcs = ["example_dispatch_test.cc"],
+    data = [":example_dispatch_so_data"],
     target_compatible_with = select({
         "//litert:windows": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -339,8 +360,13 @@ cc_test(
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_requirements_header",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_runtime_context_testonly",
         "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc/internal:litert_shared_library",
+        "//litert/core:filesystem",
+        "//litert/core:version",
+        "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_buffer",
         "//litert/vendors/c:litert_dispatch_c_api",
@@ -382,6 +408,7 @@ cc_library(
     name = "example_transformations",
     srcs = ["example_transformations.cc"],
     hdrs = ["example_transformations.h"],
+    visibility = ["//litert:litert_public"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",

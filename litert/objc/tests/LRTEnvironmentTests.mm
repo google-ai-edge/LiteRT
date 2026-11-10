@@ -24,17 +24,26 @@
 
 - (void)testCreateWithDefaultOptionsSuccess {
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:nil error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:nil error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
 }
 
 - (void)testCreateWithCustomOptionsSuccess {
   LRTEnvironmentOptions *options = [[LRTEnvironmentOptions alloc] init];
   NSError *error = nil;
-  LRTEnvironment *env = [LRTEnvironment environmentWithOptions:options error:&error];
-  XCTAssertNotNil(env);
+  LRTEnvironment *environment = [LRTEnvironment environmentWithOptions:options error:&error];
+  XCTAssertNotNil(environment);
   XCTAssertNil(error);
+}
+
+- (void)testEnvironmentOptionsCopyAndEquality {
+  LRTEnvironmentOptions *options = [[LRTEnvironmentOptions alloc] init];
+  LRTEnvironmentOptions *copiedOptions = [options copy];
+  XCTAssertNotNil(copiedOptions);
+  XCTAssertNotEqual(copiedOptions, options);
+  XCTAssertEqualObjects(copiedOptions, options);
+  XCTAssertEqual(copiedOptions.hash, options.hash);
 }
 
 @end

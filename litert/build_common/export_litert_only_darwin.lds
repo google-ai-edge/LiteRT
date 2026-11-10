@@ -1,8 +1,10 @@
 # Compiler Plugin
-*LiteRt*CompilerPlugin*
-
-# Compiled Result
-*LiteRt*CompiledResult*
+*LiteRtCompilerPluginQueryInterface
 
 # Dispatch
-*LiteRtDispatch*
+*LiteRtDispatchQueryInterface
+*LiteRtDispatch_Mock*
+*LiteRtDispatchExample*
+
+# NVIDIA dispatch extensions: the samplers LiteRT-LM looks up with dlsym
+*LiteRtDispatchNvidia*

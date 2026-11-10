@@ -19,6 +19,7 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
@@ -99,6 +100,8 @@ LiteRtElementType MapElementType(TflElementType type) {
       return kLiteRtElementTypeBFloat16;
     case tflite::TensorType_COMPLEX64:
       return kLiteRtElementTypeComplex64;
+    case tflite::TensorType_COMPLEX128:
+      return kLiteRtElementTypeComplex128;
     case tflite::TensorType_INT32:
       return kLiteRtElementTypeInt32;
     case tflite::TensorType_UINT32:
@@ -127,6 +130,8 @@ LiteRtElementType MapElementType(TflElementType type) {
       return kLiteRtElementTypeTfResource;
     case tflite::TensorType_STRING:
       return kLiteRtElementTypeTfString;
+    case tflite::TensorType_VARIANT:
+      return kLiteRtElementTypeTfVariant;
     case tflite::TensorType_FLOAT8_E4M3FN:
       return kLiteRtElementTypeFloat8E4M3FN;
     case tflite::TensorType_FLOAT8_E5M2:
@@ -151,6 +156,12 @@ Expected<TensorType> MapTensorType(const TflTensorType& tfl_tensor_type) {
     return Error(Status::kErrorUnsupported);
   }
 
+  if (ranked_shape->size() > LITERT_TENSOR_MAX_RANK) {
+    LITERT_LOG(LITERT_ERROR, "Tensor rank (%zu) exceeds max rank (%d)",
+               ranked_shape->size(), LITERT_TENSOR_MAX_RANK);
+    return Error(Status::kErrorUnsupported);
+  }
+
   TensorTypeDetail detail;
   detail.ranked_tensor_type.element_type = litert_element_type;
   detail.ranked_tensor_type.layout = BuildLayout(*ranked_shape);
@@ -171,32 +182,25 @@ Expected<Quantization> MapQuantization(
   if (scale_empty && zp_empty) {
     return MakeEmptyQuantization();
   }
-
-  const bool is_per_channel =
-      (!scale_empty && tfl_quantization->scale()->size() > 1) ||
-      (!zp_empty && tfl_quantization->zero_point()->size() > 1);
-  const bool is_per_tensor =
-      (!scale_empty && tfl_quantization->scale()->size() == 1) ||
-      (!zp_empty && tfl_quantization->zero_point()->size() == 1);
+  if (scale_empty != zp_empty || tfl_quantization->scale()->size() !=
+                                     tfl_quantization->zero_point()->size()) {
+    LITERT_LOG(LITERT_ERROR, "Invalid quantization parameters");
+    return Error(Status::kErrorInvalidArgument);
+  }
 
   // Per tensor quantization.
-  if (is_per_tensor) {
+  if (tfl_quantization->scale()->size() == 1) {
     const auto* scale_fb = tfl_quantization->scale()->data();
     const auto* zp_fb = tfl_quantization->zero_point()->data();
     return MakePerTensorQuantization(scale_fb[0], zp_fb[0]);
   }
 
   // Per channel quantization.
-  if (is_per_channel) {
+  if (tfl_quantization->scale()->size() > 1) {
     const auto* scales_fb = tfl_quantization->scale();
     const auto* zero_points_fb = tfl_quantization->zero_point();
     int32_t quantized_dimension = tfl_quantization->quantized_dimension();
 
-    if (!scales_fb || !zero_points_fb || scales_fb->empty() ||
-        scales_fb->size() != zero_points_fb->size()) {
-      LITERT_LOG(LITERT_ERROR, "Invalid per-channel quantization parameters");
-      return Error(Status::kErrorInvalidArgument);
-    }
     Quantization litert_quantization;
     litert_quantization.first = kLiteRtQuantizationPerChannel;
     litert_quantization.second.per_channel.scales =

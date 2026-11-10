@@ -35,7 +35,7 @@ void ConvertSplitCommon(
   if (num_splits == 1) {
     // Adding Identity reshape that will be removed.
     ::ml_drift::ir::IrOp* ir_op = ir_model.add_op();
-    ir_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+    ir_op->name = ToString(::ml_drift::OperationType::kReshape);
 
     const int input_id = node.inputs->data[input_idx];
     ir_model.AddConsumer(tensor_map.at(input_id), ir_op->id);
@@ -59,7 +59,7 @@ void ConvertSplitCommon(
   attr.axis = ExtractAxisFromIndex(*input_tensor, axis_tensor->data.i32[0]);
 
   ::ml_drift::ir::IrOp* split_op = ir_model.add_op();
-  split_op->name = ToString(::ml_drift::OperationType::SPLIT);
+  split_op->name = ToString(::ml_drift::OperationType::kSplit);
   split_op->attr = attr;
 
   const int input_id = node.inputs->data[input_idx];

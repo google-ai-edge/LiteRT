@@ -38,7 +38,6 @@ cc_library(
     linkopts = ["-ldl"],
     deps = [
         ":log",
-        "//litert/vendors/qualcomm/core/schema:soc_table",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
@@ -109,7 +108,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/backends:htp_backend",
         "//litert/vendors/qualcomm/core/backends:ir_backend",
     ] + select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             # copybara:uncomment_begin(google-only)
             # "@qairt//:linux_deps",
             # copybara:uncomment_end

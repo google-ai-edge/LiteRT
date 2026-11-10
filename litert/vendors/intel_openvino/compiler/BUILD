@@ -42,6 +42,7 @@ litert_lib(
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
+        ":weight_bank_attributes",
         "//litert/c/internal:litert_logging",
         "@intel_openvino//:openvino",
     ],
@@ -70,6 +71,7 @@ litert_lib(
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
+        "//litert/c/internal:litert_logging",
         "//litert/compiler/cc:litert_model",
         "@com_google_absl//absl/types:span",
     ],
@@ -175,6 +177,16 @@ litert_test(
 )
 
 litert_lib(
+    name = "weight_bank_attributes",
+    hdrs = ["weight_bank_attributes.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_lib(
     name = "alias_shared_constants",
     srcs = [
         "alias_shared_constants.cc",
@@ -188,6 +200,7 @@ litert_lib(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         ":weight_bank",
+        ":weight_bank_attributes",
         "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/types:span",
         "@intel_openvino//:openvino",
@@ -215,6 +228,7 @@ litert_test(
         ":alias_shared_constants",
         ":graph_iterator",
         ":weight_bank",
+        ":weight_bank_attributes",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_compiler_context",
         "//litert/cc/internal:litert_extended_model",
@@ -284,7 +298,6 @@ litert_dynamic_lib(
         "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
-        "//litert/c:litert_op_options_header",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_compiler_context",
         "//litert/c/options:litert_intel_openvino_options",
@@ -297,7 +310,10 @@ litert_dynamic_lib(
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/compiler/cc:litert_model",
         "//litert/compiler/cc:litert_op_options",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/intel_openvino:bytecode_header",
+        "//litert/vendors/intel_openvino:openvino_version_info",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
@@ -349,7 +365,10 @@ litert_bin(
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/compiler/cc:litert_model",
         "//litert/compiler/cc:litert_op_options",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/intel_openvino:bytecode_header",
+        "//litert/vendors/intel_openvino:openvino_version_info",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
@@ -528,6 +547,7 @@ litert_test(
         "//litert/test:load_test_model",
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
@@ -539,7 +559,7 @@ sh_test(
     name = "intel_openvino_compiler_plugin_so_symbol_test",
     srcs = ["//litert/test:litert_compiler_plugin_symbol_test.sh"],
     args = [
-        "$(location :intel_openvino_compiler_plugin_so)",
+        "$(rootpath :intel_openvino_compiler_plugin_so)",
     ],
     data = [
         ":intel_openvino_compiler_plugin_so",

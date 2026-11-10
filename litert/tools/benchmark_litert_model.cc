@@ -48,6 +48,7 @@ limitations under the License.
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/runtime/compiled_model.h"
 #include "litert/tools/flags/options_parser_registry.h"
+#include "litert/tools/partition_report.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
@@ -58,6 +59,7 @@ using ::litert::CompiledModelNext;
 using ::litert::Options;
 using ::litert::RuntimeOptions;
 using ::litert::TensorBuffer;
+using ::litert::tools::GeneratePartitionReport;
 
 HwAcceleratorSet GetRequestedHardwareAccelerators(
     const BenchmarkParams& params) {
@@ -75,7 +77,10 @@ HwAcceleratorSet GetRequestedHardwareAccelerators(
   return hardware_accelerators;
 }
 
-Options CreateCompiledModelOptions(const BenchmarkParams& params) {
+}  // namespace
+
+Options BenchmarkLiteRtModel::CreateCompiledModelOptions(
+    const BenchmarkParams& params) {
   auto use_gpu = params.Get<bool>("use_gpu");
   auto use_npu = params.Get<bool>("use_npu");
   auto use_cpu = params.Get<bool>("use_cpu");
@@ -101,6 +106,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
       params.Get<bool>("gpu_cache_compiled_programs_only");
   auto gpu_madvise_original_shared_tensors =
       params.Get<bool>("gpu_madvise_original_shared_tensors");
+  auto gpu_use_ir_model = params.Get<std::string>("gpu_use_ir_model");
   auto xnnpack_weight_cache_file_path =
       params.Get<std::string>("xnnpack_weight_cache_file_path");
   auto mediatek_nerun_pilot_version =
@@ -171,6 +177,8 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
       gpu_options.SetBackend(GpuOptions::Backend::kWebGpu);
     } else if (gpu_backend == "opengl" || gpu_backend == "gl") {
       gpu_options.SetBackend(GpuOptions::Backend::kOpenGl);
+    } else if (gpu_backend == "opencl" || gpu_backend == "cl") {
+      gpu_options.SetBackend(GpuOptions::Backend::kOpenCl);
     }
     if (gpu_precision == "fp32") {
       gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
@@ -198,6 +206,9 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     if (!gpu_model_cache_key.empty()) {
       gpu_options.SetModelCacheKey(gpu_model_cache_key.c_str());
     }
+    if (!gpu_serialization_dir.empty() && !gpu_model_cache_key.empty()) {
+      gpu_options.SetSerializeProgramCache(true);
+    }
     if (gpu_serialize_external_tensors) {
       gpu_options.SetSerializeExternalTensors(true);
     }
@@ -209,6 +220,14 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     }
     if (gpu_cache_compiled_programs_only) {
       gpu_options.CacheCompiledProgramsOnly(true);
+    }
+    if (gpu_use_ir_model == "true" || gpu_use_ir_model == "1") {
+      gpu_options.SetUseIrModel(true);
+    } else if (gpu_use_ir_model == "false" || gpu_use_ir_model == "0") {
+      gpu_options.SetUseIrModel(false);
+    } else if (!gpu_use_ir_model.empty() && gpu_use_ir_model != "default") {
+      LITERT_LOG(LITERT_ERROR, "Invalid gpu_use_ir_model: %s",
+                 gpu_use_ir_model.c_str());
     }
     gpu_options.SetMadviseOriginalSharedTensors(
         gpu_madvise_original_shared_tensors);
@@ -253,6 +272,8 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
 
   return compilation_options;
 }
+
+namespace {
 
 litert::Expected<Environment> CreateDefaultEnvironment(
     const BenchmarkParams& params) {
@@ -381,6 +402,11 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
   LITERT_ASSIGN_OR_RETURN(interpreter_, GetInterpreter(compiled_model_ptr),
                           AsTfLiteStatus(_ << "Failed to get interpreter."));
 
+  if (params_.Get<bool>("print_partition_report")) {
+    const std::string report = GeneratePartitionReport(*interpreter_);
+    LITERT_LOG(LITERT_INFO, "\n%s", report.c_str());
+  }
+
   if (!params_.Get<std::string>("model_runtime_info_output_file").empty()) {
     model_runtime_info_listener_ =
         std::make_unique<ModelRuntimeInfoListener>(interpreter_);
@@ -461,58 +487,92 @@ TfLiteStatus BenchmarkLiteRtModel::PrepareInputData() {
   return kTfLiteOk;
 }
 
+namespace {
+
+// Assumes each registered accelerator sets a single hardware bit in
+// LiteRtHwAcceleratorSet (as all current accelerators do). If a multi-backend
+// accelerator sets multiple bits in the future, logs a warning and skips it
+// until per-backend attribution is supported.
+bool MatchesHardwareCategory(
+    const CompiledModel::AcceleratorDelegationMetrics& acc,
+    LiteRtHwAccelerators category) {
+  const LiteRtHwAcceleratorSet hw = acc.hardware_type;
+  if (hw > 0 && (hw & (hw - 1)) != 0) {
+    LITERT_LOG(
+        LITERT_WARNING,
+        "Accelerator '%s' reports multiple hardware types (0x%x); "
+        "per-backend delegation metrics are not supported for multi-backend "
+        "accelerators.",
+        acc.accelerator_name.c_str(), hw);
+    return false;
+  }
+  return hw == category;
+}
+
+int SumDelegatedNodeCount(const CompiledModel::DelegationMetrics& metrics,
+                          LiteRtHwAccelerators hardware_type) {
+  int count = 0;
+  for (const auto& acc : metrics.accelerators) {
+    if (MatchesHardwareCategory(acc, hardware_type)) {
+      count += acc.delegated_node_count;
+    }
+  }
+  return count;
+}
+
+int SumPartitionCount(const CompiledModel::DelegationMetrics& metrics,
+                      LiteRtHwAccelerators hardware_type) {
+  int count = 0;
+  for (const auto& acc : metrics.accelerators) {
+    if (MatchesHardwareCategory(acc, hardware_type)) {
+      count += acc.partition_count;
+    }
+  }
+  return count;
+}
+
+}  // namespace
+
 int BenchmarkLiteRtModel::TotalNodeCount() const {
-  return (compiled_model_ && compiled_model_->Get())
-             ? compiled_model_->Get()->GetDelegationMetrics().total_node_count
-             : 0;
+  if (!compiled_model_) return 0;
+  auto metrics = compiled_model_->GetDelegationMetrics();
+  return metrics ? metrics->total_node_count : 0;
 }
 
 int BenchmarkLiteRtModel::NpuDelegatedNodeCount() const {
-  return (compiled_model_ && compiled_model_->Get())
-             ? compiled_model_->Get()
-                   ->GetDelegationMetrics()
-                   .npu_delegated_node_count
-             : 0;
+  if (!compiled_model_) return 0;
+  auto metrics = compiled_model_->GetDelegationMetrics();
+  return metrics ? SumDelegatedNodeCount(*metrics, kLiteRtHwAcceleratorNpu) : 0;
 }
 
 int BenchmarkLiteRtModel::NpuPartitionCount() const {
-  return (compiled_model_ && compiled_model_->Get())
-             ? compiled_model_->Get()
-                   ->GetDelegationMetrics()
-                   .npu_partition_count
-             : 0;
+  if (!compiled_model_) return 0;
+  auto metrics = compiled_model_->GetDelegationMetrics();
+  return metrics ? SumPartitionCount(*metrics, kLiteRtHwAcceleratorNpu) : 0;
 }
 
 int BenchmarkLiteRtModel::GpuDelegatedNodeCount() const {
-  return (compiled_model_ && compiled_model_->Get())
-             ? compiled_model_->Get()
-                   ->GetDelegationMetrics()
-                   .gpu_delegated_node_count
-             : 0;
+  if (!compiled_model_) return 0;
+  auto metrics = compiled_model_->GetDelegationMetrics();
+  return metrics ? SumDelegatedNodeCount(*metrics, kLiteRtHwAcceleratorGpu) : 0;
 }
 
 int BenchmarkLiteRtModel::GpuPartitionCount() const {
-  return (compiled_model_ && compiled_model_->Get())
-             ? compiled_model_->Get()
-                   ->GetDelegationMetrics()
-                   .gpu_partition_count
-             : 0;
+  if (!compiled_model_) return 0;
+  auto metrics = compiled_model_->GetDelegationMetrics();
+  return metrics ? SumPartitionCount(*metrics, kLiteRtHwAcceleratorGpu) : 0;
 }
 
 int BenchmarkLiteRtModel::CpuDelegatedNodeCount() const {
-  return (compiled_model_ && compiled_model_->Get())
-             ? compiled_model_->Get()
-                   ->GetDelegationMetrics()
-                   .cpu_delegated_node_count
-             : 0;
+  if (!compiled_model_) return 0;
+  auto metrics = compiled_model_->GetDelegationMetrics();
+  return metrics ? SumDelegatedNodeCount(*metrics, kLiteRtHwAcceleratorCpu) : 0;
 }
 
 int BenchmarkLiteRtModel::CpuPartitionCount() const {
-  return (compiled_model_ && compiled_model_->Get())
-             ? compiled_model_->Get()
-                   ->GetDelegationMetrics()
-                   .cpu_partition_count
-             : 0;
+  if (!compiled_model_) return 0;
+  auto metrics = compiled_model_->GetDelegationMetrics();
+  return metrics ? SumPartitionCount(*metrics, kLiteRtHwAcceleratorCpu) : 0;
 }
 
 }  // namespace litert::benchmark

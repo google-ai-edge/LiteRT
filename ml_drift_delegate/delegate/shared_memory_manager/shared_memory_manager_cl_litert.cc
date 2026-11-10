@@ -33,6 +33,7 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_macros.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
@@ -53,6 +54,46 @@ namespace ml_drift {
 namespace internal {
 
 #ifdef __ANDROID__
+// Checks whether AHardwareBuffer allocation with AHARDWAREBUFFER_FORMAT_BLOB
+// and AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER is supported on the current device.
+// The result is cached to avoid repeated failed Gralloc allocations and logcat
+// spam on devices where Gralloc does not support this combination.
+bool IsAhwbGpuDataBufferSupported() {
+#if __ANDROID_API__ >= 26 || defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
+  if (__builtin_available(android 26, *)) {
+    if (&AHardwareBuffer_allocate == nullptr ||
+        &AHardwareBuffer_release == nullptr) {
+      return false;
+    }
+    AHardwareBuffer_Desc test_desc = {};
+    test_desc.width = 64;
+    test_desc.height = 1;
+    test_desc.layers = 1;
+    test_desc.format = AHARDWAREBUFFER_FORMAT_BLOB;
+    test_desc.usage = AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER;
+
+#if __ANDROID_API__ >= 29 || defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
+    if (__builtin_available(android 29, *)) {
+      if (&AHardwareBuffer_isSupported != nullptr &&
+          !AHardwareBuffer_isSupported(&test_desc)) {
+        return false;
+      }
+    }
+#endif  // __ANDROID_API__ >= 29 ||
+        // defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
+
+    AHardwareBuffer* test_ahwb = nullptr;
+    if (AHardwareBuffer_allocate(&test_desc, &test_ahwb) != 0) {
+      return false;
+    }
+    AHardwareBuffer_release(test_ahwb);
+    return true;
+  }
+#endif  // __ANDROID_API__ >= 26 ||
+        // defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
+  return false;
+}
+
 // Tries to allocate a cl::Tensor backed by an AHardwareBuffer via the
 // cl_arm_import_memory extension. On Mali GPUs, standard clCreateBuffer /
 // clCreateImage maps GPU memory into the process address space, inflating RSS.
@@ -73,10 +114,14 @@ bool TryCreateTensorViaAhwb(
     const cl::Environment& env,
     ml_drift::TensorDescriptor& tensor_desc,
     std::unique_ptr<GpuSpatialTensor>& tensor) {
+#if __ANDROID_API__ >= 26 || defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
   if (cl::clImportMemoryARM == nullptr) return false;
-  if (tensor_desc.GetStorageType() != TensorStorageType::TEXTURE_2D) {
+  if (tensor_desc.GetStorageType() != TensorStorageType::kTexture2D) {
     return false;
   }
+
+  static const bool s_ahwb_supported = IsAhwbGpuDataBufferSupported();
+  if (!s_ahwb_supported) return false;
 
   // Compute the buffer size: width * height * channels * sizeof(element).
   std::vector<uint64_t> storage_dims = tensor_desc.GetStorageDims();
@@ -175,6 +220,12 @@ bool TryCreateTensorViaAhwb(
         buffer_memory, /*memory_owner=*/true, image_memory, desc_copy);
     return true;
   }
+#else
+  (void)env;
+  (void)tensor_desc;
+  (void)tensor;
+#endif  // __ANDROID_API__ >= 26 ||
+        // defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
   return false;
 }
 #endif  // __ANDROID__
@@ -279,11 +330,9 @@ MakeSharedMemoryManagerClLitert(
     const uint32_t external_buffer_id = static_cast<uint32_t>(it->second);
     weight_loader::WeightAccessRequest request;
     request.cpu = true;
-    absl::Status prepare_status = weight_loader->PrepareAccessForBuffer(
-        external_buffer_id, request, /*env=*/nullptr);
-    if (!prepare_status.ok()) {
-      return prepare_status;
-    }
+    LITERT_RETURN_IF_ERROR(weight_loader->PrepareAccessForBuffer(
+        external_buffer_id, request, /*env=*/nullptr))
+        << "Failed to prepare external weight " << external_buffer_id;
     const auto* access = weight_loader->GetExternalWeightByBuffer(
         external_buffer_id);
     if (access == nullptr || access->GetHostBuffer() == nullptr) {
@@ -328,7 +377,8 @@ MakeSharedMemoryManagerClLitert(
       return absl::InvalidArgumentError("Global id is zero.");
     }
     const auto* info = weight_loader->FindWeightInfoByBuffer(global_id);
-    if (info == nullptr || info->packing.empty()) {
+    if (info == nullptr || info->packing == nullptr ||
+        info->packing[0] == '\0') {
       return absl::NotFoundError("Packing info not found.");
     }
     return std::string(info->packing);

@@ -27,6 +27,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/synchronization/notification.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -151,9 +152,12 @@ class GpuBackendWebGpu : public GpuBackend {
     return *env_;
   }
 
+  // Accessing memory_manager() requires holding memory_manager_mutex() when
+  // num_steps_of_command_buffer_preparations_ > 0.
   ::ml_drift::webgpu::MemoryManager& memory_manager() {
     return memory_manager_;
   }
+  absl::Mutex& memory_manager_mutex() { return memory_manager_mutex_; }
 
   // Encoders for IO tensors.
   wgpu::CommandEncoder* command_encoder() const {
@@ -180,6 +184,9 @@ class GpuBackendWebGpu : public GpuBackend {
   int num_steps_of_command_buffer_preparations() const {
     return num_steps_of_command_buffer_preparations_;
   }
+  // Sets the number of steps to prepare command buffers in advance. This is
+  // supposed to be set only for LLMs where external tensors are not expected to
+  // change while cached command buffers are in use.
   void set_num_steps_of_command_buffer_preparations(
       int num_steps_of_command_buffer_preparations) {
     num_steps_of_command_buffer_preparations_ =
@@ -189,6 +196,7 @@ class GpuBackendWebGpu : public GpuBackend {
  private:
   std::unique_ptr<::ml_drift::webgpu::ExecutionEnvironment> env_owned_;
   ::ml_drift::webgpu::ExecutionEnvironment* const env_;
+  absl::Mutex memory_manager_mutex_;
   ::ml_drift::webgpu::MemoryManager memory_manager_;
   int num_steps_of_command_buffer_preparations_ = 0;
 
@@ -257,6 +265,8 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
   GpuBackendWebGpu* backend() const { return backend_; };
 
  private:
+  absl::StatusOr<::ml_drift::webgpu::SpatialTensor*> GetSpatialTensorInternal(
+      ::ml_drift::ValueId id);
   // Prepares command buffers for Dispatch() call.
   absl::Status PrepareCommandBuffers(
       std::vector<wgpu::CommandBuffer>& command_buffers,
@@ -281,17 +291,12 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
   // Whether next_command_buffers_ is ready to use. It's set to true when
   // all next_command_buffers_ are prepared.
   bool next_command_buffers_ready_ = false;
+  // Prepares next_command_buffers_ in parallel with the current Dispatch()
+  // call. It is only accessed by the thread calling Dispatch(), which joins it
+  // before touching next_command_buffers_ again, so no synchronization is
+  // needed; see SharedWebGpuEnv for how a Dispatch() by a different context on
+  // the same environment is handled.
   std::unique_ptr<std::thread> next_command_buffers_thread_;
-
-  // Static member var indicating the last context which built the command
-  // buffers. It's used to invalidate the next_command_buffers_ if it is not
-  // the same as the current context. For example, during multiple conversions
-  // with a LLM, prefill inference starts after decode and it would have command
-  // buffers prepared by the previous prefill inference which must be
-  // invalidated since the gpu resource binding would be changed.
-  // No synchronization is needed as the inference context is supposed to be
-  // running on a single thread.
-  static GpuInferenceContextWebGpu* last_ctx_;
 };
 
 class GpuTensorWrapperWebGpu : public GpuTensorWrapper {
@@ -317,6 +322,7 @@ class GpuIOBufferWebGpu : public GpuIOBuffer {
   // Implementation of GpuIOBuffer.
   absl::Status Read(absl::Span<uint8_t> data) override;
   absl::Status Write(absl::Span<const uint8_t> data) override;
+  size_t GetSize() const override { return buffer_.GetMemorySizeInBytes(); }
 
   // Prepares the buffer for read.
   absl::Status PreRead(wgpu::CommandEncoder& command_encoder);

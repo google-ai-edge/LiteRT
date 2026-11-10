@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -290,6 +291,17 @@ TEST(PackOpTest, MismatchedBufferSizesBaseFailure) {
   // ({2, 1}).
   EXPECT_EQ(InferPack(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(PackOpTest, RejectsAxisUnderflow) {
+  auto options = CreatePackOptions(std::numeric_limits<int32_t>::min());
+  TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_PackOptions;
+  tfl_options.value = options.release();
+
+  TestShapeInferenceContext ctx({{2, 3}, {2, 3}}, std::move(tfl_options));
+  InferenceResult result;
+  EXPECT_EQ(InferPack(ctx, result), kLiteRtStatusErrorInvalidArgument);
 }
 
 }  // namespace

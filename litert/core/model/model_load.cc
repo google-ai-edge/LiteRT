@@ -31,7 +31,9 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/build_stamp.h"
+#if !defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/core/dispatch_op_schema.h"
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/flatbuffer_to_litert.h"
 #include "litert/core/model/model.h"
@@ -53,27 +55,51 @@ class FlatbufferContext {
                     BufferManager* buffer_manager)
       : tfl_flatbuffer_(tfl_flatbuffer), buffer_manager_(buffer_manager) {}
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
   Expected<void> SetOpCode(LiteRtOpT& litert_op, uint32_t ind) {
+    if (!PackedModel()->operator_codes() ||
+        ind >= PackedModel()->operator_codes()->size()) {
+      LITERT_LOG(LITERT_ERROR, "Operator code index out of range");
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    }
     const auto* code = PackedModel()->operator_codes()->Get(ind);
+    if (code == nullptr) {
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    }
     const int32_t builtin_code = code->builtin_code();
     const int32_t dep_code = code->deprecated_builtin_code();
-    litert_op.SetOpCode(
-        static_cast<LiteRtOpCode>(std::max(dep_code, builtin_code)));
+    const int32_t resolved_code = std::max(dep_code, builtin_code);
+    if (builtin_code < 0 || resolved_code < 0 ||
+        resolved_code > static_cast<int32_t>(kLiteRtOpCodeShloComposite) ||
+        (dep_code < 0 && static_cast<int8_t>(builtin_code) !=
+                             code->deprecated_builtin_code())) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Invalid operator code: builtin_code=%d, "
+                 "deprecated_builtin_code=%d",
+                 builtin_code, dep_code);
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    }
+    litert_op.SetOpCode(static_cast<LiteRtOpCode>(resolved_code));
     if (code->custom_code()) {
       litert_op.SetCustomCode(code->custom_code()->str());
     }
     litert::internal::SetTflOpCodeInd(litert_op, ind);
     return {};
   }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   // Get the buffer at the given index in the tflite model.
   Expected<const TflPackedBuffer*> GetTflBuffer(uint32_t ind) const {
     const auto* packed_model = tfl_flatbuffer_.PackedModel();
-    if (ind >= packed_model->buffers()->size()) {
+    if (!packed_model->buffers() || ind >= packed_model->buffers()->size()) {
       LITERT_LOG(LITERT_ERROR, "Buffer index out of range");
       return Error(kLiteRtStatusErrorInvalidArgument);
     }
-    return packed_model->buffers()->Get(ind);
+    const auto* buf = packed_model->buffers()->Get(ind);
+    if (buf == nullptr) {
+      return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    }
+    return buf;
   }
 
   BufferManager* GetBufferManager() { return buffer_manager_; }
@@ -87,16 +113,50 @@ class FlatbufferContext {
 
   BufferIdMap& RegisteredTflBufferIds() { return registered_tfl_buffer_ids_; }
 
+  // The litert buffer registered for each external buffer id, so tensors that
+  // share an external constant share its buffer.
+  BufferIdMap& RegisteredExternalBufferIds() {
+    return registered_external_buffer_ids_;
+  }
+
+  // The external buffer with the given id (Tensor.external_buffer), if the
+  // model declares one.
+  Expected<const ::tflite::ExternalBuffer*> GetExternalBuffer(
+      uint32_t external_buffer_id) {
+    if (!external_buffers_indexed_) {
+      external_buffers_indexed_ = true;
+      if (const auto* buffers = PackedModel()->external_buffers()) {
+        for (const auto* buffer : *buffers) {
+          if (buffer != nullptr) {
+            external_buffers_.emplace(buffer->id(), buffer);
+          }
+        }
+      }
+    }
+    if (auto it = external_buffers_.find(external_buffer_id);
+        it != external_buffers_.end()) {
+      return it->second;
+    }
+    LITERT_LOG(LITERT_ERROR, "Tensor refers to unknown external buffer %u",
+               external_buffer_id);
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+  }
+
  private:
   const FlatbufferWrapper& tfl_flatbuffer_;
   BufferManager* buffer_manager_;
   BufferIdMap registered_tfl_buffer_ids_;
+  BufferIdMap registered_external_buffer_ids_;
+  bool external_buffers_indexed_ = false;
+  absl::flat_hash_map<uint32_t, const ::tflite::ExternalBuffer*>
+      external_buffers_;
 };
 
 bool IsRangeInAllocation(size_t offset, size_t size, size_t allocation_size) {
   return offset <= allocation_size && size <= allocation_size - offset;
 }
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
 LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
                       const TflPackedOp& tfl_op, LiteRtOpT& litert_op,
                       size_t op_index) {
@@ -171,6 +231,7 @@ LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
 
   return kLiteRtStatusOk;
 }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
 struct TflBufferContext {
   BufferRef<uint8_t> buffer;
@@ -236,6 +297,30 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context, LiteRtSubgraphT& parent,
       context.RegisteredTflBufferIds()[buffer_ind] =
           litert_tensor.Weights().GetBufferId();
     }
+  } else if (const auto external_buffer_id = tfl_tensor.external_buffer();
+             external_buffer_id != 0) {
+    // A constant stored outside the flatbuffer. The bytes stay empty here: a
+    // runtime with the weight source resolves them, and the reference is kept
+    // so that serialization re-emits it.
+    auto it = context.RegisteredExternalBufferIds().find(external_buffer_id);
+    if (it != context.RegisteredExternalBufferIds().end()) {
+      litert_tensor.Weights().SetBufferId(it->second);
+    } else {
+      auto external = context.GetExternalBuffer(external_buffer_id);
+      if (!external) {
+        return external.Error().Status();
+      }
+      BufferContext lrt_buf_ctx;
+      lrt_buf_ctx.external = ExternalBufferRef{
+          (*external)->id(), (*external)->group(), (*external)->offset(),
+          (*external)->length(),
+          (*external)->packing() ? (*external)->packing()->str()
+                                 : std::string()};
+      SetWeightsFromUnownedBuffer(litert_tensor.Weights(), BufferRef<uint8_t>(),
+                                  lrt_buf_ctx);
+      context.RegisteredExternalBufferIds()[external_buffer_id] =
+          litert_tensor.Weights().GetBufferId();
+    }
   }
 
   // TENSOR TYPE
@@ -262,9 +347,23 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context, LiteRtSubgraphT& parent,
       int zero_points_tensor_ind = details->zero_points();
       int block_size = details->block_size();
 
+      if (scales_tensor_ind < 0 ||
+          static_cast<size_t>(scales_tensor_ind) >= parent.Tensors().size()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Invalid scales tensor index in blockwise quantization");
+        return kLiteRtStatusErrorInvalidFlatbuffer;
+      }
       LiteRtTensor scales_tensor = &parent.Tensor(scales_tensor_ind);
       LiteRtTensor zero_points_tensor = nullptr;
       if (zero_points_tensor_ind != -1) {
+        if (zero_points_tensor_ind < 0 ||
+            static_cast<size_t>(zero_points_tensor_ind) >=
+                parent.Tensors().size()) {
+          LITERT_LOG(
+              LITERT_ERROR,
+              "Invalid zero_points tensor index in blockwise quantization");
+          return kLiteRtStatusErrorInvalidFlatbuffer;
+        }
         zero_points_tensor = &parent.Tensor(zero_points_tensor_ind);
       }
 
@@ -324,21 +423,29 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
   // Unpack tensors.
   for (auto i = 0; i < num_tensors; ++i) {
     const auto* tfl_tensor = tfl_subgraph.tensors()->Get(i);
+    if (tfl_tensor == nullptr) {
+      return kLiteRtStatusErrorInvalidFlatbuffer;
+    }
     auto& litert_tensor = litert_subgraph.Tensor(i);
     LITERT_RETURN_IF_ERROR(
         UnpackTensor(context, litert_subgraph, *tfl_tensor, litert_tensor));
     litert_tensor.SetTensorIndex(i);
   }
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
   // Unpack ops, pass litert_subgraph so they can look up the new litert
   // tensors.
   const auto num_ops =
       tfl_subgraph.operators() ? tfl_subgraph.operators()->size() : 0;
   for (auto i = 0; i < num_ops; ++i) {
     const auto* tfl_op = tfl_subgraph.operators()->Get(i);
+    if (tfl_op == nullptr) {
+      return kLiteRtStatusErrorInvalidFlatbuffer;
+    }
     LITERT_RETURN_IF_ERROR(UnpackOp(context, litert_subgraph, *tfl_op,
                                     litert_subgraph.EmplaceOp(), i));
   }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   // Update subgraph I/O.
   const auto num_inputs =
@@ -375,7 +482,8 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
 LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
                               LiteRtModelT& parent) {
   for (auto& tfl_signature : tfl_signatures) {
-    if (tfl_signature->subgraph_index >= parent.Subgraphs().size()) {
+    if (tfl_signature == nullptr ||
+        tfl_signature->subgraph_index >= parent.Subgraphs().size()) {
       LITERT_LOG(LITERT_ERROR,
                  "Signature does not refer to a valid subgraph index.");
       return kLiteRtStatusErrorInvalidArgument;
@@ -400,7 +508,8 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
     absl::flat_hash_map<LiteRtTensor, std::string> input_aliases;
     input_aliases.reserve(tfl_inputs.size());
     for (const auto& tfl_input : tfl_inputs) {
-      if (tfl_input->tensor_index >= litert_subgraph->Tensors().size()) {
+      if (tfl_input == nullptr ||
+          tfl_input->tensor_index >= litert_subgraph->Tensors().size()) {
         LITERT_LOG(LITERT_ERROR,
                    "Signature input does not refer to a valid tensor index.");
         return kLiteRtStatusErrorInvalidFlatbuffer;
@@ -414,7 +523,8 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
     absl::flat_hash_map<LiteRtTensor, std::string> output_aliases;
     output_aliases.reserve(tfl_outputs.size());
     for (const auto& tfl_output : tfl_outputs) {
-      if (tfl_output->tensor_index >= litert_subgraph->Tensors().size()) {
+      if (tfl_output == nullptr ||
+          tfl_output->tensor_index >= litert_subgraph->Tensors().size()) {
         LITERT_LOG(LITERT_ERROR,
                    "Signature output does not refer to a valid tensor index.");
         return kLiteRtStatusErrorInvalidFlatbuffer;
@@ -451,7 +561,7 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
                             tfl_signature->signature_key);
   }
 
-  if (tfl_signatures.empty()) {
+  if (tfl_signatures.empty() && !parent.Subgraphs().empty()) {
     parent.EmplaceSignature(MakeDefaultSignature(parent.MainSubgraph()));
   }
 
@@ -469,9 +579,22 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     const auto num_subgraphs = packed_model->subgraphs()->size();
     for (auto i = 0; i < num_subgraphs; ++i) {
       const auto* tfl_subgraph = packed_model->subgraphs()->Get(i);
+      if (tfl_subgraph == nullptr) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
       LITERT_RETURN_IF_ERROR(UnpackSubgraph(context, *tfl_subgraph,
                                             litert_model->EmplaceSubgraph()));
     }
+  }
+
+  if (const auto* groups = packed_model->external_buffer_groups()) {
+    std::vector<std::string> names;
+    names.reserve(groups->size());
+    for (const auto* group : *groups) {
+      names.push_back(group != nullptr && group->name() ? group->name()->str()
+                                                        : std::string());
+    }
+    litert_model->SetExternalBufferGroups(std::move(names));
   }
 
   // TODO Figure out how to load signatures in packed flatbuffer.
@@ -479,10 +602,13 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     std::vector<TflSignaturePtr> tfl_signatures;
     for (auto i = 0; i < packed_model->signature_defs()->size(); ++i) {
       const auto* tfl_signature = packed_model->signature_defs()->Get(i);
+      if (tfl_signature == nullptr) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
       tfl_signatures.push_back(TflSignaturePtr(tfl_signature->UnPack()));
     }
     LITERT_RETURN_IF_ERROR(UnpackSignatures(tfl_signatures, *litert_model));
-  } else {
+  } else if (!litert_model->Subgraphs().empty()) {
     litert_model->EmplaceSignature(
         MakeDefaultSignature(litert_model->MainSubgraph()));
   }
@@ -491,7 +617,10 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     const auto num_metadata = packed_model->metadata()->size();
     for (auto i = 0; i < num_metadata; ++i) {
       const auto* tfl_metadata = packed_model->metadata()->Get(i);
-      auto name = tfl_metadata->name()->str();
+      if (tfl_metadata == nullptr) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
+      auto name = tfl_metadata->name() ? tfl_metadata->name()->str() : "";
       const auto buf_id = tfl_metadata->buffer();
       auto buf = ReadBuffer(context, buf_id);
       if (!buf) {
@@ -502,16 +631,21 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     }
   }
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
   if (packed_model->operator_codes()) {
     const auto num_operator_codes = packed_model->operator_codes()->size();
     std::vector<TflOpCodePtr> tfl_op_codes(num_operator_codes);
     for (auto i = 0; i < num_operator_codes; ++i) {
       const auto* tfl_op_code = packed_model->operator_codes()->Get(i);
+      if (tfl_op_code == nullptr) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
       TflOpCodePtr tfl_op_code_ptr(tfl_op_code->UnPack());
       tfl_op_codes[i] = std::move(tfl_op_code_ptr);
     }
     litert::internal::SetTflOpCodes(*litert_model, std::move(tfl_op_codes));
   }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   return litert_model;
 }
@@ -555,6 +689,7 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
   LITERT_ASSIGN_OR_RETURN(auto model, UnpackModel(std::move(**flatbuffer)));
   model->SetSourcePath(std::string(filename));
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
   // Load bytecode of each dispatch op and attach it to the model.
   absl::flat_hash_map<size_t, unsigned int> buffer_id_map;
   const auto& model_flatbuffer = GetTflFlatbuffer(*model);
@@ -591,6 +726,7 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
       }
     }
   }
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
 
   return std::move(model);
 }

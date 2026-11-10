@@ -12,16 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+package(
+    default_applicable_licenses = ["//third_party/odml:license"],  # copybara:comment
+    default_visibility = ["//visibility:public"],
+)
+
 exports_files(
     ["LICENSE"],
     visibility = ["//:__subpackages__"],
 )
 
 exports_files([
-    "PATCH.flatbuffers_windows_no_bash",
     "PATCH.perfetto",
-    "PATCH.protobuf_port_msvc_compat",
     "PATCH.sentencepiece",
     "litert_workspace.bzl",
-    "tensorflow_source_rules.bzl",
+    "requirements_lock_3_10.txt",
+    "requirements_lock_3_11.txt",
+    "requirements_lock_3_12.txt",
+    "requirements_lock_3_13.txt",
+    "requirements_lock_3_14.txt",
+    "requirements_lock_3_14_freethreaded.txt",
+    "rbe_platform.bzl",
 ])

@@ -22,7 +22,6 @@
 #include "litert/core/model/model_buffer.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/interpreter.h"
-#include "tsl/platform/platform.h"
 
 namespace litert::testing {
 
@@ -100,12 +99,10 @@ inline Expected<TflRuntime::Ptr> MakeRuntimeFromTestFileWithNpuModel(
   return TflRuntime::CreateFromFlatBuffer(std::move(*flatbuffer));
 }
 
-// TODO(lukeboyer): Add own implementation and remove tf dependency.
 // Detects whether the code is running in OSS environment.
-inline constexpr bool IsOss() { return tsl::kIsOpenSource; }
+#define LITERT_IS_OSS 1
 
-// Macro version of above.
-#define LITERT_IS_OSS TSL_IS_IN_OSS
+inline constexpr bool IsOss() { return LITERT_IS_OSS; }
 
 }  // namespace litert::testing
 

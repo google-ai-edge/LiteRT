@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@ml_drift//ml_drift/common:build_config.bzl", "mld_platform_alias")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
@@ -96,6 +95,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings",
+        "@flatbuffers",
         "@flatbuffers//:runtime_cc",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite:ir_model_builder_helper",
@@ -113,7 +113,7 @@ cc_library(
         "//tflite/delegates:utils",
         "//tflite/kernels:kernel_util",
         "//tflite/schema:schema_fbs",
-    ] + mld_platform_alias("custom_parsers", "@ml_drift//ml_drift/common/"),
+    ],
 )
 
 cc_library(

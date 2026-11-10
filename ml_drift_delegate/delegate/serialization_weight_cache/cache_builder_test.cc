@@ -56,36 +56,36 @@ using testing_util::TempFileDesc;
 
 ml_drift::data::TensorStorageType ToFB(TensorStorageType type) {
   switch (type) {
-    case TensorStorageType::BUFFER:
+    case TensorStorageType::kBuffer:
       return ml_drift::data::TensorStorageType::BUFFER;
-    case TensorStorageType::IMAGE_BUFFER:
+    case TensorStorageType::kImageBuffer:
       return ml_drift::data::TensorStorageType::IMAGE_BUFFER;
-    case TensorStorageType::TEXTURE_2D:
+    case TensorStorageType::kTexture2D:
       return ml_drift::data::TensorStorageType::TEXTURE_2D;
-    case TensorStorageType::TEXTURE_ARRAY:
+    case TensorStorageType::kTextureArray:
       return ml_drift::data::TensorStorageType::TEXTURE_ARRAY;
-    case TensorStorageType::TEXTURE_3D:
+    case TensorStorageType::kTexture3D:
       return ml_drift::data::TensorStorageType::TEXTURE_3D;
-    case TensorStorageType::SINGLE_TEXTURE_2D:
+    case TensorStorageType::kSingleTexture2D:
       return ml_drift::data::TensorStorageType::SINGLE_TEXTURE_2D;
-    case TensorStorageType::UNKNOWN:
+    case TensorStorageType::kUnknown:
       return ml_drift::data::TensorStorageType::UNKNOWN;
   }
 }
 
 ml_drift::data::Layout ToFB(Layout type) {
   switch (type) {
-    case Layout::HWC:
+    case Layout::kHWC:
       return ml_drift::data::Layout::HWC;
-    case Layout::BHWC:
+    case Layout::kBHWC:
       return ml_drift::data::Layout::BHWC;
-    case Layout::HWDC:
+    case Layout::kHWDC:
       return ml_drift::data::Layout::HWDC;
-    case Layout::BHWDC:
+    case Layout::kBHWDC:
       return ml_drift::data::Layout::BHWDC;
-    case Layout::LINEAR:
+    case Layout::kLinear:
       return ml_drift::data::Layout::LINEAR;
-    case Layout::HW:
+    case Layout::kHW:
       return ml_drift::data::Layout::HW;
     default:
       return ml_drift::data::Layout::UNKNOWN;
@@ -94,49 +94,49 @@ ml_drift::data::Layout ToFB(Layout type) {
 
 ml_drift::data::DataType ToFB(DataType type) {
   switch (type) {
-    case DataType::BOOL:
+    case DataType::kBool:
       return ml_drift::data::DataType::BOOL;
-    case DataType::FLOAT16:
+    case DataType::kFloat16:
       return ml_drift::data::DataType::FLOAT16;
-    case DataType::FLOAT32:
+    case DataType::kFloat32:
       return ml_drift::data::DataType::FLOAT32;
-    case DataType::FLOAT64:
+    case DataType::kFloat64:
       return ml_drift::data::DataType::FLOAT64;
-    case DataType::BFLOAT16:
+    case DataType::kBfloat16:
       return ml_drift::data::DataType::BFLOAT16;
-    case DataType::UINT8:
+    case DataType::kUint8:
       return ml_drift::data::DataType::UINT8;
-    case DataType::INT8:
+    case DataType::kInt8:
       return ml_drift::data::DataType::INT8;
-    case DataType::UINT16:
+    case DataType::kUint16:
       return ml_drift::data::DataType::UINT16;
-    case DataType::INT16:
+    case DataType::kInt16:
       return ml_drift::data::DataType::INT16;
-    case DataType::UINT32:
+    case DataType::kUint32:
       return ml_drift::data::DataType::UINT32;
-    case DataType::INT32:
+    case DataType::kInt32:
       return ml_drift::data::DataType::INT32;
-    case DataType::UINT64:
+    case DataType::kUint64:
       return ml_drift::data::DataType::UINT64;
-    case DataType::INT64:
+    case DataType::kInt64:
       return ml_drift::data::DataType::INT64;
-    case DataType::INT4:
+    case DataType::kInt4:
       return ml_drift::data::DataType::INT4;
-    case DataType::UINT4:
+    case DataType::kUint4:
       return ml_drift::data::DataType::UINT4;
-    case DataType::INT3:
+    case DataType::kInt3:
       return ml_drift::data::DataType::INT3;
-    case DataType::UINT3:
+    case DataType::kUint3:
       return ml_drift::data::DataType::UINT3;
-    case DataType::INT2:
+    case DataType::kInt2:
       return ml_drift::data::DataType::INT2;
-    case DataType::UINT2:
+    case DataType::kUint2:
       return ml_drift::data::DataType::UINT2;
-    case DataType::INT1:
+    case DataType::kInt1:
       return ml_drift::data::DataType::INT1;
-    case DataType::UINT1:
+    case DataType::kUint1:
       return ml_drift::data::DataType::UINT1;
-    case DataType::UNKNOWN:
+    case DataType::kUnknown:
       return ml_drift::data::DataType::UNKNOWN;
   }
 }
@@ -157,8 +157,8 @@ TEST(CacheBuilderTest, ReserveAppendWriteWorks) {
   void* buffer = builder.Reserve(payload_size);
   std::memcpy(buffer, payload.c_str(), payload_size);
   ml_drift::TensorDescriptor tensor_desc(
-      ml_drift::DataType::FLOAT32, ml_drift::TensorStorageType::IMAGE_BUFFER,
-      ml_drift::Layout::LINEAR);
+      ml_drift::DataType::kFloat32, ml_drift::TensorStorageType::kImageBuffer,
+      ml_drift::Layout::kLinear);
   ml_drift::BufferLocation loc;
   ASSERT_OK(builder.Append(global_tensor_id,
                            /*is_quantization_param_tensor=*/false, tensor_desc,
@@ -231,8 +231,8 @@ TEST(CacheBuilderTest, AppendWithoutReserveWriteWorks) {
   ASSERT_OK(builder.StartBuildStep(unique_model_identifier));
 
   ml_drift::TensorDescriptor tensor_desc(
-      ml_drift::DataType::FLOAT32, ml_drift::TensorStorageType::IMAGE_BUFFER,
-      ml_drift::Layout::LINEAR);
+      ml_drift::DataType::kFloat32, ml_drift::TensorStorageType::kImageBuffer,
+      ml_drift::Layout::kLinear);
   const size_t payload_size = size(payload);
   ml_drift::BufferLocation loc;
   ASSERT_OK(builder.Append(global_tensor_id,
@@ -306,8 +306,8 @@ TEST(CacheBuilderTest, AppendWorksWithGlobalIdCollision) {
   void* buffer = builder.Reserve(payload_size);
   std::memcpy(buffer, payload.c_str(), payload_size);
   ml_drift::TensorDescriptor tensor_desc(
-      ml_drift::DataType::FLOAT32, ml_drift::TensorStorageType::IMAGE_BUFFER,
-      ml_drift::Layout::LINEAR);
+      ml_drift::DataType::kFloat32, ml_drift::TensorStorageType::kImageBuffer,
+      ml_drift::Layout::kLinear);
   ml_drift::BufferLocation loc;
   // Add both the quantization and non-quantization tensor with the same global
   // tensor id.
@@ -440,8 +440,8 @@ TEST(CacheBuilderTest, MultipleStepBuild) {
     void* buffer = builder.Reserve(payload_size);
     std::memcpy(buffer, payload1.c_str(), payload_size);
     ml_drift::TensorDescriptor tensor_desc(
-        ml_drift::DataType::FLOAT32, ml_drift::TensorStorageType::IMAGE_BUFFER,
-        ml_drift::Layout::LINEAR);
+        ml_drift::DataType::kFloat32, ml_drift::TensorStorageType::kImageBuffer,
+        ml_drift::Layout::kLinear);
     ml_drift::BufferLocation loc;
     ASSERT_OK(builder.Append(dummy_id1, false, tensor_desc, buffer,
                              payload_size, loc));
@@ -453,8 +453,8 @@ TEST(CacheBuilderTest, MultipleStepBuild) {
     void* buffer = builder.Reserve(payload_size);
     std::memcpy(buffer, payload3.c_str(), payload_size);
     ml_drift::TensorDescriptor tensor_desc(
-        ml_drift::DataType::FLOAT32, ml_drift::TensorStorageType::IMAGE_BUFFER,
-        ml_drift::Layout::LINEAR);
+        ml_drift::DataType::kFloat32, ml_drift::TensorStorageType::kImageBuffer,
+        ml_drift::Layout::kLinear);
     ml_drift::BufferLocation loc;
     ASSERT_OK(builder.Append(dummy_id3, false, tensor_desc, buffer,
                              payload_size, loc));
@@ -471,8 +471,8 @@ TEST(CacheBuilderTest, MultipleStepBuild) {
     void* buffer = builder.Reserve(payload_size);
     std::memcpy(buffer, payload2.c_str(), payload_size);
     ml_drift::TensorDescriptor tensor_desc(
-        ml_drift::DataType::FLOAT32, ml_drift::TensorStorageType::IMAGE_BUFFER,
-        ml_drift::Layout::LINEAR);
+        ml_drift::DataType::kFloat32, ml_drift::TensorStorageType::kImageBuffer,
+        ml_drift::Layout::kLinear);
     ml_drift::BufferLocation loc;
     ASSERT_OK(builder.Append(dummy_id2, false, tensor_desc, buffer,
                              payload_size, loc));
@@ -579,8 +579,8 @@ TEST(CacheBuilderTest, FlatBufferDoesNotGrowUnnecessarilyAcrossSteps) {
     void* buffer = builder.Reserve(payload_size);
     std::memcpy(buffer, payload.c_str(), payload_size);
     ml_drift::TensorDescriptor tensor_desc(
-        ml_drift::DataType::FLOAT32, ml_drift::TensorStorageType::IMAGE_BUFFER,
-        ml_drift::Layout::LINEAR);
+        ml_drift::DataType::kFloat32, ml_drift::TensorStorageType::kImageBuffer,
+        ml_drift::Layout::kLinear);
     ml_drift::BufferLocation loc;
     ASSERT_OK(builder.Append(i, false, tensor_desc, buffer, payload_size, loc));
     ASSERT_OK(builder.StopBuildStep());

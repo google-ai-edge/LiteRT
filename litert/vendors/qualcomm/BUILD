@@ -57,7 +57,6 @@ cc_library(
         "//litert/cc/internal:litert_shared_library",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/backends:qnn_backend",
-        "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -86,6 +85,7 @@ litert_cc_lib_with_qnn(
         "//litert/core:filesystem",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core/backends:backend_utils",
         "//litert/vendors/qualcomm/core/backends:dsp_backend",
         "//litert/vendors/qualcomm/core/backends:gpu_backend",
         "//litert/vendors/qualcomm/core/backends:htp_backend",
@@ -140,7 +140,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/utils:test_utils",
         "//litert/vendors/qualcomm/tools:dump",
     ] + select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             # copybara:uncomment_begin(google-only)
             # "@qairt//:linux_deps",
             # copybara:uncomment_end
@@ -190,7 +190,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_shared_library",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
 )

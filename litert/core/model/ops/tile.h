@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -34,7 +35,9 @@ inline LiteRtStatus InferTile(const LiteRtOpT& op,
   constexpr int kInputArgIndex = 0;
   constexpr int kMultiplesArgIndex = 1;
 
-  if (input_shapes.size() < kTileMinArgs) {
+  if (input_shapes.size() < kTileMinArgs || output_shapes.size() != 1 ||
+      op.Inputs().size() < kTileMinArgs ||
+      op.Inputs()[kMultiplesArgIndex] == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& input_shape = input_shapes[kInputArgIndex];
@@ -42,6 +45,9 @@ inline LiteRtStatus InferTile(const LiteRtOpT& op,
 
   if (multiples_tensor.Weights().Buffer().Size() > 0) {
     auto buf = multiples_tensor.Weights().Buffer();
+    if (buf.Size() % sizeof(int32_t) != 0) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
     const int32_t* mults = reinterpret_cast<const int32_t*>(buf.Data());
     int mult_rank = buf.Size() / sizeof(int32_t);
     if (mult_rank != input_shape.size())
@@ -49,7 +55,13 @@ inline LiteRtStatus InferTile(const LiteRtOpT& op,
 
     Dims out_shape = input_shape;
     for (int i = 0; i < mult_rank; ++i) {
-      if (out_shape[i] != -1) out_shape[i] *= mults[i];
+      if (mults[i] < 0 || out_shape[i] < -1) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
+      if (out_shape[i] != -1 &&
+          !SafeMultiply(out_shape[i], mults[i], out_shape[i])) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
     }
     output_shapes[0] = std::move(out_shape);
     return kLiteRtStatusOk;

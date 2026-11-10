@@ -11,6 +11,10 @@ compatible and run smoothly even when using different versions of the runtime.
 NOTE: the C API is not the recommended option for general application
 development. Most developers should use the C++ API which is easier to use.
 
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+For instructions on adding a new C API function and updating the runtime method
+table, symbol lists, and C++ `RuntimeProxy`, see [`../C_API.md`](../C_API.md).
+
 ## C API naming guide
 
 Function names follow this pattern:

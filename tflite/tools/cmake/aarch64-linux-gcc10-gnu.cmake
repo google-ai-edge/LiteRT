@@ -1,0 +1,42 @@
+# AArch64 Linux cross toolchain (glibc).
+# Toolchain: gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu
+#
+# Override install location:
+#   cmake -DAARCH64_TOOLCHAIN_ROOT=/path/to/gcc-arm-10.3-... -DCMAKE_TOOLCHAIN_FILE=...
+
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR aarch64)
+
+if(NOT AARCH64_TOOLCHAIN_ROOT)
+  if(DEFINED ENV{AARCH64_TOOLCHAIN_ROOT} AND NOT "$ENV{AARCH64_TOOLCHAIN_ROOT}" STREQUAL "")
+    set(AARCH64_TOOLCHAIN_ROOT "$ENV{AARCH64_TOOLCHAIN_ROOT}")
+  else()
+    set(AARCH64_TOOLCHAIN_ROOT
+      "/aidata/junyi/100_work_dir/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu")
+  endif()
+endif()
+
+set(TOOLCHAIN "${AARCH64_TOOLCHAIN_ROOT}")
+set(CMAKE_SYSROOT "${TOOLCHAIN}/aarch64-none-linux-gnu/libc")
+
+set(CMAKE_C_COMPILER "${TOOLCHAIN}/bin/aarch64-none-linux-gnu-gcc")
+set(CMAKE_CXX_COMPILER "${TOOLCHAIN}/bin/aarch64-none-linux-gnu-g++")
+
+if(NOT EXISTS "${CMAKE_C_COMPILER}")
+  message(FATAL_ERROR
+    "AArch64 GCC not found: ${CMAKE_C_COMPILER}\n"
+    "Install gcc-arm-10.3-2021.07 to ${AARCH64_TOOLCHAIN_ROOT}\n"
+    "or set AARCH64_TOOLCHAIN_ROOT / -DAARCH64_TOOLCHAIN_ROOT=...")
+endif()
+
+set(_AARCH64_FLAGS "-march=armv8-a --sysroot=${CMAKE_SYSROOT}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_AARCH64_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_AARCH64_FLAGS}")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --sysroot=${CMAKE_SYSROOT}")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --sysroot=${CMAKE_SYSROOT}")
+
+set(CMAKE_FIND_ROOT_PATH "${CMAKE_SYSROOT}")
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)

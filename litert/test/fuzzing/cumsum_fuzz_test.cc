@@ -144,7 +144,7 @@ TEST(CumsumFuzzTest, Rank64Smoke) {
   test_case.exclusive = false;
   test_case.reverse = false;
   test_case.invoke = true;
-  EXPECT_EQ(RunCumsumCase(test_case), RunResult::kSuccess);
+  EXPECT_EQ(RunCumsumCase(test_case), RunResult::kRejected);
 }
 
 FUZZ_TEST(CumsumFuzzTest, DISABLED_CumsumNeverCrashes)

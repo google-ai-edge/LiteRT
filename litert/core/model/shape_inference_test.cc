@@ -16,7 +16,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <limits>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -25,6 +28,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -722,6 +726,821 @@ TEST(ShapeInferenceTest, StridedSliceUnregisteredBaseFailure) {
   // Base commit returns `kLiteRtStatusErrorShapeInferenceFailed` because
   // StridedSlice (`OpCode 45`) is unregistered!
   EXPECT_EQ(engine.InferShapes(), kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+TEST(ShapeInferenceTest, ApplyInputShapesPositional) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+
+  auto& in0 = subgraph.EmplaceTensor();
+  in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 128}));
+  subgraph.Inputs().push_back(&in0);
+
+  auto& in1 = subgraph.EmplaceTensor();
+  in1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 128}));
+  subgraph.Inputs().push_back(&in1);
+
+  auto& out = subgraph.EmplaceTensor();
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 128}));
+  subgraph.Outputs().push_back(&out);
+
+  AttachInput(&in0, op);
+  AttachInput(&in1, op);
+  AttachOutput(&out, op);
+
+  ShapeInferenceEngine engine(&model);
+  const std::vector<Dims> positional_shapes = {{4, 128}, {4, 128}};
+  auto res = engine.ApplyInputShapes("", absl::MakeConstSpan(positional_shapes),
+                                     {}, {});
+  ASSERT_TRUE(res.HasValue());
+
+  EXPECT_EQ(in0.Type().second.ranked_tensor_type.layout.dimensions[0], 4);
+  EXPECT_EQ(in1.Type().second.ranked_tensor_type.layout.dimensions[0], 4);
+  EXPECT_EQ(out.Type().second.ranked_tensor_type.layout.dimensions[0], 4);
+  EXPECT_EQ(out.Type().second.ranked_tensor_type.layout.dimensions[1], 128);
+}
+
+TEST(ShapeInferenceTest, ApplyInputShapesByTensorName) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+
+  auto& in0 = subgraph.EmplaceTensor();
+  in0.SetName("arg0");
+  in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 64}));
+  subgraph.Inputs().push_back(&in0);
+
+  auto& in1 = subgraph.EmplaceTensor();
+  in1.SetName("arg1");
+  in1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 64}));
+  subgraph.Inputs().push_back(&in1);
+
+  auto& out = subgraph.EmplaceTensor();
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 64}));
+  subgraph.Outputs().push_back(&out);
+
+  AttachInput(&in0, op);
+  AttachInput(&in1, op);
+  AttachOutput(&out, op);
+
+  ShapeInferenceEngine engine(&model);
+  const std::vector<std::pair<std::string, Dims>> tensor_shapes = {
+      {"arg0", {2, 64}}, {"arg1", {2, 64}}};
+  auto res =
+      engine.ApplyInputShapes("", {}, absl::MakeConstSpan(tensor_shapes), {});
+  ASSERT_TRUE(res.HasValue());
+
+  EXPECT_EQ(in0.Type().second.ranked_tensor_type.layout.dimensions[0], 2);
+  EXPECT_EQ(out.Type().second.ranked_tensor_type.layout.dimensions[0], 2);
+  EXPECT_EQ(out.Type().second.ranked_tensor_type.layout.dimensions[1], 64);
+}
+
+TEST(ShapeInferenceTest, ApplyInputShapesBySignatureKeyAndInputName) {
+  LiteRtModelT model;
+
+  // Subgraph 0: prefill
+  auto& sg_prefill = model.EmplaceSubgraph();
+  auto& op_prefill = sg_prefill.EmplaceOp();
+  op_prefill.SetOpCode(kLiteRtOpCodeTflAdd);
+  auto& in_prefill0 = sg_prefill.EmplaceTensor();
+  in_prefill0.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 512}));
+  sg_prefill.Inputs().push_back(&in_prefill0);
+  auto& in_prefill1 = sg_prefill.EmplaceTensor();
+  in_prefill1.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 512}));
+  sg_prefill.Inputs().push_back(&in_prefill1);
+  auto& out_prefill = sg_prefill.EmplaceTensor();
+  out_prefill.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 512}));
+  sg_prefill.Outputs().push_back(&out_prefill);
+  AttachInput(&in_prefill0, op_prefill);
+  AttachInput(&in_prefill1, op_prefill);
+  AttachOutput(&out_prefill, op_prefill);
+
+  model.EmplaceSignature(&sg_prefill,
+                         std::vector<std::string>{"tokens", "other"},
+                         std::vector<LiteRtTensor>{&in_prefill0, &in_prefill1},
+                         std::vector<std::string>{"out"},
+                         std::vector<LiteRtTensor>{&out_prefill}, "prefill");
+
+  // Subgraph 1: decode
+  auto& sg_decode = model.EmplaceSubgraph();
+  auto& op_decode = sg_decode.EmplaceOp();
+  op_decode.SetOpCode(kLiteRtOpCodeTflAdd);
+  auto& in_decode0 = sg_decode.EmplaceTensor();
+  in_decode0.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 512}));
+  sg_decode.Inputs().push_back(&in_decode0);
+  auto& in_decode1 = sg_decode.EmplaceTensor();
+  in_decode1.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 512}));
+  sg_decode.Inputs().push_back(&in_decode1);
+  auto& out_decode = sg_decode.EmplaceTensor();
+  out_decode.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 512}));
+  sg_decode.Outputs().push_back(&out_decode);
+  AttachInput(&in_decode0, op_decode);
+  AttachInput(&in_decode1, op_decode);
+  AttachOutput(&out_decode, op_decode);
+
+  model.EmplaceSignature(&sg_decode,
+                         std::vector<std::string>{"tokens", "other"},
+                         std::vector<LiteRtTensor>{&in_decode0, &in_decode1},
+                         std::vector<std::string>{"out"},
+                         std::vector<LiteRtTensor>{&out_decode}, "decode");
+
+  ShapeInferenceEngine engine(&model);
+  const std::vector<std::pair<std::string, Dims>> prefill_inputs = {
+      {"tokens", {1, 512}}, {"other", {1, 512}}};
+  const std::vector<std::pair<std::string, Dims>> decode_inputs = {
+      {"tokens", {1, 1}}, {"other", {1, 1}}};
+
+  auto res1 = engine.ApplyInputShapes("prefill", {}, {},
+                                      absl::MakeConstSpan(prefill_inputs));
+  ASSERT_TRUE(res1.HasValue());
+  EXPECT_EQ(out_prefill.Type().second.ranked_tensor_type.layout.dimensions[0],
+            1);
+  EXPECT_EQ(out_prefill.Type().second.ranked_tensor_type.layout.dimensions[1],
+            512);
+
+  auto res2 = engine.ApplyInputShapes("decode", {}, {},
+                                      absl::MakeConstSpan(decode_inputs));
+  ASSERT_TRUE(res2.HasValue());
+  EXPECT_EQ(out_decode.Type().second.ranked_tensor_type.layout.dimensions[0],
+            1);
+  EXPECT_EQ(out_decode.Type().second.ranked_tensor_type.layout.dimensions[1],
+            1);
+}
+
+TEST(ShapeInferenceTest, ApplyInputShapesRejectsInvalidInputs) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& in0 = subgraph.EmplaceTensor();
+  in0.SetName("arg0");
+  in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 64}));
+  subgraph.Inputs().push_back(&in0);
+
+  ShapeInferenceEngine engine(&model);
+  // No inputs
+  EXPECT_FALSE(engine.ApplyInputShapes("", {}, {}, {}).HasValue());
+  // Mutually exclusive methods
+  const std::vector<Dims> pos = {{1, 64}};
+  const std::vector<std::pair<std::string, Dims>> named = {{"arg0", {1, 64}}};
+  EXPECT_FALSE(engine
+                   .ApplyInputShapes("", absl::MakeConstSpan(pos),
+                                     absl::MakeConstSpan(named), {})
+                   .HasValue());
+  // Positional count mismatch
+  const std::vector<Dims> pos_wrong = {{1, 64}, {1, 64}};
+  EXPECT_FALSE(
+      engine.ApplyInputShapes("", absl::MakeConstSpan(pos_wrong), {}, {})
+          .HasValue());
+  // Missing signature
+  EXPECT_FALSE(
+      engine
+          .ApplyInputShapes("nonexistent_sig", absl::MakeConstSpan(pos), {}, {})
+          .HasValue());
+  // Missing tensor name
+  const std::vector<std::pair<std::string, Dims>> bad_named = {
+      {"nonexistent_tensor", {1, 64}}};
+  EXPECT_FALSE(
+      engine.ApplyInputShapes("", {}, absl::MakeConstSpan(bad_named), {})
+          .HasValue());
+}
+
+TEST(ShapeInferenceTest,
+     InferCompositeOpShapesPropagatesToDecompositionSubgraph) {
+  LiteRtModelT model;
+  auto& main_sg = model.EmplaceSubgraph();
+  auto& decomp_sg = model.EmplaceSubgraph();
+
+  // Decomposition subgraph: TflMul
+  auto& d_in0 = decomp_sg.EmplaceTensor();
+  d_in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 16}));
+  decomp_sg.Inputs().push_back(&d_in0);
+
+  auto& d_in1 = decomp_sg.EmplaceTensor();
+  d_in1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 16}));
+  decomp_sg.Inputs().push_back(&d_in1);
+
+  auto& d_out = decomp_sg.EmplaceTensor();
+  d_out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 16}));
+  decomp_sg.Outputs().push_back(&d_out);
+
+  auto& mul_op = decomp_sg.EmplaceOp();
+  mul_op.SetOpCode(kLiteRtOpCodeTflMul);
+  AttachInput(&d_in0, mul_op);
+  AttachInput(&d_in1, mul_op);
+  AttachOutput(&d_out, mul_op);
+
+  // Main subgraph: composite op pointing to decomp_sg (index 1). Inputs are
+  // static; the composite output and decomposition tensors start dynamic.
+  auto& m_in0 = main_sg.EmplaceTensor();
+  m_in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {8, 16}));
+  main_sg.Inputs().push_back(&m_in0);
+
+  auto& m_in1 = main_sg.EmplaceTensor();
+  m_in1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {8, 16}));
+  main_sg.Inputs().push_back(&m_in1);
+
+  auto& m_out = main_sg.EmplaceTensor();
+  m_out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 16}));
+  main_sg.Outputs().push_back(&m_out);
+
+  auto& comp_op = main_sg.EmplaceOp();
+  comp_op.SetOpCode(kLiteRtOpCodeShloComposite);
+  AttachInput(&m_in0, comp_op);
+  AttachInput(&m_in1, comp_op);
+  AttachOutput(&m_out, comp_op);
+
+  tflite::StableHLOCompositeOptionsT comp_options;
+  comp_options.name = "test_composite";
+  comp_options.decomposition_subgraph_index = 1;
+
+  internal::TflOptions2 tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  tfl_options.Set(std::move(comp_options));
+  litert::internal::SetTflOptions2(comp_op, std::move(tfl_options));
+
+  ShapeInferenceEngine engine(&model);
+  ASSERT_EQ(engine.InferSubgraphShapes(&main_sg), kLiteRtStatusOk);
+
+  // Both the composite output in the main subgraph AND the decomposition
+  // subgraph tensors must now have shape {8, 16}.
+  EXPECT_EQ(m_out.Type().second.ranked_tensor_type.layout.dimensions[0], 8);
+  EXPECT_EQ(m_out.Type().second.ranked_tensor_type.layout.dimensions[1], 16);
+  EXPECT_EQ(d_in0.Type().second.ranked_tensor_type.layout.dimensions[0], 8);
+  EXPECT_EQ(d_out.Type().second.ranked_tensor_type.layout.dimensions[0], 8);
+}
+
+TEST(ShapeInferenceTest, ApplyInputShapesBySignatureNameWithoutSignatures) {
+  // Models without signatures get a synthesized default signature whose input
+  // names are the tensor names.
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  auto& in0 = subgraph.EmplaceTensor();
+  in0.SetName("x");
+  in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  auto& in1 = subgraph.EmplaceTensor();
+  in1.SetName("y");
+  in1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  auto& out = subgraph.EmplaceTensor();
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  subgraph.Inputs() = {&in0, &in1};
+  subgraph.Outputs() = {&out};
+  AttachInput(&in0, op);
+  AttachInput(&in1, op);
+  AttachOutput(&out, op);
+
+  ShapeInferenceEngine engine(&model);
+  const std::vector<std::pair<std::string, Dims>> sig_inputs = {{"x", {3, 4}},
+                                                                {"y", {3, 4}}};
+  ASSERT_TRUE(
+      engine.ApplyInputShapes("", {}, {}, absl::MakeConstSpan(sig_inputs))
+          .HasValue());
+  EXPECT_EQ(out.Type().second.ranked_tensor_type.layout.dimensions[0], 3);
+}
+
+TEST(ShapeInferenceTest, ApplyInputShapesRejectsInvalidDims) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& in0 = subgraph.EmplaceTensor();
+  in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  subgraph.Inputs().push_back(&in0);
+
+  ShapeInferenceEngine engine(&model);
+  // Dimension below -1 or zero.
+  const std::vector<Dims> negative = {{-2, 4}};
+  EXPECT_FALSE(
+      engine.ApplyInputShapes("", absl::MakeConstSpan(negative), {}, {})
+          .HasValue());
+  const std::vector<Dims> zero_dim = {{0, 4}};
+  EXPECT_FALSE(
+      engine.ApplyInputShapes("", absl::MakeConstSpan(zero_dim), {}, {})
+          .HasValue());
+  // Rank beyond LITERT_TENSOR_MAX_RANK.
+  const std::vector<Dims> too_deep = {Dims(LITERT_TENSOR_MAX_RANK + 1, 1)};
+  EXPECT_FALSE(
+      engine.ApplyInputShapes("", absl::MakeConstSpan(too_deep), {}, {})
+          .HasValue());
+  // Original shape must be untouched after rejected updates.
+  EXPECT_EQ(in0.Type().second.ranked_tensor_type.layout.dimensions[0], -1);
+}
+
+TEST(ShapeInferenceTest, CompositeOpWithInvalidDecompositionIndexFails) {
+  LiteRtModelT model;
+  auto& main_sg = model.EmplaceSubgraph();
+  auto& m_in = main_sg.EmplaceTensor();
+  m_in.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  auto& m_out = main_sg.EmplaceTensor();
+  m_out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  main_sg.Inputs() = {&m_in};
+  main_sg.Outputs() = {&m_out};
+  auto& comp_op = main_sg.EmplaceOp();
+  comp_op.SetOpCode(kLiteRtOpCodeShloComposite);
+  AttachInput(&m_in, comp_op);
+  AttachOutput(&m_out, comp_op);
+
+  tflite::StableHLOCompositeOptionsT comp_options;
+  comp_options.name = "dangling";
+  comp_options.decomposition_subgraph_index = 7;  // Out of range.
+  internal::TflOptions2 tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  tfl_options.Set(std::move(comp_options));
+  litert::internal::SetTflOptions2(comp_op, std::move(tfl_options));
+
+  ShapeInferenceEngine engine(&model);
+  EXPECT_EQ(engine.InferOpShapes(&comp_op),
+            kLiteRtStatusErrorUnsupportedOpShapeInferer);
+}
+
+TEST(ShapeInferenceTest, CompositeOpSelfRecursionIsRejected) {
+  // A composite op whose decomposition subgraph is the subgraph containing it.
+  LiteRtModelT model;
+  auto& sg = model.EmplaceSubgraph();
+  auto& in = sg.EmplaceTensor();
+  in.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 4}));
+  auto& out = sg.EmplaceTensor();
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 4}));
+  sg.Inputs() = {&in};
+  sg.Outputs() = {&out};
+  auto& comp_op = sg.EmplaceOp();
+  comp_op.SetOpCode(kLiteRtOpCodeShloComposite);
+  AttachInput(&in, comp_op);
+  AttachOutput(&out, comp_op);
+
+  tflite::StableHLOCompositeOptionsT comp_options;
+  comp_options.name = "self";
+  comp_options.decomposition_subgraph_index = 0;
+  internal::TflOptions2 tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  tfl_options.Set(std::move(comp_options));
+  litert::internal::SetTflOptions2(comp_op, std::move(tfl_options));
+
+  ShapeInferenceEngine engine(&model);
+  EXPECT_EQ(engine.InferOpShapes(&comp_op),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+TEST(ShapeInferenceTest, ZeroOutputStatelessOpFailsSafely) {
+  LiteRtModelT model;
+  auto& sg = model.EmplaceSubgraph();
+  auto& in0 = sg.EmplaceTensor();
+  in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 3}));
+  auto& in1 = sg.EmplaceTensor();
+  in1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 3}));
+
+  auto& add_op = sg.EmplaceOp();
+  add_op.SetOpCode(kLiteRtOpCodeTflAdd);
+  AttachInput(&in0, add_op);
+  AttachInput(&in1, add_op);
+  // Intentionally attach zero outputs.
+
+  ShapeInferenceEngine engine(&model);
+  EXPECT_EQ(engine.InferOpShapes(&add_op),
+            kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+struct OneHotErrorCase {
+  std::string test_name;
+  int32_t axis;
+  std::vector<uint8_t> depth_bytes;
+};
+
+using OneHotErrorTest = ::testing::TestWithParam<OneHotErrorCase>;
+
+TEST_P(OneHotErrorTest, RejectsInvalidAxisAndDepth) {
+  const auto& param = GetParam();
+  LiteRtModelT model;
+  auto& sg = model.EmplaceSubgraph();
+  auto& indices = sg.EmplaceTensor();
+  indices.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 3}));
+  auto& depth = sg.EmplaceTensor();
+  depth.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {}));
+  if (!param.depth_bytes.empty()) {
+    SetWeightsFromOwnedBuffer(
+        depth.Weights(), OwningBufferRef<uint8_t>(param.depth_bytes.data(),
+                                                  param.depth_bytes.size()));
+  }
+  auto& on_val = sg.EmplaceTensor();
+  on_val.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+  auto& off_val = sg.EmplaceTensor();
+  off_val.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+  auto& out = sg.EmplaceTensor();
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+
+  auto& op = sg.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflOneHot);
+  auto opts = std::make_unique<tflite::OneHotOptionsT>();
+  opts->axis = param.axis;
+  TflOptions tfl_opts;
+  tfl_opts.type = tflite::BuiltinOptions_OneHotOptions;
+  tfl_opts.value = opts.release();
+  SetTflOptions(op, std::move(tfl_opts));
+
+  AttachInput(&indices, op);
+  AttachInput(&depth, op);
+  AttachInput(&on_val, op);
+  AttachInput(&off_val, op);
+  AttachOutput(&out, op);
+
+  ShapeInferenceEngine engine(&model);
+  EXPECT_EQ(engine.InferShapes(), kLiteRtStatusErrorInvalidArgument);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    OneHotInvalidInputs, OneHotErrorTest,
+    ::testing::Values(
+        OneHotErrorCase{"AxisUnderflow", std::numeric_limits<int32_t>::min(),
+                        std::vector<uint8_t>{4, 0, 0, 0}},
+        OneHotErrorCase{"ShortDepthBuffer", 0, std::vector<uint8_t>{1, 0}},
+        OneHotErrorCase{"NegativeDepth", 0,
+                        std::vector<uint8_t>{0xff, 0xff, 0xff, 0xff}}),
+    [](const ::testing::TestParamInfo<OneHotErrorCase>& info) {
+      return info.param.test_name;
+    });
+
+// Graph-level regressions for inferrers that decode constant index operands.
+// Each case builds a single-op model whose output is declared with the given
+// dims and checks both engine modes.
+
+LiteRtTensorT& AddTensor(LiteRtSubgraphT& subgraph,
+                         LiteRtElementType element_type,
+                         absl::Span<const int32_t> dims) {
+  auto& tensor = subgraph.EmplaceTensor();
+  tensor.SetType(MakeRankedTensorType(element_type, dims));
+  return tensor;
+}
+
+template <typename T>
+LiteRtTensorT& AddConstTensor(LiteRtSubgraphT& subgraph,
+                              LiteRtElementType element_type,
+                              const std::vector<T>& values) {
+  auto& tensor =
+      AddTensor(subgraph, element_type, {static_cast<int32_t>(values.size())});
+  SetWeightsFromOwnedBuffer(
+      tensor.Weights(),
+      OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(values.data()),
+                               values.size() * sizeof(T)));
+  return tensor;
+}
+
+Dims TensorDims(const LiteRtTensorT& tensor) {
+  const auto& layout = tensor.Type().second.ranked_tensor_type.layout;
+  return Dims(layout.dimensions, layout.dimensions + layout.rank);
+}
+
+// Builds a single-op model in `model` with the op's output declared as
+// `declared_output`, and returns that output tensor.
+using SingleOpModelBuilder = std::function<LiteRtTensorT*(
+    LiteRtModelT& model, absl::Span<const int32_t> declared_output)>;
+
+// Checks that inference mode rewrites a placeholder output to `expected`, and
+// that validation-only mode accepts `expected` but rejects `wrong`.
+void ExpectInferredOutputInBothModes(const SingleOpModelBuilder& build,
+                                     const Dims& expected, const Dims& wrong) {
+  {
+    SCOPED_TRACE("inference");
+    LiteRtModelT model;
+    LiteRtTensorT* output = build(model, {-1});
+    ShapeInferenceEngine engine(&model);
+    ASSERT_EQ(engine.InferShapes(/*validation_only=*/false), kLiteRtStatusOk);
+    EXPECT_EQ(TensorDims(*output), expected);
+  }
+  {
+    SCOPED_TRACE("validation_only, matching declared shape");
+    LiteRtModelT model;
+    LiteRtTensorT* output = build(model, expected);
+    ShapeInferenceEngine engine(&model);
+    ASSERT_EQ(engine.InferShapes(/*validation_only=*/true), kLiteRtStatusOk);
+    EXPECT_EQ(TensorDims(*output), expected);
+  }
+  {
+    SCOPED_TRACE("validation_only, mismatching declared shape");
+    LiteRtModelT model;
+    build(model, wrong);
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(/*validation_only=*/true),
+              kLiteRtStatusErrorShapeInferenceFailed);
+  }
+}
+
+template <typename AxisT>
+SingleOpModelBuilder AxisReduction(LiteRtOpCode op_code, bool keep_dims,
+                                   LiteRtElementType axis_type,
+                                   std::vector<AxisT> axes) {
+  return [=](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+    const bool is_arg_min_max =
+        op_code == kLiteRtOpCodeTflArgMax || op_code == kLiteRtOpCodeTflArgMin;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(op_code);
+    if (!is_arg_min_max) {
+      auto options = std::make_unique<tflite::ReducerOptionsT>();
+      options->keep_dims = keep_dims;
+      TflOptions tfl_options;
+      tfl_options.type = tflite::BuiltinOptions_ReducerOptions;
+      tfl_options.value = options.release();
+      SetTflOptions(op, std::move(tfl_options));
+    }
+
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3, 4});
+    auto& axis = AddConstTensor(subgraph, axis_type, axes);
+    // ARG_MAX and ARG_MIN output INT32 indices; the reducers keep the input
+    // type.
+    auto& output = AddTensor(
+        subgraph,
+        is_arg_min_max ? kLiteRtElementTypeInt32 : kLiteRtElementTypeFloat32,
+        declared_output);
+    AttachInput(&input, op);
+    AttachInput(&axis, op);
+    AttachOutput(&output, op);
+    return &output;
+  };
+}
+
+TEST(ShapeInferenceTest, SumAndMeanWithInt64Axes) {
+  // INT64 `{1}` was previously decoded as the INT32 axes `{1, 0}`, so SUM
+  // inferred `{4}`.
+  for (LiteRtOpCode op_code : {kLiteRtOpCodeTflSum, kLiteRtOpCodeTflMean}) {
+    SCOPED_TRACE(::testing::Message() << "op_code=" << op_code);
+    ExpectInferredOutputInBothModes(
+        AxisReduction<int64_t>(op_code, /*keep_dims=*/false,
+                               kLiteRtElementTypeInt64, {1}),
+        /*expected=*/{2, 4}, /*wrong=*/{4});
+  }
+}
+
+TEST(ShapeInferenceTest, SumWithInt32Axes) {
+  ExpectInferredOutputInBothModes(
+      AxisReduction<int32_t>(kLiteRtOpCodeTflSum, /*keep_dims=*/false,
+                             kLiteRtElementTypeInt32, {1}),
+      /*expected=*/{2, 4}, /*wrong=*/{4});
+}
+
+TEST(ShapeInferenceTest, MeanWithNegativeInt32AxesKeepDims) {
+  ExpectInferredOutputInBothModes(
+      AxisReduction<int32_t>(kLiteRtOpCodeTflMean, /*keep_dims=*/true,
+                             kLiteRtElementTypeInt32, {-1, 0}),
+      /*expected=*/{1, 3, 1}, /*wrong=*/{1, 1, 4});
+}
+
+TEST(ShapeInferenceTest, ReductionAndArgMaxRejectInvalidAxes) {
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    for (int64_t bad_axis : {int64_t{-4}, int64_t{3}}) {
+      LiteRtModelT model;
+      AxisReduction<int64_t>(kLiteRtOpCodeTflSum, /*keep_dims=*/false,
+                             kLiteRtElementTypeInt64,
+                             {bad_axis})(model, {2, 3});
+      ShapeInferenceEngine engine(&model);
+      EXPECT_EQ(engine.InferShapes(validation_only),
+                kLiteRtStatusErrorInvalidArgument);
+    }
+    for (LiteRtOpCode op_code :
+         {kLiteRtOpCodeTflArgMax, kLiteRtOpCodeTflArgMin}) {
+      SCOPED_TRACE(::testing::Message() << "op_code=" << op_code);
+      LiteRtModelT model;
+      AxisReduction<int64_t>(op_code, /*keep_dims=*/false,
+                             kLiteRtElementTypeInt64, {0, 1})(model, {4});
+      ShapeInferenceEngine engine(&model);
+      EXPECT_EQ(engine.InferShapes(validation_only),
+                kLiteRtStatusErrorInvalidArgument);
+    }
+  }
+}
+
+TEST(ShapeInferenceTest, ArgMaxAndArgMinWithInt64Axis) {
+  // ARG_MAX and ARG_MIN accept an INT64 axis
+  // (kernel_utils::ReadAndNormalizeAxis).
+  for (LiteRtOpCode op_code :
+       {kLiteRtOpCodeTflArgMax, kLiteRtOpCodeTflArgMin}) {
+    SCOPED_TRACE(::testing::Message() << "op_code=" << op_code);
+    ExpectInferredOutputInBothModes(
+        AxisReduction<int64_t>(op_code, /*keep_dims=*/false,
+                               kLiteRtElementTypeInt64, {1}),
+        /*expected=*/{2, 4}, /*wrong=*/{4});
+  }
+}
+
+TEST(ShapeInferenceTest, ReductionRejectsUnrankedInputWithoutMutatingOutput) {
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflSum);
+    auto options = std::make_unique<tflite::ReducerOptionsT>();
+    options->keep_dims = false;
+    TflOptions tfl_options;
+    tfl_options.type = tflite::BuiltinOptions_ReducerOptions;
+    tfl_options.value = options.release();
+    SetTflOptions(op, std::move(tfl_options));
+
+    auto& input = subgraph.EmplaceTensor();
+    input.SetType(TensorType{
+        kLiteRtUnrankedTensorType,
+        {.unranked_tensor_type = {.element_type = kLiteRtElementTypeFloat32}}});
+    auto& axis =
+        AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32, {1});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 4});
+    AttachInput(&input, op);
+    AttachInput(&axis, op);
+    AttachOutput(&output, op);
+
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(validation_only),
+              kLiteRtStatusErrorInvalidArgument);
+    EXPECT_EQ(TensorDims(output), Dims({2, 4}));
+  }
+}
+
+TEST(ShapeInferenceTest,
+     StandaloneContextHonorsSuppliedShapeForUnrankedReductionInput) {
+  for (LiteRtOpCode op_code : {kLiteRtOpCodeTflSum, kLiteRtOpCodeTflArgMax}) {
+    SCOPED_TRACE(::testing::Message() << "op_code=" << op_code);
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(op_code);
+    if (op_code == kLiteRtOpCodeTflSum) {
+      auto options = std::make_unique<tflite::ReducerOptionsT>();
+      options->keep_dims = false;
+      TflOptions tfl_options;
+      tfl_options.type = tflite::BuiltinOptions_ReducerOptions;
+      tfl_options.value = options.release();
+      SetTflOptions(op, std::move(tfl_options));
+    }
+
+    auto& input = subgraph.EmplaceTensor();
+    input.SetType(TensorType{
+        kLiteRtUnrankedTensorType,
+        {.unranked_tensor_type = {.element_type = kLiteRtElementTypeFloat32}}});
+    auto& axis =
+        AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32, {1});
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {-1});
+    AttachInput(&input, op);
+    AttachInput(&axis, op);
+    AttachOutput(&output, op);
+
+    const std::vector<Dims> supplied_shapes = {{2, 3, 4}, {1}};
+    StandaloneShapeInferenceContext ctx(op,
+                                        absl::MakeConstSpan(supplied_shapes));
+    InferenceResult result;
+    ShapeInferenceEngine engine(&model);
+    ASSERT_EQ(engine.InferOpShapes(ctx, result), kLiteRtStatusOk);
+    ASSERT_EQ(result.output_shapes.size(), 1u);
+    EXPECT_EQ(result.output_shapes[0], Dims({2, 4}));
+  }
+}
+
+TEST(ShapeInferenceTest,
+     ReductionWithDynamicAxisShapeSignatureReturnsUnsupported) {
+  for (LiteRtOpCode op_code : {kLiteRtOpCodeTflSum, kLiteRtOpCodeTflArgMax}) {
+    SCOPED_TRACE(::testing::Message() << "op_code=" << op_code);
+    LiteRtModelT model;
+    auto& subgraph = model.EmplaceSubgraph();
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(op_code);
+    if (op_code == kLiteRtOpCodeTflSum) {
+      auto options = std::make_unique<tflite::ReducerOptionsT>();
+      options->keep_dims = false;
+      TflOptions tfl_options;
+      tfl_options.type = tflite::BuiltinOptions_ReducerOptions;
+      tfl_options.value = options.release();
+      SetTflOptions(op, std::move(tfl_options));
+    }
+
+    auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3, 4});
+    auto& axis =
+        AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32, {1});
+    axis.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {-1}));
+    auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 4});
+    AttachInput(&input, op);
+    AttachInput(&axis, op);
+    AttachOutput(&output, op);
+
+    ShapeInferenceEngine engine(&model);
+    EXPECT_EQ(engine.InferShapes(/*validation_only=*/false),
+              kLiteRtStatusErrorUnsupported);
+  }
+}
+
+TEST(ShapeInferenceTest, SliceWithInt32BeginAndInt64SizeIsRejected) {
+  // TFLite's Slice Prepare() requires `begin->type == size->type` and its
+  // kernel decodes `size` with `begin`'s element type, so a mixed-type SLICE
+  // cannot run; both modes reject it.
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    {
+      LiteRtModelT model;
+      auto& subgraph = model.EmplaceSubgraph();
+      auto& op = subgraph.EmplaceOp();
+      op.SetOpCode(kLiteRtOpCodeTflSlice);
+      auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {4, 6});
+      auto& begin =
+          AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32, {1, 2});
+      auto& size =
+          AddConstTensor<int64_t>(subgraph, kLiteRtElementTypeInt64, {2, -1});
+      auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 4});
+      AttachInput(&input, op);
+      AttachInput(&begin, op);
+      AttachInput(&size, op);
+      AttachOutput(&output, op);
+      ShapeInferenceEngine engine(&model);
+      EXPECT_EQ(engine.InferShapes(validation_only),
+                kLiteRtStatusErrorShapeInferenceFailed);
+    }
+    {
+      LiteRtModelT model;
+      auto& subgraph = model.EmplaceSubgraph();
+      auto& op = subgraph.EmplaceOp();
+      op.SetOpCode(kLiteRtOpCodeTflSlice);
+      auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {4, 6});
+      auto& begin =
+          AddConstTensor<int64_t>(subgraph, kLiteRtElementTypeInt64, {1, 2});
+      auto& size =
+          AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32, {2, -1});
+      auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 4});
+      AttachInput(&input, op);
+      AttachInput(&begin, op);
+      AttachInput(&size, op);
+      AttachOutput(&output, op);
+      ShapeInferenceEngine engine(&model);
+      EXPECT_EQ(engine.InferShapes(validation_only),
+                kLiteRtStatusErrorShapeInferenceFailed);
+    }
+  }
+}
+
+TEST(ShapeInferenceTest, SliceWithInt64BeginAndSize) {
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflSlice);
+        auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {4, 6});
+        auto& begin =
+            AddConstTensor<int64_t>(subgraph, kLiteRtElementTypeInt64, {1, 2});
+        auto& size =
+            AddConstTensor<int64_t>(subgraph, kLiteRtElementTypeInt64, {2, -1});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachInput(&begin, op);
+        AttachInput(&size, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{2, 4}, /*wrong=*/{2, 5});
+}
+
+TEST(ShapeInferenceTest, TransposeRejectsOutOfRangePerm) {
+  for (bool validation_only : {false, true}) {
+    SCOPED_TRACE(validation_only ? "validation_only" : "inference");
+    for (int32_t bad_axis : {std::numeric_limits<int32_t>::min(), -3, 2}) {
+      SCOPED_TRACE(::testing::Message() << "bad_axis=" << bad_axis);
+      LiteRtModelT model;
+      auto& subgraph = model.EmplaceSubgraph();
+      auto& op = subgraph.EmplaceOp();
+      op.SetOpCode(kLiteRtOpCodeTflTranspose);
+      auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3});
+      auto& perm = AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32,
+                                           {bad_axis, 0});
+      auto& output = AddTensor(subgraph, kLiteRtElementTypeFloat32, {3, 2});
+      AttachInput(&input, op);
+      AttachInput(&perm, op);
+      AttachOutput(&output, op);
+      ShapeInferenceEngine engine(&model);
+      EXPECT_EQ(engine.InferShapes(validation_only),
+                kLiteRtStatusErrorShapeInferenceFailed);
+    }
+  }
+}
+
+TEST(ShapeInferenceTest, TransposeWithNegativePerm) {
+  ExpectInferredOutputInBothModes(
+      [](LiteRtModelT& model, absl::Span<const int32_t> declared_output) {
+        auto& subgraph = model.EmplaceSubgraph();
+        auto& op = subgraph.EmplaceOp();
+        op.SetOpCode(kLiteRtOpCodeTflTranspose);
+        auto& input = AddTensor(subgraph, kLiteRtElementTypeFloat32, {2, 3});
+        auto& perm =
+            AddConstTensor<int32_t>(subgraph, kLiteRtElementTypeInt32, {-1, 0});
+        auto& output =
+            AddTensor(subgraph, kLiteRtElementTypeFloat32, declared_output);
+        AttachInput(&input, op);
+        AttachInput(&perm, op);
+        AttachOutput(&output, op);
+        return &output;
+      },
+      /*expected=*/{3, 2}, /*wrong=*/{2, 3});
 }
 
 }  // namespace

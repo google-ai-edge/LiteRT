@@ -55,7 +55,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/strings",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core/public:release_version",
     ],
 )

@@ -17,7 +17,6 @@
 #include <cstring>
 
 #include "litert/c/internal/litert_accelerator_def.h"
-#include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
@@ -40,8 +39,7 @@ struct CpuAcceleratorVersion {
   static constexpr int kMajor = 1;
   static constexpr int kMinor = 0;
   static constexpr int kPatch = 0;
-  static constexpr LiteRtApiVersion version = {kMajor, kMinor,
-                                               kPatch};  // NOLINT
+  static constexpr LiteRtApiVersion kVersion = {kMajor, kMinor, kPatch};
 };
 
 class CpuAccelerator final
@@ -94,14 +92,6 @@ class CpuAccelerator final
         return options_data_status;
     }
 
-#if !defined(LITERT_HAS_YNNPACK)
-    if (parsed_options.enable_ynnpack) {
-      LITERT_LOG(LITERT_WARNING,
-                 "enable_ynnpack was ignored because YNNPACK support was not "
-                 "compiled into this build.");
-    }
-#endif
-
     if (parsed_options.kernel_mode != kLiteRtCpuKernelModeDelegate) {
       *delegate_wrapper = nullptr;
       return kLiteRtStatusOk;
@@ -114,11 +104,9 @@ class CpuAccelerator final
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "XNNPack delegate failed to be created.";
 
-    bool use_single_delegate_hint =
-        parsed_options.hint_fully_delegated_to_single_delegate;
-#if defined(LITERT_HAS_YNNPACK)
-    use_single_delegate_hint &= !parsed_options.enable_ynnpack;
-#endif
+    const bool use_single_delegate_hint =
+        parsed_options.hint_fully_delegated_to_single_delegate &&
+        !parsed_options.enable_ynnpack;
     if (use_single_delegate_hint) {
       reinterpret_cast<TfLiteDelegate*>(xnnpack_delegate)->flags |=
           kTfLiteDelegateFlagsHintFullyDelegatedToSingleDelegate;
@@ -182,8 +170,8 @@ static const LiteRtAcceleratorDef LiteRtCpuAcceleratorImpl = {
         },
 };
 
-// Accelerator definition pointer referenced by auto_registration.cc.
-const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorCpuDef =
+// Accelerator definition pointer referenced by cpu_registry.cc.
+const LiteRtAcceleratorDef* LiteRtStaticLinkedAcceleratorXnnpackDef =
     &LiteRtCpuAcceleratorImpl;
 
 }  // extern "C"

@@ -19,6 +19,8 @@
 #include <string>
 
 #include "neuron/api/NeuronAdapter.h"
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_mediatek_options.h"
@@ -29,6 +31,35 @@ namespace litert::mediatek {
 
 constexpr int kDecodePartitionIndex = 0;
 constexpr int kPrefillPartitionIndex = 1;
+
+namespace {
+
+// Returns the Neuron compiler `--option-bundle` value to use for
+// `subgraph_index`, or an empty view if no bundle should be passed.
+absl::string_view ResolveOptionBundle(LrtMediatekOptions* mediatek_opts,
+                                      int subgraph_index) {
+  const char* bundle = nullptr;
+
+  // An explicit `option_bundle` applies to every subgraph, so it short-circuits
+  // the per-partition selection below. This is the knob to use for models with
+  // more than the two decode/prefill signatures.
+  LrtGetMediatekOptionsOptionBundle(mediatek_opts, &bundle);
+  if (bundle != nullptr && *bundle != '\0') {
+    return bundle;
+  }
+
+  if (subgraph_index == kDecodePartitionIndex) {
+    LrtGetMediatekOptionsOptionBundleDecode(mediatek_opts, &bundle);
+  } else if (subgraph_index == kPrefillPartitionIndex) {
+    LrtGetMediatekOptionsOptionBundlePrefill(mediatek_opts, &bundle);
+  } else {
+    // Any other subgraph is compiled like the decode partition.
+    LrtGetMediatekOptionsOptionBundleDecode(mediatek_opts, &bundle);
+  }
+  return bundle == nullptr ? absl::string_view() : absl::string_view(bundle);
+}
+
+}  // namespace
 
 Expected<NeuronCompilationPtr> CompileModel(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
@@ -63,12 +94,10 @@ Expected<NeuronCompilationPtr> CompileModel(
   LrtGetMediatekOptionsGemmaCompilerOptimizations(
       mediatek_opts, &gemma_compiler_optimizations);
   if (gemma_compiler_optimizations) {
-    if (subgraph_index == kDecodePartitionIndex) {
-      compile_options = " --option-bundle=gemma-decode-accuracy";
-    } else if (subgraph_index == kPrefillPartitionIndex) {
-      compile_options = " --option-bundle=gemma-prefill-accuracy";
-    } else {
-      compile_options = " --option-bundle=gemma-decode-accuracy";
+    const absl::string_view option_bundle =
+        ResolveOptionBundle(mediatek_opts, subgraph_index);
+    if (!option_bundle.empty()) {
+      compile_options = absl::StrCat(" --option-bundle=", option_bundle);
     }
   }
 

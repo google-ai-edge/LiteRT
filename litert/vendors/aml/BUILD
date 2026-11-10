@@ -16,3 +16,6 @@ package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//visibility:public"],
 )
+
+# Compiler plugin: //litert/vendors/aml/compiler
+# Dispatch: //litert/vendors/aml/dispatch

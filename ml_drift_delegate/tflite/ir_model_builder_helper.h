@@ -27,6 +27,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "tflite/c/builtin_op_data.h"
@@ -65,6 +66,10 @@ struct IrModelBuilderOptions {
   // Runs TransformIrModel (noop removal, pad/gemm fusion, and the interior
   // AddQuantAdjustments fake-quant pass).
   bool apply_model_transformations = true;
+  // The GPU the model is built for, when known. Parsers specialize the graph
+  // for it (e.g. drop inputs that its fused kernels do not read). Must outlive
+  // the model building.
+  const ::ml_drift::GpuInfo* const gpu_info = nullptr;
 };
 
 inline ::ml_drift::HW ToHW(int h, int w) {

@@ -38,6 +38,7 @@
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_options.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -404,6 +405,17 @@ class TestGraph {
   // impl.
   virtual bool HasReference() const = 0;
 
+  // Allows a generator to customize target compilation options per graph.
+  virtual Expected<void> ConfigureOptions(Options& /*options*/) const {
+    return {};
+  }
+
+  // Materializes the underlying graph if it is lazily loaded.
+  virtual Expected<void> EnsureLoaded() { return {}; }
+
+  // Returns true if the underlying model has been loaded into memory.
+  bool IsLoaded() const { return model_ != nullptr; }
+
   // Returns the graph under test.
   LiteRtModelT& Graph() const { return *model_; }
 
@@ -443,9 +455,9 @@ class TestGraph {
   TestGraph& operator=(TestGraph&&) = default;
 
  protected:
+  TestGraph() = default;
   explicit TestGraph(LiteRtModelT::Ptr model) : model_(std::move(model)) {}
 
- private:
   LiteRtModelT::Ptr model_;
 };
 

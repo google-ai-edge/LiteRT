@@ -15,11 +15,9 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_COMPILED_MODEL_H_
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILED_MODEL_H_
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -309,6 +307,24 @@ inline std::vector<std::unique_ptr<SimpleTensor>> FetchSignatureOutputTensors(
         FetchTensorQuantizationBlockWise(env, tensor)));
   }
   return output_tensors;
+}
+
+inline Expected<RankedTensorType> FetchSignatureInputTensorTypeByIndex(
+    const internal::EnvironmentHolder& env, LiteRtSignature signature,
+    LiteRtParamIndex input_index) {
+  LiteRtTensor tensor;
+  LITERT_RETURN_IF_ERROR(env.runtime->GetSignatureInputTensorByIndex(
+      signature, input_index, &tensor));
+  LiteRtTensorTypeId type_id;
+  LITERT_RETURN_IF_ERROR(env.runtime->GetTensorTypeId(tensor, &type_id));
+  if (type_id != kLiteRtRankedTensorType) {
+    return Error(Status::kErrorInvalidArgument,
+                 "Expected a ranked input tensor");
+  }
+  LiteRtRankedTensorType tensor_type;
+  LITERT_RETURN_IF_ERROR(
+      env.runtime->GetRankedTensorType(tensor, &tensor_type));
+  return RankedTensorType(tensor_type);
 }
 
 inline Expected<RankedTensorType> FetchSignatureOutputTensorTypeByIndex(
@@ -1088,6 +1104,116 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return non_cpu_fully_accelerated;
   }
 
+  struct AcceleratorDelegationMetrics {
+    // Name of the registered hardware accelerator (e.g. "NpuAccelerator",
+    // "LiteRT GPU", "CpuAccelerator").
+    std::string accelerator_name;
+
+    // Bitfield of hardware accelerator types supported by this accelerator.
+    LiteRtHwAcceleratorSet hardware_type = kLiteRtHwAcceleratorNone;
+
+    // Number of original model operations absorbed/delegated to this
+    // accelerator.
+    int delegated_node_count = 0;
+
+    // Number of contiguous delegated subgraphs (delegate kernel nodes in the
+    // execution plan) created for this accelerator. Multiple original model
+    // operations may be fused into a single partition.
+    int partition_count = 0;
+  };
+
+  struct DelegationMetrics {
+    // Total number of operations in the graph across active subgraphs before
+    // delegation.
+    int total_node_count = 0;
+
+    // Per-accelerator delegation metrics.
+    std::vector<AcceleratorDelegationMetrics> accelerators;
+  };
+
+  /// @brief Returns delegation metrics (total node count and per-accelerator
+  /// delegated node counts and partition counts) for the compiled model.
+  Expected<DelegationMetrics> GetDelegationMetrics() const {
+    LiteRtDelegationMetricsConst c_metrics = nullptr;
+    LITERT_RETURN_IF_ERROR(env_.runtime->CompiledModelGetDelegationMetrics(
+        Get(), &c_metrics));
+    DelegationMetrics metrics;
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetDelegationMetricsTotalNodeCount(
+        c_metrics, &metrics.total_node_count));
+    LiteRtParamIndex num_accelerators = 0;
+    LITERT_RETURN_IF_ERROR(env_.runtime->GetNumDelegationMetricsAccelerators(
+        c_metrics, &num_accelerators));
+    metrics.accelerators.reserve(num_accelerators);
+    for (LiteRtParamIndex i = 0; i < num_accelerators; ++i) {
+      LiteRtAcceleratorDelegationMetricsConst c_acc = nullptr;
+      LITERT_RETURN_IF_ERROR(
+          env_.runtime->GetDelegationMetricsAccelerator(c_metrics, i, &c_acc));
+      const char* name = nullptr;
+      LITERT_RETURN_IF_ERROR(
+          env_.runtime->GetAcceleratorDelegationMetricsName(c_acc, &name));
+      LiteRtHwAcceleratorSet hardware_type = kLiteRtHwAcceleratorNone;
+      LITERT_RETURN_IF_ERROR(
+          env_.runtime->GetAcceleratorDelegationMetricsHardwareType(
+              c_acc, &hardware_type));
+      int delegated_node_count = 0;
+      LITERT_RETURN_IF_ERROR(
+          env_.runtime->GetAcceleratorDelegationMetricsDelegatedNodeCount(
+              c_acc, &delegated_node_count));
+      int partition_count = 0;
+      LITERT_RETURN_IF_ERROR(
+          env_.runtime->GetAcceleratorDelegationMetricsPartitionCount(
+              c_acc, &partition_count));
+      metrics.accelerators.push_back(AcceleratorDelegationMetrics{
+          .accelerator_name = name ? name : "",
+          .hardware_type = hardware_type,
+          .delegated_node_count = delegated_node_count,
+          .partition_count = partition_count,
+      });
+    }
+    return metrics;
+  }
+
+  /// @brief Registers `buffer` with the NPU of this compiled model, so that
+  /// runs reuse the registration whichever tensors the buffer is bound to.
+  ///
+  /// Registrations are counted: the buffer stays registered until
+  /// `UnregisterBuffer()` is called as many times, or this compiled model is
+  /// destroyed. See `LiteRtCompiledModelRegisterTensorBuffer()` for details.
+  /// @note Thread safety: this method must not be called concurrently with
+  /// other methods on this compiled model (such as `Run()` or `RunAsync()`).
+  Expected<void> RegisterBuffer(const TensorBuffer& buffer) const {
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->CompiledModelRegisterTensorBuffer(Get(), buffer.Get()));
+    return {};
+  }
+
+  /// @brief Releases a registration of `buffer` made by `RegisterBuffer()`.
+  ///
+  /// Once the buffer has been unregistered as many times as it was registered,
+  /// it is unregistered from the NPU right away, or once it is no longer bound
+  /// to an I/O tensor (from the latest run, until a subsequent run binds a
+  /// different buffer to that tensor) nor in use by an in-flight asynchronous
+  /// run started by `RunAsync()`. Does nothing if the buffer is not registered.
+  /// @note Thread safety: this method must not be called concurrently with
+  /// other methods on this compiled model (such as `Run()` or `RunAsync()`).
+  Expected<void> UnregisterBuffer(const TensorBuffer& buffer) const {
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->CompiledModelUnregisterTensorBuffer(Get(), buffer.Get()));
+    return {};
+  }
+
+  /// @brief Returns the duration of the last native inference in nanoseconds.
+  /// Returns -1 if no inference has been executed yet or if the last inference
+  /// failed.
+  /// @note When running asynchronously (`async == true`), output buffer
+  /// synchronization is bypassed, so the recorded duration reflects the host
+  /// dispatch latency rather than the full accelerator completion time.
+  Expected<int64_t> LastInferenceDurationNanoseconds() const {
+    int64_t duration = -1;
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->GetCompiledModelLastInferenceDuration(Get(), &duration));
+    return duration;
+  }
   /// @brief Sets a callback function that will be called after every node/op
   /// during model execution to check if the execution should be cancelled.
   ///
@@ -1456,13 +1582,16 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     LiteRtSignature lite_rt_signature;
     LITERT_RETURN_IF_ERROR(env_.runtime->GetModelSignature(
         model_.Get(), signature_index, &lite_rt_signature));
-    auto input_tensors =
-        internal::compiled_model_detail::FetchSignatureInputTensors(
-            env_, lite_rt_signature);
-    if (input_index >= input_tensors.size()) {
+    LiteRtParamIndex num_inputs;
+    LITERT_RETURN_IF_ERROR(
+        env_.runtime->GetNumSignatureInputs(lite_rt_signature, &num_inputs));
+    if (input_index >= static_cast<size_t>(num_inputs)) {
       return Error(Status::kErrorInvalidArgument, "Input index out of bounds");
     }
-    return input_tensors[input_index]->RankedTensorType();
+    return internal::compiled_model_detail::
+        FetchSignatureInputTensorTypeByIndex(
+            env_, lite_rt_signature,
+            static_cast<LiteRtParamIndex>(input_index));
   }
 
   /// @brief Returns the tensor type for a given input tensor name.
@@ -2032,10 +2161,10 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                                   StringView input_name) const {
     LITERT_ASSIGN_OR_RETURN(const auto input_names,
                             GetSignatureInputNames(signature_index));
-    auto it = std::find(input_names.begin(), input_names.end(),
-                        input_name);  // NOLINT
-    if (it != input_names.end()) {
-      return std::distance(input_names.begin(), it);
+    for (size_t i = 0; i < input_names.size(); ++i) {
+      if (input_names[i] == input_name) {
+        return i;
+      }
     }
     return Unexpected(Status::kErrorNotFound,
                       "Failed to find input: " + std::string(input_name));
@@ -2047,10 +2176,10 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
                                    StringView output_name) const {
     LITERT_ASSIGN_OR_RETURN(const auto output_names,
                             GetSignatureOutputNames(signature_index));
-    auto it = std::find(output_names.begin(), output_names.end(),
-                        output_name);  // NOLINT
-    if (it != output_names.end()) {
-      return std::distance(output_names.begin(), it);
+    for (size_t i = 0; i < output_names.size(); ++i) {
+      if (output_names[i] == output_name) {
+        return i;
+      }
     }
     return Unexpected(Status::kErrorNotFound,
                       "Failed to find output: " + std::string(output_name));

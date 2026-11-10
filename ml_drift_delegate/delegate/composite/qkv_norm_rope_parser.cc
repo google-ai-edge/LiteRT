@@ -32,23 +32,21 @@ namespace litert::ml_drift {
 absl::Status QkvNormRopeOperationParser::IsSupported(
     const TfLiteContext* context, const TfLiteNode* tflite_node,
     const TfLiteRegistration* registration) {
-  if (tflite_node->inputs->size != 4) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Invalid number of inputs: ", tflite_node->inputs->size,
-                     ", while expected 4 (qkv, position, q_weight, "
-                     "k_weight)."));
-  }
-  if (tflite_node->outputs->size != 3) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Invalid number of outputs: ", tflite_node->outputs->size,
-                     ", while expected 3 (query_states, key_states, "
-                     "value_states)."));
+  const int num_inputs = tflite_node->inputs->size;
+  const int num_outputs = tflite_node->outputs->size;
+  const bool is_full_qkv = (num_inputs == 4 && num_outputs == 3);
+  const bool is_q_only = (num_inputs == 3 && num_outputs == 1);
+  if (!is_full_qkv && !is_q_only) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Invalid inputs/outputs for QkvNormRoPE: got ", num_inputs,
+        " inputs and ", num_outputs,
+        " outputs, expected (4, 3) for QKV or (3, 1) for Q-only."));
   }
 
-  ABSL_RETURN_IF_ERROR(PreCheckRuntimeOrConstantInput(context, tflite_node, 0));
-  ABSL_RETURN_IF_ERROR(PreCheckRuntimeOrConstantInput(context, tflite_node, 1));
-  ABSL_RETURN_IF_ERROR(PreCheckRuntimeOrConstantInput(context, tflite_node, 2));
-  ABSL_RETURN_IF_ERROR(PreCheckRuntimeOrConstantInput(context, tflite_node, 3));
+  for (int i = 0; i < num_inputs; ++i) {
+    ABSL_RETURN_IF_ERROR(
+        PreCheckRuntimeOrConstantInput(context, tflite_node, i));
+  }
   ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
   return absl::OkStatus();
 }
@@ -89,6 +87,9 @@ void QkvNormRopeOperationParser::Parse(
     if (!map["epsilon"].IsNull()) {
       attr.epsilon = map["epsilon"].AsFloat();
     }
+    if (!map["has_v_norm"].IsNull()) {
+      attr.has_v_norm = map["has_v_norm"].AsBool();
+    }
   } else if (tflite_node->custom_initial_data &&
              tflite_node->custom_initial_data_size > 0) {
     auto root = flexbuffers::GetRoot(
@@ -117,40 +118,23 @@ void QkvNormRopeOperationParser::Parse(
       if (!map["epsilon"].IsNull()) {
         attr.epsilon = map["epsilon"].AsFloat();
       }
+      if (!map["has_v_norm"].IsNull()) {
+        attr.has_v_norm = map["has_v_norm"].AsBool();
+      }
     }
+  }
+  if (tflite_node->inputs->size == 3) {
+    attr.num_kv_heads = 0;
   }
   node->operation.attributes = attr;
 
-  // Input 0: qkv
-  if (reader->IsConstantTensor(0)) {
-    const ::ml_drift::Value* input = reader->AddConstInput(0, /*layout=*/{});
-    graph->AddConsumer(node->id, input->id);
-  } else {
-    reader->AddInput(node, 0);
-  }
-
-  // Input 1: position
-  if (reader->IsConstantTensor(1)) {
-    const ::ml_drift::Value* input = reader->AddConstInput(1, /*layout=*/{});
-    graph->AddConsumer(node->id, input->id);
-  } else {
-    reader->AddInput(node, 1);
-  }
-
-  // Input 2: q_weight (1D)
-  if (reader->IsConstantTensor(2)) {
-    const ::ml_drift::Value* input = reader->AddConstInput(2, /*layout=*/{});
-    graph->AddConsumer(node->id, input->id);
-  } else {
-    reader->AddInput(node, 2);
-  }
-
-  // Input 3: k_weight (1D)
-  if (reader->IsConstantTensor(3)) {
-    const ::ml_drift::Value* input = reader->AddConstInput(3, /*layout=*/{});
-    graph->AddConsumer(node->id, input->id);
-  } else {
-    reader->AddInput(node, 3);
+  for (int i = 0; i < tflite_node->inputs->size; ++i) {
+    if (reader->IsConstantTensor(i)) {
+      const ::ml_drift::Value* input = reader->AddConstInput(i, /*layout=*/{});
+      graph->AddConsumer(node->id, input->id);
+    } else {
+      reader->AddInput(node, i);
+    }
   }
 
   reader->AddOutputs(node);

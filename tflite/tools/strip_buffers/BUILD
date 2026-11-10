@@ -43,7 +43,6 @@ cc_library(
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/strings",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/core:tflite_portable_logging",
     ],
 )
 
@@ -60,7 +59,6 @@ cc_binary(
         "//tflite/tools:command_line_flags",
         "@com_google_absl//absl/log",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/core:tflite_portable_logging",
     ],
 )
 
@@ -77,6 +75,5 @@ cc_binary(
         "//tflite/tools:command_line_flags",
         "@com_google_absl//absl/log",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/core:tflite_portable_logging",
     ],
 )

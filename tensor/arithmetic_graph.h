@@ -48,6 +48,9 @@ enum Padding {
   kPaddingValid,
 };
 
+// Placeholder extent for dimensions that should be inferred.
+inline constexpr int kInferredDim = -1;
+
 }  // namespace litert::tensor
 
 namespace litert::tensor::graph {
@@ -467,6 +470,11 @@ struct LessOperation : Operation {
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
+struct LessEqualOperation : Operation {
+  absl::string_view GetName() const override { return "LessEqual"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
 struct GreaterOperation : Operation {
   absl::string_view GetName() const override { return "Greater"; }
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
@@ -534,6 +542,12 @@ struct SinOperation : Operation {
 
 struct ReshapeOperationData {
   std::vector<int> new_shape;
+  // Axis that should be infered from the input shape and the other dimensions
+  // in `new_shape`.
+  //
+  // Note: `new_shape[inferred_axis]` holds the extent computed when the graph
+  // was built.
+  int inferred_axis = -1;
 };
 
 struct ReshapeOperation : ReshapeOperationData, Operation {

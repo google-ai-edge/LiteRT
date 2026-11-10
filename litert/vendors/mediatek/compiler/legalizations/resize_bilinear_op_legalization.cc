@@ -29,9 +29,10 @@ namespace litert::mediatek {
 
 namespace {
 
-absl::Span<const int32_t> GetDimensions(const litert::compiler::Tensor& op) {
+std::vector<int32_t> GetDimensions(const litert::compiler::Tensor& op) {
   LITERT_ASSIGN_OR_ABORT(auto tensor_type, op.RankedTensorType());
-  return tensor_type.Layout().Dimensions();
+  auto dims = tensor_type.Layout().Dimensions();
+  return std::vector<int32_t>(dims.begin(), dims.end());
 }
 
 }  // namespace

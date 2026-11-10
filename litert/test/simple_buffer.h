@@ -25,7 +25,6 @@
 #include <initializer_list>
 #include <iterator>
 #include <memory>
-#include <numeric>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -35,7 +34,6 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -217,6 +215,17 @@ class SimpleBuffer {
     } else if (Type().ElementType() == ElementType::Int64) {
       return b.Call<int64_t, RandomTensorFunctor>(rng, start, num_elements,
                                                   *this);
+    } else if (Type().ElementType() == ElementType::Int16) {
+      return b.Call<int16_t, RandomTensorFunctor>(rng, start, num_elements,
+                                                  *this);
+    } else if (Type().ElementType() == ElementType::Int8) {
+      return b.Call<int8_t, RandomTensorFunctor>(rng, start, num_elements,
+                                                 *this);
+    } else if (Type().ElementType() == ElementType::UInt8) {
+      return b.Call<uint8_t, RandomTensorFunctor>(rng, start, num_elements,
+                                                  *this);
+    } else if (Type().ElementType() == ElementType::Bool) {
+      return b.Call<bool, RandomTensorFunctor>(rng, start, num_elements, *this);
     } else if (Type().ElementType() == ElementType::Float16) {
       return CallHalf<RandomTensorFunctor>(b, rng, start, num_elements, *this);
     } else if (Type().ElementType() == ElementType::BFloat16) {

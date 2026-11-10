@@ -60,11 +60,13 @@ class SdpaTransposed : public TestGraph {
     size_t batch = 1;
     size_t num_kv_heads = 1;
     size_t num_q_heads = 8;
+    size_t q_seq_len = 1;
     size_t kv_len = 128;
     size_t head_dim = 128;
     float scale = 1.0f;
-    float softcap_val = 50.0f;
+    float softcap_val = 1.0f;
     bool bool_mask = true;
+    bool causal = true;
   };
 
   using Ptr = std::unique_ptr<SdpaTransposed>;
@@ -75,55 +77,66 @@ class SdpaTransposed : public TestGraph {
     int batch;
     int num_kv_heads;
     int num_q_heads;
+    int q_seq_len;
     int kv_len;
     int head_dim;
     bool bool_mask;
+    bool causal;
   };
 
   // Stratified grid of 16 realistic transposed LLM attention workloads.
   // ATS test suites should specify iters >= 16 to ensure full coverage.
   static constexpr GridConfig kStratifiedGrid[] = {
       // ─── 1. Standard Head Dimension (Head Dim = 128) Decode Workloads ───
-      {1, 1, 8, 32, 128, true},     // 0: MQA (8:1) Short Decode
-      {1, 1, 8, 128, 128, true},    // 1: MQA (8:1) Medium Decode
-      {1, 1, 8, 1024, 128, true},   // 2: MQA (8:1) Long Context Decode
-      {1, 1, 8, 2048, 128, false},  // 3: MQA (8:1) Ultra-Long Float Mask
-      {1, 2, 8, 128, 128, true},    // 4: GQA (8:2) Medium Decode
-      {1, 2, 8, 1024, 128, true},   // 5: GQA (8:2) Long Decode
-      {1, 4, 8, 256, 128, false},   // 6: GQA (8:4) Decode w/ Float Mask
-      {1, 8, 8, 512, 128, true},    // 7: MHA (8:8) Decode
+      {1, 1, 8, 1, 32, 128, true, true},     // 0: MQA (8:1) Short Decode
+      {1, 1, 8, 1, 128, 128, true, true},    // 1: MQA (8:1) Medium Decode
+      {1, 1, 8, 1, 1024, 128, true, true},   // 2: MQA (8:1) Long Context Decode
+      {1, 1, 8, 1, 2048, 128, false, true},  // 3: MQA (8:1) Ultra-Long Float
+      {1, 2, 8, 1, 128, 128, true, true},    // 4: GQA (8:2) Medium Decode
+      {1, 2, 8, 1, 1024, 128, true, true},   // 5: GQA (8:2) Long Decode
+      {1, 4, 8, 1, 256, 128, false, true},   // 6: GQA (8:4) Decode w/ Float
+      {1, 8, 8, 1, 512, 128, true, true},    // 7: MHA (8:8) Decode
 
       // ─── 2. Non-Standard Head Dimensions (Head Dim = 64, 256) ───
-      {1, 4, 4, 256, 64, true},   // 8: MHA D=64 Decode (Tiny LLM)
-      {1, 1, 8, 512, 256, true},  // 9: MQA D=256 Decode (Large Head Dim)
+      {1, 4, 4, 1, 256, 64, true, true},   // 8: MHA D=64 Decode (Tiny LLM)
+      {1, 1, 8, 1, 512, 256, true, true},  // 9: MQA D=256 Decode (Large D)
 
       // ─── 3. Prefill & Extended Sequence Workloads ───
-      {1, 1, 8, 32, 128, true},    // 10: MQA Short Sequence
-      {1, 2, 8, 64, 128, true},    // 11: GQA Medium Sequence
-      {1, 2, 8, 128, 128, false},  // 12: GQA Long Sequence w/ Float Mask
-      {1, 4, 8, 256, 128, true},   // 13: GQA Large Context
-      {1, 4, 4, 64, 64, true},     // 14: MHA D=64
-      {1, 8, 8, 128, 256, true},   // 15: MHA D=256
+      // Rows 10–13 test causal prefill (mask built from the query offset
+      // q_start); rows 14–15 test non-causal prefill on the decomposed path.
+      {1, 1, 8, 2, 32, 128, true, true},     // 10: MQA Causal Prefill
+      {1, 2, 8, 4, 64, 128, true, true},     // 11: GQA Causal Prefill
+      {1, 2, 8, 8, 128, 128, false, true},   // 12: GQA Causal Float Prefill
+      {1, 4, 8, 16, 256, 128, true, true},   // 13: GQA Large Causal Prefill
+      {1, 4, 4, 4, 64, 64, true, false},     // 14: MHA D=64 Non-Causal (Bool)
+      {1, 8, 8, 8, 128, 256, false, false},  // 15: MHA D=256 Non-Causal (Float)
   };
 
-  template <typename Rng>
-  static Expected<SdpaTransposed::Ptr> Create(Rng& /*rng*/) {
+  using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
+
+  static Params SampleParams(size_t& sample_counter) {
     static constexpr size_t kGridSize =
         sizeof(kStratifiedGrid) / sizeof(kStratifiedGrid[0]);
-    static size_t sample_counter = 0;
     const auto& entry = kStratifiedGrid[(sample_counter++) % kGridSize];
 
     Params params;
     params.batch = entry.batch;
     params.num_kv_heads = entry.num_kv_heads;
     params.num_q_heads = entry.num_q_heads;
+    params.q_seq_len = entry.q_seq_len;
     params.kv_len = entry.kv_len;
     params.head_dim = entry.head_dim;
     params.scale = 1.0f;
-    params.softcap_val = 50.0f;
+    params.softcap_val = 1.0f;
     params.bool_mask = entry.bool_mask;
+    params.causal = entry.causal;
+    return params;
+  }
 
-    return Create(std::move(params));
+  template <typename Rng>
+  static Expected<SdpaTransposed::Ptr> Create(Rng& /*rng*/) {
+    static size_t sample_counter = 0;
+    return Create(SampleParams(sample_counter));
   }
 
   static Expected<SdpaTransposed::Ptr> Create(Params params) {
@@ -134,10 +147,10 @@ class SdpaTransposed : public TestGraph {
 
   bool HasReference() const override { return true; }
 
-  ConformanceSpec GetConformanceSpec() const override {
+  static ConformanceSpec GetConformanceSpecForParams(const Params& params) {
     ConformanceSpec spec;
     spec.comparator_kind = ConformanceComparatorKind::kFloatAccumulationAware;
-    spec.accumulation_depth = std::max(params_.head_dim, params_.kv_len);
+    spec.accumulation_depth = std::max(params.head_dim, params.kv_len);
     if constexpr (std::is_same_v<T, float>) {
       spec.relative_tolerance = 1e-3;
       spec.absolute_tolerance = 1e-3;
@@ -148,29 +161,46 @@ class SdpaTransposed : public TestGraph {
     return spec;
   }
 
-  Expected<VarBuffers> MakeInputs(
-      DefaultDevice& device,
-      const RandomTensorDataBuilder& data_builder) const override {
+  ConformanceSpec GetConformanceSpec() const override {
+    return GetConformanceSpecForParams(params_);
+  }
+
+  static size_t ActiveKvLen(const Params& params) {
+    if constexpr (kWithParamTensor) {
+      // Round kv_len / 2 down to a multiple of 32 to align with
+      // ConvRuntimeCheckDesc::kChannelsAlignment (32) expected by
+      // param_tensor[2] (kActiveTokensAlignedIndex).
+      const size_t half = (params.kv_len / 2) & ~size_t{31};
+      return (half >= params.q_seq_len && half >= 32) ? half : params.kv_len;
+    }
+    return params.kv_len;
+  }
+
+  static Expected<VarBuffers> MakeInputsForParams(
+      const Params& params, bool from_cache_update, DefaultDevice& device,
+      const RandomTensorDataBuilder& data_builder) {
     VarBuffers inputs;
     size_t expected_inputs =
         3 + (kWithMask ? 1 : 0) + (kWithParamTensor ? 1 : 0);
     inputs.reserve(expected_inputs);
 
     std::array<Layout::Dim, 4> q_shape = {
-        static_cast<Layout::Dim>(params_.batch),
-        static_cast<Layout::Dim>(params_.num_kv_heads),
-        static_cast<Layout::Dim>(params_.num_q_heads),
-        static_cast<Layout::Dim>(params_.head_dim)};
+        static_cast<Layout::Dim>(params.batch),
+        static_cast<Layout::Dim>(params.num_q_heads),
+        static_cast<Layout::Dim>(params.q_seq_len),
+        static_cast<Layout::Dim>(params.head_dim)};
     std::array<Layout::Dim, 4> k_shape = {
-        static_cast<Layout::Dim>(params_.batch),
-        static_cast<Layout::Dim>(params_.num_kv_heads),
-        static_cast<Layout::Dim>(params_.kv_len),
-        static_cast<Layout::Dim>(params_.head_dim)};
-    std::array<Layout::Dim, 4> v_shape = {
-        static_cast<Layout::Dim>(params_.batch),
-        static_cast<Layout::Dim>(params_.num_kv_heads),
-        static_cast<Layout::Dim>(params_.head_dim),
-        static_cast<Layout::Dim>(params_.kv_len)};
+        static_cast<Layout::Dim>(params.batch),
+        static_cast<Layout::Dim>(params.num_kv_heads),
+        static_cast<Layout::Dim>(params.kv_len),
+        static_cast<Layout::Dim>(params.head_dim)};
+    std::array<Layout::Dim, 4> v_shape =
+        from_cache_update ? k_shape
+                          : std::array<Layout::Dim, 4>{
+                                static_cast<Layout::Dim>(params.batch),
+                                static_cast<Layout::Dim>(params.num_kv_heads),
+                                static_cast<Layout::Dim>(params.head_dim),
+                                static_cast<Layout::Dim>(params.kv_len)};
 
     auto builder = data_builder;
     if (!builder.IsFloatDummy()) {
@@ -179,11 +209,11 @@ class SdpaTransposed : public TestGraph {
 
     auto q_builder = builder;
     if (!q_builder.IsFloatDummy()) {
-      float q_scale = 1.0f / std::sqrt(static_cast<float>(params_.head_dim));
+      float q_scale = 1.0f / std::sqrt(static_cast<float>(params.head_dim));
       q_builder.SetFloatRange(-1.5f * q_scale, 1.5f * q_scale);
     }
 
-    // 1. Query input [B, H_kv, H_q, D]
+    // 1. Query input [B, H_q, S_q, D]
     LITERT_ASSIGN_OR_RETURN(auto q, SimpleBuffer::Create<T>(q_shape));
     LITERT_RETURN_IF_ERROR((q.template WriteRandom<T>(q_builder, device)));
     inputs.push_back(std::move(q));
@@ -193,29 +223,60 @@ class SdpaTransposed : public TestGraph {
     LITERT_RETURN_IF_ERROR((k.template WriteRandom<T>(builder, device)));
     inputs.push_back(std::move(k));
 
-    // 3. Transposed Value input [B, H_kv, D, KV_LEN]
+    // 3. Value input ([B, H_kv, D, KV_LEN] when standalone, or
+    // [B, H_kv, KV_LEN, D] when transposed by odml.cache_update).
     LITERT_ASSIGN_OR_RETURN(auto v, SimpleBuffer::Create<T>(v_shape));
     LITERT_RETURN_IF_ERROR((v.template WriteRandom<T>(builder, device)));
     inputs.push_back(std::move(v));
 
-    // 4. Optional Mask input [B, 1, H_q, KV_LEN]
+    const size_t active_kv_len = ActiveKvLen(params);
+    const size_t q_start =
+        (!from_cache_update && kWithParamTensor && params.q_seq_len > 1 &&
+         params.causal && active_kv_len >= params.q_seq_len)
+            ? (active_kv_len - params.q_seq_len)
+            : 0;
+
+    // 4. Optional Mask input [B, 1, S_q, KV_LEN]
     if constexpr (kWithMask) {
       std::array<Layout::Dim, 4> mask_shape = {
-          static_cast<Layout::Dim>(params_.batch), 1,
-          static_cast<Layout::Dim>(params_.num_q_heads),
-          static_cast<Layout::Dim>(params_.kv_len)};
-      LITERT_ASSIGN_OR_RETURN(auto mask, SimpleBuffer::Create<T>(mask_shape));
-      auto mask_span = mask.Span<T>();
-
-      for (size_t b = 0; b < params_.batch; ++b) {
-        for (size_t n = 0; n < params_.num_q_heads; ++n) {
-          for (size_t j = 0; j < params_.kv_len; ++j) {
-            size_t idx = (b * params_.num_q_heads + n) * params_.kv_len + j;
-            mask_span[idx] = static_cast<T>(0.0f);
+          static_cast<Layout::Dim>(params.batch), 1,
+          static_cast<Layout::Dim>(params.q_seq_len),
+          static_cast<Layout::Dim>(params.kv_len)};
+      auto fill_mask = [&](auto mask_span, auto val_fn) {
+        for (size_t b = 0; b < params.batch; ++b) {
+          for (size_t s_q = 0; s_q < params.q_seq_len; ++s_q) {
+            const size_t causal_bound =
+                (params.q_seq_len == 1 || !params.causal) ? active_kv_len
+                                                          : (q_start + s_q + 1);
+            for (size_t j = 0; j < params.kv_len; ++j) {
+              const size_t idx =
+                  (b * params.q_seq_len + s_q) * params.kv_len + j;
+              mask_span[idx] = val_fn(b, s_q, j, causal_bound);
+            }
           }
         }
+      };
+      if (params.bool_mask) {
+        LITERT_ASSIGN_OR_RETURN(auto mask,
+                                SimpleBuffer::Create<bool>(mask_shape));
+        fill_mask(mask.Span<bool>(),
+                  [](size_t b, size_t s_q, size_t j, size_t causal_bound) {
+                    return (j == 0) ||
+                           (j < causal_bound && ((b + s_q + j) % 4 != 3));
+                  });
+        inputs.push_back(std::move(mask));
+      } else {
+        LITERT_ASSIGN_OR_RETURN(auto mask, SimpleBuffer::Create<T>(mask_shape));
+        fill_mask(mask.Span<T>(),
+                  [](size_t b, size_t s_q, size_t j, size_t causal_bound) {
+                    const float val =
+                        (j < causal_bound)
+                            ? -0.25f * static_cast<float>((b + s_q + j) % 4)
+                            : -10000.0f;
+                    return static_cast<T>(val);
+                  });
+        inputs.push_back(std::move(mask));
       }
-      inputs.push_back(std::move(mask));
     }
 
     // 5. Optional Param Tensor input [1, 1, 1, 7]
@@ -229,13 +290,24 @@ class SdpaTransposed : public TestGraph {
       for (size_t i = 0; i < 7; ++i) {
         param_span[i] = 0;
       }
-      // Index 2 specifies the active token count for runtime bounds checks,
-      // informing delegates of the populated KV cache size without reshaping.
-      param_span[2] = static_cast<int32_t>(params_.kv_len);
+      // Index 0 is the starting KV cache offset (q_start) of the query chunk;
+      // indices 1 and 2 specify the active token count (and 32-aligned active
+      // token count) for runtime bounds checks, testing partial KV cache
+      // population (active_kv_len < kv_len).
+      param_span[0] = static_cast<int32_t>(q_start);
+      param_span[1] = static_cast<int32_t>(active_kv_len);
+      param_span[2] = static_cast<int32_t>(active_kv_len);
       inputs.push_back(std::move(param));
     }
 
     return inputs;
+  }
+
+  Expected<VarBuffers> MakeInputs(
+      DefaultDevice& device,
+      const RandomTensorDataBuilder& data_builder) const override {
+    return MakeInputsForParams(params_, /*from_cache_update=*/false, device,
+                               data_builder);
   }
 
   Expected<void> Reference(const VarBuffers& inputs,
@@ -244,44 +316,17 @@ class SdpaTransposed : public TestGraph {
                                                            outputs);
   }
 
-  SdpaTransposed(Params params, LiteRtModelT::Ptr model)
-      : TestGraph(std::move(model)), params_(std::move(params)) {}
-
- private:
-  static Expected<LiteRtModelT::Ptr> BuildGraph(const Params& params) {
-    using TensorTf = litert::tensor::Tensor<litert::tensor::TfLiteMixinTag>;
-
+  static TensorTf BuildSdpaComposite(const Params& params,
+                                     bool from_cache_update, TensorTf q,
+                                     TensorTf k, TensorTf v, TensorTf mask,
+                                     TensorTf param_tensor) {
     int b = static_cast<int>(params.batch);
     int num_kv_heads = static_cast<int>(params.num_kv_heads);
     int num_q_heads = static_cast<int>(params.num_q_heads);
+    int q_seq_len = static_cast<int>(params.q_seq_len);
     int kv_len = static_cast<int>(params.kv_len);
     int head_dim = static_cast<int>(params.head_dim);
-
-    TensorTf q = litert::tensor::Create(
-        "query", litert::tensor::ApiType<T>::value,
-        {b, num_kv_heads, num_q_heads, head_dim});
-    TensorTf k = litert::tensor::Create(
-        "key", litert::tensor::ApiType<T>::value,
-        {b, num_kv_heads, kv_len, head_dim});
-    TensorTf v = litert::tensor::Create(
-        "value", litert::tensor::ApiType<T>::value,
-        {b, num_kv_heads, head_dim, kv_len});
-
-    TensorTf mask;
-    if constexpr (kWithMask) {
-      mask = litert::tensor::Create(
-          "mask", litert::tensor::ApiType<T>::value,
-          {b, 1, num_q_heads, kv_len});
-    }
-
-    TensorTf param_tensor;
-    if constexpr (kWithParamTensor) {
-      // 4D control tensor [1, 1, 1, 7] per litert_torch runtime parameter
-      // specification for dynamic cache bounds.
-      param_tensor = litert::tensor::Create(
-          "param_tensor", litert::tensor::ApiType<int32_t>::value,
-          {1, 1, 1, 7});
-    }
+    int gqa_ratio = num_q_heads / num_kv_heads;
 
     flexbuffers::Builder fbb;
     fbb.Map([&]() {
@@ -291,16 +336,32 @@ class SdpaTransposed : public TestGraph {
       // axis 3 [B, H_kv, D, KV_LEN].
       fbb.Int("k_ts_idx", 2);
       fbb.Int("v_ts_idx", 3);
+      if (from_cache_update) {
+        fbb.Bool("from_cache_update", true);
+      }
       if constexpr (kSoftCap) {
+        fbb.Float("logit_cap", params.softcap_val);
         fbb.Float("softcap", params.softcap_val);
       }
     });
     fbb.Finish();
     auto composite_attributes = fbb.GetBuffer();
 
-    auto decompose = [&params](auto q_in, auto k_in, auto v_in, auto... rest) {
-      auto qk = litert::tensor::BatchMatMul(q_in, k_in, /*adj_x=*/false,
+    auto decompose = [&params, b, num_kv_heads, num_q_heads, q_seq_len, kv_len,
+                      head_dim, gqa_ratio](auto q_in, auto k_in, auto v_in,
+                                           auto... rest) {
+      // Contiguous GQA head grouping: query head i maps to KV head
+      // i / gqa_ratio (matching repeat_interleave(gqa_ratio, dim=1)).
+      auto q_for_bmm =
+          (gqa_ratio > 1)
+              ? litert::tensor::Reshape(
+                    q_in, {b, num_kv_heads, gqa_ratio * q_seq_len, head_dim})
+              : q_in;
+      auto qk = litert::tensor::BatchMatMul(q_for_bmm, k_in, /*adj_x=*/false,
                                             /*adj_y=*/true);
+      if (gqa_ratio > 1) {
+        qk = litert::tensor::Reshape(qk, {b, num_q_heads, q_seq_len, kv_len});
+      }
       auto pre_mask_scores = qk;
       if constexpr (kSoftCap) {
         TensorTf cap_tensor = litert::tensor::Create(
@@ -316,11 +377,44 @@ class SdpaTransposed : public TestGraph {
       auto scores = pre_mask_scores;
       if constexpr (kWithMask) {
         auto rest_tuple = std::forward_as_tuple(rest...);
-        scores = litert::tensor::Add(pre_mask_scores, std::get<0>(rest_tuple));
+        auto mask_in = std::get<0>(rest_tuple);
+        if (params.bool_mask) {
+          TensorTf neg_inf = litert::tensor::Create(
+              "sdpa_neg_inf", litert::tensor::ApiType<T>::value,
+              /*shape=*/{1, 1, 1, 1},
+              litert::tensor::OwningCpuBuffer::CopyAs(
+                  litert::tensor::ApiType<T>::value,
+                  std::vector<float>{-10000.0f}));
+          scores = litert::tensor::SelectV2(mask_in, pre_mask_scores, neg_inf);
+        } else {
+          scores = litert::tensor::Add(pre_mask_scores, mask_in);
+        }
+      } else if constexpr (kWithParamTensor) {
+        const int active_kv_len = static_cast<int>(ActiveKvLen(params));
+        std::vector<float> active_mask_vals(kv_len, -10000.0f);
+        for (int j = 0; j < active_kv_len; ++j) {
+          active_mask_vals[j] = 0.0f;
+        }
+        TensorTf active_mask = litert::tensor::Create(
+            "sdpa_active_mask", litert::tensor::ApiType<T>::value,
+            /*shape=*/{1, 1, 1, kv_len},
+            litert::tensor::OwningCpuBuffer::CopyAs(
+                litert::tensor::ApiType<T>::value, active_mask_vals));
+        scores = litert::tensor::Add(pre_mask_scores, active_mask);
       }
       auto probs = litert::tensor::Softmax(scores, /*beta=*/1.0f);
-      return litert::tensor::BatchMatMul(probs, v_in, /*adj_x=*/false,
-                                         /*adj_y=*/true);
+      auto probs_for_bmm =
+          (gqa_ratio > 1)
+              ? litert::tensor::Reshape(
+                    probs, {b, num_kv_heads, gqa_ratio * q_seq_len, kv_len})
+              : probs;
+      auto out = litert::tensor::BatchMatMul(probs_for_bmm, v_in,
+                                             /*adj_x=*/false, /*adj_y=*/true);
+      if (gqa_ratio > 1) {
+        out =
+            litert::tensor::Reshape(out, {b, num_q_heads, q_seq_len, head_dim});
+      }
+      return out;
     };
 
     litert::tensor::StableHLOCompositeOptions composite_options{
@@ -342,8 +436,52 @@ class SdpaTransposed : public TestGraph {
       output = litert::tensor::StableHLOComposite(composite_options, decompose,
                                                   q, k, v);
     }
-
     output.SetName("output");
+    return output;
+  }
+
+  SdpaTransposed(Params params, LiteRtModelT::Ptr model)
+      : TestGraph(std::move(model)), params_(std::move(params)) {}
+
+ private:
+  static Expected<LiteRtModelT::Ptr> BuildGraph(const Params& params) {
+    int b = static_cast<int>(params.batch);
+    int num_kv_heads = static_cast<int>(params.num_kv_heads);
+    int num_q_heads = static_cast<int>(params.num_q_heads);
+    int q_seq_len = static_cast<int>(params.q_seq_len);
+    int kv_len = static_cast<int>(params.kv_len);
+    int head_dim = static_cast<int>(params.head_dim);
+
+    TensorTf q =
+        litert::tensor::Create("query", litert::tensor::ApiType<T>::value,
+                               {b, num_q_heads, q_seq_len, head_dim});
+    TensorTf k =
+        litert::tensor::Create("key", litert::tensor::ApiType<T>::value,
+                               {b, num_kv_heads, kv_len, head_dim});
+    TensorTf v =
+        litert::tensor::Create("value", litert::tensor::ApiType<T>::value,
+                               {b, num_kv_heads, head_dim, kv_len});
+
+    TensorTf mask;
+    if constexpr (kWithMask) {
+      const auto mask_type = params.bool_mask
+                                 ? litert::tensor::Type::kBOOL
+                                 : litert::tensor::ApiType<T>::value;
+      mask =
+          litert::tensor::Create("mask", mask_type, {b, 1, q_seq_len, kv_len});
+    }
+
+    TensorTf param_tensor;
+    if constexpr (kWithParamTensor) {
+      // 4D control tensor [1, 1, 1, 7] per litert_torch runtime parameter
+      // specification for dynamic cache bounds.
+      param_tensor = litert::tensor::Create(
+          "param_tensor", litert::tensor::ApiType<int32_t>::value,
+          {1, 1, 1, 7});
+    }
+
+    TensorTf output = BuildSdpaComposite(params, /*from_cache_update=*/false, q,
+                                         k, v, mask, param_tensor);
     return litert::testing::SaveTensorGraph({output});
   }
 

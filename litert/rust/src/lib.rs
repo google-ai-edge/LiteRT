@@ -30,7 +30,7 @@
 //!
 //! // 2. Load the model from a file.
 //! let model_path = "/path/to/your/model.tflite";
-//! let model = Model::create_model_from_file(model_path)
+//! let model = Model::create_model_from_file(&environment, model_path)
 //!     .expect("Failed to load model");
 //!
 //! // 3. Set compilation options, for example, to use a hardware accelerator.
@@ -42,8 +42,8 @@
 //!     .expect("Failed to compile model");
 //!
 //! // 5. Create input and output tensor buffers.
-//! // We are using the first signature (index 0).
-//! let signature_index = SignatureIndex::from(0);
+//! // We are using the default signature (index 0).
+//! let signature_index = SignatureIndex::DEFAULT;
 //! let input_buffers = compiled_model
 //!     .create_input_tensor_buffers(&environment, &model, signature_index)
 //!     .expect("Failed to create input buffers");
@@ -76,13 +76,13 @@
 //! ```rust,no_run
 //! # #[cfg(async_support)]
 //! # async fn run_async_example() -> Result<(), litert::Error> {
-//! # use litert::{CompiledModel, EnvironmentBuilder, LiteRtHwAccelerator, Model, Options};
+//! # use litert::{CompiledModel, EnvironmentBuilder, LiteRtHwAccelerator, Model, Options, SignatureIndex};
 //! # let environment = EnvironmentBuilder::build_default().unwrap();
-//! # let model = Model::create_model_from_file("/path/to/model.tflite").unwrap();
+//! # let model = Model::create_model_from_file(&environment, "/path/to/model.tflite").unwrap();
 //! # // Note: async is not available on all platforms.
 //! # let options = Options::create_with_accelerator(LiteRtHwAccelerator::Gpu).unwrap();
 //! # let compiled_model = CompiledModel::create(&environment, &model, &options).unwrap();
-//! let signature_index = SignatureIndex::from(0);
+//! let signature_index = SignatureIndex::DEFAULT;
 //! # let input_buffers = compiled_model.create_input_tensor_buffers(&environment, &model, signature_index).unwrap();
 //! # let output_buffers = compiled_model.create_output_tensor_buffers(&environment, &model, signature_index).unwrap();
 //! // 1. Run inference asynchronously.
@@ -121,6 +121,7 @@ pub use environment::Environment;
 pub use environment::EnvironmentBuilder;
 pub use error::Error;
 pub use error::ErrorCause;
+pub use model::InputOutputIndex;
 pub use model::Model;
 pub use model::SignatureIndex;
 pub use model::SubgraphIndex;

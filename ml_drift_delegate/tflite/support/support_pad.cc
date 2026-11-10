@@ -111,12 +111,44 @@ bool IsPadSupported(const TfLiteContext* absl_nonnull context,
   if (!CheckTensorDtype(input_tensor, supported_dtypes, "inputs[0]", *error)) {
     return false;
   }
+  const TfLiteTensor& output_tensor = context->tensors[output_id];
+  if (!CheckTensorDtype(output_tensor, supported_dtypes, "outputs[0]",
+                        *error)) {
+    return false;
+  }
+  if (::tflite::IsConstantTensor(&input_tensor)) {
+    const auto* quant_params = static_cast<const TfLiteAffineQuantization*>(
+        input_tensor.quantization.params);
+    const bool valid_quantized =
+        input_tensor.quantization.type == kTfLiteAffineQuantization &&
+        quant_params != nullptr && quant_params->scale != nullptr &&
+        quant_params->zero_point != nullptr &&
+        (input_tensor.type == kTfLiteInt8 || input_tensor.type == kTfLiteUInt8);
+    const absl::flat_hash_set<TfLiteType> supported_const_dtypes = {
+        kTfLiteBool,
+        kTfLiteFloat16,
+        kTfLiteFloat32,
+        kTfLiteInt32,
+    };
+    if (!supported_const_dtypes.contains(input_tensor.type) &&
+        !valid_quantized) {
+      *error = absl::StrCat("Unsupported constant dtype for inputs[0]: ",
+                            TfLiteTypeGetName(input_tensor.type));
+      return false;
+    }
+    if (input_tensor.type != output_tensor.type &&
+        !(input_tensor.type == kTfLiteFloat16 &&
+          output_tensor.type == kTfLiteFloat32)) {
+      *error = "Input and output types must match for Pad.";
+      return false;
+    }
+  }
   const TfLiteTensor& paddings_tensor = context->tensors[paddings_id];
   if (!CheckTensorDtype(paddings_tensor, {kTfLiteInt32}, "inputs[1]", *error)) {
     return false;
   }
   const absl::Status status =
-      CheckPopulateTensor<::ml_drift::HW, ::ml_drift::DataType::INT32>(
+      CheckPopulateTensor<::ml_drift::HW, ::ml_drift::DataType::kInt32>(
           &paddings_tensor);
   if (!status.ok()) {
     *error = status.message();
@@ -133,7 +165,7 @@ bool IsPadSupported(const TfLiteContext* absl_nonnull context,
       return false;
     }
     const absl::Status status =
-        CheckPopulateTensor<::ml_drift::Scalar, ::ml_drift::DataType::FLOAT32>(
+        CheckPopulateTensor<::ml_drift::Scalar, ::ml_drift::DataType::kFloat32>(
             &const_val_tensor);
     if (!status.ok()) {
       *error = status.message();
@@ -141,16 +173,7 @@ bool IsPadSupported(const TfLiteContext* absl_nonnull context,
     }
   }
 
-  const TfLiteTensor& output_tensor = context->tensors[output_id];
-  if (!CheckTensorDtype(output_tensor, supported_dtypes, "outputs[0]",
-                        *error)) {
-    return false;
-  }
-
   // Check const inputs.
-  if (!CheckNotConstant(input_tensor, "inputs[0]", *error)) {
-    return false;
-  }
   if (!CheckIsConstant(paddings_tensor, "inputs[1]", *error)) {
     return false;
   }

@@ -20,9 +20,37 @@ load("@rules_cc//cc:objc_library.bzl", "objc_library")
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
+        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
         "//ml_drift_delegate/delegate:__subpackages__",
         "//ml_drift_delegate/tflite:__subpackages__",
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
+        "//tensor:__subpackages__",
+        # copybara:uncomment "//third_party/py/ai_edge_jax/generative/backends/cpu_gpu/compat:__subpackages__",
+    ],
+)
+
+cc_library(
+    name = "tiled_quantized_fully_connected_kernel",
+    srcs = ["tiled_quantized_fully_connected_kernel.cc"],
+    hdrs = ["tiled_quantized_fully_connected_kernel.h"],
+    deps = [
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:kernel_info",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common:util",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/kernels:fully_connected_util",
+        "@ml_drift//ml_drift/common/task:compiler_options",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:tuning_type",
+        "@ml_drift//ml_drift/common/task:util",
+        "@ml_drift//ml_drift/common/task:weights_layout",
     ],
 )
 
@@ -131,36 +159,10 @@ cc_library(
 )
 
 cc_library(
-    name = "experts_remap_builder",
-    srcs = ["experts_remap_builder.cc"],
-    hdrs = ["experts_remap_builder.h"],
-    deps = [
-        "@com_google_absl//absl/status:status_macros",
-        "@com_google_absl//absl/status:statusor",
-        "@ml_drift//ml_drift/common:data_type",
-        "@ml_drift//ml_drift/common:gpu_model_builder",
-        "@ml_drift//ml_drift/common:operations",
-        "@ml_drift//ml_drift/common:precision",
-        "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:tensor",
-        "@ml_drift//ml_drift/common:util",
-        "@ml_drift//ml_drift/common/kernels:conv_apple_mpp",
-        "@ml_drift//ml_drift/common/kernels:conv_generic",
-        "@ml_drift//ml_drift/common/kernels:conv_wave_matrix",
-        "@ml_drift//ml_drift/common/kernels:conv_wave_memory",
-        "@ml_drift//ml_drift/common/kernels:fully_connected",
-        "@ml_drift//ml_drift/common/kernels/google/custom:experts_remap",
-        "@ml_drift//ml_drift/common/task:gpu_operation",
-        "@ml_drift//ml_drift/common/task:tensor_desc",
-    ],
-)
-
-cc_library(
     name = "moe_experts_kernel",
     srcs = ["moe_experts_kernel.cc"],
     hdrs = ["moe_experts_kernel.h"],
     deps = [
-        ":experts_remap_builder",
         ":moe_experts_parser",
         "//ml_drift_delegate/delegate/composite/ir:moe_experts_parser",
         "@com_google_absl//absl/status",
@@ -169,15 +171,35 @@ cc_library(
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:gpu_model_builder_moe_util",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common:types",
-        "@ml_drift//ml_drift/common/kernels:fully_connected",
         "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+cc_test(
+    name = "moe_experts_kernel_test",
+    srcs = ["moe_experts_kernel_test.cc"],
+    deps = [
+        ":moe_experts_kernel",
+        ":moe_experts_parser",
+        "//ml_drift_delegate/delegate/composite/ir:moe_experts_parser",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
     ],
 )
 
@@ -186,6 +208,7 @@ cc_library(
     srcs = ["rope_parser.cc"],
     hdrs = ["rope_parser.h"],
     deps = [
+        "//ml_drift_delegate/tflite:model_builder_helper",
         "//ml_drift_delegate/tflite:object_reader",
         "//ml_drift_delegate/tflite:operation_parser",
         "//tflite/c:c_api_types",
@@ -196,6 +219,129 @@ cc_library(
         "@flatbuffers",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
+cc_library(
+    name = "sdpa_transposed_support",
+    srcs = ["sdpa_transposed_support.cc"],
+    hdrs = ["sdpa_transposed_support.h"],
+    deps = [
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
+cc_test(
+    name = "sdpa_transposed_support_test",
+    srcs = ["sdpa_transposed_support_test.cc"],
+    deps = [
+        ":sdpa_transposed_support",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
+cc_library(
+    name = "sdpa_kernel",
+    srcs = ["sdpa_kernel.cc"],
+    hdrs = ["sdpa_kernel.h"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:kernel_info",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/kernels/special:conv_softmax_conv",
+        "@ml_drift//ml_drift/common/task:compiler_options",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:tuning_type",
+    ],
+)
+
+mld_kernel_test(
+    name = "sdpa_kernel_test",
+    srcs = ["sdpa_kernel_test.cc"],
+    platforms = [
+        "opencl",
+        "webgpu",
+    ],
+    deps = [
+        ":sdpa_kernel",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+    ],
+)
+
+objc_library(
+    name = "sdpa_kernel_test_objc_lib",
+    testonly = True,
+    srcs = [
+        "sdpa_kernel_test.cc",
+        "@ml_drift//ml_drift/common/kernels/tests:kernel_test.h",
+        "@ml_drift//ml_drift/common/kernels/tests:metal_kernel_test.mm",
+    ],
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":sdpa_kernel",
+        "@com_google_googletest//:gtest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        # Dependency placeholder: apple_frameworks Metal,
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+        "@ml_drift//ml_drift/metal/testing:test_util",
+    ],
+)
+
+cc_test(
+    name = "sdpa_kernel_test_mac",
+    tags = [
+        "mac",
+        "manual",
+        "nobuilder",
+        "notap",
+        "nozapfhahn",
+    ],
+    deps = [
+        ":sdpa_kernel_test_objc_lib",
     ],
 )
 
@@ -206,17 +352,21 @@ cc_library(
     deps = [
         ":add_values_to_cache_parser",
         ":runtime_batched_matmul_parser",
+        ":sdpa_transposed_support",
         "//ml_drift_delegate/tflite:model_builder_helper",
         "//ml_drift_delegate/tflite:object_reader",
         "//ml_drift_delegate/tflite:operation_parser",
         "//tflite/c:common",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@flatbuffers",
         "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common/kernels:fully_connected",
         "@ml_drift//ml_drift/common/task:weights_layout",
     ],
@@ -228,8 +378,10 @@ cc_library(
     hdrs = ["sdpa_transposed_kernel.h"],
     deps = [
         ":sdpa_transposed_parser",
+        ":sdpa_transposed_support",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@ml_drift//ml_drift/common:data_type",
@@ -240,7 +392,6 @@ cc_library(
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common:types",
         "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",
@@ -257,18 +408,24 @@ mld_kernel_test(
         "webgpu",
     ],
     deps = [
+        ":add_values_to_cache_kernel",
+        ":add_values_to_cache_parser",
         ":sdpa_transposed_kernel",
         ":sdpa_transposed_parser",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/task:testing_util",
         "@ml_drift//ml_drift/common/task:weights_layout",
@@ -295,20 +452,26 @@ objc_library(
         "notap",
     ],
     deps = [
+        ":add_values_to_cache_kernel",
+        ":add_values_to_cache_parser",
         ":sdpa_transposed_kernel",
         ":sdpa_transposed_parser",
         "@com_google_googletest//:gtest",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
         # Dependency placeholder: apple_frameworks Metal,
         "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/task:testing_util",
         "@ml_drift//ml_drift/common/task:weights_layout",
@@ -331,9 +494,9 @@ cc_test(
 )
 
 cc_library(
-    name = "swiglu_parser",
-    srcs = ["swiglu_parser.cc"],
-    hdrs = ["swiglu_parser.h"],
+    name = "glu_parser",
+    srcs = ["glu_parser.cc"],
+    hdrs = ["glu_parser.h"],
     deps = [
         "//ml_drift_delegate/tflite:object_reader",
         "//ml_drift_delegate/tflite:operation_parser",
@@ -347,11 +510,11 @@ cc_library(
 )
 
 cc_library(
-    name = "swiglu_kernel",
-    srcs = ["swiglu_kernel.cc"],
-    hdrs = ["swiglu_kernel.h"],
+    name = "glu_kernel",
+    srcs = ["glu_kernel.cc"],
+    hdrs = ["glu_kernel.h"],
     deps = [
-        ":swiglu_parser",
+        ":glu_parser",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@ml_drift//ml_drift/common:gpu_model_builder",
@@ -387,10 +550,10 @@ cc_library(
     hdrs = ["short_conv_step_kernel.h"],
     deps = [
         ":short_conv_step_parser",
-        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model_builder",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
@@ -493,11 +656,42 @@ cc_test(
 )
 
 cc_library(
+    name = "fuse_sdpa_transposed_reshape",
+    srcs = ["fuse_sdpa_transposed_reshape.cc"],
+    hdrs = ["fuse_sdpa_transposed_reshape.h"],
+    deps = [
+        ":sdpa_transposed_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
+cc_test(
+    name = "fuse_sdpa_transposed_reshape_test",
+    srcs = ["fuse_sdpa_transposed_reshape_test.cc"],
+    deps = [
+        ":fuse_sdpa_transposed_reshape",
+        ":sdpa_transposed_parser",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
+cc_library(
     name = "custom_transformations",
     srcs = ["custom_transformations.cc"],
     hdrs = ["custom_transformations.h"],
     deps = [
         ":fuse_qkv_norm_rope",
+        ":fuse_sdpa_transposed_reshape",
         ":fuse_short_conv_step",
         "//ml_drift_delegate/delegate:delegate_options",
         "@com_google_absl//absl/status",
@@ -522,7 +716,6 @@ cc_library(
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:kernel_info",
         "@ml_drift//ml_drift/common:model",
-        "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:types",
         "@ml_drift//ml_drift/common/task:gpu_operation",
@@ -534,6 +727,79 @@ cc_library(
 alias(
     name = "qwen3_qkv_norm_rope_kernel",
     actual = ":qkv_norm_rope_kernel",
+)
+
+mld_kernel_test(
+    name = "qkv_norm_rope_kernel_test",
+    srcs = ["qkv_norm_rope_kernel_test.cc"],
+    platforms = [
+        "opencl",
+        "webgpu",
+    ],
+    deps = [
+        ":qkv_norm_rope_kernel",
+        ":qkv_norm_rope_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+    ],
+)
+
+objc_library(
+    name = "qkv_norm_rope_kernel_test_objc_lib",
+    testonly = True,
+    srcs = [
+        "qkv_norm_rope_kernel_test.cc",
+        "@ml_drift//ml_drift/common/kernels/tests:kernel_test.h",
+        "@ml_drift//ml_drift/common/kernels/tests:metal_kernel_test.mm",
+    ],
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":qkv_norm_rope_kernel",
+        ":qkv_norm_rope_parser",
+        "@com_google_googletest//:gtest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        # Dependency placeholder: apple_frameworks Metal,
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+        "@ml_drift//ml_drift/metal/testing:test_util",
+    ],
+)
+
+cc_test(
+    name = "qkv_norm_rope_kernel_test_mac",
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":qkv_norm_rope_kernel_test_objc_lib",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(
@@ -570,7 +836,72 @@ cc_library(
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:types",
         "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/task:tuning_type",
+    ],
+)
+
+cc_library(
+    name = "fused_sdpa_cache_update_parser",
+    srcs = ["fused_sdpa_cache_update_parser.cc"],
+    hdrs = ["fused_sdpa_cache_update_parser.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:model_builder_helper",
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:model",
+    ],
+)
+
+cc_library(
+    name = "fused_sdpa_cache_update_kernel",
+    srcs = ["fused_sdpa_cache_update_kernel.cc"],
+    hdrs = ["fused_sdpa_cache_update_kernel.h"],
+    deps = [
+        ":fused_sdpa_cache_update_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:kernel_info",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:tuning_type",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+mld_kernel_test(
+    name = "fused_sdpa_cache_update_kernel_test",
+    srcs = ["fused_sdpa_cache_update_kernel_test.cc"],
+    platforms = ["opencl"],
+    deps = [
+        ":fused_sdpa_cache_update_kernel",
+        ":fused_sdpa_cache_update_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
     ],
 )
 
@@ -583,18 +914,20 @@ cc_library(
     ],
     deps = [
         ":add_values_to_cache_parser",
+        ":fused_sdpa_cache_update_parser",
         ":gated_delta_update_parser",
+        ":glu_parser",
         ":moe_experts_parser",
         ":qkv_norm_rope_parser",
         ":rope_parser",
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_parser",
         ":short_conv_step_parser",
-        ":swiglu_parser",
         "//ml_drift_delegate/tflite:operation_parser",
         "//ml_drift_delegate/tflite:unimplemented_operation_parser",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:gpu_info",
     ],
 )
 
@@ -608,15 +941,33 @@ mld_kernel_test(
     deps = [
         ":add_values_to_cache_kernel",
         ":add_values_to_cache_parser",
-        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
-        "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+    ],
+)
+
+mld_kernel_test(
+    name = "short_conv_step_kernel_test",
+    srcs = ["short_conv_step_kernel_test.cc"],
+    platforms = [
+        "opencl",
+        "webgpu",
+    ],
+    deps = [
+        ":short_conv_step_kernel",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/task:testing_util",
     ],
@@ -644,7 +995,6 @@ objc_library(
     deps = [
         ":short_conv_step_kernel",
         "@com_google_googletest//:gtest",
-        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
@@ -652,7 +1002,6 @@ objc_library(
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/task:testing_util",
         "@ml_drift//ml_drift/metal/testing:test_util",
@@ -680,23 +1029,27 @@ cc_library(
     deps = [
         ":add_values_to_cache_kernel",
         ":add_values_to_cache_parser",
+        ":fused_sdpa_cache_update_kernel",
+        ":fused_sdpa_cache_update_parser",
         ":gated_delta_update_kernel",
         ":gated_delta_update_parser",
+        ":glu_kernel",
+        ":glu_parser",
         ":moe_experts_kernel",
         ":moe_experts_parser",
         ":qkv_norm_rope_kernel",
         ":qkv_norm_rope_parser",
         ":runtime_batched_matmul_kernel",
         ":runtime_batched_matmul_parser",
+        ":sdpa_kernel",
         ":sdpa_transposed_kernel",
         ":sdpa_transposed_parser",
         ":short_conv_step_kernel",
         ":short_conv_step_parser",
-        ":swiglu_kernel",
-        ":swiglu_parser",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:gpu_model_builder",
@@ -707,5 +1060,31 @@ cc_library(
         "@ml_drift//ml_drift/common/selectors:special_selector",
         "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
+cc_test(
+    name = "litert_op_selector_test",
+    srcs = ["litert_op_selector_test.cc"],
+    deps = [
+        ":add_values_to_cache_parser",
+        ":fused_sdpa_cache_update_parser",
+        ":litert_op_selector",
+        ":sdpa_transposed_parser",
+        ":short_conv_step_parser",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:weights_layout",
     ],
 )

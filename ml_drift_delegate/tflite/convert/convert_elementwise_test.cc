@@ -46,7 +46,8 @@ class ConvertElementwiseTest : public ::testing::Test {
  protected:
   void SetUp() override {
     delegate_ = std::unique_ptr<TfLiteDelegate, void (*)(TfLiteDelegate*)>(
-        CreateStubDelegate(), DeleteStubDelegate);
+        CreateStubDelegate({.apply_model_transformations = false}),
+        DeleteStubDelegate);
   }
 
   const ::ml_drift::ir::IrModel* GetIrModelFromBuilder(
@@ -198,6 +199,36 @@ TEST_F(ConvertElementwiseTest, Broadcast) {
   EXPECT_EQ(ir_model->op(1)->name, "reshape");
   EXPECT_EQ(ir_model->op(2)->name, "add");
   EXPECT_EQ(ir_model->op(3)->name, "reshape");
+}
+
+TEST_F(ConvertElementwiseTest,
+       BroadcastWithModelTransformationsRemovesNoopReshapes) {
+  std::unique_ptr<TfLiteDelegate, void (*)(TfLiteDelegate*)> delegate(
+      CreateStubDelegate({.apply_model_transformations = true}),
+      DeleteStubDelegate);
+
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinAdd);
+  model.AddInput(kTfLiteFloat32, {1, 2, 3, 4});
+  model.AddInput(kTfLiteFloat32, {3, 4});
+  model.AddOutput(kTfLiteFloat32, {1, 2, 3, 4});
+
+  TfLiteAddParams* params =
+      reinterpret_cast<TfLiteAddParams*>(calloc(1, sizeof(TfLiteAddParams)));
+  model.SetParameters(params);
+
+  auto interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate.get()), kTfLiteOk);
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate.get());
+  ASSERT_TRUE(ir_model);
+
+  // The identity reshapes on input 0 and output should be removed as no-ops.
+  EXPECT_EQ(ir_model->op(0), nullptr);
+  ASSERT_NE(ir_model->op(1), nullptr);
+  EXPECT_EQ(ir_model->op(1)->name, "reshape");
+  ASSERT_NE(ir_model->op(2), nullptr);
+  EXPECT_EQ(ir_model->op(2)->name, "add");
+  EXPECT_EQ(ir_model->op(3), nullptr);
 }
 
 TEST_F(ConvertElementwiseTest, BroadcastWithActivation) {
@@ -393,7 +424,7 @@ TEST_F(ConvertElementwiseTest, ConstantInputLinear) {
       std::any_cast<::ml_drift::ElementwiseAttributes>(&op->attr);
   ASSERT_TRUE(attr);
   const auto* t = std::get_if<
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>>(
       &attr->param);
   ASSERT_TRUE(t);
   EXPECT_EQ(t->shape.v, 4);
@@ -428,7 +459,7 @@ TEST_F(ConvertElementwiseTest, ConstantInputBHWC) {
       std::any_cast<::ml_drift::ElementwiseAttributes>(&op->attr);
   ASSERT_TRUE(attr);
   const auto* t = std::get_if<
-      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>>(
       &attr->param);
   ASSERT_TRUE(t);
   EXPECT_EQ(t->shape, ::ml_drift::BHWC(1, 1, 3, 4));
@@ -634,7 +665,7 @@ TEST_F(ConvertElementwiseTest, ConstantInput2D) {
       std::any_cast<::ml_drift::ElementwiseAttributes>(&op->attr);
   ASSERT_TRUE(attr);
   const auto* t = std::get_if<
-      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>>(
       &attr->param);
   ASSERT_TRUE(t);
   EXPECT_EQ(t->shape, ::ml_drift::BHWC(1, 1, 4, 4));
@@ -663,7 +694,7 @@ TEST_F(ConvertElementwiseTest, ConstantInput3D) {
       std::any_cast<::ml_drift::ElementwiseAttributes>(&op->attr);
   ASSERT_TRUE(attr);
   const auto* t = std::get_if<
-      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::FLOAT32>>(
+      ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>>(
       &attr->param);
   ASSERT_TRUE(t);
   EXPECT_EQ(t->shape, ::ml_drift::BHWC(1, 4, 4, 3));

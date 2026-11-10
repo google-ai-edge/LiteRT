@@ -102,8 +102,8 @@ TEST_F(SharedMemoryManagerClLitertTest,
        AhwbRejectsNonTexture2DStorageTypes) {
   // BUFFER should be rejected.
   {
-    TensorDescriptor desc(DataType::FLOAT16, TensorStorageType::BUFFER,
-                          Layout::LINEAR);
+    TensorDescriptor desc(DataType::kFloat16, TensorStorageType::kBuffer,
+                          Layout::kLinear);
     desc.SetBHWCShape(BHWC(1, 1, 1, 64));
     std::unique_ptr<GpuSpatialTensor> tensor;
     EXPECT_FALSE(internal::TryCreateTensorViaAhwb(env_, desc, tensor));
@@ -111,8 +111,8 @@ TEST_F(SharedMemoryManagerClLitertTest,
   }
   // IMAGE_BUFFER should be rejected.
   {
-    TensorDescriptor desc(DataType::FLOAT16, TensorStorageType::IMAGE_BUFFER,
-                          Layout::LINEAR);
+    TensorDescriptor desc(DataType::kFloat16, TensorStorageType::kImageBuffer,
+                          Layout::kLinear);
     desc.SetBHWCShape(BHWC(1, 1, 1, 64));
     std::unique_ptr<GpuSpatialTensor> tensor;
     EXPECT_FALSE(internal::TryCreateTensorViaAhwb(env_, desc, tensor));
@@ -120,8 +120,8 @@ TEST_F(SharedMemoryManagerClLitertTest,
   }
   // SINGLE_TEXTURE_2D should be rejected.
   {
-    TensorDescriptor desc(DataType::FLOAT16,
-                          TensorStorageType::SINGLE_TEXTURE_2D, Layout::HW);
+    TensorDescriptor desc(DataType::kFloat16,
+                          TensorStorageType::kSingleTexture2D, Layout::kHW);
     desc.SetBHWCShape(BHWC(1, 1, 1, 4));
     std::unique_ptr<GpuSpatialTensor> tensor;
     EXPECT_FALSE(internal::TryCreateTensorViaAhwb(env_, desc, tensor));
@@ -129,8 +129,8 @@ TEST_F(SharedMemoryManagerClLitertTest,
   }
   // TEXTURE_ARRAY should be rejected.
   {
-    TensorDescriptor desc(DataType::FLOAT16, TensorStorageType::TEXTURE_ARRAY,
-                          Layout::HW);
+    TensorDescriptor desc(DataType::kFloat16, TensorStorageType::kTextureArray,
+                          Layout::kHW);
     desc.SetBHWCShape(BHWC(1, 1, 1, 4));
     std::unique_ptr<GpuSpatialTensor> tensor;
     EXPECT_FALSE(internal::TryCreateTensorViaAhwb(env_, desc, tensor));
@@ -141,8 +141,8 @@ TEST_F(SharedMemoryManagerClLitertTest,
 TEST_F(SharedMemoryManagerClLitertTest,
        AhwbCreatesTexture2DTensorWithData) {
   // Create a TEXTURE_2D tensor descriptor with weight data.
-  TensorDescriptor desc(DataType::FLOAT32, TensorStorageType::TEXTURE_2D,
-                        Layout::HW);
+  TensorDescriptor desc(DataType::kFloat32, TensorStorageType::kTexture2D,
+                        Layout::kHW);
   desc.SetBHWCShape(BHWC(1, 4, 4, 4));  // 4x4x4 = 16 RGBA pixels = 4x4 image
 
   // Fill with known data pattern.
@@ -164,16 +164,16 @@ TEST_F(SharedMemoryManagerClLitertTest,
 
   ASSERT_NE(tensor, nullptr);
   EXPECT_EQ(tensor->GetDescriptor().GetStorageType(),
-            TensorStorageType::TEXTURE_2D);
-  EXPECT_EQ(tensor->GetDescriptor().GetDataType(), DataType::FLOAT32);
+            TensorStorageType::kTexture2D);
+  EXPECT_EQ(tensor->GetDescriptor().GetDataType(), DataType::kFloat32);
 }
 
 TEST_F(SharedMemoryManagerClLitertTest,
        AhwbCreatesTexture2DTensorWithoutData) {
   // Create a TEXTURE_2D tensor with no initial data (e.g., an intermediate
   // activation tensor).
-  TensorDescriptor desc(DataType::FLOAT32, TensorStorageType::TEXTURE_2D,
-                        Layout::HW);
+  TensorDescriptor desc(DataType::kFloat32, TensorStorageType::kTexture2D,
+                        Layout::kHW);
   desc.SetBHWCShape(BHWC(1, 4, 4, 4));
 
   std::unique_ptr<GpuSpatialTensor> tensor;
@@ -185,13 +185,13 @@ TEST_F(SharedMemoryManagerClLitertTest,
 
   ASSERT_NE(tensor, nullptr);
   EXPECT_EQ(tensor->GetDescriptor().GetStorageType(),
-            TensorStorageType::TEXTURE_2D);
+            TensorStorageType::kTexture2D);
 }
 
 TEST_F(SharedMemoryManagerClLitertTest,
        AhwbPreservesDescriptorMetadata) {
-  TensorDescriptor desc(DataType::FLOAT32, TensorStorageType::TEXTURE_2D,
-                        Layout::HW);
+  TensorDescriptor desc(DataType::kFloat32, TensorStorageType::kTexture2D,
+                        Layout::kHW);
   BHWC shape(1, 8, 8, 4);
   desc.SetBHWCShape(shape);
 
@@ -205,8 +205,8 @@ TEST_F(SharedMemoryManagerClLitertTest,
   ASSERT_NE(tensor, nullptr);
   // Verify the tensor descriptor preserves the metadata.
   const auto& result_desc = tensor->GetDescriptor();
-  EXPECT_EQ(result_desc.GetStorageType(), TensorStorageType::TEXTURE_2D);
-  EXPECT_EQ(result_desc.GetDataType(), DataType::FLOAT32);
+  EXPECT_EQ(result_desc.GetStorageType(), TensorStorageType::kTexture2D);
+  EXPECT_EQ(result_desc.GetDataType(), DataType::kFloat32);
   EXPECT_EQ(result_desc.GetBHWCShape(), shape);
   // The descriptor should not carry the data (CopyWithoutData was used).
   EXPECT_TRUE(result_desc.GetData().empty());
@@ -216,8 +216,8 @@ TEST_F(SharedMemoryManagerClLitertTest,
        AhwbDoesNotModifyTensorOnFailure) {
   // Use an unsupported storage type. The function should return false
   // and leave the tensor pointer unchanged.
-  TensorDescriptor desc(DataType::FLOAT16, TensorStorageType::BUFFER,
-                        Layout::LINEAR);
+  TensorDescriptor desc(DataType::kFloat16, TensorStorageType::kBuffer,
+                        Layout::kLinear);
   desc.SetBHWCShape(BHWC(1, 1, 1, 64));
 
   std::unique_ptr<GpuSpatialTensor> tensor;
@@ -232,8 +232,8 @@ TEST_F(SharedMemoryManagerClLitertTest,
   auto* original = cl::clImportMemoryARM;
   cl::clImportMemoryARM = nullptr;
 
-  TensorDescriptor desc(DataType::FLOAT16, TensorStorageType::TEXTURE_2D,
-                        Layout::HW);
+  TensorDescriptor desc(DataType::kFloat16, TensorStorageType::kTexture2D,
+                        Layout::kHW);
   desc.SetBHWCShape(BHWC(1, 2, 2, 4));
 
   std::unique_ptr<GpuSpatialTensor> tensor;
@@ -261,8 +261,8 @@ TEST_F(SharedMemoryManagerClLitertTest,
   ValueIdToSharedTensorMap quant_param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F16;
-  create_info.storage_type = TensorStorageType::TEXTURE_2D;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kTexture2D;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -312,7 +312,7 @@ TEST_F(SharedMemoryManagerClLitertTest,
                          manager->GetExternalConstantTensor(global_id));
     EXPECT_NE(external_tensor, nullptr);
     EXPECT_EQ(external_tensor->GetDescriptor().GetStorageType(),
-              TensorStorageType::TEXTURE_2D);
+              TensorStorageType::kTexture2D);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
@@ -326,8 +326,8 @@ TEST_F(SharedMemoryManagerClLitertTest,
   ValueIdToSharedTensorMap quant_param_tensors;
 
   CreateGpuModelInfo create_info;
-  create_info.precision = CalculationsPrecision::F16;
-  create_info.storage_type = TensorStorageType::BUFFER;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
 
   GraphFloat32 graph;
   Node* node = graph.NewNode();
@@ -372,7 +372,7 @@ TEST_F(SharedMemoryManagerClLitertTest,
                          manager->GetExternalConstantTensor(global_id));
     EXPECT_NE(external_tensor, nullptr);
     EXPECT_EQ(external_tensor->GetDescriptor().GetStorageType(),
-              TensorStorageType::BUFFER);
+              TensorStorageType::kBuffer);
   }
   TfLiteIntArrayFree(tflite_tensor.dims);
 }

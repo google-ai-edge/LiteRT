@@ -23,9 +23,11 @@
 #include <numeric>
 #include <vector>
 
+#include <gtest/gtest.h>
 #include "openvino/core/model.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/op/add.hpp"
+#include "openvino/op/broadcast.hpp"
 #include "openvino/op/concat.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/convert.hpp"
@@ -37,6 +39,7 @@
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/reduce_sum.hpp"
+#include "openvino/op/reshape.hpp"
 #include "openvino/op/result.hpp"
 #include "openvino/op/scaled_dot_product_attention.hpp"
 #include "openvino/op/slice.hpp"
@@ -46,7 +49,6 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
-#include <gtest/gtest.h>
 
 namespace litert {
 namespace openvino {
@@ -404,16 +406,18 @@ TEST(MoEGatherRewriteTest, RewritesDenseMoeIntoGatherForm) {
       model);
 
   // Postcondition: the masked dense chain (Equal/Add) is gone, replaced by
-  // Gather-K weight selection (2 Gathers per weight: flattened packed rows +
-  // scale) and a single weighted ReduceSum over the K selected experts. The
-  // router's weight-sum ReduceSum survives (it still feeds the K-weighting).
+  // Gather-K weight selection (gate, up, and down are each gathered
+  // independently: 2 Gathers per weight -- flattened packed rows + scale --
+  // times 3 weights) and a single weighted ReduceSum over the K selected
+  // experts. The router's weight-sum ReduceSum survives (it still feeds the
+  // K-weighting).
   EXPECT_EQ(CountOps<ov::op::v1::Equal>(model), 0u);
-  // ExpandExpertRowIndices emits one row-offset Add per gathered weight (up +
-  // down)
-  EXPECT_EQ(CountOps<ov::op::v1::Add>(model), 2u);
-  EXPECT_EQ(CountOps<ov::op::v8::Gather>(model), 4u);
+  // ExpandExpertRowIndices emits one row-offset Add per gathered weight
+  // (gate + up + down).
+  EXPECT_EQ(CountOps<ov::op::v1::Add>(model), 3u);
+  EXPECT_EQ(CountOps<ov::op::v8::Gather>(model), 6u);
   EXPECT_EQ(CountOps<ov::op::v1::ReduceSum>(model), 2u);
-  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(model), 2u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(model), 3u);
 }
 
 // Negative: MoEGatherRewrite requires sorted expert_ids to be exactly
@@ -430,45 +434,110 @@ TEST(MoEGatherRewriteTest, DoesNotRewriteWhenExpertIdsNotContiguous) {
   EXPECT_EQ(CountOps<ov::op::v8::Gather>(model), 0u);
 }
 
-// Negative: the gather form assumes a single token (decode/generate). When
-// the router's TopK indices have a statically-known batch dim != 1 (a
-// prefill-shaped call), the rewrite must skip the layer rather than
-// mis-compile it.
-TEST(MoEGatherRewriteTest, DoesNotRewritePrefillShapedRouter) {
+// When the router's TopK indices have a statically-known batch dim != 1 (a
+// prefill-shaped call), the single-token Gather-K form doesn't apply (no
+// single K-of-N subset is selected across all tokens), so this must dispatch
+// to the multi-token chunk path (RegroupAndRewriteChunk) instead of the
+// single-token Gather-K one: the masked Equal chain is still eliminated, but
+// via a dense N-expert computation, and the only Gather introduced is the
+// chunk-size extraction from ShapeOf(topk_indices).
+TEST(MoEGatherRewriteTest, RewritesPrefillShapedRouterViaChunkPath) {
   auto model = BuildDenseMoeGraph(/*k=*/2, SequentialExpertIds(4), /*batch=*/2);
 
   NpuOptimizer().SetCastIntegerSignToFloat(false).SetEnableMoeGather(true).Run(
       model);
 
-  EXPECT_EQ(CountOps<ov::op::v1::Equal>(model), 4u);
-  EXPECT_EQ(CountOps<ov::op::v8::Gather>(model), 0u);
+  EXPECT_EQ(CountOps<ov::op::v1::Equal>(model), 0u);
+  EXPECT_EQ(CountOps<ov::op::v8::Gather>(model), 1u);
 }
 
-// Negative/edge case: a degenerate batch=0 call (zero tokens). The TopK
-// indices' batch dim is statically 0, which is != 1, so this must hit the
-// same "not decode-shaped" guard as batch=2 rather than e.g. dividing by zero
-// or otherwise misbehaving on an empty tensor.
-TEST(MoEGatherRewriteTest, DoesNotRewriteWhenBatchIsZero) {
+// Edge case: a degenerate batch=0 call (zero tokens). The chunk path reads
+// the chunk dim from ShapeOf rather than assuming a static size, so a
+// statically-zero batch is just another chunk size -- it must still take the
+// chunk path rather than mis-dispatching to the single-token Gather-K one.
+TEST(MoEGatherRewriteTest, RewritesZeroBatchViaChunkPath) {
   auto model = BuildDenseMoeGraph(/*k=*/2, SequentialExpertIds(4), /*batch=*/0);
 
   NpuOptimizer().SetCastIntegerSignToFloat(false).SetEnableMoeGather(true).Run(
       model);
 
-  EXPECT_EQ(CountOps<ov::op::v1::Equal>(model), 4u);
-  EXPECT_EQ(CountOps<ov::op::v8::Gather>(model), 0u);
+  EXPECT_EQ(CountOps<ov::op::v1::Equal>(model), 0u);
+  EXPECT_EQ(CountOps<ov::op::v8::Gather>(model), 1u);
+}
+
+// Mixed shapes: the NPUW config picked from the classification is
+// compile-wide, so rewriting only the layers of one shape would leave that
+// config wrong for the rest. Both layers must be left dense instead.
+TEST(MoEGatherRewriteTest, LeavesGraphDenseWhenLayersDisagreeOnChunkShape) {
+  auto single = BuildDenseMoeGraph(/*k=*/2, SequentialExpertIds(4),
+                                   /*batch=*/1);
+  auto multi = BuildDenseMoeGraph(/*k=*/2, SequentialExpertIds(4),
+                                  /*batch=*/2);
+  ov::ResultVector results = single->get_results();
+  for (const auto& r : multi->get_results()) results.push_back(r);
+  ov::ParameterVector params = single->get_parameters();
+  for (const auto& p : multi->get_parameters()) params.push_back(p);
+  auto mixed = std::make_shared<ov::Model>(results, params, "mixed_moe");
+
+  const auto result = NpuOptimizer()
+                          .SetCastIntegerSignToFloat(false)
+                          .SetEnableMoeGather(true)
+                          .Run(mixed);
+
+  // Neither layer was touched, and the verdict falls back to single-token.
+  EXPECT_EQ(CountOps<ov::op::v1::Equal>(mixed), 8u);
+  EXPECT_EQ(CountOps<ov::op::v8::Gather>(mixed), 0u);
+  EXPECT_FALSE(result.moe_is_multi_token_chunk);
+}
+
+// Regression test for the Run() Result plumbing: NpuOptimizer::Run() must
+// surface MoEGatherRewrite's is_multi_token_chunk() classification regardless
+// of which strategy actually rewrote the layer (see
+// RewritesPrefillShapedRouterViaChunkPath) -- classification happens before
+// the per-layer rewrite dispatch, not as a side effect of a successful
+// rewrite.
+TEST(NpuOptimizerRunResultTest, ReportsMultiTokenChunkForBatchGreaterThanOne) {
+  auto model = BuildDenseMoeGraph(/*k=*/2, SequentialExpertIds(4), /*batch=*/2);
+
+  auto result = NpuOptimizer()
+                    .SetCastIntegerSignToFloat(false)
+                    .SetEnableMoeGather(true)
+                    .Run(model);
+
+  EXPECT_TRUE(result.moe_is_multi_token_chunk);
+}
+
+TEST(NpuOptimizerRunResultTest, ReportsSingleTokenChunkForBatchOne) {
+  auto model = BuildDenseMoeGraph(/*k=*/2, SequentialExpertIds(4), /*batch=*/1);
+
+  auto result = NpuOptimizer()
+                    .SetCastIntegerSignToFloat(false)
+                    .SetEnableMoeGather(true)
+                    .Run(model);
+
+  EXPECT_FALSE(result.moe_is_multi_token_chunk);
+}
+
+TEST(NpuOptimizerRunResultTest, DefaultsToSingleTokenWhenMoeGatherDisabled) {
+  auto model = BuildDenseMoeGraph(/*k=*/2, SequentialExpertIds(4), /*batch=*/2);
+
+  auto result = NpuOptimizer().SetCastIntegerSignToFloat(false).Run(model);
+
+  EXPECT_FALSE(result.moe_is_multi_token_chunk);
 }
 
 // Runs |reference| and its MoEGatherRewrite-rewritten clone on identical
 // {hidden, logits} inputs and returns the max abs difference between their
-// outputs. Asserts the rewrite actually fired (Gather count == 4) so a silent
-// no-op rewrite can't masquerade as "numerically matches".
+// outputs. Asserts the rewrite actually fired (|expected_gathers|: 6 for the
+// single-token gather path, 1 for the chunk path's ShapeOf extraction) so a
+// silent no-op rewrite can't masquerade as "numerically matches".
 float MaxAbsDiffAfterRewrite(const std::shared_ptr<ov::Model>& reference,
-                             const ov::Tensor& hidden,
-                             const ov::Tensor& logits) {
+                             const ov::Tensor& hidden, const ov::Tensor& logits,
+                             size_t expected_gathers = 6u) {
   auto rewritten = reference->clone();
   NpuOptimizer().SetCastIntegerSignToFloat(false).SetEnableMoeGather(true).Run(
       rewritten);
-  EXPECT_EQ(CountOps<ov::op::v8::Gather>(rewritten), 4u)
+  EXPECT_EQ(CountOps<ov::op::v8::Gather>(rewritten), expected_gathers)
       << "rewrite did not fire";
 
   ov::Core core;
@@ -511,6 +580,27 @@ TEST(MoEGatherRewriteTest, NumericallyMatchesDenseComputation) {
 
   EXPECT_LT(MaxAbsDiffAfterRewrite(reference, hidden, logits), 1e-3f)
       << "gather-K rewrite diverges from dense masked-experts reference";
+}
+
+// The multi-token chunk rewrite (dense N-expert batched MatMul + scattered
+// [chunk,N] routing matrix) must reproduce the dense masked reference just as
+// the single-token gather path does. Op counts alone can't show this: the
+// chunk path introduces a whole new Tile/ScatterElementsUpdate/Transpose
+// chain whose only correctness evidence is the numbers.
+TEST(MoEGatherRewriteTest, ChunkPathNumericallyMatchesDenseComputation) {
+  auto reference =
+      BuildDenseMoeGraph(/*k=*/2, SequentialExpertIds(6), /*batch=*/3);
+
+  ov::Tensor hidden(ov::element::f32, ov::Shape{3, kMoeHiddenDim});
+  FillRandom(hidden, /*seed=*/3);
+  ov::Tensor logits(ov::element::f32, ov::Shape{3, 6});
+  FillRandom(logits, /*seed=*/4);
+
+  EXPECT_LT(MaxAbsDiffAfterRewrite(reference, hidden, logits,
+                                   /*expected_gathers=*/1u),
+            1e-3f)
+      << "multi-token chunk rewrite diverges from dense masked-experts "
+         "reference";
 }
 
 TEST(MoEGatherRewriteTest, NumericallyMatchesWithAllZeroInputs) {
@@ -569,7 +659,7 @@ TEST(MoEGatherRewriteTest, GatherSelectsCorrectExpertRows) {
 
   NpuOptimizer().SetCastIntegerSignToFloat(false).SetEnableMoeGather(true).Run(
       model);
-  ASSERT_EQ(CountOps<ov::op::v8::Gather>(model), 4u) << "rewrite did not fire";
+  ASSERT_EQ(CountOps<ov::op::v8::Gather>(model), 6u) << "rewrite did not fire";
 
   // logits chosen so experts 1 and 3 (values 5.0, 8.0) are the clear top-2;
   // experts 0 and 2 must be excluded from the result.
@@ -614,6 +704,237 @@ TEST(MoEGatherRewriteTest, GatherSelectsCorrectExpertRows) {
            "contribution of experts {1,3} — the gather may be selecting "
            "the wrong expert rows";
   }
+}
+
+// Builds Add(Multiply(x, shared), shared): one |num_elems|-element Constant
+// feeding two consumers, which is what SplitSharedConstants targets.
+std::shared_ptr<ov::Model> BuildTwoConsumerConstantModel(size_t num_elems) {
+  auto x = std::make_shared<ov::op::v0::Parameter>(ov::element::f32,
+                                                   ov::Shape{num_elems});
+  std::vector<float> values(num_elems, 2.0f);
+  auto shared = ov::op::v0::Constant::create(ov::element::f32,
+                                             ov::Shape{num_elems}, values);
+  auto mul = std::make_shared<ov::op::v1::Multiply>(x, shared);
+  auto add = std::make_shared<ov::op::v1::Add>(mul, shared);
+  return std::make_shared<ov::Model>(ov::OutputVector{add->output(0)},
+                                     ov::ParameterVector{x}, "two_consumer");
+}
+
+// Each consumer ends up on its own Constant node, so downstream passes (and
+// NPUW's per-subgraph weight handling) see independent weights rather than
+// one node shared across unrelated consumers.
+TEST(SplitSharedConstantsTest, GivesEachConsumerItsOwnConstant) {
+  auto model = BuildTwoConsumerConstantModel(256);
+  ASSERT_EQ(CountOps<ov::op::v0::Constant>(model), 1u);
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetSplitSharedConstants(true)
+      .Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v0::Constant>(model), 2u);
+}
+
+// Disabled by default: without the opt-in the graph must be left alone.
+TEST(SplitSharedConstantsTest, DoesNothingWhenDisabled) {
+  auto model = BuildTwoConsumerConstantModel(256);
+
+  NpuOptimizer().SetCastIntegerSignToFloat(false).Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v0::Constant>(model), 1u);
+}
+
+// Only 256- and 512-element Constants are split today (see
+// SplitSharedConstants); any other size is left shared.
+TEST(SplitSharedConstantsTest, LeavesOtherSizesShared) {
+  auto model = BuildTwoConsumerConstantModel(128);
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetSplitSharedConstants(true)
+      .Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v0::Constant>(model), 1u);
+}
+
+// A single-consumer Constant is already private, so it must not be cloned.
+TEST(SplitSharedConstantsTest, LeavesSingleConsumerConstantAlone) {
+  auto x =
+      std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{256});
+  std::vector<float> values(256, 2.0f);
+  auto only =
+      ov::op::v0::Constant::create(ov::element::f32, ov::Shape{256}, values);
+  auto mul = std::make_shared<ov::op::v1::Multiply>(x, only);
+  auto model = std::make_shared<ov::Model>(
+      ov::OutputVector{mul->output(0)}, ov::ParameterVector{x}, "one_consumer");
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetSplitSharedConstants(true)
+      .Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v0::Constant>(model), 1u);
+}
+
+
+// Builds the "GQA ratio folded into the sequence axis" attention the LiteRT
+// generative export emits for a |hkv|-KV-head / |hkv * r|-query-head layer:
+// Q is reshaped so the r query-head groups stack along the sequence axis, and
+// the head-invariant additive mask is Concat-replicated r times to line back
+// up with it. This is what UnfoldGqaSequenceFold matches.
+std::shared_ptr<ov::Model> BuildGqaSequenceFoldAttention(int64_t hkv, int64_t r,
+                                                         int64_t s,
+                                                         int64_t kv_len,
+                                                         int64_t head_dim) {
+  using ov::op::v0::Constant;
+  using ov::op::v0::Parameter;
+  const int64_t hq = hkv * r;
+  const auto f = ov::element::f32;
+  auto dim = [](int64_t v) { return static_cast<size_t>(v); };
+
+  auto q = std::make_shared<Parameter>(
+      f, ov::Shape{1, dim(hq), dim(s), dim(head_dim)});
+  auto k = std::make_shared<Parameter>(
+      f, ov::Shape{1, dim(hkv), dim(kv_len), dim(head_dim)});
+  auto v = std::make_shared<Parameter>(
+      f, ov::Shape{1, dim(hkv), dim(kv_len), dim(head_dim)});
+  auto mask =
+      std::make_shared<Parameter>(f, ov::Shape{1, 1, dim(s), dim(kv_len)});
+
+  auto fold_shape =
+      Constant::create(ov::element::i64, ov::Shape{4},
+                       std::vector<int64_t>{1, hkv, s * r, head_dim});
+  auto q_folded = std::make_shared<ov::op::v1::Reshape>(q, fold_shape,
+                                                        /*special_zero=*/false);
+
+  ov::OutputVector mask_copies(static_cast<size_t>(r), mask->output(0));
+  auto mask_tiled =
+      std::make_shared<ov::op::v0::Concat>(mask_copies, /*axis=*/2);
+
+  auto scale = Constant::create(f, ov::Shape{}, std::vector<float>{1.0f});
+  auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
+      ov::OutputVector{q_folded, k, v, mask_tiled, scale}, /*causal=*/false);
+
+  auto unfold_shape = Constant::create(
+      ov::element::i64, ov::Shape{4}, std::vector<int64_t>{1, hq, s, head_dim});
+  auto unfolded = std::make_shared<ov::op::v1::Reshape>(sdpa, unfold_shape,
+                                                        /*special_zero=*/false);
+
+  return std::make_shared<ov::Model>(ov::OutputVector{unfolded->output(0)},
+                                     ov::ParameterVector{q, k, v, mask},
+                                     "gqa_sequence_fold");
+}
+
+// The rewrite is only worth anything if it is numerically a no-op. Both forms
+// must map query head h to KV head h / r; this pins that down end to end,
+// along with the head-parallel shapes the rewrite is supposed to produce.
+TEST(UnfoldGqaSequenceFoldTest, NumericallyMatchesSequenceFoldedForm) {
+  for (const int64_t r : {2, 4}) {
+    auto reference = BuildGqaSequenceFoldAttention(/*hkv=*/2, r, /*s=*/3,
+                                                   /*kv_len=*/6,
+                                                   /*head_dim=*/4);
+    auto rewritten = reference->clone();
+
+    NpuOptimizer()
+        .SetCastIntegerSignToFloat(false)
+        .SetUnfoldGqaSequenceFold(true)
+        .Run(rewritten);
+    ASSERT_EQ(CountOps<ov::op::v3::Broadcast>(rewritten), 2u)
+        << "rewrite did not fire for r=" << r;
+
+    // The mask tile is gone and SDPA now runs head-parallel: Q keeps all
+    // hq = hkv * r heads at the original sequence length, K/V are broadcast
+    // up to match, and the mask is back to its untiled length.
+    EXPECT_EQ(CountOps<ov::op::v0::Concat>(rewritten), 0u);
+    const size_t hq = 2 * static_cast<size_t>(r);
+    auto sdpa = FindSdpa(rewritten);
+    ASSERT_NE(sdpa, nullptr);
+    EXPECT_EQ(sdpa->get_input_shape(0), (ov::Shape{1, hq, 3, 4}));
+    EXPECT_EQ(sdpa->get_input_shape(1), (ov::Shape{1, hq, 6, 4}));
+    EXPECT_EQ(sdpa->get_input_shape(2), (ov::Shape{1, hq, 6, 4}));
+    EXPECT_EQ(sdpa->get_input_shape(3), (ov::Shape{1, 1, 3, 6}));
+
+    ov::Core core;
+    auto ref_compiled = core.compile_model(reference, "CPU");
+    auto new_compiled = core.compile_model(rewritten, "CPU");
+    auto ref_req = ref_compiled.create_infer_request();
+    auto new_req = new_compiled.create_infer_request();
+
+    // Inputs are ordered as constructed: {q, k, v, mask}.
+    const size_t num_inputs = reference->inputs().size();
+    ASSERT_EQ(num_inputs, rewritten->inputs().size());
+    for (size_t i = 0; i < num_inputs; ++i) {
+      const auto& port = reference->input(i);
+      ov::Tensor t(port.get_element_type(), port.get_shape());
+      FillRandom(t, static_cast<uint32_t>(i + 1));
+      ref_req.set_input_tensor(i, t);
+      new_req.set_input_tensor(i, t);
+    }
+
+    ref_req.infer();
+    new_req.infer();
+
+    auto ref_out = ref_req.get_output_tensor(0);
+    auto new_out = new_req.get_output_tensor(0);
+    ASSERT_EQ(ref_out.get_shape(), new_out.get_shape());
+    const auto* ref_data = ref_out.data<float>();
+    const auto* new_data = new_out.data<float>();
+    for (size_t i = 0; i < ref_out.get_size(); ++i) {
+      EXPECT_NEAR(new_data[i], ref_data[i],
+                  std::abs(ref_data[i]) * 1e-5f + 1e-6f)
+          << "output[" << i << "] diverges for r=" << r
+          << " -- the two forms disagree on which KV head a query head reads";
+    }
+  }
+}
+
+// Disabled by default: without the opt-in the graph must be left alone.
+TEST(UnfoldGqaSequenceFoldTest, DoesNothingWhenDisabled) {
+  auto model = BuildGqaSequenceFoldAttention(/*hkv=*/2, /*r=*/4, /*s=*/3,
+                                             /*kv_len=*/6, /*head_dim=*/4);
+
+  NpuOptimizer().SetCastIntegerSignToFloat(false).Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v0::Concat>(model), 1u);
+  EXPECT_EQ(CountOps<ov::op::v3::Broadcast>(model), 0u);
+}
+
+// A mask built from genuinely different per-group slices is NOT a replicated
+// head-invariant mask, so folding it back would change the math. Leave it.
+TEST(UnfoldGqaSequenceFoldTest, LeavesNonReplicatedMaskAlone) {
+  using ov::op::v0::Constant;
+  using ov::op::v0::Parameter;
+  const auto f = ov::element::f32;
+  auto q = std::make_shared<Parameter>(f, ov::Shape{1, 4, 3, 4});
+  auto k = std::make_shared<Parameter>(f, ov::Shape{1, 2, 6, 4});
+  auto v = std::make_shared<Parameter>(f, ov::Shape{1, 2, 6, 4});
+  // Two independent mask halves rather than one tensor repeated twice.
+  auto mask_a = std::make_shared<Parameter>(f, ov::Shape{1, 1, 3, 6});
+  auto mask_b = std::make_shared<Parameter>(f, ov::Shape{1, 1, 3, 6});
+
+  auto fold_shape = Constant::create(ov::element::i64, ov::Shape{4},
+                                     std::vector<int64_t>{1, 2, 6, 4});
+  auto q_folded = std::make_shared<ov::op::v1::Reshape>(q, fold_shape, false);
+  auto mask = std::make_shared<ov::op::v0::Concat>(
+      ov::OutputVector{mask_a, mask_b}, /*axis=*/2);
+  auto scale = Constant::create(f, ov::Shape{}, std::vector<float>{1.0f});
+  auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(
+      ov::OutputVector{q_folded, k, v, mask, scale}, false);
+  auto unfold_shape = Constant::create(ov::element::i64, ov::Shape{4},
+                                       std::vector<int64_t>{1, 4, 3, 4});
+  auto unfolded =
+      std::make_shared<ov::op::v1::Reshape>(sdpa, unfold_shape, false);
+  auto model = std::make_shared<ov::Model>(
+      ov::OutputVector{unfolded->output(0)},
+      ov::ParameterVector{q, k, v, mask_a, mask_b}, "distinct_mask_halves");
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetUnfoldGqaSequenceFold(true)
+      .Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v0::Concat>(model), 1u);
+  EXPECT_EQ(CountOps<ov::op::v3::Broadcast>(model), 0u);
 }
 
 }  // namespace

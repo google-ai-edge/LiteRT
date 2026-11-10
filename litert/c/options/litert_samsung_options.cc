@@ -16,9 +16,9 @@
 
 #include <cstring>
 #include <optional>
-#include <sstream>
 #include <string>
 
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"
@@ -93,17 +93,18 @@ LiteRtStatus LrtGetOpaqueSamsungOptionsData(LrtSamsungOptions options,
 
   *identifier = LrtSamsungOptionsGetIdentifier();
 
-  std::ostringstream toml;
+  std::string toml_str;
   if (options->enable_large_model_support.has_value()) {
-    toml << "enable_large_model_support = "
-         << (*options->enable_large_model_support ? "true" : "false") << "\n";
+    absl::StrAppend(&toml_str, "enable_large_model_support = ",
+                    *options->enable_large_model_support ? "true" : "false",
+                    "\n");
   }
 
   if (options->soc_model.has_value()) {
-    toml << "samsung_soc_model = \"" << *options->soc_model << "\"\n";
+    absl::StrAppend(&toml_str, "samsung_soc_model = \"", *options->soc_model,
+                    "\"\n");
   }
 
-  std::string toml_str = toml.str();
   *payload = new char[toml_str.size() + 1];
   memcpy(*payload, toml_str.c_str(), toml_str.size() + 1);
   *payload_deleter = [](void* p) { delete[] static_cast<char*>(p); };

@@ -14,6 +14,7 @@ target_sources(qnn_transformation
         mask.cc
         mha_to_sha.cc
         kv_swapped_attn.cc
+        relu_min_max.cc
         rotation_quant.cc
 )
 

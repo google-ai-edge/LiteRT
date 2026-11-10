@@ -34,6 +34,8 @@ limitations under the License.
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_webgpu_types.h"
 #include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
@@ -41,6 +43,7 @@ limitations under the License.
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
@@ -86,7 +89,12 @@ absl::StatusOr<HardwareBufferDescriptor> NegotiatePortDescriptor(
 
     auto new_harmonized_or = BoundaryLayoutNegotiator::HarmonizeStageBoundary(
         harmonized, *cons_desc_or);
-    if (!new_harmonized_or.ok()) return new_harmonized_or.status();
+    if (!new_harmonized_or.ok()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Connecting '", from_stage->Name(), "'.'", output_name, "' to '",
+          consumer.to_stage->Name(), "'.'", consumer.input_name,
+          "': ", new_harmonized_or.status().message()));
+    }
     harmonized = *new_harmonized_or;
   }
   return harmonized;
@@ -567,7 +575,109 @@ std::shared_ptr<LitertBuffer> CompiledModelStage::GetOutputBuffer(
   return (it != output_buffers_.end()) ? it->second : nullptr;
 }
 
+namespace {
+
+absl::StatusOr<litert::TensorBuffer> ReinterpretBufferIfNeeded(
+    const litert::Environment& env,
+    const std::shared_ptr<LitertBuffer>& litert_buf,
+    const litert::RankedTensorType& expected_type,
+    absl::string_view tensor_name) {
+  auto dup = litert_buf->tensor_buffer().Duplicate();
+  if (!dup.HasValue()) {
+    return absl::InternalError(
+        absl::StrCat("Failed to duplicate buffer '", tensor_name,
+                     "': ", dup.Error().Message()));
+  }
+  if (dup->HasType(expected_type)) {
+    return std::move(*dup);
+  }
+
+  auto btype_or = litert_buf->BufferType();
+  if (!btype_or.ok()) return btype_or.status();
+  auto btype = *btype_or;
+
+  auto size_or = litert_buf->Size();
+  if (!size_or.ok()) return size_or.status();
+  auto size = *size_or;
+
+  if (btype == litert::TensorBufferType::kHostMemory) {
+    auto span = litert_buf->LockMutable();
+    auto view_or = litert::TensorBuffer::CreateFromHostMemory(
+        env, expected_type, span.data(), size);
+    if (!view_or.HasValue()) {
+      return absl::InternalError(absl::StrCat(
+          "Failed to create host buffer view with expected shape for '",
+          tensor_name, "': ", view_or.Error().Message()));
+    }
+    return std::move(*view_or);
+  }
+#if LITERT_HAS_OPENCL_SUPPORT
+  if (litert::IsOpenClMemory(btype)) {
+    auto cl_mem_or = litert_buf->tensor_buffer().GetOpenClMemory();
+    if (!cl_mem_or.HasValue()) {
+      return absl::InternalError(absl::StrCat(
+          "Failed to get OpenCL memory for '", tensor_name, "'"));
+    }
+    auto view_or = litert::TensorBuffer::CreateFromClBuffer(
+        env, expected_type, btype, *cl_mem_or, size);
+    if (!view_or.HasValue()) {
+      return absl::InternalError(absl::StrCat(
+          "Failed to create OpenCL buffer view with expected shape for '",
+          tensor_name, "': ", view_or.Error().Message()));
+    }
+    return std::move(*view_or);
+  }
+#endif
+#if LITERT_HAS_AHWB_SUPPORT
+  if (btype == litert::TensorBufferType::kAhwb) {
+    auto ahwb_or = litert_buf->tensor_buffer().GetAhwb();
+    if (!ahwb_or.HasValue()) {
+      return absl::InternalError(
+          absl::StrCat("Failed to get AHWB memory for '", tensor_name, "'"));
+    }
+    auto view_or =
+        litert::TensorBuffer::CreateFromAhwb(env, expected_type, *ahwb_or, 0);
+    if (!view_or.HasValue()) {
+      return absl::InternalError(absl::StrCat(
+          "Failed to create AHWB buffer view with expected shape for '",
+          tensor_name, "': ", view_or.Error().Message()));
+    }
+    return std::move(*view_or);
+  }
+#endif
+#if LITERT_HAS_WEBGPU_SUPPORT
+  if (litert::IsWebGpuMemory(btype)) {
+    auto wgpu_or = litert_buf->tensor_buffer().GetWebGpuBuffer();
+    if (!wgpu_or.HasValue()) {
+      return absl::InternalError(absl::StrCat(
+          "Failed to get WebGPU memory for '", tensor_name, "'"));
+    }
+    auto view_or = litert::TensorBuffer::CreateFromWebGpuBuffer(
+        env, expected_type, btype, static_cast<LiteRtWGPUBuffer>(*wgpu_or),
+        size);
+    if (!view_or.HasValue()) {
+      return absl::InternalError(absl::StrCat(
+          "Failed to create WebGPU buffer view with expected shape for '",
+          tensor_name, "': ", view_or.Error().Message()));
+    }
+    return std::move(*view_or);
+  }
+#endif
+
+  return std::move(*dup);
+}
+
+}  // namespace
+
 absl::Status CompiledModelStage::Run() {
+  if (!env_) {
+    auto env_or = litert::Environment::Create({});
+    if (!env_or.HasValue()) {
+      return absl::InternalError("Failed to create LiteRT environment");
+    }
+    env_ = std::make_shared<litert::Environment>(std::move(*env_or));
+  }
+
   std::vector<litert::TensorBuffer> in_bufs;
   in_bufs.reserve(input_names_.size());
   for (const auto& in_name : input_names_) {
@@ -577,15 +687,11 @@ absl::Status CompiledModelStage::Run() {
           absl::StrCat("Stage '", name_, "': required input buffer '", in_name,
                        "' is not bound."));
     }
-    // Note: LiteRT TensorBuffer inherits from BaseHandle (move-only wrapper
-    // around unique_ptr). Duplicate() creates an additional reference handle.
-    auto dup = it->second->tensor_buffer().Duplicate();
-    if (!dup.HasValue()) {
-      return absl::InternalError(
-          absl::StrCat("Failed to duplicate input buffer '", in_name,
-                       "': ", dup.Error().Message()));
-    }
-    in_bufs.push_back(std::move(*dup));
+    const auto& desc = input_descriptors_.at(in_name);
+    auto buf_or = ReinterpretBufferIfNeeded(*env_, it->second,
+                                            desc.ToRankedTensorType(), in_name);
+    if (!buf_or.ok()) return buf_or.status();
+    in_bufs.push_back(std::move(*buf_or));
   }
 
   std::vector<litert::TensorBuffer> out_bufs;
@@ -595,13 +701,6 @@ absl::Status CompiledModelStage::Run() {
     auto it = output_buffers_.find(out_name);
     if (it == output_buffers_.end() || it->second == nullptr) {
       const auto& desc = output_descriptors_.at(out_name);
-      if (!env_) {
-        auto env_or = litert::Environment::Create({});
-        if (!env_or.HasValue()) {
-          return absl::InternalError("Failed to create LiteRT environment");
-        }
-        env_ = std::make_shared<litert::Environment>(std::move(*env_or));
-      }
       auto buf_or = LitertBuffer::CreateManaged(env_, desc.buffer_type,
                                                 desc.ToRankedTensorType(),
                                                 desc.PackedBytes());
@@ -617,13 +716,12 @@ absl::Status CompiledModelStage::Run() {
     } else {
       buf = it->second;
     }
-    auto dup = buf->tensor_buffer().Duplicate();
-    if (!dup.HasValue()) {
-      return absl::InternalError(
-          absl::StrCat("Failed to duplicate output buffer '", out_name,
-                       "': ", dup.Error().Message()));
-    }
-    out_bufs.push_back(std::move(*dup));
+    const auto& desc = output_descriptors_.at(out_name);
+    auto buf_or = ReinterpretBufferIfNeeded(*env_, buf,
+                                            desc.ToRankedTensorType(),
+                                            out_name);
+    if (!buf_or.ok()) return buf_or.status();
+    out_bufs.push_back(std::move(*buf_or));
   }
 
   auto run_res = compiled_model_.Run(
@@ -650,9 +748,28 @@ BoundaryLayoutNegotiator::HarmonizeStageBoundary(
   HardwareBufferDescriptor harmonized;
 
   // 1. Data Type Validation
+  bool is_fp_compat =
+      ((producer_desc.element_type == litert::ElementType::Float16 &&
+        consumer_desc.element_type == litert::ElementType::Float32) ||
+       (producer_desc.element_type == litert::ElementType::Float32 &&
+        consumer_desc.element_type == litert::ElementType::Float16)) &&
+      (producer_desc.buffer_type ==
+           litert::TensorBufferType::kOpenClTextureFp16 ||
+       consumer_desc.buffer_type ==
+           litert::TensorBufferType::kOpenClTextureFp16 ||
+       producer_desc.buffer_type ==
+           litert::TensorBufferType::kOpenClBufferFp16 ||
+       consumer_desc.buffer_type ==
+           litert::TensorBufferType::kOpenClBufferFp16 ||
+       producer_desc.buffer_type ==
+           litert::TensorBufferType::kOpenClImageBufferFp16 ||
+       consumer_desc.buffer_type ==
+           litert::TensorBufferType::kOpenClImageBufferFp16);
+
   if (producer_desc.element_type != litert::ElementType::None &&
       consumer_desc.element_type != litert::ElementType::None &&
-      producer_desc.element_type != consumer_desc.element_type) {
+      producer_desc.element_type != consumer_desc.element_type &&
+      !is_fp_compat) {
     return absl::InvalidArgumentError(absl::StrCat(
         "Type mismatch across stage boundary: producer outputs type ",
         static_cast<int>(producer_desc.element_type),
@@ -660,9 +777,11 @@ BoundaryLayoutNegotiator::HarmonizeStageBoundary(
         static_cast<int>(consumer_desc.element_type)));
   }
   harmonized.element_type =
-      (producer_desc.element_type != litert::ElementType::None)
-          ? producer_desc.element_type
-          : consumer_desc.element_type;
+      is_fp_compat
+          ? litert::ElementType::Float16
+          : ((producer_desc.element_type != litert::ElementType::None)
+                 ? producer_desc.element_type
+                 : consumer_desc.element_type);
 
   // 2. Shape Validation (allow differences only in singleton dimensions)
   auto NumElements = [](const std::vector<int32_t>& s) -> int64_t {
@@ -738,7 +857,9 @@ BoundaryLayoutNegotiator::HarmonizeStageBoundary(
   // Preserve producer shape if available, otherwise fallback to consumer.
   // When ranks differ due to singleton dimensions (e.g. {1, 128} vs {128}),
   // total byte volume and element ordering are identical, making zero-copy
-  // reinterpretation safe.
+  // reinterpretation safe. Preserving the producer shape ensures existing
+  // CPU-to-CPU chains are not negatively affected by receiving squeezed shapes
+  // (e.g., Conv2D ops requiring specific 4D ranks).
   harmonized.shape =
       !producer_desc.shape.empty() ? producer_desc.shape : consumer_desc.shape;
 
@@ -758,6 +879,16 @@ BoundaryLayoutNegotiator::HarmonizeStageBoundary(
   if (producer_desc.buffer_type == litert::TensorBufferType::kAhwb ||
       consumer_desc.buffer_type == litert::TensorBufferType::kAhwb) {
     harmonized.buffer_type = litert::TensorBufferType::kAhwb;
+  } else if (producer_desc.buffer_type ==
+                 litert::TensorBufferType::kOpenClTexture ||
+             producer_desc.buffer_type ==
+                 litert::TensorBufferType::kOpenClTextureFp16) {
+    harmonized.buffer_type = producer_desc.buffer_type;
+  } else if (consumer_desc.buffer_type ==
+                 litert::TensorBufferType::kOpenClTexture ||
+             consumer_desc.buffer_type ==
+                 litert::TensorBufferType::kOpenClTextureFp16) {
+    harmonized.buffer_type = consumer_desc.buffer_type;
   } else if (producer_desc.buffer_type ==
                  litert::TensorBufferType::kOpenClBuffer ||
              consumer_desc.buffer_type ==
@@ -968,8 +1099,8 @@ absl::StatusOr<ModelChain> ModelChain::Builder::Build() {
 
     stage_negotiated_outputs[from_stage_name][output_name] = harmonized;
     for (const auto& consumer : consumers) {
-      stage_negotiated_inputs[consumer.to_stage->Name()][consumer.input_name] =
-          harmonized;
+      stage_negotiated_inputs[consumer.to_stage->Name()]
+                             [consumer.input_name] = harmonized;
     }
   }
 

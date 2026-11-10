@@ -24,7 +24,7 @@ concurrency:
 jobs:
   clang-tidy:
     name: "clang-tidy"
-    # Use GitHub-hosted runner to avoid consuming self-hosted linux-x86-n2-16
+    # Use GitHub-hosted runner to avoid consuming self-hosted linux-x86-n4-16
     # runner pool capacity, since clang-tidy only inspects changed PR files.
     runs-on: ubuntu-latest
     env:
@@ -60,6 +60,17 @@ jobs:
             -DLITERT_ENABLE_GPU=OFF \
             -DLITERT_ENABLE_NPU=OFF
           test -f "${CMAKE_BUILD_DIR}/compile_commands.json"
+
+      # clang-tidy only consumes compile_commands.json and never runs the
+      # build, so headers produced by build-time custom commands (e.g. the
+      # flatc-generated tflite/schema/mutable/schema_generated.h used by
+      # tensor/backends/tflite) would otherwise be missing and surface as
+      # clang-diagnostic-error "file not found" in every translation unit
+      # that transitively includes them.
+      - name: Generate FlatBuffers schema headers
+        run: |
+          cmake --build "${CMAKE_BUILD_DIR}" --target tflite_mutable_schema_gen
+          test -f "${CMAKE_BUILD_DIR}/core/model/generated/include/tflite/schema/mutable/schema_generated.h"
 
       - name: Select files for clang-tidy
         id: select-files
@@ -122,11 +133,12 @@ jobs:
           for source in changed:
             if not source.startswith("litert/"):
               continue
+            if "schema" in Path(source).parts:
+              continue
             if source in compilable:
               selected.append(source)
             elif Path(source).suffix in header_suffixes:
               # For headers and .inc files, find compilable translation units that include them.
-              source_filename = Path(source).name
               including_sources = []
               for comp_path in compilable:
                 full_comp_path = repo / comp_path
@@ -136,7 +148,7 @@ jobs:
                   content = full_comp_path.read_text(errors="ignore")
                 except Exception:
                   continue
-                if source_filename in content:
+                if source in content:
                   including_sources.append(comp_path)
                   if len(including_sources) >= 3:
                     break
@@ -175,5 +187,5 @@ jobs:
             clang-tidy-18 \
             -p "${CMAKE_BUILD_DIR}" \
             --checks="${CLANG_TIDY_CHECKS}" \
-            --header-filter='.*litert/.*' \
+            --header-filter='.*litert/[^.].*' \
             < /tmp/clang_tidy_files.txt

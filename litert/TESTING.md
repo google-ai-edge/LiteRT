@@ -143,8 +143,8 @@ reporting.
 | `--csv` | `std::string` | File path to save the detailed report in CSV format. |
 | `--dump_report` | `bool` | Whether to dump the entire report details directly to the user's console output. |
 | `--data_seed` | std::optional&lt;int&gt; | A single seed for global data generation. |
-| `--do_register` | std::vector&lt;std::string&gt; | Regex(es) for explicitly including specific tests (e.g., `*mobilenet*`). |
-| `--dont_register` | std::vector&lt;std::string&gt; | Regex(es) to exclude specific tests. |
+| `--do_register` | std::vector&lt;std::string&gt; | Regex(es) for explicitly including specific tests in registration (non-matching tests are omitted from registration). |
+| `--dont_register` | std::vector&lt;std::string&gt; | Regex(es) for skipping specific tests (matching tests are registered in GTest and marked `SKIPPED` for coverage tracking). |
 | `--extra_models` | std::vector&lt;std::string&gt; | Optional list of directories or model files to add to the test suite. |
 | `--limit` | `int32_t` | Limit the total number of tests registered and run. |
 | `--quiet` | `bool` | Minimize logging output during the test run. |

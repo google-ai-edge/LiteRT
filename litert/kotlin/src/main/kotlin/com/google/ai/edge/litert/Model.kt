@@ -17,6 +17,7 @@
 package com.google.ai.edge.litert
 
 import android.content.res.AssetManager
+import androidx.annotation.VisibleForTesting
 
 /** The type of a tensor, including its element type and layout. */
 data class TensorType
@@ -31,6 +32,7 @@ constructor(val elementType: ElementType, val layout: Layout? = null) {
     INT8,
     BOOLEAN,
     INT64,
+    INT16,
   }
 
   /** Layout of a tensor. */
@@ -231,6 +233,9 @@ private constructor(
     val vtcmSize: Int? = null,
     val numHvxThreads: Int? = null,
     val optimizationLevel: OptimizationLevel? = null,
+    val htpDlbc: Boolean? = null,
+    val htpDlbcWeights: Boolean? = null,
+    val graphPriority: GraphPriority? = null,
   ) {
     /** Log level for Qualcomm options. */
     enum class LogLevel constructor(val value: Int) {
@@ -272,6 +277,15 @@ private constructor(
       HTP_OPTIMIZE_FOR_INFERENCE_O3(2),
     }
 
+    /** Graph priority for Qualcomm options. */
+    enum class GraphPriority constructor(val value: Int) {
+      DEFAULT(0),
+      LOW(1),
+      NORMAL(2),
+      NORMAL_HIGH(3),
+      HIGH(4),
+    }
+
     // Keys for passing the Qualcomm options to the native layer.
     internal enum class Key constructor(val value: Int) {
       LOG_LEVEL(0),
@@ -288,6 +302,9 @@ private constructor(
       VTCM_SIZE(11),
       NUM_HVX_THREADS(12),
       OPTIMIZATION_LEVEL(13),
+      HTP_DLBC(14),
+      HTP_DLBC_WEIGHTS(15),
+      GRAPH_PRIORITY(16),
     }
 
     // Converts the options to a map, with all values converted to strings.
@@ -307,6 +324,12 @@ private constructor(
       }
       if (useFoldRelu != null) {
         map[Key.USE_FOLD_RELU] = useFoldRelu.toString()
+      }
+      if (htpDlbc != null) {
+        map[Key.HTP_DLBC] = htpDlbc.toString()
+      }
+      if (htpDlbcWeights != null) {
+        map[Key.HTP_DLBC_WEIGHTS] = htpDlbcWeights.toString()
       }
       if (htpPerformanceMode != null) {
         map[Key.HTP_PERFORMANCE_MODE] = htpPerformanceMode.value.toString()
@@ -329,23 +352,178 @@ private constructor(
       if (optimizationLevel != null) {
         map[Key.OPTIMIZATION_LEVEL] = optimizationLevel.value.toString()
       }
+      if (graphPriority != null) {
+        map[Key.GRAPH_PRIORITY] = graphPriority.value.toString()
+      }
       return map.toMap()
     }
   }
 
+  /**
+   * Options to configure the LiteRT compiler plugin when compiling a model.
+   *
+   * Input shape overrides refine dynamic input dimensions before on-device (JIT) compilation. For
+   * each signature, use exactly one addressing mode (positional, tensor name, or signature input
+   * name); for the named modes, the last override for a given name wins. Each dimension must be
+   * positive, or `-1` to keep it dynamic.
+   *
+   * Note: Overrides are applied only during on-device (JIT) compilation by a compiler plugin, which
+   * requires a compiler plugin library directory in the [Environment] and a model that is not
+   * pre-compiled. Otherwise (e.g. CPU-only execution), they are ignored. Dimensions are validated
+   * when an override is added, names and signature keys when [CompiledModel.create] is called, and
+   * addressing modes only during compilation.
+   *
+   * The overrides are copied when [CompiledModel.create] is called, so modifying this object
+   * afterwards does not affect already created models.
+   */
+  class CompilerOptions {
+    internal enum class InputShapeMode constructor(val value: Int) {
+      POSITIONAL(0),
+      TENSOR(1),
+      SIGNATURE(2),
+    }
+
+    internal class InputShapeOverride(
+      val mode: InputShapeMode,
+      val signature: String,
+      val name: String,
+      val dimensions: List<Int>,
+    )
+
+    internal val inputShapeOverrides = mutableListOf<InputShapeOverride>()
+
+    /**
+     * Appends a positional input shape override for [signature]. Call once per input, in subgraph
+     * input order.
+     *
+     * @param dimensions Target dimensions for the input (use an empty list for a 0-D scalar, or
+     *   `-1` for dimensions that should remain dynamic).
+     * @param signature Target signature key, or `""` for the default signature.
+     * @return This [CompilerOptions] instance for chaining.
+     * @throws IllegalArgumentException if any dimension is neither positive nor `-1`.
+     */
+    @JvmOverloads
+    fun addPositionalInputShape(dimensions: List<Int>, signature: String = ""): CompilerOptions {
+      inputShapeOverrides.add(
+        InputShapeOverride(InputShapeMode.POSITIONAL, signature, "", validated(dimensions))
+      )
+      return this
+    }
+
+    /**
+     * Appends an input shape override addressed by internal tensor name in [signature]'s subgraph.
+     *
+     * @param tensorName Internal graph tensor name of the subgraph input.
+     * @param dimensions Target dimensions for the input (use an empty list for a 0-D scalar, or
+     *   `-1` for dimensions that should remain dynamic).
+     * @param signature Target signature key, or `""` for the default signature.
+     * @return This [CompilerOptions] instance for chaining.
+     * @throws IllegalArgumentException if any dimension is neither positive nor `-1`.
+     */
+    @JvmOverloads
+    fun addTensorInputShape(
+      tensorName: String,
+      dimensions: List<Int>,
+      signature: String = "",
+    ): CompilerOptions {
+      inputShapeOverrides.add(
+        InputShapeOverride(InputShapeMode.TENSOR, signature, tensorName, validated(dimensions))
+      )
+      return this
+    }
+
+    /**
+     * Appends an input shape override addressed by signature input name in [signature].
+     *
+     * @param inputName Signature input argument name.
+     * @param dimensions Target dimensions for the input (use an empty list for a 0-D scalar, or
+     *   `-1` for dimensions that should remain dynamic).
+     * @param signature Target signature key, or `""` for the default signature.
+     * @return This [CompilerOptions] instance for chaining.
+     * @throws IllegalArgumentException if any dimension is neither positive nor `-1`.
+     */
+    @JvmOverloads
+    fun addSignatureInputShape(
+      inputName: String,
+      dimensions: List<Int>,
+      signature: String = "",
+    ): CompilerOptions {
+      inputShapeOverrides.add(
+        InputShapeOverride(InputShapeMode.SIGNATURE, signature, inputName, validated(dimensions))
+      )
+      return this
+    }
+
+    // Returns a copy of the dimensions after checking that each one is positive or -1 (dynamic).
+    private fun validated(dimensions: List<Int>): List<Int> {
+      require(dimensions.all { it > 0 || it == -1 }) {
+        "Dimensions must be positive or -1 (dynamic), got $dimensions"
+      }
+      return dimensions.toList()
+    }
+  }
+
   /** Options to specify hardware acceleration for compiling a model. */
-  class Options constructor(internal val accelerators: Set<Accelerator>) {
+  class Options constructor(private val accelerators: Set<Accelerator>) {
 
     constructor(vararg accelerators: Accelerator) : this(setOf(*accelerators)) {}
+
+    private var autoFallbackToCpu: Boolean = true
 
     var cpuOptions: CpuOptions? = null
     var gpuOptions: GpuOptions? = null
     var qualcommOptions: QualcommOptions? = null
+    var compilerOptions: CompilerOptions? = null
+
+    /**
+     * Disables automatically fall back to CPU when the accelerator is not available. The default is
+     * true.
+     *
+     * @return The options.
+     * @suppress
+     */
+    @VisibleForTesting(VisibleForTesting.NONE)
+    fun disableAutoFallbackToCpu(): Options {
+      this.autoFallbackToCpu = false
+      return this
+    }
+
+    /**
+     * Returns the set of accelerators for the options.
+     *
+     * @return The set of accelerators.
+     * @suppress
+     */
+    @VisibleForTesting(VisibleForTesting.PACKAGE_PRIVATE)
+    fun getAccelerators(): Set<Accelerator> {
+      // If NPU is the only accelerator, CPU is added to support partially compiled models.
+      // TODO(niuchl): Document this behavior in the AOT flow.
+      if (autoFallbackToCpu && accelerators.size == 1 && accelerators.first() == Accelerator.NPU) {
+        return setOf(Accelerator.NPU, Accelerator.CPU)
+      }
+      return accelerators
+    }
 
     companion object {
       @JvmStatic val CPU = Options(Accelerator.CPU)
     }
   }
+
+  /**
+   * The duration of the most recent native inference execution, in nanoseconds, or a negative value
+   * (`-1L`) if this model has not been run yet or if the most recent run failed.
+   *
+   * The measured interval covers the native execution of the compiled model graph by the underlying
+   * runtime (and hardware accelerator synchronization), matching the timing scope of TFLite's
+   * `Interpreter.getLastNativeInferenceDurationNanoseconds()` API. It excludes buffer registration,
+   * host memory locking/mapping, tensor allocation, and data marshalling between Kotlin and native
+   * memory.
+   */
+  val lastNativeInferenceDurationNanoseconds: Long
+    get() {
+      assertNotDestroyed()
+      return nativeGetLastInferenceDurationNanoseconds(handle)
+    }
 
   @Throws(LiteRtException::class)
   fun createInputBuffer(inputName: String, signature: String = ""): TensorBuffer {
@@ -381,6 +559,22 @@ private constructor(
     assertNotDestroyed()
 
     return nativeGetOutputBufferRequirements(handle, signature, outputName)
+  }
+
+  @Throws(LiteRtException::class)
+  @JvmOverloads
+  fun resizeInputTensor(inputName: String, dimensions: IntArray, signature: String = "") {
+    assertNotDestroyed()
+
+    nativeResizeInputTensor(handle, signature, inputName, dimensions)
+  }
+
+  @Throws(LiteRtException::class)
+  @JvmOverloads
+  fun resizeInputTensorNonStrict(inputName: String, dimensions: IntArray, signature: String = "") {
+    assertNotDestroyed()
+
+    nativeResizeInputTensorNonStrict(handle, signature, inputName, dimensions)
   }
 
   @Throws(LiteRtException::class)
@@ -511,18 +705,13 @@ private constructor(
       envManaged: Boolean = optionalEnv == null,
     ): CompiledModel {
       val env = optionalEnv ?: Environment.create()
-      val accelerators =
-        if (options.accelerators.size == 1 && options.accelerators.first() == Accelerator.NPU) {
-          // If NPU is the only accelerator, CPU is added to support partially compiled models.
-          // TODO(niuchl): Document this behavior in the AOT flow.
-          setOf(Accelerator.NPU, Accelerator.CPU)
-        } else {
-          options.accelerators
-        }
+      val accelerators = options.getAccelerators()
 
       val cpuOptionsMap = options.cpuOptions?.toMap() ?: mapOf()
       val gpuOptionsMap = options.gpuOptions?.toMap() ?: mapOf()
       val qualcommOptionsMap = options.qualcommOptions?.toMap() ?: mapOf()
+      val inputShapeOverrides =
+        options.compilerOptions?.inputShapeOverrides?.toList() ?: emptyList()
       return CompiledModel(
         nativeCreateFromAsset(
           env.handle,
@@ -535,6 +724,10 @@ private constructor(
           gpuOptionsMap.values.toTypedArray(),
           qualcommOptionsMap.keys.map { it.value }.toIntArray(),
           qualcommOptionsMap.values.toTypedArray(),
+          inputShapeOverrides.map { it.mode.value }.toIntArray(),
+          inputShapeOverrides.map { it.signature }.toTypedArray(),
+          inputShapeOverrides.map { it.name }.toTypedArray(),
+          inputShapeOverrides.map { it.dimensions.toIntArray() }.toTypedArray(),
         ),
         env,
         envManaged,
@@ -548,18 +741,13 @@ private constructor(
       envManaged: Boolean = optionalEnv == null,
     ): CompiledModel {
       val env = optionalEnv ?: Environment.create()
-      val accelerators =
-        if (options.accelerators.size == 1 && options.accelerators.first() == Accelerator.NPU) {
-          // If NPU is the only accelerator, CPU is added to support partially compiled models.
-          // TODO(niuchl): Document this behavior in the AOT flow.
-          setOf(Accelerator.NPU, Accelerator.CPU)
-        } else {
-          options.accelerators
-        }
+      val accelerators = options.getAccelerators()
 
       val cpuOptionsMap = options.cpuOptions?.toMap() ?: mapOf()
       val gpuOptionsMap = options.gpuOptions?.toMap() ?: mapOf()
       val qualcommOptionsMap = options.qualcommOptions?.toMap() ?: mapOf()
+      val inputShapeOverrides =
+        options.compilerOptions?.inputShapeOverrides?.toList() ?: emptyList()
       return CompiledModel(
         nativeCreateFromFile(
           env.handle,
@@ -571,6 +759,10 @@ private constructor(
           gpuOptionsMap.values.toTypedArray(),
           qualcommOptionsMap.keys.map { it.value }.toIntArray(),
           qualcommOptionsMap.values.toTypedArray(),
+          inputShapeOverrides.map { it.mode.value }.toIntArray(),
+          inputShapeOverrides.map { it.signature }.toTypedArray(),
+          inputShapeOverrides.map { it.name }.toTypedArray(),
+          inputShapeOverrides.map { it.dimensions.toIntArray() }.toTypedArray(),
         ),
         env,
         envManaged,
@@ -612,6 +804,10 @@ private constructor(
       gpuOptionsValues: Array<String>,
       qualcommOptionsKeys: IntArray,
       qualcommOptionsValues: Array<String>,
+      inputShapeModes: IntArray,
+      inputShapeSignatures: Array<String>,
+      inputShapeNames: Array<String>,
+      inputShapeDimensions: Array<IntArray>,
     ): Long
 
     @JvmStatic
@@ -625,6 +821,10 @@ private constructor(
       gpuOptionsValues: Array<String>,
       qualcommOptionsKeys: IntArray,
       qualcommOptionsValues: Array<String>,
+      inputShapeModes: IntArray,
+      inputShapeSignatures: Array<String>,
+      inputShapeNames: Array<String>,
+      inputShapeDimensions: Array<IntArray>,
     ): Long
 
     @JvmStatic
@@ -654,6 +854,22 @@ private constructor(
       signature: String,
       outputName: String,
     ): TensorBufferRequirements
+
+    @JvmStatic
+    private external fun nativeResizeInputTensor(
+      compiledModelHandle: Long,
+      signature: String,
+      inputName: String,
+      dimensions: IntArray,
+    )
+
+    @JvmStatic
+    private external fun nativeResizeInputTensorNonStrict(
+      compiledModelHandle: Long,
+      signature: String,
+      inputName: String,
+      dimensions: IntArray,
+    )
 
     @JvmStatic
     private external fun nativeCreateInputBuffers(
@@ -718,6 +934,9 @@ private constructor(
       outputName: String,
       signature: String,
     ): TensorType
+
+    @JvmStatic
+    private external fun nativeGetLastInferenceDurationNanoseconds(compiledModelHandle: Long): Long
 
     @JvmStatic private external fun nativeDestroy(handle: Long)
   }

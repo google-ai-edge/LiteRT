@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -84,6 +85,32 @@ TEST(SqueezeOpTest, SqueezeAllUnitDims) {
   EXPECT_THAT(
       std::vector<int32_t>(shape.dimensions, shape.dimensions + shape.rank),
       testing::ElementsAre(2, 3));
+}
+
+TEST(SqueezeOpTest, RejectsAxisUnderflow) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflSqueeze);
+
+  auto options = std::make_unique<tflite::SqueezeOptionsT>();
+  options->squeeze_dims = {std::numeric_limits<int32_t>::min()};
+  litert::internal::TflOptions tfl_options;
+  tfl_options.type = tflite::BuiltinOptions_SqueezeOptions;
+  tfl_options.value = options.release();
+  SetTflOptions(op, std::move(tfl_options));
+
+  auto& input = subgraph.EmplaceTensor();
+  input.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 1, 3}));
+
+  auto& output = subgraph.EmplaceTensor();
+  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+
+  AttachInput(&input, op);
+  AttachOutput(&output, op);
+
+  ShapeInferenceEngine engine(&model);
+  EXPECT_EQ(engine.InferShapes(), kLiteRtStatusErrorInvalidArgument);
 }
 
 }  // namespace

@@ -22,13 +22,13 @@
 
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
+#include "litert/core/model/verifier.h"
 #include "litert/test/fuzzing/fuzzer_quota_allocator.h"
 #include "litert/test/fuzzing/fuzzing_util.h"
 #include "tflite/interpreter.h"
 #include "tflite/interpreter_builder.h"
 #include "tflite/mutable_op_resolver.h"
 #include "tflite/schema/schema_generated.h"
-#include "tflite/tools/verifier.h"
 #include "tflite/version.h"
 
 namespace tflite {
@@ -92,12 +92,13 @@ RunResult BuildAndRunOneOpModel(flatbuffers::FlatBufferBuilder* builder,
     return RunResult::kHarnessFailure;
   }
 
-  SilentErrorReporter error_reporter;
-  if (!Verify(builder->GetBufferPointer(), builder->GetSize(),
-              &error_reporter)) {
+  if (!litert::VerifyModel(builder->GetBufferPointer(), builder->GetSize(),
+                           run_spec.verify_options)
+           .ok()) {
     return RunResult::kRejected;
   }
 
+  SilentErrorReporter error_reporter;
   MutableOpResolver resolver;
   resolver.AddBuiltin(model_spec.builtin_operator, run_spec.registration,
                       run_spec.min_version, run_spec.max_version);

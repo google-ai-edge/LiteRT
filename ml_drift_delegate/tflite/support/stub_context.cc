@@ -126,7 +126,8 @@ int StubContextBuilder::AddQuantizedTensor(TfLiteType dtype,
   std::memset(&tensor, 0, sizeof(TfLiteTensor));
   tensor.type = dtype;
   tensor.dims = CopySpanToTfLiteIntArray(dims);
-  auto* affine_quantization = new TfLiteAffineQuantization;
+  // Value-initialize so that `quantized_dimension` is 0 rather than garbage.
+  auto* affine_quantization = new TfLiteAffineQuantization{};
   affine_quantization->scale = TfLiteFloatArrayCreate(scale_size);
   // Initialize scale values to 1.0f
   for (int i = 0; i < scale_size; ++i) {

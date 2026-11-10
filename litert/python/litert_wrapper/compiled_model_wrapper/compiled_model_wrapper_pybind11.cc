@@ -40,15 +40,18 @@ CompilationOptions BuildCompilationOptions(
     bool enable_hint_waiting_for_completion, int qualcomm_log_level,
     int qualcomm_htp_performance_mode, int qualcomm_dsp_performance_mode,
     int qualcomm_use_int64_bias_as_int32, int qualcomm_enable_weight_sharing,
-    int qualcomm_use_conv_hmx, int qualcomm_use_fold_relu,
-    int qualcomm_profiling, bool qualcomm_has_dump_tensor_ids,
+    int qualcomm_enable_just_in_time, int qualcomm_use_conv_hmx,
+    int qualcomm_use_fold_relu, int qualcomm_profiling,
+    bool qualcomm_has_dump_tensor_ids,
     const std::vector<std::int32_t>& qualcomm_dump_tensor_ids,
     const std::string& qualcomm_ir_json_dir,
     const std::string& qualcomm_dlc_dir, int qualcomm_vtcm_size,
     int qualcomm_num_hvx_threads, int qualcomm_optimization_level,
     int qualcomm_graph_priority, int qualcomm_backend,
     const std::string& qualcomm_saver_output_dir,
-    int qualcomm_graph_io_tensor_mem_type, int intel_openvino_graph_backend,
+    int qualcomm_graph_io_tensor_mem_type,
+    const std::string& qualcomm_qnn_lib_dir,
+    const std::string& qualcomm_dsp_skel_dir, int intel_openvino_graph_backend,
     int intel_openvino_performance_mode,
     const std::map<std::string, std::string>& intel_openvino_configs_map,
     int intel_openvino_enable_weight_sharing) {
@@ -73,6 +76,7 @@ CompilationOptions BuildCompilationOptions(
   options.qualcomm_dsp_performance_mode = qualcomm_dsp_performance_mode;
   options.qualcomm_use_int64_bias_as_int32 = qualcomm_use_int64_bias_as_int32;
   options.qualcomm_enable_weight_sharing = qualcomm_enable_weight_sharing;
+  options.qualcomm_enable_just_in_time = qualcomm_enable_just_in_time;
   options.qualcomm_use_conv_hmx = qualcomm_use_conv_hmx;
   options.qualcomm_use_fold_relu = qualcomm_use_fold_relu;
   options.qualcomm_profiling = qualcomm_profiling;
@@ -87,6 +91,8 @@ CompilationOptions BuildCompilationOptions(
   options.qualcomm_backend = qualcomm_backend;
   options.qualcomm_saver_output_dir = qualcomm_saver_output_dir;
   options.qualcomm_graph_io_tensor_mem_type = qualcomm_graph_io_tensor_mem_type;
+  options.qualcomm_qnn_lib_dir = qualcomm_qnn_lib_dir;
+  options.qualcomm_dsp_skel_dir = qualcomm_dsp_skel_dir;
   options.intel_openvino_graph_backend = intel_openvino_graph_backend;
   options.intel_openvino_performance_mode = intel_openvino_performance_mode;
   options.intel_openvino_configs_map = intel_openvino_configs_map;
@@ -117,9 +123,9 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
          bool enable_hint_waiting_for_completion, int qualcomm_log_level,
          int qualcomm_htp_performance_mode, int qualcomm_dsp_performance_mode,
          int qualcomm_use_int64_bias_as_int32,
-         int qualcomm_enable_weight_sharing, int qualcomm_use_conv_hmx,
-         int qualcomm_use_fold_relu, int qualcomm_profiling,
-         bool qualcomm_has_dump_tensor_ids,
+         int qualcomm_enable_weight_sharing, int qualcomm_enable_just_in_time,
+         int qualcomm_use_conv_hmx, int qualcomm_use_fold_relu,
+         int qualcomm_profiling, bool qualcomm_has_dump_tensor_ids,
          const std::vector<std::int32_t>& qualcomm_dump_tensor_ids,
          const std::string& qualcomm_ir_json_dir,
          const std::string& qualcomm_dlc_dir, int qualcomm_vtcm_size,
@@ -127,6 +133,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
          int qualcomm_graph_priority, int qualcomm_backend,
          const std::string& qualcomm_saver_output_dir,
          int qualcomm_graph_io_tensor_mem_type,
+         const std::string& qualcomm_qnn_lib_dir,
+         const std::string& qualcomm_dsp_skel_dir,
          int intel_openvino_graph_backend, int intel_openvino_performance_mode,
          const std::map<std::string, std::string>& intel_openvino_configs_map,
          int intel_openvino_enable_weight_sharing) {
@@ -140,12 +148,14 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
             enable_hint_waiting_for_completion, qualcomm_log_level,
             qualcomm_htp_performance_mode, qualcomm_dsp_performance_mode,
             qualcomm_use_int64_bias_as_int32, qualcomm_enable_weight_sharing,
-            qualcomm_use_conv_hmx, qualcomm_use_fold_relu, qualcomm_profiling,
+            qualcomm_enable_just_in_time, qualcomm_use_conv_hmx,
+            qualcomm_use_fold_relu, qualcomm_profiling,
             qualcomm_has_dump_tensor_ids, qualcomm_dump_tensor_ids,
             qualcomm_ir_json_dir, qualcomm_dlc_dir, qualcomm_vtcm_size,
             qualcomm_num_hvx_threads, qualcomm_optimization_level,
             qualcomm_graph_priority, qualcomm_backend,
             qualcomm_saver_output_dir, qualcomm_graph_io_tensor_mem_type,
+            qualcomm_qnn_lib_dir, qualcomm_dsp_skel_dir,
             intel_openvino_graph_backend, intel_openvino_performance_mode,
             intel_openvino_configs_map, intel_openvino_enable_weight_sharing);
         CompiledModelWrapper* wrapper =
@@ -173,6 +183,7 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("qualcomm_dsp_performance_mode") = -1,
       py::arg("qualcomm_use_int64_bias_as_int32") = -1,
       py::arg("qualcomm_enable_weight_sharing") = -1,
+      py::arg("qualcomm_enable_just_in_time") = -1,
       py::arg("qualcomm_use_conv_hmx") = -1,
       py::arg("qualcomm_use_fold_relu") = -1,
       py::arg("qualcomm_profiling") = -1,
@@ -185,6 +196,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("qualcomm_graph_priority") = -1, py::arg("qualcomm_backend") = -1,
       py::arg("qualcomm_saver_output_dir") = "",
       py::arg("qualcomm_graph_io_tensor_mem_type") = -1,
+      py::arg("qualcomm_qnn_lib_dir") = "",
+      py::arg("qualcomm_dsp_skel_dir") = "",
       py::arg("intel_openvino_graph_backend") = -1,
       py::arg("intel_openvino_performance_mode") = -1,
       py::arg("intel_openvino_configs_map") =
@@ -205,9 +218,9 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
          bool enable_hint_waiting_for_completion, int qualcomm_log_level,
          int qualcomm_htp_performance_mode, int qualcomm_dsp_performance_mode,
          int qualcomm_use_int64_bias_as_int32,
-         int qualcomm_enable_weight_sharing, int qualcomm_use_conv_hmx,
-         int qualcomm_use_fold_relu, int qualcomm_profiling,
-         bool qualcomm_has_dump_tensor_ids,
+         int qualcomm_enable_weight_sharing, int qualcomm_enable_just_in_time,
+         int qualcomm_use_conv_hmx, int qualcomm_use_fold_relu,
+         int qualcomm_profiling, bool qualcomm_has_dump_tensor_ids,
          const std::vector<std::int32_t>& qualcomm_dump_tensor_ids,
          const std::string& qualcomm_ir_json_dir,
          const std::string& qualcomm_dlc_dir, int qualcomm_vtcm_size,
@@ -215,6 +228,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
          int qualcomm_graph_priority, int qualcomm_backend,
          const std::string& qualcomm_saver_output_dir,
          int qualcomm_graph_io_tensor_mem_type,
+         const std::string& qualcomm_qnn_lib_dir,
+         const std::string& qualcomm_dsp_skel_dir,
          int intel_openvino_graph_backend, int intel_openvino_performance_mode,
          const std::map<std::string, std::string>& intel_openvino_configs_map,
          int intel_openvino_enable_weight_sharing) {
@@ -229,12 +244,14 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
             enable_hint_waiting_for_completion, qualcomm_log_level,
             qualcomm_htp_performance_mode, qualcomm_dsp_performance_mode,
             qualcomm_use_int64_bias_as_int32, qualcomm_enable_weight_sharing,
-            qualcomm_use_conv_hmx, qualcomm_use_fold_relu, qualcomm_profiling,
+            qualcomm_enable_just_in_time, qualcomm_use_conv_hmx,
+            qualcomm_use_fold_relu, qualcomm_profiling,
             qualcomm_has_dump_tensor_ids, qualcomm_dump_tensor_ids,
             qualcomm_ir_json_dir, qualcomm_dlc_dir, qualcomm_vtcm_size,
             qualcomm_num_hvx_threads, qualcomm_optimization_level,
             qualcomm_graph_priority, qualcomm_backend,
             qualcomm_saver_output_dir, qualcomm_graph_io_tensor_mem_type,
+            qualcomm_qnn_lib_dir, qualcomm_dsp_skel_dir,
             intel_openvino_graph_backend, intel_openvino_performance_mode,
             intel_openvino_configs_map, intel_openvino_enable_weight_sharing);
         CompiledModelWrapper* wrapper =
@@ -262,6 +279,7 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("qualcomm_dsp_performance_mode") = -1,
       py::arg("qualcomm_use_int64_bias_as_int32") = -1,
       py::arg("qualcomm_enable_weight_sharing") = -1,
+      py::arg("qualcomm_enable_just_in_time") = -1,
       py::arg("qualcomm_use_conv_hmx") = -1,
       py::arg("qualcomm_use_fold_relu") = -1,
       py::arg("qualcomm_profiling") = -1,
@@ -274,6 +292,8 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
       py::arg("qualcomm_graph_priority") = -1, py::arg("qualcomm_backend") = -1,
       py::arg("qualcomm_saver_output_dir") = "",
       py::arg("qualcomm_graph_io_tensor_mem_type") = -1,
+      py::arg("qualcomm_qnn_lib_dir") = "",
+      py::arg("qualcomm_dsp_skel_dir") = "",
       py::arg("intel_openvino_graph_backend") = -1,
       py::arg("intel_openvino_performance_mode") = -1,
       py::arg("intel_openvino_configs_map") =

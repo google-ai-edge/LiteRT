@@ -22,6 +22,7 @@
 
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "litert/cc/litert_common.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
@@ -106,7 +107,8 @@ Expected<void> GatedDeltaUpdateCustomOpKernel::Init(const void* init_data,
 Expected<void> GatedDeltaUpdateCustomOpKernel::GetOutputLayouts(
     const std::vector<Layout>& input_layouts,
     std::vector<Layout>& output_layouts) {
-  if (input_layouts.size() != 6 || output_layouts.size() != 2) {
+  if ((input_layouts.size() != 6 && input_layouts.size() != 7) ||
+      output_layouts.size() != 2) {
     return Unexpected(Status::kErrorInvalidArgument,
                       "Invalid number of arguments for GatedDeltaUpdate");
   }
@@ -118,7 +120,7 @@ Expected<void> GatedDeltaUpdateCustomOpKernel::GetOutputLayouts(
 Expected<void> GatedDeltaUpdateCustomOpKernel::Run(
     const std::vector<TensorBuffer>& inputs,
     std::vector<TensorBuffer>& outputs) {
-  if (inputs.size() != 6 || outputs.size() != 2) {
+  if ((inputs.size() != 6 && inputs.size() != 7) || outputs.size() != 2) {
     return Unexpected(Status::kErrorInvalidArgument,
                       "Invalid tensor count for GatedDeltaUpdate");
   }
@@ -130,11 +132,45 @@ Expected<void> GatedDeltaUpdateCustomOpKernel::Run(
     return Unexpected(Status::kErrorInvalidArgument,
                       "Input rank must be >= 4 for GatedDeltaUpdate");
   }
-  const int B = q_dims[0];
-  const int H = q_dims[1];
-  const int N = q_dims[2];
+  const int B = v_dims[0];
+  const int H = v_dims[1];
+  const int H_k = q_dims[1];
+  const int N = v_dims[2];
   const int D_k = q_dims[3];
   const int D_v = v_dims[3];
+
+  std::vector<int> valid_len_vec;
+  const int* valid_len_ptr = nullptr;
+  if (inputs.size() == 7) {
+    LITERT_ASSIGN_OR_RETURN(auto valid_len_type, inputs[6].TensorType());
+    LITERT_ASSIGN_OR_RETURN(size_t num_elems,
+                            valid_len_type.Layout().NumElements());
+    if (num_elems != static_cast<size_t>(B)) {
+      return Unexpected(Status::kErrorInvalidArgument,
+                        "Invalid valid_len tensor size for GatedDeltaUpdate");
+    }
+    valid_len_vec.resize(B);
+    if (valid_len_type.ElementType() == ElementType::Int32) {
+      LITERT_ASSIGN_OR_RETURN(auto valid_len_lock,
+                              TensorBufferScopedLock::Create<const int32_t>(
+                                  inputs[6], TensorBuffer::LockMode::kRead));
+      for (int b = 0; b < B; ++b) {
+        valid_len_vec[b] = valid_len_lock.second[b];
+      }
+    } else if (valid_len_type.ElementType() == ElementType::Float32) {
+      LITERT_ASSIGN_OR_RETURN(auto valid_len_lock,
+                              TensorBufferScopedLock::Create<const float>(
+                                  inputs[6], TensorBuffer::LockMode::kRead));
+      for (int b = 0; b < B; ++b) {
+        valid_len_vec[b] = static_cast<int>(valid_len_lock.second[b]);
+      }
+    } else {
+      return Unexpected(
+          Status::kErrorInvalidArgument,
+          "Unsupported valid_len element type for GatedDeltaUpdate");
+    }
+    valid_len_ptr = valid_len_vec.data();
+  }
 
   LITERT_ASSIGN_OR_RETURN(auto q_lock,
                           TensorBufferScopedLock::Create<const float>(
@@ -163,10 +199,10 @@ Expected<void> GatedDeltaUpdateCustomOpKernel::Run(
                               outputs[1], TensorBuffer::LockMode::kWrite));
 
   // Dispatch to only recurrent implementation for now
-  ComputeGatedDeltaUpdateRecurrent(q_lock.second, k_lock.second, v_lock.second,
-                                   beta_lock.second, g_lock.second,
-                                   rec_lock.second, out_lock.second,
-                                   new_rec_lock.second, B, H, N, D_k, D_v);
+  ComputeGatedDeltaUpdateRecurrent(
+      q_lock.second, k_lock.second, v_lock.second, beta_lock.second,
+      g_lock.second, rec_lock.second, out_lock.second, new_rec_lock.second, B,
+      H, N, D_k, D_v, H_k, valid_len_ptr);
 
   return {};
 }

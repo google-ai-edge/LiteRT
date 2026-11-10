@@ -96,7 +96,7 @@ bool IsLayerNormSupported(const TfLiteContext* absl_nonnull context,
   }
   if (scale != nullptr) {
     const absl::Status status =
-        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>(
+        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>(
             scale);
     if (!status.ok()) {
       *error = status.message();
@@ -109,7 +109,7 @@ bool IsLayerNormSupported(const TfLiteContext* absl_nonnull context,
   }
   if (bias != nullptr) {
     const absl::Status status =
-        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::FLOAT32>(
+        CheckPopulateTensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>(
             bias);
     if (!status.ok()) {
       *error = status.message();

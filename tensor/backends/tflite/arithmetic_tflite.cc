@@ -14,7 +14,9 @@ limitations under the License.
 ==============================================================================*/
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 
+#include <cstddef>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
@@ -48,10 +50,12 @@ absl::StatusOr<::tflite::TensorType> ToTfLite(const Type type) {
       return ::tflite::TensorType_INT32;
     case Type::kI64:
       return ::tflite::TensorType_INT64;
-    case Type::kU4:
+    case Type::kU2:
       return absl::FailedPreconditionError(absl::StrFormat(
           "Serialisation of a tensor with '%s' type is not supported",
           ToString(type)));
+    case Type::kU4:
+      return ::tflite::TensorType_UINT4;
     case Type::kU8:
       return ::tflite::TensorType_UINT8;
     case Type::kU16:
@@ -390,6 +394,12 @@ absl::StatusOr<TfLiteOpBuildInfo> OpMixin<
 }
 
 absl::StatusOr<TfLiteOpBuildInfo>
+OpMixin<LessEqualOperation, TfLiteMixinTag>::ToTfLite(
+    const graph::Operation& op) const {
+  return TfLiteOpBuildInfo(::tflite::BuiltinOperator_LESS_EQUAL);
+}
+
+absl::StatusOr<TfLiteOpBuildInfo>
 OpMixin<GreaterOperation, TfLiteMixinTag>::ToTfLite(
     const graph::Operation& op) const {
   return TfLiteOpBuildInfo(::tflite::BuiltinOperator_GREATER);
@@ -485,9 +495,17 @@ OpMixin<ReshapeOperation, TfLiteMixinTag>::ToTfLite(
     const graph::Operation& op) const {
   LRT_TENSOR_ASSIGN_OR_RETURN(const ReshapeOperation& data,
                               op.As<ReshapeOperation>());
+  std::vector<int> shape = data.new_shape;
+  if (data.inferred_axis >= 0) {
+    if (static_cast<size_t>(data.inferred_axis) >= shape.size()) {
+      return absl::InvalidArgumentError(
+          "Reshape inferred axis is out of range");
+    }
+    shape[data.inferred_axis] = kInferredDim;
+  }
   return TfLiteOpBuildInfo(
       ::tflite::BuiltinOperator_RESHAPE,
-      tflite::ReshapeOptionsT{.new_shape = data.new_shape});
+      tflite::ReshapeOptionsT{.new_shape = std::move(shape)});
 }
 
 absl::StatusOr<TfLiteOpBuildInfo>

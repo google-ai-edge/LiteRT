@@ -31,7 +31,7 @@ void ConvertResize2d(const TfLiteContext& context, const TfLiteNode& node,
                      ::ml_drift::ir::TensorMap& tensor_map,
                      ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* ir_op = ir_model.add_op();
-  ir_op->name = ToString(::ml_drift::OperationType::RESIZE);
+  ir_op->name = ToString(::ml_drift::OperationType::kResize);
 
   const int input_id = node.inputs->data[0];
   ir_model.AddConsumer(tensor_map[input_id], ir_op->id);
@@ -45,7 +45,7 @@ void ConvertResize2d(const TfLiteContext& context, const TfLiteNode& node,
   attr.new_shape = ::ml_drift::HW(output_shape.h, output_shape.w);
 
   if (registration.builtin_code == kTfLiteBuiltinResizeBilinear) {
-    attr.type = ::ml_drift::SamplingType::BILINEAR;
+    attr.type = ::ml_drift::SamplingType::kBilinear;
     const auto* params =
         static_cast<const TfLiteResizeBilinearParams*>(node.builtin_data);
     if (params) {
@@ -53,7 +53,7 @@ void ConvertResize2d(const TfLiteContext& context, const TfLiteNode& node,
       attr.half_pixel_centers = params->half_pixel_centers;
     }
   } else if (registration.builtin_code == kTfLiteBuiltinResizeNearestNeighbor) {
-    attr.type = ::ml_drift::SamplingType::NEAREST;
+    attr.type = ::ml_drift::SamplingType::kNearest;
     const auto* params = static_cast<const TfLiteResizeNearestNeighborParams*>(
         node.builtin_data);
     if (params) {

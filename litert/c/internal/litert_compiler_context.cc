@@ -28,7 +28,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
               .struct_size = sizeof(LiteRtCompilerContext),
               // LINT.IfChange(compiler_context_version)
               .major_version = 1,
-              .minor_version = 2,
+              .minor_version = 5,
               .reserved = 0,
               // LINT.ThenChange(./litert_compiler_context.h:compiler_context_table)
           },
@@ -247,6 +247,74 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
       .build_batch_matmul_op_option = LiteRtBuilderBuildBatchMatmulOpOption,
       .get_block_wise_quantization = LiteRtGetBlockWiseQuantization,
       .build_shlo_composite_op_option = LiteRtBuilderBuildShloCompositeOpOption,
+      .build_average_pool_2d_op_option =
+          LiteRtBuilderBuildAveragePool2dOpOption,
+      .build_concatenation_op_option = LiteRtBuilderBuildConcatenationOpOption,
+      .build_conv_2d_op_option = LiteRtBuilderBuildConv2dOpOption,
+      .build_conv_3d_op_option = LiteRtBuilderBuildConv3dOpOption,
+      .build_cumsum_op_option = LiteRtBuilderBuildCumsumOpOption,
+      .build_depth_to_space_op_option = LiteRtBuilderBuildDepthToSpaceOpOption,
+      .build_depthwise_conv_2d_op_option =
+          LiteRtBuilderBuildDepthwiseConv2dOpOption,
+      .build_div_op_option = LiteRtBuilderBuildDivOpOption,
+      .build_fully_connected_op_option =
+          LiteRtBuilderBuildFullyConnectedOpOption,
+      .build_gather_op_option = LiteRtBuilderBuildGatherOpOption,
+      .build_gelu_op_option = LiteRtBuilderBuildGeluOpOption,
+      .build_l2_pool_2d_op_option = LiteRtBuilderBuildL2Pool2dOpOption,
+      .build_leaky_relu_op_option = LiteRtBuilderBuildLeakyReluOpOption,
+      .build_max_pool_2d_op_option = LiteRtBuilderBuildMaxPool2dOpOption,
+      .build_mean_op_option = LiteRtBuilderBuildMeanOpOption,
+      .build_mirror_pad_op_option = LiteRtBuilderBuildMirrorPadOpOption,
+      .build_mul_op_option = LiteRtBuilderBuildMulOpOption,
+      .build_one_hot_op_option = LiteRtBuilderBuildOneHotOpOption,
+      .build_pack_op_option = LiteRtBuilderBuildPackOpOption,
+      .build_reduce_all_op_option = LiteRtBuilderBuildReduceAllOpOption,
+      .build_reduce_any_op_option = LiteRtBuilderBuildReduceAnyOpOption,
+      .build_reduce_max_op_option = LiteRtBuilderBuildReduceMaxOpOption,
+      .build_reduce_min_op_option = LiteRtBuilderBuildReduceMinOpOption,
+      .build_reshape_op_option = LiteRtBuilderBuildReshapeOpOption,
+      .build_resize_bilinear_op_option =
+          LiteRtBuilderBuildResizeBilinearOpOption,
+      .build_resize_nearest_neighbor_op_option =
+          LiteRtBuilderBuildResizeNearestNeighborOpOption,
+      .build_softmax_op_option = LiteRtBuilderBuildSoftmaxOpOption,
+      .build_space_to_depth_op_option = LiteRtBuilderBuildSpaceToDepthOpOption,
+      .build_split_op_option = LiteRtBuilderBuildSplitOpOption,
+      .build_split_v_op_option = LiteRtBuilderBuildSplitVOpOption,
+      .build_squeeze_op_option = LiteRtBuilderBuildSqueezeOpOption,
+      .build_strided_slice_op_option = LiteRtBuilderBuildStridedSliceOpOption,
+      .build_sub_op_option = LiteRtBuilderBuildSubOpOption,
+      .build_sum_op_option = LiteRtBuilderBuildSumOpOption,
+      .build_transpose_conv_op_option = LiteRtBuilderBuildTransposeConvOpOption,
+      .build_unpack_op_option = LiteRtBuilderBuildUnpackOpOption,
+      .get_split_v_num_splits_option = LiteRtGetSplitVNumSplitsOption,
+      .get_local_response_normalization_radius_option =
+          LiteRtGetLocalResponseNormalizationRadiusOption,
+      .get_local_response_normalization_bias_option =
+          LiteRtGetLocalResponseNormalizationBiasOption,
+      .get_local_response_normalization_alpha_option =
+          LiteRtGetLocalResponseNormalizationAlphaOption,
+      .get_local_response_normalization_beta_option =
+          LiteRtGetLocalResponseNormalizationBetaOption,
+      .get_conv_3d_transpose_padding_option =
+          LiteRtGetConv3dTransposePaddingOption,
+      .get_conv_3d_transpose_stride_d_option =
+          LiteRtGetConv3dTransposeStrideDOption,
+      .get_conv_3d_transpose_stride_w_option =
+          LiteRtGetConv3dTransposeStrideWOption,
+      .get_conv_3d_transpose_stride_h_option =
+          LiteRtGetConv3dTransposeStrideHOption,
+      .get_conv_3d_transpose_fused_activation_option =
+          LiteRtGetConv3dTransposeFusedActivationOption,
+      .get_conv_3d_transpose_dilation_d_option =
+          LiteRtGetConv3dTransposeDilationDOption,
+      .get_conv_3d_transpose_dilation_w_option =
+          LiteRtGetConv3dTransposeDilationWOption,
+      .get_conv_3d_transpose_dilation_h_option =
+          LiteRtGetConv3dTransposeDilationHOption,
+      .build_conv_3d_transpose_op_option =
+          LiteRtBuilderBuildConv3dTransposeOpOption,
   };
   return &ctx;
 }

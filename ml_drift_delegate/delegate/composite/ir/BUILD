@@ -18,8 +18,9 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
-        "//ml_drift_delegate/delegate:__subpackages__",
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
+        "//ml_drift_delegate/delegate:__subpackages__",
+        # copybara:uncomment "//third_party/py/ai_edge_jax/generative/backends/cpu_gpu/compat:__subpackages__",
     ],
 )
 
@@ -95,13 +96,16 @@ cc_library(
     srcs = ["sdpa_transposed_parser.cc"],
     hdrs = ["sdpa_transposed_parser.h"],
     deps = [
+        "//ml_drift_delegate/delegate/composite:add_values_to_cache_parser",
         "//ml_drift_delegate/delegate/composite:sdpa_transposed_parser",
+        "//ml_drift_delegate/delegate/composite:sdpa_transposed_support",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite:ir_model_builder_helper",
         "//tflite/c:common",
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@flatbuffers",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
@@ -113,11 +117,11 @@ cc_library(
 )
 
 cc_library(
-    name = "swiglu_parser",
-    srcs = ["swiglu_parser.cc"],
-    hdrs = ["swiglu_parser.h"],
+    name = "glu_parser",
+    srcs = ["glu_parser.cc"],
+    hdrs = ["glu_parser.h"],
     deps = [
-        "//ml_drift_delegate/delegate/composite:swiglu_parser",
+        "//ml_drift_delegate/delegate/composite:glu_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite:ir_model_builder_helper",
         "//tflite/c:common",
@@ -160,7 +164,6 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
-        "@flatbuffers",
         "@ml_drift//ml_drift/common:ir_model",
     ],
 )
@@ -172,10 +175,10 @@ cc_library(
     deps = [
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite:ir_model_builder_helper",
+        "//ml_drift_delegate/tflite/support:support_rotary_positional_embedding",
         "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
         "@flatbuffers",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:operations",
@@ -199,19 +202,36 @@ cc_library(
 )
 
 cc_library(
+    name = "fused_sdpa_cache_update_parser",
+    srcs = ["fused_sdpa_cache_update_parser.cc"],
+    hdrs = ["fused_sdpa_cache_update_parser.h"],
+    deps = [
+        "//ml_drift_delegate/delegate/composite:fused_sdpa_cache_update_parser",
+        "//ml_drift_delegate/tflite:custom_ir_operation_parser",
+        "//ml_drift_delegate/tflite:ir_model_builder_helper",
+        "//tflite/c:common",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:ir_model",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = ["custom_parsers.h"],
     deps = [
         ":add_values_to_cache_parser",
+        ":fused_sdpa_cache_update_parser",
         ":gated_delta_update_parser",
+        ":glu_parser",
         ":moe_experts_parser",
         ":qkv_norm_rope_parser",
         ":rope_parser",
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_parser",
         ":short_conv_step_parser",
-        ":swiglu_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -224,25 +244,58 @@ cc_library(
     hdrs = ["litert_op_selector.h"],
     deps = [
         "//ml_drift_delegate/delegate/composite:add_values_to_cache_kernel",
+        "//ml_drift_delegate/delegate/composite:fused_sdpa_cache_update_kernel",
         "//ml_drift_delegate/delegate/composite:gated_delta_update_kernel",
+        "//ml_drift_delegate/delegate/composite:glu_kernel",
         "//ml_drift_delegate/delegate/composite:moe_experts_kernel",
         "//ml_drift_delegate/delegate/composite:qkv_norm_rope_kernel",
         "//ml_drift_delegate/delegate/composite:runtime_batched_matmul_kernel",
+        "//ml_drift_delegate/delegate/composite:sdpa_kernel",
         "//ml_drift_delegate/delegate/composite:sdpa_transposed_kernel",
         "//ml_drift_delegate/delegate/composite:short_conv_step_kernel",
-        "//ml_drift_delegate/delegate/composite:swiglu_kernel",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:gpu_model_builder",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:ir_model_util",
         "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common/selectors:operation_selector",
         "@ml_drift//ml_drift/common/selectors:special_selector",
         "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
+cc_test(
+    name = "litert_op_selector_test",
+    srcs = ["litert_op_selector_test.cc"],
+    deps = [
+        ":litert_op_selector",
+        "//ml_drift_delegate/delegate/composite:add_values_to_cache_parser",
+        "//ml_drift_delegate/delegate/composite:sdpa_transposed_parser",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:weights_layout",
     ],
 )
 
@@ -310,16 +363,20 @@ cc_test(
         ":sdpa_transposed_parser",
         "//ml_drift_delegate/delegate/composite:sdpa_transposed_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
+        "//ml_drift_delegate/tflite:ir_model_builder_helper",
         "//ml_drift_delegate/tflite/convert:convert_testing_utils",
         "//ml_drift_delegate/tflite/convert:stub_delegate",
         "//tflite:builtin_ops",
         "//tflite:framework_stable",
         "//tflite/c:common",
         "//tflite/core/c:private_common",
+        "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
         "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common/task:weights_layout",
     ],
 )
 
@@ -343,11 +400,11 @@ cc_test(
 )
 
 cc_test(
-    name = "swiglu_parser_test",
-    srcs = ["swiglu_parser_test.cc"],
+    name = "glu_parser_test",
+    srcs = ["glu_parser_test.cc"],
     deps = [
-        ":swiglu_parser",
-        "//ml_drift_delegate/delegate/composite:swiglu_parser",
+        ":glu_parser",
+        "//ml_drift_delegate/delegate/composite:glu_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite/convert:convert_testing_utils",
         "//ml_drift_delegate/tflite/convert:stub_delegate",
@@ -392,6 +449,25 @@ cc_test(
         "//tflite:builtin_ops",
         "//tflite:framework_stable",
         "//tflite/c:common",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:ir_model",
+    ],
+)
+
+cc_test(
+    name = "fused_sdpa_cache_update_parser_test",
+    srcs = ["fused_sdpa_cache_update_parser_test.cc"],
+    deps = [
+        ":fused_sdpa_cache_update_parser",
+        "//ml_drift_delegate/delegate/composite:fused_sdpa_cache_update_parser",
+        "//ml_drift_delegate/tflite:custom_ir_operation_parser",
+        "//ml_drift_delegate/tflite/convert:convert_testing_utils",
+        "//ml_drift_delegate/tflite/convert:stub_delegate",
+        "//tflite:builtin_ops",
+        "//tflite:framework_stable",
+        "//tflite/c:common",
+        "//tflite/core/c:private_common",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
         "@ml_drift//ml_drift/common:ir_model",

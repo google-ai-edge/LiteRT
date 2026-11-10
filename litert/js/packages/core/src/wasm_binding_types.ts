@@ -347,6 +347,11 @@ export declare interface LiteRtTensorHandleConstructor {
    */
   new(...args: never[]): LiteRtTensorHandle;
 
+  createPlaceholder(
+      tensorType: LiteRtRankedTensorType,
+      name: string,
+      ): LiteRtTensorHandle;
+
   createManaged(
       environment: LiteRtEnvironment,
       bufferType: LiteRtTensorBufferType,
@@ -384,6 +389,17 @@ export type LiteRtTensorBuffer = LiteRtTensorHandle;
 export type LiteRtTensorBufferConstructor = LiteRtTensorHandleConstructor;
 
 /**
+ * Specification for a signature graph in a multi-signature model.
+ */
+export interface LiteRtSignatureGraphSpec {
+  name: string;
+  inputHandles?: LiteRtTensorHandle[];
+  inputs?: LiteRtTensorHandle[];
+  outputHandles?: LiteRtTensorHandle[];
+  outputs?: LiteRtTensorHandle[];
+}
+
+/**
  * Interface for the C++ LiteRt bindings.
  */
 export declare interface LiteRtWasm extends WasmModule {
@@ -394,6 +410,13 @@ export declare interface LiteRtWasm extends WasmModule {
       modelDataPtr: number,
       modelSize: number,
       ): LiteRtModel;
+  createModelDataFromTensorGraph(
+      signatures: LiteRtSignatureGraphSpec[],
+      ): {modelDataPtr: number; modelSize: number};
+  createModelDataFromTensorGraph(
+      inputHandles: LiteRtTensorHandle[],
+      outputHandles: LiteRtTensorHandle[],
+      ): {modelDataPtr: number; modelSize: number};
   compileModel(
       environment: LiteRtEnvironment,
       model: LiteRtModel,
@@ -413,14 +436,239 @@ export declare interface LiteRtWasm extends WasmModule {
       expectedRankedTensorType: LiteRtRankedTensorType,
       requirements: LiteRtTensorBufferRequirements,
       ): void;
-  registerStreamWeightsCallback(callback: Function|undefined): void;
-  getStreamWeightsCallback(): Function|undefined;
+  registerStreamWeightsCallback(
+      callback:
+          | ((
+                queue: GPUQueue,
+                requests: EmscriptenVector<WebWeightUploadRequest>,
+            ) => Promise<boolean | void>)
+          | undefined,
+  ): void;
   getThreadCount(): number;
   add(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   mul(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   sub(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   div(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
   relu(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  batchMatMul(
+    x: LiteRtTensorHandle,
+    y: LiteRtTensorHandle,
+    adjX?: boolean,
+    adjY?: boolean,
+  ): LiteRtTensorHandle;
+  fullyConnected(
+    input: LiteRtTensorHandle,
+    weights: LiteRtTensorHandle,
+    bias?: LiteRtTensorHandle,
+  ): LiteRtTensorHandle;
+  softmax(a: LiteRtTensorHandle, beta?: number): LiteRtTensorHandle;
+  logistic(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  tanh(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  gelu(input: LiteRtTensorHandle, approximate?: boolean): LiteRtTensorHandle;
+  conv2d(
+    input: LiteRtTensorHandle,
+    filter: LiteRtTensorHandle,
+    bias?: LiteRtTensorHandle,
+    strideH?: number,
+    strideW?: number,
+    padding?: number,
+    dilationH?: number,
+    dilationW?: number,
+  ): LiteRtTensorHandle;
+  depthwiseConv2d(
+    input: LiteRtTensorHandle,
+    filter: LiteRtTensorHandle,
+    bias?: LiteRtTensorHandle,
+    strideH?: number,
+    strideW?: number,
+    padding?: number,
+    depthMultiplier?: number,
+    dilationH?: number,
+    dilationW?: number,
+  ): LiteRtTensorHandle;
+  reshape(input: LiteRtTensorHandle, shape: number[]): LiteRtTensorHandle;
+  transpose(input: LiteRtTensorHandle, perm: number[]): LiteRtTensorHandle;
+  concatenation(
+    inputs: LiteRtTensorHandle[],
+    axis: number,
+  ): LiteRtTensorHandle;
+  slice(
+    input: LiteRtTensorHandle,
+    begin: number[],
+    size: number[],
+  ): LiteRtTensorHandle;
+  pad(input: LiteRtTensorHandle, paddings: LiteRtTensorHandle): LiteRtTensorHandle;
+  mean(
+    a: LiteRtTensorHandle,
+    axes: number[],
+    keepDims: boolean,
+  ): LiteRtTensorHandle;
+  sum(
+    a: LiteRtTensorHandle,
+    axes: number[],
+    keepDims: boolean,
+  ): LiteRtTensorHandle;
+  abs(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  neg(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  sqrt(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  rsqrt(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  exp(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  log(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  sin(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  cos(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  ceil(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  floor(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  round(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  pow(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  minimum(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  maximum(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  floorDiv(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  floorMod(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  equal(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  notEqual(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  less(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  greater(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  greaterEqual(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  logicalAnd(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  logicalOr(a: LiteRtTensorHandle, b: LiteRtTensorHandle): LiteRtTensorHandle;
+  logicalNot(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  select(
+    condition: LiteRtTensorHandle,
+    trueVal: LiteRtTensorHandle,
+    falseVal: LiteRtTensorHandle,
+  ): LiteRtTensorHandle;
+  relu6(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  leakyRelu(a: LiteRtTensorHandle, alpha?: number): LiteRtTensorHandle;
+  elu(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  hardSwish(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  logSoftmax(a: LiteRtTensorHandle): LiteRtTensorHandle;
+  expandDims(input: LiteRtTensorHandle, axis: number): LiteRtTensorHandle;
+  squeeze(input: LiteRtTensorHandle, squeezeDims?: number[]): LiteRtTensorHandle;
+  tile(input: LiteRtTensorHandle, multiples: number[]): LiteRtTensorHandle;
+  pack(tensors: LiteRtTensorHandle[], axis: number): LiteRtTensorHandle;
+  unpack(input: LiteRtTensorHandle, num: number, axis: number): LiteRtTensorHandle[];
+  split(
+    input: LiteRtTensorHandle,
+    axis: number,
+    numSplits: number,
+  ): LiteRtTensorHandle[];
+  reduceMax(
+    a: LiteRtTensorHandle,
+    axes: number[],
+    keepDims: boolean,
+  ): LiteRtTensorHandle;
+  argMax(
+    a: LiteRtTensorHandle,
+    axis: number,
+    outputType?: string,
+  ): LiteRtTensorHandle;
+  resizeBilinear(
+    input: LiteRtTensorHandle,
+    size: number[],
+    alignCorners: boolean,
+    halfPixelCenters: boolean,
+  ): LiteRtTensorHandle;
+  resizeNearestNeighbor(
+    input: LiteRtTensorHandle,
+    size: number[],
+    alignCorners: boolean,
+    halfPixelCenters: boolean,
+  ): LiteRtTensorHandle;
+  maxPool2d(
+    input: LiteRtTensorHandle,
+    filterHeight: number,
+    filterWidth: number,
+    strideH: number,
+    strideW: number,
+    padding: number,
+  ): LiteRtTensorHandle;
+  avgPool2d(
+    input: LiteRtTensorHandle,
+    filterHeight: number,
+    filterWidth: number,
+    strideH: number,
+    strideW: number,
+    padding: number,
+  ): LiteRtTensorHandle;
+  transposeConv2d(
+    input: LiteRtTensorHandle,
+    filter: LiteRtTensorHandle,
+    outputShape: number[],
+    bias: LiteRtTensorHandle | undefined,
+    strideH: number,
+    strideW: number,
+    padding: number,
+  ): LiteRtTensorHandle;
+  gather(
+    input: LiteRtTensorHandle,
+    indices: LiteRtTensorHandle,
+    axis: number,
+    batchDims: number,
+  ): LiteRtTensorHandle;
+  gatherNd(
+    input: LiteRtTensorHandle,
+    indices: LiteRtTensorHandle,
+  ): LiteRtTensorHandle;
+  oneHot(
+    indices: LiteRtTensorHandle,
+    depth: number,
+    onValue: number,
+    offValue: number,
+    axis: number,
+  ): LiteRtTensorHandle;
+  embeddingLookup(
+    weights: LiteRtTensorHandle,
+    ids: LiteRtTensorHandle,
+  ): LiteRtTensorHandle;
+  topK(
+    input: LiteRtTensorHandle,
+    k: number,
+  ): [LiteRtTensorHandle, LiteRtTensorHandle];
+  nonMaxSuppressionV5(
+    boxes: LiteRtTensorHandle,
+    scores: LiteRtTensorHandle,
+    maxOutputSize: number,
+    iouThreshold: number,
+    scoreThreshold: number,
+    softNmsSigma: number,
+  ): [LiteRtTensorHandle, LiteRtTensorHandle, LiteRtTensorHandle];
+  cumsum(
+    input: LiteRtTensorHandle,
+    axis: number,
+    exclusive: boolean,
+    reverse: boolean,
+  ): LiteRtTensorHandle;
+  reverse(
+    input: LiteRtTensorHandle,
+    axes: number[],
+  ): LiteRtTensorHandle;
+  spaceToDepth(
+    input: LiteRtTensorHandle,
+    blockSize: number,
+  ): LiteRtTensorHandle;
+  depthToSpace(
+    input: LiteRtTensorHandle,
+    blockSize: number,
+  ): LiteRtTensorHandle;
+  prelu(
+    input: LiteRtTensorHandle,
+    alpha: LiteRtTensorHandle,
+  ): LiteRtTensorHandle;
+  dynamicUpdateSlice(
+    operand: LiteRtTensorHandle,
+    update: LiteRtTensorHandle,
+    startIndices: number[],
+  ): LiteRtTensorHandle;
+}
+
+/**
+ * A C++ weight_loader::WebWeightUploadRequest in Wasm.
+ */
+export declare interface WebWeightUploadRequest {
+  tflId: number;
+  wgpuBufferId: number;
+  offset: number;
+  length: number;
 }
 
 /**

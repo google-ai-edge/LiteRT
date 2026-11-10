@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_C_LITERT_COMPILED_MODEL_H_
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
@@ -222,6 +223,20 @@ LiteRtStatus LiteRtRunCompiledModelAsyncWithSchedulingInfo(
     size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async,
     const LiteRtSchedulingInfo* scheduling_info);
 
+// Returns the duration of the last native inference in nanoseconds.
+// If no inference has been executed yet, or if the last inference failed,
+// *duration_nanoseconds will be set to -1.
+//
+// Note: When running asynchronously (`async == true`), output buffer
+// synchronization is bypassed, so the recorded duration reflects the host
+// dispatch latency rather than the full accelerator completion time.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - duration_nanoseconds: pointer to int64_t to receive the duration in ns.
+LiteRtStatus LiteRtGetCompiledModelLastInferenceDuration(
+    LiteRtCompiledModelConst compiled_model, int64_t* duration_nanoseconds);
+
 // Sets a callback function that will be called periodically during model
 // execution to check if the execution should be cancelled.
 //
@@ -259,6 +274,53 @@ LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
 // (e.g. 100% delegated on GPU or NPU with zero CPU execution).
 LiteRtStatus LiteRtCompiledModelIsNonCpuFullyAccelerated(
     LiteRtCompiledModel compiled_model, bool* non_cpu_fully_accelerated);
+
+// Returns an opaque handle to delegation metrics (total node count and
+// per-accelerator delegated node counts and partition counts) for the compiled
+// model.
+//
+// Note: CompiledModel owns the returned delegation_metrics handle, any
+// accelerator metrics handles obtained from it, and their accelerator name
+// strings. They are only valid during the compiled_model's lifetime.
+LiteRtStatus LiteRtCompiledModelGetDelegationMetrics(
+    LiteRtCompiledModelConst compiled_model,
+    LiteRtDelegationMetricsConst* delegation_metrics);
+
+// Returns the total number of operations in the graph across active subgraphs
+// before delegation.
+LiteRtStatus LiteRtGetDelegationMetricsTotalNodeCount(
+    LiteRtDelegationMetricsConst metrics, int* total_node_count);
+
+// Returns the number of per-accelerator delegation metrics entries.
+LiteRtStatus LiteRtGetNumDelegationMetricsAccelerators(
+    LiteRtDelegationMetricsConst metrics, LiteRtParamIndex* num_accelerators);
+
+// Returns the per-accelerator delegation metrics handle at the given index.
+LiteRtStatus LiteRtGetDelegationMetricsAccelerator(
+    LiteRtDelegationMetricsConst metrics, LiteRtParamIndex index,
+    LiteRtAcceleratorDelegationMetricsConst* accelerator_metrics);
+
+// Returns the name of the registered hardware accelerator (e.g.
+// "NpuAccelerator", "LiteRT GPU", "CpuAccelerator").
+LiteRtStatus LiteRtGetAcceleratorDelegationMetricsName(
+    LiteRtAcceleratorDelegationMetricsConst metrics, const char** name);
+
+// Returns the bitfield of hardware accelerator types supported by this
+// accelerator.
+LiteRtStatus LiteRtGetAcceleratorDelegationMetricsHardwareType(
+    LiteRtAcceleratorDelegationMetricsConst metrics,
+    LiteRtHwAcceleratorSet* hardware_type);
+
+// Returns the number of original model operations absorbed/delegated to this
+// accelerator.
+LiteRtStatus LiteRtGetAcceleratorDelegationMetricsDelegatedNodeCount(
+    LiteRtAcceleratorDelegationMetricsConst metrics, int* delegated_node_count);
+
+// Returns the number of contiguous delegated subgraphs (delegate kernel nodes
+// in the execution plan) created for this accelerator. Multiple original model
+// operations may be fused into a single partition.
+LiteRtStatus LiteRtGetAcceleratorDelegationMetricsPartitionCount(
+    LiteRtAcceleratorDelegationMetricsConst metrics, int* partition_count);
 
 // Gets the profiler for the model. CompiledModel owns the profiler.
 LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
@@ -353,6 +415,43 @@ LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
 LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     const char* key);
+
+// Registers a tensor buffer with the NPU (Dispatch API) of the compiled model
+// right away, so that runs reuse the registration whichever tensors the buffer
+// is bound to. Registrations are counted. Other accelerators ignore them, and
+// a buffer that the NPU fails to register is registered when it is bound
+// instead. Thread safety: this function must not be called concurrently with
+// other functions on the same `compiled_model` (such as
+// `LiteRtRunCompiledModel` or `LiteRtRunCompiledModelAsync`).
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - tensor_buffer: the tensor buffer to register.
+//
+// Returns:
+// - kLiteRtStatusOk if successful.
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+LiteRtStatus LiteRtCompiledModelRegisterTensorBuffer(
+    LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer);
+
+// Releases a registration made by LiteRtCompiledModelRegisterTensorBuffer().
+// Once the buffer has been unregistered as many times as it was registered, it
+// is unregistered from the NPU right away, or once it is no longer bound to an
+// I/O tensor (from the latest run, until a subsequent run binds a different
+// buffer to that tensor) nor in use by an in-flight asynchronous run started
+// by `LiteRtRunCompiledModelAsync()`. Thread safety: this function must not be
+// called concurrently with other functions on the same `compiled_model` (such
+// as `LiteRtRunCompiledModel` or `LiteRtRunCompiledModelAsync`).
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - tensor_buffer: the tensor buffer to unregister.
+//
+// Returns:
+// - kLiteRtStatusOk if successful (even if the buffer is not registered).
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+LiteRtStatus LiteRtCompiledModelUnregisterTensorBuffer(
+    LiteRtCompiledModel compiled_model, LiteRtTensorBuffer tensor_buffer);
 
 // Error reporter APIs
 

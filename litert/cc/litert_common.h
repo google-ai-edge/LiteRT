@@ -36,6 +36,7 @@ enum class Status : int {
   kErrorWrongVersion = kLiteRtStatusErrorWrongVersion,
   kErrorUnknown = kLiteRtStatusErrorUnknown,
   kErrorAlreadyExists = kLiteRtStatusErrorAlreadyExists,
+  kErrorFailedPrecondition = kLiteRtStatusErrorFailedPrecondition,
   /// Inference progression errors.
   kCancelled = kLiteRtStatusCancelled,
   /// File and loading related errors.

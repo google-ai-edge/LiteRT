@@ -17,7 +17,6 @@
 #include <sys/mman.h>
 
 #include <cstddef>
-#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -136,7 +135,7 @@ void AdapterOdc::FreeCompiledCode(char** compiled_code_data,
                            compiled_code_sizes, num_bytecodes);
 }
 
-Expected<std::vector<int32_t>> AdapterOdc::GetUnsupportedOps(
+Expected<std::vector<UnsupportedOp>> AdapterOdc::GetUnsupportedOps(
     const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
     size_t options_size) {
   return Unexpected(kLiteRtStatusErrorUnsupported,

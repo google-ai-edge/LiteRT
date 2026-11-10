@@ -29,7 +29,7 @@ void ConvertCbrt(
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::POW);
+  op->name = ToString(::ml_drift::OperationType::kPow);
   ir_model.AddConsumer(tensor_map[node.inputs->data[0]], op->id);
   ::ml_drift::ElementwiseAttributes attr;
   attr.param = 1.0f / 3.0f;

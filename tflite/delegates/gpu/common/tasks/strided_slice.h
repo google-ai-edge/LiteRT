@@ -18,6 +18,7 @@ limitations under the License.
 
 #include <string>
 
+#include "absl/status/status.h"
 #include "tflite/delegates/gpu/common/operations.h"
 #include "tflite/delegates/gpu/common/task/gpu_operation.h"
 #include "tflite/delegates/gpu/common/types.h"

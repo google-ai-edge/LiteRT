@@ -11,6 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include <algorithm>
+#include <cstring>
 #include <set>
 #include <utility>
 #include <vector>
@@ -26,12 +28,13 @@
 #include <unistd.h>
 #endif  // !defined(LITERT_WINDOWS_OS) && !defined(__APPLE__)
 
-
 #if !defined(LITERT_WINDOWS_OS) && !defined(__APPLE__)
 
-static LiteRtDispatchApi g_real_api;
-static LiteRtDispatchInterface g_intercepted_interface;
-static LiteRtDispatchAsyncInterface g_intercepted_async_interface;
+static LiteRtDispatchQueryInterfaceT g_real_query_interface = nullptr;
+static LiteRtInterface g_real_basic_interface = nullptr;
+static LiteRtDispatchInterface_V1 g_intercepted_interface;
+static LiteRtDispatchAsyncInterface_V1 g_intercepted_async_interface;
+static bool g_is_intercepted_initialized = false;
 
 static std::vector<std::pair<LiteRtEvent, int>>& GetPendingJobs() {
   static auto* pending_jobs = new std::vector<std::pair<LiteRtEvent, int>>();
@@ -49,13 +52,30 @@ GetBufferToHandle() {
       new absl::flat_hash_map<LiteRtTensorBuffer, LiteRtTensorBufferHandle>();
   return *buffer_to_handle;
 }
+static int g_num_registrations = 0;
+static int g_num_unregistrations = 0;
+static int g_num_detaches = 0;
+// Number of upcoming registrations to fail.
+static int g_num_registrations_to_fail = 0;
 static LiteRtEnvironment g_env = nullptr;
 static const LiteRtRuntimeContext* g_runtime_context = nullptr;
+static bool g_multi_inflight_async = true;
 
 extern "C" {
 
 void LiteRtDispatch_MockDispatchSetEnvironment(LiteRtEnvironment env) {
   g_env = env;
+  g_multi_inflight_async = true;
+  for (auto& job : GetPendingJobs()) {
+    (void)close(job.second);
+  }
+  GetPendingJobs().clear();
+  GetUnregisteredHandles().clear();
+  GetBufferToHandle().clear();
+}
+
+void LiteRtDispatch_MockDispatchSetMultiInflightAsync(bool enabled) {
+  g_multi_inflight_async = enabled;
 }
 
 void LiteRtDispatch_MockDispatchSignalNextJob() {
@@ -81,103 +101,188 @@ LiteRtTensorBufferHandle LiteRtDispatch_MockDispatchGetHandle(
   return 0;
 }
 
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
-  // Load real API
-  void* handle = dlopen(
-      "third_party/odml/litert/litert/vendors/examples/"
-      "libLiteRtDispatch_Example.so",
-      RTLD_NOW);
-  if (!handle) {
-    handle = dlopen("litert/vendors/examples/libLiteRtDispatch_Example.so",
-                    RTLD_NOW);
+int LiteRtDispatch_MockDispatchNumRegistrations() {
+  return g_num_registrations;
+}
+
+int LiteRtDispatch_MockDispatchNumUnregistrations() {
+  return g_num_unregistrations;
+}
+
+int LiteRtDispatch_MockDispatchNumDetaches() { return g_num_detaches; }
+
+void LiteRtDispatch_MockDispatchFailNextRegistration() {
+  ++g_num_registrations_to_fail;
+}
+
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
   }
-  if (!handle) return kLiteRtStatusErrorRuntimeFailure;
+  if (litert_runtime_version.major < 1) {
+    return kLiteRtStatusErrorUnsupported;
+  }
 
-  auto get_api = reinterpret_cast<LiteRtStatus (*)(LiteRtDispatchApi*)>(
-      dlsym(handle, "LiteRtDispatchGetApi"));
-  if (!get_api) return kLiteRtStatusErrorRuntimeFailure;
+  if (!g_is_intercepted_initialized) {
+    // Load real API
+    void* handle = dlopen(
+        "third_party/odml/litert/litert/vendors/examples/"
+        "libLiteRtDispatch_Example.so",
+        RTLD_NOW);
+    if (!handle) {
+      handle = dlopen("litert/vendors/examples/libLiteRtDispatch_Example.so",
+                      RTLD_NOW);
+    }
+    if (!handle) return kLiteRtStatusErrorRuntimeFailure;
 
-  LiteRtStatus status = get_api(&g_real_api);
-  if (status != kLiteRtStatusOk) return status;
+    g_real_query_interface = reinterpret_cast<LiteRtDispatchQueryInterfaceT>(
+        dlsym(handle, "LiteRtDispatchQueryInterface"));
+    if (!g_real_query_interface) return kLiteRtStatusErrorRuntimeFailure;
 
-  g_intercepted_interface = *g_real_api.interface;
+    LiteRtApiVersion try_version = {1, 0, 0};
+    LiteRtStatus status = g_real_query_interface(
+        kLiteRtInterfaceBasic, try_version, &g_real_basic_interface);
+    if (status != kLiteRtStatusOk) return status;
 
-  // Override initialize to save runtime_context
-  g_intercepted_interface.initialize =
-      [](const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
-         LiteRtOptions options) {
-        g_runtime_context = runtime_context;
-        g_env = env;
-        return g_real_api.interface->initialize(runtime_context, env, options);
-      };
+    auto* real_basic = reinterpret_cast<const LiteRtDispatchInterface_V1*>(
+        g_real_basic_interface);
+    g_intercepted_interface = {};
+    std::memcpy(&g_intercepted_interface, real_basic,
+                std::min<size_t>(real_basic->abi_header.struct_size,
+                                 sizeof(LiteRtDispatchInterface_V1)));
+    g_intercepted_interface.abi_header.struct_size = std::min<size_t>(
+        real_basic->abi_header.struct_size, sizeof(LiteRtDispatchInterface_V1));
 
-  // Override get_capabilities to report async support
-  g_intercepted_interface.get_capabilities = [](int* capabilities) {
-    *capabilities =
-        kLiteRtDispatchCapabilitiesBasic | kLiteRtDispatchCapabilitiesAsync;
-    return kLiteRtStatusOk;
-  };
+    // Override initialize to save runtime_context
+    g_intercepted_interface.initialize =
+        [](const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
+           LiteRtOptions options) {
+          g_runtime_context = runtime_context;
+          g_env = env;
+          auto* real_basic =
+              reinterpret_cast<const LiteRtDispatchInterface_V1*>(
+                  g_real_basic_interface);
+          return real_basic->initialize(runtime_context, env, options);
+        };
 
-  // Override Register to map buffers to handles
-  g_intercepted_interface.register_tensor_buffer =
-      [](LiteRtDispatchDeviceContext context, LiteRtTensorBuffer buffer,
-         LiteRtTensorBufferHandle* handle) {
-        LiteRtStatus s = g_real_api.interface->register_tensor_buffer(
-            context, buffer, handle);
-        if (s == kLiteRtStatusOk) {
-          GetBufferToHandle()[buffer] = *handle;
-        }
-        return s;
-      };
+    // Override get_capabilities to report async support
+    g_intercepted_interface.get_capabilities = [](int* capabilities) {
+      *capabilities =
+          kLiteRtDispatchCapabilitiesBasic | kLiteRtDispatchCapabilitiesAsync;
+      if (g_multi_inflight_async) {
+        *capabilities |= kLiteRtDispatchCapabilitiesMultiInflightAsync;
+      }
+      return kLiteRtStatusOk;
+    };
 
-  // Override Unregister to track calls
-  g_intercepted_interface.unregister_tensor_buffer =
-      [](LiteRtDispatchDeviceContext context, LiteRtTensorBufferHandle handle) {
-        GetUnregisteredHandles().insert(handle);
-        return g_real_api.interface->unregister_tensor_buffer(context, handle);
-      };
-
-  // Provide Async interface
-  g_intercepted_async_interface.invoke_async =
-      [](LiteRtDispatchInvocationContext context, int num_events,
-         LiteRtEvent* events) {
-        if (!g_env) return kLiteRtStatusErrorRuntimeFailure;
-
-        int pipefds[2];
-        if (pipe(pipefds) != 0) return kLiteRtStatusErrorRuntimeFailure;
-
-        if (!g_runtime_context ||
-            !g_runtime_context->create_event_from_sync_fence_fd) {
-          close(pipefds[0]);
-          close(pipefds[1]);
-          return kLiteRtStatusErrorRuntimeFailure;
-        }
-
-        LiteRtEvent event;
-        LiteRtStatus s = g_runtime_context->create_event_from_sync_fence_fd(
-            g_env, pipefds[0], /*owns_fd=*/true, &event);
-        if (s != kLiteRtStatusOk) {
-          close(pipefds[0]);
-          close(pipefds[1]);
+    // Override Register to map buffers to handles, and to fail on request
+    g_intercepted_interface.register_tensor_buffer =
+        [](LiteRtDispatchDeviceContext context, LiteRtTensorBuffer buffer,
+           LiteRtTensorBufferHandle* handle) {
+          if (g_num_registrations_to_fail > 0) {
+            --g_num_registrations_to_fail;
+            return kLiteRtStatusErrorRuntimeFailure;
+          }
+          auto* real_basic =
+              reinterpret_cast<const LiteRtDispatchInterface_V1*>(
+                  g_real_basic_interface);
+          LiteRtStatus s =
+              real_basic->register_tensor_buffer(context, buffer, handle);
+          if (s == kLiteRtStatusOk) {
+            GetBufferToHandle()[buffer] = *handle;
+            ++g_num_registrations;
+          }
           return s;
-        }
+        };
 
-        GetPendingJobs().push_back({event, pipefds[1]});
-        for (int i = 0; i < num_events; ++i) {
-          events[i] = event;
-        }
-        return kLiteRtStatusOk;
-      };
-  g_intercepted_async_interface.attach_input_event =
-      [](LiteRtDispatchInvocationContext context, int idx, LiteRtEvent event) {
-        return kLiteRtStatusOk;
-      };
+    // Override Unregister to track calls
+    g_intercepted_interface.unregister_tensor_buffer =
+        [](LiteRtDispatchDeviceContext context,
+           LiteRtTensorBufferHandle handle) {
+          auto* real_basic =
+              reinterpret_cast<const LiteRtDispatchInterface_V1*>(
+                  g_real_basic_interface);
+          GetUnregisteredHandles().insert(handle);
+          ++g_num_unregistrations;
+          return real_basic->unregister_tensor_buffer(context, handle);
+        };
 
-  *api = g_real_api;
-  api->interface = &g_intercepted_interface;
-  api->async_interface = &g_intercepted_async_interface;
+    // Override Detach to track calls
+    g_intercepted_interface.detach_input =
+        [](LiteRtDispatchInvocationContext context, int index,
+           LiteRtTensorBufferHandle handle) {
+          auto* real_basic =
+              reinterpret_cast<const LiteRtDispatchInterface_V1*>(
+                  g_real_basic_interface);
+          ++g_num_detaches;
+          return real_basic->detach_input(context, index, handle);
+        };
+    g_intercepted_interface.detach_output =
+        [](LiteRtDispatchInvocationContext context, int index,
+           LiteRtTensorBufferHandle handle) {
+          auto* real_basic =
+              reinterpret_cast<const LiteRtDispatchInterface_V1*>(
+                  g_real_basic_interface);
+          ++g_num_detaches;
+          return real_basic->detach_output(context, index, handle);
+        };
 
-  return kLiteRtStatusOk;
+    // Provide Async interface
+    g_intercepted_async_interface.abi_header = {
+        .struct_size = sizeof(LiteRtDispatchAsyncInterface_V1),
+        .major_version = 1,
+        .minor_version = 0,
+        .reserved = 0,
+    };
+    g_intercepted_async_interface.invoke_async =
+        [](LiteRtDispatchInvocationContext context, int num_events,
+           LiteRtEvent* events) {
+          if (!g_env) return kLiteRtStatusErrorRuntimeFailure;
+
+          int pipefds[2];
+          if (pipe(pipefds) != 0) return kLiteRtStatusErrorRuntimeFailure;
+
+          if (!g_runtime_context ||
+              !g_runtime_context->create_event_from_sync_fence_fd) {
+            close(pipefds[0]);
+            close(pipefds[1]);
+            return kLiteRtStatusErrorRuntimeFailure;
+          }
+
+          LiteRtEvent event;
+          LiteRtStatus s = g_runtime_context->create_event_from_sync_fence_fd(
+              g_env, pipefds[0], /*owns_fd=*/true, &event);
+          if (s != kLiteRtStatusOk) {
+            close(pipefds[0]);
+            close(pipefds[1]);
+            return s;
+          }
+
+          GetPendingJobs().push_back({event, pipefds[1]});
+          for (int i = 0; i < num_events; ++i) {
+            events[i] = event;
+          }
+          return kLiteRtStatusOk;
+        };
+    g_intercepted_async_interface.attach_input_event =
+        [](LiteRtDispatchInvocationContext context, int idx,
+           LiteRtEvent event) { return kLiteRtStatusOk; };
+
+    g_is_intercepted_initialized = true;
+  }
+
+  if (interface_id == kLiteRtInterfaceBasic) {
+    *out_interface = &g_intercepted_interface;
+    return kLiteRtStatusOk;
+  } else if (interface_id == kLiteRtInterfaceAsync) {
+    *out_interface = &g_intercepted_async_interface;
+    return kLiteRtStatusOk;
+  }
+
+  return g_real_query_interface(interface_id, litert_runtime_version,
+                                out_interface);
 }
 }  // extern "C"
 
@@ -186,6 +291,8 @@ LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
 extern "C" {
 
 void LiteRtDispatch_MockDispatchSetEnvironment(LiteRtEnvironment env) {}
+
+void LiteRtDispatch_MockDispatchSetMultiInflightAsync(bool enabled) {}
 
 void LiteRtDispatch_MockDispatchSignalNextJob() {}
 
@@ -199,7 +306,17 @@ LiteRtTensorBufferHandle LiteRtDispatch_MockDispatchGetHandle(
   return 0;
 }
 
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
+int LiteRtDispatch_MockDispatchNumRegistrations() { return 0; }
+
+int LiteRtDispatch_MockDispatchNumUnregistrations() { return 0; }
+
+int LiteRtDispatch_MockDispatchNumDetaches() { return 0; }
+
+void LiteRtDispatch_MockDispatchFailNextRegistration() {}
+
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(
+    LiteRtDispatchInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
   return kLiteRtStatusErrorRuntimeFailure;
 }
 

@@ -1482,5 +1482,33 @@ TEST(OpOptionsTest, TestSetSqueezeOpOptionsSuccess) {
   EXPECT_THAT(res_get->squeeze_dims, ElementsAre(0, 2));
 }
 
+TEST(OpOptionsTest, TestSetOneHotOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflOneHot, {}, {});
+  OneHotOptions options = {};
+  options.op = &op;
+  options.axis = 2;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<OneHotOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->axis, 2);
+}
+
+TEST(OpOptionsTest, TestSetSplitVOpOptionsSuccess) {
+  LiteRtBuilderT builder;
+  auto& op = builder.BuildOp(kLiteRtOpCodeTflSplitV, {}, {});
+  SplitVOptions options = {};
+  options.op = &op;
+  options.num_splits = 3;
+  auto res = options.SetOpOptions(&builder);
+  ASSERT_TRUE(res);
+
+  auto res_get = GetOptionsAs<SplitVOptions>(&op);
+  ASSERT_TRUE(res_get);
+  EXPECT_EQ(res_get->num_splits, 3);
+}
+
 }  // namespace
 }  // namespace litert

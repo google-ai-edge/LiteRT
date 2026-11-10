@@ -26,6 +26,7 @@ import com.google.ai.edge.litert.support.common.TensorOperator;
 import com.google.ai.edge.litert.support.common.internal.SupportPreconditions;
 import com.google.ai.edge.litert.support.image.ops.Rot90Op;
 import com.google.ai.edge.litert.support.image.ops.TensorOperatorWrapper;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ListIterator;
@@ -139,6 +140,7 @@ public class ImageProcessor extends SequentialProcessor<TensorImage> {
      *
      * @param op the Operator instance to be executed then
      */
+    @CanIgnoreReturnValue
     public Builder add(ImageOperator op) {
       super.add(op);
       return this;
@@ -151,6 +153,7 @@ public class ImageProcessor extends SequentialProcessor<TensorImage> {
      *
      * @param op the Operator instance to be executed then
      */
+    @CanIgnoreReturnValue
     public Builder add(TensorOperator op) {
       return add(new TensorOperatorWrapper(op));
     }

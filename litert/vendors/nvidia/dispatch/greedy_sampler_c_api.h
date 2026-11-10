@@ -43,7 +43,9 @@ LiteRtStatus LiteRtDispatchNvidiaGreedySamplerSampleF32(
 // unsupported. token_ids points to rows writable CPU int32 slots. The call
 // waits for the logits event and completes one batched device-to-host transfer
 // before return. Each row selects the first maximum; a NaN at index zero wins,
-// other NaNs are ignored. Unsupported buffer types, element types, or layouts
+// other NaNs are ignored. What the host wrote to the buffer through its lock
+// since the device last had it (a constraint's mask) is uploaded before the
+// kernel reads it. Unsupported buffer types, element types, or layouts
 // return kLiteRtStatusErrorUnsupported. No logits or caller-owned buffers are
 // modified.
 LiteRtStatus LiteRtDispatchNvidiaGreedySamplerSampleBatched(

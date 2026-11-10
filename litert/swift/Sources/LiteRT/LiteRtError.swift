@@ -32,6 +32,7 @@ public enum LiteRtError: Error, CustomStringConvertible, Equatable {
   case wrongVersion
   case unknown
   case alreadyExists
+  case failedPrecondition
   case cancelled
   case fileIO
   case invalidFlatbuffer
@@ -65,6 +66,7 @@ public enum LiteRtError: Error, CustomStringConvertible, Equatable {
     case kLiteRtStatusErrorWrongVersion: self = .wrongVersion
     case kLiteRtStatusErrorUnknown: self = .unknown
     case kLiteRtStatusErrorAlreadyExists: self = .alreadyExists
+    case kLiteRtStatusErrorFailedPrecondition: self = .failedPrecondition
     case kLiteRtStatusCancelled: self = .cancelled
     case kLiteRtStatusErrorFileIO: self = .fileIO
     case kLiteRtStatusErrorInvalidFlatbuffer: self = .invalidFlatbuffer
@@ -101,6 +103,7 @@ public enum LiteRtError: Error, CustomStringConvertible, Equatable {
     case .wrongVersion: return "Wrong version"
     case .unknown: return "Unknown error"
     case .alreadyExists: return "Already exists"
+    case .failedPrecondition: return "Failed precondition"
     case .cancelled: return "Cancelled"
     case .fileIO: return "File I/O error"
     case .invalidFlatbuffer: return "Invalid flatbuffer"

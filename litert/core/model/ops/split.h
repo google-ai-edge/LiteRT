@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
@@ -35,7 +36,9 @@ inline LiteRtStatus InferSplit(const LiteRtOpT& op,
   constexpr size_t kShapeTensorSize = sizeof(int32_t);
 
   // Inputs: Axis, Input.
-  if (input_shapes.size() < kSplitMinArgs) {
+  if (input_shapes.size() < kSplitMinArgs || output_shapes.empty() ||
+      op.Inputs().size() < kSplitMinArgs ||
+      op.Inputs()[kAxisArgIndex] == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto& axis_tensor = op.Input(kAxisArgIndex);
@@ -44,11 +47,17 @@ inline LiteRtStatus InferSplit(const LiteRtOpT& op,
   const auto& opts = GetTflOptions(op);
   const auto* split_opts = opts.AsSplitOptions();
   int32_t num_splits = split_opts ? split_opts->num_splits : op.NumOutputs();
+  if (num_splits <= 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 
   if (axis_tensor.Weights().Buffer().Size() >= kShapeTensorSize) {
     auto buf = axis_tensor.Weights().Buffer();
     int32_t axis = *reinterpret_cast<const int32_t*>(buf.Data());
-    if (axis < 0) axis += input_shape.size();
+    if ((axis < 0 && !SafeAdd(axis, input_shape.size(), axis)) || axis < 0 ||
+        static_cast<size_t>(axis) >= input_shape.size()) {
+      return kLiteRtStatusErrorInvalidArgument;
+    }
 
     Dims out_shape = input_shape;
     if (out_shape[axis] != -1) {

@@ -13,8 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
-load("@xla//third_party/rules_python/python:py_binary.bzl", "py_binary")
-load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -25,7 +25,7 @@ py_library(
     name = "utils",
     srcs = ["utils.py"],
     deps = [
-        "@org_tensorflow//third_party/py/numpy:headers",
+        "//third_party/py/numpy",
     ],
 )
 
@@ -33,7 +33,7 @@ py_library(
     name = "rmsnorm_lib",
     srcs = ["rmsnorm.py"],
     deps = [
-        "@org_tensorflow//third_party/py/numpy:headers",
+        "//third_party/py/numpy",
     ],
 )
 
@@ -50,7 +50,7 @@ py_library(
     srcs = ["rope.py"],
     deps = [
         ":utils",
-        "@org_tensorflow//third_party/py/numpy:headers",
+        "//third_party/py/numpy",
     ],
 )
 
@@ -67,7 +67,7 @@ py_library(
     srcs = ["feed_forward_network.py"],
     deps = [
         ":utils",
-        "@org_tensorflow//third_party/py/numpy:headers",
+        "//third_party/py/numpy",
     ],
 )
 
@@ -86,7 +86,7 @@ py_library(
         ":rmsnorm_lib",
         ":rope_lib",
         ":utils",
-        "@org_tensorflow//third_party/py/numpy:headers",
+        "//third_party/py/numpy",
     ],
 )
 
@@ -106,7 +106,7 @@ py_library(
         ":feed_forward_network_lib",
         ":rmsnorm_lib",
         ":utils",
-        "@org_tensorflow//third_party/py/numpy:headers",
+        "//third_party/py/numpy",
     ],
 )
 
@@ -125,7 +125,7 @@ py_library(
         ":rmsnorm_lib",
         ":transformer_lib",
         ":utils",
-        "@org_tensorflow//third_party/py/numpy:headers",
+        "//third_party/py/numpy",
     ],
 )
 

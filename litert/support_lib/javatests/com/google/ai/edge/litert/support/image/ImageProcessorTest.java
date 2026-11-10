@@ -102,6 +102,24 @@ public final class ImageProcessorTest {
   }
 
   @Test
+  public void addWithIgnoredReturnValueRegistersOperators() {
+    ImageProcessor.Builder builder = new ImageProcessor.Builder();
+    // Both add() overloads are @CanIgnoreReturnValue, so callers may use them as statements.
+    builder.add(new ResizeOp(200, 300, ResizeMethod.BILINEAR));
+    builder.add(new ResizeWithCropOrPadOp(100, 200));
+    builder.add(new Rot90Op(1));
+    builder.add(new NormalizeOp(127, 128));
+    ImageProcessor processor = builder.build();
+
+    RectF original = processor.inverseTransform(new RectF(0, 50, 100, 150), 400, 600);
+
+    assertThat(original.top).isEqualTo(100);
+    assertThat(original.left).isEqualTo(200);
+    assertThat(original.right).isEqualTo(400);
+    assertThat(original.bottom).isEqualTo(300);
+  }
+
+  @Test
   public void resizeShouldFailWithNonRgbImages() {
     int[] data = new int[] {1, 2, 3};
     TensorBuffer tensorBuffer = TensorBuffer.createDynamic(DataType.UINT8);

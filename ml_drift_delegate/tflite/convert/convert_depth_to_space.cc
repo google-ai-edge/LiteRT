@@ -30,7 +30,7 @@ void ConvertDepthToSpace(
     ::ml_drift::ir::IrModel& ir_model) {
 
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::DEPTH_TO_SPACE);
+  op->name = ToString(::ml_drift::OperationType::kDepthToSpace);
   ir_model.AddConsumer(tensor_map[node.inputs->data[0]], op->id);
   ir_model.SetProducer(tensor_map[node.outputs->data[0]], op->id);
 

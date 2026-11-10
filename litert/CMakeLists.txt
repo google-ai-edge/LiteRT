@@ -102,8 +102,7 @@ include_directories(${LITERT_GENERATED_INCLUDE_DIR})
 set(TFLITE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tflite" CACHE PATH "Path to TFLite source directory")
 set(TFLITE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/tflite_build" CACHE PATH "Path to TFLite build directory")
 
-set(TFLITE_ENABLE_XNNPACK ON CACHE BOOL "Enable XNNPACK in TFLite")
-set(TFLITE_ENABLE_GPU ON CACHE BOOL "Enable GPU in TFLite")
+option(TFLITE_ENABLE_XNNPACK "Enable XNNPACK in TFLite" ON)
 if(LITERT_DISABLE_KLEIDIAI)
   set(XNNPACK_ENABLE_KLEIDIAI OFF CACHE BOOL "Disable KleidiAI in XNNPACK")
 endif()
@@ -149,8 +148,13 @@ if(CMAKE_CROSSCOMPILING)
       if(NOT HOSTCFG_RC EQUAL 0)
         message(FATAL_ERROR "Failed to configure host flatbuffers:\n${HOSTCFG_ERR}")
       endif()
+      if(NOT CMAKE_BUILD_PARALLEL_LEVEL)
+        set(_flatc_jobs 4)
+      else()
+        set(_flatc_jobs ${CMAKE_BUILD_PARALLEL_LEVEL})
+      endif()
       execute_process(
-        COMMAND ${CMAKE_COMMAND} --build . --target flatc -- -j${CMAKE_BUILD_PARALLEL_LEVEL}
+        COMMAND ${CMAKE_COMMAND} --build . --target flatc -- -j${_flatc_jobs}
         WORKING_DIRECTORY "${_root_host_flatc_dir}"
         RESULT_VARIABLE HOSTBUILD_RC
         ERROR_VARIABLE HOSTBUILD_ERR)
@@ -171,40 +175,76 @@ else()
 endif()
 
 
-# Get TensorFlow source directory from TFLite build
-if(EXISTS "${TFLITE_BUILD_DIR}")
-    include("${TFLITE_BUILD_DIR}/tensorflow_src_dir.cmake" OPTIONAL)
-endif()
-
-# Set default TensorFlow source directory if not found
-if(NOT TENSORFLOW_SOURCE_DIR)
-    if(EXISTS "${TFLITE_BUILD_DIR}/tensorflow-src")
-        set(TENSORFLOW_SOURCE_DIR "${TFLITE_BUILD_DIR}/tensorflow-src")
-    else()
-        message(FATAL_ERROR "TensorFlow source directory not found. Please build TFLite first or set TENSORFLOW_SOURCE_DIR")
-    endif()
-endif()
-
-message(STATUS "Using TensorFlow source directory: ${TENSORFLOW_SOURCE_DIR}")
-
 # Include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${TFLITE_SOURCE_DIR}
-    ${TENSORFLOW_SOURCE_DIR}
 )
 
 list(APPEND CMAKE_MODULE_PATH "${TFLITE_SOURCE_DIR}/tools/cmake/modules")
 
-if(EXISTS "${CMAKE_BINARY_DIR}/opencl_headers")
-    include_directories(${CMAKE_BINARY_DIR}/opencl_headers)
+if(NOT EXISTS "${CMAKE_BINARY_DIR}/opencl_headers")
+  find_package(opencl_headers REQUIRED)
+endif()
+include_directories(${CMAKE_BINARY_DIR}/opencl_headers)
+
+if(NOT EXISTS "${CMAKE_BINARY_DIR}/vulkan_headers")
+  find_package(vulkan_headers REQUIRED)
+endif()
+include_directories(AFTER "${CMAKE_BINARY_DIR}/vulkan_headers/include")
+
+if(NOT EXISTS "${CMAKE_BINARY_DIR}/opengl_headers")
+  find_package(opengl_headers REQUIRED)
+endif()
+include_directories(AFTER "${CMAKE_BINARY_DIR}/opengl_headers/api")
+
+if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
+  if(NOT EXISTS "${CMAKE_BINARY_DIR}/egl_headers")
+    find_package(egl_headers REQUIRED)
+  endif()
+  include_directories(AFTER "${CMAKE_BINARY_DIR}/egl_headers/api")
 endif()
 
 # Add FP16 headers include directory
 if(EXISTS "${CMAKE_BINARY_DIR}/FP16-source/include")
-    include_directories(${CMAKE_BINARY_DIR}/FP16-source/include)
+  include_directories(${CMAKE_BINARY_DIR}/FP16-source/include)
+elseif(NOT EXISTS "${CMAKE_BINARY_DIR}/fp16_headers")
+  find_package(fp16_headers REQUIRED)
+else()
+  include_directories(${CMAKE_BINARY_DIR}/fp16_headers/include)
 endif()
+
+# Add SafeInt headers include directory
+include(OverridableFetchContent)
+OverridableFetchContent_Declare(
+  safeint
+  GIT_REPOSITORY https://github.com/dcleblanc/SafeInt
+  GIT_TAG 72f0745e26091af6d1186fd91426377f16688ba7
+  GIT_PROGRESS TRUE
+  PREFIX "${CMAKE_BINARY_DIR}"
+  SOURCE_DIR "${CMAKE_BINARY_DIR}/safeint"
+)
+OverridableFetchContent_GetProperties(safeint)
+if(NOT safeint_POPULATED)
+  OverridableFetchContent_Populate(safeint)
+endif()
+include_directories(${safeint_SOURCE_DIR})
+
+# Add ML Drift headers include directory
+OverridableFetchContent_Declare(
+  ml_drift
+  GIT_REPOSITORY https://github.com/google-ai-edge/ml-drift.git
+  GIT_TAG 1b18771f44c0be3d972847b31a80f6dc3d6964b5
+  GIT_PROGRESS TRUE
+  PREFIX "${CMAKE_BINARY_DIR}"
+  SOURCE_DIR "${CMAKE_BINARY_DIR}/ml_drift"
+)
+OverridableFetchContent_GetProperties(ml_drift)
+if(NOT ml_drift_POPULATED)
+  OverridableFetchContent_Populate(ml_drift)
+endif()
+include_directories(${ml_drift_SOURCE_DIR})
 
 # Find FlatBuffers
 #
@@ -231,6 +271,47 @@ if(NOT TARGET flatbuffers::flatbuffers)
     INTERFACE_INCLUDE_DIRECTORIES "${LITERT_FLATBUFFERS_DIR}/include"
   )
 endif()
+
+# Locate flatc for generating ML Drift FlatBuffer headers
+set(LITERT_FLATC_EXECUTABLE "")
+set(LITERT_FLATC_TARGET "")
+if(CMAKE_CROSSCOMPILING AND TFLITE_HOST_TOOLS_DIR AND EXISTS "${TFLITE_HOST_TOOLS_DIR}/flatc")
+  set(LITERT_FLATC_EXECUTABLE "${TFLITE_HOST_TOOLS_DIR}/flatc")
+elseif(TARGET flatbuffers::flatc)
+  set(LITERT_FLATC_EXECUTABLE "$<TARGET_FILE:flatbuffers::flatc>")
+  set(LITERT_FLATC_TARGET flatbuffers::flatc)
+elseif(TARGET flatc)
+  set(LITERT_FLATC_EXECUTABLE "$<TARGET_FILE:flatc>")
+  set(LITERT_FLATC_TARGET flatc)
+elseif(EXISTS "${CMAKE_BINARY_DIR}/flatbuffers-flatc/bin/flatc")
+  set(LITERT_FLATC_EXECUTABLE "${CMAKE_BINARY_DIR}/flatbuffers-flatc/bin/flatc")
+elseif(EXISTS "${LITERT_FLATBUFFERS_BUILD_DIR}/flatc")
+  set(LITERT_FLATC_EXECUTABLE "${LITERT_FLATBUFFERS_BUILD_DIR}/flatc")
+else()
+  find_program(LITERT_FLATC_EXECUTABLE NAMES flatc)
+endif()
+
+set(MLDRIFT_SERIALIZATION_BASE_FBS "${ml_drift_SOURCE_DIR}/ml_drift/common/task/serialization_base.fbs")
+set(MLDRIFT_SERIALIZATION_BASE_H "${ml_drift_SOURCE_DIR}/ml_drift/common/task/serialization_base_generated.h")
+set(MLDRIFT_CL_PROGRAM_CACHE_FBS "${ml_drift_SOURCE_DIR}/ml_drift/cl/compiled_program_cache.fbs")
+set(MLDRIFT_CL_PROGRAM_CACHE_H "${ml_drift_SOURCE_DIR}/ml_drift/cl/compiled_program_cache_generated.h")
+add_custom_command(
+  OUTPUT "${MLDRIFT_SERIALIZATION_BASE_H}" "${MLDRIFT_CL_PROGRAM_CACHE_H}"
+  COMMAND ${LITERT_FLATC_EXECUTABLE} --cpp --scoped-enums
+          -I "${ml_drift_SOURCE_DIR}"
+          -o "${ml_drift_SOURCE_DIR}/ml_drift/common/task"
+          "${MLDRIFT_SERIALIZATION_BASE_FBS}"
+  COMMAND ${LITERT_FLATC_EXECUTABLE} --cpp --scoped-enums
+          -I "${ml_drift_SOURCE_DIR}"
+          -o "${ml_drift_SOURCE_DIR}/ml_drift/cl"
+          "${MLDRIFT_CL_PROGRAM_CACHE_FBS}"
+  DEPENDS "${MLDRIFT_SERIALIZATION_BASE_FBS}" "${MLDRIFT_CL_PROGRAM_CACHE_FBS}" ${LITERT_FLATC_TARGET}
+  COMMENT "Generating ML Drift FlatBuffer headers"
+)
+add_custom_target(mldrift_serialization_gen DEPENDS
+  "${MLDRIFT_SERIALIZATION_BASE_H}"
+  "${MLDRIFT_CL_PROGRAM_CACHE_H}"
+)
 
 # Find Abseil
 find_package(absl REQUIRED)

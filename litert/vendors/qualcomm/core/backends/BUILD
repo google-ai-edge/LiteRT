@@ -33,8 +33,9 @@ cc_library(
     name = "backend_utils",
     hdrs = ["backend_utils.h"],
     deps = [
-        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core:common",
         "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -86,7 +87,6 @@ cc_library(
     srcs = ["gpu_backend.cc"],
     hdrs = ["gpu_backend.h"],
     deps = [
-        ":backend_utils",
         ":graph_config_builder",
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
@@ -140,7 +140,6 @@ cc_library(
     hdrs = ["lpai_backend.h"],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
-        ":backend_utils",
         ":graph_config_builder",
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
@@ -266,7 +265,7 @@ litert_test(
         "@com_google_absl//absl/base:no_destructor",
         "@qairt//:qnn_lib_headers",
     ] + select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             # copybara:uncomment_begin(google-only)
             # "@qairt//:linux_deps",
             # copybara:uncomment_end
@@ -299,7 +298,7 @@ litert_test(
         "@com_google_absl//absl/base:no_destructor",
         "@qairt//:qnn_lib_headers",
     ] + select({
-        "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert:linux_x86_64": [
             # copybara:uncomment_begin(google-only)
             # "@qairt//:linux_deps",
             # copybara:uncomment_end

@@ -1,4 +1,4 @@
-load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
+load("@rules_python//python:py_library.bzl", "py_library")
 load("//litert/build_common:litert_build_defs.bzl", "if_google")
 
 # Copyright 2025 Google LLC.
@@ -42,7 +42,7 @@ py_library(
         "//litert/python/mlir/_mlir_libs:model_utils_ext",
         "@lark",
         "@ml_dtypes_py//ml_dtypes",
-        "@org_tensorflow//third_party/py/numpy:headers",
+        "//third_party/py/numpy",
         "@xdsl",
     ] + if_google(
         [

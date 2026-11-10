@@ -1,0 +1,18 @@
+[package]
+name = "nvguard"
+version = "0.1.0"
+edition = "2021"
+description = "Numerics and performance regression guard for LiteRT's NVIDIA (TensorRT-RTX) backend"
+license = "Apache-2.0"
+
+[dependencies]
+anyhow = "1"
+chrono = "0.4"
+clap = { version = "4.5", features = ["derive"] }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+[profile.release]
+debug = 1

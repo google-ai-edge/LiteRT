@@ -76,9 +76,9 @@ template <typename ShapeT, ::ml_drift::DataType Type>
 inline absl::Status CheckPopulateTensor(
     const TfLiteTensor* absl_nonnull tflite_tensor,
     bool enable_spanned_weights = false) {
-  if constexpr (Type == ::ml_drift::DataType::INT2 ||
-                Type == ::ml_drift::DataType::INT4 ||
-                Type == ::ml_drift::DataType::INT8) {
+  if constexpr (Type == ::ml_drift::DataType::kInt2 ||
+                Type == ::ml_drift::DataType::kInt4 ||
+                Type == ::ml_drift::DataType::kInt8) {
     if (tflite_tensor->dims->size != 2 && tflite_tensor->dims->size != 4 &&
         tflite_tensor->dims->size != 5) {
       return absl::InvalidArgumentError(absl::StrCat(
@@ -111,7 +111,7 @@ inline absl::Status CheckPopulateTensor(
       return absl::InvalidArgumentError(
           "quant_params->zero_point must not be null for quantized tensors.");
     }
-  } else if constexpr (Type != ::ml_drift::DataType::FLOAT32) {
+  } else if constexpr (Type != ::ml_drift::DataType::kFloat32) {
     ABSL_RETURN_IF_ERROR(CheckAllDimensions<ShapeT>(tflite_tensor->dims));
     if (enable_spanned_weights) {
       return absl::InvalidArgumentError(

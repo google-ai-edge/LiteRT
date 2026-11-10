@@ -11,7 +11,7 @@ package(
 )
 
 # LiteRT-only frontend: map LiteRT graph -> Context API, AmlContextCompile, pack DispatchInfo.
-# Links external @aml_npu//compiler_core; does NOT link libcompiler_adla.so.
+# Links @aml_npu_nn_runtime compiler_core; does NOT link libcompiler_adla.so.
 litert_dynamic_lib(
     name = "aml_compiler_plugin",
     srcs = [
@@ -35,13 +35,16 @@ litert_dynamic_lib(
     linkopts = litert_android_linkopts() + select({
         "@org_tensorflow//tensorflow:linux_x86_64": [
             make_rpaths([
-                "external/aml_npu/compiler_core/libs/linux/x86_64",
-                "external/aml_npu/runtime_lib/libs/linux/x86_64",
+                "external/aml_npu_nn_runtime/aml_compiler_core/libs/linux/x86_64",
             ]),
         ],
         "//conditions:default": [],
     }) + [
         "-Wl,--version-script=$(location :export_aml_compiler_plugin_linux.lds)",
+        # libc++ is linked statically. Keep it out of .dynsym so
+        # libcompiler_adla.so cannot bind locale / iostream to this .so.
+        "-Wl,--exclude-libs,libc++_static.a",
+        "-Wl,--exclude-libs,libc++abi.a",
         "-Wl,-soname=libLiteRtCompilerPlugin_Aml.so",
         # Wheel package places the shared library in the root directory.
         "-Wl,-rpath,$$ORIGIN",
@@ -56,7 +59,8 @@ litert_dynamic_lib(
     ],
     deps = [
         "//litert/vendors/aml/core:aml_dispatch_info",
-        "@aml_npu//compiler_core:aml_compiler_core_lib",
+        "//litert/vendors/c:litert_compiler_plugin_api",
+        "@aml_npu_nn_runtime//:aml_compiler_core_lib",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_compiler_context",

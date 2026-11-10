@@ -37,6 +37,8 @@ limitations under the License.
 #include "absl/base/const_init.h"
 #include "absl/base/no_destructor.h"
 #include "absl/base/thread_annotations.h"
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_replace.h"
@@ -65,11 +67,12 @@ limitations under the License.
 #include "tflite/string_type.h"
 #include "tflite/string_util.h"
 #include "tflite/tools/logging.h"
+#ifndef TFLITE_WITHOUT_MODEL_DUMP
 #include "tflite/tools/serialization/writer_lib.h"
+#endif  // TFLITE_WITHOUT_MODEL_DUMP
 #include "tflite/tools/versioning/op_version.h"
 #include "tflite/types/fp16.h"  // IWYU pragma: keep
 #include "tflite/version.h"
-#include "tsl/platform/logging.h"
 
 namespace tflite {
 
@@ -164,6 +167,7 @@ MATCHER(Fp16Eq, "") {
   return AlmostEquals(actual, expected, fp16_ulps_in_fp32);
 }
 
+#ifndef TFLITE_WITHOUT_MODEL_DUMP
 // Returns the name of the dumped model. The name is in the format of
 // DTS-<test_suite_name>-<test_name>-<model_serial>.tflite. The model serial
 // number is used to distinguish different models dumped in the same test.
@@ -281,6 +285,7 @@ std::unique_ptr<FlatBufferModel> ModifyDumpedModel(
       std::make_unique<OwnedMemoryAllocation>(std::move(data), fbb.GetSize());
   return FlatBufferModel::VerifyAndBuildFromAllocation(std::move(allocation));
 }
+#endif  // TFLITE_WITHOUT_MODEL_DUMP
 
 }  // namespace
 
@@ -319,7 +324,9 @@ std::vector<Matcher<std::complex<float>>> ArrayComplex64Near(
 
 int SingleOpModel::AddInput(const TensorData& t) {
   int id = 0;
-  if (t.per_block_quantization != 0) {
+  if (t.multi_axis_quantization) {
+    id = AddTensorMultiAxisQuant(t);
+  } else if (t.per_block_quantization != 0) {
     id = AddTensorPerBlockQuant(t);
   } else if (t.per_channel_quantization) {
     id = AddTensorPerChannelQuant(t);
@@ -703,6 +710,7 @@ int SingleOpModel::CountNumberOfDelegatedPartitions() const {
 }
 
 void SingleOpModel::MaybeDumpModel() {
+#ifndef TFLITE_WITHOUT_MODEL_DUMP
   std::string dump_directory(
       tflite::KernelTestDelegateProviders::Get()
           ->ConstParams()
@@ -750,6 +758,7 @@ void SingleOpModel::MaybeDumpModel() {
   output_file.write(reinterpret_cast<const char*>(allocation->base()),
                     allocation->bytes());
   output_file.close();
+#endif  // TFLITE_WITHOUT_MODEL_DUMP
 }
 
 SingleOpModel::~SingleOpModel() {

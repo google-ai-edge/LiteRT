@@ -67,8 +67,8 @@ bool TryConvertConcatToPad(
       ir_model.tensor(tensor_map[node.outputs->data[0]])->desc.GetBHWDCShape();
 
   ::ml_drift::Axis axis = GetConcatAxis(input_shapes, output_shape);
-  if (axis != ::ml_drift::Axis::HEIGHT && axis != ::ml_drift::Axis::WIDTH &&
-      axis != ::ml_drift::Axis::CHANNELS) {
+  if (axis != ::ml_drift::Axis::kHeight && axis != ::ml_drift::Axis::kWidth &&
+      axis != ::ml_drift::Axis::kChannels) {
     return false;
   }
 
@@ -86,11 +86,11 @@ bool TryConvertConcatToPad(
   }
 
   ::ml_drift::ir::IrOp* pad_op = ir_model.add_op();
-  pad_op->name = ToString(::ml_drift::OperationType::PAD);
+  pad_op->name = ToString(::ml_drift::OperationType::kPad);
   ir_model.AddConsumer(input_id, pad_op->id);
 
   ::ml_drift::PadAttributes pad_attr;
-  pad_attr.type = ::ml_drift::PaddingContentType::ZEROS;
+  pad_attr.type = ::ml_drift::PaddingContentType::kZeros;
   pad_attr.appended = ::ml_drift::BHWC(0, 0, 0, 0);
   pad_attr.prepended = ::ml_drift::BHWC(0, 0, 0, 0);
 
@@ -98,13 +98,13 @@ bool TryConvertConcatToPad(
   ::ml_drift::BHWC* p =
       (zeros_index == 0) ? &pad_attr.prepended : &pad_attr.appended;
   switch (axis) {
-    case ::ml_drift::Axis::HEIGHT:
+    case ::ml_drift::Axis::kHeight:
       p->h = zero_shape.h;
       break;
-    case ::ml_drift::Axis::WIDTH:
+    case ::ml_drift::Axis::kWidth:
       p->w = zero_shape.w;
       break;
-    case ::ml_drift::Axis::CHANNELS:
+    case ::ml_drift::Axis::kChannels:
       p->c = zero_shape.c;
       break;
     default:
@@ -125,10 +125,21 @@ void ConvertConcat(
     const TfLiteContext& context, const TfLiteNode& node,
     const TfLiteRegistration& registration,
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
-    ::ml_drift::ir::IrModel& ir_model) {
+    const IrModelBuilderOptions& options, ::ml_drift::ir::IrModel& ir_model) {
   if (TryConvertConcatToPad(context, node, tensor_map, ir_model)) {
     return;
   }
+
+  // CONCATENATION requires all inputs to share the output's data type. The
+  // partitioner (FP16GraphPartitionHelper::RemapFp16InputTensors) rewires a
+  // float16 constant straight into this node, removing the DEQUANTIZE the
+  // graph declared in front of it; for a float32 concat that leaves a float16
+  // operand beside float32 ones. Read such a constant as float32 to restore
+  // what the graph declared. Only at float32 precision. Otherwise every float32
+  // tensor is lowered to float16.
+  const bool requires_float32_constants =
+      !options.enable_reduced_precision &&
+      context.tensors[node.outputs->data[0]].type == kTfLiteFloat32;
 
   std::vector<::ml_drift::ir::IrTensorId> input_ids;
   std::vector<::ml_drift::BHWDC> input_shapes;
@@ -138,7 +149,14 @@ void ConvertConcat(
     const TfLiteTensor* input_tensor = context.tensors + node.inputs->data[i];
     ::ml_drift::ir::IrTensorId input_id;
     if (tflite::IsConstantTensor(input_tensor)) {
-      input_id = AddConstInput(context, node.inputs->data[i], ir_model, {})->id;
+      const bool read_float16_constants_as_float32 =
+          requires_float32_constants && input_tensor->type == kTfLiteFloat16;
+      input_id =
+          read_float16_constants_as_float32
+              ? AddFloat16ConstAsFloat32Input(context, node.inputs->data[i],
+                                              ir_model, {})
+                    ->id
+              : AddConstInput(context, node.inputs->data[i], ir_model, {})->id;
     } else {
       input_id = tensor_map[node.inputs->data[i]];
     }
@@ -151,7 +169,7 @@ void ConvertConcat(
     for (int j = 0; j < i; ++j) {
       if (input_ids[i] == input_ids[j]) {
         ::ml_drift::ir::IrOp* copy_op = ir_model.add_op();
-        copy_op->name = ToString(::ml_drift::OperationType::COPY);
+        copy_op->name = ToString(::ml_drift::OperationType::kCopy);
         ir_model.AddConsumer(input_ids[j], copy_op->id);
         const ::ml_drift::DataType dtype =
             ir_model.tensor(input_ids[j])->desc.GetDataType();
@@ -167,7 +185,7 @@ void ConvertConcat(
   }
 
   ::ml_drift::ir::IrOp* concat_op = ir_model.add_op();
-  concat_op->name = ToString(::ml_drift::OperationType::CONCAT);
+  concat_op->name = ToString(::ml_drift::OperationType::kConcat);
 
   for (::ml_drift::ir::IrTensorId input_id : input_ids) {
     ir_model.AddConsumer(input_id, concat_op->id);

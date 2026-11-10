@@ -33,7 +33,7 @@ void ConvertRoPE(
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     ::ml_drift::ir::IrModel& ir_model) {
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::ROPE);
+  op->name = ToString(::ml_drift::OperationType::kRope);
 
   // Either 2 inputs -> 1 output, or 3 inputs -> 2 outputs.
   for (int i = 0; i < node.inputs->size; ++i) {

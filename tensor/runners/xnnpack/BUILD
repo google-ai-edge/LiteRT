@@ -48,9 +48,13 @@ cc_test(
     srcs = ["runner_test.cc"],
     deps = [
         ":runner",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:datatypes",
         "//tensor/backends/xnnpack:arithmetic",
         "//tensor/runners/common_nnpack:runner_test_suite",
         "@XNNPACK",
+        "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
     ],
 )

@@ -16,17 +16,27 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_TESTING_NUMERICAL_TEST_SUITE_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_TESTING_NUMERICAL_TEST_SUITE_H_
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <memory>
+#include <optional>
+#include <type_traits>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/backends/testing/numerical_test_bridge.h"
+#include "tensor/backends/testing/quantized_test_utils.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
@@ -37,7 +47,10 @@ limitations under the License.
 
 namespace litert::tensor {
 
+struct MlDriftMixinTag;
+struct TfLiteMixinTag;
 struct XnnpackMixinTag;
+struct YnnpackMixinTag;
 
 using ::testing::FloatNear;
 using ::testing::Pointwise;
@@ -1075,7 +1088,7 @@ TYPED_TEST_P(NumericalTestSuite, FullyConnectedQuantizedOp) {
        .input_shape = {1, 4},
        .input_data = {1.0f, 2.0f, 1.0f, 2.0f},
        .weights_shape = {2, 4},
-       .weights_data = {0x01, 0x00, 0x10, 0x00},
+       .weights_data = {1, 0, 0, 0, 0, 1, 0, 0},
        .quantization = std::make_shared<PerChannelAffineQuantization>(
            PerChannelAffineQuantization{/*scales=*/{0.1f, 0.01f},
                                         /*zero_points=*/{0, 0}}),
@@ -2169,7 +2182,9 @@ TYPED_TEST_P(NumericalTestSuite, CastOp) {
   ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
 
   std::vector<int32_t> expected_output = {1, 2, 3, 4};
-  if constexpr (std::is_same_v<Tag, XnnpackMixinTag>) {
+  // XNNPACK and YNNPACK round to the nearest integer instead of truncating.
+  if constexpr (std::is_same_v<Tag, XnnpackMixinTag> ||
+                std::is_same_v<Tag, YnnpackMixinTag>) {
     expected_output = {1, 3, 4, 4};
   }
   EXPECT_EQ(actual_output, expected_output);
@@ -3146,6 +3161,1414 @@ TYPED_TEST_P(NumericalTestSuite, ResizeNearestNeighborOp) {
 }
 
 // Register all typed tests.
+TYPED_TEST_P(NumericalTestSuite, LogSoftmaxOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  Tensor<Tag> output = LogSoftmax(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "LogSoftmax op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
+                                   1.0f, 1.0f, 1.0f, 1.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(8);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // Row 0: x - log(sum(exp(x))) = x - 4.4401897.
+  // Row 1: log(1 / 4) = -1.3862944.
+  std::vector<float> expected_output = {-3.4401897f, -2.4401897f, -1.4401897f,
+                                        -0.4401897f, -1.3862944f, -1.3862944f,
+                                        -1.3862944f, -1.3862944f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, Relu0To1Op) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = Relu0To1(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Relu0To1 op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {-1.0f, 0.25f, 2.0f, 0.75f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {0.0f, 0.25f, 1.0f, 0.75f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, ReluN1To1Op) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = ReluN1To1(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "ReluN1To1 op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {-2.0f, -0.5f, 0.5f, 3.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {-1.0f, -0.5f, 0.5f, 1.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, ZerosLikeOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = ZerosLike(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "ZerosLike op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, -2.0f, 3.5f, -4.25f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4, 1.0f);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {0.0f, 0.0f, 0.0f, 0.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, GreaterOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input1({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> input2({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = Greater(input1, input2);
+
+  auto status = this->bridge_->BuildGraph({input1, input2}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Greater op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input1_data = {1.0f, 7.0f, 3.0f, 4.0f};
+  std::vector<float> input2_data = {1.0f, 6.0f, 5.0f, -8.0f};
+
+  ASSERT_OK(this->bridge_->SetInput(input1, AsBytes(input1_data)));
+  ASSERT_OK(this->bridge_->SetInput(input2, AsBytes(input2_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<uint8_t> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<uint8_t> expected_output = {0, 1, 0, 1};
+  EXPECT_EQ(actual_output, expected_output);
+}
+
+TYPED_TEST_P(NumericalTestSuite, LogicalOrOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input1({.type = Type::kBOOL, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> input2({.type = Type::kBOOL, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = LogicalOr(input1, input2);
+
+  auto status = this->bridge_->BuildGraph({input1, input2}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "LogicalOr op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<bool> input1_bool = {true, true, false, false};
+  std::vector<uint8_t> input1_data(input1_bool.begin(), input1_bool.end());
+  std::vector<bool> input2_bool = {true, false, true, false};
+  std::vector<uint8_t> input2_data(input2_bool.begin(), input2_bool.end());
+
+  ASSERT_OK(this->bridge_->SetInput(input1, AsBytes(input1_data)));
+  ASSERT_OK(this->bridge_->SetInput(input2, AsBytes(input2_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<uint8_t> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<uint8_t> expected_output = {1, 1, 1, 0};
+  EXPECT_EQ(actual_output, expected_output);
+}
+
+TYPED_TEST_P(NumericalTestSuite, SpaceToDepthOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 4, 4, 1}});
+  Tensor<Tag> output = SpaceToDepth(input, 2);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "SpaceToDepth op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  // input[y][x] = 4 * y + x.
+  std::vector<float> input_data = {0.0f,  1.0f,  2.0f,  3.0f, 4.0f,  5.0f,
+                                   6.0f,  7.0f,  8.0f,  9.0f, 10.0f, 11.0f,
+                                   12.0f, 13.0f, 14.0f, 15.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(16);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // Each output pixel gathers its 2x2 input block in (row, col) order.
+  std::vector<float> expected_output = {0.0f,  1.0f,  4.0f,  5.0f, 2.0f,  3.0f,
+                                        6.0f,  7.0f,  8.0f,  9.0f, 12.0f, 13.0f,
+                                        10.0f, 11.0f, 14.0f, 15.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, BitwiseXorOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input1({.type = Type::kI32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> input2({.type = Type::kI32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = BitwiseXor(input1, input2);
+
+  auto status = this->bridge_->BuildGraph({input1, input2}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "BitwiseXor op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<int32_t> input1_data = {5, 3, -1, 0};
+  std::vector<int32_t> input2_data = {3, 3, 1, 7};
+  ASSERT_OK(this->bridge_->SetInput(input1, AsBytes(input1_data)));
+  ASSERT_OK(this->bridge_->SetInput(input2, AsBytes(input2_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<int32_t> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<int32_t> expected_output = {6, 0, -2, 7};
+  EXPECT_EQ(actual_output, expected_output);
+}
+
+TYPED_TEST_P(NumericalTestSuite, RightShiftOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input1({.type = Type::kI32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> input2({.type = Type::kI32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = RightShift(input1, input2);
+
+  auto status = this->bridge_->BuildGraph({input1, input2}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "RightShift op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<int32_t> input1_data = {16, -16, 7, 1024};
+  std::vector<int32_t> input2_data = {2, 2, 1, 10};
+  ASSERT_OK(this->bridge_->SetInput(input1, AsBytes(input1_data)));
+  ASSERT_OK(this->bridge_->SetInput(input2, AsBytes(input2_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<int32_t> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // Signed inputs use an arithmetic shift.
+  std::vector<int32_t> expected_output = {4, -4, 3, 1};
+  EXPECT_EQ(actual_output, expected_output);
+}
+
+TYPED_TEST_P(NumericalTestSuite, ProbeOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = Probe(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Probe op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, -2.0f, 3.5f, 0.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // Probe is an identity op used to observe intermediate values.
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), input_data));
+}
+
+TYPED_TEST_P(NumericalTestSuite, PadOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  std::vector<int32_t> paddings_data = {0, 0, 1, 1, 1, 1, 0, 0};
+  Tensor<Tag> paddings(
+      {.type = Type::kI32, .shape = {4, 2}, .buffer = paddings_data});
+  Tensor<Tag> output = Pad(input, paddings);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Pad op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, 2.0f, 3.0f, 4.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(16);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {
+      0.0f, 0.0f, 0.0f, 0.0f,  //
+      0.0f, 1.0f, 2.0f, 0.0f,  //
+      0.0f, 3.0f, 4.0f, 0.0f,  //
+      0.0f, 0.0f, 0.0f, 0.0f,
+  };
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, PadV2Op) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  std::vector<int32_t> paddings_data = {0, 0, 0, 1, 1, 0, 0, 0};
+  Tensor<Tag> paddings(
+      {.type = Type::kI32, .shape = {4, 2}, .buffer = paddings_data});
+  Tensor<Tag> constant_value(
+      {.type = Type::kFP32, .shape = {}, .buffer = 9.0f});
+  Tensor<Tag> output = PadV2(input, paddings, constant_value);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "PadV2 op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, 2.0f, 3.0f, 4.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  // Output shape: [1, 3, 3, 1] (one row after, one column before).
+  std::vector<float> actual_output(9);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {
+      9.0f, 1.0f, 2.0f,  //
+      9.0f, 3.0f, 4.0f,  //
+      9.0f, 9.0f, 9.0f,
+  };
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, GatherNdOp) {
+  using Tag = typename TypeParam::Tag;
+  struct TestCase {
+    std::vector<int> params_shape;
+    std::vector<float> params;
+    std::vector<int> indices_shape;
+    std::vector<int32_t> indices;
+    std::vector<float> expected;
+  };
+  std::vector<TestCase> test_cases = {
+      // Full-rank indices gather individual elements.
+      {.params_shape = {2, 2},
+       .params = {1.0f, 2.0f, 3.0f, 4.0f},
+       .indices_shape = {2, 2},
+       .indices = {0, 1, 1, 0},
+       .expected = {2.0f, 3.0f}},
+      // Partial indices gather whole rows.
+      {.params_shape = {2, 3},
+       .params = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f},
+       .indices_shape = {2, 1},
+       .indices = {1, 0},
+       .expected = {4.0f, 5.0f, 6.0f, 1.0f, 2.0f, 3.0f}},
+  };
+
+  for (const auto& tc : test_cases) {
+    auto bridge = TypeParam::CreateBridge();
+    ASSERT_OK(bridge->Initialize());
+    Tensor<Tag> params({.type = Type::kFP32, .shape = tc.params_shape});
+    Tensor<Tag> indices({.type = Type::kI32, .shape = tc.indices_shape});
+    Tensor<Tag> output = GatherNd(params, indices);
+
+    auto status = bridge->BuildGraph({params, indices}, {output});
+    if (status.code() == absl::StatusCode::kUnimplemented) {
+      GTEST_SKIP() << "GatherNd op is unimplemented on this backend.";
+    }
+    ASSERT_OK(status);
+
+    ASSERT_OK(bridge->SetInput(params, AsBytes(tc.params)));
+    ASSERT_OK(bridge->SetInput(indices, AsBytes(tc.indices)));
+
+    ASSERT_OK(bridge->Execute());
+
+    std::vector<float> actual_output(tc.expected.size());
+    ASSERT_OK(bridge->GetOutput(output, AsBytes(actual_output)));
+
+    EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), tc.expected));
+  }
+}
+
+TYPED_TEST_P(NumericalTestSuite, DynamicUpdateSliceOp) {
+  using Tag = typename TypeParam::Tag;
+  if constexpr (std::is_same_v<Tag, MlDriftMixinTag>) {
+    GTEST_SKIP()
+        << "DynamicUpdateSlice writes rank-2 updates at the wrong offset on "
+           "the ML Drift backend.";
+  }
+
+  Tensor<Tag> operand({.type = Type::kFP32, .shape = {3, 3}});
+  Tensor<Tag> update({.type = Type::kFP32, .shape = {2, 2}});
+  Tensor<Tag> output = DynamicUpdateSlice(operand, update, {1, 1});
+
+  auto status = this->bridge_->BuildGraph({operand, update}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "DynamicUpdateSlice op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> operand_data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f,
+                                     6.0f, 7.0f, 8.0f, 9.0f};
+  std::vector<float> update_data = {10.0f, 20.0f, 30.0f, 40.0f};
+  ASSERT_OK(this->bridge_->SetInput(operand, AsBytes(operand_data)));
+  ASSERT_OK(this->bridge_->SetInput(update, AsBytes(update_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(9);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  std::vector<float> expected_output = {
+      1.0f, 2.0f,  3.0f,   //
+      4.0f, 10.0f, 20.0f,  //
+      7.0f, 30.0f, 40.0f,
+  };
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, QuantizeOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 8}});
+  Tensor<Tag> output = Quantize(input, Type::kI8, /*scale=*/{0.5f},
+                                /*zero_point=*/{3});
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Quantize op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {-1.0f, 0.0f,    1.0f,  2.0f,
+                                   70.0f, -100.0f, 10.0f, -10.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<int8_t> actual_output(8);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // q = clamp(round(x / 0.5) + 3, -128, 127).
+  std::vector<int8_t> expected_output = {1, 3, 5, 7, 127, -128, 23, -17};
+  EXPECT_EQ(actual_output, expected_output);
+}
+
+TYPED_TEST_P(NumericalTestSuite, DequantizeOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input(
+      {.type = Type::kI8,
+       .shape = {1, 8},
+       .quantization = std::make_shared<PerChannelAffineQuantization>(
+           PerChannelAffineQuantization{/*scales=*/{0.5f},
+                                        /*zero_points=*/{3}})});
+  Tensor<Tag> output = Dequantize(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Dequantize op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<int8_t> input_data = {1, 3, 5, 7, 127, -128, 23, -17};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(8);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // x = (q - 3) * 0.5.
+  std::vector<float> expected_output = {-1.0f, 0.0f,   1.0f,  2.0f,
+                                        62.0f, -65.5f, 10.0f, -10.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, RopeOp) {
+  using Tag = typename TypeParam::Tag;
+  // [batch, tokens, heads, channels].
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 1, 4}});
+  // [tokens, channels]: cos in the first half, sin in the second half.
+  Tensor<Tag> weights({.type = Type::kFP32, .shape = {2, 4}});
+  Tensor<Tag> output = Rope(input, weights);
+
+  auto status = this->bridge_->BuildGraph({input, weights}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Rope op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
+                                   1.0f, 2.0f, 3.0f, 4.0f};
+  std::vector<float> weights_data = {1.0f, 1.0f, 0.0f, 0.0f,
+                                     0.0f, 0.5f, 1.0f, 0.5f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+  ASSERT_OK(this->bridge_->SetInput(weights, AsBytes(weights_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(8);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // Token 0 has an identity rotation. For token 1:
+  //   out[c]        = x[c] * cos[c] - x[c + 2] * sin[c]
+  //   out[c + 2]    = x[c] * sin[c] + x[c + 2] * cos[c]
+  std::vector<float> expected_output = {1.0f,  2.0f,  3.0f, 4.0f,
+                                        -3.0f, -1.0f, 1.0f, 3.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+TYPED_TEST_P(NumericalTestSuite, TopKOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {2, 4}});
+  std::vector<Tensor<Tag>> outputs = TopK(input, 2);
+  ASSERT_EQ(outputs.size(), 2);
+
+  auto status = this->bridge_->BuildGraph({input}, {outputs[0], outputs[1]});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "TopK op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, 4.0f, 2.0f, 3.0f,
+                                   8.0f, 5.0f, 7.0f, 6.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_values(4);
+  ASSERT_OK(this->bridge_->GetOutput(outputs[0], AsBytes(actual_values)));
+  std::vector<int32_t> actual_indices(4);
+  ASSERT_OK(this->bridge_->GetOutput(outputs[1], AsBytes(actual_indices)));
+
+  std::vector<float> expected_values = {4.0f, 3.0f, 8.0f, 7.0f};
+  std::vector<int32_t> expected_indices = {1, 3, 0, 2};
+  EXPECT_THAT(actual_values, Pointwise(FloatNear(1e-5), expected_values));
+  EXPECT_EQ(actual_indices, expected_indices);
+}
+
+TYPED_TEST_P(NumericalTestSuite, NonMaxSuppressionV5Op) {
+  using Tag = typename TypeParam::Tag;
+  if constexpr (std::is_same_v<Tag, TfLiteMixinTag>) {
+    GTEST_SKIP()
+        << "The TFLite serializer emits rank-1 threshold tensors, which "
+           "the TFLite NON_MAX_SUPPRESSION_V5 kernel rejects.";
+  }
+
+  // Boxes are [y1, x1, y2, x2].
+  Tensor<Tag> boxes({.type = Type::kFP32, .shape = {4, 4}});
+  Tensor<Tag> scores({.type = Type::kFP32, .shape = {4}});
+  Tensor<Tag> iou_threshold({.type = Type::kFP32, .shape = {}, .buffer = 0.5f});
+  Tensor<Tag> score_threshold(
+      {.type = Type::kFP32, .shape = {}, .buffer = 0.0f});
+  Tensor<Tag> soft_nms_sigma(
+      {.type = Type::kFP32, .shape = {}, .buffer = 0.0f});
+  std::vector<Tensor<Tag>> outputs =
+      NonMaxSuppressionV5(boxes, scores, /*max_output_size=*/3, iou_threshold,
+                          score_threshold, soft_nms_sigma);
+  ASSERT_EQ(outputs.size(), 3);
+
+  auto status = this->bridge_->BuildGraph({boxes, scores},
+                                          {outputs[0], outputs[1], outputs[2]});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "NonMaxSuppressionV5 op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> boxes_data = {
+      0.0f, 0.0f,  1.0f, 1.0f,   // Box 0.
+      0.0f, 0.1f,  1.0f, 1.1f,   // IoU 0.82 with box 0.
+      0.0f, -0.1f, 1.0f, 0.9f,   // IoU 0.82 with box 0.
+      0.0f, 10.0f, 1.0f, 11.0f,  // Disjoint from the others.
+  };
+  std::vector<float> scores_data = {0.9f, 0.75f, 0.6f, 0.95f};
+  ASSERT_OK(this->bridge_->SetInput(boxes, AsBytes(boxes_data)));
+  ASSERT_OK(this->bridge_->SetInput(scores, AsBytes(scores_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<int32_t> actual_indices(3);
+  ASSERT_OK(this->bridge_->GetOutput(outputs[0], AsBytes(actual_indices)));
+  std::vector<float> actual_scores(3);
+  ASSERT_OK(this->bridge_->GetOutput(outputs[1], AsBytes(actual_scores)));
+  std::vector<int32_t> actual_valid(1);
+  ASSERT_OK(this->bridge_->GetOutput(outputs[2], AsBytes(actual_valid)));
+
+  // Boxes 1 and 2 are suppressed by box 0; unused slots are zero-padded.
+  std::vector<int32_t> expected_indices = {3, 0, 0};
+  std::vector<float> expected_scores = {0.95f, 0.9f, 0.0f};
+  EXPECT_EQ(actual_valid[0], 2);
+  EXPECT_EQ(actual_indices, expected_indices);
+  EXPECT_THAT(actual_scores, Pointwise(FloatNear(1e-5), expected_scores));
+}
+
+TYPED_TEST_P(NumericalTestSuite, StableHLOCompositeOp) {
+  using Tag = typename TypeParam::Tag;
+  if constexpr (std::is_same_v<Tag, TfLiteMixinTag>) {
+    GTEST_SKIP() << "The TFLite builtin op resolver does not register "
+                    "STABLEHLO_COMPOSITE.";
+  }
+
+  Tensor<Tag> input1({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> input2({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = StableHLOComposite(
+      "test.mul_add",
+      [](Tensor<Tag> x, Tensor<Tag> y) { return Add(Mul(x, y), x); }, input1,
+      input2);
+
+  auto status = this->bridge_->BuildGraph({input1, input2}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "StableHLOComposite op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input1_data = {1.0f, 2.0f, -3.0f, 4.0f};
+  std::vector<float> input2_data = {5.0f, -1.0f, 2.0f, 0.5f};
+  ASSERT_OK(this->bridge_->SetInput(input1, AsBytes(input1_data)));
+  ASSERT_OK(this->bridge_->SetInput(input2, AsBytes(input2_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  // x * y + x.
+  std::vector<float> expected_output = {6.0f, 0.0f, -9.0f, 6.0f};
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), expected_output));
+}
+
+namespace numerical_test_internal {
+
+// Runs the float graph producing `outputs` on a new bridge of `Traits`, with
+// `input_data[i]` as the data of `inputs[i]`, and returns the data of each
+// output, `output_sizes[i]` floats for `outputs[i]`. Returns an unimplemented
+// status if the backend doesn't support the graph.
+template <class Traits>
+absl::StatusOr<std::vector<std::vector<float>>> RunFloatGraph(
+    absl::Span<const TensorHandle> inputs,
+    absl::Span<const std::vector<float>> input_data,
+    absl::Span<const TensorHandle> outputs,
+    absl::Span<const size_t> output_sizes) {
+  std::unique_ptr<TestBackendBridge> bridge = Traits::CreateBridge();
+  if (absl::Status status = bridge->Initialize(); !status.ok()) {
+    return status;
+  }
+  if (absl::Status status = bridge->BuildGraph(inputs, outputs); !status.ok()) {
+    return status;
+  }
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    if (absl::Status status =
+            bridge->SetInput(inputs[i], AsBytes(input_data[i]));
+        !status.ok()) {
+      return status;
+    }
+  }
+  if (absl::Status status = bridge->Execute(); !status.ok()) {
+    return status;
+  }
+  std::vector<std::vector<float>> results;
+  for (size_t i = 0; i < outputs.size(); ++i) {
+    std::vector<float>& result = results.emplace_back(output_sizes[i]);
+    if (absl::Status status = bridge->GetOutput(outputs[i], AsBytes(result));
+        !status.ok()) {
+      return status;
+    }
+  }
+  return results;
+}
+
+// Whether the traits of a backend declare `kDisabledTests`.
+template <class Traits, class = void>
+struct HasDisabledTests : std::false_type {};
+template <class Traits>
+struct HasDisabledTests<Traits, std::void_t<decltype(Traits::kDisabledTests)>>
+    : std::true_type {};
+
+// Returns whether the backend of `Traits` disables the current test, e.g. while
+// one of its bugs is being fixed. A backend disables tests by listing their
+// names in `static constexpr absl::string_view kDisabledTests[]`. A name that
+// isn't a test of the suite fails the test, so that a typo can't silently
+// disable nothing.
+template <class Traits>
+bool IsDisabled() {
+  if constexpr (!HasDisabledTests<Traits>::value) {
+    return false;
+  } else {
+    // Built once per backend, when it checks that every name it lists is a
+    // test of the suite, so that a misspelled name can't leave a failing test
+    // enabled. A failure is reported by the first test that calls this.
+    static const absl::NoDestructor<absl::flat_hash_set<absl::string_view>>
+        disabled_tests([] {
+          const ::testing::TestSuite& suite =
+              *::testing::UnitTest::GetInstance()->current_test_suite();
+          absl::flat_hash_set<absl::string_view> names(
+              std::begin(Traits::kDisabledTests),
+              std::end(Traits::kDisabledTests));
+          for (const absl::string_view name : names) {
+            bool is_test = false;
+            for (int i = 0; i < suite.total_test_count() && !is_test; ++i) {
+              is_test = suite.GetTestInfo(i)->name() == name;
+            }
+            EXPECT_TRUE(is_test) << "kDisabledTests lists " << name
+                                 << ", which isn't a test of " << suite.name();
+          }
+          return names;
+        }());
+    return disabled_tests->contains(
+        ::testing::UnitTest::GetInstance()->current_test_info()->name());
+  }
+}
+
+}  // namespace numerical_test_internal
+
+TYPED_TEST_P(NumericalTestSuite, DequantizePerChannelOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  struct TestCase {
+    int quantized_dim;
+    std::vector<float> scales;
+    std::vector<int64_t> zero_points;
+    std::vector<float> expected_output;
+  };
+  // [[1, 3, 5], [-7, 9, 11]].
+  const std::vector<int8_t> input_data = {1, 3, 5, -7, 9, 11};
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.quantized_dim = 0,
+                    .scales = {0.5f, 2.0f},
+                    .zero_points = {1, -1},
+                    .expected_output = {0, 1, 2, -12, 20, 24}},
+           TestCase{.quantized_dim = 1,
+                    .scales = {0.5f, 0.25f, 2.0f},
+                    .zero_points = {1, 3, 5},
+                    .expected_output = {0, 0, 0, -4, 1.5, 12}},
+           TestCase{.quantized_dim = 1,
+                    .scales = {0.5f, 0.25f, 2.0f},
+                    .zero_points = {},
+                    .expected_output = {0.5, 0.75, 10, -3.5, 2.25, 22}},
+       }) {
+    SCOPED_TRACE(::testing::Message()
+                 << "quantized_dimension=" << c.quantized_dim
+                 << " zero_points=" << c.zero_points.size());
+    Tensor<Tag> input(
+        {.type = Type::kI8,
+         .shape = {2, 3},
+         .quantization = std::make_shared<PerChannelAffineQuantization>(
+             c.scales, c.zero_points, c.quantized_dim)});
+    Tensor<Tag> output = Dequantize(input);
+
+    std::unique_ptr<TestBackendBridge> bridge = TypeParam::CreateBridge();
+    ASSERT_OK(bridge->Initialize());
+    absl::Status status = bridge->BuildGraph({input}, {output});
+    if (status.code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(status);
+    ASSERT_OK(bridge->SetInput(input, AsBytes(input_data)));
+    ASSERT_OK(bridge->Execute());
+    std::vector<float> actual_output(c.expected_output.size());
+    ASSERT_OK(bridge->GetOutput(output, AsBytes(actual_output)));
+    ++num_run;
+    EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), c.expected_output));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Per-channel dequantize is unimplemented on this backend.";
+  }
+}
+
+// Fully connected ops with per-channel and blockwise quantized weights, with
+// and without bias and activation. Five output channels don't fill whole bytes
+// of sub-byte weights once transposed to [K, N].
+TYPED_TEST_P(NumericalTestSuite, FullyConnectedQuantizedWeightsOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  struct TestCase {
+    Type type;
+    int n;
+    qtu::Quant quantization;
+    bool has_bias;
+    FusedActivation activation;
+  };
+  constexpr int kM = 3;
+  constexpr int kK = 64;
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .has_bias = false,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .has_bias = true,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI4,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .has_bias = true,
+                    .activation = kActRelu},
+           TestCase{.type = Type::kI2,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .has_bias = true,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .has_bias = false,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/16),
+                    .has_bias = true,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI4,
+                    .n = 8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .has_bias = false,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI4,
+                    .n = 8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/16),
+                    .has_bias = true,
+                    .activation = kActRelu},
+           TestCase{.type = Type::kI2,
+                    .n = 8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .has_bias = true,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI8,
+                    .n = 5,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .has_bias = true,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI4,
+                    .n = 5,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .has_bias = true,
+                    .activation = kActNone},
+           TestCase{.type = Type::kI4,
+                    .n = 5,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .has_bias = true,
+                    .activation = kActNone},
+       }) {
+    SCOPED_TRACE(::testing::Message()
+                 << "bits=" << BitSize(c.type) << " n=" << c.n
+                 << " quantization=" << c.quantization << " has_bias="
+                 << c.has_bias << " relu=" << (c.activation == kActRelu));
+    const qtu::QuantizedMatrix w =
+        qtu::MakeQuantizedMatrix(c.type, c.n, kK, c.quantization);
+    std::vector<float> bias_data(c.n);
+    for (int n = 0; n < c.n; ++n) {
+      bias_data[n] = 0.25f * n - 0.5f;
+    }
+    Tensor<Tag> input({.type = Type::kFP32, .shape = {kM, kK}});
+    std::optional<Tensor<Tag>> bias;
+    if (c.has_bias) {
+      bias = Tensor<Tag>(
+          {.type = Type::kFP32, .shape = {c.n}, .buffer = bias_data});
+    }
+    Tensor<Tag> output =
+        FullyConnected(input, w.ToTensor<Tag>(), bias, c.activation);
+
+    const std::vector<float> input_data = qtu::MakeInput(kM * kK);
+    // Neither the bias nor the activation adds to the error of the dot.
+    auto [expected, tolerance] = qtu::MatMul(
+        input_data, kM, kK, c.n, [&](int k, int n) { return w.At(n, k); });
+    for (int m = 0; m < kM; ++m) {
+      for (int n = 0; n < c.n; ++n) {
+        float& value = expected[m * c.n + n];
+        value += c.has_bias ? bias_data[n] : 0.0f;
+        if (c.activation == kActRelu) {
+          value = std::max(value, 0.0f);
+        }
+      }
+    }
+
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        {input}, {input_data}, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Quantized fully connected is unimplemented.";
+  }
+}
+
+// The input of a fully connected op may have any rank: the rows are all but
+// its last dimension.
+TYPED_TEST_P(NumericalTestSuite, FullyConnectedQuantizedWeightsRank3InputOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  constexpr int kK = 64;
+  constexpr int kN = 8;
+  int num_run = 0;
+  for (const qtu::Quant quantization :
+       {qtu::PerChannel(/*dim=*/0), qtu::Blockwise(/*dim=*/0, /*block=*/32)}) {
+    SCOPED_TRACE(::testing::Message() << "quantization=" << quantization);
+    const qtu::QuantizedMatrix w =
+        qtu::MakeQuantizedMatrix(Type::kI4, kN, kK, quantization);
+    Tensor<Tag> input({.type = Type::kFP32, .shape = {2, 3, kK}});
+    Tensor<Tag> output = FullyConnected(input, w.ToTensor<Tag>());
+
+    const std::vector<float> input_data = qtu::MakeInput(2 * 3 * kK);
+    const auto [expected, tolerance] = qtu::MatMul(
+        input_data, 2 * 3, kK, kN, [&](int k, int n) { return w.At(n, k); });
+
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        {input}, {input_data}, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Quantized fully connected is unimplemented.";
+  }
+}
+
+// Fully connected ops with per-tensor and asymmetric quantized weights.
+TYPED_TEST_P(NumericalTestSuite, FullyConnectedPerTensorAndAsymmetricOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  struct TestCase {
+    const char* name;
+    Type type;
+    int n;
+    qtu::Quant quantization;
+    qtu::ZeroPoints zero_points;
+  };
+  constexpr int kM = 3;
+  constexpr int kK = 64;
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.name = "per-tensor i8",
+                    .type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::PerTensor(),
+                    .zero_points = qtu::ZeroPoints::kNone},
+           TestCase{.name = "per-tensor i4",
+                    .type = Type::kI4,
+                    .n = 8,
+                    .quantization = qtu::PerTensor(),
+                    .zero_points = qtu::ZeroPoints::kNone},
+           TestCase{.name = "per-tensor i4 odd n",
+                    .type = Type::kI4,
+                    .n = 5,
+                    .quantization = qtu::PerTensor(),
+                    .zero_points = qtu::ZeroPoints::kNone},
+           TestCase{.name = "per-tensor asymmetric i8",
+                    .type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::PerTensor(),
+                    .zero_points = qtu::ZeroPoints::kSingle},
+           TestCase{.name = "asymmetric single zp i8",
+                    .type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .zero_points = qtu::ZeroPoints::kSingle},
+           TestCase{.name = "asymmetric per-channel zp i8",
+                    .type = Type::kI8,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .zero_points = qtu::ZeroPoints::kPerScale},
+           TestCase{.name = "asymmetric per-channel zp i4",
+                    .type = Type::kI4,
+                    .n = 8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .zero_points = qtu::ZeroPoints::kPerScale},
+           TestCase{.name = "asymmetric i4 odd n",
+                    .type = Type::kI4,
+                    .n = 5,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .zero_points = qtu::ZeroPoints::kPerScale},
+           TestCase{.name = "asymmetric blockwise i4",
+                    .type = Type::kI4,
+                    .n = 8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .zero_points = qtu::ZeroPoints::kPerScale},
+       }) {
+    SCOPED_TRACE(c.name);
+    const qtu::QuantizedMatrix w = qtu::MakeQuantizedMatrix(
+        c.type, c.n, kK, c.quantization, c.zero_points);
+    Tensor<Tag> input({.type = Type::kFP32, .shape = {kM, kK}});
+    Tensor<Tag> output = FullyConnected(input, w.ToTensor<Tag>());
+
+    const std::vector<float> input_data = qtu::MakeInput(kM * kK);
+    const auto [expected, tolerance] = qtu::MatMul(
+        input_data, kM, kK, c.n, [&](int k, int n) { return w.At(n, k); });
+
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        {input}, {input_data}, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Quantized fully connected is unimplemented.";
+  }
+}
+
+// A batch matmul with a quantized rank 2 right-hand side: [N, K] with `adj_y`
+// and the channels on dimension 0, [K, N] otherwise with the channels on
+// dimension 1.
+TYPED_TEST_P(NumericalTestSuite, BatchMatMulQuantizedRhsOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  struct TestCase {
+    const char* name;
+    Type type;
+    qtu::Quant quantization;
+    bool adj_y;
+  };
+  constexpr int kK = 64;
+  constexpr int kN = 8;
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.name = "per-channel i8 adj_y",
+                    .type = Type::kI8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .adj_y = true},
+           TestCase{.name = "per-channel i4 adj_y",
+                    .type = Type::kI4,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .adj_y = true},
+           TestCase{.name = "blockwise i4 adj_y",
+                    .type = Type::kI4,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .adj_y = true},
+           TestCase{.name = "per-channel i8",
+                    .type = Type::kI8,
+                    .quantization = qtu::PerChannel(/*dim=*/1),
+                    .adj_y = false},
+           TestCase{.name = "per-channel i4",
+                    .type = Type::kI4,
+                    .quantization = qtu::PerChannel(/*dim=*/1),
+                    .adj_y = false},
+           TestCase{.name = "blockwise i8",
+                    .type = Type::kI8,
+                    .quantization = qtu::Blockwise(/*dim=*/1, /*block=*/16),
+                    .adj_y = false},
+           TestCase{.name = "blockwise i4",
+                    .type = Type::kI4,
+                    .quantization = qtu::Blockwise(/*dim=*/1, /*block=*/32),
+                    .adj_y = false},
+       }) {
+    SCOPED_TRACE(c.name);
+    const qtu::QuantizedMatrix w =
+        c.adj_y ? qtu::MakeQuantizedMatrix(c.type, kN, kK, c.quantization)
+                : qtu::MakeQuantizedMatrix(c.type, kK, kN, c.quantization);
+    Tensor<Tag> lhs({.type = Type::kFP32, .shape = {2, 3, kK}});
+    Tensor<Tag> output =
+        BatchMatMul(lhs, w.ToTensor<Tag>(), /*adj_x=*/false, c.adj_y);
+
+    const std::vector<float> lhs_data = qtu::MakeInput(2 * 3 * kK);
+    const auto [expected, tolerance] = qtu::MatMul(
+        lhs_data, 2 * 3, kK, kN,
+        [&](int k, int n) { return c.adj_y ? w.At(n, k) : w.At(k, n); });
+
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        {lhs}, {lhs_data}, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Batch matmul with a quantized rhs is unimplemented.";
+  }
+}
+
+// [N, K] quantized weights transposed to [K, N] and consumed by a batch matmul.
+// The transpose keeps the quantization, with the quantized dimension following
+// the permutation. Five channels don't fill whole bytes of int4 weights.
+TYPED_TEST_P(NumericalTestSuite, TransposedQuantizedWeightsIntoBatchMatMulOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  struct TestCase {
+    const char* name;
+    Type type;
+    qtu::Quant quantization;
+    int n;
+  };
+  constexpr int kK = 64;
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.name = "per-channel i8",
+                    .type = Type::kI8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .n = 8},
+           TestCase{.name = "blockwise i8",
+                    .type = Type::kI8,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .n = 8},
+           TestCase{.name = "per-channel i8 odd n",
+                    .type = Type::kI8,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .n = 5},
+           TestCase{.name = "per-channel i4",
+                    .type = Type::kI4,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .n = 8},
+           TestCase{.name = "blockwise i4",
+                    .type = Type::kI4,
+                    .quantization = qtu::Blockwise(/*dim=*/0, /*block=*/32),
+                    .n = 8},
+           TestCase{.name = "per-channel i4 odd n",
+                    .type = Type::kI4,
+                    .quantization = qtu::PerChannel(/*dim=*/0),
+                    .n = 5},
+       }) {
+    SCOPED_TRACE(c.name);
+    const qtu::QuantizedMatrix w =
+        qtu::MakeQuantizedMatrix(c.type, c.n, kK, c.quantization);
+    Tensor<Tag> lhs({.type = Type::kFP32, .shape = {3, kK}});
+    Tensor<Tag> transposed =
+        Transpose(w.ToTensor<Tag>(), std::vector<int>{1, 0});
+    Tensor<Tag> output = BatchMatMul(lhs, transposed);
+
+    const std::vector<float> lhs_data = qtu::MakeInput(3 * kK);
+    const auto [expected, tolerance] = qtu::MatMul(
+        lhs_data, 3, kK, c.n, [&](int k, int n) { return w.At(n, k); });
+
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        {lhs}, {lhs_data}, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Transposed quantized weights are unimplemented.";
+  }
+}
+
+// The dequantized values of transposed quantized weights consumed by an op
+// that isn't a dot.
+TYPED_TEST_P(NumericalTestSuite, TransposedQuantizedWeightsIntoAddOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  constexpr int kK = 64;
+  int num_run = 0;
+  for (const Type type : {Type::kI4, Type::kI8}) {
+    for (const int n_channels : {8, 5}) {
+      for (const qtu::Quant quantization :
+           {qtu::PerChannel(/*dim=*/0),
+            qtu::Blockwise(/*dim=*/0, /*block=*/32)}) {
+        for (const qtu::ZeroPoints zp :
+             {qtu::ZeroPoints::kNone, qtu::ZeroPoints::kPerScale}) {
+          SCOPED_TRACE(
+              ::testing::Message()
+              << "bits=" << BitSize(type) << " n=" << n_channels
+              << " quantization=" << quantization << " zero_points="
+              << (zp == qtu::ZeroPoints::kNone ? "none" : "per-scale"));
+          const qtu::QuantizedMatrix w =
+              qtu::MakeQuantizedMatrix(type, n_channels, kK, quantization, zp);
+          Tensor<Tag> transposed =
+              Transpose(w.ToTensor<Tag>(), std::vector<int>{1, 0});
+          Tensor<Tag> x({.type = Type::kFP32, .shape = {kK, n_channels}});
+          Tensor<Tag> output = Add(Dequantize(transposed), x);
+
+          const std::vector<float> x_data = qtu::MakeInput(kK * n_channels);
+          std::vector<float> expected(kK * n_channels);
+          for (int k = 0; k < kK; ++k) {
+            for (int n = 0; n < n_channels; ++n) {
+              expected[k * n_channels + n] =
+                  x_data[k * n_channels + n] + w.At(n, k);
+            }
+          }
+
+          auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+              {x}, {x_data}, {output}, {expected.size()});
+          if (result.status().code() == absl::StatusCode::kUnimplemented) {
+            continue;
+          }
+          ASSERT_OK(result.status());
+          ++num_run;
+          EXPECT_THAT((*result)[0], Pointwise(FloatNear(1e-5f), expected));
+        }
+      }
+    }
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Transposed quantized weights are unimplemented.";
+  }
+}
+
+// [K, N] quantized weights with their channels on dimension 1, as the
+// right-hand side of a batch matmul whose left-hand side is transposed.
+TYPED_TEST_P(NumericalTestSuite, BatchMatMulAdjXQuantizedRhsOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  constexpr int kM = 3;
+  constexpr int kK = 64;
+  constexpr int kN = 8;
+  int num_run = 0;
+  for (const qtu::Quant quantization :
+       {qtu::PerChannel(/*dim=*/1), qtu::Blockwise(/*dim=*/1, /*block=*/16),
+        qtu::Blockwise(/*dim=*/1, /*block=*/32)}) {
+    SCOPED_TRACE(::testing::Message() << "quantization=" << quantization);
+    const qtu::QuantizedMatrix w = qtu::MakeQuantizedMatrix(
+        Type::kI4, kK, kN, quantization, qtu::ZeroPoints::kPerScale);
+    // [K, M], transposed by `adj_x`.
+    Tensor<Tag> lhs({.type = Type::kFP32, .shape = {kK, kM}});
+    Tensor<Tag> output =
+        BatchMatMul(lhs, w.ToTensor<Tag>(), /*adj_x=*/true, /*adj_y=*/false);
+
+    const std::vector<float> lhs_data = qtu::MakeInput(kK * kM);
+    std::vector<float> lhs_t(kM * kK);
+    for (int k = 0; k < kK; ++k) {
+      for (int m = 0; m < kM; ++m) {
+        lhs_t[m * kK + k] = lhs_data[k * kM + m];
+      }
+    }
+    const auto [expected, tolerance] = qtu::MatMul(
+        lhs_t, kM, kK, kN, [&](int k, int n) { return w.At(k, n); });
+
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        {lhs}, {lhs_data}, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Batch matmul with a quantized rhs is unimplemented.";
+  }
+}
+
+// Quantized weights consumed both by a dot and by an op that reads their
+// dequantized values.
+TYPED_TEST_P(NumericalTestSuite, QuantizedWeightsSharedByDotAndAddOp) {
+  if (numerical_test_internal::IsDisabled<TypeParam>()) {
+    GTEST_SKIP() << "Disabled for this backend, see its kDisabledTests.";
+  }
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  constexpr int kM = 3;
+  constexpr int kK = 64;
+  constexpr int kN = 8;
+  int num_run = 0;
+  for (const Type type : {Type::kI4, Type::kI8}) {
+    for (const qtu::Quant quantization :
+         {qtu::PerChannel(/*dim=*/0),
+          qtu::Blockwise(/*dim=*/0, /*block=*/32)}) {
+      SCOPED_TRACE(::testing::Message() << "bits=" << BitSize(type)
+                                        << " quantization=" << quantization);
+      const qtu::QuantizedMatrix w =
+          qtu::MakeQuantizedMatrix(type, kN, kK, quantization);
+      Tensor<Tag> weights = w.ToTensor<Tag>();
+      Tensor<Tag> input({.type = Type::kFP32, .shape = {kM, kK}});
+      Tensor<Tag> x({.type = Type::kFP32, .shape = {kN, kK}});
+      Tensor<Tag> dot = FullyConnected(input, weights);
+      Tensor<Tag> sum = Add(Dequantize(weights), x);
+
+      const std::vector<float> input_data = qtu::MakeInput(kM * kK);
+      const auto [expected_dot, tolerance] = qtu::MatMul(
+          input_data, kM, kK, kN, [&](int k, int n) { return w.At(n, k); });
+      const std::vector<float> x_data = qtu::MakeInput(kN * kK);
+      std::vector<float> expected_sum(kN * kK);
+      for (int i = 0; i < expected_sum.size(); ++i) {
+        expected_sum[i] = x_data[i] + w.dequantized[i];
+      }
+
+      auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+          {input, x}, {input_data, x_data}, {dot, sum},
+          {expected_dot.size(), expected_sum.size()});
+      if (result.status().code() == absl::StatusCode::kUnimplemented) {
+        continue;
+      }
+      ASSERT_OK(result.status());
+      ++num_run;
+      EXPECT_THAT((*result)[0], Pointwise(FloatNear(tolerance), expected_dot));
+      EXPECT_THAT((*result)[1], Pointwise(FloatNear(1e-5f), expected_sum));
+    }
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Quantized weights are unimplemented.";
+  }
+}
+
+// Batch matmuls with rank 2 operands, with and without `adj_x` and `adj_y`,
+// and with a rank 3 left-hand side. The right-hand side is an input, or a
+// constant like the weights of a model.
+TYPED_TEST_P(NumericalTestSuite, BatchMatMulRank2Op) {
+  using Tag = typename TypeParam::Tag;
+  namespace qtu = quantized_test_utils;
+  struct TestCase {
+    const char* name;
+    std::vector<int> lhs_shape;
+    bool adj_x;
+    bool adj_y;
+    bool constant_rhs;
+  };
+  constexpr int kM = 3;
+  constexpr int kK = 8;
+  constexpr int kN = 5;
+  int num_run = 0;
+  for (const TestCase& c : {
+           TestCase{.name = "[M, K] x [K, N]",
+                    .lhs_shape = {kM, kK},
+                    .adj_x = false,
+                    .adj_y = false,
+                    .constant_rhs = false},
+           TestCase{.name = "[M, K] x [N, K] adj_y",
+                    .lhs_shape = {kM, kK},
+                    .adj_x = false,
+                    .adj_y = true,
+                    .constant_rhs = false},
+           TestCase{.name = "[K, M] adj_x x [K, N]",
+                    .lhs_shape = {kK, kM},
+                    .adj_x = true,
+                    .adj_y = false,
+                    .constant_rhs = false},
+           TestCase{.name = "[2, M, K] x [K, N]",
+                    .lhs_shape = {2, kM, kK},
+                    .adj_x = false,
+                    .adj_y = false,
+                    .constant_rhs = false},
+           TestCase{.name = "[2, M, K] x constant [N, K] adj_y",
+                    .lhs_shape = {2, kM, kK},
+                    .adj_x = false,
+                    .adj_y = true,
+                    .constant_rhs = true},
+       }) {
+    SCOPED_TRACE(c.name);
+    const int rows = c.lhs_shape.size() == 3 ? 2 * kM : kM;
+    const std::vector<float> lhs_data = qtu::MakeInput(rows * kK);
+    std::vector<float> rhs_data = qtu::MakeInput(kK * kN);
+    for (float& value : rhs_data) {
+      value = 0.5f - value;
+    }
+    // Element (k, n) of the right-hand side.
+    auto rhs = [&](int k, int n) {
+      return c.adj_y ? rhs_data[n * kK + k] : rhs_data[k * kN + n];
+    };
+    // `lhs_data` as [rows, K].
+    std::vector<float> lhs_rows = lhs_data;
+    if (c.adj_x) {
+      for (int k = 0; k < kK; ++k) {
+        for (int m = 0; m < kM; ++m) {
+          lhs_rows[m * kK + k] = lhs_data[k * kM + m];
+        }
+      }
+    }
+    const std::vector<float> expected =
+        qtu::MatMul(lhs_rows, rows, kK, kN, rhs).first;
+
+    Tensor<Tag> lhs({.type = Type::kFP32, .shape = c.lhs_shape});
+    const std::vector<int> rhs_shape =
+        c.adj_y ? std::vector<int>{kN, kK} : std::vector<int>{kK, kN};
+    std::optional<Tensor<Tag>> rhs_tensor;
+    if (c.constant_rhs) {
+      rhs_tensor = Tensor<Tag>(
+          {.type = Type::kFP32, .shape = rhs_shape, .buffer = rhs_data});
+    } else {
+      rhs_tensor = Tensor<Tag>({.type = Type::kFP32, .shape = rhs_shape});
+    }
+    Tensor<Tag> output = BatchMatMul(lhs, *rhs_tensor, c.adj_x, c.adj_y);
+
+    std::vector<TensorHandle> inputs =
+        c.constant_rhs ? std::vector<TensorHandle>{lhs}
+                       : std::vector<TensorHandle>{lhs, *rhs_tensor};
+    std::vector<std::vector<float>> input_data =
+        c.constant_rhs ? std::vector<std::vector<float>>{lhs_data}
+                       : std::vector<std::vector<float>>{lhs_data, rhs_data};
+    auto result = numerical_test_internal::RunFloatGraph<TypeParam>(
+        inputs, input_data, {output}, {expected.size()});
+    if (result.status().code() == absl::StatusCode::kUnimplemented) {
+      continue;
+    }
+    ASSERT_OK(result.status());
+    ++num_run;
+    EXPECT_THAT((*result)[0], Pointwise(FloatNear(1e-4f), expected));
+  }
+  if (num_run == 0) {
+    GTEST_SKIP() << "Batch matmul with rank 2 operands is unimplemented.";
+  }
+}
+
 REGISTER_TYPED_TEST_SUITE_P(
     NumericalTestSuite, AddOp, SubOp, MulOp, DivOp, GeluOp, ReluOp, Relu6Op,
     LeakyReluOp, EluOp, HardSwishOp, LogisticOp, TanhOp, SqrtOp, RsqrtOp,
@@ -3159,7 +4582,17 @@ REGISTER_TYPED_TEST_SUITE_P(
     EmbeddingLookupOp, BatchMatmulOp, PReluOp, L2NormalizationOp, LstmOp,
     Conv2DOp, TransposeConvOp, TransposeConv2DOp, MaximumOp, MinimumOp,
     FloorModOp, FloorDivOp, SumOp, ReduceMaxOp, MeanOp, AveragePool2DOp,
-    MaxPool2DOp, SplitOp, PackOp, UnpackOp, ResizeNearestNeighborOp);
+    MaxPool2DOp, SplitOp, PackOp, UnpackOp, ResizeNearestNeighborOp,
+    LogSoftmaxOp, Relu0To1Op, ReluN1To1Op, ZerosLikeOp, GreaterOp, LogicalOrOp,
+    SpaceToDepthOp, BitwiseXorOp, RightShiftOp, ProbeOp, PadOp, PadV2Op,
+    GatherNdOp, DynamicUpdateSliceOp, QuantizeOp, DequantizeOp,
+    DequantizePerChannelOp, RopeOp, TopKOp, NonMaxSuppressionV5Op,
+    StableHLOCompositeOp, FullyConnectedQuantizedWeightsOp,
+    FullyConnectedQuantizedWeightsRank3InputOp,
+    FullyConnectedPerTensorAndAsymmetricOp, BatchMatMulQuantizedRhsOp,
+    TransposedQuantizedWeightsIntoBatchMatMulOp,
+    TransposedQuantizedWeightsIntoAddOp, BatchMatMulAdjXQuantizedRhsOp,
+    QuantizedWeightsSharedByDotAndAddOp, BatchMatMulRank2Op);
 
 }  // namespace litert::tensor
 

@@ -373,6 +373,7 @@ RunResult RunPadCase(const PadCase& test_case, KernelVariant kernel_variant,
   return fuzzing::BuildAndRunOneOpModel(&builder, model_spec, run_spec);
 }
 
+#if !defined(TFLITE_PAD_FUZZ_ENABLE_XNNPACK)
 auto ValidPadInputShapeDomain() {
   return fuzztest::VectorOf(fuzztest::InRange<int32_t>(0, 3))
       .WithMinSize(1)
@@ -428,6 +429,7 @@ auto MalformedPadCaseDomain() {
       {PaddingShapeKind::kWrongRows, PaddingShapeKind::kWrongColumns,
        PaddingShapeKind::kRankOne}));
 }
+#endif  // !defined(TFLITE_PAD_FUZZ_ENABLE_XNNPACK)
 
 auto ProductStressTargetDimensionDomain() {
   // These values stress both near-boundary products and wrap-to-small cases:
@@ -442,6 +444,7 @@ auto ProductStressTargetDimensionDomain() {
       fuzztest::Just<int64_t>(static_cast<int64_t>(INT32_MAX) + 1));
 }
 
+#if !defined(TFLITE_PAD_FUZZ_ENABLE_XNNPACK)
 auto ProductStressSpecDomain() {
   return fuzztest::StructOf<ProductStressSpec>(
       fuzztest::InRange<int32_t>(1, kMaxProductStressRank),
@@ -460,6 +463,7 @@ auto ProductStressSpecDomain() {
       fuzztest::ElementOf<TensorType>({TensorType_INT32, TensorType_INT64}),
       fuzztest::Arbitrary<bool>(), fuzztest::Arbitrary<bool>());
 }
+#endif  // !defined(TFLITE_PAD_FUZZ_ENABLE_XNNPACK)
 
 #if defined(TFLITE_PAD_FUZZ_ENABLE_XNNPACK)
 auto XnnpackProductStressSpecDomain() {
@@ -516,6 +520,7 @@ auto XnnpackPadCaseDomain() {
 }
 #endif
 
+#if !defined(TFLITE_PAD_FUZZ_ENABLE_XNNPACK)
 void PadExecutesValidCases(const PadCase& test_case) {
   SCOPED_TRACE(::testing::Message()
                << "shape=" << ::testing::PrintToString(test_case.input_shape)
@@ -589,6 +594,7 @@ FUZZ_TEST(PadFuzzTest, PadRejectsProductStressOverflow)
     .WithDomains(ProductStressSpecDomain());
 FUZZ_TEST(PadFuzzTest, PadReferenceRejectsProductStressOverflow)
     .WithDomains(ProductStressSpecDomain());
+#endif  // !defined(TFLITE_PAD_FUZZ_ENABLE_XNNPACK)
 
 #if defined(TFLITE_PAD_FUZZ_ENABLE_XNNPACK)
 TEST(PadFuzzTest, PadXnnpackSmokeDelegates) {

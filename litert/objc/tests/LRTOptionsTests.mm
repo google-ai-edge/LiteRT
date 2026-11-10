@@ -14,7 +14,35 @@
 
 #import <XCTest/XCTest.h>
 
+#include "litert/c/litert_common.h"
+#include "litert/c/options/litert_gpu_options.h"
 #import "third_party/odml/litert/litert/objc/apis/LRTOptions.h"
+#import "third_party/odml/litert/litert/objc/sources/LRTOptions+Internal.h"
+
+#if defined(__APPLE__)
+
+namespace {
+
+/**
+ * Reads the Metal flags carried by the C++ options backing @c options.
+ *
+ * @return Whether the GPU options exist and both flags could be read.
+ */
+bool ReadMetalFlags(LRTOptions *options, bool *usesMetalArgumentBuffers,
+                    bool *enablesMetalResidencySet) {
+  auto gpuOptions = [options cppOptions]->GetGpuOptions();
+  if (!gpuOptions.HasValue()) {
+    return false;
+  }
+  return LrtGetGpuOptionsUseMetalArgumentBuffers(usesMetalArgumentBuffers, gpuOptions->Get()) ==
+             kLiteRtStatusOk &&
+         LrtGetGpuOptionsMetalResidencySet(enablesMetalResidencySet, gpuOptions->Get()) ==
+             kLiteRtStatusOk;
+}
+
+}  // namespace
+
+#endif  // defined(__APPLE__)
 
 @interface LRTOptionsTests : XCTestCase
 @end
@@ -28,10 +56,8 @@
 }
 
 - (void)testInitWithHardwareAccelerators {
-  LRTHardwareAccelerators expectedFlags =
-      LRTHardwareAcceleratorCPU | LRTHardwareAcceleratorNPU;
-  LRTOptions *options =
-      [[LRTOptions alloc] initWithHardwareAccelerators:expectedFlags];
+  LRTHardwareAccelerators expectedFlags = LRTHardwareAcceleratorCPU | LRTHardwareAcceleratorNPU;
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:expectedFlags];
   XCTAssertNotNil(options);
   XCTAssertEqual(options.hardwareAccelerators, expectedFlags);
 }
@@ -51,5 +77,66 @@
   XCTAssertTrue(options.usesMetalArgumentBuffers);
   XCTAssertTrue(options.enablesMetalResidencySet);
 }
+
+- (void)testCopyPreservesPropertiesAndIsIndependent {
+  LRTOptions *original =
+      [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
+  original.usesMetalArgumentBuffers = YES;
+
+  LRTOptions *copiedOptions = [original copy];
+  XCTAssertNotNil(copiedOptions);
+  XCTAssertNotEqual(copiedOptions, original);
+  XCTAssertEqualObjects(copiedOptions, original);
+  XCTAssertEqual(copiedOptions.hardwareAccelerators, LRTHardwareAcceleratorGPU);
+  XCTAssertTrue(copiedOptions.usesMetalArgumentBuffers);
+  XCTAssertFalse(copiedOptions.enablesMetalResidencySet);
+
+  original.enablesMetalResidencySet = YES;
+  XCTAssertFalse(copiedOptions.enablesMetalResidencySet);
+  XCTAssertNotEqualObjects(copiedOptions, original);
+}
+
+- (void)testEqualityAndHash {
+  LRTOptions *firstOptions =
+      [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTOptions *secondOptions =
+      [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorCPU];
+  LRTOptions *gpuOptions =
+      [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
+
+  XCTAssertEqualObjects(firstOptions, secondOptions);
+  XCTAssertEqual(firstOptions.hash, secondOptions.hash);
+  XCTAssertNotEqualObjects(firstOptions, gpuOptions);
+}
+
+#if defined(__APPLE__)
+
+- (void)testSetMetalOptionsUpdatesCppOptions {
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
+  options.usesMetalArgumentBuffers = YES;
+  options.enablesMetalResidencySet = YES;
+
+  bool usesMetalArgumentBuffers = false;
+  bool enablesMetalResidencySet = false;
+  XCTAssertTrue(ReadMetalFlags(options, &usesMetalArgumentBuffers, &enablesMetalResidencySet));
+  XCTAssertTrue(usesMetalArgumentBuffers);
+  XCTAssertTrue(enablesMetalResidencySet);
+}
+
+- (void)testResetMetalOptionsUpdatesCppOptions {
+  LRTOptions *options = [[LRTOptions alloc] initWithHardwareAccelerators:LRTHardwareAcceleratorGPU];
+  options.usesMetalArgumentBuffers = YES;
+  options.enablesMetalResidencySet = YES;
+  options.usesMetalArgumentBuffers = NO;
+  options.enablesMetalResidencySet = NO;
+
+  bool usesMetalArgumentBuffers = true;
+  bool enablesMetalResidencySet = true;
+  XCTAssertTrue(ReadMetalFlags(options, &usesMetalArgumentBuffers, &enablesMetalResidencySet));
+  XCTAssertFalse(usesMetalArgumentBuffers);
+  XCTAssertFalse(enablesMetalResidencySet);
+}
+
+#endif  // defined(__APPLE__)
 
 @end

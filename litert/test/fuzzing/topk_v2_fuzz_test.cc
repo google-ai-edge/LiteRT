@@ -210,7 +210,7 @@ TEST(TopKV2FuzzTest, Rank64Smoke) {
   test_case.output_index_type = TensorType_INT32;
   test_case.dynamic_k = true;
   test_case.invoke = true;
-  EXPECT_EQ(RunTopKV2Case(test_case), RunResult::kSuccess);
+  EXPECT_EQ(RunTopKV2Case(test_case), RunResult::kRejected);
 }
 
 FUZZ_TEST(TopKV2FuzzTest, TopKV2ExecutesValidCases)

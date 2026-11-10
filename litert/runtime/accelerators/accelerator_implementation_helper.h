@@ -79,7 +79,7 @@ class AcceleratorImplementationHelper {
   // The accelerator name returned by `GetName`.
   constexpr static const absl::string_view kName = name_;
   // The accelerator version returned by `GetVersion`.
-  constexpr static const LiteRtApiVersion kVersion = VersionTrait::version;
+  constexpr static const LiteRtApiVersion kVersion = VersionTrait::kVersion;
   // The accelerator hardware support returned by `GetHardwareSupport`.
   constexpr static const LiteRtHwAcceleratorSet kHwSupport = hardware_support_;
 

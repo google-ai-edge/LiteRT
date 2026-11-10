@@ -75,13 +75,14 @@ robustness and provide coverage in advance of possible WebNN expansion. Their
 presence does not by itself expand the current threat model or change how a
 finding is classified.
 
-`tflite::Verify(...)` is one required ingress check, but it does not currently
-establish every application-specific WebNN invariant. A property that claims
-WebNN reachability must also keep its generated models within the relevant
-operator, type, rank, layout, quantization, constant-buffer, and output-metadata
-contracts expected from WebNN lowering. Other properties may deliberately go
-beyond that surface for general runtime robustness, but should say so during
-triage.
+`litert::Verify(...)` (which runs `tflite::Verify(...)`, LiteRT model loading,
+rank validation, and static shape inference `InferShapes`) is the required
+ingress check, though it may not establish every application-specific WebNN
+invariant. A property that claims WebNN reachability must also keep its
+generated models within the relevant operator, type, rank, layout, quantization,
+constant-buffer, and output-metadata contracts expected from WebNN lowering.
+Other properties may deliberately go beyond that surface for general runtime
+robustness, but should say so during triage.
 
 ## Directory structure
 
@@ -118,7 +119,7 @@ That preserves important parts of the real attack surface:
 
 1. Build a minimal FlatBuffer containing one operator.
 2. Check model-buffer and constant-buffer alignment.
-3. Run `tflite::Verify(...)`.
+3. Run `litert::Verify(..., run_spec.verify_options)`.
 4. Register only the operator and version range under test.
 5. Construct an `Interpreter` with a quota allocator.
 6. Resize runtime input tensors.
@@ -214,10 +215,20 @@ This split is important for several reasons:
 
 An invalid domain should not be arbitrary garbage. Start with an otherwise
 valid case and violate one relationship at a time. Examples include moving an
-axis just out of range, changing one filter channel count, using a padding
+axis just out of range, changing one filter channel count, setting a stride just
+larger than the input dimension (`stride = input_size + 1`), using a padding
 matrix with the wrong number of columns, or changing a reshape target by one
 element. This keeps the mutation close to the boundary being tested and makes
 it more likely that the intended validation code executes.
+
+**Never clamp a valid domain in isolation without a paired malformed property.**
+When a `Valid*Domain` restricts or clamps a parameter relationship (for example,
+clamping `stride_height = std::min(stride_height, input_shape[1])` so that valid
+properties stay on the valid side of `litert::Verify` or kernel checks), you
+must pair it with a corresponding `Malformed*Domain` / `Rejects*` property that
+explicitly crosses that boundary (such as `stride_height = input_shape[1] + 1`).
+Tightening a valid domain alone hides the out-of-range region from the fuzzer
+and leaves both the rejection check and any fallback path untested.
 
 Some boundary-stress tests need a conditional oracle. For example, a generated
 shape may be valid according to the operator contract but intentionally exceed
@@ -229,44 +240,49 @@ and always reject `kHarnessFailure`.
 
 An **empty tensor** is a tensor with one or more dimensions where at least one
 dimension is zero (resulting in zero total elements). Handling of empty tensors
-differs fundamentally between hardware/graph delegates and built-in CPU kernels:
+across backends follows these rules:
 
-- **All delegates should reject empty tensors:** All TFLite delegates (such as
-  XNNPACK, GPU, or MLDrift) should reject graphs containing empty tensor shapes
-  that are statically known in the graph during delegate partitioning /
-  `Prepare`. Hardware runtimes, device drivers, and microkernels frequently
-  assume non-zero allocations, valid strides, or non-zero divisor dimensions;
-  delegating zero-element operations risks division-by-zero, invalid hardware
-  buffer bindings, or unrecoverable driver errors.
-- **Built-in CPU kernels may provide compatibility support:** Built-in CPU
-  reference and optimized kernels may provide partial or full support for empty
-  tensors where existing applications and production models rely on it. For
-  example, the batch size dimension of a Conv2D input tensor could be zero in
-  dynamic-batching or filtering pipelines. If a CPU kernel was already written
-  to handle such shapes gracefully, we should continue having that support to
-  avoid breaking compatibility with existing applications.
+- **Built-in CPU and XNNPACK backends allow empty tensor shapes:** The LiteRT
+  core runtime, built-in CPU kernels (reference and optimized), and the XNNPACK
+  delegate allow empty tensor shapes (`dims[i] == 0`) when the operator contract
+  supports them. For example, the batch size dimension of a `CONV_2D` input
+  tensor may be zero in dynamic-batching or filtering pipelines, or an initial
+  past-KV cache input to `CONCATENATION` may have a zero sequence dimension
+  during batched prefill. The XNNPACK delegate binds a dummy non-null pointer
+  (`&dummy_data_`) for zero-byte external values and skips zero-element operator
+  executions at runtime. However, support can still depend on the specific
+  operand and dimension (for example, `CONV_2D` allows an empty input tensor
+  batch dimension while still requiring a non-empty filter tensor and non-zero
+  channel counts).
+- **Other hardware delegates (e.g., GPU / MLDrift) may reject empty tensors:**
+  Hardware runtimes, device drivers, and shader microkernels frequently assume
+  non-zero buffer allocations, valid strides, or non-zero divisor dimensions;
+  such delegates should cleanly reject graphs containing unsupported empty
+  tensor shapes during delegate partitioning, `Prepare`, or `Invoke`.
 
 ### Implications for fuzzing tests
 
 Fuzz testing in this directory must be constructed according to these rules:
 
-1. **Delegate fuzz properties must expect rejection:** When testing
-   delegate-enabled targets (e.g., `*_xnnpack_fuzz_test`), any static graph
-   containing an empty tensor shape must be treated as an unsupported/malformed
-   configuration and verified to cleanly yield `RunResult::kRejected`.
-2. **Built-in CPU fuzz properties must test compatibility without regressions:**
-   - Where an operator contract or existing CPU implementation supports empty
-     tensors (e.g., a batch dimension of zero), valid fuzz domains should
-     include zero dimensions to verify that execution succeeds
+1. **Built-in CPU and XNNPACK fuzz properties must test empty-shape support and
+   rejection boundaries:**
+   - Where an operator contract supports empty tensors (e.g., a batch or data
+     dimension of zero), valid fuzz domains for built-in CPU and XNNPACK targets
+     should include zero dimensions to verify that execution succeeds
      (`RunResult::kSuccess`), allocates without memory leaks, and completes
      cleanly.
-   - If an operator does not support empty tensors along specific non-batch
-     dimensions (e.g., filter spatial dimensions or channel counts of zero),
-     the kernel must reject them cleanly (`RunResult::kRejected`) during
-     `Prepare` or `Invoke`.
-   - In all cases, zero-element tensors must **never** cause undefined
-     behavior, integer division by zero in stride/offset calculations,
-     undersized buffer allocations, memory safety violations, or crashes.
+   - If an operator does not support empty tensors along specific operands or
+     dimensions (e.g., filter spatial dimensions, divisor dimensions, or channel
+     counts of zero), the verifier, delegate, or kernel must reject them cleanly
+     (`RunResult::kRejected`).
+2. **Other hardware delegates (e.g., MLDrift) that do not support empty
+   tensors must reject them cleanly:** Any unsupported empty tensor shape must
+   cleanly yield `RunResult::kRejected`.
+3. **No memory-safety or arithmetic failures on zero-element tensors:** In all
+   backends, zero-element tensors must **never** cause undefined behavior,
+   integer division by zero in stride/offset calculations, null-pointer
+   dereferences, undersized buffer allocations, memory safety violations, or
+   crashes.
 
 ## Designing a per-operator fuzzer
 
@@ -363,7 +379,7 @@ bytes. Packed types such as `INT4` require their packed storage size rather than
 `element_count * sizeof(T)`.
 
 Run the model verifier before interpreter construction. A per-op fuzzer may
-generate models directly and use `tflite::Verify(...)` as the global ingress
+generate models directly and use `litert::Verify(...)` as the global ingress
 check; it does not need to invoke a converter or WebNN lowering pipeline.
 
 Valid-case domains should satisfy the static invariants assigned to model
@@ -488,14 +504,17 @@ Before submitting a new per-op fuzzer, verify that:
 - the tested loading/kernel/delegate contract is clear;
 - valid and malformed cases use separate domains and exact outcomes;
 - malformed domains violate a specific documented invariant;
+- any constraint clamped in a valid domain (e.g., `std::min`) is paired with a
+  corresponding malformed property that crosses that boundary;
 - both constant and dynamic parameter paths are covered where applicable;
 - all materialization and expected-outcome arithmetic is checked;
 - tensor sizes and live allocations are bounded;
 - 32-bit overflow and checked-narrowing boundaries are represented;
 - model, constant, and runtime buffers satisfy alignment and representation
   requirements;
-- empty tensor (zero-element) handling conforms to the delegate-rejection and
-  CPU backward-compatibility contracts;
+- empty tensor (zero-element) handling conforms to the CPU and XNNPACK support
+  and per-operand rejection contracts (and hardware-delegate rejection where
+  applicable);
 - relevant reference, optimized, multithreaded, and delegate (e.g.,
   XNNPACK, MLDrift) paths are observable and covered;
 - smoke tests prove that intended deep paths are reached;

@@ -68,7 +68,7 @@ TEST_P(ConvertResize2dTest, ResizeBilinear) {
   const ::ml_drift::Resize2DAttributes* attr =
       std::any_cast<::ml_drift::Resize2DAttributes>(&op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->type, ::ml_drift::SamplingType::BILINEAR);
+  EXPECT_EQ(attr->type, ::ml_drift::SamplingType::kBilinear);
   EXPECT_EQ(attr->align_corners, true);
   EXPECT_EQ(attr->half_pixel_centers, false);
   EXPECT_EQ(attr->new_shape.h, 4);
@@ -106,7 +106,7 @@ TEST_P(ConvertResize2dTest, ResizeNearestNeighbor) {
   const ::ml_drift::Resize2DAttributes* attr =
       std::any_cast<::ml_drift::Resize2DAttributes>(&op->attr);
   ASSERT_TRUE(attr);
-  EXPECT_EQ(attr->type, ::ml_drift::SamplingType::NEAREST);
+  EXPECT_EQ(attr->type, ::ml_drift::SamplingType::kNearest);
   EXPECT_EQ(attr->align_corners, false);
   EXPECT_EQ(attr->half_pixel_centers, true);
   EXPECT_EQ(attr->new_shape.h, 10);

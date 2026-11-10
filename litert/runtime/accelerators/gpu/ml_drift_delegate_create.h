@@ -28,7 +28,10 @@ namespace litert::ml_drift {
 using DelegateCreator = TfLiteDelegatePtr (*)(MlDriftDelegateOptionsPtr,
                                               LiteRtEnvironment);
 
-// Creates a new ML Drift delegate object.
+// Creates a new ML Drift delegate object. Keeps existing values of
+// gpu_delegate_options if gpu_options_payload is not set or the individual
+// options are not set. A notable exception is `use_ir_model` which is
+// determined by LITERT_GPU_USE_IR_MODEL if the LrtGpuOptions option is not set.
 LiteRtStatus CreateDelegate(
     LiteRtRuntimeContext* runtime_context, LiteRtEnvironment env,
     LiteRtAcceleratorConst accelerator, LrtGpuOptions* gpu_options_payload,
@@ -37,6 +40,14 @@ LiteRtStatus CreateDelegate(
 
 LrtGpuOptions* GetGpuOptionsPayload(LiteRtRuntimeContext* runtime_context,
                                     LiteRtOptions options);
+
+// Retrieves the hardware supported by the ML Drift GPU accelerator.
+// On Android builds with ML Drift compatibility checking enabled, returns
+// kLiteRtStatusErrorUnsupported if `accelerator` is not yet registered to an
+// environment and the current device is not on the ML Drift compatibility
+// allowlist.
+LiteRtStatus GetHardwareSupport(LiteRtAcceleratorConst accelerator,
+                                LiteRtHwAcceleratorSet* supported_hardware);
 
 // Starts collection of HW-specific metrics for ML Drift GPU delegate.
 LiteRtStatus StartMetricsCollection(LiteRtRuntimeContext* runtime_context,

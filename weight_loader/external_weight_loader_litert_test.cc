@@ -25,13 +25,13 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/buffer.h"  // from @flatbuffers
@@ -379,7 +379,8 @@ const WeightInfo& GetSingleWeightInfo(const WeightLoader& loader) {
 
 void ExpectWeightInfo(const WeightInfo& info) {
   EXPECT_EQ(info.external_buffer_id, kExternalBufferId);
-  EXPECT_EQ(info.packing, "");
+  ASSERT_NE(info.packing, nullptr);
+  EXPECT_STREQ(info.packing, "");
 }
 
 void ExpectHostBufferMetadata(const WeightAccess* access) {
@@ -419,8 +420,7 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromFilesystemPath) {
   ExpectWeightInfo(weight_info);
   WeightAccessRequest request;
   request.cpu = true;
-  absl::Status status = loader->PrepareAccess(request, /*env=*/nullptr);
-  ASSERT_TRUE(status.ok()) << status.message();
+  ASSERT_EQ(loader->PrepareAccess(request, /*env=*/nullptr), kLiteRtStatusOk);
 
   const auto* access =
       loader->GetExternalWeightByBuffer(weight_info.external_buffer_id);
@@ -454,8 +454,7 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromScopedFile) {
   ExpectWeightInfo(weight_info);
   WeightAccessRequest request;
   request.cpu = true;
-  absl::Status status = loader->PrepareAccess(request, /*env=*/nullptr);
-  ASSERT_TRUE(status.ok()) << status.message();
+  ASSERT_EQ(loader->PrepareAccess(request, /*env=*/nullptr), kLiteRtStatusOk);
 
   const auto* access =
       loader->GetExternalWeightByBuffer(weight_info.external_buffer_id);
@@ -479,26 +478,24 @@ TEST(ExternalWeightLoaderTest, ReleasesAndReloadsSingleBufferAccess) {
 
   WeightAccessRequest request;
   request.cpu = true;
-  ASSERT_TRUE(loader
-                  ->PrepareAccessForBuffer(weight_info.external_buffer_id,
-                                           request, /*env=*/nullptr)
-                  .ok());
+  ASSERT_EQ(loader->PrepareAccessForBuffer(weight_info.external_buffer_id,
+                                           request, /*env=*/nullptr),
+            kLiteRtStatusOk);
 
   const auto* access =
       loader->GetExternalWeightByBuffer(weight_info.external_buffer_id);
   auto expected = ExpectedSlice(payload);
   ExpectHostBufferEquals(access, expected);
 
-  ASSERT_TRUE(
-      loader->ReleaseExternalWeightByBuffer(weight_info.external_buffer_id)
-          .ok());
+  ASSERT_EQ(
+      loader->ReleaseExternalWeightByBuffer(weight_info.external_buffer_id),
+      kLiteRtStatusOk);
   EXPECT_EQ(loader->GetExternalWeightByBuffer(weight_info.external_buffer_id),
             nullptr);
 
-  ASSERT_TRUE(loader
-                  ->PrepareAccessForBuffer(weight_info.external_buffer_id,
-                                           request, /*env=*/nullptr)
-                  .ok());
+  ASSERT_EQ(loader->PrepareAccessForBuffer(weight_info.external_buffer_id,
+                                           request, /*env=*/nullptr),
+            kLiteRtStatusOk);
   access = loader->GetExternalWeightByBuffer(weight_info.external_buffer_id);
   ExpectHostBufferEquals(access, expected);
 }
@@ -522,10 +519,9 @@ TEST(ExternalWeightLoaderTest, CanonicalizesDuplicateExternalBufferSlices) {
 
   WeightAccessRequest request;
   request.cpu = true;
-  ASSERT_TRUE(loader
-                  ->PrepareAccessForBuffer(kDuplicateExternalBufferId, request,
-                                           /*env=*/nullptr)
-                  .ok());
+  ASSERT_EQ(loader->PrepareAccessForBuffer(kDuplicateExternalBufferId, request,
+                                           /*env=*/nullptr),
+            kLiteRtStatusOk);
 
   const auto* canonical_access =
       loader->GetExternalWeightByBuffer(kExternalBufferId);
@@ -535,8 +531,8 @@ TEST(ExternalWeightLoaderTest, CanonicalizesDuplicateExternalBufferSlices) {
   EXPECT_EQ(canonical_access, duplicate_access);
   ExpectHostBufferEquals(duplicate_access, ExpectedSlice(payload));
 
-  ASSERT_TRUE(
-      loader->ReleaseExternalWeightByBuffer(kDuplicateExternalBufferId).ok());
+  ASSERT_EQ(loader->ReleaseExternalWeightByBuffer(kDuplicateExternalBufferId),
+            kLiteRtStatusOk);
   EXPECT_EQ(loader->GetExternalWeightByBuffer(kExternalBufferId), nullptr);
 }
 
@@ -560,8 +556,7 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsIntoMetalDeviceBuffer) {
     WeightAccessRequest request;
     request.cpu = false;
     request.metal = true;
-    absl::Status status = loader->PrepareAccess(request, env);
-    ASSERT_TRUE(status.ok()) << status.message();
+    ASSERT_EQ(loader->PrepareAccess(request, env), kLiteRtStatusOk);
 
     const auto* access =
         loader->GetExternalWeightByBuffer(weight_info.external_buffer_id);
@@ -580,8 +575,8 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsIntoMetalDeviceBuffer) {
   WeightAccessRequest request;
   request.cpu = false;
   request.metal = true;
-  absl::Status status = loader->PrepareAccess(request, /*env=*/nullptr);
-  EXPECT_EQ(status.code(), absl::StatusCode::kUnimplemented);
+  EXPECT_EQ(loader->PrepareAccess(request, /*env=*/nullptr),
+            kLiteRtStatusErrorUnsupported);
 #endif
 }
 
@@ -595,7 +590,7 @@ TEST(ExternalWeightLoaderTest, NoExternalWeightsIsNoOp) {
   request.cpu = true;
   request.opencl = false;
   request.metal = true;
-  EXPECT_TRUE(loader->PrepareAccess(request, /*env=*/nullptr).ok());
+  EXPECT_EQ(loader->PrepareAccess(request, /*env=*/nullptr), kLiteRtStatusOk);
 }
 
 TEST(ExternalWeightLoaderTest, LoadsWeightsFromMemory) {
@@ -629,8 +624,7 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromMemory) {
 
   WeightAccessRequest request;
   request.cpu = true;
-  absl::Status status = loader->PrepareAccess(request, /*env=*/nullptr);
-  ASSERT_TRUE(status.ok()) << status.message();
+  ASSERT_EQ(loader->PrepareAccess(request, /*env=*/nullptr), kLiteRtStatusOk);
 
   const auto* access =
       loader->GetExternalWeightByBuffer(weight_info.external_buffer_id);
@@ -640,9 +634,125 @@ TEST(ExternalWeightLoaderTest, LoadsWeightsFromMemory) {
 
   // Releasing should succeed and NOT crash (proves the loader doesn't try to
   // munmap the heap memory).
-  ASSERT_TRUE(
-      loader->ReleaseExternalWeightByBuffer(weight_info.external_buffer_id)
-          .ok());
+  ASSERT_EQ(
+      loader->ReleaseExternalWeightByBuffer(weight_info.external_buffer_id),
+      kLiteRtStatusOk);
+}
+
+
+// Extracts the return type of a (possibly const) member function pointer.
+template <typename T>
+struct MemberFunctionReturnType;
+
+template <typename R, typename C, typename... Args>
+struct MemberFunctionReturnType<R (C::*)(Args...)> {
+  using type = R;
+};
+
+template <typename R, typename C, typename... Args>
+struct MemberFunctionReturnType<R (C::*)(Args...) const> {
+  using type = R;
+};
+
+template <auto kMethod>
+using ReturnTypeOf = typename MemberFunctionReturnType<decltype(kMethod)>::type;
+
+template <auto kMethod>
+constexpr bool kReturnsAbiStableType =
+    std::is_trivially_copyable_v<ReturnTypeOf<kMethod>>;
+
+TEST(WeightLoaderAbiTest, VirtualMethodsReturnAbiStableTypes) {
+  static_assert(kReturnsAbiStableType<&WeightLoader::GetWeightInfo>);
+  static_assert(kReturnsAbiStableType<&WeightLoader::PrepareAccess>);
+  static_assert(kReturnsAbiStableType<&WeightLoader::PrepareAccessForBuffer>);
+  static_assert(kReturnsAbiStableType<&WeightLoader::FindWeightInfoByBuffer>);
+  static_assert(
+      kReturnsAbiStableType<&WeightLoader::GetCanonicalExternalBufferId>);
+  static_assert(
+      kReturnsAbiStableType<&WeightLoader::SetExternalWeightByBuffer>);
+  static_assert(
+      kReturnsAbiStableType<&WeightLoader::GetExternalWeightByBuffer>);
+  static_assert(
+      kReturnsAbiStableType<&WeightLoader::DiscardExternalWeightByBuffer>);
+  static_assert(
+      kReturnsAbiStableType<&WeightLoader::ReleaseExternalWeightByBuffer>);
+#if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
+  static_assert(kReturnsAbiStableType<&WeightLoader::UploadWeightsOnWeb>);
+#endif  // defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
+
+  // Status-returning methods must use the C `LiteRtStatus` enum, which is the
+  // same status type used by the rest of the runtime <-> accelerator ABI
+  // (`LiteRtRuntimeContext`).
+  static_assert(std::is_same_v<ReturnTypeOf<&WeightLoader::PrepareAccess>,
+                               LiteRtStatus>);
+  static_assert(
+      std::is_same_v<ReturnTypeOf<&WeightLoader::PrepareAccessForBuffer>,
+                     LiteRtStatus>);
+  static_assert(
+      std::is_same_v<ReturnTypeOf<&WeightLoader::SetExternalWeightByBuffer>,
+                     LiteRtStatus>);
+  static_assert(
+      std::is_same_v<ReturnTypeOf<&WeightLoader::DiscardExternalWeightByBuffer>,
+                     LiteRtStatus>);
+  static_assert(
+      std::is_same_v<ReturnTypeOf<&WeightLoader::ReleaseExternalWeightByBuffer>,
+                     LiteRtStatus>);
+#if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
+  static_assert(std::is_same_v<ReturnTypeOf<&WeightLoader::UploadWeightsOnWeb>,
+                               LiteRtStatus>);
+#endif  // defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
+}
+
+TEST(WeightLoaderAbiTest, WeightInfoHasAbiStableLayout) {
+  static_assert(std::is_standard_layout_v<WeightInfo>);
+  static_assert(std::is_trivially_copyable_v<WeightInfo>);
+  static_assert(
+      std::is_same_v<decltype(WeightInfo::external_buffer_id), uint32_t>);
+  static_assert(std::is_same_v<decltype(WeightInfo::packing), const char*>);
+
+  // `packing` defaults to an empty string, never null.
+  WeightInfo default_info;
+  ASSERT_NE(default_info.packing, nullptr);
+  EXPECT_STREQ(default_info.packing, "");
+  WeightInfo aggregate_info{};
+  ASSERT_NE(aggregate_info.packing, nullptr);
+  EXPECT_STREQ(aggregate_info.packing, "");
+}
+
+TEST(WeightLoaderAbiTest, ReportsErrorsAsLiteRtStatusThroughInterface) {
+  constexpr absl::string_view kGroupName = "abi_weights.bin";
+  constexpr uint32_t kUnknownExternalBufferId = 1234;
+  const std::string payload = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ4545454545";
+  auto model = BuildModel(kGroupName);
+  WriteWeightsFile(kGroupName, payload);
+
+  std::unique_ptr<WeightLoader> loader = CreateLiteRtWeightLoader(
+      LrtGetRuntimeContext(), model.model(),
+      /*model_directory=*/std::string(::testing::TempDir()),
+      /*scoped_weight_source=*/nullptr);
+  ASSERT_NE(loader, nullptr);
+
+  WeightAccessRequest request;
+  request.cpu = true;
+  EXPECT_EQ(loader->PrepareAccessForBuffer(kUnknownExternalBufferId, request,
+                                           /*env=*/nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(loader->SetExternalWeightByBuffer(kUnknownExternalBufferId,
+                                              WeightAccess()),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(loader->DiscardExternalWeightByBuffer(kUnknownExternalBufferId),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(loader->ReleaseExternalWeightByBuffer(kUnknownExternalBufferId),
+            kLiteRtStatusErrorInvalidArgument);
+
+  // Known buffers succeed with `kLiteRtStatusOk`.
+  EXPECT_EQ(loader->PrepareAccessForBuffer(kExternalBufferId, request,
+                                           /*env=*/nullptr),
+            kLiteRtStatusOk);
+  EXPECT_EQ(loader->DiscardExternalWeightByBuffer(kExternalBufferId),
+            kLiteRtStatusOk);
+  EXPECT_EQ(loader->ReleaseExternalWeightByBuffer(kExternalBufferId),
+            kLiteRtStatusOk);
 }
 
 }  // namespace

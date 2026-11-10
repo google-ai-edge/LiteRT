@@ -1,94 +1,154 @@
-# Copyright (c) 2026 Broadcom. All Rights Reserved.
+############################################################
+# Copyright (C) 2025 Broadcom.
 # The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
-# This software is owned by Broadcom and licensed under Apache-2.0.
 #
-# SPDX-License-Identifier: Apache-2.0
+# This program is the proprietary software of Broadcom and/or its licensors,
+# and may only be used, duplicated, modified or distributed pursuant to
+# the terms and conditions of a separate, written license agreement executed
+# between you and Broadcom (an "Authorized License").  Except as set forth in
+# an Authorized License, Broadcom grants no license (express or implied),
+# right to use, or waiver of any kind with respect to the Software, and
+# Broadcom expressly reserves all rights in and to the Software and all
+# intellectual property rights therein. IF YOU HAVE NO AUTHORIZED LICENSE,
+# THEN YOU HAVE NO RIGHT TO USE THIS SOFTWARE IN ANY WAY, AND SHOULD
+# IMMEDIATELY NOTIFY BROADCOM AND DISCONTINUE ALL USE OF THE SOFTWARE.
 #
-# Convenience wrapper around build_binaries.sh / run_inference.sh so a
-# customer building this repo can:
-#  - cross-compile the Broadcom LiteRT dispatch plugin + runtime for target
-#  - host-build the Broadcom compiler plugin and AOT-compile a .tflite model
-#  - run a single model on target
-# with familiar `make` targets.
+# Except as expressly set forth in the Authorized License,
 #
-# Typical flow (see the Broadcom LiteRT Plugin Release Guide for full setup,
-# including bstorm_headers/bstorm_binaries/models tarballs under vendors/broadcom/):
-#   export BSTORM_SDK_CORE_OUT=<bstorm sdk>/core/out/core.<chip>.<rev>.target
-#   make build PLATFORM=74110_B0
-#   make build-host
-#   make compile-model MODEL=<model_name> PLATFORM=74110_B0
-#   make run TARGET=<ip> PLATFORM=74110_B0 MODEL=<model_name>
+# 1.     This program, including its structure, sequence and organization,
+# constitutes the valuable trade secrets of Broadcom, and you shall use all
+# reasonable efforts to protect the confidentiality thereof, and to use this
+# information only in connection with your use of Broadcom integrated circuit
+# products.
 #
-# See build_binaries.sh and run_inference.sh for full option/env docs.
-
-PLATFORM ?=
-TARGET ?=
-MODEL ?=
-PORT ?=
-USER_ ?=
-MODELS_DIR ?= models
-SKIP_NODES ?=
-GRAPH_TOOL ?=
-GRAPH_TRANSFORM ?=
-GRAPH_PROCESS ?=
-comma := ,
-
-.PHONY: all build build-host compile-model run list-models clean help
-
-all: build
-
-build:
-	@test -n "$(PLATFORM)" || { echo "ERROR: PLATFORM=<platform> is required, e.g. PLATFORM=74110_B0"; exit 1; }
-	./build_binaries.sh --platform "$(PLATFORM)"
-
-build-host:
-	./build_binaries.sh --host
-
-# AOT-compiles models/<MODEL>/<MODEL>.tflite into
-# models/<MODEL>/<MODEL>.npu.tflite using the host-built compiler plugin
-# (see `make build-host`). The Broadcom subgraph is compiled for PLATFORM
-# and embedded in the output; no target board is required for this step.
+# 2.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED
+# "AS IS" AND WITH ALL FAULTS AND BROADCOM MAKES NO PROMISES, REPRESENTATIONS
+# OR WARRANTIES, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, WITH
+# RESPECT TO THE SOFTWARE.  BROADCOM SPECIFICALLY DISCLAIMS ANY AND ALL
+# IMPLIED WARRANTIES OF TITLE, MERCHANTABILITY, NONINFRINGEMENT, FITNESS FOR
+# A PARTICULAR PURPOSE, LACK OF VIRUSES, ACCURACY OR COMPLETENESS, QUIET
+# ENJOYMENT, QUIET POSSESSION OR CORRESPONDENCE TO DESCRIPTION. YOU ASSUME
+# THE ENTIRE RISK ARISING OUT OF USE OR PERFORMANCE OF THE SOFTWARE.
 #
-# Optional graph-transform knobs, forwarded to the compiler plugin via
-# BSTORM_COMPILER_PLUGIN_OPTIONS (see compiler/bstorm_compiler_plugin.cc):
-#   SKIP_NODES=<n|n-m>        skip-nodes    - exclude node(s)/range from the partition
-#   GRAPH_TOOL=<path>         graph-tool    - external graph transform/process tool binary
-#   GRAPH_TRANSFORM=<type>    graph-transform - run `<tool> transform --type <type>` first
-#   GRAPH_PROCESS=<p1,p2,..>  graph-process - run `<tool> process --process <p1+p2+...>` first
-# GRAPH_TRANSFORM and GRAPH_PROCESS are mutually exclusive; GRAPH_PROCESS wins if both are set.
-compile-model:
-	@test -n "$(MODEL)" || { echo "ERROR: MODEL=<name> is required, e.g. MODEL=torchvision_mobilenet_v2"; exit 1; }
-	@test -n "$(PLATFORM)" || { echo "ERROR: PLATFORM=<platform> is required, e.g. PLATFORM=74110_B0"; exit 1; }
-	@test -f "lib/host/apply_plugin_main" || { echo "ERROR: lib/host/apply_plugin_main not found. Run: make build-host"; exit 1; }
-	BSTORM_COMPILER_PLUGIN_OPTIONS="graph-name=$(MODEL),graph-path=$(MODELS_DIR)/$(MODEL)$(if $(SKIP_NODES),$(comma)skip-nodes=$(SKIP_NODES))$(if $(GRAPH_PROCESS),$(comma)graph-process=$(subst $(comma),+,$(GRAPH_PROCESS)),$(if $(GRAPH_TRANSFORM),$(comma)graph-transform=$(GRAPH_TRANSFORM)))$(if $(GRAPH_TOOL),$(comma)graph-tool=$(GRAPH_TOOL))" \
-	./lib/host/apply_plugin_main --cmd apply \
-		--model "$(MODELS_DIR)/$(MODEL)/$(MODEL).tflite" \
-		--soc_manufacturer Broadcom --soc_model "$(PLATFORM)" \
-		--libs lib/host \
-		--o "$(MODELS_DIR)/$(MODEL)/$(MODEL).npu.tflite"
+# 3.     TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL BROADCOM
+# OR ITS LICENSORS BE LIABLE FOR (i) CONSEQUENTIAL, INCIDENTAL, SPECIAL,
+# INDIRECT, OR EXEMPLARY DAMAGES WHATSOEVER ARISING OUT OF OR IN ANY WAY
+# RELATING TO YOUR USE OF OR INABILITY TO USE THE SOFTWARE EVEN IF BROADCOM
+# HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES; OR (ii) ANY AMOUNT IN
+# EXCESS OF THE AMOUNT ACTUALLY PAID FOR THE SOFTWARE ITSELF OR U.S. $1,
+# WHICHEVER IS GREATER. THESE LIMITATIONS SHALL APPLY NOTWITHSTANDING ANY
+# FAILURE OF ESSENTIAL PURPOSE OF ANY LIMITED REMEDY.
+############################################################
 
-run:
-	@test -n "$(TARGET)" || { echo "ERROR: TARGET=<ip> is required (or set BSTM_HW_TARGET)"; exit 1; }
-	@test -n "$(PLATFORM)" || { echo "ERROR: PLATFORM=<platform> is required, e.g. PLATFORM=74110_B0"; exit 1; }
-	./run_inference.sh --target "$(TARGET)" --platform "$(PLATFORM)" \
-		$(if $(PORT),--port "$(PORT)") \
-		$(if $(USER_),--user "$(USER_)") \
-		$(if $(MODEL),--model "$(MODEL)")
+ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+LITERT_DIR := $(abspath $(ROOT_DIR)/../../..)
+CORE_DIR := $(abspath $(ROOT_DIR)/../../../../bstorm/core)
+CMAKE_TOOLS_DIR := $(abspath $(ROOT_DIR)/../../../../bstorm/cmake)
 
-list-models:
-	./run_inference.sh --list-models
+BSTORM_CHIP ?= 74110
+BSTORM_CHIP_REV ?= b0
+BSTORM_BSTM_REV ?= 2003
+BSTORM_PLATFORM ?= 74110_B0
 
+BRCM_TOOLCHAIN_TOP ?= $(realpath /opt/toolchains/stbgcc-12.4-2.0)
+CMAKE_OUT ?= $(abspath $(ROOT_DIR)/../../../../build_arm64)
+CMAKE_OUT_HOST ?= $(abspath $(ROOT_DIR)/../../../../build_host)
+HOST_TOOLS ?= $(abspath $(ROOT_DIR)/../../../../host_tools_build)
+FLATC_BINARY = ${HOST_TOOLS}/flatbuffers-flatc/bin/flatc
+
+DEVICE_USER ?= user
+DEVICE_IP ?= device
+DEVICE_DIR ?= /tmp/bstorm_run
+
+.PHONY: host_tools build_host compile_model build_target deploy_target run_target clean dist_clean
+
+# 1. Build host FlatBuffers dependency
+host_tools:
+	mkdir -p $(HOST_TOOLS)
+	cmake -DCMAKE_BUILD_TYPE=Release \
+		-DTFLITE_SOURCE_DIR=$(LITERT_DIR)/tflite \
+		-S "$(LITERT_DIR)/tflite/tools/cmake/native_tools/flatbuffers" \
+		-B $(HOST_TOOLS)
+	cmake --build $(HOST_TOOLS) --target flatbuffers-flatc
+
+# 2. Build host compilation tool and compiler plugin
+build_host: host_tools
+	mkdir -p $(CMAKE_OUT_HOST)
+	cmake -DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_CXX_STANDARD=17 \
+		-DTFLITE_HOST_TOOLS_DIR=$(dir ${FLATC_BINARY}) \
+		-DFLATC_EXECUTABLE=${FLATC_BINARY} \
+		-DFLATBUFFERS_BUILD_FLATC=OFF \
+		-DBSTORM_CHIP=$(BSTORM_CHIP) \
+		-DBSTORM_CHIP_REV=$(BSTORM_CHIP_REV) \
+		-DBSTORM_BSTM_REV=$(BSTORM_BSTM_REV) \
+		-S $(LITERT_DIR)/litert \
+		-B $(CMAKE_OUT_HOST)
+	cmake --build $(CMAKE_OUT_HOST) -j$$(nproc) --target bstorm_compiler_plugin apply_plugin_main
+
+# 3. Pre-compile .tflite model to .npu.tflite on host
+compile_model:
+	@test -n "$(MODEL)" || (echo "ERROR: Set MODEL=<path_to_tflite>" && exit 1)
+	@test -n "$(MODEL_NPU)" || (echo "ERROR: Set MODEL_NPU=<path_to_npu_tflite>" && exit 1)
+	$(CMAKE_OUT_HOST)/tools/apply_plugin_main \
+		--cmd apply --libs $(CMAKE_OUT_HOST)/vendors/broadcom/compiler \
+		--soc_manufacturer Broadcom --soc_model $(BSTORM_PLATFORM) \
+		--model "$(MODEL)" --o "$(MODEL_NPU)"
+
+# 4. Cross-compile target artifacts
+build_target: host_tools
+	mkdir -p $(CMAKE_OUT)
+	cmake -DCMAKE_TOOLCHAIN_FILE=$(CMAKE_TOOLS_DIR)/toolchains.cmake \
+		-Dtoolchain=$(BRCM_TOOLCHAIN_TOP) \
+		-DBRCM_ARCH=aarch64 \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DTFLITE_HOST_TOOLS_DIR=$(dir ${FLATC_BINARY}) \
+		-DFLATC_EXECUTABLE=${FLATC_BINARY} \
+		-DFLATBUFFERS_BUILD_FLATC=OFF \
+		-DBSTORM_CHIP=$(BSTORM_CHIP) \
+		-DBSTORM_CHIP_REV=$(BSTORM_CHIP_REV) \
+		-DBSTORM_BSTM_REV=$(BSTORM_BSTM_REV) \
+		"-DLITERT_TFLITE_EXTRA_CMAKE_ARGS=-DCMAKE_TOOLCHAIN_FILE=$(CMAKE_TOOLS_DIR)/toolchains.cmake;-Dtoolchain=$(BRCM_TOOLCHAIN_TOP);-DFLATBUFFERS_BUILD_FLATC=OFF;-DTFLITE_HOST_TOOLS_DIR=$(dir ${FLATC_BINARY})" \
+		-S $(LITERT_DIR)/litert \
+		-B $(CMAKE_OUT)
+	cmake --build $(CMAKE_OUT) -j$$(nproc) --target \
+		bstorm_dispatch_plugin bstorm_example_next bstorm_simple_server
+
+# 5. Transfer binaries and compiled model to target hardware
+deploy_target:
+	@test -n "$(MODEL_NPU)" || (echo "ERROR: Set MODEL_NPU=<path_to_compiled_npu_tflite>" && exit 1)
+	ssh $(DEVICE_USER)@$(DEVICE_IP) "mkdir -p $(DEVICE_DIR)"
+	scp $(CMAKE_OUT)/vendors/broadcom/libbstorm_core.so \
+		$(CMAKE_OUT)/vendors/broadcom/dispatch/libLiteRtDispatch_bstorm.so \
+		$(CMAKE_OUT)/c/libLiteRt.so \
+		$(CMAKE_OUT)/vendors/broadcom/example/bstorm_example_next \
+		$(CMAKE_OUT)/vendors/broadcom/core_build/src/app/bstorm_simple_server \
+		$(CORE_DIR)/scripts/target/bstm_simple_run.sh \
+		$(MODEL_NPU) \
+		$(if $(INPUT),$(INPUT)) \
+		$(if $(EXPECTED),$(EXPECTED)) \
+		$(DEVICE_USER)@$(DEVICE_IP):$(DEVICE_DIR)/
+
+# 6. Execute model inference on target hardware
+run_target:
+	@MODEL_FILE="$(if $(MODEL_NPU),$(notdir $(MODEL_NPU)),$(MODEL_NAME))"; \
+	test -n "$$MODEL_FILE" || (echo "ERROR: Set MODEL_NPU=<path_to_compiled_npu_tflite> or MODEL_NAME=<filename>" && exit 1); \
+	ssh $(DEVICE_USER)@$(DEVICE_IP) "cd $(DEVICE_DIR) && \
+		LD_LIBRARY_PATH=. \
+		BSTORM_DISPATCH_OPTIONS=\"$(CMAKE_DISPATCH_OPT)\" \
+		./bstm_simple_run.sh bstorm_simple_server \
+		./bstorm_example_next \
+		--dispatch_library_dir . \
+		$(if $(ACCURACY),--accuracy $(ACCURACY)) \
+		$(if $(INPUT),--input $(notdir $(INPUT))) \
+		$(if $(EXPECTED),--expected $(notdir $(EXPECTED))) \
+		$$MODEL_FILE"
+
+# Clean build object files via CMake
 clean:
-	./build_binaries.sh --clean
-	./run_inference.sh --clean
+	cmake --build $(CMAKE_OUT_HOST) --target clean
+	cmake --build $(CMAKE_OUT) --target clean
 
-help:
-	@echo "Targets:"
-	@echo "  make build PLATFORM=<p>                        - cross-compile dispatch plugin + runtime into lib/"
-	@echo "  make build-host                                - host-build compiler plugin + apply_plugin_main into lib/host/"
-	@echo "  make compile-model MODEL=<m> PLATFORM=<p>       - AOT-compile models/<m>/<m>.tflite -> <m>.npu.tflite"
-	@echo "                     [SKIP_NODES=<n|n-m>] [GRAPH_TOOL=<path>]"
-	@echo "                     [GRAPH_TRANSFORM=<type> | GRAPH_PROCESS=<p1,p2,...>]"
-	@echo "  make run TARGET=<ip> PLATFORM=<p> [MODEL=<m>]   - deploy to target board and run inference"
-	@echo "  make list-models                                - list models available under models/"
-	@echo "  make clean                                      - remove build outputs and staged libs"
+# Full reset (wipes build outputs entirely)
+dist_clean:
+	rm -rf $(CMAKE_OUT) $(CMAKE_OUT_HOST) $(HOST_TOOLS)

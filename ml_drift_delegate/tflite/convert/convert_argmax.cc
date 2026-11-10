@@ -38,7 +38,7 @@ void ConvertArgMax(
   const TfLiteTensor* dst_tensor = context.tensors + output_id;
 
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
-  op->name = ToString(::ml_drift::OperationType::MAX_INDEX);
+  op->name = ToString(::ml_drift::OperationType::kMaxIndex);
 
   ::ml_drift::MaxIndexAttributes attr;
   attr.dim = ExtractAxisFromIndex(*src_tensor, dim_tensor->data.i32[0]);
@@ -56,7 +56,7 @@ void ConvertArgMax(
     ir_model.SetProducer(arg_max_result->id, op->id);
 
     ::ml_drift::ir::IrOp* reshape_op = ir_model.add_op();
-    reshape_op->name = ToString(::ml_drift::OperationType::RESHAPE);
+    reshape_op->name = ToString(::ml_drift::OperationType::kReshape);
     ::ml_drift::ReshapeAttributes reshape_attr;
     reshape_attr.new_shape =
         ir_model.tensor(tensor_map[output_id])->desc.GetBHWCShape();

@@ -20,6 +20,7 @@ limitations under the License.
 #include <cstdint>
 #include <vector>
 
+#include "SafeInt.hpp"  // from @SafeInt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
@@ -46,10 +47,11 @@ inline LiteRtStatus InferOneHot(const LiteRtOpT& op,
   const auto* options = opts.AsOneHotOptions();
   int positive_axis = options->axis;
 
-  if (positive_axis < 0) {
-    positive_axis += rank + 1;
-  }
-  if (positive_axis < 0 || positive_axis > rank) {
+  int rank_plus_one = 0;
+  if ((positive_axis < 0 &&
+       (!SafeAdd(rank, 1, rank_plus_one) ||
+        !SafeAdd(positive_axis, rank_plus_one, positive_axis))) ||
+      positive_axis < 0 || positive_axis > rank) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
@@ -58,7 +60,8 @@ inline LiteRtStatus InferOneHot(const LiteRtOpT& op,
     return kLiteRtStatusErrorInvalidArgument;
   }
   const auto* depth_tensor = op.Inputs()[1];
-  if (!depth_tensor || depth_tensor->Weights().Buffer().Size() == 0) {
+  if (!depth_tensor ||
+      depth_tensor->Weights().Buffer().Size() < sizeof(int32_t)) {
     // Depth is not constant, we cannot infer shape statically.
     // In production models, depth might be dynamic. Here we handle constant
     // case.
@@ -68,6 +71,9 @@ inline LiteRtStatus InferOneHot(const LiteRtOpT& op,
   const int32_t* depth_data =
       reinterpret_cast<const int32_t*>(depth_tensor->Weights().Buffer().Data());
   int32_t depth = depth_data[0];
+  if (depth < 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 
   std::vector<int32_t> output_shape(indices_shape.begin(), indices_shape.end());
   output_shape.insert(output_shape.begin() + positive_axis, depth);
