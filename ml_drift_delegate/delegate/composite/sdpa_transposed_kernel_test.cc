@@ -35,6 +35,7 @@
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/kernel_info.h"  // from @ml_drift
 #include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
 #include "ml_drift/common/kernels/tests/kernel_test.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
@@ -42,11 +43,14 @@
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/testing_util.h"  // from @ml_drift
+#include "ml_drift/common/task/tuning_type.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
+#include "ml_drift/common/types.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
+#include "ml_drift_delegate/delegate/composite/sdpa_transposed_support.h"
 
 namespace litert::ml_drift {
 namespace {
@@ -875,6 +879,152 @@ TEST_P(SdpaTransposedKernelExecuteTest,
   EXPECT_TRUE(status.ok()) << status.message();
 }
 
+// Qwen3.5 full-attention decode: head dim 256, 8 query heads sharing 2 KV
+// heads, flattened [1, 1, 1, 2048] output.
+TEST_P(SdpaTransposedKernelExecuteTest, SingleTokenDecodeQwen35HeadDim256) {
+  for (bool from_cache_update : {true, false}) {
+    const int s = from_cache_update ? 600 : 64;
+    const int q_start = from_cache_update ? 560 : 0;
+    const int active_tokens =
+        from_cache_update ? FilledCacheEntries(mask_mode(), 561, 600) : 0;
+    auto status = RunSdpaTransposedTest(
+        *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/s,
+        /*H=*/256, mask_mode(), /*KV=*/2, q_start, from_cache_update,
+        /*is_causal=*/false, /*flatten_output=*/true, active_tokens);
+    EXPECT_TRUE(status.ok()) << "from_cache_update=" << from_cache_update
+                             << ": " << status.message();
+  }
+}
+
+// Non-power-of-two head dims whose channel slices do not fill the 32 lanes of
+// a wave: on Metal, the wave-SIMD decode kernel walks the slices in passes of
+// 32 lanes and leaves the lanes past the last slice idle. Head dim 80 has 20
+// slices (1 pass), 192 has 48 (2 passes) and 320 has 80 (3 passes; above 256,
+// it takes this kernel since 80 slices do not divide the work-group kernel's
+// 256 work items).
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeNonPowerOfTwoHeadDims) {
+  for (int head_dim : {80, 192, 320}) {
+    auto status = RunSdpaTransposedTest(
+        *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/600,
+        /*H=*/head_dim, mask_mode(), /*KV=*/2, /*q_start=*/560,
+        /*from_cache_update=*/true, /*is_causal=*/false,
+        /*flatten_output=*/true,
+        /*active_tokens=*/FilledCacheEntries(mask_mode(), 561, 600));
+    EXPECT_TRUE(status.ok())
+        << "head_dim=" << head_dim << ": " << status.message();
+  }
+}
+
+// The wave-SIMD flash decode is generated for one fixed work group size. When
+// the compiled pipeline allows fewer threads (paravirtualized Apple GPUs), it
+// must offer no dispatch: every GPU backend then fails tuning with "No dispatch
+// parameters to launch kernel" instead of launching a work group that the
+// pipeline rejects and that silently writes nothing.
+TEST(SdpaTransposedKernelTest,
+     WaveSimdFlashDecodeHasNoDispatchAbovePipelineLimit) {
+  ::ml_drift::GpuInfo gpu_info;
+  gpu_info.vendor = ::ml_drift::GpuVendor::kApple;
+  gpu_info.gpu_api = ::ml_drift::GpuApi::kMetal;
+  gpu_info.supported_wave_sizes = {32};
+  gpu_info.apple_info = ::ml_drift::AppleInfo("apple m4 pro");
+  gpu_info.metal_info.language_version =
+      ::ml_drift::MetalLanguageVersion::kMetal3_0;
+  gpu_info.metal_info.max_work_group_size_x = 1024;
+  gpu_info.metal_info.max_work_group_size_y = 1024;
+  gpu_info.metal_info.max_work_group_size_z = 1024;
+
+  // Qwen3.5 full-attention decode: 8 query heads share 2 KV heads of head dim
+  // 256, with a flattened output.
+  constexpr int kQHeads = 8;
+  constexpr int kKvHeads = 2;
+  constexpr int kHeadDim = 256;
+  constexpr int kCacheSize = 600;
+  const ::ml_drift::BHWC q_shape(1, kQHeads, 1, kHeadDim);
+  ASSERT_TRUE(
+      GetFlashDecodeConfig(gpu_info, q_shape,
+                           ::ml_drift::BHWC(1, kKvHeads, kCacheSize, kHeadDim))
+          .use_wave_simd);
+
+  const ::ml_drift::DataType dtype = ::ml_drift::DataType::kFloat16;
+  ::ml_drift::GpuModelBuilder builder(gpu_info, {},
+                                      ::ml_drift::CalculationsPrecision::kF16,
+                                      ::ml_drift::TensorStorageType::kBuffer);
+  auto q = builder.AddTensor(q_shape, dtype);
+  auto k = builder.AddTensor(1, kKvHeads, kCacheSize, kHeadDim,
+                             ::ml_drift::TensorStorageType::kBuffer, dtype);
+  auto v = builder.AddTensor(1, kKvHeads, kHeadDim, kCacheSize,
+                             ::ml_drift::TensorStorageType::kBuffer, dtype);
+  ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::kBHWC>,
+                     ::ml_drift::DataType::kInt32>
+      param_cpu;
+  param_cpu.shape = ::ml_drift::BHWC(1, 1, 1, 7);
+  param_cpu.data = {kCacheSize - 1, kCacheSize, kCacheSize, 0, 0, 0, 0};
+  ::ml_drift::TensorDescriptor param_desc(
+      ::ml_drift::DataType::kInt32, ::ml_drift::TensorStorageType::kBuffer,
+      ::ml_drift::Layout::kBHWC);
+  param_desc.UploadData(param_cpu);
+  auto param = builder.AddConstantTensor(std::move(param_desc));
+  auto out =
+      builder.AddTensor(::ml_drift::BHWC(1, 1, 1, kQHeads * kHeadDim), dtype);
+
+  SdpaTransposedAttributes attr;
+  attr.runtime_check.src_end_ch_index = 2;
+  attr.from_cache_update = true;
+  attr.is_prefill = false;
+  const ::ml_drift::BHWC k_shape = k.tensor_desc.GetBHWCShape();
+  attr.bmm1_weights.weights_shape =
+      ::ml_drift::OHWI(k_shape.w, k_shape.h, 1, k_shape.c);
+  attr.bmm1_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
+      ::ml_drift::DataType::kFloat32, attr.bmm1_weights.weights_shape);
+  attr.bmm1_weights.desc.layout =
+      ::ml_drift::WeightsLayout::kOSpatialIOGroupO4I4;
+  const ::ml_drift::BHWC v_shape = v.tensor_desc.GetBHWCShape();
+  attr.bmm2_weights.weights_shape =
+      ::ml_drift::OHWI(v_shape.w, v_shape.h, 1, v_shape.c);
+  attr.bmm2_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
+      ::ml_drift::DataType::kFloat32, attr.bmm2_weights.weights_shape);
+  const absl::Status build_status = BuildSdpaTransposedGpuGraph(
+      {q.id, k.id, v.id, param.id}, out.id, attr, &builder);
+  ASSERT_TRUE(build_status.ok()) << build_status.message();
+  ::ml_drift::GpuModel gpu_model;
+  const absl::Status model_status = builder.GetGpuModel(
+      {{q.id, 0}, {k.id, 1}, {v.id, 2}}, {{out.id, 0}}, &gpu_model);
+  ASSERT_TRUE(model_status.ok()) << model_status.message();
+
+  const ::ml_drift::GPUOperation* flash_decode = nullptr;
+  for (const auto& node : gpu_model.nodes) {
+    if (node.name == "flash_decode_sdpa" ||
+        node.name == "flash_decode_sdpa_split") {
+      flash_decode = node.gpu_operation.get();
+    }
+  }
+  ASSERT_NE(flash_decode, nullptr);
+  const ::ml_drift::int3 work_group = flash_decode->work_group_size_;
+  const int launch_size = work_group.x * work_group.y * work_group.z;
+
+  std::vector<::ml_drift::GPUOperation::DispatchInfo> dispatches;
+  // The pipeline allows fewer threads than the launch: no dispatch.
+  flash_decode->GetPossibleDispatches(
+      ::ml_drift::TuningType::kFast, gpu_info,
+      ::ml_drift::KernelInfo{/*private_memory_size=*/0,
+                             /*max_work_group_size=*/launch_size - 32},
+      &dispatches);
+  EXPECT_TRUE(dispatches.empty());
+  // A limit equal to the launch size, or no reported limit (0): the fixed
+  // work group.
+  for (const int max_work_group_size : {launch_size, 0}) {
+    flash_decode->GetPossibleDispatches(
+        ::ml_drift::TuningType::kFast, gpu_info,
+        ::ml_drift::KernelInfo{/*private_memory_size=*/0, max_work_group_size},
+        &dispatches);
+    ASSERT_EQ(dispatches.size(), 1u) << max_work_group_size;
+    EXPECT_EQ(dispatches[0].work_group_size.x, work_group.x);
+    EXPECT_EQ(dispatches[0].work_group_size.y, work_group.y);
+    EXPECT_EQ(dispatches[0].work_group_size.z, work_group.z);
+  }
+}
+
 // Gemma 4 global-attention decode: head dim 512 (128 channel slices) with 4
 // query heads per KV head and a flattened output.
 TEST_P(SdpaTransposedKernelExecuteTest,
@@ -1154,15 +1304,16 @@ TEST_P(SdpaTransposedKernelExecuteTest,
 // mask (`MaskMode::kNone`, `attr.is_causal = true`) on a sliding-window ring
 // buffer that has wrapped around (`q_start = step % S < S - 1`, while
 // `active_tokens = S`), the fused Flash-Decode kernel attends to all `S` active
-// keys rather than clamping `active_tokens` to `q_start + 1`. Head dim 128
-// takes the wave-SIMD variant on Metal and head dim 256 the work-group variant.
+// keys rather than clamping `active_tokens` to `q_start + 1`. Head dims 128
+// and 256 take the wave-SIMD variant on Metal and head dim 512 the work-group
+// variant.
 TEST_P(SdpaTransposedKernelExecuteTest,
        SingleTokenDecodeRingBufferWrapAroundImplicitCausal) {
   if (!SupportsFusedSdpaKernels(exec_env->GetGpuInfo())) {
     GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused "
                     "SDPA kernels.";
   }
-  for (int head_dim : {128, 256}) {
+  for (int head_dim : {128, 256, 512}) {
     auto status = RunSdpaTransposedTest(
         *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/64,
         /*H=*/head_dim, MaskMode::kNone, /*KV=*/2, /*q_start=*/4,
@@ -1209,7 +1360,7 @@ TEST_P(SdpaTransposedKernelExecuteTest,
       {/*q_start=*/kS, /*param_active_tokens=*/kS + 1,
        /*expected_active_tokens=*/kS},
   };
-  for (int head_dim : {128, 256}) {
+  for (int head_dim : {128, 256, 512}) {
     for (const Case& c : cases) {
       auto status = RunSdpaTransposedTest(
           *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/kS,

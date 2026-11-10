@@ -119,20 +119,9 @@ FlashDecodeConfig GetFlashDecodeConfig(const ::ml_drift::GpuInfo& gpu_info,
                                        const ::ml_drift::BHWC& k_shape) {
   FlashDecodeConfig config;
   config.tuning = GetFlashDecodeTuning(gpu_info);
-  if (SupportsWave32Vec4SimdReduce(gpu_info) && q_shape.c == 128 &&
-      config.tuning.num_simd_groups > 1) {
-    config.use_wave_simd = true;
+  if (k_shape.h <= 0 || q_shape.h < k_shape.h || q_shape.h % k_shape.h != 0) {
     return config;
   }
-  if (k_shape.h <= 0 || q_shape.h % k_shape.h != 0) {
-    return config;
-  }
-  // Process as many query heads of the GQA group per work group as divide the
-  // group and keep the kernel within the local memory budget of the device.
-  // With head dim 512 (128 slices), the portable kernel needs 37,888 B for 8
-  // heads but only 25,088 B for 4. If not even one head fits, `heads` stays 1
-  // and `IsSupportedFlashSdpaShape` rejects the config, so the op falls back to
-  // the decomposed graph.
   const int group_size = q_shape.h / k_shape.h;
   const int slices = q_shape.c / 4;
   if (config.tuning.simd_work_group) {
@@ -143,6 +132,27 @@ FlashDecodeConfig GetFlashDecodeConfig(const ::ml_drift::GpuInfo& gpu_info,
       config.tuning.lanes_per_key /= 2;
     }
   }
+  const bool work_group_supports_slices = slices > 0 &&
+                                          slices <= config.tuning.threads &&
+                                          config.tuning.threads % slices == 0;
+  // Use the register-resident wave-SIMD kernel for 64 <= head_dim <= 256 (at
+  // most 2 float4 slices per lane) and for non-power-of-two head_dim <= 512
+  // whose slices do not divide the work-group size. Power-of-two head_dim 512
+  // keeps the 4-head SIMD work-group kernel, which shares K/V reads across 4
+  // GQA query heads via local memory.
+  if (SupportsWave32Vec4SimdReduce(gpu_info) && q_shape.c >= 64 &&
+      q_shape.c <= 512 && q_shape.c % 4 == 0 &&
+      config.tuning.num_simd_groups > 1 &&
+      (q_shape.c <= 256 || !work_group_supports_slices)) {
+    config.use_wave_simd = true;
+    return config;
+  }
+  // Process as many query heads of the GQA group per work group as divide the
+  // group and keep the kernel within the local memory budget of the device.
+  // With head dim 512 (128 slices), the portable kernel needs 37,888 B for 8
+  // heads but only 25,088 B for 4. If not even one head fits, `heads` stays 1
+  // and `IsSupportedFlashSdpaShape` rejects the config, so the op falls back to
+  // the decomposed graph.
   for (int h = std::min(group_size, config.tuning.max_heads_per_work_group);
        h >= 1; --h) {
     if (group_size % h == 0 &&

@@ -151,5 +151,34 @@ TEST(SdpaTransposedSupportTest, SimdWorkGroupLocalMemoryBytes) {
             25088);
 }
 
+TEST(SdpaTransposedSupportTest,
+     MetalWave32UsesWaveSimdForHeadDims64To256AndNonDividingUpTo512) {
+  ::ml_drift::GpuInfo gpu_info = AppleMetalGpuInfo();
+  gpu_info.apple_info = ::ml_drift::AppleInfo("apple m4 pro");
+  gpu_info.metal_info.language_version =
+      ::ml_drift::MetalLanguageVersion::kMetal3_0;
+  gpu_info.metal_info.max_work_group_size_x = 1024;
+  gpu_info.metal_info.max_work_group_size_y = 1024;
+  gpu_info.metal_info.max_work_group_size_z = 1024;
+
+  for (int head_dim : {64, 96, 128, 192, 256, 384}) {
+    const ::ml_drift::BHWC q_shape = QueryShape(head_dim);
+    const ::ml_drift::BHWC k_shape = CacheShape(/*cache_size=*/1024, head_dim);
+    const FlashDecodeConfig config =
+        GetFlashDecodeConfig(gpu_info, q_shape, k_shape);
+    EXPECT_TRUE(config.use_wave_simd) << "head_dim=" << head_dim;
+    EXPECT_EQ(config.splits, 1) << "head_dim=" << head_dim;
+    EXPECT_TRUE(IsSupportedFlashSdpaShape(gpu_info, q_shape, k_shape))
+        << "head_dim=" << head_dim;
+  }
+
+  // Head dim 512 (128 slices, divides 256 threads) stays on the 4-head SIMD
+  // work-group kernel.
+  const FlashDecodeConfig hd512 = GetFlashDecodeConfig(
+      gpu_info, QueryShape(/*head_dim=*/512), CacheShape(1024, 512));
+  EXPECT_FALSE(hd512.use_wave_simd);
+  EXPECT_TRUE(hd512.tuning.simd_work_group);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift
