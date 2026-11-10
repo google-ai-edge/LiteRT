@@ -37,7 +37,10 @@
 
 namespace litert::internal::shared_library_windows {
 
-inline thread_local std::string g_last_error;
+inline std::string& GetThreadLastError() {
+  thread_local std::string last_error;
+  return last_error;
+}
 
 inline std::string GetWindowsErrorString(DWORD error_code) {
   if (error_code == 0) {
@@ -62,7 +65,8 @@ inline std::string GetWindowsErrorString(DWORD error_code) {
 }
 
 inline const char* DlError() {
-  return g_last_error.empty() ? nullptr : g_last_error.c_str();
+  const auto& last_error = GetThreadLastError();
+  return last_error.empty() ? nullptr : last_error.c_str();
 }
 
 inline bool IsAbsolutePath(const std::string& path) {
@@ -70,7 +74,8 @@ inline bool IsAbsolutePath(const std::string& path) {
 }
 
 inline void* DlOpen(const char* filename, int flags) {
-  g_last_error.clear();
+  auto& last_error = GetThreadLastError();
+  last_error.clear();
 
   if (!filename) {
     return GetModuleHandle(NULL);
@@ -107,11 +112,11 @@ inline void* DlOpen(const char* filename, int flags) {
   }
   if (!handle) {
     DWORD error = GetLastError();
-    g_last_error = "Failed to load library '" + requested_name + "'";
+    last_error = "Failed to load library '" + requested_name + "'";
     if (fallback_name != requested_name) {
-      g_last_error += " or fallback '" + fallback_name + "'";
+      last_error += " or fallback '" + fallback_name + "'";
     }
-    g_last_error += ": " + GetWindowsErrorString(error);
+    last_error += ": " + GetWindowsErrorString(error);
   }
 
   return handle;
@@ -124,10 +129,11 @@ inline void DlClose(void* handle) {
 }
 
 inline void* DlSym(void* handle, const char* symbol) {
-  g_last_error.clear();
+  auto& last_error = GetThreadLastError();
+  last_error.clear();
 
   if (!handle || !symbol) {
-    g_last_error = "Invalid handle or symbol name";
+    last_error = "Invalid handle or symbol name";
     return nullptr;
   }
 
@@ -138,8 +144,8 @@ inline void* DlSym(void* handle, const char* symbol) {
   void* address = GetProcAddress(static_cast<HMODULE>(handle), symbol);
   if (!address) {
     DWORD error = GetLastError();
-    g_last_error = "Failed to find symbol '" + std::string(symbol) +
-                   "': " + GetWindowsErrorString(error);
+    last_error = "Failed to find symbol '" + std::string(symbol) +
+                 "': " + GetWindowsErrorString(error);
   }
 
   return address;
