@@ -66,6 +66,7 @@
 #include "ml_drift_delegate/delegate/precision.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/file_util.h"
 #include "ml_drift_delegate/delegate/task_executor.h"
+#include "ml_drift_delegate/delegate/webgpu_dawn_loader.h"
 #include "ml_drift_delegate/tflite/model_builder.h"
 #if defined(ML_DRIFT_USE_DAWN_PROC)
 #include "dawn/dawn_proc.h"  // from @dawn
@@ -265,6 +266,33 @@ void RequestSupportedExtensions(ml_drift::webgpu::ExecutionEnvironment& env,
   // LINT.ThenChange()
 }
 
+absl::string_view GetRuntimeLibraryDir(
+    const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment litert_env) {
+  if (runtime_context == nullptr || litert_env == nullptr ||
+      runtime_context->get_environment_options == nullptr ||
+      runtime_context->get_environment_options_value == nullptr) {
+    return "";
+  }
+  LiteRtEnvironmentOptions env_options = nullptr;
+  if (runtime_context->get_environment_options(litert_env, &env_options) !=
+          kLiteRtStatusOk ||
+      env_options == nullptr) {
+    return "";
+  }
+  // TODO(b/579111054): Consider adding a dedicated Dawn library directory
+  // environment option if callers need to separate Dawn from
+  // kLiteRtEnvOptionTagRuntimeLibraryDir.
+  LiteRtAny runtime_lib_dir = {};
+  if (runtime_context->get_environment_options_value(
+          env_options, kLiteRtEnvOptionTagRuntimeLibraryDir,
+          &runtime_lib_dir) == kLiteRtStatusOk &&
+      runtime_lib_dir.type == kLiteRtAnyTypeString &&
+      runtime_lib_dir.str_value != nullptr) {
+    return runtime_lib_dir.str_value;
+  }
+  return "";
+}
+
 // Creates a WebGPU environment. If a WebGPU device id is provided via
 // LiteRtEnvironment, the WebGPU environment will be initialized with the
 // provided device id and set `is_webgpu_device_provided` to true.
@@ -272,6 +300,10 @@ std::unique_ptr<ml_drift::webgpu::ExecutionEnvironment> CreateWebGpuEnvironment(
     LiteRtEnvironment litert_env, GpuPriority gpu_priority,
     DelegateEnvironment* delegate_env,
     const LiteRtRuntimeContext* runtime_context) {
+  if (!litert::ml_drift::IsWebGpuSupported(runtime_context, litert_env)) {
+    LITERT_LOG(LITERT_ERROR, "WebGPU Dawn runtime library is not available.");
+    return nullptr;
+  }
   auto webgpu_env = std::make_unique<ml_drift::webgpu::ExecutionEnvironment>(
 #if defined(__APPLE__)
       wgpu::BackendType::Metal
@@ -664,6 +696,16 @@ void LiteRtDeleteMlDriftWebGpuDelegate(TfLiteDelegate* delegate) {
 }  // extern "C"
 
 namespace litert::ml_drift {
+
+bool IsWebGpuSupported(const LiteRtRuntimeContext* runtime_context,
+                       LiteRtEnvironment env) {
+#if !defined(__EMSCRIPTEN__) && !defined(ML_DRIFT_USE_DAWN_PROC)
+  return EnsureWebGpuDawnLoaded(GetRuntimeLibraryDir(runtime_context, env))
+      .ok();
+#else
+  return true;
+#endif
+}
 
 // Returns default options for ML Drift WebGpu delegate.
 //

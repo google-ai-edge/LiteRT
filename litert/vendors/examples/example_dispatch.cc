@@ -99,9 +99,9 @@ class LiteRtDispatchDeviceContextT {
     }
 
     absl::flat_hash_set<std::string> subgraphs_to_load;
-    if (!expected_functions_.empty()) {
+    if (expected_functions_.has_value()) {
       if (cached_graphs.empty()) {
-        subgraphs_to_load = expected_functions_;
+        subgraphs_to_load = *expected_functions_;
         subgraphs_to_load.insert(std::string(function_name));
       } else {
         subgraphs_to_load.insert(std::string(function_name));
@@ -190,7 +190,7 @@ class LiteRtDispatchDeviceContextT {
       absl::flat_hash_map<BufferHandle, LiteRtTensorBuffer>;
   std::list<Buffer> buffers_;
   RegistredBuffers registered_buffers_;
-  absl::flat_hash_set<std::string> expected_functions_;
+  std::optional<absl::flat_hash_set<std::string>> expected_functions_;
   absl::flat_hash_map<
       BytecodeCacheKey,
       std::vector<std::unique_ptr<::litert::example::ExampleGlobalGraph>>>

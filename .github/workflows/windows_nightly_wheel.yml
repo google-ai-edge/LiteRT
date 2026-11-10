@@ -13,6 +13,8 @@ jobs:
   build-nightly:
     name: "Build nightly Windows wheel - Python ${{ matrix.python-version }}"
     runs-on: windows-x86-n2-16
+    outputs:
+      date: ${{ steps.nightly-date.outputs.date }}
     strategy:
       fail-fast: false
       matrix:
@@ -57,9 +59,11 @@ jobs:
           }
 
       - name: Set NIGHTLY_RELEASE_DATE
+        id: nightly-date
         run: |
           $date = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([System.DateTime]::UtcNow, 'Pacific Standard Time').ToString('yyyyMMdd')
           echo "NIGHTLY_RELEASE_DATE=$date" >> $env:GITHUB_ENV
+          echo "date=$date" >> $env:GITHUB_OUTPUT
 
       - name: Configure tensorflow & python path
         env:
@@ -156,6 +160,20 @@ jobs:
         with:
           name: ai-edge-litert-windows-${{ matrix.python-version }}
           path: dist/*.whl
+
+      - name: Build Windows x86_64 prebuilts
+        id: build-prebuilts
+        if: matrix.python-version == '3.12'
+        continue-on-error: true
+        run: .\ci\build_pip_package_with_bazel_windows.ps1 -Mode prebuilts
+
+      - name: Upload prebuilts artifact
+        if: matrix.python-version == '3.12' && steps.build-prebuilts.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: litert-prebuilts-windows-x86_64
+          path: dist/litert_prebuilts_windows_x86_64.zip
 
       - name: Shutdown bazel server before saving cache.
         if: always()
@@ -285,6 +303,34 @@ jobs:
           if ($env:BAZEL_OUTPUT_USER_ROOT -and (Test-Path $env:BAZEL_OUTPUT_USER_ROOT)) {
             bazel --output_user_root="$env:BAZEL_OUTPUT_USER_ROOT" shutdown
           }
+
+  upload-prebuilts-to-gcs:
+    name: "Upload Windows x86_64 prebuilts to GCS"
+    # Self-hosted GKE ARC runner with ambient Workload Identity.
+    runs-on: linux-x86-n4-16
+    needs: build-nightly
+    if: ${{ !cancelled() && needs.build-nightly.result == 'success' && github.ref == 'refs/heads/main' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Download prebuilts artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: litert-prebuilts-windows-x86_64
+          path: prebuilts
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@98ddc00a17442e89a24bbf282954a3b65ce6d200 # v2.1.0
+
+      - name: Upload to gs://litert/binaries/nightly
+        env:
+          NIGHTLY_DATE: ${{ needs.build-nightly.outputs.date }}
+        run: |
+          [[ "${NIGHTLY_DATE}" =~ ^[0-9]{8}$ ]] || { echo "Bad date: ${NIGHTLY_DATE}"; exit 1; }
+          gcloud storage cp prebuilts/litert_prebuilts_windows_x86_64.zip \
+            gs://litert/binaries/nightly/litert_prebuilts_windows_x86_64.zip
+          gcloud storage cp prebuilts/litert_prebuilts_windows_x86_64.zip \
+            "gs://litert/binaries/nightly/archive/litert_prebuilts_windows_x86_64_${NIGHTLY_DATE}.zip"
 
   upload-to-pypi:
     name: "Upload Nightly Wheels to PyPI"
