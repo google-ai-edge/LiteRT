@@ -795,6 +795,19 @@ TfLiteDelegatePtr CreateMlDriftClDelegate(MlDriftDelegateOptionsPtr options,
       delegate_data->options->hint_fully_delegated_to_single_delegate;
   if (delegate_data->options->kernel_batch_size > 0) {
     backend->set_kernel_batch_size(delegate_data->options->kernel_batch_size);
+  } else if (const auto& gpu_info =
+                 backend->cl_env()->GetDevicePtr()->GetInfo();
+             gpu_info.IsAdreno() && gpu_info.adreno_info.IsAdreno8xx() &&
+             delegate_data->calculation_precision !=
+                 ::ml_drift::CalculationsPrecision::kF16) {
+    // On Adreno Gen 8 (8xx), `cl_qcom_recordable_queues` packs the entire
+    // graph into a single IB1 submission (`ts`), which triggers the GMU
+    // long-IB hardware watchdog (`adreno-gen8-gmu: gpu timeout`, `Fault id: 2`)
+    // on large FP32 graphs such as high-resolution ViT encoders (`vision_1120`,
+    // 1,347 nodes, T=10,080). Flushing in batches of 64 kernels splits the
+    // execution across multiple IB timestamps while adding negligible host
+    // overhead.
+    backend->set_kernel_batch_size(64);
   }
 
   // Initialize the ml_drift cl delegate.

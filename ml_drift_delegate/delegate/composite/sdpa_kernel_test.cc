@@ -500,10 +500,9 @@ TEST_P(SdpaKernelExecuteTest, Adreno8xxCodegenAndExecute) {
       ::ml_drift::AdrenoInfo::Generation::kGen8;
   // On non-Qualcomm OpenCL drivers (e.g. host x86 or Mali OpenCL), set
   // `is_clvk` so the Qualcomm-proprietary `qcom_wave_pair_mode(1)` attribute is
-  // omitted while still executing the Adreno 8xx `max_block_s = 4`
-  // (`s_splits = 4, b_r = 16`) tiling. On physical Qualcomm Adreno OpenCL
-  // drivers, `is_clvk` remains false so `qcom_wave_pair_mode(1)` is also
-  // compiled and executed on device.
+  // omitted while still executing the Adreno 8xx `max_block_s = 8` tiling. On
+  // physical Qualcomm Adreno OpenCL drivers, `is_clvk` remains false so
+  // `qcom_wave_pair_mode(1)` is also compiled and executed on device.
   if (adreno8xx_gpu_info.IsApiOpenCl() && !exec_env->GetGpuInfo().IsAdreno()) {
     adreno8xx_gpu_info.opencl_info.platform_version = "clvk";
   }
@@ -717,11 +716,10 @@ TEST(IsSupportedFlashSdpaTest, AssemblesCrossBackendAndVendorCode) {
     return absl::NotFoundError("flash_sdpa node not found in GpuModel");
   };
 
-  // 1. S26 Ultra (Adreno 840, OpenCL): FP32 uses `max_block_s = 4`
-  // (`s_splits = 4, block_s = 4, b_r = 16`, `q_0..q_3` + `acc_0..acc_3` = 32
-  // registers in GPRs) and emits `__attribute__((qcom_wave_pair_mode(1)))`;
-  // FP16 uses `s_splits = 1, block_s = 16, b_r = 64` and does not emit
-  // `qcom_wave_pair_mode`.
+  // 1. S26 Ultra (Adreno 840, OpenCL): FP32 uses `max_block_s = 8`
+  // (`s_splits = 2, block_s = 8, b_r = 32`) with `Q` in registers and emits
+  // `__attribute__((qcom_wave_pair_mode(1)))`; FP16 uses `s_splits = 1,
+  // block_s = 16, b_r = 64` and does not emit `qcom_wave_pair_mode`.
   ::ml_drift::GpuInfo s26u_info;
   ::ml_drift::GetGpuInfoFromDeviceDescription(
       "Adreno (TM) 840", ::ml_drift::GpuApi::kOpenCl, &s26u_info);
@@ -731,10 +729,10 @@ TEST(IsSupportedFlashSdpaTest, AssemblesCrossBackendAndVendorCode) {
                                 ::ml_drift::CalculationsPrecision::kF32,
                                 MaskMode::kNone, &s26u_fp32));
   EXPECT_THAT(s26u_fp32, HasSubstr("__attribute__((qcom_wave_pair_mode(1)))"));
-  EXPECT_THAT(s26u_fp32, HasSubstr("int s_grp = tid % 4;"));
-  EXPECT_THAT(s26u_fp32, HasSubstr("int q_idx = q_tile * 16 + q_grp;"));
-  EXPECT_THAT(s26u_fp32, HasSubstr("float4 acc_3 ="));
-  EXPECT_THAT(s26u_fp32, Not(HasSubstr("acc_4")));
+  EXPECT_THAT(s26u_fp32, HasSubstr("int s_grp = tid % 2;"));
+  EXPECT_THAT(s26u_fp32, HasSubstr("int q_idx = q_tile * 32 + q_grp;"));
+  EXPECT_THAT(s26u_fp32, HasSubstr("float4 acc_7 ="));
+  EXPECT_THAT(s26u_fp32, Not(HasSubstr("acc_8")));
   EXPECT_THAT(s26u_fp32, Not(HasSubstr("q_local[")));
 
   std::string s26u_fp16;

@@ -132,27 +132,17 @@ FlashSdpaConfig GetFlashSdpaConfig(const ::ml_drift::GpuInfo& gpu_info,
   //   (`H <= 64` uses `s_splits = 1`; `64 < H <= 128` uses `s_splits = 2`).
   // - FP32 (`float4`, 4 32-bit registers per slice): `max_block_s = 8` slices
   //   (`H <= 32` uses `s_splits = 1`; `32 < H <= 64` uses `s_splits = 2`;
-  //   `64 < H <= 128` uses `s_splits = 4`), except on Adreno Gen 8 (`8xx`) in
-  //   FP32 where `max_block_s = 4` (`s_splits = 4, b_r = 16, threads = 64` for
-  //   `H = 64`) keeps `q_0..q_3` (16 regs) + `acc_0..acc_3` (16 regs) = 32
-  //   32-bit registers in GPRs (`q_in_local = false`) and `__local` SRAM at
-  //   `10.1 KB` (`<= 16 KB`), avoiding both 48-register single-wave spilling
-  //   and 64-lane `q_local` bank conflicts.
+  //   `64 < H <= 128` uses `s_splits = 4`).
   // - On Mali Valhall (16-lane warp, 64 32-bit registers per thread), stage `Q`
   //   in `__local` SRAM (`q_in_local = true`) so `Q` consumes 0 general-purpose
   //   registers while preserving `b_r = 32` in FP32 and `b_r = 64` in FP16.
-  const bool is_adreno8xx_fp32 = gpu_info.IsAdreno() &&
-                                 gpu_info.adreno_info.IsAdreno8xx() &&
-                                 !config.use_fp16;
-  const int max_block_s = config.use_fp16 ? 16 : (is_adreno8xx_fp32 ? 4 : 8);
+  const int max_block_s = config.use_fp16 ? 16 : 8;
   const int s_splits =
       (slices <= max_block_s) ? 1 : ((slices <= 2 * max_block_s) ? 2 : 4);
   const int block_s = (slices + s_splits - 1) / s_splits;
-  const bool q_in_local =
-      gpu_info.IsMali() || (is_adreno8xx_fp32 && block_s > 4);
+  const bool q_in_local = gpu_info.IsMali();
 
-  int b_r =
-      (s_splits == 4 && !is_adreno8xx_fp32) ? 32 : std::max(1, 64 / s_splits);
+  int b_r = (s_splits == 4) ? 32 : std::max(1, 64 / s_splits);
   const int max_work_group_size = gpu_info.GetMaxWorkGroupTotalSize();
   if (max_work_group_size > 0) {
     while (b_r > 1 && s_splits * b_r > max_work_group_size) {
