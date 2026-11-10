@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -75,7 +76,7 @@ struct LiteRtOptionsT {
   // Note: Only changes to version.major invalidate the CompilationCache;
   // minor updates do not impact cache keys. Changing a default value does not
   // impact the version.
-  LiteRtApiVersion version = {.major = 1, .minor = 0, .patch = 0};
+  LiteRtApiVersion version = {.major = 1, .minor = 1, .patch = 0};
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
   LiteRtOpaqueOptions options = nullptr;
   std::vector<CustomOpOption> custom_op_options;
@@ -104,6 +105,15 @@ struct LiteRtOptionsT {
   // The initial implementation does not expand the active set to transitively
   // referenced callee subgraphs.
   std::vector<std::string> selected_signature_keys;
+  // Optional token IDs whose rows should be prefetched from constant tables
+  // read by CPU EMBEDDING_LOOKUP ops when this options object is passed to
+  // CompiledModel::Run / LiteRtRunCompiledModelWithOptions. Advisory only;
+  // ignored if empty or if the signature has no prefetchable CPU
+  // EMBEDDING_LOOKUP tables. Not part of the runtime C ABI: the C++ client
+  // writes it only when it runs on the builtin runtime (litert_options.h,
+  // Options::Build), since an external runtime may lay this struct out
+  // differently. Added in version 1.1.0.
+  std::vector<int32_t> prefetch_embedding_token_ids;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_

@@ -29,6 +29,8 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_builtin.h"
+#include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
@@ -40,6 +42,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/litert_consts.h"
+#include "litert/cc/litert_any.h"
 #include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
@@ -63,6 +66,7 @@
 #include "litert/core/model/model.h"
 #include "litert/core/options.h"
 #include "litert/runtime/compiled_model.h"
+#include "litert/runtime/embedding_row_prefetcher.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -666,6 +670,99 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
+}
+
+TEST(CompiledModelTest,
+     RunWithPrefetchEmbeddingTokenIdsPopulatesOptionsAndDiscoversTable) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // 1. Verify Options::SetPrefetchEmbeddingTokenIds (private; reached through
+  // LiteRtOptionsPtrBuilder) populates LiteRtOptionsT when built via
+  // LiteRtOptionsPtrBuilder::Build. A second call replaces the first (one
+  // Options object can be reused across runs without growing).
+  LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
+  const int32_t stale_ids[] = {7, 8, 9};
+  LITERT_ASSERT_OK(
+      internal::LiteRtOptionsPtrBuilder::SetPrefetchEmbeddingTokenIds(
+          options, absl::MakeConstSpan(stale_ids)));
+  const int32_t ids[] = {0, 19, -1, 20};
+  LITERT_ASSERT_OK(
+      internal::LiteRtOptionsPtrBuilder::SetPrefetchEmbeddingTokenIds(
+          options, absl::MakeConstSpan(ids)));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      internal::LiteRtOptionsPtr built_options,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+  ASSERT_NE(built_options, nullptr);
+  EXPECT_THAT(built_options->prefetch_embedding_token_ids,
+              ElementsAre(0, 19, -1, 20));
+
+  // 1b. The field is written only for the builtin runtime. An environment
+  // created with a system runtime handle (here a copy of the builtin C API
+  // table, so every call still works) leaves it empty: the ids are dropped
+  // rather than written into a struct whose layout the runtime may not share.
+  {
+    const LiteRtRuntimeCApiStruct external_runtime = *GetLiteRtRuntimeBuiltin();
+    const std::vector<litert::EnvironmentOptions::Option> env_options = {
+        litert::EnvironmentOptions::Option{
+            litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
+            litert::LiteRtVariant(
+                reinterpret_cast<const void*>(&external_runtime)),
+        },
+    };
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        Environment external_env,
+        litert::Environment::Create(
+            litert::EnvironmentOptions(absl::MakeConstSpan(env_options))));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        internal::LiteRtOptionsPtr external_options,
+        internal::LiteRtOptionsPtrBuilder::Build(options,
+                                                 external_env.GetHolder()));
+    ASSERT_NE(external_options, nullptr);
+    EXPECT_TRUE(external_options->prefetch_embedding_token_ids.empty());
+  }
+
+  // 2. On simple_embedding_lookup_op.tflite, CompiledModel::Run(..., &options)
+  // triggers table discovery and populates the per-signature cache.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel embedding_model,
+      CompiledModel::Create(
+          env, testing::GetTestFilePath("simple_embedding_lookup_op.tflite"),
+          HwAccelerators::kCpu));
+  EXPECT_TRUE(GetCachedEmbeddingTables(embedding_model.Get(), 0).empty());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> emb_inputs,
+                              embedding_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> emb_outputs,
+                              embedding_model.CreateOutputBuffers());
+  const int32_t lookup_ids[] = {0, 1, 2, 3, 4};
+  ASSERT_TRUE(emb_inputs[0].Write<int32_t>(absl::MakeConstSpan(lookup_ids)));
+  LITERT_ASSERT_OK(embedding_model.Run(emb_inputs, emb_outputs, &options));
+
+  auto cached_tables = GetCachedEmbeddingTables(embedding_model.Get(), 0);
+  ASSERT_EQ(cached_tables.size(), 1);
+  EXPECT_EQ(cached_tables[0].num_rows, 20);
+  EXPECT_EQ(cached_tables[0].row_bytes, 8);
+
+  // 3. On a model without EMBEDDING_LOOKUP (simple_model.tflite), Run with
+  // prefetch options is a transparent no-op and still succeeds.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers, &options));
+  EXPECT_TRUE(GetCachedEmbeddingTables(compiled_model.Get(), 0).empty());
 }
 
 TEST(CompiledModelTest, RunTwoModelsPipelineWithSharedTensorBuffers) {
