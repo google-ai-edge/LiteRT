@@ -19,6 +19,8 @@ and embedded devices. It enables on-device machine learning inference with low
 latency and a small binary size on Android, iOS, and other operating systems.
 """
 
+from __future__ import annotations
+
 import os
 import platform
 import sys
@@ -181,6 +183,20 @@ def _download_and_extract(
       raise SystemExit('Install SDK failed. Aborting installation.') from e
 
 
+def _download_litert_prebuilts(*unused_args):  # {{ LITERT_PREBUILTS_HELPER }}
+  raise NotImplementedError
+
+
+def _prebuilt_members() -> dict[str, str]:
+  if IS_LINUX and platform.machine() in ('x86_64', 'AMD64'):
+    return {
+        'linux_x86_64/libLiteRtCompilerPlugin_MediaTek.so': (
+            'ai_edge_litert_sdk_mediatek/vendors/mediatek/compiler/libLiteRtCompilerPlugin_MediaTek.so'
+        ),
+    }
+  return {}
+
+
 class CustomBuildPy(_build_py):
   """Command to replace import statements."""
 
@@ -193,6 +209,7 @@ class CustomBuildPy(_build_py):
       _download_and_extract(
           NEUROPILOT_URL, NEUROPILOT_CONTENT_DIR, NEUROPILOT_TARGET_DIR
       )
+      _download_litert_prebuilts(PACKAGE_VERSION, _prebuilt_members())
 
     super().run()
 

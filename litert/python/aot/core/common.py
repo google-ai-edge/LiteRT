@@ -15,6 +15,7 @@
 
 """Constants and other small generic utilities."""
 
+import importlib
 from importlib import resources
 import os
 import pathlib
@@ -26,6 +27,12 @@ NPU = "npu"
 
 _WORKSPACE_PREFIX = "litert"
 _AI_EDGE_LITERT_PREFIX = "ai_edge_litert"
+_SDK_PREFIXES = (
+    "ai_edge_litert_sdk_qualcomm",
+    "ai_edge_litert_sdk_mediatek",
+    "ai_edge_litert_sdk_google_tensor",
+    "ai_edge_litert_sdk_intel",
+)
 _LITERT_ROOT = ""
 _PYTHON_ROOT = "python/aot"
 
@@ -51,6 +58,18 @@ def get_resource(
   Raises:
     FileNotFoundError: If the resource could not be found.
   """
+
+  for sdk_prefix in _SDK_PREFIXES:
+    try:
+      sdk_module = importlib.import_module(sdk_prefix)
+    except ImportError:
+      continue
+    sdk_file = getattr(sdk_module, "__file__", None)
+    if not isinstance(sdk_file, (str, os.PathLike)):
+      continue
+    candidate = pathlib.Path(sdk_file).resolve().parent / litert_relative_path
+    if (is_dir and candidate.is_dir()) or (not is_dir and candidate.is_file()):
+      return candidate
 
   for prefix in [_WORKSPACE_PREFIX, _AI_EDGE_LITERT_PREFIX]:
     try:

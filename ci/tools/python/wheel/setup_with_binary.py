@@ -29,6 +29,12 @@ from setuptools.command.build_py import build_py as _build_py  # pylint: disable
 PACKAGE_NAME = os.environ['PROJECT_NAME']
 PACKAGE_VERSION = os.environ['PACKAGE_VERSION']
 DOCLINES = (__doc__ or '').split('\n')
+_SDK_SUFFIX = '-nightly' if PACKAGE_NAME.endswith('_nightly') else ''
+
+
+def _sdk_req(vendor: str, marker: str = '') -> str:
+  req = f'ai-edge-litert-sdk-{vendor}{_SDK_SUFFIX}=={PACKAGE_VERSION}'
+  return f'{req}; {marker}' if marker else req
 
 EXECUTABLE_FILENAMES = [
     'tools/apply_plugin_main.exe'
@@ -196,30 +202,28 @@ setuptools.setup(
         # and OpenCV-Python requirement.
         'tqdm',
         'typing-extensions',
-        # TODO(b/445163709): remove this once litert_lm has a pypi package.
         'protobuf',
         'ml_dtypes',
     ],
     extras_require={
-        'npu-intel': [
-            # TODO(weiyiw): Update to non-nightly
-            # (ai-edge-litert-sdk-intel~=0.2.0) once it is released.
-            'ai-edge-litert-sdk-intel-nightly',
-        ],
+        'npu-intel': [_sdk_req('intel')],
+        'npu-qualcomm': [_sdk_req('qualcomm')],
+        'npu-mediatek': [_sdk_req('mediatek')],
+        'npu-google-tensor': [_sdk_req('google-tensor')],
         'npu-sdk': [
-            # TODO(weiyiw): Update to non-nightly
-            # (ai-edge-litert-sdk-intel~=0.2.0) once it is released.
-            'ai-edge-litert-sdk-intel-nightly',
-            (
-                'ai-edge-litert-sdk-qualcomm~=0.2.0; sys_platform != "win32" or'
-                ' platform_machine != "ARM64"'
+            _sdk_req(
+                'intel',
+                'platform_machine == "x86_64" or platform_machine == "AMD64"',
             ),
-            # Windows ARM64 (Snapdragon) support starts at 2.4.0.
-            (
-                'ai-edge-litert-sdk-qualcomm>=2.4.0; sys_platform == "win32"'
-                ' and platform_machine == "ARM64"'
+            _sdk_req('qualcomm'),
+            _sdk_req(
+                'mediatek',
+                'sys_platform == "linux" and platform_machine == "x86_64"',
             ),
-            'ai-edge-litert-sdk-mediatek~=0.2.0',
+            _sdk_req(
+                'google-tensor',
+                'sys_platform == "linux" and platform_machine == "x86_64"',
+            ),
         ],
         'model-utils': [
             'lark',
