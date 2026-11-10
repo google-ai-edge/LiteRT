@@ -27,6 +27,8 @@
 
 namespace qnn {
 
+class HtpQuickResponse;
+
 class HtpBackend : public QnnBackend {
  public:
   struct PlatformInfoDeleter {
@@ -67,6 +69,9 @@ class HtpBackend : public QnnBackend {
   HtpBackend& operator=(HtpBackend&&) = delete;
 
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
+
+  void StartBackgroundWork(const Options& options) override;
+  void StopBackgroundWork() override;
 
   bool SetPerformanceMode(const Options& options) override;
   void UpVote() override;
@@ -109,6 +114,7 @@ class HtpBackend : public QnnBackend {
   std::list<QnnHtpDevice_DeviceInfoExtension_t> htp_device_info_extensions_;
   class HtpPerfControl;
   std::unique_ptr<HtpPerfControl> htp_perf_control_{nullptr};
+  std::unique_ptr<HtpQuickResponse> htp_quick_response_{nullptr};
 };
 }  // namespace qnn
 

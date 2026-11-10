@@ -13,6 +13,7 @@ target_sources(qnn_backends
         gpu_backend.cc
         dsp_backend.cc
         htp_backend.cc
+        htp_quick_response.cc
         ir_backend.cc
         lpai_backend.cc
         qnn_backend.cc

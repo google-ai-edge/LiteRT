@@ -894,5 +894,15 @@ TEST(QualcommOptionsFromFlagsTest, HtpContextInitAcceleration) {
   absl::SetFlag(&FLAGS_qualcomm_htp_context_init_acceleration, false);
 }
 
+TEST(QualcommOptionsFromFlagsTest, EnableHtpQuickResponse) {
+  absl::SetFlag(&FLAGS_qualcomm_enable_htp_quick_response, true);
+
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_TRUE(options.Value().GetEnableHtpQuickResponse());
+  absl::SetFlag(&FLAGS_qualcomm_enable_htp_quick_response, false);
+}
+
 }  // namespace
 }  // namespace litert::qualcomm

@@ -100,8 +100,14 @@ cc_library(
 
 cc_library(
     name = "htp_backend",
-    srcs = ["htp_backend.cc"],
-    hdrs = ["htp_backend.h"],
+    srcs = [
+        "htp_backend.cc",
+        "htp_quick_response.cc",
+    ],
+    hdrs = [
+        "htp_backend.h",
+        "htp_quick_response.h",
+    ],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         ":backend_utils",
@@ -272,6 +278,18 @@ litert_test(
         ],
         "//conditions:default": [],
     }) + gtest_main_no_heapcheck_deps(),
+)
+
+cc_test(
+    name = "htp_quick_response_test",
+    srcs = ["htp_quick_response_test.cc"],
+    deps = [
+        ":htp_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
+    ],
 )
 
 litert_test(
