@@ -109,6 +109,7 @@ tf_cc_test(
         "//tflite/converter/core/c:tflite_common",
         "//tflite/converter/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
         "@org_tensorflow//tensorflow/core/platform:resource_loader",
     ],
 )
