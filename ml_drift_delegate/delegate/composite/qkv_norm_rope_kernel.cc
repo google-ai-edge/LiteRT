@@ -117,9 +117,14 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedQkvNormRoPE(
     cos_func_name = "native_cos";
   }
 
+  // Each workgroup has `half_slices` threads (1 x 1 x half_slices). Only use
+  // `simd_sum` when a workgroup fills an entire 32-wide Metal SIMD-group
+  // (`half_slices == 32`); when `half_slices < 32` (e.g. head_dim <= 128),
+  // Apple GPUs can pack multiple barrier-free workgroups into a single 32-lane
+  // SIMD-group, causing `simd_sum` to sum across multiple heads.
   const bool use_metal_simd_sum = gpu_info.IsApiMetal() &&
                                   gpu_info.IsWaveSizeEqualTo32() &&
-                                  half_slices <= 32;
+                                  half_slices == 32;
   std::string sum_sq_code;
   if (use_metal_simd_sum) {
     sum_sq_code =
