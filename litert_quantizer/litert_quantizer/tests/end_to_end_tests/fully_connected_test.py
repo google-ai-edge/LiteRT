@@ -17,6 +17,7 @@
 
 import logging
 import pathlib
+from typing import cast
 
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -620,6 +621,353 @@ class FullyConnectedTest(test_utils.BaseOpTestCase):
     )
     self.assertLess(weight_mse, 4e-3)
     self.assertLess(output_mse, 0.5)
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name='tensorwise_drq',
+          granularity=qtyping.QuantGranularity.TENSORWISE,
+          compute_precision=_ComputePrecision.INTEGER,
+          explicit_dequantize=False,
+          expected_block_shape=[64, 128],
+          expected_block_size=0,
+          expected_scale_shape=[1, 1],
+          expected_scale_prefix=[0.13250128],
+      ),
+      dict(
+          testcase_name='channelwise_drq',
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          compute_precision=_ComputePrecision.INTEGER,
+          explicit_dequantize=False,
+          expected_block_shape=[1, 128],
+          expected_block_size=128,
+          expected_scale_shape=[64, 1],
+          expected_scale_prefix=[
+              0.16418184,
+              0.13381582,
+              0.1583924,
+              0.0747766,
+          ],
+      ),
+      dict(
+          testcase_name='blockwise_32_drq',
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+          compute_precision=_ComputePrecision.INTEGER,
+          explicit_dequantize=False,
+          expected_block_shape=[1, 32],
+          expected_block_size=32,
+          expected_scale_shape=[64, 4],
+          expected_scale_prefix=[
+              0.18475398,
+              0.11978715,
+              0.15878251,
+              0.17805463,
+          ],
+      ),
+      dict(
+          testcase_name='channelwise_weight_only',
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          compute_precision=_ComputePrecision.FLOAT,
+          explicit_dequantize=True,
+          expected_block_shape=[1, 128],
+          expected_block_size=128,
+          expected_scale_shape=[64, 1],
+          expected_scale_prefix=[
+              0.16418184,
+              0.13381582,
+              0.1583924,
+              0.0747766,
+          ],
+      ),
+  )
+  def test_centered_int2_end_to_end(
+      self,
+      granularity: qtyping.QuantGranularity,
+      compute_precision: qtyping.ComputePrecision,
+      explicit_dequantize: bool,
+      expected_block_shape: list[int],
+      expected_block_size: int,
+      expected_scale_shape: list[int],
+      expected_scale_prefix: list[float],
+  ):
+    continuous_model_path, weight_tensor_name, continuous_weights = (
+        self._create_continuous_weights_fc_model()
+    )
+    op_config = _OpQuantConfig(
+        weight_tensor_config=_TensorQuantConfig(
+            num_bits=2,
+            granularity=granularity,
+        ),
+        compute_precision=compute_precision,
+        explicit_dequantize=explicit_dequantize,
+    )
+
+    qt = quantizer.Quantizer(continuous_model_path)
+    qt.update_quantization_recipe(
+        algorithm_key=_AlgorithmName.OCTAV,
+        regex='.*',
+        operation_name=self._op_name,
+        op_config=op_config,
+    )
+    quantization_result = qt.quantize()
+    self.assertIsNotNone(quantization_result.quantized_model)
+
+    quantized_model = tfl_flatbuffer_utils.read_model(
+        quantization_result.quantized_model
+    )
+    subgraph = quantized_model.subgraphs[0]
+    (q_weight_tensor,) = [
+        t
+        for t in subgraph.tensors
+        if tfl_flatbuffer_utils.get_tensor_name(t) == weight_tensor_name
+    ]
+    self.assertEqual(q_weight_tensor.type, qtyping.TensorType.INT2)
+
+    packed = np.frombuffer(
+        quantized_model.buffers[q_weight_tensor.buffer].data, dtype=np.uint8
+    )
+    self.assertEqual(packed.size, 2048)
+    unpacked = np.empty(packed.size * 4, dtype=np.int8)
+    for lane in range(4):
+      crumb = (packed >> (2 * lane)) & 0x03
+      unpacked[lane::4] = ((crumb ^ 0x02) - 0x02).astype(np.int8)
+    self.assertEqual(unpacked.size, continuous_weights.size)
+    self.assertSetEqual(set(np.unique(unpacked).tolist()), {-2, -1, 0, 1})
+
+    self.assertEqual(
+        q_weight_tensor.quantization.detailsType,
+        qtyping.QuantizationDetails.BlockwiseQuantization,
+    )
+    details = q_weight_tensor.quantization.details
+    self.assertSequenceEqual(list(details.blockShape), expected_block_shape)
+    self.assertEqual(details.blockSize, expected_block_size)
+
+    scales_tensor = subgraph.tensors[details.scales]
+    self.assertEqual(scales_tensor.type, qtyping.TensorType.FLOAT32)
+    self.assertSequenceEqual(list(scales_tensor.shape), expected_scale_shape)
+    stored_scale = tfl_flatbuffer_utils.get_tensor_data(
+        scales_tensor, quantized_model.buffers
+    )
+    self.assertIsNotNone(stored_scale)
+    stored_scale = cast(np.ndarray, stored_scale)
+    np.testing.assert_allclose(
+        stored_scale.ravel()[: len(expected_scale_prefix)],
+        expected_scale_prefix,
+        rtol=1e-6,
+        atol=1e-6,
+    )
+
+    zp_tensor = subgraph.tensors[details.zeroPoints]
+    self.assertEqual(zp_tensor.type, qtyping.TensorType.FLOAT32)
+    self.assertSequenceEqual(list(zp_tensor.shape), [1, 1])
+    np.testing.assert_array_equal(
+        tfl_flatbuffer_utils.get_tensor_data(
+            zp_tensor, quantized_model.buffers
+        ),
+        np.array([[-0.5]], dtype=np.float32),
+    )
+
+    dequant_weights = (
+        unpacked.reshape(64, stored_scale.shape[1], -1).astype(np.float32) + 0.5
+    ) * stored_scale[..., np.newaxis]
+    weight_mse = float(
+        np.mean(
+            (
+                dequant_weights.reshape(continuous_weights.shape)
+                - continuous_weights
+            )
+            ** 2
+        )
+    )
+    self.assertLess(weight_mse, 4e-3)
+
+    # TFLite's Python Interpreter.get_tensor_details() does not yet expose
+    # BlockwiseQuantization block_shape scales/zero_points for constant_tensors
+    # dequantization, so weight MSE is checked above and outputs are validated
+    # directly here.
+    validation_result = qt.validate(validate_output_tensors_only=True)
+    self.assert_model_size_reduction_above_min_pct(validation_result, 85)
+    self.assert_output_errors_below_tolerance(validation_result, 0.5)
+
+  def _run_decomposed_hadamard_centered_int2_pass1(
+      self,
+  ) -> tuple[str, str, bytes, bytes]:
+    continuous_model_path, weight_tensor_name, continuous_weights = (
+        self._create_continuous_weights_fc_model()
+    )
+    op_config = _OpQuantConfig(
+        weight_tensor_config=_TensorQuantConfig(
+            num_bits=2,
+            granularity=qtyping.QuantGranularity.CHANNELWISE,
+            algorithm_params={
+                'q_init_mode': 'auto',
+                'scale_refinement': 'mse_grid',
+            },
+        ),
+        compute_precision=_ComputePrecision.INTEGER,
+    )
+    qt = quantizer.Quantizer(continuous_model_path)
+    qt.update_quantization_recipe(
+        algorithm_key=_AlgorithmName.DECOMPOSED_HADAMARD_ROTATION,
+        regex='.*',
+        operation_name=self._op_name,
+        op_config=op_config,
+    )
+    quantized_bytes = qt.quantize().quantized_model
+    self.assertIsNotNone(quantized_bytes)
+    quantized_bytes = cast(bytes, quantized_bytes)
+    quantized_model = tfl_flatbuffer_utils.read_model(quantized_bytes)
+    subgraph = quantized_model.subgraphs[0]
+    (q_weight_tensor,) = [
+        t
+        for t in subgraph.tensors
+        if tfl_flatbuffer_utils.get_tensor_name(t) == weight_tensor_name
+    ]
+    (hadamard_tensor,) = [
+        t
+        for t in subgraph.tensors
+        if tfl_flatbuffer_utils.get_tensor_name(t).endswith('_hadamard_matrix')
+    ]
+    (cross_tensor,) = [
+        t
+        for t in subgraph.tensors
+        if tfl_flatbuffer_utils.get_tensor_name(t).endswith(
+            '_cross_block_matrix'
+        )
+    ]
+    self.assertEqual(q_weight_tensor.type, qtyping.TensorType.INT2)
+    self.assertEqual(hadamard_tensor.type, qtyping.TensorType.FLOAT32)
+    self.assertEqual(
+        q_weight_tensor.quantization.detailsType,
+        qtyping.QuantizationDetails.BlockwiseQuantization,
+    )
+    details = q_weight_tensor.quantization.details
+    self.assertSequenceEqual(list(details.blockShape), [1, 128])
+    packed_bytes = bytes(quantized_model.buffers[q_weight_tensor.buffer].data)
+    packed = np.frombuffer(packed_bytes, dtype=np.uint8)
+    unpacked = np.empty(packed.size * 4, dtype=np.int8)
+    for lane in range(4):
+      crumb = (packed >> (2 * lane)) & 0x03
+      unpacked[lane::4] = ((crumb ^ 0x02) - 0x02).astype(np.int8)
+    stored_scale = tfl_flatbuffer_utils.get_tensor_data(
+        subgraph.tensors[details.scales], quantized_model.buffers
+    )
+    hadamard_weight = tfl_flatbuffer_utils.get_tensor_data(
+        hadamard_tensor, quantized_model.buffers
+    )
+    cross_matrix = tfl_flatbuffer_utils.get_tensor_data(
+        cross_tensor, quantized_model.buffers
+    )
+    self.assertIsNotNone(stored_scale)
+    self.assertIsNotNone(hadamard_weight)
+    self.assertIsNotNone(cross_matrix)
+    stored_scale = cast(np.ndarray, stored_scale)
+    hadamard_weight = cast(np.ndarray, hadamard_weight)
+    cross_matrix = cast(np.ndarray, cross_matrix)
+    dequant_rot = (
+        unpacked.reshape(continuous_weights.shape).astype(np.float32) + 0.5
+    ) * stored_scale
+    dequant_unrot = np.matmul(
+        np.matmul(
+            cross_matrix.T,
+            dequant_rot.reshape(
+                continuous_weights.shape[0],
+                cross_matrix.shape[0],
+                hadamard_weight.shape[0],
+            ),
+        ),
+        hadamard_weight,
+    ).reshape(continuous_weights.shape)
+    weight_mse = float(np.mean((dequant_unrot - continuous_weights) ** 2))
+    self.assertLess(weight_mse, 4e-3)
+
+    # Validate end-to-end outputs directly because weights are rotated and
+    # Interpreter.get_tensor_details() does not yet dequantize block_shape.
+    validation_result = qt.validate(validate_output_tensors_only=True)
+    self.assert_output_errors_below_tolerance(validation_result, 0.25)
+    return (
+        continuous_model_path,
+        weight_tensor_name,
+        quantized_bytes,
+        packed_bytes,
+    )
+
+  def test_decomposed_hadamard_centered_int2_mse_grid_end_to_end(self):
+    self._run_decomposed_hadamard_centered_int2_pass1()
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name='min_max',
+          pass2_algorithm=_AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+      ),
+      dict(
+          testcase_name='octav',
+          pass2_algorithm=_AlgorithmName.OCTAV,
+      ),
+  )
+  def test_decomposed_hadamard_centered_int2_two_pass_preserves_int2_weight(
+      self, pass2_algorithm: str
+  ):
+    (
+        continuous_model_path,
+        weight_tensor_name,
+        pass1_bytes,
+        pass1_packed_bytes,
+    ) = self._run_decomposed_hadamard_centered_int2_pass1()
+
+    pass2_op_config = _OpQuantConfig(
+        weight_tensor_config=_TensorQuantConfig(
+            num_bits=8,
+            granularity=qtyping.QuantGranularity.CHANNELWISE,
+        ),
+        compute_precision=_ComputePrecision.INTEGER,
+    )
+    qt_pass2 = quantizer.Quantizer(pass1_bytes)
+    qt_pass2.update_quantization_recipe(
+        algorithm_key=pass2_algorithm,
+        regex='.*',
+        operation_name=self._op_name,
+        op_config=pass2_op_config,
+    )
+    pass2_bytes = qt_pass2.quantize().quantized_model
+    self.assertIsNotNone(pass2_bytes)
+
+    pass2_model = tfl_flatbuffer_utils.read_model(pass2_bytes)
+    subgraph = pass2_model.subgraphs[0]
+    (pass2_main_weight,) = [
+        t
+        for t in subgraph.tensors
+        if tfl_flatbuffer_utils.get_tensor_name(t) == weight_tensor_name
+    ]
+    (pass2_hadamard_weight,) = [
+        t
+        for t in subgraph.tensors
+        if tfl_flatbuffer_utils.get_tensor_name(t).endswith('_hadamard_matrix')
+    ]
+    self.assertEqual(pass2_main_weight.type, qtyping.TensorType.INT2)
+    self.assertEqual(
+        pass2_main_weight.quantization.detailsType,
+        qtyping.QuantizationDetails.BlockwiseQuantization,
+    )
+    details = pass2_main_weight.quantization.details
+    self.assertSequenceEqual(list(details.blockShape), [1, 128])
+    self.assertEqual(
+        bytes(pass2_model.buffers[pass2_main_weight.buffer].data),
+        pass1_packed_bytes,
+    )
+    zp_tensor = subgraph.tensors[details.zeroPoints]
+    np.testing.assert_array_equal(
+        tfl_flatbuffer_utils.get_tensor_data(zp_tensor, pass2_model.buffers),
+        np.array([[-0.5]], dtype=np.float32),
+    )
+    self.assertEqual(pass2_hadamard_weight.type, qtyping.TensorType.INT8)
+
+    # Validate end-to-end outputs directly because weights are rotated and
+    # Interpreter.get_tensor_details() does not yet dequantize block_shape.
+    validator = quantizer.Quantizer(
+        continuous_model_path, previous_quantized_model=pass2_bytes
+    )
+    validation_result = validator.validate(validate_output_tensors_only=True)
+    self.assert_output_errors_below_tolerance(validation_result, 0.25)
 
   @parameterized.product(
       algorithms=[

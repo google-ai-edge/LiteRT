@@ -17,7 +17,7 @@
 
 from collections.abc import MutableMapping, Sequence
 import dataclasses
-from typing import Any, Optional
+from typing import Any
 import numpy as np
 from litert_quantizer import qtyping
 from litert_quantizer.algorithms.uniform_quantize import common_quantize
@@ -34,8 +34,8 @@ _IntType = uniform_quantize_tensor.IntType
 def get_tensor_quant_params(
     op_info: qtyping.OpInfo,
     tensor_quant_config: qtyping.TensorQuantizationConfig,
-    tensor_content: Optional[np.ndarray] = None,
-    tensor_qsv: Optional[dict[str, Any]] = None,
+    tensor_content: np.ndarray | None = None,
+    tensor_qsv: dict[str, Any] | None = None,
 ) -> qtyping.UniformQuantParams:
   """Get the quantization parameters for a tensor.
 
@@ -47,6 +47,10 @@ def get_tensor_quant_params(
 
   Returns:
     The quantization parameters for the tensor.
+
+  Raises:
+    ValueError: If calibration min/max values are missing or if `centered` is
+      invalid.
   """
   # Get quant params.
   # Use tensor_content if QSV lacks min/max (e.g., including GPTQ case).
@@ -78,6 +82,15 @@ def get_tensor_quant_params(
     )
   clipping_values = None
   signed = tensor_quant_config.dtype != qtyping.TensorDataType.UINT
+  default_centered = (
+      tensor_content is not None
+      and tensor_quant_config.num_bits == 2
+      and tensor_quant_config.symmetric
+      and signed
+  )
+  centered = tensor_quant_config.algorithm_params.get(
+      "centered", default_centered
+  )
   zp, scale = uniform_quantize_tensor.tensor_zp_scale_from_min_max(
       tensor_min_max["min"],
       tensor_min_max["max"],
@@ -86,6 +99,7 @@ def get_tensor_quant_params(
       tensor_quant_config.granularity,
       clipping_values,
       signed=signed,
+      centered=centered,
   )
   quantized_dim = common_utils.get_weight_quantized_dim(
       op_info, tensor_content, tensor_quant_config.granularity  # pyrefly: ignore[bad-argument-type]
@@ -117,9 +131,7 @@ def get_tensor_quant_params(
 
 def check_if_quantized(tensor: Any) -> bool:
   """Checks if the tensor is quantized."""
-  return (
-      tensor.quantization is not None and tensor.quantization.scale is not None
-  )
+  return common_quantize.check_if_quantized(tensor)
 
 
 # TODO: b/333731147 - Use named tuple to store min/max.

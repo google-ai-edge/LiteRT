@@ -19,6 +19,8 @@ Inserts dequantize node after the given tensor to enable float execution of
 the tensor consumer
 """
 
+import dataclasses
+
 from litert_quantizer import qtyping
 from litert_quantizer.transformations import quantize_tensor
 from litert_quantizer.transformations import transformation_utils
@@ -58,9 +60,6 @@ def insert_dequant(
   dequant_op.outputs = [new_tensor_id]
   dequant_op.inputs = [transformation_input.tensor_id]
 
-  # quantize the source tensor
-  quantize_tensor.quantize_tensor(transformation_input)
-
   # update the original consumers of the op to take the dequant op,
   # and find the first consumer of the new tensor
   first_consumer_id = min(transformation_input.consumers)
@@ -81,6 +80,12 @@ def insert_dequant(
   # op is inserted after the producer
   op_id = max(transformation_input.producer + 1, first_consumer_id)
   transformation_input.subgraph.operators.insert(op_id, dequant_op)
+
+  # Quantize the source tensor with the inserted DEQUANTIZE op as its consumer
+  # so `quantize_tensor` updates only DEQUANTIZE's op version when needed.
+  quantize_tensor.quantize_tensor(
+      dataclasses.replace(transformation_input, consumers=[op_id])
+  )
   return qtyping.TransformationInfo(
       op_id=op_id, num_ops_added=1, output_tensor_id=new_tensor_id
   )

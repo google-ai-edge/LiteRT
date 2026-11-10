@@ -186,6 +186,31 @@ DEFAULT_JSON_POLICY = """
       },
       "explicit_dequantize": true,
       "compute_precision": "FLOAT"
+    },
+    "weightonly_wi2_afp32": {
+      "weight_tensor_config": {
+        "num_bits": 2,
+        "symmetric": [true, false],
+        "granularity": ["CHANNELWISE", "TENSORWISE"],
+        "dtype": "INT"
+      },
+      "explicit_dequantize": true,
+      "compute_precision": "FLOAT"
+    },
+    "weightonly_wi2_afp32_blockwise": {
+      "weight_tensor_config": {
+        "num_bits": 2,
+        "symmetric": [true],
+        "granularity": [
+          "BLOCKWISE_32",
+          "BLOCKWISE_64",
+          "BLOCKWISE_128",
+          "BLOCKWISE_256"
+        ],
+        "dtype": "INT"
+      },
+      "explicit_dequantize": true,
+      "compute_precision": "FLOAT"
     }
   },
   "ops_per_config": {
@@ -313,8 +338,8 @@ DEFAULT_JSON_POLICY = """
       "FULLY_CONNECTED",
       "CUSTOM_OP"
     ],
-    "dynamic_wi2_afp32": ["FULLY_CONNECTED", "EMBEDDING_LOOKUP", "CONV_2D"],
-    "dynamic_wi2_afp32_blockwise": ["FULLY_CONNECTED"],
+    "dynamic_wi2_afp32": ["FULLY_CONNECTED", "EMBEDDING_LOOKUP"],
+    "dynamic_wi2_afp32_blockwise": ["FULLY_CONNECTED", "EMBEDDING_LOOKUP"],
     "weightonly_wi8_afp32": [
       "BATCH_MATMUL",
       "CONV_2D",
@@ -323,7 +348,14 @@ DEFAULT_JSON_POLICY = """
       "EMBEDDING_LOOKUP",
       "FULLY_CONNECTED"
     ],
-    "weightonly_wi4_afp32": ["BATCH_MATMUL", "FULLY_CONNECTED", "EMBEDDING_LOOKUP", "CONV_2D"]
+    "weightonly_wi4_afp32": [
+      "BATCH_MATMUL",
+      "FULLY_CONNECTED",
+      "EMBEDDING_LOOKUP",
+      "CONV_2D"
+    ],
+    "weightonly_wi2_afp32": ["FULLY_CONNECTED", "EMBEDDING_LOOKUP"],
+    "weightonly_wi2_afp32_blockwise": ["FULLY_CONNECTED", "EMBEDDING_LOOKUP"]
   }
 }
 """

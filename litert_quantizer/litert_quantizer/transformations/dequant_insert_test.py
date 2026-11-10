@@ -287,6 +287,43 @@ class DequantInsertTest(absltest.TestCase):
     # check if the graph output is updated
     self.assertEqual(subgraph.outputs[0], 9)
 
+  def test_dequant_insert_centered_int2_bumps_dequant_version_not_consumer(
+      self,
+  ):
+    subgraph = self._model.subgraphs[0]
+    model = self._model
+    tensor_id = 7
+    subgraph.tensors[tensor_id].shape = np.array([4, 8], dtype=np.int32)
+    fc_opcode_idx = transformation_utils.add_op_code(
+        qtyping.BuiltinOperator.FULLY_CONNECTED, model.operatorCodes
+    )
+    model.operatorCodes[fc_opcode_idx].version = 9
+    subgraph.operators[4].opcodeIndex = fc_opcode_idx
+
+    dequant_insert.insert_dequant(
+        transformation_utils.TransformationInput(
+            tensor_id=tensor_id,
+            model=model,
+            subgraph=subgraph,
+            producer=-1,
+            consumers=[4],
+            quant_params=qtyping.UniformQuantParams(
+                num_bits=2,
+                quantized_dimension=0,
+                scale=np.ones((4, 1), dtype=np.float32),
+                zero_point=np.array([[-0.5]], dtype=np.float32),
+                quantized_data=np.zeros((4, 8), dtype=np.int8),
+            ),
+        )
+    )
+
+    dequant_opcode = model.operatorCodes[-1]
+    self.assertEqual(
+        dequant_opcode.builtinCode, qtyping.BuiltinOperator.DEQUANTIZE
+    )
+    self.assertEqual(dequant_opcode.version, 10)
+    self.assertEqual(model.operatorCodes[fc_opcode_idx].version, 9)
+
 
 if __name__ == "__main__":
   absltest.main()
