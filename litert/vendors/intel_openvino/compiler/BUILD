@@ -264,6 +264,8 @@ litert_lib(
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_intel_openvino_options",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ] + _OPENVINO_DEPS,
 )
 
@@ -283,8 +285,7 @@ litert_test(
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_intel_openvino_options",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_dynamic_lib(

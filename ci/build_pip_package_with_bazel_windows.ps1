@@ -19,11 +19,8 @@
 #   (--config=cross_compile_windows_arm64). Requires the MSVC ARM64 build tools;
 #   see ci/setup_windows_arm64_toolchain.ps1.
 # -Mode wheel (default) builds the ai-edge-litert wheel into dist/.
-# -Mode prebuilts builds the prebuilt binaries (libLiteRt.dll, the GPU
-#   accelerator, the Qualcomm plugins and the tools) into
-#   dist/prebuilts/windows_arm64/ and dist/litert_prebuilts_windows_arm64.zip.
-#   Only supported with -TargetArch arm64; other Windows prebuilts are built by
-#   the Linux prebuilt job.
+# -Mode prebuilts builds prebuilt binaries into dist/prebuilts/windows_<arch>/
+#   and dist/litert_prebuilts_windows_<arch>.zip.
 # The target and mode can also be selected with the LITERT_TARGET_ARCH and
 # LITERT_BUILD_MODE env variables.
 param (
@@ -67,12 +64,9 @@ if ($TargetArch -notin @('x86_64', 'arm64')) {
 if ($Mode -notin @('wheel', 'prebuilts')) {
   throw "Unsupported Mode '$Mode'. Expected 'wheel' or 'prebuilts'."
 }
-if ($Mode -eq 'prebuilts' -and $TargetArch -ne 'arm64') {
-  throw '-Mode prebuilts is only supported with -TargetArch arm64.'
-}
 
-# Windows ARM64 prebuilt binaries: Bazel target -> file name in the archive.
-$PrebuiltTargets = [ordered]@{
+# Prebuilt binaries: Bazel target -> file name in the archive.
+$PrebuiltTargets = if ($TargetArch -eq 'arm64') { [ordered]@{
   '//litert/c:litert_runtime_c_api_dll' = 'libLiteRt.dll'
   '//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_dll' = 'libLiteRtWebGpuAccelerator.dll'
   '//litert/vendors/qualcomm/compiler:LiteRtCompilerPlugin_Qualcomm' = 'LiteRtCompilerPlugin_Qualcomm.dll'
@@ -83,7 +77,11 @@ $PrebuiltTargets = [ordered]@{
   '//litert/tools:npu_numerics_check' = 'npu_numerics_check.exe'
   '//litert/tools:apply_plugin_main' = 'apply_plugin_main.exe'
   '//litert/tools:analyze_model_main' = 'analyze_model_main.exe'
-}
+} } else { [ordered]@{
+  '//litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin' = 'LiteRtCompilerPlugin.dll'
+  '//litert/vendors/intel_openvino/dispatch:LiteRtDispatch' = 'LiteRtDispatch.dll'
+} }
+$PrebuiltsPlatform = "windows_$TargetArch"
 [string[]]$BuildTargets = if ($Mode -eq 'prebuilts') { @($PrebuiltTargets.Keys) } else { @('//ci/tools/python/wheel:litert_wheel') }
 
 function Convert-WslPathToWindows {
@@ -586,7 +584,7 @@ if ($Mode -eq 'prebuilts') {
   if (Test-Path $PrebuiltsRoot) { Remove-Item -Recurse -Force $PrebuiltsRoot }
   # Stage the binaries in the same layout as litert_prebuilts.zip
   # (<platform>/<file>).
-  $PlatformDir = Join-Path $PrebuiltsRoot 'windows_arm64'
+  $PlatformDir = Join-Path $PrebuiltsRoot $PrebuiltsPlatform
   New-Item -ItemType Directory -Force -Path $PlatformDir | Out-Null
   $CqueryArgs = @('cquery') + $BazelArgs[1..($BazelArgs.Count - 1)] + @('--output=files')
   foreach ($Target in $PrebuiltTargets.Keys) {
@@ -600,21 +598,19 @@ if ($Mode -eq 'prebuilts') {
       throw "No .dll/.exe output found for $Target"
     }
     Copy-Item -Path (Join-Path $RepoRoot $Output) -Destination (Join-Path $PlatformDir $FileName) -Force
-    Write-Host "Staged $Target -> windows_arm64\$FileName"
+    Write-Host "Staged $Target -> $PrebuiltsPlatform\$FileName"
   }
-  $ZipPath = Join-Path $DistDir 'litert_prebuilts_windows_arm64.zip'
+  $ZipPath = Join-Path $DistDir "litert_prebuilts_$PrebuiltsPlatform.zip"
   if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
   # Use Python zipfile rather than Compress-Archive so ZIP entry paths always
   # use POSIX forward slashes even under Windows PowerShell 5.1.
-  & python -c "import pathlib, sys, zipfile; src, dst = pathlib.Path(sys.argv[1]), sys.argv[2]; zf = zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED); [zf.write(p, f'windows_arm64/{p.name}') for p in sorted(src.iterdir()) if p.is_file()]; zf.close()" $PlatformDir $ZipPath
+  & python -c "import pathlib, sys, zipfile; src, dst = pathlib.Path(sys.argv[1]), sys.argv[2]; zf = zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED); [zf.write(p, f'{src.name}/{p.name}') for p in sorted(src.iterdir()) if p.is_file()]; zf.close()" $PlatformDir $ZipPath
   if ($LASTEXITCODE -ne 0) {
     throw "Failed to create $ZipPath with exit code $LASTEXITCODE"
   }
-  # The binaries cannot run on the x86_64 host, so verify that every one of
-  # them targets ARM64.
-  & python (Join-Path $ScriptDir 'check_windows_wheel_arch.py') --arch arm64 $ZipPath
+  & python (Join-Path $ScriptDir 'check_windows_wheel_arch.py') --arch $TargetArch $ZipPath
   if ($LASTEXITCODE -ne 0) {
-    throw "Windows ARM64 prebuilts architecture check failed with exit code $LASTEXITCODE"
+    throw "Windows $TargetArch prebuilts architecture check failed with exit code $LASTEXITCODE"
   }
   Get-ChildItem -Path $PlatformDir | ForEach-Object {
     Write-Host ('{0}  {1}' -f (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash, $_.Name)

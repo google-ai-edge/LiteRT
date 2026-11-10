@@ -435,6 +435,45 @@ TEST(MlDriftDelegateCreateTest, CollectMetricsSuccess) {
   LiteRtDestroyDelegateWrapper(delegate_wrapper);
 }
 
+TEST(MlDriftDelegateCreateTest, StopMetricsCollectionSkipsMetricsOnOldRuntime) {
+  // Simulates a runtime that predates `append_metric`: the slot is still
+  // populated in memory but lies outside the declared struct size.
+  LiteRtRuntimeContext runtime_context = *LrtGetRuntimeContext();
+  runtime_context.abi_header.struct_size =
+      static_cast<uint16_t>(offsetof(LiteRtRuntimeContext, append_metric));
+  ASSERT_NE(runtime_context.append_metric, nullptr);
+
+  auto delegate_data =
+      std::make_unique<litert::ml_drift::MlDriftDelegateData>();
+  delegate_data->backend =
+      std::make_unique<litert::ml_drift::DummyGpuBackend>();
+
+  auto* delegate = new TfLiteDelegate(TfLiteDelegateCreate());
+  delegate->data_ = delegate_data.get();
+
+  LiteRtDelegateWrapper delegate_wrapper = nullptr;
+  auto deleter = [](TfLiteOpaqueDelegate* d) {
+    delete reinterpret_cast<TfLiteDelegate*>(d);
+  };
+  ASSERT_EQ(runtime_context.wrap_delegate(
+                reinterpret_cast<TfLiteOpaqueDelegate*>(delegate), deleter,
+                &delegate_wrapper),
+            kLiteRtStatusOk);
+
+  LiteRtMetrics metrics = nullptr;
+  ASSERT_EQ(LiteRtCreateMetrics(&metrics), kLiteRtStatusOk);
+  EXPECT_EQ(litert::ml_drift::StopMetricsCollection(&runtime_context,
+                                                    delegate_wrapper, metrics),
+            kLiteRtStatusOk);
+
+  int num_metrics = 0;
+  ASSERT_EQ(LiteRtGetNumMetrics(metrics, &num_metrics), kLiteRtStatusOk);
+  EXPECT_EQ(num_metrics, 0);
+
+  LiteRtDestroyMetrics(metrics);
+  LiteRtDestroyDelegateWrapper(delegate_wrapper);
+}
+
 TEST(MlDriftDelegateCreateTest, GetHardwareSupport) {
   EXPECT_EQ(litert::ml_drift::GetHardwareSupport(nullptr, nullptr),
             kLiteRtStatusErrorInvalidArgument);

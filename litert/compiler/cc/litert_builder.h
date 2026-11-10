@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -128,6 +129,9 @@ class Builder {
 
   /// @brief Builds a tensor from a `RankedTensorSpec`.
   Expected<Tensor> BuildTensor(const RankedTensorSpec& spec) const {
+    if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, build_tensor)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
     LiteRtTensor tensor;
     LiteRtRankedTensorType ranked_tensor_type_litert =
         static_cast<LiteRtRankedTensorType>(spec.ranked_tensor_type);
@@ -208,6 +212,9 @@ class Builder {
   template <typename T>
   Expected<Weights> BuildWeights(absl::Span<const T> data,
                                  const Tensor& tensor) const {
+    if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, build_weights)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
     const uint8_t* data_uint8 = reinterpret_cast<const uint8_t*>(data.data());
     size_t size_uint8 = data.size() * sizeof(T);
     LiteRtWeights weights;
@@ -219,6 +226,9 @@ class Builder {
   /// @brief Builds weights for a tensor from raw byte buffer.
   Expected<Weights> BuildWeights(const uint8_t* data, size_t size,
                                  const Tensor& tensor) const {
+    if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, build_weights)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
     LiteRtWeights weights;
     LITERT_RETURN_IF_ERROR(
         ctx_->build_weights(builder_, data, size, tensor.Get(), &weights));
@@ -229,6 +239,9 @@ class Builder {
   Expected<Tensor> BuildScalar(
       LiteRtElementType element_type,
       std::optional<std::string> name = std::nullopt) const {
+    if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, build_tensor)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
     LiteRtTensor tensor;
     LiteRtUnrankedTensorType unranked_tensor_type;
     unranked_tensor_type.element_type = element_type;
@@ -243,6 +256,9 @@ class Builder {
 
   Expected<Op> BuildOp(LiteRtOpCode op_code, absl::Span<const Tensor> inputs,
                        absl::Span<const Tensor> outputs) const {
+    if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, build_op)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
     LiteRtOp litert_op;
     std::vector<LiteRtTensor> input_tensors;
     input_tensors.reserve(inputs.size());
@@ -281,6 +297,9 @@ class Builder {
 
   /// @brief Records the op to be erased.
   Expected<void> EraseOp(const Op& op) const {
+    if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, erase_op)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
     LITERT_RETURN_IF_ERROR(ctx_->erase_op(builder_, op.Get()));
     return {};
   }
