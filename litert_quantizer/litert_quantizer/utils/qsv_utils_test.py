@@ -17,6 +17,7 @@ from absl.testing import absltest
 from absl.testing import parameterized
 import numpy as np
 
+from litert_quantizer.utils import histogram_utils
 from litert_quantizer.utils import qsv_utils
 
 
@@ -239,6 +240,37 @@ class QsvUtilsTest(parameterized.TestCase):
     else:
       np.testing.assert_array_equal(updated["mu2"], expected_mu2)
     self.assertEqual(updated["num_samples"], expected_samples)
+
+  def test_merge_histograms(self):
+    h1 = histogram_utils.DynamicHistogram(max_tensor_bins=64)
+    h1.add(np.array([-1.0, 0.0, 1.0, 2.0]))
+    h2 = histogram_utils.DynamicHistogram(max_tensor_bins=64)
+    h2.add(np.array([-2.0, 0.5, 1.5, 3.0]))
+
+    merged = qsv_utils.merge_histograms(
+        {"histogram": h1.to_dict()}, {"histogram": h2.to_dict()}
+    )
+    assert merged is not None
+    merged_hist = histogram_utils.DynamicHistogram.from_dict(merged)
+    self.assertEqual(np.sum(merged_hist.counts), 8)
+    self.assertAlmostEqual(float(merged_hist.global_min[0]), -2.0)
+    self.assertAlmostEqual(float(merged_hist.global_max[0]), 3.0)
+
+  def test_merge_histograms_with_missing_histogram(self):
+    h1 = histogram_utils.DynamicHistogram(max_tensor_bins=32)
+    h1.add(np.array([1.0, 2.0]))
+    with_hist = {"min": np.array([1.0]), "histogram": h1.to_dict()}
+    without_hist = {"min": np.array([0.0])}
+
+    self.assertIs(
+        qsv_utils.merge_histograms(with_hist, without_hist),
+        with_hist["histogram"],
+    )
+    self.assertIs(
+        qsv_utils.merge_histograms(without_hist, with_hist),
+        with_hist["histogram"],
+    )
+    self.assertIsNone(qsv_utils.merge_histograms(without_hist, without_hist))
 
 
 if __name__ == "__main__":
