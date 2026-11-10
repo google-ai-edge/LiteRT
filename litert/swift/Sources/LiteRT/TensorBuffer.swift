@@ -15,7 +15,7 @@
 import Foundation
 import CLiteRT
 
-public enum TensorBufferType: Int32 {
+public enum TensorBufferType: Int32, Sendable {
   case unknown = 0
   case hostMemory = 1
   case ahwb = 2
@@ -50,6 +50,7 @@ public enum TensorBufferType: Int32 {
   case vulkanImageBuffer = 44
   case vulkanImageBufferFp16 = 45
   case vulkanBufferPacked = 46
+  case userCustomBuffer = 100
 
   public init(cType: LiteRtTensorBufferType) {
     switch cType {
@@ -86,6 +87,7 @@ public enum TensorBufferType: Int32 {
     case kLiteRtTensorBufferTypeVulkanImageBuffer: self = .vulkanImageBuffer
     case kLiteRtTensorBufferTypeVulkanImageBufferFp16: self = .vulkanImageBufferFp16
     case kLiteRtTensorBufferTypeVulkanBufferPacked: self = .vulkanBufferPacked
+    case kLiteRtTensorBufferTypeUserCustomBuffer: self = .userCustomBuffer
     default: self = .unknown
     }
   }
