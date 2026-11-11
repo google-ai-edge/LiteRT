@@ -15,7 +15,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>  // NOLINT
+#include <fstream>
 #include <string>
+#include <system_error>  // NOLINT
 
 #include "openvino/core/any.hpp"
 #include "openvino/frontend/tensorflow_lite/frontend.hpp"
@@ -27,6 +30,9 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/test/common.h"
 #include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
@@ -89,6 +95,57 @@ TEST(TestOVPlugin, CompileAddSubgraph) {
                                    op_data_size);
 
   plugin.Api()->destroy_compiled_result(compiled);
+}
+
+// Compiles add_simple.tflite with dump_ovir_dir set to |dump_dir|.
+void CompileAddWithDumpDir(const std::string& dump_dir) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto opts, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto& ov_opts, opts.GetOptions<intel_openvino::IntelOpenVinoOptions>());
+  ov_opts.SetDumpOvirDir(dump_dir);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(opts, env.GetHolder()));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin,
+      StaticallyLinkedPlugin::Create(LrtGetCompilerContext(), /*env=*/nullptr,
+                                     litert_opts.get()));
+  auto model = testing::LoadTestFileModel("add_simple.tflite");
+
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), "PTL", model.Get(), &compiled));
+  plugin.Api()->destroy_compiled_result(compiled);
+}
+
+TEST(TestOVPlugin, CompileWithDumpOvirDirWritesIr) {
+  const std::filesystem::path dump_dir =
+      std::filesystem::path(::testing::TempDir()) / "ov_ir_dump";
+  std::filesystem::remove_all(dump_dir);
+  ASSERT_TRUE(std::filesystem::create_directories(dump_dir));
+
+  CompileAddWithDumpDir(dump_dir.string());
+
+  const auto xml = dump_dir / "Partition_0.xml";
+  ASSERT_TRUE(std::filesystem::exists(xml)) << xml;
+  EXPECT_GT(std::filesystem::file_size(xml), 0u) << xml;
+  // add_simple has no constants, so the .bin may be empty.
+  EXPECT_TRUE(std::filesystem::exists(dump_dir / "Partition_0.bin"));
+  std::filesystem::remove_all(dump_dir);
+}
+
+TEST(TestOVPlugin, CompileWithUnusableDumpOvirDirStillSucceeds) {
+  // A directory path under a regular file can never be created.
+  const std::filesystem::path blocker =
+      std::filesystem::path(::testing::TempDir()) / "ov_ir_dump_blocker";
+  { std::ofstream(blocker) << "x"; }
+
+  CompileAddWithDumpDir((blocker / "sub").string());
+
+  std::error_code ec;
+  std::filesystem::remove(blocker, ec);
 }
 
 // TOPK_V2 with a constant K (input 1 carries a weights buffer) yields a static

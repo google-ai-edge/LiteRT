@@ -39,6 +39,9 @@ Flag                                | Type | Default   | Description
 :                                          :        :         : as a `GlobalGraph` container. Set to `false` to emit :
 :                                          :        :         : standalone per-partition bytecode with baked-in      :
 :                                          :        :         : weights.                                             :
+| `--intel_openvino_dump_ovir_dir`         | string | `""`    | Debug: dump each partition's OpenVINO IR             |
+:                                          :        :         : (`Partition_<idx>.xml/.bin`, with weights) into this :
+:                                          :        :         : directory. Empty disables dumping.                   :
 
 ### Per-Graph (Per-Partition) Overrides
 

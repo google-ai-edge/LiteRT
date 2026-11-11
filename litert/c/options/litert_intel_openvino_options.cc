@@ -41,6 +41,7 @@
 struct LrtIntelOpenVinoOptionsT {
   std::optional<LiteRtIntelOpenVinoPerformanceMode> performance_mode;
   std::optional<bool> enable_weight_sharing;
+  std::string dump_ovir_dir;
   // Store custom configuration options as key-value pairs
   std::vector<std::pair<std::string, std::string>> configs_map_options;
 
@@ -88,6 +89,10 @@ LiteRtStatus LrtGetOpaqueIntelOpenVinoOptionsData(
   if (options->enable_weight_sharing.has_value()) {
     LITERT_RETURN_IF_ERROR(encoder.EncodeBool("enable_weight_sharing",
                                               *options->enable_weight_sharing));
+  }
+  if (!options->dump_ovir_dir.empty()) {
+    absl::StrAppend(&toml_str, "dump_ovir_dir = \"", options->dump_ovir_dir,
+                    "\"\n");
   }
   for (const auto& pair : options->configs_map_options) {
     LITERT_RETURN_IF_ERROR(encoder.EncodeString(
@@ -144,6 +149,10 @@ LiteRtStatus LrtCreateIntelOpenVinoOptionsFromToml(
           }
           return LrtIntelOpenVinoOptionsSetEnableWeightSharing(local_options,
                                                                *parsed_bool);
+        } else if (key == "dump_ovir_dir") {
+          std::string dir(value);
+          return LrtIntelOpenVinoOptionsSetDumpOvirDir(local_options,
+                                                       dir.c_str());
         } else if (absl::StartsWith(key, "configs_map.")) {
           std::string config_key(key.substr(12));
           std::string config_value(value);
@@ -233,6 +242,25 @@ LiteRtStatus LrtIntelOpenVinoOptionsGetEnableWeightSharing(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *enable_weight_sharing = options->enable_weight_sharing.value_or(true);
+  return kLiteRtStatusOk;
+}
+
+// dump_ovir_dir --------------------------------------------------------------
+LiteRtStatus LrtIntelOpenVinoOptionsSetDumpOvirDir(
+    LrtIntelOpenVinoOptions options, const char* dump_ovir_dir) {
+  if (options == nullptr || dump_ovir_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->dump_ovir_dir = dump_ovir_dir;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtIntelOpenVinoOptionsGetDumpOvirDir(
+    LrtIntelOpenVinoOptions options, const char** dump_ovir_dir) {
+  if (options == nullptr || dump_ovir_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *dump_ovir_dir = options->dump_ovir_dir.c_str();
   return kLiteRtStatusOk;
 }
 

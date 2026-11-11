@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <ios>
 #include <limits>
 #include <map>
@@ -248,6 +249,18 @@ class CustomOStreamBuf : public std::streambuf {
   std::string target_;
   size_t pos_;
 };
+
+void DumpOvIr(const std::shared_ptr<ov::Model>& model,
+              const std::string& dump_dir, const std::string& graph_name) {
+  const std::string base = absl::StrCat(dump_dir, "/", graph_name);
+  try {
+    ov::serialize(model, base + ".xml", base + ".bin");
+    LITERT_LOG(LITERT_INFO, "Dumped OV IR to %s.xml", base.c_str());
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_ERROR, "Failed to dump OV IR to %s.xml: %s",
+               base.c_str(), e.what());
+  }
+}
 
 }  // namespace
 
@@ -521,9 +534,17 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         std::make_shared<ov::frontend::tensorflow_lite::FrontEnd>();
 
     bool enable_weight_sharing = true;
+    std::string dump_ovir_dir;
     if (const auto& options = compiler_plugin->GetIntelOpenVinoOptions();
         options.HasValue()) {
       enable_weight_sharing = options.Value().GetEnableWeightSharing();
+      dump_ovir_dir = options.Value().GetDumpOvirDir();
+    }
+    if (!dump_ovir_dir.empty()) {
+      LITERT_LOG(LITERT_WARNING,
+                 "OV IR dump enabled: full model weights will be written "
+                 "unencrypted to '%s'",
+                 dump_ovir_dir.c_str());
     }
 
     // Cross-partition weight sharing: all partitions' distinct weights are
@@ -658,6 +679,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
         // Run NPU-specific optimization passes.
         const auto optimize_result = context.OptimizeModel(ov_model);
+        // Dump before weight-sharing rewrites so the IR is self-contained.
+        if (!dump_ovir_dir.empty()) {
+          DumpOvIr(ov_model, dump_ovir_dir, graph_name);
+        }
         if (share_npu) {
           // Must run after OptimizeModel: it configures NPUW from what the
           // passes classified, which is knowable only once they have run.
