@@ -252,6 +252,7 @@ cc_library(
         "//tflite/kernels:cpu_backend_context",
         "//tflite/kernels:cpu_backend_gemm",
         "//tflite/kernels:cpu_backend_threadpool",
+        "//tflite/types:half",
         "@com_google_absl//absl/types:span",
         "@eigen_archive//:eigen3",
         "@gemmlowp//:fixedpoint",
