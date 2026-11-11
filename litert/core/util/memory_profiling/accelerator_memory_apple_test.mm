@@ -43,7 +43,7 @@
 #include "litert/core/util/memory_profiling/host_memory.h"
 #include "litert/core/util/memory_profiling/memory_snapshot.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 namespace {
 
 using ::testing::Contains;
@@ -362,4 +362,4 @@ TEST_F(AppleAcceleratorMemoryTest, Apple_MappedWeightsAreResidentOnTheGpuNotAttr
 }
 
 }  // namespace
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal

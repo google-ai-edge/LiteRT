@@ -26,7 +26,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 // A fake /proc/self directory, private to the current test: `fdinfo/<fd>`
 // files with the given contents and no `fd/` directory, so inode lookups
@@ -59,6 +59,6 @@ class FakeProcSelf {
   std::string dir_;
 };
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_FAKE_PROC_SELF_H_

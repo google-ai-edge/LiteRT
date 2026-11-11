@@ -42,7 +42,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 #include "litert/core/util/memory_profiling/accelerator_memory_nvml.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 namespace {
 
 using ::testing::Contains;
@@ -223,4 +223,4 @@ TEST(NvidiaAcceleratorMemoryTest, Nvidia_PlatformContractReportsVram) {
 }
 
 }  // namespace
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal

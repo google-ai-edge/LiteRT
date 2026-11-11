@@ -29,7 +29,7 @@
 #include "absl/functional/function_ref.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 // The fields of one fdinfo file: key -> value, both with surrounding
 // whitespace removed. Lines without a ':' are ignored; for a repeated key the
@@ -47,6 +47,6 @@ void ForEachFdinfo(
     absl::string_view proc_self_dir,
     absl::FunctionRef<void(absl::string_view fd_name, const FdinfoFields&)> fn);
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_FDINFO_H_

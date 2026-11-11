@@ -22,7 +22,7 @@
 
 #include <gtest/gtest.h>
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 namespace {
 
 constexpr uint64_t kMb = 1024 * 1024;
@@ -74,4 +74,4 @@ TEST(NvmlProcessBytesTest, DifferingEntriesTakeTheLarger) {
 }
 
 }  // namespace
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal

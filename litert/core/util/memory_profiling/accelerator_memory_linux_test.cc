@@ -25,7 +25,7 @@
 #include "litert/core/util/memory_profiling/fake_proc_self.h"
 #include "litert/core/util/memory_profiling/fdinfo.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 namespace {
 
 using ::testing::ElementsAre;
@@ -297,4 +297,4 @@ TEST(GetProcessAcceleratorMemoryUsageTest, Linux_ReportsSomethingConsistent) {
 }
 
 }  // namespace
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal

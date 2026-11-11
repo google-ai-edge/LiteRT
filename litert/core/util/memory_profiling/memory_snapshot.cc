@@ -31,7 +31,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 #include "litert/core/util/memory_profiling/host_memory.h"
 
-namespace litert::internal {
+namespace litert::profiling {
 
 namespace {
 
@@ -165,4 +165,4 @@ MemorySnapshot TakeAndLogHostMemorySnapshot(absl::string_view title) {
   return LogMemorySnapshot(TakeHostMemorySnapshot(), title);
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling

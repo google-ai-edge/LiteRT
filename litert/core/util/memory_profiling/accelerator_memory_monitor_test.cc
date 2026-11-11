@@ -29,7 +29,7 @@
 #include "absl/synchronization/notification.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 
-namespace litert::internal {
+namespace litert::profiling {
 namespace {
 
 using ::testing::ElementsAre;
@@ -270,4 +270,4 @@ TEST(AcceleratorMemoryMonitorTest, DestructorStopsRunningMonitor) {
 }
 
 }  // namespace
-}  // namespace litert::internal
+}  // namespace litert::profiling

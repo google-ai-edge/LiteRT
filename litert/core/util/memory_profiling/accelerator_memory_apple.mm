@@ -115,7 +115,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_apple.h"
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 namespace {
 
@@ -213,14 +213,20 @@ AcceleratorMemoryUsage AcceleratorMemoryUsageFromAppleSources(
   return usage;
 }
 
+}  // namespace litert::profiling::internal
+
+namespace litert::profiling {
+
 std::optional<AcceleratorMemoryUsage> GetProcessAcceleratorMemoryUsage() {
-  const std::optional<AppleAcceleratorLedger> ledger = ReadAppleAcceleratorLedger();
-  const std::vector<MetalDeviceMemory> devices = ReadMetalAllocatedMemory();
+  const std::optional<internal::AppleAcceleratorLedger> ledger =
+      internal::ReadAppleAcceleratorLedger();
+  const std::vector<internal::MetalDeviceMemory> devices = internal::ReadMetalAllocatedMemory();
   // With neither source (no Metal device, and a kernel without the ledger)
   // there is nothing to measure. With Metal alone, everything it reports is
   // treated as mapped weights; see the file comment.
   if (!ledger.has_value() && devices.empty()) return std::nullopt;
-  return AcceleratorMemoryUsageFromAppleSources(ledger.value_or(AppleAcceleratorLedger()), devices);
+  return internal::AcceleratorMemoryUsageFromAppleSources(
+      ledger.value_or(internal::AppleAcceleratorLedger()), devices);
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling
