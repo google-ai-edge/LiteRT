@@ -48,6 +48,16 @@ class, with the following exceptions:
 *   `algorithm_params` is an optional dictionary of algorithm-specific options
     on `weight_tensor_config` (or `activation_tensor_config`), such as:
 
+    *   `"centered"` (`bool`, default `true` when `num_bits` is `2`, `symmetric`
+        is `true`, and `dtype` is `"INT"`): Supported when `algorithm_key` is
+        `"min_max_uniform_quantize"`, `"OCTAV"`, `"HADAMARD_ROTATION"`, or
+        `"DECOMPOSED_HADAMARD_ROTATION"`. Quantizes 2-bit weights onto the
+        centered 4-level mid-riser grid `(q + 0.5) * scale` (`q` in
+        `{-2, -1, 0, 1}`, `zero_point = -0.5`), packing 4 weights per byte into
+        `TensorType.INT2` with `BlockwiseQuantization` (`block_shape` and
+        `FLOAT32` `_scales` / `_zero_points`). Set `"centered": false` to use
+        legacy `zero_point = 0` mid-tread 2-bit quantization.
+
     *   `"int2_in_int4"` (`bool`, default `false`): Supported when
         `algorithm_key` is `"OCTAV"` (or an algorithm that delegates weight
         quantization to OCTAV, such as `"HADAMARD_ROTATION"` or
