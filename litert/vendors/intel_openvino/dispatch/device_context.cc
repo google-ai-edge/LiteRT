@@ -25,12 +25,17 @@
 #include <string.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
 
+#include "openvino/core/shape.hpp"
+#include "openvino/core/type/element_type.hpp"
+#include "openvino/runtime/tensor.hpp"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_layout.h"
@@ -54,12 +59,6 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
 #include "litert/vendors/intel_openvino/utils.h"  // NOLINT
-
-#if LITERT_HAS_AHWB_SUPPORT || LITERT_HAS_DMABUF_SUPPORT
-#include <limits>
-
-#include "openvino/core/type/element_type.hpp"
-#endif
 
 litert::Expected<LiteRtDispatchDeviceContextT::Ptr>
 LiteRtDispatchDeviceContextT::Create(
@@ -166,11 +165,10 @@ litert::Expected<int> GetFdFromUnixHandle(AHardwareBuffer* ahwb) {
 
 namespace {
 
-#if LITERT_HAS_AHWB_SUPPORT || LITERT_HAS_DMABUF_SUPPORT
 // Builds an OpenVINO shape from an untrusted LiteRtRankedTensorType and
-// validates that the resulting tensor fits within the host buffer of
-// `buffer_size` bytes.
-litert::Expected<std::vector<int32_t>> BuildAndValidateShape(
+// validates that the resulting tensor fits within the buffer of `buffer_size`
+// bytes.
+litert::Expected<ov::Shape> BuildAndValidateShape(
     const LiteRtRankedTensorType& tensor_type, size_t element_bit_width,
     size_t buffer_size) {
   const auto& layout = tensor_type.layout;
@@ -187,7 +185,7 @@ litert::Expected<std::vector<int32_t>> BuildAndValidateShape(
                               "Unsupported/unknown tensor element type");
   }
 
-  std::vector<int32_t> ov_shape_vec(layout.rank);
+  std::vector<size_t> ov_shape_vec(layout.rank);
   // Number of elements implied by the declared shape, computed in 64-bit with
   // overflow checks before it is multiplied by the element size.
   uint64_t num_elements = 1;
@@ -198,7 +196,7 @@ litert::Expected<std::vector<int32_t>> BuildAndValidateShape(
           kLiteRtStatusErrorInvalidArgument,
           "Dynamic/negative/zero tensor dimensions are not supported");
     }
-    ov_shape_vec[i] = dim;
+    ov_shape_vec[i] = static_cast<size_t>(dim);
     if (num_elements != 0 &&
         static_cast<uint64_t>(dim) >
             std::numeric_limits<uint64_t>::max() / num_elements) {
@@ -223,9 +221,11 @@ litert::Expected<std::vector<int32_t>> BuildAndValidateShape(
         "Declared tensor shape exceeds the mapped buffer size");
   }
 
-  return ov_shape_vec;
+  // Use the out-of-line std::vector constructor rather than the inline
+  // iterator-range template, so that the shape's storage is allocated and freed
+  // inside OpenVINO across shared-library boundaries.
+  return ov::Shape(ov_shape_vec);
 }
-#endif  // LITERT_HAS_AHWB_SUPPORT || LITERT_HAS_DMABUF_SUPPORT
 
 }  // namespace
 
@@ -295,13 +295,12 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
                          ->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
       LITERT_ASSIGN_OR_RETURN(
-          std::vector<int32_t> ov_shape_vec,
+          ov::Shape ov_shape,
           BuildAndValidateShape(tensor_type, ov_element_type.bitwidth(),
                                 tensor_buffer_size));
 
-      auto remote_tensor = context.create_tensor(
-          ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
-          buffer_fd);
+      auto remote_tensor =
+          context.create_tensor(ov_element_type, ov_shape, buffer_fd);
       return InsertTensor(RegisteredTensor{.tensor = remote_tensor});
 
 #else
@@ -322,7 +321,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
                              "Failed to get LiteRT Tensor Buffer for AHWB"));
 
       LITERT_ASSIGN_OR_RETURN(
-          std::vector<int32_t> ov_shape_vec,
+          ov::Shape ov_shape,
           BuildAndValidateShape(tensor_type, ov_element_type.bitwidth(),
                                 tensor_buffer_size));
 
@@ -345,9 +344,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       CleanupAction cleanup([buffer, tensor_buffer_size]() {
         munmap(buffer, tensor_buffer_size);
       });
-      ov::Tensor ov_tensor(ov_element_type,
-                           ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
-                           buffer);
+      ov::Tensor ov_tensor(ov_element_type, ov_shape, buffer);
       return InsertTensor(
           RegisteredTensor{.tensor = ov_tensor, .cleanup = std::move(cleanup)});
 
@@ -356,6 +353,37 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
                                 "AHWB support is missing on this platform");
 #endif  // LITERT_HAS_AHWB_SUPPORT
       break;
+    }
+
+    case kLiteRtTensorBufferTypeHostMemory: {
+      // Plain host buffers (e.g. buffers the LiteRT-LM executors allocate
+      // on the CPU side and share between subgraphs) are bound zero-copy:
+      // wrap the caller's memory in an ov::Tensor instead of requiring an
+      // OpenVINO-allocated buffer.
+      ov::element::Type ov_element_type =
+          litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
+      void* host_addr = nullptr;
+      LITERT_RETURN_IF_ERROR(
+          runtime_context_->get_tensor_buffer_host_memory(tensor_buffer,
+                                                          &host_addr),
+          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                             "Failed to get HostMemory buffer"));
+      if (host_addr == nullptr) {
+        return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                  "HostMemory buffer address is null");
+      }
+      if (tensor_buffer_offset > tensor_buffer_size) {
+        return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                  "Tensor buffer offset exceeds buffer size");
+      }
+      LITERT_ASSIGN_OR_RETURN(
+          ov::Shape ov_shape,
+          BuildAndValidateShape(tensor_type, ov_element_type.bitwidth(),
+                                tensor_buffer_size - tensor_buffer_offset));
+      void* offset_host_addr =
+          static_cast<uint8_t*>(host_addr) + tensor_buffer_offset;
+      ov::Tensor host_tensor(ov_element_type, ov_shape, offset_host_addr);
+      return InsertTensor(RegisteredTensor{.tensor = host_tensor});
     }
 
     default:

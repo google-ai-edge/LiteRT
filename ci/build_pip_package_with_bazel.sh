@@ -108,6 +108,31 @@ case "${ARCH}" in
     ;;
 esac
 
+if [[ "${LITERT_PACKAGE_MODE:-wheel}" == "prebuilts" ]]; then
+  if [[ "${ARCH}" != "x86_64" || -n "${TENSORFLOW_TARGET}" ]]; then
+    echo "LITERT_PACKAGE_MODE=prebuilts only supports native linux x86_64 builds."
+    exit 1
+  fi
+  bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
+    ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} \
+    //litert/vendors/intel_openvino/compiler:intel_openvino_compiler_plugin_so \
+    //litert/vendors/intel_openvino/dispatch:dispatch_api_so
+
+  PREBUILTS_DIR="dist/prebuilts/linux_x86_64"
+  rm -fr ./dist
+  mkdir -p "${PREBUILTS_DIR}"
+  install -m 0755 \
+    bazel-bin/litert/vendors/intel_openvino/compiler/libLiteRtCompilerPlugin_IntelOpenvino.so \
+    bazel-bin/litert/vendors/intel_openvino/dispatch/libLiteRtDispatch_IntelOpenvino.so \
+    "${PREBUILTS_DIR}/"
+  # $ORIGIN covers standalone zip extraction where OpenVINO libs sit alongside
+  # the plugin; $ORIGIN/../../../../openvino/libs (see _INTEL_OV_WHEEL_RPATH in
+  # wheel_builder.py) covers installation inside ai_edge_litert_sdk_intel at
+  # <site-packages>/ai_edge_litert_sdk_intel/vendors/intel_openvino/{compiler,dispatch}/.
+  patchelf --set-rpath '$ORIGIN:$ORIGIN/../../../../openvino/libs' "${PREBUILTS_DIR}"/*.so
+  exit 0
+fi
+
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:litert_wheel
 

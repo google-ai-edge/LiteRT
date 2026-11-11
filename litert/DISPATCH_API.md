@@ -148,7 +148,7 @@ LiteRtDispatchDeviceContextSetExpectedFunctions(
 Informs the Dispatch API runtime that only the given functions (corresponding to
 `function_name` in `LiteRtDispatchInvocationContextCreate()`) will be used with
 `device_context`, for example when only a subset of the model signatures is
-selected via `Options::SetSignatures()`.
+selected via `RuntimeOptions::SetSelectedSignatures()`.
 
 If used, this function must be called after
 `LiteRtDispatchDeviceContextCreate()` and before any
