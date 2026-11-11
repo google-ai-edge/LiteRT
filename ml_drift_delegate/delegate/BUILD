@@ -1005,6 +1005,7 @@ cc_library(
         ":gpu_backend_webgpu_litert",
         ":precision",
         ":task_executor",
+        ":webgpu_dawn_loader",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_header",
@@ -1045,7 +1046,7 @@ cc_library(
         "@ml_drift//ml_drift/webgpu:webgpu_headers",
     ] + select({
         "//tools/cc_target_os:emscripten": [],
-        "//litert:litert_runtime_link_mode_dynamic": [
+        "//litert:litert_webgpu_dawn_dynamic_loader": [
             "@dawn//:dawn_headers",
         ],
         "@ml_drift//ml_drift/webgpu:ml_drift_use_dawn_proc": [
@@ -1261,6 +1262,7 @@ cc_library(
     hdrs = ["buffer_handler_webgpu.h"],
     deps = [
         ":buffer_handler_utils",
+        ":webgpu_dawn_loader",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_model_types",
@@ -1270,6 +1272,7 @@ cc_library(
         "//litert/runtime:tensor_buffer_lockstate",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
         "@dawn//:webgpu_headers",
         "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/webgpu:buffer",
