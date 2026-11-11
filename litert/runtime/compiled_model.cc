@@ -1858,8 +1858,8 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
       // reserialized instead of falling back to the original FlatBuffer.
       need_reserialization = true;
     } else if (pruned.Error().Status() == kLiteRtStatusErrorUnsupported) {
-      // Pruning validates references before mutation. For control flow it
-      // cannot remap, keep compiling the original graph as before.
+      // Pruning validates references before mutating. If they are invalid or
+      // cyclic, compile the unpruned graph.
       LITERT_LOG(LITERT_WARNING, "Skipping signature pruning: %s",
                  pruned.Error().Message().c_str());
     } else {
