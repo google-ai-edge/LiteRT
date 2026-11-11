@@ -715,6 +715,30 @@ cc_import_files(
 )
 
 cc_import_files(
+    name = "libQnnHtpV69Stub.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtpV69Stub.so",
+)
+
+cc_import_files(
+    name = "libQnnHtpV69Skel.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtpV69Skel.so",
+)
+
+cc_import_files(
+    name = "libQnnHtpV73Stub.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtpV73Stub.so",
+)
+
+cc_import_files(
+    name = "libQnnHtpV73Skel.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtpV73Skel.so",
+)
+
+cc_import_files(
     name = "libQnnHtpV75Stub.so",
     testonly = True,
     target = "@qairt//:libQnnHtpV75Stub.so",
@@ -736,6 +760,18 @@ cc_import_files(
     name = "libQnnHtpV79Skel.so",
     testonly = True,
     target = "@qairt//:libQnnHtpV79Skel.so",
+)
+
+cc_import_files(
+    name = "libQnnHtpV81Stub.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtpV81Stub.so",
+)
+
+cc_import_files(
+    name = "libQnnHtpV81Skel.so",
+    testonly = True,
+    target = "@qairt//:libQnnHtpV81Skel.so",
 )
 
 cc_import_files(

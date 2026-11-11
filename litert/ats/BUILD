@@ -454,7 +454,13 @@ QUALCOMM_RUN_DONT_REGISTER = [
     "Slice.*f32",  # Qualcomm QNN executes f32 Slice in FP16 precision, failing kExact byte comparison
 ]
 
-QUALCOMM_SOC_MODELS = {"sm8650": "SM8650"}
+QUALCOMM_SOC_MODELS = {
+    "sm8450": "SM8450",
+    "sm8550": "SM8550",
+    "sm8650": "SM8650",
+    "sm8750": "SM8750",
+    "sm8850": "SM8850",
+}
 
 QUALCOMM_EXTRA_FLAGS = [
     "--data_seed=42",
@@ -494,6 +500,81 @@ litert_define_ats(
     soc_models = QUALCOMM_SOC_MODELS,
 )
 
+QUALCOMM_MODELS_DONT_REGISTER = [
+    # Unsupported ops / graph_prepare lowering failures in Qualcomm QNN HTP:
+    "hf_all_minilm_l6_v2",
+    "hf_detr_resnet50_dc5",
+    "hf_mbart_large_50",
+    "whisper_tiny_decoder",
+    # Partially delegated models (contain ops not offloaded to QNN HTP under NPU-only execution):
+    "hf_deberta_large_mnli",
+    "hf_distilbert",
+    "hf_emotion_english_distilroberta_base",
+    "hf_mobilebert",
+    "hf_tinyclip_vit_8m_16_text_3m_yfcc15m",
+    "hf_tinyroberta_squad2",
+    "hf_tinyroberta_squad2_dynamic_batch",
+    "qai_hub_openai_clip",
+    "qai_hub_xlsr",
+    "snapml_StyleTransferNet",
+    "torchvision_convnext_tiny",
+    "torchvision_maxvit_t",
+    "torchvision_swin_tiny",
+    # Large models whose multi-SoC QNN HTP compilation exceeds the per-shard timeout:
+    "depth_anything_v2",
+    "hf_dpt_large",
+    "hf_hubert_large_ls960_ft",
+    "qai_hub_hf_wavlm_base_plus",
+    "torchvision_deeplabv3_resnet101",
+    "torchvision_video_resnet2plus1d_18",
+    "torchvision_video_resnetmc3_18",
+    "torchvision_video_swin3d_tiny",
+]
+
+litert_define_ats(
+    name = "qualcomm_models_compile_ats",
+    aot_shard_count = 48,
+    backend = "qualcomm",
+    do_register = ["ExtraModel"],
+    dont_register = QUALCOMM_MODELS_DONT_REGISTER,
+    extra_flags = QUALCOMM_EXTRA_FLAGS + [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    mode = "compile_only",
+    soc_models = QUALCOMM_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "qualcomm_models_jit_ats",
+    backend = "qualcomm",
+    do_register = ["ExtraModel"],
+    dont_register = QUALCOMM_MODELS_DONT_REGISTER,
+    extra_flags = QUALCOMM_EXTRA_FLAGS + [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    mode = "jit",
+    soc_models = QUALCOMM_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "qualcomm_models_aot_ats",
+    aot_shard_count = 48,
+    backend = "qualcomm",
+    do_register = ["ExtraModel"],
+    dont_register = QUALCOMM_MODELS_DONT_REGISTER,
+    extra_flags = QUALCOMM_EXTRA_FLAGS + [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    mode = "aot",
+    soc_models = QUALCOMM_SOC_MODELS,
+)
+
 # copybara:uncomment_begin(google-only)
 # GOOGLE_TENSOR_DONT_REGISTER = [
 #     "CompositeOp",
@@ -517,13 +598,44 @@ litert_define_ats(
 #     "Transpose.*[(][1-8]d_(i1|i4|i64|u64)<",  # Google Tensor Transpose does not support i1, i4, i64, or u64 types
 # ]
 #
-# GOOGLE_TENSOR_SOC_MODELS = {"g5": "Tensor_G5"}
+# GOOGLE_TENSOR_RUN_DONT_REGISTER = [
+#     "BinaryNoBroadcast.*tfl[.]div.*i32",  # Google Tensor NPU rounds integer div towards -inf (floor_div) instead of truncating towards zero
+#     "tfl[.]floor_div",  # Google Tensor NPU executes f32 floor_div in BF16 precision
+#     "tfl[.]pow",  # Google Tensor NPU executes f32 pow in BF16 precision
+#     "Comparison",  # Google Tensor NPU executes f32 comparisons in BF16 precision, rounding close inputs under kExact
+#     "tfl[.](exp|round|sin|cos)[{]",  # Google Tensor NPU executes f32 transcendental/rounding ops in BF16 precision
+#     "tfl[.]sum.*[34]d_f32",  # Google Tensor NPU executes 3D/4D f32 sum reduction in BF16 precision
+#     "Transpose.*[234]d_f32",  # Google Tensor NPU executes 2D-4D f32 Transpose in BF16 precision, failing kExact byte comparison
+#     "BatchMatmul.*f32",  # Google Tensor NPU executes f32 BatchMatmul in BF16 precision
+#     "SelectV2.*f32",  # Google Tensor NPU executes f32 SelectV2 in BF16 precision, failing kExact byte comparison
+#     "Slice.*f32",  # Google Tensor NPU executes f32 Slice in BF16 precision, failing kExact byte comparison
+#     "average_pool_2d.*padding=SAME",  # Google Tensor NPU SAME-padded AveragePool2d border divisor / BF16 rounding divergence
+# ]
+#
+# GOOGLE_TENSOR_JIT_DONT_REGISTER = [
+#     "tfl[.]reduce_(max|min).*4d_f32",  # Preinstalled on-device compiler executes 4D f32 reduce_max/min in BF16 precision under kExact
+#     "tfl[.]mean.*4d_f(16|32)",  # Preinstalled on-device compiler 4D Mean reduction precision divergence
+#     "BatchMatmul.*[23]d_f16,4d_f16",  # Preinstalled on-device compiler rank-asymmetric 4D FP16 BatchMatmul divergence
+#     "FullyConnected.*[23]d_i8",  # Preinstalled on-device compiler does not offload 2D/3D INT8 FullyConnected
+#     "LogSoftmax",  # Preinstalled on-device compiler does not offload LogSoftmax
+# ]
+#
+# GOOGLE_TENSOR_SOC_MODELS = {
+#     "g4": "Tensor_G4",
+#     "g5": "Tensor_G5",
+#     "g6": "Tensor_G6",
+# }
+#
+# GOOGLE_TENSOR_EXTRA_FLAGS = [
+#     "--data_seed=42",
+# ]
 #
 # litert_define_ats(
 #     name = "google_tensor_compile_ats",
 #     aot_shard_count = 50,
 #     backend = "google_tensor",
 #     dont_register = GOOGLE_TENSOR_DONT_REGISTER,
+#     extra_flags = GOOGLE_TENSOR_EXTRA_FLAGS,
 #     mode = "compile_only",
 #     soc_models = GOOGLE_TENSOR_SOC_MODELS,
 # )
@@ -531,7 +643,8 @@ litert_define_ats(
 # litert_define_ats(
 #     name = "google_tensor_jit_ats",
 #     backend = "google_tensor",
-#     dont_register = GOOGLE_TENSOR_DONT_REGISTER,
+#     dont_register = GOOGLE_TENSOR_DONT_REGISTER + GOOGLE_TENSOR_RUN_DONT_REGISTER + GOOGLE_TENSOR_JIT_DONT_REGISTER,
+#     extra_flags = GOOGLE_TENSOR_EXTRA_FLAGS,
 #     mode = "jit",
 #     soc_models = GOOGLE_TENSOR_SOC_MODELS,
 # )
@@ -540,7 +653,116 @@ litert_define_ats(
 #     name = "google_tensor_aot_ats",
 #     aot_shard_count = 50,
 #     backend = "google_tensor",
-#     dont_register = GOOGLE_TENSOR_DONT_REGISTER,
+#     dont_register = GOOGLE_TENSOR_DONT_REGISTER + GOOGLE_TENSOR_RUN_DONT_REGISTER,
+#     extra_flags = GOOGLE_TENSOR_EXTRA_FLAGS,
+#     mode = "aot",
+#     soc_models = GOOGLE_TENSOR_SOC_MODELS,
+# )
+#
+# GOOGLE_TENSOR_MODELS_DONT_REGISTER = [
+#     # Unsupported ops / dynamic shapes in Google Tensor compiler plugin:
+#     "hf_all_minilm_l6_v2",
+#     "whisper_tiny_decoder",
+#     # Exceed Tensor_G4 SRAM working-set capacity or compiler lowering invariants:
+#     "hf_dpt_large",
+#     "hf_segformer_512",
+#     "hf_tinyclip_vit_8m_16_text_3m_yfcc15m",
+#     "isnet",
+#     "qai_hub_hf_wavlm_base_plus",
+#     "qai_hub_openai_clip",
+#     "timm_regnety_120",
+#     "torchvision_deeplabv3_resnet101",
+#     "torchvision_deeplabv3_resnet50",
+#     "torchvision_video_resnet2plus1d_18",
+#     "torchvision_video_resnet3d_18",
+#     "torchvision_video_resnetmc3_18",
+#     "yolo11n",
+#     # Large models whose multi-SoC AOT compilation exceeds the per-shard timeout:
+#     "depth_anything_v2",
+#     "hf_deberta_large_mnli",
+#     "hf_detr_resnet50_dc5",
+#     "hf_hubert_large_ls960_ft",
+#     "hf_mbart_large_50",
+#     "hf_mms_300m",
+#     "hf_mobilebert",
+#     "hf_pyannote_segmentation_3_0",
+#     "hf_wav2vec2_base_960h_dynamic",
+#     "qai_hub_hf_whisper_base_decoder",
+#     "qai_hub_hf_whisper_base_encoder",
+#     "qai_hub_real_esrgan_x4plus",
+#     "timm_pvt_v2_b3",
+#     "torchvision_efficientnet_b7",
+#     "torchvision_maxvit_t",
+#     "torchvision_swin_tiny",
+#     "torchvision_video_swin3d_tiny",
+#     "u2net_full",
+#     "u2net_lite",
+# ]
+#
+# GOOGLE_TENSOR_MODELS_JIT_DONT_REGISTER = [
+#     # Partially delegated by the preinstalled on-device compiler on Pixel 11:
+#     "hf_distil_whisper_small_no_cache",
+#     "hf_distil_whisper_small_with_cache_init",
+#     "qai_hub_midas",
+#     "snapml_StyleTransferNet",
+#     "timm_resnest14d",
+#     "torchaudio_conformer",
+#     "torchaudio_wav2letter",
+#     "torchvision_deeplabv3_mobilenet_v3_large",
+#     "torchvision_vgg16",
+#     "whisper_tiny_encoder",
+#     "yolox_tiny",
+#     # BF16 precision divergence under the preinstalled on-device compiler on Pixel 11:
+#     "timm_efficientnet",
+#     "torchvision_densenet121",
+#     "torchvision_efficientnet_b0",
+#     "torchvision_efficientnet_b1",
+#     "torchvision_efficientnet_b3",
+#     "torchvision_efficientnet_b4",
+#     "torchvision_efficientnet_b5",
+#     "torchvision_efficientnet_b6",
+# ]
+#
+# litert_define_ats(
+#     name = "google_tensor_models_compile_ats",
+#     aot_shard_count = 48,
+#     backend = "google_tensor",
+#     do_register = ["ExtraModel"],
+#     dont_register = GOOGLE_TENSOR_MODELS_DONT_REGISTER,
+#     extra_flags = GOOGLE_TENSOR_EXTRA_FLAGS + [
+#         "--iters_per_test=10",
+#         "--max_ms_per_test=20000",
+#     ],
+#     extra_models = CLASSICAL_ALL_MODELS,
+#     mode = "compile_only",
+#     soc_models = GOOGLE_TENSOR_SOC_MODELS,
+# )
+#
+# litert_define_ats(
+#     name = "google_tensor_models_jit_ats",
+#     backend = "google_tensor",
+#     do_register = ["ExtraModel"],
+#     dont_register = GOOGLE_TENSOR_MODELS_DONT_REGISTER + GOOGLE_TENSOR_MODELS_JIT_DONT_REGISTER,
+#     extra_flags = GOOGLE_TENSOR_EXTRA_FLAGS + [
+#         "--iters_per_test=10",
+#         "--max_ms_per_test=20000",
+#     ],
+#     extra_models = CLASSICAL_ALL_MODELS,
+#     mode = "jit",
+#     soc_models = GOOGLE_TENSOR_SOC_MODELS,
+# )
+#
+# litert_define_ats(
+#     name = "google_tensor_models_aot_ats",
+#     aot_shard_count = 48,
+#     backend = "google_tensor",
+#     do_register = ["ExtraModel"],
+#     dont_register = GOOGLE_TENSOR_MODELS_DONT_REGISTER,
+#     extra_flags = GOOGLE_TENSOR_EXTRA_FLAGS + [
+#         "--iters_per_test=10",
+#         "--max_ms_per_test=20000",
+#     ],
+#     extra_models = CLASSICAL_ALL_MODELS,
 #     mode = "aot",
 #     soc_models = GOOGLE_TENSOR_SOC_MODELS,
 # )
@@ -589,7 +811,30 @@ MEDIATEK_DONT_REGISTER = [
     "qai_hub_real_esrgan_x4plus",
 ]
 
-MEDIATEK_SOC_MODELS = {"mt6989": "mt6989"}
+MEDIATEK_RUN_DONT_REGISTER = [
+    "Transpose.*f32",  # MediaTek NeuroPilot relaxes FP32 to FP16 on device, failing kExact byte comparison
+    "Slice.*f32",  # MediaTek NeuroPilot relaxes FP32 to FP16 on device, failing kExact byte comparison
+    "Softmax.*[234]d_f16",  # MediaTek APU FP16 Softmax numerical precision divergence
+]
+
+MEDIATEK_SOC_MODELS = {
+    "mt6877": "mt6877",
+    "mt6985": "mt6985",
+    "mt6989": "mt6989",
+    "mt6991": "mt6991",
+}
+
+MEDIATEK_SOC_DONT_REGISTER = {
+    "mt6877": [
+        "BatchMatmul",  # MediaTek MDLA 3.0 (mt6877) does not support FP16/FP32 BatchMatmul
+        "tfl[.]gelu",  # MediaTek MDLA 3.0 (mt6877) does not support Gelu
+        "Transpose.*u16",  # MediaTek MDLA 3.0 (mt6877) does not support UINT16 Transpose
+    ],
+    "mt6985": [
+        "FullyConnected.*i4",  # MediaTek APU 690 (mt6985) does not support INT4 weight unpacking
+        "Transpose.*u16",  # MediaTek APU 690 (mt6985) does not support UINT16 Transpose
+    ],
+}
 
 MEDIATEK_EXTRA_FLAGS = [
     "--data_seed=42",
@@ -605,15 +850,17 @@ litert_define_ats(
     dont_register = MEDIATEK_DONT_REGISTER,
     extra_flags = MEDIATEK_EXTRA_FLAGS,
     mode = "compile_only",
+    soc_dont_register = MEDIATEK_SOC_DONT_REGISTER,
     soc_models = MEDIATEK_SOC_MODELS,
 )
 
 litert_define_ats(
     name = "mediatek_jit_ats",
     backend = "mediatek",
-    dont_register = MEDIATEK_DONT_REGISTER,
+    dont_register = MEDIATEK_DONT_REGISTER + MEDIATEK_RUN_DONT_REGISTER,
     extra_flags = MEDIATEK_EXTRA_FLAGS,
     mode = "jit",
+    soc_dont_register = MEDIATEK_SOC_DONT_REGISTER,
     soc_models = MEDIATEK_SOC_MODELS,
 )
 
@@ -621,8 +868,121 @@ litert_define_ats(
     name = "mediatek_aot_ats",
     aot_shard_count = 32,
     backend = "mediatek",
-    dont_register = MEDIATEK_DONT_REGISTER,
+    dont_register = MEDIATEK_DONT_REGISTER + MEDIATEK_RUN_DONT_REGISTER,
     extra_flags = MEDIATEK_EXTRA_FLAGS,
+    mode = "aot",
+    soc_dont_register = MEDIATEK_SOC_DONT_REGISTER,
+    soc_models = MEDIATEK_SOC_MODELS,
+)
+
+MEDIATEK_MODELS_DONT_REGISTER = [
+    # Unsupported ops, Int64 constant legalization crashes, or compilation timeouts in NeuroPilot:
+    "depth_anything_v2",
+    "hf_all_minilm_l6_v2",
+    "hf_deberta_large_mnli",
+    "hf_detr_resnet50_dc5",
+    "hf_distilbert",
+    "hf_dpt_large",
+    "hf_emotion_english_distilroberta_base",
+    "hf_hubert_large_ls960_ft",
+    "hf_mbart_large_50",
+    "hf_mms_300m",
+    "hf_splade_v2_distil",
+    "hf_tinyclip_vit_8m_16_text_3m_yfcc15m",
+    "hf_tinyroberta_squad2_dynamic_batch",
+    "hf_wav2vec2_base_960h",
+    "hf_wav2vec2_base_960h_dynamic",
+    "hf_yolos_tiny",
+    "qai_hub_hf_wavlm_base_plus",
+    "qai_hub_hf_whisper_base_decoder",
+    "qai_hub_hf_whisper_base_encoder",
+    "qai_hub_openai_clip",
+    "qai_hub_xlsr",
+    "snapml_StyleTransferNet",
+    "timm_nfnet",
+    "timm_regnety_120",
+    "timm_resnest14d",
+    "torchaudio_wav2vec2_base",
+    "torchvision_deeplabv3_mobilenet_v3_large",
+    "torchvision_deeplabv3_resnet101",
+    "torchvision_deeplabv3_resnet50",
+    "torchvision_densenet121",
+    "torchvision_fcn_resnet50",
+    "torchvision_maxvit_t",
+    "torchvision_resnet18",
+    "torchvision_swin_tiny",
+    "torchvision_video_swin3d_tiny",
+    "torchvision_wide_resnet50_2",
+    "whisper_tiny_decoder",
+    "yolox_tiny",
+]
+
+MEDIATEK_MODELS_RUN_DONT_REGISTER = [
+    # Partially delegated models (contain ops not offloaded to MediaTek APU under NPU-only execution):
+    "hf_distil_whisper_small_no_cache",
+    "hf_distil_whisper_small_with_cache_init",
+    "hf_mobilevit_small_e2e",
+    "hf_pyannote_segmentation_3_0",
+    "hf_tinyroberta_squad2",
+    "qai_hub_real_esrgan_x4plus",
+    "timm_efficientformer_l1",
+    "timm_efficientformerv2_s0",
+    "torchaudio_deepspeech",
+    "torchaudio_wav2letter",
+    "torchvision_convnext_tiny",
+    # Models whose compiled DLA subgraphs fail on-device Neuron runtime preparation:
+    "hf_mobilebert",
+    "timm_pvt_v2_b1",
+    "timm_pvt_v2_b3",
+    "timm_vit_small_path16_224",
+    "torchaudio_conformer",
+    "torchvision_shufflenet_v2",
+    "torchvision_video_resnet2plus1d_18",
+    "torchvision_video_resnet3d_18",
+    "torchvision_video_resnetmc3_18",
+    "torchvision_vit_base_patch16",
+]
+
+litert_define_ats(
+    name = "mediatek_models_compile_ats",
+    aot_shard_count = 48,
+    backend = "mediatek",
+    do_register = ["ExtraModel"],
+    dont_register = MEDIATEK_MODELS_DONT_REGISTER,
+    extra_flags = MEDIATEK_EXTRA_FLAGS + [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    mode = "compile_only",
+    soc_models = MEDIATEK_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "mediatek_models_jit_ats",
+    backend = "mediatek",
+    do_register = ["ExtraModel"],
+    dont_register = MEDIATEK_MODELS_DONT_REGISTER + MEDIATEK_MODELS_RUN_DONT_REGISTER,
+    extra_flags = MEDIATEK_EXTRA_FLAGS + [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    mode = "jit",
+    soc_models = MEDIATEK_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "mediatek_models_aot_ats",
+    aot_shard_count = 48,
+    backend = "mediatek",
+    do_register = ["ExtraModel"],
+    dont_register = MEDIATEK_MODELS_DONT_REGISTER + MEDIATEK_MODELS_RUN_DONT_REGISTER,
+    extra_flags = MEDIATEK_EXTRA_FLAGS + [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     mode = "aot",
     soc_models = MEDIATEK_SOC_MODELS,
 )
@@ -702,7 +1062,10 @@ SAMSUNG_DONT_REGISTER = [
     "tfl.sign",
 ]
 
-SAMSUNG_SOC_MODELS = {"e9955": "E9955"}
+SAMSUNG_SOC_MODELS = {
+    "e9955": "E9955",
+    "e9965": "E9965",
+}
 
 litert_define_ats(
     name = "samsung_compile_ats",
@@ -734,6 +1097,64 @@ litert_define_ats(
     ],
     backend = "samsung",
     dont_register = SAMSUNG_DONT_REGISTER,
+    mode = "aot",
+    soc_models = SAMSUNG_SOC_MODELS,
+)
+
+SAMSUNG_MODELS_DONT_REGISTER = [
+    "whisper_tiny_decoder",
+    "hf_all_minilm_l6_v2",
+    "hf_mobilevit_small",
+]
+
+litert_define_ats(
+    name = "samsung_models_compile_ats",
+    aot_shard_count = 48,
+    aot_tags = [
+        "manual",
+        "notap",
+    ],
+    backend = "samsung",
+    do_register = ["ExtraModel"],
+    dont_register = SAMSUNG_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    mode = "compile_only",
+    soc_models = SAMSUNG_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "samsung_models_jit_ats",
+    backend = "samsung",
+    do_register = ["ExtraModel"],
+    dont_register = SAMSUNG_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    mode = "jit",
+    soc_models = SAMSUNG_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "samsung_models_aot_ats",
+    aot_shard_count = 48,
+    aot_tags = [
+        "manual",
+        "notap",
+    ],
+    backend = "samsung",
+    do_register = ["ExtraModel"],
+    dont_register = SAMSUNG_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     mode = "aot",
     soc_models = SAMSUNG_SOC_MODELS,
 )
@@ -2183,8 +2604,6 @@ cc_library(
 #     ],
 # )
 #
-# PIXEL_9_ATS_GUITAR_TARGETS = ANDROID_ATS_GUITAR_TARGETS
-#
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_pixel_9",
 #     # This flag is required by guitar::update_culprit_finding_config and shard_count.
@@ -2192,7 +2611,7 @@ cc_library(
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_pixel_9_mh_guitar_test(
-#                 targets = PIXEL_9_ATS_GUITAR_TARGETS,
+#                 targets = ANDROID_ATS_GUITAR_TARGETS,
 #             ),
 #         ],
 #     ),
@@ -2203,6 +2622,10 @@ cc_library(
 #         "notap",
 #     ],
 # )
+#
+# PIXEL_10_ATS_GUITAR_TARGETS = ANDROID_ATS_GUITAR_TARGETS + [
+#     ":google_tensor_g5_aot_ats_remote",
+# ]
 #
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_pixel_10",
@@ -2212,7 +2635,7 @@ cc_library(
 #         tests = [
 #             litert_pixel_mh_guitar_test(
 #                 dimension_model = "pixel 10",
-#                 targets = ANDROID_ATS_GUITAR_TARGETS,
+#                 targets = PIXEL_10_ATS_GUITAR_TARGETS,
 #             ),
 #         ],
 #     ),
@@ -2223,6 +2646,11 @@ cc_library(
 #         "notap",
 #     ],
 # )
+#
+# PIXEL_11_ATS_GUITAR_TARGETS = ANDROID_ATS_GUITAR_TARGETS + [
+#     ":google_tensor_g6_jit_ats_remote",
+#     ":google_tensor_g6_aot_ats_remote",
+# ]
 #
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_pixel_11",
@@ -2232,7 +2660,7 @@ cc_library(
 #         tests = [
 #             litert_pixel_mh_guitar_test(
 #                 dimension_model = "pixel 11",
-#                 targets = ANDROID_ATS_GUITAR_TARGETS,
+#                 targets = PIXEL_11_ATS_GUITAR_TARGETS,
 #             ),
 #         ],
 #     ),
@@ -2244,6 +2672,11 @@ cc_library(
 #     ],
 # )
 #
+# QUALCOMM_S22_ATS_GUITAR_TARGETS = ANDROID_ATS_GUITAR_TARGETS + [
+#     ":qualcomm_sm8450_jit_ats_remote",
+#     ":qualcomm_sm8450_aot_ats_remote",
+# ]
+#
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_qualcomm_s22",
 #     # This flag is required by guitar::update_culprit_finding_config and shard_count.
@@ -2252,7 +2685,7 @@ cc_library(
 #         tests = [
 #             litert_qualcomm_mh_guitar_test(
 #                 dimension_model = "regex:sm-s901u|sm-s901u1|sm-s906u1|sm-s908u1",
-#                 targets = ANDROID_ATS_GUITAR_TARGETS,
+#                 targets = QUALCOMM_S22_ATS_GUITAR_TARGETS,
 #             ),
 #         ],
 #     ),
@@ -2288,6 +2721,11 @@ cc_library(
 #     ],
 # )
 #
+# QUALCOMM_S26_ATS_GUITAR_TARGETS = ANDROID_ATS_GUITAR_TARGETS + [
+#     ":qualcomm_sm8850_jit_ats_remote",
+#     ":qualcomm_sm8850_aot_ats_remote",
+# ]
+#
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_qualcomm_s26",
 #     # This flag is required by guitar::update_culprit_finding_config and shard_count.
@@ -2296,7 +2734,7 @@ cc_library(
 #         tests = [
 #             litert_qualcomm_mh_guitar_test(
 #                 dimension_model = "regex:sm-s942u1|sm-s947u1|sm-s948u1",
-#                 targets = ANDROID_ATS_GUITAR_TARGETS,
+#                 targets = QUALCOMM_S26_ATS_GUITAR_TARGETS,
 #             ),
 #         ],
 #     ),
@@ -2328,7 +2766,9 @@ cc_library(
 #     ],
 # )
 #
-# MEDIATEK_MT6989_ATS_GUITAR_TARGETS = ANDROID_ATS_GUITAR_TARGETS
+# MEDIATEK_MT6989_ATS_GUITAR_TARGETS = ANDROID_ATS_GUITAR_TARGETS + [
+#     ":mediatek_mt6989_aot_ats_remote",
+# ]
 #
 # guitar_workflow_test(
 #     name = "litert_ats_guitar_mediatek_mt6989",
@@ -2478,8 +2918,6 @@ cc_library(
 #     ],
 # )
 #
-# PIXEL_9_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS
-#
 # guitar_workflow_test(
 #     name = "litert_ats_models_guitar_pixel_9",
 #     # This flag is required by guitar::update_culprit_finding_config and shard_count.
@@ -2488,7 +2926,7 @@ cc_library(
 #         tests = [
 #             litert_pixel_9_mh_guitar_test(
 #                 name = "model_tests",
-#                 targets = PIXEL_9_ATS_MODELS_GUITAR_TARGETS,
+#                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
 #             ),
 #             litert_perfgate_upload_guitar_test(
 #                 device = "pixel_9",
@@ -2503,6 +2941,10 @@ cc_library(
 #     ],
 # )
 #
+# PIXEL_10_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS + [
+#     ":google_tensor_models_g5_aot_ats_remote",
+# ]
+#
 # guitar_workflow_test(
 #     name = "litert_ats_models_guitar_pixel_10",
 #     # This flag is required by guitar::update_culprit_finding_config and shard_count.
@@ -2512,7 +2954,7 @@ cc_library(
 #             litert_pixel_mh_guitar_test(
 #                 name = "model_tests",
 #                 dimension_model = "pixel 10",
-#                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
+#                 targets = PIXEL_10_ATS_MODELS_GUITAR_TARGETS,
 #             ),
 #             litert_perfgate_upload_guitar_test(
 #                 device = "pixel_10",
@@ -2527,6 +2969,11 @@ cc_library(
 #     ],
 # )
 #
+# PIXEL_11_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS + [
+#     ":google_tensor_models_g6_jit_ats_remote",
+#     ":google_tensor_models_g6_aot_ats_remote",
+# ]
+#
 # guitar_workflow_test(
 #     name = "litert_ats_models_guitar_pixel_11",
 #     # This flag is required by guitar::update_culprit_finding_config and shard_count.
@@ -2536,7 +2983,7 @@ cc_library(
 #             litert_pixel_mh_guitar_test(
 #                 name = "model_tests",
 #                 dimension_model = "pixel 11",
-#                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
+#                 targets = PIXEL_11_ATS_MODELS_GUITAR_TARGETS,
 #             ),
 #             litert_perfgate_upload_guitar_test(
 #                 device = "pixel_11",
@@ -2551,6 +2998,11 @@ cc_library(
 #     ],
 # )
 #
+# QUALCOMM_S22_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS + [
+#     ":qualcomm_models_sm8450_jit_ats_remote",
+#     ":qualcomm_models_sm8450_aot_ats_remote",
+# ]
+#
 # guitar_workflow_test(
 #     name = "litert_ats_models_guitar_qualcomm_s22",
 #     # This flag is required by guitar::update_culprit_finding_config and shard_count.
@@ -2560,7 +3012,7 @@ cc_library(
 #             litert_qualcomm_mh_guitar_test(
 #                 name = "model_tests",
 #                 dimension_model = "regex:sm-s901u|sm-s901u1|sm-s906u1|sm-s908u1",
-#                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
+#                 targets = QUALCOMM_S22_ATS_MODELS_GUITAR_TARGETS,
 #             ),
 #             litert_perfgate_upload_guitar_test(
 #                 device = "qualcomm_s22",
@@ -2575,7 +3027,10 @@ cc_library(
 #     ],
 # )
 #
-# QUALCOMM_S24_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS
+# QUALCOMM_S24_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS + [
+#     ":qualcomm_models_sm8650_jit_ats_remote",
+#     ":qualcomm_models_sm8650_aot_ats_remote",
+# ]
 #
 # guitar_workflow_test(
 #     name = "litert_ats_models_guitar_qualcomm_s24",
@@ -2600,6 +3055,11 @@ cc_library(
 #     ],
 # )
 #
+# QUALCOMM_S26_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS + [
+#     ":qualcomm_models_sm8850_jit_ats_remote",
+#     ":qualcomm_models_sm8850_aot_ats_remote",
+# ]
+#
 # guitar_workflow_test(
 #     name = "litert_ats_models_guitar_qualcomm_s26",
 #     # This flag is required by guitar::update_culprit_finding_config and shard_count.
@@ -2609,7 +3069,7 @@ cc_library(
 #             litert_qualcomm_mh_guitar_test(
 #                 name = "model_tests",
 #                 dimension_model = "regex:sm-s942u1|sm-s947u1|sm-s948u1",
-#                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
+#                 targets = QUALCOMM_S26_ATS_MODELS_GUITAR_TARGETS,
 #             ),
 #             litert_perfgate_upload_guitar_test(
 #                 device = "qualcomm_s26",
@@ -2648,7 +3108,9 @@ cc_library(
 #     ],
 # )
 #
-# MEDIATEK_MT6989_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS
+# MEDIATEK_MT6989_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS + [
+#     ":mediatek_models_mt6989_aot_ats_remote",
+# ]
 #
 # guitar_workflow_test(
 #     name = "litert_ats_models_guitar_mediatek_mt6989",

@@ -15,21 +15,22 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_CONFIGURE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_CONFIGURE_H_
 
+#include <algorithm>
 #include <chrono>  // NOLINT
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <regex>  // NOLINT
-#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/flags/declare.h"  // from @com_google_absl
-#include "litert/cc/litert_environment.h"
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/cc/internal/litert_rng.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
@@ -196,6 +197,7 @@ class AtsConf {
         if (!list) {
           continue;
         }
+        std::sort(list->begin(), list->end());
         res.insert(res.end(), list->begin(), list->end());
       } else {
         res.push_back(model);

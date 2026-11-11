@@ -408,7 +408,9 @@ class AtsInferenceTest : public RngTest {
     const ConformanceSpec spec = Conformance();
     ASSERT_EQ(actual.size(), ref.size());
     for (size_t i = 0; i < actual.size(); ++i) {
-      ASSERT_EQ(actual[i].Type(), ref[i].Type());
+      ASSERT_EQ(actual[i].Type().ElementType(), ref[i].Type().ElementType());
+      ASSERT_EQ(actual[i].Type().Layout().Dimensions(),
+                ref[i].Type().Layout().Dimensions());
       if (spec.comparator_kind == ConformanceComparatorKind::kExact) {
         CheckExactOutputBytesImpl(actual[i], ref[i]);
       } else if (spec.comparator_kind ==

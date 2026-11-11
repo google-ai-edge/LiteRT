@@ -17,11 +17,12 @@ Macros to define pre-configured ATS test suites and run through the litert_devic
 """
 
 load("//litert/integration_test:litert_device.bzl", "hidden_test_tags", "litert_device_exec")
-load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "dispatch_device_rlocation", "host_rlocation", "is_gpu_backend", "is_npu_backend", "plugin_device_rlocation", "version_target_suffix")
+load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "dispatch_device_rlocation", "get_mh_device", "host_rlocation", "is_gpu_backend", "is_npu_backend", "plugin_device_rlocation", "version_target_suffix")
 load(
     "//litert/integration_test:litert_device_script.bzl",
     "litert_aot_compile",
     "litert_device_script",
+    "litert_pull_extra_models",
     # copybara:uncomment_begin(google-only)
     # "make_cns_pull_model_provider",
     # copybara:uncomment_end
@@ -206,8 +207,20 @@ def litert_define_ats(
             ]
 
         init_compile_args = ["--compile_mode=true"]
-        if resolved_models.host_paths:
-            init_compile_args.append("--extra_models={}".format(",".join(resolved_models.host_paths)))
+        compile_host_paths = list(resolved_models.host_paths)
+        compile_only_data = list(resolved_models.data)
+        if mode == "compile_only" and resolved_models.model_providers:
+            pulled_models_target = "{}_extra_models{}".format(name, version_suffix)
+            litert_pull_extra_models(
+                name = pulled_models_target,
+                model_providers = resolved_models.model_providers,
+                testonly = True,
+                tags = hidden_test_tags(),
+            )
+            compile_host_paths.append(host_rlocation(":" + pulled_models_target))
+            compile_only_data.append(":" + pulled_models_target)
+        if compile_host_paths:
+            init_compile_args.append("--extra_models={}".format(",".join(compile_host_paths)))
 
         compile_only_tags = [
             "noasan",
@@ -215,6 +228,14 @@ def litert_define_ats(
             "nosan",
             "notsan",
         ] + aot_tags
+        if resolved_models.cns_models:
+            compile_only_tags = compile_only_tags + [
+                "local",
+                "manual",
+                "no-testloasd",
+                "notap",
+                "requires-net:external",
+            ]
 
         soc_entries = soc_models.items() if soc_models else [(None, None)]
 
@@ -246,6 +267,7 @@ def litert_define_ats(
                     model_providers = resolved_models.model_providers,
                     extra_models = resolved_models.cns_models,
                     data = resolved_models.data,
+                    dimensions = get_mh_device(b, soc_key, platform = platform),
                 )
             elif mode == "compile_only":
                 compile_args = _make_ats_args(
@@ -264,8 +286,8 @@ def litert_define_ats(
                     exec_args = compile_args,
                     build_for_host = True,
                     build_for_device = False,
-                    model_providers = resolved_models.model_providers,
-                    data = resolved_models.data,
+                    model_providers = [],
+                    data = compile_only_data,
                     is_test = True,
                     shard_count = aot_shard_count,
                     size = "large",
@@ -274,8 +296,6 @@ def litert_define_ats(
             elif mode == "aot":
                 if not is_npu_backend(b):
                     fail("mode = 'aot' is only supported for NPU backends.")
-                if resolved_models.cns_models or resolved_models.model_providers:
-                    fail("mode = 'aot' only supports Bazel label targets in extra_models.")
                 compile_args = _make_ats_args(
                     init = init_compile_args,
                     backend = b,
@@ -291,6 +311,7 @@ def litert_define_ats(
                     backend_id = b,
                     exec_args = compile_args,
                     data = resolved_models.data,
+                    model_providers = resolved_models.model_providers,
                     shard_count = aot_shard_count if aot_shard_count != None else 1,
                     tags = hidden_test_tags() + compile_only_tags,
                 )
@@ -323,6 +344,7 @@ def litert_define_ats(
                     model_providers = resolved_models.model_providers,
                     extra_models = resolved_models.cns_models,
                     data = resolved_models.data + [":" + aot_models_target],
+                    dimensions = get_mh_device(b, soc_key, platform = platform),
                 )
 
         if mode == "compile_only" and soc_models:
