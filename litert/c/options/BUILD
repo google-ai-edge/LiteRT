@@ -44,6 +44,20 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "litert_arm_vulkan_ml_options_test",
+    srcs = ["litert_arm_vulkan_ml_options_test.cc"],
+    deps = [
+        ":litert_arm_vulkan_ml_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc/options:litert_arm_vulkan_ml_options",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "litert_cpu_options",
     srcs = ["litert_cpu_options.cc"],

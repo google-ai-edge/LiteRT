@@ -19,11 +19,15 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "absl/time/clock.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model.h"
 #include "litert/c/options/litert_arm_vulkan_ml_options.h"
 #include "litert/cc/internal/litert_context_wrapper.h"
 #include "litert/cc/internal/litert_extended_model.h"
@@ -33,7 +37,9 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_arm_vulkan_ml_options.h"
-#include "litert/vendors/arm_vulkan_ml/capabilities.h"
+#include "litert/vendors/arm_vulkan_ml/common/arm_vulkan_ml_jit_executable.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/partition.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
 
@@ -92,6 +98,15 @@ class LiteRtCompilerPluginT {
     return enable_just_in_time && *enable_just_in_time;
   }
 
+  bool IsDumpOpTimingsRequested() const {
+    if (!arm_vulkan_ml_options_) {
+      return false;
+    }
+    litert::Expected<bool> dump_op_timings =
+        arm_vulkan_ml_options_->GetDumpOpTimings();
+    return dump_op_timings && *dump_op_timings;
+  }
+
  private:
   litert::Expected<litert::arm_vulkan_ml::ArmVulkanMLOptions>
       arm_vulkan_ml_options_ = litert::Error(kLiteRtStatusErrorNotFound,
@@ -105,6 +120,8 @@ class LiteRtCompilerPluginT {
 struct LiteRtCompiledResultT {
   std::vector<std::vector<char>> byte_codes;
   std::vector<std::string> call_infos;
+  std::vector<std::unique_ptr<litert::arm_vulkan_ml::ArmVulkanMLJitExecutable>>
+      executables;
 };
 
 namespace {
@@ -144,7 +161,7 @@ LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
   if (compiler_plugin == nullptr || sdk_version == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *sdk_version = "";
+  *sdk_version = "TFSC-2.0.0/TOSA.001000.1-direct-v1";
   return kLiteRtStatusOk;
 }
 
@@ -152,7 +169,7 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     const LiteRtCompilerContext* compiler_context,
     LiteRtCompilerPlugin* compiler_plugin, LiteRtEnvironmentOptions env,
     LiteRtOptions options) {
-  (void)env;
+  static_cast<void>(env);
   if (compiler_plugin == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -201,31 +218,33 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
-  (void)soc_model;
+  static_cast<void>(soc_model);
   if (subgraph == nullptr || selected_ops == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   LITERT_RETURN_IF_ERROR(EnsureJitMode(compiler_plugin));
 
+  const bool dump_timings = compiler_plugin->IsDumpOpTimingsRequested();
+  const absl::Time partition_start_time =
+      dump_timings ? absl::Now() : absl::InfinitePast();
+  size_t total_ops = 0;
+  size_t accepted_ops = 0;
+
   litert::Subgraph graph(subgraph);
   for (const auto& op : graph.Ops()) {
-    if (!litert::arm_vulkan_ml::IsSupportedOpCode(op.Code())) {
-      continue;
-    }
-
-    bool is_supported = true;
-    for (const auto& input : op.Inputs()) {
-      is_supported &=
-          litert::arm_vulkan_ml::IsSupportedType(input.ElementType());
-    }
-    for (const auto& output : op.Outputs()) {
-      is_supported &=
-          litert::arm_vulkan_ml::IsSupportedType(output.ElementType());
-    }
-
-    if (is_supported) {
+    ++total_ops;
+    std::string reason;
+    if (litert::arm_vulkan_ml::AnalyzeOperation(op, reason)) {
+      ++accepted_ops;
       LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
     }
+  }
+  if (dump_timings) {
+    LITERT_LOG(LITERT_INFO,
+               "[ArmVulkanML][Timing][Partition] total=%.3f ms "
+               "(accepted=%zu/%zu ops)",
+               absl::ToDoubleMilliseconds(absl::Now() - partition_start_time),
+               accepted_ops, total_ops);
   }
   return kLiteRtStatusOk;
 }
@@ -233,13 +252,62 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
-  (void)soc_model;
+  static_cast<void>(soc_model);
   if (partitions == nullptr || compiled_result == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
+  *compiled_result = nullptr;
   LITERT_RETURN_IF_ERROR(EnsureJitMode(compiler_plugin));
 
+  const bool dump_timings = compiler_plugin->IsDumpOpTimingsRequested();
+  const absl::Time compile_start_time =
+      dump_timings ? absl::Now() : absl::InfinitePast();
+
   auto result = std::make_unique<LiteRtCompiledResultT>();
+  auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
+  if (model.NumSubgraphs() == 0) return kLiteRtStatusErrorInvalidArgument;
+  for (size_t i = 0; i < model.NumSubgraphs(); ++i) {
+    auto graph = model.Subgraph(i);
+    if (!graph) return graph.Error().Status();
+    std::string reason;
+    litert::arm_vulkan_ml::CompileTimingReport timing;
+    std::shared_ptr<const litert::arm_vulkan_ml::CompiledPartition> partition =
+        dump_timings
+            ? litert::arm_vulkan_ml::CompilePartition(*graph, reason, timing)
+            : litert::arm_vulkan_ml::CompilePartition(*graph, reason);
+    if (!partition) {
+      LITERT_LOG(LITERT_ERROR, "ArmVulkanML partition %zu: %s", i,
+                 reason.c_str());
+      return kLiteRtStatusErrorUnsupported;
+    }
+    if (dump_timings) {
+      LITERT_LOG(
+          LITERT_INFO,
+          "[ArmVulkanML][Timing][CompilePartition:%zu] total=%.3f ms | "
+          "ImportGraph=%.3f ms | OptimizeGraph=%.3f ms | "
+          "TfscEmitAndConstDedup=%.3f ms | SpirvWriteAndFinalize=%.3f ms "
+          "(spirv_bytes=%zu, constants=%zu, constant_bytes=%zu, reused=%zu)",
+          i, timing.total_ms, timing.import_ms, timing.optimize_ms,
+          timing.tfsc_emit_ms, timing.spirv_serialize_ms, timing.spirv_bytes,
+          timing.constant_count, timing.constant_bytes,
+          timing.reused_constants);
+    }
+    auto executable =
+        std::make_unique<litert::arm_vulkan_ml::ArmVulkanMLJitExecutable>();
+    executable->partition = std::move(partition);
+    result->executables.push_back(std::move(executable));
+    result->call_infos.push_back("arm_vulkan_ml_" + std::to_string(i));
+    // Core dispatch metadata expects a module index even in the JIT flow.
+    // The payload is the JIT handle, not a serialized VGF or SPIR-V bytecode.
+    result->byte_codes.emplace_back();
+  }
+  if (dump_timings) {
+    LITERT_LOG(LITERT_INFO,
+               "[ArmVulkanML][Timing][PluginCompileTotal] total=%.3f ms "
+               "(partitions=%zu)",
+               absl::ToDoubleMilliseconds(absl::Now() - compile_start_time),
+               model.NumSubgraphs());
+  }
   *compiled_result = result.release();
   return kLiteRtStatusOk;
 }
@@ -281,7 +349,8 @@ LiteRtStatus LiteRtGetCompiledResultHandle(LiteRtCompiledResult compiled_result,
       static_cast<size_t>(call_idx) >= compiled_result->call_infos.size()) {
     return kLiteRtStatusErrorIndexOOB;
   }
-  *handle = nullptr;
+  *handle = reinterpret_cast<LiteRtJitExecutable>(
+      compiled_result->executables[call_idx].get());
   return kLiteRtStatusOk;
 }
 
@@ -299,7 +368,7 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
   }
   *call_info = compiled_result->call_infos[call_idx].data();
   *call_info_size = compiled_result->call_infos[call_idx].size();
-  *byte_code_idx = 0;
+  *byte_code_idx = call_idx;
   return kLiteRtStatusOk;
 }
 
@@ -328,10 +397,10 @@ LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
     LiteRtApiVersion api_version, LiteRtCompilerPlugin compiler_plugin,
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name) {
-  (void)compiler_plugin;
-  (void)env;
-  (void)options;
-  (void)soc_model_name;
+  static_cast<void>(compiler_plugin);
+  static_cast<void>(env);
+  static_cast<void>(options);
+  static_cast<void>(soc_model_name);
   if (api_version.major != LITERT_API_VERSION_MAJOR) {
     return kLiteRtStatusErrorUnsupportedCompilerVersion;
   }

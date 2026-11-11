@@ -47,7 +47,10 @@ cc_library(
 
 cc_library(
     name = "tosa_for_spirv_codegen_tosa_headers",
-    hdrs = glob(["include/tosa/**/*.hpp"]),
+    hdrs = glob([
+        "include/spirv/**/*.hpp",
+        "include/tosa/**/*.hpp",
+    ]),
     include_prefix = "tosa-for-spirv-codegen",
     strip_include_prefix = "include",
 )
