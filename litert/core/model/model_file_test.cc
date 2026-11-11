@@ -1162,7 +1162,7 @@ TEST(ModelSerializeTest, TransferAndSerializeNoConstants) {
   auto& weights = tensor.Weights();
   weights.SetBufferManager(root.Buffers());
 
-  auto other = root.Yank({0});
+  LITERT_ASSERT_OK_AND_ASSIGN(auto other, root.Yank({0}));
   ASSERT_EQ(other.Subgraphs().size(), 1);
 
   auto serialized = SerializeModel(std::move(other));
@@ -1187,7 +1187,7 @@ TEST(ModelSerializeTest, TransferAndSerializeWithConstants) {
     SetWeightsFromOwnedBuffer(weights, std::move(buffer), context);
   }
 
-  auto other = root.Yank({0});
+  LITERT_ASSERT_OK_AND_ASSIGN(auto other, root.Yank({0}));
   ASSERT_EQ(other.Subgraphs().size(), 1);
 
   auto serialized = SerializeModel(std::move(other));
@@ -1212,7 +1212,7 @@ TEST(ModelSerializeTest, TransferAndSerializeOffsetBuffers) {
     SetWeightsFromOwnedBuffer(weights, std::move(buffer), context);
   }
 
-  auto other = root.Yank({0});
+  LITERT_ASSERT_OK_AND_ASSIGN(auto other, root.Yank({0}));
   ASSERT_EQ(other.Subgraphs().size(), 1);
 
   auto serialized = SerializeModel(std::move(other));
@@ -1865,6 +1865,20 @@ TEST(ModelLoadTest, ExternalBufferKeepsReferenceAndSerializesIt) {
   EXPECT_EQ(reloaded_context.get().external->id, kExternalBufferId);
 }
 
+TEST(ModelLoadTest, AcceptsOperatorCodesUpToMaxValue) {
+  static_assert(kLiteRtOpCodeMaxValue <= tflite::BuiltinOperator_MAX);
+  auto flatbuffer =
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kAddSimple));
+  auto tfl_model = flatbuffer->get()->Unpack();
+  tfl_model->operator_codes[0]->deprecated_builtin_code =
+      tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES;
+  tfl_model->operator_codes[0]->builtin_code =
+      static_cast<tflite::BuiltinOperator>(kLiteRtOpCodeMaxValue);
+  auto serialized = SerializeFlatbuffer(*tfl_model);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto loaded, LoadModelFromBuffer(serialized));
+  EXPECT_EQ(loaded->Subgraph(0).Op(0).OpCode(), kLiteRtOpCodeMaxValue);
+}
+
 struct InvalidOperatorCodeCase {
   std::string test_name;
   int8_t deprecated_code;
@@ -1889,12 +1903,18 @@ TEST_P(InvalidOperatorCodeLoadTest, RejectsInvalidOperatorCode) {
 
 INSTANTIATE_TEST_SUITE_P(
     InvalidOperatorCodes, InvalidOperatorCodeLoadTest,
-    Values(InvalidOperatorCodeCase{"OutOfRangeBuiltinCode",
-                                   static_cast<int8_t>(
-                                       tflite::BuiltinOperator_ADD),
-                                   static_cast<tflite::BuiltinOperator>(999)},
-           InvalidOperatorCodeCase{"NegativeMismatchedDeprecatedCode", -1,
-                                   tflite::BuiltinOperator_ADD}),
+    Values(
+        InvalidOperatorCodeCase{
+            "OutOfRangeBuiltinCode",
+            static_cast<int8_t>(tflite::BuiltinOperator_ADD),
+            static_cast<tflite::BuiltinOperator>(999)},
+        InvalidOperatorCodeCase{"NegativeMismatchedDeprecatedCode", -1,
+                                tflite::BuiltinOperator_ADD},
+        InvalidOperatorCodeCase{
+            "AboveLiteRtOpCodeMaxValue",
+            static_cast<int8_t>(
+                tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES),
+            static_cast<tflite::BuiltinOperator>(kLiteRtOpCodeMaxValue + 1)}),
     [](const ::testing::TestParamInfo<InvalidOperatorCodeCase>& info) {
       return info.param.test_name;
     });

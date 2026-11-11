@@ -165,6 +165,40 @@ TEST(TestCallDummyPlugin, CompileMultiSubgraphWithSharedWeights) {
   plugin.Api()->destroy_compiled_result(compiled);
 }
 
+TEST(TestCallDummyPlugin, ReportsRegionSubgraphCapability) {
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
+  ASSERT_TRUE(LITERT_ABI_HAS_API(plugin.Api(), /*req_major=*/1,
+                                 get_compiler_plugin_capabilities));
+
+  uint64_t capabilities = kLiteRtCompilerPluginCapabilityNone;
+  LITERT_ASSERT_OK(plugin.Api()->get_compiler_plugin_capabilities(
+      plugin.Get(), &capabilities));
+  EXPECT_NE(capabilities & kLiteRtCompilerPluginCapabilityRegionSubgraphs, 0);
+}
+
+TEST(TestCallDummyPlugin, CompileEmitsCallsForEntrySubgraphsOnly) {
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
+  auto model = testing::LoadTestFileModel("cst_multi_subgraph.tflite");
+  ASSERT_EQ(model.Get()->NumSubgraphs(), 2);
+  // Treat the second subgraph as a helper of the first.
+  model.Get()->SetNumEntrySubgraphs(1);
+
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
+      plugin.Get(), /*soc_model=*/nullptr, model.Get(), &compiled));
+
+  LiteRtParamIndex num_calls = 0;
+  LITERT_ASSERT_OK(
+      plugin.Api()->get_num_compiled_result_calls(compiled, &num_calls));
+  EXPECT_EQ(num_calls, 1);
+
+  plugin.Api()->destroy_compiled_result(compiled);
+}
+
 TEST(TestCallDummyPlugin, CompileAoT) {
   auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
   ASSERT_TRUE(plugin_or.HasValue());
@@ -222,12 +256,13 @@ TEST(TestCallDummyPlugin, CompileJitHandle) {
   plugin.Api()->destroy_compiled_result(result);
 }
 
-// Example V1.1 flat extension struct used to test minor version append-only
-// extensibility (abi_header at offset 0, new members appended at end).
+// Example V1.2 flat extension struct used to test minor version append-only
+// extensibility (abi_header at offset 0, new members appended after the
+// members of LiteRtCompilerPluginInterface_V1).
 typedef LiteRtStatus (*LiteRtCompilerPluginDummyT)(
     LiteRtCompilerPlugin compiler_plugin);
 
-typedef struct LiteRtCompilerPluginInterface_V1_1 {
+typedef struct LiteRtCompilerPluginInterface_V1_2 {
   LiteRtAbiHeader abi_header;
 
   LiteRtGetCompilerPluginVersionT get_compiler_plugin_version;
@@ -255,33 +290,42 @@ typedef struct LiteRtCompilerPluginInterface_V1_1 {
   LiteRtGetCompilerPluginSDKVersionT get_compiler_plugin_sdk_version;
   LiteRtGetCompiledResultHandleT get_compiled_result_handle;
   LiteRtCompilerPluginCheckCompilerCompatibilityT check_compiler_compatibility;
+  LiteRtGetCompilerPluginCapabilitiesT get_compiler_plugin_capabilities;
 
-  // Appended in V1.1:
+  // Appended in V1.2:
   LiteRtCompilerPluginDummyT dummy;
-} LiteRtCompilerPluginInterface_V1_1;
+} LiteRtCompilerPluginInterface_V1_2;
 
-TEST(TestCallDummyPlugin, VersionNegotiationV1_1) {
-  const LiteRtCompilerPluginInterface_V1_1* api_v1_1 = nullptr;
-  LiteRtApiVersion runtime_version = {1, 1, 0};
+// The extension must not overlap members of the official table.
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1_2,
+                       get_compiler_plugin_capabilities) ==
+              offsetof(LiteRtCompilerPluginInterface_V1,
+                       get_compiler_plugin_capabilities));
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1_2, dummy) ==
+              sizeof(LiteRtCompilerPluginInterface_V1));
+
+TEST(TestCallDummyPlugin, VersionNegotiationV1_2) {
+  const LiteRtCompilerPluginInterface_V1_2* api_v1_2 = nullptr;
+  LiteRtApiVersion runtime_version = {1, 2, 0};
   LiteRtStatus status = LiteRtCompilerPluginQueryInterface(
       kLiteRtCompilerPluginInterfaceBasic, runtime_version,
-      reinterpret_cast<LiteRtInterface*>(&api_v1_1));
+      reinterpret_cast<LiteRtInterface*>(&api_v1_2));
 
   ASSERT_EQ(status, kLiteRtStatusOk);
-  ASSERT_NE(api_v1_1, nullptr);
-  EXPECT_EQ(api_v1_1->abi_header.major_version, 1);
-  EXPECT_EQ(api_v1_1->abi_header.minor_version, 1);
-  EXPECT_TRUE(LITERT_ABI_HAS_API(api_v1_1, /*req_major=*/1, dummy));
+  ASSERT_NE(api_v1_2, nullptr);
+  EXPECT_EQ(api_v1_2->abi_header.major_version, 1);
+  EXPECT_EQ(api_v1_2->abi_header.minor_version, 2);
+  EXPECT_TRUE(LITERT_ABI_HAS_API(api_v1_2, /*req_major=*/1, dummy));
 
   LiteRtCompilerPlugin plugin = nullptr;
-  LITERT_ASSERT_OK(api_v1_1->create_compiler_plugin(
+  LITERT_ASSERT_OK(api_v1_2->create_compiler_plugin(
       LrtGetCompilerContext(), &plugin, /*env=*/nullptr, /*options=*/nullptr));
   ASSERT_NE(plugin, nullptr);
 
-  LITERT_ASSERT_OK(api_v1_1->dummy(plugin));
-  EXPECT_EQ(api_v1_1->dummy(nullptr), kLiteRtStatusErrorInvalidArgument);
+  LITERT_ASSERT_OK(api_v1_2->dummy(plugin));
+  EXPECT_EQ(api_v1_2->dummy(nullptr), kLiteRtStatusErrorInvalidArgument);
 
-  api_v1_1->destroy_compiler_plugin(plugin);
+  api_v1_2->destroy_compiler_plugin(plugin);
 }
 
 }  // namespace

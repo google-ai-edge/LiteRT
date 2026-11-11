@@ -49,6 +49,7 @@
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
 #include "litert/core/model/model_serialize.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "litert/core/options.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
@@ -1792,9 +1793,14 @@ TEST(PartitionTest, NestedNpuCallComposite) {
   ASSERT_EQ(ops.size(), 1);
   ASSERT_EQ(ops.front()->OpCode(), kLiteRtOpCodeTflCustom);
 
-  const auto& sgs = partition_result->second.Subgraphs();
-  ASSERT_EQ(sgs.size(), 1);
-  ASSERT_EQ(sgs.front()->Op(0).OpCode(), kLiteRtOpCodeShloComposite);
+  // The example plugin supports helper subgraphs, so the decomposition of the
+  // composite nested in the npu_call body is passed along as a helper.
+  const auto& partitions = partition_result->second;
+  ASSERT_EQ(partitions.NumSubgraphs(), 2);
+  ASSERT_EQ(partitions.NumEntrySubgraphs(), 1);
+  const auto& nested_composite = partitions.Subgraph(0).Op(0);
+  ASSERT_EQ(nested_composite.OpCode(), kLiteRtOpCodeShloComposite);
+  EXPECT_EQ(CompositeDecompositionIndex(nested_composite), 1);
 }
 
 TEST(PartitionModelTest, PartitionIsland) {
@@ -2316,14 +2322,14 @@ TEST_F(CompilerPluginFriend,
 }
 
 TEST(CompilerPluginTest, LoadPlugin_NewerVersionNegotiation) {
-  // Loads example_plugin.so (V1.1), verifies runtime (V1.0) successfully
-  // negotiates V1.1 ABI via forward compatibility.
+  // Loads example_plugin.so (V1.2), verifies runtime (V1.1) successfully
+  // negotiates V1.2 ABI via forward compatibility.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
                                  {GetLiteRtPath(kTestPluginSearchPath)}));
   EXPECT_EQ(plugin.NegotiatedVersion().major, 1);
-  EXPECT_EQ(plugin.NegotiatedVersion().minor, 1);
+  EXPECT_EQ(plugin.NegotiatedVersion().minor, 2);
   EXPECT_EQ(plugin.SocManufacturer(), kTestManufacturer);
   LITERT_ASSERT_OK_AND_ASSIGN(auto hw, plugin.SupportedHardware());
   EXPECT_EQ(hw, kLiteRtHwAcceleratorNpu);

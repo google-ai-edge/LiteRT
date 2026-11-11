@@ -42,13 +42,15 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/model/buffer_manager.h"
+#include "litert/core/model/subgraph_call_graph.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/converter/schema/schema_generated.h"
 
 using ::litert::internal::AttachInput;
 using ::litert::internal::AttachOutput;
 using ::litert::internal::DCE;
-using ::litert::internal::Drop;
+using ::litert::internal::MarkDead;
 using ::litert::internal::TflBuffer;
 using ::litert::internal::TflBufferPtr;
 using ::litert::internal::TflOpCode;
@@ -161,161 +163,150 @@ LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph) {
     retained_keys.insert(std::string(key));
   }
 
-  const auto subgraphs = model.Subgraphs();
-  absl::flat_hash_map<const LiteRtSubgraphT*, size_t> subgraph_indices;
-  subgraph_indices.reserve(subgraphs.size());
-  for (size_t i = 0; i < subgraphs.size(); ++i) {
-    subgraph_indices.emplace(subgraphs[i], i);
-  }
-
-  std::vector<bool> reachable(subgraphs.size(), false);
-  std::vector<size_t> pending;
+  std::vector<LiteRtSubgraph> roots;
   for (LiteRtSignature signature : model.Signatures()) {
-    if (!retained_keys.contains(signature->Key())) {
-      continue;
-    }
-    const auto it = subgraph_indices.find(&signature->GetSubgraph());
-    if (it == subgraph_indices.end()) {
-      return ::litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                  "Signature references an unknown subgraph");
-    }
-    if (!reachable[it->second]) {
-      reachable[it->second] = true;
-      pending.push_back(it->second);
+    if (retained_keys.contains(signature->Key())) {
+      roots.push_back(&signature->GetSubgraph());
     }
   }
 
-  while (!pending.empty()) {
-    const size_t subgraph_index = pending.back();
-    pending.pop_back();
-    for (LiteRtOp op : subgraphs[subgraph_index]->Ops()) {
-      if (litert::internal::GetTflOptions2(*op).type ==
-          tflite::BuiltinOptions2_StablehloCaseOptions) {
-        return ::litert::Unexpected(
-            kLiteRtStatusErrorUnsupported,
-            "Signature pruning does not support StableHLO case subgraph "
-            "references");
-      }
-      if (op->OpCode() == kLiteRtOpCodeShloComposite) {
-        const auto* options =
-            litert::internal::GetTflOptions2(*op).AsStableHLOCompositeOptions();
-        if (options == nullptr || options->decomposition_subgraph_index < -1) {
-          return ::litert::Unexpected(
-              kLiteRtStatusErrorInvalidArgument,
-              "StableHLO composite references an invalid subgraph");
-        }
-        if (options->decomposition_subgraph_index == -1) {
-          return ::litert::Unexpected(
-              kLiteRtStatusErrorUnsupported,
-              "Signature pruning does not support a StableHLO composite "
-              "without a decomposition subgraph");
-        }
-        if (static_cast<size_t>(options->decomposition_subgraph_index) >=
-            subgraphs.size()) {
-          return ::litert::Unexpected(
-              kLiteRtStatusErrorInvalidArgument,
-              "StableHLO composite references an invalid subgraph");
-        }
-        const size_t dependency =
-            static_cast<size_t>(options->decomposition_subgraph_index);
-        if (!reachable[dependency]) {
-          reachable[dependency] = true;
-          pending.push_back(dependency);
-        }
-        continue;
-      }
-
-      // TransferSubgraphTo currently remaps StableHLO composite references.
-      // Reject other control-flow references instead of silently producing a
-      // model with stale subgraph indices.
-      switch (op->OpCode()) {
-        case kLiteRtOpCodeTflIf:
-        case kLiteRtOpCodeTflWhile:
-        case kLiteRtOpCodeTflCallOnce:
-        case kLiteRtOpCodeShloCustomCall:
-        case kLiteRtOpCodeShloReduce:
-        case kLiteRtOpCodeShloScatter:
-        case kLiteRtOpCodeShloWindow:
-        case kLiteRtOpCodeShloSort:
-        case kLiteRtOpCodeShloWhile:
-          return ::litert::Unexpected(
-              kLiteRtStatusErrorUnsupported,
-              "Signature pruning does not support this subgraph reference "
-              "operator");
-        default:
-          break;
-      }
-    }
-  }
-
+  const size_t num_subgraphs = model.NumSubgraphs();
+  LITERT_RETURN_IF_ERROR(PruneUnreachableSubgraphs(model, roots));
   const size_t removed_signatures = model.RemoveSignaturesIf(
       [&retained_keys](const LiteRtSignatureT& signature) {
         return !retained_keys.contains(signature.Key());
       });
-  std::vector<size_t> removed_subgraph_indices;
-  for (size_t i = 0; i < reachable.size(); ++i) {
-    if (!reachable[i]) {
-      removed_subgraph_indices.push_back(i);
-    }
-  }
-  LiteRtSubgraphT::Alloc removed_subgraphs;
-  model.TransferSubgraphTo(removed_subgraphs,
-                           std::move(removed_subgraph_indices));
-  for (LiteRtSubgraph removed_subgraph : removed_subgraphs.Elements()) {
-    for (LiteRtOp removed_op : removed_subgraph->Ops()) {
-      model.RemoveAssetFromOp(removed_op);
-    }
-  }
   LITERT_LOG(LITERT_INFO,
              "Pruned model to %zu signatures and %zu reachable subgraphs "
              "(%zu signatures and %zu subgraphs removed)",
              model.Signatures().size(), model.Subgraphs().size(),
-             removed_signatures, removed_subgraphs.Size());
+             removed_signatures, num_subgraphs - model.Subgraphs().size());
   return {};
 }
 
-void LiteRtModelT::TransferSubgraphTo(LiteRtSubgraphT::Alloc& dest,
-                                      std::vector<size_t> indices) {
-  if (indices.empty()) {
-    return;
-  }
-  std::sort(indices.begin(), indices.end());
-  indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
-  std::vector<int> new_inds(subgraphs_.Size(), 0);
-  auto num_removed = 0;
-  auto i = indices.begin();
-  for (size_t j = 0; j < new_inds.size(); ++j) {
-    if (i != indices.end() && *i == j) {
-      ++num_removed;
-      // Keep track of removed sgs just for dcheck.
-      new_inds[j] = -1;
-      ++i;
-      continue;
+::litert::Expected<void> PruneUnreachableSubgraphs(
+    LiteRtModelT& model, absl::Span<const LiteRtSubgraph> roots) {
+  const auto subgraphs = model.Subgraphs();
+  std::vector<int32_t> root_indices;
+  root_indices.reserve(roots.size());
+  for (LiteRtSubgraph root : roots) {
+    const auto it = absl::c_find(subgraphs, root);
+    if (it == subgraphs.end()) {
+      return ::litert::Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
+          "Root subgraph for pruning is not owned by the model");
     }
-    new_inds[j] = j - num_removed;
+    root_indices.push_back(static_cast<int32_t>(it - subgraphs.begin()));
   }
 
-  ForEachIr(
-      this, [&](LiteRtSubgraph subgraph, int32_t subgraph_index, LiteRtOp op) {
-        if (op->OpCode() != kLiteRtOpCodeShloComposite) {
-          return;
-        }
-        auto opts = litert::internal::TakeTflOptions2(*op);
-        auto& decomp_ind =
-            opts.AsStableHLOCompositeOptions()->decomposition_subgraph_index;
-        // Skip update for decomposition ops that are already removed.
-        if (decomp_ind != -1) {
-          const auto new_ind = new_inds[decomp_ind];
-          decomp_ind = new_ind;
-        }
-        litert::internal::SetTflOptions2(*op, std::move(opts));
-      });
-  subgraphs_.TransferTo(dest, std::move(indices));
+  LITERT_ASSIGN_OR_RETURN(auto graph,
+                          litert::internal::BuildSubgraphCallGraph(model));
+  const auto reachable = litert::internal::SubgraphClosure(graph, root_indices);
+  std::vector<size_t> unreachable;
+  for (size_t i = 0; i < subgraphs.size(); ++i) {
+    if (!reachable.contains(static_cast<int32_t>(i))) {
+      unreachable.push_back(i);
+    }
+  }
+  if (unreachable.empty()) {
+    return {};
+  }
+  LITERT_RETURN_IF_ERROR(model.DiscardSubgraphs(std::move(unreachable)));
+  return {};
 }
 
-LiteRtModelT LiteRtModelT::Yank(std::vector<size_t> indices) {
+litert::Expected<std::vector<int32_t>> LiteRtModelT::MoveSubgraphsTo(
+    LiteRtSubgraphT::Alloc& dest, std::vector<size_t> ordered_indices,
+    bool remap_moved) {
+  const size_t num_subgraphs = subgraphs_.Size();
+  const size_t dest_size = dest.Size();
+
+  // Position of each subgraph in `dest` once moved, or -1 if it stays.
+  std::vector<int32_t> moved_map(num_subgraphs, -1);
+  std::vector<size_t> unique_indices;
+  unique_indices.reserve(ordered_indices.size());
+  for (const size_t index : ordered_indices) {
+    if (index >= num_subgraphs) {
+      return ::litert::Unexpected(
+          kLiteRtStatusErrorIndexOOB,
+          absl::StrCat("Cannot move subgraph ", index, " of ", num_subgraphs));
+    }
+    if (moved_map[index] == -1) {
+      moved_map[index] =
+          static_cast<int32_t>(dest_size + unique_indices.size());
+      unique_indices.push_back(index);
+    }
+  }
+
+  // Position of each remaining subgraph in this model, or -1 if it moves.
+  std::vector<int32_t> kept_map(num_subgraphs, -1);
+  int32_t next_kept = 0;
+  for (size_t i = 0; i < num_subgraphs; ++i) {
+    if (moved_map[i] == -1) {
+      kept_map[i] = next_kept++;
+    }
+  }
+
+  // Validate every reference before mutating anything.
+  const auto subgraphs = subgraphs_.Elements();
+  for (size_t i = 0; i < num_subgraphs; ++i) {
+    const bool is_moved = moved_map[i] != -1;
+    if (is_moved && !remap_moved) {
+      continue;
+    }
+    const auto& target_map = is_moved ? moved_map : kept_map;
+    for (const LiteRtOpT* op : subgraphs[i]->Ops()) {
+      for (const int32_t ref : litert::internal::SubgraphRefs(*op)) {
+        if (ref < 0 || static_cast<size_t>(ref) >= num_subgraphs) {
+          return ::litert::Unexpected(
+              kLiteRtStatusErrorUnsupported,
+              absl::StrCat("An op in subgraph ", i,
+                           " references invalid subgraph index ", ref));
+        }
+        if (target_map[ref] == -1) {
+          return ::litert::Unexpected(
+              kLiteRtStatusErrorInvalidGraphInvariant,
+              absl::StrCat("An op in ", is_moved ? "moved" : "remaining",
+                           " subgraph ", i, " references ",
+                           is_moved ? "remaining" : "moved", " subgraph ",
+                           ref));
+        }
+      }
+    }
+  }
+
+  for (size_t i = 0; i < num_subgraphs; ++i) {
+    const bool is_moved = moved_map[i] != -1;
+    if (is_moved && !remap_moved) {
+      continue;
+    }
+    const auto& target_map = is_moved ? moved_map : kept_map;
+    for (LiteRtOp op : subgraphs[i]->Ops()) {
+      LITERT_RETURN_IF_ERROR(
+          litert::internal::RemapSubgraphRefs(*op, target_map));
+    }
+  }
+
+  // `IrAllocator::TransferTo` appends in ascending index order; restore the
+  // requested order afterwards.
+  std::vector<LiteRtSubgraph> dest_order(dest.Elements().begin(),
+                                         dest.Elements().end());
+  for (const size_t index : unique_indices) {
+    dest_order.push_back(subgraphs[index]);
+  }
+  const bool already_ascending = absl::c_is_sorted(unique_indices);
+  subgraphs_.TransferTo(dest, std::move(unique_indices));
+  if (!already_ascending) {
+    dest.Reorder(dest_order);
+  }
+  return kept_map;
+}
+
+litert::Expected<LiteRtModelT> LiteRtModelT::Yank(
+    std::vector<size_t> ordered_indices) {
   LiteRtSubgraphT::Alloc yanked;
-  TransferSubgraphTo(yanked, std::move(indices));
+  LITERT_RETURN_IF_ERROR(MoveSubgraphsTo(yanked, std::move(ordered_indices),
+                                         /*remap_moved=*/true));
 
   LiteRtModelT res;
   res.TransferSubgraphsFrom(std::move(yanked));
@@ -335,6 +326,37 @@ LiteRtModelT LiteRtModelT::Yank(std::vector<size_t> indices) {
   res.buffer_manager_ = LiteRtModelT::StoredBufferManager(Buffers());
 
   return res;
+}
+
+litert::Expected<std::vector<int32_t>> LiteRtModelT::DiscardSubgraphs(
+    std::vector<size_t> indices) {
+  LiteRtSubgraphT::Alloc discarded;
+  LITERT_ASSIGN_OR_RETURN(
+      auto kept_map,
+      MoveSubgraphsTo(discarded, std::move(indices), /*remap_moved=*/false));
+  for (LiteRtSubgraph subgraph : discarded.Elements()) {
+    for (LiteRtOp op : subgraph->Ops()) {
+      RemoveAssetFromOp(op);
+    }
+  }
+  return kept_map;
+}
+
+litert::Expected<void> LiteRtModelT::AbsorbSubgraphsFrom(
+    LiteRtModelT& other, std::vector<size_t> ordered_indices) {
+  if (&other == this) {
+    return ::litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                "Cannot absorb subgraphs from the same model");
+  }
+  if (other.Buffers() != Buffers()) {
+    return ::litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        "Absorbed subgraphs must share the model's buffer manager");
+  }
+  LITERT_RETURN_IF_ERROR(other.MoveSubgraphsTo(
+      subgraphs_, std::move(ordered_indices), /*remap_moved=*/true));
+  other.SetNumEntrySubgraphs(std::nullopt);
+  return {};
 }
 
 LiteRtWeightsT& LiteRtBuilderT::BuildWeights(const uint8_t* data, size_t size,
@@ -420,7 +442,7 @@ void LiteRtBuilderT::EraseOp(LiteRtOp opToErase) {
 void LiteRtBuilderT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
   // Remove all ops that are marked for erases.
   for (LiteRtOp op : erases_) {
-    Drop(*op);
+    MarkDead(*op);
   }
 
   // Clear dead ops and tensors in user defined subgraph.
@@ -544,7 +566,9 @@ const LiteRtModelT::TflFlatbuffer& GetTflFlatbuffer(
 namespace {
 
 bool IsOpDead(const LiteRtOpT& op) {
-  return op.Inputs().empty() && op.Outputs().empty();
+  // An op without edges is dead unless it still references subgraphs, as a
+  // CALL_ONCE does. `MarkDead` clears those references.
+  return op.Inputs().empty() && op.Outputs().empty() && !HasSubgraphRefs(op);
 }
 
 bool IsTensorDead(const LiteRtTensorT& tensor) {
@@ -650,6 +674,58 @@ LiteRtOpT& MakeClone(LiteRtSubgraphT& parent, const LiteRtOpT& src) {
   auto& new_op = parent.EmplaceOp();
   CloneTo(src, new_op);
   return new_op;
+}
+
+litert::Expected<LiteRtSubgraph> CloneSubgraph(LiteRtModelT& model,
+                                               const LiteRtSubgraphT& src,
+                                               std::string name) {
+  auto& dest = model.EmplaceSubgraph();
+  dest.SetName(std::move(name));
+
+  // Clone each tensor exactly once. `MakeClone` is not used because it also
+  // clones the block-wise scale and zero-point tensors, which are themselves
+  // tensors of `src` and would be cloned twice.
+  absl::flat_hash_map<const LiteRtTensorT*, LiteRtTensor> tensor_map;
+  tensor_map.reserve(src.Tensors().size());
+  for (const LiteRtTensorT* src_tensor : src.Tensors()) {
+    auto& dest_tensor = dest.EmplaceTensor();
+    CloneTo(*src_tensor, dest_tensor);
+    tensor_map.emplace(src_tensor, &dest_tensor);
+  }
+  auto map_tensor =
+      [&tensor_map](const LiteRtTensorT* src_tensor) -> LiteRtTensor {
+    const auto it = tensor_map.find(src_tensor);
+    return it == tensor_map.end() ? nullptr : it->second;
+  };
+  for (LiteRtTensor dest_tensor : dest.Tensors()) {
+    if (dest_tensor->Qparams().first != kLiteRtQuantizationBlockWise) {
+      continue;
+    }
+    auto& block_wise = dest_tensor->Qparams().second.block_wise;
+    if (block_wise.scales != nullptr) {
+      block_wise.scales = map_tensor(block_wise.scales);
+    }
+    if (block_wise.zero_points != nullptr) {
+      block_wise.zero_points = map_tensor(block_wise.zero_points);
+    }
+  }
+
+  for (const LiteRtOpT* src_op : src.Ops()) {
+    auto& dest_op = MakeClone(dest, *src_op);
+    for (const LiteRtTensorT* input : src_op->Inputs()) {
+      AttachInput(map_tensor(input), dest_op);
+    }
+    for (const LiteRtTensorT* output : src_op->Outputs()) {
+      AttachOutput(map_tensor(output), dest_op);
+    }
+  }
+  for (const LiteRtTensorT* input : src.Inputs()) {
+    dest.Inputs().push_back(map_tensor(input));
+  }
+  for (const LiteRtTensorT* output : src.Outputs()) {
+    dest.Outputs().push_back(map_tensor(output));
+  }
+  return &dest;
 }
 
 std::optional<LiteRtParamIndex> FindInput(const LiteRtOpT& op,
@@ -801,6 +877,12 @@ void Drop(LiteRtOpT& litert_op) {
   while (!litert_op.Outputs().empty()) {
     DisconnectOutput(litert_op, 0);
   }
+}
+
+void MarkDead(LiteRtOpT& litert_op) {
+  Drop(litert_op);
+  ClearTflOptions(litert_op);
+  litert_op.ClearCustomOptions();
 }
 
 bool DCE(LiteRtSubgraphT& subgraph) {
