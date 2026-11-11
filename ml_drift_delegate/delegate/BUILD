@@ -1457,6 +1457,8 @@ cc_test(
         ":buffer_handler_utils",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_googletest//:gtest_main",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common/task:tensor_desc",
