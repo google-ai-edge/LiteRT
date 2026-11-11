@@ -127,7 +127,9 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     std::vector<::ml_drift::ValueId> src_ids(cache_inputs.size());
     for (size_t i = 0; i < cache_inputs.size(); ++i) {
       src_ids[i] = cache_inputs[i]->id;
-      cache_op_def.src_tensors[i] = cache_inputs[i]->desc;
+      ABSL_ASSIGN_OR_RETURN(auto src_handle,
+                            model_builder->GetTensor(src_ids[i]));
+      cache_op_def.src_tensors[i] = src_handle.tensor_desc;
     }
     std::vector<::ml_drift::ValueId> dst_ids(outputs.size());
     for (size_t i = 0; i < outputs.size(); ++i) {
@@ -146,7 +148,9 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
         if (auto it = replaced_tensors_.find(outputs[i]->id);
             it != replaced_tensors_.end()) {
           dst_ids[i] = it->second->id;
-          cache_op_def.dst_tensors[i] = it->second->desc;
+          ABSL_ASSIGN_OR_RETURN(auto dst_handle,
+                                model_builder->GetTensor(dst_ids[i]));
+          cache_op_def.dst_tensors[i] = dst_handle.tensor_desc;
         }
       }
     }

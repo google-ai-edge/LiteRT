@@ -36,6 +36,7 @@ cc_library(
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
         "@flatbuffers",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
@@ -317,7 +318,9 @@ cc_test(
         "//tflite/core/c:private_common",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:shape",
     ],
 )
 

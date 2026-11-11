@@ -68,6 +68,7 @@ cc_library(
         "@flatbuffers",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:shape",
     ],
 )
 
@@ -77,6 +78,7 @@ cc_library(
     hdrs = ["add_values_to_cache_kernel.h"],
     deps = [
         ":add_values_to_cache_parser",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
@@ -1044,6 +1046,8 @@ mld_kernel_test(
         ":add_values_to_cache_parser",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/types:span",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:precision",
