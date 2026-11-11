@@ -133,5 +133,37 @@ TEST_F(ConvertRoPETest, WithAttributes) {
   EXPECT_FLOAT_EQ(attr->min_timescale, 2.0f);
 }
 
+TEST_F(ConvertRoPETest, ConstantPositionEmitsConstProducer) {
+  auto delegate = std::unique_ptr<TfLiteDelegate, void (*)(TfLiteDelegate*)>(
+      CreateStubDelegate(), DeleteStubDelegate);
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinCustom);
+  model.SetCustomName("custom_call.rotary_positional_embedding");
+
+  model.AddInput(kTfLiteFloat32, {1, 8, 4, 64});
+  std::vector<int32_t> pos_vals = {1, 2, 3, 4};
+  std::vector<uint8_t> pos_bytes(
+      reinterpret_cast<const uint8_t*>(pos_vals.data()),
+      reinterpret_cast<const uint8_t*>(pos_vals.data() + pos_vals.size()));
+  model.AddConstInput(kTfLiteInt32, {1, 4}, pos_bytes);
+  model.AddOutput(kTfLiteFloat32, {1, 8, 4, 64});
+
+  auto interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate.get()), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate.get());
+  ASSERT_TRUE(ir_model);
+  ASSERT_EQ(ir_model->ops().size(), 2);
+  const auto* op = ir_model->op(0);
+  EXPECT_EQ(op->name, "rope");
+  ASSERT_EQ(op->inputs.size(), 2);
+  EXPECT_EQ(op->outputs.size(), 1);
+  const auto* const_op = ir_model->op(1);
+  EXPECT_EQ(const_op->name, ToString(::ml_drift::OperationType::kConstant));
+  ASSERT_EQ(const_op->outputs.size(), 1);
+  EXPECT_EQ(op->inputs[1], const_op->outputs[0]);
+  EXPECT_EQ(ir_model->inputs().size(), 1);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir
