@@ -860,13 +860,24 @@ Expected<PartitionResult> PartitionModel(
 
   // Add collect all the subgraphs to be compiled. These are the bodies of
   // outlined partitions or npu_calls.
+  //
+  // Yank moves the subgraphs in ascending index order, so in the new model the
+  // npu_call bodies (subgraphs of the input model) come first, by index, and
+  // the outlined partitions (appended to the model) follow. Dispatch op i must
+  // be the op whose body is subgraph i of the new model, so the npu_call
+  // dispatch ops are ordered by body index and put before the outlined ones.
+  std::sort(
+      npu_calls.begin(), npu_calls.end(),
+      [](const auto& a, const auto& b) { return a.subgraph < b.subgraph; });
+  std::vector<LiteRtOp> npu_dispatch_ops;
   std::vector<size_t> decomps_to_compile;
   for (auto& npu_call : npu_calls) {
-    auto* op = npu_call.op;
-    MakeDispatchOp(*op);
-    dispatch_ops.push_back(op);
+    MakeDispatchOp(*npu_call.op);
+    npu_dispatch_ops.push_back(npu_call.op);
     decomps_to_compile.push_back(npu_call.subgraph);
   }
+  dispatch_ops.insert(dispatch_ops.begin(), npu_dispatch_ops.begin(),
+                      npu_dispatch_ops.end());
   for (auto i = input_num_sgs; i < model.NumSubgraphs(); ++i) {
     // Outlined subgraphs are pushed to the back of the model.
     decomps_to_compile.push_back(i);
@@ -918,6 +929,14 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
 
   CompiledResult& stored_result = *compiled_result;
   bool has_jit_handles = false;
+
+  // Dispatch op i takes call i, so the counts must match.
+  if (auto num_calls = stored_result.NumCalls();
+      num_calls.HasValue() && *num_calls != dispatch_ops.size()) {
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 absl::StrCat("Plugin emitted ", *num_calls, " calls for ",
+                              dispatch_ops.size(), " dispatch ops"));
+  }
 
   // Register byte code buffers as external buffers. Map the byte code indices
   // to the registered buffer ids.
