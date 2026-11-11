@@ -34,6 +34,7 @@ limitations under the License.
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/kernels/padding.h"
+#include "tflite/types/half.h"
 #include "tflite/util.h"
 
 namespace tflite {
@@ -149,9 +150,11 @@ static TfLiteStatus AllocateTemporaryTensorsIfRequired(TfLiteContext* context,
                                                        TfLiteNode* node) {
   OpData* data = reinterpret_cast<OpData*>(node->user_data);
   int temporaries_count = 0;
+  data->has_col2im = false;
+  data->weights_are_transposed = false;
 
   // Allocate col2im tensor. Currently it's only used for optimized kernels.
-  if (kernel_type == kGenericOptimized) {
+  if (kernel_type == kGenericOptimized && weights_type != kTfLiteFloat16) {
     if (data->col2im_id == kTensorNotAllocated) {
       context->AddTensors(context, 1, &data->col2im_id);
     }
@@ -162,7 +165,7 @@ static TfLiteStatus AllocateTemporaryTensorsIfRequired(TfLiteContext* context,
 
   // Allocate transposed_weights tensor. Currently it's only used for optimized
   // float kernels.
-  if (kernel_type == kGenericOptimized) {
+  if (kernel_type == kGenericOptimized && weights_type != kTfLiteFloat16) {
     if (data->transposed_weights_id == kTensorNotAllocated) {
       context->AddTensors(context, 1, &data->transposed_weights_id);
     }
@@ -382,7 +385,12 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
                      input->type == kTfLiteInt8 || input->type == kTfLiteInt16);
   if (input->type == kTfLiteFloat32) {
     TF_LITE_ENSURE(context, weights->type == kTfLiteFloat32 ||
+                                weights->type == kTfLiteFloat16 ||
                                 weights->type == kTfLiteInt8);
+    if (weights->type == kTfLiteFloat16) {
+      TF_LITE_ENSURE(context, IsConstantOrPersistentTensor(weights));
+      TF_LITE_ENSURE(context, weights->sparsity == nullptr);
+    }
   } else if (input->type == kTfLiteUInt8) {
     TF_LITE_ENSURE_TYPES_EQ(context, weights->type, kTfLiteUInt8);
   } else if (input->type == kTfLiteInt8) {
@@ -646,6 +654,16 @@ void EvalFloat(TfLiteContext* context, const TfLiteTransposeConvParams* params,
   op_params.stride_height = params->stride_height;
   op_params.float_activation_min = output_activation_min;
   op_params.float_activation_max = output_activation_max;
+
+  if (weights->type == kTfLiteFloat16) {
+    reference_ops::TransposeConv(
+        op_params, GetTensorShape(input), GetTensorData<float>(input),
+        GetTensorShape(weights), GetTensorData<tflite::half>(weights),
+        GetTensorShape(bias), GetTensorData<float>(bias),
+        GetTensorShape(output), GetTensorData<float>(output),
+        GetTensorShape(col2im), GetTensorData<float>(col2im));
+    return;
+  }
 
   switch (kernel_type) {
     case kReference: {
