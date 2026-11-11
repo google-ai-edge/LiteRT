@@ -340,6 +340,17 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "cl_program_test",
+    srcs = ["cl_program_test.cc"],
+    deps = [
+        ":cl_program",
+        "//tflite/delegates/gpu/common:gpu_info",
+        "//tflite/delegates/gpu/common/task:compiler_options",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 flatbuffer_cc_library(
     name = "compiled_program_cache_cc_fbs",
     srcs = ["compiled_program_cache.fbs"],
