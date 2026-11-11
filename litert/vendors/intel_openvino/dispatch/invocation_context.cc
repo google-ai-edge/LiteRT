@@ -670,6 +670,7 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
       // it's supported, we use DMA-BUF.
       kLiteRtTensorBufferTypeDmaBuf,
       kLiteRtTensorBufferTypeAhwb,
+      kLiteRtTensorBufferTypeHostMemory,
   };
 
   int num_supported_tensor_buffer_types =
