@@ -242,6 +242,12 @@ struct ApplyPluginsResult {
   std::string success_message;
   std::string error_message;
 
+  // Set by ApplyPlugins() if a plugin failed after it had started modifying
+  // the model (transformation, partitioning and compilation work in place and
+  // are not undone). The model is then in an unspecified state and must not
+  // be used or serialized; callers should fall back to the original model.
+  bool model_invalidated = false;
+
   // Keep the compiler plugins (and their loaded DLLs) alive.
   // MUST be declared before compiled_results so it is destroyed
   // AFTER compiled_results!

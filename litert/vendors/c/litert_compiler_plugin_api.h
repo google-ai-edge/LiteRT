@@ -17,6 +17,7 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_compiler_context.h"
@@ -32,8 +33,24 @@ extern "C" {
 
 // Current ABI version for LiteRT Compiler Plugin interface tables.
 #define LITERT_COMPILER_PLUGIN_ABI_VERSION_MAJOR 1
-#define LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR 0
+#define LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR 1
 #define LITERT_COMPILER_PLUGIN_ABI_VERSION_PATCH 0
+
+/// Optional features a compiler plugin can report through
+/// `get_compiler_plugin_capabilities`.
+///
+/// @note Values are ABI stable bit flags.
+typedef enum {
+  kLiteRtCompilerPluginCapabilityNone = 0,
+  /// `compiler_plugin_compile` accepts a partitions model whose subgraphs
+  /// [num_entry_subgraphs, num_subgraphs) are private helper subgraphs (region
+  /// bodies, control-flow branches, composite decompositions) referenced by
+  /// ops in the entry subgraphs, and emits exactly one call per entry
+  /// subgraph. The entry count is available through
+  /// `LiteRtCompilerContext::get_num_entry_subgraphs`. Without this capability
+  /// every subgraph of the partitions model is an entry subgraph.
+  kLiteRtCompilerPluginCapabilityRegionSubgraphs = 1 << 0,
+} LiteRtCompilerPluginCapability;
 
 //
 // Api Interface
@@ -99,6 +116,10 @@ typedef LiteRtStatus (*LiteRtCompilerPluginCheckCompilerCompatibilityT)(
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name);
 
+/// Reports a bitwise OR of `LiteRtCompilerPluginCapability` values.
+typedef LiteRtStatus (*LiteRtGetCompilerPluginCapabilitiesT)(
+    LiteRtCompilerPlugin compiler_plugin, uint64_t* capabilities);
+
 /// Identifiers for the versioned compiler plugin interface tables queried via
 /// LiteRtCompilerPluginQueryInterface.
 ///
@@ -136,11 +157,23 @@ typedef struct LiteRtCompilerPluginInterface_V1 {
   LiteRtGetCompilerPluginSDKVersionT get_compiler_plugin_sdk_version;
   LiteRtGetCompiledResultHandleT get_compiled_result_handle;
   LiteRtCompilerPluginCheckCompilerCompatibilityT check_compiler_compatibility;
+
+  // Added in version 1.1.
+  LiteRtGetCompilerPluginCapabilitiesT get_compiler_plugin_capabilities;
 } LiteRtCompilerPluginInterface_V1;
 
 static_assert(
     offsetof(LiteRtCompilerPluginInterface_V1, abi_header) == 0,
     "LiteRtCompilerPluginInterface_V1 abi_header must be at offset 0");
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1,
+                       get_compiler_plugin_capabilities) == 152,
+              "LiteRtCompilerPluginInterface_V1 "
+              "get_compiler_plugin_capabilities offset mismatch");
+static_assert(sizeof(LiteRtCompilerPluginInterface_V1) == 160,
+              "LiteRtCompilerPluginInterface_V1 size mismatch");
+#endif  // __cplusplus
 
 typedef LiteRtStatus (*LiteRtCompilerPluginQueryInterfaceT)(
     LiteRtCompilerPluginInterfaceId interface_id,
