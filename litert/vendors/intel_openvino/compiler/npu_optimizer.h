@@ -108,7 +108,7 @@ class FuseSplitAttentionToSDPA : public ov::pass::MatcherPass {
 // SetFuseSplitAttentionToSDPA(true) is also set.
 class UnfoldGqaSequenceFold : public ov::pass::ModelPass {
  public:
-  OPENVINO_RTTI("UnfoldGqaSequenceFold");
+  OPENVINO_MODEL_PASS_RTTI("UnfoldGqaSequenceFold");
   bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 
@@ -120,7 +120,7 @@ class UnfoldGqaSequenceFold : public ov::pass::ModelPass {
 // fully-rewritten graph rather than an intermediate one.
 class SplitSharedConstants : public ov::pass::ModelPass {
  public:
-  OPENVINO_RTTI("SplitSharedConstants");
+  OPENVINO_MODEL_PASS_RTTI("SplitSharedConstants");
   bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
 // Rewrites Gemma4's dense Mixture-of-Experts block — where all N experts are
@@ -146,7 +146,7 @@ class SplitSharedConstants : public ov::pass::ModelPass {
 // (gates both strategies).
 class MoEGatherRewrite : public ov::pass::ModelPass {
  public:
-  OPENVINO_RTTI("MoEGatherRewrite");
+  OPENVINO_MODEL_PASS_RTTI("MoEGatherRewrite");
   bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 
   // Valid after run_on_model() has executed. Reports whether the MoE
