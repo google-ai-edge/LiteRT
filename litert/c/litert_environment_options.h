@@ -20,12 +20,16 @@
 
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_custom_tensor_buffer.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
 
+// Tags for LiteRtEnvironment options.
+//
+// NOTE: Enum values are part of the ABI-stable public C API. Do not renumber or
+// reorder existing entries; append new tags in contiguous ascending order
+// before `kLiteRtEnvOptionTagNull`.
 // LINT.IfChange(LiteRtEnvOptionTag)
 typedef enum {
   kLiteRtEnvOptionTagCompilerPluginLibraryDir = 0,
@@ -40,7 +44,8 @@ typedef enum {
   kLiteRtEnvOptionTagWebGpuQueue = 9,
   kLiteRtEnvOptionTagMetalDevice = 10,
   kLiteRtEnvOptionTagMetalCommandQueue = 11,
-  // WARNING: Vulkan support is experimental.
+  // WARNING: Vulkan support is experimental. See also external Vulkan handle
+  // tags (kLiteRtEnvOptionTagVulkanInstance, etc.) appended below.
   kLiteRtEnvOptionTagVulkanEnvironment = 12,
   // kLiteRtEnvOptionTagVulkanCommandPool = 13,  // Deprecated.
   kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy = 14,
@@ -79,6 +84,13 @@ typedef enum {
   /// \internal This is for internal use only. Populated by
   /// LiteRtCreateEnvironment with the runtime's LITERT_RUNTIME_ABI_VERSION.
   kLiteRtEnvOptionTagRuntimeAbiVersion = 31,
+  // External Vulkan handles for sharing a caller-managed Vulkan device/queue
+  // (WARNING: Vulkan support is experimental).
+  kLiteRtEnvOptionTagVulkanInstance = 32,
+  kLiteRtEnvOptionTagVulkanPhysicalDevice = 33,
+  kLiteRtEnvOptionTagVulkanDevice = 34,
+  kLiteRtEnvOptionTagVulkanQueue = 35,
+  kLiteRtEnvOptionTagVulkanQueueFamilyIndex = 36,
   // Internal use only. Virtual null tag for option that is not defined.
   kLiteRtEnvOptionTagNull = 255,
 } LiteRtEnvOptionTag;
