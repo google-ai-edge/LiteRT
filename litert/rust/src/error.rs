@@ -128,6 +128,27 @@ impl fmt::Debug for Error {
 
 impl std::error::Error for Error {}
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn statuses_after_generic_errors_keep_their_own_descriptions() {
+        assert_eq!(
+            Error::new(ErrorCause::CreateEnvironment, 500).litert_status_description(),
+            "kLiteRtStatusErrorFileIO"
+        );
+        assert_eq!(
+            Error::new(ErrorCause::CreateEnvironment, 100).litert_status_description(),
+            "kLiteRtStatusCancelled"
+        );
+        assert_eq!(
+            Error::new(ErrorCause::CreateEnvironment, 424242).litert_status_description(),
+            "???"
+        );
+    }
+}
+
 impl Error {
     pub(crate) fn new(cause: ErrorCause, status: LiteRtStatus) -> Self {
         Error { cause, litert_status: status }
@@ -164,7 +185,8 @@ impl Error {
             LiteRtStatus_kLiteRtStatusErrorWrongVersion => "kLiteRtStatusErrorWrongVersion",
             LiteRtStatus_kLiteRtStatusErrorUnknown => "kLiteRtStatusErrorUnknown",
             LiteRtStatus_kLiteRtStatusErrorAlreadyExists => "kLiteRtStatusErrorAlreadyExists",
-            LiteRtStatus_kLiteRtStatusErrorFailedPrecondition => {
+            #[cfg(any(litert_has_failed_precondition, bazel_bindgen))]
+            crate::bindings::LiteRtStatus_kLiteRtStatusErrorFailedPrecondition => {
                 "kLiteRtStatusErrorFailedPrecondition"
             }
 
