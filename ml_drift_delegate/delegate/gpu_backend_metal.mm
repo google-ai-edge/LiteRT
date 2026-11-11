@@ -17,6 +17,7 @@
 #import <Metal/Metal.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <memory>
 #include <utility>
 
@@ -191,20 +192,18 @@ absl::Status GpuBackendMetal::WaitForCompletion() {
     return absl::OkStatus();
   }
 
-  // We need only synchronization so volatile works better than atomic which reads from global
-  // memory each time.
-  __block volatile bool buffer_completed = false;
+  auto buffer_completed = std::make_shared<std::atomic<bool>>(false);
 
   if (wait_type_ == kGpuDelegateWaitTypeActive) {
     [command_buffer_ addCompletedHandler:^(id<MTLCommandBuffer>) {
-      buffer_completed = true;
+      buffer_completed->store(true, std::memory_order_release);
     }];
   }
 
   [command_buffer_ commit];
 
   if (wait_type_ == kGpuDelegateWaitTypeActive) {
-    while (!buffer_completed) {
+    while (!buffer_completed->load(std::memory_order_acquire)) {
       // Busy wait. Use local variable. Volatile uses RAM access all the time.
       for (volatile int i = 0; i < 100; ++i) {
       }
