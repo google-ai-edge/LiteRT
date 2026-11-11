@@ -119,6 +119,7 @@ cc_library(
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_metrics_header",
+        "//litert/c/internal:litert_abi_header",
         "//litert/c/internal:litert_logging",
         "//litert/c/internal:litert_logging_helper_with_runtime_context",
         "//litert/c/internal:litert_runtime_context_header",

@@ -14,6 +14,7 @@
 
 #include "litert/compiler/cc/litert_builder.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <initializer_list>
 #include <optional>
@@ -121,6 +122,60 @@ TEST(CcBuilderTest, TestBuildRankedTensor) {
   EXPECT_EQ(built_tensor_type->Layout().Rank(), 3);
   EXPECT_THAT(built_tensor_type->Layout().Dimensions(),
               ::testing::ElementsAreArray({1, 2, 3}));
+}
+
+TEST(CcBuilderTest, BuilderApisRequireFunctionsInContext) {
+  // Simulates an older compiler host whose context ends before the builder
+  // functions added in 1.1.0. The slots are still populated in memory.
+  LiteRtCompilerContext ctx = *LrtGetCompilerContext();
+  ctx.abi_header.struct_size =
+      static_cast<uint16_t>(offsetof(LiteRtCompilerContext, build_tensor));
+  ASSERT_NE(ctx.build_tensor, nullptr);
+
+  LiteRtBuilderT builder;
+  Builder cc_builder(&ctx, &builder);
+  LiteRtTensorT raw_tensor;
+  Tensor tensor(&ctx, &raw_tensor);
+  LiteRtOpT raw_op;
+  Op op(&ctx, &raw_op);
+  const uint8_t data[] = {1, 2, 3, 4};
+
+  auto built_tensor =
+      cc_builder.BuildTensor(MakeRankedTensorSpec<float>({1, 2}));
+  ASSERT_FALSE(built_tensor.HasValue());
+  EXPECT_EQ(built_tensor.Error().Status(), kLiteRtStatusErrorWrongVersion);
+
+  auto scalar = cc_builder.BuildScalar(kLiteRtElementTypeFloat32);
+  ASSERT_FALSE(scalar.HasValue());
+  EXPECT_EQ(scalar.Error().Status(), kLiteRtStatusErrorWrongVersion);
+
+  auto weights = cc_builder.BuildWeights(data, sizeof(data), tensor);
+  ASSERT_FALSE(weights.HasValue());
+  EXPECT_EQ(weights.Error().Status(), kLiteRtStatusErrorWrongVersion);
+
+  auto typed_weights = cc_builder.BuildWeights(
+      absl::Span<const uint8_t>(data, sizeof(data)), tensor);
+  ASSERT_FALSE(typed_weights.HasValue());
+  EXPECT_EQ(typed_weights.Error().Status(), kLiteRtStatusErrorWrongVersion);
+
+  auto built_op = cc_builder.BuildOp(kLiteRtOpCodeTflAdd, {}, {});
+  ASSERT_FALSE(built_op.HasValue());
+  EXPECT_EQ(built_op.Error().Status(), kLiteRtStatusErrorWrongVersion);
+
+  auto erased = cc_builder.EraseOp(op);
+  ASSERT_FALSE(erased.HasValue());
+  EXPECT_EQ(erased.Error().Status(), kLiteRtStatusErrorWrongVersion);
+}
+
+TEST(CcBuilderTest, BuildOpRequiresNonNullFunction) {
+  LiteRtCompilerContext ctx = *LrtGetCompilerContext();
+  ctx.build_op = nullptr;
+  LiteRtBuilderT builder;
+  Builder cc_builder(&ctx, &builder);
+
+  auto built_op = cc_builder.BuildOp(kLiteRtOpCodeTflAdd, {}, {});
+  ASSERT_FALSE(built_op.HasValue());
+  EXPECT_EQ(built_op.Error().Status(), kLiteRtStatusErrorWrongVersion);
 }
 
 TEST(CcBuilderTest, TestCloneTensor) {

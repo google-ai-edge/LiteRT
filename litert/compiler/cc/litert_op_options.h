@@ -915,7 +915,8 @@ struct SplitVOptions : public OpOptions {
   LiteRtStatus InitFromOp(const LiteRtCompilerContext* ctx,
                           LiteRtOp op) override {
     if (ctx == nullptr || ctx->get_op_code == nullptr ||
-        ctx->get_split_v_num_splits_option == nullptr) {
+        !LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            get_split_v_num_splits_option)) {
       return kLiteRtStatusErrorRuntimeFailure;
     }
     LiteRtOpCode opcode;
@@ -1064,14 +1065,22 @@ struct Conv3dTransposeOptions : public OpOptions {
   LiteRtStatus InitFromOp(const LiteRtCompilerContext* ctx,
                           LiteRtOp op) override {
     if (ctx == nullptr || ctx->get_op_code == nullptr ||
-        ctx->get_conv_3d_transpose_padding_option == nullptr ||
-        ctx->get_conv_3d_transpose_stride_w_option == nullptr ||
-        ctx->get_conv_3d_transpose_stride_h_option == nullptr ||
-        ctx->get_conv_3d_transpose_stride_d_option == nullptr ||
-        ctx->get_conv_3d_transpose_dilation_w_option == nullptr ||
-        ctx->get_conv_3d_transpose_dilation_h_option == nullptr ||
-        ctx->get_conv_3d_transpose_dilation_d_option == nullptr ||
-        ctx->get_conv_3d_transpose_fused_activation_option == nullptr) {
+        !LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            get_conv_3d_transpose_padding_option) ||
+        !LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            get_conv_3d_transpose_stride_w_option) ||
+        !LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            get_conv_3d_transpose_stride_h_option) ||
+        !LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            get_conv_3d_transpose_stride_d_option) ||
+        !LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            get_conv_3d_transpose_dilation_w_option) ||
+        !LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            get_conv_3d_transpose_dilation_h_option) ||
+        !LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            get_conv_3d_transpose_dilation_d_option) ||
+        !LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            get_conv_3d_transpose_fused_activation_option)) {
       return kLiteRtStatusErrorRuntimeFailure;
     }
     LiteRtOpCode opcode;
@@ -1734,10 +1743,14 @@ struct LocalResponseNormalizationOptions : public OpOptions {
   LiteRtStatus InitFromOp(const LiteRtCompilerContext* ctx,
                           LiteRtOp op) override {
     if (ctx == nullptr || ctx->get_op_code == nullptr ||
-        ctx->get_local_response_normalization_radius_option == nullptr ||
-        ctx->get_local_response_normalization_bias_option == nullptr ||
-        ctx->get_local_response_normalization_alpha_option == nullptr ||
-        ctx->get_local_response_normalization_beta_option == nullptr) {
+        !LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            get_local_response_normalization_radius_option) ||
+        !LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            get_local_response_normalization_bias_option) ||
+        !LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            get_local_response_normalization_alpha_option) ||
+        !LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                            get_local_response_normalization_beta_option)) {
       return kLiteRtStatusErrorRuntimeFailure;
     }
     LiteRtOpCode opcode;

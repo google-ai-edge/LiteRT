@@ -14,6 +14,9 @@
 
 #include "litert/compiler/cc/litert_op_options.h"
 
+#include <cstddef>
+#include <cstdint>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -115,6 +118,84 @@ TEST(CompilerOpOptionsTest, ReshapeOptionsFromModel) {
   ASSERT_TRUE(res);
   EXPECT_THAT(res->new_shape, ElementsAre(8, 128, 1));
   EXPECT_EQ(reshape_op, res->op);
+}
+
+// Returns a copy of the compiler context as an older host would pass it: the
+// declared struct size ends right before the member at `member_offset`, while
+// the function pointer slots beyond it are still populated in memory.
+LiteRtCompilerContext ContextTruncatedAt(size_t member_offset) {
+  LiteRtCompilerContext ctx = *LrtGetCompilerContext();
+  ctx.abi_header.struct_size = static_cast<uint16_t>(member_offset);
+  return ctx;
+}
+
+TEST(CompilerOpOptionsTest, SplitVOptionsRequireGetterInContext) {
+  LiteRtCompilerContext truncated_ctx = ContextTruncatedAt(
+      offsetof(LiteRtCompilerContext, get_split_v_num_splits_option));
+  ASSERT_NE(truncated_ctx.get_split_v_num_splits_option, nullptr);
+  SplitVOptions truncated_options;
+  EXPECT_EQ(truncated_options.InitFromOp(&truncated_ctx, /*op=*/nullptr),
+            kLiteRtStatusErrorRuntimeFailure);
+
+  LiteRtCompilerContext null_ctx = *LrtGetCompilerContext();
+  null_ctx.get_split_v_num_splits_option = nullptr;
+  SplitVOptions null_options;
+  EXPECT_EQ(null_options.InitFromOp(&null_ctx, /*op=*/nullptr),
+            kLiteRtStatusErrorRuntimeFailure);
+}
+
+TEST(CompilerOpOptionsTest, Conv3dTransposeOptionsRequireGettersInContext) {
+  const size_t kGetterOffsets[] = {
+      offsetof(LiteRtCompilerContext, get_conv_3d_transpose_padding_option),
+      offsetof(LiteRtCompilerContext, get_conv_3d_transpose_stride_w_option),
+      offsetof(LiteRtCompilerContext, get_conv_3d_transpose_stride_h_option),
+      offsetof(LiteRtCompilerContext, get_conv_3d_transpose_stride_d_option),
+      offsetof(LiteRtCompilerContext, get_conv_3d_transpose_dilation_w_option),
+      offsetof(LiteRtCompilerContext, get_conv_3d_transpose_dilation_h_option),
+      offsetof(LiteRtCompilerContext, get_conv_3d_transpose_dilation_d_option),
+      offsetof(LiteRtCompilerContext,
+               get_conv_3d_transpose_fused_activation_option),
+  };
+  for (size_t offset : kGetterOffsets) {
+    SCOPED_TRACE(offset);
+    LiteRtCompilerContext truncated_ctx = ContextTruncatedAt(offset);
+    Conv3dTransposeOptions options;
+    EXPECT_EQ(options.InitFromOp(&truncated_ctx, /*op=*/nullptr),
+              kLiteRtStatusErrorRuntimeFailure);
+  }
+
+  LiteRtCompilerContext null_ctx = *LrtGetCompilerContext();
+  null_ctx.get_conv_3d_transpose_padding_option = nullptr;
+  Conv3dTransposeOptions null_options;
+  EXPECT_EQ(null_options.InitFromOp(&null_ctx, /*op=*/nullptr),
+            kLiteRtStatusErrorRuntimeFailure);
+}
+
+TEST(CompilerOpOptionsTest,
+     LocalResponseNormalizationOptionsRequireGettersInContext) {
+  const size_t kGetterOffsets[] = {
+      offsetof(LiteRtCompilerContext,
+               get_local_response_normalization_radius_option),
+      offsetof(LiteRtCompilerContext,
+               get_local_response_normalization_bias_option),
+      offsetof(LiteRtCompilerContext,
+               get_local_response_normalization_alpha_option),
+      offsetof(LiteRtCompilerContext,
+               get_local_response_normalization_beta_option),
+  };
+  for (size_t offset : kGetterOffsets) {
+    SCOPED_TRACE(offset);
+    LiteRtCompilerContext truncated_ctx = ContextTruncatedAt(offset);
+    LocalResponseNormalizationOptions options;
+    EXPECT_EQ(options.InitFromOp(&truncated_ctx, /*op=*/nullptr),
+              kLiteRtStatusErrorRuntimeFailure);
+  }
+
+  LiteRtCompilerContext null_ctx = *LrtGetCompilerContext();
+  null_ctx.get_local_response_normalization_radius_option = nullptr;
+  LocalResponseNormalizationOptions null_options;
+  EXPECT_EQ(null_options.InitFromOp(&null_ctx, /*op=*/nullptr),
+            kLiteRtStatusErrorRuntimeFailure);
 }
 
 }  // namespace
