@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -364,7 +366,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   const auto* ctx = compiler_plugin->compiler_context;
   litert::compiler::Model model(ctx, partitions);
 
-  auto num_partitions = model.NumSubgraphs();
+  // Subgraphs after the entries are helpers referenced by ops in the entry
+  // subgraphs; they get no call of their own.
+  LITERT_ASSIGN_OR_RETURN(const size_t num_partitions,
+                          model.NumEntrySubgraphs());
   auto result = std::make_unique<LiteRtCompiledResultT>();
   result->per_op_data.resize(num_partitions);
 
@@ -417,6 +422,17 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetCompilerPluginCapabilities(
+    LiteRtCompilerPlugin compiler_plugin, uint64_t* capabilities) {
+  if (!compiler_plugin || !capabilities) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // Compilation emits one call per entry subgraph and ignores helper
+  // subgraphs, as required for kLiteRtCompilerPluginCapabilityRegionSubgraphs.
+  *capabilities = kLiteRtCompilerPluginCapabilityRegionSubgraphs;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtCompilerPluginDummy(LiteRtCompilerPlugin compiler_plugin) {
   if (!compiler_plugin) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -427,12 +443,16 @@ LiteRtStatus LiteRtCompilerPluginDummy(LiteRtCompilerPlugin compiler_plugin) {
 
 namespace {
 
-// Example V1.1 flat extension struct used to test minor version append-only
-// extensibility (abi_header at offset 0, new members appended at end).
+// Simulates a plugin built against a future minor version of the compiler
+// plugin ABI, one past LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR: the official
+// LiteRtCompilerPluginInterface_V1 members, in order, followed by a member
+// (`dummy`) that the current table does not have. Used to test minor version
+// append-only extensibility (abi_header at offset 0, new members appended at
+// the end).
 typedef LiteRtStatus (*LiteRtCompilerPluginDummyT)(
     LiteRtCompilerPlugin compiler_plugin);
 
-typedef struct LiteRtCompilerPluginInterface_V1_1 {
+typedef struct LiteRtCompilerPluginInterface_V1NextMinor {
   LiteRtAbiHeader abi_header;
 
   LiteRtGetCompilerPluginVersionT get_compiler_plugin_version;
@@ -460,45 +480,58 @@ typedef struct LiteRtCompilerPluginInterface_V1_1 {
   LiteRtGetCompilerPluginSDKVersionT get_compiler_plugin_sdk_version;
   LiteRtGetCompiledResultHandleT get_compiled_result_handle;
   LiteRtCompilerPluginCheckCompilerCompatibilityT check_compiler_compatibility;
+  LiteRtGetCompilerPluginCapabilitiesT get_compiler_plugin_capabilities;
 
-  // Appended in V1.1:
+  // Appended in the next minor version:
   LiteRtCompilerPluginDummyT dummy;
-} LiteRtCompilerPluginInterface_V1_1;
+} LiteRtCompilerPluginInterface_V1NextMinor;
 
-static const LiteRtCompilerPluginInterface_V1_1 ExamplePluginInterface_V1_1 = {
-    .abi_header =
-        {
-            .struct_size = sizeof(LiteRtCompilerPluginInterface_V1_1),
-            .major_version = 1,
-            .minor_version = 1,
-            .reserved = 0,
-        },
-    .get_compiler_plugin_version = LiteRtGetCompilerPluginVersion,
-    .get_compiler_plugin_soc_manufacturer =
-        LiteRtGetCompilerPluginSocManufacturer,
-    .create_compiler_plugin = LiteRtCreateCompilerPlugin,
-    .destroy_compiler_plugin = LiteRtDestroyCompilerPlugin,
-    .get_compiler_plugin_supported_hardware =
-        LiteRtGetCompilerPluginSupportedHardware,
-    .get_num_compiler_plugin_supported_models =
-        LiteRtGetNumCompilerPluginSupportedSocModels,
-    .get_compiler_plugin_supported_soc_model =
-        LiteRtGetCompilerPluginSupportedSocModel,
-    .compiler_plugin_partition = LiteRtCompilerPluginPartition,
-    .compiler_plugin_compile = LiteRtCompilerPluginCompile,
-    .destroy_compiled_result = LiteRtDestroyCompiledResult,
-    .get_compiled_result_byte_code = LiteRtGetCompiledResultByteCode,
-    .get_compiled_result_num_byte_code = LiteRtCompiledResultNumByteCodeModules,
-    .get_compiled_result_call_info = LiteRtGetCompiledResultCallInfo,
-    .get_num_compiled_result_calls = LiteRtGetNumCompiledResultCalls,
-    .register_all_transformations =
-        LiteRtCompilerPluginRegisterAllTransformations,
-    .get_compiler_plugin_sdk_version = LiteRtGetCompilerPluginSDKVersion,
-    .get_compiled_result_handle = LiteRtGetCompiledResultHandle,
-    .check_compiler_compatibility =
-        LiteRtCompilerPluginCheckCompilerCompatibility,
-    .dummy = LiteRtCompilerPluginDummy,
-};
+// The extension must not overlap members of the official table.
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1NextMinor,
+                       get_compiler_plugin_capabilities) ==
+              offsetof(LiteRtCompilerPluginInterface_V1,
+                       get_compiler_plugin_capabilities));
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1NextMinor, dummy) ==
+              sizeof(LiteRtCompilerPluginInterface_V1));
+
+static const LiteRtCompilerPluginInterface_V1NextMinor
+    ExamplePluginInterface_V1NextMinor = {
+        .abi_header =
+            {
+                .struct_size =
+                    sizeof(LiteRtCompilerPluginInterface_V1NextMinor),
+                .major_version = 1,
+                .minor_version = LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR + 1,
+                .reserved = 0,
+            },
+        .get_compiler_plugin_version = LiteRtGetCompilerPluginVersion,
+        .get_compiler_plugin_soc_manufacturer =
+            LiteRtGetCompilerPluginSocManufacturer,
+        .create_compiler_plugin = LiteRtCreateCompilerPlugin,
+        .destroy_compiler_plugin = LiteRtDestroyCompilerPlugin,
+        .get_compiler_plugin_supported_hardware =
+            LiteRtGetCompilerPluginSupportedHardware,
+        .get_num_compiler_plugin_supported_models =
+            LiteRtGetNumCompilerPluginSupportedSocModels,
+        .get_compiler_plugin_supported_soc_model =
+            LiteRtGetCompilerPluginSupportedSocModel,
+        .compiler_plugin_partition = LiteRtCompilerPluginPartition,
+        .compiler_plugin_compile = LiteRtCompilerPluginCompile,
+        .destroy_compiled_result = LiteRtDestroyCompiledResult,
+        .get_compiled_result_byte_code = LiteRtGetCompiledResultByteCode,
+        .get_compiled_result_num_byte_code =
+            LiteRtCompiledResultNumByteCodeModules,
+        .get_compiled_result_call_info = LiteRtGetCompiledResultCallInfo,
+        .get_num_compiled_result_calls = LiteRtGetNumCompiledResultCalls,
+        .register_all_transformations =
+            LiteRtCompilerPluginRegisterAllTransformations,
+        .get_compiler_plugin_sdk_version = LiteRtGetCompilerPluginSDKVersion,
+        .get_compiled_result_handle = LiteRtGetCompiledResultHandle,
+        .check_compiler_compatibility =
+            LiteRtCompilerPluginCheckCompilerCompatibility,
+        .get_compiler_plugin_capabilities = LiteRtGetCompilerPluginCapabilities,
+        .dummy = LiteRtCompilerPluginDummy,
+    };
 
 }  // namespace
 
@@ -510,7 +543,7 @@ extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginQueryInterface(
   }
   if (litert_runtime_version.major >= 1) {
     if (interface_id == kLiteRtCompilerPluginInterfaceBasic) {
-      *out_interface = &ExamplePluginInterface_V1_1;
+      *out_interface = &ExamplePluginInterface_V1NextMinor;
       return kLiteRtStatusOk;
     }
   }

@@ -486,6 +486,31 @@ class Model {
     return num_subgraphs;
   }
 
+  // Returns the number of leading subgraphs that are entry points. In the
+  // partitions model passed to a plugin's compile function, the remaining
+  // subgraphs are private helpers referenced by ops in the entry subgraphs.
+  //
+  // A compiler host older than `get_num_entry_subgraphs` (compiler context
+  // 1.6) never queries plugin capabilities and never passes helper subgraphs,
+  // so every subgraph is an entry there and this returns the subgraph count.
+  // This keeps a plugin built against newer headers working with an older
+  // host.
+  Expected<size_t> NumEntrySubgraphs() const {
+    LiteRtParamIndex num_entry_subgraphs = 0;
+    if (LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, get_num_entry_subgraphs)) {
+      LITERT_RETURN_IF_ERROR(
+          ctx_->get_num_entry_subgraphs(model_, &num_entry_subgraphs));
+      return num_entry_subgraphs;
+    }
+    if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, get_num_model_subgraphs)) {
+      return Unexpected(kLiteRtStatusErrorNotFound,
+                        "Compiler context cannot count model subgraphs");
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx_->get_num_model_subgraphs(model_, &num_entry_subgraphs));
+    return num_entry_subgraphs;
+  }
+
   Expected<class Subgraph> Subgraph(size_t index) const {
     LiteRtSubgraph subgraph;
     if (!ctx_ || !ctx_->get_model_subgraph) {

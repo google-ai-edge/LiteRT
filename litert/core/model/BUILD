@@ -29,9 +29,15 @@ package(
 
 cc_library_with_testonly_vis(
     name = "model",
-    srcs = ["model.cc"],
+    srcs = [
+        "model.cc",
+        "subgraph_call_graph.cc",
+        "subgraph_refs.cc",
+    ],
     hdrs = [
         "model.h",
+        "subgraph_call_graph.h",
+        "subgraph_refs.h",
         "//litert/c:litert_model_hdrs",
     ],
     vis = [
@@ -64,10 +70,46 @@ cc_library_with_testonly_vis(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "subgraph_refs_test",
+    srcs = ["subgraph_refs_test.cc"],
+    deps = [
+        ":model",
+        "@com_google_googletest//:gtest_main",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/core/util:flatbuffer_tools",
+        "//litert/test:matchers",
+        "//tflite/converter/schema:schema_fbs",
+        # copybara:uncomment_begin(google-only)
+        # "@com_google_absl//absl/container:flat_hash_set",
+        # "@com_google_absl//absl/strings",
+        # "@com_google_absl//absl/strings:string_view",
+        # "@flatbuffers//include/flatbuffers:reflection_generated",
+        # "//tflite/converter/schema:schema_reflection_data",
+        # copybara:uncomment_end
+    ],
+)
+
+cc_test(
+    name = "subgraph_call_graph_test",
+    srcs = ["subgraph_call_graph_test.cc"],
+    deps = [
+        ":model",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/core/util:flatbuffer_tools",
+        "//litert/test:matchers",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -81,6 +123,7 @@ cc_test(
         ":buffer_manager",
         ":model",
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/core:build_stamp",
@@ -1274,6 +1317,7 @@ cc_test(
     srcs = ["verifier_test.cc"],
     deps = [
         ":verifier",
+        "//litert/c:litert_op_code",
         "//tflite:stderr_reporter",
         "//tflite:version",
         "//tflite/schema:schema_fbs",

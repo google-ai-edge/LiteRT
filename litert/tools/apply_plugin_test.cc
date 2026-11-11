@@ -37,6 +37,8 @@
 #include "litert/core/build_stamp.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/subgraph_call_graph.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -61,6 +63,8 @@ absl::string_view TestModelPath(absl::string_view filename) {
   const auto model_path = ::litert::testing::GetTestFilePath(filename);
   ABSL_CHECK(model_path.size() < 512);
   model_path.copy(kModelPath, model_path.size(), 0);
+  // Terminate: a shorter path must not keep the tail of a longer earlier one.
+  kModelPath[model_path.size()] = '\0';
   return kModelPath;
 }
 
@@ -128,6 +132,47 @@ TEST(TestApplyPluginTool, TestPartition) {
   run->outs.push_back(out);
   LITERT_ASSERT_OK(ApplyPlugin(std::move(run)));
   EXPECT_FALSE(out.str().empty());
+}
+
+// Partitioning a model with a WHILE partitions main and the loop body, and
+// merges the partitions back with every subgraph reference still valid.
+TEST(TestApplyPluginTool, TestPartitionWhileModel) {
+  auto run =
+      MakeBaseRun(ApplyPluginRun::Cmd::PARTITION, "tfl_while_region.tflite");
+  std::stringstream out;
+  run->outs.push_back(out);
+  LITERT_ASSERT_OK(ApplyPlugin(std::move(run)));
+
+  std::string out_str = out.str();
+  BufferRef<uint8_t> serialized(out_str.data(), out_str.size());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto model, Model::CreateFromBuffer(serialized));
+  const LiteRtModelT& partitioned = *model.Get();
+  EXPECT_TRUE(litert::internal::BuildSubgraphCallGraph(partitioned).HasValue());
+  // The input has 3 subgraphs; the partitions are appended.
+  EXPECT_GT(partitioned.NumSubgraphs(), 3);
+  auto has_dispatch_op = [](const LiteRtSubgraphT& subgraph) {
+    for (const LiteRtOpT* op : subgraph.Ops()) {
+      if (op->OpCode() == kLiteRtOpCodeTflCustom) {
+        return true;
+      }
+    }
+    return false;
+  };
+  EXPECT_TRUE(has_dispatch_op(partitioned.Subgraph(0)));
+  bool found_while = false;
+  for (const LiteRtOpT* op : partitioned.Subgraph(0).Ops()) {
+    if (op->OpCode() == kLiteRtOpCodeTflWhile) {
+      found_while = true;
+      const auto refs = litert::internal::SubgraphRefs(*op);
+      ASSERT_EQ(refs.size(), 2);
+      EXPECT_THAT(partitioned.Subgraph(refs[0]).Name(),
+                  HasSubstr("while_cond"));
+      EXPECT_THAT(partitioned.Subgraph(refs[1]).Name(),
+                  HasSubstr("while_body"));
+      EXPECT_TRUE(has_dispatch_op(partitioned.Subgraph(refs[1])));
+    }
+  }
+  EXPECT_TRUE(found_while);
 }
 
 TEST(TestApplyPluginTool, TestCompileBadConfig) {
