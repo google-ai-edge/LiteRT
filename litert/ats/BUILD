@@ -661,8 +661,6 @@ litert_define_ats(
         "Slice",  # OpenCL Slice uses kExact byte comparison on FP16-rounded f32 buffers
         "RuntimeBmm.*(i4|i8)",  # GPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
         "MoeExperts",  # ML Drift GPU delegate expects tfl.custom "moe" with 4D OHWI weights rather than shlo.composite "odml.moe_experts"
-        # TODO(b/583887564): Enable once IrModel constant pos lowering lands.
-        "Rope.*_i32<[^>]+>_cst",
         # TODO(b/576190160): Investigate GroupNorm numerical mismatch and SIGKILL on Qualcomm S26 (Adreno 840).
         "GroupNorm",
         "hf_all_minilm_l6_v2",

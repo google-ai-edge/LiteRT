@@ -736,7 +736,6 @@ cc_library(
         ":convert_aux",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
-        "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/container:flat_hash_map",
         "@flatbuffers",
         "@ml_drift//ml_drift/common:ir_model",

@@ -658,20 +658,19 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
         // Run NPU-specific optimization passes.
         const auto optimize_result = context.OptimizeModel(ov_model);
-        if (share_npu) {
-          // Must run after OptimizeModel: it configures NPUW from what the
-          // passes classified, which is knowable only once they have run.
-          context.ConfigureForNpuWeightSharing(
-              npu_weights_bank_name, optimize_result.moe_is_multi_token_chunk);
-        }
 
-        ov::AnyMap configs = context.ConfigsMap();
         std::map<std::string, uint32_t> const_map;
         if (share_weights) {
           if (share_npu) {
-            // NPU: alias+tag weights (see AliasAndTagSharedConstants).
-            litert::openvino::AliasAndTagSharedConstants(
+            // NPU: alias+tag weights first, and enable NPUW weightless sharing
+            // only when this partition actually references shared pool weights.
+            const size_t aliased = litert::openvino::AliasAndTagSharedConstants(
                 ov_model, weight_bank, pool_offset_of, partition_idx);
+            if (aliased > 0) {
+              LITERT_RETURN_IF_ERROR(context.ConfigureForNpuWeightSharing(
+                  npu_weights_bank_name,
+                  optimize_result.moe_is_multi_token_chunk));
+            }
           } else {
             // GPU: convert weights to Parameters bound to the shared bank at
             // dispatch; const_map records friendly_name -> BufferId.
@@ -684,6 +683,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                        converted, partition_idx);
           }
         }
+        ov::AnyMap configs = context.ConfigsMap();
 
         // KV tier: the largest static extent over this partition's
         // "kv_cache" inputs, i.e. the context length it was compiled for.
