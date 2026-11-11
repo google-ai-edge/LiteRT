@@ -64,6 +64,9 @@ CUDA repository), the CLI in LiteRT-LM's. LiteRT-LM's `.bazelrc` builds on Windo
 and runfiles trees, which needs Developer Mode and `LongPathsEnabled` on the host (a build tool's
 path exceeds 260 characters); a host without them passes `--nowindows_enable_symlinks` and
 `--noenable_runfiles`, which works only with rules_python's manifest-only bootstrap patched in.
+The `litert_lm` step passes `--define=litert_webgpu_dawn_dynamic_loader=false`: LiteRT's Dawn
+rules link a dynamic loader by default, and LiteRT-LM's workspace also links its prebuilt Dawn
+into the CLI, so on Windows the linker finds every `wgpu` symbol twice (LNK2005) without it.
 
 Host preparation stays outside the runners: on the 5080 the owner's `benchmark` shell
 preparation (High Performance, ASUS Profile 1, the cleanup allowlist) before a formal batch;

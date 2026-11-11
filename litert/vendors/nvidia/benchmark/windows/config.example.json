@@ -90,7 +90,8 @@
         "opt",
         "--noenable_runfiles",
         "--jobs=8",
-        "--define=litert_nvidia_extensions=true"
+        "--define=litert_nvidia_extensions=true",
+        "--define=litert_webgpu_dawn_dynamic_loader=false"
       ]
     }
   }

@@ -15,6 +15,7 @@
 #ifndef LITERT_VENDORS_INTEL_OPENVINO_COMPILER_OPENVINO_COMPILE_CONTEXT_H_
 #define LITERT_VENDORS_INTEL_OPENVINO_COMPILER_OPENVINO_COMPILE_CONTEXT_H_
 
+#include <cstddef>
 #include <memory>
 #include <string>
 
@@ -49,12 +50,27 @@ class OpenVinoCompileContext {
   // parameters (e.g. NPU_PLATFORM).  |soc_model| may be nullptr.
   LiteRtStatus ConfigureForSoc(const char* soc_model);
 
+  // Classification info OptimizeModel()'s NPU passes produced, beyond the
+  // in-place graph mutation, that ConfigureForNpuWeightSharing() needs.
+  struct OptimizeModelResult {
+    // Whether a multi-token-chunk MoE layer was detected and rewritten (see
+    // NpuOptimizer::Result::moe_is_multi_token_chunk). Always false on
+    // non-NPU targets or when MoE gather is disabled.
+    bool moe_is_multi_token_chunk = false;
+    // How many SDPAs were decomposed for NPUW's Host Flash Attention (see
+    // NpuOptimizer::Result::num_sdpa_decomposed_for_hfa).
+    size_t num_sdpa_decomposed_for_hfa = 0;
+  };
+
   // Enables the NPUW weight-sharing compile knobs on an NPU target so that
   // export_model emits a WEIGHTLESS blob (constants referenced by
   // WeightlessCacheAttribute bin_offset rather than baked in).
-  // |moe_multi_token_chunk| (from OptimizeModel's result) selects the NPUW
-  // pipeline: a multi-token chunk gets the host-router/REP pipeline, a
-  // single-token one gets the plain CWAI pipeline.
+  // |result| (from OptimizeModel) selects the NPUW pipeline: a multi-token
+  // MoE chunk gets the host-router/REP pipeline with attention and MoE
+  // isolated, a graph with SDPAs decomposed for HFA gets REP with attention
+  // isolated, anything else gets the plain CWAI pipeline. A graph with SDPAs
+  // decomposed for HFA also gets NPUW_ATTN=HFA unless NPUW_ATTN was set
+  // explicitly.
   //
   // |weights_bank_name| names the NPUW weights bank baked into the blob. It
   // MUST be unique per distinct weight pool: NPUW's BankManager is a global
@@ -73,16 +89,7 @@ class OpenVinoCompileContext {
   // enables NPUW (NPU_USE_NPUW) without any weightless sharing mechanism
   // (NPUW_CWAI, NPUW_FOLD, or non-empty NPUW_FOLD_ONLY).
   LiteRtStatus ConfigureForNpuWeightSharing(
-      const std::string& weights_bank_name, bool moe_multi_token_chunk = false);
-
-  // Classification info OptimizeModel()'s NPU passes produced, beyond the
-  // in-place graph mutation, that ConfigureForNpuWeightSharing() needs.
-  struct OptimizeModelResult {
-    // Whether a multi-token-chunk MoE layer was detected and rewritten (see
-    // NpuOptimizer::Result::moe_is_multi_token_chunk). Always false on
-    // non-NPU targets or when MoE gather is disabled.
-    bool moe_is_multi_token_chunk = false;
-  };
+      const std::string& weights_bank_name, const OptimizeModelResult& result);
 
   // Runs NPU-specific optimization passes on the given OV model.
   OptimizeModelResult OptimizeModel(
@@ -100,6 +107,11 @@ class OpenVinoCompileContext {
   ov::AnyMap configs_map_;
   bool eliminate_fq_after_matmul_ = false;
   bool fuse_split_attention_to_sdpa_ = false;
+
+  // Enables Host Flash Attention on the prefill graphs: the SDPA fusion, the
+  // GQA unfold and DecomposeSDPAForHFA, plus NPUW_ATTN=HFA on the graphs it
+  // rewrote. Set via config "enable_hfa".
+  bool enable_hfa_ = false;
 
   // Enables MoEGatherRewrite: turns Gemma4's dense masked MoE into gather-based
   // selective (K-of-N) expert computation. Set via config "enable_moe_gather".
