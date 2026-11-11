@@ -78,8 +78,8 @@ $PrebuiltTargets = if ($TargetArch -eq 'arm64') { [ordered]@{
   '//litert/tools:apply_plugin_main' = 'apply_plugin_main.exe'
   '//litert/tools:analyze_model_main' = 'analyze_model_main.exe'
 } } else { [ordered]@{
-  '//litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin' = 'LiteRtCompilerPlugin.dll'
-  '//litert/vendors/intel_openvino/dispatch:LiteRtDispatch' = 'LiteRtDispatch.dll'
+  '//litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin_IntelOpenvino' = 'LiteRtCompilerPlugin_IntelOpenvino.dll'
+  '//litert/vendors/intel_openvino/dispatch:LiteRtDispatch_IntelOpenvino' = 'LiteRtDispatch_IntelOpenvino.dll'
 } }
 $PrebuiltsPlatform = "windows_$TargetArch"
 [string[]]$BuildTargets = if ($Mode -eq 'prebuilts') { @($PrebuiltTargets.Keys) } else { @('//ci/tools/python/wheel:litert_wheel') }

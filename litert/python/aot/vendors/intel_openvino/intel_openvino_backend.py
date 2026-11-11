@@ -29,10 +29,10 @@ from litert.python.aot.vendors.intel_openvino import target as target_lib
 
 if sys.platform == "win32":
   COMPILER_PLUGIN_LIB_PATH = pathlib.Path(
-      "vendors/intel_openvino/compiler/LiteRtCompilerPlugin.dll"
+      "vendors/intel_openvino/compiler/LiteRtCompilerPlugin_IntelOpenvino.dll"
   )
   DISPATCH_LIB_PATH = pathlib.Path(
-      "vendors/intel_openvino/dispatch/LiteRtDispatch.dll"
+      "vendors/intel_openvino/dispatch/LiteRtDispatch_IntelOpenvino.dll"
   )
 else:
   COMPILER_PLUGIN_LIB_PATH = pathlib.Path(

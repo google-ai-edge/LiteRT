@@ -136,7 +136,7 @@ litert_dynamic_lib(
 )
 
 litert_bin(
-    name = "LiteRtDispatch",
+    name = "LiteRtDispatch_IntelOpenvino",
     srcs = [
         "device_context.cc",
         "dispatch_api.cc",
@@ -163,6 +163,11 @@ litert_bin(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     linkopts = litert_android_linkopts(),
     linkshared = 1,
+    tags = [
+        "nobuilder",
+        "notap",
+        "windows",
+    ],
     visibility = ["//visibility:public"],  # Allows LiteRT-LM packaging.
     deps = [
         ":litert_dispatch_api",
@@ -202,6 +207,12 @@ litert_bin(
         "@com_google_absl//absl/synchronization",
         "@intel_openvino//:openvino",
     ],
+)
+
+alias(
+    name = "LiteRtDispatch",
+    actual = ":LiteRtDispatch_IntelOpenvino",
+    visibility = ["//visibility:public"],
 )
 
 litert_lib(
