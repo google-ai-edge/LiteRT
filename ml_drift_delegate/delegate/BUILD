@@ -1,9 +1,14 @@
+load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 load("@build_bazel_rules_apple//apple:macos.bzl", "macos_unit_test")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("//litert/build_common:litert_build_defs.bzl", "if_oss")
 load("//litert/build_common:special_rule.bzl", "gles_deps", "litert_gpu_accelerator_deps", "litert_metal_opts")
+load("//litert/python:pytype.bzl", "pytype_strict_binary")
+load("//ml_drift_delegate/delegate:webgpu_dawn_loader.bzl", "generate_webgpu_dawn_loader_inc")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -825,6 +830,161 @@ objc_library(
     ],
 )
 
+pytype_strict_binary(
+    name = "webgpu_dawn_loader_gen",
+    srcs = ["webgpu_dawn_loader_gen.py"],
+    tags = ["notap"],
+)
+
+generate_webgpu_dawn_loader_inc(
+    name = "webgpu_dawn_procs_inc",
+    out = "webgpu_dawn_procs.inc",
+    dawn_headers = "@dawn//:dawn_headers",
+)
+
+selects.config_setting_group(
+    name = "webgpu_dawn_dynamic_loader_oss_disabled",
+    match_any = [
+        "@ml_drift//ml_drift/webgpu:ml_drift_use_dawn_proc",
+        "//litert:emscripten",
+        "//litert:litert_webgpu_dawn_dynamic_loader_disabled",
+    ],
+)
+
+cc_library(
+    name = "webgpu_dawn_loader",
+    srcs = ["webgpu_dawn_loader.cc"],
+    hdrs = ["webgpu_dawn_loader.h"],
+    linkopts = select({
+        "//litert:emscripten": [],
+        "//litert:windows": [],
+        "//conditions:default": ["-ldl"],
+    }),
+    linkstatic = 1,
+    local_defines = if_oss(
+        select({
+            ":webgpu_dawn_dynamic_loader_oss_disabled": [],
+            "//conditions:default": ["LITERT_WEBGPU_DAWN_DYNAMIC_LOADER"],
+        }),
+        select({
+            "//litert:litert_webgpu_dawn_dynamic_loader": [
+                "LITERT_WEBGPU_DAWN_DYNAMIC_LOADER",
+            ],
+            "//conditions:default": [],
+        }),
+    ),
+    textual_hdrs = if_oss(
+        select({
+            ":webgpu_dawn_dynamic_loader_oss_disabled": [],
+            "//conditions:default": [":webgpu_dawn_procs_inc"],
+        }),
+        select({
+            "//litert:litert_webgpu_dawn_dynamic_loader": [
+                ":webgpu_dawn_procs_inc",
+            ],
+            "//conditions:default": [],
+        }),
+    ),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/debugging:leak_check",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/synchronization",
+    ] + if_oss(
+        select({
+            ":webgpu_dawn_dynamic_loader_oss_disabled": [],
+            "//conditions:default": [
+                "@dawn//:dawn_headers",
+                "@dawn//:libdawn_proc",
+            ],
+        }),
+        select({
+            "//litert:litert_webgpu_dawn_dynamic_loader": [
+                "@dawn//:dawn_headers",
+                "@dawn//:libdawn_proc",
+            ],
+            "//conditions:default": [],
+        }),
+    ),
+    alwayslink = 1,
+)
+
+cc_binary(
+    name = "libfake_webgpu_dawn.so",
+    testonly = 1,
+    srcs = ["fake_webgpu_dawn.cc"],
+    linkshared = 1,
+    tags = [
+        "noandroid",
+        "noios",
+        "nomacos",
+        "notap",
+        "nowindows",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_absl//absl/base:core_headers",
+        "@dawn//:dawn_headers",
+    ],
+)
+
+cc_binary(
+    name = "libincomplete_webgpu_dawn.so",
+    testonly = 1,
+    linkshared = 1,
+    tags = [
+        "noandroid",
+        "noios",
+        "nomacos",
+        "notap",
+        "nowindows",
+    ],
+)
+
+cc_test(
+    name = "webgpu_dawn_loader_test",
+    srcs = [
+        "webgpu_dawn_loader.cc",
+        "webgpu_dawn_loader.h",
+        "webgpu_dawn_loader_test.cc",
+        ":webgpu_dawn_procs_inc",
+    ],
+    data = [
+        ":libfake_webgpu_dawn.so",
+        ":libincomplete_webgpu_dawn.so",
+    ],
+    linkopts = select({
+        "//litert:emscripten": [],
+        "//litert:windows": [],
+        "//conditions:default": ["-ldl"],
+    }),
+    linkstatic = 1,
+    local_defines = ["LITERT_WEBGPU_DAWN_DYNAMIC_LOADER"],
+    tags = [
+        "noandroid",
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+    deps = [
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/debugging:leak_check",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_googletest//:gtest_main",
+        "@dawn//:dawn_headers",
+        "@dawn//:libdawn_proc",
+    ],
+)
+
 cc_library(
     name = "delegate_webgpu",
     srcs = ["delegate_webgpu.cc"],
@@ -845,6 +1005,7 @@ cc_library(
         ":gpu_backend_webgpu_litert",
         ":precision",
         ":task_executor",
+        ":webgpu_dawn_loader",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_header",
@@ -885,7 +1046,7 @@ cc_library(
         "@ml_drift//ml_drift/webgpu:webgpu_headers",
     ] + select({
         "//tools/cc_target_os:emscripten": [],
-        "//litert:litert_runtime_link_mode_dynamic": [
+        "//litert:litert_webgpu_dawn_dynamic_loader": [
             "@dawn//:dawn_headers",
         ],
         "@ml_drift//ml_drift/webgpu:ml_drift_use_dawn_proc": [
@@ -1101,6 +1262,7 @@ cc_library(
     hdrs = ["buffer_handler_webgpu.h"],
     deps = [
         ":buffer_handler_utils",
+        ":webgpu_dawn_loader",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_model_types",
@@ -1110,6 +1272,7 @@ cc_library(
         "//litert/runtime:tensor_buffer_lockstate",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
         "@dawn//:webgpu_headers",
         "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/webgpu:buffer",
