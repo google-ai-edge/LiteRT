@@ -17,6 +17,10 @@ limitations under the License. -->
 See the [LiteRT Intel dev page](https://ai.google.dev/edge/litert/next/intel)
 for details.
 
+## Documentation
+
+See the [documentation index](docs/README.md) for designs and options.
+
 ## Changing the OpenVINO package
 
 The OpenVINO package used to build LiteRT (Bazel) and the one bundled by the
