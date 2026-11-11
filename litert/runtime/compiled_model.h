@@ -44,6 +44,7 @@
 #endif  // !defined(LITERT_DISABLE_NPU)
 #include "litert/core/environment.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/subgraph_call_graph.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/custom_op_dispatcher.h"
 #include "litert/runtime/external_litert_buffer_context.h"
@@ -78,6 +79,15 @@ class LiteRtDelegationMetricsT {
 class LiteRtCompiledModelT {
  public:
   using Ptr = std::unique_ptr<LiteRtCompiledModelT>;
+
+  // The subgraphs to make active for the selected signatures' root subgraphs
+  // `roots`: the roots and every subgraph they transitively reference in
+  // `call_graph`. Falls back to `roots` alone (with a warning) if `call_graph`
+  // is unset or does not have one entry per subgraph. Sorted ascending.
+  // Public for testing.
+  static std::vector<int> ActiveSubgraphIndices(
+      const std::optional<litert::internal::SubgraphCallGraph>& call_graph,
+      const absl::flat_hash_set<int>& roots, int num_subgraphs);
 
   explicit LiteRtCompiledModelT(LiteRtEnvironmentT* env);
   ~LiteRtCompiledModelT();
@@ -403,10 +413,17 @@ class LiteRtCompiledModelT {
   // If the signature key is not found, returns nullptr.
   tflite::SignatureRunner* GetSignatureRunner(absl::string_view signature_key);
 
-  // Resolves selected signatures to their deduplicated root subgraphs. The
-  // initial implementation intentionally defines the active set to be exactly
-  // this root set and does not add transitively referenced callees.
+  // Resolves selected signatures to their deduplicated root subgraphs plus
+  // every subgraph those roots transitively reference (control-flow branches,
+  // region bodies, composite decompositions), so that delegates are applied to
+  // e.g. a WHILE body that contains a dispatch op. Falls back to the root set
+  // alone when the call graph of the loaded model is unknown.
   litert::Expected<void> InitializeActiveSubgraphs(LiteRtOptions options);
+
+  // Records the subgraph call graph of `model`, the LiteRt model `fb_model_`
+  // is (or is about to be) built from. Subgraph indices in the flatbuffer
+  // match `model`'s.
+  void RecordSubgraphCallGraph(const LiteRtModelT& model);
 
   // Marks signature subgraph input and output tensors as kTfLiteNonCpu to
   // prevent TFLite's ArenaPlanner from allocating host heap buffers for them.
@@ -449,13 +466,27 @@ class LiteRtCompiledModelT {
   // locked and use it with CustomAllocation. The locked buffer is kept in the
   // `locked_buffers`. Caller is responsible for unlocking of these buffers.
   // If the TensorBuffer can be consumed by the delegate, then `tensor` will be
-  // marked as non-CPU to avoid TFLite from allocating it.
+  // marked as non-CPU to avoid TFLite from allocating it. Host memory buffers
+  // that are registered with the delegate and also used by CPU ops are added
+  // to `backend_shared_host_buffers`; see ReleaseBackendSharedHostBuffers().
   litert::Expected<void> RegisterBuffer(
       tflite::SignatureRunner* runner, TfLiteTensor* tensor, int tensor_index,
       const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
       absl::flat_hash_map<LiteRtTensorBuffer, void*>& locked_buffers,
+      absl::flat_hash_set<LiteRtTensorBuffer>& backend_shared_host_buffers,
       std::vector<ConstantOutputInfo>& constant_outputs,
       std::vector<PendingCopy>& pending_string_output_copies);
+
+  // Unlocks the buffers in `backend_shared_host_buffers` and removes them from
+  // `locked_buffers` before the model is invoked. A delegate (e.g. the
+  // dispatch delegate) locks such a buffer while it runs, and buffer locks are
+  // exclusive, so the CPU side must not hold the lock across Invoke(). For
+  // host memory the address stays valid after Unlock(), so the CPU custom
+  // allocation remains usable.
+  static litert::Expected<void> ReleaseBackendSharedHostBuffers(
+      const absl::flat_hash_set<LiteRtTensorBuffer>&
+          backend_shared_host_buffers,
+      absl::flat_hash_map<LiteRtTensorBuffer, void*>& locked_buffers);
 
   void RegisterDelegate(Delegate&& delegate) {
     delegates_.push_back(std::move(delegate));
@@ -509,6 +540,18 @@ class LiteRtCompiledModelT {
       LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
       LiteRtOptionsT& options, LiteRtEnvironmentT& env);
 
+  // Takes ownership of `serialized` and builds the FlatBuffer model from it.
+  litert::Expected<void> SetSerializedModel(
+      litert::OwningBufferRef<uint8_t> serialized);
+
+  // Initializes the compiled model after a compiler plugin failed and left
+  // `model`, which was pruned to `selected_signature_keys`, modified: a fresh
+  // copy of the original FlatBuffer of `model` is pruned the same way and
+  // serialized.
+  litert::Expected<void> InitializeFromPrunedOriginalModel(
+      LiteRtModelT& model,
+      const std::vector<std::string>& selected_signature_keys);
+
   // Tries to load the model from the cache. Returns true if the model is loaded
   // from the cache, false otherwise.
   bool TryLoadingFromCache(
@@ -531,6 +574,8 @@ class LiteRtCompiledModelT {
 #endif  // !defined(LITERT_DISABLE_NPU)
   // Flatbuffer model should outlive the interp_.
   std::unique_ptr<::tflite::FlatBufferModel> fb_model_;
+  // Subgraph call graph of the model `fb_model_` was built from, if known.
+  std::optional<litert::internal::SubgraphCallGraph> fb_call_graph_;
 
   // If JIT compilation hasn't happened, the flatbuffer fd belongs to the
   // incoming literal model. If JIT compilation has happened, the fd belongs to

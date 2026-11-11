@@ -65,7 +65,9 @@ LiteRtStatus LiteRtBuilderBuildOp(LiteRtBuilder builder, LiteRtOpCode op_code,
                                   LiteRtTensor* outputs, LiteRtOp* new_op);
 
 // Removes an existing OP from the graph being rewritten.
-// This function is performed transactionally within the builder context.
+// This function is performed transactionally within the builder context: the
+// op stays connected and its options stay readable until the builder's changes
+// are applied, which happens only if the pattern returns kLiteRtStatusOk.
 LiteRtStatus LiteRtBuilderEraseOp(LiteRtBuilder builder, LiteRtOp op_to_erase);
 
 struct LiteRtCompilerContext;

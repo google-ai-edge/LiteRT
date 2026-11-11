@@ -540,6 +540,13 @@ typedef struct LiteRtCompilerContext {
       int32_t* stride_h, int32_t* stride_d, int32_t* dilation_w_factor,
       int32_t* dilation_h_factor, int32_t* dilation_d_factor,
       uint32_t* fused_activation_function);
+  // Added in version 1.6.0
+  // Number of leading subgraphs of `model` that are entry points. In the
+  // partitions model passed to `compiler_plugin_compile`, the remaining
+  // subgraphs are private helpers referenced by ops in the
+  // entry subgraphs; the plugin must emit one call per entry subgraph only.
+  LiteRtStatus (*get_num_entry_subgraphs)(
+      LiteRtModel model, LiteRtParamIndex* num_entry_subgraphs);
 } LiteRtCompilerContext;
 // LINT.ThenChange(./litert_compiler_context.cc:compiler_context_version)
 
@@ -549,7 +556,7 @@ typedef struct LiteRtCompilerContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCompilerContext) == 1512,
+static_assert(sizeof(LiteRtCompilerContext) == 1520,
               "LiteRtCompilerContext size mismatch");
 static_assert(offsetof(LiteRtCompilerContext, abi_header) == 0,
               "LiteRtCompilerContext abi_header offset mismatch");
@@ -1235,6 +1242,8 @@ static_assert(
     offsetof(LiteRtCompilerContext, build_conv_3d_transpose_op_option) ==
         1504,
     "LiteRtCompilerContext build_conv_3d_transpose_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_num_entry_subgraphs) == 1512,
+              "LiteRtCompilerContext get_num_entry_subgraphs offset mismatch");
 #endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();

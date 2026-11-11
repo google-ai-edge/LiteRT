@@ -15,6 +15,7 @@
 #include "litert/compiler/plugin/compiler_plugin.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>  // NOLINT
 #include <fstream>
@@ -1776,6 +1777,60 @@ TEST(PartitionTest, MultiNpuCallComposite) {
   }
 }
 
+// main: npu_call(decomp3) -> composite(decomp2) -> npu_call(decomp1), with the
+// middle composite renamed so that the example plugin selects it. Dispatch op
+// i must be the op whose body is subgraph i of the partitions model.
+TEST(PartitionTest, DispatchOpsMatchPartitionsWithNpuCallsAndSelections) {
+  auto model_wrap = testing::LoadTestFileModel("multi_composite.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+
+  ASSERT_EQ(model.NumSubgraphs(), 4);
+  auto& main = model.Subgraph(0);
+  ASSERT_EQ(main.Ops().size(), 3);
+  LiteRtOp npu_call_0 = main.Ops()[0];
+  LiteRtOp composite = main.Ops()[1];
+  LiteRtOp npu_call_1 = main.Ops()[2];
+  LiteRtSubgraph decomp1 = model.Subgraphs()[1];
+  LiteRtSubgraph decomp3 = model.Subgraphs()[3];
+  {
+    auto options = TakeTflOptions2(*composite);
+    options.AsStableHLOCompositeOptions()->name =
+        std::string(CompositeOptions::kRmsNorm);
+    SetTflOptions2(*composite, std::move(options));
+  }
+  // Swap the bodies of the two npu_calls so that the op order differs from the
+  // body index order.
+  for (auto [op, decomp_index] : {std::pair{npu_call_0, 3}, {npu_call_1, 1}}) {
+    auto options = TakeTflOptions2(*op);
+    options.AsStableHLOCompositeOptions()->decomposition_subgraph_index =
+        decomp_index;
+    SetTflOptions2(*op, std::move(options));
+  }
+
+  auto partition_result = PartitionModel(plugins->front(), model);
+  ASSERT_TRUE(partition_result);
+
+  const auto& dispatch_ops = partition_result->first;
+  const auto& partitions = partition_result->second;
+  ASSERT_EQ(dispatch_ops.size(), 3);
+  ASSERT_EQ(partitions.NumSubgraphs(), 3);
+  for (size_t i = 0; i < dispatch_ops.size(); ++i) {
+    const LiteRtSubgraphT* body = partitions.Subgraphs()[i];
+    if (dispatch_ops[i] == npu_call_0) {
+      EXPECT_EQ(body, decomp3);
+    } else if (dispatch_ops[i] == npu_call_1) {
+      EXPECT_EQ(body, decomp1);
+    } else {
+      // The outlined partition holds the selected composite.
+      ASSERT_EQ(body->Ops().size(), 1);
+      EXPECT_EQ(body->Ops().front()->OpCode(), kLiteRtOpCodeShloComposite);
+    }
+  }
+}
+
 TEST(PartitionTest, NestedNpuCallComposite) {
   auto model_wrap = testing::LoadTestFileModel("nested_composite.tflite");
   ASSERT_TRUE(model_wrap);
@@ -2316,14 +2371,14 @@ TEST_F(CompilerPluginFriend,
 }
 
 TEST(CompilerPluginTest, LoadPlugin_NewerVersionNegotiation) {
-  // Loads example_plugin.so (V1.1), verifies runtime (V1.0) successfully
-  // negotiates V1.1 ABI via forward compatibility.
+  // Loads example_plugin.so (V1.2), verifies runtime (V1.1) successfully
+  // negotiates V1.2 ABI via forward compatibility.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
                                  {GetLiteRtPath(kTestPluginSearchPath)}));
   EXPECT_EQ(plugin.NegotiatedVersion().major, 1);
-  EXPECT_EQ(plugin.NegotiatedVersion().minor, 1);
+  EXPECT_EQ(plugin.NegotiatedVersion().minor, 2);
   EXPECT_EQ(plugin.SocManufacturer(), kTestManufacturer);
   LITERT_ASSERT_OK_AND_ASSIGN(auto hw, plugin.SupportedHardware());
   EXPECT_EQ(hw, kLiteRtHwAcceleratorNpu);

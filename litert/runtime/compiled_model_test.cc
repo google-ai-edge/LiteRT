@@ -23,6 +23,7 @@
 #include <ios>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -77,6 +78,7 @@
 #include "litert/core/build_stamp.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/subgraph_call_graph.h"
 #include "litert/core/options.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
@@ -214,6 +216,39 @@ Expected<std::vector<LiteRtTensorBufferT*>> CreateOutputBuffersFromRequirements(
   return CreateInputOutputBuffersFromRequirements(env, model, signature_key,
                                                   compiled_model,
                                                   /*is_input=*/false);
+}
+
+// main (0) -> WHILE branches (1, 2); 2 -> a REDUCE body (3); 4 is unrelated.
+litert::internal::SubgraphCallGraph ActiveSubgraphsTestGraph() {
+  litert::internal::SubgraphCallGraph graph;
+  graph.callees = {{1, 2}, {}, {3}, {}, {}};
+  return graph;
+}
+
+TEST(CompiledModelActiveSubgraphsTest, IncludesEverythingTheRootsReference) {
+  EXPECT_THAT(LiteRtCompiledModelT::ActiveSubgraphIndices(
+                  ActiveSubgraphsTestGraph(), /*roots=*/{0},
+                  /*num_subgraphs=*/5),
+              ElementsAre(0, 1, 2, 3));
+  EXPECT_THAT(LiteRtCompiledModelT::ActiveSubgraphIndices(
+                  ActiveSubgraphsTestGraph(), /*roots=*/{2, 4},
+                  /*num_subgraphs=*/5),
+              ElementsAre(2, 3, 4));
+}
+
+TEST(CompiledModelActiveSubgraphsTest, FallsBackToRootsWithoutCallGraph) {
+  EXPECT_THAT(LiteRtCompiledModelT::ActiveSubgraphIndices(
+                  std::nullopt, /*roots=*/{2, 0}, /*num_subgraphs=*/5),
+              ElementsAre(0, 2));
+}
+
+TEST(CompiledModelActiveSubgraphsTest,
+     FallsBackToRootsOnSubgraphCountMismatch) {
+  // The interpreter has 6 subgraphs, the recorded graph only 5.
+  EXPECT_THAT(LiteRtCompiledModelT::ActiveSubgraphIndices(
+                  ActiveSubgraphsTestGraph(), /*roots=*/{0},
+                  /*num_subgraphs=*/6),
+              ElementsAre(0));
 }
 
 TEST(CompiledModelTest, Basic) {
