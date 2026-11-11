@@ -231,18 +231,7 @@ class EmbeddingLookupTest(test_utils.BaseOpTestCase):
     # The signature of `embedding_lookup.tflite` has no outputs, so
     # `validate()` would not compare the lookup results. Look up every row of
     # the quantized model instead.
-    interpreter = tfl_interpreter_utils.create_tfl_interpreter(quantized_model)
-    lookup_results = []
-    for row in range(len(table)):
-      tfl_interpreter_utils.invoke_interpreter_once(
-          interpreter, [np.array([row], dtype=np.int32)]
-      )
-      lookup_results.append(
-          interpreter.get_tensor(interpreter.get_output_details()[0]['index'])
-      )
-    self.assertLess(
-        np.mean((np.concatenate(lookup_results) - table) ** 2), 1e-4
-    )
+    self._assert_lookup_mse_below(quantized_model, table, max_mse=1e-4)
 
   @parameterized.named_parameters(
       dict(
@@ -306,6 +295,94 @@ class EmbeddingLookupTest(test_utils.BaseOpTestCase):
         if name.endswith(suffix):
           rotation_matrix_types[suffix] = tensor.type
     self.assertEqual(rotation_matrix_types, expected_rotation_matrix_types)
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name='channelwise_drq',
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          compute_precision=_ComputePrecision.INTEGER,
+          explicit_dequantize=False,
+          expected_block_shape=[1, 64],
+          expected_scale_shape=[16, 1],
+      ),
+      dict(
+          testcase_name='blockwise_32_drq',
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+          compute_precision=_ComputePrecision.INTEGER,
+          explicit_dequantize=False,
+          expected_block_shape=[1, 32],
+          expected_scale_shape=[16, 2],
+      ),
+      dict(
+          testcase_name='channelwise_weight_only',
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          compute_precision=_ComputePrecision.FLOAT,
+          explicit_dequantize=True,
+          expected_block_shape=[1, 64],
+          expected_scale_shape=[16, 1],
+      ),
+  )
+  def test_centered_int2_embedding_lookup_end_to_end(
+      self,
+      granularity,
+      compute_precision,
+      explicit_dequantize,
+      expected_block_shape,
+      expected_scale_shape,
+  ):
+    rng = np.random.default_rng(77)
+    table = rng.normal(0.0, 0.25, size=(16, 64)).astype(np.float32)
+    qt = quantizer.Quantizer(self._create_embedding_model(table))
+    qt.update_quantization_recipe(
+        regex='.*',
+        operation_name=_OpName.EMBEDDING_LOOKUP,
+        algorithm_key=quantizer.AlgorithmName.OCTAV,
+        op_config=_OpQuantConfig(
+            weight_tensor_config=_TensorQuantConfig(
+                num_bits=2,
+                granularity=granularity,
+            ),
+            compute_precision=compute_precision,
+            explicit_dequantize=explicit_dequantize,
+        ),
+    )
+    quantized_bytes = qt.quantize().quantized_model
+    self.assertIsNotNone(quantized_bytes)
+    quantized_model = tfl_flatbuffer_utils.read_model(quantized_bytes)
+    subgraph = quantized_model.subgraphs[0]
+    (q_table_tensor,) = [
+        t for t in subgraph.tensors if t.type == qtyping.TensorType.INT2
+    ]
+    self.assertLen(quantized_model.buffers[q_table_tensor.buffer].data, 256)
+    details = q_table_tensor.quantization.details
+    self.assertSequenceEqual(list(details.blockShape), expected_block_shape)
+    self.assertSequenceEqual(
+        list(subgraph.tensors[details.scales].shape), expected_scale_shape
+    )
+    zp_tensor = subgraph.tensors[details.zeroPoints]
+    self.assertSequenceEqual(list(zp_tensor.shape), [1, 1])
+    np.testing.assert_array_equal(
+        tfl_flatbuffer_utils.get_tensor_data(
+            zp_tensor, quantized_model.buffers
+        ),
+        np.array([[-0.5]], dtype=np.float32),
+    )
+
+    self._assert_lookup_mse_below(quantized_bytes, table, max_mse=2e-2)
+
+  def _assert_lookup_mse_below(
+      self, quantized_model: bytes, table: np.ndarray, max_mse: float
+  ) -> None:
+    interpreter = tfl_interpreter_utils.create_tfl_interpreter(quantized_model)
+    output_idx = interpreter.get_output_details()[0]['index']
+    lookup_results = []
+    for row in range(len(table)):
+      tfl_interpreter_utils.invoke_interpreter_once(
+          interpreter, [np.array([row], dtype=np.int32)]
+      )
+      lookup_results.append(interpreter.get_tensor(output_idx))
+    mse = float(np.mean((np.concatenate(lookup_results) - table) ** 2))
+    self.assertLess(mse, max_mse)
 
   def _create_embedding_model(self, table: np.ndarray) -> str:
     """Writes `embedding_lookup.tflite` with its `[16, 8]` table replaced.

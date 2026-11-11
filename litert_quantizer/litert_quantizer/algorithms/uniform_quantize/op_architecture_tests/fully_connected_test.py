@@ -74,7 +74,7 @@ class FullyConnectedTest(op_test_utils.BaseQuantizeTest):
 
   # TODO(rewu): add int16 tests.
   @parameterized.product(
-      num_bits_weight=(4, 8),
+      num_bits_weight=(2, 4, 8),
       granularity=(
           qtyping.QuantGranularity.CHANNELWISE,
           qtyping.QuantGranularity.TENSORWISE,
@@ -102,6 +102,9 @@ class FullyConnectedTest(op_test_utils.BaseQuantizeTest):
   ):
     get_tensor_quant_params_func, symmetric_weight = algos
     compute_precision, is_srq, explicit_dequantize = test_case
+    # 2-bit SRQ is not supported by TFLite FULLY_CONNECTED kernels.
+    if is_srq and num_bits_weight == 2:
+      return
 
     # Read from Model Explorer.
     subgraph0 = self._op_test_info.test_model.subgraphs[0]

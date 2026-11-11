@@ -535,6 +535,7 @@ class OctavQuantizeTest(parameterized.TestCase):
         num_bits=num_bits,
         symmetric=True,
         granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={"centered": False} if num_bits == 2 else {},
     )
     fc_op_info = self._get_fc_op_info(tensor_config)
 
@@ -610,6 +611,140 @@ class OctavQuantizeTest(parameterized.TestCase):
         f"Expected legacy MSE ({legacy_mse:.6e}) < min-max"
         f" ({min_max_mse:.6e}) for {distribution} INT{num_bits}.",
     )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="channelwise",
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          expected_quantized_dim=0,
+          expected_scale=[[12.0 / 17.0], [24.0 / 17.0]],
+          expected_q=[
+              [-2, -1, 0, 1, -2, 1, -1, 0],
+              [1, -2, 0, -1, 0, -1, 1, -2],
+          ],
+      ),
+      dict(
+          testcase_name="tensorwise",
+          granularity=qtyping.QuantGranularity.TENSORWISE,
+          expected_quantized_dim=None,
+          expected_scale=[[72.0 / 55.0]],
+          expected_q=[
+              [-2, -1, 0, 1, -1, 0, -1, 0],
+              [1, -2, 0, -1, 0, -1, 1, -2],
+          ],
+      ),
+  )
+  def test_get_tensor_quant_params_centered_int2(
+      self,
+      granularity: qtyping.QuantGranularity,
+      expected_quantized_dim: int | None,
+      expected_scale: list[list[float]],
+      expected_q: list[list[int]],
+  ):
+    test_data = np.array(
+        [
+            [-1.5, -0.4, 0.4, 1.5, -0.9, 0.9, -0.1, 0.1],
+            [3.0, -3.0, 1.1, -1.1, 0.2, -0.2, 2.5, -2.5],
+        ],
+        dtype=np.float32,
+    )
+    tensor_config = qtyping.TensorQuantizationConfig(
+        num_bits=2,
+        granularity=granularity,
+    )
+    quant_params = octav.get_tensor_quant_params(
+        op_info=self._get_fc_op_info(tensor_config),
+        tensor_quant_config=tensor_config,
+        tensor_content=test_data,
+    )
+    self.assertEqual(quant_params.num_bits, 2)
+    self.assertEqual(quant_params.quantized_dimension, expected_quantized_dim)
+    self.assertEqual(quant_params.scale.dtype, np.float32)
+    self.assertEqual(quant_params.zero_point.dtype, np.float32)
+    np.testing.assert_array_equal(quant_params.zero_point, [[-0.5]])
+    np.testing.assert_allclose(
+        quant_params.scale,
+        np.array(expected_scale, dtype=np.float32),
+        rtol=1e-6,
+        atol=1e-6,
+    )
+    q_data = cast(np.ndarray, quant_params.quantized_data)
+    np.testing.assert_array_equal(q_data, np.array(expected_q, dtype=np.int8))
+
+  def test_centered_int2_matches_int2_in_int4_and_beats_mid_tread(self):
+    rng = np.random.default_rng(2028)
+    weights = rng.laplace(0.0, 0.2, size=(16, 256)).astype(np.float32)
+    centered_cfg = qtyping.TensorQuantizationConfig(
+        num_bits=2,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+    )
+    mid_tread_cfg = qtyping.TensorQuantizationConfig(
+        num_bits=2,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={"centered": False},
+    )
+    emulated_cfg = qtyping.TensorQuantizationConfig(
+        num_bits=4,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={"int2_in_int4": True},
+    )
+
+    centered_qp = octav.get_tensor_quant_params(
+        self._get_fc_op_info(centered_cfg), centered_cfg, weights
+    )
+    mid_tread_qp = octav.get_tensor_quant_params(
+        self._get_fc_op_info(mid_tread_cfg), mid_tread_cfg, weights
+    )
+    emulated_qp = octav.get_tensor_quant_params(
+        self._get_fc_op_info(emulated_cfg), emulated_cfg, weights
+    )
+
+    centered_dequant = (
+        cast(np.ndarray, centered_qp.quantized_data).astype(np.float32) + 0.5
+    ) * centered_qp.scale
+    emulated_dequant = (
+        cast(np.ndarray, emulated_qp.quantized_data).astype(np.float32)
+        * emulated_qp.scale
+    )
+    mid_tread_dequant = (
+        cast(np.ndarray, mid_tread_qp.quantized_data).astype(np.float32)
+        * mid_tread_qp.scale
+    )
+    np.testing.assert_allclose(
+        centered_dequant, emulated_dequant, rtol=1e-6, atol=1e-6
+    )
+    centered_mse = float(np.mean((centered_dequant - weights) ** 2))
+    mid_tread_mse = float(np.mean((mid_tread_dequant - weights) ** 2))
+    self.assertLess(centered_mse, mid_tread_mse)
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="non_bool_centered",
+          num_bits=2,
+          alg_params={"centered": "false"},
+          expected_error="centered must be a boolean",
+      ),
+      dict(
+          testcase_name="int4_centered",
+          num_bits=4,
+          alg_params={"centered": True},
+          expected_error="centered=True requires num_bits=2",
+      ),
+  )
+  def test_get_tensor_quant_params_rejects_invalid_centered(
+      self, num_bits: int, alg_params: dict[str, object], expected_error: str
+  ):
+    tensor_config = qtyping.TensorQuantizationConfig(
+        num_bits=num_bits,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params=alg_params,
+    )
+    with self.assertRaisesRegex(ValueError, expected_error):
+      octav.get_tensor_quant_params(
+          op_info=self._get_fc_op_info(tensor_config),
+          tensor_quant_config=tensor_config,
+          tensor_content=np.ones((2, 4), dtype=np.float32),
+      )
 
 
 if __name__ == "__main__":

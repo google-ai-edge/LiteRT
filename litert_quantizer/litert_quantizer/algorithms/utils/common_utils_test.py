@@ -139,9 +139,8 @@ class MinMaxQuantizeUtilsTest(parameterized.TestCase):
   def test_check_drq_config_succeeds(
       self, op_name, weight_num_bits, granularity
   ):
-    # TODO: b/353365054 - Remove this check after int4 DRQ is supported for
-    # conv2d.
-    if op_name == _TFLOpName.CONV_2D and weight_num_bits == 4:
+    # 2-bit DRQ is not supported for conv2d until kernel support is available.
+    if op_name == _TFLOpName.CONV_2D and weight_num_bits == 2:
       return
     op_quant_config = _OpQuantConfig(
         weight_tensor_config=_TensorQuantConfig(
@@ -153,6 +152,78 @@ class MinMaxQuantizeUtilsTest(parameterized.TestCase):
     common_utils.check_if_valid_op_config(
         op_name, op_quant_config, _DEFAULT_CONFIG_CHECK_POLICY
     )
+
+  @parameterized.product(
+      op_name=(
+          _TFLOpName.FULLY_CONNECTED,
+          _TFLOpName.EMBEDDING_LOOKUP,
+      ),
+      granularity=(
+          qtyping.QuantGranularity.TENSORWISE,
+          qtyping.QuantGranularity.CHANNELWISE,
+          qtyping.QuantGranularity.BLOCKWISE_32,
+          qtyping.QuantGranularity.BLOCKWISE_64,
+          qtyping.QuantGranularity.BLOCKWISE_128,
+          qtyping.QuantGranularity.BLOCKWISE_256,
+      ),
+      mode=(
+          (_ComputePrecision.INTEGER, False, True),
+          (_ComputePrecision.FLOAT, True, True),
+          (_ComputePrecision.FLOAT, True, False),
+      ),
+  )
+  def test_check_int2_op_config_succeeds(self, op_name, granularity, mode):
+    compute_precision, explicit_dequantize, symmetric = mode
+    is_blockwise = granularity not in (
+        qtyping.QuantGranularity.TENSORWISE,
+        qtyping.QuantGranularity.CHANNELWISE,
+    )
+    # Blockwise 2-bit policy requires symmetric weights.
+    if is_blockwise and not symmetric:
+      return
+    op_quant_config = _OpQuantConfig(
+        weight_tensor_config=_TensorQuantConfig(
+            num_bits=2,
+            symmetric=symmetric,
+            granularity=granularity,
+        ),
+        compute_precision=compute_precision,
+        explicit_dequantize=explicit_dequantize,
+    )
+    common_utils.check_if_valid_op_config(
+        op_name, op_quant_config, _DEFAULT_CONFIG_CHECK_POLICY
+    )
+
+  @parameterized.product(
+      granularity=(
+          qtyping.QuantGranularity.TENSORWISE,
+          qtyping.QuantGranularity.CHANNELWISE,
+          qtyping.QuantGranularity.BLOCKWISE_32,
+      ),
+      mode=(
+          (_ComputePrecision.INTEGER, False),
+          (_ComputePrecision.FLOAT, True),
+      ),
+  )
+  def test_check_conv2d_int2_config_raises_error(self, granularity, mode):
+    compute_precision, explicit_dequantize = mode
+    op_quant_config = _OpQuantConfig(
+        weight_tensor_config=_TensorQuantConfig(
+            num_bits=2,
+            granularity=granularity,
+        ),
+        compute_precision=compute_precision,
+        explicit_dequantize=explicit_dequantize,
+    )
+    error_message = (
+        f"Quantization config {op_quant_config} was not found in the policy."
+    )
+    with self.assertRaisesWithPredicateMatch(
+        ValueError, lambda err: error_message in str(err)
+    ):
+      common_utils.check_if_valid_op_config(
+          _TFLOpName.CONV_2D, op_quant_config, _DEFAULT_CONFIG_CHECK_POLICY
+      )
 
   @parameterized.parameters((_TFLOpName.RESHAPE), (_TFLOpName.AVERAGE_POOL_2D))
   def test_check_drq_config_unsupported_op_raise_error(self, op_name):

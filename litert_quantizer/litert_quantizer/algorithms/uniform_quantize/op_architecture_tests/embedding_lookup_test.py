@@ -59,7 +59,7 @@ class EmbeddingLookupTest(op_test_utils.BaseQuantizeTest):
     )
 
   @parameterized.product(
-      num_bits_weight=(4, 8),
+      num_bits_weight=(2, 4, 8),
       granularity=(
           qtyping.QuantGranularity.CHANNELWISE,
           qtyping.QuantGranularity.TENSORWISE,

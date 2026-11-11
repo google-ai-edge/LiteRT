@@ -479,8 +479,7 @@ def _quantize_mse_chunk(
     Quantized float32 codes matching `w_chunk` shape.
   """
   if int2_in_int4:
-    # pylint: disable-next=protected-access
-    return octav._to_odd_int4_codes(w_chunk, s_chunk).astype(np.float32)
+    return octav.to_odd_int4_codes(w_chunk, s_chunk).astype(np.float32)
   return np.clip(np.rint(w_chunk / s_chunk), qmin, qmax)
 
 

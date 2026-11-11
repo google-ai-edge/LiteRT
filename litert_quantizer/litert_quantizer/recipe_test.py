@@ -85,6 +85,30 @@ class RecipeTest(parameterized.TestCase):
         len(quant_result.quantized_model),
         pathlib.Path(self._test_model_path).stat().st_size,
     )
+    interpreter = tfl_interpreter_utils.create_tfl_interpreter(
+        quant_result.quantized_model
+    )
+    input_data = tfl_interpreter_utils.create_random_normal_input_data(
+        quant_result.quantized_model, num_samples=1
+    )
+    tfl_interpreter_utils.invoke_interpreter_signature(
+        interpreter, next(iter(input_data.values()))[0]
+    )
+
+  def test_conv2d_int2_config_rejected_by_policy(self):
+    qt = quantizer.Quantizer(self._test_model_path)
+    with self.assertRaisesRegex(ValueError, 'Unsupported op'):
+      qt.add_dynamic_config(
+          regex='.*',
+          operation_name=recipe.TFLOperationName.CONV_2D,
+          num_bits=2,
+      )
+    with self.assertRaisesRegex(ValueError, 'Unsupported op'):
+      qt.add_weight_only_config(
+          regex='.*',
+          operation_name=recipe.TFLOperationName.CONV_2D,
+          num_bits=2,
+      )
 
   @unittest.skip('skipping due to b/438971945')
   def test_quantization_from_weight_only_wi8_afp32_func_succeeds(self):
