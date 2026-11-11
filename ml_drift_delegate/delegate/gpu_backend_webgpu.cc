@@ -312,6 +312,11 @@ absl::Status GpuBackendWebGpu::ReadSpatialTensorToDescriptor(
   return wgpu_tensor->ToDescriptor(env_->device(), &desc);
 }
 
+absl::Status GpuBackendWebGpu::ReadSpatialTensorData(
+    ::ml_drift::GpuSpatialTensor& tensor, absl::Span<uint8_t> dst) {
+  return absl::UnimplementedError("ReadSpatialTensorData is not implemented");
+}
+
 absl::Status GpuBackendWebGpu::UpdateSpatialTensor(
     ::ml_drift::GpuSpatialTensor* tensor,
     const ::ml_drift::TensorDescriptor& desc, size_t page_adjusted_offset,

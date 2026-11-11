@@ -341,6 +341,10 @@ class DummyGpuBackend : public GpuBackend {
       ::ml_drift::TensorDescriptor& desc) override {
     return absl::UnimplementedError("");
   }
+  absl::Status ReadSpatialTensorData(::ml_drift::GpuSpatialTensor& tensor,
+                                     absl::Span<uint8_t> dst) override {
+    return absl::UnimplementedError("");
+  }
   absl::Status UpdateSpatialTensor(
       ::ml_drift::GpuSpatialTensor* tensor,
       const ::ml_drift::TensorDescriptor& desc, size_t page_adjusted_offset,

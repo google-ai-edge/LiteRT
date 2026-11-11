@@ -107,6 +107,8 @@ class GpuBackendOpenCl : public GpuBackend {
   absl::Status ReadSpatialTensorToDescriptor(
       ::ml_drift::GpuSpatialTensor& tensor,
       ::ml_drift::TensorDescriptor& desc) override;
+  absl::Status ReadSpatialTensorData(::ml_drift::GpuSpatialTensor& tensor,
+                                     absl::Span<uint8_t> dst) override;
   absl::Status UpdateSpatialTensor(
       ::ml_drift::GpuSpatialTensor* tensor,
       const ::ml_drift::TensorDescriptor& desc, size_t page_adjusted_offset,

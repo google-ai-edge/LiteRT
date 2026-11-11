@@ -235,6 +235,18 @@ class GpuBackend {
       ::ml_drift::GpuSpatialTensor& tensor,
       ::ml_drift::TensorDescriptor& desc) = 0;
 
+  // Reads the GPU data of the given spatial tensor into `dst`, which must be
+  // exactly `tensor.GetDescriptor().GetMemorySizeInBytes()` bytes. Unlike
+  // ReadSpatialTensorToDescriptor(), the caller provides the CPU memory, e.g. a
+  // reusable staging buffer, so no buffer has to be allocated (and
+  // zero-initialized) for every tensor.
+  // Returns an UnimplementedError if the backend can't read this tensor
+  // directly into `dst`, in which case the caller should fall back to
+  // ReadSpatialTensorToDescriptor().
+  // [OPTIONAL] Only for LiteRT delegates.
+  virtual absl::Status ReadSpatialTensorData(
+      ::ml_drift::GpuSpatialTensor& tensor, absl::Span<uint8_t> dst) = 0;
+
   // Updates the given spatial tensor with the given descriptor. If the tensor
   // already has GPU memory, it will be released.
   //
