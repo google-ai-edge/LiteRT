@@ -79,3 +79,17 @@ android_local_test(
         "//third_party/java/truth",
     ],
 )
+
+android_local_test(
+    name = "environment_test",
+    size = "small",
+    srcs = ["java/com/google/ai/edge/litert/EnvironmentTest.java"],
+    data = ["//litert/test:testdata/simple_model.tflite"],
+    manifest = "AndroidManifest.xml",
+    test_class = "com.google.ai.edge.litert.EnvironmentTest",
+    deps = [
+        "//litert/kotlin:litert_compiled_model_api",
+        "//third_party/java/junit",
+        "//third_party/java/truth",
+    ],
+)

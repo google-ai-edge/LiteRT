@@ -135,6 +135,13 @@ class Environment {
     if (!c_options) {
       return c_options.Error();
     }
+    for (const auto& c_option : *c_options) {
+      if (c_option.tag == kLiteRtEnvOptionTagRuntimeAbiVersion) {
+        return Error(
+            Status::kErrorInvalidArgument,
+            "kLiteRtEnvOptionTagRuntimeAbiVersion cannot be set by caller.");
+      }
+    }
     const struct LiteRtRuntimeCApiStruct* handle = nullptr;
     Expected<const LiteRtVariant> system_runtime_handle =
         options.GetOption(EnvironmentOptions::Tag::kSystemRuntimeHandle);
@@ -330,6 +337,9 @@ class Environment {
       : runtime_(std::move(runtime)) {
     std::function<void(LiteRtEnvironment)> handle_deleter;
     auto runtime_ptr = runtime_.get();
+    if (runtime_ptr != nullptr && env != nullptr) {
+      runtime_ptr->ResolveAbiVersionFromEnvironment(env);
+    }
     if (owned == OwnHandle::kYes && runtime_ptr != nullptr) {
       handle_deleter = [runtime_ptr](LiteRtEnvironment env_) {
         runtime_ptr->DestroyEnvironment(env_);
@@ -374,7 +384,7 @@ class Environment {
   Expected<EnvironmentOptions> FromCOptions(
       LiteRtEnvironmentOptions options) const {
     std::vector<EnvironmentOptions::Option> env_options;
-    for (int i = 0; i <= kLiteRtEnvOptionTagSystemGpuAcceleratorHandle; ++i) {
+    for (int i = 0; i <= kLiteRtEnvOptionTagRuntimeAbiVersion; ++i) {
       LiteRtAny value;
       if (runtime_->GetEnvironmentOptionsValue(
               options, static_cast<LiteRtEnvOptionTag>(i), &value) ==

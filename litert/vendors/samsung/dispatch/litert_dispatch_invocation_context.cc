@@ -31,7 +31,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/core/util/tensor_type_util.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/samsung/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/samsung/dispatch/litert_weight_binary_manager.h"
@@ -214,7 +214,7 @@ Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
           kLiteRtTensorBufferTypeDmaBuf,
       };
 
-  auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
+  auto buffer_size = litert::RankedTensorType(tensor_type).Bytes();
   if (!buffer_size) {
     return Unexpected(buffer_size.Error());
   }

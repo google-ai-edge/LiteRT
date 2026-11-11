@@ -21,6 +21,12 @@ pub struct BenchEnv {
     pub models_dir: PathBuf,
     pub build_id: String,
     pub smi: PathBuf,
+    /// The CLI's and the dispatch library's file names (env.sh's NB_CLI and
+    /// NB_DISPATCH_LIB: the PE names on Windows).
+    pub cli_name: String,
+    pub dispatch_lib: String,
+    /// The Python 3 interpreter the scripts run (env.sh's NB_PYTHON).
+    pub python: String,
     /// Extra environment of every probe (capture --env NAME=VALUE): a runtime
     /// knob's A/B as a capture of its own. Its probes run in a pool of their
     /// own (pool_suffix), so a compile-time knob compiles its own engines.
@@ -28,8 +34,14 @@ pub struct BenchEnv {
     pub pool_suffix: String,
 }
 
+/// The shell env.sh and bench.sh run in: bash on PATH, or NVGUARD_BASH (on
+/// Windows, Git Bash's bash.exe where another bash.exe comes first on PATH).
+pub fn bash_program() -> String {
+    std::env::var("NVGUARD_BASH").unwrap_or_else(|_| "bash".to_string())
+}
+
 fn bash(script: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new("bash")
+    let output = Command::new(bash_program())
         .arg("-c")
         .arg(script)
         .arg("nvguard")
@@ -53,8 +65,8 @@ impl BenchEnv {
             bail!("not a benchmark directory (no env.sh): {}", bench_dir.display());
         }
         let script = r#"set -e; source "$1/env.sh"; nb_resolve_paths
-printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_ID=%s\n' \
-  "$NB_RT" "$NB_LM" "$NB_ROOT" "$NB_RUNTIME_LIBS" "$NB_MODELS" "$(nb_build_id)""#;
+printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_ID=%s\nNB_CLI=%s\nNB_DISPATCH_LIB=%s\nNB_PYTHON=%s\n' \
+  "$NB_RT" "$NB_LM" "$NB_ROOT" "$NB_RUNTIME_LIBS" "$NB_MODELS" "$(nb_build_id)" "$NB_CLI" "$NB_DISPATCH_LIB" "$NB_PYTHON""#;
         let text = bash(script, &[&bench_dir.to_string_lossy()])?;
         let mut values = BTreeMap::new();
         for line in text.lines() {
@@ -64,6 +76,14 @@ printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_
         }
         let get = |key: &str| -> Result<String> {
             values.get(key).cloned().ok_or_else(|| anyhow!("env.sh gave no {key}"))
+        };
+        // An env.sh from before these names: the Linux names.
+        let get_or = |key: &str, default: &str| -> String {
+            values
+                .get(key)
+                .filter(|v| !v.is_empty())
+                .cloned()
+                .unwrap_or_else(|| default.to_string())
         };
         let smi = match Command::new("nvidia-smi").arg("--version").output() {
             Ok(o) if o.status.success() => PathBuf::from("nvidia-smi"),
@@ -78,17 +98,20 @@ printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_
             models_dir: PathBuf::from(get("NB_MODELS")?),
             build_id: get("BUILD_ID")?,
             smi,
+            cli_name: get_or("NB_CLI", "litert_lm_advanced_main"),
+            dispatch_lib: get_or("NB_DISPATCH_LIB", "libLiteRtDispatch_Nvidia.so"),
+            python: get_or("NB_PYTHON", "python3"),
             extra_env: Vec::new(),
             pool_suffix: String::new(),
         })
     }
 
     pub fn cli(&self) -> PathBuf {
-        self.runtime_libs.join("litert_lm_advanced_main")
+        self.runtime_libs.join(&self.cli_name)
     }
 
     pub fn built(&self) -> bool {
-        self.cli().is_file() && self.runtime_libs.join("libLiteRtDispatch_Nvidia.so").is_file()
+        self.cli().is_file() && self.runtime_libs.join(&self.dispatch_lib).is_file()
     }
 
     /// The litertlm file of a profile name (e2b, e4b, 12b, 26b) or a file path.
@@ -144,7 +167,7 @@ printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_
         if !script.is_file() {
             bail!("no {}", script.display());
         }
-        let output = Command::new("python3")
+        let output = Command::new(&self.python)
             .arg("-I")
             .arg(&script)
             .arg(seconds.to_string())
@@ -174,11 +197,15 @@ printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_
     }
 
     /// The environment of a CLI run in a pool: nb_runtime_env's exports on top
-    /// of the current environment.
+    /// of the current environment. On Windows the shell's environment is in
+    /// POSIX form (its PATH above all), so the CLI gets this process's
+    /// environment (the system's variables a Windows process needs) with the
+    /// pool's settings from env.sh over it and env.sh's DLL directories
+    /// (NB_DLL_PATH) first on PATH.
     pub fn runtime_env(&self, pool: &Path, model_file: &Path) -> Result<Vec<(String, String)>> {
         let script =
             r#"set -e; source "$1/env.sh"; nb_resolve_paths; nb_runtime_env "$2" "$3"; env -0"#;
-        let output = Command::new("bash")
+        let output = Command::new(bash_program())
             .arg("-c")
             .arg(script)
             .arg("nvguard")
@@ -190,7 +217,7 @@ printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_
         if !output.status.success() {
             bail!("nb_runtime_env failed: {}", String::from_utf8_lossy(&output.stderr).trim());
         }
-        let mut env: Vec<(String, String)> = Vec::new();
+        let mut from_shell: Vec<(String, String)> = Vec::new();
         for entry in output.stdout.split(|b| *b == 0) {
             if entry.is_empty() {
                 continue;
@@ -200,9 +227,37 @@ printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_
                 if key == "_" || key == "SHLVL" || key == "PWD" || key == "OLDPWD" {
                     continue;
                 }
-                env.push((key.to_string(), value.to_string()));
+                from_shell.push((key.to_string(), value.to_string()));
             }
         }
+        let mut env: Vec<(String, String)> = if cfg!(windows) {
+            let mut env: Vec<(String, String)> =
+                std::env::vars().filter(|(k, _)| !k.starts_with("LITERT_NVIDIA_")).collect();
+            let mut dll_path = None;
+            for (key, value) in from_shell {
+                if key == "NB_DLL_PATH" {
+                    dll_path = Some(value);
+                } else if key.starts_with("LITERT_NVIDIA_")
+                    || key.starts_with("CUDA_")
+                    || key == "TENSORRT_RTX_ROOT"
+                {
+                    env.retain(|(k, _)| k != &key);
+                    env.push((key, value));
+                }
+            }
+            if let Some(dirs) = dll_path {
+                let current = env
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default();
+                env.retain(|(k, _)| !k.eq_ignore_ascii_case("PATH"));
+                env.push(("PATH".to_string(), format!("{dirs};{current}")));
+            }
+            env
+        } else {
+            from_shell
+        };
         for (key, value) in &self.extra_env {
             env.retain(|(k, _)| k != key);
             env.push((key.clone(), value.clone()));
@@ -210,7 +265,35 @@ printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_
         Ok(env)
     }
 
+    /// The space free on the filesystem that holds `path`, GiB.
+    #[cfg(windows)]
+    pub fn free_gib(path: &Path) -> Result<f64> {
+        use std::os::windows::ffi::OsStrExt;
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetDiskFreeSpaceExW(
+                directory: *const u16,
+                free_to_caller: *mut u64,
+                total: *mut u64,
+                free: *mut u64,
+            ) -> i32;
+        }
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+        let (mut available, mut total, mut free) = (0u64, 0u64, 0u64);
+        let ok =
+            unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut available, &mut total, &mut free) };
+        if ok == 0 {
+            bail!(
+                "GetDiskFreeSpaceEx {} failed: {}",
+                path.display(),
+                std::io::Error::last_os_error()
+            );
+        }
+        Ok(available as f64 / 1073741824.0)
+    }
+
     /// The space free on the filesystem that holds `path`, GiB (df -Pk).
+    #[cfg(not(windows))]
     pub fn free_gib(path: &Path) -> Result<f64> {
         let output = Command::new("df").arg("-Pk").arg(path).output().context("running df")?;
         let text = String::from_utf8_lossy(&output.stdout);
@@ -230,16 +313,21 @@ printf 'NB_RT=%s\nNB_LM=%s\nNB_ROOT=%s\nNB_RUNTIME_LIBS=%s\nNB_MODELS=%s\nBUILD_
     }
 
     /// Whether another CUDA compute process holds the GPU (bench.sh refuses to
-    /// measure beside one).
+    /// measure beside one). On Windows nvidia-smi lists every process with a
+    /// context on the GPU, the desktop's included, so there another instance
+    /// of the CLI is what counts.
     pub fn gpu_busy(&self) -> Result<bool> {
         let output = Command::new(&self.smi)
-            .args(["--query-compute-apps=pid", "--format=csv,noheader"])
+            .args(["--query-compute-apps=pid,process_name", "--format=csv,noheader"])
             .output()
             .with_context(|| format!("running {}", self.smi.display()))?;
         if !output.status.success() {
             bail!("nvidia-smi failed: {}", String::from_utf8_lossy(&output.stderr).trim());
         }
-        Ok(String::from_utf8_lossy(&output.stdout).lines().any(|l| !l.trim().is_empty()))
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .any(|l| !cfg!(windows) || l.contains(&self.cli_name)))
     }
 
     pub fn git_head(&self, tree: &Path) -> String {

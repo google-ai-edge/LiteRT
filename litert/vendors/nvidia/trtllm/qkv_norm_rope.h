@@ -24,9 +24,10 @@
 // and value heads; every head is RMS-normalized over its depth (queries by
 // q_scale, keys by k_scale, values without a scale when has_v_norm, else
 // not at all); queries and keys are rotated by the token's position with
-// the half-rotation RoPE over the first `rotary` dims (pairs (i, i + rotary
-// / 2); inverse timescale of pair i = exp(-i * ln(max_timescale /
-// min_timescale) / (rotary / 2)) / min_timescale, the composite's constants):
+// the half-rotation RoPE whose first rotary / 2 pairs (i, i + depth / 2)
+// turn (proportional RoPE when rotary < depth, e.g. Qwen 3.5); inverse
+// timescale of pair i = exp(-i * ln(max_timescale / min_timescale) /
+// (depth / 2)) / min_timescale, the composite's constants:
 //   q [1, heads, tokens, depth], k and v [1, kv_heads, tokens, depth].
 // BF16 in and out, FP32 inside. positions holds `tokens` int32.
 struct LiteRtNvidiaQkvNormRopeParams {

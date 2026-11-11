@@ -741,10 +741,22 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
         BuildHtpContextConfigs(options_, configs, htp_configs);
     const auto context_configs =
         htp_span.empty() ? configs.data() : htp_span.data();
+    const bool vote_during_load =
+        options_.GetHtpPerfCtrlMode() == ::qnn::HtpPerfCtrlMode::kAuto &&
+        options_.GetHtpPerformanceMode() !=
+            ::qnn::HtpPerformanceMode::kDefault;
+
+    if (vote_during_load) {
+      qnn_backend.UpVote();
+    }
     status = Api()->contextCreateFromBinary(
         qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
         context_configs, bytecode.data(), bytecode.size(), &context_handle,
         profile_handle);
+
+    if (vote_during_load) {
+      qnn_backend.ScheduleDownVote();
+    }
   } else {
     status = Api()->contextCreateFromBinary(
         qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),

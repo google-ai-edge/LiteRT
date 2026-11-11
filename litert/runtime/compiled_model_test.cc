@@ -31,6 +31,7 @@
 #include <gtest/gtest.h>
 #include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/detached_buffer.h"  // from @flatbuffers
@@ -94,8 +95,11 @@
 namespace litert {
 namespace {
 
+using ::testing::AllOf;
 using ::testing::ElementsAre;
 using ::testing::FloatNear;
+using ::testing::HasSubstr;
+using ::testing::Not;
 using ::testing::Pointwise;
 using ::testing::litert::IsError;
 
@@ -361,6 +365,144 @@ TEST(CompiledModelTest,
   LiteRtDestroyOptions(jit_compilation_options);
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);
+}
+
+// Regression test for https://github.com/google-ai-edge/LiteRT-LM/issues/4125:
+// on a device that is not on the GPU compatibility list, no GPU accelerator is
+// registered, and compiling for the GPU only failed with "Some ops are not
+// accelerated ...", which did not say that the GPU is unavailable.
+TEST(CompiledModelTest,
+     CompilationFailureExplainsMissingGpuAcceleratorWithoutCpuFallback) {
+  // Auto-register only the CPU accelerator, as on a device whose GPU is
+  // rejected by the compatibility list. LiteRtCreateEnvironment (unlike
+  // LiteRtEnvironmentT::CreateWithOptions) runs the automatic registration.
+  LiteRtAny cpu_only;
+  cpu_only.type = kLiteRtAnyTypeInt;
+  cpu_only.int_value = kLiteRtHwAcceleratorCpu;
+  const LiteRtEnvOption env_options[] = {
+      LiteRtEnvOption{
+          /*.tag=*/kLiteRtEnvOptionTagAutoRegisterAccelerators,
+          /*.value=*/cpu_only,
+      },
+  };
+  LiteRtEnvironment env_ptr = nullptr;
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/1, env_options, &env_ptr),
+            kLiteRtStatusOk);
+
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorGpu),
+            kLiteRtStatusOk);
+  auto compiled_model =
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options);
+  EXPECT_THAT(compiled_model, IsError(kLiteRtStatusErrorCompilation));
+  if (!compiled_model) {
+    EXPECT_THAT(
+        compiled_model.Error().Message(),
+        AllOf(HasSubstr("No GPU accelerator is registered"),
+              HasSubstr("GPU compatibility list"), Not(HasSubstr("NPU"))));
+  }
+
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+// A GPU accelerator that is registered but delegates no op, to exercise the
+// partial-delegation error of CompiledModel::Create.
+LiteRtStatus FakeGpuGetName(LiteRtAcceleratorConst, const char** name) {
+  *name = "FakeGpuAccelerator";
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus FakeGpuGetVersion(LiteRtAcceleratorConst, LiteRtApiVersion*) {
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus FakeGpuGetHardwareSupport(LiteRtAcceleratorConst,
+                                       LiteRtHwAcceleratorSet* hardware) {
+  *hardware = kLiteRtHwAcceleratorGpu;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus FakeGpuCreateDelegate(LiteRtRuntimeContext*, LiteRtEnvironment,
+                                   LiteRtAcceleratorConst, LiteRtOptions,
+                                   LiteRtDelegateWrapper* delegate) {
+  // No delegate: the accelerator delegates no op.
+  *delegate = nullptr;
+  return kLiteRtStatusOk;
+}
+
+void RegisterFakeGpuAccelerator(LiteRtEnvironment env) {
+  LiteRtAccelerator accelerator;
+  ASSERT_EQ(LiteRtCreateAccelerator(&accelerator), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetAcceleratorGetName(accelerator, FakeGpuGetName),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetAcceleratorGetVersion(accelerator, FakeGpuGetVersion),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetAcceleratorGetHardwareSupport(accelerator,
+                                                   FakeGpuGetHardwareSupport),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetDelegateFunction(accelerator, FakeGpuCreateDelegate),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtRegisterAccelerator(env, accelerator, /*data=*/nullptr,
+                                      /*ReleaseData=*/nullptr),
+            kLiteRtStatusOk);
+}
+
+// When a requested accelerator is registered but does not delegate every op,
+// the failure is a partial delegation, even if another requested accelerator
+// (here the NPU) is not registered.
+TEST(CompiledModelTest,
+     CompilationFailureReportsPartialDelegationWhenRequestedGpuIsRegistered) {
+  for (const LiteRtHwAcceleratorSet requested :
+       {LiteRtHwAcceleratorSet{kLiteRtHwAcceleratorGpu},
+        LiteRtHwAcceleratorSet{kLiteRtHwAcceleratorGpu |
+                               kLiteRtHwAcceleratorNpu}}) {
+    SCOPED_TRACE(absl::StrCat("requested accelerators: ", requested));
+    LiteRtAny none;
+    none.type = kLiteRtAnyTypeInt;
+    none.int_value = kLiteRtHwAcceleratorNone;
+    const LiteRtEnvOption env_options[] = {
+        LiteRtEnvOption{
+            /*.tag=*/kLiteRtEnvOptionTagAutoRegisterAccelerators,
+            /*.value=*/none,
+        },
+    };
+    LiteRtEnvironment env_ptr = nullptr;
+    ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/1, env_options, &env_ptr),
+              kLiteRtStatusOk);
+    RegisterFakeGpuAccelerator(env_ptr);
+
+    std::string path = testing::GetTestFilePath(kModelFileName);
+    LiteRtModel model;
+    ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+              kLiteRtStatusOk);
+
+    LiteRtOptions jit_compilation_options;
+    ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+    ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                   requested),
+              kLiteRtStatusOk);
+    auto compiled_model =
+        LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options);
+    EXPECT_THAT(compiled_model, IsError(kLiteRtStatusErrorCompilation));
+    if (!compiled_model) {
+      EXPECT_THAT(compiled_model.Error().Message(),
+                  AllOf(HasSubstr("Some ops are not accelerated"),
+                        Not(HasSubstr("is registered"))));
+    }
+
+    LiteRtDestroyOptions(jit_compilation_options);
+    LiteRtDestroyModel(model);
+    LiteRtDestroyEnvironment(env_ptr);
+  }
 }
 
 TEST(CompiledModelTest, UseAhwbBuffer) {

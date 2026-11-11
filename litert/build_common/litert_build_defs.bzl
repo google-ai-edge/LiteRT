@@ -273,6 +273,7 @@ def gpu_accelerator_exported_symbols_linkopt():
 def _litert_base(
         rule,
         ungrte = False,
+        enable_new_dtags = False,
         **cc_rule_kwargs):
     """
     Base rule for LiteRT targets.
@@ -284,10 +285,12 @@ def _litert_base(
       additional build flag "ungrte" will also be inspected to determine whether
       the behavior should occur. The default behavior without specifying the
       build flag is to always ungrte.
+      enable_new_dtags: Emit ELF RUNPATH instead of RPATH, allowing an explicit
+      LD_LIBRARY_PATH to select runtime libraries ahead of bundled libraries.
       **cc_rule_kwargs: Keyword arguments to pass to the underlying rule.
     """
 
-    _DEFAULT_LINK_OPTS = ["-Wl,--disable-new-dtags"]
+    _DEFAULT_LINK_OPTS = ["-Wl,--enable-new-dtags" if enable_new_dtags else "-Wl,--disable-new-dtags"]
 
     _UNGRTE_LINK_OPTS = [_SYS_ELF_INTERPRETER_LINKOPT_X86_64, _SYS_RPATHS_LINKOPT_X86_64]
 
@@ -394,6 +397,7 @@ def litert_test_lib(
 def litert_bin(
         ungrte = False,
         export_litert_only = False,
+        enable_new_dtags = False,
         **cc_bin_kwargs):
     """
     LiteRT binary rule.
@@ -401,6 +405,7 @@ def litert_bin(
     Args:
       ungrte: Whether to link against system libraries ("ungrte").
       export_litert_only: Whether to export only LiteRT symbols.
+      enable_new_dtags: Emit ELF RUNPATH so LD_LIBRARY_PATH can select a pinned runtime.
       **cc_bin_kwargs: Keyword arguments to pass to the underlying rule.
     """
     if export_litert_only:
@@ -413,6 +418,7 @@ def litert_bin(
     _litert_base(
         cc_binary,
         ungrte,
+        enable_new_dtags = enable_new_dtags,
         **cc_bin_kwargs
     )
 

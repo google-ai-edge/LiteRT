@@ -66,7 +66,23 @@ float Bf16BitsToFloat(uint16_t bits) {
   return value;
 }
 
+// Positive normal values (the test's weight scales), rounded to nearest.
+uint16_t FloatToHalfBits(float value) {
+  uint32_t bits;
+  std::memcpy(&bits, &value, sizeof(bits));
+  const uint32_t exponent = ((bits >> 23) & 0xff) - 127 + 15;
+  uint32_t half = (exponent << 10) | ((bits >> 13) & 0x3ff);
+  const uint32_t rest = bits & 0x1fff;
+  if (rest > 0x1000 || (rest == 0x1000 && (half & 1) != 0)) ++half;
+  return static_cast<uint16_t>(half);
+}
+
+double HalfBitsToDouble(uint16_t bits) {
+  return std::ldexp(1.0 + (bits & 0x3ff) / 1024.0, ((bits >> 10) & 0x1f) - 15);
+}
+
 double Gelu(double x, int gate) {
+  if (gate == kLiteRtNvidiaGemmGateSilu) return x / (1.0 + std::exp(-x));
   if (gate == kLiteRtNvidiaGemmGateGeluTanh) {
     return 0.5 * x *
            (1.0 + std::tanh(0.7978845608028654 * (x + 0.044715 * x * x * x)));
@@ -93,6 +109,7 @@ void RunCase(const Case& test_case) {
   SCOPED_TRACE(::testing::Message()
                << "rows=" << shape.rows << " input_size=" << shape.input_size
                << " output_size=" << shape.output_size << " gate=" << shape.gate
+               << " scale_block=" << shape.scale_block
                << " kind=" << static_cast<int>(test_case.rows)
                << " norm=" << test_case.norm);
   ASSERT_TRUE(LiteRtNvidiaInt8GemmSupports(&shape));
@@ -111,7 +128,8 @@ void RunCase(const Case& test_case) {
     const size_t row = i / input;
     const int k = static_cast<int>(i % input);
     float value = next() * (1.0f + static_cast<float>(row % 7) * 3.0f);
-    if (test_case.rows == Rows::kChannels && k % 241 == 7) value *= 40.0f;
+    if (test_case.rows == Rows::kChannels && k % 241 == 7 && k < 241 * 16)
+      value *= 40.0f;
     if (test_case.rows == Rows::kSparse && (row % 5 == 3 || i % 11 != 0))
       value = 0.0f;
     if (test_case.rows == Rows::kHuge) {
@@ -128,9 +146,15 @@ void RunCase(const Case& test_case) {
     state = state * 1664525u + 1013904223u;
     byte = static_cast<uint8_t>(state >> 24);
   }
-  std::vector<uint16_t> scales(channels);
-  for (auto& scale : scales)
-    scale = FloatToBf16Bits(0.002f + 0.004f * std::fabs(next()));
+  // BF16 per channel, or fp16 per channel and 32-dim block.
+  const bool blockwise = shape.scale_block == 32;
+  const int blocks = input / 32;
+  std::vector<uint16_t> scales(
+      blockwise ? static_cast<size_t>(channels) * blocks : channels);
+  for (auto& scale : scales) {
+    const float value = 0.002f + 0.004f * std::fabs(next());
+    scale = blockwise ? FloatToHalfBits(value) : FloatToBf16Bits(value);
+  }
   std::vector<float> norm_scale(input);
   for (auto& s : norm_scale) s = 0.5f + std::fabs(next());
   const float norm_eps = 1e-6f;
@@ -184,14 +208,21 @@ void RunCase(const Case& test_case) {
       const uint8_t* packed =
           weights.data() + static_cast<size_t>(channel) * input / 2;
       double sum = 0.0;
+      double block_sum = 0.0;
       for (int k = 0; k < input; ++k) {
         const int nibble = (packed[k / 2] >> ((k & 1) * 4)) & 15;
         double a =
             Bf16BitsToFloat(activation[static_cast<size_t>(row) * input + k]);
         if (test_case.norm) a *= factor * norm_scale[k];
-        sum += a * ((nibble ^ 8) - 8);
+        block_sum += a * ((nibble ^ 8) - 8);
+        if (blockwise && (k + 1) % 32 == 0) {
+          sum += block_sum *
+                 HalfBitsToDouble(
+                     scales[static_cast<size_t>(channel) * blocks + k / 32]);
+          block_sum = 0.0;
+        }
       }
-      return sum * Bf16BitsToFloat(scales[channel]);
+      return blockwise ? sum : block_sum * Bf16BitsToFloat(scales[channel]);
     };
     double error = 0.0;
     double rounding = 0.0;
@@ -287,16 +318,20 @@ TEST(SubbyteGemmInt8Test, Supports) {
   };
   EXPECT_TRUE(supports({1024, 3840, 8192, kLiteRtNvidiaGemmGateNone, 0}));
   EXPECT_TRUE(supports({128, 15360, 3840, kLiteRtNvidiaGemmGateGeluTanh, 0}));
-  EXPECT_FALSE(supports(
-      {1024, 3840, 8192, kLiteRtNvidiaGemmGateNone, 32}));  // blockwise scales
+  EXPECT_TRUE(supports({1024, 3840, 8192, kLiteRtNvidiaGemmGateNone, 32}));
+  EXPECT_TRUE(supports({1024, 17408, 5120, kLiteRtNvidiaGemmGateNone, 32}));
   EXPECT_FALSE(supports({1024, 3904, 8192, kLiteRtNvidiaGemmGateNone,
                          0}));  // not a multiple of 128
-  EXPECT_FALSE(supports({1024, 16512, 8192, kLiteRtNvidiaGemmGateNone,
+  EXPECT_FALSE(supports({1024, 24704, 8192, kLiteRtNvidiaGemmGateNone,
                          0}));  // past the selection's buffer
   EXPECT_FALSE(supports({100, 3840, 8192, kLiteRtNvidiaGemmGateNone, 0}));
+  // Blockwise weights also gather the low halves of their outliers' weights.
+  LiteRtNvidiaGemmShape per_channel = {1024, 3840, 8192,
+                                       kLiteRtNvidiaGemmGateNone, 0};
   LiteRtNvidiaGemmShape blockwise = {1024, 3840, 8192,
                                      kLiteRtNvidiaGemmGateNone, 32};
-  EXPECT_EQ(LiteRtNvidiaInt8GemmWorkspaceBytes(&blockwise), 0u);
+  EXPECT_GT(LiteRtNvidiaInt8GemmWorkspaceBytes(&blockwise),
+            LiteRtNvidiaInt8GemmWorkspaceBytes(&per_channel));
 }
 
 TEST(SubbyteGemmInt8Test, UniformRows) {
@@ -327,6 +362,30 @@ TEST(SubbyteGemmInt8Test, OutlierChannelsAreExact) {
 TEST(SubbyteGemmInt8Test, SparseRows) {
   RunCase(
       {{256, 1536, 256, kLiteRtNvidiaGemmGateNone, 0}, Rows::kSparse, false});
+}
+
+// An fp16 scale per channel and 32-dim block (Gemma 4's and Qwen 3.5's
+// weights): the same error as per-channel scales, outliers included.
+TEST(SubbyteGemmInt8Test, BlockwiseScales) {
+  RunCase(
+      {{256, 1536, 768, kLiteRtNvidiaGemmGateNone, 32}, Rows::kUniform, false});
+  RunCase(
+      {{128, 5120, 512, kLiteRtNvidiaGemmGateSilu, 32}, Rows::kUniform, true});
+  RunCase({{128, 3840, 384, kLiteRtNvidiaGemmGateGeluTanh, 32},
+           Rows::kChannels,
+           false});
+  RunCase(
+      {{256, 1536, 768, kLiteRtNvidiaGemmGateNone, 32}, Rows::kHuge, false});
+  RunCase(
+      {{256, 1536, 256, kLiteRtNvidiaGemmGateNone, 32}, Rows::kSparse, false});
+}
+
+// Qwen 3.5's down projection, wider than the 16384 dims the outlier selection
+// held before.
+TEST(SubbyteGemmInt8Test, WideInput) {
+  RunCase({{128, 17408, 256, kLiteRtNvidiaGemmGateNone, 32},
+           Rows::kChannels,
+           false});
 }
 
 // LiteRT-LM pads a prefill chunk past its tokens with rows at position 0,

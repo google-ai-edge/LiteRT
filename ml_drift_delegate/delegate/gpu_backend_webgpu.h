@@ -269,6 +269,7 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
       const override;
   absl::Status ReportMemoryBenchmarkIfEnabled(
       const ::ml_drift::CreateGpuModelInfo& create_info) override;
+  // Must be called before any Dispatch() call.
   absl::Status SetCommandBufferHint(int num_nodes_per_command_encoder) override;
 
   // Underlying WebGPU inference context.
@@ -301,6 +302,8 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
 
   absl::StatusOr<::ml_drift::webgpu::SpatialTensor*> GetSpatialTensorInternal(
       ::ml_drift::ValueId id);
+  void JoinNextCommandBuffersThread();
+  absl::Status FlushPendingSpatialTensors();
   // Prepares command buffers for Dispatch() call.
   absl::Status PrepareCommandBuffers(
       PreparedCommandBuffers& command_buffers,
@@ -318,6 +321,11 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
   const std::shared_ptr<const WebGpuCommandCapture> command_capture_;
   const uint64_t capture_context_id_;
 
+  // Spatial tensor bindings staged while background command buffer preparation
+  // is enabled, applied to ctx_ once next_command_buffers_thread_ finishes.
+  absl::flat_hash_map<::ml_drift::ValueId, ::ml_drift::webgpu::SpatialTensor*>
+      pending_spatial_tensors_;
+
   // Command buffers prepared in advance for the next Dispatch() call.
   std::vector<PreparedCommandBuffers> next_command_buffers_;
   int num_nodes_per_command_encoder_;
@@ -328,10 +336,10 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
   // all next_command_buffers_ are prepared.
   bool next_command_buffers_ready_ = false;
   // Prepares next_command_buffers_ in parallel with the current Dispatch()
-  // call. It is only accessed by the thread calling Dispatch(), which joins it
-  // before touching next_command_buffers_ again, so no synchronization is
-  // needed; see SharedWebGpuEnv for how a Dispatch() by a different context on
-  // the same environment is handled.
+  // call. JoinNextCommandBuffersThread() joins and resets it before flushing
+  // staged bindings to ctx_ or touching next_command_buffers_ again; see
+  // SharedWebGpuEnv for how a Dispatch() by a different context on the same
+  // environment is handled.
   std::unique_ptr<std::thread> next_command_buffers_thread_;
 };
 

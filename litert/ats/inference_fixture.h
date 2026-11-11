@@ -139,9 +139,10 @@ class AtsInferenceTest : public RngTest {
   void TearDown() override {
     cap_.accelerator.SetFields(conf_);
 
-    if (conf_.IsNpu() && !cap_.accelerator.soc_man.empty() &&
-        graph_->IsLoaded()) {
-      auto stamp = GetBuildStamp(Graph());
+    if (conf_.IsNpu() && (aot_model_ != nullptr || graph_->IsLoaded())) {
+      const LiteRtModelT& target_graph =
+          aot_model_ != nullptr ? *aot_model_ : Graph();
+      auto stamp = GetBuildStamp(target_graph);
       if (stamp) {
         cap_.accelerator.soc_man = std::string(stamp->soc_manufacturer);
         cap_.accelerator.soc_model = std::string(stamp->soc_model);
@@ -178,8 +179,15 @@ class AtsInferenceTest : public RngTest {
     LITERT_RETURN_IF_ERROR(graph_->ConfigureOptions(options));
 
     if (conf_.IsNpu()) {
-      auto exec = NpuCompiledModelExecutor::Create(Graph(), options, env);
-      cap_.compilation.SetFields(conf_, Graph(), !exec.HasValue());
+      LiteRtModelT* target_graph = &Graph();
+      if (!conf_.AotModelsDir().empty()) {
+        LITERT_ASSIGN_OR_RETURN(aot_model_,
+                                conf_.LoadAotModel(names_.report_id));
+        target_graph = aot_model_.get();
+        cap_.model.SetFields(names_, *target_graph);
+      }
+      auto exec = NpuCompiledModelExecutor::Create(*target_graph, options, env);
+      cap_.compilation.SetFields(conf_, *target_graph, !exec.HasValue());
       if (!exec) {
         return exec.Error();
       }
@@ -491,6 +499,7 @@ class AtsInferenceTest : public RngTest {
       : graph_(std::move(graph)), conf_(conf), names_(names), cap_(cap) {}
 
   TestGraph::Ptr graph_;
+  LiteRtModelT::Ptr aot_model_ = nullptr;
   const AtsConf& conf_;
   TestNames names_;
   Capture::Entry& cap_;

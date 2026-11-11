@@ -90,7 +90,8 @@ MAIN_FUNCTION($0) {
     args.active_scales.ReadPerChannel<float>(active_scale, x, 0, ae_id, b);
     sum += in_value * (scale_value * active_scale);
   }
-  args.dst.Write(ucl::Convert<args.dst::type>(sum), x, y, s, b);
+  args.dst::type res_value = ucl::Convert<args.dst::type>(sum);
+  args.dst.Write(res_value, x, y, s, b);
 }
 )";
   return std::make_unique<ScaleWithBatchIdsOp>(std::move(op));

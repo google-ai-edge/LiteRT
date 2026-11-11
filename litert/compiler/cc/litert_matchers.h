@@ -352,6 +352,21 @@ struct OpVariadicMatcher {
     return res;
   }
 
+  bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    auto def_op = tensor.GetDefiningOp();
+    if (!def_op) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor has no defining op");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    bool res = Match(*def_op, tracer);
+    if (tracer) tracer->PopScope();
+    return res;
+  }
+
  private:
   template <size_t... I>
   bool MatchInputs(const Op& op, MatchTracer* tracer,

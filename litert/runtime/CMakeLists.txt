@@ -48,6 +48,7 @@ set(LITERT_RUNTIME_SOURCES
     litert_cpu_options.cc
     litert_runtime_options.cc
     magic_number_utils.cc
+    model_buffer_writes.cc
     profiler.cc
     profiler_summarizer.cc
     tensor_buffer.cc

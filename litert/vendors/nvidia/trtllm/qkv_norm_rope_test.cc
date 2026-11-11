@@ -55,7 +55,8 @@ float Bf16BitsToFloat(uint16_t value) {
 }
 
 // The composite's decomposition: per-head RMS norm (scale for q and k, none
-// for v), then the half-rotation RoPE over the first `rotary` dims.
+// for v), then the half-rotation RoPE whose first rotary / 2 pairs
+// (i, i + depth / 2) turn, with timescales spaced over all depth / 2 pairs.
 void Reference(const LiteRtNvidiaQkvNormRopeParams& p,
                const std::vector<uint16_t>& qkv,
                const std::vector<int32_t>& positions,
@@ -83,7 +84,7 @@ void Reference(const LiteRtNvidiaQkvNormRopeParams& p,
       if (is_q || is_k) {
         const int half = p.rotary / 2;
         const double log_step =
-            std::log(p.max_timescale / p.min_timescale) / half;
+            std::log(p.max_timescale / p.min_timescale) / (p.depth / 2);
         for (int i = 0; i < half; ++i) {
           const double inv_timescale =
               std::exp(-i * log_step) / p.min_timescale;
@@ -173,10 +174,29 @@ TEST(QkvNormRopeTest, MatchesReference) {
   // full rotation at base 10,000, value norm; decode and a prefill chunk.
   RunCase({1, 16, 8, 256, 256, 1, 1e-6f, 1.0f, 10000.0f});
   RunCase({37, 16, 8, 256, 256, 1, 1e-6f, 1.0f, 10000.0f});
-  // Its global layers' geometry: depth 512, a quarter rotated at base 1e6.
+  // Proportional RoPE with depth 512, a quarter of the pairs turning.
   RunCase({5, 16, 2, 512, 128, 0, 1e-6f, 1.0f, 1000000.0f});
+  // Qwen 3.5's full-attention layers: 24 query heads, 4 KV heads of depth
+  // 256, a quarter of the pairs turning, no value norm.
+  RunCase({1, 24, 4, 256, 64, 0, 1e-6f, 1.0f, 1e28f});
+  RunCase({70, 24, 4, 256, 64, 0, 1e-6f, 1.0f, 1e28f});
   // Small odd shapes.
   RunCase({3, 2, 1, 64, 32, 1, 1e-5f, 1.0f, 500.0f});
+}
+
+// Qwen 3.5 rotates 64 of its 256 dims at base 1e7; its export states this as
+// proportion 0.25 and max_timescale 1e7^(256 / 64) = 1e28 over the whole
+// depth. The composite's timescales must reproduce the model's
+// 1e7^(-2i / 64), the frequencies of its exported decomposition.
+TEST(QkvNormRopeTest, ProportionalTimescalesMatchQwen35) {
+  constexpr int kDepth = 256;
+  constexpr int kRotary = 64;
+  const double log_step = std::log(1e28) / (kDepth / 2);
+  for (int i = 0; i < kRotary / 2; ++i) {
+    const double composite = std::exp(-i * log_step);
+    const double model = std::pow(1e7, -2.0 * i / kRotary);
+    EXPECT_NEAR(composite / model, 1.0, 1e-9) << "pair " << i;
+  }
 }
 
 TEST(QkvNormRopeTest, RejectsInvalidParams) {

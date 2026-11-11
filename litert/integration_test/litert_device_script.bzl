@@ -19,6 +19,14 @@ load("@rules_shell//shell:sh_library.bzl", "sh_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/integration_test:litert_device_common.bzl", "get_spec", "split_dep_platform")
 
+# copybara:uncomment_begin(google-only)
+# load(
+#     "//litert/integration_test/google:mobile_gtest.bzl",
+#     "default_debian_sysroot",
+#     "resolve_debian_sysroot",
+# )
+# copybara:uncomment_end
+
 def _extract_binary(target):
     # cc_test case
     if RunEnvironmentInfo in target:
@@ -334,6 +342,156 @@ def litert_device_script(
         tags = tags,
         visibility = visibility,
         **script_kwargs
+    )
+
+# copybara:comment_begin(oss-only)
+def resolve_debian_sysroot(_ctx, compile_bin):
+    return [], "\"{}\"".format(compile_bin.path)
+
+# copybara:comment_end
+
+# copybara:comment_begin(oss-only)
+def default_debian_sysroot(_backend_id):
+    return None
+
+# copybara:comment_end
+
+# Runs sharded host AOT compilation during the build to produce a directory of
+# pre-compiled .tflite models that can be pushed to a device by mobile_test.
+def _litert_aot_compile_impl(ctx):
+    compile_bin = ctx.executable.host_bin
+    host_libs = ctx.files.host_libs
+    plugin_dirs = [lib.dirname for lib in host_libs if "libLiteRtCompilerPlugin" in lib.basename]
+    if not plugin_dirs:
+        fail("No compiler plugin library found in host_libs.")
+
+    sysroot_files, runner_prefix = resolve_debian_sysroot(ctx, compile_bin)
+
+    inputs = depset(
+        direct = [compile_bin] + host_libs + ctx.files.data + sysroot_files,
+        transitive = [
+            v[DefaultInfo].default_runfiles.files
+            for v in [ctx.attr.host_bin] + ctx.attr.host_libs + ctx.attr.data
+        ],
+    )
+    args_str = " ".join(["'{}'".format(a.replace("\\'", "").replace("\"", "").replace("'", "")) for a in ctx.attr.exec_args])
+    link_path = ":".join(depset([f.dirname for f in host_libs + sysroot_files]).to_list())
+
+    out_dir = ctx.actions.declare_directory(ctx.label.name)
+    num_shards = max(1, ctx.attr.shard_count)
+    shard_dirs = [out_dir] if num_shards == 1 else [
+        ctx.actions.declare_directory("{}_shard_{}".format(ctx.label.name, i))
+        for i in range(num_shards)
+    ]
+    for shard_idx, shard_dir in enumerate(shard_dirs):
+        # Note: `cp -rsf` symlinks generated exec-config outputs (e.g. LLVM/DIVE tools)
+        # from `bazel-out/.../bin/<path>` to `./<path>` so subprocesses using
+        # `GetRunfilesDir()` can locate them inside a non-test build action.
+        ctx.actions.run_shell(
+            inputs = inputs,
+            outputs = [shard_dir],
+            command = """
+                set -e
+                cp -rsf "$(pwd)/{exec_root}/." .
+                mkdir -p "{models_out}"
+                export LD_LIBRARY_PATH="{link_path}:${{LD_LIBRARY_PATH:-}}"
+                export TEST_TOTAL_SHARDS={total_shards}
+                export TEST_SHARD_INDEX={shard_idx}
+                {runner_prefix} --plugin_dir="{plugin_dir}" --models_out="{models_out}" {args_str}
+            """.format(
+                exec_root = compile_bin.root.path,
+                models_out = shard_dir.path,
+                link_path = link_path,
+                total_shards = num_shards,
+                shard_idx = shard_idx,
+                runner_prefix = runner_prefix,
+                plugin_dir = plugin_dirs[0],
+                args_str = args_str,
+            ),
+            mnemonic = "LiteRtAotCompileShard",
+            progress_message = "Compiling LiteRT AOT models ({} shard {}/{})".format(
+                ctx.label.name,
+                shard_idx + 1,
+                num_shards,
+            ),
+        )
+    if num_shards > 1:
+        ctx.actions.run_shell(
+            inputs = shard_dirs,
+            outputs = [out_dir],
+            command = "mkdir -p '{out}' {dirs} && find {dirs} -maxdepth 1 -name '*.tflite' -exec cp -t '{out}/' {{}} +".format(
+                out = out_dir.path,
+                dirs = " ".join(["'{}'".format(d.path) for d in shard_dirs]),
+            ),
+            mnemonic = "LiteRtAotMerge",
+        )
+
+    return [
+        DefaultInfo(
+            files = depset([out_dir]),
+            runfiles = ctx.runfiles(files = [out_dir]),
+        ),
+    ]
+
+_litert_aot_compile_rule = rule(
+    implementation = _litert_aot_compile_impl,
+    attrs = {
+        "host_bin": attr.label(mandatory = True, executable = True, cfg = "exec"),
+        "data": attr.label_list(default = [], allow_files = True),
+        "host_libs": attr.label_list(default = [], allow_files = True, cfg = "exec"),
+        "exec_args": attr.string_list(default = []),
+        "shard_count": attr.int(default = 1),
+        "debian_sysroot": attr.label(
+            default = None,
+            # copybara:uncomment_begin(google-only)
+            # cfg = "exec",
+            # copybara:uncomment_end
+        ),
+    },
+)
+
+def litert_aot_compile(
+        name,
+        bin,
+        backend_id,
+        exec_args = [],
+        data = [],
+        shard_count = 1,
+        testonly = True,
+        tags = []):
+    """Compiles ATS models AOT on the host during the build into an output directory.
+
+    Args:
+      name: Name of the generated directory output target.
+      bin: Label of the host ATS compiler binary target.
+      backend_id: Backend configuration identifier (e.g., "qualcomm", "google_tensor").
+      exec_args: Command-line arguments passed to the host compiler binary.
+      data: Additional data dependencies (such as input .tflite models).
+      shard_count: Number of parallel build shards used to compile models.
+      testonly: If True, marks the generated target as testonly.
+      tags: Additional Bazel tags applied to the generated target.
+    """
+    backend = get_spec(backend_id)
+    plugin_libs = [
+        lib
+        for lib in backend.libs
+        if (backend.plugin and backend.plugin in lib) or
+           (backend.dispatch and backend.dispatch in lib) or
+           ("libLiteRt.so" in lib)
+    ]
+
+    debian_sysroot = default_debian_sysroot(backend_id)
+
+    _litert_aot_compile_rule(
+        name = name,
+        host_bin = bin,
+        host_libs = plugin_libs + list(backend.host_libs),
+        data = data,
+        exec_args = exec_args,
+        shard_count = shard_count if shard_count != None else 1,
+        debian_sysroot = debian_sysroot,
+        testonly = testonly,
+        tags = tags,
     )
 
 def make_download_model_provider(name, url, testonly = True):

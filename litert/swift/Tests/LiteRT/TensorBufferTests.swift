@@ -172,7 +172,20 @@ final class TensorBufferTests: XCTestCase {
       return
     }
 
-    let env = try createTestEnvironment()
+    guard let queue = device.makeCommandQueue() else {
+      XCTFail("Failed to create MTLCommandQueue")
+      return
+    }
+
+    // Importing a Metal buffer requires the environment to carry the Metal
+    // device and command queue: the Metal accelerator rejects the import with
+    // an invalid argument error if the command queue is missing.
+    let devicePtr = Unmanaged.passUnretained(device).toOpaque()
+    let queuePtr = Unmanaged.passUnretained(queue).toOpaque()
+    let env = try createTestEnvironment(options: [
+      .metalDevice(devicePtr),
+      .metalCommandQueue(queuePtr)
+    ])
     try withExtendedLifetime(env) {
       let size = 1024
       guard let mtlBuffer = device.makeBuffer(length: size, options: []) else {

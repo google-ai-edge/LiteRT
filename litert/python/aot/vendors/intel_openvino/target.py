@@ -43,6 +43,7 @@ class SocModel(StrEnum):
 
   LNL = "LNL"  # NPU4000, Lunar Lake
   PTL = "PTL"  # NPU5010, Panther Lake
+  WCL = "WCL"  # NPU5020, Wildcat Lake
 
 
 class SocManufacturer(StrEnum):

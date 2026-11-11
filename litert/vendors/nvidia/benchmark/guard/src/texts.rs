@@ -31,6 +31,18 @@ pub struct TextRun {
     #[serde(default)]
     pub immediate_upload: bool,
     pub parser_errors: usize,
+    /// The CLI's own word that it cannot run the probe (a build without
+    /// constrained decoding): the run is reported, not judged.
+    #[serde(default)]
+    pub unsupported: Option<String>,
+}
+
+/// What the CLI says when a build cannot run a probe: the constrained decode
+/// of a build with constrained decoding compiled out (LiteRT-LM's
+/// `enable_constrained_decoding=false`).
+pub fn unsupported_reason(log: &str) -> Option<String> {
+    const MARK: &str = "Constrained decoding is disabled in this build";
+    log.contains(MARK).then(|| format!("the CLI has no constrained decoding ({MARK})"))
 }
 
 /// Where two texts part.
@@ -115,5 +127,12 @@ mod tests {
         assert_eq!(common_words("same text", "same text"), 2);
         assert_eq!(session_output("junk\noutput: {\"a\":1}\n"), "{\"a\":1}");
         assert_eq!(session_output("no marker"), "no marker");
+    }
+
+    #[test]
+    fn a_build_without_constrained_decoding_is_told_by_the_cli() {
+        let log = "E0000 litert_lm_advanced_main.cc:416] Failed to run litert_lm: UNIMPLEMENTED: Constrained decoding is disabled in this build.\n";
+        assert!(unsupported_reason(log).unwrap().contains("no constrained decoding"));
+        assert_eq!(unsupported_reason("Parser Error: token"), None);
     }
 }

@@ -65,13 +65,13 @@ Host preparation is external: on cuda-wsl use `zsh -lic benchmark` before a
 formal measurement and set `CI_HOST_MODE=formal`. Without formal preparation,
 leave the default `CI_HOST_MODE=diagnostic` and label timings accordingly.
 The runners refuse competing CUDA compute processes. Every run records the
-host's clocks in its `meta.json` (`host_clock`, from `clock_check.py`: the
+host's clocks in its `meta.json` (`host_clock`, from `clock_check.tool`: the
 kernel tick and frequency, the monotonic clock's rate against the raw clock),
 since the CLI's rates are read on the monotonic clock; a formal or
 idle-verified run is refused, with the reasons, when the tick is not 10,000 us
 or that rate is off by more than 0.1%, and a diagnostic run warns and records.
 A refusal is the host's clock to fix (root: the kernel tick, or the
-clocksource), not the benchmark's; `python3 clock_check.py 10` shows the
+clocksource), not the benchmark's; `python3 clock_check.tool 10` shows the
 state. Do not drop global OS
 caches or stop unrelated applications. Model-file cache, compiled artifacts,
 process warm-up and prompt/KV reuse are distinct states; “hot” describes the
@@ -173,3 +173,13 @@ not override the output budget. Real-text runs honor stop tokens. A successful
 check requires a populated long prefix followed by decode and a positive host
 arena count. Initialization alone does not validate long-context execution.
 Treat timings as diagnostic unless the host passed formal preparation.
+
+## Measurements against llama.cpp, and the tables
+
+[README.md](README.md) is the method and manual of the comparison tables under `google/`
+(the RTX 5080 on native Windows and WSL, the RTX Spark): `windows/bench.tool` and
+`windows/matrix.tool` are bench.sh and matrix.sh on native Windows (`windows/config.json`
+names the machine), `llama/` measures llama.cpp the same way, `eval/` runs LiveCodeBench and
+GPQA, and `report/tables.tool` / `report/eval.tool` rewrite `google/` from the machine's
+cached runs, the newest valid run per cell. The `.tool` files are Python
+(`python3 file.tool`); `test_tables.tool` tests the processing on synthetic runs.

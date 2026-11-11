@@ -26,7 +26,6 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 
-
 LiteRtRuntimeContext* LrtGetRuntimeContext() {
   static LiteRtRuntimeContext context = {
       .abi_header =
@@ -34,7 +33,7 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
               .struct_size = sizeof(LiteRtRuntimeContext),
               // LINT.IfChange(runtime_context_version)
               .major_version = 1,
-              .minor_version = 2,
+              .minor_version = 3,
               // LINT.ThenChange(./litert_runtime_context.h:runtime_context_table)
               .reserved = 0,
           },
@@ -104,6 +103,8 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
           LiteRtExternalLiteRtBufferContextGetRunOptions,
       .get_options_hardware_accelerators = LiteRtGetOptionsHardwareAccelerators,
       .append_metric = LiteRtAppendMetric,
+      .create_tensor_buffer_requirements_with_alignment =
+          LiteRtCreateTensorBufferRequirementsWithAlignment,
   };
   return &context;
 }

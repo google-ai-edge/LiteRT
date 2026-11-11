@@ -405,8 +405,12 @@ TEST(AcceleratorMemoryUsageTest,
       CreateD3D11TestDevice(&skip_reason);
   if (!d3d.has_value()) GTEST_SKIP() << skip_reason;
 
+  // The snapshots are built from the same host reading that the PrivateUsage
+  // assertions below use, so that they compare one sample with itself rather
+  // than two samples taken a moment apart.
   const HostMemoryUsage raw_before = GetHostMemoryUsage();
-  const MemorySnapshot before = TakeMemorySnapshot();
+  const MemorySnapshot before =
+      MakeMemorySnapshot(raw_before, GetProcessAcceleratorMemoryUsage());
   ASSERT_TRUE(raw_before.platform_attributed_bytes.has_value());
   ASSERT_TRUE(before.attributed_by_os.has_value());
   ASSERT_TRUE(before.resident_in_ram.has_value());
@@ -416,7 +420,8 @@ TEST(AcceleratorMemoryUsageTest,
   ASSERT_NE(buffer, nullptr);
 
   const HostMemoryUsage raw_after = GetHostMemoryUsage();
-  const MemorySnapshot after = TakeMemorySnapshot();
+  const MemorySnapshot after =
+      MakeMemorySnapshot(raw_after, GetProcessAcceleratorMemoryUsage());
   ASSERT_TRUE(raw_after.platform_attributed_bytes.has_value());
   ASSERT_TRUE(after.attributed_by_os.has_value());
   ASSERT_TRUE(after.resident_in_ram.has_value());
@@ -451,7 +456,9 @@ TEST(AcceleratorMemoryUsageTest,
                  << resident_delta << " (CPU " << resident_cpu_delta
                  << "); snapshot is now " << after;
 
-  // The attributed total is PrivateUsage, whatever happened.
+  // The attributed total is PrivateUsage, whatever happened. The snapshot was
+  // built from the same host reading, so the two deltas are equal by
+  // construction; the tolerance is belt and braces.
   EXPECT_NEAR(static_cast<double>(attributed_delta),
               static_cast<double>(raw_delta), static_cast<double>(kMb));
   // The memory is present once, on the GPU side: whether or not the working

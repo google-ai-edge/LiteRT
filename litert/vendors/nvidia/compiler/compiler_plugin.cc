@@ -85,11 +85,12 @@ using litert::Expected;
 
 constexpr char kPluginManufacturer[] = "NVIDIA";
 constexpr char kPluginSocModel[] = "tensorrt-rtx";
-constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 15;
+constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 18;
 
 enum class PartitionPolicy {
   kSafe,
   kGemma4,
+  kQwen35,
   kCompute,
   kAll,
 };
@@ -276,6 +277,9 @@ PartitionPolicy GetPartitionPolicy() {
   if (policy == "gemma4") {
     return PartitionPolicy::kGemma4;
   }
+  if (policy == "qwen3_5") {
+    return PartitionPolicy::kQwen35;
+  }
   if (policy == "compute") {
     return PartitionPolicy::kCompute;
   }
@@ -290,6 +294,8 @@ const char* PartitionPolicyName(PartitionPolicy policy) {
       return "compute";
     case PartitionPolicy::kGemma4:
       return "gemma4";
+    case PartitionPolicy::kQwen35:
+      return "qwen3_5";
     case PartitionPolicy::kSafe:
       return "safe";
   }
@@ -379,6 +385,22 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
   }
 }
 
+// Qwen 3.5's hybrid stack in whole-signature islands, as for Gemma 4: its
+// attention layers use the same composites, and its Gated DeltaNet layers
+// add the gated_delta_update custom op, the short convolution composite and
+// the elementwise ops of their gates and decays.
+bool IsValidatedQwen35TensorRtOp(const litert::compiler::Op& op) {
+  switch (op.Code()) {
+    case kLiteRtOpCodeTflExp:
+    case kLiteRtOpCodeTflGreater:
+    case kLiteRtOpCodeTflLog:
+    case kLiteRtOpCodeTflLogistic:
+      return true;
+    default:
+      return IsValidatedGemma4TensorRtOp(op);
+  }
+}
+
 bool MatchesOpNameToken(const litert::compiler::Op& op,
                         const std::string& token) {
   if (token.empty()) {
@@ -450,6 +472,8 @@ bool IsPolicyAllowedOp(const litert::compiler::Op& op, PartitionPolicy policy) {
       return IsComputeHeavyOp(op);
     case PartitionPolicy::kGemma4:
       return IsValidatedGemma4TensorRtOp(op);
+    case PartitionPolicy::kQwen35:
+      return IsValidatedQwen35TensorRtOp(op);
     case PartitionPolicy::kSafe:
       return IsSafeGemma4Op(op);
   }
@@ -530,7 +554,10 @@ std::string BuildCompilerSdkVersion() {
       "LITERT_NVIDIA_TENSORRT_FUSE_GEMV_GROUPS",
       "LITERT_NVIDIA_TENSORRT_FUSE_MOE_ROUTER",
       "LITERT_NVIDIA_TENSORRT_FUSE_MOE_BLOCK",
+      "LITERT_NVIDIA_TENSORRT_FUSE_GATED_DELTA_NET",
       "LITERT_NVIDIA_TENSORRT_FUSE_NORM_GEMV",
+      "LITERT_NVIDIA_TENSORRT_FUSE_SWIGLU",
+      "LITERT_NVIDIA_TENSORRT_INT8_BLOCKWISE_GEMM",
       "LITERT_NVIDIA_TENSORRT_JIT_HANDLE",
       "LITERT_NVIDIA_TENSORRT_MAX_FC_WEIGHT_BYTES",
       "LITERT_NVIDIA_TENSORRT_MAX_FILL_BYTES",

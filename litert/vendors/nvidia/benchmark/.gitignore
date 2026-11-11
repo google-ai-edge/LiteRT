@@ -1,1 +1,6 @@
 env.local.sh
+
+# The native Windows runners' machine configuration and the processors' per-cell sources.
+windows/config.json
+google/**/sources.json
+__pycache__/

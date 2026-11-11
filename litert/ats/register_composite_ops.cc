@@ -25,6 +25,7 @@
 #include "litert/ats/register_moe_experts.h"
 #include "litert/ats/register_qkv_norm_rope.h"
 #include "litert/ats/register_rms_norm.h"
+#include "litert/ats/register_rope.h"
 #include "litert/ats/register_runtime_bmm.h"
 #include "litert/ats/register_sdpa.h"
 #include "litert/ats/register_sdpa_transposed.h"
@@ -46,6 +47,7 @@ void RegisterCompositeOpsImpl(const AtsConf& options, size_t& test_id,
   RegisterTflMoe(options, test_id, kDefaultIters, cap);
   RegisterQkvNormRope(options, test_id, kDefaultIters, cap);
   RegisterRmsNorm(options, test_id, kDefaultIters, cap);
+  RegisterRope(options, test_id, kDefaultIters, cap);
   RegisterRuntimeBmm(options, test_id, kDefaultIters, cap);
   RegisterSdpa(options, test_id, /*iters=*/20, cap);
   RegisterSdpaTransposed(options, test_id, kDefaultIters, cap);

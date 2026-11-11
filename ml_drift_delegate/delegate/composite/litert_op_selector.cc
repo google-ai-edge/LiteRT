@@ -52,6 +52,7 @@
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/short_conv_step_kernel.h"
 #include "ml_drift_delegate/delegate/composite/short_conv_step_parser.h"
+#include "ml_drift_delegate/delegate/composite/symmetric_quantized_fully_connected.h"
 
 namespace litert::ml_drift {
 
@@ -277,6 +278,13 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
   }
   if (node.operation.type == ToString(::ml_drift::OperationType::kRope)) {
     return CreateRoPEFromNode(inputs, outputs, node, model_builder);
+  }
+  // Symmetric quantized FullyConnected binds no zero point, which ML Drift's
+  // selector expects for these ops.
+  absl::Status fc_status = CreateSymmetricQuantizedFullyConnectedFromNode(
+      gpu_info_, create_info_, inputs, outputs, node, model_builder);
+  if (!absl::IsUnimplemented(fc_status)) {
+    return fc_status;
   }
   return ::ml_drift::GPUOperationFromNode(gpu_info_, op_def, create_info_,
                                           inputs, outputs, node, model_builder);

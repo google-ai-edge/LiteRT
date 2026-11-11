@@ -17,6 +17,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include "litert/cc/litert_expected.h"
 
@@ -64,6 +66,39 @@ class CudaVmmBlock {
   uint64_t address_ = 0;
   uint64_t size_ = 0;
   bool mapped_ = false;
+};
+
+// A range of device addresses whose granules map blocks, one block at as many
+// places as wanted: the range reads as the blocks it maps and costs only
+// their memory. Its mappings end with it; the blocks keep their own.
+class CudaVmmRange {
+ public:
+  // `size` is a positive multiple of CudaVmmGranule().
+  static Expected<std::unique_ptr<CudaVmmRange>> Create(uint64_t size);
+
+  ~CudaVmmRange();
+  CudaVmmRange(const CudaVmmRange&) = delete;
+  CudaVmmRange& operator=(const CudaVmmRange&) = delete;
+
+  // Maps all of `block` at `offset`, a multiple of the granule where nothing
+  // is mapped yet.
+  Expected<void> Map(uint64_t offset, const CudaVmmBlock& block);
+  // Lets the current device read and write the range, all of which must be
+  // mapped by then.
+  Expected<void> EnableAccess();
+
+  void* address() const { return reinterpret_cast<void*>(address_); }
+  uint64_t size() const { return size_; }
+
+ private:
+  CudaVmmRange() = default;
+
+  void* context_ = nullptr;  // CUcontext
+  uint64_t address_ = 0;
+  uint64_t size_ = 0;
+  uint64_t granule_ = 0;
+  // The offset and size of every mapping.
+  std::vector<std::pair<uint64_t, uint64_t>> mappings_;
 };
 
 }  // namespace litert::nvidia

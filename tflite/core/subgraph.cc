@@ -2429,10 +2429,14 @@ TfLiteStatus Subgraph::ReplaceNodeWithSubgraph(
   // NOLINTNEXTLINE: absl not allowed.
   std::unordered_map<int, int> input_map, output_map;
   for (int i = 0; i < subgraph->inputs_.size(); ++i) {
-    input_map[subgraph->inputs_[i]] = node.inputs->data[i];
+    if (subgraph->inputs_[i] != kTfLiteOptionalTensor) {
+      input_map[subgraph->inputs_[i]] = node.inputs->data[i];
+    }
   }
   for (int i = 0; i < subgraph->outputs_.size(); ++i) {
-    output_map[subgraph->outputs_[i]] = node.outputs->data[i];
+    if (subgraph->outputs_[i] != kTfLiteOptionalTensor) {
+      output_map[subgraph->outputs_[i]] = node.outputs->data[i];
+    }
   }
 
   // Clone all inserted subgraph tensors and add them to this subgraph
@@ -2477,6 +2481,9 @@ TfLiteStatus Subgraph::ReplaceNodeWithSubgraph(
     auto ReMapTensorIndex = [tensor_offset](
                                 const std::unordered_map<int, int>& map,
                                 const int tensor_index) {
+      if (tensor_index == kTfLiteOptionalTensor) {
+        return kTfLiteOptionalTensor;
+      }
       auto it = map.find(tensor_index);
       if (it != map.end()) {
         return it->second;
@@ -2495,7 +2502,9 @@ TfLiteStatus Subgraph::ReplaceNodeWithSubgraph(
     std::vector<int> node_intermediates(decomp_node.intermediates->size);
     for (int i = 0; i < node_intermediates.size(); ++i) {
       node_intermediates[i] =
-          decomp_node.intermediates->data[i] + tensor_offset;
+          decomp_node.intermediates->data[i] == kTfLiteOptionalTensor
+              ? kTfLiteOptionalTensor
+              : decomp_node.intermediates->data[i] + tensor_offset;
     }
 
     // Add new op to subgraph.

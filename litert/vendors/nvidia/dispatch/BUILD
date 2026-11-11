@@ -392,6 +392,7 @@ litert_dispatch_api(
         "//litert/vendors/nvidia:windows_compat",
         "//litert/vendors/nvidia/compiler:cache_update_plugin",
         "//litert/vendors/nvidia/compiler:decode_attention_plugin",
+        "//litert/vendors/nvidia/compiler:gated_delta_plugin",
         "//litert/vendors/nvidia/compiler:int8_cache_write_plugin",
         "//litert/vendors/nvidia/compiler:moe_plugin",
         "//litert/vendors/nvidia/compiler:qkv_norm_rope_plugin",

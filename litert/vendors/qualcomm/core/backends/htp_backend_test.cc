@@ -737,6 +737,27 @@ TEST_P(HtpBackendRPCPollingPerfParamTest, AutoSchedulesVotePerInference) {
   EXPECT_TRUE(LastVoteIsUpVoteTo(params.voltage_corner));
 }
 
+TEST_P(HtpBackendRPCPollingPerfParamTest,
+       AutoUpVoteIsSynchronousForContextLoad) {
+  const auto& params = GetParam();
+  Options options;
+  options.SetHtpPerformanceMode(params.mode);
+  options.SetHtpPerfCtrlMode(HtpPerfCtrlMode::kAuto);
+  HtpBackend backend(&qnn_api_copy_);
+
+#if defined(__x86_64__) || defined(_M_X64)
+  ASSERT_TRUE(backend.Init(options, kFp16SocInfo));
+#else
+  ASSERT_TRUE(backend.Init(options, std::nullopt));
+#endif
+
+  const size_t configs_after_init = captured_configs->size();
+  backend.UpVote();
+
+  EXPECT_EQ(captured_configs->size(), configs_after_init + 1);
+  EXPECT_TRUE(LastVoteIsUpVoteTo(params.voltage_corner));
+}
+
 TEST_F(HtpBackendPerfBaseTest, ManualModeChangeRevotes) {
   Options options;
   options.SetHtpPerformanceMode(HtpPerformanceMode::kPowerSaver);

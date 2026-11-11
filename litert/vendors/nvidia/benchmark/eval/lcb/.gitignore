@@ -1,0 +1,5 @@
+# Downloaded/decoded dataset, generated prompts, and raw generation artifacts.
+/data/
+/problems/
+/prompts/
+/runs/

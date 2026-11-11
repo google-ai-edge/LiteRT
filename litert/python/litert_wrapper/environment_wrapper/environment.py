@@ -53,9 +53,17 @@ def _vendor_subdir_if_has_lib(
   base = _vendors_dir()
   if not base:
     return ""
-  lib_glob = win_glob if sys.platform == "win32" else nix_glob
+  if sys.platform == "win32":
+    lib_globs = [win_glob]
+  elif sys.platform == "darwin":
+    # On macOS, shared libraries may also use the `.dylib` extension.
+    lib_globs = [nix_glob, os.path.splitext(nix_glob)[0] + ".dylib"]
+  else:
+    lib_globs = [nix_glob]
   path = os.path.join(base, vendor, subdir)
-  if os.path.isdir(path) and glob.glob(os.path.join(path, lib_glob)):
+  if os.path.isdir(path) and any(
+      glob.glob(os.path.join(path, lib_glob)) for lib_glob in lib_globs
+  ):
     return path
   return ""
 

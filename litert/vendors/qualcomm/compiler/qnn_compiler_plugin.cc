@@ -56,6 +56,7 @@
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 #include "litert/vendors/qualcomm/compiler/transformations/attention_chunk_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/entry_embedding_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/gqa_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/legalize_int32_ops_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/mlp_quant_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
@@ -796,6 +797,7 @@ struct GraphTransformFilter {
   bool mlp_quant = false;
   bool attention_chunk = false;
   bool rope = false;
+  bool gqa = false;
 
   static GraphTransformFilter FromOptions(absl::string_view graph_transform) {
     GraphTransformFilter filter;
@@ -817,6 +819,7 @@ struct GraphTransformFilter {
         filter.mlp_quant = enable;
         filter.attention_chunk = enable;
         filter.rope = enable;
+        filter.gqa = enable;
       } else if (token == "experimental_legalize") {
         filter.legalize_int32_sign = enable;
         filter.legalize_int32_reduce_max = enable;
@@ -837,6 +840,8 @@ struct GraphTransformFilter {
         filter.attention_chunk = enable;
       } else if (token == "rope") {
         filter.rope = enable;
+      } else if (token == "gqa") {
+        filter.gqa = enable;
       }
     }
     return filter;
@@ -860,6 +865,13 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
   const auto filter = GraphTransformFilter::FromOptions(
       compiler_plugin->Options().GetGraphTransform());
 
+  if (filter.gqa) {
+    compiler_plugin->Transformations().push_back({
+        &GqaTransformation,
+        "GqaTransformation",
+        100,
+    });
+  }
   if (filter.legalize_int32_sign) {
     compiler_plugin->Transformations().push_back({
         &LegalizeInt32SignTransformation,
@@ -907,7 +919,8 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
         90,
     });
   }
-  if (filter.entry_embedding || filter.rope || filter.attention_chunk) {
+  if (filter.entry_embedding || filter.rope || filter.attention_chunk ||
+      filter.gqa) {
     compiler_plugin->Transformations().push_back({
         &OrphanCleanupTransformation,
         "OrphanCleanupTransformation",

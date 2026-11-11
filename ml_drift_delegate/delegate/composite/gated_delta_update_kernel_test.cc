@@ -27,11 +27,17 @@
 #include "testing/base/public/gunit.h"
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
+#include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
+#include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/kernels/elementwise.h"  // from @ml_drift
 #include "ml_drift/common/kernels/tests/kernel_test.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
@@ -483,6 +489,206 @@ TEST_P(GatedDeltaNetTest, SharedMemoryRecurrenceAndNorm) {
   ASSERT_OK(RunTestCases(precision(), storage(),
                          GdnKernels::kSharedMemoryRecurrence,
                          RecurrenceTestCases()));
+}
+
+absl::Status LinkReluAndAssemble(
+    const ::ml_drift::GpuInfo& gpu_info,
+    const ::ml_drift::TensorDescriptor& output_desc, bool expect_zero_pad_tail,
+    ::ml_drift::GPUOperation* op) {
+  ::ml_drift::GPUOperation relu_op = ::ml_drift::CreateElementwiseOneInput(
+      gpu_info, output_desc, output_desc, ::ml_drift::OperationType::kRelu);
+  ABSL_RETURN_IF_ERROR(op->AddOperation(gpu_info, &relu_op));
+  ABSL_RETURN_IF_ERROR(op->AssembleCode(gpu_info));
+  if (absl::StrContains(op->code_, ")_final")) {
+    return absl::InternalError(
+        "Linked shader still contains malformed ')_final' identifier.");
+  }
+  if (!absl::StrContains(op->code_, "_act_final")) {
+    return absl::InternalError(
+        "Linked shader is missing expected '_act_final' variable.");
+  }
+  if (expect_zero_pad_tail && !absl::StrContains(op->code_, "zero_act_final")) {
+    return absl::InternalError(
+        "Linked shader is missing expected 'zero_act_final' variable.");
+  }
+  return absl::OkStatus();
+}
+
+absl::Status CheckNonBlockLinkedCodegen(const ::ml_drift::GpuInfo& gpu_info,
+                                        ::ml_drift::DataType data_type,
+                                        int head_k_dim, int mode) {
+  constexpr int kSeqLen = 4;
+  constexpr int kNumVHeads = 4;
+  constexpr int kHeadVDim = 128;
+  ::ml_drift::OperationDef op_def;
+  op_def.src_tensors = {
+      MakeDesc(data_type, ::ml_drift::TensorStorageType::kBuffer,
+               ::ml_drift::BHWC(1, kNumKHeads, kSeqLen, head_k_dim)),
+      MakeDesc(data_type, ::ml_drift::TensorStorageType::kBuffer,
+               ::ml_drift::BHWC(1, kNumKHeads, kSeqLen, head_k_dim)),
+      MakeDesc(data_type, ::ml_drift::TensorStorageType::kBuffer,
+               ::ml_drift::BHWC(1, kNumVHeads, kSeqLen, kHeadVDim)),
+      MakeDesc(data_type, ::ml_drift::TensorStorageType::kBuffer,
+               ::ml_drift::BHWC(1, 1, kNumVHeads, kSeqLen)),
+      MakeDesc(data_type, ::ml_drift::TensorStorageType::kBuffer,
+               ::ml_drift::BHWC(1, 1, kNumVHeads, kSeqLen)),
+      MakeDesc(::ml_drift::DataType::kInt32,
+               ::ml_drift::TensorStorageType::kBuffer,
+               ::ml_drift::BHWC(1, 1, 1, 1)),
+  };
+  const ::ml_drift::TensorDescriptor output_desc =
+      MakeDesc(data_type, ::ml_drift::TensorStorageType::kBuffer,
+               ::ml_drift::BHWC(1, kNumVHeads, kSeqLen, kHeadVDim));
+  const ::ml_drift::TensorDescriptor state_desc = MakeDesc(
+      ::ml_drift::DataType::kFloat32, ::ml_drift::TensorStorageType::kBuffer,
+      ::ml_drift::BHWC(1, kNumVHeads, head_k_dim, kHeadVDim));
+  op_def.dst_tensors = {output_desc, state_desc};
+
+  ::ml_drift::GpuModelBuilder builder(gpu_info,
+                                      ::ml_drift::GpuModelBuilderOptions());
+  std::vector<::ml_drift::ir::IrTensor> ir_inputs;
+  ir_inputs.reserve(op_def.src_tensors.size());
+  std::vector<const ::ml_drift::ir::IrTensor*> ir_input_ptrs;
+  for (const auto& src_desc : op_def.src_tensors) {
+    const auto handle = builder.AddTensor(src_desc);
+    ir_inputs.emplace_back(handle.id);
+    ir_inputs.back().desc = src_desc;
+    ir_input_ptrs.push_back(&ir_inputs.back());
+  }
+  std::vector<::ml_drift::ir::IrTensor> ir_outputs;
+  ir_outputs.reserve(op_def.dst_tensors.size());
+  std::vector<const ::ml_drift::ir::IrTensor*> ir_output_ptrs;
+  for (const auto& dst_desc : op_def.dst_tensors) {
+    const auto handle = builder.AddTensor(dst_desc);
+    ir_outputs.emplace_back(handle.id);
+    ir_outputs.back().desc = dst_desc;
+    ir_output_ptrs.push_back(&ir_outputs.back());
+  }
+
+  ::ml_drift::ir::IrOp ir_op(0);
+  GatedDeltaUpdateAttributes attr;
+  attr.mode = mode;
+  ir_op.attr = attr;
+  ABSL_RETURN_IF_ERROR(CreateGatedDeltaUpdateFromIrOp(
+      op_def, ir_input_ptrs, ir_output_ptrs, ir_op, &gpu_info, &builder));
+  return LinkReluAndAssemble(gpu_info, output_desc,
+                             /*expect_zero_pad_tail=*/true,
+                             builder.GetLastGpuOperation().get());
+}
+
+std::vector<::ml_drift::GpuInfo> MakeAllBackendWave32GpuInfos() {
+  std::vector<::ml_drift::GpuInfo> infos;
+
+  ::ml_drift::GpuInfo metal;
+  metal.gpu_api = ::ml_drift::GpuApi::kMetal;
+  metal.supported_wave_sizes = {32};
+  infos.push_back(metal);
+
+  ::ml_drift::GpuInfo opencl;
+  opencl.gpu_api = ::ml_drift::GpuApi::kOpenCl;
+  opencl.supported_wave_sizes = {32};
+  opencl.opencl_info.cl_version = ::ml_drift::OpenClVersion::kCl2_0;
+  opencl.opencl_info.supports_fp16 = true;
+  opencl.opencl_info.extensions = {"cl_khr_subgroups",
+                                   "cl_khr_subgroup_shuffle",
+                                   "cl_khr_subgroup_extended_types"};
+  infos.push_back(opencl);
+
+  ::ml_drift::GpuInfo vulkan;
+  vulkan.gpu_api = ::ml_drift::GpuApi::kVulkan;
+  vulkan.supported_wave_sizes = {32};
+  vulkan.vulkan_info.extensions = {"VK_KHR_shader_float16_int8",
+                                   "GL_KHR_shader_subgroup_shuffle"};
+  infos.push_back(vulkan);
+
+  ::ml_drift::GpuInfo opengl;
+  opengl.gpu_api = ::ml_drift::GpuApi::kOpenGl;
+  opengl.supported_wave_sizes = {32};
+  opengl.opengl_info.extensions = {"GL_KHR_shader_subgroup_shuffle"};
+  infos.push_back(opengl);
+
+  ::ml_drift::GpuInfo webgpu;
+  webgpu.gpu_api = ::ml_drift::GpuApi::kWebGpu;
+  webgpu.supported_wave_sizes = {32};
+  webgpu.webgpu_info.supports_subgroups = true;
+  webgpu.webgpu_info.supports_fp16 = true;
+  infos.push_back(webgpu);
+
+  return infos;
+}
+
+TEST(GatedDeltaNetCodegenTest, LinkedElementwiseOutput) {
+  GatedDeltaNetAttributes block_attr;
+  block_attr.num_k_heads = kNumKHeads;
+  block_attr.num_v_heads = 4;
+  block_attr.head_k_dim = kHeadKDim;
+  block_attr.head_v_dim = 128;
+  const int value_dim = block_attr.num_v_heads * block_attr.head_v_dim;
+  const int conv_dim =
+      2 * block_attr.num_k_heads * block_attr.head_k_dim + value_dim;
+  const int zba_dim = value_dim + 2 * block_attr.num_v_heads;
+
+  for (const ::ml_drift::GpuInfo& gpu_info : MakeAllBackendWave32GpuInfos()) {
+    for (::ml_drift::DataType data_type :
+         {::ml_drift::DataType::kFloat16, ::ml_drift::DataType::kFloat32}) {
+      const auto storage = ::ml_drift::TensorStorageType::kBuffer;
+      const auto output_1 =
+          MakeDesc(data_type, storage, ::ml_drift::BHWC(1, 1, 1, value_dim));
+      const auto state_desc = MakeDesc(
+          ::ml_drift::DataType::kFloat32, storage,
+          ::ml_drift::BHWC(1, block_attr.num_v_heads, block_attr.head_k_dim,
+                           block_attr.head_v_dim));
+
+      ::ml_drift::OperationDef decode_def;
+      decode_def.src_tensors = {
+          MakeDesc(data_type, storage, ::ml_drift::BHWC(1, 1, 1, conv_dim)),
+          MakeDesc(data_type, storage, ::ml_drift::BHWC(1, 1, 1, zba_dim)),
+          MakeDesc(data_type, storage,
+                   ::ml_drift::BHWC(block_attr.num_v_heads, 1, 1, 1)),
+          MakeDesc(data_type, storage,
+                   ::ml_drift::BHWC(block_attr.num_v_heads, 1, 1, 1)),
+          MakeDesc(data_type, storage,
+                   ::ml_drift::BHWC(block_attr.head_v_dim, 1, 1, 1)),
+      };
+      decode_def.dst_tensors = {output_1, state_desc};
+
+      for (bool use_wave_ops : {true, false}) {
+        ASSERT_OK_AND_ASSIGN(auto decode_op,
+                             CreateGatedDeltaNetDecode(decode_def, block_attr,
+                                                       gpu_info, use_wave_ops));
+        ASSERT_OK(LinkReluAndAssemble(gpu_info, output_1,
+                                      /*expect_zero_pad_tail=*/false,
+                                      decode_op.get()));
+      }
+
+      const auto output_4 =
+          MakeDesc(data_type, storage, ::ml_drift::BHWC(1, 1, 4, value_dim));
+      ::ml_drift::OperationDef norm_def;
+      norm_def.src_tensors = {
+          MakeDesc(::ml_drift::DataType::kFloat32, storage,
+                   ::ml_drift::BHWC(1, 1, 4, value_dim)),
+          MakeDesc(data_type, storage, ::ml_drift::BHWC(1, 1, 4, zba_dim)),
+          MakeDesc(data_type, storage,
+                   ::ml_drift::BHWC(block_attr.head_v_dim, 1, 1, 1)),
+      };
+      norm_def.dst_tensors = {output_4};
+      ASSERT_OK_AND_ASSIGN(auto norm_op,
+                           CreateGatedDeltaNetNorm(norm_def, block_attr));
+      ASSERT_OK(LinkReluAndAssemble(gpu_info, output_4,
+                                    /*expect_zero_pad_tail=*/false,
+                                    norm_op.get()));
+
+      // Non-block recurrence kernel: wave shuffle (mode=0) and shared-memory
+      // reductions (mode=2) for both q_slices == 32 (D_k = 128) and
+      // q_slices == 16 (D_k = 64), including zero_pad_tail_step.
+      ASSERT_OK(CheckNonBlockLinkedCodegen(gpu_info, data_type,
+                                           /*head_k_dim=*/128, /*mode=*/0));
+      ASSERT_OK(CheckNonBlockLinkedCodegen(gpu_info, data_type,
+                                           /*head_k_dim=*/128, /*mode=*/2));
+      ASSERT_OK(CheckNonBlockLinkedCodegen(gpu_info, data_type,
+                                           /*head_k_dim=*/64, /*mode=*/2));
+    }
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(

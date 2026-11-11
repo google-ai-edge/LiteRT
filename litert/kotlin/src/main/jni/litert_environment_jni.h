@@ -21,10 +21,29 @@
 extern "C" {
 #endif  // __cplusplus
 
+// Allocates and destroys a native builder accumulating EnvironmentOptions
+// entries across JNI calls before Environment creation.
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_Environment_nativeCreateOptions(JNIEnv* env,
+                                                               jclass clazz);
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_Environment_nativeDestroyOptions(JNIEnv* env,
+                                                                jclass clazz,
+                                                                jlong handle);
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_Environment_nativeAddStringOption(
+    JNIEnv* env, jclass clazz, jlong handle, jint tag, jstring value);
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_Environment_nativeAddPointerOption(
+    JNIEnv* env, jclass clazz, jlong handle, jint tag, jlong pointer);
+
 // The client needs to keep the environment object alive for the duration of
 // the entire inference.
 JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Environment_nativeCreate(
-    JNIEnv* env, jclass clazz, jintArray tags, jobjectArray values);
+    JNIEnv* env, jclass clazz, jlong options_handle);
 
 JNIEXPORT jintArray JNICALL
 Java_com_google_ai_edge_litert_Environment_nativeGetAvailableAccelerators(

@@ -43,7 +43,7 @@ std::vector<OpWrapper> BuildConv2dOp(
   // transpose filter
   TensorWrapper& filter_tensor = inputs[kFilterIndex];
   const std::vector<uint32_t>& filters_dims = filter_tensor.GetDimensions();
-  auto& filter_quant_params = filter_tensor.GetQuantParams();
+  auto filter_quant_params = filter_tensor.GetQuantParams();
   std::vector<std::uint32_t> permute_dims{filters_dims[1], filters_dims[2],
                                           filters_dims[3], filters_dims[0]};
   if (std::holds_alternative<AxisScaleOffsetQuantizeParamsWrapper>(
@@ -83,8 +83,8 @@ std::vector<OpWrapper> BuildConv2dOp(
         filter_tensor.GetDataType(), filter_quant_params, permute_dims,
         filter_bytes, transpose_weight_uint8.data()));
   } else {
-    transposed_filter_tensor =
-        &(tensor_pool.CloneNativeTensorFrom(filter_tensor, permute_dims));
+    transposed_filter_tensor = &(tensor_pool.CloneNativeTensorFrom(
+        filter_tensor, filter_quant_params, permute_dims));
 
     const std::vector<std::uint32_t> permute_shape{4};
     const std::array<std::uint32_t, 4> permute_data{kHeightIndex, kWidthIndex,

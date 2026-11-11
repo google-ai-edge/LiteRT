@@ -26,6 +26,8 @@ cuda_library(
     name = "gemma4_head_kernels_cuda",
     srcs = [
         "decode_attention.cu",
+        "gated_delta.cu",
+        "gated_delta_net.cu",
         "global_attention.cu",
         "head_kernels.cu",
         "int2_gemv.cu",
@@ -37,6 +39,8 @@ cuda_library(
     ],
     hdrs = [
         "decode_attention.h",
+        "gated_delta.h",
+        "gated_delta_net.h",
         "global_attention.h",
         "head_kernels.h",
         "int2_gemv.h",
@@ -72,6 +76,8 @@ cc_library(
     name = "gemma4_head_kernels",
     hdrs = [
         "decode_attention.h",
+        "gated_delta.h",
+        "gated_delta_net.h",
         "global_attention.h",
         "head_kernels.h",
         "int2_gemv.h",
@@ -121,6 +127,50 @@ cc_test(
         "//litert:linux_x86_64": [],
         "//litert:windows": [],
         "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "gated_delta_test",
+    srcs = ["gated_delta_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//litert:windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "gated_delta_net_test",
+    srcs = ["gated_delta_net_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//litert:windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [

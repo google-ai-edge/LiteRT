@@ -55,7 +55,6 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//tflite/java/jni",
         "@com_google_absl//absl/cleanup",  # buildcleaner: keep
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

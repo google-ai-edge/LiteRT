@@ -18,7 +18,6 @@
 #include <jni.h>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl  // IWYU pragma: keep
-#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -32,17 +31,6 @@ constexpr int kAccelatorNone = 0;
 constexpr int kAccelatorCpu = 1;
 constexpr int kAccelatorGpu = 2;
 constexpr int kAccelatorNpu = 3;
-
-// Parses an integer from a string.
-template <typename IntType = int>
-inline IntType ParseInt(absl::string_view str, absl::string_view name) {
-  IntType value = 0;
-  if (!absl::SimpleAtoi(str, &value)) {
-    LITERT_FATAL("Failed to parse %.*s: %.*s", static_cast<int>(name.size()),
-                 name.data(), static_cast<int>(str.size()), str.data());
-  }
-  return value;
-}
 
 // Throws a LiteRtException in Kotlin.
 inline void ThrowLiteRtException(JNIEnv* env, LiteRtStatus status,

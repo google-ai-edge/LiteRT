@@ -328,7 +328,8 @@ public final class CompiledModel {
       let requirements = try inputBufferRequirements(
         inputIndex: i, signatureIndex: signatureIndex)
       let tensorType = try inputTensorType(inputIndex: i, signatureIndex: signatureIndex)
-      let bufferType = requirements.supportedTypes.first ?? .hostMemory
+      let bufferType =
+        requirements.supportedTypes.first(where: { $0 != .unknown }) ?? .hostMemory
       let buf = try TensorBuffer(
         environment: environment,
         bufferType: bufferType,
@@ -356,9 +357,11 @@ public final class CompiledModel {
       guard requirements.bufferSize > 0 else { throw LiteRtError.runtimeFailure }
       let elementType = try outputTensorType(
         outputIndex: index, signatureIndex: signatureIndex).elementType
+      let bufferType =
+        requirements.supportedTypes.first(where: { $0 != .unknown }) ?? .hostMemory
       return try TensorBuffer(
         environment: environment,
-        bufferType: requirements.supportedTypes.first ?? .hostMemory,
+        bufferType: bufferType,
         tensorType: TensorType(elementType: elementType, layout: layout),
         size: requirements.bufferSize)
     }

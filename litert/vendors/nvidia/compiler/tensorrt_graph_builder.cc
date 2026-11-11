@@ -53,6 +53,7 @@
 #include "litert/vendors/nvidia/cache_layout.h"
 #include "litert/vendors/nvidia/compiler/cache_update_plugin.h"
 #include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
+#include "litert/vendors/nvidia/compiler/gated_delta_plugin.h"
 #include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
 #include "litert/vendors/nvidia/compiler/moe_plugin.h"
 #include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
@@ -63,6 +64,8 @@
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
 #include "litert/vendors/nvidia/trtllm/decode_attention.h"
+#include "litert/vendors/nvidia/trtllm/gated_delta.h"
+#include "litert/vendors/nvidia/trtllm/gated_delta_net.h"
 #include "litert/vendors/nvidia/trtllm/global_attention.h"
 #include "litert/vendors/nvidia/trtllm/int2_gemv.h"
 #include "litert/vendors/nvidia/trtllm/int4_block_gemv.h"
@@ -140,6 +143,21 @@ bool FcBlockScalesEnabled() {
 bool FuseGemvGroupsEnabled() {
   return EnvEnabled("LITERT_NVIDIA_TENSORRT_FUSE_GEMV_GROUPS",
                     /*default_value=*/true);
+}
+
+// Whether the GEMMs over blockwise INT4 weights run on the int8 tensor cores
+// (trtllm/subbyte_gemm_int8.cu), as the per-channel ones do: with the qwen3_5
+// partition policy, whose greedy outputs it keeps, unless
+// LITERT_NVIDIA_TENSORRT_INT8_BLOCKWISE_GEMM says otherwise (Gemma's blockwise
+// models stay on the fp16 kernel).
+bool Int8BlockwiseGemmRequested() {
+  if (const char* value =
+          std::getenv("LITERT_NVIDIA_TENSORRT_INT8_BLOCKWISE_GEMM");
+      value != nullptr && value[0] != '\0') {
+    return std::strcmp(value, "0") != 0;
+  }
+  const char* policy = std::getenv("LITERT_NVIDIA_TENSORRT_PARTITION_POLICY");
+  return policy != nullptr && std::strcmp(policy, "qwen3_5") == 0;
 }
 
 bool NativeKvCacheUpdateEnabled() {
@@ -936,6 +954,7 @@ std::optional<DecodeCacheUpdateLayout> DecodeCacheUpdateMode(const Op& op) {
 
 bool TensorHasShape(const Tensor& tensor,
                     std::initializer_list<int32_t> expected);
+bool IsUnquantizedFloat32(const Tensor& tensor);
 
 // odml.qkv_norm_rope(qkv [1, n, (H + 2 Hkv) D] float, position int32 (n
 // values), q_scale [D], k_scale [D]) -> q [1, H, n, D], k and v [1, Hkv, n,
@@ -1051,6 +1070,41 @@ std::optional<int32_t> SdpaTransposedPaddedTokens(int32_t group, int32_t tokens,
   return std::nullopt;
 }
 
+// Many query rows of a multi-head FP16 cache that already holds the chunk's
+// keys (Qwen 3.5's prefill attends to its updated caches): the tiled
+// tensor-core kernel over the whole cache, no padding (tiled_attention.h).
+bool SdpaTransposedTiledCache(int32_t heads, int32_t rows, int32_t mask_rows,
+                              int32_t depth, int32_t cache_len) {
+  const LiteRtNvidiaAttentionShape shape = {heads, rows,      mask_rows,
+                                            depth, cache_len, 0};
+  return rows > 16 && kSdpaTransposedFill <= kMaxGlobalAttentionFill &&
+         LiteRtNvidiaTiledAttentionSupports(&shape);
+}
+
+// The gate_size of an odml.swiglu composite (x [.., 2 * N]) -> silu(x[.., :N])
+// * x[.., N:]: Qwen 3.5's feed-forward gate over its fused gate/up projection.
+std::optional<int32_t> SwigluGateSize(const Op& op) {
+  if (op.Inputs().size() != 1 || op.Outputs().size() != 1) {
+    return std::nullopt;
+  }
+  CompositeOptions options;
+  if (options.InitFromOp(op.Get()) != kLiteRtStatusOk ||
+      !options.attributes_map.has_value() ||
+      options.attributes_map.value()["gate_size"].IsNull()) {
+    return std::nullopt;
+  }
+  const int32_t gate_size =
+      options.attributes_map.value()["gate_size"].AsInt32();
+  auto in_type = op.Inputs()[0].RankedTensorType();
+  if (!in_type || in_type->Layout().Rank() < 1 || gate_size <= 0 ||
+      in_type->Layout().Dimensions().back() != 2 * gate_size ||
+      !IsFloatLike(op.Inputs()[0].ElementType()) ||
+      !IsFloatLike(op.Outputs()[0].ElementType())) {
+    return std::nullopt;
+  }
+  return gate_size;
+}
+
 std::optional<int32_t> SdpaTransposedGroup(const Op& op) {
   if (op.Inputs().size() != 5 || op.Outputs().size() != 1) {
     return std::nullopt;
@@ -1094,7 +1148,8 @@ std::optional<int32_t> SdpaTransposedGroup(const Op& op) {
   // in chunks, many tokens the tensor-core kernel (depth 512, rows a multiple
   // of its tile, padded otherwise: SdpaTransposedPaddedTokens).
   if (rows > 16 && q[2] > 16 &&
-      !SdpaTransposedPaddedTokens(group, q[2], depth).has_value()) {
+      !SdpaTransposedPaddedTokens(group, q[2], depth).has_value() &&
+      !SdpaTransposedTiledCache(k[1], rows, mask[2], depth, k[2])) {
     return std::nullopt;
   }
   return group;
@@ -1235,9 +1290,155 @@ std::optional<MoeCustomOp> ParseMoeCustomOp(const Op& op) {
   return moe;
 }
 
+// A recurrent state of a linear-attention layer (Qwen 3.5's Gated DeltaNet
+// and its short convolution): an FP32 subgraph input whose updated value is
+// the op's output, read by nothing else in the graph. The runtime binds both
+// to one buffer and the plugins update it in place in FP32.
+bool IsInPlaceFp32State(const Tensor& input, const Tensor& output) {
+  return input.IsSubgraphInput() && IsUnquantizedFloat32(input) &&
+         IsUnquantizedFloat32(output) && output.Uses().empty() &&
+         input.Uses().size() == 1;
+}
+
+// Qwen 3.5's gated_delta_update custom op (q, k [1, Hk, n, Dk], v [1, H, n,
+// Dv], beta, g [1, H, n], state [1, H, Dk, Dv][, valid length int32]) ->
+// (out [1, H, n, Dv], state'), see trtllm/gated_delta.h.
+struct GatedDeltaUpdateOp {
+  LiteRtNvidiaGatedDeltaParams params{};
+  bool has_valid_len = false;
+};
+
+std::optional<GatedDeltaUpdateOp> ParseGatedDeltaUpdate(const Op& op) {
+  const auto code = op.CustomCode();
+  if (!code || (*code != "gated_delta_update" &&
+                *code != "custom_call.gated_delta_update")) {
+    return std::nullopt;
+  }
+  if ((op.Inputs().size() != 6 && op.Inputs().size() != 7) ||
+      op.Outputs().size() != 2) {
+    return std::nullopt;
+  }
+  if (const auto options = op.CustomOptions(); options && !options->empty()) {
+    const flexbuffers::Map map =
+        flexbuffers::GetRoot(options->data(), options->size()).AsMap();
+    if (!map["state_dtype"].IsNull() &&
+        map["state_dtype"].AsString().str() != "float32") {
+      return std::nullopt;
+    }
+  }
+  std::array<std::vector<int32_t>, 6> dims;
+  for (int i = 0; i < 6; ++i) {
+    auto type = op.Inputs()[i].RankedTensorType();
+    if (!type || !IsFloatLike(op.Inputs()[i].ElementType()) ||
+        op.Inputs()[i].HasWeights()) {
+      return std::nullopt;
+    }
+    const auto d = type->Layout().Dimensions();
+    dims[i].assign(d.begin(), d.end());
+  }
+  const auto& q = dims[0];
+  const auto& v = dims[2];
+  const auto& state = dims[5];
+  if (q.size() != 4 || dims[1] != q || v.size() != 4 || state.size() != 4 ||
+      q[0] != 1 || v[0] != 1 || q[2] != v[2] || state[0] != 1 ||
+      state[1] != v[1] || state[2] != q[3] || state[3] != v[3] ||
+      dims[3] != std::vector<int32_t>{1, v[1], v[2]} ||
+      dims[4] != std::vector<int32_t>{1, v[1], v[2]}) {
+    return std::nullopt;
+  }
+  if (!IsInPlaceFp32State(op.Inputs()[5], op.Outputs()[1]) ||
+      !TensorHasShape(op.Outputs()[0], {1, v[1], v[2], v[3]})) {
+    return std::nullopt;
+  }
+  GatedDeltaUpdateOp result;
+  result.params = {v[1], q[1], v[2], q[3], v[3]};
+  if (op.Inputs().size() == 7) {
+    auto type = op.Inputs()[6].RankedTensorType();
+    int64_t count = 1;
+    if (type) {
+      for (int32_t d : type->Layout().Dimensions()) count *= d;
+    }
+    if (!type || count != 1 ||
+        op.Inputs()[6].ElementType() != litert::ElementType::Int32 ||
+        op.Inputs()[6].HasWeights()) {
+      return std::nullopt;
+    }
+    result.has_valid_len = true;
+  }
+  if (!LiteRtNvidiaGatedDeltaSupports(&result.params)) return std::nullopt;
+  return result;
+}
+
+// odml.short_conv_step(x [1, n, C], state [1, C, L - 1], weight [C, 1, L][,
+// valid length int32]) -> (y [1, n, C], state'): the causal depthwise
+// convolution of a Gated DeltaNet layer, attributes conv_L_cache (L),
+// use_silu and is_gated (unsupported), see trtllm/gated_delta.h.
+struct ShortConvStepOp {
+  LiteRtNvidiaShortConvParams params{};
+  bool has_valid_len = false;
+};
+
+std::optional<ShortConvStepOp> ParseShortConvStep(const Op& op) {
+  if ((op.Inputs().size() != 3 && op.Inputs().size() != 4) ||
+      op.Outputs().size() != 2) {
+    return std::nullopt;
+  }
+  CompositeOptions options;
+  if (options.InitFromOp(op.Get()) != kLiteRtStatusOk ||
+      !options.attributes_map.has_value()) {
+    return std::nullopt;
+  }
+  const auto& map = options.attributes_map.value();
+  if (map["conv_L_cache"].IsNull() ||
+      (!map["is_gated"].IsNull() && map["is_gated"].AsBool())) {
+    return std::nullopt;
+  }
+  const int32_t taps = map["conv_L_cache"].AsInt32();
+  const bool silu = map["use_silu"].IsNull() || map["use_silu"].AsBool();
+  auto x_type = op.Inputs()[0].RankedTensorType();
+  if (!x_type || x_type->Layout().Rank() != 3 ||
+      !IsFloatLike(op.Inputs()[0].ElementType()) ||
+      op.Inputs()[0].HasWeights()) {
+    return std::nullopt;
+  }
+  const auto x = x_type->Layout().Dimensions();
+  const int32_t tokens = x[1];
+  const int32_t channels = x[2];
+  if (x[0] != 1 || taps < 2 ||
+      !TensorHasShape(op.Inputs()[1], {1, channels, taps - 1}) ||
+      !IsInPlaceFp32State(op.Inputs()[1], op.Outputs()[1]) ||
+      !TensorHasShape(op.Inputs()[2], {channels, 1, taps}) ||
+      !IsUnquantizedFloat32(op.Inputs()[2]) || !op.Inputs()[2].HasWeights() ||
+      op.Inputs()[2].Weights().Bytes().size() !=
+          static_cast<size_t>(channels) * taps * sizeof(float) ||
+      !TensorHasShape(op.Outputs()[0], {1, tokens, channels})) {
+    return std::nullopt;
+  }
+  ShortConvStepOp result;
+  result.params = {channels, tokens, taps, silu ? 1 : 0};
+  if (op.Inputs().size() == 4) {
+    auto type = op.Inputs()[3].RankedTensorType();
+    int64_t count = 1;
+    if (type) {
+      for (int32_t d : type->Layout().Dimensions()) count *= d;
+    }
+    if (!type || count != 1 ||
+        op.Inputs()[3].ElementType() != litert::ElementType::Int32 ||
+        op.Inputs()[3].HasWeights()) {
+      return std::nullopt;
+    }
+    result.has_valid_len = true;
+  }
+  if (!LiteRtNvidiaShortConvSupports(&result.params)) return std::nullopt;
+  return result;
+}
+
 // The experts stay in the model file until the engine runs: the plugin needs
 // the file the weight store maps (LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH).
 Expected<bool> IsCustomOpSupported(const Op& op) {
+  if (ParseGatedDeltaUpdate(op).has_value()) {
+    return true;
+  }
   if (!ParseMoeCustomOp(op).has_value()) {
     return false;
   }
@@ -1394,6 +1595,12 @@ Expected<bool> IsCompositeSupported(const Op& op) {
   }
   if (name == "odml.qkv_norm_rope") {
     return ParseQkvNormRope(op).has_value();
+  }
+  if (name == "odml.short_conv_step") {
+    return ParseShortConvStep(op).has_value();
+  }
+  if (name == "odml.swiglu") {
+    return SwigluGateSize(op).has_value();
   }
   if (name == "odml.sdpa_transposed") {
     if (!SdpaTransposedGroup(op).has_value()) {
@@ -2645,6 +2852,7 @@ class TensorRtGraphBuilder {
     LITERT_RETURN_IF_ERROR(FindPrefillAttentionBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(FindCompositeAttentionBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(FindMoeBlocks(subgraph));
+    LITERT_RETURN_IF_ERROR(FindGatedDeltaNetBlocks(subgraph));
     std::vector<Op> prefill_cache_updates;
     for (size_t i = 0; i < num_ops_to_lower; ++i) {
       if (ops[i].Code() == kLiteRtOpCodeShloComposite &&
@@ -4223,7 +4431,9 @@ class TensorRtGraphBuilder {
         location.has_value() ? static_cast<int64_t>(weight_store_->granule())
                              : 0,
         info.scale_block, scale_offset, norm != nullptr ? norm->eps : -1.0f,
-        norm != nullptr ? norm->multiplier : 1.0f, row_positions));
+        norm != nullptr ? norm->multiplier : 1.0f, row_positions,
+        /*int8_blockwise=*/gemm && info.scale_block != 0 &&
+            Int8BlockwiseGemmRequested()));
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create CUDA subbyte GEMV plugin");
@@ -4411,6 +4621,70 @@ class TensorRtGraphBuilder {
     return found;
   }
 
+  // Qwen 3.5's feed-forward: one INT4 fully connected op over the gate and up
+  // projections stacked [2 * N, K] whose single user is odml.swiglu (gate_size
+  // N). The gated CUDA GEMM/GEMV computes silu(gate) * up in its SiLU mode in
+  // one launch, without the [.., 2 * N] intermediate.
+  // LITERT_NVIDIA_TENSORRT_FUSE_SWIGLU=0 lowers them separately.
+  std::optional<Op> FindFusedSwiglu(const Op& op) {
+    if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_FUSE_SWIGLU",
+                    /*default_value=*/true) ||
+        op.Inputs().size() != 2 || op.Outputs().size() != 1 ||
+        !HasNoFusedActivation(op)) {
+      return std::nullopt;
+    }
+    const auto info = InspectSubbyteGemvWeights(op.Inputs()[1]);
+    if (!info || info->bit_width != 4 || info->rows % 2 != 0) {
+      return std::nullopt;
+    }
+    auto user = SingleUser(op.Outputs()[0], 0);
+    if (!user || user->Code() != kLiteRtOpCodeShloComposite ||
+        CompositeOpName(*user) != "odml.swiglu" ||
+        graph_outputs_.count(op.Outputs()[0].Get()) != 0) {
+      return std::nullopt;
+    }
+    const auto gate_size = SwigluGateSize(*user);
+    if (!gate_size.has_value() || 2 * *gate_size != info->rows) {
+      return std::nullopt;
+    }
+    return user;
+  }
+
+  Expected<void> AddFusedSwiglu(const Op& op, const Op& swiglu,
+                                nvinfer1::ITensor* activation,
+                                nvinfer1::DataType compute_type,
+                                const NormFusion* norm = nullptr) {
+    LITERT_ASSIGN_OR_RETURN(auto info,
+                            InspectSubbyteGemvWeights(op.Inputs()[1]));
+    LITERT_RETURN_IF_ERROR(
+        ValidateSubbyteGemvActivation(activation, compute_type, info.columns,
+                                      info.bit_width, info.scale_block));
+    std::vector<absl::Span<const uint8_t>> members = {
+        op.Inputs()[1].Weights().Bytes()};
+    std::vector<float> scales;
+    std::vector<absl::Span<const uint8_t>> block_scales;
+    LITERT_RETURN_IF_ERROR(
+        AppendGemvScales(op.Inputs()[1], info, scales, block_scales));
+    const std::string suffix =
+        "_" + std::to_string(op.Inputs()[1].TensorIndex());
+    LITERT_ASSIGN_OR_RETURN(
+        auto* gated,
+        AddSubbyteGemvPlugin(
+            activation, info, members, absl::MakeConstSpan(scales), suffix,
+            "cuda_subbyte_swiglu_gemm" + suffix, kLiteRtNvidiaGemmGateSilu,
+            absl::MakeConstSpan(block_scales), norm));
+    LITERT_ASSIGN_OR_RETURN(auto out_type,
+                            swiglu.Outputs()[0].RankedTensorType());
+    LITERT_ASSIGN_OR_RETURN(auto out_dims, ConvertDims(out_type));
+    LITERT_ASSIGN_OR_RETURN(gated, ReshapeTensor(gated, out_dims));
+    unlowered_ops_.insert(swiglu.Get());
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX fused CUDA SwiGLU GEMM: N=%d K=%d "
+               "tensor=%s",
+               info.rows / 2, info.columns, suffix.c_str() + 1);
+    return SetOutputTensor(swiglu.Outputs()[0], gated);
+  }
+
   // Emits the launch of a gated feed-forward pair at its gate projection and
   // binds the result of the multiplication; the other members are not
   // lowered.
@@ -4583,6 +4857,8 @@ class TensorRtGraphBuilder {
       } else {
         fused_gemv_outputs_[group[i].Get()] = slice;
       }
+      gemv_group_slices_[group[i].Get()] = {fused, offset, row_counts[i],
+                                            static_cast<int32_t>(total_rows)};
       offset += row_counts[i];
     }
     LITERT_LOG(LITERT_INFO,
@@ -5250,6 +5526,9 @@ class TensorRtGraphBuilder {
       case kLiteRtOpCodeTflLess:
         operation = nvinfer1::ElementWiseOperation::kLESS;
         break;
+      case kLiteRtOpCodeTflGreater:
+        operation = nvinfer1::ElementWiseOperation::kGREATER;
+        break;
       case kLiteRtOpCodeTflGreaterEqual:
         operation = nvinfer1::ElementWiseOperation::kLESS;
         invert_result = true;
@@ -5317,12 +5596,15 @@ class TensorRtGraphBuilder {
         HasExactFp32Value(op.Inputs()[0])) {
       LITERT_ASSIGN_OR_RETURN(input, GetExactFp32Tensor(op.Inputs()[0]));
     }
-    if (op.Code() == kLiteRtOpCodeTflTanh) {
-      auto* layer =
-          network_->addActivation(*input, nvinfer1::ActivationType::kTANH);
+    if (op.Code() == kLiteRtOpCodeTflTanh ||
+        op.Code() == kLiteRtOpCodeTflLogistic) {
+      auto* layer = network_->addActivation(
+          *input, op.Code() == kLiteRtOpCodeTflTanh
+                      ? nvinfer1::ActivationType::kTANH
+                      : nvinfer1::ActivationType::kSIGMOID);
       if (layer == nullptr || layer->getOutput(0) == nullptr) {
         return Error(kLiteRtStatusErrorCompilation,
-                     "Failed to add TensorRT tanh layer");
+                     "Failed to add TensorRT activation layer");
       }
       return SetOutputTensor(op.Outputs()[0], layer->getOutput(0));
     }
@@ -5337,6 +5619,12 @@ class TensorRtGraphBuilder {
         break;
       case kLiteRtOpCodeTflRsqrt:
         operation = nvinfer1::UnaryOperation::kSQRT;
+        break;
+      case kLiteRtOpCodeTflExp:
+        operation = nvinfer1::UnaryOperation::kEXP;
+        break;
+      case kLiteRtOpCodeTflLog:
+        operation = nvinfer1::UnaryOperation::kLOG;
         break;
       default:
         return Error(kLiteRtStatusErrorUnsupported,
@@ -5391,8 +5679,12 @@ class TensorRtGraphBuilder {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add TensorRT cast layer");
     }
+    // Integers and booleans turned into floats keep an exact FP32 view: the
+    // valid-row counts of Qwen 3.5's prefill (a sum over a boolean mask) must
+    // not be rounded to BF16 (whose integers above 256 are 2 or 4 apart).
     if (Fp16ActivationsEnabled() && trt_type == nvinfer1::DataType::kFLOAT &&
-        IsPositionElementType(op.Inputs()[0].ElementType())) {
+        (IsPositionElementType(op.Inputs()[0].ElementType()) ||
+         op.Inputs()[0].ElementType() == litert::ElementType::Bool)) {
       exact_fp32_map_[op.Outputs()[0].Get()] = layer->getOutput(0);
     }
     return SetOutputTensor(op.Outputs()[0], layer->getOutput(0));
@@ -7371,9 +7663,9 @@ class TensorRtGraphBuilder {
     int32_t padded_tokens = 0;  // tensor-core kernel with the tokens padded
   };
 
-  static std::optional<AttentionRowPlan> PlanAttentionRows(int32_t group,
-                                                           int32_t tokens,
-                                                           int32_t depth) {
+  static std::optional<AttentionRowPlan> PlanAttentionRows(
+      int32_t group, int32_t tokens, int32_t depth, int32_t heads,
+      int32_t mask_rows, int32_t cache_len) {
     if (group < 1 || tokens < 1) {
       return std::nullopt;
     }
@@ -7386,6 +7678,9 @@ class TensorRtGraphBuilder {
     }
     const auto padded = SdpaTransposedPaddedTokens(group, tokens, depth);
     if (!padded.has_value()) {
+      if (SdpaTransposedTiledCache(heads, rows, mask_rows, depth, cache_len)) {
+        return AttentionRowPlan{0, tokens};
+      }
       return std::nullopt;
     }
     return AttentionRowPlan{0, *padded};
@@ -7539,7 +7834,11 @@ class TensorRtGraphBuilder {
         !new_keys && !block.int8_cache.has_value() && !block.window.has_value();
     std::optional<AttentionRowPlan> plan;
     if (plain_block && block.group * tokens > 16) {
-      plan = PlanAttentionRows(block.group, tokens, depth);
+      plan = PlanAttentionRows(
+          block.group, tokens, depth,
+          static_cast<int32_t>(k_cache->getDimensions().d[1]),
+          static_cast<int32_t>(mask_in->getDimensions().d[2]),
+          static_cast<int32_t>(k_cache->getDimensions().d[2]));
       if (!plan.has_value()) {
         return Error(kLiteRtStatusErrorCompilation,
                      "Attention block rows fit no CUDA attention kernel");
@@ -8012,6 +8311,18 @@ class TensorRtGraphBuilder {
                    "CUDA gated feed-forward GEMM unavailable for tensor %u: %s",
                    op.Inputs()[1].TensorIndex(),
                    gated.Error().Message().c_str());
+      }
+      if (const auto swiglu = FindFusedSwiglu(op); swiglu.has_value()) {
+        LITERT_ASSIGN_OR_RETURN(auto* activation,
+                                AddCastTensor(gemv_input, compute_type));
+        auto gated =
+            AddFusedSwiglu(op, *swiglu, activation, compute_type, norm_ptr);
+        if (gated.HasValue()) {
+          return {};
+        }
+        LITERT_LOG(
+            LITERT_INFO, "CUDA SwiGLU GEMM unavailable for tensor %u: %s",
+            op.Inputs()[1].TensorIndex(), gated.Error().Message().c_str());
       }
     }
     if (Fp16ActivationsEnabled() &&
@@ -8502,7 +8813,8 @@ class TensorRtGraphBuilder {
   }
 
   // odml.rms_norm(x[, w]) = x * rsqrt(mean(x^2, last_axis) + eps) [* w].
-  // The decomposition's epsilon is 1e-6 for this model family.
+  // eps is the composite's attribute: 1e-6 for Gemma 4, while Qwen 3.5 states
+  // its linear-attention q/k L2 norms as RMS norms with eps 1e-6 / 128.
   Expected<void> LowerCompositeRmsNorm(const Op& op) {
     LITERT_ASSIGN_OR_RETURN(auto* x, GetTensor(op.Inputs()[0]));
     const int rank = x->getDimensions().nbDims;
@@ -8524,7 +8836,13 @@ class TensorRtGraphBuilder {
     for (int i = 0; i < rank; ++i) {
       one_dims.d[i] = 1;
     }
-    const float eps_value = 1e-6f;
+    float eps_value = 1e-6f;
+    CompositeOptions options;
+    if (options.InitFromOp(op.Get()) == kLiteRtStatusOk &&
+        options.attributes_map.has_value() &&
+        !options.attributes_map.value()["epsilon"].IsNull()) {
+      eps_value = options.attributes_map.value()["epsilon"].AsFloat();
+    }
     LITERT_ASSIGN_OR_RETURN(
         auto* eps, AddFloatConstant(absl::MakeConstSpan(&eps_value, 1),
                                     one_dims, "rms_norm_eps", x->getType()));
@@ -9422,12 +9740,696 @@ class TensorRtGraphBuilder {
                             nvinfer1::DataType::kFLOAT);
   }
 
+  // The FP32 view of a linear-attention state input (IsInPlaceFp32State): the
+  // network input itself, which no FP16/BF16 activation cast has touched.
+  Expected<nvinfer1::ITensor*> GetFp32StateInput(const Tensor& state) {
+    const auto raw = raw_input_map_.find(state.Get());
+    if (raw == raw_input_map_.end() || raw->second == nullptr ||
+        raw->second->getType() != nvinfer1::DataType::kFLOAT) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "Linear-attention state is not an FP32 network input");
+    }
+    return raw->second;
+  }
+
+  // A plugin's (activation, FP32 state') outputs: the state leaves the
+  // network in FP32 through raw_output_map_, unrounded.
+  Expected<void> SetStatefulPluginOutputs(const Op& op,
+                                          nvinfer1::IPluginV3Layer* layer,
+                                          const std::string& name) {
+    for (int o = 0; o < 2; ++o) {
+      layer->getOutput(o)->setName(
+          KeepName(UniqueName(name + "_" + std::to_string(o))));
+    }
+    raw_output_map_[op.Outputs()[1].Get()] = layer->getOutput(1);
+    LITERT_RETURN_IF_ERROR(
+        SetOutputTensor(op.Outputs()[0], layer->getOutput(0)));
+    return SetOutputTensor(op.Outputs()[1], layer->getOutput(1));
+  }
+
+  // A member of a fused GEMV group: the group's output and the member's
+  // columns [offset, offset + columns) of its `stride`.
+  struct GemvGroupSlice {
+    nvinfer1::ITensor* fused = nullptr;
+    int32_t offset = 0;
+    int32_t columns = 0;
+    int32_t stride = 0;
+  };
+
+  // A whole gated DeltaNet layer of Qwen 3.5 (trtllm/gated_delta_net.h) from
+  // the outputs of its in-projections to the product of its gated norm,
+  // matched around its gated_delta_update op (FindGatedDeltaNetBlocks).
+  struct GatedDeltaNetBlock {
+    LiteRtNvidiaGatedDeltaNetParams params{};
+    // The in-projections qkv, z, a (with the dt bias) and b, and their outputs.
+    std::array<LiteRtOp, 4> projections{};
+    std::array<LiteRtTensor, 4> projection_outputs{};
+    std::optional<Tensor> conv_state, conv_state_out, state, state_out;
+    std::optional<Tensor> valid_len;
+    std::optional<Tensor> output;  // the gated norm's product
+    std::vector<float> constants;  // gated_delta_net.h's order, biases last
+  };
+
+  // Whether `tensor` is a row mask: a cast of a BOOL tensor (the valid rows
+  // of a prefill chunk).
+  static bool IsRowMask(const Tensor& tensor) {
+    const auto cast = tensor.GetDefiningOp();
+    return cast && cast->Code() == kLiteRtOpCodeTflCast &&
+           cast->Inputs().size() == 1 &&
+           cast->Inputs()[0].ElementType() == litert::ElementType::Bool;
+  }
+
+  // Whether `op` is a TRANSPOSE swapping axes 1 and 2 of a rank 3 or 4 tensor
+  // (between the rows and the heads of a gated DeltaNet layer).
+  static bool IsRowHeadTranspose(const Op& op) {
+    if (op.Code() != kLiteRtOpCodeTflTranspose || op.Inputs().size() != 2) {
+      return false;
+    }
+    const auto perm = ReadInt32Constant(op.Inputs()[1]);
+    return perm && (*perm == std::vector<int32_t>{0, 2, 1} ||
+                    *perm == std::vector<int32_t>{0, 2, 1, 3});
+  }
+
+  // The producer side of `tensor` past the layout ops and row masks of a
+  // gated DeltaNet layer: single-use RESHAPE and row/head TRANSPOSE ops and
+  // MULs by a row mask, which join `members`.
+  static Tensor SkipLayoutAndMasks(Tensor tensor,
+                                   std::vector<LiteRtOp>& members) {
+    while (true) {
+      const auto producer = tensor.GetDefiningOp();
+      if (!producer || tensor.Uses().size() != 1 ||
+          producer->Outputs().size() != 1 || producer->Inputs().empty()) {
+        return tensor;
+      }
+      const Op& op = *producer;
+      if (op.Code() == kLiteRtOpCodeTflReshape || IsRowHeadTranspose(op)) {
+        members.push_back(op.Get());
+        tensor = op.Inputs()[0];
+        continue;
+      }
+      if (op.Code() == kLiteRtOpCodeTflMul && op.Inputs().size() == 2 &&
+          HasNoFusedActivation(op)) {
+        if (IsRowMask(op.Inputs()[1])) {
+          members.push_back(op.Get());
+          tensor = op.Inputs()[0];
+          continue;
+        }
+        if (IsRowMask(op.Inputs()[0])) {
+          members.push_back(op.Get());
+          tensor = op.Inputs()[1];
+          continue;
+        }
+      }
+      return tensor;
+    }
+  }
+
+  // An odml.rms_norm composite with an FP32 constant weight of `dim` values:
+  // the weight and the epsilon.
+  static std::optional<std::pair<std::vector<float>, float>> RmsNormWeights(
+      const Op& op, int dim) {
+    if (op.Code() != kLiteRtOpCodeShloComposite ||
+        CompositeOpName(op) != "odml.rms_norm" || op.Inputs().size() != 2 ||
+        op.Outputs().size() != 1) {
+      return std::nullopt;
+    }
+    const Tensor weight = op.Inputs()[1];
+    if (!weight.HasWeights() || !IsUnquantizedFloat32(weight) ||
+        weight.Weights().Bytes().size() != dim * sizeof(float)) {
+      return std::nullopt;
+    }
+    std::vector<float> values(dim);
+    std::memcpy(values.data(), weight.Weights().Bytes().data(),
+                dim * sizeof(float));
+    float eps = 1e-6f;
+    CompositeOptions options;
+    if (options.InitFromOp(op.Get()) == kLiteRtStatusOk &&
+        options.attributes_map.has_value() &&
+        !options.attributes_map.value()["epsilon"].IsNull()) {
+      eps = options.attributes_map.value()["epsilon"].AsFloat();
+    }
+    return std::make_pair(std::move(values), eps);
+  }
+
+  // The single-use output of a fully connected op of `columns` outputs.
+  static std::optional<Op> ProjectionOf(const Tensor& tensor, int columns) {
+    const auto fc = tensor.GetDefiningOp();
+    auto type = tensor.RankedTensorType();
+    if (!fc || fc->Code() != kLiteRtOpCodeTflFullyConnected ||
+        fc->Outputs().size() != 1 || tensor.Uses().size() != 1 || !type ||
+        type->Layout().Rank() < 1 ||
+        type->Layout().Dimensions().back() != columns) {
+      return std::nullopt;
+    }
+    return *fc;
+  }
+
+  // Matches the layer around one gated_delta_update op, in decode
+  //   y = short_conv(qkv); q, k = rms_norm(slices of y); v = slice of y
+  //   beta = sigmoid(b); g = A * log(1 + exp(min(a, 50)))
+  //   o = gated_delta_update(q, k, v, beta, g, state)
+  //   out = rms_norm(o) * (z * sigmoid(z))
+  // with reshapes between the shapes, and in prefill with row/head
+  // transposes, row masks on every operand and the valid length. Every
+  // intermediate result has a single reader within the layer; the ops past
+  // the projections join `members`, the final product is `anchor`.
+  std::optional<GatedDeltaNetBlock> MatchGatedDeltaNetBlock(
+      const Op& gdn, const GatedDeltaUpdateOp& parsed,
+      std::vector<LiteRtOp>& members, LiteRtOp& anchor) {
+    const auto& p = parsed.params;
+    const int d = 128;
+    if (p.key_dim != d || p.value_dim != d) return std::nullopt;
+    const int hk = p.key_heads;
+    const int hv = p.heads;
+    const int channels = (2 * hk + hv) * d;
+    GatedDeltaNetBlock block;
+    members.push_back(gdn.Get());
+    std::optional<Op> conv;
+    // The slice of the convolution's output at `offset`, `width` wide.
+    const auto conv_slice = [&](const Tensor& tensor, int offset,
+                                int width) -> bool {
+      const auto slice = tensor.GetDefiningOp();
+      if (!slice || tensor.Uses().size() != 1 ||
+          slice->Code() != kLiteRtOpCodeTflSlice ||
+          slice->Inputs().size() != 3) {
+        return false;
+      }
+      const auto begin = ReadInt32Constant(slice->Inputs()[1]);
+      const auto size = ReadInt32Constant(slice->Inputs()[2]);
+      if (!begin || !size || begin->size() != 3 || size->size() != 3 ||
+          (*begin)[0] != 0 || (*begin)[1] != 0 || (*begin)[2] != offset ||
+          (*size)[2] != width ||
+          !TensorHasShape(slice->Inputs()[0], {1, p.tokens, channels})) {
+        return false;
+      }
+      const auto producer = slice->Inputs()[0].GetDefiningOp();
+      if (!producer || (conv && conv->Get() != producer->Get())) return false;
+      conv = *producer;
+      members.push_back(slice->Get());
+      return true;
+    };
+    // q and k: the norms of their slices.
+    const auto normed = [&](int input, int offset, float& eps) -> bool {
+      const Tensor t = SkipLayoutAndMasks(gdn.Inputs()[input], members);
+      const auto norm = t.GetDefiningOp();
+      if (!norm || t.Uses().size() != 1) return false;
+      auto weights = RmsNormWeights(*norm, d);
+      if (!weights) return false;
+      members.push_back(norm->Get());
+      block.constants.insert(block.constants.end(), weights->first.begin(),
+                             weights->first.end());
+      eps = weights->second;
+      return conv_slice(SkipLayoutAndMasks(norm->Inputs()[0], members), offset,
+                        hk * d);
+    };
+    // decay [hv], then q_scale and k_scale (filled by `normed`).
+    std::vector<float> decay;
+    if (!normed(0, 0, block.params.q_eps) ||
+        !normed(1, hk * d, block.params.k_eps) ||
+        !conv_slice(SkipLayoutAndMasks(gdn.Inputs()[2], members), 2 * hk * d,
+                    hv * d)) {
+      return std::nullopt;
+    }
+    // beta = sigmoid(b).
+    const Tensor beta = SkipLayoutAndMasks(gdn.Inputs()[3], members);
+    const auto sigmoid = beta.GetDefiningOp();
+    if (!sigmoid || beta.Uses().size() != 1 ||
+        sigmoid->Code() != kLiteRtOpCodeTflLogistic) {
+      return std::nullopt;
+    }
+    members.push_back(sigmoid->Get());
+    const auto b_fc = ProjectionOf(sigmoid->Inputs()[0], hv);
+    // g = A * log(1 + exp(min(a, 50))), A a constant per head.
+    const auto unary_of =
+        [&](const Tensor& tensor, LiteRtOpCode code,
+            std::optional<float> constant,
+            std::optional<Tensor>* operand) -> std::optional<Op> {
+      const auto op = tensor.GetDefiningOp();
+      if (!op || tensor.Uses().size() != 1 || op->Code() != code ||
+          op->Outputs().size() != 1) {
+        return std::nullopt;
+      }
+      if (!constant.has_value()) {
+        if (op->Inputs().size() != 1) return std::nullopt;
+        *operand = op->Inputs()[0];
+      } else {
+        if (op->Inputs().size() != 2 || !HasNoFusedActivation(*op)) {
+          return std::nullopt;
+        }
+        const int c = ReadFloat32Scalar(op->Inputs()[1]) == constant ? 1 : 0;
+        if (ReadFloat32Scalar(op->Inputs()[c]) != constant) return std::nullopt;
+        *operand = op->Inputs()[1 - c];
+      }
+      members.push_back(op->Get());
+      return *op;
+    };
+    const Tensor g = SkipLayoutAndMasks(gdn.Inputs()[4], members);
+    const auto scale = g.GetDefiningOp();
+    if (!scale || g.Uses().size() != 1 ||
+        scale->Code() != kLiteRtOpCodeTflMul || scale->Inputs().size() != 2 ||
+        !HasNoFusedActivation(*scale)) {
+      return std::nullopt;
+    }
+    const int a_index = scale->Inputs()[1].HasWeights() ? 1 : 0;
+    const Tensor a_values = scale->Inputs()[a_index];
+    if (!a_values.HasWeights() || !IsUnquantizedFloat32(a_values) ||
+        a_values.Weights().Bytes().size() != hv * sizeof(float)) {
+      return std::nullopt;
+    }
+    decay.resize(hv);
+    std::memcpy(decay.data(), a_values.Weights().Bytes().data(),
+                hv * sizeof(float));
+    members.push_back(scale->Get());
+    std::optional<Tensor> chain = scale->Inputs()[1 - a_index];
+    if (!unary_of(*chain, kLiteRtOpCodeTflLog, std::nullopt, &chain) ||
+        !unary_of(*chain, kLiteRtOpCodeTflAdd, 1.0f, &chain) ||
+        !unary_of(*chain, kLiteRtOpCodeTflExp, std::nullopt, &chain) ||
+        !unary_of(*chain, kLiteRtOpCodeTflMinimum, 50.0f, &chain)) {
+      return std::nullopt;
+    }
+    const auto a_fc = ProjectionOf(*chain, hv);
+    // The convolution and its input, the qkv projection.
+    if (!conv || conv->Outputs()[0].Uses().size() != 3) return std::nullopt;
+    const auto conv_parsed = ParseShortConvStep(*conv);
+    if (!conv_parsed || conv_parsed->params.channels != channels ||
+        conv_parsed->params.tokens != p.tokens) {
+      return std::nullopt;
+    }
+    members.push_back(conv->Get());
+    const auto qkv_fc =
+        ProjectionOf(SkipLayoutAndMasks(conv->Inputs()[0], members), channels);
+    // The output side: o -> layout ops -> rms_norm -> * silu(z).
+    Tensor o = gdn.Outputs()[0];
+    std::optional<Op> next;
+    while (true) {
+      const auto uses = o.Uses();
+      if (uses.size() != 1) return std::nullopt;
+      const Op& user = uses[0].user;
+      if (user.Code() == kLiteRtOpCodeTflReshape || IsRowHeadTranspose(user)) {
+        if (uses[0].user_arg_ind != 0) return std::nullopt;
+        members.push_back(user.Get());
+        o = user.Outputs()[0];
+        continue;
+      }
+      next = user;
+      break;
+    }
+    auto out_norm = RmsNormWeights(*next, d);
+    if (!out_norm || next->Inputs()[0].Get() != o.Get()) return std::nullopt;
+    members.push_back(next->Get());
+    const auto product_uses = next->Outputs()[0].Uses();
+    if (product_uses.size() != 1) return std::nullopt;
+    const Op& product = product_uses[0].user;
+    if (product.Code() != kLiteRtOpCodeTflMul || product.Inputs().size() != 2 ||
+        !HasNoFusedActivation(product) ||
+        !TensorHasShape(product.Outputs()[0], {1, p.tokens, hv, d})) {
+      return std::nullopt;
+    }
+    const Tensor gate = product.Inputs()[1 - product_uses[0].user_arg_ind];
+    const auto silu = gate.GetDefiningOp();
+    if (!silu || gate.Uses().size() != 1 ||
+        silu->Code() != kLiteRtOpCodeTflMul || silu->Inputs().size() != 2 ||
+        !HasNoFusedActivation(*silu)) {
+      return std::nullopt;
+    }
+    std::optional<Tensor> z;
+    for (int i = 0; i < 2 && !z; ++i) {
+      const auto logistic = silu->Inputs()[i].GetDefiningOp();
+      if (logistic && logistic->Code() == kLiteRtOpCodeTflLogistic &&
+          silu->Inputs()[i].Uses().size() == 1 &&
+          logistic->Inputs()[0].Get() == silu->Inputs()[1 - i].Get() &&
+          silu->Inputs()[1 - i].Uses().size() == 2) {
+        z = silu->Inputs()[1 - i];
+        members.push_back(logistic->Get());
+      }
+    }
+    if (!z) return std::nullopt;
+    members.push_back(silu->Get());
+    Tensor z_raw = *z;
+    if (const auto reshape = z_raw.GetDefiningOp();
+        reshape && reshape->Code() == kLiteRtOpCodeTflReshape &&
+        reshape->Inputs()[0].Uses().size() == 1) {
+      members.push_back(reshape->Get());
+      z_raw = reshape->Inputs()[0];
+    }
+    const auto z_fc = ProjectionOf(z_raw, hv * d);
+    if (!qkv_fc || !z_fc || !a_fc || !b_fc) return std::nullopt;
+    // The projections' biases, which FinishFullyConnected adds past the GEMV
+    // (zeros without one); a fused activation would not be in the group's
+    // output either.
+    std::vector<float> biases;
+    for (const auto& [fc, columns] :
+         {std::pair<const Op*, int>{&*qkv_fc, channels},
+          {&*z_fc, hv * d},
+          {&*a_fc, hv},
+          {&*b_fc, hv}}) {
+      if (!HasNoFusedActivation(*fc)) return std::nullopt;
+      const size_t at = biases.size();
+      biases.resize(at + columns, 0.0f);
+      if (fc->Inputs().size() < 3) continue;
+      const Tensor bias = fc->Inputs()[2];
+      if (!bias.HasWeights() || !IsUnquantizedFloat32(bias) ||
+          bias.Weights().Bytes().size() != columns * sizeof(float)) {
+        return std::nullopt;
+      }
+      std::memcpy(biases.data() + at, bias.Weights().Bytes().data(),
+                  columns * sizeof(float));
+    }
+
+    block.projections = {qkv_fc->Get(), z_fc->Get(), a_fc->Get(), b_fc->Get()};
+    block.projection_outputs = {
+        qkv_fc->Outputs()[0].Get(), z_fc->Outputs()[0].Get(),
+        a_fc->Outputs()[0].Get(), b_fc->Outputs()[0].Get()};
+    block.conv_state = conv->Inputs()[1];
+    block.conv_state_out = conv->Outputs()[1];
+    block.state = gdn.Inputs()[5];
+    block.state_out = gdn.Outputs()[1];
+    if (parsed.has_valid_len) block.valid_len = gdn.Inputs()[6];
+    if (parsed.has_valid_len != conv_parsed->has_valid_len) return std::nullopt;
+    block.output = product.Outputs()[0];
+    anchor = product.Get();
+    // decay, q_scale, k_scale (already in), norm_weight, conv_weight.
+    block.constants.insert(block.constants.begin(), decay.begin(), decay.end());
+    block.constants.insert(block.constants.end(), out_norm->first.begin(),
+                           out_norm->first.end());
+    const auto conv_bytes = conv->Inputs()[2].Weights().Bytes();
+    const size_t conv_values = conv_bytes.size() / sizeof(float);
+    const size_t before = block.constants.size();
+    block.constants.resize(before + conv_values);
+    std::memcpy(block.constants.data() + before, conv_bytes.data(),
+                conv_values * sizeof(float));
+    block.constants.insert(block.constants.end(), biases.begin(), biases.end());
+    auto& bp = block.params;
+    bp.tokens = p.tokens;
+    bp.key_heads = hk;
+    bp.value_heads = hv;
+    bp.head_dim = d;
+    bp.taps = conv_parsed->params.taps;
+    bp.silu = conv_parsed->params.silu;
+    bp.out_eps = out_norm->second;
+    return block;
+  }
+
+  // Records every gated DeltaNet layer matched by MatchGatedDeltaNetBlock:
+  // its ops past the in-projections are not lowered, and its final product
+  // emits the LiteRtNvidiaGatedDeltaNet plugin (LowerGatedDeltaNetBlock).
+  // LITERT_NVIDIA_TENSORRT_FUSE_GATED_DELTA_NET=0 keeps the op-by-op lowering.
+  Expected<void> FindGatedDeltaNetBlocks(const Subgraph& subgraph) {
+    if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_FUSE_GATED_DELTA_NET",
+                    /*default_value=*/true) ||
+        !Fp16ActivationsEnabled()) {
+      return {};
+    }
+    size_t found = 0;
+    size_t candidates = 0;
+    for (const auto& op : subgraph.Ops()) {
+      const auto parsed = ParseGatedDeltaUpdate(op);
+      if (!parsed.has_value()) continue;
+      ++candidates;
+      std::vector<LiteRtOp> members;
+      LiteRtOp anchor = nullptr;
+      auto block = MatchGatedDeltaNetBlock(op, *parsed, members, anchor);
+      if (!block.has_value()) continue;
+      bool ordered = op_order_.count(anchor) != 0;
+      for (LiteRtOp member : members) {
+        ordered = ordered && op_order_.count(member) != 0 &&
+                  unlowered_ops_.count(member) == 0;
+      }
+      for (LiteRtOp projection : block->projections) {
+        ordered = ordered && op_order_.count(projection) != 0 &&
+                  op_order_[projection] < op_order_[anchor];
+      }
+      if (!ordered) continue;
+      unlowered_ops_.insert(members.begin(), members.end());
+      gdn_anchor_ops_[anchor] = gdn_blocks_.size();
+      gdn_blocks_.push_back(std::move(*block));
+      ++found;
+    }
+    if (candidates != 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX fused %zu of %zu gated DeltaNet layers "
+                 "into the CUDA gated DeltaNet plugin",
+                 found, candidates);
+    }
+    return {};
+  }
+
+  // Emits one matched gated DeltaNet layer at its final product. The
+  // projections come from their fused GEMV group's output when all four are
+  // its members (no copies), else from their concatenation.
+  Expected<void> LowerGatedDeltaNetBlock(size_t index) {
+    GatedDeltaNetBlock& block = gdn_blocks_[index];
+    auto& p = block.params;
+    nvinfer1::ITensor* proj = nullptr;
+    std::array<int32_t, 4> offsets{};
+    const GemvGroupSlice* group = nullptr;
+    bool grouped = true;
+    for (int i = 0; i < 4 && grouped; ++i) {
+      const auto it = gemv_group_slices_.find(block.projections[i]);
+      grouped = it != gemv_group_slices_.end() &&
+                (group == nullptr || it->second.fused == group->fused);
+      if (grouped) {
+        group = &it->second;
+        offsets[i] = it->second.offset;
+      }
+    }
+    if (grouped) {
+      proj = group->fused;
+      p.proj_stride = group->stride;
+    } else {
+      std::vector<nvinfer1::ITensor*> parts;
+      int32_t at = 0;
+      for (int i = 0; i < 4; ++i) {
+        const auto it = tensor_map_.find(block.projection_outputs[i]);
+        if (it == tensor_map_.end() || it->second == nullptr) {
+          return Error(kLiteRtStatusErrorCompilation,
+                       "Gated DeltaNet projection was not lowered");
+        }
+        LITERT_ASSIGN_OR_RETURN(
+            auto* part, AddCastTensor(it->second, nvinfer1::DataType::kBF16));
+        const auto dims = part->getDimensions();
+        offsets[i] = at;
+        at += static_cast<int32_t>(dims.d[dims.nbDims - 1]);
+        parts.push_back(part);
+      }
+      auto* concat = network_->addConcatenation(
+          parts.data(), static_cast<int32_t>(parts.size()));
+      if (concat == nullptr || concat->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to concatenate the gated DeltaNet projections");
+      }
+      concat->setAxis(parts[0]->getDimensions().nbDims - 1);
+      proj = concat->getOutput(0);
+      p.proj_stride = at;
+    }
+    LITERT_ASSIGN_OR_RETURN(proj,
+                            AddCastTensor(proj, nvinfer1::DataType::kBF16));
+    p.qkv_offset = offsets[0];
+    p.z_offset = offsets[1];
+    p.a_offset = offsets[2];
+    p.b_offset = offsets[3];
+    if (block.constants.size() != LiteRtNvidiaGatedDeltaNetConstantCount(&p)) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Gated DeltaNet constants do not match the layer");
+    }
+    LITERT_ASSIGN_OR_RETURN(auto* conv_state,
+                            GetFp32StateInput(*block.conv_state));
+    LITERT_ASSIGN_OR_RETURN(auto* state, GetFp32StateInput(*block.state));
+    nvinfer1::Dims constant_dims{};
+    constant_dims.nbDims = 1;
+    constant_dims.d[0] = static_cast<int64_t>(block.constants.size());
+    const std::string suffix = std::to_string(block.state->TensorIndex());
+    LITERT_ASSIGN_OR_RETURN(
+        auto* constants, AddFloatConstant(block.constants, constant_dims,
+                                          "gated_delta_net_constants_" + suffix,
+                                          nvinfer1::DataType::kFLOAT));
+    std::vector<nvinfer1::ITensor*> inputs = {proj, conv_state, state,
+                                              constants};
+    if (block.valid_len.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(auto* valid_len, GetTensor(*block.valid_len));
+      if (valid_len->getType() != nvinfer1::DataType::kINT32) {
+        return Error(kLiteRtStatusErrorUnsupported,
+                     "gated DeltaNet valid length must be int32");
+      }
+      inputs.push_back(valid_len);
+    }
+    TrtPtr<nvinfer1::IPluginV3> plugin(
+        CreateGatedDeltaNetPlugin(p, block.valid_len.has_value()));
+    if (!plugin) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to create the gated DeltaNet plugin");
+    }
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        *network_, inputs.data(), static_cast<int32_t>(inputs.size()), *plugin);
+    if (layer == nullptr || layer->getOutput(0) == nullptr ||
+        layer->getOutput(1) == nullptr || layer->getOutput(2) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the gated DeltaNet plugin layer");
+    }
+    const std::string name = "cuda_gated_delta_net_" + suffix;
+    layer->setName(KeepName(UniqueName(name)));
+    for (int o = 0; o < 3; ++o) {
+      layer->getOutput(o)->setName(
+          KeepName(UniqueName(name + "_" + std::to_string(o))));
+    }
+    owned_plugins_.push_back(std::move(plugin));
+    LITERT_ASSIGN_OR_RETURN(auto out_type, block.output->RankedTensorType());
+    LITERT_ASSIGN_OR_RETURN(auto out_dims, ConvertDims(out_type));
+    LITERT_ASSIGN_OR_RETURN(auto* out,
+                            ReshapeTensor(layer->getOutput(0), out_dims));
+    raw_output_map_[block.conv_state_out->Get()] = layer->getOutput(1);
+    raw_output_map_[block.state_out->Get()] = layer->getOutput(2);
+    LITERT_RETURN_IF_ERROR(
+        SetOutputTensor(*block.conv_state_out, layer->getOutput(1)));
+    LITERT_RETURN_IF_ERROR(
+        SetOutputTensor(*block.state_out, layer->getOutput(2)));
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX fused CUDA gated DeltaNet layer: state=%s "
+               "rows=%d projections=%s",
+               suffix.c_str(), p.tokens, grouped ? "group" : "concatenated");
+    return SetOutputTensor(*block.output, out);
+  }
+
+  // Qwen 3.5's gated_delta_update as the LiteRtNvidiaGatedDeltaUpdate plugin
+  // (trtllm/gated_delta.h): q, k, v, beta and g in FP32, the state read from
+  // and written to the runtime's FP32 buffer.
+  Expected<void> LowerGatedDeltaUpdate(const Op& op,
+                                       const GatedDeltaUpdateOp& parsed) {
+    std::vector<nvinfer1::ITensor*> inputs;
+    for (int i = 0; i < 5; ++i) {
+      LITERT_ASSIGN_OR_RETURN(auto* tensor, GetTensor(op.Inputs()[i]));
+      LITERT_ASSIGN_OR_RETURN(
+          tensor, AddCastTensor(tensor, nvinfer1::DataType::kFLOAT));
+      inputs.push_back(tensor);
+    }
+    LITERT_ASSIGN_OR_RETURN(auto* state, GetFp32StateInput(op.Inputs()[5]));
+    inputs.push_back(state);
+    if (parsed.has_valid_len) {
+      LITERT_ASSIGN_OR_RETURN(auto* valid_len, GetTensor(op.Inputs()[6]));
+      if (valid_len->getType() != nvinfer1::DataType::kINT32) {
+        return Error(kLiteRtStatusErrorUnsupported,
+                     "gated_delta_update valid length must be int32");
+      }
+      inputs.push_back(valid_len);
+    }
+    const auto& p = parsed.params;
+    TrtPtr<nvinfer1::IPluginV3> plugin(CreateGatedDeltaUpdatePlugin(
+        p.heads, p.key_heads, p.key_dim, p.value_dim, parsed.has_valid_len));
+    if (!plugin) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to create the gated_delta_update plugin");
+    }
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        *network_, inputs.data(), static_cast<int32_t>(inputs.size()), *plugin);
+    if (layer == nullptr || layer->getOutput(0) == nullptr ||
+        layer->getOutput(1) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the gated_delta_update plugin layer");
+    }
+    const std::string name =
+        "cuda_gated_delta_" + std::to_string(op.Inputs()[5].TensorIndex());
+    layer->setName(KeepName(UniqueName(name)));
+    owned_plugins_.push_back(std::move(plugin));
+    return SetStatefulPluginOutputs(op, layer, name);
+  }
+
+  // odml.swiglu(x) = silu(x[.., :N]) * x[.., N:] where its fully connected
+  // producer did not absorb it (FindFusedSwiglu): its slices and gates.
+  Expected<void> LowerCompositeSwiglu(const Op& op) {
+    const auto gate_size = SwigluGateSize(op);
+    if (!gate_size.has_value()) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "Unsupported swiglu composite");
+    }
+    LITERT_ASSIGN_OR_RETURN(auto* x, GetTensor(op.Inputs()[0]));
+    const int axis = x->getDimensions().nbDims - 1;
+    LITERT_ASSIGN_OR_RETURN(auto* gate,
+                            SliceTensorAxis(x, axis, 0, *gate_size));
+    LITERT_ASSIGN_OR_RETURN(auto* up,
+                            SliceTensorAxis(x, axis, *gate_size, *gate_size));
+    auto* sigmoid =
+        network_->addActivation(*gate, nvinfer1::ActivationType::kSIGMOID);
+    if (sigmoid == nullptr || sigmoid->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation, "Failed to add swiglu gate");
+    }
+    auto* silu = network_->addElementWise(
+        *gate, *sigmoid->getOutput(0), nvinfer1::ElementWiseOperation::kPROD);
+    if (silu == nullptr || silu->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation, "Failed to add swiglu silu");
+    }
+    auto* out = network_->addElementWise(*silu->getOutput(0), *up,
+                                         nvinfer1::ElementWiseOperation::kPROD);
+    if (out == nullptr || out->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add swiglu product");
+    }
+    return SetOutputTensor(op.Outputs()[0], out->getOutput(0));
+  }
+
+  // odml.short_conv_step as the LiteRtNvidiaShortConv plugin
+  // (trtllm/gated_delta.h).
+  Expected<void> LowerCompositeShortConvStep(const Op& op) {
+    const auto parsed = ParseShortConvStep(op);
+    if (!parsed.has_value()) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "Unsupported short_conv_step composite");
+    }
+    const auto& p = parsed->params;
+    LITERT_ASSIGN_OR_RETURN(auto* x, GetTensor(op.Inputs()[0]));
+    LITERT_ASSIGN_OR_RETURN(x, AddCastTensor(x, nvinfer1::DataType::kFLOAT));
+    LITERT_ASSIGN_OR_RETURN(auto* state, GetFp32StateInput(op.Inputs()[1]));
+    const auto bytes = op.Inputs()[2].Weights().Bytes();
+    std::vector<float> values(static_cast<size_t>(p.channels) * p.taps);
+    std::memcpy(values.data(), bytes.data(), values.size() * sizeof(float));
+    nvinfer1::Dims dims{};
+    dims.nbDims = 3;
+    dims.d[0] = p.channels;
+    dims.d[1] = 1;
+    dims.d[2] = p.taps;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* weight,
+        AddFloatConstant(
+            values, dims,
+            "short_conv_weight_" + std::to_string(op.Inputs()[2].TensorIndex()),
+            nvinfer1::DataType::kFLOAT));
+    std::vector<nvinfer1::ITensor*> inputs = {x, state, weight};
+    if (parsed->has_valid_len) {
+      LITERT_ASSIGN_OR_RETURN(auto* valid_len, GetTensor(op.Inputs()[3]));
+      if (valid_len->getType() != nvinfer1::DataType::kINT32) {
+        return Error(kLiteRtStatusErrorUnsupported,
+                     "short_conv_step valid length must be int32");
+      }
+      inputs.push_back(valid_len);
+    }
+    TrtPtr<nvinfer1::IPluginV3> plugin(CreateShortConvPlugin(
+        p.channels, p.taps, p.silu != 0, parsed->has_valid_len));
+    if (!plugin) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to create the short_conv_step plugin");
+    }
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        *network_, inputs.data(), static_cast<int32_t>(inputs.size()), *plugin);
+    if (layer == nullptr || layer->getOutput(0) == nullptr ||
+        layer->getOutput(1) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the short_conv_step plugin layer");
+    }
+    const std::string name =
+        "cuda_short_conv_" + std::to_string(op.Inputs()[1].TensorIndex());
+    layer->setName(KeepName(UniqueName(name)));
+    owned_plugins_.push_back(std::move(plugin));
+    return SetStatefulPluginOutputs(op, layer, name);
+  }
+
   // The moe custom op as the CUDA mixture-of-experts plugin. The experts'
   // bytes are located in the model file through the weight store's mapping;
   // the plugin loads them when an execution context attaches. With the
   // router chain recognized (FindMoeRouting) the plugin takes the residual
   // stream and routes itself.
   Expected<void> LowerCustomOp(const Op& op) {
+    if (const auto delta = ParseGatedDeltaUpdate(op); delta.has_value()) {
+      return LowerGatedDeltaUpdate(op, *delta);
+    }
     const auto moe = ParseMoeCustomOp(op);
     if (!moe.has_value()) {
       return Error(kLiteRtStatusErrorUnsupported, "Unsupported custom op");
@@ -9700,6 +10702,12 @@ class TensorRtGraphBuilder {
     if (name == "odml.qkv_norm_rope") {
       return LowerCompositeQkvNormRope(op);
     }
+    if (name == "odml.short_conv_step") {
+      return LowerCompositeShortConvStep(op);
+    }
+    if (name == "odml.swiglu") {
+      return LowerCompositeSwiglu(op);
+    }
     if (name == "odml.cache_update") {
       return LowerCompositeCacheUpdate(op);
     }
@@ -9730,6 +10738,7 @@ class TensorRtGraphBuilder {
       case kLiteRtOpCodeTflSlice:
       case kLiteRtOpCodeTflConcatenation:
       case kLiteRtOpCodeTflTranspose:
+      case kLiteRtOpCodeTflSum:
         break;
       default:
         return false;
@@ -9786,6 +10795,10 @@ class TensorRtGraphBuilder {
         fused != fused_attention_ops_.end()) {
       return LowerDecodeAttentionMember(fused->second);
     }
+    if (auto gdn = gdn_anchor_ops_.find(op.Get());
+        gdn != gdn_anchor_ops_.end()) {
+      return LowerGatedDeltaNetBlock(gdn->second);
+    }
     if (unlowered_ops_.count(op.Get()) != 0) {
       return {};
     }
@@ -9798,6 +10811,7 @@ class TensorRtGraphBuilder {
       case kLiteRtOpCodeTflMinimum:
         return LowerElementwise(op);
       case kLiteRtOpCodeTflLess:
+      case kLiteRtOpCodeTflGreater:
       case kLiteRtOpCodeTflGreaterEqual:
       case kLiteRtOpCodeTflNotEqual:
       case kLiteRtOpCodeTflEqual:
@@ -9811,6 +10825,9 @@ class TensorRtGraphBuilder {
       case kLiteRtOpCodeTflCos:
       case kLiteRtOpCodeTflTanh:
       case kLiteRtOpCodeTflRsqrt:
+      case kLiteRtOpCodeTflLogistic:
+      case kLiteRtOpCodeTflExp:
+      case kLiteRtOpCodeTflLog:
         return LowerUnary(op);
       case kLiteRtOpCodeTflGelu:
         return LowerGelu(op);
@@ -9944,6 +10961,13 @@ class TensorRtGraphBuilder {
   std::unordered_map<LiteRtOp, size_t> fused_attention_ops_;
   std::unordered_set<LiteRtOp> unlowered_ops_;
   std::unordered_map<LiteRtOp, MoeBlockPlan> moe_plans_;
+  // Each member of a fused GEMV group: the group's output and the member's
+  // columns in it (see AddCudaSubbyteGemvGroup).
+  std::unordered_map<LiteRtOp, GemvGroupSlice> gemv_group_slices_;
+  // Fused gated DeltaNet layers by the op that emits them
+  // (FindGatedDeltaNetBlocks).
+  std::vector<GatedDeltaNetBlock> gdn_blocks_;
+  std::unordered_map<LiteRtOp, size_t> gdn_anchor_ops_;
 };
 
 }  // namespace
@@ -9965,6 +10989,7 @@ bool IsTensorRtOpSupported(const Op& op) {
       result = IsElementwiseSupported(op);
       break;
     case kLiteRtOpCodeTflLess:
+    case kLiteRtOpCodeTflGreater:
     case kLiteRtOpCodeTflGreaterEqual:
     case kLiteRtOpCodeTflNotEqual:
     case kLiteRtOpCodeTflEqual:
@@ -9982,6 +11007,9 @@ bool IsTensorRtOpSupported(const Op& op) {
     case kLiteRtOpCodeTflCos:
     case kLiteRtOpCodeTflTanh:
     case kLiteRtOpCodeTflRsqrt:
+    case kLiteRtOpCodeTflLogistic:
+    case kLiteRtOpCodeTflExp:
+    case kLiteRtOpCodeTflLog:
       result = IsUnaryActivationSupported(op);
       break;
     case kLiteRtOpCodeTflGelu:

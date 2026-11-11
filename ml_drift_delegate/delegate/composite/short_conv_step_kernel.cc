@@ -233,9 +233,9 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
                       BxExpr(token, is_gated, hidden_size), ";\n");
     }
     absl::StrAppend(
-        &c, "    args.out.Write(ucl::Convert<args.out::type>(",
+        &c, "    args.out::type out_val = ucl::Convert<args.out::type>(",
         PostConvOutExpr("acc", "X", is_gated, use_silu, hidden_size),
-        "), X, 0, S);\n");
+        ");\n    args.out.Write(out_val, X, 0, S);\n");
     c += "    return;\n  }\n";
   }
 
@@ -269,9 +269,9 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
     const std::string acc_var = absl::StrCat("acc", t);
     const std::string tok_str = absl::StrCat(t);
     absl::StrAppend(
-        &c, "  args.out.Write(ucl::Convert<args.out::type>(",
+        &c, "  args.out::type out_val", t, " = ucl::Convert<args.out::type>(",
         PostConvOutExpr(acc_var, tok_str, is_gated, use_silu, hidden_size),
-        "), ", t, ", 0, S);\n");
+        ");\n  args.out.Write(out_val", t, ", ", t, ", 0, S);\n");
   }
 
   // next_state tap j = padded[n + j] with n = num_valid_tokens clamped to

@@ -236,4 +236,47 @@ TEST_F(LiteRtEnvironmentOptionsTest, OverwriteTrue) {
   LiteRtDestroyEnvironment(environment);
 }
 
+TEST_F(LiteRtEnvironmentOptionsTest,
+       CreateEnvironmentPopulatesRuntimeAbiVersion) {
+  const char* expected_abi_version = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetRuntimeAbiVersion(&expected_abi_version));
+  ASSERT_NE(expected_abi_version, nullptr);
+
+  LiteRtEnvironment environment = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateEnvironment(/*num_options=*/0,
+                                           /*options=*/nullptr, &environment));
+  LiteRtEnvironmentOptions options = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetEnvironmentOptions(environment, &options));
+  LiteRtAny option_value{};
+  LITERT_ASSERT_OK(LiteRtGetEnvironmentOptionsValue(
+      options, kLiteRtEnvOptionTagRuntimeAbiVersion, &option_value));
+  EXPECT_THAT(option_value.type, Eq(kLiteRtAnyTypeString));
+  EXPECT_THAT(option_value.str_value, StrEq(expected_abi_version));
+  LiteRtDestroyEnvironment(environment);
+}
+
+TEST_F(LiteRtEnvironmentOptionsTest,
+       CreateEnvironmentOverwritesCallerRuntimeAbiVersion) {
+  const char* expected_abi_version = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetRuntimeAbiVersion(&expected_abi_version));
+  ASSERT_NE(expected_abi_version, nullptr);
+
+  LiteRtEnvOption spoofed_option{};
+  spoofed_option.tag = kLiteRtEnvOptionTagRuntimeAbiVersion;
+  spoofed_option.value.type = kLiteRtAnyTypeString;
+  spoofed_option.value.str_value = "99.99.99";
+  const LiteRtEnvOption initial_options[] = {spoofed_option};
+
+  LiteRtEnvironment environment = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateEnvironment(1, initial_options, &environment));
+  LiteRtEnvironmentOptions options = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetEnvironmentOptions(environment, &options));
+  LiteRtAny option_value{};
+  LITERT_ASSERT_OK(LiteRtGetEnvironmentOptionsValue(
+      options, kLiteRtEnvOptionTagRuntimeAbiVersion, &option_value));
+  EXPECT_THAT(option_value.type, Eq(kLiteRtAnyTypeString));
+  EXPECT_THAT(option_value.str_value, StrEq(expected_abi_version));
+  LiteRtDestroyEnvironment(environment);
+}
+
 }  // namespace

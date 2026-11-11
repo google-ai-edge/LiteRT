@@ -380,16 +380,42 @@ GpuInferenceContextVulkan::GpuInferenceContextVulkan(
       num_nodes_per_command_buffer_(kDefaultMaxNumNodesPerCommandBuffer) {}
 
 GpuInferenceContextVulkan::~GpuInferenceContextVulkan() {
-  if (next_command_buffers_thread_) {
-    next_command_buffers_thread_->join();
-  }
+  JoinNextCommandBuffersThread();
   if (post_dispatch_event_ != nullptr) {
     post_dispatch_event_->Release(post_dispatch_event_);
   }
 }
 
+void GpuInferenceContextVulkan::JoinNextCommandBuffersThread() {
+  if (next_command_buffers_thread_) {
+    next_command_buffers_thread_->join();
+    next_command_buffers_thread_.reset();
+  }
+}
+
+absl::Status GpuInferenceContextVulkan::FlushPendingSpatialTensors() {
+  if (pending_spatial_tensors_.empty()) {
+    return absl::OkStatus();
+  }
+  auto pending = std::move(pending_spatial_tensors_);
+  pending_spatial_tensors_.clear();
+  absl::MutexLock lock(ctx_mutex_);
+  for (const auto& [id, tensor] : pending) {
+    ABSL_RETURN_IF_ERROR(ctx_.SetTensor(id, tensor));
+  }
+  return absl::OkStatus();
+}
+
 absl::StatusOr<::ml_drift::GpuSpatialTensor*>
 GpuInferenceContextVulkan::GetSpatialTensor(::ml_drift::ValueId id) {
+  if (auto it = pending_spatial_tensors_.find(id);
+      it != pending_spatial_tensors_.end()) {
+    if (it->second == nullptr) {
+      return absl::NotFoundError(
+          absl::StrCat("No GPU tensor allocated for tensor id ", id, "."));
+    }
+    return it->second;
+  }
   absl::MutexLock lock(ctx_mutex_);
   auto* tensor = ctx_.GetTensor(id);
   if (tensor == nullptr) {
@@ -403,8 +429,13 @@ GpuInferenceContextVulkan::GetSpatialTensor(::ml_drift::ValueId id) {
 
 absl::Status GpuInferenceContextVulkan::BindSpatialTensor(
     ::ml_drift::ValueId id, ::ml_drift::GpuSpatialTensor* tensor) {
+  auto* vk_tensor = static_cast<VulkanSpatialTensor*>(tensor);
+  if (!next_command_buffers_.empty()) {
+    pending_spatial_tensors_[id] = vk_tensor;
+    return absl::OkStatus();
+  }
   absl::MutexLock lock(ctx_mutex_);
-  return ctx_.SetTensor(id, static_cast<VulkanSpatialTensor*>(tensor));
+  return ctx_.SetTensor(id, vk_tensor);
 }
 
 absl::Status GpuInferenceContextVulkan::WriteDataToWeightTensor(
@@ -436,9 +467,8 @@ absl::Status GpuInferenceContextVulkan::Dispatch() {
     return shared_env.AddToPendingCommandBuffers(std::move(command_buffers));
   }
 
-  if (next_command_buffers_thread_) {
-    next_command_buffers_thread_->join();
-  }
+  JoinNextCommandBuffersThread();
+  ABSL_RETURN_IF_ERROR(FlushPendingSpatialTensors());
 
   if (last_ctx_ != this) {
     last_ctx_ = this;
@@ -557,6 +587,11 @@ absl::Status GpuInferenceContextVulkan::ReportMemoryBenchmarkIfEnabled(
 
 absl::Status GpuInferenceContextVulkan::SetCommandBufferHint(
     int num_nodes_per_command_buffer) {
+  // Must be called before any Dispatch() call.
+  if (next_command_buffers_thread_ != nullptr) {
+    return absl::FailedPreconditionError(
+        "SetCommandBufferHint must be called before any Dispatch() call.");
+  }
   num_nodes_per_command_buffer_ = num_nodes_per_command_buffer;
   return absl::OkStatus();
 }

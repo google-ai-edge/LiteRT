@@ -191,3 +191,30 @@ runtime's `LiteRtRuntimeCApiStruct`.
         `kLiteRtStatusErrorUnsupported`.
     *   Verify the symbol export test passes:
         `bazel test //litert/c:litert_runtime_c_api_so_symbol_test`.
+
+### 7. (If Needed) Expose via `LiteRtRuntimeContext` or `LiteRtCompilerContext`
+
+If external components need to call the new C API without linking against
+`libLiteRt.so`, expose it in the corresponding ABI-stable context table:
+
+*   **`LiteRtRuntimeContext`**
+    ([`c/internal/litert_runtime_context.h`](c/internal/litert_runtime_context.h)
+    /
+    [`c/internal/litert_runtime_context.cc`](c/internal/litert_runtime_context.cc)):
+    for hardware accelerators, delegates, and Dispatch API implementations.
+*   **`LiteRtCompilerContext`**
+    ([`c/internal/litert_compiler_context.h`](c/internal/litert_compiler_context.h)
+    /
+    [`c/internal/litert_compiler_context.cc`](c/internal/litert_compiler_context.cc)):
+    for Compiler Plugins and C++ compiler wrappers in `compiler/cc/`.
+
+When extending either context struct, append the new function pointer at the
+very end, update the layout `static_assert`s and `abi_header.minor_version`
+(enforced via `LINT.ThenChange`), get review from the LiteRT ABI compatibility
+team, and guard all call sites with
+`LITERT_ABI_HAS_API(ctx, /*req_major=*/1, <member_name>)` (never check
+`ctx-><member_name> != nullptr` directly).
+
+See the full checklist, `LITERT_ABI_HAS_API` examples, and
+backward-compatibility testing requirements in
+[RuntimeContext ABI Stability](https://github.com/google-ai-edge/LiteRT/blob/main/docs/apis/runtime_context.md#abi-stability-and-extending-context-tables).

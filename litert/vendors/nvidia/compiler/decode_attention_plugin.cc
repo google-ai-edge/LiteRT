@@ -89,6 +89,24 @@ bool UsesGlobalKernel(const nvinfer1::Dims& q, const nvinfer1::Dims& mask) {
                                              static_cast<int32_t>(q.d[3]));
 }
 
+// Many query rows of a multi-head cache whose keys already hold the chunk
+// (Qwen 3.5's prefill attends to its updated caches): the tiled tensor-core
+// kernel over the whole cache with no separate new keys (tiled_attention.h).
+LiteRtNvidiaAttentionShape CacheOnlyShape(const nvinfer1::Dims& q,
+                                          const nvinfer1::Dims& k,
+                                          const nvinfer1::Dims& mask) {
+  return {static_cast<int32_t>(q.d[1]),    static_cast<int32_t>(q.d[2]),
+          static_cast<int32_t>(mask.d[2]), static_cast<int32_t>(q.d[3]),
+          static_cast<int32_t>(k.d[2]),    0};
+}
+
+bool UsesTiledCacheKernel(const nvinfer1::Dims& q, const nvinfer1::Dims& k,
+                          const nvinfer1::Dims& mask) {
+  if (q.d[2] <= kMaxRows) return false;
+  const LiteRtNvidiaAttentionShape shape = CacheOnlyShape(q, k, mask);
+  return LiteRtNvidiaTiledAttentionSupports(&shape);
+}
+
 bool ValidDimensions(const nvinfer1::Dims& dims) {
   if (dims.nbDims != 4) return false;
   for (int i = 0; i < dims.nbDims; ++i) {
@@ -204,7 +222,7 @@ bool ValidDescriptors(const nvinfer1::PluginTensorDesc* inputs,
   if (mask.d[3] != k.d[2]) {
     return false;
   }
-  return UsesGlobalKernel(q, mask) ||
+  return UsesGlobalKernel(q, mask) || UsesTiledCacheKernel(q, k, mask) ||
          (q.d[2] <= kMaxRows && SupportedDepth(q.d[3]) &&
           (mask.d[2] == 1 || mask.d[2] == q.d[2]));
 }
@@ -370,6 +388,12 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
           NewKeysShape(q, k, inputs[3].max, inputs[4].max);
       return LiteRtNvidiaTiledAttentionWorkspaceBytes(&shape);
     }
+    if (int8_cache_ == 0 && !UsesGlobalKernel(q, inputs[3].max) &&
+        UsesTiledCacheKernel(q, k, inputs[3].max)) {
+      const LiteRtNvidiaAttentionShape shape =
+          CacheOnlyShape(q, k, inputs[3].max);
+      return LiteRtNvidiaTiledAttentionWorkspaceBytes(&shape);
+    }
     if (int8_cache_ == 0 && UsesGlobalKernel(q, inputs[3].max)) {
       return LiteRtNvidiaGlobalAttentionWorkspaceBytes(
           static_cast<int32_t>(q.d[2]),
@@ -422,7 +446,13 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
           window_ != 0 ? static_cast<const int32_t*>(inputs[4]) : nullptr,
           depth, fill_, outputs[0], workspace, stream);
     } else {
-      if (UsesGlobalKernel(q, mask)) {
+      if (!UsesGlobalKernel(q, mask) && UsesTiledCacheKernel(q, k, mask)) {
+        const LiteRtNvidiaAttentionShape shape = CacheOnlyShape(q, k, mask);
+        status = LiteRtNvidiaLaunchTiledAttention(
+            &shape, inputs[0], q_bf16, inputs[1], inputs[2], nullptr, nullptr,
+            static_cast<const bool*>(inputs[3]), fill_, outputs[0], workspace,
+            stream);
+      } else if (UsesGlobalKernel(q, mask)) {
         // One launch per KV head over that head's rows, keys and values; the
         // mask is shared and the launches run in order on the stream, so
         // they share the workspace.

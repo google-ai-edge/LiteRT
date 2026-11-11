@@ -189,6 +189,14 @@ typedef struct LiteRtRuntimeContext {
   // Append a metric to the metrics object.
   LiteRtStatus (*append_metric)(LiteRtMetrics metrics,
                                 const LiteRtMetric* metric);
+
+  // Added in version 1.3.0
+  // Create a LiteRtTensorBufferRequirements with alignment.
+  LiteRtStatus (*create_tensor_buffer_requirements_with_alignment)(
+      int num_supported_tensor_buffer_types,
+      const LiteRtTensorBufferType* supported_tensor_buffer_types,
+      size_t buffer_size, int num_strides, const uint32_t* strides,
+      size_t alignment, LiteRtTensorBufferRequirements* requirements);
 } LiteRtRuntimeContext;
 // LINT.ThenChange(./litert_runtime_context.cc:runtime_context_version)
 
@@ -198,7 +206,7 @@ typedef struct LiteRtRuntimeContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtRuntimeContext) == 416,
+static_assert(sizeof(LiteRtRuntimeContext) == 424,
               "LiteRtRuntimeContext size mismatch");
 static_assert(offsetof(LiteRtRuntimeContext, abi_header) == 0,
               "LiteRtRuntimeContext abi_header offset mismatch");
@@ -347,6 +355,11 @@ static_assert(
     "LiteRtRuntimeContext get_options_hardware_accelerators offset mismatch");
 static_assert(offsetof(LiteRtRuntimeContext, append_metric) == 408,
               "LiteRtRuntimeContext append_metric offset mismatch");
+static_assert(
+    offsetof(LiteRtRuntimeContext,
+             create_tensor_buffer_requirements_with_alignment) == 416,
+    "LiteRtRuntimeContext create_tensor_buffer_requirements_with_alignment "
+    "offset mismatch");
 #endif  // __cplusplus
 
 LiteRtRuntimeContext* LrtGetRuntimeContext();

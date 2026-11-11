@@ -76,6 +76,9 @@ typedef enum {
   /// \internal This is for internal use only, for a custom GPU accelerator
   /// handle.
   kLiteRtEnvOptionTagSystemGpuAcceleratorHandle = 30,
+  /// \internal This is for internal use only. Populated by
+  /// LiteRtCreateEnvironment with the runtime's LITERT_RUNTIME_ABI_VERSION.
+  kLiteRtEnvOptionTagRuntimeAbiVersion = 31,
   // Internal use only. Virtual null tag for option that is not defined.
   kLiteRtEnvOptionTagNull = 255,
 } LiteRtEnvOptionTag;

@@ -53,6 +53,22 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
 
   // LINT.ThenChange(../../../../../../../../../c/litert_environment_options.h)
 
+  private class NativeOptionsBuilder : JniHandle(nativeCreateOptions()) {
+    fun addStringOption(tag: Int, value: String) {
+      assertNotDestroyed()
+      nativeAddStringOption(handle, tag, value)
+    }
+
+    fun addPointerOption(tag: Int, pointer: Long) {
+      assertNotDestroyed()
+      nativeAddPointerOption(handle, tag, pointer)
+    }
+
+    override fun destroy() {
+      nativeDestroyOptions(handle)
+    }
+  }
+
   override protected fun destroy() {
     nativeDestroy(handle)
   }
@@ -91,17 +107,10 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
       options: Map<Option, String> = mapOf(),
       enableCompilerCache: Boolean = true,
     ): Environment {
-      val keys = options.keys.map { it.value }.toMutableList()
-      val values = options.values.toMutableList()
-
-      if (enableCompilerCache) {
-        context.cacheDir?.absolutePath?.let { path ->
-          keys.add(ENV_OPTION_TAG_COMPILER_CACHE_DIR)
-          values.add(path)
-        }
-      }
-
-      return Environment(nativeCreate(keys.toIntArray(), values.toTypedArray()))
+      return createWithOptions(
+        options = options,
+        compilerCacheDir = if (enableCompilerCache) context.cacheDir?.absolutePath else null,
+      )
     }
 
     /**
@@ -116,9 +125,7 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
     @JvmOverloads
     @JvmStatic
     fun create(options: Map<Option, String> = mapOf()): Environment {
-      return Environment(
-        nativeCreate(options.keys.map { it.value }.toIntArray(), options.values.toTypedArray())
-      )
+      return createWithOptions(options = options)
     }
 
     // TODO(niuchl): Add support for downloading NPU library.
@@ -139,23 +146,11 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
       options: Map<Option, String> = mapOf(),
       enableCompilerCache: Boolean = true,
     ): Environment {
-      val mutableOptions = options.toMutableMap()
-      if (npuAcceleratorProvider.isDeviceSupported() && npuAcceleratorProvider.isLibraryReady()) {
-        mutableOptions[Option.DispatchLibraryDir] = npuAcceleratorProvider.getLibraryDir()
-        mutableOptions[Option.CompilerPluginLibraryDir] = npuAcceleratorProvider.getLibraryDir()
-      }
-
-      val keys = mutableOptions.keys.map { it.value }.toMutableList()
-      val values = mutableOptions.values.toMutableList()
-
-      if (enableCompilerCache) {
-        context.cacheDir?.absolutePath?.let { path ->
-          keys.add(ENV_OPTION_TAG_COMPILER_CACHE_DIR)
-          values.add(path)
-        }
-      }
-
-      return Environment(nativeCreate(keys.toIntArray(), values.toTypedArray()))
+      return createWithOptions(
+        options = options,
+        npuAcceleratorProvider = npuAcceleratorProvider,
+        compilerCacheDir = if (enableCompilerCache) context.cacheDir?.absolutePath else null,
+      )
     }
 
     /**
@@ -174,21 +169,68 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
       npuAcceleratorProvider: NpuAcceleratorProvider,
       options: Map<Option, String> = mapOf(),
     ): Environment {
-      val mutableOptions = options.toMutableMap()
-      if (npuAcceleratorProvider.isDeviceSupported() && npuAcceleratorProvider.isLibraryReady()) {
-        mutableOptions[Option.DispatchLibraryDir] = npuAcceleratorProvider.getLibraryDir()
-        mutableOptions[Option.CompilerPluginLibraryDir] = npuAcceleratorProvider.getLibraryDir()
-      }
-
-      return Environment(
-        nativeCreate(
-          mutableOptions.keys.map { it.value }.toIntArray(),
-          mutableOptions.values.toTypedArray(),
-        )
-      )
+      return createWithOptions(options = options, npuAcceleratorProvider = npuAcceleratorProvider)
     }
 
-    @JvmStatic private external fun nativeCreate(keys: IntArray, values: Array<String>): Long
+    private fun isPointerOption(option: Option): Boolean =
+      when (option) {
+        Option.SystemRuntimeHandle,
+        Option.SystemContextHandle,
+        Option.SystemGpuAcceleratorHandle -> true
+        Option.CompilerPluginLibraryDir,
+        Option.DispatchLibraryDir -> false
+      }
+
+    private fun createWithOptions(
+      options: Map<Option, String>,
+      npuAcceleratorProvider: NpuAcceleratorProvider? = null,
+      compilerCacheDir: String? = null,
+    ): Environment {
+      val effectiveOptions =
+        if (
+          npuAcceleratorProvider != null &&
+            npuAcceleratorProvider.isDeviceSupported() &&
+            npuAcceleratorProvider.isLibraryReady()
+        ) {
+          val libraryDir = npuAcceleratorProvider.getLibraryDir()
+          options.toMutableMap().apply {
+            this[Option.DispatchLibraryDir] = libraryDir
+            this[Option.CompilerPluginLibraryDir] = libraryDir
+          }
+        } else {
+          options
+        }
+
+      NativeOptionsBuilder().use { builder ->
+        for ((option, value) in effectiveOptions) {
+          if (isPointerOption(option)) {
+            val pointer =
+              value.trim().toLongOrNull()
+                ?: throw LiteRtException(
+                  Status.ErrorInvalidArgument,
+                  "Invalid pointer value for ${option.name}: $value",
+                )
+            builder.addPointerOption(option.value, pointer)
+          } else {
+            builder.addStringOption(option.value, value)
+          }
+        }
+        if (compilerCacheDir != null) {
+          builder.addStringOption(ENV_OPTION_TAG_COMPILER_CACHE_DIR, compilerCacheDir)
+        }
+        return Environment(nativeCreate(builder.handle))
+      }
+    }
+
+    @JvmStatic private external fun nativeCreateOptions(): Long
+
+    @JvmStatic private external fun nativeDestroyOptions(handle: Long)
+
+    @JvmStatic private external fun nativeAddStringOption(handle: Long, tag: Int, value: String)
+
+    @JvmStatic private external fun nativeAddPointerOption(handle: Long, tag: Int, pointer: Long)
+
+    @JvmStatic private external fun nativeCreate(optionsHandle: Long): Long
 
     @JvmStatic private external fun nativeGetAvailableAccelerators(handle: Long): IntArray
 

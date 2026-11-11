@@ -238,8 +238,12 @@ TEST_F(AppleAcceleratorMemoryTest, Apple_SourcesAreAvailable) {
 // resident figure shows it on both sides (see the file comment of
 // accelerator_memory_apple.mm for why that cannot be corrected).
 TEST_F(AppleAcceleratorMemoryTest, Apple_ChargedBufferIsOnTheGpuSideOfTheAttributedFigure) {
-  const MemorySnapshot before = TakeMemorySnapshot();
+  // The snapshots are built from the same host reading that the footprint
+  // assertions below use, so that they compare one sample of phys_footprint
+  // with itself rather than two samples taken a moment apart (a page fault in
+  // between failed the equality by 16 KB in a few percent of runs).
   const HostMemoryUsage host_before = GetHostMemoryUsage();
+  const MemorySnapshot before = MakeMemorySnapshot(host_before, GetProcessAcceleratorMemoryUsage());
   LogSnapshot("before", before);
   ASSERT_TRUE(before.accelerator.has_value());
   ASSERT_TRUE(before.attributed_by_os.has_value());
@@ -252,8 +256,8 @@ TEST_F(AppleAcceleratorMemoryTest, Apple_ChargedBufferIsOnTheGpuSideOfTheAttribu
     ASSERT_NE(buffer, nil);
     std::memset(buffer.contents, 1, kBufferBytes);
 
-    const MemorySnapshot after = TakeMemorySnapshot();
     const HostMemoryUsage host_after = GetHostMemoryUsage();
+    const MemorySnapshot after = MakeMemorySnapshot(host_after, GetProcessAcceleratorMemoryUsage());
     LogSnapshot("with a 256 MB shared buffer", after);
     ASSERT_TRUE(after.accelerator.has_value());
     ASSERT_TRUE(after.attributed_by_os.has_value());
@@ -268,12 +272,15 @@ TEST_F(AppleAcceleratorMemoryTest, Apple_ChargedBufferIsOnTheGpuSideOfTheAttribu
     EXPECT_THAT(after.accelerator->breakdown, Contains(Pair("graphics", testing::Ge(kTolerance))));
 
     // The attributed figure is phys_footprint as the OS reports it, with the
-    // buffer on its accelerator side and its CPU side unmoved.
+    // buffer on its accelerator side and its CPU side unmoved. The snapshot
+    // was built from the same host reading, so the two deltas are equal by
+    // construction; the tolerance is belt and braces.
     const int64_t footprint_delta =
         Delta(*host_before.platform_attributed_bytes, *host_after.platform_attributed_bytes);
     EXPECT_GE(footprint_delta, static_cast<int64_t>(kTolerance));
-    EXPECT_EQ(Delta(before.attributed_by_os->total_bytes, after.attributed_by_os->total_bytes),
-              footprint_delta);
+    EXPECT_NEAR(static_cast<double>(Delta(before.attributed_by_os->total_bytes,
+                                          after.attributed_by_os->total_bytes)),
+                static_cast<double>(footprint_delta), static_cast<double>(kMb));
     EXPECT_GE(Delta(before.attributed_by_os->accelerator_bytes,
                     after.attributed_by_os->accelerator_bytes),
               static_cast<int64_t>(kTolerance));

@@ -941,7 +941,7 @@ TEST(Int4BlockGemvTest, RejectsInvalidArguments) {
                                               /*input_size=*/48, 8, 0, nullptr),
       cudaErrorInvalidValue);
   EXPECT_EQ(LiteRtNvidiaLaunchBf16Int4BlockGemvRows(
-                &byte, &byte, &byte, &byte, 1, 64, 8, /*gate=*/3, nullptr),
+                &byte, &byte, &byte, &byte, 1, 64, 8, /*gate=*/4, nullptr),
             cudaErrorInvalidValue);
   EXPECT_EQ(LiteRtNvidiaLaunchBf16Int4BlockGemvRows(
                 &byte, &byte, &byte, &byte,

@@ -45,6 +45,9 @@ enum LiteRtNvidiaGemmGate : int32_t {
   // approximation of GELU or the exact one.
   kLiteRtNvidiaGemmGateGeluTanh = 1,
   kLiteRtNvidiaGemmGateGeluErf = 2,
+  // output[m][n] = silu(y[m][n]) * y[m][output_size + n], silu(x) =
+  // x * sigmoid(x): the SwiGLU of Qwen 3.5's fused gate/up projection.
+  kLiteRtNvidiaGemmGateSilu = 3,
 };
 
 struct LiteRtNvidiaGemmShape {
@@ -164,8 +167,10 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmNormed(
 // row's (positions[r] == positions[0] + r), so the padding a runtime appends
 // to a chunk (LiteRT-LM's rows past the tokens hold position 0) does not
 // choose them for the chunk's rows. Every row is multiplied either way.
-// Per-channel scales (scale_block 0), input_size a multiple of 128 and at
-// most 16384. The workspace is this kernel's own, not the fp16 kernel's.
+// Per-channel scales (scale_block 0) or blockwise ones (32: the scale of
+// each 32-dim slice applies to its int32 sums in fp32, and the activation
+// scales round up to 16 significant bits), input_size a multiple of 128 and
+// at most 24576. The workspace is this kernel's own, not the fp16 kernel's.
 extern "C" bool LiteRtNvidiaInt8GemmSupports(
     const LiteRtNvidiaGemmShape* shape);
 extern "C" size_t LiteRtNvidiaInt8GemmWorkspaceBytes(

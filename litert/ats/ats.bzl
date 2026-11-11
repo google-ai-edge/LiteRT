@@ -16,10 +16,11 @@
 Macros to define pre-configured ATS test suites and run through the litert_device* macros.
 """
 
-load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
+load("//litert/integration_test:litert_device.bzl", "hidden_test_tags", "litert_device_exec")
 load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "dispatch_device_rlocation", "host_rlocation", "is_gpu_backend", "is_npu_backend", "plugin_device_rlocation", "version_target_suffix")
 load(
     "//litert/integration_test:litert_device_script.bzl",
+    "litert_aot_compile",
     "litert_device_script",
     # copybara:uncomment_begin(google-only)
     # "make_cns_pull_model_provider",
@@ -135,14 +136,14 @@ def _resolve_extra_models(name, extra_models):
 def litert_define_ats(
         backend,
         name,
-        jit_suffix,
-        compile_only_suffix,
-        compile_aot_and_run_suffix = None,
+        mode = "jit",
         dont_register = [],
         do_register = [],
         param_seeds = {},
         extra_flags = [],
         extra_models = [],
+        soc_models = {},
+        soc_dont_register = {},
         platform = "android",
         aot_shard_count = None,
         aot_tags = []):
@@ -151,11 +152,9 @@ def litert_define_ats(
     Args:
       name: The name of the test suite.
       backend: The backend to use for the test suite.
-      jit_suffix: Suffix for the Just-In-Time execution target.
-      compile_only_suffix: Suffix for the Compile-Only target.
-      compile_aot_and_run_suffix: Suffix for the Compile AOT and Run target.
-      dont_register: A list of regular expressions for tests that should be skipped
-          (registered in GTest as SKIPPED so coverage stats remain complete).
+      mode: Execution mode ("jit", "compile_only", or "aot").
+      dont_register: A list of regular expressions for tests that should not be
+          registered.
       do_register: A list of regular expressions for tests that should be registered
           (non-matching tests are omitted from registration entirely).
       param_seeds: A dictionary of parameter seeds for the test suite.
@@ -163,15 +162,32 @@ def litert_define_ats(
       extra_models: A list of labels to directories or files containing .tflite models,
           CNS paths to .tflite models, or .tar.gz URLs (https://...) to
           download .tflite models from. Cannot mix source types.
+      soc_models: Optional dictionary mapping a short SoC key (e.g. "g4") to its
+          `--soc_model` value (e.g. "Tensor_G4") for multi-SoC target generation.
+      soc_dont_register: Optional dictionary mapping a short SoC key to a list of
+          extra regular expressions to exclude on that SoC across all modes.
       platform: Target OS platform ("android", "macos", or "windows").
-      aot_shard_count: Optional shard_count for the host compile-only sh_test target.
+      aot_shard_count: Optional shard_count for the host compile-only sh_test target
+          or host AOT compilation shards.
       aot_tags: Additional tags for the host compile-only sh_test target.
     """
+    if mode not in ("jit", "compile_only", "aot"):
+        fail("Unsupported mode: {}".format(mode))
+
+    for f in extra_flags:
+        if f.startswith("--soc_model="):
+            fail("Use soc_models = {...} instead of passing --soc_model in extra_flags.")
+
     if "append" not in dir(backend):
         backend = [backend]
 
-    if compile_aot_and_run_suffix:
-        fail("Compile aot and run on device is not supported yet.")
+    mode_tail = ""
+    prefix = name
+    for suffix in ("_compile_ats", "_jit_ats", "_aot_ats", "_ats"):
+        if name.endswith(suffix):
+            prefix = name[:-len(suffix)]
+            mode_tail = suffix
+            break
 
     resolved_models = _resolve_extra_models(name, extra_models)
 
@@ -189,61 +205,132 @@ def litert_define_ats(
                 "--plugin_dir=\"{}\"".format(plugin_device_rlocation(b)),
             ]
 
-        run_args = _make_ats_args(
-            init = init_run_args,
-            backend = b,
-            dont_register = dont_register,
-            do_register = do_register,
-            param_seeds = param_seeds,
-            extra_flags = extra_flags,
-        )
-
-        if jit_suffix != None:
-            litert_device_exec(
-                name = name + jit_suffix + version_suffix,
-                target = "//litert/ats:ats",
-                remote_suffix = "_remote",
-                local_suffix = "",
-                exec_args = run_args,
-                backend_id = b,
-                platform = platform,
-                enable_ynnpack = "--enable_ynnpack=true" in extra_flags,
-                model_providers = resolved_models.model_providers,
-                extra_models = resolved_models.cns_models,
-                data = resolved_models.data,
-            )
-
         init_compile_args = ["--compile_mode=true"]
         if resolved_models.host_paths:
             init_compile_args.append("--extra_models={}".format(",".join(resolved_models.host_paths)))
 
-        compile_args = _make_ats_args(
-            init = init_compile_args,
-            backend = b,
-            dont_register = dont_register,
-            do_register = do_register,
-            param_seeds = param_seeds,
-            extra_flags = extra_flags,
-        )
+        compile_only_tags = [
+            "noasan",
+            "nomsan",
+            "nosan",
+            "notsan",
+        ] + aot_tags
 
-        if compile_only_suffix != None:
-            litert_device_script(
-                name = name + compile_only_suffix + version_suffix,
-                script = "//litert/ats:ats_aot.sh",
-                bin = "//litert/ats:ats",
-                backend_id = b,
-                exec_args = compile_args,
-                build_for_host = True,
-                build_for_device = False,
-                model_providers = resolved_models.model_providers,
-                data = resolved_models.data,
-                is_test = True,
-                shard_count = aot_shard_count,
-                size = "large",
-                tags = [
-                    "noasan",
-                    "nomsan",
-                    "nosan",
-                    "notsan",
-                ] + aot_tags,
+        soc_entries = soc_models.items() if soc_models else [(None, None)]
+
+        for soc_key, soc_val in soc_entries:
+            target_name = ("{}_{}{}".format(prefix, soc_key, mode_tail) if soc_key != None else name) + version_suffix
+            effective_dont_register = dont_register + (soc_dont_register.get(soc_key, []) if soc_key != None else [])
+            soc_extra_flags = (
+                extra_flags + ["--soc_model={}".format(soc_val)] if soc_val != None else extra_flags
+            )
+
+            if mode == "jit":
+                run_args = _make_ats_args(
+                    init = init_run_args,
+                    backend = b,
+                    dont_register = effective_dont_register,
+                    do_register = do_register,
+                    param_seeds = param_seeds,
+                    extra_flags = soc_extra_flags,
+                )
+                litert_device_exec(
+                    name = target_name,
+                    target = "//litert/ats:ats",
+                    remote_suffix = "_remote",
+                    local_suffix = "",
+                    exec_args = run_args,
+                    backend_id = b,
+                    platform = platform,
+                    enable_ynnpack = "--enable_ynnpack=true" in extra_flags,
+                    model_providers = resolved_models.model_providers,
+                    extra_models = resolved_models.cns_models,
+                    data = resolved_models.data,
+                )
+            elif mode == "compile_only":
+                compile_args = _make_ats_args(
+                    init = init_compile_args,
+                    backend = b,
+                    dont_register = effective_dont_register,
+                    do_register = do_register,
+                    param_seeds = param_seeds,
+                    extra_flags = soc_extra_flags,
+                )
+                litert_device_script(
+                    name = target_name,
+                    script = "//litert/ats:ats_aot.sh",
+                    bin = "//litert/ats:ats",
+                    backend_id = b,
+                    exec_args = compile_args,
+                    build_for_host = True,
+                    build_for_device = False,
+                    model_providers = resolved_models.model_providers,
+                    data = resolved_models.data,
+                    is_test = True,
+                    shard_count = aot_shard_count,
+                    size = "large",
+                    tags = compile_only_tags,
+                )
+            elif mode == "aot":
+                if not is_npu_backend(b):
+                    fail("mode = 'aot' is only supported for NPU backends.")
+                if resolved_models.cns_models or resolved_models.model_providers:
+                    fail("mode = 'aot' only supports Bazel label targets in extra_models.")
+                compile_args = _make_ats_args(
+                    init = init_compile_args,
+                    backend = b,
+                    dont_register = effective_dont_register,
+                    do_register = do_register,
+                    param_seeds = param_seeds,
+                    extra_flags = soc_extra_flags,
+                )
+                aot_models_target = target_name + "_models"
+                litert_aot_compile(
+                    name = aot_models_target,
+                    bin = "//litert/ats:ats",
+                    backend_id = b,
+                    exec_args = compile_args,
+                    data = resolved_models.data,
+                    shard_count = aot_shard_count if aot_shard_count != None else 1,
+                    tags = hidden_test_tags() + compile_only_tags,
+                )
+
+                init_aot_run_args = [
+                    "--dispatch_dir=\"{}\"".format(dispatch_device_rlocation(b)),
+                    "--aot_models_dir=\"{}\"".format(device_rlocation(":" + aot_models_target)),
+                ]
+                if platform not in ("macos", "windows") and resolved_models.device_paths:
+                    init_aot_run_args.append("--extra_models={}".format(",".join(resolved_models.device_paths)))
+
+                aot_run_args = _make_ats_args(
+                    init = init_aot_run_args,
+                    backend = b,
+                    dont_register = effective_dont_register,
+                    do_register = do_register,
+                    param_seeds = param_seeds,
+                    extra_flags = soc_extra_flags,
+                )
+
+                litert_device_exec(
+                    name = target_name,
+                    target = "//litert/ats:ats",
+                    remote_suffix = "_remote",
+                    local_suffix = "",
+                    exec_args = aot_run_args,
+                    backend_id = b,
+                    platform = platform,
+                    enable_ynnpack = "--enable_ynnpack=true" in extra_flags,
+                    model_providers = resolved_models.model_providers,
+                    extra_models = resolved_models.cns_models,
+                    data = resolved_models.data + [":" + aot_models_target],
+                )
+
+        if mode == "compile_only" and soc_models:
+            native.test_suite(
+                name = name + version_suffix,
+                tests = [
+                    ":{}_{}{}{}".format(prefix, soc_key, mode_tail, version_suffix)
+                    for soc_key in soc_models
+                ],
+                tags = compile_only_tags,
             )

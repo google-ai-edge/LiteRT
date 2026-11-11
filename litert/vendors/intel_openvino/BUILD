@@ -14,6 +14,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//litert/build_common:litert_build_defs.bzl", "litert_test")
 
 # copybara:uncomment_begin(google-only)
 # load("//tools/build_defs/build_test:build_test.bzl", "build_test")
@@ -81,6 +82,22 @@ cc_library(
         # copybara:comment_begin(oss-only)
         "@intel_openvino//:openvino",
         # copybara:comment_end
+    ],
+)
+
+litert_test(
+    name = "openvino_version_info_test",
+    srcs = ["openvino_version_info_test.cc"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":openvino_version_info",
+        "@intel_openvino//:openvino",
     ],
 )
 

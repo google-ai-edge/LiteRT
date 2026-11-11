@@ -17,6 +17,7 @@
 #include <jni.h>
 
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <utility>
 #include <vector>
@@ -33,8 +34,16 @@
 namespace {
 
 using ::litert::Environment;
-using ::litert::jni::ParseInt;
 using ::litert::jni::ThrowLiteRtException;
+
+struct JniEnvironmentOptionsBuilder {
+  // LiteRtVariant stores string options as non-owning `const char*`, and
+  // EnvironmentOptions only copies them in Environment::Create. Own the bytes
+  // here until then. std::deque keeps element addresses (and thus c_str())
+  // stable across emplace_back, unlike std::vector with SSO strings.
+  std::deque<std::string> strings;
+  std::vector<litert::EnvironmentOptions::Option> options;
+};
 
 // Converts a litert::HwAccelerators to the value used in the Kotlin enum.
 int ToJniAccelerator(litert::HwAccelerators accelerator) {
@@ -54,59 +63,62 @@ int ToJniAccelerator(litert::HwAccelerators accelerator) {
   }
 }
 
-// Returns true if the value of the option with the given tag is a pointer,
-// which is passed from Kotlin as its decimal string representation.
-bool IsPointerOption(litert::EnvironmentOptions::Tag tag) {
-  switch (tag) {
-    case litert::EnvironmentOptions::Tag::kSystemRuntimeHandle:
-    case litert::EnvironmentOptions::Tag::kSystemGpuAcceleratorHandle:
-    case litert::EnvironmentOptions::Tag::kContext:
-      return true;
-    default:
-      return false;
-  }
-}
-
 }  // namespace
 
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
 
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_Environment_nativeCreateOptions(JNIEnv* env,
+                                                               jclass clazz) {
+  return reinterpret_cast<jlong>(new JniEnvironmentOptionsBuilder());
+}
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_Environment_nativeDestroyOptions(JNIEnv* env,
+                                                                jclass clazz,
+                                                                jlong handle) {
+  delete reinterpret_cast<JniEnvironmentOptionsBuilder*>(handle);
+}
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_Environment_nativeAddStringOption(
+    JNIEnv* env, jclass clazz, jlong handle, jint tag, jstring value) {
+  auto* builder = reinterpret_cast<JniEnvironmentOptionsBuilder*>(handle);
+  LITERT_INTERNAL_CHECK(builder != nullptr);
+  AUTO_CLEANUP_JNI_STRING(env, value);
+  const std::string& stored =
+      builder->strings.emplace_back(value_str != nullptr ? value_str : "");
+  builder->options.push_back(litert::EnvironmentOptions::Option{
+      static_cast<litert::EnvironmentOptions::Tag>(tag),
+      litert::LiteRtVariant(stored.c_str())});
+}
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_Environment_nativeAddPointerOption(
+    JNIEnv* env, jclass clazz, jlong handle, jint tag, jlong pointer) {
+  auto* builder = reinterpret_cast<JniEnvironmentOptionsBuilder*>(handle);
+  LITERT_INTERNAL_CHECK(builder != nullptr);
+  // An intermediate static_cast to std::uintptr_t is used before the
+  // reinterpret_cast to const void* to avoid size-mismatch compilation
+  // warnings/errors on 32-bit platforms (where pointers are 32-bit but jlong
+  // is 64-bit).
+  const void* ptr =
+      reinterpret_cast<const void*>(static_cast<std::uintptr_t>(pointer));
+  builder->options.push_back(litert::EnvironmentOptions::Option{
+      static_cast<litert::EnvironmentOptions::Tag>(tag),
+      litert::LiteRtVariant(ptr)});
+}
+
 JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Environment_nativeCreate(
-    JNIEnv* env, jclass clazz, jintArray tags, jobjectArray values) {
-  if (env->GetArrayLength(tags) != env->GetArrayLength(values)) {
-    LITERT_FATAL("Number of tags and values do not match.");
-  }
-
-  auto num_tags = env->GetArrayLength(tags);
-  AUTO_CLEANUP_JNI_STRING_ARRAY(env, values);
-  std::vector<litert::EnvironmentOptions::Option> options;
-  if (num_tags > 0) {
-    options.reserve(num_tags);
-
-    AUTO_CLEANUP_JNI_INT_ARRAY(env, tags);
-    for (int i = 0; i < num_tags; ++i) {
-      auto value = values_vector[i];
-      auto tag = static_cast<litert::EnvironmentOptions::Tag>(tags_array[i]);
-      if (IsPointerOption(tag)) {
-        options.push_back(litert::EnvironmentOptions::Option{
-            // An intermediate static_cast to std::uintptr_t is used before the
-            // reinterpret_cast to const void* to avoid size-mismatch
-            // compilation warnings/errors on 32-bit platforms (where pointers
-            // are 32-bit but int64_t is 64-bit).
-            tag, litert::LiteRtVariant(
-                     reinterpret_cast<const void*>(static_cast<std::uintptr_t>(
-                         ParseInt<int64_t>(value, "pointer option"))))});
-      } else {
-        options.push_back(litert::EnvironmentOptions::Option{
-            tag, litert::LiteRtVariant(value)});
-      }
-    }
-  }
+    JNIEnv* env, jclass clazz, jlong options_handle) {
+  const auto* builder =
+      reinterpret_cast<const JniEnvironmentOptionsBuilder*>(options_handle);
+  LITERT_INTERNAL_CHECK(builder != nullptr);
 
   auto litert_env = Environment::Create(
-      litert::EnvironmentOptions(absl::MakeConstSpan(options)));
+      litert::EnvironmentOptions(absl::MakeConstSpan(builder->options)));
   if (!litert_env) {
     LITERT_LOG(LITERT_ERROR, "Failed to create environment: %s.",
                litert_env.Error().Message().c_str());

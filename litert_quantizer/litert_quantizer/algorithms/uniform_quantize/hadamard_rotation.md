@@ -73,6 +73,7 @@ choose between two structures:
   "sizing_mode": "min_compute",   // "min_compute" | "max_power_of_two"
   "max_hadamard_size": 256,       // power-of-2 cap on d, or null
   "scale_refinement": "mse_grid", // "none" | "mse_grid"
+  "int2_in_int4": false,          // true | false (symmetric num_bits=4 only)
   "randomize": false,             // true | false
   "q_seed": 0
 }
@@ -85,6 +86,7 @@ choose between two structures:
 | `sizing_mode`       | `str` (`"min_compute"`)  | `"min_compute"`, `"max_power_of_two"`          | How $$D = m \cdot d$$ is factored into block count $$m$$ and Hadamard block size $$d$$ when `q_init_mode="auto"`.                              |
 | `max_hadamard_size` | `int` or `None` (`None`) | Power of 2 (`64`, `128`, `256`, ...) or `None` | Upper bound $$d_{\max}$$ on the Hadamard block size $$d$$.                                                                                     |
 | `scale_refinement`  | `str` (`"none"`)         | `"none"`, `"mse_grid"`                         | Post-OCTAV per-channel scale refinement to minimize discrete rounding MSE $$\lVert w - s \cdot \text{round}(w/s) \rVert_2^2$$.                 |
+| `int2_in_int4`      | `bool` (`False`)         | `true`, `false`                                | Temporary 2-bit mid-riser evaluation mode: restricts symmetric `num_bits=4` weights to the 4-level odd codebook $$\{-3, -1, +1, +3\}$$ (`scale = clip / 4`) inside an `INT4` container to evaluate 4-level 2-bit quantization on existing `INT4` kernels (no FlatBuffer storage size reduction over `INT4`). |
 | `randomize`         | `bool` (`False`)         | `true`, `false`                                | Multiplies $$H_d$$ by a deterministic random $$\pm 1$$ sign diagonal ($$\text{diag}(s) H_d$$) to break coherent alignment with weights.        |
 | `q_seed`            | `int` (`0`)              | Integer seed                                   | Deterministic RNG seed used when `randomize=true` or `q_init_mode="auto"`.                                                                     |
 <!-- mdformat on -->
@@ -135,18 +137,60 @@ include the activation memory traffic of the two `TRANSPOSE` ops that the
 #### How `scale_refinement` Works
 
 OCTAV estimates per-channel clipping scales under a continuous uniform-noise
-approximation, which is accurate at `int8` but suboptimal at `int4` (15 bins)
-and `int2` (3 bins) where discrete rounding boundaries matter.
+approximation, which is accurate at `int8` but can be refined at low bit-widths
+(`int4` and `int2`) where discrete rounding boundaries matter.
 
 <!-- mdformat off(reason: standard GFM table rendering in Critique and Code Search) -->
 | `scale_refinement` | What It Does                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | :----------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"none"`           | Uses the raw OCTAV scale directly.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `"none"`           | Uses the analytical OCTAV scale directly.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `"mse_grid"`       | 1. **Grid search**: Tests 25 candidate multipliers $$\alpha \in [0.80, 1.20]$$ around each channel's OCTAV scale ($$s = \alpha \cdot s_{\text{octav}}$$) and keeps the $$\alpha$$ with lowest rounding MSE $$\lVert w - s \cdot \text{round}(w/s) \rVert_2^2$$.<br>2. **Alternating least-squares refinement (2 steps)**: Holding the rounded integers $$q = \text{clip}(\text{round}(w/s), q_{\min}, q_{\max})$$ fixed, updates the scale to $$s^* = \frac{w \cdot q}{q \cdot q}$$ and re-rounds. |
 <!-- mdformat on -->
 
 Tensors with more than 16384 rows, such as large embedding tables, test 15
 candidate multipliers instead of 25 to bound quantization time.
+
+#### Temporary 2-Bit Mid-Riser Emulation in `INT4` (`int2_in_int4`) and Interaction with `scale_refinement="mse_grid"`
+
+-   **Why 4-level 2-bit mid-riser is needed over standard symmetric `INT2`**:
+    Standard symmetric 2-bit quantization (`num_bits=2`, `symmetric=true`) in
+    LiteRT/TFLite uses the grid $$\{-2, -1, 0, +1\}\cdot{s}$$ with
+    $$s = \text{clip}$$ (so $$-2$$ is only reached below
+    $$-1.5\cdot\text{clip}$$, leaving effectively 3 levels
+    $$\{-1, 0, +1\}\cdot{s}$$ within $$[-\text{clip}, \text{clip}]$$ to preserve
+    `zero_point = 0`). That places a wide deadzone bin at zero where
+    Hadamard/Kronecker-rotated weights are densest, resulting in `~30%` higher
+    Relative RMSE (`~2x` higher MSE) than a 4-level symmetric mid-riser grid
+    $$\{-1.5, -0.5, +0.5, +1.5\}\cdot\Delta$$.
+-   **Why `int2_in_int4` is a temporary evaluation feature stored in `INT4`**:
+    Because TFLite/LiteRT's FlatBuffer schema and runtime kernels (`XNNPACK`,
+    CPU, GPU) do not yet implement native 2-bit mid-riser unpacking and
+    dequantization, setting `"int2_in_int4": true` on a symmetric 4-bit
+    (`num_bits=4`, `symmetric=true`) configuration temporarily emulates the
+    4-level 2-bit mid-riser codebook inside a standard signed `INT4` container
+    so 4-level 2-bit accuracy and mixed-precision (`W2`/`W4`/`W8`) bit-allocation
+    recipes can be evaluated end-to-end on existing `INT4` runtime kernels
+    before dedicated 2-bit mid-riser packing and kernels land:
+    -   **Codebook**: $$q\in\{-3,-1,+1,+3\}$$ (`zero_point = 0`).
+    -   **Effective step size**: $$\Delta=2s$$, where $$s=\text{clip}/4$$ is the
+        stored `INT4` scale, so dequantized values are
+        $$\widehat{w}=s\cdot{q}\in\{-3s,-s,+s,+3s\}=\{-1.5\Delta,-0.5\Delta,+0.5\Delta,+1.5\Delta\}$$.
+    -   **Rounding rule**:
+        $$q=2\cdot\text{clip}\!\left(\text{round}\!\left(\frac{w}{2s}-0.5\right),-2,1\right)+1$$.
+    -   **Storage caveat**: Because the weights remain stored in `INT4`
+        containers during this temporary emulation, `"int2_in_int4": true`
+        provides **no FlatBuffer file size or runtime memory reduction over
+        `INT4`** (2-bit effective storage is accounted for analytically during
+        offline recipe search).
+-   **Why `scale_refinement="mse_grid"` must preserve $$\{-3,-1,+1,+3\}$$**:
+    When `scale_refinement="mse_grid"` is enabled together with
+    `int2_in_int4=true`, both the $$\alpha\in[0.80,1.20]$$ multiplier grid
+    search and the two alternating least-squares (`ALS`) steps re-quantize
+    candidate scales using the odd `INT4` mid-riser rounding rule above rather
+    than the full `[-8, 7]` `INT4` grid. Without this restriction, `mse_grid`
+    would round candidate scales onto the full `[-8, 7]` `INT4` grid,
+    overwriting the 4-level 2-bit emulation with 4-bit weights and invalidating
+    2-bit accuracy evaluations.
 
 ### 2.3 Two-Pass Quantization Pattern (Model Weights vs. Inserted Rotation Matrices)
 

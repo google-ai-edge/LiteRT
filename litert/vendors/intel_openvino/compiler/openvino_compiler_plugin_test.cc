@@ -41,7 +41,7 @@ namespace {
 using ::testing::Values;
 
 const auto kSupportedOps = Values("add_simple.tflite");
-const auto kSupportedSocModels = Values("LNL", "PTL");
+const auto kSupportedSocModels = Values("LNL", "PTL", "WCL");
 
 TEST(TestOVPlugin, PartitionAddGraph) {
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -165,6 +165,14 @@ TEST(TestOVPlugin, GetSocModelConfigPTL) {
             kLiteRtStatusOk);
   ASSERT_GT(config_map.count("NPU_PLATFORM"), 0u);
   EXPECT_EQ(config_map.at("NPU_PLATFORM").as<std::string>(), "NPU5010");
+}
+
+TEST(TestOVPlugin, GetSocModelConfigWCL) {
+  ov::AnyMap config_map;
+  EXPECT_EQ(litert::openvino::GetSocModelConfig("WCL", config_map),
+            kLiteRtStatusOk);
+  ASSERT_GT(config_map.count("NPU_PLATFORM"), 0u);
+  EXPECT_EQ(config_map.at("NPU_PLATFORM").as<std::string>(), "NPU5020");
 }
 
 TEST(TestOVPlugin, GetSocModelConfigUnknownReturnsError) {

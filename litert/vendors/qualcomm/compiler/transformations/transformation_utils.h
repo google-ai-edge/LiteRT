@@ -81,14 +81,15 @@ Expected<compiler::Tensor> BuildReshape(
 Expected<compiler::Tensor> BuildBatchMatmul(
     compiler::Builder& builder, const compiler::Tensor& lhs,
     const compiler::Tensor& rhs, const compiler::Tensor& like,
-    absl::Span<const int32_t> dimensions, bool asymmetric_quantize_input,
+    absl::Span<const int32_t> dimensions,
+    bool asymmetric_quantize_input = false,
     bool adj_y = false);
 
 // Returns the consuming op if `tensor` has exactly one use with opcode `code`
 // at `input_index`.
 std::optional<compiler::Op> SingleUser(const compiler::Tensor& tensor,
                                        LiteRtOpCode code,
-                                       LiteRtParamIndex input_index);
+                                       LiteRtParamIndex input_index = 0);
 
 std::optional<compiler::Tensor> SingleOutput(const compiler::Op& op);
 

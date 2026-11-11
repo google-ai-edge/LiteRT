@@ -226,4 +226,82 @@ CudaVmmBlock::~CudaVmmBlock() {
   api->context_pop_current(&popped);
 }
 
+Expected<std::unique_ptr<CudaVmmRange>> CudaVmmRange::Create(uint64_t size) {
+  const DriverApi* api = GetDriverApi();
+  if (api == nullptr) {
+    return Error(kLiteRtStatusErrorUnsupported,
+                 "The CUDA driver library lacks the virtual memory API");
+  }
+  LITERT_ASSIGN_OR_RETURN(const uint64_t granule, CudaVmmGranule());
+  if (size == 0 || size % granule != 0) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "A CUDA virtual memory range is a multiple of the granule");
+  }
+  std::unique_ptr<CudaVmmRange> range(new CudaVmmRange());
+  range->granule_ = granule;
+  CUcontext context = nullptr;
+  CUresult result = api->context_get_current(&context);
+  if (result != CUDA_SUCCESS || context == nullptr) {
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "The thread has no current CUDA context");
+  }
+  range->context_ = context;
+  CUdeviceptr address = 0;
+  result = api->address_reserve(&address, size, granule, 0, 0);
+  if (result != CUDA_SUCCESS) {
+    return DriverError(*api, "cuMemAddressReserve", result);
+  }
+  range->address_ = address;
+  range->size_ = size;
+  return range;
+}
+
+Expected<void> CudaVmmRange::Map(uint64_t offset, const CudaVmmBlock& block) {
+  if (offset % granule_ != 0 || offset > size_ ||
+      block.size() > size_ - offset) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "A block must fit the range at a multiple of the granule");
+  }
+  const DriverApi* api = GetDriverApi();
+  const CUresult result =
+      api->map(address_ + offset, block.size(), 0, block.handle(), 0);
+  if (result != CUDA_SUCCESS) {
+    return DriverError(*api, "cuMemMap", result);
+  }
+  mappings_.emplace_back(offset, block.size());
+  return {};
+}
+
+Expected<void> CudaVmmRange::EnableAccess() {
+  LITERT_ASSIGN_OR_RETURN(auto properties, AllocationProperties());
+  CUmemAccessDesc access{};
+  access.location = properties.location;
+  access.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+  const DriverApi* api = GetDriverApi();
+  const CUresult result = api->set_access(address_, size_, &access, 1);
+  if (result != CUDA_SUCCESS) {
+    return DriverError(*api, "cuMemSetAccess", result);
+  }
+  return {};
+}
+
+CudaVmmRange::~CudaVmmRange() {
+  const DriverApi* api = GetDriverApi();
+  if (api == nullptr || context_ == nullptr) {
+    return;
+  }
+  if (api->context_push_current(static_cast<CUcontext>(context_)) !=
+      CUDA_SUCCESS) {
+    return;
+  }
+  for (const auto& [offset, size] : mappings_) {
+    api->unmap(address_ + offset, size);
+  }
+  if (address_ != 0) {
+    api->address_free(address_, size_);
+  }
+  CUcontext popped = nullptr;
+  api->context_pop_current(&popped);
+}
+
 }  // namespace litert::nvidia

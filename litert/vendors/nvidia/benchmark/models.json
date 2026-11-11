@@ -1,0 +1,148 @@
+{
+  "_": "The model registry of the tables: profile -> name, family, table, MTP drafter, the sampler LiteRT-LM uses for the file (greedy: E2B/E4B carry no sampler parameters; model: top-k 64, top-p 0.95, temperature 1.0), the synthetic workloads of the matrix, and the real-text-only long-context workloads. plain_selected_signatures: a plain run of the model compiles only prefill_1024 and decode (bench.sh's rule for the larger models). llama: the llama.cpp comparison model: its source repository and the GGUF file names a run may record (basenames; the HF blob digest for a file kept under its blob name); a run of another file is not a cell. E2B/E4B: Google's mobile-QAT checkpoints (the quantization of the LiteRT exports), Unsloth's GGUFs repacked from TQ2_0 to Q2_0 for the CUDA backend (llama/repack_mobile_qat.tool).",
+  "e2b": {
+    "name": "E2B",
+    "family": "gemma4",
+    "table": "dense",
+    "mtp": true,
+    "sampler": "greedy",
+    "workloads": [
+      "short",
+      "8k",
+      "16k",
+      "30k"
+    ],
+    "long_context": [],
+    "llama": {
+      "source": "unsloth/gemma-4-E2B-it-qat-mobile-GGUF",
+      "files": [
+        "gemma-4-E2B-it-qat-UD-Q2_K_XL-cuda-Q2_0-repacked.gguf",
+        "gemma-4-E2B-mobile-qat-Q2_0-cuda.gguf"
+      ],
+      "draft": "MTP/mtp-gemma-4-E2B-it-Q8_0.gguf",
+      "repack": "gemma-4-E2B-it-qat-UD-Q2_K_XL.gguf"
+    }
+  },
+  "e4b": {
+    "name": "E4B",
+    "family": "gemma4",
+    "table": "dense",
+    "mtp": true,
+    "sampler": "greedy",
+    "workloads": [
+      "short",
+      "8k",
+      "16k",
+      "30k"
+    ],
+    "long_context": [],
+    "llama": {
+      "source": "unsloth/gemma-4-E4B-it-qat-mobile-GGUF",
+      "files": [
+        "gemma-4-E4B-it-qat-UD-Q2_K_XL-cuda-Q2_0-repacked.gguf",
+        "gemma-4-E4B-mobile-qat-Q2_0-cuda.gguf"
+      ],
+      "draft": "MTP/mtp-gemma-4-E4B-it-Q8_0.gguf",
+      "repack": "gemma-4-E4B-it-qat-UD-Q2_K_XL.gguf"
+    }
+  },
+  "12b": {
+    "name": "12B",
+    "family": "gemma4",
+    "table": "dense",
+    "mtp": true,
+    "sampler": "model",
+    "workloads": [
+      "short",
+      "8k",
+      "16k",
+      "30k",
+      "128k"
+    ],
+    "long_context": [],
+    "plain_selected_signatures": true,
+    "llama": {
+      "source": "unsloth/gemma-4-12B-it-qat-GGUF",
+      "files": [
+        "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf",
+        "90fd44e29e0d7cffeb0fd00dc73cfdab9ed0b0e95306ecf7821ea634c940c370"
+      ],
+      "draft": "MTP/mtp-gemma-4-12B-it-Q8_0.gguf"
+    }
+  },
+  "26b": {
+    "name": "26B-A4B",
+    "family": "gemma4",
+    "table": "moe",
+    "mtp": true,
+    "sampler": "model",
+    "workloads": [
+      "short",
+      "8k",
+      "16k",
+      "30k"
+    ],
+    "long_context": [
+      "128k",
+      "256k"
+    ],
+    "plain_selected_signatures": true,
+    "llama": {
+      "source": "unsloth/gemma-4-26B-A4B-it-qat-GGUF",
+      "files": [
+        "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf",
+        "a7c5bc715f5ff8e99a3e8901ce7d2b42b402c669bf24f7c5250747633d0f5891"
+      ],
+      "draft": "MTP/mtp-gemma-4-26B-A4B-it-Q8_0.gguf"
+    }
+  },
+  "qwen27b": {
+    "name": "Qwen 3.8 27B",
+    "family": "qwen3_8",
+    "table": "qwen",
+    "mtp": false,
+    "sampler": "model",
+    "partition_policy": "qwen3_5",
+    "workloads": [
+      "short",
+      "8k",
+      "16k",
+      "30k",
+      "128k"
+    ],
+    "long_context": [],
+    "plain_selected_signatures": true,
+    "llama": {
+      "source": "unsloth/Qwen3.8-27B-GGUF",
+      "files": [
+        "Qwen3.8-27B-Q4_0.gguf"
+      ],
+      "draft": null
+    }
+  },
+  "tables": {
+    "dense": {
+      "file": "gemma4_dense.md",
+      "title": "Gemma 4 E2B, E4B and 12B",
+      "models": [
+        "e2b",
+        "e4b",
+        "12b"
+      ]
+    },
+    "moe": {
+      "file": "gemma4_moe.md",
+      "title": "Gemma 4 26B-A4B",
+      "models": [
+        "26b"
+      ]
+    },
+    "qwen": {
+      "file": "qwen3_8_27b.md",
+      "title": "Qwen 3.8 27B",
+      "models": [
+        "qwen27b"
+      ]
+    }
+  }
+}

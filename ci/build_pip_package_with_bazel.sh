@@ -157,11 +157,8 @@ if [[ -d "ci/tools/python/vendor_sdk/google_tensor" ]]; then
   mv bazel-bin/ci/tools/python/vendor_sdk/google_tensor/ai_edge_litert_sdk_google_tensor*.tar.gz dist/
 fi
 
-## Samsung SDK
-bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
-  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/samsung:ai_edge_litert_sdk_samsung_sdist
-
-mv bazel-bin/ci/tools/python/vendor_sdk/samsung/ai_edge_litert_sdk_samsung*.tar.gz dist/
+## Samsung SDK: intentionally not built. LiteRT does not publish
+## ai-edge-litert-sdk-samsung (or its nightly) to PyPI.
 
 ## Intel SDK
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \

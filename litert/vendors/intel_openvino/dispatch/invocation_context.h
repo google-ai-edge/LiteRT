@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +28,7 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/infer_request.hpp"
+#include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "absl/base/thread_annotations.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
@@ -211,6 +212,13 @@ class LiteRtDispatchInvocationContextT {
 #if defined(__ANDROID__)
   void* ctx = nullptr;
 #endif
+  // Last priority requested from the compiled model, whether or not the plugin
+  // accepted it, so an unchanged request or a plugin that rejects the property
+  // is not retried on every inference. Not synchronized: like ctx and the infer
+  // request it is only used by Invoke(), one call at a time per context, and
+  // cleared on release under the exclusive use_mutex_. Declared on every
+  // platform because ReleaseImportedLocked() clears it on every platform.
+  std::optional<ov::hint::Priority> requested_model_priority_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
