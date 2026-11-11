@@ -18,7 +18,6 @@ limitations under the License.
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/reference/reference_ops.h"
-#include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
 
@@ -89,8 +88,10 @@ TfLiteStatus ReverseSequenceImpl(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE(context, batch_dim < NumDimensions(input));
   TF_LITE_ENSURE_EQ(context, SizeOfDimension(seq_lengths_tensor, 0),
                     SizeOfDimension(input, batch_dim));
-  for (int i = 0; i < NumDimensions(seq_lengths_tensor); ++i) {
-    TF_LITE_ENSURE(context, seq_lengths[i] <= SizeOfDimension(input, seq_dim));
+  const int seq_size = SizeOfDimension(input, seq_dim);
+  for (int i = 0; i < NumElements(seq_lengths_tensor); ++i) {
+    TF_LITE_ENSURE(context, seq_lengths[i] >= 0);
+    TF_LITE_ENSURE(context, seq_lengths[i] <= seq_size);
   }
 
   TfLiteTensor* output;
