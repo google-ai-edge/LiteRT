@@ -619,4 +619,35 @@ public final class NativeInterpreterWrapperTest {
       assertThat(wrapper.getInputTensor(0).shape()).isEqualTo(expectedDims);
     }
   }
+
+  @Test
+  public void testCloseDeletesInterpreterBeforeClosingOwnedDelegates() {
+    boolean[] delegateClosed = {false};
+    boolean[] interpreterDeletedBeforeDelegateClose = {false};
+    InterpreterImpl.Options options = new InterpreterImpl.Options();
+    options.addDelegateFactory(
+        runtime ->
+            new Delegate() {
+              private final long handle = createHeapDelegate();
+
+              @Override
+              public long getNativeHandle() {
+                return handle;
+              }
+
+              @Override
+              public void close() {
+                delegateClosed[0] = true;
+                interpreterDeletedBeforeDelegateClose[0] = deleteHeapDelegate(handle);
+              }
+            });
+    NativeInterpreterWrapper wrapper = new NativeInterpreterWrapper(FLOAT_MODEL_PATH, options);
+    wrapper.close();
+    assertThat(delegateClosed[0]).isTrue();
+    assertThat(interpreterDeletedBeforeDelegateClose[0]).isTrue();
+  }
+
+  private static native long createHeapDelegate();
+
+  private static native boolean deleteHeapDelegate(long delegateHandle);
 }
