@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/nvidia/bytecode.h"
@@ -31,6 +32,8 @@ enum class AotArtifactValidation {
 };
 
 const char* AotArtifactValidationName(AotArtifactValidation validation);
+
+std::string AotRuntimeCacheKey(const TensorRtAotLocator& locator);
 
 // Owns a read-only mapping of one content-addressed TensorRT AOT artifact.
 // Locator v2 can avoid an eager full-file scan when the writer-recorded,
