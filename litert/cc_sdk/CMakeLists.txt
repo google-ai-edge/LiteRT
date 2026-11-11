@@ -25,13 +25,26 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Suppress deprecation warnings (matching Bazel build behavior in .bazelrc)
-# The codebase has deprecated Error constructors that are still in use
-add_compile_options(
-  -Wno-deprecated-declarations
-  -Wno-return-type
-  -fpermissive
-)
+# Suppress deprecation warnings (matching Bazel build behavior in .bazelrc).
+# The codebase has deprecated Error constructors that are still in use.
+# These are GCC/Clang spellings. cl.exe parses "-Wno-..." as its /W<level>
+# switch and stops with "D8021: invalid numeric argument
+# '/Wno-deprecated-declarations'" on every translation unit, including the
+# Abseil and FlatBuffers sources fetched below; clang-cl accepts the -Wno-
+# options but warns about -fpermissive. MSVC-style drivers (cl.exe, and
+# clang-cl, which CMake also reports as MSVC) get the equivalent /wd switch
+# instead. This mirrors litert/CMakeLists.txt.
+if(MSVC)
+  add_compile_options(
+    /wd4996  # deprecated declarations
+  )
+else()
+  add_compile_options(
+    -Wno-deprecated-declarations
+    -Wno-return-type
+    -fpermissive
+  )
+endif()
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/litert/build_common/build_config.h.in")
   set(LITERT_CC_SDK_TREE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -73,6 +86,86 @@ add_library(litert_c_api SHARED IMPORTED)
 set_target_properties(litert_c_api PROPERTIES
   IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/${LITERT_C_API_LIB_NAME}"
 )
+
+# Generates an MSVC import library for `dll` at `out_lib` from the DLL's export
+# table: dumpbin /exports -> .def -> lib /def. Fails configuration with an
+# actionable message when the MSVC binutils are not available.
+function(litert_cc_sdk_generate_implib dll out_lib)
+  get_filename_component(_linker_dir "${CMAKE_LINKER}" DIRECTORY)
+  find_program(LITERT_DUMPBIN NAMES dumpbin HINTS "${_linker_dir}")
+  find_program(LITERT_LIB_TOOL NAMES lib llvm-lib HINTS "${_linker_dir}")
+  if(NOT LITERT_DUMPBIN OR NOT LITERT_LIB_TOOL)
+    message(FATAL_ERROR
+        "Cannot generate an import library for ${dll}: dumpbin and lib (or "
+        "llvm-lib) were not found. Run CMake from a Visual Studio developer "
+        "shell, or place a matching libLiteRt.lib next to the DLL.")
+  endif()
+
+  execute_process(
+    COMMAND "${LITERT_DUMPBIN}" /nologo /exports "${dll}"
+    OUTPUT_VARIABLE _exports
+    RESULT_VARIABLE _result
+  )
+  if(NOT _result EQUAL 0)
+    message(FATAL_ERROR "dumpbin /exports failed for ${dll} (exit ${_result}).")
+  endif()
+
+  # Export table rows look like "   123   7A 0001F2C0 LiteRtCreateEnvironment".
+  string(REGEX MATCHALL "\n +[0-9]+ +[0-9A-Fa-f]+ +[0-9A-Fa-f]+ +[^ \t\r\n]+"
+         _rows "${_exports}")
+  list(LENGTH _rows _count)
+  if(_count EQUAL 0)
+    message(FATAL_ERROR "No exports found in ${dll}; cannot generate ${out_lib}.")
+  endif()
+  get_filename_component(_dll_name "${dll}" NAME)
+  set(_def "LIBRARY ${_dll_name}\nEXPORTS\n")
+  foreach(_row IN LISTS _rows)
+    string(REGEX REPLACE ".* ([^ \t\r\n]+)$" "\\1" _symbol "${_row}")
+    string(APPEND _def "${_symbol}\n")
+  endforeach()
+  set(_def_file "${out_lib}.def")
+  file(WRITE "${_def_file}" "${_def}")
+
+  if(CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "ARM64"
+     OR CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+    set(_machine ARM64)
+  else()
+    set(_machine X64)
+  endif()
+  execute_process(
+    COMMAND "${LITERT_LIB_TOOL}" /nologo "/def:${_def_file}"
+            "/machine:${_machine}" "/out:${out_lib}"
+    RESULT_VARIABLE _result
+  )
+  if(NOT _result EQUAL 0 OR NOT EXISTS "${out_lib}")
+    message(FATAL_ERROR "lib /def failed for ${_def_file} (exit ${_result}).")
+  endif()
+  message(STATUS
+      "Generated ${out_lib} (${_count} exports, /machine:${_machine}) from ${_dll_name}")
+endfunction()
+
+if(WIN32)
+  # On Windows a consumer links against an import library (.lib), not the DLL
+  # itself, and CMake refuses to generate ("IMPORTED_IMPLIB not set for imported
+  # target \"litert_c_api\"") without one. The prebuilt packages ship only
+  # libLiteRt.dll. Use a libLiteRt.lib placed next to the DLL when there is one;
+  # otherwise generate it from the DLL's export table into the build directory.
+  # Every exported data symbol (e.g. kLiteRtRuntimeBuiltin) is declared
+  # __declspec(dllimport) in the public headers, so a .def without DATA
+  # annotations links correctly.
+  set(LITERT_C_API_IMPLIB "${CMAKE_CURRENT_SOURCE_DIR}/libLiteRt.lib")
+  if(NOT EXISTS "${LITERT_C_API_IMPLIB}")
+    set(LITERT_C_API_IMPLIB "${CMAKE_BINARY_DIR}/libLiteRt.lib")
+    if(NOT EXISTS "${LITERT_C_API_IMPLIB}")
+      litert_cc_sdk_generate_implib(
+        "${CMAKE_CURRENT_SOURCE_DIR}/${LITERT_C_API_LIB_NAME}"
+        "${LITERT_C_API_IMPLIB}")
+    endif()
+  endif()
+  set_target_properties(litert_c_api PROPERTIES
+    IMPORTED_IMPLIB "${LITERT_C_API_IMPLIB}"
+  )
+endif()
 
 # GPU Accelerator library
 if (APPLE)
