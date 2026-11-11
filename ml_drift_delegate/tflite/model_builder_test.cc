@@ -22,6 +22,7 @@
 #include <cstring>
 #include <memory>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "testing/base/public/gmock.h"
@@ -35,6 +36,7 @@
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/model_builder_internal.h"
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
@@ -2731,6 +2733,48 @@ TEST(DequantizeOperationParserTest, TestIsSupported) {
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
+}
+
+TEST(DequantizeOperationParserTest, ParseConstSub4dShapesMatchOutputs) {
+  const std::pair<std::vector<int>, ::ml_drift::BHWC> kCases[] = {
+      {{4, 3}, ::ml_drift::BHWC(4, 1, 1, 3)},
+      {{2, 3, 4}, ::ml_drift::BHWC(2, 1, 3, 4)},
+  };
+  for (const auto& [dims, expected_shape] : kCases) {
+    auto context = std::make_unique<StubTfLiteContext>(
+        kTfLiteBuiltinDequantize, /*op_version=*/1, /*num_inputs=*/1, dims);
+    context->QuantizeTensor(1, kTfLiteInt8);
+    context->SetTensorType(1, kTfLiteInt8, kTfLiteMmapRo);
+    const int n = expected_shape.DimensionsProduct();
+    context->tensor(1)->bytes = n * sizeof(int8_t);
+    context->tensor(1)->params = {.scale = 0.5f, .zero_point = 2};
+    for (int i = 0; i < n; ++i) {
+      context->tensor(1)->data.int8[i] = static_cast<int8_t>(i);
+    }
+
+    auto parser = NewOperationParser(context->node(), context->registration(),
+                                     /*allow_quant_ops=*/true);
+    ASSERT_OK(parser->IsSupported(context.get(), context->node(),
+                                  context->registration()));
+
+    ::ml_drift::GraphFloat32 graph;
+    absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+    ObjectReader reader(&graph, context.get(), context->node(),
+                        &tensor_to_value);
+    parser->Parse(context->node(), context->registration(), &graph, &reader);
+
+    ASSERT_EQ(graph.nodes().size(), 1);
+    const auto* attr = std::any_cast<::ml_drift::ConstTensorAttributes>(
+        &graph.nodes()[0]->operation.attributes);
+    ASSERT_NE(attr, nullptr);
+    const auto* tensor = std::get_if<::ml_drift::TensorFloat32>(&attr->tensor);
+    ASSERT_NE(tensor, nullptr);
+    ASSERT_EQ(graph.outputs().size(), 1);
+    EXPECT_EQ(tensor->shape, expected_shape);
+    EXPECT_EQ(graph.outputs()[0]->tensor.shape, tensor->shape);
+    EXPECT_FLOAT_EQ(tensor->data[0], -1.0f);
+    EXPECT_FLOAT_EQ(tensor->data[n - 1], 0.5f * (n - 3));
+  }
 }
 
 TEST(LogicalElementwiseOperationParserTest, TestIsSupported) {

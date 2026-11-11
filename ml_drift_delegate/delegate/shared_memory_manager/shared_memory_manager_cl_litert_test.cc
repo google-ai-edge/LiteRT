@@ -12,17 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tests for TryCreateTensorViaAhwb and the create_tensor_func contract in
-// MakeSharedMemoryManagerClLitert.
+// Tests for DeviceSupportsAhwbImport, TryCreateTensorViaAhwb and the
+// create_tensor_func contract in MakeSharedMemoryManagerClLitert.
 //
-// This file contains two groups of tests:
+// This file contains three groups of tests:
 //
-//   1. Android-only direct unit tests (#ifdef __ANDROID__):
+//   1. Cross-platform tests for DeviceSupportsAhwbImport, which decides
+//      whether the AHWB import path is attempted at all. Most of them use
+//      synthetic GpuInfo values; one checks the gate on the real device.
+//
+//   2. Android-only direct unit tests (#ifdef __ANDROID__):
 //      These call TryCreateTensorViaAhwb directly and require a device with
 //      a Mali GPU that supports the cl_arm_import_memory extension. They will
 //      GTEST_SKIP on devices without the extension.
 //
-//   2. Cross-platform integration tests:
+//   3. Cross-platform integration tests:
 //      These test the create_tensor_func path through
 //      MakeSharedMemoryManagerClLitert and work on any OpenCL-capable device
 //      (host GPU or Android).
@@ -32,8 +36,8 @@
 //   bazel test //third_party/odml/litert/ml_drift/delegate/\
 //       shared_memory_manager:shared_memory_manager_cl_litert_test
 //
-//   Only the cross-platform integration tests will run; the Android-only
-//   tests are compiled out.
+//   Only the cross-platform tests will run; the Android-only tests are
+//   compiled out.
 //
 // === Running on Android (Mali GPU) ===
 //
@@ -56,6 +60,8 @@
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager_cl_litert.h"
 
 #include <memory>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "testing/base/public/gmock.h"
@@ -63,6 +69,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
@@ -91,6 +98,69 @@ class SharedMemoryManagerClLitertTest : public ::testing::Test {
  protected:
   cl::Environment env_;
 };
+
+// ---------------------------------------------------------------------------
+// Device gating for the AHWB import path (cross-platform)
+// ---------------------------------------------------------------------------
+
+GpuInfo MakeOpenClGpuInfo(const std::string& description,
+                          std::vector<std::string> extensions) {
+  GpuInfo info;
+  GetGpuInfoFromDeviceDescription(description, GpuApi::kOpenCl, &info);
+  info.opencl_info.extensions = std::move(extensions);
+  return info;
+}
+
+TEST(DeviceSupportsAhwbImportTest, TrueForMaliAdvertisingAhbImport) {
+  const GpuInfo info = MakeOpenClGpuInfo(
+      "Mali-G715",
+      {"cl_khr_fp16", "cl_arm_import_memory", "cl_arm_import_memory_dma_buf",
+       "cl_arm_import_memory_android_hardware_buffer"});
+  ASSERT_TRUE(info.IsMali());
+  EXPECT_TRUE(internal::DeviceSupportsAhwbImport(info));
+}
+
+TEST(DeviceSupportsAhwbImportTest, FalseForXclipseWithoutAhbImport) {
+  // Samsung Xclipse drivers export clImportMemoryARM and advertise other
+  // cl_arm_import_memory* types but not the AHB one (extension list observed
+  // on a Galaxy S24+ / Xclipse 940; the ANGLE-based Exynos 2600 driver also
+  // lacks it and crashes on AHB import, b/582255090).
+  const GpuInfo info = MakeOpenClGpuInfo(
+      "Samsung Xclipse 940",
+      {"cl_khr_fp16", "cl_arm_import_memory", "cl_arm_import_memory_host",
+       "cl_arm_import_memory_dma_buf", "cl_arm_import_memory_protected"});
+  ASSERT_TRUE(info.IsAMD());
+  EXPECT_FALSE(internal::DeviceSupportsAhwbImport(info));
+}
+
+TEST(DeviceSupportsAhwbImportTest, FalseForMaliWithoutAhbImport) {
+  const GpuInfo info =
+      MakeOpenClGpuInfo("Mali-G78", {"cl_khr_fp16", "cl_arm_import_memory"});
+  ASSERT_TRUE(info.IsMali());
+  EXPECT_FALSE(internal::DeviceSupportsAhwbImport(info));
+}
+
+TEST(DeviceSupportsAhwbImportTest, FalseWithNoExtensions) {
+  const GpuInfo info = MakeOpenClGpuInfo("Adreno (TM) 830", {});
+  EXPECT_FALSE(internal::DeviceSupportsAhwbImport(info));
+}
+
+TEST(DeviceSupportsAhwbImportTest, FalseForNonOpenClApi) {
+  GpuInfo info;
+  GetGpuInfoFromDeviceDescription("Mali-G715", GpuApi::kVulkan, &info);
+  info.vulkan_info.extensions = {
+      "cl_arm_import_memory_android_hardware_buffer"};
+  EXPECT_FALSE(internal::DeviceSupportsAhwbImport(info));
+}
+
+TEST_F(SharedMemoryManagerClLitertTest, GateMatchesCurrentDevice) {
+  // Sanity check on the real device: the gate must agree with the advertised
+  // extension list.
+  const GpuInfo& info = env_.device().GetInfo();
+  EXPECT_EQ(internal::DeviceSupportsAhwbImport(info),
+            info.SupportsExtension(
+                "cl_arm_import_memory_android_hardware_buffer"));
+}
 
 // ---------------------------------------------------------------------------
 // Direct unit tests for TryCreateTensorViaAhwb (Android-only)

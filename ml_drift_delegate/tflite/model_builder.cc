@@ -2171,21 +2171,9 @@ class DequantizeOperationParser : public TFLiteOperationParser {
             absl::StrCat("Unsupported dims for tensor: ", input->name,
                          " Got dims:", input->dims->size));
       }
-      if (input->dims->size == 2) {
-        ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32>
-            dummy_tensor_2d;
-        ABSL_RETURN_IF_ERROR(
-            PreCheckReadTensor(context, tflite_node, 0, &dummy_tensor_2d));
-      } else if (input->dims->size == 3) {
-        ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::kFloat32>
-            dummy_tensor_3d;
-        ABSL_RETURN_IF_ERROR(
-            PreCheckReadTensor(context, tflite_node, 0, &dummy_tensor_3d));
-      } else if (input->dims->size == 4) {
-        ::ml_drift::TensorFloat32 dummy_tensor;
-        ABSL_RETURN_IF_ERROR(
-            PreCheckReadTensor(context, tflite_node, 0, &dummy_tensor));
-      }
+      ::ml_drift::TensorFloat32 dummy_tensor;
+      ABSL_RETURN_IF_ERROR(
+          PreCheckReadTensor(context, tflite_node, 0, &dummy_tensor));
       return absl::OkStatus();
     }
 
@@ -2229,33 +2217,6 @@ class DequantizeOperationParser : public TFLiteOperationParser {
     return absl::OkStatus();
   }
 
-  // Read a constant tensor with broadcasting to 4D.
-  void ReadConstTensor(ObjectReader* reader, int input_index,
-                       ::ml_drift::TensorFloat32* tensor) {
-    const TfLiteTensor* input = reader->GetInputTensor(input_index);
-    if (input->dims->size == 2) {
-      ::ml_drift::Tensor<::ml_drift::HW, ::ml_drift::DataType::kFloat32>
-          tensor_2d;
-      reader->ReadTensor(input_index, &tensor_2d,
-                         ReadTensorFlags::kNoExtraBytes);
-      tensor->id = tensor_2d.id;
-      tensor->shape =
-          ::ml_drift::BHWC(1, 1, tensor_2d.shape.h, tensor_2d.shape.w);
-      tensor->data = std::move(tensor_2d.data);
-    } else if (input->dims->size == 3) {
-      ::ml_drift::Tensor<::ml_drift::HWC, ::ml_drift::DataType::kFloat32>
-          tensor_3d;
-      reader->ReadTensor(input_index, &tensor_3d,
-                         ReadTensorFlags::kNoExtraBytes);
-      tensor->id = tensor_3d.id;
-      tensor->shape = ::ml_drift::BHWC(1, tensor_3d.shape.h, tensor_3d.shape.w,
-                                       tensor_3d.shape.c);
-      tensor->data = std::move(tensor_3d.data);
-    } else if (input->dims->size == 4) {
-      reader->ReadTensor(input_index, tensor, ReadTensorFlags::kNoExtraBytes);
-    }
-  }
-
   void Parse(const TfLiteNode* tflite_node,
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
@@ -2265,7 +2226,8 @@ class DequantizeOperationParser : public TFLiteOperationParser {
     if (runtime_inputs == 0) {
       // constant input, can be dequantized here
       ::ml_drift::TensorFloat32 attr_tensor;
-      ReadConstTensor(reader, /*input_index=*/0, &attr_tensor);
+      reader->ReadTensor(/*node_input_index=*/0, &attr_tensor,
+                         ReadTensorFlags::kNoExtraBytes);
       ::ml_drift::ConstTensorAttributes attr;
       attr.tensor = std::move(attr_tensor);
       ::ml_drift::Node* node = graph->NewNode();
