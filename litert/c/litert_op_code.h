@@ -249,6 +249,11 @@ typedef enum {
 } LiteRtOpCode;
 // LINT.ThenChange(../python/litert_model/_pywrap_litert_model.cc:op_codes)
 
+// The largest value in `LiteRtOpCode`. Update it when appending to the enum.
+// It is declared outside `LiteRtOpCode` so that switch statements over op codes
+// do not have to handle it.
+enum { kLiteRtOpCodeMaxValue = kLiteRtOpCodeShloCase };
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
