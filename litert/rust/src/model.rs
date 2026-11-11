@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Wrappers around `LiteRT` [`Model`], [`Signature`], [`Subgraph`], and [`Tensor`] handles.
+
 #![allow(non_upper_case_globals)]
 
 use crate::bindings::*;
@@ -24,39 +26,51 @@ use std::borrow::Cow;
 use std::ffi::{c_char, c_void, CString};
 use std::marker::PhantomData;
 
-/// `Model` is a wrapper around the LiteRtModel C struct.
-/// Usually represents a model loaded from a file.
+/// `Model` is a wrapper around the `LiteRtModel` C struct.
+/// Usually represents a model loaded from a file or an in-memory buffer.
 pub struct Model<'a> {
+    /// Underlying C `LiteRtModel` handle owned by this struct.
     pub(crate) raw_model: LiteRtModel,
-    // If the model is created from a buffer, it can own or borrow the buffer.
-    // This field is used to keep the buffer alive for the lifetime of the model.
+    /// Backing model buffer (owned or borrowed) kept alive for the lifetime of the model when
+    /// created via [`Model::create_model_from_buffer`].
     _buffer: Option<Cow<'a, [u8]>>,
 }
 
-/// `Subgraph` is a wrapper around the LiteRtSubgraph C struct.
+/// `Subgraph` is a wrapper around the `LiteRtSubgraph` C struct.
 /// It represents a subgraph of a model.
 pub struct Subgraph<'a> {
+    /// Underlying C `LiteRtSubgraph` handle borrowed from the parent [`Model`].
     raw_subgraph: LiteRtSubgraph,
+    /// Binds this subgraph's lifetime to the parent [`Model`].
     _phantom: PhantomData<&'a LiteRtSubgraph>,
 }
 
-/// `Signature` is a wrapper around the LiteRtSignature C struct.
+/// `Signature` is a wrapper around the `LiteRtSignature` C struct.
 /// It represents a signature of a model.
 pub struct Signature<'a> {
+    /// Underlying C `LiteRtSignature` handle borrowed from the parent [`Model`].
     raw_signature: LiteRtSignature,
+    /// Binds this signature's lifetime to the parent [`Model`].
     _phantom: PhantomData<&'a LiteRtSignature>,
 }
 
+/// Selects whether [`InputOutputNamesIterator`] iterates over signature input or output names.
 enum InputOutputNamesIteratorKind {
+    /// Iterate over signature input names.
     Input,
+    /// Iterate over signature output names.
     Output,
 }
 
 /// An iterator over the input or output names of a signature.
 pub struct InputOutputNamesIterator<'a> {
+    /// Borrowed reference to the [`Signature`] whose input or output names are being iterated.
     signature: &'a Signature<'a>,
+    /// Next zero-based input or output index to query.
     index: LiteRtParamIndex,
+    /// Total number of input or output names in `signature`.
     total_num_names: LiteRtParamIndex,
+    /// Whether this iterator yields input names or output names.
     kind: InputOutputNamesIteratorKind,
 }
 
@@ -164,6 +178,58 @@ impl<'a> Signature<'a> {
             total_num_names: num_outputs,
             kind: InputOutputNamesIteratorKind::Output,
         })
+    }
+
+    /// Returns the input argument name at the given signature input index.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The zero-based index of the input in the signature (or a type convertible into
+    ///   [`InputOutputIndex`]).
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(&str)` - The input name string owned by the parent [`Model`].
+    /// * `Err(Error)` - If `index` is out of bounds, querying the input name fails, or the C string
+    ///   is not valid UTF-8.
+    pub fn input_name_at(&self, index: impl Into<InputOutputIndex>) -> Result<&'a str, Error> {
+        let mut name: *const c_char = std::ptr::null();
+        call_check_status!(
+            // SAFETY: `self.raw_signature` is valid and `name` is a valid out-pointer.
+            unsafe {
+                LiteRtGetSignatureInputName(self.raw_signature, index.into().value(), &mut name)
+            },
+            ErrorCause::GetSignatureInputName
+        );
+        // SAFETY: When `LiteRtGetSignatureInputName` returns OK, `name` points to a valid
+        // NUL-terminated string owned by the underlying `LiteRtModel` for lifetime `'a`.
+        unsafe { c_str_to_str(name) }
+    }
+
+    /// Returns the output argument name at the given signature output index.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The zero-based index of the output in the signature (or a type convertible into
+    ///   [`InputOutputIndex`]).
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(&str)` - The output name string owned by the parent [`Model`].
+    /// * `Err(Error)` - If `index` is out of bounds, querying the output name fails, or the C
+    ///   string is not valid UTF-8.
+    pub fn output_name_at(&self, index: impl Into<InputOutputIndex>) -> Result<&'a str, Error> {
+        let mut name: *const c_char = std::ptr::null();
+        call_check_status!(
+            // SAFETY: `self.raw_signature` is valid and `name` is a valid out-pointer.
+            unsafe {
+                LiteRtGetSignatureOutputName(self.raw_signature, index.into().value(), &mut name)
+            },
+            ErrorCause::GetSignatureOutputName
+        );
+        // SAFETY: When `LiteRtGetSignatureOutputName` returns OK, `name` points to a valid
+        // NUL-terminated string owned by the underlying `LiteRtModel` for lifetime `'a`.
+        unsafe { c_str_to_str(name) }
     }
 
     /// Returns the zero-based input index corresponding to the given signature input name.
@@ -349,9 +415,9 @@ impl<'a> Iterator for InputOutputNamesIterator<'a> {
         let current_index = self.index;
         self.index += 1;
         let mut name: *const c_char = std::ptr::null_mut();
-        // SAFETY: self.raw_signature is always valid as it's initialized by a wrapper function.
-        // We assume that the output is valid if the return status is OK or don't use the output
-        // pointers.
+        // SAFETY: self.signature.raw_signature is always valid as it's initialized by a wrapper
+        // function. We assume that the output is valid if the return status is OK or don't use the
+        // output pointers.
         unsafe {
             let (status, cause) = match self.kind {
                 InputOutputNamesIteratorKind::Input => (
@@ -390,8 +456,11 @@ impl<'a> Iterator for InputOutputNamesIterator<'a> {
 
 /// An iterator over the signatures of a model.
 pub struct SignatureIterator<'a> {
+    /// Borrowed reference to the [`Model`] whose signatures are being iterated.
     model: &'a Model<'a>,
+    /// Next zero-based signature index to query.
     index: LiteRtParamIndex,
+    /// Total number of signatures in `model`.
     total_num_signatures: SignatureIndex,
 }
 
@@ -411,10 +480,12 @@ impl<'a> Iterator for SignatureIterator<'a> {
     }
 }
 
-/// `Tensor` is a wrapper around the LiteRtTensor C struct.
+/// `Tensor` is a wrapper around the `LiteRtTensor` C struct.
 /// It represents a tensor in a model.
 pub struct Tensor<'a> {
+    /// Underlying C `LiteRtTensor` handle borrowed from the parent [`Model`].
     raw_tensor: LiteRtTensor,
+    /// Binds this tensor's lifetime to the parent [`Model`].
     _phantom: PhantomData<&'a LiteRtTensor>,
 }
 
@@ -640,10 +711,10 @@ impl<'a> Subgraph<'a> {
                 return Ok(tensor);
             }
         }
-        return Err(Error::new(
+        Err(Error::new(
             ErrorCause::SubgraphInputTensorByNameNotFound,
             LiteRtStatus_kLiteRtStatusErrorInvalidArgument,
-        ));
+        ))
     }
 
     /// Returns the subgraph output [`Tensor`] at the specified index.
@@ -695,10 +766,10 @@ impl<'a> Subgraph<'a> {
                 return Ok(tensor);
             }
         }
-        return Err(Error::new(
+        Err(Error::new(
             ErrorCause::SubgraphOutputTensorByNameNotFound,
             LiteRtStatus_kLiteRtStatusErrorInvalidArgument,
-        ));
+        ))
     }
 }
 
@@ -782,7 +853,7 @@ impl Model<'static> {
     ///
     /// # Arguments
     ///
-    /// * `environment` - The LiteRT [`Environment`] used to initialize the model.
+    /// * `environment` - The `LiteRT` [`Environment`] used to initialize the model.
     /// * `path` - Path to the `.tflite` model file on disk.
     ///
     /// # Returns
@@ -800,7 +871,8 @@ impl Model<'static> {
         let c_ptr: *const c_char = path_c_string.as_ptr();
         let mut raw_model_ptr: LiteRtModel = std::ptr::null_mut();
         call_check_status!(
-            // SAFETY: c_ptr is a valid pointer to the memory buffer provided by safe Rust code.
+            // SAFETY: `c_ptr` is a valid pointer to a NUL-terminated path string owned by
+            // `path_c_string`, and `&mut raw_model_ptr` is a valid stack out-pointer.
             unsafe {
                 LiteRtCreateModelFromFile(environment.raw_environment, c_ptr, &mut raw_model_ptr)
             },
@@ -822,9 +894,9 @@ impl<'a> Model<'a> {
     ///
     /// # Arguments
     ///
-    /// * `environment` - The LiteRT [`Environment`] used to initialize the model.
+    /// * `environment` - The `LiteRT` [`Environment`] used to initialize the model.
     /// * `buffer` - Borrowed byte slice (`&'a [u8]`) or owned byte vector (`Vec<u8>`) containing
-    ///   the FlatBuffer model data.
+    ///   the `FlatBuffer` model data.
     ///
     /// # Returns
     ///
@@ -948,9 +1020,10 @@ impl<'a> Model<'a> {
     pub fn signature(&self, index: SignatureIndex) -> Result<Signature<'_>, Error> {
         let mut raw_signature_ptr: LiteRtSignature = std::ptr::null_mut();
         call_check_status!(
-            // SAFETY: self.raw_model is always valid as it's initialized by a wrapper function.
-            // We assume that the output is valid if the return status is OK or don't use the
-            // output pointers.
+            // SAFETY:
+            // - `self.raw_model` is a valid, non-null `LiteRtModel` handle for the lifetime of
+            //   `self`.
+            // - `&mut raw_signature_ptr` is a valid, aligned, non-null stack out-pointer.
             unsafe {
                 LiteRtGetModelSignature(self.raw_model, index.value(), &mut raw_signature_ptr)
             },
@@ -958,17 +1031,56 @@ impl<'a> Model<'a> {
         );
         Ok(Signature { raw_signature: raw_signature_ptr, _phantom: PhantomData {} })
     }
+
+    /// Returns the [`SignatureIndex`] matching the given signature `key`.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The signature key string to look up.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(SignatureIndex)` - The zero-based index of the matching signature.
+    /// * `Err(Error)` - If no signature with `key` exists (`ErrorCause::GetSignature`) or querying
+    ///   model signatures fails.
+    pub fn signature_index_by_key(&self, key: &str) -> Result<SignatureIndex, Error> {
+        let num_sigs = self.num_signatures()?.value();
+        for i in 0..num_sigs {
+            let sig_idx = SignatureIndex::new(i);
+            let sig = self.signature(sig_idx)?;
+            if sig.key()? == key {
+                return Ok(sig_idx);
+            }
+        }
+        Err(Error::new(ErrorCause::GetSignature, LiteRtStatus_kLiteRtStatusErrorNotFound))
+    }
 }
 
 impl Drop for Model<'_> {
     fn drop(&mut self) {
-        // SAFETY: self.raw_model is always valid, it's guaranteed to be initialized by
-        // create* function.
+        // SAFETY:
+        // - `self.raw_model` is a valid, non-null `LiteRtModel` handle initialized by
+        //   `LiteRtCreateModelFromFile` or `LiteRtCreateModelFromBuffer`.
+        // - `LiteRtDestroyModel` executes in `Drop::drop` before field `self._buffer`
+        //   (`Option<Cow<'a, [u8]>>`) is dropped, ensuring the backing FlatBuffer memory outlives
+        //   the C `LiteRtModel`.
         unsafe {
             LiteRtDestroyModel(self.raw_model);
         }
     }
 }
+
+// SAFETY: `LiteRtModel` and `_buffer` (`Option<Cow<'a, [u8]>>`) can be safely transferred across
+// threads and destroyed on another thread when `Model` is dropped.
+unsafe impl Send for Model<'_> {}
+
+// SAFETY: All `&self` methods on `Model`, `Signature`, `Subgraph`, and `Tensor` perform strictly
+// read-only inspection queries on the underlying `LiteRtModelT` and its subgraphs/signatures,
+// whereas `CompiledModel::create` requires an exclusive `&mut Model<'_>` borrow because C++ model
+// compilation (`LiteRtCreateCompiledModel`) can mutate `LiteRtModelT` in place. Rust's borrow
+// checker therefore statically prevents any concurrent read or compilation race on `LiteRtModelT`
+// without runtime locks on inspection methods.
+unsafe impl Sync for Model<'_> {}
 
 #[cfg(test)]
 mod tests {

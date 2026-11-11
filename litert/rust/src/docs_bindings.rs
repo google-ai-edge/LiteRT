@@ -15,9 +15,19 @@
 // This file is stub of bindgen generated file that is used only to generate
 // documentation. For example, on cargo.io when a new version of the crate is published.
 
-pub type LiteRtCompiledModel = *mut ::std::ffi::c_void;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LiteRtCompiledModelT {
+    _unused: [u8; 0],
+}
+pub type LiteRtCompiledModel = *mut LiteRtCompiledModelT;
 
-pub type LiteRtEnvironment = *mut ::std::ffi::c_void;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LiteRtEnvironmentT {
+    _unused: [u8; 0],
+}
+pub type LiteRtEnvironment = *mut LiteRtEnvironmentT;
 
 pub type LiteRtTensor = *mut ::std::ffi::c_void;
 
@@ -27,7 +37,12 @@ pub type LiteRtSignature = *mut ::std::ffi::c_void;
 
 pub type LiteRtModel = *mut ::std::ffi::c_void;
 
-pub type LiteRtOptions = *mut ::std::ffi::c_void;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LiteRtOptionsT {
+    _unused: [u8; 0],
+}
+pub type LiteRtOptions = *mut LiteRtOptionsT;
 
 pub type LiteRtOption = *mut ::std::ffi::c_void;
 
@@ -35,9 +50,19 @@ pub type LiteRtProfiler = *mut ::std::ffi::c_void;
 
 pub type LiteRtMetrics = *mut ::std::ffi::c_void;
 
-pub type LiteRtTensorBuffer = *mut ::std::ffi::c_void;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LiteRtTensorBufferT {
+    _unused: [u8; 0],
+}
+pub type LiteRtTensorBuffer = *mut LiteRtTensorBufferT;
 
-pub type LiteRtTensorBufferRequirements = *mut ::std::ffi::c_void;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LiteRtTensorBufferRequirementsT {
+    _unused: [u8; 0],
+}
+pub type LiteRtTensorBufferRequirements = *mut LiteRtTensorBufferRequirementsT;
 
 pub type LiteRtEvent = *mut ::std::ffi::c_void;
 
@@ -59,17 +84,40 @@ pub type LiteRtAnyType = ::std::os::raw::c_uint;
 
 pub type LiteRtElementType = ::std::os::raw::c_uint;
 
-pub type LiteRtRankedTensorType = ::std::os::raw::c_uint;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct LiteRtRankedTensorType {
+    pub element_type: LiteRtElementType,
+    pub layout: LiteRtLayout,
+}
 
-pub type LiteRtUnrankedTensorType = ::std::os::raw::c_uint;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct LiteRtUnrankedTensorType {
+    pub element_type: LiteRtElementType,
+}
 
 pub type LiteRtTensorTypeId = ::std::os::raw::c_uint;
 
 pub type LiteRtTensorBufferType = ::std::os::raw::c_uint;
 
-pub type LiteRtEnvOption = *mut ::std::ffi::c_void;
-
 pub type LiteRtEnvOptionTag = ::std::os::raw::c_uint;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct LiteRtEnvOption {
+    pub tag: LiteRtEnvOptionTag,
+    pub value: LiteRtAny,
+}
+
+pub const LiteRtTensorBufferLockMode_kLiteRtTensorBufferLockModeRead: LiteRtTensorBufferLockMode =
+    0;
+
+pub const LiteRtTensorBufferLockMode_kLiteRtTensorBufferLockModeWrite: LiteRtTensorBufferLockMode =
+    1;
+
+pub const LiteRtTensorBufferLockMode_kLiteRtTensorBufferLockModeReadWrite:
+    LiteRtTensorBufferLockMode = 2;
 
 pub const LiteRtStatus_kLiteRtStatusOk: LiteRtStatus = 0;
 
@@ -130,6 +178,10 @@ pub const LiteRtStatus_kLiteRtStatusErrorUnsupportedRuntimeVersion: LiteRtStatus
 pub const LiteRtStatus_kLiteRtStatusErrorUnsupportedCompilerVersion: LiteRtStatus = 4001;
 
 pub const LiteRtStatus_kLiteRtStatusErrorIncompatibleByteCodeVersion: LiteRtStatus = 4002;
+
+pub const LiteRtStatus_kLiteRtStatusErrorUnsupportedOpShapeInferer: LiteRtStatus = 4003;
+
+pub const LiteRtStatus_kLiteRtStatusErrorShapeInferenceFailed: LiteRtStatus = 4004;
 
 pub const LiteRtHwAccelerators_kLiteRtHwAcceleratorNone: LiteRtHwAccelerators = 0;
 
@@ -203,7 +255,16 @@ pub const LiteRtTensorBufferType_kLiteRtTensorBufferTypeGlTexture: LiteRtTensorB
 
 pub const LiteRtTensorBufferType_kLiteRtTensorBufferTypeOpenClBuffer: LiteRtTensorBufferType = 10;
 
+pub const LiteRtTensorBufferType_kLiteRtTensorBufferTypeOpenClBufferFp16: LiteRtTensorBufferType =
+    11;
+
 pub const LiteRtTensorBufferType_kLiteRtTensorBufferTypeOpenClTexture: LiteRtTensorBufferType = 12;
+
+pub const LiteRtTensorBufferType_kLiteRtTensorBufferTypeOpenClTextureFp16: LiteRtTensorBufferType =
+    13;
+
+pub const LiteRtTensorBufferType_kLiteRtTensorBufferTypeOpenClBufferPacked: LiteRtTensorBufferType =
+    14;
 
 pub const LiteRtTensorBufferType_kLiteRtTensorBufferTypeWebGpuBuffer: LiteRtTensorBufferType = 20;
 
@@ -259,7 +320,23 @@ pub const LiteRtEnvOptionTag_kLiteRtEnvOptionTagRuntimeLibraryDir: LiteRtEnvOpti
 
 pub const LiteRtEnvOptionTag_kLiteRtEnvOptionTagSystemGpuAcceleratorHandle: LiteRtEnvOptionTag = 30;
 
-pub struct LiteRtLayout {}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct LiteRtLayout {
+    pub _bitfield_1: u16,
+    pub dimensions: [::std::os::raw::c_int; 8usize],
+    pub strides: [::std::os::raw::c_uint; 8usize],
+}
+
+impl LiteRtLayout {
+    pub fn rank(&self) -> ::std::os::raw::c_uint {
+        u32::from(self._bitfield_1 & 0x7f)
+    }
+
+    pub fn set_rank(&mut self, val: ::std::os::raw::c_uint) {
+        self._bitfield_1 = (self._bitfield_1 & !0x7f) | ((val as u16) & 0x7f);
+    }
+}
 
 pub fn LiteRtGetNumLayoutElements(
     layout: *const LiteRtLayout,
@@ -490,7 +567,22 @@ pub const LiteRtAnyType_kLiteRtAnyTypeString: LiteRtAnyType = 8;
 
 pub const LiteRtAnyType_kLiteRtAnyTypeVoidPtr: LiteRtAnyType = 9;
 
-pub struct LiteRtAny {}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union LiteRtAny__bindgen_ty_1 {
+    pub bool_value: bool,
+    pub int_value: i64,
+    pub real_value: f64,
+    pub ptr_value: *const ::std::os::raw::c_void,
+    pub str_value: *const ::std::os::raw::c_char,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct LiteRtAny {
+    pub type_: LiteRtAnyType,
+    pub __bindgen_anon_1: LiteRtAny__bindgen_ty_1,
+}
 
 pub fn LiteRtGetStatusString(status: LiteRtStatus) -> *const ::std::os::raw::c_char {
     unimplemented!()
@@ -729,6 +821,10 @@ pub fn LiteRtUnlockTensorBuffer(buffer: LiteRtTensorBuffer) -> LiteRtStatus {
     unimplemented!()
 }
 
+pub fn LiteRtClearTensorBuffer(buffer: LiteRtTensorBuffer) -> LiteRtStatus {
+    unimplemented!()
+}
+
 pub fn LiteRtDestroyTensorBuffer(buffer: LiteRtTensorBuffer) {
     unimplemented!()
 }
@@ -776,7 +872,15 @@ pub fn LiteRtSetTensorBufferEvent(
     unimplemented!()
 }
 
+pub fn LiteRtClearTensorBufferEvent(tensor_buffer: LiteRtTensorBuffer) -> LiteRtStatus {
+    unimplemented!()
+}
+
 pub fn LiteRtIsEventSignaled(event: LiteRtEvent, is_signaled: *mut bool) -> LiteRtStatus {
+    unimplemented!()
+}
+
+pub fn LiteRtWaitEvent(event: LiteRtEvent, timeout_in_ms: i64) -> LiteRtStatus {
     unimplemented!()
 }
 

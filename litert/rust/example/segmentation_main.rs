@@ -51,9 +51,9 @@ impl SegmentationModel {
         let env = litert::EnvironmentBuilder::build_default()?;
         let accelerators = env.get_available_accelerators()?;
         println!("Available accelerators: {:?}", accelerators);
-        let m = litert::Model::create_model_from_file(&env, model_path)?;
+        let mut m = litert::Model::create_model_from_file(&env, model_path)?;
         let options = litert::Options::create_with_accelerator(litert::LiteRtHwAccelerator::Cpu)?;
-        let cm = litert::CompiledModel::create(&env, &m, &options)?;
+        let cm = litert::CompiledModel::create(&env, &mut m, &options)?;
         Ok(SegmentationModel { compiled_model: cm, model: m, env })
     }
 
