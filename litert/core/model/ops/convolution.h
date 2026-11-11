@@ -159,15 +159,6 @@ inline LiteRtStatus InferConv2D(const LiteRtOpT& op,
     LITERT_LOG(LITERT_ERROR, "Conv2D tensor element count overflows int32");
     return kLiteRtStatusErrorShapeInferenceFailed;
   }
-  const bool need_im2col = stride_h != 1 || stride_w != 1 || dilation_h != 1 ||
-                           dilation_w != 1 || filter_h != 1 || filter_w != 1;
-  if (need_im2col && !CheckShapePositiveProductFitsInInt32(
-                         {input_shape[0], out_h, out_w, filter_shape[3],
-                          filter_h, filter_w})) {
-    LITERT_LOG(LITERT_ERROR, "Conv2D im2col element count overflows int32");
-    return kLiteRtStatusErrorShapeInferenceFailed;
-  }
-
   output_shapes[0] = std::move(out_shape);
   return kLiteRtStatusOk;
 }
