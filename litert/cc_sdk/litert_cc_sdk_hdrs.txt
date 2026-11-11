@@ -76,7 +76,6 @@ litert/cc/litert_event.h
 litert/cc/litert_expected.h
 litert/cc/litert_layout.h
 litert/cc/litert_macros.h
-litert/cc/litert_model.h
 litert/cc/litert_model_types.h
 litert/cc/litert_opaque_options.h
 litert/cc/litert_options.h

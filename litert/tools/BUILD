@@ -785,10 +785,11 @@ cc_binary(
     srcs = ["dump_model_simple.cc"],
     deps = [
         "//litert/c:litert_model_types",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_layout",
-        "//litert/cc:litert_model",
         "//litert/cc:litert_model_types",
         "//litert/cc:litert_ranked_tensor_type",
     ],

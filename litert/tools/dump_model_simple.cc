@@ -18,10 +18,11 @@
 #include <vector>
 
 #include "litert/c/litert_model_types.h"
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_layout.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_model_types.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
 
@@ -107,13 +108,17 @@ int main(int argc, char* argv[]) {
     std::cerr << "Failed to create environment\n";
     return 1;
   }
-  auto model = litert::Model::CreateFromFile(*env, argv[1]);
-  if (!model) {
-    std::cerr << "Failed to load model from file: " << argv[1] << "\n";
+  auto compiled_model = litert::CompiledModel::Create(
+      *env, argv[1], litert::HwAccelerators::kCpu);
+  if (!compiled_model) {
+    // CompiledModel::Create compiles the model for CPU, so models that cannot
+    // run on CPU (e.g. NPU-precompiled bytecode) fail here.
+    std::cerr << "Failed to create CPU compiled model from file: " << argv[1]
+              << ": " << compiled_model.Error().Message() << "\n";
     return 1;
   }
 
-  auto signatures = model->GetSignatures();
+  auto signatures = compiled_model->GetSignatures();
   if (!signatures) {
     std::cerr << "Failed to get signatures\n";
     return 1;

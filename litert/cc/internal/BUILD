@@ -414,7 +414,7 @@ cc_library(
     visibility = internal_static_library_visibility,
     deps = [
         ":litert_detail",
-        ":litert_extended_model",
+        ":litert_model",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
@@ -431,7 +431,7 @@ cc_test(
     srcs = ["litert_model_predicates_test.cc"],
     data = ["//litert/test:mlir_test_data"],
     deps = [
-        ":litert_extended_model",
+        ":litert_model",
         ":litert_model_predicates",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_element_type",
@@ -489,8 +489,8 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_extended_model",
-    hdrs = ["litert_extended_model.h"],
+    name = "litert_model",
+    hdrs = ["litert_model.h"],
     defines = select({
         "//litert:litert_runtime_link_mode_dynamic": ["LITERT_DYNAMIC_RUNTIME"],
         "//conditions:default": [],
@@ -504,15 +504,16 @@ cc_library(
         "//litert/c:litert_model",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_api_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
         "//litert/cc:litert_model_types",
         "//litert/cc:litert_ranked_tensor_type",
+        "//litert/core/model:model_load",
         "//tflite/converter:allocation",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
@@ -520,16 +521,32 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_extended_model",
+    hdrs = ["litert_extended_model.h"],
+    visibility = internal_static_library_visibility,
+    deps = [
+        ":litert_model",
+    ],
+)
+
 cc_test(
-    name = "litert_extended_model_test",
-    srcs = ["litert_extended_model_test.cc"],
+    name = "litert_model_test",
+    srcs = ["litert_model_test.cc"],
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
+    defines = select({
+        "//litert:litert_runtime_link_mode_dynamic": ["LITERT_DYNAMIC_RUNTIME"],
+        "//conditions:default": [],
+    }),
     deps = [
-        ":litert_extended_model",
+        ":litert_model",
+        ":scoped_file",
         "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
@@ -565,6 +582,7 @@ cc_library(
     visibility = next_library_visibility,
     deps = [
         ":litert_handle",
+        ":litert_model",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_metrics",
@@ -574,7 +592,6 @@ cc_library(
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc:litert_profiler",
         "//litert/cc:litert_tensor_buffer",
@@ -592,12 +609,12 @@ cc_test(
     ],
     deps = [
         ":litert_compiled_model_next",
+        ":litert_model",
         "//litert/c:litert_compiled_model",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc:litert_profiler",
         "//litert/cc:litert_tensor_buffer",

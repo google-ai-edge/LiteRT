@@ -21,7 +21,7 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/test/load_test_model.h"
 
