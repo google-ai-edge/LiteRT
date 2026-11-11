@@ -205,12 +205,12 @@ Expected<const LiteRtSignatureT*> RemoveSignature(LiteRtModelT& model,
                                                   absl::string_view key);
 
 // Removes subgraphs not reachable from any signature (or from subgraph 0 when
-// the model has no signatures) via StableHLO composite decomposition subgraph
-// references, and remaps `decomposition_subgraph_index` on remaining
-// composites. Returns the number of removed subgraphs, or 0 if control-flow
-// operators (`WHILE`, `IF`, ...) prevent pruning
-// (`kLiteRtStatusErrorUnsupported` from `PruneModelToSignatures` is tolerated
-// without mutating the model).
+// the model has no signatures) via the subgraph references held by ops
+// (control-flow branches, StableHLO region bodies and composite
+// decompositions), and remaps the references in the remaining subgraphs.
+// Returns the number of removed subgraphs, or 0 if the model's subgraph
+// references are invalid or cyclic (`kLiteRtStatusErrorUnsupported` from
+// `PruneModelToSignatures` is tolerated without mutating the model).
 Expected<size_t> PruneUnreachableSubgraphs(LiteRtModelT& model);
 
 //===----------------------------------------------------------------------===//

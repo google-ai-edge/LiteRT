@@ -26,6 +26,7 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "tflite/schema/schema_generated.h"
 
 #ifdef __cplusplus
@@ -568,12 +569,11 @@ LiteRtStatus LiteRtGetSHLOCompositeOpDecompositionSubgraphIndex(
   if (op->OpCode() != kLiteRtOpCodeShloComposite) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  auto& opts = litert::internal::GetTflOptions2(*op);
-  if (opts.value == nullptr) {
+  const auto index = litert::internal::CompositeDecompositionIndex(*op);
+  if (!index.has_value()) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *subgraph_index =
-      opts.AsStableHLOCompositeOptions()->decomposition_subgraph_index;
+  *subgraph_index = *index;
   return kLiteRtStatusOk;
 }
 

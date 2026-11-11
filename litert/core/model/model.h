@@ -1050,6 +1050,18 @@ class LiteRtModelT {
   // signatures, metadata etc.
   LiteRtModelT Yank(std::vector<size_t> indices);
 
+  // Destroys the subgraphs at the given indices and remaps references in the
+  // remaining subgraphs. References from destroyed subgraphs are ignored; a
+  // remaining subgraph that references a destroyed one is an error
+  // (kLiteRtStatusErrorInvalidGraphInvariant). Also fails with
+  // kLiteRtStatusErrorIndexOOB if an index is out of range and with
+  // kLiteRtStatusErrorUnsupported if a remaining subgraph holds an invalid
+  // reference. Returns the old-to-new index map, with -1 for destroyed
+  // subgraphs. Signatures are not updated: the caller must not destroy a
+  // signature's subgraph, or must remove that signature itself.
+  litert::Expected<std::vector<int32_t>> DiscardSubgraphs(
+      std::vector<size_t> indices);
+
   // SIGNATURES
 
   // All signatures registered with this model.
@@ -1191,6 +1203,16 @@ class LiteRtModelT {
       : tfl_flatbuffer_(std::move(tfl_flatbuffer)) {}
 
  private:
+  // Moves the subgraphs at `ordered_indices` to the end of `dest` in the given
+  // order and remaps references in the remaining subgraphs. If
+  // `remap_moved` is true, references inside the moved subgraphs must resolve
+  // to moved subgraphs and are remapped to their positions in `dest`;
+  // otherwise they are left untouched. Returns the old-to-new index map of the
+  // remaining subgraphs.
+  litert::Expected<std::vector<int32_t>> MoveSubgraphsTo(
+      LiteRtSubgraphT::Alloc& dest, std::vector<size_t> ordered_indices,
+      bool remap_moved);
+
   LiteRtSubgraphT::Alloc subgraphs_;
   LiteRtSignatureT::Alloc signatures_;
 
@@ -1224,12 +1246,24 @@ std::optional<std::string> GetCustomOpCode(const LiteRtModelT& model,
 ::litert::Expected<LiteRtSubgraph> LookupSubgraph(
     const LiteRtModelT& model, absl::string_view signature_key);
 
-// Retains only the named entry-point signatures and the StableHLO composite
-// decomposition subgraphs reachable from them. This mutates the model while
-// preserving pointer stability for all retained IR objects.
+// Retains only the named entry-point signatures and the subgraphs transitively
+// referenced from them (region bodies, control-flow branches and composite
+// decompositions). This mutates the model while preserving pointer stability
+// for all retained IR objects. Fails with kLiteRtStatusErrorUnsupported,
+// without mutating the model, if the subgraph references anywhere in the model
+// (including in subgraphs that would be removed) are invalid or cyclic.
 ::litert::Expected<void> PruneModelToSignatures(
     LiteRtModelT& model,
     absl::Span<const absl::string_view> signature_keys);
+
+// Destroys every subgraph that is not one of `roots` and is not transitively
+// referenced from them. Each root must be owned by `model`. Fails with
+// kLiteRtStatusErrorUnsupported if the subgraph references anywhere in the
+// model (including in subgraphs that would be destroyed) are invalid or cyclic.
+// Signatures are not updated: every signature subgraph must be a root, or the
+// caller must remove the signatures whose subgraphs are destroyed.
+::litert::Expected<void> PruneUnreachableSubgraphs(
+    LiteRtModelT& model, absl::Span<const LiteRtSubgraph> roots);
 
 namespace litert::internal {
 
@@ -1274,6 +1308,14 @@ litert::Expected<LiteRtTensorT*> MakeClone(LiteRtSubgraphT& parent,
 
 // Same as clone to, but allocates a the dest op into given subgraph.
 LiteRtOpT& MakeClone(LiteRtSubgraphT& parent, const LiteRtOpT& src);
+
+// Deep-copies `src` (tensors, ops and subgraph IO) into a new subgraph named
+// `name` appended to `model`. Weights are shared by buffer id rather than
+// copied. Subgraph references held by the cloned ops are copied unchanged, so
+// the clone references the same subgraphs as `src`.
+litert::Expected<LiteRtSubgraph> CloneSubgraph(LiteRtModelT& model,
+                                               const LiteRtSubgraphT& src,
+                                               std::string name);
 
 // OBSERVERS
 
@@ -1325,12 +1367,19 @@ LiteRtTensor DisconnectInput(LiteRtOpT& op, LiteRtParamIndex input_ind);
 LiteRtTensor DisconnectOutput(LiteRtOpT& op, LiteRtParamIndex output_ind);
 
 // Remove all incoming and outgoing edges from this op. This can prep nodes
-// for removal in DCE.
+// for removal in DCE. The op keeps its options, so they can still be read.
 void Drop(LiteRtOpT& litert_op);
 
+// Drops the op and clears its options, including any subgraph references, so
+// that DCE removes it. A dead op may only be reused through `MakeDispatchOp`,
+// which reinitializes it.
+void MarkDead(LiteRtOpT& litert_op);
+
 // Run very naive dead code elimination. Removes only ops/tensors that have no
-// in/out edges. Ops are handled first. Ignores subgraph IO. Not recursive and
-// does only one pass. Returns if the graph was modified.
+// in/out edges. Ops without edges that still reference subgraphs (such as
+// CALL_ONCE) are kept; use `MarkDead` to remove those. Ops are handled first.
+// Ignores subgraph IO. Not recursive and does only one pass. Returns if the
+// graph was modified.
 // NOTE: This de-allocates removed objects, only use when references to these
 // objects will not be used.
 // TODO: Update this with complete work-list based approach.
