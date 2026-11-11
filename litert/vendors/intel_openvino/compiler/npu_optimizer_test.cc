@@ -23,8 +23,9 @@
 #include <numeric>
 #include <vector>
 
-#include <gtest/gtest.h>
+#include "openvino/core/dimension.hpp"
 #include "openvino/core/model.hpp"
+#include "openvino/core/partial_shape.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/broadcast.hpp"
@@ -37,6 +38,7 @@
 #include "openvino/op/gelu.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
+#include "openvino/op/pad.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/reduce_sum.hpp"
 #include "openvino/op/reshape.hpp"
@@ -44,11 +46,14 @@
 #include "openvino/op/scaled_dot_product_attention.hpp"
 #include "openvino/op/slice.hpp"
 #include "openvino/op/softmax.hpp"
+#include "openvino/op/strided_slice.hpp"
 #include "openvino/op/topk.hpp"
 #include "openvino/pass/manager.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
+#include <gtest/gtest.h>
+#include "transformations/op_conversions/scaled_dot_product_attention_decomposition.hpp"
 
 namespace litert {
 namespace openvino {
@@ -65,14 +70,18 @@ namespace {
 //                 MatMul(Slice(probs,cur),V_slice,T) ]
 // |s_past| is the cached sequence length and |s_cur| is the current chunk size
 // (the K/V slice length): decode uses s_cur=1, prefill uses s_cur=chunk (e.g.
-// 128). The query length equals s_cur in both cases.
-std::shared_ptr<ov::Model> BuildSplitCacheAttention(int64_t s_past = 8,
-                                                    int64_t s_cur = 1) {
+// 128). The query length equals s_cur in both cases. |negative_cur_start|
+// spells the current branch's start as -s_cur (counted from the end of the
+// score axis) instead of +s_past; both select the same elements.
+std::shared_ptr<ov::Model> BuildSplitCacheAttention(
+    int64_t s_past = 8, int64_t s_cur = 1, bool reverse_v_add = false,
+    bool use_strided_slice = false, bool negative_cur_start = false) {
   using ov::op::v0::Concat;
   using ov::op::v0::Constant;
   using ov::op::v0::MatMul;
   using ov::op::v0::Parameter;
   using ov::op::v1::Add;
+  using ov::op::v1::StridedSlice;
   using ov::op::v8::Slice;
   using ov::op::v8::Softmax;
 
@@ -81,6 +90,7 @@ std::shared_ptr<ov::Model> BuildSplitCacheAttention(int64_t s_past = 8,
   constexpr int64_t kDim = 256;
   const int64_t lq = s_cur;
   const int64_t s_kv = s_past + s_cur;
+  const int64_t cur_start = negative_cur_start ? -s_cur : s_past;
   const auto f = ov::element::f32;
 
   auto q = std::make_shared<Parameter>(
@@ -112,19 +122,50 @@ std::shared_ptr<ov::Model> BuildSplitCacheAttention(int64_t s_past = 8,
   auto probs = std::make_shared<Softmax>(masked, /*axis=*/-1);
 
   // Split probs back into past / current, then probs * V^T (transpose_b).
-  auto start0 = Constant::create(ov::element::i64, ov::Shape{1}, {0});
-  auto stop0 = Constant::create(ov::element::i64, ov::Shape{1}, {s_past});
-  auto step = Constant::create(ov::element::i64, ov::Shape{1}, {1});
-  auto axis = Constant::create(ov::element::i64, ov::Shape{1}, {-1});
-  auto slice_past = std::make_shared<Slice>(probs, start0, stop0, step, axis);
+  ov::Output<ov::Node> slice_past;
+  ov::Output<ov::Node> slice_cur;
+  if (use_strided_slice) {
+    // Exercise begin_mask[3] == 1 on the past branch and explicit
+    // begin[3] == s_past on the new branch.
+    auto begin_past = Constant::create(ov::element::i64, ov::Shape{4},
+                                       std::vector<int64_t>{0, 0, 0, 0});
+    auto end_past = Constant::create(ov::element::i64, ov::Shape{4},
+                                     std::vector<int64_t>{0, 0, 0, s_past});
+    auto strides = Constant::create(ov::element::i64, ov::Shape{4},
+                                    std::vector<int64_t>{1, 1, 1, 1});
+    slice_past = std::make_shared<StridedSlice>(
+                     probs, begin_past, end_past, strides,
+                     /*begin_mask=*/std::vector<int64_t>{1, 1, 1, 1},
+                     /*end_mask=*/std::vector<int64_t>{1, 1, 1, 0})
+                     ->output(0);
 
-  auto start1 = Constant::create(ov::element::i64, ov::Shape{1}, {s_past});
-  auto stop1 = Constant::create(ov::element::i64, ov::Shape{1}, {s_kv});
-  auto slice_cur = std::make_shared<Slice>(probs, start1, stop1, step, axis);
+    auto begin_cur = Constant::create(ov::element::i64, ov::Shape{4},
+                                      std::vector<int64_t>{0, 0, 0, cur_start});
+    auto end_cur = Constant::create(ov::element::i64, ov::Shape{4},
+                                    std::vector<int64_t>{0, 0, 0, s_kv});
+    slice_cur = std::make_shared<StridedSlice>(
+                    probs, begin_cur, end_cur, strides,
+                    /*begin_mask=*/std::vector<int64_t>{1, 1, 1, 0},
+                    /*end_mask=*/std::vector<int64_t>{1, 1, 1, 1})
+                    ->output(0);
+  } else {
+    auto start0 = Constant::create(ov::element::i64, ov::Shape{1}, {0});
+    auto stop0 = Constant::create(ov::element::i64, ov::Shape{1}, {s_past});
+    auto step = Constant::create(ov::element::i64, ov::Shape{1}, {1});
+    auto axis = Constant::create(ov::element::i64, ov::Shape{1}, {-1});
+    slice_past =
+        std::make_shared<Slice>(probs, start0, stop0, step, axis)->output(0);
+
+    auto start1 = Constant::create(ov::element::i64, ov::Shape{1}, {cur_start});
+    auto stop1 = Constant::create(ov::element::i64, ov::Shape{1}, {s_kv});
+    slice_cur =
+        std::make_shared<Slice>(probs, start1, stop1, step, axis)->output(0);
+  }
 
   auto pv_cache = std::make_shared<MatMul>(slice_past, v_cache, false, true);
   auto pv_slice = std::make_shared<MatMul>(slice_cur, v_slice, false, true);
-  auto out = std::make_shared<Add>(pv_cache, pv_slice);
+  auto out = reverse_v_add ? std::make_shared<Add>(pv_slice, pv_cache)
+                           : std::make_shared<Add>(pv_cache, pv_slice);
 
   auto result = std::make_shared<ov::op::v0::Result>(out);
   return std::make_shared<ov::Model>(
@@ -165,6 +206,24 @@ void FillRandom(ov::Tensor tensor, uint32_t seed) {
     state = state * 6364136223846793005ULL + 1442695040888963407ULL;
     data[i] = static_cast<float>((state >> 40) & 0xFFFF) / 32768.0f - 1.0f;
   }
+}
+
+// Evaluates |model| on |inputs| using OpenVINO's built-in reference kernels
+// (after decomposing any ScaledDotProductAttention op into primitive ops that
+// implement Node::evaluate). This avoids loading the CPU plugin DSO at test
+// time while exercising the exact graph topology and tensor values.
+ov::Tensor EvaluateModel(const std::shared_ptr<ov::Model>& model,
+                         const ov::TensorVector& inputs) {
+  auto eval_model = model->clone();
+  ov::pass::Manager pm;
+  pm.register_pass<ov::pass::ScaledDotProductAttentionDecomposition>();
+  pm.run_passes(eval_model);
+  ov::TensorVector outputs;
+  for (const auto& out : eval_model->outputs()) {
+    outputs.emplace_back(out.get_element_type(), out.get_shape());
+  }
+  EXPECT_TRUE(eval_model->evaluate(outputs, inputs));
+  return outputs.at(0);
 }
 
 // Negative: when the K_cache (or V_cache) tensor is consumed by something
@@ -260,6 +319,391 @@ TEST(FuseSplitAttentionToSDPATest, NumericallyMatchesSplitCache) {
   }
   EXPECT_LT(max_abs_diff, 1e-4f)
       << "fused output diverges from split-cache reference";
+}
+
+// When the final Add has its operands reversed (`Add(pv_slice, pv_cache)`
+// rather than `Add(pv_cache, pv_slice)`), FuseSplitAttentionToSDPA must
+// inspect the Softmax slice offsets and swap the V branches so that K and V
+// are concatenated in the same `[cache, new]` order. Without this recovery,
+// every attention weight is multiplied against the wrong value vector.
+TEST(FuseSplitAttentionToSDPATest, FusesAndMatchesWhenAddOperandsAreReversed) {
+  auto reference = BuildSplitCacheAttention(/*s_past=*/7, /*s_cur=*/1,
+                                            /*reverse_v_add=*/true);
+  auto fused = reference->clone();
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetFuseSplitAttentionToSDPA(true)
+      .Run(fused);
+  ASSERT_NE(FindSdpa(fused), nullptr) << "fusion did not fire";
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(fused), 0u);
+  EXPECT_EQ(CountOps<ov::op::v8::Softmax>(fused), 0u);
+
+  const size_t num_inputs = reference->inputs().size();
+  ASSERT_EQ(num_inputs, fused->inputs().size());
+  ov::TensorVector inputs;
+  for (size_t i = 0; i < num_inputs; ++i) {
+    const auto& port = reference->input(i);
+    ov::Tensor t(port.get_element_type(), port.get_shape());
+    FillRandom(t, static_cast<uint32_t>(i + 10));
+    inputs.push_back(t);
+  }
+
+  auto ref_out = EvaluateModel(reference, inputs);
+  auto fused_out = EvaluateModel(fused, inputs);
+  ASSERT_EQ(ref_out.get_size(), fused_out.get_size());
+  const auto* a = ref_out.data<float>();
+  const auto* b = fused_out.data<float>();
+  float max_abs_diff = 0.0f;
+  for (size_t i = 0; i < ref_out.get_size(); ++i) {
+    max_abs_diff = std::max(max_abs_diff, std::abs(a[i] - b[i]));
+    ASSERT_FALSE(std::isnan(b[i])) << "fused output has NaN at " << i;
+  }
+  EXPECT_LT(max_abs_diff, 1e-4f)
+      << "reversed-Add fused output diverges from split-cache reference";
+}
+
+// Same V-branch recovery when the Softmax is split using v1::StridedSlice
+// (including begin_mask on the past branch) instead of v8::Slice.
+TEST(FuseSplitAttentionToSDPATest, FusesAndMatchesWithStridedSliceVBranches) {
+  auto reference = BuildSplitCacheAttention(
+      /*s_past=*/7, /*s_cur=*/1, /*reverse_v_add=*/true,
+      /*use_strided_slice=*/true);
+  auto fused = reference->clone();
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetFuseSplitAttentionToSDPA(true)
+      .Run(fused);
+  ASSERT_NE(FindSdpa(fused), nullptr) << "fusion did not fire";
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(fused), 0u);
+
+  const size_t num_inputs = reference->inputs().size();
+  ASSERT_EQ(num_inputs, fused->inputs().size());
+  ov::TensorVector inputs;
+  for (size_t i = 0; i < num_inputs; ++i) {
+    const auto& port = reference->input(i);
+    ov::Tensor t(port.get_element_type(), port.get_shape());
+    FillRandom(t, static_cast<uint32_t>(i + 20));
+    inputs.push_back(t);
+  }
+
+  auto ref_out = EvaluateModel(reference, inputs);
+  auto fused_out = EvaluateModel(fused, inputs);
+  ASSERT_EQ(ref_out.get_size(), fused_out.get_size());
+  const auto* a = ref_out.data<float>();
+  const auto* b = fused_out.data<float>();
+  float max_abs_diff = 0.0f;
+  for (size_t i = 0; i < ref_out.get_size(); ++i) {
+    max_abs_diff = std::max(max_abs_diff, std::abs(a[i] - b[i]));
+    ASSERT_FALSE(std::isnan(b[i])) << "fused output has NaN at " << i;
+  }
+  EXPECT_LT(max_abs_diff, 1e-4f)
+      << "StridedSlice fused output diverges from split-cache reference";
+}
+
+// Slice and StridedSlice both accept a negative start that counts back from
+// the end of the axis. The current branch written as start=-s_cur must be
+// recognized as the high end of the score axis (the same as start=s_past), so
+// the reversed Add is still reordered and fused correctly.
+TEST(FuseSplitAttentionToSDPATest, FusesAndMatchesWithNegativeSliceStart) {
+  for (const bool use_strided_slice : {false, true}) {
+    SCOPED_TRACE(use_strided_slice ? "StridedSlice" : "Slice");
+    auto reference = BuildSplitCacheAttention(
+        /*s_past=*/7, /*s_cur=*/1, /*reverse_v_add=*/true, use_strided_slice,
+        /*negative_cur_start=*/true);
+    auto fused = reference->clone();
+
+    NpuOptimizer()
+        .SetCastIntegerSignToFloat(false)
+        .SetFuseSplitAttentionToSDPA(true)
+        .Run(fused);
+    ASSERT_NE(FindSdpa(fused), nullptr) << "fusion did not fire";
+    EXPECT_EQ(CountOps<ov::op::v0::MatMul>(fused), 0u);
+
+    const size_t num_inputs = reference->inputs().size();
+    ASSERT_EQ(num_inputs, fused->inputs().size());
+    ov::TensorVector inputs;
+    for (size_t i = 0; i < num_inputs; ++i) {
+      const auto& port = reference->input(i);
+      ov::Tensor t(port.get_element_type(), port.get_shape());
+      FillRandom(t, static_cast<uint32_t>(i + 30));
+      inputs.push_back(t);
+    }
+
+    auto ref_out = EvaluateModel(reference, inputs);
+    auto fused_out = EvaluateModel(fused, inputs);
+    ASSERT_EQ(ref_out.get_size(), fused_out.get_size());
+    const auto* a = ref_out.data<float>();
+    const auto* b = fused_out.data<float>();
+    float max_abs_diff = 0.0f;
+    for (size_t i = 0; i < ref_out.get_size(); ++i) {
+      max_abs_diff = std::max(max_abs_diff, std::abs(a[i] - b[i]));
+      ASSERT_FALSE(std::isnan(b[i])) << "fused output has NaN at " << i;
+    }
+    EXPECT_LT(max_abs_diff, 1e-4f)
+        << "negative-start fused output diverges from split-cache reference";
+  }
+}
+
+// Negative: a V-branch slice with a non-unit step does not read one forward
+// range beginning at its start (a negative step reads backwards from it), so
+// its start says nothing about branch order and the pass must not fuse.
+TEST(FuseSplitAttentionToSDPATest, DoesNotFuseWhenVBranchSliceHasNegativeStep) {
+  using ov::op::v0::Concat;
+  using ov::op::v0::Constant;
+  using ov::op::v0::MatMul;
+  using ov::op::v0::Parameter;
+  using ov::op::v1::Add;
+  using ov::op::v8::Slice;
+  using ov::op::v8::Softmax;
+
+  const auto f = ov::element::f32;
+  auto q = std::make_shared<Parameter>(f, ov::Shape{1, 8, 1, 256});
+  auto k_cache = std::make_shared<Parameter>(f, ov::Shape{1, 8, 8, 256});
+  auto k_slice = std::make_shared<Parameter>(f, ov::Shape{1, 8, 8, 256});
+  auto v_cache = std::make_shared<Parameter>(f, ov::Shape{1, 8, 256, 8});
+  auto v_slice = std::make_shared<Parameter>(f, ov::Shape{1, 8, 256, 8});
+  auto mask = std::make_shared<Parameter>(f, ov::Shape{1, 1, 1, 16});
+
+  auto qk_cache = std::make_shared<MatMul>(q, k_cache, false, true);
+  auto qk_slice = std::make_shared<MatMul>(q, k_slice, false, true);
+  auto scores =
+      std::make_shared<Concat>(ov::OutputVector{qk_cache, qk_slice}, -1);
+  auto masked = std::make_shared<Add>(scores, mask);
+  auto probs = std::make_shared<Softmax>(masked, -1);
+
+  auto axis = Constant::create(ov::element::i64, ov::Shape{1}, {-1});
+  // Past branch: elements [0, 8) in forward order.
+  auto slice_past = std::make_shared<Slice>(
+      probs, Constant::create(ov::element::i64, ov::Shape{1}, {0}),
+      Constant::create(ov::element::i64, ov::Shape{1}, {8}),
+      Constant::create(ov::element::i64, ov::Shape{1}, {1}), axis);
+  // Current branch: elements 15 down to 8, read backwards (start=15, step=-1).
+  auto slice_cur = std::make_shared<Slice>(
+      probs, Constant::create(ov::element::i64, ov::Shape{1}, {15}),
+      Constant::create(ov::element::i64, ov::Shape{1}, {7}),
+      Constant::create(ov::element::i64, ov::Shape{1}, {-1}), axis);
+
+  auto pv_cache = std::make_shared<MatMul>(slice_past, v_cache, false, true);
+  auto pv_slice = std::make_shared<MatMul>(slice_cur, v_slice, false, true);
+  auto out = std::make_shared<Add>(pv_cache, pv_slice);
+  auto model = std::make_shared<ov::Model>(
+      ov::ResultVector{std::make_shared<ov::op::v0::Result>(out)},
+      ov::ParameterVector{q, k_cache, k_slice, v_cache, v_slice, mask},
+      "negative_step_split_attention");
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetFuseSplitAttentionToSDPA(true)
+      .Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(model), 0u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(model), 4u);
+}
+
+// Negative: a StridedSlice ellipsis mask shifts which input axis each begin[i]
+// refers to. Here begin has rank + 1 entries with an ellipsis at index 0 that
+// covers no axes, so begin[3] is axis 2's offset (0) while the last axis
+// actually starts at begin[4] (8). The pass must not read begin[3] as the
+// last-axis offset, and must not fuse.
+TEST(FuseSplitAttentionToSDPATest,
+     DoesNotFuseWhenVBranchStridedSliceUsesEllipsisMask) {
+  using ov::op::v0::Concat;
+  using ov::op::v0::Constant;
+  using ov::op::v0::MatMul;
+  using ov::op::v0::Parameter;
+  using ov::op::v1::Add;
+  using ov::op::v1::StridedSlice;
+  using ov::op::v8::Slice;
+  using ov::op::v8::Softmax;
+
+  const auto f = ov::element::f32;
+  auto q = std::make_shared<Parameter>(f, ov::Shape{1, 8, 1, 256});
+  auto k_cache = std::make_shared<Parameter>(f, ov::Shape{1, 8, 8, 256});
+  auto k_slice = std::make_shared<Parameter>(f, ov::Shape{1, 8, 8, 256});
+  auto v_cache = std::make_shared<Parameter>(f, ov::Shape{1, 8, 256, 8});
+  auto v_slice = std::make_shared<Parameter>(f, ov::Shape{1, 8, 256, 8});
+  auto mask = std::make_shared<Parameter>(f, ov::Shape{1, 1, 1, 16});
+
+  auto qk_cache = std::make_shared<MatMul>(q, k_cache, false, true);
+  auto qk_slice = std::make_shared<MatMul>(q, k_slice, false, true);
+  auto scores =
+      std::make_shared<Concat>(ov::OutputVector{qk_cache, qk_slice}, -1);
+  auto masked = std::make_shared<Add>(scores, mask);
+  auto probs = std::make_shared<Softmax>(masked, -1);
+
+  auto slice_past = std::make_shared<Slice>(
+      probs, Constant::create(ov::element::i64, ov::Shape{1}, {0}),
+      Constant::create(ov::element::i64, ov::Shape{1}, {8}),
+      Constant::create(ov::element::i64, ov::Shape{1}, {1}),
+      Constant::create(ov::element::i64, ov::Shape{1}, {-1}));
+  auto slice_cur = std::make_shared<StridedSlice>(
+      probs,
+      Constant::create(ov::element::i64, ov::Shape{5},
+                       std::vector<int64_t>{0, 0, 0, 0, 8}),
+      Constant::create(ov::element::i64, ov::Shape{5},
+                       std::vector<int64_t>{0, 0, 0, 0, 16}),
+      Constant::create(ov::element::i64, ov::Shape{5},
+                       std::vector<int64_t>{1, 1, 1, 1, 1}),
+      /*begin_mask=*/std::vector<int64_t>{0, 1, 1, 1, 0},
+      /*end_mask=*/std::vector<int64_t>{0, 1, 1, 1, 0},
+      /*new_axis_mask=*/std::vector<int64_t>{},
+      /*shrink_axis_mask=*/std::vector<int64_t>{},
+      /*ellipsis_mask=*/std::vector<int64_t>{1, 0, 0, 0, 0});
+
+  auto pv_cache = std::make_shared<MatMul>(slice_past, v_cache, false, true);
+  auto pv_slice = std::make_shared<MatMul>(slice_cur, v_slice, false, true);
+  auto out = std::make_shared<Add>(pv_cache, pv_slice);
+  auto model = std::make_shared<ov::Model>(
+      ov::ResultVector{std::make_shared<ov::op::v0::Result>(out)},
+      ov::ParameterVector{q, k_cache, k_slice, v_cache, v_slice, mask},
+      "ellipsis_mask_split_attention");
+  ASSERT_EQ(slice_cur->get_output_partial_shape(0),
+            ov::PartialShape({1, 8, 1, 8}));
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetFuseSplitAttentionToSDPA(true)
+      .Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(model), 0u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(model), 4u);
+}
+
+// Negative: when the V-branch slice offsets do not match the score Concat
+// split point (e.g. K splits 16 into 8 + 8 while V splits 16 into 4 + 12),
+// concatenating K and V would misalign keys and values, so the pass must
+// reject the fusion.
+TEST(FuseSplitAttentionToSDPATest,
+     DoesNotFuseWhenVBranchSliceOffsetsMisalignedWithConcatSplit) {
+  using ov::op::v0::Concat;
+  using ov::op::v0::Constant;
+  using ov::op::v0::MatMul;
+  using ov::op::v0::Parameter;
+  using ov::op::v1::Add;
+  using ov::op::v8::Slice;
+  using ov::op::v8::Softmax;
+
+  const auto f = ov::element::f32;
+  auto q = std::make_shared<Parameter>(f, ov::Shape{1, 8, 1, 256});
+  auto k_cache = std::make_shared<Parameter>(f, ov::Shape{1, 8, 8, 256});
+  auto k_slice = std::make_shared<Parameter>(f, ov::Shape{1, 8, 8, 256});
+  auto v_cache = std::make_shared<Parameter>(f, ov::Shape{1, 8, 256, 4});
+  auto v_slice = std::make_shared<Parameter>(f, ov::Shape{1, 8, 256, 12});
+  auto mask = std::make_shared<Parameter>(f, ov::Shape{1, 1, 1, 16});
+
+  auto qk_cache = std::make_shared<MatMul>(q, k_cache, false, true);
+  auto qk_slice = std::make_shared<MatMul>(q, k_slice, false, true);
+  auto scores =
+      std::make_shared<Concat>(ov::OutputVector{qk_cache, qk_slice}, -1);
+  auto masked = std::make_shared<Add>(scores, mask);
+  auto probs = std::make_shared<Softmax>(masked, -1);
+
+  auto step = Constant::create(ov::element::i64, ov::Shape{1}, {1});
+  auto axis = Constant::create(ov::element::i64, ov::Shape{1}, {-1});
+  auto slice_past = std::make_shared<Slice>(
+      probs, Constant::create(ov::element::i64, ov::Shape{1}, {0}),
+      Constant::create(ov::element::i64, ov::Shape{1}, {4}), step, axis);
+  auto slice_cur = std::make_shared<Slice>(
+      probs, Constant::create(ov::element::i64, ov::Shape{1}, {4}),
+      Constant::create(ov::element::i64, ov::Shape{1}, {16}), step, axis);
+
+  auto pv_cache = std::make_shared<MatMul>(slice_past, v_cache, false, true);
+  auto pv_slice = std::make_shared<MatMul>(slice_cur, v_slice, false, true);
+  auto out = std::make_shared<Add>(pv_cache, pv_slice);
+  auto model = std::make_shared<ov::Model>(
+      ov::ResultVector{std::make_shared<ov::op::v0::Result>(out)},
+      ov::ParameterVector{q, k_cache, k_slice, v_cache, v_slice, mask},
+      "misaligned_split_attention");
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetFuseSplitAttentionToSDPA(true)
+      .Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(model), 0u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(model), 4u);
+}
+
+// When pad_kv_to_alignment is disabled, an unaligned merged KV length
+// (7 + 1 = 8, not a multiple of 16) must be rejected, whereas an already
+// 16-aligned merged KV length (8 + 8 = 16) fuses without inserting Pad ops.
+TEST(FuseSplitAttentionToSDPATest,
+     RespectsSdpaPadKvToAlignmentKnobOnUnalignedAndAlignedShapes) {
+  auto unaligned = BuildSplitCacheAttention(/*s_past=*/7, /*s_cur=*/1);
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetFuseSplitAttentionToSDPA(true)
+      .SetSdpaPadKvToAlignment(false)
+      .Run(unaligned);
+  EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(unaligned), 0u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(unaligned), 4u);
+
+  auto aligned = BuildSplitCacheAttention(/*s_past=*/8, /*s_cur=*/8);
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetFuseSplitAttentionToSDPA(true)
+      .SetSdpaPadKvToAlignment(false)
+      .Run(aligned);
+  EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(aligned), 1u);
+  EXPECT_EQ(CountOps<ov::op::v1::Pad>(aligned), 0u);
+}
+
+// Negative: when the cache score Concat input has a dynamic width, static
+// slice offsets cannot be verified against the split point at compile time, so
+// the pass must reject the fusion rather than risk misaligning K and V.
+TEST(FuseSplitAttentionToSDPATest, DoesNotFuseWhenCacheScoreWidthIsDynamic) {
+  using ov::op::v0::Concat;
+  using ov::op::v0::Constant;
+  using ov::op::v0::MatMul;
+  using ov::op::v0::Parameter;
+  using ov::op::v1::Add;
+  using ov::op::v8::Slice;
+  using ov::op::v8::Softmax;
+
+  const auto f = ov::element::f32;
+  const auto dyn = ov::Dimension::dynamic();
+  auto q = std::make_shared<Parameter>(f, ov::Shape{1, 8, 1, 256});
+  auto k_cache =
+      std::make_shared<Parameter>(f, ov::PartialShape{1, 8, dyn, 256});
+  auto k_slice = std::make_shared<Parameter>(f, ov::Shape{1, 8, 8, 256});
+  auto v_cache =
+      std::make_shared<Parameter>(f, ov::PartialShape{1, 8, 256, dyn});
+  auto v_slice = std::make_shared<Parameter>(f, ov::Shape{1, 8, 256, 8});
+  auto mask = std::make_shared<Parameter>(f, ov::PartialShape{1, 1, 1, dyn});
+
+  auto qk_cache = std::make_shared<MatMul>(q, k_cache, false, true);
+  auto qk_slice = std::make_shared<MatMul>(q, k_slice, false, true);
+  auto scores =
+      std::make_shared<Concat>(ov::OutputVector{qk_cache, qk_slice}, -1);
+  auto masked = std::make_shared<Add>(scores, mask);
+  auto probs = std::make_shared<Softmax>(masked, -1);
+
+  auto step = Constant::create(ov::element::i64, ov::Shape{1}, {1});
+  auto axis = Constant::create(ov::element::i64, ov::Shape{1}, {-1});
+  auto slice_past = std::make_shared<Slice>(
+      probs, Constant::create(ov::element::i64, ov::Shape{1}, {0}),
+      Constant::create(ov::element::i64, ov::Shape{1}, {8}), step, axis);
+  auto slice_cur = std::make_shared<Slice>(
+      probs, Constant::create(ov::element::i64, ov::Shape{1}, {8}),
+      Constant::create(ov::element::i64, ov::Shape{1}, {16}), step, axis);
+
+  auto pv_cache = std::make_shared<MatMul>(slice_past, v_cache, false, true);
+  auto pv_slice = std::make_shared<MatMul>(slice_cur, v_slice, false, true);
+  auto out = std::make_shared<Add>(pv_cache, pv_slice);
+  auto model = std::make_shared<ov::Model>(
+      ov::ResultVector{std::make_shared<ov::op::v0::Result>(out)},
+      ov::ParameterVector{q, k_cache, k_slice, v_cache, v_slice, mask},
+      "dynamic_cache_width_split_attention");
+
+  NpuOptimizer()
+      .SetCastIntegerSignToFloat(false)
+      .SetFuseSplitAttentionToSDPA(true)
+      .Run(model);
+
+  EXPECT_EQ(CountOps<ov::op::v13::ScaledDotProductAttention>(model), 0u);
+  EXPECT_EQ(CountOps<ov::op::v0::MatMul>(model), 4u);
 }
 
 // Fixed per-expert weight shapes used by BuildDenseMoeGraph: a fused gate+up
@@ -775,7 +1219,6 @@ TEST(SplitSharedConstantsTest, LeavesSingleConsumerConstantAlone) {
 
   EXPECT_EQ(CountOps<ov::op::v0::Constant>(model), 1u);
 }
-
 
 // Builds the "GQA ratio folded into the sequence axis" attention the LiteRT
 // generative export emits for a |hkv|-KV-head / |hkv * r|-query-head layer:
