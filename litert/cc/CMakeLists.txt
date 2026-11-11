@@ -116,29 +116,24 @@ set(LITERT_CC_HEADERS
 )
 
 # Core C++ API library
-# TODO (b/507233667): Convert this to an INTERFACE library.
-add_library(litert_cc_api STATIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/../c/empty.cc
-)
+add_library(litert_cc_api INTERFACE)
 
 target_include_directories(litert_cc_api
-    PUBLIC
+    INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 
 target_link_libraries(litert_cc_api
-    PUBLIC
+    INTERFACE
         absl::status
         absl::statusor
         absl::span
         absl::strings
         absl::log
         absl::die_if_null
-    PRIVATE
         litert_c_api
         litert_c_options
 )
