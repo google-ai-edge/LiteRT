@@ -155,7 +155,7 @@ class FusedFlashDecodeSdpaOp : public ::ml_drift::GPUOperation {
 
   ::ml_drift::int3 GetGridSize() const override {
     if (work_group_size_.z > 1) {
-      return ::ml_drift::int3(src_[0]->Width(),
+      return ::ml_drift::int3(src_[0]->Width() * splits_,
                               head_groups_ * work_group_size_.y,
                               work_group_size_.z);
     }
@@ -288,18 +288,20 @@ std::string GenerateImplicitCausalBoundCode(bool has_param,
 // Generates the wave-SIMD (32-lane) reduction Flash-Decode kernel source.
 //
 // Execution model:
-// - `num_simd_groups` waves per work group (32 lanes per wave, e.g. 16 waves =
-//   512 work items). Launch shape: (1, 32, num_simd_groups).
-// - Grid: X = sequence index (1), Y = query head index.
+// - `num_simd_groups` waves per work group (32 lanes per wave, e.g. 8 or 16
+//   waves = 256 or 512 work items). Launch shape: (1, 32, num_simd_groups).
+// - Grid: X = sequence index * splits, Y = query head group * 32, Z = waves.
+// - Each work group processes `heads` GQA sibling query heads that share one
+//   K/V head so every K and V cache read is reused across all `heads` queries,
+//   and one `split` of the K/V sequence so models with few K/V heads occupy all
+//   GPU compute units.
 // - Within each wave, the 32 lanes compute channel-parallel dot products
 //   across `slices_per_lane = ceil(slices / 32)` slices per lane (supporting
 //   head_dim up to 512) reduced in FP32 via `ucl::WaveSum`.
-// - Across the waves, the KV cache sequence length is partitioned into
-//   chunks of 16 keys (4 vector loads of 4 keys). Each wave maintains an FP32
-//   local online softmax (m_prev = running max, l_prev = running exp sum,
-//   out_acc_r = FP32 accumulators).
 // - Cross-wave reduction: wave 0 reduces s_m, s_l, and 32-slice tiles of s_acc
-//   in fixed 8 KB local memory using `ucl::WaveMax` and `ucl::WaveSum`.
+//   in local memory using `ucl::WaveMax` and `ucl::WaveSum`. With `splits > 1`,
+//   each split writes its unnormalized output and `(m, l)` pair to `part`, and
+//   `FusedFlashDecodeCombineOp` merges the splits.
 //
 // Masked keys and keys past `active_tokens` get the score -1e30 (a boolean
 // mask) or the additive mask value; any score below -9000 contributes a
@@ -312,6 +314,17 @@ std::string GenerateImplicitCausalBoundCode(bool has_param,
 // changes an FP16 sum above 2048), and head dims 256 and 512 sum 2-4x as many
 // products per logit as head dim 128.
 //
+// Unrolling: `heads`, `slices_per_lane` and `unroll_chunks` are compile-time
+// constants, and the generated code unrolls every loop over them.
+// `GetFlashDecodeConfig` keeps them small: `slices_per_lane` (head_dim / 128,
+// rounded up) is 1 to 4, `heads * slices_per_lane` is at most 4, and
+// `unroll_chunks` is 4 for one head and 2 for grouped heads. A lane thus holds
+// at most 4 float4 query and 4 float4 accumulator registers, and the main loop
+// unrolls at most 16 four-key dot products and value updates per lane (one
+// head with 4 slices per lane), or 8 with grouped heads. Each attention shape
+// compiles one kernel variant at model init, plus the combine kernel when
+// `splits > 1`.
+//
 // The kernel is declared with
 // `[[max_total_threads_per_threadgroup(32 * num_simd_groups)]]`. Without it,
 // the Metal compiler may size the pipeline's register allocation so that
@@ -319,34 +332,60 @@ std::string GenerateImplicitCausalBoundCode(bool has_param,
 // paravirtualized Apple GPUs: 384 for 512 work items with FP32
 // accumulators), and the dispatch then silently writes nothing.
 std::string GenerateWaveSimdFlashDecodeCode(
-    int num_simd_groups, int slices, int gqa_ratio, int k_stride_head,
-    int k_stride_slice, int v_stride_head, int v_stride_s, bool has_mask,
-    bool is_bool_mask, int mask_width, bool has_param, bool is_causal,
-    bool is_single_query, bool has_softcap, bool is_flattened_dst) {
+    int num_simd_groups, int heads, int splits, int slices, int gqa_ratio,
+    int k_stride_head, int k_stride_slice, int v_stride_head, int v_stride_s,
+    bool has_mask, bool is_bool_mask, int mask_width, bool has_param,
+    bool is_causal, bool is_single_query, bool has_softcap,
+    bool is_flattened_dst) {
   const int slices_per_lane = (slices + 31) / 32;
   const bool exact_32 = (slices % 32 == 0);
-  const int v_stride_4s = v_stride_s * 4;
+  const int unroll_chunks = (heads == 1) ? 4 : 2;
+  const int v_stride_unroll = v_stride_s * unroll_chunks;
   const std::string mask_row = mask_width == 1 ? "0" : "X";
+  auto head_expr = [heads](int h) -> std::string {
+    if (heads == 1) return "head_group";
+    if (h == 0) return "head0";
+    return absl::StrCat("head0 + ", h);
+  };
+
   std::string op_code = R"(
 #pragma OPENCL EXTENSION ucl_wave_simd: enable
 [[max_total_threads_per_threadgroup($WG_THREADS)]]
 MAIN_FUNCTION($0) {
-  int X = ucl::GetGlobalId<0>();
-  int Y = ucl::GetGroupId<1>();
-  int simd_id = ucl::GetLocalId<2>();
+)";
+  if (splits > 1) {
+    absl::StrAppend(&op_code,
+                    "  int X_split = ucl::GetGlobalId<0>();\n"
+                    "  int X = X_split / ",
+                    splits,
+                    ";\n"
+                    "  int split = X_split % ",
+                    splits, ";\n");
+  } else {
+    op_code += "  int X = ucl::GetGlobalId<0>();\n";
+  }
+  op_code += "  int head_group = ucl::GetGroupId<1>();\n";
+  if (heads > 1) {
+    absl::StrAppend(&op_code, "  int head0 = head_group * ", heads, ";\n");
+  }
+  absl::StrAppend(&op_code, R"(  int simd_id = ucl::GetLocalId<2>();
   int tid = ucl::GetLocalId<1>();
 
-  __local float s_m[$NSG];
-  __local float s_l[$NSG];
-  __local float s_w[$NSG];
-  __local float4 s_acc[32][$NSG];
+  __local float s_m[)",
+                  heads, R"(][$NSG];
+  __local float s_l[)",
+                  heads, R"(][$NSG];
+  __local float s_w[)",
+                  heads, R"(][$NSG];
+  __local float4 s_acc[)",
+                  heads, R"(][32][$NSG];
 
   // Every wave writes its own `s_m` / `s_l` slot before the first barrier, so
   // the slots need no initialization. Initializing them from wave 0 without a
   // barrier would race with those writes and could drop the keys of a wave
   // that finishes before wave 0 starts.
   int active_tokens = args.cache_size;
-)";
+)");
 
   if (has_param) {
     op_code += R"(
@@ -365,20 +404,47 @@ MAIN_FUNCTION($0) {
     op_code += GenerateImplicitCausalBoundCode(has_param, is_single_query);
   }
 
-  absl::StrAppend(&op_code, R"(
-  int total_chunks = (active_tokens + 3) / 4;
+  op_code += "\n  int total_chunks = (active_tokens + 3) / 4;\n";
+  if (splits > 1) {
+    absl::StrAppend(
+        &op_code, "  int chunks_per_split = (total_chunks + ", splits - 1,
+        ") / ", splits,
+        ";\n"
+        "  int split_chunk_start = min(total_chunks, split * "
+        "chunks_per_split);\n"
+        "  int split_chunk_end = min(total_chunks, split_chunk_start + "
+        "chunks_per_split);\n"
+        "  int split_key_end = min(active_tokens, split_chunk_end * 4);\n"
+        "  int split_chunks = split_chunk_end - split_chunk_start;\n"
+        "  int chunks_per_simd = (split_chunks + $NSG - 1) / $NSG;\n"
+        "  int chunk_start = split_chunk_start + min(split_chunks, simd_id * "
+        "chunks_per_simd);\n"
+        "  int chunk_end = min(split_chunk_end, chunk_start + "
+        "chunks_per_simd);\n");
+  } else {
+    op_code += R"(  int split_key_end = active_tokens;
   int chunks_per_simd = (total_chunks + $NSG - 1) / $NSG;
-  int chunk_start = simd_id * chunks_per_simd;
+  int chunk_start = min(total_chunks, simd_id * chunks_per_simd);
   int chunk_end = min(total_chunks, chunk_start + chunks_per_simd);
-  int safe_chunk_end = max(chunk_start, min(chunk_end, (active_tokens / 16) * 4));
-
-  int kv_head = )",
-                  (gqa_ratio > 1 ? absl::StrCat("Y / ", gqa_ratio) : "Y"), R"(;
-  int chunk = chunk_start;
-  int k_idx = kv_head * )",
+)";
+  }
+  const std::string kv_head_expr =
+      (gqa_ratio % heads == 0)
+          ? (gqa_ratio > heads
+                 ? absl::StrCat("head_group / ", gqa_ratio / heads)
+                 : "head_group")
+          : absl::StrCat("(", head_expr(0), ") / ", gqa_ratio);
+  absl::StrAppend(&op_code,
+                  "  int safe_chunk_end = max(chunk_start, min(chunk_end, "
+                  "split_key_end / 4));\n\n"
+                  "  int kv_head = ",
+                  kv_head_expr,
+                  ";\n"
+                  "  int chunk = chunk_start;\n"
+                  "  int k_idx = kv_head * ",
                   k_stride_head, " + tid * ", k_stride_slice,
-                  R"( + chunk * 4;
-  int v_idx = kv_head * )",
+                  " + chunk * 4;\n"
+                  "  int v_idx = kv_head * ",
                   v_stride_head, " + tid * 4 + chunk * ", v_stride_s, ";\n");
 
   if (!exact_32) {
@@ -391,28 +457,33 @@ MAIN_FUNCTION($0) {
         v_stride_head, " + s_last * 4 + chunk * ", v_stride_s, ";\n");
   }
 
-  for (int r = 0; r < slices_per_lane; ++r) {
-    if (exact_32 || r + 1 < slices_per_lane) {
-      const std::string s_expr =
-          r == 0 ? "tid" : absl::StrCat("tid + ", r * 32);
-      absl::StrAppend(&op_code, "  float4 q", r,
-                      " = ucl::Convert<float4>(args.q.Read(X, Y, ", s_expr,
-                      "));\n");
-    } else {
-      absl::StrAppend(
-          &op_code, "  float4 q", r,
-          " = (s_last_raw < args.slices) ? ucl::Convert<float4>(args.q.Read(X, "
-          "Y, s_last)) : float4(0.0f);\n");
+  for (int h = 0; h < heads; ++h) {
+    const std::string h_str = head_expr(h);
+    for (int r = 0; r < slices_per_lane; ++r) {
+      if (exact_32 || r + 1 < slices_per_lane) {
+        const std::string s_expr =
+            r == 0 ? "tid" : absl::StrCat("tid + ", r * 32);
+        absl::StrAppend(&op_code, "  float4 q_", h, "_", r,
+                        " = ucl::Convert<float4>(args.q.Read(X, ", h_str, ", ",
+                        s_expr, "));\n");
+      } else {
+        absl::StrAppend(&op_code, "  float4 q_", h, "_", r,
+                        " = (s_last_raw < args.slices) ? "
+                        "ucl::Convert<float4>(args.q.Read(X, ",
+                        h_str, ", s_last)) : float4(0.0f);\n");
+      }
+      absl::StrAppend(&op_code, "  float4 out_acc_", h, "_", r,
+                      " = float4(0.0f);\n");
     }
-    absl::StrAppend(&op_code, "  float4 out_acc", r, " = float4(0.0f);\n");
+    absl::StrAppend(&op_code, "  float m_prev_", h,
+                    " = -1.0e30f;\n  float l_prev_", h, " = 0.0f;\n");
   }
 
-  op_code += R"(  float m_prev = -1.0e30f;
-  float l_prev = 0.0f;
-  const float inv_ln2 = 1.4426950408889634f;
-
-  for (; chunk + 3 < safe_chunk_end; chunk += 4) {
-)";
+  absl::StrAppend(&op_code,
+                  "  const float inv_ln2 = 1.4426950408889634f;\n\n"
+                  "  for (; chunk + ",
+                  unroll_chunks - 1,
+                  " < safe_chunk_end; chunk += ", unroll_chunks, ") {\n");
 
   auto k_addr_expr = [&](int r, int key_offset) -> std::string {
     if (exact_32 || r + 1 < slices_per_lane) {
@@ -429,8 +500,11 @@ MAIN_FUNCTION($0) {
     return absl::StrCat("v_idx_last + ", block_idx * v_stride_s + key_in_block);
   };
 
-  for (int m = 0; m < 4; ++m) {
-    absl::StrAppend(&op_code, "    float4 d", m, ";\n    {\n");
+  for (int m = 0; m < unroll_chunks; ++m) {
+    for (int h = 0; h < heads; ++h) {
+      absl::StrAppend(&op_code, "    float4 d_", h, "_", m, ";\n");
+    }
+    op_code += "    {\n";
     for (int r = 0; r < slices_per_lane; ++r) {
       const int k_off = m * 4;
       absl::StrAppend(
@@ -443,82 +517,96 @@ MAIN_FUNCTION($0) {
           k_addr_expr(r, k_off + 2), "));\n",
           "        float4 k3 = ucl::Convert<float4>(args.k.Read(",
           k_addr_expr(r, k_off + 3), "));\n");
-      if (r == 0) {
-        absl::StrAppend(&op_code, "        d", m,
-                        " = float4(dot(q0, k0), dot(q0, k1), dot(q0, k2), "
-                        "dot(q0, k3));\n      }\n");
-      } else {
-        absl::StrAppend(&op_code, "        d", m, " += float4(dot(q", r,
-                        ", k0), dot(q", r, ", k1), dot(q", r, ", k2), dot(q", r,
-                        ", k3));\n      }\n");
+      for (int h = 0; h < heads; ++h) {
+        if (r == 0) {
+          absl::StrAppend(&op_code, "        d_", h, "_", m, " = float4(dot(q_",
+                          h, "_0, k0), dot(q_", h, "_0, k1), dot(q_", h,
+                          "_0, k2), dot(q_", h, "_0, k3));\n");
+        } else {
+          absl::StrAppend(&op_code, "        d_", h, "_", m,
+                          " += float4(dot(q_", h, "_", r, ", k0), dot(q_", h,
+                          "_", r, ", k1), dot(q_", h, "_", r, ", k2), dot(q_",
+                          h, "_", r, ", k3));\n");
+        }
       }
+      op_code += "      }\n";
     }
-    absl::StrAppend(&op_code, "      d", m, " = ucl::WaveSum(d", m,
-                    ");\n    }\n");
+    for (int h = 0; h < heads; ++h) {
+      absl::StrAppend(&op_code, "      d_", h, "_", m, " = ucl::WaveSum(d_", h,
+                      "_", m, ");\n");
+    }
+    op_code += "    }\n";
   }
 
   if (has_softcap) {
-    op_code += R"(
-    d0 = args.softcap * tanh(d0 / args.softcap);
-    d1 = args.softcap * tanh(d1 / args.softcap);
-    d2 = args.softcap * tanh(d2 / args.softcap);
-    d3 = args.softcap * tanh(d3 / args.softcap);
-)";
-  }
-
-  if (has_mask) {
-    op_code += R"(
-    float4 m_vec0 = ucl::Convert<float4>(args.mask.Read($MROW, 0, chunk + 0));
-    float4 m_vec1 = ucl::Convert<float4>(args.mask.Read($MROW, 0, chunk + 1));
-    float4 m_vec2 = ucl::Convert<float4>(args.mask.Read($MROW, 0, chunk + 2));
-    float4 m_vec3 = ucl::Convert<float4>(args.mask.Read($MROW, 0, chunk + 3));
-)";
-    if (is_bool_mask) {
-      op_code += R"(
-    d0 = select(d0, float4(-1.0e30f), m_vec0 < 0.5f);
-    d1 = select(d1, float4(-1.0e30f), m_vec1 < 0.5f);
-    d2 = select(d2, float4(-1.0e30f), m_vec2 < 0.5f);
-    d3 = select(d3, float4(-1.0e30f), m_vec3 < 0.5f);
-)";
-    } else {
-      op_code += R"(
-    d0 += m_vec0;
-    d1 += m_vec1;
-    d2 += m_vec2;
-    d3 += m_vec3;
-)";
+    for (int m = 0; m < unroll_chunks; ++m) {
+      for (int h = 0; h < heads; ++h) {
+        absl::StrAppend(&op_code, "    d_", h, "_", m,
+                        " = args.softcap * tanh(d_", h, "_", m,
+                        " / args.softcap);\n");
+      }
     }
   }
 
-  op_code += R"(
-    float4 m_c01 = max(max(d0, d1), max(d2, d3));
-    float m_chunk = max(max(m_c01.x, m_c01.y), max(m_c01.z, m_c01.w));
-    float m_new = max(m_prev, m_chunk);
-    float alpha = exp2((m_prev - m_new) * inv_ln2);
-
-    float4 p0 = exp2((d0 - m_new) * inv_ln2);
-    float4 p1 = exp2((d1 - m_new) * inv_ln2);
-    float4 p2 = exp2((d2 - m_new) * inv_ln2);
-    float4 p3 = exp2((d3 - m_new) * inv_ln2);
-)";
   if (has_mask) {
-    op_code += R"(
-    p0 = select(p0, float4(0.0f), d0 < float4(-9000.0f));
-    p1 = select(p1, float4(0.0f), d1 < float4(-9000.0f));
-    p2 = select(p2, float4(0.0f), d2 < float4(-9000.0f));
-    p3 = select(p3, float4(0.0f), d3 < float4(-9000.0f));
-)";
+    for (int m = 0; m < unroll_chunks; ++m) {
+      absl::StrAppend(
+          &op_code, "    float4 m_vec", m,
+          " = ucl::Convert<float4>(args.mask.Read($MROW, 0, chunk + ", m,
+          "));\n");
+      for (int h = 0; h < heads; ++h) {
+        if (is_bool_mask) {
+          absl::StrAppend(&op_code, "    d_", h, "_", m, " = select(d_", h, "_",
+                          m, ", float4(-1.0e30f), m_vec", m, " < 0.5f);\n");
+        } else {
+          absl::StrAppend(&op_code, "    d_", h, "_", m, " += m_vec", m, ";\n");
+        }
+      }
+    }
   }
-  op_code += R"(
-    float4 p_sum01 = (p0 + p1) + (p2 + p3);
-    float p_sum = (p_sum01.x + p_sum01.y) + (p_sum01.z + p_sum01.w);
-    l_prev = fma(l_prev, alpha, p_sum);
-    m_prev = m_new;
-)";
+
+  for (int h = 0; h < heads; ++h) {
+    if (unroll_chunks == 4) {
+      absl::StrAppend(&op_code, "    float4 m_c_", h, " = max(max(d_", h,
+                      "_0, d_", h, "_1), max(d_", h, "_2, d_", h, "_3));\n");
+    } else {
+      absl::StrAppend(&op_code, "    float4 m_c_", h, " = max(d_", h, "_0, d_",
+                      h, "_1);\n");
+    }
+    absl::StrAppend(&op_code, "    float m_chunk_", h, " = max(max(m_c_", h,
+                    ".x, m_c_", h, ".y), max(m_c_", h, ".z, m_c_", h,
+                    ".w));\n    float m_new_", h, " = max(m_prev_", h,
+                    ", m_chunk_", h, ");\n    float alpha_", h,
+                    " = exp2((m_prev_", h, " - m_new_", h, ") * inv_ln2);\n");
+    for (int m = 0; m < unroll_chunks; ++m) {
+      absl::StrAppend(&op_code, "    float4 p_", h, "_", m, " = exp2((d_", h,
+                      "_", m, " - m_new_", h, ") * inv_ln2);\n");
+      if (has_mask) {
+        absl::StrAppend(&op_code, "    p_", h, "_", m, " = select(p_", h, "_",
+                        m, ", float4(0.0f), d_", h, "_", m,
+                        " < float4(-9000.0f));\n");
+      }
+    }
+    if (unroll_chunks == 4) {
+      absl::StrAppend(&op_code, "    float4 p_sum_v_", h, " = (p_", h,
+                      "_0 + p_", h, "_1) + (p_", h, "_2 + p_", h, "_3);\n");
+    } else {
+      absl::StrAppend(&op_code, "    float4 p_sum_v_", h, " = p_", h, "_0 + p_",
+                      h, "_1;\n");
+    }
+    absl::StrAppend(&op_code, "    float p_sum_", h, " = (p_sum_v_", h,
+                    ".x + p_sum_v_", h, ".y) + (p_sum_v_", h, ".z + p_sum_v_",
+                    h, ".w);\n    l_prev_", h, " = fma(l_prev_", h, ", alpha_",
+                    h, ", p_sum_", h, ");\n    m_prev_", h, " = m_new_", h,
+                    ";\n");
+    for (int r = 0; r < slices_per_lane; ++r) {
+      absl::StrAppend(&op_code, "    out_acc_", h, "_", r, " *= alpha_", h,
+                      ";\n");
+    }
+  }
 
   for (int r = 0; r < slices_per_lane; ++r) {
-    absl::StrAppend(&op_code, "    out_acc", r, " *= alpha;\n");
-    for (int m = 0; m < 4; ++m) {
+    for (int m = 0; m < unroll_chunks; ++m) {
       absl::StrAppend(
           &op_code,
           "    {\n      float4 v0 = ucl::Convert<float4>(args.v.Read(",
@@ -528,29 +616,34 @@ MAIN_FUNCTION($0) {
           "      float4 v2 = ucl::Convert<float4>(args.v.Read(",
           v_addr_expr(r, m, 2), "));\n",
           "      float4 v3 = ucl::Convert<float4>(args.v.Read(",
-          v_addr_expr(r, m, 3), "));\n", "      out_acc", r, " = fma(p", m,
-          ".x, v0, fma(p", m, ".y, v1, fma(p", m, ".z, v2, fma(p", m,
-          ".w, v3, out_acc", r, "))));\n    }\n");
+          v_addr_expr(r, m, 3), "));\n");
+      for (int h = 0; h < heads; ++h) {
+        absl::StrAppend(&op_code, "      out_acc_", h, "_", r, " = fma(p_", h,
+                        "_", m, ".x, v0, fma(p_", h, "_", m, ".y, v1, fma(p_",
+                        h, "_", m, ".z, v2, fma(p_", h, "_", m,
+                        ".w, v3, out_acc_", h, "_", r, "))));\n");
+      }
+      op_code += "    }\n";
     }
   }
 
-  absl::StrAppend(&op_code, "    k_idx += 16;\n    v_idx += ", v_stride_4s,
-                  ";\n");
+  absl::StrAppend(&op_code, "    k_idx += ", 4 * unroll_chunks,
+                  ";\n    v_idx += ", v_stride_unroll, ";\n");
   if (!exact_32) {
-    absl::StrAppend(&op_code,
-                    "    k_idx_last += 16;\n    v_idx_last += ", v_stride_4s,
-                    ";\n");
+    absl::StrAppend(&op_code, "    k_idx_last += ", 4 * unroll_chunks,
+                    ";\n    v_idx_last += ", v_stride_unroll, ";\n");
   }
   op_code += R"(  }
 
   for (; chunk < chunk_end; ++chunk) {
-    bool v_k1 = (chunk * 4 + 1) < active_tokens;
-    bool v_k2 = (chunk * 4 + 2) < active_tokens;
-    bool v_k3 = (chunk * 4 + 3) < active_tokens;
-    float4 d;
-    {
+    bool v_k1 = (chunk * 4 + 1) < split_key_end;
+    bool v_k2 = (chunk * 4 + 2) < split_key_end;
+    bool v_k3 = (chunk * 4 + 3) < split_key_end;
 )";
-
+  for (int h = 0; h < heads; ++h) {
+    absl::StrAppend(&op_code, "    float4 d_", h, ";\n");
+  }
+  op_code += "    {\n";
   for (int r = 0; r < slices_per_lane; ++r) {
     absl::StrAppend(
         &op_code,
@@ -562,56 +655,97 @@ MAIN_FUNCTION($0) {
         k_addr_expr(r, 2), ")) : float4(0.0f);\n",
         "        float4 k3 = v_k3 ? ucl::Convert<float4>(args.k.Read(",
         k_addr_expr(r, 3), ")) : float4(0.0f);\n");
-    if (r == 0) {
-      op_code +=
-          "        d = float4(dot(q0, k0), dot(q0, k1), dot(q0, k2), dot(q0, "
-          "k3));\n      }\n";
-    } else {
-      absl::StrAppend(&op_code, "        d += float4(dot(q", r, ", k0), dot(q",
-                      r, ", k1), dot(q", r, ", k2), dot(q", r,
-                      ", k3));\n      }\n");
+    for (int h = 0; h < heads; ++h) {
+      if (r == 0) {
+        absl::StrAppend(&op_code, "        d_", h, " = float4(dot(q_", h,
+                        "_0, k0), dot(q_", h, "_0, k1), dot(q_", h,
+                        "_0, k2), dot(q_", h, "_0, k3));\n");
+      } else {
+        absl::StrAppend(&op_code, "        d_", h, " += float4(dot(q_", h, "_",
+                        r, ", k0), dot(q_", h, "_", r, ", k1), dot(q_", h, "_",
+                        r, ", k2), dot(q_", h, "_", r, ", k3));\n");
+      }
     }
+    op_code += "      }\n";
   }
-  op_code += "      d = ucl::WaveSum(d);\n    }\n";
+  for (int h = 0; h < heads; ++h) {
+    absl::StrAppend(&op_code, "      d_", h, " = ucl::WaveSum(d_", h, ");\n");
+  }
+  op_code += "    }\n";
 
   if (has_softcap) {
-    op_code += "    d = args.softcap * tanh(d / args.softcap);\n";
+    for (int h = 0; h < heads; ++h) {
+      absl::StrAppend(&op_code, "    d_", h, " = args.softcap * tanh(d_", h,
+                      " / args.softcap);\n");
+    }
   }
 
   if (has_mask) {
-    op_code += R"(
-    float4 m_vec = ucl::Convert<float4>(args.mask.Read($MROW, 0, chunk));
-    if (args.is_bool_mask) {
-      if (m_vec.x < 0.5f || (chunk * 4 + 0) >= active_tokens) d.x = -1.0e30f;
-      if (m_vec.y < 0.5f || (chunk * 4 + 1) >= active_tokens) d.y = -1.0e30f;
-      if (m_vec.z < 0.5f || (chunk * 4 + 2) >= active_tokens) d.z = -1.0e30f;
-      if (m_vec.w < 0.5f || (chunk * 4 + 3) >= active_tokens) d.w = -1.0e30f;
-    } else {
-      d += m_vec;
-      if ((chunk * 4 + 0) >= active_tokens) d.x = -1.0e30f;
-      if ((chunk * 4 + 1) >= active_tokens) d.y = -1.0e30f;
-      if ((chunk * 4 + 2) >= active_tokens) d.z = -1.0e30f;
-      if ((chunk * 4 + 3) >= active_tokens) d.w = -1.0e30f;
+    op_code +=
+        "    float4 m_vec = ucl::Convert<float4>(args.mask.Read($MROW, 0, "
+        "chunk));\n";
+    for (int h = 0; h < heads; ++h) {
+      absl::StrAppend(
+          &op_code,
+          "    if (args.is_bool_mask) {\n"
+          "      if (m_vec.x < 0.5f || (chunk * 4 + 0) >= split_key_end) d_",
+          h,
+          ".x = -1.0e30f;\n"
+          "      if (m_vec.y < 0.5f || !v_k1) d_",
+          h,
+          ".y = -1.0e30f;\n"
+          "      if (m_vec.z < 0.5f || !v_k2) d_",
+          h,
+          ".z = -1.0e30f;\n"
+          "      if (m_vec.w < 0.5f || !v_k3) d_",
+          h,
+          ".w = -1.0e30f;\n"
+          "    } else {\n"
+          "      d_",
+          h,
+          " += m_vec;\n"
+          "      if ((chunk * 4 + 0) >= split_key_end) d_",
+          h,
+          ".x = -1.0e30f;\n"
+          "      if (!v_k1) d_",
+          h,
+          ".y = -1.0e30f;\n"
+          "      if (!v_k2) d_",
+          h,
+          ".z = -1.0e30f;\n"
+          "      if (!v_k3) d_",
+          h,
+          ".w = -1.0e30f;\n"
+          "    }\n");
     }
-)";
   } else {
-    op_code += R"(
-    if ((chunk * 4 + 0) >= active_tokens) d.x = -1.0e30f;
-    if ((chunk * 4 + 1) >= active_tokens) d.y = -1.0e30f;
-    if ((chunk * 4 + 2) >= active_tokens) d.z = -1.0e30f;
-    if ((chunk * 4 + 3) >= active_tokens) d.w = -1.0e30f;
-)";
+    for (int h = 0; h < heads; ++h) {
+      absl::StrAppend(&op_code, "    if ((chunk * 4 + 0) >= split_key_end) d_",
+                      h,
+                      ".x = -1.0e30f;\n"
+                      "    if (!v_k1) d_",
+                      h,
+                      ".y = -1.0e30f;\n"
+                      "    if (!v_k2) d_",
+                      h,
+                      ".z = -1.0e30f;\n"
+                      "    if (!v_k3) d_",
+                      h, ".w = -1.0e30f;\n");
+    }
   }
 
-  absl::StrAppend(&op_code, R"(
-    float m_new = max(m_prev, max(max(d.x, d.y), max(d.z, d.w)));
-    float alpha = exp2((m_prev - m_new) * inv_ln2);
-    float4 p = exp2((d - m_new) * inv_ln2);
-    p = select(p, float4(0.0f), d < float4()",
-                  (has_mask ? "-9000.0f" : "-1.0e20f"), R"());
-    l_prev = fma(l_prev, alpha, (p.x + p.y) + (p.z + p.w));
-    m_prev = m_new;
-)");
+  for (int h = 0; h < heads; ++h) {
+    absl::StrAppend(&op_code, "    float m_new_", h, " = max(m_prev_", h,
+                    ", max(max(d_", h, ".x, d_", h, ".y), max(d_", h, ".z, d_",
+                    h, ".w)));\n    float alpha_", h, " = exp2((m_prev_", h,
+                    " - m_new_", h, ") * inv_ln2);\n    float4 p_", h,
+                    " = exp2((d_", h, " - m_new_", h, ") * inv_ln2);\n    p_",
+                    h, " = select(p_", h, ", float4(0.0f), d_", h, " < float4(",
+                    (has_mask ? "-9000.0f" : "-1.0e20f"), "));\n    l_prev_", h,
+                    " = fma(l_prev_", h, ", alpha_", h, ", (p_", h, ".x + p_",
+                    h, ".y) + (p_", h, ".z + p_", h, ".w));\n    m_prev_", h,
+                    " = m_new_", h, ";\n");
+  }
 
   for (int r = 0; r < slices_per_lane; ++r) {
     absl::StrAppend(
@@ -622,10 +756,14 @@ MAIN_FUNCTION($0) {
         "      float4 v2 = v_k2 ? ucl::Convert<float4>(args.v.Read(",
         v_addr_expr(r, 0, 2), ")) : float4(0.0f);\n",
         "      float4 v3 = v_k3 ? ucl::Convert<float4>(args.v.Read(",
-        v_addr_expr(r, 0, 3), ")) : float4(0.0f);\n", "      out_acc", r,
-        " = fma(out_acc", r,
-        ", alpha, fma(p.x, v0, fma(p.y, v1, fma(p.z, v2, p.w * v3))));\n    "
-        "}\n");
+        v_addr_expr(r, 0, 3), ")) : float4(0.0f);\n");
+    for (int h = 0; h < heads; ++h) {
+      absl::StrAppend(&op_code, "      out_acc_", h, "_", r, " = fma(out_acc_",
+                      h, "_", r, ", alpha_", h, ", fma(p_", h, ".x, v0, fma(p_",
+                      h, ".y, v1, fma(p_", h, ".z, v2, p_", h,
+                      ".w * v3))));\n");
+    }
+    op_code += "    }\n";
   }
 
   absl::StrAppend(&op_code, "    k_idx += 4;\n    v_idx += ", v_stride_s,
@@ -635,83 +773,109 @@ MAIN_FUNCTION($0) {
                     "    k_idx_last += 4;\n    v_idx_last += ", v_stride_s,
                     ";\n");
   }
-  op_code += R"(  }
-
-  if (tid == 0) {
-    s_m[simd_id] = m_prev;
-    s_l[simd_id] = l_prev;
+  op_code += "\n  }\n\n  if (tid == 0) {\n";
+  for (int h = 0; h < heads; ++h) {
+    absl::StrAppend(&op_code, "    s_m[", h, "][simd_id] = m_prev_", h,
+                    ";\n    s_l[", h, "][simd_id] = l_prev_", h, ";\n");
   }
-  s_acc[tid][simd_id] = out_acc0;
+  op_code += "  }\n";
+  for (int h = 0; h < heads; ++h) {
+    absl::StrAppend(&op_code, "  s_acc[", h, "][tid][simd_id] = out_acc_", h,
+                    "_0;\n");
+  }
+  op_code += "\n  ucl::SyncThreads<WorkGroup, Local>();\n\n";
 
-  ucl::SyncThreads<WorkGroup, Local>();
-
-  if (simd_id == 0) {
-    bool valid_w = (tid < $NSG) && (s_l[tid] > 0.0f);
-    float m_val = valid_w ? s_m[tid] : -1.0e30f;
-    float global_m = ucl::WaveMax(m_val);
-
-    float sc = valid_w ? exp2((s_m[tid] - global_m) * 1.4426950408889634f) : 0.0f;
-    float l_term = valid_w ? (sc * s_l[tid]) : 0.0f;
-    float l_total = ucl::WaveSum(l_term);
-    float inv_l = (l_total > 0.0f) ? (1.0f / l_total) : 0.0f;
-
-    if (tid < $NSG) {
-      s_w[tid] = sc * inv_l;
+  for (int h = 0; h < heads; ++h) {
+    const int owner_wave = h % num_simd_groups;
+    absl::StrAppend(
+        &op_code, "  if (simd_id == ", owner_wave,
+        ") {\n    bool valid_w = (tid < $NSG) && (s_l[", h,
+        "][tid] > 0.0f);\n    float m_val = valid_w ? s_m[", h,
+        "][tid] : -1.0e30f;\n    float global_m = ucl::WaveMax(m_val);\n"
+        "    float sc = valid_w ? exp2((s_m[",
+        h,
+        "][tid] - global_m) * 1.4426950408889634f) : 0.0f;\n"
+        "    float l_term = valid_w ? (sc * s_l[",
+        h, "][tid]) : 0.0f;\n    float l_total = ucl::WaveSum(l_term);\n");
+    if (splits > 1) {
+      absl::StrAppend(
+          &op_code, "    if (tid < $NSG) {\n      s_w[", h,
+          "][tid] = sc;\n    }\n    if (tid == 0) {\n"
+          "      args.dst::type part_ml = ucl::Convert<args.dst::type>("
+          "float4(global_m, l_total, 0.0f, 0.0f));\n"
+          "      args.dst.Write(part_ml, X_split, ",
+          head_expr(h), ", ", slices, ");\n    }\n  }\n");
+    } else {
+      absl::StrAppend(
+          &op_code,
+          "    float inv_l = (l_total > 0.0f) ? (1.0f / l_total) : 0.0f;\n"
+          "    if (tid < $NSG) {\n      s_w[",
+          h, "][tid] = sc * inv_l;\n    }\n  }\n");
     }
   }
+  op_code += "\n  ucl::SyncThreads<WorkGroup, Local>();\n";
 
-  ucl::SyncThreads<WorkGroup, Local>();
-)";
-
-  // Prebuild the cross-wave weighted reduction tree (`num_simd_groups` is an
-  // even power of two).
-  std::string wave_reduce_code;
-  std::vector<std::string> terms;
-  for (int i = 0; i + 1 < num_simd_groups; i += 2) {
-    const std::string name = absl::StrCat("acc", i / 2);
-    absl::StrAppend(&wave_reduce_code, "    float4 ", name, " = fma(s_w[", i,
-                    "], s_acc[tid][", i, "], s_w[", i + 1, "] * s_acc[tid][",
-                    i + 1, "]);\n");
-    terms.push_back(name);
-  }
-  for (int level = 0; terms.size() > 1; ++level) {
-    std::vector<std::string> next;
-    for (size_t i = 0; i + 1 < terms.size(); i += 2) {
-      const std::string name = absl::StrCat("sum", level, "_", i / 2);
-      absl::StrAppend(&wave_reduce_code, "    float4 ", name, " = ", terms[i],
-                      " + ", terms[i + 1], ";\n");
-      next.push_back(name);
+  // Build the cross-wave weighted reduction tree for head `h`
+  // (`num_simd_groups` is an even power of two).
+  auto build_wave_reduce_code = [num_simd_groups](int h) -> std::string {
+    std::string wave_reduce_code;
+    std::vector<std::string> terms;
+    for (int i = 0; i + 1 < num_simd_groups; i += 2) {
+      const std::string name = absl::StrCat("acc", i / 2);
+      absl::StrAppend(&wave_reduce_code, "    float4 ", name, " = fma(s_w[", h,
+                      "][", i, "], s_acc[", h, "][tid][", i, "], s_w[", h, "][",
+                      i + 1, "] * s_acc[", h, "][tid][", i + 1, "]);\n");
+      terms.push_back(name);
     }
-    terms = std::move(next);
-  }
-  absl::StrAppend(&wave_reduce_code, "    float4 final_acc = ", terms[0],
-                  ";\n");
+    for (int level = 0; terms.size() > 1; ++level) {
+      std::vector<std::string> next;
+      for (size_t i = 0; i + 1 < terms.size(); i += 2) {
+        const std::string name = absl::StrCat("sum", level, "_", i / 2);
+        absl::StrAppend(&wave_reduce_code, "    float4 ", name, " = ", terms[i],
+                        " + ", terms[i + 1], ";\n");
+        next.push_back(name);
+      }
+      terms = std::move(next);
+    }
+    absl::StrAppend(&wave_reduce_code, "    float4 final_acc = ", terms[0],
+                    ";\n");
+    return wave_reduce_code;
+  };
 
   for (int r = 0; r < slices_per_lane; ++r) {
     if (r > 0) {
-      absl::StrAppend(&op_code,
-                      "  ucl::SyncThreads<WorkGroup, Local>();\n"
-                      "  s_acc[tid][simd_id] = out_acc",
-                      r,
-                      ";\n"
-                      "  ucl::SyncThreads<WorkGroup, Local>();\n");
+      op_code += "  ucl::SyncThreads<WorkGroup, Local>();\n";
+      for (int h = 0; h < heads; ++h) {
+        absl::StrAppend(&op_code, "  s_acc[", h, "][tid][simd_id] = out_acc_",
+                        h, "_", r, ";\n");
+      }
+      op_code += "  ucl::SyncThreads<WorkGroup, Local>();\n";
     }
     const std::string slice_expr =
         r == 0 ? "tid" : absl::StrCat("tid + ", r * 32);
-    absl::StrAppend(&op_code, "  if (simd_id == 0) {\n", wave_reduce_code,
-                    "    int s_out = ", slice_expr,
-                    ";\n    if (s_out < args.slices) {\n");
-    op_code +=
-        "      args.dst::type res_value = "
-        "ucl::Convert<args.dst::type>(final_acc);\n";
-    if (is_flattened_dst) {
-      absl::StrAppend(&op_code, "      int out_slice = Y * ", slices,
-                      " + s_out;\n");
-      op_code += "      args.dst.Write(res_value, X, 0, out_slice);\n";
-    } else {
-      op_code += "      args.dst.Write(res_value, X, Y, s_out);\n";
+    for (int h = 0; h < heads; ++h) {
+      const int owner_wave = h % num_simd_groups;
+      const std::string wave_reduce_code = build_wave_reduce_code(h);
+      const std::string h_str = head_expr(h);
+      absl::StrAppend(&op_code, "  if (simd_id == ", owner_wave, ") {\n",
+                      wave_reduce_code, "    int s_out = ", slice_expr,
+                      ";\n    if (s_out < args.slices) {\n");
+      op_code +=
+          "      args.dst::type res_value = "
+          "ucl::Convert<args.dst::type>(final_acc);\n";
+      if (splits > 1) {
+        absl::StrAppend(&op_code, "      args.dst.Write(res_value, X_split, ",
+                        h_str, ", s_out);\n");
+      } else if (is_flattened_dst) {
+        absl::StrAppend(&op_code, "      int out_slice = (", h_str, ") * ",
+                        slices, " + s_out;\n");
+        op_code += "      args.dst.Write(res_value, X, 0, out_slice);\n";
+      } else {
+        absl::StrAppend(&op_code, "      args.dst.Write(res_value, X, ", h_str,
+                        ", s_out);\n");
+      }
+      op_code += "    }\n  }\n";
     }
-    op_code += "    }\n  }\n";
   }
 
   op_code += "}\n";
@@ -1366,8 +1530,7 @@ CreateFusedFlashDecodeSdpa(const ::ml_drift::GpuInfo& gpu_info,
       config.use_wave_simd
           ? ::ml_drift::int3(1, 32, config.tuning.num_simd_groups)
           : ::ml_drift::int3(config.tuning.threads, 1, 1);
-  const int head_groups =
-      config.use_wave_simd ? q_heads : (q_heads / config.heads);
+  const int head_groups = q_heads / config.heads;
   FusedFlashDecodeSdpaOp op(work_group_size, head_groups, config.splits);
   op.args_.AddInt("cache_size", cache_size);
   if (config.use_wave_simd) {
@@ -1407,10 +1570,10 @@ CreateFusedFlashDecodeSdpa(const ::ml_drift::GpuInfo& gpu_info,
   const bool is_single_query = q_desc.GetBHWCShape().w == 1;
   if (config.use_wave_simd) {
     op.code_ = GenerateWaveSimdFlashDecodeCode(
-        config.tuning.num_simd_groups, slices, group_size, k_stride_head,
-        k_stride_slice, v_stride_head, v_stride_block, has_mask, is_bool_mask,
-        mask_width, has_param, attr.is_causal, is_single_query, has_softcap,
-        is_flattened_dst);
+        config.tuning.num_simd_groups, config.heads, config.splits, slices,
+        group_size, k_stride_head, k_stride_slice, v_stride_head,
+        v_stride_block, has_mask, is_bool_mask, mask_width, has_param,
+        attr.is_causal, is_single_query, has_softcap, is_flattened_dst);
   } else if (config.tuning.simd_work_group) {
     op.code_ = GenerateSimdWorkGroupFlashDecodeCode(
         config, slices, group_size, k_stride_head, k_stride_slice,

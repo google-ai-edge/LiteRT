@@ -344,6 +344,9 @@ bool SplitsScoresWithinPrefillBudget(const ::ml_drift::GpuInfo& gpu_info) {
 // the decomposed graph. When `expected_score_chunks` is positive, the test also
 // checks that the built graph splits the query rows into that many chunks (one
 // `strided_slice` per chunk when there is more than one).
+// With `select_as_apple_m4_pro`, Metal kernel configs are selected as on a
+// 20-core M4 Pro (e.g. GQA head groups and key splits of the wave-SIMD flash
+// decode), while the graph still runs on the test device.
 absl::Status RunSdpaTransposedTest(
     ::ml_drift::TestExecutionEnvironment& env,
     ::ml_drift::CalculationsPrecision precision,
@@ -358,7 +361,7 @@ absl::Status RunSdpaTransposedTest(
         kMaxDecomposedSdpaScoreChunkBytes,
     int expected_score_chunks = 0,
     std::optional<bool> is_prefill_override = std::nullopt,
-    float q_multiplier = 1.0f) {
+    float q_multiplier = 1.0f, bool select_as_apple_m4_pro = false) {
   if (KV <= 0) KV = BK;
   if (active_tokens <= 0) active_tokens = S;
   if (decode_mask_keys <= 0) decode_mask_keys = active_tokens;
@@ -371,7 +374,11 @@ absl::Status RunSdpaTransposedTest(
     return absl::InvalidArgumentError(
         "Only single-token outputs can be flattened.");
   }
-  ::ml_drift::GpuModelBuilder builder(env.GetGpuInfo(), {}, precision, storage);
+  ::ml_drift::GpuInfo builder_gpu_info = env.GetGpuInfo();
+  if (select_as_apple_m4_pro && IsAppleMetal(builder_gpu_info)) {
+    builder_gpu_info.apple_info = ::ml_drift::AppleInfo("apple m4 pro");
+  }
+  ::ml_drift::GpuModelBuilder builder(builder_gpu_info, {}, precision, storage);
 
   ::ml_drift::DataType datatype;
   switch (precision) {
@@ -1022,6 +1029,60 @@ TEST(SdpaTransposedKernelTest,
     EXPECT_EQ(dispatches[0].work_group_size.x, work_group.x);
     EXPECT_EQ(dispatches[0].work_group_size.y, work_group.y);
     EXPECT_EQ(dispatches[0].work_group_size.z, work_group.z);
+  }
+}
+
+// GQA head groups and key splits of the wave-SIMD flash decode. Kernel configs
+// are selected as on a 20-core M4 Pro: test devices with fewer compute units
+// (e.g. the paravirtualized Apple GPUs on Forge report 4) keep one head per
+// work group and one split. Each case also checks the selected config, so a
+// routing change cannot silently drop the coverage:
+// - head dims 256 (Qwen3.5-0.8B), 128 and 80 (20 slices, so idle lanes) group
+//   2, 4 and 4 query heads per work group and split the keys;
+// - head dim 192 (48 slices) groups 2 heads with a partial last slice pass;
+// - GQA group 3 cannot form 2-head groups and keeps one head per work group.
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeGqaHeadGroupsAndSplitKeys) {
+  if (!IsAppleMetal(exec_env->GetGpuInfo())) {
+    GTEST_SKIP() << "GQA head groups and key splits are configs of the "
+                    "wave-SIMD (Metal) flash decode.";
+  }
+  ::ml_drift::GpuInfo m4_pro = exec_env->GetGpuInfo();
+  m4_pro.apple_info = ::ml_drift::AppleInfo("apple m4 pro");
+  struct Case {
+    int q_heads;
+    int kv_heads;
+    int head_dim;
+    int cache_size;
+    int expected_heads;
+    int expected_splits;
+  };
+  const Case cases[] = {
+      {8, 2, 256, 1280, 2, 5}, {8, 2, 128, 1280, 4, 5}, {8, 2, 80, 600, 4, 2},
+      {4, 2, 192, 1024, 2, 4}, {6, 2, 192, 400, 1, 1},
+  };
+  for (const Case& c : cases) {
+    const FlashDecodeConfig config = GetFlashDecodeConfig(
+        m4_pro, ::ml_drift::BHWC(1, c.q_heads, 1, c.head_dim),
+        ::ml_drift::BHWC(1, c.kv_heads, c.cache_size, c.head_dim));
+    ASSERT_TRUE(config.use_wave_simd) << "head_dim=" << c.head_dim;
+    EXPECT_EQ(config.heads, c.expected_heads) << "head_dim=" << c.head_dim;
+    EXPECT_EQ(config.splits, c.expected_splits) << "head_dim=" << c.head_dim;
+    const int q_start = c.cache_size - 40;
+    const int active_tokens =
+        FilledCacheEntries(mask_mode(), q_start + 1, c.cache_size);
+    auto status = RunSdpaTransposedTest(
+        *exec_env, precision(), storage(), c.q_heads, /*T=*/1, c.cache_size,
+        c.head_dim, mask_mode(), c.kv_heads, q_start,
+        /*from_cache_update=*/true, /*is_causal=*/false,
+        /*flatten_output=*/true, active_tokens, /*decode_mask_keys=*/0,
+        /*param_active_tokens=*/std::nullopt,
+        /*force_work_group_flash_prefill=*/false,
+        kMaxDecomposedSdpaScoreChunkBytes, /*expected_score_chunks=*/0,
+        /*is_prefill_override=*/std::nullopt, /*q_multiplier=*/1.0f,
+        /*select_as_apple_m4_pro=*/true);
+    EXPECT_TRUE(status.ok())
+        << "head_dim=" << c.head_dim << ": " << status.message();
   }
 }
 
