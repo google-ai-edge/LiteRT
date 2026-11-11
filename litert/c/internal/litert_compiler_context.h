@@ -540,6 +540,19 @@ typedef struct LiteRtCompilerContext {
       int32_t* stride_h, int32_t* stride_d, int32_t* dilation_w_factor,
       int32_t* dilation_h_factor, int32_t* dilation_d_factor,
       uint32_t* fused_activation_function);
+  // Added in version 1.6.0
+  //
+  // Serializes `subgraph` into standalone tflite flatbuffer bytes without
+  // mutating or destroying the owning model. The output is a single-subgraph
+  // model containing only `subgraph`'s tensors, ops and weights; signatures,
+  // metadata and other subgraphs are dropped, and the
+  // `decomposition_subgraph_index` of StableHLO composite ops is set to -1.
+  // Caller takes ownership of `buf` (free with `delete[]`); the valid
+  // flatbuffer is buf[offset, size]. Returns kLiteRtStatusErrorUnsupported in
+  // builds without NPU support.
+  LiteRtStatus (*serialize_subgraph)(LiteRtSubgraph subgraph, uint8_t** buf,
+                                     size_t* size, size_t* offset,
+                                     LiteRtModelSerializationOptions options);
 } LiteRtCompilerContext;
 // LINT.ThenChange(./litert_compiler_context.cc:compiler_context_version)
 
@@ -549,7 +562,7 @@ typedef struct LiteRtCompilerContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCompilerContext) == 1512,
+static_assert(sizeof(LiteRtCompilerContext) == 1520,
               "LiteRtCompilerContext size mismatch");
 static_assert(offsetof(LiteRtCompilerContext, abi_header) == 0,
               "LiteRtCompilerContext abi_header offset mismatch");
@@ -1235,6 +1248,8 @@ static_assert(
     offsetof(LiteRtCompilerContext, build_conv_3d_transpose_op_option) ==
         1504,
     "LiteRtCompilerContext build_conv_3d_transpose_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, serialize_subgraph) == 1512,
+              "LiteRtCompilerContext serialize_subgraph offset mismatch");
 #endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();

@@ -22,11 +22,13 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -462,6 +464,21 @@ class Subgraph {
       ops.emplace_back(ctx_, op);
     }
     return ops;
+  }
+
+  Expected<OwningBufferRef<uint8_t>> Serialize(
+      LiteRtModelSerializationOptions options = {
+          .bytecode_alignment = 1}) const {
+    if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, serialize_subgraph)) {
+      return Unexpected(
+          kLiteRtStatusErrorUnsupported,
+          "serialize_subgraph is unavailable in compiler context");
+    }
+    OwningBufferRef<uint8_t> buf;
+    auto [data, size, offset] = buf.GetWeak();
+    LITERT_RETURN_IF_ERROR(
+        ctx_->serialize_subgraph(subgraph_, &data, &size, &offset, options));
+    return buf;
   }
 
  private:
