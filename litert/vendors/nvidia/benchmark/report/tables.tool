@@ -237,7 +237,7 @@ def main():
   for key, table in models['tables'].items():
     if not tables.present(table['models']):
       continue
-    (out / table['file']).write_text(tables.render(table) + '\n', newline='\n')
+    (out / table['file']).write_text(tables.render(table) + '\n', encoding='utf-8', newline='\n')
     written.append(table['file'])
   if args.sources:
     pathlib.Path(args.sources).write_text(json.dumps(
