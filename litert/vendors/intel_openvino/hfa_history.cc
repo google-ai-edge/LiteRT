@@ -24,6 +24,7 @@
 #include <string>
 #include <utility>
 
+#include "openvino/core/except.hpp"
 #include "openvino/core/type/bfloat16.hpp"
 #include "openvino/core/type/float16.hpp"
 #include "litert/c/internal/litert_logging.h"
@@ -116,6 +117,10 @@ Expected<int64_t> HistorySizeFromMask(const ov::Tensor& mask) {
       return MaskHistory(mask.data<const ov::float16>(), rows, past, len);
     }
     return MaskHistory(mask.data<const ov::bfloat16>(), rows, past, len);
+  } catch (const ov::Exception& e) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      std::string("HFA history mask is not readable: ") +
+                          e.what());
   } catch (const std::exception& e) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       std::string("HFA history mask is not readable: ") +
@@ -159,6 +164,10 @@ std::optional<HfaHistoryReporter> HfaHistoryReporter::Find(
         return HfaHistoryReporter(index, std::move(state));
       }
     }
+  } catch (const ov::Exception& e) {
+    LITERT_LOG(LITERT_WARNING, "HFA: '%s' query_state() failed: %s",
+               graph_name.c_str(), e.what());
+    return std::nullopt;
   } catch (const std::exception& e) {
     LITERT_LOG(LITERT_WARNING, "HFA: '%s' query_state() failed: %s",
                graph_name.c_str(), e.what());
@@ -187,6 +196,10 @@ Expected<int64_t> HfaHistoryReporter::Update(ov::InferRequest& infer_request) {
     LITERT_LOG(LITERT_DEBUG, "HFA: history %lld",
                static_cast<long long>(*history));
     return history;
+  } catch (const ov::Exception& e) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      std::string("Failed to set the HFA history: ") +
+                          e.what());
   } catch (const std::exception& e) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       std::string("Failed to set the HFA history: ") +
