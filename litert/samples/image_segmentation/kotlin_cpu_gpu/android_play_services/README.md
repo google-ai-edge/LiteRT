@@ -85,3 +85,14 @@ device is offline. In that case the app shows an error.
 This doesn't apply when the app is distributed through Google Play: an entry in
 the app's manifest tells Google Play about the dependency on the LiteRT module,
 so Google Play downloads the module when the app is installed.
+
+## Test
+
+The instrumentation tests in `app/src/androidTest` initialize LiteRT from Google
+Play services and segment an image on the CPU and on the GPU (or on the CPU
+fallback, on devices without a supported GPU). To run them on a connected device
+or emulator with Google Play services:
+
+```sh
+./gradlew :app:connectedDebugAndroidTest
+```
