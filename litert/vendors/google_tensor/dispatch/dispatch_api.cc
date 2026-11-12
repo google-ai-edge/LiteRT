@@ -31,7 +31,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/core/util/tensor_type_util.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
@@ -65,8 +65,11 @@ LiteRtStatus CreateTensorBufferRequirements(
     return kLiteRtStatusErrorUnsupported;
   }
 
+  // Unlike litert::internal::GetNumPackedBytes, RankedTensorType::Bytes() does
+  // not support Complex128 or check the byte count for size_t overflow. Neither
+  // applies to EdgeTPU tensor buffers.
   LITERT_ASSIGN_OR_RETURN(size_t size_bytes,
-                          litert::internal::GetNumPackedBytes(tensor_type));
+                          litert::RankedTensorType(tensor_type).Bytes());
 
   return runtime_context->create_tensor_buffer_requirements(
       GetTheSupportedTensorBufferTypes().size(),
