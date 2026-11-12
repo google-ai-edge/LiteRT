@@ -728,7 +728,10 @@ TEST(SubbyteGemvPluginTest, RejectsInvalidGatesAndGemmShapes) {
   };
   EXPECT_NE(create(4, 128, 256, /*gate=*/1, /*gemm=*/true), nullptr);
   EXPECT_NE(create(4, 130, 256, /*gate=*/0, /*gemm=*/true), nullptr);
-  EXPECT_EQ(create(4, 128, 256, /*gate=*/3, /*gemm=*/true), nullptr);
+  // 3 is the SiLU gate (Qwen 3.5's SwiGLU); the first value that names no gate
+  // is 4.
+  EXPECT_NE(create(4, 128, 256, /*gate=*/3, /*gemm=*/true), nullptr);
+  EXPECT_EQ(create(4, 128, 256, /*gate=*/4, /*gemm=*/true), nullptr);
   EXPECT_EQ(create(4, 129, 256, /*gate=*/1, /*gemm=*/true), nullptr);
   // The GEMM takes INT4 weights and input dims in multiples of 128, and a
   // gate needs the GEMM.

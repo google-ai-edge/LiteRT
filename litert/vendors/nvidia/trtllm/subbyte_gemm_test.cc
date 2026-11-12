@@ -257,7 +257,9 @@ TEST(SubbyteGemmTest, SupportsRowsAndInputsInMultiplesOf128) {
   EXPECT_FALSE(supports({128, 3872, 15360, kLiteRtNvidiaGemmGateNone}));
   EXPECT_FALSE(supports({128, 3840, 15361, kLiteRtNvidiaGemmGateNone}));
   EXPECT_FALSE(supports({128, 3840, 0, kLiteRtNvidiaGemmGateNone}));
-  EXPECT_FALSE(supports({128, 3840, 15360, 3}));
+  // 3 is the SiLU gate (Qwen 3.5's SwiGLU); the first value that names no gate
+  // is 4.
+  EXPECT_FALSE(supports({128, 3840, 15360, 4}));
   // Gemma 4 26B-A4B: input sizes of an odd number of 64-dim chunks, and
   // scales per block of 32.
   EXPECT_TRUE(supports({128, 704, 2816, kLiteRtNvidiaGemmGateNone}));
