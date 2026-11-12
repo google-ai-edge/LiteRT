@@ -76,15 +76,9 @@ the debug key; your own app must use its own release signing key.
 The model is downloaded into `app/src/main/assets` during the build (see
 `app/download_model.gradle`).
 
-When the app is side-loaded (for example, installed with
-`./gradlew :app:installDebug`) or distributed through an alternative app store,
-Google Play services may need to download the LiteRT module the first time the
-app uses LiteRT, so the first initialization can take longer, or fail if the
-device is offline. In that case the app shows an error.
-
-This doesn't apply when the app is distributed through Google Play: an entry in
-the app's manifest tells Google Play about the dependency on the LiteRT module,
-so Google Play downloads the module when the app is installed.
+In some cases, Google Play services may need to download the LiteRT module the
+first time the app uses LiteRT, so the first initialization can take longer, or
+fail if the device is offline. In that case the app shows an error.
 
 ## Test
 
