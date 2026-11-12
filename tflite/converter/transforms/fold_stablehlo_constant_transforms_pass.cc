@@ -44,8 +44,8 @@ limitations under the License.
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"  // from @llvm-project
 #include "stablehlo/dialect/StablehloOps.h"  // from @stablehlo
 #include "tflite/converter/ir/tfl_ops_in_place_transpose.h"
-#include "tflite/converter/transforms/passes.h"
 #include "tflite/converter/transforms/resource_constant_fold_utils.h"
+#include "tflite/converter/transforms/tfl_passes.h"
 
 namespace mlir {
 namespace TFL {
