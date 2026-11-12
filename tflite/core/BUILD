@@ -351,6 +351,26 @@ cc_library(
 
 # Test signature runner.
 cc_test(
+    name = "interpreter_builder_specialization_test",
+    size = "small",
+    srcs = ["interpreter_builder_specialization_test.cc"],
+    data = [
+        "//tflite:testdata/multi_signatures.bin",
+        "//tflite:testdata/no_signatures.bin",
+        "//tflite:testdata/no_signatures_no_tensor_names.bin",
+    ],
+    deps = [
+        ":framework",
+        ":signature_runner",
+        "//tflite:model_builder",
+        "//tflite/core/c:common",
+        "//tflite/core/kernels:builtin_ops",
+        "//tflite/testing:util",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "signature_runner_test",
     size = "small",
     srcs = ["signature_runner_test.cc"],
