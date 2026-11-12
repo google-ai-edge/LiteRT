@@ -1670,6 +1670,20 @@ TEST_F(MlDriftConversionTest, MaximumOp) {
               })));
 }
 
+// ML Drift has no float zero point support outside the FullyConnected
+// weights, so it rejects them instead of silently dropping them.
+TEST_F(MlDriftConversionTest, DequantizeRejectsFloatZeroPoints) {
+  TensorMLD quant_input({.type = Type::kI8, .shape = {1, 2, 2, 1}});
+  auto quant_params = std::make_shared<PerChannelAffineQuantization>();
+  quant_params->scales = {0.25f};
+  quant_params->zero_points = {0};
+  quant_params->float_zero_points = {-0.5f};
+  quant_input.SetQuantization(quant_params);
+  TensorMLD output = Dequantize(quant_input);
+  EXPECT_EQ(AppendGpuModelBuilder(context_, {output}).status().code(),
+            absl::StatusCode::kUnimplemented);
+}
+
 TEST_F(MlDriftConversionTest, EmbeddingLookupOp) {
   TensorMLD ids({.type = Type::kI32, .shape = {1, 4}});
   TensorMLD weights({.type = Type::kFP32, .shape = {8, 4}});

@@ -358,6 +358,43 @@ build:cross_compile_windows_arm64 --define=xnn_enable_arm_i8mm=false
 build:cross_compile_windows_arm64 --define=xnn_enable_arm_sme=false
 build:cross_compile_windows_arm64 --define=xnn_enable_arm_sme2=false
 
+# Cross-compile for Windows x86_64 from a Linux x86_64 host with the hermetic
+# @llvm18_linux_x86_64 clang-cl + lld-link + llvm-lib and xwin MSVC/Windows SDK
+# sysroot. Don't trigger --config=<host platform> when cross-compiling: on a
+# Linux host it would apply build:linux (-std=gnu++17, -fpermissive, GCC-style
+# -W copts, --config=dynamic_kernels), which clang-cl must not receive.
+build:cross_compile_windows_x86_64 --noenable_platform_specific_config
+build:cross_compile_windows_x86_64 --incompatible_enable_cc_toolchain_resolution
+build:cross_compile_windows_x86_64 --platforms=//platforms:windows_x86_64
+build:cross_compile_windows_x86_64 --extra_toolchains=//third_party/windows_msvc_toolchain:linux_x86_64_windows_x86_64
+build:cross_compile_windows_x86_64 --compiler=clang-cl
+build:cross_compile_windows_x86_64 --cpu=x64_windows
+build:cross_compile_windows_x86_64 --host_cpu=k8
+build:cross_compile_windows_x86_64 --host_cxxopt=-std=c++17
+build:cross_compile_windows_x86_64 --host_copt=-w
+build:cross_compile_windows_x86_64 --copt=/W0
+build:cross_compile_windows_x86_64 --copt=/Zc:__cplusplus
+build:cross_compile_windows_x86_64 --copt=/Zc:preprocessor
+build:cross_compile_windows_x86_64 --copt=/D_USE_MATH_DEFINES
+build:cross_compile_windows_x86_64 --copt=-D_ENABLE_EXTENDED_ALIGNED_STORAGE
+build:cross_compile_windows_x86_64 --copt=/U_WIN32_WINNT
+build:cross_compile_windows_x86_64 --copt=/D_WIN32_WINNT=0x0A00
+build:cross_compile_windows_x86_64 --copt=-DWIN32_LEAN_AND_MEAN
+build:cross_compile_windows_x86_64 --copt=-DNOGDI
+build:cross_compile_windows_x86_64 --copt=/arch:AVX2
+build:cross_compile_windows_x86_64 --conlyopt=/std:c11
+build:cross_compile_windows_x86_64 --cxxopt=/std:c++20
+build:cross_compile_windows_x86_64 --per_file_copt=external/com_google_protobuf/.*\.cc$@/std:c++17
+build:cross_compile_windows_x86_64 --config=monolithic
+build:cross_compile_windows_x86_64 --linkopt=/OPT:REF
+build:cross_compile_windows_x86_64 --linkopt=/OPT:ICF
+build:cross_compile_windows_x86_64 --features=compiler_param_file
+build:cross_compile_windows_x86_64 --features=archive_param_file
+build:cross_compile_windows_x86_64 --define=build_with_mkl=false
+build:cross_compile_windows_x86_64 --define=build_with_openmp=false
+build:cross_compile_windows_x86_64 --define=xnn_enable_avx512bf16=false
+build:cross_compile_windows_x86_64 --define=xnn_enable_avx512fp16=false
+
 # Windows pthreadpool configuration
 # On Windows, set /std:c11 and /experimental:c11atomics for pthreadpool.
 build:windows --conlyopt=/std:c11
@@ -631,3 +668,7 @@ common --noenable_bzlmod
 
 build:windows_arm64 --cpu=arm64_windows
 build:windows_arm64 --host_cpu=arm64_windows
+
+# Build the Dawn (WebGPU) runtime library from source, to be loaded by the ML Drift WebGPU accelerator.
+# See third_party/dawn/workspace.bzl.
+build:dawn_from_source --repo_env=LITERT_BUILD_DAWN=1
