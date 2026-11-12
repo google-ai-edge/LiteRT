@@ -1230,6 +1230,7 @@ objc_library(
 ios_unit_test(
     name = "litert_tensor_buffer_test_ios",
     minimum_os_version = LITERT_MIN_IOS_VERSION,
+    # copybara:uncomment requires_booted_simulator = True,
     runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
     deps = [":litert_tensor_buffer_test_library"],
 )
