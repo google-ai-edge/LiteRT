@@ -152,6 +152,21 @@ TEST(TakeMemorySnapshotTest, ReportsThisProcess) {
   }
 }
 
+TEST(TakeHostMemorySnapshotTest, ReportsThisProcessWithoutTheAccelerator) {
+  const MemorySnapshot snapshot = TakeHostMemorySnapshot();
+  ASSERT_TRUE(snapshot.resident_in_ram.has_value());
+  ASSERT_TRUE(snapshot.attributed_by_os.has_value());
+  EXPECT_GT(snapshot.resident_in_ram->cpu_bytes, 0);
+  EXPECT_GT(snapshot.attributed_by_os->cpu_bytes, 0);
+  // The accelerator is not queried: no detail, and nothing on its side.
+  EXPECT_FALSE(snapshot.accelerator.has_value());
+  for (const MemorySplit& split :
+       {*snapshot.resident_in_ram, *snapshot.attributed_by_os}) {
+    EXPECT_EQ(split.accelerator_bytes, 0);
+    EXPECT_EQ(split.total_bytes, split.cpu_bytes);
+  }
+}
+
 TEST(FormatMemorySplitTest, ShowsTheTotalAndItsParts) {
   EXPECT_EQ(FormatMemorySplit({.total_bytes = 1156 * kMb,
                                .cpu_bytes = 900 * kMb,
@@ -177,7 +192,7 @@ TEST(MemorySnapshotToStringTest, ListsAvailableQuantitiesOnOneLine) {
 TEST(MemorySnapshotToStringTest, OmitsUnavailableQuantities) {
   const MemorySnapshot snapshot =
       MakeMemorySnapshot(HostMemoryUsage(), std::nullopt);
-  EXPECT_EQ(snapshot.ToString(), "accelerator detail=unsupported");
+  EXPECT_EQ(snapshot.ToString(), "accelerator detail=not measured");
 }
 
 TEST(FormatMemorySnapshotTest, FormatsOneQuantityPerLine) {
@@ -194,13 +209,13 @@ TEST(FormatMemorySnapshotTest, FormatsOneQuantityPerLine) {
             "    -   256.00 MB  Some GPU (local)");
 }
 
-TEST(FormatMemorySnapshotTest, SaysWhenAcceleratorMemoryIsUnsupported) {
+TEST(FormatMemorySnapshotTest, SaysWhenAcceleratorMemoryIsNotMeasured) {
   const MemorySnapshot snapshot = MakeMemorySnapshot(Host(8, 10), std::nullopt);
   const std::string text = FormatMemorySnapshot(snapshot);
   EXPECT_THAT(text, HasSubstr("Memory usage:\n"));
   EXPECT_THAT(text, HasSubstr("  Memory resident in RAM: 8.00 MB (CPU 8.00 MB "
                               "+ accelerator 0.00 MB)\n"));
-  EXPECT_THAT(text, HasSubstr("  Accelerator memory detail: unsupported"));
+  EXPECT_THAT(text, HasSubstr("  Accelerator memory detail: not measured"));
   EXPECT_THAT(text, Not(HasSubstr("    - ")));
 }
 
@@ -227,6 +242,29 @@ TEST(TakeAndLogMemorySnapshotTest, LogsEachLineAndReturnsTheSnapshot) {
             reference.attributed_by_os.has_value());
   EXPECT_EQ(snapshot.accelerator.has_value(),
             reference.accelerator.has_value());
+}
+
+TEST(TakeAndLogHostMemorySnapshotTest, LogsEachLineAndReturnsTheSnapshot) {
+  absl::ScopedMockLog log(absl::MockLogDefault::kDisallowUnexpected);
+  // The same lines as TakeAndLogMemorySnapshot(), with the accelerator never
+  // measured. (Later expectations take precedence, so the catch-all comes
+  // first.)
+  EXPECT_CALL(log, Log(absl::LogSeverity::kInfo, _, StartsWith("  ")))
+      .Times(AnyNumber());
+  EXPECT_CALL(log, Log(absl::LogSeverity::kInfo, _,
+                       "  Accelerator memory detail: not measured"));
+  EXPECT_CALL(log, Log(absl::LogSeverity::kInfo, _, "After load:"));
+  log.StartCapturingLogs();
+
+  const MemorySnapshot snapshot = TakeAndLogHostMemorySnapshot("After load");
+
+  // The returned snapshot is a live one, of the host side only.
+  const MemorySnapshot reference = TakeHostMemorySnapshot();
+  EXPECT_EQ(snapshot.resident_in_ram.has_value(),
+            reference.resident_in_ram.has_value());
+  EXPECT_EQ(snapshot.attributed_by_os.has_value(),
+            reference.attributed_by_os.has_value());
+  EXPECT_FALSE(snapshot.accelerator.has_value());
 }
 
 }  // namespace

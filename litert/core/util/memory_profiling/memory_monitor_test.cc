@@ -116,7 +116,6 @@ MATCHER_P2(SplitsAs, cpu_mb, accelerator_mb, "") {
 MemoryPeaks PeaksOf(std::vector<MemorySnapshot> samples) {
   absl::Notification exhausted;
   MemoryMonitor monitor(
-      absl::Milliseconds(1),
       std::make_unique<ScriptedSampler>(std::move(samples), &exhausted));
   monitor.Start();
   EXPECT_TRUE(exhausted.WaitForNotificationWithTimeout(absl::Seconds(5)));
@@ -125,7 +124,7 @@ MemoryPeaks PeaksOf(std::vector<MemorySnapshot> samples) {
 }
 
 TEST(MemoryMonitorTest, NoPeaksBeforeStart) {
-  MemoryMonitor monitor(absl::Milliseconds(1));
+  MemoryMonitor monitor;
   const MemoryPeaks peaks = monitor.GetPeaks();
   EXPECT_EQ(peaks.num_samples, 0);
   EXPECT_FALSE(peaks.resident_in_ram.has_value());
@@ -174,13 +173,12 @@ TEST(MemoryMonitorTest, IgnoresUnavailableFigures) {
 
 TEST(MemoryMonitorTest, PeaksSurviveStopAndRestart) {
   absl::Notification exhausted;
-  MemoryMonitor monitor(absl::Milliseconds(1),
-                        std::make_unique<ScriptedSampler>(
-                            std::vector<MemorySnapshot>{
-                                Snapshot(Split(80, 9), Split(90, 9), 9),
-                                Snapshot(Split(10, 2), Split(20, 2), 2),
-                            },
-                            &exhausted));
+  MemoryMonitor monitor(std::make_unique<ScriptedSampler>(
+      std::vector<MemorySnapshot>{
+          Snapshot(Split(80, 9), Split(90, 9), 9),
+          Snapshot(Split(10, 2), Split(20, 2), 2),
+      },
+      &exhausted));
 
   monitor.Start();
   // Repeated Start() calls are no-ops.
@@ -205,7 +203,6 @@ TEST(MemoryMonitorTest, PeaksSurviveStopAndRestart) {
 TEST(MemoryMonitorTest, DestructorStopsRunningMonitor) {
   absl::Notification exhausted;
   auto monitor = std::make_unique<MemoryMonitor>(
-      absl::Milliseconds(1),
       std::make_unique<ScriptedSampler>(
           std::vector<MemorySnapshot>{Snapshot(Split(1, 0), Split(1, 0), 1)},
           &exhausted));
@@ -216,13 +213,28 @@ TEST(MemoryMonitorTest, DestructorStopsRunningMonitor) {
 }
 
 TEST(MemoryMonitorTest, DefaultSamplerTakesRealSnapshots) {
-  MemoryMonitor monitor(absl::Milliseconds(1));
+  MemoryMonitor monitor(MemoryMonitor::Scope::kHostAndAccelerator,
+                        absl::Milliseconds(1));
   monitor.Start();
   monitor.Stop();
   const MemoryPeaks peaks = monitor.GetPeaks();
   EXPECT_GE(peaks.num_samples, 1);
   // Every supported host reports at least its resident size.
   EXPECT_TRUE(peaks.resident_in_ram.has_value());
+}
+
+TEST(MemoryMonitorTest, HostOnlyScopeLeavesTheAcceleratorOut) {
+  MemoryMonitor monitor(MemoryMonitor::Scope::kHostOnly);
+  monitor.Start();
+  monitor.Stop();
+  const MemoryPeaks peaks = monitor.GetPeaks();
+  EXPECT_GE(peaks.num_samples, 1);
+  ASSERT_TRUE(peaks.resident_in_ram.has_value());
+  EXPECT_GT(peaks.resident_in_ram->cpu_bytes, 0);
+  EXPECT_EQ(peaks.resident_in_ram->accelerator_bytes, 0);
+  EXPECT_FALSE(peaks.accelerator.has_value());
+  EXPECT_THAT(FormatMemoryPeaks(peaks),
+              HasSubstr("\n  Peak accelerator memory detail: not measured"));
 }
 
 // Counts its samples and lets a test wait for a given number of them. Uses
@@ -262,7 +274,7 @@ TEST(MemoryMonitorTest, StopDoesNotWaitOutTheIntervalAndTakesALastSample) {
   auto sampler = std::make_unique<CountingSampler>();
   CountingSampler* counting = sampler.get();
   // An interval far longer than the test: Stop() must cut the wait short.
-  MemoryMonitor monitor(absl::Hours(1), std::move(sampler));
+  MemoryMonitor monitor(std::move(sampler), absl::Hours(1));
   monitor.Start();
   ASSERT_TRUE(counting->WaitForCount(1, absl::Seconds(5)));
   const absl::Time before_stop = absl::Now();
