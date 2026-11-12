@@ -113,11 +113,6 @@ Expected<void> MakeModelBufferWritable(const void* data, size_t size) {
     return {};
   }
   std::lock_guard<std::mutex> lock(ProtectionMutex());
-  // A page still copy-on-write and unwritten: the view was not made read-only
-  // yet (KeepModelBufferReadOnlyUntilWritten), so it is now.
-  if (IsCopyOnWriteView(region) && region.Protect == PAGE_WRITECOPY) {
-    LowerUnwrittenPages(region.AllocationBase);
-  }
   SYSTEM_INFO system;
   GetSystemInfo(&system);
   const uintptr_t page = system.dwPageSize;

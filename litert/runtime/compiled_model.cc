@@ -948,9 +948,12 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     LiteRtOptions options, LiteRtEnvironmentT& env) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Graph Loading");
   // Windows charges a copy-on-write view of the model file in full; the model
-  // is written to only through MakeModelBufferWritable.
-  litert::internal::KeepModelBufferReadOnlyUntilWritten(
-      litert::internal::GetTflFlatbuffer(model).Buf().Data());
+  // is written to only through MakeModelBufferWritable. Only a model for NPU
+  // has its view made read-only, because that costs initialization time.
+  if (hw_accelerators & kLiteRtHwAcceleratorNpu) {
+    litert::internal::KeepModelBufferReadOnlyUntilWritten(
+        litert::internal::GetTflFlatbuffer(model).Buf().Data());
+  }
 #if !defined(LITERT_NO_BUILTIN_OPS)
   LITERT_RETURN_IF_ERROR(
       litert::internal::ReplaceMagicNumbersIfAny(env, model));

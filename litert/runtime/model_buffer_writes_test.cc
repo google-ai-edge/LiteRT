@@ -138,6 +138,7 @@ TEST_F(FileViewTest, ChargesOnlyThePagesOfACopyOnWriteViewThatAreAskedFor) {
   ASSERT_GE(Commit() - before, static_cast<int64_t>(kBytes))
       << "the view was not charged in full";
 
+  KeepModelBufferReadOnlyUntilWritten(view);
   uint8_t* target = view + 5 * (1 << 20) + 4000;  // Spans two pages.
   ASSERT_TRUE(MakeModelBufferWritable(target, 200).HasValue());
   EXPECT_LT(Commit() - before, static_cast<int64_t>(4 * kPage + (1 << 20)))
@@ -166,6 +167,21 @@ TEST_F(FileViewTest, ChargesOnlyThePagesOfACopyOnWriteViewThatAreAskedFor) {
   other[0] = static_cast<uint8_t>(~other[0]);
   EXPECT_EQ(target[0], static_cast<uint8_t>(~Pattern(target - view)));
   EXPECT_EQ(Protection(target), PAGE_READWRITE);
+  EXPECT_TRUE(FileUnchanged());
+}
+
+// A view that was not made read-only, as that of a model that is not for NPU:
+// a write to it leaves the rest of the view copy-on-write.
+TEST_F(FileViewTest, LeavesACopyOnWriteViewThatWasNotMadeReadOnlyAsItIs) {
+  uint8_t* view = Map(/*copy_on_write=*/true);
+  ASSERT_NE(view, nullptr);
+  uint8_t* target = view + 3 * kPage + 17;
+  ASSERT_TRUE(MakeModelBufferWritable(target, 8).HasValue());
+  for (int i = 0; i < 8; ++i) target[i] = 0xEE;
+  EXPECT_EQ(target[7], 0xEE);
+  EXPECT_EQ(Protection(target), PAGE_READWRITE);
+  EXPECT_EQ(Protection(view), PAGE_WRITECOPY);
+  EXPECT_EQ(Protection(view + kBytes - 1), PAGE_WRITECOPY);
   EXPECT_TRUE(FileUnchanged());
 }
 
@@ -226,6 +242,7 @@ TEST_F(FileViewTest, MakesARangeOfAReadOnlyViewCopyOnWrite) {
 TEST_F(FileViewTest, ThreadsWritingToOneViewKeepEachOthersWrites) {
   uint8_t* view = Map(/*copy_on_write=*/true);
   ASSERT_NE(view, nullptr);
+  KeepModelBufferReadOnlyUntilWritten(view);
   constexpr int kThreads = 8;
   constexpr int kPagesPerThread = 64;
   std::vector<std::thread> threads;
