@@ -21,7 +21,6 @@ limitations under the License.
 #include <limits>
 #include <vector>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/kernels/cpu_backend_context.h"
 #include "tflite/kernels/cpu_backend_threadpool.h"
 #include "tflite/kernels/internal/compatibility.h"
