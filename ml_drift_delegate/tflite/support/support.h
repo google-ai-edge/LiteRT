@@ -24,6 +24,10 @@
 
 namespace litert::ml_drift::ir {
 
+// Checks if any input or output tensor of the node has a dimension <= 0.
+bool HasEmptyTensor(const TfLiteContext* absl_nonnull context,
+                    const TfLiteNode* absl_nonnull node);
+
 // Returns a list of supported node indices by ML Drift.
 std::vector<int> GetSupportedNodes(
     TfLiteContext* absl_nonnull context,
