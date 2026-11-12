@@ -3176,6 +3176,7 @@ cc_test(
         "//tflite/kernels/internal:tensor_utils",
         "//tflite/kernels/internal:types",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
     ],
