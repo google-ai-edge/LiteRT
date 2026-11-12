@@ -631,3 +631,7 @@ common --noenable_bzlmod
 
 build:windows_arm64 --cpu=arm64_windows
 build:windows_arm64 --host_cpu=arm64_windows
+
+# Build the Dawn (WebGPU) runtime from source and link it into the ML Drift WebGPU accelerator.
+# See third_party/dawn/workspace.bzl.
+build:dawn_from_source --repo_env=LITERT_BUILD_DAWN=1

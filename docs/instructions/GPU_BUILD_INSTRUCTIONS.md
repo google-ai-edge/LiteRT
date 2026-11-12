@@ -89,6 +89,39 @@ bazel build -c opt \
 > local `ml-drift` source tree instead of downloading the pinned archive from
 > GitHub.
 
+## Optional: Building the WebGPU Accelerator with Dawn from Source
+
+`libLiteRtWebGpuAccelerator.so` (`.dll` on Windows) needs [Dawn](https://dawn.googlesource.com/dawn).
+By default `@dawn` only provides Dawn's headers, so a source-built accelerator
+has unresolved `wgpu*` symbols and cannot be loaded (the prebuilt one from
+`@litert_prebuilts` has Dawn linked in). Add `--config=dawn_from_source` to
+build Dawn with CMake and link it into the accelerator:
+
+```bash
+bazel build -c opt --config=dawn_from_source \
+  --cxxopt=-std=c++20 --host_cxxopt=-std=c++20 \
+  //litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_so
+```
+
+This needs `cmake`, `git`, `python3`, a C++20 compiler and network access (Dawn's
+dependencies are fetched automatically), and takes a few minutes the first time.
+To build a local Dawn checkout, or pass Dawn CMake options:
+
+```bash
+bazel build -c opt --config=dawn_from_source \
+  --repo_env=LITERT_DAWN_SRC_DIR=$HOME/workspace/dawn \
+  --repo_env=LITERT_DAWN_CMAKE_ARGS="-DDAWN_USE_X11=ON" \
+  --override_repository=ml_drift=$HOME/workspace/ml-drift \
+  //litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_so
+```
+
+Put the resulting `libLiteRtWebGpuAccelerator.so` in a directory on
+`LD_LIBRARY_PATH` of the application.
+
+On Windows the same flags work (`/std:c++20` is already the default; Dawn is always
+built in Release, so use `-c opt`). Dawn compiles shaders with `d3dcompiler_47.dll` at run time, so
+copy that file from the Windows SDK next to `libLiteRtWebGpuAccelerator.dll`.
+
 ## Troubleshooting
 
 | Error | Cause | Solution |
