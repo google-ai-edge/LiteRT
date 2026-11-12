@@ -2300,6 +2300,16 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
           break;
         }
 
+        // A host buffer shared with CPU nodes needs a CPU allocation even
+        // when it is also registered with an accelerator backend.
+        if (buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory) {
+          LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                                  GetTensorIdentifier(*interp_, tensor));
+          if (cpu_tensors_.contains(tensor_id)) {
+            break;
+          }
+        }
+
         // Mark the tensor as non-CPU to avoid TFLite from allocating it.
         tensor->allocation_type = kTfLiteNonCpu;
         tensor->data.data = nullptr;
