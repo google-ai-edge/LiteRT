@@ -356,6 +356,57 @@ def default_debian_sysroot(_backend_id):
 
 # copybara:comment_end
 
+# Runs model provider binaries once at build time to populate a directory of
+# extra .tflite models that can be consumed by sharded host compilation targets.
+def _litert_pull_extra_models_impl(ctx):
+    model_provider_bins = [v.files_to_run.executable for v in ctx.attr.model_providers]
+    out_dir = ctx.actions.declare_directory(ctx.label.name)
+    provider_inputs = depset(
+        direct = model_provider_bins,
+        transitive = [
+            v[DefaultInfo].default_runfiles.files
+            for v in ctx.attr.model_providers
+        ],
+    )
+    provider_calls = " ".join(["'{}'".format(p.path) for p in model_provider_bins])
+    ctx.actions.run_shell(
+        inputs = provider_inputs,
+        outputs = [out_dir],
+        execution_requirements = {
+            "no-remote-exec": "1",
+            "requires-network": "1",
+        },
+        command = """
+            set -e
+            export TEST_TMPDIR="$(pwd)/_tmp_cns_{name}"
+            mkdir -p "{out}"
+            for p in {provider_calls}; do
+              for f in $("$p"); do
+                cp -f "$f" "{out}/"
+              done
+            done
+        """.format(
+            name = ctx.label.name,
+            out = out_dir.path,
+            provider_calls = provider_calls,
+        ),
+        mnemonic = "LiteRtPullExtraModels",
+        progress_message = "Pulling LiteRT extra models ({})".format(ctx.label.name),
+    )
+    return [
+        DefaultInfo(
+            files = depset([out_dir]),
+            runfiles = ctx.runfiles(files = [out_dir]),
+        ),
+    ]
+
+litert_pull_extra_models = rule(
+    implementation = _litert_pull_extra_models_impl,
+    attrs = {
+        "model_providers": attr.label_list(mandatory = True, allow_files = True, cfg = "exec"),
+    },
+)
+
 # Runs sharded host AOT compilation during the build to produce a directory of
 # pre-compiled .tflite models that can be pushed to a device by mobile_test.
 def _litert_aot_compile_impl(ctx):
@@ -367,8 +418,48 @@ def _litert_aot_compile_impl(ctx):
 
     sysroot_files, runner_prefix = resolve_debian_sysroot(ctx, compile_bin)
 
+    model_provider_bins = [v.files_to_run.executable for v in ctx.attr.model_providers]
+    extra_models_dirs = []
+    extra_models_flag = ""
+    if model_provider_bins:
+        extra_models_dir = ctx.actions.declare_directory("{}_extra_models".format(ctx.label.name))
+        extra_models_dirs = [extra_models_dir]
+        extra_models_flag = "--extra_models=\"{}\"".format(extra_models_dir.path)
+        provider_inputs = depset(
+            direct = model_provider_bins,
+            transitive = [
+                v[DefaultInfo].default_runfiles.files
+                for v in ctx.attr.model_providers
+            ],
+        )
+        provider_calls = " ".join(["'{}'".format(p.path) for p in model_provider_bins])
+        ctx.actions.run_shell(
+            inputs = provider_inputs,
+            outputs = [extra_models_dir],
+            execution_requirements = {
+                "no-remote-exec": "1",
+                "requires-network": "1",
+            },
+            command = """
+                set -e
+                export TEST_TMPDIR="$(pwd)/_tmp_cns_{name}"
+                mkdir -p "{out}"
+                for p in {provider_calls}; do
+                  for f in $("$p"); do
+                    cp -f "$f" "{out}/"
+                  done
+                done
+            """.format(
+                name = ctx.label.name,
+                out = extra_models_dir.path,
+                provider_calls = provider_calls,
+            ),
+            mnemonic = "LiteRtPullExtraModels",
+            progress_message = "Pulling LiteRT extra models ({})".format(ctx.label.name),
+        )
+
     inputs = depset(
-        direct = [compile_bin] + host_libs + ctx.files.data + sysroot_files,
+        direct = [compile_bin] + host_libs + ctx.files.data + sysroot_files + extra_models_dirs,
         transitive = [
             v[DefaultInfo].default_runfiles.files
             for v in [ctx.attr.host_bin] + ctx.attr.host_libs + ctx.attr.data
@@ -390,6 +481,7 @@ def _litert_aot_compile_impl(ctx):
         ctx.actions.run_shell(
             inputs = inputs,
             outputs = [shard_dir],
+            execution_requirements = {"no-remote-exec": "1"} if model_provider_bins else {},
             command = """
                 set -e
                 cp -rsf "$(pwd)/{exec_root}/." .
@@ -397,7 +489,7 @@ def _litert_aot_compile_impl(ctx):
                 export LD_LIBRARY_PATH="{link_path}:${{LD_LIBRARY_PATH:-}}"
                 export TEST_TOTAL_SHARDS={total_shards}
                 export TEST_SHARD_INDEX={shard_idx}
-                {runner_prefix} --plugin_dir="{plugin_dir}" --models_out="{models_out}" {args_str}
+                {runner_prefix} --plugin_dir="{plugin_dir}" --models_out="{models_out}" {extra_models_flag} {args_str}
             """.format(
                 exec_root = compile_bin.root.path,
                 models_out = shard_dir.path,
@@ -406,6 +498,7 @@ def _litert_aot_compile_impl(ctx):
                 shard_idx = shard_idx,
                 runner_prefix = runner_prefix,
                 plugin_dir = plugin_dirs[0],
+                extra_models_flag = extra_models_flag,
                 args_str = args_str,
             ),
             mnemonic = "LiteRtAotCompileShard",
@@ -419,6 +512,7 @@ def _litert_aot_compile_impl(ctx):
         ctx.actions.run_shell(
             inputs = shard_dirs,
             outputs = [out_dir],
+            execution_requirements = {"no-remote-exec": "1"} if model_provider_bins else {},
             command = "mkdir -p '{out}' {dirs} && find {dirs} -maxdepth 1 -name '*.tflite' -exec cp -t '{out}/' {{}} +".format(
                 out = out_dir.path,
                 dirs = " ".join(["'{}'".format(d.path) for d in shard_dirs]),
@@ -438,6 +532,7 @@ _litert_aot_compile_rule = rule(
     attrs = {
         "host_bin": attr.label(mandatory = True, executable = True, cfg = "exec"),
         "data": attr.label_list(default = [], allow_files = True),
+        "model_providers": attr.label_list(default = [], allow_files = True, cfg = "exec"),
         "host_libs": attr.label_list(default = [], allow_files = True, cfg = "exec"),
         "exec_args": attr.string_list(default = []),
         "shard_count": attr.int(default = 1),
@@ -456,6 +551,7 @@ def litert_aot_compile(
         backend_id,
         exec_args = [],
         data = [],
+        model_providers = [],
         shard_count = 1,
         testonly = True,
         tags = []):
@@ -467,6 +563,7 @@ def litert_aot_compile(
       backend_id: Backend configuration identifier (e.g., "qualcomm", "google_tensor").
       exec_args: Command-line arguments passed to the host compiler binary.
       data: Additional data dependencies (such as input .tflite models).
+      model_providers: Optional list of model provider targets to invoke before compilation.
       shard_count: Number of parallel build shards used to compile models.
       testonly: If True, marks the generated target as testonly.
       tags: Additional Bazel tags applied to the generated target.
@@ -487,6 +584,7 @@ def litert_aot_compile(
         host_bin = bin,
         host_libs = plugin_libs + list(backend.host_libs),
         data = data,
+        model_providers = model_providers,
         exec_args = exec_args,
         shard_count = shard_count if shard_count != None else 1,
         debian_sysroot = debian_sysroot,
@@ -513,6 +611,7 @@ def make_download_model_provider(name, url, testonly = True):
     sh_binary(
         name = name,
         srcs = [":" + name + "_expanded"],
+        deps = ["//litert/integration_test:device_script_common"],
         testonly = testonly,
     )
 
@@ -542,6 +641,7 @@ def make_download_model_provider(name, url, testonly = True):
 #     sh_binary(
 #         name = name,
 #         srcs = [":" + name + "_expanded"],
+#         deps = ["//litert/integration_test:device_script_common"],
 #         testonly = testonly,
 #         visibility = visibility,
 #     )

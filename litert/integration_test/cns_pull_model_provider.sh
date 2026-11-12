@@ -17,7 +17,7 @@
 source litert/integration_test/device_script_common.sh || exit 1
 
 # TODO: Unify workdirs with other scripts.
-readonly work_dir="/tmp/litert_extras"
+readonly work_dir="${TEST_TMPDIR:-/tmp}/litert_extras"
 rm -rf "${work_dir}"
 mkdir -p "${work_dir}"
 

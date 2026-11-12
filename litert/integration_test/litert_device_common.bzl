@@ -110,7 +110,7 @@ def make_path_args(spec):
 
 # COMMON
 
-def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, mh_user = None, host_libs = [], version_target_suffix = "", platform = "android"):
+def BackendSpec(id, libs = [], mh_devices = [], soc_mh_devices = {}, dispatch = None, plugin = None, mh_user = None, host_libs = [], version_target_suffix = "", platform = "android"):
     """
     Defines a backend specification.
 
@@ -119,6 +119,7 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
         libs: A list of tuples of (library target, environment variable). Path to the target
             will be added to the environment variable.
         mh_devices: A list of mobile harness device specifications.
+        soc_mh_devices: Optional dictionary mapping a short SoC key to its Mobile Harness device dimensions.
         dispatch: The dispatch library target name.
         plugin: The compiler plugin library target name.
         mh_user: The "run_as" arg to use in device cloud if it is enabled.
@@ -162,6 +163,7 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
         env_paths = make_path_args(env_paths) if platform == "android" else [],
         mh_devices = mh_devices,
         default_mh_device = mh_devices[0],
+        soc_mh_devices = soc_mh_devices,
         dispatch = dispatch,
         plugin = plugin,
         mh_user = mh_user,
@@ -172,20 +174,35 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
 # QUALCOMM
 
 def _QualcommSpec(version = "V75"):
+    htp_versions = ["V69", "V73", "V75", "V79", "V81"] if version == "V75" else [version]
+
     # copybara:uncomment_begin(google-only)
-    # stub_lib = "//litert/integration_test:libQnnHtp%sStub.so" % version
-    # skel_lib = "//litert/integration_test:libQnnHtp%sSkel.so" % version
+    # stub_libs = [
+    # ("//litert/integration_test:libQnnHtp%sStub.so" % v, "LD_LIBRARY_PATH")
+    # for v in htp_versions
+    # ]
+    # skel_libs = [
+    # ("//litert/integration_test:libQnnHtp%sSkel.so" % v, "ADSP_LIBRARY_PATH")
+    # for v in htp_versions
+    # ]
     #
     # copybara:uncomment_end
     # copybara:comment_begin
-    stub_lib = "@qairt//:libQnnHtp%sStub.so" % version
-    skel_lib = "@qairt//:libQnnHtp%sSkel.so" % version
+    stub_libs = [
+        ("@qairt//:libQnnHtp%sStub.so" % v, "LD_LIBRARY_PATH")
+        for v in htp_versions
+    ]
+    skel_libs = [
+        ("@qairt//:libQnnHtp%sSkel.so" % v, "ADSP_LIBRARY_PATH")
+        for v in htp_versions
+    ]
 
     # copybara:comment_end
     version_suffix = version.lower()
     id = "qualcomm_%s" % version_suffix
 
     mh = {}
+    soc_mh = {}
 
     if version == "V75":
         # No suffix will be used for V75 by default as to not break existing scripts.
@@ -194,6 +211,24 @@ def _QualcommSpec(version = "V75"):
         mh = {
             "model": "regex:sm-s928b|sm-s928u1",
             "pool": "shared",
+        }
+        soc_mh = {
+            "sm8450": {
+                "model": "regex:sm-s901u|sm-s901u1|sm-s906u1|sm-s908u1",
+                "pool": "shared",
+            },
+            "sm8650": {
+                "model": "regex:sm-s928b|sm-s928u1",
+                "pool": "shared",
+            },
+            "sm8750": {
+                "model": "regex:sm-s938*",
+                "pool": "shared",
+            },
+            "sm8850": {
+                "model": "regex:sm-s942u1|sm-s947u1|sm-s948u1",
+                "pool": "shared",
+            },
         }
     elif version == "V79":
         mh = {
@@ -207,25 +242,23 @@ def _QualcommSpec(version = "V75"):
             libs = [
                 # copybara:uncomment_begin(google-only)
                 # ("//litert/integration_test:libQnnHtp.so", "LD_LIBRARY_PATH"),
-                # (stub_lib, "LD_LIBRARY_PATH"),
                 # ("//litert/integration_test:libQnnSystem.so", "LD_LIBRARY_PATH"),
                 # ("//litert/integration_test:libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
                 # ("//litert/integration_test:libQnnIr.so", "LD_LIBRARY_PATH"),
                 # ("//litert/integration_test:libQnnSaver.so", "LD_LIBRARY_PATH"),
-                # (skel_lib, "ADSP_LIBRARY_PATH"),
                 # copybara:uncomment_end_and_comment_begin
                 ("@qairt//:libQnnHtp.so", "LD_LIBRARY_PATH"),
-                (stub_lib, "LD_LIBRARY_PATH"),
                 ("@qairt//:libQnnSystem.so", "LD_LIBRARY_PATH"),
                 ("@qairt//:libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
                 ("@qairt//:libQnnIr.so", "LD_LIBRARY_PATH"),
                 ("@qairt//:libQnnSaver.so", "LD_LIBRARY_PATH"),
-                (skel_lib, "ADSP_LIBRARY_PATH"),
                 # copybara:comment_end
+            ] + stub_libs + skel_libs + [
                 ("//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so", "LD_LIBRARY_PATH"),
                 ("//litert/vendors/qualcomm/compiler:libLiteRtCompilerPlugin_Qualcomm.so", "LD_LIBRARY_PATH"),
             ],
             mh_devices = [mh],
+            soc_mh_devices = soc_mh,
             plugin = "libLiteRtCompilerPlugin_Qualcomm.so",
             dispatch = "libLiteRtDispatch_Qualcomm.so",
             host_libs = [
@@ -264,6 +297,16 @@ def _MediatekSpec():
                 "hardware": "mt6989",
                 "label": "odml-test",
             }],
+            soc_mh_devices = {
+                "mt6877": {
+                    "hardware": "mt6877",
+                    "pool": "shared",
+                },
+                "mt6989": {
+                    "hardware": "mt6989",
+                    "pool": "shared",
+                },
+            },
             dispatch = "libLiteRtDispatch_MediaTek.so",
             plugin = "libLiteRtCompilerPlugin_MediaTek.so",
             # Prebuilt libneuron_adapter.so dynamically links against C++/GCC
@@ -330,6 +373,23 @@ def _GoogleTensorSpec():
                 "label": "odml-test",
                 "model": "pixel 9",
             }],
+            soc_mh_devices = {
+                "g4": {
+                    "build_type": "userdebug",
+                    "model": "pixel 9",
+                    "pool": "shared",
+                },
+                "g5": {
+                    "build_type": "userdebug",
+                    "model": "pixel 10",
+                    "pool": "shared",
+                },
+                "g6": {
+                    "build_type": "userdebug",
+                    "model": "pixel 11",
+                    "pool": "shared",
+                },
+            },
             mh_user = "odml-team",
             dispatch = "libLiteRtDispatch_GoogleTensor.so",
             plugin = "libLiteRtCompilerPlugin_google_tensor.so",
@@ -476,6 +536,13 @@ def get_libs(name, platform = "android"):
 # Get the spec for the given backend.
 def get_spec(name, platform = "android"):
     return _Specs(name, platform = platform)
+
+# Get the Mobile Harness device specification for the given backend and optional SoC key.
+def get_mh_device(name, soc_key = None, platform = "android"):
+    spec = _Specs(name, platform = platform)
+    if soc_key != None and soc_key in spec.soc_mh_devices:
+        return spec.soc_mh_devices[soc_key]
+    return spec.default_mh_device
 
 # Get the host libs for the given backend.
 def get_host_libs(name, platform = "android"):
