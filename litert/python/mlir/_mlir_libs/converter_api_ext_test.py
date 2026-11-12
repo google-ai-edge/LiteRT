@@ -38,6 +38,40 @@ class ConverterApiExtTest(googletest.TestCase):
       )
       np.testing.assert_array_equal(np_array, actual_array)
 
+  def test_rank_reduction_and_gpu_compatibility_default_to_false(self):
+    config = converter_api_ext.ConvertToTFLConfig()
+    self.assertFalse(config.rank_reduction)
+    self.assertFalse(config.unsafe_gpu_compatibility)
+    self.assertFalse(config.unsafe_single_batch_rank_reduction)
+
+  def test_rank_reduction_and_gpu_compatibility_are_independent(self):
+    config = converter_api_ext.ConvertToTFLConfig()
+
+    config.rank_reduction = True
+    self.assertTrue(config.rank_reduction)
+    self.assertFalse(config.unsafe_gpu_compatibility)
+    # The deprecated alias only reads true when both are set.
+    self.assertFalse(config.unsafe_single_batch_rank_reduction)
+
+    config.rank_reduction = False
+    config.unsafe_gpu_compatibility = True
+    self.assertFalse(config.rank_reduction)
+    self.assertTrue(config.unsafe_gpu_compatibility)
+    self.assertFalse(config.unsafe_single_batch_rank_reduction)
+
+  def test_deprecated_alias_sets_both_flags(self):
+    config = converter_api_ext.ConvertToTFLConfig()
+
+    config.unsafe_single_batch_rank_reduction = True
+    self.assertTrue(config.rank_reduction)
+    self.assertTrue(config.unsafe_gpu_compatibility)
+    self.assertTrue(config.unsafe_single_batch_rank_reduction)
+
+    config.unsafe_single_batch_rank_reduction = False
+    self.assertFalse(config.rank_reduction)
+    self.assertFalse(config.unsafe_gpu_compatibility)
+    self.assertFalse(config.unsafe_single_batch_rank_reduction)
+
 
 if __name__ == "__main__":
   googletest.main()
