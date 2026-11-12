@@ -307,6 +307,43 @@ BUILTIN_EXTRA_FLAGS = [
     "--data_seed=42",
 ]
 
+WEBGPU_BASE_DONT_REGISTER = [
+    "Binary.*i32",
+    "Comparison.*f32",  # WebGPU executes f32 graphs in FP16 precision, rounding close f32 inputs to equal under kExact
+    "OneHot",
+    "LogSoftmax",
+    "Transpose.*[(]1d_",
+    "Transpose.*[(][1-8]d_(f32|i1|i4|i8|u8|i16|u16|i32|u32|i64|u64)<",
+    "FullyConnected",
+    "BatchMatmul",
+    "tfl[.]prelu",
+    "tfl[.]zeros_like",
+    "tfl[.]relu_0_to_1",
+    "tfl[.]floor_div",
+    "tfl[.]floor[{]",
+    "tfl[.]ceil",
+    "tfl[.]round",
+    "5d",
+    "6d",
+    "7d",
+    "8d",
+    "Pad.*[(][123]d",
+    "Swiglu.*3d_f(16|32)<(?!1x)",  # WebGPU accelerator does not support SwiGLU with batch > 1
+    "QkvNormRope.*4d_f(16|32)<(?!1x)",  # WebGPU accelerator does not support QkvNormRope with batch > 1
+    "SelectV2",
+    "Slice",
+    "RuntimeBmm.*(i4|i8)",  # WebGPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
+    "MoeExperts",  # ML Drift WebGPU delegate expects tfl.custom "moe" with 4D OHWI weights rather than shlo.composite "odml.moe_experts"
+    "scaled_dot_product_attention",
+]
+
+WEBGPU_MACOS_OVERRIDES = [
+]
+
+WEBGPU_WINDOWS_OVERRIDES = [
+    "BinaryBroadcast.*tfl[.]pow",  # D3D12/DXC FP16 pow(x, y) rounding divergence on large broadcast outputs
+]
+
 litert_define_ats(
     name = "cpu_ats",
     backend = "cpu",
@@ -869,39 +906,22 @@ litert_define_ats(
 litert_define_ats(
     name = "webgpu_macos_ats",
     backend = "webgpu",
-    dont_register = [
-        "Binary.*i32",
-        "Comparison.*f32",  # WebGPU executes f32 graphs in FP16 precision, rounding close f32 inputs to equal under kExact
-        "OneHot",
-        "LogSoftmax",
-        "Transpose.*[(]1d_",
-        "Transpose.*[(][1-8]d_(f32|i1|i4|i8|u8|i16|u16|i32|u32|i64|u64)<",
-        "FullyConnected",
-        "BatchMatmul",
-        "tfl[.]prelu",
-        "tfl[.]zeros_like",
-        "tfl[.]relu_0_to_1",
-        "tfl[.]floor_div",
-        "tfl[.]floor[{]",
-        "tfl[.]ceil",
-        "tfl[.]round",
-        "5d",
-        "6d",
-        "7d",
-        "8d",
-        "Pad.*[(][123]d",
-        "Swiglu.*3d_f(16|32)<(?!1x)",  # WebGPU accelerator does not support SwiGLU with batch > 1
-        "QkvNormRope.*4d_f(16|32)<(?!1x)",  # WebGPU accelerator does not support QkvNormRope with batch > 1
-        "SelectV2",
-        "Slice",
-        "RuntimeBmm.*(i4|i8)",  # WebGPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
-        "MoeExperts",  # ML Drift WebGPU delegate expects tfl.custom "moe" with 4D OHWI weights rather than shlo.composite "odml.moe_experts"
-        "scaled_dot_product_attention",
-    ],
+    dont_register = WEBGPU_BASE_DONT_REGISTER + WEBGPU_MACOS_OVERRIDES,
     extra_flags = [
         "--data_seed=42",
     ],
     platform = "macos",
+)
+
+litert_define_ats(
+    name = "webgpu_windows_ats",
+    backend = "webgpu",
+    dont_register = WEBGPU_BASE_DONT_REGISTER + WEBGPU_WINDOWS_OVERRIDES,
+    extra_flags = [
+        "--data_seed=42",
+        "--max_ms_per_test=2000",
+    ],
+    platform = "windows",
 )
 
 litert_define_ats(
@@ -1040,6 +1060,19 @@ litert_define_ats(
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     platform = "macos",
+)
+
+litert_define_ats(
+    name = "webgpu_windows_models_ats",
+    backend = "webgpu",
+    do_register = ["ExtraModel"],
+    dont_register = GPU_MODELS_DONT_REGISTER,
+    extra_flags = [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    platform = "windows",
 )
 
 # SOURCE CODES #####################################################################################
@@ -2422,18 +2455,75 @@ cc_library(
 # )
 #
 # WINDOWS_ATS_GUITAR_TARGETS = [
+#     ":webgpu_windows_ats_remote",
 #     ":cpu_windows_ats_remote",
 #     ":ynnpack_cpu_windows_ats_remote",
 #     ":builtin_cpu_windows_ats_remote",
 # ]
 #
+# # Acer Predator PH16-73: Intel Core Ultra 9 275HX, NVIDIA GeForce RTX 5090 Laptop GPU.
+# WINDOWS_PREDATOR_CORE_ULTRA9_275HX_RTX5090_DIMENSIONS = {
+#     "model": "Predator PH16-73",
+# }
+#
+# # Dell XPS 14 DA14260: Intel Core Ultra X7 358H (Panther Lake), Intel Arc B390 integrated GPU.
+# WINDOWS_XPS14_CORE_ULTRA_X7_358H_ARC_B390_DIMENSIONS = {
+#     "model": "XPS 14 DA14260",
+# }
+#
+# # ASUS ProArt PX13 HN7306EAC: AMD Ryzen AI Max+ 395, AMD Radeon 8060S integrated GPU.
+# WINDOWS_PROART_RYZEN_AI_MAX395_RADEON_8060S_DIMENSIONS = {
+#     "model": "ProArt PX13 HN7306EAC",
+# }
+#
 # guitar_workflow_test(
-#     name = "litert_ats_guitar_windows",
+#     name = "litert_ats_guitar_windows_predator_core_ultra9_275hx_rtx5090",
 #     # This flag is required by guitar::update_culprit_finding_config and shard_count.
 #     extract_deps = True,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_windows_mh_guitar_test(
+#                 dimension_model = WINDOWS_PREDATOR_CORE_ULTRA9_275HX_RTX5090_DIMENSIONS["model"],
+#                 targets = WINDOWS_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_windows_xps14_core_ultra_x7_358h_arc_b390",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_windows_mh_guitar_test(
+#                 dimension_model = WINDOWS_XPS14_CORE_ULTRA_X7_358H_ARC_B390_DIMENSIONS["model"],
+#                 targets = WINDOWS_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_guitar_windows_proart_ryzen_ai_max395_radeon_8060s",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_windows_mh_guitar_test(
+#                 dimension_model = WINDOWS_PROART_RYZEN_AI_MAX395_RADEON_8060S_DIMENSIONS["model"],
 #                 targets = WINDOWS_ATS_GUITAR_TARGETS,
 #             ),
 #         ],
@@ -2761,6 +2851,7 @@ cc_library(
 # )
 #
 # WINDOWS_ATS_MODELS_GUITAR_TARGETS = [
+#     ":webgpu_windows_models_ats_remote",
 #     ":cpu_windows_models_ats_remote",
 #     ":ynnpack_cpu_windows_models_ats_remote",
 #     ":ynnpack_fallback_cpu_windows_models_ats_remote",
@@ -2768,17 +2859,66 @@ cc_library(
 # ]
 #
 # guitar_workflow_test(
-#     name = "litert_ats_models_guitar_windows",
+#     name = "litert_ats_models_guitar_windows_predator_core_ultra9_275hx_rtx5090",
 #     # This flag is required by guitar::update_culprit_finding_config and shard_count.
 #     extract_deps = True,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_windows_mh_guitar_test(
 #                 name = "model_tests",
+#                 dimension_model = WINDOWS_PREDATOR_CORE_ULTRA9_275HX_RTX5090_DIMENSIONS["model"],
 #                 targets = WINDOWS_ATS_MODELS_GUITAR_TARGETS,
 #             ),
 #             litert_perfgate_upload_guitar_test(
-#                 device = "windows",
+#                 device = "windows_predator_core_ultra9_275hx_rtx5090",
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_windows_xps14_core_ultra_x7_358h_arc_b390",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_windows_mh_guitar_test(
+#                 name = "model_tests",
+#                 dimension_model = WINDOWS_XPS14_CORE_ULTRA_X7_358H_ARC_B390_DIMENSIONS["model"],
+#                 targets = WINDOWS_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "windows_xps14_core_ultra_x7_358h_arc_b390",
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_windows_proart_ryzen_ai_max395_radeon_8060s",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_windows_mh_guitar_test(
+#                 name = "model_tests",
+#                 dimension_model = WINDOWS_PROART_RYZEN_AI_MAX395_RADEON_8060S_DIMENSIONS["model"],
+#                 targets = WINDOWS_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 device = "windows_proart_ryzen_ai_max395_radeon_8060s",
 #             ),
 #         ],
 #     ),
