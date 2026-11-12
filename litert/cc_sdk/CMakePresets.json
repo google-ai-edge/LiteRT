@@ -23,6 +23,42 @@
         "CMAKE_BUILD_TYPE": "Release",
         "LITERT_AUTO_BUILD_TFLITE": "ON"
       }
+    },
+    {
+      "name": "windows-arm64",
+      "displayName": "Windows ARM64 (Ninja, from a VS ARM64 developer shell)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/cmake_build_windows_arm64",
+      "architecture": {
+        "value": "arm64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "windows-x64",
+      "displayName": "Windows x64 (Ninja, from a VS x64 developer shell)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/cmake_build_windows_x64",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
     }
   ]
 }
