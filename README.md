@@ -90,6 +90,7 @@ Every developer's path is different. Here are a few common journeys to help you 
 | **⚡Maximize Performance** | Explore the [LiteRT API](https://ai.google.dev/edge/api/litert/c) & [LiteRT NPU Acceleration](https://ai.google.dev/edge/litert/next/npu) to leverage underlying hardware acceleration. |
 | **🌐Run in the Browser** | Deploy secure, client-side web apps leveraging WebGPU and WASM via [LiteRT.js](https://ai.google.dev/edge/litert/web). |
 | **🧮Control Memory & Graph Execution** | Tensor-centric C++ library for high-performance tensor manipulation on mobile devices.[LiteRT Tensor API](https://github.com/google-ai-edge/LiteRT/tree/main/tensor). |
+| **🔌Build Your Own NPU Backend** | Ship standalone NPU dispatch and compiler plugin libraries outside the LiteRT repo using the [Build Your Own NPU Backend](https://github.com/google-ai-edge/LiteRT/blob/main/litert/BUILD_YOUR_OWN_BACKEND.md) guide. |
 
 ---
 ## 💻 Platforms Supported

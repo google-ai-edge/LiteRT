@@ -63,4 +63,15 @@ optimization tools.
 
 - vendors/
 
-  Code specific to SoC-vendors
+  Code specific to SoC-vendors (see [vendors/README.md](./vendors/README.md) and
+  [Build Your Own NPU Backend](./BUILD_YOUR_OWN_BACKEND.md))
+
+## NPU Backend and Vendor Documentation
+
+-   [Build Your Own NPU Backend](./BUILD_YOUR_OWN_BACKEND.md)
+-   [Dispatch API](./DISPATCH_API.md)
+-   [Compiler Plugins](./COMPILER_PLUGIN.md)
+-   [JIT Compilation](./JIT_COMPILATION.md)
+-   [Transformation Pattern Matching](./PATTERN_MATCHING.md)
+-   [Accelerator Test Suite (`ats`)](./TESTING.md)
+-   [LiteRT CLI Tools](./tools/README.md)
