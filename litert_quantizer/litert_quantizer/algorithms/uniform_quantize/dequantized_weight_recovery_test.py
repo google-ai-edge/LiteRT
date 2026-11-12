@@ -364,6 +364,101 @@ class DequantizedWeightRecoveryTest(parameterized.TestCase):
       self.assertEqual(np.sum(recovered_zp), 0)
       self.assertEqual(recovered_zp.shape, scale.shape)
 
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="channelwise_4bit",
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          num_bits=4,
+          # Levels {0, 2s, 7s}, as in a Gemma 4 26B-A4B down_proj block: the
+          # minimum gap (2s) overestimates the step.
+          sparse_codes=(2, -7),
+      ),
+      dict(
+          testcase_name="blockwise_4bit",
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+          num_bits=4,
+          sparse_codes=(2, -7),
+      ),
+      dict(
+          testcase_name="channelwise_8bit",
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          num_bits=8,
+          # Levels {0, 2s, 5s, 127s}: a loose tolerance accepts max|w| as the
+          # scale (k = 1), which rounds 2s and 5s to 0.
+          sparse_codes=(2, 5, 127),
+      ),
+      dict(
+          testcase_name="blockwise_8bit",
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+          num_bits=8,
+          sparse_codes=(2, 5, 127),
+      ),
+  )
+  def test_get_tensor_quant_params_success_with_sparse_lattice_weights(
+      self, granularity, num_bits, sparse_codes
+  ):
+    step = np.float32(0.01303)
+    # Row 0 is a dense group with scale 0.1, which checks that the repair leaves
+    # correctly recovered groups alone. Row 1 only holds a few multiples of
+    # `step`, so every gap between its levels is a multiple of the step.
+    dense = np.array([1, -2, 3, -4] * 8, dtype=np.float32) * np.float32(0.1)
+    sparse = np.zeros(32, dtype=np.float32)
+    sparse[: len(sparse_codes)] = np.array(sparse_codes) * step
+    dequant_vals = np.vstack([dense, sparse])
+    tensor_quant_config = qtyping.TensorQuantizationConfig(
+        num_bits=num_bits,
+        granularity=granularity,
+    )
+    op_info = qtyping.OpInfo(
+        op=None,
+        op_name=_TFLOpName.FULLY_CONNECTED,
+        subgraph_op_index=0,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=tensor_quant_config
+        ),
+    )
+
+    # Raises if the recovered weights fail the lossless validation. Both
+    # granularities have one group per row of the (2, 32) weight.
+    tensor_quant_params = dequantized_weight_recovery.get_tensor_quant_params(
+        op_info, tensor_quant_config, dequant_vals
+    )
+
+    np.testing.assert_allclose(
+        tensor_quant_params.scale, [[0.1], [0.01303]], rtol=1e-6
+    )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="at_16_group_floor_repairs_scales",
+          num_sparse_rows=16,
+          expected_scale=[[0.1]] * 16,
+      ),
+      dict(
+          testcase_name="above_16_group_floor_skips_repair",
+          num_sparse_rows=17,
+          expected_scale=[[0.2]] * 17,
+      ),
+  )
+  def test_tensor_zp_scale_from_2d_dequantized_symmetric_weights_sparse_repair_limit(
+      self, num_sparse_rows, expected_scale
+  ):
+    # Each row has levels {0, 0.2, -0.7} (0, 2s, -7s with s = 0.1), so the
+    # minimum gap is 0.2 (2s). Up to max(16, 1% of groups) = 16 bad rows are
+    # repaired to 0.1; 17 bad rows exceed the limit and keep 0.2.
+    sparse_row = np.array([0.0, 0.2, -0.7, 0.0], dtype=np.float32)
+    dequant_vals = np.broadcast_to(
+        sparse_row, (num_sparse_rows, sparse_row.size)
+    ).copy()
+
+    _, recovered_scale = (
+        dequantized_weight_recovery.get_zp_scale_from_dequantized_symmetric_weights(
+            dequant_vals, quantized_dimension=0, num_bits=4
+        )
+    )
+
+    np.testing.assert_allclose(recovered_scale, expected_scale, rtol=1e-6)
+
   def test_get_tensor_quant_params_success_with_qsv(self):
 
     # Fall back to naive_min_max_quantize.py for non-weight tensors.

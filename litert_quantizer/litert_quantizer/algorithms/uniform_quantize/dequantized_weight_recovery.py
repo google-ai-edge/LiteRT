@@ -31,6 +31,22 @@ _TFLOpName = qtyping.TFLOperationName
 _QuantTransformation = qtyping.QuantTransformation
 _IntType = uniform_quantize_tensor.IntType
 
+# A group's scale is re-derived when it reconstructs the group with an error
+# above this fraction of a step. A minimum gap that missed the step errs by at
+# least 1/128 of a step (up to 8 bits), while the float rounding of the gap
+# stays below 0.2% of a step.
+_SPARSE_REPAIR_DETECT_TOLERANCE = 5e-3
+# A re-derived scale is accepted only if it reconstructs every value within
+# this fraction of a step, so only exact fits pass.
+_SPARSE_REPAIR_ACCEPT_TOLERANCE = 1e-3
+# Number of elements to materialize at a time when checking groups.
+_SPARSE_REPAIR_CHUNK_ELEMENTS = 1 << 22
+# When more than 16 groups and more than 1% of the groups need a repair, the
+# weights were most likely never quantized (or were rounded to bf16), so the
+# repair is skipped and the lossless validation reports the error.
+_SPARSE_REPAIR_MIN_BAD_GROUPS = 16
+_SPARSE_REPAIR_MAX_BAD_GROUP_FRACTION = 0.01
+
 
 def _validate_recovered_weights(
     original_vals: np.ndarray,
@@ -62,6 +78,81 @@ def _validate_recovered_weights(
         f" values. Max diff between recovered and original values: {max_diff}"
         f" (tolerance: {tol})"
     )
+
+
+def _repair_sparse_groups(
+    abs_vals_2d: np.ndarray,
+    scales_1d: np.ndarray,
+    min_scale: float,
+    *,
+    num_bits: int | None,
+) -> np.ndarray:
+  """Re-derives the scale of groups whose minimum gap missed the true step.
+
+  The minimum gap between adjacent levels is assumed to be one quantization
+  step. In a sparse group that only holds a few levels, every gap can be a
+  multiple of the step (e.g. levels {0, 2s, 7s}: gaps 2s and 5s), so that
+  scale reconstructs the group with an error of a sizeable fraction of a step.
+  Such groups are rare (one in ~200k blocks of Gemma 4 26B) but fail the
+  lossless validation.
+
+  For groups whose reconstruction error exceeds
+  `_SPARSE_REPAIR_DETECT_TOLERANCE` of a step, the scale is re-derived as
+  max|w| / k for the smallest k in [1, 2^(num_bits-1)] that reproduces every
+  value within `_SPARSE_REPAIR_ACCEPT_TOLERANCE` of a step. Any such k is a
+  lossless representation; the smallest one keeps the largest scale.
+
+  When more than `max(16, 1% of groups)` need a repair, nothing is repaired and
+  `scales_1d` is returned unchanged.
+
+  Args:
+    abs_vals_2d: Absolute weight values, shaped (num_groups, group_size).
+    scales_1d: Current scale per group.
+    min_scale: Lower bound on the returned scales.
+    num_bits: Bit width; `None` disables the repair.
+
+  Returns:
+    The scales with repaired groups (same shape and dtype as `scales_1d`), or
+    `scales_1d` unchanged when the repair is disabled or skipped.
+  """
+  if num_bits is None:
+    return scales_1d
+  num_groups, group_size = abs_vals_2d.shape
+  if num_groups == 0 or group_size == 0:
+    return scales_1d
+  code_limit = float(1 << (num_bits - 1))
+  max_bad_groups = max(
+      _SPARSE_REPAIR_MIN_BAD_GROUPS,
+      int(_SPARSE_REPAIR_MAX_BAD_GROUP_FRACTION * num_groups),
+  )
+  rows_per_chunk = max(1, _SPARSE_REPAIR_CHUNK_ELEMENTS // group_size)
+  scales = scales_1d.astype(np.float64, copy=True)
+  bad_rows = []
+  for row_start in range(0, num_groups, rows_per_chunk):
+    row_end = min(row_start + rows_per_chunk, num_groups)
+    block = abs_vals_2d[row_start:row_end]
+    chunk_scales = scales[row_start:row_end, np.newaxis]
+    codes = np.rint(block / chunk_scales)
+    np.minimum(codes, code_limit, out=codes)
+    err = np.max(np.abs(codes * chunk_scales - block), axis=1)
+    bad = np.flatnonzero(
+        err > _SPARSE_REPAIR_DETECT_TOLERANCE * scales[row_start:row_end]
+    )
+    bad_rows.extend((bad + row_start).tolist())
+    # Fail fast instead of searching every group of unsupported weights.
+    if len(bad_rows) > max_bad_groups:
+      return scales_1d
+  for row in bad_rows:
+    group = np.asarray(abs_vals_2d[row], dtype=np.float64)
+    group_max = float(group.max())
+    for k in range(1, int(code_limit) + 1):
+      candidate = group_max / k
+      codes = np.rint(group / candidate)
+      max_err = np.max(np.abs(codes * candidate - group))
+      if max_err <= _SPARSE_REPAIR_ACCEPT_TOLERANCE * candidate:
+        scales[row] = max(candidate, min_scale)
+        break
+  return scales.astype(scales_1d.dtype)
 
 
 def _get_scale(arr: np.ndarray, min_scale: float) -> float:
@@ -131,10 +222,19 @@ def _check_unique_values(
         tensor_content, quantized_dimension, block_size
     )
 
+  if reshaped_2d.size == 0:
+    return 0, limit
+
   max_found = 0
-  for row in reshaped_2d:
-    num_unique = np.unique(row).size
-    max_found = max(max_found, num_unique)
+  # Count distinct values on sorted chunks instead of np.unique per row,
+  # which is a Python-level loop over millions of blocks.
+  chunk_rows = max(1, (1 << 20) // max(reshaped_2d.shape[1], 1))
+  for start in range(0, reshaped_2d.shape[0], chunk_rows):
+    sorted_chunk = np.sort(reshaped_2d[start : start + chunk_rows], axis=1)
+    row_unique = 1 + np.count_nonzero(
+        sorted_chunk[:, 1:] != sorted_chunk[:, :-1], axis=1
+    )
+    max_found = max(max_found, int(row_unique.max()))
     if max_found > limit:
       break
   return max_found, limit
@@ -145,6 +245,7 @@ def get_zp_scale_from_dequantized_symmetric_weights(
     quantized_dimension: int | Sequence[int] | None = None,
     block_size: int = 0,
     min_scale: float = 1e-9,
+    num_bits: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
   """Calculates scale and zero point from dequantized and symmetric weights.
 
@@ -158,6 +259,8 @@ def get_zp_scale_from_dequantized_symmetric_weights(
         quantization.
       block_size: The block size for blockwise quantization.
       min_scale: The minimum allowed scale value.
+      num_bits: The target bit width, used to repair groups whose levels are
+        not adjacent multiples of the step. `None` disables the repair.
 
   Returns:
       A tuple containing:
@@ -243,6 +346,11 @@ def get_zp_scale_from_dequantized_symmetric_weights(
   scales_1d = np.maximum(min_diffs, min_scale)
   scales_1d[scales_1d == np.inf] = min_scale
 
+  # In sparse groups the minimum gap can be a multiple of the step.
+  scales_1d = _repair_sparse_groups(
+      reshaped_2d, scales_1d, min_scale, num_bits=num_bits
+  )
+
   scales = scales_1d.reshape(target_shape)
 
   # Zero points are all zeros for symmetric quantization.
@@ -269,6 +377,7 @@ def get_tensor_quant_params(
 
   Raises:
     ValueError: If the tensor is not a symmetric weight tensor.
+    RuntimeError: If weight recovery validation fails.
   """
   # Fallback to naive_min_max_quantize.py for non-weight tensors.
   if tensor_content is None:
@@ -297,6 +406,7 @@ def get_tensor_quant_params(
       dequant_vals=tensor_content,
       quantized_dimension=quantized_dim,
       block_size=block_size,
+      num_bits=tensor_quant_config.num_bits,
   )
   is_multi_axis = isinstance(quantized_dim, Sequence)
   quant_params = qtyping.UniformQuantParams(
