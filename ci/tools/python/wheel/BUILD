@@ -163,8 +163,8 @@ PACKAGE_DATA = select({
     ],
     "//litert:windows": [
         "//litert/tools:apply_plugin_main",
-        "//litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin",
-        "//litert/vendors/intel_openvino/dispatch:LiteRtDispatch",
+        "//litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin_IntelOpenvino",
+        "//litert/vendors/intel_openvino/dispatch:LiteRtDispatch_IntelOpenvino",
     ],
     "//conditions:default": [],
 })
