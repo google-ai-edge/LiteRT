@@ -42,7 +42,7 @@ limitations under the License.
 #include "tflite/converter/schema/schema_generated.h"
 #include "tflite/converter/tf_tfl_passes.h"
 #include "tflite/converter/transforms/passes.h"
-#include "tflite/converter/utils/convert_type.h"
+#include "tflite/converter/utils/tf_convert_type.h"
 #include "tensorflow/compiler/mlir/tensorflow/utils/error_util.h"
 #include "tensorflow/core/framework/types.pb.h"
 
