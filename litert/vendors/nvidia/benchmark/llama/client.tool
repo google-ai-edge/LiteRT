@@ -84,7 +84,8 @@ def main():
     return 1
   wall = time.monotonic() - start
   timings = result.get('timings', {})
-  open(args.out + '.txt', 'w').write(result.get('content', ''))
+  # UTF-8, not the Windows code page: generated text is not limited to it.
+  open(args.out + '.txt', 'w', encoding='utf-8').write(result.get('content', ''))
   json.dump(
       {
           'wall_s': wall,
