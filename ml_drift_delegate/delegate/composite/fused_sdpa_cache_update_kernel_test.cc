@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -33,12 +34,17 @@
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
+#include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/kernels/tests/kernel_test.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/testing_util.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
+#include "ml_drift/common/types.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
+#include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
 
 namespace litert::ml_drift {
@@ -677,6 +683,525 @@ TEST_P(FusedSdpaCacheUpdateKernelTest, FullyMaskedRowSplitRows) {
        .start = 120,
        .end = 128,
        .fully_mask_last_row = true});
+}
+
+class ReadLinearBytesOp : public ::ml_drift::GPUOperation {
+ public:
+  explicit ReadLinearBytesOp(int total_vec4s) : total_vec4s_(total_vec4s) {}
+  ReadLinearBytesOp(ReadLinearBytesOp&&) = default;
+  ReadLinearBytesOp& operator=(ReadLinearBytesOp&&) = default;
+  ReadLinearBytesOp(const ReadLinearBytesOp&) = delete;
+  ReadLinearBytesOp& operator=(const ReadLinearBytesOp&) = delete;
+
+  ::ml_drift::int3 GetGridSize() const override {
+    return ::ml_drift::int3(total_vec4s_, 1, 1);
+  }
+
+ private:
+  int total_vec4s_ = 1;
+};
+
+std::unique_ptr<::ml_drift::GPUOperation> CreateReadLinearBytesToFloatOp(
+    const ::ml_drift::TensorDescriptor& src,
+    const ::ml_drift::TensorDescriptor& keep_alive,
+    const ::ml_drift::TensorDescriptor& dst, int total_vec4s) {
+  ReadLinearBytesOp op(total_vec4s);
+  op.AddSrcTensor("src", src);
+  op.AddSrcTensor("keep_alive", keep_alive);
+  op.AddDstTensor("dst", dst);
+  op.args_.AddInt("total_vec4s", total_vec4s);
+  op.code_ = R"(
+MAIN_FUNCTION($0) {
+  int X = ucl::GetGlobalId<0>();
+  if (X >= args.total_vec4s) {
+    return;
+  }
+  float4 v = ucl::Convert<float4>(args.src.Read(X));
+  args.dst::type out_v = ucl::Convert<args.dst::type>(v);
+  args.dst.WriteLinear(out_v, X);
+}
+)";
+  return std::make_unique<ReadLinearBytesOp>(std::move(op));
+}
+
+// Runs `CreateAddValuesToCacheFromNode` (seeding a quantized INT8 or packed
+// INT4 ring cache) followed by `BuildSdpaCacheUpdateGpuGraph` (with float or
+// INT8 `query` and `key_new`/`value_new`), verifying both the attention output
+// and in-place ring-buffer cache updates.
+absl::Status RunQuantizedFusedSdpaCacheUpdateTest(
+    ::ml_drift::TestExecutionEnvironment& env,
+    ::ml_drift::CalculationsPrecision precision,
+    ::ml_drift::TensorStorageType storage, MaskMode mask_mode,
+    const TestCase& c, int kv_quant_bits, bool int8_query, bool int8_slices,
+    bool float16_output = false, bool float16_slices = false) {
+  const int H = c.heads, T = c.new_len, W = c.cache_size, D = c.head_dim;
+  const int R = c.groups * T;
+  const int L = W + T;
+  const ::ml_drift::DataType data_type =
+      ::ml_drift::DeduceDataTypeFromPrecision(precision);
+  constexpr auto kBuffer = ::ml_drift::TensorStorageType::kBuffer;
+
+  const float kScaleK = (kv_quant_bits == 4) ? 0.0625f : 0.0078125f;
+  const float kScaleV = (kv_quant_bits == 4) ? 0.125f : 0.0078125f;
+  const float scale_q = 0.03125f / std::sqrt(static_cast<float>(D));
+  const float kScaleKn = kScaleK;
+  const float kScaleVn = kScaleV;
+
+  using TensorHandle = ::ml_drift::GpuModelBuilder::TensorHandle;
+  ::ml_drift::GpuModelBuilder builder(env.GetGpuInfo(), {}, precision, storage);
+  TensorHandle query_feed =
+      builder.AddTensor(::ml_drift::BHWC(1, H, R, D), data_type);
+  TensorHandle query = query_feed;
+  if (int8_query) {
+    TensorHandle query_int8 =
+        builder.AddTensor(1, H, R, D, kBuffer, ::ml_drift::DataType::kInt8);
+    TensorHandle query_cast =
+        builder.Cast(query_feed, ::ml_drift::DataType::kInt8);
+    ABSL_RETURN_IF_ERROR(builder.UpdateOutputTensor(query_cast, query_int8.id));
+    query = query_int8;
+  }
+
+  TensorHandle init_src_k =
+      builder.AddTensor(::ml_drift::BHWC(1, H, W, D), data_type);
+  TensorHandle init_src_v =
+      builder.AddTensor(::ml_drift::BHWC(1, H, W, D), data_type);
+  const int packed_d = (kv_quant_bits == 4) ? (D / 2) : D;
+  TensorHandle k_cache = builder.AddTensor(1, H, W, packed_d, kBuffer,
+                                           ::ml_drift::DataType::kUint8);
+  TensorHandle v_cache = builder.AddTensor(1, H, packed_d, W, kBuffer,
+                                           ::ml_drift::DataType::kUint8);
+
+  ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::kBHWC>,
+                     ::ml_drift::DataType::kInt32>
+      init_param_cpu;
+  init_param_cpu.shape = ::ml_drift::BHWC(1, 1, 1, 7);
+  init_param_cpu.data = {0, W, W, W, 0, 0, 0};
+  ::ml_drift::TensorDescriptor init_param_desc(
+      ::ml_drift::DataType::kInt32, kBuffer, ::ml_drift::Layout::kBHWC);
+  init_param_desc.UploadData(init_param_cpu);
+  TensorHandle init_param =
+      builder.AddConstantTensor(std::move(init_param_desc));
+
+  ::ml_drift::OperationDef init_cache_def;
+  init_cache_def.src_tensors = {init_src_k.tensor_desc, init_src_v.tensor_desc,
+                                init_param.tensor_desc};
+  init_cache_def.dst_tensors = {k_cache.tensor_desc, v_cache.tensor_desc};
+  AddValuesToCacheAttributes init_cache_attr;
+  init_cache_attr.kv_cache_batch_size = H;
+  init_cache_attr.cache_size = W;
+  init_cache_attr.head_size = D;
+  init_cache_attr.kv_quant_bits = kv_quant_bits;
+  init_cache_attr.scale_k = kScaleK;
+  init_cache_attr.scale_v = kScaleV;
+  ::ml_drift::ir::IrOp init_cache_ir(::ml_drift::ir::IrOpId{0});
+  init_cache_ir.name = kAddValuesToCacheType;
+  init_cache_ir.attr = init_cache_attr;
+  ABSL_ASSIGN_OR_RETURN(
+      std::unique_ptr<::ml_drift::GPUOperation> init_cache_op,
+      CreateAddValuesToCacheFromNode(init_cache_def, init_cache_ir));
+  builder.AddGpuOperation({init_src_k, init_src_v, init_param},
+                          {k_cache, v_cache}, std::move(init_cache_op),
+                          kAddValuesToCacheType);
+
+  TensorHandle k_new_feed =
+      builder.AddTensor(::ml_drift::BHWC(1, H, T, D), data_type);
+  TensorHandle v_new_feed =
+      builder.AddTensor(::ml_drift::BHWC(1, H, D, T), data_type);
+  TensorHandle k_new = k_new_feed;
+  TensorHandle v_new = v_new_feed;
+  if (int8_slices) {
+    TensorHandle key_new_int8 =
+        builder.AddTensor(1, H, T, D, kBuffer, ::ml_drift::DataType::kInt8);
+    TensorHandle key_new_cast =
+        builder.Cast(k_new_feed, ::ml_drift::DataType::kInt8);
+    ABSL_RETURN_IF_ERROR(
+        builder.UpdateOutputTensor(key_new_cast, key_new_int8.id));
+    k_new = key_new_int8;
+    TensorHandle value_new_int8 =
+        builder.AddTensor(1, H, D, T, kBuffer, ::ml_drift::DataType::kInt8);
+    TensorHandle value_new_cast =
+        builder.Cast(v_new_feed, ::ml_drift::DataType::kInt8);
+    ABSL_RETURN_IF_ERROR(
+        builder.UpdateOutputTensor(value_new_cast, value_new_int8.id));
+    v_new = value_new_int8;
+  } else if (float16_slices) {
+    k_new = builder.Cast(k_new_feed, ::ml_drift::DataType::kFloat16);
+    v_new = builder.Cast(v_new_feed, ::ml_drift::DataType::kFloat16);
+  }
+
+  TensorHandle mask_feed =
+      builder.AddTensor(::ml_drift::BHWC(1, 1, T, L), data_type);
+  TensorHandle mask =
+      mask_mode == MaskMode::kBool
+          ? builder.Cast(mask_feed, ::ml_drift::DataType::kBool)
+          : (float16_output
+                 ? builder.Cast(mask_feed, ::ml_drift::DataType::kFloat16)
+                 : mask_feed);
+
+  ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::kBHWC>,
+                     ::ml_drift::DataType::kInt32>
+      param_cpu;
+  param_cpu.shape = ::ml_drift::BHWC(1, 1, 1, 7);
+  param_cpu.data = {c.start, c.end, 0, 0, 0, 0, 0};
+  ::ml_drift::TensorDescriptor param_desc(
+      ::ml_drift::DataType::kInt32, kBuffer, ::ml_drift::Layout::kBHWC);
+  param_desc.UploadData(param_cpu);
+  TensorHandle param = builder.AddConstantTensor(std::move(param_desc));
+
+  TensorHandle out = builder.AddTensor(
+      ::ml_drift::BHWC(1, H, R, D),
+      float16_output ? ::ml_drift::DataType::kFloat16 : data_type);
+  std::vector<uint32_t> output_ids = {out.id};
+  std::vector<std::pair<uint32_t, uint32_t>> model_outputs = {{out.id, 0}};
+  uint32_t k_cache_out_id = 0;
+  uint32_t v_cache_out_id = 0;
+  if (c.update_cache) {
+    TensorHandle k_cache_out = builder.AddTensor(
+        1, H, W, packed_d, kBuffer, ::ml_drift::DataType::kUint8);
+    TensorHandle v_cache_out = builder.AddTensor(
+        1, H, packed_d, W, kBuffer, ::ml_drift::DataType::kUint8);
+    k_cache_out_id = k_cache_out.id;
+    v_cache_out_id = v_cache_out.id;
+    output_ids.push_back(k_cache_out.id);
+    output_ids.push_back(v_cache_out.id);
+  }
+
+  FusedSdpaCacheUpdateAttributes attr;
+  attr.softcap = c.softcap;
+  attr.update_cache = c.update_cache;
+  attr.kv_quant_bits = kv_quant_bits;
+  attr.scale_k = kScaleK;
+  attr.scale_v = kScaleV;
+  if (int8_query) attr.scale_q = scale_q;
+  if (int8_slices) {
+    attr.scale_key_new = kScaleKn;
+    attr.scale_value_new = kScaleVn;
+  }
+  ABSL_RETURN_IF_ERROR(BuildSdpaCacheUpdateGpuGraph(
+      {query.id, k_cache.id, v_cache.id, k_new.id, v_new.id, mask.id, param.id},
+      output_ids, attr, &builder));
+
+  const int total_cache_bytes = H * W * packed_d;
+  if (c.update_cache) {
+    // Use a standalone linear-read GPUOperation (which `MergeNodes` never links
+    // into `WriteLinear`) that also takes `k_cache`/`v_cache` as `keep_alive`
+    // inputs so the memory planner keeps their buffers live until the end of
+    // the graph when we redirect `k_cache_out -> k_cache` in-place below.
+    ABSL_ASSIGN_OR_RETURN(TensorHandle key_cache_out_handle,
+                          builder.GetTensor(k_cache_out_id));
+    ABSL_ASSIGN_OR_RETURN(TensorHandle value_cache_out_handle,
+                          builder.GetTensor(v_cache_out_id));
+    TensorHandle key_cache_float =
+        builder.AddTensor(1, 1, 1, total_cache_bytes, kBuffer, data_type);
+    TensorHandle value_cache_float =
+        builder.AddTensor(1, 1, 1, total_cache_bytes, kBuffer, data_type);
+    const int total_vec4s = total_cache_bytes / 4;
+    builder.AddGpuOperation(
+        {key_cache_out_handle, k_cache}, {key_cache_float},
+        CreateReadLinearBytesToFloatOp(
+            key_cache_out_handle.tensor_desc, k_cache.tensor_desc,
+            key_cache_float.tensor_desc, total_vec4s),
+        "test_read_linear_k_cache");
+    builder.AddGpuOperation(
+        {value_cache_out_handle, v_cache}, {value_cache_float},
+        CreateReadLinearBytesToFloatOp(
+            value_cache_out_handle.tensor_desc, v_cache.tensor_desc,
+            value_cache_float.tensor_desc, total_vec4s),
+        "test_read_linear_v_cache");
+    model_outputs.push_back({key_cache_float.id, 1});
+    model_outputs.push_back({value_cache_float.id, 2});
+  }
+
+  ::ml_drift::GpuModel gpu_model;
+  ABSL_RETURN_IF_ERROR(builder.GetGpuModel(
+      std::vector<std::pair<uint32_t, uint32_t>>{{query_feed.id, 0},
+                                                 {init_src_k.id, 1},
+                                                 {init_src_v.id, 2},
+                                                 {k_new_feed.id, 3},
+                                                 {v_new_feed.id, 4},
+                                                 {mask_feed.id, 5}},
+      model_outputs, &gpu_model));
+
+  if (c.update_cache) {
+    // Redirect `fused_sdpa_ring_cache_write` outputs and downstream casts to
+    // the initial cache buffers to emulate LiteRT-LM in-place aliasing.
+    for (auto& node : gpu_model.nodes) {
+      for (uint32_t& id : node.inputs) {
+        if (id == k_cache_out_id) id = k_cache.id;
+        if (id == v_cache_out_id) id = v_cache.id;
+      }
+      for (uint32_t& id : node.outputs) {
+        if (id == k_cache_out_id) id = k_cache.id;
+        if (id == v_cache_out_id) id = v_cache.id;
+      }
+    }
+  }
+
+  const int q_lo = (kv_quant_bits == 4) ? -8 : -128;
+  const int q_hi = (kv_quant_bits == 4) ? 7 : 127;
+  const int q_span = q_hi - q_lo + 1;
+
+  Inputs in_ref;
+  std::vector<float> q_feed_data(H * R * D);
+  in_ref.q.resize(H * R * D);
+  for (int i = 0; i < H * R * D; ++i) {
+    const int qi = ((i * 7 + 3) % 41) - 20;
+    if (int8_query) {
+      q_feed_data[i] = static_cast<float>(qi);
+      in_ref.q[i] = static_cast<float>(qi) * scale_q;
+    } else {
+      q_feed_data[i] = static_cast<float>(qi) * scale_q;
+      in_ref.q[i] = q_feed_data[i];
+    }
+  }
+
+  std::vector<float> init_k_src(H * W * D);
+  std::vector<float> init_v_src(H * W * D);
+  in_ref.k_cache.resize(H * W * D);
+  in_ref.v_cache.resize(H * D * W);
+  for (int h = 0; h < H; ++h) {
+    for (int s = 0; s < W; ++s) {
+      for (int d = 0; d < D; ++d) {
+        const int ki = ((h * 5 + s * 3 + d) % (q_span - 1)) + q_lo;
+        const int vi = ((h * 3 + s * 7 + d * 2) % (q_span - 1)) + q_lo;
+        const float kv = static_cast<float>(ki) * kScaleK;
+        const float vv = static_cast<float>(vi) * kScaleV;
+        init_k_src[(h * W + s) * D + d] = kv;
+        init_v_src[(h * W + s) * D + d] = vv;
+        in_ref.k_cache[(h * W + s) * D + d] = kv;
+        in_ref.v_cache[(h * D + d) * W + s] = vv;
+      }
+    }
+  }
+
+  std::vector<float> kn_feed_data(H * T * D);
+  std::vector<float> vn_feed_data(H * D * T);
+  in_ref.k_new.resize(H * T * D);
+  in_ref.v_new.resize(H * D * T);
+  for (int h = 0; h < H; ++h) {
+    for (int x = 0; x < T; ++x) {
+      for (int d = 0; d < D; ++d) {
+        const int ki = ((h * 11 + x * 5 + d * 3 + 1) % (q_span - 1)) + q_lo;
+        const int vi = ((h * 7 + x * 13 + d * 5 + 2) % (q_span - 1)) + q_lo;
+        const float kv = static_cast<float>(ki) * kScaleK;
+        const float vv = static_cast<float>(vi) * kScaleV;
+        const int k_idx = (h * T + x) * D + d;
+        const int v_idx = (h * D + d) * T + x;
+        kn_feed_data[k_idx] = int8_slices ? std::round(kv / kScaleKn) : kv;
+        vn_feed_data[v_idx] = int8_slices ? std::round(vv / kScaleVn) : vv;
+        in_ref.k_new[k_idx] = kv;
+        in_ref.v_new[v_idx] = vv;
+      }
+    }
+  }
+
+  in_ref.mask.resize(T * L);
+  const int filled_slots = FilledSlots(c);
+  for (int t = 0; t < T; ++t) {
+    for (int j = 0; j < L; ++j) {
+      const bool attend =
+          !(c.fully_mask_last_row && t == T - 1) &&
+          (j < W ? j < filled_slots && (j * 5 + t * 3) % 4 != 0 : (j - W) <= t);
+      if (mask_mode == MaskMode::kBool) {
+        in_ref.mask[t * L + j] = attend ? 1.0f : 0.0f;
+      } else {
+        in_ref.mask[t * L + j] =
+            attend ? -0.25f * static_cast<float>((j + t) % 3) : -10000.0f;
+      }
+    }
+  }
+
+  std::vector<float> k_cache_post = in_ref.k_cache;
+  std::vector<float> v_cache_post = in_ref.v_cache;
+  ApplyRingWrite(c, in_ref, k_cache_post, v_cache_post);
+  const std::vector<float> expected_out =
+      ReferenceAttention(c, mask_mode, in_ref, in_ref.k_cache, in_ref.v_cache);
+
+  auto make_tensor = [](const ::ml_drift::BHWC& shape,
+                        std::vector<float> data) {
+    ::ml_drift::TensorFloat32 t;
+    t.shape = shape;
+    t.data = std::move(data);
+    return t;
+  };
+  std::vector<::ml_drift::TensorFloat32> src_cpu = {
+      make_tensor(::ml_drift::BHWC(1, H, R, D), q_feed_data),
+      make_tensor(::ml_drift::BHWC(1, H, W, D), init_k_src),
+      make_tensor(::ml_drift::BHWC(1, H, W, D), init_v_src),
+      make_tensor(::ml_drift::BHWC(1, H, T, D), kn_feed_data),
+      make_tensor(::ml_drift::BHWC(1, H, D, T), vn_feed_data),
+      make_tensor(::ml_drift::BHWC(1, 1, T, L), in_ref.mask)};
+
+  ::ml_drift::TensorFloat32 out_cpu =
+      make_tensor(::ml_drift::BHWC(1, H, R, D), {});
+  ::ml_drift::TensorFloat32 k_cache_cpu =
+      make_tensor(::ml_drift::BHWC(1, 1, 1, total_cache_bytes), {});
+  ::ml_drift::TensorFloat32 v_cache_cpu =
+      make_tensor(::ml_drift::BHWC(1, 1, 1, total_cache_bytes), {});
+  std::vector<::ml_drift::TensorFloat32*> dst_cpu = {&out_cpu};
+  if (c.update_cache) {
+    dst_cpu.push_back(&k_cache_cpu);
+    dst_cpu.push_back(&v_cache_cpu);
+  }
+  ABSL_RETURN_IF_ERROR(env.ExecuteGpuModel(src_cpu, dst_cpu, &gpu_model));
+
+  const bool f16 =
+      data_type == ::ml_drift::DataType::kFloat16 || float16_output ||
+      float16_slices;
+  const float out_tolerance = f16 ? (D > 64 ? 2e-2f : 1e-2f) : 2e-3f;
+  EXPECT_THAT(out_cpu.data,
+              ::testing::Pointwise(::testing::FloatNear(out_tolerance),
+                                   expected_out));
+
+  if (c.update_cache) {
+    // Compare directly against the linear `kOSpatialIOGroupO4I4` and
+    // `kOSpatialIOGroupI4O4` `uchar4` words written by `AddValuesToCache` and
+    // `CreateRingCacheWriteOp`.
+    const int head_slices = packed_d / 4;
+    const int cache_slices = W / 4;
+    std::vector<float> expected_k_linear(total_cache_bytes, 0.0f);
+    std::vector<float> expected_v_linear(total_cache_bytes, 0.0f);
+    for (int h = 0; h < H; ++h) {
+      for (int s = 0; s < W; ++s) {
+        const int s_slice = s / 4;
+        const int s_lane = s % 4;
+        for (int hs = 0; hs < head_slices; ++hs) {
+          const int k_vec4 =
+              ((h * head_slices + hs) * cache_slices + s_slice) * 4 + s_lane;
+          const int v_vec4 =
+              ((h * cache_slices + s_slice) * head_slices + hs) * 4 + s_lane;
+          for (int lane = 0; lane < 4; ++lane) {
+            if (kv_quant_bits == 8) {
+              const int d = hs * 4 + lane;
+              expected_k_linear[k_vec4 * 4 + lane] =
+                  std::round(k_cache_post[(h * W + s) * D + d] / kScaleK) +
+                  128.0f;
+              expected_v_linear[v_vec4 * 4 + lane] =
+                  std::round(v_cache_post[(h * D + d) * W + s] / kScaleV) +
+                  128.0f;
+            } else {
+              const int c0 = hs * 8 + lane;
+              const int c1 = hs * 8 + 4 + lane;
+              const float k0 = k_cache_post[(h * W + s) * D + c0] / kScaleK;
+              const float k1 = k_cache_post[(h * W + s) * D + c1] / kScaleK;
+              const int k_lo = static_cast<int>(std::round(k0)) + 8;
+              const int k_hi = static_cast<int>(std::round(k1)) + 8;
+              expected_k_linear[k_vec4 * 4 + lane] =
+                  static_cast<float>(k_lo + k_hi * 16);
+
+              const float v0 = v_cache_post[(h * D + c0) * W + s] / kScaleV;
+              const float v1 = v_cache_post[(h * D + c1) * W + s] / kScaleV;
+              const int v_lo = static_cast<int>(std::round(v0)) + 8;
+              const int v_hi = static_cast<int>(std::round(v1)) + 8;
+              expected_v_linear[v_vec4 * 4 + lane] =
+                  static_cast<float>(v_lo + v_hi * 16);
+            }
+          }
+        }
+      }
+    }
+    EXPECT_THAT(k_cache_cpu.data,
+                ::testing::Pointwise(::testing::FloatNear(1e-3f),
+                                     expected_k_linear));
+    EXPECT_THAT(v_cache_cpu.data,
+                ::testing::Pointwise(::testing::FloatNear(1e-3f),
+                                     expected_v_linear));
+  }
+  return absl::OkStatus();
+}
+
+TEST_P(FusedSdpaCacheUpdateKernelTest, Gemma5SlidingInt8KvFloatQueryAndSlices) {
+  EXPECT_OK(RunQuantizedFusedSdpaCacheUpdateTest(
+      *exec_env, precision(), storage(), mask_mode(),
+      {.heads = 2,
+       .groups = 4,
+       .new_len = 16,
+       .cache_size = 64,
+       .head_dim = 256,
+       .start = 56,
+       .end = 72},
+      /*kv_quant_bits=*/8, /*int8_query=*/false, /*int8_slices=*/false));
+}
+
+TEST_P(FusedSdpaCacheUpdateKernelTest,
+       Int8QueryAndInt8SlicesWithInt8KvWraparound) {
+  for (int new_len : {1, 8}) {
+    SCOPED_TRACE(absl::StrCat("new_len=", new_len));
+    EXPECT_OK(RunQuantizedFusedSdpaCacheUpdateTest(
+        *exec_env, precision(), storage(), mask_mode(),
+        {.heads = 2,
+         .groups = 2,
+         .new_len = new_len,
+         .cache_size = 16,
+         .head_dim = 64,
+         .start = 14,
+         .end = 14 + new_len},
+        /*kv_quant_bits=*/8, /*int8_query=*/true, /*int8_slices=*/true));
+  }
+}
+
+TEST_P(FusedSdpaCacheUpdateKernelTest,
+       Int8QueryAndInt8SlicesWithPackedInt4KvWraparound) {
+  for (const TestCase& tc : {
+           TestCase{.heads = 2,
+                    .groups = 4,
+                    .new_len = 8,
+                    .cache_size = 32,
+                    .head_dim = 256,
+                    .start = 28,
+                    .end = 36,
+                    .update_cache = true},
+           TestCase{.heads = 2,
+                    .groups = 2,
+                    .new_len = 4,
+                    .cache_size = 32,
+                    .head_dim = 64,
+                    .start = 0,
+                    .end = 4,
+                    .update_cache = true},
+           TestCase{.heads = 2,
+                    .groups = 2,
+                    .new_len = 1,
+                    .cache_size = 16,
+                    .head_dim = 64,
+                    .start = 10,
+                    .end = 11,
+                    .update_cache = false},
+       }) {
+    SCOPED_TRACE(absl::StrCat("start=", tc.start));
+    EXPECT_OK(RunQuantizedFusedSdpaCacheUpdateTest(
+        *exec_env, precision(), storage(), mask_mode(), tc,
+        /*kv_quant_bits=*/4, /*int8_query=*/true, /*int8_slices=*/true));
+  }
+}
+
+TEST_P(FusedSdpaCacheUpdateKernelTest,
+       Float32QueryFloat16OutputQuantizedKvWraparound) {
+  if (precision() != ::ml_drift::CalculationsPrecision::kF32) {
+    GTEST_SKIP() << "Output already matches query precision.";
+  }
+  if (!exec_env->IsStorageSupported(storage(),
+                                    ::ml_drift::DataType::kFloat16)) {
+    GTEST_SKIP() << "FLOAT16 tensors are not supported.";
+  }
+  for (int kv_bits : {8, 4}) {
+    for (bool float16_slices : {false, true}) {
+      SCOPED_TRACE(
+          absl::StrCat("kv_bits=", kv_bits, ",f16_slices=", float16_slices));
+      EXPECT_OK(RunQuantizedFusedSdpaCacheUpdateTest(
+          *exec_env, precision(), storage(), mask_mode(),
+          {.heads = 2,
+           .groups = 4,
+           .new_len = 8,
+           .cache_size = 32,
+           .head_dim = 256,
+           .start = 28,
+           .end = 36,
+           .update_cache = true},
+          kv_bits, /*int8_query=*/false, /*int8_slices=*/false,
+          /*float16_output=*/true, float16_slices));
+    }
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(

@@ -14,20 +14,52 @@
 
 #include "ml_drift_delegate/delegate/composite/ir/fused_sdpa_cache_update_parser.h"
 
-#include <utility>
-
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
-#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
-#include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
 
 namespace litert::ml_drift::ir {
 namespace {
+
+void RetagQuantizedCacheTensor(::ml_drift::ir::IrModel& ir_model,
+                               ::ml_drift::ir::IrTensorId tensor_id,
+                               int quant_bits, int cache_ts_idx) {
+  ::ml_drift::ir::IrTensor* tensor = ir_model.GetMutableTensor(tensor_id);
+  if (tensor->desc.GetDataType() == ::ml_drift::DataType::kUint8) {
+    return;
+  }
+  ir_model.ResetQuantParams(tensor_id);
+  tensor->desc.SetDataType(::ml_drift::DataType::kUint8);
+  if (quant_bits == 4) {
+    tensor->desc.SetBHWCShape(::litert::ml_drift::PackInt4KvCacheShape(
+        tensor->desc.GetBHWCShape(), cache_ts_idx));
+  }
+}
+
+bool RetagPartitionInt8Tensor(::ml_drift::ir::IrModel& ir_model,
+                              ::ml_drift::ir::IrTensorId tensor_id,
+                              const TfLiteTensor& tflite_tensor) {
+  if (tflite_tensor.type != kTfLiteInt8) {
+    return false;
+  }
+  ::ml_drift::ir::IrTensor* tensor = ir_model.GetMutableTensor(tensor_id);
+  if (tensor->desc.GetDataType() == ::ml_drift::DataType::kInt8) {
+    return true;
+  }
+  if (ir_model.FindProducer(tensor_id) == nullptr &&
+      ir_model.FindConsumers(tensor_id).empty()) {
+    ir_model.ResetQuantParams(tensor_id);
+    tensor->desc.SetDataType(::ml_drift::DataType::kInt8);
+    return true;
+  }
+  return false;
+}
 
 absl::Status FusedSdpaCacheUpdateIsSupported(
     const TfLiteContext* context, const TfLiteNode* tflite_node,
@@ -37,11 +69,59 @@ absl::Status FusedSdpaCacheUpdateIsSupported(
 }
 
 void FusedSdpaCacheUpdateConvert(
-    const TfLiteContext& /*context*/, const TfLiteNode& tflite_node,
+    const TfLiteContext& context, const TfLiteNode& tflite_node,
     const TfLiteRegistration& /*registration*/,
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     const IrModelBuilderOptions& /*options*/,
     ::ml_drift::ir::IrModel& ir_model) {
+  const TfLiteTensor& query_tensor =
+      context.tensors[tflite_node.inputs->data[0]];
+  const TfLiteTensor& key_cache_tensor =
+      context.tensors[tflite_node.inputs->data[1]];
+  const TfLiteTensor& value_cache_tensor =
+      context.tensors[tflite_node.inputs->data[2]];
+  const TfLiteTensor& key_new_tensor =
+      context.tensors[tflite_node.inputs->data[3]];
+  const TfLiteTensor& value_new_tensor =
+      context.tensors[tflite_node.inputs->data[4]];
+
+  const ::ml_drift::ir::IrTensorId query_id =
+      tensor_map[tflite_node.inputs->data[0]];
+  const ::ml_drift::ir::IrTensorId key_cache_id =
+      tensor_map[tflite_node.inputs->data[1]];
+  const ::ml_drift::ir::IrTensorId value_cache_id =
+      tensor_map[tflite_node.inputs->data[2]];
+  const ::ml_drift::ir::IrTensorId key_new_id =
+      tensor_map[tflite_node.inputs->data[3]];
+  const ::ml_drift::ir::IrTensorId value_new_id =
+      tensor_map[tflite_node.inputs->data[4]];
+
+  const bool query_is_raw_int8 =
+      RetagPartitionInt8Tensor(ir_model, query_id, query_tensor);
+  const bool key_new_is_raw_int8 =
+      RetagPartitionInt8Tensor(ir_model, key_new_id, key_new_tensor);
+  const bool value_new_is_raw_int8 =
+      RetagPartitionInt8Tensor(ir_model, value_new_id, value_new_tensor);
+
+  const int quant_bits =
+      (key_cache_tensor.type == kTfLiteInt4)
+          ? 4
+          : ((key_cache_tensor.type == kTfLiteInt8) ? 8 : 0);
+  if (quant_bits > 0) {
+    RetagQuantizedCacheTensor(ir_model, key_cache_id, quant_bits,
+                              /*cache_ts_idx=*/2);
+    RetagQuantizedCacheTensor(ir_model, value_cache_id, quant_bits,
+                              /*cache_ts_idx=*/3);
+    if (tflite_node.outputs->size == 3) {
+      RetagQuantizedCacheTensor(
+          ir_model, tensor_map[tflite_node.outputs->data[1]], quant_bits,
+          /*cache_ts_idx=*/2);
+      RetagQuantizedCacheTensor(
+          ir_model, tensor_map[tflite_node.outputs->data[2]], quant_bits,
+          /*cache_ts_idx=*/3);
+    }
+  }
+
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
   op->name = kFusedSdpaCacheUpdateType;
 
@@ -54,19 +134,12 @@ void FusedSdpaCacheUpdateConvert(
     ir_model.SetProducer(tensor_map[tflite_node.outputs->data[i]], op->id);
   }
 
-  ::litert::ml_drift::FusedSdpaCacheUpdateAttributes attr;
-  attr.update_cache = tflite_node.outputs->size == 3;
-  const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
-      tflite_node.builtin_data);
-  if (params != nullptr && params->attributes != nullptr) {
-    const flexbuffers::Map flexbuffer_map =
-        flexbuffers::GetRoot(params->attributes, params->attributes_size)
-            .AsMap();
-    if (!flexbuffer_map["softcap"].IsNull()) {
-      attr.softcap = flexbuffer_map["softcap"].AsFloat();
-    }
-  }
-  op->attr = std::move(attr);
+  op->attr = ::litert::ml_drift::PopulateFusedSdpaCacheUpdateAttributes(
+      tflite_node, query_tensor, key_cache_tensor, value_cache_tensor,
+      key_new_tensor, value_new_tensor,
+      {.query = query_is_raw_int8,
+       .key_new = key_new_is_raw_int8,
+       .value_new = value_new_is_raw_int8});
 }
 
 }  // namespace

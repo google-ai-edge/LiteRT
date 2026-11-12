@@ -226,7 +226,25 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     int param_index = inputs.size() > 6 ? 6 : -1;
     std::vector<::ml_drift::Value*> sdpa_inputs =
         ResolveInputsWithBufferParam(param_index, inputs, model_builder);
-    return CreateFusedSdpaCacheUpdateFromNode(sdpa_inputs, outputs, node,
+    std::vector<::ml_drift::Value*> sdpa_outputs = outputs;
+    // Output 0 is the attention tensor; outputs >= 1 are updated key/value
+    // caches that must be materialized in linear BUFFER storage when internal.
+    for (int i = 1; i < sdpa_outputs.size(); ++i) {
+      const bool is_external =
+          create_info_.predefined.contains(sdpa_outputs[i]->id) ||
+          create_info_.external_immutable_tensors.contains(
+              sdpa_outputs[i]->id) ||
+          create_info_.external_mutable_tensors.contains(sdpa_outputs[i]->id);
+      if (!is_external) {
+        TensorToBuffer(*sdpa_outputs[i], /*copy_from_original=*/false,
+                       model_builder);
+        if (auto it = replaced_tensors_.find(sdpa_outputs[i]->id);
+            it != replaced_tensors_.end()) {
+          sdpa_outputs[i] = it->second.get();
+        }
+      }
+    }
+    return CreateFusedSdpaCacheUpdateFromNode(sdpa_inputs, sdpa_outputs, node,
                                               model_builder);
   }
   if (node.operation.type == kRuntimeBatchedMatMulType) {

@@ -21,6 +21,7 @@
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -303,6 +304,66 @@ TEST(LiteRtOpSelectorTest, FusedSdpaCacheUpdateConvertsParamTensorToBuffer) {
     }
   }
   EXPECT_EQ(checked_nodes, 2);
+}
+
+TEST(LiteRtOpSelectorTest, FusedSdpaCacheUpdateRejectsScaleOnFloatQuery) {
+  const GpuInfo gpu_info = GetTestGpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kBuffer;
+
+  GpuModelBuilderOptions options;
+  options.storage = TensorStorageType::kBuffer;
+  GpuModelBuilder builder(gpu_info, options);
+
+  auto add_buf = [&](DataType dtype, const BHWC& shape) {
+    TensorDescriptor desc(dtype, TensorStorageType::kBuffer, Layout::kHWC);
+    desc.SetBHWCShape(shape);
+    return builder.AddTensor(desc);
+  };
+
+  constexpr int kHkv = 2, kT = 4, kW = 16, kD = 8;
+  auto query = add_buf(DataType::kFloat32, BHWC(1, kHkv, kT, kD));
+  auto key_cache = add_buf(DataType::kFloat32, BHWC(1, kHkv, kW, kD));
+  auto value_cache = add_buf(DataType::kFloat32, BHWC(1, kHkv, kD, kW));
+  auto key_new = add_buf(DataType::kFloat32, BHWC(1, kHkv, kT, kD));
+  auto value_new = add_buf(DataType::kFloat32, BHWC(1, kHkv, kD, kT));
+  auto mask = add_buf(DataType::kFloat32, BHWC(1, 1, kT, kW + kT));
+  auto param = add_buf(DataType::kInt32, BHWC(1, 1, 1, 7));
+  auto attn_out = add_buf(DataType::kFloat32, BHWC(1, kHkv, kT, kD));
+
+  Value v_query{query.id, {DataType::kFloat32, BHWC(1, kHkv, kT, kD)}};
+  Value v_kc{key_cache.id, {DataType::kFloat32, BHWC(1, kHkv, kW, kD)}};
+  Value v_vc{value_cache.id, {DataType::kFloat32, BHWC(1, kHkv, kD, kW)}};
+  Value v_kn{key_new.id, {DataType::kFloat32, BHWC(1, kHkv, kT, kD)}};
+  Value v_vn{value_new.id, {DataType::kFloat32, BHWC(1, kHkv, kD, kT)}};
+  Value v_mask{mask.id, {DataType::kFloat32, BHWC(1, 1, kT, kW + kT)}};
+  Value v_param{param.id, {DataType::kInt32, BHWC(1, 1, 1, 7)}};
+  Value v_attn{attn_out.id, {DataType::kFloat32, BHWC(1, kHkv, kT, kD)}};
+
+  OperationDef op_def;
+  op_def.src_tensors = {
+      query.tensor_desc, key_cache.tensor_desc, value_cache.tensor_desc,
+      key_new.tensor_desc, value_new.tensor_desc, mask.tensor_desc,
+      param.tensor_desc};
+  op_def.dst_tensors = {attn_out.tensor_desc};
+
+  GraphFloat32 graph;
+  Node* sdpa_node = graph.NewNode();
+  sdpa_node->operation.type = kFusedSdpaCacheUpdateType;
+  FusedSdpaCacheUpdateAttributes attr;
+  attr.scale_q = 0.0625f;
+  sdpa_node->operation.attributes = attr;
+
+  LiteRtOpSelector selector(&create_info, &gpu_info);
+  EXPECT_EQ(
+      selector
+          .GPUOperationFromNode(
+              op_def,
+              {&v_query, &v_kc, &v_vc, &v_kn, &v_vn, &v_mask, &v_param},
+              {&v_attn}, *sdpa_node, &builder)
+          .code(),
+      absl::StatusCode::kInvalidArgument);
 }
 
 TEST(LiteRtOpSelectorTest,

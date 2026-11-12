@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -27,7 +28,9 @@
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/ir/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/tflite/convert/convert_testing_utils.h"
 #include "ml_drift_delegate/tflite/convert/stub_delegate.h"
@@ -224,6 +227,345 @@ TEST_F(ConvertAddValuesToCacheTest, UnsupportedLayoutIsNotDelegated) {
   const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
   if (ir_model != nullptr) {
     EXPECT_THAT(ir_model->ops(), SizeIs(0));
+  }
+}
+
+void SetQuantizationScale(TfLiteTensor* tensor, float scale,
+                          int32_t zero_point = 0) {
+  ASSERT_EQ(tensor->quantization.type, kTfLiteAffineQuantization);
+  auto* quant =
+      static_cast<TfLiteAffineQuantization*>(tensor->quantization.params);
+  ASSERT_NE(quant, nullptr);
+  ASSERT_EQ(quant->scale->size, 1);
+  ASSERT_EQ(quant->zero_point->size, 1);
+  quant->scale->data[0] = scale;
+  quant->zero_point->data[0] = zero_point;
+  tensor->params.scale = scale;
+  tensor->params.zero_point = zero_point;
+}
+
+TEST_F(ConvertAddValuesToCacheTest, Int4CachePacksHalfShapeAndSetsQuantBits) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});   // src_k
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});   // src_v
+  builder.AddInput(kTfLiteInt32, {4});               // params
+  builder.AddOutput(kTfLiteInt4, {1, 2, 128, 64});   // cache_k [B, K, S, H]
+  builder.AddOutput(kTfLiteInt4, {1, 2, 64, 128});   // cache_v [B, K, H, S]
+
+  builder.SetParameters(CreateAddValuesToCacheParams(2, 128, 64, 0.25f, 0.5f));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::AddValuesToCacheAttributes>(&op->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_EQ(attr->kv_quant_bits, 4);
+  EXPECT_EQ(attr->scale_k, 0.25f);
+  EXPECT_EQ(attr->scale_v, 0.5f);
+
+  const auto* out_k = ir_model->tensor(op->outputs[0]);
+  const auto* out_v = ir_model->tensor(op->outputs[1]);
+  ASSERT_NE(out_k, nullptr);
+  ASSERT_NE(out_v, nullptr);
+  EXPECT_EQ(out_k->desc.GetDataType(), ::ml_drift::DataType::kUint8);
+  EXPECT_EQ(out_v->desc.GetDataType(), ::ml_drift::DataType::kUint8);
+  EXPECT_EQ(out_k->desc.GetBHWCShape(), ::ml_drift::BHWC(1, 2, 128, 32));
+  EXPECT_EQ(out_v->desc.GetBHWCShape(), ::ml_drift::BHWC(1, 2, 32, 128));
+  EXPECT_FALSE(out_k->quant_params.has_value());
+  EXPECT_FALSE(out_v->quant_params.has_value());
+}
+
+TEST_F(ConvertAddValuesToCacheTest, Int4CacheReadsScaleFromTensorQuantParams) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteInt32, {4});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 128, 64});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 64, 128});
+
+  builder.SetParameters(CreateAddValuesToCacheParams(2, 128, 64));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  SetQuantizationScale(interpreter->tensor(interpreter->outputs()[0]), 0.125f);
+  SetQuantizationScale(interpreter->tensor(interpreter->outputs()[1]), 0.375f);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::AddValuesToCacheAttributes>(
+          &ir_model->ops()[0]->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_EQ(attr->kv_quant_bits, 4);
+  EXPECT_EQ(attr->scale_k, 0.125f);
+  EXPECT_EQ(attr->scale_v, 0.375f);
+}
+
+TEST_F(ConvertAddValuesToCacheTest, Int8CacheKeepsFullByteShape) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteInt32, {4});
+  builder.AddOutput(kTfLiteInt8, {1, 2, 128, 64});
+  builder.AddOutput(kTfLiteInt8, {1, 2, 64, 128});
+
+  builder.SetParameters(CreateAddValuesToCacheParams(2, 128, 64, 0.25f, 0.5f));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::AddValuesToCacheAttributes>(&op->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_EQ(attr->kv_quant_bits, 8);
+  EXPECT_EQ(ir_model->tensor(op->outputs[0])->desc.GetBHWCShape(),
+            ::ml_drift::BHWC(1, 2, 128, 64));
+  EXPECT_EQ(ir_model->tensor(op->outputs[1])->desc.GetBHWCShape(),
+            ::ml_drift::BHWC(1, 2, 64, 128));
+}
+
+TEST_F(ConvertAddValuesToCacheTest, Int4CacheUnalignedHeadSizeIsNotDelegated) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 12});
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 12});
+  builder.AddInput(kTfLiteInt32, {4});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 128, 12});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 12, 128});
+
+  builder.SetParameters(CreateAddValuesToCacheParams(2, 128, 12, 0.25f, 0.5f));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  if (ir_model != nullptr) {
+    EXPECT_THAT(ir_model->ops(), SizeIs(0));
+  }
+}
+
+TEST_F(ConvertAddValuesToCacheTest, Int4CacheMissingScalesIsNotDelegated) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteInt32, {4});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 128, 64});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 64, 128});
+
+  builder.SetParameters(CreateAddValuesToCacheParams(2, 128, 64));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  // SingleOpInterpreterBuilder defaults affine scale to 1.0f; clear it to 0.0f
+  // to verify non-positive / missing scales are rejected.
+  SetQuantizationScale(interpreter->tensor(interpreter->outputs()[0]), 0.0f);
+  SetQuantizationScale(interpreter->tensor(interpreter->outputs()[1]), 0.0f);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  if (ir_model != nullptr) {
+    EXPECT_THAT(ir_model->ops(), SizeIs(0));
+  }
+}
+
+TEST_F(ConvertAddValuesToCacheTest,
+       Int4CacheAsymmetricZeroPointIsNotDelegated) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteInt32, {4});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 128, 64});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 64, 128});
+
+  builder.SetParameters(CreateAddValuesToCacheParams(2, 128, 64, 0.25f, 0.5f));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  SetQuantizationScale(interpreter->tensor(interpreter->outputs()[0]), 0.25f,
+                       /*zero_point=*/1);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  if (ir_model != nullptr) {
+    EXPECT_THAT(ir_model->ops(), SizeIs(0));
+  }
+}
+
+TEST_F(ConvertAddValuesToCacheTest,
+       Int4CacheMismatchedAttrAndTensorDimsIsNotDelegated) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteInt32, {4});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 64, 64});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 64, 64});
+
+  // attr.cache_size (128) exceeds out_k/out_v time dim (64).
+  builder.SetParameters(CreateAddValuesToCacheParams(2, 128, 64, 0.25f, 0.5f));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  if (ir_model != nullptr) {
+    EXPECT_THAT(ir_model->ops(), SizeIs(0));
+  }
+}
+
+TEST_F(ConvertAddValuesToCacheTest, Int4CacheNonFiniteScaleIsNotDelegated) {
+  const float bad_scales[] = {std::numeric_limits<float>::quiet_NaN(),
+                              std::numeric_limits<float>::infinity()};
+  for (const float bad_scale : bad_scales) {
+    SCOPED_TRACE(bad_scale);
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+    builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+    builder.AddInput(kTfLiteInt32, {4});
+    builder.AddOutput(kTfLiteInt4, {1, 2, 128, 64});
+    builder.AddOutput(kTfLiteInt4, {1, 2, 64, 128});
+
+    builder.SetParameters(
+        CreateAddValuesToCacheParams(2, 128, 64, bad_scale, 0.5f));
+
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+    ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+    const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+    if (ir_model != nullptr) {
+      EXPECT_THAT(ir_model->ops(), SizeIs(0));
+    }
+  }
+}
+
+TEST_F(ConvertAddValuesToCacheTest,
+       QuantizedCacheDelegatesAffineInt8SourceInputs) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteInt8, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteInt8, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteInt32, {4});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 128, 64});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 64, 128});
+
+  builder.SetParameters(CreateAddValuesToCacheParams(2, 128, 64, 0.25f, 0.5f));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  SetQuantizationScale(interpreter->tensor(interpreter->inputs()[0]), 0.125f);
+  SetQuantizationScale(interpreter->tensor(interpreter->inputs()[1]), 0.125f);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_NE(ir_model, nullptr);
+  EXPECT_THAT(ir_model->ops(), SizeIs(1));
+}
+
+TEST_F(ConvertAddValuesToCacheTest,
+       Int4CacheDelegatesSymmetricInt4SourceInputs) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteInt4, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteInt4, {1, 2, 1, 64});
+  builder.AddInput(kTfLiteInt32, {4});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 128, 64});
+  builder.AddOutput(kTfLiteInt4, {1, 2, 64, 128});
+
+  builder.SetParameters(CreateAddValuesToCacheParams(2, 128, 64, 0.25f, 0.5f));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  SetQuantizationScale(interpreter->tensor(interpreter->inputs()[0]), 0.25f);
+  SetQuantizationScale(interpreter->tensor(interpreter->inputs()[1]), 0.5f);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_NE(ir_model, nullptr);
+  EXPECT_THAT(ir_model->ops(), SizeIs(1));
+}
+
+TEST_F(ConvertAddValuesToCacheTest,
+       QuantizedCacheNonFloatInputIsNotDelegated) {
+  const TfLiteType unsupported_src_types[] = {kTfLiteInt32, kTfLiteBFloat16};
+  const TfLiteType cache_types[] = {kTfLiteInt4, kTfLiteInt8};
+  for (const TfLiteType bad_src_type : unsupported_src_types) {
+    for (const TfLiteType cache_type : cache_types) {
+      SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+      builder.AddInput(bad_src_type, {1, 2, 1, 64});
+      builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+      builder.AddInput(kTfLiteInt32, {4});
+      builder.AddOutput(cache_type, {1, 2, 128, 64});
+      builder.AddOutput(cache_type, {1, 2, 64, 128});
+
+      builder.SetParameters(
+          CreateAddValuesToCacheParams(2, 128, 64, 0.25f, 0.5f));
+
+      auto interpreter = builder.Build();
+      ASSERT_NE(interpreter, nullptr);
+      ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+      const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+      if (ir_model != nullptr) {
+        EXPECT_THAT(ir_model->ops(), SizeIs(0));
+      }
+    }
+  }
+}
+
+TEST_F(ConvertAddValuesToCacheTest,
+       QuantizedCacheMismatchedKvHeadsOrInvalidInt8ScaleIsNotDelegated) {
+  // Mismatched K vs V head counts (dims[1]: 2 vs 4).
+  {
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+    builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+    builder.AddInput(kTfLiteInt32, {4});
+    builder.AddOutput(kTfLiteInt4, {1, 2, 128, 64});
+    builder.AddOutput(kTfLiteInt4, {1, 4, 64, 128});
+
+    builder.SetParameters(
+        CreateAddValuesToCacheParams(2, 128, 64, 0.25f, 0.5f));
+
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+    ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+    const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+    if (ir_model != nullptr) {
+      EXPECT_THAT(ir_model->ops(), SizeIs(0));
+    }
+  }
+
+  // INT8 cache with non-finite scale_k.
+  {
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+    builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});
+    builder.AddInput(kTfLiteInt32, {4});
+    builder.AddOutput(kTfLiteInt8, {1, 2, 128, 64});
+    builder.AddOutput(kTfLiteInt8, {1, 2, 64, 128});
+
+    builder.SetParameters(CreateAddValuesToCacheParams(
+        2, 128, 64, std::numeric_limits<float>::quiet_NaN(), 0.5f));
+
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+    ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+    const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+    if (ir_model != nullptr) {
+      EXPECT_THAT(ir_model->ops(), SizeIs(0));
+    }
   }
 }
 

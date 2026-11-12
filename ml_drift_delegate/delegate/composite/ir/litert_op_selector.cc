@@ -127,7 +127,9 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     std::vector<::ml_drift::ValueId> src_ids(cache_inputs.size());
     for (size_t i = 0; i < cache_inputs.size(); ++i) {
       src_ids[i] = cache_inputs[i]->id;
-      cache_op_def.src_tensors[i] = cache_inputs[i]->desc;
+      ABSL_ASSIGN_OR_RETURN(auto src_handle,
+                            model_builder->GetTensor(src_ids[i]));
+      cache_op_def.src_tensors[i] = src_handle.tensor_desc;
     }
     std::vector<::ml_drift::ValueId> dst_ids(outputs.size());
     for (size_t i = 0; i < outputs.size(); ++i) {
@@ -146,7 +148,9 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
         if (auto it = replaced_tensors_.find(outputs[i]->id);
             it != replaced_tensors_.end()) {
           dst_ids[i] = it->second->id;
-          cache_op_def.dst_tensors[i] = it->second->desc;
+          ABSL_ASSIGN_OR_RETURN(auto dst_handle,
+                                model_builder->GetTensor(dst_ids[i]));
+          cache_op_def.dst_tensors[i] = dst_handle.tensor_desc;
         }
       }
     }
@@ -159,7 +163,23 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     int param_index = inputs.size() > 6 ? 6 : -1;
     std::vector<const ::ml_drift::ir::IrTensor*> sdpa_inputs =
         ResolveInputsWithBufferParam(param_index, inputs, model_builder);
-    return CreateFusedSdpaCacheUpdateFromIrOp(sdpa_inputs, outputs, op,
+    std::vector<const ::ml_drift::ir::IrTensor*> sdpa_outputs = outputs;
+    for (size_t i = 1; i < sdpa_outputs.size(); ++i) {
+      const bool is_external =
+          create_info_.predefined.contains(sdpa_outputs[i]->id) ||
+          create_info_.external_immutable_tensors.contains(
+              sdpa_outputs[i]->id) ||
+          create_info_.external_mutable_tensors.contains(sdpa_outputs[i]->id);
+      if (!is_external) {
+        TensorToBuffer(*sdpa_outputs[i], /*copy_from_original=*/false,
+                       model_builder);
+        if (auto it = replaced_tensors_.find(sdpa_outputs[i]->id);
+            it != replaced_tensors_.end()) {
+          sdpa_outputs[i] = it->second.get();
+        }
+      }
+    }
+    return CreateFusedSdpaCacheUpdateFromIrOp(sdpa_inputs, sdpa_outputs, op,
                                               model_builder);
   } else if (op.name == "gated_delta_update") {
     return CreateGatedDeltaUpdateFromIrOp(op_def, inputs, outputs, op,

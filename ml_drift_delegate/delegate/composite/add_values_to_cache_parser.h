@@ -20,8 +20,10 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
+#include "tflite/c/common.h"
 
 namespace litert::ml_drift {
 
@@ -35,6 +37,11 @@ struct AddValuesToCacheAttributes {
   // bound.
   int token_index_offset_param_idx = 0;
   int active_tokens_param_idx = 1;
+  // Quantized KV cache bit-width: 0 for float, 8 for symmetric INT8 stored as
+  // unsigned bytes (offset +128), 4 for symmetric INT4 packed two nibbles per
+  // byte in a half-size kUint8 buffer (offset +8, low nibble = head slice 2*S,
+  // high nibble = head slice 2*S + 1).
+  int kv_quant_bits = 0;
   // quantized kv cache case
   std::optional<float> scale_k;
   std::optional<float> scale_v;
@@ -55,6 +62,26 @@ struct AddValuesToCacheAttributes {
 // the CPU decomposition instead of being computed with the wrong layout.
 absl::Status ReadAddValuesToCacheLayout(const flexbuffers::Map& attributes,
                                         AddValuesToCacheAttributes& attr);
+
+// Validates the K/V cache output tensor types, quantization parameters, and
+// alignment constraints for `odml.cache_update`.
+absl::Status CheckAddValuesToCacheOutputs(
+    const TfLiteContext* context, const TfLiteNode* tflite_node,
+    const AddValuesToCacheAttributes& attr);
+
+// Populates `kv_quant_bits` and falls back to `TfLiteAffineQuantization` scales
+// on `out_k` / `out_v` when `scale_k` / `scale_v` were not set in FlexBuffers.
+void PopulateAddValuesToCacheQuantAttributes(const TfLiteTensor& out_k,
+                                             const TfLiteTensor& out_v,
+                                             AddValuesToCacheAttributes& attr);
+
+// Halves the `head_size` axis of a 4D INT4 KV cache BHWC shape so that a
+// `DataType::kUint8` `kBuffer` descriptor allocates 0.5 bytes per logical
+// element (matching `TfLiteTensor::bytes`):
+// - `cache_ts_idx == 2` (`[B, K, S, H]`): returns `[B, K, S, H / 2]`.
+// - `cache_ts_idx == 3` (`[B, K, H, S]`): returns `[B, K, H / 2, S]`.
+::ml_drift::BHWC PackInt4KvCacheShape(const ::ml_drift::BHWC& logical_shape,
+                                      int cache_ts_idx);
 
 class AddValuesToCacheOperationParser : public TFLiteOperationParser {
  public:

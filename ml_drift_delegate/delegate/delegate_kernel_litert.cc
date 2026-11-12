@@ -460,12 +460,36 @@ absl::Status DelegateKernelLiteRt::ProcessTensor(
       data_type = ::litert::ml_drift::ToDataType(tflite_tensor->type);
     }
     bool preserve_f32 = proc_context.preserved_fp32_values.contains(value_id);
+    ::ml_drift::TensorStorageType requested_storage_type =
+        GetStorageType(tflite_tensor->name);
+    // Quantized KV cache tensors retagged to raw kUint8 bytes (including packed
+    // sub-byte kTfLiteInt4 caches) are written/read linearly as 1D buffers.
+    const bool is_4bit_tflite = tflite_tensor->type == kTfLiteInt4 ||
+                                tflite_tensor->type == kTfLiteUInt4;
+    if (data_type == ::ml_drift::DataType::kUint8 &&
+        (is_4bit_tflite || tflite_tensor->type == kTfLiteInt8)) {
+      requested_storage_type = ::ml_drift::TensorStorageType::kBuffer;
+    }
     ABSL_ASSIGN_OR_RETURN(
         ::ml_drift::TensorDescriptor tensor_desc,
         CreateTensorDescriptor(proc_context.gpu_info, shape, data_type,
                                delegate_data_->calculation_precision,
-                               GetStorageType(tflite_tensor->name),
-                               preserve_f32));
+                               requested_storage_type, preserve_f32));
+    if (data_type == ::ml_drift::DataType::kUint8 && is_4bit_tflite) {
+      if (tensor_desc.GetStorageType() !=
+          ::ml_drift::TensorStorageType::kBuffer) {
+        return absl::InvalidArgumentError(
+            "4-bit GPU tensor descriptor must use linear buffer storage.");
+      }
+      const uint64_t desc_bytes = tensor_desc.GetMemorySizeInBytes();
+      const uint64_t aligned_packed_bytes =
+          ((static_cast<uint64_t>(tflite_tensor->bytes) + 3) / 4) * 4;
+      if (desc_bytes != aligned_packed_bytes) {
+        return absl::InvalidArgumentError(
+            "4-bit GPU tensor descriptor byte size does not match packed 4-bit "
+            "buffer size.");
+      }
+    }
     auto tensor_storage_type = tensor_desc.GetStorageType();
 
     // Store tensor descriptor
