@@ -17,10 +17,22 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
+#include <ios>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+
+#if defined(__APPLE__)
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <cerrno>
+#endif  // defined(__APPLE__)
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -29,6 +41,10 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "flatbuffers/detached_buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
+#include "litert/c/internal/litert_runtime_builtin.h"
+#include "litert/c/internal/litert_runtime_c_api.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
@@ -40,7 +56,11 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/litert_consts.h"
+#include "litert/cc/internal/scoped_file.h"
+#include "litert/cc/internal/scoped_weight_source.h"
+#include "litert/cc/litert_any.h"
 #include "litert/cc/litert_api_types.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
@@ -63,14 +83,17 @@
 #include "litert/core/model/model.h"
 #include "litert/core/options.h"
 #include "litert/runtime/compiled_model.h"
+#include "litert/runtime/embedding_row_prefetcher.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
+#include "tflite/builtin_ops.h"
 // copybara:uncomment_begin(google internal)
 // #include "tflite/core/subgraph.h"
 // copybara:uncomment_end
 #include "tflite/interpreter.h"
+#include "tflite/schema/schema_generated.h"
 
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
@@ -666,6 +689,335 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
+}
+
+TEST(CompiledModelTest,
+     RunWithPrefetchEmbeddingTokenIdsPopulatesOptionsAndDiscoversTable) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // 1. Verify Options::SetPrefetchEmbeddingTokenIds (private; reached through
+  // LiteRtOptionsPtrBuilder) populates LiteRtOptionsT when built via
+  // LiteRtOptionsPtrBuilder::Build. A second call replaces the first (one
+  // Options object can be reused across runs without growing).
+  LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
+  const int32_t stale_ids[] = {7, 8, 9};
+  LITERT_ASSERT_OK(
+      internal::LiteRtOptionsPtrBuilder::SetPrefetchEmbeddingTokenIds(
+          options, absl::MakeConstSpan(stale_ids)));
+  const int32_t ids[] = {0, 19, -1, 20};
+  LITERT_ASSERT_OK(
+      internal::LiteRtOptionsPtrBuilder::SetPrefetchEmbeddingTokenIds(
+          options, absl::MakeConstSpan(ids)));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      internal::LiteRtOptionsPtr built_options,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+  ASSERT_NE(built_options, nullptr);
+  EXPECT_THAT(built_options->prefetch_embedding_token_ids,
+              ElementsAre(0, 19, -1, 20));
+
+  // 1b. The field is written only for the builtin runtime. An environment
+  // created with a system runtime handle (here a copy of the builtin C API
+  // table, so every call still works) leaves it empty: the ids are dropped
+  // rather than written into a struct whose layout the runtime may not share.
+  {
+    const LiteRtRuntimeCApiStruct external_runtime = *GetLiteRtRuntimeBuiltin();
+    const std::vector<litert::EnvironmentOptions::Option> env_options = {
+        litert::EnvironmentOptions::Option{
+            litert::EnvironmentOptions::Tag::kSystemRuntimeHandle,
+            litert::LiteRtVariant(
+                reinterpret_cast<const void*>(&external_runtime)),
+        },
+    };
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        Environment external_env,
+        litert::Environment::Create(
+            litert::EnvironmentOptions(absl::MakeConstSpan(env_options))));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        internal::LiteRtOptionsPtr external_options,
+        internal::LiteRtOptionsPtrBuilder::Build(options,
+                                                 external_env.GetHolder()));
+    ASSERT_NE(external_options, nullptr);
+    EXPECT_TRUE(external_options->prefetch_embedding_token_ids.empty());
+  }
+
+  // 2. On simple_embedding_lookup_op.tflite, CompiledModel::Run(..., &options)
+  // triggers table discovery and populates the per-signature cache.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel embedding_model,
+      CompiledModel::Create(
+          env, testing::GetTestFilePath("simple_embedding_lookup_op.tflite"),
+          HwAccelerators::kCpu));
+  EXPECT_TRUE(GetCachedEmbeddingTables(embedding_model.Get(), 0).empty());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> emb_inputs,
+                              embedding_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> emb_outputs,
+                              embedding_model.CreateOutputBuffers());
+  const int32_t lookup_ids[] = {0, 1, 2, 3, 4};
+  ASSERT_TRUE(emb_inputs[0].Write<int32_t>(absl::MakeConstSpan(lookup_ids)));
+  LITERT_ASSERT_OK(embedding_model.Run(emb_inputs, emb_outputs, &options));
+
+  auto cached_tables = GetCachedEmbeddingTables(embedding_model.Get(), 0);
+  ASSERT_EQ(cached_tables.size(), 1);
+  EXPECT_EQ(cached_tables[0].num_rows, 20);
+  EXPECT_EQ(cached_tables[0].row_bytes, 8);
+
+  // 3. On a model without EMBEDDING_LOOKUP (simple_model.tflite), Run with
+  // prefetch options is a transparent no-op and still succeeds.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers, &options));
+  EXPECT_TRUE(GetCachedEmbeddingTables(compiled_model.Get(), 0).empty());
+}
+
+#if defined(__APPLE__)
+// A MAP_PRIVATE mapping of a whole file, unmapped on destruction. data() is
+// null if the file could not be mapped; error() then holds errno.
+class PrivateFileMapping {
+ public:
+  PrivateFileMapping(const std::string& path, int prot) {
+    const int fd = open(path.c_str(), O_RDONLY);
+    if (fd < 0) {
+      error_ = errno;
+      return;
+    }
+    struct stat file_stat;
+    if (fstat(fd, &file_stat) != 0) {
+      error_ = errno;
+    } else {
+      const size_t file_size = static_cast<size_t>(file_stat.st_size);
+      void* mapped = mmap(nullptr, file_size, prot, MAP_PRIVATE, fd, 0);
+      if (mapped == MAP_FAILED) {
+        error_ = errno;
+      } else {
+        data_ = mapped;
+        size_ = file_size;
+      }
+    }
+    close(fd);
+  }
+  ~PrivateFileMapping() {
+    if (data_ != nullptr) munmap(data_, size_);
+  }
+  PrivateFileMapping(const PrivateFileMapping&) = delete;
+  PrivateFileMapping& operator=(const PrivateFileMapping&) = delete;
+
+  void* data() const { return data_; }
+  size_t size() const { return size_; }
+  int error() const { return error_; }
+
+ private:
+  void* data_ = nullptr;
+  size_t size_ = 0;
+  int error_ = 0;
+};
+
+// On Apple platforms the hint is issued only when every table lies in a
+// read-only mapping. The same model is loaded from a heap buffer and from a
+// writable private file mapping, which are refused (Unsupported, cached per
+// signature), and from a PROT_READ private file mapping, which is how
+// LiteRT-LM maps its embedding lookup sections, and from the file itself,
+// which LiteRT maps read-only; those two are prefetched. The test lives here
+// because runtime:compiled_model_test does not build for darwin.
+TEST(CompiledModelTest, PrefetchEmbeddingRowsSkipsWritableTablesOnApple) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+  const std::string path =
+      testing::GetTestFilePath("simple_embedding_lookup_op.tflite");
+  const PrivateFileMapping read_only(path, PROT_READ);
+  ASSERT_NE(read_only.data(), nullptr) << strerror(read_only.error());
+  const PrivateFileMapping writable(path, PROT_READ | PROT_WRITE);
+  ASSERT_NE(writable.data(), nullptr) << strerror(writable.error());
+  const uint8_t* const file_bytes =
+      static_cast<const uint8_t*>(read_only.data());
+  const std::vector<uint8_t> heap(file_bytes, file_bytes + read_only.size());
+
+  struct TestCase {
+    const char* name;
+    const void* model_data;  // Null: CompiledModel::Create(env, path, ...).
+    bool expect_prefetched;  // Ok when true, Unsupported otherwise.
+  };
+  const TestCase kCases[] = {
+      {"heap_buffer", heap.data(), false},
+      {"writable_private_mapping", writable.data(), false},
+      {"read_only_private_mapping", read_only.data(), true},
+      {"model_file", nullptr, true},
+  };
+  const int32_t ids[] = {0, 10, 19};
+  for (const TestCase& tc : kCases) {
+    SCOPED_TRACE(tc.name);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        CompiledModel compiled_model,
+        tc.model_data == nullptr
+            ? CompiledModel::Create(env, path, HwAccelerators::kCpu)
+            : CompiledModel::Create(
+                  env, BufferRef<uint8_t>(tc.model_data, read_only.size()),
+                  HwAccelerators::kCpu));
+    // Twice: a second call must give the same verdict. The empty probe must
+    // report the same verdict as a real batch.
+    for (int round = 0; round < 2; ++round) {
+      auto probe = PrefetchEmbeddingRows(compiled_model.Get(), 0, {});
+      auto prefetched = PrefetchEmbeddingRows(compiled_model.Get(), 0, ids);
+      if (tc.expect_prefetched) {
+        LITERT_EXPECT_OK(probe);
+        LITERT_EXPECT_OK(prefetched);
+      } else {
+        EXPECT_THAT(probe,
+                    ::testing::litert::IsError(kLiteRtStatusErrorUnsupported));
+        EXPECT_THAT(prefetched,
+                    ::testing::litert::IsError(kLiteRtStatusErrorUnsupported));
+      }
+    }
+    // The table is cached either way.
+    EXPECT_EQ(GetCachedEmbeddingTables(compiled_model.Get(), 0).size(), 1);
+  }
+}
+#endif  // defined(__APPLE__)
+
+// The embedding table is an external weight slice, as in a dedup-layout
+// LiteRT-LM bundle (embedder tables in TFLiteWeights sections), so the weight
+// loader maps it from the file. The hint must still work: on Apple that needs
+// the loader's mapping to be read-only for a CPU-only compiled model
+// (InitializeRuntime() passes read_only_cpu_mappings); without it the probe
+// reports Unsupported. On Linux and Windows the test covers the plumbing and
+// the external-weight restore path.
+TEST(CompiledModelTest, PrefetchEmbeddingRowsOnExternalWeightTable) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+  const std::string path =
+      testing::GetTestFilePath("simple_embedding_lookup_op.tflite");
+
+  // Locate the table (input 1 of the EMBEDDING_LOOKUP op) inside the file. In
+  // a .litertlm bundle each TFLiteWeights section is 16 KiB-aligned and every
+  // tensor offset inside it is aligned to LITERT_HOST_MEMORY_BUFFER_ALIGNMENT
+  // (64 bytes), which LiteRtTensorBufferT::CreateFromHostMemory enforces. The
+  // inline flatbuffer buffer is only 4-byte aligned, so write the table bytes
+  // into a section file at a 64-byte-aligned offset (64, not 0, so the loader's
+  // page_offset math is exercised too).
+  std::ifstream input_file(path, std::ios::binary);
+  ASSERT_TRUE(input_file.is_open());
+  const std::string original((std::istreambuf_iterator<char>(input_file)),
+                             std::istreambuf_iterator<char>());
+  const tflite::Model* fb_model = tflite::GetModel(original.data());
+  const tflite::SubGraph* fb_subgraph = fb_model->subgraphs()->Get(0);
+  const int32_t table_tensor_index =
+      fb_subgraph->operators()->Get(0)->inputs()->Get(1);
+  const uint32_t table_buffer_index =
+      fb_subgraph->tensors()->Get(table_tensor_index)->buffer();
+  const auto* table_bytes =
+      fb_model->buffers()->Get(table_buffer_index)->data();
+  ASSERT_NE(table_bytes, nullptr);
+  constexpr uint64_t kSectionOffset = LITERT_HOST_MEMORY_BUFFER_ALIGNMENT;
+  const uint64_t table_length = table_bytes->size();
+  ASSERT_EQ(table_length, 20 * 8);  // 20 rows of 2 floats.
+  const std::string weights_path =
+      ::testing::TempDir() + "/external_embedding_table.bin";
+  {
+    std::ofstream weights_file(weights_path,
+                               std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(weights_file.is_open());
+    const std::string prefix(kSectionOffset, '\0');
+    weights_file.write(prefix.data(), prefix.size());
+    weights_file.write(reinterpret_cast<const char*>(table_bytes->data()),
+                       table_length);
+    ASSERT_TRUE(weights_file.good());
+  }
+
+  // Repack the model with the table as external buffer 1 in group 1
+  // ("ext_weights"; slot 0 is the reserved placeholder group), at offset 0 of
+  // its section. Both LiteRT's UnpackTensor (model_load.cc) and TFLite's
+  // interpreter_builder take the external_buffer branch only when buffer == 0.
+  std::unique_ptr<tflite::ModelT> tfl_model =
+      tflite::UnPackModel(original.data());
+  ASSERT_NE(tfl_model, nullptr);
+  tflite::TensorT& table_tensor =
+      *tfl_model->subgraphs[0]->tensors[table_tensor_index];
+  tfl_model->buffers[table_tensor.buffer]->data.clear();
+  table_tensor.buffer = 0;
+  table_tensor.external_buffer = 1;
+  for (const char* group_name : {"", "ext_weights"}) {
+    auto group = std::make_unique<tflite::ExternalBufferGroupT>();
+    group->name = group_name;
+    tfl_model->external_buffer_groups.push_back(std::move(group));
+  }
+  auto external_buffer = std::make_unique<tflite::ExternalBufferT>();
+  external_buffer->id = 1;
+  external_buffer->group = 1;
+  external_buffer->offset = 0;
+  external_buffer->length = table_length;
+  tfl_model->external_buffers.push_back(std::move(external_buffer));
+  flatbuffers::FlatBufferBuilder builder;
+  tflite::FinishModelBuffer(builder,
+                            tflite::Model::Pack(builder, tfl_model.get()));
+  const flatbuffers::DetachedBuffer model_buffer = builder.Release();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
+  LITERT_ASSERT_OK(options.SetHardwareAccelerators(HwAccelerators::kCpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(ScopedFile scoped_file,
+                              ScopedFile::Open(weights_path));
+  Options::ScopedWeightSectionMap sections;
+  sections.emplace("ext_weights", ScopedWeightSection{.offset = kSectionOffset,
+                                                      .length = table_length});
+  LITERT_ASSERT_OK(
+      options.SetExternalWeightScopedFile(scoped_file, std::move(sections)));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(
+          env, BufferRef<uint8_t>(model_buffer.data(), model_buffer.size()),
+          options));
+
+  // Probe, then a batch, twice: the verdict is cached per signature.
+  const int32_t ids[] = {0, 10, 19};
+  for (int round = 0; round < 2; ++round) {
+    auto probe = PrefetchEmbeddingRows(compiled_model.Get(), 0, {});
+    auto prefetched = PrefetchEmbeddingRows(compiled_model.Get(), 0, ids);
+#if defined(__linux__) || defined(__APPLE__) || defined(LITERT_WINDOWS_OS)
+    LITERT_EXPECT_OK(probe);
+    LITERT_EXPECT_OK(prefetched);
+#else
+    EXPECT_THAT(probe,
+                ::testing::litert::IsError(kLiteRtStatusErrorUnsupported));
+    EXPECT_THAT(prefetched,
+                ::testing::litert::IsError(kLiteRtStatusErrorUnsupported));
+#endif
+  }
+
+  // The cached table is the restored external slice: the tensor the kernel
+  // reads, the right shape, the file's bytes, and not inside the heap model
+  // buffer.
+  LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter * interpreter,
+                              GetInterpreter(compiled_model.Get()));
+  const void* kernel_table_data = nullptr;
+  tflite::Subgraph* subgraph = interpreter->subgraph(0);
+  for (int node_index : subgraph->execution_plan()) {
+    const auto& [node, registration] =
+        subgraph->nodes_and_registration()[node_index];
+    if (registration.builtin_code != kTfLiteBuiltinEmbeddingLookup) continue;
+    ASSERT_GE(node.inputs->size, 2);
+    kernel_table_data = subgraph->tensor(node.inputs->data[1])->data.raw;
+  }
+  ASSERT_NE(kernel_table_data, nullptr);
+  auto tables = GetCachedEmbeddingTables(compiled_model.Get(), 0);
+  ASSERT_EQ(tables.size(), 1);
+  EXPECT_EQ(tables[0].data, kernel_table_data);
+  EXPECT_EQ(tables[0].num_rows, 20);
+  EXPECT_EQ(tables[0].row_bytes, 8);
+  EXPECT_EQ(std::memcmp(tables[0].data, table_bytes->data(), table_length), 0);
+  const uint8_t* const model_begin = model_buffer.data();
+  EXPECT_TRUE(tables[0].data < model_begin ||
+              tables[0].data >= model_begin + model_buffer.size());
 }
 
 TEST(CompiledModelTest, RunTwoModelsPipelineWithSharedTensorBuffers) {

@@ -36,6 +36,7 @@ set(LITERT_RUNTIME_SOURCES
     dispatch/dispatch_opaque_options.cc
     dispatch/litert_dispatch.cc
     dmabuf_buffer.cc
+    embedding_row_prefetcher.cc
     event.cc
     external_litert_buffer_context.cc
     fastrpc_buffer.cc

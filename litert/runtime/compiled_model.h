@@ -46,6 +46,7 @@
 #include "litert/core/model/model.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/custom_op_dispatcher.h"
+#include "litert/runtime/embedding_row_prefetcher.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/profiler.h"
@@ -312,6 +313,34 @@ class LiteRtCompiledModelT {
   friend litert::Expected<bool> InputTensorNeedsResize(
       LiteRtCompiledModelT* compiled_model, const TfLiteTensor* tensor,
       absl::Span<const int> new_shape);
+
+  // Hints the OS to prefetch the rows `token_ids` of every CPU EMBEDDING_LOOKUP
+  // table of signature `signature_index`. The tables are discovered on first
+  // use from the post-delegation execution plan and cached per signature
+  // (constant tensors keep their address for the life of the interpreter).
+  // Errors: InvalidArgument (index out of range), NotFound (signature not
+  // selected, or no CPU EMBEDDING_LOOKUP table), Unsupported (no OS hint on
+  // this platform), RuntimeFailure (the OS rejected a hint); see
+  // EmbeddingRowPrefetcher::Prefetch(). An empty `token_ids` only probes.
+  // Run() invokes it after AllocateTensors() and before Invoke() when
+  // LiteRtOptions::prefetch_embedding_token_ids is non-empty, so the plan it
+  // discovers is the one that runs (delegates re-applied after a resize,
+  // STABLEHLO_COMPOSITE nodes inlined); errors are only logged there, so
+  // non-CPU or unsupported targets remain a transparent no-op.
+  litert::Expected<void> PrefetchEmbeddingRows(
+      size_t signature_index, absl::Span<const int32_t> token_ids);
+
+  // Friend function to test PrefetchEmbeddingRows.
+  friend litert::Expected<void> PrefetchEmbeddingRows(
+      LiteRtCompiledModelT* compiled_model, size_t signature_index,
+      absl::Span<const int32_t> token_ids);
+
+  // Returns the CPU EMBEDDING_LOOKUP tables cached for `signature_index`
+  // (empty if not yet discovered or if none exist).
+  friend absl::Span<
+      const litert::internal::EmbeddingRowPrefetcher::EmbeddingTable>
+  GetCachedEmbeddingTables(const LiteRtCompiledModelT* compiled_model,
+                           size_t signature_index);
 
   // A opaque delegate and its metrics collection functions.
   struct Delegate {
@@ -629,6 +658,12 @@ class LiteRtCompiledModelT {
   absl::flat_hash_set<TfLiteTensorIdentifier, TensorIdentifierHash,
                       TensorIdentifierEqual>
       user_registered_buffers_;
+
+  // One EmbeddingRowPrefetcher per signature index, discovered lazily by
+  // PrefetchEmbeddingRows(). An empty prefetcher means "none" (cached
+  // negative).
+  absl::flat_hash_map<size_t, litert::internal::EmbeddingRowPrefetcher>
+      embedding_prefetchers_by_signature_;
 
   // The profiler used by the compiled model. This is used to forward the
   // profiler events to the TFLite interpreter.

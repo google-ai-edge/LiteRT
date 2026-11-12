@@ -216,11 +216,18 @@ using WeightInMemoryMap =
 // - weight_in_memory_map: a map from group ID to weight data in host memory.
 //     If specified, the `WeightLoader` will use the weight data in the map
 //     in addition to the external weight files.
+// - read_only_cpu_mappings: map file-backed CPU weight slices PROT_READ instead
+//     of PROT_READ | PROT_WRITE (POSIX only; Windows views are already
+//     read-only and host-memory weights are not mapped). The writable default
+//     exists for the Nvidia Vulkan zero-copy import of the host pointer, so set
+//     this only for compiled models that apply no GPU delegate. On Apple it
+//     lets PrefetchEmbeddingRows() hint external embedding tables.
 std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
     LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
     std::optional<std::string> model_directory = std::nullopt,
     std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source = nullptr,
-    const WeightInMemoryMap* weight_in_memory_map = nullptr);
+    const WeightInMemoryMap* weight_in_memory_map = nullptr,
+    bool read_only_cpu_mappings = false);
 
 #if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
 struct WebWeightUploadRequest {

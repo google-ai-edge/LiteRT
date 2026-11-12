@@ -740,6 +740,39 @@ cc_test(
 # copybara:uncomment_end
 
 cc_library(
+    name = "embedding_row_prefetcher",
+    srcs = ["embedding_row_prefetcher.cc"],
+    hdrs = ["embedding_row_prefetcher.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/core/util:memory_advice",
+        "//tflite:builtin_ops",
+        "//tflite:framework",
+        "//tflite/c:common",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "embedding_row_prefetcher_test",
+    srcs = ["embedding_row_prefetcher_test.cc"],
+    deps = [
+        ":embedding_row_prefetcher",
+        "//litert/c:litert_common",
+        "//litert/core/util:memory_advice",
+        "//litert/test:matchers",
+        "//tflite:framework",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_library(
     name = "compiled_model",
     srcs = [
         "compiled_model.cc",
@@ -774,6 +807,7 @@ cc_library(
     deps = [
         ":accelerator",
         ":custom_op_dispatcher",
+        ":embedding_row_prefetcher",
         ":external_litert_buffer_context",
         ":litert_runtime_options",
         ":metrics",
@@ -879,6 +913,7 @@ cc_test(
     srcs = ["compiled_model_test.cc"],
     data = [
         "//litert/test:testdata/simple_add_dynamic_shape.tflite",
+        "//litert/test:testdata/simple_embedding_lookup_op.tflite",
         "//litert/test:testdata/simple_model.tflite",
         "//litert/vendors/examples:example_dispatch_so",
         "//litert/vendors/examples:example_plugin_so",
@@ -889,6 +924,7 @@ cc_test(
     deps = [
         ":accelerator",
         ":compiled_model",
+        ":embedding_row_prefetcher",
         ":external_litert_buffer_context",
         ":open_cl_memory",
         ":tensor_buffer",
@@ -937,6 +973,7 @@ cc_test(
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
+        "//tflite/core:private_cc_api_stable",
         "//tflite/kernels:builtin_ops",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/debugging:leak_check",
