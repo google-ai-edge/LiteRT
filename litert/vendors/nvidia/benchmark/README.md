@@ -58,7 +58,12 @@ when another benchmark runs (or, with `host.require_ac`, off AC power). `powersh
 Bypass -File windows\build.ps1` is `build.sh`: it builds the two plugins and the CLI with Bazel from
 the configured checkouts (the `build` section names the machine's Bazel, its MSVC environment
 script and architecture, the SDKs and each tree's Bazel arguments; `config.example.json` shows an
-x64 machine) and stages them into `runtime_dir` with `BUILD_ID` and a `build.json` record.
+x64 machine) and stages them into `runtime_dir` with `BUILD_ID` and a `build.json` record. The
+plugins are built in LiteRT's own workspace (the `litert` step; LiteRT-LM's workspace defines no
+CUDA repository), the CLI in LiteRT-LM's. LiteRT-LM's `.bazelrc` builds on Windows with symlinks
+and runfiles trees, which needs Developer Mode and `LongPathsEnabled` on the host (a build tool's
+path exceeds 260 characters); a host without them passes `--nowindows_enable_symlinks` and
+`--noenable_runfiles`, which works only with rules_python's manifest-only bootstrap patched in.
 
 Host preparation stays outside the runners: on the 5080 the owner's `benchmark` shell
 preparation (High Performance, ASUS Profile 1, the cleanup allowlist) before a formal batch;
@@ -89,8 +94,11 @@ python windows/matrix.tool C:\state\measured\matrix_20261108 e2b e4b 12b 26b --l
 A single measurement is `bench.sh` / `windows/bench.tool --model M --workload W --metric
 latency|memory|verify|cold [--mtp] [--prompt-file F]`, the same flags on both. The cold
 metric starts from an empty cache pool; the other metrics reuse the pool of the model and
-build, and a pool without compiled engines is prepared by a separate one-iteration run that
-is never reported (`prepare.*` in the run directory).
+build, and each configuration a pool has not compiled yet (context capacity, prefill sizes and
+signatures, speculative decoding, extra flags) is prepared first by a separate one-iteration run
+that is never reported (`prepare.*` in the run directory; a marker under the pool's `prepared/`):
+the process that compiles a configuration's engines reads low (E4B's 8k prefill 14,357 tokens/s
+against 16,500 from warm caches).
 
 A run directory holds `meta.json` (the workload, the command, the build ids, the host),
 `cli.log` (the CLI's output; its benchmark report is the data), `time.txt` (GNU time) or
@@ -136,8 +144,9 @@ the memory comparison includes different KV capacities.
 measured iterations: 8 iterations with 2 discarded at 1k, 4 with 1 discarded above, because
 TensorRT-RTX captures an engine's CUDA graph at its second execution and a 1k prompt is one
 prefill chunk per iteration. llama.cpp's columns are llama-bench's means (`-p N -n 0` for
-prefill, `-p 0 -n T -d N` for decode at that depth; Windows runs that declare warm-up
-repetitions discard them). The speedup is TensorRT-RTX over llama.cpp.
+prefill, `-p 0 -n T -d N` for decode at that depth), without the warm-up repetitions a run's meta
+declares: llama-bench's first repetition is cold (on Windows a 12B 1k prefill reads 1,235 tokens/s
+against 5,865 after it). The speedup is TensorRT-RTX over llama.cpp.
 
 **MTP** rows use real text (the prompt files of LiteRT's benchmark, about 1k, 8k, 16k, 30k and
 128k tokens of documentation ending in a question) with stop tokens honored: three
@@ -160,7 +169,9 @@ Long-context 26B runs on TensorRT-RTX place expert weights in mapped host memory
 phase, the engine builds, the executor's init and the whole process) and from the 1k
 synthetic latency process as the warm start (its whole-process time includes its
 iterations). Model files are read into the OS file cache before a model's group, so neither
-is a cold disk read. **Answer check**: the CLI's Paris question on the NPU and on the CPU.
+is a cold disk read. **Answer check**: the CLI's Paris question on the NPU and on the CPU, with 16
+output tokens, or the `verify_output_tokens` of a model that reasons before it answers (Qwen 3.8
+27B: 256).
 
 **llama.cpp models and settings** (`models.json`'s `llama` entries): E2B and E4B are Google's
 mobile-QAT checkpoints, the quantization of their LiteRT exports, as Unsloth's `UD-Q2_K_XL`

@@ -205,11 +205,17 @@ export NB_LABEL=$label NB_PROFILE=$profile NB_MODEL=$model NB_WORKLOAD=$workload
 export NB_PROMPT_FILE=$prompt_file NB_INPUT=$input NB_OUTPUT=$output NB_CONTEXT=$context NB_ITERATIONS=$iterations
 export NB_WARMUPS=$warmups NB_BUILD_ID=$build_id NB_POOL=$pool
 
-# A pool without AOT artifacts compiles in its first run; that run is kept apart as "prepare"
-# so the measured runs read warm caches (the cold metric is that first run itself).
-if [[ $metric != cold ]] && ! compgen -G "$pool/aot/tensorrt_aot*.bin" >/dev/null; then
+# A pool compiles a configuration's engines in the first run that asks for them (the context
+# capacity, the prefill sizes and signatures, speculative decoding, extra flags and overrides shape
+# them), and the compiling process's rates read low. That run is kept apart as "prepare", once per
+# configuration (a marker in the pool), so the measured runs read warm caches (the cold metric is
+# that first run itself).
+shape="$context|$prefill|${selected[*]}|$mtp|${extra[*]}|${env_extra[*]}"
+prepared=$pool/prepared/$(printf '%s' "$shape" | sha256sum | cut -c1-16)
+if [[ $metric != cold && ! -e $prepared ]]; then
   mapfile -t prep < <(benchmark_args 1)
   invoke prepare npu 0 "${prep[@]}" || nb_die "Preparation failed; see $run/prepare.cli.log"
+  mkdir -p "$pool/prepared" && printf '%s\n' "$shape" > "$prepared"
 fi
 rc=0
 case "$metric" in
@@ -224,7 +230,9 @@ case "$metric" in
     mapfile -t args < <(benchmark_args 1)
     invoke "" npu 1 "${args[@]}" --report_peak_memory_footprint=true || rc=$? ;;
   verify)
-    answer=(--benchmark=false --max_output_tokens=16 '--input_prompt=Answer with only the capital city: What is the capital of France?' --expected_output=Paris)
+    # A model that reasons before it answers needs room for it (models.json: verify_output_tokens).
+    verify_tokens=$("$NB_PYTHON" -c 'import json, sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], {}).get("verify_output_tokens", 16))' "$here/models.json" "$profile" 2>/dev/null) || verify_tokens=16
+    answer=(--benchmark=false "--max_output_tokens=${verify_tokens:-16}" '--input_prompt=Answer with only the capital city: What is the capital of France?' --expected_output=Paris)
     invoke npu npu 0 "${answer[@]}" || rc=$?
     invoke cpu cpu 0 "${answer[@]}" --enable_speculative_decoding=false || rc=$? ;;
 esac

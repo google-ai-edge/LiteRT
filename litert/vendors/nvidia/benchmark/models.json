@@ -1,5 +1,5 @@
 {
-  "_": "The model registry of the tables: profile -> name, family, table, MTP drafter, the sampler LiteRT-LM uses for the file (greedy: E2B/E4B carry no sampler parameters; model: top-k 64, top-p 0.95, temperature 1.0), the synthetic workloads of the matrix, and the real-text-only long-context workloads. plain_selected_signatures: a plain run of the model compiles only prefill_1024 and decode (bench.sh's rule for the larger models). llama: the llama.cpp comparison model: its source repository and the GGUF file names a run may record (basenames; the HF blob digest for a file kept under its blob name); a run of another file is not a cell. E2B/E4B: Google's mobile-QAT checkpoints (the quantization of the LiteRT exports), Unsloth's GGUFs repacked from TQ2_0 to Q2_0 for the CUDA backend (llama/repack_mobile_qat.tool).",
+  "_": "The model registry of the tables: profile -> name, family, table, MTP drafter, the sampler LiteRT-LM uses for the file (greedy: E2B/E4B carry no sampler parameters; model: top-k 64, top-p 0.95, temperature 1.0), the synthetic workloads of the matrix, and the real-text-only long-context workloads. plain_selected_signatures: a plain run of the model compiles only prefill_1024 and decode (bench.sh's rule for the larger models). llama: the llama.cpp comparison model: its source repository and the GGUF file names a run may record (basenames; the HF blob digest for a file kept under its blob name); a run of another file is not a cell. E2B/E4B: Google's mobile-QAT checkpoints (the quantization of the LiteRT exports), Unsloth's GGUFs repacked from TQ2_0 to Q2_0 for the CUDA backend (llama/repack_mobile_qat.tool). long_context_args: what a long-context run adds to bench (the expanded context capacity and the device memory kept free of expert weights). verify_output_tokens: the answer check's output limit for a model that reasons before it answers (default 16).",
   "e2b": {
     "name": "E2B",
     "family": "gemma4",
@@ -94,6 +94,20 @@
         "a7c5bc715f5ff8e99a3e8901ce7d2b42b402c669bf24f7c5250747633d0f5891"
       ],
       "draft": "MTP/mtp-gemma-4-26B-A4B-it-Q8_0.gguf"
+    },
+    "long_context_args": {
+      "128k": [
+        "--context",
+        "131072",
+        "--env",
+        "LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB=5120"
+      ],
+      "256k": [
+        "--context",
+        "262144",
+        "--env",
+        "LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB=10240"
+      ]
     }
   },
   "qwen27b": {
@@ -118,7 +132,8 @@
         "Qwen3.8-27B-Q4_0.gguf"
       ],
       "draft": null
-    }
+    },
+    "verify_output_tokens": 256
   },
   "tables": {
     "dense": {

@@ -88,10 +88,10 @@ def main():
           bench('--model', model, '--workload', workload, '--metric', 'memory')
         for workload in spec['long_context']:  # real text, context expansion, host-placed experts
           prompt = prompts / (workloads['text']['prompts'].get(workload, 'prompt_' + workload) + '.txt')
-          bench('--model', model, '--workload', workload, '--metric', 'latency', '--prompt-file', str(prompt),
-                '--cli-arg', '--allow_context_length_expansion=true')
-          bench('--model', model, '--workload', workload, '--metric', 'memory', '--prompt-file', str(prompt),
-                '--cli-arg', '--allow_context_length_expansion=true')
+          # --cli-arg=VALUE: argparse reads a separate value that starts with -- as another option.
+          long = ['--cli-arg=--allow_context_length_expansion=true', *spec.get('long_context_args', {}).get(workload, [])]
+          bench('--model', model, '--workload', workload, '--metric', 'latency', '--prompt-file', str(prompt), *long)
+          bench('--model', model, '--workload', workload, '--metric', 'memory', '--prompt-file', str(prompt), *long)
       elif group == 'mtp':
         for workload in spec['workloads']:
           prompt = prompts / (workloads['text']['prompts'][workload] + '.txt')
