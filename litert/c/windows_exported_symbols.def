@@ -19,6 +19,7 @@
 ; libLiteRtWebGpuAccelerator.dll when --define=resolve_symbols_from_exec=true.
 
 EXPORTS
+  GetLiteRtRuntimeBuiltin
   kLiteRtRuntimeBuiltin DATA
   LiteRtAddCustomOpKernelOption
   LiteRtAddEnvironmentOptions
@@ -193,6 +194,7 @@ EXPORTS
   LiteRtGetConv3dTransposeStrideWOption
   LiteRtGetCumsumExclusiveOption
   LiteRtGetCumsumReverseOption
+  LiteRtGetDefaultLogger
   LiteRtGetDelegationMetricsAccelerator
   LiteRtGetDelegationMetricsTotalNodeCount
   LiteRtGetDepthToSpaceBlockSizeOption
@@ -230,6 +232,7 @@ EXPORTS
   LiteRtGetLocalResponseNormalizationBetaOption
   LiteRtGetLocalResponseNormalizationBiasOption
   LiteRtGetLocalResponseNormalizationRadiusOption
+  LiteRtGetLogSeverityName
   LiteRtGetMainModelSubgraphIndex
   LiteRtGetMaxPool2dFilterHeightOption
   LiteRtGetMaxPool2dFilterWidthOption
@@ -239,6 +242,7 @@ EXPORTS
   LiteRtGetMaxPool2dStrideWOption
   LiteRtGetMeanKeepDimsOption
   LiteRtGetMetric
+  LiteRtGetMinLoggerSeverity
   LiteRtGetMirrorPadModeOption
   LiteRtGetModelMetadata
   LiteRtGetModelSignature
@@ -246,6 +250,7 @@ EXPORTS
   LiteRtGetMulFusedActivationOption
   LiteRtGetNextOpaqueOptions
   LiteRtGetNumDelegationMetricsAccelerators
+  LiteRtGetNumLayoutElements
   LiteRtGetNumMetrics
   LiteRtGetNumModelSignatures
   LiteRtGetNumModelSubgraphs
@@ -303,6 +308,7 @@ EXPORTS
   LiteRtGetSplitNumSplitsOption
   LiteRtGetSplitVNumSplitsOption
   LiteRtGetSqueezeDimsOption
+  LiteRtGetStatusString
   LiteRtGetStridedSliceBeginMaskOption
   LiteRtGetStridedSliceEllipsisMaskOption
   LiteRtGetStridedSliceEndMaskOption
@@ -356,8 +362,10 @@ EXPORTS
   LiteRtGpuEnvironmentCreate
   LiteRtHasTensorBufferEvent
   LiteRtIsEventSignaled
+  LiteRtIsSameLayout
   LiteRtJoinTensorBufferRequirements
   LiteRtLockTensorBuffer
+  LiteRtLoggerLog
   LiteRtPopOpaqueOptions
   LiteRtPushOp
   LiteRtRegisterAccelerator
@@ -378,6 +386,7 @@ EXPORTS
   LiteRtSetCustomEvent
   LiteRtSetDelegateFunction
   LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation
+  LiteRtSetMinLoggerSeverity
   LiteRtSetOpaqueOptionsHash
   LiteRtSetOptionsHardwareAccelerators
   LiteRtSetProfilerCurrentEventSource
@@ -389,3 +398,59 @@ EXPORTS
   LiteRtUnwrapDelegate
   LiteRtWaitEvent
   LiteRtWrapDelegate
+  LrtAddGpuOptionsBufferStorageTensorPattern
+  LrtAddGpuOptionsExternalTensorPattern
+  LrtCreateCpuOptions
+  LrtCreateGoogleTensorOptions
+  LrtCreateGpuOptions
+  LrtCreateQualcommOptions
+  LrtCreateRuntimeOptions
+  LrtDestroyCpuOptions
+  LrtDestroyGoogleTensorOptions
+  LrtDestroyGpuOptions
+  LrtDestroyQualcommOptions
+  LrtDestroyRuntimeOptions
+  LrtGetOpaqueCpuOptionsData
+  LrtGetOpaqueGoogleTensorOptionsData
+  LrtGetOpaqueGpuOptionsData
+  LrtGetOpaqueQualcommOptionsData
+  LrtGetOpaqueRuntimeOptionsData
+  LrtGoogleTensorOptionsSetPerformanceMode
+  LrtQualcommOptionsSetHtpPerformanceMode
+  LrtQualcommOptionsSetLogLevel
+  LrtSetCpuOptionsEnableYNNPack
+  LrtSetCpuOptionsNumThread
+  LrtSetCpuOptionsXNNPackFlags
+  LrtSetCpuOptionsXnnPackWeightCacheFileDescriptor
+  LrtSetCpuOptionsXnnPackWeightCachePath
+  LrtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
+  LrtSetGpuAcceleratorCompilationOptionsCacheCompiledProgramsOnly
+  LrtSetGpuAcceleratorCompilationOptionsDisableShaderOptimization
+  LrtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors
+  LrtSetGpuAcceleratorCompilationOptionsModelCacheKey
+  LrtSetGpuAcceleratorCompilationOptionsPrecision
+  LrtSetGpuAcceleratorCompilationOptionsPreferTextureWeights
+  LrtSetGpuAcceleratorCompilationOptionsProgramCacheFd
+  LrtSetGpuAcceleratorCompilationOptionsSerializationDir
+  LrtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors
+  LrtSetGpuAcceleratorCompilationOptionsSerializeProgramCache
+  LrtSetGpuAcceleratorCompilationOptionsWeightCacheFd
+  LrtSetGpuAcceleratorRuntimeOptionsConvertWeightsOnGpu
+  LrtSetGpuAcceleratorRuntimeOptionsHintWaitingForCompletion
+  LrtSetGpuAcceleratorRuntimeOptionsKernelBatchSize
+  LrtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations
+  LrtSetGpuAcceleratorRuntimeOptionsNumThreadsToCompile
+  LrtSetGpuAcceleratorRuntimeOptionsNumThreadsToUpload
+  LrtSetGpuAcceleratorRuntimeOptionsPreferredDeviceSubstr
+  LrtSetGpuAcceleratorRuntimeOptionsWaitForWeightsConversionComplete
+  LrtSetGpuAcceleratorRuntimeOptionsWaitType
+  LrtSetGpuOptionsConstantTensorsSharing
+  LrtSetGpuOptionsExternalTensorsMode
+  LrtSetGpuOptionsGpuPriority
+  LrtSetGpuOptionsHintFullyDelegatedToSingleDelegate
+  LrtSetGpuOptionsInfiniteFloatCapping
+  LrtSetGpuOptionsUseIrModel
+  LrtSetRuntimeOptionsCompressQuantizationZeroPoints
+  LrtSetRuntimeOptionsDisableDelegateClustering
+  LrtSetRuntimeOptionsEnableProfiling
+  LrtSetRuntimeOptionsSelectedSignatures

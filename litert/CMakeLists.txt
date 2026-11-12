@@ -43,6 +43,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if(MSVC)
   add_compile_options(
     /wd4996  # deprecated declarations
+    /wd4715  # the counterpart of -Wno-return-type below
   )
 else()
   add_compile_options(
@@ -95,6 +96,10 @@ option(LITERT_ENABLE_GPU "Enable GPU acceleration support" ON)
 option(LITERT_ENABLE_NPU "Enable NPU acceleration support" ON)
 option(LITERT_DISABLE_KLEIDIAI "Disable KleidiAI delegate when bundling host TFLite (default ON for Linux/macOS x86_64 hosts)" ${_litert_disable_kleidiai_default})
 option(LITERT_BUILD_SUPPORT_LIBS "Enable build for the support libraries" OFF)
+# Default ON to keep the existing behaviour. A caller embedding LiteRT as a
+# runtime only does not need the command-line tools, and until now there was no
+# way to say so: add_subdirectory(tools) ran unconditionally.
+option(LITERT_BUILD_TOOLS "Build the LiteRT command-line tools" ON)
 option(LITERT_ENABLE_UV_VENV "Enables uv virtual environment for the build" OFF)
 
 set(LITERT_HOST_C_COMPILER "" CACHE FILEPATH "Host C compiler used for helper host-side tools (e.g. FlatBuffers flatc)")
@@ -441,7 +446,11 @@ if(LITERT_ENABLE_NPU)
 else()
   message(STATUS "Skipping NPU vendor dispatch libraries: LITERT_ENABLE_NPU is OFF")
 endif()
-add_subdirectory(tools)
+if(LITERT_BUILD_TOOLS)
+  add_subdirectory(tools)
+else()
+  message(STATUS "Skipping LiteRT tools: LITERT_BUILD_TOOLS is OFF")
+endif()
 add_subdirectory(experimental/custom_ops/gated_delta_net)
 
 

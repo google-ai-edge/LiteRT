@@ -56,6 +56,13 @@ set_target_properties(qnn_compiler_plugin PROPERTIES
 )
 
 if(WIN32)
+    # As for the dispatch library: FindLiteRtCompilerPluginSharedLibs() matches
+    # on a "libLiteRtCompilerPlugin" prefix, which an empty
+    # CMAKE_SHARED_LIBRARY_PREFIX would not produce.
+    set_target_properties(qnn_compiler_plugin PROPERTIES PREFIX "lib")
+endif()
+
+if(WIN32)
     # LITERT_CAPI_EXPORT resolves to __declspec(dllimport) unless the library
     # being built says so, which makes defining the plugin's own entry points a
     # hard error (C2491). The Bazel build passes the same define.
