@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/die_if_null.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
@@ -141,7 +142,7 @@ absl::StatusOr<std::unique_ptr<GpuInferenceContext>> GpuBackendMetalLitert::Crea
   ABSL_RETURN_IF_ERROR(ctx->metal_ctx().InitFromGpuModel(
       create_info, &gpu_model, metal_device()->device(), serialized_model));
   if (@available(macOS 15.0, iOS 18.0, *)) {
-    PopulateResidencySet(create_info, ctx->metal_ctx());
+    PopulateResidencySet(create_info, *ctx);
   }
   return std::move(ctx);
 }
@@ -152,7 +153,7 @@ absl::StatusOr<std::unique_ptr<GpuInferenceContext>> GpuBackendMetalLitert::Rest
   ABSL_RETURN_IF_ERROR(ctx->metal_ctx().RestoreDeserialized(
       serialized_model, metal_device()->device(), &create_info));
   if (@available(macOS 15.0, iOS 18.0, *)) {
-    PopulateResidencySet(create_info, ctx->metal_ctx());
+    PopulateResidencySet(create_info, *ctx);
   }
   return std::move(ctx);
 }
@@ -187,8 +188,8 @@ GpuInferenceContextMetalLitert::GpuInferenceContextMetalLitert(
     : GpuInferenceContextMetal(backend, memory_manager) {}
 
 GpuInferenceContextMetalLitert::~GpuInferenceContextMetalLitert() {
-  if (post_dispatch_event_ != nullptr) {
-    post_dispatch_event_->Release(post_dispatch_event_);
+  for (CustomEventMetal* event : post_dispatch_event_pool_) {
+    event->Release(event);
   }
 }
 
@@ -211,8 +212,8 @@ absl::StatusOr<GpuEventHandle> GpuInferenceContextMetalLitert::GetPostDispatchEv
     metal_backend()->set_command_buffer([metal_backend()->command_queue() commandBuffer]);
   }
 
-  // Signal a new event after all the encoded commands and commit them without waiting. The event
-  // is attached to the output tensor buffers.
+  // Signal an event after all the encoded commands and commit them without waiting. The event is
+  // attached to the output tensor buffers.
   //
   // The signal is encoded here rather than in PostConvert(/*input=*/false): nothing is encoded
   // between the two (HandleOutputEvents() directly follows the output conversion, whose compute
@@ -220,15 +221,34 @@ absl::StatusOr<GpuEventHandle> GpuInferenceContextMetalLitert::GetPostDispatchEv
   // buffer. Unlike PostConvert(), this runs in external-tensors mode too, where the output
   // conversion is skipped, and it is the only place that knows whether this invocation is
   // asynchronous, so synchronous invocations never create an event.
-  if (post_dispatch_event_ != nullptr) {
-    post_dispatch_event_->Release(post_dispatch_event_);
+  //
+  // Events are pooled: an event is reused once it has signaled and no tensor buffer retains it
+  // anymore. Otherwise a new event is created, replacing pool entries round-robin once the pool
+  // is full.
+  constexpr size_t kMaxEventPoolSize = 8;
+  CustomEventMetal* post_dispatch_event = nullptr;
+  for (CustomEventMetal* candidate : post_dispatch_event_pool_) {
+    if (candidate->IsUnique() && candidate->IsSignaled(candidate) != 0) {
+      post_dispatch_event = candidate;
+      break;
+    }
   }
-  post_dispatch_event_ = new CustomEventMetal(metal_backend()->metal_device()->device());
-  post_dispatch_event_->EncodeSignal(metal_backend()->command_buffer());
+  if (post_dispatch_event == nullptr) {
+    post_dispatch_event = new CustomEventMetal(metal_backend()->metal_device()->device());
+    if (post_dispatch_event_pool_.size() < kMaxEventPoolSize) {
+      post_dispatch_event_pool_.push_back(post_dispatch_event);
+    } else {
+      size_t idx = next_evict_idx_ % post_dispatch_event_pool_.size();
+      next_evict_idx_ = idx + 1;
+      post_dispatch_event_pool_[idx]->Release(post_dispatch_event_pool_[idx]);
+      post_dispatch_event_pool_[idx] = post_dispatch_event;
+    }
+  }
+  post_dispatch_event->EncodeSignal(metal_backend()->command_buffer());
   [metal_backend()->command_buffer() commit];
   metal_backend()->set_command_buffer(nullptr);
 
-  return post_dispatch_event_;
+  return post_dispatch_event;
 }
 
 absl::Status GpuInferenceContextMetalLitert::WaitForEventsCompleted(
@@ -260,8 +280,10 @@ absl::Status GpuInferenceContextMetalLitert::WaitForEventsCompleted(
 // to finish. DelegateKernelLiteRt::HandleOutputEvents() waits for it in synchronous execution
 // mode, and attaches the post-dispatch event to the outputs in asynchronous execution mode.
 absl::Status GpuInferenceContextMetalLitert::PostConvert(bool input) {
-  [metal_backend()->compute_command_encoder() endEncoding];
-  metal_backend()->set_compute_command_encoder(nullptr);
+  if (metal_backend()->compute_command_encoder() != nullptr) {
+    [metal_backend()->compute_command_encoder() endEncoding];
+    metal_backend()->set_compute_command_encoder(nullptr);
+  }
   return absl::OkStatus();
 }
 
