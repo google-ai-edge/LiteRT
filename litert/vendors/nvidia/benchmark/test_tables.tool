@@ -114,8 +114,13 @@ class SelectionTest(unittest.TestCase):
     litert_run(self.root / 'b', 'cpu_fallback', [999, 999], start='2026-11-03T00:00:00Z', delegated=False)
     litert_run(self.root / 'c', 'failed', [999, 999], start='2026-11-04T00:00:00Z', exit_code=1)
     litert_run(self.root / 'd', 'incomplete', [999], start='2026-11-05T00:00:00Z', iterations=2)
+    # A prompt beyond the model's context: the CLI prints its iterations without a turn and exits 0.
+    empty = litert_run(self.root / 'e', 'empty', [999, 999], start='2026-11-06T00:00:00Z')
+    (empty / 'cli.log').write_text(DISPATCH + 2 * ('BenchmarkInfo:\n  Init Phases (7):\n    - Init Executor: 1500.00 ms\n'
+                                                   '  Decode Turns (Total 0 turns):\n    No decode turns recorded.\n'))
     records = self.records()
-    self.assertEqual(sorted(r['run'].split(os.sep)[-1] for r in records if r['errors']), ['cpu_fallback', 'failed', 'incomplete'])
+    self.assertEqual(sorted(r['run'].split(os.sep)[-1] for r in records if r['errors']),
+                     ['cpu_fallback', 'empty', 'failed', 'incomplete'])
     chosen = RUNS.select(records)
     self.assertTrue(chosen[('litert', 'e2b', 'short', 'latency')]['run'].endswith('ok'))
 
