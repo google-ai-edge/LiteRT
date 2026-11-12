@@ -31,7 +31,7 @@
 #include <string>
 #include <vector>
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 // Framebuffer (VRAM) memory this process uses on one NVIDIA GPU.
 struct NvmlDeviceMemory {
@@ -85,6 +85,6 @@ uint64_t NvmlProcessBytes(unsigned int pid,
                           const std::vector<NvmlProcessEntry>& compute,
                           const std::vector<NvmlProcessEntry>& graphics);
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_ACCELERATOR_MEMORY_NVML_H_

@@ -28,7 +28,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 // Summary of the DMA-BUF buffers held by the current process.
 struct DmaBufSummary {
@@ -60,6 +60,6 @@ DmaBufSummary ReadDmaBufSummary(absl::string_view proc_self_dir);
 AcceleratorMemoryUsage AcceleratorMemoryUsageFromDmaBuf(
     const DmaBufSummary& dmabuf);
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_ACCELERATOR_MEMORY_DMABUF_H_

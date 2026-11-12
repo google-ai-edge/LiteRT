@@ -24,7 +24,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 #include "litert/core/util/memory_profiling/host_memory.h"
 
-namespace litert::internal {
+namespace litert::profiling {
 
 // An amount of memory split into the part the CPU side of the process uses
 // and the part its accelerators (GPU, and where measured NPU) use.
@@ -144,6 +144,6 @@ MemorySnapshot MakeMemorySnapshot(
     const HostMemoryUsage& host,
     std::optional<AcceleratorMemoryUsage> accelerator);
 
-}  // namespace litert::internal
+}  // namespace litert::profiling
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_MEMORY_SNAPSHOT_H_

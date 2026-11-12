@@ -70,7 +70,7 @@
 #include "absl/strings/strip.h"  // from @com_google_absl
 #include "litert/core/util/memory_profiling/host_memory.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 namespace {
 
@@ -111,12 +111,16 @@ HostMemoryUsage ParseProcStatus(absl::string_view status) {
   return usage;
 }
 
+}  // namespace litert::profiling::internal
+
+namespace litert::profiling {
+
 HostMemoryUsage GetHostMemoryUsage() {
   std::ifstream file("/proc/self/status");
   if (!file.is_open()) return HostMemoryUsage();
   std::stringstream contents;
   contents << file.rdbuf();
-  return ParseProcStatus(contents.str());
+  return internal::ParseProcStatus(contents.str());
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling

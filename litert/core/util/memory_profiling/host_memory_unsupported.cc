@@ -17,8 +17,8 @@
 
 #include "litert/core/util/memory_profiling/host_memory.h"
 
-namespace litert::internal {
+namespace litert::profiling {
 
 HostMemoryUsage GetHostMemoryUsage() { return HostMemoryUsage(); }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling

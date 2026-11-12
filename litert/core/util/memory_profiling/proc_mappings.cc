@@ -29,7 +29,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/strings/strip.h"  // from @com_google_absl
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 namespace {
 
@@ -126,4 +126,4 @@ std::optional<uint64_t> ReadSmapsRollupRss(absl::string_view proc_self_dir) {
   return ParseSmapsRollupRss(*contents);
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal

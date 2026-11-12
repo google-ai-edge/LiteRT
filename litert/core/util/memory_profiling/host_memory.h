@@ -18,7 +18,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace litert::internal {
+namespace litert::profiling {
 
 // Host (CPU-side) memory of the current process at a point in time, as two
 // numbers that answer two different questions. Both are instantaneous: they
@@ -71,6 +71,6 @@ struct HostMemoryUsage {
 // -----------------------------------------------------------------------------
 HostMemoryUsage GetHostMemoryUsage();
 
-}  // namespace litert::internal
+}  // namespace litert::profiling
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_HOST_MEMORY_H_

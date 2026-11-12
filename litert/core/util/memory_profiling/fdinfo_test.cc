@@ -23,7 +23,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/core/util/memory_profiling/fake_proc_self.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 namespace {
 
 using ::testing::IsEmpty;
@@ -76,4 +76,4 @@ TEST(ForEachFdinfoTest, VisitsEveryDescriptorWithItsFields) {
 }
 
 }  // namespace
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal

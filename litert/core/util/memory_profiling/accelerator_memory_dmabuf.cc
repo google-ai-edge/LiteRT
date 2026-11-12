@@ -31,7 +31,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 #include "litert/core/util/memory_profiling/fdinfo.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 namespace {
 
@@ -143,4 +143,4 @@ AcceleratorMemoryUsage AcceleratorMemoryUsageFromDmaBuf(
   return usage;
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal

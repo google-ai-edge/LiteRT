@@ -30,7 +30,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 #include "litert/core/util/memory_profiling/proc_mappings.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 // What the process's own address space says about GPU driver memory: the
 // bytes mapped from each kind of GPU device node, and whether a Mali GPU is
@@ -84,6 +84,6 @@ AcceleratorMemoryUsage AcceleratorMemoryUsageFromAndroidSources(
     const DmaBufSummary& dmabuf, const GpuDriverMappings& driver,
     const AndroidResidentView& resident);
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_ACCELERATOR_MEMORY_ANDROID_H_
