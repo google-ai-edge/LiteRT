@@ -1020,10 +1020,34 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
 
       std::vector<float> scales;
       std::vector<int64_t> zero_points(1, 0);
+      std::vector<float> float_zero_points;
       LRT_TENSOR_RETURN_IF_ERROR(ReadData(
           scales, {".weight_scale", ".scale", ".scales", ".weight_scales"}));
-      LRT_TENSOR_RETURN_IF_ERROR(
-          ReadData(zero_points, {".weight_zero_point", ".zero_point"}));
+      if (auto zp_it = FindDataFor({".weight_zero_point", ".zero_point"});
+          zp_it != tensor_infos_.end()) {
+        LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(zp_it->second));
+        if (zp_it->second.dtype == safetensors::dtype::kFLOAT32 ||
+            zp_it->second.dtype == safetensors::dtype::kFLOAT16 ||
+            zp_it->second.dtype == safetensors::dtype::kBFLOAT16 ||
+            zp_it->second.dtype == safetensors::dtype::kFLOAT64) {
+          LRT_TENSOR_ASSIGN_OR_RETURN(
+              float_zero_points,
+              ConvertTensorTo<std::vector<float>>(zp_it->second));
+          if (float_zero_points.empty()) {
+            return absl::InvalidArgumentError(absl::StrCat(
+                "Zero-point tensor is empty for: ", module));
+          }
+          zero_points.clear();
+        } else {
+          LRT_TENSOR_ASSIGN_OR_RETURN(
+              zero_points,
+              ConvertTensorTo<std::vector<int64_t>>(zp_it->second));
+          if (zero_points.empty()) {
+            return absl::InvalidArgumentError(absl::StrCat(
+                "Zero-point tensor is empty for: ", module));
+          }
+        }
+      }
 
       // Checkpoints declaring config groups describe each module separately;
       // older ones only carry model-wide parameters.
@@ -1040,43 +1064,74 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
               : (group_size > 0 ? QuantizationConfig::Strategy::kGroup
                                 : QuantizationConfig::Strategy::kChannel);
 
+      if (strategy != QuantizationConfig::Strategy::kGroup &&
+          !info.shape.empty()) {
+        // One scale per tensor, per row (dim 0), or per row of each leading
+        // index: stacked per-block weights `[blocks, out, in]` carry
+        // `blocks * out` scales, which `quantized_dimension = 0` doesn't
+        // describe, so such tensors must be sliced into 2-D blocks before a
+        // backend reads them (backends reject a scale count that doesn't
+        // match the channel dimension).
+        size_t leading = 1;
+        for (size_t d = 0; d + 1 < info.shape.size(); ++d) {
+          leading *= static_cast<size_t>(std::max<int64_t>(info.shape[d], 0));
+        }
+        const size_t count = scales.size();
+        if (count != 1 && count != static_cast<size_t>(info.shape[0]) &&
+            count != leading) {
+          return absl::InvalidArgumentError(absl::StrCat(
+              "Tensor `", name, "` has ", count,
+              " per-channel scales; expected 1, ", info.shape[0], " or ",
+              leading));
+        }
+      }
       if (strategy == QuantizationConfig::Strategy::kGroup) {
         quantization = std::make_shared<BlockwiseQuantization>(
             std::move(scales), std::move(zero_points), group_size,
-            /*quantized_dimension=*/0);
+            /*quantized_dimension=*/0, std::move(float_zero_points));
       } else {
         quantization = std::make_shared<PerChannelAffineQuantization>(
             std::move(scales), std::move(zero_points),
-            /*quantized_dimension=*/0);
+            /*quantized_dimension=*/0, std::move(float_zero_points));
       }
 
-      // Nibble-packed weights hold two elements per byte, so the shape on disk
-      // is half as wide as the weight it represents.
-      if (num_bits == 4 && info.shape.size() == 2) {
-        if (info.shape[0] < 0 || info.shape[1] < 0) {
-          return absl::InvalidArgumentError(
-              absl::StrCat("Tensor `", name, "` has negative shape dimension"));
+      // Crumb-packed (2-bit) and nibble-packed (4-bit) weights hold four or two
+      // elements per byte along the innermost dimension.
+      if ((num_bits == 2 || num_bits == 4) && info.shape.size() >= 2) {
+        for (const auto dim : info.shape) {
+          if (dim < 0) {
+            return absl::InvalidArgumentError(absl::StrCat(
+                "Tensor `", name, "` has negative shape dimension"));
+          }
         }
-        const size_t d_out = static_cast<size_t>(info.shape[0]);
-        const size_t d_in_packed = static_cast<size_t>(info.shape[1]);
-        const size_t packed_element_count = BufferSize(type, 1) * 2;
+        const size_t elements_per_byte = 8 / num_bits;
+        const size_t packed_element_count =
+            BufferSize(type, 1) * elements_per_byte;
+        const size_t inner_packed = static_cast<size_t>(info.shape.back());
         if (packed_element_count != 0 &&
-            d_in_packed >
+            inner_packed >
                 std::numeric_limits<size_t>::max() / packed_element_count) {
           return absl::InvalidArgumentError(
               absl::StrCat("Tensor `", name, "` unpacked dimension overflows"));
         }
-        const size_t d_in = d_in_packed * packed_element_count;
-        if (d_out > static_cast<size_t>(std::numeric_limits<int>::max()) ||
-            d_in > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        const size_t inner = inner_packed * packed_element_count;
+        constexpr size_t kIntMax =
+            static_cast<size_t>(std::numeric_limits<int>::max());
+        bool exceeds_int_max = inner > kIntMax;
+        for (size_t i = 0; i + 1 < info.shape.size(); ++i) {
+          exceeds_int_max |= static_cast<size_t>(info.shape[i]) > kIntMax;
+        }
+        if (exceeds_int_max) {
           return absl::InvalidArgumentError(absl::StrCat(
               "Tensor `", name, "` unpacked shape exceeds int max"));
         }
+        std::vector<int> unpacked_shape(info.shape.begin(), info.shape.end());
+        unpacked_shape.back() = static_cast<int>(inner);
 
         return TensorHandle(TensorInit{
             .name = std::string(name),
-            .type = Type::kI4,
-            .shape = {static_cast<int>(d_out), static_cast<int>(d_in)},
+            .type = num_bits == 2 ? Type::kI2 : Type::kI4,
+            .shape = std::move(unpacked_shape),
             .buffer = buffer,
             .quantization = quantization});
       }
@@ -1143,15 +1198,30 @@ SafetensorLoader::LoadQuantizationParams(
 
   // Symmetric quantization, which is the common case, stores no zero points.
   std::vector<int64_t> zero_points(1, 0);
+  std::vector<float> float_zero_points;
   const std::string zero_point_name = absl::StrCat(module, kZeroPointSuffix);
   if (auto zp_it = tensor_infos_.find(zero_point_name);
       zp_it != tensor_infos_.end()) {
     LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(zp_it->second));
-    LRT_TENSOR_ASSIGN_OR_RETURN(
-        zero_points, ConvertTensorTo<std::vector<int64_t>>(zp_it->second));
-    if (zero_points.empty()) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Zero-point tensor is empty for: ", module));
+    if (zp_it->second.dtype == safetensors::dtype::kFLOAT32 ||
+        zp_it->second.dtype == safetensors::dtype::kFLOAT16 ||
+        zp_it->second.dtype == safetensors::dtype::kBFLOAT16 ||
+        zp_it->second.dtype == safetensors::dtype::kFLOAT64) {
+      LRT_TENSOR_ASSIGN_OR_RETURN(
+          float_zero_points,
+          ConvertTensorTo<std::vector<float>>(zp_it->second));
+      if (float_zero_points.empty()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Zero-point tensor is empty for: ", module));
+      }
+      zero_points.clear();
+    } else {
+      LRT_TENSOR_ASSIGN_OR_RETURN(
+          zero_points, ConvertTensorTo<std::vector<int64_t>>(zp_it->second));
+      if (zero_points.empty()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Zero-point tensor is empty for: ", module));
+      }
     }
   }
 
@@ -1159,12 +1229,12 @@ SafetensorLoader::LoadQuantizationParams(
     case QuantizationConfig::Strategy::kGroup:
       return std::make_shared<BlockwiseQuantization>(
           std::move(scales), std::move(zero_points), scheme.group_size,
-          /*quantized_dimension=*/0);
+          /*quantized_dimension=*/0, std::move(float_zero_points));
     case QuantizationConfig::Strategy::kChannel:
     case QuantizationConfig::Strategy::kTensor:
       return std::make_shared<PerChannelAffineQuantization>(
           std::move(scales), std::move(zero_points),
-          /*quantized_dimension=*/0);
+          /*quantized_dimension=*/0, std::move(float_zero_points));
     default:
       break;
   }

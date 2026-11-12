@@ -31,6 +31,7 @@ cc_library(
         "//tensor/backends/common_nnpack:utils",
         "//tensor/internal:graph",
         "//tensor/utils:macros",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base:dynamic_annotations",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",

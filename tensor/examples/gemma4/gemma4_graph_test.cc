@@ -43,6 +43,7 @@ limitations under the License.
 namespace litert::tensor::examples::gemma4 {
 namespace {
 
+using ::testing::ElementsAre;
 using ::testing::FloatNear;
 using ::testing::Pointwise;
 
@@ -327,10 +328,10 @@ TYPED_TEST(Gemma4GraphTest, GlobalLayerGraphTest) {
 
   // Expected values calculated using helpers/reference/gemma4_graph.py:
   const std::array<float, 20> expected_data = {
-      0.071176f, 0.446494f, 0.820556f, 1.192319f, 1.560770f,
-      1.924927f, 2.283859f, 2.636688f, 2.982600f, 3.320851f,
-      0.066741f, 0.460139f, 0.852115f, 1.241471f, 1.627041f,
-      2.007705f, 2.382401f, 2.750137f, 3.110000f, 3.461159f};
+      0.071182f, 0.444328f, 0.816239f, 1.185890f, 1.552284f,
+      1.914455f, 2.271488f, 2.622517f, 2.966740f, 3.303423f,
+      0.066505f, 0.460559f, 0.853184f, 1.243178f, 1.629367f,
+      2.010628f, 2.385894f, 2.754166f, 3.114528f, 3.466150f};
 
   EXPECT_THAT(runner.template ReadOutputAs<float>(model_outputs.logits),
               IsOkAndHolds(Pointwise(FloatNear(1e-4f), expected_data)));
@@ -441,7 +442,7 @@ TYPED_TEST(Gemma4GraphTest, SharedKVCacheGraphTest) {
   config.use_post_attn_norm = true;
   config.use_post_ffw_norm = true;
   config.final_logit_softcap = 10.0f;
-  config.frac_shared_layers = 1.0f / 3.0f;  // Layer 2 is shared.
+  config.frac_shared_layers = 1.0f / 3.0f;  // Layer 2 shares Layer 1's KV.
   config.share_local = true;
 
   Gemma4Inputs<Tag> inputs;
@@ -485,16 +486,16 @@ TYPED_TEST(Gemma4GraphTest, SharedKVCacheGraphTest) {
   EXPECT_THAT(runner.template ReadOutputAs<float>(model_outputs.logits),
               IsOkAndHolds(Pointwise(
                   FloatNear(1e-4f),
-                  {0.069635f, 0.444022f, 0.817165f, 1.188033f, 1.555614f,
-                   1.918937f, 2.277076f, 2.629158f, 2.974375f, 3.311985f,
-                   0.066323f, 0.460078f, 0.852409f, 1.242114f, 1.628025f,
-                   2.009017f, 2.384028f, 2.752061f, 3.112201f, 3.463619f})));
+                  {0.069418f, 0.444620f, 0.818571f, 1.190232f, 1.558587f,
+                   1.922658f, 2.281512f, 2.634272f, 2.980126f, 3.318328f,
+                   0.066271f, 0.460083f, 0.852470f, 1.242231f, 1.628195f,
+                   2.009240f, 2.384300f, 2.752381f, 3.112565f, 3.464023f})));
 
   EXPECT_THAT(
       runner.template ReadOutputAs<float>(model_outputs.key_caches[2]),
       IsOkAndHolds(Pointwise(FloatNear(1e-4f),
-                             {0.766109f, 0.097841f, 0.863950f, 1.630059f,
-                              0.214422f, -0.909717f, 1.286534f, 1.212956f})));
+                             {0.828487f, 0.029702f, 0.914964f, 1.573392f,
+                              0.232546f, -0.913679f, 1.293728f, 1.198907f})));
 }
 
 TYPED_TEST(Gemma4GraphTest, PerLayerInputsGraphTest) {
@@ -963,6 +964,108 @@ TEST(Gemma4GraphWeightCacheTest, WeightCacheTest) {
   }
 
   remove(cache_path.c_str());
+}
+
+// E2B: 35 layers, pattern 5, 20 shared layers -> 0..14 unshared;
+// shared local layers reuse 13; shared global layers reuse 14.
+TEST(Gemma4GraphConfigTest, KvCacheSharingPatternsE2B) {
+  const std::vector<int> e2b = GetKvCacheSharingPatterns(Config::E2B());
+  ASSERT_EQ(e2b.size(), 35u);
+  for (int i = 0; i < 15; ++i) {
+    EXPECT_EQ(e2b[i], i) << "layer " << i;
+  }
+  for (int i = 15; i < 35; ++i) {
+    const int expected = ((i + 1) % 5 == 0) ? 14 : 13;
+    EXPECT_EQ(e2b[i], expected) << "layer " << i;
+  }
+}
+
+// E4B: 42 layers, pattern 6, 18 shared layers -> 0..23 unshared;
+// shared local layers reuse 22; shared global layers reuse 23.
+TEST(Gemma4GraphConfigTest, KvCacheSharingPatternsE4B) {
+  const std::vector<int> e4b = GetKvCacheSharingPatterns(Config::E4B());
+  ASSERT_EQ(e4b.size(), 42u);
+  for (int i = 0; i < 24; ++i) {
+    EXPECT_EQ(e4b[i], i) << "layer " << i;
+  }
+  for (int i = 24; i < 42; ++i) {
+    const int expected = ((i + 1) % 6 == 0) ? 23 : 22;
+    EXPECT_EQ(e4b[i], expected) << "layer " << i;
+  }
+}
+
+// Float32 rounding: `35 - (18.0f / 35.0f) * 35` evaluates to `16.999998f` in
+// float32; rounding `frac_shared_layers * num_layers` must yield 17 unshared
+// layers (0..16), not 16.
+TEST(Gemma4GraphConfigTest, KvCacheSharingPatternsFloat32Rounding) {
+  Config config = Config::E2B();
+  config.num_layers = 35;
+  config.frac_shared_layers = 18.0f / 35.0f;
+  const std::vector<int> patterns = GetKvCacheSharingPatterns(config);
+  ASSERT_EQ(patterns.size(), 35u);
+  EXPECT_EQ(patterns[16], 16);
+  EXPECT_EQ(patterns[17], 16);  // Layer 17 (local) shares Layer 16 (last L).
+  EXPECT_EQ(patterns[19], 14);  // Layer 19 (global) shares Layer 14 (last G).
+}
+
+// Non-multiple `num_unshared_layers`: 8 layers, pattern 4 (`[L, L, L, G, L,
+// L, L, G]`), 3 shared layers -> unshared `[0:L, 1:L, 2:L, 3:G, 4:L]`.
+// Shared local layers (5, 6) must reuse 4 (not 3, which is global), and
+// shared global layer (7) must reuse 3 (not 4, which is local).
+TEST(Gemma4GraphConfigTest, KvCacheSharingPatternsNonMultipleUnsharedLayers) {
+  Config config = Config::E4B();
+  config.num_layers = 8;
+  config.attention_pattern_size = 4;
+  config.frac_shared_layers = 3.0f / 8.0f;
+  config.share_local = true;
+  config.share_global = true;
+  EXPECT_THAT(GetKvCacheSharingPatterns(config),
+              ElementsAre(0, 1, 2, 3, 4, 4, 4, 3));
+}
+
+// Fallback when no unshared layer of matching `LayerType` exists:
+// 4 layers, pattern 4 (`[L, L, L, G]`), 2 shared layers -> unshared `[0:L,
+// 1:L]`. Layer 3 is global with no unshared global layer before it, so it
+// must stay unshared (`patterns[3] == 3`).
+TEST(Gemma4GraphConfigTest, KvCacheSharingPatternsFallback) {
+  Config config = Config::E4B();
+  config.num_layers = 4;
+  config.attention_pattern_size = 4;
+  config.frac_shared_layers = 2.0f / 4.0f;
+  config.share_local = true;
+  config.share_global = true;
+  EXPECT_THAT(GetKvCacheSharingPatterns(config), ElementsAre(0, 1, 1, 3));
+}
+
+TEST(Gemma4GraphConfigTest, KvCacheSharingPatternsEdgeCases) {
+  Config config = Config::E4B();
+
+  // Non-positive `num_layers` returns an empty pattern.
+  config.num_layers = 0;
+  EXPECT_THAT(GetKvCacheSharingPatterns(config), ElementsAre());
+  config.num_layers = -2;
+  EXPECT_THAT(GetKvCacheSharingPatterns(config), ElementsAre());
+
+  // `share_local = false` / `share_global = false` disables sharing per type.
+  config.num_layers = 4;
+  config.attention_pattern_size = 2;  // [L, G, L, G]
+  config.frac_shared_layers = 0.5f;   // layers 2, 3 are in shared range
+  config.share_local = false;
+  config.share_global = true;
+  EXPECT_THAT(GetKvCacheSharingPatterns(config), ElementsAre(0, 1, 2, 1));
+
+  config.share_local = true;
+  config.share_global = false;
+  EXPECT_THAT(GetKvCacheSharingPatterns(config), ElementsAre(0, 1, 0, 3));
+
+  // Out-of-range `frac_shared_layers` is clamped to [0, num_layers].
+  config.share_local = true;
+  config.share_global = true;
+  config.frac_shared_layers = -0.5f;
+  EXPECT_THAT(GetKvCacheSharingPatterns(config), ElementsAre(0, 1, 2, 3));
+
+  config.frac_shared_layers = 1.5f;
+  EXPECT_THAT(GetKvCacheSharingPatterns(config), ElementsAre(0, 1, 2, 3));
 }
 
 }  // namespace
