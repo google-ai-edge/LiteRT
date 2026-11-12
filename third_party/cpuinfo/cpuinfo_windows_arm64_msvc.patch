@@ -16,7 +16,7 @@
 # parameters are C99 syntax that cl.exe rejects, the Windows ARM init header is
 # missing from the Bazel target, and the registry queries need Advapi32.lib.
 # Same patch as XNNPACK's cpuinfo_windows_arm64_msvc.patch, for the same
-# cpuinfo commit (66ee79c038d70dad9f08705b2c9b3e58f6d8f512).
+# cpuinfo commit (731932997e55e84900e6f95aefb6edd167b0edcc).
 diff --git a/BUILD.bazel b/BUILD.bazel
 index d78fb2de..6d3afe99 100644
 --- a/BUILD.bazel
