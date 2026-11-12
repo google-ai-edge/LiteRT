@@ -47,6 +47,7 @@ package_group(
         "//tflite/...",
         "//third_party/ai_lab/...",
         "//third_party/py/ai_edge_jax/...",
+        "//third_party/py/clover/...",
         "//waymo/accelerator/alpine/tools/...",
         "//waymo/ml/compiler/mlir/...",
     ],
@@ -1290,6 +1291,23 @@ cc_library(
 )
 
 cc_library(
+    name = "legalize_jax_random",
+    srcs = ["transforms/legalize_jax_random.cc"],
+    deps = [
+        ":tensorflow_lite",
+        ":tensorflow_lite_passes_inc_gen",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:QuantOps",
+        "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:TransformUtils",
+        "@stablehlo//:stablehlo_ops",
+    ],
+)
+
+cc_library(
     name = "tensorflow_lite_legalize_tf",
     srcs = [
         "transforms/dilated_conv.cc",
@@ -1302,7 +1320,6 @@ cc_library(
         "transforms/if_outline.cc",
         "transforms/insert_call_once_op.cc",
         "transforms/legalize_hashtables.cc",
-        "transforms/legalize_jax_random.cc",
         "transforms/legalize_tf.cc",
         "transforms/legalize_tf_while.cc",
         "transforms/legalize_variables.cc",
@@ -1332,6 +1349,7 @@ cc_library(
         ":downcast_x64",
         ":elements_attr_roundtrip_pass",
         ":fake_quant_utils",
+        ":legalize_jax_random",
         ":lstm_utils",
         ":nms_utils",
         ":optimize_broadcast_like_pass_options",
@@ -1422,6 +1440,7 @@ cc_library(
         ":convert_type",
         ":optimize_pass_options",
         ":pass",
+        ":resource_constant_fold_utils",
         ":tensorflow_lite_ops",
         ":tensorflow_lite_optimize_inc_gen",
         ":utils",
@@ -1529,6 +1548,17 @@ cc_library(
 )
 
 cc_library(
+    name = "tfl_carrier",
+    srcs = ["transforms/tfl_carrier.cc"],
+    hdrs = ["transforms/tfl_carrier.h"],
+    deps = [
+        "@llvm-project//mlir:AsmParser",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
+    ],
+)
+
+cc_library(
     name = "tensorflow_lite_push_transpose_through_ewise_pass",
     srcs = [
         "transforms/push_transpose_through_ewise_pass.cc",
@@ -1569,40 +1599,83 @@ cc_library(
     ],
 )
 
+# Quantization passes used by the strict QDQ (StableHLO) conversion pipeline.
+# Kept separate from `tensorflow_lite_quantize` so that the StableHLO to TFLite
+# path does not have to link the TensorFlow graph quantization passes.
+cc_library(
+    name = "strict_qdq_quantize_passes",
+    srcs = [
+        "transforms/fold_fp16_casts_into_fully_connected_pass.cc",
+        "transforms/fold_stablehlo_constant_transforms_pass.cc",
+        "transforms/fuse_a4w2_drq_fully_connected_pass.cc",
+        "transforms/generated_post_quantize.inc",
+        "transforms/lower_blockwise_dequantize_pass.cc",
+        "transforms/lower_quant_annotations_helper.cc",
+        "transforms/lower_quant_annotations_pass.cc",
+        "transforms/post_quantize.cc",
+        "transforms/quantization/bias_quantizer_pass.cc",
+        "transforms/quantization/fuse_qdq_pass.cc",
+        "transforms/quantization/propagate_qparams_pass.cc",
+        "transforms/quantization/quant_utils.cc",
+    ],
+    hdrs = [
+        "transforms/lower_quant_annotations_helper.h",
+        "transforms/quantization/quant_utils.h",
+    ],
+    deps = [
+        ":resource_constant_fold_utils",
+        ":shape_and_size_utils",
+        ":tensorflow_lite",
+        ":tensorflow_lite_ops",
+        ":tensorflow_lite_passes_inc_gen",
+        ":tensorflow_lite_post_quantize_inc_gen",
+        ":tensorflow_lite_strict_quantize_inc_gen",
+        "//tflite/converter/quantization/common/quantization_lib",
+        "//tflite/converter/quantization/common/quantization_lib:quantization_config",
+        "//tflite/converter/quantization/ir:QuantOps",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:ArithDialect",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:QuantOps",
+        "@llvm-project//mlir:Rewrite",
+        "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:TransformUtils",
+        "@org_tensorflow//tensorflow/compiler/mlir/quantization/common:uniform_quantized_types",
+        "@org_tensorflow//tensorflow/compiler/mlir/quantization/common/ir:QuantOps",
+        "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
+        "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:dynamic_shape_utils",
+        "@stablehlo//:stablehlo_ops",
+    ],
+)
+
 cc_library(
     name = "tensorflow_lite_quantize",
     srcs = [
         "transforms/decompose_hybrid_quantization.cc",
         "transforms/default_quant_params.cc",
-        "transforms/fold_fp16_casts_into_fully_connected_pass.cc",
-        "transforms/fold_stablehlo_constant_transforms_pass.cc",
-        "transforms/fuse_a4w2_drq_fully_connected_pass.cc",
-        "transforms/generated_post_quantize.inc",
         "transforms/generated_quantize.inc",
-        "transforms/lower_quant_annotations_helper.cc",
-        "transforms/lower_quant_annotations_pass.cc",
         "transforms/modify_io_nodes.cc",
         "transforms/optimize_op_order.cc",
-        "transforms/post_quantize.cc",
         "transforms/prepare_quantize.cc",
         "transforms/prepare_quantize_dynamic_range.cc",
         "transforms/prepare_quantize_helper.cc",
-        "transforms/quantization/bias_quantizer_pass.cc",
-        "transforms/quantization/fuse_qdq_pass.cc",
-        "transforms/quantization/propagate_qparams_pass.cc",
-        "transforms/quantization/quant_utils.cc",
         "transforms/quantize.cc",
         "transforms/quantize_variables.cc",
         "utils/generated_op_quant_spec_getters.inc",
     ],
     hdrs = [
-        "transforms/lower_quant_annotations_helper.h",
         "transforms/passes.h",
         "transforms/prepare_quantize_helper.h",
-        "transforms/quantization/quant_utils.h",
     ],
     deps = [
-        "convert_type",
+        ":convert_type",
         ":downcast_x64",
         ":elements_attr_roundtrip_pass",
         ":op_quant_spec_getters_inc",
@@ -1610,13 +1683,12 @@ cc_library(
         ":resource_constant_fold_utils",
         ":shape_and_size_utils",
         ":stateful_ops_utils",
+        ":strict_qdq_quantize_passes",
         ":tensorflow_lite",
         ":tensorflow_lite_ops",
         ":tensorflow_lite_passes_inc_gen",
-        ":tensorflow_lite_post_quantize_inc_gen",
         ":tensorflow_lite_quantize_by_converter_inc_gen",
         ":tensorflow_lite_quantize_inc_gen",
-        ":tensorflow_lite_strict_quantize_inc_gen",
         ":validators",
         "//tflite/converter/quantization/common/quantization_lib",
         "//tflite/converter/quantization/common/quantization_lib:quantization_config",
@@ -1644,13 +1716,11 @@ cc_library(
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/common:uniform_quantized_types",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/common/ir:QuantOps",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
-        "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:dynamic_shape_utils",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:tensorflow_types",
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/platform:logging",
         "@stablehlo//:stablehlo_ops",
-        "@xla//xla/mlir_hlo",
     ],
 )
 
@@ -2293,9 +2363,11 @@ cc_library(
         ":convert_type",
         ":low_bit_utils",
         ":string_utils",
+        ":tensorflow_lite_ops",
         "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/base",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/meta:type_traits",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
