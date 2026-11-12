@@ -822,6 +822,8 @@ Expected<int> ReplaceMagicNumbersIfAny(const LiteRtEnvironmentT& env,
 
   LogDebugInfo(model, *magic_number_configs, magic_number_verifications);
 
+  // The pass asks for the same pages of the model's buffer many times.
+  ScopedModelBufferWrites buffer_writes;
   LITERT_ASSIGN_OR_RETURN(
       int total_updated_tensors,
       UpdateMagicNumbersInModel(*magic_number_configs, model));

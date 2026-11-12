@@ -47,6 +47,27 @@ Expected<void> MakeModelBufferWritable(const void* data, size_t size);
 // done to already, and nothing on every platform but Windows.
 void KeepModelBufferReadOnlyUntilWritten(const void* data);
 
+// While one is alive on a thread, MakeModelBufferWritable on that thread
+// remembers the ranges it made writable, or found to need nothing, and returns
+// at once for a range inside them. A pass that patches many values of one
+// model asks for the same pages again and again (the magic numbers of a Gemma
+// 4 E2B: 1,424 ranges in 326 pages), and on Windows every range that is not
+// remembered costs a query of its pages, which walks the view from them to the
+// next page with other attributes. The buffers written to must stay mapped
+// while the scope is alive: what it remembers ends with it, so a view mapped
+// later where one of them was is asked about afresh. A scope inside another on
+// the same thread adds nothing.
+class ScopedModelBufferWrites {
+ public:
+  ScopedModelBufferWrites();
+  ~ScopedModelBufferWrites();
+  ScopedModelBufferWrites(const ScopedModelBufferWrites&) = delete;
+  ScopedModelBufferWrites& operator=(const ScopedModelBufferWrites&) = delete;
+
+ private:
+  void* ranges_ = nullptr;  // This scope's ranges, when it is the outer one.
+};
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_MODEL_BUFFER_WRITES_H_

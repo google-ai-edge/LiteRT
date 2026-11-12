@@ -24,6 +24,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <mutex>  // NOLINT(build/c++11)
+#include <utility>
+#include <vector>
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -88,8 +90,60 @@ void CopyPages(uintptr_t begin, uintptr_t end, uintptr_t page) {
   }
 }
 
+// The page ranges a thread's ScopedModelBufferWrites has seen made writable or
+// found to need nothing, the most recent last.
+struct RememberedRanges {
+  std::vector<std::pair<uintptr_t, uintptr_t>> ranges;
+
+  bool Covers(uintptr_t begin, uintptr_t end) const {
+    for (auto it = ranges.rbegin(); it != ranges.rend(); ++it) {
+      if (it->first <= begin && end <= it->second) return true;
+    }
+    return false;
+  }
+
+  void Add(uintptr_t begin, uintptr_t end) {
+    if (!ranges.empty() && ranges.back().second == begin) {
+      ranges.back().second = end;  // The pages after the last range.
+    } else if (!ranges.empty() && ranges.back().first == end) {
+      ranges.back().first = begin;  // The pages before it.
+    } else {
+      ranges.emplace_back(begin, end);
+    }
+  }
+};
+
+thread_local RememberedRanges* remembered_ranges = nullptr;
+
+uintptr_t PageSize() {
+  static const uintptr_t page = [] {
+    SYSTEM_INFO system;
+    GetSystemInfo(&system);
+    return static_cast<uintptr_t>(system.dwPageSize);
+  }();
+  return page;
+}
+
 }  // namespace
 #endif  // _WIN32
+
+ScopedModelBufferWrites::ScopedModelBufferWrites() {
+#ifdef _WIN32
+  if (remembered_ranges == nullptr) {
+    remembered_ranges = new RememberedRanges();
+    ranges_ = remembered_ranges;
+  }
+#endif  // _WIN32
+}
+
+ScopedModelBufferWrites::~ScopedModelBufferWrites() {
+#ifdef _WIN32
+  if (ranges_ != nullptr) {
+    delete static_cast<RememberedRanges*>(ranges_);
+    remembered_ranges = nullptr;
+  }
+#endif  // _WIN32
+}
 
 void KeepModelBufferReadOnlyUntilWritten(const void* data) {
 #ifdef _WIN32
@@ -106,23 +160,39 @@ void KeepModelBufferReadOnlyUntilWritten(const void* data) {
 
 Expected<void> MakeModelBufferWritable(const void* data, size_t size) {
 #ifdef _WIN32
-  MEMORY_BASIC_INFORMATION region;
-  if (size == 0 ||
-      VirtualQuery(data, &region, sizeof(region)) != sizeof(region) ||
-      region.Type != MEM_MAPPED) {
+  if (size == 0) {
+    return {};
+  }
+  const uintptr_t page = PageSize();
+  const uintptr_t begin = reinterpret_cast<uintptr_t>(data) / page * page;
+  const uintptr_t end =
+      (reinterpret_cast<uintptr_t>(data) + size + page - 1) / page * page;
+  RememberedRanges* const remembered = remembered_ranges;
+  if (remembered != nullptr && remembered->Covers(begin, end)) {
     return {};
   }
   std::lock_guard<std::mutex> lock(ProtectionMutex());
-  SYSTEM_INFO system;
-  GetSystemInfo(&system);
-  const uintptr_t page = system.dwPageSize;
-  const uintptr_t end =
-      (reinterpret_cast<uintptr_t>(data) + size + page - 1) / page * page;
-  uintptr_t cursor = reinterpret_cast<uintptr_t>(data) / page * page;
+  // Each range of pages is queried once, under the lock: a query walks the view
+  // from the page to the next one with other attributes.
+  MEMORY_BASIC_INFORMATION region;
+  uintptr_t cursor = begin;
   while (cursor < end) {
     if (VirtualQuery(reinterpret_cast<const void*>(cursor), &region,
-                     sizeof(region)) != sizeof(region) ||
-        region.State != MEM_COMMIT) {
+                     sizeof(region)) != sizeof(region)) {
+      if (cursor == begin) {
+        return {};
+      }
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "A model buffer to write to is not mapped");
+    }
+    if (cursor == begin && region.Type != MEM_MAPPED) {
+      // Memory that is not a file view needs nothing.
+      if (remembered != nullptr) {
+        remembered->Add(begin, std::min(RegionEnd(region), end));
+      }
+      return {};
+    }
+    if (region.State != MEM_COMMIT) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "A model buffer to write to is not mapped");
     }
@@ -148,6 +218,9 @@ Expected<void> MakeModelBufferWritable(const void* data, size_t size) {
                           "A model buffer to write to cannot be made writable");
     }
     cursor = part_end;
+  }
+  if (remembered != nullptr) {
+    remembered->Add(begin, end);
   }
 #endif  // _WIN32
   return {};

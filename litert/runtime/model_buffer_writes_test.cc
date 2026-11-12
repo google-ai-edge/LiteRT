@@ -45,6 +45,21 @@ TEST(MakeModelBufferWritableTest, LeavesMemoryThatIsNotAFileViewAlone) {
   EXPECT_EQ(buffer[16], 3);
 }
 
+TEST(MakeModelBufferWritableTest, AScopeLeavesMemoryThatIsNotAFileViewAlone) {
+  std::vector<uint8_t> buffer(3 * 4096, 1);
+  ScopedModelBufferWrites writes;
+  ScopedModelBufferWrites inner;
+  for (int i = 0; i < 3; ++i) {
+    ASSERT_TRUE(MakeModelBufferWritable(buffer.data() + 10, 20).HasValue());
+    ASSERT_TRUE(
+        MakeModelBufferWritable(buffer.data() + 4096, 2 * 4096 - 1).HasValue());
+  }
+  buffer[15] = 2;
+  buffer[2 * 4096] = 3;
+  EXPECT_EQ(buffer[15], 2);
+  EXPECT_EQ(buffer[2 * 4096], 3);
+}
+
 #ifdef _WIN32
 constexpr size_t kBytes = 64 << 20;
 constexpr size_t kPage = 4096;
@@ -236,6 +251,70 @@ TEST_F(FileViewTest, MakesARangeOfAReadOnlyViewCopyOnWrite) {
   for (int i = 0; i < 8; ++i) target[i] = 0xEE;
   EXPECT_EQ(target[7], 0xEE);
   EXPECT_EQ(Protection(view), PAGE_READONLY);
+  EXPECT_TRUE(FileUnchanged());
+}
+
+// A pass that writes many values asks for the same pages many times: inside a
+// scope they are made writable once, and the rest of the view stays read-only.
+TEST_F(FileViewTest, AScopeRemembersThePagesItMadeWritable) {
+  uint8_t* view = Map(/*copy_on_write=*/true);
+  ASSERT_NE(view, nullptr);
+  KeepModelBufferReadOnlyUntilWritten(view);
+  const int64_t before = Commit();
+  {
+    ScopedModelBufferWrites writes;
+    for (int i = 0; i < 2000; ++i) {
+      // Two pages in turn, and a range across both.
+      uint8_t* at = view + (5 + i % 2) * kPage + (i % 500) * 8;
+      ASSERT_TRUE(MakeModelBufferWritable(at, 8).HasValue());
+      at[0] = static_cast<uint8_t>(i);
+      at[7] = static_cast<uint8_t>(i >> 8);
+    }
+    ASSERT_TRUE(MakeModelBufferWritable(view + 6 * kPage - 4, 8).HasValue());
+    view[6 * kPage - 1] = 0x5A;
+    view[6 * kPage] = 0xA5;
+    ASSERT_TRUE(MakeModelBufferWritable(view + 40 * kPage + 1, 1).HasValue());
+    view[40 * kPage + 1] = 0x77;
+  }
+  EXPECT_EQ(view[6 * kPage - 1], 0x5A);
+  EXPECT_EQ(view[6 * kPage], 0xA5);
+  EXPECT_EQ(view[40 * kPage + 1], 0x77);
+  EXPECT_EQ(view[40 * kPage], Pattern(40 * kPage));
+  EXPECT_EQ(Protection(view + 5 * kPage), PAGE_READWRITE);
+  EXPECT_EQ(Protection(view + 6 * kPage), PAGE_READWRITE);
+  EXPECT_EQ(Protection(view + 7 * kPage), PAGE_READONLY);
+  EXPECT_EQ(Protection(view + 40 * kPage), PAGE_READWRITE);
+  EXPECT_LE(Commit() - before, static_cast<int64_t>(256 * kPage));
+  EXPECT_TRUE(FileUnchanged());
+}
+
+// What a scope remembered ends with it: a read-only view mapped where a page
+// was written to is made copy-on-write when it is asked for.
+TEST_F(FileViewTest, AScopeForgetsItsPagesWhenItEnds) {
+  uint8_t* first = Map(/*copy_on_write=*/true);
+  ASSERT_NE(first, nullptr);
+  {
+    ScopedModelBufferWrites writes;
+    ASSERT_TRUE(MakeModelBufferWritable(first + kPage, 8).HasValue());
+    first[kPage] = 0x11;
+  }
+  ASSERT_TRUE(UnmapViewOfFile(first));
+  views_.pop_back();
+  HANDLE section =
+      CreateFileMappingA(file_, nullptr, PAGE_READONLY, 0, 0, nullptr);
+  ASSERT_NE(section, nullptr);
+  sections_.push_back(section);
+  void* mapped = MapViewOfFileEx(section, FILE_MAP_READ, 0, 0, 0, first);
+  ASSERT_EQ(mapped, first) << "the address was taken in between";
+  views_.push_back(mapped);
+  uint8_t* second = static_cast<uint8_t*>(mapped);
+  EXPECT_EQ(second[kPage], Pattern(kPage));
+  {
+    ScopedModelBufferWrites writes;
+    ASSERT_TRUE(MakeModelBufferWritable(second + kPage, 8).HasValue());
+    second[kPage] = 0x22;
+  }
+  EXPECT_EQ(second[kPage], 0x22);
   EXPECT_TRUE(FileUnchanged());
 }
 
