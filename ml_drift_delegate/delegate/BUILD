@@ -1486,6 +1486,7 @@ objc_library(
 ios_unit_test(
     name = "buffer_handler_metal_test",
     minimum_os_version = "15.0",
+    # copybara:uncomment requires_booted_simulator = True,
     runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
     deps = [":buffer_handler_metal_test_lib"],
 )
