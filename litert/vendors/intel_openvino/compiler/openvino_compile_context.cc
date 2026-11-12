@@ -113,6 +113,13 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
         context.eliminate_fq_after_matmul_ = (value == "true");
         continue;
       }
+      if (key == "fold_one_hot_matmul_to_gather") {
+        LITERT_LOG(LITERT_INFO,
+                   "Custom config: fold_one_hot_matmul_to_gather = %s",
+                   value.c_str());
+        context.fold_one_hot_matmul_to_gather_ = (value == "true");
+        continue;
+      }
       if (key == "fuse_split_attention_to_sdpa") {
         LITERT_LOG(LITERT_INFO,
                    "Custom config: fuse_split_attention_to_sdpa = %s",
@@ -186,6 +193,10 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
       if (key.empty()) continue;
       if (key == "optimize_fq_after_matmul") {
         context.eliminate_fq_after_matmul_ = (value == "true");
+        continue;
+      }
+      if (key == "fold_one_hot_matmul_to_gather") {
+        context.fold_one_hot_matmul_to_gather_ = (value == "true");
         continue;
       }
       if (key == "fuse_split_attention_to_sdpa") {
@@ -288,6 +299,7 @@ OpenVinoCompileContext::OptimizeModel(
       NpuOptimizer()
           .SetConstantFold(true)
           .SetEliminateMatMulFakeQuantize(eliminate_fq_after_matmul_)
+          .SetFoldOneHotMatMulToGather(fold_one_hot_matmul_to_gather_)
           .SetFuseSplitAttentionToSDPA(fuse_split_attention_to_sdpa_)
           .SetUnfoldGqaSequenceFold(unfold_gqa_sequence_fold_)
           .SetSdpaPadKvToAlignment(sdpa_pad_kv_to_alignment_)
