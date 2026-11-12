@@ -46,6 +46,14 @@ reported history is one past the last visible cache column across the query
 rows; uniformly negative padding rows contribute zero. This is a history
 count, not a column index.
 
+> [!NOTE]
+> The history is one value shared by all attention blocks, derived from the
+> widest suitable mask (typically the global mask). NPUW rounds it up to a
+> multiple of the prefill chunk size, adds the new chunk, and caps the result
+> at each block's own KV length. A local block processes its whole ring plus
+> the new chunk once the rounded history reaches the ring capacity; its own
+> mask hides slots outside the sliding window.
+
 An untagged graph has no reporter. If the tagged input is unsupported or the
 OpenVINO state is unavailable, dispatch logs a warning and cannot report
 history. If updating an active reporter fails, the invocation returns an error.

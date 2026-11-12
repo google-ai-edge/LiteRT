@@ -107,6 +107,8 @@ Expected<int64_t> HistorySizeFromMask(const ov::Tensor& mask) {
     const size_t rows = shape[2];
     const size_t len = shape[3];
     const size_t past = len - rows;
+    // TODO: Support remote masks (e.g. DMA-BUF). Their data() is not
+    // host-accessible; read through a synchronized LiteRT buffer mapping.
     if (type == ov::element::f32) {
       return MaskHistory(mask.data<const float>(), rows, past, len);
     }
