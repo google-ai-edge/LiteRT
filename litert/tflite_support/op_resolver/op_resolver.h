@@ -58,8 +58,10 @@ Expected<void> SetOpResolver(Options& options,
 /// `GetOpaqueDelegateCreators`) are ignored. Registrations returned by
 /// `op_resolver.FindOp()` must have `registration_external`
 /// (`TfLiteOperator*`) set; non-opaque `TfLiteRegistration`s without
-/// `registration_external` will be rejected. Not supported in minimal static
-/// CPU builds (`LITERT_DISABLE_CPU`); use `SetOpResolver` there instead.
+/// `registration_external` will be ignored. Unresolved built-in ops fall back
+/// to the runtime's default built-in ops when available. Not supported in
+/// minimal static CPU builds (`LITERT_DISABLE_CPU`); use `SetOpResolver` there
+/// instead.
 Expected<void> SetOpaqueOpResolver(Options& options,
                                    const tflite::OpResolver& op_resolver);
 

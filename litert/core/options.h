@@ -122,8 +122,8 @@ struct LiteRtOptionsT {
     void* user_data = nullptr;
   };
   // Optional C API callbacks representing an application-provided OpResolver.
-  // When set, CompiledModel wraps these callbacks into an OpResolver instead of
-  // creating the default builtin op resolver.
+  // When set, CompiledModel chains these callbacks ahead of the runtime's
+  // default builtin op resolver (when available).
   std::optional<OpResolverCallbacks> op_resolver_callbacks;
 };
 
