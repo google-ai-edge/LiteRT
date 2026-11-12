@@ -110,26 +110,45 @@ esac
 
 if [[ "${LITERT_PACKAGE_MODE:-wheel}" == "prebuilts" ]]; then
   if [[ "${ARCH}" != "x86_64" || -n "${TENSORFLOW_TARGET}" ]]; then
-    echo "LITERT_PACKAGE_MODE=prebuilts only supports native linux x86_64 builds."
+    echo "LITERT_PACKAGE_MODE=prebuilts requires a linux x86_64 host with TENSORFLOW_TARGET unset."
     exit 1
   fi
   bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
     ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} \
+    //litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so \
+    //litert/vendors/mediatek/compiler:compiler_plugin_so \
+    //litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so \
     //litert/vendors/intel_openvino/compiler:intel_openvino_compiler_plugin_so \
     //litert/vendors/intel_openvino/dispatch:dispatch_api_so
 
-  PREBUILTS_DIR="dist/prebuilts/linux_x86_64"
+  PREBUILTS_X86_DIR="dist/prebuilts/linux_x86_64"
   rm -fr ./dist
-  mkdir -p "${PREBUILTS_DIR}"
+  mkdir -p "${PREBUILTS_X86_DIR}"
   install -m 0755 \
+    bazel-bin/litert/vendors/qualcomm/compiler/libLiteRtCompilerPlugin_Qualcomm.so \
+    bazel-bin/litert/vendors/mediatek/compiler/libLiteRtCompilerPlugin_MediaTek.so \
+    bazel-bin/litert/vendors/google_tensor/compiler/libLiteRtCompilerPlugin_google_tensor.so \
     bazel-bin/litert/vendors/intel_openvino/compiler/libLiteRtCompilerPlugin_IntelOpenvino.so \
     bazel-bin/litert/vendors/intel_openvino/dispatch/libLiteRtDispatch_IntelOpenvino.so \
-    "${PREBUILTS_DIR}/"
+    "${PREBUILTS_X86_DIR}/"
   # $ORIGIN covers standalone zip extraction where OpenVINO libs sit alongside
   # the plugin; $ORIGIN/../../../../openvino/libs (see _INTEL_OV_WHEEL_RPATH in
   # wheel_builder.py) covers installation inside ai_edge_litert_sdk_intel at
   # <site-packages>/ai_edge_litert_sdk_intel/vendors/intel_openvino/{compiler,dispatch}/.
-  patchelf --set-rpath '$ORIGIN:$ORIGIN/../../../../openvino/libs' "${PREBUILTS_DIR}"/*.so
+  patchelf --set-rpath '$ORIGIN:$ORIGIN/../../../../openvino/libs' "${PREBUILTS_X86_DIR}"/*IntelOpenvino.so
+
+  bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
+    ${BAZEL_FLAGS} --config=cross_compile_linux_arm64 \
+    ${CUSTOM_BAZEL_FLAGS} \
+    //litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so \
+    //litert/vendors/qualcomm/dispatch:dispatch_api_so
+
+  PREBUILTS_ARM64_DIR="dist/prebuilts/linux_arm64"
+  mkdir -p "${PREBUILTS_ARM64_DIR}"
+  install -m 0755 \
+    bazel-bin/litert/vendors/qualcomm/compiler/libLiteRtCompilerPlugin_Qualcomm.so \
+    bazel-bin/litert/vendors/qualcomm/dispatch/libLiteRtDispatch_Qualcomm.so \
+    "${PREBUILTS_ARM64_DIR}/"
   exit 0
 fi
 

@@ -297,6 +297,20 @@ jobs:
           name: ai-edge-litert-windows-arm64-${{ matrix.python-version }}
           path: dist/*.whl
 
+      - name: Build Windows ARM64 prebuilts
+        id: build-prebuilts
+        if: matrix.python-version == '3.12'
+        continue-on-error: true
+        run: .\ci\build_pip_package_with_bazel_windows.ps1 -TargetArch arm64 -Mode prebuilts
+
+      - name: Upload prebuilts artifact
+        if: matrix.python-version == '3.12' && steps.build-prebuilts.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: litert-prebuilts-windows-arm64
+          path: dist/litert_prebuilts_windows_arm64.zip
+
       - name: Shutdown bazel server
         if: always() && env.BAZEL_OUTPUT_USER_ROOT != ''
         run: |
@@ -305,19 +319,20 @@ jobs:
           }
 
   upload-prebuilts-to-gcs:
-    name: "Upload Windows x86_64 prebuilts to GCS"
+    name: "Upload Windows prebuilts to GCS"
     # Self-hosted GKE ARC runner with ambient Workload Identity.
     runs-on: linux-x86-n4-16
-    needs: build-nightly
+    needs: [build-nightly, build-nightly-arm64]
     if: ${{ !cancelled() && needs.build-nightly.result == 'success' && github.ref == 'refs/heads/main' }}
     permissions:
       contents: read
     steps:
-      - name: Download prebuilts artifact
+      - name: Download prebuilts artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: litert-prebuilts-windows-x86_64
+          pattern: litert-prebuilts-windows-*
           path: prebuilts
+          merge-multiple: true
 
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@98ddc00a17442e89a24bbf282954a3b65ce6d200 # v2.1.0
@@ -327,10 +342,21 @@ jobs:
           NIGHTLY_DATE: ${{ needs.build-nightly.outputs.date }}
         run: |
           [[ "${NIGHTLY_DATE}" =~ ^[0-9]{8}$ ]] || { echo "Bad date: ${NIGHTLY_DATE}"; exit 1; }
-          gcloud storage cp prebuilts/litert_prebuilts_windows_x86_64.zip \
-            gs://litert/binaries/nightly/litert_prebuilts_windows_x86_64.zip
-          gcloud storage cp prebuilts/litert_prebuilts_windows_x86_64.zip \
-            "gs://litert/binaries/nightly/archive/litert_prebuilts_windows_x86_64_${NIGHTLY_DATE}.zip"
+          # Publish whichever archives were built, but fail the job if either
+          # arch is missing so a stale nightly zip does not go unnoticed.
+          missing=0
+          for arch in x86_64 arm64; do
+            name="litert_prebuilts_windows_${arch}"
+            zip_file="prebuilts/${name}.zip"
+            if [[ ! -f "${zip_file}" ]]; then
+              echo "Missing ${zip_file}"
+              missing=1
+              continue
+            fi
+            gcloud storage cp "${zip_file}" "gs://litert/binaries/nightly/${name}.zip"
+            gcloud storage cp "${zip_file}" "gs://litert/binaries/nightly/archive/${name}_${NIGHTLY_DATE}.zip"
+          done
+          exit "${missing}"
 
   upload-to-pypi:
     name: "Upload Nightly Wheels to PyPI"
