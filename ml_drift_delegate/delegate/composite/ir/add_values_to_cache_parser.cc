@@ -18,6 +18,7 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
@@ -53,6 +54,7 @@ absl::Status AddValuesToCacheIsSupported(
     return absl::InvalidArgumentError("odml.cache_update expects 2 outputs.");
   }
 
+  ::litert::ml_drift::AddValuesToCacheAttributes attr{};
   const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
       tflite_node->builtin_data);
   if (params) {
@@ -71,13 +73,21 @@ absl::Status AddValuesToCacheIsSupported(
       return absl::InvalidArgumentError(
           "odml.cache_update is missing head_size.");
     }
-    ::litert::ml_drift::AddValuesToCacheAttributes layout;
-    if (absl::Status status = ::litert::ml_drift::ReadAddValuesToCacheLayout(
-            flexbuffer_map, layout);
-        !status.ok()) {
-      return status;
+    attr.kv_cache_batch_size = flexbuffer_map["kv_cache_batch_size"].AsInt32();
+    attr.cache_size = flexbuffer_map["cache_size"].AsInt32();
+    attr.head_size = flexbuffer_map["head_size"].AsInt32();
+    if (!flexbuffer_map["scale_k"].IsNull()) {
+      attr.scale_k = flexbuffer_map["scale_k"].AsFloat();
     }
+    if (!flexbuffer_map["scale_v"].IsNull()) {
+      attr.scale_v = flexbuffer_map["scale_v"].AsFloat();
+    }
+    ABSL_RETURN_IF_ERROR(
+        ::litert::ml_drift::ReadAddValuesToCacheLayout(flexbuffer_map, attr));
   }
+  ABSL_RETURN_IF_ERROR(
+      ::litert::ml_drift::CheckAddValuesToCacheOutputs(context, tflite_node,
+                                                       attr));
 
   return absl::OkStatus();
 }
@@ -118,22 +128,34 @@ void AddValuesToCacheConvert(
   // AddValuesToCacheIsSupported() has already rejected unsupported layouts.
   ::litert::ml_drift::ReadAddValuesToCacheLayout(flexbuffer_map, attr)
       .IgnoreError();
-  add_values_op->attr = std::move(attr);
 
-  const TfLiteType out_type =
-      context.tensors[tflite_node.outputs->data[0]].type;
+  const TfLiteTensor& out_k_tensor =
+      context.tensors[tflite_node.outputs->data[0]];
+  const TfLiteTensor& out_v_tensor =
+      context.tensors[tflite_node.outputs->data[1]];
+  ::litert::ml_drift::PopulateAddValuesToCacheQuantAttributes(
+      out_k_tensor, out_v_tensor, attr);
+
+  const TfLiteType out_type = out_k_tensor.type;
   if (out_type == kTfLiteInt8 || out_type == kTfLiteUInt8 ||
-      out_type == kTfLiteInt4 || out_type == kTfLiteUInt4 ||
-      out_type == kTfLiteInt2) {
+      out_type == kTfLiteInt4) {
     auto output_1_id = tensor_map[tflite_node.outputs->data[0]];
     auto output_2_id = tensor_map[tflite_node.outputs->data[1]];
     ir_model.ResetQuantParams(output_1_id);
     ir_model.ResetQuantParams(output_2_id);
-    ir_model.GetMutableTensor(output_1_id)
-        ->desc.SetDataType(::ml_drift::DataType::kUint8);
-    ir_model.GetMutableTensor(output_2_id)
-        ->desc.SetDataType(::ml_drift::DataType::kUint8);
+    auto* out_1 = ir_model.GetMutableTensor(output_1_id);
+    auto* out_2 = ir_model.GetMutableTensor(output_2_id);
+    out_1->desc.SetDataType(::ml_drift::DataType::kUint8);
+    out_2->desc.SetDataType(::ml_drift::DataType::kUint8);
+    if (out_type == kTfLiteInt4) {
+      out_1->desc.SetBHWCShape(::litert::ml_drift::PackInt4KvCacheShape(
+          out_1->desc.GetBHWCShape(), attr.k_cache_ts_idx));
+      out_2->desc.SetBHWCShape(::litert::ml_drift::PackInt4KvCacheShape(
+          out_2->desc.GetBHWCShape(), attr.v_cache_ts_idx));
+    }
   }
+
+  add_values_op->attr = std::move(attr);
 
   ir_model.SetProducer(tensor_map[tflite_node.outputs->data[0]],
                        add_values_op->id);

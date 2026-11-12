@@ -18,6 +18,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -38,6 +40,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
+#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -572,6 +575,637 @@ TEST(DelegateOpenClTest, BatchMatMulAdjXAndAdjYConst2dRhsMatchesCpu) {
                                               adj_x, adj_y, /*const_rhs=*/true,
                                               use_ir_model);
         }
+      }
+    }
+  }
+}
+
+std::vector<uint8_t> BuildInt4CacheUpdateModelBuffer(int batch_heads,
+                                                     int tokens, int cache_size,
+                                                     int head_size,
+                                                     float scale_k,
+                                                     float scale_v) {
+  flatbuffers::FlatBufferBuilder builder;
+
+  std::vector<flatbuffers::Offset<tflite::OperatorCode>> opcodes;
+  opcodes.push_back(tflite::CreateOperatorCode(
+      builder,
+      /*deprecated_builtin_code=*/
+      tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES,
+      /*custom_code=*/0, /*version=*/1,
+      /*builtin_code=*/tflite::BuiltinOperator_STABLEHLO_COMPOSITE));
+  auto opcodes_vec = builder.CreateVector(opcodes);
+
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers;
+  buffers.push_back(tflite::CreateBuffer(builder));
+
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors;
+  auto add_float_or_int_tensor = [&](absl::Span<const int32_t> shape,
+                                     tflite::TensorType type,
+                                     const char* name) -> int32_t {
+    const int32_t idx = static_cast<int32_t>(tensors.size());
+    tensors.push_back(tflite::CreateTensor(
+        builder, builder.CreateVector(shape.data(), shape.size()), type,
+        /*buffer=*/0, builder.CreateString(name)));
+    return idx;
+  };
+  auto add_int4_tensor = [&](absl::Span<const int32_t> shape, float scale,
+                             const char* name) -> int32_t {
+    const int32_t idx = static_cast<int32_t>(tensors.size());
+    auto quant = tflite::CreateQuantizationParameters(
+        builder, /*min=*/0, /*max=*/0,
+        builder.CreateVector(std::vector<float>{scale}),
+        builder.CreateVector(std::vector<int64_t>{0}));
+    tensors.push_back(tflite::CreateTensor(
+        builder, builder.CreateVector(shape.data(), shape.size()),
+        tflite::TensorType_INT4, /*buffer=*/0, builder.CreateString(name),
+        quant));
+    return idx;
+  };
+
+  const int32_t src_k_idx = add_float_or_int_tensor(
+      {1, batch_heads, tokens, head_size}, tflite::TensorType_FLOAT32, "src_k");
+  const int32_t src_v_idx = add_float_or_int_tensor(
+      {1, batch_heads, tokens, head_size}, tflite::TensorType_FLOAT32, "src_v");
+  const int32_t params_idx = add_float_or_int_tensor(
+      {1, 1, 1, 7}, tflite::TensorType_INT32, "runtime_params");
+  // Deliberately omit "kv_cache" from the output names to verify that INT4
+  // cache outputs always get 1D BUFFER storage even without name-pattern match.
+  const int32_t out_k_idx = add_int4_tensor(
+      {1, batch_heads, cache_size, head_size}, scale_k, "out_k");
+  const int32_t out_v_idx = add_int4_tensor(
+      {1, batch_heads, head_size, cache_size}, scale_v, "out_v");
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("kv_cache_batch_size", batch_heads);
+    fbb.Int("cache_size", cache_size);
+    fbb.Int("head_size", head_size);
+    fbb.Float("scale_k", scale_k);
+    fbb.Float("scale_v", scale_v);
+  });
+  fbb.Finish();
+  const std::vector<uint8_t>& flex_attrs = fbb.GetBuffer();
+
+  auto composite_opts =
+      tflite::CreateStableHLOCompositeOptions(
+          builder, builder.CreateString("odml.cache_update"),
+          /*decomposition_subgraph_index=*/1,
+          builder.CreateVector(flex_attrs.data(), flex_attrs.size()),
+          tflite::CustomOptionsFormat_FLEXBUFFERS, /*version=*/1)
+          .Union();
+  const std::vector<int32_t> main_inputs = {src_k_idx, src_v_idx, params_idx};
+  const std::vector<int32_t> main_outputs = {out_k_idx, out_v_idx};
+  const std::vector<flatbuffers::Offset<tflite::Operator>> main_ops = {
+      tflite::CreateOperator(
+          builder, /*opcode_index=*/0, builder.CreateVector(main_inputs),
+          builder.CreateVector(main_outputs), tflite::BuiltinOptions_NONE,
+          /*builtin_options=*/0, /*custom_options=*/0,
+          tflite::CustomOptionsFormat_FLEXBUFFERS,
+          /*mutating_variable_inputs=*/0, /*intermediates=*/0,
+          /*large_custom_options_offset=*/0, /*large_custom_options_size=*/0,
+          tflite::BuiltinOptions2_StableHLOCompositeOptions, composite_opts)};
+
+  auto main_subgraph = tflite::CreateSubGraph(
+      builder, builder.CreateVector(tensors), builder.CreateVector(main_inputs),
+      builder.CreateVector(main_outputs), builder.CreateVector(main_ops),
+      builder.CreateString("main"));
+  // Placeholder decomposition subgraph at index 1 with matching I/O tensors for
+  // TFLite STABLEHLO_COMPOSITE Prepare().
+  std::vector<flatbuffers::Offset<tflite::Tensor>> decomp_tensors;
+  auto add_decomp_tensor = [&](absl::Span<const int32_t> shape,
+                               tflite::TensorType type, const char* name,
+                               float scale = 0.0f) -> int32_t {
+    const int32_t idx = static_cast<int32_t>(decomp_tensors.size());
+    flatbuffers::Offset<tflite::QuantizationParameters> quant = 0;
+    if (scale > 0.0f) {
+      quant = tflite::CreateQuantizationParameters(
+          builder, /*min=*/0, /*max=*/0,
+          builder.CreateVector(std::vector<float>{scale}),
+          builder.CreateVector(std::vector<int64_t>{0}));
+    }
+    decomp_tensors.push_back(tflite::CreateTensor(
+        builder, builder.CreateVector(shape.data(), shape.size()), type,
+        /*buffer=*/0, builder.CreateString(name), quant));
+    return idx;
+  };
+  const int32_t d_in0 = add_decomp_tensor(
+      {1, batch_heads, tokens, head_size}, tflite::TensorType_FLOAT32, "d_k");
+  const int32_t d_in1 = add_decomp_tensor(
+      {1, batch_heads, tokens, head_size}, tflite::TensorType_FLOAT32, "d_v");
+  const int32_t d_in2 =
+      add_decomp_tensor({1, 1, 1, 7}, tflite::TensorType_INT32, "d_p");
+  const int32_t d_out0 = add_decomp_tensor(
+      {1, batch_heads, cache_size, head_size}, tflite::TensorType_INT4,
+      "d_out_k", scale_k);
+  const int32_t d_out1 = add_decomp_tensor(
+      {1, batch_heads, head_size, cache_size}, tflite::TensorType_INT4,
+      "d_out_v", scale_v);
+  const std::vector<flatbuffers::Offset<tflite::Operator>> empty_ops;
+  auto decomp_subgraph = tflite::CreateSubGraph(
+      builder, builder.CreateVector(decomp_tensors),
+      builder.CreateVector(std::vector<int32_t>{d_in0, d_in1, d_in2}),
+      builder.CreateVector(std::vector<int32_t>{d_out0, d_out1}),
+      builder.CreateVector(empty_ops), builder.CreateString("decomp"));
+
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, opcodes_vec,
+      builder.CreateVector(std::vector<flatbuffers::Offset<tflite::SubGraph>>{
+          main_subgraph, decomp_subgraph}),
+      builder.CreateString("odml.cache_update int4 test"),
+      builder.CreateVector(buffers));
+  builder.Finish(model, tflite::ModelIdentifier());
+  return std::vector<uint8_t>(builder.GetBufferPointer(),
+                              builder.GetBufferPointer() + builder.GetSize());
+}
+
+TEST(DelegateOpenClTest, AddValuesToCacheInt4ExternalBuffersBothPipelines) {
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+  if (!IsOpenClSupported()) {
+    GTEST_SKIP() << "OpenCL is not supported on this platform";
+  }
+
+  constexpr int kBatchHeads = 2;
+  constexpr int kTokens = 2;
+  constexpr int kCacheSize = 16;
+  constexpr int kHeadSize = 16;
+  constexpr float kScaleK = 0.25f;
+  constexpr float kScaleV = 0.5f;
+  constexpr size_t kPackedBytes = (kBatchHeads * kCacheSize * kHeadSize) / 2;
+
+  const std::vector<uint8_t> model_buf = BuildInt4CacheUpdateModelBuffer(
+      kBatchHeads, kTokens, kCacheSize, kHeadSize, kScaleK, kScaleV);
+
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+
+  const size_t input_elems = kBatchHeads * kTokens * kHeadSize;
+  std::vector<float> src_k(input_elems);
+  std::vector<float> src_v(input_elems);
+  for (size_t i = 0; i < input_elems; ++i) {
+    const int centered = static_cast<int>(i % 21) - 10;
+    src_k[i] = static_cast<float>(centered) * kScaleK;
+    src_v[i] = static_cast<float>(-centered) * kScaleV;
+  }
+  constexpr int kStartIdx = 3;
+  const std::vector<int32_t> params = {
+      kStartIdx, kStartIdx + kTokens, kStartIdx + kTokens, kTokens, 0, 0, 0};
+
+  auto quantize_nibble = [](float val, float scale) -> uint8_t {
+    const float clamped =
+        std::min(7.0f * scale, std::max(-8.0f * scale, val));
+    const float q = std::min(
+        15.0f, std::max(0.0f, std::nearbyint(clamped / scale) + 8.0f));
+    return static_cast<uint8_t>(q);
+  };
+
+  for (bool use_ir_model : {false, true}) {
+    SCOPED_TRACE(absl::StrCat("use_ir_model=", use_ir_model));
+    auto litert_options = litert::Options::Create();
+    ASSERT_TRUE(litert_options);
+    ASSERT_TRUE(
+        litert_options->SetHardwareAccelerators(litert::HwAccelerators::kGpu));
+    auto gpu_options = litert_options->GetOptions<litert::GpuOptions>();
+    ASSERT_TRUE(gpu_options);
+    ASSERT_TRUE(gpu_options->SetBackend(litert::GpuOptions::Backend::kOpenCl));
+    ASSERT_TRUE(
+        gpu_options->SetPrecision(litert::GpuOptions::Precision::kFp32));
+    ASSERT_EQ(gpu_options->SetSerializeProgramCache(false), kLiteRtStatusOk);
+    ASSERT_EQ(gpu_options->EnableExternalTensorsMode(true), kLiteRtStatusOk);
+    ASSERT_EQ(gpu_options->SetUseIrModel(use_ir_model), kLiteRtStatusOk);
+
+    auto compiled_model = litert::CompiledModel::Create(
+        *env, litert::BufferRef<uint8_t>(model_buf.data(), model_buf.size()),
+        *litert_options);
+    ASSERT_TRUE(compiled_model) << compiled_model.Error().Message();
+    auto fully_accelerated = compiled_model->IsFullyAccelerated();
+    ASSERT_TRUE(fully_accelerated);
+    EXPECT_TRUE(*fully_accelerated);
+
+    auto input_buffers = compiled_model->CreateInputBuffers();
+    ASSERT_TRUE(input_buffers);
+    ASSERT_EQ(input_buffers->size(), 3);
+    ASSERT_TRUE((*input_buffers)[0].Write<float>(absl::MakeConstSpan(src_k)));
+    ASSERT_TRUE((*input_buffers)[1].Write<float>(absl::MakeConstSpan(src_v)));
+    ASSERT_TRUE(
+        (*input_buffers)[2].Write<int32_t>(absl::MakeConstSpan(params)));
+
+    auto output_buffers = compiled_model->CreateOutputBuffers();
+    ASSERT_TRUE(output_buffers);
+    ASSERT_EQ(output_buffers->size(), 2);
+    // Verify true 0.5-byte/element GPU buffer allocation!
+    auto size_k = (*output_buffers)[0].Size();
+    auto size_v = (*output_buffers)[1].Size();
+    ASSERT_TRUE(size_k);
+    ASSERT_TRUE(size_v);
+    EXPECT_EQ(*size_k, kPackedBytes);
+    EXPECT_EQ(*size_v, kPackedBytes);
+    auto packed_size_k = (*output_buffers)[0].PackedSize();
+    auto packed_size_v = (*output_buffers)[1].PackedSize();
+    ASSERT_TRUE(packed_size_k);
+    ASSERT_TRUE(packed_size_v);
+    EXPECT_EQ(*packed_size_k, kPackedBytes);
+    EXPECT_EQ(*packed_size_v, kPackedBytes);
+
+    std::vector<uint8_t> init_cache(kPackedBytes, 0x3C);
+    ASSERT_TRUE(
+        (*output_buffers)[0].Write<uint8_t>(absl::MakeConstSpan(init_cache)));
+    ASSERT_TRUE(
+        (*output_buffers)[1].Write<uint8_t>(absl::MakeConstSpan(init_cache)));
+
+    ASSERT_TRUE(compiled_model->Run(*input_buffers, *output_buffers));
+
+    std::vector<uint8_t> actual_k(kPackedBytes);
+    std::vector<uint8_t> actual_v(kPackedBytes);
+    ASSERT_TRUE((*output_buffers)[0].Read<uint8_t>(absl::MakeSpan(actual_k)));
+    ASSERT_TRUE((*output_buffers)[1].Read<uint8_t>(absl::MakeSpan(actual_v)));
+
+    std::vector<uint8_t> expected_k = init_cache;
+    std::vector<uint8_t> expected_v = init_cache;
+    constexpr int kPackedHeadSlices = kHeadSize / 8;
+    constexpr int kCacheSlices = kCacheSize / 4;
+    for (int b = 0; b < kBatchHeads; ++b) {
+      for (int t = 0; t < kTokens; ++t) {
+        const int tok = kStartIdx + t;
+        const int tok_slice = tok / 4;
+        const int tok_in_slice = tok % 4;
+        for (int s = 0; s < kPackedHeadSlices; ++s) {
+          const int k_vec4 =
+              ((b * kPackedHeadSlices + s) * kCacheSlices + tok_slice) * 4 +
+              tok_in_slice;
+          const int v_vec4 =
+              ((b * kCacheSlices + tok_slice) * kPackedHeadSlices + s) * 4 +
+              tok_in_slice;
+          for (int comp = 0; comp < 4; ++comp) {
+            const size_t src_lo =
+                (b * kTokens + t) * kHeadSize + (s * 8 + comp);
+            const size_t src_hi =
+                (b * kTokens + t) * kHeadSize + (s * 8 + 4 + comp);
+            expected_k[k_vec4 * 4 + comp] = static_cast<uint8_t>(
+                quantize_nibble(src_k[src_lo], kScaleK) |
+                (quantize_nibble(src_k[src_hi], kScaleK) << 4));
+            expected_v[v_vec4 * 4 + comp] = static_cast<uint8_t>(
+                quantize_nibble(src_v[src_lo], kScaleV) |
+                (quantize_nibble(src_v[src_hi], kScaleV) << 4));
+          }
+        }
+      }
+    }
+    EXPECT_EQ(actual_k, expected_k);
+    EXPECT_EQ(actual_v, expected_v);
+  }
+}
+
+std::vector<uint8_t> BuildInt8QueryInt4KvSdpaModelBuffer(
+    int q_heads, int kv_heads, int tokens, int cache_size, int head_size,
+    float scale_q, float scale_k, float scale_v, bool expose_kv_outputs) {
+  flatbuffers::FlatBufferBuilder builder;
+
+  std::vector<flatbuffers::Offset<tflite::OperatorCode>> opcodes;
+  opcodes.push_back(tflite::CreateOperatorCode(
+      builder,
+      /*deprecated_builtin_code=*/
+      tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES,
+      /*custom_code=*/0, /*version=*/1,
+      /*builtin_code=*/tflite::BuiltinOperator_STABLEHLO_COMPOSITE));
+  auto opcodes_vec = builder.CreateVector(opcodes);
+
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers;
+  buffers.push_back(tflite::CreateBuffer(builder));
+
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors;
+  auto add_tensor = [&](absl::Span<const int32_t> shape,
+                        tflite::TensorType type, const char* name,
+                        float scale = 0.0f) -> int32_t {
+    const int32_t idx = static_cast<int32_t>(tensors.size());
+    flatbuffers::Offset<tflite::QuantizationParameters> quant = 0;
+    if (scale > 0.0f) {
+      quant = tflite::CreateQuantizationParameters(
+          builder, /*min=*/0, /*max=*/0,
+          builder.CreateVector(std::vector<float>{scale}),
+          builder.CreateVector(std::vector<int64_t>{0}));
+    }
+    tensors.push_back(tflite::CreateTensor(
+        builder, builder.CreateVector(shape.data(), shape.size()), type,
+        /*buffer=*/0, builder.CreateString(name), quant));
+    return idx;
+  };
+
+  const int32_t q_idx = add_tensor({1, q_heads, tokens, head_size},
+                                   tflite::TensorType_INT8, "q", scale_q);
+  const int32_t src_k_idx = add_tensor(
+      {1, kv_heads, tokens, head_size}, tflite::TensorType_FLOAT32, "src_k");
+  const int32_t src_v_idx = add_tensor(
+      {1, kv_heads, tokens, head_size}, tflite::TensorType_FLOAT32, "src_v");
+  const int32_t mask_idx = add_tensor(
+      {1, 1, tokens, cache_size}, tflite::TensorType_FLOAT32, "mask");
+  const int32_t params_idx =
+      add_tensor({1, 1, 1, 7}, tflite::TensorType_INT32, "runtime_params");
+  const int32_t cache_k_idx =
+      add_tensor({1, kv_heads, cache_size, head_size}, tflite::TensorType_INT4,
+                 "cache_k", scale_k);
+  const int32_t cache_v_idx =
+      add_tensor({1, kv_heads, head_size, cache_size}, tflite::TensorType_INT4,
+                 "cache_v", scale_v);
+  const int32_t out_idx = add_tensor(
+      {1, q_heads, tokens, head_size}, tflite::TensorType_FLOAT32, "attn_out");
+
+  flexbuffers::Builder cache_fbb;
+  cache_fbb.Map([&]() {
+    cache_fbb.Int("kv_cache_batch_size", kv_heads);
+    cache_fbb.Int("cache_size", cache_size);
+    cache_fbb.Int("head_size", head_size);
+    cache_fbb.Float("scale_k", scale_k);
+    cache_fbb.Float("scale_v", scale_v);
+  });
+  cache_fbb.Finish();
+  const std::vector<uint8_t>& cache_attrs = cache_fbb.GetBuffer();
+  auto cache_opts =
+      tflite::CreateStableHLOCompositeOptions(
+          builder, builder.CreateString("odml.cache_update"),
+          /*decomposition_subgraph_index=*/1,
+          builder.CreateVector(cache_attrs.data(), cache_attrs.size()),
+          tflite::CustomOptionsFormat_FLEXBUFFERS, /*version=*/1)
+          .Union();
+
+  flexbuffers::Builder sdpa_fbb;
+  sdpa_fbb.Map([&]() {
+    sdpa_fbb.Bool("from_cache_update", true);
+    sdpa_fbb.Bool("is_causal", true);
+  });
+  sdpa_fbb.Finish();
+  const std::vector<uint8_t>& sdpa_attrs = sdpa_fbb.GetBuffer();
+  auto sdpa_opts =
+      tflite::CreateStableHLOCompositeOptions(
+          builder, builder.CreateString("odml.sdpa_transposed"),
+          /*decomposition_subgraph_index=*/2,
+          builder.CreateVector(sdpa_attrs.data(), sdpa_attrs.size()),
+          tflite::CustomOptionsFormat_FLEXBUFFERS, /*version=*/1)
+          .Union();
+
+  const std::vector<flatbuffers::Offset<tflite::Operator>> main_ops = {
+      tflite::CreateOperator(
+          builder, /*opcode_index=*/0,
+          builder.CreateVector(
+              std::vector<int32_t>{src_k_idx, src_v_idx, params_idx}),
+          builder.CreateVector(std::vector<int32_t>{cache_k_idx, cache_v_idx}),
+          tflite::BuiltinOptions_NONE, /*builtin_options=*/0,
+          /*custom_options=*/0, tflite::CustomOptionsFormat_FLEXBUFFERS,
+          /*mutating_variable_inputs=*/0, /*intermediates=*/0,
+          /*large_custom_options_offset=*/0, /*large_custom_options_size=*/0,
+          tflite::BuiltinOptions2_StableHLOCompositeOptions, cache_opts),
+      tflite::CreateOperator(
+          builder, /*opcode_index=*/0,
+          builder.CreateVector(std::vector<int32_t>{
+              q_idx, cache_k_idx, cache_v_idx, mask_idx, params_idx}),
+          builder.CreateVector(std::vector<int32_t>{out_idx}),
+          tflite::BuiltinOptions_NONE, /*builtin_options=*/0,
+          /*custom_options=*/0, tflite::CustomOptionsFormat_FLEXBUFFERS,
+          /*mutating_variable_inputs=*/0, /*intermediates=*/0,
+          /*large_custom_options_offset=*/0, /*large_custom_options_size=*/0,
+          tflite::BuiltinOptions2_StableHLOCompositeOptions, sdpa_opts),
+  };
+
+  // In external-tensors mode, expose `cache_k` and `cache_v` as subgraph
+  // outputs alongside `attn_out` to verify persistent 4-bit GPU buffers; in
+  // non-external mode, keep them internal between `cache_update` and
+  // `sdpa_transposed` since ML Drift BHWC host converters do not unpack INT4.
+  const std::vector<int32_t> main_inputs = {q_idx, src_k_idx, src_v_idx,
+                                            mask_idx, params_idx};
+  std::vector<int32_t> main_outputs = {out_idx};
+  if (expose_kv_outputs) {
+    main_outputs.push_back(cache_k_idx);
+    main_outputs.push_back(cache_v_idx);
+  }
+  auto main_subgraph = tflite::CreateSubGraph(
+      builder, builder.CreateVector(tensors), builder.CreateVector(main_inputs),
+      builder.CreateVector(main_outputs), builder.CreateVector(main_ops),
+      builder.CreateString("main"));
+
+  auto make_stub_decomp = [&](absl::Span<const int32_t> src_indices,
+                              absl::Span<const int32_t> dst_indices,
+                              const char* sg_name) {
+    std::vector<flatbuffers::Offset<tflite::Tensor>> d_tensors;
+    std::vector<int32_t> d_in;
+    std::vector<int32_t> d_out;
+    // Reuse shapes/types via fresh descriptors matching the main tensors.
+    auto clone_spec = [&](int32_t orig_idx) -> int32_t {
+      const int32_t id = static_cast<int32_t>(d_tensors.size());
+      absl::Span<const int32_t> sh;
+      tflite::TensorType tp = tflite::TensorType_FLOAT32;
+      float sc = 0.0f;
+      const std::vector<int32_t> sh_q = {1, q_heads, tokens, head_size};
+      const std::vector<int32_t> sh_kv_up = {1, kv_heads, tokens, head_size};
+      const std::vector<int32_t> sh_m = {1, 1, tokens, cache_size};
+      const std::vector<int32_t> sh_p = {1, 1, 1, 7};
+      const std::vector<int32_t> sh_ck = {1, kv_heads, cache_size, head_size};
+      const std::vector<int32_t> sh_cv = {1, kv_heads, head_size, cache_size};
+      if (orig_idx == q_idx) {
+        sh = sh_q;
+        tp = tflite::TensorType_INT8;
+        sc = scale_q;
+      } else if (orig_idx == src_k_idx || orig_idx == src_v_idx) {
+        sh = sh_kv_up;
+      } else if (orig_idx == mask_idx) {
+        sh = sh_m;
+      } else if (orig_idx == params_idx) {
+        sh = sh_p;
+        tp = tflite::TensorType_INT32;
+      } else if (orig_idx == cache_k_idx) {
+        sh = sh_ck;
+        tp = tflite::TensorType_INT4;
+        sc = scale_k;
+      } else if (orig_idx == cache_v_idx) {
+        sh = sh_cv;
+        tp = tflite::TensorType_INT4;
+        sc = scale_v;
+      } else {
+        sh = sh_q;
+      }
+      flatbuffers::Offset<tflite::QuantizationParameters> q = 0;
+      if (sc > 0.0f) {
+        q = tflite::CreateQuantizationParameters(
+            builder, 0, 0, builder.CreateVector(std::vector<float>{sc}),
+            builder.CreateVector(std::vector<int64_t>{0}));
+      }
+      d_tensors.push_back(tflite::CreateTensor(
+          builder, builder.CreateVector(sh.data(), sh.size()), tp, 0,
+          builder.CreateString("d"), q));
+      return id;
+    };
+    for (int32_t idx : src_indices) d_in.push_back(clone_spec(idx));
+    for (int32_t idx : dst_indices) d_out.push_back(clone_spec(idx));
+    const std::vector<flatbuffers::Offset<tflite::Operator>> empty_ops;
+    return tflite::CreateSubGraph(
+        builder, builder.CreateVector(d_tensors), builder.CreateVector(d_in),
+        builder.CreateVector(d_out), builder.CreateVector(empty_ops),
+        builder.CreateString(sg_name));
+  };
+
+  auto decomp_cache = make_stub_decomp(
+      std::vector<int32_t>{src_k_idx, src_v_idx, params_idx},
+      std::vector<int32_t>{cache_k_idx, cache_v_idx}, "decomp_cache");
+  auto decomp_sdpa = make_stub_decomp(
+      std::vector<int32_t>{q_idx, cache_k_idx, cache_v_idx, mask_idx,
+                           params_idx},
+      std::vector<int32_t>{out_idx}, "decomp_sdpa");
+
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, opcodes_vec,
+      builder.CreateVector(std::vector<flatbuffers::Offset<tflite::SubGraph>>{
+          main_subgraph, decomp_cache, decomp_sdpa}),
+      builder.CreateString("int8_q_int4_kv_sdpa_test"),
+      builder.CreateVector(buffers));
+  builder.Finish(model, tflite::ModelIdentifier());
+  return std::vector<uint8_t>(builder.GetBufferPointer(),
+                              builder.GetBufferPointer() + builder.GetSize());
+}
+
+TEST(DelegateOpenClTest,
+     CacheUpdateAndSdpaTransposedInt8QueryInt4KvBothPipelines) {
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+  if (!IsOpenClSupported()) {
+    GTEST_SKIP() << "OpenCL is not supported on this platform";
+  }
+
+  constexpr int kQHeads = 4;
+  constexpr int kKvHeads = 2;
+  constexpr int kTokens = 4;
+  constexpr int kCacheSize = 16;
+  constexpr int kHeadSize = 16;
+  constexpr float kScaleQ = 0.03125f;
+  constexpr float kScaleK = 0.125f;
+  constexpr float kScaleV = 0.125f;
+  constexpr size_t kPackedKvBytes = (kKvHeads * kCacheSize * kHeadSize) / 2;
+
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+
+  std::vector<int8_t> q_int8(kQHeads * kTokens * kHeadSize);
+  for (size_t i = 0; i < q_int8.size(); ++i) {
+    q_int8[i] = static_cast<int8_t>((static_cast<int>(i * 7 + 3) % 41) - 20);
+  }
+  std::vector<float> src_k(kKvHeads * kTokens * kHeadSize);
+  std::vector<float> src_v(kKvHeads * kTokens * kHeadSize);
+  for (size_t i = 0; i < src_k.size(); ++i) {
+    // Use coprime moduli (15, 13) against `kHeadSize = 16` so every token `s`
+    // has distinct K and V vectors and any `scale_q` / `scale_k` error shifts
+    // the attention weighted sum immediately.
+    const int k_q = (static_cast<int>(i * 5 + 1) % 15) - 7;
+    const int v_q = (static_cast<int>(i * 3 + 9) % 13) - 6;
+    src_k[i] = static_cast<float>(k_q) * kScaleK;
+    src_v[i] = static_cast<float>(v_q) * kScaleV;
+  }
+  std::vector<float> mask(kTokens * kCacheSize, -10000.0f);
+  for (int t = 0; t < kTokens; ++t) {
+    for (int s = 0; s <= t; ++s) {
+      mask[t * kCacheSize + s] = 0.0f;
+    }
+  }
+  const std::vector<int32_t> params = {0, kTokens, kTokens, kTokens, 0, 0, 0};
+
+  // Exact CPU reference for causal GQA over the quantized Q, K, and V values.
+  std::vector<float> expected_out(kQHeads * kTokens * kHeadSize, 0.0f);
+  constexpr int kGqaRatio = kQHeads / kKvHeads;
+  for (int qh = 0; qh < kQHeads; ++qh) {
+    const int kvh = qh / kGqaRatio;
+    for (int t = 0; t < kTokens; ++t) {
+      std::vector<float> scores(kCacheSize, -10000.0f);
+      float max_s = -1e9f;
+      for (int s = 0; s < kTokens; ++s) {
+        float dot = 0.0f;
+        for (int h = 0; h < kHeadSize; ++h) {
+          const float q_f =
+              static_cast<float>(q_int8[(qh * kTokens + t) * kHeadSize + h]) *
+              kScaleQ;
+          const float k_f = src_k[(kvh * kTokens + s) * kHeadSize + h];
+          dot += q_f * k_f;
+        }
+        scores[s] = dot + mask[t * kCacheSize + s];
+        max_s = std::max(max_s, scores[s]);
+      }
+      float sum_exp = 0.0f;
+      std::vector<float> probs(kCacheSize, 0.0f);
+      for (int s = 0; s < kCacheSize; ++s) {
+        probs[s] = std::exp(scores[s] - max_s);
+        sum_exp += probs[s];
+      }
+      for (int h = 0; h < kHeadSize; ++h) {
+        float acc = 0.0f;
+        for (int s = 0; s < kTokens; ++s) {
+          acc += (probs[s] / sum_exp) *
+                 src_v[(kvh * kTokens + s) * kHeadSize + h];
+        }
+        expected_out[(qh * kTokens + t) * kHeadSize + h] = acc;
+      }
+    }
+  }
+
+  for (bool use_ir_model : {false, true}) {
+    for (bool external_tensors : {false, true}) {
+      SCOPED_TRACE(absl::StrCat("use_ir_model=", use_ir_model,
+                                " external_tensors=", external_tensors));
+      const std::vector<uint8_t> model_buf =
+          BuildInt8QueryInt4KvSdpaModelBuffer(
+              kQHeads, kKvHeads, kTokens, kCacheSize, kHeadSize, kScaleQ,
+              kScaleK, kScaleV, /*expose_kv_outputs=*/external_tensors);
+      auto litert_options = litert::Options::Create();
+      ASSERT_TRUE(litert_options);
+      ASSERT_TRUE(litert_options->SetHardwareAccelerators(
+          litert::HwAccelerators::kGpu));
+      auto gpu_options = litert_options->GetOptions<litert::GpuOptions>();
+      ASSERT_TRUE(gpu_options);
+      ASSERT_TRUE(
+          gpu_options->SetBackend(litert::GpuOptions::Backend::kOpenCl));
+      ASSERT_TRUE(
+          gpu_options->SetPrecision(litert::GpuOptions::Precision::kFp32));
+      ASSERT_EQ(gpu_options->SetSerializeProgramCache(false), kLiteRtStatusOk);
+      ASSERT_EQ(gpu_options->EnableExternalTensorsMode(external_tensors),
+                kLiteRtStatusOk);
+      ASSERT_EQ(gpu_options->SetUseIrModel(use_ir_model), kLiteRtStatusOk);
+
+      auto compiled_model = litert::CompiledModel::Create(
+          *env, litert::BufferRef<uint8_t>(model_buf.data(), model_buf.size()),
+          *litert_options);
+      ASSERT_TRUE(compiled_model) << compiled_model.Error().Message();
+      auto fully_accelerated = compiled_model->IsFullyAccelerated();
+      ASSERT_TRUE(fully_accelerated);
+      EXPECT_TRUE(*fully_accelerated);
+
+      auto input_buffers = compiled_model->CreateInputBuffers();
+      ASSERT_TRUE(input_buffers);
+      ASSERT_EQ(input_buffers->size(), 5);
+      ASSERT_TRUE(
+          (*input_buffers)[0].Write<int8_t>(absl::MakeConstSpan(q_int8)));
+      ASSERT_TRUE((*input_buffers)[1].Write<float>(absl::MakeConstSpan(src_k)));
+      ASSERT_TRUE((*input_buffers)[2].Write<float>(absl::MakeConstSpan(src_v)));
+      ASSERT_TRUE((*input_buffers)[3].Write<float>(absl::MakeConstSpan(mask)));
+      ASSERT_TRUE(
+          (*input_buffers)[4].Write<int32_t>(absl::MakeConstSpan(params)));
+
+      auto output_buffers = compiled_model->CreateOutputBuffers();
+      ASSERT_TRUE(output_buffers);
+      ASSERT_EQ(output_buffers->size(), external_tensors ? 3 : 1);
+      if (external_tensors) {
+        auto size_k = (*output_buffers)[1].Size();
+        auto size_v = (*output_buffers)[2].Size();
+        ASSERT_TRUE(size_k);
+        ASSERT_TRUE(size_v);
+        EXPECT_EQ(*size_k, kPackedKvBytes);
+        EXPECT_EQ(*size_v, kPackedKvBytes);
+      }
+
+      ASSERT_TRUE(compiled_model->Run(*input_buffers, *output_buffers));
+
+      std::vector<float> actual_out(expected_out.size(), 0.0f);
+      ASSERT_TRUE(
+          (*output_buffers)[0].Read<float>(absl::MakeSpan(actual_out)));
+      for (size_t i = 0; i < expected_out.size(); ++i) {
+        EXPECT_NEAR(actual_out[i], expected_out[i], 1e-4f) << "at index " << i;
       }
     }
   }

@@ -19,6 +19,8 @@
 
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "litert/c/litert_model_types.h"
@@ -427,6 +429,74 @@ TEST(BufferHandlerUtilsTest, ConvertDataFromDescriptorUInt16) {
 
   EXPECT_THAT(host_data[0], Eq(1));
   EXPECT_THAT(host_data[7], Eq(8));
+}
+
+TEST(BufferHandlerUtilsTest, CreateAndConvertInt4BufferPackedBytes) {
+  LiteRtRankedTensorType tensor_type;
+  tensor_type.layout.rank = 4;
+  tensor_type.layout.dimensions[0] = 1;
+  tensor_type.layout.dimensions[1] = 2;
+  tensor_type.layout.dimensions[2] = 16;
+  tensor_type.layout.dimensions[3] = 16;
+  tensor_type.element_type = kLiteRtElementTypeInt4;
+
+  // Non-buffer storage is rejected for 4-bit tensors.
+  EXPECT_FALSE(CreateTensorDescriptor(
+                   tensor_type, kLiteRtTensorBufferTypeOpenClTexture)
+                   .ok());
+
+  auto desc = CreateTensorDescriptor(tensor_type,
+                                     kLiteRtTensorBufferTypeOpenClBuffer);
+  ASSERT_TRUE(desc.ok());
+  EXPECT_THAT(desc->GetDataType(), Eq(::ml_drift::DataType::kUint8));
+  EXPECT_THAT(desc->GetStorageType(),
+              Eq(::ml_drift::TensorStorageType::kBuffer));
+  // 1 * 2 * 16 * 16 = 512 int4 elements = 256 packed bytes.
+  EXPECT_THAT(desc->GetMemorySizeInBytes(), Eq(256));
+
+  std::vector<uint8_t> host_in(256);
+  for (int i = 0; i < 256; ++i) {
+    host_in[i] = static_cast<uint8_t>((i * 13 + 7) & 0xFF);
+  }
+  ConvertDataToDescriptor(host_in.data(), *desc, kLiteRtElementTypeInt4);
+  ASSERT_EQ(desc->GetData().size(), 256);
+
+  std::vector<uint8_t> host_out(256, 0);
+  ConvertDataFromDescriptor(*desc, host_out.data(), kLiteRtElementTypeInt4);
+  EXPECT_EQ(host_out, host_in);
+}
+
+TEST(BufferHandlerUtilsTest, CreateAndConvertInt4OddElementCount) {
+  LiteRtRankedTensorType tensor_type;
+  tensor_type.layout.rank = 1;
+  tensor_type.layout.dimensions[0] = 5;  // 5 nibbles -> 3 packed host bytes
+  tensor_type.element_type = kLiteRtElementTypeInt4;
+
+  auto desc =
+      CreateTensorDescriptor(tensor_type, kLiteRtTensorBufferTypeMetalBuffer);
+  ASSERT_TRUE(desc.ok());
+  EXPECT_THAT(desc->GetMemorySizeInBytes(), Eq(4));
+
+  std::vector<uint8_t> host_in = {0x12, 0x34, 0x05};
+  ConvertDataToDescriptor(host_in.data(), *desc, kLiteRtElementTypeInt4);
+
+  std::vector<uint8_t> host_out(3, 0xFF);
+  ConvertDataFromDescriptor(*desc, host_out.data(), kLiteRtElementTypeInt4);
+  EXPECT_EQ(host_out, host_in);
+}
+
+TEST(BufferHandlerUtilsTest, RejectsOverflowingInt4Dimensions) {
+  LiteRtRankedTensorType tensor_type;
+  tensor_type.layout.rank = 4;
+  tensor_type.layout.dimensions[0] = 1 << 20;
+  tensor_type.layout.dimensions[1] = 1 << 20;
+  tensor_type.layout.dimensions[2] = 1 << 24;
+  tensor_type.layout.dimensions[3] = 1;
+  tensor_type.element_type = kLiteRtElementTypeInt4;
+
+  EXPECT_THAT(
+      CreateTensorDescriptor(tensor_type, kLiteRtTensorBufferTypeOpenClBuffer),
+      ::absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
 }
 }  // namespace
 }  // namespace litert::ml_drift

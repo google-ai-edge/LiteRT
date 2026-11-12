@@ -47,15 +47,20 @@ struct SdpaTransposedAttributes {
   // SDPA or `is_causal` attribute is set). When false and `mask` is absent,
   // attention is full (non-causal) over `[0, active_tokens)`.
   bool is_causal = false;
-  // Dequantization scales of INT8 symmetric per-tensor quantized K and V
-  // caches, broadcast to one entry per output channel of the matmul that reads
-  // the cache (`scale_k`: one per cache slot, `scale_v`: one per head_dim
+  // Bit-width of quantized K/V caches: 0 for float caches, 8 for INT8 caches,
+  // and 4 for packed INT4 caches written by `odml.cache_update`.
+  int kv_quant_bits = 0;
+  // Dequantization scale of a symmetric per-tensor INT8 query (`in[0]`) when
+  // the query arrives at the GPU graph as raw `DataType::kInt8` (e.g., an
+  // external buffer input); absent when the query is float or already
+  // dequantized by ML Drift's tensor reader.
+  std::optional<float> scale_q;
+  // Dequantization scales of INT8 or INT4 symmetric per-tensor quantized K and
+  // V caches, broadcast to one entry per output channel of the matmul that
+  // reads the cache (`scale_k`: one per cache slot, `scale_v`: one per head_dim
   // element). Set, together with kUint8 `bmm1_weights` / `bmm2_weights`
-  // descriptors and `from_cache_update`, only when K and V are int8; absent
-  // for float caches. The cache bytes must be in the packed layout and
-  // encoding written by the GPU `AddValuesToCache` kernel, i.e. `int8 + 128`
-  // (offset binary), which `FullyConnectedInt8ExternalWeights` decodes as
-  // `(byte - 128) * scale` when no zero-point tensor is given.
+  // descriptors, `kv_quant_bits` in {4, 8}, and `from_cache_update`, only when
+  // K and V are quantized; absent for float caches.
   std::optional<
       ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>>
       scale_k;
@@ -67,22 +72,38 @@ struct SdpaTransposedAttributes {
 // Returns true if `tensor` is an INT8 tensor with affine quantization.
 bool IsInt8Tensor(const TfLiteTensor& tensor);
 
+// Returns true if `tensor` is an INT4 tensor with affine quantization.
+bool IsInt4Tensor(const TfLiteTensor& tensor);
+
+// Returns the per-tensor scale of an affine quantized `tensor`.
+float GetAffineTensorScale(const TfLiteTensor& tensor);
+
+// Checks the query (input 0) and output (output 0) types of an
+// `odml.sdpa_transposed` node: query must be float or symmetric per-tensor
+// INT8, and output must be float.
+absl::Status CheckSdpaTransposedQueryAndOutputTypes(
+    const TfLiteContext* context, const TfLiteNode* tflite_node);
+
 // Checks the K (input 1) and V (input 2) caches of an `odml.sdpa_transposed`
-// node: either both are float, or both are INT8 with symmetric per-tensor
-// quantization. Returns an Unavailable error otherwise so that the node is left
-// to the CPU decomposition.
+// node: both must have matching types and be float, symmetric per-tensor INT8,
+// or symmetric per-tensor INT4 (4D with head_dim % 8 == 0 and
+// cache_size % 4 == 0). Returns an Unavailable error otherwise so that the node
+// is left to the CPU decomposition.
 absl::Status CheckSdpaTransposedKvCacheTypes(const TfLiteContext* context,
                                              const TfLiteNode* tflite_node);
 
-// Fills the INT8 KV cache fields of `attr` for int8 `k_tensor` / `v_tensor`:
-// kUint8 external-weights descriptors of both matmuls and the broadcast
-// `scale_k` / `scale_v` tensors. Callers must also set `from_cache_update`, as
-// the int8 cache bytes are only meaningful in the layout written by
-// `odml.cache_update`. `k_shape` / `v_shape` are the BHWC shapes the kernel
-// consumes (after merging the model batch). The scales are taken from
-// `cache_update_attr` when the caches are produced by an `odml.cache_update`
-// node of the same graph (these are the scales the bytes were quantized with)
-// and from the tensors' quantization parameters otherwise.
+// Fills the quantized KV cache fields of `attr` for INT8 or INT4 `k_tensor` /
+// `v_tensor` (`quant_bits` in {4, 8}): `kv_quant_bits`, kUint8 external-weights
+// descriptors of both matmuls (over the logical unpacked cache shapes), and the
+// broadcast `scale_k` / `scale_v` tensors. `k_shape` / `v_shape` are the BHWC
+// shapes in the graph after merging the model batch (for `quant_bits == 4`,
+// their head_dim axis is already packed by half via `PackInt4KvCacheShape`).
+void SetSdpaTransposedQuantizedKvCacheWeights(
+    const TfLiteTensor& k_tensor, const TfLiteTensor& v_tensor,
+    const ::ml_drift::BHWC& k_shape, const ::ml_drift::BHWC& v_shape,
+    int quant_bits, const AddValuesToCacheAttributes* cache_update_attr,
+    SdpaTransposedAttributes& attr);
+
 void SetSdpaTransposedInt8KvCacheWeights(
     const TfLiteTensor& k_tensor, const TfLiteTensor& v_tensor,
     const ::ml_drift::BHWC& k_shape, const ::ml_drift::BHWC& v_shape,

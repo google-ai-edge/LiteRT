@@ -2327,7 +2327,13 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> BuildDecomposedSdpa(
     if (mask->tensor_desc.GetDataType() == ::ml_drift::DataType::kBool) {
       logits = SelectBoolMask(model_builder, logits, *mask);
     } else {
-      logits = model_builder->Add(logits, *mask);
+      ::ml_drift::GpuModelBuilder::TensorHandle mask_for_add = *mask;
+      if (mask_for_add.tensor_desc.GetDataType() !=
+          logits.tensor_desc.GetDataType()) {
+        mask_for_add =
+            model_builder->Cast(mask_for_add, logits.tensor_desc.GetDataType());
+      }
+      logits = model_builder->Add(logits, mask_for_add);
     }
     if (reshape_logits_for_mask) {
       logits = model_builder->Reshape(
@@ -2382,6 +2388,142 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> BuildDecomposedSdpa(
                                       bmm2_runtime_check, param_tensor);
 }
 
+class UnpackInt4KvCacheToInt8Op : public ::ml_drift::GPUOperation {
+ public:
+  UnpackInt4KvCacheToInt8Op(int cache_size, int kv_heads, int half_slices)
+      : cache_size_(cache_size),
+        kv_heads_(kv_heads),
+        half_slices_(half_slices) {}
+
+  ::ml_drift::int3 GetGridSize() const override {
+    return ::ml_drift::int3(cache_size_, kv_heads_, half_slices_);
+  }
+
+  UnpackInt4KvCacheToInt8Op(UnpackInt4KvCacheToInt8Op&&) = default;
+  UnpackInt4KvCacheToInt8Op& operator=(UnpackInt4KvCacheToInt8Op&&) = default;
+  UnpackInt4KvCacheToInt8Op(const UnpackInt4KvCacheToInt8Op&) = delete;
+  UnpackInt4KvCacheToInt8Op& operator=(const UnpackInt4KvCacheToInt8Op&) =
+      delete;
+
+ private:
+  int cache_size_ = 1;
+  int kv_heads_ = 1;
+  int half_slices_ = 1;
+};
+
+// Unpacks packed INT4 K and V caches written by `AddValuesToCache` (where each
+// uchar4 stores slice 2*Z in low nibbles +8 and slice 2*Z+1 in high nibbles +8)
+// into transient INT8 K and V buffers (`nibble + 120 = signed_int4 + 128`) in
+// the exact `kOSpatialIOGroupO4I4` / `kOSpatialIOGroupI4O4` layouts consumed by
+// `FullyConnectedInt8ExternalWeights`. When `params` is present, slots past the
+// aligned active token count return immediately without memory traffic.
+std::unique_ptr<::ml_drift::GPUOperation> CreateUnpackInt4KvCacheToInt8(
+    const ::ml_drift::TensorDescriptor& src_k_desc,
+    const ::ml_drift::TensorDescriptor& src_v_desc,
+    const ::ml_drift::TensorDescriptor* param_desc,
+    const ::ml_drift::TensorDescriptor& dst_k_desc,
+    const ::ml_drift::TensorDescriptor& dst_v_desc,
+    const SdpaTransposedAttributes& attr) {
+  const ::ml_drift::BHWC dst_k_shape = dst_k_desc.GetBHWCShape();
+  const int kv_heads = dst_k_shape.h;
+  const int cache_size = dst_k_shape.w;
+  const int half_slices = dst_k_shape.c / 8;
+
+  UnpackInt4KvCacheToInt8Op op(cache_size, kv_heads, half_slices);
+  op.args_.AddInt("cache_size", cache_size);
+  op.args_.AddInt("kv_heads", kv_heads);
+  op.args_.AddInt("half_slices", half_slices);
+  op.AddSrcTensor("src_k", src_k_desc);
+  op.AddSrcTensor("src_v", src_v_desc);
+
+  const bool has_param =
+      (param_desc != nullptr &&
+       attr.runtime_check.src_end_ch_index.has_value());
+  if (has_param) {
+    op.args_.AddInt("src_end_ch_index", *attr.runtime_check.src_end_ch_index);
+    op.AddSrcTensor("params", *param_desc);
+  }
+  op.AddDstTensor("dst_k", dst_k_desc);
+  op.AddDstTensor("dst_v", dst_v_desc);
+
+  std::string c = R"(
+MAIN_FUNCTION($0) {
+  int X = ucl::GetGlobalId<0>();
+  int Y = ucl::GetGlobalId<1>();
+  int Z = ucl::GetGlobalId<2>();
+  if (X >= args.cache_size || Y >= args.kv_heads || Z >= args.half_slices) {
+    return;
+  }
+)";
+  if (has_param) {
+    absl::StrAppend(
+        &c, R"(  {
+    int param_slice = args.src_end_ch_index / 4;
+    int param_comp = args.src_end_ch_index % 4;
+    float4 p_vec = ucl::Convert<float4>(args.params.Read(0, 0, param_slice, 0));
+    float p_raw = p_vec.x;
+    if (param_comp == 1) {
+      p_raw = p_vec.y;
+    } else if (param_comp == 2) {
+      p_raw = p_vec.z;
+    } else if (param_comp == 3) {
+      p_raw = p_vec.w;
+    }
+    int param_val = ucl::Convert<int>(p_raw);
+    if (param_val > 0 && param_val < args.cache_size) {
+      int aligned = ((param_val + )",
+        ::ml_drift::ConvRuntimeCheckDesc::kChannelsAlignment - 1, ") / ",
+        ::ml_drift::ConvRuntimeCheckDesc::kChannelsAlignment, ") * ",
+        ::ml_drift::ConvRuntimeCheckDesc::kChannelsAlignment, R"(;
+      int end_tokens = min(args.cache_size, aligned);
+      if (X >= end_tokens) {
+        return;
+      }
+    }
+  }
+)");
+  }
+  absl::StrAppend(&c, R"(  int c_slices = (args.cache_size + 3) / 4;
+  int x_slice = X / 4;
+  int x_rem = X % 4;
+  int h_slices_in = args.half_slices;
+  int h_slices_out = args.half_slices * 2;
+  {
+    int k_in_idx = ((Y * h_slices_in + Z) * c_slices + x_slice) * 4 + x_rem;
+    uint4 u_k = ucl::Convert<uint4>(args.src_k.Read(k_in_idx));
+    uint4 k_lo_u = (u_k & ucl::Init<uint4>(15u)) + ucl::Init<uint4>(120u);
+    uint4 k_hi_u =
+        ((u_k / ucl::Init<uint4>(16u)) & ucl::Init<uint4>(15u)) +
+        ucl::Init<uint4>(120u);
+    uchar4 k_lo = ucl::Convert<uchar4>(k_lo_u);
+    uchar4 k_hi = ucl::Convert<uchar4>(k_hi_u);
+    int k_out0 = ((Y * h_slices_out + Z * 2) * c_slices + x_slice) * 4 + x_rem;
+    int k_out1 =
+        ((Y * h_slices_out + (Z * 2 + 1)) * c_slices + x_slice) * 4 + x_rem;
+    args.dst_k.WriteLinear(k_lo, k_out0);
+    args.dst_k.WriteLinear(k_hi, k_out1);
+  }
+  {
+    int v_in_idx = ((Y * c_slices + x_slice) * h_slices_in + Z) * 4 + x_rem;
+    uint4 u_v = ucl::Convert<uint4>(args.src_v.Read(v_in_idx));
+    uint4 v_lo_u = (u_v & ucl::Init<uint4>(15u)) + ucl::Init<uint4>(120u);
+    uint4 v_hi_u =
+        ((u_v / ucl::Init<uint4>(16u)) & ucl::Init<uint4>(15u)) +
+        ucl::Init<uint4>(120u);
+    uchar4 v_lo = ucl::Convert<uchar4>(v_lo_u);
+    uchar4 v_hi = ucl::Convert<uchar4>(v_hi_u);
+    int v_out0 = ((Y * c_slices + x_slice) * h_slices_out + Z * 2) * 4 + x_rem;
+    int v_out1 =
+        ((Y * c_slices + x_slice) * h_slices_out + (Z * 2 + 1)) * 4 + x_rem;
+    args.dst_v.WriteLinear(v_lo, v_out0);
+    args.dst_v.WriteLinear(v_hi, v_out1);
+  }
+}
+)");
+  op.code_ = std::move(c);
+  return std::make_unique<UnpackInt4KvCacheToInt8Op>(std::move(op));
+}
+
 }  // namespace
 
 absl::Status BuildSdpaTransposedGpuGraph(
@@ -2398,6 +2540,46 @@ absl::Status BuildSdpaTransposedGpuGraph(
   ABSL_ASSIGN_OR_RETURN(auto q, model_builder->GetTensor(input_ids[0]));
   ABSL_ASSIGN_OR_RETURN(auto k, model_builder->GetTensor(input_ids[1]));
   ABSL_ASSIGN_OR_RETURN(auto v, model_builder->GetTensor(input_ids[2]));
+  ABSL_ASSIGN_OR_RETURN(auto output_ref, model_builder->GetTensor(output_id));
+
+  const ::ml_drift::DataType output_dtype =
+      output_ref.tensor_desc.GetDataType();
+  if (!::ml_drift::IsFloatType(output_dtype)) {
+    return absl::InvalidArgumentError(
+        "SDPA transposed expects a float output tensor.");
+  }
+  auto update_output =
+      [&](::ml_drift::GpuModelBuilder::TensorHandle result) -> absl::Status {
+    // A dequantized INT8 query inside a mixed-precision partition is FLOAT32 on
+    // the GPU, whereas the attention output tensor can be FLOAT16.
+    if (result.tensor_desc.GetDataType() != output_dtype) {
+      result = model_builder->Cast(result, output_dtype);
+    }
+    return model_builder->UpdateOutputTensor(result, output_id);
+  };
+
+  if (q.tensor_desc.GetDataType() == ::ml_drift::DataType::kInt8) {
+    if (!attr.scale_q.has_value() || *attr.scale_q <= 0.0f) {
+      return absl::InvalidArgumentError(
+          "SDPA transposed expects a positive scale_q for INT8 query tensors.");
+    }
+    const ::ml_drift::DataType compute_dtype =
+        ::ml_drift::IsFloatType(k.tensor_desc.GetDataType())
+            ? k.tensor_desc.GetDataType()
+            : output_dtype;
+    q = model_builder->Cast(q, ::ml_drift::DataType::kFloat32);
+    q = model_builder->Multiplication(q, *attr.scale_q);
+    if (compute_dtype != ::ml_drift::DataType::kFloat32) {
+      q = model_builder->Cast(q, compute_dtype);
+    }
+  } else if (attr.scale_q.has_value()) {
+    return absl::InvalidArgumentError(
+        "SDPA transposed received scale_q for a non-INT8 query tensor.");
+  } else if (::ml_drift::IsFloatType(q.tensor_desc.GetDataType()) &&
+             ::ml_drift::IsFloatType(k.tensor_desc.GetDataType()) &&
+             q.tensor_desc.GetDataType() != k.tensor_desc.GetDataType()) {
+    q = model_builder->Cast(q, k.tensor_desc.GetDataType());
+  }
 
   const ::ml_drift::TensorDescriptor* mask_desc = nullptr;
   ::ml_drift::GpuModelBuilder::TensorHandle mask;
@@ -2424,32 +2606,59 @@ absl::Status BuildSdpaTransposedGpuGraph(
 
   const ::ml_drift::BHWC q_shape = q.tensor_desc.GetBHWCShape();
   const ::ml_drift::BHWC k_cache_shape = k.tensor_desc.GetBHWCShape();
+  const ::ml_drift::BHWC v_cache_shape = v.tensor_desc.GetBHWCShape();
   const bool supports_fused_kernels =
       SupportsFusedSdpaKernels(model_builder->gpu_info());
 
-  // INT8 symmetric per-tensor quantized K/V caches arrive as kUint8 byte
-  // tensors with per-output-channel dequantization scales (see
-  // `SdpaTransposedAttributes::scale_k`). They only take the decomposed
+  // INT8 and INT4 symmetric per-tensor quantized K/V caches arrive as kUint8
+  // byte tensors with per-output-channel dequantization scales (see
+  // `SdpaTransposedAttributes::scale_k`). They take the decomposed
   // FullyConnected path below, so the fused Flash kernels are skipped.
-  const bool int8_k =
+  const bool quant_k =
       k.tensor_desc.GetDataType() == ::ml_drift::DataType::kUint8;
-  const bool int8_v =
+  const bool quant_v =
       v.tensor_desc.GetDataType() == ::ml_drift::DataType::kUint8;
-  if (int8_k != attr.scale_k.has_value() ||
-      int8_v != attr.scale_v.has_value()) {
+  if (quant_k != attr.scale_k.has_value() ||
+      quant_v != attr.scale_v.has_value()) {
     return absl::InvalidArgumentError(
-        "SDPA transposed expects dequantization scales exactly for INT8 K/V "
-        "caches.");
+        "SDPA transposed expects dequantization scales exactly for quantized "
+        "K/V caches.");
   }
-  if (int8_k != int8_v) {
+  if (quant_k != quant_v) {
     return absl::InvalidArgumentError(
-        "SDPA transposed expects both or none of the K/V caches to be INT8.");
+        "SDPA transposed expects both or none of the K/V caches to be "
+        "quantized.");
   }
-  const bool int8_kv = int8_k && int8_v;
-  if (int8_kv && !attr.from_cache_update) {
+  const bool quant_kv = quant_k && quant_v;
+  const int kv_quant_bits =
+      quant_kv ? (attr.kv_quant_bits == 0 ? 8 : attr.kv_quant_bits)
+               : attr.kv_quant_bits;
+  if ((!quant_kv && kv_quant_bits != 0) ||
+      (quant_kv && kv_quant_bits != 4 && kv_quant_bits != 8)) {
     return absl::InvalidArgumentError(
-        "SDPA transposed expects INT8 K/V caches in the odml.cache_update "
+        "SDPA transposed has invalid kv_quant_bits for K/V cache descriptors.");
+  }
+  if (quant_kv && !attr.from_cache_update) {
+    return absl::InvalidArgumentError(
+        "SDPA transposed expects quantized K/V caches in the odml.cache_update "
         "layout.");
+  }
+  if (kv_quant_bits == 4) {
+    if (k.tensor_desc.GetStorageType() !=
+            ::ml_drift::TensorStorageType::kBuffer ||
+        v.tensor_desc.GetStorageType() !=
+            ::ml_drift::TensorStorageType::kBuffer) {
+      return absl::InvalidArgumentError(
+          "SDPA transposed expects INT4 K/V caches in BUFFER storage.");
+    }
+    if (q_shape.c <= 0 || q_shape.c % 8 != 0 || k_cache_shape.w <= 0 ||
+        k_cache_shape.w % 4 != 0 || k_cache_shape.c * 2 != q_shape.c ||
+        v_cache_shape.h != k_cache_shape.h ||
+        v_cache_shape.w * 2 != q_shape.c ||
+        v_cache_shape.c != k_cache_shape.w) {
+      return absl::InvalidArgumentError(
+          "SDPA transposed packed INT4 K/V cache shapes do not match query.");
+    }
   }
 
   // The fused Flash-Attention prefill kernel indexes K and V directly in the
@@ -2460,7 +2669,7 @@ absl::Status BuildSdpaTransposedGpuGraph(
   // cache (`IsSupportedFlashPrefillShape`). Everything else falls back to the
   // multi-op graph below.
   const bool is_supported_flash_prefill =
-      attr.is_prefill && attr.from_cache_update && !int8_kv &&
+      attr.is_prefill && attr.from_cache_update && !quant_kv &&
       IsSupportedFlashPrefillShape(q_shape, k_cache_shape) &&
       k.tensor_desc.GetStorageType() ==
           ::ml_drift::TensorStorageType::kBuffer &&
@@ -2481,7 +2690,7 @@ absl::Status BuildSdpaTransposedGpuGraph(
     if (param_desc) src_tensors.push_back(param_tensor);
     model_builder->AddGpuOperation(src_tensors, {dst}, std::move(op),
                                    "flash_prefill_sdpa");
-    return model_builder->UpdateOutputTensor(dst, output_id);
+    return update_output(dst);
   }
 
   // The work-group Flash-Decode kernel processes one query token per work group
@@ -2514,7 +2723,6 @@ absl::Status BuildSdpaTransposedGpuGraph(
                              v.tensor_desc, mask_desc);
 
   if (is_supported_flash_decode) {
-    ABSL_ASSIGN_OR_RETURN(auto output_ref, model_builder->GetTensor(output_id));
     const ::ml_drift::BHWC output_shape = output_ref.tensor_desc.GetBHWCShape();
     const bool is_flattened_dst =
         output_shape.h == 1 && output_shape.c == q_shape.h * q_shape.c;
@@ -2546,7 +2754,7 @@ absl::Status BuildSdpaTransposedGpuGraph(
           decode_config.splits, is_flattened_dst);
       model_builder->AddGpuOperation({part}, {dst}, std::move(combine),
                                      absl::StrCat(op_name, "_combine"));
-      return model_builder->UpdateOutputTensor(dst, output_id);
+      return update_output(dst);
     }
     ABSL_ASSIGN_OR_RETURN(
         auto op, CreateFusedFlashDecodeSdpa(
@@ -2554,7 +2762,7 @@ absl::Status BuildSdpaTransposedGpuGraph(
                      v.tensor_desc, mask_desc, param_desc, dst.tensor_desc,
                      attr, is_flattened_dst, decode_config));
     model_builder->AddGpuOperation(src_tensors, {dst}, std::move(op), op_name);
-    return model_builder->UpdateOutputTensor(dst, output_id);
+    return update_output(dst);
   }
 
   // The parsers prune the BOOL causal mask only when `UsesFusedSdpaKernel`
@@ -2574,7 +2782,31 @@ absl::Status BuildSdpaTransposedGpuGraph(
         "BuildSdpaTransposedGpuGraph disagree."));
   }
 
-  const auto k_shape = k.tensor_desc.GetBHWCShape();
+  ::ml_drift::GpuModelBuilder::TensorHandle k_for_bmm = k;
+  ::ml_drift::GpuModelBuilder::TensorHandle v_for_bmm = v;
+  if (kv_quant_bits == 4) {
+    auto unpacked_k = model_builder->AddTensor(
+        k_cache_shape.b, k_cache_shape.h, k_cache_shape.w, q_shape.c,
+        ::ml_drift::TensorStorageType::kBuffer, ::ml_drift::DataType::kUint8);
+    auto unpacked_v = model_builder->AddTensor(
+        v_cache_shape.b, v_cache_shape.h, q_shape.c, v_cache_shape.c,
+        ::ml_drift::TensorStorageType::kBuffer, ::ml_drift::DataType::kUint8);
+    auto unpack_op = CreateUnpackInt4KvCacheToInt8(
+        k.tensor_desc, v.tensor_desc, param_desc, unpacked_k.tensor_desc,
+        unpacked_v.tensor_desc, attr);
+    std::vector<::ml_drift::GpuModelBuilder::TensorHandle> unpack_srcs = {k, v};
+    if (param_desc != nullptr &&
+        attr.runtime_check.src_end_ch_index.has_value()) {
+      unpack_srcs.push_back(param_tensor);
+    }
+    model_builder->AddGpuOperation(unpack_srcs, {unpacked_k, unpacked_v},
+                                   std::move(unpack_op),
+                                   "unpack_int4_kv_cache");
+    k_for_bmm = unpacked_k;
+    v_for_bmm = unpacked_v;
+  }
+
+  const auto k_shape = k_for_bmm.tensor_desc.GetBHWCShape();
   if (k_shape.h <= 0 || q_shape.h < k_shape.h || q_shape.h % k_shape.h != 0) {
     return absl::InvalidArgumentError(
         "Query heads must be a positive multiple of KV heads.");
@@ -2613,11 +2845,11 @@ absl::Status BuildSdpaTransposedGpuGraph(
                                             attr.from_cache_update))
           : 1;
   const int chunk_rows = gqa_ratio / num_chunks * q_shape.w;
-  // The dequantization scales of INT8 K/V caches, shared by all chunks. The
-  // matmuls output the query data type, so both scales use it.
+  // The dequantization scales of quantized K/V caches, shared by all chunks.
+  // The matmuls output the query data type, so both scales use it.
   ::ml_drift::GpuModelBuilder::TensorHandle scale_k;
   ::ml_drift::GpuModelBuilder::TensorHandle scale_v;
-  if (int8_kv) {
+  if (quant_kv) {
     scale_k = model_builder->AddConstantTensor(*attr.scale_k,
                                                q.tensor_desc.GetDataType());
     scale_v = model_builder->AddConstantTensor(*attr.scale_v,
@@ -2635,11 +2867,11 @@ absl::Status BuildSdpaTransposedGpuGraph(
                                    q_shape.c));
     ABSL_ASSIGN_OR_RETURN(
         auto chunk_output,
-        BuildDecomposedSdpa(attr, q_shape, q_rows, k, v,
+        BuildDecomposedSdpa(attr, q_shape, q_rows, k_for_bmm, v_for_bmm,
                             mask_desc != nullptr ? &mask : nullptr,
                             param_desc != nullptr ? &param_tensor : nullptr,
-                            int8_kv ? &scale_k : nullptr,
-                            int8_kv ? &scale_v : nullptr, model_builder));
+                            quant_kv ? &scale_k : nullptr,
+                            quant_kv ? &scale_v : nullptr, model_builder));
     chunk_outputs.push_back(chunk_output);
   }
   ::ml_drift::GpuModelBuilder::TensorHandle output =
@@ -2647,12 +2879,11 @@ absl::Status BuildSdpaTransposedGpuGraph(
           ? chunk_outputs[0]
           : model_builder->Concat(chunk_outputs, ::ml_drift::Axis::kWidth);
 
-  ABSL_ASSIGN_OR_RETURN(auto output_ref, model_builder->GetTensor(output_id));
   const auto output_shape = output_ref.tensor_desc.GetBHWCShape();
   if (output.tensor_desc.GetBHWCShape() != output_shape) {
     output = model_builder->Reshape(output, output_shape);
   }
-  return model_builder->UpdateOutputTensor(output, output_id);
+  return update_output(output);
 }
 
 absl::Status CreateSdpaTransposedFromNode(

@@ -14,6 +14,9 @@
 
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 
+#include <cmath>
+#include <cstdint>
+#include <optional>
 #include <utility>
 
 #include "absl/status/status.h"  // from @com_google_absl
@@ -21,6 +24,7 @@
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
@@ -28,6 +32,66 @@
 #include "tflite/c/common.h"
 
 namespace litert::ml_drift {
+namespace {
+
+std::optional<float> TryGetSymmetricTensorScale(const TfLiteTensor& tensor) {
+  if (tensor.quantization.type != kTfLiteAffineQuantization ||
+      tensor.quantization.params == nullptr) {
+    return std::nullopt;
+  }
+  const auto* quantization =
+      static_cast<const TfLiteAffineQuantization*>(tensor.quantization.params);
+  if (quantization->scale == nullptr || quantization->scale->size != 1) {
+    return std::nullopt;
+  }
+  return quantization->scale->data[0];
+}
+
+absl::Status CheckSymmetricQuantParamsIfPresent(const TfLiteTensor& tensor) {
+  if (tensor.quantization.type != kTfLiteAffineQuantization ||
+      tensor.quantization.params == nullptr) {
+    return absl::OkStatus();
+  }
+  const auto* quantization =
+      static_cast<const TfLiteAffineQuantization*>(tensor.quantization.params);
+  if (quantization->scale == nullptr || quantization->scale->size != 1 ||
+      (quantization->zero_point != nullptr &&
+       quantization->zero_point->size > 0 &&
+       quantization->zero_point->data[0] != 0)) {
+    return absl::UnavailableError(
+        "odml.cache_update expects symmetric per-tensor quantization for K/V "
+        "caches.");
+  }
+  return absl::OkStatus();
+}
+
+bool IsSupportedQuantizedCacheSourceTensor(const TfLiteTensor& tensor) {
+  if (tensor.type == kTfLiteFloat32 || tensor.type == kTfLiteFloat16) {
+    return true;
+  }
+  if ((tensor.type == kTfLiteInt8 || tensor.type == kTfLiteUInt8 ||
+       tensor.type == kTfLiteInt4) &&
+      tensor.quantization.type == kTfLiteAffineQuantization &&
+      tensor.quantization.params != nullptr) {
+    const auto* quantization =
+        static_cast<const TfLiteAffineQuantization*>(
+            tensor.quantization.params);
+    if (quantization->scale == nullptr || quantization->scale->size != 1 ||
+        !std::isfinite(quantization->scale->data[0]) ||
+        quantization->scale->data[0] <= 0.0f ||
+        quantization->zero_point == nullptr ||
+        quantization->zero_point->size != 1) {
+      return false;
+    }
+    if (tensor.type == kTfLiteInt4 && quantization->zero_point->data[0] != 0) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+}  // namespace
 
 absl::Status ReadAddValuesToCacheLayout(const flexbuffers::Map& attributes,
                                         AddValuesToCacheAttributes& attr) {
@@ -56,6 +120,180 @@ absl::Status ReadAddValuesToCacheLayout(const flexbuffers::Map& attributes,
   return absl::OkStatus();
 }
 
+absl::Status CheckAddValuesToCacheOutputs(
+    const TfLiteContext* context, const TfLiteNode* tflite_node,
+    const AddValuesToCacheAttributes& attr) {
+  if (tflite_node->outputs == nullptr || tflite_node->outputs->size != 2) {
+    return absl::InvalidArgumentError("odml.cache_update expects 2 outputs.");
+  }
+  const int out_k_idx = tflite_node->outputs->data[0];
+  const int out_v_idx = tflite_node->outputs->data[1];
+  if (out_k_idx < 0 || out_k_idx >= context->tensors_size || out_v_idx < 0 ||
+      out_v_idx >= context->tensors_size) {
+    return absl::InvalidArgumentError(
+        "odml.cache_update has invalid output tensor index.");
+  }
+  const TfLiteTensor& out_k = context->tensors[out_k_idx];
+  const TfLiteTensor& out_v = context->tensors[out_v_idx];
+  if (out_k.type != out_v.type) {
+    return absl::UnavailableError(
+        "odml.cache_update expects matching K and V cache output types.");
+  }
+  if (out_k.type == kTfLiteUInt4 || out_k.type == kTfLiteInt2) {
+    return absl::UnavailableError(
+        "odml.cache_update does not support UInt4 or Int2 KV caches on GPU.");
+  }
+  if (out_k.type != kTfLiteFloat32 && out_k.type != kTfLiteFloat16 &&
+      out_k.type != kTfLiteBFloat16 && out_k.type != kTfLiteInt8 &&
+      out_k.type != kTfLiteUInt8 && out_k.type != kTfLiteInt4) {
+    return absl::UnavailableError(
+        "odml.cache_update has unsupported output tensor type.");
+  }
+  if (out_k.type == kTfLiteInt4 || out_k.type == kTfLiteInt8 ||
+      out_k.type == kTfLiteUInt8) {
+    if (attr.kv_cache_batch_size <= 0 || attr.head_size <= 0 ||
+        attr.cache_size <= 0) {
+      return absl::UnavailableError(
+          "odml.cache_update with quantized KV cache requires positive "
+          "kv_cache_batch_size, head_size, and cache_size.");
+    }
+    if (tflite_node->inputs == nullptr || tflite_node->inputs->size < 2) {
+      return absl::InvalidArgumentError(
+          "odml.cache_update expects at least 2 inputs.");
+    }
+    const int src_k_idx = tflite_node->inputs->data[0];
+    const int src_v_idx = tflite_node->inputs->data[1];
+    if (src_k_idx < 0 || src_k_idx >= context->tensors_size || src_v_idx < 0 ||
+        src_v_idx >= context->tensors_size) {
+      return absl::InvalidArgumentError(
+          "odml.cache_update has invalid input tensor index.");
+    }
+    const TfLiteTensor& src_k = context->tensors[src_k_idx];
+    const TfLiteTensor& src_v = context->tensors[src_v_idx];
+    if (!IsSupportedQuantizedCacheSourceTensor(src_k) ||
+        !IsSupportedQuantizedCacheSourceTensor(src_v)) {
+      return absl::UnavailableError(
+          "odml.cache_update with quantized KV cache requires float or "
+          "per-tensor affine quantized INT8/UINT8/INT4 K/V update inputs.");
+    }
+    if (src_k.dims == nullptr || src_k.dims->size != 4 ||
+        src_v.dims == nullptr || src_v.dims->size != 4 ||
+        out_k.dims == nullptr || out_k.dims->size != 4 ||
+        out_v.dims == nullptr || out_v.dims->size != 4) {
+      return absl::UnavailableError(
+          "odml.cache_update with quantized KV cache expects 4D input and "
+          "cache tensors.");
+    }
+    const int src_k_tokens =
+        attr.k_update_ts_idx == 3 ? src_k.dims->data[3] : src_k.dims->data[2];
+    const int src_k_head_dim =
+        attr.k_update_ts_idx == 3 ? src_k.dims->data[2] : src_k.dims->data[3];
+    const int src_v_tokens =
+        attr.v_update_ts_idx == 3 ? src_v.dims->data[3] : src_v.dims->data[2];
+    const int src_v_head_dim =
+        attr.v_update_ts_idx == 3 ? src_v.dims->data[2] : src_v.dims->data[3];
+    if (src_k.dims->data[0] != 1 || src_v.dims->data[0] != 1 ||
+        src_k.dims->data[1] <= 0 ||
+        src_k.dims->data[1] != src_v.dims->data[1] ||
+        src_k_tokens <= 0 || src_k_tokens != src_v_tokens ||
+        src_k_head_dim <= 0 || src_k_head_dim != src_v_head_dim ||
+        src_k_head_dim % attr.head_size != 0) {
+      return absl::UnavailableError(
+          "odml.cache_update with quantized KV cache has incompatible K/V "
+          "update shapes.");
+    }
+    const int k_head_axis = attr.k_cache_ts_idx == 2 ? 3 : 2;
+    const int k_time_axis = attr.k_cache_ts_idx;
+    const int v_head_axis = attr.v_cache_ts_idx == 3 ? 2 : 3;
+    const int v_time_axis = attr.v_cache_ts_idx;
+    const int64_t num_heads = src_k_head_dim / attr.head_size;
+    const int64_t expected_batch =
+        static_cast<int64_t>(attr.kv_cache_batch_size) * num_heads;
+    const int64_t cache_batch =
+        static_cast<int64_t>(out_k.dims->data[0]) * out_k.dims->data[1];
+    if (out_k.dims->data[k_head_axis] != attr.head_size ||
+        out_v.dims->data[v_head_axis] != attr.head_size ||
+        out_k.dims->data[k_time_axis] != attr.cache_size ||
+        out_v.dims->data[v_time_axis] != attr.cache_size ||
+        out_k.dims->data[0] <= 0 || out_k.dims->data[1] <= 0 ||
+        out_k.dims->data[0] != out_v.dims->data[0] ||
+        out_k.dims->data[1] != out_v.dims->data[1] ||
+        expected_batch != cache_batch) {
+      return absl::UnavailableError(
+          "odml.cache_update with quantized KV cache expects K and V cache "
+          "dimensions matching kv_cache_batch_size, head_size, and "
+          "cache_size.");
+    }
+    if (out_k.type == kTfLiteInt4 || out_k.type == kTfLiteInt8) {
+      ABSL_RETURN_IF_ERROR(CheckSymmetricQuantParamsIfPresent(out_k));
+      ABSL_RETURN_IF_ERROR(CheckSymmetricQuantParamsIfPresent(out_v));
+    }
+    const std::optional<float> scale_k =
+        attr.scale_k.has_value() ? attr.scale_k
+                                 : TryGetSymmetricTensorScale(out_k);
+    const std::optional<float> scale_v =
+        attr.scale_v.has_value() ? attr.scale_v
+                                 : TryGetSymmetricTensorScale(out_v);
+    if ((scale_k.has_value() &&
+         (!std::isfinite(*scale_k) || *scale_k <= 0.0f)) ||
+        (scale_v.has_value() &&
+         (!std::isfinite(*scale_v) || *scale_v <= 0.0f))) {
+      return absl::UnavailableError(
+          "odml.cache_update with quantized KV cache requires finite positive "
+          "scale_k and scale_v.");
+    }
+    if (out_k.type == kTfLiteInt4) {
+      if (attr.head_size % 8 != 0) {
+        return absl::UnavailableError(
+            "odml.cache_update with INT4 KV cache requires head_size divisible "
+            "by 8.");
+      }
+      if (attr.cache_size % 4 != 0) {
+        return absl::UnavailableError(
+            "odml.cache_update with INT4 KV cache requires cache_size "
+            "divisible by 4.");
+      }
+      if (!scale_k.has_value() || !scale_v.has_value()) {
+        return absl::UnavailableError(
+            "odml.cache_update with INT4 KV cache requires positive scale_k "
+            "and scale_v.");
+      }
+    }
+  }
+  return absl::OkStatus();
+}
+
+void PopulateAddValuesToCacheQuantAttributes(const TfLiteTensor& out_k,
+                                             const TfLiteTensor& out_v,
+                                             AddValuesToCacheAttributes& attr) {
+  if (out_k.type == kTfLiteInt4) {
+    attr.kv_quant_bits = 4;
+  } else if (out_k.type == kTfLiteInt8 || out_k.type == kTfLiteUInt8) {
+    attr.kv_quant_bits = 8;
+  } else {
+    attr.kv_quant_bits = 0;
+  }
+  if (!attr.scale_k.has_value()) {
+    attr.scale_k = TryGetSymmetricTensorScale(out_k);
+  }
+  if (!attr.scale_v.has_value()) {
+    attr.scale_v = TryGetSymmetricTensorScale(out_v);
+  }
+}
+
+::ml_drift::BHWC PackInt4KvCacheShape(const ::ml_drift::BHWC& logical_shape,
+                                      int cache_ts_idx) {
+  ::ml_drift::BHWC packed = logical_shape;
+  if (cache_ts_idx == 2) {
+    // [B, K, S, H] -> [B, K, S, H / 2]
+    packed.c /= 2;
+  } else {
+    // [B, K, H, S] -> [B, K, H / 2, S]
+    packed.w /= 2;
+  }
+  return packed;
+}
+
 absl::Status AddValuesToCacheOperationParser::IsSupported(
     const TfLiteContext* context, const TfLiteNode* tflite_node,
     const TfLiteRegistration*) {
@@ -72,6 +310,7 @@ absl::Status AddValuesToCacheOperationParser::IsSupported(
     return absl::InvalidArgumentError("odml.cache_update expects 2 outputs.");
   }
 
+  AddValuesToCacheAttributes attr{};
   const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
       tflite_node->builtin_data);
   if (params) {
@@ -90,9 +329,19 @@ absl::Status AddValuesToCacheOperationParser::IsSupported(
       return absl::InvalidArgumentError(
           "odml.cache_update is missing head_size.");
     }
-    AddValuesToCacheAttributes layout;
-    ABSL_RETURN_IF_ERROR(ReadAddValuesToCacheLayout(flexbuffer_map, layout));
+    attr.kv_cache_batch_size = flexbuffer_map["kv_cache_batch_size"].AsInt32();
+    attr.cache_size = flexbuffer_map["cache_size"].AsInt32();
+    attr.head_size = flexbuffer_map["head_size"].AsInt32();
+    if (!flexbuffer_map["scale_k"].IsNull()) {
+      attr.scale_k = flexbuffer_map["scale_k"].AsFloat();
+    }
+    if (!flexbuffer_map["scale_v"].IsNull()) {
+      attr.scale_v = flexbuffer_map["scale_v"].AsFloat();
+    }
+    ABSL_RETURN_IF_ERROR(ReadAddValuesToCacheLayout(flexbuffer_map, attr));
   }
+  ABSL_RETURN_IF_ERROR(
+      CheckAddValuesToCacheOutputs(context, tflite_node, attr));
 
   return absl::OkStatus();
 }
@@ -111,42 +360,6 @@ void AddValuesToCacheOperationParser::Parse(const TfLiteNode* tflite_node,
   reader->AddInput(node, 1);  // src_v
   reader->AddInput(node, 2);  // runtime_param_tensor
   reader->AddOutputs(node);
-
-  // TODO(b/482104479): allow native int8 tensors in MLDrift. Currently, MLDrift
-  // will automatically dequantize int8 tensors to float32 if the tflite tensor
-  // is quantized (AffineQuantization present).
-  if (reader->GetOutputTensor(0)->type == kTfLiteInt8 ||
-      reader->GetOutputTensor(0)->type == kTfLiteUInt8 ||
-      reader->GetOutputTensor(0)->type == kTfLiteInt4 ||
-      reader->GetOutputTensor(0)->type == kTfLiteUInt4 ||
-      reader->GetOutputTensor(0)->type == kTfLiteInt2) {
-    auto output_1 = graph->FindOutputs(node->id)[0];
-    auto output_2 = graph->FindOutputs(node->id)[1];
-    // reader->AddOutputs() created new FP32 tflite tensors, and uses those as
-    // the tflite tensor reference (tensor index). We change it back to the
-    // original tensor index to keep the mapping of the value to the original
-    // int8 tflite tensor, as we expect to use that int8 tensor to map to the
-    // GPU value used in the kernel, without any dequantize in the middle.
-    output_1->tensor.ref = tflite_node->outputs->data[0];
-    output_2->tensor.ref = tflite_node->outputs->data[1];
-    if (output_1->quant_params.has_value()) {
-      output_1->quant_params.reset();
-    }
-    if (output_2->quant_params.has_value()) {
-      output_2->quant_params.reset();
-    }
-    // For quantized KV cache tensors (Int8, UInt8, Int4, UInt4, Int2), we set
-    // the DataType to UINT8 so MLDrift allocates a plain byte buffer on the GPU
-    // without injecting implicit dequantization ops.
-    // Note: the GPU cache is NOT sub-byte packed. The AddValuesToCache kernel
-    // writes one byte per element (quantized to the int8 range), and the shape
-    // is left unchanged, so the buffer holds exactly one byte per element even
-    // when the TFLite tensor type is Int4/UInt4/Int2.
-    // TODO(b/482104479): Support native sub-byte/intX data types directly in
-    // MLDrift.
-    output_1->tensor.type = ::ml_drift::DataType::kUint8;
-    output_2->tensor.type = ::ml_drift::DataType::kUint8;
-  }
 
   const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
       tflite_node->builtin_data);
@@ -167,6 +380,45 @@ void AddValuesToCacheOperationParser::Parse(const TfLiteNode* tflite_node,
   }
   // IsSupported() has already rejected unsupported layouts.
   ReadAddValuesToCacheLayout(flexbuffer_map, attr).IgnoreError();
+
+  const TfLiteTensor* out_k_tensor = reader->GetOutputTensor(0);
+  const TfLiteTensor* out_v_tensor = reader->GetOutputTensor(1);
+  PopulateAddValuesToCacheQuantAttributes(*out_k_tensor, *out_v_tensor, attr);
+
+  // TODO(b/482104479): allow native int8/int4 tensors in MLDrift. Currently,
+  // MLDrift will automatically dequantize quantized tensors to float32 if
+  // AffineQuantization is present.
+  if (out_k_tensor->type == kTfLiteInt8 ||
+      out_k_tensor->type == kTfLiteUInt8 ||
+      out_k_tensor->type == kTfLiteInt4) {
+    auto output_1 = graph->FindOutputs(node->id)[0];
+    auto output_2 = graph->FindOutputs(node->id)[1];
+    // reader->AddOutputs() created new FP32 tflite tensors, and uses those as
+    // the tflite tensor reference (tensor index). We change it back to the
+    // original tensor index to keep the mapping of the value to the original
+    // quantized tflite tensor, without any dequantize in the middle.
+    output_1->tensor.ref = tflite_node->outputs->data[0];
+    output_2->tensor.ref = tflite_node->outputs->data[1];
+    if (output_1->quant_params.has_value()) {
+      output_1->quant_params.reset();
+    }
+    if (output_2->quant_params.has_value()) {
+      output_2->quant_params.reset();
+    }
+    // Store quantized KV caches in DataType::kUint8 GPU buffers. For INT8/UInt8
+    // the shape is unchanged (1 byte/elem). For INT4 we halve the head_size
+    // axis so the GPU buffer allocates 0.5 bytes/elem (matching
+    // TfLiteTensor::bytes) with 2 nibbles packed per byte.
+    output_1->tensor.type = ::ml_drift::DataType::kUint8;
+    output_2->tensor.type = ::ml_drift::DataType::kUint8;
+    if (out_k_tensor->type == kTfLiteInt4) {
+      output_1->tensor.shape =
+          PackInt4KvCacheShape(output_1->tensor.shape, attr.k_cache_ts_idx);
+      output_2->tensor.shape =
+          PackInt4KvCacheShape(output_2->tensor.shape, attr.v_cache_ts_idx);
+    }
+  }
+
   node->operation.attributes = std::move(attr);
 }
 
