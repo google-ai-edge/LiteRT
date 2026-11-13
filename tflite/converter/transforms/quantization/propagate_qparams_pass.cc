@@ -49,8 +49,8 @@ limitations under the License.
 #include "tflite/converter/ir/tfl_ops.h"
 #include "tflite/converter/quantization/common/quantization_lib/quantization_interface.h.inc"
 #include "tflite/converter/quantization/common/quantization_lib/quantization_traits.h"
-#include "tflite/converter/transforms/passes.h"  // IWYU pragma: keep
 #include "tflite/converter/transforms/quantization/quant_utils.h"
+#include "tflite/converter/transforms/tfl_passes.h"  // IWYU pragma: keep
 #include "tflite/converter/utils/shape_and_size_utils.h"
 
 namespace mlir {
