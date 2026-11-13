@@ -180,6 +180,8 @@ build:android --dynamic_mode=off
 build:android --define=xnn_enable_avxvnniint8=false
 # TODO: Remove once Android NDK clang supports SVE2 inline asm.
 build:android --define=xnn_enable_arm_sve2=false
+# TODO: Remove once Android NDK clang is upgraded to Clang 20+.
+build:android --define=xnn_enable_arm_sme_acle=false
 
 # Sets the default Apple platform to macOS.
 build:macos --apple_platform_type=macos
@@ -207,6 +209,8 @@ build:apple-toolchain --apple_crosstool_top=@local_config_apple_cc//:toolchain
 build:apple-toolchain --crosstool_top=@local_config_apple_cc//:toolchain
 build:apple-toolchain --host_crosstool_top=@local_config_apple_cc//:toolchain
 build:apple-toolchain --xcode_version_config=@local_config_xcode//:host_xcodes
+# TODO: Remove once Xcode AppleClang supports ARM SME ACLE (LLVM 20+).
+build:apple-toolchain --define=xnn_enable_arm_sme_acle=false
 
 # Wheel builds need the installable macOS runtime dylib linked into python
 # extensions and packaged into the wheel.

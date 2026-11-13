@@ -97,31 +97,17 @@ std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
 
   if (input_tensor.IsQuantI8() || input_tensor.IsQuantU8() ||
       input_tensor.IsQuantI16() || input_tensor.IsQuantU16()) {
-    std::int32_t pad_const_value = 0;
     if (inputs.size() >= kPadConstValueIndex + 1) {
       const auto pad_const_data =
           GetQuantizedPadConstValue(input_tensor, inputs[kPadConstValueIndex]);
       if (!pad_const_data.has_value()) {
         return {};
       }
-      pad_const_value = pad_const_data.value();
-    } else {
-      if (std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
-              input_tensor.GetQuantParams())) {
-        const auto& quant_param = std::get<ScaleOffsetQuantizeParamsWrapper>(
-            input_tensor.GetQuantParams());
-        pad_const_value = quant_param.GetZeroPoint();
-      } else {
-        QNN_LOG_ERROR(
-            "Unsupported quantization type type for pad const value tensor.");
-        return {};
-      }
+      const std::int32_t pad_const_value = pad_const_data.value();
+      pad_op.AddScalarParam<std::int32_t>(QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
+                                          pad_const_value);
     }
-    pad_op.AddScalarParam<std::int32_t>(QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
-                                        pad_const_value);
-
   } else if (input_tensor.IsF16() || input_tensor.IsF32()) {
-    float pad_const_value = 0;
     if (inputs.size() >= kPadConstValueIndex + 1) {
       const auto pad_const_data =
           inputs[kPadConstValueIndex].get().GetTensorData<float>();
@@ -131,10 +117,11 @@ std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
       }
       // TODO(jiunkaiy): Remove this magic number (-65472) after HTP resolves
       // accuracy issues.
-      pad_const_value = std::max(pad_const_data.value()[0], -65472.f);
+      const float pad_const_value =
+          std::max(pad_const_data.value()[0], -65472.f);
+      pad_op.AddScalarParam<float>(QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
+                                   pad_const_value);
     }
-    pad_op.AddScalarParam<float>(QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
-                                 pad_const_value);
   } else {
     QNN_LOG_ERROR("Unsupported input tensor type.")
     return {};

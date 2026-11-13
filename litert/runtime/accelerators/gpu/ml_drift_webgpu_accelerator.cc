@@ -16,7 +16,6 @@
 #include <utility>
 
 #include "litert/c/internal/litert_accelerator_def.h"
-#include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
@@ -84,12 +83,6 @@ class GpuWebGpuAccelerator {
                                      LiteRtAcceleratorConst accelerator,
                                      LiteRtOptions options,
                                      LiteRtDelegateWrapper* delegate_wrapper) {
-    if (!litert::ml_drift::IsWebGpuSupported(runtime_context, env)) {
-      LITERT_LOG(
-          LITERT_ERROR,
-          "WebGPU backend requested, but WebGPU runtime is not available.");
-      return kLiteRtStatusErrorUnsupported;
-    }
     litert::TfLiteDelegatePtr delegate_ptr{nullptr, nullptr};
     auto delegate_options =
         litert::ml_drift::MlDriftWebGpuDelegateDefaultOptionsPtr();

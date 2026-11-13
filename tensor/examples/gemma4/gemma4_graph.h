@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_GEMMA4_GRAPH_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_GEMMA4_GRAPH_H_
 
+#include <algorithm>
 #include <cmath>
 #include <numeric>
 #include <vector>
@@ -70,18 +71,31 @@ struct Gemma4Outputs {
 };
 
 inline std::vector<int> GetKvCacheSharingPatterns(const Config& config) {
+  if (config.num_layers <= 0) {
+    return {};
+  }
   std::vector<int> patterns(config.num_layers);
   std::iota(patterns.begin(), patterns.end(), 0);
 
-  const int num_unshared_layers = static_cast<int>(
-      config.num_layers - config.frac_shared_layers * config.num_layers);
+  const int num_shared_layers = std::clamp(
+      static_cast<int>(std::lround(
+          static_cast<double>(config.frac_shared_layers) * config.num_layers)),
+      0, config.num_layers);
+  const int num_unshared_layers = config.num_layers - num_shared_layers;
   for (int i = num_unshared_layers; i < config.num_layers; ++i) {
-    if (config.share_local &&
-        config.GetLayerType(i) == Config::LayerType::kLocalSliding) {
-      patterns[i] = num_unshared_layers > 2 ? num_unshared_layers - 2 : 0;
-    } else if (config.share_global &&
-               config.GetLayerType(i) == Config::LayerType::kGlobal) {
-      patterns[i] = num_unshared_layers > 1 ? num_unshared_layers - 1 : 0;
+    const Config::LayerType layer_type = config.GetLayerType(i);
+    const bool should_share =
+        (layer_type == Config::LayerType::kLocalSliding &&
+         config.share_local) ||
+        (layer_type == Config::LayerType::kGlobal && config.share_global);
+    if (!should_share) {
+      continue;
+    }
+    for (int j = num_unshared_layers - 1; j >= 0; --j) {
+      if (config.GetLayerType(j) == layer_type) {
+        patterns[i] = j;
+        break;
+      }
     }
   }
   return patterns;

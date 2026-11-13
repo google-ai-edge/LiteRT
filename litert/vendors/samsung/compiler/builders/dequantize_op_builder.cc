@@ -15,12 +15,10 @@
 
 #include "litert/vendors/samsung/compiler/builders/dequantize_op_builder.h"
 
-#include <cstdint>
-
-#include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/vendors/samsung/compiler/builders/op_wrapper.h"
+#include "litert/vendors/samsung/compiler/builders/utils.h"
 
 namespace litert::samsung {
 
@@ -34,11 +32,17 @@ Expected<OpWrapper> BuildDequantizeOp(const litert::compiler::Op& op) {
     op_wrapper.AddOutput(output);
   }
 
-  // Set default values for scale and zero-point
-  std::vector<float> scales = {1.0};
-  std::vector<int32_t> zero_points = {0};
-  op_wrapper.AddParam("x_scale", scales);
-  op_wrapper.AddParam("x_zero_point", zero_points);
+  // The input tensor's declared quantization is the source of truth for a
+  // DequantizeLinear node: copy it into the node params so they agree with
+  // the tensor's quant_info.
+  const auto inputs = op.Inputs();
+  if (!inputs.empty()) {
+    if (auto params = GetQuantizationParams(inputs[0])) {
+      op_wrapper.AddParam("x_scale", params->scales);
+      op_wrapper.AddParam("x_zero_point", params->zero_points);
+    }
+  }
+
   return op_wrapper;
 }
 }  // namespace litert::samsung

@@ -57,15 +57,31 @@ def _get_kv_cache_sharing_patterns(
       - `seq[i] == i` means that the KV cache belongs to the layer.
       - `seq[i] != i` means that the KV cache belongs to another layer.
   """
+  if num_layers <= 0:
+    return []
   patterns = list(range(num_layers))
-  num_unshared_layers = int(num_layers - frac_shared_layers * num_layers)
+  num_shared_layers = min(
+      max(round(frac_shared_layers * num_layers), 0), num_layers
+  )
+  num_unshared_layers = num_layers - num_shared_layers
+
+  def _is_global(layer_idx: int) -> bool:
+    return (
+        attention_pattern_size > 0
+        and ((layer_idx + 1) % attention_pattern_size) == 0
+    )
 
   for i in range(num_unshared_layers, num_layers):
-    is_global = ((i + 1) % attention_pattern_size) == 0
-    if share_local and not is_global:
-      patterns[i] = num_unshared_layers - 2 if num_unshared_layers > 2 else 0
-    elif share_global and is_global:
-      patterns[i] = num_unshared_layers - 1 if num_unshared_layers > 1 else 0
+    is_global = _is_global(i)
+    should_share = (share_global and is_global) or (
+        share_local and not is_global
+    )
+    if not should_share:
+      continue
+    for j in range(num_unshared_layers - 1, -1, -1):
+      if _is_global(j) == is_global:
+        patterns[i] = j
+        break
   return patterns
 
 
