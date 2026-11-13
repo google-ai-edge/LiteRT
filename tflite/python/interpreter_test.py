@@ -325,6 +325,18 @@ class InterpreterTest(test_util.TensorFlowTestCase):
                         [0, 2, 3])
     self.assertAllEqual(s_params['dim_metadata'][1]['array_indices'], [0, 1, 1])
 
+  def testSparseSubByteTensorAccess(self):
+    interpreter = interpreter_wrapper.Interpreter(
+        model_path=resource_loader.get_path_to_datafile(
+            '../testdata/sparse_int4.tflite'))
+    interpreter.allocate_tensors()
+
+    # The tensor holds 8 int4 values packed into 4 bytes. Values are expanded to
+    # one byte per element before being handed to numpy, so the returned array
+    # must have one entry per element rather than one per packed byte.
+    values = interpreter.get_tensor(0)
+    self.assertEqual(len(values), 8)
+
   @mock.patch.object(metrics.TFLiteMetrics,
                      'increase_counter_interpreter_creation')
   def testCreationCounter(self, increase_call):
