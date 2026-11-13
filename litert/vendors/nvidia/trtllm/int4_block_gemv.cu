@@ -281,23 +281,28 @@ constexpr int kMaxExperts = 1024;
 constexpr int kPairRows = kTileRows;  // routed (row, slot) pairs per chunk
 
 // The weight tile of expert `expert`'s output rows [o0, o0 + kTileRows) of a
-// projection whose rows interleave the experts.
+// projection whose rows interleave the experts (the model's order) or follow
+// each other expert by expert (`expert_major`).
 __device__ __forceinline__ WeightTile ExpertTile(const uint8_t* weights,
                                                  const void* scales,
                                                  const void* scale_max,
-                                                 int compact, int experts,
-                                                 int expert, int o0,
-                                                 int out_rows,
+                                                 int compact, int expert_major,
+                                                 int experts, int expert,
+                                                 int o0, int out_rows,
                                                  int input_size) {
   const size_t row_bytes = static_cast<size_t>(input_size) / 2;
   const size_t blocks = static_cast<size_t>(input_size) / kBlock;
-  const size_t first = static_cast<size_t>(o0) * experts + expert;
-  WeightTile tile{weights + first * row_bytes, row_bytes * experts, nullptr,
-                  blocks * experts, min(kTileRows, out_rows - o0)};
+  // The expert's first row of the tile, and the rows from one to the next.
+  const size_t first = expert_major != 0
+                           ? static_cast<size_t>(expert) * out_rows + o0
+                           : static_cast<size_t>(o0) * experts + expert;
+  const size_t step = expert_major != 0 ? 1 : experts;
+  WeightTile tile{weights + first * row_bytes, row_bytes * step, nullptr,
+                  blocks * step, min(kTileRows, out_rows - o0)};
   if (compact != 0) {
     tile.fractions = static_cast<const uint8_t*>(scales) + first * blocks;
     tile.scale_max = static_cast<const __half*>(scale_max) + first;
-    tile.max_stride = experts;
+    tile.max_stride = step;
   } else {
     tile.scales = static_cast<const __half*>(scales) + first * blocks;
   }
@@ -462,15 +467,15 @@ __global__ void __launch_bounds__(Threads)
   float up_squares[1] = {};
   AccumulateTile<__nv_bfloat16, 1, Threads, kTileRows, kCompact>(
       ExpertTile(arena.gate, arena.gate_scales, arena.gate_scale_max,
-                 arena.compact_scales, shape.experts, expert, o0,
-                 shape.hidden_dim, shape.model_dim),
+                 arena.compact_scales, arena.expert_major, shape.experts,
+                 expert, o0, shape.hidden_dim, shape.model_dim),
       act, shape.model_dim, gate, norm_scale, squares);
   ReduceTile<1, Threads>(gate, warp_sums);
   __syncthreads();
   AccumulateTile<__nv_bfloat16, 1, Threads, kTileRows, kCompact>(
       ExpertTile(arena.up, arena.up_scales, arena.up_scale_max,
-                 arena.compact_scales, shape.experts, expert, o0,
-                 shape.hidden_dim, shape.model_dim),
+                 arena.compact_scales, arena.expert_major, shape.experts,
+                 expert, o0, shape.hidden_dim, shape.model_dim),
       act, shape.model_dim, up, norm_scale, up_squares);
   ReduceTile<1, Threads>(up, warp_sums);
   float factor = 1.0f;
@@ -521,8 +526,8 @@ __global__ void __launch_bounds__(Threads)
   float acc[1][kTileRows] = {};
   AccumulateTile<float, 1, Threads, kTileRows, kCompact>(
       ExpertTile(arena.down, arena.down_scales, arena.down_scale_max,
-                 arena.compact_scales, shape.experts, expert, o0,
-                 shape.model_dim, shape.hidden_dim),
+                 arena.compact_scales, arena.expert_major, shape.experts,
+                 expert, o0, shape.model_dim, shape.hidden_dim),
       act, shape.hidden_dim, acc);
   ReduceTile<1, Threads>(acc, warp_sums);
   if (threadIdx.x == 0) {
@@ -675,6 +680,24 @@ __global__ void MoeCombineKernel(const float* __restrict__ partial, int top_k,
     sum += src[static_cast<size_t>(j) * model_dim];
   }
   output[static_cast<size_t>(row) * model_dim + o] = __float2bfloat16_rn(sum);
+}
+
+// The rows of some output channels of a projection from the model's order
+// to their places in an expert-major one (LiteRtNvidiaLaunchMoeExpertRows),
+// a thread per 16 bytes.
+__global__ void MoeExpertRowsKernel(const uint4* __restrict__ model_rows,
+                                    uint4* __restrict__ expert_rows,
+                                    int first_channel, int experts,
+                                    int expert_channels, int row_words,
+                                    size_t words) {
+  const size_t word =
+      static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (word >= words) return;
+  const size_t row = word / row_words;
+  const size_t channel = first_channel + row / experts;
+  const size_t expert = row % experts;
+  expert_rows[(expert * expert_channels + channel) * row_words +
+              word % row_words] = model_rows[word];
 }
 
 // Prefill routing: the (row, slot) pairs grouped by expert.
@@ -1038,6 +1061,13 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
       activation, row_source, padded, shape.model_dim, norm_scale, norm_eps,
       1.0f, row_scale, scaled_x, stream);
   if (status != cudaSuccess) return status;
+  // The rows from a channel of an expert to its next channel, and from an
+  // expert to the next: the model's order interleaves the experts.
+  const uint64_t channel_rows = arena.expert_major != 0 ? 1 : shape.experts;
+  const uint64_t gate_expert_rows =
+      arena.expert_major != 0 ? shape.hidden_dim : 1;
+  const uint64_t down_expert_rows =
+      arena.expert_major != 0 ? shape.model_dim : 1;
   const uint64_t model_row_bytes = static_cast<uint64_t>(shape.model_dim) / 2;
   const uint64_t model_scales = static_cast<uint64_t>(shape.model_dim) / kBlock;
   const LiteRtNvidiaGroupedGemmWeights gate_up = {
@@ -1045,15 +1075,15 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
       arena.up,
       arena.gate_scales,
       arena.up_scales,
-      model_row_bytes * shape.experts,
-      model_scales * shape.experts,
-      model_row_bytes,
-      model_scales,
+      model_row_bytes * channel_rows,
+      model_scales * channel_rows,
+      model_row_bytes * gate_expert_rows,
+      model_scales * gate_expert_rows,
       tile_experts,
       arena.gate_scale_max,
       arena.up_scale_max,
-      static_cast<uint64_t>(shape.experts),
-      1,
+      channel_rows,
+      gate_expert_rows,
       arena.compact_scales};
   const LiteRtNvidiaGemmShape gate_shape = {padded, shape.model_dim,
                                             shape.hidden_dim, shape.gate, 32};
@@ -1072,15 +1102,15 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
       nullptr,
       arena.down_scales,
       nullptr,
-      hidden_row_bytes * shape.experts,
-      hidden_scales * shape.experts,
-      hidden_row_bytes,
-      hidden_scales,
+      hidden_row_bytes * channel_rows,
+      hidden_scales * channel_rows,
+      hidden_row_bytes * down_expert_rows,
+      hidden_scales * down_expert_rows,
       tile_experts,
       arena.down_scale_max,
       nullptr,
-      static_cast<uint64_t>(shape.experts),
-      1,
+      channel_rows,
+      down_expert_rows,
       arena.compact_scales};
   const LiteRtNvidiaGemmShape down_shape = {
       padded, shape.hidden_dim, shape.model_dim, kLiteRtNvidiaGemmGateNone, 32};
@@ -1125,6 +1155,30 @@ extern "C" void LiteRtNvidiaCompactScaleRow(const float* scales,
     const int value = static_cast<int>(fraction);
     fractions[b] = static_cast<uint8_t>(value < 0 ? 0 : value > 255 ? 255 : value);
   }
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchMoeExpertRows(
+    const void* model_rows, void* expert_rows, int32_t first_channel,
+    int32_t channels, int32_t experts, int32_t expert_channels,
+    int32_t row_bytes, cudaStream_t stream) {
+  using namespace litert::nvidia::int4_block;
+  if (model_rows == nullptr || expert_rows == nullptr || first_channel < 0 ||
+      channels < 1 || experts < 1 || channels > expert_channels ||
+      first_channel > expert_channels - channels || row_bytes < 16 ||
+      row_bytes % 16 != 0) {
+    return cudaErrorInvalidValue;
+  }
+  constexpr int kThreads = 256;
+  const size_t words =
+      static_cast<size_t>(channels) * experts * (row_bytes / 16);
+  const size_t blocks = (words + kThreads - 1) / kThreads;
+  if (blocks > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
+    return cudaErrorInvalidValue;
+  }
+  MoeExpertRowsKernel<<<static_cast<unsigned>(blocks), kThreads, 0, stream>>>(
+      static_cast<const uint4*>(model_rows), static_cast<uint4*>(expert_rows),
+      first_channel, experts, expert_channels, row_bytes / 16, words);
+  return cudaPeekAtLastError();
 }
 
 extern "C" bool LiteRtNvidiaMoeSupports(const LiteRtNvidiaMoeShape* shape) {

@@ -1298,4 +1298,201 @@ TEST(Int4BlockGemvTest, MoeCompactScalesMatchHalfScales) {
   }
 }
 
+// The rows of an expert piece from the model's order (row channel * experts
+// + expert) to expert-major order (row expert * channels + channel).
+template <typename T>
+std::vector<T> ExpertMajorRows(const std::vector<T>& model, int experts,
+                               int channels) {
+  const size_t row = model.size() / (static_cast<size_t>(experts) * channels);
+  std::vector<T> ordered(model.size());
+  for (size_t c = 0; c < static_cast<size_t>(channels); ++c) {
+    for (size_t e = 0; e < static_cast<size_t>(experts); ++e) {
+      std::copy_n(model.begin() + (c * experts + e) * row, row,
+                  ordered.begin() + (e * channels + c) * row);
+    }
+  }
+  return ordered;
+}
+
+// The loader's kernel that takes the rows of a projection from the model's
+// order to an expert-major arena, a few channels at a time.
+TEST(Int4BlockGemvTest, MoeExpertRowsMatchTheHostPermutation) {
+  struct Case {
+    int experts;
+    int channels;
+    int row_bytes;
+  };
+  for (const Case& c : {Case{128, 704, 1408}, Case{5, 96, 64}, Case{1, 7, 16},
+                        Case{16, 1, 48}}) {
+    SCOPED_TRACE(::testing::Message() << c.experts << " experts, " << c.channels
+                                      << " channels of " << c.row_bytes);
+    std::vector<uint8_t> model(static_cast<size_t>(c.experts) * c.channels *
+                               c.row_bytes);
+    uint32_t state = 12345u + c.experts;
+    for (uint8_t& byte : model) {
+      state = state * 1664525u + 1013904223u;
+      byte = static_cast<uint8_t>(state >> 24);
+    }
+    const std::vector<uint8_t> expected =
+        ExpertMajorRows(model, c.experts, c.channels);
+    auto d_major = AllocateCuda(model.size());
+    ASSERT_EQ(cudaMemset(d_major.get(), 0xee, model.size()), cudaSuccess);
+    // In chunks of uneven sizes, each from a scratch copy of its rows.
+    const size_t channel_bytes = static_cast<size_t>(c.experts) * c.row_bytes;
+    for (int first = 0, n = 1; first < c.channels; first += n, n = n * 3 + 1) {
+      const int channels = std::min(n, c.channels - first);
+      auto d_rows = AllocateCuda(channels * channel_bytes);
+      ASSERT_EQ(cudaMemcpy(d_rows.get(), model.data() + first * channel_bytes,
+                           channels * channel_bytes, cudaMemcpyHostToDevice),
+                cudaSuccess);
+      ASSERT_EQ(LiteRtNvidiaLaunchMoeExpertRows(d_rows.get(), d_major.get(),
+                                                first, channels, c.experts,
+                                                c.channels, c.row_bytes,
+                                                /*stream=*/nullptr),
+                cudaSuccess);
+      ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    }
+    std::vector<uint8_t> actual(model.size());
+    ASSERT_EQ(cudaMemcpy(actual.data(), d_major.get(), actual.size(),
+                         cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    EXPECT_TRUE(actual == expected);
+  }
+  uint8_t byte = 0;
+  EXPECT_EQ(LiteRtNvidiaLaunchMoeExpertRows(&byte, &byte, 0, 1, 4, 8,
+                                            /*row_bytes=*/24, nullptr),
+            cudaErrorInvalidValue);
+  EXPECT_EQ(LiteRtNvidiaLaunchMoeExpertRows(&byte, &byte, /*first_channel=*/6,
+                                            /*channels=*/3, 4, 8, 16, nullptr),
+            cudaErrorInvalidValue);
+}
+
+// An expert-major arena gives the bits of the model's order: the kernels
+// read the same rows from other places. One row, a verify step's rows and
+// prefill's grouped GEMMs, FP16 and compact scales.
+TEST(Int4BlockGemvTest, MoeExpertMajorMatchesTheModelsOrder) {
+  for (const int rows : {1, 5, 8, 130, 256}) {
+    for (const bool compact : {false, true}) {
+      SCOPED_TRACE(::testing::Message()
+                   << "rows=" << rows << " compact=" << compact);
+      const LiteRtNvidiaMoeShape shape = {rows, 4, 12, 704, 128, 1};
+      const int experts = shape.experts, dim = shape.model_dim,
+                hidden = shape.hidden_dim;
+      ASSERT_TRUE(LiteRtNvidiaMoeSupports(&shape));
+      const std::vector<uint8_t> gate_w =
+          MakeInt4Weights(hidden * experts, dim, 5);
+      const std::vector<uint8_t> up_w =
+          MakeInt4Weights(hidden * experts, dim, 9);
+      const std::vector<uint8_t> down_w =
+          MakeInt4Weights(dim * experts, hidden, 13);
+      const std::vector<uint16_t> gate_s = MakeScales(hidden * experts, dim, 5);
+      const std::vector<uint16_t> up_s = MakeScales(hidden * experts, dim, 9);
+      const std::vector<uint16_t> down_s =
+          MakeScales(dim * experts, hidden, 13);
+      // Compact: per row the FP16 maximum and a byte per block.
+      const auto compact_of =
+          [](const std::vector<uint16_t>& halves, int row_blocks,
+             std::vector<uint8_t>* fractions, std::vector<uint16_t>* maxima) {
+            const size_t n_rows = halves.size() / row_blocks;
+            fractions->resize(halves.size());
+            maxima->resize(n_rows);
+            std::vector<float> row(row_blocks);
+            for (size_t r = 0; r < n_rows; ++r) {
+              for (int b = 0; b < row_blocks; ++b) {
+                row[b] = HalfBitsToFloat(halves[r * row_blocks + b]);
+              }
+              LiteRtNvidiaCompactScaleRow(row.data(), row_blocks,
+                                          fractions->data() + r * row_blocks,
+                                          maxima->data() + r);
+            }
+          };
+      std::vector<uint8_t> gate_q, up_q, down_q;
+      std::vector<uint16_t> gate_m, up_m, down_m;
+      compact_of(gate_s, dim / 32, &gate_q, &gate_m);
+      compact_of(up_s, dim / 32, &up_q, &up_m);
+      compact_of(down_s, hidden / 32, &down_q, &down_m);
+      std::vector<uint16_t> x(static_cast<size_t>(rows) * dim);
+      for (int r = 0; r < rows; ++r) {
+        for (int i = 0; i < dim; ++i) {
+          x[static_cast<size_t>(r) * dim + i] = FloatToBf16Bits(
+              static_cast<float>((i * 13 + r * 7) % 97 - 48) / 29.0f);
+        }
+      }
+      std::vector<int32_t> indices(static_cast<size_t>(rows) * shape.top_k);
+      std::vector<float> weights(indices.size());
+      for (int r = 0; r < rows; ++r) {
+        for (int j = 0; j < shape.top_k; ++j) {
+          indices[static_cast<size_t>(r) * shape.top_k + j] =
+              (r * 5 + j * 3 + r / 7) % experts;
+          weights[static_cast<size_t>(r) * shape.top_k + j] =
+              0.05f + 0.1f * static_cast<float>((r + 2 * j) % 7);
+        }
+      }
+      std::vector<float> expert_scale(experts);
+      for (int e = 0; e < experts; ++e) expert_scale[e] = 0.98f + 0.0005f * e;
+      const auto upload = [](const void* data, size_t bytes) {
+        auto device = AllocateCuda(bytes);
+        EXPECT_EQ(cudaMemcpy(device.get(), data, bytes, cudaMemcpyHostToDevice),
+                  cudaSuccess);
+        return device;
+      };
+      auto d_x = upload(x.data(), x.size() * 2);
+      auto d_idx = upload(indices.data(), indices.size() * 4);
+      auto d_w = upload(weights.data(), weights.size() * 4);
+      auto d_es = upload(expert_scale.data(), expert_scale.size() * 4);
+      auto d_ws = AllocateCuda(LiteRtNvidiaMoeWorkspaceBytes(&shape));
+      const size_t out_bytes = static_cast<size_t>(rows) * dim * 2;
+      std::vector<uint16_t> outputs[2];
+      for (const int by_expert : {0, 1}) {
+        const auto rows_of = [&](const auto& model, int channels) {
+          const auto ordered = by_expert != 0
+                                   ? ExpertMajorRows(model, experts, channels)
+                                   : model;
+          return upload(ordered.data(), ordered.size() * sizeof(ordered[0]));
+        };
+        auto d_gate = rows_of(gate_w, hidden);
+        auto d_up = rows_of(up_w, hidden);
+        auto d_down = rows_of(down_w, dim);
+        auto d_gate_s =
+            compact ? rows_of(gate_q, hidden) : rows_of(gate_s, hidden);
+        auto d_up_s = compact ? rows_of(up_q, hidden) : rows_of(up_s, hidden);
+        auto d_down_s = compact ? rows_of(down_q, dim) : rows_of(down_s, dim);
+        auto d_gate_m = rows_of(gate_m, hidden);
+        auto d_up_m = rows_of(up_m, hidden);
+        auto d_down_m = rows_of(down_m, dim);
+        LiteRtNvidiaMoeArena arena = {static_cast<const uint8_t*>(d_gate.get()),
+                                      static_cast<const uint8_t*>(d_up.get()),
+                                      static_cast<const uint8_t*>(d_down.get()),
+                                      d_gate_s.get(),
+                                      d_up_s.get(),
+                                      d_down_s.get()};
+        if (compact) {
+          arena.gate_scale_max = d_gate_m.get();
+          arena.up_scale_max = d_up_m.get();
+          arena.down_scale_max = d_down_m.get();
+          arena.compact_scales = 1;
+        }
+        arena.expert_major = by_expert;
+        auto d_out = AllocateCuda(out_bytes);
+        ASSERT_EQ(LiteRtNvidiaLaunchMoeInt4Block(
+                      &shape, &arena, d_x.get(),
+                      static_cast<const int32_t*>(d_idx.get()),
+                      static_cast<const float*>(d_w.get()),
+                      static_cast<const float*>(d_es.get()), d_ws.get(),
+                      d_out.get(), /*stream=*/nullptr),
+                  cudaSuccess);
+        ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+        outputs[by_expert].resize(out_bytes / 2);
+        ASSERT_EQ(cudaMemcpy(outputs[by_expert].data(), d_out.get(), out_bytes,
+                             cudaMemcpyDeviceToHost),
+                  cudaSuccess);
+      }
+      EXPECT_TRUE(outputs[0] == outputs[1]);
+      // Not a trivial agreement: the outputs are not all zero.
+      EXPECT_NE(std::count(outputs[0].begin(), outputs[0].end(), 0),
+                static_cast<ptrdiff_t>(outputs[0].size()));
+    }
+  }
+}
+
 }  // namespace

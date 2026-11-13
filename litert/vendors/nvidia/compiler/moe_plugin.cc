@@ -226,8 +226,18 @@ struct ArenaLayout {
   // FP16 maxima at max_offsets[piece - 3].
   bool compact = false;
   std::array<size_t, 3> max_offsets{};
+  // The rows of the experts' pieces (0-5) expert by expert instead of in the
+  // model's order, which interleaves the experts.
+  bool expert_major = false;
   size_t total = 0;
 };
+
+// The row of an arena piece that holds row `row` of the model's order
+// (channel * experts + expert).
+size_t ArenaRow(const ArenaLayout& layout, size_t row, size_t experts,
+                size_t channels) {
+  return layout.expert_major ? row % experts * channels + row / experts : row;
+}
 
 // Whether piece i holds FP32 scales to convert; the three INT4 pieces and
 // the router's rows are copied.
@@ -306,9 +316,10 @@ bool LayoutArena(const MoeExpertSource& source, int32_t experts,
 
 // Debug: LITERT_NVIDIA_MOE_ARENA_CHECKSUM=1 logs a checksum of what each
 // arena holds once it is loaded, read back from where it lives: the pieces'
-// bytes in the order of the layout, without the alignment gaps between them
-// (which nothing writes). Two loaders that log the same checksums put the
-// same weights and scales in front of the kernels.
+// bytes in the order of the layout, their rows in the model's order whatever
+// the arena's, without the alignment gaps between them (which nothing
+// writes). Two loaders that log the same checksums put the same weights and
+// scales in front of the kernels.
 bool ArenaChecksumEnabled() {
   const char* value = std::getenv("LITERT_NVIDIA_MOE_ARENA_CHECKSUM");
   return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
@@ -344,17 +355,37 @@ bool ArenaChecksum(const void* memory, bool on_device,
     bytes = copy.data();
   }
   uint64_t hash = 0xcbf29ce484222325ull;
+  std::vector<uint8_t> ordered;
+  // `count` bytes of the rows of an expert piece, in the model's order.
+  const auto hash_rows = [&](const uint8_t* piece, size_t count, int i) {
+    const size_t channels = i == 2 || i == 5 ? model_dim : hidden_dim;
+    const size_t rows = channels * experts;
+    const size_t row_bytes = count / rows;
+    if (layout.expert_major) {
+      ordered.resize(count);
+      for (size_t row = 0; row < rows; ++row) {
+        std::memcpy(
+            ordered.data() + row * row_bytes,
+            piece + ArenaRow(layout, row, experts, channels) * row_bytes,
+            row_bytes);
+      }
+      piece = ordered.data();
+    }
+    hash = HashBytes(hash, piece, count);
+  };
   for (int i = 0; i < kPieces; ++i) {
     if (source.sizes[i] == 0) continue;
     if (layout.compact && i >= 3 && i < 6) {
       // A byte per block, a gap, then the rows' maxima.
       const size_t rows = i < 5 ? static_cast<size_t>(hidden_dim) * experts
                                 : static_cast<size_t>(model_dim) * experts;
-      const size_t fractions =
-          source.sizes[i] / (source.scale_type == 0 ? 4 : 2);
-      hash = HashBytes(hash, bytes + layout.offsets[i], fractions);
-      hash = HashBytes(hash, bytes + layout.max_offsets[i - 3],
-                       rows * sizeof(uint16_t));
+      hash_rows(bytes + layout.offsets[i],
+                source.sizes[i] / (source.scale_type == 0 ? 4 : 2), i);
+      hash_rows(bytes + layout.max_offsets[i - 3], rows * sizeof(uint16_t), i);
+      continue;
+    }
+    if (i < 6) {
+      hash_rows(bytes + layout.offsets[i], layout.bytes[i], i);
       continue;
     }
     hash = HashBytes(hash, bytes + layout.offsets[i], layout.bytes[i]);
@@ -492,17 +523,26 @@ class Staging {
 
   // Copies `bytes` of the buffer Next() returned to `target` on the device.
   bool Send(void* target, size_t bytes, std::string* error) {
+    return Copy(target, bytes, error) && Mark(error);
+  }
+
+  // The two halves of Send, for a kernel on stream() between them that
+  // reads what was copied: the buffer is free once Mark's event has passed.
+  bool Copy(void* target, size_t bytes, std::string* error) {
+    return CudaOk(cudaMemcpyAsync(target, buffers_[next_].data, bytes,
+                                  cudaMemcpyHostToDevice, stream_),
+                  "cudaMemcpyAsync", error);
+  }
+  bool Mark(std::string* error) {
     Buffer& buffer = buffers_[next_];
-    if (!CudaOk(cudaMemcpyAsync(target, buffer.data, bytes,
-                                cudaMemcpyHostToDevice, stream_),
-                "cudaMemcpyAsync", error) ||
-        !CudaOk(cudaEventRecord(buffer.copied, stream_), "cudaEventRecord",
+    if (!CudaOk(cudaEventRecord(buffer.copied, stream_), "cudaEventRecord",
                 error)) {
       return false;
     }
     buffer.pending = true;
     return true;
   }
+  cudaStream_t stream() const { return stream_; }
 
   // Waits for every copy sent.
   bool Wait(std::string* error) {
@@ -526,7 +566,8 @@ class Staging {
 // What a loading thread keeps from one arena to the next.
 struct LoadContext {
   Staging staging;
-  std::vector<uint8_t> file_bytes;     // scales as the file holds them
+  std::vector<uint8_t> file_bytes;     // rows as the file holds them
+  std::vector<uint8_t> fractions;      // a piece's compact scales
   const float* half_floats = nullptr;  // HalfFloats()
 };
 
@@ -591,15 +632,15 @@ bool FillArena(const MoeExpertSource& source, const ArenaLayout& layout,
       const size_t rows_per_chunk = std::max<size_t>(1, kStagingBytes / row_in);
       std::vector<uint16_t> maxima(rows);
       std::vector<float> row(blocks);
+      // A device arena's fractions are made in host memory, each row in its
+      // place, and copied once the piece is whole.
+      if (on_device) context->fractions.resize(rows * blocks);
+      uint8_t* fractions = on_device ? context->fractions.data() : target;
       for (size_t r0 = 0; r0 < rows; r0 += rows_per_chunk) {
         const size_t n = std::min(rows_per_chunk, rows - r0);
         context->file_bytes.resize(n * row_in);
         if (!file.Read(source.offsets[i] + r0 * row_in,
                        context->file_bytes.data(), n * row_in, error)) {
-          return false;
-        }
-        uint8_t* fractions = target + r0 * blocks;
-        if (on_device && (fractions = staging.Next(error)) == nullptr) {
           return false;
         }
         for (size_t r = 0; r < n; ++r) {
@@ -613,18 +654,70 @@ bool FillArena(const MoeExpertSource& source, const ArenaLayout& layout,
               row[b] = context->half_floats[bits];
             }
           }
+          const size_t at = ArenaRow(layout, r0 + r, experts, rows / experts);
           LiteRtNvidiaCompactScaleRow(row.data(), static_cast<int32_t>(blocks),
-                                      fractions + r * blocks,
-                                      maxima.data() + r0 + r);
-        }
-        if (on_device &&
-            !staging.Send(target + r0 * blocks, n * blocks, error)) {
-          return false;
+                                      fractions + at * blocks,
+                                      maxima.data() + at);
         }
       }
-      if (!put(base + layout.max_offsets[i - 3], maxima.data(),
+      if ((on_device && !put(target, fractions, rows * blocks)) ||
+          !put(base + layout.max_offsets[i - 3], maxima.data(),
                rows * sizeof(uint16_t))) {
         return false;
+      }
+      continue;
+    }
+    if (layout.expert_major && i < 3) {
+      // The file holds the rows of an output channel together, one per
+      // expert; each goes to its expert's rows. A device arena gets them
+      // through its own memory: the place of the piece's block scales,
+      // which are loaded after the weights, takes a chunk's rows as the
+      // file has them, and a kernel carries them from there to their
+      // experts. Nothing else on the device is needed for it.
+      const size_t channels = i < 2 ? hidden_dim : model_dim;
+      const size_t row_bytes = in_bytes / channels / experts;
+      const size_t channel_bytes = row_bytes * experts;
+      uint8_t* model_rows = base + layout.offsets[i + 3];
+      const size_t chunk_bytes =
+          on_device ? std::min<size_t>(kStagingBytes,
+                                       source.sizes[i + 3] /
+                                           (source.scale_type == 0 ? 4 : 2))
+                    : kStagingBytes;
+      const size_t channels_per_chunk = chunk_bytes / channel_bytes;
+      if (channels_per_chunk == 0) {
+        *error = "the rows of a channel do not fit the staging buffer";
+        return false;
+      }
+      for (size_t c0 = 0; c0 < channels; c0 += channels_per_chunk) {
+        const size_t n = std::min(channels_per_chunk, channels - c0);
+        const uint64_t offset = source.offsets[i] + c0 * channel_bytes;
+        if (on_device) {
+          uint8_t* staged = staging.Next(error);
+          if (staged == nullptr ||
+              !file.Read(offset, staged, n * channel_bytes, error) ||
+              !staging.Copy(model_rows, n * channel_bytes, error) ||
+              !CudaOk(LiteRtNvidiaLaunchMoeExpertRows(
+                          model_rows, target, static_cast<int32_t>(c0),
+                          static_cast<int32_t>(n), experts,
+                          static_cast<int32_t>(channels),
+                          static_cast<int32_t>(row_bytes), staging.stream()),
+                      "LiteRtNvidiaLaunchMoeExpertRows", error) ||
+              !staging.Mark(error)) {
+            return false;
+          }
+          continue;
+        }
+        context->file_bytes.resize(n * channel_bytes);
+        if (!file.Read(offset, context->file_bytes.data(), n * channel_bytes,
+                       error)) {
+          return false;
+        }
+        for (size_t row = 0; row < n * experts; ++row) {
+          std::memcpy(
+              target + ArenaRow(layout, c0 * experts + row, experts, channels) *
+                           row_bytes,
+              context->file_bytes.data() + row * row_bytes, row_bytes);
+        }
       }
       continue;
     }
@@ -690,7 +783,8 @@ bool SetArenaPointers(const MoeExpertSource& source, const ArenaLayout& layout,
       layout.compact ? device_bytes + layout.max_offsets[0] : nullptr,
       layout.compact ? device_bytes + layout.max_offsets[1] : nullptr,
       layout.compact ? device_bytes + layout.max_offsets[2] : nullptr,
-      layout.compact ? 1 : 0};
+      layout.compact ? 1 : 0,
+      layout.expert_major ? 1 : 0};
   return true;
 }
 
@@ -715,6 +809,17 @@ int LoadThreads() {
       EnvInt64("LITERT_NVIDIA_MOE_LOAD_THREADS", 4), 1, 16));
 }
 
+// The order of the experts' rows in an arena: expert by expert, so that the
+// rows a routed expert reads follow each other. In the model's order they
+// lie among the rows of the 127 other experts, 1.4 kB every 180 kB for
+// Gemma 4 26B-A4B's gate projection, and the device fetches part of the
+// neighbours with every one of them. LITERT_NVIDIA_MOE_EXPERT_MAJOR=0 keeps
+// the model's order, to compare the two.
+bool ExpertMajorArenas() {
+  const char* value = std::getenv("LITERT_NVIDIA_MOE_EXPERT_MAJOR");
+  return value == nullptr || value[0] == '\0' || std::strcmp(value, "0") != 0;
+}
+
 // Loads the arenas of `loads`, several at a time, and returns the number of
 // threads that loaded them.
 int LoadArenas(std::vector<ArenaLoad>& loads) {
@@ -734,6 +839,7 @@ int LoadArenas(std::vector<ArenaLoad>& loads) {
       placement != nullptr && std::strcmp(placement, "host") == 0;
   const bool to_device =
       placement != nullptr && std::strcmp(placement, "device") == 0;
+  const bool expert_major = ExpertMajorArenas();
   // Placement: device while a reserve stays free, pinned host otherwise.
   // Decided for one arena after the other, in the order given, each seeing
   // the device memory the ones before it took, before anything is loaded.
@@ -749,6 +855,7 @@ int LoadArenas(std::vector<ArenaLoad>& loads) {
       load.error = "the expert pieces do not match the layer's shape";
       continue;
     }
+    load.layout.expert_major = expert_major;
     bool on_device = !to_host;
     if (!to_host && !to_device) {
       size_t free_bytes = 0;

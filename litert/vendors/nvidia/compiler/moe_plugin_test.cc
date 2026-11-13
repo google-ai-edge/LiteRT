@@ -14,6 +14,7 @@
 
 #include "litert/vendors/nvidia/compiler/moe_plugin.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -332,6 +333,23 @@ std::unique_ptr<nvinfer1::IPluginV3> Attach(nvinfer1::IPluginV3* plugin) {
       runtime->attachToContext(nullptr));
 }
 
+// The rows of an expert piece as an arena holds them: in the model's order
+// (row channel * experts + expert) or expert by expert.
+template <typename T>
+std::vector<T> ArenaOrder(const std::vector<T>& model, size_t experts,
+                          size_t channels, bool expert_major) {
+  if (!expert_major) return model;
+  const size_t row = model.size() / (experts * channels);
+  std::vector<T> arena(model.size());
+  for (size_t c = 0; c < channels; ++c) {
+    for (size_t e = 0; e < experts; ++e) {
+      std::copy_n(model.begin() + (c * experts + e) * row, row,
+                  arena.begin() + (e * channels + c) * row);
+    }
+  }
+  return arena;
+}
+
 void ExpectBytes(const void* arena, const void* expected, size_t bytes,
                  const char* what) {
   SCOPED_TRACE(what);
@@ -349,7 +367,8 @@ void ExpectBytes(const void* arena, const void* expected, size_t bytes,
 }
 
 // The arena of `layer` holds what the scalar conversions make of the file.
-void ExpectArena(const Layer& layer, bool expect_device) {
+void ExpectArena(const Layer& layer, bool expect_device,
+                 bool expect_expert_major) {
   SCOPED_TRACE(::testing::Message()
                << "experts at " << layer.source.offsets[0]);
   LiteRtNvidiaMoeArena arena{};
@@ -359,21 +378,27 @@ void ExpectArena(const Layer& layer, bool expect_device) {
                            &arena, &on_device));
   EXPECT_EQ(on_device, expect_device);
   EXPECT_EQ(arena.compact_scales, 1);
-  ExpectBytes(arena.gate, layer.gate.data(), layer.gate.size(), "gate");
-  ExpectBytes(arena.up, layer.up.data(), layer.up.size(), "up");
-  ExpectBytes(arena.down, layer.down.data(), layer.down.size(), "down");
-  ExpectBytes(arena.gate_scales, layer.gate_fractions.data(),
-              layer.gate_fractions.size(), "gate fractions");
-  ExpectBytes(arena.up_scales, layer.up_fractions.data(),
-              layer.up_fractions.size(), "up fractions");
-  ExpectBytes(arena.down_scales, layer.down_fractions.data(),
-              layer.down_fractions.size(), "down fractions");
-  ExpectBytes(arena.gate_scale_max, layer.gate_max.data(),
-              layer.gate_max.size() * 2, "gate maxima");
-  ExpectBytes(arena.up_scale_max, layer.up_max.data(), layer.up_max.size() * 2,
-              "up maxima");
-  ExpectBytes(arena.down_scale_max, layer.down_max.data(),
-              layer.down_max.size() * 2, "down maxima");
+  EXPECT_EQ(arena.expert_major != 0, expect_expert_major);
+  const size_t experts = layer.shape.experts;
+  const size_t hidden = layer.shape.hidden_dim;
+  const size_t model = layer.shape.model_dim;
+  const bool by_expert = arena.expert_major != 0;
+  const auto expect_rows = [&](const void* pointer, const auto& rows,
+                               size_t channels, const char* what) {
+    const auto expected = ArenaOrder(rows, experts, channels, by_expert);
+    ExpectBytes(pointer, expected.data(), expected.size() * sizeof(expected[0]),
+                what);
+  };
+  expect_rows(arena.gate, layer.gate, hidden, "gate");
+  expect_rows(arena.up, layer.up, hidden, "up");
+  expect_rows(arena.down, layer.down, model, "down");
+  expect_rows(arena.gate_scales, layer.gate_fractions, hidden,
+              "gate fractions");
+  expect_rows(arena.up_scales, layer.up_fractions, hidden, "up fractions");
+  expect_rows(arena.down_scales, layer.down_fractions, model, "down fractions");
+  expect_rows(arena.gate_scale_max, layer.gate_max, hidden, "gate maxima");
+  expect_rows(arena.up_scale_max, layer.up_max, hidden, "up maxima");
+  expect_rows(arena.down_scale_max, layer.down_max, model, "down maxima");
   ExpectBytes(arena.router, layer.router.data(), layer.router.size(), "router");
   ExpectBytes(arena.router_scales, layer.router_scales.data(),
               layer.router_scales.size(), "router scales");
@@ -394,29 +419,36 @@ size_t LoadedBytes() {
   return device + host;
 }
 
-class MoePluginTest : public testing::Test {
+// The parameter: LITERT_NVIDIA_MOE_EXPERT_MAJOR, empty for the default.
+class MoePluginTest : public testing::TestWithParam<const char*> {
  protected:
   void SetUp() override {
     SetMoeArenaLoadingEnabled(true);
     // Empty: the defaults.
     setenv("LITERT_NVIDIA_MOE_PLACEMENT", "", 1);
     setenv("LITERT_NVIDIA_MOE_LOAD_THREADS", "", 1);
+    setenv("LITERT_NVIDIA_MOE_EXPERT_MAJOR", GetParam(), 1);
   }
   void TearDown() override {
     for (const std::string& path : paths_) std::remove(path.c_str());
   }
-  std::string Path(const char* name) {
-    paths_.push_back(::testing::TempDir() + "/" + name);
+  // A file of this test and layout alone: arenas are kept by file.
+  std::string Path(const std::string& name) {
+    paths_.push_back(::testing::TempDir() + "/moe_" + name + "_" + GetParam() +
+                     ".bin");
     return paths_.back();
   }
+  bool ExpertMajor() const { return std::strcmp(GetParam(), "0") != 0; }
 
   std::vector<std::string> paths_;
 };
 
+INSTANTIATE_TEST_SUITE_P(Layouts, MoePluginTest, testing::Values("", "0", "1"));
+
 // Gemma 4 26B-A4B's layer: every expert piece spans several staging buffers.
-TEST_F(MoePluginTest, AttachLoadsTheBytesOfTheFile) {
+TEST_P(MoePluginTest, AttachLoadsTheBytesOfTheFile) {
   const std::vector<Layer> layers =
-      WriteModel(Path("moe_26b_layer.bin"), {128, 2816, 704, 2112, 1}, 1, 1);
+      WriteModel(Path("26b_layer"), {128, 2816, 704, 2112, 1}, 1, 1);
   ASSERT_EQ(layers.size(), 1u);
   const auto plugin = MakePlugin(layers[0]);
   ASSERT_NE(plugin, nullptr);
@@ -424,19 +456,19 @@ TEST_F(MoePluginTest, AttachLoadsTheBytesOfTheFile) {
   const auto attached = Attach(plugin.get());
   ASSERT_NE(attached, nullptr);
   EXPECT_GT(LoadedBytes(), before);
-  ExpectArena(layers[0], /*expect_device=*/true);
+  ExpectArena(layers[0], /*expect_device=*/true, ExpertMajor());
 }
 
 // The layers of a deserialized engine load together when the first of them
 // is attached, by one thread or several, FP32 scales converted on the way.
-TEST_F(MoePluginTest, AttachLoadsTheAnnouncedArenas) {
-  int file = 0;
+TEST_P(MoePluginTest, AttachLoadsTheAnnouncedArenas) {
+  int seed = 100;
   for (const char* threads : {"1", "3", "16"}) {
     SCOPED_TRACE(threads);
     setenv("LITERT_NVIDIA_MOE_LOAD_THREADS", threads, 1);
-    const std::string name = "moe_layers_" + std::to_string(file++) + ".bin";
     const std::vector<Layer> layers =
-        WriteModel(Path(name.c_str()), {12, 256, 96, 64, 0}, 7, 100 + file);
+        WriteModel(Path(std::string("layers_") + threads), {12, 256, 96, 64, 0},
+                   7, ++seed);
     ASSERT_EQ(layers.size(), 7u);
     std::vector<std::unique_ptr<nvinfer1::IPluginV3>> plugins;
     for (const Layer& layer : layers) {
@@ -449,7 +481,7 @@ TEST_F(MoePluginTest, AttachLoadsTheAnnouncedArenas) {
     const size_t after = LoadedBytes();
     EXPECT_GT(after, before);
     for (const Layer& layer : layers) {
-      ExpectArena(layer, /*expect_device=*/true);
+      ExpectArena(layer, /*expect_device=*/true, ExpertMajor());
     }
     // Checking them loaded nothing more.
     EXPECT_EQ(LoadedBytes(), after);
@@ -458,25 +490,25 @@ TEST_F(MoePluginTest, AttachLoadsTheAnnouncedArenas) {
 
 // Arenas in page-locked host memory (a device short of memory) are filled
 // in place.
-TEST_F(MoePluginTest, LoadsHostArenas) {
+TEST_P(MoePluginTest, LoadsHostArenas) {
   setenv("LITERT_NVIDIA_MOE_PLACEMENT", "host", 1);
   for (const int scale_type : {0, 1}) {
-    const std::string name = "moe_host_" + std::to_string(scale_type) + ".bin";
-    const std::vector<Layer> layers = WriteModel(
-        Path(name.c_str()), {16, 704, 128, 96, scale_type}, 3, 7 + scale_type);
+    const std::vector<Layer> layers =
+        WriteModel(Path("host_" + std::to_string(scale_type)),
+                   {16, 704, 128, 96, scale_type}, 3, 7 + scale_type);
     ASSERT_EQ(layers.size(), 3u);
     std::vector<std::unique_ptr<nvinfer1::IPluginV3>> plugins;
     for (const Layer& layer : layers) plugins.push_back(Deserialize(layer));
     for (const Layer& layer : layers) {
-      ExpectArena(layer, /*expect_device=*/false);
+      ExpectArena(layer, /*expect_device=*/false, ExpertMajor());
     }
   }
 }
 
 // A file that is not the one the plan was built from is not loaded.
-TEST_F(MoePluginTest, RejectsAFileOfAnotherSize) {
+TEST_P(MoePluginTest, RejectsAFileOfAnotherSize) {
   std::vector<Layer> layers =
-      WriteModel(Path("moe_resized.bin"), {12, 256, 96, 64, 1}, 1, 3);
+      WriteModel(Path("resized"), {12, 256, 96, 64, 1}, 1, 3);
   ASSERT_EQ(layers.size(), 1u);
   layers[0].source.model_size += 1;
   LiteRtNvidiaMoeArena arena{};

@@ -60,12 +60,13 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
 // top_k routed experts e = top_indices[r][j],
 //   hidden = gelu(x_r . gate_e) * (x_r . up_e)          [hidden_dim]
 //   out_r += top_weights[r][j] * per_expert_scale[e] * (hidden . down_e)
-// The expert weights keep the model's layout, which interleaves the experts
-// within the output dimension: row o of expert e of the gate and up
-// projections is row o * experts + e of a [hidden_dim * experts,
-// model_dim] INT4 matrix, and of the down projection row o * experts + e of
-// [model_dim * experts, hidden_dim]; the scales are FP16 per block of 32
-// input dims in the same row order. Activations and outputs are BF16.
+// The model's layout interleaves the experts within the output dimension:
+// row o of expert e of the gate and up projections is row o * experts + e of
+// a [hidden_dim * experts, model_dim] INT4 matrix, and of the down projection
+// row o * experts + e of [model_dim * experts, hidden_dim]; the scales are
+// FP16 per block of 32 input dims in the same row order. An arena holds the
+// rows in that order or expert by expert (`expert_major`). Activations and
+// outputs are BF16.
 struct LiteRtNvidiaMoeArena {
   const uint8_t* gate;
   const uint8_t* up;
@@ -93,7 +94,25 @@ struct LiteRtNvidiaMoeArena {
   const void* up_scale_max;
   const void* down_scale_max;
   int32_t compact_scales;
+  // The experts' rows (weights, scales and maxima) expert by expert
+  // (expert_major != 0): row o of expert e is row e * hidden_dim + o of the
+  // gate and up projections and row e * model_dim + o of the down
+  // projection, so that what a routed expert reads is contiguous. In the
+  // model's order an expert's rows lie `experts` rows apart, each among the
+  // rows of the experts not routed to.
+  int32_t expert_major;
 };
+
+// A loader's step from the model's order to an expert-major arena: copies
+// the rows of the output channels [first_channel, first_channel + channels)
+// of a projection, `model_rows` in the model's order (row (c - first_channel)
+// * experts + e), to their places in the expert-major projection
+// `expert_rows` (row e * expert_channels + c). A row is row_bytes long, a
+// multiple of 16; both are device memory aligned to 16 bytes.
+extern "C" cudaError_t LiteRtNvidiaLaunchMoeExpertRows(
+    const void* model_rows, void* expert_rows, int32_t first_channel,
+    int32_t channels, int32_t experts, int32_t expert_channels,
+    int32_t row_bytes, cudaStream_t stream);
 
 // A row of block scales into the compact format: the row's maximum as FP16
 // bits, then each block's scale as round(255 * scale / maximum) (scales are
