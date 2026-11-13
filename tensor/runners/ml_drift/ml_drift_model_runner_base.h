@@ -32,7 +32,6 @@ limitations under the License.
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
@@ -231,7 +230,12 @@ class MlDriftModelRunnerBase {
     ci.hints.Add(ml_drift::ModelHints::kFastTuning);
     ci.hints.Add(ml_drift::ModelHints::kPreferTextureWeights);
     ci.hints.Add(ml_drift::ModelHints::kEnableHostMappedPointer);
-    ci.hints.Add(ml_drift::ModelHints::kDisallow8bitConvs);
+    // `LRT_ALLOW_8BIT_CONVS=1` lets ML Drift run large quantized
+    // FullyConnected / convolutions with dynamically INT8-quantized
+    // activations and INT8 dot products.
+    if (!Allow8BitConvsFromEnv()) {
+      ci.hints.Add(ml_drift::ModelHints::kDisallow8bitConvs);
+    }
     ci.hints.Add(ml_drift::ModelHints::kAllowSpecialKernels);
     const char* allow_cb_env = std::getenv("LRT_ALLOW_COMMAND_BUFFER");
     ci.hints.allow_cl_khr_command_buffer =
@@ -275,6 +279,8 @@ MlDriftModelRunnerBase<Backend, ModelFunctor, Inputs, Outputs>::
       model_builder_ = std::make_unique<ml_drift::GpuModelBuilder>(
           gpu_info, ci.hints, ci.precision, ci.storage_type);
       conversion_ctx_ptr_->gpu_model_builder = model_builder_.get();
+      conversion_ctx_ptr_->allow_8bit_convs = Allow8BitConvsFromEnv();
+      conversion_ctx_ptr_->hints = ci.hints;
       conversion_ctx_ptr_->default_float_type =
           ml_drift::DeduceDataTypeFromPrecision(ci.precision);
     }
@@ -286,6 +292,8 @@ MlDriftModelRunnerBase<Backend, ModelFunctor, Inputs, Outputs>::
     model_builder_ = std::make_unique<ml_drift::GpuModelBuilder>(
         gpu_info, ci.hints, ci.precision, ci.storage_type);
     conversion_ctx_ptr_->gpu_model_builder = model_builder_.get();
+    conversion_ctx_ptr_->allow_8bit_convs = Allow8BitConvsFromEnv();
+    conversion_ctx_ptr_->hints = ci.hints;
     conversion_ctx_ptr_->default_float_type =
         ml_drift::DeduceDataTypeFromPrecision(ci.precision);
   }

@@ -7,11 +7,8 @@ package(default_visibility = ["//visibility:public"])
 
 py_binary(
     name = "dawn_json_generator",
-    srcs = [
-        "generator/dawn_json_generator.py",
-        "generator/generator_lib.py",
-        "generator/webgpu_docs_utility.py",
-    ],
+    # All the generator's modules: they differ between Dawn versions, e.g. a local checkout.
+    srcs = glob(["generator/*.py"]),
     imports = [
         "generator",
     ],
@@ -210,7 +207,11 @@ cc_library(
     ] + glob([
         "include/**/*.h",
     ]),
-    copts = ["-DDAWN_DISABLE_LOGGING"],
+    # DAWN_HAVE_UTILS_BUILD_CONFIG is required by src/utils of newer Dawn versions, e.g. a local checkout.
+    copts = [
+        "-DDAWN_DISABLE_LOGGING",
+        "-DDAWN_HAVE_UTILS_BUILD_CONFIG",
+    ],
     includes = [
         ".",
         "include",
