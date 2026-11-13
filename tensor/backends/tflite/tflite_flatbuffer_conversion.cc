@@ -471,6 +471,11 @@ absl::Status ModelFactory::Build() {
       if (auto pcq = tensor_info.quantization
                          ->As<const PerChannelAffineQuantization>();
           pcq.ok()) {
+        if (pcq->HasNonZeroFloatZeroPoints()) {
+          return absl::UnimplementedError(
+              "TFLite QuantizationParameters does not support float "
+              "zero_points in PerChannelAffineQuantization.");
+        }
         t.quantization = std::make_unique<tflite::QuantizationParametersT>();
         t.quantization->scale = pcq->scales;
         t.quantization->zero_point = pcq->zero_points;
@@ -503,7 +508,23 @@ absl::Status ModelFactory::Build() {
         int scale_tensor_idx = subgraph.tensors.size() - 1;
 
         int zero_point_tensor_idx = -1;  // Default to 0 zero point.
-        if (!bwq->zero_points.empty()) {
+        if (!bwq->float_zero_points.empty()) {
+          auto zp_buffer =
+              OwningCpuBuffer::Copy<Type::kFP32>(bwq->float_zero_points);
+          auto [it, inserted] =
+              buffers_.insert({zp_buffer, BufferSerializationInfo{}});
+          if (inserted) {
+            it->second.index = buffer_list_.size() + 1;
+            buffer_list_.push_back(zp_buffer);
+          }
+          auto zp_tensor = std::make_unique<tflite::TensorT>();
+          zp_tensor->shape = {static_cast<int>(bwq->float_zero_points.size())};
+          zp_tensor->type = tflite::TensorType_FLOAT32;
+          zp_tensor->name = absl::StrCat(tensor_info.name, "_zero_points");
+          zp_tensor->buffer = it->second.index;
+          subgraph.tensors.push_back(std::move(zp_tensor));
+          zero_point_tensor_idx = subgraph.tensors.size() - 1;
+        } else if (!bwq->zero_points.empty()) {
           auto zp_buffer = OwningCpuBuffer::Copy<Type::kI64>(bwq->zero_points);
           auto [it, inserted] =
               buffers_.insert({zp_buffer, BufferSerializationInfo{}});

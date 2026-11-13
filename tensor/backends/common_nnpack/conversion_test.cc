@@ -18,6 +18,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -137,6 +138,71 @@ TEST(CommonNnpackConversionTest,
                                raw.size())));
 
   EXPECT_THAT(result, Pointwise(FloatEq(), {1.0f, 2.0f, 2.0f, 6.0f}));
+}
+
+absl::StatusOr<std::vector<float>> DequantizeTwoByTwo(
+    Type type, std::shared_ptr<graph::PerChannelAffineQuantization> pcq) {
+  graph::TensorInformation info{
+      .type = type,
+      .shape = {2, 2},
+      .quantization = std::move(pcq),
+  };
+  static constexpr int8_t kRaw[] = {2, 4, 1, 3};
+  return DequantizeInt8ConstantTensor(
+      info,
+      absl::MakeSpan(reinterpret_cast<const std::byte*>(kRaw), sizeof(kRaw)));
+}
+
+TEST(CommonNnpackConversionTest,
+     DequantizeInt8ConstantTensorBroadcastsSingleScaleAndZeroPoint) {
+  EXPECT_THAT(
+      DequantizeTwoByTwo(Type::kI8,
+                         std::make_shared<graph::PerChannelAffineQuantization>(
+                             std::vector<float>{0.5f}, std::vector<int64_t>{},
+                             /*quantized_dimension=*/0,
+                             /*float_zero_points=*/std::vector<float>{1.0f})),
+      absl_testing::IsOkAndHolds(
+          Pointwise(FloatEq(), {0.5f, 1.5f, 0.0f, 1.0f})));
+}
+
+TEST(CommonNnpackConversionTest, DequantizeInt8ConstantTensorRejectsNonInt8) {
+  EXPECT_THAT(
+      DequantizeTwoByTwo(
+          Type::kI4,
+          std::make_shared<graph::PerChannelAffineQuantization>(
+              std::vector<float>{0.5f, 2.0f}, std::vector<int64_t>{1, 1})),
+      StatusIs(absl::StatusCode::kUnimplemented));
+}
+
+TEST(CommonNnpackConversionTest,
+     DequantizeInt8ConstantTensorRejectsQuantizedDimensionOne) {
+  EXPECT_THAT(
+      DequantizeTwoByTwo(
+          Type::kI8,
+          std::make_shared<graph::PerChannelAffineQuantization>(
+              std::vector<float>{0.5f, 2.0f}, std::vector<int64_t>{1, 1},
+              /*quantized_dimension=*/1)),
+      StatusIs(absl::StatusCode::kUnimplemented));
+}
+
+TEST(CommonNnpackConversionTest,
+     DequantizeInt8ConstantTensorRejectsMismatchedScaleCount) {
+  EXPECT_THAT(
+      DequantizeTwoByTwo(
+          Type::kI8,
+          std::make_shared<graph::PerChannelAffineQuantization>(
+              std::vector<float>{0.5f, 2.0f, 1.0f}, std::vector<int64_t>{1})),
+      StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(CommonNnpackConversionTest,
+     DequantizeInt8ConstantTensorRejectsMismatchedZeroPointCount) {
+  EXPECT_THAT(
+      DequantizeTwoByTwo(
+          Type::kI8,
+          std::make_shared<graph::PerChannelAffineQuantization>(
+              std::vector<float>{0.5f, 2.0f}, std::vector<int64_t>{1, 1, 1})),
+      StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(CommonNnpackConversionTest, TopologicalSortLeafTensorReturnsEmpty) {
