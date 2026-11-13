@@ -138,6 +138,12 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
         context.unfold_gqa_sequence_fold_ = (value == "true");
         continue;
       }
+      if (key == "enable_hfa") {
+        LITERT_LOG(LITERT_INFO, "Custom config: enable_hfa = %s",
+                   value.c_str());
+        context.enable_hfa_ = (value == "true");
+        continue;
+      }
       if (key == "split_shared_constants") {
         LITERT_LOG(LITERT_INFO, "Custom config: split_shared_constants = %s",
                    value.c_str());
@@ -196,6 +202,10 @@ OpenVinoCompileContext::OpenVinoCompileContext() {
         context.unfold_gqa_sequence_fold_ = (value == "true");
         continue;
       }
+      if (key == "enable_hfa") {
+        context.enable_hfa_ = (value == "true");
+        continue;
+      }
       if (key == "sdpa_pad_kv_to_alignment") {
         context.sdpa_pad_kv_to_alignment_ = (value == "true");
         continue;
@@ -226,8 +236,15 @@ LiteRtStatus OpenVinoCompileContext::ConfigureForSoc(const char* soc_model) {
 }
 
 LiteRtStatus OpenVinoCompileContext::ConfigureForNpuWeightSharing(
-    const std::string& weights_bank_name, bool moe_multi_token_chunk) {
+    const std::string& weights_bank_name, const OptimizeModelResult& result) {
   if (device_ != "NPU") return kLiteRtStatusOk;
+  const bool moe_multi_token_chunk = result.moe_is_multi_token_chunk;
+  // HFA is built from isolated attention blocks, which only the REP pipeline
+  // produces: under NONE the whole graph is one function and NPUW_ATTN=HFA is
+  // ignored. So a dense graph with SDPAs decomposed for HFA gets REP too, with
+  // only attention isolated. Keyed on the decomposition, not on NPUW_ATTN, so
+  // an explicit NPUW_ATTN=STATIC control compiles the same blocks.
+  const bool hfa_decomposed = result.num_sdpa_decomposed_for_hfa > 0;
   // NPUW private properties, set by literal key because
   // npuw_private_properties.hpp is not shipped in the runtime SDK.
   auto set_default_if_not_set = [&](absl::string_view key,
@@ -245,11 +262,14 @@ LiteRtStatus OpenVinoCompileContext::ConfigureForNpuWeightSharing(
                              : absl::string_view(weights_bank_name));
   set_default_if_not_set("NPUW_FUNCALL_FOR_ALL", "YES");
 
-  if (moe_multi_token_chunk) {
+  if (moe_multi_token_chunk || hfa_decomposed) {
     set_default_if_not_set("NPUW_ONLINE_PIPELINE", "REP");
     set_default_if_not_set("NPUW_UNFOLD_IREQS", "NO");
-    set_default_if_not_set("NPUW_ONLINE_ISOLATE", "ATTN,MOE");
-    set_default_if_not_set("NPUW_MOE_TOKEN_CHUNK_SIZE", "0");
+    set_default_if_not_set("NPUW_ONLINE_ISOLATE",
+                           moe_multi_token_chunk ? "ATTN,MOE" : "ATTN");
+    if (moe_multi_token_chunk) {
+      set_default_if_not_set("NPUW_MOE_TOKEN_CHUNK_SIZE", "0");
+    }
     set_default_if_not_set("NPUW_ONLINE_KEEP_BLOCK_SIZE", "4");
     set_default_if_not_set("NPUW_FOLD", "YES");
     set_default_if_not_set("NPUW_ONLINE_KEEP_BLOCKS", "3");
@@ -274,9 +294,35 @@ LiteRtStatus OpenVinoCompileContext::ConfigureForNpuWeightSharing(
 
   LITERT_LOG(LITERT_INFO,
              "NPU weight sharing: enabled NPUW weightless compile knobs (%s "
-             "chunk pipeline, bank '%s')",
+             "chunk pipeline, bank '%s'%s)",
              moe_multi_token_chunk ? "multi-token" : "single-token",
-             configs_map_["NPUW_WEIGHTS_BANK"].as<std::string>().c_str());
+             configs_map_["NPUW_WEIGHTS_BANK"].as<std::string>().c_str(),
+             hfa_decomposed ? ", HFA-decomposed attention" : "");
+
+  // Set NPUW_ATTN=HFA on graphs with decomposed SDPAs unless already set.
+  if (hfa_decomposed &&
+      configs_map_.try_emplace("NPUW_ATTN", std::string("HFA")).second) {
+    LITERT_LOG(LITERT_INFO,
+               "enable_hfa: NPUW_ATTN=HFA (%zu SDPA op(s) decomposed for it)",
+               result.num_sdpa_decomposed_for_hfa);
+  }
+  // The configs map may override the pipeline, and HFA attaches only to the
+  // attention blocks REP isolates.
+  if (hfa_decomposed &&
+      configs_map_["NPUW_ONLINE_PIPELINE"].as<std::string>() != "REP") {
+    LITERT_LOG(LITERT_WARNING,
+               "enable_hfa: NPUW_ONLINE_PIPELINE=%s overrides REP, so NPUW "
+               "will not attach HFA",
+               configs_map_["NPUW_ONLINE_PIPELINE"].as<std::string>().c_str());
+  }
+  // HFA converts only the decomposed form that enable_hfa produces.
+  const auto attn = configs_map_.find("NPUW_ATTN");
+  if (!enable_hfa_ && attn != configs_map_.end() &&
+      attn->second.as<std::string>() == "HFA") {
+    LITERT_LOG(LITERT_WARNING,
+               "NPUW_ATTN=HFA without enable_hfa=true: attention stays fused, "
+               "so NPUW will not attach HFA");
+  }
   return kLiteRtStatusOk;
 }
 
@@ -284,17 +330,21 @@ OpenVinoCompileContext::OptimizeModelResult
 OpenVinoCompileContext::OptimizeModel(
     const std::shared_ptr<ov::Model>& model) const {
   if (device_ != "NPU") return {};
+  // enable_hfa implies the SDPA fusion and the GQA unfold.
   const NpuOptimizer::Result result =
       NpuOptimizer()
           .SetConstantFold(true)
           .SetEliminateMatMulFakeQuantize(eliminate_fq_after_matmul_)
-          .SetFuseSplitAttentionToSDPA(fuse_split_attention_to_sdpa_)
-          .SetUnfoldGqaSequenceFold(unfold_gqa_sequence_fold_)
+          .SetFuseSplitAttentionToSDPA(fuse_split_attention_to_sdpa_ ||
+                                       enable_hfa_)
+          .SetUnfoldGqaSequenceFold(unfold_gqa_sequence_fold_ || enable_hfa_)
+          .SetDecomposeSDPAForHFA(enable_hfa_)
           .SetSdpaPadKvToAlignment(sdpa_pad_kv_to_alignment_)
           .SetEnableMoeGather(enable_moe_gather_)
           .SetSplitSharedConstants(split_shared_constants_)
           .Run(model);
-  return {.moe_is_multi_token_chunk = result.moe_is_multi_token_chunk};
+  return {.moe_is_multi_token_chunk = result.moe_is_multi_token_chunk,
+          .num_sdpa_decomposed_for_hfa = result.num_sdpa_decomposed_for_hfa};
 }
 
 }  // namespace openvino

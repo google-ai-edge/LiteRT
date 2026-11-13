@@ -284,6 +284,7 @@ cc_test(
     ],
     deps = [
         ":decode_attention_plugin",
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
         "@com_google_googletest//:gtest_main",
         "@local_tensorrt_rtx//:tensorrt_rtx_headers",
         "@local_tensorrt_rtx//:tensorrt_rtx_stub",

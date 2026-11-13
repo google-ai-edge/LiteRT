@@ -330,6 +330,8 @@ WEBGPU_BASE_DONT_REGISTER = [
     "Pad.*[(][123]d",
     "Swiglu.*3d_f(16|32)<(?!1x)",  # WebGPU accelerator does not support SwiGLU with batch > 1
     "QkvNormRope.*4d_f(16|32)<(?!1x)",  # WebGPU accelerator does not support QkvNormRope with batch > 1
+    # TODO(b/584819001): Enable once IrModel constant q_weight/k_weight lowering lands.
+    "QkvNormRope.*1d_f(16|32)<[^>]+>_cst",
     "SelectV2",
     "Slice",
     "RuntimeBmm.*(i4|i8)",  # WebGPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
@@ -694,6 +696,8 @@ litert_define_ats(
         "BatchMatmul(?!.*_cst).*[34]d",  # OpenCL only supports 3D/4D BatchMatmul with constant 2D RHS (dynamic 3D/4D uses 1xB or rank-asymmetric broadcast)
         "Swiglu.*3d_f(16|32)<(?!1x)",  # GPU accelerator does not support SwiGLU with batch > 1
         "QkvNormRope.*4d_f(16|32)<(?!1x)",  # GPU accelerator does not support QkvNormRope with batch > 1
+        # TODO(b/584819001): Enable once IrModel constant q_weight/k_weight lowering lands.
+        "QkvNormRope.*1d_f(16|32)<[^>]+>_cst",
         "SelectV2",  # OpenCL SelectV2 rejects multidimensional if/else broadcasting and uses kExact on FP16-rounded f32
         "Slice",  # OpenCL Slice uses kExact byte comparison on FP16-rounded f32 buffers
         "RuntimeBmm.*(i4|i8)",  # GPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
@@ -891,6 +895,8 @@ litert_define_ats(
         "Pad.*[(][123]d",
         "Swiglu.*3d_f(16|32)<(?!1x)",  # Metal accelerator does not support SwiGLU with batch > 1
         "QkvNormRope.*4d_f(16|32)<(?!1x)",  # Metal accelerator does not support QkvNormRope with batch > 1
+        # TODO(b/584819001): Enable once IrModel constant q_weight/k_weight lowering lands.
+        "QkvNormRope.*1d_f(16|32)<[^>]+>_cst",
         "SelectV2",
         "Slice",
         "RuntimeBmm.*(i4|i8)",  # Metal odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update

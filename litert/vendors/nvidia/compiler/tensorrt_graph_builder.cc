@@ -7770,9 +7770,19 @@ class TensorRtGraphBuilder {
   // over its three row tiles only and crawl through a long cache. Many tokens
   // (prefill) run the tensor-core kernel, the tokens padded when the rows
   // are not a multiple of its tile.
+  //
+  // A chunk of 16 rows at depth 512 lands on the tensor-core kernel, and
+  // every such launch reads the whole cache (the 26B's verify step read its
+  // global caches three times, 0.6 GB each at 30k tokens). The chunks that
+  // fill 16 rows therefore go as one launch that computes each of them as
+  // its own launch did and reads the caches once per two of them
+  // (LiteRtNvidiaLaunchGlobalAttentionTokens); a last partial chunk keeps
+  // its launch of the decode kernel.
   struct AttentionRowPlan {
     int32_t chunk_tokens = 0;   // decode kernel per chunk of this many tokens
     int32_t padded_tokens = 0;  // tensor-core kernel with the tokens padded
+    // The leading tokens whose chunks share one launch (0: none do).
+    int32_t shared_tokens = 0;
   };
 
   static std::optional<AttentionRowPlan> PlanAttentionRows(
@@ -7786,7 +7796,15 @@ class TensorRtGraphBuilder {
       return AttentionRowPlan{tokens, tokens};
     }
     if (tokens <= 16) {
-      return AttentionRowPlan{std::max<int32_t>(1, 16 / group), tokens};
+      AttentionRowPlan plan{std::max<int32_t>(1, 16 / group), tokens};
+      const int32_t full = tokens / plan.chunk_tokens * plan.chunk_tokens;
+      if (full > plan.chunk_tokens &&
+          LiteRtNvidiaGlobalAttentionTokensSupports(
+              group * full, full, mask_rows == tokens ? full : mask_rows,
+              depth)) {
+        plan.shared_tokens = full;
+      }
+      return plan;
     }
     const auto padded = SdpaTransposedPaddedTokens(group, tokens, depth);
     if (!padded.has_value()) {
@@ -7881,10 +7899,11 @@ class TensorRtGraphBuilder {
     // One plugin launch over `t` tokens: q [1, Hq, t, D] and a mask of 1 or
     // t rows; the group's query heads become rows of their KV head
     // ([1, Hq, t, D] -> [1, H, group * t, D], head-major within the group)
-    // and the result comes back as [1, Hq, t, D].
+    // and the result comes back as [1, Hq, t, D]. `shared`: the tokens are
+    // chunks that share the launch (AttentionRowPlan).
     const auto launch = [&](nvinfer1::ITensor* q_part,
-                            nvinfer1::ITensor* mask_part,
-                            int32_t t) -> Expected<nvinfer1::ITensor*> {
+                            nvinfer1::ITensor* mask_part, int32_t t,
+                            bool shared) -> Expected<nvinfer1::ITensor*> {
       nvinfer1::ITensor* grouped_q = q_part;
       if (block.group > 1) {
         nvinfer1::Dims grouped = q_dims_in;
@@ -7903,7 +7922,8 @@ class TensorRtGraphBuilder {
       }
       TrtPtr<nvinfer1::IPluginV3> plugin(CreateDecodeAttentionPlugin(
           block.fill, new_keys,
-          block.int8_cache.has_value() ? &*block.int8_cache : nullptr, window));
+          block.int8_cache.has_value() ? &*block.int8_cache : nullptr, window,
+          /*row_tokens=*/shared ? t : 0));
       if (!plugin) {
         return Error(kLiteRtStatusErrorCompilation,
                      "Failed to create CUDA decode attention plugin");
@@ -7957,18 +7977,28 @@ class TensorRtGraphBuilder {
       }
     }
     if (plan.has_value() && plan->chunk_tokens > 0) {
-      // Chunks of tokens on the decode kernel, over the same caches.
+      // Chunks of tokens on the decode kernel, over the same caches; the
+      // chunks that share a launch first.
       std::vector<nvinfer1::ITensor*> parts;
-      for (int32_t first = 0; first < tokens; first += plan->chunk_tokens) {
-        const int32_t t = std::min(plan->chunk_tokens, tokens - first);
+      for (int32_t first = 0, t = 0; first < tokens; first += t) {
+        const bool shared = first < plan->shared_tokens;
+        t = shared ? plan->shared_tokens
+                   : std::min(plan->chunk_tokens, tokens - first);
         LITERT_ASSIGN_OR_RETURN(auto* q_part, SliceTensorAxis(q, 2, first, t));
         nvinfer1::ITensor* mask_part = mask_in;
         if (mask_in->getDimensions().d[2] == tokens) {
           LITERT_ASSIGN_OR_RETURN(mask_part,
                                   SliceTensorAxis(mask_in, 2, first, t));
         }
-        LITERT_ASSIGN_OR_RETURN(auto* part, launch(q_part, mask_part, t));
+        LITERT_ASSIGN_OR_RETURN(auto* part,
+                                launch(q_part, mask_part, t, shared));
         parts.push_back(part);
+        if (shared) {
+          LITERT_LOG(LITERT_INFO,
+                     "NVIDIA TensorRT-RTX attention block: %d of %d tokens "
+                     "of %d query heads share the cache reads of one launch",
+                     t, tokens, block.group);
+        }
       }
       LITERT_ASSIGN_OR_RETURN(
           out, ConcatTensors(std::move(parts), 2, "the attention chunks"));
@@ -8000,11 +8030,13 @@ class TensorRtGraphBuilder {
             padded_mask, ConcatTensors({mask_in, mask_pad}, 2,
                                        "the padded attention mask rows"));
       }
-      LITERT_ASSIGN_OR_RETURN(auto* padded_out,
-                              launch(padded_q, padded_mask, padded_tokens));
+      LITERT_ASSIGN_OR_RETURN(
+          auto* padded_out,
+          launch(padded_q, padded_mask, padded_tokens, /*shared=*/false));
       LITERT_ASSIGN_OR_RETURN(out, SliceTensorAxis(padded_out, 2, 0, tokens));
     } else {
-      LITERT_ASSIGN_OR_RETURN(out, launch(q, mask_in, tokens));
+      LITERT_ASSIGN_OR_RETURN(out,
+                              launch(q, mask_in, tokens, /*shared=*/false));
     }
     block.emitted = true;
     return SetOutputTensor(*block.output, out);

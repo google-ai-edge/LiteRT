@@ -274,6 +274,142 @@ void RunCase(const Case& test_case) {
   }
 }
 
+// A few tokens of several query heads (row = head * tokens + token): the
+// token launch against the 16-row launches it stands for, one per 16 / heads
+// tokens with the tokens' mask rows repeated per head, bit for bit.
+struct TokenCase {
+  int heads;
+  int tokens;
+  int seq;
+  // Mask row t sees keys [0, position + t] except every `hole`-th one (0: no
+  // holes); `hidden_token`'s row sees nothing. A shared mask is row 0 alone.
+  int position;
+  int hole;
+  int hidden_token;
+  bool shared_mask;
+  float fill;
+  bool bf16;
+};
+
+void RunTokenCase(const TokenCase& test_case) {
+  SCOPED_TRACE(::testing::Message()
+               << "heads=" << test_case.heads << " tokens=" << test_case.tokens
+               << " seq=" << test_case.seq << " position=" << test_case.position
+               << " hole=" << test_case.hole
+               << " hidden=" << test_case.hidden_token << " shared_mask="
+               << test_case.shared_mask << " bf16=" << test_case.bf16);
+  const int heads = test_case.heads;
+  const int tokens = test_case.tokens;
+  const int rows = heads * tokens;
+  const int chunk = 16 / heads;
+  const int seq = test_case.seq;
+  const int mask_rows = test_case.shared_mask ? 1 : tokens;
+  ASSERT_TRUE(LiteRtNvidiaGlobalAttentionTokensSupports(rows, tokens, mask_rows,
+                                                        kDepth));
+  uint32_t state = 88172645u + rows + seq + test_case.position;
+  const auto next = [&]() -> float {
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return static_cast<float>(state >> 8) / 8388608.0f - 1.0f;  // [-1, 1)
+  };
+  std::vector<uint16_t> q(static_cast<size_t>(rows) * kDepth);
+  for (uint16_t& bits : q) {
+    bits = test_case.bf16 ? FloatToBf16Bits(next()) : FloatToHalfBits(next());
+  }
+  std::vector<uint16_t> k(static_cast<size_t>(seq) * kDepth);
+  std::vector<uint16_t> v(k.size());
+  for (size_t i = 0; i < k.size(); ++i) {
+    k[i] = FloatToHalfBits(0.5f * next());
+    v[i] = FloatToHalfBits(4.0f * next());
+  }
+  std::vector<uint8_t> mask(static_cast<size_t>(mask_rows) * seq, 0);
+  for (int t = 0; t < mask_rows; ++t) {
+    if (t == test_case.hidden_token) continue;
+    for (int j = 0; j <= std::min(test_case.position + t, seq - 1); ++j) {
+      mask[static_cast<size_t>(t) * seq + j] =
+          test_case.hole == 0 || j % test_case.hole != test_case.hole - 1;
+    }
+  }
+
+  auto k_device = Upload(k);
+  auto v_device = Upload(v);
+  const auto run = [&](const std::vector<uint16_t>& q_host,
+                       const std::vector<uint8_t>& mask_host, int launch_rows,
+                       int launch_mask_rows, bool by_token,
+                       std::vector<uint16_t>* out) {
+    const size_t workspace_bytes =
+        by_token ? LiteRtNvidiaGlobalAttentionTokensWorkspaceBytes(
+                       launch_rows, tokens, launch_mask_rows, seq, kDepth)
+                 : LiteRtNvidiaGlobalAttentionWorkspaceBytes(
+                       launch_rows, launch_mask_rows, seq, kDepth);
+    ASSERT_GT(workspace_bytes, 0u);
+    auto q_device = Upload(q_host);
+    auto mask_device = Upload(mask_host);
+    auto out_device = AllocateCuda(q_host.size() * sizeof(uint16_t));
+    auto workspace = AllocateCuda(workspace_bytes);
+    ASSERT_NE(out_device, nullptr);
+    ASSERT_NE(workspace, nullptr);
+    ASSERT_EQ(
+        cudaMemset(out_device.get(), 0xff, q_host.size() * sizeof(uint16_t)),
+        cudaSuccess);
+    const cudaError_t status =
+        by_token
+            ? LiteRtNvidiaLaunchGlobalAttentionTokens(
+                  q_device.get(), test_case.bf16, k_device.get(),
+                  v_device.get(), static_cast<const bool*>(mask_device.get()),
+                  launch_mask_rows, tokens, launch_rows, seq, kDepth,
+                  test_case.fill, out_device.get(), workspace.get(),
+                  /*stream=*/nullptr)
+            : LiteRtNvidiaLaunchGlobalAttention(
+                  q_device.get(), test_case.bf16, k_device.get(),
+                  v_device.get(), static_cast<const bool*>(mask_device.get()),
+                  launch_mask_rows, launch_rows, seq, kDepth, test_case.fill,
+                  out_device.get(), workspace.get(),
+                  /*stream=*/nullptr);
+    ASSERT_EQ(status, cudaSuccess);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    out->resize(q_host.size());
+    ASSERT_EQ(
+        cudaMemcpy(out->data(), out_device.get(),
+                   out->size() * sizeof(uint16_t), cudaMemcpyDeviceToHost),
+        cudaSuccess);
+  };
+
+  std::vector<uint16_t> out;
+  run(q, mask, rows, mask_rows, /*by_token=*/true, &out);
+  if (::testing::Test::HasFatalFailure()) return;
+  for (int tile = 0; tile < tokens / chunk; ++tile) {
+    // The tile's rows as a launch of its own takes them: head-major over the
+    // tile's tokens, a mask row per query row (or the one a single token or a
+    // shared mask has).
+    const int tile_mask_rows = test_case.shared_mask || chunk == 1 ? 1 : 16;
+    std::vector<uint16_t> tile_q(static_cast<size_t>(16) * kDepth);
+    std::vector<uint8_t> tile_mask(static_cast<size_t>(tile_mask_rows) * seq);
+    std::vector<int> source(16);
+    for (int r = 0; r < 16; ++r) {
+      const int token = tile * chunk + r % chunk;
+      source[r] = (r / chunk) * tokens + token;
+      std::copy_n(q.begin() + static_cast<size_t>(source[r]) * kDepth, kDepth,
+                  tile_q.begin() + static_cast<size_t>(r) * kDepth);
+      if (r < tile_mask_rows) {
+        std::copy_n(mask.begin() + static_cast<size_t>(token % mask_rows) * seq,
+                    seq, tile_mask.begin() + static_cast<size_t>(r) * seq);
+      }
+    }
+    std::vector<uint16_t> tile_out;
+    run(tile_q, tile_mask, 16, tile_mask_rows, /*by_token=*/false, &tile_out);
+    if (::testing::Test::HasFatalFailure()) return;
+    for (int r = 0; r < 16; ++r) {
+      EXPECT_EQ(std::memcmp(&out[static_cast<size_t>(source[r]) * kDepth],
+                            &tile_out[static_cast<size_t>(r) * kDepth],
+                            kDepth * sizeof(uint16_t)),
+                0)
+          << "tile=" << tile << " row=" << r;
+    }
+  }
+}
+
 TEST(GlobalAttentionTest, SupportsDepth512RowsInMultiplesOf16) {
   EXPECT_TRUE(LiteRtNvidiaGlobalAttentionSupports(16, 1, 512));
   EXPECT_TRUE(LiteRtNvidiaGlobalAttentionSupports(16, 16, 512));
@@ -354,6 +490,68 @@ TEST(GlobalAttentionTest, RowsWithoutVisibleKeysAverageTheSequence) {
   RunCase({64, 4, 900, 300, 0, 2, -1.0e4f, false});
   RunCase({256, 16, 900, 300, 0, 5, -1.0e4f, false});
   RunCase({1024, 64, 900, 300, 0, 5, -1.0e4f, false});
+}
+
+TEST(GlobalAttentionTest, TokenTilesSupportAFewTokensOfSeveralHeads) {
+  EXPECT_TRUE(LiteRtNvidiaGlobalAttentionTokensSupports(32, 4, 4, 512));
+  EXPECT_TRUE(LiteRtNvidiaGlobalAttentionTokensSupports(32, 4, 1, 512));
+  EXPECT_TRUE(LiteRtNvidiaGlobalAttentionTokensSupports(64, 4, 4, 512));
+  EXPECT_TRUE(LiteRtNvidiaGlobalAttentionTokensSupports(48, 12, 12, 512));
+  EXPECT_TRUE(LiteRtNvidiaGlobalAttentionTokensSupports(16, 2, 2, 512));
+  // Five tokens of eight heads: the fifth fills half a tile.
+  EXPECT_FALSE(LiteRtNvidiaGlobalAttentionTokensSupports(40, 5, 5, 512));
+  EXPECT_FALSE(LiteRtNvidiaGlobalAttentionTokensSupports(32, 4, 2, 512));
+  EXPECT_FALSE(LiteRtNvidiaGlobalAttentionTokensSupports(32, 4, 4, 256));
+  EXPECT_FALSE(LiteRtNvidiaGlobalAttentionTokensSupports(24, 4, 4, 512));
+  EXPECT_FALSE(LiteRtNvidiaGlobalAttentionTokensSupports(128, 4, 4, 512));
+  EXPECT_FALSE(LiteRtNvidiaGlobalAttentionTokensSupports(32, 0, 1, 512));
+  EXPECT_EQ(
+      LiteRtNvidiaGlobalAttentionTokensWorkspaceBytes(40, 5, 5, 1024, 512), 0u);
+  EXPECT_EQ(LiteRtNvidiaGlobalAttentionTokensWorkspaceBytes(32, 4, 4, 0, 512),
+            0u);
+  uint16_t sentinel = 0;
+  bool mask = true;
+  EXPECT_NE(LiteRtNvidiaLaunchGlobalAttentionTokens(
+                &sentinel, false, &sentinel, &sentinel, &mask, 5, 5, 40, 64,
+                512, -1.0e4f, &sentinel, &sentinel, nullptr),
+            cudaSuccess);
+  EXPECT_NE(LiteRtNvidiaLaunchGlobalAttentionTokens(
+                &sentinel, false, &sentinel, &sentinel, &mask, 4, 4, 32, 64,
+                512, -1.0e4f, &sentinel, nullptr, nullptr),
+            cudaSuccess);
+}
+
+TEST(GlobalAttentionTest, TokenTilesMatchTheirOwnLaunches) {
+  if (!HasComputeCapability80()) {
+    GTEST_SKIP() << "Requires compute capability 8.0 or newer.";
+  }
+  // Gemma 4 26B's verify step (8 query heads, 4 of its 5 tokens): a cache of
+  // one key tile, of one tile per block, and one the blocks walk; the tokens
+  // at the start and the end of the cache and across a 64-key tile boundary
+  // (the two row tiles then end at different key tiles).
+  RunTokenCase({8, 4, 60, 20, 0, -1, false, -1.0e4f, true});
+  RunTokenCase({8, 4, 3000, 0, 0, -1, false, -1.0e4f, true});
+  RunTokenCase({8, 4, 3000, 1500, 7, -1, false, -INFINITY, false});
+  for (const int position : {8125, 8126, 8127, 8128, 9212}) {
+    RunTokenCase({8, 4, 9216, position, 0, -1, false, -1.0e4f, true});
+  }
+  RunTokenCase({8, 4, 40000, 39996, 0, -1, false, -1.0e4f, true});
+  RunTokenCase({8, 4, 40000, 21310, 5, -1, false, -45824.0f, false});
+  // A token that sees nothing takes the whole sequence; its tile's other
+  // token and the other tile are not disturbed.
+  RunTokenCase({8, 4, 3000, 700, 0, 1, false, -1.0e4f, true});
+  RunTokenCase({8, 4, 3000, 700, 0, 2, false, -1.0e4f, false});
+  // One mask row for every token.
+  RunTokenCase({8, 4, 3000, 1000, 3, -1, true, -1.0e4f, true});
+  // Other head counts: a token per tile, an odd number of tiles (the last
+  // block owns one), tiles of 4 and 8 tokens, and rows that are in order.
+  RunTokenCase({16, 4, 3000, 2040, 0, -1, false, -1.0e4f, true});
+  RunTokenCase({16, 3, 20000, 12345, 0, -1, false, -1.0e4f, false});
+  RunTokenCase({4, 12, 3000, 250, 9, -1, false, -1.0e4f, true});
+  RunTokenCase({2, 16, 3000, 2970, 0, -1, false, -INFINITY, false});
+  RunTokenCase({1, 48, 3000, 100, 0, -1, false, -1.0e4f, true});
+  // One tile: the 16-row launch itself.
+  RunTokenCase({8, 2, 3000, 1500, 0, -1, false, -1.0e4f, true});
 }
 
 }  // namespace

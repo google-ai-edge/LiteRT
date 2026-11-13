@@ -660,6 +660,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         const auto optimize_result = context.OptimizeModel(ov_model);
 
         std::map<std::string, uint32_t> const_map;
+        bool npuw_configured = false;
         if (share_weights) {
           if (share_npu) {
             // NPU: alias+tag weights first, and enable NPUW weightless sharing
@@ -667,9 +668,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
             const size_t aliased = litert::openvino::AliasAndTagSharedConstants(
                 ov_model, weight_bank, pool_offset_of, partition_idx);
             if (aliased > 0) {
+              // Must run after OptimizeModel: it configures NPUW from what the
+              // passes classified, which is knowable only once they have run.
               LITERT_RETURN_IF_ERROR(context.ConfigureForNpuWeightSharing(
-                  npu_weights_bank_name,
-                  optimize_result.moe_is_multi_token_chunk));
+                  npu_weights_bank_name, optimize_result));
+              npuw_configured = true;
             }
           } else {
             // GPU: convert weights to Parameters bound to the shared bank at
@@ -682,6 +685,15 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                        "parameters in partition %d",
                        converted, partition_idx);
           }
+        }
+        if (!npuw_configured &&
+            optimize_result.num_sdpa_decomposed_for_hfa > 0) {
+          LITERT_LOG(LITERT_WARNING,
+                     "enable_hfa: NPUW_ATTN=HFA is set only on NPU partitions "
+                     "that share pool weights; partition %d gets its attention "
+                     "decomposed but no HFA unless NPUW_ATTN=HFA is passed "
+                     "explicitly",
+                     partition_idx);
         }
         ov::AnyMap configs = context.ConfigsMap();
 
