@@ -66,3 +66,21 @@ def openvino_configure():
             },
         ]),
     )
+
+    # Windows SDK for cross-compiling the Windows x86_64 plugins from a Linux
+    # host (--config=cross_compile_windows_x86_64). Only referenced by
+    # @intel_openvino when it does not already hold the Windows SDK, so it is
+    # never fetched on Windows hosts or for Linux/Android builds.
+    configurable_repo(
+        name = "intel_openvino_windows",
+        build_file = Label("//third_party/intel_openvino:openvino_windows.bazel"),
+        packages = json.encode([
+            {
+                "url": OPENVINO_URLS["windows"],
+                "file_extension": "zip",
+                "symlink_mapping": {
+                    "openvino": OPENVINO_DIRS["windows"],
+                },
+            },
+        ]),
+    )
