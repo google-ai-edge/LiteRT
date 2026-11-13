@@ -529,6 +529,38 @@ class QuantizerTest(parameterized.TestCase):
     srq_model_path = str(pathlib.Path(self._tmp_save_path) / 'srq_model.tflite')
     srq_result.export_model(srq_model_path)
 
+  def test_quantize_with_stream_weights_parity(self):
+    self._quantizer.load_quantization_recipe(self._test_recipe)
+    stream_output_path = pathlib.Path(self._tmp_save_path) / 'stream.tflite'
+    quant_result_stream = self._quantizer.quantize(
+        serialize_to_path=stream_output_path, stream_weights=True
+    )
+    quant_result_stream.export_model(stream_output_path, overwrite=True)
+    self.assertTrue(os.path.exists(str(stream_output_path)))
+
+    eager_quantizer = quantizer.Quantizer(
+        self._test_model_path, self._test_recipe
+    )
+    quant_result_eager = eager_quantizer.quantize(stream_weights=False)
+
+    input_data = tfl_interpreter_utils.create_random_normal_input_data(
+        self._test_model_path, num_samples=1, random_seed=0
+    )
+    validation_result = model_validator.compare_model(
+        quant_result_eager.quantized_model,
+        str(stream_output_path),
+        input_data,
+        error_metrics=[quantizer.ValidationErrorMetric.MSE],
+    )
+    for sig_key in validation_result.available_signature_keys():
+      sig_result = validation_result.get_signature_comparison_result(sig_key)
+      for output_name, errors in sig_result.output_tensors.items():
+        self.assertLess(
+            errors[quantizer.ValidationErrorMetric.MSE.value],
+            1e-10,
+            f'Mismatch for {sig_key}:{output_name}',
+        )
+
 
 class QuantizerBytearrayInputs(absltest.TestCase):
 
@@ -909,6 +941,25 @@ class CalibrationModesParityTest(parameterized.TestCase):
             1e-10,
             f'Output mismatch for {sig_key}:{output_name}',
         )
+
+  def test_model_with_duplicate_tensor_names_quantizes_successfully(self):
+    from ai_edge_litert.tools import flatbuffer_utils  # pylint: disable=g-import-not-at-top
+    from litert_quantizer.utils import tfl_flatbuffer_utils  # pylint: disable=g-import-not-at-top
+
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH)
+        / 'tests/models/two_signatures.tflite'
+    )
+    fb_model = tfl_flatbuffer_utils.read_model(model_path)
+    # Intentionally duplicate a tensor name
+    fb_model.subgraphs[0].tensors[1].name = (
+        fb_model.subgraphs[0].tensors[0].name
+    )
+    _test_recipe = recipe_utils.resolve_recipe('dynamic_wi8_afp32')
+    raw_model = flatbuffer_utils.convert_object_to_bytearray(fb_model)
+    qt = quantizer.Quantizer(raw_model, _test_recipe)
+    res = qt.quantize()
+    self.assertIsNotNone(res.quantized_model)
 
 
 if __name__ == '__main__':
