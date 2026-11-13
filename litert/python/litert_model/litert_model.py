@@ -646,15 +646,16 @@ class Model:
     """Removes subgraphs not reachable from any signature (or main subgraph).
 
     Reachability follows signatures (or subgraph 0 when the model is
-    signatureless) and `STABLEHLO_COMPOSITE` `decompositionSubgraphIndex`
-    references. Remaining `STABLEHLO_COMPOSITE` ops have their
-    `decompositionSubgraphIndex` attributes remapped to the new subgraph
-    positions. Handles to removed subgraphs, ops and tensors become invalid and
-    raise `LiteRtError` when used.
+    signatureless) and the subgraph references held by ops: control-flow
+    branches (`WHILE`, `IF`, ...), StableHLO region bodies and
+    `STABLEHLO_COMPOSITE` `decompositionSubgraphIndex`. Remaining ops have
+    their subgraph references remapped to the new subgraph positions. Handles
+    to removed subgraphs, ops and tensors become invalid and raise
+    `LiteRtError` when used.
 
     Returns:
       The number of removed subgraphs (`0` if nothing was unreachable or if
-      control-flow operators such as `WHILE` or `IF` prevented pruning).
+      the model's subgraph references are invalid or cyclic).
     """
     return self._handle.prune_unreachable_subgraphs()
 

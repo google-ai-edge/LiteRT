@@ -72,6 +72,12 @@ litert::Expected<LiteRtOp> OutlinePartition(LiteRtSubgraphT& root,
 Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
                               LiteRtSubgraph source_subgraph);
 
+// Checks the preconditions of InlineSubgraph() that depend only on
+// `destination_op` and `source_subgraph`: the same number of inputs and
+// outputs, with matching tensor types.
+Expected<void> CheckInlinable(const LiteRtOpT& destination_op,
+                              const LiteRtSubgraphT& source_subgraph);
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_COMPILER_PLUGIN_ALGO_H_
