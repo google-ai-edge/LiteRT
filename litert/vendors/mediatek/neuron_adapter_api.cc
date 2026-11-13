@@ -15,6 +15,9 @@
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 #include <dlfcn.h>
+#if defined(__ANDROID__)
+#include <sys/system_properties.h>
+#endif
 
 #include <cstdint>
 #include <memory>
@@ -24,13 +27,15 @@
 #include <vector>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#if defined(__ANDROID__)
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#endif
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "neuron/api/NeuronAdapter.h"
 
 #ifndef LITERT_NEURO_PILOT_V7_HOST_LIB_DIR
 #define LITERT_NEURO_PILOT_V7_HOST_LIB_DIR \
@@ -58,6 +63,23 @@
 
 namespace litert {
 namespace mediatek {
+namespace {
+
+#if defined(__ANDROID__)
+// Returns true if `ro.vendor.mediatek.platform` identifies a MediaTek SoC that
+// ships NeuroPilot 9 on the platform even when
+// `NeuronService_getNeuroPilotMagicNumber` returns `< 0` (e.g. MT8196/MT8196P).
+bool IsCurrentDeviceNeuroPilot9Platform() {
+  char raw_platform[PROP_VALUE_MAX] = {};
+  if (__system_property_get("ro.vendor.mediatek.platform", raw_platform) > 0) {
+    absl::string_view platform(raw_platform);
+    return platform == "MT8196" || platform == "MT8196P";
+  }
+  return false;
+}
+#endif
+
+}  // namespace
 
 NeuronAdapterApi::NeuronAdapterApi() : api_(new Api) {}
 
@@ -150,6 +172,9 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
   } else if (magic_number &&
              magic_number.Value() >= kMinMagicNumberForNeuronService) {
     so_paths.push_back("libneuronusdk_adapter.9.mtk.so");
+  } else if (IsCurrentDeviceNeuroPilot9Platform()) {
+    so_paths.push_back("libneuronusdk_adapter.9.mtk.so");
+    so_paths.push_back("libneuronusdk_adapter.mtk.so");
   } else {
     so_paths.push_back("libneuronusdk_adapter.8.mtk.so");
     so_paths.push_back("libneuronusdk_adapter.mtk.so");
