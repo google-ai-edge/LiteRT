@@ -127,12 +127,12 @@ Int4 QuantizeInt4(std::vector<float>& values, int rows, int columns) {
 // Qwen 4's hyper-connection mix at its widths in double precision, from the
 // BF16 inputs: normed, then mixed.
 struct Reference {
-  std::vector<double> normed, mixed;
+  std::vector<double> normed, mixed, extra;
 };
 
 Reference Mix(const LiteRtNvidiaHcMixParams& p, const std::vector<uint16_t>& x,
               const std::vector<float>& norm, const std::vector<float>& down,
-              const std::vector<float>& up) {
+              const std::vector<float>& up, const std::vector<float>& more) {
   const int width = p.streams * p.hidden;
   Reference ref;
   ref.normed.resize(static_cast<size_t>(p.rows) * width);
@@ -154,6 +154,13 @@ Reference Mix(const LiteRtNvidiaHcMixParams& p, const std::vector<uint16_t>& x,
             static_cast<float>(FromBf16(x[static_cast<size_t>(r) * width + k]) *
                                factor * norm[k])));
       }
+    }
+    for (int e = 0; e < p.extra; ++e) {
+      double dot = 0.0;
+      for (int k = 0; k < width; ++k) {
+        dot += more[static_cast<size_t>(e) * width + k] * xn[k];
+      }
+      ref.extra.push_back(dot);
     }
     std::vector<double> t(p.low_rank);
     for (int j = 0; j < p.low_rank; ++j) {
@@ -241,11 +248,13 @@ Timing Time(const std::function<cudaError_t(cudaStream_t)>& launch) {
           graph_ms * 1000.0f / (kGraphIterations * kGraphCalls)};
 }
 
-void Check(int rows, int hidden, int low_rank, bool int4, bool time) {
-  const LiteRtNvidiaHcMixParams p{rows,  4,     hidden,      low_rank,
-                                  0.25f, 1e-6f, int4 ? 1 : 0};
-  SCOPED_TRACE(::testing::Message() << "rows=" << rows << " hidden=" << hidden
-                                    << " low_rank=" << low_rank);
+void Check(int rows, int hidden, int low_rank, bool int4, bool time,
+           int extra = 0) {
+  const LiteRtNvidiaHcMixParams p{rows,  4,     hidden,       low_rank,
+                                  0.25f, 1e-6f, int4 ? 1 : 0, extra};
+  SCOPED_TRACE(::testing::Message()
+               << "rows=" << rows << " hidden=" << hidden
+               << " low_rank=" << low_rank << " extra=" << extra);
   ASSERT_TRUE(LiteRtNvidiaHcMixSupports(&p));
   const int width = p.streams * hidden;
   const auto to_bf16 = [](const std::vector<float>& values) {
@@ -260,24 +269,34 @@ void Check(int rows, int hidden, int low_rank, bool int4, bool time) {
   auto down =
       Fill(static_cast<size_t>(low_rank) * width, 7, -down_gain, down_gain);
   auto up = Fill(static_cast<size_t>(width) * low_rank, 11, -up_gain, up_gain);
-  CudaAllocation d_down, d_up, d_down_scales, d_up_scales;
+  // The extra projection: a few rows over the normed streams.
+  auto more =
+      Fill(static_cast<size_t>(extra) * width, 13, -down_gain, down_gain);
+  CudaAllocation d_down, d_up, d_down_scales, d_up_scales, d_more,
+      d_more_scales;
   size_t weight_bytes = 0;
   if (int4) {
     const Int4 qd = QuantizeInt4(down, low_rank, width);
     const Int4 qu = QuantizeInt4(up, width, low_rank);
+    const Int4 qm = QuantizeInt4(more, extra, width);
     d_down = Upload(qd.packed);
     d_up = Upload(qu.packed);
+    d_more = Upload(qm.packed);
     d_down_scales = Upload(qd.scales);
     d_up_scales = Upload(qu.scales);
+    d_more_scales = Upload(qm.scales);
     weight_bytes = qd.packed.size() + qu.packed.size() +
                    2 * (qd.scales.size() + qu.scales.size());
   } else {
     const auto down_bits = to_bf16(down);
     const auto up_bits = to_bf16(up);
+    const auto more_bits = to_bf16(more);
     for (size_t i = 0; i < down.size(); ++i) down[i] = FromBf16(down_bits[i]);
     for (size_t i = 0; i < up.size(); ++i) up[i] = FromBf16(up_bits[i]);
+    for (size_t i = 0; i < more.size(); ++i) more[i] = FromBf16(more_bits[i]);
     d_down = Upload(down_bits);
     d_up = Upload(up_bits);
+    d_more = Upload(more_bits);
     weight_bytes = 2 * (down.size() + up.size());
   }
   auto d_x = Upload(x);
@@ -286,6 +305,8 @@ void Check(int rows, int hidden, int low_rank, bool int4, bool time) {
       static_cast<size_t>(rows) * hidden, 0x7fc0));  // NaN until written
   auto d_normed =
       Upload(std::vector<uint16_t>(static_cast<size_t>(rows) * width, 0x7fc0));
+  auto d_extra =
+      Upload(std::vector<uint16_t>(static_cast<size_t>(rows) * extra, 0x7fc0));
   // NaNs where the down projection's pieces go: a CTA past the barrier
   // before every piece is written shows.
   auto d_workspace =
@@ -293,23 +314,27 @@ void Check(int rows, int hidden, int low_rank, bool int4, bool time) {
   auto d_state = Upload(std::vector<uint8_t>(LiteRtNvidiaHcMixStateBytes()));
   void* state = d_state.get();
   const auto launch = [&](cudaStream_t stream) {
-    return LiteRtNvidiaLaunchHcMix(
+    return LiteRtNvidiaLaunchHcMixExtra(
         &p, static_cast<const __nv_bfloat16*>(d_x.get()),
         static_cast<const float*>(d_norm.get()), d_down.get(),
         static_cast<const __half*>(d_down_scales.get()), d_up.get(),
-        static_cast<const __half*>(d_up_scales.get()),
+        static_cast<const __half*>(d_up_scales.get()), d_more.get(),
+        static_cast<const __half*>(d_more_scales.get()),
         static_cast<__nv_bfloat16*>(d_mixed.get()),
-        static_cast<__nv_bfloat16*>(d_normed.get()), state, d_workspace.get(),
+        static_cast<__nv_bfloat16*>(d_normed.get()),
+        static_cast<__nv_bfloat16*>(d_extra.get()), state, d_workspace.get(),
         stream);
   };
   ASSERT_EQ(launch(nullptr), cudaSuccess);
   ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
-  const Reference want = Mix(p, x, norm, down, up);
+  const Reference want = Mix(p, x, norm, down, up, more);
   const auto normed = Download<uint16_t>(d_normed.get(), want.normed.size());
   const auto mixed = Download<uint16_t>(d_mixed.get(), want.mixed.size());
+  const auto extras = Download<uint16_t>(d_extra.get(), want.extra.size());
   // One BF16 rounding of each output, about 2e-3 of the RMS.
   EXPECT_LT(RelativeError(normed, want.normed), 4e-3);
   EXPECT_LT(RelativeError(mixed, want.mixed), 4e-3);
+  if (extra > 0) EXPECT_LT(RelativeError(extras, want.extra), 4e-3);
   // The barrier's state is zero again, and a second launch gives the same
   // bits; so do the two launches without a barrier.
   EXPECT_EQ(Download<uint32_t>(d_state.get(), 2), std::vector<uint32_t>(2, 0));
@@ -330,6 +355,8 @@ void Check(int rows, int hidden, int low_rank, bool int4, bool time) {
     EXPECT_EQ(Download<uint16_t>(d_normed.get(), normed.size()), normed)
         << "barrier " << barrier;
     EXPECT_EQ(Download<uint16_t>(d_mixed.get(), mixed.size()), mixed)
+        << "barrier " << barrier;
+    EXPECT_EQ(Download<uint16_t>(d_extra.get(), extras.size()), extras)
         << "barrier " << barrier;
   }
   state = d_state.get();
@@ -375,6 +402,10 @@ TEST(HyperConnectionTest, MixMatchesReference) {
     // Wider streams, and a low rank that leaves a warp's lanes idle.
     Check(2, 4096, 512, int4, false);
     Check(1, 8192, 64, int4, false);
+    // With the combine's injection projection (hc rows), and more rows.
+    Check(1, 2560, 320, int4, false, /*extra=*/4);
+    Check(3, 2560, 320, int4, false, /*extra=*/4);
+    Check(4, 256, 32, int4, false, /*extra=*/16);
   }
 }
 
@@ -384,6 +415,7 @@ TEST(HyperConnectionTest, TimesTheMix) {
   }
   Check(1, 2560, 320, /*int4=*/false, true);
   Check(1, 2560, 320, /*int4=*/true, true);
+  Check(1, 2560, 320, /*int4=*/true, true, /*extra=*/4);
 }
 
 }  // namespace
