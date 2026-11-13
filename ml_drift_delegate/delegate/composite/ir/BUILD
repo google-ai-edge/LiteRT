@@ -255,6 +255,7 @@ cc_library(
         "//ml_drift_delegate/delegate/composite:sdpa_transposed_kernel",
         "//ml_drift_delegate/delegate/composite:short_conv_step_kernel",
         "//ml_drift_delegate/delegate/composite:symmetric_quantized_fully_connected",
+        "//ml_drift_delegate/delegate/extension:scatter_nd_kernel",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",

@@ -1187,6 +1187,7 @@ cc_library(
         ":short_conv_step_kernel",
         ":short_conv_step_parser",
         ":symmetric_quantized_fully_connected",
+        "//ml_drift_delegate/delegate/extension:scatter_nd_kernel",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
