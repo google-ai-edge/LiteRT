@@ -28,7 +28,8 @@ namespace reference_ops {
 
 inline bool StringRefEqualFn(const StringRef& lhs, const StringRef& rhs) {
   if (lhs.len != rhs.len) return false;
-  for (int i = 0; i < lhs.len; ++i) {
+  if (lhs.len > 0 && (lhs.str == nullptr || rhs.str == nullptr)) return false;
+  for (size_t i = 0; i < lhs.len; ++i) {
     if (lhs.str[i] != rhs.str[i]) return false;
   }
   return true;
