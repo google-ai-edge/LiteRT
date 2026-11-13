@@ -395,3 +395,16 @@ gemma4_mixed48_b64 = lambda: {
         )
     ),
 }
+
+# Qwen3.5 (hybrid GatedDeltaNet + attention) mixed 4/8-bit quantization for
+# single-model LiteRT-LM exports from litert_torch `export_hf`: int4
+# blockwise-32 weights, with int8 channelwise for the projections that write
+# back to the residual stream in every decoder layer (MLP `down_proj`,
+# GatedDeltaNet `out_proj` and attention `o_proj`), which recovers most of the
+# int4 accuracy loss of Qwen3.5-0.8B. The tied embedding / LM head stays int4:
+# it is the largest weight, and int8 there costs the most decode speed. The
+# regex matches the op output names that `export_hf` emits for Qwen3.5.
+qwen3_5_mixed48_b32 = lambda: dynamic_wi4b32_afp32() + dynamic_wi8c_afp32(
+    regex=r'Linear_(down|out|o)_proj',
+    operation_name=TFLOperationName.FULLY_CONNECTED,
+)
