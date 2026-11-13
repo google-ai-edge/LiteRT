@@ -282,12 +282,32 @@ litert_accelerator_library(
 #     ],
 # )
 #
+# cc_binary(
+#     name = "libfake_OpenCL.so",
+#     testonly = 1,
+#     srcs = ["fake_opencl.cc"],
+#     linkopts = ["-Wl,-soname,libOpenCL.so"],
+#     linkshared = 1,
+#     tags = [
+#         "noandroid",
+#         "noios",
+#         "nomacos",
+#         "notap",
+#         "nowindows",
+#     ],
+#     deps = [
+#         "@com_google_absl//absl/base:core_headers",
+#         "@opencl_headers",
+#     ],
+# )
+#
 # cc_test(
 #     name = "ml_drift_gpu_accelerator_optional_dawn_test",
 #     srcs = ["ml_drift_gpu_accelerator_optional_dawn_test.cc"],
 #     data = [
 #         ":libEGL.so.1",
 #         ":libGLESv2.so.2",
+#         ":libfake_OpenCL.so",
 #         ":ml_drift_gpu_accelerator_so",
 #         "//ml_drift_delegate/delegate:libfake_webgpu_dawn.so",
 #     ],
