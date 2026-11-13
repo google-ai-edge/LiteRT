@@ -36,6 +36,7 @@ using ::testing::ElementsAre;
 using ::testing::FloatEq;
 using ::testing::IsEmpty;
 using ::testing::Not;
+using ::testing::VariantWith;
 
 TEST(Gemma3SafetensorLoaderTest, AbslFlagParseAndUnparse) {
   Gemma3QuantizedLoadMode mode = Gemma3QuantizedLoadMode::kPreserveQuantized;
@@ -190,7 +191,8 @@ TEST(Gemma3SafetensorLoaderTest,
       const PerChannelAffineQuantization& pcq,
       preserved.GetQuantization()->As<PerChannelAffineQuantization>());
   EXPECT_THAT(pcq.scales, ElementsAre(FloatEq(0.5f), FloatEq(0.25f)));
-  EXPECT_THAT(pcq.zero_points, ElementsAre(2, -4));
+  EXPECT_THAT(pcq.zero_points,
+              VariantWith<std::vector<int64_t>>(ElementsAre(2, -4)));
   EXPECT_EQ(pcq.quantized_dimension, 0);
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(

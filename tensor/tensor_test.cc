@@ -15,10 +15,12 @@ limitations under the License.
 
 #include "tensor/tensor.h"
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -227,7 +229,7 @@ TEST(TensorTest, SetQuantizationWorks) {
   Tensor a;
   auto quantization = std::make_shared<PerChannelAffineQuantization>();
   quantization->scales = {0.5f};
-  quantization->zero_points = {128};
+  quantization->zero_points = std::vector<int64_t>{128};
   quantization->quantized_dimension = 1;
 
   a.SetQuantization(quantization);

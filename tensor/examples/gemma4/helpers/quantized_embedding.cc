@@ -198,8 +198,6 @@ class QuantizedGemmaEmbeddingTable : public GemmaEmbeddingTable {
             static_cast<size_t>(row) * num_blocks_per_row;
         const float* row_scales =
             blockwise_quant_->scales.data() + row_block_offset;
-        const size_t num_zp = blockwise_quant_->zero_points.size();
-        const int64_t* zp_data = blockwise_quant_->zero_points.data();
 
         for (int c = 0; c < num_cols; ++c) {
           const int col = col_start + c;
@@ -207,29 +205,20 @@ class QuantizedGemmaEmbeddingTable : public GemmaEmbeddingTable {
                                                 col, bits, fields_per_byte);
           const size_t block_in_row = col / block_size;
           const size_t block_idx = row_block_offset + block_in_row;
-          int64_t zp = 0;
-          if (num_zp == 1) {
-            zp = zp_data[0];
-          } else if (block_idx < num_zp) {
-            zp = zp_data[block_idx];
-          }
+          // Integer or float zero point.
+          const float zp = blockwise_quant_->ZeroPointAt(block_idx);
           const float scale = row_scales[block_in_row];
-          dst[c] = static_cast<float>(val - zp) * scale;
+          dst[c] = (static_cast<float>(val) - zp) * scale;
         }
       } else if (per_channel_quant_ != nullptr) {
         const float scale = per_channel_quant_->scales[row];
-        const size_t num_zp = per_channel_quant_->zero_points.size();
-        int64_t zp = 0;
-        if (num_zp == 1) {
-          zp = per_channel_quant_->zero_points[0];
-        } else if (static_cast<size_t>(row) < num_zp) {
-          zp = per_channel_quant_->zero_points[row];
-        }
+        // Integer or float zero point.
+        const float zp = per_channel_quant_->ZeroPointAt(row);
         for (int c = 0; c < num_cols; ++c) {
           const int8_t val =
               ExtractPackedField(raw_bytes + row_byte_offset, col_start + c,
                                  bits, fields_per_byte);
-          dst[c] = static_cast<float>(val - zp) * scale;
+          dst[c] = (static_cast<float>(val) - zp) * scale;
         }
       }
     } else if (type_ == Type::kI8) {
@@ -238,23 +227,17 @@ class QuantizedGemmaEmbeddingTable : public GemmaEmbeddingTable {
 
       if (per_channel_quant_ != nullptr) {
         const float scale = per_channel_quant_->scales[row];
-        const size_t num_zp = per_channel_quant_->zero_points.size();
-        int64_t zp = 0;
-        if (num_zp == 1) {
-          zp = per_channel_quant_->zero_points[0];
-        } else if (static_cast<size_t>(row) < num_zp) {
-          zp = per_channel_quant_->zero_points[row];
-        }
+        // Integer or float zero point.
+        const float zp = per_channel_quant_->ZeroPointAt(row);
         for (int c = 0; c < num_cols; ++c) {
-          dst[c] = static_cast<float>(int8_bytes[row_offset + c] - zp) * scale;
+          dst[c] =
+              (static_cast<float>(int8_bytes[row_offset + c]) - zp) * scale;
         }
       } else if (blockwise_quant_ != nullptr) {
         const int block_size = blockwise_quant_->block_size;
         const int num_blocks_per_row = emb_dim_ / block_size;
         const float* row_scales = blockwise_quant_->scales.data() +
                                   static_cast<size_t>(row) * num_blocks_per_row;
-        const size_t num_zp = blockwise_quant_->zero_points.size();
-        const int64_t* zp_data = blockwise_quant_->zero_points.data();
         const size_t row_block_offset =
             static_cast<size_t>(row) * num_blocks_per_row;
 
@@ -262,14 +245,11 @@ class QuantizedGemmaEmbeddingTable : public GemmaEmbeddingTable {
           const int col = col_start + c;
           const size_t block_in_row = col / block_size;
           const size_t block_idx = row_block_offset + block_in_row;
-          int64_t zp = 0;
-          if (num_zp == 1) {
-            zp = zp_data[0];
-          } else if (block_idx < num_zp) {
-            zp = zp_data[block_idx];
-          }
+          // Integer or float zero point.
+          const float zp = blockwise_quant_->ZeroPointAt(block_idx);
           const float scale = row_scales[block_in_row];
-          dst[c] = static_cast<float>(int8_bytes[row_offset + c] - zp) * scale;
+          dst[c] =
+              (static_cast<float>(int8_bytes[row_offset + c]) - zp) * scale;
         }
       }
     }

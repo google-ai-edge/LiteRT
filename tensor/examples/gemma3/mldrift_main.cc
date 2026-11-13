@@ -348,7 +348,6 @@ absl::Status CpuEmbeddingLookup(const std::vector<int32_t>& input_ids,
       auto quant,
       emb_weights.quantization->As<const PerChannelAffineQuantization>());
   const float* scales = quant.scales.data();
-  const auto* zero_points = quant.zero_points.data();
 
   int vocab_size = emb_weights.shape[0];
   int emb_dim = emb_weights.shape[1];
@@ -361,7 +360,8 @@ absl::Status CpuEmbeddingLookup(const std::vector<int32_t>& input_ids,
       id = 0;
     }
     float scale = scales[id];
-    float zp = static_cast<float>(zero_points[id]);
+    // Integer or float zero point.
+    float zp = quant.ZeroPointAt(id);
 
     const int8_t* row_packed = packed_data + id * (emb_dim / 2);
     float* row_out = output_data + t * emb_dim;
@@ -978,7 +978,7 @@ absl::Status Run(absl::string_view weights_path,
         if (pc_quant) {
           ABSL_LOG(INFO) << "Embedding table quantization: "
                          << "scales=" << pc_quant->scales.size()
-                         << " zero_points=" << pc_quant->zero_points.size()
+                         << " zero_points=" << pc_quant->NumZeroPoints()
                          << " quant_dim=" << pc_quant->quantized_dimension;
           if (!pc_quant->scales.empty()) {
             ABSL_LOG(INFO) << "Embedding table first scale: "

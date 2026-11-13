@@ -68,6 +68,7 @@ using ::testing::Pointee;
 using ::testing::SizeIs;
 using ::testing::StrEq;
 using ::testing::UnorderedElementsAre;
+using ::testing::VariantWith;
 using ::testing::litert::AlignmentIs;
 using ::tflite::TfLiteArrayIs;
 
@@ -1914,7 +1915,8 @@ TEST(SerializationTest, ExpandsSharedZeroPointWithoutMutatingGraph) {
   TensorTf output = Dequantize(input);
 
   ASSERT_THAT(Save({output}, path), IsOk());
-  EXPECT_THAT(quantization->zero_points, ElementsAre(0));
+  EXPECT_THAT(quantization->zero_points,
+              VariantWith<std::vector<int64_t>>(ElementsAre(0)));
 
   std::unique_ptr<tflite::FlatBufferModel> model =
       tflite::FlatBufferModel::BuildFromFile(path.c_str());

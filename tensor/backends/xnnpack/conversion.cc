@@ -193,12 +193,17 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
               channelwise_zp_ptr))
           << "Could not define a new channelwise quantized int2 tensor value.";
     } else if (pcq.scales.size() == 1 && info.type != Type::kI4 &&
-               !pcq.HasNonZeroFloatZeroPoints()) {
+               (pcq.IntegerZeroPoints() != nullptr ||
+                !pcq.HasNonZeroZeroPoints())) {
+      // Integer zero points, or all-zero float ones. Non-zero float zero points
+      // are dequantized below.
+      const std::vector<int64_t>* zero_points = pcq.IntegerZeroPoints();
       LRT_TENSOR_RETURN_IF_ERROR(xnn_define_quantized_tensor_value(
           sg, GetXnnpackType(value),
-          pcq.zero_points.empty() ? 0 : pcq.zero_points[0], pcq.scales[0],
-          dims.size(), dims.empty() ? nullptr : dims.data(), data_ptr,
-          external_id, value.flags, &value.id))
+          zero_points == nullptr || zero_points->empty() ? 0
+                                                         : (*zero_points)[0],
+          pcq.scales[0], dims.size(), dims.empty() ? nullptr : dims.data(),
+          data_ptr, external_id, value.flags, &value.id))
           << "Could not define a new quantized tensor value.";
     } else {
       if (info.type == Type::kI4 && pcq.HasNonZeroZeroPoints()) {
@@ -233,7 +238,9 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
   } else if (auto maybe_bwq = info.quantization->As<BlockwiseQuantization>();
              maybe_bwq.ok()) {
     const auto& bwq = maybe_bwq.value();
-    if (bwq.HasNonZeroFloatZeroPoints()) {
+    // Null for float zero points, which are only supported when all zero.
+    const std::vector<int64_t>* zero_points = bwq.IntegerZeroPoints();
+    if (zero_points == nullptr && bwq.HasNonZeroZeroPoints()) {
       return absl::UnimplementedError(absl::StrCat(
           info.name,
           ": XNNPACK does not support floating-point blockwise zero points."));
@@ -255,7 +262,8 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
     }
     graph_->fp16_buffers().emplace_back(bwq.scales.begin(), bwq.scales.end());
     const void* scale_ptr = graph_->fp16_buffers().back().data();
-    int32_t zero_point = bwq.zero_points.empty() ? 0 : bwq.zero_points[0];
+    int32_t zero_point =
+        zero_points == nullptr || zero_points->empty() ? 0 : (*zero_points)[0];
     LRT_TENSOR_RETURN_IF_ERROR(xnn_define_blockwise_quantized_tensor_value_v2(
         sg, GetXnnpackType(value), zero_point, scale_ptr, dims.size(),
         bwq.quantized_dimension, bwq.block_size,

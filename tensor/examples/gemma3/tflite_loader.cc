@@ -266,7 +266,11 @@ absl::StatusOr<TensorHandle> TfliteLoader::LoadTensor(
           "Quantization is not PerChannelAffineQuantization");
     }
     const auto& scales = pc_quant->scales;
-    const auto& zero_points = pc_quant->zero_points;
+    if (pc_quant->HasFloatZeroPoints()) {
+      return absl::UnimplementedError(
+          "Dequantization with float zero points is not supported");
+    }
+    const std::vector<int64_t>& zero_points = *pc_quant->IntegerZeroPoints();
     int quantized_dimension = pc_quant->quantized_dimension;
 
     if (scales.empty()) {
@@ -447,10 +451,17 @@ absl::StatusOr<TensorHandle> TfliteLoader::LoadTensorWithSlice(
         if (pc_quant->quantized_dimension == 0) {
           std::vector<float> sliced_scales(pc_quant->scales.begin() + start_row,
                                            pc_quant->scales.begin() + end_row);
+          if (pc_quant->HasFloatZeroPoints()) {
+            return absl::UnimplementedError(
+                "Slicing quantization with float zero points is not "
+                "supported");
+          }
+          const std::vector<int64_t>& zero_points =
+              *pc_quant->IntegerZeroPoints();
           std::vector<int64_t> sliced_zero_points;
-          if (!pc_quant->zero_points.empty()) {
-            sliced_zero_points.assign(pc_quant->zero_points.begin() + start_row,
-                                      pc_quant->zero_points.begin() + end_row);
+          if (!zero_points.empty()) {
+            sliced_zero_points.assign(zero_points.begin() + start_row,
+                                      zero_points.begin() + end_row);
           }
           quantization = std::make_shared<PerChannelAffineQuantization>(
               std::move(sliced_scales), std::move(sliced_zero_points), 0);
@@ -488,7 +499,11 @@ absl::StatusOr<TensorHandle> TfliteLoader::LoadTensorWithSlice(
           "Quantization is not PerChannelAffineQuantization");
     }
     const auto& scales = pc_quant->scales;
-    const auto& zero_points = pc_quant->zero_points;
+    if (pc_quant->HasFloatZeroPoints()) {
+      return absl::UnimplementedError(
+          "Dequantization with float zero points is not supported");
+    }
+    const std::vector<int64_t>& zero_points = *pc_quant->IntegerZeroPoints();
 
     if (scales.empty()) {
       return absl::InvalidArgumentError("Quantization scales are empty");

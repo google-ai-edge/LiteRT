@@ -84,24 +84,54 @@ struct Quantization {
   }
 };
 
+// The zero points of a quantized tensor: either integers or floats (e.g.
+// `-0.5f` for centered INT2). Holding exactly one kind makes it impossible to
+// set both, so every reader has to handle each kind explicitly. An empty
+// vector (the default) means symmetric quantization.
+using ZeroPoints = std::variant<std::vector<int64_t>, std::vector<float>>;
+
+// Returns the number of zero points.
+inline size_t NumZeroPoints(const ZeroPoints& zero_points) {
+  return std::visit([](const auto& zps) { return zps.size(); }, zero_points);
+}
+
+// Returns the zero point of channel or block `idx` as a float: the only zero
+// point if there is one, 0 if there are none or `idx` is out of range.
+inline float ZeroPointAt(const ZeroPoints& zero_points, size_t idx) {
+  return std::visit(
+      [idx](const auto& zps) {
+        if (zps.empty()) return 0.0f;
+        if (zps.size() == 1) return static_cast<float>(zps[0]);
+        return idx < zps.size() ? static_cast<float>(zps[idx]) : 0.0f;
+      },
+      zero_points);
+}
+
+// Returns true if any zero point is non-zero.
+inline bool HasNonZeroZeroPoints(const ZeroPoints& zero_points) {
+  return std::visit(
+      [](const auto& zps) {
+        for (const auto zp : zps) {
+          if (zp != 0) return true;
+        }
+        return false;
+      },
+      zero_points);
+}
+
 // Holds quantization parameters for a tensor.
 //
 // Dequantization formula for element `i` in channel `c`:
 //   w = scales[c] * (q_signed[i] - ZeroPointAt(c))
-// where `ZeroPointAt(c)` reads `float_zero_points` when non-empty (exact
-// floating-point zero-point, e.g. `-0.5f` for centered INT2), otherwise
-// `zero_points`.
 struct PerChannelAffineQuantization : Quantization {
   PerChannelAffineQuantization() = default;
 
   PerChannelAffineQuantization(std::vector<float> scales,
-                               std::vector<int64_t> zero_points,
-                               int quantized_dimension = 0,
-                               std::vector<float> float_zero_points = {})
+                               ZeroPoints zero_points,
+                               int quantized_dimension = 0)
       : scales(std::move(scales)),
         zero_points(std::move(zero_points)),
-        quantized_dimension(quantized_dimension),
-        float_zero_points(std::move(float_zero_points)) {}
+        quantized_dimension(quantized_dimension) {}
 
   internal::TypeId GetTypeId() const override {
     return internal::TypeId::Get<PerChannelAffineQuantization>();
@@ -110,61 +140,41 @@ struct PerChannelAffineQuantization : Quantization {
     return id == internal::TypeId::Get<PerChannelAffineQuantization>();
   }
 
+  // Returns the integer zero points, or null if they are floats.
+  const std::vector<int64_t>* IntegerZeroPoints() const {
+    return std::get_if<std::vector<int64_t>>(&zero_points);
+  }
+  // Returns the float zero points, or null if they are integers.
+  const std::vector<float>* FloatZeroPoints() const {
+    return std::get_if<std::vector<float>>(&zero_points);
+  }
+  bool HasFloatZeroPoints() const { return FloatZeroPoints() != nullptr; }
+  size_t NumZeroPoints() const { return graph::NumZeroPoints(zero_points); }
   float ZeroPointAt(size_t idx) const {
-    if (!float_zero_points.empty()) {
-      return float_zero_points.size() == 1 ? float_zero_points[0]
-                                           : (idx < float_zero_points.size()
-                                                  ? float_zero_points[idx]
-                                                  : 0.0f);
-    }
-    if (!zero_points.empty()) {
-      return static_cast<float>(
-          zero_points.size() == 1
-              ? zero_points[0]
-              : (idx < zero_points.size() ? zero_points[idx] : int64_t{0}));
-    }
-    return 0.0f;
+    return graph::ZeroPointAt(zero_points, idx);
   }
-
-  bool HasNonZeroFloatZeroPoints() const {
-    for (float zp : float_zero_points) {
-      if (zp != 0.0f) return true;
-    }
-    return false;
-  }
-
   bool HasNonZeroZeroPoints() const {
-    if (HasNonZeroFloatZeroPoints()) return true;
-    for (int64_t zp : zero_points) {
-      if (zp != 0) return true;
-    }
-    return false;
+    return graph::HasNonZeroZeroPoints(zero_points);
   }
 
   std::vector<float> scales;
-  std::vector<int64_t> zero_points;
+  ZeroPoints zero_points;
   int quantized_dimension = 0;
-  std::vector<float> float_zero_points;
 };
 
 // Holds blockwise quantization parameters for a tensor.
 //
 // Dequantization formula for element `i` in block `b`:
 //   w = scales[b] * (q_signed[i] - ZeroPointAt(b))
-// where `ZeroPointAt(b)` reads `float_zero_points` when non-empty, otherwise
-// `zero_points`.
 struct BlockwiseQuantization : Quantization {
   BlockwiseQuantization() = default;
 
-  BlockwiseQuantization(std::vector<float> scales,
-                        std::vector<int64_t> zero_points, int block_size,
-                        int quantized_dimension = 0,
-                        std::vector<float> float_zero_points = {})
+  BlockwiseQuantization(std::vector<float> scales, ZeroPoints zero_points,
+                        int block_size, int quantized_dimension = 0)
       : scales(std::move(scales)),
         zero_points(std::move(zero_points)),
         block_size(block_size),
-        quantized_dimension(quantized_dimension),
-        float_zero_points(std::move(float_zero_points)) {}
+        quantized_dimension(quantized_dimension) {}
 
   internal::TypeId GetTypeId() const override {
     return internal::TypeId::Get<BlockwiseQuantization>();
@@ -173,42 +183,27 @@ struct BlockwiseQuantization : Quantization {
     return id == internal::TypeId::Get<BlockwiseQuantization>();
   }
 
+  // Returns the integer zero points, or null if they are floats.
+  const std::vector<int64_t>* IntegerZeroPoints() const {
+    return std::get_if<std::vector<int64_t>>(&zero_points);
+  }
+  // Returns the float zero points, or null if they are integers.
+  const std::vector<float>* FloatZeroPoints() const {
+    return std::get_if<std::vector<float>>(&zero_points);
+  }
+  bool HasFloatZeroPoints() const { return FloatZeroPoints() != nullptr; }
+  size_t NumZeroPoints() const { return graph::NumZeroPoints(zero_points); }
   float ZeroPointAt(size_t idx) const {
-    if (!float_zero_points.empty()) {
-      return float_zero_points.size() == 1 ? float_zero_points[0]
-                                           : (idx < float_zero_points.size()
-                                                  ? float_zero_points[idx]
-                                                  : 0.0f);
-    }
-    if (!zero_points.empty()) {
-      return static_cast<float>(
-          zero_points.size() == 1
-              ? zero_points[0]
-              : (idx < zero_points.size() ? zero_points[idx] : int64_t{0}));
-    }
-    return 0.0f;
+    return graph::ZeroPointAt(zero_points, idx);
   }
-
-  bool HasNonZeroFloatZeroPoints() const {
-    for (float zp : float_zero_points) {
-      if (zp != 0.0f) return true;
-    }
-    return false;
-  }
-
   bool HasNonZeroZeroPoints() const {
-    if (HasNonZeroFloatZeroPoints()) return true;
-    for (int64_t zp : zero_points) {
-      if (zp != 0) return true;
-    }
-    return false;
+    return graph::HasNonZeroZeroPoints(zero_points);
   }
 
   std::vector<float> scales;
-  std::vector<int64_t> zero_points;
+  ZeroPoints zero_points;
   int block_size = 0;
   int quantized_dimension = 0;
-  std::vector<float> float_zero_points;
 };
 
 using Shape = std::vector<int32_t>;

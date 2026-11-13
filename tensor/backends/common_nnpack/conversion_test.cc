@@ -158,9 +158,9 @@ TEST(CommonNnpackConversionTest,
   EXPECT_THAT(
       DequantizeTwoByTwo(Type::kI8,
                          std::make_shared<graph::PerChannelAffineQuantization>(
-                             std::vector<float>{0.5f}, std::vector<int64_t>{},
-                             /*quantized_dimension=*/0,
-                             /*float_zero_points=*/std::vector<float>{1.0f})),
+                             std::vector<float>{0.5f},
+                             /*zero_points=*/std::vector<float>{1.0f},
+                             /*quantized_dimension=*/0)),
       absl_testing::IsOkAndHolds(
           Pointwise(FloatEq(), {0.5f, 1.5f, 0.0f, 1.0f})));
 }

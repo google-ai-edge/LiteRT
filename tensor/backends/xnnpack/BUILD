@@ -136,6 +136,7 @@ cc_test(
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/backends/testing:numerical_test_suite",
+        "//tensor/internal:graph",
         "//tensor/runners/xnnpack:runner",
         "//tensor/utils:macros",
         "//tensor/utils:matchers",

@@ -434,7 +434,7 @@ TEST_F(MlDriftConversionNumericalTest, DequantizeOp) {
   TensorMLD quant_input({.type = Type::kI8, .shape = {1, 2, 2, 1}});
   auto quant_params = std::make_shared<PerChannelAffineQuantization>();
   quant_params->scales = {0.25f};
-  quant_params->zero_points = {0};
+  quant_params->zero_points = std::vector<int64_t>{0};
   quant_input.SetQuantization(quant_params);
   TensorMLD output = Dequantize(quant_input);
   RunTest(output, {{quant_input, std::vector<int8_t>{1, 2, -1, -2}}},
