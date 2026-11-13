@@ -69,8 +69,7 @@ NB_MODULE(converter_api_ext, m) {
               &litert::ConvertToTFLConfig::qdq_conversion_mode,
               "Quantization mode: 'NONE', 'STATIC', 'DYNAMIC', 'STRICT'")
 
-      .def_rw("strict_qdq_mode",
-              &litert::ConvertToTFLConfig::strict_qdq_mode,
+      .def_rw("strict_qdq_mode", &litert::ConvertToTFLConfig::strict_qdq_mode,
               "Enables strict QDQ mode")
 
       .def_rw("unsafe_fuse_dynamic_shaped_broadcast",
@@ -80,9 +79,26 @@ NB_MODULE(converter_api_ext, m) {
       .def_rw("enable_x64", &litert::ConvertToTFLConfig::enable_x64,
               "Allows x64 types in the model")
 
-      .def_rw("unsafe_single_batch_rank_reduction",
-            &litert::ConvertToTFLConfig::unsafe_single_batch_rank_reduction,
-            "Allows single batch rank reduction");
+      .def_rw("rank_reduction", &litert::ConvertToTFLConfig::rank_reduction,
+              "Runs the rank reduction pass (assumes the exported batch size)")
+
+      .def_rw("unsafe_gpu_compatibility",
+              &litert::ConvertToTFLConfig::unsafe_gpu_compatibility,
+              "Runs the GPU compatibility pass (GPU-only rewrites)")
+
+      // Deprecated: the former name of the two flags above, which it set
+      // together. Reads true only if both are set.
+      .def_prop_rw(
+          "unsafe_single_batch_rank_reduction",
+          [](const litert::ConvertToTFLConfig& c) {
+            return c.rank_reduction && c.unsafe_gpu_compatibility;
+          },
+          [](litert::ConvertToTFLConfig& c, bool v) {
+            c.rank_reduction = v;
+            c.unsafe_gpu_compatibility = v;
+          },
+          "Deprecated alias for rank_reduction + "
+          "unsafe_gpu_compatibility");
 
   m.def(
       "prepare_mlir_context",
