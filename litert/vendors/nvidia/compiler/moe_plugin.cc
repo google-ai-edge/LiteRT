@@ -755,9 +755,9 @@ bool FillArena(const MoeExpertSource& source, const ArenaLayout& layout,
   return !on_device || staging.Wait(error);
 }
 
-// Where the kernels find the pieces.
+// Where the kernels find the pieces, and how they are to read them.
 bool SetArenaPointers(const MoeExpertSource& source, const ArenaLayout& layout,
-                      Arena* arena, std::string* error) {
+                      bool group_rows, Arena* arena, std::string* error) {
   void* device_base = arena->memory;
   if (!arena->on_device &&
       cudaHostGetDevicePointer(&device_base, arena->memory, 0) != cudaSuccess) {
@@ -784,7 +784,8 @@ bool SetArenaPointers(const MoeExpertSource& source, const ArenaLayout& layout,
       layout.compact ? device_bytes + layout.max_offsets[1] : nullptr,
       layout.compact ? device_bytes + layout.max_offsets[2] : nullptr,
       layout.compact ? 1 : 0,
-      layout.expert_major ? 1 : 0};
+      layout.expert_major ? 1 : 0,
+      group_rows ? 1 : 0};
   return true;
 }
 
@@ -820,6 +821,23 @@ bool ExpertMajorArenas() {
   return value == nullptr || value[0] == '\0' || std::strcmp(value, "0") != 0;
 }
 
+// Whether the kernels group a verify step's rows by expert
+// (LiteRtNvidiaMoeArena::group_rows): where the device is an integrated GPU,
+// which reads its weights at the host's memory bandwidth, so that a verify
+// step's time is the bytes it reads (the RTX Spark); not on a discrete GPU,
+// where grouping measured slower (the RTX 5080: speculative decoding by 9 to
+// 13%). LITERT_NVIDIA_MOE_GROUP_ROWS=1 or 0 decides instead, to compare.
+bool GroupRows() {
+  const char* value = std::getenv("LITERT_NVIDIA_MOE_GROUP_ROWS");
+  if (value != nullptr && value[0] != '\0') return std::strcmp(value, "0") != 0;
+  int device = 0;
+  int integrated = 0;
+  return cudaGetDevice(&device) == cudaSuccess &&
+         cudaDeviceGetAttribute(&integrated, cudaDevAttrIntegrated, device) ==
+             cudaSuccess &&
+         integrated != 0;
+}
+
 // Loads the arenas of `loads`, several at a time, and returns the number of
 // threads that loaded them.
 int LoadArenas(std::vector<ArenaLoad>& loads) {
@@ -840,6 +858,7 @@ int LoadArenas(std::vector<ArenaLoad>& loads) {
   const bool to_device =
       placement != nullptr && std::strcmp(placement, "device") == 0;
   const bool expert_major = ExpertMajorArenas();
+  const bool group_rows = GroupRows();
   // Placement: device while a reserve stays free, pinned host otherwise.
   // Decided for one arena after the other, in the order given, each seeing
   // the device memory the ones before it took, before anything is loaded.
@@ -899,8 +918,8 @@ int LoadArenas(std::vector<ArenaLoad>& loads) {
           !FillArena(load.source, load.layout, load.experts, load.model_dim,
                      load.hidden_dim, &context, load.arena.get(),
                      &load.error) ||
-          !SetArenaPointers(load.source, load.layout, load.arena.get(),
-                            &load.error)) {
+          !SetArenaPointers(load.source, load.layout, group_rows,
+                            load.arena.get(), &load.error)) {
         // The copies under way still write the arena.
         std::string ignored;
         context.staging.Wait(&ignored);

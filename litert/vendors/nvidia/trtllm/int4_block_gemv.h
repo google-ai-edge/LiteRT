@@ -101,6 +101,15 @@ struct LiteRtNvidiaMoeArena {
   // model's order an expert's rows lie `experts` rows apart, each among the
   // rows of the experts not routed to.
   int32_t expert_major;
+  // A verify step's rows (2 to kLiteRtNvidiaInt4BlockGemvMaxRows) grouped by
+  // expert (group_rows != 0, compact scales only): an expert's weights are
+  // read once for the rows routed to it instead of once per row, with every
+  // row's result unchanged.
+  // That is less memory traffic and more work per block: it pays where the
+  // device reads its weights at the host's memory bandwidth (an integrated
+  // GPU), and costs time where a discrete GPU's cache already serves the
+  // repeated reads (the RTX 5080: speculative decoding 9-13% slower).
+  int32_t group_rows;
 };
 
 // A loader's step from the model's order to an expert-major arena: copies

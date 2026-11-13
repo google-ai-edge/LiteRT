@@ -496,6 +496,262 @@ __global__ void __launch_bounds__(Threads)
   }
 }
 
+// A few rows (a verify step: 2 to kLiteRtNvidiaInt4BlockGemvMaxRows) grouped
+// by expert (LiteRtNvidiaMoeArena::group_rows): a group holds up to
+// kGroupMaxRows routed (row, slot) pairs of one expert, in pair order, and
+// the groups come in the order of their first pair, empty slots after them.
+// The table takes the place of the router's logits in the workspace, which
+// nothing reads once the rows are routed. The grouped kernels read compact
+// scales only, the format the plugin loads: one instantiation per group size
+// is enough of them.
+constexpr int kGroupMaxRows = kLiteRtNvidiaInt4BlockGemvMaxRows;
+constexpr int kGroupMaxPairs = kGroupMaxRows * kMaxTopK;
+constexpr int kNoExpert = 0xffff;
+
+struct MoeGroup {
+  uint16_t expert;  // kNoExpert: a pair routed to no expert
+  uint8_t count;    // 0: an empty slot
+  uint8_t pairs[kGroupMaxRows];
+};
+
+// One block, a thread per pair.
+__global__ void __launch_bounds__(kGroupMaxPairs)
+    MoeGroupPairsKernel(const int32_t* __restrict__ top_indices, int pairs,
+                        int experts, MoeGroup* __restrict__ groups) {
+  __shared__ int32_t expert_s[kGroupMaxPairs];
+  __shared__ int32_t rank_s[kGroupMaxPairs];
+  __shared__ int32_t leader_s[kGroupMaxPairs];
+  __shared__ int32_t slot_s[kGroupMaxPairs];
+  const int p = threadIdx.x;
+  if (p < pairs) {
+    const int expert = top_indices[p];
+    expert_s[p] = expert >= 0 && expert < experts ? expert : kNoExpert;
+  }
+  __syncthreads();
+  // The pair's rank among the pairs of its expert: every kGroupMaxRows of
+  // them are a group (one row routes to an expert once, so the routing's own
+  // groups never split). A pair without an expert is a group of its own.
+  if (p < pairs) {
+    int rank = 0;
+    if (expert_s[p] != kNoExpert) {
+      for (int q = 0; q < p; ++q) rank += expert_s[q] == expert_s[p] ? 1 : 0;
+    }
+    rank_s[p] = rank;
+  }
+  __syncthreads();
+  if (p < pairs) {
+    int leader = p;
+    if (expert_s[p] != kNoExpert) {
+      const int first = rank_s[p] - rank_s[p] % kGroupMaxRows;
+      for (int q = 0; q < p; ++q) {
+        if (expert_s[q] == expert_s[p] && rank_s[q] == first) {
+          leader = q;
+          break;
+        }
+      }
+    }
+    leader_s[p] = leader;
+  }
+  __syncthreads();
+  if (p == 0) {
+    int slot = 0;
+    for (int q = 0; q < pairs; ++q) {
+      if (leader_s[q] == q) slot_s[q] = slot++;
+    }
+    for (; slot < pairs; ++slot) groups[slot].count = 0;
+  }
+  __syncthreads();
+  if (p < pairs && leader_s[p] == p) {
+    MoeGroup group;
+    group.expert = static_cast<uint16_t>(expert_s[p]);
+    int count = 0;
+    for (int q = p; q < pairs && count < kGroupMaxRows; ++q) {
+      if (leader_s[q] == p) group.pairs[count++] = static_cast<uint8_t>(q);
+    }
+    for (int i = count; i < kGroupMaxRows; ++i) group.pairs[i] = 0;
+    group.count = static_cast<uint8_t>(count);
+    groups[slot_s[p]] = group;
+  }
+}
+
+// gelu(x_r . gate_e) * (x_r . up_e) for the Rows rows of a group: the
+// expert's tile rows are read once for all of them, and every row's sums
+// take the order they take alone.
+template <int Rows, int Threads>
+__device__ __forceinline__ void HiddenGroup(
+    const __nv_bfloat16* __restrict__ activation, int expert,
+    const int32_t* rows_s, const int32_t* pairs_s,
+    const float* __restrict__ norm_scale, float norm_eps,
+    const LiteRtNvidiaMoeArena& arena, const LiteRtNvidiaMoeShape& shape,
+    float* __restrict__ hidden, float* warp_sums) {
+  constexpr int kWarps = Threads / kWarpSize;
+  const int o0 = blockIdx.x * kTileRows;
+  const ActivationRows<__nv_bfloat16> act{
+      activation, static_cast<size_t>(shape.model_dim), rows_s};
+  float gate[Rows][kTileRows] = {};
+  float up[Rows][kTileRows] = {};
+  float squares[Rows] = {};
+  float up_squares[Rows] = {};
+  AccumulateTile<__nv_bfloat16, Rows, Threads, kTileRows, /*kCompact=*/true>(
+      ExpertTile(arena.gate, arena.gate_scales, arena.gate_scale_max,
+                 arena.compact_scales, arena.expert_major, shape.experts,
+                 expert, o0, shape.hidden_dim, shape.model_dim),
+      act, shape.model_dim, gate, norm_scale, squares);
+  ReduceTile<Rows, Threads>(gate, warp_sums);
+  __syncthreads();
+  AccumulateTile<__nv_bfloat16, Rows, Threads, kTileRows, /*kCompact=*/true>(
+      ExpertTile(arena.up, arena.up_scales, arena.up_scale_max,
+                 arena.compact_scales, arena.expert_major, shape.experts,
+                 expert, o0, shape.hidden_dim, shape.model_dim),
+      act, shape.model_dim, up, norm_scale, up_squares);
+  ReduceTile<Rows, Threads>(up, warp_sums);
+  float factor[Rows];
+#pragma unroll
+  for (int r = 0; r < Rows; ++r) factor[r] = 1.0f;
+  if (norm_scale != nullptr) {
+    if constexpr (kWarps > 1) __syncthreads();
+    ReduceRows<Rows, Threads>(squares, warp_sums);
+#pragma unroll
+    for (int r = 0; r < Rows; ++r) {
+      factor[r] =
+          rsqrtf(squares[r] / static_cast<float>(shape.model_dim) + norm_eps);
+    }
+  }
+  if (threadIdx.x == 0) {
+    const int valid = min(kTileRows, shape.hidden_dim - o0);
+#pragma unroll
+    for (int r = 0; r < Rows; ++r) {
+      float* out =
+          hidden + static_cast<size_t>(pairs_s[r]) * shape.hidden_dim + o0;
+#pragma unroll
+      for (int i = 0; i < kTileRows; ++i) {
+        if (i < valid) {
+          out[i] =
+              Gelu(gate[r][i] * factor[r], shape.gate) * up[r][i] * factor[r];
+        }
+      }
+    }
+  }
+}
+
+#define LITERT_NVIDIA_MOE_GROUP_CASES(CASE) \
+  CASE(1) CASE(2) CASE(3) CASE(4) CASE(5) CASE(6) CASE(7) CASE(8)
+static_assert(kGroupMaxRows == 8, "the group cases are 1 to 8 rows");
+
+// Grid (hidden_dim / kTileRows, rows * top_k): block (tile, group slot).
+template <int Threads>
+__global__ void __launch_bounds__(Threads)
+    MoeHiddenGroupedKernel(const __nv_bfloat16* __restrict__ activation,
+                           const MoeGroup* __restrict__ groups,
+                           const float* __restrict__ norm_scale,
+                           float norm_eps, LiteRtNvidiaMoeArena arena,
+                           LiteRtNvidiaMoeShape shape,
+                           float* __restrict__ hidden) {
+  constexpr int kWarps = Threads / kWarpSize;
+  __shared__ float warp_sums[kGroupMaxRows * kTileRows * kWarps];
+  __shared__ int32_t rows_s[kGroupMaxRows];
+  __shared__ int32_t pairs_s[kGroupMaxRows];
+  const MoeGroup group = groups[blockIdx.y];
+  if (group.count == 0 || group.expert == kNoExpert) return;
+  if (threadIdx.x < kGroupMaxRows) {
+    const int pair = group.pairs[threadIdx.x < group.count ? threadIdx.x : 0];
+    pairs_s[threadIdx.x] = pair;
+    rows_s[threadIdx.x] = pair / shape.top_k;
+  }
+  __syncthreads();
+  switch (group.count) {
+#define LITERT_NVIDIA_MOE_HIDDEN_GROUP_CASE(n)                              \
+  case n:                                                                   \
+    HiddenGroup<n, Threads>(activation, group.expert, rows_s, pairs_s,      \
+                            norm_scale, norm_eps, arena, shape, hidden,     \
+                            warp_sums);                                     \
+    break;
+    LITERT_NVIDIA_MOE_GROUP_CASES(LITERT_NVIDIA_MOE_HIDDEN_GROUP_CASE)
+#undef LITERT_NVIDIA_MOE_HIDDEN_GROUP_CASE
+    default:
+      break;
+  }
+}
+
+// partial[pair][o] = w_pair * (hidden[pair] . down_e[o]) for the Rows pairs
+// of a group.
+template <int Rows, int Threads>
+__device__ __forceinline__ void DownGroup(
+    const float* __restrict__ hidden, int expert, const int32_t* pairs_s,
+    const float* __restrict__ top_weights,
+    const float* __restrict__ per_expert_scale,
+    const LiteRtNvidiaMoeArena& arena, const LiteRtNvidiaMoeShape& shape,
+    float* __restrict__ partial, float* warp_sums) {
+  const int o0 = blockIdx.x * kTileRows;
+  const int valid = min(kTileRows, shape.model_dim - o0);
+  const ActivationRows<float> act{
+      hidden, static_cast<size_t>(shape.hidden_dim), pairs_s};
+  float acc[Rows][kTileRows] = {};
+  AccumulateTile<float, Rows, Threads, kTileRows, /*kCompact=*/true>(
+      ExpertTile(arena.down, arena.down_scales, arena.down_scale_max,
+                 arena.compact_scales, arena.expert_major, shape.experts,
+                 expert, o0, shape.model_dim, shape.hidden_dim),
+      act, shape.hidden_dim, acc);
+  ReduceTile<Rows, Threads>(acc, warp_sums);
+  if (threadIdx.x == 0) {
+#pragma unroll
+    for (int r = 0; r < Rows; ++r) {
+      const int pair = pairs_s[r];
+      const float weight = top_weights[pair] * per_expert_scale[expert];
+      float* dst = partial + static_cast<size_t>(pair) * shape.model_dim + o0;
+#pragma unroll
+      for (int i = 0; i < kTileRows; ++i) {
+        if (i < valid) dst[i] = weight * acc[r][i];
+      }
+    }
+  }
+}
+
+// Grid (model_dim / kTileRows, rows * top_k): block (tile, group slot).
+template <int Threads>
+__global__ void __launch_bounds__(Threads)
+    MoeDownGroupedKernel(const float* __restrict__ hidden,
+                         const MoeGroup* __restrict__ groups,
+                         const float* __restrict__ top_weights,
+                         const float* __restrict__ per_expert_scale,
+                         LiteRtNvidiaMoeArena arena, LiteRtNvidiaMoeShape shape,
+                         float* __restrict__ partial) {
+  constexpr int kWarps = Threads / kWarpSize;
+  __shared__ float warp_sums[kGroupMaxRows * kTileRows * kWarps];
+  __shared__ int32_t pairs_s[kGroupMaxRows];
+  const MoeGroup group = groups[blockIdx.y];
+  if (group.count == 0) return;
+  const int o0 = blockIdx.x * kTileRows;
+  if (group.expert == kNoExpert) {
+    // The pair's partial is zero, as the pair's own block writes it.
+    if (threadIdx.x == 0) {
+      float* dst = partial +
+                   static_cast<size_t>(group.pairs[0]) * shape.model_dim + o0;
+      const int valid = min(kTileRows, shape.model_dim - o0);
+      for (int i = 0; i < valid; ++i) dst[i] = 0.0f;
+    }
+    return;
+  }
+  if (threadIdx.x < kGroupMaxRows) {
+    pairs_s[threadIdx.x] =
+        group.pairs[threadIdx.x < group.count ? threadIdx.x : 0];
+  }
+  __syncthreads();
+  switch (group.count) {
+#define LITERT_NVIDIA_MOE_DOWN_GROUP_CASE(n)                                \
+  case n:                                                                   \
+    DownGroup<n, Threads>(hidden, group.expert, pairs_s, top_weights,       \
+                          per_expert_scale, arena, shape, partial,          \
+                          warp_sums);                                       \
+    break;
+    LITERT_NVIDIA_MOE_GROUP_CASES(LITERT_NVIDIA_MOE_DOWN_GROUP_CASE)
+#undef LITERT_NVIDIA_MOE_DOWN_GROUP_CASE
+    default:
+      break;
+  }
+}
+#undef LITERT_NVIDIA_MOE_GROUP_CASES
+
 // Decode: grid (model_dim / kTileRows, rows * top_k). partial[pair][o] =
 // w_pair * (hidden[pair] . down_e[o]) for the pair's expert e, so every
 // routed expert's tiles run in parallel; MoeCombineKernel sums the pairs.
@@ -960,6 +1216,19 @@ MoeWorkspace LayoutWorkspace(const LiteRtNvidiaMoeShape& shape,
   return w;
 }
 
+// Whether the launch groups the rows by expert: the arena asks for it and
+// holds compact scales, the rows are a verify step's, and the groups fit
+// where the logits were.
+bool GroupsRows(const LiteRtNvidiaMoeShape& shape,
+                const LiteRtNvidiaMoeArena& arena) {
+  return arena.group_rows != 0 && arena.compact_scales != 0 &&
+         shape.rows >= 2 &&
+         shape.rows <= kLiteRtNvidiaInt4BlockGemvMaxRows &&
+         static_cast<size_t>(shape.rows) * shape.top_k * sizeof(MoeGroup) <=
+             RoundUp256(static_cast<size_t>(shape.rows) * shape.experts *
+                        sizeof(uint16_t));
+}
+
 template <int Threads>
 cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
                       const LiteRtNvidiaMoeArena& arena,
@@ -983,30 +1252,47 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
     const dim3 down_grid(model_tiles, shape.rows * shape.top_k);
     auto* route_indices = reinterpret_cast<int32_t*>(workspace + w.top_indices);
     auto* route_weights = reinterpret_cast<float*>(workspace + w.top_weights);
-    if (arena.compact_scales != 0) {
-      MoeHiddenKernel<Threads, true><<<hidden_grid, Threads, 0, stream>>>(
-          activation, top_indices, logits, renormalize, route_indices,
-          route_weights, norm_scale, norm_eps, arena, shape, hidden);
+    cudaError_t status;
+    if (GroupsRows(shape, arena)) {
+      // The rows are routed already: an expert's tile rows are read once for
+      // the rows that route to it.
+      auto* groups = reinterpret_cast<MoeGroup*>(workspace + w.logits);
+      MoeGroupPairsKernel<<<1, kGroupMaxPairs, 0, stream>>>(
+          top_indices, shape.rows * shape.top_k, shape.experts, groups);
+      MoeHiddenGroupedKernel<Threads><<<hidden_grid, Threads, 0, stream>>>(
+          activation, groups, norm_scale, norm_eps, arena, shape, hidden);
+      MoeDownGroupedKernel<kDownThreads>
+          <<<down_grid, kDownThreads, 0, stream>>>(
+              hidden, groups, top_weights, per_expert_scale, arena, shape,
+              partial);
+      status = cudaPeekAtLastError();
+      if (status != cudaSuccess) return status;
     } else {
-      MoeHiddenKernel<Threads, false><<<hidden_grid, Threads, 0, stream>>>(
-          activation, top_indices, logits, renormalize, route_indices,
-          route_weights, norm_scale, norm_eps, arena, shape, hidden);
+      if (arena.compact_scales != 0) {
+        MoeHiddenKernel<Threads, true><<<hidden_grid, Threads, 0, stream>>>(
+            activation, top_indices, logits, renormalize, route_indices,
+            route_weights, norm_scale, norm_eps, arena, shape, hidden);
+      } else {
+        MoeHiddenKernel<Threads, false><<<hidden_grid, Threads, 0, stream>>>(
+            activation, top_indices, logits, renormalize, route_indices,
+            route_weights, norm_scale, norm_eps, arena, shape, hidden);
+      }
+      status = cudaPeekAtLastError();
+      if (status != cudaSuccess) return status;
+      if (arena.compact_scales != 0) {
+        MoeDownKernel<kDownThreads, true>
+            <<<down_grid, kDownThreads, 0, stream>>>(
+                hidden, top_indices, top_weights, per_expert_scale, arena,
+                shape, partial);
+      } else {
+        MoeDownKernel<kDownThreads, false>
+            <<<down_grid, kDownThreads, 0, stream>>>(
+                hidden, top_indices, top_weights, per_expert_scale, arena,
+                shape, partial);
+      }
+      status = cudaPeekAtLastError();
+      if (status != cudaSuccess) return status;
     }
-    cudaError_t status = cudaPeekAtLastError();
-    if (status != cudaSuccess) return status;
-    if (arena.compact_scales != 0) {
-      MoeDownKernel<kDownThreads, true>
-          <<<down_grid, kDownThreads, 0, stream>>>(hidden, top_indices,
-                                                   top_weights, per_expert_scale,
-                                                   arena, shape, partial);
-    } else {
-      MoeDownKernel<kDownThreads, false>
-          <<<down_grid, kDownThreads, 0, stream>>>(hidden, top_indices,
-                                                   top_weights, per_expert_scale,
-                                                   arena, shape, partial);
-    }
-    status = cudaPeekAtLastError();
-    if (status != cudaSuccess) return status;
     if (block != nullptr) {
       return LaunchBlockEpilogue<false>(shape, *block, partial, nullptr,
                                         nullptr, top_indices, top_weights,
@@ -1328,8 +1614,10 @@ cudaError_t LaunchFusedRouting(const LiteRtNvidiaMoeShape* shape,
         stream);
   }
   if (status != cudaSuccess) return status;
-  if (shape->rows <= kLiteRtNvidiaInt4BlockGemvMaxRows) {
-    // Decode: the hidden kernel routes from the logits itself.
+  if (shape->rows <= kLiteRtNvidiaInt4BlockGemvMaxRows &&
+      !GroupsRows(*shape, *arena)) {
+    // Decode: the hidden kernel routes from the logits itself. Rows that
+    // are grouped by expert are routed here first.
     return cudaSuccess;
   }
   constexpr int kRouteWarps = 4;
@@ -1348,10 +1636,14 @@ cudaError_t LaunchFusedRouting(const LiteRtNvidiaMoeShape* shape,
   return cudaPeekAtLastError();
 }
 
-// The logits the hidden kernel routes from in decode; prefill routed already.
+// The logits the hidden kernel routes from in decode; prefill and grouped
+// rows are routed already.
 const __nv_bfloat16* DecodeRoutingLogits(const LiteRtNvidiaMoeShape& shape,
+                                         const LiteRtNvidiaMoeArena& arena,
                                          const char* logits) {
-  return shape.rows <= kLiteRtNvidiaInt4BlockGemvMaxRows
+  using namespace litert::nvidia::int4_block;
+  return shape.rows <= kLiteRtNvidiaInt4BlockGemvMaxRows &&
+                 !GroupsRows(shape, arena)
              ? reinterpret_cast<const __nv_bfloat16*>(logits)
              : nullptr;
 }
@@ -1395,7 +1687,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4BlockFused(
       reinterpret_cast<const int32_t*>(bytes + w.top_indices),
       reinterpret_cast<const float*>(bytes + w.top_weights), per_expert_scale,
       expert_norm_scale, norm_eps, workspace, output, stream,
-      /*block=*/nullptr, DecodeRoutingLogits(*shape, bytes + w.logits),
+      /*block=*/nullptr, DecodeRoutingLogits(*shape, *arena, bytes + w.logits),
       renormalize);
 }
 
@@ -1476,7 +1768,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchMoeLayerBlock(
       reinterpret_cast<const int32_t*>(bytes + w.top_indices),
       reinterpret_cast<const float*>(bytes + w.top_weights), per_expert_scale,
       expert_norm_scale, norm_eps, workspace, output, stream, &epilogue,
-      DecodeRoutingLogits(*shape, bytes + w.logits), renormalize);
+      DecodeRoutingLogits(*shape, *arena, bytes + w.logits), renormalize);
 }
 
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRows(

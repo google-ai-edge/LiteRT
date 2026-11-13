@@ -1495,4 +1495,217 @@ TEST(Int4BlockGemvTest, MoeExpertMajorMatchesTheModelsOrder) {
   }
 }
 
+// A verify step's rows grouped by expert (LiteRtNvidiaMoeArena::group_rows)
+// give the bits of one launch block per routed pair: the plain launch over
+// routings with experts shared between rows, an expert that fills more than
+// one group and a pair without an expert; the fused launch, which then
+// routes before it groups; and the layer block.
+TEST(Int4BlockGemvTest, MoeGroupedRowsMatchTheirPairs) {
+  const int top_k = 4, experts = 64, dim = 704, hidden = 128, dense_hidden = 96;
+  const std::vector<uint8_t> gate_w = MakeInt4Weights(hidden * experts, dim, 5);
+  const std::vector<uint8_t> up_w = MakeInt4Weights(hidden * experts, dim, 9);
+  const std::vector<uint8_t> down_w =
+      MakeInt4Weights(dim * experts, hidden, 13);
+  const std::vector<uint8_t> router_w = MakeInt4Weights(experts, dim, 21);
+  const std::vector<uint16_t> router_s = MakeScales(experts, dim, 21);
+  const std::vector<uint8_t> dense_gu_w =
+      MakeInt4Weights(2 * dense_hidden, dim, 33);
+  const std::vector<uint16_t> dense_gu_s =
+      MakeScales(2 * dense_hidden, dim, 33);
+  const std::vector<uint8_t> dense_down_w =
+      MakeInt4Weights(dim, dense_hidden, 37);
+  const std::vector<uint16_t> dense_down_s = MakeScales(dim, dense_hidden, 37);
+  // Compact expert scales: per row the FP16 maximum and a byte per block.
+  const auto compact_of = [](const std::vector<uint16_t>& halves,
+                             int row_blocks, std::vector<uint8_t>* fractions,
+                             std::vector<uint16_t>* maxima) {
+    const size_t n_rows = halves.size() / row_blocks;
+    fractions->resize(halves.size());
+    maxima->resize(n_rows);
+    std::vector<float> row(row_blocks);
+    for (size_t r = 0; r < n_rows; ++r) {
+      for (int b = 0; b < row_blocks; ++b) {
+        row[b] = HalfBitsToFloat(halves[r * row_blocks + b]);
+      }
+      LiteRtNvidiaCompactScaleRow(row.data(), row_blocks,
+                                  fractions->data() + r * row_blocks,
+                                  maxima->data() + r);
+    }
+  };
+  std::vector<uint8_t> gate_q, up_q, down_q;
+  std::vector<uint16_t> gate_m, up_m, down_m;
+  compact_of(MakeScales(hidden * experts, dim, 5), dim / 32, &gate_q, &gate_m);
+  compact_of(MakeScales(hidden * experts, dim, 9), dim / 32, &up_q, &up_m);
+  compact_of(MakeScales(dim * experts, hidden, 13), hidden / 32, &down_q,
+             &down_m);
+  std::vector<float> router_norm(dim), expert_norm(dim), dense_norm(dim),
+      dense_post(dim), moe_post(dim), sum_post(dim), expert_scale(experts);
+  for (int i = 0; i < dim; ++i) {
+    router_norm[i] = 0.7f + 0.0005f * (i % 61);
+    expert_norm[i] = 1.1f - 0.0004f * (i % 53);
+    dense_norm[i] = 0.9f + 0.0003f * (i % 47);
+    dense_post[i] = 1.2f - 0.0006f * (i % 43);
+    moe_post[i] = 0.8f + 0.0004f * (i % 41);
+    sum_post[i] = 1.05f - 0.0002f * (i % 37);
+  }
+  for (int e = 0; e < experts; ++e) expert_scale[e] = 0.98f + 0.0003f * e;
+  const auto upload = [](const void* data, size_t bytes) {
+    auto device = AllocateCuda(bytes);
+    EXPECT_EQ(cudaMemcpy(device.get(), data, bytes, cudaMemcpyHostToDevice),
+              cudaSuccess);
+    return device;
+  };
+  auto d_router = upload(router_w.data(), router_w.size());
+  auto d_router_s = upload(router_s.data(), router_s.size() * 2);
+  auto d_dense_gu = upload(dense_gu_w.data(), dense_gu_w.size());
+  auto d_dense_gu_s = upload(dense_gu_s.data(), dense_gu_s.size() * 2);
+  auto d_dense_down = upload(dense_down_w.data(), dense_down_w.size());
+  auto d_dense_down_s = upload(dense_down_s.data(), dense_down_s.size() * 2);
+  auto d_es = upload(expert_scale.data(), expert_scale.size() * 4);
+  auto d_rn = upload(router_norm.data(), router_norm.size() * 4);
+  auto d_en = upload(expert_norm.data(), expert_norm.size() * 4);
+  auto d_dn = upload(dense_norm.data(), dense_norm.size() * 4);
+  auto d_dp = upload(dense_post.data(), dense_post.size() * 4);
+  auto d_mp = upload(moe_post.data(), moe_post.size() * 4);
+  auto d_sp = upload(sum_post.data(), sum_post.size() * 4);
+  cudaStream_t main_stream = nullptr, side_stream = nullptr;
+  cudaEvent_t fork = nullptr, join = nullptr;
+  ASSERT_EQ(cudaStreamCreateWithFlags(&main_stream, cudaStreamNonBlocking),
+            cudaSuccess);
+  ASSERT_EQ(cudaStreamCreateWithFlags(&side_stream, cudaStreamNonBlocking),
+            cudaSuccess);
+  ASSERT_EQ(cudaEventCreateWithFlags(&fork, cudaEventDisableTiming),
+            cudaSuccess);
+  ASSERT_EQ(cudaEventCreateWithFlags(&join, cudaEventDisableTiming),
+            cudaSuccess);
+  for (const int by_expert : {0, 1}) {
+    const auto rows_of = [&](const auto& model, int channels) {
+      const auto ordered =
+          by_expert != 0 ? ExpertMajorRows(model, experts, channels) : model;
+      return upload(ordered.data(), ordered.size() * sizeof(ordered[0]));
+    };
+    auto d_gate = rows_of(gate_w, hidden);
+    auto d_up = rows_of(up_w, hidden);
+    auto d_down = rows_of(down_w, dim);
+    auto d_gate_q = rows_of(gate_q, hidden);
+    auto d_up_q = rows_of(up_q, hidden);
+    auto d_down_q = rows_of(down_q, dim);
+    auto d_gate_m = rows_of(gate_m, hidden);
+    auto d_up_m = rows_of(up_m, hidden);
+    auto d_down_m = rows_of(down_m, dim);
+    LiteRtNvidiaMoeArena arena = {
+        static_cast<const uint8_t*>(d_gate.get()),
+        static_cast<const uint8_t*>(d_up.get()),
+        static_cast<const uint8_t*>(d_down.get()),
+        d_gate_q.get(),
+        d_up_q.get(),
+        d_down_q.get(),
+        static_cast<const uint8_t*>(d_router.get()),
+        d_router_s.get(),
+        static_cast<const uint8_t*>(d_dense_gu.get()),
+        d_dense_gu_s.get(),
+        static_cast<const uint8_t*>(d_dense_down.get()),
+        d_dense_down_s.get(),
+        d_gate_m.get(),
+        d_up_m.get(),
+        d_down_m.get(),
+        /*compact_scales=*/1,
+        by_expert};
+    for (const int rows : {2, 5, 8}) {
+      SCOPED_TRACE(::testing::Message()
+                   << "rows=" << rows << " expert_major=" << by_expert);
+      const LiteRtNvidiaMoeShape shape = {rows, top_k, experts, dim, hidden, 1};
+      const int pairs = rows * top_k;
+      std::vector<uint16_t> x(static_cast<size_t>(rows) * dim);
+      for (int r = 0; r < rows; ++r) {
+        for (int i = 0; i < dim; ++i) {
+          x[static_cast<size_t>(r) * dim + i] = FloatToBf16Bits(
+              static_cast<float>((i * 31 + r * 17) % 103 - 51) / 7.0f);
+        }
+      }
+      // Slot 0 and 1 of every row go to expert 3 (16 pairs of it at 8 rows:
+      // two groups), slot 2 to an expert rows share in threes, slot 3 to the
+      // row's own; one pair has no expert.
+      std::vector<int32_t> indices(pairs);
+      std::vector<float> weights(pairs);
+      for (int r = 0; r < rows; ++r) {
+        indices[r * top_k + 0] = 3;
+        indices[r * top_k + 1] = 3;
+        indices[r * top_k + 2] = 10 + r / 3;
+        indices[r * top_k + 3] = 20 + r;
+        for (int j = 0; j < top_k; ++j) {
+          weights[r * top_k + j] =
+              0.05f + 0.1f * static_cast<float>((r + 2 * j) % 7);
+        }
+      }
+      indices[pairs - 1] = -1;
+      auto d_x = upload(x.data(), x.size() * 2);
+      auto d_idx = upload(indices.data(), indices.size() * 4);
+      auto d_w = upload(weights.data(), weights.size() * 4);
+      const size_t workspace_bytes =
+          LiteRtNvidiaMoeBlockWorkspaceBytes(&shape, dense_hidden, 1);
+      ASSERT_GE(workspace_bytes, LiteRtNvidiaMoeWorkspaceBytes(&shape));
+      auto d_ws = AllocateCuda(workspace_bytes);
+      const size_t out_bytes = static_cast<size_t>(rows) * dim * 2;
+      const LiteRtNvidiaMoeBlockParams block = {
+          dense_hidden,
+          /*dense_gate=*/1,
+          /*residual_multiplier=*/1.25f,
+          static_cast<const float*>(d_dn.get()),
+          static_cast<const float*>(d_dp.get()),
+          static_cast<const float*>(d_mp.get()),
+          static_cast<const float*>(d_sp.get()),
+          side_stream,
+          fork,
+          join};
+      // launch 0: plain, 1: fused routing, 2: the layer block.
+      for (int launch = 0; launch < 3; ++launch) {
+        SCOPED_TRACE(::testing::Message() << "launch " << launch);
+        std::vector<uint16_t> outputs[2];
+        for (const int grouped : {0, 1}) {
+          arena.group_rows = grouped;
+          auto d_out = AllocateCuda(out_bytes);
+          cudaError_t status = cudaSuccess;
+          if (launch == 0) {
+            status = LiteRtNvidiaLaunchMoeInt4Block(
+                &shape, &arena, d_x.get(),
+                static_cast<const int32_t*>(d_idx.get()),
+                static_cast<const float*>(d_w.get()),
+                static_cast<const float*>(d_es.get()), d_ws.get(), d_out.get(),
+                main_stream);
+          } else if (launch == 1) {
+            status = LiteRtNvidiaLaunchMoeInt4BlockFused(
+                &shape, &arena, d_x.get(),
+                static_cast<const float*>(d_es.get()),
+                static_cast<const float*>(d_rn.get()), 0.6f,
+                static_cast<const float*>(d_en.get()), 1e-6f,
+                /*renormalize=*/1, d_ws.get(), d_out.get(), main_stream);
+          } else {
+            status = LiteRtNvidiaLaunchMoeLayerBlock(
+                &shape, &arena, d_x.get(),
+                static_cast<const float*>(d_es.get()),
+                static_cast<const float*>(d_rn.get()), 0.6f,
+                static_cast<const float*>(d_en.get()), 1e-6f,
+                /*renormalize=*/1, &block, d_ws.get(), d_out.get(),
+                main_stream);
+          }
+          ASSERT_EQ(status, cudaSuccess);
+          ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+          outputs[grouped].resize(out_bytes / 2);
+          ASSERT_EQ(cudaMemcpy(outputs[grouped].data(), d_out.get(), out_bytes,
+                               cudaMemcpyDeviceToHost),
+                    cudaSuccess);
+        }
+        EXPECT_TRUE(outputs[0] == outputs[1]);
+        EXPECT_NE(std::count(outputs[0].begin(), outputs[0].end(), 0),
+                  static_cast<ptrdiff_t>(outputs[0].size()));
+      }
+    }
+  }
+  cudaEventDestroy(fork);
+  cudaEventDestroy(join);
+  cudaStreamDestroy(side_stream);
+  cudaStreamDestroy(main_stream);
+}
+
 }  // namespace
