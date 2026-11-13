@@ -332,6 +332,56 @@ bool BoundPass(CompilerGraph& graph, OptimizationReport* report) {
   return changed;
 }
 
+bool IsSpatialZeroPad(const GraphNode& pad, const GraphValue& input,
+                      const GraphValue& padded) {
+  const auto& p = pad.body.parameters;
+  return p.size() == 8 && p[0] == 0 && p[1] == 0 && p[2] >= 0 && p[3] >= 0 &&
+         p[4] >= 0 && p[5] >= 0 && p[6] == 0 && p[7] == 0 &&
+         input.shape.size() == 4 && padded.shape.size() == 4 &&
+         !pad.body.inputs.empty() && SameQuantization(input, padded) &&
+         pad.body.pad_value == pad.body.inputs[0].zero_point;
+}
+
+std::optional<Conv2dPlan> AnalyzeFoldedZeroPadConv(
+    const GraphNode& conv, const std::vector<int32_t>& p,
+    const GraphValue& spatial_input, uint32_t input_channels,
+    const char** failure_reason) {
+  if (!conv.body.convolution || spatial_input.shape.size() != 4) {
+    return std::nullopt;
+  }
+  auto spec = conv.body.convolution->spec;
+  if (std::any_of(spec.padding.begin(), spec.padding.end(),
+                  [](int32_t x) { return x != 0; })) {
+    if (failure_reason) *failure_reason = "convolution already has padding";
+    return std::nullopt;
+  }
+  for (size_t axis = 0; axis < 2; ++axis) {
+    int64_t effective =
+        (int64_t{spec.weight_shape[axis + 1]} - 1) * spec.dilation[axis] + 1;
+    if (p[2 + 2 * axis] >= effective || p[3 + 2 * axis] >= effective) {
+      if (failure_reason) {
+        *failure_reason = "padding must be smaller than the effective kernel";
+      }
+      return std::nullopt;
+    }
+    spec.padding[2 * axis] = p[2 + 2 * axis];
+    spec.padding[2 * axis + 1] = p[3 + 2 * axis];
+  }
+  spec.input_shape = {spatial_input.shape[0], spatial_input.shape[1],
+                      spatial_input.shape[2], input_channels};
+  std::string reason;
+  auto plan = AnalyzeConv2d(std::move(spec), reason);
+  if (!plan) {
+    if (failure_reason) {
+      *failure_reason =
+          "folded geometry/range rejected by convolution analysis";
+    }
+    return std::nullopt;
+  }
+  plan->activation_range = conv.body.convolution->activation_range;
+  return plan;
+}
+
 bool PadPass(CompilerGraph& graph, OptimizationReport* report) {
   Uses uses(graph);
   bool changed = false;
@@ -358,41 +408,19 @@ bool PadPass(CompilerGraph& graph, OptimizationReport* report) {
     const auto& p = pad.body.parameters;
     const auto& input = graph.values[pad.inputs[0]];
     const auto& padded = graph.values[pad.outputs[0]];
-    if (p.size() != 8 || p[0] || p[1] || p[6] || p[7] ||
-        !SameQuantization(input, padded) ||
-        pad.body.pad_value != pad.body.inputs[0].zero_point) {
+    if (!IsSpatialZeroPad(pad, input, padded)) {
       skip(
           "requires spatial-only padding of real zero with unchanged "
           "quantization");
       continue;
     }
-    auto spec = conv.body.convolution->spec;
-    if (std::any_of(spec.padding.begin(), spec.padding.end(),
-                    [](int32_t x) { return x != 0; })) {
-      skip("convolution already has padding");
-      continue;
-    }
-    bool legal = true;
-    for (size_t axis = 0; axis < 2; ++axis) {
-      int64_t effective =
-          (int64_t{spec.weight_shape[axis + 1]} - 1) * spec.dilation[axis] + 1;
-      if (p[2 + 2 * axis] >= effective || p[3 + 2 * axis] >= effective)
-        legal = false;
-      spec.padding[2 * axis] = p[2 + 2 * axis];
-      spec.padding[2 * axis + 1] = p[3 + 2 * axis];
-    }
-    if (!legal) {
-      skip("padding must be smaller than the effective kernel");
-      continue;
-    }
-    std::copy(input.shape.begin(), input.shape.end(), spec.input_shape.begin());
-    std::string reason;
-    auto plan = AnalyzeConv2d(std::move(spec), reason);
+    const char* failure_reason = nullptr;
+    auto plan = AnalyzeFoldedZeroPadConv(conv, p, input, input.shape[3],
+                                         &failure_reason);
     if (!plan) {
-      skip("folded geometry/range rejected by convolution analysis");
+      if (failure_reason) skip(failure_reason);
       continue;
     }
-    plan->activation_range = conv.body.convolution->activation_range;
     conv.body.convolution = std::move(plan);
     conv.body.inputs[0] = Quantized(input);
     conv.inputs[0] = pad.inputs[0];
@@ -401,6 +429,113 @@ bool PadPass(CompilerGraph& graph, OptimizationReport* report) {
     Decision(report, "fold_zero_pad", conv, true,
              "real-zero spatial PAD absorbed; geometry and accumulator ranges "
              "rechecked");
+    changed = true;
+  }
+
+  // Push spatial-only real-zero PAD through channel-only SLICE fan-out so each
+  // downstream convolution absorbs its padding directly.
+  Uses slice_uses(graph);
+  for (size_t pad_idx = 0; pad_idx < graph.nodes.size(); ++pad_idx) {
+    auto& pad = graph.nodes[pad_idx];
+    if (pad.removed || (pad.body.code != kLiteRtOpCodeTflPad &&
+                        pad.body.code != kLiteRtOpCodeTflPadv2) ||
+        pad.inputs.size() != 1 || pad.outputs.size() != 1 ||
+        !pad.output_transforms.empty()) {
+      continue;
+    }
+    const ValueId pad_out = pad.outputs[0];
+    const auto& input = graph.values[pad.inputs[0]];
+    const auto& padded = graph.values[pad_out];
+    if (padded.graph_input || padded.graph_output || padded.persistent ||
+        slice_uses.count[pad_out] == 0 ||
+        !IsSpatialZeroPad(pad, input, padded)) {
+      continue;
+    }
+    const auto& p = pad.body.parameters;
+    struct BranchFold {
+      size_t slice_idx;
+      size_t conv_idx;
+      Conv2dPlan plan;
+    };
+    std::vector<BranchFold> branches;
+    bool all_branches_valid = true;
+    for (size_t i = 0; i < graph.nodes.size(); ++i) {
+      const auto& slice = graph.nodes[i];
+      if (slice.removed) continue;
+      if (std::find(slice.inputs.begin(), slice.inputs.end(), pad_out) ==
+          slice.inputs.end()) {
+        continue;
+      }
+      if (slice.body.code != kLiteRtOpCodeTflSlice || slice.body.portable ||
+          slice.body.typed || slice.transform_only ||
+          !slice.output_transforms.empty() || slice.inputs.size() != 1 ||
+          slice.body.inputs.empty() || slice.outputs.size() != 1 ||
+          slice.body.kernel.size() != 4 || slice.body.parameters.size() != 4 ||
+          slice.body.kernel[0] != 0 || slice.body.kernel[1] != 0 ||
+          slice.body.kernel[2] != 0 ||
+          slice.body.parameters[0] != static_cast<int32_t>(padded.shape[0]) ||
+          slice.body.parameters[1] != static_cast<int32_t>(padded.shape[1]) ||
+          slice.body.parameters[2] != static_cast<int32_t>(padded.shape[2])) {
+        all_branches_valid = false;
+        break;
+      }
+      const ValueId slice_out = slice.outputs[0];
+      if (!Removable(graph, slice_out, slice_uses) ||
+          graph.values[slice_out].shape.size() != 4 ||
+          !SameQuantization(padded, graph.values[slice_out])) {
+        all_branches_valid = false;
+        break;
+      }
+      size_t conv_idx = graph.nodes.size();
+      for (size_t j = 0; j < graph.nodes.size(); ++j) {
+        const auto& candidate = graph.nodes[j];
+        if (!candidate.removed && !candidate.inputs.empty() &&
+            candidate.inputs[0] == slice_out) {
+          conv_idx = j;
+          break;
+        }
+      }
+      if (conv_idx == graph.nodes.size()) {
+        all_branches_valid = false;
+        break;
+      }
+      const auto& conv = graph.nodes[conv_idx];
+      if ((conv.kind != CompositeKind::kConvolution &&
+           conv.kind != CompositeKind::kDepthwiseConvolution) ||
+          conv.inputs.size() != 1 || conv.body.inputs.empty()) {
+        all_branches_valid = false;
+        break;
+      }
+      auto plan = AnalyzeFoldedZeroPadConv(
+          conv, p, input, graph.values[slice_out].shape[3], nullptr);
+      if (!plan) {
+        all_branches_valid = false;
+        break;
+      }
+      branches.push_back({i, conv_idx, std::move(*plan)});
+    }
+    if (!all_branches_valid || branches.size() != slice_uses.count[pad_out]) {
+      continue;
+    }
+    for (auto& branch : branches) {
+      auto& slice = graph.nodes[branch.slice_idx];
+      auto& conv = graph.nodes[branch.conv_idx];
+      const ValueId slice_out = slice.outputs[0];
+      slice.inputs[0] = pad.inputs[0];
+      slice.body.inputs[0] = Quantized(input);
+      slice.body.parameters[1] = static_cast<int32_t>(input.shape[1]);
+      slice.body.parameters[2] = static_cast<int32_t>(input.shape[2]);
+      graph.values[slice_out].shape[1] = input.shape[1];
+      graph.values[slice_out].shape[2] = input.shape[2];
+      slice.body.output = Quantized(graph.values[slice_out]);
+      conv.body.convolution = std::move(branch.plan);
+      conv.body.inputs[0] = Quantized(graph.values[slice_out]);
+      Origins(conv, pad);
+      Decision(report, "fold_zero_pad", conv, true,
+               "real-zero spatial PAD absorbed across channel SLICE; geometry "
+               "and accumulator ranges rechecked");
+    }
+    pad.removed = true;
     changed = true;
   }
   return changed;
