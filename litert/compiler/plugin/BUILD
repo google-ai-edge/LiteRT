@@ -31,6 +31,7 @@ cc_library(
     deps = [
         ":algo",
         ":litert_compiler_options",
+        ":region_op_semantics",
         "//litert/c:litert_any",
         "//litert/c:litert_builder",
         "//litert/c:litert_common",
@@ -200,6 +201,23 @@ cc_test(
 )
 
 cc_library(
+    name = "region_op_semantics",
+    srcs = ["region_op_semantics.cc"],
+    hdrs = ["region_op_semantics.h"],
+    deps = ["//litert/c:litert_op_code"],
+)
+
+cc_test(
+    name = "region_op_semantics_test",
+    srcs = ["region_op_semantics_test.cc"],
+    deps = [
+        ":region_op_semantics",
+        "//litert/c:litert_op_code",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "algo",
     srcs = ["algo.cc"],
     hdrs = ["algo.h"],
@@ -212,9 +230,37 @@ cc_library(
         "//litert/cc/internal:litert_detail",
         "//litert/core:insert_order_map",
         "//litert/core/model",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
+    ],
+)
+
+cc_test(
+    name = "compiler_plugin_region_test",
+    srcs = ["compiler_plugin_region_test.cc"],
+    data = ["//litert/test:tflite_test_data"],
+    deps = [
+        ":compiler_plugin",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_abi_header",
+        "//litert/cc:litert_expected",
+        "//litert/cc/internal:litert_op_options",
+        "//litert/core/model",
+        "//litert/core/util:flatbuffer_tools",
+        "//litert/test:load_test_model",
+        "//litert/test:matchers",
+        "//litert/vendors/c:litert_compiler_plugin",
+        "//litert/vendors/c:litert_compiler_plugin_api",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

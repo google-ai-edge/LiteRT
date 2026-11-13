@@ -171,9 +171,11 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginCompile(
 input `partitions` represents a model where **all** the selected subgraphs have
 been isolated. The plugin processes these partitions, invoking it's specific
 toolchain to generate the **bytecode** for the target hardware. It is expected
-that the plugin's output provides an entry point for each subgraph passed for
-compilation. In most cases this is either individual byte code modules for each
-input subgraph, or a single byte code module with multiple entry points.
+that the plugin's output provides an entry point for each *entry* subgraph
+passed for compilation (see
+[Region ops and helper subgraphs](#3-region-ops-and-helper-subgraphs)). In most
+cases this is either individual byte code modules for each entry subgraph, or a
+single byte code module with multiple entry points.
 
 **Type of the data returned by `compile`:** The `LiteRtCompilerPluginCompile`
 function returns its output via the out-parameter **`LiteRtCompiledResult`**.
@@ -187,6 +189,31 @@ and contains two main pieces of information:
 2.  **Call Information:** Metadata for each partition. This provides the mapping
     from `i`th input subgraph to a result byte code module and entry point
     identifier into that module.
+
+### 3\. Region ops and helper subgraphs
+
+Some ops reference other subgraphs by index: control flow (`WHILE`, `IF`,
+`CALL_ONCE`, `STABLEHLO_WHILE`, `STABLEHLO_CASE`), ops with computation regions
+(`STABLEHLO_REDUCE`, `STABLEHLO_REDUCE_WINDOW`, `STABLEHLO_SCATTER`,
+`STABLEHLO_SORT`, ...) and `odml.npu_call` bodies that contain such ops. A
+plugin opts in to receiving them by implementing
+`get_compiler_plugin_capabilities` (compiler plugin API minor version 1) and
+reporting `kLiteRtCompilerPluginCapabilityRegionSubgraphs`:
+
+*   The partitions model passed to `compile` is laid out as
+    `[entry subgraphs..., helper subgraphs...]`. Helpers are the bodies,
+    branches and decompositions referenced by ops in the entries. The entry
+    count is `LiteRtCompilerContext::get_num_entry_subgraphs` (compiler context
+    minor version 6), or `litert::compiler::Model::NumEntrySubgraphs()` in C++.
+*   `compile` must emit exactly one call per entry subgraph, and none for
+    helpers. Use the entry count, not `NumSubgraphs()`, wherever the plugin
+    counts partitions.
+*   Every helper subgraph has a non-empty name, and non-empty names are unique.
+
+For plugins that do not report the capability, every subgraph of the partitions
+model is an entry. Their selections of ops that reference other subgraphs are
+kept on CPU (with a warning), which splits the surrounding partitions, and an
+`odml.npu_call` whose body needs helper subgraphs is rejected.
 
 -----
 
@@ -288,7 +315,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   // 1. Create the internal result structure
   auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
-  const auto num_partitions = model.NumSubgraphs();
+  // Subgraphs after the entries are helpers referenced by ops in the entries;
+  // they get no call of their own.
+  const auto num_partitions = model.NumEntrySubgraphs();
   auto result = std::make_unique<LiteRtCompiledResultT>();
   result->byte_code.resize(num_partitions);
   result->per_op_data.resize(num_partitions);

@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -50,6 +51,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/compiler/plugin/algo.h"
 #include "litert/compiler/plugin/litert_compiler_options.h"
+#include "litert/compiler/plugin/region_op_semantics.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/dynamic_loading.h"
 #include "litert/core/environment.h"
@@ -57,6 +59,8 @@
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/core/model/subgraph_call_graph.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "litert/core/options.h"
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/core/version.h"
@@ -424,6 +428,25 @@ Expected<LiteRtHwAccelerators> CompilerPlugin::SupportedHardware() const {
   return supported_hardware;
 }
 
+bool CompilerPlugin::SupportsRegionSubgraphs() const {
+  if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
+                          get_compiler_plugin_capabilities)) {
+    return false;
+  }
+  uint64_t capabilities = kLiteRtCompilerPluginCapabilityNone;
+  if (const LiteRtStatus status =
+          plugin_api_v1_->get_compiler_plugin_capabilities(plugin_handle_,
+                                                           &capabilities);
+      status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_WARNING,
+               "Failed to get compiler plugin capabilities (status %d). "
+               "Assuming none.",
+               status);
+    return false;
+  }
+  return (capabilities & kLiteRtCompilerPluginCapabilityRegionSubgraphs) != 0;
+}
+
 Expected<std::string> CompilerPlugin::SdkVersion() const {
   if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
                           get_compiler_plugin_sdk_version)) {
@@ -623,259 +646,833 @@ LiteRtStatus PartitionSubgraph(
   return kLiteRtStatusOk;
 }
 
+// A set of subgraphs, keyed by pointer (stable while subgraphs are added or
+// reordered).
+using SubgraphSet = absl::flat_hash_set<LiteRtSubgraph>;
+
+enum class CompositeKind { kNone, kNpuCall, kCpuCall, kStandard };
+
+CompositeKind GetCompositeKind(LiteRtOp op) {
+  auto info = GetOptionsAs<CompositeOptions>(op);
+  if (!info) {
+    return CompositeKind::kNone;
+  }
+  if (info->name == CompositeOptions::kNpuCall) {
+    return CompositeKind::kNpuCall;
+  }
+  if (info->name == CompositeOptions::kCpuCall) {
+    return CompositeKind::kCpuCall;
+  }
+  return CompositeKind::kStandard;
+}
+
+// The decomposition subgraph of a composite op, or nullptr if it has none.
+LiteRtSubgraph DecompositionOf(const LiteRtModelT& model, const LiteRtOpT& op) {
+  const auto index = CompositeDecompositionIndex(op);
+  if (!index.has_value() || *index < 0 ||
+      static_cast<size_t>(*index) >= model.NumSubgraphs()) {
+    return nullptr;
+  }
+  return model.Subgraphs()[*index];
+}
+
+int32_t IndexOf(const LiteRtModelT& model, const LiteRtSubgraphT* subgraph) {
+  const auto subgraphs = model.Subgraphs();
+  const auto it = absl::c_find(subgraphs, subgraph);
+  ABSL_DCHECK(it != subgraphs.end());
+  return static_cast<int32_t>(it - subgraphs.begin());
+}
+
+std::string CloneName(const LiteRtSubgraphT& origin, int32_t origin_index,
+                      absl::string_view role, int32_t clone_index) {
+  const std::string base = origin.Name().empty()
+                               ? absl::StrCat("subgraph_", origin_index)
+                               : std::string(origin.Name());
+  return absl::StrCat(base, "_", role, "_clone", clone_index);
+}
+
+// Adds the subgraphs at `refs`, and every subgraph they transitively
+// reference, to `pinned`.
+void PinClosure(const LiteRtModelT& model, absl::Span<const int32_t> refs,
+                SubgraphSet& pinned) {
+  std::vector<int32_t> pending(refs.begin(), refs.end());
+  while (!pending.empty()) {
+    LiteRtSubgraph subgraph = model.Subgraphs()[pending.back()];
+    pending.pop_back();
+    if (!pinned.insert(subgraph).second) {
+      continue;
+    }
+    for (const LiteRtOpT* op : subgraph->Ops()) {
+      for (const int32_t ref : SubgraphRefs(*op)) {
+        pending.push_back(ref);
+      }
+    }
+  }
+}
+
+// Fails if `roots`, or a subgraph that ships with them, has an op the plugin
+// must not receive: a region op (plugin without region support) or an
+// odml.cpu_call that cannot be inlined. Follows cpu_call bodies and, with
+// region support, every subgraph reference.
+Expected<void> CheckShippedSubgraphs(const LiteRtModelT& model,
+                                     absl::Span<const LiteRtSubgraph> roots,
+                                     bool supports_region_subgraphs) {
+  SubgraphSet visited;
+  std::vector<LiteRtSubgraph> pending(roots.begin(), roots.end());
+  while (!pending.empty()) {
+    LiteRtSubgraph subgraph = pending.back();
+    pending.pop_back();
+    if (!visited.insert(subgraph).second) {
+      continue;
+    }
+    for (LiteRtOp op : subgraph->Ops()) {
+      if (!supports_region_subgraphs && IsRegionOp(*op)) {
+        return Unexpected(
+            kLiteRtStatusErrorUnsupported,
+            absl::StrCat("A subgraph passed to the compiler plugin contains an "
+                         "op (code ",
+                         op->OpCode(),
+                         ") that references other subgraphs, but the plugin "
+                         "does not report "
+                         "kLiteRtCompilerPluginCapabilityRegionSubgraphs"));
+      }
+      if (GetCompositeKind(op) == CompositeKind::kCpuCall) {
+        LiteRtSubgraph body = DecompositionOf(model, *op);
+        if (body == nullptr) {
+          return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                            "odml.cpu_call has no decomposition subgraph");
+        }
+        if (auto inlinable = CheckInlinable(*op, *body); !inlinable) {
+          return Unexpected(
+              kLiteRtStatusErrorUnsupported,
+              absl::StrCat("An odml.cpu_call in a subgraph passed to the "
+                           "compiler plugin cannot be inlined: ",
+                           inlinable.Error().Message()));
+        }
+        pending.push_back(body);
+        continue;
+      }
+      if (supports_region_subgraphs) {
+        for (const int32_t ref : SubgraphRefs(*op)) {
+          pending.push_back(model.Subgraphs()[ref]);
+        }
+      }
+    }
+  }
+  return {};
+}
+
+// For plugins with region support: removes selected region ops whose
+// subgraphs (which would ship as helpers) contain an odml.cpu_call that cannot
+// be inlined. Those ops stay on CPU. Appends a message to `warnings` for each.
+void DropSelectionsWithUninlinableCpuCalls(
+    const LiteRtModelT& model,
+    std::vector<LiteRtOpWithPartitionIndex>& selected, int32_t subgraph_index,
+    std::vector<std::string>& warnings) {
+  selected.erase(
+      std::remove_if(selected.begin(), selected.end(),
+                     [&](const LiteRtOpWithPartitionIndex& selection) {
+                       LiteRtOp op = selection.first;
+                       if (!IsRegionOp(*op)) {
+                         return false;
+                       }
+                       std::vector<LiteRtSubgraph> callees;
+                       for (const int32_t ref : SubgraphRefs(*op)) {
+                         callees.push_back(model.Subgraphs()[ref]);
+                       }
+                       auto status = CheckShippedSubgraphs(
+                           model, callees, /*supports_region_subgraphs=*/true);
+                       if (status) {
+                         return false;
+                       }
+                       warnings.push_back(absl::StrCat(
+                           "Keeping op (code ", op->OpCode(), ") in subgraph<",
+                           subgraph_index,
+                           "> on CPU: ", status.Error().Message()));
+                       return true;
+                     }),
+      selected.end());
+}
+
+// Removes selections the partitioner handles itself (npu_call and cpu_call
+// composites), ops without tensors and, depending on region support, ops that
+// reference other subgraphs. Appends a message to `warnings` for what was
+// removed from the plugin's selection.
+void FilterSelection(const LiteRtModelT& model,
+                     std::vector<LiteRtOpWithPartitionIndex>& selected,
+                     bool supports_region_subgraphs, int32_t subgraph_index,
+                     std::vector<std::string>& warnings) {
+  std::vector<std::string> dropped_op_codes;
+  size_t num_dropped_tensorless = 0;
+  selected.erase(
+      std::remove_if(selected.begin(), selected.end(),
+                     [&](const LiteRtOpWithPartitionIndex& selection) {
+                       LiteRtOp op = selection.first;
+                       const auto kind = GetCompositeKind(op);
+                       if (kind == CompositeKind::kNpuCall ||
+                           kind == CompositeKind::kCpuCall) {
+                         return true;
+                       }
+                       if (!supports_region_subgraphs && IsRegionOp(*op)) {
+                         dropped_op_codes.push_back(absl::StrCat(op->OpCode()));
+                         return true;
+                       }
+                       // An op without tensors (e.g. a CALL_ONCE) cannot be
+                       // connected to a dispatch op: as a partition of its
+                       // own, the dispatch op would have no edges and would
+                       // be removed by DCE.
+                       if (op->Inputs().empty() && op->Outputs().empty()) {
+                         num_dropped_tensorless++;
+                         return true;
+                       }
+                       return false;
+                     }),
+      selected.end());
+  if (num_dropped_tensorless > 0) {
+    warnings.push_back(absl::StrCat(
+        "Plugin selected ", num_dropped_tensorless,
+        " op(s) without inputs or outputs in subgraph<", subgraph_index,
+        ">. Keeping them on CPU."));
+  }
+  if (!dropped_op_codes.empty()) {
+    warnings.push_back(absl::StrCat(
+        "Plugin selected ", dropped_op_codes.size(), " op(s) in subgraph<",
+        subgraph_index, "> that reference other subgraphs (op codes: ",
+        absl::StrJoin(dropped_op_codes, ", "),
+        ") but does not report "
+        "kLiteRtCompilerPluginCapabilityRegionSubgraphs. Keeping them on CPU, "
+        "which splits the surrounding partitions."));
+  }
+  if (supports_region_subgraphs) {
+    DropSelectionsWithUninlinableCpuCalls(model, selected, subgraph_index,
+                                          warnings);
+  }
+}
+
+// `subgraph` must be partitioned for its CPU callers (signatures, the main
+// subgraph and the ops in `cpu_callers`) but must also stay unchanged for its
+// other callers. Gives those other callers a copy, so `subgraph` itself can be
+// partitioned in place.
+Expected<void> SplitPinnedSubgraph(LiteRtModelT& model,
+                                   LiteRtSubgraphT& subgraph,
+                                   absl::Span<const LiteRtOp> cpu_callers,
+                                   SubgraphSet& pinned) {
+  const int32_t index = IndexOf(model, &subgraph);
+  const int32_t clone_index = static_cast<int32_t>(model.NumSubgraphs());
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtSubgraph clone,
+      CloneSubgraph(model, subgraph,
+                    CloneName(subgraph, index, "pinned", clone_index)));
+  const absl::flat_hash_set<LiteRtOp> keep(cpu_callers.begin(),
+                                           cpu_callers.end());
+  for (LiteRtSubgraph caller : model.Subgraphs()) {
+    for (LiteRtOp op : caller->Ops()) {
+      if (!keep.contains(op)) {
+        RetargetSubgraphRefs(*op, index, clone_index);
+      }
+    }
+  }
+  // The callees of `subgraph` stay pinned: the clone still references them.
+  pinned.erase(&subgraph);
+  pinned.insert(clone);
+  return {};
+}
+
+// Gives `callers` a copy of `subgraph` and returns it. Every other reference
+// to `subgraph`, including signatures (which cannot be retargeted), keeps the
+// original.
+Expected<LiteRtSubgraph> CloneForCallers(LiteRtModelT& model,
+                                         LiteRtSubgraphT& subgraph,
+                                         absl::Span<const LiteRtOp> callers) {
+  const int32_t index = IndexOf(model, &subgraph);
+  const int32_t clone_index = static_cast<int32_t>(model.NumSubgraphs());
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtSubgraph clone,
+      CloneSubgraph(model, subgraph,
+                    CloneName(subgraph, index, "walked", clone_index)));
+  for (LiteRtOp op : callers) {
+    RetargetSubgraphRefs(*op, index, clone_index);
+  }
+  return clone;
+}
+
+struct PartitionWalkState {
+  bool supports_region_subgraphs = false;
+  LiteRtCompilerOptionsPartitionStrategy strategy =
+      kLiteRtCompilerOptionsPartitionStrategyDefault;
+  size_t max_partitions = 0;
+  SubgraphSet pinned;
+  std::vector<LiteRtOp> dispatch_ops;
+  std::vector<LiteRtSubgraph> outlined;
+  // Subgraphs passed to the plugin's partition function, in walk order.
+  std::vector<LiteRtSubgraph> processed;
+};
+
+// Runs the plugin on `subgraph` and outlines the selected ops.
+Expected<void> PartitionOneSubgraph(CompilerPlugin& compiler_plugin,
+                                    LiteRtModelT& model,
+                                    absl::string_view soc_model,
+                                    LiteRtSubgraphT& subgraph,
+                                    int32_t subgraph_index,
+                                    PartitionWalkState& state) {
+  LITERT_ASSIGN_OR_RETURN(auto selected,
+                          compiler_plugin.Partition(&subgraph, soc_model));
+  // Logged only for the selection that is outlined.
+  std::vector<std::string> warnings;
+  FilterSelection(model, selected, state.supports_region_subgraphs,
+                  subgraph_index, warnings);
+
+  // Inline standard composites the plugin did not select, so that the plugin
+  // can pick ops from their decompositions instead.
+  std::vector<LiteRtOp> ops_to_inline;
+  for (LiteRtOp op : subgraph.Ops()) {
+    if (GetCompositeKind(op) != CompositeKind::kStandard) {
+      continue;
+    }
+    const bool is_selected = absl::c_any_of(
+        selected,
+        [op](const auto& selection) { return selection.first == op; });
+    if (!is_selected) {
+      ops_to_inline.push_back(op);
+    }
+  }
+  size_t num_inlined = 0;
+  for (LiteRtOp op : ops_to_inline) {
+    LiteRtSubgraph decomposition = DecompositionOf(model, *op);
+    if (decomposition == nullptr) {
+      continue;
+    }
+    if (auto status = InlineSubgraph(model, *op, decomposition); !status) {
+      const auto info = GetOptionsAs<CompositeOptions>(op);
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to inline composite op '%s' (subgraph %d): %s",
+                 std::string(info->name).c_str(),
+                 IndexOf(model, decomposition),
+                 status.Error().Message().c_str());
+      continue;
+    }
+    ++num_inlined;
+  }
+  if (num_inlined > 0) {
+    LITERT_LOG(LITERT_INFO, "Inlined %zu composite ops into subgraph<%d>",
+               num_inlined, subgraph_index);
+    LITERT_ASSIGN_OR_RETURN(selected,
+                            compiler_plugin.Partition(&subgraph, soc_model));
+    warnings.clear();
+    FilterSelection(model, selected, state.supports_region_subgraphs,
+                    subgraph_index, warnings);
+  }
+  for (const std::string& warning : warnings) {
+    LITERT_LOG(LITERT_WARNING, "%s", warning.c_str());
+  }
+
+  // Read what the selected ops reference before outlining moves them.
+  for (const auto& [op, partition_index] : selected) {
+    if (GetCompositeKind(op) == CompositeKind::kStandard) {
+      // The plugin compiles the composite directly; its decomposition is no
+      // longer needed and is pruned once unreferenced.
+      ClearCompositeDecomposition(*op);
+    } else if (IsRegionOp(*op)) {
+      PinClosure(model, SubgraphRefs(*op), state.pinned);
+    }
+  }
+
+  const size_t num_selected_ops = selected.size();
+  const size_t num_ops = subgraph.Ops().size();
+  const size_t num_dispatch_ops = state.dispatch_ops.size();
+  const size_t num_subgraphs = model.NumSubgraphs();
+  LITERT_RETURN_IF_ERROR(
+      PartitionSubgraph(std::move(selected), subgraph, state.dispatch_ops,
+                        model, state.strategy, state.max_partitions));
+  for (size_t i = num_subgraphs; i < model.NumSubgraphs(); ++i) {
+    state.outlined.push_back(model.Subgraphs()[i]);
+  }
+  LITERT_LOG(LITERT_INFO,
+             "Partitioned subgraph<%d>, selected %zu ops, from a total of %zu "
+             "ops. resulted in %zu partitions.",
+             subgraph_index, num_selected_ops, num_ops,
+             state.dispatch_ops.size() - num_dispatch_ops);
+  return {};
+}
+
+std::vector<int32_t> IndicesOf(const LiteRtModelT& model,
+                               absl::Span<const LiteRtSubgraph> subgraphs) {
+  std::vector<int32_t> indices;
+  indices.reserve(subgraphs.size());
+  for (LiteRtSubgraph subgraph : subgraphs) {
+    indices.push_back(IndexOf(model, subgraph));
+  }
+  return indices;
+}
+
+// Inlines every odml.cpu_call in `host`, including cpu_calls that inlining
+// brings into `host` from nested bodies. No other subgraph is modified (the
+// bodies are copied, not changed). A cpu_call that cannot be inlined is an
+// error if `must_succeed`; otherwise it stays a composite, which the CPU runs
+// by executing its body.
+Expected<void> InlineCpuCallsInto(LiteRtModelT& model, LiteRtSubgraphT& host,
+                                  bool must_succeed) {
+  absl::flat_hash_set<LiteRtOp> kept;
+  while (true) {
+    LiteRtOp cpu_call = nullptr;
+    for (LiteRtOp op : host.Ops()) {
+      if (GetCompositeKind(op) == CompositeKind::kCpuCall &&
+          !kept.contains(op)) {
+        cpu_call = op;
+        break;
+      }
+    }
+    if (cpu_call == nullptr) {
+      return {};
+    }
+    LiteRtSubgraph body = DecompositionOf(model, *cpu_call);
+    ABSL_DCHECK(body != nullptr);  // Validated before the walk.
+    auto status = InlineSubgraph(model, *cpu_call, body);
+    if (status) {
+      continue;
+    }
+    if (must_succeed) {
+      return Unexpected(
+          kLiteRtStatusErrorInvalidGraphInvariant,
+          absl::StrCat("Cannot inline an odml.cpu_call in a subgraph passed "
+                       "to the compiler plugin: ",
+                       status.Error().Message()));
+    }
+    LITERT_LOG(LITERT_WARNING, "Keeping an odml.cpu_call on CPU: %s",
+               status.Error().Message().c_str());
+    kept.insert(cpu_call);
+  }
+}
+
+// True if an op in a subgraph outside `bundle` references `index`.
+bool HasCallerOutside(const LiteRtModelT& model, int32_t index,
+                      const SubgraphSet& bundle) {
+  for (LiteRtSubgraph subgraph : model.Subgraphs()) {
+    if (bundle.contains(subgraph)) {
+      continue;
+    }
+    for (const LiteRtOpT* op : subgraph->Ops()) {
+      if (absl::c_linear_search(SubgraphRefs(*op), index)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// True if an op in `scope` other than `except` references `index`.
+bool HasOtherRef(const LiteRtModelT& model,
+                 const absl::flat_hash_set<int32_t>& scope, int32_t index,
+                 const LiteRtOpT* except) {
+  for (const int32_t caller : scope) {
+    for (const LiteRtOpT* op : model.Subgraph(caller).Ops()) {
+      if (op != except && absl::c_linear_search(SubgraphRefs(*op), index)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Returns the subgraph the npu_call `op` compiles. Entry subgraphs are moved
+// into the partitions model and may be modified there, so each npu_call gets
+// a decomposition no other op, signature or entry uses; a shared one is
+// cloned for `op`.
+Expected<LiteRtSubgraph> ExclusiveNpuCallDecomposition(
+    LiteRtModelT& model, LiteRtOpT& op,
+    const absl::flat_hash_set<int32_t>& live, const SubgraphSet& cpu_roots,
+    const SubgraphSet& entries) {
+  LiteRtSubgraph decomposition = DecompositionOf(model, op);
+  if (decomposition == nullptr) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "odml.npu_call has no decomposition subgraph");
+  }
+  const int32_t index = IndexOf(model, decomposition);
+  if (!cpu_roots.contains(decomposition) && !entries.contains(decomposition) &&
+      !HasOtherRef(model, live, index, &op)) {
+    return decomposition;
+  }
+  const int32_t clone_index = static_cast<int32_t>(model.NumSubgraphs());
+  LITERT_LOG(LITERT_WARNING,
+             "odml.npu_call decomposition subgraph<%d> is also used elsewhere; "
+             "compiling a copy (its byte code is duplicated)",
+             index);
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtSubgraph clone,
+      CloneSubgraph(model, *decomposition,
+                    CloneName(*decomposition, index, "npu_call", clone_index)));
+  RetargetSubgraphRefs(op, index, clone_index);
+  return clone;
+}
+
+// Gives every helper subgraph in `partitions` a non-empty name and makes all
+// non-empty names unique. Region references are resolved by subgraph name when
+// the model is imported to MLIR, so a helper with an empty or duplicate name
+// breaks them. Entry subgraphs are only referenced by their dispatch ops and
+// keep their names, so an empty entry name still imports as `fn_<index>`.
+void NameSubgraphs(LiteRtModelT& partitions) {
+  absl::flat_hash_set<std::string> used;
+  for (size_t i = 0; i < partitions.NumSubgraphs(); ++i) {
+    auto& subgraph = partitions.Subgraph(i);
+    std::string name(subgraph.Name());
+    if (name.empty()) {
+      if (i < partitions.NumEntrySubgraphs()) {
+        continue;
+      }
+      name = absl::StrCat("region_", i);
+    }
+    std::string unique_name = name;
+    for (int suffix = 1; !used.insert(unique_name).second; ++suffix) {
+      unique_name = absl::StrCat(name, "_", suffix);
+    }
+    subgraph.SetName(std::move(unique_name));
+  }
+}
+
+// Moves `entries` and the subgraphs they transitively reference into a new
+// model. Referenced subgraphs that are still used on CPU are cloned.
+Expected<LiteRtModelT> PackagePartitions(
+    LiteRtModelT& model, const std::vector<LiteRtSubgraph>& cpu_roots,
+    const SubgraphSet& cpu_root_set, const std::vector<LiteRtSubgraph>& entries,
+    bool supports_region_subgraphs) {
+  // Drop subgraphs that neither run on CPU nor are needed by the entries, so
+  // that every remaining caller outside the bundle is live.
+  std::vector<LiteRtSubgraph> roots = cpu_roots;
+  roots.insert(roots.end(), entries.begin(), entries.end());
+  LITERT_RETURN_IF_ERROR(PruneUnreachableSubgraphs(model, roots));
+
+  LITERT_ASSIGN_OR_RETURN(auto graph, BuildSubgraphCallGraph(model));
+  const std::vector<int32_t> entry_indices = IndicesOf(model, entries);
+  const auto closure = SubgraphClosure(graph, entry_indices);
+  SubgraphSet bundle(entries.begin(), entries.end());
+  std::vector<LiteRtSubgraph> helpers;
+  for (const int32_t index : TopologicalOrder(graph)) {
+    LiteRtSubgraph subgraph = model.Subgraphs()[index];
+    if (closure.contains(index) && !bundle.contains(subgraph)) {
+      helpers.push_back(subgraph);
+    }
+  }
+  bundle.insert(helpers.begin(), helpers.end());
+
+  // Visit callers before callees: cloning a helper leaves the original on the
+  // CPU side, which makes it an outside caller of the helper's callees.
+  for (auto& helper : helpers) {
+    const int32_t index = IndexOf(model, helper);
+    if (!cpu_root_set.contains(helper) &&
+        !HasCallerOutside(model, index, bundle)) {
+      continue;
+    }
+    const int32_t clone_index = static_cast<int32_t>(model.NumSubgraphs());
+    LITERT_ASSIGN_OR_RETURN(
+        LiteRtSubgraph clone,
+        CloneSubgraph(model, *helper,
+                      CloneName(*helper, index, "npu", clone_index)));
+    for (LiteRtSubgraph subgraph : model.Subgraphs()) {
+      if (!bundle.contains(subgraph)) {
+        continue;
+      }
+      for (LiteRtOp op : subgraph->Ops()) {
+        RetargetSubgraphRefs(*op, index, clone_index);
+      }
+    }
+    bundle.erase(helper);
+    bundle.insert(clone);
+    helper = clone;
+  }
+
+  // Internal invariant: region ops never reach a plugin without the capability.
+  if (!supports_region_subgraphs && !helpers.empty()) {
+    return Unexpected(kLiteRtStatusErrorInvalidGraphInvariant,
+                      "Partitions reference helper subgraphs, but the plugin "
+                      "does not support them");
+  }
+
+  std::vector<size_t> indices;
+  indices.reserve(entries.size() + helpers.size());
+  for (LiteRtSubgraph subgraph : entries) {
+    indices.push_back(IndexOf(model, subgraph));
+  }
+  for (LiteRtSubgraph subgraph : helpers) {
+    indices.push_back(IndexOf(model, subgraph));
+  }
+  LITERT_ASSIGN_OR_RETURN(auto partitions, model.Yank(std::move(indices)));
+
+  // Helpers are now exclusive to `partitions`: inline their cpu_calls (checked
+  // to be inlinable before the walk) and drop the cpu_call bodies that are no
+  // longer referenced. Entries stay at [0, entries.size()).
+  if (!helpers.empty()) {
+    for (LiteRtSubgraph subgraph : partitions.Subgraphs()) {
+      LITERT_RETURN_IF_ERROR(
+          InlineCpuCallsInto(partitions, *subgraph, /*must_succeed=*/true));
+    }
+    std::vector<LiteRtSubgraph> partition_entries(
+        partitions.Subgraphs().begin(),
+        partitions.Subgraphs().begin() + entries.size());
+    LITERT_RETURN_IF_ERROR(
+        PruneUnreachableSubgraphs(partitions, partition_entries));
+  }
+  partitions.SetNumEntrySubgraphs(entries.size());
+  NameSubgraphs(partitions);
+  return partitions;
+}
+
 }  // namespace
 
 Expected<PartitionResult> PartitionModel(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
     absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition) {
-  // This algorithm decides the subgraphs to be partitioned by the plugin. This
-  // is a trivial process with the exception of composite ops and their
-  // decomposition subgraphs. Currently, we deploy the most naive approach to
-  // handling composite ops.
+  // Decides which subgraphs are passed to the plugin's partition function,
+  // outlines the selected ops and packages the partitions for compilation.
   //
-  // There are a couple cases to consider:
-  // 1. The composite op is an "odml.npu_call", in which case it represents a
-  // partition which was explicitly requested by the model author.
+  // Subgraphs are visited callers first, starting from the CPU roots.
+  // * Bodies of control flow (WHILE, IF, ...) left on CPU are partitioned too.
+  // * Bodies of other region ops (REDUCE, SORT, ...), of offloaded ops and of
+  //   npu_call/cpu_call composites are pinned: never partitioned. A subgraph
+  //   that is both partitioned and pinned is cloned for the pinning callers.
+  // * Offloaded region ops take their bodies along as helper subgraphs; only
+  //   plugins reporting kLiteRtCompilerPluginCapabilityRegionSubgraphs may
+  //   offload them.
   //
-  // In this case, the the composite itself is always selected, regardless of
-  // whether the plugin selects it. Its subgraph is not passed to the partition
-  // function and it is passed in its entirety to the compilation function.
-  //
-  // More advanced behavior could include:
-  // * Ensuring the plugin can compile the entire partition, and inlining it if
-  // not.
-  //
-  // 2. The composite op is an "odml.cpu_call", in which case it represents an
-  // explicit request to leave a portion of the model on the CPU.
-  //
-  // In this case, the composite itself is NEVER selected for partitioning. Its
-  // decomposition subgraph is inlined back into the main subgraph AFTER the
-  // partitioning phase is complete. This ensures that the operations within
-  // the decomposition are not available for acceleration.
-  //
-  // 3. Standard non npu_call or cpu_call composite ops.
-  //
-  // 3.1 Composite op is supported by the plugin. Since a plugin is capable of
-  // directly compile the composite op, the composite op will be selected
-  // during partitioning. Therefore, all ops in the decomposition subgraph will
-  // be ignored, furthermore, the decomposition subgraph will be removed from
-  // the model.
-  //
-  // 3.2 Composite op is not supported by the plugin. In this case, the
-  // composite op will not be selected during partitioning. To give best effort
-  // compilation, we inline the decomposition subgraph into the main subgraph,
-  // that is, replace the composite op with the ops in the decomposition
-  // subgraph. After re-partitioning, there are chances that the decomposition
-  // Ops are now selected by the plugin.
-  //
-  // More advanced behavior could include:
-  // * Allowing the plugin to compile the decomposition subgraph in the case
-  // it cannot lower the composite directly. Potentially inline in this case
-  // contingent on the availability of a suitable CPU kernel for the composite
-  // op.
-  //
-  // ASSUMPTIONS:
-  // * npu_call ops ARE NOT nested within decompositions of other npu_call ops.
-  // * Standard composite ops ARE allowed to be nested within decompositions of
-  // npu_call ops.
-  // * No two npu_call ops share the same subgraph.
-  // * Any composite op in a decomposition subgraph will be treated as a regular
-  // op and inlined back into the main subgraph.
+  // Composites: an npu_call in a partitioned subgraph is offloaded with its
+  // decomposition as an entry; a cpu_call is inlined after partitioning; any
+  // other composite is compiled directly if the plugin selects it, else inlined
+  // and the subgraph is partitioned again.
 
-  // Find decomposition subgraphs and npu_call ops. These will be used to filter
-  // subgraphs passed to the plugin and pass on auto-selected npu_call
-  // partitions.
-  absl::flat_hash_set<uint32_t> decomp_subgraphs;
-  auto input_num_sgs = model.NumSubgraphs();
-  std::vector<size_t> selected_composite_subgraph_indexes;
+  // Fails without mutating the model if the subgraph references are invalid.
+  LITERT_ASSIGN_OR_RETURN(const auto graph, BuildSubgraphCallGraph(model));
+  const std::vector<LiteRtSubgraph> initial_subgraphs(model.Subgraphs().begin(),
+                                                      model.Subgraphs().end());
+  const size_t num_initial_subgraphs = initial_subgraphs.size();
 
-  // Track all cpu_call ops and their decomposition subgraphs for late inlining.
-  std::vector<std::pair<LiteRtOp, uint32_t>> cpu_calls;
+  PartitionWalkState state;
+  state.supports_region_subgraphs = compiler_plugin.SupportsRegionSubgraphs();
+  if (auto compiler_options = compiler_plugin.CompilerOptions();
+      compiler_options.HasValue()) {
+    state.strategy = compiler_options->partition_strategy;
+    state.max_partitions = compiler_options->max_partitions;
+  }
 
-  ForEachIr(&model, [&](LiteRtOp op) {
-    auto info = GetOptionsAs<CompositeOptions>(op);
-    if (!info) {
-      return;
-    }
-    decomp_subgraphs.insert(info->subgraph);
-    if (info->name == CompositeOptions::kCpuCall) {
-      cpu_calls.push_back({op, info->subgraph});
-    }
-  });
-
-  // Build partition result via calling plugin on non-decomposition subgraphs.
-  std::vector<LiteRtOp> dispatch_ops;
-  for (auto i = 0; i < input_num_sgs; ++i) {
-    if (decomp_subgraphs.contains(i)) {
-      continue;
-    }
-    if (!subgraphs_to_partition.empty() &&
-        !subgraphs_to_partition.contains(i)) {
-      continue;
-    }
-    auto* subgraph = model.Subgraphs()[i];
-    auto selected_ops = compiler_plugin.Partition(subgraph, soc_model);
-    // TODO ensure selected ops don't contain npu_calls.
-    if (!selected_ops) {
-      return selected_ops.Error();
-    }
-
-    // Shield odml.cpu_call from being selected by the plugin.
-    selected_ops->erase(
-        std::remove_if(selected_ops->begin(), selected_ops->end(),
-                       [](const auto& pair) {
-                         auto info = GetOptionsAs<CompositeOptions>(pair.first);
-                         return info &&
-                                info->name == CompositeOptions::kCpuCall;
-                       }),
-        selected_ops->end());
-
-    // Find all composite ops (except npu_calls and cpu_calls) that are not
-    // selected.
-    std::vector<LiteRtOp> ops_to_inline;
-    for (auto& op : subgraph->Ops()) {
-      auto info = GetOptionsAs<CompositeOptions>(op);
-      if (!info) {
+  // Classify composite decompositions.
+  std::vector<int32_t> npu_call_decompositions;
+  std::vector<int32_t> cpu_call_decompositions;
+  SubgraphSet standard_decompositions;
+  for (LiteRtSubgraph subgraph : initial_subgraphs) {
+    for (LiteRtOp op : subgraph->Ops()) {
+      const auto kind = GetCompositeKind(op);
+      LiteRtSubgraph decomposition = DecompositionOf(model, *op);
+      if ((kind == CompositeKind::kNpuCall ||
+           kind == CompositeKind::kCpuCall) &&
+          decomposition == nullptr) {
+        return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                          kind == CompositeKind::kNpuCall
+                              ? "odml.npu_call has no decomposition subgraph"
+                              : "odml.cpu_call has no decomposition subgraph");
+      }
+      if (kind == CompositeKind::kNone || decomposition == nullptr) {
         continue;
       }
-      if (info->name == CompositeOptions::kNpuCall ||
-          info->name == CompositeOptions::kCpuCall) {
-        continue;
-      }
-      auto is_composite_selected = std::any_of(
-          selected_ops->begin(), selected_ops->end(),
-          [&op](const auto& selected_op) { return selected_op.first == op; });
-      if (!is_composite_selected) {
-        ops_to_inline.push_back(op);
-      }
-    }
-
-    // Inline all composite ops that are not selected.
-    for (auto& op : ops_to_inline) {
-      auto info = GetOptionsAs<CompositeOptions>(op);
-      auto status =
-          InlineSubgraph(model, *op, model.Subgraphs()[info->subgraph]);
-      if (status) {
-        // Now the decomposition subgraph is inlined into the main subgraph,
-        // therefore its also "selected".
-        selected_composite_subgraph_indexes.push_back(info->subgraph);
+      const int32_t index = IndexOf(model, decomposition);
+      if (kind == CompositeKind::kNpuCall) {
+        npu_call_decompositions.push_back(index);
+      } else if (kind == CompositeKind::kCpuCall) {
+        cpu_call_decompositions.push_back(index);
       } else {
-        LITERT_LOG(LITERT_ERROR,
-                   "Failed to inline composite op '%s' (subgraph %d): %s",
-                   std::string(info->name).c_str(), info->subgraph,
-                   status.Error().Message().c_str());
+        standard_decompositions.insert(decomposition);
       }
     }
-    if (!ops_to_inline.empty()) {
-      LITERT_LOG(LITERT_INFO, "Inlined %lu composite ops into subgraph<%d>",
-                 ops_to_inline.size(), i);
-      // Re-do partitioning only if inlining happened.
-      selected_ops->clear();
-      selected_ops = compiler_plugin.Partition(subgraph, soc_model);
+  }
 
-      // Re-shield odml.cpu_call from being selected by the plugin.
-      selected_ops->erase(
-          std::remove_if(
-              selected_ops->begin(), selected_ops->end(),
-              [](const auto& pair) {
-                auto info = GetOptionsAs<CompositeOptions>(pair.first);
-                return info && info->name == CompositeOptions::kCpuCall;
-              }),
-          selected_ops->end());
+  // Every npu_call body is checked before anything is mutated: it must not
+  // need helpers the plugin cannot take, and its cpu_calls must be inlinable.
+  // This is conservative: it also checks npu_calls that end up not being
+  // offloaded (e.g. in subgraphs excluded by `subgraphs_to_partition`).
+  for (const int32_t index : npu_call_decompositions) {
+    LITERT_RETURN_IF_ERROR(CheckShippedSubgraphs(
+        model, {initial_subgraphs[index]}, state.supports_region_subgraphs));
+  }
+
+  // CPU roots: signatures, the main subgraph, and any other subgraph without
+  // callers that is not a composite decomposition.
+  std::vector<int> num_callers(num_initial_subgraphs, 0);
+  for (const auto& callees : graph.callees) {
+    for (const int32_t callee : callees) {
+      ++num_callers[callee];
     }
+  }
+  std::vector<LiteRtSubgraph> cpu_roots;
+  SubgraphSet cpu_root_set;
+  auto add_cpu_root = [&](LiteRtSubgraph subgraph) {
+    if (cpu_root_set.insert(subgraph).second) {
+      cpu_roots.push_back(subgraph);
+    }
+  };
+  for (LiteRtSignature signature : model.Signatures()) {
+    add_cpu_root(&signature->GetSubgraph());
+  }
+  if (num_initial_subgraphs > 0) {
+    add_cpu_root(initial_subgraphs[LiteRtModelT::kMainSubgraphIndex]);
+  }
+  for (size_t i = 0; i < num_initial_subgraphs; ++i) {
+    // A composite decomposition always has its composite as a caller.
+    if (num_callers[i] == 0) {
+      add_cpu_root(initial_subgraphs[i]);
+    }
+  }
 
-    // Record all decomposition subgraph indexes, where its compositie op will
-    // be compiled without relying on the decomposition body.
-    for (auto& op : *selected_ops) {
-      auto info = GetOptionsAs<CompositeOptions>(op.first);
-      if (!info) {
+  // The bodies of npu_call and cpu_call composites are compiled or inlined
+  // as a whole and must not be partitioned.
+  PinClosure(model, npu_call_decompositions, state.pinned);
+  PinClosure(model, cpu_call_decompositions, state.pinned);
+  // An op that interprets its subgraphs (REDUCE, SORT, ...) needs them
+  // unchanged whether it ends up offloaded or on CPU, and wherever it is,
+  // including subgraphs the walk does not visit.
+  for (LiteRtSubgraph subgraph : initial_subgraphs) {
+    for (const LiteRtOpT* op : subgraph->Ops()) {
+      if (IsRegionOp(*op) &&
+          RegionInvocationOf(op->OpCode()) == RegionInvocation::kAtomic) {
+        PinClosure(model, SubgraphRefs(*op), state.pinned);
+      }
+    }
+  }
+
+  // Only CPU roots selected by `subgraphs_to_partition` start the walk. The
+  // others, and everything they reference, are pinned.
+  SubgraphSet roots;
+  SubgraphSet unwalked_roots;
+  for (LiteRtSubgraph subgraph : cpu_roots) {
+    const int32_t index = IndexOf(model, subgraph);
+    if (subgraphs_to_partition.empty() ||
+        subgraphs_to_partition.contains(static_cast<uint32_t>(index))) {
+      roots.insert(subgraph);
+    } else {
+      unwalked_roots.insert(subgraph);
+      PinClosure(model, {index}, state.pinned);
+    }
+  }
+  for (const uint32_t index : subgraphs_to_partition) {
+    if (index >= num_initial_subgraphs ||
+        !cpu_root_set.contains(initial_subgraphs[index])) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Ignoring subgraph<%u> in the subgraphs to partition: it is "
+                 "not a CPU root (a signature subgraph, the main subgraph or "
+                 "an unreferenced subgraph).",
+                 index);
+    }
+  }
+  // CPU control-flow ops that made each subgraph a root.
+  absl::flat_hash_map<LiteRtSubgraph, std::vector<LiteRtOp>> root_callers;
+  for (const int32_t index : TopologicalOrder(graph)) {
+    LiteRtSubgraph subgraph = initial_subgraphs[index];
+    if (!roots.contains(subgraph) ||
+        standard_decompositions.contains(subgraph)) {
+      continue;
+    }
+    int32_t subgraph_index = index;
+    // Checked before `pinned`: every unwalked root is also pinned.
+    if (unwalked_roots.contains(subgraph)) {
+      // Reached only through control flow in a walked subgraph. Its
+      // signature keeps the unchanged original; those control-flow ops get a
+      // copy, which is partitioned instead. The copy's callees stay pinned,
+      // so they are split in turn when the copy makes them roots.
+      LITERT_ASSIGN_OR_RETURN(
+          subgraph, CloneForCallers(model, *subgraph, root_callers[subgraph]));
+      subgraph_index = IndexOf(model, subgraph);
+    } else if (state.pinned.contains(subgraph)) {
+      // Partitioned in place for its CPU callers (its signature, if it is a
+      // CPU root, and `root_callers`); every other caller gets an unchanged
+      // copy.
+      LITERT_RETURN_IF_ERROR(SplitPinnedSubgraph(
+          model, *subgraph, root_callers[subgraph], state.pinned));
+    }
+    LITERT_RETURN_IF_ERROR(PartitionOneSubgraph(
+        compiler_plugin, model, soc_model, *subgraph, subgraph_index, state));
+    state.processed.push_back(subgraph);
+    // Ops left in the subgraph run on CPU.
+    for (LiteRtOp op : subgraph->Ops()) {
+      if (!IsRegionOp(*op)) {
         continue;
       }
-      if (info->name == CompositeOptions::kNpuCall) {
-        continue;
+      const auto refs = SubgraphRefs(*op);
+      if (RegionInvocationOf(op->OpCode()) ==
+          RegionInvocation::kWholeSubgraph) {
+        for (const int32_t ref : refs) {
+          LiteRtSubgraph callee = model.Subgraphs()[ref];
+          roots.insert(callee);
+          root_callers[callee].push_back(op);
+        }
+      } else {
+        PinClosure(model, refs, state.pinned);
       }
-      selected_composite_subgraph_indexes.push_back(info->subgraph);
-    }
-    auto num_selected_ops = selected_ops->size();
-    auto num_ops = subgraph->Ops().size();
-
-    auto num_partitions = dispatch_ops.size();
-    // Get partition strategy from compiler options.
-    auto compiler_options = compiler_plugin.CompilerOptions();
-    LiteRtCompilerOptionsPartitionStrategy strategy =
-        kLiteRtCompilerOptionsPartitionStrategyDefault;
-    size_t max_partitions = 0;
-    if (compiler_options.HasValue()) {
-      strategy = compiler_options->partition_strategy;
-      max_partitions = compiler_options->max_partitions;
-    }
-
-    LITERT_RETURN_IF_ERROR(PartitionSubgraph(std::move(*selected_ops),
-                                             *subgraph, dispatch_ops, model,
-                                             strategy, max_partitions));
-    num_partitions = dispatch_ops.size() - num_partitions;
-    LITERT_LOG(LITERT_INFO,
-               "Partitioned subgraph<%d>, selected %lu "
-               "ops, from a total of %lu ops. resulted in %lu partitions.",
-               i, num_selected_ops, num_ops, num_partitions);
-  }
-
-  // Late inline all odml.cpu_call ops.
-  for (auto& [op, sg_idx] : cpu_calls) {
-    auto status = InlineSubgraph(model, *op, model.Subgraphs()[sg_idx]);
-    if (status) {
-      selected_composite_subgraph_indexes.push_back(sg_idx);
     }
   }
 
-  ABSL_DCHECK_EQ(dispatch_ops.size(), model.NumSubgraphs() - input_num_sgs);
-
-  std::sort(selected_composite_subgraph_indexes.begin(),
-            selected_composite_subgraph_indexes.end());
-  selected_composite_subgraph_indexes.erase(
-      std::unique(selected_composite_subgraph_indexes.begin(),
-                  selected_composite_subgraph_indexes.end()),
-      selected_composite_subgraph_indexes.end());
-
-  // Update input_num_sgs to account for removed decomposition subgraphs.
-  ABSL_DCHECK_LE(selected_composite_subgraph_indexes.size(), input_num_sgs);
-  input_num_sgs -= selected_composite_subgraph_indexes.size();
-  // Remove all decomposition subgraphs from the model.
-  model.Yank(std::move(selected_composite_subgraph_indexes));
-
-  // Collect all npu_call ops, and their decomposition subgraphs indexes.
-  // Note:  we do this after partitioning and removing decomposition subgraphs,
-  // so subgraph indexes of npu_calls are also updated.
-  std::vector<CompositeOptions> npu_calls;
-  ForEachIr(&model, [&](LiteRtOp op) {
-    auto info = GetOptionsAs<CompositeOptions>(op);
-    if (!info) {
-      return;
-    }
-    if (info->name == CompositeOptions::kNpuCall) {
-      npu_calls.push_back(std::move(*info));
-    }
-  });
-
-  // Add collect all the subgraphs to be compiled. These are the bodies of
-  // outlined partitions or npu_calls.
-  std::vector<size_t> decomps_to_compile;
-  for (auto& npu_call : npu_calls) {
-    auto* op = npu_call.op;
-    MakeDispatchOp(*op);
-    dispatch_ops.push_back(op);
-    decomps_to_compile.push_back(npu_call.subgraph);
-  }
-  for (auto i = input_num_sgs; i < model.NumSubgraphs(); ++i) {
-    // Outlined subgraphs are pushed to the back of the model.
-    decomps_to_compile.push_back(i);
+  // No more partitioning happens, so cpu_call bodies can be inlined without
+  // exposing their ops to the plugin. Each stage only rewrites subgraphs it
+  // owns.
+  // 1. Walked CPU subgraphs. A cpu_call that cannot be inlined stays a
+  //    composite.
+  for (LiteRtSubgraph subgraph : state.processed) {
+    LITERT_RETURN_IF_ERROR(
+        InlineCpuCallsInto(model, *subgraph, /*must_succeed=*/false));
   }
 
-  // Create a new model split from the input model.
-  auto new_model = model.Yank(std::move(decomps_to_compile));
+  // 2. Each npu_call in a walked subgraph becomes a dispatch op compiling its
+  // decomposition; npu_calls elsewhere stay composites.
+  std::vector<LiteRtSubgraph> entries = state.outlined;
+  {
+    // Only references from live subgraphs make a decomposition shared;
+    // cpu_call bodies inlined in stage 1 and decompositions cleared or inlined
+    // during the walk are dead.
+    LITERT_ASSIGN_OR_RETURN(auto live_graph, BuildSubgraphCallGraph(model));
+    std::vector<int32_t> live_roots = IndicesOf(model, cpu_roots);
+    const auto processed_indices = IndicesOf(model, state.processed);
+    live_roots.insert(live_roots.end(), processed_indices.begin(),
+                      processed_indices.end());
+    const auto outlined_indices = IndicesOf(model, state.outlined);
+    live_roots.insert(live_roots.end(), outlined_indices.begin(),
+                      outlined_indices.end());
+    const auto live = SubgraphClosure(live_graph, live_roots);
+    SubgraphSet entry_set(entries.begin(), entries.end());
+    for (LiteRtSubgraph subgraph : state.processed) {
+      for (LiteRtOp op : subgraph->Ops()) {
+        if (GetCompositeKind(op) != CompositeKind::kNpuCall) {
+          continue;
+        }
+        LITERT_ASSIGN_OR_RETURN(LiteRtSubgraph decomposition,
+                                ExclusiveNpuCallDecomposition(
+                                    model, *op, live, cpu_root_set, entry_set));
+        entries.push_back(decomposition);
+        entry_set.insert(decomposition);
+        MakeDispatchOp(*op);
+        state.dispatch_ops.push_back(op);
+      }
+    }
+  }
+  ABSL_DCHECK_EQ(state.dispatch_ops.size(), entries.size());
 
-  return PartitionResult{std::move(dispatch_ops), std::move(new_model)};
+  // 3. Entries are used only by their dispatch op, so they are rewritten in
+  // place. Helpers are handled in PackagePartitions.
+  for (LiteRtSubgraph entry : entries) {
+    LITERT_RETURN_IF_ERROR(
+        InlineCpuCallsInto(model, *entry, /*must_succeed=*/true));
+  }
+
+  if (!state.supports_region_subgraphs) {
+    // Plugins without region support compile composites as opaque ops. Must
+    // follow stage 3, which needs the cpu_call decompositions.
+    for (LiteRtSubgraph entry : entries) {
+      for (LiteRtOp op : entry->Ops()) {
+        ClearCompositeDecomposition(*op);
+      }
+    }
+  }
+
+  LITERT_ASSIGN_OR_RETURN(auto partitions,
+                          PackagePartitions(model, cpu_roots, cpu_root_set,
+                                            entries,
+                                            state.supports_region_subgraphs));
+  return PartitionResult{std::move(state.dispatch_ops), std::move(partitions)};
 }
 
 Expected<PartitionResult> PartitionModelDirect(
@@ -897,7 +1494,8 @@ Expected<PartitionResult> PartitionModelDirect(
     // Outlined subgraphs are pushed to the back of the model.
     decomps_to_compile.push_back(i);
   }
-  auto new_model = model.Yank(std::move(decomps_to_compile));
+  LITERT_ASSIGN_OR_RETURN(auto new_model,
+                          model.Yank(std::move(decomps_to_compile)));
 
   return PartitionResult{std::move(dispatch_ops), std::move(new_model)};
 }
@@ -918,6 +1516,15 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
 
   CompiledResult& stored_result = *compiled_result;
   bool has_jit_handles = false;
+
+  // The plugin must emit exactly one call per entry subgraph; helper subgraphs
+  // after the entries get no call of their own.
+  if (auto num_calls = stored_result.NumCalls();
+      num_calls.HasValue() && *num_calls != dispatch_ops.size()) {
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 absl::StrCat("Plugin emitted ", *num_calls, " calls for ",
+                              dispatch_ops.size(), " entry subgraphs"));
+  }
 
   // Register byte code buffers as external buffers. Map the byte code indices
   // to the registered buffer ids.
@@ -1104,11 +1711,17 @@ Expected<bool> ApplyCompilerOptionsInputShapes(
   return true;
 }
 
+// Applies `compiler_plugin` to `model`. If it fails, `*model_modified` (if
+// given) tells whether `model` may already have been changed: transformation,
+// partitioning and compilation modify it in place and are not undone.
 Expected<void> ApplySinglePlugin(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
     absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition,
-    ApplyPluginsResult& result) {
+    ApplyPluginsResult& result, bool* model_modified = nullptr) {
+  if (model_modified != nullptr) {
+    *model_modified = false;
+  }
   if (auto sdk_version = compiler_plugin.SdkVersion(); sdk_version.HasValue()) {
     if (!sdk_version->empty()) {
       LITERT_LOG(LITERT_INFO, "Applying plugin with SDK version: %s",
@@ -1132,6 +1745,11 @@ Expected<void> ApplySinglePlugin(
   if (!compatibility) {
     LITERT_LOG(LITERT_ERROR, "%s", compatibility.Error().Message().c_str());
     return compatibility.Error();
+  }
+
+  // From here on, a failure may leave `model` partially modified.
+  if (model_modified != nullptr) {
+    *model_modified = true;
   }
 
   // Compiler Plugin: Transformation, apply transformations to model.
@@ -1264,11 +1882,20 @@ Expected<ApplyPluginsResult> ApplyPlugins(
     }
 
     if (*plugin_supported_hardware & selected_hw_accelerators) {
-      auto status = ApplySinglePlugin(compiler_plugin, *model, "", {}, result);
+      bool model_modified = false;
+      auto status = ApplySinglePlugin(compiler_plugin, *model, "", {}, result,
+                                      &model_modified);
 
       if (!status) {
         error_messages.push_back(
             absl::StrCat(plugin_name, " ", status.Error().Message()));
+        if (model_modified) {
+          // The model may be half partitioned (e.g. dispatch ops without
+          // byte code). Applying further plugins to it is pointless; the
+          // caller must not use it.
+          result.model_invalidated = true;
+          break;
+        }
         continue;
       }
 

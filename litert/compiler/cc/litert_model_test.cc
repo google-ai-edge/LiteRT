@@ -21,6 +21,7 @@
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/core/model/model.h"
 #include "litert/test/common.h"
 #include "litert/test/load_test_model.h"
 
@@ -82,6 +83,24 @@ TEST(ModelTest, BlockWiseQuantizationSkipsFunctionOutsideContext) {
   EXPECT_EQ(quantization.scales, nullptr);
   EXPECT_EQ(quantization.zero_points, nullptr);
   EXPECT_EQ(quantization.block_size, 0);
+}
+
+// A partitions model: one entry subgraph followed by one helper.
+TEST(ModelTest, NumEntrySubgraphs) {
+  auto cc_model = litert::testing::LoadTestFileModel("simple_multi_op.tflite");
+  LiteRtModel c_model = cc_model.Get();
+  c_model->EmplaceSubgraph();
+  c_model->SetNumEntrySubgraphs(1);
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+
+  EXPECT_EQ(litert::compiler::Model(ctx, c_model).NumEntrySubgraphs(), 1);
+
+  // A context from before `get_num_entry_subgraphs` was added: every subgraph
+  // is treated as an entry.
+  LiteRtCompilerContext old_ctx = *ctx;
+  old_ctx.abi_header.struct_size =
+      offsetof(LiteRtCompilerContext, get_num_entry_subgraphs);
+  EXPECT_EQ(litert::compiler::Model(&old_ctx, c_model).NumEntrySubgraphs(), 2);
 }
 
 }  // namespace

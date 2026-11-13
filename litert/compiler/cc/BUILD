@@ -96,6 +96,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c/internal:litert_compiler_context",
+        "//litert/core/model",
         "//litert/test:common",
         "//litert/test:load_test_model",
         "@com_google_googletest//:gtest_main",

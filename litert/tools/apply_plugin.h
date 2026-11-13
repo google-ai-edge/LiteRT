@@ -144,8 +144,10 @@ struct ApplyPluginRun {
   // larger pipeline like an end2end test.
   UserStream dump_out;
 
-  // If provided, only the subgraphs with the given indices are applied with the
-  // plugin.
+  // If provided, only the CPU roots (signature subgraphs, the main subgraph,
+  // or unreferenced subgraphs) with the given indices are partitioned,
+  // together with the bodies of control flow that stays on CPU in them,
+  // whatever their index. Other CPU roots are left unchanged.
   absl::flat_hash_set<uint32_t> subgraphs = {};
 
   // Environment options.

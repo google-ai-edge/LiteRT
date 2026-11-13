@@ -486,6 +486,20 @@ class Model {
     return num_subgraphs;
   }
 
+  // Number of leading subgraphs that are entry points. In the partitions
+  // model passed to a plugin's compile function, the remaining subgraphs are
+  // private helpers referenced by ops in the entry subgraphs. Falls back to
+  // `NumSubgraphs()` if the runtime does not provide the count.
+  size_t NumEntrySubgraphs() const {
+    if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, get_num_entry_subgraphs)) {
+      return NumSubgraphs();
+    }
+    LiteRtParamIndex num_entry_subgraphs = 0;
+    internal::AssertOk(ctx_->get_num_entry_subgraphs, model_,
+                       &num_entry_subgraphs);
+    return num_entry_subgraphs;
+  }
+
   Expected<class Subgraph> Subgraph(size_t index) const {
     LiteRtSubgraph subgraph;
     if (!ctx_ || !ctx_->get_model_subgraph) {

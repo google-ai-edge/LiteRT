@@ -20,6 +20,7 @@ add_library(litert_compiler_plugin STATIC
     plugin/algo.cc
     plugin/compiler_plugin.cc
     plugin/litert_compiler_options.cc
+    plugin/region_op_semantics.cc
 )
 
 target_include_directories(litert_compiler_plugin

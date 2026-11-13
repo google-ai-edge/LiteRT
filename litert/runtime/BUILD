@@ -841,6 +841,7 @@ cc_library(
         "//litert/build_common:build_include_npu_enabled": [
             "//litert/compiler/plugin:compiler_plugin",
             "//litert/core/cache:compilation_cache",
+            "//litert/core/model:model_load",
             "//litert/core/model:model_serialize",
         ],
         "//conditions:default": [],
