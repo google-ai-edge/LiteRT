@@ -314,6 +314,65 @@ bool LayoutArena(const MoeExpertSource& source, int32_t experts,
   return true;
 }
 
+// Debug: LITERT_NVIDIA_MOE_ARENA_CHECKSUM=1 logs a checksum of what each
+// arena holds once it is loaded, read back from where it lives: the pieces'
+// bytes in the order of the layout, without the alignment gaps between them
+// (which nothing writes). Two loaders that log the same checksums put the
+// same weights and scales in front of the kernels.
+bool ArenaChecksumEnabled() {
+  const char* value = std::getenv("LITERT_NVIDIA_MOE_ARENA_CHECKSUM");
+  return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}
+
+// FNV-1a over the 8-byte words of `data`, then over its last bytes.
+uint64_t HashBytes(uint64_t hash, const uint8_t* data, size_t bytes) {
+  constexpr uint64_t kPrime = 0x100000001b3ull;
+  size_t at = 0;
+  for (; at + sizeof(uint64_t) <= bytes; at += sizeof(uint64_t)) {
+    uint64_t word = 0;
+    std::memcpy(&word, data + at, sizeof(word));
+    hash = (hash ^ word) * kPrime;
+  }
+  for (; at < bytes; ++at) {
+    hash = (hash ^ data[at]) * kPrime;
+  }
+  return hash;
+}
+
+bool ArenaChecksum(const void* memory, bool on_device,
+                   const MoeExpertSource& source, const ArenaLayout& layout,
+                   int32_t experts, int32_t model_dim, int32_t hidden_dim,
+                   uint64_t* checksum) {
+  std::vector<uint8_t> copy;
+  const auto* bytes = static_cast<const uint8_t*>(memory);
+  if (on_device) {
+    copy.resize(layout.total);
+    if (cudaMemcpy(copy.data(), memory, layout.total, cudaMemcpyDeviceToHost) !=
+        cudaSuccess) {
+      return false;
+    }
+    bytes = copy.data();
+  }
+  uint64_t hash = 0xcbf29ce484222325ull;
+  for (int i = 0; i < kPieces; ++i) {
+    if (source.sizes[i] == 0) continue;
+    if (layout.compact && i >= 3 && i < 6) {
+      // A byte per block, a gap, then the rows' maxima.
+      const size_t rows = i < 5 ? static_cast<size_t>(hidden_dim) * experts
+                                : static_cast<size_t>(model_dim) * experts;
+      const size_t fractions =
+          source.sizes[i] / (source.scale_type == 0 ? 4 : 2);
+      hash = HashBytes(hash, bytes + layout.offsets[i], fractions);
+      hash = HashBytes(hash, bytes + layout.max_offsets[i - 3],
+                       rows * sizeof(uint16_t));
+      continue;
+    }
+    hash = HashBytes(hash, bytes + layout.offsets[i], layout.bytes[i]);
+  }
+  *checksum = hash;
+  return true;
+}
+
 class FileReader {
  public:
   ~FileReader() {
@@ -554,6 +613,18 @@ std::shared_ptr<Arena> LoadArena(const MoeExpertSource& source, int32_t experts,
       layout.compact ? device_bytes + layout.max_offsets[1] : nullptr,
       layout.compact ? device_bytes + layout.max_offsets[2] : nullptr,
       layout.compact ? 1 : 0};
+  if (ArenaChecksumEnabled()) {
+    uint64_t checksum = 0;
+    if (!ArenaChecksum(arena->memory, on_device, source, layout, experts,
+                       model_dim, hidden_dim, &checksum)) {
+      *error = "reading the arena back for its checksum failed";
+      return nullptr;
+    }
+    std::fprintf(stderr,
+                 "[LiteRtNvidiaMoe] experts at offset %llu: checksum %016llx\n",
+                 static_cast<unsigned long long>(source.offsets[0]),
+                 static_cast<unsigned long long>(checksum));
+  }
   return arena;
 }
 
