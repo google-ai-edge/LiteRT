@@ -54,6 +54,7 @@ limitations under the License.
 #include <stdint.h>
 
 #include <cstring>
+#include <limits>
 #include <memory>
 
 #include "tflite/core/c/builtin_op_data.h"
@@ -75,7 +76,10 @@ TfLiteStatus Resize(TfLiteContext* context, TfLiteNode* node) {
 
   const TfLiteTensor* hash;
   TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, 0, &hash));
+  TF_LITE_ENSURE_TYPES_EQ(context, hash->type, kTfLiteFloat32);
   TF_LITE_ENSURE_EQ(context, NumDimensions(hash), 2);
+  TF_LITE_ENSURE(context, SizeOfDimension(hash, 0) >= 1);
+  TF_LITE_ENSURE(context, SizeOfDimension(hash, 1) >= 1);
   // Support up to 32 bits.
   TF_LITE_ENSURE(context, SizeOfDimension(hash, 1) <= 32);
 
@@ -87,6 +91,7 @@ TfLiteStatus Resize(TfLiteContext* context, TfLiteNode* node) {
   if (NumInputs(node) == 3) {
     const TfLiteTensor* weight;
     TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, 2, &weight));
+    TF_LITE_ENSURE_TYPES_EQ(context, weight->type, kTfLiteFloat32);
     TF_LITE_ENSURE_EQ(context, NumDimensions(weight), 1);
     TF_LITE_ENSURE_EQ(context, SizeOfDimension(weight, 0),
                       SizeOfDimension(input, 0));
@@ -94,17 +99,40 @@ TfLiteStatus Resize(TfLiteContext* context, TfLiteNode* node) {
 
   TfLiteTensor* output;
   TF_LITE_ENSURE_OK(context, GetOutputSafe(context, node, 0, &output));
-  TfLiteIntArray* outputSize = TfLiteIntArrayCreate(1);
+  TF_LITE_ENSURE_TYPES_EQ(context, output->type, kTfLiteInt32);
+  int output_elements = 0;
   switch (params->type) {
-    case kTfLiteLshProjectionSparse:
-      outputSize->data[0] = SizeOfDimension(hash, 0);
+    case kTfLiteLshProjectionSparse: {
+      const int num_hash = SizeOfDimension(hash, 0);
+      const int num_bits = SizeOfDimension(hash, 1);
+      TF_LITE_ENSURE(context, num_bits < 32 || num_hash == 1);
+      if (num_bits < 32) {
+        const uint64_t max_offset =
+            static_cast<uint64_t>(num_hash - 1) << num_bits;
+        const uint64_t max_sig = (1ULL << num_bits) - 1ULL;
+        TF_LITE_ENSURE(
+            context, max_offset + max_sig <=
+                         static_cast<uint64_t>(
+                             std::numeric_limits<uint32_t>::max()));
+      }
+      output_elements = num_hash;
       break;
-    case kTfLiteLshProjectionDense:
-      outputSize->data[0] = SizeOfDimension(hash, 0) * SizeOfDimension(hash, 1);
+    }
+    case kTfLiteLshProjectionDense: {
+      const int64_t dense_elements =
+          static_cast<int64_t>(SizeOfDimension(hash, 0)) *
+          SizeOfDimension(hash, 1);
+      TF_LITE_ENSURE(context,
+                     dense_elements >= 0 &&
+                         dense_elements <= std::numeric_limits<int>::max());
+      output_elements = static_cast<int>(dense_elements);
       break;
+    }
     default:
       return kTfLiteError;
   }
+  TfLiteIntArray* outputSize = TfLiteIntArrayCreate(1);
+  outputSize->data[0] = output_elements;
   return context->ResizeTensor(context, output, outputSize);
 }
 
@@ -116,7 +144,8 @@ TfLiteStatus Resize(TfLiteContext* context, TfLiteNode* node) {
 int RunningSignBit(const TfLiteTensor* input, const TfLiteTensor* weight,
                    float seed) {
   double score = 0.0;
-  int input_item_bytes = input->bytes / SizeOfDimension(input, 0);
+  const size_t input_item_bytes =
+      input->bytes / static_cast<size_t>(SizeOfDimension(input, 0));
   char* input_ptr = input->data.raw;
 
   const size_t seed_size = sizeof(float);
@@ -148,13 +177,18 @@ void SparseLshProjection(const TfLiteTensor* hash, const TfLiteTensor* input,
   int num_hash = SizeOfDimension(hash, 0);
   int num_bits = SizeOfDimension(hash, 1);
   for (int i = 0; i < num_hash; i++) {
-    int32_t hash_signature = 0;
+    uint32_t hash_signature = 0;
     for (int j = 0; j < num_bits; j++) {
       float seed = GetTensorData<float>(hash)[i * num_bits + j];
-      int bit = RunningSignBit(input, weight, seed);
+      uint32_t bit = static_cast<uint32_t>(RunningSignBit(input, weight, seed));
       hash_signature = (hash_signature << 1) | bit;
     }
-    *out_buf++ = hash_signature + i * (1 << num_bits);
+    if (num_bits < 32) {
+      *out_buf++ = static_cast<int32_t>(
+          hash_signature + static_cast<uint32_t>(i) * (1U << num_bits));
+    } else {
+      *out_buf++ = static_cast<int32_t>(hash_signature);
+    }
   }
 }
 
