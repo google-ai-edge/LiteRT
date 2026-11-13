@@ -1,6 +1,5 @@
 # Build targets for open-source Dawn repository.
 
-load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@rules_python//python:defs.bzl", "py_binary")
 
 package(default_visibility = ["//visibility:public"])
@@ -125,12 +124,33 @@ cc_library(
     ],
 )
 
-selects.config_setting_group(
-    name = "webgpu_dawn_dynamic_loader_disabled",
-    match_any = [
-        "@litert//litert:emscripten",
-        "@litert//litert:litert_webgpu_dawn_dynamic_loader_disabled",
-    ],
+genrule(
+    name = "generate_webgpu_dawn_stub",
+    srcs = ["include/dawn/webgpu.h"],
+    outs = ["webgpu_dawn_stub.cc"],
+    cmd = "sed -n -E 's/.*WGPU_EXPORT .* (wgpu[A-Za-z0-9_]+)\\(.*/extern \"C\" __declspec(dllexport) void \\1() {}/p' $(location include/dawn/webgpu.h) > $@",
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+cc_binary(
+    name = "stub/webgpu_dawn.dll",
+    srcs = [":webgpu_dawn_stub.cc"],
+    linkshared = 1,
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+filegroup(
+    name = "webgpu_dawn_interface_lib",
+    srcs = [":stub/webgpu_dawn.dll"],
+    output_group = "interface_library",
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+cc_import(
+    name = "webgpu_dawn_dll_import",
+    interface_library = ":webgpu_dawn_interface_lib",
+    system_provided = 1,
+    target_compatible_with = ["@platforms//os:windows"],
 )
 
 cc_library(
@@ -146,14 +166,19 @@ cc_library(
         "include",
         "src",
     ],
+    linkopts = select({
+        "@platforms//os:windows": [
+            "/DELAYLOAD:webgpu_dawn.dll",
+            "delayimp.lib",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         ":dawn_native",
         ":webgpu_headers",
     ] + select({
-        ":webgpu_dawn_dynamic_loader_disabled": [],
-        "//conditions:default": [
-            "@litert//ml_drift_delegate/delegate:webgpu_dawn_loader",
-        ],
+        "@platforms//os:windows": [":webgpu_dawn_dll_import"],
+        "//conditions:default": [],
     }),
 )
 
