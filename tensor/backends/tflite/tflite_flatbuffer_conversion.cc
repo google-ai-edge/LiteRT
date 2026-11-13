@@ -410,6 +410,9 @@ absl::Status ModelFactory::Build() {
 
   size_t unnamed_input_idx = 0;
   size_t unnamed_output_idx = 0;
+  // (tensor index, scales tensor name) of blockwise tensors whose scales are
+  // an existing tensor of this subgraph.
+  std::vector<std::pair<int, std::string>> named_scale_refs;
 
   for (auto& [tensor, build_info] : tensors_) {
     // The const cast is safe: we hash on the tensor group shared_ptr and index
@@ -471,6 +474,11 @@ absl::Status ModelFactory::Build() {
       if (auto pcq = tensor_info.quantization
                          ->As<const PerChannelAffineQuantization>();
           pcq.ok()) {
+        if (pcq->HasNonZeroFloatZeroPoints()) {
+          return absl::UnimplementedError(
+              "TFLite QuantizationParameters does not support float "
+              "zero_points in PerChannelAffineQuantization.");
+        }
         t.quantization = std::make_unique<tflite::QuantizationParametersT>();
         t.quantization->scale = pcq->scales;
         t.quantization->zero_point = pcq->zero_points;
@@ -484,51 +492,112 @@ absl::Status ModelFactory::Build() {
                  bwq.ok()) {
         t.quantization = std::make_unique<tflite::QuantizationParametersT>();
         t.quantization->quantized_dimension = bwq->quantized_dimension;
-
-        // Block quantization scales and zero points are passed as tensors.
-        std::vector<fp16_t> scales_f16(bwq->scales.begin(), bwq->scales.end());
-        auto scale_buffer = OwningCpuBuffer::Copy<Type::kFP16>(scales_f16);
-        auto [it, inserted] =
-            buffers_.insert({scale_buffer, BufferSerializationInfo{}});
-        if (inserted) {
-          it->second.index = buffer_list_.size() + 1;
-          buffer_list_.push_back(scale_buffer);
-        }
-        auto scale_tensor = std::make_unique<tflite::TensorT>();
-        scale_tensor->shape = {static_cast<int>(bwq->scales.size())};
-        scale_tensor->type = tflite::TensorType_FLOAT16;
-        scale_tensor->name = absl::StrCat(tensor_info.name, "_scales");
-        scale_tensor->buffer = it->second.index;
-        subgraph.tensors.push_back(std::move(scale_tensor));
-        int scale_tensor_idx = subgraph.tensors.size() - 1;
-
-        int zero_point_tensor_idx = -1;  // Default to 0 zero point.
-        if (!bwq->zero_points.empty()) {
-          auto zp_buffer = OwningCpuBuffer::Copy<Type::kI64>(bwq->zero_points);
+        tflite::BlockwiseQuantizationT q_details;
+        q_details.block_size = bwq->block_size;
+        if (!bwq->scales_tensor_name.empty()) {
+          if (bwq->HasNonZeroZeroPoints()) {
+            return absl::InvalidArgumentError(absl::StrCat(
+                "Blockwise non-zero zero points need inline scales: no zero "
+                "point tensor is written with a scales_tensor_name. ",
+                DebugInfo(tensor)));
+          }
+          // Scales live in an existing tensor of this subgraph; its index is
+          // resolved once every tensor has one (see named_scale_refs below).
+          q_details.scales = -1;
+          q_details.zero_points = -1;
+          q_details.block_shape = bwq->block_shape;
+          named_scale_refs.emplace_back(build_info.index,
+                                        bwq->scales_tensor_name);
+        } else {
+          if (!bwq->block_shape.empty()) {
+            return absl::InvalidArgumentError(absl::StrCat(
+                "Blockwise block_shape needs a scales_tensor_name: inline "
+                "scales are written for block_size only. ",
+                DebugInfo(tensor)));
+          }
+          // Block quantization scales and zero points are passed as tensors.
+          std::vector<fp16_t> scales_f16(bwq->scales.begin(),
+                                         bwq->scales.end());
+          auto scale_buffer = OwningCpuBuffer::Copy<Type::kFP16>(scales_f16);
           auto [it, inserted] =
-              buffers_.insert({zp_buffer, BufferSerializationInfo{}});
+              buffers_.insert({scale_buffer, BufferSerializationInfo{}});
           if (inserted) {
             it->second.index = buffer_list_.size() + 1;
-            buffer_list_.push_back(zp_buffer);
+            buffer_list_.push_back(scale_buffer);
           }
-          auto zp_tensor = std::make_unique<tflite::TensorT>();
-          zp_tensor->shape = {static_cast<int>(bwq->zero_points.size())};
-          zp_tensor->type = tflite::TensorType_INT64;
-          zp_tensor->name = absl::StrCat(tensor_info.name, "_zero_points");
-          zp_tensor->buffer = it->second.index;
-          subgraph.tensors.push_back(std::move(zp_tensor));
-          zero_point_tensor_idx = subgraph.tensors.size() - 1;
-        }
+          auto scale_tensor = std::make_unique<tflite::TensorT>();
+          scale_tensor->shape = {static_cast<int>(bwq->scales.size())};
+          scale_tensor->type = tflite::TensorType_FLOAT16;
+          scale_tensor->name = absl::StrCat(tensor_info.name, "_scales");
+          scale_tensor->buffer = it->second.index;
+          subgraph.tensors.push_back(std::move(scale_tensor));
+          int scale_tensor_idx = subgraph.tensors.size() - 1;
 
-        tflite::BlockwiseQuantizationT q_details;
-        q_details.scales = scale_tensor_idx;
-        q_details.zero_points = zero_point_tensor_idx;
-        q_details.block_size = bwq->block_size;
+          int zero_point_tensor_idx = -1;  // Default to 0 zero point.
+          if (!bwq->float_zero_points.empty()) {
+            auto zp_buffer =
+                OwningCpuBuffer::Copy<Type::kFP32>(bwq->float_zero_points);
+            auto [it, inserted] =
+                buffers_.insert({zp_buffer, BufferSerializationInfo{}});
+            if (inserted) {
+              it->second.index = buffer_list_.size() + 1;
+              buffer_list_.push_back(zp_buffer);
+            }
+            auto zp_tensor = std::make_unique<tflite::TensorT>();
+            zp_tensor->shape = {
+                static_cast<int>(bwq->float_zero_points.size())};
+            zp_tensor->type = tflite::TensorType_FLOAT32;
+            zp_tensor->name = absl::StrCat(tensor_info.name, "_zero_points");
+            zp_tensor->buffer = it->second.index;
+            subgraph.tensors.push_back(std::move(zp_tensor));
+            zero_point_tensor_idx = subgraph.tensors.size() - 1;
+          } else if (!bwq->zero_points.empty()) {
+            auto zp_buffer =
+                OwningCpuBuffer::Copy<Type::kI64>(bwq->zero_points);
+            auto [it, inserted] =
+                buffers_.insert({zp_buffer, BufferSerializationInfo{}});
+            if (inserted) {
+              it->second.index = buffer_list_.size() + 1;
+              buffer_list_.push_back(zp_buffer);
+            }
+            auto zp_tensor = std::make_unique<tflite::TensorT>();
+            zp_tensor->shape = {static_cast<int>(bwq->zero_points.size())};
+            zp_tensor->type = tflite::TensorType_INT64;
+            zp_tensor->name = absl::StrCat(tensor_info.name, "_zero_points");
+            zp_tensor->buffer = it->second.index;
+            subgraph.tensors.push_back(std::move(zp_tensor));
+            zero_point_tensor_idx = subgraph.tensors.size() - 1;
+          }
+
+          q_details.scales = scale_tensor_idx;
+          q_details.zero_points = zero_point_tensor_idx;
+        }
         t.quantization->details.Set(std::move(q_details));
       } else {
         return absl::InvalidArgumentError(
             "Unsupported quantization type for TFLite serialization.");
       }
+    }
+  }
+
+  if (!named_scale_refs.empty()) {
+    // Tensor names are not unique: a name resolves to the first tensor that
+    // has it.
+    absl::flat_hash_map<absl::string_view, int> tensor_index_by_name;
+    for (size_t j = 0; j < subgraph.tensors.size(); ++j) {
+      tensor_index_by_name.try_emplace(subgraph.tensors[j]->name,
+                                       static_cast<int>(j));
+    }
+    for (const auto& [tensor_index, scales_name] : named_scale_refs) {
+      const auto it = tensor_index_by_name.find(scales_name);
+      if (it == tensor_index_by_name.end()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Blockwise scales tensor '", scales_name,
+                         "' is not a tensor of this subgraph."));
+      }
+      subgraph.tensors[tensor_index]
+          ->quantization->details.AsBlockwiseQuantization()
+          ->scales = it->second;
     }
   }
 

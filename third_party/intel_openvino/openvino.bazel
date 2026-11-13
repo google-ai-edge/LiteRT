@@ -1,5 +1,13 @@
 # BUILD content for the @intel_openvino repository.
 
+# On Windows hosts openvino/ is the Windows SDK. When cross-compiling for
+# Windows from a Linux host, openvino/ is the Linux SDK, so Windows builds use
+# @intel_openvino_windows instead.
+_HAS_WINDOWS_SDK = bool(glob(
+    ["openvino/runtime/lib/intel64/Release/openvino.lib"],
+    allow_empty = True,
+))
+
 cc_library(
     name = "openvino",
     hdrs = select({
@@ -7,6 +15,10 @@ cc_library(
             "openvino_android/runtime/include/**/*.h",
             "openvino_android/runtime/include/**/*.hpp",
         ]),
+        "@litert//litert:windows": glob([
+            "openvino/runtime/include/**/*.h",
+            "openvino/runtime/include/**/*.hpp",
+        ]) if _HAS_WINDOWS_SDK else [],
         "//conditions:default": glob([
             "openvino/runtime/include/**/*.h",
             "openvino/runtime/include/**/*.hpp",
@@ -16,7 +28,7 @@ cc_library(
         "@litert//litert:windows": [
             "openvino/runtime/lib/intel64/Release/openvino.lib",
             "openvino/runtime/lib/intel64/Release/openvino_tensorflow_lite_frontend.lib",
-        ],
+        ] if _HAS_WINDOWS_SDK else [],
         "@litert//litert:android": [
             "openvino_android/runtime/lib/intel64/libopenvino.so",
             "openvino_android/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",
@@ -36,6 +48,11 @@ cc_library(
             "openvino_android/runtime/include/ie",
             "openvino_android/runtime/include",
         ],
+        "@litert//litert:windows": [
+            "openvino/runtime/include/ie/cpp",
+            "openvino/runtime/include/ie",
+            "openvino/runtime/include",
+        ] if _HAS_WINDOWS_SDK else [],
         "//conditions:default": [
             "openvino/runtime/include/ie/cpp",
             "openvino/runtime/include/ie",
@@ -50,6 +67,12 @@ cc_library(
         ],
     }),
     visibility = ["//visibility:public"],
+    deps = select({
+        "@litert//litert:windows": [] if _HAS_WINDOWS_SDK else [
+            "@intel_openvino_windows//:openvino",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 exports_files(glob(["**/*.so"]))
