@@ -2269,45 +2269,61 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     }
   }
 
-  bool buffer_requires_cpu_sync = false;
-  bool registered_in_buffer_context = false;
+  LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                          GetTensorIdentifier(*interp_, tensor));
 
-  Expected<LiteRtTensorBufferRequirementsConst> requirements =
-      buffer_context_->GetBufferRequirements(tensor);
-  if (requirements) {
-    const auto& supported_types = (*requirements)->SupportedBufferTypes();
-
-    for (auto& type : supported_types) {
-      if (type == buffer->buffer_type()) {
-        // Register tensor buffer if it can be used by the backend.
-        buffer->Duplicate();
-        LiteRtTensorBufferPtr duplicated_buffer(buffer);
-        if (auto status = buffer_context_->RegisterTensorBuffer(
-                tensor, std::move(duplicated_buffer));
-            status != kLiteRtStatusOk) {
-          return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                            "Failed to register tensor buffer");
-        }
-        registered_in_buffer_context = true;
-        LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
-                                GetTensorIdentifier(*interp_, tensor));
-        user_registered_buffers_.insert(tensor_id);
-
-        // A host buffer shared with CPU nodes needs a CPU allocation even
-        // when it is also registered with an accelerator backend.
-        if (buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory &&
-            cpu_tensors_.contains(tensor_id)) {
-          break;
-        }
-
-        // Mark the tensor as non-CPU to avoid TFLite from allocating it.
-        tensor->allocation_type = kTfLiteNonCpu;
-        tensor->data.data = nullptr;
-        return {};
+  auto can_register_with_backend =
+      [&](LiteRtTensorBufferRequirementsConst reqs) -> Expected<bool> {
+    if (!absl::c_linear_search(reqs->SupportedBufferTypes(),
+                               buffer->buffer_type())) {
+      return false;
+    }
+    if (buffer->buffer_type() != kLiteRtTensorBufferTypeHostMemory) {
+      return true;
+    }
+    // A host buffer shared with CPU nodes needs a CPU allocation and must
+    // not be registered into the backend buffer context.
+    if (cpu_tensors_.contains(tensor_id)) {
+      return false;
+    }
+    if (reqs->BufferSize() > 0 && buffer->buffer_size() < reqs->BufferSize()) {
+      return false;
+    }
+    if (reqs->Alignment() > 0) {
+      LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, buffer->GetHostBuffer());
+      if (reinterpret_cast<uintptr_t>(host_mem_addr) % reqs->Alignment() != 0) {
+        return false;
       }
     }
-    // Unmatched host buffers and CPU-shared host buffers both need a CPU
-    // allocation, including buffers registered with the backend above.
+    return true;
+  };
+
+  bool buffer_requires_cpu_sync = false;
+  if (Expected<LiteRtTensorBufferRequirementsConst> requirements =
+          buffer_context_->GetBufferRequirements(tensor);
+      requirements) {
+    LITERT_ASSIGN_OR_RETURN(const bool can_register,
+                            can_register_with_backend(*requirements));
+    if (can_register) {
+      // Register tensor buffer if it can be used by the backend.
+      buffer->Duplicate();
+      LiteRtTensorBufferPtr duplicated_buffer(buffer);
+      if (auto status = buffer_context_->RegisterTensorBuffer(
+              tensor, std::move(duplicated_buffer));
+          status != kLiteRtStatusOk) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Failed to register tensor buffer");
+      }
+      user_registered_buffers_.insert(tensor_id);
+
+      // Mark the tensor as non-CPU to avoid TFLite from allocating it.
+      tensor->allocation_type = kTfLiteNonCpu;
+      tensor->data.data = nullptr;
+      return {};
+    }
+    // Unmatched host buffers (e.g. unaligned/undersized) and CPU-shared host
+    // buffers both need a CPU allocation and must unregister any stale backend
+    // registration.
     // TODO: b/452064364 - refactor register buffer logic.
     buffer_requires_cpu_sync =
         buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory;
@@ -2318,15 +2334,10 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
   }
 
   if (buffer_requires_cpu_sync) {
-    // A host buffer shared with CPU nodes is registered with the backend above
-    // and still needs CPU sync, so only unregister a stale buffer that was
-    // registered by an earlier RegisterBuffer() call for this tensor.
-    if (!registered_in_buffer_context) {
-      LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
-                              GetTensorIdentifier(*interp_, tensor));
-      if (user_registered_buffers_.erase(tensor_id) > 0) {
-        buffer_context_->UnregisterTensorBuffer(tensor);
-      }
+    // Unregister a stale buffer that was registered by an earlier
+    // RegisterBuffer() call before falling back to CPU allocation.
+    if (user_registered_buffers_.erase(tensor_id) > 0) {
+      buffer_context_->UnregisterTensorBuffer(tensor);
     }
     // When backend requires CPU buffer.
     bool buffer_is_cpu_compatible =
@@ -2460,8 +2471,6 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     }
   }
 
-  LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
-                          GetTensorIdentifier(*interp_, tensor));
   if (cpu_tensors_.find(tensor_id) != cpu_tensors_.end()) {
     void* host_mem_addr = nullptr;
     if (auto it = locked_buffers.find(buffer); it != locked_buffers.end()) {
