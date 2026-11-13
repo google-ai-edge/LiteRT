@@ -50,8 +50,8 @@ IS_WINDOWS_ARM64 = sys.platform == 'win32' and platform.machine().lower() in (
 # --- Configuration for Qualcomm SDK Download ---
 # Qairt version doesn't not necessarily match the SDK version though.
 # LINT.IfChange(wheel_qairt_sdk_version)
-QAIRT_URL = 'https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.51.1.261002/v2.51.1.261002.zip'
-QAIRT_CONTENT_DIR = 'qairt/2.51.1.261002'
+QAIRT_URL = 'https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.52.0.261104/v2.52.0.261104.zip'
+QAIRT_CONTENT_DIR = 'qairt/2.52.0.261104'
 # LINT.ThenChange(
 # ../../../../../../opensource_only/third_party/qairt/workspace.bzl:bazel_qairt_sdk_version,
 # ../../../../../../litert/google/npu_runtime_libraries/fetch_qualcomm_library.sh:fetch_qairt_sdk_version,
