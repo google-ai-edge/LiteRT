@@ -357,6 +357,8 @@ def get_tensor_quant_params(
         quant_params,
         is_blockwise_quant=is_blockwise_quant,
     )
+  elif op_info is not None and getattr(op_info, "stream_weights", False):
+    return quant_params
   else:
     quantized_vars = uniform_quantize_tensor.uniform_quantize(
         tensor_content,

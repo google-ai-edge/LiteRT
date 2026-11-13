@@ -36,8 +36,13 @@ _OpName = qtyping.TFLOperationName
 class ParamsGenerator:
   """Generate model tensor level quantization parameters."""
 
-  def __init__(self, float_tflite: qtyping.ModelT):
+  def __init__(
+      self,
+      float_tflite: qtyping.ModelT,
+      stream_weights: bool = False,
+  ):
     self.float_model: qtyping.ModelT = float_tflite
+    self.stream_weights = stream_weights
 
     if not tfl_flatbuffer_utils.is_float_model(self.float_model):
       warnings.warn(
@@ -71,6 +76,7 @@ class ParamsGenerator:
       model_recipe_manager: recipe_manager.RecipeManager,
       model_qsvs: Optional[dict[str, qtyping.QSV]] = None,
       enable_progress_bar: bool | None = None,
+      stream_weights: bool | None = None,
   ) -> dict[str, qtyping.TensorTransformationParams]:
     """Generate the quantization parameters for the model.
 
@@ -80,6 +86,8 @@ class ParamsGenerator:
         obtained through calibration process.
       enable_progress_bar: Whether to enable the progress bar. By default, it is
         disabled for smaller models and enabled for larger models.
+      stream_weights: Whether to stream/defer weight quantization to minimize
+        memory.
 
     Returns:
       model_quant_results: The quantization parameters for tensors in the model.
@@ -87,6 +95,9 @@ class ParamsGenerator:
     Raises:
       RuntimeError: If the calibration dataset is required but not provided.
     """
+    if stream_weights is None:
+      stream_weights = self.stream_weights
+
     if model_recipe_manager.need_calibration() and not model_qsvs:
       raise RuntimeError(
           'Model quantization statistics values (QSVs) are required for the'
@@ -160,7 +171,11 @@ class ParamsGenerator:
 
           else:
             op_info = qtyping.OpInfo(
-                op, op_key, subgraph_op_id, op_quant_config
+                op,
+                op_key,
+                subgraph_op_id,
+                op_quant_config,
+                stream_weights=stream_weights,
             )
             # Step2: query algorithm_manager to get/call the related function.
             materialize_func = algorithm_manager.get_quantization_func(
