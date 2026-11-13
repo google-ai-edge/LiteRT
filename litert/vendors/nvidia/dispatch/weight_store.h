@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_NVIDIA_DISPATCH_WEIGHT_STORE_H_
 #define ODML_LITERT_LITERT_VENDORS_NVIDIA_DISPATCH_WEIGHT_STORE_H_
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -91,6 +92,24 @@ class EngineWeightMapping {
 
   std::unique_ptr<Manager> manager_;
 };
+
+// A stretch of host memory and the device memory it is copied to.
+struct HostToDeviceCopy {
+  const void* source = nullptr;
+  uint64_t size = 0;
+  void* target = nullptr;
+};
+
+// Copies host memory to the device on `stream` the way the weight segments
+// are filled: through page-locked buffers that take turns, so the source may
+// be pageable (a mapped file) and every device copy is a stream copy, which
+// does not hold up the caller's other streams. Returns once the device has
+// every copy; or, when `cancel` reads true (it is read before each chunk of
+// at most 32 MiB), once the device has the chunks started until then, the
+// rest left out.
+Expected<void> CopyToDevice(const std::vector<HostToDeviceCopy>& copies,
+                            cudaStream_t stream,
+                            const std::atomic<bool>* cancel = nullptr);
 
 }  // namespace litert::nvidia
 

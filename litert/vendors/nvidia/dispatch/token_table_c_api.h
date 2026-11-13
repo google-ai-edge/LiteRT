@@ -52,14 +52,17 @@ typedef struct {
 // and dim in the model the calling thread created last: a runtime registers a
 // model's tables on the thread that created the model, right after creating
 // it and before it creates another. Nothing is copied to the device during
-// the call. Such a step copies its registrations, all or none, once every
+// the call. Such a step has its registrations copied, all or none, once every
 // table it awaits is registered and it runs in a long decode loop (32
 // invocations of its context in a row): speculative decoding runs the decode
 // step once per response, and plainly only for a few steps at the end of the
 // context window or an adaptive policy's bootstrap, so the table takes no
-// device memory there. The caller's
+// device memory there. A thread of the dispatch's makes the copy while the
+// loop goes on, and the step feeds itself from the invocation that finds the
+// tables on the device. The caller's
 // table and scales memory must stay valid as long as that model (a runtime
-// passes its model resources' memory, which outlives the model); a table
+// passes its model resources' memory, which outlives the model; a copy in
+// flight is stopped when the step's context is destroyed); a table
 // given by descriptor is read during the call into the dispatch's memory, and
 // the descriptor is not read afterwards. A copy that fails leaves that step
 // without its feed and is not tried again for it. The device copy lives as
