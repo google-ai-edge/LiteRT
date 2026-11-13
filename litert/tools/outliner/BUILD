@@ -15,10 +15,7 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
-package(
-    default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_internal_users"],
-)
+package(default_applicable_licenses = ["@org_tensorflow//tensorflow:license"])
 
 cc_library(
     name = "outliner_util",
