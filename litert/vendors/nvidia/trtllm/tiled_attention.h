@@ -19,6 +19,7 @@
 #include <cstdint>
 
 #include "cuda_runtime_api.h"
+#include "litert/vendors/nvidia/trtllm/decode_attention.h"
 
 // Tensor-core attention for prefill: many query rows against the keys of a KV
 // cache followed by the keys of the chunk being prefilled,
@@ -69,6 +70,35 @@ extern "C" size_t LiteRtNvidiaTiledAttentionWorkspaceBytes(
 extern "C" cudaError_t LiteRtNvidiaLaunchTiledAttention(
     const LiteRtNvidiaAttentionShape* shape, const void* q, bool q_bf16,
     const void* k, const void* v, const void* k_new, const void* v_new,
+    const bool* mask, float fill, void* out, void* workspace,
+    cudaStream_t stream);
+
+// The same attention over INT8 per-tensor quantized caches as the model
+// stores them (the global layers of Gemma 4 E2B and E4B, whose prefill reads
+// the caches after their update): k is [heads, cache_len, depth] INT8, v is
+// [heads, depth, cache_len] INT8 (params->value_columns), there are no new
+// keys and the mask is required. A block dequantizes each tile to FP16 as it
+// stages it, so no FP16 copy of the caches exists and, as above, only the
+// tiles some row of the block can see are read: the attention costs the keys
+// present, not the length of the caches.
+//
+// A row that sees no key (a padded prompt row) gets the average of all
+// values, which is what the softmax over equal scores is, from one pass over
+// the value cache rather than from a visit of every tile by its block; with a
+// `fill` of -inf it gets zero.
+//
+// Depth 512, new_len 0, and cache_len a multiple of 16 besides the conditions
+// of LiteRtNvidiaTiledAttentionSupports.
+extern "C" bool LiteRtNvidiaTiledAttentionInt8Supports(
+    const LiteRtNvidiaAttentionShape* shape);
+
+// Depends only on the shape.
+extern "C" size_t LiteRtNvidiaTiledAttentionInt8WorkspaceBytes(
+    const LiteRtNvidiaAttentionShape* shape);
+
+extern "C" cudaError_t LiteRtNvidiaLaunchTiledAttentionInt8(
+    const LiteRtNvidiaAttentionShape* shape, const void* q, bool q_bf16,
+    const void* k, const void* v, const LiteRtNvidiaInt8CacheParams* params,
     const bool* mask, float fill, void* out, void* workspace,
     cudaStream_t stream);
 

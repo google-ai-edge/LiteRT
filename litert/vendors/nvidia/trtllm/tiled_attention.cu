@@ -226,10 +226,14 @@ __global__ void __launch_bounds__(kThreads)
 // One block per `block_rows` consecutive mask rows: the tiles some row of
 // the block sees and the tiles all of its rows see entirely. A row that sees
 // no key takes the softmax over all keys (every score is `fill`), like the
-// unfused graph, so its block visits every tile.
+// unfused graph, so its block visits every tile. With `blind_bits` such rows
+// are left to BlindRowsKernel instead: bit r of blind_bits[block * block_rows
+// / 32 + r / 32] says that row r of the block sees no key, and the block's
+// tiles are those of its other rows.
 __global__ void __launch_bounds__(kThreads)
     BlockBitmapKernel(const uint32_t* __restrict__ row_bits, int block_rows,
-                      int words, int tiles, uint32_t* __restrict__ block_bits) {
+                      int words, int tiles, uint32_t* __restrict__ block_bits,
+                      uint32_t* __restrict__ blind_bits) {
   constexpr int kThreadWords = kMaxBitmapWords / kThreads;
   __shared__ int sees_s[kBlockElements / 256];
   const int first_row = blockIdx.x * block_rows;
@@ -257,11 +261,38 @@ __global__ void __launch_bounds__(kThreads)
     }
   }
   __syncthreads();
+  uint32_t* out = block_bits + static_cast<size_t>(blockIdx.x) * 2 * words;
+  if (blind_bits != nullptr) {
+    if (threadIdx.x < block_rows / 32) {
+      uint32_t blind_word = 0;
+      for (int r = 0; r < 32; ++r) {
+        blind_word |= (sees_s[threadIdx.x * 32 + r] == 0 ? 1u : 0u) << r;
+      }
+      blind_bits[static_cast<size_t>(blockIdx.x) * (block_rows / 32) +
+                 threadIdx.x] = blind_word;
+    }
+#pragma unroll
+    for (int i = 0; i < kThreadWords; ++i) {
+      const int w = threadIdx.x + i * kThreads;
+      if (w >= words) continue;
+      // A tile every seeing row sees entirely needs no mask: what the rows
+      // that see nothing compute from it is overwritten.
+      uint32_t all = 0xffffffffu;
+      for (int r = 0; r < block_rows; ++r) {
+        if (sees_s[r] != 0) {
+          all &= row_bits[static_cast<size_t>(first_row + r) * 2 * words +
+                          words + w];
+        }
+      }
+      out[w] = any_words[i];
+      out[words + w] = all;
+    }
+    return;
+  }
   bool blind = false;
   for (int r = 0; r < block_rows; ++r) {
     blind = blind || sees_s[r] == 0;
   }
-  uint32_t* out = block_bits + static_cast<size_t>(blockIdx.x) * 2 * words;
 #pragma unroll
   for (int i = 0; i < kThreadWords; ++i) {
     const int w = threadIdx.x + i * kThreads;
@@ -275,6 +306,7 @@ __global__ void __launch_bounds__(kThreads)
 }
 
 struct Sources {
+  static constexpr bool kInt8 = false;
   const __half* k;
   const __half* v;
   const __half* k_new;
@@ -282,6 +314,46 @@ struct Sources {
   int cache_len;
   int new_len;
 };
+
+// INT8 per-tensor quantized caches, real = quantized * scale + bias: the keys
+// as rows [heads, cache_len, depth], the values as columns [heads, depth,
+// cache_len], and no new keys. cache_len is a multiple of the tile, so every
+// load is a whole 16-byte vector.
+struct Int8Sources {
+  static constexpr bool kInt8 = true;
+  static constexpr int new_len = 0;
+  const int8_t* k;
+  const int8_t* v;
+  int cache_len;
+  float k_scale;
+  float k_bias;
+  float v_scale;
+  float v_bias;
+};
+
+// Byte `index` of a word of INT8 values, dequantized.
+__device__ __forceinline__ float Dequantized(int word, int index, float scale,
+                                             float bias) {
+  const int value =
+      static_cast<int8_t>(static_cast<uint32_t>(word) >> (8 * index));
+  return fmaf(static_cast<float>(value), scale, bias);
+}
+
+// Sixteen INT8 values as sixteen dequantized FP16 values.
+__device__ __forceinline__ void DequantizeVector(int4 bytes, float scale,
+                                                 float bias, int4* halves) {
+  const int in[4] = {bytes.x, bytes.y, bytes.z, bytes.w};
+  uint32_t out[8];
+#pragma unroll
+  for (int i = 0; i < 4; ++i) {
+    out[2 * i] = PackHalves(Dequantized(in[i], 0, scale, bias),
+                            Dequantized(in[i], 1, scale, bias));
+    out[2 * i + 1] = PackHalves(Dequantized(in[i], 2, scale, bias),
+                                Dequantized(in[i], 3, scale, bias));
+  }
+  halves[0] = make_int4(out[0], out[1], out[2], out[3]);
+  halves[1] = make_int4(out[4], out[5], out[6], out[7]);
+}
 
 // grid (splits, heads * rows / kRows). Block (split, y) owns kRows query rows
 // of one head and visits the visible tiles congruent to `split` modulo
@@ -296,9 +368,12 @@ struct Sources {
 // to that many tiles accumulate in fp16, which cannot overflow, before they
 // are added to the fp32 sums of the row, and the sums so far are rescaled
 // when a larger score turns up.
-template <typename T, int kD>
+//
+// INT8 sources (Int8Sources) stay quantized in the registers, half the bytes
+// of an FP16 tile, and are dequantized to FP16 on their way to shared memory.
+template <typename T, int kD, typename Src>
 __global__ void __launch_bounds__(kThreads, 1)
-    TiledAttentionKernel(const T* __restrict__ q, Sources src,
+    TiledAttentionKernel(const T* __restrict__ q, Src src,
                          const bool* __restrict__ mask,
                          const uint32_t* __restrict__ block_bits,
                          int mask_rows, int rows, float fill,
@@ -336,12 +411,9 @@ __global__ void __launch_bounds__(kThreads, 1)
   const int part = warp % G::kGroupWarps;
 
   const T* q_head = q + static_cast<size_t>(head) * rows * kD;
-  const __half* k_head = src.k + static_cast<size_t>(head) * src.cache_len * kD;
-  const __half* v_head = src.v + static_cast<size_t>(head) * src.cache_len * kD;
-  const __half* k_new_head =
-      src.k_new + static_cast<size_t>(head) * src.new_len * kD;
-  const __half* v_new_head =
-      src.v_new + static_cast<size_t>(head) * src.new_len * kD;
+  // The caches of a head hold cache_len * kD elements in either layout.
+  const auto* k_head = src.k + static_cast<size_t>(head) * src.cache_len * kD;
+  const auto* v_head = src.v + static_cast<size_t>(head) * src.cache_len * kD;
 
   if (tid < G::kRows) {
     max_s[tid] = -INFINITY;
@@ -417,29 +489,79 @@ __global__ void __launch_bounds__(kThreads, 1)
       cache_s + ((lane & 7) + ((lane >> 3) & 1) * 8) * G::kRowBytes +
       (part * G::kWarpDims + (lane >> 4) * 8) * 2;
 
-  int4 staged[G::kStageVectors];
+  // A thread stages kStageVectors 16-byte vectors of an FP16 tile, or half as
+  // many of an INT8 tile: 16 dims of a key, or 16 keys of one of its two dims
+  // of the values, which are stored as columns.
+  constexpr int kInt8Vectors = G::kStageVectors / 2;
+  constexpr int kInt8RowVectors = kD / 16;
+  int4 staged[Src::kInt8 ? kInt8Vectors : G::kStageVectors];
   auto load_tile = [&](bool values, int tile) {
     const int j0 = tile * kTile;
-    const bool fresh = j0 >= src.cache_len;
-    const __half* base = fresh ? (values ? v_new_head : k_new_head)
-                               : (values ? v_head : k_head);
-    const int first = fresh ? j0 - src.cache_len : j0;
-    const int last = (fresh ? src.new_len : src.cache_len) - 1;
+    if constexpr (Src::kInt8) {
+      static_assert(kD == 2 * kThreads, "two dims of the values per thread");
 #pragma unroll
-    for (int j = 0; j < G::kStageVectors; ++j) {
-      const int i = tid + j * kThreads;
-      const int key = min(first + i / G::kVectorsPerRow, last);
-      staged[j] = reinterpret_cast<const int4*>(
-          base + static_cast<size_t>(key) * kD)[i % G::kVectorsPerRow];
+      for (int j = 0; j < kInt8Vectors; ++j) {
+        const int i = tid + j * kThreads;
+        staged[j] =
+            values ? *reinterpret_cast<const int4*>(
+                         v_head +
+                         static_cast<size_t>(2 * tid + j) * src.cache_len + j0)
+                   : reinterpret_cast<const int4*>(
+                         k_head +
+                         static_cast<size_t>(j0 + i / kInt8RowVectors) *
+                             kD)[i % kInt8RowVectors];
+      }
+    } else {
+      const bool fresh = j0 >= src.cache_len;
+      const __half* base =
+          fresh ? (values ? src.v_new : src.k_new) +
+                      static_cast<size_t>(head) * src.new_len * kD
+                : (values ? v_head : k_head);
+      const int first = fresh ? j0 - src.cache_len : j0;
+      const int last = (fresh ? src.new_len : src.cache_len) - 1;
+#pragma unroll
+      for (int j = 0; j < G::kStageVectors; ++j) {
+        const int i = tid + j * kThreads;
+        const int key = min(first + i / G::kVectorsPerRow, last);
+        staged[j] = reinterpret_cast<const int4*>(
+            base + static_cast<size_t>(key) * kD)[i % G::kVectorsPerRow];
+      }
     }
   };
-  auto store_tile = [&]() {
+  // `values` says what load_tile staged.
+  auto store_tile = [&](bool values) {
+    if constexpr (Src::kInt8) {
+      if (values) {
+        // Columns to rows: the thread's two dims of key i are one word of
+        // row i.
+        const int lo[4] = {staged[0].x, staged[0].y, staged[0].z, staged[0].w};
+        const int hi[4] = {staged[1].x, staged[1].y, staged[1].z, staged[1].w};
 #pragma unroll
-    for (int j = 0; j < G::kStageVectors; ++j) {
-      const int i = tid + j * kThreads;
-      *reinterpret_cast<int4*>(cache_s +
-                               (i / G::kVectorsPerRow) * G::kRowBytes +
-                               (i % G::kVectorsPerRow) * 16) = staged[j];
+        for (int i = 0; i < kTile; ++i) {
+          *reinterpret_cast<uint32_t*>(cache_s + i * G::kRowBytes + tid * 4) =
+              PackHalves(
+                  Dequantized(lo[i / 4], i % 4, src.v_scale, src.v_bias),
+                  Dequantized(hi[i / 4], i % 4, src.v_scale, src.v_bias));
+        }
+      } else {
+#pragma unroll
+        for (int j = 0; j < kInt8Vectors; ++j) {
+          const int i = tid + j * kThreads;
+          DequantizeVector(
+              staged[j], src.k_scale, src.k_bias,
+              reinterpret_cast<int4*>(cache_s +
+                                      (i / kInt8RowVectors) * G::kRowBytes +
+                                      (i % kInt8RowVectors) * 32));
+        }
+      }
+    } else {
+#pragma unroll
+      for (int j = 0; j < G::kStageVectors; ++j) {
+        const int i = tid + j * kThreads;
+        *reinterpret_cast<int4*>(cache_s +
+                                 (i / G::kVectorsPerRow) * G::kRowBytes +
+                                 (i % G::kVectorsPerRow) * 16) = staged[j];
+      }
     }
   };
 
@@ -651,7 +773,7 @@ __global__ void __launch_bounds__(kThreads, 1)
   int next = tiles;
   if (c < tiles) {
     load_tile(/*values=*/false, c);
-    store_tile();
+    store_tile(/*values=*/false);
     next = next_tile(c + splits);
     if (next < tiles) {
       load_tile(/*values=*/false, next);
@@ -663,7 +785,7 @@ __global__ void __launch_bounds__(kThreads, 1)
   }
   while (c < tiles) {
     if (next < tiles) {
-      store_tile();
+      store_tile(/*values=*/false);
     }
     load_tile(/*values=*/true, c);
     __syncthreads();
@@ -680,7 +802,7 @@ __global__ void __launch_bounds__(kThreads, 1)
     }
     __syncthreads();
 
-    store_tile();
+    store_tile(/*values=*/true);
     int after = tiles;
     if (next < tiles) {
       store_scores();
@@ -841,6 +963,105 @@ __global__ void __launch_bounds__(kD / 2)
       PackOutput<T>(acc0 * inv, acc1 * inv);
 }
 
+// The sum of the four INT8 values of a word.
+__device__ __forceinline__ int ByteSum(int word) {
+  return static_cast<int8_t>(word) + static_cast<int8_t>(word >> 8) +
+         static_cast<int8_t>(word >> 16) + (word >> 24);
+}
+
+// mean[head * depth + d] = the average over all keys of dim d of an INT8
+// value cache stored as columns [heads, depth, cache_len], dequantized: what
+// a row that sees no key gets from a softmax over equal scores. Nothing is
+// read unless some mask row is such a row (blind_bits, see
+// BlockBitmapKernel). grid (depth / kMeanDims, heads): kThreads / kMeanDims
+// threads share the cache_len / 16 vectors of a dim. `scale` is the scale of
+// the cache divided by cache_len.
+constexpr int kMeanDims = 4;
+
+__global__ void __launch_bounds__(kThreads)
+    BlindMeanKernel(const int8_t* __restrict__ v, int depth, int cache_len,
+                    const uint32_t* __restrict__ blind_bits, int blind_words,
+                    float scale, float bias, float* __restrict__ mean) {
+  constexpr int kDimThreads = kThreads / kMeanDims;
+  __shared__ int sums_s[kWarps];
+  uint32_t blind = 0;
+  for (int w = threadIdx.x; w < blind_words; w += kThreads) {
+    blind |= blind_bits[w];
+  }
+  if (__syncthreads_or(blind != 0 ? 1 : 0) == 0) {
+    return;
+  }
+  const int dim = blockIdx.x * kMeanDims + threadIdx.x / kDimThreads;
+  const int4* column = reinterpret_cast<const int4*>(
+      v + (static_cast<size_t>(blockIdx.y) * depth + dim) * cache_len);
+  int sum = 0;
+  for (int i = threadIdx.x % kDimThreads; i < cache_len / 16;
+       i += kDimThreads) {
+    const int4 bytes = column[i];
+    sum += ByteSum(bytes.x) + ByteSum(bytes.y) + ByteSum(bytes.z) +
+           ByteSum(bytes.w);
+  }
+#pragma unroll
+  for (int offset = 16; offset > 0; offset >>= 1) {
+    sum += __shfl_xor_sync(0xffffffffu, sum, offset);
+  }
+  if (threadIdx.x % 32 == 0) {
+    sums_s[threadIdx.x / 32] = sum;
+  }
+  __syncthreads();
+  if (threadIdx.x % kDimThreads == 0) {
+    int total = 0;
+#pragma unroll
+    for (int w = 0; w < kDimThreads / 32; ++w) {
+      total += sums_s[threadIdx.x / 32 + w];
+    }
+    mean[static_cast<size_t>(blockIdx.y) * depth + dim] =
+        fmaf(static_cast<float>(total), scale, bias);
+  }
+}
+
+// The rows whose mask row sees no key (blind_bits) get `mean` of their head,
+// or zero without one (a `fill` of -inf gives such a row no weight at all).
+// One block per attention block, two dims per thread.
+template <typename T, int kD>
+__global__ void __launch_bounds__(kD / 2)
+    BlindRowsKernel(const uint32_t* __restrict__ blind_bits,
+                    const float* __restrict__ mean, int mask_rows, int rows,
+                    T* __restrict__ out) {
+  constexpr int kBlockRows = kBlockElements / kD;
+  constexpr int kBlockWords = kBlockRows / 32;
+  const int row_tiles = rows / kBlockRows;
+  const int head = blockIdx.x / row_tiles;
+  const int r0 = (blockIdx.x % row_tiles) * kBlockRows;
+  const uint32_t* bits =
+      blind_bits +
+      static_cast<size_t>((r0 % mask_rows) / kBlockRows) * kBlockWords;
+  uint32_t blind[kBlockWords];
+  uint32_t any = 0;
+#pragma unroll
+  for (int w = 0; w < kBlockWords; ++w) {
+    blind[w] = bits[w];
+    any |= blind[w];
+  }
+  if (any == 0) {
+    return;
+  }
+  const int tid = threadIdx.x;
+  const float2 values =
+      mean == nullptr
+          ? make_float2(0.0f, 0.0f)
+          : *reinterpret_cast<const float2*>(
+                mean + static_cast<size_t>(head) * kD + tid * 2);
+  const uint32_t word = PackOutput<T>(values.x, values.y);
+  T* out_block = out + (static_cast<size_t>(head) * rows + r0) * kD;
+  for (int r = 0; r < kBlockRows; ++r) {
+    if ((blind[r >> 5] >> (r & 31)) & 1u) {
+      *reinterpret_cast<uint32_t*>(out_block + static_cast<size_t>(r) * kD +
+                                   tid * 2) = word;
+    }
+  }
+}
+
 int BlockRows(int depth) { return kBlockElements / depth; }
 
 int Tiles(const LiteRtNvidiaAttentionShape& shape) {
@@ -853,10 +1074,11 @@ int Words(const LiteRtNvidiaAttentionShape& shape) {
 
 // The split count bounds the workspace, which is sized from the shape alone
 // (the plan may be built on another device than the one that runs it).
-int MaxSplits(const LiteRtNvidiaAttentionShape& shape) {
+int MaxSplits(const LiteRtNvidiaAttentionShape& shape,
+              size_t max_partial_bytes = kMaxPartialBytes) {
   const size_t part_bytes = static_cast<size_t>(shape.heads) * shape.rows *
                             (shape.depth + 2) * sizeof(float);
-  const size_t fit = kMaxPartialBytes / part_bytes;
+  const size_t fit = max_partial_bytes / part_bytes;
   const int tiles = Tiles(shape);
   const int splits =
       fit < 1 ? 1 : (fit > kMaxSplits ? kMaxSplits : static_cast<int>(fit));
@@ -874,12 +1096,12 @@ size_t BitmapBytes(const LiteRtNvidiaAttentionShape& shape) {
 // `multiprocessors`. Costs in units of one tile of one block: a block takes
 // its share of the tiles plus about 12 to start, and merging the partial sums
 // of a row about depth / 256000 per split.
-int ChooseSplits(const LiteRtNvidiaAttentionShape& shape, int multiprocessors) {
+int ChooseSplits(const LiteRtNvidiaAttentionShape& shape, int multiprocessors,
+                 int max_splits) {
   const int blocks = shape.heads * (shape.rows / BlockRows(shape.depth));
   const double tiles = Tiles(shape);
   const double merge = static_cast<double>(shape.heads) * shape.rows *
                        shape.depth / 256000.0;
-  const int max_splits = MaxSplits(shape);
   int best = 1;
   double best_cost = 0.0;
   for (int s = 1; s <= max_splits; ++s) {
@@ -914,9 +1136,9 @@ cudaError_t GetDeviceLimits(DeviceLimits* limits) {
                                 device);
 }
 
-template <typename T, int kD>
+template <typename T, int kD, typename Src>
 cudaError_t LaunchBlocks(const LiteRtNvidiaAttentionShape& shape, const T* q,
-                         const Sources& src, const bool* mask,
+                         const Src& src, const bool* mask,
                          const uint32_t* block_bits, float fill, int splits,
                          float* ws_acc, float* ws_m, float* ws_l, T* out,
                          cudaStream_t stream) {
@@ -924,14 +1146,14 @@ cudaError_t LaunchBlocks(const LiteRtNvidiaAttentionShape& shape, const T* q,
   static bool attribute_set = false;  // per instantiation
   if (!attribute_set) {
     const cudaError_t status = cudaFuncSetAttribute(
-        TiledAttentionKernel<T, kD>,
+        TiledAttentionKernel<T, kD, Src>,
         cudaFuncAttributeMaxDynamicSharedMemorySize,
         static_cast<int>(G::kBytes));
     if (status != cudaSuccess) return status;
     attribute_set = true;
   }
   const int blocks = shape.heads * (shape.rows / G::kRows);
-  TiledAttentionKernel<T, kD>
+  TiledAttentionKernel<T, kD, Src>
       <<<dim3(splits, blocks), kThreads, G::kBytes, stream>>>(
           q, src, mask, block_bits, shape.mask_rows, shape.rows, fill, ws_acc,
           ws_m, ws_l, out);
@@ -953,7 +1175,8 @@ cudaError_t Launch(const LiteRtNvidiaAttentionShape& shape, const T* q,
     return cudaErrorInvalidConfiguration;
   }
   const int block_rows = BlockRows(shape.depth);
-  const int splits = ChooseSplits(shape, limits.multiprocessors);
+  const int splits =
+      ChooseSplits(shape, limits.multiprocessors, MaxSplits(shape));
   const int seq = shape.cache_len + shape.new_len;
   const int words = Words(shape);
   uint32_t* row_bits = static_cast<uint32_t*>(workspace);
@@ -970,7 +1193,8 @@ cudaError_t Launch(const LiteRtNvidiaAttentionShape& shape, const T* q,
     status = cudaGetLastError();
     if (status != cudaSuccess) return status;
     BlockBitmapKernel<<<shape.mask_rows / block_rows, kThreads, 0, stream>>>(
-        row_bits, block_rows, words, Tiles(shape), block_bits);
+        row_bits, block_rows, words, Tiles(shape), block_bits,
+        /*blind_bits=*/nullptr);
     status = cudaGetLastError();
     if (status != cudaSuccess) return status;
   } else {
@@ -982,6 +1206,84 @@ cudaError_t Launch(const LiteRtNvidiaAttentionShape& shape, const T* q,
   }
   return LaunchBlocks<T, 256>(shape, q, src, mask, block_bits, fill, splits,
                               ws_acc, ws_m, ws_l, out, stream);
+}
+
+// The INT8 shapes of a whole prompt chunk fill the device with one split, and
+// the workspace is device memory that every context of the engine holds:
+// this much of it may go to partial sums, which leaves the splits to the
+// short chunks they help.
+constexpr size_t kMaxInt8PartialBytes = size_t{32} << 20;
+
+int MaxInt8Splits(const LiteRtNvidiaAttentionShape& shape) {
+  return MaxSplits(shape, kMaxInt8PartialBytes);
+}
+
+// Which mask rows see no key, a bit per row, and the average value of every
+// dim of every head for them.
+size_t BlindBytes(const LiteRtNvidiaAttentionShape& shape) {
+  const size_t bytes =
+      static_cast<size_t>(shape.mask_rows) / 32 * sizeof(uint32_t) +
+      static_cast<size_t>(shape.heads) * shape.depth * sizeof(float);
+  return (bytes + 255) / 256 * 256;
+}
+
+// The workspace holds the bitmaps, the rows that see no key and their average
+// value, then the partial sums.
+template <typename T>
+cudaError_t LaunchInt8(const LiteRtNvidiaAttentionShape& shape, const T* q,
+                       const Int8Sources& src, const bool* mask, float fill,
+                       T* out, void* workspace, cudaStream_t stream) {
+  constexpr int kD = 512;
+  DeviceLimits limits;
+  cudaError_t status = GetDeviceLimits(&limits);
+  if (status != cudaSuccess) return status;
+  if (static_cast<size_t>(limits.shared_memory_optin) < kSharedBytes) {
+    return cudaErrorInvalidConfiguration;
+  }
+  const int block_rows = BlockRows(kD);
+  const int splits =
+      ChooseSplits(shape, limits.multiprocessors, MaxInt8Splits(shape));
+  const int words = Words(shape);
+  const int blind_words = shape.mask_rows / 32;
+  uint32_t* row_bits = static_cast<uint32_t*>(workspace);
+  uint32_t* block_bits =
+      row_bits + static_cast<size_t>(shape.mask_rows) * 2 * words;
+  uint32_t* blind_bits = reinterpret_cast<uint32_t*>(
+      static_cast<char*>(workspace) + BitmapBytes(shape));
+  float* mean = reinterpret_cast<float*>(blind_bits + blind_words);
+  float* ws_acc = reinterpret_cast<float*>(static_cast<char*>(workspace) +
+                                           BitmapBytes(shape) +
+                                           BlindBytes(shape));
+  // One split writes the output itself and has no partial sums.
+  const size_t parts =
+      splits == 1 ? 0 : static_cast<size_t>(shape.heads) * shape.rows * splits;
+  float* ws_m = ws_acc + parts * kD;
+  float* ws_l = ws_m + parts;
+  RowBitmapKernel<<<dim3((words + kWarps - 1) / kWarps, shape.mask_rows),
+                    kThreads, 0, stream>>>(mask, shape.cache_len, words,
+                                           row_bits);
+  status = cudaGetLastError();
+  if (status != cudaSuccess) return status;
+  BlockBitmapKernel<<<shape.mask_rows / block_rows, kThreads, 0, stream>>>(
+      row_bits, block_rows, words, Tiles(shape), block_bits, blind_bits);
+  status = cudaGetLastError();
+  if (status != cudaSuccess) return status;
+  // A finite fill gives a row that sees no key the average of all values.
+  const bool average = std::isfinite(fill);
+  if (average) {
+    BlindMeanKernel<<<dim3(kD / kMeanDims, shape.heads), kThreads, 0, stream>>>(
+        src.v, kD, shape.cache_len, blind_bits, blind_words,
+        src.v_scale / shape.cache_len, src.v_bias, mean);
+    status = cudaGetLastError();
+    if (status != cudaSuccess) return status;
+  }
+  status = LaunchBlocks<T, kD>(shape, q, src, mask, block_bits, fill, splits,
+                               ws_acc, ws_m, ws_l, out, stream);
+  if (status != cudaSuccess) return status;
+  BlindRowsKernel<T, kD><<<shape.heads * (shape.rows / block_rows), kD / 2, 0,
+                           stream>>>(blind_bits, average ? mean : nullptr,
+                                     shape.mask_rows, shape.rows, out);
+  return cudaGetLastError();
 }
 
 }  // namespace
@@ -1040,4 +1342,52 @@ extern "C" cudaError_t LiteRtNvidiaLaunchTiledAttention(
   }
   return Launch(*shape, static_cast<const __half*>(q), src, mask, fill,
                 static_cast<__half*>(out), workspace, stream);
+}
+
+extern "C" bool LiteRtNvidiaTiledAttentionInt8Supports(
+    const LiteRtNvidiaAttentionShape* shape) {
+  return LiteRtNvidiaTiledAttentionSupports(shape) && shape->depth == 512 &&
+         shape->new_len == 0 && shape->cache_len % kTile == 0;
+}
+
+extern "C" size_t LiteRtNvidiaTiledAttentionInt8WorkspaceBytes(
+    const LiteRtNvidiaAttentionShape* shape) {
+  if (!LiteRtNvidiaTiledAttentionInt8Supports(shape)) {
+    return 0;
+  }
+  // One split writes the output itself.
+  const int max_splits = MaxInt8Splits(*shape);
+  const size_t parts = max_splits == 1 ? 0
+                                       : static_cast<size_t>(shape->heads) *
+                                             shape->rows * max_splits;
+  return BitmapBytes(*shape) + BlindBytes(*shape) +
+         parts * (static_cast<size_t>(shape->depth) + 2) * sizeof(float);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchTiledAttentionInt8(
+    const LiteRtNvidiaAttentionShape* shape, const void* q, bool q_bf16,
+    const void* k, const void* v, const LiteRtNvidiaInt8CacheParams* params,
+    const bool* mask, float fill, void* out, void* workspace,
+    cudaStream_t stream) {
+  if (!LiteRtNvidiaTiledAttentionInt8Supports(shape) || q == nullptr ||
+      k == nullptr || v == nullptr || params == nullptr || mask == nullptr ||
+      out == nullptr || workspace == nullptr || !params->value_columns ||
+      !std::isfinite(params->k_scale) || !std::isfinite(params->v_scale)) {
+    return cudaErrorInvalidValue;
+  }
+  const Int8Sources src = {
+      static_cast<const int8_t*>(k),
+      static_cast<const int8_t*>(v),
+      shape->cache_len,
+      params->k_scale,
+      -static_cast<float>(params->k_zero_point) * params->k_scale,
+      params->v_scale,
+      -static_cast<float>(params->v_zero_point) * params->v_scale};
+  if (q_bf16) {
+    return LaunchInt8(*shape, static_cast<const __nv_bfloat16*>(q), src, mask,
+                      fill, static_cast<__nv_bfloat16*>(out), workspace,
+                      stream);
+  }
+  return LaunchInt8(*shape, static_cast<const __half*>(q), src, mask, fill,
+                    static_cast<__half*>(out), workspace, stream);
 }

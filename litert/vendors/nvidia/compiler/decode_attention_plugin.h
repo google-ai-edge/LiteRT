@@ -41,7 +41,11 @@ namespace litert::nvidia {
 // mask_rows in multiples of 32768 / D, S a multiple of 16).
 // With `int8_cache`, the key and value caches are per-tensor quantized INT8
 // (Gemma 4 E4B) and the plugin dequantizes them; `new_keys` is then
-// unsupported.
+// unsupported. INT8 caches of depth 512 whose value cache is stored
+// [1, H, D, S] also take many rows (prefill): rows and mask_rows in multiples
+// of 64 with S a multiple of 16 run on the tiled tensor-core kernel, which
+// reads the quantized caches and only the keys some row can see
+// (trtllm/tiled_attention.h).
 // With `window` != 0 (INT8 caches only, a multiple of 16) the plugin takes
 // a fifth input, the window's start (int32 [1], a multiple of 16), and
 // attends over `window` keys of the full caches and mask from there.

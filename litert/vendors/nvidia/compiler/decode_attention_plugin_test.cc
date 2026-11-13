@@ -207,6 +207,79 @@ TEST_F(DecodeAttentionPluginTest, WindowedInt8CachesTakeAStartInput) {
   EXPECT_NE(status(), 0);
 }
 
+TEST_F(DecodeAttentionPluginTest, Int8CachesOfDepth512TakePrefillRows) {
+  // The prefill of Gemma 4 E2B (one KV head, eight query heads) and E4B (two
+  // KV heads of four query heads) through their global layers: INT8 caches
+  // of depth 512, the value cache stored [1, H, D, S], and the mask of the
+  // chunk's tokens or the model's tiling of it over the query heads.
+  LiteRtNvidiaInt8CacheParams int8 = {0.001f, 0, 0.02f, 0,
+                                      /*value_columns=*/true};
+  const auto create = [&]() {
+    plugin_.reset(
+        CreateDecodeAttentionPlugin(-1.0e30f, /*new_keys=*/false, &int8));
+    ASSERT_NE(plugin_, nullptr);
+    runtime_ = static_cast<nvinfer1::IPluginV3OneRuntime*>(
+        plugin_->getCapabilityInterface(
+            nvinfer1::PluginCapabilityType::kRUNTIME));
+    ASSERT_NE(runtime_, nullptr);
+  };
+  const auto set_shape = [&](int heads, int rows, int mask_rows, int seq,
+                             int depth) {
+    inputs_[0].dims = nvinfer1::Dims4{1, heads, rows, depth};
+    inputs_[1].dims = nvinfer1::Dims4{1, heads, seq, depth};
+    inputs_[1].type = nvinfer1::DataType::kINT8;
+    inputs_[2].dims = nvinfer1::Dims4{1, heads, depth, seq};
+    inputs_[2].type = nvinfer1::DataType::kINT8;
+    inputs_[3].dims = nvinfer1::Dims4{1, 1, mask_rows, seq};
+    output_ = inputs_[0];
+  };
+  create();
+  for (int tokens : {128, 1024}) {
+    set_shape(1, 8 * tokens, tokens, 31744, 512);
+    EXPECT_EQ(ShapeStatus(), 0) << "tokens=" << tokens;
+    set_shape(1, 8 * tokens, 8 * tokens, 31744, 512);
+    EXPECT_EQ(ShapeStatus(), 0) << "tokens=" << tokens;
+    set_shape(2, 4 * tokens, tokens, 2048, 512);
+    EXPECT_EQ(ShapeStatus(), 0) << "tokens=" << tokens;
+  }
+  // A whole chunk runs in one split: its workspace holds the bitmaps of the
+  // mask, not partial sums.
+  set_shape(1, 8192, 1024, 31744, 512);
+  auto* build = static_cast<nvinfer1::IPluginV3OneBuild*>(
+      plugin_->getCapabilityInterface(nvinfer1::PluginCapabilityType::kBUILD));
+  ASSERT_NE(build, nullptr);
+  std::array<nvinfer1::DynamicPluginTensorDesc, 4> dynamic{};
+  for (int i = 0; i < 4; ++i) {
+    dynamic[i].desc = inputs_[i];
+    dynamic[i].min = dynamic[i].opt = dynamic[i].max = inputs_[i].dims;
+  }
+  nvinfer1::DynamicPluginTensorDesc dynamic_output{};
+  dynamic_output.desc = output_;
+  const size_t workspace =
+      build->getWorkspaceSize(dynamic.data(), 4, &dynamic_output, 1);
+  EXPECT_GT(workspace, 0u);
+  EXPECT_LT(workspace, size_t{1} << 20);
+  // Rows and mask rows in whole blocks of 64, a cache the value columns of
+  // which are read in whole 16-byte vectors, depth 512.
+  set_shape(1, 32, 4, 31744, 512);
+  EXPECT_NE(ShapeStatus(), 0);
+  set_shape(1, 8192, 1000, 31744, 512);
+  EXPECT_NE(ShapeStatus(), 0);
+  set_shape(1, 8192, 1024, 32003, 512);
+  EXPECT_NE(ShapeStatus(), 0);
+  set_shape(1, 8192, 1024, 31744, 256);
+  EXPECT_NE(ShapeStatus(), 0);
+  // A value cache stored as rows keeps to the decode kernel's 16 rows.
+  int8.value_columns = false;
+  create();
+  set_shape(1, 8192, 1024, 31744, 512);
+  inputs_[2].dims = inputs_[1].dims;
+  EXPECT_NE(ShapeStatus(), 0);
+  set_shape(1, 16, 1, 31744, 512);
+  inputs_[2].dims = inputs_[1].dims;
+  EXPECT_EQ(ShapeStatus(), 0);
+}
+
 TEST_F(DecodeAttentionPluginTest, RejectsInvalidShapeArguments) {
   EXPECT_NE(runtime_->onShapeChange(nullptr, 4, &output_, 1), 0);
   EXPECT_NE(runtime_->onShapeChange(inputs_.data(), 4, nullptr, 1), 0);

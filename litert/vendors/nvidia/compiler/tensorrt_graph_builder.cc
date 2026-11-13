@@ -6965,11 +6965,15 @@ class TensorRtGraphBuilder {
 
   // A mask [1, 1, n, S] tiled over the query heads, as the model builds it:
   // reshape(concatenation(mask, ..., mask; axis 1)) = [1, 1, heads * n, S],
-  // whose row r is row r % n of `mask`.
+  // whose row r is row r % n of `mask`. Gemma 4's E-models tile the mask as
+  // floats: reshape(not_equal(concatenation(cast(mask), ...; axis 1), 0)).
   struct TiledMask {
     Tensor mask;
     LiteRtOp reshape_op = nullptr;
     LiteRtOp concat_op = nullptr;
+    // The float tiling's comparison and cast.
+    LiteRtOp not_equal_op = nullptr;
+    LiteRtOp cast_op = nullptr;
   };
 
   static std::optional<TiledMask> FindTiledMask(const Tensor& tiled,
@@ -6979,7 +6983,18 @@ class TensorRtGraphBuilder {
         reshape->Inputs().empty()) {
       return std::nullopt;
     }
-    auto concat = reshape->Inputs()[0].GetDefiningOp();
+    Tensor stacked = reshape->Inputs()[0];
+    auto not_equal = stacked.GetDefiningOp();
+    const bool floats =
+        not_equal && not_equal->Code() == kLiteRtOpCodeTflNotEqual;
+    if (floats) {
+      if (not_equal->Inputs().size() != 2 ||
+          ReadFloatScalar(not_equal->Inputs()[1]) != 0.0f) {
+        return std::nullopt;
+      }
+      stacked = not_equal->Inputs()[0];
+    }
+    auto concat = stacked.GetDefiningOp();
     int32_t axis = 0;
     if (!concat || concat->Code() != kLiteRtOpCodeTflConcatenation ||
         concat->Inputs().empty() || concat->Outputs().size() != 1 ||
@@ -6988,11 +7003,21 @@ class TensorRtGraphBuilder {
         (axis != 1 && axis != -3)) {
       return std::nullopt;
     }
-    const Tensor mask = concat->Inputs()[0];
+    Tensor mask = concat->Inputs()[0];
     for (const auto& input : concat->Inputs()) {
       if (input.Get() != mask.Get()) {
         return std::nullopt;
       }
+    }
+    LiteRtOp cast_op = nullptr;
+    if (floats) {
+      auto cast = mask.GetDefiningOp();
+      if (!cast || cast->Code() != kLiteRtOpCodeTflCast ||
+          cast->Inputs().size() != 1) {
+        return std::nullopt;
+      }
+      cast_op = cast->Get();
+      mask = cast->Inputs()[0];
     }
     auto type = mask.RankedTensorType();
     if (!type || mask.ElementType() != litert::ElementType::Bool) {
@@ -7006,7 +7031,37 @@ class TensorRtGraphBuilder {
                         {1, static_cast<int32_t>(copies), dims[2], seq})) {
       return std::nullopt;
     }
-    return TiledMask{mask, reshape->Get(), concat->Get()};
+    return TiledMask{mask, reshape->Get(), concat->Get(),
+                     floats ? not_equal->Get() : nullptr, cast_op};
+  }
+
+  // Leaves the ops of mask tilings unlowered when only fused attention blocks
+  // read the tiled masks: from the reshape back to the cast, an op goes when
+  // every reader of its result is fused or went before it.
+  void DropUnreadMaskTilings(const Subgraph& subgraph,
+                             const std::vector<TiledMask>& tiled_masks) {
+    for (const auto& tiled : tiled_masks) {
+      for (LiteRtOp op : {tiled.reshape_op, tiled.not_equal_op, tiled.concat_op,
+                          tiled.cast_op}) {
+        if (op == nullptr) {
+          continue;
+        }
+        const Op tiling(subgraph.Context(), op);
+        if (tiling.Outputs().size() != 1) {
+          break;
+        }
+        const Tensor result = tiling.Outputs()[0];
+        bool unread = graph_outputs_.count(result.Get()) == 0;
+        for (const auto& use : result.Uses()) {
+          unread = unread && (fused_attention_ops_.count(use.user.Get()) != 0 ||
+                              unlowered_ops_.count(use.user.Get()) != 0);
+        }
+        if (!unread) {
+          break;
+        }
+        unlowered_ops_.insert(op);
+      }
+    }
   }
 
   static bool IsRuntimeBmm(const Op& op) {
@@ -7461,7 +7516,14 @@ class TensorRtGraphBuilder {
     return std::make_pair(q.scale, static_cast<int32_t>(q.zero_point));
   }
 
-  // Decode attention blocks over INT8 per-tensor KV caches (Gemma 4 E4B):
+  // The INT8 blocks of many query rows that go to the tensor-core kernels,
+  // and the mask tilings they read past.
+  struct Int8AttentionTally {
+    size_t tensor_core = 0;
+    std::vector<TiledMask> tiled_masks;
+  };
+
+  // Attention blocks over INT8 per-tensor KV caches (Gemma 4 E2B and E4B):
   //   k_out, v_out = odml.cache_update(k, v, positions, k_cache, v_cache, ...)
   //   scores = runtime_bmm(q [1,H,n,D], k_out [1,H,S,D])
   //   probs  = softmax(select(mask [1,1,n|1,S], scores, fill))
@@ -7475,6 +7537,7 @@ class TensorRtGraphBuilder {
       return {};
     }
     size_t num_blocks = 0;
+    Int8AttentionTally tally;
     for (const auto& update : subgraph.Ops()) {
       if (update.Code() != kLiteRtOpCodeShloComposite ||
           CompositeOpName(update) != "odml.cache_update" ||
@@ -7498,7 +7561,7 @@ class TensorRtGraphBuilder {
         LITERT_ASSIGN_OR_RETURN(
             const bool matched,
             MatchInt8CacheAttentionBlock(scores_op, k_out, v_out, *k_quant,
-                                         *v_quant));
+                                         *v_quant, &tally));
         num_blocks += matched ? 1 : 0;
       }
     }
@@ -7525,16 +7588,19 @@ class TensorRtGraphBuilder {
         }
         LITERT_ASSIGN_OR_RETURN(
             const bool matched,
-            MatchInt8CacheAttentionBlock(scores_op, k, *v, *k_quant, *v_quant));
+            MatchInt8CacheAttentionBlock(scores_op, k, *v, *k_quant, *v_quant,
+                                         &tally));
         num_blocks += matched ? 1 : 0;
       }
     }
+    DropUnreadMaskTilings(subgraph, tally.tiled_masks);
     if (num_blocks != 0) {
       LITERT_LOG(LITERT_INFO,
                  "NVIDIA TensorRT-RTX fusing %zu attention blocks over INT8 "
-                 "caches into the CUDA attention plugin (last block: heads=%d "
-                 "rows=%d depth=%d seq=%d)",
-                 num_blocks, int8_attention_geometry_[0],
+                 "caches into the CUDA attention plugin (%zu on the "
+                 "tensor-core kernels; last block: heads=%d rows=%d depth=%d "
+                 "seq=%d)",
+                 num_blocks, tally.tensor_core, int8_attention_geometry_[0],
                  int8_attention_geometry_[1], int8_attention_geometry_[2],
                  int8_attention_geometry_[3]);
     }
@@ -7542,9 +7608,12 @@ class TensorRtGraphBuilder {
   }
 
   // One block of FindInt8CacheAttentionBlocks, starting at its score product.
-  Expected<bool> MatchInt8CacheAttentionBlock(
-      const Op& scores_op, const Tensor& k_out, const Tensor& v_out,
-      std::pair<float, int32_t> k_quant, std::pair<float, int32_t> v_quant) {
+  Expected<bool> MatchInt8CacheAttentionBlock(const Op& scores_op,
+                                              const Tensor& k_out,
+                                              const Tensor& v_out,
+                                              std::pair<float, int32_t> k_quant,
+                                              std::pair<float, int32_t> v_quant,
+                                              Int8AttentionTally* tally) {
     const Tensor q = scores_op.Inputs()[0];
     const Tensor scores = scores_op.Outputs()[0];
     const auto select_op = SingleUser(scores, 1);
@@ -7610,18 +7679,54 @@ class TensorRtGraphBuilder {
     const int64_t keys_read = windowed != windowed_by_scores_.end()
                                   ? windowed_reads_[windowed->second].length
                                   : seq;
-    if (heads < 2 && keys_read <= kSingleHeadNativeCacheLimit) {
+    // The many query rows of a prefill chunk over a global layer's caches,
+    // which hold the chunk already, run on the tiled tensor-core kernel
+    // (trtllm/tiled_attention.h), given the mask from before the model tiled
+    // it over the query heads. The kernel reads the quantized caches and only
+    // the keys some row can see, where TensorRT's lowering dequantizes the
+    // whole cache and keeps [rows, context] scores, a select and the tiled
+    // mask for every chunk whatever the prompt holds: E2B's prefill at a
+    // 31,744-token capacity spent 13.7 ms per block and chunk there and
+    // 1.2 GiB of activations.
+    std::optional<TiledMask> tiled;
+    Tensor block_mask = mask;
+    bool tensor_core = false;
+    if (rows > 16 && windowed == windowed_by_scores_.end() &&
+        GlobalAttentionPluginEnabled() && *fill <= kMaxGlobalAttentionFill) {
+      tiled = FindTiledMask(mask, rows, seq);
+      if (tiled.has_value()) {
+        block_mask = tiled->mask;
+      }
+      auto block_mask_type = block_mask.RankedTensorType();
+      if (!block_mask_type) {
+        return false;
+      }
+      const auto block_mask_dims = block_mask_type->Layout().Dimensions();
+      const LiteRtNvidiaAttentionShape shape = {
+          static_cast<int32_t>(heads),
+          static_cast<int32_t>(rows),
+          block_mask_dims.size() == 4 ? block_mask_dims[2] : 0,
+          static_cast<int32_t>(depth),
+          static_cast<int32_t>(seq),
+          /*new_len=*/0};
+      tensor_core = block_mask_dims.size() == 4 && block_mask_dims[0] == 1 &&
+                    block_mask_dims[1] == 1 && block_mask_dims[3] == seq &&
+                    LiteRtNvidiaTiledAttentionInt8Supports(&shape) &&
+                    LiteRtNvidiaTiledAttentionAvailable();
+    }
+    if (!tensor_core && heads < 2 && keys_read <= kSingleHeadNativeCacheLimit) {
       return false;
     }
-    if (q_dims[0] != 1 || rows < 1 || rows > 16 || k_dims[0] != 1 ||
-        k_dims[1] != heads || k_dims[3] != depth || v_dims[0] != 1 ||
-        v_dims[1] != heads || v_dims[2] != depth || v_dims[3] != seq ||
-        scores_dims[0] != 1 || scores_dims[1] != heads ||
+    if (q_dims[0] != 1 || rows < 1 || (rows > 16 && !tensor_core) ||
+        k_dims[0] != 1 || k_dims[1] != heads || k_dims[3] != depth ||
+        v_dims[0] != 1 || v_dims[1] != heads || v_dims[2] != depth ||
+        v_dims[3] != seq || scores_dims[0] != 1 || scores_dims[1] != heads ||
         scores_dims[2] != rows || scores_dims[3] != seq ||
         output_dims[0] != 1 || output_dims[1] != heads ||
         output_dims[2] != rows || output_dims[3] != depth ||
         mask_dims[0] != 1 || mask_dims[1] != 1 ||
-        (mask_dims[2] != 1 && mask_dims[2] != rows) || mask_dims[3] != seq ||
+        (mask_dims[2] != 1 && mask_dims[2] != rows && !tensor_core) ||
+        mask_dims[3] != seq ||
         !TensorHasShape(select_op->Outputs()[0], {1, heads, rows, seq}) ||
         !LiteRtNvidiaDecodeAttentionInt8Supports(static_cast<int32_t>(depth))) {
       return false;
@@ -7633,6 +7738,13 @@ class TensorRtGraphBuilder {
     block.k_out = k_out.Get();
     block.v_out = v_out.Get();
     block.mask = mask.Get();
+    if (tensor_core) {
+      block.mask = block_mask.Get();
+      ++tally->tensor_core;
+      if (tiled.has_value()) {
+        tally->tiled_masks.push_back(*tiled);
+      }
+    }
     block.output = output;
     block.fill = *fill;
     block.int8_cache = LiteRtNvidiaInt8CacheParams{

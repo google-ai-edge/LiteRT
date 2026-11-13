@@ -107,6 +107,18 @@ bool UsesTiledCacheKernel(const nvinfer1::Dims& q, const nvinfer1::Dims& k,
   return LiteRtNvidiaTiledAttentionSupports(&shape);
 }
 
+// Many query rows over INT8 caches of depth 512 that already hold the chunk
+// (the prefill of Gemma 4 E2B and E4B through their global layers): the tiled
+// tensor-core kernel reads the quantized keys and the value columns as they
+// are stored (tiled_attention.h).
+bool UsesTiledInt8Kernel(int32_t int8_cache, int32_t window,
+                         const nvinfer1::Dims& q, const nvinfer1::Dims& k,
+                         const nvinfer1::Dims& mask) {
+  if (int8_cache != 2 || window != 0 || q.d[2] <= kMaxRows) return false;
+  const LiteRtNvidiaAttentionShape shape = CacheOnlyShape(q, k, mask);
+  return LiteRtNvidiaTiledAttentionInt8Supports(&shape);
+}
+
 bool ValidDimensions(const nvinfer1::Dims& dims) {
   if (dims.nbDims != 4) return false;
   for (int i = 0; i < dims.nbDims; ++i) {
@@ -196,8 +208,14 @@ bool ValidDescriptors(const nvinfer1::PluginTensorDesc* inputs,
     return false;
   }
   if (int8_cache != 0) {
-    // INT8 caches run only on the decode kernel.
-    return !new_keys && mask.d[3] == k.d[2] && q.d[2] <= kMaxRows &&
+    // INT8 caches run on the decode kernel, or many rows on the tiled one.
+    if (new_keys || mask.d[3] != k.d[2]) {
+      return false;
+    }
+    if (UsesTiledInt8Kernel(int8_cache, window, q, k, mask)) {
+      return true;
+    }
+    return q.d[2] <= kMaxRows &&
            (window == 0 || (window <= k.d[2] && window % 16 == 0)) &&
            LiteRtNvidiaDecodeAttentionInt8Supports(
                static_cast<int32_t>(q.d[3])) &&
@@ -400,6 +418,11 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
           static_cast<int32_t>(inputs[3].max.d[2]),
           static_cast<int32_t>(k.d[2]), static_cast<int32_t>(q.d[3]));
     }
+    if (UsesTiledInt8Kernel(int8_cache_, window_, q, k, inputs[3].max)) {
+      const LiteRtNvidiaAttentionShape shape =
+          CacheOnlyShape(q, k, inputs[3].max);
+      return LiteRtNvidiaTiledAttentionInt8WorkspaceBytes(&shape);
+    }
     return LiteRtNvidiaDecodeAttentionWorkspaceBytes(
         static_cast<int32_t>(q.d[1]), static_cast<int32_t>(q.d[2]),
         window_ != 0 ? window_ : static_cast<int32_t>(k.d[2]),
@@ -435,6 +458,13 @@ class DecodeAttentionPlugin final : public nvinfer1::IPluginV3,
           NewKeysShape(q, k, mask, input_desc[4].dims);
       status = LiteRtNvidiaLaunchTiledAttention(
           &shape, inputs[0], q_bf16, inputs[1], inputs[2], inputs[4], inputs[5],
+          static_cast<const bool*>(inputs[3]), fill_, outputs[0], workspace,
+          stream);
+    } else if (UsesTiledInt8Kernel(int8_cache_, window_, q, k, mask)) {
+      const LiteRtNvidiaInt8CacheParams int8 = Int8Params();
+      const LiteRtNvidiaAttentionShape shape = CacheOnlyShape(q, k, mask);
+      status = LiteRtNvidiaLaunchTiledAttentionInt8(
+          &shape, inputs[0], q_bf16, inputs[1], inputs[2], &int8,
           static_cast<const bool*>(inputs[3]), fill_, outputs[0], workspace,
           stream);
     } else if (int8_cache_ != 0) {
