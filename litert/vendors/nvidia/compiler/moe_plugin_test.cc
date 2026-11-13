@@ -505,6 +505,19 @@ TEST_P(MoePluginTest, LoadsHostArenas) {
   }
 }
 
+// Experts whose rows of one output channel are larger than the loader's
+// staging buffers (1,024 experts of 4,112-byte rows: 4.2 MB) are loaded all
+// the same, in the model's row order.
+TEST_P(MoePluginTest, KeepsTheModelsOrderForChannelsLargerThanTheStaging) {
+  if (std::strcmp(GetParam(), "1") != 0) {
+    GTEST_SKIP() << "Runs once, with expert-major arenas asked for.";
+  }
+  const std::vector<Layer> layers =
+      WriteModel(Path("wide_channels"), {1024, 8224, 32, 64, 1}, 1, 11);
+  ASSERT_EQ(layers.size(), 1u);
+  ExpectArena(layers[0], /*expect_device=*/true, /*expect_expert_major=*/false);
+}
+
 // A file that is not the one the plan was built from is not loaded.
 TEST_P(MoePluginTest, RejectsAFileOfAnotherSize) {
   std::vector<Layer> layers =

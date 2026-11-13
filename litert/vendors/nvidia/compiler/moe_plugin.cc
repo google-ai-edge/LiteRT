@@ -102,7 +102,15 @@ constexpr int kFields = 19;
 constexpr int kPieces = 14;
 
 constexpr size_t kArenaAlignment = 256;
-constexpr size_t kStagingBytes = 32u << 20;
+// A loading thread's two page-locked buffers, and the block scales it reads
+// to convert at a time. Small on purpose: every thread holds them while the
+// arenas load, which is when a process with the drafter is at its largest.
+// With 32 MiB buffers and whole pieces of scales, four threads held 0.35 GiB
+// and the peak resident set of such a run grew by as much; with these they
+// hold 70 MiB (Gemma 4 26B-A4B: 8 MiB of buffers, a piece's 7.9 MB of
+// compact scales and 1 MiB of scales to convert, each).
+constexpr size_t kStagingBytes = 4u << 20;
+constexpr size_t kScaleChunkBytes = 1u << 20;
 
 std::atomic<bool> g_loading_enabled{false};
 
@@ -563,11 +571,42 @@ class Staging {
   int next_ = 1;
 };
 
+// Host memory a loading thread works in, given back to the system when the
+// thread is done. From the heap it would not go back: the C library keeps a
+// heap per thread and does not trim what a thread has freed, so the megabytes
+// each loading thread converts in stayed resident for the rest of the
+// process, on top of what it holds at its largest.
+class Scratch {
+ public:
+  ~Scratch() {
+    if (data_ != nullptr) cudaFreeHost(data_);
+  }
+
+  // At least `bytes` of memory; what an earlier call returned is gone.
+  uint8_t* Get(size_t bytes, std::string* error) {
+    if (bytes > bytes_) {
+      if (data_ != nullptr) cudaFreeHost(data_);
+      bytes_ = 0;
+      if (!CudaOk(cudaMallocHost(&data_, bytes), "cudaMallocHost", error)) {
+        data_ = nullptr;
+        return nullptr;
+      }
+      bytes_ = bytes;
+    }
+    return static_cast<uint8_t*>(data_);
+  }
+
+ private:
+  void* data_ = nullptr;
+  size_t bytes_ = 0;
+};
+
 // What a loading thread keeps from one arena to the next.
 struct LoadContext {
   Staging staging;
-  std::vector<uint8_t> file_bytes;     // rows as the file holds them
-  std::vector<uint8_t> fractions;      // a piece's compact scales
+  Scratch file_bytes;                  // rows as the file holds them
+  Scratch fractions;                   // a piece's compact scales
+  Scratch maxima;                      // and its rows' maxima
   const float* half_floats = nullptr;  // HalfFloats()
 };
 
@@ -625,26 +664,29 @@ bool FillArena(const MoeExpertSource& source, const ArenaLayout& layout,
       const size_t scale_in = source.scale_type == 0 ? 4 : 2;
       const size_t blocks = in_bytes / scale_in / rows;
       const size_t row_in = blocks * scale_in;
-      if (blocks > kStagingBytes) {
-        *error = "a row of block scales does not fit the staging buffer";
-        return false;
-      }
-      const size_t rows_per_chunk = std::max<size_t>(1, kStagingBytes / row_in);
-      std::vector<uint16_t> maxima(rows);
+      const size_t rows_per_chunk =
+          std::max<size_t>(1, kScaleChunkBytes / row_in);
       std::vector<float> row(blocks);
       // A device arena's fractions are made in host memory, each row in its
       // place, and copied once the piece is whole.
-      if (on_device) context->fractions.resize(rows * blocks);
-      uint8_t* fractions = on_device ? context->fractions.data() : target;
+      uint8_t* fractions = target;
+      if (on_device) {
+        fractions = context->fractions.Get(rows * blocks, error);
+        if (fractions == nullptr) return false;
+      }
+      auto* maxima = reinterpret_cast<uint16_t*>(
+          context->maxima.Get(rows * sizeof(uint16_t), error));
+      uint8_t* file_bytes =
+          context->file_bytes.Get(rows_per_chunk * row_in, error);
+      if (maxima == nullptr || file_bytes == nullptr) return false;
       for (size_t r0 = 0; r0 < rows; r0 += rows_per_chunk) {
         const size_t n = std::min(rows_per_chunk, rows - r0);
-        context->file_bytes.resize(n * row_in);
-        if (!file.Read(source.offsets[i] + r0 * row_in,
-                       context->file_bytes.data(), n * row_in, error)) {
+        if (!file.Read(source.offsets[i] + r0 * row_in, file_bytes, n * row_in,
+                       error)) {
           return false;
         }
         for (size_t r = 0; r < n; ++r) {
-          const uint8_t* in = context->file_bytes.data() + r * row_in;
+          const uint8_t* in = file_bytes + r * row_in;
           if (scale_in == 4) {
             std::memcpy(row.data(), in, row_in);
           } else {
@@ -656,12 +698,11 @@ bool FillArena(const MoeExpertSource& source, const ArenaLayout& layout,
           }
           const size_t at = ArenaRow(layout, r0 + r, experts, rows / experts);
           LiteRtNvidiaCompactScaleRow(row.data(), static_cast<int32_t>(blocks),
-                                      fractions + at * blocks,
-                                      maxima.data() + at);
+                                      fractions + at * blocks, maxima + at);
         }
       }
       if ((on_device && !put(target, fractions, rows * blocks)) ||
-          !put(base + layout.max_offsets[i - 3], maxima.data(),
+          !put(base + layout.max_offsets[i - 3], maxima,
                rows * sizeof(uint16_t))) {
         return false;
       }
@@ -707,16 +748,16 @@ bool FillArena(const MoeExpertSource& source, const ArenaLayout& layout,
           }
           continue;
         }
-        context->file_bytes.resize(n * channel_bytes);
-        if (!file.Read(offset, context->file_bytes.data(), n * channel_bytes,
-                       error)) {
+        uint8_t* file_bytes = context->file_bytes.Get(n * channel_bytes, error);
+        if (file_bytes == nullptr ||
+            !file.Read(offset, file_bytes, n * channel_bytes, error)) {
           return false;
         }
         for (size_t row = 0; row < n * experts; ++row) {
           std::memcpy(
               target + ArenaRow(layout, c0 * experts + row, experts, channels) *
                            row_bytes,
-              context->file_bytes.data() + row * row_bytes, row_bytes);
+              file_bytes + row * row_bytes, row_bytes);
         }
       }
       continue;
@@ -732,15 +773,14 @@ bool FillArena(const MoeExpertSource& source, const ArenaLayout& layout,
           return false;
         }
       } else {
-        context->file_bytes.resize(chunk);
-        if (!file.Read(source.offsets[i] + done, context->file_bytes.data(),
-                       chunk, error)) {
+        uint8_t* file_bytes = context->file_bytes.Get(chunk, error);
+        if (file_bytes == nullptr ||
+            !file.Read(source.offsets[i] + done, file_bytes, chunk, error)) {
           return false;
         }
         for (size_t v = 0; v < chunk / sizeof(float); ++v) {
           float value = 0.0f;
-          std::memcpy(&value, context->file_bytes.data() + v * sizeof(float),
-                      sizeof(float));
+          std::memcpy(&value, file_bytes + v * sizeof(float), sizeof(float));
           const uint16_t half = FloatToHalfBits(value);
           std::memcpy(out + v * sizeof(half), &half, sizeof(half));
         }
@@ -874,7 +914,21 @@ int LoadArenas(std::vector<ArenaLoad>& loads) {
       load.error = "the expert pieces do not match the layer's shape";
       continue;
     }
-    load.layout.expert_major = expert_major;
+    // The rows of an output channel, one per expert, pass through a staging
+    // buffer together on their way to their experts: an arena whose channels
+    // are larger than the buffers keeps the model's order, which the kernels
+    // read as well.
+    const size_t channel_bytes = static_cast<size_t>(load.experts) *
+                                 std::max(load.model_dim, load.hidden_dim) / 2;
+    load.layout.expert_major = expert_major && channel_bytes <= kStagingBytes;
+    if (expert_major && !load.layout.expert_major) {
+      std::fprintf(stderr,
+                   "[LiteRtNvidiaMoe] experts at offset %llu: the rows of a "
+                   "channel (%.1f MB) do not fit the loader's staging "
+                   "buffers; the arena keeps the model's row order\n",
+                   static_cast<unsigned long long>(load.source.offsets[0]),
+                   channel_bytes / 1048576.0);
+    }
     bool on_device = !to_host;
     if (!to_host && !to_device) {
       size_t free_bytes = 0;
