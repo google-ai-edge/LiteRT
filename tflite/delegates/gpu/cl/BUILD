@@ -235,6 +235,7 @@ cc_library(
     srcs = ["cl_device.cc"],
     hdrs = ["cl_device.h"],
     deps = [
+        ":cooperative_matrix",
         ":opencl_wrapper",
         ":util",
         "//tflite/delegates/gpu/common:gpu_info",
@@ -245,6 +246,17 @@ cc_library(
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_library(
+    name = "cooperative_matrix",
+    srcs = ["cooperative_matrix.cc"],
+    hdrs = ["cooperative_matrix.h"],
+    deps = [
+        ":opencl_wrapper",
+        "//tflite/delegates/gpu/common:data_type",
+        "//tflite/delegates/gpu/common:gpu_info",
     ],
 )
 

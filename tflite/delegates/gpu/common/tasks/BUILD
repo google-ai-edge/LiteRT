@@ -14,6 +14,8 @@
 # ==============================================================================
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//tflite/delegates/gpu:build_defs.bzl", "gtest_main_no_heapcheck_deps")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -151,6 +153,24 @@ cc_library(
         "//tflite/delegates/gpu/common:util",
         "//tflite/delegates/gpu/common/task:gpu_operation",
         "//tflite/delegates/gpu/common/task:weights_layout",
+    ],
+)
+
+cc_library(
+    name = "conv_coop_mat",
+    srcs = ["conv_coop_mat.cc"],
+    hdrs = ["conv_coop_mat.h"],
+    deps = [
+        "//tflite/delegates/gpu/common:data_type",
+        "//tflite/delegates/gpu/common:gpu_info",
+        "//tflite/delegates/gpu/common:operations",
+        "//tflite/delegates/gpu/common:shape",
+        "//tflite/delegates/gpu/common:status",
+        "//tflite/delegates/gpu/common:types",
+        "//tflite/delegates/gpu/common:util",
+        "//tflite/delegates/gpu/common/task:buffer_desc",
+        "//tflite/delegates/gpu/common/task:gpu_operation",
+        "//tflite/delegates/gpu/common/task:gpu_tensor",
     ],
 )
 
@@ -1209,5 +1229,27 @@ cc_library(
         "//tflite/delegates/gpu/common:status",
         "//tflite/delegates/gpu/common:winograd_util",
         "//tflite/delegates/gpu/common/task:testing_util",
+    ],
+)
+
+cc_library(
+    name = "conv_coop_mat_test_util",
+    testonly = 1,
+    srcs = ["conv_coop_mat_test_util.cc"],
+    hdrs = ["conv_coop_mat_test_util.h"],
+    deps = [
+        ":conv_coop_mat",
+        "//tflite/delegates/gpu/common:data_type",
+        "//tflite/delegates/gpu/common:gpu_info",
+        "//tflite/delegates/gpu/common:operations",
+        "//tflite/delegates/gpu/common:precision",
+        "//tflite/delegates/gpu/common:shape",
+        "//tflite/delegates/gpu/common:status",
+        "//tflite/delegates/gpu/common:tensor",
+        "//tflite/delegates/gpu/common:types",
+        "//tflite/delegates/gpu/common/task:gpu_operation",
+        "//tflite/delegates/gpu/common/task:tensor_desc",
+        "//tflite/delegates/gpu/common/task:testing_util",
+        "@com_google_absl//absl/strings",
     ],
 )

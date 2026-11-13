@@ -27,6 +27,7 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
+#include "tflite/delegates/gpu/cl/cooperative_matrix.h"
 #include "tflite/delegates/gpu/cl/opencl_wrapper.h"
 #include "tflite/delegates/gpu/cl/util.h"
 #include "tflite/delegates/gpu/common/status.h"
@@ -383,6 +384,17 @@ GpuInfoFromDeviceID(cl_device_id id, cl_platform_id platform_id) {
   } else if (info.IsPowerVR()) {
     ParsePowerVRDriverVersion(info.opencl_info.driver_version,
                               info.powervr_info.driver_version);
+  }
+  if (info.SupportsExtension("cl_khr_cooperative_matrix") &&
+      clGetExtensionFunctionAddressForPlatform) {
+    // Resolve for this device's platform, not a process-global driver. Device
+    // construction precedes loading the remaining platform extension functions.
+    const auto get_matrix_info =
+        reinterpret_cast<cooperative_matrix::GetInfo>(
+            clGetExtensionFunctionAddressForPlatform(
+                platform_id, "clGetDeviceCooperativeMatrixInfoKHR"));
+    cooperative_matrix::ReadInfo(id, clGetDeviceInfo, get_matrix_info,
+                                  &info.opencl_info);
   }
   return info;
 }

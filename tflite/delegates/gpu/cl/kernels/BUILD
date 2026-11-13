@@ -96,6 +96,27 @@ cc_test(
 )
 
 cc_test(
+    name = "conv_coop_mat_test",
+    srcs = ["conv_coop_mat_test.cc"],
+    tags = [
+        "noasan",
+        "nomsan",
+        "notsan",
+        "requires-gpu-sm90",
+    ],
+    # opencl_wrapper (via tflite/tools/logging.h) calls __android_log_print;
+    # the header-only //tflite/tools:logging target adds no -llog on Android.
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": ["-llog"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":cl_test",
+        "//tflite/delegates/gpu/common/tasks:conv_coop_mat_test_util",
+    ] + gtest_main_no_heapcheck_deps(),
+)
+
+cc_test(
     name = "conv_constants_test",
     srcs = ["conv_constants_test.cc"],
     tags = [
@@ -784,6 +805,7 @@ test_suite(
         "add_test",
         "cast_test",
         "concat_test",
+        "conv_coop_mat_test",
         "conv_constants_test",
         "conv_generic_test",
         "conv_weights_converter_test",
