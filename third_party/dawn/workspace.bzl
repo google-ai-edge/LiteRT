@@ -16,6 +16,7 @@ _DAWN_VERSION = "20260720.160313"
 _ENV_BUILD = "LITERT_BUILD_DAWN"
 _ENV_SRC_DIR = "LITERT_DAWN_SRC_DIR"
 _ENV_CMAKE_ARGS = "LITERT_DAWN_CMAKE_ARGS"
+_ENV_SH = "BAZEL_SH"
 
 # C++17 compatibility patches for the generated Dawn C++ header and dawn_proc templates, applied to the
 # downloaded release.
@@ -56,20 +57,30 @@ _REPLACED_FILES = ["BUILD.bazel", "WORKSPACE.bazel", "MODULE.bazel", "MODULE.baz
 _FLATTENED = ["src/utils", "src/utils/chromium_test_compat"]
 _FLATTENED_PARENTS = ["src"] + _FLATTENED
 
+def _find_python(rctx):
+    """Finds a working Python executable in PATH, skipping broken stubs like the Windows Store alias."""
+    for name in ["python3", "python"]:
+        candidate = rctx.which(name)
+        if candidate and rctx.execute([str(candidate), "-V"]).return_code == 0:
+            return candidate
+    fail("Could not find a working `python3` or `python` executable in PATH to fetch Dawn dependencies.")
+
 def _fetch_dependencies(rctx, src):
     dependencies = dict(_DEPENDENCIES)
     if rctx.os.name.startswith("windows"):
         dependencies.update(_WINDOWS_DEPENDENCIES)
 
+    python = None
     for _ in range(3):
         missing = [d for d, marker in dependencies.items() if not rctx.path("%s/third_party/%s/%s" % (src, d, marker)).exists]
         if not missing:
             return
+        if not python:
+            python = _find_python(rctx)
         for d in missing:
             # Dawn's script ignores git failures and then skips the empty clone left behind.
             rctx.delete("%s/third_party/%s/.git" % (src, d))
-        python = rctx.which("python3") or rctx.which("python")
-        rctx.execute([python, "tools/fetch_dawn_dependencies.py"], working_directory = str(src), timeout = 3600)
+        rctx.execute([str(python), "tools/fetch_dawn_dependencies.py"], working_directory = str(src), timeout = 3600)
     fail("Could not fetch Dawn's dependencies (needs git and network access). Still missing: " + ", ".join(missing))
 
 def _link_local_dawn(rctx, src):
@@ -140,7 +151,9 @@ def _dawn_repo_impl(rctx):
     local_dir = rctx.getenv(_ENV_SRC_DIR)
 
     if local_dir:
-        src = rctx.path(local_dir)
+        src = rctx.workspace_root.get_child(local_dir)
+        if not src.is_dir:
+            fail("%s path '%s' (resolved to '%s') is not a directory." % (_ENV_SRC_DIR, local_dir, src))
         _link_local_dawn(rctx, src)
     else:
         src = rctx.path(".")
@@ -148,8 +161,9 @@ def _dawn_repo_impl(rctx):
             url = "https://github.com/google/dawn/archive/v%s.tar.gz" % _DAWN_VERSION,
             stripPrefix = "dawn-" + _DAWN_VERSION,
         )
+        bash = rctx.getenv(_ENV_SH) or "bash"
         for cmd in _PATCH_CMDS:
-            result = rctx.execute(["bash", "-c", cmd])
+            result = rctx.execute([bash, "-c", cmd])
             if result.return_code != 0:
                 fail("Patching Dawn failed:\n%s\n%s\n%s" % (cmd, result.stdout, result.stderr))
         rctx.delete("BUILD.bazel")
@@ -162,7 +176,7 @@ def _dawn_repo_impl(rctx):
 _dawn_repo = repository_rule(
     implementation = _dawn_repo_impl,
     attrs = {"build_file": attr.label(allow_single_file = True, mandatory = True)},
-    environ = [_ENV_BUILD, _ENV_SRC_DIR, _ENV_CMAKE_ARGS],
+    environ = [_ENV_BUILD, _ENV_SRC_DIR, _ENV_CMAKE_ARGS, _ENV_SH],
 )
 
 def repo():
