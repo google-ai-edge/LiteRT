@@ -49,6 +49,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/compiler/plugin/algo.h"
 #include "litert/core/filesystem.h"
@@ -523,8 +524,8 @@ litert::Expected<ComparisonResult> CompareBuffers(
 
   ComparisonResult res;
   res.failed = false;
-  double sum_squared_error = 0, sum_sq_cpu = 0, sum_sq_accel = 0,
-         dot_product = 0, sum_cpu = 0, sum_accel = 0;
+  double sum_squared_error = 0, sum_abs_error = 0, sum_sq_cpu = 0,
+         sum_sq_accel = 0, dot_product = 0, sum_cpu = 0, sum_accel = 0;
   double max_abs_cpu = 0;
 
   res.min_ref = std::numeric_limits<float>::max();
@@ -535,6 +536,7 @@ litert::Expected<ComparisonResult> CompareBuffers(
   for (size_t i = 0; i < total_elements; ++i) {
     double diff = std::abs(cpu_data[i] - accel_data[i]);
     sum_squared_error += diff * diff;
+    sum_abs_error += diff;
     if (diff > res.max_diff) res.max_diff = static_cast<float>(diff);
     dot_product += cpu_data[i] * accel_data[i];
     sum_sq_cpu += cpu_data[i] * cpu_data[i];
@@ -557,6 +559,7 @@ litert::Expected<ComparisonResult> CompareBuffers(
 
   res.mse = sum_squared_error / total_elements;
   res.mean_diff = sum_cpu / total_elements - sum_accel / total_elements;
+  res.mean_abs_diff = sum_abs_error / total_elements;
   double mag_cpu = std::sqrt(sum_sq_cpu), mag_accel = std::sqrt(sum_sq_accel);
   res.cosine_similarity = (mag_cpu > 0 && mag_accel > 0)
                               ? (dot_product / (mag_cpu * mag_accel))
@@ -607,6 +610,11 @@ void AccuracyDebuggerSummary::LogSummary(
               [](const OpStats& a, const OpStats& b) {
                 return a.metrics.max_diff > b.metrics.max_diff;
               });
+  } else if (options.sort_by == "mean_abs_diff") {
+    std::sort(sorted.begin(), sorted.end(),
+              [](const OpStats& a, const OpStats& b) {
+                return a.metrics.mean_abs_diff > b.metrics.mean_abs_diff;
+              });
   } else if (options.sort_by == "mse") {
     std::sort(sorted.begin(), sorted.end(),
               [](const OpStats& a, const OpStats& b) {
@@ -648,9 +656,10 @@ void AccuracyDebuggerSummary::LogSummary(
   std::cout << "Regressions:      " << failing_op_indices.size() << std::endl;
   std::cout << kBanner << std::endl;
   std::cout << absl::StreamFormat(
-                   "%-6s %-35s | %-12s | %-10s | %-5s | %-20s | %-20s | %-15s",
-                   "Index", "Op Code", "Max Diff", "Cos Sim", "NaN",
-                   "Ref Range", "Accel Range", "Status")
+                   "%-6s %-35s | %-12s | %-12s | %-10s | %-5s | %-20s | %-20s "
+                   "| %-15s",
+                   "Index", "Op Code", "Max Diff", "MeanAbsDiff", "Cos Sim",
+                   "NaN", "Ref Range", "Accel Range", "Status")
             << std::endl;
   std::cout << kSeparator << std::endl;
 
@@ -678,10 +687,11 @@ void AccuracyDebuggerSummary::LogSummary(
 
     std::cout
         << absl::StreamFormat(
-               "[%4d] %-35s | %12.6f | %10.8f | %5s | %-20s | %-20s | %-15s",
+               "[%4d] %-35s | %12.6f | %12.6f | %10.8f | %5s | %-20s | %-20s | "
+               "%-15s",
                op.global_index, op.op_code, op.metrics.max_diff,
-               op.metrics.cosine_similarity, has_nan, ref_range, accel_range,
-               status)
+               op.metrics.mean_abs_diff, op.metrics.cosine_similarity, has_nan,
+               ref_range, accel_range, status)
         << std::endl;
   }
   std::cout << kBanner << std::endl;
@@ -694,8 +704,9 @@ void AccuracyDebuggerSummary::SaveToCsv(const std::string& path) const {
     return;
   }
 
-  csv_file << "Index,Op Code,Tensor Name,Max Diff,MSE,Cos Sim,SNR (dB),PSNR "
-              "(dB),NaN,Min Ref,Max Ref,Min Accel,Max Accel,Status\n";
+  csv_file << "Index,Op Code,Tensor Name,Max Diff,Mean Abs Diff,MSE,Cos "
+              "Sim,SNR (dB),PSNR (dB),NaN,Min Ref,Max Ref,Min Accel,Max "
+              "Accel,Status\n";
   for (const auto& op : all_ops) {
     std::string status = "OK";
     for (const auto& m : op.metrics.failing_metrics) {
@@ -707,12 +718,12 @@ void AccuracyDebuggerSummary::SaveToCsv(const std::string& path) const {
     if (status == "OK" && op.metrics.failed) status = "REGRESSION";
 
     csv_file << absl::StrFormat(
-        "%d,%s,%s,%.6f,%.6f,%.8f,%.2f,%.2f,%s,%.6f,%.6f,%.6f,%.6f,%s\n",
+        "%d,%s,%s,%.6f,%.6f,%.6f,%.8f,%.2f,%.2f,%s,%.6f,%.6f,%.6f,%.6f,%s\n",
         op.global_index, op.op_code, CsvEscape(op.tensor_name),
-        op.metrics.max_diff, op.metrics.mse, op.metrics.cosine_similarity,
-        op.metrics.snr, op.metrics.psnr, op.metrics.has_nan_accel ? "Y" : "N",
-        op.metrics.min_ref, op.metrics.max_ref, op.metrics.min_accel,
-        op.metrics.max_accel, status);
+        op.metrics.max_diff, op.metrics.mean_abs_diff, op.metrics.mse,
+        op.metrics.cosine_similarity, op.metrics.snr, op.metrics.psnr,
+        op.metrics.has_nan_accel ? "Y" : "N", op.metrics.min_ref,
+        op.metrics.max_ref, op.metrics.min_accel, op.metrics.max_accel, status);
   }
   std::cout << "Summary saved to: " << path << std::endl;
 }
@@ -754,6 +765,13 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
     gpu_opts->SetPrecision(litert::GpuOptions::Precision::kFp32);
   } else {
     cpu_opts_res->SetHardwareAccelerators(litert::HwAccelerators::kCpu);
+    auto cpu_opts = cpu_opts_res->GetCpuOptions();
+    if (!cpu_opts) return absl::InternalError("CPU opts failed");
+    if (auto status = cpu_opts->SetKernelMode(options.cpu_kernel_mode);
+        !status) {
+      return absl::InternalError(absl::StrCat(
+          "Failed to set CPU kernel mode: ", status.Error().Message()));
+    }
   }
 
   absl::flat_hash_map<const LiteRtTensorT*, std::vector<char>>
@@ -799,9 +817,11 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
   }
 
   struct WorkUnit {
+    int global_index = 0;
     std::vector<const LiteRtOpT*> ops;
     std::string opcode_str;
     bool skip_accel = false;
+    bool is_prefill = false;
   };
   std::vector<WorkUnit> work_units;
 
@@ -811,29 +831,62 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
           internal::PartitionIntoIslands(*subgraph, options.boundary_tensors);
       for (size_t i = 0; i < islands.size(); ++i) {
         WorkUnit unit;
+        unit.global_index = static_cast<int>(i);
         for (auto* op : islands[i]) unit.ops.push_back(op);
         unit.opcode_str =
             absl::StrFormat("Partition_%d(%d Ops)", i, unit.ops.size());
         work_units.push_back(std::move(unit));
       }
     } else {
-      for (const auto* op : subgraph->Ops()) {
+      const auto& sg_ops = subgraph->Ops();
+      int total_ops = static_cast<int>(sg_ops.size());
+      int start_idx = std::clamp(options.start_op, 0, total_ops);
+      if (start_idx > 0) {
+        WorkUnit prefill;
+        prefill.global_index = 0;
+        for (int i = 0; i < start_idx; ++i) {
+          prefill.ops.push_back(sg_ops[i]);
+        }
+        prefill.opcode_str =
+            absl::StrFormat("CPU_Prefill[0..%d]", start_idx - 1);
+        prefill.skip_accel = true;
+        prefill.is_prefill = true;
+        work_units.push_back(std::move(prefill));
+      }
+      int step = std::max(1, options.chunk_size);
+      for (int i = start_idx; i < total_ops; i += step) {
+        int end_idx = std::min(i + step, total_ops);
         WorkUnit unit;
-        unit.ops.push_back(op);
-        unit.opcode_str = GetOpName(*op);
-        if (options.skip_unsupported_npu_ops &&
-            (op->OpCode() == kLiteRtOpCodeTflEmbeddingLookup ||
-             op->OpCode() == kLiteRtOpCodeTflCustom)) {
-          unit.skip_accel = true;
+        unit.global_index = i;
+        for (int j = i; j < end_idx; ++j) {
+          unit.ops.push_back(sg_ops[j]);
+        }
+        if (unit.ops.size() == 1) {
+          const auto* op = unit.ops[0];
+          unit.opcode_str = GetOpName(*op);
+          if (options.skip_unsupported_npu_ops &&
+              (op->OpCode() == kLiteRtOpCodeTflEmbeddingLookup ||
+               op->OpCode() == kLiteRtOpCodeTflCustom)) {
+            unit.skip_accel = true;
+          }
+        } else {
+          unit.opcode_str = absl::StrFormat(
+              "Chunk[%d..%d](%s..%s)", i, end_idx - 1,
+              GetOpName(*unit.ops.front()), GetOpName(*unit.ops.back()));
         }
         work_units.push_back(std::move(unit));
       }
     }
   }
 
-  int global_op_counter = 0;
-  for (auto& unit : work_units) {
-    if (options.max_ops != -1 && global_op_counter >= options.max_ops) break;
+  int checked_units = 0;
+  for (size_t unit_idx = 0; unit_idx < work_units.size(); ++unit_idx) {
+    auto& unit = work_units[unit_idx];
+    if (!unit.is_prefill && options.max_ops != -1 &&
+        checked_units >= options.max_ops) {
+      break;
+    }
+    int global_op_counter = unit.global_index;
 
     std::string sanitized_opcode = SanitizeFilename(unit.opcode_str);
     std::string op_info =
@@ -845,33 +898,40 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
     auto serialized = std::move(*serialized_res);
 
     if (options.dump_only) {
-      std::string filename = absl::StrFormat(
-          "op_%04d_%s_i%d_o%d.tflite", global_op_counter, sanitized_opcode,
-          em.inputs.size(), em.outputs.size());
-      std::string dump_path =
-          litert::internal::Join({options.output_dir, filename});
-      std::ofstream dump_file(dump_path, std::ios::binary);
-      if (!dump_file.is_open()) {
-        ABSL_LOG(ERROR) << "Failed to open dump file: " << dump_path;
-      } else {
-        dump_file.write(reinterpret_cast<const char*>(serialized.Data()),
-                        serialized.Size());
-        std::cout << "Dumped model to: " << dump_path << std::endl;
+      if (!unit.is_prefill) {
+        std::string filename = absl::StrFormat(
+            "op_%04d_%s_i%d_o%d.tflite", global_op_counter, sanitized_opcode,
+            em.inputs.size(), em.outputs.size());
+        std::string dump_path =
+            litert::internal::Join({options.output_dir, filename});
+        std::ofstream dump_file(dump_path, std::ios::binary);
+        if (!dump_file.is_open()) {
+          ABSL_LOG(ERROR) << "Failed to open dump file: " << dump_path;
+        } else {
+          dump_file.write(reinterpret_cast<const char*>(serialized.Data()),
+                          serialized.Size());
+          std::cout << "Dumped model to: " << dump_path << std::endl;
+        }
+        checked_units++;
       }
-      global_op_counter++;
       continue;
     }
 
     // --- CPU Path (Golden Reference) ---
     auto cpu_model_res = CompiledModel::Create(env, serialized, *cpu_opts_res);
     if (!cpu_model_res) {
+      if (unit.is_prefill) {
+        return absl::InternalError(
+            absl::StrCat("Prefill CPU compile failed for ", op_info, ": ",
+                         cpu_model_res.Error().Message()));
+      }
       ComparisonResult final_res;
       final_res.failed = true;
       final_res.failing_metrics.push_back("CPU_COMPILE_FAILED");
       if (summary)
         summary->all_ops.push_back(
             {(int)global_op_counter, unit.opcode_str, "", final_res});
-      global_op_counter++;
+      checked_units++;
       continue;
     }
     auto& cpu_model = *cpu_model_res;
@@ -880,9 +940,18 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
     if (!cpu_in_exp) return absl::InternalError("CPU inputs failed");
     auto cpu_inputs = std::move(cpu_in_exp.Value());
 
-    if (!options.input_dir.empty() && global_op_counter == 0) {
-      auto fill_status = tensor_utils::FillInputBuffersWithCustomData(
-          cpu_model, options.signature_index, cpu_inputs, options.input_dir);
+    if (!options.input_dir.empty() && unit_idx == 0) {
+      litert::Expected<void> fill_status = {};
+      if (litert::internal::Exists(options.input_dir) &&
+          !litert::internal::IsDir(options.input_dir) &&
+          !cpu_inputs.empty()) {
+        fill_status = tensor_utils::FillSingleInputBufferFromFile(
+            cpu_model, options.signature_index, "", cpu_inputs[0],
+            options.input_dir, false);
+      } else {
+        fill_status = tensor_utils::FillInputBuffersWithCustomData(
+            cpu_model, options.signature_index, cpu_inputs, options.input_dir);
+      }
       if (!fill_status) {
         ABSL_LOG(WARNING) << "Failed to fill inputs from " << options.input_dir
                           << ": " << fill_status.Error().Message();
@@ -926,6 +995,11 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
     auto cpu_run_status =
         cpu_model.Run(static_cast<size_t>(0), cpu_inputs, cpu_outputs);
     if (!cpu_run_status) {
+      if (unit.is_prefill) {
+        return absl::InternalError(
+            absl::StrCat("Prefill CPU run failed for ", op_info, ": ",
+                         cpu_run_status.Error().Message()));
+      }
       ComparisonResult final_res;
       final_res.failed = true;
       final_res.failing_metrics.push_back("CPU_RUN_FAILED");
@@ -934,7 +1008,7 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
             {(int)global_op_counter, unit.opcode_str, "", final_res});
         summary->failing_op_indices.push_back(global_op_counter);
       }
-      global_op_counter++;
+      checked_units++;
       continue;
     }
 
@@ -946,6 +1020,24 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
       if (em.outputs[i]) {
         cpu_tensor_values[em.outputs[i]] = std::move(cpu_data);
       }
+    }
+
+    if (unit.is_prefill) {
+      for (size_t i = 0; i < em.outputs.size(); ++i) {
+        if (em.outputs[i]) {
+          accel_tensor_values[em.outputs[i]] = cpu_tensor_values[em.outputs[i]];
+        }
+      }
+      for (const auto* op : unit.ops) {
+        for (const auto* in_t : op->Inputs()) {
+          if (in_t && global_consumer_counts.contains(in_t) &&
+              --global_consumer_counts[in_t] == 0) {
+            cpu_tensor_values.erase(in_t);
+            accel_tensor_values.erase(in_t);
+          }
+        }
+      }
+      continue;
     }
 
     if (options.dump_tensors) {
@@ -997,7 +1089,8 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
       } else {
         auto& accel_model = *accel_model_res;
         auto fully_accel_exp = accel_model.IsFullyAccelerated();
-        if (!fully_accel_exp.HasValue() || !fully_accel_exp.Value()) {
+        if ((!fully_accel_exp.HasValue() || !fully_accel_exp.Value()) &&
+            !options.allow_partial_acceleration) {
           worst_res.failed = true;
           worst_res.failing_metrics.push_back("NOT_PARTITIONED");
         } else {
@@ -1036,10 +1129,10 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
                                            ? std::string(em.outputs[i]->Name())
                                            : "unknown";
                   ABSL_LOG(INFO) << absl::StreamFormat(
-                      "  Comparing tensor: %s | Max Diff: %.6f | MSE: %.6f | "
-                      "Cos Sim: %.6f",
-                      t_name, comp_res->max_diff, comp_res->mse,
-                      comp_res->cosine_similarity);
+                      "  Comparing tensor: %s | Max Diff: %.6f | MeanAbsDiff: "
+                      "%.6f | MSE: %.6f | Cos Sim: %.6f",
+                      t_name, comp_res->max_diff, comp_res->mean_abs_diff,
+                      comp_res->mse, comp_res->cosine_similarity);
 
                   if (comp_res->failed) any_tensor_failed = true;
 
@@ -1164,7 +1257,7 @@ absl::Status RunAccuracyDebugger(litert::Environment& env, LiteRtModelT& model,
         }
       }
     }
-    global_op_counter++;
+    checked_units++;
   }
 
   if (summary) {

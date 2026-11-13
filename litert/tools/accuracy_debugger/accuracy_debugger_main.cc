@@ -25,12 +25,14 @@
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_arm_vulkan_ml_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
@@ -38,6 +40,7 @@
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/core/model/model_load.h"
 #include "litert/tools/accuracy_debugger/accuracy_debugger_util.h"
+#include "litert/tools/flags/vendors/arm_vulkan_ml_flags.h"
 #include "litert/tools/flags/vendors/google_tensor_flags.h"
 #include "litert/tools/flags/vendors/intel_openvino_flags.h"
 #include "litert/tools/flags/vendors/mediatek_flags.h"
@@ -45,7 +48,8 @@
 
 ABSL_FLAG(std::string, model_path, "", "(Required) Path to the tflite model");
 ABSL_FLAG(std::string, input_dir, "",
-          "Directory containing real input data (.raw files)");
+          "Directory containing real input data (.raw files), or path to a "
+          "single .raw file for input 0.");
 ABSL_FLAG(std::string, output_dir, "/tmp/accuracy_debugger",
           "Output directory for failing ops");
 
@@ -62,8 +66,18 @@ ABSL_FLAG(float, pearson_correlation, 0.98f,
           "Threshold for Pearson correlation (minimum).");
 
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
+ABSL_FLAG(int, start_op, 0,
+          "Zero-based op index to start accelerator checking from. Ops before "
+          "start_op are executed on CPU to populate intermediate tensors.");
 ABSL_FLAG(int, max_ops, -1,
-          "Maximum number of operations to check. -1 for all.");
+          "Maximum number of operations/chunks to check after start_op. -1 for "
+          "all.");
+ABSL_FLAG(int, chunk_size, 1,
+          "Number of contiguous ops per work unit when boundary_tensors is "
+          "empty. 1 = single-op mode, >1 = multi-op chunk mode.");
+ABSL_FLAG(bool, allow_partial_acceleration, false,
+          "Whether to allow work units that are only partially accelerated on "
+          "the target accelerator.");
 ABSL_FLAG(bool, skip_unsupported_npu_ops, true,
           "Whether to skip operations that are known to be unsupported or "
           "unstable on the NPU (e.g. EMBEDDING_LOOKUP, CUSTOM).");
@@ -82,14 +96,18 @@ ABSL_FLAG(std::string, compiler_cache_dir, "",
 ABSL_FLAG(int, summary_max_rows, 50,
           "Maximum number of rows to print in the summary table (-1 for all)");
 ABSL_FLAG(std::string, sort_by, "cos_sim",
-          "Metric to sort the summary table by (index, max_diff, mse, cos_sim, "
-          "snr, psnr)");
+          "Metric to sort the summary table by (index, max_diff, "
+          "mean_abs_diff, mse, cos_sim, snr, psnr)");
 ABSL_FLAG(
     std::string, boundary_tensors, "",
     "Comma-separated list of boundary tensor names for multi-op chunking. "
     "If empty, single-op mode is used.");
 ABSL_FLAG(bool, use_gpu_ref, false,
           "Use GPU FP32 as reference path instead of CPU");
+ABSL_FLAG(std::string, cpu_kernel_mode, "delegate",
+          "Selects which CPU kernel mode the golden reference uses when "
+          "validating accelerator results (ignored when --use_gpu_ref=true). "
+          "Options: delegate (or xnnpack), builtin, reference.");
 ABSL_FLAG(bool, dump_only, false,
           "Only extract and save models, do not run accuracy checking.");
 ABSL_FLAG(bool, dump_tensors, false,
@@ -100,6 +118,7 @@ ABSL_FLAG(bool, use_gpu_fp32_as_accel, false,
 
 namespace litert::tools {
 
+using ::litert::arm_vulkan_ml::UpdateArmVulkanMLOptionsFromFlags;
 using ::litert::google_tensor::UpdateGoogleTensorOptionsFromFlags;
 using ::litert::intel_openvino::UpdateIntelOpenVinoOptionsFromFlags;
 using ::litert::mediatek::UpdateMediatekOptionsFromFlags;
@@ -119,6 +138,23 @@ litert::HwAcceleratorSet GetAccelerator() {
     }
   }
   return accelerators;
+}
+
+litert::Expected<LiteRtCpuKernelMode> ParseCpuKernelMode(
+    absl::string_view mode) {
+  if (mode == "delegate" || mode == "xnnpack") {
+    return kLiteRtCpuKernelModeDelegate;
+  }
+  if (mode == "builtin") {
+    return kLiteRtCpuKernelModeBuiltin;
+  }
+  if (mode == "reference") {
+    return kLiteRtCpuKernelModeReference;
+  }
+  return litert::Error(
+      kLiteRtStatusErrorInvalidArgument,
+      "Invalid cpu_kernel_mode flag value. Expected: delegate, xnnpack, "
+      "builtin, or reference.");
 }
 
 litert::Expected<litert::Environment> GetEnvironment() {
@@ -166,6 +202,11 @@ litert::Expected<litert::Options> GetOptions() {
       auto& mediatek_opts,
       options.GetOptions<litert::mediatek::MediatekOptions>());
   LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
+  LITERT_ASSIGN_OR_RETURN(
+      auto& arm_vulkan_ml_opts,
+      options.GetOptions<litert::arm_vulkan_ml::ArmVulkanMLOptions>());
+  LITERT_RETURN_IF_ERROR(
+      UpdateArmVulkanMLOptionsFromFlags(arm_vulkan_ml_opts));
   if (absl::GetFlag(FLAGS_use_gpu_fp32_as_accel)) {
     auto gpu_opts = options.GetGpuOptions();
     gpu_opts->SetPrecision(litert::GpuOptions::Precision::kFp32);
@@ -228,7 +269,11 @@ int main(int argc, char** argv) {
       absl::GetFlag(FLAGS_pearson_correlation);
 
   checker_options.signature_index = absl::GetFlag(FLAGS_signature_index);
+  checker_options.start_op = absl::GetFlag(FLAGS_start_op);
   checker_options.max_ops = absl::GetFlag(FLAGS_max_ops);
+  checker_options.chunk_size = absl::GetFlag(FLAGS_chunk_size);
+  checker_options.allow_partial_acceleration =
+      absl::GetFlag(FLAGS_allow_partial_acceleration);
   checker_options.skip_unsupported_npu_ops =
       absl::GetFlag(FLAGS_skip_unsupported_npu_ops);
   checker_options.summary_max_rows = absl::GetFlag(FLAGS_summary_max_rows);
@@ -237,7 +282,14 @@ int main(int argc, char** argv) {
       absl::GetFlag(FLAGS_use_accel_output_as_input);
   checker_options.save_failing_models =
       absl::GetFlag(FLAGS_save_failing_models);
+  auto cpu_kernel_mode_res =
+      litert::tools::ParseCpuKernelMode(absl::GetFlag(FLAGS_cpu_kernel_mode));
+  if (!cpu_kernel_mode_res) {
+    ABSL_LOG(ERROR) << cpu_kernel_mode_res.Error().Message();
+    return 1;
+  }
   checker_options.use_gpu_ref = absl::GetFlag(FLAGS_use_gpu_ref);
+  checker_options.cpu_kernel_mode = *cpu_kernel_mode_res;
   checker_options.dump_only = absl::GetFlag(FLAGS_dump_only);
   checker_options.dump_tensors = absl::GetFlag(FLAGS_dump_tensors);
 
