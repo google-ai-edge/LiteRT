@@ -36,6 +36,11 @@ struct Config {
   // FP16 caches: the tensor-core streaming kernel (global_attention.h), one
   // launch per head, rows a multiple of 16.
   bool streaming = false;
+  // Streaming: the launches per head (a verify step ran 16 rows at a time),
+  // or, with tokens > 0, one token launch per head over `rows` rows of that
+  // many tokens, whose row tiles share the cache reads.
+  int launches = 1;
+  int tokens = 0;
 };
 
 void Time(const Config& c) {
@@ -60,10 +65,13 @@ void Time(const Config& c) {
   }
   auto out = AllocateCuda(q_bytes);
   const size_t ws_bytes =
-      c.streaming ? LiteRtNvidiaGlobalAttentionWorkspaceBytes(c.rows, c.rows,
-                                                              c.seq, c.depth)
-                  : LiteRtNvidiaDecodeAttentionWorkspaceBytes(
-                        c.heads, c.rows, c.read > 0 ? c.read : c.seq, c.depth);
+      c.tokens > 0 ? LiteRtNvidiaGlobalAttentionTokensWorkspaceBytes(
+                         c.rows, c.tokens, c.tokens, c.seq, c.depth)
+      : c.streaming
+          ? LiteRtNvidiaGlobalAttentionWorkspaceBytes(c.rows, c.rows, c.seq,
+                                                      c.depth)
+          : LiteRtNvidiaDecodeAttentionWorkspaceBytes(
+                c.heads, c.rows, c.read > 0 ? c.read : c.seq, c.depth);
   auto ws = AllocateCuda(ws_bytes);
   ASSERT_TRUE(q && k && v && mask && out && ws);
   const LiteRtNvidiaInt8CacheParams params = {0.0125f, -3, 0.02f, 5, c.columns};
@@ -78,14 +86,26 @@ void Time(const Config& c) {
       const size_t q_head = static_cast<size_t>(c.rows) * c.depth * 2;
       const size_t kv_head = static_cast<size_t>(c.seq) * c.depth * 2;
       cudaError_t status = cudaSuccess;
-      for (int head = 0; head < c.heads && status == cudaSuccess; ++head) {
-        status = LiteRtNvidiaLaunchGlobalAttention(
-            static_cast<const char*>(q.get()) + head * q_head, true,
-            static_cast<const char*>(k.get()) + head * kv_head,
-            static_cast<const char*>(v.get()) + head * kv_head,
-            static_cast<const bool*>(mask.get()), c.rows, c.rows, c.seq,
-            c.depth, -1.0e9f, static_cast<char*>(out.get()) + head * q_head,
-            ws.get(), s);
+      for (int i = 0; i < c.launches * c.heads && status == cudaSuccess; ++i) {
+        const int head = i % c.heads;
+        status =
+            c.tokens > 0
+                ? LiteRtNvidiaLaunchGlobalAttentionTokens(
+                      static_cast<const char*>(q.get()) + head * q_head, true,
+                      static_cast<const char*>(k.get()) + head * kv_head,
+                      static_cast<const char*>(v.get()) + head * kv_head,
+                      static_cast<const bool*>(mask.get()), c.tokens, c.tokens,
+                      c.rows, c.seq, c.depth, -1.0e9f,
+                      static_cast<char*>(out.get()) + head * q_head, ws.get(),
+                      s)
+                : LiteRtNvidiaLaunchGlobalAttention(
+                      static_cast<const char*>(q.get()) + head * q_head, true,
+                      static_cast<const char*>(k.get()) + head * kv_head,
+                      static_cast<const char*>(v.get()) + head * kv_head,
+                      static_cast<const bool*>(mask.get()), c.rows, c.rows,
+                      c.seq, c.depth, -1.0e9f,
+                      static_cast<char*>(out.get()) + head * q_head, ws.get(),
+                      s);
       }
       return status;
     }
@@ -245,6 +265,25 @@ TEST(DecodeAttentionBenchmark, Geometries) {
       {"26B global 32k streaming 16 rows", false, false, 2, 16, 512, 32768, 0,
        0, true},
       {"26B global 32k decode 16 rows", false, false, 2, 16, 512, 32768},
+      // Four tokens of the 26B's verify step (8 query heads per KV head): two
+      // 16-row launches per head, and the token launch that reads the cache
+      // once for both.
+      {"26B verify 2k, 2 x 16 rows", false, false, 2, 16, 512, 2048, 0, 0, true,
+       2},
+      {"26B verify 2k, 4 tokens", false, false, 2, 32, 512, 2048, 0, 0, true, 1,
+       4},
+      {"26B verify 8k, 2 x 16 rows", false, false, 2, 16, 512, 9216, 0, 0, true,
+       2},
+      {"26B verify 8k, 4 tokens", false, false, 2, 32, 512, 9216, 0, 0, true, 1,
+       4},
+      {"26B verify 16k, 2 x 16 rows", false, false, 2, 16, 512, 17408, 0, 0,
+       true, 2},
+      {"26B verify 16k, 4 tokens", false, false, 2, 32, 512, 17408, 0, 0, true,
+       1, 4},
+      {"26B verify 32k, 2 x 16 rows", false, false, 2, 16, 512, 32768, 0, 0,
+       true, 2},
+      {"26B verify 32k, 4 tokens", false, false, 2, 32, 512, 32768, 0, 0, true,
+       1, 4},
       {"fp16-rows same geometry", false, false, 2, 4, 256, 2048},
       {"fp16-rows (12B-like)", false, false, 8, 2, 256, 2048},
       {"fp16-rows (12B-like 32k)", false, false, 8, 2, 256, 32768},
