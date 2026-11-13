@@ -32,13 +32,17 @@ class BaseDivOpModel : public SingleOpModel {
  public:
   BaseDivOpModel(const TensorData& input1, const TensorData& input2,
                  const TensorData& output,
-                 ActivationFunctionType activation_type) {
+                 ActivationFunctionType activation_type,
+                 bool allocate_tensors = true) {
     input1_ = AddInput(input1);
     input2_ = AddInput(input2);
     output_ = AddOutput(output);
     SetBuiltinOp(BuiltinOperator_DIV, BuiltinOptions_DivOptions,
                  CreateDivOptions(builder_, activation_type).Union());
-    BuildInterpreter({GetShape(input1_), GetShape(input2_)});
+    BuildInterpreter({GetShape(input1_), GetShape(input2_)},
+                     /*num_threads=*/-1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/true, allocate_tensors);
   }
 
   int input1() { return input1_; }
@@ -306,6 +310,86 @@ TEST(QuantizedDivOpTest, QuantizedNoActivationInt8) {
 
 TEST(QuantizedDivOpTest, QuantizedNoActivationInt16) {
   QuantizedNoActivation<TensorType_INT16, int16_t>();
+}
+
+template <TensorType tensor_type, typename integer_dtype>
+void QuantizedStorageBoundaryZeroPointValid(int32_t zero_point,
+                                            integer_dtype numerator,
+                                            integer_dtype denominator) {
+  QuantizedDivOpModel m(
+      {tensor_type, {1}, 0.0f, 0.0f, 1.0f, zero_point},
+      {tensor_type, {1}, 0.0f, 0.0f, 1.0f, zero_point},
+      {tensor_type, {}, 0.0f, 0.0f, 1.0f, zero_point},
+      ActivationFunctionType_NONE);
+  m.PopulateTensor<integer_dtype>(m.input1(), {numerator});
+  m.PopulateTensor<integer_dtype>(m.input2(), {denominator});
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetDequantizedOutput<integer_dtype>(),
+              ElementsAreArray(ArrayFloatNear({2.0f}, 0.0f)));
+}
+
+TEST(QuantizedDivOpTest, StorageBoundaryZeroPointsValid) {
+  QuantizedStorageBoundaryZeroPointValid<TensorType_UINT8, uint8_t>(0, 4, 2);
+  QuantizedStorageBoundaryZeroPointValid<TensorType_INT8, int8_t>(-128, -124,
+                                                                  -126);
+  QuantizedStorageBoundaryZeroPointValid<TensorType_INT16, int16_t>(
+      -32768, -32764, -32766);
+}
+
+void ExpectInvalidZeroPointRejected(TensorType tensor_type,
+                                    int32_t input1_zero_point,
+                                    int32_t input2_zero_point,
+                                    int32_t output_zero_point) {
+  BaseDivOpModel m(
+      {tensor_type, {1}, 0.0f, 0.0f, 1.0f, input1_zero_point},
+      {tensor_type, {1}, 0.0f, 0.0f, 1.0f, input2_zero_point},
+      {tensor_type, {}, 0.0f, 0.0f, 1.0f, output_zero_point},
+      ActivationFunctionType_NONE, /*allocate_tensors=*/false);
+  EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+}
+
+void ExpectOutOfRangeZeroPointsRejected(TensorType tensor_type,
+                                        int32_t valid_zero_point,
+                                        int32_t invalid_zero_point) {
+  ExpectInvalidZeroPointRejected(tensor_type, invalid_zero_point,
+                                 valid_zero_point, valid_zero_point);
+  ExpectInvalidZeroPointRejected(tensor_type, valid_zero_point,
+                                 invalid_zero_point, valid_zero_point);
+  ExpectInvalidZeroPointRejected(tensor_type, valid_zero_point,
+                                 valid_zero_point, invalid_zero_point);
+}
+
+TEST(QuantizedDivOpTest, OutOfRangeZeroPointsRejectedUInt8) {
+  ExpectOutOfRangeZeroPointsRejected(TensorType_UINT8, 0, -1);
+  ExpectOutOfRangeZeroPointsRejected(TensorType_UINT8, 0, 256);
+}
+
+TEST(QuantizedDivOpTest, OutOfRangeZeroPointsRejectedInt8) {
+  ExpectOutOfRangeZeroPointsRejected(TensorType_INT8, 0, -129);
+  ExpectOutOfRangeZeroPointsRejected(TensorType_INT8, 0, 128);
+}
+
+TEST(QuantizedDivOpTest, OutOfRangeZeroPointsRejectedInt16) {
+  ExpectOutOfRangeZeroPointsRejected(TensorType_INT16, 0, -32769);
+  ExpectOutOfRangeZeroPointsRejected(TensorType_INT16, 0, 32768);
+}
+
+TEST(DivOpTest, EmptyTensorBroadcastValid) {
+  DivOpModel<float> m({TensorType_FLOAT32, {0, 3}},
+                      {TensorType_FLOAT32, {1, 3}}, {TensorType_FLOAT32, {}},
+                      ActivationFunctionType_NONE);
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetOutput(), testing::IsEmpty());
+}
+
+TEST(QuantizedDivOpTest, EmptyTensorBroadcastValid) {
+  QuantizedDivOpModel m({TensorType_INT8, {0, 3}, -1.0f, 1.0f},
+                        {TensorType_INT8, {1, 3}, -1.0f, 1.0f},
+                        {TensorType_INT8, {}, -1.0f, 1.0f},
+                        ActivationFunctionType_NONE);
+  m.QuantizeAndPopulate<int8_t>(m.input2(), {0.5f, 0.5f, 0.5f});
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetDequantizedOutput<int8_t>(), testing::IsEmpty());
 }
 
 template <TensorType tensor_type, typename integer_dtype>
