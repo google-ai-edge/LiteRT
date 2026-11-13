@@ -62,6 +62,7 @@
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
+#include "ml_drift_delegate/tflite/support/support_scatter_nd.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
@@ -4281,6 +4282,38 @@ class OneHotOperationParser : public TFLiteOperationParser {
   }
 };
 
+class ScatterNdOperationParser : public TFLiteOperationParser {
+ public:
+  absl::Status IsSupported(const TfLiteContext* context,
+                           const TfLiteNode* tflite_node,
+                           const TfLiteRegistration* registration) final {
+    // ScatterND is not in TFLite's GPU compatibility list, so that check has
+    // to be turned off.
+    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
+                                         {.max_version = 1,
+                                          .min_inputs = 3,
+                                          .max_inputs = 3,
+                                          .num_outputs = 1,
+                                          .check_gpu_compatibility = false}));
+    // Both pipelines accept the same form of ScatterND.
+    std::string error;
+    if (!ir::IsScatterNdSupported(context, tflite_node, registration, &error)) {
+      return absl::InvalidArgumentError(error);
+    }
+    return absl::OkStatus();
+  }
+
+  void Parse(const TfLiteNode* tflite_node,
+             const TfLiteRegistration* registration,
+             ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
+    ::ml_drift::Node* node = graph->NewNode();
+    node->operation.type = "scatter_nd";
+    reader->AddInput(node, 0);  // indices
+    reader->AddInput(node, 1);  // updates
+    reader->AddOutputs(node);
+  }
+};
+
 class PackOperationParser : public TFLiteOperationParser {
  public:
   absl::Status IsSupported(const TfLiteContext* context,
@@ -7369,6 +7402,8 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
     case kTfLiteBuiltinRsqrt:
       return std::make_unique<ElementwiseOperationParser>(
           ::ml_drift::OperationType::kRsqrt);
+    case kTfLiteBuiltinScatterNd:
+      return std::make_unique<ScatterNdOperationParser>();
     case kTfLiteBuiltinSelect:
     case kTfLiteBuiltinSelectV2:
       return std::make_unique<SelectV2OperationParser>();
@@ -7602,6 +7637,7 @@ TfLiteIntArray* GetOpsToReplaceWithOptions(
     }
     if (registration->builtin_code == kTfLiteBuiltinEmbeddingLookup ||
         registration->builtin_code == kTfLiteBuiltinOneHot ||
+        registration->builtin_code == kTfLiteBuiltinScatterNd ||
         registration->builtin_code == kTfLiteBuiltinDynamicUpdateSlice) {
       allowed_in_types.push_back(kTfLiteInt32);
     }

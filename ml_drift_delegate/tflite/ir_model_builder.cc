@@ -67,6 +67,7 @@
 #include "ml_drift_delegate/tflite/convert/convert_rms_norm.h"
 #include "ml_drift_delegate/tflite/convert/convert_rope.h"
 #include "ml_drift_delegate/tflite/convert/convert_sdpa.h"
+#include "ml_drift_delegate/tflite/convert/convert_scatter_nd.h"
 #include "ml_drift_delegate/tflite/convert/convert_select.h"
 #include "ml_drift_delegate/tflite/convert/convert_slice.h"
 #include "ml_drift_delegate/tflite/convert/convert_softmax.h"
@@ -417,6 +418,9 @@ class IrModelBuilder {
     auto reverse =
         absl::bind_front(ConvertReverse, context_, node, registration,
                          std::ref(tensor_map), std::ref(ir_model));
+    auto scatter_nd =
+        absl::bind_front(ConvertScatterNd, context_, node, registration,
+                         std::ref(tensor_map), std::ref(ir_model));
     auto select = absl::bind_front(ConvertSelect, context_, node, registration,
                                    std::ref(tensor_map), std::ref(ir_model));
     auto slice = absl::bind_front(ConvertSlice, context_, node, registration,
@@ -521,6 +525,7 @@ class IrModelBuilder {
       case kTfLiteBuiltinRightShift:               return elementwise();
       case kTfLiteBuiltinRound:                    return elementwise();
       case kTfLiteBuiltinRsqrt:                    return elementwise();
+      case kTfLiteBuiltinScatterNd:                return scatter_nd();
       case kTfLiteBuiltinSelect:                   return select();
       case kTfLiteBuiltinSelectV2:                 return select();
       case kTfLiteBuiltinSign:                     return elementwise();
