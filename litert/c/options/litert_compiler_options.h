@@ -137,6 +137,25 @@ LiteRtStatus LrtAddCompilerOptionsSignatureInputShape(
     LrtCompilerOptions* options, const char* signature_key,
     const char* input_name, const int32_t* dims, size_t rank);
 
+// Appends one input shape of a shape specialization in "Add" mode: the
+// subgraph behind `source_signature_key` is instantiated again as a new static
+// signature `new_signature_key` (which must be non-empty and must not already
+// exist in the model), with signature input `input_name` fixed to `dims`.
+// Call once per input to fix; inputs that are not listed keep their shape.
+// Several calls with the same `new_signature_key` describe one specialization;
+// several specializations may share one `source_signature_key` (e.g.
+// "prefill" -> "prefill_128", "prefill_512"). The source signature is left
+// untouched. Pass NULL or "" for `source_signature_key` to target the default
+// (first) signature. Every element of `dims` must be positive (> 0): the new
+// signature must be fully static. `rank` may be 0 for a 0-D scalar input.
+// Cross-entry rules (unique new keys, no collision with model signatures, a
+// source signature is used either by Add entries or by one in-place refinement
+// above, not both) are validated by `CompiledModel::Create()`.
+LiteRtStatus LrtAddCompilerOptionsShapeSpecializationInputShape(
+    LrtCompilerOptions* options, const char* source_signature_key,
+    const char* new_signature_key, const char* input_name, const int32_t* dims,
+    size_t rank);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
