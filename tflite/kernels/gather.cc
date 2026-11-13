@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include <stdint.h>
 
+#include <limits>
+
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/optimized/optimized_ops.h"
@@ -44,10 +46,51 @@ void Free(TfLiteContext* context, void* buffer) {
   delete reinterpret_cast<OpData*>(buffer);
 }
 
+bool CheckedDimProduct(const TfLiteTensor* tensor, int begin, int end,
+                       int64_t* product) {
+  if (tensor == nullptr || tensor->dims == nullptr || product == nullptr ||
+      begin < 0 || end < begin || end > tensor->dims->size) {
+    return false;
+  }
+  int64_t count = 1;
+  for (int i = begin; i < end; ++i) {
+    const int dim = tensor->dims->data[i];
+    if (dim < 0) {
+      return false;
+    }
+    if (dim > 0 && count > std::numeric_limits<int>::max() / dim) {
+      return false;
+    }
+    count *= dim;
+  }
+  *product = count;
+  return true;
+}
+
+bool CheckedNumElements(const TfLiteTensor* tensor, int64_t* num_elements) {
+  if (tensor == nullptr || tensor->dims == nullptr) {
+    return false;
+  }
+  return CheckedDimProduct(tensor, 0, tensor->dims->size, num_elements);
+}
+
+bool CheckedGatherComponentSizes(const TfLiteTensor* input,
+                                 const TfLiteTensor* positions, int axis,
+                                 int batch_dims) {
+  int64_t component_size = 0;
+  return CheckedDimProduct(input, 0, batch_dims, &component_size) &&
+         CheckedDimProduct(input, batch_dims, axis, &component_size) &&
+         CheckedDimProduct(input, axis + 1, input->dims->size,
+                           &component_size) &&
+         CheckedDimProduct(positions, batch_dims, positions->dims->size,
+                           &component_size);
+}
+
 TfLiteStatus EvalImpl(TfLiteContext* context, TfLiteNode* node);
 
 TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   OpData* data = reinterpret_cast<OpData*>(node->user_data);
+  data->noop = false;
   TF_LITE_ENSURE_EQ(context, NumInputs(node), 2);
   TF_LITE_ENSURE_EQ(context, NumOutputs(node), 1);
 
@@ -125,8 +168,40 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     TF_LITE_ENSURE_EQ(context, input->dims->data[i], positions->dims->data[i]);
   }
 
+  int64_t input_elements = 0;
+  int64_t positions_elements = 0;
+  TF_LITE_ENSURE(context, CheckedNumElements(input, &input_elements));
+  TF_LITE_ENSURE(context, CheckedNumElements(positions, &positions_elements));
+  TF_LITE_ENSURE(
+      context,
+      CheckedGatherComponentSizes(input, positions, axis, batch_dims));
+
   const int num_dimensions =
       NumDimensions(input) + NumDimensions(positions) - 1 - batch_dims;
+  TF_LITE_ENSURE(context, num_dimensions >= 0);
+  int64_t expected_output_elements = 1;
+  for (int i = 0; i < axis; ++i) {
+    const int dim = input->dims->data[i];
+    TF_LITE_ENSURE(context,
+                   dim == 0 || expected_output_elements <=
+                                   std::numeric_limits<int>::max() / dim);
+    expected_output_elements *= dim;
+  }
+  for (int i = batch_dims; i < positions->dims->size; ++i) {
+    const int dim = positions->dims->data[i];
+    TF_LITE_ENSURE(context,
+                   dim == 0 || expected_output_elements <=
+                                   std::numeric_limits<int>::max() / dim);
+    expected_output_elements *= dim;
+  }
+  for (int i = axis + 1; i < input->dims->size; ++i) {
+    const int dim = input->dims->data[i];
+    TF_LITE_ENSURE(context,
+                   dim == 0 || expected_output_elements <=
+                                   std::numeric_limits<int>::max() / dim);
+    expected_output_elements *= dim;
+  }
+
   TfLiteIntArray* output_shape = TfLiteIntArrayCreate(num_dimensions);
   int output_index = 0;
   for (int i = 0; i < axis; ++i) {
@@ -138,26 +213,55 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   for (int i = axis + 1; i < input->dims->size; ++i) {
     output_shape->data[output_index++] = input->dims->data[i];
   }
-  data->noop = IsConstantOrPersistentTensor(input) &&
-               IsConstantOrPersistentTensor(positions);
-  if (data->noop) {
+  if (IsConstantOrPersistentTensor(input) &&
+      IsConstantOrPersistentTensor(positions)) {
     SetTensorToPersistentRo(output);
     TF_LITE_ENSURE_OK(context,
                       context->ResizeTensor(context, output, output_shape));
-    return EvalImpl(context, node);
-  } else {
-    return context->ResizeTensor(context, output, output_shape);
+    TF_LITE_ENSURE_OK(context, EvalImpl(context, node));
+    data->noop = true;
+    return kTfLiteOk;
   }
+  return context->ResizeTensor(context, output, output_shape);
 }
 
 template <typename InputT, typename PositionsT>
 TfLiteStatus Gather(TfLiteContext* context, const TfLiteGatherParams& params,
                     const TfLiteTensor* input, const TfLiteTensor* positions,
                     TfLiteTensor* output) {
-  const PositionsT* indexes = GetTensorData<PositionsT>(positions);
-  bool indices_has_only_positive_elements = true;
+  int64_t input_elements = 0;
+  int64_t positions_elements = 0;
+  int64_t output_elements = 0;
+  TF_LITE_ENSURE(context, CheckedNumElements(input, &input_elements));
+  TF_LITE_ENSURE(context, CheckedNumElements(positions, &positions_elements));
+  TF_LITE_ENSURE(context, CheckedNumElements(output, &output_elements));
   const size_t num_indices = positions->bytes / sizeof(PositionsT);
-  for (size_t i = 0; i < num_indices; i++) {
+  TF_LITE_ENSURE(context,
+                 num_indices >= static_cast<size_t>(positions_elements));
+  if (input->type == kTfLiteInt4) {
+    TF_LITE_ENSURE(context,
+                   input->bytes >= (static_cast<size_t>(input_elements) + 1) / 2);
+    TF_LITE_ENSURE(
+        context,
+        output->bytes >= (static_cast<size_t>(output_elements) + 1) / 2);
+  } else {
+    TF_LITE_ENSURE(context, input->bytes / sizeof(InputT) >=
+                                static_cast<size_t>(input_elements));
+    TF_LITE_ENSURE(context, output->bytes / sizeof(InputT) >=
+                                static_cast<size_t>(output_elements));
+  }
+  const PositionsT* indexes = GetTensorData<PositionsT>(positions);
+  if (positions_elements > 0) {
+    TF_LITE_ENSURE(context, indexes != nullptr);
+  }
+  if (input_elements > 0) {
+    TF_LITE_ENSURE(context, GetTensorData<InputT>(input) != nullptr);
+  }
+  if (output_elements > 0) {
+    TF_LITE_ENSURE(context, GetTensorData<InputT>(output) != nullptr);
+  }
+  bool indices_has_only_positive_elements = true;
+  for (int64_t i = 0; i < positions_elements; i++) {
     if (indexes[i] < 0) {
       indices_has_only_positive_elements = false;
       break;
@@ -184,11 +288,25 @@ TfLiteStatus GatherStrings(TfLiteContext* context, const TfLiteTensor* input,
                            TfLiteTensor* output) {
   DynamicBuffer buffer;
 
-  const PositionT* indexes = GetTensorData<PositionT>(positions);
-  bool indices_has_only_positive_elements = true;
+  int64_t positions_elements = 0;
+  TF_LITE_ENSURE(context, CheckedNumElements(positions, &positions_elements));
   const size_t num_indices = positions->bytes / sizeof(PositionT);
-  for (size_t i = 0; i < num_indices; i++) {
-    if (indexes[i] < 0) {
+  TF_LITE_ENSURE(
+      context, positions_elements >= 0 &&
+                   static_cast<uint64_t>(positions_elements) <=
+                       static_cast<uint64_t>(num_indices));
+  const PositionT* coords_data = GetTensorData<PositionT>(positions);
+  TF_LITE_ENSURE(context, input->data.raw != nullptr);
+  if (positions_elements > 0) {
+    TF_LITE_ENSURE(context, coords_data != nullptr);
+  }
+  if (output->bytes > 0) {
+    TF_LITE_ENSURE(context, output->data.raw != nullptr);
+  }
+
+  bool indices_has_only_positive_elements = true;
+  for (int64_t i = 0; i < positions_elements; ++i) {
+    if (coords_data[i] < 0) {
       indices_has_only_positive_elements = false;
       break;
     }
@@ -200,10 +318,9 @@ TfLiteStatus GatherStrings(TfLiteContext* context, const TfLiteTensor* input,
   TF_LITE_ENSURE(context, num_strings >= 0);
   TF_LITE_ENSURE(context, input->bytes / sizeof(int32_t) >=
                               static_cast<size_t>(num_strings) + 2);
-  const int num_indexes = NumElements(positions);
 
-  for (int i = 0; i < num_indexes; ++i) {
-    const PositionT pos = indexes[i];
+  for (int64_t i = 0; i < positions_elements; ++i) {
+    const PositionT pos = coords_data[i];
     TF_LITE_ENSURE(context, pos < num_strings);
     const int32_t* offsets = reinterpret_cast<const int32_t*>(input->data.raw);
     const int32_t start_offset = offsets[pos + 1];
@@ -280,6 +397,8 @@ TfLiteStatus DispatchEvalPositionType(TfLiteContext* const context,
 }
 
 TfLiteStatus EvalImpl(TfLiteContext* context, TfLiteNode* node) {
+  TF_LITE_ENSURE_EQ(context, NumInputs(node), 2);
+  TF_LITE_ENSURE_EQ(context, NumOutputs(node), 1);
   const auto* params =
       reinterpret_cast<const TfLiteGatherParams*>(node->builtin_data);
   const TfLiteTensor* input;
@@ -290,6 +409,73 @@ TfLiteStatus EvalImpl(TfLiteContext* context, TfLiteNode* node) {
   TfLiteTensor* output;
   TF_LITE_ENSURE_OK(context,
                     GetOutputSafe(context, node, kOutputTensor, &output));
+  TF_LITE_ENSURE_TYPES_EQ(context, output->type, input->type);
+
+  int axis = params->axis;
+  TF_LITE_ENSURE(context, axis >= INT16_MIN && axis <= INT16_MAX);
+  if (axis < 0) {
+    axis += NumDimensions(input);
+  }
+  TF_LITE_ENSURE(context, 0 <= axis && axis < NumDimensions(input));
+
+  int batch_dims = params->batch_dims;
+  TF_LITE_ENSURE(context, batch_dims >= INT16_MIN && batch_dims <= INT16_MAX);
+  if (batch_dims < 0) {
+    batch_dims += NumDimensions(positions);
+  }
+  TF_LITE_ENSURE(context, batch_dims <= axis);
+  TF_LITE_ENSURE(context, 0 <= batch_dims && batch_dims < NumDimensions(input));
+  TF_LITE_ENSURE(context, batch_dims <= NumDimensions(positions));
+
+  int64_t input_elements = 0;
+  int64_t positions_elements = 0;
+  TF_LITE_ENSURE(context, CheckedNumElements(input, &input_elements));
+  TF_LITE_ENSURE(context, CheckedNumElements(positions, &positions_elements));
+  TF_LITE_ENSURE(
+      context,
+      CheckedGatherComponentSizes(input, positions, axis, batch_dims));
+  for (int i = 0; i < batch_dims; ++i) {
+    TF_LITE_ENSURE_EQ(context, input->dims->data[i], positions->dims->data[i]);
+  }
+
+  if (input->type == kTfLiteString) {
+    TF_LITE_ENSURE_EQ(context, NumDimensions(input), 1);
+    TF_LITE_ENSURE_EQ(context, axis, 0);
+    TF_LITE_ENSURE_EQ(context, batch_dims, 0);
+  } else {
+    int64_t output_elements = 0;
+    TF_LITE_ENSURE(context, CheckedNumElements(output, &output_elements));
+    const int expected_output_dims =
+        NumDimensions(input) + NumDimensions(positions) - 1 - batch_dims;
+    TF_LITE_ENSURE_EQ(context, NumDimensions(output), expected_output_dims);
+    int output_index = 0;
+    int64_t expected_output_elements = 1;
+    for (int i = 0; i < axis; ++i) {
+      const int dim = input->dims->data[i];
+      TF_LITE_ENSURE_EQ(context, output->dims->data[output_index++], dim);
+      TF_LITE_ENSURE(context,
+                     dim == 0 || expected_output_elements <=
+                                     std::numeric_limits<int>::max() / dim);
+      expected_output_elements *= dim;
+    }
+    for (int i = batch_dims; i < positions->dims->size; ++i) {
+      const int dim = positions->dims->data[i];
+      TF_LITE_ENSURE_EQ(context, output->dims->data[output_index++], dim);
+      TF_LITE_ENSURE(context,
+                     dim == 0 || expected_output_elements <=
+                                     std::numeric_limits<int>::max() / dim);
+      expected_output_elements *= dim;
+    }
+    for (int i = axis + 1; i < input->dims->size; ++i) {
+      const int dim = input->dims->data[i];
+      TF_LITE_ENSURE_EQ(context, output->dims->data[output_index++], dim);
+      TF_LITE_ENSURE(context,
+                     dim == 0 || expected_output_elements <=
+                                     std::numeric_limits<int>::max() / dim);
+      expected_output_elements *= dim;
+    }
+    TF_LITE_ENSURE_EQ(context, output_elements, expected_output_elements);
+  }
 
   TfLiteStatus status =
       DispatchEvalPositionType(context, params, input, positions, output);
