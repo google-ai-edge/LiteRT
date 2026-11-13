@@ -125,6 +125,24 @@ TEST(QuantizationTest, As) {
   EXPECT_THAT(const_quant_ref.As<DummyQuantization>(), Not(IsOk()));
 }
 
+TEST(QuantizationTest, FloatZeroPoints) {
+  PerChannelAffineQuantization pcq({0.5f, 0.25f}, /*zero_points=*/{},
+                                   /*quantized_dimension=*/0,
+                                   /*float_zero_points=*/{-0.5f});
+  EXPECT_TRUE(pcq.HasNonZeroFloatZeroPoints());
+  EXPECT_TRUE(pcq.HasNonZeroZeroPoints());
+  EXPECT_FLOAT_EQ(pcq.ZeroPointAt(0), -0.5f);
+  EXPECT_FLOAT_EQ(pcq.ZeroPointAt(1), -0.5f);
+
+  BlockwiseQuantization bwq({0.5f, 0.25f}, /*zero_points=*/{},
+                            /*block_size=*/32, /*quantized_dimension=*/0,
+                            /*float_zero_points=*/{-0.5f, 0.25f});
+  EXPECT_TRUE(bwq.HasNonZeroFloatZeroPoints());
+  EXPECT_TRUE(bwq.HasNonZeroZeroPoints());
+  EXPECT_FLOAT_EQ(bwq.ZeroPointAt(0), -0.5f);
+  EXPECT_FLOAT_EQ(bwq.ZeroPointAt(1), 0.25f);
+}
+
 struct DummyOp : Operation {
   absl::string_view GetName() const override { return "DummyOp"; }
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION

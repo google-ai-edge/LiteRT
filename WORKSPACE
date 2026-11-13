@@ -559,6 +559,11 @@ load("//third_party/intel_openvino:openvino.bzl", "openvino_configure")
 
 openvino_configure()
 
+# WINDOWS CROSS-COMPILE TOOLCHAINS (LINUX HOST) ---------------------------------------------------
+load("//third_party/windows_msvc_toolchain:workspace.bzl", "windows_msvc_toolchain_configure")
+
+windows_msvc_toolchain_configure()
+
 # SAMSUNG EXYNOS ----------------------------------------------------------------------------------
 load("//third_party/exynos_ai_litecore:workspace.bzl", "exynos_ai_litecore")
 
