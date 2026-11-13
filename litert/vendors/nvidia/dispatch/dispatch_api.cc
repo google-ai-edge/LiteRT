@@ -2693,6 +2693,9 @@ class LiteRtDispatchInvocationContextT {
     auto context = std::unique_ptr<LiteRtDispatchInvocationContextT>(
         new LiteRtDispatchInvocationContextT(runtime_context, device_context,
                                              std::move(bytecode)));
+    if (aot_locator.has_value()) {
+      context->aot_fingerprint_ = aot_locator->fingerprint;
+    }
     if (context->aot_residency_) {
       context->aot_locator_ = std::move(aot_locator);
       std::lock_guard<std::mutex> lock(context->aot_residency_->mutex);
@@ -5982,13 +5985,23 @@ class LiteRtDispatchInvocationContextT {
     }
   }
 
+  // The runtime cache file of this engine, by its function and its content.
+  // An engine from an AOT artifact is named by the artifact's fingerprint:
+  // the locator's, which the artifact was checked against when it was opened
+  // (its bytes, or the identity of the file its writer fingerprinted), and
+  // which stands in the artifact's own file name. Hashing the plan instead
+  // read all of it at every start (the E2B's four plans are 223 MB and took
+  // 0.34 s, the E4B's 402 MB and 0.61 s). An engine without an artifact is
+  // named by a hash of its plan.
   std::string RuntimeCachePath(const std::string& dir) const {
     const std::string function_name =
         SanitizeCacheComponent(bytecode_.function_name);
-    const uint64_t engine_hash =
-        Fnv1a64(bytecode_.engine_data, bytecode_.engine_size);
-    return JoinPath(dir, function_name + "_" + Hex64(engine_hash) +
-                             ".trt_rtx_runtime_cache");
+    const std::string engine_key =
+        aot_fingerprint_.has_value()
+            ? Hex64(aot_fingerprint_->low) + Hex64(aot_fingerprint_->high)
+            : Hex64(Fnv1a64(bytecode_.engine_data, bytecode_.engine_size));
+    return JoinPath(
+        dir, function_name + "_" + engine_key + ".trt_rtx_runtime_cache");
   }
 
   Expected<void> ConfigureRuntimeCache() {
@@ -5996,11 +6009,7 @@ class LiteRtDispatchInvocationContextT {
     if (cache_dir.empty() || runtime_config_ == nullptr) {
       return {};
     }
-    // A lazy engine always reloads the same validated AOT artifact. Reuse its
-    // cache key rather than rescan a multi-GiB plan at every phase transition.
-    if (!aot_residency_ || runtime_cache_path_.empty()) {
-      runtime_cache_path_ = RuntimeCachePath(cache_dir);
-    }
+    runtime_cache_path_ = RuntimeCachePath(cache_dir);
     runtime_cache_.reset(runtime_config_->createRuntimeCache());
     if (!runtime_cache_) {
       LITERT_LOG(LITERT_WARNING,
@@ -6586,6 +6595,9 @@ class LiteRtDispatchInvocationContextT {
   LiteRtDispatchDeviceContext device_context_;
   std::shared_ptr<AotEngineResidency> aot_residency_;
   std::optional<litert::nvidia::TensorRtAotLocator> aot_locator_;
+  // The content fingerprint of the AOT artifact the engine came from, if it
+  // came from one (RuntimeCachePath).
+  std::optional<litert::nvidia::TensorRtArtifactFingerprint> aot_fingerprint_;
   std::unordered_map<std::string, nvinfer1::TensorLocation> tensor_locations_;
   std::unordered_map<std::string, nvinfer1::DataType> tensor_types_;
   bool resident_has_run_ = false;

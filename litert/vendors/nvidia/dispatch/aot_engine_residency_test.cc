@@ -746,6 +746,42 @@ TEST_F(AotEngineResidencyTest, DefaultEagerModeDoesNotReopenArtifacts) {
   Run(a_, 10.0f, 1.0f);
 }
 
+TEST_F(AotEngineResidencyTest, NamesTheRuntimeCacheByTheArtifactFingerprint) {
+  ScopedEnvironment eager("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES", "0");
+  ScopedEnvironment cache("LITERT_NVIDIA_DISPATCH_RUNTIME_CACHE_DIR",
+                          directory_.c_str());
+  CreateDevice();
+  ASSERT_FALSE(HasFatalFailure());
+  auto bytes = BuildBytecode("a", 1.0f, false);
+  ASSERT_TRUE(bytes) << bytes.Error().Message();
+  const std::string artifact = directory_ + "/a.bin";
+  ASSERT_TRUE(Write(artifact, *bytes));
+  auto locator = Locator(artifact, *bytes);
+  ASSERT_TRUE(locator) << locator.Error().Message();
+  // The cache is named as the artifact's writer names the artifact: by the
+  // fingerprint of the artifact's bytes, which the locator carries.
+  const auto fingerprint =
+      FingerprintTensorRtAotArtifact(bytes->data(), bytes->size());
+  char key[33];
+  std::snprintf(key, sizeof(key), "%016llx%016llx",
+                static_cast<unsigned long long>(fingerprint.low),
+                static_cast<unsigned long long>(fingerprint.high));
+  const std::string cache_path =
+      directory_ + "/a_" + key + ".trt_rtx_runtime_cache";
+  paths_.push_back(cache_path);
+  ASSERT_EQ(CreateContext(*locator, "a", &a_), kLiteRtStatusOk);
+  Bind(a_);
+  ASSERT_FALSE(HasFatalFailure());
+  Run(a_, 0.0f, 1.0f);
+  struct stat status{};
+  EXPECT_NE(stat(cache_path.c_str(), &status), 0);
+  // The engine's cache is written when its context goes.
+  ASSERT_EQ(interface_->invocation_context_destroy(a_), kLiteRtStatusOk);
+  contexts_.clear();
+  ASSERT_EQ(stat(cache_path.c_str(), &status), 0);
+  EXPECT_GT(status.st_size, 0);
+}
+
 TEST_F(AotEngineResidencyTest, RejectsNonAotBacking) {
   CreateDevice();
   ASSERT_FALSE(HasFatalFailure());
