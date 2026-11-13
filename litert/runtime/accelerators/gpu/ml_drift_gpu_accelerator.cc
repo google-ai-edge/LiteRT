@@ -182,18 +182,30 @@ class GpuAccelerator {
       litert::TfLiteDelegatePtr& delegate_ptr) {
     auto gpu_options_payload =
         litert::ml_drift::GetGpuOptionsPayload(runtime_context, options);
-#if LITERT_HAS_WEBGPU_SUPPORT
     LiteRtGpuBackend backend = kLiteRtGpuBackendAutomatic;
     LrtGetGpuOptionsGpuBackend(&backend, gpu_options_payload);
     if (backend == kLiteRtGpuBackendAutomatic) {
-      if (!litert::ml_drift::IsOpenClSupported()) {
-        LITERT_LOG(
-            LITERT_INFO,
-            "OpenCL not supported on this platform. Using WebGPU instead.");
-        backend = kLiteRtGpuBackendWebGpu;
+      if (litert::ml_drift::IsOpenClSupported()) {
+        backend = kLiteRtGpuBackendOpenCl;
+      } else {
+#if LITERT_HAS_WEBGPU_SUPPORT
+        if (litert::ml_drift::IsWebGpuSupported(runtime_context, env)) {
+          LITERT_LOG(
+              LITERT_INFO,
+              "OpenCL not supported on this platform. Using WebGPU instead.");
+          backend = kLiteRtGpuBackendWebGpu;
+        }
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+        if (backend == kLiteRtGpuBackendAutomatic) {
+          LITERT_LOG(LITERT_ERROR,
+                     "Neither OpenCL nor WebGPU runtime is available.");
+          LrtDestroyGpuOptions(gpu_options_payload);
+          return kLiteRtStatusErrorUnsupported;
+        }
       }
     }
     if (backend == kLiteRtGpuBackendWebGpu) {
+#if LITERT_HAS_WEBGPU_SUPPORT
       if (!litert::ml_drift::IsWebGpuSupported(runtime_context, env)) {
         LITERT_LOG(LITERT_ERROR,
                    "WebGPU backend selected, but WebGPU Dawn runtime is not "
@@ -215,8 +227,14 @@ class GpuAccelerator {
           runtime_context, env, accelerator, gpu_options_payload,
           std::move(delegate_options),
           litert::ml_drift::CreateMlDriftWebGpuDelegate, delegate_ptr);
-    }
+#else
+      LITERT_LOG(LITERT_ERROR,
+                 "WebGPU backend selected, but WebGPU support is not enabled "
+                 "in this build.");
+      LrtDestroyGpuOptions(gpu_options_payload);
+      return kLiteRtStatusErrorUnsupported;
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
+    }
     active_backend_.store(kLiteRtGpuBackendOpenCl);
     auto delegate_options =
         litert::ml_drift::MlDriftClDelegateDefaultOptionsPtr();
