@@ -15,6 +15,7 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts")
 load("//litert/build_common:special_rule.bzl", "litert_gpu_accelerator_deps", "litert_gpu_accelerator_prebuilts")
 
 package(
@@ -29,6 +30,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
@@ -38,11 +40,11 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_gpu_options",
         "//litert/compiler/plugin:algo",
         "//litert/core:filesystem",
         "//litert/core/model",
-        "//litert/core/model:model_load",
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",
         "//litert/tools:dump_ops_util",
@@ -61,15 +63,18 @@ cc_library(
 cc_binary(
     name = "accuracy_debugger",
     srcs = ["accuracy_debugger_main.cc"],
+    copts = commandline_flag_copts(),
     data = litert_gpu_accelerator_prebuilts(),
     deps = [
         ":accuracy_debugger_util",
+        "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_common",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_options",
+        "//litert/cc/options:litert_arm_vulkan_ml_options",
         "//litert/cc/options:litert_google_tensor_options",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc/options:litert_intel_openvino_options",
@@ -77,6 +82,7 @@ cc_binary(
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/core/model:model_load",
         "//litert/tools/flags:common_flags",
+        "//litert/tools/flags/vendors:arm_vulkan_ml_flags",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
@@ -93,9 +99,14 @@ cc_binary(
 cc_test(
     name = "accuracy_debugger_util_test",
     srcs = ["accuracy_debugger_util_test.cc"],
-    data = ["//litert/test:testdata/simple_add_op.tflite"],
+    data = [
+        "//litert/test:testdata/simple_add_op.tflite",
+        "//litert/test:testdata/two_adds.tflite",
+    ],
     deps = [
         ":accuracy_debugger_util",
+        "//litert/c:litert_model_types",
+        "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",

@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_options.h"
@@ -41,6 +42,7 @@ struct ComparisonResult {
   float max_diff = 0;
   double mse = 0;
   double mean_diff = 0;
+  double mean_abs_diff = 0;
   double cosine_similarity = 0;
   double snr = 0;
   double psnr = 0;
@@ -83,12 +85,16 @@ struct AccuracyDebuggerOptions {
   bool save_failing_models = true;
   size_t signature_index = 0;
   bool use_accel_output_as_input = false;
+  int start_op = 0;
   int max_ops = -1;
+  int chunk_size = 1;
+  bool allow_partial_acceleration = false;
   bool skip_unsupported_npu_ops = true;
   int summary_max_rows = -1;
   std::string sort_by = "index";
   std::vector<std::string> boundary_tensors;
   bool use_gpu_ref = false;
+  LiteRtCpuKernelMode cpu_kernel_mode = kLiteRtCpuKernelModeDelegate;
   bool dump_only = false;
   bool dump_tensors = false;
   AccuracyThresholds thresholds;
