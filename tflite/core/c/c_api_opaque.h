@@ -649,6 +649,12 @@ TfLiteStatus TfLiteOpaqueContextAddTensor(TfLiteOpaqueContext* context,
 
 /// Populates the size in bytes of a provide `type` into `bytes`.  Returns
 /// `kTfLiteOk` for valid types, and `kTfLiteError` otherwise.
+///
+/// Note: this is the "unpacked" size of a single element, not its footprint in
+/// the tensor buffer. Sub-byte types (kTfLiteInt4/kTfLiteUInt4: 2 elements per
+/// byte, kTfLiteInt2: 4 elements per byte) are bit-packed, so multiplying this
+/// value by the element count overestimates the buffer size. Use
+/// TfLiteOpaqueTensorByteSize to obtain the buffer size.
 TFL_CAPI_EXPORT
 TfLiteStatus TfLiteOpaqueContextGetSizeOfType(TfLiteOpaqueContext* context,
                                               TfLiteType type, size_t* bytes);
