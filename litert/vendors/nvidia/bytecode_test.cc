@@ -14,6 +14,7 @@
 
 #include "litert/vendors/nvidia/bytecode.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -850,6 +851,64 @@ TEST(TensorRtBytecodeTest, AotLocatorRejectsRelativeAndTruncatedData) {
   packed->pop_back();
   EXPECT_FALSE(
       TryParseTensorRtAotLocator(packed->data(), packed->size()).HasValue());
+}
+
+// A locator handed to LiteRT is padded to a multiple of the alignment, so
+// what LiteRT writes behind it does not move with the length of the path;
+// it reads back as the locator it was, as an unpadded one of an earlier
+// build or of the index does, and anything else behind a locator is an
+// error.
+TEST(TensorRtBytecodeTest, AotLocatorPaddingHidesThePathLength) {
+  std::vector<size_t> padded_sizes;
+  for (const char* path :
+       {"/tmp/cache/artifact.trt_aot", "/tmp/cache1/artifact.trt_aot",
+        "/tmp/cache12/artifact.trt_aot"}) {
+    SCOPED_TRACE(path);
+    const TensorRtAotLocator locator{
+        NativeAbsolutePath(path),
+        5,
+        {2, 3},
+        TensorRtAotFileIdentity{3, 5, 7, 11, 13, 17}};
+    auto packed = PackTensorRtAotLocator(locator);
+    ASSERT_TRUE(packed.HasValue()) << packed.Error().Message();
+    std::vector<uint8_t> padded = *packed;
+    PadTensorRtAotLocator(padded);
+    EXPECT_EQ(padded.size() % kTensorRtAotLocatorAlignment, 0u);
+    EXPECT_GE(padded.size(), packed->size());
+    EXPECT_LT(padded.size() - packed->size(), kTensorRtAotLocatorAlignment);
+    EXPECT_TRUE(std::equal(packed->begin(), packed->end(), padded.begin()));
+    padded_sizes.push_back(padded.size());
+    for (const std::vector<uint8_t>* bytes : {&*packed, &padded}) {
+      auto parsed = TryParseTensorRtAotLocator(bytes->data(), bytes->size());
+      ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
+      ASSERT_TRUE(parsed->has_value());
+      EXPECT_EQ(parsed->value().path, locator.path);
+      EXPECT_EQ(parsed->value().artifact_size, locator.artifact_size);
+      EXPECT_EQ(parsed->value().fingerprint, locator.fingerprint);
+      EXPECT_EQ(parsed->value().file_identity, locator.file_identity);
+    }
+    // Padding it again changes nothing.
+    std::vector<uint8_t> again = padded;
+    PadTensorRtAotLocator(again);
+    EXPECT_EQ(again, padded);
+    // A whole alignment of zeros, or anything but zeros, is not padding.
+    std::vector<uint8_t> too_long = *packed;
+    too_long.resize(packed->size() + kTensorRtAotLocatorAlignment, 0);
+    EXPECT_FALSE(TryParseTensorRtAotLocator(too_long.data(), too_long.size())
+                     .HasValue());
+    if (padded.size() > packed->size()) {
+      std::vector<uint8_t> garbage = padded;
+      garbage.back() = 1;
+      EXPECT_FALSE(TryParseTensorRtAotLocator(garbage.data(), garbage.size())
+                       .HasValue());
+    }
+  }
+  // Paths one character apart give locators of the same length, or of
+  // lengths a whole alignment apart.
+  for (size_t i = 1; i < padded_sizes.size(); ++i) {
+    EXPECT_EQ(
+        (padded_sizes[i] - padded_sizes[0]) % kTensorRtAotLocatorAlignment, 0u);
+  }
 }
 
 TEST(TensorRtBytecodeTest, ArtifactFingerprintDependsOnAllBytes) {

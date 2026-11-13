@@ -1993,7 +1993,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
               cached_manifest->call_infos[i] == PartitionName(i);
         }
         if (call_layout_matches) {
+          // LiteRT gets the locators padded (bytecode.h).
           result->bytecodes = std::move(cached_manifest->locators);
+          for (auto& locator : result->bytecodes) {
+            litert::nvidia::PadTensorRtAotLocator(locator);
+          }
           result->call_infos = std::move(cached_manifest->call_infos);
           result->bytecode_indices.reserve(
               cached_manifest->bytecode_indices.size());
@@ -2311,6 +2315,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     memory_profiler.Log("jit_handles_ready", soc_model);
   }
 
+  if (!aot_cache_dir.empty()) {
+    // The modules are locators: LiteRT gets them padded, as from the index,
+    // which has them as they were packed.
+    for (auto& locator : result->bytecodes) {
+      litert::nvidia::PadTensorRtAotLocator(locator);
+    }
+  }
   memory_profiler.Log("compile_end", soc_model);
   *compiled_result = result.release();
   return kLiteRtStatusOk;

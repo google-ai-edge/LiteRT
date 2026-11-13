@@ -359,9 +359,24 @@ TensorRtArtifactFingerprint FingerprintTensorRtAotArtifact(const void* data,
 Expected<std::vector<uint8_t>> PackTensorRtAotLocator(
     const TensorRtAotLocator& locator);
 
+// A locator as the compiler plugin hands it to LiteRT ends in zero bytes up
+// to a multiple of this. LiteRT writes the locators behind the rewritten
+// model and the model's constants right behind them, one after the other: a
+// locator is as long as its artifact's path, so with some cache directories
+// the constants landed on addresses their types cannot be read at (an odd
+// one for FP16 scales), and the runtime copied each of them to the heap
+// (234 MiB for Gemma 4 26B-A4B with its drafter). The alignment is that of
+// the model before them, so the constants lie as they do behind no locator.
+inline constexpr size_t kTensorRtAotLocatorAlignment = 16;
+
+// Appends that padding to a packed locator. The AOT index keeps its locators
+// as they were packed.
+void PadTensorRtAotLocator(std::vector<uint8_t>& locator);
+
 // Returns nullopt when data is ordinary TensorRT bytecode. Once the AOT magic
 // is present, malformed locator data is reported as an error rather than being
-// reinterpreted as engine bytecode.
+// reinterpreted as engine bytecode. A locator is read with or without its
+// padding.
 Expected<std::optional<TensorRtAotLocator>> TryParseTensorRtAotLocator(
     const void* data, size_t size);
 

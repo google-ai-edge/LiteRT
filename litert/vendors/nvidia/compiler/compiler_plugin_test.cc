@@ -188,6 +188,9 @@ TEST_F(CompilerAotTest, ProducesIndependentShardsAndReusesCompleteManifest) {
           kLiteRtStatusOk);
       const auto* bytes = static_cast<const uint8_t*>(data);
       std::vector<uint8_t> locator_bytes(bytes, bytes + size);
+      // Padded, from the compilation as from the index, whatever the length
+      // of the cache directory's path.
+      EXPECT_EQ(size % litert::nvidia::kTensorRtAotLocatorAlignment, 0u);
       if (run == 0)
         first_locators.push_back(locator_bytes);
       else
