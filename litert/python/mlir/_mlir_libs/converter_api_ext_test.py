@@ -38,10 +38,11 @@ class ConverterApiExtTest(googletest.TestCase):
       )
       np.testing.assert_array_equal(np_array, actual_array)
 
-  def test_rank_reduction_and_gpu_compatibility_default_to_false(self):
+  def test_rank_reduction_is_on_and_gpu_compatibility_off_by_default(self):
     config = converter_api_ext.ConvertToTFLConfig()
-    self.assertFalse(config.rank_reduction)
+    self.assertTrue(config.rank_reduction)
     self.assertFalse(config.unsafe_gpu_compatibility)
+    # The deprecated alias only reads true when both are set.
     self.assertFalse(config.unsafe_single_batch_rank_reduction)
 
   def test_rank_reduction_and_gpu_compatibility_are_independent(self):

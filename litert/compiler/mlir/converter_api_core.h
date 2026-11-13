@@ -62,7 +62,7 @@ struct ConvertToTFLConfig {
 
   // If true, run the rank reduction pass (fold unit dims out of rank > 4 ops,
   // assuming the exported batch size is kept).
-  bool rank_reduction = false;
+  bool rank_reduction = true;
 
   // If true, run the GPU compatibility pass (GPU-delegate-specific rewrites
   // with unbounded materialization; GPU-only).
