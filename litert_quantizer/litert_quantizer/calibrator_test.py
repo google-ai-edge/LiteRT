@@ -351,6 +351,18 @@ class CalibratorTestBase(absltest.TestCase):
     self._calibrator.reset_model_qsvs()
     self.assertEqual(self._calibrator._metadata["num_samples_calibrated"], 0)
 
+  def test_calibrate_with_generator_dataset_succeeds(self):
+    self._single_fc_model_init()
+    _add_default_int8xint8_integer_recipe(self._recipe_manager)
+    gen_dataset = {
+        tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: (
+            _representative_dataset_gen(num_samples=5)
+        ),
+    }
+    self._calibrator.calibrate(gen_dataset, self._recipe_manager)
+    self.assertEqual(self._calibrator._metadata["num_samples_calibrated"], 5)
+    self.assertNotEmpty(self._calibrator.get_model_qsvs())
+
 
 class CalibratorPreserveAllTensorsTest(CalibratorTestBase):
   mode = _CalibrationMode.CALIBRATION_PRESERVE_ALL_TENSORS
