@@ -313,7 +313,8 @@ absl::Status CheckDecomposedSdpaScoreChunks(
 
 // Whether the decomposed graph on `gpu_info` splits score tensors within
 // `kMaxDecomposedSdpaScoreBytes`: not on OpenCL and WebGPU, which keep them on
-// one GEMM (`DecomposedSdpaScoreChunkBudget`).
+// one GEMM (`DecomposedSdpaScoreChunkBudget`), except for WebGPU on Apple GPUs
+// (`PrefersChunkedDecomposedPrefill`).
 bool SplitsScoresWithinPrefillBudget(const ::ml_drift::GpuInfo& gpu_info) {
   return DecomposedSdpaScoreChunkBudget(gpu_info, kMaxDecomposedSdpaScoreBytes,
                                         /*max_chunk_bytes=*/0) == 0;
@@ -1995,6 +1996,83 @@ TEST(UsesFusedSdpaKernelTest, OpenClAndWebGpuGatePrefillOnScoreBytes) {
                                     /*is_prefill=*/true,
                                     /*from_cache_update=*/true));
   }
+}
+
+// WebGPU on Apple GPUs runs long-context prefill on score chunks of the
+// decomposed graph, as Metal does where the MMA kernel does not apply.
+TEST(PrefersChunkedDecomposedPrefillTest, OnlyWebGpuOnAppleGpus) {
+  EXPECT_TRUE(PrefersChunkedDecomposedPrefill(
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kWebGpu)));
+  EXPECT_FALSE(PrefersChunkedDecomposedPrefill(
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kMetal)));
+  EXPECT_FALSE(PrefersChunkedDecomposedPrefill(
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kOpenCl)));
+  EXPECT_FALSE(PrefersChunkedDecomposedPrefill(MakeGpuInfo(
+      ::ml_drift::GpuVendor::kQualcomm, ::ml_drift::GpuApi::kWebGpu)));
+  EXPECT_FALSE(PrefersChunkedDecomposedPrefill(MakeGpuInfo(
+      ::ml_drift::GpuVendor::kNvidia, ::ml_drift::GpuApi::kWebGpu)));
+}
+
+TEST(UsesFusedSdpaKernelTest, AppleWebGpuPrefillRunsOnScoreChunks) {
+  const auto apple_webgpu =
+      MakeGpuInfo(::ml_drift::GpuVendor::kApple, ::ml_drift::GpuApi::kWebGpu);
+  const auto other_webgpu = MakeGpuInfo(::ml_drift::GpuVendor::kQualcomm,
+                                        ::ml_drift::GpuApi::kWebGpu);
+  EXPECT_EQ(DecomposedSdpaScoreChunkBudget(apple_webgpu),
+            kMaxDecomposedSdpaScoreChunkBytes);
+  EXPECT_EQ(DecomposedSdpaScoreChunkBudget(other_webgpu),
+            kMaxDecomposedSdpaScoreBytes);
+
+  // Gemma 4 26B-A4B global attention, 1024-token prefill: 16 query heads share
+  // 2 K/V heads of head dim 512. 512 MiB, 1 GiB and 2 GiB of scores run on 4, 8
+  // and 8 chunks of 128, 128 and 256 MiB.
+  const ::ml_drift::BHWC q_shape(1, 16, 1024, 512);
+  for (const auto& [cache_size, chunks] :
+       {std::pair{16384, 4}, std::pair{32768, 8}, std::pair{65536, 8}}) {
+    const ::ml_drift::BHWC k_shape(1, 2, cache_size, 512);
+    EXPECT_FALSE(UsesWorkGroupFlashPrefill(apple_webgpu, q_shape, k_shape))
+        << "cache_size=" << cache_size;
+    EXPECT_FALSE(UsesFusedSdpaKernel(apple_webgpu, q_shape, k_shape,
+                                     /*is_prefill=*/true,
+                                     /*from_cache_update=*/true))
+        << "cache_size=" << cache_size;
+    EXPECT_EQ(
+        NumDecomposedSdpaScoreChunks(
+            q_shape, k_shape, DecomposedSdpaScoreChunkBudget(apple_webgpu)),
+        chunks)
+        << "cache_size=" << cache_size;
+  }
+  // Other WebGPU devices keep the 512 MiB on one GEMM and switch to the
+  // work-group Flash kernel above 768 MiB.
+  EXPECT_FALSE(UsesWorkGroupFlashPrefill(other_webgpu, q_shape,
+                                         ::ml_drift::BHWC(1, 2, 16384, 512)));
+  EXPECT_TRUE(UsesWorkGroupFlashPrefill(other_webgpu, q_shape,
+                                        ::ml_drift::BHWC(1, 2, 32768, 512)));
+
+  // Plain multi-head attention has no GQA group to split: 32 heads with a 32K
+  // cache keep 2 GiB of scores, so they stay on the work-group Flash kernel.
+  EXPECT_TRUE(UsesWorkGroupFlashPrefill(apple_webgpu,
+                                        ::ml_drift::BHWC(1, 32, 1024, 64),
+                                        ::ml_drift::BHWC(1, 32, 32768, 64)));
+  // A GQA group of 2 with a 64K cache: 2 chunks of 1 GiB.
+  EXPECT_TRUE(UsesWorkGroupFlashPrefill(apple_webgpu,
+                                        ::ml_drift::BHWC(1, 16, 1024, 128),
+                                        ::ml_drift::BHWC(1, 8, 65536, 128)));
+  // Qwen3 0.6B with a 32K cache: 2 chunks of 512 MiB stay on the GEMM.
+  EXPECT_FALSE(UsesWorkGroupFlashPrefill(apple_webgpu,
+                                         ::ml_drift::BHWC(1, 16, 1024, 128),
+                                         ::ml_drift::BHWC(1, 8, 32768, 128)));
+
+  // Tests still force the work-group kernel by lowering the score budget, and
+  // single-token queries never take the prefill path.
+  const ::ml_drift::BHWC small_q(1, 4, 7, 128);
+  const ::ml_drift::BHWC small_k(1, 2, 64, 128);
+  EXPECT_FALSE(UsesWorkGroupFlashPrefill(apple_webgpu, small_q, small_k));
+  EXPECT_TRUE(UsesWorkGroupFlashPrefill(apple_webgpu, small_q, small_k,
+                                        /*max_score_bytes=*/0));
+  EXPECT_FALSE(UsesWorkGroupFlashPrefill(apple_webgpu,
+                                         ::ml_drift::BHWC(1, 4, 1, 128),
+                                         small_k, /*max_score_bytes=*/0));
 }
 
 TEST(UsesFusedSdpaKernelTest, OpenClPrefillBudgetHonorsMaxAllocation) {

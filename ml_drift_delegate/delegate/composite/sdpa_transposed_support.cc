@@ -259,6 +259,10 @@ bool IsSupportedFlashPrefillShape(const ::ml_drift::BHWC& q_shape,
   return IsSupportedFusedSdpaShape(q_shape, k_shape) && q_shape.c <= 128;
 }
 
+bool PrefersChunkedDecomposedPrefill(const ::ml_drift::GpuInfo& gpu_info) {
+  return gpu_info.IsApiWebGpu() && gpu_info.IsApple();
+}
+
 uint64_t DecomposedSdpaScoreBytes(const ::ml_drift::BHWC& q_shape,
                                   const ::ml_drift::BHWC& k_shape) {
   constexpr uint64_t kHalfBytes = 2;
@@ -282,10 +286,13 @@ uint64_t ClampToMaxAllocation(const ::ml_drift::GpuInfo& gpu_info,
 uint64_t DecomposedSdpaScoreChunkBudget(const ::ml_drift::GpuInfo& gpu_info,
                                         uint64_t max_score_bytes,
                                         uint64_t max_chunk_bytes) {
-  const uint64_t budget =
-      SupportsFusedSdpaKernels(gpu_info) && !SupportsWaveMatrixPrefill(gpu_info)
-          ? std::max(max_chunk_bytes, max_score_bytes)
-          : max_chunk_bytes;
+  const bool keeps_prefill_budget_on_one_gemm =
+      SupportsFusedSdpaKernels(gpu_info) &&
+      !SupportsWaveMatrixPrefill(gpu_info) &&
+      !PrefersChunkedDecomposedPrefill(gpu_info);
+  const uint64_t budget = keeps_prefill_budget_on_one_gemm
+                              ? std::max(max_chunk_bytes, max_score_bytes)
+                              : max_chunk_bytes;
   // Each chunk must also fit one buffer of an OpenCL device, even when its
   // maximum allocation is below `max_chunk_bytes`.
   return ClampToMaxAllocation(gpu_info, budget);
@@ -323,8 +330,14 @@ bool UsesWorkGroupFlashPrefill(const ::ml_drift::GpuInfo& gpu_info,
   if (SupportsWaveMatrixPrefill(gpu_info) || q_shape.w <= 1) {
     return false;
   }
-  return DecomposedSdpaScoreBytes(q_shape, k_shape) >
-         ClampToMaxAllocation(gpu_info, max_score_bytes);
+  uint64_t score_bytes = DecomposedSdpaScoreBytes(q_shape, k_shape);
+  if (PrefersChunkedDecomposedPrefill(gpu_info)) {
+    // The decomposed graph only keeps one score chunk live. The score bytes
+    // are a multiple of the number of chunks, so the division is exact.
+    score_bytes /= NumDecomposedSdpaScoreChunks(
+        q_shape, k_shape, kMaxDecomposedSdpaScoreChunkBytes);
+  }
+  return score_bytes > ClampToMaxAllocation(gpu_info, max_score_bytes);
 }
 
 bool UsesFlashDecodeForShape(const ::ml_drift::GpuInfo& gpu_info,
