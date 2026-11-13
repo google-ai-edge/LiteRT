@@ -235,6 +235,32 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "moe_plugin_test",
+    srcs = ["moe_plugin_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":moe_plugin",
+        "//litert/vendors/nvidia:windows_compat",
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
+    ],
+)
+
 cc_library(
     name = "decode_attention_plugin",
     srcs = ["decode_attention_plugin.cc"],

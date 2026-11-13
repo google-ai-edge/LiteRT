@@ -35,6 +35,8 @@
 #include <mutex>
 #include <new>
 #include <string>
+#include <thread>  // NOLINT(build/c++11)
+#include <utility>
 #include <vector>
 
 #include "cuda_runtime_api.h"
@@ -195,18 +197,6 @@ struct Arena {
   bool on_device = false;
   LiteRtNvidiaMoeArena pointers{};
 };
-
-struct Registry {
-  std::mutex mutex;
-  std::map<std::string, std::shared_ptr<Arena>> arenas;
-  size_t device_bytes = 0;
-  size_t host_bytes = 0;
-};
-
-Registry& GetRegistry() {
-  static auto* const registry = new Registry();
-  return *registry;
-}
 
 std::string ArenaKey(const MoeExpertSource& source) {
   std::string key = source.model_path;
@@ -373,6 +363,24 @@ bool ArenaChecksum(const void* memory, bool on_device,
   return true;
 }
 
+// The FP32 value of every FP16 bit pattern. A layer's experts carry 24
+// million FP16 block scales (Gemma 4 26B-A4B), and converting them one by
+// one with HalfBitsToFloat took a quarter of the time a layer took to load.
+std::vector<float> HalfFloats() {
+  std::vector<float> table(size_t{1} << 16);
+  for (size_t bits = 0; bits < table.size(); ++bits) {
+    table[bits] = HalfBitsToFloat(static_cast<uint16_t>(bits));
+  }
+  return table;
+}
+
+bool CudaOk(cudaError_t status, const char* call, std::string* error) {
+  if (status == cudaSuccess) return true;
+  *error = std::string(call) + " failed: " + cudaGetErrorString(status);
+  return false;
+}
+
+// The model file as one loading thread reads it.
 class FileReader {
  public:
   ~FileReader() {
@@ -398,9 +406,25 @@ class FileReader {
   }
   bool Read(uint64_t offset, void* buffer, size_t bytes, std::string* error) {
     auto* out = static_cast<uint8_t*>(buffer);
+#ifdef _WIN32
+    // pread() of windows_compat.h opens the file again for every call, to
+    // leave the position of the caller's descriptor alone. This descriptor
+    // has one reader, which seeks it instead and reads on through the one
+    // open file.
+    if (_lseeki64(fd_, static_cast<int64_t>(offset), SEEK_SET) < 0) {
+      *error = std::string("seek failed: ") + std::strerror(errno);
+      return false;
+    }
+#endif
     for (size_t done = 0; done < bytes;) {
+#ifdef _WIN32
+      const ssize_t result = _read(
+          fd_, out + done,
+          static_cast<unsigned>(std::min<size_t>(bytes - done, 1u << 30)));
+#else
       const ssize_t result = pread(fd_, out + done, bytes - done,
                                    static_cast<int64_t>(offset + done));
+#endif
       if (result < 0 && errno == EINTR) continue;
       if (result <= 0) {
         *error =
@@ -417,79 +441,141 @@ class FileReader {
   int fd_ = -1;
 };
 
-// Loads the pieces of `source` into a new arena.
-std::shared_ptr<Arena> LoadArena(const MoeExpertSource& source, int32_t experts,
-                                 int32_t model_dim, int32_t hidden_dim,
-                                 std::string* error) {
-  // The arenas load before the engines' activations and the KV caches, so
-  // "free" here overstates what stays free. Gemma 4 26B-A4B's 30 layers take
-  // 11.6 GB and what follows them 3.1-4.4 GiB up to its 32k context with the
-  // drafter: on a 16 GB card every layer belongs on the device, and a layer
-  // in host memory costs a third of the decode speed. The reserve therefore
-  // only keeps the last layers off a nearly full device;
-  // LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB raises it for cards where the model
-  // cannot fit whole, LITERT_NVIDIA_MOE_PLACEMENT=host|device forces a side.
-  const uint64_t reserve = static_cast<uint64_t>(EnvInt64(
-                               "LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB", 512))
-                           << 20;
-  const char* placement = std::getenv("LITERT_NVIDIA_MOE_PLACEMENT");
-  const bool by_memory =
-      placement == nullptr || (std::strcmp(placement, "host") != 0 &&
-                               std::strcmp(placement, "device") != 0);
-  size_t free_bytes = 0;
-  size_t total_bytes = 0;
-  if (cudaMemGetInfo(&free_bytes, &total_bytes) != cudaSuccess) {
-    *error = "cudaMemGetInfo failed";
-    return nullptr;
+// The host-to-device copies of one loading thread, as the weight store
+// uploads (dispatch/weight_store.cc): two page-locked buffers take turns on
+// the thread's own stream, so the next chunk is read or converted while the
+// device copies the last one out. The destructor waits for the copies.
+class Staging {
+ public:
+  ~Staging() {
+    if (stream_ != nullptr) cudaStreamSynchronize(stream_);
+    for (Buffer& buffer : buffers_) {
+      if (buffer.copied != nullptr) cudaEventDestroy(buffer.copied);
+      if (buffer.data != nullptr) cudaFreeHost(buffer.data);
+    }
+    if (stream_ != nullptr) cudaStreamDestroy(stream_);
   }
-  // The experts' block scales are stored compact: a byte per block as the
-  // fraction of the row's FP16 maximum, half the bytes of FP16 scales (the
-  // 26B: 1.43 GB to 0.72, reproduced to 0.3% at the 99th percentile) at the
-  // same decode speed, the format being a compile-time choice of the kernels.
-  ArenaLayout layout;
-  if (!LayoutArena(source, experts, model_dim, hidden_dim, /*compact=*/true,
-                   &layout)) {
-    *error = "the expert pieces do not match the layer's shape";
-    return nullptr;
-  }
-  FileReader file;
-  if (!file.Open(source, error)) return nullptr;
 
-  auto arena = std::make_shared<Arena>();
-  arena->bytes = layout.total;
-  // Placement: device while a reserve stays free, pinned host otherwise.
-  bool on_device = true;
-  if (placement != nullptr && std::strcmp(placement, "host") == 0) {
-    on_device = false;
-  } else if (by_memory) {
-    on_device = free_bytes >= layout.total + reserve;
+  // The buffer for the next chunk, kStagingBytes of it, once the device has
+  // copied what it held.
+  uint8_t* Next(std::string* error) {
+    next_ ^= 1;
+    Buffer& buffer = buffers_[next_];
+    if (stream_ == nullptr &&
+        !CudaOk(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking),
+                "cudaStreamCreateWithFlags", error)) {
+      stream_ = nullptr;
+      return nullptr;
+    }
+    if (buffer.data == nullptr &&
+        !CudaOk(cudaMallocHost(&buffer.data, kStagingBytes), "cudaMallocHost",
+                error)) {
+      buffer.data = nullptr;
+      return nullptr;
+    }
+    if (buffer.copied == nullptr &&
+        !CudaOk(
+            cudaEventCreateWithFlags(&buffer.copied, cudaEventDisableTiming),
+            "cudaEventCreateWithFlags", error)) {
+      buffer.copied = nullptr;
+      return nullptr;
+    }
+    if (buffer.pending) {
+      buffer.pending = false;
+      if (!CudaOk(cudaEventSynchronize(buffer.copied), "cudaEventSynchronize",
+                  error)) {
+        return nullptr;
+      }
+    }
+    return static_cast<uint8_t*>(buffer.data);
   }
-  cudaError_t status =
-      on_device ? cudaMalloc(&arena->memory, layout.total)
-                : cudaHostAlloc(&arena->memory, layout.total,
-                                cudaHostAllocMapped | cudaHostAllocPortable);
+
+  // Copies `bytes` of the buffer Next() returned to `target` on the device.
+  bool Send(void* target, size_t bytes, std::string* error) {
+    Buffer& buffer = buffers_[next_];
+    if (!CudaOk(cudaMemcpyAsync(target, buffer.data, bytes,
+                                cudaMemcpyHostToDevice, stream_),
+                "cudaMemcpyAsync", error) ||
+        !CudaOk(cudaEventRecord(buffer.copied, stream_), "cudaEventRecord",
+                error)) {
+      return false;
+    }
+    buffer.pending = true;
+    return true;
+  }
+
+  // Waits for every copy sent.
+  bool Wait(std::string* error) {
+    for (Buffer& buffer : buffers_) buffer.pending = false;
+    return stream_ == nullptr || CudaOk(cudaStreamSynchronize(stream_),
+                                        "cudaStreamSynchronize", error);
+  }
+
+ private:
+  struct Buffer {
+    void* data = nullptr;
+    cudaEvent_t copied = nullptr;
+    bool pending = false;
+  };
+
+  cudaStream_t stream_ = nullptr;
+  std::array<Buffer, 2> buffers_;
+  int next_ = 1;
+};
+
+// What a loading thread keeps from one arena to the next.
+struct LoadContext {
+  Staging staging;
+  std::vector<uint8_t> file_bytes;     // scales as the file holds them
+  const float* half_floats = nullptr;  // HalfFloats()
+};
+
+// Allocates the arena: device memory, or page-locked host memory the device
+// maps.
+bool AllocateArena(Arena* arena, std::string* error) {
+  const cudaError_t status =
+      arena->on_device
+          ? cudaMalloc(&arena->memory, arena->bytes)
+          : cudaHostAlloc(&arena->memory, arena->bytes,
+                          cudaHostAllocMapped | cudaHostAllocPortable);
   if (status != cudaSuccess) {
     arena->memory = nullptr;
-    *error = std::string(on_device ? "cudaMalloc" : "cudaHostAlloc") +
+    *error = std::string(arena->on_device ? "cudaMalloc" : "cudaHostAlloc") +
              " failed: " + cudaGetErrorString(status);
-    return nullptr;
+    return false;
   }
-  arena->on_device = on_device;
-  void* device_base = arena->memory;
-  if (!on_device &&
-      cudaHostGetDevicePointer(&device_base, arena->memory, 0) != cudaSuccess) {
-    *error = "cudaHostGetDevicePointer failed";
-    return nullptr;
-  }
+  return true;
+}
 
-  // Staging for device arenas and for the scale conversion.
-  std::vector<uint8_t> staging;
-  std::vector<uint16_t> halves;
+// Fills the arena with the pieces of `source`: a host arena in place, a
+// device arena through the staging buffers.
+bool FillArena(const MoeExpertSource& source, const ArenaLayout& layout,
+               int32_t experts, int32_t model_dim, int32_t hidden_dim,
+               LoadContext* context, Arena* arena, std::string* error) {
+  FileReader file;
+  if (!file.Open(source, error)) return false;
+  const bool on_device = arena->on_device;
+  Staging& staging = context->staging;
+  // Host memory into the arena.
+  const auto put = [&](uint8_t* target, const void* data, size_t bytes) {
+    if (!on_device) {
+      std::memcpy(target, data, bytes);
+      return true;
+    }
+    for (size_t done = 0; done < bytes;) {
+      const size_t chunk = std::min(bytes - done, kStagingBytes);
+      uint8_t* staged = staging.Next(error);
+      if (staged == nullptr) return false;
+      std::memcpy(staged, static_cast<const uint8_t*>(data) + done, chunk);
+      if (!staging.Send(target + done, chunk, error)) return false;
+      done += chunk;
+    }
+    return true;
+  };
   auto* base = static_cast<uint8_t*>(arena->memory);
   for (int i = 0; i < kPieces; ++i) {
     if (source.sizes[i] == 0) continue;
     uint8_t* target = base + layout.offsets[i];
-    const bool convert = ConvertsPiece(source, i);
     const size_t in_bytes = source.sizes[i];
     if (layout.compact && i >= 3 && i < 6) {
       // Row by row: the maximum as FP16, the blocks as fractions of it.
@@ -498,100 +584,92 @@ std::shared_ptr<Arena> LoadArena(const MoeExpertSource& source, int32_t experts,
       const size_t scale_in = source.scale_type == 0 ? 4 : 2;
       const size_t blocks = in_bytes / scale_in / rows;
       const size_t row_in = blocks * scale_in;
+      if (blocks > kStagingBytes) {
+        *error = "a row of block scales does not fit the staging buffer";
+        return false;
+      }
       const size_t rows_per_chunk = std::max<size_t>(1, kStagingBytes / row_in);
       std::vector<uint16_t> maxima(rows);
       std::vector<float> row(blocks);
-      std::vector<uint8_t> fractions;
       for (size_t r0 = 0; r0 < rows; r0 += rows_per_chunk) {
         const size_t n = std::min(rows_per_chunk, rows - r0);
-        staging.resize(n * row_in);
-        if (!file.Read(source.offsets[i] + r0 * row_in, staging.data(),
-                       n * row_in, error)) {
-          return nullptr;
+        context->file_bytes.resize(n * row_in);
+        if (!file.Read(source.offsets[i] + r0 * row_in,
+                       context->file_bytes.data(), n * row_in, error)) {
+          return false;
         }
-        fractions.resize(n * blocks);
+        uint8_t* fractions = target + r0 * blocks;
+        if (on_device && (fractions = staging.Next(error)) == nullptr) {
+          return false;
+        }
         for (size_t r = 0; r < n; ++r) {
-          for (size_t b = 0; b < blocks; ++b) {
-            if (scale_in == 4) {
-              std::memcpy(&row[b], staging.data() + (r * blocks + b) * 4, 4);
-            } else {
+          const uint8_t* in = context->file_bytes.data() + r * row_in;
+          if (scale_in == 4) {
+            std::memcpy(row.data(), in, row_in);
+          } else {
+            for (size_t b = 0; b < blocks; ++b) {
               uint16_t bits = 0;
-              std::memcpy(&bits, staging.data() + (r * blocks + b) * 2, 2);
-              row[b] = HalfBitsToFloat(bits);
+              std::memcpy(&bits, in + b * sizeof(bits), sizeof(bits));
+              row[b] = context->half_floats[bits];
             }
           }
           LiteRtNvidiaCompactScaleRow(row.data(), static_cast<int32_t>(blocks),
-                                      fractions.data() + r * blocks,
+                                      fractions + r * blocks,
                                       maxima.data() + r0 + r);
         }
-        if (on_device) {
-          status = cudaMemcpy(target + r0 * blocks, fractions.data(),
-                              n * blocks, cudaMemcpyHostToDevice);
-          if (status != cudaSuccess) {
-            *error =
-                std::string("cudaMemcpy failed: ") + cudaGetErrorString(status);
-            return nullptr;
-          }
-        } else {
-          std::memcpy(target + r0 * blocks, fractions.data(), n * blocks);
+        if (on_device &&
+            !staging.Send(target + r0 * blocks, n * blocks, error)) {
+          return false;
         }
       }
-      uint8_t* max_target = base + layout.max_offsets[i - 3];
-      if (on_device) {
-        status = cudaMemcpy(max_target, maxima.data(), rows * sizeof(uint16_t),
-                            cudaMemcpyHostToDevice);
-        if (status != cudaSuccess) {
-          *error =
-              std::string("cudaMemcpy failed: ") + cudaGetErrorString(status);
-          return nullptr;
-        }
-      } else {
-        std::memcpy(max_target, maxima.data(), rows * sizeof(uint16_t));
+      if (!put(base + layout.max_offsets[i - 3], maxima.data(),
+               rows * sizeof(uint16_t))) {
+        return false;
       }
       continue;
     }
+    const bool convert = ConvertsPiece(source, i);
     for (size_t done = 0; done < in_bytes;) {
       const size_t chunk = std::min(in_bytes - done, kStagingBytes);
-      const uint8_t* ready = nullptr;
-      size_t ready_bytes = chunk;
-      if (!convert && !on_device) {
-        if (!file.Read(source.offsets[i] + done, target + done, chunk, error)) {
-          return nullptr;
-        }
-        done += chunk;
-        continue;
-      }
-      staging.resize(chunk);
-      if (!file.Read(source.offsets[i] + done, staging.data(), chunk, error)) {
-        return nullptr;
-      }
-      ready = staging.data();
-      if (convert) {
-        const size_t count = chunk / sizeof(float);
-        halves.resize(count);
-        for (size_t v = 0; v < count; ++v) {
-          float value = 0.0f;
-          std::memcpy(&value, staging.data() + v * sizeof(float),
-                      sizeof(float));
-          halves[v] = FloatToHalfBits(value);
-        }
-        ready = reinterpret_cast<const uint8_t*>(halves.data());
-        ready_bytes = count * sizeof(uint16_t);
-      }
       const size_t out_done = convert ? done / 2 : done;
-      if (on_device) {
-        status = cudaMemcpy(target + out_done, ready, ready_bytes,
-                            cudaMemcpyHostToDevice);
-        if (status != cudaSuccess) {
-          *error =
-              std::string("cudaMemcpy failed: ") + cudaGetErrorString(status);
-          return nullptr;
+      uint8_t* out = target + out_done;
+      if (on_device && (out = staging.Next(error)) == nullptr) return false;
+      if (!convert) {
+        if (!file.Read(source.offsets[i] + done, out, chunk, error)) {
+          return false;
         }
       } else {
-        std::memcpy(target + out_done, ready, ready_bytes);
+        context->file_bytes.resize(chunk);
+        if (!file.Read(source.offsets[i] + done, context->file_bytes.data(),
+                       chunk, error)) {
+          return false;
+        }
+        for (size_t v = 0; v < chunk / sizeof(float); ++v) {
+          float value = 0.0f;
+          std::memcpy(&value, context->file_bytes.data() + v * sizeof(float),
+                      sizeof(float));
+          const uint16_t half = FloatToHalfBits(value);
+          std::memcpy(out + v * sizeof(half), &half, sizeof(half));
+        }
+      }
+      if (on_device && !staging.Send(target + out_done,
+                                     convert ? chunk / 2 : chunk, error)) {
+        return false;
       }
       done += chunk;
     }
+  }
+  return !on_device || staging.Wait(error);
+}
+
+// Where the kernels find the pieces.
+bool SetArenaPointers(const MoeExpertSource& source, const ArenaLayout& layout,
+                      Arena* arena, std::string* error) {
+  void* device_base = arena->memory;
+  if (!arena->on_device &&
+      cudaHostGetDevicePointer(&device_base, arena->memory, 0) != cudaSuccess) {
+    *error = "cudaHostGetDevicePointer failed";
+    return false;
   }
   auto* device_bytes = static_cast<uint8_t*>(device_base);
   const bool routed = source.router_scale_type >= 0;
@@ -613,19 +691,155 @@ std::shared_ptr<Arena> LoadArena(const MoeExpertSource& source, int32_t experts,
       layout.compact ? device_bytes + layout.max_offsets[1] : nullptr,
       layout.compact ? device_bytes + layout.max_offsets[2] : nullptr,
       layout.compact ? 1 : 0};
-  if (ArenaChecksumEnabled()) {
-    uint64_t checksum = 0;
-    if (!ArenaChecksum(arena->memory, on_device, source, layout, experts,
-                       model_dim, hidden_dim, &checksum)) {
-      *error = "reading the arena back for its checksum failed";
-      return nullptr;
+  return true;
+}
+
+// An arena to load, and what became of it.
+struct ArenaLoad {
+  MoeExpertSource source;
+  int32_t experts = 0;
+  int32_t model_dim = 0;
+  int32_t hidden_dim = 0;
+  ArenaLayout layout;
+  std::shared_ptr<Arena> arena;  // null once the load has failed
+  std::string error;
+  double seconds = 0.0;
+};
+
+// The threads that load a batch of arenas, a layer each at a time:
+// LITERT_NVIDIA_MOE_LOAD_THREADS, four by default. A thread reads the page
+// cache at about the rate one stream copies to the device, so the device's
+// link is the limit from three or four threads on.
+int LoadThreads() {
+  return static_cast<int>(std::clamp<int64_t>(
+      EnvInt64("LITERT_NVIDIA_MOE_LOAD_THREADS", 4), 1, 16));
+}
+
+// Loads the arenas of `loads`, several at a time, and returns the number of
+// threads that loaded them.
+int LoadArenas(std::vector<ArenaLoad>& loads) {
+  // The arenas load before the engines' activations and the KV caches, so
+  // "free" here overstates what stays free. Gemma 4 26B-A4B's 30 layers take
+  // 11.6 GB and what follows them 3.1-4.4 GiB up to its 32k context with the
+  // drafter: on a 16 GB card every layer belongs on the device, and a layer
+  // in host memory costs a third of the decode speed. The reserve therefore
+  // only keeps the last layers off a nearly full device;
+  // LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB raises it for cards where the model
+  // cannot fit whole, LITERT_NVIDIA_MOE_PLACEMENT=host|device forces a side.
+  const uint64_t reserve = static_cast<uint64_t>(EnvInt64(
+                               "LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB", 512))
+                           << 20;
+  const char* placement = std::getenv("LITERT_NVIDIA_MOE_PLACEMENT");
+  const bool to_host =
+      placement != nullptr && std::strcmp(placement, "host") == 0;
+  const bool to_device =
+      placement != nullptr && std::strcmp(placement, "device") == 0;
+  // Placement: device while a reserve stays free, pinned host otherwise.
+  // Decided for one arena after the other, in the order given, each seeing
+  // the device memory the ones before it took, before anything is loaded.
+  size_t placed = 0;
+  for (ArenaLoad& load : loads) {
+    // The experts' block scales are stored compact: a byte per block as the
+    // fraction of the row's FP16 maximum, half the bytes of FP16 scales (the
+    // 26B: 1.43 GB to 0.72, reproduced to 0.3% at the 99th percentile) at the
+    // same decode speed, the format being a compile-time choice of the
+    // kernels.
+    if (!LayoutArena(load.source, load.experts, load.model_dim, load.hidden_dim,
+                     /*compact=*/true, &load.layout)) {
+      load.error = "the expert pieces do not match the layer's shape";
+      continue;
     }
-    std::fprintf(stderr,
-                 "[LiteRtNvidiaMoe] experts at offset %llu: checksum %016llx\n",
-                 static_cast<unsigned long long>(source.offsets[0]),
-                 static_cast<unsigned long long>(checksum));
+    bool on_device = !to_host;
+    if (!to_host && !to_device) {
+      size_t free_bytes = 0;
+      size_t total_bytes = 0;
+      if (cudaMemGetInfo(&free_bytes, &total_bytes) != cudaSuccess) {
+        load.error = "cudaMemGetInfo failed";
+        continue;
+      }
+      on_device = free_bytes >= load.layout.total + reserve;
+    }
+    auto arena = std::make_shared<Arena>();
+    arena->bytes = load.layout.total;
+    arena->on_device = on_device;
+    // A host arena is allocated by the thread that fills it: page-locking it
+    // takes time, and the placement of the arenas after it does not depend
+    // on it (where host memory is the device's, the arenas after a host
+    // arena are host arenas with or without it).
+    if (on_device && !AllocateArena(arena.get(), &load.error)) continue;
+    load.arena = std::move(arena);
+    ++placed;
   }
-  return arena;
+  const int threads = static_cast<int>(
+      std::min<size_t>(LoadThreads(), std::max<size_t>(placed, 1)));
+  const std::vector<float> half_floats = HalfFloats();
+  int device = 0;
+  const bool device_known = cudaGetDevice(&device) == cudaSuccess;
+  std::atomic<size_t> next{0};
+  const auto work = [&](bool helper) {
+    // A new thread would otherwise use device 0.
+    if (helper && device_known) cudaSetDevice(device);
+    LoadContext context;
+    context.half_floats = half_floats.data();
+    for (;;) {
+      const size_t i = next.fetch_add(1);
+      if (i >= loads.size()) break;
+      ArenaLoad& load = loads[i];
+      if (load.arena == nullptr) continue;
+      const auto start = std::chrono::steady_clock::now();
+      if ((!load.arena->on_device &&
+           !AllocateArena(load.arena.get(), &load.error)) ||
+          !FillArena(load.source, load.layout, load.experts, load.model_dim,
+                     load.hidden_dim, &context, load.arena.get(),
+                     &load.error) ||
+          !SetArenaPointers(load.source, load.layout, load.arena.get(),
+                            &load.error)) {
+        // The copies under way still write the arena.
+        std::string ignored;
+        context.staging.Wait(&ignored);
+        load.arena.reset();
+      }
+      load.seconds = std::chrono::duration<double>(
+                         std::chrono::steady_clock::now() - start)
+                         .count();
+    }
+  };
+  std::vector<std::thread> helpers;
+  for (int t = 1; t < threads; ++t) helpers.emplace_back(work, true);
+  work(false);
+  for (std::thread& helper : helpers) helper.join();
+  return threads;
+}
+
+struct Registry {
+  std::mutex mutex;
+  std::map<std::string, std::shared_ptr<Arena>> arenas;
+  // The arenas the plugins of deserialized engines will ask for, in the
+  // order the plugins were created, until the first of them is asked for.
+  std::vector<std::pair<std::string, ArenaLoad>> announced;
+  size_t device_bytes = 0;
+  size_t host_bytes = 0;
+};
+
+Registry& GetRegistry() {
+  static auto* const registry = new Registry();
+  return *registry;
+}
+
+// A plugin of a deserialized engine will ask for the arena of `source` when
+// its execution context is created: the first arena that is asked for brings
+// the announced ones in with it, several at a time (AcquireArena).
+void AnnounceArena(const MoeExpertSource& source, int32_t experts,
+                   int32_t model_dim, int32_t hidden_dim) {
+  Registry& registry = GetRegistry();
+  std::lock_guard<std::mutex> lock(registry.mutex);
+  std::string key = ArenaKey(source);
+  if (registry.arenas.count(key) != 0) return;
+  for (const auto& announced : registry.announced) {
+    if (announced.first == key) return;
+  }
+  registry.announced.emplace_back(
+      std::move(key), ArenaLoad{source, experts, model_dim, hidden_dim});
 }
 
 std::shared_ptr<Arena> AcquireArena(const MoeExpertSource& source,
@@ -638,31 +852,64 @@ std::shared_ptr<Arena> AcquireArena(const MoeExpertSource& source,
       found != registry.arenas.end()) {
     return found->second;
   }
-  const auto start = std::chrono::steady_clock::now();
-  std::string error;
-  auto arena = LoadArena(source, experts, model_dim, hidden_dim, &error);
-  if (arena == nullptr) {
-    std::fprintf(stderr,
-                 "[LiteRtNvidiaMoe] loading the experts at offset %llu of %s "
-                 "failed: %s\n",
-                 static_cast<unsigned long long>(source.offsets[0]),
-                 source.model_path.c_str(), error.c_str());
-    return nullptr;
+  // This arena first, then the announced ones in their order: the order in
+  // which the device's memory is given out.
+  std::vector<std::string> keys = {key};
+  std::vector<ArenaLoad> loads;
+  loads.push_back({source, experts, model_dim, hidden_dim});
+  for (auto& announced : registry.announced) {
+    if (announced.first == key) continue;
+    keys.push_back(std::move(announced.first));
+    loads.push_back(std::move(announced.second));
   }
+  registry.announced.clear();
+  const auto start = std::chrono::steady_clock::now();
+  const int threads = LoadArenas(loads);
   const double seconds =
       std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
           .count();
-  (arena->on_device ? registry.device_bytes : registry.host_bytes) +=
-      arena->bytes;
-  std::fprintf(stderr,
-               "[LiteRtNvidiaMoe] experts at offset %llu: %.1f MB in %s "
-               "memory, %.2f s (arenas now %.2f GB device, %.2f GB host)\n",
-               static_cast<unsigned long long>(source.offsets[0]),
-               arena->bytes / 1048576.0, arena->on_device ? "device" : "host",
-               seconds, registry.device_bytes / 1073741824.0,
-               registry.host_bytes / 1073741824.0);
-  registry.arenas.emplace(key, arena);
-  return arena;
+  size_t loaded_bytes = 0;
+  for (size_t i = 0; i < loads.size(); ++i) {
+    const ArenaLoad& load = loads[i];
+    const auto offset = static_cast<unsigned long long>(load.source.offsets[0]);
+    if (load.arena == nullptr) {
+      std::fprintf(stderr,
+                   "[LiteRtNvidiaMoe] loading the experts at offset %llu of %s "
+                   "failed: %s\n",
+                   offset, load.source.model_path.c_str(), load.error.c_str());
+      continue;
+    }
+    const Arena& arena = *load.arena;
+    loaded_bytes += arena.bytes;
+    (arena.on_device ? registry.device_bytes : registry.host_bytes) +=
+        arena.bytes;
+    std::fprintf(stderr,
+                 "[LiteRtNvidiaMoe] experts at offset %llu: %.1f MB in %s "
+                 "memory, %.2f s (arenas now %.2f GB device, %.2f GB host)\n",
+                 offset, arena.bytes / 1048576.0,
+                 arena.on_device ? "device" : "host", load.seconds,
+                 registry.device_bytes / 1073741824.0,
+                 registry.host_bytes / 1073741824.0);
+    if (ArenaChecksumEnabled()) {
+      uint64_t checksum = 0;
+      if (ArenaChecksum(arena.memory, arena.on_device, load.source, load.layout,
+                        load.experts, load.model_dim, load.hidden_dim,
+                        &checksum)) {
+        std::fprintf(
+            stderr,
+            "[LiteRtNvidiaMoe] experts at offset %llu: checksum %016llx\n",
+            offset, static_cast<unsigned long long>(checksum));
+      }
+    }
+    registry.arenas.emplace(keys[i], load.arena);
+  }
+  if (loads.size() > 1) {
+    std::fprintf(stderr,
+                 "[LiteRtNvidiaMoe] %zu arenas, %.2f GB, loaded in %.2f s by "
+                 "%d threads\n",
+                 loads.size(), loaded_bytes / 1073741824.0, seconds, threads);
+  }
+  return loads[0].arena;
 }
 
 int64_t ActivationRows(const nvinfer1::Dims& dims, int32_t model_dim) {
@@ -1053,7 +1300,6 @@ class MoePluginCreator final : public nvinfer1::IPluginCreatorV3One {
       const char* name, const nvinfer1::PluginFieldCollection* fields,
       nvinfer1::TensorRTPhase phase) noexcept override {
     static_cast<void>(name);
-    static_cast<void>(phase);
     if (fields == nullptr || fields->fields == nullptr) {
       return nullptr;
     }
@@ -1142,9 +1388,17 @@ class MoePluginCreator final : public nvinfer1::IPluginCreatorV3One {
         dense_gate = value;
       }
     }
-    return CreateMoePlugin(experts, top_k, model_dim, hidden_dim, gate, source,
-                           routed != 0, norm_eps, router_multiplier, block != 0,
-                           dense_gate, residual_multiplier);
+    nvinfer1::IPluginV3* plugin =
+        CreateMoePlugin(experts, top_k, model_dim, hidden_dim, gate, source,
+                        routed != 0, norm_eps, router_multiplier, block != 0,
+                        dense_gate, residual_multiplier);
+    if (plugin != nullptr && phase == nvinfer1::TensorRTPhase::kRUNTIME &&
+        MoeArenaLoadingEnabled()) {
+      // An engine being deserialized: its layers' arenas are wanted together
+      // when its execution context is created.
+      AnnounceArena(source, experts, model_dim, hidden_dim);
+    }
+    return plugin;
   }
 
   const nvinfer1::PluginFieldCollection* getFieldNames() noexcept override {
@@ -1221,6 +1475,17 @@ bool MoeArenaLoadingEnabled() noexcept {
   if (g_loading_enabled.load()) return true;
   const char* value = std::getenv("LITERT_NVIDIA_MOE_LOAD_EXPERTS");
   return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}
+
+bool LoadMoeArena(const MoeExpertSource& source, int32_t experts,
+                  int32_t model_dim, int32_t hidden_dim,
+                  LiteRtNvidiaMoeArena* pieces, bool* on_device) noexcept {
+  const std::shared_ptr<Arena> arena =
+      AcquireArena(source, experts, model_dim, hidden_dim);
+  if (arena == nullptr) return false;
+  if (pieces != nullptr) *pieces = arena->pointers;
+  if (on_device != nullptr) *on_device = arena->on_device;
+  return true;
 }
 
 void MoeArenaBytes(size_t* device_bytes, size_t* host_bytes) noexcept {
