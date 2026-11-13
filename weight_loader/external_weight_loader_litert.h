@@ -207,6 +207,10 @@ struct WeightAccess {
 using WeightInMemoryMap =
     absl::flat_hash_map<std::string, absl::Span<const std::byte>>;
 
+// Uploads the external weights of one model to WebGPU buffers on the web. Only
+// defined in web builds with WebGPU support; see below.
+class WebWeightUploader;
+
 // Creates a `WeightLoader` instance from a TFLite model flatbuffer.
 // - flatbuffer: the TFLite model flatbuffer.
 // - model_directory: the directory where the external weight files are located.
@@ -216,11 +220,16 @@ using WeightInMemoryMap =
 // - weight_in_memory_map: a map from group ID to weight data in host memory.
 //     If specified, the `WeightLoader` will use the weight data in the map
 //     in addition to the external weight files.
+// - web_weight_uploader: uploads the weights that are not in host memory to
+//     WebGPU buffers on the web. If not specified, the callback registered with
+//     `RegisterWebWeightUploadCallback()` is used instead. Ignored unless built
+//     for the web with WebGPU support.
 std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
     LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
     std::optional<std::string> model_directory = std::nullopt,
     std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source = nullptr,
-    const WeightInMemoryMap* weight_in_memory_map = nullptr);
+    const WeightInMemoryMap* weight_in_memory_map = nullptr,
+    std::shared_ptr<WebWeightUploader> web_weight_uploader = nullptr);
 
 #if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
 struct WebWeightUploadRequest {
@@ -239,7 +248,30 @@ using WebWeightUploadCallback =
     absl::Status (*)(const wgpu::Queue& queue,
                      absl::Span<const WebWeightUploadRequest> requests);
 
+// Registers the process-wide callback that uploads the external weights which
+// are not in host memory to WebGPU buffers, for models compiled without a
+// `WebWeightUploader`.
 void RegisterWebWeightUploadCallback(WebWeightUploadCallback callback);
+
+// Uploads the external weights of one model to WebGPU buffers on the web, for
+// the weights that are not in host memory (e.g. because they are streamed).
+//
+// Unlike the callback registered with `RegisterWebWeightUploadCallback()`, an
+// uploader is set per model being compiled (see
+// `litert::Options::SetWebWeightUploader()`), so it can read the weights of
+// that particular model without relying on global state.
+class WebWeightUploader {
+ public:
+  virtual ~WebWeightUploader() = default;
+
+  // Writes the `length` bytes at `offset` in the model's external weights to
+  // the start of `buffer`, using `queue`, for each request. The requests are
+  // in no particular order. WebGPU requires the size of each write to be a
+  // multiple of 4 bytes.
+  virtual absl::Status Upload(
+      const wgpu::Queue& queue,
+      absl::Span<const WebWeightUploadRequest> requests) = 0;
+};
 #endif  // defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
 
 }  // namespace weight_loader

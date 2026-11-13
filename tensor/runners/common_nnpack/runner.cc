@@ -23,6 +23,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/base/dynamic_annotations.h"  // from @com_google_absl  // IWYU pragma: keep
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -108,7 +109,10 @@ absl::Status NnpackRunner::SetInput(const TensorHandle& tensor,
   LRT_TENSOR_RETURN_IF_ERROR(Reserve(buffer_ptr, ByteSize(external_info),
                                      /*preserve_data=*/true));
   external_buffers_[value.id] = std::move(buffer_ptr);
-  value.info.shape = external_info.shape;
+  if (value.info.shape != external_info.shape) {
+    value.info.shape = external_info.shape;
+    shapes_dirty_ = true;
+  }
   return absl::OkStatus();
 }
 
@@ -159,7 +163,10 @@ absl::Status NnpackRunner::ReshapeInput(const TensorHandle& tensor,
   if ((value.flags & FlagExternalInput()) == 0) {
     return absl::InvalidArgumentError("Tensor is not marked as external input");
   }
-  value.info.shape.assign(shape.begin(), shape.end());
+  if (!absl::c_equal(value.info.shape, shape)) {
+    value.info.shape.assign(shape.begin(), shape.end());
+    shapes_dirty_ = true;
+  }
 
   if (auto it = external_buffers_.find(value.id);
       it != external_buffers_.end()) {
@@ -199,6 +206,7 @@ absl::Status NnpackRunner::PrepareRuntime() {
   if (!runtime_prepared_) {
     LRT_TENSOR_RETURN_IF_ERROR(CreateRuntime());
     runtime_prepared_ = true;
+    shapes_dirty_ = true;
   }
   return absl::OkStatus();
 }
@@ -206,14 +214,16 @@ absl::Status NnpackRunner::PrepareRuntime() {
 absl::Status NnpackRunner::Run() {
   LRT_TENSOR_RETURN_IF_ERROR(PrepareRuntime());
 
-  // Reshape inputs.
+  // Validate input buffers and, when shapes changed, propagate input shapes.
   for (auto& value : graph_->mutable_values()) {
     if ((value.flags & FlagExternalInput()) == 0) {
       continue;
     }
-    LRT_TENSOR_ASSIGN_OR_RETURN(const std::vector<size_t> dims,
-                                ToNnpackDims(value.info.shape));
-    LRT_TENSOR_RETURN_IF_ERROR(SetExternalValueShape(value.id, dims));
+    if (shapes_dirty_) {
+      LRT_TENSOR_ASSIGN_OR_RETURN(const std::vector<size_t> dims,
+                                  ToNnpackDims(value.info.shape));
+      LRT_TENSOR_RETURN_IF_ERROR(SetExternalValueShape(value.id, dims));
+    }
     std::shared_ptr<Buffer> input_buffer = external_buffers_[value.id];
     if (input_buffer == nullptr) {
       return absl::FailedPreconditionError(absl::StrFormat(
@@ -224,21 +234,30 @@ absl::Status NnpackRunner::Run() {
                                        /*preserve_data=*/true));
   }
 
-  // Reshape runtime.
-  LRT_TENSOR_RETURN_IF_ERROR(ReshapeRuntime());
+  if (shapes_dirty_) {
+    // Reshape runtime and query updated output shapes.
+    LRT_TENSOR_RETURN_IF_ERROR(ReshapeRuntime());
 
-  // Resize outputs.
+    for (auto& value : graph_->mutable_values()) {
+      if ((value.flags & FlagExternalOutput()) == 0) {
+        continue;
+      }
+      std::vector<size_t> dims;
+      LRT_TENSOR_RETURN_IF_ERROR(GetExternalValueShape(value.id, dims));
+
+      value.info.shape.clear();
+      value.info.shape.reserve(dims.size());
+      for (size_t dim : dims) {
+        value.info.shape.push_back(static_cast<int32_t>(dim));
+      }
+    }
+    shapes_dirty_ = false;
+  }
+
+  // Ensure output buffers are allocated.
   for (auto& value : graph_->mutable_values()) {
     if ((value.flags & FlagExternalOutput()) == 0) {
       continue;
-    }
-    std::vector<size_t> dims;
-    LRT_TENSOR_RETURN_IF_ERROR(GetExternalValueShape(value.id, dims));
-
-    value.info.shape.clear();
-    value.info.shape.reserve(dims.size());
-    for (size_t dim : dims) {
-      value.info.shape.push_back(static_cast<int32_t>(dim));
     }
     LRT_TENSOR_RETURN_IF_ERROR(Reserve(external_buffers_[value.id],
                                        ByteSize(value.info),

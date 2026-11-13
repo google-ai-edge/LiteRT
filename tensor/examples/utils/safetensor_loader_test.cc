@@ -27,6 +27,8 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
@@ -38,6 +40,7 @@ limitations under the License.
 namespace litert::tensor::examples {
 namespace {
 
+using ::absl_testing::StatusIs;
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::FloatEq;
@@ -802,6 +805,108 @@ TEST(SafetensorLoaderTest, LoadsAndReadsUnalignedContiguousTensors) {
                                   loader.ReadTensorAs<float>("odd_i8"));
   EXPECT_THAT(read_i8_as_f32,
               ElementsAre(FloatEq(-3.0f), FloatEq(0.0f), FloatEq(7.0f)));
+}
+
+TEST(SafetensorLoaderTest, Loads3DInt2WeightWithFloatZeroPoints) {
+  // Shape [2, 2, 4] logical 2-bit values stored as [2, 2, 1] INT8 bytes.
+  auto raw_bytes = OwningCpuBuffer::Copy<Type::kI8>({-28, 27, -28, 27});
+  auto scales = OwningCpuBuffer::Copy<Type::kFP32>({0.5f, 0.25f, 0.125f, 1.0f});
+  auto float_zps = OwningCpuBuffer::Copy<Type::kFP32>({-0.5f});
+
+  std::string json = R"({
+    "quant_method": "compressed-tensors",
+    "format": "int-quantized",
+    "config_groups": {
+      "group_0": {
+        "weights": { "num_bits": 2, "strategy": "channel" },
+        "targets": ["re:.*block_w.*"]
+      }
+    }
+  })";
+
+  SafetensorFileGuard file = CreateTempSafetensor(
+      {
+          {.name = "model.layers.0.mlp.block_w",
+           .type = Type::kI8,
+           .shape = {2, 2, 1},
+           .buffer = raw_bytes},
+          {.name = "model.layers.0.mlp.block_w.weight_scale",
+           .type = Type::kFP32,
+           .shape = {4},
+           .buffer = scales},
+          {.name = "model.layers.0.mlp.block_w.weight_zero_point",
+           .type = Type::kFP32,
+           .shape = {1},
+           .buffer = float_zps},
+      },
+      json);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(SafetensorLoader loader,
+                                  SafetensorLoader::Load(file.GetPath()));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      TensorHandle tensor,
+      loader.LoadTensor("model.layers.0.mlp.block_w"));
+
+  EXPECT_EQ(tensor.GetType(), Type::kI2);
+  EXPECT_THAT(tensor.GetShape(), ElementsAre(2, 2, 4));
+  ASSERT_NE(tensor.GetQuantization(), nullptr);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      const PerChannelAffineQuantization& pcq,
+      tensor.GetQuantization()->As<const PerChannelAffineQuantization>());
+  EXPECT_THAT(pcq.scales,
+              ElementsAre(FloatEq(0.5f), FloatEq(0.25f), FloatEq(0.125f),
+                          FloatEq(1.0f)));
+  EXPECT_TRUE(pcq.zero_points.empty());
+  EXPECT_THAT(pcq.float_zero_points, ElementsAre(FloatEq(-0.5f)));
+  EXPECT_FLOAT_EQ(pcq.ZeroPointAt(0), -0.5f);
+
+  // The packed bytes are kept as they are: signed 2-bit values from the least
+  // significant bits up (0xE4 -> 0, 1, -2, -1; 0x1B -> -1, -2, 1, 0), which
+  // XNNPACK reads as qcint2.
+  ASSERT_NE(tensor.GetBufferPtr(), nullptr);
+  const LockedBufferSpan<const int2_t> packed =
+      tensor.GetBufferPtr()->Lock().As<const int2_t>();
+  ASSERT_GE(packed.size(), 4);
+  std::vector<int> values;
+  for (size_t i = 0; i < 4; ++i) {
+    const int2_t v = packed.data()[i];
+    values.insert(values.end(), {v.a, v.b, v.c, v.d});
+  }
+  EXPECT_THAT(values, ElementsAre(0, 1, -2, -1, -1, -2, 1, 0, 0, 1, -2, -1, -1,
+                                  -2, 1, 0));
+}
+
+// The scale count of a per-channel tensor must be 1, its first dimension, or
+// the product of its leading dimensions.
+TEST(SafetensorLoaderTest, RejectsAPerChannelScaleCountOfNoChannelAxis) {
+  auto raw_bytes = OwningCpuBuffer::Copy<Type::kI8>({-28, 27, -28, 27});
+  auto scales = OwningCpuBuffer::Copy<Type::kFP32>({0.5f, 0.25f, 0.125f});
+  std::string json = R"({
+    "quant_method": "compressed-tensors",
+    "format": "int-quantized",
+    "config_groups": {
+      "group_0": {
+        "weights": { "num_bits": 2, "strategy": "channel" },
+        "targets": ["re:.*block_w.*"]
+      }
+    }
+  })";
+  SafetensorFileGuard file = CreateTempSafetensor(
+      {
+          {.name = "model.layers.0.mlp.block_w",
+           .type = Type::kI8,
+           .shape = {2, 2, 1},
+           .buffer = raw_bytes},
+          {.name = "model.layers.0.mlp.block_w.weight_scale",
+           .type = Type::kFP32,
+           .shape = {3},
+           .buffer = scales},
+      },
+      json);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(SafetensorLoader loader,
+                                  SafetensorLoader::Load(file.GetPath()));
+  EXPECT_THAT(loader.LoadTensor("model.layers.0.mlp.block_w"),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 }  // namespace
