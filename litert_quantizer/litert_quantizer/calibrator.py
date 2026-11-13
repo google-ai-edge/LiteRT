@@ -15,7 +15,7 @@
 
 """Quantization Calibration."""
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sized
 import copy
 import enum
 import json
@@ -423,7 +423,8 @@ class Calibrator:
   def _get_total_operations(self, calibration_dataset) -> int:
     """Get the total number of OPs to go through while calibrating the model."""
     data_sizes = {
-        key: len(list(dataset)) for key, dataset in calibration_dataset.items()
+        key: len(dataset) if isinstance(dataset, Sized) else 0
+        for key, dataset in calibration_dataset.items()
     }
     total_ops = 0
     for key, value in data_sizes.items():
