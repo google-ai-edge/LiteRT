@@ -279,7 +279,8 @@ class LiteRtDispatchInvocationContextT {
     return *outputs_[graph_output_index];
   }
 
-  void Setup() {
+  // Copies the attached input buffers into the graph inputs.
+  LiteRtStatus Setup() {
     const auto& const_map = example_graph_ptr_->ConstMap();
     const auto& graph_inputs = example_graph_ptr_->Inputs();
     for (int i = 0; i < inputs_.size(); ++i) {
@@ -289,27 +290,32 @@ class LiteRtDispatchInvocationContextT {
       auto* input = inputs_[i];
       LiteRtTensorBuffer buffer = device_context_->Lookup(input);
       size_t packed_size;
-      runtime_context_->get_tensor_buffer_packed_size(buffer, &packed_size);
+      LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_packed_size(
+          buffer, &packed_size));
       input->resize(packed_size / sizeof(float));
-      void* host_mem;
-      runtime_context_->lock_tensor_buffer(buffer, &host_mem,
-                                           kLiteRtTensorBufferLockModeRead);
+      void* host_mem = nullptr;
+      LITERT_RETURN_IF_ERROR(runtime_context_->lock_tensor_buffer(
+          buffer, &host_mem, kLiteRtTensorBufferLockModeRead));
       std::memcpy(input->data(), host_mem, packed_size);
-      runtime_context_->unlock_tensor_buffer(buffer);
+      LITERT_RETURN_IF_ERROR(runtime_context_->unlock_tensor_buffer(buffer));
     }
+    return kLiteRtStatusOk;
   }
 
-  void Finish() {
+  // Copies the graph outputs into the attached output buffers.
+  LiteRtStatus Finish() {
     for (auto* output : outputs_) {
       LiteRtTensorBuffer buffer = device_context_->Lookup(output);
       size_t packed_size;
-      runtime_context_->get_tensor_buffer_packed_size(buffer, &packed_size);
-      void* host_mem;
-      runtime_context_->lock_tensor_buffer(buffer, &host_mem,
-                                           kLiteRtTensorBufferLockModeWrite);
+      LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_packed_size(
+          buffer, &packed_size));
+      void* host_mem = nullptr;
+      LITERT_RETURN_IF_ERROR(runtime_context_->lock_tensor_buffer(
+          buffer, &host_mem, kLiteRtTensorBufferLockModeWrite));
       std::memcpy(host_mem, output->data(), packed_size);
-      runtime_context_->unlock_tensor_buffer(buffer);
+      LITERT_RETURN_IF_ERROR(runtime_context_->unlock_tensor_buffer(buffer));
     }
+    return kLiteRtStatusOk;
   }
 
   // Stores per-invocation options to be used for the next invocation.
@@ -615,7 +621,7 @@ LiteRtStatus InvocationContextSetOptions(
 }
 
 LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
-  invocation_context->Setup();
+  LITERT_RETURN_IF_ERROR(invocation_context->Setup());
   const auto num_inputs = invocation_context->ExampleGraph().Inputs().size();
   std::vector<Buffer> inputs(num_inputs);
   for (int i = 0; i < num_inputs; ++i) {
@@ -637,8 +643,7 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
     invocation_context->GetOutput(i) = std::move(results[i]);
   }
 
-  invocation_context->Finish();
-  return kLiteRtStatusOk;
+  return invocation_context->Finish();
 }
 
 LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
