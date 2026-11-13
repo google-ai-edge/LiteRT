@@ -106,5 +106,22 @@ TEST(MatrixDiagTest, DegenerateCase) {
   EXPECT_THAT(model.GetOutputType(), TfLiteType::kTfLiteUInt8);
 }
 
+TEST(MatrixDiagTest, RejectsUnsupportedTypes) {
+  for (TensorType type : {TensorType_BOOL, TensorType_FLOAT16}) {
+    SCOPED_TRACE(type);
+    MatrixDiagOpModel<uint8_t> model({type, {2}});
+    EXPECT_EQ(model.Invoke(), kTfLiteError);
+  }
+}
+
+TEST(MatrixDiagTest, Int64ValuesPreserved) {
+  MatrixDiagOpModel<int64_t> model({TensorType_INT64, {2}});
+  const int64_t value = int64_t{1} << 40;
+  model.PopulateTensor<int64_t>(model.input(), {value, -value});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+  EXPECT_THAT(model.GetOutputShape(), ElementsAre(2, 2));
+  EXPECT_THAT(model.GetOutput(), ElementsAre(value, 0, 0, -value));
+}
+
 }  // namespace
 }  // namespace tflite
