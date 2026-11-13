@@ -22,6 +22,22 @@ package(
 )
 
 android_local_test(
+    name = "compiled_model_acceleration_test",
+    size = "small",
+    srcs = ["java/com/google/ai/edge/litert/CompiledModelAccelerationTest.java"],
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    manifest = "AndroidManifest.xml",
+    test_class = "com.google.ai.edge.litert.CompiledModelAccelerationTest",
+    deps = [
+        "//litert/kotlin:litert_compiled_model_api",
+        "//third_party/java/junit",
+        "//third_party/java/truth",
+    ],
+)
+
+android_local_test(
     name = "compiled_model_int16_test",
     size = "small",
     srcs = ["java/com/google/ai/edge/litert/CompiledModelInt16Test.java"],

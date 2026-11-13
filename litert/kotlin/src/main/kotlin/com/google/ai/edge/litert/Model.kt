@@ -509,6 +509,30 @@ private constructor(
       return nativeGetLastInferenceDurationNanoseconds(handle)
     }
 
+  /**
+   * Returns whether the compiled model is fully accelerated with the selected hardware
+   * accelerator(s).
+   *
+   * Note: If CPU acceleration (e.g. XNNPACK) is selected or used as fallback, this method returns
+   * true if all ops were delegated to CPU/XNNPACK. Use [isNonCpuFullyAccelerated] to detect if the
+   * model was executed on non-CPU accelerators (GPU/NPU).
+   */
+  @Throws(LiteRtException::class)
+  fun isFullyAccelerated(): Boolean {
+    assertNotDestroyed()
+    return nativeIsFullyAccelerated(handle)
+  }
+
+  /**
+   * Returns whether the compiled model is fully accelerated on non-CPU hardware accelerators
+   * (e.g. 100% delegated on GPU or NPU with zero CPU execution).
+   */
+  @Throws(LiteRtException::class)
+  fun isNonCpuFullyAccelerated(): Boolean {
+    assertNotDestroyed()
+    return nativeIsNonCpuFullyAccelerated(handle)
+  }
+
   @Throws(LiteRtException::class)
   fun createInputBuffer(inputName: String, signature: String = ""): TensorBuffer {
     assertNotDestroyed()
@@ -901,6 +925,12 @@ private constructor(
 
     @JvmStatic
     private external fun nativeGetLastInferenceDurationNanoseconds(compiledModelHandle: Long): Long
+
+    @JvmStatic
+    private external fun nativeIsFullyAccelerated(compiledModelHandle: Long): Boolean
+
+    @JvmStatic
+    private external fun nativeIsNonCpuFullyAccelerated(compiledModelHandle: Long): Boolean
 
     @JvmStatic private external fun nativeDestroy(handle: Long)
   }
