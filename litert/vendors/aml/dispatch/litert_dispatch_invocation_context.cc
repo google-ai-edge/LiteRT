@@ -136,13 +136,14 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
   int err = 0;
   InitAdlaLogLevel();
   ADLA_LOGI("[AML_DELEGATE_Kernel] Start to open libnnsdk.so");
-  aml_nn_ = aml_nnsdk::AML_NNImplementation();
-  if (aml_nn_ == nullptr)
+  aml_nn_ = std::make_shared<aml_nnsdk::AML_NN>(aml_nnsdk::CreateAmlNn());
+  if (aml_nn_ == nullptr || !aml_nn_->available)
   {
     ADLA_LOGE("[AML_DELEGATE_Kernel] aml_nn create failed");
     return;
   }
-  ADLA_LOGI("[AML_DELEGATE_Kernel] aml_nn create success");
+  ADLA_LOGI("[AML_DELEGATE_Kernel] aml_nn create success AML_NN=%p",
+            aml_nn_.get());
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT()
@@ -151,7 +152,7 @@ LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT()
   if (!shared_model_key_.empty())
   {
     // Shared multi-subgraph path: drop ref; last holder destroys qcontext.
-    device_context_.ReleaseSharedAdlaModel(shared_model_key_, aml_nn_);
+    device_context_.ReleaseSharedAdlaModel(shared_model_key_, aml_nn_.get());
     shared_adla_model_.reset();
     shared_model_key_.clear();
     return;
@@ -200,7 +201,7 @@ LiteRtDispatchInvocationContextT::Create(
              dispatch_info->adla_bin_size, dispatch_info->adla_bin.size());
 
   ptr->subgraph_idx_ = dispatch_info->subgraph_idx;
-  if (!aml_nnsdk::IsNnsdk2Available(ptr->aml_nn_))
+  if (!aml_nnsdk::IsNnsdk2Available(ptr->aml_nn_.get()))
   {
     LITERT_LOG(LITERT_ERROR, "NNSDK2 symbols not available");
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -230,19 +231,29 @@ LiteRtDispatchInvocationContextT::Create(
   auto shared = device_context.AcquireSharedAdlaModel(ptr->shared_model_key_);
   if (shared != nullptr)
   {
+    if (shared->aml_nn == nullptr || shared->aml_nn->qcontext == nullptr)
+    {
+      device_context.ReleaseSharedAdlaModel(ptr->shared_model_key_,
+                                            ptr->aml_nn_.get());
+      ptr->shared_model_key_.clear();
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Shared ADLA has no AML_NN context");
+    }
     ptr->shared_adla_model_ = shared;
     ptr->use_adla_memory_ = shared->use_adla_memory;
     ptr->model_file_path_ = shared->model_file_path;
     ptr->subgraph_num_ = shared->subgraph_num;
-    ptr->aml_nn_->qcontext = shared->qcontext;
+    // Keep this model's AML_NN. Do not copy qcontext onto another model.
+    ptr->aml_nn_ = shared->aml_nn;
     LITERT_LOG(LITERT_INFO,
                "[AML Dispatch] reuse shared ADLA key=%s subgraph_idx=%d "
-               "subgraph_num=%d",
+               "subgraph_num=%d AML_NN=%p qcontext=%p",
                ptr->shared_model_key_.c_str(), ptr->subgraph_idx_,
-               ptr->subgraph_num_);
+               ptr->subgraph_num_, ptr->aml_nn_.get(), ptr->aml_nn_->qcontext);
     if (auto status = ptr->BindSubgraph(ptr->subgraph_idx_); !status)
     {
-      device_context.ReleaseSharedAdlaModel(ptr->shared_model_key_, ptr->aml_nn_);
+      device_context.ReleaseSharedAdlaModel(ptr->shared_model_key_,
+                                            ptr->aml_nn_.get());
       ptr->shared_adla_model_.reset();
       ptr->shared_model_key_.clear();
       return Unexpected(status.Error());
@@ -293,14 +304,38 @@ LiteRtDispatchInvocationContextT::Create(
     return Unexpected(status.Error());
   }
 
+  pending_shared->aml_nn = ptr->aml_nn_;
   pending_shared->qcontext = ptr->aml_nn_->qcontext;
   pending_shared->subgraph_num = ptr->subgraph_num_;
+  ADLA_LOGI("[AML Dispatch] loaded model key=%s AML_NN=%p qcontext=%p",
+            ptr->shared_model_key_.c_str(), ptr->aml_nn_.get(),
+            ptr->aml_nn_->qcontext);
   ptr->shared_adla_model_ =
       device_context.RegisterSharedAdlaModel(std::move(pending_shared));
   if (ptr->shared_adla_model_ == nullptr)
   {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to register shared ADLA model");
+  }
+  if (ptr->shared_adla_model_->aml_nn != ptr->aml_nn_)
+  {
+    // Another loader registered this key first. Drop our context and use theirs.
+    if (ptr->aml_nn_ != nullptr && ptr->aml_nn_->qcontext != nullptr &&
+        ptr->aml_nn_->nnsdk2_func_ptr.destroy != nullptr)
+    {
+      ptr->aml_nn_->nnsdk2_func_ptr.destroy(ptr->aml_nn_->qcontext);
+      ptr->aml_nn_->qcontext = nullptr;
+    }
+    ptr->aml_nn_ = ptr->shared_adla_model_->aml_nn;
+    ptr->subgraph_num_ = ptr->shared_adla_model_->subgraph_num;
+    if (auto status = ptr->BindSubgraph(ptr->subgraph_idx_); !status)
+    {
+      device_context.ReleaseSharedAdlaModel(ptr->shared_model_key_,
+                                            ptr->aml_nn_.get());
+      ptr->shared_adla_model_.reset();
+      ptr->shared_model_key_.clear();
+      return Unexpected(status.Error());
+    }
   }
 
   return litert::Expected<Ptr>(std::move(ptr));
@@ -389,7 +424,7 @@ Expected<void> LiteRtDispatchInvocationContextT::CreateModel(int subgraph_idx)
 
   // Match NNSDK sample: query AMLNN_QUERY_SUBGRAPH_NUM after amlnn_init.
   subgraph_num_ = 1;
-  if (aml_nnsdk::Nnsdk2QuerySubgraphNum(aml_nn_, ctx, &subgraph_num_) < 0)
+  if (aml_nnsdk::Nnsdk2QuerySubgraphNum(aml_nn_.get(), ctx, &subgraph_num_) < 0)
   {
     ADLA_LOGE("[AML Dispatch] query subgraph num fail");
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -412,7 +447,7 @@ Expected<void> LiteRtDispatchInvocationContextT::BindSubgraph(int subgraph_idx)
   void* ctx = aml_nn_->qcontext;
 
   // Match NNSDK sample: amlnn_select_subgraph then query IO for that subgraph.
-  if (aml_nnsdk::Nnsdk2SelectSubgraphIfNeeded(aml_nn_, ctx, subgraph_idx_,
+  if (aml_nnsdk::Nnsdk2SelectSubgraphIfNeeded(aml_nn_.get(), ctx, subgraph_idx_,
                                            subgraph_num_) < 0)
   {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -746,7 +781,7 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
 Expected<void> LiteRtDispatchInvocationContextT::ExecuteModel()
 {
   // Ensure the active subgraph matches this partition before set/run/get.
-  if (aml_nnsdk::Nnsdk2SelectSubgraphIfNeeded(aml_nn_, aml_nn_->qcontext,
+  if (aml_nnsdk::Nnsdk2SelectSubgraphIfNeeded(aml_nn_.get(), aml_nn_->qcontext,
                                            subgraph_idx_, subgraph_num_) < 0)
   {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,

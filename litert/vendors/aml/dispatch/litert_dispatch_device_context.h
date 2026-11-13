@@ -42,7 +42,8 @@ class LiteRtDispatchInvocationContextT;
  * @var model_key       Key = model_path + "|" + model_names.
  * @var adla_bin        Embedded ADLA bytes (may be empty for path-based load).
  * @var adla_bin_size   Valid byte count of @c adla_bin.
- * @var qcontext        Shared NNSDK2 context from @c amlnn_init.
+ * @var qcontext        This model's NNSDK2 context from @c amlnn_init.
+ * @var aml_nn          This model's AML_NN. qcontext lives here, not in a singleton.
  * @var use_adla_memory True if loaded from memory; false if from file path.
  * @var model_file_path Fallback / diagnostic .adla path.
  * @var subgraph_num    Queried NNSDK2 subgraph count (AMLNN_QUERY_SUBGRAPH_NUM).
@@ -53,6 +54,7 @@ struct AmlSharedAdlaModel {
   std::vector<uint8_t> adla_bin;
   size_t adla_bin_size = 0;
   void* qcontext = nullptr;
+  std::shared_ptr<aml_nnsdk::AML_NN> aml_nn;
   bool use_adla_memory = false;
   std::string model_file_path;
   int subgraph_num = 1;

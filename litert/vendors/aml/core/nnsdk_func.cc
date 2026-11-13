@@ -95,6 +95,12 @@ AML_NN* AML_NNImplementation() {
   return &aml_nn;
 }
 
+AML_NN CreateAmlNn() {
+  AML_NN aml_nn = load_nnsdk_func();
+  aml_nn.qcontext = nullptr;
+  return aml_nn;
+}
+
 bool IsNnsdk2Available(const AML_NN* aml_nn) {
   return aml_nn != nullptr && aml_nn->available;
 }

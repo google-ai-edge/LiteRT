@@ -155,17 +155,21 @@ void LiteRtDispatchDeviceContextT::ReleaseSharedAdlaModel(
     return;
   }
 
-  // Last holder: destroy the shared NPU context and drop the registry entry.
-  if (model->qcontext != nullptr && aml_nn != nullptr)
+  // Last holder: destroy this model's NPU context. Prefer the AML_NN that
+  // owns the qcontext so another model's handle is left alone.
+  aml_nnsdk::AML_NN* owner =
+      (model->aml_nn != nullptr) ? model->aml_nn.get() : aml_nn;
+  if (model->qcontext != nullptr && owner != nullptr)
   {
-    ADLA_LOGI("[AML Dispatch] amlnn_destroy (shared)");
-    if (aml_nn->nnsdk2_func_ptr.destroy != nullptr)
+    ADLA_LOGI("[AML Dispatch] amlnn_destroy (shared) AML_NN=%p qcontext=%p",
+              owner, model->qcontext);
+    if (owner->nnsdk2_func_ptr.destroy != nullptr)
     {
-      aml_nn->nnsdk2_func_ptr.destroy(model->qcontext);
+      owner->nnsdk2_func_ptr.destroy(model->qcontext);
     }
-    if (aml_nn->qcontext == model->qcontext)
+    if (owner->qcontext == model->qcontext)
     {
-      aml_nn->qcontext = nullptr;
+      owner->qcontext = nullptr;
     }
     model->qcontext = nullptr;
   }

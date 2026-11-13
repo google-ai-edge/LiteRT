@@ -117,7 +117,7 @@ private:
     Aml_GraphHandle_t graph_handle_;
     int graph_index_;
 
-    aml_nnsdk::AML_NN *aml_nn_ = nullptr;
+    std::shared_ptr<aml_nnsdk::AML_NN> aml_nn_;
     bool use_adla_memory_ = false;          /**< Load ADLA from memory vs file. */
     std::string model_file_path_;           /**< Fallback .adla path for path load. */
     std::string shared_model_key_;          /**< MakeAdlaModelKey(path, names). */
