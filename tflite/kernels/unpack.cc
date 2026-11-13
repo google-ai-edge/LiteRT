@@ -15,6 +15,8 @@ limitations under the License.
 
 #include <stdint.h>
 
+#include <limits>
+
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/reference/reference_ops.h"
@@ -22,6 +24,7 @@ limitations under the License.
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/util.h"
 
 namespace tflite {
 namespace ops {
@@ -40,7 +43,9 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   const TfLiteTensor* input;
   TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, kInputTensor, &input));
-  TF_LITE_ENSURE(context, NumElements(input) > 0);
+  int input_elements;
+  TF_LITE_ENSURE_OK(context, CheckedNumElements(input, input_elements));
+  TF_LITE_ENSURE(context, input_elements > 0);
   int axis = data->axis;
   TF_LITE_ENSURE(context, axis >= INT16_MIN && axis <= INT16_MAX);
   if (axis < 0) {
@@ -62,6 +67,19 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   const TfLiteIntArray* input_shape = input->dims;
   // Num should be equal to the shape[axis].
+  TF_LITE_ENSURE(context, data->num > 0);
+  TF_LITE_ENSURE_EQ(context, data->num, input_shape->data[axis]);
+  for (int i = 0; i < data->num; ++i) {
+    TfLiteTensor* output;
+    TF_LITE_ENSURE_OK(context, GetOutputSafe(context, node, i, &output));
+    TF_LITE_ENSURE_TYPES_EQ(context, output->type, input->type);
+    // Guarantee input/output quantization params match as we do not support
+    // rescaling of unpacked quantized tensors.
+    TF_LITE_ENSURE_EQ(context, input->params.zero_point,
+                      output->params.zero_point);
+    TF_LITE_ENSURE_EQ(context, input->params.scale, output->params.scale);
+  }
+
   // Resize outputs. rank will be R - 1.
   TfLiteIntArray* output_shape = TfLiteIntArrayCreate(NumDimensions(input) - 1);
   int o = 0;
@@ -71,19 +89,16 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     }
   }
 
-  TF_LITE_ENSURE_EQ(context, data->num, input_shape->data[axis]);
   for (int i = 0; i < data->num; ++i) {
-    TfLiteIntArray* copied_output_shape = TfLiteIntArrayCopy(output_shape);
     TfLiteTensor* output;
     TF_LITE_ENSURE_OK(context, GetOutputSafe(context, node, i, &output));
-    TF_LITE_ENSURE_TYPES_EQ(context, output->type, input->type);
-    // Guarantee input/output quantization params match as we do not support
-    // rescaling of unpacked quantized tensors.
-    TF_LITE_ENSURE_EQ(context, input->params.zero_point,
-                      output->params.zero_point);
-    TF_LITE_ENSURE_EQ(context, input->params.scale, output->params.scale);
-    TF_LITE_ENSURE_OK(
-        context, context->ResizeTensor(context, output, copied_output_shape));
+    TfLiteIntArray* copied_output_shape = TfLiteIntArrayCopy(output_shape);
+    const TfLiteStatus resize_status =
+        context->ResizeTensor(context, output, copied_output_shape);
+    if (resize_status != kTfLiteOk) {
+      TfLiteIntArrayFree(output_shape);
+      return resize_status;
+    }
   }
 
   TfLiteIntArrayFree(output_shape);
@@ -91,8 +106,21 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 }
 
 template <typename T>
-void UnpackImpl(TfLiteContext* context, TfLiteNode* node,
-                const TfLiteTensor* input, int output_count, int axis) {
+TfLiteStatus UnpackImpl(TfLiteContext* context, TfLiteNode* node,
+                       const TfLiteTensor* input, int output_count, int axis,
+                       int input_elements) {
+  TF_LITE_ENSURE(context, static_cast<size_t>(input_elements) <=
+                              std::numeric_limits<size_t>::max() / sizeof(T));
+  const size_t input_bytes = static_cast<size_t>(input_elements) * sizeof(T);
+  TF_LITE_ENSURE(context, input->bytes >= input_bytes);
+  TF_LITE_ENSURE(context, GetTensorData<T>(input) != nullptr);
+  const size_t output_bytes = input_bytes / output_count;
+  for (int i = 0; i < output_count; ++i) {
+    TfLiteTensor* output;
+    TF_LITE_ENSURE_OK(context, GetOutputSafe(context, node, i, &output));
+    TF_LITE_ENSURE(context, output->bytes >= output_bytes);
+    TF_LITE_ENSURE(context, GetTensorData<T>(output) != nullptr);
+  }
   tflite::UnpackParams op_params;
   op_params.axis = static_cast<int16_t>(axis);
   op_params.num_split = output_count;
@@ -100,35 +128,58 @@ void UnpackImpl(TfLiteContext* context, TfLiteNode* node,
   reference_ops::Unpack<T>(op_params, GetTensorShape(input),
                            GetTensorData<T>(input), **all_outputs.shapes(),
                            all_outputs.data());
+  return kTfLiteOk;
 }
 
 TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   const TfLiteUnpackParams* data =
       reinterpret_cast<TfLiteUnpackParams*>(node->builtin_data);
 
+  TF_LITE_ENSURE_EQ(context, NumInputs(node), 1);
+  TF_LITE_ENSURE(context, data->num > 0);
+  TF_LITE_ENSURE_EQ(context, NumOutputs(node), data->num);
+
   const TfLiteTensor* input;
   TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, kInputTensor, &input));
+  int input_elements;
+  TF_LITE_ENSURE_OK(context, CheckedNumElements(input, input_elements));
+  TF_LITE_ENSURE(context, input_elements > 0);
   int axis = data->axis;
   if (axis < 0) {
     axis += NumDimensions(input);
   }
   TF_LITE_ENSURE(context, axis >= 0 && axis < NumDimensions(input));
   TF_LITE_ENSURE(context, axis <= INT16_MAX);
+  TF_LITE_ENSURE_EQ(context, SizeOfDimension(input, axis), data->num);
+
+  const int expected_output_elements = input_elements / data->num;
+  for (int i = 0; i < data->num; ++i) {
+    TfLiteTensor* output;
+    TF_LITE_ENSURE_OK(context, GetOutputSafe(context, node, i, &output));
+    TF_LITE_ENSURE_TYPES_EQ(context, output->type, input->type);
+    int output_elements;
+    TF_LITE_ENSURE_OK(context, CheckedNumElements(output, output_elements));
+    TF_LITE_ENSURE_EQ(context, output_elements, expected_output_elements);
+  }
   switch (TfLiteTypeGetSizeBits(input->type)) {
     case 8: {
-      UnpackImpl<uint8_t>(context, node, input, data->num, axis);
+      TF_LITE_ENSURE_OK(context, UnpackImpl<uint8_t>(context, node, input,
+                                                   data->num, axis, input_elements));
       break;
     }
     case 16: {
-      UnpackImpl<uint16_t>(context, node, input, data->num, axis);
+      TF_LITE_ENSURE_OK(context, UnpackImpl<uint16_t>(context, node, input,
+                                                    data->num, axis, input_elements));
       break;
     }
     case 32: {
-      UnpackImpl<uint32_t>(context, node, input, data->num, axis);
+      TF_LITE_ENSURE_OK(context, UnpackImpl<uint32_t>(context, node, input,
+                                                    data->num, axis, input_elements));
       break;
     }
     case 64: {
-      UnpackImpl<uint64_t>(context, node, input, data->num, axis);
+      TF_LITE_ENSURE_OK(context, UnpackImpl<uint64_t>(context, node, input,
+                                                    data->num, axis, input_elements));
       break;
     }
     default: {
