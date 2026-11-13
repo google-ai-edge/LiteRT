@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -153,5 +155,111 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/core:environment",
+    ],
+)
+
+cc_binary(
+    name = "fake_webgpu_accelerator.so",
+    testonly = 1,
+    srcs = ["fake_gpu_accelerators.cc"],
+    copts = ["-DFAKE_WEBGPU"],
+    linkshared = 1,
+    tags = [
+        "manual",
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_accelerator_def",
+        "//litert/c/internal:litert_runtime_context_header",
+    ],
+)
+
+cc_binary(
+    name = "fake_opencl_accelerator.so",
+    testonly = 1,
+    srcs = ["fake_gpu_accelerators.cc"],
+    linkshared = 1,
+    tags = [
+        "manual",
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_accelerator_def",
+        "//litert/c/internal:litert_runtime_context_header",
+    ],
+)
+
+cc_binary(
+    name = "fake_unsupported_accelerator.so",
+    testonly = 1,
+    srcs = ["fake_gpu_accelerators.cc"],
+    copts = ["-DFAKE_UNSUPPORTED"],
+    linkshared = 1,
+    tags = [
+        "manual",
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_accelerator_def",
+        "//litert/c/internal:litert_runtime_context_header",
+    ],
+)
+
+cc_test(
+    name = "gpu_registry_test",
+    srcs = ["gpu_registry_test.cc"],
+    data = [
+        ":fake_opencl_accelerator.so",
+        ":fake_unsupported_accelerator.so",
+        ":fake_webgpu_accelerator.so",
+    ],
+    tags = [
+        "noios",
+        "nomacos",
+        "nowindows",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gpu_registry",
+        ":gpu_static_registry",
+        "@com_google_googletest//:gtest_main",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c/internal:litert_accelerator_def",
+        "//litert/c/internal:litert_runtime_context_header",
+        # Required at link time by :registration_helper when not linking full libLiteRt.so.
+        "//litert/c/internal:litert_tensor_buffer_registry",
+        "//litert/cc:litert_expected",
+        "//litert/core:environment",
+        "//litert/test:common",
     ],
 )
