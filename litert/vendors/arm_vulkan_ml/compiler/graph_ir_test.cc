@@ -475,6 +475,88 @@ TEST(GraphOptimizer,
     EXPECT_FALSE(graph.nodes[0].removed);
   }
 }
+
+TEST(GraphOptimizer,
+     RealZeroSpatialPadFoldsAcrossMultiBranchChannelSlicesIntoGroupedConvs) {
+  CompilerGraph graph;
+  // v0: input [1, 4, 4, 2]
+  // v1: padded [1, 6, 6, 2]
+  // v2: slice0 [1, 6, 6, 1]
+  // v3: slice1 [1, 6, 6, 1]
+  // v4: conv0 [1, 4, 4, 2]
+  // v5: conv1 [1, 4, 4, 2]
+  graph.values = {Value({1, 4, 4, 2}), Value({1, 6, 6, 2}),
+                  Value({1, 6, 6, 1}), Value({1, 6, 6, 1}),
+                  Value({1, 4, 4, 2}), Value({1, 4, 4, 2})};
+  graph.inputs = {0};
+  graph.outputs = {4, 5};
+  graph.values[0].graph_input = true;
+  graph.values[4].graph_output = true;
+  graph.values[5].graph_output = true;
+  graph.original_operator_count = 5;
+
+  GraphNode pad = Shape(0, 1, 0, graph.values[0], graph.values[1], {});
+  pad.body.code = kLiteRtOpCodeTflPad;
+  pad.body.pad_value = -17;
+  pad.body.parameters = {0, 0, 1, 1, 1, 1, 0, 0};
+
+  auto make_slice = [&](ValueId out_id, size_t src, int32_t c_start) {
+    GraphNode slice =
+        Shape(1, out_id, src, graph.values[1], graph.values[out_id], {});
+    slice.body.code = kLiteRtOpCodeTflSlice;
+    slice.body.kernel = {0, 0, 0, c_start};
+    slice.body.parameters = {1, 6, 6, 1};
+    return slice;
+  };
+  auto make_conv = [&](ValueId in_id, ValueId out_id, size_t src) {
+    Conv2dSpec spec{};
+    spec.input_shape = {1, 6, 6, 1};
+    spec.weight_shape = {2, 3, 3, 1};
+    spec.output_shape = {1, 4, 4, 2};
+    spec.stride = {1, 1};
+    spec.dilation = {1, 1};
+    spec.weights.assign(18, 1);
+    spec.bias = {0, 0};
+    spec.input_scale = .125;
+    spec.output_scale = .25;
+    spec.weight_scales = {.5, .5};
+    spec.bias_scales = {.0625, .0625};
+    spec.input_zero_point = -17;
+    spec.output_zero_point = -17;
+    spec.activation = Activation::kNone;
+    std::string reason;
+    std::optional<Conv2dPlan> analyzed = AnalyzeConv2d(spec, reason);
+    EXPECT_TRUE(analyzed) << reason;
+    GraphNode conv = Shape(in_id, out_id, src, graph.values[in_id],
+                           graph.values[out_id], {});
+    conv.kind = CompositeKind::kConvolution;
+    conv.body.code = kLiteRtOpCodeTflConv2d;
+    conv.body.convolution = std::move(analyzed);
+    return conv;
+  };
+
+  graph.nodes = {pad, make_slice(2, 1, 0), make_slice(3, 2, 1),
+                 make_conv(2, 4, 3), make_conv(3, 5, 4)};
+
+  std::string reason;
+  OptimizationReport report;
+  ASSERT_TRUE(OptimizeGraph(graph, &report, reason)) << reason;
+  EXPECT_TRUE(graph.nodes[0].removed);
+  for (size_t slice_idx : {1u, 2u}) {
+    EXPECT_FALSE(graph.nodes[slice_idx].removed);
+    EXPECT_EQ(graph.nodes[slice_idx].inputs[0], 0);
+    EXPECT_EQ(graph.nodes[slice_idx].body.parameters,
+              (std::vector<int32_t>{1, 4, 4, 1}));
+    EXPECT_EQ(graph.values[graph.nodes[slice_idx].outputs[0]].shape,
+              (std::vector<uint32_t>{1, 4, 4, 1}));
+  }
+  for (size_t conv_idx : {3u, 4u}) {
+    EXPECT_FALSE(graph.nodes[conv_idx].removed);
+    const auto& folded = *graph.nodes[conv_idx].body.convolution;
+    EXPECT_EQ(folded.spec.padding, (std::array<int32_t, 4>{1, 1, 1, 1}));
+    EXPECT_EQ(folded.spec.input_shape, (std::array<uint32_t, 4>{1, 4, 4, 1}));
+  }
+}
 TEST(GraphOptimizer, PersistentValuesAreFusionAndCleanupBarriers) {
   auto graph = Chain(Clamp(Value(), -10, 50), Clamp(Value(), 0, 30));
   graph.values[1].persistent = true;
