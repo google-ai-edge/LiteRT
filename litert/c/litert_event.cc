@@ -75,7 +75,7 @@ LiteRtStatus LiteRtCreateEventFromOpenClEvent(LiteRtEnvironment env,
 }
 
 LiteRtStatus LiteRtGetEventEventType(LiteRtEvent event, LiteRtEventType* type) {
-  if (!event || !type) {
+  if (!event || type) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   *type = event->type;
