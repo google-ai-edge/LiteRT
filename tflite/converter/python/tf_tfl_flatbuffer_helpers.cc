@@ -24,31 +24,19 @@ limitations under the License.
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "llvm/Support/ToolOutputFile.h"
-#include "llvm/Support/raw_ostream.h"
-#include "mlir/Dialect/Func/Extensions/AllExtensions.h"  // from @llvm-project
-#include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
-#include "mlir/Dialect/Quant/IR/Quant.h"  // from @llvm-project
 #include "mlir/IR/BuiltinAttributes.h"  // from @llvm-project
-#include "mlir/IR/BuiltinDialect.h"  // from @llvm-project
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
 #include "mlir/IR/MLIRContext.h"  // from @llvm-project
 #include "mlir/IR/OwningOpRef.h"  // from @llvm-project
 #include "mlir/Parser/Parser.h"  // from @llvm-project
-#include "mlir/Support/FileUtilities.h"  // from @llvm-project
 #include "mlir/Support/LLVM.h"  // from @llvm-project
 #include "mlir/Support/WalkResult.h"  // from @llvm-project
-#include "stablehlo/dialect/StablehloOps.h"  // from @stablehlo
-#include "stablehlo/dialect/VhloOps.h"  // from @stablehlo
 #include "tflite/converter/common/tfl_pass_config.h"
 #include "tflite/converter/converter_flags.pb.h"
 #include "tflite/converter/ir/tfl_ops.h"
 #include "tflite/converter/model_flags.pb.h"
-#include "tflite/converter/python/slim_model_importer.h"
-#include "tflite/converter/python/stablehlo_tfl_pipeline.h"
 #include "tflite/converter/quantization/common/quantization_lib/quantization_config.h"
+#include "tflite/converter/quantization/common/quantization_lib/tf_quantization_config.h"
 #include "tflite/converter/tf_to_tfl_flatbuffer.h"
 #include "tflite/converter/tools/optimize/reduced_precision_metadata.h"
 #include "tflite/converter/transforms/passes.h"
@@ -235,14 +223,16 @@ absl::Status PopulateQuantizationSpecs(
     std::vector<std::optional<std::vector<int>>>* node_shapes,
     std::vector<std::optional<double>>* node_mins,
     std::vector<std::optional<double>>* node_maxs) {
-  quant_specs->inference_input_type =
+  const DataType inference_input_type =
       ConvertIODataTypeToDataType(converter_flags.inference_input_type());
+  quant_specs->inference_input_type =
+      mlir::TFL::ConvertDataTypeToInferenceDataType(inference_input_type);
   DataType inference_type =
       ConvertIODataTypeToDataType(converter_flags.inference_type());
   // Use non-float flag `inference_input_type` to override the `inference_type`
   // because we have to apply quantization to satisfy that.
-  if (quant_specs->inference_input_type != DT_FLOAT) {
-    inference_type = quant_specs->inference_input_type;
+  if (inference_input_type != DT_FLOAT) {
+    inference_type = inference_input_type;
   }
 
   for (auto& flag : model_flags.input_arrays()) {
@@ -291,11 +281,11 @@ absl::Status PopulateQuantizationSpecs(
     quant_specs->disable_per_channel =
         converter_flags.disable_per_channel_quantization();
     if (converter_flags.quantize_to_float16()) {
-      quant_specs->inference_type = DT_HALF;
-      quant_specs->inference_input_type = DT_HALF;
+      quant_specs->inference_type = mlir::TFL::InferenceDataType::kHalf;
+      quant_specs->inference_input_type = mlir::TFL::InferenceDataType::kHalf;
     } else {
-      quant_specs->inference_type = DT_QINT8;
-      quant_specs->inference_input_type = DT_QINT8;
+      quant_specs->inference_type = mlir::TFL::InferenceDataType::kQInt8;
+      quant_specs->inference_input_type = mlir::TFL::InferenceDataType::kQInt8;
     }
   } else {
     // These flags are incompatible with post_training_quantize() as only
@@ -370,55 +360,6 @@ absl::Status ConvertMLIRToTFLiteFlatBuffer(
       /*export_to_mlir=*/false, quantization_py_function_lib);
 
   return status;
-}
-
-absl::Status ConvertMlirBytecodeToTFLite(
-    tflite::ConverterFlags& converter_flags, absl::string_view model_dir,
-    llvm::raw_pwrite_stream& export_stream) {
-  mlir::DialectRegistry registry;
-  registry
-      .insert<mlir::BuiltinDialect, mlir::func::FuncDialect,
-              mlir::stablehlo::StablehloDialect, mlir::vhlo::VhloDialect,
-              mlir::TFL::TensorFlowLiteDialect, mlir::quant::QuantDialect>();
-  auto context = std::make_unique<mlir::MLIRContext>(registry);
-  context->loadAllAvailableDialects();
-
-  auto module_or = LoadSlimModel(model_dir, context.get());
-  if (!module_or.ok()) return module_or.status();
-  auto module = std::move(module_or).value();
-
-  mlir::TFL::QuantizationSpecs quant_specs;
-  quant_specs.qdq_conversion_mode = mlir::TFL::QDQConversionMode::kQDQStrict;
-
-  mlir::TFL::PassConfig pass_config(quant_specs);
-  pass_config.fold_fp16_resource_casts =
-      converter_flags.fold_fp16_resource_casts();
-  pass_config.unfold_batch_matmul = converter_flags.unfold_batchmatmul();
-  pass_config.fold_fp16_casts_into_fully_connected =
-      converter_flags.fold_fp16_casts_into_fully_connected();
-
-  return mlir::TFL::ConvertStableHloToTFLite(*module, converter_flags,
-                                             pass_config, export_stream);
-}
-
-absl::Status ConvertMlirBytecodeToTFLite(
-    tflite::ConverterFlags& converter_flags, absl::string_view model_dir,
-    absl::string_view output_file_path) {
-  std::string error_msg;
-  auto output = mlir::openOutputFile(output_file_path, &error_msg);
-  if (!output) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Failed to open output file: ", error_msg));
-  }
-  auto status =
-      ConvertMlirBytecodeToTFLite(converter_flags, model_dir, output->os());
-  if (!status.ok()) return status;
-  output->os().close();
-  if (output->os().has_error()) {
-    return absl::InternalError("Error writing to output file.");
-  }
-  output->keep();
-  return absl::OkStatus();
 }
 
 void WarningUnusedFlags(const tflite::ModelFlags& model_flags,

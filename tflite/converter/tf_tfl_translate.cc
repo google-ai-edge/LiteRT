@@ -49,6 +49,7 @@ limitations under the License.
 #include "tflite/converter/flatbuffer_export_flags.h"
 #include "tflite/converter/ir/tfl_ops.h"
 #include "tflite/converter/quantization/common/quantization_lib/quantization_config.h"
+#include "tflite/converter/quantization/common/quantization_lib/tf_quantization_config.h"
 #include "tflite/converter/tf_tfl_translate_cl.h"
 #include "tflite/converter/tf_to_tfl_flatbuffer.h"
 #include "tflite/converter/transforms/passes.h"
@@ -200,9 +201,9 @@ int main(int argc, char **argv) {
   if (weight_quantization != "NONE") {
     quant_specs.weight_quantization = true;
     if (weight_quantization == "INT8") {
-      quant_specs.inference_type = tensorflow::DT_QINT8;
+      quant_specs.inference_type = mlir::TFL::InferenceDataType::kQInt8;
     } else if (weight_quantization == "FLOAT16") {
-      quant_specs.inference_type = tensorflow::DT_HALF;
+      quant_specs.inference_type = mlir::TFL::InferenceDataType::kHalf;
     } else {
       llvm::errs() << "Unknown weight quantization " << weight_quantization;
       return kTrFailure;
