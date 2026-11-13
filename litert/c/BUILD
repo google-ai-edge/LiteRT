@@ -794,6 +794,7 @@ cc_test(
         "//litert/cc:litert_buffer_ref",
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
+        "//litert/core/util:flatbuffer_tools",
         "//litert/test:matchers",
         "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/strings:string_view",

@@ -249,6 +249,32 @@ TEST(CompiledModelTest, CpuRuntimeSignatureSelectionStillExecutes) {
               Pointwise(FloatNear(1e-5), kTestOutputTensor));
 }
 
+TEST(CompiledModelTest, CpuSignatureSelectionRunsControlFlowModel) {
+  // main: WHILE(cond, body) -> MUL.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model, Model::CreateFromFile(env, testing::GetTestFilePath(
+                                                 "tfl_while_region.tflite")));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signature, model.GetSignature(0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  options.SetHardwareAccelerators(HwAccelerators::kCpu);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& runtime_options,
+                              options.GetRuntimeOptions());
+  const StringView selected[] = {signature.Key()};
+  LITERT_ASSERT_OK(runtime_options.SetSelectedSignatures(selected));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled, CompiledModelTestPeer::Create(env, model.Get(), options));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, compiled.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, compiled.CreateOutputBuffers());
+  ASSERT_THAT(inputs, SizeIs(2));
+  LITERT_ASSERT_OK(inputs[0].Write<int32_t>({2}));
+  LITERT_ASSERT_OK(inputs[1].Write<float>({1.0f, 2.0f, 3.0f, 4.0f}));
+  LITERT_ASSERT_OK(compiled.Run(inputs, outputs));
+  std::array<float, 4> output;
+  LITERT_ASSERT_OK(outputs[0].Read(absl::MakeSpan(output)));
+  EXPECT_THAT(output, ElementsAre(1.0f, 32.0f, 243.0f, 1024.0f));
+}
+
 TEST(CompiledModelTest, Basic) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
