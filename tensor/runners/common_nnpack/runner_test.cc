@@ -116,6 +116,9 @@ class TestRunner : public NnpackRunner {
     poison_output_on_invoke_ = poison;
   }
 
+  // Number of `ReshapeRuntime` calls so far.
+  int reshape_count() const { return reshape_count_; }
+
   // Returns the graph information associated to `tensor`.
   const graph::TensorInformation& InfoOf(const TensorHandle& tensor) const {
     const absl::StatusOr<size_t> index = graph().Lookup(tensor);
@@ -139,6 +142,7 @@ class TestRunner : public NnpackRunner {
   }
 
   absl::Status ReshapeRuntime() override {
+    ++reshape_count_;
     return StatusOf(Hook::kReshapeRuntime);
   }
 
@@ -193,6 +197,7 @@ class TestRunner : public NnpackRunner {
 
   std::array<absl::Status, static_cast<size_t>(Hook::kNumHooks)> hook_statuses_;
   bool poison_output_on_invoke_ = false;
+  int reshape_count_ = 0;
   TensorHandle input_ = TensorHandle::Invalid();
   TensorHandle output_ = TensorHandle::Invalid();
   std::vector<size_t> input_dims_;
@@ -566,6 +571,57 @@ TEST(ReshapeInputTest, NewShapeIsUsedByRun) {
   EXPECT_THAT(
       runner.ReadOutputAs<float>(runner.Output()),
       IsOkAndHolds(ElementsAre(1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f)));
+}
+
+// `Run` reshapes the runtime on the first run and after a shape change only.
+TEST(ReshapeInputTest, RunReshapesTheRuntimeOnlyWhenAShapeChanged) {
+  TestRunner runner = MakeTestRunner();
+  const std::vector<int32_t> four = {4};
+  const std::vector<int32_t> eight = {8};
+  std::vector<float> data = {1.f, 2.f, 3.f, 4.f};
+  ASSERT_THAT(runner.ReshapeInput(runner.Input(), four), IsOk());
+  ASSERT_THAT(runner.SetInputAsCopy(runner.Input(), data), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  EXPECT_EQ(runner.reshape_count(), 1);
+  EXPECT_THAT(runner.InfoOf(runner.Output()).shape, ElementsAre(4));
+
+  // The same shape again: no reshape, and the new data still reaches the
+  // output.
+  data = {5.f, 6.f, 7.f, 8.f};
+  ASSERT_THAT(runner.ReshapeInput(runner.Input(), four), IsOk());
+  ASSERT_THAT(runner.SetInputAsCopy(runner.Input(), data), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  EXPECT_EQ(runner.reshape_count(), 1);
+  EXPECT_THAT(runner.ReadOutputAs<float>(runner.Output()),
+              IsOkAndHolds(ElementsAre(5.f, 6.f, 7.f, 8.f)));
+
+  // A new shape: reshaped, and the output follows.
+  data = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f};
+  ASSERT_THAT(runner.ReshapeInput(runner.Input(), eight), IsOk());
+  ASSERT_THAT(runner.SetInputAsCopy(runner.Input(), data), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  EXPECT_EQ(runner.reshape_count(), 2);
+  EXPECT_THAT(runner.InfoOf(runner.Output()).shape, ElementsAre(8));
+  EXPECT_THAT(
+      runner.ReadOutputAs<float>(runner.Output()),
+      IsOkAndHolds(ElementsAre(1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f)));
+
+  // A shape change through `SetInput` with a tensor also reshapes.
+  const std::vector<float> two = {9.f, 10.f};
+  const TensorHandle external({.name = "external",
+                               .type = Type::kFP32,
+                               .shape = {2},
+                               .buffer = two});
+  ASSERT_THAT(runner.SetInput(runner.Input(), external), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  EXPECT_EQ(runner.reshape_count(), 3);
+  EXPECT_THAT(runner.InfoOf(runner.Output()).shape, ElementsAre(2));
+  // Output buffers are not shrunk, so only the first 2 values are the output.
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const LockedBufferSpan<const float> out,
+                       runner.ReadOutputAs<float>(runner.Output()));
+  ASSERT_GE(out.size(), 2);
+  EXPECT_EQ(out.data()[0], 9.f);
+  EXPECT_EQ(out.data()[1], 10.f);
 }
 
 TEST(ReshapeInputTest, GrowsAnOwningInputBuffer) {

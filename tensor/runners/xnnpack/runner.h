@@ -137,6 +137,7 @@ class XnnpackRunner : public NnpackRunner {
   xnn_weights_cache_t weights_cache_ = nullptr;
   xnn_workspace_t workspace_ = nullptr;
   pthreadpool_t threadpool_ = nullptr;
+  bool profile_logged_ = false;
 };
 
 }  // namespace litert::tensor
