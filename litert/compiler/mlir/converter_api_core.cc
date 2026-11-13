@@ -182,8 +182,9 @@ GetTFLConverterFlagsAndPassConfig(mlir::ModuleOp module_op,
       return absl::InvalidArgumentError(absl::StrCat(
           "Unknown model origin framework: ", config.model_origin_framework));
     }
-    converter_flags.set_unsafe_single_batch_rank_reduction(
-        config.unsafe_single_batch_rank_reduction);
+    converter_flags.set_rank_reduction(config.rank_reduction);
+    converter_flags.set_unsafe_gpu_compatibility(
+        config.unsafe_gpu_compatibility);
   }
 
   mlir::TFL::QuantizationSpecs quant_specs;
@@ -237,8 +238,9 @@ GetTFLConverterFlagsAndPassConfig(mlir::ModuleOp module_op,
         converter_flags.canonicalizing_inf_as_min_max_float();
     pass_config.unsafe_fuse_dynamic_shaped_broadcast =
         converter_flags.unsafe_fuse_dynamic_shaped_broadcast();
-    pass_config.unsafe_single_batch_rank_reduction =
-        converter_flags.unsafe_single_batch_rank_reduction();
+    pass_config.rank_reduction = converter_flags.rank_reduction();
+    pass_config.unsafe_gpu_compatibility =
+        converter_flags.unsafe_gpu_compatibility();
 
     pass_config.enable_hlo_to_tf_conversion = true;
 
