@@ -78,7 +78,6 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   const int params_rank = NumDimensions(params);
   const int indices_rank = NumDimensions(indices);
-  const int indices_nd = SizeOfDimension(indices, indices_rank - 1);
   if (params_rank < 1) {
     TF_LITE_KERNEL_LOG(context, "Params must be at least a vector.");
     return kTfLiteError;
@@ -87,6 +86,7 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     TF_LITE_KERNEL_LOG(context, "Indices must be at least a vector.");
     return kTfLiteError;
   }
+  const int indices_nd = SizeOfDimension(indices, indices_rank - 1);
   if (indices_nd < 0 || indices_nd > params_rank) {
     TF_LITE_KERNEL_LOG(
         context,

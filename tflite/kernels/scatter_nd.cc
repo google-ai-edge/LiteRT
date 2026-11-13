@@ -56,13 +56,19 @@ TfLiteStatus CheckShapes(TfLiteContext* context, const RuntimeShape& indices,
                               (shape_shape.DimensionsCount() == 1));
 
   const int outer_dims = indices.DimensionsCount() - 1;
+  TF_LITE_ENSURE(context, outer_dims <= updates.DimensionsCount());
   for (int i = 0; i < outer_dims; ++i) {
     TF_LITE_ENSURE_EQ(context, indices.Dims(i), updates.Dims(i));
   }
 
   const int ix = indices.Dims(outer_dims);
+  TF_LITE_ENSURE(context, ix >= 0 && ix <= shape_shape.Dims(0));
   TF_LITE_ENSURE_EQ(context, updates.DimensionsCount() - outer_dims,
                     shape_shape.Dims(0) - ix);
+  TF_LITE_ENSURE(context, shape_data != nullptr || shape_shape.Dims(0) == 0);
+  for (int i = 0; i < shape_shape.Dims(0); ++i) {
+    TF_LITE_ENSURE(context, shape_data[i] >= 0);
+  }
   for (int i = 0; i + outer_dims < updates.DimensionsCount(); ++i) {
     TF_LITE_ENSURE_EQ(context, updates.Dims(i + outer_dims),
                       shape_data[ix + i]);
@@ -99,30 +105,32 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     TF_LITE_KERNEL_LOG(context, "Indices and shape must have the same type.");
     return kTfLiteError;
   }
+  TF_LITE_ENSURE(context, (NumDimensions(indices) >= 1) &&
+                              (NumDimensions(updates) >= 1) &&
+                              (NumDimensions(shape) == 1));
 
   TfLiteTensor* output;
   TF_LITE_ENSURE_OK(context,
                     GetOutputSafe(context, node, kOutputTensor, &output));
   output->type = updates->type;
 
-  if (IsConstantOrPersistentTensor(shape)) {
-    switch (indices->type) {
-      case kTfLiteInt32:
+  switch (indices->type) {
+    case kTfLiteInt32:
+      if (IsConstantOrPersistentTensor(shape)) {
         TF_LITE_ENSURE_OK(
             context,
             CheckShapes<int32_t>(context, GetTensorShape(indices),
                                  GetTensorShape(updates), GetTensorShape(shape),
                                  GetTensorData<int32_t>(shape)));
         return ResizeOutputTensor<int32_t>(context, shape, output);
-      default:
-        TF_LITE_KERNEL_LOG(
-            context, "Indices of type '%s' are not supported by scatter_nd.",
-            TfLiteTypeGetName(indices->type));
-        return kTfLiteError;
-    }
-  } else {
-    SetTensorToDynamic(output);
-    return kTfLiteOk;
+      }
+      SetTensorToDynamic(output);
+      return kTfLiteOk;
+    default:
+      TF_LITE_KERNEL_LOG(
+          context, "Indices of type '%s' are not supported by scatter_nd.",
+          TfLiteTypeGetName(indices->type));
+      return kTfLiteError;
   }
 }
 
