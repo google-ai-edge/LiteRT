@@ -305,8 +305,6 @@ build:linux --copt="-Wno-array-bounds"
 
 # Windows-specific Python configuration
 build:windows --repo_env=HERMETIC_PYTHON_VERSION=3.12
-build:windows --action_env=PYTHON_BIN_PATH="C:/Program Files/Python312/python.exe"
-build:windows --python_path="C:/Program Files/Python312/python.exe"
 
 # Add unused-result as an error on Linux.
 build:linux --copt="-Wunused-result"
@@ -369,7 +367,6 @@ build:windows --per_file_copt=external/pthreadpool/.*@-std=c11
 build:windows --per_file_copt=external/pthreadpool/_*@/D_CRT_SECURE_NO_WARNINGS
 
 # Force include MSVC compatibility header for litert files
-build:windows --per_file_copt=external/litert/.*@/FI"C:/BuildTools/LiteRT-LM/msvc_compat.h"
 
 # On Windows, `__cplusplus` is wrongly defined without this switch
 # See https://devblogs.microsoft.com/cppblog/msvc-now-correctly-reports-__cplusplus/

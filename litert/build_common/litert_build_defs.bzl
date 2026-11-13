@@ -467,7 +467,7 @@ def litert_dynamic_lib(
         additional_linker_inputs = export_lrt_only_script()
     cc_shared_library(
         name = shared_lib_name,
-        shared_lib_name = so_name,
+        shared_lib_name = select({"//litert:windows": so_name[:-3] + ".dll", "//conditions:default": so_name}),
         user_link_flags = user_link_flags,
         additional_linker_inputs = additional_linker_inputs,
         tags = tags,
