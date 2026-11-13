@@ -50,6 +50,71 @@ RuntimeShape MakeRuntimeShape(const std::vector<int>& dims) {
   return shape;
 }
 
+TEST(ReshapeValidationTest, ValidEvalControl) {
+  ReshapeOpModel<float> model({2, 2}, {1}, {4},
+                            ShapeSpecificationType::kAsConstantTensor);
+  model.SetInput({1, 2, 3, 4});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+  EXPECT_THAT(model.GetOutput(), ElementsAreArray({1, 2, 3, 4}));
+}
+
+class MismatchedTypePrepareReshapeModel : public SingleOpModel {
+ public:
+  MismatchedTypePrepareReshapeModel() {
+    input_ = AddInput({TensorType_FLOAT32, {2, 2}});
+    shape_ = AddConstInput(TensorType_INT32, {4}, {1});
+    output_ = AddOutput({TensorType_INT32, {4}});
+    SetBuiltinOp(BuiltinOperator_RESHAPE, BuiltinOptions_ReshapeOptions,
+                 CreateReshapeOptions(builder_, builder_.CreateVector<int>({4}))
+                     .Union());
+    BuildInterpreter({{2, 2}, {1}}, /*num_threads=*/1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false,
+                     /*allocate_and_delegate=*/false);
+  }
+
+ private:
+  int input_;
+  int shape_;
+  int output_;
+};
+
+TEST(ReshapeValidationTest, PrepareAndEvalRejectMismatchedOutputType) {
+  MismatchedTypePrepareReshapeModel bad_prepare;
+  EXPECT_EQ(bad_prepare.AllocateTensors(), kTfLiteError);
+
+  ReshapeOpModel<float> model({2, 2}, {1}, {4},
+                            ShapeSpecificationType::kAsConstantTensor);
+  model.SetInput({1, 2, 3, 4});
+  TfLiteTensor* output = model.GetOutputTensor(0);
+  const auto original_type = output->type;
+  output->type = kTfLiteInt32;
+  EXPECT_EQ(model.Invoke(), kTfLiteError);
+  output->type = original_type;
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+  EXPECT_THAT(model.GetOutput(), ElementsAreArray({1, 2, 3, 4}));
+}
+
+TEST(ReshapeValidationTest, EvalRejectsInsufficientBytesAndNullData) {
+  ReshapeOpModel<float> model({2, 2}, {1}, {4},
+                            ShapeSpecificationType::kAsConstantTensor);
+  model.SetInput({1, 2, 3, 4});
+  TfLiteTensor* output = model.GetOutputTensor(0);
+  const auto original_bytes = output->bytes;
+  // Keep the real allocation intact while testing the metadata contract.
+  output->bytes = original_bytes - 1;
+  EXPECT_EQ(model.Invoke(), kTfLiteError);
+  output->bytes = original_bytes;
+
+  char* original_output_raw = output->data.raw;
+  output->data.raw = nullptr;
+  EXPECT_EQ(model.Invoke(), kTfLiteError);
+  output->data.raw = original_output_raw;
+
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+  EXPECT_THAT(model.GetOutput(), ElementsAreArray({1, 2, 3, 4}));
+}
+
 template <typename T>
 class ReshapeOpTest : public ::testing::Test {};
 
