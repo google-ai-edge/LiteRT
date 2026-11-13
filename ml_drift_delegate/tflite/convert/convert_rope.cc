@@ -22,6 +22,7 @@
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
+#include "ml_drift_delegate/tflite/convert/convert_aux.h"
 #include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
 
@@ -36,9 +37,7 @@ void ConvertRoPE(
   op->name = ToString(::ml_drift::OperationType::kRope);
 
   // Either 2 inputs -> 1 output, or 3 inputs -> 2 outputs.
-  for (int i = 0; i < node.inputs->size; ++i) {
-    ir_model.AddConsumer(tensor_map[node.inputs->data[i]], op->id);
-  }
+  AddNodeInputs(context, node, tensor_map, /*layout=*/{}, ir_model, op);
 
   for (int i = 0; i < node.outputs->size; ++i) {
     ir_model.SetProducer(tensor_map[node.outputs->data[i]], op->id);

@@ -326,6 +326,50 @@ NS_ASSUME_NONNULL_BEGIN
                                                                             error:(NSError **)error;
 
 /**
+ * Creates a single input tensor buffer for the named input tensor in the default signature.
+ *
+ * @param inputName The name of the input tensor in the default signature.
+ * @param error Out-parameter populated on failure.
+ * @return A newly allocated input @c LRTTensorBuffer instance, or @c nil on failure.
+ */
+- (nullable LRTTensorBuffer *)createInputTensorBufferForName:(NSString *)inputName
+                                                       error:(NSError **)error;
+
+/**
+ * Creates a single input tensor buffer for the named input tensor in the specified signature.
+ *
+ * @param inputName The name of the input tensor in the signature.
+ * @param signatureKey The name/key of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return A newly allocated input @c LRTTensorBuffer instance, or @c nil on failure.
+ */
+- (nullable LRTTensorBuffer *)createInputTensorBufferForName:(NSString *)inputName
+                                                signatureKey:(NSString *)signatureKey
+                                                       error:(NSError **)error;
+
+/**
+ * Creates a single output tensor buffer for the named output tensor in the default signature.
+ *
+ * @param outputName The name of the output tensor in the default signature.
+ * @param error Out-parameter populated on failure.
+ * @return A newly allocated output @c LRTTensorBuffer instance, or @c nil on failure.
+ */
+- (nullable LRTTensorBuffer *)createOutputTensorBufferForName:(NSString *)outputName
+                                                        error:(NSError **)error;
+
+/**
+ * Creates a single output tensor buffer for the named output tensor in the specified signature.
+ *
+ * @param outputName The name of the output tensor in the signature.
+ * @param signatureKey The name/key of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return A newly allocated output @c LRTTensorBuffer instance, or @c nil on failure.
+ */
+- (nullable LRTTensorBuffer *)createOutputTensorBufferForName:(NSString *)outputName
+                                                 signatureKey:(NSString *)signatureKey
+                                                        error:(NSError **)error;
+
+/**
  * Runs model inference synchronously for the default signature.
  *
  * @param inputs Array of input tensor buffers matching model signature.
@@ -364,6 +408,32 @@ NS_ASSUME_NONNULL_BEGIN
               outputs:(NSArray<LRTTensorBuffer *> *)outputs
          signatureKey:(NSString *)signatureKey
                 error:(NSError **)error;
+
+/**
+ * Runs model inference synchronously for the default signature using named tensor buffer maps.
+ *
+ * @param inputMap Dictionary mapping input tensor names to input tensor buffers.
+ * @param outputMap Dictionary mapping output tensor names to output tensor buffers.
+ * @param error Out-parameter populated on failure.
+ * @return @c YES on success, @c NO on failure.
+ */
+- (BOOL)runWithInputMap:(NSDictionary<NSString *, LRTTensorBuffer *> *)inputMap
+              outputMap:(NSDictionary<NSString *, LRTTensorBuffer *> *)outputMap
+                  error:(NSError **)error;
+
+/**
+ * Runs model inference synchronously for a specified signature key using named tensor buffer maps.
+ *
+ * @param inputMap Dictionary mapping input tensor names to input tensor buffers.
+ * @param outputMap Dictionary mapping output tensor names to output tensor buffers.
+ * @param signatureKey The name/key of the signature in the model.
+ * @param error Out-parameter populated on failure.
+ * @return @c YES on success, @c NO on failure.
+ */
+- (BOOL)runWithInputMap:(NSDictionary<NSString *, LRTTensorBuffer *> *)inputMap
+              outputMap:(NSDictionary<NSString *, LRTTensorBuffer *> *)outputMap
+           signatureKey:(NSString *)signatureKey
+                  error:(NSError **)error;
 
 /**
  * Resizes the specified input tensor of the default signature to support dynamic shapes.
@@ -413,6 +483,40 @@ NS_ASSUME_NONNULL_BEGIN
  * @return @c YES on success, @c NO on failure.
  */
 - (BOOL)resizeInputTensorAtIndex:(NSUInteger)inputIndex
+                    signatureKey:(NSString *)signatureKey
+                   newDimensions:(NSArray<NSNumber *> *)dimensions
+                           error:(NSError **)error;
+
+/**
+ * Resizes the named input tensor of the default signature to support dynamic shapes.
+ *
+ * After calling this, you must re-create the input and output tensor buffers
+ * to match the new shapes.
+ *
+ * @param inputName The name of the input tensor in the default signature.
+ * @param dimensions The new dimensions for the input tensor. An array of NSNumber representing the
+ * sizes of each dimension.
+ * @param error Out-parameter populated on failure.
+ * @return @c YES on success, @c NO on failure.
+ */
+- (BOOL)resizeInputTensorForName:(NSString *)inputName
+                   newDimensions:(NSArray<NSNumber *> *)dimensions
+                           error:(NSError **)error;
+
+/**
+ * Resizes the named input tensor for a given signature key to support dynamic shapes.
+ *
+ * After calling this, you must re-create the input and output tensor buffers
+ * to match the new shapes.
+ *
+ * @param inputName The name of the input tensor in the signature.
+ * @param signatureKey The name/key of the signature containing the input tensor.
+ * @param dimensions The new dimensions for the input tensor. An array of NSNumber representing the
+ * sizes of each dimension.
+ * @param error Out-parameter populated on failure.
+ * @return @c YES on success, @c NO on failure.
+ */
+- (BOOL)resizeInputTensorForName:(NSString *)inputName
                     signatureKey:(NSString *)signatureKey
                    newDimensions:(NSArray<NSNumber *> *)dimensions
                            error:(NSError **)error;

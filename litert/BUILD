@@ -388,6 +388,30 @@ config_setting(
     visibility = ["//visibility:public"],
 )
 
+config_setting(
+    name = "litert_webgpu_dawn_dynamic_loader_define",
+    define_values = {"litert_webgpu_dawn_dynamic_loader": "true"},
+)
+
+# Dynamically loads WebGPU Dawn (libwebgpu_dawn.so / .dylib / .dll) at runtime
+# via libdawn_proc instead of linking Dawn at build or load time. Evaluates to
+# false on Emscripten (:linux cannot match when :emscripten matches) so select()
+# blocks never hit ambiguous-match errors when combined with :emscripten.
+alias(
+    name = "litert_webgpu_dawn_dynamic_loader",
+    actual = select({
+        ":emscripten": ":linux",
+        "//conditions:default": ":litert_webgpu_dawn_dynamic_loader_define",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "litert_webgpu_dawn_dynamic_loader_disabled",
+    define_values = {"litert_webgpu_dawn_dynamic_loader": "false"},
+    visibility = ["//visibility:public"],
+)
+
 # Configuration for building with built-in kernels (default)
 config_setting(
     name = "with_builtin_ops",

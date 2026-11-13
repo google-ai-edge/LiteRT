@@ -133,6 +133,10 @@ def load(run, litert_report, llama_report, models=None):
         done = len(part.get('cli', {}).get('iterations', []))
         if done != meta['iterations']:
           errors.append(f"{name}: {done} of {meta['iterations']} iterations")
+      # A prompt beyond the model's context leaves every iteration empty, and the CLI exits 0.
+      if (meta['metric'] in ('latency', 'memory') and name in ('main', 'npu')
+          and not part.get('summary', {}).get('decode_tokens_per_second')):
+        errors.append(f'{name}: no decode turn measured')
   record['errors'] = errors
   return record
 

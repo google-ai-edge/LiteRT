@@ -171,7 +171,7 @@ def main():
       continue
     out = pathlib.Path(args.out) / name / f'{args.platform}.md'
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(text, newline='\n')
+    out.write_text(text, encoding='utf-8', newline='\n')
     written.append(str(out))
   print('wrote ' + ', '.join(written) if written else 'nothing written')
 

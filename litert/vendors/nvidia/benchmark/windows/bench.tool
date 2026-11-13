@@ -17,6 +17,7 @@ Output: DIR/LABEL/{cli.log,time.json,gpu.tsv,meta.json} (+ prepare.* and npu./cp
 """
 import argparse
 import datetime
+import hashlib
 import importlib.machinery
 import importlib.util
 import json
@@ -172,11 +173,19 @@ def main():
     pathlib.Path(prefix + 'time.json').write_text(json.dumps(timing, indent=1) + '\n')
     return timing['exit_code']
 
-  # A pool without AOT artifacts compiles in its first run; that run is kept apart as "prepare"
-  # so the measured runs read warm caches (the cold metric is that first run itself).
-  if args.metric != 'cold' and not list((pool / 'aot').glob('tensorrt_aot*.bin')):
+  # A pool compiles a configuration's engines in the first run that asks for them (the context
+  # capacity, the prefill sizes and signatures, speculative decoding, extra flags and overrides
+  # shape them), and the compiling process's rates read low: E4B's 8k prefill 14,357 tokens/s
+  # against 16,500 from warm caches. That run is kept apart as "prepare", once per configuration
+  # (a marker in the pool), so the measured runs read warm caches (the cold metric is that first
+  # run itself).
+  shape = json.dumps([context, prefill, selected, args.mtp, args.cli_arg, sorted(args.env)])
+  prepared = pool / 'prepared' / hashlib.sha256(shape.encode()).hexdigest()[:16]
+  if args.metric != 'cold' and not prepared.exists():
     if invoke('prepare', 'npu', False, benchmark_args(1)):
       raise SystemExit(f'Preparation failed; see {run}/prepare.cli.log')
+    prepared.parent.mkdir(parents=True, exist_ok=True)
+    prepared.write_text(shape + '\n')
   rc = 0
   if args.metric == 'latency':
     rc = invoke('', 'npu', False, benchmark_args(iterations))
@@ -185,7 +194,8 @@ def main():
   elif args.metric == 'memory':
     rc = invoke('', 'npu', True, benchmark_args(1) + ['--report_peak_memory_footprint=true'])
   else:
-    answer = ['--benchmark=false', '--max_output_tokens=16',
+    # A model that reasons before it answers needs room for it (models.json: verify_output_tokens).
+    answer = ['--benchmark=false', f"--max_output_tokens={spec.get('verify_output_tokens', 16)}",
               '--input_prompt=Answer with only the capital city: What is the capital of France?', '--expected_output=Paris']
     rc = invoke('npu', 'npu', False, answer) or rc
     rc = invoke('cpu', 'cpu', False, answer + ['--enable_speculative_decoding=false']) or rc

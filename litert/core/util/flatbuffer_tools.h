@@ -291,7 +291,9 @@ class FlatbufferWrapper {
   }
 
   // Packed schema object.
-  const TflPackedModel* PackedModel() const { return fb_model_->GetModel(); }
+  const TflPackedModel* PackedModel() const {
+    return fb_model_ ? fb_model_->GetModel() : nullptr;
+  }
 
   // Unpack the contained flatbuffer.
   TflModelPtr Unpack() const {

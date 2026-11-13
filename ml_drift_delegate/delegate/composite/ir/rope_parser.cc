@@ -23,6 +23,7 @@
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
+#include "ml_drift_delegate/tflite/convert/convert_aux.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "ml_drift_delegate/tflite/support/support_rotary_positional_embedding.h"
@@ -79,7 +80,7 @@ void ParseRopeAttributes(const uint8_t* buffer, size_t length,
 }
 
 void RopeConvert(
-    const TfLiteContext& /*context*/, const TfLiteNode& tflite_node,
+    const TfLiteContext& context, const TfLiteNode& tflite_node,
     const TfLiteRegistration& /*registration*/,
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     const IrModelBuilderOptions& /*options*/,
@@ -90,11 +91,7 @@ void RopeConvert(
   // stock operation selector instead of LiteRtOpSelector.
   op->name = "rope";
 
-  for (int i = 0; i < tflite_node.inputs->size; ++i) {
-    if (tflite_node.inputs->data[i] != kTfLiteOptionalTensor) {
-      ir_model.AddConsumer(tensor_map[tflite_node.inputs->data[i]], op->id);
-    }
-  }
+  AddNodeInputs(context, tflite_node, tensor_map, /*layout=*/{}, ir_model, op);
   for (int i = 0; i < tflite_node.outputs->size; ++i) {
     ir_model.SetProducer(tensor_map[tflite_node.outputs->data[i]], op->id);
   }

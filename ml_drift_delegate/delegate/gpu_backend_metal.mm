@@ -17,6 +17,8 @@
 #import <Metal/Metal.h>
 #include <unistd.h>
 
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <utility>
 
@@ -327,6 +329,27 @@ absl::Status GpuBackendMetal::ReadSpatialTensorToDescriptor(::ml_drift::GpuSpati
                                                             ::ml_drift::TensorDescriptor& desc) {
   auto* metal_tensor = static_cast<::ml_drift::metal::MetalSpatialTensor*>(&tensor);
   return metal_tensor->ToDescriptor(&desc, device_->device());
+}
+
+absl::Status GpuBackendMetal::ReadSpatialTensorData(::ml_drift::GpuSpatialTensor& tensor,
+                                                    absl::Span<uint8_t> dst) {
+  auto* metal_tensor = static_cast<::ml_drift::metal::MetalSpatialTensor*>(&tensor);
+  if (metal_tensor->GetMemorySizeInBytes() != dst.size()) {
+    return absl::InvalidArgumentError(
+        "ReadSpatialTensorData: the destination size doesn't match the tensor size.");
+  }
+  const ::ml_drift::TensorStorageType storage_type = metal_tensor->GetStorageType();
+  if ((storage_type != ::ml_drift::TensorStorageType::kBuffer &&
+       storage_type != ::ml_drift::TensorStorageType::kImageBuffer) ||
+      metal_tensor->GetBufferHandle() == nil) {
+    return absl::UnimplementedError("ReadSpatialTensorData only supports buffer tensors.");
+  }
+  // Buffers use shared storage, so the GPU data is directly CPU-accessible once the GPU work
+  // completed (like MetalSpatialTensor::ReadData): copy it straight into `dst`.
+  if (!dst.empty()) {
+    std::memcpy(dst.data(), metal_tensor->GetBufferPointer(), dst.size());
+  }
+  return absl::OkStatus();
 }
 
 absl::Status GpuBackendMetal::UpdateSpatialTensor(::ml_drift::GpuSpatialTensor* tensor,

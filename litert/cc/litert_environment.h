@@ -384,7 +384,7 @@ class Environment {
   Expected<EnvironmentOptions> FromCOptions(
       LiteRtEnvironmentOptions options) const {
     std::vector<EnvironmentOptions::Option> env_options;
-    for (int i = 0; i <= kLiteRtEnvOptionTagRuntimeAbiVersion; ++i) {
+    for (int i = 0; i < kLiteRtEnvOptionTagNull; ++i) {
       LiteRtAny value;
       if (runtime_->GetEnvironmentOptionsValue(
               options, static_cast<LiteRtEnvOptionTag>(i), &value) ==

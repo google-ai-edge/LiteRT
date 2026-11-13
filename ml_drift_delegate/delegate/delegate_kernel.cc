@@ -522,19 +522,40 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
           ::ml_drift::SharedMemoryManager::GlobalId global_id =
               local_to_global_id_map[main_model_id];
           if (use_serialization_cache) {
-            // Download from GPU to CPU memory.
-            ::ml_drift::TensorDescriptor descriptor = tensor->GetDescriptor();
-            ABSL_RETURN_IF_ERROR(
-                backend_->ReadSpatialTensorToDescriptor(*tensor, descriptor));
             // New entries can only be added while the cache is being built. A
             // cache that was loaded from disk stays read-only for the rest of
             // this run, so tensors that it doesn't already contain are left
             // uncached instead of failing the model load. Every other
             // insertion failure is a genuine error and is propagated.
             if (shared_memory_serialization_cache->IsReadyForInsert()) {
-              // Insert the descriptor to the cache.
-              ABSL_RETURN_IF_ERROR(shared_memory_serialization_cache->Insert(
-                  global_id.value, !global_id.IsSourceId(), descriptor));
+              // Download the tensor from GPU memory straight into the cache's
+              // staging buffer and append it to the cache file. This avoids
+              // allocating a temporary CPU copy of every tensor, which is
+              // slow for large models since that fresh memory has to be
+              // faulted in.
+              const ::ml_drift::TensorDescriptor descriptor =
+                  tensor->GetDescriptor();
+              absl::Status insert_status =
+                  shared_memory_serialization_cache->InsertWithWriter(
+                      global_id.value, !global_id.IsSourceId(), descriptor,
+                      descriptor.GetMemorySizeInBytes(),
+                      [&](absl::Span<uint8_t> staging) {
+                        return backend_->ReadSpatialTensorData(*tensor,
+                                                               staging);
+                      });
+              if (absl::IsUnimplemented(insert_status)) {
+                // The backend can't read this tensor directly. Nothing was
+                // inserted, so fall back to reading it into a descriptor
+                // first.
+                ::ml_drift::TensorDescriptor descriptor_with_data =
+                    tensor->GetDescriptor();
+                ABSL_RETURN_IF_ERROR(backend_->ReadSpatialTensorToDescriptor(
+                    *tensor, descriptor_with_data));
+                insert_status = shared_memory_serialization_cache->Insert(
+                    global_id.value, !global_id.IsSourceId(),
+                    descriptor_with_data);
+              }
+              ABSL_RETURN_IF_ERROR(insert_status);
               // Release the tensor memory now that the cache holds a copy.
               if (require_serialization_cache_on_first_load) {
                 ABSL_RETURN_IF_ERROR(

@@ -24,6 +24,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_scheduling_info.h"
@@ -99,9 +100,9 @@ class LiteRtDispatchDeviceContextT {
     }
 
     absl::flat_hash_set<std::string> subgraphs_to_load;
-    if (!expected_functions_.empty()) {
+    if (expected_functions_.has_value()) {
       if (cached_graphs.empty()) {
-        subgraphs_to_load = expected_functions_;
+        subgraphs_to_load = *expected_functions_;
         subgraphs_to_load.insert(std::string(function_name));
       } else {
         subgraphs_to_load.insert(std::string(function_name));
@@ -190,7 +191,7 @@ class LiteRtDispatchDeviceContextT {
       absl::flat_hash_map<BufferHandle, LiteRtTensorBuffer>;
   std::list<Buffer> buffers_;
   RegistredBuffers registered_buffers_;
-  absl::flat_hash_set<std::string> expected_functions_;
+  std::optional<absl::flat_hash_set<std::string>> expected_functions_;
   absl::flat_hash_map<
       BytecodeCacheKey,
       std::vector<std::unique_ptr<::litert::example::ExampleGlobalGraph>>>
@@ -314,8 +315,8 @@ class LiteRtDispatchInvocationContextT {
   // Stores per-invocation options to be used for the next invocation.
   void SetRunOptions(LiteRtOptions options) {
     LiteRtHwAcceleratorSet accelerators = kLiteRtHwAcceleratorNone;
-    if (options && runtime_context_ &&
-        runtime_context_->get_options_hardware_accelerators) {
+    if (options && LITERT_ABI_HAS_API(runtime_context_, /*req_major=*/1,
+                                      get_options_hardware_accelerators)) {
       if (runtime_context_->get_options_hardware_accelerators(
               options, &accelerators) != kLiteRtStatusOk) {
         accelerators = kLiteRtHwAcceleratorNone;

@@ -418,12 +418,21 @@ def _GpuSpec(accelerator = "cl_gl", platform = "android"):
         ]
     elif accelerator == "webgpu":
         id = "webgpu"
-        libs = [
-            (
-                "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_dylib" if platform == "macos" else "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_so",
-                "DYLD_LIBRARY_PATH" if platform == "macos" else "LD_LIBRARY_PATH",
-            ),
-        ]
+        if platform == "macos":
+            libs = [
+                ("//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_dylib", "DYLD_LIBRARY_PATH"),
+            ]
+        elif platform == "windows":
+            libs = [
+                ("//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_dll", "PATH"),
+                # copybara:uncomment_begin(google-only)
+                # ("//third_party/odml/litert_lm/runtime/e2e_tests:dxc_dlls", "PATH"),
+                # copybara:uncomment_end
+            ]
+        else:
+            libs = [
+                ("//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_so", "LD_LIBRARY_PATH"),
+            ]
     else:
         fail("Unsupported GPU accelerator: {}".format(accelerator))
 
@@ -619,5 +628,33 @@ windows_bin_only = rule(
     implementation = _windows_bin_only_impl,
     attrs = {
         "src": attr.label(mandatory = True),
+    },
+)
+
+def _platform_transition_impl(_settings, attr):
+    return {"//command_line_option:platforms": str(attr.platform)}
+
+_platform_transition = transition(
+    implementation = _platform_transition_impl,
+    inputs = [],
+    outputs = ["//command_line_option:platforms"],
+)
+
+# Transitions Windows runtime dependencies to `platform` and forwards their .dll files.
+def _windows_dlls_impl(ctx):
+    dlls = []
+    seen = {}
+    for dep in ctx.attr.deps:
+        for f in dep[DefaultInfo].files.to_list():
+            if f.basename.lower().endswith(".dll") and f.basename not in seen:
+                seen[f.basename] = True
+                dlls.append(f)
+    return [DefaultInfo(files = depset(dlls), runfiles = ctx.runfiles(files = dlls))]
+
+windows_dlls = rule(
+    implementation = _windows_dlls_impl,
+    attrs = {
+        "deps": attr.label_list(cfg = _platform_transition),
+        "platform": attr.label(mandatory = True),
     },
 )

@@ -27,7 +27,7 @@ load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/build_common:ynnpack_platform_data.bzl", "ynnpack_platform_data")
-load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_spec", "host_rlocation", "windows_bin_only")
+load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_spec", "host_rlocation", "windows_bin_only", "windows_dlls")
 load("//litert/integration_test:litert_device_script.bzl", "litert_device_script")
 
 # copybara:uncomment_begin(google-only)
@@ -137,6 +137,16 @@ def hidden_test_tags():
 #         windows_files = {
 #             "windows_bin": [":" + windows_bin_name],
 #         }
+#         if libs:
+#             windows_libs_name = "{}_windows_libs".format(name)
+#             windows_dlls(
+#                 name = windows_libs_name,
+#                 testonly = True,
+#                 platform = "INTERNAL_WINDOWS_PLATFORM",
+#                 tags = hidden_test_tags(),
+#                 deps = libs,
+#             )
+#             windows_files["extra_files"] = [":" + windows_libs_name]
 #
 #         # Strip bash quotes and caret-escape cmd.exe metacharacters for AiEdgeWindowsModelEval's cmd.exe /s /c "..." wrapper.
 #         windows_exec_args = []

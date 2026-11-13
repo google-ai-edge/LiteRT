@@ -24,6 +24,7 @@
 
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/core.hpp"
+#include "openvino/runtime/file_handle.hpp"
 #include "openvino/runtime/remote_tensor.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "absl/base/thread_annotations.h"  // from @com_google_absl
@@ -115,15 +116,47 @@ class NpuSharedBank {
   // not file-backed or a chunk cannot be mapped.
   std::string EnsureOnDisk(const PoolSource& src);
 
+  // Returns a provider handing NPUW a file descriptor of the model file whose
+  // seek position is |src.file_offset| -- the first byte of the weight pool.
+  // NPUW reads that position back (ov::util::get_file_position) and maps
+  // [pool, EOF) directly out of the model, so the pool is neither copied to a
+  // temp file nor faulted into this process: NPUW's per-weight mappings and
+  // the page cache do the paging. Preferred over EnsureOnDisk when available.
+  //
+  // Returns an empty provider -- caller must fall back to EnsureOnDisk -- when
+  // the model is not file-backed, when the descriptor cannot be reopened, when
+  // the bytes at |src.file_offset| do not match |src.data| (a wrong
+  // alloc_base_file_offset would otherwise shift every weight silently), or on
+  // Windows, where |src.fd| belongs to another module's C runtime and cannot
+  // be resolved to an OS handle here (see the note in EnsureOnDisk).
+  //
+  // Thread-safe and resolve-once: the first successful call opens the
+  // descriptor the bank owns until it is destroyed, so the returned provider
+  // stays valid for every model imported from this device context, including
+  // after the runtime closes the model's own descriptor.
+  ov::FileHandleProvider MakeHandleProvider(const PoolSource& src);
+
   // The cached bank path, or empty if EnsureOnDisk has not yet succeeded.
   std::string Path() const;
 
  private:
+  // Builds the provider over the already-resolved model_fd_/pool_file_offset_.
+  ov::FileHandleProvider MakeProviderLocked()
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(npu_bank_mutex_);
+
   mutable absl::Mutex npu_bank_mutex_;
   std::string bank_path_ ABSL_GUARDED_BY(npu_bank_mutex_);
   // False when bank_path_ came from LITERT_OV_WEIGHTS_PATH: that file is the
   // deployment's, not ours to unlink.
   bool owns_bank_file_ ABSL_GUARDED_BY(npu_bank_mutex_) = false;
+  // Bank-owned descriptor of the model file handed out by MakeHandleProvider,
+  // and the pool's absolute offset in it. -1 until the first successful
+  // MakeHandleProvider; closed by the destructor.
+  int model_fd_ ABSL_GUARDED_BY(npu_bank_mutex_) = -1;
+  uint64_t pool_file_offset_ ABSL_GUARDED_BY(npu_bank_mutex_) = 0;
+  // True once MakeHandleProvider has decided, either way, so a failed probe is
+  // not repeated for every partition.
+  bool handle_resolved_ ABSL_GUARDED_BY(npu_bank_mutex_) = false;
 };
 
 }  // namespace litert::openvino

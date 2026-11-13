@@ -18,6 +18,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cerrno>
 #include <cstddef>
@@ -33,6 +34,7 @@
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
@@ -247,6 +249,103 @@ TEST_P(SerializationWeightCacheTest, LookUpSucceeds) {
         cache.LookUp(id, GetQuantizationParamTensor(), looked_up_tensor_desc));
     EXPECT_THAT(looked_up_tensor_desc, TensorDescEq(tensor_desc));
   }
+}
+
+TEST_P(SerializationWeightCacheTest, InsertWithWriterLookUpSucceeds) {
+  const uint64_t unique_model_identifier = 9876;
+  ASSERT_OK(cache.StartBuild(tmp_dir, "insert_with_writer_look_up_succeeds",
+                             unique_model_identifier));
+  for (const auto& [id, tensor_desc] : tensor_descs) {
+    // The written data comes from the writer, not from the descriptor.
+    ml_drift::TensorDescriptor tensor_desc_without_data;
+    tensor_desc.CopyWithoutData(&tensor_desc_without_data);
+    const absl::Span<const uint8_t> data = tensor_desc.GetData();
+    ASSERT_OK(cache.InsertWithWriter(
+        id, GetQuantizationParamTensor(), tensor_desc_without_data, data.size(),
+        [&](absl::Span<uint8_t> staging) -> absl::Status {
+          EXPECT_EQ(staging.size(), data.size());
+          std::copy(data.begin(), data.end(), staging.begin());
+          return absl::OkStatus();
+        }));
+  }
+  ASSERT_OK(cache.StopBuild());
+  ASSERT_OK(cache.Load(tmp_dir, "insert_with_writer_look_up_succeeds",
+                       unique_model_identifier));
+
+  for (const auto& [id, tensor_desc] : tensor_descs) {
+    ml_drift::TensorDescriptor looked_up_tensor_desc;
+    ASSERT_OK(
+        cache.LookUp(id, GetQuantizationParamTensor(), looked_up_tensor_desc));
+    EXPECT_THAT(looked_up_tensor_desc, TensorDescEq(tensor_desc));
+  }
+}
+
+TEST_P(SerializationWeightCacheTest, InsertWithWriterPropagatesWriterError) {
+  const uint64_t unique_model_identifier = 9876;
+  ASSERT_OK(cache.StartBuild(tmp_dir,
+                             "insert_with_writer_propagates_writer_error",
+                             unique_model_identifier));
+  ml_drift::TensorDescriptor tensor_desc;
+  tensor_desc.SetAccess(ml_drift::AccessType::kRead);
+  EXPECT_THAT(cache.InsertWithWriter(
+                  /*global_tensor_id=*/10, GetQuantizationParamTensor(),
+                  tensor_desc, /*size=*/4,
+                  [](absl::Span<uint8_t>) -> absl::Status {
+                    return absl::InternalError("GPU read failed");
+                  }),
+              StatusIs(::util::error::INTERNAL, HasSubstr("GPU read failed")));
+}
+
+// The delegate falls back to Insert() when the writer of InsertWithWriter()
+// returns an UnimplementedError, so a failed InsertWithWriter() must not leave
+// anything behind for that tensor.
+TEST_P(SerializationWeightCacheTest,
+       InsertSucceedsAfterInsertWithWriterFailsForTheSameTensor) {
+  const uint64_t unique_model_identifier = 9876;
+  ASSERT_OK(cache.StartBuild(tmp_dir,
+                             "insert_succeeds_after_insert_with_writer_fails",
+                             unique_model_identifier));
+  for (const auto& [id, tensor_desc] : tensor_descs) {
+    // The writer isn't called for empty tensors, so there's nothing to fail.
+    if (!tensor_desc.GetData().empty()) {
+      EXPECT_THAT(cache.InsertWithWriter(
+                      id, GetQuantizationParamTensor(), tensor_desc,
+                      tensor_desc.GetData().size(),
+                      [](absl::Span<uint8_t>) -> absl::Status {
+                        return absl::UnimplementedError("can't read directly");
+                      }),
+                  StatusIs(::util::error::UNIMPLEMENTED));
+    }
+    ASSERT_OK(cache.Insert(id, GetQuantizationParamTensor(), tensor_desc));
+  }
+  ASSERT_OK(cache.StopBuild());
+  ASSERT_OK(cache.Load(tmp_dir,
+                       "insert_succeeds_after_insert_with_writer_fails",
+                       unique_model_identifier));
+
+  for (const auto& [id, tensor_desc] : tensor_descs) {
+    ml_drift::TensorDescriptor looked_up_tensor_desc;
+    ASSERT_OK(
+        cache.LookUp(id, GetQuantizationParamTensor(), looked_up_tensor_desc));
+    EXPECT_THAT(looked_up_tensor_desc, TensorDescEq(tensor_desc));
+  }
+}
+
+TEST_P(SerializationWeightCacheTest, InsertWithWriterFailsWhenNotBuilding) {
+  ml_drift::TensorDescriptor tensor_desc;
+  bool writer_called = false;
+  EXPECT_THAT(
+      cache.InsertWithWriter(/*global_tensor_id=*/10,
+                             GetQuantizationParamTensor(), tensor_desc,
+                             /*size=*/4,
+                             [&](absl::Span<uint8_t>) -> absl::Status {
+                               writer_called = true;
+                               return absl::OkStatus();
+                             }),
+      StatusIs(
+          ::util::error::INVALID_ARGUMENT,
+          HasSubstr("Cannot insert a buffer in a cache that is not building")));
+  EXPECT_FALSE(writer_called);
 }
 
 TEST_P(SerializationWeightCacheTest,

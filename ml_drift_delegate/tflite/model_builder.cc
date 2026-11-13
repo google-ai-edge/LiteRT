@@ -1865,7 +1865,8 @@ class Conv2DOperationParser : public TFLiteOperationParser {
       auto& conv_weights = conv_attr.weights.emplace<::ml_drift::Tensor<
           ::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>();
       conv_weights.id = -1;
-      conv_weights.shape.o = dst_group_size;
+      conv_weights.shape = ::ml_drift::OHWI(dst_group_size, weights_shape.h,
+                                            weights_shape.w, src_group_size);
       conv_weights.data.resize(conv_weights.shape.DimensionsProduct() +
                                XNN_EXTRA_BYTES / sizeof(float));
       for (int out_i = 0; out_i < dst_group_size; ++out_i) {

@@ -118,17 +118,18 @@ genrule(
         "@ml_drift//ml_drift/common/kernels:fully_connected.cc",
     ],
     outs = ["srcs/build_identifier.cc"],
-    cmd = "$(execpath :generate_build_identifier_py) --output $@ $(SRCS)",
-    tools = [":generate_build_identifier_py"],
+    # copybara:comment_begin(oss-only)
+    cmd = "python3 $(execpath generate_build_identifier.py) --output $@ $(SRCS)",
+    tools = ["generate_build_identifier.py"],
+    # copybara:comment_end_and_uncomment_begin
+    # cmd = "$(execpath :generate_build_identifier_py) --output $@ $(SRCS)",
+    # tools = [":generate_build_identifier_py"],
+    # copybara:uncomment_end
 )
 
 py_binary(
     name = "generate_build_identifier_py",
     srcs = ["generate_build_identifier.py"],
-    # Disable implicit __init__.py creation in OSS runfiles so @jinja2 is not shadowed.
-    # copybara:comment_begin(oss-only)
-    legacy_create_init = 0,
-    # copybara:comment_end
     main = "generate_build_identifier.py",
     tags = ["notap"],  # This should only be built as part of the related genrule.
 )
@@ -208,6 +209,8 @@ cc_library(
         "//ml_drift_delegate/delegate:unowned_tensor_desc",
         "//tflite/c:common",
         "//tflite/delegates:serialization",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
@@ -231,6 +234,7 @@ cc_test(
         ":testing_util",
         "//ml_drift_delegate/delegate:precision",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",

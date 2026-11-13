@@ -125,6 +125,17 @@ class BufferManager {
     return {};
   }
 
+  // Replace the bytes of a registered buffer with an owned buffer, keeping its
+  // context.
+  Expected<void> SetOwnedBuffer(BufferId id,
+                                OwningBufferRef<uint8_t>&& buffer) {
+    if (id == kEmptyBufferId || id >= buffers_.size()) {
+      return Error(kLiteRtStatusErrorIndexOOB);
+    }
+    buffers_[id].first = std::move(buffer);
+    return {};
+  }
+
   // Number of buffers. Ids will be 0 <-> num - 1.
   size_t NumBuffers() const { return buffers_.size(); }
 

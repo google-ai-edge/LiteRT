@@ -464,6 +464,28 @@ void PopulateBlockwiseQuantizedFullyConnected(
   return tensor;
 }
 
+void AddNodeInputs(
+    const TfLiteContext& context, const TfLiteNode& node,
+    absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
+    const SizedLayout& layout, ::ml_drift::ir::IrModel& ir_model,
+    ::ml_drift::ir::IrOp* op) {
+  for (int i = 0; i < node.inputs->size; ++i) {
+    const int input_id = node.inputs->data[i];
+    if (input_id == kTfLiteOptionalTensor) {
+      continue;
+    }
+    const auto ir_tensor_id = tensor_map[input_id];
+    if (tflite::IsConstantTensor(context.tensors + input_id) &&
+        !ir_model.tensor(ir_tensor_id)->buffer_source.is_shared) {
+      ::ml_drift::ir::IrTensor* const_tensor =
+          AddConstInput(context, input_id, ir_model, layout);
+      ir_model.AddConsumer(const_tensor->id, op->id);
+    } else {
+      ir_model.AddConsumer(ir_tensor_id, op->id);
+    }
+  }
+}
+
 ::ml_drift::Axis ExtractAxisFromIndex(const TfLiteTensor& tflite_tensor,
                                       int index) {
   const TfLiteIntArray* dims = tflite_tensor.dims;

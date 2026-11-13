@@ -75,9 +75,14 @@ def load_run(run):
       detail[name] = tests
       for t in tests:
         speeds = t.get('samples_ts') or [t['avg_ts']]
-        # A run that asks llama-bench for warm-up repetitions (the Windows matrix: meta
-        # prefill_warmups / decode_warmups) discards them; llama-bench's avg_ts covers them all.
-        warmups = meta.get('decode_warmups' if name == 'tg' else 'prefill_warmups', 0) or 0
+        # llama-bench's first repetitions are warm-ups (its first one is cold: on Windows a 12B 1k
+        # prefill reads 1,235 tokens/s against 5,865 after it): the run's meta says how many
+        # (warmups; the earlier Windows matrix's prefill_warmups / decode_warmups) and the mean
+        # leaves them out; llama-bench's own avg_ts covers them all.
+        warmups = meta.get('decode_warmups' if name == 'tg' else 'prefill_warmups')
+        if warmups is None:
+          warmups = meta.get('warmups', 0) if name in ('pp', 'tg') else 0
+        warmups = warmups or 0
         if warmups and len(speeds) > warmups:
           speeds = speeds[warmups:]
           mean = statistics.mean(speeds)

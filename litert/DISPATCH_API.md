@@ -130,7 +130,7 @@ The following repo has C and C++ API implementation:
   - `litert/c/options/`
   - `litert/cc/options/`
 
-Check [LiteRT OpaqueOptions with TOML](https://github.com/google-ai-edge/LiteRT/blob/main/g3doc/apis/opaque_options_toml.md) for details.
+Check [LiteRT OpaqueOptions with TOML](https://github.com/google-ai-edge/LiteRT/blob/main/docs/apis/opaque_options_toml.md) for details.
 
 ### LiteRtDispatchDeviceContextCreate
 
@@ -148,7 +148,7 @@ LiteRtDispatchDeviceContextSetExpectedFunctions(
 Informs the Dispatch API runtime that only the given functions (corresponding to
 `function_name` in `LiteRtDispatchInvocationContextCreate()`) will be used with
 `device_context`, for example when only a subset of the model signatures is
-selected via `Options::SetSignatures()`.
+selected via `RuntimeOptions::SetSelectedSignatures()`.
 
 If used, this function must be called after
 `LiteRtDispatchDeviceContextCreate()` and before any
@@ -327,8 +327,12 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchUnregisterTensorBuffer(
 
 ## Resources
 
-
-
+-   [Build Your Own NPU Backend](./BUILD_YOUR_OWN_BACKEND.md)
+-   [Compiler Plugins](./COMPILER_PLUGIN.md)
+-   [JIT Compilation in LiteRT](./JIT_COMPILATION.md)
+-   [LiteRT Runtime Decoupling with RuntimeContext](https://github.com/google-ai-edge/LiteRT/blob/main/docs/apis/runtime_context.md)
+-   [Tensor Registration API](https://github.com/google-ai-edge/LiteRT/blob/main/docs/apis/tensor_buffer_registry.md)
+-   [Reference Implementation (`vendors/examples/`)](./vendors/examples/)
 
 ## An example NPU inference with Dispatch API
 

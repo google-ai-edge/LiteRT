@@ -120,9 +120,10 @@ namespace {
 // How often the address-space walk (/proc/self/maps and
 // /proc/self/smaps_rollup) is repeated. The knob to turn if GPU memory moves
 // faster than this in a workload of interest, at the cost of the walk's 10-30
-// ms per refresh on the sampling thread; MemoryMonitor samples every 50 ms by
-// default. /proc/self/status and /proc/self/fdinfo are cheap and are read on
-// every call.
+// ms per refresh on the sampling thread; a MemoryMonitor samples every
+// MemoryMonitor::kDefaultSamplingInterval (memory_monitor.h) by default, so
+// most of its samples reuse the previous walk. /proc/self/status and
+// /proc/self/fdinfo are cheap and are read on every call.
 //
 // What the lag costs. On Mali, nothing in the headline: the resident total is
 // VmRSS (fresh) + dma-bufs + Mali pool - (Mali pool + touched KGSL pages), in

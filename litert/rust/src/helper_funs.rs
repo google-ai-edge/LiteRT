@@ -12,21 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Internal FFI string conversion helpers.
+
 pub use crate::bindings::*;
 use crate::error::{Error, ErrorCause};
 
 use std::ffi::{c_char, CStr};
 
-/// A helper function, that converts a const pointer to a C string to str
-// SAFETY: The function is unsafe because it can get a not checked pointer from a C string.
+/// Converts a NUL-terminated C string pointer into a borrowed UTF-8 `&'a str`.
+///
+/// # Arguments
+///
+/// * `c_str` - Pointer to a NUL-terminated C string (or null).
+///
+/// # Returns
+///
+/// The validated UTF-8 string slice `&'a str`.
+///
+/// # Errors
+///
+/// Returns [`Error`] (`ErrorCause::InvalidStringEncoding`) if `c_str` is null or does not contain
+/// valid UTF-8.
+///
+/// # Safety
+///
+/// If `c_str` is non-null, it must point to a valid NUL-terminated C string that remains valid and
+/// immutable for the lifetime `'a`.
 pub unsafe fn c_str_to_str<'a>(c_str: *const c_char) -> Result<&'a str, Error> {
-    if c_str == std::ptr::null() {
+    if c_str.is_null() {
         return Err(Error::new(
             ErrorCause::InvalidStringEncoding,
             LiteRtStatus_kLiteRtStatusErrorRuntimeFailure,
         ));
     }
-    // SAFETY: An UB is not possible as we check that the pointer is not null.
+    // SAFETY:
+    // - `c_str` is checked to be non-null above.
+    // - By the `# Safety` contract of `c_str_to_str`, `c_str` points to a valid NUL-terminated C
+    //   string that remains valid and immutable for lifetime `'a`.
     unsafe {
         CStr::from_ptr(c_str).to_str().map_err(|_| {
             Error::new(

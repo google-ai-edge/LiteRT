@@ -175,6 +175,7 @@ cc_library(
     deps = [
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite:ir_model_builder_helper",
+        "//ml_drift_delegate/tflite/convert:convert_aux",
         "//ml_drift_delegate/tflite/support:support_rotary_positional_embedding",
         "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",

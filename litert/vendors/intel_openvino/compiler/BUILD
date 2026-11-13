@@ -264,6 +264,8 @@ litert_lib(
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_intel_openvino_options",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ] + _OPENVINO_DEPS,
 )
 
@@ -283,8 +285,7 @@ litert_test(
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_intel_openvino_options",
-        "@intel_openvino//:openvino",
-    ],
+    ] + _OPENVINO_DEPS,
 )
 
 litert_dynamic_lib(
@@ -349,7 +350,7 @@ litert_dynamic_lib(
 )
 
 litert_bin(
-    name = "LiteRtCompilerPlugin",
+    name = "LiteRtCompilerPlugin_IntelOpenvino",
     srcs = [
         "openvino_compiler_plugin.cc",
     ],
@@ -366,6 +367,11 @@ litert_bin(
     }),
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     linkshared = 1,
+    tags = [
+        "nobuilder",
+        "notap",
+        "windows",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":alias_shared_constants",
@@ -400,6 +406,12 @@ litert_bin(
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
     ] + _OPENVINO_DEPS,
+)
+
+alias(
+    name = "LiteRtCompilerPlugin",
+    actual = ":LiteRtCompilerPlugin_IntelOpenvino",
+    visibility = ["//visibility:public"],
 )
 
 litert_lib(

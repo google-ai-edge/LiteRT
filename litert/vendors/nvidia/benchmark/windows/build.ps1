@@ -54,6 +54,17 @@ function Native {
   } finally { $ErrorActionPreference = $previous }
   return @($output | ForEach-Object { "$_" })
 }
+function NativeQuery {
+  # A read-only query (bazel info, cquery), tried again when Windows fails to start the process:
+  # 0xC0000142 (-1073741502) happens to children of an SSH session after a long build.
+  param([string]$exe, [string[]]$arguments, [string]$cwd)
+  foreach ($attempt in 1..3) {
+    $output = @(Native $exe $arguments $cwd)
+    if ($LASTEXITCODE -ne -1073741502) { break }
+    Start-Sleep -Seconds 5
+  }
+  return $output
+}
 function GitOutput([string]$dir, [string[]]$arguments) {
   $out = Native 'git.exe' (@('-C', $dir) + $arguments)
   if ($LASTEXITCODE -ne 0) { throw "git $($arguments -join ' ') failed in $dir" }
@@ -129,13 +140,13 @@ foreach ($step in $steps) {
   # The outputs of this step's targets, by Bazel's own account.
   # info takes the build options too: the repository environment they set decides which external
   # repositories exist (without them a bare info can try to fetch others, offline).
-  $info = @(Native $bazel (@($step.startup) + @('info') + @($step.args) + @('execution_root')) $step.cwd)
+  $info = @(NativeQuery $bazel (@($step.startup) + @('info') + @($step.args) + @('execution_root')) $step.cwd)
   $infoExit = $LASTEXITCODE
   $root = $info | Where-Object { $_ -and (Test-Path -LiteralPath $_.Trim()) } | Select-Object -Last 1
   if ($infoExit -ne 0 -or -not $root) { throw "bazel info execution_root failed in $($step.cwd) (exit $infoExit; output: $($info -join ' | '))" }
   $root = $root.Trim()
   $query = @($step.startup) + @('cquery') + @($step.args) + @("set($($step.targets -join ' '))", '--output=files')
-  $files = Native $bazel $query $step.cwd
+  $files = NativeQuery $bazel $query $step.cwd
   if ($LASTEXITCODE -ne 0) { throw "bazel cquery failed in $($step.cwd)" }
   foreach ($f in $files) {
     $f = $f.Trim()

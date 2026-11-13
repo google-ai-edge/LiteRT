@@ -24,8 +24,10 @@
 #include <utility>
 #include <vector>
 
+#include "absl/functional/function_ref.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/precision.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/cache_builder.h"
@@ -159,6 +161,16 @@ class SerializationWeightCache {
   absl::Status Insert(uint32_t global_tensor_id,
                       bool is_quantization_param_tensor,
                       const TensorDescriptor& tensor_desc);
+
+  // Like Insert(), but the tensor data isn't taken from `tensor_desc`, whose
+  // data is ignored. Instead, `write_data` is called with a staging buffer of
+  // `size` bytes to fill with the tensor data. The staging buffer is reused
+  // across insertions, so the caller doesn't need to allocate a CPU copy of
+  // every tensor, e.g. when reading the tensor back from the GPU.
+  absl::Status InsertWithWriter(
+      uint32_t global_tensor_id, bool is_quantization_param_tensor,
+      const TensorDescriptor& tensor_desc, size_t size,
+      absl::FunctionRef<absl::Status(absl::Span<uint8_t>)> write_data);
 
   // Releases the cache's memory.
   void Release();

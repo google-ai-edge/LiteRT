@@ -58,31 +58,43 @@ bool IsRotaryPositionalEmbeddingSupported(
   if (!ValidateTensorIds(*context, *inputs, "inputs", *error)) return false;
   if (!ValidateTensorIds(*context, *outputs, "outputs", *error)) return false;
 
-  // Check dtype.
-  const absl::flat_hash_set<TfLiteType> supported_dtypes = {
+  // Check dtype and constancy.
+  const int pos_tensor_idx = inputs->size == 2 ? 1 : 2;
+  const absl::flat_hash_set<TfLiteType> supported_src_output_dtypes = {
       // clang-format off
       // go/keep-sorted start numeric=yes
       kTfLiteFloat16,
       kTfLiteFloat32,
-      kTfLiteInt8,
-      kTfLiteInt16,
-      kTfLiteInt32,
-      kTfLiteUInt8,
-      kTfLiteUInt16,
-      kTfLiteUInt32,
       // go/keep-sorted end
       // clang-format on
   };
-  for (int i = 0; i < inputs->size; ++i) {
+  const absl::flat_hash_set<TfLiteType> supported_pos_dtypes = {
+      // clang-format off
+      // go/keep-sorted start numeric=yes
+      kTfLiteFloat16,
+      kTfLiteFloat32,
+      kTfLiteInt32,
+      // go/keep-sorted end
+      // clang-format on
+  };
+  for (int i = 0; i < pos_tensor_idx; ++i) {
     const TfLiteTensor& input = context->tensors[inputs->data[i]];
-    if (!CheckTensorDtype(input, supported_dtypes,
+    if (!CheckTensorDtype(input, supported_src_output_dtypes,
                           absl::StrCat("inputs[", i, "]"), *error)) {
       return false;
     }
+    if (!CheckNotConstant(input, absl::StrCat("inputs[", i, "]"), *error)) {
+      return false;
+    }
+  }
+  const TfLiteTensor* pos = context->tensors + inputs->data[pos_tensor_idx];
+  if (!CheckTensorDtype(*pos, supported_pos_dtypes,
+                        absl::StrCat("inputs[", pos_tensor_idx, "]"), *error)) {
+    return false;
   }
   for (int i = 0; i < outputs->size; ++i) {
     const TfLiteTensor& output = context->tensors[outputs->data[i]];
-    if (!CheckTensorDtype(output, supported_dtypes,
+    if (!CheckTensorDtype(output, supported_src_output_dtypes,
                           absl::StrCat("outputs[", i, "]"), *error)) {
       return false;
     }
@@ -97,9 +109,7 @@ bool IsRotaryPositionalEmbeddingSupported(
     }
   }
 
-  const int pos_tensor_idx = inputs->size == 2 ? 1 : 2;
   const TfLiteTensor* src = context->tensors + inputs->data[0];
-  const TfLiteTensor* pos = context->tensors + inputs->data[pos_tensor_idx];
 
   const int src_batch = src->dims->size >= 1 ? src->dims->data[0] : 1;
   const int pos_batch = pos->dims->size >= 1 ? pos->dims->data[0] : 1;

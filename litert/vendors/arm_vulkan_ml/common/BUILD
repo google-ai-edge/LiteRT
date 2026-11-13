@@ -13,4 +13,5 @@ package(
 cc_library(
     name = "arm_vulkan_ml_jit_executable",
     hdrs = ["arm_vulkan_ml_jit_executable.h"],
+    deps = ["//litert/c:litert_model_types"],
 )

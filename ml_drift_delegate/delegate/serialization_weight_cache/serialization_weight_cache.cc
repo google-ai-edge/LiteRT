@@ -48,6 +48,8 @@ inline uint64_t Fingerprint64(const char* s, size_t len) {
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/functional/function_ref.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
@@ -410,6 +412,19 @@ absl::Status SerializationWeightCache::LookUp(uint32_t global_tensor_id,
 absl::Status SerializationWeightCache::Insert(
     uint32_t global_tensor_id, bool is_quantization_param_tensor,
     const TensorDescriptor& tensor_desc) {
+  const size_t size = tensor_desc.GetData().size();
+  return InsertWithWriter(
+      global_tensor_id, is_quantization_param_tensor, tensor_desc, size,
+      [&](absl::Span<uint8_t> staging) -> absl::Status {
+        absl::c_copy(tensor_desc.GetData(), staging.begin());
+        return absl::OkStatus();
+      });
+}
+
+absl::Status SerializationWeightCache::InsertWithWriter(
+    uint32_t global_tensor_id, bool is_quantization_param_tensor,
+    const TensorDescriptor& tensor_desc, size_t size,
+    absl::FunctionRef<absl::Status(absl::Span<uint8_t>)> write_data) {
   if (!IsBuilding()) {
     return absl::InvalidArgumentError(
         "Cannot insert a buffer in a cache that is not building.");
@@ -421,14 +436,14 @@ absl::Status SerializationWeightCache::Insert(
     return absl::InvalidArgumentError("Tensor already exists in cache.");
   }
 
-  size_t size = tensor_desc.GetData().size();
   void* ptr = builder_.Reserve(size);
   if (ptr == nullptr && size > 0) {
     return absl::ResourceExhaustedError(
         "Failed to allocate memory for cache staging buffer.");
   }
   if (size > 0) {
-    std::memcpy(ptr, tensor_desc.GetData().data(), size);
+    ABSL_RETURN_IF_ERROR(
+        write_data(absl::MakeSpan(static_cast<uint8_t*>(ptr), size)));
   }
 
   TensorDescriptor tensor_desc_without_data;

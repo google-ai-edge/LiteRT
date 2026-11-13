@@ -14,9 +14,13 @@
 
 #include "litert/compiler/cc/litert_model.h"
 
+#include <cstddef>
+#include <cstdint>
+
 #include <gtest/gtest.h>
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/test/common.h"
 #include "litert/test/load_test_model.h"
 
@@ -45,6 +49,39 @@ TEST(ModelTest, BasicModelInspection) {
 
   auto outputs = subgraph.Outputs();
   EXPECT_FALSE(outputs.empty());
+}
+
+bool block_wise_quantization_called = false;
+
+LiteRtStatus RecordBlockWiseQuantizationCall(
+    LiteRtTensor tensor, LiteRtQuantizationBlockWise* quantization) {
+  block_wise_quantization_called = true;
+  return kLiteRtStatusOk;
+}
+
+TEST(ModelTest, BlockWiseQuantizationSkipsFunctionOutsideContext) {
+  auto cc_model = litert::testing::LoadTestFileModel("simple_multi_op.tflite");
+
+  // Simulates an older compiler host whose context ends before
+  // `get_block_wise_quantization` (added in 1.1.0). The slot is still
+  // populated in memory and must not be called.
+  LiteRtCompilerContext ctx = *LrtGetCompilerContext();
+  ctx.get_block_wise_quantization = RecordBlockWiseQuantizationCall;
+  ctx.abi_header.struct_size = static_cast<uint16_t>(
+      offsetof(LiteRtCompilerContext, get_block_wise_quantization));
+
+  litert::compiler::Model model(&ctx, cc_model.Get());
+  auto subgraph = model.Subgraph(0);
+  ASSERT_TRUE(subgraph.HasValue());
+  auto inputs = subgraph->Inputs();
+  ASSERT_FALSE(inputs.empty());
+
+  block_wise_quantization_called = false;
+  LiteRtQuantizationBlockWise quantization = inputs[0].BlockWiseQuantization();
+  EXPECT_FALSE(block_wise_quantization_called);
+  EXPECT_EQ(quantization.scales, nullptr);
+  EXPECT_EQ(quantization.zero_points, nullptr);
+  EXPECT_EQ(quantization.block_size, 0);
 }
 
 }  // namespace

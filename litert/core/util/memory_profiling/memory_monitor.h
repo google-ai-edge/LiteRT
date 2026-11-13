@@ -46,7 +46,8 @@ struct MemoryPeaks {
   std::optional<MemorySplit> attributed_by_os;
   // The accelerator detail of the sample with the most accelerator memory
   // present, kept whole so its breakdown still sums to its total. nullopt
-  // where accelerator memory tracking is unsupported.
+  // where accelerator memory is not measured: unsupported by the platform, or
+  // a MemoryMonitor::Scope::kHostOnly monitor.
   std::optional<AcceleratorMemoryUsage> accelerator;
   // How many samples the peaks are based on; 0 means "no peaks yet".
   int num_samples = 0;
@@ -89,24 +90,62 @@ std::string FormatMemoryPeaks(const MemoryPeaks& peaks,
 //   ... run ...
 //   monitor.Stop();
 //   std::cerr << "run " << monitor.GetPeaks() << "\n";
+//
+// For a run that uses no accelerator, sample the host only:
+//
+//   MemoryMonitor monitor(MemoryMonitor::Scope::kHostOnly);
+//
+// Samples are taken every kDefaultSamplingInterval unless another interval is
+// given:
+//
+//   MemoryMonitor monitor(MemoryMonitor::Scope::kHostOnly,
+//                         absl::Milliseconds(10));
 class MemoryMonitor {
  public:
+  // What the default sampler measures.
+  enum class Scope {
+    // Host and accelerator memory, with TakeMemorySnapshot().
+    kHostAndAccelerator,
+    // Host memory only, with TakeHostMemorySnapshot(): the accelerator is
+    // never queried, and the peaks have no accelerator part. For runs that
+    // use no accelerator, where querying one costs more than it tells (see
+    // TakeHostMemorySnapshot()).
+    kHostOnly,
+  };
+
+  // How often samples are taken unless the constructor is told otherwise:
+  // often enough to catch the peaks of a model run, cheap enough not to
+  // disturb it.
+  static constexpr absl::Duration kDefaultSamplingInterval =
+      absl::Milliseconds(50);
+
   // Produces the samples and paces them. Can be overridden for testing.
   class Sampler {
    public:
+    explicit Sampler(Scope scope = Scope::kHostAndAccelerator)
+        : scope_(scope) {}
     virtual ~Sampler() = default;
-    virtual MemorySnapshot Sample() { return TakeMemorySnapshot(); }
+    // TakeMemorySnapshot() or TakeHostMemorySnapshot(), as `scope` says.
+    virtual MemorySnapshot Sample();
     // Waits between two samples: for `interval`, or until `stop` is notified,
     // whichever comes first, so that Stop() does not have to wait out the
     // interval.
     virtual void WaitBetweenSamples(absl::Duration interval,
                                     const absl::Notification& stop);
+
+   private:
+    Scope scope_;
   };
 
-  // A null `sampler` means the default one, which calls TakeMemorySnapshot().
+  // Samples what `scope` says, every `sampling_interval`.
   explicit MemoryMonitor(
-      absl::Duration sampling_interval = absl::Milliseconds(50),
-      std::unique_ptr<Sampler> sampler = nullptr);
+      Scope scope = Scope::kHostAndAccelerator,
+      absl::Duration sampling_interval = kDefaultSamplingInterval);
+  // FOR TESTING: samples with `sampler`, every `sampling_interval`. A null
+  // `sampler` means the default one, measuring host and accelerator.
+  explicit MemoryMonitor(
+      std::unique_ptr<Sampler> sampler,
+      absl::Duration sampling_interval = kDefaultSamplingInterval);
   // Stops the monitor if it is still running.
   ~MemoryMonitor();
 

@@ -18,11 +18,13 @@
 
 #include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
 
+#include <cstddef>
 #include <cstdint>
 
 #include "openvino/core/shape.hpp"
 #include <gtest/gtest.h>
 #include "litert/c/internal/litert_custom_tensor_buffer_handlers_def.h"
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_layout.h"
@@ -30,6 +32,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
+#include "litert/vendors/intel_openvino/dispatch/device_context.h"
 
 namespace {
 
@@ -215,6 +218,153 @@ TEST(OpenVinoTensorBufferTest, ImportHandlerRejectsViewLargerThanSource) {
                 16 * sizeof(float), 8 * sizeof(float), &hw_memory_info),
             kLiteRtStatusErrorInvalidArgument);
   EXPECT_EQ(hw_memory_info, nullptr);
+}
+
+struct FakeHostTensorBuffer {
+  LiteRtRankedTensorType tensor_type = kTensorType;
+  void* host_addr = nullptr;
+  size_t size = 0;
+  size_t offset = 0;
+};
+
+LiteRtRuntimeContext MakeFakeRuntimeContext() {
+  LiteRtRuntimeContext ctx = {};
+  ctx.get_tensor_buffer_type = [](LiteRtTensorBuffer,
+                                  LiteRtTensorBufferType* type) {
+    *type = kLiteRtTensorBufferTypeHostMemory;
+    return kLiteRtStatusOk;
+  };
+  ctx.get_tensor_buffer_size = [](LiteRtTensorBuffer buf, size_t* size) {
+    *size = reinterpret_cast<const FakeHostTensorBuffer*>(buf)->size;
+    return kLiteRtStatusOk;
+  };
+  ctx.get_tensor_buffer_offset = [](LiteRtTensorBuffer buf, size_t* offset) {
+    *offset = reinterpret_cast<const FakeHostTensorBuffer*>(buf)->offset;
+    return kLiteRtStatusOk;
+  };
+  ctx.get_tensor_buffer_tensor_type = [](LiteRtTensorBuffer buf,
+                                         LiteRtRankedTensorType* type) {
+    *type = reinterpret_cast<const FakeHostTensorBuffer*>(buf)->tensor_type;
+    return kLiteRtStatusOk;
+  };
+  ctx.get_tensor_buffer_host_memory = [](LiteRtTensorBuffer buf, void** addr) {
+    *addr = reinterpret_cast<const FakeHostTensorBuffer*>(buf)->host_addr;
+    return kLiteRtStatusOk;
+  };
+  return ctx;
+}
+
+TEST(OpenVinoDeviceContextHostMemoryTest,
+     RegisterHostMemoryUsesOffsetBufferInPlace) {
+  const LiteRtRuntimeContext runtime_ctx = MakeFakeRuntimeContext();
+  auto device_ctx = LiteRtDispatchDeviceContextT::Create(&runtime_ctx, nullptr);
+  ASSERT_TRUE(device_ctx);
+
+  float data[12] = {};
+  FakeHostTensorBuffer fake_buf = {
+      .tensor_type = kTensorType,
+      .host_addr = data,
+      .size = sizeof(data),
+      .offset = 4 * sizeof(float),
+  };
+  auto handle = (*device_ctx)
+                    ->RegisterTensorBuffer(
+                        reinterpret_cast<LiteRtTensorBuffer>(&fake_buf));
+  ASSERT_TRUE(handle);
+
+  auto ov_tensor = (*device_ctx)->getOVTensor(*handle);
+  ASSERT_TRUE(ov_tensor);
+  EXPECT_EQ(ov_tensor->data(), data + 4);
+  EXPECT_EQ(ov_tensor->get_shape(), ov::Shape({2, 4}));
+  EXPECT_EQ(ov_tensor->get_byte_size(), 8 * sizeof(float));
+
+  EXPECT_TRUE((*device_ctx)->UnregisterTensorBuffer(*handle));
+}
+
+TEST(OpenVinoDeviceContextHostMemoryTest, RejectsNullHostMemory) {
+  const LiteRtRuntimeContext runtime_ctx = MakeFakeRuntimeContext();
+  auto device_ctx = LiteRtDispatchDeviceContextT::Create(&runtime_ctx, nullptr);
+  ASSERT_TRUE(device_ctx);
+
+  FakeHostTensorBuffer fake_buf = {
+      .tensor_type = kTensorType,
+      .host_addr = nullptr,
+      .size = 8 * sizeof(float),
+      .offset = 0,
+  };
+  EXPECT_FALSE((*device_ctx)
+                   ->RegisterTensorBuffer(
+                       reinterpret_cast<LiteRtTensorBuffer>(&fake_buf)));
+}
+
+TEST(OpenVinoDeviceContextHostMemoryTest,
+     RejectsOffsetExceedingBufferOrInsufficientRemainingBytes) {
+  const LiteRtRuntimeContext runtime_ctx = MakeFakeRuntimeContext();
+  auto device_ctx = LiteRtDispatchDeviceContextT::Create(&runtime_ctx, nullptr);
+  ASSERT_TRUE(device_ctx);
+
+  float data[8] = {};
+  FakeHostTensorBuffer offset_past_end = {
+      .tensor_type = kTensorType,
+      .host_addr = data,
+      .size = sizeof(data),
+      .offset = sizeof(data) + sizeof(float),
+  };
+  EXPECT_FALSE((*device_ctx)
+                   ->RegisterTensorBuffer(
+                       reinterpret_cast<LiteRtTensorBuffer>(&offset_past_end)));
+
+  FakeHostTensorBuffer insufficient_after_offset = {
+      .tensor_type = kTensorType,
+      .host_addr = data,
+      .size = sizeof(data),
+      .offset = sizeof(float),
+  };
+  EXPECT_FALSE((*device_ctx)
+                   ->RegisterTensorBuffer(reinterpret_cast<LiteRtTensorBuffer>(
+                       &insufficient_after_offset)));
+}
+
+TEST(OpenVinoDeviceContextHostMemoryTest,
+     RejectsInvalidRankNegativeDimAndUnsupportedType) {
+  const LiteRtRuntimeContext runtime_ctx = MakeFakeRuntimeContext();
+  auto device_ctx = LiteRtDispatchDeviceContextT::Create(&runtime_ctx, nullptr);
+  ASSERT_TRUE(device_ctx);
+
+  float data[8] = {};
+
+  LiteRtRankedTensorType bad_rank_type = kTensorType;
+  bad_rank_type.layout.rank = LITERT_TENSOR_MAX_RANK + 1;
+  FakeHostTensorBuffer bad_rank = {
+      .tensor_type = bad_rank_type,
+      .host_addr = data,
+      .size = sizeof(data),
+  };
+  EXPECT_FALSE((*device_ctx)
+                   ->RegisterTensorBuffer(
+                       reinterpret_cast<LiteRtTensorBuffer>(&bad_rank)));
+
+  constexpr int32_t kDynamicDims[] = {-1, 4};
+  FakeHostTensorBuffer neg_dim = {
+      .tensor_type = {kLiteRtElementTypeFloat32,
+                      ::litert::BuildLayout(kDynamicDims)},
+      .host_addr = data,
+      .size = sizeof(data),
+  };
+  EXPECT_FALSE((*device_ctx)
+                   ->RegisterTensorBuffer(
+                       reinterpret_cast<LiteRtTensorBuffer>(&neg_dim)));
+
+  LiteRtRankedTensorType bad_elem_type = kTensorType;
+  bad_elem_type.element_type = kLiteRtElementTypeNone;
+  FakeHostTensorBuffer bad_elem = {
+      .tensor_type = bad_elem_type,
+      .host_addr = data,
+      .size = sizeof(data),
+  };
+  EXPECT_FALSE((*device_ctx)
+                   ->RegisterTensorBuffer(
+                       reinterpret_cast<LiteRtTensorBuffer>(&bad_elem)));
 }
 
 }  // namespace

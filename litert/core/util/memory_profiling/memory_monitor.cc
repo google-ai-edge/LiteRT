@@ -90,7 +90,7 @@ std::string MemoryPeaks::ToString() const {
   parts.push_back(absl::StrCat("peak accelerator detail=",
                                accelerator.has_value()
                                    ? AcceleratorSummary(*accelerator)
-                                   : std::string("unsupported")));
+                                   : std::string("not measured")));
   parts.push_back(
       absl::StrCat(num_samples, num_samples == 1 ? " sample" : " samples"));
   return absl::StrJoin(parts, ", ");
@@ -124,9 +124,14 @@ std::string FormatMemoryPeaks(const MemoryPeaks& peaks,
       lines.push_back(absl::StrCat("  ", line));
     }
   } else {
-    lines.push_back("  Peak accelerator memory detail: unsupported");
+    lines.push_back("  Peak accelerator memory detail: not measured");
   }
   return absl::StrJoin(lines, "\n");
+}
+
+MemorySnapshot MemoryMonitor::Sampler::Sample() {
+  return scope_ == Scope::kHostOnly ? TakeHostMemorySnapshot()
+                                    : TakeMemorySnapshot();
 }
 
 void MemoryMonitor::Sampler::WaitBetweenSamples(
@@ -134,8 +139,11 @@ void MemoryMonitor::Sampler::WaitBetweenSamples(
   stop.WaitForNotificationWithTimeout(interval);
 }
 
-MemoryMonitor::MemoryMonitor(absl::Duration sampling_interval,
-                             std::unique_ptr<Sampler> sampler)
+MemoryMonitor::MemoryMonitor(Scope scope, absl::Duration sampling_interval)
+    : MemoryMonitor(std::make_unique<Sampler>(scope), sampling_interval) {}
+
+MemoryMonitor::MemoryMonitor(std::unique_ptr<Sampler> sampler,
+                             absl::Duration sampling_interval)
     : sampler_(sampler != nullptr ? std::move(sampler)
                                   : std::make_unique<Sampler>()),
       sampling_interval_(sampling_interval) {}

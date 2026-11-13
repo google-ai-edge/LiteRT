@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <numeric>
 #include <utility>
 #include <vector>
 
@@ -50,9 +51,11 @@
 namespace litert::ml_drift {
 namespace {
 
-using absl_testing::StatusIs;
-using testing::_;
-using testing::HasSubstr;
+using ::absl_testing::StatusIs;
+using ::testing::_;
+using ::testing::ElementsAre;
+using ::testing::ElementsAreArray;
+using ::testing::HasSubstr;
 
 class DelegatedInterpreter {
  public:
@@ -2546,6 +2549,77 @@ TEST_F(Conv2DOperationParserTest, ParseWithSharedTensorsWorks) {
                                      .global_id = kGlobalId,
                                      .dequant_forced = false};
   EXPECT_EQ(shared_tensor_map.at(kWeightsValueId), kExpected);
+}
+
+// A grouped convolution whose per-group channel counts are not multiples of 4
+// is replaced with SPLIT -> one CONVOLUTION_2D per group -> CONCAT.
+TEST_F(Conv2DOperationParserTest, ParseSplitsGroupedConvIntoPerGroupConvs) {
+  // 2 groups, each mapping 5 input channels to 3 output channels with a 1x2
+  // kernel.
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinConv2d,
+      /*op_version=*/5,
+      /*num_inputs=*/3,
+      /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  context->ChangeTensorShape(1, {1, 1, 2, 10});  // input (BHWC)
+  context->ChangeTensorShape(2, {6, 1, 2, 5});   // filter (OHWI)
+  context->ChangeTensorShape(3, {6});            // bias
+  context->ChangeTensorShape(4, {1, 1, 1, 6});   // output (BHWC)
+  context->SetTensorType(2, kTfLiteFloat32, kTfLiteMmapRo);
+  context->SetTensorType(3, kTfLiteFloat32, kTfLiteMmapRo);
+  constexpr size_t kWeightsPerGroup = 3 * 1 * 2 * 5;
+  const absl::Span<float> filter(context->tensor(2)->data.f,
+                                 2 * kWeightsPerGroup);
+  std::iota(filter.begin(), filter.end(), 0.0f);
+  const absl::Span<float> bias(context->tensor(3)->data.f, 6);
+  std::iota(bias.begin(), bias.end(), 100.0f);
+  TfLiteConvParams* const tf_options =
+      static_cast<TfLiteConvParams*>(context->node()->builtin_data);
+  tf_options->stride_width = 1;
+  tf_options->stride_height = 1;
+  tf_options->dilation_width_factor = 1;
+  tf_options->dilation_height_factor = 1;
+  tf_options->padding = kTfLitePaddingValid;
+  tf_options->activation = kTfLiteActNone;
+  auto parser = NewOperationParser(context->node(), context->registration());
+  ASSERT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+
+  const std::vector<::ml_drift::Node*> nodes = graph.nodes();
+  ASSERT_EQ(nodes.size(), 4);
+  ASSERT_EQ(nodes[0]->operation.type,
+            ToString(::ml_drift::OperationType::kSplit));
+  ASSERT_EQ(nodes[1]->operation.type,
+            ToString(::ml_drift::OperationType::kConvolution2D));
+  ASSERT_EQ(nodes[2]->operation.type,
+            ToString(::ml_drift::OperationType::kConvolution2D));
+  ASSERT_EQ(nodes[3]->operation.type,
+            ToString(::ml_drift::OperationType::kConcat));
+  const auto& conv0 = std::any_cast<const ::ml_drift::Convolution2DAttributes&>(
+      nodes[1]->operation.attributes);
+  const auto& conv1 = std::any_cast<const ::ml_drift::Convolution2DAttributes&>(
+      nodes[2]->operation.attributes);
+  EXPECT_EQ(conv0.groups, 1);
+  EXPECT_EQ(conv1.groups, 1);
+  // The filter and the per-group weights are both OHWI, so each group takes
+  // one contiguous block of the filter's output channels.
+  const auto& weights0 = ::ml_drift::GetFloatWeights(conv0);
+  const auto& weights1 = ::ml_drift::GetFloatWeights(conv1);
+  ASSERT_EQ(weights0.shape, ::ml_drift::OHWI(3, 1, 2, 5));
+  ASSERT_EQ(weights1.shape, ::ml_drift::OHWI(3, 1, 2, 5));
+  ASSERT_GE(weights0.data.size(), kWeightsPerGroup);
+  ASSERT_GE(weights1.data.size(), kWeightsPerGroup);
+  EXPECT_THAT(absl::MakeConstSpan(weights0.data).first(kWeightsPerGroup),
+              ElementsAreArray(filter.first(kWeightsPerGroup)));
+  EXPECT_THAT(absl::MakeConstSpan(weights1.data).first(kWeightsPerGroup),
+              ElementsAreArray(filter.last(kWeightsPerGroup)));
+  EXPECT_THAT(conv0.bias.data, ElementsAre(100.0f, 101.0f, 102.0f));
+  EXPECT_THAT(conv1.bias.data, ElementsAre(103.0f, 104.0f, 105.0f));
 }
 
 TEST(DepthwiseConvolutionOperationParserTest, TestIsSupported) {

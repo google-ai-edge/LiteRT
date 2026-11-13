@@ -18,11 +18,11 @@
 #include <memory>
 #include <string>
 
+#include "openvino/core/any.hpp"
+#include "openvino/core/model.hpp"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
-#include "openvino/core/any.hpp"
-#include "openvino/core/model.hpp"
 
 namespace litert {
 namespace openvino {
@@ -68,8 +68,12 @@ class OpenVinoCompileContext {
   // weight pools. A content-derived name lets partitions that genuinely share a
   // pool dedup, while isolating unrelated models (e.g. the main text decoder
   // vs. the auxiliary cache-update model).
-  void ConfigureForNpuWeightSharing(const std::string& weights_bank_name,
-                                    bool moe_multi_token_chunk = false);
+  //
+  // Returns kLiteRtStatusErrorInvalidArgument when the resulting configs map
+  // enables NPUW (NPU_USE_NPUW) without any weightless sharing mechanism
+  // (NPUW_CWAI, NPUW_FOLD, or non-empty NPUW_FOLD_ONLY).
+  LiteRtStatus ConfigureForNpuWeightSharing(
+      const std::string& weights_bank_name, bool moe_multi_token_chunk = false);
 
   // Classification info OptimizeModel()'s NPU passes produced, beyond the
   // in-place graph mutation, that ConfigureForNpuWeightSharing() needs.

@@ -284,6 +284,11 @@ absl::Status GpuBackendVulkan::ReadSpatialTensorToDescriptor(
       "ReadSpatialTensorToDescriptor is not implemented");
 }
 
+absl::Status GpuBackendVulkan::ReadSpatialTensorData(
+    ::ml_drift::GpuSpatialTensor& tensor, absl::Span<uint8_t> dst) {
+  return absl::UnimplementedError("ReadSpatialTensorData is not implemented");
+}
+
 absl::Status GpuBackendVulkan::UpdateSpatialTensor(
     ::ml_drift::GpuSpatialTensor* tensor,
     const ::ml_drift::TensorDescriptor& desc, size_t page_adjusted_offset,

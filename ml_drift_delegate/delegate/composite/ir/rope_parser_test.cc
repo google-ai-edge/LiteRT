@@ -267,5 +267,105 @@ TEST_F(ConvertRopeTest, RejectsMismatchedNonUnitPosBatch) {
   EXPECT_EQ(ir_model, nullptr);
 }
 
+TEST_F(ConvertRopeTest, ConstantPositionEmitsConstProducer) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 8, 4, 64});
+  std::vector<int32_t> pos_vals = {1, 2, 3, 4};
+  std::vector<uint8_t> pos_bytes(
+      reinterpret_cast<const uint8_t*>(pos_vals.data()),
+      reinterpret_cast<const uint8_t*>(pos_vals.data() + pos_vals.size()));
+  builder.AddConstInput(kTfLiteInt32, {1, 4}, pos_bytes);
+  builder.AddOutput(kTfLiteFloat32, {1, 8, 4, 64});
+
+  builder.SetParameters(CreateRopeParams(/*max_timescale=*/10000.0f));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(2));
+  EXPECT_THAT(ir_model->ops()[0]->name, Eq("rope"));
+  ASSERT_THAT(ir_model->ops()[0]->inputs, SizeIs(2));
+  EXPECT_THAT(ir_model->ops()[0]->outputs, SizeIs(1));
+  EXPECT_THAT(ir_model->ops()[1]->name,
+              Eq(ToString(::ml_drift::OperationType::kConstant)));
+  ASSERT_THAT(ir_model->ops()[1]->outputs, SizeIs(1));
+  EXPECT_EQ(ir_model->ops()[0]->inputs[1], ir_model->ops()[1]->outputs[0]);
+  EXPECT_THAT(ir_model->inputs(), SizeIs(1));
+}
+
+TEST_F(ConvertRopeTest, QueryAndKeyConstantPositionEmitsConstProducer) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat16, {1, 8, 4, 64});
+  builder.AddInput(kTfLiteFloat16, {1, 2, 4, 64});
+  std::vector<int32_t> pos_vals = {1, 2, 3, 4};
+  std::vector<uint8_t> pos_bytes(
+      reinterpret_cast<const uint8_t*>(pos_vals.data()),
+      reinterpret_cast<const uint8_t*>(pos_vals.data() + pos_vals.size()));
+  builder.AddConstInput(kTfLiteInt32, {1, 4}, pos_bytes);
+  builder.AddOutput(kTfLiteFloat16, {1, 8, 4, 64});
+  builder.AddOutput(kTfLiteFloat16, {1, 2, 4, 64});
+
+  builder.SetParameters(CreateRopeParams(/*max_timescale=*/10000.0f));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(2));
+  EXPECT_THAT(ir_model->ops()[0]->name, Eq("rope"));
+  ASSERT_THAT(ir_model->ops()[0]->inputs, SizeIs(3));
+  EXPECT_THAT(ir_model->ops()[0]->outputs, SizeIs(2));
+  EXPECT_THAT(ir_model->ops()[1]->name,
+              Eq(ToString(::ml_drift::OperationType::kConstant)));
+  ASSERT_THAT(ir_model->ops()[1]->outputs, SizeIs(1));
+  EXPECT_EQ(ir_model->ops()[0]->inputs[2], ir_model->ops()[1]->outputs[0]);
+  EXPECT_THAT(ir_model->inputs(), SizeIs(2));
+}
+
+TEST_F(ConvertRopeTest, RejectsUnsupportedConstantPositionDtype) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 8, 4, 64});
+  std::vector<int16_t> pos_vals = {1, 2, 3, 4};
+  std::vector<uint8_t> pos_bytes(
+      reinterpret_cast<const uint8_t*>(pos_vals.data()),
+      reinterpret_cast<const uint8_t*>(pos_vals.data() + pos_vals.size()));
+  builder.AddConstInput(kTfLiteInt16, {1, 4}, pos_bytes);
+  builder.AddOutput(kTfLiteFloat32, {1, 8, 4, 64});
+
+  builder.SetParameters(CreateRopeParams(/*max_timescale=*/10000.0f));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  EXPECT_EQ(ir_model, nullptr);
+}
+
+TEST_F(ConvertRopeTest, RejectsConstantRotatedInput) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  std::vector<float> src_vals(8 * 4 * 64, 1.0f);
+  std::vector<uint8_t> src_bytes(
+      reinterpret_cast<const uint8_t*>(src_vals.data()),
+      reinterpret_cast<const uint8_t*>(src_vals.data() + src_vals.size()));
+  builder.AddConstInput(kTfLiteFloat32, {1, 8, 4, 64}, src_bytes);
+  builder.AddInput(kTfLiteInt32, {1, 4});
+  builder.AddOutput(kTfLiteFloat32, {1, 8, 4, 64});
+
+  builder.SetParameters(CreateRopeParams(/*max_timescale=*/10000.0f));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  EXPECT_EQ(ir_model, nullptr);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir

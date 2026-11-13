@@ -135,6 +135,8 @@ cc_test(
         "//litert/core:filesystem",
         "//litert/core:options",
         "//litert/core/model",
+        "//litert/core/model:model_load",
+        "//litert/core/model:model_serialize",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:load_test_model",

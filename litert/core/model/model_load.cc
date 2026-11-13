@@ -15,6 +15,7 @@
 #include "litert/core/model/model_load.h"
 
 #include <algorithm>
+#include <cstdarg>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -23,6 +24,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -39,6 +41,8 @@
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/converter/allocation.h"
+#include "tflite/converter/core/model_builder_base.h"
+#include "tflite/core/api/error_reporter.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::internal {
@@ -154,6 +158,31 @@ class FlatbufferContext {
 
 bool IsRangeInAllocation(size_t offset, size_t size, size_t allocation_size) {
   return offset <= allocation_size && size <= allocation_size - offset;
+}
+
+class SilentErrorReporter : public tflite::ErrorReporter {
+ public:
+  int Report(const char* format, va_list args) override { return 0; }
+};
+
+bool IsAbsolutePath(absl::string_view path) {
+  if (path.empty()) {
+    return false;
+  }
+#if defined(_WIN32)
+  if (path.size() >= 2 && path[1] == ':' &&
+      ((path[0] >= 'A' && path[0] <= 'Z') ||
+       (path[0] >= 'a' && path[0] <= 'z'))) {
+    return true;
+  }
+  if (path.size() >= 2 && (path[0] == '\\' || path[0] == '/') &&
+      (path[1] == '\\' || path[1] == '/')) {
+    return true;
+  }
+  return path[0] == '\\' || path[0] == '/';
+#else
+  return path[0] == '/';
+#endif
 }
 
 #if !defined(LITERT_NO_BUILTIN_OPS)
@@ -727,6 +756,70 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
     }
   }
 #endif  // !defined(LITERT_NO_BUILTIN_OPS)
+
+  // Resolve external weight group files located alongside the model file, if
+  // present on disk. If a group file is not on disk (e.g., it refers to a
+  // ScopedWeightSource section or WeightInMemoryMap key supplied at runtime),
+  // leave the buffer view empty to be resolved when runtime options are
+  // available.
+  const auto& ext_groups = model->ExternalBufferGroups();
+  BufferManager* buffers = model->Buffers();
+  if (!ext_groups.empty() && buffers->NumBuffers() > 1) {
+    absl::string_view model_dir;
+    const size_t last_sep = filename.find_last_of("/\\");
+    if (last_sep != absl::string_view::npos) {
+      model_dir = filename.substr(0, last_sep);
+    }
+
+    std::vector<tflite::Allocation::Ptr> group_allocs(ext_groups.size());
+    std::vector<uint8_t> group_attempted(ext_groups.size(), 0);
+
+    for (BufferManager::BufferId buf_id = 1; buf_id < buffers->NumBuffers();
+         ++buf_id) {
+      auto ctx = buffers->GetContext(buf_id);
+      if (!ctx || !ctx->get().external.has_value()) {
+        continue;
+      }
+      const ExternalBufferRef& ext_buf = *ctx->get().external;
+      const uint32_t group_idx = ext_buf.group;
+      if (group_idx >= ext_groups.size() || ext_groups[group_idx].empty()) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
+
+      if (!group_attempted[group_idx]) {
+        group_attempted[group_idx] = 1;
+        const absl::string_view group_name = ext_groups[group_idx];
+        std::string resolved_path;
+        if (model_dir.empty() || IsAbsolutePath(group_name)) {
+          resolved_path = std::string(group_name);
+        } else {
+          resolved_path = absl::StrCat(model_dir, "/", group_name);
+        }
+        SilentErrorReporter silent_reporter;
+        auto alloc = tflite::GetAllocationFromFile(
+            resolved_path.c_str(), &silent_reporter, allow_modifications);
+        if (alloc && alloc->valid()) {
+          group_allocs[group_idx] = std::move(alloc);
+        }
+      }
+
+      const tflite::Allocation* group_alloc = group_allocs[group_idx].get();
+      if (group_alloc == nullptr) {
+        continue;
+      }
+
+      if (!IsRangeInAllocation(ext_buf.offset, ext_buf.length,
+                               group_alloc->bytes())) {
+        return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+      }
+
+      OwningBufferRef<uint8_t> weight_buf(
+          static_cast<const uint8_t*>(group_alloc->base()) + ext_buf.offset,
+          ext_buf.length);
+      LITERT_RETURN_IF_ERROR(
+          buffers->SetOwnedBuffer(buf_id, std::move(weight_buf)));
+    }
+  }
 
   return std::move(model);
 }

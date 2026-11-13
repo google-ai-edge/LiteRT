@@ -22,6 +22,7 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -224,8 +225,9 @@ class Tensor {
   }
 
   LiteRtQuantizationBlockWise BlockWiseQuantization() const {
-    LiteRtQuantizationBlockWise block_wise_quantization;
-    if (ctx_ && ctx_->get_block_wise_quantization) {
+    LiteRtQuantizationBlockWise block_wise_quantization{};
+    if (LITERT_ABI_HAS_API(ctx_, /*req_major=*/1,
+                           get_block_wise_quantization)) {
       internal::AssertOk(ctx_->get_block_wise_quantization, Get(),
                          &block_wise_quantization);
     }

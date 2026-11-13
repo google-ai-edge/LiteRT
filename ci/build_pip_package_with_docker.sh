@@ -42,12 +42,16 @@ if [ ! -d /root_dir ]; then
     -e RELEASE_VERSION=${RELEASE_VERSION} \
     -e TEST_WHEEL=${TEST_WHEEL:-false} \
     -e TENSORFLOW_TARGET=${TENSORFLOW_TARGET:-} \
+    -e LITERT_PACKAGE_MODE=${LITERT_PACKAGE_MODE:-wheel} \
+    -e HOST_UID=$(id -u) \
+    -e HOST_GID=$(id -g) \
     --entrypoint /script_dir/build_pip_package_with_docker.sh \
     tflite-builder
   exit 0
 else
   # Running inside docker container
   cd /root_dir
+  trap 'if [[ -n "${HOST_UID:-}" && -n "${HOST_GID:-}" ]]; then chown -R "${HOST_UID}:${HOST_GID}" /root_dir 2>/dev/null || true; fi' EXIT
 
   export CI_BUILD_PYTHON="python${DOCKER_PYTHON_VERSION}"
   export HERMETIC_PYTHON_VERSION="${DOCKER_PYTHON_VERSION}"

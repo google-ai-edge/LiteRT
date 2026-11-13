@@ -68,8 +68,10 @@ struct MemorySnapshot {
   std::optional<MemorySplit> resident_in_ram;
   std::optional<MemorySplit> attributed_by_os;
   // The accelerator side in detail (regions, per-device or per-buffer lines);
-  // std::nullopt where accelerator memory tracking is unsupported, in which
-  // case the accelerator parts above are 0.
+  // std::nullopt where accelerator memory is not measured, either because the
+  // platform does not support it or because the snapshot covers the host only
+  // (TakeHostMemorySnapshot()), in which case the accelerator parts above are
+  // 0.
   std::optional<AcceleratorMemoryUsage> accelerator;
 
   // Single-line summary, e.g.
@@ -101,12 +103,25 @@ std::string FormatMemorySplit(const MemorySplit& split);
 // sampling cadence of tens of milliseconds, not inside hot loops.
 MemorySnapshot TakeMemorySnapshot();
 
+// Takes a snapshot of the host side only. The accelerator is not queried at
+// all, so `accelerator` is std::nullopt and the accelerator parts of the
+// figures are 0. For callers that know the process is not using an
+// accelerator: querying one is not free, and on some systems not harmless (on
+// Windows, it wakes a sleeping discrete GPU, which slows down the CPU-only run
+// being measured; b/581640795). Costs one system call or one small /proc read.
+MemorySnapshot TakeHostMemorySnapshot();
+
 // Takes a snapshot, logs FormatMemorySnapshot(snapshot, title) (see below) at
 // INFO, one log line per text line, and returns the snapshot. For marking the
 // phases of a run:
 //
 //   TakeAndLogMemorySnapshot("Memory after model load");
 MemorySnapshot TakeAndLogMemorySnapshot(
+    absl::string_view title = "Memory usage");
+
+// The same, with TakeHostMemorySnapshot(): for marking the phases of a run
+// that uses no accelerator.
+MemorySnapshot TakeAndLogHostMemorySnapshot(
     absl::string_view title = "Memory usage");
 
 // Detailed, multi-line form: `title` on the first line, then
@@ -122,7 +137,9 @@ std::string FormatMemorySnapshot(const MemorySnapshot& snapshot,
 // FOR TESTING PURPOSES ONLY
 //
 // Builds a snapshot from its raw ingredients, the host memory and the
-// accelerator usage. TakeMemorySnapshot() is this applied to the live values.
+// accelerator usage. TakeMemorySnapshot() is this applied to the live values,
+// TakeHostMemorySnapshot() this applied to the live host values and
+// std::nullopt.
 MemorySnapshot MakeMemorySnapshot(
     const HostMemoryUsage& host,
     std::optional<AcceleratorMemoryUsage> accelerator);

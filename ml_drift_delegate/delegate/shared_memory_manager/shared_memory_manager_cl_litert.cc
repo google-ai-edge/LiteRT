@@ -27,6 +27,7 @@
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include "ml_drift/cl/tensor.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
@@ -52,6 +53,16 @@
 
 namespace ml_drift {
 namespace internal {
+
+bool DeviceSupportsAhwbImport(const GpuInfo& gpu_info) {
+  // Only Mali advertises this Arm extension. PowerVR and Xclipse export
+  // clImportMemoryARM without it and can crash on AHB import (b/582255090);
+  // Adreno has neither.
+  // TODO: b/584327517 - Support the Adreno and PowerVR AHB import extensions.
+  return gpu_info.IsApiOpenCl() &&
+         gpu_info.SupportsExtension(
+             "cl_arm_import_memory_android_hardware_buffer");
+}
 
 #ifdef __ANDROID__
 // Checks whether AHardwareBuffer allocation with AHARDWAREBUFFER_FORMAT_BLOB
@@ -107,6 +118,9 @@ bool IsAhwbGpuDataBufferSupported() {
 // Currently only supports TEXTURE_2D tensors, which are the primary storage
 // type on Mali GPUs and account for the vast majority of weight memory.
 //
+// Only attempted when the device advertises
+// cl_arm_import_memory_android_hardware_buffer (see DeviceSupportsAhwbImport).
+//
 // Returns true if the tensor was successfully created via AHWB; |tensor| is
 // populated. Returns false on any failure; the caller should fall through to
 // the standard CreateTensor path.
@@ -116,6 +130,7 @@ bool TryCreateTensorViaAhwb(
     std::unique_ptr<GpuSpatialTensor>& tensor) {
 #if __ANDROID_API__ >= 26 || defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__)
   if (cl::clImportMemoryARM == nullptr) return false;
+  if (!DeviceSupportsAhwbImport(env.device().GetInfo())) return false;
   if (tensor_desc.GetStorageType() != TensorStorageType::kTexture2D) {
     return false;
   }

@@ -48,8 +48,9 @@ The framework replaces the original subgraphs with custom operations that invoke
 the hardware driver, passing along the compiled bytecode created by the plugin.
 
 **LiteRt Dispatch** is the runtime analog for compiler plugin. They provide the
-means of calling into the HAL given compiler output. See the dispatch
-documentation here #TODO.
+means of calling into the HAL given compiler output. See
+[Dispatch API](./DISPATCH_API.md) and
+[Build Your Own NPU Backend](./BUILD_YOUR_OWN_BACKEND.md).
 
 ### AOT vs On-Device
 
@@ -327,8 +328,10 @@ LiteRtStatus LiteRtGetCompiledResultByteCode(
 ## Usage and Validation
 
 LiteRt provides various toolings for applying compiler plugins to model files,
-executing the result, and validating/benchmarking. Please refer to the
-documentation for the LiteRt's tooling: #TODO.
+executing the result, and validating/benchmarking. See
+[LiteRT Tools Overview](./tools/README.md),
+[Accelerator Test Suite (`ats`)](./TESTING.md), and
+[Build Your Own NPU Backend](./BUILD_YOUR_OWN_BACKEND.md).
 
 -----
 

@@ -64,15 +64,17 @@ def litert_run(root, label, speeds, *, profile='e2b', workload='short', metric='
 
 
 def llama_run(root, label, pp, tg, *, start='2026-11-01T00:00:00Z', load_mode='mmap',
-              model='/models/gemma-4-E2B-it-qat-UD-Q2_K_XL-cuda-Q2_0-repacked.gguf'):
+              model='/models/gemma-4-E2B-it-qat-UD-Q2_K_XL-cuda-Q2_0-repacked.gguf', warmups=1):
   run = root / label
   run.mkdir(parents=True)
   (run / 'meta.json').write_text(json.dumps({
       'label': label, 'runtime': 'llama.cpp', 'profile': 'e2b', 'workload': 'short', 'metric': 'latency',
-      'mtp': False, 'prompt_file': None, 'iterations': 3, 'warmups': 0, 'exit_code': 0, 'start': start,
+      'mtp': False, 'prompt_file': None, 'iterations': 3, 'warmups': warmups, 'exit_code': 0, 'start': start,
       'build_id': 'b1', 'release_tag': 'v0.8.0', 'load_mode': load_mode, 'gpu_baseline_mib': 100, 'model': model}))
-  (run / 'pp.json').write_text(json.dumps([{'n_prompt': 1024, 'n_gen': 0, 'n_depth': 0, 'avg_ts': pp, 'samples_ts': [pp] * 3}]))
-  (run / 'tg.json').write_text(json.dumps([{'n_prompt': 0, 'n_gen': 256, 'n_depth': 1024, 'avg_ts': tg, 'samples_ts': [tg] * 3}]))
+  # llama-bench's first repetition is cold; the run's warm-up count leaves it out of the mean.
+  cold = [x / 4 for x in (pp, tg)] if warmups else [pp, tg]
+  (run / 'pp.json').write_text(json.dumps([{'n_prompt': 1024, 'n_gen': 0, 'n_depth': 0, 'avg_ts': (cold[0] + 2 * pp) / 3, 'samples_ts': [cold[0], pp, pp]}]))
+  (run / 'tg.json').write_text(json.dumps([{'n_prompt': 0, 'n_gen': 256, 'n_depth': 1024, 'avg_ts': (cold[1] + 2 * tg) / 3, 'samples_ts': [cold[1], tg, tg]}]))
   return run
 
 
@@ -112,8 +114,13 @@ class SelectionTest(unittest.TestCase):
     litert_run(self.root / 'b', 'cpu_fallback', [999, 999], start='2026-11-03T00:00:00Z', delegated=False)
     litert_run(self.root / 'c', 'failed', [999, 999], start='2026-11-04T00:00:00Z', exit_code=1)
     litert_run(self.root / 'd', 'incomplete', [999], start='2026-11-05T00:00:00Z', iterations=2)
+    # A prompt beyond the model's context: the CLI prints its iterations without a turn and exits 0.
+    empty = litert_run(self.root / 'e', 'empty', [999, 999], start='2026-11-06T00:00:00Z')
+    (empty / 'cli.log').write_text(DISPATCH + 2 * ('BenchmarkInfo:\n  Init Phases (7):\n    - Init Executor: 1500.00 ms\n'
+                                                   '  Decode Turns (Total 0 turns):\n    No decode turns recorded.\n'))
     records = self.records()
-    self.assertEqual(sorted(r['run'].split(os.sep)[-1] for r in records if r['errors']), ['cpu_fallback', 'failed', 'incomplete'])
+    self.assertEqual(sorted(r['run'].split(os.sep)[-1] for r in records if r['errors']),
+                     ['cpu_fallback', 'empty', 'failed', 'incomplete'])
     chosen = RUNS.select(records)
     self.assertTrue(chosen[('litert', 'e2b', 'short', 'latency')]['run'].endswith('ok'))
 

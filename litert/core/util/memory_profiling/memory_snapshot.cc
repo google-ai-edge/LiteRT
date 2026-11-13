@@ -68,6 +68,17 @@ std::optional<MemorySplit> Split(std::optional<uint64_t> host_bytes,
   return split;
 }
 
+// Logs FormatMemorySnapshot(snapshot, title) at INFO, one log line per text
+// line, and returns `snapshot`.
+MemorySnapshot LogMemorySnapshot(MemorySnapshot snapshot,
+                                 absl::string_view title) {
+  for (absl::string_view line :
+       absl::StrSplit(FormatMemorySnapshot(snapshot, title), '\n')) {
+    ABSL_LOG(INFO) << line;
+  }
+  return snapshot;
+}
+
 }  // namespace
 
 std::string FormatMemorySplit(const MemorySplit& split) {
@@ -88,7 +99,7 @@ std::string MemorySnapshot::ToString() const {
   parts.push_back(
       absl::StrCat("accelerator detail=", accelerator.has_value()
                                               ? AcceleratorSummary(*accelerator)
-                                              : std::string("unsupported")));
+                                              : std::string("not measured")));
   return absl::StrJoin(parts, ", ");
 }
 
@@ -116,6 +127,10 @@ MemorySnapshot TakeMemorySnapshot() {
   return MakeMemorySnapshot(host, GetProcessAcceleratorMemoryUsage());
 }
 
+MemorySnapshot TakeHostMemorySnapshot() {
+  return MakeMemorySnapshot(GetHostMemoryUsage(), std::nullopt);
+}
+
 std::string FormatMemorySnapshot(const MemorySnapshot& snapshot,
                                  absl::string_view title) {
   std::vector<std::string> lines;
@@ -137,18 +152,17 @@ std::string FormatMemorySnapshot(const MemorySnapshot& snapshot,
       lines.push_back(absl::StrCat("  ", line));
     }
   } else {
-    lines.push_back("  Accelerator memory detail: unsupported");
+    lines.push_back("  Accelerator memory detail: not measured");
   }
   return absl::StrJoin(lines, "\n");
 }
 
 MemorySnapshot TakeAndLogMemorySnapshot(absl::string_view title) {
-  const MemorySnapshot snapshot = TakeMemorySnapshot();
-  for (absl::string_view line :
-       absl::StrSplit(FormatMemorySnapshot(snapshot, title), '\n')) {
-    ABSL_LOG(INFO) << line;
-  }
-  return snapshot;
+  return LogMemorySnapshot(TakeMemorySnapshot(), title);
+}
+
+MemorySnapshot TakeAndLogHostMemorySnapshot(absl::string_view title) {
+  return LogMemorySnapshot(TakeHostMemorySnapshot(), title);
 }
 
 }  // namespace litert::internal

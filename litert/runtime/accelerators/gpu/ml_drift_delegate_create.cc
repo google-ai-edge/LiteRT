@@ -18,6 +18,7 @@
 #include <memory>
 #include <utility>
 
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_runtime_context.h"
 #include "litert/c/internal/litert_runtime_context.h"
@@ -375,6 +376,13 @@ LiteRtStatus StopMetricsCollection(LiteRtRuntimeContext* runtime_context,
                       ? delegate_data->shared_backend.get()
                       : delegate_data->backend.get();
   if (!backend) return kLiteRtStatusOk;
+
+  if (!LITERT_ABI_HAS_API(runtime_context, /*req_major=*/1, append_metric)) {
+    LITERT_LOG(LITERT_DEBUG,
+               "Runtime does not provide append_metric; skipping GPU memory "
+               "metrics.");
+    return kLiteRtStatusOk;
+  }
 
   auto intermediate_memory =
       backend->GetSizeOfMemoryAllocatedForIntermediateTensors();

@@ -17,6 +17,11 @@
 #include <memory>
 #include <string>
 
+#include "openvino/core/any.hpp"
+#include "openvino/core/model.hpp"
+#include "openvino/runtime/properties.hpp"
+#include "absl/strings/ascii.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
@@ -24,11 +29,30 @@
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/vendors/intel_openvino/compiler/npu_optimizer.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_soc_config.h"
-#include "openvino/core/model.hpp"
-#include "openvino/runtime/properties.hpp"
 
 namespace litert {
 namespace openvino {
+namespace {
+
+// Returns whether the boolean OpenVINO option |key| in |configs| is on.
+// Callers may pass the value as a bool or as a string ("YES", "TRUE", "1"),
+// so both forms are accepted; an absent key counts as off.
+bool IsNpuwOptionEnabled(const ov::AnyMap& configs, absl::string_view key) {
+  const auto it = configs.find(std::string(key));
+  if (it == configs.end()) return false;
+  if (it->second.is<bool>()) return it->second.as<bool>();
+  const std::string value = absl::AsciiStrToUpper(it->second.as<std::string>());
+  return value == "YES" || value == "TRUE" || value == "1";
+}
+
+bool HasNonEmptyNpuwStringOption(const ov::AnyMap& configs,
+                                 absl::string_view key) {
+  const auto it = configs.find(std::string(key));
+  if (it == configs.end() || !it->second.is<std::string>()) return false;
+  return !absl::StripAsciiWhitespace(it->second.as<std::string>()).empty();
+}
+
+}  // namespace
 
 OpenVinoCompileContext::OpenVinoCompileContext() {
   configs_map_[ov::hint::performance_mode.name()] =
@@ -201,31 +225,51 @@ LiteRtStatus OpenVinoCompileContext::ConfigureForSoc(const char* soc_model) {
   return kLiteRtStatusOk;
 }
 
-void OpenVinoCompileContext::ConfigureForNpuWeightSharing(
+LiteRtStatus OpenVinoCompileContext::ConfigureForNpuWeightSharing(
     const std::string& weights_bank_name, bool moe_multi_token_chunk) {
-  if (device_ != "NPU") return;
+  if (device_ != "NPU") return kLiteRtStatusOk;
   // NPUW private properties, set by literal key because
   // npuw_private_properties.hpp is not shipped in the runtime SDK.
-  configs_map_["NPU_USE_NPUW"] = "YES";
-  configs_map_["NPUW_DEVICES"] = "NPU";
+  auto set_default_if_not_set = [&](absl::string_view key,
+                                    absl::string_view default_val) {
+    configs_map_.try_emplace(std::string(key), std::string(default_val));
+  };
+  set_default_if_not_set("NPU_USE_NPUW", "YES");
+  set_default_if_not_set("NPUW_DEVICES", "NPU");
   // Bank name must be unique per distinct weight pool (see header). Fall back
   // to the legacy fixed name only if the caller could not derive one,
   // preserving old behaviour rather than silently breaking dedup.
-  configs_map_["NPUW_WEIGHTS_BANK"] =
-      weights_bank_name.empty() ? std::string("shared") : weights_bank_name;
-  configs_map_["NPUW_FUNCALL_FOR_ALL"] = "YES";
+  set_default_if_not_set("NPUW_WEIGHTS_BANK",
+                         weights_bank_name.empty()
+                             ? absl::string_view("shared")
+                             : absl::string_view(weights_bank_name));
+  set_default_if_not_set("NPUW_FUNCALL_FOR_ALL", "YES");
 
   if (moe_multi_token_chunk) {
-    configs_map_["NPUW_ONLINE_PIPELINE"] = "REP";
-    configs_map_["NPUW_UNFOLD_IREQS"] = "NO";
-    configs_map_["NPUW_ONLINE_ISOLATE"] = "ATTN,MOE";
-    configs_map_["NPUW_MOE_TOKEN_CHUNK_SIZE"] = "0";
-    configs_map_["NPUW_ONLINE_KEEP_BLOCK_SIZE"] = "4";
-    configs_map_["NPUW_FOLD"] = "YES";
-    configs_map_["NPUW_ONLINE_KEEP_BLOCKS"] = "3";
+    set_default_if_not_set("NPUW_ONLINE_PIPELINE", "REP");
+    set_default_if_not_set("NPUW_UNFOLD_IREQS", "NO");
+    set_default_if_not_set("NPUW_ONLINE_ISOLATE", "ATTN,MOE");
+    set_default_if_not_set("NPUW_MOE_TOKEN_CHUNK_SIZE", "0");
+    set_default_if_not_set("NPUW_ONLINE_KEEP_BLOCK_SIZE", "4");
+    set_default_if_not_set("NPUW_FOLD", "YES");
+    set_default_if_not_set("NPUW_ONLINE_KEEP_BLOCKS", "3");
   } else {
-    configs_map_["NPUW_ONLINE_PIPELINE"] = "NONE";
-    configs_map_["NPUW_CWAI"] = "YES";
+    set_default_if_not_set("NPUW_ONLINE_PIPELINE", "NONE");
+    set_default_if_not_set("NPUW_CWAI", "YES");
+  }
+
+  // NPUW shares weights across partitions only through CWAI, FOLD, or
+  // FOLD_ONLY. If the caller's overrides leave all three disabled while NPUW is
+  // on, reject the configuration with a clear error.
+  if (IsNpuwOptionEnabled(configs_map_, "NPU_USE_NPUW") &&
+      !IsNpuwOptionEnabled(configs_map_, "NPUW_CWAI") &&
+      !IsNpuwOptionEnabled(configs_map_, "NPUW_FOLD") &&
+      !HasNonEmptyNpuwStringOption(configs_map_, "NPUW_FOLD_ONLY")) {
+    LITERT_LOG(
+        LITERT_ERROR,
+        "NPU weight sharing requires NPUW_CWAI=YES, NPUW_FOLD=YES, or a "
+        "non-empty NPUW_FOLD_ONLY when NPU_USE_NPUW=YES");
+    return kLiteRtStatusErrorInvalidArgument;
   }
 
   LITERT_LOG(LITERT_INFO,
@@ -233,6 +277,7 @@ void OpenVinoCompileContext::ConfigureForNpuWeightSharing(
              "chunk pipeline, bank '%s')",
              moe_multi_token_chunk ? "multi-token" : "single-token",
              configs_map_["NPUW_WEIGHTS_BANK"].as<std::string>().c_str());
+  return kLiteRtStatusOk;
 }
 
 OpenVinoCompileContext::OptimizeModelResult
