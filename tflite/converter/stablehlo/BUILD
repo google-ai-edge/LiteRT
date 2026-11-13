@@ -139,7 +139,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@llvm-project//mlir:Transforms",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -385,7 +385,8 @@ cc_library(
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:QuantOps",
         "@llvm-project//mlir:Support",
-        "@xla//xla/mlir_hlo",
+        "@llvm-project//mlir:Transforms",
+        "@stablehlo//:stablehlo_ops",
     ],
     alwayslink = 1,
 )
@@ -581,9 +582,11 @@ gentbl_cc_library(
     td_file = "transforms/legalize_hlo_patterns.td",
     deps = [
         "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:ArithOpsTdFiles",
         "@llvm-project//mlir:FuncTdFiles",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:tensorflow_ops_td_files",
-        "@xla//xla/mlir_hlo:hlo_ops_td_files",
+        "@stablehlo//:chlo_ops_td_files",
+        "@stablehlo//:stablehlo_ops_td_files",
     ],
 )
 
@@ -596,8 +599,9 @@ gentbl_cc_library(
     deps = [
         "//tflite/converter:tensorflow_lite_ops_td_files",
         "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:ArithOpsTdFiles",
         "@llvm-project//mlir:FuncTdFiles",
-        "@xla//xla/mlir_hlo:hlo_ops_td_files",
+        "@stablehlo//:stablehlo_ops_td_files",
     ],
 )
 
@@ -641,7 +645,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
     alwayslink = True,
 )
@@ -654,8 +658,9 @@ gentbl_cc_library(
     td_file = "transforms/prepare_hlo.td",
     deps = [
         "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:ArithOpsTdFiles",
         "@llvm-project//mlir:FuncTdFiles",
-        "@xla//xla/mlir_hlo:hlo_ops_td_files",
+        "@stablehlo//:stablehlo_ops_td_files",
     ],
 )
 
@@ -681,12 +686,15 @@ cc_library(
         "//tflite/converter/stablehlo/transforms/legalize_hlo_conversions:pad_util",
         "//tflite/converter/stablehlo/transforms/legalize_hlo_conversions:reduce_window",
         "//tflite/converter/stablehlo/transforms/legalize_hlo_conversions:slice",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:ArithDialect",
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:stablehlo_passes_optimization",
     ],
     alwayslink = True,
 )
@@ -756,8 +764,9 @@ cc_library(
         "@org_tensorflow//tensorflow/core:lib",
         "@stablehlo//:broadcast_utils",
         "@stablehlo//:chlo_ops",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
+    alwayslink = 1,
 )
 
 td_library(
