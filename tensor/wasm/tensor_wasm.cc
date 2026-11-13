@@ -241,6 +241,8 @@ emscripten::val GetTensorWebGpuBufferId(const TensorHandle& tensor) {
 struct JSQuantizationParams {
   std::vector<float> scales;
   std::vector<int> zeroPoints;
+  // Non-integer zero points (e.g. -0.5 for centered INT2), empty if none.
+  std::vector<float> floatZeroPoints;
   int quantizedDimension;
 };
 
@@ -255,6 +257,7 @@ JSQuantizationParams GetQuantizationParams(const TensorHandle& tensor) {
     return JSQuantizationParams{
         .scales = affine_or->scales,
         .zeroPoints = zero_points_i32,
+        .floatZeroPoints = affine_or->float_zero_points,
         .quantizedDimension = affine_or->quantized_dimension};
   }
   return {};
@@ -841,6 +844,7 @@ EMSCRIPTEN_BINDINGS(litert_tensor_core) {
   value_object<JSQuantizationParams>("QuantizationParams")
       .field("scales", &JSQuantizationParams::scales)
       .field("zeroPoints", &JSQuantizationParams::zeroPoints)
+      .field("floatZeroPoints", &JSQuantizationParams::floatZeroPoints)
       .field("quantizedDimension", &JSQuantizationParams::quantizedDimension);
 
   // Register vectors for shape handling

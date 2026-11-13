@@ -57,15 +57,31 @@ def _get_kv_cache_sharing_patterns(
       - `seq[i] == i` means that the KV cache belongs to the layer.
       - `seq[i] != i` means that the KV cache belongs to another layer.
   """
+  if num_layers <= 0:
+    return []
   patterns = list(range(num_layers))
-  num_unshared_layers = int(num_layers - frac_shared_layers * num_layers)
+  num_shared_layers = min(
+      max(round(frac_shared_layers * num_layers), 0), num_layers
+  )
+  num_unshared_layers = num_layers - num_shared_layers
+
+  def _is_global(layer_idx: int) -> bool:
+    return (
+        attention_pattern_size > 0
+        and ((layer_idx + 1) % attention_pattern_size) == 0
+    )
 
   for i in range(num_unshared_layers, num_layers):
-    is_global = ((i + 1) % attention_pattern_size) == 0
-    if share_local and not is_global:
-      patterns[i] = num_unshared_layers - 2 if num_unshared_layers > 2 else 0
-    elif share_global and is_global:
-      patterns[i] = num_unshared_layers - 1 if num_unshared_layers > 1 else 0
+    is_global = _is_global(i)
+    should_share = (share_global and is_global) or (
+        share_local and not is_global
+    )
+    if not should_share:
+      continue
+    for j in range(num_unshared_layers - 1, -1, -1):
+      if _is_global(j) == is_global:
+        patterns[i] = j
+        break
   return patterns
 
 
@@ -183,7 +199,10 @@ def _gemma4_graph(
     shared_k = computed_keys[shared_idx] if is_shared else None
     shared_v = computed_values[shared_idx] if is_shared else None
 
-    is_global = ((layer_idx + 1) % attention_pattern_size) == 0
+    is_global = (
+        attention_pattern_size > 0
+        and ((layer_idx + 1) % attention_pattern_size) == 0
+    )
 
     mask = global_attention_mask if is_global else sliding_attention_mask
     cos = rope_global_cos if is_global else rope_local_cos
@@ -578,6 +597,122 @@ def _generate_expected_values_for_no_softcap_graph_test() -> None:
   utils.cpp_print("Logits (no softcap):", logits)
 
 
+def _generate_expected_values_for_distinct_global_key_size_graph_test() -> None:
+  """Generates results for hybrid graph with head_dim != global_key_size."""
+  print("\n=== Global Layer With Distinct Key Size Graph ===")
+  embedded_input = np.array(
+      [[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]], dtype=np.float32
+  )
+  sliding_mask = np.array([[[[0.0, -1e9], [0.0, 0.0]]]], dtype=np.float32)
+  global_mask = np.array([[[[0.0, 0.0], [0.0, 0.0]]]], dtype=np.float32)
+  cos_local = np.array(
+      [[[[0.8660254, 0.8660254], [0.7071068, 0.7071068]]]], dtype=np.float32
+  )
+  sin_local = np.array(
+      [[[[0.5, 0.5], [0.7071068, 0.7071068]]]], dtype=np.float32
+  )
+  cos_global = np.array(
+      [[[[1.0, 0.0, 1.0, 0.0], [0.0, 1.0, 0.0, 1.0]]]], dtype=np.float32
+  )
+  sin_global = np.array(
+      [[[[0.0, 1.0, 0.0, 1.0], [1.0, 0.0, 1.0, 0.0]]]], dtype=np.float32
+  )
+  weights = dict(_create_test_weights(num_layers=2))
+  weights["model.layers.0.self_attn.q_proj.weight"] = np.eye(
+      4, dtype=np.float32
+  )
+  weights["model.layers.0.self_attn.k_proj.weight"] = np.array(
+      [[0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]], dtype=np.float32
+  )
+  weights["model.layers.0.self_attn.v_proj.weight"] = np.array(
+      [[0.5, 0.0, 0.0, 0.0], [0.0, 0.5, 0.0, 0.0]], dtype=np.float32
+  )
+  weights["model.layers.0.self_attn.o_proj.weight"] = np.eye(
+      4, dtype=np.float32
+  )
+  weights["model.layers.0.self_attn.q_norm.weight"] = np.ones(
+      (2,), dtype=np.float32
+  )
+  weights["model.layers.0.self_attn.k_norm.weight"] = np.ones(
+      (2,), dtype=np.float32
+  )
+
+  logits, _, _ = _gemma4_graph(
+      embedded_input=embedded_input,
+      weights=weights,
+      global_attention_mask=global_mask,
+      sliding_attention_mask=sliding_mask,
+      rope_global_cos=cos_global,
+      rope_global_sin=sin_global,
+      rope_local_cos=cos_local,
+      rope_local_sin=sin_local,
+      num_layers=2,
+      head_dim=2,
+      global_key_size=4,
+      attention_pattern_size=2,
+  )
+  utils.cpp_print("Logits (distinct global_key_size):", logits)
+
+
+def _generate_expected_values_for_disabled_post_norms_graph_test() -> None:
+  """Generates results for graph with post-attn and post-FFN norms disabled."""
+  print("\n=== Disabled Post-Norms Graph ===")
+  embedded_input = np.array(
+      [[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]], dtype=np.float32
+  )
+  sliding_mask = np.array([[[[0.0, -1e9], [0.0, 0.0]]]], dtype=np.float32)
+  cos = np.array(
+      [[[[0.8660254, 0.5, 0.8660254, 0.5], [0.7071068, 0.0, 0.7071068, 0.0]]]],
+      dtype=np.float32,
+  )
+  sin = np.array(
+      [[[[0.5, 0.8660254, 0.5, 0.8660254], [0.7071068, 1.0, 0.7071068, 1.0]]]],
+      dtype=np.float32,
+  )
+  weights = dict(_create_test_weights(num_layers=2))
+
+  logits, _, _ = _gemma4_graph(
+      embedded_input=embedded_input,
+      weights=weights,
+      sliding_attention_mask=sliding_mask,
+      rope_local_cos=cos,
+      rope_local_sin=sin,
+      num_layers=2,
+      use_post_attn_norm=False,
+      use_post_ffw_norm=False,
+  )
+  utils.cpp_print("Logits (disabled post-norms):", logits)
+
+
+def _generate_expected_values_for_attn_logits_soft_cap_graph_test() -> None:
+  """Generates results for graph with attention logits soft-capping enabled."""
+  print("\n=== Attention Logits Soft-Cap Graph ===")
+  embedded_input = np.array(
+      [[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]], dtype=np.float32
+  )
+  sliding_mask = np.array([[[[0.0, -1e9], [0.0, 0.0]]]], dtype=np.float32)
+  cos = np.array(
+      [[[[0.8660254, 0.5, 0.8660254, 0.5], [0.7071068, 0.0, 0.7071068, 0.0]]]],
+      dtype=np.float32,
+  )
+  sin = np.array(
+      [[[[0.5, 0.8660254, 0.5, 0.8660254], [0.7071068, 1.0, 0.7071068, 1.0]]]],
+      dtype=np.float32,
+  )
+  weights = dict(_create_test_weights(num_layers=2))
+
+  logits, _, _ = _gemma4_graph(
+      embedded_input=embedded_input,
+      weights=weights,
+      sliding_attention_mask=sliding_mask,
+      rope_local_cos=cos,
+      rope_local_sin=sin,
+      num_layers=2,
+      attn_logits_soft_cap=1.0,
+  )
+  utils.cpp_print("Logits (attn_logits_soft_cap=1.0):", logits)
+
+
 def _generate_expected_values_for_per_layer_inputs_with_projection_graph_test() -> (
     None
 ):
@@ -646,10 +781,13 @@ def _generate_expected_values_for_per_layer_inputs_with_projection_graph_test() 
 def main() -> None:
   _generate_expected_values_for_default_gemma4_graph_test()
   _generate_expected_values_for_global_layer_graph_test()
+  _generate_expected_values_for_distinct_global_key_size_graph_test()
   _generate_expected_values_for_kv_cache_sharing_graph_test()
   _generate_expected_values_for_per_layer_inputs_graph_test()
   _generate_expected_values_for_per_layer_inputs_with_projection_graph_test()
   _generate_expected_values_for_no_softcap_graph_test()
+  _generate_expected_values_for_disabled_post_norms_graph_test()
+  _generate_expected_values_for_attn_logits_soft_cap_graph_test()
 
 
 if __name__ == "__main__":

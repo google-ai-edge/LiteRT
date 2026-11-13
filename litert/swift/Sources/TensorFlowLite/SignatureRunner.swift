@@ -16,7 +16,7 @@ import Foundation
 import TensorFlowLiteC
 
 #if os(Linux)
-  import SwiftGlibc
+  import Glibc
 #else
   import Darwin
 #endif
