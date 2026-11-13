@@ -78,6 +78,22 @@ def get_tensor_quant_params(
     )
   clipping_values = None
   signed = tensor_quant_config.dtype != qtyping.TensorDataType.UINT
+  # Optional: also use the most negative level (e.g. -8 for int4) for
+  # channels/blocks whose extreme is negative. See
+  # `uniform_quantize_tensor.tensor_zp_scale_from_min_max`.
+  full_range = tensor_quant_config.algorithm_params.get("full_range", False)
+  if not isinstance(full_range, bool):
+    raise ValueError(f"full_range must be a boolean, got {full_range!r}.")
+  if full_range and (
+      not tensor_quant_config.symmetric
+      or not signed
+      or tensor_quant_config.num_bits >= 8
+  ):
+    raise ValueError(
+        "full_range requires signed symmetric quantization with num_bits < 8,"
+        f" got num_bits={tensor_quant_config.num_bits},"
+        f" symmetric={tensor_quant_config.symmetric}, signed={signed}."
+    )
   zp, scale = uniform_quantize_tensor.tensor_zp_scale_from_min_max(
       tensor_min_max["min"],
       tensor_min_max["max"],
@@ -86,6 +102,7 @@ def get_tensor_quant_params(
       tensor_quant_config.granularity,
       clipping_values,
       signed=signed,
+      full_range=full_range,
   )
   quantized_dim = common_utils.get_weight_quantized_dim(
       op_info, tensor_content, tensor_quant_config.granularity  # pyrefly: ignore[bad-argument-type]

@@ -204,6 +204,88 @@ class NaiveMinMaxQuantizeTest(parameterized.TestCase):
     self.assertEqual(quant_params.block_size, 32)
     self.assertEqual(quant_params.quantized_dimension, 1)
 
+  def test_get_tensor_quant_params_for_full_range_blockwise_weight(self):
+    subgraph0 = self._test_model.subgraphs[0]
+    subgraph_op_index = 3
+    fc_op = subgraph0.operators[subgraph_op_index]
+    weight_tensor_config = _TensorQuantConfig(
+        num_bits=4,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+        algorithm_params={"full_range": True},
+    )
+    op_info = qtyping.OpInfo(
+        op=fc_op,
+        op_name=_TFLOpName.FULLY_CONNECTED,
+        subgraph_op_index=subgraph_op_index,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=weight_tensor_config,
+        ),
+    )
+    test_data = np.random.uniform(low=-5, high=5, size=(4, 32)).astype(
+        np.float32
+    )
+    # Rows 0 and 2 have a negative extreme, rows 1 and 3 a positive one.
+    test_data[0, 3] = -10.0
+    test_data[1, 7] = 9.0
+    test_data[2, 0] = -6.0
+    test_data[3, 31] = 8.0
+    quant_params = naive_min_max_quantize.get_tensor_quant_params(
+        op_info=op_info,
+        tensor_quant_config=weight_tensor_config,
+        tensor_content=test_data,
+    )
+
+    self.assertTrue(np.array_equal(quant_params.zero_point, np.zeros([4, 1])))
+    expected_scales = np.array([[10.0 / 8], [9.0 / 7], [6.0 / 8], [8.0 / 7]])
+    expected_scales = (
+        expected_scales.astype(ml_dtypes.bfloat16)
+        .astype(np.float16)
+        .astype(np.float32)
+    )
+    self.assertTrue(np.allclose(quant_params.scale, expected_scales, atol=1e-5))
+    quantized_data = cast(np.ndarray, quant_params.quantized_data)
+    self.assertEqual(quantized_data[0, 3], -8)
+    self.assertEqual(quantized_data[2, 0], -8)
+    self.assertEqual(quantized_data[1, 7], 7)
+    self.assertEqual(quantized_data[3, 31], 7)
+    self.assertGreaterEqual(quantized_data.min(), -8)
+    self.assertLessEqual(quantized_data.max(), 7)
+
+  @parameterized.named_parameters(
+      dict(testcase_name="int8", num_bits=8, symmetric=True),
+      dict(testcase_name="asymmetric", num_bits=4, symmetric=False),
+  )
+  def test_get_tensor_quant_params_full_range_unsupported_raises(
+      self, num_bits, symmetric
+  ):
+    subgraph0 = self._test_model.subgraphs[0]
+    subgraph_op_index = 3
+    fc_op = subgraph0.operators[subgraph_op_index]
+    weight_tensor_config = _TensorQuantConfig(
+        num_bits=num_bits,
+        symmetric=symmetric,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={"full_range": True},
+    )
+    op_info = qtyping.OpInfo(
+        op=fc_op,
+        op_name=_TFLOpName.FULLY_CONNECTED,
+        subgraph_op_index=subgraph_op_index,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=weight_tensor_config,
+        ),
+    )
+    test_data = np.random.uniform(low=-5, high=5, size=(4, 32)).astype(
+        np.float32
+    )
+    with self.assertRaisesRegex(ValueError, "full_range requires"):
+      naive_min_max_quantize.get_tensor_quant_params(
+          op_info=op_info,
+          tensor_quant_config=weight_tensor_config,
+          tensor_content=test_data,
+      )
+
   def test_get_tensor_quant_params_for_multi_axis_weight(self):
     quantized_dimensions = (0, 1)
     reduced_axis = 2

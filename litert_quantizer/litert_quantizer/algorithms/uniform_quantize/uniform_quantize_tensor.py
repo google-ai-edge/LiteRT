@@ -521,6 +521,7 @@ def tensor_zp_scale_from_min_max(
     granularity: qtyping.QuantGranularity,
     clipping_values: Optional[np.ndarray] = None,
     signed: bool = True,
+    full_range: bool = False,
 ):
   """Get zero point and scale from min and max value.
 
@@ -537,6 +538,13 @@ def tensor_zp_scale_from_min_max(
       should be the same shape as min_value and max_value. If None, no clipping
       will be applied.
     signed: Whether the tensor is signed.
+    full_range: Only for signed symmetric quantization with fewer than 8 bits
+      (no narrow range). By default the scale is `bound / qmax`, so the most
+      negative level (e.g. -8 for int4) is never used. With `full_range`, a
+      channel or block whose largest-magnitude value is negative uses `bound /
+      -qmin` instead: its extreme maps exactly onto qmin and its step is `qmax /
+      -qmin` times smaller (7/8 for int4). Positive values above `qmax * scale`
+      in such a channel or block are clipped to qmax.
 
   Returns:
     The zero point and scale of the tensor.
@@ -585,6 +593,9 @@ def tensor_zp_scale_from_min_max(
       zp = np.ones_like(scale) * (half_q + 1)
     else:
       scale = bound / qmax
+      if full_range and num_bits < 8:
+        negative_extreme = np.abs(min_value) > np.abs(max_value)
+        scale = np.where(negative_extreme, bound / -qmin, scale)
       zp = np.zeros_like(scale, dtype=np.int32)
   else:
     # Include 0 to the range to support zero-padding.
