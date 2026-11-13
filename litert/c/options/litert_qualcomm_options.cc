@@ -44,6 +44,7 @@ struct CustomOpPackage {
   std::string compile_package_path = "";
   std::string dispatch_package_path = "";
   std::string target = "";
+  std::string op_type = "";
 };
 
 LiteRtStatus ParseCustomOpPackageValue(absl::string_view value,
@@ -78,6 +79,8 @@ LiteRtStatus ParseCustomOpPackageValue(absl::string_view value,
       package.dispatch_package_path = val;
     } else if (key == "target") {
       package.target = val;
+    } else if (key == "op_type") {
+      package.op_type = val;
     } else {
       return kLiteRtStatusErrorInvalidArgument;
     }
@@ -567,7 +570,8 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
                      ";interface_provider:", package.interface_provider,
                      ";compile_package_path:", package.compile_package_path,
                      ";dispatch_package_path:", package.dispatch_package_path,
-                     ";target:", package.target, ";")));
+                     ";target:", package.target,
+                     ";op_type:", package.op_type, ";")));
   }
   if (options->lpai_target.has_value()) {
     LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
@@ -711,7 +715,8 @@ LiteRtStatus LrtQualcommOptionsGetSchematicDir(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsSetCustomOpPackage(
     LrtQualcommOptions options, const char* name,
     const char* interface_provider, const char* compile_package_path,
-    const char* dispatch_package_path, const char* target) {
+    const char* dispatch_package_path, const char* target,
+    const char* op_type) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -722,6 +727,7 @@ LiteRtStatus LrtQualcommOptionsSetCustomOpPackage(
   package.compile_package_path = compile_package_path;
   package.dispatch_package_path = dispatch_package_path;
   package.target = target;
+  package.op_type = op_type ? op_type : "";
 
   options->custom_op_package = std::move(package);
 
@@ -731,10 +737,11 @@ LiteRtStatus LrtQualcommOptionsSetCustomOpPackage(
 LiteRtStatus LrtQualcommOptionsGetCustomOpPackage(
     LrtQualcommOptions options, const char** name,
     const char** interface_provider, const char** compile_package_path,
-    const char** dispatch_package_path, const char** target) {
+    const char** dispatch_package_path, const char** target,
+    const char** op_type) {
   if (options == nullptr || name == nullptr || interface_provider == nullptr ||
       compile_package_path == nullptr || dispatch_package_path == nullptr ||
-      target == nullptr) {
+      target == nullptr || op_type == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
@@ -744,6 +751,7 @@ LiteRtStatus LrtQualcommOptionsGetCustomOpPackage(
     *compile_package_path = "";
     *dispatch_package_path = "";
     *target = "";
+    *op_type = "";
     return kLiteRtStatusOk;
   }
 
@@ -753,6 +761,21 @@ LiteRtStatus LrtQualcommOptionsGetCustomOpPackage(
   *compile_package_path = package.compile_package_path.c_str();
   *dispatch_package_path = package.dispatch_package_path.c_str();
   *target = package.target.c_str();
+  *op_type = package.op_type.c_str();
+  return kLiteRtStatusOk;
+}
+
+// Keep for backward compat — resolved by op_type="" default.
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackageOpType(
+    LrtQualcommOptions options, const char** op_type) {
+  if (options == nullptr || op_type == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!options->custom_op_package.has_value()) {
+    *op_type = "";
+    return kLiteRtStatusOk;
+  }
+  *op_type = options->custom_op_package->op_type.c_str();
   return kLiteRtStatusOk;
 }
 

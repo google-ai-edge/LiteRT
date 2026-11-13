@@ -125,6 +125,9 @@ struct CustomOpPackage {
   std::string dispatch_package_path;
   // QNN backend target at dispatch time (e.g., "HTP", "GPU").
   std::string target;
+  // TFLite op name to intercept and route through this package instead of the
+  // built-in builder (e.g., "Softmax"). Empty means only custom ops are routed.
+  std::string op_type;
 };
 
 enum class GpuPrecision {
@@ -280,7 +283,8 @@ class Options {
                           absl::string_view interface_provider,
                           absl::string_view compile_package_path,
                           absl::string_view dispatch_package_path,
-                          absl::string_view target);
+                          absl::string_view target,
+                          absl::string_view op_type = "");
   const CustomOpPackage& GetCustomOpPackage() const;
 
   // LPAI options.

@@ -174,7 +174,8 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetCustomOpPackage(
       custom_op_package.name, custom_op_package.interface_provider,
       custom_op_package.compile_package_path,
-      custom_op_package.dispatch_package_path, custom_op_package.target);
+      custom_op_package.dispatch_package_path, custom_op_package.target,
+      custom_op_package.op_type);
   qnn_options.SetLpaiTarget(
       static_cast<::qnn::LpaiTarget>(qualcomm_options.GetLpaiTarget()));
   qnn_options.SetLpaiFps(qualcomm_options.GetLpaiFps());

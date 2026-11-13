@@ -1769,6 +1769,27 @@ LiteRtStatus BuildDetectionPostprocessCustomOp(
                                             op_wrappers);
 }
 
+LiteRtStatus BuildBuiltinAsCustomOp(
+    const litert::compiler::Op& litert_op,
+    ::qnn::TensorPool& tensor_pool,
+    std::vector<::qnn::TensorWrapperRef>& input_tensors,
+    std::vector<::qnn::TensorWrapperRef>& output_tensors,
+    std::vector<::qnn::OpWrapper>& op_wrappers,
+    const ::qnn::CustomOpPackage& custom_op_package) {
+  if (custom_op_package.name.empty()) {
+    LITERT_LOG(LITERT_ERROR,
+               "Custom op package name is required for built-in op override.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  op_wrappers.emplace_back(::qnn::CreateCustomOp(
+      custom_op_package.name.c_str(), custom_op_package.op_type.c_str(),
+      std::vector<::qnn::ConstTensorWrapperRef>(input_tensors.begin(),
+                                                input_tensors.end()),
+      std::vector<::qnn::ConstTensorWrapperRef>(output_tensors.begin(),
+                                                output_tensors.end())));
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus BuildCustomOp(const litert::compiler::Op& litert_op,
                            ::qnn::TensorPool& tensor_pool,
                            std::vector<::qnn::TensorWrapperRef>& input_tensors,
@@ -1849,6 +1870,12 @@ LiteRtStatus ConvertOp(const ::qnn::Options& options,
                        size_t op_index, ::qnn::SdkVersion sdk_version) {
   const auto& builders = GetOpBuilders();
   const auto op_code = litert_op.Code();
+  const auto& custom_op_package = options.GetCustomOpPackage();
+  if (!custom_op_package.op_type.empty() &&
+      GetTfliteOpName(op_code) == custom_op_package.op_type) {
+    return BuildBuiltinAsCustomOp(litert_op, tensor_pool, input_tensors,
+                                  output_tensors, op_wrappers, custom_op_package);
+  }
   if (op_code < builders.size() && builders[op_code]) {
     return builders[op_code](litert_op, tensor_pool, input_tensors,
                              output_tensors, op_wrappers,
@@ -1857,7 +1884,7 @@ LiteRtStatus ConvertOp(const ::qnn::Options& options,
   }
   if (op_code == kLiteRtOpCodeTflCustom) {
     return BuildCustomOp(litert_op, tensor_pool, input_tensors, output_tensors,
-                         op_wrappers, options.GetCustomOpPackage());
+                         op_wrappers, custom_op_package);
   }
   LITERT_LOG(LITERT_ERROR, "%s",
              DescribeUnsupportedOp(op_index, litert_op).c_str());
