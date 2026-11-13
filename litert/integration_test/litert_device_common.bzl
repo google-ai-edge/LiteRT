@@ -17,6 +17,9 @@
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_platform//platform_data:defs.bzl", "platform_data")
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
+load("//litert/build_common:ynnpack_platform_data.bzl", _windows_dlls = "windows_dlls")
+
+windows_dlls = _windows_dlls
 
 # DEVICE PATHS #####################################################################################
 
@@ -628,33 +631,5 @@ windows_bin_only = rule(
     implementation = _windows_bin_only_impl,
     attrs = {
         "src": attr.label(mandatory = True),
-    },
-)
-
-def _platform_transition_impl(_settings, attr):
-    return {"//command_line_option:platforms": str(attr.platform)}
-
-_platform_transition = transition(
-    implementation = _platform_transition_impl,
-    inputs = [],
-    outputs = ["//command_line_option:platforms"],
-)
-
-# Transitions Windows runtime dependencies to `platform` and forwards their .dll files.
-def _windows_dlls_impl(ctx):
-    dlls = []
-    seen = {}
-    for dep in ctx.attr.deps:
-        for f in dep[DefaultInfo].files.to_list():
-            if f.basename.lower().endswith(".dll") and f.basename not in seen:
-                seen[f.basename] = True
-                dlls.append(f)
-    return [DefaultInfo(files = depset(dlls), runfiles = ctx.runfiles(files = dlls))]
-
-windows_dlls = rule(
-    implementation = _windows_dlls_impl,
-    attrs = {
-        "deps": attr.label_list(cfg = _platform_transition),
-        "platform": attr.label(mandatory = True),
     },
 )

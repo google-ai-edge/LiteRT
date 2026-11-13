@@ -85,3 +85,31 @@ ynnpack_platform_data = rule(
     },
     executable = True,
 )
+
+def _platform_transition_impl(_settings, attr):
+    return {"//command_line_option:platforms": str(attr.platform)}
+
+_platform_transition = transition(
+    implementation = _platform_transition_impl,
+    inputs = [],
+    outputs = ["//command_line_option:platforms"],
+)
+
+def _windows_dlls_impl(ctx):
+    dlls = []
+    seen = {}
+    for dep in ctx.attr.deps:
+        for f in dep[DefaultInfo].files.to_list():
+            if f.basename.lower().endswith(".dll") and f.basename not in seen:
+                seen[f.basename] = True
+                dlls.append(f)
+    return [DefaultInfo(files = depset(dlls), runfiles = ctx.runfiles(files = dlls))]
+
+windows_dlls = rule(
+    implementation = _windows_dlls_impl,
+    doc = "Transitions Windows runtime dependencies to `platform` and forwards their `.dll` files.",
+    attrs = {
+        "deps": attr.label_list(cfg = _platform_transition),
+        "platform": attr.label(mandatory = True),
+    },
+)

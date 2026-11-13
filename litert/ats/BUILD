@@ -2867,6 +2867,10 @@ cc_library(
 #             litert_windows_mh_guitar_test(
 #                 name = "model_tests",
 #                 dimension_model = WINDOWS_PREDATOR_CORE_ULTRA9_275HX_RTX5090_DIMENSIONS["model"],
+#                 # Run targets sequentially in 1 shard to avoid staging 5 concurrent ~20.8 GB
+#                 # CLASSICAL_ALL_MODELS job directories on ai-edge-eval-host-1 and queueing on the
+#                 # single Predator PH16-73 device.
+#                 shard_count = 1,
 #                 targets = WINDOWS_ATS_MODELS_GUITAR_TARGETS,
 #             ),
 #             litert_perfgate_upload_guitar_test(
@@ -2915,6 +2919,10 @@ cc_library(
 #             litert_windows_mh_guitar_test(
 #                 name = "model_tests",
 #                 dimension_model = WINDOWS_PROART_RYZEN_AI_MAX395_RADEON_8060S_DIMENSIONS["model"],
+#                 # Run targets sequentially in 1 shard to avoid staging 5 concurrent ~20.8 GB
+#                 # CLASSICAL_ALL_MODELS job directories on ai-edge-eval-host-1 and queueing on the
+#                 # single ProArt PX13 HN7306EAC device.
+#                 shard_count = 1,
 #                 targets = WINDOWS_ATS_MODELS_GUITAR_TARGETS,
 #             ),
 #             litert_perfgate_upload_guitar_test(
