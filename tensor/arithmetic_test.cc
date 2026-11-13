@@ -753,7 +753,7 @@ TEST(ArithmeticTest, EmbeddingLookupWithVectorWorks) {
 TEST(ArithmeticTest, DynamicUpdateSliceWorks) {
   auto quantization = std::make_shared<PerChannelAffineQuantization>();
   quantization->scales = {0.5f};
-  quantization->zero_points = {0};
+  quantization->zero_points = std::vector<int64_t>{0};
   Tensor operand(
       {.type = Type::kI8, .shape = {10, 10}, .quantization = quantization});
   Tensor update(

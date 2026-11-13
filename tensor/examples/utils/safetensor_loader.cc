@@ -43,6 +43,7 @@ limitations under the License.
 #include "tensor/datatypes.h"
 #include "tensor/examples/utils/minijson.h"
 #include "tensor/examples/utils/safetensors.h"
+#include "tensor/internal/graph.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
 
@@ -1019,8 +1020,7 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
       };
 
       std::vector<float> scales;
-      std::vector<int64_t> zero_points(1, 0);
-      std::vector<float> float_zero_points;
+      graph::ZeroPoints zero_points = std::vector<int64_t>(1, 0);
       LRT_TENSOR_RETURN_IF_ERROR(ReadData(
           scales, {".weight_scale", ".scale", ".scales", ".weight_scales"}));
       if (auto zp_it = FindDataFor({".weight_zero_point", ".zero_point"});
@@ -1031,21 +1031,15 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
             zp_it->second.dtype == safetensors::dtype::kBFLOAT16 ||
             zp_it->second.dtype == safetensors::dtype::kFLOAT64) {
           LRT_TENSOR_ASSIGN_OR_RETURN(
-              float_zero_points,
-              ConvertTensorTo<std::vector<float>>(zp_it->second));
-          if (float_zero_points.empty()) {
-            return absl::InvalidArgumentError(absl::StrCat(
-                "Zero-point tensor is empty for: ", module));
-          }
-          zero_points.clear();
+              zero_points, ConvertTensorTo<std::vector<float>>(zp_it->second));
         } else {
           LRT_TENSOR_ASSIGN_OR_RETURN(
               zero_points,
               ConvertTensorTo<std::vector<int64_t>>(zp_it->second));
-          if (zero_points.empty()) {
-            return absl::InvalidArgumentError(absl::StrCat(
-                "Zero-point tensor is empty for: ", module));
-          }
+        }
+        if (graph::NumZeroPoints(zero_points) == 0) {
+          return absl::InvalidArgumentError(
+              absl::StrCat("Zero-point tensor is empty for: ", module));
         }
       }
 
@@ -1088,11 +1082,11 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
       if (strategy == QuantizationConfig::Strategy::kGroup) {
         quantization = std::make_shared<BlockwiseQuantization>(
             std::move(scales), std::move(zero_points), group_size,
-            /*quantized_dimension=*/0, std::move(float_zero_points));
+            /*quantized_dimension=*/0);
       } else {
         quantization = std::make_shared<PerChannelAffineQuantization>(
             std::move(scales), std::move(zero_points),
-            /*quantized_dimension=*/0, std::move(float_zero_points));
+            /*quantized_dimension=*/0);
       }
 
       // Crumb-packed (2-bit) and nibble-packed (4-bit) weights hold four or two
@@ -1197,8 +1191,7 @@ SafetensorLoader::LoadQuantizationParams(
   }
 
   // Symmetric quantization, which is the common case, stores no zero points.
-  std::vector<int64_t> zero_points(1, 0);
-  std::vector<float> float_zero_points;
+  graph::ZeroPoints zero_points = std::vector<int64_t>(1, 0);
   const std::string zero_point_name = absl::StrCat(module, kZeroPointSuffix);
   if (auto zp_it = tensor_infos_.find(zero_point_name);
       zp_it != tensor_infos_.end()) {
@@ -1208,20 +1201,14 @@ SafetensorLoader::LoadQuantizationParams(
         zp_it->second.dtype == safetensors::dtype::kBFLOAT16 ||
         zp_it->second.dtype == safetensors::dtype::kFLOAT64) {
       LRT_TENSOR_ASSIGN_OR_RETURN(
-          float_zero_points,
-          ConvertTensorTo<std::vector<float>>(zp_it->second));
-      if (float_zero_points.empty()) {
-        return absl::InvalidArgumentError(
-            absl::StrCat("Zero-point tensor is empty for: ", module));
-      }
-      zero_points.clear();
+          zero_points, ConvertTensorTo<std::vector<float>>(zp_it->second));
     } else {
       LRT_TENSOR_ASSIGN_OR_RETURN(
           zero_points, ConvertTensorTo<std::vector<int64_t>>(zp_it->second));
-      if (zero_points.empty()) {
-        return absl::InvalidArgumentError(
-            absl::StrCat("Zero-point tensor is empty for: ", module));
-      }
+    }
+    if (graph::NumZeroPoints(zero_points) == 0) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Zero-point tensor is empty for: ", module));
     }
   }
 
@@ -1229,12 +1216,12 @@ SafetensorLoader::LoadQuantizationParams(
     case QuantizationConfig::Strategy::kGroup:
       return std::make_shared<BlockwiseQuantization>(
           std::move(scales), std::move(zero_points), scheme.group_size,
-          /*quantized_dimension=*/0, std::move(float_zero_points));
+          /*quantized_dimension=*/0);
     case QuantizationConfig::Strategy::kChannel:
     case QuantizationConfig::Strategy::kTensor:
       return std::make_shared<PerChannelAffineQuantization>(
           std::move(scales), std::move(zero_points),
-          /*quantized_dimension=*/0, std::move(float_zero_points));
+          /*quantized_dimension=*/0);
     default:
       break;
   }

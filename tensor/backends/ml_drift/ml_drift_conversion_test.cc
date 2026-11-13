@@ -854,7 +854,7 @@ TEST_F(MlDriftConversionTest, DequantizeOp) {
   TensorMLD quant_input({.type = Type::kI8, .shape = {1, 2, 2, 1}});
   auto quant_params = std::make_shared<PerChannelAffineQuantization>();
   quant_params->scales = {0.25f};
-  quant_params->zero_points = {0};
+  quant_params->zero_points = std::vector<int64_t>{0};
   quant_input.SetQuantization(quant_params);
   TensorMLD output = Dequantize(quant_input);
   auto tensor_to_handle_or = AppendGpuModelBuilder(context_, {output});
@@ -1676,8 +1676,7 @@ TEST_F(MlDriftConversionTest, DequantizeRejectsFloatZeroPoints) {
   TensorMLD quant_input({.type = Type::kI8, .shape = {1, 2, 2, 1}});
   auto quant_params = std::make_shared<PerChannelAffineQuantization>();
   quant_params->scales = {0.25f};
-  quant_params->zero_points = {0};
-  quant_params->float_zero_points = {-0.5f};
+  quant_params->zero_points = std::vector<float>{-0.5f};
   quant_input.SetQuantization(quant_params);
   TensorMLD output = Dequantize(quant_input);
   EXPECT_EQ(AppendGpuModelBuilder(context_, {output}).status().code(),

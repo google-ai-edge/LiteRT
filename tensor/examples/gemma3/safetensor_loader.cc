@@ -227,9 +227,15 @@ absl::Status DequantizeInt8ToFp32(absl::string_view name,
       return absl::InvalidArgumentError(
           absl::StrCat("Scale tensor is empty for: ", name));
     }
+    if (pcq->HasFloatZeroPoints()) {
+      return absl::UnimplementedError(absl::StrCat(
+          "Dequantization with float zero points is not supported for: ",
+          name));
+    }
     const std::vector<int64_t> default_zp(1, 0);
-    const std::vector<int64_t>& zero_points =
-        pcq->zero_points.empty() ? default_zp : pcq->zero_points;
+    const std::vector<int64_t>& zero_points = pcq->IntegerZeroPoints()->empty()
+                                                  ? default_zp
+                                                  : *pcq->IntegerZeroPoints();
 
     size_t channel_size = 0;
     if (!shape.empty() && shape[0] > 0) {
@@ -268,8 +274,14 @@ absl::Status DequantizeInt8ToFp32(absl::string_view name,
       return absl::InvalidArgumentError(
           absl::StrCat("Blockwise scale count mismatch for: ", name));
     }
-    if (!bq->zero_points.empty() && bq->zero_points.size() != 1 &&
-        bq->zero_points.size() != total_blocks) {
+    if (bq->HasFloatZeroPoints()) {
+      return absl::UnimplementedError(absl::StrCat(
+          "Dequantization with float zero points is not supported for: ",
+          name));
+    }
+    const std::vector<int64_t>& zero_points = *bq->IntegerZeroPoints();
+    if (!zero_points.empty() && zero_points.size() != 1 &&
+        zero_points.size() != total_blocks) {
       return absl::InvalidArgumentError(
           absl::StrCat("Blockwise zero-point count mismatch for: ", name));
     }
@@ -278,10 +290,10 @@ absl::Status DequantizeInt8ToFp32(absl::string_view name,
         const size_t idx = r * cols + c;
         const size_t block_idx = r * blocks_per_row + (c / block_size);
         const int64_t zp64 =
-            bq->zero_points.empty()
+            zero_points.empty()
                 ? 0
-                : (bq->zero_points.size() == 1 ? bq->zero_points[0]
-                                               : bq->zero_points[block_idx]);
+                : (zero_points.size() == 1 ? zero_points[0]
+                                           : zero_points[block_idx]);
         const int32_t q = static_cast<int32_t>(quantized_data[idx]);
         const int32_t zp = static_cast<int32_t>(zp64);
         dst[idx] = static_cast<float>(q - zp) * bq->scales[block_idx];

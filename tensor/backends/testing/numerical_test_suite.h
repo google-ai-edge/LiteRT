@@ -1068,8 +1068,9 @@ TYPED_TEST_P(NumericalTestSuite, FullyConnectedQuantizedOp) {
        .weights_shape = {4, 4},
        .weights_data = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
        .quantization = std::make_shared<PerChannelAffineQuantization>(
-           PerChannelAffineQuantization{/*scales=*/{1.0f, 1.0f, 1.0f, 1.0f},
-                                        /*zero_points=*/{0, 0, 0, 0}}),
+           PerChannelAffineQuantization{
+               /*scales=*/{1.0f, 1.0f, 1.0f, 1.0f},
+               /*zero_points=*/std::vector<int64_t>{0, 0, 0, 0}}),
        .bias_shape = {4},
        .bias_data = {0.1f, 0.2f, 0.3f, 0.4f},
        .expected = {1.1f, 2.2f, 3.3f, 4.4f}},
@@ -1079,8 +1080,9 @@ TYPED_TEST_P(NumericalTestSuite, FullyConnectedQuantizedOp) {
        .weights_shape = {2, 4},
        .weights_data = {1, 0, 0, 0, 0, 1, 0, 0},
        .quantization = std::make_shared<PerChannelAffineQuantization>(
-           PerChannelAffineQuantization{/*scales=*/{0.1f, 0.01f},
-                                        /*zero_points=*/{0, 0}}),
+           PerChannelAffineQuantization{
+               /*scales=*/{0.1f, 0.01f},
+               /*zero_points=*/std::vector<int64_t>{0, 0}}),
        .bias_shape = {2},
        .bias_data = {0.1f, 0.2f},
        .expected = {0.2f, 0.22f}},
@@ -1090,8 +1092,9 @@ TYPED_TEST_P(NumericalTestSuite, FullyConnectedQuantizedOp) {
        .weights_shape = {2, 4},
        .weights_data = {1, 0, 0, 0, 0, 1, 0, 0},
        .quantization = std::make_shared<PerChannelAffineQuantization>(
-           PerChannelAffineQuantization{/*scales=*/{0.1f, 0.01f},
-                                        /*zero_points=*/{0, 0}}),
+           PerChannelAffineQuantization{
+               /*scales=*/{0.1f, 0.01f},
+               /*zero_points=*/std::vector<int64_t>{0, 0}}),
        .bias_shape = {},
        .bias_data = {},
        .expected = {0.1f, 0.02f}},
@@ -1101,8 +1104,9 @@ TYPED_TEST_P(NumericalTestSuite, FullyConnectedQuantizedOp) {
        .weights_shape = {4, 4},
        .weights_data = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
        .quantization = std::make_shared<PerChannelAffineQuantization>(
-           PerChannelAffineQuantization{/*scales=*/{1.0f, 1.0f, 1.0f, 1.0f},
-                                        /*zero_points=*/{0, 0, 0, 0}}),
+           PerChannelAffineQuantization{
+               /*scales=*/{1.0f, 1.0f, 1.0f, 1.0f},
+               /*zero_points=*/std::vector<int64_t>{0, 0, 0, 0}}),
        .bias_shape = {4},
        .bias_data = {0.1f, 0.2f, 0.3f, 0.4f},
        .expected = {1.1f, 2.2f, 3.3f, 4.4f}},
@@ -1112,8 +1116,9 @@ TYPED_TEST_P(NumericalTestSuite, FullyConnectedQuantizedOp) {
        .weights_shape = {4, 4},
        .weights_data = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
        .quantization = std::make_shared<PerChannelAffineQuantization>(
-           PerChannelAffineQuantization{/*scales=*/{1.0f, 1.0f, 1.0f, 1.0f},
-                                        /*zero_points=*/{0, 0, 0, 0}}),
+           PerChannelAffineQuantization{
+               /*scales=*/{1.0f, 1.0f, 1.0f, 1.0f},
+               /*zero_points=*/std::vector<int64_t>{0, 0, 0, 0}}),
        .bias_shape = {4},
        .bias_data = {0.1f, 0.2f, 0.3f, 0.4f},
        .expected = {1.1f, 2.2f, 3.3f, 4.4f}},
@@ -3601,8 +3606,9 @@ TYPED_TEST_P(NumericalTestSuite, DequantizeOp) {
       {.type = Type::kI8,
        .shape = {1, 8},
        .quantization = std::make_shared<PerChannelAffineQuantization>(
-           PerChannelAffineQuantization{/*scales=*/{0.5f},
-                                        /*zero_points=*/{3}})});
+           PerChannelAffineQuantization{
+               /*scales=*/{0.5f},
+               /*zero_points=*/std::vector<int64_t>{3}})});
   Tensor<Tag> output = Dequantize(input);
 
   auto status = this->bridge_->BuildGraph({input}, {output});

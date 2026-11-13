@@ -66,13 +66,10 @@ absl::StatusOr<std::vector<float>> DequantizeInt8ConstantTensor(
     return (allow_empty && count == 0) || count == 1 || count == out_channels;
   };
   if (!valid_count(pcq.scales.size(), /*allow_empty=*/false) ||
-      !valid_count(pcq.zero_points.size(), /*allow_empty=*/true) ||
-      !valid_count(pcq.float_zero_points.size(), /*allow_empty=*/true)) {
+      !valid_count(pcq.NumZeroPoints(), /*allow_empty=*/true)) {
     return absl::InvalidArgumentError(absl::StrFormat(
-        "%zu scales, %zu zero points and %zu float zero points don't match "
-        "%zu output channels",
-        pcq.scales.size(), pcq.zero_points.size(), pcq.float_zero_points.size(),
-        out_channels));
+        "%zu scales and %zu zero points don't match %zu output channels",
+        pcq.scales.size(), pcq.NumZeroPoints(), out_channels));
   }
 
   if (raw_data.size() < num_elements) {
@@ -87,6 +84,7 @@ absl::StatusOr<std::vector<float>> DequantizeInt8ConstantTensor(
 
   for (size_t o = 0; o < out_channels; ++o) {
     const float scale = pcq.scales.size() == 1 ? pcq.scales[0] : pcq.scales[o];
+    // Integer and float zero points are both exact as floats.
     const float zero_point = pcq.ZeroPointAt(o);
     const size_t row_offset = o * in_channels;
     for (size_t i = 0; i < in_channels; ++i) {

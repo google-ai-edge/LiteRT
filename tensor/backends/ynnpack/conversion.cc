@@ -43,19 +43,22 @@ limitations under the License.
 namespace litert::tensor {
 namespace {
 
-// Returns the zero points of `quantization`, as stored in it.
+// Returns the integer zero points of `quantization`, as stored in it. Float
+// zero points, which `ValidateQuantization` only accepts when all zero, are
+// returned as none.
 absl::Span<const int64_t> GetRawZeroPoints(const Quantization& quantization) {
+  const std::vector<int64_t>* zero_points = nullptr;
   if (absl::StatusOr<const BlockwiseQuantization&> bwq =
           quantization.As<const BlockwiseQuantization>();
       bwq.ok()) {
-    return bwq->zero_points;
+    zero_points = bwq->IntegerZeroPoints();
+  } else if (absl::StatusOr<const PerChannelAffineQuantization&> pcq =
+                 quantization.As<const PerChannelAffineQuantization>();
+             pcq.ok()) {
+    zero_points = pcq->IntegerZeroPoints();
   }
-  if (absl::StatusOr<const PerChannelAffineQuantization&> pcq =
-          quantization.As<const PerChannelAffineQuantization>();
-      pcq.ok()) {
-    return pcq->zero_points;
-  }
-  return {};
+  if (zero_points == nullptr) return {};
+  return *zero_points;
 }
 
 // Quantization parameters may omit the zero points (symmetric quantization) or
@@ -263,13 +266,13 @@ absl::Status YnnpackBuildContext::ValidateQuantization(
           ") doesn't match the expected block count (", channels * num_blocks,
           ")."));
     }
-    if (bwq->HasNonZeroFloatZeroPoints()) {
+    if (bwq->HasFloatZeroPoints() && bwq->HasNonZeroZeroPoints()) {
       return absl::UnimplementedError(
           absl::StrCat(info.name,
                        ": floating-point zero points are not supported by the "
                        "YNNPACK backend."));
     }
-    return CheckZeroPointCount(bwq->zero_points.size(), bwq->scales.size(),
+    return CheckZeroPointCount(bwq->NumZeroPoints(), bwq->scales.size(),
                                info.name);
   }
 
@@ -292,13 +295,13 @@ absl::Status YnnpackBuildContext::ValidateQuantization(
             dims[quantized_dimension], ")."));
       }
     }
-    if (pcq->HasNonZeroFloatZeroPoints()) {
+    if (pcq->HasFloatZeroPoints() && pcq->HasNonZeroZeroPoints()) {
       return absl::UnimplementedError(
           absl::StrCat(info.name,
                        ": floating-point zero points are not supported by the "
                        "YNNPACK backend."));
     }
-    return CheckZeroPointCount(pcq->zero_points.size(), pcq->scales.size(),
+    return CheckZeroPointCount(pcq->NumZeroPoints(), pcq->scales.size(),
                                info.name);
   }
 

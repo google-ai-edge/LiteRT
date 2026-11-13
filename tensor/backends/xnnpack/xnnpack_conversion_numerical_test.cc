@@ -33,6 +33,7 @@ limitations under the License.
 #include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
+#include "tensor/internal/graph.h"
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
@@ -129,12 +130,12 @@ struct XnnpackTraits {
 INSTANTIATE_TYPED_TEST_SUITE_P(Xnnpack, NumericalTestSuite, XnnpackTraits);
 
 // Runs `FullyConnected` on XNNPACK with `[4, 32]` weights holding `levels`
-// quantized with `scales` and `float_zero_point`, and compares it against a
-// float reference.
+// quantized with `scales` and `zero_points`, and compares it against a float
+// reference.
 template <Type kWeightType>
 void ExpectQuantizedFullyConnectedMatchesReference(
     const int8_t (&levels)[4], const std::vector<float>& scales,
-    std::vector<float> float_zero_points) {
+    graph::ZeroPoints zero_points) {
   using XnnTensor = Tensor<XnnpackMixinTag>;
   constexpr int kBatch = 2;
   constexpr int kInCols = 32;
@@ -157,8 +158,7 @@ void ExpectQuantizedFullyConnectedMatchesReference(
       q_vals[o * kInCols + i] = levels[(o + i) % 4];
     }
   }
-  const float zero_point =
-      float_zero_points.empty() ? 0.0f : float_zero_points[0];
+  const float zero_point = graph::ZeroPointAt(zero_points, 0);
   auto w_buf = OwningCpuBuffer::Copy<kWeightType>(q_vals);
 
   XnnTensor x(TensorInit{
@@ -169,8 +169,8 @@ void ExpectQuantizedFullyConnectedMatchesReference(
                  .shape = {kOutCols, kInCols},
                  .buffer = w_buf,
                  .quantization = std::make_shared<PerChannelAffineQuantization>(
-                     scales, /*zero_points=*/std::vector<int64_t>{},
-                     /*quantized_dimension=*/0, std::move(float_zero_points))});
+                     scales, std::move(zero_points),
+                     /*quantized_dimension=*/0)});
   XnnTensor y = FullyConnected(x, w);
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(XnnpackRunner runner,
@@ -200,22 +200,23 @@ TEST(XnnpackCenteredInt2Test, FullyConnectedWithFloatZeroPoint) {
   // dequantized weight is (q + 0.5f) * scale in {-1.5, -0.5, +0.5, +1.5} * s.
   ExpectQuantizedFullyConnectedMatchesReference<Type::kI2>(
       {-2, -1, 0, 1}, /*scales=*/{0.25f, 0.5f, 0.125f, 1.0f},
-      /*float_zero_points=*/{-0.5f});
+      /*zero_points=*/std::vector<float>{-0.5f});
 }
 
 TEST(XnnpackCenteredInt2Test, FullyConnectedWithSingleScale) {
   ExpectQuantizedFullyConnectedMatchesReference<Type::kI2>(
-      {-2, -1, 0, 1}, /*scales=*/{0.25f}, /*float_zero_points=*/{-0.5f});
+      {-2, -1, 0, 1}, /*scales=*/{0.25f},
+      /*zero_points=*/std::vector<float>{-0.5f});
 }
 
 TEST(XnnpackInt2Test, FullyConnectedWithSingleScaleAndNoZeroPoint) {
   ExpectQuantizedFullyConnectedMatchesReference<Type::kI2>(
-      {-2, -1, 0, 1}, /*scales=*/{0.25f}, /*float_zero_points=*/{});
+      {-2, -1, 0, 1}, /*scales=*/{0.25f}, /*zero_points=*/{});
 }
 
 TEST(XnnpackInt4Test, FullyConnectedWithSingleScale) {
   ExpectQuantizedFullyConnectedMatchesReference<Type::kI4>(
-      {-8, -1, 0, 7}, /*scales=*/{0.125f}, /*float_zero_points=*/{});
+      {-8, -1, 0, 7}, /*scales=*/{0.125f}, /*zero_points=*/{});
 }
 
 }  // namespace

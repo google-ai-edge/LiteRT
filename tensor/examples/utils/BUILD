@@ -126,6 +126,7 @@ cc_library(
         "//tensor",
         "//tensor:buffer",
         "//tensor:datatypes",
+        "//tensor/internal:graph",
         "//tensor/utils:macros",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",

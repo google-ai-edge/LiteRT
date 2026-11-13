@@ -45,6 +45,7 @@ using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::FloatEq;
 using ::testing::Not;
+using ::testing::VariantWith;
 
 TEST(SafetensorLoaderTest, AbslStringifyMethodAndStrategy) {
   EXPECT_EQ(absl::StrCat(QuantizationConfig::Method::kCompressedTensors),
@@ -260,7 +261,8 @@ TEST(SafetensorLoaderTest, LoadsPackedInt4WeightPerChannel) {
       const PerChannelAffineQuantization& quantization,
       tensor.GetQuantization()->As<const PerChannelAffineQuantization>());
   EXPECT_THAT(quantization.scales, ElementsAre(FloatEq(0.5f), FloatEq(0.25f)));
-  EXPECT_THAT(quantization.zero_points, ElementsAre(0));
+  EXPECT_THAT(quantization.zero_points,
+              VariantWith<std::vector<int64_t>>(ElementsAre(0)));
   EXPECT_EQ(quantization.quantized_dimension, 0);
 }
 
@@ -856,8 +858,8 @@ TEST(SafetensorLoaderTest, Loads3DInt2WeightWithFloatZeroPoints) {
   EXPECT_THAT(pcq.scales,
               ElementsAre(FloatEq(0.5f), FloatEq(0.25f), FloatEq(0.125f),
                           FloatEq(1.0f)));
-  EXPECT_TRUE(pcq.zero_points.empty());
-  EXPECT_THAT(pcq.float_zero_points, ElementsAre(FloatEq(-0.5f)));
+  ASSERT_NE(pcq.FloatZeroPoints(), nullptr);
+  EXPECT_THAT(*pcq.FloatZeroPoints(), ElementsAre(FloatEq(-0.5f)));
   EXPECT_FLOAT_EQ(pcq.ZeroPointAt(0), -0.5f);
 
   // The packed bytes are kept as they are: signed 2-bit values from the least

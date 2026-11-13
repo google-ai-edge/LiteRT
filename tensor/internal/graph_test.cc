@@ -14,8 +14,10 @@ limitations under the License.
 ==============================================================================*/
 #include "tensor/internal/graph.h"
 
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -29,7 +31,9 @@ limitations under the License.
 namespace litert::tensor::graph {
 namespace {
 
+using testing::ElementsAre;
 using testing::ElementsAreArray;
+using testing::IsEmpty;
 using testing::Not;
 using testing::SizeIs;
 using testing::StrEq;
@@ -89,13 +93,13 @@ TEST(TensorTest, TensorWithWringIndexIsInvalid) {
 }
 
 TEST(QuantizationTest, GetTypeId) {
-  PerChannelAffineQuantization quant({1.0f}, {0}, 0);
+  PerChannelAffineQuantization quant({1.0f}, std::vector<int64_t>{0}, 0);
   EXPECT_EQ(quant.GetTypeId(),
             internal::TypeId::Get<PerChannelAffineQuantization>());
 }
 
 TEST(QuantizationTest, IsA) {
-  PerChannelAffineQuantization quant({1.0f}, {0}, 0);
+  PerChannelAffineQuantization quant({1.0f}, std::vector<int64_t>{0}, 0);
   EXPECT_TRUE(quant.IsA(internal::TypeId::Get<PerChannelAffineQuantization>()));
 }
 
@@ -109,7 +113,7 @@ struct DummyQuantization : Quantization {
 };
 
 TEST(QuantizationTest, As) {
-  PerChannelAffineQuantization quant({1.0f}, {0}, 0);
+  PerChannelAffineQuantization quant({1.0f}, std::vector<int64_t>{0}, 0);
   Quantization& quant_ref = quant;
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(PerChannelAffineQuantization & quant_as,
@@ -125,22 +129,75 @@ TEST(QuantizationTest, As) {
   EXPECT_THAT(const_quant_ref.As<DummyQuantization>(), Not(IsOk()));
 }
 
+TEST(QuantizationTest, DefaultsToNoIntegerZeroPoints) {
+  PerChannelAffineQuantization pcq;
+  ASSERT_NE(pcq.IntegerZeroPoints(), nullptr);
+  EXPECT_THAT(*pcq.IntegerZeroPoints(), IsEmpty());
+  EXPECT_EQ(pcq.FloatZeroPoints(), nullptr);
+  EXPECT_FALSE(pcq.HasFloatZeroPoints());
+  EXPECT_EQ(pcq.NumZeroPoints(), 0);
+  EXPECT_FALSE(pcq.HasNonZeroZeroPoints());
+  EXPECT_FLOAT_EQ(pcq.ZeroPointAt(0), 0.0f);
+
+  BlockwiseQuantization bwq;
+  ASSERT_NE(bwq.IntegerZeroPoints(), nullptr);
+  EXPECT_THAT(*bwq.IntegerZeroPoints(), IsEmpty());
+  EXPECT_FALSE(bwq.HasFloatZeroPoints());
+  EXPECT_EQ(bwq.NumZeroPoints(), 0);
+}
+
+TEST(QuantizationTest, IntegerZeroPoints) {
+  PerChannelAffineQuantization pcq({0.5f, 0.25f},
+                                   /*zero_points=*/std::vector<int64_t>{0, 3},
+                                   /*quantized_dimension=*/0);
+  ASSERT_NE(pcq.IntegerZeroPoints(), nullptr);
+  EXPECT_THAT(*pcq.IntegerZeroPoints(), ElementsAre(0, 3));
+  EXPECT_EQ(pcq.FloatZeroPoints(), nullptr);
+  EXPECT_FALSE(pcq.HasFloatZeroPoints());
+  EXPECT_EQ(pcq.NumZeroPoints(), 2);
+  EXPECT_TRUE(pcq.HasNonZeroZeroPoints());
+  EXPECT_FLOAT_EQ(pcq.ZeroPointAt(0), 0.0f);
+  EXPECT_FLOAT_EQ(pcq.ZeroPointAt(1), 3.0f);
+  EXPECT_FLOAT_EQ(pcq.ZeroPointAt(2), 0.0f);
+
+  BlockwiseQuantization bwq({0.5f, 0.25f},
+                            /*zero_points=*/std::vector<int64_t>{2},
+                            /*block_size=*/32);
+  EXPECT_EQ(bwq.NumZeroPoints(), 1);
+  EXPECT_FLOAT_EQ(bwq.ZeroPointAt(0), 2.0f);
+  EXPECT_FLOAT_EQ(bwq.ZeroPointAt(1), 2.0f);
+}
+
 TEST(QuantizationTest, FloatZeroPoints) {
-  PerChannelAffineQuantization pcq({0.5f, 0.25f}, /*zero_points=*/{},
-                                   /*quantized_dimension=*/0,
-                                   /*float_zero_points=*/{-0.5f});
-  EXPECT_TRUE(pcq.HasNonZeroFloatZeroPoints());
+  PerChannelAffineQuantization pcq({0.5f, 0.25f},
+                                   /*zero_points=*/std::vector<float>{-0.5f},
+                                   /*quantized_dimension=*/0);
+  EXPECT_EQ(pcq.IntegerZeroPoints(), nullptr);
+  ASSERT_NE(pcq.FloatZeroPoints(), nullptr);
+  EXPECT_THAT(*pcq.FloatZeroPoints(), ElementsAre(-0.5f));
+  EXPECT_TRUE(pcq.HasFloatZeroPoints());
+  EXPECT_EQ(pcq.NumZeroPoints(), 1);
   EXPECT_TRUE(pcq.HasNonZeroZeroPoints());
   EXPECT_FLOAT_EQ(pcq.ZeroPointAt(0), -0.5f);
   EXPECT_FLOAT_EQ(pcq.ZeroPointAt(1), -0.5f);
 
-  BlockwiseQuantization bwq({0.5f, 0.25f}, /*zero_points=*/{},
-                            /*block_size=*/32, /*quantized_dimension=*/0,
-                            /*float_zero_points=*/{-0.5f, 0.25f});
-  EXPECT_TRUE(bwq.HasNonZeroFloatZeroPoints());
+  BlockwiseQuantization bwq({0.5f, 0.25f},
+                            /*zero_points=*/std::vector<float>{-0.5f, 0.25f},
+                            /*block_size=*/32, /*quantized_dimension=*/0);
+  EXPECT_TRUE(bwq.HasFloatZeroPoints());
+  EXPECT_EQ(bwq.NumZeroPoints(), 2);
   EXPECT_TRUE(bwq.HasNonZeroZeroPoints());
   EXPECT_FLOAT_EQ(bwq.ZeroPointAt(0), -0.5f);
   EXPECT_FLOAT_EQ(bwq.ZeroPointAt(1), 0.25f);
+}
+
+TEST(QuantizationTest, AllZeroFloatZeroPointsAreStillFloat) {
+  PerChannelAffineQuantization pcq(
+      {0.5f, 0.25f},
+      /*zero_points=*/std::vector<float>{0.0f, 0.0f},
+      /*quantized_dimension=*/0);
+  EXPECT_TRUE(pcq.HasFloatZeroPoints());
+  EXPECT_FALSE(pcq.HasNonZeroZeroPoints());
 }
 
 struct DummyOp : Operation {

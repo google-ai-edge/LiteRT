@@ -27,6 +27,7 @@ limitations under the License.
 #include <set>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
@@ -37,6 +38,7 @@ limitations under the License.
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/strings/substitute.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/kernels/elementwise.h"  // from @ml_drift
@@ -171,16 +173,19 @@ absl::StatusOr<std::pair<float, int64_t>> GetPerTensorQuantization(
         absl::StrCat(op_name, " requires quantization parameters."));
   }
   auto pcq = info.quantization->As<const PerChannelAffineQuantization>();
-  if (!pcq.ok() || pcq->scales.size() != 1 || pcq->zero_points.size() > 1) {
+  if (!pcq.ok() || pcq->scales.size() != 1 || pcq->NumZeroPoints() > 1) {
     return absl::UnimplementedError(absl::StrCat(
         op_name, " only supports per-tensor quantization in ML Drift."));
   }
-  if (pcq->HasNonZeroFloatZeroPoints()) {
+  // Null for float zero points, which are only supported when zero.
+  const std::vector<int64_t>* zero_points = pcq->IntegerZeroPoints();
+  if (zero_points == nullptr && pcq->HasNonZeroZeroPoints()) {
     return absl::UnimplementedError(absl::StrCat(
         op_name, " doesn't support float zero points in ML Drift."));
   }
-  return std::make_pair(pcq->scales[0],
-                        pcq->zero_points.empty() ? 0 : pcq->zero_points[0]);
+  return std::make_pair(
+      pcq->scales[0],
+      zero_points == nullptr || zero_points->empty() ? 0 : (*zero_points)[0]);
 }
 
 // Adds an elementwise `op_type` operation of `lhs` and `rhs`, which is
@@ -232,11 +237,16 @@ absl::Status AddDequantization(
     const std::vector<int>& shape,
     const PerChannelAffineQuantization& quantization) {
   const std::vector<float>& scales = quantization.scales;
-  const std::vector<int64_t>& zero_points = quantization.zero_points;
-  if (quantization.HasNonZeroFloatZeroPoints()) {
+  // Null for float zero points, which are only supported when all zero.
+  const std::vector<int64_t>* integer_zero_points =
+      quantization.IntegerZeroPoints();
+  if (integer_zero_points == nullptr && quantization.HasNonZeroZeroPoints()) {
     return absl::UnimplementedError(
         "Dequantize doesn't support float zero points in ML Drift.");
   }
+  const absl::Span<const int64_t> zero_points =
+      integer_zero_points != nullptr ? absl::MakeConstSpan(*integer_zero_points)
+                                     : absl::Span<const int64_t>();
   if (scales.empty() ||
       (zero_points.size() > 1 && zero_points.size() != scales.size())) {
     return absl::InvalidArgumentError(
@@ -453,18 +463,20 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
 
   const std::vector<float>& raw_scales =
       pcq_ptr != nullptr ? pcq_ptr->scales : bwq_ptr->scales;
-  const std::vector<int64_t>& raw_zps =
+  const graph::ZeroPoints& zero_points =
       pcq_ptr != nullptr ? pcq_ptr->zero_points : bwq_ptr->zero_points;
-  const bool has_non_zero_float_zp = pcq_ptr != nullptr
-                                         ? pcq_ptr->HasNonZeroFloatZeroPoints()
-                                         : bwq_ptr->HasNonZeroFloatZeroPoints();
-  if (has_non_zero_float_zp) {
+  const bool has_non_zero_zp = graph::HasNonZeroZeroPoints(zero_points);
+  // Null for float zero points, which are only supported when all zero.
+  const std::vector<int64_t>* integer_zps =
+      std::get_if<std::vector<int64_t>>(&zero_points);
+  if (integer_zps == nullptr && has_non_zero_zp) {
     return absl::UnimplementedError(absl::StrCat(
         "Weights tensor (", out_info.name,
         ") has float zero points, which ML Drift doesn't support yet."));
   }
-  const bool has_non_zero_zp = std::any_of(
-      raw_zps.begin(), raw_zps.end(), [](int64_t zp) { return zp != 0; });
+  const absl::Span<const int64_t> raw_zps =
+      integer_zps != nullptr ? absl::MakeConstSpan(*integer_zps)
+                             : absl::Span<const int64_t>();
 
   std::string scale_key;
   std::string zp_key;
