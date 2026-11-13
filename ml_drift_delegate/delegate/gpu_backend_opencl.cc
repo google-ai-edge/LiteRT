@@ -41,6 +41,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/cl/buffer.h"  // from @ml_drift
+#include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
 #include "ml_drift/cl/converter.h"  // from @ml_drift
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/inference_context.h"  // from @ml_drift
@@ -243,9 +244,8 @@ absl::Status GpuBackendOpenCl::ReleaseSpatialTensorMemory(
 
 absl::StatusOr<std::unique_ptr<GpuIOBuffer>> GpuBackendOpenCl::CreateIOBuffer(
     GpuMemoryHandle gpu_memory) {
-  return std::make_unique<GpuIOBufferOpenCl>(
-      env_,
-      ::ml_drift::cl::CreateBufferShared(static_cast<cl_mem>(gpu_memory)));
+  return GpuIOBufferOpenCl::Create(env_, ::ml_drift::cl::CreateBufferShared(
+                                             static_cast<cl_mem>(gpu_memory)));
 }
 
 absl::StatusOr<std::unique_ptr<GpuIOBuffer>>
@@ -268,7 +268,7 @@ GpuBackendOpenCl::CreateIOBufferWithSize(::ml_drift::DataType data_type,
     ABSL_RETURN_IF_ERROR(::ml_drift::cl::CreateReadWriteBuffer(
         size, &env_->context(), &cl_buffer));
   }
-  return std::make_unique<GpuIOBufferOpenCl>(env_, std::move(cl_buffer));
+  return GpuIOBufferOpenCl::Create(env_, std::move(cl_buffer));
 }
 
 // Answers the allocation policy question: returns true if the device
@@ -285,8 +285,8 @@ bool GpuBackendOpenCl::SupportsZeroCopyHostPtr(bool input) const {
   }
   const auto& info = env_->GetDevicePtr()->GetInfo();
   // Both D-Series (DXT, Tensor G5) and C-Series (CXTP, Tensor G6) have been
-  // verified to support zero-copy host pointer wrapping with CPU-GPU cache
-  // coherency upon clFinish.
+  // verified to support zero-copy host pointer wrapping via CL_MEM_USE_HOST_PTR
+  // with explicit map/unmap cache maintenance.
   if (info.IsPowerVR() &&
       (info.powervr_info.IsImgDxx() || info.powervr_info.IsImgCxx())) {
     return true;
@@ -303,25 +303,13 @@ bool GpuBackendOpenCl::SupportsZeroCopyHostPtr(bool input) const {
 //
 // This is an intrinsic hardware capability property kept independent of the
 // allocation policy (force_host_ptr_io_buffer_):
-// - On PowerVR D-Series (DXT, Tensor G5) and C-Series (CXTP, Tensor G6),
-//   hardware cache coherency is guaranteed across CPU and GPU caches upon
-//   clFinish, so explicit host sync is not required.
-// - For non-coherent devices (e.g. Nvidia/AMD discrete GPUs or unverified
-//   PowerVR generations), standard operation uses normal device allocations
-//   with clEnqueueReadBuffer or clEnqueueWriteBuffer. If host pointers are
-//   wrapped (such as during host workstation unit testing), this map/unmap
-//   synchronization ensures OpenCL specification compliance and prevents
-//   cache divergence.
+// - All devices using CL_MEM_USE_HOST_PTR without hardware cache snooping
+//   (including PowerVR D-Series on Tensor G5 and C-Series on Tensor G6)
+//   require explicit map/unmap synchronization between host CPU and GPU
+//   accesses, as the GPU MMU does not snoop CPU caches upon clFinish.
+// - Returns false only when no OpenCL environment is present.
 bool GpuBackendOpenCl::RequiresExplicitHostSync() const {
-  if (env_ == nullptr || env_->GetDevicePtr() == nullptr) {
-    return false;
-  }
-  const auto& info = env_->GetDevicePtr()->GetInfo();
-  // Both D-Series (DXT, Tensor G5) and C-Series (CXTP, Tensor G6) have been
-  // verified to be cache coherent after clFinish. Other PowerVR generations
-  // fall back to explicit map/unmap.
-  return !(info.IsPowerVR() &&
-           (info.powervr_info.IsImgDxx() || info.powervr_info.IsImgCxx()));
+  return env_ != nullptr;
 }
 
 bool GpuBackendOpenCl::SupportsHostPtrIOBuffer(bool input) const {
@@ -367,6 +355,9 @@ GpuBackendOpenCl::CreateInternalHostBuffer(::ml_drift::DataType data_type,
   if (size == 0) {
     return absl::InvalidArgumentError("Buffer size must be greater than 0.");
   }
+  if (env_ == nullptr) {
+    return absl::FailedPreconditionError("OpenCL environment is null.");
+  }
   const size_t alignment = GetHostPtrAlignment();
   if (alignment == 0) {
     return absl::FailedPreconditionError(
@@ -406,7 +397,7 @@ GpuBackendOpenCl::CreateInternalHostBuffer(::ml_drift::DataType data_type,
   }
 
   ::ml_drift::cl::Buffer cl_buffer(mem, size);
-  return std::make_unique<GpuIOBufferOpenCl>(
+  return GpuIOBufferOpenCl::Create(
       env_, std::move(cl_buffer), /*is_host_ptr=*/true, host_ptr,
       /*owns_host_ptr=*/true, RequiresExplicitHostSync());
 }
@@ -428,6 +419,9 @@ GpuBackendOpenCl::WrapExternalHostBuffer(::ml_drift::DataType data_type,
   if (size == 0) {
     return absl::InvalidArgumentError("Buffer size must be greater than 0.");
   }
+  if (env_ == nullptr) {
+    return absl::FailedPreconditionError("OpenCL environment is null.");
+  }
   const size_t alignment = GetHostPtrAlignment();
   if (reinterpret_cast<uintptr_t>(host_ptr) % alignment != 0) {
     return absl::InvalidArgumentError(absl::StrCat(
@@ -445,7 +439,7 @@ GpuBackendOpenCl::WrapExternalHostBuffer(::ml_drift::DataType data_type,
   }
 
   ::ml_drift::cl::Buffer cl_buffer(mem, size);
-  return std::make_unique<GpuIOBufferOpenCl>(
+  return GpuIOBufferOpenCl::Create(
       env_, std::move(cl_buffer), /*is_host_ptr=*/true, host_ptr,
       /*owns_host_ptr=*/false, RequiresExplicitHostSync());
 }
@@ -584,6 +578,48 @@ absl::Status GpuInferenceContextOpenCl::SetCommandBufferHint(
   return absl::UnimplementedError("SetCommandBufferHint is not implemented.");
 }
 
+absl::StatusOr<std::unique_ptr<GpuIOBufferOpenCl>> GpuIOBufferOpenCl::Create(
+    ::ml_drift::cl::Environment* env, ::ml_drift::cl::Buffer&& buffer,
+    bool is_host_ptr, void* host_ptr, bool owns_host_ptr,
+    bool requires_explicit_host_sync) {
+  auto io_buffer = std::unique_ptr<GpuIOBufferOpenCl>(
+      new GpuIOBufferOpenCl(env, std::move(buffer), is_host_ptr, host_ptr,
+                            owns_host_ptr, requires_explicit_host_sync));
+  if (io_buffer->requires_explicit_host_sync_) {
+    const size_t size = io_buffer->buffer_.GetMemorySizeInBytes();
+    if (size > 0) {
+      if (io_buffer->env_ == nullptr || io_buffer->env_->queue() == nullptr ||
+          io_buffer->env_->queue()->queue() == nullptr) {
+        return absl::FailedPreconditionError(
+            "Cannot map OpenCL host pointer buffer without an active command "
+            "queue.");
+      }
+      if (io_buffer->buffer_.GetMemoryPtr() == nullptr) {
+        return absl::FailedPreconditionError(
+            "Cannot map OpenCL host pointer buffer with null cl_mem.");
+      }
+      cl_int err = CL_SUCCESS;
+      void* mapped_ptr = ::ml_drift::cl::clEnqueueMapBuffer(
+          io_buffer->env_->queue()->queue(), io_buffer->buffer_.GetMemoryPtr(),
+          /*blocking_map=*/CL_TRUE, CL_MAP_READ | CL_MAP_WRITE, /*offset=*/0,
+          size, /*num_events_in_wait_list=*/0, /*event_wait_list=*/nullptr,
+          /*event=*/nullptr, &err);
+      if (err != CL_SUCCESS || mapped_ptr == nullptr) {
+        return absl::InternalError(
+            absl::StrCat("clEnqueueMapBuffer failed in Create: ",
+                         ::ml_drift::cl::CLErrorCodeToString(err)));
+      }
+      if (mapped_ptr != io_buffer->host_ptr_ &&
+          io_buffer->host_ptr_ != nullptr) {
+        std::memcpy(mapped_ptr, io_buffer->host_ptr_, size);
+      }
+      io_buffer->mapped_ptr_ = mapped_ptr;
+      io_buffer->is_mapped_ = true;
+    }
+  }
+  return io_buffer;
+}
+
 GpuIOBufferOpenCl::GpuIOBufferOpenCl(::ml_drift::cl::Environment* env,
                                      ::ml_drift::cl::Buffer&& buffer,
                                      bool is_host_ptr, void* host_ptr,
@@ -598,6 +634,23 @@ GpuIOBufferOpenCl::GpuIOBufferOpenCl(::ml_drift::cl::Environment* env,
 }
 
 GpuIOBufferOpenCl::~GpuIOBufferOpenCl() {
+  if (owns_host_ptr_ && is_mapped_ && env_ != nullptr &&
+      env_->queue() != nullptr && env_->queue()->queue() != nullptr &&
+      buffer_.GetMemoryPtr() != nullptr && mapped_ptr_ != nullptr) {
+    if (pending_host_sync_) {
+      env_->queue()->WaitForCompletion().IgnoreError();
+      pending_host_sync_ = false;
+    }
+    cl_int err = ::ml_drift::cl::clEnqueueUnmapMemObject(
+        env_->queue()->queue(), buffer_.GetMemoryPtr(), mapped_ptr_,
+        /*num_events_in_wait_list=*/0, /*event_wait_list=*/nullptr,
+        /*event=*/nullptr);
+    mapped_ptr_ = nullptr;
+    is_mapped_ = false;
+    if (err == CL_SUCCESS) {
+      env_->queue()->WaitForCompletion().IgnoreError();
+    }
+  }
   buffer_ = ::ml_drift::cl::Buffer();
   if (owns_host_ptr_ && host_ptr_ != nullptr) {
 #if defined(_WIN32)
@@ -609,46 +662,32 @@ GpuIOBufferOpenCl::~GpuIOBufferOpenCl() {
 }
 
 absl::Status GpuIOBufferOpenCl::SyncToDevice() {
-  if (requires_explicit_host_sync_) {
-    const size_t size = buffer_.GetMemorySizeInBytes();
-    if (size == 0) {
-      return absl::OkStatus();
-    }
-    // Save host memory contents into staging storage before mapping. This
-    // fallback ensures OpenCL specification compliance and supports unit
-    // testing on non-coherent host workstation GPUs (e.g. Nvidia). This path
-    // is test/compat-only (requires_explicit_host_sync_ is false on PowerVR
-    // D-Series/C-Series) and is not perf-critical. On such non-coherent
-    // platforms,
-    // clEnqueueMapBuffer with CL_MAP_WRITE_INVALIDATE_REGION may invalidate
-    // host CPU caches, discard dirty cache lines, or return a divergent driver
-    // bounce buffer. A reusable staging buffer avoids heap allocations per
-    // inference on workstation GPUs.
-    if (host_ptr_ != nullptr) {
-      if (staging_buffer_.size() < size) {
-        staging_buffer_.resize(size);
-      }
-      std::memcpy(staging_buffer_.data(), host_ptr_, size);
-    }
-    cl_int err = CL_SUCCESS;
-    void* mapped_ptr = ::ml_drift::cl::clEnqueueMapBuffer(
-        env_->queue()->queue(), buffer_.GetMemoryPtr(),
-        /*blocking_map=*/CL_TRUE, CL_MAP_WRITE_INVALIDATE_REGION, /*offset=*/0,
-        size, /*num_events_in_wait_list=*/0, /*event_wait_list=*/nullptr,
-        /*event=*/nullptr, &err);
-    if (err != CL_SUCCESS || mapped_ptr == nullptr) {
-      return absl::InternalError(
-          absl::StrCat("clEnqueueMapBuffer failed in SyncToDevice: ",
-                       ::ml_drift::cl::CLErrorCodeToString(err)));
-    }
-    if (host_ptr_ != nullptr) {
+  if (!requires_explicit_host_sync_) {
+    return absl::OkStatus();
+  }
+  const size_t size = buffer_.GetMemorySizeInBytes();
+  if (size == 0) {
+    return absl::OkStatus();
+  }
+  if (env_ == nullptr || env_->queue() == nullptr ||
+      env_->queue()->queue() == nullptr || buffer_.GetMemoryPtr() == nullptr) {
+    return absl::FailedPreconditionError(
+        "Cannot sync OpenCL host pointer buffer without an active command "
+        "queue and cl_mem.");
+  }
+  if (is_mapped_ && pending_host_sync_) {
+    ABSL_RETURN_IF_ERROR(env_->queue()->WaitForCompletion());
+    ABSL_RETURN_IF_ERROR(FinishPendingHostSync());
+  }
+  if (is_mapped_) {
+    if (mapped_ptr_ != host_ptr_ && host_ptr_ != nullptr) {
       // NOMUTANTS -- Driver bounce buffer copy: on unified virtual memory
-      // drivers mapped_ptr == host_ptr_, but OpenCL spec compliance requires
-      // copying staging buffer on non-coherent drivers (b/376383693).
-      std::memcpy(mapped_ptr, staging_buffer_.data(), size);
+      // drivers mapped_ptr_ == host_ptr_, but OpenCL spec compliance requires
+      // copying host_ptr_ into mapped_ptr_ on non-coherent drivers.
+      std::memcpy(mapped_ptr_, host_ptr_, size);
     }
-    err = ::ml_drift::cl::clEnqueueUnmapMemObject(
-        env_->queue()->queue(), buffer_.GetMemoryPtr(), mapped_ptr,
+    cl_int err = ::ml_drift::cl::clEnqueueUnmapMemObject(
+        env_->queue()->queue(), buffer_.GetMemoryPtr(), mapped_ptr_,
         /*num_events_in_wait_list=*/0, /*event_wait_list=*/nullptr,
         /*event=*/nullptr);
     if (err != CL_SUCCESS) {
@@ -656,47 +695,110 @@ absl::Status GpuIOBufferOpenCl::SyncToDevice() {
           absl::StrCat("clEnqueueUnmapMemObject failed in SyncToDevice: ",
                        ::ml_drift::cl::CLErrorCodeToString(err)));
     }
-    return env_->queue()->WaitForCompletion();
+    mapped_ptr_ = nullptr;
+    is_mapped_ = false;
+    return absl::OkStatus();
+  }
+  // Cold/unmapped fallback: stage host_ptr_ into a separate buffer and write
+  // synchronously rather than calling clEnqueueMapBuffer + unmap, avoiding
+  // cache invalidation or bounce-buffer clobbering of dirty CPU writes.
+  if (host_ptr_ != nullptr) {
+    if (staging_buffer_.size() < size) {
+      staging_buffer_.resize(size);
+    }
+    std::memcpy(staging_buffer_.data(), host_ptr_, size);
+    return env_->queue()->EnqueueWriteBuffer(buffer_.GetMemoryPtr(), size,
+                                             staging_buffer_.data(),
+                                             /*async=*/false);
   }
   return absl::OkStatus();
 }
 
-absl::Status GpuIOBufferOpenCl::SyncToHost() {
+absl::Status GpuIOBufferOpenCl::UnmapIfMapped() {
+  if (!requires_explicit_host_sync_ || !is_mapped_) {
+    return absl::OkStatus();
+  }
+  const size_t size = buffer_.GetMemorySizeInBytes();
+  if (size == 0) {
+    mapped_ptr_ = nullptr;
+    is_mapped_ = false;
+    pending_host_sync_ = false;
+    return absl::OkStatus();
+  }
+  if (env_ == nullptr || env_->queue() == nullptr ||
+      env_->queue()->queue() == nullptr || buffer_.GetMemoryPtr() == nullptr) {
+    return absl::FailedPreconditionError(
+        "Cannot unmap OpenCL host pointer buffer without an active command "
+        "queue and cl_mem.");
+  }
+  if (pending_host_sync_) {
+    ABSL_RETURN_IF_ERROR(env_->queue()->WaitForCompletion());
+    pending_host_sync_ = false;
+  }
+  cl_int err = ::ml_drift::cl::clEnqueueUnmapMemObject(
+      env_->queue()->queue(), buffer_.GetMemoryPtr(), mapped_ptr_,
+      /*num_events_in_wait_list=*/0, /*event_wait_list=*/nullptr,
+      /*event=*/nullptr);
+  if (err != CL_SUCCESS) {
+    return absl::InternalError(
+        absl::StrCat("clEnqueueUnmapMemObject failed in UnmapIfMapped: ",
+                     ::ml_drift::cl::CLErrorCodeToString(err)));
+  }
+  mapped_ptr_ = nullptr;
+  is_mapped_ = false;
+  return absl::OkStatus();
+}
+
+absl::Status GpuIOBufferOpenCl::SyncToHost(bool wait_for_completion) {
   // NOMUTANTS -- Only host pointer buffers have explicit host sync enabled.
-  if (requires_explicit_host_sync_) {
-    const size_t size = buffer_.GetMemorySizeInBytes();
-    if (size == 0) {
-      return absl::OkStatus();
-    }
-    // Map/unmap read synchronization fallback for OpenCL specification
-    // compliance and unit testing on non-coherent workstation GPUs. If the
-    // driver allocates a divergent bounce buffer (mapped_ptr != host_ptr_),
-    // copy the results back to host_ptr_.
+  if (!requires_explicit_host_sync_) {
+    return absl::OkStatus();
+  }
+  const size_t size = buffer_.GetMemorySizeInBytes();
+  if (size == 0) {
+    return absl::OkStatus();
+  }
+  if (env_ == nullptr || env_->queue() == nullptr ||
+      env_->queue()->queue() == nullptr || buffer_.GetMemoryPtr() == nullptr) {
+    return absl::FailedPreconditionError(
+        "Cannot sync OpenCL host pointer buffer without an active command "
+        "queue and cl_mem.");
+  }
+  if (!is_mapped_) {
     cl_int err = CL_SUCCESS;
     void* mapped_ptr = ::ml_drift::cl::clEnqueueMapBuffer(
         env_->queue()->queue(), buffer_.GetMemoryPtr(),
-        /*blocking_map=*/CL_TRUE, CL_MAP_READ, /*offset=*/0, size,
-        /*num_events_in_wait_list=*/0,
-        /*event_wait_list=*/nullptr, /*event=*/nullptr, &err);
+        /*blocking_map=*/CL_FALSE, CL_MAP_READ | CL_MAP_WRITE, /*offset=*/0,
+        size, /*num_events_in_wait_list=*/0, /*event_wait_list=*/nullptr,
+        /*event=*/nullptr, &err);
     if (err != CL_SUCCESS || mapped_ptr == nullptr) {
       return absl::InternalError(
           absl::StrCat("clEnqueueMapBuffer failed in SyncToHost: ",
                        ::ml_drift::cl::CLErrorCodeToString(err)));
     }
-    if (mapped_ptr != host_ptr_ && host_ptr_ != nullptr) {
-      std::memcpy(host_ptr_, mapped_ptr, size);
-    }
-    err = ::ml_drift::cl::clEnqueueUnmapMemObject(
-        env_->queue()->queue(), buffer_.GetMemoryPtr(), mapped_ptr,
-        /*num_events_in_wait_list=*/0, /*event_wait_list=*/nullptr,
-        /*event=*/nullptr);
-    if (err != CL_SUCCESS) {
-      return absl::InternalError(
-          absl::StrCat("clEnqueueUnmapMemObject failed in SyncToHost: ",
-                       ::ml_drift::cl::CLErrorCodeToString(err)));
-    }
-    return env_->queue()->WaitForCompletion();
+    mapped_ptr_ = mapped_ptr;
+    is_mapped_ = true;
+    // Mark pending even when mapped_ptr_ == host_ptr_ so a subsequent blocking
+    // SyncToHost(true) or Read() still waits for the async map to complete.
+    pending_host_sync_ = true;
   }
+  if (wait_for_completion && pending_host_sync_) {
+    ABSL_RETURN_IF_ERROR(env_->queue()->WaitForCompletion());
+    return FinishPendingHostSync();
+  }
+  return absl::OkStatus();
+}
+
+absl::Status GpuIOBufferOpenCl::FinishPendingHostSync() {
+  if (!requires_explicit_host_sync_ || !pending_host_sync_) {
+    return absl::OkStatus();
+  }
+  const size_t size = buffer_.GetMemorySizeInBytes();
+  if (mapped_ptr_ != nullptr && host_ptr_ != nullptr &&
+      mapped_ptr_ != host_ptr_ && size > 0) {
+    std::memcpy(host_ptr_, mapped_ptr_, size);
+  }
+  pending_host_sync_ = false;
   return absl::OkStatus();
 }
 
@@ -716,6 +818,9 @@ absl::Status GpuIOBufferOpenCl::Read(absl::Span<uint8_t> data) {
 
 absl::Status GpuIOBufferOpenCl::Write(absl::Span<const uint8_t> data) {
   if (is_host_ptr_) {
+    if (requires_explicit_host_sync_ && pending_host_sync_) {
+      ABSL_RETURN_IF_ERROR(SyncToHost(/*wait_for_completion=*/true));
+    }
     const size_t copy_size = std::min(
         data.size(), static_cast<size_t>(buffer_.GetMemorySizeInBytes()));
     if (data.data() != host_ptr_ && copy_size > 0) {
@@ -734,6 +839,7 @@ Tensor2BufferConverterOpenCl::Tensor2BufferConverterOpenCl(
 
 absl::Status Tensor2BufferConverterOpenCl::Convert(
     ::ml_drift::GpuSpatialTensor& src_tensor, GpuIOBuffer& dst_buffer) {
+  ABSL_RETURN_IF_ERROR(dst_buffer.UnmapIfMapped());
   return converter_->ConvertExplicit(
       env_->queue(), static_cast<::ml_drift::cl::Tensor*>(&src_tensor),
       &(static_cast<GpuIOBufferOpenCl&>(dst_buffer).cl_buffer()));
@@ -746,6 +852,9 @@ Buffer2TensorConverterOpenCl::Buffer2TensorConverterOpenCl(
 
 absl::Status Buffer2TensorConverterOpenCl::Convert(
     GpuIOBuffer& src_buffer, ::ml_drift::GpuSpatialTensor& dst_tensor) {
+  if (src_buffer.IsMapped()) {
+    ABSL_RETURN_IF_ERROR(src_buffer.SyncToDevice());
+  }
   return converter_->ConvertExplicit(
       env_->queue(), &(static_cast<GpuIOBufferOpenCl&>(src_buffer).cl_buffer()),
       static_cast<::ml_drift::cl::Tensor*>(&dst_tensor));

@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
@@ -40,6 +41,7 @@
 #include "ml_drift/common/task/gpu_object_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
@@ -128,6 +130,26 @@ Expected<GpuTensorBufferPtr> AllocateTensorBuffer(
   return GetTensorBuffer(runtime_context, buffer_context, tflite_tensor);
 }
 
+LiteRtStatus CreateBufferRequirements(
+    const LiteRtRuntimeContext* runtime_context,
+    const GpuBackend::GpuBufferRequirements& requirements,
+    size_t required_data_size,
+    LiteRtTensorBufferRequirements* gpu_buffer_requirements) {
+  if (requirements.alignment > 0 &&
+      LITERT_ABI_HAS_API(runtime_context, /*req_major=*/1,
+                         create_tensor_buffer_requirements_with_alignment)) {
+    return runtime_context->create_tensor_buffer_requirements_with_alignment(
+        requirements.buffer_types.size(), requirements.buffer_types.data(),
+        required_data_size, requirements.strides.size(),
+        requirements.strides.data(), requirements.alignment,
+        gpu_buffer_requirements);
+  }
+  return runtime_context->create_tensor_buffer_requirements(
+      requirements.buffer_types.size(), requirements.buffer_types.data(),
+      required_data_size, requirements.strides.size(),
+      requirements.strides.data(), gpu_buffer_requirements);
+}
+
 }  // namespace
 
 absl::StatusOr<DelegateKernelLiteRt*> DelegateKernelLiteRt::Create(
@@ -187,10 +209,17 @@ absl::Status DelegateKernelLiteRt::MarkToFlushIfGlBuffer(
 bool DelegateKernelLiteRt::IsAhwbTensorBuffer(
     const GpuTensorBufferPtr& tensor_buffer) const {
   LiteRtTensorBufferType buffer_type;
-  return runtime_context_->get_tensor_buffer_type(tensor_buffer.get(),
-                                                  &buffer_type) ==
-             kLiteRtStatusOk &&
+  return runtime_context_->get_tensor_buffer_type(
+             tensor_buffer.get(), &buffer_type) == kLiteRtStatusOk &&
          buffer_type == kLiteRtTensorBufferTypeAhwb;
+}
+
+bool DelegateKernelLiteRt::IsHostMemoryTensorBuffer(
+    const GpuTensorBufferPtr& tensor_buffer) const {
+  LiteRtTensorBufferType buffer_type;
+  return runtime_context_->get_tensor_buffer_type(
+             tensor_buffer.get(), &buffer_type) == kLiteRtStatusOk &&
+         buffer_type == kLiteRtTensorBufferTypeHostMemory;
 }
 
 // Create internal SpatialTensor from I/O TensorBuffers and bind them to the
@@ -200,6 +229,7 @@ absl::Status DelegateKernelLiteRt::BindExternalTensorBuffers(
     TfLiteContext* context) {
   bool external_tensors_mode = !NoExternalTensorsMode();
   has_ahwb_tensor_buffers_ = false;
+  has_host_memory_buffers_ = false;
 
   for (int i = 0; i < input_indices_.size(); ++i) {
     if (IsExternalSharedConstantTensor(input_ids_[i])) {
@@ -219,6 +249,7 @@ absl::Status DelegateKernelLiteRt::BindExternalTensorBuffers(
         auto gpu_memory, backend_->GetGpuMemoryAllocated(*tensor_buffer),
         _ << absl::StrCat("Input#", i, " tensor does not have a GPU Memory."));
     if (external_tensors_mode || external_tensor_ids_.contains(input_ids_[i])) {
+      ABSL_RETURN_IF_ERROR(backend_->SyncHostMemoryToDevice(*tensor_buffer));
       ABSL_RETURN_IF_ERROR(BindGpuMemoryToInferenceContext(
           input_ids_[i], input_tensor_descriptors_[i], gpu_memory,
           input_tensors_));
@@ -229,6 +260,8 @@ absl::Status DelegateKernelLiteRt::BindExternalTensorBuffers(
     }
     has_ahwb_tensor_buffers_ =
         has_ahwb_tensor_buffers_ || IsAhwbTensorBuffer(*tensor_buffer);
+    has_host_memory_buffers_ =
+        has_host_memory_buffers_ || IsHostMemoryTensorBuffer(*tensor_buffer);
   }
 
   for (int i = 0; i < output_indices_.size(); ++i) {
@@ -245,6 +278,9 @@ absl::Status DelegateKernelLiteRt::BindExternalTensorBuffers(
         _ << absl::StrCat("Output#", i, " tensor does not have a GPU Memory."));
     if (external_tensors_mode ||
         external_tensor_ids_.contains(output_ids_[i])) {
+      if (IsHostMemoryTensorBuffer(*tensor_buffer)) {
+        ABSL_RETURN_IF_ERROR(backend_->SyncHostMemoryToDevice(*tensor_buffer));
+      }
       ABSL_RETURN_IF_ERROR(BindGpuMemoryToInferenceContext(
           output_ids_[i], output_tensor_descriptors_[i], gpu_memory,
           output_tensors_));
@@ -255,6 +291,8 @@ absl::Status DelegateKernelLiteRt::BindExternalTensorBuffers(
     }
     has_ahwb_tensor_buffers_ =
         has_ahwb_tensor_buffers_ || IsAhwbTensorBuffer(*tensor_buffer);
+    has_host_memory_buffers_ =
+        has_host_memory_buffers_ || IsHostMemoryTensorBuffer(*tensor_buffer);
   }
   return absl::OkStatus();
 }
@@ -283,6 +321,8 @@ absl::Status DelegateKernelLiteRt::ConvertNonExternalInputTensorsToGpuMemory(
     LITERT_ASSIGN_OR_RETURN(
         auto gpu_memory, backend_->GetGpuMemoryAllocated(tensor_buffer),
         _ << absl::StrCat("Input#", i, " tensor does not have a GPU Memory."));
+
+    ABSL_RETURN_IF_ERROR(backend_->SyncHostMemoryToDevice(tensor_buffer));
 
     ABSL_ASSIGN_OR_RETURN(auto src_buffer,
                           backend_->CreateIOBuffer(gpu_memory));
@@ -320,6 +360,9 @@ absl::Status DelegateKernelLiteRt::ConvertGpuMemoryToNonExternalOutputTensors(
         auto gpu_memory, backend_->GetGpuMemoryAllocated(tensor_buffer),
         _ << absl::StrCat("Output#", i, " tensor does not have a GPU Memory."));
 
+    ABSL_RETURN_IF_ERROR(
+        backend_->PrepareHostMemoryForDeviceWrite(tensor_buffer));
+
     ABSL_ASSIGN_OR_RETURN(auto dst_buffer,
                           backend_->CreateIOBuffer(gpu_memory));
     ABSL_ASSIGN_OR_RETURN(auto src_tensor,
@@ -349,10 +392,9 @@ absl::Status DelegateKernelLiteRt::RegisterLiteRtBufferRequirements(
   ABSL_ASSIGN_OR_RETURN(auto requirements,
                         backend_->GetGpuBufferRequirements(
                             used_storage_type, tensor_desc.GetDataType()));
-  LITERT_RETURN_IF_ERROR(runtime_context_->create_tensor_buffer_requirements(
-      requirements.buffer_types.size(), requirements.buffer_types.data(),
-      required_data_size, requirements.strides.size(),
-      requirements.strides.data(), &gpu_buffer_requirements));
+  LITERT_RETURN_IF_ERROR(
+      CreateBufferRequirements(runtime_context_, requirements,
+                               required_data_size, &gpu_buffer_requirements));
   LITERT_RETURN_IF_ERROR(
       runtime_context_
           ->external_litert_buffer_context_register_buffer_requirements(
@@ -370,10 +412,9 @@ absl::Status DelegateKernelLiteRt::
   ABSL_ASSIGN_OR_RETURN(
       auto requirements,
       backend_->GetGpuBufferRequirementsForNonExternalTensors());
-  LITERT_RETURN_IF_ERROR(runtime_context_->create_tensor_buffer_requirements(
-      requirements.buffer_types.size(), requirements.buffer_types.data(),
-      required_data_size, requirements.strides.size(),
-      requirements.strides.data(), &gpu_buffer_requirements));
+  LITERT_RETURN_IF_ERROR(
+      CreateBufferRequirements(runtime_context_, requirements,
+                               required_data_size, &gpu_buffer_requirements));
   LITERT_RETURN_IF_ERROR(
       runtime_context_
           ->external_litert_buffer_context_register_buffer_requirements(
@@ -522,6 +563,36 @@ absl::Status DelegateKernelLiteRt::HandleInputEvents(TfLiteContext* context) {
 
 absl::Status DelegateKernelLiteRt::HandleOutputEvents(
     TfLiteContext* context, bool is_async_execution_mode) {
+  bool completed = false;
+  auto cleanup = absl::MakeCleanup([&]() {
+    if (!completed && backend_ != nullptr) {
+      backend_->WaitForCompletion().IgnoreError();
+    }
+    if (backend_ != nullptr) {
+      backend_->ClearWrappedHostBuffers();
+    }
+  });
+
+  std::vector<GpuTensorBufferPtr> host_output_buffers;
+  if (has_host_memory_buffers_ && context != nullptr) {
+    host_output_buffers.reserve(output_indices_.size());
+    for (int i = 0; i < output_indices_.size(); ++i) {
+      TfLiteTensor* tflite_tensor = &context->tensors[output_indices_[i]];
+      auto tensor_buffer =
+          GetTensorBuffer(runtime_context_, buffer_context_, tflite_tensor);
+      if (tensor_buffer && IsHostMemoryTensorBuffer(*tensor_buffer)) {
+        ABSL_RETURN_IF_ERROR(backend_->SyncHostMemoryToHost(*tensor_buffer));
+        host_output_buffers.push_back(std::move(*tensor_buffer));
+      }
+    }
+  }
+  auto finish_host_syncs = [&]() -> absl::Status {
+    for (const auto& tensor_buffer : host_output_buffers) {
+      ABSL_RETURN_IF_ERROR(backend_->FinishHostMemorySyncToHost(tensor_buffer));
+    }
+    return absl::OkStatus();
+  };
+
   auto post_dispatch_event =
       ctx_->GetPostDispatchEvent(is_async_execution_mode);
   if (!post_dispatch_event.ok()) {
@@ -531,34 +602,53 @@ absl::Status DelegateKernelLiteRt::HandleOutputEvents(
 
     if (is_async_execution_mode) {
       LITERT_LOG(LITERT_DEBUG, "Backend doesn't support async execution mode");
+      if (has_host_memory_buffers_) {
+        ABSL_RETURN_IF_ERROR(backend_->WaitForCompletion());
+        ABSL_RETURN_IF_ERROR(finish_host_syncs());
+      }
+      completed = true;
       return absl::OkStatus();
     }
 
     // In synchronous execution no completion event is attached to the output
     // tensor buffers. Not waiting is fine for GPU memory such as OpenCL
     // buffers: reading or writing them through the TensorBuffer API goes
-    // through the same in-order command queue. AHardwareBuffers are instead
-    // accessed with AHardwareBuffer_lock() or imported into GL, which are not
-    // ordered after the dispatched work, so a reader could see stale output and
-    // a writer could overwrite an input that is still being read. Wait for them
-    // even with DoNotWait, like the OpenCL backend does for GL buffers in
-    // GpuInferenceContextOpenClLitert::PostConvert().
-    if (!has_ahwb_tensor_buffers_ &&
+    // through the same in-order command queue. AHardwareBuffers and HostMemory
+    // buffers are instead accessed on the CPU or freed directly outside the
+    // OpenCL command queue, which are not ordered after the dispatched work.
+    // Waiting for them even with DoNotWait prevents CPU-GPU race conditions,
+    // deallocation hazards, and driver cache-op faults (b/581934983).
+    if (!has_ahwb_tensor_buffers_ && !has_host_memory_buffers_ &&
         delegate_data_->options->wait_type == kGpuDelegateWaitTypeDoNotWait) {
+      completed = true;
       return absl::OkStatus();
     }
 
     // Don't distinguish wait_type except DoNotWait. Some backend, e.g. Metal,
     // may distinguish wait_type in WaitForCompletion().
-    return backend_->WaitForCompletion();
+    ABSL_RETURN_IF_ERROR(backend_->WaitForCompletion());
+    ABSL_RETURN_IF_ERROR(finish_host_syncs());
+    completed = true;
+    return absl::OkStatus();
   }
 
   if (!is_async_execution_mode) {
     // If not running in async execution mode, we wait for output_event and
     // we do not attach output event to tensor buffer.
     std::vector<GpuEventHandle> output_events{*post_dispatch_event};
-    return ctx_->WaitForEventsCompleted(absl::MakeSpan(output_events),
-                                        /*force_sync=*/true);
+    ABSL_RETURN_IF_ERROR(ctx_->WaitForEventsCompleted(
+        absl::MakeSpan(output_events), /*force_sync=*/true));
+    if (!host_output_buffers.empty()) {
+      ABSL_RETURN_IF_ERROR(backend_->WaitForCompletion());
+      ABSL_RETURN_IF_ERROR(finish_host_syncs());
+    }
+    completed = true;
+    return absl::OkStatus();
+  }
+
+  if (has_host_memory_buffers_) {
+    ABSL_RETURN_IF_ERROR(backend_->WaitForCompletion());
+    ABSL_RETURN_IF_ERROR(finish_host_syncs());
   }
 
   // Bind the output event to the all output tensor buffers.
@@ -576,6 +666,7 @@ absl::Status DelegateKernelLiteRt::HandleOutputEvents(
     ABSL_RETURN_IF_ERROR(
         backend_->AssociateGpuEvent(*post_dispatch_event, env, tensor_buffer));
   }
+  completed = true;
   return absl::OkStatus();
 }
 
@@ -618,7 +709,9 @@ absl::Status DelegateKernelLiteRt::UploadIntermediateCpuTensorsToGpuMemory(
           << ") is different from LiteRT packed buffer size (" << buffer_size
           << ").";
     }
-    std::memcpy(host_memory, tflite_tensor->data.raw, bytes_to_copy);
+    if (host_memory != tflite_tensor->data.raw) {
+      std::memcpy(host_memory, tflite_tensor->data.raw, bytes_to_copy);
+    }
     LITERT_RETURN_IF_ERROR(
         runtime_context_->unlock_tensor_buffer(tensor_buffer.get()));
   }
@@ -658,7 +751,9 @@ absl::Status DelegateKernelLiteRt::DownloadGpuMemoryToIntermediateCpuTensors(
           << ") is different from LiteRT packed buffer size (" << buffer_size
           << ").";
     }
-    std::memcpy(tflite_tensor->data.raw, host_memory, bytes_to_copy);
+    if (tflite_tensor->data.raw != host_memory) {
+      std::memcpy(tflite_tensor->data.raw, host_memory, bytes_to_copy);
+    }
     LITERT_RETURN_IF_ERROR(
         runtime_context_->unlock_tensor_buffer(tensor_buffer.get()));
   }
