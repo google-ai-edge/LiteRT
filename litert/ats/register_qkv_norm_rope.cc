@@ -15,6 +15,7 @@
 #include "litert/ats/register_qkv_norm_rope.h"
 
 #include <cstddef>
+#include <type_traits>
 
 #include "litert/ats/compile_fixture.h"
 #include "litert/ats/configure.h"
@@ -34,7 +35,8 @@ void RegisterQkvNormRopeImpl(const AtsConf& options, size_t& test_id,
   RegisterCombinations<
       Fixture,
       QkvNormRope,
-      TypeList<float, tflite::half>>
+      TypeList<float, tflite::half>,
+      TypeList<std::false_type, std::true_type>>
     (iters, test_id, options, cap);
   // clang-format on
 }
