@@ -393,15 +393,44 @@ config_setting(
     define_values = {"litert_webgpu_dawn_dynamic_loader": "true"},
 )
 
+config_setting(
+    name = "ml_drift_use_dawn_proc_define",
+    define_values = {"ml_drift_use_dawn_proc": "true"},
+)
+
+# Never matches normal builds; used as the false branch in alias select().
+config_setting(
+    name = "litert_webgpu_dawn_dynamic_loader_never",
+    define_values = {"litert_webgpu_dawn_dynamic_loader": "__never__"},
+)
+
+selects.config_setting_group(
+    name = "litert_webgpu_dawn_dynamic_loader_force_disabled",
+    match_any = [
+        ":emscripten",
+        ":litert_webgpu_dawn_dynamic_loader_disabled",
+        ":ml_drift_use_dawn_proc_define",
+    ],
+)
+
+selects.config_setting_group(
+    name = "litert_webgpu_dawn_dynamic_loader_enabled",
+    match_any = [
+        ":litert_runtime_link_mode_dynamic",
+        ":litert_webgpu_dawn_dynamic_loader_define",
+    ],
+)
+
 # Dynamically loads WebGPU Dawn (libwebgpu_dawn.so / .dylib / .dll) at runtime
-# via libdawn_proc instead of linking Dawn at build or load time. Evaluates to
-# false on Emscripten (:linux cannot match when :emscripten matches) so select()
-# blocks never hit ambiguous-match errors when combined with :emscripten.
+# via libdawn_proc instead of linking Dawn at build or load time. Enabled when
+# litert_runtime_link_mode=dynamic or litert_webgpu_dawn_dynamic_loader=true,
+# and forced false on Emscripten, litert_webgpu_dawn_dynamic_loader=false, or
+# ml_drift_use_dawn_proc=true so select() blocks never hit ambiguous matches.
 alias(
     name = "litert_webgpu_dawn_dynamic_loader",
     actual = select({
-        ":emscripten": ":linux",
-        "//conditions:default": ":litert_webgpu_dawn_dynamic_loader_define",
+        ":litert_webgpu_dawn_dynamic_loader_force_disabled": ":litert_webgpu_dawn_dynamic_loader_never",
+        "//conditions:default": ":litert_webgpu_dawn_dynamic_loader_enabled",
     }),
     visibility = ["//visibility:public"],
 )
