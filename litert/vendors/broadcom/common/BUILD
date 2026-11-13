@@ -51,7 +51,7 @@ package(
 )
 
 # copybara:comment_begin(oss-only)
-# Common utilities library
+# # Common utilities library
 cc_library(
     name = "bstorm_util_litert",
     srcs = [
@@ -69,4 +69,3 @@ cc_library(
         "@//:bstorm_core",
     ],
 )
-# copybara:comment_end
