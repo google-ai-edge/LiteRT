@@ -85,7 +85,7 @@ using litert::Expected;
 
 constexpr char kPluginManufacturer[] = "NVIDIA";
 constexpr char kPluginSocModel[] = "tensorrt-rtx";
-constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 18;
+constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 19;
 
 enum class PartitionPolicy {
   kSafe,
@@ -557,6 +557,7 @@ std::string BuildCompilerSdkVersion() {
       "LITERT_NVIDIA_TENSORRT_FUSE_GATED_DELTA_NET",
       "LITERT_NVIDIA_TENSORRT_FUSE_NORM_GEMV",
       "LITERT_NVIDIA_TENSORRT_FUSE_SWIGLU",
+      "LITERT_NVIDIA_TENSORRT_GLOBAL_ATTENTION_PLUGIN",
       "LITERT_NVIDIA_TENSORRT_INT8_BLOCKWISE_GEMM",
       "LITERT_NVIDIA_TENSORRT_JIT_HANDLE",
       "LITERT_NVIDIA_TENSORRT_MAX_FC_WEIGHT_BYTES",
