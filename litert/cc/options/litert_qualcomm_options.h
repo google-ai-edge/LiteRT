@@ -507,6 +507,20 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  void SetQualcommQuantOverrides(const std::string& quantization_overrides) {
+    LrtQualcommOptionsSetQualcommQuantOverrides(options_,
+                                               quantization_overrides.c_str());
+  }
+  StringView GetQualcommQuantOverrides() {
+    const char* val;
+    auto status =
+        LrtQualcommOptionsGetQualcommQuantOverrides(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
   void SetGraphTransform(const std::string& graph_transform) {
     LrtQualcommOptionsSetGraphTransform(options_, graph_transform.c_str());
   }
