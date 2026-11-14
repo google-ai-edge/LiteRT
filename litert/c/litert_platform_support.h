@@ -45,13 +45,11 @@ inline bool LiteRtHasAhwbSupport() {
 #endif
 }
 
-inline bool LiteRtHasIonSupport() {
-#if LITERT_HAS_ION_SUPPORT
-  return true;
-#else
-  return false;
-#endif
-}
+// Probes runtime ION support by loading libion.so, resolving
+// ion_open/ion_close/ion_alloc_fd, and opening an ION device fd when
+// LITERT_HAS_ION_SUPPORT is enabled. The result is cached for the process
+// lifetime.
+bool LiteRtHasIonSupport();
 
 inline bool LiteRtHasDmaBufSupport() {
 #if LITERT_HAS_DMABUF_SUPPORT
@@ -61,13 +59,11 @@ inline bool LiteRtHasDmaBufSupport() {
 #endif
 }
 
-inline bool LiteRtHasFastRpcSupport() {
-#if LITERT_HAS_FASTRPC_SUPPORT
-  return true;
-#else
-  return false;
-#endif
-}
+// Probes runtime FastRPC support by loading libcdsprpc.so and verifying that
+// rpcmem_alloc/rpcmem_free/rpcmem_to_fd are present when
+// LITERT_HAS_FASTRPC_SUPPORT is enabled. The result is cached for the process
+// lifetime.
+bool LiteRtHasFastRpcSupport();
 
 inline bool LiteRtHasSyncFenceSupport() {
 #if LITERT_HAS_SYNC_FENCE_SUPPORT

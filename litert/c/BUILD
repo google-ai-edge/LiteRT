@@ -733,8 +733,30 @@ cc_library(
 
 cc_library(
     name = "litert_platform_support",
+    srcs = ["litert_platform_support.cc"],
     hdrs = ["litert_platform_support.h"],
-    deps = [":litert_common"],
+    compatible_with = get_compatible_with_portable(),
+    linkopts = select({
+        "//litert:macos": [],
+        "//litert:ios": [],
+        "//litert:windows": [],
+        "//conditions:default": ["-ldl"],
+    }),
+    deps = [
+        ":litert_common",
+        "//litert/c/internal:litert_platform_support_internal",
+    ],
+)
+
+cc_test(
+    name = "litert_platform_support_test",
+    srcs = ["litert_platform_support_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_platform_support",
+        "//litert/c/internal:litert_platform_support_internal",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(
@@ -879,6 +901,7 @@ cc_test(
     copts = ["--std=c11"],
     linkopts = ["-ldl"],
     deps = LITERT_C_API_COMMON_DEPS + [
+        ":litert_platform_support",
         ":litert_profiler_event",
         "//litert/c/internal:litert_runtime_builtin_header",
         "//litert/c/internal:litert_runtime_context_testonly",
@@ -964,6 +987,7 @@ cc_binary(
     linkstatic = 1,
     # copybara:uncomment malloc = "//base:system_malloc",
     deps = LITERT_C_API_COMMON_DEPS + [
+        ":litert_platform_support",
         ":litert_profiler_event",
         "//litert/c/internal:litert_runtime_builtin_header",
         "//litert/c/internal:litert_runtime_context_testonly",
@@ -1278,6 +1302,7 @@ filegroup(
         "litert_opaque_options.h",
         "litert_opencl_types.h",
         "litert_options.h",
+        "litert_platform_support.cc",
         "litert_platform_support.h",
         "litert_profiler.h",
         "litert_profiler_event.h",

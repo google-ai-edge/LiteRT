@@ -44,6 +44,7 @@
 #include "litert/c/litert_op_code.h"         // NOLINT
 #include "litert/c/litert_op_options.h"      // NOLINT
 #include "litert/c/litert_options.h"         // NOLINT
+#include "litert/c/litert_platform_support.h"  // NOLINT
 #include "litert/c/litert_profiler.h"        // NOLINT
 #include "litert/c/litert_profiler_event.h"  // NOLINT
 #include "litert/c/litert_tensor_buffer.h"   // NOLINT
