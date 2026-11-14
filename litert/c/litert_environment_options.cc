@@ -30,7 +30,11 @@ LiteRtStatus LiteRtGetEnvironmentOptionsValue(LiteRtEnvironmentOptions options,
   LITERT_RETURN_IF_ERROR(
       value, litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument))
       << "`value` handle is null.";
-  LITERT_ASSIGN_OR_RETURN(*value, options->GetOption(tag));
+  auto option = options->GetOption(tag);
+  if (!option) {
+    return litert::ToLiteRtStatus(option.Error().StatusCC());
+  }
+  *value = option.Value();
   return kLiteRtStatusOk;
 }
 
