@@ -1388,6 +1388,7 @@ cc_test(
         "//tflite:framework",
         "//tflite/core:framework",
         "//tflite/core/c:common",
+        "@XNNPACK",
         "@com_google_googletest//:gtest",
         "@flatbuffers//:runtime_cc",
     ],
