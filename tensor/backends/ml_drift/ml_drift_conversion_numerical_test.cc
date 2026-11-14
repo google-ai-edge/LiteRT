@@ -697,5 +697,245 @@ TEST_F(MlDriftConversionNumericalTest, PersistentWeightsTest) {
   }
 }
 
+TEST(MlDriftBlockwiseQuantizedNumericalTest,
+     BlockwiseQ8_0AndAffineInt4FullyConnectedAcrossDecodeTiledAndBulkRegimes) {
+  constexpr int kOut = 8;
+  constexpr int kIn = 64;
+  constexpr int kBlockSize = 32;
+  constexpr int kBlocksPerRow = kIn / kBlockSize;
+
+  // 1. Blockwise INT8 (`Q8_0`) constant weights.
+  std::vector<int8_t> q8_data(kOut * kIn);
+  std::vector<float> q8_scales(kOut * kBlocksPerRow);
+  std::vector<float> q8_ref(kOut * kIn);
+  for (int r = 0; r < kOut; ++r) {
+    for (int b = 0; b < kBlocksPerRow; ++b) {
+      const int blk = r * kBlocksPerRow + b;
+      q8_scales[blk] = 0.015625f * static_cast<float>((blk % 7) + 1);
+      for (int j = 0; j < kBlockSize; ++j) {
+        const int idx = r * kIn + b * kBlockSize + j;
+        q8_data[idx] = static_cast<int8_t>((idx * 11 + 3) % 81 - 40);
+        q8_ref[idx] = q8_scales[blk] * static_cast<float>(q8_data[idx]);
+      }
+    }
+  }
+
+  // 2. Affine blockwise INT4 (`Q4_1` / `Q4_K`) constant weights with positive
+  // and negative floating-point zero-points.
+  auto q4_buf = OwningCpuBuffer::Allocate<Type::kI4>(kOut * kIn);
+  int4_t* q4_packed = q4_buf->Span<int4_t>().data();
+  std::vector<float> q4_scales(kOut * kBlocksPerRow);
+  std::vector<float> q4_zps(kOut * kBlocksPerRow);
+  std::vector<float> q4_ref(kOut * kIn);
+  for (int r = 0; r < kOut; ++r) {
+    for (int b = 0; b < kBlocksPerRow; ++b) {
+      const int blk = r * kBlocksPerRow + b;
+      q4_scales[blk] = 0.03125f * static_cast<float>((blk % 5) + 1);
+      q4_zps[blk] = (blk % 3 == 0) ? -3.25f : ((blk % 3 == 1) ? 2.5f : 0.0f);
+      for (int j = 0; j < kBlockSize; j += 2) {
+        const int elem = r * kIn + b * kBlockSize + j;
+        const int qa = ((elem * 3 + 2) % 16) - 8;
+        const int qb = ((elem * 7 + 5) % 16) - 8;
+        q4_packed[elem / 2].a = static_cast<int8_t>(qa);
+        q4_packed[elem / 2].b = static_cast<int8_t>(qb);
+        q4_ref[elem] = q4_scales[blk] * (static_cast<float>(qa) - q4_zps[blk]);
+        q4_ref[elem + 1] =
+            q4_scales[blk] * (static_cast<float>(qb) - q4_zps[blk]);
+      }
+    }
+  }
+
+  // Exercise T = 1 (decode `fc1x1_int{4,8}`), T = 8 (`TiledQuantizedFC`), and
+  // T = 128 (`WeightsConverter + Conv`).
+  for (int seq_len : {1, 8, 128}) {
+    std::vector<float> x_vals(seq_len * kIn);
+    for (int i = 0; i < seq_len * kIn; ++i) {
+      x_vals[i] = 0.05f * static_cast<float>((i * 13 + 7) % 19 - 9);
+    }
+
+    for (bool is_q4_affine : {false, true}) {
+      MlDriftTestBackendBridge bridge;
+      ASSERT_THAT(bridge.Initialize(), IsOk());
+
+      Tensor<MlDriftMixinTag> x(
+          {.name = "x", .type = Type::kFP32, .shape = {1, seq_len, kIn}});
+      Tensor<MlDriftMixinTag> w =
+          is_q4_affine
+              ? Tensor<MlDriftMixinTag>(
+                    {.name = "w_q4_k",
+                     .type = Type::kI4,
+                     .shape = {kOut, kIn},
+                     .buffer = q4_buf,
+                     .quantization = std::make_shared<BlockwiseQuantization>(
+                         q4_scales, ZeroPoints::Float(q4_zps), kBlockSize,
+                         /*quantized_dimension=*/0)})
+              : Tensor<MlDriftMixinTag>(
+                    {.name = "w_q8_0",
+                     .type = Type::kI8,
+                     .shape = {kOut, kIn},
+                     .buffer = q8_data,
+                     .quantization = std::make_shared<BlockwiseQuantization>(
+                         q8_scales, std::vector<int64_t>{}, kBlockSize,
+                         /*quantized_dimension=*/0)});
+      Tensor<MlDriftMixinTag> y = FullyConnected(x, w);
+
+      ASSERT_THAT(bridge.BuildGraph({TensorHandle(x)}, {TensorHandle(y)}),
+                  IsOk());
+      ASSERT_THAT(
+          bridge.SetInput(TensorHandle(x),
+                          absl::MakeConstSpan(
+                              reinterpret_cast<const std::byte*>(x_vals.data()),
+                              x_vals.size() * sizeof(float))),
+          IsOk());
+      ASSERT_THAT(bridge.Execute(), IsOk());
+
+      std::vector<float> actual(seq_len * kOut, 0.0f);
+      ASSERT_THAT(
+          bridge.GetOutput(
+              TensorHandle(y),
+              absl::MakeSpan(reinterpret_cast<std::byte*>(actual.data()),
+                             actual.size() * sizeof(float))),
+          IsOk());
+
+      const std::vector<float>& w_ref = is_q4_affine ? q4_ref : q8_ref;
+      std::vector<float> expected(seq_len * kOut, 0.0f);
+      for (int t = 0; t < seq_len; ++t) {
+        for (int o = 0; o < kOut; ++o) {
+          for (int i = 0; i < kIn; ++i) {
+            expected[t * kOut + o] += x_vals[t * kIn + i] * w_ref[o * kIn + i];
+          }
+        }
+      }
+      // ML Drift stores blockwise scale/zero-point tensors in FP16 on some GPU
+      // paths (`WeightsConverter` to float16 or fp16 scale textures), while our
+      // chosen scales (`0.015625`, `0.03125`) and zero-points (`-3.25`, `2.5`)
+      // are exact in FP16; allow 2e-3 for FP16 weight conversion at T = 128.
+      EXPECT_THAT(actual,
+                  testing::Pointwise(testing::FloatNear(2e-3f), expected))
+          << "seq_len=" << seq_len << " is_q4_affine=" << is_q4_affine;
+    }
+  }
+}
+
+TEST(MlDriftBlockwiseQuantizedNumericalTest,
+     QuantizedEmbeddingLookupAndTiedFullyConnectedShareWeights) {
+  constexpr int kVocab = 12;
+  constexpr int kDim = 64;
+  constexpr int kBlockSize = 32;
+  constexpr int kBlocksPerRow = kDim / kBlockSize;
+  constexpr int kSeqLen = 3;
+
+  std::vector<int8_t> q8_data(kVocab * kDim);
+  std::vector<float> q8_scales(kVocab * kBlocksPerRow);
+  std::vector<float> q8_ref(kVocab * kDim);
+  auto q4_buf = OwningCpuBuffer::Allocate<Type::kI4>(kVocab * kDim);
+  int4_t* q4_packed = q4_buf->Span<int4_t>().data();
+  std::vector<float> q4_scales(kVocab * kBlocksPerRow);
+  std::vector<float> q4_zps(kVocab * kBlocksPerRow);
+  std::vector<float> q4_ref(kVocab * kDim);
+
+  for (int v = 0; v < kVocab; ++v) {
+    for (int b = 0; b < kBlocksPerRow; ++b) {
+      const int blk = v * kBlocksPerRow + b;
+      q8_scales[blk] = 0.015625f * static_cast<float>((blk % 6) + 1);
+      q4_scales[blk] = 0.03125f * static_cast<float>((blk % 4) + 1);
+      q4_zps[blk] = (blk % 2 == 0) ? -2.5f : 1.75f;
+      for (int j = 0; j < kBlockSize; ++j) {
+        const int idx = v * kDim + b * kBlockSize + j;
+        q8_data[idx] = static_cast<int8_t>((idx * 9 + 5) % 61 - 30);
+        q8_ref[idx] = q8_scales[blk] * static_cast<float>(q8_data[idx]);
+      }
+      for (int j = 0; j < kBlockSize; j += 2) {
+        const int idx = v * kDim + b * kBlockSize + j;
+        const int qa = ((idx * 5 + 1) % 16) - 8;
+        const int qb = ((idx * 3 + 7) % 16) - 8;
+        q4_packed[idx / 2].a = static_cast<int8_t>(qa);
+        q4_packed[idx / 2].b = static_cast<int8_t>(qb);
+        q4_ref[idx] = q4_scales[blk] * (static_cast<float>(qa) - q4_zps[blk]);
+        q4_ref[idx + 1] =
+            q4_scales[blk] * (static_cast<float>(qb) - q4_zps[blk]);
+      }
+    }
+  }
+
+  const std::vector<int32_t> token_ids = {2, 9, 5};
+  for (const char* weight_name : {"token_embd.weight", "custom_emb.weight"}) {
+    for (bool is_q4_affine : {false, true}) {
+      MlDriftTestBackendBridge bridge;
+      ASSERT_THAT(bridge.Initialize(), IsOk());
+
+      Tensor<MlDriftMixinTag> ids(
+          {.name = "ids", .type = Type::kI32, .shape = {1, kSeqLen}});
+      Tensor<MlDriftMixinTag> emb_w =
+          is_q4_affine
+              ? Tensor<MlDriftMixinTag>(
+                    {.name = weight_name,
+                     .type = Type::kI4,
+                     .shape = {kVocab, kDim},
+                     .buffer = q4_buf,
+                     .quantization = std::make_shared<BlockwiseQuantization>(
+                         q4_scales, ZeroPoints::Float(q4_zps), kBlockSize,
+                         /*quantized_dimension=*/0)})
+              : Tensor<MlDriftMixinTag>(
+                    {.name = weight_name,
+                     .type = Type::kI8,
+                     .shape = {kVocab, kDim},
+                     .buffer = q8_data,
+                     .quantization = std::make_shared<BlockwiseQuantization>(
+                         q8_scales, std::vector<int64_t>{}, kBlockSize,
+                         /*quantized_dimension=*/0)});
+      Tensor<MlDriftMixinTag> embedded = EmbeddingLookup(ids, emb_w);
+      Tensor<MlDriftMixinTag> logits = FullyConnected(embedded, emb_w);
+
+      ASSERT_THAT(
+          bridge.BuildGraph({TensorHandle(ids)},
+                            {TensorHandle(embedded), TensorHandle(logits)}),
+          IsOk());
+      ASSERT_THAT(bridge.SetInput(
+                      TensorHandle(ids),
+                      absl::MakeConstSpan(
+                          reinterpret_cast<const std::byte*>(token_ids.data()),
+                          token_ids.size() * sizeof(int32_t))),
+                  IsOk());
+      ASSERT_THAT(bridge.Execute(), IsOk());
+
+      std::vector<float> actual_emb(kSeqLen * kDim, 0.0f);
+      std::vector<float> actual_logits(kSeqLen * kVocab, 0.0f);
+      ASSERT_THAT(
+          bridge.GetOutput(
+              TensorHandle(embedded),
+              absl::MakeSpan(reinterpret_cast<std::byte*>(actual_emb.data()),
+                             actual_emb.size() * sizeof(float))),
+          IsOk());
+      ASSERT_THAT(
+          bridge.GetOutput(
+              TensorHandle(logits),
+              absl::MakeSpan(reinterpret_cast<std::byte*>(actual_logits.data()),
+                             actual_logits.size() * sizeof(float))),
+          IsOk());
+
+      const std::vector<float>& w_ref = is_q4_affine ? q4_ref : q8_ref;
+      std::vector<float> expected_emb(kSeqLen * kDim, 0.0f);
+      std::vector<float> expected_logits(kSeqLen * kVocab, 0.0f);
+      for (int t = 0; t < kSeqLen; ++t) {
+        const int tok = token_ids[t];
+        for (int d = 0; d < kDim; ++d) {
+          expected_emb[t * kDim + d] = w_ref[tok * kDim + d];
+        }
+        for (int v = 0; v < kVocab; ++v) {
+          for (int d = 0; d < kDim; ++d) {
+            expected_logits[t * kVocab + v] +=
+                expected_emb[t * kDim + d] * w_ref[v * kDim + d];
+          }
+        }
+      }
+      EXPECT_THAT(actual_emb,
+                  testing::Pointwise(testing::FloatNear(1e-4f), expected_emb));
+      EXPECT_THAT(actual_logits, testing::Pointwise(testing::FloatNear(1e-3f),
+                                                    expected_logits));
+    }
+  }
+}
+
 }  // namespace
 }  // namespace litert::tensor

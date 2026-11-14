@@ -116,6 +116,8 @@ cc_library(
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/utils:macros",
+        "//tensor/utils:parallel",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log:absl_log",
@@ -123,6 +125,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:source_location",
         "@com_google_absl//absl/types:span",
     ],
@@ -137,6 +140,7 @@ cc_test(
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/utils:matchers",
+        "//tensor/utils:parallel",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings:string_view",
@@ -242,4 +246,14 @@ cc_test(
 cc_library(
     name = "fp16",
     hdrs = ["fp16.h"],
+)
+
+cc_library(
+    name = "tensor_hash",
+    hdrs = ["tensor_hash.h"],
+    deps = [
+        ":graph",
+        "//tensor:buffer",
+        "@com_google_absl//absl/strings:string_view",
+    ],
 )

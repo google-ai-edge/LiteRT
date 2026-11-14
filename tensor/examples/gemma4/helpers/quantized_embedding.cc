@@ -293,6 +293,7 @@ GemmaEmbeddingTable::Create(TensorHandle tensor, int expected_emb_dim) {
     if (auto pc = quant->As<const PerChannelAffineQuantization>(); pc.ok()) {
       per_channel_quant = std::make_shared<PerChannelAffineQuantization>(*pc);
     } else if (auto bw = quant->As<const BlockwiseQuantization>(); bw.ok()) {
+      bw->EnsureMaterialized();
       blockwise_quant = std::make_shared<BlockwiseQuantization>(*bw);
     } else {
       return absl::InvalidArgumentError(
