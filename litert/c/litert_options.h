@@ -17,6 +17,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
+#include "litert/c/litert_op_resolver.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,6 +53,18 @@ LiteRtStatus LiteRtAddOpaqueOptions(LiteRtOptions options,
 // `LiteRtGetNextAcceleratorCompilationOptions`.
 LiteRtStatus LiteRtGetOpaqueOptions(LiteRtOptions options,
                                     LiteRtOpaqueOptions* opaque_options);
+
+// Sets operator resolver callbacks for the given options.
+//
+// Either `find_builtin_op` or `find_custom_op` may be null if not needed.
+// `user_data` (if non-null) and any `TfLiteOperator` objects returned by the
+// callbacks are owned by the caller and must outlive the CompiledModel(s)
+// created with these options. Returns `kLiteRtStatusErrorUnsupported` in
+// minimal static CPU builds (`LITERT_DISABLE_CPU`).
+LiteRtStatus LiteRtSetOpResolverOption(LiteRtOptions options,
+                                       LiteRtFindBuiltinOpFunc find_builtin_op,
+                                       LiteRtFindCustomOpFunc find_custom_op,
+                                       void* user_data);
 
 // Adds a custom op kernel to the given options.
 LiteRtStatus LiteRtAddCustomOpKernelOption(
