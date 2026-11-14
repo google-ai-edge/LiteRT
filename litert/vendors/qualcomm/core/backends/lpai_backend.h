@@ -5,7 +5,10 @@
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BACKENDS_LPAI_BACKEND_H_
 
 #include <list>
+#include <memory>
 #include <optional>
+#include <utility>
+#include <vector>
 
 #include "LPAI/QnnLpaiBackend.h"  // from @qairt
 #include "LPAI/QnnLpaiCommon.h"   // from @qairt
@@ -39,6 +42,15 @@ class LpaiBackend : public QnnBackend {
 
   explicit LpaiBackend(const QNN_INTERFACE_VER_TYPE* qnn_api);
 
+  // Declared here, defined in .cc so the unique_ptr to the incomplete
+  // PrepareConfig (pimpl) is destroyed where its type is complete.
+  ~LpaiBackend() override;
+
+  LpaiBackend(const LpaiBackend&) = delete;
+  LpaiBackend& operator=(const LpaiBackend&) = delete;
+  LpaiBackend(LpaiBackend&&) = delete;
+  LpaiBackend& operator=(LpaiBackend&&) = delete;
+
   bool Init(const Options& options, std::optional<SocInfo> soc_info) override;
 
   GraphConfigBuilder BuildGraphConfigs(
@@ -48,8 +60,13 @@ class LpaiBackend : public QnnBackend {
                                    const Options& options) override;
 
  private:
+  std::optional<std::vector<const QnnBackend_Config_t*>> CreateBackendConfigs(
+      const Options& options, std::optional<SocInfo> soc_info);
+
   std::list<QnnLpaiBackend_CustomConfig_t> lpai_backend_custom_configs_;
   std::list<QnnLpaiBackend_CustomConfigHwInfo_t> lpai_hw_infos_;
+  class PrepareConfig;
+  std::unique_ptr<PrepareConfig> prepare_config_;
 };
 
 }  // namespace qnn

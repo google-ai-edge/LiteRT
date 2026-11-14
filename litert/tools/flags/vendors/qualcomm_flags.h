@@ -266,6 +266,7 @@ ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::LpaiClientPerfType,
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::LpaiCoreAffinityType,
                   qualcomm_lpai_core_affinity_type);
 ABSL_DECLARE_FLAG(uint32_t, qualcomm_lpai_core_selection);
+ABSL_DECLARE_FLAG(std::string, qualcomm_lpai_prepare_config);
 
 namespace litert::qualcomm {
 

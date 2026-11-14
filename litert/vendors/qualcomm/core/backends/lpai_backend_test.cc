@@ -5,7 +5,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "LPAI/QnnLpaiCommon.h"  // from @qairt
@@ -47,6 +51,7 @@ struct CapturedGraphFinalize {
 struct CapturedBackendConfig {
   bool called = false;
   std::optional<QnnLpaiBackend_CustomConfigHwInfo_t> hw_info;
+  std::optional<std::string> prepare_config_path;
 };
 
 class LpaiBackendTest : public ::testing::Test {
@@ -63,6 +68,7 @@ class LpaiBackendTest : public ::testing::Test {
       auto& t = *self_;
       t.captured_backend_config_.called = true;
       t.captured_backend_config_.hw_info.reset();
+      t.captured_backend_config_.prepare_config_path.reset();
       if (configs != nullptr) {
         for (size_t i = 0; configs[i] != nullptr; ++i) {
           const auto* config = configs[i];
@@ -78,6 +84,14 @@ class LpaiBackendTest : public ::testing::Test {
                 *static_cast<QnnLpaiBackend_CustomConfigHwInfo_t*>(
                     custom->config);
           }
+#if (QNN_LPAI_API_VERSION_MAJOR > 2) || \
+    (QNN_LPAI_API_VERSION_MAJOR == 2 && QNN_LPAI_API_VERSION_MINOR >= 35)
+          else if (custom->option == QNN_LPAI_BACKEND_CUSTOM_CFG_PREPARE_CFG &&
+                   custom->config != nullptr) {
+            t.captured_backend_config_.prepare_config_path =
+                static_cast<const char*>(custom->config);
+          }
+#endif
         }
       }
       *backend = t.fake_handle_;
@@ -154,6 +168,66 @@ TEST_F(LpaiBackendTest, InitSucceedsForSocWithLpai) {
   Options options;
   options.SetLogLevel(LogLevel::kOff);
   EXPECT_TRUE(backend_->Init(options, FindOrCreateSocInfo("SM8850")));
+  ASSERT_TRUE(captured_backend_config_.called);
+  EXPECT_FALSE(captured_backend_config_.prepare_config_path.has_value());
+}
+
+#if (QNN_LPAI_API_VERSION_MAJOR > 2) || \
+    (QNN_LPAI_API_VERSION_MAJOR == 2 && QNN_LPAI_API_VERSION_MINOR >= 35)
+TEST_F(LpaiBackendTest, InitForwardsPrepareConfigPath) {
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetLpaiPrepareConfig(
+      "dump_dir:/tmp/lpai_dump;eaix_dump:true;aix_dump:true");
+  EXPECT_TRUE(backend_->Init(options, FindOrCreateSocInfo("SM8850")));
+  ASSERT_TRUE(captured_backend_config_.called);
+  ASSERT_TRUE(captured_backend_config_.prepare_config_path.has_value());
+  std::ifstream config_file(*captured_backend_config_.prepare_config_path);
+  ASSERT_TRUE(config_file.good());
+  const std::string contents((std::istreambuf_iterator<char>(config_file)),
+                             std::istreambuf_iterator<char>());
+  EXPECT_NE(contents.find("\"dump_dir\": \"/tmp/lpai_dump\""),
+            std::string::npos);
+  EXPECT_NE(contents.find("\"eaix_dump\": true"), std::string::npos);
+  EXPECT_NE(contents.find("\"aix_dump\": true"), std::string::npos);
+
+  const std::filesystem::path config_path =
+      *captured_backend_config_.prepare_config_path;
+  backend_.reset();
+  EXPECT_FALSE(std::filesystem::exists(config_path));
+}
+#else
+TEST_F(LpaiBackendTest, InitRejectsPrepareConfigWithoutSdkSupport) {
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetLpaiPrepareConfig("eaix_dump:true");
+  EXPECT_FALSE(backend_->Init(options, FindOrCreateSocInfo("SM8850")));
+  EXPECT_FALSE(captured_backend_config_.called);
+}
+#endif
+
+TEST_F(LpaiBackendTest, InitRejectsInvalidPrepareConfig) {
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetLpaiPrepareConfig("eaix_dump:not-a-bool");
+  EXPECT_FALSE(backend_->Init(options, FindOrCreateSocInfo("SM8850")));
+  EXPECT_FALSE(captured_backend_config_.called);
+}
+
+TEST_F(LpaiBackendTest, InitRejectsDuplicatePrepareConfigKey) {
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetLpaiPrepareConfig("eaix_dump:true;eaix_dump:false");
+  EXPECT_FALSE(backend_->Init(options, FindOrCreateSocInfo("SM8850")));
+  EXPECT_FALSE(captured_backend_config_.called);
+}
+
+TEST_F(LpaiBackendTest, InitRejectsEmptyDumpDirValue) {
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetLpaiPrepareConfig("dump_dir:");
+  EXPECT_FALSE(backend_->Init(options, FindOrCreateSocInfo("SM8850")));
+  EXPECT_FALSE(captured_backend_config_.called);
 }
 
 #if !defined(__ANDROID__)

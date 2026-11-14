@@ -184,6 +184,7 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetLpaiCoreAffinityType(static_cast<::qnn::LpaiCoreAffinityType>(
       qualcomm_options.GetLpaiCoreAffinityType()));
   qnn_options.SetLpaiCoreSelection(qualcomm_options.GetLpaiCoreSelection());
+  qnn_options.SetLpaiPrepareConfig(qualcomm_options.GetLpaiPrepareConfig());
   qnn_options.SetQnnLibDir(qualcomm_options.GetQnnLibDir());
   qnn_options.SetDspSkelDir(qualcomm_options.GetDspSkelDir());
 

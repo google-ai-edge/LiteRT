@@ -12,15 +12,20 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <queue>
+#include <string>
 #include <thread>  // NOLINT
 #include <utility>
 
 #include "QnnTypes.h"  // from @qairt
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/common.h"
 
 namespace qnn {
+
+std::optional<std::string> WriteTemporaryFile(absl::string_view contents);
 
 inline Qnn_Priority_t GetGraphPriorityValue(GraphPriority graph_priority) {
   switch (graph_priority) {
