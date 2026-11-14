@@ -266,6 +266,41 @@ TYPED_TEST(ReshapeOpTest, Strings) {
   }
 }
 
+class PrepareOnlyReshapeOpModel : public SingleOpModel {
+ public:
+  PrepareOnlyReshapeOpModel(const TensorData& input, const TensorData& output,
+                            const std::vector<int>& new_shape) {
+    SetBypassDefaultDelegates();
+    const int input_id = AddInput(input);
+    AddOutput(output);
+    SetBuiltinOp(BuiltinOperator_RESHAPE, BuiltinOptions_ReshapeOptions,
+                 CreateReshapeOptions(builder_, builder_.CreateVector(new_shape))
+                     .Union());
+    BuildInterpreter({GetShape(input_id)}, /*num_threads=*/1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false,
+                     /*allocate_and_delegate=*/false);
+  }
+};
+
+TEST(ReshapeOpMismatchedTypesTest, WiderInputType) {
+  PrepareOnlyReshapeOpModel m({TensorType_FLOAT32, {1, 2, 4, 1}},
+                              {TensorType_FLOAT16, {}}, {2, 4});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(ReshapeOpMismatchedTypesTest, NarrowerInputType) {
+  PrepareOnlyReshapeOpModel m({TensorType_INT8, {1, 2, 4, 1}},
+                              {TensorType_INT32, {}}, {2, 4});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(ReshapeOpMismatchedTypesTest, SameSizeDifferentType) {
+  PrepareOnlyReshapeOpModel m({TensorType_INT32, {1, 2, 4, 1}},
+                              {TensorType_FLOAT32, {}}, {2, 4});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
 TEST(ReshapeShapeResolverTest, ResolvesInferredDimension) {
   TfLiteContext context = MakeSilentContext();
   RuntimeShape input_shape = MakeRuntimeShape({2, 3, 4});
