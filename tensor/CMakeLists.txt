@@ -14,10 +14,12 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-add_library(litert_tensor_api_utils INTERFACE)
+add_library(litert_tensor_api_utils STATIC
+    utils/parallel.cc
+)
 
 target_include_directories(litert_tensor_api_utils
-    INTERFACE
+    PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/core/model/generated/include>
@@ -25,7 +27,7 @@ target_include_directories(litert_tensor_api_utils
 )
 
 target_link_libraries(litert_tensor_api_utils
-    INTERFACE
+    PUBLIC
         litert_cc_internal
         absl::log
         absl::status
@@ -33,6 +35,14 @@ target_link_libraries(litert_tensor_api_utils
         absl::statusor
         absl::source_location
 )
+
+if(TARGET pthreadpool)
+    target_link_libraries(litert_tensor_api_utils PUBLIC pthreadpool)
+else()
+    target_compile_definitions(litert_tensor_api_utils
+        PRIVATE LITERT_TENSOR_NO_PTHREADPOOL
+    )
+endif()
 
 add_library(litert_tensor_api_internal STATIC
     internal/graph.cc

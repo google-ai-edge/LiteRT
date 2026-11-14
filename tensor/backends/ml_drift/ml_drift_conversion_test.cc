@@ -26,6 +26,7 @@ limitations under the License.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -1987,6 +1988,136 @@ TEST_F(MlDriftConversionTest, DequantizeSymmetricPerChannelOpSkipsZeroPoints) {
     EXPECT_NE(node.name, "dequantize_sub");
   }
   EXPECT_THAT(model.const_tensors, SizeIs(1));
+}
+
+TEST_F(MlDriftConversionTest,
+       BlockwiseQuantizationValidationAndAffineZeroPointLowering) {
+  auto add_dummy_weight_handle = [&](TensorMLD& w) {
+    context_.graph_tensor_to_handle[w.GetRaw()] = model_builder_->AddTensor(
+        ml_drift::BHWC(1, 1, 1, 64), ml_drift::DataType::kUint8);
+  };
+
+  // 1. Valid affine blockwise INT4 (`Q4_1` / `Q4_K`) creates scale + zero-point
+  // constant tensors.
+  {
+    MlDriftBuildContext local_ctx;
+    ml_drift::GpuModelBuilder builder(env_.device().GetInfo(), {},
+                                      ml_drift::CalculationsPrecision::kF32,
+                                      ml_drift::TensorStorageType::kBuffer);
+    local_ctx.gpu_model_builder = &builder;
+    local_ctx.default_float_type = ml_drift::DataType::kFloat32;
+
+    TensorMLD x({.type = Type::kFP32, .shape = {1, 2, 32}});
+    TensorMLD w({.name = "q4_k.weight",
+                 .type = Type::kI4,
+                 .shape = {4, 32},
+                 .quantization = std::make_shared<BlockwiseQuantization>(
+                     std::vector<float>{0.1f, 0.2f, 0.3f, 0.4f},
+                     ZeroPoints::Float({-2.0f, 1.5f, 0.0f, -3.25f}),
+                     /*block_size=*/32, /*quantized_dimension=*/0)});
+    local_ctx.graph_tensor_to_handle[w.GetRaw()] = builder.AddTensor(
+        ml_drift::BHWC(1, 1, 1, 64), ml_drift::DataType::kUint8);
+    TensorMLD out = FullyConnected(x, w);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto map,
+                                    AppendGpuModelBuilder(local_ctx, {out}));
+    ml_drift::GpuModel model;
+    ASSERT_OK(
+        builder.GetGpuModel({map.at(x.GetRaw()).id,
+                             local_ctx.graph_tensor_to_handle[w.GetRaw()].id},
+                            {map.at(out.GetRaw()).id}, &model));
+    EXPECT_THAT(model.const_tensors, SizeIs(2));
+  }
+
+  // 2. Single output channel (`ohwi.o == 1`) returns UnimplementedError.
+  {
+    TensorMLD x({.type = Type::kFP32, .shape = {1, 2, 32}});
+    TensorMLD w({.name = "single_out.weight",
+                 .type = Type::kI4,
+                 .shape = {1, 32},
+                 .quantization = std::make_shared<BlockwiseQuantization>(
+                     std::vector<float>{0.25f}, std::vector<int64_t>{},
+                     /*block_size=*/32)});
+    add_dummy_weight_handle(w);
+    TensorMLD out = FullyConnected(x, w);
+    EXPECT_THAT(AppendGpuModelBuilder(context_, {out}).status(),
+                absl_testing::StatusIs(absl::StatusCode::kUnimplemented));
+  }
+
+  // 3. Input dimension not divisible by `block_size` returns InvalidArgument.
+  {
+    TensorMLD x({.type = Type::kFP32, .shape = {1, 2, 48}});
+    TensorMLD w({.name = "bad_block.weight",
+                 .type = Type::kI8,
+                 .shape = {4, 48},
+                 .quantization = std::make_shared<BlockwiseQuantization>(
+                     std::vector<float>(4, 0.25f), std::vector<int64_t>{},
+                     /*block_size=*/32)});
+    add_dummy_weight_handle(w);
+    TensorMLD out = FullyConnected(x, w);
+    EXPECT_THAT(AppendGpuModelBuilder(context_, {out}).status(),
+                absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+  }
+
+  // 4. Mismatched `zero_points.size()` returns InvalidArgument.
+  {
+    TensorMLD x({.type = Type::kFP32, .shape = {1, 2, 32}});
+    TensorMLD w({.name = "bad_zp_count.weight",
+                 .type = Type::kI4,
+                 .shape = {4, 32},
+                 .quantization = std::make_shared<BlockwiseQuantization>(
+                     std::vector<float>(4, 0.25f),
+                     ZeroPoints::Float({-1.0f, 1.0f}), /*block_size=*/32,
+                     /*quantized_dimension=*/0)});
+    add_dummy_weight_handle(w);
+    TensorMLD out = FullyConnected(x, w);
+    EXPECT_THAT(AppendGpuModelBuilder(context_, {out}).status(),
+                absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+  }
+
+  // 5. Mismatched blockwise `scales.size()` returns InvalidArgument.
+  {
+    TensorMLD x({.type = Type::kFP32, .shape = {1, 2, 32}});
+    TensorMLD w({.name = "bad_scales.weight",
+                 .type = Type::kI8,
+                 .shape = {4, 32},
+                 .quantization = std::make_shared<BlockwiseQuantization>(
+                     std::vector<float>(3, 0.25f), std::vector<int64_t>{},
+                     /*block_size=*/32)});
+    add_dummy_weight_handle(w);
+    TensorMLD out = FullyConnected(x, w);
+    EXPECT_THAT(AppendGpuModelBuilder(context_, {out}).status(),
+                absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+  }
+
+  // 6. Non-zero `quantized_dimension` returns InvalidArgument.
+  {
+    TensorMLD x({.type = Type::kFP32, .shape = {1, 2, 32}});
+    TensorMLD w({.name = "bad_qdim.weight",
+                 .type = Type::kI8,
+                 .shape = {4, 32},
+                 .quantization = std::make_shared<BlockwiseQuantization>(
+                     std::vector<float>(4, 0.25f), std::vector<int64_t>{},
+                     /*block_size=*/32, /*quantized_dimension=*/1)});
+    add_dummy_weight_handle(w);
+    TensorMLD out = FullyConnected(x, w);
+    EXPECT_THAT(AppendGpuModelBuilder(context_, {out}).status(),
+                absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+  }
+
+  // 7. `block_size % 4 != 0` when `num_blocks > 1` returns InvalidArgument.
+  {
+    TensorMLD x({.type = Type::kFP32, .shape = {1, 2, 12}});
+    TensorMLD w({.name = "bad_block_align.weight",
+                 .type = Type::kI8,
+                 .shape = {4, 12},
+                 .quantization = std::make_shared<BlockwiseQuantization>(
+                     std::vector<float>(8, 0.25f), std::vector<int64_t>{},
+                     /*block_size=*/6, /*quantized_dimension=*/0)});
+    add_dummy_weight_handle(w);
+    TensorMLD out = FullyConnected(x, w);
+    EXPECT_THAT(AppendGpuModelBuilder(context_, {out}).status(),
+                absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+  }
 }
 
 }  // namespace litert::tensor

@@ -114,7 +114,6 @@ static absl::StatusOr<ml_drift::TensorDescriptor> GetConstantTensorDescriptor(
     bool force_buffer_storage,
     ml_drift::TensorDescriptor::PhysicalLayout1D physical_layout_1d) {
   LRT_TENSOR_ASSIGN_OR_RETURN(auto shape, ShapeToBHWC(info.shape));
-  auto locked_buffer = info.buffer->Lock();
   int64_t element_count = 1;
   for (int dim : info.shape) {
     if (dim < 0) {
@@ -126,10 +125,16 @@ static absl::StatusOr<ml_drift::TensorDescriptor> GetConstantTensorDescriptor(
   }
   const size_t expected_bytes =
       BufferSize(info.type, static_cast<size_t>(element_count));
-  if (locked_buffer.size() < expected_bytes) {
+  size_t actual_bytes = 0;
+  if (auto byte_size_or = info.buffer->ByteSize(); byte_size_or.ok()) {
+    actual_bytes = *byte_size_or;
+  } else {
+    actual_bytes = info.buffer->Lock().size();
+  }
+  if (actual_bytes < expected_bytes) {
     return absl::InvalidArgumentError(
         absl::StrCat("Constant buffer too small for shape/type. Expected >= ",
-                     expected_bytes, " bytes, got ", locked_buffer.size()));
+                     expected_bytes, " bytes, got ", actual_bytes));
   }
   ml_drift::TensorStorageType storage_type;
   ml_drift::Layout layout;
