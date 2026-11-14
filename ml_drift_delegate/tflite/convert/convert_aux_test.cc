@@ -474,7 +474,6 @@ TEST(ConvertAuxTest, AddConstInputBool) {
   tfl_tensor.type = kTfLiteBool;
   tfl_tensor.dims = TfLiteIntArrayCreate(1);
   tfl_tensor.dims->data[0] = 2;
-  std::vector<bool> tensor_data = {true, false};
   // TfLiteBool is often char or bool.
   std::vector<uint8_t> tfl_bool_data = {1, 0};
   tfl_tensor.data.uint8 = tfl_bool_data.data();
