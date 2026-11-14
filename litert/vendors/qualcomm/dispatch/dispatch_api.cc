@@ -92,35 +92,19 @@ char BuildId[256];
 
 LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
                         LiteRtEnvironment environment, LiteRtOptions options) {
-  LiteRtEnvironmentOptions environment_options;
+  LiteRtEnvironmentOptions environment_options = nullptr;
   if (runtime_context->get_environment_options(
           environment, &environment_options) == kLiteRtStatusOk) {
     LiteRtPropagateMinLoggerSeverityWithRuntimeContext(runtime_context,
                                                        environment_options);
   }
-  TheEnvironmentOptions = environment_options;
-  TheOptions = options;
 
-  const char* dispatch_lib_dir = nullptr;
-  if (environment_options) {
-    LiteRtAny dispatch_lib_dir_any;
-    auto status = runtime_context->get_environment_options_value(
-        environment_options, kLiteRtEnvOptionTagDispatchLibraryDir,
-        &dispatch_lib_dir_any);
-    if (status == kLiteRtStatusOk && dispatch_lib_dir_any.str_value) {
-      dispatch_lib_dir = dispatch_lib_dir_any.str_value;
-    }
-  }
-
-  // TODO LUKE confirm where the lib dir is coming from, the
-  // "dispatch_library_dir" thing makes no sense Since this should be shared lib
-  // for libqnn.so.
   litert::Expected<litert::qualcomm::QualcommOptions> qnn_opts =
       litert::Error(kLiteRtStatusErrorNotFound, "Null Qualcomm options");
 
-  if (TheOptions) {
+  if (options) {
     litert::internal::OptionsWrapper internal_options(
-        litert::internal::ContextWrapper(runtime_context), TheOptions);
+        litert::internal::ContextWrapper(runtime_context), options);
     auto opaque_options_result = internal_options.GetOpaqueOptions();
     if (opaque_options_result) {
       auto payload_data_result = opaque_options_result->FindOpaqueOptions(
@@ -133,6 +117,31 @@ LiteRtStatus Initialize(const LiteRtRuntimeContext* runtime_context,
           qnn_opts = litert::qualcomm::QualcommOptions(options_handle);
         }
       }
+    }
+  }
+
+  if (QnnManagerStorage() != nullptr && QnnBackendStorage() != nullptr) {
+    if (qnn_opts) {
+      TheOptions = options;
+      ::qnn::Options qnn_options;
+      InitQnnOptions(qnn_options, qnn_opts.Value());
+      Qnn().SetOptions(qnn_options);
+      QnnBackend().SetPerformanceMode(qnn_options);
+    }
+    return kLiteRtStatusOk;
+  }
+
+  TheEnvironmentOptions = environment_options;
+  TheOptions = options;
+
+  const char* dispatch_lib_dir = nullptr;
+  if (environment_options) {
+    LiteRtAny dispatch_lib_dir_any;
+    auto status = runtime_context->get_environment_options_value(
+        environment_options, kLiteRtEnvOptionTagDispatchLibraryDir,
+        &dispatch_lib_dir_any);
+    if (status == kLiteRtStatusOk && dispatch_lib_dir_any.str_value) {
+      dispatch_lib_dir = dispatch_lib_dir_any.str_value;
     }
   }
 
@@ -315,7 +324,6 @@ LiteRtStatus InvocationContextCreate(
     return context.Error().Status();
   }
   *invocation_context = context->release();
-  device_context->SetInvocationContext(*invocation_context);
   return kLiteRtStatusOk;
 }
 
