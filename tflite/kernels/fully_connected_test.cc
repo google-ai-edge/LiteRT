@@ -35,6 +35,7 @@ limitations under the License.
 #include "absl/log/absl_check.h"
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "tflite/core/interpreter.h"
+#include "tflite/kernels/internal/reference/sparse_ops/fully_connected.h"
 #include "tflite/kernels/test_util.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/string_type.h"
@@ -2671,6 +2672,43 @@ class SparseHybridFullyConnectedOpTest
     return GetKernelMap().at(GetParam().kernel_tag);
   }
 };
+
+TEST(SparseFullyConnectedReferenceTest, RejectsNullDenseBuffer) {
+  const auto free_array = [](TfLiteIntArray* array) {
+    TfLiteIntArrayFree(array);
+  };
+  std::unique_ptr<TfLiteIntArray, decltype(free_array)> traversal_order(
+      TfLiteIntArrayCreate(2), free_array);
+  traversal_order->data[0] = 0;
+  traversal_order->data[1] = 1;
+  std::unique_ptr<TfLiteIntArray, decltype(free_array)> segments(
+      TfLiteIntArrayCreate(1), free_array);
+  segments->data[0] = 0;
+  std::unique_ptr<TfLiteIntArray, decltype(free_array)> indices(
+      TfLiteIntArrayCreate(0), free_array);
+  TfLiteDimensionMetadata metadata[] = {
+      {kTfLiteDimDense, 0, nullptr, nullptr},
+      {kTfLiteDimSparseCSR, 0, segments.get(), indices.get()},
+  };
+  const TfLiteSparsity sparsity{traversal_order.get(), nullptr, metadata, 2};
+  const float input[] = {1, 2, 3, 4};
+  const float weights[] = {0};
+  float output = 123;
+
+  // Valid empty metadata reaches the dense-buffer guard after conversion.
+  internal::sparsity::FormatConverter<float> converter({0, 4}, sparsity);
+  ASSERT_EQ(converter.SparseToDense(weights), kTfLiteOk);
+  ASSERT_TRUE(converter.GetData().empty());
+  if (converter.GetData().data() != nullptr) {
+    GTEST_SKIP() << "Empty vectors do not have null data on this platform.";
+  }
+  EXPECT_EQ(reference_ops::FullyConnectedSparseWeight(
+                sparsity, FullyConnectedParams{}, RuntimeShape({1, 4}), input,
+                RuntimeShape({0, 4}), weights, RuntimeShape({0}), nullptr,
+                RuntimeShape({1, 0}), &output),
+            kTfLiteError);
+  EXPECT_EQ(output, 123);
+}
 
 TEST_P(SparseFullyConnectedOpTest, SimpleTest) {
   std::initializer_list<float> weight_data = {
