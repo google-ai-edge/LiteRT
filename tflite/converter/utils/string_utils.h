@@ -90,6 +90,38 @@ inline int GetStringCount(const void* raw_buffer) {
   return *static_cast<const int32_t*>(raw_buffer);
 }
 
+// Get String pointer and length of index-th string in tensor, where the tensor
+// buffer is `buffer_bytes` bytes long. Returns {nullptr, 0} if the buffer is
+// null or too small for its own header, or if the index, the offsets or the end
+// of the string fall outside the buffer.
+// NOTE: This will not create a copy of string data.
+inline StringRef GetString(const void* raw_buffer, size_t buffer_bytes,
+                           int string_index) {
+  if (raw_buffer == nullptr || string_index < 0 ||
+      buffer_bytes < sizeof(int32_t)) {
+    return StringRef{nullptr, 0};
+  }
+  const int32_t num_strings = GetStringCount(raw_buffer);
+  if (num_strings <= 0 || string_index >= num_strings) {
+    return StringRef{nullptr, 0};
+  }
+  const uint64_t header_bytes =
+      (static_cast<uint64_t>(num_strings) + 2) * sizeof(int32_t);
+  if (static_cast<uint64_t>(buffer_bytes) < header_bytes) {
+    return StringRef{nullptr, 0};
+  }
+  const int32_t* offset =
+      static_cast<const int32_t*>(raw_buffer) + (string_index + 1);
+  const int32_t start = *offset;
+  const int32_t end = *(offset + 1);
+  if (start < 0 || static_cast<uint64_t>(start) < header_bytes || end < start ||
+      static_cast<uint64_t>(end) > static_cast<uint64_t>(buffer_bytes)) {
+    return StringRef{nullptr, 0};
+  }
+  return StringRef{static_cast<const char*>(raw_buffer) + start,
+                   static_cast<size_t>(end - start)};
+}
+
 // Get String pointer and length of index-th string in tensor.
 // NOTE: This will not create a copy of string data.
 inline StringRef GetString(const void* raw_buffer, int string_index) {
