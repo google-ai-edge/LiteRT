@@ -111,6 +111,7 @@ add_executable(builder_test)
 target_sources(builder_test
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/addn_test.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/broadcast_to_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/conv2d_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/detection_postprocess_test.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/../qnn_backend_test/builder_test/depthwise_conv2d_test.cc
