@@ -511,16 +511,17 @@ kt_android_library(
     deps = LITERT_KOTLIN_DEPS_NO_AIPACK,
 )
 
-# This library is for building the Maven artifact only.
+# This library is for building the "litert-api" Maven artifact only. It has no support for Google
+# Play AI Pack, so that the artifact doesn't depend on the Google Play AI Delivery client.
 kt_android_library(
     name = "litert_api_for_maven",
-    srcs = LITERT_API_SRCS_ALL,
+    srcs = LITERT_API_SRCS_NO_AIPACK,
     exports_manifest = 1,
     javacopts = JAVACOPTS,
     manifest = "src/main/AndroidManifest.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = ["//visibility:private"],
-    deps = LITERT_KOTLIN_DEPS_ALL + [
+    deps = LITERT_KOTLIN_DEPS_NO_AIPACK + [
         ":litert_api_jni",  # unuseddeps: keep
     ],
 )
@@ -557,7 +558,7 @@ android_library(
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = ["//visibility:private"],
     deps = [
-        ":litert_api_no_jni",
+        ":litert_api_no_jni_no_aipack",
         ":litert_impl_jni",  # native implementation needed for the target
         "@org_checkerframework_qual",
     ],
