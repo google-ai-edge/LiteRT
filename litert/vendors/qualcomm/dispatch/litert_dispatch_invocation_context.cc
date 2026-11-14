@@ -462,7 +462,11 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
     return {};
   }
 
-  auto mem_handle = device_context_->GetMemHandle(tensor_buffer_handle, tensor);
+  // Register the buffer with this invocation's own QNN context: the contexts
+  // of a model may live in different HTP PDs, and a memory handle only works
+  // with graphs of the PD it was registered in.
+  auto mem_handle = device_context_->GetMemHandle(tensor_buffer_handle, tensor,
+                                                  raw_context_handle_);
   if (!mem_handle) {
     return Unexpected(mem_handle.Error());
   }
