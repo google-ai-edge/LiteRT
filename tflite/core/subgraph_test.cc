@@ -84,6 +84,34 @@ TEST(RemoveUnusedInputs, BypassInputsWithoutOp) {
   ASSERT_EQ(subgraph.inputs(), std::vector<int>({0, -1, 2}));
 }
 
+TEST(AddNodeWithParameters, RejectsOutOfRangeIntermediateIndex) {
+  Interpreter interpreter;
+  Subgraph& subgraph = interpreter.primary_subgraph();
+  ASSERT_EQ(subgraph.AddTensors(4), kTfLiteOk);
+
+  TfLiteRegistration op_registration = {};
+  int node_index = -1;
+  // An out-of-range intermediate index must be rejected up front instead of
+  // being stored and dereferenced later (e.g. by LSTM Prepare).
+  EXPECT_EQ(subgraph.AddNodeWithParameters(
+                /*inputs=*/{0}, /*outputs=*/{1}, /*intermediates=*/{999},
+                /*init_data=*/nullptr, /*init_data_size=*/0,
+                /*builtin_data=*/nullptr, &op_registration, &node_index),
+            kTfLiteError);
+  // Valid intermediates are still accepted.
+  EXPECT_EQ(subgraph.AddNodeWithParameters(
+                /*inputs=*/{0}, /*outputs=*/{1}, /*intermediates=*/{2, 3},
+                /*init_data=*/nullptr, /*init_data_size=*/0,
+                /*builtin_data=*/nullptr, &op_registration, &node_index),
+            kTfLiteOk);
+  // Optional (-1) intermediates are still accepted.
+  EXPECT_EQ(subgraph.AddNodeWithParameters(
+                /*inputs=*/{0}, /*outputs=*/{1}, /*intermediates=*/{-1},
+                /*init_data=*/nullptr, /*init_data_size=*/0,
+                /*builtin_data=*/nullptr, &op_registration, &node_index),
+            kTfLiteOk);
+}
+
 TEST(GetSubgraphContext, NonConstGetSubgraphContext) {
   Interpreter interpreter;
   auto& subgraph = interpreter.primary_subgraph();
