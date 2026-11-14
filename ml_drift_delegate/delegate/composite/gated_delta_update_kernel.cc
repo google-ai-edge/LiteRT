@@ -1479,7 +1479,7 @@ STATE_WRITE_OUT_STEP
   if (k_lane == 0) {
     float4 norm_w = NORM_WEIGHT_EXPR;
     float4 z_vec = ucl::Convert<float4>(args.zba.Read(0, 0, out_slice, b));
-    float4 z_gate = z_vec / (ucl::Init<float4>(1.0f) + exp(-z_vec));
+    float4 z_gate = Z_GATE_EXPR;
     float4 gated_out = my_attn_out * ucl::Init<float4>(inv_rms) * norm_w * z_gate;
     ActivationType gated_out_act = ucl::Convert<ActivationType>(gated_out);
     args.output.Write(gated_out_act, 0, 0, out_slice, b);
@@ -1603,7 +1603,7 @@ GDN_SCALAR_GATES
     int out_slice = h * HEAD_V_DIM_SLICES + v_slice;
     float4 norm_w = NORM_WEIGHT_EXPR;
     float4 z_vec = ucl::Convert<float4>(args.zba.Read(0, 0, out_slice, b));
-    float4 z_gate = z_vec / (ucl::Init<float4>(1.0f) + exp(-z_vec));
+    float4 z_gate = Z_GATE_EXPR;
     float4 gated_out = head_out[v_slice] * ucl::Init<float4>(inv_rms) * norm_w * z_gate;
     ActivationType gated_out_act = ucl::Convert<ActivationType>(gated_out);
     args.output.Write(gated_out_act, 0, 0, out_slice, b);
@@ -1841,7 +1841,7 @@ MAIN_FUNCTION($0) {
   if (v_slice < HEAD_V_DIM_SLICES) {
     float4 norm_w = NORM_WEIGHT_EXPR;
     float4 z_vec = ucl::Convert<float4>(args.zba.Read(t, 0, out_slice, b));
-    float4 z_gate = z_vec / (ucl::Init<float4>(1.0f) + exp(-z_vec));
+    float4 z_gate = Z_GATE_EXPR;
     float4 gated_out = o * ucl::Init<float4>(inv_rms) * norm_w * z_gate;
     ActivationType gated_out_act = ucl::Convert<ActivationType>(gated_out);
     args.output.Write(gated_out_act, t, 0, out_slice, b);
@@ -2004,12 +2004,21 @@ GdnWaveStateCode BuildGdnWaveStateCode(int k_rounds, absl::string_view indent) {
   return c;
 }
 
+absl::string_view OutputGateExpr(const GatedDeltaNetAttributes& attr) {
+  if (attr.output_gate_type == "sigmoid") {
+    return "ucl::Init<float4>(1.0f) / (ucl::Init<float4>(1.0f) + exp(-z_vec))";
+  }
+  return "z_vec / (ucl::Init<float4>(1.0f) + exp(-z_vec))";
+}
+
 void SubstituteGdnCommonDims(const GatedDeltaNetAttributes& attr,
                              const GdnDims& dims,
                              const GdnWaveStateCode* state_code,
                              ::ml_drift::DataType output_type,
                              std::string* code) {
-  absl::StrReplaceAll({{"GDN_SCALAR_GATES", kGdnScalarGates}}, code);
+  absl::StrReplaceAll({{"GDN_SCALAR_GATES", kGdnScalarGates},
+                       {"Z_GATE_EXPR", OutputGateExpr(attr)}},
+                      code);
   if (state_code != nullptr) {
     absl::StrReplaceAll({{"STATE_INIT_DECLS", state_code->init},
                          {"DECAY_STEP", state_code->decay},
@@ -2366,6 +2375,7 @@ CreateGatedDeltaNetNorm(const ::ml_drift::OperationDef& definition,
   std::string code = kGatedDeltaNetNormShader;
   absl::StrReplaceAll(
       {{"NORM_WEIGHT_EXPR", norm_weight_expr},
+       {"Z_GATE_EXPR", OutputGateExpr(attr)},
        {"HEAD_V_DIM_SLICES", absl::StrCat(attr.head_v_dim / 4)},
        {"ActivationType", ::ml_drift::ToUclDataType(output.GetDataType(), 4)}},
       &code);

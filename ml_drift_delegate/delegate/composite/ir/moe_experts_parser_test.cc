@@ -815,6 +815,29 @@ TEST_F(ConvertMoeExpertsTest, AcceptsGeluTanhActivation) {
   EXPECT_TRUE(status.ok()) << status.message();
 }
 
+TEST_F(ConvertMoeExpertsTest, AcceptsSiluActivation) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("moe");
+  AddInt8MoeInputs(builder, /*gate_blocks=*/1, /*ff1_blocks=*/1,
+                   /*linear_blocks=*/1);
+
+  TfLiteCustomAllocation custom_alloc = CreateMoeExpertsParams(
+      kNumExperts, kNumActiveExperts, kModelDim, kHiddenDim, "int8", "silu");
+  builder.SetCustomData(custom_alloc.data, custom_alloc.bytes);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_NE(ir_model, nullptr);
+  ASSERT_THAT(ir_model->ops(), SizeIs(2));
+  const auto* attr =
+      std::any_cast<MoeExpertsAttributes>(&ir_model->ops()[0]->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_EQ(attr->activation, MoeExpertsAttributes::Activation::kSilu);
+}
+
 TEST_F(ConvertMoeExpertsTest,
        ExcludesFp32WeightsAndPerExpertScaleFromSharedTensors) {
   SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);

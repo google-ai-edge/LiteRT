@@ -90,12 +90,14 @@ struct GdnTestCase {
   int seq_len = 1;
   // Valid mask of the tokens, or empty for no mask input.
   std::vector<float> mask;
+  std::string output_gate_type = "silu";
 };
 
 std::string Describe(const GdnTestCase& test_case) {
   return absl::StrCat("H_v=", test_case.num_v_heads,
                       " D_v=", test_case.head_v_dim, " T=", test_case.seq_len,
-                      " mask=[", absl::StrJoin(test_case.mask, ","), "]");
+                      " gate=", test_case.output_gate_type, " mask=[",
+                      absl::StrJoin(test_case.mask, ","), "]");
 }
 
 // Deterministic value in [lo, hi) for element `i` of stream `stream`.
@@ -206,9 +208,11 @@ GdnOutputs ComputeReference(const GatedDeltaNetAttributes& attr, int seq_len,
       const double inv_rms = 1.0 / std::sqrt(sumsq / dv + attr.norm_eps);
       for (int j = 0; j < dv; ++j) {
         const double z = zba[h * dv + j];
-        const double silu = z / (1.0 + std::exp(-z));
+        const double z_gate = (attr.output_gate_type == "sigmoid")
+                                  ? (1.0 / (1.0 + std::exp(-z)))
+                                  : (z / (1.0 + std::exp(-z)));
         ref.output[t * value_dim + h * dv + j] =
-            static_cast<float>(o[j] * inv_rms * in.norm_weight[j] * silu);
+            static_cast<float>(o[j] * inv_rms * in.norm_weight[j] * z_gate);
       }
     }
   }
@@ -265,6 +269,7 @@ absl::Status RunGatedDeltaNetTest(::ml_drift::TestExecutionEnvironment& env,
   attr.head_v_dim = test_case.head_v_dim;
   attr.eps = 1e-6f;
   attr.norm_eps = 1e-6f;
+  attr.output_gate_type = test_case.output_gate_type;
   const int seq_len = test_case.seq_len;
   const int hv = attr.num_v_heads;
   const int dk = attr.head_k_dim;
@@ -437,26 +442,33 @@ absl::Status RunTestCases(::ml_drift::CalculationsPrecision precision,
 std::vector<GdnTestCase> DecodeTestCases() {
   return {
       {.seq_len = 1},
+      {.seq_len = 1, .output_gate_type = "sigmoid"},
       {.seq_len = 1, .mask = {1.0f}},
       {.seq_len = 1, .mask = {0.0f}},
-      {.head_v_dim = 64, .seq_len = 1, .mask = {1.0f}},
+      {.head_v_dim = 64,
+       .seq_len = 1,
+       .mask = {1.0f},
+       .output_gate_type = "sigmoid"},
       {.num_v_heads = 2, .head_v_dim = 16, .seq_len = 1},
   };
 }
 
 // Cases of the recurrence kernels: one or several tokens, with and without a
-// mask, padded tails, D_v = 64 and 16 and GQA ratios 2 and 1.
+// mask, padded tails, D_v = 64 and 16, GQA ratios 2 and 1, and SiLU/sigmoid
+// output gates.
 std::vector<GdnTestCase> RecurrenceTestCases() {
   return {
       {.seq_len = 1},
       {.seq_len = 1, .mask = {1.0f}},
       {.seq_len = 1, .mask = {0.0f}},
       {.seq_len = 8},
+      {.seq_len = 8, .output_gate_type = "sigmoid"},
       {.seq_len = 8, .mask = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f}},
       {.seq_len = 6, .mask = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
       {.head_v_dim = 64,
        .seq_len = 7,
-       .mask = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f}},
+       .mask = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
+       .output_gate_type = "sigmoid"},
       {.num_v_heads = 2, .head_v_dim = 16, .seq_len = 5},
   };
 }

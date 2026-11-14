@@ -58,6 +58,9 @@ struct GatedDeltaNetAttributes {
   float eps = 1e-6f;
   // Epsilon of the gated RMSNorm.
   float norm_eps = 1e-6f;
+  // Activation applied to the z gate in gated RMSNorm ("silu", "swish", or
+  // "sigmoid"; e.g. Qwen 3.5 uses "silu", Qwen3.8-Flash-Next uses "sigmoid").
+  std::string output_gate_type = "silu";
 };
 
 // TODO(kimishpatel): Get rid of the mode flag and make recurrent vs. chunked

@@ -68,6 +68,13 @@ GatedDeltaUpdateAttributes ParseGatedDeltaUpdateAttributes(
       if (!flexbuffer_map["norm_eps"].IsNull()) {
         attr.block->norm_eps = flexbuffer_map["norm_eps"].AsFloat();
       }
+      if (!flexbuffer_map["output_gate_type"].IsNull()) {
+        attr.block->output_gate_type =
+            flexbuffer_map["output_gate_type"].AsString().str();
+      } else if (!flexbuffer_map["gate_activation"].IsNull()) {
+        attr.block->output_gate_type =
+            flexbuffer_map["gate_activation"].AsString().str();
+      }
     }
   }
   return attr;
@@ -131,6 +138,12 @@ absl::Status CheckGatedDeltaNetAttributes(const GatedDeltaNetAttributes& attr) {
     return absl::UnavailableError(
         "gated_delta_update block mode requires head_v_dim to be a multiple of "
         "16 up to 128.");
+  }
+  if (attr.output_gate_type != "silu" && attr.output_gate_type != "swish" &&
+      attr.output_gate_type != "sigmoid") {
+    return absl::UnavailableError(
+        "gated_delta_update block mode only supports output_gate_type 'silu' "
+        "or 'sigmoid'.");
   }
   return absl::OkStatus();
 }
