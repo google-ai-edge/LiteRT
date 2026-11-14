@@ -185,6 +185,17 @@ class DepthwiseConv2DTester : public ModelCache<DepthwiseConv2DTester> {
     return *this;
   }
 
+  // Per-channel INT8 filter consumed directly by DEPTHWISE_CONV_2D with FP32
+  // input and output (dynamic-range quantization), without a DEQUANTIZE.
+  inline DepthwiseConv2DTester& DynamicRangeQuantizedInt8Weights() {
+    weights_type_ = WeightsType::kChannelWiseQuantizedInt8;
+    bias_type_ = BiasType::kFP32;
+    dynamic_range_ = true;
+    return *this;
+  }
+
+  inline bool DynamicRange() const { return dynamic_range_; }
+
   inline DepthwiseConv2DTester& SparseWeights() {
     sparse_weights_ = true;
     return *this;
@@ -262,6 +273,7 @@ class DepthwiseConv2DTester : public ModelCache<DepthwiseConv2DTester> {
   enum WeightsType weights_type_ { WeightsType::kFP32 };
   enum BiasType bias_type_ { BiasType::kFP32 };
   bool sparse_weights_ = false;
+  bool dynamic_range_ = false;
   ::tflite::Padding padding_ = ::tflite::Padding_VALID;
   ::tflite::ActivationFunctionType activation_ =
       ::tflite::ActivationFunctionType_NONE;

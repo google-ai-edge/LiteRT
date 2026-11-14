@@ -20,6 +20,7 @@ limitations under the License.
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <random>
 #include <vector>
@@ -100,6 +101,23 @@ void DepthwiseConv2DTester::Test(TfLiteDelegate* delegate) {
   float* delegate_output_data =
       delegate_interpreter->typed_output_tensor<float>(0);
 
+  // The TFLite dynamic-range kernel quantizes the input to INT8 (per batch,
+  // step at most 1/255 for inputs in [0, 1)), while XNNPACK computes in FP32.
+  // Bound the difference by the input rounding error over the kernel window.
+  std::vector<float> dynamic_range_tolerance(OutputChannels(), 0.0f);
+  if (DynamicRange()) {
+    const TfLiteNode& node =
+        default_interpreter->node_and_registration(0)->first;
+    const TfLiteTensor* filter = default_interpreter->tensor(node.inputs->data[1]);
+    const auto* quant_params = static_cast<const TfLiteAffineQuantization*>(
+        filter->quantization.params);
+    for (int32_t c = 0; c < OutputChannels(); c++) {
+      dynamic_range_tolerance[c] = KernelHeight() * KernelWidth() *
+                                   std::numeric_limits<int8_t>::max() *
+                                   quant_params->scale->data[c] / 255.0f;
+    }
+  }
+
   for (int32_t i = 0; i < BatchSize(); i++) {
     for (int32_t y = 0; y < OutputHeight(); y++) {
       for (int32_t x = 0; x < OutputWidth(); x++) {
@@ -108,7 +126,8 @@ void DepthwiseConv2DTester::Test(TfLiteDelegate* delegate) {
                                     OutputChannels() +
                                 c;
           ASSERT_NEAR(default_output_data[index], delegate_output_data[index],
-                      std::abs(default_output_data[index]) * 3.0e-6f)
+                      std::abs(default_output_data[index]) * 3.0e-6f +
+                          dynamic_range_tolerance[c])
               << "batch " << i << " / " << BatchSize() << ", y position " << y
               << " / " << OutputHeight() << ", x position " << x << " / "
               << OutputWidth() << ", channel " << c << " / "
@@ -375,7 +394,7 @@ std::vector<char> DepthwiseConv2DTester::CreateTfLiteModel() const {
                                       densify_filter_outputs.size())));
   }
 
-  if (quantized_filter_tensor_id >= 0) {
+  if (quantized_filter_tensor_id >= 0 && !DynamicRange()) {
     const std::array<int32_t, 1> dequantize_filter_inputs{
         {quantized_filter_tensor_id}};
     const std::array<int32_t, 1> dequantize_filter_outputs{{filter_tensor_id}};
@@ -400,7 +419,9 @@ std::vector<char> DepthwiseConv2DTester::CreateTfLiteModel() const {
   }
 
   const std::array<int32_t, 3> op_inputs{
-      {input_tensor_id, filter_tensor_id, bias_tensor_id}};
+      {input_tensor_id,
+       DynamicRange() ? quantized_filter_tensor_id : filter_tensor_id,
+       bias_tensor_id}};
   const std::array<int32_t, 1> op_outputs{{output_tensor_id}};
   const flatbuffers::Offset<DepthwiseConv2DOptions> depthwise_conv2d_options =
       CreateDepthwiseConv2DOptions(
