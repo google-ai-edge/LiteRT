@@ -1,0 +1,414 @@
+// Copyright 2026 The LiteRT Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto2";
+
+package litert.arm_vulkan_ml.tool;
+
+message TensorInputEntry {
+  optional int32 index = 1;
+  optional string file = 2;
+}
+
+message TensorInputCase {
+  optional string id = 1;
+  repeated TensorInputEntry inputs = 2;
+}
+
+message TensorInputsManifest {
+  repeated TensorInputCase cases = 1;
+}
+
+message ValidationInstanceRecord {
+  optional string event = 1;
+  optional string mode = 2;
+  optional string layer = 3;
+  optional uint32 api_version = 4;
+  optional uint32 implementation_version = 5;
+}
+
+message ValidationMessageRecord {
+  optional string event = 1;
+  optional int32 severity = 2;
+  optional uint32 type = 3;
+  optional string id = 4;
+  optional string message = 5;
+  optional string instance_log = 6;
+}
+
+message VulkanValidationReport {
+  optional string requested = 1;
+  optional uint32 baseline_api_version = 2;
+  optional string status = 3;
+  optional int32 errors = 4;
+  optional int32 warnings = 5;
+  repeated ValidationInstanceRecord instances = 6;
+  repeated ValidationMessageRecord messages = 7;
+  optional bool baseline_matches = 8;
+}
+
+message ResidualOperatorReport {
+  optional uint64 subgraph = 1;
+  optional uint64 index = 2;
+  optional int32 opcode = 3;
+}
+
+message QuantizationReport {
+  repeated float scales = 1;
+  repeated int64 zero_points = 2;
+  optional int32 dimension = 3;
+}
+
+message TensorInfoReport {
+  optional int32 id = 1;
+  optional string name = 2;
+  optional string type = 3;
+  repeated int32 shape = 4;
+  repeated int32 shape_signature = 5;
+  optional QuantizationReport quantization = 6;
+}
+
+message OperatorInfoReport {
+  optional uint64 index = 1;
+  optional int32 opcode = 2;
+  optional string name = 3;
+  repeated int32 inputs = 4;
+  repeated int32 outputs = 5;
+  optional bool supported = 6;
+  optional string reason = 7;
+  repeated string output_names = 8;
+  optional string composite_name = 9;
+  optional int32 composite_version = 10;
+}
+
+message OptimizationDecisionReport {
+  optional string pass = 1;
+  repeated uint64 operators = 2;
+  optional bool applied = 3;
+  optional string reason = 4;
+}
+
+message OptimizationSummaryReport {
+  optional string before_ir = 1;
+  optional string after_ir = 2;
+  optional uint64 emitted_operators = 3;
+  optional uint64 constant_count = 4;
+  optional uint64 constant_bytes = 5;
+  optional double compile_ms = 6;
+  repeated OptimizationDecisionReport decisions = 7;
+}
+
+message TensorDescriptorReport {
+  repeated int64 shape = 1;
+  optional uint32 binding = 2;
+  optional int32 element = 3;
+  optional int32 logical_element = 4;
+  optional bool logical_scalar = 5;
+}
+
+message LevelRequirementsReport {
+  optional bool checked = 1;
+  optional uint32 max_rank = 2;
+  optional uint64 max_tensor_bytes = 3;
+  optional uint64 max_kernel = 4;
+  optional uint64 max_stride = 5;
+  optional uint64 max_scale = 6;
+  optional uint64 max_tensor_list_size = 7;
+  optional uint64 max_nesting = 8;
+}
+
+message OperatorCountReport {
+  optional string name = 1;
+  optional uint32 opcode = 2;
+  optional uint64 count = 3;
+}
+
+message GraphMetricsReport {
+  repeated OperatorCountReport operators = 1;
+  optional uint64 identity_reshapes = 2;
+  optional uint64 identity_reshape_logical_bytes = 3;
+  optional uint64 all_reshape_logical_bytes = 4;
+  optional uint64 largest_result_tensor_bytes = 5;
+  optional string note = 6;
+}
+
+message LoweringRecordReport {
+  optional uint64 operator = 1;
+  repeated uint32 created_result_ids = 2;
+  repeated uint64 source_operators = 3;
+  optional string composite = 4;
+}
+
+message ConstantReport {
+  optional string file = 1;
+  repeated int64 shape = 2;
+  optional int32 element = 3;
+  optional uint32 binding = 4;
+}
+
+message PartitionReport {
+  optional uint64 index = 1;
+  repeated uint64 operators = 2;
+  optional OptimizationSummaryReport optimization = 3;
+  optional string softmax_lut_type = 4;
+  optional int32 rescale_multiplier_bits = 5;
+  repeated string profiles = 6;
+  repeated string extensions = 7;
+  optional string instruction_set = 8;
+  optional string entry_point = 9;
+  optional string spirv_file = 10;
+  optional string assembly_file = 11;
+  repeated TensorDescriptorReport inputs = 12;
+  repeated TensorDescriptorReport outputs = 13;
+  optional LevelRequirementsReport level_requirements = 14;
+  repeated uint32 tosa_opcodes = 15;
+  optional GraphMetricsReport graph_metrics = 16;
+  optional bool spirv_valid = 17;
+  repeated LoweringRecordReport lowering = 18;
+  repeated ConstantReport constants = 19;
+  optional string vgf_file = 20;
+  optional uint32 vgf_vulkan_header_version = 21;
+  optional string vgf_sha256 = 22;
+  optional string vgf_scope = 23;
+  optional string artifact_kind = 24;
+}
+
+message SubgraphReport {
+  optional uint64 index = 1;
+  repeated OperatorInfoReport operators = 2;
+  repeated TensorInfoReport tensors = 3;
+  repeated PartitionReport partitions = 4;
+  optional uint64 selected_operators = 5;
+}
+
+message ExtensionVersionReport {
+  optional string name = 1;
+  optional uint32 revision = 2;
+}
+
+message DeviceFeaturesReport {
+  optional bool tensors = 1;
+  optional bool data_graph = 2;
+  optional bool vulkan_memory_model = 3;
+  optional bool synchronization2 = 4;
+  optional bool maintenance5 = 5;
+  optional bool replicated_composites = 6;
+  optional bool shader_int16 = 7;
+  optional bool shader_int64 = 8;
+}
+
+message TensorLimitsReport {
+  optional uint32 rank = 1;
+  optional uint64 elements = 2;
+  optional uint64 dimension_elements = 3;
+  optional uint64 bytes = 4;
+  optional uint32 descriptors = 5;
+}
+
+message FormatSupportReport {
+  optional int32 format = 1;
+  optional uint64 linear_features = 2;
+}
+
+message ExternalTensorHandleReport {
+  optional string type = 1;
+  optional bool importable = 2;
+  optional bool dedicated_only = 3;
+  optional string reason = 4;
+}
+
+message ExternalTensorSlotReport {
+  optional uint64 slot = 1;
+  optional string direction = 2;
+  repeated ExternalTensorHandleReport handles = 3;
+}
+
+message QualityPropertyReport {
+  optional string name = 1;
+  optional uint32 quality = 2;
+}
+
+message GraphEngineReport {
+  optional uint32 queue_family = 1;
+  optional string instruction_set = 2;
+  optional int32 level = 3;
+  optional string level_constraints = 4;
+  repeated QualityPropertyReport profiles = 5;
+  repeated QualityPropertyReport extensions = 6;
+  optional bool reported_requirements_match = 7;
+  optional string rejection = 8;
+}
+
+message DeviceReport {
+  optional string name = 1;
+  optional uint32 api_version = 2;
+  optional uint32 driver_version = 3;
+  optional uint32 vendor_id = 4;
+  optional uint32 device_id = 5;
+  optional int32 device_type = 6;
+  repeated ExtensionVersionReport extensions = 7;
+  optional DeviceFeaturesReport features = 8;
+  optional TensorLimitsReport tensor_limits = 9;
+  repeated FormatSupportReport formats = 10;
+  repeated ExternalTensorSlotReport external_tensors = 11;
+  optional bool required_extensions = 12;
+  optional string rejection = 13;
+  repeated GraphEngineReport engines = 14;
+}
+
+message InputHashReport {
+  optional int32 index = 1;
+  optional string sha256 = 2;
+}
+
+message ToleranceReport {
+  optional double atol = 1;
+  optional double rtol = 2;
+  optional double max_code_error = 3;
+  optional double mean_code_error = 4;
+}
+
+message BufferIoReport {
+  optional uint64 input_copy_bytes = 1;
+  optional uint64 output_copy_bytes = 2;
+  optional uint64 imported_slots = 3;
+}
+
+message OutputComparisonReport {
+  optional bool passed = 1;
+  optional double max_error = 2;
+  optional double mean_error = 3;
+  optional bool finite = 4;
+  optional uint64 elements = 5;
+  optional bool floating = 6;
+  optional string comparison = 7;
+  optional double max_dequantized_error = 8;
+  optional int64 top1_actual = 9;
+  optional int64 top1_expected = 10;
+  optional bool top1_agreement = 11;
+  optional int32 tensor = 12;
+  repeated int32 shape = 13;
+  optional string type = 14;
+  repeated float scales = 15;
+  repeated int64 zero_points = 16;
+  optional int32 quantized_dimension = 17;
+}
+
+message TraceOperatorReport {
+  optional uint64 index = 1;
+  optional string name = 2;
+  repeated OutputComparisonReport outputs = 3;
+  optional uint64 captured_bytes = 4;
+  optional BufferIoReport buffer_io = 5;
+}
+
+message CoverageVariantReport {
+  optional string data_input_type = 1;
+  optional string output_type = 2;
+  optional string route = 3;
+  optional string constraints = 4;
+}
+
+message CoverageOperatorReport {
+  optional string name = 1;
+  optional int32 opcode = 2;
+  optional string implementation = 3;
+  optional string device_support = 4;
+  optional uint64 data_input = 5;
+  repeated CoverageVariantReport variants = 6;
+  optional string reason = 7;
+}
+
+message NamedCompositeReport {
+  optional string name = 1;
+  optional int32 version = 2;
+  optional string data_input_type = 3;
+  optional string output_type = 4;
+  optional string constraints = 5;
+  optional string device_support = 6;
+}
+
+message CoverageCountsReport {
+  optional uint64 total = 1;
+  optional uint64 implemented_subset = 2;
+  optional uint64 not_implemented = 3;
+  optional uint64 excluded = 4;
+  optional uint64 registered_type_pairs = 5;
+  optional uint64 schema_entries = 6;
+  optional uint64 named_composites = 7;
+}
+
+message CoverageReport {
+  optional int32 schema_version = 1;
+  optional string operator_set = 2;
+  optional string scope = 3;
+  optional string global_constraints = 4;
+  repeated CoverageOperatorReport operators = 5;
+  repeated NamedCompositeReport named_composites = 6;
+  optional CoverageCountsReport counts = 7;
+}
+
+message ToolReport {
+  optional int32 schema_version = 1;
+  optional string status = 2;
+  optional string command = 3;
+  optional string softmax_lut_type = 4;
+  optional string rescale_multiplier_bits = 5;
+  optional string binary_sha256 = 6;
+  optional string instruction_set = 7;
+  optional int32 tensor_api_revision = 8;
+  optional bool allow_emulation = 9;
+  optional string model_sha256 = 10;
+  optional string execution_status = 11;
+  optional string numerical_status = 12;
+  optional VulkanValidationReport vulkan_validation = 13;
+  optional string error = 14;
+
+  // Inspect / compile fields.
+  optional string graph_view = 15;
+  optional string operator_index_scope = 16;
+  repeated ResidualOperatorReport residual_operators = 17;
+  optional uint64 effective_partition_count = 18;
+  repeated SubgraphReport subgraphs = 19;
+  optional bool complete_coverage = 20;
+  optional string coverage_status = 21;
+
+  // Capabilities fields.
+  optional string loader = 22;
+  repeated DeviceReport devices = 23;
+  optional string pipeline_acceptance = 24;
+
+  // Trace / validate fields.
+  optional string model = 25;
+  optional string reference = 26;
+  optional string case_id = 27;
+  repeated InputHashReport inputs = 28;
+  optional ToleranceReport tolerances = 29;
+  optional string trace_mode = 30;
+  optional uint64 capture_budget_bytes = 31;
+  optional string budget_scope = 32;
+  optional string instrumentation_note = 33;
+  optional uint64 last_attempted_operator = 34;
+  optional string reference_status = 35;
+  optional bool fully_accelerated = 36;
+  optional string execution_path = 37;
+  optional bool spirv_valid = 38;
+  repeated TraceOperatorReport operators = 39;
+  optional uint64 first_divergence = 40;
+  optional bool complete = 41;
+  repeated ToolReport cases = 42;
+
+  // Coverage fields.
+  optional CoverageReport coverage = 43;
+}
