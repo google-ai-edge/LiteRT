@@ -47,8 +47,10 @@ cc_library(
     ],
     deps = [
         "//tflite/converter:common",
+        "//tflite/converter:convert_type",
         "//tflite/converter:flatbuffer_translate_lib",
         "//tflite/converter:tensorflow_lite",
+        "//tflite/converter:tf_convert_type",
         "//tflite/converter:tf_tfl_passes",
         "//tflite/converter/debug",
         "//tflite/converter/debug:debug_options_proto_cc",
@@ -79,6 +81,7 @@ cc_library(
         "//tflite/converter:common",
         "//tflite/converter:flatbuffer_translate_lib",
         "//tflite/converter:tensorflow_lite",
+        "//tflite/converter:tf_convert_type",
         "//tflite/converter:tf_tfl_passes",
         "//tflite/converter/quantization/common/quantization_lib:quantization_config",
         "//tflite/converter/schema:schema_fbs",
