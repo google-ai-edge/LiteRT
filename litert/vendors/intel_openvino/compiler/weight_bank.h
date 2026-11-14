@@ -26,6 +26,7 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/intel_openvino/compiler/encoded_weights_store.h"
 
 namespace litert::openvino {
 
@@ -43,7 +44,13 @@ namespace litert::openvino {
 // resolved back to the shared buffer they belong to.
 class WeightBank {
  public:
-  WeightBank() = default;
+  // |encoded_weights| (optional, not owned): buffers the frontend re-encodes
+  // before OpenVINO sees them (int2 -> u2 on the NPU shared path) are pooled in
+  // that encoded form. The pool is what NPUW reloads weightless constants from
+  // at runtime, so it must hold the same bytes as the compiled constants, not
+  // the raw ones. Without a store every buffer is pooled as-is.
+  explicit WeightBank(EncodedWeightStore* encoded_weights = nullptr)
+      : encoded_weights_(encoded_weights) {}
 
   // Records every constant-weight buffer referenced by |subgraph|. Repeated
   // BufferIds (within or across subgraphs) collapse to a single entry. Safe to
@@ -84,7 +91,9 @@ class WeightBank {
   void FinalizeDerivedBuffers();
 
  private:
-  // BufferId -> the buffer's bytes (a view into the model's mmapped weights).
+  EncodedWeightStore* encoded_weights_;
+  // BufferId -> the buffer's bytes (a view into the model's mmapped weights, or
+  // into |encoded_weights_| for re-encoded buffers).
   std::unordered_map<int32_t, absl::Span<const uint8_t>> buffer_bytes_;
   // Weight tensor name -> its BufferId. Many names may map to one BufferId
   // (tensors that share storage), which is how shared weights resolve to a

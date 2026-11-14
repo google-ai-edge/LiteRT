@@ -56,6 +56,7 @@
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/intel_openvino/bytecode_header.h"
 #include "litert/vendors/intel_openvino/compiler/alias_shared_constants.h"
+#include "litert/vendors/intel_openvino/compiler/encoded_weights_store.h"
 #include "litert/vendors/intel_openvino/compiler/global_graph.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
 #include "litert/vendors/intel_openvino/compiler/openvino_compile_context.h"
@@ -556,7 +557,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     }
     const bool share_npu = share_weights && share_device == "NPU";
 
-    litert::openvino::WeightBank weight_bank;
+    litert::openvino::EncodedWeightStore encoded_weights;
+    litert::openvino::WeightBank weight_bank(share_npu ? &encoded_weights
+                                                       : nullptr);
     litert::openvino::OpenVinoGlobalGraph global_graph;
     // Authoritative BufferId -> byte offset in the contiguous pool, built in
     // the SAME ascending-id order Serialize() lays out, so a Constant's WLCA
@@ -581,6 +584,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           LITERT_LOG(LITERT_ERROR, "Failed to retrieve Subgraph");
           return kLiteRtStatusErrorCompilation;
         }
+        // NPU stores int2 weights in the pool as the same u2 bytes the frontend
+        // feeds OpenVINO, so they stay byte-identical to the compiled constants
+        // and remain shareable.
         weight_bank.AddSubgraph(subgraph.Value());
 
         // Only the NPU path needs the optimized graph here, to harvest the
@@ -600,7 +606,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
             graph_delegate =
                 std::make_shared<litert::openvino::GraphIteratorDelegate>(
                     compiler_plugin->ctx(), &subgraph.Value(),
-                    context.Device());
+                    context.Device(), share_npu ? &encoded_weights : nullptr);
         auto input_model = tflite_fe->load(graph_delegate);
         auto ov_model = tflite_fe->convert(input_model);
         context.OptimizeModel(ov_model);
@@ -649,7 +655,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
             graph_delegate =
                 std::make_shared<litert::openvino::GraphIteratorDelegate>(
                     compiler_plugin->ctx(), &expected_subgraph.Value(),
-                    context.Device());
+                    context.Device(), share_npu ? &encoded_weights : nullptr);
         auto input_model = tflite_fe->load(graph_delegate);
         LITERT_LOG(LITERT_INFO, "Model loaded");
         auto ov_model = tflite_fe->convert(input_model);
