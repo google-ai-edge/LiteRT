@@ -89,6 +89,9 @@ class GpuWebGpuAccelerator {
     if (delegate_options && options) {
       delegate_options->weight_loader =
           reinterpret_cast<LiteRtOptionsT*>(options)->weight_loader;
+      if (delegate_options->weight_loader != nullptr) {
+        delegate_options->enable_constant_tensors_sharing = true;
+      }
     }
     LITERT_RETURN_IF_ERROR(litert::ml_drift::CreateDelegate(
         runtime_context, env, accelerator,

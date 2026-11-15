@@ -495,6 +495,7 @@ litert_device_test(
 #         "requires-gpu-sm90-full",  # Vulkan/WebGPU: no driver on MIG
 #     ],
 #     deps = [
+#         ":litert_buffer_ref",
 #         ":litert_common",
 #         ":litert_compiled_model",
 #         ":litert_environment",
@@ -510,14 +511,17 @@ litert_device_test(
 #         "@com_google_absl//absl/strings",
 #         "@com_google_absl//absl/types:span",
 #         "@dawn//:dawn_headers",
+#         "@flatbuffers",
 #         "@ml_drift//ml_drift/webgpu:execution_environment",
 #         "@ml_drift//ml_drift/webgpu:webgpu_headers",
-#         "//litert/c:litert_environment_options",
+#         "//litert/cc/internal:scoped_file",
+#         "//litert/cc/internal:scoped_weight_source",
 #         "//litert/cc/options:litert_gpu_options",
 #         "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model",
+#         "//tflite/schema:schema_fbs",
 #         "//third_party/vulkan_loader",
 #     ],
 # )
