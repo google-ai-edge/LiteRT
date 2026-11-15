@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "litert/c/litert_options.h"
+
+#include <cstddef>
+
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
@@ -108,7 +112,7 @@ LiteRtStatus LiteRtAddCustomOpKernelOption(
 LiteRtStatus LiteRtAddExternalTensorBinding(LiteRtOptions options,
                                             const char* signature_name,
                                             const char* tensor_name, void* data,
-                                            size_t size_bytes) {
+                                            int size_bytes) {
   LRT_CHECK_NON_NULL(options);
   LRT_CHECK_NON_NULL(signature_name);
   LRT_CHECK_NON_NULL(tensor_name);
@@ -117,7 +121,7 @@ LiteRtStatus LiteRtAddExternalTensorBinding(LiteRtOptions options,
       {/*.signature_name =*/signature_name,
        /*.tensor_name =*/tensor_name,
        /*.data =*/data,
-       /*.size_bytes =*/size_bytes});
+       /*.size_bytes =*/static_cast<size_t>(size_bytes)});
   return kLiteRtStatusOk;
 }
 
