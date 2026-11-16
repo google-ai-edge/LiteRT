@@ -821,6 +821,11 @@ TEST(TensorBuffer, Vulkan) {
                                       sizeof(kTensorData), &tensor_buffer),
       kLiteRtStatusOk);
 
+  HwMemoryHandle vk_memory_handle = nullptr;
+  ASSERT_EQ(LiteRtGetTensorBufferVulkanMemory(tensor_buffer, &vk_memory_handle),
+            kLiteRtStatusOk);
+  EXPECT_NE(vk_memory_handle, nullptr);
+
   LiteRtTensorBufferType buffer_type;
   ASSERT_EQ(LiteRtGetTensorBufferType(tensor_buffer, &buffer_type),
             kLiteRtStatusOk);

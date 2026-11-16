@@ -15,18 +15,47 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_VULKAN_ENV_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_SHARED_VULKAN_ENV_H_
 
+#include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/syrtis/command_buffer.h"  // from @ml_drift
 #include "ml_drift/syrtis/environment.h"  // from @ml_drift
+#include "ml_drift/syrtis/queue.h"  // from @ml_drift
 #include "ml_drift/syrtis/vulkan_wrapper.h"  // from @ml_drift
 
 namespace litert::ml_drift {
 
 class SharedVulkanEnv {
  public:
+  // Creates a SharedVulkanEnv with an owned Vulkan environment and command
+  // pool, ensuring Vulkan function pointers are initialized.
+  // Returns nullptr on failure.
+  static std::unique_ptr<SharedVulkanEnv> Create();
+
+  // Creates a SharedVulkanEnv wrapping caller-provided external Vulkan
+  // handles without taking ownership of the underlying VkInstance,
+  // VkPhysicalDevice, VkDevice, or VkQueue, ensuring Vulkan function pointers
+  // are initialized. If `queue_family_index < 0`, queries `physical_device` for
+  // the first compute-capable queue family.
+  //
+  // Because Vulkan does not provide an API to query extensions enabled on an
+  // existing `VkDevice`, all device extensions supported by `physical_device`
+  // are assumed to be enabled on `device`. Callers must ensure that optional
+  // device extensions supported by `physical_device` and used by ML Drift
+  // (e.g., `VK_KHR_storage_buffer_storage_class`, `VK_KHR_16bit_storage`,
+  // `VK_KHR_shader_float16_int8`) were enabled when creating `device`.
+  //
+  // Returns nullptr on failure.
+  static std::unique_ptr<SharedVulkanEnv> CreateFromExternalHandles(
+      VkInstance instance, VkPhysicalDevice physical_device, VkDevice device,
+      VkQueue queue, int64_t queue_family_index = -1);
+
+  // Constructs an uninitialized instance (used by test fixtures that supply
+  // their own `syrtis::Environment`). Prefer `Create()` or
+  // `CreateFromExternalHandles()`.
   SharedVulkanEnv();
   ~SharedVulkanEnv();
 
@@ -66,6 +95,7 @@ class SharedVulkanEnv {
   }
 
  private:
+  std::unique_ptr<::ml_drift::syrtis::Queue> external_queue_;
   ::ml_drift::syrtis::Environment vulkan_env_;
   // A command pool used for every data transfer and compute works.
   VkCommandPool command_pool_ = VK_NULL_HANDLE;
