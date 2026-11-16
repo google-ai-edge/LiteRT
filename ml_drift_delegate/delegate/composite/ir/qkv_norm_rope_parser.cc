@@ -21,6 +21,7 @@
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_parser.h"
+#include "ml_drift_delegate/tflite/convert/convert_aux.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "tflite/c/builtin_op_data.h"
@@ -47,7 +48,7 @@ absl::Status QkvNormRopeIsSupported(
 }
 
 void QkvNormRopeConvert(
-    const TfLiteContext& /*context*/, const TfLiteNode& tflite_node,
+    const TfLiteContext& context, const TfLiteNode& tflite_node,
     const TfLiteRegistration& /*registration*/,
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     const IrModelBuilderOptions& /*options*/,
@@ -55,11 +56,7 @@ void QkvNormRopeConvert(
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
   op->name = "qkv_norm_rope";
 
-  for (int i = 0; i < tflite_node.inputs->size; ++i) {
-    if (tflite_node.inputs->data[i] != kTfLiteOptionalTensor) {
-      ir_model.AddConsumer(tensor_map[tflite_node.inputs->data[i]], op->id);
-    }
-  }
+  AddNodeInputs(context, tflite_node, tensor_map, /*layout=*/{}, ir_model, op);
   for (int i = 0; i < tflite_node.outputs->size; ++i) {
     ir_model.SetProducer(tensor_map[tflite_node.outputs->data[i]], op->id);
   }

@@ -26,6 +26,7 @@
 #include "testing/base/public/gunit.h"
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_parser.h"
 #include "ml_drift_delegate/tflite/convert/convert_testing_utils.h"
 #include "ml_drift_delegate/tflite/convert/stub_delegate.h"
@@ -203,6 +204,90 @@ TEST_F(ConvertQkvNormRopeTest, HasVNormAndQOnlyConversion) {
   EXPECT_EQ(attr->head_dim, 512);
   EXPECT_FLOAT_EQ(attr->proportion, 0.25f);
   EXPECT_TRUE(attr->has_v_norm);
+}
+
+TEST_F(ConvertQkvNormRopeTest, ConstantWeightsEmitConstProducers) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 1, 1, 32 * 128});  // qkv
+  builder.AddInput(kTfLiteInt32, {1, 1});                 // position
+  std::vector<float> weight_vals(128, 1.0f);
+  std::vector<uint8_t> weight_bytes(
+      reinterpret_cast<const uint8_t*>(weight_vals.data()),
+      reinterpret_cast<const uint8_t*>(weight_vals.data() +
+                                       weight_vals.size()));
+  builder.AddConstInput(kTfLiteFloat32, {128}, weight_bytes);  // q_weight
+  builder.AddConstInput(kTfLiteFloat32, {128}, weight_bytes);  // k_weight
+  builder.AddOutput(kTfLiteFloat32, {1, 16, 1, 128});          // q_out
+  builder.AddOutput(kTfLiteFloat32, {1, 8, 1, 128});           // k_out
+  builder.AddOutput(kTfLiteFloat32, {1, 8, 1, 128});           // v_out
+
+  builder.SetParameters(
+      CreateQkvNormRopeParams(16, 8, 128, 1.0f, 10000.0f, 1.0f, 1e-6f));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(3));
+  EXPECT_THAT(ir_model->ops()[0]->name, Eq("qkv_norm_rope"));
+  ASSERT_THAT(ir_model->ops()[0]->inputs, SizeIs(4));
+  EXPECT_THAT(ir_model->ops()[0]->outputs, SizeIs(3));
+
+  EXPECT_THAT(ir_model->ops()[1]->name,
+              Eq(ToString(::ml_drift::OperationType::kConstant)));
+  ASSERT_THAT(ir_model->ops()[1]->outputs, SizeIs(1));
+  EXPECT_EQ(ir_model->ops()[0]->inputs[2], ir_model->ops()[1]->outputs[0]);
+
+  EXPECT_THAT(ir_model->ops()[2]->name,
+              Eq(ToString(::ml_drift::OperationType::kConstant)));
+  ASSERT_THAT(ir_model->ops()[2]->outputs, SizeIs(1));
+  EXPECT_EQ(ir_model->ops()[0]->inputs[3], ir_model->ops()[2]->outputs[0]);
+
+  EXPECT_THAT(ir_model->inputs(), SizeIs(2));
+}
+
+TEST_F(ConvertQkvNormRopeTest, Float16ConstantWeightsEmitConstProducers) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat16, {1, 1, 1, 32 * 128});  // qkv
+  builder.AddInput(kTfLiteInt32, {1, 1});                 // position
+  std::vector<uint16_t> weight_vals(128, 0x3c00);         // 1.0 in FP16
+  std::vector<uint8_t> weight_bytes(
+      reinterpret_cast<const uint8_t*>(weight_vals.data()),
+      reinterpret_cast<const uint8_t*>(weight_vals.data() +
+                                       weight_vals.size()));
+  builder.AddConstInput(kTfLiteFloat16, {128}, weight_bytes);  // q_weight
+  builder.AddConstInput(kTfLiteFloat16, {128}, weight_bytes);  // k_weight
+  builder.AddOutput(kTfLiteFloat16, {1, 16, 1, 128});          // q_out
+  builder.AddOutput(kTfLiteFloat16, {1, 8, 1, 128});           // k_out
+  builder.AddOutput(kTfLiteFloat16, {1, 8, 1, 128});           // v_out
+
+  builder.SetParameters(
+      CreateQkvNormRopeParams(16, 8, 128, 1.0f, 10000.0f, 1.0f, 1e-6f));
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(3));
+  EXPECT_THAT(ir_model->ops()[0]->name, Eq("qkv_norm_rope"));
+  ASSERT_THAT(ir_model->ops()[0]->inputs, SizeIs(4));
+  EXPECT_THAT(ir_model->ops()[0]->outputs, SizeIs(3));
+
+  EXPECT_THAT(ir_model->ops()[1]->name,
+              Eq(ToString(::ml_drift::OperationType::kConstant)));
+  ASSERT_THAT(ir_model->ops()[1]->outputs, SizeIs(1));
+  EXPECT_EQ(ir_model->ops()[0]->inputs[2], ir_model->ops()[1]->outputs[0]);
+
+  EXPECT_THAT(ir_model->ops()[2]->name,
+              Eq(ToString(::ml_drift::OperationType::kConstant)));
+  ASSERT_THAT(ir_model->ops()[2]->outputs, SizeIs(1));
+  EXPECT_EQ(ir_model->ops()[0]->inputs[3], ir_model->ops()[2]->outputs[0]);
+
+  EXPECT_THAT(ir_model->inputs(), SizeIs(2));
 }
 
 }  // namespace
