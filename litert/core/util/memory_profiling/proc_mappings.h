@@ -33,7 +33,7 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 // One line of /proc/<pid>/maps: a mapping of [start, end) and the path it is
 // backed by ("/dev/kgsl-3d0", "/data/model.litertlm", "[anon:scudo:primary]",
@@ -86,6 +86,6 @@ std::optional<uint64_t> ParseSmapsRollupRss(absl::string_view contents);
 // cost.
 std::optional<uint64_t> ReadSmapsRollupRss(absl::string_view proc_self_dir);
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_PROC_MAPPINGS_H_

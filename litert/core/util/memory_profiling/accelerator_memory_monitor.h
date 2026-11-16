@@ -28,7 +28,7 @@
 #include "absl/synchronization/notification.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 
-namespace litert::internal {
+namespace litert::profiling {
 
 // Accelerator (GPU / NPU) memory used by the current process at a point in
 // time, in the two senses a MemorySnapshot (memory_snapshot.h) reports memory
@@ -160,6 +160,6 @@ class AcceleratorMemoryMonitor {
   std::optional<AcceleratorMemoryUsage> peak_ ABSL_GUARDED_BY(mutex_);
 };
 
-}  // namespace litert::internal
+}  // namespace litert::profiling
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_ACCELERATOR_MEMORY_MONITOR_H_

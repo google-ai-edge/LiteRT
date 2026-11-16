@@ -82,7 +82,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_nvml.h"
 #include "litert/core/util/memory_profiling/fdinfo.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 namespace {
 
@@ -256,9 +256,14 @@ std::optional<AcceleratorMemoryUsage> AcceleratorMemoryUsageFromLinuxSources(
   return usage;
 }
 
+}  // namespace litert::profiling::internal
+
+namespace litert::profiling {
+
 std::optional<AcceleratorMemoryUsage> GetProcessAcceleratorMemoryUsage() {
-  return AcceleratorMemoryUsageFromLinuxSources(ReadDrmClients("/proc/self"),
-                                                ReadNvmlProcessMemory());
+  return internal::AcceleratorMemoryUsageFromLinuxSources(
+      internal::ReadDrmClients("/proc/self"),
+      internal::ReadNvmlProcessMemory());
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling

@@ -113,7 +113,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 #include "litert/core/util/memory_profiling/proc_mappings.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 namespace {
 
@@ -167,18 +167,24 @@ AddressSpaceWalk GetAddressSpaceWalk(const ProcResidentCounters& status) {
 
 }  // namespace
 
+}  // namespace litert::profiling::internal
+
+namespace litert::profiling {
+
 std::optional<AcceleratorMemoryUsage> GetProcessAcceleratorMemoryUsage() {
-  const DmaBufSummary dmabuf = ReadDmaBufSummary("/proc/self");
+  const internal::DmaBufSummary dmabuf =
+      internal::ReadDmaBufSummary("/proc/self");
   // /proc/self/status is always readable; should it not be, the mapped pools
   // (which need only /proc/self/maps) are still reported, and only the Mali
   // pool and the overlap with the host's figures are lost.
-  const ProcResidentCounters status =
-      ReadProcStatusResident("/proc/self").value_or(ProcResidentCounters());
-  const AddressSpaceWalk walk = GetAddressSpaceWalk(status);
-  return AcceleratorMemoryUsageFromAndroidSources(
+  const internal::ProcResidentCounters status =
+      internal::ReadProcStatusResident("/proc/self")
+          .value_or(internal::ProcResidentCounters());
+  const internal::AddressSpaceWalk walk = internal::GetAddressSpaceWalk(status);
+  return internal::AcceleratorMemoryUsageFromAndroidSources(
       dmabuf, walk.driver,
-      AndroidResidentView{.status = status,
-                          .unmapped_rss_bytes = walk.mali_pool_bytes});
+      internal::AndroidResidentView{
+          .status = status, .unmapped_rss_bytes = walk.mali_pool_bytes});
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling

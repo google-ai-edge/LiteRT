@@ -22,13 +22,13 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/core/util/memory_profiling/host_memory.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 // Builds a HostMemoryUsage from the contents of /proc/<pid>/status. Fields
 // whose lines are missing are left unset; see host_memory_linux.cc for which
 // lines feed which field.
 HostMemoryUsage ParseProcStatus(absl::string_view status);
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_HOST_MEMORY_LINUX_H_

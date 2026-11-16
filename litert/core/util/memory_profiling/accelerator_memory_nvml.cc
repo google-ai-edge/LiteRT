@@ -28,7 +28,7 @@
 
 #include "absl/log/absl_log.h"  // from @com_google_absl
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 namespace {
 
@@ -260,4 +260,4 @@ uint64_t NvmlProcessBytes(unsigned int pid,
   return bytes;
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal

@@ -21,10 +21,10 @@
 
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 
-namespace litert::internal {
+namespace litert::profiling {
 
 std::optional<AcceleratorMemoryUsage> GetProcessAcceleratorMemoryUsage() {
   return std::nullopt;
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling

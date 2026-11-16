@@ -26,7 +26,7 @@
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 FdinfoFields ParseFdinfo(absl::string_view contents) {
   FdinfoFields fields;
@@ -57,4 +57,4 @@ void ForEachFdinfo(
   closedir(dir);
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal

@@ -22,7 +22,7 @@
 #include <gtest/gtest.h>
 #include "litert/core/util/memory_profiling/host_memory.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 namespace {
 
 using ::testing::Eq;
@@ -96,4 +96,4 @@ TEST(GetHostMemoryUsageTest, Linux_ReportsThisProcess) {
 }
 
 }  // namespace
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal

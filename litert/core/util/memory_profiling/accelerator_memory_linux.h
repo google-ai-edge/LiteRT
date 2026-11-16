@@ -30,7 +30,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_nvml.h"
 #include "litert/core/util/memory_profiling/fdinfo.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 // One DRM client of this process: what one open handle on a GPU device node
 // has allocated, as the kernel reports it in that descriptor's fdinfo.
@@ -91,6 +91,6 @@ std::optional<AcceleratorMemoryUsage> AcceleratorMemoryUsageFromLinuxSources(
     const std::vector<DrmClientMemory>& drm_clients,
     const std::optional<std::vector<NvmlDeviceMemory>>& nvml_devices);
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_ACCELERATOR_MEMORY_LINUX_H_

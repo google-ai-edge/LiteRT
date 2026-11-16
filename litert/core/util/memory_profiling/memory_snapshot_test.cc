@@ -27,7 +27,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 #include "litert/core/util/memory_profiling/host_memory.h"
 
-namespace litert::internal {
+namespace litert::profiling {
 namespace {
 
 using ::testing::_;
@@ -268,4 +268,4 @@ TEST(TakeAndLogHostMemorySnapshotTest, LogsEachLineAndReturnsTheSnapshot) {
 }
 
 }  // namespace
-}  // namespace litert::internal
+}  // namespace litert::profiling

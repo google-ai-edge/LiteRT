@@ -35,7 +35,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 #include "litert/core/util/memory_profiling/memory_snapshot.h"
 
-namespace litert::internal {
+namespace litert::profiling {
 
 namespace {
 
@@ -211,4 +211,4 @@ void MemoryMonitor::LogPeaks(absl::string_view title) const {
   }
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling
