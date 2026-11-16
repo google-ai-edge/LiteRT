@@ -104,6 +104,7 @@ TFL_OP_TO_WEIGHT_QUANTIZED_DIM = immutabledict.immutabledict({
 TFL_OP_TO_BLOCKWISE_WEIGHT_QUANTIZED_DIM = immutabledict.immutabledict({
     _TFLOpName.FULLY_CONNECTED: 1,
     _TFLOpName.EMBEDDING_LOOKUP: 1,
+    _TFLOpName.CUSTOM_OP: 3,
 })
 
 NUM_TFL_DATATYPES = 18
