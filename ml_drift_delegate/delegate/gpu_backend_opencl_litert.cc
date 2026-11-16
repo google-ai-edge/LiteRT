@@ -16,6 +16,7 @@
 
 #include <fcntl.h>  // IWYU pragma: keep b/332641196
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -28,6 +29,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "ml_drift/cl/buffer.h"  // from @ml_drift
 #include "ml_drift/cl/cl_event.h"  // from @ml_drift
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/memory_manager.h"  // from @ml_drift
@@ -187,14 +189,71 @@ GpuBackendOpenClLitert::~GpuBackendOpenClLitert() {
 
 absl::StatusOr<GpuMemoryHandle> GpuBackendOpenClLitert::GetGpuMemoryAllocated(
     const GpuTensorBufferPtr& tensor_buffer) {
+  LiteRtTensorBufferType buffer_type;
+  LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_type(
+      tensor_buffer.get(), &buffer_type));
+
+  if (buffer_type == kLiteRtTensorBufferTypeHostMemory) {
+    const bool is_supported = SupportsZeroCopyHostPtr(/*input=*/false) &&
+                              SupportsZeroCopyHostPtr(/*input=*/true);
+    if (!is_supported) {
+      return absl::FailedPreconditionError(
+          "Host pointer I/O buffers are not supported for both input and "
+          "output on this device.");
+    }
+
+    void* host_addr = nullptr;
+    LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_host_memory(
+        tensor_buffer.get(), &host_addr));
+    size_t buffer_size = 0;
+    LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_size(
+        tensor_buffer.get(), &buffer_size));
+
+    if (buffer_size == 0) {
+      return absl::InvalidArgumentError("Buffer size must be greater than 0.");
+    }
+    if (host_addr == nullptr) {
+      return absl::InvalidArgumentError("Host memory pointer cannot be null.");
+    }
+
+    const size_t alignment = GetHostPtrAlignment();
+    if (alignment != 0 &&
+        reinterpret_cast<uintptr_t>(host_addr) % alignment != 0) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Host memory pointer ",
+                       absl::Hex(reinterpret_cast<uintptr_t>(host_addr)),
+                       " does not meet required alignment: ", alignment));
+    }
+
+    auto it = wrapped_host_buffers_.find(tensor_buffer.get());
+    if (it != wrapped_host_buffers_.end()) {
+      auto* opencl_io_buf = static_cast<GpuIOBufferOpenCl*>(it->second.get());
+      if (opencl_io_buf->GetHostPtr() == host_addr &&
+          opencl_io_buf->GetSize() == buffer_size) {
+        return opencl_io_buf->cl_buffer().GetMemoryPtr();
+      }
+    }
+
+    ABSL_ASSIGN_OR_RETURN(
+        auto host_io_buf,
+        WrapExternalHostBuffer(::ml_drift::DataType::kFloat32, buffer_size,
+                               /*input=*/true, host_addr));
+    auto* opencl_io_buf = static_cast<GpuIOBufferOpenCl*>(host_io_buf.get());
+    GpuMemoryHandle cl_mem = opencl_io_buf->cl_buffer().GetMemoryPtr();
+    if (it != wrapped_host_buffers_.end()) {
+      it->second = std::move(host_io_buf);
+    } else {
+      wrapped_host_buffers_.emplace(tensor_buffer.get(),
+                                    std::move(host_io_buf));
+    }
+    return cl_mem;
+  }
+
   LiteRtClMem cl_mem_addr;
   LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_opencl_memory(
       tensor_buffer.get(), &cl_mem_addr));
 #if LITERT_HAS_OPENGL_SUPPORT
   if (gl_interop_fabric_) {
-    LiteRtTensorBufferType buffer_type;
-    LITERT_RETURN_IF_ERROR(runtime_context_->get_tensor_buffer_type(
-        tensor_buffer.get(), &buffer_type));
     if (buffer_type == kLiteRtTensorBufferTypeGlBuffer) {
       ABSL_RETURN_IF_ERROR(gl_interop_fabric_->RegisterMemory(cl_mem_addr));
     }
@@ -325,6 +384,12 @@ GpuBackendOpenClLitert::GetGpuBufferRequirementsForNonExternalTensors() {
     requirements.strides.push_back(0);
   }
 #endif
+  if (SupportsZeroCopyHostPtr(/*input=*/true) &&
+      SupportsZeroCopyHostPtr(/*input=*/false)) {
+    requirements.buffer_types.push_back(kLiteRtTensorBufferTypeHostMemory);
+    requirements.strides.push_back(0);
+    requirements.alignment = GetHostPtrAlignment();
+  }
   return requirements;
 }
 
@@ -422,6 +487,46 @@ void GpuBackendOpenClLitert::FlushCompiledCacheIfNeeded() {
              num_compiled_programs_after - num_compiled_programs_,
              num_compiled_programs_after);
   num_compiled_programs_ = num_compiled_programs_after;
+}
+
+absl::Status GpuBackendOpenClLitert::SyncHostMemoryToDevice(
+    const GpuTensorBufferPtr& tensor_buffer) {
+  auto it = wrapped_host_buffers_.find(tensor_buffer.get());
+  if (it != wrapped_host_buffers_.end() && it->second != nullptr) {
+    return it->second->SyncToDevice();
+  }
+  return absl::OkStatus();
+}
+
+absl::Status GpuBackendOpenClLitert::PrepareHostMemoryForDeviceWrite(
+    const GpuTensorBufferPtr& tensor_buffer) {
+  auto it = wrapped_host_buffers_.find(tensor_buffer.get());
+  if (it != wrapped_host_buffers_.end() && it->second != nullptr) {
+    return it->second->UnmapIfMapped();
+  }
+  return absl::OkStatus();
+}
+
+absl::Status GpuBackendOpenClLitert::SyncHostMemoryToHost(
+    const GpuTensorBufferPtr& tensor_buffer) {
+  auto it = wrapped_host_buffers_.find(tensor_buffer.get());
+  if (it != wrapped_host_buffers_.end() && it->second != nullptr) {
+    return it->second->SyncToHost(/*wait_for_completion=*/false);
+  }
+  return absl::OkStatus();
+}
+
+absl::Status GpuBackendOpenClLitert::FinishHostMemorySyncToHost(
+    const GpuTensorBufferPtr& tensor_buffer) {
+  auto it = wrapped_host_buffers_.find(tensor_buffer.get());
+  if (it != wrapped_host_buffers_.end() && it->second != nullptr) {
+    return it->second->FinishPendingHostSync();
+  }
+  return absl::OkStatus();
+}
+
+absl::Status GpuBackendOpenClLitert::WaitForCompletion() {
+  return GpuBackendOpenCl::WaitForCompletion();
 }
 
 GpuInferenceContextOpenClLitert::GpuInferenceContextOpenClLitert(

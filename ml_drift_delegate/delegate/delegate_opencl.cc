@@ -25,6 +25,7 @@
 #include <utility>
 
 #include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
@@ -481,11 +482,24 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
       reinterpret_cast<litert::ml_drift::DelegateKernelLiteRt*>(
           node->user_data);
 
+  bool invoke_completed = false;
+  auto wrapped_host_cleanup = absl::MakeCleanup([&]() {
+    if (delegate_kernel != nullptr && delegate_kernel->backend() != nullptr) {
+      if (!invoke_completed) {
+        delegate_kernel->backend()->WaitForCompletion().IgnoreError();
+      }
+      delegate_kernel->backend()->ClearWrappedHostBuffers();
+    }
+  });
+
   uint64_t upload_start;
   if (is_profiling) {
     upload_start = tflite::profiling::time::NowMicros();
   }
 
+  if (delegate_kernel->HasQuantizedTensors()) {
+    CALL_DELEGATE_KERNEL(DequantizeInputs, context);
+  }
   CALL_DELEGATE_KERNEL(BindExternalTensorBuffers, context);
   CALL_DELEGATE_KERNEL(UploadIntermediateCpuTensorsToGpuMemory, context);
   CALL_DELEGATE_KERNEL(HandleInputEvents, context);
@@ -541,6 +555,9 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
   }
 
   CALL_DELEGATE_KERNEL(DownloadGpuMemoryToIntermediateCpuTensors, context);
+  if (delegate_kernel->HasQuantizedTensors()) {
+    CALL_DELEGATE_KERNEL(QuantizeOutputs, context);
+  }
   CALL_DELEGATE_KERNEL(FlushBufferCacheIfNeeded, context);
 
   if (is_profiling) {
@@ -550,6 +567,7 @@ TfLiteStatus Invoke(TfLiteContext* context, TfLiteNode* node) {
                                      download_end - download_start);
   }
 
+  invoke_completed = true;
   return kTfLiteOk;
 }
 
@@ -756,6 +774,8 @@ TfLiteDelegatePtr CreateMlDriftClDelegate(MlDriftDelegateOptionsPtr options,
   auto backend = std::make_shared<GpuBackendOpenClLitert>(
       (*delegate_env)->cl_env.get(), (*delegate_env)->egl_display,
       std::move(compiled_cache), runtime_context);
+  backend->SetForceHostPtrIOBuffer(
+      delegate_data->options->force_host_ptr_io_buffers);
   delegate_data->shared_backend = backend;
 
   switch (delegate_data->options->precision) {
