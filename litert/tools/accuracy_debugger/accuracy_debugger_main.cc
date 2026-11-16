@@ -76,9 +76,14 @@ ABSL_FLAG(std::string, accelerator, "gpu", "Target accelerator (gpu, npu)");
 ABSL_FLAG(std::string, dispatch_library_dir, "",
           "(Required for NPU) Path to the dispatch library.");
 ABSL_FLAG(std::string, compiler_plugin_library_dir, "",
-          "(Required for NPU) Path to the compiler plugin library.");
+          "Path to the compiler plugin library for online NPU compilation.");
 ABSL_FLAG(std::string, compiler_cache_dir, "",
-          "(Required for NPU) Path to the compiler cache directory.");
+          "Path to the compiler cache directory for online NPU compilation.");
+ABSL_FLAG(
+    std::string, precompiled_model_dir, "",
+    "Directory containing AOT-compiled work-unit models. Each file must have "
+    "the same name produced by --dump_only. When set, the accelerator path "
+    "loads these models instead of compiling extracted models online.");
 ABSL_FLAG(int, summary_max_rows, 50,
           "Maximum number of rows to print in the summary table (-1 for all)");
 ABSL_FLAG(std::string, sort_by, "cos_sim",
@@ -240,6 +245,8 @@ int main(int argc, char** argv) {
   checker_options.use_gpu_ref = absl::GetFlag(FLAGS_use_gpu_ref);
   checker_options.dump_only = absl::GetFlag(FLAGS_dump_only);
   checker_options.dump_tensors = absl::GetFlag(FLAGS_dump_tensors);
+  checker_options.precompiled_model_dir =
+      absl::GetFlag(FLAGS_precompiled_model_dir);
 
   std::string boundary_tensors_str = absl::GetFlag(FLAGS_boundary_tensors);
   if (!boundary_tensors_str.empty()) {

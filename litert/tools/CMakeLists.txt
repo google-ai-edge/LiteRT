@@ -137,6 +137,76 @@ set(ABSEIL_TOOL_LIBS
     absl::statusor
 )
 
+# Accuracy debugger
+add_executable(accuracy_debugger
+    accuracy_debugger/accuracy_debugger_main.cc
+    accuracy_debugger/accuracy_debugger_util.cc
+)
+
+target_include_directories(accuracy_debugger
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        ${TENSORFLOW_SOURCE_DIR}
+)
+
+# absl strips flag names/registration on Android by default
+# (ABSL_FLAGS_STRIP_NAMES=1). This tool uses absl::ParseCommandLine.
+if(ANDROID)
+    target_compile_definitions(accuracy_debugger PRIVATE ABSL_FLAGS_STRIP_NAMES=0)
+endif()
+
+if(ANDROID)
+    target_link_libraries(accuracy_debugger
+        PRIVATE
+            litert_dump
+            "-Wl,--whole-archive"
+            litert_tool_flags_google_tensor
+            litert_tool_flags_intel_openvino
+            litert_tool_flags_mediatek
+            litert_tool_flags_qualcomm
+            "-Wl,--no-whole-archive"
+            ${LITERT_TOOL_COMMON_LIBS}
+            tensorflow-lite
+            ${ABSEIL_TOOL_LIBS}
+            Threads::Threads
+            litert_tensor_utils
+    )
+elseif(APPLE)
+    target_link_libraries(accuracy_debugger
+        PRIVATE
+            litert_dump
+            litert_tool_flags_google_tensor
+            litert_tool_flags_intel_openvino
+            litert_tool_flags_mediatek
+            litert_tool_flags_qualcomm
+            ${LITERT_TOOL_COMMON_LIBS}
+            tensorflow-lite
+            ${ABSEIL_TOOL_LIBS}
+            Threads::Threads
+            litert_tensor_utils
+    )
+else()
+    target_link_libraries(accuracy_debugger
+        PRIVATE
+            litert_dump
+            "-Wl,--whole-archive"
+            litert_tool_flags_google_tensor
+            litert_tool_flags_intel_openvino
+            litert_tool_flags_mediatek
+            litert_tool_flags_qualcomm
+            "-Wl,--no-whole-archive"
+            Threads::Threads
+            tensorflow-lite
+            "-Wl,--start-group"
+            ${ABSEIL_TOOL_LIBS}
+            ${LITERT_TOOL_COMMON_LIBS}
+            "-Wl,--end-group"
+            ${CMAKE_DL_LIBS}
+            litert_tensor_utils
+    )
+endif()
+
 # NPU numerics check
 add_executable(litert_npu_numerics_check
     npu_numerics_check.cc
