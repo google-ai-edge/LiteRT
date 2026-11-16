@@ -52,6 +52,7 @@ cc_library(
     visibility = ["//visibility:private"],
     deps = [
         "//tflite/core/c:common",
+        "@com_google_absl//absl/base:core_headers",
     ],
     alwayslink = 1,
 )
