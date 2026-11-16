@@ -213,12 +213,12 @@ Expected<std::vector<UnsupportedOp>> AdapterAot::GetUnsupportedOps(
 }
 
 Expected<std::vector<bool>> AdapterAot::AreCompositesSupported(
-    absl::Span<const std::string> composite_names, const char* options_data,
-    size_t options_size) {
+    absl::Span<const CompositeOpDescriptor> composite_ops,
+    const char* options_data, size_t options_size) {
   // TODO(b/564862823): Pass options_data and options_size to
   // GoogleTensorValidateCompositeOps to support per-chip composite op
   // validation.
-  if (composite_names.empty()) {
+  if (composite_ops.empty()) {
     return std::vector<bool>{};
   }
 
@@ -230,13 +230,31 @@ Expected<std::vector<bool>> AdapterAot::AreCompositesSupported(
         "symbol not loaded");
   }
 
+  std::vector<std::vector<int32_t>> operand_types_storage(composite_ops.size());
+  std::vector<std::vector<int32_t>> result_types_storage(composite_ops.size());
   std::vector<GoogleTensorCompositeOpDescriptor> descriptors(
-      composite_names.size());
-  for (size_t i = 0; i < composite_names.size(); ++i) {
-    descriptors[i].composite_name = composite_names[i].c_str();
+      composite_ops.size());
+  for (size_t i = 0; i < composite_ops.size(); ++i) {
+    operand_types_storage[i].reserve(composite_ops[i].operand_types.size());
+    for (const LiteRtElementType type : composite_ops[i].operand_types) {
+      operand_types_storage[i].push_back(static_cast<int32_t>(type));
+    }
+    result_types_storage[i].reserve(composite_ops[i].result_types.size());
+    for (const LiteRtElementType type : composite_ops[i].result_types) {
+      result_types_storage[i].push_back(static_cast<int32_t>(type));
+    }
+    descriptors[i].composite_name = composite_ops[i].name.c_str();
+    descriptors[i].operand_types = operand_types_storage[i].empty()
+                                       ? nullptr
+                                       : operand_types_storage[i].data();
+    descriptors[i].num_operands = operand_types_storage[i].size();
+    descriptors[i].result_types = result_types_storage[i].empty()
+                                      ? nullptr
+                                      : result_types_storage[i].data();
+    descriptors[i].num_results = result_types_storage[i].size();
   }
   std::vector<GoogleTensorCompositeOpValidationResult> results(
-      composite_names.size());
+      composite_ops.size());
   if (!api_->validate_composite_ops(
           descriptors.data(), sizeof(GoogleTensorCompositeOpDescriptor),
           descriptors.size(), results.data(),
@@ -251,10 +269,8 @@ Expected<std::vector<bool>> AdapterAot::AreCompositesSupported(
                                                  results.size());
     }
   };
-  // TODO(b/562408779): Surface composite validation failure reasons and
-  // categories to the caller instead of only logging and returning booleans.
   std::vector<bool> supported_flags;
-  supported_flags.reserve(composite_names.size());
+  supported_flags.reserve(composite_ops.size());
   for (const GoogleTensorCompositeOpValidationResult& result : results) {
     if (result.category == GOOGLE_TENSOR_COMPOSITE_VALIDATION_INTERNAL_ERROR) {
       std::string error_msg = "Internal error during composite op validation";
