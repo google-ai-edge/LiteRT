@@ -379,6 +379,7 @@ EXPORTS
   LiteRtSetDelegateFunction
   LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation
   LiteRtSetOpaqueOptionsHash
+  LiteRtSetOpResolverOption
   LiteRtSetOptionsHardwareAccelerators
   LiteRtSetProfilerCurrentEventSource
   LiteRtSetTensorBufferEvent

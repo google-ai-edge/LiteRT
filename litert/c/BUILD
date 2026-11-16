@@ -559,10 +559,22 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_op_resolver",
+    hdrs = ["litert_op_resolver.h"],
+    compatible_with = get_compatible_with_portable(),
+)
+
 litert_c_api_library(
     name = "litert_options",
     srcs = ["litert_options.cc"],
     hdrs = ["litert_options.h"],
+    copts = select({
+        "//litert/build_common:litert_disable_cpu": [
+            "-DLITERT_DISABLE_CPU",
+        ],
+        "//conditions:default": [],
+    }),
     # We want `compatible_with = get_compatible_with_portable()` only
     # for the header target, not for the impl target, to avoid having
     # to propagage similar `compatible_with` declarations into all the
@@ -577,6 +589,7 @@ litert_c_api_library(
     deps = [
         ":litert_common",
         ":litert_custom_op_kernel",
+        ":litert_op_resolver",
     ],
 )
 
@@ -585,6 +598,7 @@ cc_test(
     srcs = ["litert_options_test.cc"],
     deps = [
         ":litert_common",
+        ":litert_op_resolver",
         ":litert_opaque_options",
         ":litert_options",
         "//litert/cc:litert_expected",
@@ -1260,6 +1274,7 @@ filegroup(
         "litert_model_types.h",
         "litert_op_code.h",
         "litert_op_options.h",
+        "litert_op_resolver.h",
         "litert_opaque_options.h",
         "litert_opencl_types.h",
         "litert_options.h",

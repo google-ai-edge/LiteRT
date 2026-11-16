@@ -41,10 +41,16 @@ cc_library(
     hdrs = ["op_resolver.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_options",
+        "//litert/cc/internal:litert_runtime_proxy_api",
         "//litert/core:options",
+        "//tflite:mutable_op_resolver",
+        "//tflite/c:common",
+        "//tflite/core/api:op_resolver",
+        "//tflite/schema:schema_fbs",
     ],
 )
 
@@ -61,12 +67,16 @@ cc_test(
         "op_resolver_test.cc",
         ":simple_model_selected_ops",
     ],
+    copts = select({
+        "//litert/build_common:litert_disable_cpu": ["-DLITERT_DISABLE_CPU"],
+        "//conditions:default": [],
+    }),
     data = [
         "//litert/test:testdata/simple_model.tflite",
+        "//litert/test:testdata/simple_model_custom_op.tflite",
     ],
     deps = [
         ":op_resolver",
-        "//litert/c:litert_common",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
@@ -81,7 +91,17 @@ cc_test(
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-    ],
+    ] + select({
+        "//litert/build_common:litert_disable_cpu": [
+            "//litert/c:litert_common",
+        ],
+        "//conditions:default": [
+            "//tflite:builtin_ops",
+            "//tflite/core/c:private_c_api_opaque_without_op_resolver",
+            "//tflite/core/c:private_common",
+            "@com_google_absl//absl/cleanup",
+        ],
+    }),
 )
 
 litert_cc_test(
@@ -91,9 +111,14 @@ litert_cc_test(
         ":simple_model_selected_ops",
     ],
     build_include = "cpu_only",
+    copts = select({
+        "//litert/build_common:litert_disable_cpu": ["-DLITERT_DISABLE_CPU"],
+        "//conditions:default": [],
+    }),
     cpu_backend = "selective",
     data = [
         "//litert/test:testdata/simple_model.tflite",
+        "//litert/test:testdata/simple_model_custom_op.tflite",
     ],
     tags = [
         "noios",
@@ -102,7 +127,6 @@ litert_cc_test(
     ],
     deps = [
         ":op_resolver",
-        "//litert/c:litert_common",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
@@ -117,7 +141,17 @@ litert_cc_test(
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-    ],
+    ] + select({
+        "//litert/build_common:litert_disable_cpu": [
+            "//litert/c:litert_common",
+        ],
+        "//conditions:default": [
+            "//tflite:builtin_ops",
+            "//tflite/core/c:private_c_api_opaque_without_op_resolver",
+            "//tflite/core/c:private_common",
+            "@com_google_absl//absl/cleanup",
+        ],
+    }),
 )
 
 litert_cc_library(
