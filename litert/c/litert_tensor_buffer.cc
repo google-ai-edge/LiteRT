@@ -459,7 +459,7 @@ LiteRtStatus LiteRtGetTensorBufferVulkanMemory(
 
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer, tensor_buffer->GetCustomBuffer());
 
-  *hw_memory_handle = custom_buffer->hw_buffer_handle();
+  *hw_memory_handle = custom_buffer->raw_handle();
   return kLiteRtStatusOk;
 #else
   return kLiteRtStatusErrorUnsupported;
