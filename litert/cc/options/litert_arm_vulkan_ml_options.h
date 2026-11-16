@@ -64,6 +64,19 @@ class ArmVulkanMLOptions : public ConcreteOptionsBase {
     return enable_just_in_time;
   }
 
+  Expected<void> SetDumpOpTimings(bool dump_op_timings) {
+    internal::AssertOk(LrtArmVulkanMLOptionsSetDumpOpTimings, Get(),
+                       dump_op_timings);
+    return {};
+  }
+
+  Expected<bool> GetDumpOpTimings() const {
+    bool dump_op_timings = false;
+    internal::AssertOk(LrtArmVulkanMLOptionsGetDumpOpTimings, Get(),
+                       &dump_op_timings);
+    return dump_op_timings;
+  }
+
   LrtArmVulkanMLOptions Get() const { return options_.get(); }
   LrtArmVulkanMLOptions Release() { return options_.release(); }
 

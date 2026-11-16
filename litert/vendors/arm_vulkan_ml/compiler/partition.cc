@@ -44,10 +44,19 @@
 #include "spirv/unified1/spirv.hpp"  // from @arm_vulkan_ml_dep_spirv_headers
 
 namespace litert::arm_vulkan_ml {
+
+std::shared_ptr<const CompiledPartition> CompilePartition(
+    const Subgraph& subgraph, std::string& reason,
+    CompileTimingReport& timing) {
+  return CompilePartition(subgraph, reason, nullptr, nullptr,
+                          SoftmaxLutType::kAuto, 32, &timing);
+}
+
 std::shared_ptr<const CompiledPartition> CompilePartition(
     const Subgraph& subgraph, std::string& reason,
     std::vector<LoweringRecord>* diagnostics, OptimizationReport* optimization,
-    SoftmaxLutType softmax_lut, int rescale_multiplier_bits) {
+    SoftmaxLutType softmax_lut, int rescale_multiplier_bits,
+    CompileTimingReport* timing) {
   if (rescale_multiplier_bits != 16 && rescale_multiplier_bits != 32) {
     reason = "Rescale multiplier bits must be 16 or 32";
     return nullptr;
@@ -56,8 +65,16 @@ std::shared_ptr<const CompiledPartition> CompilePartition(
   // Import and optimize without allocating any TFSC result IDs. The operation
   // analysis is shared with partition selection; optimizations cannot add ops
   // to a partition that selection rejected.
+  absl::Time stage_start_time = absl::Now();
   std::optional<CompilerGraph> ir = ImportGraph(subgraph, reason, softmax_lut);
-  if (!ir || !OptimizeGraph(*ir, optimization, reason)) return nullptr;
+  if (!ir) return nullptr;
+  const double import_ms =
+      absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
+  stage_start_time = absl::Now();
+  if (!OptimizeGraph(*ir, optimization, reason)) return nullptr;
+  const double optimize_ms =
+      absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
+  stage_start_time = absl::Now();
   auto artifact = std::make_shared<CompiledPartition>();
   std::shared_ptr<tfsc::spirv::Module> module = tfsc::CreateModule();
   tfsc::tosa::Graph graph(module, artifact->entry_point);
@@ -247,6 +264,9 @@ std::shared_ptr<const CompiledPartition> CompilePartition(
     artifact->outputs.push_back(std::move(output));
   }
   graph.FinalizeGraph();
+  const double tfsc_emit_ms =
+      absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
+  stage_start_time = absl::Now();
   // Internal decompositions can use FP32 even with integer graph interfaces
   // (for example BUCKETIZE). Derive profile requirements from emitted types.
   for (const tfsc::spirv::Instruction& instruction : module->GetSpirvGraph()) {
@@ -307,6 +327,22 @@ std::shared_ptr<const CompiledPartition> CompilePartition(
     }
     optimization->compile_ms =
         absl::ToDoubleMilliseconds(absl::Now() - compile_start_time);
+  }
+  if (timing) {
+    timing->import_ms = import_ms;
+    timing->optimize_ms = optimize_ms;
+    timing->tfsc_emit_ms = tfsc_emit_ms;
+    timing->spirv_serialize_ms =
+        absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
+    timing->total_ms =
+        absl::ToDoubleMilliseconds(absl::Now() - compile_start_time);
+    timing->spirv_bytes = artifact->spirv.size() * sizeof(uint32_t);
+    timing->constant_count = artifact->constants.size();
+    timing->constant_bytes = 0;
+    for (const auto& constant : artifact->constants) {
+      timing->constant_bytes += constant.bytes.size();
+    }
+    timing->reused_constants = constants.reused;
   }
   return artifact;
 }

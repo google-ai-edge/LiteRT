@@ -27,14 +27,26 @@ namespace litert::arm_vulkan_ml {
 // synchronization and function-pointer lifetime.
 class VulkanInvocation {
  public:
+  struct CreateOptions {
+    bool allow_emulation = false;
+    bool dump_timings = false;
+  };
   static std::unique_ptr<VulkanInvocation> Create(
       std::shared_ptr<const CompiledPartition> artifact, bool allow_emulation,
       std::string& error);
+  static std::unique_ptr<VulkanInvocation> Create(
+      std::shared_ptr<const CompiledPartition> artifact,
+      const CreateOptions& options, std::string& error);
   // Internal dependency-injection entry point; resolver must outlive
   // invocation.
   static std::unique_ptr<VulkanInvocation> CreateWithResolver(
       std::shared_ptr<const CompiledPartition> artifact, bool allow_emulation,
       PFN_vkGetInstanceProcAddr resolver, std::string& error,
+      std::shared_ptr<HardwareBufferApi> hardware_api = nullptr);
+  static std::unique_ptr<VulkanInvocation> CreateWithResolver(
+      std::shared_ptr<const CompiledPartition> artifact,
+      const CreateOptions& options, PFN_vkGetInstanceProcAddr resolver,
+      std::string& error,
       std::shared_ptr<HardwareBufferApi> hardware_api = nullptr);
   ~VulkanInvocation();
   struct BufferRequirements {
@@ -49,7 +61,40 @@ class VulkanInvocation {
     uint64_t input_bytes = 0, output_bytes = 0;
     size_t imported_slots = 0;
   };
+  // Wall-clock stage durations (in milliseconds) and session scratch memory
+  // allocations recorded during Vulkan device setup and data-graph pipeline
+  // construction.
+  struct InitStatistics {
+    // Dynamic library load, instance creation, and instance proc resolution.
+    double dlopen_and_instance_ms = 0.0;
+    // Physical device enumeration and VK_ARM_tensors / VK_ARM_data_graph
+    // capability and TOSA profile queries.
+    double query_capabilities_ms = 0.0;
+    // Logical VkDevice creation, device proc resolution, and queue setup.
+    double create_device_ms = 0.0;
+    // Total wall-clock time for Vulkan device initialization prior to Build().
+    double device_setup_total_ms = 0.0;
+    // SPIR-V VkShaderModule creation duration.
+    double create_shader_module_ms = 0.0;
+    // Descriptor set layout/pool allocation and pipeline constant marshaling.
+    double descriptors_and_constants_ms = 0.0;
+    // vkCreateDataGraphPipelinesARM driver compilation duration.
+    double create_data_graph_pipeline_ms = 0.0;
+    // vkCreateDataGraphPipelineSessionARM duration.
+    double create_session_ms = 0.0;
+    // Session bind-point query, scratch memory allocation, and binding.
+    double session_memory_alloc_bind_ms = 0.0;
+    // Command pool, command buffer, and completion fence creation.
+    double cmd_pool_and_fence_ms = 0.0;
+    // Total wall-clock time spent inside Build().
+    double build_total_ms = 0.0;
+    // Number of VkDeviceMemory allocations bound to the data-graph session.
+    size_t session_memory_objects = 0;
+    // Total bytes requested across all bound session scratch memory objects.
+    size_t session_memory_bytes = 0;
+  };
   CopyStatistics Statistics() const;
+  InitStatistics InitStats() const;
   bool Run(const std::vector<const void*>& inputs,
            const std::vector<void*>& outputs, std::string& error);
 

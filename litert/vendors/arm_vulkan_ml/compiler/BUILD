@@ -271,6 +271,7 @@ litert_dynamic_lib(
         "//litert/cc/options:litert_arm_vulkan_ml_options",
         "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
         "//litert/vendors/c:litert_compiler_plugin_api",
+        "@com_google_absl//absl/time",
     ],
 )
 
@@ -341,7 +342,9 @@ cc_test(
         ":partition",
         ":softmax",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_expected",
         "//litert/cc/internal:litert_extended_model",
+        "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",

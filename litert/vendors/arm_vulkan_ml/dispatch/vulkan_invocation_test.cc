@@ -1787,6 +1787,37 @@ TEST_F(InvocationTest,
     EXPECT_EQ(fake_.submits, submits);
   }
 }
+TEST_F(InvocationTest,
+       CreateOptionsWithDumpTimingsPopulatesInitStatisticsAndRuns) {
+  VulkanInvocation::CreateOptions options;
+  options.allow_emulation = false;
+  options.dump_timings = true;
+  std::unique_ptr<VulkanInvocation> invocation =
+      VulkanInvocation::CreateWithResolver(FloatFixture(), options, Resolve,
+                                           error_);
+  ASSERT_NE(invocation, nullptr) << error_;
+
+  const VulkanInvocation::InitStatistics stats = invocation->InitStats();
+  EXPECT_GE(stats.dlopen_and_instance_ms, 0.0);
+  EXPECT_GE(stats.query_capabilities_ms, 0.0);
+  EXPECT_GE(stats.create_device_ms, 0.0);
+  EXPECT_GE(stats.device_setup_total_ms, 0.0);
+  EXPECT_GE(stats.create_shader_module_ms, 0.0);
+  EXPECT_GE(stats.descriptors_and_constants_ms, 0.0);
+  EXPECT_GE(stats.create_data_graph_pipeline_ms, 0.0);
+  EXPECT_GE(stats.create_session_ms, 0.0);
+  EXPECT_GE(stats.session_memory_alloc_bind_ms, 0.0);
+  EXPECT_GE(stats.cmd_pool_and_fence_ms, 0.0);
+  EXPECT_GE(stats.build_total_ms, 0.0);
+  EXPECT_EQ(stats.session_memory_objects, 3u);
+  EXPECT_EQ(stats.session_memory_bytes, 192u);
+
+  VulkanInvocation::BufferRequirements req;
+  ASSERT_TRUE(invocation->Requirements(0, req, error_)) << error_;
+  EXPECT_GT(req.bytes, 0u);
+  ASSERT_TRUE(Run(*invocation)) << error_;
+  ASSERT_TRUE(Run(*invocation)) << error_;
+}
 
 TEST_F(InvocationTest,
        ValidatesExternalBufferRegistrationOverlapAndInvocationErrorPaths) {

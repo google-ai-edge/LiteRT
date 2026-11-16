@@ -250,12 +250,14 @@ TEST(ArmVulkanMLCompilerPluginApiTest,
             kLiteRtStatusErrorUnsupported);
   api->destroy_compiler_plugin(non_jit);
 
-  // Verify compiled result bytecode, call info, and bounds checking.
+  // Exercise dump_op_timings = true across both partition and compile, then
+  // verify compiled result bytecode, call info, and bounds checking.
   auto timed_opts = Options::Create();
   ASSERT_TRUE(timed_opts);
   auto arm_opts = timed_opts->GetOptions<arm_vulkan_ml::ArmVulkanMLOptions>();
   ASSERT_TRUE(arm_opts);
   LITERT_ASSERT_OK(arm_opts->SetEnableJustInTime(true));
+  LITERT_ASSERT_OK(arm_opts->SetDumpOpTimings(true));
   auto env = Environment::Create({});
   ASSERT_TRUE(env);
   auto c_timed_opts =

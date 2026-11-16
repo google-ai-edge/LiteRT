@@ -27,6 +27,8 @@
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/vendors/arm_vulkan_ml/common/arm_vulkan_ml_jit_executable.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/graph_ir.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/partition.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/softmax.h"
@@ -792,6 +794,47 @@ TEST(OperationTest, Int16LutActivationsSoftmaxLayoutPoolAndSumCompile) {
       EXPECT_EQ(compiled->extensions, (std::vector<std::string>{"EXT-INT16"}));
     }
   }
+}
+
+TEST(OperationTest, CompilePartitionPopulatesTimingReport) {
+  std::vector<uint8_t> bytes = AddModel({1, 4}, {1, 4}, {1, 4});
+  std::unique_ptr<tflite::ModelT> unpacked = tflite::UnPackModel(bytes.data());
+  tflite::SubGraphT& graph = *unpacked->subgraphs[0];
+  graph.inputs = {0};
+  auto rhs_buffer = std::make_unique<tflite::BufferT>();
+  rhs_buffer->data = {1, 2, 3, 4};
+  graph.tensors[1]->buffer = unpacked->buffers.size();
+  unpacked->buffers.push_back(std::move(rhs_buffer));
+
+  flatbuffers::FlatBufferBuilder builder;
+  tflite::FinishModelBuffer(builder,
+                            tflite::Model::Pack(builder, unpacked.get()));
+  Expected<ExtendedModel> model = ExtendedModel::CreateFromBuffer(
+      BufferRef<uint8_t>(builder.GetBufferPointer(), builder.GetSize()));
+  ASSERT_TRUE(model);
+  Expected<Subgraph> subgraph = model->Subgraph(0);
+  ASSERT_TRUE(subgraph);
+
+  std::string reason;
+  CompileTimingReport timing;
+  std::shared_ptr<const CompiledPartition> compiled =
+      CompilePartition(*subgraph, reason, timing);
+  ASSERT_NE(compiled, nullptr) << reason;
+  EXPECT_GE(timing.import_ms, 0.0);
+  EXPECT_GE(timing.optimize_ms, 0.0);
+  EXPECT_GE(timing.tfsc_emit_ms, 0.0);
+  EXPECT_GE(timing.spirv_serialize_ms, 0.0);
+  EXPECT_GT(timing.total_ms, 0.0);
+  EXPECT_GT(timing.spirv_bytes, 0u);
+  EXPECT_EQ(timing.spirv_bytes, compiled->spirv.size() * sizeof(uint32_t));
+  EXPECT_GT(timing.constant_count, 0u);
+  EXPECT_EQ(timing.constant_count, compiled->constants.size());
+  size_t expected_constant_bytes = 0;
+  for (const ConstantTensor& constant : compiled->constants) {
+    expected_constant_bytes += constant.bytes.size();
+  }
+  EXPECT_GT(timing.constant_bytes, 0u);
+  EXPECT_EQ(timing.constant_bytes, expected_constant_bytes);
 }
 
 template <typename ModelResult>

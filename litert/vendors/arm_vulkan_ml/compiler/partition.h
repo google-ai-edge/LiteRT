@@ -36,6 +36,19 @@ struct LoweringRecord {
   std::vector<size_t> source_operators;
   std::string composite;
 };
+// Wall-clock stage breakdown (in milliseconds) and emitted SPIR-V / constant
+// payload sizes recorded during a single CompilePartition call.
+struct CompileTimingReport {
+  double import_ms = 0.0;
+  double optimize_ms = 0.0;
+  double tfsc_emit_ms = 0.0;
+  double spirv_serialize_ms = 0.0;
+  double total_ms = 0.0;
+  size_t spirv_bytes = 0;
+  size_t constant_count = 0;
+  size_t constant_bytes = 0;
+  size_t reused_constants = 0;
+};
 
 // Compiles `graph` into a `CompiledPartition` containing serialized TOSA
 // SPIR-V and constant descriptors, or populates `reason` and returns nullptr.
@@ -44,7 +57,9 @@ std::shared_ptr<const CompiledPartition> CompilePartition(
     std::vector<LoweringRecord>* diagnostics = nullptr,
     OptimizationReport* optimization = nullptr,
     SoftmaxLutType softmax_lut = SoftmaxLutType::kAuto,
-    int rescale_multiplier_bits = 32);
+    int rescale_multiplier_bits = 32, CompileTimingReport* timing = nullptr);
+std::shared_ptr<const CompiledPartition> CompilePartition(
+    const Subgraph& graph, std::string& reason, CompileTimingReport& timing);
 
 }  // namespace litert::arm_vulkan_ml
 #endif  // ODML_LITERT_LITERT_VENDORS_ARM_VULKAN_ML_COMPILER_PARTITION_H_

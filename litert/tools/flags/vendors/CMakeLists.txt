@@ -123,3 +123,21 @@ target_link_libraries(litert_tool_flags_samsung
         absl::flags
         litert_tool_flags_common
 )
+
+# Arm Vulkan ML flags
+add_library(litert_tool_flags_arm_vulkan_ml STATIC
+    arm_vulkan_ml_flags.cc
+)
+
+target_include_directories(litert_tool_flags_arm_vulkan_ml
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../../..>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(litert_tool_flags_arm_vulkan_ml
+    PUBLIC
+        absl::flags
+)

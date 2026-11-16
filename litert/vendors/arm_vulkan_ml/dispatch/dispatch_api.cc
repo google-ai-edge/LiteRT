@@ -29,6 +29,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_arm_vulkan_ml_options.h"
 #include "litert/vendors/arm_vulkan_ml/common/arm_vulkan_ml_jit_executable.h"
 #include "litert/vendors/arm_vulkan_ml/dispatch/buffer_events.h"
 #include "litert/vendors/arm_vulkan_ml/dispatch/external_buffer.h"
@@ -47,12 +48,44 @@ struct RegisteredBuffer {
 };
 struct DeviceState {
   const LiteRtRuntimeContext* runtime;
+  bool dump_op_timings = false;
   absl::Mutex mutex;
   uint64_t next_handle = 1;
   absl::flat_hash_map<LiteRtTensorBufferHandle,
                       std::shared_ptr<RegisteredBuffer>>
       buffers;
 };
+
+bool ParseDumpOpTimings(const LiteRtRuntimeContext* runtime,
+                        LiteRtOptions options) {
+  if (!runtime || !options || !runtime->get_opaque_options ||
+      !runtime->find_opaque_options_data) {
+    return false;
+  }
+  LiteRtOpaqueOptions opaque_options = nullptr;
+  if (runtime->get_opaque_options(options, &opaque_options) !=
+          kLiteRtStatusOk ||
+      !opaque_options) {
+    return false;
+  }
+  void* payload = nullptr;
+  if (runtime->find_opaque_options_data(opaque_options,
+                                        LrtArmVulkanMLOptionsGetIdentifier(),
+                                        &payload) != kLiteRtStatusOk ||
+      !payload) {
+    return false;
+  }
+  LrtArmVulkanMLOptions arm_options = nullptr;
+  if (LrtCreateArmVulkanMLOptionsFromToml(static_cast<const char*>(payload),
+                                          &arm_options) != kLiteRtStatusOk ||
+      !arm_options) {
+    return false;
+  }
+  bool dump_op_timings = false;
+  LrtArmVulkanMLOptionsGetDumpOpTimings(arm_options, &dump_op_timings);
+  LrtDestroyArmVulkanMLOptions(arm_options);
+  return dump_op_timings;
+}
 using litert::arm_vulkan_ml::TensorDescriptor;
 using litert::arm_vulkan_ml::TensorElement;
 using litert::arm_vulkan_ml::TensorElementBytes;
@@ -118,7 +151,7 @@ LiteRtStatus GetCapabilities(int* value) {
   return kLiteRtStatusOk;
 }
 LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime,
-                                 LiteRtOptions,
+                                 LiteRtOptions options,
                                  LiteRtDispatchDeviceContext* output) {
   if (!output) return kLiteRtStatusErrorInvalidArgument;
   *output = nullptr;
@@ -131,6 +164,7 @@ LiteRtStatus DeviceContextCreate(const LiteRtRuntimeContext* runtime,
   auto context = std::make_unique<LiteRtDispatchDeviceContextT>();
   context->state = std::make_shared<DeviceState>();
   context->state->runtime = runtime;
+  context->state->dump_op_timings = ParseDumpOpTimings(runtime, options);
   *output = context.release();
   return kLiteRtStatusOk;
 }
@@ -185,7 +219,7 @@ LiteRtStatus RegisterTensorBuffer(LiteRtDispatchDeviceContext context,
                                   LiteRtTensorBufferHandle* output) {
   if (!context || !buffer || !output) return kLiteRtStatusErrorInvalidArgument;
   auto& state = *context->state;
-  absl::MutexLock lock(&state.mutex);
+  absl::MutexLock lock(state.mutex);
   const auto* api = state.runtime;
   LiteRtTensorBufferType type;
   if (api->get_tensor_buffer_type(buffer, &type) != kLiteRtStatusOk ||
@@ -237,7 +271,7 @@ LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext context,
                                     LiteRtTensorBufferHandle handle) {
   if (!context) return kLiteRtStatusErrorInvalidArgument;
   auto& state = *context->state;
-  absl::MutexLock lock(&state.mutex);
+  absl::MutexLock lock(state.mutex);
   auto found = state.buffers.find(handle);
   if (found == state.buffers.end() || found->second.use_count() != 1)
     return kLiteRtStatusErrorInvalidArgument;
@@ -273,12 +307,40 @@ LiteRtStatus InvocationContextCreate(const LiteRtRuntimeContext*,
   context->outputs.resize(num_outputs);
   const char* option = std::getenv("LITERT_ARM_VULKAN_ML_ALLOW_EMULATION");
   bool allow_emulation = option && !std::strcmp(option, "1");
+  const bool dump_timings = device->state->dump_op_timings;
+  VulkanInvocation::CreateOptions invocation_options;
+  invocation_options.allow_emulation = allow_emulation;
+  invocation_options.dump_timings = dump_timings;
   std::string error;
   context->invocation =
-      VulkanInvocation::Create(context->artifact, allow_emulation, error);
+      VulkanInvocation::Create(context->artifact, invocation_options, error);
   if (!context->invocation) {
     std::fprintf(stderr, "ArmVulkanML: %s\n", error.c_str());
     return kLiteRtStatusErrorRuntimeFailure;
+  }
+  if (dump_timings) {
+    const VulkanInvocation::InitStatistics init_stats =
+        context->invocation->InitStats();
+    std::fprintf(
+        stderr,
+        "[ArmVulkanML][Timing][VulkanInvocation::DeviceSetup] total=%.3f ms | "
+        "dlopen+vkCreateInstance=%.3f ms | QueryCapabilities=%.3f ms | "
+        "vkCreateDevice=%.3f ms\n"
+        "[ArmVulkanML][Timing][VulkanInvocation::Build] total=%.3f ms | "
+        "vkCreateShaderModule=%.3f ms | DescriptorsAndConstants=%.3f ms | "
+        "vkCreateDataGraphPipelinesARM=%.3f ms | "
+        "vkCreateDataGraphPipelineSessionARM=%.3f ms | "
+        "SessionMemoryAllocBind=%.3f ms (%zu objs, %zu bytes) | "
+        "CommandPoolAndFence=%.3f ms\n",
+        init_stats.device_setup_total_ms, init_stats.dlopen_and_instance_ms,
+        init_stats.query_capabilities_ms, init_stats.create_device_ms,
+        init_stats.build_total_ms, init_stats.create_shader_module_ms,
+        init_stats.descriptors_and_constants_ms,
+        init_stats.create_data_graph_pipeline_ms, init_stats.create_session_ms,
+        init_stats.session_memory_alloc_bind_ms,
+        init_stats.session_memory_objects, init_stats.session_memory_bytes,
+        init_stats.cmd_pool_and_fence_ms);
+    std::fflush(stderr);
   }
   *output = context.release();
   return kLiteRtStatusOk;
@@ -300,8 +362,8 @@ LiteRtStatus InvocationContextSetOptions(LiteRtDispatchInvocationContext c,
 LiteRtStatus Attach(LiteRtDispatchInvocationContext context, int index,
                     LiteRtTensorBufferHandle handle, bool input, bool detach) {
   if (!context || index < 0) return kLiteRtStatusErrorInvalidArgument;
-  absl::MutexLock invocation_lock(&context->mutex);
-  absl::MutexLock lock(&context->state->mutex);
+  absl::MutexLock invocation_lock(context->mutex);
+  absl::MutexLock lock(context->state->mutex);
   auto& slots = input ? context->inputs : context->outputs;
   const auto& descriptors =
       input ? context->artifact->inputs : context->artifact->outputs;
@@ -352,7 +414,7 @@ LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext c, int i,
 }
 LiteRtStatus Invoke(LiteRtDispatchInvocationContext context) {
   if (!context) return kLiteRtStatusErrorInvalidArgument;
-  absl::MutexLock lock(&context->mutex);
+  absl::MutexLock lock(context->mutex);
   const auto* api = context->state->runtime;
   struct Locks {
     const LiteRtRuntimeContext* api;

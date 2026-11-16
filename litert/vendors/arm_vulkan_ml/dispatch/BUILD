@@ -35,6 +35,7 @@ cc_library(
         "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
         "@arm_vulkan_ml_dep_vulkan_headers//:vulkan_headers",
         "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
     ],
 )
 
@@ -68,6 +69,7 @@ litert_dynamic_lib(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_runtime_context",
         "//litert/c/internal:litert_scheduling_info",
+        "//litert/c/options:litert_arm_vulkan_ml_options",
         "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -189,6 +191,7 @@ cc_library(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_runtime_context",
         "//litert/c/internal:litert_scheduling_info",
+        "//litert/c/options:litert_arm_vulkan_ml_options",
         "//litert/vendors/arm_vulkan_ml/common:arm_vulkan_ml_jit_executable",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/container:flat_hash_map",
