@@ -39,6 +39,15 @@ extern "C" {
 typedef struct TfLiteTensor TfLiteTensor;
 typedef struct AHardwareBuffer AHardwareBuffer;
 
+// Sync operations for host-memory tensor buffers with cached OpenCL mappings.
+typedef enum {
+  kLrtHostSyncToDevice = 0,
+  kLrtHostPrepareForDeviceWrite = 1,
+  kLrtHostSyncToHostOutputAsync = 2,
+  kLrtHostSyncToHostInputAsync = 3,
+  kLrtHostFinishSyncToHost = 4,
+} LrtTensorBufferHostSyncOp;
+
 /// A function table that contains LiteRT C APIs needed for Accelerators.
 ///
 /// @note This concrete type is shared with LiteRT runtime and Accelerators and
@@ -197,6 +206,17 @@ typedef struct LiteRtRuntimeContext {
       const LiteRtTensorBufferType* supported_tensor_buffer_types,
       size_t buffer_size, int num_strides, const uint32_t* strides,
       size_t alignment, LiteRtTensorBufferRequirements* requirements);
+
+  // Added in version 1.4.0
+  // Gets or lazily creates an OpenCL buffer view for a tensor buffer, falling
+  // back to `env` when the tensor buffer has no bound environment (e.g., an
+  // external host-memory buffer).
+  LiteRtStatus (*get_tensor_buffer_opencl_memory_with_env)(
+      LiteRtEnvironment env, LiteRtTensorBuffer tensor_buffer,
+      LiteRtClMem* cl_mem_addr);
+  // Synchronizes a host-memory tensor buffer with its cached OpenCL mapping.
+  LiteRtStatus (*sync_tensor_buffer_host_memory)(
+      LiteRtTensorBuffer tensor_buffer, LrtTensorBufferHostSyncOp op);
 } LiteRtRuntimeContext;
 // LINT.ThenChange(./litert_runtime_context.cc:runtime_context_version)
 
@@ -206,7 +226,7 @@ typedef struct LiteRtRuntimeContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtRuntimeContext) == 424,
+static_assert(sizeof(LiteRtRuntimeContext) == 440,
               "LiteRtRuntimeContext size mismatch");
 static_assert(offsetof(LiteRtRuntimeContext, abi_header) == 0,
               "LiteRtRuntimeContext abi_header offset mismatch");
@@ -360,9 +380,24 @@ static_assert(
              create_tensor_buffer_requirements_with_alignment) == 416,
     "LiteRtRuntimeContext create_tensor_buffer_requirements_with_alignment "
     "offset mismatch");
+static_assert(
+    offsetof(LiteRtRuntimeContext, get_tensor_buffer_opencl_memory_with_env) ==
+        424,
+    "LiteRtRuntimeContext get_tensor_buffer_opencl_memory_with_env offset "
+    "mismatch");
+static_assert(
+    offsetof(LiteRtRuntimeContext, sync_tensor_buffer_host_memory) == 432,
+    "LiteRtRuntimeContext sync_tensor_buffer_host_memory offset mismatch");
 #endif  // __cplusplus
 
 LiteRtRuntimeContext* LrtGetRuntimeContext();
+
+LiteRtStatus LrtGetTensorBufferOpenClMemoryWithEnv(
+    LiteRtEnvironment env, LiteRtTensorBuffer tensor_buffer,
+    LiteRtClMem* cl_mem_addr);
+
+LiteRtStatus LrtSyncTensorBufferHostMemory(LiteRtTensorBuffer tensor_buffer,
+                                           LrtTensorBufferHostSyncOp op);
 
 #ifdef __cplusplus
 }  // extern "C"

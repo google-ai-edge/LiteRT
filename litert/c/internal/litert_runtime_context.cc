@@ -33,7 +33,7 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
               .struct_size = sizeof(LiteRtRuntimeContext),
               // LINT.IfChange(runtime_context_version)
               .major_version = 1,
-              .minor_version = 3,
+              .minor_version = 4,
               // LINT.ThenChange(./litert_runtime_context.h:runtime_context_table)
               .reserved = 0,
           },
@@ -105,6 +105,11 @@ LiteRtRuntimeContext* LrtGetRuntimeContext() {
       .append_metric = LiteRtAppendMetric,
       .create_tensor_buffer_requirements_with_alignment =
           LiteRtCreateTensorBufferRequirementsWithAlignment,
+#if LITERT_HAS_OPENCL_SUPPORT
+      .get_tensor_buffer_opencl_memory_with_env =
+          LrtGetTensorBufferOpenClMemoryWithEnv,
+      .sync_tensor_buffer_host_memory = LrtSyncTensorBufferHostMemory,
+#endif  // LITERT_HAS_OPENCL_SUPPORT
   };
   return &context;
 }

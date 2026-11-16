@@ -23,6 +23,10 @@
 #include <utility>
 #include <vector>
 
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
 #include "absl/log/absl_check.h"  // from @com_google_absl
@@ -34,6 +38,7 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_platform_support.h"
@@ -183,6 +188,10 @@ class ClEnvironment {
     return environment_options;
   }
 
+  ::ml_drift::cl::CLCommandQueue* GetCommandQueue() {
+    return command_queue_.get();
+  }
+
  private:
   static Expected<void> CreateContext(GlEnvironment* gl_env,
                                       ::ml_drift::cl::CLDevice& device,
@@ -273,6 +282,12 @@ class UserGpuEnvironment {
   }
 
   litert::Environment& GetEnvironment() { return env_; }
+
+#if LITERT_HAS_OPENCL_SUPPORT
+  ::ml_drift::cl::CLCommandQueue* GetOpenClCommandQueue() {
+    return cl_env_ ? cl_env_->GetCommandQueue() : nullptr;
+  }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
  private:
   std::unique_ptr<GlEnvironment> gl_env_;
@@ -1556,6 +1571,169 @@ TEST(TensorBuffer, GetCustomHandleFailsForNonCustomBuffer) {
                                   RankedTensorType(kTestTensorType),
                                   sizeof(kTensorData)));
   EXPECT_FALSE(tensor_buffer.GetCustomHandle());
+}
+
+TEST(TensorBuffer, HostMemoryOpenClCachingAndCoherence) {
+  if (!HasOpenClSupport()) {
+    GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
+                    "skipping the test";
+  }
+  if (!CanLoadOpenCl()) {
+    GTEST_SKIP() << "OpenCL library could not be loaded; skipping the test";
+  }
+#if defined(_WIN32) || !LITERT_HAS_OPENCL_SUPPORT
+  GTEST_SKIP() << "OpenCL HostMemory interop is not tested on this platform.";
+#elif defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN/TSAN.";
+#else
+  auto user_gpu_env = UserGpuEnvironment::Create(/*create_gl_env=*/false);
+  ASSERT_NE(user_gpu_env, nullptr);
+  ::ml_drift::cl::CLCommandQueue* queue = user_gpu_env->GetOpenClCommandQueue();
+  ASSERT_NE(queue, nullptr);
+
+  int64_t sys_page_size = sysconf(_SC_PAGESIZE);
+  const size_t host_alignment =
+      std::max<size_t>(sys_page_size > 0 ? static_cast<size_t>(sys_page_size)
+                                         : LITERT_HOST_MEMORY_BUFFER_ALIGNMENT,
+                       LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
+
+  constexpr TensorBufferType kSupportedTypes[] = {
+      TensorBufferType::kHostMemory, TensorBufferType::kOpenClBuffer};
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto reqs, TensorBufferRequirements::CreateWithAlignment(
+                     absl::MakeConstSpan(kSupportedTypes), sizeof(kTensorData),
+                     host_alignment));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto tensor_buffer,
+                              TensorBuffer::CreateManagedFromRequirements(
+                                  user_gpu_env->GetEnvironment(),
+                                  RankedTensorType(kTestTensorType), reqs));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type, tensor_buffer.BufferType());
+  ASSERT_EQ(buffer_type, TensorBufferType::kHostMemory);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtClMem cl_mem_1,
+                              tensor_buffer.GetOpenClMemory());
+  ASSERT_NE(cl_mem_1, nullptr);
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtClMem cl_mem_2,
+                              tensor_buffer.GetOpenClMemory());
+  EXPECT_EQ(cl_mem_2, cl_mem_1);
+
+  // Write on CPU via Lock/Unlock and verify OpenCL side observes the data.
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr, TensorBufferScopedLock::Create(
+                                tensor_buffer, TensorBuffer::LockMode::kWrite));
+    EXPECT_EQ(
+        reinterpret_cast<uintptr_t>(lock_and_addr.second) % host_alignment, 0u);
+    std::memcpy(lock_and_addr.second, kTensorData, sizeof(kTensorData));
+  }
+  std::vector<float> cl_readback(4, 0.0f);
+  ASSERT_EQ(::ml_drift::cl::clEnqueueReadBuffer(
+                queue->queue(), cl_mem_1, CL_TRUE, 0, sizeof(kTensorData),
+                cl_readback.data(), 0, nullptr, nullptr),
+            CL_SUCCESS);
+  for (size_t i = 0; i < 4; ++i) {
+    EXPECT_FLOAT_EQ(cl_readback[i], kTensorData[i]);
+  }
+
+  // Write on OpenCL side and verify CPU Lock(kRead) syncs the device data.
+  const std::vector<float> gpu_data = {101.0f, 202.0f, 303.0f, 404.0f};
+  ASSERT_EQ(::ml_drift::cl::clEnqueueWriteBuffer(
+                queue->queue(), cl_mem_1, CL_TRUE, 0, sizeof(kTensorData),
+                gpu_data.data(), 0, nullptr, nullptr),
+            CL_SUCCESS);
+  std::vector<float> host_readback(4, 0.0f);
+  LITERT_ASSERT_OK(tensor_buffer.Read<float>(absl::MakeSpan(host_readback)));
+  for (size_t i = 0; i < 4; ++i) {
+    EXPECT_FLOAT_EQ(host_readback[i], gpu_data[i]);
+  }
+
+  // Clear() zeros the host buffer and Lock(kWrite)/Unlock flushes zeros to CL.
+  LITERT_ASSERT_OK(tensor_buffer.Clear());
+  LITERT_ASSERT_OK(tensor_buffer.Read<float>(absl::MakeSpan(host_readback)));
+  for (size_t i = 0; i < 4; ++i) {
+    EXPECT_FLOAT_EQ(host_readback[i], 0.0f);
+  }
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr, TensorBufferScopedLock::Create(
+                                tensor_buffer, TensorBuffer::LockMode::kWrite));
+    (void)lock_and_addr;
+  }
+  ASSERT_EQ(::ml_drift::cl::clEnqueueReadBuffer(
+                queue->queue(), cl_mem_1, CL_TRUE, 0, sizeof(kTensorData),
+                cl_readback.data(), 0, nullptr, nullptr),
+            CL_SUCCESS);
+  for (size_t i = 0; i < 4; ++i) {
+    EXPECT_FLOAT_EQ(cl_readback[i], 0.0f);
+  }
+#endif
+}
+
+TEST(TensorBuffer, HostMemoryGetOpenClMemoryRejectsMissingEnvOrUnaligned) {
+  if (!HasOpenClSupport()) {
+    GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
+                    "skipping the test";
+  }
+  if (!CanLoadOpenCl()) {
+    GTEST_SKIP() << "OpenCL library could not be loaded; skipping the test";
+  }
+#if defined(_WIN32) || !LITERT_HAS_OPENCL_SUPPORT
+  GTEST_SKIP() << "OpenCL HostMemory interop is not tested on this platform.";
+#elif defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN/TSAN.";
+#else
+  // Managed HostMemory created on a CPU-only environment cannot obtain an
+  // OpenCL handle.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto cpu_env, litert::Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto cpu_buffer,
+      TensorBuffer::CreateManaged(cpu_env, TensorBufferType::kHostMemory,
+                                  RankedTensorType(kTestTensorType),
+                                  sizeof(kTensorData)));
+  EXPECT_THAT(cpu_buffer.GetOpenClMemory(), IsError());
+
+  // Unmanaged 5-arg HostMemory has no bound environment: the zero-arg wrapper
+  // rejects missing env even when page-aligned, whereas passing an explicit
+  // fallback env succeeds for page-aligned pointers and rejects sub-page
+  // alignment with kLiteRtStatusErrorInvalidArgument.
+  auto user_gpu_env = UserGpuEnvironment::Create(/*create_gl_env=*/false);
+  ASSERT_NE(user_gpu_env, nullptr);
+  int64_t sys_page_size = sysconf(_SC_PAGESIZE);
+  const size_t host_alignment =
+      std::max<size_t>(sys_page_size > 0 ? static_cast<size_t>(sys_page_size)
+                                         : LITERT_HOST_MEMORY_BUFFER_ALIGNMENT,
+                       LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
+  void* raw_mem = nullptr;
+  ASSERT_EQ(::posix_memalign(&raw_mem, host_alignment, host_alignment * 2), 0);
+  std::memset(raw_mem, 0, host_alignment * 2);
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto aligned_buffer,
+        TensorBuffer::CreateFromHostMemory(user_gpu_env->GetEnvironment(),
+                                           RankedTensorType(kTestTensorType),
+                                           raw_mem, sizeof(kTensorData)));
+    EXPECT_THAT(aligned_buffer.GetOpenClMemory(),
+                IsError(kLiteRtStatusErrorRuntimeFailure));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        LiteRtClMem aligned_cl_mem,
+        static_cast<LiteRtTensorBufferT*>(aligned_buffer.Get())
+            ->GetOpenClMemory(user_gpu_env->GetEnvironment().Get()));
+    EXPECT_NE(aligned_cl_mem, nullptr);
+
+    uint8_t* unaligned_ptr = static_cast<uint8_t*>(raw_mem) + 64;
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto unaligned_buffer,
+        TensorBuffer::CreateFromHostMemory(user_gpu_env->GetEnvironment(),
+                                           RankedTensorType(kTestTensorType),
+                                           unaligned_ptr, sizeof(kTensorData)));
+    EXPECT_THAT(unaligned_buffer.GetOpenClMemory(),
+                IsError(kLiteRtStatusErrorRuntimeFailure));
+    EXPECT_THAT(static_cast<LiteRtTensorBufferT*>(unaligned_buffer.Get())
+                    ->GetOpenClMemory(user_gpu_env->GetEnvironment().Get()),
+                IsError(kLiteRtStatusErrorInvalidArgument));
+  }
+  litert_aligned_free(raw_mem);
+#endif
 }
 
 }  // namespace

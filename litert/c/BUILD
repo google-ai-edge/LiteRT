@@ -421,6 +421,7 @@ litert_c_api_library(
         ":litert_event",
         "@com_google_absl//absl/types:span",
         "//litert/c/internal:litert_logging",
+        "//litert/c/internal:litert_runtime_context_header",
         "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -429,7 +430,12 @@ litert_c_api_library(
         "//litert/runtime:tensor_buffer_requirements",
         "@opencl_headers",
         ":litert_tensor_buffer_requirements_impl",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_gpu_enabled": [
+            "//litert/runtime:open_cl_memory",
+        ],
+        "//conditions:default": [],
+    }),
     linkopts = litert_android_linkopts() + gles_linkopts() + litert_metal_linkopts(),
     deps = [
         ":litert_common",

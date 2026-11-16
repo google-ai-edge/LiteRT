@@ -1229,6 +1229,7 @@ cc_test(
 #         "//litert/c:litert_environment",
 #         "//litert/c:litert_environment_options",
 #         "//litert/c:litert_model_types",
+#         "//litert/c:litert_opencl_types",
 #         "//litert/c:litert_tensor_buffer",
 #         "//litert/c:litert_tensor_buffer_types",
 #         "//litert/c/internal:litert_tensor_buffer_registry",
