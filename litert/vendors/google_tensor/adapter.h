@@ -23,6 +23,7 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert::google_tensor {
@@ -31,6 +32,16 @@ namespace litert::google_tensor {
 struct UnsupportedOp {
   int32_t op_index;
   std::string reason;
+};
+
+// Describes a composite operation, including its name and the element and
+// quantization types of its operands and results, for support validation.
+struct CompositeOpDescriptor {
+  std::string name;
+  std::vector<LiteRtElementType> operand_types;
+  std::vector<LiteRtElementType> result_types;
+  std::vector<LiteRtQuantizationTypeId> operand_quantization_types;
+  std::vector<LiteRtQuantizationTypeId> result_quantization_types;
 };
 
 // This class adapts the google tensor compiler API for dynamic loading.
@@ -66,17 +77,40 @@ class Adapter {
       const char* tfl_buffer_data, size_t tfl_buffer_size, const char* options,
       size_t options_size) = 0;
 
-  // Checks if multiple named composite ops are supported.
-  // Returns a vector of booleans corresponding to each composite in
-  // composite_names.
+  // Checks whether each composite op in `composite_ops` (including operand and
+  // result element and quantization types) is supported under the given
+  // serialized `options` (may be nullptr when `options_size == 0`).
+  // Returns `kLiteRtStatusErrorUnsupported` by default for Adapter subclasses
+  // that do not support standalone composite validation (e.g., `AdapterOdc`).
   virtual Expected<std::vector<bool>> AreCompositesSupported(
-      absl::Span<const std::string> composite_names, const char* options,
-      size_t options_size) {
+      absl::Span<const CompositeOpDescriptor> composite_ops,
+      const char* options, size_t options_size) {
     return litert::Unexpected(kLiteRtStatusErrorUnsupported,
                               "AreCompositesSupported is not supported");
   }
 
-  // Checks if multiple named composite ops are supported without options.
+  // Checks if multiple composite ops are supported without options.
+  Expected<std::vector<bool>> AreCompositesSupported(
+      absl::Span<const CompositeOpDescriptor> composite_ops) {
+    return AreCompositesSupported(composite_ops, nullptr, 0);
+  }
+
+  // Checks whether each composite op in `composite_names` is supported by op
+  // name only (without validating operand or result element and quantization
+  // types). Prefer the `CompositeOpDescriptor` overload above when tensor types
+  // are available.
+  virtual Expected<std::vector<bool>> AreCompositesSupported(
+      absl::Span<const std::string> composite_names, const char* options,
+      size_t options_size) {
+    std::vector<CompositeOpDescriptor> descriptors;
+    descriptors.reserve(composite_names.size());
+    for (const std::string& name : composite_names) {
+      descriptors.push_back(CompositeOpDescriptor{.name = name});
+    }
+    return AreCompositesSupported(descriptors, options, options_size);
+  }
+
+  // Checks composite op support by name only, without compiler options.
   Expected<std::vector<bool>> AreCompositesSupported(
       absl::Span<const std::string> composite_names) {
     return AreCompositesSupported(composite_names, nullptr, 0);
