@@ -308,7 +308,7 @@ class Builder {
   /// updating use-def chains on both tensors.
   Expected<void> SetOpInput(const Op& op, LiteRtParamIndex input_index,
                             const Tensor& new_tensor) const {
-    if (!ctx_->set_op_input) {
+    if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, set_op_input)) {
       return Unexpected(kLiteRtStatusErrorUnsupported);
     }
     LITERT_RETURN_IF_ERROR(

@@ -61,6 +61,56 @@ TEST(LiteRtBuilderTest, EraseOpNullBuilderReturnsError) {
             kLiteRtStatusErrorInvalidArgument);
 }
 
+TEST(LiteRtBuilderTest, CanSetOpInput) {
+  LiteRtBuilderT builder;
+  LiteRtTensorT old_tensor;
+  LiteRtTensorT other_tensor;
+  LiteRtTensorT new_tensor;
+  LiteRtTensorT output_tensor;
+  LiteRtOp op;
+  std::vector<LiteRtTensor> inputs = {&old_tensor, &other_tensor};
+  std::vector<LiteRtTensor> outputs = {&output_tensor};
+  LITERT_ASSERT_OK(LiteRtBuilderBuildOp(&builder, kLiteRtOpCodeTflAdd,
+                                        inputs.size(), inputs.data(),
+                                        outputs.size(), outputs.data(), &op));
+  op->Inputs()[0] = &old_tensor;
+  old_tensor.Users().push_back(op);
+  old_tensor.UserArgInds().push_back(0);
+
+  LITERT_ASSERT_OK(LiteRtBuilderSetOpInput(&builder, op, 0, &new_tensor));
+
+  EXPECT_THAT(op->Inputs(), ElementsAre(&new_tensor, &other_tensor));
+  EXPECT_EQ(old_tensor.NumUses(), 0);
+  ASSERT_EQ(new_tensor.NumUses(), 1);
+  auto [user, arg_ind] = new_tensor.GetUse(0);
+  EXPECT_EQ(user, op);
+  EXPECT_EQ(arg_ind, 0);
+}
+
+TEST(LiteRtBuilderTest, SetOpInputNullArgumentsReturnError) {
+  LiteRtBuilderT builder;
+  LiteRtOpT op;
+  LiteRtTensorT tensor;
+  EXPECT_EQ(LiteRtBuilderSetOpInput(nullptr, &op, 0, &tensor),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtBuilderSetOpInput(&builder, nullptr, 0, &tensor),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtBuilderSetOpInput(&builder, &op, 0, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(LiteRtBuilderTest, SetOpInputOutOfRangeIndexReturnsError) {
+  LiteRtBuilderT builder;
+  LiteRtOpT op;
+  LiteRtTensorT input_tensor;
+  LiteRtTensorT new_tensor;
+  op.Inputs().push_back(&input_tensor);
+  EXPECT_EQ(LiteRtBuilderSetOpInput(&builder, &op, 1, &new_tensor),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_THAT(op.Inputs(), ElementsAre(&input_tensor));
+  EXPECT_EQ(new_tensor.NumUses(), 0);
+}
+
 TEST(LiteRtBuilderTest, CanBuildUnrankedTensor) {
   LiteRtBuilderT builder;
   LiteRtTensor tensor;
