@@ -42,6 +42,7 @@ add_library(samsung_compiler_plugin SHARED
     builders/l2normalization_op_builder.cc
     builders/leakyrelu_op_builder.cc
     builders/logistic_op_builder.cc
+    builders/op_wrapper.cc
     builders/pad_op_builder.cc
     builders/pool2d_op_builder.cc
     builders/quantize_op_builder.cc
