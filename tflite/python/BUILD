@@ -32,7 +32,6 @@ package(
         "@org_tensorflow//tensorflow:internal",
         "@org_tensorflow//third_party/odml/infra/genai/conversion:__subpackages__",
         "@org_tensorflow//third_party/odml/litert:__subpackages__",
-        "@org_tensorflow//third_party/odml/model_customization/quantization:__subpackages__",
         "@org_tensorflow//third_party/py/ai_edge_torch:__subpackages__",
         "@org_tensorflow//third_party/py/litert_torch:__subpackages__",
         "@org_tensorflow//third_party/py/tensorflow_federated:__subpackages__",
