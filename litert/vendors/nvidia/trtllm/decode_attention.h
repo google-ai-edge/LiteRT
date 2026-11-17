@@ -90,26 +90,39 @@ struct LiteRtNvidiaQuantAttentionParams {
   int32_t cache_bits;  // 8 or 4
 };
 
+// Which kernels the quantized decode attention takes: 1 the exact ones, 0 the
+// fast ones, -1 (the initial state) what LITERT_NVIDIA_QUANT_ATTENTION_EXACT
+// said when the first launch asked.
+extern "C" void LiteRtNvidiaSetQuantAttentionExact(int32_t exact);
+
 // Depth 256, at most 16 rows, and caches of 8 or 4 bits.
 extern "C" bool LiteRtNvidiaQuantDecodeAttentionSupports(int32_t rows,
                                                          int32_t depth,
                                                          int32_t cache_bits);
 
 // Decode attention over quantized caches: q [heads, rows, depth] (FP16 or
-// BF16) is the query before its QUANTIZE (or its dequantized value). The
-// kernels compute the decomposition of odml.sdpa_transposed tensor by tensor
-// with the operations of LiteRT's CPU backend (XNNPACK on x86 with AVX2, FMA3
-// and F16C), so that an FP16 result has the CPU's bits: the query quantized
-// to INT8 as XNNPACK converts a FLOAT16 tensor (times the reciprocal of the
-// scale rounded to FLOAT16, half to even, saturated) and dequantized to
-// FLOAT16 with the scale rounded to FLOAT16; a score one fused multiply-add
-// per depth element with the key dequantized to fp32, then cast to FLOAT16;
-// scores where the mask is false become `fill`; XNNPACK's softmax of a
-// FLOAT16 tensor, which gives no weight at all to a key 9.7 below the
-// largest score and rounds the others to FLOAT16; and
-//   out[h][r] = weights . values[h]
-// one fused multiply-add per key in the cache's order, cast to q's type
-// (trtllm/quant_attention_reference.h is the same on the host).
+// BF16) is the query before its QUANTIZE (or its dequantized value), which
+// the kernels quantize to INT8 as XNNPACK converts a FLOAT16 tensor (times
+// the reciprocal of the scale rounded to FLOAT16, half to even, saturated)
+// and dequantize to FLOAT16 with the scale rounded to FLOAT16. A score is
+// the sum of the products with the key's values times k_scale, cast to
+// FLOAT16; scores where the mask is false become `fill`, and
+//   out[h][r] = softmax_j(scores) . values[h]
+// in q's type. There are two sets of kernels:
+//  - The fast ones (the default) fold the softmax in chunk by chunk in fp32.
+//    Their weights are not the graph's: its SOFTMAX is XNNPACK's on a FLOAT16
+//    tensor, which gives no weight at all to a key 9.7 below the largest
+//    score, takes exp() from a second-degree polynomial and rounds every
+//    weight to FLOAT16. Many values of the result differ from the CPU's by a
+//    unit of FLOAT16.
+//  - The exact ones (LITERT_NVIDIA_QUANT_ATTENTION_EXACT=1 in the
+//    environment of the process, or LiteRtNvidiaSetQuantAttentionExact)
+//    compute the decomposition of odml.sdpa_transposed tensor by tensor with
+//    the operations of LiteRT's CPU backend in its order (XNNPACK on x86 with
+//    AVX2, FMA3 and F16C; trtllm/quant_attention_reference.h is the same on
+//    the host): an FP16 result has the CPU's bits. A row's values are one
+//    chain of multiply-adds over the keys with a weight, so a step over a
+//    ring of 512 keys costs 60 us where the fast kernels take 6.
 // mask is [mask_rows, cache_len] bool, mask_rows a divisor of
 // `rows`: row r reads mask row r % mask_rows, the order of mask_rows tokens
 // under rows / mask_rows query heads. Chunks of keys no row sees are not
@@ -117,8 +130,10 @@ extern "C" bool LiteRtNvidiaQuantDecodeAttentionSupports(int32_t rows,
 // and a row that sees no key gets zero; with a finite fill such a row has no
 // defined result. `workspace` needs
 // LiteRtNvidiaDecodeAttentionWorkspaceBytes(heads, rows, cache_len, depth)
-// bytes. Two launches: the scores of the chunks of the keys, then the softmax
-// and the values of every row.
+// bytes. Two launches: one over the chunks of the keys and one that combines
+// them, or (exact) the scores and then the softmax and the values of every
+// row (LiteRtNvidiaLaunchQuantDecodeAttentionUpdate can do the fast ones in
+// one).
 extern "C" cudaError_t LiteRtNvidiaLaunchQuantDecodeAttention(
     const void* q, bool q_bf16, const void* k, const void* v,
     const LiteRtNvidiaQuantAttentionParams* params, const bool* mask,
@@ -151,9 +166,12 @@ extern "C" size_t LiteRtNvidiaQuantDecodeAttentionStateBytes(int32_t heads,
 // LiteRtNvidiaLaunchQuantDecodeAttention over the updated caches, with the
 // same results bit for bit, in the attention's launches alone: every block
 // writes the token's quantized rows into the caches before it reads them. A
-// null token writes nothing. `state` is no longer read: the one launch it
-// counted the blocks of folded the softmax in chunk by chunk, which is not
-// the decomposition's arithmetic.
+// null token writes nothing. With a `state` the fast attention is one launch
+// when that is the faster way: a block per chunk of 64 keys and query row, as
+// long as the device has a multiprocessor for each (the ring of 512 keys of a
+// decode step on a desktop GPU); the last of a row's blocks combines them,
+// counted in the state, which no two launches in flight may share. Otherwise,
+// with a null state, and for the exact kernels, two launches.
 extern "C" cudaError_t LiteRtNvidiaLaunchQuantDecodeAttentionUpdate(
     const void* q, bool q_bf16, void* k, void* v,
     const LiteRtNvidiaQuantCacheToken* token,

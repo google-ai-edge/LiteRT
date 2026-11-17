@@ -440,76 +440,86 @@ TEST(QuantDecodeAttentionTest, MatchesTheDecomposition) {
         Case{4, 448, kGroup, 1, 300, false}, Case{8, 200, kGroup, 1, 150, true},
         Case{4, 37, kGroup, 1, 20, false}, Case{8, kRing, 16, 16, 400, false},
         Case{4, 2048, 12, 12, 1500, false}}) {
-    SCOPED_TRACE(::testing::Message()
-                 << "bits=" << c.bits << " cache_len=" << c.cache_len
-                 << " rows=" << c.rows << " mask_rows=" << c.mask_rows
-                 << " step=" << c.step << " bf16=" << c.bf16);
-    Random random(seed++);
-    const LiteRtNvidiaQuantAttentionParams params = {
-        0.006f, c.bits == 8 ? 0.039f : 0.3825f, c.bits == 8 ? 0.0518f : 0.7136f,
-        c.bits};
-    const Caches caches = RandomCaches(c.cache_len, c.bits, &random);
-    const Query query = RandomQuery(c.rows, params.q_scale, c.bf16, &random);
-    // Mask row r: the ring's (or the causal) mask of position step - r, so
-    // every row sees a key.
-    std::vector<uint8_t> mask;
-    for (int r = 0; r < c.mask_rows; ++r) {
-      std::vector<uint8_t> row(c.cache_len, 0);
-      if (c.bits == 8 && c.cache_len == kRing) {
-        row = RingDecodeMask(kRing, c.step - r, kRing);
-      } else {
-        std::fill(row.begin(), row.begin() + c.step - r + 1, 1);
+    for (const bool exact : {false, true}) {
+      SCOPED_TRACE(::testing::Message()
+                   << "bits=" << c.bits << " cache_len=" << c.cache_len
+                   << " rows=" << c.rows << " mask_rows=" << c.mask_rows
+                   << " step=" << c.step << " bf16=" << c.bf16
+                   << " exact=" << exact);
+      LiteRtNvidiaSetQuantAttentionExact(exact ? 1 : 0);
+      Random random(seed);
+      const LiteRtNvidiaQuantAttentionParams params = {
+          0.006f, c.bits == 8 ? 0.039f : 0.3825f,
+          c.bits == 8 ? 0.0518f : 0.7136f, c.bits};
+      const Caches caches = RandomCaches(c.cache_len, c.bits, &random);
+      const Query query = RandomQuery(c.rows, params.q_scale, c.bf16, &random);
+      // Mask row r: the ring's (or the causal) mask of position step - r, so
+      // every row sees a key.
+      std::vector<uint8_t> mask;
+      for (int r = 0; r < c.mask_rows; ++r) {
+        std::vector<uint8_t> row(c.cache_len, 0);
+        if (c.bits == 8 && c.cache_len == kRing) {
+          row = RingDecodeMask(kRing, c.step - r, kRing);
+        } else {
+          std::fill(row.begin(), row.begin() + c.step - r + 1, 1);
+        }
+        mask.insert(mask.end(), row.begin(), row.end());
       }
-      mask.insert(mask.end(), row.begin(), row.end());
-    }
-    const auto q = Upload(query.bits);
-    const auto k = Upload(StoredCache(caches.k, c.bits));
-    const auto v = Upload(StoredCache(caches.v, c.bits));
-    const auto mask_device = Upload(mask);
-    auto out = AllocateCuda(query.bits.size() * 2);
-    auto workspace = AllocateCuda(LiteRtNvidiaDecodeAttentionWorkspaceBytes(
-        kHeads, c.rows, c.cache_len, kDepth));
-    ASSERT_TRUE(
-        LiteRtNvidiaQuantDecodeAttentionSupports(c.rows, kDepth, c.bits));
-    ASSERT_EQ(LiteRtNvidiaLaunchQuantDecodeAttention(
-                  q.get(), c.bf16, k.get(), v.get(), &params,
-                  static_cast<const bool*>(mask_device.get()), c.mask_rows,
-                  kHeads, c.rows, c.cache_len, kDepth, kSdpaFill, out.get(),
-                  workspace.get(), nullptr),
-              cudaSuccess);
-    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+      const auto q = Upload(query.bits);
+      const auto k = Upload(StoredCache(caches.k, c.bits));
+      const auto v = Upload(StoredCache(caches.v, c.bits));
+      const auto mask_device = Upload(mask);
+      auto out = AllocateCuda(query.bits.size() * 2);
+      auto workspace = AllocateCuda(LiteRtNvidiaDecodeAttentionWorkspaceBytes(
+          kHeads, c.rows, c.cache_len, kDepth));
+      ASSERT_TRUE(
+          LiteRtNvidiaQuantDecodeAttentionSupports(c.rows, kDepth, c.bits));
+      ASSERT_EQ(LiteRtNvidiaLaunchQuantDecodeAttention(
+                    q.get(), c.bf16, k.get(), v.get(), &params,
+                    static_cast<const bool*>(mask_device.get()), c.mask_rows,
+                    kHeads, c.rows, c.cache_len, kDepth, kSdpaFill, out.get(),
+                    workspace.get(), nullptr),
+                cudaSuccess);
+      ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
-    AttentionInputs reference;
-    reference.q = &query.quantized;
-    reference.rows = c.rows;
-    reference.q_scale = params.q_scale;
-    reference.k_scale = params.k_scale;
-    reference.v_scale = params.v_scale;
-    reference.caches = &caches;
-    reference.mask = &mask;
-    reference.mask_rows = c.mask_rows;
-    reference.fill = kSdpaFill;
-    const auto expected = litert::nvidia::quant_reference::Attention(reference);
-    const auto actual =
-        BitsToFloats(Download<uint16_t>(out, query.bits.size()), c.bf16);
-    if (!c.bf16) {
-      // The kernels compute the decomposition's tensors with the CPU
-      // backend's operations in its order: every value has the reference's
-      // bits.
-      size_t different = 0;
-      for (size_t i = 0; i < expected.size(); ++i) {
-        different += actual[i] != expected[i] ? 1 : 0;
+      AttentionInputs reference;
+      reference.q = &query.quantized;
+      reference.rows = c.rows;
+      reference.q_scale = params.q_scale;
+      reference.k_scale = params.k_scale;
+      reference.v_scale = params.v_scale;
+      reference.caches = &caches;
+      reference.mask = &mask;
+      reference.mask_rows = c.mask_rows;
+      reference.fill = kSdpaFill;
+      const auto expected =
+          litert::nvidia::quant_reference::Attention(reference);
+      const auto actual =
+          BitsToFloats(Download<uint16_t>(out, query.bits.size()), c.bf16);
+      if (exact && !c.bf16) {
+        // The exact kernels compute the decomposition's tensors with the CPU
+        // backend's operations in its order: every value has the reference's
+        // bits.
+        size_t different = 0;
+        for (size_t i = 0; i < expected.size(); ++i) {
+          different += actual[i] != expected[i] ? 1 : 0;
+        }
+        EXPECT_EQ(different, 0u) << "of " << expected.size() << " values";
+        continue;
       }
-      EXPECT_EQ(different, 0u) << "of " << expected.size() << " values";
-      continue;
+      // The fast kernels weigh the keys in fp32 and the reference with the
+      // graph's FLOAT16 softmax: the values reach 6.6 (INT8) or 5.7 (INT4),
+      // where an FP16 result is good to about 0.004; a BF16 one (either set of
+      // kernels) to 0.03.
+      const auto errors =
+          CompareRows(actual, expected, kDepth, c.bf16 ? 0.05f : 0.02f);
+      EXPECT_TRUE(RowsMatch(errors))
+          << errors.rows_off << " of " << errors.rows
+          << " rows are off, the largest error is " << errors.max_error;
     }
-    // A BF16 result is the same fp32 sum rounded to BF16: good to about 0.03
-    // at these values (up to 6.6).
-    const auto errors = CompareRows(actual, expected, kDepth, 0.05f);
-    EXPECT_TRUE(RowsMatch(errors))
-        << errors.rows_off << " of " << errors.rows
-        << " rows are off, the largest error is " << errors.max_error;
+    ++seed;
   }
+  LiteRtNvidiaSetQuantAttentionExact(-1);
 }
 
 // Zeroed device memory for the one-launch attention's counters.
