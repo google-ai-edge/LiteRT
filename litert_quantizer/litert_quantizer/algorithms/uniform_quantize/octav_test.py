@@ -611,6 +611,44 @@ class OctavQuantizeTest(parameterized.TestCase):
         f" ({min_max_mse:.6e}) for {distribution} INT{num_bits}.",
     )
 
+  def test_get_tensor_quant_params_int4_multiaxis_blockwise(self):
+    rng = np.random.default_rng(42)
+    weights = rng.normal(0.0, 1.0, size=(2, 3, 64)).astype(np.float32)
+    tensor_config = qtyping.TensorQuantizationConfig(
+        num_bits=4,
+        granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+        quantized_dimensions=(0, 1),
+    )
+    op_info = qtyping.OpInfo(
+        op=qtyping.OperatorT(),
+        op_name=qtyping.TFLOperationName.CUSTOM_OP,
+        subgraph_op_index=0,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=tensor_config
+        ),
+    )
+    quant_params = octav.get_tensor_quant_params(
+        op_info=op_info,
+        tensor_quant_config=tensor_config,
+        tensor_content=weights,
+    )
+    self.assertIsNone(quant_params.quantized_dimension)
+    self.assertEqual(quant_params.quantized_dimensions, (0, 1))
+    self.assertEqual(quant_params.block_size, 32)
+    self.assertEqual(quant_params.scale.shape, (2, 3, 2))
+    np.testing.assert_array_equal(
+        quant_params.zero_point, np.zeros((2, 3, 2), dtype=np.int8)
+    )
+    self.assertIsNotNone(quant_params.quantized_data)
+    q_data = cast(np.ndarray, quant_params.quantized_data)
+    self.assertEqual(q_data.shape, (2, 3, 64))
+    dequant = (
+        q_data.reshape(2, 3, 2, 32).astype(np.float32)
+        * quant_params.scale[..., np.newaxis]
+    )
+    mse = float(np.mean((dequant.reshape(weights.shape) - weights) ** 2))
+    self.assertLess(mse, 0.015)
+
 
 if __name__ == "__main__":
   absltest.main()
