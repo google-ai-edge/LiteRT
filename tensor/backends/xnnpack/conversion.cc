@@ -253,6 +253,15 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
           info.name, ": blockwise scale count (", bwq.scales.size(),
           ") is smaller than block_count (", expected_block_count, ")"));
     }
+    // XNNPACK's blockwise quantized values have a single zero point.
+    for (const int64_t zero_point : bwq.zero_points) {
+      if (zero_point != bwq.zero_points[0]) {
+        return absl::UnimplementedError(absl::StrCat(
+            info.name,
+            ": XNNPACK doesn't support blockwise quantization with different "
+            "zero points"));
+      }
+    }
     graph_->fp16_buffers().emplace_back(bwq.scales.begin(), bwq.scales.end());
     const void* scale_ptr = graph_->fp16_buffers().back().data();
     int32_t zero_point = bwq.zero_points.empty() ? 0 : bwq.zero_points[0];
