@@ -808,6 +808,11 @@ bool DCE(LiteRtSubgraphT& subgraph) {
 
   absl::flat_hash_set<const LiteRtTensorT*> referenced_tensors;
   for (const auto* tensor : subgraph.Tensors()) {
+    // A tensor this pass removes keeps nothing alive: the scales of a dead
+    // blockwise-quantized constant go with it.
+    if (IsTensorDead(*tensor) && !IsIO(subgraph, *tensor)) {
+      continue;
+    }
     if (tensor->Qparams().first == kLiteRtQuantizationBlockWise) {
       const auto& block_wise = tensor->Qparams().second.block_wise;
       if (block_wise.scales) {
