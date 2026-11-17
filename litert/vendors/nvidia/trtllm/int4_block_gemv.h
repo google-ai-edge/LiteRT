@@ -30,7 +30,12 @@
 //
 // `rows` activation rows, 1 for decode and up to
 // kLiteRtNvidiaInt4BlockGemvMaxRows for a verify step, share every weight
-// read. input_size must be a multiple of 32.
+// read. input_size must be a multiple of 32. Two or more rows (a verify step)
+// multiply on the tensor cores (BF16 MMA, FP32 accumulation): a nibble is an
+// exact BF16 value, a block's sum takes its scale after the block, and FP32
+// activations (a fused norm's scaled ones) enter as a BF16 high and low part.
+// Only the order of the FP32 sums and those activations' last bits differ
+// from one row's arithmetic, which a row alone keeps bit for bit.
 //
 // `gate` selects a gated feed-forward: the weights and scales then hold
 // 2 * output_size rows, the gate projection followed by the up projection,
@@ -103,12 +108,12 @@ struct LiteRtNvidiaMoeArena {
   int32_t expert_major;
   // A verify step's rows (2 to kLiteRtNvidiaInt4BlockGemvMaxRows) grouped by
   // expert (group_rows != 0, compact scales only): an expert's weights are
-  // read once for the rows routed to it instead of once per row, with every
-  // row's result unchanged.
-  // That is less memory traffic and more work per block: it pays where the
-  // device reads its weights at the host's memory bandwidth (an integrated
-  // GPU), and costs time where a discrete GPU's cache already serves the
-  // repeated reads (the RTX 5080: speculative decoding 9-13% slower).
+  // read once for the rows routed to it instead of once per row, the rows
+  // multiplied on the tensor cores (the rounding of the dense GEMV's rows).
+  // That is less memory traffic: it pays where the device reads its weights
+  // at the host's memory bandwidth (an integrated GPU), and gains nothing
+  // where a discrete GPU's cache already serves the repeated reads (the RTX
+  // 5080: the verify step's expert launch measured no faster grouped).
   int32_t group_rows;
 };
 

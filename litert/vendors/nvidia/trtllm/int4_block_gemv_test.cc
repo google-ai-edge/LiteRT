@@ -387,6 +387,109 @@ TEST(Int4BlockGemvTest, GatedFeedForwardMatchesCpuReference) {
   }
 }
 
+// Whether BF16 outputs `test` agree with `reference` to their rounding: each
+// within two units in the last place of the larger, or of a hundredth of
+// the outputs' RMS where they cancel to near zero. Returns the share of
+// bit-identical values.
+double ExpectBf16Close(const std::vector<uint16_t>& reference,
+                       const std::vector<uint16_t>& test) {
+  EXPECT_EQ(reference.size(), test.size());
+  double squares = 0.0;
+  for (const uint16_t value : reference) {
+    squares +=
+        static_cast<double>(Bf16BitsToFloat(value)) * Bf16BitsToFloat(value);
+  }
+  const float floor =
+      0.01f * static_cast<float>(
+                  std::sqrt(squares / std::max<size_t>(1, reference.size())));
+  size_t same = 0;
+  for (size_t i = 0; i < reference.size() && i < test.size(); ++i) {
+    same += reference[i] == test[i] ? 1 : 0;
+    const float a = Bf16BitsToFloat(reference[i]);
+    const float b = Bf16BitsToFloat(test[i]);
+    const float scale = std::max({std::fabs(a), std::fabs(b), floor});
+    EXPECT_LE(std::fabs(a - b), scale * (2.0f / 128.0f))
+        << "i=" << i << " " << a << " " << b;
+  }
+  return static_cast<double>(same) / std::max<size_t>(1, reference.size());
+}
+
+// A verify step's rows (2 or more) multiply on the tensor cores; a row alone
+// takes the FP32 kernel. The products agree to the outputs' rounding (most
+// bit for bit), plain, gated and with the norm fused, over the projections'
+// input sizes and a partial tile of channels.
+TEST(Int4BlockGemvTest, VerifyRowsMatchEachRowAlone) {
+  struct Case {
+    int n;
+    int k;
+    int gate;
+    bool norm;
+  };
+  const Case cases[] = {
+      {44, 704, 0, false},   {2816, 2112, 0, false}, {2816, 4096, 0, false},
+      {1000, 2816, 0, true}, {270, 2816, 1, true},   {136, 2112, 2, false},
+  };
+  for (const auto& c : cases) {
+    for (const int rows : {2, 5, 8}) {
+      SCOPED_TRACE(::testing::Message()
+                   << "n=" << c.n << " k=" << c.k << " gate=" << c.gate
+                   << " norm=" << c.norm << " rows=" << rows);
+      const int channels = c.gate != 0 ? 2 * c.n : c.n;
+      const std::vector<uint8_t> weights = MakeInt4Weights(channels, c.k, 11);
+      const std::vector<uint16_t> scales = MakeScales(channels, c.k, 11);
+      std::vector<uint16_t> activation(static_cast<size_t>(rows) * c.k);
+      for (size_t i = 0; i < activation.size(); ++i) {
+        activation[i] = FloatToBf16Bits(
+            static_cast<float>(static_cast<int>((i * 37) % 211) - 105) /
+            (i % 97 == 0 ? 3.0f : 53.0f));
+      }
+      std::vector<float> norm_scale(c.k);
+      for (int i = 0; i < c.k; ++i) norm_scale[i] = 0.6f + 0.0037f * (i % 89);
+      auto d_w = AllocateCuda(weights.size());
+      auto d_s = AllocateCuda(scales.size() * 2);
+      auto d_a = AllocateCuda(activation.size() * 2);
+      auto d_ns = AllocateCuda(norm_scale.size() * 4);
+      auto d_rows = AllocateCuda(static_cast<size_t>(rows) * c.n * 2);
+      auto d_one = AllocateCuda(static_cast<size_t>(rows) * c.n * 2);
+      ASSERT_TRUE(d_w && d_s && d_a && d_ns && d_rows && d_one);
+      cudaMemcpy(d_w.get(), weights.data(), weights.size(),
+                 cudaMemcpyHostToDevice);
+      cudaMemcpy(d_s.get(), scales.data(), scales.size() * 2,
+                 cudaMemcpyHostToDevice);
+      cudaMemcpy(d_a.get(), activation.data(), activation.size() * 2,
+                 cudaMemcpyHostToDevice);
+      cudaMemcpy(d_ns.get(), norm_scale.data(), norm_scale.size() * 4,
+                 cudaMemcpyHostToDevice);
+      const float* ns =
+          c.norm ? static_cast<const float*>(d_ns.get()) : nullptr;
+      ASSERT_EQ(
+          LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
+              d_a.get(), static_cast<const uint8_t*>(d_w.get()), d_s.get(), ns,
+              1e-6f, 0.75f, d_rows.get(), rows, c.k, c.n, c.gate, nullptr),
+          cudaSuccess);
+      for (int r = 0; r < rows; ++r) {
+        ASSERT_EQ(LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
+                      static_cast<const uint16_t*>(d_a.get()) +
+                          static_cast<size_t>(r) * c.k,
+                      static_cast<const uint8_t*>(d_w.get()), d_s.get(), ns,
+                      1e-6f, 0.75f,
+                      static_cast<uint16_t*>(d_one.get()) +
+                          static_cast<size_t>(r) * c.n,
+                      1, c.k, c.n, c.gate, nullptr),
+                  cudaSuccess);
+      }
+      ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+      std::vector<uint16_t> together(static_cast<size_t>(rows) * c.n);
+      std::vector<uint16_t> alone(together.size());
+      cudaMemcpy(together.data(), d_rows.get(), together.size() * 2,
+                 cudaMemcpyDeviceToHost);
+      cudaMemcpy(alone.data(), d_one.get(), alone.size() * 2,
+                 cudaMemcpyDeviceToHost);
+      EXPECT_GE(ExpectBf16Close(alone, together), 0.9);
+    }
+  }
+}
+
 // The experts' weights in the model's interleaved layout: row o of expert e
 // is row o * experts + e.
 struct MoeCase {
@@ -1702,10 +1805,11 @@ TEST(Int4BlockGemvTest, MoeExpertMajorMatchesTheModelsOrder) {
 }
 
 // A verify step's rows grouped by expert (LiteRtNvidiaMoeArena::group_rows)
-// give the bits of one launch block per routed pair: the plain launch over
-// routings with experts shared between rows, an expert that fills more than
-// one group and a pair without an expert; the fused launch, which then
-// routes before it groups; and the layer block.
+// agree with one launch block per routed pair to the outputs' rounding (the
+// groups multiply on the tensor cores): the plain launch over routings with
+// experts shared between rows, an expert that fills more than one group and
+// a pair without an expert; the fused launch, which then routes before it
+// groups; and the layer block.
 TEST(Int4BlockGemvTest, MoeGroupedRowsMatchTheirPairs) {
   const int top_k = 4, experts = 64, dim = 704, hidden = 128, dense_hidden = 96;
   const std::vector<uint8_t> gate_w = MakeInt4Weights(hidden * experts, dim, 5);
@@ -1902,7 +2006,7 @@ TEST(Int4BlockGemvTest, MoeGroupedRowsMatchTheirPairs) {
                                cudaMemcpyDeviceToHost),
                     cudaSuccess);
         }
-        EXPECT_TRUE(outputs[0] == outputs[1]);
+        EXPECT_GE(ExpectBf16Close(outputs[0], outputs[1]), 0.9);
         EXPECT_NE(std::count(outputs[0].begin(), outputs[0].end(), 0),
                   static_cast<ptrdiff_t>(outputs[0].size()));
       }
