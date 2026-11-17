@@ -1,0 +1,399 @@
+#!/usr/bin/env python3
+# Copyright 2026 Google LLC.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Teacher-forced comparison of two backends' logits for the same tokens.
+
+A greedy text is a poor test of a backend whose arithmetic is not the
+reference's bit for bit: the two texts part at the first near-tie and are
+incomparable after it. Fed the same token stream (LiteRT-LM's CLI does that
+with --score_target_text: the prompt is prefilled, then every decode step reads
+the target's next token whatever the model picked), the two backends' logits
+compare at every step. LiteRT-LM's debugger (--enable_debugger) captures them
+on the CPU; it is off for the NPU executor, whose logits the NVIDIA dispatch
+writes instead (LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS=DIR:STEPS:MB).
+
+  teacher_forced.py collect [--tokenizer SPM --target FILE] CAPTURE_DIR
+  OUT_PREFIX
+      The debugger's captures of one run (CAPTURE_DIR = the cache directory's
+      litert_lm_debugger) -> OUT_PREFIX.logits.npy (float32 [steps, vocab]) and
+      OUT_PREFIX.steps.json (each decode step's position and, given the
+      model's SentencePiece tokenizer and the target text, the token the step
+      scores: step i scores the target's token i).
+  teacher_forced.py collect-dispatch [--tokenizer SPM --target FILE] DUMP_DIR
+  OUT_PREFIX
+      The same from the NVIDIA dispatch's output dumps (DUMP_DIR/index.jsonl):
+      every output as wide as the vocabulary, in the order the steps produced
+      them. They carry no positions: `compare` takes the reference's.
+  teacher_forced.py compare [--json FILE] [--bins B,...] [--positions P,...]
+                            REF_PREFIX TEST_PREFIX [REF_PREFIX TEST_PREFIX ...]
+      Per step: the reference's top token and its margin over the runner-up,
+      whether the test picks the same top token, how far the test's margin for
+      the reference's two candidates is from the reference's, KL(ref || test),
+      and the negative log-likelihood of the token fed next under both. Prints
+      the agreement by the reference's margin, the margin error's
+      distribution, and every statistic by position; --json writes the steps.
+
+No GPU and no LiteRT are needed: numpy only.
+"""
+
+import argparse
+import json
+from pathlib import Path
+import re
+import struct
+import sys
+
+import numpy as np
+
+_DTYPES = {
+    "F32": np.float32,
+    "F16": np.float16,
+    "I32": np.int32,
+    "I64": np.int64,
+    "I8": np.int8,
+    "U8": np.uint8,
+    "BOOL": np.bool_,
+}
+
+
+def read_safetensors(path):
+  """The tensors of a safetensors file: {name: array}."""
+  with open(path, "rb") as f:
+    size = struct.unpack("<Q", f.read(8))[0]
+    header = json.loads(f.read(size))
+    data = f.read()
+  tensors = {}
+  for name, info in header.items():
+    if name == "__metadata__":
+      continue
+    begin, end = info["data_offsets"]
+    array = np.frombuffer(data[begin:end], dtype=_DTYPES[info["dtype"]])
+    tensors[name] = array.reshape(info["shape"])
+  return tensors
+
+
+def _single(path):
+  tensors = read_safetensors(path)
+  if len(tensors) != 1:
+    raise ValueError(f"{path}: {len(tensors)} tensors, one expected")
+  return next(iter(tensors.values()))
+
+
+def target_tokens(tokenizer_path, target_path):
+  """The target's tokens as LiteRT-LM's scoring encodes them (no BOS)."""
+  import sentencepiece  # pylint: disable=g-import-not-at-top
+
+  processor = sentencepiece.SentencePieceProcessor(model_file=tokenizer_path)
+  return processor.encode(Path(target_path).read_text())
+
+
+def collect(capture_dir, out_prefix, scored=None):
+  """One run's decode steps from the debugger's captures."""
+  sessions = [p for p in Path(capture_dir).iterdir() if p.is_dir()]
+  if len(sessions) != 1:
+    raise ValueError(f"{capture_dir}: {len(sessions)} sessions, one expected")
+  session = sessions[0]
+  pattern = re.compile(r"decode_post_logits_step_(\d+)\.safetensors")
+  steps = sorted(
+      int(m.group(1))
+      for m in (pattern.fullmatch(p.name) for p in session.iterdir())
+      if m
+  )
+  if not steps:
+    raise ValueError(f"{session}: no decode logits captured")
+  logits = np.stack([
+      _single(session / f"decode_post_logits_step_{s}.safetensors")
+      .astype(np.float32)
+      .reshape(-1)
+      for s in steps
+  ])
+  if scored is not None and len(scored) != len(steps):
+    raise ValueError(
+        f"{session}: {len(steps)} decode steps for a target of "
+        f"{len(scored)} tokens"
+    )
+  records = []
+  for i, s in enumerate(steps):
+    record = {"step": s}
+    path = session / f"decode_pre_input_pos_step_{s}.safetensors"
+    if path.exists():
+      record["position"] = int(_single(path).reshape(-1)[0])
+    if scored is not None:
+      record["scored"] = int(scored[i])
+    records.append(record)
+  np.save(f"{out_prefix}.logits.npy", logits)
+  Path(f"{out_prefix}.steps.json").write_text(json.dumps(records) + "\n")
+  print(
+      f"{out_prefix}: {len(steps)} decode steps, vocabulary {logits.shape[1]}"
+  )
+
+
+def collect_dispatch(dump_dir, out_prefix, scored=None, vocab=262144):
+  """One run's decode steps from the NVIDIA dispatch's output dumps."""
+  entries = [json.loads(line) for line in open(Path(dump_dir) / "index.jsonl")]
+  entries = sorted(
+      (e for e in entries if e["dims"] and e["dims"][-1] == vocab),
+      key=lambda e: e["seq"],
+  )
+  if not entries:
+    raise ValueError(f"{dump_dir}: no output of {vocab} columns dumped")
+  rows = []
+  for e in entries:
+    if e["skipped"]:
+      raise ValueError(
+          f"{dump_dir}: step {e['step']} of {e['function']} was not "
+          "written (raise the dump's size cap)"
+      )
+    raw = (Path(dump_dir) / e["file"]).read_bytes()
+    dtype = np.float16 if len(raw) == 2 * vocab else np.float32
+    rows.append(np.frombuffer(raw, dtype=dtype).astype(np.float32).reshape(-1))
+  logits = np.stack(rows)
+  if scored is not None and len(scored) != len(rows):
+    raise ValueError(
+        f"{dump_dir}: {len(rows)} decode steps for a target of "
+        f"{len(scored)} tokens"
+    )
+  records = [{"step": e["step"]} for e in entries]
+  if scored is not None:
+    for record, token in zip(records, scored):
+      record["scored"] = int(token)
+  np.save(f"{out_prefix}.logits.npy", logits)
+  Path(f"{out_prefix}.steps.json").write_text(json.dumps(records) + "\n")
+  print(f"{out_prefix}: {len(rows)} decode steps, vocabulary {logits.shape[1]}")
+
+
+def _log_softmax(logits):
+  top = logits.max(axis=-1, keepdims=True)
+  shifted = logits.astype(np.float64) - top
+  return shifted - np.log(np.exp(shifted).sum(axis=-1, keepdims=True))
+
+
+def compare_steps(ref, test, scored, positions):
+  """Per-step statistics of TEST against REF ([steps, vocab] logits each).
+
+  scored[i] is the token step i is scored on (the one fed to the next step),
+  or None.
+  """
+  if ref.shape != test.shape:
+    raise ValueError(f"shapes differ: {ref.shape} and {test.shape}")
+  ref_lp = _log_softmax(ref)
+  test_lp = _log_softmax(test)
+  rows = []
+  for i in range(ref.shape[0]):
+    order = np.argsort(-ref[i], kind="stable")[:2]
+    first, second = int(order[0]), int(order[1])
+    test_first = int(np.argmax(test[i]))
+    ref_margin = float(ref[i, first] - ref[i, second])
+    test_margin = float(test[i, first] - test[i, second])
+    p = np.exp(ref_lp[i])
+    row = {
+        "step": i,
+        "position": positions[i],
+        "ref_top": first,
+        "ref_second": second,
+        "test_top": test_first,
+        "agree": test_first == first,
+        "ref_margin": ref_margin,
+        "test_margin": test_margin,
+        "margin_error": test_margin - ref_margin,
+        # The test's own margin of its pick over the reference's (positive when
+        # they disagree): how far the flip went.
+        "flip_margin": float(test[i, test_first] - test[i, first]),
+        "top_logit_error": float(test[i, first] - ref[i, first]),
+        "kl": float(np.sum(p * (ref_lp[i] - test_lp[i]))),
+    }
+    if scored[i] is not None:
+      row["scored"] = scored[i]
+      row["ref_nll"] = float(-ref_lp[i, scored[i]])
+      row["test_nll"] = float(-test_lp[i, scored[i]])
+    rows.append(row)
+  return rows
+
+
+def _load_run(prefix):
+  logits = np.load(f"{prefix}.logits.npy")
+  steps = json.loads(Path(f"{prefix}.steps.json").read_text())
+  return logits, steps
+
+
+def _quantiles(values):
+  values = np.asarray(values, dtype=np.float64)
+  if values.size == 0:
+    return "-"
+  return (
+      f"median {np.median(values):.3f}, 90% {np.quantile(values, 0.9):.3f}, "
+      f"99% {np.quantile(values, 0.99):.3f}, max {values.max():.3f}"
+  )
+
+
+def summarize(rows, bins, position_edges, out=sys.stdout):
+  """The tables of a comparison over all rows."""
+  rows = list(rows)
+  print(
+      f"steps: {len(rows)}, top-1 agreement"
+      f" {np.mean([r['agree'] for r in rows]):.4f}",
+      file=out,
+  )
+  print("by the reference's top-2 margin:", file=out)
+  edges = list(bins) + [float("inf")]
+  for lo, hi in zip([0.0] + list(bins), edges):
+    part = [r for r in rows if lo <= r["ref_margin"] < hi]
+    flips = [r for r in part if not r["agree"]]
+    worst = max((r["ref_margin"] for r in flips), default=None)
+    print(
+        f"  [{lo:g}, {hi:g}): {len(part)} steps, {len(flips)} disagree"
+        + (
+            f" (largest reference margin among them {worst:.3f})"
+            if flips
+            else ""
+        ),
+        file=out,
+    )
+  errors = [abs(r["margin_error"]) for r in rows]
+  print(
+      "|margin error| (test - reference, the reference's two candidates):"
+      f" {_quantiles(errors)}",
+      file=out,
+  )
+  print(
+      f"KL(reference || test): mean {np.mean([r['kl'] for r in rows]):.5f}, "
+      f"{_quantiles([r['kl'] for r in rows])}",
+      file=out,
+  )
+  scored = [r for r in rows if "ref_nll" in r]
+  if scored:
+    ref_nll = np.mean([r["ref_nll"] for r in scored])
+    test_nll = np.mean([r["test_nll"] for r in scored])
+    print(
+        f"mean NLL of the fed tokens over {len(scored)} steps: reference"
+        f" {ref_nll:.4f}, test {test_nll:.4f}, test - reference"
+        f" {test_nll - ref_nll:+.4f}",
+        file=out,
+    )
+  if position_edges:
+    print("by position:", file=out)
+    edges = list(position_edges) + [float("inf")]
+    for lo, hi in zip([0] + list(position_edges), edges):
+      part = [
+          r
+          for r in rows
+          if r["position"] is not None and lo <= r["position"] < hi
+      ]
+      if not part:
+        continue
+      part_scored = [r for r in part if "ref_nll" in r]
+      nll = ""
+      if part_scored:
+        nll = (
+            f", NLL ref {np.mean([r['ref_nll'] for r in part_scored]):.4f} "
+            f"test {np.mean([r['test_nll'] for r in part_scored]):.4f}"
+        )
+      print(
+          f"  [{lo:g}, {hi:g}): {len(part)} steps, agree "
+          f"{np.mean([r['agree'] for r in part]):.4f}, |margin error| median "
+          f"{np.median([abs(r['margin_error']) for r in part]):.3f} 90% "
+          f"{np.quantile([abs(r['margin_error']) for r in part], 0.9):.3f} max "
+          f"{max(abs(r['margin_error']) for r in part):.3f}, KL mean "
+          f"{np.mean([r['kl'] for r in part]):.5f}{nll}",
+          file=out,
+      )
+  flips = [r for r in rows if not r["agree"]]
+  if flips:
+    print(
+        "disagreements (reference margin, test's pick over the reference's"
+        " top):",
+        file=out,
+    )
+    for r in sorted(flips, key=lambda r: -r["ref_margin"]):
+      print(
+          f"  {r.get('run', '')} step {r['step']} position {r['position']}:"
+          f" reference {r['ref_top']} by {r['ref_margin']:.3f}, test"
+          f" {r['test_top']} by {r['flip_margin']:.3f}",
+          file=out,
+      )
+
+
+def compare(pairs, json_path=None, bins=(), position_edges=()):
+  rows = []
+  for ref_prefix, test_prefix in pairs:
+    ref, ref_steps = _load_run(ref_prefix)
+    test, test_steps = _load_run(test_prefix)
+    if len(ref_steps) != len(test_steps):
+      raise ValueError(
+          f"{ref_prefix} has {len(ref_steps)} steps, {test_prefix}"
+          f" {len(test_steps)}"
+      )
+    scored = [s.get("scored") for s in ref_steps]
+    positions = [s.get("position") for s in ref_steps]
+    test_positions = [
+        s.get("position", p) for s, p in zip(test_steps, positions)
+    ]
+    if (
+        scored != [s.get("scored") for s in test_steps]
+        or positions != test_positions
+    ):
+      raise ValueError(f"{ref_prefix} and {test_prefix} were fed other tokens")
+    for row in compare_steps(ref, test, scored, positions):
+      row["run"] = Path(test_prefix).name
+      rows.append(row)
+  summarize(rows, bins, position_edges)
+  if json_path:
+    with open(json_path, "w") as f:
+      for row in rows:
+        f.write(json.dumps(row) + "\n")
+  return rows
+
+
+def main(argv):
+  parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+  sub = parser.add_subparsers(dest="command", required=True)
+  c = sub.add_parser("collect")
+  c.add_argument("--tokenizer")
+  c.add_argument("--target")
+  c.add_argument("capture_dir")
+  c.add_argument("out_prefix")
+  d = sub.add_parser("collect-dispatch")
+  d.add_argument("--tokenizer")
+  d.add_argument("--target")
+  d.add_argument("dump_dir")
+  d.add_argument("out_prefix")
+  m = sub.add_parser("compare")
+  m.add_argument("--json")
+  m.add_argument("--bins", default="0.25,0.5,1,1.5,2,3")
+  m.add_argument("--positions", default="")
+  m.add_argument("prefixes", nargs="+")
+  args = parser.parse_args(argv)
+  if args.command == "collect":
+    scored = None
+    if args.tokenizer and args.target:
+      scored = target_tokens(args.tokenizer, args.target)
+    collect(args.capture_dir, args.out_prefix, scored)
+    return 0
+  if args.command == "collect-dispatch":
+    scored = None
+    if args.tokenizer and args.target:
+      scored = target_tokens(args.tokenizer, args.target)
+    collect_dispatch(args.dump_dir, args.out_prefix, scored)
+    return 0
+  if len(args.prefixes) % 2:
+    parser.error("prefixes come in pairs: REF TEST")
+  pairs = list(zip(args.prefixes[0::2], args.prefixes[1::2]))
+  bins = [float(b) for b in args.bins.split(",") if b]
+  positions = [int(p) for p in args.positions.split(",") if p]
+  compare(pairs, args.json, bins, positions)
+  return 0
+
+
+if __name__ == "__main__":
+  sys.exit(main(sys.argv[1:]))
