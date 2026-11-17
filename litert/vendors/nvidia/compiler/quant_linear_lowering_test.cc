@@ -40,6 +40,7 @@
 #include "litert/vendors/nvidia/compiler/tensorrt_graph_builder.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
+#include "litert/vendors/nvidia/trtllm/quant_gemm.h"
 #include "litert/vendors/nvidia/trtllm/quant_linear.h"
 #include "litert/vendors/nvidia/trtllm/quant_linear_reference.h"
 #include "tflite/schema/schema_generated.h"
@@ -1231,6 +1232,40 @@ TEST(QuantLinearLoweringTest, ProjectionResultsFeedOpsOutsideRegions) {
     for (auto& value : expected) value *= out_scales[i];
     ExpectSame(HalfFloats(result.outputs[names[i]]), expected, names[i]);
   }
+}
+
+// The rows of a prefill chunk: a product of whole tiles runs on the tensor
+// cores (quant_gemm.h), which quantize the float activation into the
+// plugin's workspace first, with the row kernels' results.
+TEST(QuantLinearLoweringTest, ManyRowsHaveRowKernelsResults) {
+  Random random(47);
+  constexpr int kTokens = 128;
+  constexpr int kColumns = 128;
+  constexpr int kRows = 256;
+  const float in_scale = 0.05f;
+  const float out_scale = 0.25f;
+  Graph g;
+  auto& x = g.Input(kLiteRtElementTypeFloat16, {1, kTokens, kColumns}, "x");
+  const auto weights = random.Bytes(kRows * kColumns / 2);
+  const auto scales = random.Floats(kRows, 0.004f, 0.008f);
+  auto& projected = g.FullyConnected(
+      g.Quantize(x, in_scale), g.Int4Weights(kRows, kColumns, weights, scales),
+      g.Int8({1, kTokens, kRows}, out_scale));
+  g.Output(g.Dequantize(projected), "y");
+  const auto x_values =
+      RoundedToFp16(random.Floats(kTokens * kColumns, -5.0f, 5.0f));
+  RunResult result;
+  RunGraph(g, {{"x", HalfBytes(x_values)}}, &result);
+  if (testing::Test::HasFatalFailure()) return;
+  auto params = Int4Params(kRows, kColumns);
+  params.activation = kLiteRtNvidiaQuantFp16;
+  params.quantize_scale = ref::RoundToFp16(1.0f / in_scale);
+  ASSERT_TRUE(LiteRtNvidiaQuantGemmSupports(&params, kTokens));
+  auto expected =
+      ref::Linear(params, kTokens, x_values, weights,
+                  Int4Multipliers(in_scale, scales, out_scale), {}, {});
+  for (auto& value : expected) value *= out_scale;
+  ExpectSame(HalfFloats(result.outputs["y"]), expected, "y");
 }
 
 // The Gemma 4 E2B and E4B have the same INT4 products between FLOAT32

@@ -24,6 +24,7 @@
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
 #include "NvInferRuntime.h"
+#include "litert/vendors/nvidia/trtllm/quant_gemm.h"
 #include "litert/vendors/nvidia/trtllm/quant_linear.h"
 
 namespace litert::nvidia {
@@ -253,10 +254,19 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
                : 1;
   }
 
-  size_t getWorkspaceSize(const nvinfer1::DynamicPluginTensorDesc*, int32_t,
+  // The many rows of a prefill chunk run on the tensor cores (quant_gemm.h),
+  // which quantize a float activation into the workspace first.
+  size_t getWorkspaceSize(const nvinfer1::DynamicPluginTensorDesc* inputs,
+                          int32_t num_inputs,
                           const nvinfer1::DynamicPluginTensorDesc*,
                           int32_t) const noexcept override {
-    return 0;
+    if (kind_ != kLinear || inputs == nullptr || num_inputs < 1) {
+      return 0;
+    }
+    const auto& p = params_.linear;
+    const int64_t m =
+        Rows(inputs[0].max, static_cast<int64_t>(p.segments) * p.columns);
+    return LiteRtNvidiaQuantGemmWorkspaceBytes(&p, static_cast<int32_t>(m));
   }
 
   int32_t enqueue(const nvinfer1::PluginTensorDesc* input_desc,
@@ -264,7 +274,6 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
                   const void* const* inputs, void* const* outputs,
                   void* workspace, cudaStream_t stream) noexcept override {
     static_cast<void>(output_desc);
-    static_cast<void>(workspace);
     if (input_desc == nullptr || inputs == nullptr || outputs == nullptr) {
       return 1;
     }
@@ -277,12 +286,21 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
       const bool logits = p.requant == kLiteRtNvidiaQuantRequantLogits;
       if (m >= 1 && weights != nullptr &&
           (!logits || Elements(input_desc[3].dims) == m)) {
-        status = LiteRtNvidiaLaunchQuantLinear(
-            &p, static_cast<int32_t>(m), inputs[0], weights,
-            static_cast<const float*>(inputs[2]),
-            p.lut != 0 ? static_cast<const int8_t*>(inputs[3]) : nullptr,
-            logits ? static_cast<const float*>(inputs[3]) : nullptr, outputs[0],
-            stream);
+        const int8_t* lut =
+            p.lut != 0 ? static_cast<const int8_t*>(inputs[3]) : nullptr;
+        if (LiteRtNvidiaQuantGemmSupports(&p, static_cast<int32_t>(m))) {
+          // Many rows: the tensor cores, with the row kernels' results.
+          status = LiteRtNvidiaLaunchQuantGemm(
+              &p, static_cast<int32_t>(m), inputs[0], weights,
+              static_cast<const float*>(inputs[2]), lut, outputs[0], workspace,
+              stream);
+        } else {
+          status = LiteRtNvidiaLaunchQuantLinear(
+              &p, static_cast<int32_t>(m), inputs[0], weights,
+              static_cast<const float*>(inputs[2]), lut,
+              logits ? static_cast<const float*>(inputs[3]) : nullptr,
+              outputs[0], stream);
+        }
       }
     } else if (kind_ == kGlue) {
       const auto& p = params_.glue;
