@@ -18,12 +18,18 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+#include <thread>  // NOLINT(build/c++11)
+#include <type_traits>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/synchronization/barrier.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -31,9 +37,11 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_op_resolver.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -477,6 +485,108 @@ TEST(CompiledModelTest, GetOutputTensorLayoutsWithDynamicModel) {
   LiteRtDestroyCompiledModel(compiled_model);
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(environment);
+}
+
+struct ScopedCpuModelTestInputs {
+  LiteRtEnvironment environment = nullptr;
+  LiteRtModel model = nullptr;
+  LiteRtOptions options = nullptr;
+
+  static void Create(const std::string& path, ScopedCpuModelTestInputs* out) {
+    LITERT_ASSERT_OK(LiteRtCreateEnvironment(
+        /*num_options=*/0, /*options=*/nullptr, &out->environment));
+    LITERT_ASSERT_OK(
+        LiteRtCreateModelFromFile(out->environment, path.c_str(), &out->model));
+    LITERT_ASSERT_OK(LiteRtCreateOptions(&out->options));
+    LITERT_ASSERT_OK(LiteRtSetOptionsHardwareAccelerators(
+        out->options, kLiteRtHwAcceleratorCpu));
+  }
+
+  ~ScopedCpuModelTestInputs() {
+    LiteRtDestroyOptions(options);
+    LiteRtDestroyModel(model);
+    LiteRtDestroyEnvironment(environment);
+  }
+};
+
+TEST(CompiledModelTest, ConcurrentCpuModelCreation) {
+  constexpr int kNumThreads = 4;
+  const std::string path = testing::GetTestFilePath(kModelFileName);
+  absl::Barrier start_barrier(kNumThreads);
+
+  std::vector<std::thread> threads;
+  threads.reserve(kNumThreads);
+  for (int t = 0; t < kNumThreads; ++t) {
+    threads.emplace_back([&]() {
+      ScopedCpuModelTestInputs inputs;
+      ScopedCpuModelTestInputs::Create(path, &inputs);
+      start_barrier.Block();
+
+      LiteRtCompiledModel compiled_model = nullptr;
+      LITERT_ASSERT_OK(LiteRtCreateCompiledModel(
+          inputs.environment, inputs.model, inputs.options, &compiled_model));
+      bool fully_accelerated = false;
+      LITERT_ASSERT_OK(LiteRtCompiledModelIsFullyAccelerated(
+          compiled_model, &fully_accelerated));
+      EXPECT_TRUE(fully_accelerated);
+      LiteRtDestroyCompiledModel(compiled_model);
+    });
+  }
+  for (std::thread& thread : threads) {
+    thread.join();
+  }
+}
+
+TEST(CompiledModelTest, CpuModelCreationExecutesInParallelWithoutGlobalLock) {
+  struct Rendezvous {
+    absl::Mutex mutex;
+    int entered = 0;
+    bool timed_out = false;
+  } rendezvous;
+
+  using FindBuiltinOpResult =
+      std::invoke_result_t<LiteRtFindBuiltinOpFunc, void*, int, int>;
+  LiteRtFindBuiltinOpFunc find_builtin_op =
+      [](void* user_data, int, int) -> FindBuiltinOpResult {
+    thread_local bool arrived = false;
+    if (!arrived) {
+      arrived = true;
+      auto* state = static_cast<Rendezvous*>(user_data);
+      absl::MutexLock lock(state->mutex);
+      ++state->entered;
+      auto both_entered = [state]() { return state->entered >= 2; };
+      if (!state->mutex.AwaitWithTimeout(absl::Condition(&both_entered),
+                                         absl::Seconds(5))) {
+        state->timed_out = true;
+      }
+    }
+    return nullptr;
+  };
+
+  const std::string path = testing::GetTestFilePath(kModelFileName);
+  std::vector<std::thread> threads;
+  threads.reserve(2);
+  for (int i = 0; i < 2; ++i) {
+    threads.emplace_back([&]() {
+      ScopedCpuModelTestInputs inputs;
+      ScopedCpuModelTestInputs::Create(path, &inputs);
+      LITERT_ASSERT_OK(LiteRtSetOpResolverOption(
+          inputs.options, find_builtin_op, /*find_custom_op=*/nullptr,
+          &rendezvous));
+
+      LiteRtCompiledModel compiled_model = nullptr;
+      EXPECT_NE(LiteRtCreateCompiledModel(inputs.environment, inputs.model,
+                                          inputs.options, &compiled_model),
+                kLiteRtStatusOk);
+    });
+  }
+  for (std::thread& thread : threads) {
+    thread.join();
+  }
+
+  absl::MutexLock lock(rendezvous.mutex);
+  EXPECT_EQ(rendezvous.entered, 2);
+  EXPECT_FALSE(rendezvous.timed_out);
 }
 
 }  // namespace
