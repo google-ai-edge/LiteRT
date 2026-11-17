@@ -111,6 +111,10 @@ struct LiteRtNvidiaMoeArena {
   // read once for the rows routed to it instead of once per row, the rows
   // multiplied on the tensor cores (the rounding of the dense GEMV's rows).
   int32_t group_rows;
+  // The pieces are in mapped host memory (host_memory != 0: a layer that did
+  // not fit the device), which the prefill's grouped GEMM reads in whole
+  // tiles (LiteRtNvidiaGroupedGemmWeights::host_memory).
+  int32_t host_memory;
 };
 
 // A loader's step from the model's order to an expert-major arena: copies

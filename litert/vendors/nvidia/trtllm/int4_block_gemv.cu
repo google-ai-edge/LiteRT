@@ -1642,7 +1642,8 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
       channel_rows,
       gate_expert_rows,
       arena.compact_scales,
-      row_source};
+      row_source,
+      arena.host_memory};
   const LiteRtNvidiaGemmShape gate_shape = {padded, shape.model_dim,
                                             shape.hidden_dim, shape.gate, 32};
   status = LiteRtNvidiaLaunchBf16Int4GroupedGemm(
@@ -1670,7 +1671,8 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
       channel_rows,
       down_expert_rows,
       arena.compact_scales,
-      row_source};
+      row_source,
+      arena.host_memory};
   const LiteRtNvidiaGemmShape down_shape = {
       padded, shape.hidden_dim, shape.model_dim, kLiteRtNvidiaGemmGateNone, 32};
   status = LiteRtNvidiaLaunchBf16Int4GroupedGemm(

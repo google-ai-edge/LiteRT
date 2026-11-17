@@ -377,6 +377,7 @@ void ExpectArena(const Layer& layer, bool expect_device,
                            layer.shape.model_dim, layer.shape.hidden_dim,
                            &arena, &on_device));
   EXPECT_EQ(on_device, expect_device);
+  EXPECT_EQ(arena.host_memory != 0, !expect_device);
   EXPECT_EQ(arena.compact_scales, 1);
   EXPECT_EQ(arena.expert_major != 0, expect_expert_major);
   const size_t experts = layer.shape.experts;

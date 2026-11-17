@@ -825,7 +825,8 @@ bool SetArenaPointers(const MoeExpertSource& source, const ArenaLayout& layout,
       layout.compact ? device_bytes + layout.max_offsets[2] : nullptr,
       layout.compact ? 1 : 0,
       layout.expert_major ? 1 : 0,
-      group_rows ? 1 : 0};
+      group_rows ? 1 : 0,
+      arena->on_device ? 0 : 1};
   return true;
 }
 

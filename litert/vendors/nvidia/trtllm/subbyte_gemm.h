@@ -99,7 +99,8 @@ extern "C" bool LiteRtNvidiaSubbyteGemmFillsDevice(
 // channels. The activations are already in the GEMM's tile layout
 // (LiteRtNvidiaLaunchGemmScaleRows); the padded rows of a tile past its
 // expert's last row produce rows the caller ignores. A block of this GEMM
-// multiplies half a tile, and two blocks share a multiprocessor.
+// multiplies half a tile, and two blocks share a multiprocessor (weights in
+// device memory; see host_memory).
 struct LiteRtNvidiaGroupedGemmWeights {
   const uint8_t* gate;
   const uint8_t* up;  // gate mode only
@@ -123,8 +124,16 @@ struct LiteRtNvidiaGroupedGemmWeights {
   // (LiteRtNvidiaLaunchGemmScaleRows' row_indices). A block of the GEMM's
   // kLiteRtNvidiaGroupedGemmBlockRows rows whose first index is negative is
   // skipped, its output rows left as they are: an expert's rows come first in
-  // its tiles, so such a block holds none of them.
+  // its tiles, so such a block holds none of them. (With host_memory every
+  // row of a tile is multiplied.)
   const int32_t* row_source;
+  // Nonzero: the weights and scales are in mapped host memory (an expert
+  // arena that did not fit the device), which the device reads across the
+  // bus. Half-tile blocks took 2 to 4 times as long there as blocks of a
+  // whole tile (Gemma 4 26B-A4B's experts, RTX 5080), so the launch then
+  // multiplies whole tiles with the dense GEMM's kernel: the same products,
+  // bit for bit.
+  int32_t host_memory;
 };
 
 // The rows of a block of the grouped GEMM: half a tile.
