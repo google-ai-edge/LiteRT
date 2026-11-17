@@ -16,7 +16,7 @@
 """Implements the OCTAV quantization."""
 
 import dataclasses
-from typing import Any, Optional
+from typing import Any
 import numpy as np
 from litert_quantizer import qtyping
 from litert_quantizer.algorithms.uniform_quantize import common_quantize
@@ -143,8 +143,17 @@ def _guess_clipping_with_octav(
   return guess
 
 
-def _to_odd_int4_codes(data: np.ndarray, scale: np.ndarray) -> np.ndarray:
-  """Rounds `data` to the nearest of {-3, -1, 1, 3} * `scale` as int8."""
+def to_odd_int4_codes(data: np.ndarray, scale: np.ndarray) -> np.ndarray:
+  """Rounds `data` to the nearest of {-3, -1, 1, 3} * `scale` as int8.
+
+  Args:
+    data: Floating-point tensor values to quantize.
+    scale: Positive half-step scale (`clip / 4`, so levels are `2 * scale`
+      apart).
+
+  Returns:
+    Signed `np.int8` array containing odd INT4 codes in `{-3, -1, 1, 3}`.
+  """
   s_2bit = np.float32(2.0) * np.maximum(
       scale.astype(np.float32, copy=False), np.float32(1e-9)
   )
@@ -193,19 +202,19 @@ def _quantize_int2_in_int4(
     )
     for k in range(0, flat_data.shape[0], chunk_rows):
       end = min(k + chunk_rows, flat_data.shape[0])
-      ret[k:end, :] = _to_odd_int4_codes(
+      ret[k:end, :] = to_odd_int4_codes(
           flat_data[k:end, :], flat_scale[k:end, :]
       )
     return np.reshape(ret, output_shape)
 
-  return _to_odd_int4_codes(tensor_data, scales)
+  return to_odd_int4_codes(tensor_data, scales)
 
 
 def get_tensor_quant_params(
     op_info: qtyping.OpInfo,
     tensor_quant_config: qtyping.TensorQuantizationConfig,
-    tensor_content: Optional[np.ndarray] = None,
-    tensor_qsv: Optional[dict[str, Any]] = None,
+    tensor_content: np.ndarray | None = None,
+    tensor_qsv: dict[str, Any] | None = None,
 ) -> qtyping.UniformQuantParams:
   """Returns the quantization parameters for a tensor.
 
@@ -283,6 +292,7 @@ def get_tensor_quant_params(
   quantized_dim = common_utils.get_weight_quantized_dim(
       op_info, tensor_content, tensor_quant_config.granularity
   )
+  is_multi_axis = isinstance(quantized_dim, (list, tuple))
   is_blockwise_quant = uniform_quantize_tensor.is_blockwise(
       tensor_quant_config.granularity
   )
@@ -292,6 +302,7 @@ def get_tensor_quant_params(
             tensor_content,
             op_info.op_name,
             tensor_quant_config.granularity,
+            quantized_dim=(tensor_content.ndim - 1 if is_multi_axis else None),
         )
     )
   else:
@@ -345,7 +356,8 @@ def get_tensor_quant_params(
       zero_point=zp,
       num_bits=tensor_quant_config.num_bits,
       symmetric=tensor_quant_config.symmetric,
-      quantized_dimension=quantized_dim,
+      quantized_dimension=(quantized_dim if not is_multi_axis else None),
+      quantized_dimensions=(quantized_dim if is_multi_axis else None),
       block_size=uniform_quantize_tensor.extract_block_size_from_granularity(
           tensor_quant_config.granularity
       ),

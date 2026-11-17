@@ -19,6 +19,8 @@ Inserts dequantize node after the given tensor to enable float execution of
 the tensor consumer
 """
 
+import dataclasses
+
 from litert_quantizer import qtyping
 from litert_quantizer.transformations import quantize_tensor
 from litert_quantizer.transformations import transformation_utils
@@ -38,6 +40,10 @@ def insert_dequant(
       op_id: the index where the dequant op is added
       num_ops_added: the total number of ops inserted by this operation, which
         is 1
+
+  Raises:
+    ValueError: If quantizing the source tensor fails due to unsupported bit
+      widths or invalid `BlockwiseQuantization` parameters or consumer ops.
   """
   dequant_op_code_idx = transformation_utils.add_op_code(
       qtyping.BuiltinOperator.DEQUANTIZE,
@@ -57,9 +63,6 @@ def insert_dequant(
   dequant_op.opcodeIndex = dequant_op_code_idx
   dequant_op.outputs = [new_tensor_id]
   dequant_op.inputs = [transformation_input.tensor_id]
-
-  # quantize the source tensor
-  quantize_tensor.quantize_tensor(transformation_input)
 
   # update the original consumers of the op to take the dequant op,
   # and find the first consumer of the new tensor
@@ -81,6 +84,12 @@ def insert_dequant(
   # op is inserted after the producer
   op_id = max(transformation_input.producer + 1, first_consumer_id)
   transformation_input.subgraph.operators.insert(op_id, dequant_op)
+
+  # Quantize the source tensor with the inserted DEQUANTIZE op as its consumer
+  # so `quantize_tensor` updates only DEQUANTIZE's op version when needed.
+  quantize_tensor.quantize_tensor(
+      dataclasses.replace(transformation_input, consumers=[op_id])
+  )
   return qtyping.TransformationInfo(
       op_id=op_id, num_ops_added=1, output_tensor_id=new_tensor_id
   )
