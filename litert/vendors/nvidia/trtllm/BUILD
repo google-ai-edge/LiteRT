@@ -34,6 +34,7 @@ cuda_library(
         "int4_block_gemv.cu",
         "qkv_norm_rope.cu",
         "quant_cache.cu",
+        "quant_gemm.cu",
         "quant_linear.cu",
         "subbyte_gemm.cu",
         "subbyte_gemm_int8.cu",
@@ -50,6 +51,7 @@ cuda_library(
         "int4_block_gemv.h",
         "qkv_norm_rope.h",
         "quant_cache.h",
+        "quant_gemm.h",
         "quant_linear.h",
         "subbyte_gemm.h",
         "tiled_attention.h",
@@ -88,6 +90,7 @@ cc_library(
         "int4_block_gemv.h",
         "qkv_norm_rope.h",
         "quant_cache.h",
+        "quant_gemm.h",
         "quant_linear.h",
         "subbyte_gemm.h",
         "tiled_attention.h",
@@ -111,6 +114,29 @@ cc_library(
 cc_test(
     name = "quant_linear_test",
     srcs = ["quant_linear_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        ":quant_linear_reference",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "quant_gemm_test",
+    srcs = ["quant_gemm_test.cc"],
     tags = [
         "exclusive",
         "manual",
