@@ -2157,6 +2157,56 @@ bool IsRopeOfQuantProjection(const Op& op) {
   return product && IsQuantFullyConnected(*product);
 }
 
+// odml.factorized_mlp(x FLOAT16 [.., 2 C], six centered INT2 weights) -> y
+// FLOAT16: a factorized MLP carved into one composite (tools/carve), whose
+// attributes carry the INT8 scales of x and of the stages' results in order
+// (QuantFactorizedMlp::scales). The weights are up-1 a and b, up-2, down-1 and
+// down-2 a and b.
+struct QuantFactorizedMlpComposite {
+  float scales[6] = {};
+};
+
+std::optional<QuantFactorizedMlpComposite> ParseQuantFactorizedMlpComposite(
+    const Op& op) {
+  if (!QuantProductsEnabled() || op.Code() != kLiteRtOpCodeShloComposite ||
+      CompositeOpName(op) != "odml.factorized_mlp" || op.Inputs().size() != 7 ||
+      op.Outputs().size() != 1 || op.Inputs()[0].HasWeights() ||
+      op.Inputs()[0].ElementType() != litert::ElementType::Float16 ||
+      op.Outputs()[0].ElementType() != litert::ElementType::Float16) {
+    return std::nullopt;
+  }
+  for (int i = 1; i <= 6; ++i) {
+    const auto type = op.Inputs()[i].RankedTensorType();
+    if (!type) return std::nullopt;
+    const size_t rank = type->Layout().Rank();
+    const bool blocks = i == 3 || i == 4;
+    if ((blocks ? rank < 3 : rank != 2) ||
+        !CenteredInt2Scales(op.Inputs()[i], blocks ? rank - 2 : 1)) {
+      return std::nullopt;
+    }
+  }
+  CompositeOptions options;
+  if (options.InitFromOp(op.Get()) != kLiteRtStatusOk ||
+      !options.attributes_map.has_value()) {
+    return std::nullopt;
+  }
+  auto& attributes = options.attributes_map.value();
+  constexpr const char* kScales[6] = {"scale_in",  "scale_up1",   "scale_up2",
+                                      "scale_act", "scale_down1", "scale_out"};
+  QuantFactorizedMlpComposite parsed;
+  for (int i = 0; i < 6; ++i) {
+    if (attributes[kScales[i]].IsNull()) return std::nullopt;
+    parsed.scales[i] = attributes[kScales[i]].AsFloat();
+    if (!(parsed.scales[i] > 0.0f)) return std::nullopt;
+  }
+  // The kernels' table between the middle stages is the SiLU.
+  if (!attributes["activation"].IsNull() &&
+      std::strcmp(attributes["activation"].AsString().c_str(), "silu") != 0) {
+    return std::nullopt;
+  }
+  return parsed;
+}
+
 Expected<bool> IsCompositeSupported(const Op& op) {
   const std::string name = CompositeOpName(op);
   if (name.empty() || !NativeCompositeEnabled(name)) {
@@ -2225,6 +2275,9 @@ Expected<bool> IsCompositeSupported(const Op& op) {
   }
   if (name == "odml.rope") {
     return ParseQuantRope(op).has_value() && IsRopeOfQuantProjection(op);
+  }
+  if (name == "odml.factorized_mlp") {
+    return ParseQuantFactorizedMlpComposite(op).has_value();
   }
   if (name == "odml.short_conv_step") {
     return ParseShortConvStep(op).has_value();
@@ -3397,6 +3450,12 @@ class TensorRtGraphBuilder {
       TensorRtWeightStoreBuilder* weight_store,
       absl::Span<const std::string> shared_cache_inputs) {
     weight_store_ = weight_store;
+    GraphComputesFloat16() = SubgraphComputesFloat16(subgraph);
+    if (GraphComputesFloat16()) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX the graph computes in FLOAT16: FP16 "
+                 "activations");
+    }
     LITERT_RETURN_IF_ERROR(
         FindReadOnlyValueCaches(subgraph, read_only_value_cache_inputs));
     LITERT_RETURN_IF_ERROR(
@@ -3980,14 +4039,40 @@ class TensorRtGraphBuilder {
     return PredequantMode::kFloat;
   }
 
-  // bf16 keeps fp32's exponent range, sidestepping overflow in reductions
-  // and exp-heavy regions at slightly coarser mantissa.
+  // bf16 keeps fp32's exponent range, sidestepping overflow in reductions and
+  // exp-heavy regions at slightly coarser mantissa. That is a choice of the
+  // pool for the Gemma 4 graphs, which compute in FLOAT32 (with FLOAT16 casts
+  // around some norms). A graph whose quantized products sit between FLOAT16
+  // tensors (a residual stream, attention results and head in FLOAT16, every
+  // product INT8) has chosen its type: the values between its quant layers are
+  // FP16, and BF16 would drop three bits of every one of them (the first token
+  // of a reply changed with it).
   static nvinfer1::DataType ModeFloatType() {
     const char* value = std::getenv("LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS");
-    if (value != nullptr && std::strcmp(value, "bf16") == 0) {
+    if (value != nullptr && std::strcmp(value, "bf16") == 0 &&
+        !GraphComputesFloat16()) {
       return nvinfer1::DataType::kBF16;
     }
     return nvinfer1::DataType::kHALF;
+  }
+
+  // Whether the subgraph being built computes in FLOAT16: set by Build.
+  static bool& GraphComputesFloat16() {
+    thread_local bool value = false;
+    return value;
+  }
+
+  // A statically quantized product between FLOAT16 tensors (the ops of
+  // FindQuantRegions), in the graph's own ops or carved into a composite.
+  static bool SubgraphComputesFloat16(const Subgraph& subgraph) {
+    for (const auto& op : subgraph.Ops()) {
+      if (IsQuantFullyConnected(op) || IsQuantLogitsFullyConnected(op) ||
+          IsQuantBatchMatmul(op) ||
+          ParseQuantFactorizedMlpComposite(op).has_value()) {
+        return true;
+      }
+    }
+    return false;
   }
 
   const char* KeepName(std::string name) {
@@ -11991,7 +12076,10 @@ class TensorRtGraphBuilder {
 
   struct QuantGlue {
     QuantGlueChain chain;
-    std::optional<Tensor> quantized;  // the QUANTIZE's INT8 result
+    // The QUANTIZE's INT8 result, or the FLOAT16 x of a carved factorized MLP,
+    // whose QUANTIZE is inside the composite; and its INT8 scale.
+    std::optional<Tensor> quantized;
+    float scale = 0.0f;
   };
 
   struct QuantProjections {
@@ -12355,7 +12443,25 @@ class TensorRtGraphBuilder {
     LITERT_ASSIGN_OR_RETURN(auto type, tensor.RankedTensorType());
     LITERT_ASSIGN_OR_RETURN(auto dims, ConvertDims(type));
     LITERT_ASSIGN_OR_RETURN(rows, ReshapeTensor(rows, dims));
-    return AddDequantizeTensor(tensor, rows, ModeFloatType());
+    if (tensor.ElementType() == litert::ElementType::Int8) {
+      return AddDequantizeTensor(tensor, rows, ModeFloatType());
+    }
+    // The FLOAT16 result of a carved composite: the scale is the layer's.
+    nvinfer1::Dims scalar{};
+    const float scale[] = {value.scale};
+    LITERT_ASSIGN_OR_RETURN(
+        auto* scale_tensor,
+        AddFloatConstant(
+            scale, scalar,
+            "quant_view_scale_" + std::to_string(tensor.TensorIndex()),
+            QuantizationScaleType(ModeFloatType())));
+    auto* layer =
+        network_->addDequantize(*rows, *scale_tensor, ModeFloatType());
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to dequantize a quant layer's result");
+    }
+    return layer->getOutput(0);
   }
 
   bool QuantOpsAreFree(const std::vector<LiteRtOp>& ops) const {
@@ -12636,6 +12742,27 @@ class TensorRtGraphBuilder {
     return table;
   }
 
+  // Packed INT2 BATCH_MATMUL weights [blocks, columns, outputs] as the rows
+  // [blocks * outputs, columns] of a FULLY_CONNECTED per block.
+  static std::vector<uint8_t> QuantTransposedBlocks(
+      absl::Span<const uint8_t> packed, int32_t blocks, int32_t columns,
+      int32_t outputs) {
+    std::vector<uint8_t> rows(packed.size(), 0);
+    for (int32_t b = 0; b < blocks; ++b) {
+      for (int32_t k = 0; k < columns; ++k) {
+        const size_t from = (static_cast<size_t>(b) * columns + k) * outputs;
+        for (int32_t n = 0; n < outputs; ++n) {
+          const uint8_t field =
+              (packed[(from + n) / 4] >> (2 * ((from + n) % 4))) & 3;
+          const size_t to =
+              (static_cast<size_t>(b) * outputs + n) * columns + k;
+          rows[to / 4] |= field << (2 * (to % 4));
+        }
+      }
+    }
+    return rows;
+  }
+
   // The dims [.., blocks, columns, outputs] of BATCH_MATMUL weights.
   static std::array<int32_t, 3> QuantBlockDims(const Tensor& weights) {
     const auto type = weights.RankedTensorType();
@@ -12700,7 +12827,8 @@ class TensorRtGraphBuilder {
     };
 
     QuantActivation activation;
-    if (mlp.input->ElementType() == litert::ElementType::Int8) {
+    if (mlp.input->ElementType() == litert::ElementType::Int8 ||
+        quant_values_.count(mlp.input->Get()) != 0) {
       LITERT_ASSIGN_OR_RETURN(activation,
                               GetQuantActivation(*mlp.input, 2 * up1_columns));
     } else {
@@ -12728,8 +12856,16 @@ class TensorRtGraphBuilder {
                                     joined(scales[0], scales[1]), nullptr,
                                     nullptr, name + "_up1"));
 
+    // The middle stages' weights are stored [blocks, inputs, outputs], one
+    // output's weights spread over the input rows. Transposed copies give
+    // every output its weights as a row, and the rows kernel takes them four
+    // inputs per dp4a: a third of the launch time of the blocks kernel for a
+    // decode step and a seventh for a prefill chunk. The copies are constants
+    // of the plan (the model file's bytes would be shared through the weight
+    // store, but the decode and the prefill graphs hold separate copies of
+    // these weights in the file anyway).
     params = {};
-    params.layout = kLiteRtNvidiaQuantLayoutBlocks;
+    params.layout = kLiteRtNvidiaQuantLayoutRows;
     params.bit_width = 2;
     params.rows = blocks * up2[2];
     params.columns = up2[1];
@@ -12741,7 +12877,9 @@ class TensorRtGraphBuilder {
     params.lut = 1;
     params.ratio = ratio(1, 2);
     const auto silu = QuantSiluTable(mlp.scales[2], mlp.scales[3]);
-    const absl::Span<const uint8_t> up2_members[] = {bytes(2)};
+    const auto up2_rows =
+        QuantTransposedBlocks(bytes(2), blocks, up2[1], up2[2]);
+    const absl::Span<const uint8_t> up2_members[] = {up2_rows};
     LITERT_ASSIGN_OR_RETURN(
         stage, AddQuantLinear(params, stage, up2_members, scales[2], &silu,
                               nullptr, name + "_up2"));
@@ -12752,7 +12890,9 @@ class TensorRtGraphBuilder {
     params.swap1 = 2;
     params.lut = 0;
     params.ratio = ratio(3, 4);
-    const absl::Span<const uint8_t> down1_members[] = {bytes(3)};
+    const auto down1_rows =
+        QuantTransposedBlocks(bytes(3), blocks, down1[1], down1[2]);
+    const absl::Span<const uint8_t> down1_members[] = {down1_rows};
     LITERT_ASSIGN_OR_RETURN(
         stage, AddQuantLinear(params, stage, down1_members, scales[3], nullptr,
                               nullptr, name + "_down1"));
@@ -13132,6 +13272,22 @@ class TensorRtGraphBuilder {
                      quant_factorized_mlps_.size(), members);
       quant_factorized_mlps_.push_back(std::move(*mlp));
     }
+    // Factorized MLPs carved into odml.factorized_mlp: the composite is the
+    // region.
+    for (const auto& op : ops) {
+      const auto carved = ParseQuantFactorizedMlpComposite(op);
+      if (!carved.has_value() || !QuantOpsAreFree({op.Get()})) continue;
+      QuantFactorizedMlp mlp;
+      mlp.input = op.Inputs()[0];
+      for (int i = 1; i <= 6; ++i) mlp.weights.push_back(op.Inputs()[i]);
+      std::copy(std::begin(carved->scales), std::end(carved->scales),
+                mlp.scales);
+      mlp.output = op.Outputs()[0];
+      quant_outputs_.insert(mlp.output->Get());
+      AddQuantRegion(QuantRegionKind::kFactorizedMlp,
+                     quant_factorized_mlps_.size(), {op.Get()});
+      quant_factorized_mlps_.push_back(std::move(mlp));
+    }
     // The other INT8 products with INT4 weights, grouped by the tensor they
     // read: the q, k and v projections are one launch.
     for (const auto& op : ops) {
@@ -13217,6 +13373,25 @@ class TensorRtGraphBuilder {
       AddQuantRegion(QuantRegionKind::kHead, quant_heads_.size(), members);
       quant_heads_.push_back(std::move(head));
     }
+    // The float steps in front of a carved factorized MLP, whose QUANTIZE is
+    // inside the composite: behind an RMS norm the glue quantizes for it.
+    for (const auto& mlp : quant_factorized_mlps_) {
+      if (mlp.input->ElementType() != litert::ElementType::Float16 ||
+          !ReadOnce(*mlp.input)) {
+        continue;
+      }
+      QuantGlue glue;
+      glue.chain = MatchQuantGlueChain(*mlp.input, /*shared=*/false);
+      if (!glue.chain.norm.has_value() ||
+          !QuantOpsAreFree(glue.chain.members)) {
+        continue;
+      }
+      glue.quantized = *mlp.input;
+      glue.scale = mlp.scales[0];
+      AddQuantRegion(QuantRegionKind::kGlue, quant_glues_.size(),
+                     glue.chain.members);
+      quant_glues_.push_back(std::move(glue));
+    }
     // The float steps in front of the QUANTIZE ops that feed the products:
     // a QUANTIZE behind an RMS norm becomes a glue layer; any other is left
     // to the product's kernel, which quantizes its float input itself.
@@ -13243,6 +13418,7 @@ class TensorRtGraphBuilder {
       glue.chain = MatchQuantGlueChain(op.Inputs()[0], /*shared=*/false);
       if (!glue.chain.norm.has_value()) continue;
       glue.quantized = op.Outputs()[0];
+      glue.scale = op.Outputs()[0].PerTensorQuantization().scale;
       members.insert(members.end(), glue.chain.members.begin(),
                      glue.chain.members.end());
       if (!QuantOpsAreFree(members)) continue;
@@ -13308,7 +13484,7 @@ class TensorRtGraphBuilder {
   }
 
   Expected<void> LowerQuantGlue(const QuantGlue& glue) {
-    const float scale = glue.quantized->PerTensorQuantization().scale;
+    const float scale = glue.scale;
     LITERT_ASSIGN_OR_RETURN(
         auto* q,
         AddQuantGlue(glue.chain, kLiteRtNvidiaQuantGlueStatic, scale, nullptr,

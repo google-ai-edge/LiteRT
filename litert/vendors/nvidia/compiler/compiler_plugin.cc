@@ -85,7 +85,7 @@ using litert::Expected;
 
 constexpr char kPluginManufacturer[] = "NVIDIA";
 constexpr char kPluginSocModel[] = "tensorrt-rtx";
-constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 20;
+constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 21;
 
 enum class PartitionPolicy {
   kSafe,

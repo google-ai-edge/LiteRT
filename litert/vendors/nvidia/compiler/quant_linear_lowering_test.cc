@@ -311,6 +311,28 @@ class Graph {
     return output;
   }
 
+  // odml.factorized_mlp(x, six weights) -> y FLOAT16 with the six INT8 scales
+  // as attributes, as the carve tool writes it.
+  LiteRtTensorT& FactorizedMlpComposite(
+      LiteRtTensorT& x, const std::vector<LiteRtTensorT*>& weights,
+      const float* scales) {
+    auto& output = Tensor(kLiteRtElementTypeFloat16, Dims(x));
+    std::vector<LiteRtTensorT*> inputs = {&x};
+    inputs.insert(inputs.end(), weights.begin(), weights.end());
+    auto& op = Op(kLiteRtOpCodeShloComposite, inputs, output);
+    flexbuffers::Builder attributes;
+    const auto map = attributes.StartMap();
+    attributes.Int("version", 1);
+    attributes.String("activation", "silu");
+    const char* names[6] = {"scale_in",  "scale_up1",   "scale_up2",
+                            "scale_act", "scale_down1", "scale_out"};
+    for (int i = 0; i < 6; ++i) attributes.Float(names[i], scales[i]);
+    attributes.EndMap(map);
+    attributes.Finish();
+    SetComposite(op, "odml.factorized_mlp", attributes.GetBuffer());
+    return output;
+  }
+
   static std::vector<int32_t> Dims(const LiteRtTensorT& tensor) {
     const auto& layout = tensor.Type().second.ranked_tensor_type.layout;
     return std::vector<int32_t>(layout.dimensions,
@@ -750,6 +772,27 @@ struct FactorizedMlp {
     return g.Concat(*results[0], *results[1], 1);
   }
 
+  // The same MLP as the composite the carve tool makes of those ops, from
+  // the FLOAT16 tensor `x` [1, m, 2 C] in front of its QUANTIZE.
+  LiteRtTensorT& BuildComposite(Graph& g, LiteRtTensorT& x, bool rank4) const {
+    const auto block_dims = [&](int inputs, int outputs) {
+      return rank4 ? std::vector<int32_t>{1, kB, inputs, outputs}
+                   : std::vector<int32_t>{kB, inputs, outputs};
+    };
+    const size_t block_axis = rank4 ? 2 : 1;
+    return g.FactorizedMlpComposite(
+        x,
+        {&g.CenteredInt2Weights({kR1, kC}, 1, up1[0], up1_scales[0]),
+         &g.CenteredInt2Weights({kR1, kC}, 1, up1[1], up1_scales[1]),
+         &g.CenteredInt2Weights(block_dims(kK2, kN), block_axis, up2,
+                                up2_scales),
+         &g.CenteredInt2Weights(block_dims(kN, 2 * kD), block_axis, down1,
+                                down1_scales),
+         &g.CenteredInt2Weights({kR4, kB * kD}, 1, down2[0], down2_scales[0]),
+         &g.CenteredInt2Weights({kR4, kB * kD}, 1, down2[1], down2_scales[1])},
+        scales);
+  }
+
   // The reference: the four products on the INT8 rows `xq`.
   std::vector<float> Reference(const std::vector<float>& xq, int m) const {
     const auto join = [](const std::vector<uint8_t>& a,
@@ -841,8 +884,8 @@ struct FactorizedMlp {
 // QUANTIZE and query projection with its head norm, rotation and scalar.
 // Launches: the output projection (it quantizes its float input), a glue, the
 // four of the factorized MLP, a glue, the query projection, a qkv rope.
-void RunBlockBack(int tokens, bool prefill) {
-  SCOPED_TRACE(testing::Message() << tokens << " tokens");
+void RunBlockBack(int tokens, bool prefill, bool carved = false) {
+  SCOPED_TRACE(testing::Message() << tokens << " tokens, carved " << carved);
   Random random(23 + tokens);
   const float attention_scale = 0.04118f;
   const float projected_scale = 0.05521f;
@@ -890,17 +933,29 @@ void RunBlockBack(int tokens, bool prefill) {
     return g.Binary(
         kLiteRtOpCodeTflAdd,
         g.Binary(kLiteRtOpCodeTflMul, stream, g.Scalar16(c_x[i])),
-        g.Binary(kLiteRtOpCodeTflMul, g.Norm(g.Dequantize(branch), norm),
+        g.Binary(kLiteRtOpCodeTflMul,
+                 g.Norm(Graph::ElementType(branch) == kLiteRtElementTypeInt8
+                            ? g.Dequantize(branch)
+                            : branch,
+                        norm),
                  g.Scalar16(c_y[i])));
   };
   auto& x1 = residual(x, projected, norm_after_attention, 0);
-  auto& mlp_in =
-      g.Quantize(g.Reshape(g.Norm(x1, norm_before_mlp), {tokens, kWidth}),
-                 factorized_mlp.scales[0]);
-  auto& mlp_out =
-      g.Reshape(factorized_mlp.Build(g, mlp_in, tokens, /*rank4=*/!prefill),
-                {1, tokens, kWidth});
-  auto& x2 = residual(x1, mlp_out, norm_after_mlp, 1);
+  // The carved model has the MLP as one composite between the FLOAT16
+  // tensors around it; the model as exported has its ops.
+  LiteRtTensorT* mlp_out = nullptr;
+  if (carved) {
+    mlp_out = &factorized_mlp.BuildComposite(g, g.Norm(x1, norm_before_mlp),
+                                             /*rank4=*/!prefill);
+  } else {
+    auto& mlp_in =
+        g.Quantize(g.Reshape(g.Norm(x1, norm_before_mlp), {tokens, kWidth}),
+                   factorized_mlp.scales[0]);
+    mlp_out =
+        &g.Reshape(factorized_mlp.Build(g, mlp_in, tokens, /*rank4=*/!prefill),
+                   {1, tokens, kWidth});
+  }
+  auto& x2 = residual(x1, *mlp_out, norm_after_mlp, 1);
   auto& next = g.Quantize(g.Norm(x2, norm_next), next_scale);
   auto& q_projected =
       g.FullyConnected(next, g.Int4Weights(kWidth, kWidth, q_weights, q_scales),
@@ -1005,6 +1060,13 @@ TEST(QuantLinearLoweringTest, BackOfADecodeBlock) {
 
 TEST(QuantLinearLoweringTest, BackOfAPrefillBlock) {
   RunBlockBack(/*tokens=*/6, /*prefill=*/true);
+}
+
+// The same blocks of the carved model: odml.factorized_mlp is lowered as the
+// four launches of its ops, behind the same glue, with the same results.
+TEST(QuantLinearLoweringTest, BackOfACarvedBlock) {
+  RunBlockBack(/*tokens=*/1, /*prefill=*/false, /*carved=*/true);
+  RunBlockBack(/*tokens=*/6, /*prefill=*/true, /*carved=*/true);
 }
 
 // The tail of the decode graph: the final norm, whose FLOAT16 result is the
