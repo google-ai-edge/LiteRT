@@ -42,6 +42,12 @@
 // window - 1, at most p + 1 and at most ring - 1. Then positions becomes
 // p + 1, the cache parameter {p + 1, p + 2, p + 2} (its other values stay),
 // and the global causal mask gains key p + 1.
+//
+// An MTP drafter's step feeds the next one of its round (dispatch_api.cc,
+// DraftFeed): the input is the token's embedding followed by the step's
+// projected activations, copied as they are (the tail), and the steps of a
+// round share their position, which no feed advances (no positions, cache
+// parameter or masks).
 struct LiteRtNvidiaStepFeedParams {
   const int32_t* token;     // [1] the greedy token, on the device
   const uint8_t* table;     // INT4 or INT2 [vocab, dim]
@@ -54,8 +60,8 @@ struct LiteRtNvidiaStepFeedParams {
   float multiplier;
   int32_t vocab;
   int32_t dim;
-  float* embeddings;    // [dim]
-  int32_t* positions;   // [1]
+  float* embeddings;    // [dim + tail_count]
+  int32_t* positions;   // [1], or null without a cache parameter and masks
   int32_t* param;       // [>= 3], or null
   uint8_t* local_mask;  // [ring], or null
   int32_t ring;
@@ -77,12 +83,15 @@ struct LiteRtNvidiaStepFeedParams {
   unsigned int* blocks_done;
   // Host-mapped mirrors of what was written (null: not mirrored).
   int32_t* token_mirror;      // [1]
-  float* embeddings_mirror;   // [dim]
+  float* embeddings_mirror;   // [dim + tail_count]
   int32_t* positions_mirror;  // [1]
   int32_t* param_mirror;      // [param_count]
   int32_t param_count;
   uint8_t* local_mask_mirror;  // [ring]
   float* per_layer_mirror;     // [per_layer_count * per_layer_width]
+  // What follows the embedding in `embeddings` (null: nothing), on the device.
+  const float* tail;  // [tail_count]
+  int32_t tail_count;
 };
 
 // A strided copy, as cudaMemcpy2D takes it: `height` runs of `width` bytes,
@@ -107,7 +116,8 @@ extern "C" cudaError_t LiteRtNvidiaLaunchRowCopies(
 // Enqueues the feed on `stream`, one launch. An out-of-range token (negative
 // or at least vocab) gives zero embeddings and is mirrored as is. Exactly one
 // of row_scales and block_scales is given; dim is a multiple of scale_block;
-// the bits are 4 or 2, and dim times bits a multiple of 8.
+// the bits are 4 or 2, and dim times bits a multiple of 8. Without positions,
+// no cache parameter and no masks.
 extern "C" cudaError_t LiteRtNvidiaLaunchStepFeed(
     const LiteRtNvidiaStepFeedParams* params, cudaStream_t stream);
 

@@ -237,8 +237,9 @@ uint64_t NextDeviceContextSerial() {
 // the context window (the drafter's steps plus one or two in a row) or, when
 // adaptive, for a bootstrap of 16 plain steps and the priming step after it,
 // none of which should take the tables' device memory for the rest of the
-// process; plain decoding runs its first response's first steps without
-// steps ahead, once per process.
+// process (the drafter's chained steps take the token table, DraftFeed);
+// plain decoding runs its first response's first steps without steps ahead,
+// once per process.
 constexpr uint64_t kTokenTableUploadInvocations = 32;
 
 // How the session samples, for the steps run ahead (step_sampler_c_api.h):
@@ -470,9 +471,14 @@ void RunTokenTableUpload(TokenTableUpload* upload) {
 // unless another step feed's copy is in flight: the states of this call
 // still lack those tables, and a later call finds them on the device, or
 // the step feed failed.
+// With `adopt`, a step feed with no registration of its own takes another
+// step feed's registration of such a table: an MTP drafter embeds its tokens
+// with the base model's embedder, whose registration is for the base model's
+// decode step.
 std::vector<TokenTableState> FindTokenTables(
     const void* context, uint64_t device_context,
-    const std::vector<AwaitedTokenTable>& keys, bool upload) {
+    const std::vector<AwaitedTokenTable>& keys, bool upload,
+    bool adopt = false) {
   auto& registry = GetTokenTableRegistry();
   std::vector<TokenTableState> states(keys.size());
   std::vector<std::shared_ptr<const TokenTableSource>> sources(keys.size());
@@ -493,8 +499,19 @@ std::vector<TokenTableState> FindTokenTables(
     if (waiter == nullptr) {
       registry.waiters.push_back(
           {context, device_context, keys[i], nullptr, false});
-      ready = false;
-      continue;
+      if (!adopt) {
+        ready = false;
+        continue;
+      }
+      waiter = &registry.waiters.back();
+    }
+    if (adopt && waiter->source == nullptr && !waiter->failed) {
+      for (const auto& other : registry.waiters) {
+        if (other.key == keys[i] && other.source != nullptr) {
+          waiter->source = other.source;
+          break;
+        }
+      }
     }
     states[i] = {std::nullopt, waiter->source != nullptr, waiter->failed};
     ready = ready && states[i].registered && !states[i].failed;
@@ -559,11 +576,11 @@ bool TokenTableWanted(const AwaitedTokenTable& key) {
 
 // Takes a registration for the step feeds it is for (RegistrationWanted,
 // checked again under the lock). Nothing is copied now: one of them has it
-// copied to the device in a long decode loop (kTokenTableUploadInvocations;
-// under speculative decoding the table never takes device memory). Only that
-// copy reads the caller's memory, no longer than the step feed's context is
-// there: the caller's model resources outlive it. The first copy of a kind,
-// vocab and dim serves every step feed that awaits one.
+// copied to the device in a long decode loop (kTokenTableUploadInvocations),
+// or an MTP drafter whose steps chain (DraftFeed, under speculative decoding).
+// Only that copy reads the caller's memory, no longer than the step feed's
+// context is there: the caller's model resources outlive it. The first copy
+// of a kind, vocab and dim serves every step feed that awaits one.
 LiteRtStatus TakeTokenTable(RegisteredTokenTable registered,
                             const std::vector<const void*>& table_parts,
                             size_t part_bytes,
@@ -881,6 +898,20 @@ class CudaTensorBufferRegistry {
     return nullptr;
   }
 
+  // Whether the buffers at `handle` have pinned host copies that hold the
+  // device copy (a read lock needs no download), and there is a buffer.
+  bool PinnedHostCurrent(void* handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(handle);
+    if (range.first == range.second) return false;
+    for (auto it = range.first; it != range.second; ++it) {
+      if (!it->second->host_current || !it->second->host_cache_pinned) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   // The host copy of the buffer at `handle` holds the device copy.
   void MarkHostCurrent(void* handle) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -1153,6 +1184,56 @@ class FusedGreedyRegistry {
   std::unordered_map<const void*, FusedGreedyEntry> entries_;
 };
 
+// The MTP drafter's steps chained on the device (the invocation context's
+// DraftFeed): once a greedy sampler took a step's token from the argmax the
+// step ran on the device (FusedGreedyRegistry, or a step ahead's handoff),
+// the drafter that wrote those logits runs its round's next step. By the
+// logits' device pointer; LiteRT-LM samples a drafter step on the thread that
+// invoked it.
+class DraftFeedRegistry {
+ public:
+  using Launch = std::function<void(const NvidiaGreedySamplerContext*)>;
+  static DraftFeedRegistry& Get() {
+    static auto* registry = new DraftFeedRegistry;
+    return *registry;
+  }
+  void Set(const void* logits, Launch launch) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    launches_[logits] = std::move(launch);
+  }
+  void Clear(const void* logits) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    launches_.erase(logits);
+  }
+  // `context` took the token of the step that wrote `logits`; its argmax is
+  // the context's device result.
+  void Taken(const void* logits, const NvidiaGreedySamplerContext* context) {
+    Launch launch;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      auto it = launches_.find(logits);
+      if (it == launches_.end()) return;
+      launch = it->second;
+    }
+    launch(context);
+  }
+  // A device allocation is going away: no drafter writes logits there.
+  void ForgetRange(const void* begin, size_t bytes) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const uintptr_t first = reinterpret_cast<uintptr_t>(begin);
+    for (auto it = launches_.begin(); it != launches_.end();) {
+      const uintptr_t address = reinterpret_cast<uintptr_t>(it->first);
+      it = address >= first && address - first < std::max<size_t>(bytes, 1)
+               ? launches_.erase(it)
+               : std::next(it);
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  std::unordered_map<const void*, Launch> launches_;
+};
+
 LiteRtStatus ValidateCudaDevicePointer(void* device_ptr) {
   if (device_ptr == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -1261,6 +1342,7 @@ LiteRtStatus DestroyCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
     // A sampler that still reads another view of the allocation registers
     // again on its next call.
     FusedGreedyRegistry::Get().ForgetRange(info->memory_handle, info->bytes);
+    DraftFeedRegistry::Get().ForgetRange(info->memory_handle, info->bytes);
   }
   LiteRtStatus status = kLiteRtStatusOk;
   if (info->host_cache != nullptr) {
@@ -2055,16 +2137,19 @@ LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
     std::copy_n(context->host_result, rows, token_ids);
     ++context->calls;
     ++context->fused_calls;
+    DraftFeedRegistry::Get().Taken(device_logits, context);
     return kLiteRtStatusOk;
   }
   StepHandoff handoff;
   const bool fed = StepHandoffRegistry::Get().Find(device_logits, &handoff);
   if (fed && rows == 1 &&
       !CudaTensorBufferRegistry::Get().AnyHostNewer(handle) && handoff.k == 1) {
-    // The decode step that feeds itself argmaxed the step's logits already.
+    // The decode step that feeds itself, or the drafter's step ahead,
+    // argmaxed the step's logits already.
     token_ids[0] = handoff.ids[0];
     ++context->calls;
     ++context->fused_calls;
+    DraftFeedRegistry::Get().Taken(device_logits, context);
     return kLiteRtStatusOk;
   }
 
@@ -2899,6 +2984,7 @@ class LiteRtDispatchInvocationContextT {
     SaveRuntimeCache();
     LogOwnGraphUse();
     DestroyStepFeed();
+    DestroyDraftFeed();
     DestroyOwnGraphs();
     DestroyExternalHeadResources();
     for (cudaStream_t aux_stream : aux_streams_) {
@@ -3121,6 +3207,33 @@ class LiteRtDispatchInvocationContextT {
                    static_cast<unsigned long long>(steps));
       }
     }
+    if (draft_.in_flight) {
+      // The drafter's next step ran ahead (DraftFeed): this is it when the
+      // host's input is the one it used.
+      LITERT_RETURN_IF_ERROR(CudaOk(cudaEventSynchronize(draft_.slot.feed_done),
+                                    "cudaEventSynchronize draft feed"));
+      LITERT_ASSIGN_OR_RETURN(const bool matched, VerifyDraftInputs());
+      if (matched) {
+        DispatchCpuTimer take_timer(profile);
+        LITERT_RETURN_IF_ERROR(TakeDraftStep());
+        if (profile) {
+          LITERT_LOG(LITERT_INFO,
+                     "NVIDIA dispatch profile function=%s draft_ahead=1 "
+                     "cpu_sync_ms=%.3f",
+                     bytecode_.function_name.c_str(), take_timer.ElapsedMs());
+        }
+        return {};
+      }
+      LITERT_RETURN_IF_ERROR(DropDraftStep());
+    }
+    if (draft_.enabled) {
+      // The host runs this step: its token is the invocation's own argmax,
+      // and the round counts it.
+      if (draft_.logits != nullptr) {
+        StepHandoffRegistry::Get().Clear(draft_.logits);
+      }
+      if (!draft_.stopped) LITERT_RETURN_IF_ERROR(CountDraftRound());
+    }
     LITERT_RETURN_IF_ERROR(device_context_->WaitStepAhead(this, stream_));
 
     ScopedHostBufferLocks locked(runtime_context_);
@@ -3331,6 +3444,11 @@ class LiteRtDispatchInvocationContextT {
     // not at the speculation after it (the first speculating step of a
     // session read the live buffer otherwise).
     EnsureFeedLogitsPinned();
+    if (draft_.enabled && !draft_.stopped) {
+      // The drafter's projected activations are read by the host after the
+      // round's next step ran ahead: from their host copy, prefetched here.
+      LITERT_RETURN_IF_ERROR(RegisterDraftLogits());
+    }
     LITERT_RETURN_IF_ERROR(PrefetchReadOutputs(nullptr));
     DispatchCpuTimer sync_timer(profile);
     const char* sync_context =
@@ -3696,6 +3814,7 @@ class LiteRtDispatchInvocationContextT {
     LITERT_RETURN_IF_ERROR(MapEngineWeights());
     LITERT_RETURN_IF_ERROR(RefitEngine());
     LITERT_RETURN_IF_ERROR(InitStepFeed());
+    LITERT_RETURN_IF_ERROR(InitDraftFeed());
     DumpEngineInfo();
     const bool own_graph = OwnCudaGraph(&own_graph_mode_);
     if (UseCudaGraph() || own_graph) {
@@ -3923,6 +4042,54 @@ class LiteRtDispatchInvocationContextT {
     bool returned_valid = false;
   };
   StepFeed feed_;
+
+  // An MTP drafter's steps chained on the device. LiteRT-LM drafts a round of
+  // steps (llm_litert_mtp_drafter.cc, RunDraftingLoop) that share the
+  // position, the masks and the base model's caches it writes once per round;
+  // between two steps the host takes the step's greedy token, looks its
+  // embedding up and writes it, followed by the step's projected activations,
+  // as the next step's input. Once the sampler took a step's token from the
+  // argmax the step ran on the device (DraftFeedRegistry), the round's next
+  // step runs: the feed kernel writes that input from the token table (the
+  // embedder's, registered for the base model) and the activations, with a
+  // host-mapped mirror, then the step and its argmax. When the host asks for
+  // that step, its input must be the mirror and no other input rewritten, as
+  // for a decode step (StepFeed); otherwise the step runs as asked. The
+  // round's length is learned from the host's writes of the position, so no
+  // step runs past a round's end. LITERT_NVIDIA_DISPATCH_STEP_FEED=0 turns it
+  // off with the decode feed.
+  struct DraftFeed {
+    bool enabled = false;      // a drafter's engine, set up
+    bool stopped = false;      // too many misses, or the table cannot be had
+    size_t input_port = 0;     // FP32 [1, 1, 2 * dim]: embedding, activations
+    size_t position_port = 0;  // INT32 [1]
+    size_t activations_port = 0;  // output FP32 [1, 1, dim]
+    size_t logits_port = 0;       // output FP32 [1, 1, vocab]
+    uint32_t vocab = 0;
+    uint32_t dim = 0;
+    std::optional<RegisteredTokenTable> table;  // on the device
+    // The step ahead: its input's mirror (the token, then the 2 * dim
+    // floats), its events, its staged outputs.
+    StepFeedSlot slot;
+    // The step ahead's argmax for the host's sampler (StepHandoff), pinned.
+    int32_t* handoff_ids = nullptr;
+    float* handoff_values = nullptr;
+    int32_t* handoff_flags = nullptr;
+    const void* logits = nullptr;  // the device pointer it is registered by
+    bool in_flight = false;
+    bool token_enqueued = false;  // the step ahead's argmax is enqueued
+    // The steps of the round under way (the host's write of the position
+    // starts one), the length of the last round, the length learned from
+    // two equal rounds in a row (0: none).
+    uint32_t round_steps = 0;
+    uint32_t last_round = 0;
+    uint32_t round_length = 0;
+    bool logged_ready = false;
+    uint64_t speculated = 0;
+    uint64_t hits = 0;
+    uint64_t misses = 0;
+  };
+  DraftFeed draft_;
 
   // The step feed's token table, slots and sampler (bytecode.h,
   // TensorRtStepFeed). Nothing to set up when the bytecode has no feed, the
@@ -5263,6 +5430,420 @@ class LiteRtDispatchInvocationContextT {
       if (record.HasValue() && *record != nullptr) {
         CudaTensorBufferRegistry::Get().MarkHostStale((*record)->cuda_handle);
       }
+    }
+    return {};
+  }
+
+  // The drafter's engine (DraftFeed): two float outputs [1, 1, n], the
+  // smaller one's width doubled being an input's [1, 1, 2 * dim], one INT32
+  // [1] input (the position), no cache written. Nothing else is fed.
+  Expected<void> InitDraftFeed() {
+    if (bytecode_.step_feed.has_value() || !StepFeedEnabled() ||
+        aot_residency_ || DispatchDumpIoEnabled() ||
+        DumpOutputsSpec() != nullptr || !PrefetchOutputsEnabled() ||
+        !FusedSamplingEnabled() || bytecode_.output_names.size() != 2 ||
+        engine_ == nullptr) {
+      return {};
+    }
+    for (const int aliased : aliased_input_of_output_) {
+      if (aliased >= 0) return {};
+    }
+    const auto width = [&](const std::string& name) -> int64_t {
+      if (name.empty() || engine_->getTensorDataType(name.c_str()) !=
+                              nvinfer1::DataType::kFLOAT) {
+        return 0;
+      }
+      const nvinfer1::Dims dims = engine_->getTensorShape(name.c_str());
+      if (dims.nbDims != 3 || dims.d[0] != 1 || dims.d[1] != 1 ||
+          dims.d[2] <= 0) {
+        return 0;
+      }
+      return dims.d[2];
+    };
+    const int64_t first = width(bytecode_.output_names[0]);
+    const int64_t second = width(bytecode_.output_names[1]);
+    if (first == 0 || second == 0 || first == second) return {};
+    const int64_t dim = std::min(first, second);
+    int input_port = -1;
+    int position_port = -1;
+    for (size_t i = 0; i < bytecode_.input_names.size(); ++i) {
+      const std::string& name = bytecode_.input_names[i];
+      if (width(name) == 2 * dim) {
+        if (input_port >= 0) return {};
+        input_port = static_cast<int>(i);
+        continue;
+      }
+      const nvinfer1::Dims dims = engine_->getTensorShape(name.c_str());
+      if (engine_->getTensorDataType(name.c_str()) ==
+              nvinfer1::DataType::kINT32 &&
+          dims.nbDims == 1 && dims.d[0] == 1) {
+        if (position_port >= 0) return {};
+        position_port = static_cast<int>(i);
+      }
+    }
+    if (input_port < 0 || position_port < 0) return {};
+    draft_.input_port = static_cast<size_t>(input_port);
+    draft_.position_port = static_cast<size_t>(position_port);
+    draft_.activations_port = first < second ? 0 : 1;
+    draft_.logits_port = first < second ? 1 : 0;
+    draft_.dim = static_cast<uint32_t>(dim);
+    draft_.vocab = static_cast<uint32_t>(std::max(first, second));
+    const auto fail = [&](const char* what, cudaError_t status) {
+      LITERT_LOG(LITERT_WARNING, "NVIDIA dispatch %s: the draft feed's %s: %s",
+                 bytecode_.function_name.c_str(), what,
+                 cudaGetErrorString(status));
+      DestroyDraftFeed();
+      static_cast<void>(cudaGetLastError());
+      return Expected<void>();
+    };
+    StepFeedSlot& slot = draft_.slot;
+    const size_t mirror_bytes =
+        16 + 2 * static_cast<size_t>(dim) * sizeof(float);
+    cudaError_t status =
+        cudaHostAlloc(&slot.mirror, mirror_bytes,
+                      cudaHostAllocMapped | cudaHostAllocPortable);
+    if (status != cudaSuccess) return fail("mirror", status);
+    std::memset(slot.mirror, 0, mirror_bytes);
+    slot.token_mirror = static_cast<int32_t*>(slot.mirror);
+    slot.embeddings_mirror =
+        reinterpret_cast<float*>(static_cast<uint8_t*>(slot.mirror) + 16);
+    status = cudaEventCreateWithFlags(&slot.feed_done, cudaEventDisableTiming);
+    if (status != cudaSuccess) return fail("event", status);
+    status = cudaEventCreateWithFlags(&slot.step_done, cudaEventDisableTiming);
+    if (status != cudaSuccess) return fail("event", status);
+    slot.staging.assign(output_handles_.size(), nullptr);
+    slot.staging_bytes.assign(output_handles_.size(), 0);
+    status = cudaHostAlloc(reinterpret_cast<void**>(&draft_.handoff_ids),
+                           sizeof(int32_t), cudaHostAllocDefault);
+    if (status != cudaSuccess) return fail("handoff", status);
+    status = cudaHostAlloc(reinterpret_cast<void**>(&draft_.handoff_values),
+                           sizeof(float), cudaHostAllocDefault);
+    if (status != cudaSuccess) return fail("handoff", status);
+    status = cudaHostAlloc(reinterpret_cast<void**>(&draft_.handoff_flags),
+                           sizeof(int32_t), cudaHostAllocDefault);
+    if (status != cudaSuccess) return fail("handoff", status);
+    // An argmax, not a selection: a top-k reader makes its own.
+    draft_.handoff_values[0] = 0.0f;
+    draft_.handoff_flags[0] = kLiteRtNvidiaTopKCandidatesInconsistent;
+    draft_.enabled = true;
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA dispatch %s: an MTP drafter's step (input port %d "
+               "[1, 1, %lld], position port %d, vocabulary %u): its steps "
+               "chain on the device once a round's length is learned",
+               bytecode_.function_name.c_str(), input_port,
+               static_cast<long long>(2 * dim), position_port, draft_.vocab);
+    return {};
+  }
+
+  void DestroyDraftFeed() {
+    if (draft_.in_flight) cudaEventSynchronize(draft_.slot.step_done);
+    if (draft_.logits != nullptr) {
+      DraftFeedRegistry::Get().Clear(draft_.logits);
+      StepHandoffRegistry::Get().Clear(draft_.logits);
+    }
+    if (draft_.enabled || draft_.speculated != 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: the drafter ran %llu steps ahead: %llu "
+                 "taken, %llu missed%s",
+                 bytecode_.function_name.c_str(),
+                 static_cast<unsigned long long>(draft_.speculated),
+                 static_cast<unsigned long long>(draft_.hits),
+                 static_cast<unsigned long long>(draft_.misses),
+                 draft_.stopped ? " (stopped)" : "");
+    }
+    StepFeedSlot& slot = draft_.slot;
+    if (slot.feed_done != nullptr) cudaEventDestroy(slot.feed_done);
+    if (slot.step_done != nullptr) cudaEventDestroy(slot.step_done);
+    if (slot.mirror != nullptr) cudaFreeHost(slot.mirror);
+    for (void* staging : slot.staging) {
+      if (staging != nullptr) cudaFreeHost(staging);
+    }
+    if (draft_.handoff_ids != nullptr) cudaFreeHost(draft_.handoff_ids);
+    if (draft_.handoff_values != nullptr) cudaFreeHost(draft_.handoff_values);
+    if (draft_.handoff_flags != nullptr) cudaFreeHost(draft_.handoff_flags);
+    draft_ = DraftFeed();
+  }
+
+  // At an invocation the host made itself: a write of the position starts a
+  // round. Two rounds in a row of one length teach it; another length
+  // unlearns it.
+  Expected<void> CountDraftRound() {
+    auto* position = DraftRecord(false, draft_.position_port);
+    if (position == nullptr) {
+      draft_.stopped = true;
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: the drafter's position is not a device "
+                 "buffer: its steps do not chain",
+                 bytecode_.function_name.c_str());
+      return {};
+    }
+    if (!CudaTensorBufferRegistry::Get().AnyHostNewer(position->cuda_handle)) {
+      ++draft_.round_steps;
+      return {};
+    }
+    const uint32_t steps = draft_.round_steps;
+    if (steps != 0) {
+      draft_.round_length =
+          steps >= 2 && steps == draft_.last_round ? steps : 0;
+      draft_.last_round = steps;
+    }
+    draft_.round_steps = 1;
+    return {};
+  }
+
+  // Before a step's prefetch: the projected activations get a pinned host
+  // copy, which the prefetch then keeps current, and the sampler of the
+  // step's logits is told where the next step runs (DraftFeedRegistry).
+  Expected<void> RegisterDraftLogits() {
+    auto* activations = DraftRecord(true, draft_.activations_port);
+    auto* logits = DraftRecord(true, draft_.logits_port);
+    if (activations == nullptr || logits == nullptr ||
+        !CudaTensorBufferRegistry::Get().EnsurePinnedHostCache(
+            activations->cuda_handle)) {
+      draft_.stopped = true;
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: the drafter's outputs have no device "
+                 "buffers with pinned host copies: its steps do not chain",
+                 bytecode_.function_name.c_str());
+      return {};
+    }
+    if (logits->device_ptr != draft_.logits && draft_.logits != nullptr) {
+      DraftFeedRegistry::Get().Clear(draft_.logits);
+      StepHandoffRegistry::Get().Clear(draft_.logits);
+    }
+    // Every time: a release of the buffer forgets it (DestroyCudaTensorBuffer)
+    // and another may take its address.
+    draft_.logits = logits->device_ptr;
+    DraftFeedRegistry::Get().Set(
+        draft_.logits, [this](const NvidiaGreedySamplerContext* sampler) {
+          LaunchDraftStep(sampler);
+        });
+    return {};
+  }
+
+  // The drafter's own records, when every input and output is a device
+  // buffer the step ahead can use as bound (nothing staged from the host,
+  // nothing transient), or null.
+  LiteRtDispatchDeviceContextT::Record* DraftRecord(bool output, size_t port) {
+    const auto& handles = output ? output_handles_ : input_handles_;
+    if (port >= handles.size() || handles[port] == 0) return nullptr;
+    auto record = device_context_->GetRecord(handles[port]);
+    if (!record.HasValue() || !(*record)->direct_cuda_buffer ||
+        (*record)->transient_device_ptr || (*record)->device_ptr == nullptr) {
+      return nullptr;
+    }
+    return *record;
+  }
+
+  // The sampler took the token of the step this context ran last, from its
+  // argmax on the device (`sampler`'s device result): the round's next step
+  // runs now, ahead of the host. A failure stops the feed; the host's step
+  // then runs as asked.
+  void LaunchDraftStep(const NvidiaGreedySamplerContext* sampler) {
+    if (!draft_.enabled || draft_.stopped || draft_.in_flight ||
+        draft_.round_length == 0 || draft_.round_steps >= draft_.round_length ||
+        sampler == nullptr || sampler->device_result == nullptr) {
+      return;
+    }
+    if (!draft_.table.has_value()) {
+      const std::vector<TokenTableState> states = FindTokenTables(
+          this, device_context_->serial(), {{0, draft_.vocab, draft_.dim, 0}},
+          /*upload=*/true, /*adopt=*/true);
+      if (states[0].failed) {
+        draft_.stopped = true;
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA dispatch %s: the drafter's token table [%u, %u] "
+                   "cannot be had: its steps do not chain",
+                   bytecode_.function_name.c_str(), draft_.vocab, draft_.dim);
+        return;
+      }
+      if (!states[0].table.has_value()) return;  // on its way to the device
+      draft_.table = *states[0].table;
+    }
+    for (size_t i = 0; i < input_handles_.size(); ++i) {
+      if (DraftRecord(false, i) == nullptr) return;
+    }
+    auto* input = DraftRecord(false, draft_.input_port);
+    auto* activations = DraftRecord(true, draft_.activations_port);
+    auto* logits = DraftRecord(true, draft_.logits_port);
+    auto& registry = CudaTensorBufferRegistry::Get();
+    const size_t dim_bytes = static_cast<size_t>(draft_.dim) * sizeof(float);
+    if (activations == nullptr || logits == nullptr ||
+        input->size < 2 * dim_bytes || activations->size < dim_bytes ||
+        logits->size < static_cast<size_t>(draft_.vocab) * sizeof(float) ||
+        logits->device_ptr != draft_.logits ||
+        registry.AnyHostNewer(logits->cuda_handle) ||
+        // The host reads the step's activations from the host copy the step
+        // prefetched, not from the device's the step ahead overwrites.
+        !registry.PinnedHostCurrent(activations->cuda_handle)) {
+      return;
+    }
+    if (!draft_.logged_ready) {
+      draft_.logged_ready = true;
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: the drafter's steps chain on the device "
+                 "(rounds of %u steps, token table [%u, %u] INT%u)",
+                 bytecode_.function_name.c_str(), draft_.round_length,
+                 draft_.table->vocab, draft_.table->dim, draft_.table->bits);
+    }
+    const auto launched = [&]() -> Expected<void> {
+      StepFeedSlot& slot = draft_.slot;
+      const RegisteredTokenTable& table = *draft_.table;
+      LiteRtNvidiaStepFeedParams params{};
+      params.token = sampler->device_result;
+      params.table = static_cast<const uint8_t*>(table.table);
+      params.bits = static_cast<int32_t>(table.bits);
+      if (table.scale_block == 0) {
+        params.row_scales = static_cast<const float*>(table.scales);
+      } else {
+        params.block_scales = static_cast<const uint16_t*>(table.scales);
+        params.scale_block = static_cast<int32_t>(table.scale_block);
+      }
+      params.multiplier = table.multiplier;
+      params.vocab = static_cast<int32_t>(draft_.vocab);
+      params.dim = static_cast<int32_t>(draft_.dim);
+      params.embeddings = static_cast<float*>(input->device_ptr);
+      params.token_mirror = slot.token_mirror;
+      params.embeddings_mirror = slot.embeddings_mirror;
+      params.tail = static_cast<const float*>(activations->device_ptr);
+      params.tail_count = static_cast<int32_t>(draft_.dim);
+      LITERT_RETURN_IF_ERROR(
+          CudaOk(LiteRtNvidiaLaunchStepFeed(&params, stream_),
+                 "LaunchStepFeed draft"));
+      // From here on the input on the device is the step ahead's.
+      draft_.in_flight = true;
+      draft_.token_enqueued = false;
+      LITERT_RETURN_IF_ERROR(CudaOk(cudaEventRecord(slot.feed_done, stream_),
+                                    "cudaEventRecord draft feed"));
+      if (!aux_streams_.empty()) {
+        execution_context_->setAuxStreams(
+            aux_streams_.data(), static_cast<int32_t>(aux_streams_.size()));
+      }
+      LITERT_RETURN_IF_ERROR(EnqueueStep());
+      std::vector<const void*> enqueued;
+      LITERT_RETURN_IF_ERROR(EnqueueFusedGreedy(logits->device_ptr, stream_,
+                                                &enqueued, draft_.handoff_ids,
+                                                /*keep_fresh=*/true));
+      draft_.token_enqueued = !enqueued.empty();
+      slot.prefetched.clear();
+      LITERT_RETURN_IF_ERROR(PrefetchReadOutputs(&slot));
+      LITERT_RETURN_IF_ERROR(CudaOk(cudaEventRecord(slot.step_done, stream_),
+                                    "cudaEventRecord draft step"));
+      ++draft_.speculated;
+      // The launches reach the device now, not at the next synchronization.
+      static_cast<void>(cudaStreamQuery(stream_));
+      return {};
+    }();
+    if (!launched) {
+      LITERT_LOG(LITERT_WARNING,
+                 "NVIDIA dispatch %s: the drafter's step ahead: %s; its steps "
+                 "no longer chain",
+                 bytecode_.function_name.c_str(),
+                 launched.Error().Message().c_str());
+      static_cast<void>(cudaGetLastError());
+      draft_.stopped = true;
+    }
+  }
+
+  // Whether the host's inputs for this step are the step ahead's: the
+  // bindings, no host write to the logits, the host's write of the input
+  // matching the mirror, no other input written.
+  Expected<bool> VerifyDraftInputs() {
+    if (!draft_.token_enqueued) return false;
+    for (size_t i = 0; i < input_handles_.size(); ++i) {
+      auto* record = DraftRecord(false, i);
+      if (record == nullptr || record->device_ptr != bound_input_ptrs_[i]) {
+        return false;
+      }
+    }
+    for (size_t i = 0; i < output_handles_.size(); ++i) {
+      auto* record = DraftRecord(true, i);
+      if (record == nullptr || record->device_ptr != bound_output_ptrs_[i]) {
+        return false;
+      }
+    }
+    auto& registry = CudaTensorBufferRegistry::Get();
+    auto* input = DraftRecord(false, draft_.input_port);
+    auto* logits = DraftRecord(true, draft_.logits_port);
+    if (registry.AnyHostNewer(logits->cuda_handle)) return false;
+    const size_t bytes = 2 * static_cast<size_t>(draft_.dim) * sizeof(float);
+    if (!registry.AnyHostNewer(input->cuda_handle) ||
+        !registry.VerifyHostWrite(input->cuda_handle,
+                                  draft_.slot.embeddings_mirror, bytes)) {
+      if (draft_.misses < 4) {
+        std::vector<float> host(bytes / sizeof(float));
+        size_t at = host.size();
+        if (registry.ReadHostCopy(input->cuda_handle, host.data(), bytes)) {
+          for (size_t i = 0; i < host.size(); ++i) {
+            if (std::memcmp(&host[i], &draft_.slot.embeddings_mirror[i],
+                            sizeof(float)) != 0) {
+              at = i;
+              break;
+            }
+          }
+        }
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA dispatch %s: the drafter's step ahead (token %d) "
+                   "is not the host's: its input differs at float %zu of %zu",
+                   bytecode_.function_name.c_str(), draft_.slot.token_mirror[0],
+                   at, host.size());
+      }
+      return false;
+    }
+    for (size_t i = 0; i < input_handles_.size(); ++i) {
+      if (i == draft_.input_port) continue;
+      if (registry.AnyHostNewer(DraftRecord(false, i)->cuda_handle)) {
+        return false;
+      }
+    }
+    registry.ConfirmHostWrite(input->cuda_handle);
+    return true;
+  }
+
+  // The host asks for the step ahead: its outputs are in place, the staged
+  // one goes to its host copy (the others' are stale), its token to the
+  // sampler.
+  Expected<void> TakeDraftStep() {
+    StepFeedSlot& slot = draft_.slot;
+    LITERT_RETURN_IF_ERROR(WaitStepAheadDone(slot.step_done));
+    auto& registry = CudaTensorBufferRegistry::Get();
+    for (size_t i = 0; i < output_handles_.size(); ++i) {
+      registry.Discard(DraftRecord(true, i)->cuda_handle);
+    }
+    TakePrefetched(slot);
+    draft_.in_flight = false;
+    ++draft_.hits;
+    ++draft_.round_steps;
+    StepHandoffRegistry::Get().Set(
+        draft_.logits, StepHandoff{draft_.handoff_ids, draft_.handoff_values,
+                                   draft_.handoff_flags, 1, nullptr});
+    return {};
+  }
+
+  // The host's inputs are not the step ahead's: it ran for nothing. Its input
+  // on the device goes back to the host's copy before the host's step, which
+  // overwrites its outputs.
+  Expected<void> DropDraftStep() {
+    LITERT_RETURN_IF_ERROR(WaitStepAheadDone(draft_.slot.step_done));
+    draft_.slot.prefetched.clear();
+    draft_.in_flight = false;
+    if (auto* input = DraftRecord(false, draft_.input_port)) {
+      CudaTensorBufferRegistry::Get().MarkHostStale(input->cuda_handle);
+    }
+    ++draft_.misses;
+    // A round shorter than learned is learned again.
+    draft_.round_length = 0;
+    const uint64_t steps = draft_.hits + draft_.misses;
+    if ((draft_.misses >= kStepFeedMaxMisses && draft_.hits < draft_.misses) ||
+        (steps >= kStepFeedMissWindow &&
+         draft_.misses * 100 > steps * kStepFeedMissPercent)) {
+      draft_.stopped = true;
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: the drafter's steps stop chaining after "
+                 "%llu of %llu steps ahead the host did not confirm",
+                 bytecode_.function_name.c_str(),
+                 static_cast<unsigned long long>(draft_.misses),
+                 static_cast<unsigned long long>(steps));
     }
     return {};
   }

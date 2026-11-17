@@ -665,4 +665,99 @@ TEST(StepFeedKernelTest, BlockScalesFeedLikeTheHostsBlockwiseLookup) {
   }
 }
 
+// An MTP drafter's step feeds the next step of its round: the token's
+// embedding followed by the step's projected activations, as LiteRT-LM's
+// drafter concatenates them, and no position, which the round's steps share.
+TEST(StepFeedKernelTest, DrafterFeedAppendsTheActivationsWithoutAPosition) {
+  constexpr int kVocab = 50;
+  constexpr int kDim = 2816;
+  constexpr int kBlock = 32;
+  constexpr int kBlocks = kDim / kBlock;
+  const float multiplier = static_cast<float>(std::sqrt(2816.0));
+  std::vector<uint8_t> table(static_cast<size_t>(kVocab) * kDim / 2);
+  uint32_t state = 4242u;
+  for (auto& byte : table) {
+    state = state * 1664525u + 1013904223u;
+    byte = static_cast<uint8_t>(state >> 24);
+  }
+  std::vector<uint16_t> scales(static_cast<size_t>(kVocab) * kBlocks);
+  for (auto& bits : scales) {
+    state = state * 1664525u + 1013904223u;
+    bits = static_cast<uint16_t>(0x2000 | ((state >> 8) & 0x0FFF));
+  }
+  std::vector<float> activations(kDim);
+  for (int k = 0; k < kDim; ++k) {
+    activations[k] = std::sin(0.37f * static_cast<float>(k)) * 3.5f;
+  }
+  auto device_table = AllocateCuda(table.size());
+  auto device_scales = AllocateCuda(scales.size() * sizeof(uint16_t));
+  auto device_token = AllocateCuda(sizeof(int32_t));
+  auto device_input = AllocateCuda(2 * kDim * sizeof(float));
+  auto device_activations = AllocateCuda(kDim * sizeof(float));
+  auto mirror = AllocateMapped(sizeof(int32_t) + 2 * kDim * sizeof(float));
+  auto* token_mirror = static_cast<int32_t*>(mirror.get());
+  auto* input_mirror = reinterpret_cast<float*>(token_mirror + 1);
+  ASSERT_EQ(cudaMemcpy(device_table.get(), table.data(), table.size(),
+                       cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpy(device_scales.get(), scales.data(),
+                 scales.size() * sizeof(uint16_t), cudaMemcpyHostToDevice),
+      cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(device_activations.get(), activations.data(),
+                       kDim * sizeof(float), cudaMemcpyHostToDevice),
+            cudaSuccess);
+  LiteRtNvidiaStepFeedParams params{};
+  params.token = static_cast<const int32_t*>(device_token.get());
+  params.table = static_cast<const uint8_t*>(device_table.get());
+  params.bits = 4;
+  params.block_scales = static_cast<const uint16_t*>(device_scales.get());
+  params.scale_block = kBlock;
+  params.multiplier = multiplier;
+  params.vocab = kVocab;
+  params.dim = kDim;
+  params.embeddings = static_cast<float*>(device_input.get());
+  params.token_mirror = token_mirror;
+  params.embeddings_mirror = input_mirror;
+  params.tail = static_cast<const float*>(device_activations.get());
+  params.tail_count = kDim;
+  for (const int32_t token : {0, 23, kVocab - 1}) {
+    ASSERT_EQ(cudaMemcpy(device_token.get(), &token, sizeof(token),
+                         cudaMemcpyHostToDevice),
+              cudaSuccess);
+    ASSERT_EQ(LiteRtNvidiaLaunchStepFeed(&params, nullptr), cudaSuccess);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    std::vector<float> input(2 * kDim);
+    ASSERT_EQ(cudaMemcpy(input.data(), device_input.get(),
+                         input.size() * sizeof(float), cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    for (int k = 0; k < kDim; ++k) {
+      const float scale = HalfToFloat(
+          scales[static_cast<size_t>(token) * kBlocks + k / kBlock]);
+      const float dequantized =
+          static_cast<float>(
+              DecodeInt4(table, static_cast<size_t>(token) * kDim + k)) *
+          scale;
+      const float expected = dequantized * multiplier;
+      ASSERT_EQ(input[k], expected) << "token " << token << " dim " << k;
+      ASSERT_EQ(input_mirror[k], expected);
+    }
+    // The activations after the embedding, bit for bit.
+    ASSERT_EQ(std::memcmp(input.data() + kDim, activations.data(),
+                          kDim * sizeof(float)),
+              0);
+    ASSERT_EQ(std::memcmp(input_mirror + kDim, activations.data(),
+                          kDim * sizeof(float)),
+              0);
+    EXPECT_EQ(token_mirror[0], token);
+  }
+  // Without a position there is nothing to mask.
+  auto device_local = AllocateCuda(16);
+  params.local_mask = static_cast<uint8_t*>(device_local.get());
+  params.ring = 16;
+  params.window = 16;
+  EXPECT_EQ(LiteRtNvidiaLaunchStepFeed(&params, nullptr),
+            cudaErrorInvalidValue);
+}
+
 }  // namespace
