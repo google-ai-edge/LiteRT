@@ -97,6 +97,7 @@ struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsBackend> qnn_backend;
   std::optional<bool> enable_weight_sharing;
   std::optional<bool> enable_just_in_time;
+  std::optional<bool> enable_zero_copy_context_loading;
   std::optional<LrtQualcommOptionsOpNameFormat> op_name_format;
   std::optional<bool> use_conv_hmx;
   std::optional<bool> use_fold_relu;
@@ -187,6 +188,11 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           auto v = litert::internal::ParseTomlBool(value);
           if (!v) return v.Error().Status();
           LrtQualcommOptionsSetEnableJustInTime(parsed_options, *v);
+        } else if (key == "enable_zero_copy_context_loading") {
+          auto v = litert::internal::ParseTomlBool(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetEnableZeroCopyContextLoading(
+              parsed_options, *v);
         } else if (key == "op_name_format") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -438,6 +444,11 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->enable_just_in_time.has_value()) {
     LITERT_RETURN_IF_ERROR(encoder.EncodeBool("enable_just_in_time",
                                               *options->enable_just_in_time));
+  }
+  if (options->enable_zero_copy_context_loading.has_value()) {
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeBool("enable_zero_copy_context_loading",
+                           *options->enable_zero_copy_context_loading));
   }
   if (options->op_name_format.has_value()) {
     LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
@@ -865,6 +876,31 @@ LiteRtStatus LrtQualcommOptionsGetEnableJustInTime(LrtQualcommOptions options,
   }
 
   *enable_just_in_time = options->enable_just_in_time.value_or(false);
+
+  return kLiteRtStatusOk;
+}
+
+// enable_zero_copy_context_loading --------------------------------------------
+
+LiteRtStatus LrtQualcommOptionsSetEnableZeroCopyContextLoading(
+    LrtQualcommOptions options, bool enable_zero_copy_context_loading) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->enable_zero_copy_context_loading = enable_zero_copy_context_loading;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetEnableZeroCopyContextLoading(
+    LrtQualcommOptions options, bool* enable_zero_copy_context_loading) {
+  if (enable_zero_copy_context_loading == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *enable_zero_copy_context_loading =
+      options->enable_zero_copy_context_loading.value_or(false);
 
   return kLiteRtStatusOk;
 }

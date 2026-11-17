@@ -182,6 +182,9 @@ class Options {
   void SetEnableJustInTime(bool enable_just_in_time);
   bool GetEnableJustInTime() const;
 
+  void SetEnableZeroCopyContextLoading(bool enable_zero_copy_context_loading);
+  bool GetEnableZeroCopyContextLoading() const;
+
   void SetOpNameFormat(OpNameFormat op_name_format);
   OpNameFormat GetOpNameFormat() const;
 
@@ -319,6 +322,7 @@ class Options {
   bool use_int64_bias_as_int32_ = true;
   bool enable_weight_sharing_ = false;
   bool enable_just_in_time_ = false;
+  bool enable_zero_copy_context_loading_ = false;
   OpNameFormat op_name_format_ = OpNameFormat::kBasic;
   bool use_conv_hmx_ = true;
   bool use_fold_relu_ = true;
