@@ -1037,6 +1037,8 @@ __global__ void __launch_bounds__(kMaxExperts)
 // the unused tiles.
 //   tile_experts[t]   the expert of tile t, or -1
 //   row_source[r]     the token of padded row r, -1 for a zero row, -2 unused
+//                     (also the rows of a GEMM block with none of the
+//                     expert's rows, which the GEMMs skip)
 //   row_self[r]       r for a row in use, -2 otherwise (the hidden pre-pass)
 //   pair_row[pair]    the padded row of a routed pair
 __global__ void MoeTileFillKernel(const int32_t* __restrict__ counts,
@@ -1073,10 +1075,16 @@ __global__ void MoeTileFillKernel(const int32_t* __restrict__ counts,
       const int pair = grouped[offsets[e] + i];
       row_source[row] = pair / top_k;
       pair_row[pair] = row;
-    } else {
+      row_self[row] = row;
+    } else if (i / kLiteRtNvidiaGroupedGemmBlockRows *
+                   kLiteRtNvidiaGroupedGemmBlockRows <
+               count) {
       row_source[row] = -1;
+      row_self[row] = row;
+    } else {
+      row_source[row] = -2;
+      row_self[row] = -2;
     }
-    row_self[row] = row;
   }
 }
 
@@ -1370,7 +1378,8 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
       arena.up_scale_max,
       channel_rows,
       gate_expert_rows,
-      arena.compact_scales};
+      arena.compact_scales,
+      row_source};
   const LiteRtNvidiaGemmShape gate_shape = {padded, shape.model_dim,
                                             shape.hidden_dim, shape.gate, 32};
   status = LiteRtNvidiaLaunchBf16Int4GroupedGemm(
@@ -1397,7 +1406,8 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
       nullptr,
       channel_rows,
       down_expert_rows,
-      arena.compact_scales};
+      arena.compact_scales,
+      row_source};
   const LiteRtNvidiaGemmShape down_shape = {
       padded, shape.hidden_dim, shape.model_dim, kLiteRtNvidiaGemmGateNone, 32};
   status = LiteRtNvidiaLaunchBf16Int4GroupedGemm(

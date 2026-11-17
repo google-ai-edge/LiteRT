@@ -585,4 +585,109 @@ TEST(SubbyteGemmTest, GatedProjectionsMatchReference) {
       {{256, 768, 512, kLiteRtNvidiaGemmGateGeluTanh}, Rows::kSparse, 2.0f});
 }
 
+// The grouped GEMM's own kernel against the dense one, over the same rows,
+// weights and blockwise scales (one expert): the products are the same, so
+// every row it multiplies is bit-identical. The second half of its second
+// tile holds no gathered rows (row_source -2): that block is skipped and its
+// output rows keep what they held.
+TEST(SubbyteGemmTest, GroupedGemmMatchesDenseAndSkipsBlocksWithoutRows) {
+  if (!LiteRtNvidiaSubbyteGemmAvailable()) {
+    GTEST_SKIP() << "Requires compute capability 8.0 or newer and 81 KB of "
+                    "shared memory per block.";
+  }
+  constexpr int kRows = 256;
+  constexpr int kInput = 832;  // 13 chunks
+  constexpr int kOutput = 200;
+  constexpr int kKept = 192;
+  for (const int gate :
+       {kLiteRtNvidiaGemmGateNone, kLiteRtNvidiaGemmGateGeluTanh}) {
+    SCOPED_TRACE(::testing::Message() << "gate=" << gate);
+    const int channels = gate != 0 ? 2 * kOutput : kOutput;
+    uint32_t state = 4242;
+    const auto next = [&state] {
+      state = state * 1664525u + 1013904223u;
+      return state;
+    };
+    std::vector<uint16_t> activation(static_cast<size_t>(kRows) * kInput);
+    for (auto& value : activation) {
+      value = FloatToBf16Bits(
+          static_cast<float>(next() >> 8 & 0xffff) / 16384.0f - 2.0f);
+    }
+    std::vector<uint8_t> weights(static_cast<size_t>(channels) * kInput / 2);
+    for (auto& byte : weights) byte = static_cast<uint8_t>(next() >> 24);
+    std::vector<uint16_t> scales(static_cast<size_t>(channels) * kInput / 32);
+    for (auto& scale : scales) {
+      scale = FloatToHalfBits(
+          0.001f +
+          0.003f * static_cast<float>(next() >> 8 & 0xffff) / 65535.0f);
+    }
+    const LiteRtNvidiaGemmShape shape = {kRows, kInput, kOutput, gate, 32};
+    auto activation_device = Upload(activation);
+    auto weights_device = Upload(weights);
+    auto scales_device = Upload(scales);
+    const size_t output_bytes =
+        static_cast<size_t>(kRows) * kOutput * sizeof(uint16_t);
+    auto dense = AllocateCuda(output_bytes);
+    auto workspace =
+        AllocateCuda(LiteRtNvidiaSubbyteGemmWorkspaceBytes(&shape));
+    ASSERT_EQ(LiteRtNvidiaLaunchBf16Int4Gemm(
+                  &shape, activation_device.get(),
+                  static_cast<const uint8_t*>(weights_device.get()),
+                  scales_device.get(), dense.get(), workspace.get(), nullptr),
+              cudaSuccess);
+
+    auto row_scale = AllocateCuda(kRows * sizeof(float));
+    auto scaled = AllocateCuda(static_cast<size_t>(kRows) * kInput * 2);
+    ASSERT_EQ(LiteRtNvidiaLaunchGemmScaleRows(
+                  activation_device.get(), nullptr, kRows, kInput,
+                  static_cast<float*>(row_scale.get()), scaled.get(), nullptr),
+              cudaSuccess);
+    auto tile_experts = Upload(std::vector<int32_t>{0, 0});
+    std::vector<int32_t> sources(kRows);
+    for (int r = 0; r < kRows; ++r) sources[r] = r < kKept ? r : -2;
+    auto row_source = Upload(sources);
+    const auto* bytes = static_cast<const uint8_t*>(weights_device.get());
+    const auto* halves = static_cast<const uint16_t*>(scales_device.get());
+    const LiteRtNvidiaGroupedGemmWeights grouped_weights = {
+        bytes,
+        bytes + static_cast<size_t>(kOutput) * kInput / 2,
+        halves,
+        halves + static_cast<size_t>(kOutput) * kInput / 32,
+        kInput / 2,
+        kInput / 32,
+        0,
+        0,
+        static_cast<const int32_t*>(tile_experts.get()),
+        nullptr,
+        nullptr,
+        0,
+        0,
+        0,
+        static_cast<const int32_t*>(row_source.get())};
+    auto grouped = AllocateCuda(output_bytes);
+    ASSERT_EQ(cudaMemset(grouped.get(), 0xff, output_bytes), cudaSuccess);
+    ASSERT_EQ(
+        LiteRtNvidiaLaunchBf16Int4GroupedGemm(
+            &shape, &grouped_weights, scaled.get(),
+            static_cast<const float*>(row_scale.get()), grouped.get(), nullptr),
+        cudaSuccess);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    std::vector<uint16_t> expected(static_cast<size_t>(kRows) * kOutput);
+    std::vector<uint16_t> actual(expected.size());
+    ASSERT_EQ(cudaMemcpy(expected.data(), dense.get(), output_bytes,
+                         cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(actual.data(), grouped.get(), output_bytes,
+                         cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    for (int r = 0; r < kRows; ++r) {
+      for (int n = 0; n < kOutput; ++n) {
+        const size_t i = static_cast<size_t>(r) * kOutput + n;
+        ASSERT_EQ(actual[i], r < kKept ? expected[i] : 0xffff)
+            << "row=" << r << " channel=" << n;
+      }
+    }
+  }
+}
+
 }  // namespace

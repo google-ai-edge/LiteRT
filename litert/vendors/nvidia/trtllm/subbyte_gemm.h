@@ -98,7 +98,8 @@ extern "C" bool LiteRtNvidiaSubbyteGemmFillsDevice(
 // up projection has its own base pointers instead of following the gate
 // channels. The activations are already in the GEMM's tile layout
 // (LiteRtNvidiaLaunchGemmScaleRows); the padded rows of a tile past its
-// expert's last row produce rows the caller ignores.
+// expert's last row produce rows the caller ignores. A block of this GEMM
+// multiplies half a tile, and two blocks share a multiprocessor.
 struct LiteRtNvidiaGroupedGemmWeights {
   const uint8_t* gate;
   const uint8_t* up;  // gate mode only
@@ -118,7 +119,16 @@ struct LiteRtNvidiaGroupedGemmWeights {
   uint64_t max_channel_stride;
   uint64_t max_expert_stride;
   int32_t compact_scales;
+  // Optional (null: every row is multiplied): the gather indices of the rows
+  // (LiteRtNvidiaLaunchGemmScaleRows' row_indices). A block of the GEMM's
+  // kLiteRtNvidiaGroupedGemmBlockRows rows whose first index is negative is
+  // skipped, its output rows left as they are: an expert's rows come first in
+  // its tiles, so such a block holds none of them.
+  const int32_t* row_source;
 };
+
+// The rows of a block of the grouped GEMM: half a tile.
+inline constexpr int32_t kLiteRtNvidiaGroupedGemmBlockRows = 64;
 
 // The activation pre-pass of the GEMM on its own: `rows` rows of
 // `input_size` BF16 values, row r taken from source row row_indices[r]
