@@ -5013,6 +5013,150 @@ TEST(TensorRtGraphBuilderTest, BatchMatmulBroadcastsALowerRankOperand) {
   EXPECT_EQ(cudaFree(d_lhs), cudaSuccess);
 }
 
+TEST(TensorRtGraphBuilderTest, OneHotTableLookupGathersRows) {
+  // The Gemma 4 vision export's patch position embeddings: a one-hot of each
+  // patch's coordinate times an INT8 table with per-channel scales. The
+  // product is the dequantized row of each index, computed exactly in FP32
+  // and then held in the activation type (BF16 in this test's environment,
+  // as in the benchmark's) like any other value; an index outside the table
+  // (a padding patch) gives zeros.
+  constexpr int32_t kIndices = 6;
+  constexpr int32_t kDepth = 64;
+  constexpr int32_t kColumns = 24;
+  const std::array<int32_t, kIndices> indices_host = {0,  5,      kDepth - 1,
+                                                      -1, kDepth, 17};
+  const int32_t depth = kDepth;
+  const float on = 1.0f;
+  const float off = 0.0f;
+  std::vector<int8_t> table_values(static_cast<size_t>(kDepth) * kColumns);
+  for (size_t i = 0; i < table_values.size(); ++i) {
+    table_values[i] = static_cast<int8_t>((i * 37 + i / 7) % 255) - 127;
+  }
+  std::vector<float> scales(kColumns);
+  for (int32_t c = 0; c < kColumns; ++c) {
+    scales[c] = 0.0006767f * (1.0f + c / 7.0f);
+  }
+  const std::vector<int64_t> zero_points(kColumns, 0);
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  const auto tensor = [&](const char* name, LiteRtElementType type,
+                          const std::vector<int32_t>& dims) -> LiteRtTensorT& {
+    auto& value = graph.EmplaceTensor();
+    value.SetName(name);
+    value.SetType(MakeRankedTensorType(type, dims));
+    return value;
+  };
+  const auto constant = [](LiteRtTensorT& value, const void* data,
+                           size_t bytes) {
+    SetWeightsFromUnownedBuffer(
+        value.Weights(), litert::BufferRef<uint8_t>(
+                             reinterpret_cast<const uint8_t*>(data), bytes));
+  };
+  auto& indices = tensor("indices", kLiteRtElementTypeInt32, {1, kIndices});
+  graph.Inputs().push_back(&indices);
+  auto& depth_tensor = tensor("depth", kLiteRtElementTypeInt32, {});
+  constant(depth_tensor, &depth, sizeof(depth));
+  auto& on_tensor = tensor("on", kLiteRtElementTypeFloat32, {});
+  constant(on_tensor, &on, sizeof(on));
+  auto& off_tensor = tensor("off", kLiteRtElementTypeFloat32, {});
+  constant(off_tensor, &off, sizeof(off));
+  auto& selection =
+      tensor("selection", kLiteRtElementTypeFloat32, {1, kIndices, kDepth});
+  auto& table = tensor("table", kLiteRtElementTypeInt8, {1, kDepth, kColumns});
+  constant(table, table_values.data(), table_values.size());
+  table.SetQarams(MakePerChannelQuantization(scales, zero_points,
+                                             /*quantized_dim=*/2, table));
+  auto& rows =
+      tensor("rows", kLiteRtElementTypeFloat32, {1, kIndices, kColumns});
+  graph.Outputs().push_back(&rows);
+  auto& one_hot = graph.EmplaceOp();
+  one_hot.SetOpCode(kLiteRtOpCodeTflOneHot);
+  {
+    tflite::OneHotOptionsT one_hot_options;
+    one_hot_options.axis = -1;
+    tflite::BuiltinOptionsUnion options;
+    options.Set(std::move(one_hot_options));
+    litert::internal::SetTflOptions(one_hot, std::move(options));
+  }
+  for (auto* input : {&indices, &depth_tensor, &on_tensor, &off_tensor}) {
+    litert::internal::AttachInput(input, one_hot);
+  }
+  litert::internal::AttachOutput(&selection, one_hot);
+  auto& product = graph.EmplaceOp();
+  product.SetOpCode(kLiteRtOpCodeTflBatchMatmul);
+  {
+    tflite::BuiltinOptionsUnion options;
+    options.Set(tflite::BatchMatMulOptionsT{});
+    litert::internal::SetTflOptions(product, std::move(options));
+  }
+  litert::internal::AttachInput(&selection, product);
+  litert::internal::AttachInput(&table, product);
+  litert::internal::AttachOutput(&rows, product);
+
+  const auto* compiler_context = LrtGetCompilerContext();
+  EXPECT_TRUE(litert::nvidia::IsTensorRtOpSupported(
+      litert::compiler::Op(compiler_context, &one_hot)));
+  EXPECT_TRUE(litert::nvidia::IsTensorRtOpSupported(
+      litert::compiler::Op(compiler_context, &product)));
+  auto built = litert::nvidia::BuildTensorRtEngine(
+      litert::compiler::Subgraph(compiler_context, &graph));
+  ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+  litert::nvidia::TensorRtLogger logger;
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(runtime->deserializeCudaEngine(
+      built->engine.data(), built->engine.size()));
+  ASSERT_NE(engine, nullptr);
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  void* device_indices = nullptr;
+  void* device_rows = nullptr;
+  std::vector<float> actual(static_cast<size_t>(kIndices) * kColumns, -7.0f);
+  ASSERT_EQ(cudaMalloc(&device_indices, sizeof(indices_host)), cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&device_rows, actual.size() * sizeof(float)),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(device_indices, indices_host.data(),
+                       sizeof(indices_host), cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_TRUE(
+      context->setTensorAddress(built->input_names[0].c_str(), device_indices));
+  ASSERT_TRUE(
+      context->setTensorAddress(built->output_names[0].c_str(), device_rows));
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  ASSERT_TRUE(context->enqueueV3(stream));
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(actual.data(), device_rows,
+                       actual.size() * sizeof(float), cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  for (int32_t i = 0; i < kIndices; ++i) {
+    const int32_t row = indices_host[i];
+    for (int32_t c = 0; c < kColumns; ++c) {
+      const float exact =
+          row < 0 || row >= kDepth
+              ? 0.0f
+              : static_cast<float>(table_values[row * kColumns + c]) *
+                    scales[c];
+      const float expected = Bf16ToFloat(FloatToBf16(exact));
+      EXPECT_EQ(actual[i * kColumns + c], expected)
+          << "index=" << row << " c=" << c;
+    }
+  }
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_rows), cudaSuccess);
+  EXPECT_EQ(cudaFree(device_indices), cudaSuccess);
+
+  // Another one-hot (here: an "on" value of 2) is not a lookup's selector.
+  const float two = 2.0f;
+  constant(on_tensor, &two, sizeof(two));
+  EXPECT_FALSE(litert::nvidia::IsTensorRtOpSupported(
+      litert::compiler::Op(compiler_context, &one_hot)));
+  EXPECT_FALSE(litert::nvidia::IsTensorRtOpSupported(
+      litert::compiler::Op(compiler_context, &product)));
+}
+
 TEST(TensorRtGraphBuilderTest, LongContextSoftmaxSupport) {
   // Gemma 4 12B prefill_1024 at 32K depth. Only construct tensor metadata;
   // partition eligibility must not depend on allocating this large tensor.

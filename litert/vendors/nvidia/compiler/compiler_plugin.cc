@@ -85,7 +85,7 @@ using litert::Expected;
 
 constexpr char kPluginManufacturer[] = "NVIDIA";
 constexpr char kPluginSocModel[] = "tensorrt-rtx";
-constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 24;
+constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 25;
 
 enum class PartitionPolicy {
   kSafe,
@@ -367,6 +367,9 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
     case kLiteRtOpCodeTflMinimum:
     case kLiteRtOpCodeTflMul:
     case kLiteRtOpCodeTflNotEqual:
+    // Only as the selector of a table lookup (the Gemma 4 vision export's
+    // position embeddings); other one-hots are not supported.
+    case kLiteRtOpCodeTflOneHot:
     case kLiteRtOpCodeTflPack:
     case kLiteRtOpCodeTflQuantize:
     case kLiteRtOpCodeTflReduceMax:

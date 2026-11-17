@@ -2362,11 +2362,57 @@ class ScopedHostBufferLocks {
 struct AotEngineResidency {
   std::mutex mutex;
   LiteRtDispatchInvocationContext active = nullptr;
+  // The opt-in mode keeps one engine of the device context resident: a
+  // reload evicts the active engine. The variants of a plan (PlanVariantKey)
+  // evict only when one is created; a variant reloaded later stays resident.
+  bool evicts_on_reload = true;
 };
 
 bool LazyAotEnginesEnabled() {
   const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES");
   return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}
+
+// Plans that hold all their weights (no weight store) and are refitted with
+// the same constants are one partition compiled for several input sizes: the
+// Gemma 4 vision encoder's signatures vision_70 ... vision_1120, of which
+// LiteRT-LM runs one per image, each plan with its own copy of the encoder's
+// 545 MB of weights. Returns the key of such a plan's variants: its IO counts
+// and its refit constants (names, types, counts and sizes, and the first and
+// last bytes of each, which tell different constants apart).
+std::optional<uint64_t> PlanVariantKey(
+    const litert::nvidia::TensorRtBytecode& bytecode) {
+  if (bytecode.weight_store.has_value() || bytecode.trtllm_head.has_value() ||
+      bytecode.step_feed.has_value() || bytecode.refit_weights.empty()) {
+    return std::nullopt;
+  }
+  uint64_t key = 14695981039346656037ull;  // FNV-1a
+  const auto mix = [&key](const void* data, size_t size) {
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < size; ++i) {
+      key = (key ^ bytes[i]) * 1099511628211ull;
+    }
+  };
+  const uint64_t io[2] = {bytecode.input_names.size(),
+                          bytecode.output_names.size()};
+  mix(io, sizeof(io));
+  constexpr size_t kSampleBytes = 2048;
+  for (const auto& weight : bytecode.refit_weights) {
+    mix(weight.name.data(), weight.name.size());
+    const uint64_t shape[3] = {static_cast<uint64_t>(weight.data_type),
+                               weight.count, weight.size};
+    mix(shape, sizeof(shape));
+    if (weight.data == nullptr) {
+      continue;
+    }
+    const size_t head = std::min(weight.size, kSampleBytes);
+    mix(weight.data, head);
+    if (weight.size > head) {
+      const size_t tail = std::min(weight.size - head, kSampleBytes);
+      mix(weight.data + weight.size - tail, tail);
+    }
+  }
+  return key;
 }
 
 }  // namespace
@@ -2615,6 +2661,16 @@ class LiteRtDispatchDeviceContextT {
     return aot_residency_;
   }
 
+  // The residency of the variants of a plan (PlanVariantKey).
+  std::shared_ptr<AotEngineResidency> VariantResidency(uint64_t key) {
+    auto& residency = variant_residencies_[key];
+    if (!residency) {
+      residency = std::make_shared<AotEngineResidency>();
+      residency->evicts_on_reload = false;
+    }
+    return residency;
+  }
+
   // The step a decode context ran ahead of the host (StepFeed): the streams
   // of the other contexts of this device wait for it before they run, so a
   // prefill on another stream never races its cache rows. LiteRT-LM runs its
@@ -2660,6 +2716,8 @@ class LiteRtDispatchDeviceContextT {
   const uint64_t serial_;
   const LiteRtRuntimeContext* runtime_context_;
   std::shared_ptr<AotEngineResidency> aot_residency_;
+  std::unordered_map<uint64_t, std::shared_ptr<AotEngineResidency>>
+      variant_residencies_;
   const void* step_ahead_owner_ = nullptr;
   const void* last_invoker_ = nullptr;
   cudaEvent_t step_ahead_done_ = nullptr;
@@ -2768,13 +2826,21 @@ class LiteRtDispatchInvocationContextT {
                    "LiteRT dispatch IO count does not match TensorRT engine");
     }
 
+    const std::optional<uint64_t> variant_key =
+        device_context->aot_residency() == nullptr && aot_locator.has_value()
+            ? PlanVariantKey(bytecode)
+            : std::nullopt;
     auto context = std::unique_ptr<LiteRtDispatchInvocationContextT>(
         new LiteRtDispatchInvocationContextT(runtime_context, device_context,
                                              std::move(bytecode)));
     if (aot_locator.has_value()) {
       context->aot_fingerprint_ = aot_locator->fingerprint;
     }
-    if (context->aot_residency_) {
+    if (variant_key.has_value()) {
+      LITERT_RETURN_IF_ERROR(context->InitializeVariant(
+          device_context->VariantResidency(*variant_key),
+          std::move(*aot_locator)));
+    } else if (context->aot_residency_) {
       context->aot_locator_ = std::move(aot_locator);
       std::lock_guard<std::mutex> lock(context->aot_residency_->mutex);
       if (auto* active = context->aot_residency_->active) {
@@ -2813,7 +2879,7 @@ class LiteRtDispatchInvocationContextT {
         aot_residency_->active = nullptr;
       }
       SynchronizeForCleanup();
-      ReleaseExecutionResources(/*save_runtime_cache=*/resident_has_run_);
+      ReleaseExecutionResources(/*save_runtime_cache=*/SavesRuntimeCache());
       if (layer_profiler_) {
         layer_profiler_->Dump(bytecode_.function_name);
       }
@@ -3407,12 +3473,9 @@ class LiteRtDispatchInvocationContextT {
     }
   }
 
-  Expected<void> ProbeAotIoMetadata() {
-    DispatchCpuTimer probe_timer(/*enabled=*/true);
-    memory_profiler_.Log("engine_metadata_probe_begin",
-                         bytecode_.function_name.c_str());
-    LITERT_RETURN_IF_ERROR(DeserializeEngine());
-    LITERT_RETURN_IF_ERROR(RecordAliasedOutputs());
+  // The locations and types of the engine's IO tensors, which a context of
+  // a residency answers from while its engine is not loaded.
+  void RecordIoMetadata() {
     for (const auto& name : bytecode_.input_names) {
       tensor_locations_.emplace(name, engine_->getTensorLocation(name.c_str()));
       tensor_types_.emplace(name, engine_->getTensorDataType(name.c_str()));
@@ -3424,6 +3487,40 @@ class LiteRtDispatchInvocationContextT {
         tensor_types_.emplace(name, engine_->getTensorDataType(name.c_str()));
       }
     }
+  }
+
+  // A variant of a plan (PlanVariantKey) is created resident and evicts the
+  // variant created before it: LiteRT-LM creates a vision encoder's selected
+  // signatures in order of size and runs the largest (the last) for every
+  // image its token budget allows. A variant that runs later is reloaded
+  // from its artifact and then stays resident (EnsureAotEngineResident).
+  Expected<void> InitializeVariant(
+      std::shared_ptr<AotEngineResidency> residency,
+      litert::nvidia::TensorRtAotLocator locator) {
+    std::lock_guard<std::mutex> lock(residency->mutex);
+    if (auto* resident = residency->active) {
+      LITERT_RETURN_IF_ERROR(resident->EvictAotEngine());
+      residency->active = nullptr;
+    }
+    aot_residency_ = std::move(residency);
+    aot_locator_ = std::move(locator);
+    LITERT_RETURN_IF_ERROR(Initialize());
+    RecordIoMetadata();
+    aot_residency_->active = this;
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA dispatch %s is a variant of a plan of other input "
+               "sizes: one variant stays resident",
+               bytecode_.function_name.c_str());
+    return {};
+  }
+
+  Expected<void> ProbeAotIoMetadata() {
+    DispatchCpuTimer probe_timer(/*enabled=*/true);
+    memory_profiler_.Log("engine_metadata_probe_begin",
+                         bytecode_.function_name.c_str());
+    LITERT_RETURN_IF_ERROR(DeserializeEngine());
+    LITERT_RETURN_IF_ERROR(RecordAliasedOutputs());
+    RecordIoMetadata();
     engine_.reset();
     runtime_.reset();
     memory_profiler_.Log("engine_metadata_probe_end",
@@ -3483,6 +3580,16 @@ class LiteRtDispatchInvocationContextT {
     resident_has_run_ = false;
   }
 
+  // Whether releasing the engine keeps its runtime cache. A variant of a plan
+  // is created resident, like an eager context, and the kernels compiled for
+  // its execution context then are worth keeping whether it ran or not (an
+  // eager context saves at its destruction): otherwise every process compiles
+  // the evicted variants' kernels again (2 s per vision transformer on the
+  // Spark).
+  bool SavesRuntimeCache() const {
+    return resident_has_run_ || !aot_residency_->evicts_on_reload;
+  }
+
   Expected<void> EvictAotEngine() {
     DispatchCpuTimer eviction_timer(/*enabled=*/true);
     memory_profiler_.Log("engine_eviction_begin",
@@ -3491,7 +3598,7 @@ class LiteRtDispatchInvocationContextT {
       LITERT_RETURN_IF_ERROR(CudaOk(cudaStreamSynchronize(stream_),
                                     "cudaStreamSynchronize AOT eviction"));
     }
-    ReleaseExecutionResources(/*save_runtime_cache=*/resident_has_run_);
+    ReleaseExecutionResources(/*save_runtime_cache=*/SavesRuntimeCache());
     memory_profiler_.Log("engine_evicted", bytecode_.function_name.c_str());
     LITERT_LOG(LITERT_INFO, "NVIDIA AOT engine evicted: %s elapsed_ms=%.3f",
                bytecode_.function_name.c_str(), eviction_timer.ElapsedMs());
@@ -3502,7 +3609,11 @@ class LiteRtDispatchInvocationContextT {
     if (aot_residency_->active == this) {
       return {};
     }
-    if (auto* active = aot_residency_->active) {
+    if (!aot_residency_->evicts_on_reload) {
+      if (execution_context_ != nullptr) {
+        return {};
+      }
+    } else if (auto* active = aot_residency_->active) {
       LITERT_RETURN_IF_ERROR(active->EvictAotEngine());
       aot_residency_->active = nullptr;
     }

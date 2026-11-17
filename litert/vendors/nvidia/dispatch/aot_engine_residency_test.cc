@@ -887,6 +887,63 @@ TEST_F(AotEngineResidencyTest, DefaultEagerModeDoesNotReopenArtifacts) {
   Run(a_, 10.0f, 1.0f);
 }
 
+TEST_F(AotEngineResidencyTest, KeepsOneVariantOfAPlanResident) {
+  // Two plans refitted with the same constants stand for a partition compiled
+  // for two input sizes (a vision encoder's signatures). Creating the second
+  // evicts the first (keeping its runtime cache); the first is reloaded from
+  // its artifact when it runs, and both then stay resident.
+  ScopedEnvironment eager("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES", "0");
+  ScopedEnvironment cache("LITERT_NVIDIA_DISPATCH_RUNTIME_CACHE_DIR",
+                          directory_.c_str());
+  CreateDevice();
+  ASSERT_FALSE(HasFatalFailure());
+  std::array<std::string, 2> paths;
+  std::array<std::string, 2> cache_paths;
+  std::array<LiteRtDispatchInvocationContext, 2> variants = {nullptr, nullptr};
+  for (int i = 0; i < 2; ++i) {
+    const char* name = i == 0 ? "a" : "b";
+    auto bytes = BuildBytecode(name, 3.0f, /*stripped=*/true);
+    ASSERT_TRUE(bytes) << bytes.Error().Message();
+    paths[i] = directory_ + "/" + name + ".bin";
+    ASSERT_TRUE(Write(paths[i], *bytes));
+    auto locator = Locator(paths[i], *bytes);
+    ASSERT_TRUE(locator) << locator.Error().Message();
+    const auto fingerprint =
+        FingerprintTensorRtAotArtifact(bytes->data(), bytes->size());
+    char key[33];
+    std::snprintf(key, sizeof(key), "%016llx%016llx",
+                  static_cast<unsigned long long>(fingerprint.low),
+                  static_cast<unsigned long long>(fingerprint.high));
+    cache_paths[i] =
+        directory_ + "/" + name + "_" + key + ".trt_rtx_runtime_cache";
+    paths_.push_back(cache_paths[i]);
+    ASSERT_EQ(CreateContext(*locator, name, &variants[i]), kLiteRtStatusOk);
+    Bind(variants[i]);
+    ASSERT_FALSE(HasFatalFailure());
+  }
+  // The evicted variant kept the runtime cache of its execution context,
+  // though it never ran, as an eager context does at its destruction.
+  struct stat status{};
+  EXPECT_EQ(stat(cache_paths[0].c_str(), &status), 0);
+  // The last variant created is resident: it runs without its artifact.
+  const std::string saved = directory_ + "/saved.bin";
+  paths_.push_back(saved);
+  ASSERT_EQ(rename(paths[1].c_str(), saved.c_str()), 0);
+  Run(variants[1], 0.0f, 3.0f);
+  ASSERT_EQ(rename(saved.c_str(), paths[1].c_str()), 0);
+  // The first was evicted: it needs its artifact.
+  ASSERT_EQ(rename(paths[0].c_str(), saved.c_str()), 0);
+  EXPECT_EQ(interface_->invoke(variants[0]), kLiteRtStatusErrorFileIO);
+  ASSERT_EQ(rename(saved.c_str(), paths[0].c_str()), 0);
+  Run(variants[0], 10.0f, 3.0f);
+  // Reloaded, it stays resident beside the other.
+  ASSERT_EQ(unlink(paths[0].c_str()), 0);
+  ASSERT_EQ(unlink(paths[1].c_str()), 0);
+  Run(variants[1], 20.0f, 3.0f);
+  Run(variants[0], 30.0f, 3.0f);
+  Run(variants[1], 40.0f, 3.0f);
+}
+
 TEST_F(AotEngineResidencyTest, NamesTheRuntimeCacheByTheArtifactFingerprint) {
   ScopedEnvironment eager("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES", "0");
   ScopedEnvironment cache("LITERT_NVIDIA_DISPATCH_RUNTIME_CACHE_DIR",

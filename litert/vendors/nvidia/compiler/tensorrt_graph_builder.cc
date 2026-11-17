@@ -2409,12 +2409,127 @@ Expected<bool> IsDynamicUpdateSliceSupported(const Op& op) {
   return partial_axes <= 1;
 }
 
+std::optional<float> ReadFloatScalar(const Tensor& tensor);
+
+// ONE_HOT(indices, depth, on = 1, off = 0) along a new last axis whose only
+// user is the left operand of a BATCH_MATMUL with a constant table [depth, C]
+// or [1, depth, C] (FLOAT32, or INT8 with symmetric per-tensor scales or
+// per-channel scales along C): the product is a lookup of the table's rows.
+// The Gemma 4 vision export with an MTP drafter computes its patch position
+// embeddings this way (two [2520, 10240] x [10240, 1152] products per
+// 280-token image, which ran on the CPU; the earlier export used
+// EMBEDDING_LOOKUP). Returns the BATCH_MATMUL.
+std::optional<Op> OneHotTableLookup(const Op& one_hot) {
+  if (one_hot.Code() != kLiteRtOpCodeTflOneHot ||
+      one_hot.Inputs().size() != 4 || one_hot.Outputs().size() != 1) {
+    return std::nullopt;
+  }
+  // Inputs() and Outputs() return copies: keep the tensors, not references.
+  const Tensor indices = one_hot.Inputs()[0];
+  const Tensor selection = one_hot.Outputs()[0];
+  const auto indices_type = indices.RankedTensorType();
+  const auto selection_type = selection.RankedTensorType();
+  const auto depth = ReadInt32Constant(one_hot.Inputs()[1]);
+  int32_t axis = 0;
+  if (indices.HasWeights() ||
+      indices.ElementType() != litert::ElementType::Int32 ||
+      selection.ElementType() != litert::ElementType::Float32 ||
+      !indices_type || !selection_type || !depth || depth->size() != 1 ||
+      (*depth)[0] <= 0 || ReadFloatScalar(one_hot.Inputs()[2]) != 1.0f ||
+      ReadFloatScalar(one_hot.Inputs()[3]) != 0.0f ||
+      LiteRtGetOneHotAxisOption(one_hot.Get(), &axis) != kLiteRtStatusOk) {
+    return std::nullopt;
+  }
+  const auto index_dims = indices_type->Layout().Dimensions();
+  const int rank = static_cast<int>(index_dims.size());
+  if ((axis != -1 && axis != rank) ||
+      selection_type->Layout().Dimensions().size() !=
+          static_cast<size_t>(rank) + 1) {
+    return std::nullopt;
+  }
+  const auto uses = selection.Uses();
+  if (uses.size() != 1 || uses[0].user_arg_ind != 0) {
+    return std::nullopt;
+  }
+  const Op product = uses[0].user;
+  bool adj_x = false;
+  bool adj_y = false;
+  if (product.Code() != kLiteRtOpCodeTflBatchMatmul ||
+      product.Inputs().size() != 2 || product.Outputs().size() != 1 ||
+      LiteRtGetBatchMatmulAdjXOption(product.Get(), &adj_x) !=
+          kLiteRtStatusOk ||
+      LiteRtGetBatchMatmulAdjYOption(product.Get(), &adj_y) !=
+          kLiteRtStatusOk ||
+      adj_x || adj_y) {
+    return std::nullopt;
+  }
+  const Tensor table = product.Inputs()[1];
+  const Tensor rows = product.Outputs()[0];
+  const auto table_type = table.RankedTensorType();
+  const auto rows_type = rows.RankedTensorType();
+  if (!table.HasWeights() || !table_type || !rows_type ||
+      rows.ElementType() != litert::ElementType::Float32) {
+    return std::nullopt;
+  }
+  const auto table_dims = table_type->Layout().Dimensions();
+  const int table_rank = static_cast<int>(table_dims.size());
+  if ((table_rank != 2 && !(table_rank == 3 && table_dims[0] == 1)) ||
+      table_dims[table_rank - 2] != (*depth)[0]) {
+    return std::nullopt;
+  }
+  const int32_t columns = table_dims[table_rank - 1];
+  const auto rows_dims = rows_type->Layout().Dimensions();
+  if (rows_dims.size() != static_cast<size_t>(rank) + 1 ||
+      rows_dims[rank] != columns) {
+    return std::nullopt;
+  }
+  for (int i = 0; i < rank; ++i) {
+    if (index_dims[i] <= 0 || rows_dims[i] != index_dims[i]) {
+      return std::nullopt;
+    }
+  }
+  if (table.ElementType() == litert::ElementType::Float32) {
+    return table.QTypeId() == kLiteRtQuantizationNone
+               ? std::optional<Op>(product)
+               : std::nullopt;
+  }
+  if (table.ElementType() != litert::ElementType::Int8) {
+    return std::nullopt;
+  }
+  auto symmetric =
+      HasSymmetricTensorRtQuantization(table, /*allow_per_channel=*/true);
+  if (!symmetric || !*symmetric) {
+    return std::nullopt;
+  }
+  if (table.QTypeId() == kLiteRtQuantizationPerChannel) {
+    const auto q = table.PerChannelQuantization();
+    if (q.quantized_dimension != table_rank - 1 ||
+        q.num_channels != static_cast<uint64_t>(columns)) {
+      return std::nullopt;
+    }
+  }
+  return product;
+}
+
+// The BATCH_MATMUL of a OneHotTableLookup: `op`'s left operand is the one-hot.
+bool IsOneHotTableLookupProduct(const Op& op) {
+  const auto selector = op.Inputs()[0].GetDefiningOp();
+  if (!selector) {
+    return false;
+  }
+  const auto product = OneHotTableLookup(*selector);
+  return product && product->Get() == op.Get();
+}
+
 Expected<bool> IsBatchMatmulSupported(const Op& op) {
   if (op.Inputs().size() != 2 || op.Outputs().size() != 1) {
     return false;
   }
   // INT8 rows times centered INT2 weights: a product of the quant plugin.
   if (IsQuantBatchMatmul(op)) {
+    return true;
+  }
+  if (IsOneHotTableLookupProduct(op)) {
     return true;
   }
   for (const auto& tensor : op.Inputs()) {
@@ -9098,7 +9213,176 @@ class TensorRtGraphBuilder {
     return SetOutputTensor(op.Outputs()[0], out);
   }
 
+  // The one-hot of a OneHotTableLookup needs no layer of its own when its
+  // product is lowered here: the product gathers the selected rows.
+  Expected<void> LowerOneHot(const Op& op) {
+    const auto product = OneHotTableLookup(op);
+    if (product && op_order_.count(product->Get()) != 0) {
+      return {};
+    }
+    LITERT_ASSIGN_OR_RETURN(auto* indices, GetTensor(op.Inputs()[0]));
+    LITERT_ASSIGN_OR_RETURN(auto depth, ReadInt32Constant(op.Inputs()[1]));
+    const float off_on[2] = {0.0f, 1.0f};
+    LITERT_ASSIGN_OR_RETURN(
+        auto* values,
+        AddFloatConstant(off_on, nvinfer1::Dims{1, {2}}, "one_hot_values"));
+    LITERT_ASSIGN_OR_RETURN(
+        auto* depth_tensor,
+        AddInt32Constant(depth, nvinfer1::Dims{0, {}}, "one_hot_depth"));
+    auto* layer = network_->addOneHot(*indices, *values, *depth_tensor, -1);
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add TensorRT one-hot layer");
+    }
+    return SetOutputTensor(op.Outputs()[0], layer->getOutput(0));
+  }
+
+  // The product of a OneHotTableLookup: the rows its one-hot selects, by a
+  // gather. Each sum of the product has one term that is not a zero, the
+  // row's value, so the gather is exact. INT8 tables are kept as FP16 integers
+  // (exact) and scaled after the gather in FP32, as a dequantization does. An
+  // index outside [0, depth) selects no row (zeros), as in the one-hot.
+  Expected<void> LowerOneHotTableLookup(const Op& selector, const Op& op) {
+    const Tensor table = op.Inputs()[1];
+    LITERT_ASSIGN_OR_RETURN(auto table_type, table.RankedTensorType());
+    const auto table_dims = table_type.Layout().Dimensions();
+    const int32_t depth = table_dims[table_dims.size() - 2];
+    const int32_t columns = table_dims[table_dims.size() - 1];
+    const bool quantized = table.ElementType() == litert::ElementType::Int8;
+    std::vector<float> values(static_cast<size_t>(depth) * columns);
+    const auto bytes = table.Weights().Bytes();
+    if (bytes.size() != values.size() * (quantized ? 1 : sizeof(float))) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Unexpected one-hot lookup table size");
+    }
+    if (quantized) {
+      for (size_t i = 0; i < values.size(); ++i) {
+        values[i] = static_cast<float>(static_cast<int8_t>(bytes[i]));
+      }
+    } else {
+      std::memcpy(values.data(), bytes.data(), bytes.size());
+    }
+    // The table stays in the plan, not among the refit constants
+    // (AddFloatConstant): refitting the vision export's two tables (47 MB)
+    // added seconds to every load of its engines.
+    const nvinfer1::DataType table_type_trt =
+        quantized ? nvinfer1::DataType::kHALF : nvinfer1::DataType::kFLOAT;
+    owned_weights_.emplace_back(values.size() *
+                                (quantized ? sizeof(uint16_t) : sizeof(float)));
+    if (quantized) {
+      auto* half_data =
+          reinterpret_cast<uint16_t*>(owned_weights_.back().data());
+      for (size_t i = 0; i < values.size(); ++i) {
+        half_data[i] = Fp32ToFp16Bits(values[i]);
+      }
+    } else {
+      std::memcpy(owned_weights_.back().data(), values.data(),
+                  owned_weights_.back().size());
+    }
+    auto* table_layer = network_->addConstant(
+        nvinfer1::Dims{2, {depth, columns}},
+        nvinfer1::Weights{table_type_trt, owned_weights_.back().data(),
+                          static_cast<int64_t>(values.size())});
+    if (table_layer == nullptr || table_layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the one-hot lookup's table");
+    }
+    nvinfer1::ITensor* table_tensor = table_layer->getOutput(0);
+    LITERT_ASSIGN_OR_RETURN(auto* indices, GetTensor(selector.Inputs()[0]));
+    const nvinfer1::Dims index_dims = indices->getDimensions();
+    nvinfer1::Dims ones{};
+    ones.nbDims = index_dims.nbDims;
+    for (int i = 0; i < ones.nbDims; ++i) {
+      ones.d[i] = 1;
+    }
+    const int32_t zero = 0;
+    const int32_t last = depth - 1;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* zero_tensor,
+        AddInt32Constant(absl::MakeConstSpan(&zero, 1), ones, "lookup_zero"));
+    LITERT_ASSIGN_OR_RETURN(
+        auto* last_tensor,
+        AddInt32Constant(absl::MakeConstSpan(&last, 1), ones, "lookup_last"));
+    auto* below = network_->addElementWise(
+        *indices, *last_tensor, nvinfer1::ElementWiseOperation::kMIN);
+    auto* clamped =
+        below == nullptr
+            ? nullptr
+            : network_->addElementWise(*below->getOutput(0), *zero_tensor,
+                                       nvinfer1::ElementWiseOperation::kMAX);
+    auto* in_range =
+        clamped == nullptr
+            ? nullptr
+            : network_->addElementWise(*clamped->getOutput(0), *indices,
+                                       nvinfer1::ElementWiseOperation::kEQUAL);
+    auto* gather =
+        clamped == nullptr
+            ? nullptr
+            : network_->addGather(*table_tensor, *clamped->getOutput(0), 0);
+    if (in_range == nullptr || gather == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add TensorRT one-hot lookup layers");
+    }
+    nvinfer1::ITensor* rows = gather->getOutput(0);
+    nvinfer1::Dims row_dims = ones;
+    row_dims.nbDims = index_dims.nbDims + 1;
+    row_dims.d[index_dims.nbDims] = columns;
+    if (quantized) {
+      LITERT_ASSIGN_OR_RETURN(rows,
+                              AddCastTensor(rows, nvinfer1::DataType::kFLOAT));
+      std::vector<float> scales(columns);
+      if (table.QTypeId() == kLiteRtQuantizationPerChannel) {
+        const auto q = table.PerChannelQuantization();
+        std::copy(q.scales, q.scales + columns, scales.begin());
+      } else {
+        std::fill(scales.begin(), scales.end(),
+                  table.PerTensorQuantization().scale);
+      }
+      LITERT_ASSIGN_OR_RETURN(
+          auto* scale_tensor,
+          AddFloatConstant(
+              scales, row_dims,
+              "one_hot_lookup_scales_" + std::to_string(table.TensorIndex())));
+      auto* scaled = network_->addElementWise(
+          *rows, *scale_tensor, nvinfer1::ElementWiseOperation::kPROD);
+      if (scaled == nullptr || scaled->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to scale the one-hot lookup's rows");
+      }
+      rows = scaled->getOutput(0);
+    }
+    auto* condition = network_->addShuffle(*in_range->getOutput(0));
+    if (condition == nullptr || condition->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to shape the one-hot lookup's index check");
+    }
+    nvinfer1::Dims condition_dims = index_dims;
+    condition_dims.nbDims = index_dims.nbDims + 1;
+    condition_dims.d[index_dims.nbDims] = 1;
+    condition->setReshapeDimensions(condition_dims);
+    const float zero_value = 0.0f;
+    nvinfer1::Dims zero_dims = ones;
+    zero_dims.nbDims = index_dims.nbDims + 1;
+    zero_dims.d[index_dims.nbDims] = 1;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* zero_rows,
+        AddFloatConstant(absl::MakeConstSpan(&zero_value, 1), zero_dims,
+                         "lookup_zero_rows", rows->getType()));
+    auto* select =
+        network_->addSelect(*condition->getOutput(0), *rows, *zero_rows);
+    if (select == nullptr || select->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the one-hot lookup's select");
+    }
+    return SetOutputTensor(op.Outputs()[0], select->getOutput(0));
+  }
+
   Expected<void> LowerBatchMatmul(const Op& op) {
+    if (const auto selector = op.Inputs()[0].GetDefiningOp();
+        selector && op_order_.count(selector->Get()) != 0 &&
+        IsOneHotTableLookupProduct(op)) {
+      return LowerOneHotTableLookup(*selector, op);
+    }
     LITERT_ASSIGN_OR_RETURN(auto* lhs, GetTensor(op.Inputs()[0]));
     LITERT_ASSIGN_OR_RETURN(auto* rhs, GetTensor(op.Inputs()[1]));
     bool adj_x = false;
@@ -14179,6 +14463,8 @@ class TensorRtGraphBuilder {
         return LowerConcatenation(op);
       case kLiteRtOpCodeTflBatchMatmul:
         return LowerBatchMatmul(op);
+      case kLiteRtOpCodeTflOneHot:
+        return LowerOneHot(op);
       case kLiteRtOpCodeTflFullyConnected:
         return LowerFullyConnected(op);
       case kLiteRtOpCodeTflSelectV2:
@@ -14398,6 +14684,10 @@ bool IsTensorRtOpSupported(const Op& op) {
       break;
     case kLiteRtOpCodeTflBatchMatmul:
       result = IsBatchMatmulSupported(op);
+      break;
+    case kLiteRtOpCodeTflOneHot:
+      // Only as the selector of a table lookup, whose rows are gathered.
+      result = OneHotTableLookup(op).has_value();
       break;
     case kLiteRtOpCodeTflFullyConnected:
       result = IsFullyConnectedSupported(op);
