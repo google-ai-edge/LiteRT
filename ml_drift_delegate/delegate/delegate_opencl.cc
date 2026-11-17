@@ -756,6 +756,8 @@ TfLiteDelegatePtr CreateMlDriftClDelegate(MlDriftDelegateOptionsPtr options,
   auto backend = std::make_shared<GpuBackendOpenClLitert>(
       (*delegate_env)->cl_env.get(), (*delegate_env)->egl_display,
       std::move(compiled_cache), runtime_context);
+  backend->SetForceHostPtrIOBuffer(
+      delegate_data->options->force_host_ptr_io_buffers);
   delegate_data->shared_backend = backend;
 
   switch (delegate_data->options->precision) {

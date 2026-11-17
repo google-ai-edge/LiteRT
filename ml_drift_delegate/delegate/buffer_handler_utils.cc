@@ -17,6 +17,7 @@
 #include <cstdint>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -27,6 +28,37 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 
 namespace litert::ml_drift {
+
+absl::StatusOr<::ml_drift::DataType> ToMlDriftDataType(
+    LiteRtElementType element_type) {
+  switch (element_type) {
+    case kLiteRtElementTypeFloat32:
+      return ::ml_drift::DataType::kFloat32;
+    case kLiteRtElementTypeFloat16:
+      return ::ml_drift::DataType::kFloat16;
+    case kLiteRtElementTypeInt32:
+      return ::ml_drift::DataType::kInt32;
+    case kLiteRtElementTypeInt64:
+      return ::ml_drift::DataType::kInt64;
+    case kLiteRtElementTypeUInt32:
+      return ::ml_drift::DataType::kUint32;
+    case kLiteRtElementTypeUInt64:
+      return ::ml_drift::DataType::kUint64;
+    case kLiteRtElementTypeInt16:
+      return ::ml_drift::DataType::kInt16;
+    case kLiteRtElementTypeUInt16:
+      return ::ml_drift::DataType::kUint16;
+    case kLiteRtElementTypeInt8:
+      return ::ml_drift::DataType::kInt8;
+    case kLiteRtElementTypeUInt8:
+      return ::ml_drift::DataType::kUint8;
+    case kLiteRtElementTypeBool:
+      return ::ml_drift::DataType::kBool;
+    default:
+      return absl::InvalidArgumentError(
+          absl::StrCat("Unsupported element type: ", element_type));
+  }
+}
 
 absl::StatusOr<::ml_drift::TensorDescriptor> CreateTensorDescriptor(
     const LiteRtRankedTensorType& tensor_type,
@@ -63,46 +95,11 @@ absl::StatusOr<::ml_drift::TensorDescriptor> CreateTensorDescriptor(
           "Rank ", tensor_type.layout.rank, " tensor is not supported."));
   }
 
-  ::ml_drift::DataType data_type;
-  switch (tensor_type.element_type) {
-    case kLiteRtElementTypeFloat32:
-      data_type = IsGpuFloat16Memory(buffer_type)
-                      ? ::ml_drift::DataType::kFloat16
-                      : ::ml_drift::DataType::kFloat32;
-      break;
-    case kLiteRtElementTypeBool:
-      data_type = ::ml_drift::DataType::kBool;
-      break;
-    case kLiteRtElementTypeInt32:
-      data_type = ::ml_drift::DataType::kInt32;
-      break;
-    case kLiteRtElementTypeFloat16:
-      data_type = ::ml_drift::DataType::kFloat16;
-      break;
-    case kLiteRtElementTypeInt8:
-      data_type = ::ml_drift::DataType::kInt8;
-      break;
-    case kLiteRtElementTypeUInt8:
-      data_type = ::ml_drift::DataType::kUint8;
-      break;
-    case kLiteRtElementTypeUInt32:
-      data_type = ::ml_drift::DataType::kUint32;
-      break;
-    case kLiteRtElementTypeInt64:
-      data_type = ::ml_drift::DataType::kInt64;
-      break;
-    case kLiteRtElementTypeUInt64:
-      data_type = ::ml_drift::DataType::kUint64;
-      break;
-    case kLiteRtElementTypeInt16:
-      data_type = ::ml_drift::DataType::kInt16;
-      break;
-    case kLiteRtElementTypeUInt16:
-      data_type = ::ml_drift::DataType::kUint16;
-      break;
-    default:
-      return absl::InvalidArgumentError(
-          absl::StrCat("Unsupported element type: ", tensor_type.element_type));
+  ABSL_ASSIGN_OR_RETURN(auto data_type,
+                        ToMlDriftDataType(tensor_type.element_type));
+  if (data_type == ::ml_drift::DataType::kFloat32 &&
+      IsGpuFloat16Memory(buffer_type)) {
+    data_type = ::ml_drift::DataType::kFloat16;
   }
 
   ::ml_drift::TensorStorageType storage_type;

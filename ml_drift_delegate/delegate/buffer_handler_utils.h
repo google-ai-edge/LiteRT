@@ -22,6 +22,10 @@
 
 namespace litert::ml_drift {
 
+// Converts a LiteRT element type to the corresponding ML Drift data type.
+absl::StatusOr<::ml_drift::DataType> ToMlDriftDataType(
+    LiteRtElementType element_type);
+
 // Creates a ML Drift tensor descriptor from the given LiteRT tensor type and
 // buffer type.
 absl::StatusOr<::ml_drift::TensorDescriptor> CreateTensorDescriptor(

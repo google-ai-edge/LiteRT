@@ -193,6 +193,14 @@ bool DelegateKernelLiteRt::IsAhwbTensorBuffer(
          buffer_type == kLiteRtTensorBufferTypeAhwb;
 }
 
+bool DelegateKernelLiteRt::IsHostMemoryTensorBuffer(
+    const GpuTensorBufferPtr& tensor_buffer) const {
+  LiteRtTensorBufferType buffer_type;
+  return runtime_context_->get_tensor_buffer_type(
+             tensor_buffer.get(), &buffer_type) == kLiteRtStatusOk &&
+         buffer_type == kLiteRtTensorBufferTypeHostMemory;
+}
+
 // Create internal SpatialTensor from I/O TensorBuffers and bind them to the
 // inference context. The created SpatialTensors are stored in
 // input_tensors_ and output_tensors_.
@@ -200,6 +208,7 @@ absl::Status DelegateKernelLiteRt::BindExternalTensorBuffers(
     TfLiteContext* context) {
   bool external_tensors_mode = !NoExternalTensorsMode();
   has_ahwb_tensor_buffers_ = false;
+  has_host_memory_buffers_ = false;
 
   for (int i = 0; i < input_indices_.size(); ++i) {
     if (IsExternalSharedConstantTensor(input_ids_[i])) {
@@ -229,6 +238,8 @@ absl::Status DelegateKernelLiteRt::BindExternalTensorBuffers(
     }
     has_ahwb_tensor_buffers_ =
         has_ahwb_tensor_buffers_ || IsAhwbTensorBuffer(*tensor_buffer);
+    has_host_memory_buffers_ =
+        has_host_memory_buffers_ || IsHostMemoryTensorBuffer(*tensor_buffer);
   }
 
   for (int i = 0; i < output_indices_.size(); ++i) {
@@ -255,6 +266,8 @@ absl::Status DelegateKernelLiteRt::BindExternalTensorBuffers(
     }
     has_ahwb_tensor_buffers_ =
         has_ahwb_tensor_buffers_ || IsAhwbTensorBuffer(*tensor_buffer);
+    has_host_memory_buffers_ =
+        has_host_memory_buffers_ || IsHostMemoryTensorBuffer(*tensor_buffer);
   }
   return absl::OkStatus();
 }
@@ -537,13 +550,12 @@ absl::Status DelegateKernelLiteRt::HandleOutputEvents(
     // In synchronous execution no completion event is attached to the output
     // tensor buffers. Not waiting is fine for GPU memory such as OpenCL
     // buffers: reading or writing them through the TensorBuffer API goes
-    // through the same in-order command queue. AHardwareBuffers are instead
-    // accessed with AHardwareBuffer_lock() or imported into GL, which are not
-    // ordered after the dispatched work, so a reader could see stale output and
-    // a writer could overwrite an input that is still being read. Wait for them
-    // even with DoNotWait, like the OpenCL backend does for GL buffers in
-    // GpuInferenceContextOpenClLitert::PostConvert().
-    if (!has_ahwb_tensor_buffers_ &&
+    // through the same in-order command queue. AHardwareBuffers and HostMemory
+    // buffers are instead accessed on the CPU or freed directly outside the
+    // OpenCL command queue, which are not ordered after the dispatched work.
+    // Waiting for them even with DoNotWait prevents CPU-GPU race conditions,
+    // deallocation hazards, and driver cache-op faults (b/581934983).
+    if (!has_ahwb_tensor_buffers_ && !has_host_memory_buffers_ &&
         delegate_data_->options->wait_type == kGpuDelegateWaitTypeDoNotWait) {
       return absl::OkStatus();
     }
