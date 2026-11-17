@@ -578,8 +578,8 @@ constexpr int kDepth = 16;  // head size
 
 // The front of a block that writes a cache (prefill and decode blocks 0 to
 // 19): the stream's norm and QUANTIZE, the q, k and v projections, their
-// head norms, the rotation of q and k and the query's scalar. One glue, one
-// projections and one qkv rope launch.
+// head norms, the rotation of q and k and the query's scalar. The glue runs
+// in the projections' launch; then one qkv rope launch.
 void RunQkvFront(int tokens, bool rotate_through_reshape, float proportion) {
   SCOPED_TRACE(testing::Message() << tokens << " tokens");
   Random random(11 + tokens);
@@ -645,7 +645,7 @@ void RunQkvFront(int tokens, bool rotate_through_reshape, float proportion) {
             {"input_pos", RawBytes(position_values)}},
            &result);
   if (testing::Test::HasFatalFailure()) return;
-  EXPECT_EQ(CountOf(result.layers, "cuda_quant_glue"), 1u) << result.layers;
+  EXPECT_EQ(CountOf(result.layers, "cuda_quant_glue"), 0u) << result.layers;
   EXPECT_EQ(CountOf(result.layers, "cuda_quant_projections"), 1u);
   EXPECT_EQ(CountOf(result.layers, "cuda_quant_qkv_rope"), 1u);
 
@@ -884,7 +884,8 @@ struct FactorizedMlp {
 // factorized MLP, the MLP, the second residual update, the next block's norm,
 // QUANTIZE and query projection with its head norm, rotation and scalar.
 // Launches: the output projection (it quantizes its float input), a glue, the
-// four of the factorized MLP, a glue, the query projection, a qkv rope.
+// four of the factorized MLP, the query projection (it runs the glue in front
+// of it), a qkv rope.
 void RunBlockBack(int tokens, bool prefill, bool carved = false) {
   SCOPED_TRACE(testing::Message() << tokens << " tokens, carved " << carved);
   Random random(23 + tokens);
@@ -988,7 +989,7 @@ void RunBlockBack(int tokens, bool prefill, bool carved = false) {
   if (testing::Test::HasFatalFailure()) return;
   EXPECT_EQ(CountOf(result.layers, "cuda_quant_projections"), 2u)
       << result.layers;
-  EXPECT_EQ(CountOf(result.layers, "cuda_quant_glue"), 2u);
+  EXPECT_EQ(CountOf(result.layers, "cuda_quant_glue"), 1u);
   EXPECT_EQ(CountOf(result.layers, "cuda_quant_factorized_mlp"), 4u);
   EXPECT_EQ(CountOf(result.layers, "cuda_quant_qkv_rope"), 1u);
 
@@ -1264,6 +1265,51 @@ TEST(QuantLinearLoweringTest, ManyRowsHaveRowKernelsResults) {
   auto expected =
       ref::Linear(params, kTokens, x_values, weights,
                   Int4Multipliers(in_scale, scales, out_scale), {}, {});
+  for (auto& value : expected) value *= out_scale;
+  ExpectSame(HalfFloats(result.outputs["y"]), expected, "y");
+}
+
+// The rows of a prefill chunk behind a glue: the layer runs the glue into its
+// workspace and the product on the tensor cores, with the results of the
+// glue and row kernels.
+TEST(QuantLinearLoweringTest, ManyRowsBehindAGlueHaveRowKernelsResults) {
+  Random random(53);
+  constexpr int kTokens = 128;
+  constexpr int kColumns = 128;
+  constexpr int kRows = 256;
+  const float in_scale = 0.03f;
+  const float out_scale = 0.25f;
+  const auto norm = random.Floats(kColumns, 0.5f, 2.0f);
+  Graph g;
+  auto& x = g.Input(kLiteRtElementTypeFloat16, {1, kTokens, kColumns}, "x");
+  const auto weights = random.Bytes(kRows * kColumns / 2);
+  const auto scales = random.Floats(kRows, 0.004f, 0.008f);
+  auto& projected =
+      g.FullyConnected(g.Quantize(g.Norm(x, norm), in_scale),
+                       g.Int4Weights(kRows, kColumns, weights, scales),
+                       g.Int8({1, kTokens, kRows}, out_scale));
+  g.Output(g.Dequantize(projected), "y");
+  const auto x_values =
+      RoundedToFp16(random.Floats(kTokens * kColumns, -3.0f, 3.0f));
+  RunResult result;
+  RunGraph(g, {{"x", HalfBytes(x_values)}}, &result);
+  if (testing::Test::HasFatalFailure()) return;
+  EXPECT_EQ(CountOf(result.layers, "cuda_quant_glue"), 0u) << result.layers;
+  EXPECT_EQ(CountOf(result.layers, "cuda_quant_projections"), 1u);
+  LiteRtNvidiaQuantGlueParams glue = {};
+  glue.width = kColumns;
+  glue.x_type = kLiteRtNvidiaQuantFp16;
+  glue.norm = 1;
+  glue.norm_eps = 1e-6f;
+  glue.quantize = kLiteRtNvidiaQuantGlueStatic;
+  glue.quantize_scale = ref::RoundToFp16(1.0f / in_scale);
+  const auto quantized = ref::Glue(glue, kTokens, x_values, {}, {}, norm);
+  const auto params = Int4Params(kRows, kColumns);
+  ASSERT_TRUE(LiteRtNvidiaQuantGemmSupports(&params, kTokens));
+  auto expected = ref::Linear(
+      params, kTokens,
+      std::vector<float>(quantized.q.begin(), quantized.q.end()), weights,
+      Int4Multipliers(in_scale, scales, out_scale), {}, {});
   for (auto& value : expected) value *= out_scale;
   ExpectSame(HalfFloats(result.outputs["y"]), expected, "y");
 }

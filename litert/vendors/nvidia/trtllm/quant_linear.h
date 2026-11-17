@@ -157,6 +157,25 @@ extern "C" cudaError_t LiteRtNvidiaLaunchQuantGlue(
     void* x_out, void* z_out, int8_t* q_out, float* row_scale_out,
     cudaStream_t stream);
 
+// The glue in front of a product and the product in one launch: per
+// activation row, LiteRtNvidiaLaunchQuantGlue with `glue` (static
+// quantization) and then LiteRtNvidiaLaunchQuantLinear with `linear` (rows
+// layout, INT8 activations) on its q, with the results of the two launches,
+// bit for bit. The CTAs of a row each run its glue, so the launch suits few
+// rows (decode); `linear`'s rows may hold up to 256 weight words.
+extern "C" bool LiteRtNvidiaQuantGlueLinearSupports(
+    const LiteRtNvidiaQuantGlueParams* glue,
+    const LiteRtNvidiaQuantLinearParams* linear);
+
+// The inputs of both launches (q stays on the chip); outputs x_out and z_out
+// as LiteRtNvidiaLaunchQuantGlue's (optional), the product's INT8 [m, rows].
+extern "C" cudaError_t LiteRtNvidiaLaunchQuantGlueLinear(
+    const LiteRtNvidiaQuantGlueParams* glue,
+    const LiteRtNvidiaQuantLinearParams* linear, int32_t m, const void* x,
+    const int8_t* y, const float* branch_weights, const float* norm_weights,
+    const uint8_t* weights, const float* multipliers, const int8_t* lut,
+    void* x_out, void* z_out, void* output, cudaStream_t stream);
+
 // The steps between the q, k and v projections and the attention: every head
 // of the INT8 projection results [tokens, (q_heads + k_heads + v_heads) *
 // depth] (queries, keys, values) is dequantized (fl16(q * scale)),

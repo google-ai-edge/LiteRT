@@ -12186,7 +12186,8 @@ class TensorRtGraphBuilder {
   //   projections  FULLY_CONNECTED ops that read one INT8 tensor, one launch
   //   MLP          a factorized MLP, four launches (MatchQuantFactorizedMlp,
   //                LowerQuantFactorizedMlp)
-  //   glue         the float steps in front of a QUANTIZE, one launch
+  //   glue         the float steps in front of a QUANTIZE, one launch, or
+  //                part of the projections' launch that reads its result
   //   qkv rope     the head norms and odml.rope behind q, k and v, one launch
   //   head         the vocabulary product behind its dynamic quantization
   // INT8 results stay INT8 between the layers (quant_values_) and float ones
@@ -12233,9 +12234,22 @@ class TensorRtGraphBuilder {
     float scale = 0.0f;
   };
 
+  // A glue as a layer runs it (PrepareQuantGlue): its kernel parameters,
+  // its inputs (x, then y and the branch norm's weights, then the norm's
+  // weights) and its outputs (the QuantGlueOutput mask).
+  struct QuantGlueLayer {
+    const QuantGlueChain* chain = nullptr;
+    LiteRtNvidiaQuantGlueParams params = {};
+    std::vector<nvinfer1::ITensor*> inputs;
+    int32_t outputs = 0;
+  };
+
   struct QuantProjections {
     std::optional<Tensor> input;
     std::vector<Op> ops;  // in row order
+    // The glue (quant_glues_) whose INT8 result is `input`, run by the
+    // product's launch.
+    std::optional<size_t> glue;
   };
 
   // A factorized MLP on INT8 activations, all weights centered INT2:
@@ -12478,13 +12492,15 @@ class TensorRtGraphBuilder {
   // in row order, views of the model file when they are the model's: with a
   // weight store they stay there and the layer reads the holder of their
   // segment, else they are copied into a constant. Returns INT8 [m, rows],
-  // or the FP32 logits.
+  // or the FP32 logits. With `glue` the layer runs that glue in front and
+  // reads its x instead of `activation` (an INT8 activation, the glue's q).
   Expected<nvinfer1::ITensor*> AddQuantLinear(
       const LiteRtNvidiaQuantLinearParams& params,
       nvinfer1::ITensor* activation,
       absl::Span<const absl::Span<const uint8_t>> members,
       const std::vector<float>& multipliers, const std::vector<int8_t>* lut,
-      nvinfer1::ITensor* row_scale, const std::string& name) {
+      nvinfer1::ITensor* row_scale, const std::string& name,
+      const QuantGlueLayer* glue = nullptr) {
     size_t bytes = 0;
     for (const auto& member : members) bytes += member.size();
     if (bytes != static_cast<size_t>(params.rows) * params.columns *
@@ -12534,8 +12550,9 @@ class TensorRtGraphBuilder {
         auto* multiplier_tensor,
         AddFloatConstant(multipliers, multiplier_dims, name + "_multipliers",
                          nvinfer1::DataType::kFLOAT));
-    std::vector<nvinfer1::ITensor*> inputs = {activation, weights,
-                                              multiplier_tensor};
+    std::vector<nvinfer1::ITensor*> inputs = {
+        glue != nullptr ? glue->inputs[0] : activation, weights,
+        multiplier_tensor};
     if (lut != nullptr) {
       owned_weights_.emplace_back(lut->begin(), lut->end());
       nvinfer1::Dims dims{};
@@ -12553,11 +12570,22 @@ class TensorRtGraphBuilder {
     if (row_scale != nullptr) {
       inputs.push_back(row_scale);
     }
-    TrtPtr<nvinfer1::IPluginV3> plugin(CreateQuantLinearPlugin(
-        params,
-        location.has_value() ? static_cast<int64_t>(location->offset) : 0,
+    const int64_t weight_offset =
+        location.has_value() ? static_cast<int64_t>(location->offset) : 0;
+    const int64_t holder_granule =
         location.has_value() ? static_cast<int64_t>(weight_store_->granule())
-                             : 0));
+                             : 0;
+    TrtPtr<nvinfer1::IPluginV3> plugin;
+    if (glue != nullptr) {
+      inputs.insert(inputs.end(), glue->inputs.begin() + 1, glue->inputs.end());
+      plugin.reset(CreateQuantGlueLinearPlugin(
+          glue->params, params,
+          glue->outputs & (kQuantGlueOutputX | kQuantGlueOutputZ),
+          weight_offset, holder_granule));
+    } else {
+      plugin.reset(
+          CreateQuantLinearPlugin(params, weight_offset, holder_granule));
+    }
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create the quantized product plugin");
@@ -12576,6 +12604,10 @@ class TensorRtGraphBuilder {
     layer->getOutput(0)->setName(KeepName(UniqueName(name)));
     owned_plugins_.push_back(std::move(plugin));
     uses_cuda_subbyte_gemv_ = true;
+    if (glue != nullptr) {
+      int32_t next = 1;
+      LITERT_RETURN_IF_ERROR(SetQuantGlueFloats(*glue, layer, next));
+    }
     return layer->getOutput(0);
   }
 
@@ -12633,6 +12665,58 @@ class TensorRtGraphBuilder {
     }
     unlowered_ops_.insert(members.begin(), members.end());
     quant_regions_[first] = {kind, index};
+  }
+
+  // Adds the glue quant_glues_.back() of `members` to the projections region
+  // that reads its INT8 result `read`, whose launch then runs the glue in front
+  // (QuantProjections::glue): the region is emitted at its first op, now the
+  // glue's. Any other glue is a region of its own (the factorized MLP's first
+  // stage reads rows too short to hide a glue).
+  void AddQuantGlueRegion(const Tensor& read,
+                          const std::vector<LiteRtOp>& members) {
+    const size_t index = quant_glues_.size() - 1;
+    const auto projections = quant_projections_by_input_.find(read.Get());
+    if (projections == quant_projections_by_input_.end()) {
+      AddQuantRegion(QuantRegionKind::kGlue, index, members);
+      return;
+    }
+    quant_projections_[projections->second].glue = index;
+    LiteRtOp first = members.front();
+    for (LiteRtOp op : members) {
+      if (op_order_[op] < op_order_[first]) first = op;
+    }
+    for (auto it = quant_regions_.begin(); it != quant_regions_.end(); ++it) {
+      if (it->second.kind == QuantRegionKind::kProjections &&
+          it->second.index == projections->second) {
+        if (op_order_[it->first] < op_order_[first]) first = it->first;
+        quant_regions_.erase(it);
+        break;
+      }
+    }
+    unlowered_ops_.insert(members.begin(), members.end());
+    quant_regions_[first] = {QuantRegionKind::kProjections,
+                             projections->second};
+  }
+
+  // The glue in front of the projections (QuantProjections::glue) as their
+  // layer runs it, if the kernel takes it with `params` (which read the
+  // glue's INT8 result); else the glue gets its own layer here, whose INT8
+  // result the projections then read.
+  Expected<std::optional<QuantGlueLayer>> QuantGlueInFront(
+      std::optional<size_t> index,
+      const LiteRtNvidiaQuantLinearParams& params) {
+    if (!index.has_value()) return std::optional<QuantGlueLayer>();
+    const QuantGlue& glue = quant_glues_[*index];
+    LITERT_ASSIGN_OR_RETURN(
+        auto layer,
+        PrepareQuantGlue(glue.chain, kLiteRtNvidiaQuantGlueStatic, glue.scale,
+                         "cuda_quant_glue_" +
+                             std::to_string(glue.quantized->TensorIndex())));
+    if (LiteRtNvidiaQuantGlueLinearSupports(&layer.params, &params)) {
+      return std::optional<QuantGlueLayer>(std::move(layer));
+    }
+    LITERT_RETURN_IF_ERROR(LowerQuantGlue(glue));
+    return std::optional<QuantGlueLayer>();
   }
 
   // The op of `code` that computes `tensor`, when one op reads `tensor`.
@@ -12781,14 +12865,11 @@ class TensorRtGraphBuilder {
     return chain;
   }
 
-  // Adds the glue layer of `chain` with the quantization `quantize`
-  // (LiteRtNvidiaQuantGlueQuantize) to `scale`. Returns its INT8 result
-  // [m, width]; `row_scale`, when not null, receives the dynamic scales.
-  // The updated residual stream and the norm's result (for other readers)
-  // become the FLOAT16 values of their tensors.
-  Expected<nvinfer1::ITensor*> AddQuantGlue(const QuantGlueChain& chain,
+  // The parameters and inputs of the glue of `chain` with the quantization
+  // `quantize` (LiteRtNvidiaQuantGlueQuantize) to `scale`, for its own layer
+  // (AddQuantGlue) or the layer of the product behind it (AddQuantLinear).
+  Expected<QuantGlueLayer> PrepareQuantGlue(const QuantGlueChain& chain,
                                             int32_t quantize, float scale,
-                                            nvinfer1::ITensor** row_scale,
                                             const std::string& name) {
     LITERT_ASSIGN_OR_RETURN(auto x_type, chain.x->RankedTensorType());
     const int32_t width = x_type.Layout().Dimensions().back();
@@ -12839,20 +12920,13 @@ class TensorRtGraphBuilder {
     if (quantize == kLiteRtNvidiaQuantGlueDynamic) {
       outputs |= kQuantGlueOutputRowScale;
     }
-    TrtPtr<nvinfer1::IPluginV3> plugin(CreateQuantGluePlugin(params, outputs));
-    if (!plugin) {
-      return Error(kLiteRtStatusErrorCompilation,
-                   "Failed to create the quant glue plugin");
-    }
-    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
-        *network_, inputs.data(), static_cast<int32_t>(inputs.size()), *plugin);
-    if (layer == nullptr) {
-      return Error(kLiteRtStatusErrorCompilation,
-                   "Failed to add the quant glue plugin layer");
-    }
-    layer->setName(KeepName(UniqueName(name)));
-    owned_plugins_.push_back(std::move(plugin));
-    int32_t next = 0;
+    return QuantGlueLayer{&chain, params, std::move(inputs), outputs};
+  }
+
+  // Records the outputs x' and z of a layer that ran `glue`, from output
+  // `next` on, as the FLOAT16 values of their tensors.
+  Expected<void> SetQuantGlueFloats(const QuantGlueLayer& glue,
+                                    nvinfer1::ILayer* layer, int32_t& next) {
     const auto float_output = [&](const Tensor& tensor) -> Expected<void> {
       LITERT_ASSIGN_OR_RETURN(auto type, tensor.RankedTensorType());
       LITERT_ASSIGN_OR_RETURN(auto dims, ConvertDims(type));
@@ -12860,12 +12934,43 @@ class TensorRtGraphBuilder {
                               ReshapeTensor(layer->getOutput(next++), dims));
       return SetQuantFloat(tensor, value);
     };
-    if ((outputs & kQuantGlueOutputX) != 0) {
-      LITERT_RETURN_IF_ERROR(float_output(*chain.updated));
+    if ((glue.outputs & kQuantGlueOutputX) != 0) {
+      LITERT_RETURN_IF_ERROR(float_output(*glue.chain->updated));
     }
-    if (z_output) {
-      LITERT_RETURN_IF_ERROR(float_output(*chain.normed));
+    if ((glue.outputs & kQuantGlueOutputZ) != 0) {
+      LITERT_RETURN_IF_ERROR(float_output(*glue.chain->normed));
     }
+    return {};
+  }
+
+  // Adds the glue layer of `chain` with the quantization `quantize`
+  // (LiteRtNvidiaQuantGlueQuantize) to `scale`. Returns its INT8 result
+  // [m, width]; `row_scale`, when not null, receives the dynamic scales.
+  // The updated residual stream and the norm's result (for other readers)
+  // become the FLOAT16 values of their tensors.
+  Expected<nvinfer1::ITensor*> AddQuantGlue(const QuantGlueChain& chain,
+                                            int32_t quantize, float scale,
+                                            nvinfer1::ITensor** row_scale,
+                                            const std::string& name) {
+    LITERT_ASSIGN_OR_RETURN(auto glue,
+                            PrepareQuantGlue(chain, quantize, scale, name));
+    TrtPtr<nvinfer1::IPluginV3> plugin(
+        CreateQuantGluePlugin(glue.params, glue.outputs));
+    if (!plugin) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to create the quant glue plugin");
+    }
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        *network_, glue.inputs.data(), static_cast<int32_t>(glue.inputs.size()),
+        *plugin);
+    if (layer == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the quant glue plugin layer");
+    }
+    layer->setName(KeepName(UniqueName(name)));
+    owned_plugins_.push_back(std::move(plugin));
+    int32_t next = 0;
+    LITERT_RETURN_IF_ERROR(SetQuantGlueFloats(glue, layer, next));
     nvinfer1::ITensor* q = layer->getOutput(next++);
     q->setName(KeepName(UniqueName(name + "_q")));
     if (row_scale != nullptr) {
@@ -13469,6 +13574,8 @@ class TensorRtGraphBuilder {
         quant_outputs_.insert(member.Outputs()[0].Get());
       }
       quant_product_inputs_.insert(group.input->Get());
+      quant_projections_by_input_[group.input->Get()] =
+          quant_projections_.size();
       AddQuantRegion(QuantRegionKind::kProjections, quant_projections_.size(),
                      members);
       quant_projections_.push_back(std::move(group));
@@ -13539,9 +13646,9 @@ class TensorRtGraphBuilder {
       }
       glue.quantized = *mlp.input;
       glue.scale = mlp.scales[0];
-      AddQuantRegion(QuantRegionKind::kGlue, quant_glues_.size(),
-                     glue.chain.members);
+      const std::vector<LiteRtOp> members = glue.chain.members;
       quant_glues_.push_back(std::move(glue));
+      AddQuantGlueRegion(*mlp.input, members);
     }
     // The float steps in front of the QUANTIZE ops that feed the products:
     // a QUANTIZE behind an RMS norm becomes a glue layer; any other is left
@@ -13573,17 +13680,22 @@ class TensorRtGraphBuilder {
       members.insert(members.end(), glue.chain.members.begin(),
                      glue.chain.members.end());
       if (!QuantOpsAreFree(members)) continue;
-      AddQuantRegion(QuantRegionKind::kGlue, quant_glues_.size(), members);
       quant_glues_.push_back(std::move(glue));
+      AddQuantGlueRegion(read, members);
     }
     if (!quant_regions_.empty()) {
-      LITERT_LOG(
-          LITERT_INFO,
-          "NVIDIA TensorRT-RTX quantized products: %zu projection "
-          "launches, %zu factorized MLPs, %zu glue launches, %zu qkv rope "
-          "launches, %zu heads",
-          quant_projections_.size(), quant_factorized_mlps_.size(),
-          quant_glues_.size(), quant_qkv_ropes_.size(), quant_heads_.size());
+      size_t glues_in_projections = 0;
+      for (const auto& group : quant_projections_) {
+        glues_in_projections += group.glue.has_value() ? 1 : 0;
+      }
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX quantized products: %zu projection "
+                 "launches (%zu with the glue in front), %zu factorized MLPs, "
+                 "%zu glue launches, %zu qkv rope launches, %zu heads",
+                 quant_projections_.size(), glues_in_projections,
+                 quant_factorized_mlps_.size(),
+                 quant_glues_.size() - glues_in_projections,
+                 quant_qkv_ropes_.size(), quant_heads_.size());
     }
     return {};
   }
@@ -13592,8 +13704,6 @@ class TensorRtGraphBuilder {
     const auto [first_rows, columns] =
         QuantMatrixDims(group.ops[0].Inputs()[1]);
     static_cast<void>(first_rows);
-    LITERT_ASSIGN_OR_RETURN(auto activation,
-                            GetQuantActivation(*group.input, columns));
     const float input_scale = group.input->PerTensorQuantization().scale;
     std::vector<absl::Span<const uint8_t>> members;
     std::vector<float> multipliers;
@@ -13616,14 +13726,22 @@ class TensorRtGraphBuilder {
     params.segments = 1;
     params.swap0 = 1;
     params.swap1 = 1;
-    params.activation = activation.type;
-    params.quantize_scale = activation.quantize_scale;
+    params.activation = kLiteRtNvidiaQuantInt8;
     params.requant = kLiteRtNvidiaQuantRequantFp32;
+    LITERT_ASSIGN_OR_RETURN(auto glue, QuantGlueInFront(group.glue, params));
+    QuantActivation activation;
+    if (!glue.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(activation,
+                              GetQuantActivation(*group.input, columns));
+      params.activation = activation.type;
+      params.quantize_scale = activation.quantize_scale;
+    }
     const std::string name =
         "cuda_quant_projections_" + std::to_string(group.input->TensorIndex());
     LITERT_ASSIGN_OR_RETURN(
-        auto* result, AddQuantLinear(params, activation.rows, members,
-                                     multipliers, nullptr, nullptr, name));
+        auto* result,
+        AddQuantLinear(params, activation.rows, members, multipliers, nullptr,
+                       nullptr, name, glue.has_value() ? &*glue : nullptr));
     int32_t offset = 0;
     for (const Op& op : group.ops) {
       const int32_t rows = QuantMatrixDims(op.Inputs()[1]).first;
@@ -14188,6 +14306,8 @@ class TensorRtGraphBuilder {
   std::unordered_map<LiteRtOp, QuantRegion> quant_regions_;
   std::unordered_set<LiteRtTensor> quant_outputs_;
   std::unordered_set<LiteRtTensor> quant_product_inputs_;
+  // The projections regions (quant_projections_) by the tensor they read.
+  std::unordered_map<LiteRtTensor, size_t> quant_projections_by_input_;
   std::vector<QuantProjections> quant_projections_;
   std::vector<QuantFactorizedMlp> quant_factorized_mlps_;
   std::vector<QuantGlue> quant_glues_;

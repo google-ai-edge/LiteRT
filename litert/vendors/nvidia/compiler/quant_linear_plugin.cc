@@ -15,6 +15,7 @@
 #include "litert/vendors/nvidia/compiler/quant_linear_plugin.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -41,14 +42,17 @@ constexpr char kHolderGranuleField[] = "holder_granule";
 constexpr int kFields = 5;
 
 // Which kernel the layer launches.
-enum Kind : int32_t { kLinear = 0, kGlue = 1, kQkvRope = 2 };
+enum Kind : int32_t { kLinear = 0, kGlue = 1, kQkvRope = 2, kGlueLinear = 3 };
 
-// The parameters of the layer's kernel: the member `kind` names.
+// The parameters of the layer's kernel: the member `kind` names; kGlueLinear
+// has `linear` and `glue`, which a plan holds as one run of bytes.
 struct Params {
   LiteRtNvidiaQuantLinearParams linear = {};
   LiteRtNvidiaQuantGlueParams glue = {};
   LiteRtNvidiaQuantQkvRopeParams rope = {};
 };
+static_assert(offsetof(Params, glue) == sizeof(LiteRtNvidiaQuantLinearParams),
+              "kGlueLinear serializes linear and glue as one run");
 
 nvinfer1::DataType TensorType(int32_t type) {
   switch (type) {
@@ -119,6 +123,9 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
         return sizeof(LiteRtNvidiaQuantLinearParams);
       case kGlue:
         return sizeof(LiteRtNvidiaQuantGlueParams);
+      case kGlueLinear:
+        return sizeof(LiteRtNvidiaQuantLinearParams) +
+               sizeof(LiteRtNvidiaQuantGlueParams);
       default:
         return sizeof(LiteRtNvidiaQuantQkvRopeParams);
     }
@@ -196,7 +203,11 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
       return 1;
     }
     const int last = inputs[0].nbDims - 1;
-    if (kind_ == kLinear) {
+    if (kind_ == kLinear || kind_ == kGlueLinear) {
+      // kGlueLinear: x' and z have the shape of x.
+      for (int32_t o = 1; o < num_outputs; ++o) {
+        outputs[o] = inputs[0];
+      }
       outputs[0] = inputs[0];
       outputs[0].d[last] = expr_builder.constant(params_.linear.rows);
       return outputs[0].d[last] != nullptr ? 0 : 1;
@@ -255,12 +266,20 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
   }
 
   // The many rows of a prefill chunk run on the tensor cores (quant_gemm.h),
-  // which quantize a float activation into the workspace first.
+  // which quantize a float activation into the workspace first; with the
+  // glue in front (kGlueLinear) the glue's INT8 rows go there.
   size_t getWorkspaceSize(const nvinfer1::DynamicPluginTensorDesc* inputs,
                           int32_t num_inputs,
                           const nvinfer1::DynamicPluginTensorDesc*,
                           int32_t) const noexcept override {
-    if (kind_ != kLinear || inputs == nullptr || num_inputs < 1) {
+    if (inputs == nullptr || num_inputs < 1) {
+      return 0;
+    }
+    if (kind_ == kGlueLinear) {
+      const int64_t m = Rows(inputs[0].max, params_.glue.width);
+      return m > 1 ? static_cast<size_t>(m) * params_.glue.width : 0;
+    }
+    if (kind_ != kLinear) {
       return 0;
     }
     const auto& p = params_.linear;
@@ -302,6 +321,9 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
               outputs[0], stream);
         }
       }
+    } else if (kind_ == kGlueLinear) {
+      status =
+          EnqueueGlueLinear(input_desc, inputs, outputs, workspace, stream);
     } else if (kind_ == kGlue) {
       const auto& p = params_.glue;
       const int64_t m = Rows(input_desc[0].dims, p.width);
@@ -371,9 +393,55 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
   }
 
  private:
+  // kGlueLinear: one launch for few rows; many rows run the glue into the
+  // workspace and then the tensor cores, as the two layers did.
+  cudaError_t EnqueueGlueLinear(const nvinfer1::PluginTensorDesc* input_desc,
+                                const void* const* inputs, void* const* outputs,
+                                void* workspace, cudaStream_t stream) const {
+    const auto& g = params_.glue;
+    const auto& p = params_.linear;
+    const int64_t m = Rows(input_desc[0].dims, g.width);
+    const uint8_t* weights = Weights(input_desc[1].dims, inputs[1]);
+    if (m < 1 || weights == nullptr) {
+      return cudaErrorInvalidValue;
+    }
+    const auto* multipliers = static_cast<const float*>(inputs[2]);
+    const int8_t* lut =
+        p.lut != 0 ? static_cast<const int8_t*>(inputs[3]) : nullptr;
+    int32_t next = 3 + (p.lut != 0 ? 1 : 0);
+    const int8_t* y = nullptr;
+    const float* branch_weights = nullptr;
+    if (g.branch != 0) {
+      y = static_cast<const int8_t*>(inputs[next++]);
+      branch_weights = static_cast<const float*>(inputs[next++]);
+    }
+    const float* norm_weights =
+        g.norm != 0 ? static_cast<const float*>(inputs[next]) : nullptr;
+    void* x_out = (outputs_ & kQuantGlueOutputX) != 0 ? outputs[1] : nullptr;
+    void* z_out = (outputs_ & kQuantGlueOutputZ) != 0
+                      ? outputs[x_out != nullptr ? 2 : 1]
+                      : nullptr;
+    if (m > 1 && workspace != nullptr &&
+        LiteRtNvidiaQuantGemmSupports(&p, static_cast<int32_t>(m))) {
+      auto* q = static_cast<int8_t*>(workspace);
+      const cudaError_t status = LiteRtNvidiaLaunchQuantGlue(
+          &g, static_cast<int32_t>(m), inputs[0], y, branch_weights,
+          norm_weights, x_out, z_out, q, nullptr, stream);
+      if (status != cudaSuccess) return status;
+      return LiteRtNvidiaLaunchQuantGemm(&p, static_cast<int32_t>(m), q,
+                                         weights, multipliers, lut, outputs[0],
+                                         /*workspace=*/nullptr, stream);
+    }
+    return LiteRtNvidiaLaunchQuantGlueLinear(
+        &g, &p, static_cast<int32_t>(m), inputs[0], y, branch_weights,
+        norm_weights, weights, multipliers, lut, x_out, z_out, outputs[0],
+        stream);
+  }
+
   const void* ParamsData() const noexcept {
     switch (kind_) {
       case kLinear:
+      case kGlueLinear:
         return &params_.linear;
       case kGlue:
         return &params_.glue;
@@ -391,16 +459,31 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
       case kGlue:
         return 1 + (params_.glue.branch != 0 ? 2 : 0) +
                (params_.glue.norm != 0 ? 1 : 0);
+      case kGlueLinear:
+        return GlueLinearFirstGlueInput() + (params_.glue.branch != 0 ? 2 : 0) +
+               (params_.glue.norm != 0 ? 1 : 0);
       default:
         return 3 + RopeGroups();
     }
   }
 
+  // kGlueLinear: x, the product's weights, multipliers and table, then y and
+  // the branch norm's weights, then the norm's weights.
+  int32_t GlueLinearFirstGlueInput() const noexcept {
+    return 3 + (params_.linear.lut != 0 ? 1 : 0);
+  }
+
   nvinfer1::DataType InputType(int32_t index) const noexcept {
-    if (kind_ == kLinear) {
+    if (kind_ == kGlueLinear && index >= GlueLinearFirstGlueInput()) {
+      return params_.glue.branch != 0 && index == GlueLinearFirstGlueInput()
+                 ? nvinfer1::DataType::kINT8
+                 : nvinfer1::DataType::kFLOAT;
+    }
+    if (kind_ == kLinear || kind_ == kGlueLinear) {
       switch (index) {
         case 0:
-          return TensorType(params_.linear.activation);
+          return TensorType(kind_ == kLinear ? params_.linear.activation
+                                             : params_.glue.x_type);
         case 1:
           return holder_granule_ != 0 ? nvinfer1::DataType::kINT64
                                       : nvinfer1::DataType::kINT8;
@@ -426,8 +509,10 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
     switch (kind_) {
       case kLinear:
         return 1;
-      case kGlue: {
-        int32_t count = 0;
+      case kGlue:
+      case kGlueLinear: {
+        // kGlueLinear: the product's result, then x' and z of the mask.
+        int32_t count = kind_ == kGlueLinear ? 1 : 0;
         for (int32_t bit = 1; bit <= kQuantGlueOutputRowScale; bit <<= 1) {
           count += (outputs_ & bit) != 0 ? 1 : 0;
         }
@@ -454,6 +539,12 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
   }
 
   nvinfer1::DataType OutputType(int32_t index) const noexcept {
+    if (kind_ == kGlueLinear) {
+      if (index == 0) return nvinfer1::DataType::kINT8;
+      return GlueOutput(index - 1) == kQuantGlueOutputX
+                 ? nvinfer1::DataType::kHALF
+                 : TensorType(params_.glue.z_type);
+    }
     if (kind_ == kLinear) {
       return params_.linear.requant == kLiteRtNvidiaQuantRequantLogits
                  ? nvinfer1::DataType::kFLOAT
@@ -506,7 +597,7 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
 
   int32_t kind_;
   Params params_;
-  int32_t outputs_;  // glue: the QuantGlueOutput mask
+  int32_t outputs_;  // glue, glue and product: the QuantGlueOutput mask
   int64_t weight_offset_;
   int64_t holder_granule_;
   std::array<nvinfer1::PluginField, kFields> fields_;
@@ -537,6 +628,17 @@ nvinfer1::IPluginV3* CreatePlugin(int32_t kind, const Params& params,
         ((outputs & kQuantGlueOutputRowScale) != 0 &&
          p.quantize != kLiteRtNvidiaQuantGlueDynamic) ||
         weight_offset != 0 || holder_granule != 0) {
+      return nullptr;
+    }
+  } else if (kind == kGlueLinear) {
+    // x' and z are the only glue outputs; q stays inside.
+    if (!LiteRtNvidiaQuantGlueLinearSupports(&params.glue, &params.linear) ||
+        (outputs & ~(kQuantGlueOutputX | kQuantGlueOutputZ)) != 0 ||
+        (holder_granule == 0
+             ? weight_offset != 0
+             : (holder_granule < 16 ||
+                (holder_granule & (holder_granule - 1)) != 0 ||
+                weight_offset < 0 || weight_offset % 16 != 0))) {
       return nullptr;
     }
   } else if (kind == kQkvRope) {
@@ -607,12 +709,13 @@ class QuantLinearPluginCreator final : public nvinfer1::IPluginCreatorV3One {
         }
       }
     }
-    if (kind < kLinear || kind > kQkvRope || params_data == nullptr ||
+    if (kind < kLinear || kind > kGlueLinear || params_data == nullptr ||
         params_size != QuantLinearPlugin::ParamsSize(kind)) {
       return nullptr;
     }
     Params params;
-    std::memcpy(kind == kLinear ? static_cast<void*>(&params.linear)
+    std::memcpy(kind == kLinear || kind == kGlueLinear
+                    ? static_cast<void*>(&params.linear)
                 : kind == kGlue ? static_cast<void*>(&params.glue)
                                 : static_cast<void*>(&params.rope),
                 params_data, params_size);
@@ -652,6 +755,16 @@ nvinfer1::IPluginV3* CreateQuantGluePlugin(
   all.glue = params;
   return CreatePlugin(kGlue, all, outputs, /*weight_offset=*/0,
                       /*holder_granule=*/0);
+}
+
+nvinfer1::IPluginV3* CreateQuantGlueLinearPlugin(
+    const LiteRtNvidiaQuantGlueParams& glue,
+    const LiteRtNvidiaQuantLinearParams& linear, int32_t outputs,
+    int64_t weight_offset, int64_t holder_granule) noexcept {
+  Params all;
+  all.linear = linear;
+  all.glue = glue;
+  return CreatePlugin(kGlueLinear, all, outputs, weight_offset, holder_granule);
 }
 
 nvinfer1::IPluginV3* CreateQuantQkvRopePlugin(

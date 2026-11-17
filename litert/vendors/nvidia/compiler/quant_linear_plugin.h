@@ -54,6 +54,20 @@ enum QuantGlueOutput : int32_t {
 nvinfer1::IPluginV3* CreateQuantGluePlugin(
     const LiteRtNvidiaQuantGlueParams& params, int32_t outputs) noexcept;
 
+// The glue in front of a product and the product as one layer
+// (LiteRtNvidiaLaunchQuantGlueLinear for few rows; for many, the glue into
+// the workspace and the product on the tensor cores):
+//   inputs  x as the glue's; the product's weights (or holder), multipliers
+//           and table as CreateQuantLinearPlugin's; then the glue's y and
+//           branch norm weights (with glue.branch) and norm weights (with
+//           glue.norm)
+//   outputs the product's INT8 [..., rows], then x' and z of the `outputs`
+//           mask (kQuantGlueOutputX, kQuantGlueOutputZ)
+nvinfer1::IPluginV3* CreateQuantGlueLinearPlugin(
+    const LiteRtNvidiaQuantGlueParams& glue,
+    const LiteRtNvidiaQuantLinearParams& linear, int32_t outputs,
+    int64_t weight_offset = 0, int64_t holder_granule = 0) noexcept;
+
 // The head norms and the rotation behind the q, k and v projections
 // (LiteRtNvidiaLaunchQuantQkvRope; params.tokens is the input's):
 //   inputs  qkv INT8 [..., (q_heads + k_heads + v_heads) * depth]; positions
