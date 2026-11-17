@@ -13,12 +13,15 @@
 # limitations under the License.
 # ==============================================================================
 
+import json
+
 from absl.testing import absltest
 from absl.testing import parameterized
 import numpy as np
 
 from litert_quantizer import quantizer
 from litert_quantizer.utils import calibration_utils
+from litert_quantizer.utils import histogram_utils
 from litert_quantizer.utils import test_utils
 from litert_quantizer.utils import tfl_interpreter_utils
 
@@ -40,6 +43,12 @@ _CALIBRATION_DATASET = {
         ),
         "tokens": _RNG.integers(low=0, high=10, size=(1, 100)).astype(np.int32),
     }],
+}
+
+
+_SIGNATURE_DATA = {
+    "signature_1": ["output_1_1"],
+    "signature_2": ["output_1_1"],
 }
 
 
@@ -76,6 +85,12 @@ def _get_quant_parameters(
 
 
 class CalibrationQsvAlignmentUtilsTest(parameterized.TestCase):
+
+  def setUp(self):
+    super().setUp()
+    self._kv_model_path = test_utils.get_path_to_datafile(
+        "../tests/models/toy_model_with_kv_cache_multi_signature.tflite"
+    )
 
   def test_load_calibration_results(self):
     temp_file = self.create_tempfile()
@@ -137,62 +152,52 @@ class CalibrationQsvAlignmentUtilsTest(parameterized.TestCase):
     self.assertEqual(tensor_name, [expected_tensor_name])
 
   def test_align_quant_stats_succeeds(self):
-    model_path = test_utils.get_path_to_datafile(
-        "../tests/models/toy_model_with_kv_cache_multi_signature.tflite"
-    )
     recipe_path = test_utils.get_path_to_datafile(
         "../recipes/default_a8w8_recipe.json"
     )
-    signature_data = {
-        "signature_1": ["output_1_1"],
-        "signature_2": ["output_1_1"],
-    }
 
     # Obtain the calibration results.
-    qt = quantizer.Quantizer(model_path, recipe_path)
+    qt = quantizer.Quantizer(self._kv_model_path, recipe_path)
     qsv = qt.calibrate(_CALIBRATION_DATASET)
 
     # First quantize the model without aligning the quantization parameters.
     quantized_model = qt.quantize(qsv).quantized_model
-    quant_params = _get_quant_parameters(quantized_model, signature_data)
+    quant_params = _get_quant_parameters(quantized_model, _SIGNATURE_DATA)
     self.assertFalse(
         all(x == quant_params[0] for x in quant_params)
     )  # not equal quantization params.
 
     # Align the quantization parameters and quantize again.
-    calib_utils = calibration_utils.CalibrationQsvAlignmentUtils(model_path)
-    calib_utils.align_quant_stats(qsv, signature_data)
+    calib_utils = calibration_utils.CalibrationQsvAlignmentUtils(
+        self._kv_model_path
+    )
+    calib_utils.align_quant_stats(qsv, _SIGNATURE_DATA)
     quantized_model = qt.quantize(qsv).quantized_model
-    quant_params = _get_quant_parameters(quantized_model, signature_data)
+    quant_params = _get_quant_parameters(quantized_model, _SIGNATURE_DATA)
     self.assertTrue(
         all(x == quant_params[0] for x in quant_params)
     )  # equal quantization params.
 
   def test_update_quant_stats_succeeds(self):
-    model_path = test_utils.get_path_to_datafile(
-        "../tests/models/toy_model_with_kv_cache_multi_signature.tflite"
-    )
     recipe_path = test_utils.get_path_to_datafile(
         "../recipes/default_a8w8_recipe.json"
     )
-    signature_data = {
-        "signature_1": ["output_1_1"],
-        "signature_2": ["output_1_1"],
-    }
 
     # Obtain the calibration results.
-    qt = quantizer.Quantizer(model_path, recipe_path)
+    qt = quantizer.Quantizer(self._kv_model_path, recipe_path)
     qsv = qt.calibrate(_CALIBRATION_DATASET)
 
     # First quantize the model without updating the `signature_1`.
     quantized_model = qt.quantize(qsv).quantized_model
-    quant_params = _get_quant_parameters(quantized_model, signature_data)
+    quant_params = _get_quant_parameters(quantized_model, _SIGNATURE_DATA)
     self.assertFalse(
         all(x == quant_params[0] for x in quant_params)
     )  # not equal quantization params.
 
     # Update the `signature_1` with stats from `signature_2`.
-    calib_utils = calibration_utils.CalibrationQsvAlignmentUtils(model_path)
+    calib_utils = calibration_utils.CalibrationQsvAlignmentUtils(
+        self._kv_model_path
+    )
     min_val, max_val = calib_utils.align_quant_stats(  # for min and max only.
         qsv,
         {
@@ -208,10 +213,82 @@ class CalibrationQsvAlignmentUtilsTest(parameterized.TestCase):
         max_val,
     )
     quantized_model = qt.quantize(qsv).quantized_model
-    quant_params = _get_quant_parameters(quantized_model, signature_data)
+    quant_params = _get_quant_parameters(quantized_model, _SIGNATURE_DATA)
     self.assertTrue(
         all(x == quant_params[0] for x in quant_params)
     )  # equal quantization params.
+
+  def test_save_and_load_calibration_results_with_histogram(self):
+    hist = histogram_utils.DynamicHistogram(max_tensor_bins=64)
+    hist.add(np.linspace(-2.0, 4.0, 100))
+    payload = {
+        "model_qsvs": {
+            "tensor1": {
+                "min": np.array([[-2.0]]),
+                "max": np.array([[4.0]]),
+                "num_samples": np.array(100),
+                "histogram": hist.to_dict(),
+            }
+        },
+        "metadata": {"num_samples_calibrated": 100},
+    }
+    temp_file = self.create_tempfile()
+    temp_file.write_text(
+        json.dumps(payload, cls=calibration_utils.NumpyEncoder)
+    )
+    loaded_qsvs, metadata = calibration_utils.load_calibration_results(
+        temp_file.full_path
+    )
+    self.assertEqual(metadata, {"num_samples_calibrated": 100})
+    np.testing.assert_allclose(loaded_qsvs["tensor1"]["min"], [[-2.0]])
+    np.testing.assert_allclose(loaded_qsvs["tensor1"]["max"], [[4.0]])
+    self.assertEqual(int(loaded_qsvs["tensor1"]["num_samples"]), 100)
+    loaded_hist = histogram_utils.DynamicHistogram.from_dict(
+        loaded_qsvs["tensor1"]["histogram"]
+    )
+    np.testing.assert_array_equal(loaded_hist.counts, hist.counts)
+    self.assertAlmostEqual(loaded_hist.lower_bound, hist.lower_bound)
+    self.assertAlmostEqual(loaded_hist.bin_width, hist.bin_width)
+
+  def test_align_and_update_quant_stats_drop_histograms(self):
+    calib_utils = calibration_utils.CalibrationQsvAlignmentUtils(
+        self._kv_model_path
+    )
+    tensor_1 = calib_utils._search_tensor_by_signature_name(
+        "signature_1", "output_1_1"
+    )[0]
+    tensor_2 = calib_utils._search_tensor_by_signature_name(
+        "signature_2", "output_1_1"
+    )[0]
+    self.assertNotEqual(tensor_1, tensor_2)
+
+    def make_qsv(values_1, values_2):
+      qsv = {}
+      for tensor_name, values in ((tensor_1, values_1), (tensor_2, values_2)):
+        hist = histogram_utils.DynamicHistogram(max_tensor_bins=64)
+        hist.add(np.array(values))
+        qsv[tensor_name] = {
+            "min": np.array(min(values)),
+            "max": np.array(max(values)),
+            "histogram": hist.to_dict(),
+        }
+      return qsv
+
+    # Simulate a main and an aux model whose aligned tensors carry histograms.
+    main_qsv = make_qsv([-1.0, 0.0, 1.0], [2.0, 3.0])
+    aux_qsv = make_qsv([-0.5, 0.5], [4.0, 5.0])
+
+    min_val, max_val = calib_utils.align_quant_stats(main_qsv, _SIGNATURE_DATA)
+    calib_utils.update_quant_stats(aux_qsv, _SIGNATURE_DATA, min_val, max_val)
+
+    self.assertEqual(min_val, -1.0)
+    self.assertEqual(max_val, 3.0)
+    # Every aligned tensor in both models quantizes from the same min/max.
+    for qsv in (main_qsv, aux_qsv):
+      for tensor_name in (tensor_1, tensor_2):
+        self.assertEqual(qsv[tensor_name]["min"], -1.0)
+        self.assertEqual(qsv[tensor_name]["max"], 3.0)
+        self.assertNotIn("histogram", qsv[tensor_name])
 
 
 if __name__ == "__main__":

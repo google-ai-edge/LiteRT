@@ -20,6 +20,7 @@ from typing import Any, Union
 import numpy as np
 
 from litert_quantizer import qtyping
+from litert_quantizer.utils import histogram_utils
 
 
 def _update_moving_average(
@@ -169,3 +170,25 @@ def oscar_and_moving_average_update(
   updated_qsv["mu2"] = merged_mu2
   updated_qsv["num_samples"] = total_samples
   return updated_qsv
+
+
+def merge_histograms(
+    qsv: qtyping.QSV, new_qsv: qtyping.QSV
+) -> dict[str, Any] | None:
+  """Merges the `histogram` entries of two QSVs.
+
+  Args:
+    qsv: The existing QSV of the tensor.
+    new_qsv: The new QSV (e.g., from a new round of calibration).
+
+  Returns:
+    The merged histogram in `DynamicHistogram.to_dict` format, the histogram of
+    whichever QSV has one, or None if neither has a histogram.
+  """
+  old_hist = qsv.get("histogram")
+  new_hist = new_qsv.get("histogram")
+  if old_hist and new_hist:
+    hist = histogram_utils.DynamicHistogram.from_dict(old_hist)
+    hist.merge(histogram_utils.DynamicHistogram.from_dict(new_hist))
+    return hist.to_dict()
+  return old_hist or new_hist or None

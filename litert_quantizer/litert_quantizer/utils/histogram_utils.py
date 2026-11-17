@@ -164,32 +164,31 @@ class _DynamicHistogram1D:
     self.counts += bin_counts
 
   def _accumulate_resampled(self, other: '_DynamicHistogram1D') -> None:
-    """Accumulates counts from another histogram using resampling."""
+    """Accumulates counts from another histogram using resampling.
+
+    Requires `self.bin_width >= other.bin_width`, so each source bin overlaps at
+    most two target bins. Counts are split in proportion to the overlap.
+
+    Args:
+      other: The histogram to accumulate into this one.
+    """
     accum_counts = self.counts.astype(np.float64)
+    src_idx = np.flatnonzero(other.counts)
+    src_counts = other.counts[src_idx].astype(np.float64)
+    left = other.lower_bound + src_idx * other.bin_width  # pyrefly: ignore[unsupported-operation]
+    right = left + other.bin_width  # pyrefly: ignore[unsupported-operation]
 
-    for i, c in enumerate(other.counts):
-      if c == 0:
-        continue
-      l = other.lower_bound + i * other.bin_width  # pyrefly: ignore[unsupported-operation]
-      r = l + other.bin_width  # pyrefly: ignore[unsupported-operation]
-
-      start_idx = int(np.floor((l - self.lower_bound) / self.bin_width))  # pyrefly: ignore[unsupported-operation]
-      end_idx = int(np.ceil((r - self.lower_bound) / self.bin_width))  # pyrefly: ignore[unsupported-operation]
-
-      start_idx = max(0, start_idx)
-      end_idx = min(len(self.counts), end_idx)
-
-      for j in range(start_idx, end_idx):
-        sl = self.lower_bound + j * self.bin_width  # pyrefly: ignore[unsupported-operation]
-        sr = sl + self.bin_width  # pyrefly: ignore[unsupported-operation]
-
-        overlap_l = max(l, sl)
-        overlap_r = min(r, sr)
-
-        if overlap_l < overlap_r:
-          overlap_w = overlap_r - overlap_l
-          frac = overlap_w / other.bin_width  # pyrefly: ignore[unsupported-operation]
-          accum_counts[j] += c * frac
+    first = np.floor((left - self.lower_bound) / self.bin_width).astype(  # pyrefly: ignore[unsupported-operation]
+        np.int64
+    )
+    split = self.lower_bound + (first + 1) * self.bin_width  # pyrefly: ignore[unsupported-operation]
+    first_frac = np.clip(
+        (np.minimum(right, split) - left) / other.bin_width, 0.0, 1.0  # pyrefly: ignore[unsupported-operation]
+    )
+    num_bins = len(accum_counts)
+    for idx, frac in ((first, first_frac), (first + 1, 1.0 - first_frac)):
+      in_range = (idx >= 0) & (idx < num_bins)
+      np.add.at(accum_counts, idx[in_range], (src_counts * frac)[in_range])
 
     self.counts = np.round(accum_counts).astype(np.int64)
 
