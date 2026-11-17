@@ -15,6 +15,8 @@
 
 """E2E tests for the quantizer for model with embedding_lookup."""
 
+from typing import cast
+
 from absl.testing import absltest
 from absl.testing import parameterized
 import numpy as np
@@ -31,17 +33,6 @@ _TensorQuantConfig = qtyping.TensorQuantizationConfig
 _OpQuantConfig = qtyping.OpQuantizationConfig
 
 _RNG = np.random.default_rng(66)
-
-
-def _get_dummy_data(num_samples):
-  data = []
-  for _ in range(num_samples):
-    data.append({'inputs': _RNG.uniform(size=(1,)).astype(np.int32)})
-  return data
-
-
-# def _get_test_data(num_samples: int = 8):
-#   return _get_dummy_data(num_samples)
 
 
 class EmbeddingLookupTest(test_utils.BaseOpTestCase):
@@ -231,18 +222,7 @@ class EmbeddingLookupTest(test_utils.BaseOpTestCase):
     # The signature of `embedding_lookup.tflite` has no outputs, so
     # `validate()` would not compare the lookup results. Look up every row of
     # the quantized model instead.
-    interpreter = tfl_interpreter_utils.create_tfl_interpreter(quantized_model)
-    lookup_results = []
-    for row in range(len(table)):
-      tfl_interpreter_utils.invoke_interpreter_once(
-          interpreter, [np.array([row], dtype=np.int32)]
-      )
-      lookup_results.append(
-          interpreter.get_tensor(interpreter.get_output_details()[0]['index'])
-      )
-    self.assertLess(
-        np.mean((np.concatenate(lookup_results) - table) ** 2), 1e-4
-    )
+    self._assert_lookup_mse_below(quantized_model, table, max_mse=1e-4)
 
   @parameterized.named_parameters(
       dict(
@@ -306,6 +286,244 @@ class EmbeddingLookupTest(test_utils.BaseOpTestCase):
         if name.endswith(suffix):
           rotation_matrix_types[suffix] = tensor.type
     self.assertEqual(rotation_matrix_types, expected_rotation_matrix_types)
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name='min_max_channelwise_drq',
+          algorithm_key=quantizer.AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          compute_precision=_ComputePrecision.INTEGER,
+          explicit_dequantize=False,
+          expected_block_shape=[1, 64],
+          expected_scale_shape=[16, 1],
+          expected_scale_prefix=[
+              0.61074114,
+              0.44196114,
+              0.38770905,
+              0.47974005,
+          ],
+          expected_max_mse=2e-2,
+      ),
+      dict(
+          testcase_name='min_max_blockwise_32_drq',
+          algorithm_key=quantizer.AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+          compute_precision=_ComputePrecision.INTEGER,
+          explicit_dequantize=False,
+          expected_block_shape=[1, 32],
+          expected_scale_shape=[16, 2],
+          expected_scale_prefix=[
+              0.44241011,
+              0.61074114,
+              0.35498181,
+              0.44196114,
+          ],
+          expected_max_mse=2e-2,
+      ),
+      dict(
+          testcase_name='min_max_channelwise_weight_only',
+          algorithm_key=quantizer.AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          compute_precision=_ComputePrecision.FLOAT,
+          explicit_dequantize=True,
+          expected_block_shape=[1, 64],
+          expected_scale_shape=[16, 1],
+          expected_scale_prefix=[
+              0.61074114,
+              0.44196114,
+              0.38770905,
+              0.47974005,
+          ],
+          expected_max_mse=2e-2,
+      ),
+      dict(
+          testcase_name='octav_channelwise_drq',
+          algorithm_key=quantizer.AlgorithmName.OCTAV,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          compute_precision=_ComputePrecision.INTEGER,
+          explicit_dequantize=False,
+          expected_block_shape=[1, 64],
+          expected_scale_shape=[16, 1],
+          expected_scale_prefix=[
+              0.24948074,
+              0.22149065,
+              0.20231834,
+              0.22076474,
+          ],
+          expected_max_mse=1e-2,
+      ),
+      dict(
+          testcase_name='octav_blockwise_32_drq',
+          algorithm_key=quantizer.AlgorithmName.OCTAV,
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+          compute_precision=_ComputePrecision.INTEGER,
+          explicit_dequantize=False,
+          expected_block_shape=[1, 32],
+          expected_scale_shape=[16, 2],
+          expected_scale_prefix=[
+              0.23140371,
+              0.27831241,
+              0.16711421,
+              0.24876475,
+          ],
+          expected_max_mse=1e-2,
+      ),
+      dict(
+          testcase_name='octav_channelwise_weight_only',
+          algorithm_key=quantizer.AlgorithmName.OCTAV,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          compute_precision=_ComputePrecision.FLOAT,
+          explicit_dequantize=True,
+          expected_block_shape=[1, 64],
+          expected_scale_shape=[16, 1],
+          expected_scale_prefix=[
+              0.24948074,
+              0.22149065,
+              0.20231834,
+              0.22076474,
+          ],
+          expected_max_mse=1e-2,
+      ),
+      dict(
+          testcase_name='decomposed_hadamard_mse_grid_drq',
+          algorithm_key=quantizer.AlgorithmName.DECOMPOSED_HADAMARD_ROTATION,
+          algorithm_params={'scale_refinement': 'mse_grid'},
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          compute_precision=_ComputePrecision.INTEGER,
+          explicit_dequantize=False,
+          expected_block_shape=[1, 64],
+          expected_scale_shape=[16, 1],
+          expected_scale_prefix=[
+              0.24050526,
+              0.25262171,
+              0.25926483,
+              0.2204321,
+          ],
+          expected_max_mse=1e-2,
+      ),
+  )
+  def test_centered_int2_embedding_lookup_end_to_end(
+      self,
+      algorithm_key,
+      granularity,
+      compute_precision,
+      explicit_dequantize,
+      expected_block_shape,
+      expected_scale_shape,
+      expected_scale_prefix,
+      expected_max_mse,
+      algorithm_params=None,
+  ):
+    rng = np.random.default_rng(77)
+    table = rng.normal(0.0, 0.25, size=(16, 64)).astype(np.float32)
+    qt = quantizer.Quantizer(self._create_embedding_model(table))
+    qt.update_quantization_recipe(
+        regex='.*',
+        operation_name=_OpName.EMBEDDING_LOOKUP,
+        algorithm_key=algorithm_key,
+        op_config=_OpQuantConfig(
+            weight_tensor_config=_TensorQuantConfig(
+                num_bits=2,
+                granularity=granularity,
+                **(
+                    {'algorithm_params': algorithm_params}
+                    if algorithm_params is not None
+                    else {}
+                ),
+            ),
+            compute_precision=compute_precision,
+            explicit_dequantize=explicit_dequantize,
+        ),
+    )
+    quantized_bytes = qt.quantize().quantized_model
+    self.assertIsNotNone(quantized_bytes)
+    quantized_bytes = cast(bytes, quantized_bytes)
+    quantized_model = tfl_flatbuffer_utils.read_model(quantized_bytes)
+    subgraph = quantized_model.subgraphs[0]
+    (q_table_tensor,) = [
+        t for t in subgraph.tensors if t.type == qtyping.TensorType.INT2
+    ]
+    self.assertLen(quantized_model.buffers[q_table_tensor.buffer].data, 256)
+    details = q_table_tensor.quantization.details
+    self.assertSequenceEqual(list(details.blockShape), expected_block_shape)
+    scales_tensor = subgraph.tensors[details.scales]
+    self.assertEqual(scales_tensor.type, qtyping.TensorType.FLOAT32)
+    self.assertSequenceEqual(list(scales_tensor.shape), expected_scale_shape)
+    stored_scale = tfl_flatbuffer_utils.get_tensor_data(
+        scales_tensor, quantized_model.buffers
+    )
+    self.assertIsNotNone(stored_scale)
+    stored_scale = cast(np.ndarray, stored_scale)
+    np.testing.assert_allclose(
+        stored_scale.ravel()[: len(expected_scale_prefix)],
+        expected_scale_prefix,
+        rtol=1e-6,
+        atol=1e-6,
+    )
+    zp_tensor = subgraph.tensors[details.zeroPoints]
+    self.assertSequenceEqual(list(zp_tensor.shape), [1, 1])
+    np.testing.assert_array_equal(
+        tfl_flatbuffer_utils.get_tensor_data(
+            zp_tensor, quantized_model.buffers
+        ),
+        np.array([[-0.5]], dtype=np.float32),
+    )
+
+    self._assert_lookup_mse_below(
+        quantized_bytes, table, max_mse=expected_max_mse
+    )
+
+  def test_centered_int2_embedding_lookup_opt_out_end_to_end(self):
+    rng = np.random.default_rng(77)
+    table = rng.normal(0.0, 0.25, size=(16, 64)).astype(np.float32)
+    qt = quantizer.Quantizer(self._create_embedding_model(table))
+    qt.update_quantization_recipe(
+        regex='.*',
+        operation_name=_OpName.EMBEDDING_LOOKUP,
+        algorithm_key=quantizer.AlgorithmName.OCTAV,
+        op_config=_OpQuantConfig(
+            weight_tensor_config=_TensorQuantConfig(
+                num_bits=2,
+                granularity=qtyping.QuantGranularity.CHANNELWISE,
+                algorithm_params={'centered': False},
+            ),
+            compute_precision=_ComputePrecision.INTEGER,
+            explicit_dequantize=False,
+        ),
+    )
+    quantized_bytes = qt.quantize().quantized_model
+    self.assertIsNotNone(quantized_bytes)
+    quantized_bytes = cast(bytes, quantized_bytes)
+    quantized_model = tfl_flatbuffer_utils.read_model(quantized_bytes)
+    (q_table_tensor,) = [
+        t
+        for t in quantized_model.subgraphs[0].tensors
+        if t.type == qtyping.TensorType.INT2
+    ]
+    self.assertLen(quantized_model.buffers[q_table_tensor.buffer].data, 256)
+    self.assertEqual(
+        q_table_tensor.quantization.detailsType,
+        qtyping.QuantizationDetails.NONE,
+    )
+    np.testing.assert_array_equal(
+        q_table_tensor.quantization.zeroPoint,
+        np.zeros(16, dtype=np.int64),
+    )
+    self._assert_lookup_mse_below(quantized_bytes, table, max_mse=2e-2)
+
+  def _assert_lookup_mse_below(
+      self, quantized_model: bytes, table: np.ndarray, max_mse: float
+  ) -> None:
+    interpreter = tfl_interpreter_utils.create_tfl_interpreter(quantized_model)
+    output_idx = interpreter.get_output_details()[0]['index']
+    lookup_results = []
+    for row in range(len(table)):
+      tfl_interpreter_utils.invoke_interpreter_once(
+          interpreter, [np.array([row], dtype=np.int32)]
+      )
+      lookup_results.append(interpreter.get_tensor(output_idx))
+    mse = float(np.mean((np.concatenate(lookup_results) - table) ** 2))
+    self.assertLess(mse, max_mse)
 
   def _create_embedding_model(self, table: np.ndarray) -> str:
     """Writes `embedding_lookup.tflite` with its `[16, 8]` table replaced.

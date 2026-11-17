@@ -84,6 +84,21 @@ def _is_all_signature_defs_outputs_float(model_content: bytes):
   return True
 
 
+def _read_model_and_buffers(
+    model_path: str,
+) -> tuple[qtyping.ModelT, dict[int, bytes]]:
+  with open(model_path, 'rb') as f:
+    model_bytes = f.read()
+  model = qtyping.ModelT.InitFromObj(qtyping.Model.GetRootAs(model_bytes, 0))
+  buffer_bytes = {}
+  for idx, buf in enumerate(model.buffers):
+    if buf.offset:
+      buffer_bytes[idx] = bytes(model_bytes[buf.offset : buf.offset + buf.size])
+    elif buf.data is not None:
+      buffer_bytes[idx] = bytes(buf.data)
+  return model, buffer_bytes
+
+
 class QuantizerTest(parameterized.TestCase):
 
   def setUp(self):
@@ -530,6 +545,106 @@ class QuantizerTest(parameterized.TestCase):
     srq_result = srq_quantizer.quantize(calibration_result)
     srq_model_path = str(pathlib.Path(self._tmp_save_path) / 'srq_model.tflite')
     srq_result.export_model(srq_model_path)
+
+  @parameterized.parameters(
+      _CalibrationMode.CALIBRATION_PRESERVE_ALL_TENSORS,
+      _CalibrationMode.CALIBRATION_PROFILER_BASED,
+  )
+  def test_two_pass_quantization_with_centered_int2_and_srq_succeeds(
+      self, mode
+  ):
+    pass1_quantizer = quantizer.Quantizer(self._test_model_path)
+    pass1_quantizer.update_quantization_recipe(
+        regex='.*',
+        operation_name=_TFLOpName.FULLY_CONNECTED,
+        algorithm_key=_AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+        op_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=_TensorQuantConfig(
+                num_bits=2,
+                granularity=qtyping.QuantGranularity.CHANNELWISE,
+            ),
+            compute_precision=_ComputePrecision.INTEGER,
+        ),
+    )
+    pass1_result = pass1_quantizer.quantize()
+    pass1_model_path = str(
+        pathlib.Path(self._tmp_save_path) / 'centered_int2_model.tflite'
+    )
+    pass1_result.export_model(pass1_model_path)
+
+    srq_recipe_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / 'recipes/default_a8w8_recipe.json'
+    )
+    srq_quantizer = quantizer.Quantizer(pass1_model_path)
+    srq_quantizer.load_quantization_recipe(srq_recipe_path)
+    representative_dataset = (
+        tfl_interpreter_utils.create_random_normal_input_data(
+            pass1_model_path, num_samples=1
+        )
+    )
+    calibration_result = srq_quantizer.calibrate(
+        representative_dataset, mode=mode
+    )
+    srq_result = srq_quantizer.quantize(calibration_result)
+    srq_model_path = str(pathlib.Path(self._tmp_save_path) / 'srq_model.tflite')
+    srq_result.export_model(srq_model_path)
+
+    pass1_model, pass1_buffers = _read_model_and_buffers(pass1_model_path)
+    srq_model, srq_buffers = _read_model_and_buffers(srq_model_path)
+    pass1_subgraph = pass1_model.subgraphs[0]
+    srq_subgraph = srq_model.subgraphs[0]
+    pass1_tensors = {t.name.decode('utf-8'): t for t in pass1_subgraph.tensors}
+    srq_fc_ops = [
+        op
+        for op in srq_subgraph.operators
+        if srq_model.operatorCodes[op.opcodeIndex].builtinCode
+        == qtyping.BuiltinOperator.FULLY_CONNECTED
+    ]
+    self.assertLen(srq_fc_ops, 2)
+
+    for fc_op in srq_fc_ops:
+      srq_weight = srq_subgraph.tensors[fc_op.inputs[1]]
+      weight_name = srq_weight.name.decode('utf-8')
+      pass1_weight = pass1_tensors[weight_name]
+      self.assertEqual(srq_weight.type, qtyping.TensorType.INT2)
+      self.assertEqual(
+          srq_weight.quantization.detailsType,
+          qtyping.QuantizationDetails.BlockwiseQuantization,
+      )
+      self.assertEqual(
+          srq_buffers[srq_weight.buffer],
+          pass1_buffers[pass1_weight.buffer],
+      )
+      zp_tensor = srq_subgraph.tensors[
+          srq_weight.quantization.details.zeroPoints
+      ]
+      self.assertEqual(
+          zp_tensor.name.decode('utf-8'),
+          f'{weight_name}_zero_points',
+      )
+      zp_data = np.frombuffer(
+          srq_buffers[zp_tensor.buffer], dtype=np.float32
+      ).reshape(zp_tensor.shape)
+      np.testing.assert_array_equal(
+          zp_data,
+          np.array([[-0.5]], dtype=np.float32),
+      )
+
+    fc_with_bias = srq_fc_ops[0]
+    bias_tensor = srq_subgraph.tensors[fc_with_bias.inputs[2]]
+    bias_name = bias_tensor.name.decode('utf-8')
+    self.assertEqual(pass1_tensors[bias_name].type, qtyping.TensorType.FLOAT32)
+    self.assertEqual(bias_tensor.type, qtyping.TensorType.INT32)
+    self.assertIsNotNone(bias_tensor.quantization.scale)
+
+    interpreter = tfl_interpreter_utils.create_tfl_interpreter(srq_model_path)
+    outputs = tfl_interpreter_utils.invoke_interpreter_signature(
+        interpreter, representative_dataset['serving_default'][0]
+    )
+    self.assertNotEmpty(outputs)
+    for output_value in outputs.values():
+      self.assertEqual(output_value.shape, (1, 10))
+      self.assertTrue(np.all(np.isfinite(output_value)))
 
 
 class QuantizerBytearrayInputs(absltest.TestCase):

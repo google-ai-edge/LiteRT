@@ -17,6 +17,7 @@
 
 import dataclasses
 import pathlib
+from typing import cast
 
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -966,6 +967,176 @@ class HadamardRotationFullyConnectedTest(parameterized.TestCase):
   ):
     with self.assertRaisesRegex(ValueError, expected_error):
       hadamard_rotation.make_cross_block_matrix(m, q_init_mode, seed=seed)
+
+  def test_mse_grid_centered_int2_matches_int2_in_int4_and_reduces_mse(self):
+    rng = np.random.default_rng(2029)
+    weight = rng.standard_normal((16, 64)).astype(np.float32)
+
+    qconfig_no_refine = _TensorQuantConfig(
+        num_bits=2,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "max_hadamard_size": 64,
+            "scale_refinement": "none",
+        },
+    )
+    qconfig_refine = _TensorQuantConfig(
+        num_bits=2,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "max_hadamard_size": 64,
+            "scale_refinement": "mse_grid",
+        },
+    )
+    qconfig_emulated = _TensorQuantConfig(
+        num_bits=4,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "max_hadamard_size": 64,
+            "int2_in_int4": True,
+            "scale_refinement": "mse_grid",
+        },
+    )
+
+    qp_no_refine = hadamard_rotation.get_tensor_quant_params(
+        self._op_info, qconfig_no_refine, weight, None
+    )
+    qp_refine = hadamard_rotation.get_tensor_quant_params(
+        self._op_info, qconfig_refine, weight, None
+    )
+    qp_emulated = hadamard_rotation.get_tensor_quant_params(
+        self._op_info, qconfig_emulated, weight, None
+    )
+
+    self.assertIsNotNone(qp_no_refine.quantized_data)
+    self.assertIsNotNone(qp_refine.quantized_data)
+    self.assertIsNotNone(qp_emulated.quantized_data)
+    q_no_refine = cast(np.ndarray, qp_no_refine.quantized_data)
+    q_refine = cast(np.ndarray, qp_refine.quantized_data)
+    q_emulated = cast(np.ndarray, qp_emulated.quantized_data)
+    np.testing.assert_array_equal(qp_refine.zero_point, [[-0.5]])
+    self.assertSetEqual(set(np.unique(q_refine).tolist()), {-2, -1, 0, 1})
+
+    dequant_no_refine = (
+        q_no_refine.astype(np.float32) + 0.5
+    ) * qp_no_refine.scale.reshape(-1, 1)
+    dequant_refine = (
+        q_refine.astype(np.float32) + 0.5
+    ) * qp_refine.scale.reshape(-1, 1)
+    dequant_emulated = q_emulated.astype(
+        np.float32
+    ) * qp_emulated.scale.reshape(-1, 1)
+    np.testing.assert_allclose(
+        dequant_refine, dequant_emulated, rtol=1e-6, atol=1e-6
+    )
+
+    # Rotate weight identically to verify MSE reduction in rotated space.
+    w_rot, _, _, _ = hadamard_rotation._rotate_with_diagonal_hadamard(
+        weight, axis=1, max_size=64
+    )
+    mse_no_refine = float(np.mean((w_rot - dequant_no_refine) ** 2))
+    mse_refine = float(np.mean((w_rot - dequant_refine) ** 2))
+    self.assertLess(mse_refine, mse_no_refine)
+
+  def test_mse_grid_centered_false_uses_mid_tread(self):
+    rng = np.random.default_rng(2030)
+    weight = rng.standard_normal((16, 64)).astype(np.float32)
+
+    qconfig_no_refine = _TensorQuantConfig(
+        num_bits=2,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "max_hadamard_size": 64,
+            "centered": False,
+            "scale_refinement": "none",
+        },
+    )
+    qconfig_refine = _TensorQuantConfig(
+        num_bits=2,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={
+            "max_hadamard_size": 64,
+            "centered": False,
+            "scale_refinement": "mse_grid",
+        },
+    )
+
+    qp_no_refine = hadamard_rotation.get_tensor_quant_params(
+        self._op_info, qconfig_no_refine, weight, None
+    )
+    qp_refine = hadamard_rotation.get_tensor_quant_params(
+        self._op_info, qconfig_refine, weight, None
+    )
+
+    self.assertIsNotNone(qp_no_refine.quantized_data)
+    self.assertIsNotNone(qp_refine.quantized_data)
+    q_no_refine = cast(np.ndarray, qp_no_refine.quantized_data)
+    q_refine = cast(np.ndarray, qp_refine.quantized_data)
+    np.testing.assert_array_equal(
+        qp_refine.zero_point, np.zeros((16, 1), dtype=np.int8)
+    )
+    self.assertSetEqual(set(np.unique(q_refine).tolist()), {-2, -1, 0, 1})
+
+    w_rot, _, _, _ = hadamard_rotation._rotate_with_diagonal_hadamard(
+        weight, axis=1, max_size=64
+    )
+    dequant_no_refine = (
+        q_no_refine.astype(np.float32) * qp_no_refine.scale.reshape(-1, 1)
+    )
+    dequant_refine = (
+        q_refine.astype(np.float32) * qp_refine.scale.reshape(-1, 1)
+    )
+    mse_no_refine = float(np.mean((w_rot - dequant_no_refine) ** 2))
+    mse_refine = float(np.mean((w_rot - dequant_refine) ** 2))
+    self.assertLessEqual(mse_refine, mse_no_refine)
+
+  def test_mse_grid_keeps_exact_centered_int2_solution(self):
+    # `w_rot` is `(q + 0.5) * 0.9` for `q = [-2, 0, 0, 0]` (up to float32
+    # rounding), so mse_grid must keep this scale and these codes. Rounding
+    # without the 0.5 code offset would pick a different scale.
+    w_rot = np.array([[-1.35, 0.45, 0.45, 0.45]], dtype=np.float32)
+    init_scale = np.array([0.9], dtype=np.float32)
+    init_q = np.array([[-2, 0, 0, 0]], dtype=np.int8)
+    init_qparams = qtyping.UniformQuantParams(
+        num_bits=2,
+        quantized_dimension=0,
+        scale=init_scale,
+        zero_point=np.array([-0.5], dtype=np.float32),
+        symmetric=True,
+        quantized_data=init_q,
+        block_size=0,
+    )
+    refined = hadamard_rotation._refine_quant_params_mse(w_rot, init_qparams)
+    np.testing.assert_array_equal(refined.scale, init_scale)
+    np.testing.assert_array_equal(refined.quantized_data, init_q)
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="non_bool_value",
+          num_bits=2,
+          centered="true",
+          expected_error="centered must be a boolean",
+      ),
+      dict(
+          testcase_name="non_2bit",
+          num_bits=4,
+          centered=True,
+          expected_error=(
+              "Centered quantization requires signed symmetric 2-bit"
+          ),
+      ),
+  )
+  def test_invalid_centered_raises(self, num_bits, centered, expected_error):
+    weight = np.ones((4, 8), dtype=np.float32)
+    qconfig = _TensorQuantConfig(
+        num_bits=num_bits,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        algorithm_params={"centered": centered},
+    )
+    with self.assertRaisesRegex(ValueError, expected_error):
+      hadamard_rotation.get_tensor_quant_params(
+          self._op_info, qconfig, weight, None
+      )
 
 
 class HadamardRotationEmbeddingLookupTest(parameterized.TestCase):
