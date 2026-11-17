@@ -413,7 +413,7 @@ SharedMemoryManager::GetInt2TensorDescExperimental(
     uint2 tex_size = Get2dResourceSize(weights_desc, shape);
     constexpr int uint2_bits = 2;
     constexpr int kUint2ElementsPerUint8Texel =
-        std::numeric_limits<uint16_t>::digits / uint2_bits;
+        std::numeric_limits<uint8_t>::digits / uint2_bits;
     tex_size.x /= kUint2ElementsPerUint8Texel;
     weights_u8_td.SetBHWDCShape(BHWDC(1, tex_size.y, tex_size.x, 1, 4));
   }
