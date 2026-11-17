@@ -22,6 +22,8 @@ import numpy as np
 from litert_quantizer import qtyping
 from litert_quantizer.utils import tfl_flatbuffer_utils
 
+_CHUNK_BYTES = 32 * 1024 * 1024
+
 
 @dataclasses.dataclass(frozen=True)
 class IntType:
@@ -124,6 +126,10 @@ def fix_quantization_params_rank(
 
   Returns:
     quantization_params with broadcasted scales and zero_points.
+
+  Raises:
+    ValueError: If `tensor_data` is scalar and `scale` or `zero_point` has more
+      than one element.
   """
   scales, zero_points = (
       quantization_params.scale,
@@ -142,23 +148,26 @@ def fix_quantization_params_rank(
     scales = np.array(scales.item())
     zero_points = np.array(zero_points.item())
   else:
-    dims = [
+    dims = tuple(
         dim
         for dim in range(tensor_data.ndim)
         if dim != quantization_params.quantized_dimension
-    ]
-    scales = np.expand_dims(scales, axis=dims)  # pyrefly: ignore[no-matching-overload]
-    zero_points = np.expand_dims(zero_points, axis=dims)  # pyrefly: ignore[no-matching-overload]
+    )
+    if scales.ndim < tensor_data.ndim:
+      if scales.size == 1:
+        scales = scales.reshape((1,) * tensor_data.ndim)
+      else:
+        scales = np.expand_dims(scales, axis=dims)
+    if zero_points.ndim < tensor_data.ndim:
+      if zero_points.size == 1:
+        zero_points = zero_points.reshape((1,) * tensor_data.ndim)
+      else:
+        zero_points = np.expand_dims(zero_points, axis=dims)
 
-  return qtyping.UniformQuantParams(
+  return dataclasses.replace(
+      quantization_params,
       scale=scales,
       zero_point=zero_points,
-      num_bits=quantization_params.num_bits,
-      symmetric=quantization_params.symmetric,
-      quantized_dimension=quantization_params.quantized_dimension,
-      quantized_data=quantization_params.quantized_data,
-      block_size=quantization_params.block_size,
-      signed=quantization_params.signed,
   )
 
 
@@ -273,15 +282,10 @@ def broadcast_scale_zp_for_blockwise(
         ),
         tensor_content.shape,
     )
-  return qtyping.UniformQuantParams(
+  return dataclasses.replace(
+      quant_params,
       scale=expanded_scale,
       zero_point=expanded_zp,
-      num_bits=quant_params.num_bits,
-      symmetric=quant_params.symmetric,
-      quantized_dimension=quant_params.quantized_dimension,
-      quantized_dimensions=quant_params.quantized_dimensions,
-      block_size=quant_params.block_size,
-      signed=quant_params.signed,
   )
 
 
@@ -289,7 +293,7 @@ def uniform_quantize(
     tensor_data: np.ndarray,
     quantization_params: qtyping.UniformQuantParams,
     is_blockwise_quant: bool = False,
-):
+) -> np.ndarray:
   """Uniform quantize a tensor.
 
   Args:
@@ -343,7 +347,7 @@ def uniform_quantize(
   # avoid creating large intermediate values.
   if (
       tensor_data.ndim > 1
-      and tensor_data.nbytes > 32 * 1024 * 1024
+      and tensor_data.nbytes > _CHUNK_BYTES
       and tensor_data.dtype.itemsize * 8 != qtype.num_bits
   ):
     # Reshape the `tensor_data`, `scales`, and `zero_points` to just two
@@ -357,14 +361,15 @@ def uniform_quantize(
     )
     ret = np.zeros(shape=tensor_data.shape, dtype=_get_numpy_dtype(qtype))
 
-    # Use a chunk size corresponding to 32 MiB of input data.
-    chunk_size = (32 * 1024 * 1024) // (
-        output_shape[-1] * tensor_data.dtype.itemsize
+    # Use a chunk size corresponding to _CHUNK_BYTES of input data.
+    chunk_size = max(
+        1,
+        _CHUNK_BYTES // max(1, output_shape[-1] * tensor_data.dtype.itemsize),
     )
 
-    # Loop over `tensor_data` in chunks.
-    for k in range(0, tensor_data.size, chunk_size):
-      end = min(k + chunk_size, tensor_data.size)
+    # Loop over `tensor_data` rows in chunks.
+    for k in range(0, tensor_data.shape[0], chunk_size):
+      end = min(k + chunk_size, tensor_data.shape[0])
 
       # Quantize the chunk.
       q = np.divide(tensor_data[k:end, :], scales[k:end, :])
@@ -514,14 +519,14 @@ def symmetric_quantize_bias_tensor(
 
 
 def tensor_zp_scale_from_min_max(
-    min_value,
-    max_value,
+    min_value: np.ndarray,
+    max_value: np.ndarray,
     num_bits: int,
     symmetric: bool,
     granularity: qtyping.QuantGranularity,
     clipping_values: Optional[np.ndarray] = None,
     signed: bool = True,
-):
+) -> tuple[np.ndarray, np.ndarray]:
   """Get zero point and scale from min and max value.
 
   Args:
@@ -576,9 +581,9 @@ def tensor_zp_scale_from_min_max(
 
   if symmetric:
     bound = np.maximum(np.abs(min_value), np.abs(max_value))
-    bound = np.maximum(bound, min_bound)
     if clipping_values is not None:
       bound = np.clip(bound, neg_clipping_values, pos_clipping_values)
+    bound = np.maximum(bound, min_bound)
     if not qtype.signed:
       half_q = (qmax - 1) / 2
       scale = bound / half_q
@@ -592,9 +597,10 @@ def tensor_zp_scale_from_min_max(
     # This ensures bound_min <= 0 <= bound_max.
     bound_max = np.maximum(max_value, np.zeros_like(max_value))
     bound_min = np.minimum(min_value, np.zeros_like(min_value))
-    bound = np.maximum(bound_max - bound_min, min_bound)
+    bound = bound_max - bound_min
     if clipping_values is not None:
       bound = np.clip(bound, -clipping_values, clipping_values)
+    bound = np.maximum(bound, min_bound)
     scale = bound / (qmax - qmin)
     zp = qmin - bound_min / scale
     zp = np.rint(zp)
