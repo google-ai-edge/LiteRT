@@ -16,6 +16,7 @@
 #include <memory>
 
 #include "testing/base/public/gunit.h"
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/convert/convert_testing_utils.h"
@@ -161,6 +162,33 @@ TEST_F(ConvertQuantizeTest, BasicUInt4) {
   EXPECT_FLOAT_EQ(attr->scale, 1.0f);
   EXPECT_FLOAT_EQ(attr->min, 1.0f * (0.0f - 0.0f));
   EXPECT_FLOAT_EQ(attr->max, 1.0f * (15.0f - 0.0f));
+}
+
+TEST_F(ConvertQuantizeTest, Float16InputInsertsCast) {
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinQuantize, /*version=*/4);
+  model.AddInput(kTfLiteFloat16, {1, 2, 3, 4});
+  model.AddOutput(kTfLiteInt8, {1, 2, 3, 4});
+
+  auto interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_.get()), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_.get());
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_EQ(ir_model->ops().size(), 2);
+  const ::ml_drift::ir::IrOp* cast_op = ir_model->op(0);
+  const ::ml_drift::ir::IrOp* qdq_op = ir_model->op(1);
+  EXPECT_EQ(cast_op->name, "cast");
+  EXPECT_EQ(qdq_op->name, "quantize_and_dequantize");
+  ASSERT_EQ(cast_op->inputs.size(), 1);
+  ASSERT_EQ(cast_op->outputs.size(), 1);
+  ASSERT_EQ(qdq_op->inputs.size(), 1);
+  EXPECT_EQ(cast_op->outputs[0], qdq_op->inputs[0]);
+  EXPECT_EQ(ir_model->tensor(cast_op->inputs[0])->desc.GetDataType(),
+            ::ml_drift::DataType::kFloat16);
+  EXPECT_EQ(ir_model->tensor(cast_op->outputs[0])->desc.GetDataType(),
+            ::ml_drift::DataType::kFloat32);
 }
 
 }  // namespace
