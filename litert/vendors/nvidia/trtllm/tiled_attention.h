@@ -102,4 +102,32 @@ extern "C" cudaError_t LiteRtNvidiaLaunchTiledAttentionInt8(
     const bool* mask, float fill, void* out, void* workspace,
     cudaStream_t stream);
 
+// The same attention with a quantized query over the quantized caches of
+// LiteRtNvidiaQuantAttentionParams (decode_attention.h), in prefill: q
+// [heads, rows, depth] FP16 holds the dequantized INT8 query
+// (LiteRtNvidiaLaunchQuantizeQuery in quant_cache.h), k and v are the caches
+// as stored (INT8, or INT4 two per byte when params->cache_bits is 4), and
+// k_new and v_new are the INT8 rows [heads, new_len, depth] of the chunk's
+// keys and values (LiteRtNvidiaLaunchQuantizeRows), with the scales of the
+// cache, or null when new_len is 0. out is FP16 and the mask is required. A
+// block dequantizes each tile to FP16 as it stages it and reads only the
+// tiles some row of the block can see. A row that sees no key gets zero,
+// whatever the fill: the graphs replace it, or never read it.
+//
+// Depth 256 and cache_len a multiple of 16 besides the conditions of
+// LiteRtNvidiaTiledAttentionSupports.
+extern "C" bool LiteRtNvidiaTiledQuantAttentionSupports(
+    const LiteRtNvidiaAttentionShape* shape, int32_t cache_bits);
+
+// Depends only on the shape.
+extern "C" size_t LiteRtNvidiaTiledQuantAttentionWorkspaceBytes(
+    const LiteRtNvidiaAttentionShape* shape);
+
+extern "C" cudaError_t LiteRtNvidiaLaunchTiledQuantAttention(
+    const LiteRtNvidiaAttentionShape* shape,
+    const LiteRtNvidiaQuantAttentionParams* params, const void* q,
+    const void* k, const void* v, const void* k_new, const void* v_new,
+    const bool* mask, float fill, void* out, void* workspace,
+    cudaStream_t stream);
+
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_TILED_ATTENTION_H_

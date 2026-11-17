@@ -307,6 +307,7 @@ __global__ void __launch_bounds__(kThreads)
 
 struct Sources {
   static constexpr bool kInt8 = false;
+  static constexpr int kQuantBits = 0;
   const __half* k;
   const __half* v;
   const __half* k_new;
@@ -321,6 +322,7 @@ struct Sources {
 // load is a whole 16-byte vector.
 struct Int8Sources {
   static constexpr bool kInt8 = true;
+  static constexpr int kQuantBits = 0;
   static constexpr int new_len = 0;
   const int8_t* k;
   const int8_t* v;
@@ -329,6 +331,26 @@ struct Int8Sources {
   float k_bias;
   float v_scale;
   float v_bias;
+};
+
+// The caches of LiteRtNvidiaQuantAttentionParams (zero points 0): the keys
+// as rows [heads, cache_len, depth] and the values as columns [heads, depth,
+// cache_len], INT8 or (kBits == 4) INT4 two per byte with the first in the
+// low nibble. The new keys and values that follow the cache are INT8 rows
+// [heads, new_len, depth] with the scales of the cache. cache_len is a
+// multiple of the tile, so no tile holds keys of both.
+template <int kBits>
+struct QuantSources {
+  static constexpr bool kInt8 = false;
+  static constexpr int kQuantBits = kBits;
+  const int8_t* k;
+  const int8_t* v;
+  const int8_t* k_new;
+  const int8_t* v_new;
+  int cache_len;
+  int new_len;
+  float k_scale;
+  float v_scale;
 };
 
 // Byte `index` of a word of INT8 values, dequantized.
@@ -355,6 +377,28 @@ __device__ __forceinline__ void DequantizeVector(int4 bytes, float scale,
   halves[1] = make_int4(out[4], out[5], out[6], out[7]);
 }
 
+// INT4 value `index` of a word of eight, dequantized.
+__device__ __forceinline__ float DequantizedNibble(int word, int index,
+                                                   float scale) {
+  const int value =
+      static_cast<int>(static_cast<uint32_t>(word) << (28 - 4 * index)) >> 28;
+  return static_cast<float>(value) * scale;
+}
+
+// Sixteen INT4 values (two words) as sixteen dequantized FP16 values.
+__device__ __forceinline__ void DequantizeNibbles(int lo, int hi, float scale,
+                                                  int4* halves) {
+  const int in[2] = {lo, hi};
+  uint32_t out[8];
+#pragma unroll
+  for (int i = 0; i < 8; ++i) {
+    out[i] = PackHalves(DequantizedNibble(in[i / 4], 2 * (i % 4), scale),
+                        DequantizedNibble(in[i / 4], 2 * (i % 4) + 1, scale));
+  }
+  halves[0] = make_int4(out[0], out[1], out[2], out[3]);
+  halves[1] = make_int4(out[4], out[5], out[6], out[7]);
+}
+
 // grid (splits, heads * rows / kRows). Block (split, y) owns kRows query rows
 // of one head and visits the visible tiles congruent to `split` modulo
 // `splits`. With one split the block writes `out`; otherwise its partial sums
@@ -370,7 +414,8 @@ __device__ __forceinline__ void DequantizeVector(int4 bytes, float scale,
 // when a larger score turns up.
 //
 // INT8 sources (Int8Sources) stay quantized in the registers, half the bytes
-// of an FP16 tile, and are dequantized to FP16 on their way to shared memory.
+// of an FP16 tile, and are dequantized to FP16 on their way to shared memory;
+// so do the INT8 and INT4 caches and the INT8 new keys of QuantSources.
 template <typename T, int kD, typename Src>
 __global__ void __launch_bounds__(kThreads, 1)
     TiledAttentionKernel(const T* __restrict__ q, Src src,
@@ -495,9 +540,52 @@ __global__ void __launch_bounds__(kThreads, 1)
   constexpr int kInt8Vectors = G::kStageVectors / 2;
   constexpr int kInt8RowVectors = kD / 16;
   int4 staged[Src::kInt8 ? kInt8Vectors : G::kStageVectors];
+  // Quantized sources (QuantSources): whether the staged tile is one of new
+  // keys, whose values are rows like their keys. A thread stages 16 dims of
+  // a key (16 INT8 bytes, or 8 bytes of INT4), or 8 keys of two dims of the
+  // values of the cache, which are stored as columns.
+  bool staged_fresh = false;
   auto load_tile = [&](bool values, int tile) {
     const int j0 = tile * kTile;
-    if constexpr (Src::kInt8) {
+    if constexpr (Src::kQuantBits != 0) {
+      static_assert(kD == kThreads, "a thread stages 16 dims of a key");
+      staged_fresh = j0 >= src.cache_len;
+      const int key = tid / 16;
+      if (staged_fresh || (!values && Src::kQuantBits == 8)) {
+        const int8_t* rows =
+            staged_fresh
+                ? (values ? src.v_new : src.k_new) +
+                      static_cast<size_t>(head) * src.new_len * kD
+                : src.k + static_cast<size_t>(head) * src.cache_len * kD;
+        const int first = staged_fresh ? j0 - src.cache_len : j0;
+        const int last = (staged_fresh ? src.new_len : src.cache_len) - 1;
+        staged[0] = reinterpret_cast<const int4*>(
+            rows + static_cast<size_t>(min(first + key, last)) * kD)[tid % 16];
+      } else if (!values) {
+        const int2 nibbles = reinterpret_cast<const int2*>(
+            src.k + (static_cast<size_t>(head) * src.cache_len + j0 + key) *
+                        (kD / 2))[tid % 16];
+        staged[0] = make_int4(nibbles.x, nibbles.y, 0, 0);
+      } else {
+        // Keys 8 * (tid / 128) and up of dims 2 * (tid % 128) and the next.
+        const size_t first =
+            (static_cast<size_t>(head) * kD + 2 * (tid % (kThreads / 2))) *
+                src.cache_len +
+            j0 + 8 * (tid / (kThreads / 2));
+        if constexpr (Src::kQuantBits == 8) {
+          const int2 lo = *reinterpret_cast<const int2*>(src.v + first);
+          const int2 hi =
+              *reinterpret_cast<const int2*>(src.v + first + src.cache_len);
+          staged[0] = make_int4(lo.x, lo.y, hi.x, hi.y);
+        } else {
+          staged[0] = make_int4(
+              *reinterpret_cast<const int*>(src.v + first / 2),
+              *reinterpret_cast<const int*>(src.v +
+                                            (first + src.cache_len) / 2),
+              0, 0);
+        }
+      }
+    } else if constexpr (Src::kInt8) {
       static_assert(kD == 2 * kThreads, "two dims of the values per thread");
 #pragma unroll
       for (int j = 0; j < kInt8Vectors; ++j) {
@@ -530,7 +618,35 @@ __global__ void __launch_bounds__(kThreads, 1)
   };
   // `values` says what load_tile staged.
   auto store_tile = [&](bool values) {
-    if constexpr (Src::kInt8) {
+    if constexpr (Src::kQuantBits != 0) {
+      // The keys are staged as their integers, which FP16 holds exactly: the
+      // score products are then the decomposition's, and the softmax applies
+      // the scale of the keys.
+      const float scale = values ? src.v_scale : 1.0f;
+      int4* row = reinterpret_cast<int4*>(cache_s + (tid / 16) * G::kRowBytes +
+                                          (tid % 16) * 32);
+      if (staged_fresh || (!values && Src::kQuantBits == 8)) {
+        DequantizeVector(staged[0], scale, 0.0f, row);
+      } else if (!values) {
+        DequantizeNibbles(staged[0].x, staged[0].y, scale, row);
+      } else {
+        // Columns to rows: the thread's two dims of a key are one word of
+        // the key's row.
+        const int lo[2] = {staged[0].x, staged[0].y};
+        const int hi[2] = {staged[0].z, staged[0].w};
+#pragma unroll
+        for (int i = 0; i < kTile / 2; ++i) {
+          *reinterpret_cast<uint32_t*>(
+              cache_s + (8 * (tid / (kThreads / 2)) + i) * G::kRowBytes +
+              (tid % (kThreads / 2)) * 4) =
+              Src::kQuantBits == 8
+                  ? PackHalves(Dequantized(lo[i / 4], i % 4, scale, 0.0f),
+                               Dequantized(hi[i / 4], i % 4, scale, 0.0f))
+                  : PackHalves(DequantizedNibble(staged[0].x, i, scale),
+                               DequantizedNibble(staged[0].y, i, scale));
+        }
+      }
+    } else if constexpr (Src::kInt8) {
       if (values) {
         // Columns to rows: the thread's two dims of key i are one word of
         // row i.
@@ -697,6 +813,14 @@ __global__ void __launch_bounds__(kThreads, 1)
       }
       sc[e] = sum.x;
       sc[e + 1] = sum.y;
+      if constexpr (Src::kQuantBits != 0) {
+        // The decomposition casts its scores to FP16 before the mask.
+        const __half2 rounded =
+            __floats2half2_rn(sc[e] * src.k_scale, sc[e + 1] * src.k_scale);
+        const float2 scores = __half22float2(rounded);
+        sc[e] = scores.x;
+        sc[e + 1] = scores.y;
+      }
     }
     if (((all_s[c >> 5] >> (c & 31)) & 1u) == 0) {
       const bool* mask_row =
@@ -1286,6 +1410,56 @@ cudaError_t LaunchInt8(const LiteRtNvidiaAttentionShape& shape, const T* q,
   return cudaGetLastError();
 }
 
+// Quantized sources: the workspace holds the bitmaps and the rows that see no
+// key, as LaunchInt8 lays them out, then the partial sums. A row that sees no
+// key gets zero.
+template <int kBits>
+cudaError_t LaunchQuant(const LiteRtNvidiaAttentionShape& shape,
+                        const __half* q, const QuantSources<kBits>& src,
+                        const bool* mask, float fill, __half* out,
+                        void* workspace, cudaStream_t stream) {
+  constexpr int kD = 256;
+  DeviceLimits limits;
+  cudaError_t status = GetDeviceLimits(&limits);
+  if (status != cudaSuccess) return status;
+  if (static_cast<size_t>(limits.shared_memory_optin) < kSharedBytes) {
+    return cudaErrorInvalidConfiguration;
+  }
+  const int block_rows = BlockRows(kD);
+  const int splits =
+      ChooseSplits(shape, limits.multiprocessors, MaxInt8Splits(shape));
+  const int words = Words(shape);
+  uint32_t* row_bits = static_cast<uint32_t*>(workspace);
+  uint32_t* block_bits =
+      row_bits + static_cast<size_t>(shape.mask_rows) * 2 * words;
+  uint32_t* blind_bits = reinterpret_cast<uint32_t*>(
+      static_cast<char*>(workspace) + BitmapBytes(shape));
+  float* ws_acc = reinterpret_cast<float*>(static_cast<char*>(workspace) +
+                                           BitmapBytes(shape) +
+                                           BlindBytes(shape));
+  // One split writes the output itself and has no partial sums.
+  const size_t parts =
+      splits == 1 ? 0 : static_cast<size_t>(shape.heads) * shape.rows * splits;
+  float* ws_m = ws_acc + parts * kD;
+  float* ws_l = ws_m + parts;
+  RowBitmapKernel<<<dim3((words + kWarps - 1) / kWarps, shape.mask_rows),
+                    kThreads, 0, stream>>>(
+      mask, shape.cache_len + shape.new_len, words, row_bits);
+  status = cudaGetLastError();
+  if (status != cudaSuccess) return status;
+  BlockBitmapKernel<<<shape.mask_rows / block_rows, kThreads, 0, stream>>>(
+      row_bits, block_rows, words, Tiles(shape), block_bits, blind_bits);
+  status = cudaGetLastError();
+  if (status != cudaSuccess) return status;
+  status = LaunchBlocks<__half, kD>(shape, q, src, mask, block_bits, fill,
+                                    splits, ws_acc, ws_m, ws_l, out, stream);
+  if (status != cudaSuccess) return status;
+  BlindRowsKernel<__half, kD><<<shape.heads * (shape.rows / block_rows),
+                                kD / 2, 0, stream>>>(
+      blind_bits, /*mean=*/nullptr, shape.mask_rows, shape.rows, out);
+  return cudaGetLastError();
+}
+
 }  // namespace
 
 extern "C" bool LiteRtNvidiaTiledAttentionSupports(
@@ -1390,4 +1564,62 @@ extern "C" cudaError_t LiteRtNvidiaLaunchTiledAttentionInt8(
   }
   return LaunchInt8(*shape, static_cast<const __half*>(q), src, mask, fill,
                     static_cast<__half*>(out), workspace, stream);
+}
+
+extern "C" bool LiteRtNvidiaTiledQuantAttentionSupports(
+    const LiteRtNvidiaAttentionShape* shape, int32_t cache_bits) {
+  return LiteRtNvidiaTiledAttentionSupports(shape) && shape->depth == 256 &&
+         shape->cache_len % kTile == 0 && (cache_bits == 8 || cache_bits == 4);
+}
+
+extern "C" size_t LiteRtNvidiaTiledQuantAttentionWorkspaceBytes(
+    const LiteRtNvidiaAttentionShape* shape) {
+  if (!LiteRtNvidiaTiledQuantAttentionSupports(shape, 8)) {
+    return 0;
+  }
+  // One split writes the output itself.
+  const int max_splits = MaxInt8Splits(*shape);
+  const size_t parts = max_splits == 1 ? 0
+                                       : static_cast<size_t>(shape->heads) *
+                                             shape->rows * max_splits;
+  return BitmapBytes(*shape) + BlindBytes(*shape) +
+         parts * (static_cast<size_t>(shape->depth) + 2) * sizeof(float);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchTiledQuantAttention(
+    const LiteRtNvidiaAttentionShape* shape,
+    const LiteRtNvidiaQuantAttentionParams* params, const void* q,
+    const void* k, const void* v, const void* k_new, const void* v_new,
+    const bool* mask, float fill, void* out, void* workspace,
+    cudaStream_t stream) {
+  if (params == nullptr ||
+      !LiteRtNvidiaTiledQuantAttentionSupports(shape, params->cache_bits) ||
+      q == nullptr || k == nullptr || v == nullptr || mask == nullptr ||
+      out == nullptr || workspace == nullptr ||
+      (shape->new_len > 0 && (k_new == nullptr || v_new == nullptr)) ||
+      !std::isfinite(params->k_scale) || !std::isfinite(params->v_scale)) {
+    return cudaErrorInvalidValue;
+  }
+  if (params->cache_bits == 8) {
+    const QuantSources<8> src = {static_cast<const int8_t*>(k),
+                                 static_cast<const int8_t*>(v),
+                                 static_cast<const int8_t*>(k_new),
+                                 static_cast<const int8_t*>(v_new),
+                                 shape->cache_len,
+                                 shape->new_len,
+                                 params->k_scale,
+                                 params->v_scale};
+    return LaunchQuant(*shape, static_cast<const __half*>(q), src, mask, fill,
+                       static_cast<__half*>(out), workspace, stream);
+  }
+  const QuantSources<4> src = {static_cast<const int8_t*>(k),
+                               static_cast<const int8_t*>(v),
+                               static_cast<const int8_t*>(k_new),
+                               static_cast<const int8_t*>(v_new),
+                               shape->cache_len,
+                               shape->new_len,
+                               params->k_scale,
+                               params->v_scale};
+  return LaunchQuant(*shape, static_cast<const __half*>(q), src, mask, fill,
+                     static_cast<__half*>(out), workspace, stream);
 }

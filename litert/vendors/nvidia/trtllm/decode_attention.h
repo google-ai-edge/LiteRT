@@ -76,4 +76,44 @@ extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttention(
     int32_t mask_rows, int32_t heads, int32_t rows, int32_t seq, int32_t depth,
     float fill, void* out, void* workspace, cudaStream_t stream);
 
+// The quantization of an attention block whose query, keys and values are
+// all quantized (odml.sdpa_transposed and odml.fused_sdpa_cache_update over
+// quantized tensors): an INT8 query with q_scale and caches that hold INT8
+// values, or INT4 values two per byte (the first in the low nibble, as LiteRT
+// packs them), with k_scale and v_scale. Every zero point is 0. The keys are
+// rows [heads, cache_len, depth], the values columns [heads, depth,
+// cache_len], both as the model stores them.
+struct LiteRtNvidiaQuantAttentionParams {
+  float q_scale;
+  float k_scale;
+  float v_scale;
+  int32_t cache_bits;  // 8 or 4
+};
+
+// Depth 256, at most 16 rows, and caches of 8 or 4 bits.
+extern "C" bool LiteRtNvidiaQuantDecodeAttentionSupports(int32_t rows,
+                                                         int32_t depth,
+                                                         int32_t cache_bits);
+
+// Decode attention over quantized caches: q [heads, rows, depth] (FP16 or
+// BF16) is the query before its QUANTIZE (or its dequantized value), which
+// the kernel rounds to INT8 as TFLite's QUANTIZE does (q / q_scale rounded
+// half away from zero, saturated). A score is the exact integer product sum
+// times q_scale * k_scale, rounded to FP16 as the composite's decomposition
+// casts it; scores where the mask is false become `fill`, and
+//   out[h][r] = softmax_j(scores) . values[h]
+// in q's type. mask is [mask_rows, cache_len] bool, mask_rows a divisor of
+// `rows`: row r reads mask row r % mask_rows, the order of mask_rows tokens
+// under rows / mask_rows query heads. Chunks of keys no row sees are not
+// read. With a `fill` of -inf the keys a mask hides stay out of the softmax
+// and a row that sees no key gets zero; with a finite fill such a row has no
+// defined result. `workspace` needs
+// LiteRtNvidiaDecodeAttentionWorkspaceBytes(heads, rows, cache_len, depth)
+// bytes.
+extern "C" cudaError_t LiteRtNvidiaLaunchQuantDecodeAttention(
+    const void* q, bool q_bf16, const void* k, const void* v,
+    const LiteRtNvidiaQuantAttentionParams* params, const bool* mask,
+    int32_t mask_rows, int32_t heads, int32_t rows, int32_t cache_len,
+    int32_t depth, float fill, void* out, void* workspace, cudaStream_t stream);
+
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_DECODE_ATTENTION_H_

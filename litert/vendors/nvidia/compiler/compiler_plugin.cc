@@ -1407,8 +1407,9 @@ bool ContainsReductionOp(const LiteRtCompilerContext* ctx,
   return false;
 }
 
-// Whether the island writes a KV cache: an odml.cache_update composite or a
-// dynamic update slice. Such an island is kept however small: on the CPU it
+// Whether the island writes a KV cache: an odml.cache_update or
+// odml.fused_sdpa_cache_update composite or a dynamic update slice. Such an
+// island is kept however small: on the CPU it
 // would rewrite a whole cache that the engines keep on the device (Gemma 4
 // 26B's prefill ends with the last layer's cache update, which the unlowered
 // rope composite before it cuts off from the rest of the graph).
@@ -1422,7 +1423,9 @@ bool ContainsCacheUpdate(const LiteRtCompilerContext* ctx,
     const char* name = nullptr;
     if (op.Code() == kLiteRtOpCodeShloComposite &&
         LiteRtGetSHLOCompositeOpName(raw_op, &name) == kLiteRtStatusOk &&
-        name != nullptr && std::strcmp(name, "odml.cache_update") == 0) {
+        name != nullptr &&
+        (std::strcmp(name, "odml.cache_update") == 0 ||
+         std::strcmp(name, "odml.fused_sdpa_cache_update") == 0)) {
       return true;
     }
   }

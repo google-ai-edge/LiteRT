@@ -57,6 +57,7 @@
 #include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
 #include "litert/vendors/nvidia/compiler/moe_plugin.h"
 #include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
+#include "litert/vendors/nvidia/compiler/quant_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
 #include "litert/vendors/nvidia/compiler/weight_store_builder.h"
@@ -1174,6 +1175,290 @@ std::optional<int32_t> SdpaTransposedGroup(const Op& op) {
   return group;
 }
 
+// The composites over quantized KV caches (INT8 queries over the INT8 ring
+// caches of local layers and the INT4 caches of global ones) run on the
+// quantized attention plugin (quant_attention_plugin.h), which reads and
+// writes the caches as the model stores them. The plugin takes the float
+// tensors behind the graph's QUANTIZE ops, so these lowerings need float
+// activations.
+bool QuantAttentionEnabled() {
+  const char* value = std::getenv("LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS");
+  return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}
+
+// The mask fills of the decompositions: FP16 0xF999 in odml.sdpa_transposed
+// over quantized tensors, -10000 in odml.fused_sdpa_cache_update.
+constexpr float kQuantSdpaFill = -45856.0f;
+constexpr float kQuantFusedSdpaFill = -10000.0f;
+
+// The scale and the bits of an INT8 or INT4 tensor quantized per tensor with
+// a zero point of 0.
+struct QuantTensor {
+  float scale = 0.0f;
+  int32_t bits = 0;
+};
+
+std::optional<QuantTensor> ParseQuantTensor(const Tensor& tensor) {
+  const auto type = tensor.ElementType();
+  if ((type != litert::ElementType::Int8 &&
+       type != litert::ElementType::Int4) ||
+      tensor.QTypeId() != kLiteRtQuantizationPerTensor) {
+    return std::nullopt;
+  }
+  const auto q = tensor.PerTensorQuantization();
+  if (!std::isfinite(q.scale) || q.scale <= 0.0f || q.zero_point != 0) {
+    return std::nullopt;
+  }
+  return QuantTensor{q.scale, type == litert::ElementType::Int8 ? 8 : 4};
+}
+
+bool QuantizedLike(const Tensor& tensor, float scale, int32_t bits) {
+  const auto quant = ParseQuantTensor(tensor);
+  return quant.has_value() && quant->bits == bits && quant->scale == scale;
+}
+
+std::optional<std::array<int32_t, 4>> StaticRank4Dims(const Tensor& tensor) {
+  auto type = tensor.RankedTensorType();
+  if (!type || type->Layout().Rank() != 4 || type->Layout().HasStrides()) {
+    return std::nullopt;
+  }
+  std::array<int32_t, 4> dims;
+  const auto shape = type->Layout().Dimensions();
+  std::copy(shape.begin(), shape.end(), dims.begin());
+  for (int32_t d : dims) {
+    if (d <= 0) return std::nullopt;
+  }
+  return dims;
+}
+
+// A key cache [1, H, S, D] and a value cache [1, H, D, S] of one quantized
+// type.
+struct QuantCaches {
+  int32_t heads = 0;
+  int32_t seq = 0;
+  int32_t depth = 0;
+  int32_t bits = 0;
+  float k_scale = 0.0f;
+  float v_scale = 0.0f;
+};
+
+std::optional<QuantCaches> ParseQuantCaches(const Tensor& k, const Tensor& v) {
+  const auto k_quant = ParseQuantTensor(k);
+  const auto v_quant = ParseQuantTensor(v);
+  const auto kd = StaticRank4Dims(k);
+  const auto vd = StaticRank4Dims(v);
+  if (!k_quant || !v_quant || !kd || !vd || k_quant->bits != v_quant->bits ||
+      (*kd)[0] != 1 || (*vd)[0] != 1 || (*vd)[1] != (*kd)[1] ||
+      (*vd)[2] != (*kd)[3] || (*vd)[3] != (*kd)[2] || (*kd)[3] % 2 != 0) {
+    return std::nullopt;
+  }
+  return QuantCaches{(*kd)[1],      (*kd)[2],       (*kd)[3],
+                     k_quant->bits, k_quant->scale, v_quant->scale};
+}
+
+// The plugin leaves the keys a mask hides out of the softmax, where the
+// decompositions give their scores `fill`. That is the same result for every
+// row that sees a key when the fill is so far below every score that its
+// weight is no fp32 number (exp(-104) is none); a score is at most depth x
+// 128 x the keys' limit x the two scales. A row that sees no key gets zero
+// from the plugin and the average of all values from the decomposition: the
+// graphs replace such a row (the SELECT after odml.sdpa_transposed) or never
+// read it (the padding of a prefill chunk).
+bool QuantFillHidesScores(float fill, const QuantCaches& caches,
+                          float q_scale) {
+  const float max_score = static_cast<float>(caches.depth) * 128.0f *
+                          static_cast<float>(1 << (caches.bits - 1)) * q_scale *
+                          caches.k_scale;
+  return fill + 2.0f * max_score < -150.0f;
+}
+
+// odml.cache_update over quantized tensors, (k [1, H, n, D], v [1, H, n, D],
+// params, k_cache, v_cache, k_start [4], v_start [4]) -> the two caches. The
+// keys, the values and their caches share a quantization, so the
+// decomposition's re-quantization of the rows is the identity and its two
+// DYNAMIC_UPDATE_SLICE ops write them as they are. The caches are inputs of
+// the graph.
+struct QuantCacheUpdate {
+  QuantCaches caches;
+  int32_t tokens = 0;  // n
+};
+
+std::optional<QuantCacheUpdate> ParseQuantCacheUpdate(const Op& op) {
+  if (!QuantAttentionEnabled() || op.Inputs().size() != 7 ||
+      op.Outputs().size() != 2 || !op.Inputs()[3].IsSubgraphInput() ||
+      !op.Inputs()[4].IsSubgraphInput()) {
+    return std::nullopt;
+  }
+  const auto caches = ParseQuantCaches(op.Inputs()[3], op.Inputs()[4]);
+  const auto kd = StaticRank4Dims(op.Inputs()[0]);
+  const auto vd = StaticRank4Dims(op.Inputs()[1]);
+  if (!caches || !kd || !vd || *kd != *vd || (*kd)[0] != 1 ||
+      (*kd)[1] != caches->heads || (*kd)[2] > caches->seq ||
+      (*kd)[3] != caches->depth) {
+    return std::nullopt;
+  }
+  for (int i = 0; i < 2; ++i) {
+    const float scale = i == 0 ? caches->k_scale : caches->v_scale;
+    auto start_type = op.Inputs()[5 + i].RankedTensorType();
+    if (!QuantizedLike(op.Inputs()[i], scale, caches->bits) ||
+        !QuantizedLike(op.Outputs()[i], scale, caches->bits) || !start_type ||
+        StaticRank4Dims(op.Outputs()[i]) !=
+            StaticRank4Dims(op.Inputs()[3 + i]) ||
+        op.Inputs()[5 + i].ElementType() != litert::ElementType::Int32 ||
+        start_type->Layout().Rank() != 1 ||
+        start_type->Layout().Dimensions()[0] != 4) {
+      return std::nullopt;
+    }
+  }
+  return QuantCacheUpdate{*caches, (*kd)[2]};
+}
+
+// odml.sdpa_transposed with an INT8 query, (q [1, Hq, n, D], k_cache,
+// v_cache, mask [1, 1, n, S] bool, params) -> float [1, Hq, n, D]: the
+// Hq / H query heads of a KV head attend over the whole cache under the
+// mask. The caches are the results of an odml.cache_update that
+// ParseQuantCacheUpdate takes, or inputs of the graph. Up to 16 rows per KV
+// head run the plugin's decode kernel, more its tensor-core kernel.
+struct QuantSdpa {
+  QuantCaches caches;
+  float q_scale = 0.0f;
+  int32_t group = 0;   // Hq / H
+  int32_t tokens = 0;  // n
+};
+
+std::optional<QuantSdpa> ParseQuantSdpa(const Op& op) {
+  if (!QuantAttentionEnabled() || op.Inputs().size() != 5 ||
+      op.Outputs().size() != 1) {
+    return std::nullopt;
+  }
+  const auto q_quant = ParseQuantTensor(op.Inputs()[0]);
+  const auto caches = ParseQuantCaches(op.Inputs()[1], op.Inputs()[2]);
+  const auto qd = StaticRank4Dims(op.Inputs()[0]);
+  if (!q_quant || q_quant->bits != 8 || !caches || !qd || (*qd)[0] != 1 ||
+      (*qd)[1] % caches->heads != 0 || (*qd)[3] != caches->depth ||
+      op.Inputs()[3].ElementType() != litert::ElementType::Bool ||
+      !TensorHasShape(op.Inputs()[3], {1, 1, (*qd)[2], caches->seq}) ||
+      !IsFloatLike(op.Outputs()[0].ElementType()) ||
+      !TensorHasShape(op.Outputs()[0],
+                      {(*qd)[0], (*qd)[1], (*qd)[2], (*qd)[3]})) {
+    return std::nullopt;
+  }
+  for (int i : {1, 2}) {
+    if (op.Inputs()[i].IsSubgraphInput()) {
+      continue;
+    }
+    const auto producer = op.Inputs()[i].GetDefiningOp();
+    if (!producer || producer->Code() != kLiteRtOpCodeShloComposite ||
+        CompositeOpName(*producer) != "odml.cache_update" ||
+        !ParseQuantCacheUpdate(*producer).has_value()) {
+      return std::nullopt;
+    }
+  }
+  // The query arrives scaled, and the caches have their sequence on axes 2
+  // and 3.
+  CompositeOptions options;
+  if (options.InitFromOp(op.Get()) == kLiteRtStatusOk &&
+      options.attributes_map.has_value()) {
+    const auto& map = options.attributes_map.value();
+    if ((!map["scale"].IsNull() && map["scale"].AsFloat() != 1.0f) ||
+        (!map["k_ts_idx"].IsNull() && map["k_ts_idx"].AsInt32() != 2) ||
+        (!map["v_ts_idx"].IsNull() && map["v_ts_idx"].AsInt32() != 3)) {
+      return std::nullopt;
+    }
+  }
+  if (!QuantFillHidesScores(kQuantSdpaFill, *caches, q_quant->scale)) {
+    return std::nullopt;
+  }
+  const int32_t group = (*qd)[1] / caches->heads;
+  const int32_t rows = group * (*qd)[2];
+  if (rows <= 16) {
+    if (!LiteRtNvidiaQuantDecodeAttentionSupports(rows, caches->depth,
+                                                  caches->bits)) {
+      return std::nullopt;
+    }
+  } else {
+    const LiteRtNvidiaAttentionShape shape = {
+        caches->heads, rows, (*qd)[2], caches->depth, caches->seq, 0};
+    if (!LiteRtNvidiaTiledQuantAttentionSupports(&shape, caches->bits) ||
+        !LiteRtNvidiaTiledAttentionAvailable()) {
+      return std::nullopt;
+    }
+  }
+  return QuantSdpa{*caches, q_quant->scale, group, (*qd)[2]};
+}
+
+// odml.fused_sdpa_cache_update, (q [1, H, R, D] INT8, k_cache [1, H, S, D],
+// v_cache [1, H, D, S], k [1, H, M, D], v [1, H, D, M], mask [1, 1, M, S + M]
+// bool, params [1, 1, 1, 7]) -> (float [1, H, R, D], the two caches): the
+// attention of R / M query heads per KV head over the INT8 ring caches
+// followed by the chunk's own keys and values, and the chunk written into the
+// ring (unless update_cache is false). The caches are inputs of the graph.
+struct QuantFusedSdpa {
+  QuantCaches caches;
+  float q_scale = 0.0f;
+  int32_t rows = 0;    // R
+  int32_t tokens = 0;  // M
+  bool update_cache = true;
+};
+
+std::optional<QuantFusedSdpa> ParseQuantFusedSdpa(const Op& op) {
+  if (!QuantAttentionEnabled() || op.Inputs().size() != 7 ||
+      op.Outputs().size() != 3 || !op.Inputs()[1].IsSubgraphInput() ||
+      !op.Inputs()[2].IsSubgraphInput()) {
+    return std::nullopt;
+  }
+  const auto q_quant = ParseQuantTensor(op.Inputs()[0]);
+  const auto caches = ParseQuantCaches(op.Inputs()[1], op.Inputs()[2]);
+  const auto qd = StaticRank4Dims(op.Inputs()[0]);
+  const auto kd = StaticRank4Dims(op.Inputs()[3]);
+  if (!q_quant || q_quant->bits != 8 || !caches || caches->bits != 8 || !qd ||
+      !kd) {
+    return std::nullopt;
+  }
+  const int32_t rows = (*qd)[2];
+  const int32_t tokens = (*kd)[2];
+  if ((*qd)[0] != 1 || (*qd)[1] != caches->heads || (*qd)[3] != caches->depth ||
+      rows % tokens != 0 ||
+      !QuantizedLike(op.Inputs()[3], caches->k_scale, 8) ||
+      !TensorHasShape(op.Inputs()[3],
+                      {1, caches->heads, tokens, caches->depth}) ||
+      !QuantizedLike(op.Inputs()[4], caches->v_scale, 8) ||
+      !TensorHasShape(op.Inputs()[4],
+                      {1, caches->heads, caches->depth, tokens}) ||
+      op.Inputs()[5].ElementType() != litert::ElementType::Bool ||
+      !TensorHasShape(op.Inputs()[5], {1, 1, tokens, caches->seq + tokens}) ||
+      op.Inputs()[6].ElementType() != litert::ElementType::Int32 ||
+      !TensorHasShape(op.Inputs()[6], {1, 1, 1, 7}) ||
+      !IsFloatLike(op.Outputs()[0].ElementType()) ||
+      !TensorHasShape(op.Outputs()[0],
+                      {1, caches->heads, rows, caches->depth}) ||
+      !QuantizedLike(op.Outputs()[1], caches->k_scale, 8) ||
+      !TensorHasShape(op.Outputs()[1],
+                      {1, caches->heads, caches->seq, caches->depth}) ||
+      !QuantizedLike(op.Outputs()[2], caches->v_scale, 8) ||
+      !TensorHasShape(op.Outputs()[2],
+                      {1, caches->heads, caches->depth, caches->seq})) {
+    return std::nullopt;
+  }
+  bool update_cache = true;
+  CompositeOptions options;
+  if (options.InitFromOp(op.Get()) == kLiteRtStatusOk &&
+      options.attributes_map.has_value()) {
+    const auto update = options.attributes_map.value()["update_cache"];
+    if (update.IsBool()) {
+      update_cache = update.AsBool();
+    }
+  }
+  const LiteRtNvidiaAttentionShape shape = {caches->heads, rows,        tokens,
+                                            caches->depth, caches->seq, tokens};
+  if (!LiteRtNvidiaTiledQuantAttentionSupports(&shape, 8) ||
+      !LiteRtNvidiaTiledAttentionAvailable() ||
+      !QuantFillHidesScores(kQuantFusedSdpaFill, *caches, q_quant->scale)) {
+    return std::nullopt;
+  }
+  return QuantFusedSdpa{*caches, q_quant->scale, rows, tokens, update_cache};
+}
+
 // The "moe" custom op of Gemma 4 26B-A4B (the XNNPACK delegate's
 // mixture-of-experts contract): inputs x [1, n, model_dim], top_weights
 // [1, n, k], top_indices [1, n, k] int32, gate and up weights INT4
@@ -1576,7 +1861,8 @@ Expected<bool> IsCompositeSupported(const Op& op) {
   }
   if (name == "odml.cache_update") {
     if (PrefillCacheUpdateRingMode(op).has_value() ||
-        DecodeCacheUpdateMode(op).has_value()) {
+        DecodeCacheUpdateMode(op).has_value() ||
+        ParseQuantCacheUpdate(op).has_value()) {
       return true;
     }
     // (update_a f32, update_b f32, _, cache_a i8, cache_b i8, start_a i32,
@@ -1622,6 +1908,9 @@ Expected<bool> IsCompositeSupported(const Op& op) {
     return ParseSwiglu(op).has_value();
   }
   if (name == "odml.sdpa_transposed") {
+    if (ParseQuantSdpa(op).has_value()) {
+      return true;
+    }
     if (!SdpaTransposedGroup(op).has_value()) {
       return false;
     }
@@ -1640,6 +1929,9 @@ Expected<bool> IsCompositeSupported(const Op& op) {
       }
     }
     return true;
+  }
+  if (name == "odml.fused_sdpa_cache_update") {
+    return ParseQuantFusedSdpa(op).has_value();
   }
   if (name == "odml.runtime_bmm") {
     // (a, cache, positions) -> a @ dequantize(cache)^T over the full
@@ -2862,6 +3154,7 @@ class TensorRtGraphBuilder {
     LITERT_RETURN_IF_ERROR(FindDecodeAttentionBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(FindWindowedCacheReads(subgraph));
     LITERT_RETURN_IF_ERROR(FindInt8CacheAttentionBlocks(subgraph));
+    FindPackedInt4Caches(subgraph);
     LITERT_RETURN_IF_ERROR(AddInputs(subgraph));
     const size_t num_ops_to_lower =
         ops.size() - (trtllm_head.has_value() ? 4 : 0);
@@ -3424,6 +3717,13 @@ class TensorRtGraphBuilder {
       LITERT_ASSIGN_OR_RETURN(auto data_type,
                               ConvertDataType(type.ElementType()));
       std::string name = TensorName("input", input, i);
+      // An INT4 cache of the composites over quantized caches is declared as
+      // the INT8 bytes that hold it (FindPackedInt4Caches).
+      if (const auto packed = packed_int4_caches_.find(input.Get());
+          packed != packed_int4_caches_.end()) {
+        data_type = nvinfer1::DataType::kINT8;
+        dims.d[packed->second ? 2 : 3] /= 2;
+      }
       // A value cache stored as [B, H, D, S] and updated in place is either
       // held as [B, H, S, D] (see TransposedValueCacheEnabled) or declared
       // through its free [B, H*D, S, 1] view so the native cache update can
@@ -3534,6 +3834,9 @@ class TensorRtGraphBuilder {
             type.ElementType() == litert::ElementType::Float32 &&
             Fp16CacheStorageEnabled()) {
           boundary_type = nvinfer1::DataType::kHALF;
+        }
+        if (packed_int4_caches_.count(output.Get()) != 0) {
+          boundary_type = nvinfer1::DataType::kINT8;
         }
         if (out->getType() != boundary_type) {
           LITERT_ASSIGN_OR_RETURN(
@@ -8648,6 +8951,11 @@ class TensorRtGraphBuilder {
   }
 
   Expected<void> LowerSelectV2(const Op& op) {
+    if (const auto attention = QuantAttentionBehindMaskSelect(op);
+        attention.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(auto* value, GetTensor(*attention));
+      return SetOutputTensor(op.Outputs()[0], value);
+    }
     nvinfer1::ITensor* condition = nullptr;
     if (const auto select = windowed_by_select_.find(op.Get());
         select != windowed_by_select_.end()) {
@@ -9386,6 +9694,399 @@ class TensorRtGraphBuilder {
         BuildScatterUpdate(cache_b, shuffle->getOutput(0), start_b));
     LITERT_RETURN_IF_ERROR(SetQuantizedScatterOutput(op.Outputs()[0], out_a));
     return SetQuantizedScatterOutput(op.Outputs()[1], out_b);
+  }
+
+  // The INT4 caches of the composites over quantized caches. TensorRT has no
+  // INT4 tensors at an engine's boundary, so such a cache crosses it as the
+  // INT8 bytes LiteRT packs it into, two values per byte: the same buffer,
+  // declared [1, H, S, D / 2] for a key cache and [1, H, D / 2, S] for a
+  // value cache. Only the quantized attention plugin reads or writes it.
+  void FindPackedInt4Caches(const Subgraph& subgraph) {
+    for (const auto& op : subgraph.Ops()) {
+      if (op.Code() != kLiteRtOpCodeShloComposite) {
+        continue;
+      }
+      const std::string name = CompositeOpName(op);
+      const bool update =
+          name == "odml.cache_update" && ParseQuantCacheUpdate(op).has_value();
+      if (!update &&
+          !(name == "odml.sdpa_transposed" && ParseQuantSdpa(op).has_value())) {
+        continue;
+      }
+      for (int i = 0; i < 2; ++i) {
+        const Tensor cache = op.Inputs()[(update ? 3 : 1) + i];
+        if (cache.ElementType() != litert::ElementType::Int4) {
+          continue;
+        }
+        packed_int4_caches_[cache.Get()] = i == 1;
+        if (update) {
+          packed_int4_caches_[op.Outputs()[i].Get()] = i == 1;
+        }
+      }
+    }
+  }
+
+  // The op that produces `tensor`, if it has this code.
+  static std::optional<Op> ProducerWithCode(const Tensor& tensor,
+                                            LiteRtOpCode code) {
+    if (tensor.IsSubgraphInput() || tensor.HasWeights()) {
+      return std::nullopt;
+    }
+    const auto producer = tensor.GetDefiningOp();
+    if (!producer || producer->Code() != code) {
+      return std::nullopt;
+    }
+    return *producer;
+  }
+
+  // The float tensor behind a quantized input of a composite over quantized
+  // caches: the input of the QUANTIZE that produces `tensor`, also through
+  // one RESHAPE or TRANSPOSE of the quantized tensor (*shape_op). The plugin
+  // rounds that float as the QUANTIZE does. Null without such a QUANTIZE.
+  Expected<nvinfer1::ITensor*> FloatBeforeQuantize(
+      const Tensor& tensor, std::optional<Op>* shape_op) {
+    auto quantize = ProducerWithCode(tensor, kLiteRtOpCodeTflQuantize);
+    if (!quantize.has_value()) {
+      *shape_op = ProducerWithCode(tensor, kLiteRtOpCodeTflReshape);
+      if (!shape_op->has_value()) {
+        *shape_op = ProducerWithCode(tensor, kLiteRtOpCodeTflTranspose);
+      }
+      if (shape_op->has_value()) {
+        quantize = ProducerWithCode((*shape_op)->Inputs()[0],
+                                    kLiteRtOpCodeTflQuantize);
+      }
+    }
+    if (!quantize.has_value() ||
+        !IsFloatLike(quantize->Inputs()[0].ElementType())) {
+      return nullptr;
+    }
+    return GetTensor(quantize->Inputs()[0]);
+  }
+
+  // `value` as a tensor of the activations' float type with `dims`.
+  Expected<nvinfer1::ITensor*> AsQuantPluginFloat(nvinfer1::ITensor* value,
+                                                  const nvinfer1::Dims& dims) {
+    if (value->getType() == nvinfer1::DataType::kFLOAT) {
+      LITERT_ASSIGN_OR_RETURN(value, AddCastTensor(value, ModeFloatType()));
+    }
+    if (value->getType() != nvinfer1::DataType::kHALF &&
+        value->getType() != nvinfer1::DataType::kBF16) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "A quantized composite input has no float value");
+    }
+    const nvinfer1::Dims have = value->getDimensions();
+    if (have.nbDims == dims.nbDims &&
+        std::equal(have.d, have.d + have.nbDims, dims.d)) {
+      return value;
+    }
+    return ReshapeTensor(value, dims);
+  }
+
+  // The query a composite takes quantized, as floats with `dims`: the float
+  // before its QUANTIZE (a RESHAPE of the quantized query keeps the order of
+  // its elements), or the query's own value, which float activations hold
+  // dequantized.
+  Expected<nvinfer1::ITensor*> QuantizedQueryAsFloat(
+      const Tensor& tensor, const nvinfer1::Dims& dims) {
+    std::optional<Op> shape_op;
+    LITERT_ASSIGN_OR_RETURN(auto* value,
+                            FloatBeforeQuantize(tensor, &shape_op));
+    if (value == nullptr ||
+        (shape_op.has_value() && shape_op->Code() != kLiteRtOpCodeTflReshape)) {
+      LITERT_ASSIGN_OR_RETURN(value, GetTensor(tensor));
+    }
+    return AsQuantPluginFloat(value, dims);
+  }
+
+  // The keys or values of n tokens a composite takes quantized ([1, H, n, D],
+  // or [1, H, D, n] with `columns`), as float rows [1, H, n, D]. The graphs
+  // quantize the values as [1, n, H, D] and transpose the quantized tensor:
+  // the plugin reads those rows as they are (*token_major), which spares the
+  // transpose.
+  Expected<nvinfer1::ITensor*> QuantizedRowsAsFloat(const Tensor& tensor,
+                                                    bool columns, int32_t heads,
+                                                    int32_t tokens,
+                                                    int32_t depth,
+                                                    bool* token_major) {
+    *token_major = false;
+    const nvinfer1::Dims rows{4, {1, heads, tokens, depth}};
+    std::optional<Op> shape_op;
+    LITERT_ASSIGN_OR_RETURN(auto* value,
+                            FloatBeforeQuantize(tensor, &shape_op));
+    if (value != nullptr && !shape_op.has_value() && !columns) {
+      return AsQuantPluginFloat(value, rows);
+    }
+    if (value != nullptr && shape_op.has_value() &&
+        shape_op->Code() == kLiteRtOpCodeTflReshape && tokens == 1) {
+      // One token: rows and columns hold the same elements in the same order.
+      return AsQuantPluginFloat(value, rows);
+    }
+    if (value != nullptr && shape_op.has_value() &&
+        shape_op->Code() == kLiteRtOpCodeTflTranspose) {
+      const auto perm = ReadInt32Constant(shape_op->Inputs()[1]);
+      const std::vector<int32_t> from_token_rows =
+          columns ? std::vector<int32_t>{0, 2, 3, 1}
+                  : std::vector<int32_t>{0, 2, 1, 3};
+      if (perm && *perm == from_token_rows) {
+        *token_major = true;
+        return AsQuantPluginFloat(value,
+                                  nvinfer1::Dims{4, {1, tokens, heads, depth}});
+      }
+    }
+    LITERT_ASSIGN_OR_RETURN(value, GetTensor(tensor));
+    if (columns) {
+      auto* layer = network_->addShuffle(*value);
+      if (layer == nullptr || layer->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to transpose the columns of a quantized input");
+      }
+      layer->setFirstTranspose(nvinfer1::Permutation{{0, 1, 3, 2}});
+      value = layer->getOutput(0);
+    }
+    return AsQuantPluginFloat(value, rows);
+  }
+
+  // The graphs follow odml.sdpa_transposed with a SELECT over its tokens:
+  //   SELECT_V2(NOT_EQUAL(REDUCE_MAX(CAST(mask), context axis), 0),
+  //             attention as [1, n, Hq, D], 0)
+  // gives the tokens whose mask row sees no key zero. The quantized
+  // attention plugin gives such rows zero itself (ParseQuantSdpa), so over
+  // its result the SELECT is the identity, and the reduction of the mask, a
+  // [tokens, context] fp32 tensor for a prefill chunk, is never built.
+  // Returns the SELECT's attention input when `op` is such a SELECT.
+  static std::optional<Tensor> QuantAttentionBehindMaskSelect(const Op& op) {
+    if (op.Inputs().size() != 3) {
+      return std::nullopt;
+    }
+    const auto zero = ReadFloatScalar(op.Inputs()[2]);
+    if (!zero || *zero != 0.0f) {
+      return std::nullopt;
+    }
+    // The attention [1, Hq, n, D] as [1, n, Hq, D]: a reshape for one token.
+    const std::vector<int32_t> tokens_first = {0, 2, 1, 3};
+    const auto as_tokens_first = [&](const Tensor& tensor,
+                                     int32_t tokens) -> std::optional<Tensor> {
+      if (tokens == 1) {
+        if (const auto reshape =
+                ProducerWithCode(tensor, kLiteRtOpCodeTflReshape)) {
+          return reshape->Inputs()[0];
+        }
+      }
+      const auto transpose =
+          ProducerWithCode(tensor, kLiteRtOpCodeTflTranspose);
+      if (!transpose) {
+        return std::nullopt;
+      }
+      const auto perm = ReadInt32Constant(transpose->Inputs()[1]);
+      if (!perm || *perm != tokens_first) {
+        return std::nullopt;
+      }
+      return transpose->Inputs()[0];
+    };
+    const Tensor then = op.Inputs()[1];
+    auto then_type = then.RankedTensorType();
+    if (!then_type || then_type->Layout().Rank() != 4) {
+      return std::nullopt;
+    }
+    const int32_t tokens = then_type->Layout().Dimensions()[1];
+    const auto attention = as_tokens_first(then, tokens);
+    if (!attention) {
+      return std::nullopt;
+    }
+    const auto sdpa = ProducerWithCode(*attention, kLiteRtOpCodeShloComposite);
+    if (!sdpa || CompositeOpName(*sdpa) != "odml.sdpa_transposed") {
+      return std::nullopt;
+    }
+    const auto form = ParseQuantSdpa(*sdpa);
+    if (!form.has_value() || form->tokens != tokens ||
+        !TensorHasShape(then, {1, tokens, form->group * form->caches.heads,
+                               form->caches.depth}) ||
+        !TensorHasShape(op.Inputs()[0], {1, tokens, 1, 1})) {
+      return std::nullopt;
+    }
+    // The condition: whether the token's row of the composite's mask, as
+    // [1, n, 1, S], has a key.
+    const auto not_equal =
+        ProducerWithCode(op.Inputs()[0], kLiteRtOpCodeTflNotEqual);
+    if (!not_equal) {
+      return std::nullopt;
+    }
+    const auto no_key = ReadFloatScalar(not_equal->Inputs()[1]);
+    const auto reduce =
+        ProducerWithCode(not_equal->Inputs()[0], kLiteRtOpCodeTflReduceMax);
+    if (!no_key || *no_key != 0.0f || !reduce) {
+      return std::nullopt;
+    }
+    const auto axes = ReadInt32Constant(reduce->Inputs()[1]);
+    const auto cast =
+        ProducerWithCode(reduce->Inputs()[0], kLiteRtOpCodeTflCast);
+    if (!axes || axes->size() != 1 || ((*axes)[0] != 3 && (*axes)[0] != -1) ||
+        !cast ||
+        !TensorHasShape(cast->Inputs()[0], {1, tokens, 1, form->caches.seq})) {
+      return std::nullopt;
+    }
+    const Tensor mask = sdpa->Inputs()[3];
+    const Tensor rows = cast->Inputs()[0];
+    if (rows.Get() != mask.Get()) {
+      // A reshape of [1, 1, n, S] to [1, n, 1, S] keeps the rows' order.
+      auto moved = ProducerWithCode(rows, kLiteRtOpCodeTflReshape);
+      if (!moved) {
+        const auto transposed = as_tokens_first(rows, /*tokens=*/0);
+        if (!transposed || transposed->Get() != mask.Get()) {
+          return std::nullopt;
+        }
+      } else if (moved->Inputs()[0].Get() != mask.Get()) {
+        return std::nullopt;
+      }
+    }
+    return then;
+  }
+
+  // A layer of the quantized attention plugin; `name` names it in the engine.
+  Expected<nvinfer1::IPluginV3Layer*> AddQuantAttentionLayer(
+      const QuantAttentionOptions& options,
+      std::vector<nvinfer1::ITensor*> inputs, const char* name) {
+    for (const auto* input : inputs) {
+      if (input == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "A quantized cache of the composite is not in the "
+                     "network");
+      }
+    }
+    TrtPtr<nvinfer1::IPluginV3> plugin(CreateQuantAttentionPlugin(options));
+    if (!plugin) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to create the CUDA quantized attention plugin");
+    }
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(*network_, inputs.data(),
+                                                     inputs.size(), *plugin);
+    if (layer == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the CUDA quantized attention plugin layer");
+    }
+    layer->setName(KeepName(UniqueName(name)));
+    owned_plugins_.push_back(std::move(plugin));
+    return layer;
+  }
+
+  // An updated cache of a composite over quantized caches: the raw tensor is
+  // the graph's output and what the attention composites read.
+  Expected<void> SetQuantCacheOutput(const Tensor& tensor,
+                                     nvinfer1::ITensor* out) {
+    if (out == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "The quantized attention plugin has no cache output");
+    }
+    raw_output_map_[tensor.Get()] = out;
+    return SetOutputTensor(tensor, out);
+  }
+
+  // odml.cache_update over quantized caches (ParseQuantCacheUpdate): one
+  // plugin launch quantizes the step's keys and values and writes them into
+  // both caches at the start indices.
+  Expected<void> LowerQuantCacheUpdate(const Op& op,
+                                       const QuantCacheUpdate& form) {
+    const auto& caches = form.caches;
+    bool token_major = false;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* keys,
+        QuantizedRowsAsFloat(op.Inputs()[0], /*columns=*/false, caches.heads,
+                             form.tokens, caches.depth, &token_major));
+    if (token_major) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "Quantized cache update keys must be rows of heads");
+    }
+    LITERT_ASSIGN_OR_RETURN(
+        auto* values,
+        QuantizedRowsAsFloat(op.Inputs()[1], /*columns=*/false, caches.heads,
+                             form.tokens, caches.depth, &token_major));
+    LITERT_ASSIGN_OR_RETURN(auto* start_k, GetTensor(op.Inputs()[5]));
+    LITERT_ASSIGN_OR_RETURN(auto* start_v, GetTensor(op.Inputs()[6]));
+    QuantAttentionOptions options;
+    options.mode = QuantAttentionMode::kCacheUpdate;
+    options.quant = {1.0f, caches.k_scale, caches.v_scale, caches.bits};
+    options.v_token_major = token_major;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* layer,
+        AddQuantAttentionLayer(options,
+                               {raw_input_map_[op.Inputs()[3].Get()],
+                                raw_input_map_[op.Inputs()[4].Get()], keys,
+                                values, start_k, start_v},
+                               "cuda_quant_cache_update"));
+    LITERT_RETURN_IF_ERROR(
+        SetQuantCacheOutput(op.Outputs()[0], layer->getOutput(0)));
+    return SetQuantCacheOutput(op.Outputs()[1], layer->getOutput(1));
+  }
+
+  // odml.sdpa_transposed over quantized caches (ParseQuantSdpa): the query
+  // heads of a KV head become its rows, head-major, which is the order the
+  // plugin's mask rows repeat in.
+  Expected<void> LowerQuantSdpa(const Op& op, const QuantSdpa& form) {
+    const auto& caches = form.caches;
+    const nvinfer1::Dims grouped{
+        4, {1, caches.heads, form.group * form.tokens, caches.depth}};
+    LITERT_ASSIGN_OR_RETURN(auto* q,
+                            QuantizedQueryAsFloat(op.Inputs()[0], grouped));
+    LITERT_ASSIGN_OR_RETURN(auto* mask, GetTensor(op.Inputs()[3]));
+    QuantAttentionOptions options;
+    options.mode = QuantAttentionMode::kAttention;
+    options.quant = {form.q_scale, caches.k_scale, caches.v_scale, caches.bits};
+    LITERT_ASSIGN_OR_RETURN(
+        auto* layer,
+        AddQuantAttentionLayer(options,
+                               {q, RawInt8Cache(op.Inputs()[1].Get()),
+                                RawInt8Cache(op.Inputs()[2].Get()), mask},
+                               "cuda_quant_attention"));
+    LITERT_ASSIGN_OR_RETURN(auto output_type,
+                            op.Outputs()[0].RankedTensorType());
+    LITERT_ASSIGN_OR_RETURN(auto output_dims, ConvertDims(output_type));
+    LITERT_ASSIGN_OR_RETURN(auto* out,
+                            ReshapeTensor(layer->getOutput(0), output_dims));
+    return SetOutputTensor(op.Outputs()[0], out);
+  }
+
+  // odml.fused_sdpa_cache_update (ParseQuantFusedSdpa): one plugin layer
+  // attends to the ring caches and the chunk's keys, then writes the chunk
+  // into the ring.
+  Expected<void> LowerQuantFusedSdpa(const Op& op, const QuantFusedSdpa& form) {
+    const auto& caches = form.caches;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* q,
+        QuantizedQueryAsFloat(
+            op.Inputs()[0],
+            nvinfer1::Dims{4, {1, caches.heads, form.rows, caches.depth}}));
+    bool token_major = false;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* keys,
+        QuantizedRowsAsFloat(op.Inputs()[3], /*columns=*/false, caches.heads,
+                             form.tokens, caches.depth, &token_major));
+    if (token_major) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "Fused attention keys must be rows of heads");
+    }
+    LITERT_ASSIGN_OR_RETURN(
+        auto* values,
+        QuantizedRowsAsFloat(op.Inputs()[4], /*columns=*/true, caches.heads,
+                             form.tokens, caches.depth, &token_major));
+    LITERT_ASSIGN_OR_RETURN(auto* mask, GetTensor(op.Inputs()[5]));
+    LITERT_ASSIGN_OR_RETURN(auto* params, GetTensor(op.Inputs()[6]));
+    QuantAttentionOptions options;
+    options.mode = QuantAttentionMode::kFusedAttentionUpdate;
+    options.quant = {form.q_scale, caches.k_scale, caches.v_scale, caches.bits};
+    options.v_token_major = token_major;
+    options.update_cache = form.update_cache;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* layer,
+        AddQuantAttentionLayer(
+            options,
+            {q, raw_input_map_[op.Inputs()[1].Get()],
+             raw_input_map_[op.Inputs()[2].Get()], mask, keys, values, params},
+            "cuda_quant_fused_attention"));
+    LITERT_RETURN_IF_ERROR(
+        SetOutputTensor(op.Outputs()[0], layer->getOutput(0)));
+    LITERT_RETURN_IF_ERROR(
+        SetQuantCacheOutput(op.Outputs()[1], layer->getOutput(1)));
+    return SetQuantCacheOutput(op.Outputs()[2], layer->getOutput(2));
   }
 
   // odml.runtime_bmm(a, cache, positions) = a @ dequantize(cache)^T over the
@@ -10959,7 +11660,20 @@ class TensorRtGraphBuilder {
       return LowerCompositeSwiglu(op);
     }
     if (name == "odml.cache_update") {
+      if (const auto form = ParseQuantCacheUpdate(op); form.has_value()) {
+        return LowerQuantCacheUpdate(op, *form);
+      }
       return LowerCompositeCacheUpdate(op);
+    }
+    if (name == "odml.sdpa_transposed") {
+      if (const auto form = ParseQuantSdpa(op); form.has_value()) {
+        return LowerQuantSdpa(op, *form);
+      }
+    }
+    if (name == "odml.fused_sdpa_cache_update") {
+      if (const auto form = ParseQuantFusedSdpa(op); form.has_value()) {
+        return LowerQuantFusedSdpa(op, *form);
+      }
     }
     if (name == "odml.runtime_bmm") {
       return LowerCompositeRuntimeBmm(op);
@@ -11167,6 +11881,9 @@ class TensorRtGraphBuilder {
   // Produced tensors that already carry the boundary format (e.g. int8 cache
   // scatter results); MarkOutputs prefers these over the FP16 view.
   std::unordered_map<LiteRtTensor, nvinfer1::ITensor*> raw_output_map_;
+  // The INT4 caches the engine declares as their INT8 bytes
+  // (FindPackedInt4Caches); true for a value cache.
+  std::unordered_map<LiteRtTensor, bool> packed_int4_caches_;
   std::vector<std::string> input_names_;
   std::vector<std::string> output_names_;
   int next_name_id_ = 0;
