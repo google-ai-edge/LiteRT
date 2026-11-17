@@ -1362,8 +1362,15 @@ LiteRtStatus ClearCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   // The device contents change without an invocation: no fused argmax of them
   // can be fresh.
   FusedGreedyRegistry::Get().ForgetRange(info->memory_handle, info->bytes);
-  return CudaStatus(cudaMemset(info->memory_handle, 0, copy_bytes),
-                    "cudaMemset CUDA tensor buffer");
+  LITERT_RETURN_IF_ERROR(
+      CudaStatus(cudaMemset(info->memory_handle, 0, copy_bytes),
+                 "cudaMemset CUDA tensor buffer"));
+  // The memset runs on the default stream, which the invocations' streams
+  // (non-blocking) do not wait for: the upload of what the host writes next
+  // could land before it and be zeroed (native Windows, the 26B's vision
+  // encoder read an image's patches as zeros, all or a prefix of them).
+  return CudaStatus(cudaStreamSynchronize(nullptr),
+                    "cudaStreamSynchronize CUDA tensor buffer clear");
 }
 
 Expected<size_t> TensorBufferPackedSize(

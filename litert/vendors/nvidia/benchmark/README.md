@@ -67,6 +67,11 @@ path exceeds 260 characters); a host without them passes `--nowindows_enable_sym
 The `litert_lm` step passes `--define=litert_webgpu_dawn_dynamic_loader=false`: LiteRT's Dawn
 rules link a dynamic loader by default, and LiteRT-LM's workspace also links its prebuilt Dawn
 into the CLI, so on Windows the linker finds every `wgpu` symbol twice (LNK2005) without it.
+The host needs a `python3` on PATH: LiteRT's genrule
+`ml_drift_delegate/delegate/serialization_weight_cache:generate_build_identifier` runs it from Git
+Bash, so a Python that installs only `python.exe` needs a shim (a shell script that execs
+`python.exe "$@"`) outside the directories Bazel reads as inputs (in the CUDA toolkit's `bin` it
+reruns the CUDA kernels' build).
 
 Host preparation stays outside the runners: on the 5080 the owner's `benchmark` shell
 preparation (High Performance, ASUS Profile 1, the cleanup allowlist) before a formal batch;

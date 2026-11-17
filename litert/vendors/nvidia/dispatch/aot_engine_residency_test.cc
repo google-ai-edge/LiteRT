@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -25,6 +26,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -800,6 +802,71 @@ TEST_F(AotEngineResidencyTest, UploadsHostWritesWhenAnInvocationReadsThem) {
     expect_device(input_.device_ptr, 9.0f, 1.0f);
     ASSERT_EQ(interface_->invoke(a_), kLiteRtStatusOk);
     expect_host(output_info, 10.0f);
+  }
+
+  EXPECT_EQ(interface_->invocation_context_destroy(a_), kLiteRtStatusOk);
+  contexts_.clear();
+  EXPECT_EQ(handlers->destroy_func(input_info), kLiteRtStatusOk);
+  EXPECT_EQ(handlers->destroy_func(output_info), kLiteRtStatusOk);
+  input_.device_ptr = output_.device_ptr = nullptr;
+}
+
+void CUDART_CB HoldTheStream(void*) {
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+}
+
+// LiteRT-LM clears a CUDA tensor buffer and then writes it (the vision
+// encoder's input patches). The clear must have landed when the next
+// invocation uploads the write, whatever else the device is busy with: a
+// blocking stream's work holds the default stream back here.
+TEST_F(AotEngineResidencyTest, AClearLandsBeforeTheWriteThatFollowsIt) {
+  ScopedEnvironment eager("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES", "0");
+  const auto* handlers = tensor_buffer_handlers_def_;
+  ASSERT_NE(handlers, nullptr);
+  ASSERT_EQ(cudaFree(input_.device_ptr), cudaSuccess);
+  ASSERT_EQ(cudaFree(output_.device_ptr), cudaSuccess);
+  input_.device_ptr = output_.device_ptr = nullptr;
+  auto type = TensorType();
+  HwMemoryInfoPtr input_info = nullptr;
+  HwMemoryInfoPtr output_info = nullptr;
+  ASSERT_EQ(handlers->create_func(nullptr, nullptr, &type, kCudaBufferType,
+                                  kBytes, kBytes, &input_info),
+            kLiteRtStatusOk);
+  ASSERT_EQ(handlers->create_func(nullptr, nullptr, &type, kCudaBufferType,
+                                  kBytes, kBytes, &output_info),
+            kLiteRtStatusOk);
+  input_.device_ptr = input_info->memory_handle;
+  output_.device_ptr = output_info->memory_handle;
+  CreateDevice();
+  ASSERT_FALSE(HasFatalFailure());
+  auto bytes = BuildBytecode("a", 1.0f, false);
+  ASSERT_TRUE(bytes) << bytes.Error().Message();
+  ASSERT_EQ(CreateContext(*bytes, "a", &a_), kLiteRtStatusOk);
+  Bind(a_);
+  ASSERT_FALSE(HasFatalFailure());
+
+  cudaStream_t busy = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&busy), cudaSuccess);
+  ASSERT_EQ(cudaLaunchHostFunc(busy, HoldTheStream, nullptr), cudaSuccess);
+  ASSERT_EQ(handlers->clear_func(input_info), kLiteRtStatusOk);
+  void* host = nullptr;
+  ASSERT_EQ(
+      handlers->lock_func(input_info, kLiteRtTensorBufferLockModeWrite, &host),
+      kLiteRtStatusOk);
+  ASSERT_NE(host, nullptr);
+  for (int i = 0; i < kElements; ++i) {
+    static_cast<float*>(host)[i] = 5.0f + i;
+  }
+  ASSERT_EQ(handlers->unlock_func(input_info), kLiteRtStatusOk);
+  ASSERT_EQ(interface_->invoke(a_), kLiteRtStatusOk);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  ASSERT_EQ(cudaStreamDestroy(busy), cudaSuccess);
+  std::array<float, kElements> device;
+  ASSERT_EQ(cudaMemcpy(device.data(), input_.device_ptr, kBytes,
+                       cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  for (int i = 0; i < kElements; ++i) {
+    EXPECT_FLOAT_EQ(device[i], 5.0f + i) << i;
   }
 
   EXPECT_EQ(interface_->invocation_context_destroy(a_), kLiteRtStatusOk);
