@@ -374,11 +374,17 @@ TfLiteDelegatePtr CreateMlDriftVulkanDelegate(MlDriftDelegateOptionsPtr options,
         ::ml_drift::CalculationsPrecision::kF32F16;
   }
 
+  const bool hint_fully_delegated_to_single_delegate =
+      delegate_data->options->hint_fully_delegated_to_single_delegate;
+
   // Initialize the ml_drift Vulkan delegate.
   TfLiteDelegatePtr delegate(new TfLiteDelegate(TfLiteDelegateCreate()),
                              LiteRtDeleteMlDriftVulkanDelegate);
   delegate->data_ = delegate_data.release();
   delegate->Prepare = DelegatePrepare;
+  if (hint_fully_delegated_to_single_delegate) {
+    delegate->flags |= kTfLiteDelegateFlagsHintFullyDelegatedToSingleDelegate;
+  }
   return delegate;
 }
 
