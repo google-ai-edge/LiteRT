@@ -1,0 +1,625 @@
+// Copyright 2026 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "litert/vendors/nvidia/trtllm/quant_linear.h"
+
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <vector>
+
+#include <gtest/gtest.h>
+#include "cuda_runtime_api.h"
+#include "driver_types.h"
+#include "litert/vendors/nvidia/trtllm/quant_linear_reference.h"
+
+namespace {
+
+namespace ref = litert::nvidia::quant_reference;
+
+// Device memory holding a copy of host values.
+class DeviceBuffer {
+ public:
+  explicit DeviceBuffer(size_t bytes) : bytes_(bytes) {
+    EXPECT_EQ(cudaMalloc(&data_, bytes), cudaSuccess);
+    EXPECT_EQ(cudaMemset(data_, 0xA5, bytes), cudaSuccess);
+  }
+  template <typename T>
+  explicit DeviceBuffer(const std::vector<T>& values)
+      : DeviceBuffer(values.size() * sizeof(T)) {
+    EXPECT_EQ(cudaMemcpy(data_, values.data(), bytes_, cudaMemcpyHostToDevice),
+              cudaSuccess);
+  }
+  ~DeviceBuffer() { cudaFree(data_); }
+  DeviceBuffer(const DeviceBuffer&) = delete;
+  DeviceBuffer& operator=(const DeviceBuffer&) = delete;
+
+  template <typename T>
+  T* as() const {
+    return static_cast<T*>(data_);
+  }
+  template <typename T>
+  std::vector<T> Download() const {
+    std::vector<T> values(bytes_ / sizeof(T));
+    EXPECT_EQ(cudaMemcpy(values.data(), data_, bytes_, cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    return values;
+  }
+
+ private:
+  void* data_ = nullptr;
+  size_t bytes_ = 0;
+};
+
+// A small deterministic generator.
+class Random {
+ public:
+  explicit Random(uint64_t seed) : state_(seed * 0x9E3779B97F4A7C15ull + 1) {}
+  uint32_t Next() {
+    state_ ^= state_ << 13;
+    state_ ^= state_ >> 7;
+    state_ ^= state_ << 17;
+    return static_cast<uint32_t>(state_ >> 32);
+  }
+  // Uniform in [low, high].
+  int Int(int low, int high) {
+    return low +
+           static_cast<int>(Next() % static_cast<uint32_t>(high - low + 1));
+  }
+  float Float(float low, float high) {
+    return low + (high - low) * (Next() >> 8) / 16777216.0f;
+  }
+
+ private:
+  uint64_t state_;
+};
+
+std::vector<uint8_t> RandomBytes(Random& random, size_t count) {
+  std::vector<uint8_t> bytes(count);
+  for (auto& byte : bytes) byte = static_cast<uint8_t>(random.Next());
+  return bytes;
+}
+
+std::vector<int8_t> RandomInt8(Random& random, size_t count, int low = -128,
+                               int high = 127) {
+  std::vector<int8_t> values(count);
+  for (auto& value : values) value = static_cast<int8_t>(random.Int(low, high));
+  return values;
+}
+
+std::vector<float> RandomFloats(Random& random, size_t count, float low,
+                                float high) {
+  std::vector<float> values(count);
+  for (auto& value : values) value = random.Float(low, high);
+  return values;
+}
+
+std::vector<float> ToFloats(const std::vector<int8_t>& values) {
+  return std::vector<float>(values.begin(), values.end());
+}
+
+// Runs the kernel on INT8 activations and compares every output with the
+// reference.
+void ExpectLinearMatches(const LiteRtNvidiaQuantLinearParams& params, int m,
+                         const std::vector<int8_t>& activation,
+                         const std::vector<uint8_t>& weights,
+                         const std::vector<float>& multipliers,
+                         const std::vector<int8_t>& lut = {}) {
+  ASSERT_TRUE(LiteRtNvidiaQuantLinearSupports(&params));
+  const DeviceBuffer device_activation(activation);
+  const DeviceBuffer device_weights(weights);
+  const DeviceBuffer device_multipliers(multipliers);
+  const DeviceBuffer device_lut(lut.empty() ? std::vector<int8_t>(256) : lut);
+  const DeviceBuffer device_output(static_cast<size_t>(m) * params.rows);
+  ASSERT_EQ(
+      LiteRtNvidiaLaunchQuantLinear(
+          &params, m, device_activation.as<void>(),
+          device_weights.as<uint8_t>(), device_multipliers.as<float>(),
+          device_lut.as<int8_t>(), nullptr, device_output.as<void>(), nullptr),
+      cudaSuccess);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  const auto actual = device_output.Download<int8_t>();
+  const auto expected = ref::Linear(params, m, ToFloats(activation), weights,
+                                    multipliers, lut, {});
+  size_t mismatches = 0;
+  for (size_t i = 0; i < actual.size(); ++i) {
+    if (actual[i] != static_cast<int>(expected[i]) && ++mismatches <= 5) {
+      ADD_FAILURE() << "output " << i << ": " << static_cast<int>(actual[i])
+                    << " expected " << expected[i];
+    }
+  }
+  EXPECT_EQ(mismatches, 0u) << "of " << actual.size();
+}
+
+LiteRtNvidiaQuantLinearParams RowsParams(int bit_width, int rows, int columns,
+                                         int segments) {
+  LiteRtNvidiaQuantLinearParams params = {};
+  params.layout = kLiteRtNvidiaQuantLayoutRows;
+  params.bit_width = bit_width;
+  params.rows = rows;
+  params.columns = columns;
+  params.segments = segments;
+  params.swap0 = 1;
+  params.swap1 = 1;
+  params.activation = kLiteRtNvidiaQuantInt8;
+  params.requant = bit_width == 4 ? kLiteRtNvidiaQuantRequantFp32
+                                  : kLiteRtNvidiaQuantRequantDouble;
+  params.ratio = 1.0;
+  return params;
+}
+
+// The q, k and v projections: three INT4 matrices of one width, one launch.
+// Multipliers of 1/2, 1/4 and 1/8 put many results on a tie, which XNNPACK's
+// requantization rounds to even; large ones saturate.
+TEST(QuantLinearTest, Int4RowsMatchXnnpackRequantization) {
+  Random random(1);
+  for (const int columns : {64, 2048}) {
+    SCOPED_TRACE(columns);
+    const int rows = columns == 64 ? 96 : 3072;
+    auto params = RowsParams(4, rows, columns, 1);
+    const auto weights =
+        RandomBytes(random, static_cast<size_t>(rows) * columns / 2);
+    std::vector<float> multipliers(rows);
+    for (int r = 0; r < rows; ++r) {
+      switch (r % 5) {
+        case 0:
+          multipliers[r] = 0.5f / (1 << random.Int(0, 2));
+          break;
+        case 1:
+          multipliers[r] = random.Float(0.5f, 4.0f);
+          break;
+        default:
+          multipliers[r] = random.Float(0.001f, 0.02f);
+      }
+    }
+    for (const int m : {1, 3}) {
+      ExpectLinearMatches(params, m,
+                          RandomInt8(random, static_cast<size_t>(m) * columns),
+                          weights, multipliers);
+    }
+  }
+}
+
+// The QUANTIZE in front of a projection runs in the kernel: every float type
+// gives what the model's FLOAT16 tensor would.
+TEST(QuantLinearTest, FloatActivationsAreQuantizedAsFloat16) {
+  Random random(2);
+  constexpr int kRows = 32;
+  constexpr int kColumns = 256;
+  constexpr int kM = 2;
+  const float scale = 0.04118f;
+  for (const int bit_width : {4, 2}) {
+    for (const int type : {kLiteRtNvidiaQuantFp16, kLiteRtNvidiaQuantBf16,
+                           kLiteRtNvidiaQuantFp32}) {
+      SCOPED_TRACE(testing::Message() << bit_width << " bits, type " << type);
+      auto params = RowsParams(bit_width, kRows, kColumns, 1);
+      params.activation = type;
+      params.quantize_scale = ref::RoundToFp16(1.0f / scale);
+      params.ratio = 0.37;
+      const auto weights = RandomBytes(
+          random, static_cast<size_t>(kRows) * kColumns * bit_width / 8);
+      const auto multipliers = RandomFloats(random, kRows, 0.002f, 0.03f);
+      // Values past the INT8 range too, and exact ties of the quantization.
+      std::vector<float> values =
+          RandomFloats(random, static_cast<size_t>(kM) * kColumns, -6.0f, 6.0f);
+      for (int i = 0; i < 16; ++i) {
+        values[i] = (i - 8 + 0.5f) / params.quantize_scale;
+      }
+      std::vector<uint8_t> raw;
+      std::vector<float> as_fp16(values.size());
+      for (size_t i = 0; i < values.size(); ++i) {
+        if (type == kLiteRtNvidiaQuantFp32) {
+          as_fp16[i] = ref::RoundToFp16(values[i]);
+        } else if (type == kLiteRtNvidiaQuantBf16) {
+          const uint16_t bits = ref::Bf16Bits(values[i]);
+          values[i] = ref::Bf16Value(bits);
+          as_fp16[i] = ref::RoundToFp16(values[i]);
+        } else {
+          as_fp16[i] = ref::RoundToFp16(values[i]);
+        }
+      }
+      if (type == kLiteRtNvidiaQuantFp32) {
+        raw.resize(values.size() * sizeof(float));
+        std::memcpy(raw.data(), values.data(), raw.size());
+      } else {
+        std::vector<uint16_t> halves(values.size());
+        for (size_t i = 0; i < values.size(); ++i) {
+          halves[i] = type == kLiteRtNvidiaQuantBf16 ? ref::Bf16Bits(values[i])
+                                                     : ref::HalfBits(values[i]);
+        }
+        raw.resize(halves.size() * sizeof(uint16_t));
+        std::memcpy(raw.data(), halves.data(), raw.size());
+      }
+      ASSERT_TRUE(LiteRtNvidiaQuantLinearSupports(&params));
+      const DeviceBuffer device_activation(raw);
+      const DeviceBuffer device_weights(weights);
+      const DeviceBuffer device_multipliers(multipliers);
+      const DeviceBuffer device_output(static_cast<size_t>(kM) * kRows);
+      ASSERT_EQ(
+          LiteRtNvidiaLaunchQuantLinear(
+              &params, kM, device_activation.as<void>(),
+              device_weights.as<uint8_t>(), device_multipliers.as<float>(),
+              nullptr, nullptr, device_output.as<void>(), nullptr),
+          cudaSuccess);
+      ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+      const auto actual = device_output.Download<int8_t>();
+      const auto expected =
+          ref::Linear(params, kM, as_fp16, weights, multipliers, {}, {});
+      for (size_t i = 0; i < actual.size(); ++i) {
+        ASSERT_EQ(actual[i], static_cast<int>(expected[i])) << i;
+      }
+    }
+  }
+}
+
+// The first and the last stage of a factorized MLP: two centered INT2 matrices
+// over the halves of the input, the outputs regrouped for the next stage.
+// Scales that are powers of two put results on a tie, which TFLite rounds away
+// from zero.
+TEST(QuantLinearTest, CenteredInt2RowsMatchTfliteBlockwiseKernel) {
+  Random random(3);
+  struct Shape {
+    int rows, columns, segments, swap0, swap1;
+  };
+  for (const Shape shape : {Shape{64, 48, 2, 2, 4}, Shape{8192, 1024, 2, 2, 32},
+                            Shape{2048, 4096, 2, 1, 1}}) {
+    SCOPED_TRACE(shape.rows);
+    auto params = RowsParams(2, shape.rows, shape.columns, shape.segments);
+    params.swap0 = shape.swap0;
+    params.swap1 = shape.swap1;
+    params.ratio =
+        static_cast<double>(0.02716f) / static_cast<double>(0.06822f);
+    const auto weights = RandomBytes(
+        random, static_cast<size_t>(shape.rows) * shape.columns / 4);
+    std::vector<float> multipliers(shape.rows);
+    for (int r = 0; r < shape.rows; ++r) {
+      multipliers[r] = r % 4 == 0 ? 0.0625f : random.Float(0.01f, 0.08f);
+    }
+    for (const int m : {1, 2}) {
+      ExpectLinearMatches(
+          params, m,
+          RandomInt8(random,
+                     static_cast<size_t>(m) * shape.segments * shape.columns),
+          weights, multipliers);
+    }
+    // A ratio of 1/2 with scales of 1/16: half-integers before the rounding.
+    params.ratio = 0.5;
+    ExpectLinearMatches(
+        params, 1,
+        RandomInt8(random, static_cast<size_t>(shape.segments) * shape.columns,
+                   -8, 8),
+        weights, multipliers);
+  }
+}
+
+// The middle stages of a factorized MLP: a centered INT2 matrix per block as
+// BATCH_MATMUL stores it, [blocks, inputs, outputs], with the SiLU between them
+// as a table and the outputs regrouped for the last stage.
+TEST(QuantLinearTest, CenteredInt2BlocksMatchTfliteBlockwiseKernel) {
+  Random random(4);
+  struct Shape {
+    int blocks, columns, outputs, swap0, swap1, lut;
+  };
+  for (const Shape shape :
+       {Shape{4, 64, 48, 1, 1, 1}, Shape{4, 160, 32, 4, 2, 0},
+        Shape{32, 256, 1024, 1, 1, 1}, Shape{32, 1024, 256, 32, 2, 0}}) {
+    SCOPED_TRACE(testing::Message() << shape.columns << "x" << shape.outputs);
+    LiteRtNvidiaQuantLinearParams params = {};
+    params.layout = kLiteRtNvidiaQuantLayoutBlocks;
+    params.bit_width = 2;
+    params.rows = shape.blocks * shape.outputs;
+    params.columns = shape.columns;
+    params.segments = shape.blocks;
+    params.swap0 = shape.swap0;
+    params.swap1 = shape.swap1;
+    params.activation = kLiteRtNvidiaQuantInt8;
+    params.requant = kLiteRtNvidiaQuantRequantDouble;
+    params.lut = shape.lut;
+    params.ratio = static_cast<double>(0.06822f) / static_cast<double>(0.114f);
+    const auto weights = RandomBytes(
+        random, static_cast<size_t>(params.rows) * shape.columns / 4);
+    std::vector<float> multipliers(params.rows);
+    for (int r = 0; r < params.rows; ++r) {
+      multipliers[r] = r % 4 == 0 ? 0.125f : random.Float(0.02f, 0.09f);
+    }
+    std::vector<int8_t> lut;
+    if (shape.lut != 0) lut = RandomInt8(random, 256);
+    for (const int m : {1, 3}) {
+      ExpectLinearMatches(params, m,
+                          RandomInt8(random, static_cast<size_t>(m) *
+                                                 shape.blocks * shape.columns),
+                          weights, multipliers, lut);
+    }
+  }
+}
+
+// The vocabulary head: FLOAT16 logits from the row's dynamic scale, then the
+// soft cap in FP32.
+TEST(QuantLinearTest, LogitsMatchTfliteDynamicRangeKernel) {
+  Random random(5);
+  constexpr int kRows = 4096;
+  constexpr int kColumns = 2048;
+  constexpr int kM = 2;
+  auto params = RowsParams(2, kRows, kColumns, 1);
+  params.requant = kLiteRtNvidiaQuantRequantLogits;
+  const auto weights =
+      RandomBytes(random, static_cast<size_t>(kRows) * kColumns / 4);
+  const auto multipliers = RandomFloats(random, kRows, 0.02f, 0.025f);
+  const auto activation =
+      RandomInt8(random, static_cast<size_t>(kM) * kColumns, -127, 127);
+  const std::vector<float> row_scale = {0.0123f, 0.0456f};
+  for (const bool capped : {false, true}) {
+    SCOPED_TRACE(capped);
+    params.cap_in = capped ? 1.0f / 30.0f : 0.0f;
+    params.cap_out = capped ? 30.0f : 0.0f;
+    const DeviceBuffer device_activation(activation);
+    const DeviceBuffer device_weights(weights);
+    const DeviceBuffer device_multipliers(multipliers);
+    const DeviceBuffer device_row_scale(row_scale);
+    const DeviceBuffer device_output(static_cast<size_t>(kM) * kRows *
+                                     sizeof(float));
+    ASSERT_EQ(LiteRtNvidiaLaunchQuantLinear(
+                  &params, kM, device_activation.as<void>(),
+                  device_weights.as<uint8_t>(), device_multipliers.as<float>(),
+                  nullptr, device_row_scale.as<float>(),
+                  device_output.as<void>(), nullptr),
+              cudaSuccess);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    const auto actual = device_output.Download<float>();
+    const auto expected = ref::Linear(params, kM, ToFloats(activation), weights,
+                                      multipliers, {}, row_scale);
+    for (size_t i = 0; i < actual.size(); ++i) {
+      if (capped) {
+        // The device's tanh and the host's differ in the last bits.
+        ASSERT_NEAR(actual[i], expected[i],
+                    1e-5f * std::fabs(expected[i]) + 1e-6f)
+            << i;
+      } else {
+        ASSERT_EQ(actual[i], expected[i]) << i;
+      }
+    }
+  }
+}
+
+struct GlueCase {
+  int width;
+  int x_type;
+  int branch;
+  int norm;
+  int quantize;
+  int z_type;
+};
+
+// The float steps between two products: the residual update behind an INT8
+// projection result, the next norm and its quantization, each rounded to
+// FLOAT16 where the graph holds one.
+TEST(QuantLinearTest, GlueMatchesReference) {
+  Random random(6);
+  for (const GlueCase c :
+       {GlueCase{2048, kLiteRtNvidiaQuantFp16, 1, 1,
+                 kLiteRtNvidiaQuantGlueStatic, kLiteRtNvidiaQuantFp16},
+        GlueCase{2048, kLiteRtNvidiaQuantFp32, 0, 1,
+                 kLiteRtNvidiaQuantGlueStatic, kLiteRtNvidiaQuantFp16},
+        GlueCase{2048, kLiteRtNvidiaQuantFp16, 1, 1,
+                 kLiteRtNvidiaQuantGlueDynamic, kLiteRtNvidiaQuantFp32},
+        GlueCase{96, kLiteRtNvidiaQuantBf16, 1, 0, kLiteRtNvidiaQuantGlueStatic,
+                 kLiteRtNvidiaQuantFp16},
+        GlueCase{4096, kLiteRtNvidiaQuantFp16, 0, 0, kLiteRtNvidiaQuantGlueNone,
+                 kLiteRtNvidiaQuantFp32}}) {
+    SCOPED_TRACE(testing::Message()
+                 << "width " << c.width << " type " << c.x_type << " branch "
+                 << c.branch << " norm " << c.norm << " quantize "
+                 << c.quantize);
+    constexpr int kM = 3;
+    LiteRtNvidiaQuantGlueParams params = {};
+    params.width = c.width;
+    params.x_type = c.x_type;
+    params.branch = c.branch;
+    params.norm = c.norm;
+    params.quantize = c.quantize;
+    params.z_type = c.z_type;
+    params.branch_scale = ref::RoundToFp16(0.05521f);
+    params.branch_eps = 1e-6f;
+    params.c_x = ref::RoundToFp16(0.796f);
+    params.c_y = ref::RoundToFp16(0.6055f);
+    params.norm_eps = 1e-6f;
+    params.quantize_scale = ref::RoundToFp16(1.0f / 0.02716f);
+    ASSERT_TRUE(LiteRtNvidiaQuantGlueSupports(&params));
+    const size_t total = static_cast<size_t>(kM) * c.width;
+    std::vector<float> x = RandomFloats(random, total, -3.0f, 3.0f);
+    // The last row is all zero: its dynamic scale is 1.
+    if (c.branch == 0) std::fill(x.end() - c.width, x.end(), 0.0f);
+    std::vector<uint8_t> raw_x;
+    std::vector<float> x_fp16(total);
+    if (c.x_type == kLiteRtNvidiaQuantFp32) {
+      raw_x.resize(total * sizeof(float));
+      std::memcpy(raw_x.data(), x.data(), raw_x.size());
+      for (size_t i = 0; i < total; ++i) x_fp16[i] = ref::RoundToFp16(x[i]);
+    } else {
+      std::vector<uint16_t> halves(total);
+      for (size_t i = 0; i < total; ++i) {
+        if (c.x_type == kLiteRtNvidiaQuantBf16) {
+          halves[i] = ref::Bf16Bits(x[i]);
+          x_fp16[i] = ref::RoundToFp16(ref::Bf16Value(halves[i]));
+        } else {
+          halves[i] = ref::HalfBits(x[i]);
+          x_fp16[i] = ref::HalfValue(halves[i]);
+        }
+      }
+      raw_x.resize(total * sizeof(uint16_t));
+      std::memcpy(raw_x.data(), halves.data(), raw_x.size());
+    }
+    const auto y = RandomInt8(random, total);
+    const auto branch_weights = RandomFloats(random, c.width, 0.5f, 2.0f);
+    const auto norm_weights = RandomFloats(random, c.width, 0.5f, 2.0f);
+    const DeviceBuffer device_x(raw_x);
+    const DeviceBuffer device_y(y);
+    const DeviceBuffer device_branch_weights(branch_weights);
+    const DeviceBuffer device_norm_weights(norm_weights);
+    const DeviceBuffer device_x_out(total * sizeof(uint16_t));
+    const DeviceBuffer device_z(total * sizeof(float));
+    const DeviceBuffer device_q(total);
+    const DeviceBuffer device_row_scale(kM * sizeof(float));
+    const bool quantized = c.quantize != kLiteRtNvidiaQuantGlueNone;
+    ASSERT_EQ(
+        LiteRtNvidiaLaunchQuantGlue(
+            &params, kM, device_x.as<void>(), device_y.as<int8_t>(),
+            device_branch_weights.as<float>(), device_norm_weights.as<float>(),
+            device_x_out.as<void>(), device_z.as<void>(),
+            quantized ? device_q.as<int8_t>() : nullptr,
+            device_row_scale.as<float>(), nullptr),
+        cudaSuccess);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    const auto expected =
+        ref::Glue(params, kM, x_fp16, y, branch_weights, norm_weights);
+    const auto x_out = device_x_out.Download<uint16_t>();
+    const auto q = device_q.Download<int8_t>();
+    for (size_t i = 0; i < total; ++i) {
+      ASSERT_EQ(x_out[i], ref::HalfBits(expected.x[i])) << "x' " << i;
+      if (quantized) {
+        ASSERT_EQ(q[i], expected.q[i]) << "q " << i;
+      }
+    }
+    if (c.z_type == kLiteRtNvidiaQuantFp32) {
+      const auto z = device_z.Download<float>();
+      for (size_t i = 0; i < total; ++i) {
+        ASSERT_EQ(z[i], expected.z[i]) << "z " << i;
+      }
+    } else {
+      const auto z = device_z.Download<uint16_t>();
+      for (size_t i = 0; i < total; ++i) {
+        ASSERT_EQ(z[i], ref::HalfBits(expected.z[i])) << "z " << i;
+      }
+    }
+    if (c.quantize == kLiteRtNvidiaQuantGlueDynamic) {
+      const auto row_scale = device_row_scale.Download<float>();
+      for (int row = 0; row < kM; ++row) {
+        EXPECT_EQ(row_scale[row], expected.row_scale[row]) << row;
+      }
+    }
+  }
+}
+
+// The head norms and the rotation between the projections and the attention.
+// Values are bit-identical; rotated queries and keys differ from the host
+// where the device's sine or cosine rounds to the other FLOAT16 neighbour.
+TEST(QuantLinearTest, QkvRopeMatchesReference) {
+  Random random(7);
+  struct Heads {
+    int q, k, v;
+  };
+  // A cached block, a block that reads another block's cache, and a block
+  // that only writes its cache.
+  for (const Heads heads : {Heads{8, 2, 2}, Heads{8, 0, 0}, Heads{0, 2, 2}}) {
+    SCOPED_TRACE(testing::Message() << heads.q << " " << heads.k);
+    LiteRtNvidiaQuantQkvRopeParams params = {};
+    params.tokens = 5;
+    params.q_heads = heads.q;
+    params.k_heads = heads.k;
+    params.v_heads = heads.v;
+    params.depth = 256;
+    params.q_scale = ref::RoundToFp16(0.1162f);
+    params.k_scale = ref::RoundToFp16(0.1423f);
+    params.v_scale = ref::RoundToFp16(0.1423f);
+    params.epsilon = 1e-6f;
+    params.q_multiplier = 0.125f;
+    ASSERT_TRUE(LiteRtNvidiaQuantQkvRopeSupports(&params));
+    const int total_heads = heads.q + heads.k + heads.v;
+    const auto qkv = RandomInt8(random, static_cast<size_t>(params.tokens) *
+                                            total_heads * params.depth);
+    const std::vector<int32_t> positions = {0, 1, 511, 4097, 32770};
+    const auto q_norm = RandomFloats(random, params.depth, 0.5f, 2.0f);
+    const auto k_norm = RandomFloats(random, params.depth, 0.5f, 2.0f);
+    const auto v_norm = RandomFloats(random, params.depth, 0.5f, 2.0f);
+    // A proportion of 1/4: the pairs past the first 32 keep their values.
+    auto inverse = ref::InverseTimescales(params.depth, 1.0f, 1000000.0f);
+    if (heads.q == 0) std::fill(inverse.begin() + 32, inverse.end(), 0.0f);
+    const size_t q_count =
+        static_cast<size_t>(heads.q) * params.tokens * params.depth;
+    const size_t kv_count =
+        static_cast<size_t>(heads.k) * params.tokens * params.depth;
+    const DeviceBuffer device_qkv(qkv);
+    const DeviceBuffer device_positions(positions);
+    const DeviceBuffer device_q_norm(q_norm);
+    const DeviceBuffer device_k_norm(k_norm);
+    const DeviceBuffer device_v_norm(v_norm);
+    const DeviceBuffer device_inverse(inverse);
+    const DeviceBuffer device_q((q_count + 1) * sizeof(uint16_t));
+    const DeviceBuffer device_k((kv_count + 1) * sizeof(uint16_t));
+    const DeviceBuffer device_v((kv_count + 1) * sizeof(uint16_t));
+    ASSERT_EQ(LiteRtNvidiaLaunchQuantQkvRope(
+                  &params, device_qkv.as<int8_t>(),
+                  device_positions.as<int32_t>(), device_q_norm.as<float>(),
+                  device_k_norm.as<float>(), device_v_norm.as<float>(),
+                  device_inverse.as<float>(), device_q.as<void>(),
+                  device_k.as<void>(), device_v.as<void>(), nullptr),
+              cudaSuccess);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    const auto expected =
+        ref::QkvRope(params, qkv, positions, q_norm, k_norm, v_norm, inverse);
+    const auto expect_rotated = [](const std::vector<uint16_t>& actual,
+                                   const std::vector<float>& reference,
+                                   size_t count) {
+      size_t different = 0;
+      for (size_t i = 0; i < count; ++i) {
+        if (actual[i] == ref::HalfBits(reference[i])) continue;
+        ++different;
+        ASSERT_NEAR(ref::HalfValue(actual[i]), reference[i],
+                    4e-3f * std::max(1.0f, std::fabs(reference[i])))
+            << i;
+      }
+      EXPECT_LE(different, count / 100) << "of " << count;
+    };
+    expect_rotated(device_q.Download<uint16_t>(), expected.q, q_count);
+    expect_rotated(device_k.Download<uint16_t>(), expected.k, kv_count);
+    const auto v = device_v.Download<uint16_t>();
+    for (size_t i = 0; i < kv_count; ++i) {
+      ASSERT_EQ(v[i], ref::HalfBits(expected.v[i])) << i;
+    }
+  }
+}
+
+TEST(QuantLinearTest, RejectsUnsupportedShapes) {
+  auto params = RowsParams(4, 96, 64, 1);
+  EXPECT_TRUE(LiteRtNvidiaQuantLinearSupports(&params));
+  params.rows = 100;  // not whole CTAs of eight rows
+  EXPECT_FALSE(LiteRtNvidiaQuantLinearSupports(&params));
+  params = RowsParams(4, 96, 60, 1);  // not whole 32-bit words
+  EXPECT_FALSE(LiteRtNvidiaQuantLinearSupports(&params));
+  params = RowsParams(2, 96, 64, 1);
+  params.requant =
+      kLiteRtNvidiaQuantRequantFp32;  // INT2 requantizes in doubles
+  EXPECT_FALSE(LiteRtNvidiaQuantLinearSupports(&params));
+  params = RowsParams(2, 96, 64, 1);
+  params.swap0 = 5;
+  EXPECT_FALSE(LiteRtNvidiaQuantLinearSupports(&params));
+  params = RowsParams(4, 96, 64, 1);
+  EXPECT_EQ(LiteRtNvidiaLaunchQuantLinear(&params, 1, nullptr, nullptr, nullptr,
+                                          nullptr, nullptr, nullptr, nullptr),
+            cudaErrorInvalidValue);
+  LiteRtNvidiaQuantGlueParams glue = {};
+  glue.width = 8192;
+  glue.x_type = kLiteRtNvidiaQuantFp16;
+  glue.z_type = kLiteRtNvidiaQuantFp16;
+  EXPECT_FALSE(LiteRtNvidiaQuantGlueSupports(&glue));
+  LiteRtNvidiaQuantQkvRopeParams rope = {};
+  rope.tokens = 1;
+  rope.q_heads = 8;
+  rope.depth = 255;
+  rope.q_scale = 1.0f;
+  EXPECT_FALSE(LiteRtNvidiaQuantQkvRopeSupports(&rope));
+}
+
+}  // namespace

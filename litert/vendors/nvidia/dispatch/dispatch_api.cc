@@ -75,6 +75,7 @@
 #include "litert/vendors/nvidia/compiler/moe_plugin.h"
 #include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
 #include "litert/vendors/nvidia/compiler/quant_attention_plugin.h"
+#include "litert/vendors/nvidia/compiler/quant_linear_plugin.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/dispatch/aot_artifact.h"
 #include "litert/vendors/nvidia/dispatch/dispatch_profiler.h"
@@ -3540,6 +3541,7 @@ class LiteRtDispatchInvocationContextT {
     litert::nvidia::EnsureMoePluginRegistered();
     litert::nvidia::EnsureQkvNormRopePluginRegistered();
     litert::nvidia::EnsureQuantAttentionPluginRegistered();
+    litert::nvidia::EnsureQuantLinearPluginRegistered();
     // Execution contexts of this process load their expert arenas.
     litert::nvidia::SetMoeArenaLoadingEnabled(true);
     LITERT_LOG(LITERT_INFO,

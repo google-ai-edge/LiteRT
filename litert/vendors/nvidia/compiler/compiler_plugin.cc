@@ -358,6 +358,8 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
     case kLiteRtOpCodeTflGreaterEqual:
     case kLiteRtOpCodeTflLess:
     case kLiteRtOpCodeTflLogicalAnd:
+    // The SiLU between the stages of a factorized MLP (LOGISTIC, MUL).
+    case kLiteRtOpCodeTflLogistic:
     case kLiteRtOpCodeTflMaximum:
     case kLiteRtOpCodeTflMean:
     case kLiteRtOpCodeTflMinimum:
