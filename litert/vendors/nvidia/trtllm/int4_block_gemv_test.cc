@@ -930,6 +930,116 @@ TEST(Int4BlockGemvTest, TimesDecodeShapes) {
   cudaEventDestroy(stop);
 }
 
+// The expert launch of a 1,024-token prefill chunk (Gemma 4 26B-A4B's shape,
+// an expert-major arena with compact scales, as the plugin loads it) under
+// three routings: every expert 64 rows (half of a GEMM tile), a pseudo-random
+// one, and all rows on 8 experts (whole tiles: LiteRT-LM's synthetic
+// benchmark prompt is mostly one token, which routes alike).
+TEST(Int4BlockGemvTest, TimesPrefillRoutings) {
+  if (std::getenv("INT4_BLOCK_GEMV_TIMING") == nullptr) {
+    GTEST_SKIP() << "Set INT4_BLOCK_GEMV_TIMING=1.";
+  }
+  const LiteRtNvidiaMoeShape shape = {1024, 8, 128, 2816, 704, 1};
+  const int experts = shape.experts, dim = shape.model_dim,
+            hidden = shape.hidden_dim;
+  const size_t gate_rows = static_cast<size_t>(hidden) * experts;
+  const size_t down_rows = static_cast<size_t>(dim) * experts;
+  const auto filled = [](size_t bytes, uint8_t value) {
+    auto device = AllocateCuda(bytes);
+    cudaMemset(device.get(), value, bytes);
+    return device;
+  };
+  auto d_gate = filled(gate_rows * dim / 2, 0x5a);
+  auto d_up = filled(gate_rows * dim / 2, 0x3c);
+  auto d_down = filled(down_rows * hidden / 2, 0x5a);
+  auto d_gate_q = filled(gate_rows * (dim / 32), 200);
+  auto d_up_q = filled(gate_rows * (dim / 32), 200);
+  auto d_down_q = filled(down_rows * (hidden / 32), 200);
+  const auto upload = [](const void* data, size_t bytes) {
+    auto device = AllocateCuda(bytes);
+    cudaMemcpy(device.get(), data, bytes, cudaMemcpyHostToDevice);
+    return device;
+  };
+  const std::vector<uint16_t> gate_max(gate_rows, FloatToHalfBits(0.01f));
+  const std::vector<uint16_t> down_max(down_rows, FloatToHalfBits(0.01f));
+  auto d_gate_m = upload(gate_max.data(), gate_max.size() * 2);
+  auto d_up_m = upload(gate_max.data(), gate_max.size() * 2);
+  auto d_down_m = upload(down_max.data(), down_max.size() * 2);
+  std::vector<uint16_t> x(static_cast<size_t>(shape.rows) * dim);
+  for (size_t i = 0; i < x.size(); ++i) {
+    x[i] = FloatToBf16Bits(static_cast<float>(i * 7 % 13) / 13.0f - 0.5f);
+  }
+  auto d_x = upload(x.data(), x.size() * 2);
+  const std::vector<float> weights(static_cast<size_t>(shape.rows) * 8, 0.125f);
+  const std::vector<float> expert_scale(experts, 1.0f);
+  auto d_w = upload(weights.data(), weights.size() * 4);
+  auto d_es = upload(expert_scale.data(), expert_scale.size() * 4);
+  auto d_ws = AllocateCuda(LiteRtNvidiaMoeWorkspaceBytes(&shape));
+  auto d_out = AllocateCuda(static_cast<size_t>(shape.rows) * dim * 2);
+  LiteRtNvidiaMoeArena arena = {static_cast<const uint8_t*>(d_gate.get()),
+                                static_cast<const uint8_t*>(d_up.get()),
+                                static_cast<const uint8_t*>(d_down.get()),
+                                d_gate_q.get(),
+                                d_up_q.get(),
+                                d_down_q.get()};
+  arena.gate_scale_max = d_gate_m.get();
+  arena.up_scale_max = d_up_m.get();
+  arena.down_scale_max = d_down_m.get();
+  arena.compact_scales = 1;
+  arena.expert_major = 1;
+  struct Routing {
+    const char* name;
+    std::vector<int32_t> indices;
+  };
+  std::vector<Routing> routings(3);
+  routings[0].name = "64 rows on every expert";
+  routings[1].name = "pseudo-random experts";
+  routings[2].name = "all rows on 8 experts";
+  uint32_t state = 12345;
+  for (int r = 0; r < shape.rows; ++r) {
+    std::vector<int32_t> chosen;
+    while (chosen.size() < 8) {
+      state = state * 1664525u + 1013904223u;
+      const int e = static_cast<int>((state >> 8) % experts);
+      if (std::find(chosen.begin(), chosen.end(), e) == chosen.end()) {
+        chosen.push_back(e);
+      }
+    }
+    for (int j = 0; j < 8; ++j) {
+      routings[0].indices.push_back((r * 8 + j) % experts);
+      routings[1].indices.push_back(chosen[j]);
+      routings[2].indices.push_back(j);
+    }
+  }
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+  constexpr int kIterations = 20;
+  for (const Routing& routing : routings) {
+    auto d_idx = upload(routing.indices.data(), routing.indices.size() * 4);
+    const auto launch = [&]() {
+      return LiteRtNvidiaLaunchMoeInt4Block(
+          &shape, &arena, d_x.get(), static_cast<const int32_t*>(d_idx.get()),
+          static_cast<const float*>(d_w.get()),
+          static_cast<const float*>(d_es.get()), d_ws.get(), d_out.get(),
+          nullptr);
+    };
+    // A few launches so the clocks are up.
+    for (int i = 0; i < 10; ++i) ASSERT_EQ(launch(), cudaSuccess);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    cudaEventRecord(start);
+    for (int i = 0; i < kIterations; ++i) ASSERT_EQ(launch(), cudaSuccess);
+    cudaEventRecord(stop);
+    ASSERT_EQ(cudaEventSynchronize(stop), cudaSuccess);
+    float ms = 0.0f;
+    cudaEventElapsedTime(&ms, start, stop);
+    std::printf("moe prefill, 1024 rows, %-24s %8.1f us\n", routing.name,
+                ms * 1000.0f / kIterations);
+  }
+  cudaEventDestroy(start);
+  cudaEventDestroy(stop);
+}
+
 TEST(Int4BlockGemvTest, RejectsInvalidArguments) {
   uint8_t byte = 0;
   EXPECT_EQ(

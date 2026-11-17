@@ -225,8 +225,15 @@ struct WeightAddressing {
   int32_t compact_scales;
 };
 
-// grid (rows / kBlockRows, column tiles): the blocks that read the same
-// weights are adjacent, so the weights come from memory once. A block
+// A dense GEMM's grid is (rows / kBlockRows, column tiles): the blocks that
+// read the same weights are adjacent, so the weights come from memory once,
+// and its activations (a prefill chunk's 1,024 rows) stay in the L2 cache. A
+// grouped GEMM's is (column tiles, rows / kBlockRows): the blocks of a row
+// tile are adjacent, so its activations come from memory once. Its padded
+// rows (Gemma 4 26B-A4B's experts: about 18,000 rows, 100 MB, for a
+// 1,024-token chunk) would otherwise come from memory once per column tile,
+// while the weights of a tile's expert are read by that tile's blocks
+// either way. A block
 // multiplies kBlockRows activation rows by the kBlockCols weight rows of its
 // column tile: the channels [n0, n0 + kBlockCols), or with a gate the
 // channels [n0, n0 + kBlockCols / 2) of the gate projection followed by the
@@ -261,9 +268,12 @@ __global__ void __launch_bounds__(kThreads, 1)
   const int lane = tid & 31;
   const int g = lane >> 2;
   const int t = lane & 3;
-  const int m0 = blockIdx.x * kBlockRows;
+  const bool grouped = addressing.tile_experts != nullptr;
+  const int row_tile = static_cast<int>(grouped ? blockIdx.y : blockIdx.x);
+  const int column_tile = static_cast<int>(grouped ? blockIdx.x : blockIdx.y);
+  const int m0 = row_tile * kBlockRows;
   const int block_channels = gate != 0 ? kBlockCols / 2 : kBlockCols;
-  const int n0 = blockIdx.y * block_channels;
+  const int n0 = column_tile * block_channels;
   const int chunks = input_size / kChunk;
 
   // table[byte] = the two INT4 values of the byte as FP16.
@@ -286,9 +296,7 @@ __global__ void __launch_bounds__(kThreads, 1)
       activation + static_cast<size_t>(m0) * input_size + tid * 8;
   const int w_row = tid / 2;
   const int w_channel = min(n0 + w_row % block_channels, output_size - 1);
-  const int expert = addressing.tile_experts == nullptr
-                         ? 0
-                         : addressing.tile_experts[blockIdx.x];
+  const int expert = grouped ? addressing.tile_experts[row_tile] : 0;
   if (expert < 0) return;  // an unused tile of a grouped GEMM
   const bool up_half = w_row / block_channels != 0;
   const uint8_t* weight_row =
@@ -796,7 +804,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GroupedGemm(
       weights->tile_experts,   weights->gate_scale_max,
       weights->up_scale_max,   weights->max_channel_stride,
       weights->max_expert_stride, weights->compact_scales};
-  const dim3 grid(shape->rows / kBlockRows, ColumnTiles(*shape));
+  const dim3 grid(ColumnTiles(*shape), shape->rows / kBlockRows);
   if (blockwise) {
     Int4GemmKernel<true><<<grid, kThreads, kSharedBytes, stream>>>(
         static_cast<const __half*>(scaled), addressing, row_scale,
