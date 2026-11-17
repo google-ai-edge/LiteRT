@@ -130,7 +130,12 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     std::vector<::ml_drift::ValueId> src_ids(cache_inputs.size());
     for (size_t i = 0; i < cache_inputs.size(); ++i) {
       src_ids[i] = cache_inputs[i]->id;
-      cache_op_def.src_tensors[i] = cache_inputs[i]->desc;
+      // Preserve `op_def.src_tensors[i]` for unreplaced inputs: external graph
+      // inputs keep `kUnknown` storage on `IrTensor::desc` while their resolved
+      // external descriptor lives in `op_def`.
+      if (cache_inputs[i]->id != inputs[i]->id) {
+        cache_op_def.src_tensors[i] = cache_inputs[i]->desc;
+      }
     }
     std::vector<::ml_drift::ValueId> dst_ids(outputs.size());
     for (size_t i = 0; i < outputs.size(); ++i) {

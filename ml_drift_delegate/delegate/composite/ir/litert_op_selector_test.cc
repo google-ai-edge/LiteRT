@@ -335,6 +335,61 @@ TEST_F(LiteRtOpSelectorIrTest,
   EXPECT_EQ(gpu_model.nodes[0].inputs.size(), 3);
 }
 
+// In `IrModelToGpuModel`, external graph input/output `IrTensor`s keep
+// `TensorStorageType::kUnknown` on `IrTensor::desc` while their resolved
+// external descriptors live in `GpuModelBuilder` (`op_def`). Selecting
+// `add_values_to_cache` must preserve those resolved descriptors instead of
+// overwriting `op_def.src_tensors` with `IrTensor::desc`.
+TEST_F(LiteRtOpSelectorIrTest,
+       AddValuesToCachePreservesExternalInputDescriptors) {
+  auto add_external_tensor = [&](const BHWC& shape, DataType dtype) {
+    TensorDescriptor external_desc(dtype, TensorStorageType::kBuffer,
+                                   Layout::kHWC);
+    external_desc.SetBHWCShape(shape);
+    auto handle = builder_.AddTensor(external_desc);
+    create_info_.external_mutable_tensors[handle.id] = external_desc;
+    IrTensor* tensor =
+        tensors_.emplace_back(std::make_unique<IrTensor>(handle.id)).get();
+    tensor->desc = TensorDescriptor(dtype, TensorStorageType::kUnknown,
+                                    Layout::kHWC);
+    tensor->desc.SetBHWCShape(shape);
+    return std::make_pair(tensor, external_desc);
+  };
+
+  auto [src_k, src_k_desc] = add_external_tensor(BHWC(1, 2, 2, 16),
+                                                 DataType::kFloat32);
+  auto [src_v, src_v_desc] = add_external_tensor(BHWC(1, 2, 2, 16),
+                                                 DataType::kFloat32);
+  auto [param, param_desc] = add_external_tensor(BHWC(1, 1, 1, 7),
+                                                 DataType::kInt32);
+  auto [dst_k, dst_k_desc] = add_external_tensor(BHWC(1, 2, 16, 8),
+                                                 DataType::kUint8);
+  auto [dst_v, dst_v_desc] = add_external_tensor(BHWC(1, 2, 8, 16),
+                                                 DataType::kUint8);
+
+  OperationDef op_def;
+  op_def.src_tensors = {src_k_desc, src_v_desc, param_desc};
+  op_def.dst_tensors = {dst_k_desc, dst_v_desc};
+
+  AddValuesToCacheAttributes attr{
+      .kv_cache_batch_size = 2,
+      .cache_size = 16,
+      .head_size = 16,
+      .scale_k = 0.25f,
+      .scale_v = 0.5f,
+  };
+  IrOp* op = ir_model_.add_op();
+  op->name = kAddValuesToCacheType;
+  op->attr = attr;
+  ASSERT_OK(selector_.GPUOperationFromNode(
+      op_def, {src_k, src_v, param}, {dst_k, dst_v}, *op, &builder_));
+
+  GpuModel gpu_model;
+  ASSERT_OK(BuildModel({src_k, src_v, param}, {dst_k, dst_v}, &gpu_model));
+  ASSERT_EQ(gpu_model.nodes.size(), 1);
+  EXPECT_EQ(gpu_model.nodes[0].name, kAddValuesToCacheType);
+}
+
 TEST_F(LiteRtOpSelectorIrTest,
        AddValuesToCacheAndStartPosPromoteToBufferForQsaComposites) {
   const IrTensor* q_idx = AddTensor(BHWC(1, 1, 4, 16));
