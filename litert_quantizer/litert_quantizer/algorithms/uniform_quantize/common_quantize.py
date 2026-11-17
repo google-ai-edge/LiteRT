@@ -39,11 +39,9 @@ _ComputePrecision = qtyping.ComputePrecision
 _TensorTransformationParams = qtyping.TensorTransformationParams
 
 
-def check_if_quantized(tensor: Any) -> bool:
+def check_if_quantized(tensor: qtyping.TensorT) -> bool:
   """Checks if the tensor is quantized."""
-  return (
-      tensor.quantization is not None and tensor.quantization.scale is not None
-  )
+  return tfl_flatbuffer_utils.is_quantized(tensor)
 
 
 def check_op_quantization_config(
@@ -305,6 +303,47 @@ def materialize_average_pool_2d(
   )
 
 
+def _get_blockwise_weight_scale(
+    weight_tensor: qtyping.TensorT,
+    graph_info: qtyping.GraphInfo,
+    num_channels: int,
+) -> np.ndarray:
+  """Returns the per-tensor or per-channel scale of a blockwise weight.
+
+  Args:
+    weight_tensor: Quantized weight tensor using `BlockwiseQuantization`.
+    graph_info: Graph information containing subgraph tensors and buffers.
+    num_channels: Expected number of output channels for per-channel scales.
+
+  Returns:
+    A 1-D `float32` scale array of length 1 (per-tensor) or `num_channels`
+    (per-channel).
+
+  Raises:
+    ValueError: If `weight_tensor` does not use `BlockwiseQuantization`, its
+      scale tensor has no buffer, or its scale uses sub-channel blocks.
+  """
+  quant_params = weight_tensor.quantization
+  if (
+      quant_params.detailsType
+      != qtyping.QuantizationDetails.BlockwiseQuantization
+  ):
+    raise ValueError(
+        "SRQ bias materialization requires weight scale or"
+        " BlockwiseQuantization details."
+    )
+  scale_tensor = graph_info.subgraph_tensors[quant_params.details.scales]
+  scale = tfl_flatbuffer_utils.get_tensor_data(scale_tensor, graph_info.buffers)
+  if scale is None:
+    raise ValueError("BlockwiseQuantization scale tensor has no buffer.")
+  if scale.size != 1 and not scale.shape[0] == scale.size == num_channels:
+    raise ValueError(
+        "SRQ bias materialization requires per-tensor or per-channel weight"
+        f" scales, got BlockwiseQuantization scale shape {scale.shape}."
+    )
+  return scale.astype(np.float32).reshape(-1)
+
+
 def _materialize_bias_for_fc_conv_ops(
     op_info: qtyping.OpInfo,
     graph_info: qtyping.GraphInfo,
@@ -312,7 +351,7 @@ def _materialize_bias_for_fc_conv_ops(
     op_input_index: int = 0,
     op_weight_index: int = 1,
     op_bias_index: int = 2,
-):
+) -> None:
   """Materializes bias tensors in conv ops by updating `op_tensor_params`.
 
   Args:
@@ -323,6 +362,11 @@ def _materialize_bias_for_fc_conv_ops(
     op_input_index: Index for the input tensor in the op.
     op_weight_index: Index for the weight tensor in the op.
     op_bias_index: Index for the bias tensor in the op.
+
+  Raises:
+    ValueError: If `weight_tensor_config` is `None` for a quantized weight, if
+      a quantized weight lacks both `scale` and a per-tensor or per-channel
+      `BlockwiseQuantization` scale buffer, or if bias quantization fails.
   """
   _, weight_tensor, bias_tensor, _ = (
       tfl_flatbuffer_utils.parse_fc_bmm_conv_tensors(
@@ -352,15 +396,23 @@ def _materialize_bias_for_fc_conv_ops(
           op_tensor_params[op_weight_index].consumers[0].parameters  # pyrefly: ignore[unsupported-operation]
       )
       if weight_consumer_params is None and check_if_quantized(weight_tensor):
-        quant_params = weight_tensor.quantization
         if op_info.op_quant_config.weight_tensor_config is None:
           raise ValueError(
               "weight_tensor_config cannot be None when weight tensor is"
               " quantized."
           )
+        quant_params = weight_tensor.quantization
+        weight_scale = quant_params.scale
+        if weight_scale is None or np.size(weight_scale) == 0:
+          weight_scale = _get_blockwise_weight_scale(
+              weight_tensor,
+              graph_info,
+              # FC weights are [out, in].
+              num_channels=weight_tensor.shape[0],
+          )
         weight_consumer_params = qtyping.UniformQuantParams(
             num_bits=op_info.op_quant_config.weight_tensor_config.num_bits,
-            scale=quant_params.scale,
+            scale=weight_scale,
             zero_point=quant_params.zeroPoint,
             quantized_dimension=quant_params.quantizedDimension,
         )

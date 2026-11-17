@@ -16,6 +16,7 @@
 """Tests for tensor_utils."""
 
 import dataclasses
+from unittest import mock
 
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -48,6 +49,152 @@ class TensorUtilsTest(parameterized.TestCase):
     self.assertEqual(
         expected_range, uniform_quantize_tensor.get_quantized_range(qtype)
     )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="centered_int2_scalar_half",
+          zero_points=np.array([-0.5], dtype=np.float32),
+          expected=True,
+      ),
+      dict(
+          testcase_name="centered_int2_2d_half",
+          zero_points=np.array([[-0.5]], dtype=np.float32),
+          expected=True,
+      ),
+      dict(
+          testcase_name="int2_zero_int",
+          zero_points=np.array([0], dtype=np.int32),
+          expected=False,
+      ),
+      dict(
+          testcase_name="int2_zero_float",
+          zero_points=np.array([0.0], dtype=np.float32),
+          expected=False,
+      ),
+      dict(
+          testcase_name="int2_non_half_float",
+          zero_points=np.array([-0.25], dtype=np.float32),
+          expected=False,
+      ),
+      dict(
+          testcase_name="int2_mixed_float",
+          zero_points=np.array([-0.5, 0.0], dtype=np.float32),
+          expected=False,
+      ),
+      dict(
+          testcase_name="int2_empty_float",
+          zero_points=np.array([], dtype=np.float32),
+          expected=False,
+      ),
+      dict(
+          testcase_name="int4_half",
+          num_bits=4,
+          zero_points=np.array([-0.5], dtype=np.float32),
+          expected=False,
+      ),
+      dict(
+          testcase_name="uint2_half",
+          signed=False,
+          zero_points=np.array([-0.5], dtype=np.float32),
+          expected=False,
+      ),
+  )
+  def test_is_centered_int2_zero_point(
+      self, zero_points, expected, num_bits=2, signed=True
+  ):
+    self.assertEqual(
+        uniform_quantize_tensor.is_centered_int2_zero_point(
+            _IntType(num_bits, signed=signed), zero_points
+        ),
+        expected,
+    )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="symmetric_int2_weight_default_true",
+          expected=True,
+      ),
+      dict(
+          testcase_name="explicit_true",
+          algorithm_params={"centered": True},
+          expected=True,
+      ),
+      dict(
+          testcase_name="explicit_false",
+          algorithm_params={"centered": False},
+          expected=False,
+      ),
+      dict(
+          testcase_name="activation_default_false",
+          is_weight=False,
+          expected=False,
+      ),
+      dict(
+          testcase_name="int4_default_false",
+          num_bits=4,
+          expected=False,
+      ),
+      dict(
+          testcase_name="asymmetric_default_false",
+          symmetric=False,
+          expected=False,
+      ),
+      dict(
+          testcase_name="uint2_default_false",
+          dtype=qtyping.TensorDataType.UINT,
+          expected=False,
+      ),
+  )
+  def test_get_centered_int2_option(
+      self,
+      expected,
+      algorithm_params=None,
+      num_bits=2,
+      symmetric=True,
+      dtype=qtyping.TensorDataType.INT,
+      is_weight=True,
+  ):
+    tensor_config = qtyping.TensorQuantizationConfig(
+        num_bits=num_bits,
+        symmetric=symmetric,
+        dtype=dtype,
+        **(
+            {"algorithm_params": algorithm_params}
+            if algorithm_params is not None
+            else {}
+        ),
+    )
+    self.assertEqual(
+        uniform_quantize_tensor.get_centered_int2_option(
+            tensor_config, is_weight=is_weight
+        ),
+        expected,
+    )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="non_bool_centered",
+          algorithm_params={"centered": "true"},
+          expected_error="centered must be a boolean",
+      ),
+      dict(
+          testcase_name="non_weight_centered",
+          algorithm_params={"centered": True},
+          is_weight=False,
+          expected_error="Centered quantization is only supported for weight",
+      ),
+  )
+  def test_get_centered_int2_option_rejects_invalid_option(
+      self, algorithm_params, expected_error, is_weight=True
+  ):
+    tensor_config = qtyping.TensorQuantizationConfig(
+        num_bits=2,
+        algorithm_params=algorithm_params,
+    )
+    with self.assertRaisesRegex(ValueError, expected_error):
+      uniform_quantize_tensor.get_centered_int2_option(
+          tensor_config, is_weight=is_weight
+      )
 
   @parameterized.parameters(
       (_IntType(8, True), np.int8),
@@ -82,6 +229,13 @@ class TensorUtilsTest(parameterized.TestCase):
           tensor_data=np.array([[1, 2], [4, 5]]),
           quantized_dimension=0,
       ),
+      dict(
+          testcase_name="2d_tensor_1d_per_tensor_params",
+          scale=np.array([0.5], dtype=np.float32),
+          zero_point=np.array([0], dtype=np.int8),
+          tensor_data=np.array([[1.0, 2.0], [4.0, 5.0]], dtype=np.float32),
+          quantized_dimension=None,
+      ),
   )
   def test_fix_quantization_params_rank_succeed(
       self, scale, zero_point, tensor_data, quantized_dimension
@@ -98,6 +252,27 @@ class TensorUtilsTest(parameterized.TestCase):
     )
     self.assertEqual(fixed_quant_params.scale.ndim, tensor_data.ndim)
     self.assertEqual(fixed_quant_params.zero_point.ndim, tensor_data.ndim)
+
+  def test_fix_quantization_params_rank_preserves_metadata(self):
+    hadamard = qtyping.UniformQuantParams.HadamardRotationParams(
+        random_binary_vector=np.ones(4, dtype=np.int8),
+        hadamard_size=4,
+    )
+    quant_params = qtyping.UniformQuantParams(
+        num_bits=4,
+        quantized_dimension=0,
+        quantized_dimensions=(0,),
+        scale=np.array([0.5, 1.5], dtype=np.float32),
+        zero_point=np.array([0, 0], dtype=np.int8),
+        hadamard=hadamard,
+        custom_algorithm_param={"algo": "test"},
+    )
+    fixed = uniform_quantize_tensor.fix_quantization_params_rank(
+        np.zeros((2, 4), dtype=np.float32), quant_params
+    )
+    self.assertEqual(fixed.hadamard, hadamard)
+    self.assertEqual(fixed.custom_algorithm_param, {"algo": "test"})
+    self.assertEqual(fixed.quantized_dimensions, (0,))
 
   def test_fix_quantization_params_rank_scalar_tensor_1d_params_raise(self):
     quant_params = qtyping.UniformQuantParams(
@@ -280,6 +455,92 @@ class TensorUtilsTest(parameterized.TestCase):
     np.testing.assert_array_equal(
         broadcasted.zero_point,
         np.array([[0, 0, 1, 1], [-1, -1, 2, 2]], dtype=np.int32),
+    )
+
+  def test_broadcast_scale_zp_for_blockwise_preserves_metadata(self):
+    hadamard = qtyping.UniformQuantParams.HadamardRotationParams(
+        random_binary_vector=np.ones(4, dtype=np.int8),
+        hadamard_size=4,
+    )
+    quant_params = qtyping.UniformQuantParams(
+        quantized_dimension=None,
+        quantized_dimensions=(0, 1),
+        block_size=2,
+        num_bits=4,
+        scale=np.array([[[0.5, 1.5], [2.0, 3.0]]], dtype=np.float32),
+        zero_point=np.array([[[0, 1], [-1, 2]]], dtype=np.int32),
+        hadamard=hadamard,
+        custom_algorithm_param={"algo": "test"},
+    )
+    broadcasted = uniform_quantize_tensor.broadcast_scale_zp_for_blockwise(
+        np.zeros((1, 2, 4), dtype=np.float32), quant_params
+    )
+    self.assertEqual(broadcasted.hadamard, hadamard)
+    self.assertEqual(broadcasted.custom_algorithm_param, {"algo": "test"})
+    self.assertEqual(broadcasted.quantized_dimensions, (0, 1))
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="1d_scalar_zp",
+          zero_point=np.array([-0.5], dtype=np.float32),
+      ),
+      dict(
+          testcase_name="2d_scalar_zp",
+          zero_point=np.array([[-0.5]], dtype=np.float32),
+      ),
+  )
+  def test_broadcast_scale_zp_for_blockwise_scalar_zp(self, zero_point):
+    tensor = np.zeros((2, 4), dtype=np.float32)
+    quant_params = qtyping.UniformQuantParams(
+        quantized_dimension=1,
+        block_size=2,
+        num_bits=2,
+        scale=np.array([[0.5, 1.5], [2.0, 3.0]], dtype=np.float32),
+        zero_point=zero_point,
+    )
+    broadcasted = uniform_quantize_tensor.broadcast_scale_zp_for_blockwise(
+        tensor, quant_params
+    )
+    self.assertEqual(broadcasted.zero_point.shape, (2, 4))
+    self.assertEqual(broadcasted.zero_point.strides, (0, 0))
+    self.assertFalse(broadcasted.zero_point.flags.writeable)
+    np.testing.assert_array_equal(
+        broadcasted.zero_point,
+        np.array(
+            [[-0.5, -0.5, -0.5, -0.5], [-0.5, -0.5, -0.5, -0.5]],
+            dtype=np.float32,
+        ),
+    )
+
+  def test_uniform_quantize_chunked_single_row_exceeds_chunk_bytes(self):
+    tensor_data = np.array(
+        [
+            [0.0, 1.0, 2.0, 3.0, -1.0, -2.0, -3.0, 7.0],
+            [0.0, 2.0, 4.0, 6.0, -2.0, -4.0, -6.0, 14.0],
+            [0.0, -1.0, 1.0, 2.0, -2.0, 3.0, -3.0, 4.0],
+        ],
+        dtype=np.float32,
+    )
+    quant_params = qtyping.UniformQuantParams(
+        num_bits=4,
+        quantized_dimension=0,
+        scale=np.array([[1.0], [2.0], [0.5]], dtype=np.float32),
+        zero_point=np.array([[0], [0], [0]], dtype=np.int8),
+    )
+    with mock.patch.object(uniform_quantize_tensor, "_CHUNK_BYTES", 16):
+      quantized = uniform_quantize_tensor.uniform_quantize(
+          tensor_data, quant_params
+      )
+    np.testing.assert_array_equal(
+        quantized,
+        np.array(
+            [
+                [0, 1, 2, 3, -1, -2, -3, 7],
+                [0, 1, 2, 3, -1, -2, -3, 7],
+                [0, -2, 2, 4, -4, 6, -6, 7],
+            ],
+            dtype=np.int8,
+        ),
     )
 
   @parameterized.named_parameters(
@@ -594,17 +855,45 @@ class TensorUtilsTest(parameterized.TestCase):
       # Range has to be extended to include zero.
       self.assertEqual(calculated_min, 0)
 
-  @parameterized.parameters(
-      # number of bits, is_symmetric, max bound of the quantized range.
-      (4, True, 7),
-      (8, False, 255),
-    )
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="int4_symmetric",
+          num_bits=4,
+          symmetric=True,
+          signed=True,
+          clipping_values=np.array([4.0]),
+          expected_scale=4.0 / 7,
+      ),
+      dict(
+          testcase_name="int8_asymmetric",
+          num_bits=8,
+          symmetric=False,
+          signed=True,
+          clipping_values=np.array([4.0]),
+          expected_scale=4.0 / 255,
+      ),
+      dict(
+          testcase_name="int4_symmetric_zero_clipping",
+          num_bits=4,
+          symmetric=True,
+          signed=True,
+          clipping_values=np.array([[0.0]], dtype=np.float32),
+          expected_scale=1e-9 / 7,
+      ),
+      dict(
+          testcase_name="uint8_asymmetric_zero_clipping",
+          num_bits=8,
+          symmetric=False,
+          signed=False,
+          clipping_values=np.array([[0.0]], dtype=np.float32),
+          expected_scale=1e-9 / 255,
+      ),
+  )
   def test_tensor_zp_scale_from_min_max_with_clipping(
-      self, num_bits, symmetric, quantized_bound
+      self, num_bits, symmetric, signed, clipping_values, expected_scale
   ):
     min_val = np.array([[1.0]])
     max_val = np.array([[5.0]])
-    clipping_values = np.array([4.0])
     zp, scale = uniform_quantize_tensor.tensor_zp_scale_from_min_max(
         min_val,
         max_val,
@@ -612,8 +901,8 @@ class TensorUtilsTest(parameterized.TestCase):
         symmetric,
         qtyping.QuantGranularity.TENSORWISE,
         clipping_values,
+        signed=signed,
     )
-    expected_scale = clipping_values / quantized_bound
 
     with self.subTest(name="CheckShapes"):
       self.assertEqual(zp.shape, scale.shape)
@@ -624,7 +913,177 @@ class TensorUtilsTest(parameterized.TestCase):
         self.assertEqual(zp[0], 0)
 
     with self.subTest(name="CheckScaleValue"):
-      self.assertEqual(scale[0], expected_scale)
+      self.assertEqual(scale.item(), expected_scale)
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="per_tensor",
+          tensor_data=np.array(
+              [[-1.6, -0.4, 0.4, 1.6], [-0.9, -0.1, 0.1, 0.9]],
+              dtype=np.float32,
+          ),
+          scale=np.array([[1.0]], dtype=np.float32),
+          expected_q=[[-2, -1, 0, 1], [-1, -1, 0, 0]],
+          expected_dequant=[
+              [-1.5, -0.5, 0.5, 1.5],
+              [-0.5, -0.5, 0.5, 0.5],
+          ],
+      ),
+      dict(
+          testcase_name="per_channel",
+          tensor_data=np.array(
+              [[-1.5, -0.5, 0.5, 1.5], [-3.0, -1.0, 1.0, 3.0]],
+              dtype=np.float32,
+          ),
+          quantized_dimension=0,
+          scale=np.array([[1.0], [2.0]], dtype=np.float32),
+          expected_q=[[-2, -1, 0, 1], [-2, -1, 0, 1]],
+          expected_dequant=[
+              [-1.5, -0.5, 0.5, 1.5],
+              [-3.0, -1.0, 1.0, 3.0],
+          ],
+      ),
+      dict(
+          testcase_name="blockwise",
+          tensor_data=np.array(
+              [[-1.5, 1.5, -3.0, 3.0], [-0.5, 0.5, -2.0, 2.0]],
+              dtype=np.float32,
+          ),
+          quantized_dimension=1,
+          block_size=2,
+          scale=np.array([[1.0, 2.0], [1.0, 4.0]], dtype=np.float32),
+          expected_q=[[-2, 1, -2, 1], [-1, 0, -1, 0]],
+          expected_dequant=[
+              [-1.5, 1.5, -3.0, 3.0],
+              [-0.5, 0.5, -2.0, 2.0],
+          ],
+      ),
+  )
+  def test_centered_int2_quantize_and_dequantize(
+      self,
+      tensor_data,
+      scale,
+      expected_q,
+      expected_dequant,
+      quantized_dimension=None,
+      block_size=0,
+  ):
+    quant_params = qtyping.UniformQuantParams(
+        num_bits=2,
+        quantized_dimension=quantized_dimension,
+        scale=scale,
+        zero_point=np.array([[-0.5]], dtype=np.float32),
+        block_size=block_size,
+    )
+    quantized = uniform_quantize_tensor.uniform_quantize(
+        tensor_data, quant_params, is_blockwise_quant=block_size > 0
+    )
+    np.testing.assert_array_equal(
+        quantized, np.array(expected_q, dtype=np.int8)
+    )
+    dequantized = uniform_quantize_tensor.uniform_dequantize(
+        quantized, quant_params
+    )
+    np.testing.assert_allclose(
+        dequantized, np.array(expected_dequant, dtype=np.float32)
+    )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="non_half_float_zp",
+          zero_point=np.array([-0.25], dtype=np.float32),
+      ),
+      dict(
+          testcase_name="int4_float_zp",
+          num_bits=4,
+          zero_point=np.array([-0.5], dtype=np.float32),
+      ),
+      dict(
+          testcase_name="uint2_float_zp",
+          signed=False,
+          zero_point=np.array([0.5], dtype=np.float32),
+      ),
+  )
+  def test_uniform_quantize_rejects_unsupported_float_zero_point(
+      self, zero_point, num_bits=2, signed=True
+  ):
+    quant_params = qtyping.UniformQuantParams(
+        num_bits=num_bits,
+        quantized_dimension=0,
+        scale=np.array([1.0], dtype=np.float32),
+        zero_point=zero_point,
+        signed=signed,
+    )
+    with self.assertRaisesRegex(ValueError, "zero_points need to be integer"):
+      uniform_quantize_tensor.uniform_quantize(
+          np.array([-1.0, 1.0], dtype=np.float32), quant_params
+      )
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="channelwise",
+          min_val=np.array([[-1.5], [-0.5]], dtype=np.float32),
+          max_val=np.array([[0.5], [3.0]], dtype=np.float32),
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          expected_scale=[[1.0], [2.0]],
+          expected_zp=[[-0.5]],
+      ),
+      dict(
+          testcase_name="blockwise_preserves_float32_scale",
+          min_val=np.array([[-1.5, -150000.0]], dtype=np.float32),
+          max_val=np.array([[1.500003, 150000.0]], dtype=np.float32),
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+          expected_scale=[[1.000002, 100000.0]],
+          expected_zp=[[-0.5]],
+      ),
+  )
+  def test_tensor_zp_scale_from_min_max_centered_int2(
+      self, min_val, max_val, granularity, expected_scale, expected_zp
+  ):
+    zp, scale = uniform_quantize_tensor.tensor_zp_scale_from_min_max(
+        min_val,
+        max_val,
+        num_bits=2,
+        symmetric=True,
+        granularity=granularity,
+        centered=True,
+    )
+    self.assertEqual(scale.dtype, np.float32)
+    self.assertEqual(zp.dtype, np.float32)
+    np.testing.assert_allclose(
+        scale, np.array(expected_scale, dtype=np.float32), rtol=1e-6, atol=1e-6
+    )
+    np.testing.assert_array_equal(zp, np.array(expected_zp, dtype=np.float32))
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="int4_centered",
+          num_bits=4,
+      ),
+      dict(
+          testcase_name="asymmetric_centered",
+          symmetric=False,
+      ),
+      dict(
+          testcase_name="unsigned_centered",
+          signed=False,
+      ),
+  )
+  def test_tensor_zp_scale_from_min_max_rejects_invalid_centered(
+      self, num_bits=2, symmetric=True, signed=True
+  ):
+    with self.assertRaisesRegex(
+        ValueError, "Centered quantization requires signed symmetric 2-bit"
+    ):
+      uniform_quantize_tensor.tensor_zp_scale_from_min_max(
+          np.array([[-1.0]]),
+          np.array([[1.0]]),
+          num_bits=num_bits,
+          symmetric=symmetric,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          signed=signed,
+          centered=True,
+      )
 
 
 if __name__ == "__main__":
