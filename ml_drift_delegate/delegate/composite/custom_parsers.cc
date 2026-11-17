@@ -23,10 +23,12 @@
 #include "ml_drift_delegate/delegate/composite/glu_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_parser.h"
+#include "ml_drift_delegate/delegate/composite/qsa_indexer_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/short_conv_step_parser.h"
+#include "ml_drift_delegate/delegate/composite/sparse_sdpa_transposed_parser.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
 #include "ml_drift_delegate/tflite/unimplemented_operation_parser.h"
 
@@ -68,6 +70,12 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
   if (op_name == kFusedSdpaCacheUpdateCompositeName) {
     return std::make_unique<FusedSdpaCacheUpdateOperationParser>();
   }
+  if (op_name == kQsaIndexerUpdateCompositeName) {
+    return std::make_unique<QsaIndexerUpdateOperationParser>();
+  }
+  if (op_name == kSparseSdpaTransposedCompositeName) {
+    return std::make_unique<SparseSdpaTransposedOperationParser>();
+  }
   return std::make_unique<UnimplementedOperationParser>(op_name);
 }
 
@@ -79,13 +87,17 @@ bool CustomOperationParserFactory::SupportsIntegerTypes(
              op_name == "gated_delta_update" ||
              op_name == kGatedDeltaBlockCompositeName ||
              op_name == kQkvNormRopeType || op_name == kShortConvStepType ||
-             op_name == kFusedSdpaCacheUpdateCompositeName;
+             op_name == kFusedSdpaCacheUpdateCompositeName ||
+             op_name == kQsaIndexerUpdateCompositeName ||
+             op_name == kSparseSdpaTransposedCompositeName;
   return res;
 }
 
 bool CustomOperationParserFactory::SupportsBoolTypes(std::string_view op_name) {
   return op_name == "odml.sdpa_transposed" ||
-         op_name == kFusedSdpaCacheUpdateCompositeName;
+         op_name == kFusedSdpaCacheUpdateCompositeName ||
+         op_name == kQsaIndexerUpdateCompositeName ||
+         op_name == kSparseSdpaTransposedCompositeName;
 }
 
 }  // namespace litert::ml_drift

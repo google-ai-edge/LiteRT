@@ -21,10 +21,12 @@
 #include "ml_drift_delegate/delegate/composite/ir/glu_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/qkv_norm_rope_parser.h"
+#include "ml_drift_delegate/delegate/composite/ir/qsa_indexer_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/rope_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/short_conv_step_parser.h"
+#include "ml_drift_delegate/delegate/composite/ir/sparse_sdpa_transposed_parser.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 
 namespace litert::ml_drift::ir {
@@ -43,6 +45,8 @@ CustomIrOpMap GetCustomParsers() {
   parsers["odml.short_conv_step"] = GetShortConvStepParser();
   parsers["gated_delta_update"] = GetGatedDeltaUpdateParser();
   parsers["odml.gated_delta_block"] = GetGatedDeltaBlockParser();
+  parsers["odml.qsa_indexer_update"] = GetQsaIndexerUpdateParser();
+  parsers["odml.sparse_sdpa_transposed"] = GetSparseSdpaTransposedParser();
 
   return parsers;
 }

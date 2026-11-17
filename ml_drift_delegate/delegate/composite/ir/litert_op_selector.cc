@@ -40,10 +40,13 @@
 #include "ml_drift_delegate/delegate/composite/glu_kernel.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_kernel.h"
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_kernel.h"
+#include "ml_drift_delegate/delegate/composite/qsa_indexer_update_kernel.h"
+#include "ml_drift_delegate/delegate/composite/qsa_indexer_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_kernel.h"
 #include "ml_drift_delegate/delegate/composite/short_conv_step_kernel.h"
+#include "ml_drift_delegate/delegate/composite/sparse_sdpa_transposed_kernel.h"
 #include "ml_drift_delegate/delegate/composite/symmetric_quantized_fully_connected.h"
 
 namespace litert::ml_drift::ir {
@@ -192,6 +195,19 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     return CreateQkvNormRopeFromIrOp(inputs, outputs, op, model_builder);
   } else if (op.name == "short_conv_step") {
     return CreateShortConvStepFromIrOp(inputs, outputs, op, model_builder);
+  } else if (op.name == "qsa_indexer_update") {
+    int param_index = inputs.size() > kQsaIndexerStartPosGpuInput
+                          ? kQsaIndexerStartPosGpuInput
+                          : -1;
+    std::vector<const ::ml_drift::ir::IrTensor*> qsa_inputs =
+        ResolveInputsWithBufferParam(param_index, inputs, model_builder);
+    return CreateQsaIndexerUpdateFromIrOp(qsa_inputs, outputs, op,
+                                          model_builder);
+  } else if (op.name == "sparse_sdpa_transposed") {
+    std::vector<const ::ml_drift::ir::IrTensor*> sdpa_inputs =
+        ResolveInputsWithBufferParam(/*param_index=*/-1, inputs, model_builder);
+    return CreateSparseSdpaTransposedFromIrOp(sdpa_inputs, outputs, op,
+                                              model_builder);
   } else if (op.name ==
              ToString(::ml_drift::OperationType::kScaledDotProductAttention)) {
     // Try the custom fused Flash SDPA kernel first, and fall back to the

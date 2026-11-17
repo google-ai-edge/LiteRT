@@ -45,6 +45,8 @@
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_kernel.h"
 #include "ml_drift_delegate/delegate/composite/qkv_norm_rope_parser.h"
+#include "ml_drift_delegate/delegate/composite/qsa_indexer_update_kernel.h"
+#include "ml_drift_delegate/delegate/composite/qsa_indexer_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_kernel.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_kernel.h"
@@ -52,6 +54,8 @@
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/short_conv_step_kernel.h"
 #include "ml_drift_delegate/delegate/composite/short_conv_step_parser.h"
+#include "ml_drift_delegate/delegate/composite/sparse_sdpa_transposed_kernel.h"
+#include "ml_drift_delegate/delegate/composite/sparse_sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/symmetric_quantized_fully_connected.h"
 
 namespace litert::ml_drift {
@@ -262,6 +266,21 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
   }
   if (node.operation.type == kShortConvStepType) {
     return CreateShortConvStepFromNode(inputs, outputs, node, model_builder);
+  }
+  if (node.operation.type == kQsaIndexerUpdateType) {
+    int param_index = inputs.size() > kQsaIndexerStartPosGpuInput
+                          ? kQsaIndexerStartPosGpuInput
+                          : -1;
+    std::vector<::ml_drift::Value*> qsa_inputs =
+        ResolveInputsWithBufferParam(param_index, inputs, model_builder);
+    return CreateQsaIndexerUpdateFromNode(qsa_inputs, outputs, node,
+                                          model_builder);
+  }
+  if (node.operation.type == kSparseSdpaTransposedType) {
+    std::vector<::ml_drift::Value*> sdpa_inputs =
+        ResolveInputsWithBufferParam(/*param_index=*/-1, inputs, model_builder);
+    return CreateSparseSdpaTransposedFromNode(sdpa_inputs, outputs, node,
+                                              model_builder);
   }
   if (node.operation.type ==
       ToString(::ml_drift::OperationType::kScaledDotProductAttention)) {

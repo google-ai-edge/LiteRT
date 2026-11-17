@@ -960,6 +960,108 @@ cc_library(
 )
 
 cc_library(
+    name = "qsa_parser_utils",
+    hdrs = ["qsa_parser_utils.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:common",
+        "//tflite/kernels:kernel_util",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:model",
+    ],
+)
+
+cc_library(
+    name = "qsa_indexer_update_parser",
+    srcs = ["qsa_indexer_update_parser.cc"],
+    hdrs = ["qsa_indexer_update_parser.h"],
+    deps = [
+        ":qsa_parser_utils",
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:model",
+    ],
+)
+
+cc_library(
+    name = "sparse_sdpa_transposed_parser",
+    srcs = ["sparse_sdpa_transposed_parser.cc"],
+    hdrs = ["sparse_sdpa_transposed_parser.h"],
+    deps = [
+        ":add_values_to_cache_parser",
+        ":qsa_parser_utils",
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite/c:common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:model",
+    ],
+)
+
+cc_library(
+    name = "qsa_indexer_update_kernel",
+    srcs = ["qsa_indexer_update_kernel.cc"],
+    hdrs = ["qsa_indexer_update_kernel.h"],
+    deps = [
+        ":qsa_indexer_update_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:kernel_info",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:tuning_type",
+    ],
+)
+
+cc_library(
+    name = "sparse_sdpa_transposed_kernel",
+    srcs = ["sparse_sdpa_transposed_kernel.cc"],
+    hdrs = ["sparse_sdpa_transposed_kernel.h"],
+    deps = [
+        ":sparse_sdpa_transposed_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:kernel_info",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:tuning_type",
+    ],
+)
+
+cc_library(
     name = "fused_sdpa_cache_update_kernel",
     srcs = ["fused_sdpa_cache_update_kernel.cc"],
     hdrs = ["fused_sdpa_cache_update_kernel.h"],
@@ -1006,6 +1108,81 @@ mld_kernel_test(
     ],
 )
 
+mld_kernel_test(
+    name = "qsa_composites_kernel_test",
+    srcs = ["qsa_composites_kernel_test.cc"],
+    platforms = [
+        "opencl",
+        "webgpu",
+    ],
+    deps = [
+        ":qsa_indexer_update_kernel",
+        ":qsa_indexer_update_parser",
+        ":sparse_sdpa_transposed_kernel",
+        ":sparse_sdpa_transposed_parser",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+    ],
+)
+
+objc_library(
+    name = "qsa_composites_kernel_test_objc_lib",
+    testonly = True,
+    srcs = [
+        "qsa_composites_kernel_test.cc",
+        "@ml_drift//ml_drift/common/kernels/tests:kernel_test.h",
+        "@ml_drift//ml_drift/common/kernels/tests:metal_kernel_test.mm",
+    ],
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":qsa_indexer_update_kernel",
+        ":qsa_indexer_update_parser",
+        ":sparse_sdpa_transposed_kernel",
+        ":sparse_sdpa_transposed_parser",
+        "@com_google_googletest//:gtest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        # Dependency placeholder: apple_frameworks Metal,
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+        "@ml_drift//ml_drift/metal/testing:test_util",
+    ],
+)
+
+cc_test(
+    name = "qsa_composites_kernel_test_mac",
+    tags = [
+        "mac",
+        "manual",
+        "nobuilder",
+        "notap",
+        "nozapfhahn",
+    ],
+    deps = [
+        ":qsa_composites_kernel_test_objc_lib",
+    ],
+)
+
 cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
@@ -1020,10 +1197,12 @@ cc_library(
         ":glu_parser",
         ":moe_experts_parser",
         ":qkv_norm_rope_parser",
+        ":qsa_indexer_update_parser",
         ":rope_parser",
         ":runtime_batched_matmul_parser",
         ":sdpa_transposed_parser",
         ":short_conv_step_parser",
+        ":sparse_sdpa_transposed_parser",
         "//ml_drift_delegate/tflite:operation_parser",
         "//ml_drift_delegate/tflite:unimplemented_operation_parser",
         "@com_google_absl//absl/log:absl_log",
@@ -1179,6 +1358,8 @@ cc_library(
         ":moe_experts_parser",
         ":qkv_norm_rope_kernel",
         ":qkv_norm_rope_parser",
+        ":qsa_indexer_update_kernel",
+        ":qsa_indexer_update_parser",
         ":runtime_batched_matmul_kernel",
         ":runtime_batched_matmul_parser",
         ":sdpa_kernel",
@@ -1186,6 +1367,8 @@ cc_library(
         ":sdpa_transposed_parser",
         ":short_conv_step_kernel",
         ":short_conv_step_parser",
+        ":sparse_sdpa_transposed_kernel",
+        ":sparse_sdpa_transposed_parser",
         ":symmetric_quantized_fully_connected",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",

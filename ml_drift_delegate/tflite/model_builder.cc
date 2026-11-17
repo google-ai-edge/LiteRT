@@ -7645,6 +7645,7 @@ TfLiteIntArray* GetOpsToReplaceWithOptions(
                                           registration,
                                           composite_parser_factory)) {
       allowed_in_types.push_back(kTfLiteInt32);
+      allowed_out_types.push_back(kTfLiteInt32);
     }
     if (SupportAllPrecisionOp(registration->builtin_code)) {
       add_int_types(&allowed_in_types);

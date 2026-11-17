@@ -40,7 +40,9 @@
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/qsa_indexer_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
+#include "ml_drift_delegate/delegate/composite/sparse_sdpa_transposed_parser.h"
 
 namespace litert::ml_drift::ir {
 namespace {
@@ -331,6 +333,85 @@ TEST_F(LiteRtOpSelectorIrTest,
   ASSERT_OK(BuildModel({src, weights, scale}, {out}, &gpu_model));
   ASSERT_EQ(gpu_model.nodes.size(), 1);
   EXPECT_EQ(gpu_model.nodes[0].inputs.size(), 3);
+}
+
+TEST_F(LiteRtOpSelectorIrTest,
+       AddValuesToCacheAndStartPosPromoteToBufferForQsaComposites) {
+  const IrTensor* q_idx = AddTensor(BHWC(1, 1, 4, 16));
+  const IrTensor* k_idx_new = AddTensor(BHWC(1, 1, 1, 16));
+  const IrTensor* k_norm_w = AddTensor(BHWC(1, 1, 1, 16));
+  const IrTensor* b_cos = AddTensor(BHWC(1, 1, 8, 8));
+  const IrTensor* b_sin = AddTensor(BHWC(1, 1, 8, 8));
+  // `start_pos` starts as kTexture2D and must be promoted to kBuffer.
+  const IrTensor* start_pos = AddTensor(BHWC(1, 1, 1, 1), DataType::kInt32);
+  const IrTensor* mask = AddTensor(BHWC(1, 1, 1, 32));
+  const IrTensor* topk = AddTensor(BHWC(1, 1, 1, 2), DataType::kInt32);
+  const IrTensor* new_ring = AddTensor(BHWC(1, 1, 4, 16), DataType::kFloat32,
+                                       TensorStorageType::kBuffer);
+  const IrTensor* new_pool = AddTensor(BHWC(1, 1, 8, 16), DataType::kFloat32,
+                                       TensorStorageType::kBuffer);
+
+  QsaIndexerUpdateAttributes idx_attr{
+      .compress_ratio = 4,
+      .block_topk = 2,
+      .rms_norm_eps = 1e-6f,
+      .scale = 0.25f,
+  };
+  ASSERT_OK(SelectOp(
+      kQsaIndexerUpdateType, idx_attr,
+      {q_idx, k_idx_new, k_norm_w, b_cos, b_sin, start_pos, mask},
+      {topk, new_ring, new_pool}));
+
+  const IrTensor* src_k = AddTensor(BHWC(1, 1, 32, 64));
+  const IrTensor* src_v = AddTensor(BHWC(1, 1, 32, 64));
+  const IrTensor* param = AddTensor(BHWC(1, 1, 1, 7), DataType::kInt32);
+  const IrTensor* cache_k = AddTensor(BHWC(1, 1, 32, 64));
+  const IrTensor* cache_v = AddTensor(BHWC(1, 1, 64, 32));
+  AddValuesToCacheAttributes cache_attr{
+      .kv_cache_batch_size = 1, .cache_size = 32, .head_size = 64};
+  ASSERT_OK(SelectOp(kAddValuesToCacheType, cache_attr, {src_k, src_v, param},
+                     {cache_k, cache_v}));
+
+  const IrTensor* q_main = AddTensor(BHWC(1, 4, 1, 64));
+  const IrTensor* sdpa_out = AddTensor(BHWC(1, 1, 4, 64));
+  SparseSdpaTransposedAttributes sdpa_attr{
+      .compress_ratio = 4,
+      .block_topk = 2,
+      .scale = 0.125f,
+      .k_ts_idx = 2,
+      .v_ts_idx = 3,
+      .from_cache_update = true,
+  };
+  ASSERT_OK(SelectOp(kSparseSdpaTransposedType, sdpa_attr,
+                     {q_main, cache_k, cache_v, topk, mask}, {sdpa_out}));
+
+  GpuModel gpu_model;
+  ASSERT_OK(BuildModel({q_idx, k_idx_new, k_norm_w, b_cos, b_sin, start_pos,
+                        mask, src_k, src_v, param, q_main},
+                       {sdpa_out, new_ring, new_pool}, &gpu_model));
+
+  bool found_sparse_sdpa = false;
+  bool found_ring_update = false;
+  for (const auto& node : gpu_model.nodes) {
+    if (node.name == "qsa_ring_and_pool_update") {
+      found_ring_update = true;
+      // Sources: k_idx_new, k_norm_weight, block_cos, block_sin, start_pos,
+      // mask; `start_pos` (GPU input 5) must be promoted to kBuffer.
+      ASSERT_EQ(node.inputs.size(), 6);
+      EXPECT_EQ(gpu_model.tensors.at(node.inputs[4]).GetStorageType(),
+                TensorStorageType::kBuffer);
+    }
+    if (node.name == kSparseSdpaTransposedType) {
+      found_sparse_sdpa = true;
+      ASSERT_EQ(node.inputs.size(), 5);
+      EXPECT_EQ(gpu_model.tensors.at(node.inputs[1]).GetStorageType(),
+                TensorStorageType::kBuffer);
+      EXPECT_EQ(gpu_model.tensors.at(node.inputs[2]).GetStorageType(),
+                TensorStorageType::kBuffer);
+    }
+  }
+  EXPECT_TRUE(found_sparse_sdpa);
+  EXPECT_TRUE(found_ring_update);
 }
 
 }  // namespace
