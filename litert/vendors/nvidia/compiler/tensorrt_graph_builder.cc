@@ -5419,7 +5419,7 @@ class TensorRtGraphBuilder {
         holder->second = layer->getOutput(0);
         weight_holders_.push_back({std::move(name), reader.segment, bytes});
       }
-      reader.layer->setInput(1, *holder->second);
+      reader.layer->setInput(reader.input, *holder->second);
       if (reader.scales_too) {
         reader.layer->setInput(2, *holder->second);
       }
@@ -12550,6 +12550,9 @@ class TensorRtGraphBuilder {
     float scales[6] = {};
     // y: the INT8 result, or the FLOAT16 tensor its DEQUANTIZE makes.
     std::optional<Tensor> output;
+    // The glue (quant_glues_) whose INT8 result is x, run by the MLP's
+    // launch.
+    std::optional<size_t> glue;
   };
 
   struct QuantQkvRope {
@@ -12772,12 +12775,82 @@ class TensorRtGraphBuilder {
     return AddFloatConstant(values, dims, name, nvinfer1::DataType::kFLOAT);
   }
 
-  // Adds a product layer. `members` are the packed weights of its matrices
-  // in row order, views of the model file when they are the model's: with a
-  // weight store they stay there and the layer reads the holder of their
-  // segment, else they are copied into a constant. Returns INT8 [m, rows],
-  // or the FP32 logits. With `glue` the layer runs that glue in front and
-  // reads its x instead of `activation` (an INT8 activation, the glue's q).
+  // The weights input of a product layer: `members` are the packed weights
+  // of its matrices in row order, views of the model file when they are the
+  // model's. With a weight store they stay there and the layer reads the
+  // holder of their segment (`location`), else they are copied into a
+  // constant.
+  struct QuantWeights {
+    nvinfer1::ITensor* tensor = nullptr;
+    std::optional<TensorRtWeightLocation> location;
+  };
+
+  Expected<QuantWeights> AddQuantWeights(
+      const LiteRtNvidiaQuantLinearParams& params,
+      absl::Span<const absl::Span<const uint8_t>> members) {
+    size_t bytes = 0;
+    for (const auto& member : members) bytes += member.size();
+    if (bytes != static_cast<size_t>(params.rows) * params.columns *
+                     params.bit_width / 8) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Unexpected weights of a quantized product");
+    }
+    QuantWeights weights;
+    if (weight_store_ != nullptr) {
+      auto added = weight_store_->Add(members);
+      if (added.HasValue()) {
+        weights.location = *added;
+      } else if (added.Error().Status() != kLiteRtStatusErrorNotFound) {
+        return added.Error();
+      }
+    }
+    if (weights.location.has_value()) {
+      // The holder of the segment replaces this once the segments of the
+      // partition are final (AddWeightHolders).
+      LITERT_ASSIGN_OR_RETURN(weights.tensor, ProvisionalWeightHolder());
+      return weights;
+    }
+    std::vector<uint8_t> packed;
+    packed.reserve(bytes);
+    for (const auto& member : members) {
+      packed.insert(packed.end(), member.begin(), member.end());
+    }
+    owned_weights_.push_back(std::move(packed));
+    nvinfer1::Dims dims{};
+    dims.nbDims = 1;
+    dims.d[0] = static_cast<int64_t>(bytes);
+    auto* constant = network_->addConstant(
+        dims, nvinfer1::Weights{nvinfer1::DataType::kINT8,
+                                owned_weights_.back().data(),
+                                static_cast<int64_t>(bytes)});
+    if (constant == nullptr || constant->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the weights of a quantized product");
+    }
+    weights.tensor = constant->getOutput(0);
+    return weights;
+  }
+
+  // The INT8 table of a quantized product as a constant.
+  Expected<nvinfer1::ITensor*> AddQuantTable(const std::vector<int8_t>& lut) {
+    owned_weights_.emplace_back(lut.begin(), lut.end());
+    nvinfer1::Dims dims{};
+    dims.nbDims = 1;
+    dims.d[0] = static_cast<int64_t>(lut.size());
+    auto* constant = network_->addConstant(
+        dims, nvinfer1::Weights{nvinfer1::DataType::kINT8,
+                                owned_weights_.back().data(), dims.d[0]});
+    if (constant == nullptr || constant->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the table of a quantized product");
+    }
+    return constant->getOutput(0);
+  }
+
+  // Adds a product layer on the weights `members` (AddQuantWeights).
+  // Returns INT8 [m, rows], or the FP32 logits. With `glue` the layer runs
+  // that glue in front and reads its x instead of `activation` (an INT8
+  // activation, the glue's q).
   Expected<nvinfer1::ITensor*> AddQuantLinear(
       const LiteRtNvidiaQuantLinearParams& params,
       nvinfer1::ITensor* activation,
@@ -12785,48 +12858,14 @@ class TensorRtGraphBuilder {
       const std::vector<float>& multipliers, const std::vector<int8_t>* lut,
       nvinfer1::ITensor* row_scale, const std::string& name,
       const QuantGlueLayer* glue = nullptr) {
-    size_t bytes = 0;
-    for (const auto& member : members) bytes += member.size();
-    if (bytes != static_cast<size_t>(params.rows) * params.columns *
-                     params.bit_width / 8 ||
-        multipliers.size() != static_cast<size_t>(params.rows)) {
+    if (multipliers.size() != static_cast<size_t>(params.rows)) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Unexpected weights of a quantized product");
     }
-    std::optional<TensorRtWeightLocation> location;
-    if (weight_store_ != nullptr) {
-      auto added = weight_store_->Add(members);
-      if (added.HasValue()) {
-        location = *added;
-      } else if (added.Error().Status() != kLiteRtStatusErrorNotFound) {
-        return added.Error();
-      }
-    }
-    nvinfer1::ITensor* weights = nullptr;
-    if (location.has_value()) {
-      // The holder of the segment replaces this once the segments of the
-      // partition are final (AddWeightHolders).
-      LITERT_ASSIGN_OR_RETURN(weights, ProvisionalWeightHolder());
-    } else {
-      std::vector<uint8_t> packed;
-      packed.reserve(bytes);
-      for (const auto& member : members) {
-        packed.insert(packed.end(), member.begin(), member.end());
-      }
-      owned_weights_.push_back(std::move(packed));
-      nvinfer1::Dims dims{};
-      dims.nbDims = 1;
-      dims.d[0] = static_cast<int64_t>(bytes);
-      auto* constant = network_->addConstant(
-          dims, nvinfer1::Weights{nvinfer1::DataType::kINT8,
-                                  owned_weights_.back().data(),
-                                  static_cast<int64_t>(bytes)});
-      if (constant == nullptr || constant->getOutput(0) == nullptr) {
-        return Error(kLiteRtStatusErrorCompilation,
-                     "Failed to add the weights of a quantized product");
-      }
-      weights = constant->getOutput(0);
-    }
+    LITERT_ASSIGN_OR_RETURN(const QuantWeights added,
+                            AddQuantWeights(params, members));
+    nvinfer1::ITensor* weights = added.tensor;
+    const std::optional<TensorRtWeightLocation>& location = added.location;
     nvinfer1::Dims multiplier_dims{};
     multiplier_dims.nbDims = 1;
     multiplier_dims.d[0] = params.rows;
@@ -12838,18 +12877,8 @@ class TensorRtGraphBuilder {
         glue != nullptr ? glue->inputs[0] : activation, weights,
         multiplier_tensor};
     if (lut != nullptr) {
-      owned_weights_.emplace_back(lut->begin(), lut->end());
-      nvinfer1::Dims dims{};
-      dims.nbDims = 1;
-      dims.d[0] = static_cast<int64_t>(lut->size());
-      auto* constant = network_->addConstant(
-          dims, nvinfer1::Weights{nvinfer1::DataType::kINT8,
-                                  owned_weights_.back().data(), dims.d[0]});
-      if (constant == nullptr || constant->getOutput(0) == nullptr) {
-        return Error(kLiteRtStatusErrorCompilation,
-                     "Failed to add the table of a quantized product");
-      }
-      inputs.push_back(constant->getOutput(0));
+      LITERT_ASSIGN_OR_RETURN(auto* table, AddQuantTable(*lut));
+      inputs.push_back(table);
     }
     if (row_scale != nullptr) {
       inputs.push_back(row_scale);
@@ -12951,35 +12980,53 @@ class TensorRtGraphBuilder {
     quant_regions_[first] = {kind, index};
   }
 
-  // Adds the glue quant_glues_.back() of `members` to the projections region
-  // that reads its INT8 result `read`, whose launch then runs the glue in front
-  // (QuantProjections::glue): the region is emitted at its first op, now the
-  // glue's. Any other glue is a region of its own (the factorized MLP's first
-  // stage reads rows too short to hide a glue).
+  // Adds the glue quant_glues_.back() of `members` to the region that reads its
+  // INT8 result `read` and runs the glue in its launch: the projections
+  // (QuantProjections::glue), or the factorized MLP of a decode step's one row
+  // (QuantFactorizedMlp::glue). The region is emitted at its first op, now the
+  // glue's. Any other glue is a region of its own (a prefill chunk's factorized
+  // MLP starts with rows too short to hide a glue).
   void AddQuantGlueRegion(const Tensor& read,
                           const std::vector<LiteRtOp>& members) {
     const size_t index = quant_glues_.size() - 1;
+    QuantRegion owner;
     const auto projections = quant_projections_by_input_.find(read.Get());
-    if (projections == quant_projections_by_input_.end()) {
+    const auto factorized_mlp =
+        quant_factorized_mlps_by_input_.find(read.Get());
+    if (projections != quant_projections_by_input_.end()) {
+      quant_projections_[projections->second].glue = index;
+      owner = {QuantRegionKind::kProjections, projections->second};
+    } else if (factorized_mlp != quant_factorized_mlps_by_input_.end() &&
+               QuantOneRow(read)) {
+      quant_factorized_mlps_[factorized_mlp->second].glue = index;
+      owner = {QuantRegionKind::kFactorizedMlp, factorized_mlp->second};
+    } else {
       AddQuantRegion(QuantRegionKind::kGlue, index, members);
       return;
     }
-    quant_projections_[projections->second].glue = index;
     LiteRtOp first = members.front();
     for (LiteRtOp op : members) {
       if (op_order_[op] < op_order_[first]) first = op;
     }
     for (auto it = quant_regions_.begin(); it != quant_regions_.end(); ++it) {
-      if (it->second.kind == QuantRegionKind::kProjections &&
-          it->second.index == projections->second) {
+      if (it->second.kind == owner.kind && it->second.index == owner.index) {
         if (op_order_[it->first] < op_order_[first]) first = it->first;
         quant_regions_.erase(it);
         break;
       }
     }
     unlowered_ops_.insert(members.begin(), members.end());
-    quant_regions_[first] = {QuantRegionKind::kProjections,
-                             projections->second};
+    quant_regions_[first] = owner;
+  }
+
+  // Whether `tensor` [..., n] holds one row.
+  static bool QuantOneRow(const Tensor& tensor) {
+    const auto type = tensor.RankedTensorType();
+    if (!type) return false;
+    const auto dims = type->Layout().Dimensions();
+    int64_t rows = 1;
+    for (size_t d = 0; d + 1 < dims.size(); ++d) rows *= dims[d];
+    return !dims.empty() && rows == 1;
   }
 
   // The glue in front of the projections (QuantProjections::glue) as their
@@ -13317,6 +13364,91 @@ class TensorRtGraphBuilder {
     return {dims[0], dims[1]};
   }
 
+  // Adds the layer of a factorized MLP's four products on one INT8 row
+  // (CreateQuantFactorizedMlpPlugin): the weights `members` of each stage
+  // (AddQuantWeights), its multipliers, and `lut` for the stages that have a
+  // table. With `glue` the layer runs that glue in front and reads its x
+  // instead of `activation`. Returns INT8 [1, rows of stage 3].
+  Expected<nvinfer1::ITensor*> AddQuantFactorizedMlp(
+      const LiteRtNvidiaQuantFactorizedMlpParams& stages,
+      nvinfer1::ITensor* activation,
+      const absl::Span<const absl::Span<const uint8_t>> (&members)[4],
+      const std::vector<float> (&multipliers)[4],
+      const std::vector<int8_t>& lut, const std::string& name,
+      const QuantGlueLayer* glue = nullptr) {
+    std::vector<nvinfer1::ITensor*> inputs = {glue != nullptr ? glue->inputs[0]
+                                                              : activation};
+    std::array<int64_t, 4> offsets = {};
+    std::optional<TensorRtWeightLocation> locations[4];
+    for (int s = 0; s < 4; ++s) {
+      LITERT_ASSIGN_OR_RETURN(const QuantWeights added,
+                              AddQuantWeights(stages.stages[s], members[s]));
+      inputs.push_back(added.tensor);
+      locations[s] = added.location;
+      offsets[s] = added.location.has_value()
+                       ? static_cast<int64_t>(added.location->offset)
+                       : -1;
+    }
+    for (int s = 0; s < 4; ++s) {
+      if (multipliers[s].size() != static_cast<size_t>(stages.stages[s].rows)) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Unexpected weights of a quantized product");
+      }
+      nvinfer1::Dims dims{};
+      dims.nbDims = 1;
+      dims.d[0] = stages.stages[s].rows;
+      LITERT_ASSIGN_OR_RETURN(
+          auto* tensor,
+          AddFloatConstant(multipliers[s], dims,
+                           name + "_multipliers" + std::to_string(s),
+                           nvinfer1::DataType::kFLOAT));
+      inputs.push_back(tensor);
+    }
+    bool table = false;
+    for (const auto& stage : stages.stages) table = table || stage.lut != 0;
+    if (table) {
+      LITERT_ASSIGN_OR_RETURN(auto* tensor, AddQuantTable(lut));
+      inputs.push_back(tensor);
+    }
+    if (glue != nullptr) {
+      inputs.insert(inputs.end(), glue->inputs.begin() + 1, glue->inputs.end());
+    }
+    bool holders = false;
+    for (const int64_t offset : offsets) holders = holders || offset >= 0;
+    TrtPtr<nvinfer1::IPluginV3> plugin(CreateQuantFactorizedMlpPlugin(
+        stages, offsets,
+        holders ? static_cast<int64_t>(weight_store_->granule()) : 0,
+        glue != nullptr ? &glue->params : nullptr,
+        glue != nullptr
+            ? glue->outputs & (kQuantGlueOutputX | kQuantGlueOutputZ)
+            : 0));
+    if (!plugin) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to create the factorized MLP plugin");
+    }
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        *network_, inputs.data(), static_cast<int32_t>(inputs.size()), *plugin);
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the factorized MLP plugin layer");
+    }
+    for (int s = 0; s < 4; ++s) {
+      if (locations[s].has_value()) {
+        holder_readers_.push_back({layer, locations[s]->segment,
+                                   /*scales_too=*/false, /*input=*/1 + s});
+      }
+    }
+    layer->setName(KeepName(UniqueName(name)));
+    layer->getOutput(0)->setName(KeepName(UniqueName(name)));
+    owned_plugins_.push_back(std::move(plugin));
+    uses_cuda_subbyte_gemv_ = true;
+    if (glue != nullptr) {
+      int32_t next = 1;
+      LITERT_RETURN_IF_ERROR(SetQuantGlueFloats(*glue, layer, next));
+    }
+    return layer->getOutput(0);
+  }
+
   // Emits a factorized MLP as four product layers: the first quantizes a float
   // x itself, the second applies the SiLU as a table, and their INT8 results
   // are regrouped on the way out so that every stage reads rows.
@@ -13366,9 +13498,20 @@ class TensorRtGraphBuilder {
       return all;
     };
 
+    // The glue in front quantizes x for the MLP (an INT8 activation); its
+    // layer, if the MLP's launch does not take it, comes first.
+    std::optional<QuantGlueLayer> glue;
     QuantActivation activation;
-    if (mlp.input->ElementType() == litert::ElementType::Int8 ||
-        quant_values_.count(mlp.input->Get()) != 0) {
+    if (mlp.glue.has_value()) {
+      const QuantGlue& in_front = quant_glues_[*mlp.glue];
+      LITERT_ASSIGN_OR_RETURN(
+          glue,
+          PrepareQuantGlue(
+              in_front.chain, kLiteRtNvidiaQuantGlueStatic, in_front.scale,
+              "cuda_quant_glue_" +
+                  std::to_string(in_front.quantized->TensorIndex())));
+    } else if (mlp.input->ElementType() == litert::ElementType::Int8 ||
+               quant_values_.count(mlp.input->Get()) != 0) {
       LITERT_ASSIGN_OR_RETURN(activation,
                               GetQuantActivation(*mlp.input, 2 * up1_columns));
     } else {
@@ -13378,7 +13521,8 @@ class TensorRtGraphBuilder {
       activation.type = QuantTypeOf(activation.rows);
       activation.quantize_scale = RoundFp16(1.0f / mlp.scales[0]);
     }
-    LiteRtNvidiaQuantLinearParams params = {};
+    LiteRtNvidiaQuantFactorizedMlpParams stages = {};
+    LiteRtNvidiaQuantLinearParams& params = stages.stages[0];
     params.layout = kLiteRtNvidiaQuantLayoutRows;
     params.bit_width = 2;
     params.rows = 2 * up1_rows;
@@ -13391,10 +13535,6 @@ class TensorRtGraphBuilder {
     params.requant = kLiteRtNvidiaQuantRequantDouble;
     params.ratio = ratio(0, 1);
     const absl::Span<const uint8_t> up1_members[] = {bytes(0), bytes(1)};
-    LITERT_ASSIGN_OR_RETURN(
-        auto* stage, AddQuantLinear(params, activation.rows, up1_members,
-                                    joined(scales[0], scales[1]), nullptr,
-                                    nullptr, name + "_up1"));
 
     // The middle stages' weights are stored [blocks, inputs, outputs], one
     // output's weights spread over the input rows. Transposed copies give
@@ -13404,55 +13544,85 @@ class TensorRtGraphBuilder {
     // of the plan (the model file's bytes would be shared through the weight
     // store, but the decode and the prefill graphs hold separate copies of
     // these weights in the file anyway).
-    params = {};
-    params.layout = kLiteRtNvidiaQuantLayoutRows;
-    params.bit_width = 2;
-    params.rows = blocks * up2[2];
-    params.columns = up2[1];
-    params.segments = blocks;
-    params.swap0 = 1;
-    params.swap1 = 1;
-    params.activation = kLiteRtNvidiaQuantInt8;
-    params.requant = kLiteRtNvidiaQuantRequantDouble;
-    params.lut = 1;
-    params.ratio = ratio(1, 2);
+    LiteRtNvidiaQuantLinearParams& up2_params = stages.stages[1];
+    up2_params.layout = kLiteRtNvidiaQuantLayoutRows;
+    up2_params.bit_width = 2;
+    up2_params.rows = blocks * up2[2];
+    up2_params.columns = up2[1];
+    up2_params.segments = blocks;
+    up2_params.swap0 = 1;
+    up2_params.swap1 = 1;
+    up2_params.activation = kLiteRtNvidiaQuantInt8;
+    up2_params.requant = kLiteRtNvidiaQuantRequantDouble;
+    up2_params.lut = 1;
+    up2_params.ratio = ratio(1, 2);
     const auto silu = QuantSiluTable(mlp.scales[2], mlp.scales[3]);
     const auto up2_rows =
         QuantTransposedBlocks(bytes(2), blocks, up2[1], up2[2]);
     const absl::Span<const uint8_t> up2_members[] = {up2_rows};
-    LITERT_ASSIGN_OR_RETURN(
-        stage, AddQuantLinear(params, stage, up2_members, scales[2], &silu,
-                              nullptr, name + "_up2"));
 
-    params.rows = blocks * down1[2];
-    params.columns = down1[1];
-    params.swap0 = blocks;
-    params.swap1 = 2;
-    params.lut = 0;
-    params.ratio = ratio(3, 4);
+    LiteRtNvidiaQuantLinearParams& down1_params = stages.stages[2];
+    down1_params = up2_params;
+    down1_params.rows = blocks * down1[2];
+    down1_params.columns = down1[1];
+    down1_params.swap0 = blocks;
+    down1_params.swap1 = 2;
+    down1_params.lut = 0;
+    down1_params.ratio = ratio(3, 4);
     const auto down1_rows =
         QuantTransposedBlocks(bytes(3), blocks, down1[1], down1[2]);
     const absl::Span<const uint8_t> down1_members[] = {down1_rows};
-    LITERT_ASSIGN_OR_RETURN(
-        stage, AddQuantLinear(params, stage, down1_members, scales[3], nullptr,
-                              nullptr, name + "_down1"));
 
-    params = {};
-    params.layout = kLiteRtNvidiaQuantLayoutRows;
-    params.bit_width = 2;
-    params.rows = 2 * down2_rows;
-    params.columns = down2_columns;
-    params.segments = 2;
-    params.swap0 = 1;
-    params.swap1 = 1;
-    params.activation = kLiteRtNvidiaQuantInt8;
-    params.requant = kLiteRtNvidiaQuantRequantDouble;
-    params.ratio = ratio(4, 5);
+    LiteRtNvidiaQuantLinearParams& down2_params = stages.stages[3];
+    down2_params.layout = kLiteRtNvidiaQuantLayoutRows;
+    down2_params.bit_width = 2;
+    down2_params.rows = 2 * down2_rows;
+    down2_params.columns = down2_columns;
+    down2_params.segments = 2;
+    down2_params.swap0 = 1;
+    down2_params.swap1 = 1;
+    down2_params.activation = kLiteRtNvidiaQuantInt8;
+    down2_params.requant = kLiteRtNvidiaQuantRequantDouble;
+    down2_params.ratio = ratio(4, 5);
     const absl::Span<const uint8_t> down2_members[] = {bytes(4), bytes(5)};
-    LITERT_ASSIGN_OR_RETURN(
-        stage, AddQuantLinear(params, stage, down2_members,
-                              joined(scales[4], scales[5]), nullptr, nullptr,
-                              name + "_down2"));
+
+    const absl::Span<const absl::Span<const uint8_t>> members[] = {
+        up1_members, up2_members, down1_members, down2_members};
+    const std::vector<float> multipliers[] = {joined(scales[0], scales[1]),
+                                              scales[2], scales[3],
+                                              joined(scales[4], scales[5])};
+    nvinfer1::ITensor* stage = nullptr;
+    const bool glued =
+        glue.has_value() && glue->inputs[0]->getDimensions().d[0] == 1 &&
+        LiteRtNvidiaQuantGlueFactorizedMlpSupports(&glue->params, &stages);
+    if (glue.has_value() && !glued) {
+      LITERT_RETURN_IF_ERROR(LowerQuantGlue(quant_glues_[*mlp.glue]));
+      LITERT_ASSIGN_OR_RETURN(activation,
+                              GetQuantActivation(*mlp.input, 2 * up1_columns));
+    }
+    // A decode step's MLP (one INT8 row) is one launch, with the glue in
+    // front when it has one; every other MLP is the four launches.
+    if (glued) {
+      LITERT_ASSIGN_OR_RETURN(
+          stage, AddQuantFactorizedMlp(stages, nullptr, members, multipliers,
+                                       silu, name, &*glue));
+    } else if (activation.type == kLiteRtNvidiaQuantInt8 &&
+               activation.rows->getDimensions().d[0] == 1 &&
+               LiteRtNvidiaQuantFactorizedMlpSupports(&stages)) {
+      LITERT_ASSIGN_OR_RETURN(
+          stage, AddQuantFactorizedMlp(stages, activation.rows, members,
+                                       multipliers, silu, name));
+    } else {
+      static const char* const kStageNames[] = {"_up1", "_up2", "_down1",
+                                                "_down2"};
+      stage = activation.rows;
+      for (int s = 0; s < 4; ++s) {
+        LITERT_ASSIGN_OR_RETURN(
+            stage, AddQuantLinear(stages.stages[s], stage, members[s],
+                                  multipliers[s], s == 1 ? &silu : nullptr,
+                                  nullptr, name + kStageNames[s]));
+      }
+    }
     SetQuantValue(*mlp.output, stage, 0, 2 * down2_rows, mlp.scales[5]);
     LITERT_LOG(LITERT_INFO,
                "NVIDIA TensorRT-RTX quant factorized MLP: output=%u blocks=%d "
@@ -13808,6 +13978,8 @@ class TensorRtGraphBuilder {
       if (!mlp.has_value() || !QuantOpsAreFree(members)) continue;
       quant_outputs_.insert(mlp->output->Get());
       quant_product_inputs_.insert(mlp->input->Get());
+      quant_factorized_mlps_by_input_[mlp->input->Get()] =
+          quant_factorized_mlps_.size();
       AddQuantRegion(QuantRegionKind::kFactorizedMlp,
                      quant_factorized_mlps_.size(), members);
       quant_factorized_mlps_.push_back(std::move(*mlp));
@@ -13824,6 +13996,8 @@ class TensorRtGraphBuilder {
                 mlp.scales);
       mlp.output = op.Outputs()[0];
       quant_outputs_.insert(mlp.output->Get());
+      quant_factorized_mlps_by_input_[mlp.input->Get()] =
+          quant_factorized_mlps_.size();
       AddQuantRegion(QuantRegionKind::kFactorizedMlp,
                      quant_factorized_mlps_.size(), {op.Get()});
       quant_factorized_mlps_.push_back(std::move(mlp));
@@ -13972,14 +14146,20 @@ class TensorRtGraphBuilder {
       for (const auto& group : quant_projections_) {
         glues_in_projections += group.glue.has_value() ? 1 : 0;
       }
-      LITERT_LOG(LITERT_INFO,
-                 "NVIDIA TensorRT-RTX quantized products: %zu projection "
-                 "launches (%zu with the glue in front), %zu factorized MLPs, "
-                 "%zu glue launches, %zu qkv rope launches, %zu heads",
-                 quant_projections_.size(), glues_in_projections,
-                 quant_factorized_mlps_.size(),
-                 quant_glues_.size() - glues_in_projections,
-                 quant_qkv_ropes_.size(), quant_heads_.size());
+      size_t glues_in_factorized_mlps = 0;
+      for (const auto& mlp : quant_factorized_mlps_) {
+        glues_in_factorized_mlps += mlp.glue.has_value() ? 1 : 0;
+      }
+      LITERT_LOG(
+          LITERT_INFO,
+          "NVIDIA TensorRT-RTX quantized products: %zu projection "
+          "launches (%zu with the glue in front), %zu factorized MLPs "
+          "(%zu with the glue in front), %zu glue launches, %zu qkv "
+          "rope launches, %zu heads",
+          quant_projections_.size(), glues_in_projections,
+          quant_factorized_mlps_.size(), glues_in_factorized_mlps,
+          quant_glues_.size() - glues_in_projections - glues_in_factorized_mlps,
+          quant_qkv_ropes_.size(), quant_heads_.size());
     }
     return {};
   }
@@ -14539,6 +14719,7 @@ class TensorRtGraphBuilder {
     nvinfer1::ILayer* layer = nullptr;
     uint32_t segment = 0;
     bool scales_too = false;  // the blockwise scales are in the segment too
+    int32_t input = 1;        // the layer's input that takes the holder
   };
   // The odml.cache_update ops whose token the attention over their caches
   // writes (LowerQuantCacheUpdate), by their updated key cache, until that
@@ -14594,6 +14775,7 @@ class TensorRtGraphBuilder {
   std::unordered_set<LiteRtTensor> quant_product_inputs_;
   // The projections regions (quant_projections_) by the tensor they read.
   std::unordered_map<LiteRtTensor, size_t> quant_projections_by_input_;
+  std::unordered_map<LiteRtTensor, size_t> quant_factorized_mlps_by_input_;
   std::vector<QuantProjections> quant_projections_;
   std::vector<QuantFactorizedMlp> quant_factorized_mlps_;
   std::vector<QuantGlue> quant_glues_;

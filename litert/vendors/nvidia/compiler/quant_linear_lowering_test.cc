@@ -884,8 +884,9 @@ struct FactorizedMlp {
 // factorized MLP, the MLP, the second residual update, the next block's norm,
 // QUANTIZE and query projection with its head norm, rotation and scalar.
 // Launches: the output projection (it quantizes its float input), a glue, the
-// four of the factorized MLP, the query projection (it runs the glue in front
-// of it), a qkv rope.
+// four of the factorized MLP (for a decode step's one row, one launch that runs
+// the glue in front too), the query projection (it runs the glue in front of
+// it), a qkv rope.
 void RunBlockBack(int tokens, bool prefill, bool carved = false) {
   SCOPED_TRACE(testing::Message() << tokens << " tokens, carved " << carved);
   Random random(23 + tokens);
@@ -989,8 +990,9 @@ void RunBlockBack(int tokens, bool prefill, bool carved = false) {
   if (testing::Test::HasFatalFailure()) return;
   EXPECT_EQ(CountOf(result.layers, "cuda_quant_projections"), 2u)
       << result.layers;
-  EXPECT_EQ(CountOf(result.layers, "cuda_quant_glue"), 1u);
-  EXPECT_EQ(CountOf(result.layers, "cuda_quant_factorized_mlp"), 4u);
+  EXPECT_EQ(CountOf(result.layers, "cuda_quant_glue"), tokens == 1 ? 0u : 1u);
+  EXPECT_EQ(CountOf(result.layers, "cuda_quant_factorized_mlp"),
+            tokens == 1 ? 1u : 4u);
   EXPECT_EQ(CountOf(result.layers, "cuda_quant_qkv_rope"), 1u);
 
   // The attention output arrives [1, heads, tokens, depth]; the projection

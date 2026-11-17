@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_QUANT_LINEAR_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_QUANT_LINEAR_H_
 
+#include <cstddef>
 #include <cstdint>
 
 #include "driver_types.h"
@@ -110,6 +111,36 @@ extern "C" cudaError_t LiteRtNvidiaLaunchQuantLinear(
     const int8_t* lut, const float* row_scale, void* output,
     cudaStream_t stream);
 
+// The four products of a factorized MLP on one activation row in one launch:
+// stages[0..3] are up-1, up-2, down-1 and down-2 as
+// LiteRtNvidiaLaunchQuantLinear runs them (rows layout, centered INT2 weights,
+// INT8 activations), each reading the INT8 result of the one before, with the
+// results of the four launches, bit for bit.
+struct LiteRtNvidiaQuantFactorizedMlpParams {
+  LiteRtNvidiaQuantLinearParams stages[4];
+};
+
+extern "C" bool LiteRtNvidiaQuantFactorizedMlpSupports(
+    const LiteRtNvidiaQuantFactorizedMlpParams* params);
+
+// The launch's device state (zero before the first launch; the launch
+// leaves it zero) and its workspace (the three results between the stages).
+extern "C" size_t LiteRtNvidiaQuantFactorizedMlpStateBytes();
+extern "C" size_t LiteRtNvidiaQuantFactorizedMlpWorkspaceBytes(
+    const LiteRtNvidiaQuantFactorizedMlpParams* params);
+
+// activation INT8 [stages[0].segments * stages[0].columns], the packed
+// weights, multipliers [rows] of each stage, the table of the stages that
+// have one; output INT8 [stages[3].rows]. Where the device cannot run the
+// one launch (it needs a co-resident grid and the bulk copies of compute
+// capability 9.0) or `state` is null, the four launches run instead, their
+// intermediate results in the workspace.
+extern "C" cudaError_t LiteRtNvidiaLaunchQuantFactorizedMlp(
+    const LiteRtNvidiaQuantFactorizedMlpParams* params,
+    const int8_t* activation, const uint8_t* const weights[4],
+    const float* const multipliers[4], const int8_t* lut, void* state,
+    void* workspace, int8_t* output, cudaStream_t stream);
+
 enum LiteRtNvidiaQuantGlueQuantize : int32_t {
   kLiteRtNvidiaQuantGlueNone = 0,
   // q = sat8(rne(z * quantize_scale)), quantize_scale = fl16(1 / scale).
@@ -175,6 +206,25 @@ extern "C" cudaError_t LiteRtNvidiaLaunchQuantGlueLinear(
     const int8_t* y, const float* branch_weights, const float* norm_weights,
     const uint8_t* weights, const float* multipliers, const int8_t* lut,
     void* x_out, void* z_out, void* output, cudaStream_t stream);
+
+// The glue in front of a factorized MLP and the MLP on one activation row in
+// one launch: LiteRtNvidiaLaunchQuantGlue with `glue` (static quantization) and
+// LiteRtNvidiaLaunchQuantFactorizedMlp on its q, with the results of the two
+// launches, bit for bit.
+extern "C" bool LiteRtNvidiaQuantGlueFactorizedMlpSupports(
+    const LiteRtNvidiaQuantGlueParams* glue,
+    const LiteRtNvidiaQuantFactorizedMlpParams* params);
+
+// The glue's inputs and its outputs x_out and z_out (optional) as
+// LiteRtNvidiaLaunchQuantGlue takes them (q stays on the chip), the MLP's as
+// LiteRtNvidiaLaunchQuantFactorizedMlp takes them.
+extern "C" cudaError_t LiteRtNvidiaLaunchQuantGlueFactorizedMlp(
+    const LiteRtNvidiaQuantGlueParams* glue,
+    const LiteRtNvidiaQuantFactorizedMlpParams* params, const void* x,
+    const int8_t* y, const float* branch_weights, const float* norm_weights,
+    const uint8_t* const weights[4], const float* const multipliers[4],
+    const int8_t* lut, void* state, void* workspace, void* x_out, void* z_out,
+    int8_t* output, cudaStream_t stream);
 
 // The steps between the q, k and v projections and the attention: every head
 // of the INT8 projection results [tokens, (q_heads + k_heads + v_heads) *

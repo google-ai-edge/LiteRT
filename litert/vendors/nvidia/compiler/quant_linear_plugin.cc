@@ -42,7 +42,25 @@ constexpr char kHolderGranuleField[] = "holder_granule";
 constexpr int kFields = 5;
 
 // Which kernel the layer launches.
-enum Kind : int32_t { kLinear = 0, kGlue = 1, kQkvRope = 2, kGlueLinear = 3 };
+enum Kind : int32_t {
+  kLinear = 0,
+  kGlue = 1,
+  kQkvRope = 2,
+  kGlueLinear = 3,
+  kFactorizedMlp = 4,
+};
+
+constexpr int kFactorizedMlpStages = 4;
+
+// kFactorizedMlp's parameters as a plan holds them: the stages, where each
+// stage's weights are in its weights input (CreateQuantFactorizedMlpPlugin),
+// and the glue in front of the MLP when `glue` is 1.
+struct FactorizedMlpPlanParams {
+  LiteRtNvidiaQuantFactorizedMlpParams stages = {};
+  int64_t weight_offsets[kFactorizedMlpStages] = {};
+  int32_t glue = 0;
+  LiteRtNvidiaQuantGlueParams glue_params = {};
+};
 
 // The parameters of the layer's kernel: the member `kind` names; kGlueLinear
 // has `linear` and `glue`, which a plan holds as one run of bytes.
@@ -50,6 +68,7 @@ struct Params {
   LiteRtNvidiaQuantLinearParams linear = {};
   LiteRtNvidiaQuantGlueParams glue = {};
   LiteRtNvidiaQuantQkvRopeParams rope = {};
+  FactorizedMlpPlanParams factorized_mlp = {};
 };
 static_assert(offsetof(Params, glue) == sizeof(LiteRtNvidiaQuantLinearParams),
               "kGlueLinear serializes linear and glue as one run");
@@ -126,6 +145,8 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
       case kGlueLinear:
         return sizeof(LiteRtNvidiaQuantLinearParams) +
                sizeof(LiteRtNvidiaQuantGlueParams);
+      case kFactorizedMlp:
+        return sizeof(FactorizedMlpPlanParams);
       default:
         return sizeof(LiteRtNvidiaQuantQkvRopeParams);
     }
@@ -142,6 +163,12 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
         return static_cast<nvinfer1::IPluginV3OneRuntime*>(this);
     }
     return nullptr;
+  }
+
+  ~QuantLinearPlugin() override {
+    if (factorized_mlp_state_ != nullptr) {
+      cudaFree(factorized_mlp_state_);
+    }
   }
 
   nvinfer1::IPluginV3* clone() noexcept override {
@@ -203,6 +230,15 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
       return 1;
     }
     const int last = inputs[0].nbDims - 1;
+    if (kind_ == kFactorizedMlp) {
+      // x' and z of a glue in front have the shape of x.
+      for (int32_t o = 0; o < num_outputs; ++o) {
+        outputs[o] = inputs[0];
+      }
+      outputs[0].d[last] = expr_builder.constant(
+          params_.factorized_mlp.stages.stages[kFactorizedMlpStages - 1].rows);
+      return outputs[0].d[last] != nullptr ? 0 : 1;
+    }
     if (kind_ == kLinear || kind_ == kGlueLinear) {
       // kGlueLinear: x' and z have the shape of x.
       for (int32_t o = 1; o < num_outputs; ++o) {
@@ -279,6 +315,10 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
       const int64_t m = Rows(inputs[0].max, params_.glue.width);
       return m > 1 ? static_cast<size_t>(m) * params_.glue.width : 0;
     }
+    if (kind_ == kFactorizedMlp) {
+      return LiteRtNvidiaQuantFactorizedMlpWorkspaceBytes(
+          &params_.factorized_mlp.stages);
+    }
     if (kind_ != kLinear) {
       return 0;
     }
@@ -324,6 +364,9 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
     } else if (kind_ == kGlueLinear) {
       status =
           EnqueueGlueLinear(input_desc, inputs, outputs, workspace, stream);
+    } else if (kind_ == kFactorizedMlp) {
+      status =
+          EnqueueFactorizedMlp(input_desc, inputs, outputs, workspace, stream);
     } else if (kind_ == kGlue) {
       const auto& p = params_.glue;
       const int64_t m = Rows(input_desc[0].dims, p.width);
@@ -384,7 +427,12 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
   nvinfer1::IPluginV3* attachToContext(
       nvinfer1::IPluginResourceContext* context) noexcept override {
     static_cast<void>(context);
-    return clone();
+    auto* attached = new (std::nothrow) QuantLinearPlugin(
+        kind_, params_, outputs_, weight_offset_, holder_granule_);
+    if (attached != nullptr && kind_ == kFactorizedMlp) {
+      attached->AllocateFactorizedMlpState();
+    }
+    return attached;
   }
 
   const nvinfer1::PluginFieldCollection* getFieldsToSerialize() noexcept
@@ -438,6 +486,81 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
         stream);
   }
 
+  // kFactorizedMlp: the one launch for its one row; without a state (no memory,
+  // no CUDA context) the launch runs the four products.
+  cudaError_t EnqueueFactorizedMlp(const nvinfer1::PluginTensorDesc* input_desc,
+                                   const void* const* inputs,
+                                   void* const* outputs, void* workspace,
+                                   cudaStream_t stream) const {
+    const auto& p = params_.factorized_mlp;
+    const auto& first = p.stages.stages[0];
+    if (Rows(input_desc[0].dims,
+             static_cast<int64_t>(first.segments) * first.columns) != 1) {
+      return cudaErrorInvalidValue;
+    }
+    const uint8_t* weights[kFactorizedMlpStages];
+    const float* multipliers[kFactorizedMlpStages];
+    bool table = false;
+    for (int s = 0; s < kFactorizedMlpStages; ++s) {
+      const auto& stage = p.stages.stages[s];
+      weights[s] = WeightsAt(input_desc[1 + s].dims, inputs[1 + s],
+                             static_cast<uint64_t>(stage.rows) * stage.columns *
+                                 stage.bit_width / 8,
+                             p.weight_offsets[s]);
+      if (weights[s] == nullptr) return cudaErrorInvalidValue;
+      multipliers[s] =
+          static_cast<const float*>(inputs[1 + kFactorizedMlpStages + s]);
+      table = table || stage.lut != 0;
+    }
+    const auto* lut =
+        table ? static_cast<const int8_t*>(inputs[1 + 2 * kFactorizedMlpStages])
+              : nullptr;
+    auto* output = static_cast<int8_t*>(outputs[0]);
+    if (p.glue == 0) {
+      return LiteRtNvidiaLaunchQuantFactorizedMlp(
+          &p.stages, static_cast<const int8_t*>(inputs[0]), weights,
+          multipliers, lut, factorized_mlp_state_, workspace, output, stream);
+    }
+    const auto& g = p.glue_params;
+    int32_t next = FactorizedMlpFirstGlueInput();
+    const int8_t* y = nullptr;
+    const float* branch_weights = nullptr;
+    if (g.branch != 0) {
+      y = static_cast<const int8_t*>(inputs[next++]);
+      branch_weights = static_cast<const float*>(inputs[next++]);
+    }
+    const float* norm_weights =
+        g.norm != 0 ? static_cast<const float*>(inputs[next]) : nullptr;
+    void* x_out = (outputs_ & kQuantGlueOutputX) != 0 ? outputs[1] : nullptr;
+    void* z_out = (outputs_ & kQuantGlueOutputZ) != 0
+                      ? outputs[x_out != nullptr ? 2 : 1]
+                      : nullptr;
+    return LiteRtNvidiaLaunchQuantGlueFactorizedMlp(
+        &g, &p.stages, inputs[0], y, branch_weights, norm_weights, weights,
+        multipliers, lut, factorized_mlp_state_, workspace, x_out, z_out,
+        output, stream);
+  }
+
+  // The one launch's barrier counters for this layer of one execution
+  // context, zero between its launches; zeroed on a stream of their own
+  // (the default stream is not to be used while another stream is
+  // captured).
+  void AllocateFactorizedMlpState() noexcept {
+    void* state = nullptr;
+    cudaStream_t stream = nullptr;
+    const size_t bytes = LiteRtNvidiaQuantFactorizedMlpStateBytes();
+    if (cudaMalloc(&state, bytes) == cudaSuccess &&
+        cudaStreamCreate(&stream) == cudaSuccess &&
+        cudaMemsetAsync(state, 0, bytes, stream) == cudaSuccess &&
+        cudaStreamSynchronize(stream) == cudaSuccess) {
+      factorized_mlp_state_ = state;
+    } else {
+      if (state != nullptr) cudaFree(state);
+      static_cast<void>(cudaGetLastError());
+    }
+    if (stream != nullptr) cudaStreamDestroy(stream);
+  }
+
   const void* ParamsData() const noexcept {
     switch (kind_) {
       case kLinear:
@@ -445,6 +568,8 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
         return &params_.linear;
       case kGlue:
         return &params_.glue;
+      case kFactorizedMlp:
+        return &params_.factorized_mlp;
       default:
         return &params_.rope;
     }
@@ -462,9 +587,28 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
       case kGlueLinear:
         return GlueLinearFirstGlueInput() + (params_.glue.branch != 0 ? 2 : 0) +
                (params_.glue.norm != 0 ? 1 : 0);
+      case kFactorizedMlp:
+        return FactorizedMlpFirstGlueInput() +
+               (params_.factorized_mlp.glue != 0
+                    ? (params_.factorized_mlp.glue_params.branch != 0 ? 2 : 0) +
+                          (params_.factorized_mlp.glue_params.norm != 0 ? 1 : 0)
+                    : 0);
       default:
         return 3 + RopeGroups();
     }
+  }
+
+  // kFactorizedMlp: x, the four stages' weights, their multipliers and the
+  // table, then the glue's y and branch norm weights, then its norm weights.
+  int32_t FactorizedMlpFirstGlueInput() const noexcept {
+    return 1 + 2 * kFactorizedMlpStages + (FactorizedMlpHasTable() ? 1 : 0);
+  }
+
+  bool FactorizedMlpHasTable() const noexcept {
+    for (const auto& stage : params_.factorized_mlp.stages.stages) {
+      if (stage.lut != 0) return true;
+    }
+    return false;
   }
 
   // kGlueLinear: x, the product's weights, multipliers and table, then y and
@@ -474,6 +618,25 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
   }
 
   nvinfer1::DataType InputType(int32_t index) const noexcept {
+    if (kind_ == kFactorizedMlp) {
+      const auto& p = params_.factorized_mlp;
+      if (index == 0) {
+        return p.glue != 0 ? TensorType(p.glue_params.x_type)
+                           : nvinfer1::DataType::kINT8;
+      }
+      if (index <= kFactorizedMlpStages) {
+        return p.weight_offsets[index - 1] >= 0 ? nvinfer1::DataType::kINT64
+                                                : nvinfer1::DataType::kINT8;
+      }
+      if (index >= FactorizedMlpFirstGlueInput()) {
+        return p.glue_params.branch != 0 &&
+                       index == FactorizedMlpFirstGlueInput()
+                   ? nvinfer1::DataType::kINT8
+                   : nvinfer1::DataType::kFLOAT;
+      }
+      return index <= 2 * kFactorizedMlpStages ? nvinfer1::DataType::kFLOAT
+                                               : nvinfer1::DataType::kINT8;
+    }
     if (kind_ == kGlueLinear && index >= GlueLinearFirstGlueInput()) {
       return params_.glue.branch != 0 && index == GlueLinearFirstGlueInput()
                  ? nvinfer1::DataType::kINT8
@@ -510,9 +673,11 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
       case kLinear:
         return 1;
       case kGlue:
-      case kGlueLinear: {
-        // kGlueLinear: the product's result, then x' and z of the mask.
-        int32_t count = kind_ == kGlueLinear ? 1 : 0;
+      case kGlueLinear:
+      case kFactorizedMlp: {
+        // kGlueLinear, kFactorizedMlp: the product's result, then x' and z of
+        // the mask.
+        int32_t count = kind_ == kGlue ? 0 : 1;
         for (int32_t bit = 1; bit <= kQuantGlueOutputRowScale; bit <<= 1) {
           count += (outputs_ & bit) != 0 ? 1 : 0;
         }
@@ -539,6 +704,12 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
   }
 
   nvinfer1::DataType OutputType(int32_t index) const noexcept {
+    if (kind_ == kFactorizedMlp) {
+      if (index == 0) return nvinfer1::DataType::kINT8;
+      return GlueOutput(index - 1) == kQuantGlueOutputX
+                 ? nvinfer1::DataType::kHALF
+                 : TensorType(params_.factorized_mlp.glue_params.z_type);
+    }
     if (kind_ == kGlueLinear) {
       if (index == 0) return nvinfer1::DataType::kINT8;
       return GlueOutput(index - 1) == kQuantGlueOutputX
@@ -572,12 +743,21 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
   const uint8_t* Weights(const nvinfer1::Dims& dims,
                          const void* input) const noexcept {
     const auto& p = params_.linear;
-    const uint64_t bytes =
-        static_cast<uint64_t>(p.rows) * p.columns * p.bit_width / 8;
+    return WeightsAt(
+        dims, input,
+        static_cast<uint64_t>(p.rows) * p.columns * p.bit_width / 8,
+        holder_granule_ == 0 ? -1 : weight_offset_);
+  }
+
+  // `bytes` of packed weights in a weights input of `dims` at `input`: the
+  // input itself where `offset` is negative, else `offset` bytes into the
+  // segment its holder stands for.
+  const uint8_t* WeightsAt(const nvinfer1::Dims& dims, const void* input,
+                           uint64_t bytes, int64_t offset) const noexcept {
     if (dims.nbDims != 1 || dims.d[0] <= 0 || input == nullptr) {
       return nullptr;
     }
-    if (holder_granule_ == 0) {
+    if (offset < 0) {
       return static_cast<uint64_t>(dims.d[0]) >= bytes
                  ? static_cast<const uint8_t*>(input)
                  : nullptr;
@@ -585,14 +765,13 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
     const uint64_t granule = static_cast<uint64_t>(holder_granule_);
     const uint64_t holder_bytes =
         static_cast<uint64_t>(dims.d[0]) * sizeof(int64_t);
-    if (holder_bytes < granule || weight_offset_ < 0 ||
-        static_cast<uint64_t>(weight_offset_) + bytes >
-            holder_bytes - granule) {
+    if (granule == 0 || holder_bytes < granule ||
+        static_cast<uint64_t>(offset) + bytes > holder_bytes - granule) {
       return nullptr;
     }
     const uintptr_t address = reinterpret_cast<uintptr_t>(input);
     const uintptr_t segment = (address + granule - 1) & ~(granule - 1);
-    return reinterpret_cast<const uint8_t*>(segment) + weight_offset_;
+    return reinterpret_cast<const uint8_t*>(segment) + offset;
   }
 
   int32_t kind_;
@@ -602,7 +781,14 @@ class QuantLinearPlugin final : public nvinfer1::IPluginV3,
   int64_t holder_granule_;
   std::array<nvinfer1::PluginField, kFields> fields_;
   nvinfer1::PluginFieldCollection field_collection_;
+  void* factorized_mlp_state_ = nullptr;
 };
+
+// A holder's granule: a power of two of at least 16, so that the kernels
+// read aligned words.
+bool HolderGranule(int64_t granule) {
+  return granule >= 16 && (granule & (granule - 1)) == 0;
+}
 
 nvinfer1::IPluginV3* CreatePlugin(int32_t kind, const Params& params,
                                   int32_t outputs, int64_t weight_offset,
@@ -639,6 +825,26 @@ nvinfer1::IPluginV3* CreatePlugin(int32_t kind, const Params& params,
              : (holder_granule < 16 ||
                 (holder_granule & (holder_granule - 1)) != 0 ||
                 weight_offset < 0 || weight_offset % 16 != 0))) {
+      return nullptr;
+    }
+  } else if (kind == kFactorizedMlp) {
+    // A weights input is the packed weights (-1) or a holder.
+    bool holders = false;
+    for (const int64_t offset : params.factorized_mlp.weight_offsets) {
+      if (offset < -1 || (offset >= 0 && offset % 16 != 0)) return nullptr;
+      holders = holders || offset >= 0;
+    }
+    // x' and z are the only outputs of a glue in front; q stays inside.
+    const auto& p = params.factorized_mlp;
+    if (!(p.glue == 0 ? LiteRtNvidiaQuantFactorizedMlpSupports(&p.stages) &&
+                            outputs == 0
+                      : p.glue == 1 &&
+                            LiteRtNvidiaQuantGlueFactorizedMlpSupports(
+                                &p.glue_params, &p.stages) &&
+                            (outputs &
+                             ~(kQuantGlueOutputX | kQuantGlueOutputZ)) == 0) ||
+        weight_offset != 0 ||
+        (holders ? !HolderGranule(holder_granule) : holder_granule != 0)) {
       return nullptr;
     }
   } else if (kind == kQkvRope) {
@@ -709,7 +915,7 @@ class QuantLinearPluginCreator final : public nvinfer1::IPluginCreatorV3One {
         }
       }
     }
-    if (kind < kLinear || kind > kGlueLinear || params_data == nullptr ||
+    if (kind < kLinear || kind > kFactorizedMlp || params_data == nullptr ||
         params_size != QuantLinearPlugin::ParamsSize(kind)) {
       return nullptr;
     }
@@ -717,7 +923,9 @@ class QuantLinearPluginCreator final : public nvinfer1::IPluginCreatorV3One {
     std::memcpy(kind == kLinear || kind == kGlueLinear
                     ? static_cast<void*>(&params.linear)
                 : kind == kGlue ? static_cast<void*>(&params.glue)
-                                : static_cast<void*>(&params.rope),
+                : kind == kFactorizedMlp
+                    ? static_cast<void*>(&params.factorized_mlp)
+                    : static_cast<void*>(&params.rope),
                 params_data, params_size);
     return CreatePlugin(kind, params, outputs, weight_offset, holder_granule);
   }
@@ -765,6 +973,23 @@ nvinfer1::IPluginV3* CreateQuantGlueLinearPlugin(
   all.linear = linear;
   all.glue = glue;
   return CreatePlugin(kGlueLinear, all, outputs, weight_offset, holder_granule);
+}
+
+nvinfer1::IPluginV3* CreateQuantFactorizedMlpPlugin(
+    const LiteRtNvidiaQuantFactorizedMlpParams& params,
+    const std::array<int64_t, 4>& weight_offsets, int64_t holder_granule,
+    const LiteRtNvidiaQuantGlueParams* glue, int32_t outputs) noexcept {
+  Params all;
+  all.factorized_mlp.stages = params;
+  for (int s = 0; s < kFactorizedMlpStages; ++s) {
+    all.factorized_mlp.weight_offsets[s] = weight_offsets[s];
+  }
+  if (glue != nullptr) {
+    all.factorized_mlp.glue = 1;
+    all.factorized_mlp.glue_params = *glue;
+  }
+  return CreatePlugin(kFactorizedMlp, all, outputs, /*weight_offset=*/0,
+                      holder_granule);
 }
 
 nvinfer1::IPluginV3* CreateQuantQkvRopePlugin(

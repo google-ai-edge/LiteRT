@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_COMPILER_QUANT_LINEAR_PLUGIN_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_COMPILER_QUANT_LINEAR_PLUGIN_H_
 
+#include <array>
 #include <cstdint>
 
 #include "NvInferRuntime.h"
@@ -67,6 +68,25 @@ nvinfer1::IPluginV3* CreateQuantGlueLinearPlugin(
     const LiteRtNvidiaQuantGlueParams& glue,
     const LiteRtNvidiaQuantLinearParams& linear, int32_t outputs,
     int64_t weight_offset = 0, int64_t holder_granule = 0) noexcept;
+
+// The four products of a factorized MLP on one activation row as one layer
+// (LiteRtNvidiaLaunchQuantFactorizedMlp), with `glue` the glue in front of it
+// too (LiteRtNvidiaLaunchQuantGlueFactorizedMlp):
+//   inputs  activation INT8 [..., segments * columns of stage 0], one row,
+//           or with `glue` its x; the packed weights of the four stages,
+//           each INT8 [bytes] where weight_offsets[s] is negative, else the
+//           INT64 holder of a weight store segment with the weights
+//           weight_offsets[s] bytes into it; the multipliers FP32 [rows] of
+//           each stage; the table INT8 [256] when a stage has one; then the
+//           glue's y and branch norm weights (with glue->branch) and norm
+//           weights (with glue->norm)
+//   outputs INT8 [..., rows of stage 3], then x' and z of the `outputs`
+//           mask (kQuantGlueOutputX, kQuantGlueOutputZ)
+nvinfer1::IPluginV3* CreateQuantFactorizedMlpPlugin(
+    const LiteRtNvidiaQuantFactorizedMlpParams& params,
+    const std::array<int64_t, 4>& weight_offsets, int64_t holder_granule,
+    const LiteRtNvidiaQuantGlueParams* glue = nullptr,
+    int32_t outputs = 0) noexcept;
 
 // The head norms and the rotation behind the q, k and v projections
 // (LiteRtNvidiaLaunchQuantQkvRope; params.tokens is the input's):
