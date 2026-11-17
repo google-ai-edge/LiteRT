@@ -190,10 +190,7 @@ YNNPACK_DONT_REGISTER = [
     "tfl\\.zeros_like",  # YNNPACK does not support ZerosLike
     "tfl\\.reduce_prod",  # YNNPACK does not support ReduceProd
     "tfl\\.tile",  # YNNPACK does not support Tile (used in MQA TransformerLayer)
-    "Pad.*<([0-9]+x)*1(x[0-9]+)*>",  # YNNPACK does not support padding on extent-1 dimensions
-    "RuntimeBmm.*(f16|i4)",  # YNNPACK does not support mixed fp32_fp16_fp32 dot in f16 RuntimeBmm or int4 Dequantize in decomposition subgraph
     "Rope.*_i32<[^>]+>_cst",  # YNNPACK Convert (Cast) does not support constant int32 position input in Rope decomposition subgraph
-    "SdpaTransposed",  # SdpaTransposed generator does not yet set logit_cap attribute for YNNPACK
     "TflMoe",  # YNNPACK does not support ML Drift GPU custom "moe" op
     "FullyConnected.*(i4|u8)",  # YNNPACK delegate requires even output dims for INT4 weights and does not support UINT8 FullyConnected
     "Transpose.*[(][1-8]d_(i1|i16|u16|u32|i64|u64)<",  # YNNPACK Transpose supports FP32, FP16, INT4, INT8, UINT8, and INT32 types
