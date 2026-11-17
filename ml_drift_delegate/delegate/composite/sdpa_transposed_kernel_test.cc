@@ -1132,6 +1132,21 @@ TEST_P(SdpaTransposedKernelExecuteTest,
   }
 }
 
+// Gemma 4 26B global-attention decode at an 8K cache (32 MiB of K and V), where
+// the Apple Metal SIMD-group work-group kernel processes all 8 GQA query heads
+// in one work group with one SIMD lane per key (`kSimdWorkGroupFullGqaKvBytes`)
+// and 5,201 active entries split into one full 256-key chunk plus an 8-key
+// cooperative tail chunk per split.
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeGemma4GlobalFullGqaEightHeads) {
+  auto status = RunSdpaTransposedTest(
+      *exec_env, precision(), storage(), /*BK=*/16, /*T=*/1, /*S=*/8192,
+      /*H=*/512, mask_mode(), /*KV=*/2, /*q_start=*/5200,
+      /*from_cache_update=*/true, /*is_causal=*/false, /*flatten_output=*/true,
+      /*active_tokens=*/FilledCacheEntries(mask_mode(), 5201, 8192));
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
 // Speculative-decoding MTP verifier (`T = 2`, `attr.is_prefill = false` as set
 // by `sdpa_transposed_parser.cc` for `q_shape.w <= 2`) on Gemma 4 26B global
 // (head dim 512, 8 query heads per KV head) and sliding (head dim 256, 2 query

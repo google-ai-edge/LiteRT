@@ -45,7 +45,8 @@ struct FlashDecodeTuning {
   int max_heads_per_work_group = 8;
   // The keys of every query token and K/V head group are split across work
   // groups until there are at least `target_work_groups` work groups, but
-  // every split keeps at least `min_split_keys` keys.
+  // every split keeps at least `min_split_keys` keys. `GetFlashDecodeTuning`
+  // scales this up to at least two work groups per GPU compute unit.
   int target_work_groups = 40;
   int min_split_keys = 256;
   // Local memory budget in bytes of the work-group reduction kernel. Apple GPUs
@@ -77,14 +78,23 @@ struct FlashDecodeTuning {
 // compiler limits the kernel to fewer work items than it is launched with
 // (b/578633071). The wave-SIMD kernel uses 16 waves on Apple GPUs.
 //
-// On Apple GPUs (Metal) the work-group kernel uses its SIMD-group variant with
-// at most 4 query heads per work group. Measured on M4 Pro with Gemma 4
-// 26B-A4B decode, the global attention layers (head dim 512, 8 query heads per
-// K/V head) take 53 us at 1K and 686 us at a 31.8K context, compared with 103
-// us and 899 us for the portable kernel. With 8 heads per work group, which
-// reads K/V only once, they take 83 us and 671 us.
+// On Apple GPUs (Metal) the work-group kernel uses its SIMD-group variant. At
+// short contexts it processes at most 4 query heads per work group with 4 SIMD
+// lanes per key: measured on M4 Pro with Gemma 4 26B-A4B decode, the global
+// attention layers (head dim 512, 8 query heads per K/V head) take 53 us at 1K
+// vs. 83 us with 8 heads, because the second K/V read hits the GPU cache. Once
+// the K and V caches of a layer reach `kSimdWorkGroupFullGqaKvBytes`, where K/V
+// reads come from DRAM, `GetFlashDecodeConfig` processes up to 8 query heads
+// per work group with one lane per key so each K/V entry is read from DRAM once
+// in coalesced cache lines with uniform `q_local` broadcasts.
 // TODO(b/553029558): Tune for Mali, Intel, Nvidia and AMD GPUs.
 FlashDecodeTuning GetFlashDecodeTuning(const ::ml_drift::GpuInfo& gpu_info);
+
+// Combined F16 size in bytes of a layer's K and V caches from which the
+// SIMD-group work-group Flash-Decode kernel processes up to 8 GQA query heads
+// per work group with one SIMD lane per key instead of splitting 8-head GQA
+// groups across two 4-head work groups.
+inline constexpr uint64_t kSimdWorkGroupFullGqaKvBytes = 32ull << 20;
 
 // Keys scored by each work item per chunk of the portable work-group
 // Flash-Decode kernel: at most as many as keep the probabilities of a chunk

@@ -1373,7 +1373,47 @@ std::string GenerateSimdWorkGroupFlashDecodeCode(
                   chunk, ") {\n", per_head("    float tmax$g = -1.0e30f;\n"));
   // Pass r scores keys base + r * keys_per_pass + key_lane: lane part
   // `key_part` of the key reads channel slices [key_part * part_slices,
-  // (key_part + 1) * part_slices).
+  // (key_part + 1) * part_slices). When `lanes_per_key == 1` and a tail chunk
+  // has at most `threads / 4` remaining keys, 4 adjacent lanes cooperate on
+  // each remaining key to shorten the serial slice loop by 4x.
+  const bool cooperative_tail =
+      lanes_per_key == 1 && threads % 4 == 0 && slices % 4 == 0;
+  if (cooperative_tail) {
+    const int tail_keys = threads / 4;
+    const int tail_slices = slices / 4;
+    absl::StrAppend(
+        &c, "    if (key_end - base <= ", tail_keys, R"() {
+      int t_part = tid % 4;
+      int t_lane = tid / 4;
+      int key = base + t_lane;
+)",
+        per_head("      float d$g = 0.0f;\n"),
+        R"(      bool valid = key < key_end;
+      if (valid) {
+        int k_idx = k_head + key + t_part * )",
+        tail_slices * k_stride_slice, R"(;
+        int q_idx = t_part * )",
+        tail_slices, R"(;
+        for (int sl = 0; sl < )",
+        tail_slices, R"(; ++sl) {
+          float4 kv = ucl::Convert<float4>(args.k.Read(k_idx));
+)",
+        per_head(absl::StrCat("          d$g += dot(q_local[$g * ", slices,
+                              " + q_idx + sl], kv);\n")),
+        "          k_idx += ", k_stride_slice, ";\n        }\n      }\n",
+        per_head("      d$g += ucl::WaveShuffleXor(d$g, 1);\n"
+                 "      d$g += ucl::WaveShuffleXor(d$g, 2);\n"),
+        "      if (t_part == 0 && valid) {\n",
+        FlashDecodeScoreEpilogueCode(heads, has_softcap, has_mask, is_bool_mask,
+                                     mask_width),
+        "      }\n",
+        per_head(absl::StrCat(
+            "      float s$g = (t_part == 0 && valid) ? d$g : -1.0e30f;\n"
+            "      tmax$g = max(tmax$g, s$g);\n"
+            "      p_local[$g * ",
+            chunk, " + t_part * ", tail_keys, " + t_lane] = s$g;\n")),
+        "    } else {\n");
+  }
   for (int r = 0; r < lanes_per_key; ++r) {
     absl::StrAppend(&c, "    {\n      int key = base + ", r * keys_per_pass,
                     " + key_lane;\n", per_head("      float d$g = 0.0f;\n"),
@@ -1407,6 +1447,9 @@ std::string GenerateSimdWorkGroupFlashDecodeCode(
         per_head(absl::StrCat("        p_local[$g * ", chunk, " + ",
                               r * keys_per_pass, " + key_lane] = s$g;\n")),
         "      }\n    }\n");
+  }
+  if (cooperative_tail) {
+    absl::StrAppend(&c, "    }\n");
   }
   // Chunk maximum, rescaling and probabilities. The barrier after `max_local`
   // also makes the scores in `p_local` visible to every work item.
@@ -1447,34 +1490,64 @@ std::string GenerateSimdWorkGroupFlashDecodeCode(
                             "; ++i) {\n", "    l_total$g += sum_local[$g * ",
                             simd_groups, " + i];\n", "  }\n")));
 
-  // Key-group reduction and output, one head at a time.
-  for (int g = 0; g < heads; ++g) {
-    if (reuse_scores) {
-      absl::StrAppend(&c, "  p_local[tid * 4] = acc", g, ".x;\n",
-                      "  p_local[tid * 4 + 1] = acc", g, ".y;\n",
-                      "  p_local[tid * 4 + 2] = acc", g, ".z;\n",
-                      "  p_local[tid * 4 + 3] = acc", g, ".w;\n",
-                      "  ucl::SyncThreads<WorkGroup, Local>();\n",
-                      "  if (tid < ", slices, ") {\n",
-                      "    float4 sum = ucl::Init<float4>(0.0f);\n",
-                      "    for (int i = 0; i < ", key_groups, "; ++i) {\n",
-                      "      int a = (i * ", slices, " + tid) * 4;\n",
-                      "      sum += ucl::Init<float4>(p_local[a], "
-                      "p_local[a + 1], p_local[a + 2], p_local[a + 3]);\n",
-                      "    }\n");
-    } else {
+  // Key-group reduction and output, batching heads through `p_local` when
+  // `reuse_scores` holds (`tid < slices` already has key_group 0 in `acc<g>`).
+  if (key_groups == 1) {
+    for (int g = 0; g < heads; ++g) {
+      absl::StrAppend(
+          &c, "  if (tid < ", slices, ") {\n    float4 sum = acc", g, ";\n",
+          FlashDecodeResultWriteCode(g, splits, slices, is_flattened_dst),
+          "  }\n");
+    }
+  } else if (reuse_scores) {
+    const int rem_threads = threads - slices;
+    const int batch_heads =
+        std::min(heads, std::max(1, (heads * chunk) / (rem_threads * 4)));
+    for (int g0 = 0; g0 < heads; g0 += batch_heads) {
+      const int g_end = std::min(heads, g0 + batch_heads);
+      absl::StrAppend(&c, "  if (tid >= ", slices, ") {\n");
+      for (int g = g0; g < g_end; ++g) {
+        absl::StrAppend(&c, "    {\n      int a = (",
+                        (g - g0) * rem_threads - slices, " + tid) * 4;\n",
+                        "      p_local[a] = acc", g,
+                        ".x;\n      p_local[a + 1] = acc", g,
+                        ".y;\n      p_local[a + 2] = acc", g,
+                        ".z;\n      p_local[a + 3] = acc", g, ".w;\n    }\n");
+      }
+      absl::StrAppend(&c,
+                      "  }\n  ucl::SyncThreads<WorkGroup, Local>();\n"
+                      "  if (tid < ",
+                      slices, ") {\n");
+      for (int g = g0; g < g_end; ++g) {
+        absl::StrAppend(&c, "    {\n      float4 sum = acc", g,
+                        ";\n      for (int i = 1; i < ", key_groups,
+                        "; ++i) {\n        int a = (", (g - g0) * rem_threads,
+                        " + (i - 1) * ", slices, " + tid) * 4;\n",
+                        "        sum += ucl::Init<float4>(p_local[a], "
+                        "p_local[a + 1], p_local[a + 2], p_local[a + 3]);\n"
+                        "      }\n",
+                        FlashDecodeResultWriteCode(g, splits, slices,
+                                                   is_flattened_dst),
+                        "    }\n");
+      }
+      absl::StrAppend(&c, "  }\n");
+      if (g_end < heads) {
+        absl::StrAppend(&c, "  ucl::SyncThreads<WorkGroup, Local>();\n");
+      }
+    }
+  } else {
+    for (int g = 0; g < heads; ++g) {
       absl::StrAppend(
           &c, "  acc_local[tid] = acc", g, ";\n",
           "  ucl::SyncThreads<WorkGroup, Local>();\n", "  if (tid < ", slices,
           ") {\n", "    float4 sum = acc_local[tid];\n",
           "    for (int i = 1; i < ", key_groups, "; ++i) {\n",
-          "      sum += acc_local[i * ", slices, " + tid];\n", "    }\n");
-    }
-    absl::StrAppend(
-        &c, FlashDecodeResultWriteCode(g, splits, slices, is_flattened_dst),
-        "  }\n");
-    if (g + 1 < heads) {
-      absl::StrAppend(&c, "  ucl::SyncThreads<WorkGroup, Local>();\n");
+          "      sum += acc_local[i * ", slices, " + tid];\n", "    }\n",
+          FlashDecodeResultWriteCode(g, splits, slices, is_flattened_dst),
+          "  }\n");
+      if (g + 1 < heads) {
+        absl::StrAppend(&c, "  ucl::SyncThreads<WorkGroup, Local>();\n");
+      }
     }
   }
   absl::StrAppend(&c, "}\n");
@@ -1597,8 +1670,9 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeCombine(
     const ::ml_drift::TensorDescriptor& part_desc,
     const ::ml_drift::TensorDescriptor& dst_desc, int slices, int q_heads,
     int splits, bool is_flattened_dst) {
+  const int wg_size = std::min(slices, 32);
   FusedFlashDecodeCombineOp op(slices, q_heads, splits);
-  op.work_group_size_ = ::ml_drift::int3(slices, 1, 1);
+  op.work_group_size_ = ::ml_drift::int3(wg_size, 1, 1);
   op.AddSrcTensor("part", part_desc);
   op.AddDstTensor("dst", dst_desc);
   const std::string ml_read =
@@ -1607,9 +1681,25 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeCombine(
   op.code_ = absl::StrCat(
       R"(
 MAIN_FUNCTION($0) {
+  int tid = ucl::GetLocalId<0>();
   int slice = ucl::GetGlobalId<0>();
   int head = ucl::GetGlobalId<1>();
   int X = ucl::GetGlobalId<2>();
+  __local float ml_m[)",
+      splits, R"(];
+  __local float ml_l[)",
+      splits, R"(];
+  if (head < )",
+      q_heads, R"() {
+    for (int i = tid; i < )",
+      splits, "; i += ", wg_size, R"() {
+      float4 ml = )",
+      ml_read, R"(;
+      ml_m[i] = ml.x;
+      ml_l[i] = ml.y;
+    }
+  }
+  ucl::SyncThreads<WorkGroup, Local>();
   if (slice >= )",
       slices, " || head >= ", q_heads, R"() {
     return;
@@ -1617,21 +1707,18 @@ MAIN_FUNCTION($0) {
   float m_max = -1.0e30f;
   for (int i = 0; i < )",
       splits, R"(; ++i) {
-    float4 ml = )",
-      ml_read, R"(;
-    if (ml.y > 0.0f) {
-      m_max = max(m_max, ml.x);
+    if (ml_l[i] > 0.0f) {
+      m_max = max(m_max, ml_m[i]);
     }
   }
   float l_sum = 0.0f;
   float4 acc = ucl::Init<float4>(0.0f);
   for (int i = 0; i < )",
       splits, R"(; ++i) {
-    float4 ml = )",
-      ml_read, R"(;
-    if (ml.y > 0.0f) {
-      float w = exp(ml.x - m_max);
-      l_sum += w * ml.y;
+    float li = ml_l[i];
+    if (li > 0.0f) {
+      float w = exp(ml_m[i] - m_max);
+      l_sum += w * li;
       acc += w * ucl::Convert<float4>(args.part.Read(X * )",
       splits, R"( + i, head, slice));
     }

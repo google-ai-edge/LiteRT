@@ -25,6 +25,8 @@ namespace litert::ml_drift {
 
 FlashDecodeTuning GetFlashDecodeTuning(const ::ml_drift::GpuInfo& gpu_info) {
   FlashDecodeTuning tuning;
+  tuning.target_work_groups =
+      std::max(tuning.target_work_groups, 2 * gpu_info.GetComputeUnitsCount());
   const int max_work_group_size = gpu_info.GetMaxWorkGroupTotalSize();
   if (max_work_group_size > 0) {
     // Keep both kernels within the work-group size limit of the device.
@@ -125,6 +127,19 @@ FlashDecodeConfig GetFlashDecodeConfig(const ::ml_drift::GpuInfo& gpu_info,
   const int group_size = q_shape.h / k_shape.h;
   const int slices = q_shape.c / 4;
   if (config.tuning.simd_work_group) {
+    constexpr uint64_t kHalfBytes = 2;
+    const uint64_t kv_cache_bytes = 2 * static_cast<uint64_t>(k_shape.b) *
+                                    k_shape.h * k_shape.w * q_shape.c *
+                                    kHalfBytes;
+    if (kv_cache_bytes >= kSimdWorkGroupFullGqaKvBytes) {
+      // Once the layer's K/V caches outgrow the GPU cache, process the whole
+      // 8-head GQA group in one work group (25,088 B <= 32 KB for head dim 512)
+      // with one lane per key so K/V is read from DRAM once in coalesced cache
+      // lines and `q_local` is broadcast uniformly across every SIMD group.
+      config.tuning.max_heads_per_work_group =
+          std::max(config.tuning.max_heads_per_work_group, 8);
+      config.tuning.lanes_per_key = 1;
+    }
     // Split the dot product of a key across as many lanes as divide its
     // channel slices, e.g. a single lane for head dim 4.
     while (config.tuning.lanes_per_key > 1 &&
