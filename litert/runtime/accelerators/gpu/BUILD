@@ -357,30 +357,32 @@ litert_accelerator_library(
     ],
 )
 
-litert_accelerator_library(
-    name = "ml_drift_vulkan_accelerator",
-    srcs = ["ml_drift_vulkan_accelerator.cc"],
-    shared_lib_name = "libLiteRtVulkanAccelerator.so",
-    visibility = [
-        "//litert:__subpackages__",
-        "//third_party/odml/infra:__subpackages__",
-        "//third_party/odml/litert:__subpackages__",
-    ],
-    deps = [
-        ":ml_drift_delegate_create",
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment_options_header",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/c/internal:litert_accelerator_def",
-        "//litert/c/internal:litert_runtime_context_header",
-        "//litert/cc:litert_macros",
-        "//litert/runtime/accelerators:gpu_static_registry",
-        "//ml_drift_delegate/delegate:buffer_handler_vulkan",
-        "//ml_drift_delegate/delegate:delegate_types",
-        "//ml_drift_delegate/delegate:delegate_vulkan",
-        "//tflite/c:c_api_types",
-    ],
-)
+# copybara:uncomment_begin(the ML Drift Vulkan backend needs syrtis, which is not open source)
+# litert_accelerator_library(
+#     name = "ml_drift_vulkan_accelerator",
+#     srcs = ["ml_drift_vulkan_accelerator.cc"],
+#     shared_lib_name = "libLiteRtVulkanAccelerator.so",
+#     visibility = [
+#         "//third_party/odml/infra:__subpackages__",
+#         "//third_party/odml/litert:__subpackages__",
+#         "//litert:__subpackages__",
+#     ],
+#     deps = [
+#         ":ml_drift_delegate_create",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_environment_options_header",
+#         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/c/internal:litert_accelerator_def",
+#         "//litert/c/internal:litert_runtime_context_header",
+#         "//litert/cc:litert_macros",
+#         "//litert/runtime/accelerators:gpu_static_registry",
+#         "//ml_drift_delegate/delegate:buffer_handler_vulkan",
+#         "//ml_drift_delegate/delegate:delegate_types",
+#         "//ml_drift_delegate/delegate:delegate_vulkan",
+#         "//tflite/c:c_api_types",
+#     ],
+# )
+# copybara:uncomment_end
 
 litert_accelerator_library(
     name = "ml_drift_metal_accelerator",

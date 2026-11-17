@@ -351,57 +351,59 @@ cc_test(
     ],
 )
 
-cc_library(
-    name = "shared_memory_manager_vulkan",
-    hdrs = ["shared_memory_manager_vulkan.h"],
-    visibility = ["//ml_drift_delegate/delegate:__subpackages__"],
-    deps = [
-        ":graph_adapter",
-        ":shared_memory_manager",
-        "//ml_drift_delegate/delegate:shared_vulkan_env",
-        "//ml_drift_delegate/delegate:unowned_tensor_desc",
-        "//ml_drift_delegate/delegate/serialization_weight_cache",
-        "//tflite/core/c:private_common",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:status_macros",
-        "@ml_drift//ml_drift/common:gpu_model",
-        "@ml_drift//ml_drift/common:model",
-        "@ml_drift//ml_drift/common/task:gpu_tensor",
-        "@ml_drift//ml_drift/common/task:tensor_desc",
-        "@ml_drift//ml_drift/syrtis:environment",
-        "@ml_drift//ml_drift/syrtis:vulkan_spatial_tensor",
-    ],
-)
-
-cc_test(
-    name = "shared_memory_manager_vulkan_test",
-    srcs = ["shared_memory_manager_vulkan_test.cc"],
-    tags = ["requires-gpu-sm90-full"],  # Vulkan/WebGPU: no driver on MIG
-    deps = [
-        ":gf32_graph_adapter",
-        ":graph_adapter",
-        ":ir_graph_adapter",
-        ":shared_memory_manager",
-        ":shared_memory_manager_vulkan",
-        "@com_google_googletest//:gtest_main_no_heapcheck",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/status",
-        "@ml_drift//ml_drift/common:data_type",
-        "@ml_drift//ml_drift/common:gpu_model",
-        "@ml_drift//ml_drift/common:ir_model",
-        "@ml_drift//ml_drift/common:model",
-        "@ml_drift//ml_drift/common:precision",
-        "@ml_drift//ml_drift/common:shape",
-        "@ml_drift//ml_drift/common/task:gpu_tensor",
-        "@ml_drift//ml_drift/common/task:tensor_desc",
-        "@ml_drift//ml_drift/syrtis/testing:vulkan_test",
-        "//ml_drift_delegate/delegate:shared_vulkan_env",
-        "//ml_drift_delegate/delegate/serialization_weight_cache",
-        "//ml_drift_delegate/tflite:shared_const_tensor_map",
-        "//tflite/c:common",
-        # copybara:uncomment "//third_party/vulkan_loader",
-    ],
-)
+# copybara:uncomment_begin(the ML Drift Vulkan backend needs syrtis, which is not open source)
+# cc_library(
+#     name = "shared_memory_manager_vulkan",
+#     hdrs = ["shared_memory_manager_vulkan.h"],
+#     visibility = ["//ml_drift_delegate/delegate:__subpackages__"],
+#     deps = [
+#         ":graph_adapter",
+#         ":shared_memory_manager",
+#         "@com_google_absl//absl/status",
+#         "@com_google_absl//absl/status:status_macros",
+#         "@ml_drift//ml_drift/common:gpu_model",
+#         "@ml_drift//ml_drift/common:model",
+#         "@ml_drift//ml_drift/common/task:gpu_tensor",
+#         "@ml_drift//ml_drift/common/task:tensor_desc",
+#         "@ml_drift//ml_drift/syrtis:environment",
+#         "@ml_drift//ml_drift/syrtis:vulkan_spatial_tensor",
+#         "//ml_drift_delegate/delegate:shared_vulkan_env",
+#         "//ml_drift_delegate/delegate:unowned_tensor_desc",
+#         "//ml_drift_delegate/delegate/serialization_weight_cache",
+#         "//tflite/core/c:private_common",
+#     ],
+# )
+#
+# cc_test(
+#     name = "shared_memory_manager_vulkan_test",
+#     srcs = ["shared_memory_manager_vulkan_test.cc"],
+#     tags = ["requires-gpu-sm90-full"],  # Vulkan/WebGPU: no driver on MIG
+#     deps = [
+#         ":gf32_graph_adapter",
+#         ":graph_adapter",
+#         ":ir_graph_adapter",
+#         ":shared_memory_manager",
+#         ":shared_memory_manager_vulkan",
+#         "@com_google_googletest//:gtest_main_no_heapcheck",
+#         "@com_google_absl//absl/container:flat_hash_map",
+#         "@com_google_absl//absl/status",
+#         "@ml_drift//ml_drift/common:data_type",
+#         "@ml_drift//ml_drift/common:gpu_model",
+#         "@ml_drift//ml_drift/common:ir_model",
+#         "@ml_drift//ml_drift/common:model",
+#         "@ml_drift//ml_drift/common:precision",
+#         "@ml_drift//ml_drift/common:shape",
+#         "@ml_drift//ml_drift/common/task:gpu_tensor",
+#         "@ml_drift//ml_drift/common/task:tensor_desc",
+#         "@ml_drift//ml_drift/syrtis/testing:vulkan_test",
+#         "//ml_drift_delegate/delegate:shared_vulkan_env",
+#         "//ml_drift_delegate/delegate/serialization_weight_cache",
+#         "//ml_drift_delegate/tflite:shared_const_tensor_map",
+#         "//tflite/c:common",
+#         # copybara:uncomment "//third_party/vulkan_loader",
+#     ],
+# )
+# copybara:uncomment_end
 
 objc_library(
     name = "shared_memory_manager_metal",
