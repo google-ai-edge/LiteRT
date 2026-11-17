@@ -20,6 +20,7 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 import teacher_forced
@@ -152,6 +153,88 @@ class TeacherForcedTest(unittest.TestCase):
       self.assertEqual(
           json.loads(Path(prefix + ".steps.json").read_text()),
           [{"step": 1, "scored": 5}, {"step": 2, "scored": 6}],
+      )
+
+  def test_pad_to_shape(self):
+    # An INT4 cache of 3 positions out of the model's 5, two values a byte,
+    # low nibble first, over the flat tensor: [[1, 2, 3], [-1, 7, 0]].
+    raw, length = teacher_forced.pad_to_shape(
+        bytes([0x21, 0xF3, 0x07]), (1, 2, 5), 4
+    )
+    self.assertEqual(length, 3)
+    self.assertEqual(raw, bytes([0x21, 0x03, 0xF0, 0x07, 0x00]))
+    raw, length = teacher_forced.pad_to_shape(bytes([1, 1]), (1, 1, 1, 4), 8)
+    self.assertEqual((raw, length), (bytes([1, 1, 0, 0]), 2))
+    with self.assertRaises(ValueError):
+      teacher_forced.pad_to_shape(bytes(3), (1, 1, 1, 2), 8)
+
+  def test_replay_of_recorded_steps(self):
+    with tempfile.TemporaryDirectory() as tmp:
+      dump = Path(tmp) / "io"
+      log = Path(tmp) / "run.log"
+      lines = [
+          "NVIDIA dispatch io in tensorrt_partition_2=input_0_tensor_0 "
+          "f32[0 0 0 0] midsum=1\n"
+      ]
+      for step, position in ((1, 30), (2, 31)):
+        for i, tensor in enumerate((1, 0, 2)):
+          lines.append(
+              "I1115 NVIDIA dispatch io in tensorrt_partition_0="
+              f"input_{i}_tensor_{tensor} f32[0 0 0 0] midsum=2\n"
+          )
+        step_dir = dump / "tensorrt_partition_0" / f"step{step}"
+        step_dir.mkdir(parents=True)
+        np.array([position], dtype=np.int32).tofile(step_dir / "input_0.raw")
+        np.zeros(4, dtype=np.float32).tofile(step_dir / "input_1.raw")
+        (step_dir / "input_2.raw").write_bytes(bytes([0x21, 0xF3, 0x07]))
+      log.write_text("".join(lines))
+      inputs = {
+          0: ("embeddings", (1, 4), 32),
+          1: ("input_pos", (1,), 32),
+          2: ("kv_cache", (1, 2, 5), 4),
+      }
+      out = Path(tmp) / "replay"
+      with mock.patch.object(
+          teacher_forced, "signature_inputs", return_value=inputs
+      ):
+        teacher_forced.replay_manifest(
+            str(dump),
+            str(log),
+            str(out),
+            "tensorrt_partition_0",
+            "model.tflite",
+        )
+      manifest = (out / "manifest.txt").read_text().splitlines()
+      self.assertEqual(len(manifest), 2)
+      fields = manifest[1].split()
+      recorded = (dump / "tensorrt_partition_0" / "step2").resolve()
+      padded = (out / "inputs" / "step2" / "kv_cache.raw").resolve()
+      self.assertEqual(
+          fields,
+          [
+              str((out / "step2").resolve()),
+              f"input_pos={recorded / 'input_0.raw'}",
+              f"embeddings={recorded / 'input_1.raw'}",
+              f"kv_cache={padded}",
+          ],
+      )
+      self.assertEqual(padded.read_bytes(), bytes([0x21, 0x03, 0xF0, 0x07, 0]))
+      # What cpu_replay writes for each line.
+      for step in (1, 2):
+        np.full(4, step, dtype=np.float32).tofile(
+            out / f"step{step}.logits.raw"
+        )
+      prefix = str(Path(tmp) / "cpu")
+      teacher_forced.collect_replay(str(out), prefix, scored=[7, 8])
+      np.testing.assert_array_equal(
+          np.load(prefix + ".logits.npy")[1], np.full(4, 2)
+      )
+      self.assertEqual(
+          json.loads(Path(prefix + ".steps.json").read_text()),
+          [
+              {"step": 1, "position": 30, "scored": 7},
+              {"step": 2, "position": 31, "scored": 8},
+          ],
       )
 
 

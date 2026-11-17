@@ -133,6 +133,34 @@ cc_binary(
     ],
 )
 
+# A CPU reference for recorded steps of another backend, with LiteRT-LM's CPU
+# settings. Build it as the LiteRT-LM CLI is built (from the LiteRT-LM
+# workspace with this tree as @litert) to get the CLI's XNNPACK.
+cc_binary(
+    name = "cpu_replay",
+    srcs = ["cpu_replay.cc"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/options:litert_cpu_options",
+        "//litert/cc/options:litert_runtime_options",
+        "//tflite/delegates/xnnpack:xnnpack_delegate",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
+    ],
+)
+
 cc_library(
     name = "carve_test_util",
     testonly = True,

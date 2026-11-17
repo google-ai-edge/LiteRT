@@ -35,6 +35,23 @@ writes instead (LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS=DIR:STEPS:MB).
       The same from the NVIDIA dispatch's output dumps (DUMP_DIR/index.jsonl):
       every output as wide as the vocabulary, in the order the steps produced
       them. They carry no positions: `compare` takes the reference's.
+  teacher_forced.py replay-manifest --model FILE.tflite [--signature decode]
+                            --function F [--steps N,...] DUMP_DIR LOG OUT_DIR
+      A CPU reference where LiteRT-LM's CPU run does not finish (a long
+      context): the steps of an NVIDIA run that recorded its inputs
+      (LITERT_NVIDIA_DISPATCH_DUMP_IO=dir:DUMP_DIR; F is the signature's
+      dispatch function, e.g. tensorrt_partition_0; LOG is the run's log,
+      whose "NVIDIA dispatch io in F=input_I_tensor_T" lines give each input's
+      tensor) -> OUT_DIR/manifest.txt for cpu_replay, which runs each step on
+      the CPU as LiteRT-LM would. Inputs that the run sized by its context (the
+      KV caches, the mask) are padded to the model's length with zeros, which
+      changes no logit. Every step reads the NVIDIA run's state: the
+      comparison measures the steps, not what the NVIDIA prefill and earlier
+      steps wrote. Needs the `tflite` package.
+  teacher_forced.py collect-replay [--tokenizer SPM --target FILE] OUT_DIR
+  OUT_PREFIX
+      cpu_replay's logits of every step of OUT_DIR/manifest.txt, with the
+      steps' positions -> OUT_PREFIX.logits.npy and OUT_PREFIX.steps.json.
   teacher_forced.py compare [--json FILE] [--bins B,...] [--positions P,...]
                             REF_PREFIX TEST_PREFIX [REF_PREFIX TEST_PREFIX ...]
       Per step: the reference's top token and its margin over the runner-up,
@@ -173,6 +190,173 @@ def collect_dispatch(dump_dir, out_prefix, scored=None, vocab=262144):
   print(f"{out_prefix}: {len(rows)} decode steps, vocabulary {logits.shape[1]}")
 
 
+_DISPATCH_INPUT = re.compile(
+    r"NVIDIA dispatch io in (\S+?)=input_(\d+)_tensor_(\d+) "
+)
+
+# Bits per element of TFLite's tensor types.
+_TFLITE_BITS = {
+    0: 32,
+    1: 16,
+    2: 32,
+    3: 8,
+    4: 64,
+    6: 8,
+    7: 16,
+    9: 8,
+    10: 64,
+    17: 4,
+}
+
+
+def signature_inputs(model_path, signature):
+  """{tensor index: (name, shape, bits)} of a signature's inputs."""
+  import mmap  # pylint: disable=g-import-not-at-top
+  import tflite  # pylint: disable=g-import-not-at-top
+
+  with open(model_path, "rb") as f:
+    buffer = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+  model = tflite.Model.GetRootAsModel(buffer, 0)
+  for i in range(model.SignatureDefsLength()):
+    definition = model.SignatureDefs(i)
+    if definition.SignatureKey().decode() != signature:
+      continue
+    subgraph = model.Subgraphs(definition.SubgraphIndex())
+    inputs = {}
+    for j in range(definition.InputsLength()):
+      index = definition.Inputs(j).TensorIndex()
+      tensor = subgraph.Tensors(index)
+      inputs[index] = (
+          definition.Inputs(j).Name().decode(),
+          tuple(int(d) for d in tensor.ShapeAsNumpy()),
+          _TFLITE_BITS[tensor.Type()],
+      )
+    return inputs
+  raise ValueError(f"{model_path}: no signature {signature}")
+
+
+def dispatch_input_tensors(log_path, function):
+  """The tensor index of each input of FUNCTION, in the dispatch's order."""
+  tensors = []
+  with open(log_path, errors="replace") as log:
+    for line in log:
+      m = _DISPATCH_INPUT.search(line)
+      if not m or m.group(1) != function:
+        continue
+      if int(m.group(2)) < len(tensors):
+        break
+      tensors.append(int(m.group(3)))
+  if not tensors:
+    raise ValueError(f"{log_path}: no inputs of {function} logged")
+  return tensors
+
+
+def pad_to_shape(raw, shape, bits):
+  """A tensor recorded with a shorter sequence axis (the longest one), padded
+
+  with zeros to SHAPE: (bytes, recorded length).
+  """
+  axis = int(np.argmax(shape))
+  others = int(np.prod(shape)) // shape[axis]
+  count = len(raw) * 8 // bits
+  length = count // others
+  if length * others != count or length > shape[axis]:
+    raise ValueError(f"{len(raw)} bytes do not fit {shape}")
+  recorded = list(shape)
+  recorded[axis] = length
+  if bits == 4:
+    packed = np.frombuffer(raw, dtype=np.uint8)
+    values = np.empty(packed.size * 2, dtype=np.uint8)
+    values[0::2] = packed & 0x0F
+    values[1::2] = packed >> 4
+  else:
+    values = np.frombuffer(raw, dtype=f"u{bits // 8}")
+  padded = np.zeros(shape, dtype=values.dtype)
+  padded[tuple(slice(0, d) for d in recorded)] = values[:count].reshape(
+      recorded
+  )
+  flat = padded.reshape(-1)
+  if bits == 4:
+    flat = np.append(flat, np.uint8(0)) if flat.size % 2 else flat
+    return (flat[0::2] | (flat[1::2] << 4)).astype(np.uint8).tobytes(), length
+  return flat.tobytes(), length
+
+
+def replay_manifest(
+    dump_dir,
+    log_path,
+    out_dir,
+    function,
+    model_path,
+    signature="decode",
+    only=(),
+):
+  """cpu_replay's manifest for every recorded step of FUNCTION (or ONLY)."""
+  inputs = signature_inputs(model_path, signature)
+  tensors = dispatch_input_tensors(log_path, function)
+  if sorted(tensors) != sorted(inputs):
+    raise ValueError(
+        f"{function} has the inputs {tensors}, {signature} {sorted(inputs)}"
+    )
+  root = Path(dump_dir).resolve() / function
+  steps = sorted(
+      int(p.name[4:])
+      for p in root.iterdir()
+      if re.fullmatch(r"step\d+", p.name)
+      and (not only or int(p.name[4:]) in only)
+  )
+  out = Path(out_dir).resolve()
+  lines = []
+  lengths = set()
+  for step in steps:
+    files = []
+    for i, tensor in enumerate(tensors):
+      name, shape, bits = inputs[tensor]
+      path = root / f"step{step}" / f"input_{i}.raw"
+      if path.stat().st_size * 8 != int(np.prod(shape)) * bits:
+        raw, length = pad_to_shape(path.read_bytes(), shape, bits)
+        lengths.add(length)
+        path = out / "inputs" / f"step{step}" / f"{name}.raw"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+      files.append(f"{name}={path}")
+    lines.append(" ".join([str(out / f"step{step}")] + files))
+  out.mkdir(parents=True, exist_ok=True)
+  (out / "manifest.txt").write_text("".join(line + "\n" for line in lines))
+  padded = f", padded from {sorted(lengths)}" if lengths else ""
+  print(
+      f"{out / 'manifest.txt'}: {len(steps)} steps of {len(tensors)} "
+      f"inputs{padded}"
+  )
+
+
+def collect_replay(out_dir, out_prefix, scored=None):
+  """cpu_replay's logits of the manifest's steps, with their positions."""
+  rows = []
+  records = []
+  for line in (Path(out_dir) / "manifest.txt").read_text().splitlines():
+    fields = line.split()
+    prefix, files = fields[0], dict(f.split("=", 1) for f in fields[1:])
+    rows.append(np.fromfile(f"{prefix}.logits.raw", dtype=np.float32))
+    records.append({
+        "step": int(Path(prefix).name[4:]),
+        "position": int(np.fromfile(files["input_pos"], dtype=np.int32)[0]),
+    })
+  if scored is not None and len(scored) != len(rows):
+    raise ValueError(
+        f"{out_dir}: {len(rows)} steps for a target of {len(scored)} tokens"
+    )
+  if scored is not None:
+    for record, token in zip(records, scored):
+      record["scored"] = int(token)
+  logits = np.stack(rows)
+  np.save(f"{out_prefix}.logits.npy", logits)
+  Path(f"{out_prefix}.steps.json").write_text(json.dumps(records) + "\n")
+  print(
+      f"{out_prefix}: {len(rows)} replayed steps, vocabulary {logits.shape[1]}"
+  )
+
+
 def _log_softmax(logits):
   top = logits.max(axis=-1, keepdims=True)
   shifted = logits.astype(np.float64) - top
@@ -300,12 +484,13 @@ def summarize(rows, bins, position_edges, out=sys.stdout):
             f"test {np.mean([r['test_nll'] for r in part_scored]):.4f}"
         )
       print(
-          f"  [{lo:g}, {hi:g}): {len(part)} steps, agree "
-          f"{np.mean([r['agree'] for r in part]):.4f}, |margin error| median "
-          f"{np.median([abs(r['margin_error']) for r in part]):.3f} 90% "
-          f"{np.quantile([abs(r['margin_error']) for r in part], 0.9):.3f} max "
-          f"{max(abs(r['margin_error']) for r in part):.3f}, KL mean "
-          f"{np.mean([r['kl'] for r in part]):.5f}{nll}",
+          f"  [{lo:g}, {hi:g}): {len(part)} steps, agree"
+          f" {np.mean([r['agree'] for r in part]):.4f}, |margin error| median"
+          f" {np.median([abs(r['margin_error']) for r in part]):.3f} 90%"
+          f" {np.quantile([abs(r['margin_error']) for r in part], 0.9):.3f} 99%"
+          f" {np.quantile([abs(r['margin_error']) for r in part], 0.99):.3f}"
+          f" max {max(abs(r['margin_error']) for r in part):.3f}, KL mean"
+          f" {np.mean([r['kl'] for r in part]):.5f}{nll}",
           file=out,
       )
   flips = [r for r in rows if not r["agree"]]
@@ -368,6 +553,19 @@ def main(argv):
   d.add_argument("--target")
   d.add_argument("dump_dir")
   d.add_argument("out_prefix")
+  r = sub.add_parser("replay-manifest")
+  r.add_argument("--model", required=True)
+  r.add_argument("--signature", default="decode")
+  r.add_argument("--function", required=True)
+  r.add_argument("--steps", default="")
+  r.add_argument("dump_dir")
+  r.add_argument("log")
+  r.add_argument("out_dir")
+  y = sub.add_parser("collect-replay")
+  y.add_argument("--tokenizer")
+  y.add_argument("--target")
+  y.add_argument("out_dir")
+  y.add_argument("out_prefix")
   m = sub.add_parser("compare")
   m.add_argument("--json")
   m.add_argument("--bins", default="0.25,0.5,1,1.5,2,3")
@@ -385,6 +583,23 @@ def main(argv):
     if args.tokenizer and args.target:
       scored = target_tokens(args.tokenizer, args.target)
     collect_dispatch(args.dump_dir, args.out_prefix, scored)
+    return 0
+  if args.command == "replay-manifest":
+    replay_manifest(
+        args.dump_dir,
+        args.log,
+        args.out_dir,
+        args.function,
+        args.model,
+        args.signature,
+        [int(n) for n in args.steps.split(",") if n],
+    )
+    return 0
+  if args.command == "collect-replay":
+    scored = None
+    if args.tokenizer and args.target:
+      scored = target_tokens(args.tokenizer, args.target)
+    collect_replay(args.out_dir, args.out_prefix, scored)
     return 0
   if len(args.prefixes) % 2:
     parser.error("prefixes come in pairs: REF TEST")
