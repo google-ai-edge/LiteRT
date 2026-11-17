@@ -40,6 +40,7 @@
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/nvidia/cache_layout.h"
+#include "litert/vendors/nvidia/compiler/moe_plugin.h"
 #include "litert/vendors/nvidia/compiler/weight_holder_calibration.h"
 #include "litert/vendors/nvidia/compiler/weight_store_builder.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
@@ -4907,6 +4908,111 @@ TEST(TensorRtGraphBuilderTest, MixedPrecisionBatchMatmul) {
   EXPECT_EQ(cudaFree(d_lhs), cudaSuccess);
 }
 
+TEST(TensorRtGraphBuilderTest, BatchMatmulBroadcastsALowerRankOperand) {
+  // The Gemma 4 vision pooler: [1, P, T] pooling weights, transposed, times
+  // [P, C] patch features give [1, T, C]; the rank-2 operand broadcasts over
+  // the other's leading dimension.
+  constexpr int kPatches = 6;
+  constexpr int kTokens = 4;
+  constexpr int kChannels = 5;
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  auto& lhs = graph.EmplaceTensor();
+  lhs.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, kPatches, kTokens}));
+  lhs.SetName("lhs");
+  graph.Inputs().push_back(&lhs);
+  auto& rhs = graph.EmplaceTensor();
+  rhs.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {kPatches, kChannels}));
+  rhs.SetName("rhs");
+  graph.Inputs().push_back(&rhs);
+  auto& output = graph.EmplaceTensor();
+  output.SetType(
+      MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, kTokens, kChannels}));
+  output.SetName("output");
+  graph.Outputs().push_back(&output);
+  auto& op = graph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflBatchMatmul);
+  {
+    tflite::BatchMatMulOptionsT matmul;
+    matmul.adj_x = true;
+    tflite::BuiltinOptionsUnion options;
+    options.Set(std::move(matmul));
+    litert::internal::SetTflOptions(op, std::move(options));
+  }
+  litert::internal::AttachInput(&lhs, op);
+  litert::internal::AttachInput(&rhs, op);
+  litert::internal::AttachOutput(&output, op);
+  ASSERT_TRUE(litert::nvidia::IsTensorRtOpSupported(
+      litert::compiler::Op(LrtGetCompilerContext(), &op)));
+  auto built = litert::nvidia::BuildTensorRtEngine(
+      litert::compiler::Subgraph(LrtGetCompilerContext(), &graph));
+  ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+  litert::nvidia::TensorRtLogger logger;
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(runtime->deserializeCudaEngine(
+      built->engine.data(), built->engine.size()));
+  ASSERT_NE(engine, nullptr);
+  for (const auto& name :
+       {built->input_names[0], built->input_names[1], built->output_names[0]}) {
+    ASSERT_EQ(engine->getTensorDataType(name.c_str()),
+              nvinfer1::DataType::kFLOAT)
+        << name;
+  }
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  // Multiples of 1/4 whose sums of products are exact in BF16 activations.
+  std::vector<float> lhs_host(kPatches * kTokens);
+  std::vector<float> rhs_host(kPatches * kChannels);
+  for (size_t i = 0; i < lhs_host.size(); ++i) {
+    lhs_host[i] = static_cast<float>(static_cast<int>(i % 5) - 2) * 0.25f;
+  }
+  for (size_t i = 0; i < rhs_host.size(); ++i) {
+    rhs_host[i] = static_cast<float>(static_cast<int>(i % 7) - 3) * 0.5f;
+  }
+  std::vector<float> actual(kTokens * kChannels);
+  void* d_lhs = nullptr;
+  void* d_rhs = nullptr;
+  void* d_out = nullptr;
+  ASSERT_EQ(cudaMalloc(&d_lhs, lhs_host.size() * 4), cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&d_rhs, rhs_host.size() * 4), cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&d_out, actual.size() * 4), cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(d_lhs, lhs_host.data(), lhs_host.size() * 4,
+                       cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(d_rhs, rhs_host.data(), rhs_host.size() * 4,
+                       cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_TRUE(context->setTensorAddress(built->input_names[0].c_str(), d_lhs));
+  ASSERT_TRUE(context->setTensorAddress(built->input_names[1].c_str(), d_rhs));
+  ASSERT_TRUE(context->setTensorAddress(built->output_names[0].c_str(), d_out));
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  ASSERT_TRUE(context->enqueueV3(stream));
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(actual.data(), d_out, actual.size() * 4,
+                       cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  for (int t = 0; t < kTokens; ++t) {
+    for (int c = 0; c < kChannels; ++c) {
+      float expected = 0.0f;
+      for (int p = 0; p < kPatches; ++p) {
+        expected += lhs_host[p * kTokens + t] * rhs_host[p * kChannels + c];
+      }
+      EXPECT_FLOAT_EQ(actual[t * kChannels + c], expected)
+          << "t=" << t << " c=" << c;
+    }
+  }
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  EXPECT_EQ(cudaFree(d_out), cudaSuccess);
+  EXPECT_EQ(cudaFree(d_rhs), cudaSuccess);
+  EXPECT_EQ(cudaFree(d_lhs), cudaSuccess);
+}
+
 TEST(TensorRtGraphBuilderTest, LongContextSoftmaxSupport) {
   // Gemma 4 12B prefill_1024 at 32K depth. Only construct tensor metadata;
   // partition eligibility must not depend on allocating this large tensor.
@@ -5221,4 +5327,648 @@ TEST(TensorRtGraphBuilderTest, Fp16ActivationsKeepPositionsExact) {
   EXPECT_EQ(cudaFree(device_offsets), cudaSuccess);
   EXPECT_EQ(cudaFree(device_cos), cudaSuccess);
   EXPECT_EQ(cudaFree(device_positions), cudaSuccess);
+}
+
+TEST(TensorRtGraphBuilderTest, SwigluCompositeAppliesItsActivation) {
+  // odml.swiglu(x) = act(x[.., :N]) * x[.., N:] over a fused gate/up
+  // projection [2 * N, K]. The composite keeps its name whatever the
+  // activation: SiLU without an `activation` attribute or with "silu" (Qwen
+  // 3.5), the tanh GELU with "gelu_tanh" (Gemma 4 26B exported with a fused
+  // feed-forward, which ran with SiLU while the attribute was not read). One
+  // decode row and a prefill chunk, with the gate in the projection's CUDA
+  // launch and with the composite lowered on its own, match an FP32 reference
+  // of that activation and not of the other one.
+  constexpr int32_t kK = 256;
+  constexpr int32_t kBlock = 32;
+  const int32_t tiles = ColumnTilesThatFillTheDevice();
+  ASSERT_GT(tiles, 0);
+  const int32_t hidden = tiles * 64;
+  const int32_t channels = 2 * hidden;
+  // Blockwise INT4 weights with FP16 scales, as the 26B carries them.
+  std::vector<int8_t> values(static_cast<size_t>(channels) * kK);
+  for (size_t i = 0; i < values.size(); ++i) {
+    values[i] = static_cast<int8_t>((i * 5 + i / 7) % 16) - 8;
+  }
+  const std::vector<uint8_t> packed = PackInt4(values);
+  std::vector<uint16_t> scales(static_cast<size_t>(channels) * (kK / kBlock));
+  for (size_t i = 0; i < scales.size(); ++i) {
+    scales[i] = Fp16Bits(0.002f * (1 + i % 5));
+  }
+  const auto add_swiglu = [&](LiteRtSubgraphT& graph, const char* activation,
+                              int32_t rows) -> LiteRtOpT& {
+    const auto tensor =
+        [&](const char* name, LiteRtElementType type,
+            const std::vector<int32_t>& dims) -> LiteRtTensorT& {
+      auto& value = graph.EmplaceTensor();
+      value.SetName(name);
+      value.SetType(MakeRankedTensorType(type, dims));
+      return value;
+    };
+    auto& input = tensor("input", kLiteRtElementTypeFloat32, {1, rows, kK});
+    graph.Inputs().push_back(&input);
+    auto& weight_scales = tensor("weights_scales", kLiteRtElementTypeFloat16,
+                                 {channels, kK / kBlock});
+    SetWeightsFromUnownedBuffer(
+        weight_scales.Weights(),
+        litert::BufferRef<uint8_t>(
+            reinterpret_cast<const uint8_t*>(scales.data()),
+            scales.size() * sizeof(uint16_t)));
+    auto& weights = tensor("weights", kLiteRtElementTypeInt4, {channels, kK});
+    SetWeightsFromUnownedBuffer(
+        weights.Weights(),
+        litert::BufferRef<uint8_t>(packed.data(), packed.size()));
+    weights.SetQarams(
+        MakeBlockWiseQuantization(&weight_scales, nullptr, kBlock));
+    auto& gate_up =
+        tensor("gate_up", kLiteRtElementTypeFloat32, {1, rows, channels});
+    auto& fc = graph.EmplaceOp();
+    fc.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+    tflite::FullyConnectedOptionsT fc_options;
+    fc_options.keep_num_dims = true;
+    tflite::BuiltinOptionsUnion fc_union;
+    fc_union.Set(std::move(fc_options));
+    litert::internal::SetTflOptions(fc, std::move(fc_union));
+    litert::internal::AttachInput(&input, fc);
+    litert::internal::AttachInput(&weights, fc);
+    litert::internal::AttachOutput(&gate_up, fc);
+    auto& output =
+        tensor("output", kLiteRtElementTypeFloat32, {1, rows, hidden});
+    graph.Outputs().push_back(&output);
+    auto& swiglu = graph.EmplaceOp();
+    swiglu.SetOpCode(kLiteRtOpCodeShloComposite);
+    tflite::StableHLOCompositeOptionsT composite;
+    composite.name = "odml.swiglu";
+    flexbuffers::Builder attributes;
+    const auto map = attributes.StartMap();
+    attributes.Int("gate_size", hidden);
+    if (activation != nullptr) {
+      attributes.String("activation", activation);
+    }
+    attributes.EndMap(map);
+    attributes.Finish();
+    composite.composite_attributes = attributes.GetBuffer();
+    tflite::BuiltinOptions2Union composite_union;
+    composite_union.Set(std::move(composite));
+    litert::internal::SetTflOptions2(swiglu, std::move(composite_union));
+    litert::internal::AttachInput(&gate_up, swiglu);
+    litert::internal::AttachOutput(&output, swiglu);
+    return swiglu;
+  };
+  const auto* compiler_context = LrtGetCompilerContext();
+  {
+    // An activation without a lowering is left to the decomposition.
+    LiteRtModelT model;
+    auto& swiglu = add_swiglu(model.EmplaceSubgraph(), "relu", 1);
+    EXPECT_FALSE(litert::nvidia::IsTensorRtOpSupported(
+        litert::compiler::Op(compiler_context, &swiglu)));
+  }
+  struct Case {
+    const char* activation;  // nullptr: no attribute
+    bool gelu;
+    int32_t rows;
+    bool fuse;
+  };
+  const Case cases[] = {
+      {nullptr, false, 1, true},       {nullptr, false, 1, false},
+      {nullptr, false, 1024, true},    {nullptr, false, 1024, false},
+      {"gelu_tanh", true, 1, true},    {"gelu_tanh", true, 1, false},
+      {"gelu_tanh", true, 1024, true}, {"gelu_tanh", true, 1024, false},
+      {"silu", false, 1, true},        {"gelu_pytorch_tanh", true, 1, true},
+  };
+  for (const Case& test_case : cases) {
+    SCOPED_TRACE(testing::Message()
+                 << "activation="
+                 << (test_case.activation ? test_case.activation : "(none)")
+                 << " rows=" << test_case.rows << " fuse=" << test_case.fuse);
+    const int32_t rows = test_case.rows;
+    LiteRtModelT model;
+    auto& graph = model.EmplaceSubgraph();
+    auto& swiglu = add_swiglu(graph, test_case.activation, rows);
+    ASSERT_TRUE(litert::nvidia::IsTensorRtOpSupported(
+        litert::compiler::Op(compiler_context, &swiglu)));
+    setenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS", "cuda_gemv", 1);
+    setenv("LITERT_NVIDIA_TENSORRT_FUSE_SWIGLU", test_case.fuse ? "1" : "0", 1);
+    auto built = litert::nvidia::BuildTensorRtEngine(
+        litert::compiler::Subgraph(compiler_context, &graph));
+    unsetenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS");
+    unsetenv("LITERT_NVIDIA_TENSORRT_FUSE_SWIGLU");
+    ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+    ASSERT_EQ(built->input_names.size(), 1u);
+    ASSERT_EQ(built->output_names.size(), 1u);
+    litert::nvidia::TensorRtLogger logger;
+    std::unique_ptr<nvinfer1::IRuntime> runtime(
+        nvinfer1::createInferRuntime(logger));
+    ASSERT_NE(runtime, nullptr);
+    std::unique_ptr<nvinfer1::ICudaEngine> engine(
+        runtime->deserializeCudaEngine(built->engine.data(),
+                                       built->engine.size()));
+    ASSERT_NE(engine, nullptr);
+    std::unique_ptr<nvinfer1::IEngineInspector> inspector(
+        engine->createEngineInspector());
+    ASSERT_NE(inspector, nullptr);
+    const std::string layers = inspector->getEngineInformation(
+        nvinfer1::LayerInformationFormat::kONELINE);
+    EXPECT_EQ(layers.find("cuda_subbyte_swiglu_gemm") != std::string::npos,
+              test_case.fuse)
+        << layers;
+
+    std::unique_ptr<nvinfer1::IExecutionContext> context(
+        engine->createExecutionContext());
+    ASSERT_NE(context, nullptr);
+    std::vector<float> activations(static_cast<size_t>(rows) * kK);
+    uint32_t state = 4321u;
+    for (auto& value : activations) {
+      state = state * 1664525u + 1013904223u;
+      value =
+          static_cast<float>((state >> 8) & 0xFFFF) / 65535.0f * 4.0f - 2.0f;
+    }
+    std::vector<float> actual(static_cast<size_t>(rows) * hidden);
+    void* device_input = nullptr;
+    void* device_output = nullptr;
+    ASSERT_EQ(cudaMalloc(&device_input, activations.size() * sizeof(float)),
+              cudaSuccess);
+    ASSERT_EQ(cudaMalloc(&device_output, actual.size() * sizeof(float)),
+              cudaSuccess);
+    ASSERT_EQ(
+        cudaMemcpy(device_input, activations.data(),
+                   activations.size() * sizeof(float), cudaMemcpyHostToDevice),
+        cudaSuccess);
+    ASSERT_TRUE(
+        context->setTensorAddress(built->input_names[0].c_str(), device_input));
+    ASSERT_TRUE(context->setTensorAddress(built->output_names[0].c_str(),
+                                          device_output));
+    cudaStream_t stream = nullptr;
+    ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+    ASSERT_TRUE(context->enqueueV3(stream));
+    ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(actual.data(), device_output,
+                         actual.size() * sizeof(float), cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    const auto dot = [&](int m, int channel) {
+      double sum = 0.0;
+      for (int32_t k = 0; k < kK; ++k) {
+        // The engine computes on BF16 activations.
+        sum += static_cast<double>(Bf16ToFloat(
+                   FloatToBf16(activations[static_cast<size_t>(m) * kK + k]))) *
+               values[static_cast<size_t>(channel) * kK + k] *
+               Fp16ToFloat(scales[static_cast<size_t>(channel) * (kK / kBlock) +
+                                  k / kBlock]);
+      }
+      return sum;
+    };
+    const auto silu = [](double x) { return x / (1.0 + std::exp(-x)); };
+    const auto gelu = [](double x) {
+      return 0.5 * x *
+             (1.0 + std::tanh(0.7978845608028654 * (x + 0.044715 * x * x * x)));
+    };
+    for (int m : {0, 1, 127, 128, 601, 1023}) {
+      if (m >= rows) continue;
+      double error = 0.0;
+      double other_error = 0.0;
+      double norm = 0.0;
+      for (int32_t n = 0; n < hidden; ++n) {
+        const double gate = dot(m, n);
+        const double up = dot(m, hidden + n);
+        const double expected = (test_case.gelu ? gelu(gate) : silu(gate)) * up;
+        const double other = (test_case.gelu ? silu(gate) : gelu(gate)) * up;
+        const double value = actual[static_cast<size_t>(m) * hidden + n];
+        error += (value - expected) * (value - expected);
+        other_error += (value - other) * (value - other);
+        norm += expected * expected;
+      }
+      // One decode row: BF16 rounding of the product and of the gate. A
+      // prefill chunk runs the GEMM on the int8 tensor cores (see
+      // CudaGemmForManyActivationRows for its bound).
+      EXPECT_LE(std::sqrt(error),
+                (rows > 1 ? 2.0e-2 : 6.0e-3) * std::sqrt(norm))
+          << "row=" << m;
+      EXPECT_GE(std::sqrt(other_error), 5.0e-2 * std::sqrt(norm))
+          << "row=" << m;
+    }
+    EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+    EXPECT_EQ(cudaFree(device_output), cudaSuccess);
+    EXPECT_EQ(cudaFree(device_input), cudaSuccess);
+  }
+}
+
+TEST(TensorRtGraphBuilderTest, MoeLayerBlockOfTheFusedExport) {
+  if (!litert::nvidia::TensorRtWeightHoldersSupported()) {
+    GTEST_SKIP() << "Needs the weight placeholders of TensorRT-RTX 1.7.";
+  }
+  // A layer's feed-forward block around the moe op as Gemma 4 26B's two
+  // exports lay it out. The first: gate and up projections, GELU and a
+  // multiply, and a router that selects the top probabilities and divides
+  // them by their sum. The vision export: one projection over the stacked
+  // gate and up rows with odml.swiglu (gelu_tanh), and a router that takes the
+  // softmax of the selected logits. Both must become the one block plugin
+  // over the same pieces of the model file, the halves of the stacked rows
+  // being the gate and the up piece, and compute the same residual stream.
+  constexpr int32_t kExperts = 4;
+  constexpr int32_t kTopK = 2;
+  constexpr int32_t kD = 64;       // model_dim
+  constexpr int32_t kHidden = 32;  // the experts' hidden_dim
+  constexpr int32_t kDense = 32;   // the dense feed-forward's
+  constexpr int32_t kBlock = 32;
+  constexpr uint64_t kGranule = 2 << 20;
+  // The model file: every piece at its own page.
+  enum Piece {
+    kRouterW,
+    kRouterS,
+    kGateUpW,
+    kGateUpS,
+    kDownW,
+    kDownS,
+    kExpertGateW,
+    kExpertGateS,
+    kExpertUpW,
+    kExpertUpS,
+    kExpertDownW,
+    kExpertDownS,
+    kPieceCount
+  };
+  const std::array<size_t, kPieceCount> sizes = {
+      kExperts * kD / 2,
+      kExperts * (kD / kBlock) * sizeof(uint16_t),
+      2 * kDense * kD / 2,
+      2 * kDense * (kD / kBlock) * sizeof(uint16_t),
+      kD * kDense / 2,
+      kD * (kDense / kBlock) * sizeof(uint16_t),
+      kHidden * kExperts * kD / 2,
+      kHidden * kExperts * (kD / kBlock) * sizeof(float),
+      kHidden * kExperts * kD / 2,
+      kHidden * kExperts * (kD / kBlock) * sizeof(float),
+      kD * kExperts * kHidden / 2,
+      kD * kExperts * (kHidden / kBlock) * sizeof(float),
+  };
+  std::array<size_t, kPieceCount> offsets{};
+  std::vector<uint8_t> file_bytes(4096 * (kPieceCount + 1), 0x5a);
+  uint32_t state = 2026u;
+  const auto next = [&state] {
+    state = state * 1664525u + 1013904223u;
+    return state >> 8;
+  };
+  for (int piece = 0; piece < kPieceCount; ++piece) {
+    offsets[piece] = 4096 * (piece + 1);
+    ASSERT_LE(sizes[piece], 4096u);
+    uint8_t* out = file_bytes.data() + offsets[piece];
+    if (piece % 2 == 0) {
+      // INT4 rows: any byte is two of them.
+      for (size_t i = 0; i < sizes[piece]; ++i) {
+        out[i] = static_cast<uint8_t>(next());
+      }
+    } else if (piece < kExpertGateW) {
+      for (size_t i = 0; i < sizes[piece] / sizeof(uint16_t); ++i) {
+        const uint16_t scale = Fp16Bits(0.01f + 0.005f * (next() % 5));
+        std::memcpy(out + i * sizeof(scale), &scale, sizeof(scale));
+      }
+    } else {
+      for (size_t i = 0; i < sizes[piece] / sizeof(float); ++i) {
+        const float scale = 0.01f + 0.005f * (next() % 5);
+        std::memcpy(out + i * sizeof(scale), &scale, sizeof(scale));
+      }
+    }
+  }
+  std::string path = ::testing::TempDir() + "/moe_block_model.XXXXXX";
+  const int fd = mkstemp(path.data());
+  ASSERT_GE(fd, 0);
+  ASSERT_EQ(write(fd, file_bytes.data(), file_bytes.size()),
+            static_cast<ssize_t>(file_bytes.size()));
+  auto* mapping = static_cast<const uint8_t*>(mmap(
+      nullptr, file_bytes.size(), PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0));
+  close(fd);
+  ASSERT_NE(mapping, MAP_FAILED);
+
+  // The norms' scales and the experts' output scales.
+  std::array<std::vector<float>, 6> norm_scales;
+  for (size_t n = 0; n < norm_scales.size(); ++n) {
+    norm_scales[n].resize(kD);
+    for (int32_t i = 0; i < kD; ++i) {
+      norm_scales[n][i] = 0.5f + 0.125f * ((i + 3 * n) % 7);
+    }
+  }
+  const std::array<float, kExperts> expert_scales = {1.0f, 0.75f, 1.25f, 0.5f};
+  const int32_t top_k = kTopK;
+  const int32_t sum_axis = 2;
+  std::vector<float> activations(kD);
+  for (int32_t i = 0; i < kD; ++i) {
+    activations[i] = 0.25f * ((i * 7) % 11 - 5);
+  }
+
+  const auto* compiler_context = LrtGetCompilerContext();
+  litert::nvidia::SetMoeArenaLoadingEnabled(true);
+  std::array<std::vector<float>, 2> results;
+  for (const bool stacked : {false, true}) {
+    SCOPED_TRACE(testing::Message() << "stacked=" << stacked);
+    LiteRtModelT model;
+    auto& graph = model.EmplaceSubgraph();
+    const auto tensor =
+        [&](const std::string& name, LiteRtElementType type,
+            const std::vector<int32_t>& dims) -> LiteRtTensorT& {
+      auto& value = graph.EmplaceTensor();
+      value.SetName(name);
+      value.SetType(MakeRankedTensorType(type, dims));
+      return value;
+    };
+    // A constant that is a view of the model file.
+    const auto view = [&](const std::string& name, LiteRtElementType type,
+                          const std::vector<int32_t>& dims, size_t offset,
+                          size_t size) -> LiteRtTensorT& {
+      auto& value = tensor(name, type, dims);
+      SetWeightsFromUnownedBuffer(
+          value.Weights(), litert::BufferRef<uint8_t>(mapping + offset, size));
+      return value;
+    };
+    const auto constant = [&](const std::string& name, LiteRtElementType type,
+                              const std::vector<int32_t>& dims,
+                              const void* data, size_t size) -> LiteRtTensorT& {
+      auto& value = tensor(name, type, dims);
+      SetWeightsFromUnownedBuffer(
+          value.Weights(),
+          litert::BufferRef<uint8_t>(static_cast<const uint8_t*>(data), size));
+      return value;
+    };
+    // `rows` blockwise INT4 rows of a piece and of its scales, from `first`.
+    const auto blockwise = [&](const std::string& name, Piece weights,
+                               int32_t first, int32_t rows,
+                               int32_t columns) -> LiteRtTensorT& {
+      const size_t row_bytes = columns / 2;
+      const size_t scale_row_bytes = columns / kBlock * sizeof(uint16_t);
+      auto& scales = view(name + "_scales", kLiteRtElementTypeFloat16,
+                          {rows, columns / kBlock},
+                          offsets[weights + 1] + first * scale_row_bytes,
+                          rows * scale_row_bytes);
+      auto& value =
+          view(name, kLiteRtElementTypeInt4, {rows, columns},
+               offsets[weights] + first * row_bytes, rows * row_bytes);
+      value.SetQarams(MakeBlockWiseQuantization(&scales, nullptr, kBlock));
+      return value;
+    };
+    const auto op =
+        [&](LiteRtOpCode code, std::initializer_list<LiteRtTensorT*> inputs,
+            std::initializer_list<LiteRtTensorT*> outputs) -> LiteRtOpT& {
+      auto& value = graph.EmplaceOp();
+      value.SetOpCode(code);
+      for (auto* input : inputs) {
+        litert::internal::AttachInput(input, value);
+      }
+      for (auto* output : outputs) {
+        litert::internal::AttachOutput(output, value);
+      }
+      return value;
+    };
+    const auto real = [&](const std::string& name,
+                          int32_t channels) -> LiteRtTensorT& {
+      return tensor(name, kLiteRtElementTypeFloat32, {1, 1, channels});
+    };
+    const auto norm = [&](LiteRtTensorT& input, int index,
+                          const std::string& name) -> LiteRtTensorT& {
+      auto& scale = constant(name + "_scale", kLiteRtElementTypeFloat32, {kD},
+                             norm_scales[index].data(), kD * sizeof(float));
+      auto& output = real(name, kD);
+      auto& composite_op =
+          op(kLiteRtOpCodeShloComposite, {&input, &scale}, {&output});
+      tflite::StableHLOCompositeOptionsT composite;
+      composite.name = "odml.rms_norm";
+      flexbuffers::Builder attributes;
+      const auto map = attributes.StartMap();
+      attributes.Float("epsilon", 1e-6f);
+      attributes.EndMap(map);
+      attributes.Finish();
+      composite.composite_attributes = attributes.GetBuffer();
+      tflite::BuiltinOptions2Union options;
+      options.Set(std::move(composite));
+      litert::internal::SetTflOptions2(composite_op, std::move(options));
+      return output;
+    };
+    const auto fully_connected =
+        [&](LiteRtTensorT& input, LiteRtTensorT& weights,
+            const std::string& name, int32_t channels) -> LiteRtTensorT& {
+      auto& output = real(name, channels);
+      auto& fc =
+          op(kLiteRtOpCodeTflFullyConnected, {&input, &weights}, {&output});
+      tflite::FullyConnectedOptionsT fc_options;
+      fc_options.keep_num_dims = true;
+      tflite::BuiltinOptionsUnion options;
+      options.Set(std::move(fc_options));
+      litert::internal::SetTflOptions(fc, std::move(options));
+      return output;
+    };
+    const auto softmax = [&](LiteRtTensorT& input, const std::string& name,
+                             int32_t channels) -> LiteRtTensorT& {
+      auto& output = real(name, channels);
+      auto& value = op(kLiteRtOpCodeTflSoftmax, {&input}, {&output});
+      tflite::SoftmaxOptionsT softmax_options;
+      softmax_options.beta = 1.0f;
+      tflite::BuiltinOptionsUnion options;
+      options.Set(std::move(softmax_options));
+      litert::internal::SetTflOptions(value, std::move(options));
+      return output;
+    };
+    const auto add = [&](LiteRtTensorT& left, LiteRtTensorT& right,
+                         const std::string& name) -> LiteRtTensorT& {
+      auto& output = real(name, kD);
+      auto& value = op(kLiteRtOpCodeTflAdd, {&left, &right}, {&output});
+      tflite::BuiltinOptionsUnion options;
+      options.Set(tflite::AddOptionsT{});
+      litert::internal::SetTflOptions(value, std::move(options));
+      return output;
+    };
+
+    auto& residual = real("residual", kD);
+    graph.Inputs().push_back(&residual);
+    // The dense feed-forward.
+    auto& dense_in = norm(residual, 0, "dense_in");
+    LiteRtTensorT* gated = nullptr;
+    if (stacked) {
+      auto& gate_up = fully_connected(
+          dense_in, blockwise("gate_up_w", kGateUpW, 0, 2 * kDense, kD),
+          "gate_up", 2 * kDense);
+      gated = &real("gated", kDense);
+      auto& swiglu = op(kLiteRtOpCodeShloComposite, {&gate_up}, {gated});
+      tflite::StableHLOCompositeOptionsT composite;
+      composite.name = "odml.swiglu";
+      flexbuffers::Builder attributes;
+      const auto map = attributes.StartMap();
+      attributes.String("activation", "gelu_tanh");
+      attributes.Int("gate_size", kDense);
+      attributes.EndMap(map);
+      attributes.Finish();
+      composite.composite_attributes = attributes.GetBuffer();
+      tflite::BuiltinOptions2Union options;
+      options.Set(std::move(composite));
+      litert::internal::SetTflOptions2(swiglu, std::move(options));
+    } else {
+      auto& gate = fully_connected(dense_in,
+                                   blockwise("gate_w", kGateUpW, 0, kDense, kD),
+                                   "gate", kDense);
+      auto& gate_act = real("gate_act", kDense);
+      auto& gelu = op(kLiteRtOpCodeTflGelu, {&gate}, {&gate_act});
+      tflite::GeluOptionsT gelu_options;
+      gelu_options.approximate = true;
+      tflite::BuiltinOptionsUnion gelu_union;
+      gelu_union.Set(std::move(gelu_options));
+      litert::internal::SetTflOptions(gelu, std::move(gelu_union));
+      auto& up = fully_connected(
+          dense_in, blockwise("up_w", kGateUpW, kDense, kDense, kD), "up",
+          kDense);
+      gated = &real("gated", kDense);
+      auto& multiply = op(kLiteRtOpCodeTflMul, {&gate_act, &up}, {gated});
+      tflite::BuiltinOptionsUnion multiply_options;
+      multiply_options.Set(tflite::MulOptionsT{});
+      litert::internal::SetTflOptions(multiply, std::move(multiply_options));
+    }
+    auto& dense = fully_connected(
+        *gated, blockwise("down_w", kDownW, 0, kD, kDense), "dense", kD);
+    auto& dense_post = norm(dense, 1, "dense_post");
+    // The router.
+    auto& router_in = norm(residual, 2, "router_in");
+    auto& logits = fully_connected(
+        router_in, blockwise("router_w", kRouterW, 0, kExperts, kD), "logits",
+        kExperts);
+    auto& k = constant("k", kLiteRtElementTypeInt32, {}, &top_k, sizeof(top_k));
+    auto& top_values = real("top_values", kTopK);
+    auto& top_indices =
+        tensor("top_indices", kLiteRtElementTypeInt32, {1, 1, kTopK});
+    LiteRtTensorT* top_weights = nullptr;
+    if (stacked) {
+      auto& topk = op(kLiteRtOpCodeTflTopkV2, {&logits, &k},
+                      {&top_values, &top_indices});
+      tflite::BuiltinOptionsUnion topk_options;
+      topk_options.Set(tflite::TopKV2OptionsT{});
+      litert::internal::SetTflOptions(topk, std::move(topk_options));
+      top_weights = &softmax(top_values, "top_weights", kTopK);
+    } else {
+      auto& probabilities = softmax(logits, "probabilities", kExperts);
+      auto& topk = op(kLiteRtOpCodeTflTopkV2, {&probabilities, &k},
+                      {&top_values, &top_indices});
+      tflite::BuiltinOptionsUnion topk_options;
+      topk_options.Set(tflite::TopKV2OptionsT{});
+      litert::internal::SetTflOptions(topk, std::move(topk_options));
+      auto& axis = constant("axis", kLiteRtElementTypeInt32, {1}, &sum_axis,
+                            sizeof(sum_axis));
+      auto& total = real("total", 1);
+      auto& sum = op(kLiteRtOpCodeTflSum, {&top_values, &axis}, {&total});
+      tflite::ReducerOptionsT sum_options;
+      sum_options.keep_dims = true;
+      tflite::BuiltinOptionsUnion sum_union;
+      sum_union.Set(std::move(sum_options));
+      litert::internal::SetTflOptions(sum, std::move(sum_union));
+      top_weights = &real("top_weights", kTopK);
+      auto& divide =
+          op(kLiteRtOpCodeTflDiv, {&top_values, &total}, {top_weights});
+      tflite::BuiltinOptionsUnion divide_options;
+      divide_options.Set(tflite::DivOptionsT{});
+      litert::internal::SetTflOptions(divide, std::move(divide_options));
+    }
+    // The experts.
+    auto& expert_in = norm(residual, 3, "expert_in");
+    const auto expert_piece =
+        [&](const std::string& name, Piece piece, int32_t rows,
+            int32_t columns) -> std::pair<LiteRtTensorT*, LiteRtTensorT*> {
+      auto& weights =
+          view(name, kLiteRtElementTypeInt4, {rows, kExperts, 1, columns},
+               offsets[piece], sizes[piece]);
+      auto& scales = view(name + "_scales", kLiteRtElementTypeFloat32,
+                          {rows, kExperts, 1, columns / kBlock},
+                          offsets[piece + 1], sizes[piece + 1]);
+      return {&weights, &scales};
+    };
+    const auto expert_gate =
+        expert_piece("expert_gate", kExpertGateW, kHidden, kD);
+    const auto expert_up = expert_piece("expert_up", kExpertUpW, kHidden, kD);
+    const auto expert_down =
+        expert_piece("expert_down", kExpertDownW, kD, kHidden);
+    auto& per_expert_scale = constant(
+        "per_expert_scale", kLiteRtElementTypeFloat32, {1, 1, 1, kExperts},
+        expert_scales.data(), sizeof(expert_scales));
+    auto& experts = real("experts", kD);
+    auto& moe = op(kLiteRtOpCodeTflCustom,
+                   {&expert_in, top_weights, &top_indices, expert_gate.first,
+                    expert_gate.second, expert_up.first, expert_up.second,
+                    expert_down.first, expert_down.second, &per_expert_scale},
+                   {&experts});
+    moe.SetCustomCode("moe");
+    flexbuffers::Builder moe_options;
+    const auto moe_map = moe_options.StartMap();
+    moe_options.String("activation", "gelu_tanh");
+    moe_options.Int("hidden_dim", kHidden);
+    moe_options.Int("model_dim", kD);
+    moe_options.Int("num_active_experts", kTopK);
+    moe_options.Int("num_experts", kExperts);
+    moe_options.String("weight_type", "int4");
+    moe_options.EndMap(moe_map);
+    moe_options.Finish();
+    moe.SetCustomOptions(moe_options.GetBuffer().data(),
+                         moe_options.GetBuffer().size());
+    auto& experts_post = norm(experts, 4, "experts_post");
+    auto& sum = add(dense_post, experts_post, "sum");
+    auto& sum_post = norm(sum, 5, "sum_post");
+    auto& next_residual = add(residual, sum_post, "next_residual");
+    graph.Outputs().push_back(&next_residual);
+
+    auto store = litert::nvidia::TensorRtWeightStoreBuilder::Create(
+        path, kGranule, /*segment_bytes=*/kGranule);
+    ASSERT_TRUE(store.HasValue()) << store.Error().Message();
+    setenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS", "cuda_gemv", 1);
+    auto built = litert::nvidia::BuildTensorRtEngine(
+        litert::compiler::Subgraph(compiler_context, &graph), {}, store->get());
+    unsetenv("LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS");
+    ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+    litert::nvidia::TensorRtLogger logger;
+    std::unique_ptr<nvinfer1::IRuntime> runtime(
+        nvinfer1::createInferRuntime(logger));
+    ASSERT_NE(runtime, nullptr);
+    std::unique_ptr<nvinfer1::ICudaEngine> engine(
+        runtime->deserializeCudaEngine(built->engine.data(),
+                                       built->engine.size()));
+    ASSERT_NE(engine, nullptr);
+    std::unique_ptr<nvinfer1::IEngineInspector> inspector(
+        engine->createEngineInspector());
+    ASSERT_NE(inspector, nullptr);
+    const std::string layers = inspector->getEngineInformation(
+        nvinfer1::LayerInformationFormat::kONELINE);
+    // The block plugin replaced the projections: none of them is left for
+    // the CUDA GEMV (the router's, lowered before the plugin took the routing
+    // over, has no reader and TensorRT drops it).
+    ASSERT_NE(layers.find("cuda_moe_"), std::string::npos) << layers;
+    ASSERT_EQ(layers.find("cuda_subbyte_"), std::string::npos) << layers;
+
+    std::unique_ptr<nvinfer1::IExecutionContext> context(
+        engine->createExecutionContext());
+    ASSERT_NE(context, nullptr);
+    void* device_input = nullptr;
+    void* device_output = nullptr;
+    ASSERT_EQ(cudaMalloc(&device_input, kD * sizeof(float)), cudaSuccess);
+    ASSERT_EQ(cudaMalloc(&device_output, kD * sizeof(float)), cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(device_input, activations.data(), kD * sizeof(float),
+                         cudaMemcpyHostToDevice),
+              cudaSuccess);
+    ASSERT_TRUE(
+        context->setTensorAddress(built->input_names[0].c_str(), device_input));
+    ASSERT_TRUE(context->setTensorAddress(built->output_names[0].c_str(),
+                                          device_output));
+    cudaStream_t stream = nullptr;
+    ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+    ASSERT_TRUE(context->enqueueV3(stream));
+    ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+    auto& result = results[stacked ? 1 : 0];
+    result.resize(kD);
+    ASSERT_EQ(cudaMemcpy(result.data(), device_output, kD * sizeof(float),
+                         cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+    EXPECT_EQ(cudaFree(device_output), cudaSuccess);
+    EXPECT_EQ(cudaFree(device_input), cudaSuccess);
+  }
+  litert::nvidia::SetMoeArenaLoadingEnabled(false);
+  // The block adds to the residual stream, the same in both layouts.
+  double added = 0.0;
+  for (int32_t i = 0; i < kD; ++i) {
+    ASSERT_TRUE(std::isfinite(results[0][i])) << i;
+    added += std::fabs(results[0][i] - activations[i]);
+    EXPECT_EQ(results[1][i], results[0][i]) << i;
+  }
+  EXPECT_GT(added, 1.0);
+  munmap(const_cast<uint8_t*>(mapping), file_bytes.size());
+  unlink(path.c_str());
 }

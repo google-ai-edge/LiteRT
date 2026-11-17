@@ -435,6 +435,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        ":moe_plugin",
         ":tensorrt_graph_builder",
         ":weight_holder_calibration",
         ":weight_store_builder",
@@ -485,6 +486,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        ":moe_plugin",
         ":tensorrt_graph_builder",
         ":weight_holder_calibration",
         ":weight_store_builder",

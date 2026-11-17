@@ -1081,9 +1081,18 @@ bool SdpaTransposedTiledCache(int32_t heads, int32_t rows, int32_t mask_rows,
          LiteRtNvidiaTiledAttentionSupports(&shape);
 }
 
-// The gate_size of an odml.swiglu composite (x [.., 2 * N]) -> silu(x[.., :N])
-// * x[.., N:]: Qwen 3.5's feed-forward gate over its fused gate/up projection.
-std::optional<int32_t> SwigluGateSize(const Op& op) {
+// An odml.swiglu composite (x [.., 2 * N]) -> act(x[.., :N]) * x[.., N:], the
+// feed-forward gate over a fused gate/up projection. The composite keeps its
+// name whatever the activation: its `activation` attribute names it, SiLU
+// when absent or "silu" (Qwen 3.5's SwiGLU) and the tanh approximation of
+// GELU for "gelu_tanh" or "gelu_pytorch_tanh" (Gemma 4's GeGLU). Any other
+// activation is left to the composite's decomposition.
+struct SwigluGate {
+  int32_t gate_size = 0;
+  LiteRtNvidiaGemmGate activation = kLiteRtNvidiaGemmGateSilu;
+};
+
+std::optional<SwigluGate> ParseSwiglu(const Op& op) {
   if (op.Inputs().size() != 1 || op.Outputs().size() != 1) {
     return std::nullopt;
   }
@@ -1093,16 +1102,26 @@ std::optional<int32_t> SwigluGateSize(const Op& op) {
       options.attributes_map.value()["gate_size"].IsNull()) {
     return std::nullopt;
   }
-  const int32_t gate_size =
-      options.attributes_map.value()["gate_size"].AsInt32();
+  SwigluGate gate;
+  gate.gate_size = options.attributes_map.value()["gate_size"].AsInt32();
+  const auto activation = options.attributes_map.value()["activation"];
+  if (!activation.IsNull()) {
+    if (!activation.IsString()) return std::nullopt;
+    const std::string name = activation.AsString().str();
+    if (name == "gelu_tanh" || name == "gelu_pytorch_tanh") {
+      gate.activation = kLiteRtNvidiaGemmGateGeluTanh;
+    } else if (name != "silu") {
+      return std::nullopt;
+    }
+  }
   auto in_type = op.Inputs()[0].RankedTensorType();
-  if (!in_type || in_type->Layout().Rank() < 1 || gate_size <= 0 ||
-      in_type->Layout().Dimensions().back() != 2 * gate_size ||
+  if (!in_type || in_type->Layout().Rank() < 1 || gate.gate_size <= 0 ||
+      in_type->Layout().Dimensions().back() != 2 * gate.gate_size ||
       !IsFloatLike(op.Inputs()[0].ElementType()) ||
       !IsFloatLike(op.Outputs()[0].ElementType())) {
     return std::nullopt;
   }
-  return gate_size;
+  return gate;
 }
 
 std::optional<int32_t> SdpaTransposedGroup(const Op& op) {
@@ -1600,7 +1619,7 @@ Expected<bool> IsCompositeSupported(const Op& op) {
     return ParseShortConvStep(op).has_value();
   }
   if (name == "odml.swiglu") {
-    return SwigluGateSize(op).has_value();
+    return ParseSwiglu(op).has_value();
   }
   if (name == "odml.sdpa_transposed") {
     if (!SdpaTransposedGroup(op).has_value()) {
@@ -4621,10 +4640,11 @@ class TensorRtGraphBuilder {
     return found;
   }
 
-  // Qwen 3.5's feed-forward: one INT4 fully connected op over the gate and up
-  // projections stacked [2 * N, K] whose single user is odml.swiglu (gate_size
-  // N). The gated CUDA GEMM/GEMV computes silu(gate) * up in its SiLU mode in
-  // one launch, without the [.., 2 * N] intermediate.
+  // Qwen 3.5's feed-forward, and Gemma 4's when it is exported fused: one INT4
+  // fully connected op over the gate and up projections stacked [2 * N, K]
+  // whose single user is odml.swiglu (gate_size N). The gated CUDA GEMM/GEMV
+  // computes act(gate) * up in the composite's gate mode in one launch,
+  // without the [.., 2 * N] intermediate.
   // LITERT_NVIDIA_TENSORRT_FUSE_SWIGLU=0 lowers them separately.
   std::optional<Op> FindFusedSwiglu(const Op& op) {
     if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_FUSE_SWIGLU",
@@ -4643,8 +4663,8 @@ class TensorRtGraphBuilder {
         graph_outputs_.count(op.Outputs()[0].Get()) != 0) {
       return std::nullopt;
     }
-    const auto gate_size = SwigluGateSize(*user);
-    if (!gate_size.has_value() || 2 * *gate_size != info->rows) {
+    const auto gate = ParseSwiglu(*user);
+    if (!gate.has_value() || 2 * gate->gate_size != info->rows) {
       return std::nullopt;
     }
     return user;
@@ -4656,6 +4676,11 @@ class TensorRtGraphBuilder {
                                 const NormFusion* norm = nullptr) {
     LITERT_ASSIGN_OR_RETURN(auto info,
                             InspectSubbyteGemvWeights(op.Inputs()[1]));
+    const auto gate = ParseSwiglu(swiglu);
+    if (!gate.has_value()) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "Unsupported swiglu composite");
+    }
     LITERT_RETURN_IF_ERROR(
         ValidateSubbyteGemvActivation(activation, compute_type, info.columns,
                                       info.bit_width, info.scale_block));
@@ -4671,7 +4696,7 @@ class TensorRtGraphBuilder {
         auto* gated,
         AddSubbyteGemvPlugin(
             activation, info, members, absl::MakeConstSpan(scales), suffix,
-            "cuda_subbyte_swiglu_gemm" + suffix, kLiteRtNvidiaGemmGateSilu,
+            "cuda_subbyte_swiglu_gemm" + suffix, gate->activation,
             absl::MakeConstSpan(block_scales), norm));
     LITERT_ASSIGN_OR_RETURN(auto out_type,
                             swiglu.Outputs()[0].RankedTensorType());
@@ -4680,8 +4705,10 @@ class TensorRtGraphBuilder {
     unlowered_ops_.insert(swiglu.Get());
     LITERT_LOG(LITERT_INFO,
                "NVIDIA TensorRT-RTX fused CUDA SwiGLU GEMM: N=%d K=%d "
-               "tensor=%s",
-               info.rows / 2, info.columns, suffix.c_str() + 1);
+               "tensor=%s gate=%s",
+               info.rows / 2, info.columns, suffix.c_str() + 1,
+               gate->activation == kLiteRtNvidiaGemmGateGeluTanh ? "gelu_tanh"
+                                                                 : "silu");
     return SetOutputTensor(swiglu.Outputs()[0], gated);
   }
 
@@ -8315,8 +8342,11 @@ class TensorRtGraphBuilder {
       adj_y = false;  // The value cache is already [B, H, S, D].
     }
     // Operands may arrive in different float precisions (e.g. BF16
-    // probabilities from a runtime_bmm chain against FP16 chunk values).
-    LITERT_RETURN_IF_ERROR(MatchElementwiseFloatTypes(lhs, rhs));
+    // probabilities from a runtime_bmm chain against FP16 chunk values) and in
+    // different ranks, the lower one broadcasting over the other's leading
+    // dimensions (the Gemma 4 vision pooler multiplies [1, P, T] weights with
+    // [P, C] patches); TensorRT's matrix multiply wants equal ranks.
+    LITERT_RETURN_IF_ERROR(MatchElementwiseRanks(lhs, rhs));
     auto* layer = network_->addMatrixMultiply(
         *lhs,
         adj_x ? nvinfer1::MatrixOperation::kTRANSPOSE
@@ -9478,7 +9508,11 @@ class TensorRtGraphBuilder {
   //   top_weights  <- [reshape] <- div(topk.0, sum(topk.0)) | topk.0
   //   router_in    <- [mul c]* <- [reshape] <- rms_norm(X, w_router)
   //   x            <- [reshape] <- rms_norm(X, w_experts)
-  // with one residual X. The fused plugin takes X and does all of it.
+  // with one residual X; or, as the export with a fused feed-forward selects
+  // before it normalizes,
+  //   top_indices  <- topk(fc(router_in, W_router)).1
+  //   top_weights  <- softmax(topk.0)
+  // The fused plugin takes X and does all of it.
   struct MoeRouting {
     Tensor residual;
     Tensor router_norm;
@@ -9538,28 +9572,45 @@ class TensorRtGraphBuilder {
     }
     const auto k = ReadInt32Constant(topk->Inputs()[1]);
     if (!k || k->size() != 1 || (*k)[0] != moe.top_k) return std::nullopt;
-    // Its values, renormalized by their sum.
+    const auto is_plain_softmax = [](const Op& candidate) {
+      float beta = 1.0f;
+      return candidate.Code() == kLiteRtOpCodeTflSoftmax &&
+             !candidate.Inputs().empty() &&
+             LiteRtGetSoftmaxBetaOption(candidate.Get(), &beta) ==
+                 kLiteRtStatusOk &&
+             beta == 1.0f;
+    };
     const Tensor weights = StripReshapes(op.Inputs()[1]);
-    auto div = weights.GetDefiningOp();
-    if (!div || div->Code() != kLiteRtOpCodeTflDiv ||
-        div->Inputs().size() != 2 || !HasNoFusedActivation(*div) ||
-        StripReshapes(div->Inputs()[0]).Get() != topk->Outputs()[0].Get()) {
-      return std::nullopt;
+    const auto normalized = weights.GetDefiningOp();
+    if (!normalized) return std::nullopt;
+    Tensor logits = topk->Inputs()[0];
+    if (is_plain_softmax(*normalized)) {
+      // The softmax of the selected logits: the same weights as the selected
+      // probabilities over their sum.
+      if (StripReshapes(normalized->Inputs()[0]).Get() !=
+          topk->Outputs()[0].Get()) {
+        return std::nullopt;
+      }
+    } else {
+      // Its values, renormalized by their sum.
+      if (normalized->Code() != kLiteRtOpCodeTflDiv ||
+          normalized->Inputs().size() != 2 ||
+          !HasNoFusedActivation(*normalized) ||
+          StripReshapes(normalized->Inputs()[0]).Get() !=
+              topk->Outputs()[0].Get()) {
+        return std::nullopt;
+      }
+      auto sum = StripReshapes(normalized->Inputs()[1]).GetDefiningOp();
+      if (!sum || sum->Code() != kLiteRtOpCodeTflSum || sum->Inputs().empty() ||
+          StripReshapes(sum->Inputs()[0]).Get() != topk->Outputs()[0].Get()) {
+        return std::nullopt;
+      }
+      // softmax(fc(router_in, W)) with a plain softmax.
+      auto softmax = StripReshapes(logits).GetDefiningOp();
+      if (!softmax || !is_plain_softmax(*softmax)) return std::nullopt;
+      logits = softmax->Inputs()[0];
     }
-    auto sum = StripReshapes(div->Inputs()[1]).GetDefiningOp();
-    if (!sum || sum->Code() != kLiteRtOpCodeTflSum || sum->Inputs().empty() ||
-        StripReshapes(sum->Inputs()[0]).Get() != topk->Outputs()[0].Get()) {
-      return std::nullopt;
-    }
-    // softmax(fc(router_in, W)) with a plain softmax.
-    auto softmax = StripReshapes(topk->Inputs()[0]).GetDefiningOp();
-    float beta = 1.0f;
-    if (!softmax || softmax->Code() != kLiteRtOpCodeTflSoftmax ||
-        LiteRtGetSoftmaxBetaOption(softmax->Get(), &beta) != kLiteRtStatusOk ||
-        beta != 1.0f) {
-      return std::nullopt;
-    }
-    auto fc = StripReshapes(softmax->Inputs()[0]).GetDefiningOp();
+    auto fc = StripReshapes(logits).GetDefiningOp();
     if (!fc || fc->Code() != kLiteRtOpCodeTflFullyConnected ||
         fc->Inputs().size() != 2 || !HasNoFusedActivation(*fc) ||
         !IsBlockwiseInt4Weights(fc->Inputs()[1])) {
@@ -9635,10 +9686,16 @@ class TensorRtGraphBuilder {
   //   ADD(rms_norm(dense, w_dp), rms_norm(moe, w_mp)) -> rms_norm(w_sp)
   //   ADD(X, that) [-> MUL scalar] = the next residual stream.
   // Every intermediate has that one reader; the dense chain has no reshapes.
+  // The export with a fused feed-forward has one projection over the gate and
+  // up rows stacked and odml.swiglu (tanh GELU) for the gate and the product:
+  //   dense = down(swiglu(gate_up(N)))
   struct MoeBlockFusion {
     Tensor dense_norm;    // the dense input norm's scale
     Tensor dense_gate_w;  // [dense_hidden, model_dim], blockwise INT4
     Tensor dense_up_w;
+    // dense_gate_w and dense_up_w are one tensor [2 * dense_hidden,
+    // model_dim], the gate rows first.
+    bool dense_stacked = false;
     Tensor dense_down_w;  // [model_dim, dense_hidden]
     Tensor dense_post;    // the dense output norm's scale
     Tensor moe_post;      // the experts' output norm's scale
@@ -9707,47 +9764,71 @@ class TensorRtGraphBuilder {
     }
     block.dense_down_w = down->Inputs()[1];
     block.absorbed.push_back(down->Get());
-    const auto mul = down->Inputs()[0].GetDefiningOp();
-    if (!mul || mul->Code() != kLiteRtOpCodeTflMul ||
-        mul->Inputs().size() != 2 || !HasNoFusedActivation(*mul)) {
-      return std::nullopt;
-    }
-    block.absorbed.push_back(mul->Get());
-    std::optional<Op> gelu;
-    std::optional<Op> up;
-    for (int i = 0; i < 2; ++i) {
-      if (!ReadOnce(mul->Inputs()[i])) return std::nullopt;
-      const auto producer = mul->Inputs()[i].GetDefiningOp();
-      if (!producer) return std::nullopt;
-      if (producer->Code() == kLiteRtOpCodeTflGelu) {
-        gelu = *producer;
-      } else if (producer->Code() == kLiteRtOpCodeTflFullyConnected) {
-        up = *producer;
+    const auto gated = down->Inputs()[0].GetDefiningOp();
+    if (!gated) return std::nullopt;
+    Tensor dense_in;
+    if (gated->Code() == kLiteRtOpCodeShloComposite &&
+        CompositeOpName(*gated) == "odml.swiglu") {
+      // The fused export: one projection over the gate and up rows stacked,
+      // gated by odml.swiglu with the tanh GELU.
+      const auto swiglu = ParseSwiglu(*gated);
+      if (!swiglu.has_value() ||
+          swiglu->activation != kLiteRtNvidiaGemmGateGeluTanh ||
+          !ReadOnce(gated->Inputs()[0])) {
+        return std::nullopt;
       }
+      const auto gate_up = gated->Inputs()[0].GetDefiningOp();
+      if (!gate_up || !is_fc(*gate_up)) return std::nullopt;
+      block.gate_mode = 1;
+      block.dense_stacked = true;
+      block.absorbed.push_back(gated->Get());
+      block.absorbed.push_back(gate_up->Get());
+      block.dense_gate_w = gate_up->Inputs()[1];
+      block.dense_up_w = gate_up->Inputs()[1];
+      dense_in = gate_up->Inputs()[0];
+    } else {
+      if (gated->Code() != kLiteRtOpCodeTflMul || gated->Inputs().size() != 2 ||
+          !HasNoFusedActivation(*gated)) {
+        return std::nullopt;
+      }
+      block.absorbed.push_back(gated->Get());
+      std::optional<Op> gelu;
+      std::optional<Op> up;
+      for (int i = 0; i < 2; ++i) {
+        if (!ReadOnce(gated->Inputs()[i])) return std::nullopt;
+        const auto producer = gated->Inputs()[i].GetDefiningOp();
+        if (!producer) return std::nullopt;
+        if (producer->Code() == kLiteRtOpCodeTflGelu) {
+          gelu = *producer;
+        } else if (producer->Code() == kLiteRtOpCodeTflFullyConnected) {
+          up = *producer;
+        }
+      }
+      if (!gelu || !up || gelu->Inputs().size() != 1 || !is_fc(*up) ||
+          !ReadOnce(gelu->Inputs()[0])) {
+        return std::nullopt;
+      }
+      bool approximate = false;
+      if (LiteRtGetGeluApproximateOption(gelu->Get(), &approximate) !=
+          kLiteRtStatusOk) {
+        return std::nullopt;
+      }
+      block.gate_mode = approximate ? 1 : 2;
+      block.absorbed.push_back(gelu->Get());
+      block.absorbed.push_back(up->Get());
+      const auto gate = gelu->Inputs()[0].GetDefiningOp();
+      if (!gate || !is_fc(*gate) ||
+          gate->Inputs()[0].Get() != up->Inputs()[0].Get()) {
+        return std::nullopt;
+      }
+      block.absorbed.push_back(gate->Get());
+      block.dense_gate_w = gate->Inputs()[1];
+      block.dense_up_w = up->Inputs()[1];
+      dense_in = gate->Inputs()[0];
     }
-    if (!gelu || !up || gelu->Inputs().size() != 1 || !is_fc(*up) ||
-        !ReadOnce(gelu->Inputs()[0])) {
-      return std::nullopt;
-    }
-    bool approximate = false;
-    if (LiteRtGetGeluApproximateOption(gelu->Get(), &approximate) !=
-        kLiteRtStatusOk) {
-      return std::nullopt;
-    }
-    block.gate_mode = approximate ? 1 : 2;
-    block.absorbed.push_back(gelu->Get());
-    block.absorbed.push_back(up->Get());
-    const auto gate = gelu->Inputs()[0].GetDefiningOp();
-    if (!gate || !is_fc(*gate) ||
-        gate->Inputs()[0].Get() != up->Inputs()[0].Get()) {
-      return std::nullopt;
-    }
-    block.absorbed.push_back(gate->Get());
-    block.dense_gate_w = gate->Inputs()[1];
-    block.dense_up_w = up->Inputs()[1];
-    const Tensor dense_in = gate->Inputs()[0];
+    // Its readers: the gate and the up projection, or the one stacked one.
     if (graph_outputs_.count(dense_in.Get()) != 0 ||
-        dense_in.Uses().size() != 2) {
+        dense_in.Uses().size() != (block.dense_stacked ? 1u : 2u)) {
       return std::nullopt;
     }
     const auto dense_in_norm = dense_in.GetDefiningOp();
@@ -9767,11 +9848,15 @@ class TensorRtGraphBuilder {
     const auto dd = down_type->Layout().Dimensions();
     if (gd.size() != 2 || ud.size() != 2 || dd.size() != 2 ||
         gd[1] != moe.model_dim || ud[1] != moe.model_dim || ud[0] != gd[0] ||
-        dd[0] != moe.model_dim || dd[1] != gd[0] || gd[0] < 32 ||
-        gd[0] % 32 != 0) {
+        (block.dense_stacked && gd[0] % 2 != 0)) {
       return std::nullopt;
     }
-    block.dense_hidden = gd[0];
+    const int32_t dense_hidden = block.dense_stacked ? gd[0] / 2 : gd[0];
+    if (dd[0] != moe.model_dim || dd[1] != dense_hidden || dense_hidden < 32 ||
+        dense_hidden % 32 != 0) {
+      return std::nullopt;
+    }
+    block.dense_hidden = dense_hidden;
     // ADD1 -> rms_norm(w_sp) -> ADD2(X, .) [-> MUL scalar]
     const auto sum_norm = SoleUser(add1->Outputs()[0], &block.absorbed);
     if (!sum_norm || !is_norm(*sum_norm)) return std::nullopt;
@@ -10477,31 +10562,46 @@ class TensorRtGraphBuilder {
     return SetStatefulPluginOutputs(op, layer, name);
   }
 
-  // odml.swiglu(x) = silu(x[.., :N]) * x[.., N:] where its fully connected
+  // odml.swiglu(x) = act(x[.., :N]) * x[.., N:] where its fully connected
   // producer did not absorb it (FindFusedSwiglu): its slices and gates.
   Expected<void> LowerCompositeSwiglu(const Op& op) {
-    const auto gate_size = SwigluGateSize(op);
-    if (!gate_size.has_value()) {
+    const auto parsed = ParseSwiglu(op);
+    if (!parsed.has_value()) {
       return Error(kLiteRtStatusErrorUnsupported,
                    "Unsupported swiglu composite");
     }
     LITERT_ASSIGN_OR_RETURN(auto* x, GetTensor(op.Inputs()[0]));
     const int axis = x->getDimensions().nbDims - 1;
     LITERT_ASSIGN_OR_RETURN(auto* gate,
-                            SliceTensorAxis(x, axis, 0, *gate_size));
-    LITERT_ASSIGN_OR_RETURN(auto* up,
-                            SliceTensorAxis(x, axis, *gate_size, *gate_size));
-    auto* sigmoid =
-        network_->addActivation(*gate, nvinfer1::ActivationType::kSIGMOID);
-    if (sigmoid == nullptr || sigmoid->getOutput(0) == nullptr) {
-      return Error(kLiteRtStatusErrorCompilation, "Failed to add swiglu gate");
+                            SliceTensorAxis(x, axis, 0, parsed->gate_size));
+    LITERT_ASSIGN_OR_RETURN(
+        auto* up,
+        SliceTensorAxis(x, axis, parsed->gate_size, parsed->gate_size));
+    nvinfer1::ITensor* gated = nullptr;
+    if (parsed->activation == kLiteRtNvidiaGemmGateGeluTanh) {
+      auto* gelu =
+          network_->addActivation(*gate, nvinfer1::ActivationType::kGELU_TANH);
+      if (gelu == nullptr || gelu->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add swiglu gate");
+      }
+      gated = gelu->getOutput(0);
+    } else {
+      auto* sigmoid =
+          network_->addActivation(*gate, nvinfer1::ActivationType::kSIGMOID);
+      if (sigmoid == nullptr || sigmoid->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add swiglu gate");
+      }
+      auto* silu = network_->addElementWise(
+          *gate, *sigmoid->getOutput(0), nvinfer1::ElementWiseOperation::kPROD);
+      if (silu == nullptr || silu->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add swiglu silu");
+      }
+      gated = silu->getOutput(0);
     }
-    auto* silu = network_->addElementWise(
-        *gate, *sigmoid->getOutput(0), nvinfer1::ElementWiseOperation::kPROD);
-    if (silu == nullptr || silu->getOutput(0) == nullptr) {
-      return Error(kLiteRtStatusErrorCompilation, "Failed to add swiglu silu");
-    }
-    auto* out = network_->addElementWise(*silu->getOutput(0), *up,
+    auto* out = network_->addElementWise(*gated, *up,
                                          nvinfer1::ElementWiseOperation::kPROD);
     if (out == nullptr || out->getOutput(0) == nullptr) {
       return Error(kLiteRtStatusErrorCompilation,
@@ -10673,10 +10773,16 @@ class TensorRtGraphBuilder {
           break;
         }
         scale_type = type;
-        source.offsets[weight_pieces[i]] = *offset;
-        source.sizes[weight_pieces[i]] = bytes.size();
-        source.offsets[scale_pieces[i]] = *scale_offset;
-        source.sizes[scale_pieces[i]] = scale_bytes.size();
+        // The halves of a stacked projection are the gate and the up piece.
+        const bool half = block->dense_stacked && i < 2;
+        const size_t weight_size = half ? bytes.size() / 2 : bytes.size();
+        const size_t scale_size =
+            half ? scale_bytes.size() / 2 : scale_bytes.size();
+        const size_t skipped = half && i == 1 ? 1 : 0;
+        source.offsets[weight_pieces[i]] = *offset + skipped * weight_size;
+        source.sizes[weight_pieces[i]] = weight_size;
+        source.offsets[scale_pieces[i]] = *scale_offset + skipped * scale_size;
+        source.sizes[scale_pieces[i]] = scale_size;
       }
       if (in_file) {
         source.dense_scale_type = scale_type;
