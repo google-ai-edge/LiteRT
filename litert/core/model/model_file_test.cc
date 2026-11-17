@@ -497,6 +497,79 @@ TEST(ModelLoadTest, RejectsDispatchBytecodePastAllocation) {
   EXPECT_EQ(litert_model.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
 }
 
+TEST(ModelLoadTest, LoadsValidLargeCustomOptionsOffset) {
+  static constexpr absl::string_view kCustomPayload = "appended_custom_opts";
+
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  auto& op = sg.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflCustom);
+  op.SetCustomCode("test_custom_op");
+
+  auto serialized = SerializeModel(std::move(root));
+  ASSERT_TRUE(serialized);
+
+  auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(flatbuffer);
+  auto tfl_model = flatbuffer->get()->Unpack();
+  tfl_model->subgraphs[0]->operators[0]->custom_options.clear();
+  tfl_model->subgraphs[0]->operators[0]->large_custom_options_offset = 1;
+  tfl_model->subgraphs[0]->operators[0]->large_custom_options_size =
+      kCustomPayload.size();
+
+  auto packed = SerializeFlatbuffer(*tfl_model);
+  const uint64_t offset = (packed.Size() + 15) / 16 * 16;
+  tfl_model->subgraphs[0]->operators[0]->large_custom_options_offset = offset;
+  packed = SerializeFlatbuffer(*tfl_model);
+  ASSERT_LE(packed.Size(), offset);
+
+  const std::filesystem::path test_file_path =
+      std::filesystem::path(::testing::TempDir()) / "large_custom_opts.tflite";
+  std::ofstream output(test_file_path, std::ios::binary);
+  output.write(reinterpret_cast<const char*>(packed.Data()), packed.Size());
+  std::string padding(offset - packed.Size(), '\0');
+  output.write(padding.data(), padding.size());
+  output.write(kCustomPayload.data(), kCustomPayload.size());
+  output.close();
+
+  auto litert_model = LoadModelFromFile(test_file_path.string());
+  ASSERT_TRUE(litert_model);
+  const auto loaded_opts = (*litert_model)->Subgraph(0).Op(0).CustomOptions();
+  EXPECT_EQ(absl::string_view(reinterpret_cast<const char*>(loaded_opts.Data()),
+                              loaded_opts.Size()),
+            kCustomPayload);
+}
+
+TEST(ModelLoadTest, RejectsOutOfBoundsLargeCustomOptionsOffset) {
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  auto& op = sg.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflCustom);
+  op.SetCustomCode("test_custom_op");
+
+  auto serialized = SerializeModel(std::move(root));
+  ASSERT_TRUE(serialized);
+
+  auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(flatbuffer);
+  auto tfl_model = flatbuffer->get()->Unpack();
+  tfl_model->subgraphs[0]->operators[0]->custom_options.clear();
+  tfl_model->subgraphs[0]->operators[0]->large_custom_options_offset = 1000000;
+  tfl_model->subgraphs[0]->operators[0]->large_custom_options_size = 32;
+
+  auto mutated = SerializeFlatbuffer(*tfl_model);
+  const std::filesystem::path test_file_path =
+      std::filesystem::path(::testing::TempDir()) /
+      "oob_large_custom_opts.tflite";
+  std::ofstream output(test_file_path, std::ios::binary);
+  output.write(reinterpret_cast<const char*>(mutated.Data()), mutated.Size());
+  output.close();
+
+  auto litert_model = LoadModelFromFile(test_file_path.string());
+  ASSERT_FALSE(litert_model);
+  EXPECT_EQ(litert_model.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
+}
+
 TEST(ModelTestCApi, Int2) {
   auto model = LoadModelThroughRoundTrip("FFW-2-bit.tflite");
   ASSERT_TRUE(model);
