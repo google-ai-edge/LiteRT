@@ -47,9 +47,24 @@ public final class Environment {
     }
   }
 
+  /// Returns whether `LiteRtCreateEnvironment` can register `accelerator` with `options`. It
+  /// registers every accelerator by default, and only the ones in the bitmask when
+  /// `.autoRegisterAccelerators` is passed.
+  internal static func autoRegisters(_ accelerator: Accelerator, options: [Option]) -> Bool {
+    let masks = options.compactMap { option -> Int64? in
+      if case .autoRegisterAccelerators(let mask) = option { return mask }
+      return nil
+    }
+    return masks.isEmpty || masks.contains { $0 & Int64(accelerator.rawValue) != 0 }
+  }
+
   public init(options: [Option] = []) throws {
     var resolvedOptions = options
-    if !options.contains(where: { if case .runtimeLibraryDir = $0 { return true }; return false }) {
+    // The Metal accelerator library is only loaded when the GPU accelerator is
+    // auto-registered, so it is only searched for in that case.
+    if Self.autoRegisters(.gpu, options: options),
+      !options.contains(where: { if case .runtimeLibraryDir = $0 { return true }; return false })
+    {
       // The accelerator is distributed either as a plain dylib or as a
       // framework bundle, whose executable is named after the bundle.
       let libNames = ["libLiteRtMetalAccelerator.dylib", "LiteRtMetalAccelerator"]
