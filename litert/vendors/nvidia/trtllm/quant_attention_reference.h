@@ -98,13 +98,94 @@ inline float ThroughHalf(float value) {
   return HalfBitsToFloat(FloatToHalfBits(value));
 }
 
-// TFLite's QUANTIZE with a zero point of 0 (reference_ops::AffineQuantize
-// and AffineQuantizeToInt4 in tflite/kernels/quantize.cc): the fp32 quotient
-// rounded half away from zero, saturated to the range of `bits` bits.
+// QUANTIZE with a zero point of 0, as the CPU backend computes it for the
+// graphs' FLOAT16 tensors. To INT8 XNNPACK converts (xnn_f16_qs8_vcvt, whose
+// scale is xnn_init_f16_qs8_cvt_scalar_params'): the value times the
+// reciprocal of the scale rounded to FLOAT16, rounded half to even, saturated
+// to [-128, 127]. To INT4, which XNNPACK does not take, TFLite's kernel
+// divides (AffineQuantizeToInt4 in tflite/kernels/quantize.cc): the fp32
+// quotient rounded half away from zero, saturated to [-8, 7].
 inline int8_t Quantize(float value, float scale, int bits) {
+  if (bits == 8) {
+    const float reciprocal = ThroughHalf(1.0f / scale);
+    const float product = value * reciprocal;
+    const float rounded = std::nearbyint(product);
+    return static_cast<int8_t>(std::min(std::max(rounded, -128.0f), 127.0f));
+  }
   const int32_t rounded = static_cast<int32_t>(std::round(value / scale));
-  const int32_t limit = 1 << (bits - 1);
-  return static_cast<int8_t>(std::min(std::max(rounded, -limit), limit - 1));
+  return static_cast<int8_t>(std::min(std::max(rounded, -8), 7));
+}
+
+// exp(x) of x <= 0 as xnn_f16_raddstoreexpminusmax_ukernel__avx2_rr1_p2
+// computes it in fp32: a second-degree polynomial, and zero where a FLOAT16
+// result would be denormal (below -9.703125).
+inline float XnnHalfExpMinus(float x) {
+  const float magic_bias = 0x1.8000FEp23f;
+  float n = std::fma(x, 0x1.715476p0f, magic_bias);
+  uint32_t bits = 0;
+  std::memcpy(&bits, &n, sizeof(bits));
+  bits <<= 23;
+  float s = 0.0f;
+  std::memcpy(&s, &bits, sizeof(s));
+  n = n - magic_bias;
+  float t = std::fma(n, -0x1.62E43p-1f, x);
+  const float p = std::fma(0x1.FF3A32p-2f, t, 0x1.039E10p+0f);
+  t = t * s;
+  const float f = std::fma(t, p, s);
+  return x < -0x1.368000p+3f ? 0.0f : f;
+}
+
+// SOFTMAX on a FLOAT16 tensor, in place (XNNPACK's softmax operator with the
+// microkernels x86 gets with AVX2 and F16C): the maximum; exp(x - max) as
+// above, each rounded to FLOAT16; the fp32 sum of the unrounded values as
+// the microkernel adds them (eight lanes over the whole vectors, the lanes
+// in pairs, the last keys of a length that is no multiple of eight into the
+// pairs, then (0 + 2) + (1 + 3)); the reciprocal of the sum rounded to
+// FLOAT16 (compute_reciprocal_f16); the products rounded to FLOAT16
+// (xnn_f16_vmulc).
+inline void HalfSoftmax(std::vector<float>* values) {
+  std::vector<float>& x = *values;
+  const int n = static_cast<int>(x.size());
+  float max = -INFINITY;
+  for (const float value : x) {
+    max = std::max(max, value);
+  }
+  const int whole = n & ~7;
+  float lanes[8] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+  for (int j = 0; j < n; ++j) {
+    x[j] = XnnHalfExpMinus(x[j] - max);
+    if (j < whole) {
+      lanes[j & 7] = lanes[j & 7] + x[j];
+    }
+  }
+  float pair[4];
+  for (int i = 0; i < 4; ++i) {
+    pair[i] = lanes[i] + lanes[i + 4];
+  }
+  int next = whole;
+  const int rest = n - whole;
+  if ((rest & 4) != 0) {
+    for (int i = 0; i < 4; ++i) {
+      pair[i] = pair[i] + x[next + i];
+    }
+    next += 4;
+  }
+  if ((rest & 2) != 0) {
+    pair[0] = pair[0] + x[next];
+    pair[1] = pair[1] + x[next + 1];
+    next += 2;
+  }
+  if ((rest & 1) != 0) {
+    pair[0] = pair[0] + x[next];
+  }
+  const float low = pair[0] + pair[2];
+  const float high = pair[1] + pair[3];
+  const float sum = low + high;
+  const float scale = ThroughHalf(1.0f / sum);
+  for (int j = 0; j < n; ++j) {
+    const float product = ThroughHalf(x[j]) * scale;
+    x[j] = ThroughHalf(product);
+  }
 }
 
 // INT4 values two per byte, the first in the low nibble, as LiteRT packs an
@@ -229,12 +310,20 @@ struct AttentionInputs {
 };
 
 // The attention of odml.sdpa_transposed (ops 0 to 16 of its decomposition)
-// and of odml.fused_sdpa_cache_update (ops 0 to 32): the query dequantized to
-// FP16, fp32 products with the dequantized keys, the scores cast to FP16 and
-// masked with `fill`, the softmax, its probabilities cast to FP16, fp32
-// products with the dequantized values, and the result cast to FP16 (the
-// fused composite casts the cache's and the chunk's parts and adds them in
-// FP16). Returns [heads][rows][depth].
+// and of odml.fused_sdpa_cache_update (ops 0 to 32), tensor by tensor as the
+// CPU backend computes them (XNNPACK on x86 with AVX2, FMA3 and F16C): the
+// query dequantized to FP16 with the scale rounded to FP16 (xnn_qs8_f16_vcvt);
+// the keys dequantized to fp32; the scores one fused multiply-add per depth
+// element (xnn_f32_gemm), cast to FP16 and masked with `fill`; the softmax,
+// which odml.sdpa_transposed takes on the FP16 tensor (HalfSoftmax) and the
+// fused composite in fp32 between two casts; fp32 products with the
+// dequantized values, one fused multiply-add per key in the cache's order;
+// and the result cast to FP16 (the fused composite casts the cache's and the
+// chunk's parts and adds them in FP16). Returns [heads][rows][depth].
+//
+// The kernels of the first composite (decode_attention.cu) have these bits.
+// The tensor-core kernel of the second (tiled_attention.cu) multiplies FP16
+// operands and folds the softmax in tile by tile: it agrees to RowsMatch.
 inline std::vector<float> Attention(const AttentionInputs& in) {
   const Caches& caches = *in.caches;
   const int depth = caches.depth;
@@ -247,8 +336,10 @@ inline std::vector<float> Attention(const AttentionInputs& in) {
   for (int h = 0; h < caches.heads; ++h) {
     for (int r = 0; r < in.rows; ++r) {
       const size_t row = (static_cast<size_t>(h) * in.rows + r) * depth;
+      const float q_scale = ThroughHalf(in.q_scale);
       for (int d = 0; d < depth; ++d) {
-        q[d] = ThroughHalf(static_cast<float>((*in.q)[row + d]) * in.q_scale);
+        const float product = static_cast<float>((*in.q)[row + d]) * q_scale;
+        q[d] = ThroughHalf(product);
       }
       const uint8_t* mask_row =
           in.mask->data() + static_cast<size_t>(r % in.mask_rows) * keys;
@@ -263,35 +354,45 @@ inline std::vector<float> Attention(const AttentionInputs& in) {
                                  caches.cache_len) *
                                     depth +
                                 d];
-          score += q[d] * (static_cast<float>(key) * in.k_scale);
+          const float dequantized = static_cast<float>(key) * in.k_scale;
+          score = std::fma(q[d], dequantized, score);
         }
         scores[j] = mask_row[j] != 0 ? ThroughHalf(score) : in.fill;
         max_score = std::max(max_score, scores[j]);
       }
-      float sum = 0.0f;
-      for (int j = 0; j < keys; ++j) {
-        scores[j] = std::exp(scores[j] - max_score);
-        sum += scores[j];
+      if (in.new_len == 0) {
+        HalfSoftmax(&scores);
+      } else {
+        float sum = 0.0f;
+        for (int j = 0; j < keys; ++j) {
+          scores[j] = std::exp(scores[j] - max_score);
+          sum += scores[j];
+        }
+        for (int j = 0; j < keys; ++j) {
+          scores[j] = ThroughHalf(scores[j] / sum);
+        }
       }
       std::fill(cache_part.begin(), cache_part.end(), 0.0f);
       std::fill(new_part.begin(), new_part.end(), 0.0f);
       for (int j = 0; j < keys; ++j) {
-        const float p = ThroughHalf(scores[j] / sum);
+        const float p = scores[j];
         if (p == 0.0f) {
           continue;
         }
         for (int d = 0; d < depth; ++d) {
           if (j < caches.cache_len) {
-            cache_part[d] +=
-                p * (static_cast<float>(caches.Value(h, j, d)) * in.v_scale);
+            const float dequantized =
+                static_cast<float>(caches.Value(h, j, d)) * in.v_scale;
+            cache_part[d] = std::fma(p, dequantized, cache_part[d]);
           } else {
-            new_part[d] +=
-                p * (static_cast<float>(
-                         (*in.v_new)[(static_cast<size_t>(h) * in.new_len + j -
-                                      caches.cache_len) *
-                                         depth +
-                                     d]) *
-                     in.v_scale);
+            const float dequantized =
+                static_cast<float>(
+                    (*in.v_new)[(static_cast<size_t>(h) * in.new_len + j -
+                                 caches.cache_len) *
+                                    depth +
+                                d]) *
+                in.v_scale;
+            new_part[d] = std::fma(p, dequantized, new_part[d]);
           }
         }
       }

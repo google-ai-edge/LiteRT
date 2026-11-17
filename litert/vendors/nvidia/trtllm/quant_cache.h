@@ -25,13 +25,17 @@
 // [heads, cache_len, depth], values as columns [heads, depth, cache_len],
 // INT8 or INT4 two per byte with the first in the low nibble): the QUANTIZE
 // of the query and of the keys and values a step adds, and the cache updates
-// of odml.cache_update and odml.fused_sdpa_cache_update. Quantization is
-// TFLite's QUANTIZE with a zero point of 0: x / scale rounded half away from
-// zero and saturated to the INT8 or INT4 range. Float tensors are FP16, or
-// BF16 where a `bf16` argument says so.
+// of odml.cache_update and odml.fused_sdpa_cache_update. Quantization is the
+// graphs' QUANTIZE with a zero point of 0 as the CPU backend computes it: to
+// INT8, XNNPACK's conversion of a FLOAT16 tensor (x times the reciprocal of
+// the scale rounded to FLOAT16, rounded half to even, saturated to [-128,
+// 127]); to INT4, TFLite's kernel (x / scale rounded half away from zero,
+// saturated to [-8, 7]). Float tensors are FP16, or BF16 where a `bf16`
+// argument says so.
 
-// out[i] (FP16) = the INT8 quantization of q[i] times `scale`: the query a
-// tensor-core kernel multiplies.
+// out[i] (FP16) = the INT8 quantization of q[i], dequantized as XNNPACK does
+// (times `scale` rounded to FLOAT16): the query a tensor-core kernel
+// multiplies.
 extern "C" cudaError_t LiteRtNvidiaLaunchQuantizeQuery(const void* q,
                                                        bool q_bf16,
                                                        size_t count,

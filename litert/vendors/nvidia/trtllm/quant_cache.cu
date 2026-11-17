@@ -30,10 +30,21 @@ __device__ __forceinline__ float ToFloat(__nv_bfloat16 v) {
   return __bfloat162float(v);
 }
 
-// TFLite's QUANTIZE with a zero point of 0: x / scale rounded half away from
-// zero, saturated to [lo, hi].
+// The graphs' QUANTIZE ops (zero point 0) as the CPU backend computes them. To
+// INT8, from a FLOAT16 tensor, XNNPACK converts (xnn_f16_qs8_vcvt): x times the
+// reciprocal of the scale *rounded to FLOAT16*
+// (xnn_init_f16_qs8_cvt_scalar_params), rounded half to even, saturated to
+// [-128, 127]. To INT4, which XNNPACK does not take, TFLite's own kernel
+// divides (AffineQuantizeToInt4 in tflite/kernels/quantize.cc): the fp32
+// quotient rounded half away from zero, saturated to [-8, 7]. Dividing for INT8
+// as well gave another value for one query element in 200 of a 3B model (the
+// reciprocal of its query scale is 2.3e-4 off in FLOAT16).
 __device__ __forceinline__ int Quantize(float x, float scale, float lo,
                                         float hi) {
+  if (lo == -128.0f) {
+    const float reciprocal = __half2float(__float2half(1.0f / scale));
+    return static_cast<int>(fminf(fmaxf(rintf(x * reciprocal), lo), hi));
+  }
   return static_cast<int>(fminf(fmaxf(roundf(x / scale), lo), hi));
 }
 
@@ -65,9 +76,11 @@ template <typename T>
 __global__ void QuantizeQueryKernel(const T* __restrict__ q, size_t count,
                                     float scale, __half* __restrict__ out) {
   for (size_t i = FirstItem(); i < count; i += ItemStride()) {
+    // DEQUANTIZE to FLOAT16 (xnn_qs8_f16_vcvt): times the scale rounded to
+    // FLOAT16, rounded to FLOAT16.
     out[i] = __float2half(
         static_cast<float>(Quantize(ToFloat(q[i]), scale, -128.0f, 127.0f)) *
-        scale);
+        __half2float(__float2half(scale)));
   }
 }
 

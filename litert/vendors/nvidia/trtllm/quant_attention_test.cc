@@ -198,16 +198,17 @@ std::vector<uint8_t> RingPrefillMask(int ring, int tokens, int start, int steps,
   return mask;
 }
 
-TEST(QuantCacheTest, QueryIsRoundedHalfAwayFromZeroAndSaturated) {
-  // With a scale of 0.5 the quotients are exact: ties go away from zero
-  // (TFLite's QUANTIZE; TensorRT's rounds them to even), and what leaves the
-  // INT8 range saturates.
+TEST(QuantCacheTest, QueryIsQuantizedAsXnnpackConvertsIt) {
+  // With a scale of 0.5 the reciprocal is exact in FLOAT16 and so are the
+  // products: ties go to the even value (XNNPACK's conversion, which is what
+  // the CPU backend runs for a FLOAT16 tensor; TFLite's own QUANTIZE kernel
+  // rounds them away from zero), and what leaves the INT8 range saturates.
   const float scale = 0.5f;
   const std::vector<float> values = {
       0.25f, 0.75f,  -0.25f, -0.75f, 1.25f,  -1.25f, 0.2f, -0.3f,
       63.5f, 63.75f, 100.0f, -64.0f, -64.3f, -90.0f, 0.0f, 3.1f};
   const std::vector<float> expected = {
-      0.5f,  1.0f,  -0.5f, -1.0f,  1.5f,   -1.5f,  0.0f, -0.5f,
+      0.0f,  1.0f,  0.0f,  -1.0f,  1.0f,   -1.0f,  0.0f, -0.5f,
       63.5f, 63.5f, 63.5f, -64.0f, -64.0f, -64.0f, 0.0f, 3.0f};
   for (const bool bf16 : {false, true}) {
     SCOPED_TRACE(bf16 ? "bf16" : "fp16");
@@ -491,10 +492,20 @@ TEST(QuantDecodeAttentionTest, MatchesTheDecomposition) {
     const auto expected = litert::nvidia::quant_reference::Attention(reference);
     const auto actual =
         BitsToFloats(Download<uint16_t>(out, query.bits.size()), c.bf16);
-    // The values reach 6.6 (INT8) or 5.7 (INT4): an FP16 result is good to
-    // about 0.004 there, a BF16 one to 0.03.
-    const auto errors =
-        CompareRows(actual, expected, kDepth, c.bf16 ? 0.05f : 0.02f);
+    if (!c.bf16) {
+      // The kernels compute the decomposition's tensors with the CPU
+      // backend's operations in its order: every value has the reference's
+      // bits.
+      size_t different = 0;
+      for (size_t i = 0; i < expected.size(); ++i) {
+        different += actual[i] != expected[i] ? 1 : 0;
+      }
+      EXPECT_EQ(different, 0u) << "of " << expected.size() << " values";
+      continue;
+    }
+    // A BF16 result is the same fp32 sum rounded to BF16: good to about 0.03
+    // at these values (up to 6.6).
+    const auto errors = CompareRows(actual, expected, kDepth, 0.05f);
     EXPECT_TRUE(RowsMatch(errors))
         << errors.rows_off << " of " << errors.rows
         << " rows are off, the largest error is " << errors.max_error;

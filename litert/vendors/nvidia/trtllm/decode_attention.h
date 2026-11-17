@@ -96,21 +96,29 @@ extern "C" bool LiteRtNvidiaQuantDecodeAttentionSupports(int32_t rows,
                                                          int32_t cache_bits);
 
 // Decode attention over quantized caches: q [heads, rows, depth] (FP16 or
-// BF16) is the query before its QUANTIZE (or its dequantized value), which
-// the kernel rounds to INT8 as TFLite's QUANTIZE does (q / q_scale rounded
-// half away from zero, saturated). A score is the exact integer product sum
-// times q_scale * k_scale, rounded to FP16 as the composite's decomposition
-// casts it; scores where the mask is false become `fill`, and
-//   out[h][r] = softmax_j(scores) . values[h]
-// in q's type. mask is [mask_rows, cache_len] bool, mask_rows a divisor of
+// BF16) is the query before its QUANTIZE (or its dequantized value). The
+// kernels compute the decomposition of odml.sdpa_transposed tensor by tensor
+// with the operations of LiteRT's CPU backend (XNNPACK on x86 with AVX2, FMA3
+// and F16C), so that an FP16 result has the CPU's bits: the query quantized
+// to INT8 as XNNPACK converts a FLOAT16 tensor (times the reciprocal of the
+// scale rounded to FLOAT16, half to even, saturated) and dequantized to
+// FLOAT16 with the scale rounded to FLOAT16; a score one fused multiply-add
+// per depth element with the key dequantized to fp32, then cast to FLOAT16;
+// scores where the mask is false become `fill`; XNNPACK's softmax of a
+// FLOAT16 tensor, which gives no weight at all to a key 9.7 below the
+// largest score and rounds the others to FLOAT16; and
+//   out[h][r] = weights . values[h]
+// one fused multiply-add per key in the cache's order, cast to q's type
+// (trtllm/quant_attention_reference.h is the same on the host).
+// mask is [mask_rows, cache_len] bool, mask_rows a divisor of
 // `rows`: row r reads mask row r % mask_rows, the order of mask_rows tokens
 // under rows / mask_rows query heads. Chunks of keys no row sees are not
 // read. With a `fill` of -inf the keys a mask hides stay out of the softmax
 // and a row that sees no key gets zero; with a finite fill such a row has no
 // defined result. `workspace` needs
 // LiteRtNvidiaDecodeAttentionWorkspaceBytes(heads, rows, cache_len, depth)
-// bytes. Two launches: one over the chunks of the keys and one that combines
-// them (LiteRtNvidiaLaunchQuantDecodeAttentionUpdate does both in one).
+// bytes. Two launches: the scores of the chunks of the keys, then the softmax
+// and the values of every row.
 extern "C" cudaError_t LiteRtNvidiaLaunchQuantDecodeAttention(
     const void* q, bool q_bf16, const void* k, const void* v,
     const LiteRtNvidiaQuantAttentionParams* params, const bool* mask,
@@ -143,12 +151,9 @@ extern "C" size_t LiteRtNvidiaQuantDecodeAttentionStateBytes(int32_t heads,
 // LiteRtNvidiaLaunchQuantDecodeAttention over the updated caches, with the
 // same results bit for bit, in the attention's launches alone: every block
 // writes the token's quantized rows into the caches before it reads them. A
-// null token writes nothing. With a `state` the attention is one launch when
-// that is the faster way: a block per chunk of 64 keys and query row, as long
-// as the device has a multiprocessor for each (the ring of 512 keys of a
-// decode step on a desktop GPU); the last of a row's blocks combines them,
-// counted in the state, which no two launches in flight may share. Otherwise,
-// and with a null state, the two launches.
+// null token writes nothing. `state` is no longer read: the one launch it
+// counted the blocks of folded the softmax in chunk by chunk, which is not
+// the decomposition's arithmetic.
 extern "C" cudaError_t LiteRtNvidiaLaunchQuantDecodeAttentionUpdate(
     const void* q, bool q_bf16, void* k, void* v,
     const LiteRtNvidiaQuantCacheToken* token,
