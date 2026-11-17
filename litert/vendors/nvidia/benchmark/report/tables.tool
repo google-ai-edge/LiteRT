@@ -159,8 +159,8 @@ class Tables:
         c, lc = self.host_memory('litert', profile, workload), self.host_memory('llama', profile, workload)
         if any(v is not None for v in (g, lg, c, lc)):
           memory.append(row(name(profile) + [ctx, fmt(g, 2), fmt(lg, 2), reduction(g, lg), fmt(c, 2), fmt(lc, 2)]))
-        if workload in self.models[profile]['long_context']:
-          continue  # measured on text only; shown as decode/prefill rows, not as MTP rows
+        if workload in self.models[profile]['long_context'] and not self.platform.get('long_context_mtp'):
+          continue  # no MTP there on this platform (platforms.json): shown as decode/prefill rows only
         for runtime, label in (('litert', 'TensorRT-RTX'), ('llama', 'llama.cpp')):
           plain = self.text(runtime, profile, workload, 'text_plain', 'decode_tokens_per_second')
           spec = self.text(runtime, profile, workload, 'text_mtp', 'decode_tokens_per_second')

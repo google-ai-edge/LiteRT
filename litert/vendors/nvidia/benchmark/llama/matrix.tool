@@ -8,7 +8,8 @@ usage: matrix.tool OUT_DIR [MODEL...] [--cooldown C] [--config FILE]   (default 
   context  llama-bench at the model's workloads: prefill of the whole prompt, decode at that
            depth (latency), one prefill+decode pass under GPU sampling (memory: with the model
            mapped, and without mmap for the host-memory column)
-  mtp      llama-server completions of the real prompts, plain and with the MTP drafter
+  mtp      llama-server completions of the real prompts, plain and with the MTP drafter (at the
+           long-context workloads too where platforms.json says the platform holds them)
   init     the server's start to ready, twice
 """
 import argparse
@@ -72,8 +73,9 @@ def main():
             bench('--model', model, '--workload', workload, '--metric', 'memory', '--label', f'{model}_{workload}_plain_memory_none',
                   env={'LLAMA_LOAD_MODE': 'none'})
       elif group == 'mtp':
-        for workload in spec['workloads']:
-          prompt = prompts / (workloads['text']['prompts'][workload] + '.txt')
+        # Where the platform's memory holds them (platforms.json), the long-context workloads too.
+        for workload in spec['workloads'] + (spec['long_context'] if common.long_context_mtp(config) else []):
+          prompt = prompts / (workloads['text']['prompts'].get(workload, 'prompt_' + workload) + '.txt')
           bench('--model', model, '--workload', workload, '--metric', 'latency', '--prompt-file', str(prompt),
                 '--iterations', str(workloads['text']['plain_iterations'] + 1), '--label', f'{model}_{workload}_plain_text')
           if spec.get('mtp') and config['llama']['models'][model].get('draft'):

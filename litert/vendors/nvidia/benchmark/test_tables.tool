@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent
 
@@ -75,6 +76,24 @@ def llama_run(root, label, pp, tg, *, start='2026-11-01T00:00:00Z', load_mode='m
   cold = [x / 4 for x in (pp, tg)] if warmups else [pp, tg]
   (run / 'pp.json').write_text(json.dumps([{'n_prompt': 1024, 'n_gen': 0, 'n_depth': 0, 'avg_ts': (cold[0] + 2 * pp) / 3, 'samples_ts': [cold[0], pp, pp]}]))
   (run / 'tg.json').write_text(json.dumps([{'n_prompt': 0, 'n_gen': 256, 'n_depth': 1024, 'avg_ts': (cold[1] + 2 * tg) / 3, 'samples_ts': [cold[1], tg, tg]}]))
+  return run
+
+
+def llama_text_run(root, label, decode, *, mtp=False, workload='128k', prompt_tokens=128533, acceptance=0.57):
+  """llama-server completions of the 26B (four, the first a warm-up) as llama/bench.tool writes them."""
+  run = root / label
+  run.mkdir(parents=True)
+  (run / 'meta.json').write_text(json.dumps({
+      'label': label, 'runtime': 'llama.cpp', 'profile': '26b', 'workload': workload, 'metric': 'latency',
+      'mtp': mtp, 'prompt_file': f'/prompt_{workload}.txt', 'iterations': 4, 'warmups': 1, 'exit_code': 0,
+      'start': '2026-11-01T00:00:00Z', 'build_id': 'b1', 'release_tag': 'v1.0.0', 'load_mode': 'none',
+      'gpu_baseline_mib': 100, 'model': '/models/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf'}))
+  for i in range(1, 5):
+    timings = {'prompt_n': prompt_tokens, 'prompt_per_second': 1500.0, 'predicted_n': 128,
+               'predicted_per_second': decode / 2 if i == 1 else decode}
+    if mtp:
+      timings.update({'draft_n': 100, 'draft_n_accepted': round(acceptance * 100)})
+    (run / f'client.{i}.json').write_text(json.dumps({'timings': timings}))
   return run
 
 
@@ -150,6 +169,62 @@ class SelectionTest(unittest.TestCase):
     self.assertIn('| E2B | 1k | 31,000 | 20,000 | 1.55x |', text)
     self.assertNotIn('26B', text)
     self.assertFalse((self.root / 'google/5080_wsl/gemma4_moe.md').exists())
+
+  def test_long_context_mtp_rows_follow_the_platform(self):
+    # The 26B's 128k: TensorRT-RTX's long-context run (real text, plain), llama.cpp's plain and MTP completions.
+    litert_run(self.root, '26b_128k_plain_latency', [40, 50, 50, 50], profile='26b', workload='128k', prompt='/prompt_128k.txt')
+    llama_text_run(self.root, '26b_128k_plain_text', 44.0)
+    llama_text_run(self.root, '26b_128k_mtp_text', 58.0, mtp=True)
+    for platform, mtp_rows in (('rtx_spark', ['| 128k | TensorRT-RTX | 1,024 | 50 | — | — | — |',
+                                              '| 128k | llama.cpp | 128,533 | 44 | 58 | 1.32x | 57% |']),
+                               ('5080', [])):
+      out = subprocess.run([sys.executable, str(ROOT / 'report/tables.tool'), '--platform', platform, '--runs', str(self.root),
+                            '--out', str(self.root / 'google')], capture_output=True, text=True)
+      self.assertEqual(out.returncode, 0, out.stderr)
+      text = (self.root / f'google/{platform}/gemma4_moe.md').read_text(encoding='utf-8')
+      self.assertIn('| 128k | 50.0 | 44.0 | 1.14x |', text)  # the decode table, on both platforms
+      self.assertEqual([line for line in text.split('## 2. MTP')[1:2] for line in line.splitlines() if line.startswith('| 128k')],
+                       mtp_rows, platform)
+
+
+class MatrixTest(unittest.TestCase):
+  """The cells both matrix tools run for the 26B, by platform and by whether its file has an MTP drafter."""
+
+  def labels(self, tool, platform, drafter):
+    with tempfile.TemporaryDirectory() as tmp:
+      tmp = pathlib.Path(tmp)
+      header = b'tf_lite_prefill_decode' + (b'tf_lite_mtp_drafter' if drafter else b'')
+      (tmp / '26b.litertlm').write_bytes(b'LITERTLM' + bytes(16) + (32 + len(header)).to_bytes(8, 'little') + header)
+      (tmp / 'prompts').mkdir()
+      (tmp / 'config.json').write_text(json.dumps({
+          'platform': platform, 'models': {'26b': str(tmp / '26b.litertlm')}, 'prompts_dir': str(tmp / 'prompts'),
+          'llama': {'models': {'26b': {'main': 'm.gguf', 'draft': 'd.gguf'}}}}))
+      matrix = load(ROOT / tool, 'matrix')
+      commands = []
+      with mock.patch.object(matrix.common, 'check', return_value={'problems': []}), \
+           mock.patch.object(matrix.subprocess, 'run', side_effect=lambda c, **_: commands.append(c) or mock.Mock(returncode=0)), \
+           mock.patch.object(sys, 'argv', [tool, str(tmp / 'out'), '26b', '--config', str(tmp / 'config.json')]), \
+           mock.patch.dict(os.environ, {'BENCH_GROUPS': 'mtp', 'LLAMA_GROUPS': 'mtp'}), \
+           mock.patch('builtins.print'):
+        matrix.main()
+      prompt = lambda c: pathlib.Path(c[c.index('--prompt-file') + 1]).name
+      return {(c[c.index('--label') + 1], prompt(c), *c[c.index('--context'):c.index('--context') + 4]) if '--context' in c
+              else (c[c.index('--label') + 1], prompt(c)) for c in commands}
+
+  def test_windows_matrix(self):
+    standard = {(f'26b_{w}_{m}_text', f'prompt_{p}.txt') for w, p in (('short', '1024'), ('8k', '8k'), ('16k', '16k'), ('30k', '30k'))
+                for m in ('plain', 'mtp')}
+    long = {('26b_128k_mtp_text', 'prompt_128k.txt', '--context', '131072', '--env', 'LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB=5120'),
+            ('26b_256k_mtp_text', 'prompt_256k.txt', '--context', '262144', '--env', 'LITERT_NVIDIA_MOE_DEVICE_RESERVE_MB=10240')}
+    self.assertEqual(self.labels('windows/matrix.tool', 'rtx_spark', True), standard | long)
+    self.assertEqual(self.labels('windows/matrix.tool', '5080', True), standard)
+    self.assertEqual(self.labels('windows/matrix.tool', 'rtx_spark', False), {c for c in standard if '_plain_' in c[0]})
+
+  def test_llama_matrix(self):
+    cells = lambda workloads: {(f'26b_{w}_{m}_text', f'prompt_{p}.txt') for w, p in workloads for m in ('plain', 'mtp')}
+    standard = (('short', '1024'), ('8k', '8k'), ('16k', '16k'), ('30k', '30k'))
+    self.assertEqual(self.labels('llama/matrix.tool', 'rtx_spark', True), cells(standard + (('128k', '128k'), ('256k', '256k'))))
+    self.assertEqual(self.labels('llama/matrix.tool', '5080', True), cells(standard))
 
 
 class WorkloadsTest(unittest.TestCase):

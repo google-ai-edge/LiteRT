@@ -145,8 +145,10 @@ cell.
 17,408; 30k = 30,720 / 256 / 31,744; 128k = 128,001 / 128 / 130,048; 256k = 256,001 / 128 /
 262,144. The 12B and Qwen 3.8 27B add 128k; the 26B's 128k and 256k are real-text runs with
 context expansion of the 32k export and a 5,120 / 10,240 MiB device reserve for the experts.
-llama-bench sizes its own capacity per phase (prompt + generation + depth, rounded up), so
-the memory comparison includes different KV capacities.
+MTP is measured at 128k and 256k only where the platform's memory holds it (`platforms.json`'s
+`long_context_mtp`: the RTX Spark, not the 16 GB RTX 5080). llama-bench sizes its own
+capacity per phase (prompt + generation + depth, rounded up), so the memory comparison
+includes different KV capacities.
 
 **Decode and prefill speed** are the CLI's own rates (`Decode Speed`, `Prefill Speed`) over the
 measured iterations: 8 iterations with 2 discarded at 1k, 4 with 1 discarded above, because
@@ -159,7 +161,12 @@ against 5,865 after it). The speedup is TensorRT-RTX over llama.cpp.
 **MTP** rows use real text (the prompt files of LiteRT's benchmark, about 1k, 8k, 16k, 30k and
 128k tokens of documentation ending in a question) with stop tokens honored: three
 conversations with one discarded for plain decoding, four with two discarded under speculative
-decoding (the decode engine's capture falls in the second conversation). Acceptance is
+decoding (the decode engine's capture falls in the second conversation). At the 26B's 128k and
+256k (the 256k prompt is SKILL.md's, built from the 128k one), on a `long_context_mtp`
+platform, TensorRT-RTX's plain figure is the long-context run of the decode table (four
+conversations, one discarded) and its MTP run adds the drafter to that run's context
+expansion and device reserve; llama.cpp's server runs both as at the other workloads. A model
+file without an MTP drafter (the 26B's vision export) has no MTP cells. Acceptance is
 accepted drafted tokens over drafted tokens; it measures agreement, not correctness. E2B and
 E4B sample greedily; 12B, 26B and Qwen use top-k 64, top-p 0.95, temperature 1.0 (their
 files' policy); llama-server's completions use the same sampler with seeds 1, 2, ... in the

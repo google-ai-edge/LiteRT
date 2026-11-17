@@ -259,6 +259,22 @@ def prompts_dir(config):
   raise SystemExit('No prompts directory: set prompts_dir or litert_dir in the configuration')
 
 
+def long_context_mtp(config):
+  """Whether the configured platform measures MTP at the long-context workloads too
+  (platforms.json; the RTX 5080's 16 GB do not hold them)."""
+  return bool(registry('platforms.json').get(config.get('platform'), {}).get('long_context_mtp'))
+
+
+def has_mtp_drafter(path):
+  """Whether a LiteRT-LM file holds an MTP drafter: its header (from byte 32 to the end
+  offset stored at byte 24) names the model type of every section."""
+  with open(path, 'rb') as stream:
+    start = stream.read(32)
+    if start[:8] != b'LITERTLM':
+      return False
+    return b'tf_lite_mtp_drafter' in stream.read(int.from_bytes(start[24:32], 'little') - 32)
+
+
 def main():
   if len(sys.argv) < 2 or sys.argv[1] not in ('check', 'cooldown'):
     raise SystemExit(__doc__)

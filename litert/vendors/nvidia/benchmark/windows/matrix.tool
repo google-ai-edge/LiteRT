@@ -10,7 +10,8 @@ usage: matrix.tool OUT_DIR [MODEL...]          (default models: e2b e4b 12b 26b)
 OUT_DIR under the state root's measured/ directory is what report/tables.tool reads.
 
   context  plain decoding on synthetic prefill tokens (latency, memory) at the model's workloads
-  mtp      plain and speculative decoding on the real prompts of those lengths
+  mtp      plain and speculative decoding on the real prompts of those lengths, and speculative
+           decoding at the long-context workloads where platforms.json says the platform holds it
   init     a cold start on an empty cache
   verify   the Paris answer on the NPU and on the CPU
 """
@@ -74,9 +75,17 @@ def main():
     if subprocess.run(command).returncode:
       failed.append(' '.join(extra))
 
+  def long_context(spec, workload):
+    """A long-context run's real text, context expansion and host-placed experts."""
+    prompt = prompts / (workloads['text']['prompts'].get(workload, 'prompt_' + workload) + '.txt')
+    # --cli-arg=VALUE: argparse reads a separate value that starts with -- as another option.
+    return ['--prompt-file', str(prompt), '--cli-arg=--allow_context_length_expansion=true',
+            *spec.get('long_context_args', {}).get(workload, [])]
+
   for model in models:
     spec = registry[model]
-    prefetch(common.model_file(config, model))
+    path = common.model_file(config, model)
+    prefetch(path)
     for group in groups:
       if group == 'verify':
         bench('--model', model, '--metric', 'verify')
@@ -87,23 +96,28 @@ def main():
           extra = spec.get('workload_args', {}).get(workload, [])
           bench('--model', model, '--workload', workload, '--metric', 'latency', *extra)
           bench('--model', model, '--workload', workload, '--metric', 'memory', *extra)
-        for workload in spec['long_context']:  # real text, context expansion, host-placed experts
-          prompt = prompts / (workloads['text']['prompts'].get(workload, 'prompt_' + workload) + '.txt')
-          # --cli-arg=VALUE: argparse reads a separate value that starts with -- as another option.
-          long = ['--cli-arg=--allow_context_length_expansion=true', *spec.get('long_context_args', {}).get(workload, [])]
-          bench('--model', model, '--workload', workload, '--metric', 'latency', '--prompt-file', str(prompt), *long)
-          bench('--model', model, '--workload', workload, '--metric', 'memory', '--prompt-file', str(prompt), *long)
+        for workload in spec['long_context']:
+          bench('--model', model, '--workload', workload, '--metric', 'latency', *long_context(spec, workload))
+          bench('--model', model, '--workload', workload, '--metric', 'memory', *long_context(spec, workload))
       elif group == 'mtp':
+        drafter = spec.get('mtp') and common.has_mtp_drafter(path)
+        if spec.get('mtp') and not drafter:  # the CLI would fail on it (the 26B's vision export)
+          print(f'{model}: {path} has no MTP drafter; its MTP cells are skipped', flush=True)
         for workload in spec['workloads']:
           prompt = prompts / (workloads['text']['prompts'][workload] + '.txt')
           extra = spec.get('workload_args', {}).get(workload, [])
           bench('--model', model, '--workload', workload, '--metric', 'latency', '--prompt-file', str(prompt),
                 '--iterations', str(workloads['text']['plain_iterations']), '--label', f'{model}_{workload}_plain_text',
                 *extra)
-          if spec.get('mtp'):
+          if drafter:
             bench('--model', model, '--workload', workload, '--metric', 'latency', '--prompt-file', str(prompt),
                   '--iterations', str(workloads['text']['mtp_iterations']), '--mtp', '--label', f'{model}_{workload}_mtp_text',
                   *extra)
+        # Where the platform's memory holds them (platforms.json), MTP at the long-context workloads too;
+        # their plain real-text cell is the context group's long-context run.
+        for workload in spec['long_context'] if drafter and common.long_context_mtp(config) else []:
+          bench('--model', model, '--workload', workload, '--metric', 'latency', *long_context(spec, workload),
+                '--iterations', str(workloads['text']['mtp_iterations']), '--mtp', '--label', f'{model}_{workload}_mtp_text')
   if args.llama:
     command = [sys.executable, str(HERE.parent / 'llama' / 'matrix.tool'), str(out) + '_llama', *models, *cooldown]
     if args.config:
