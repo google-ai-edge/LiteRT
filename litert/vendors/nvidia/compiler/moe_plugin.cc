@@ -862,20 +862,16 @@ bool ExpertMajorArenas() {
 }
 
 // Whether the kernels group a verify step's rows by expert
-// (LiteRtNvidiaMoeArena::group_rows): where the device is an integrated GPU,
-// which reads its weights at the host's memory bandwidth, so that a verify
-// step's time is the bytes it reads (the RTX Spark); not on a discrete GPU,
-// where grouping measured slower (the RTX 5080: speculative decoding by 9 to
-// 13%). LITERT_NVIDIA_MOE_GROUP_ROWS=1 or 0 decides instead, to compare.
+// (LiteRtNvidiaMoeArena::group_rows), so that an expert's weights are read
+// once for the rows routed to it: on an integrated GPU, which reads its
+// weights at the host's memory bandwidth (the RTX Spark), and on a discrete
+// one, where the grouped launch made Gemma 4 26B's verify step 13% faster
+// than the rows' own launches (the RTX 5080 at 8k tokens, 2026-11-16).
+// LITERT_NVIDIA_MOE_GROUP_ROWS=0 gives each row its own launches instead, to
+// compare.
 bool GroupRows() {
   const char* value = std::getenv("LITERT_NVIDIA_MOE_GROUP_ROWS");
-  if (value != nullptr && value[0] != '\0') return std::strcmp(value, "0") != 0;
-  int device = 0;
-  int integrated = 0;
-  return cudaGetDevice(&device) == cudaSuccess &&
-         cudaDeviceGetAttribute(&integrated, cudaDevAttrIntegrated, device) ==
-             cudaSuccess &&
-         integrated != 0;
+  return value == nullptr || value[0] == '\0' || std::strcmp(value, "0") != 0;
 }
 
 // Loads the arenas of `loads`, several at a time, and returns the number of

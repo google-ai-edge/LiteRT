@@ -685,14 +685,126 @@ struct MoeGroup {
   uint8_t pairs[kGroupMaxRows];
 };
 
-// One block, a thread per pair.
+// Eight BF16 values (one 16-byte word) as four float pairs.
+__device__ __forceinline__ void WordPairs(uint4 bits, float2 pairs[4]) {
+  const uint32_t words[4] = {bits.x, bits.y, bits.z, bits.w};
+#pragma unroll
+  for (int i = 0; i < 4; ++i) {
+    pairs[i] = __bfloat1622float2(
+        *reinterpret_cast<const __nv_bfloat162*>(&words[i]));
+  }
+}
+
+// The grouped launch's prologue. Block 0, a thread per pair: with `logits`
+// (the fused launches), warp r routes row r as MoeRouteKernel does into
+// route_indices and route_weights, which top_indices then is, and the pairs
+// of top_indices are grouped by expert into `groups`. With `norm_scale` (the
+// expert norm), block 1 + r splits row r's values times the scale into hi and
+// lo [rows, model_dim] (SplitPair) and puts its RMS factor in factors[r], the
+// sum of squares taken in the order the grouped hidden kernel took it in
+// every group before (AccumulateMma's per lane, then StoreWarpSums' and the
+// epilogue's): the kernel then reads the products' operands and factors it
+// computed. One launch where the routing, the grouping and the norm took
+// three before, and the split done once instead of in every group.
 __global__ void __launch_bounds__(kGroupMaxPairs)
-    MoeGroupPairsKernel(const int32_t* __restrict__ top_indices, int pairs,
-                        int experts, MoeGroup* __restrict__ groups) {
+    MoeRouteGroupKernel(const __nv_bfloat16* __restrict__ logits,
+                        int renormalize, int32_t* route_indices,
+                        float* route_weights, const int32_t* top_indices,
+                        const __nv_bfloat16* __restrict__ activation,
+                        const float* __restrict__ norm_scale, float norm_eps,
+                        LiteRtNvidiaMoeShape shape, MoeGroup* groups,
+                        __nv_bfloat16* __restrict__ hi,
+                        __nv_bfloat16* __restrict__ lo,
+                        float* __restrict__ factors) {
+  if (blockIdx.x > 0) {
+    // The norm comes with the fused launches only: model_dim <= kMaxRouteDim.
+    __shared__ uint4 row_s[kMaxRouteDim / 8];
+    __shared__ float squares_s[kMmaWarps][4];
+    const int r = blockIdx.x - 1;
+    const int words = shape.model_dim / 8;
+    const uint4* row = reinterpret_cast<const uint4*>(activation) +
+                       static_cast<size_t>(r) * words;
+    for (int i = threadIdx.x; i < words; i += blockDim.x) {
+      row_s[i] = __ldg(row + i);
+    }
+    __syncthreads();
+    if (threadIdx.x < kMmaWarps * 4) {
+      // Lane c of warp w of the grouped kernel: elements 8c to 8c + 7 of the
+      // blocks of its groups of kMmaUnroll, in order.
+      const int w = threadIdx.x / 4;
+      const int c = threadIdx.x % 4;
+      const int blocks = shape.model_dim / kBlock;
+      float squares = 0.0f;
+      for (int b0 = w * kMmaUnroll; b0 < blocks;
+           b0 += kMmaWarps * kMmaUnroll) {
+#pragma unroll
+        for (int u = 0; u < kMmaUnroll; ++u) {
+          if (b0 + u >= blocks) break;
+          float2 raw[4];
+          WordPairs(row_s[(b0 + u) * (kBlock / 8) + c], raw);
+#pragma unroll
+          for (int n = 0; n < 4; ++n) {
+            squares = fmaf(raw[n].x, raw[n].x, squares);
+            squares = fmaf(raw[n].y, raw[n].y, squares);
+          }
+        }
+      }
+      squares_s[w][c] = squares;
+    }
+    for (int i = threadIdx.x; i < words; i += blockDim.x) {
+      float2 raw[4];
+      float2 scale[4];
+      WordPairs(row_s[i], raw);
+      LoadPairs<float>(norm_scale + 8 * i, scale);
+      uint32_t high[4];
+      uint32_t low[4];
+#pragma unroll
+      for (int n = 0; n < 4; ++n) {
+        SplitPair(__fmul_rn(raw[n].x, scale[n].x),
+                  __fmul_rn(raw[n].y, scale[n].y), high[n], low[n]);
+      }
+      const size_t at = static_cast<size_t>(r) * words + i;
+      reinterpret_cast<uint4*>(hi)[at] =
+          make_uint4(high[0], high[1], high[2], high[3]);
+      reinterpret_cast<uint4*>(lo)[at] =
+          make_uint4(low[0], low[1], low[2], low[3]);
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) {
+      float total = 0.0f;
+#pragma unroll
+      for (int w = 0; w < kMmaWarps; ++w) {
+        total += (squares_s[w][0] + squares_s[w][1]) +
+                 (squares_s[w][2] + squares_s[w][3]);
+      }
+      factors[r] =
+          rsqrtf(total / static_cast<float>(shape.model_dim) + norm_eps);
+    }
+    return;
+  }
   __shared__ int32_t expert_s[kGroupMaxPairs];
   __shared__ int32_t rank_s[kGroupMaxPairs];
   __shared__ int32_t leader_s[kGroupMaxPairs];
   __shared__ int32_t slot_s[kGroupMaxPairs];
+  const int pairs = shape.rows * shape.top_k;
+  const int experts = shape.experts;
+  const int warp = threadIdx.x / kWarpSize;
+  if (logits != nullptr && warp < shape.rows) {
+    const __nv_bfloat16* src =
+        logits + static_cast<size_t>(warp) * shape.experts;
+    int32_t* indices =
+        route_indices + static_cast<size_t>(warp) * shape.top_k;
+    float* weights = route_weights + static_cast<size_t>(warp) * shape.top_k;
+    if (shape.experts <= 4 * kWarpSize) {
+      RouteRow<4>(src, shape.experts, shape.top_k, /*slot=*/0, renormalize,
+                  /*write=*/true, threadIdx.x % kWarpSize, indices, weights);
+    } else {
+      RouteRow<kMaxExperts / kWarpSize>(
+          src, shape.experts, shape.top_k, /*slot=*/0, renormalize,
+          /*write=*/true, threadIdx.x % kWarpSize, indices, weights);
+    }
+  }
+  __syncthreads();  // the routing's indices
   const int p = threadIdx.x;
   if (p < pairs) {
     const int expert = top_indices[p];
@@ -749,17 +861,22 @@ __global__ void __launch_bounds__(kGroupMaxPairs)
 // kMmaTile rows is read once for all of them. Grid (hidden_dim / kMmaTile,
 // rows * top_k): block (tile, group slot).
 //   hidden[pair][o] = gelu(x_r . gate_e) * (x_r . up_e)
+// With kNorm the rows are the prologue's split ones (norm_hi, norm_lo and
+// factors, MoeRouteGroupKernel); the hidden values go out as the high and
+// low parts the down projection multiplies (hidden_hi, hidden_lo).
 template <bool kNorm>
 __global__ void __launch_bounds__(kMmaThreads)
     MoeHiddenGroupedKernel(const __nv_bfloat16* __restrict__ activation,
                            const MoeGroup* __restrict__ groups,
-                           const float* __restrict__ norm_scale,
-                           float norm_eps, LiteRtNvidiaMoeArena arena,
+                           const __nv_bfloat16* __restrict__ norm_hi,
+                           const __nv_bfloat16* __restrict__ norm_lo,
+                           const float* __restrict__ factors,
+                           LiteRtNvidiaMoeArena arena,
                            LiteRtNvidiaMoeShape shape,
-                           float* __restrict__ hidden) {
+                           __nv_bfloat16* __restrict__ hidden_hi,
+                           __nv_bfloat16* __restrict__ hidden_lo) {
   __shared__ MmaStage<2> stages[kMmaWarps];
   __shared__ float sums[kMmaWarps][2][kMmaTile][kMmaRows];
-  __shared__ float squares_s[kMmaWarps][kMmaRows];
   __shared__ int32_t rows_s[kMmaRows];
   const MoeGroup group = groups[blockIdx.y];
   if (group.count == 0 || group.expert == kNoExpert) return;
@@ -779,42 +896,50 @@ __global__ void __launch_bounds__(kMmaThreads)
                  arena.compact_scales, arena.expert_major, shape.experts,
                  group.expert, o0, shape.hidden_dim, shape.model_dim,
                  kMmaTile)};
-  const ActivationRows<__nv_bfloat16> act{
-      activation, static_cast<size_t>(shape.model_dim), rows_s};
   float acc[2][4] = {};
-  float squares = 0.0f;
   const int warp = threadIdx.x / kWarpSize;
-  AccumulateMma<__nv_bfloat16, 2, /*kCompact=*/true, kNorm>(
-      tiles, act, group.count, shape.model_dim, warp, kMmaWarps, stages[warp],
-      acc, norm_scale, &squares);
-  StoreWarpSums<2>(acc, squares, kNorm, sums, squares_s);
+  if constexpr (kNorm) {
+    const ActivationRows<__nv_bfloat16> act{
+        norm_hi, static_cast<size_t>(shape.model_dim), rows_s, norm_lo};
+    AccumulateMma<__nv_bfloat16, 2, /*kCompact=*/true, /*kNorm=*/false,
+                  /*kPreSplit=*/true>(tiles, act, group.count,
+                                      shape.model_dim, warp, kMmaWarps,
+                                      stages[warp], acc, nullptr, nullptr);
+  } else {
+    const ActivationRows<__nv_bfloat16> act{
+        activation, static_cast<size_t>(shape.model_dim), rows_s};
+    AccumulateMma<__nv_bfloat16, 2, /*kCompact=*/true, /*kNorm=*/false>(
+        tiles, act, group.count, shape.model_dim, warp, kMmaWarps,
+        stages[warp], acc, nullptr, nullptr);
+  }
+  StoreWarpSums<2>(acc, 0.0f, false, sums, nullptr);
   __syncthreads();
   const int channel = threadIdx.x / kMmaRows;
   const int r = threadIdx.x % kMmaRows;
   if (r >= group.count || channel >= tiles[0].valid_rows) return;
   float gate = 0.0f;
   float up = 0.0f;
-  float row_squares = 0.0f;
 #pragma unroll
   for (int w = 0; w < kMmaWarps; ++w) {
     gate += sums[w][0][channel][r];
     up += sums[w][1][channel][r];
-    if constexpr (kNorm) row_squares += squares_s[w][r];
   }
-  float factor = 1.0f;
-  if constexpr (kNorm) {
-    factor = rsqrtf(row_squares / static_cast<float>(shape.model_dim) +
-                    norm_eps);
-  }
-  hidden[static_cast<size_t>(group.pairs[r]) * shape.hidden_dim + o0 +
-         channel] = Gelu(gate * factor, shape.gate) * up * factor;
+  const float factor = kNorm ? factors[rows_s[r]] : 1.0f;
+  // Rounded before its low part is taken, as the FP32 value it was.
+  const float value = __fmul_rn(Gelu(gate * factor, shape.gate) * up, factor);
+  const __nv_bfloat16 high = __float2bfloat16_rn(value);
+  const size_t at =
+      static_cast<size_t>(group.pairs[r]) * shape.hidden_dim + o0 + channel;
+  hidden_hi[at] = high;
+  hidden_lo[at] = __float2bfloat16_rn(value - __bfloat162float(high));
 }
 
 // partial[pair][o] = w_pair * (hidden[pair] . down_e[o]) for the pairs of a
-// group, on the tensor cores. Grid (model_dim / kMmaTile, rows * top_k):
-// block (tile, group slot).
+// group, on the tensor cores, from the hidden rows as the hidden kernel split
+// them. Grid (model_dim / kMmaTile, rows * top_k): block (tile, group slot).
 __global__ void __launch_bounds__(kMmaThreads)
-    MoeDownGroupedKernel(const float* __restrict__ hidden,
+    MoeDownGroupedKernel(const __nv_bfloat16* __restrict__ hidden_hi,
+                         const __nv_bfloat16* __restrict__ hidden_lo,
                          const MoeGroup* __restrict__ groups,
                          const float* __restrict__ top_weights,
                          const float* __restrict__ per_expert_scale,
@@ -844,13 +969,14 @@ __global__ void __launch_bounds__(kMmaThreads)
                  arena.compact_scales, arena.expert_major, shape.experts,
                  group.expert, o0, shape.model_dim, shape.hidden_dim,
                  kMmaTile)};
-  const ActivationRows<float> act{
-      hidden, static_cast<size_t>(shape.hidden_dim), pairs_s};
+  const ActivationRows<__nv_bfloat16> act{
+      hidden_hi, static_cast<size_t>(shape.hidden_dim), pairs_s, hidden_lo};
   float acc[1][4] = {};
   const int warp = threadIdx.x / kWarpSize;
-  AccumulateMma<float, 1, /*kCompact=*/true, /*kNorm=*/false>(
-      tiles, act, group.count, shape.hidden_dim, warp, kMmaWarps,
-      stages[warp], acc, nullptr, nullptr);
+  AccumulateMma<__nv_bfloat16, 1, /*kCompact=*/true, /*kNorm=*/false,
+                /*kPreSplit=*/true>(tiles, act, group.count,
+                                    shape.hidden_dim, warp, kMmaWarps,
+                                    stages[warp], acc, nullptr, nullptr);
   StoreWarpSums<1>(acc, 0.0f, false, sums, nullptr);
   __syncthreads();
   const int channel = threadIdx.x / kMmaRows;
@@ -1374,28 +1500,42 @@ cudaError_t LaunchMoe(const LiteRtNvidiaMoeShape& shape,
     auto* route_weights = reinterpret_cast<float*>(workspace + w.top_weights);
     cudaError_t status;
     if (GroupsRows(shape, arena)) {
-      // The rows are routed already: an expert's tile rows are read once for
-      // the rows that route to it.
+      // An expert's tile rows are read once for the rows that route to it.
+      // The prologue routes the rows (fused launches: from the logits, which
+      // the groups then replace) and splits the normed ones.
       auto* groups = reinterpret_cast<MoeGroup*>(workspace + w.logits);
-      MoeGroupPairsKernel<<<1, kGroupMaxPairs, 0, stream>>>(
-          top_indices, shape.rows * shape.top_k, shape.experts, groups);
+      const int pairs = shape.rows * shape.top_k;
+      auto* norm_hi = reinterpret_cast<__nv_bfloat16*>(partial);
+      __nv_bfloat16* norm_lo =
+          norm_hi + static_cast<size_t>(shape.rows) * shape.model_dim;
+      auto* factors = reinterpret_cast<float*>(
+          norm_lo + static_cast<size_t>(shape.rows) * shape.model_dim);
+      auto* hidden_hi = reinterpret_cast<__nv_bfloat16*>(hidden);
+      __nv_bfloat16* hidden_lo =
+          hidden_hi + static_cast<size_t>(pairs) * shape.hidden_dim;
+      const int prologue_blocks = norm_scale != nullptr ? 1 + shape.rows : 1;
+      MoeRouteGroupKernel<<<prologue_blocks, kGroupMaxPairs, 0, stream>>>(
+          logits, renormalize, route_indices, route_weights, top_indices,
+          activation, norm_scale, norm_eps, shape, groups, norm_hi, norm_lo,
+          factors);
       const dim3 hidden_mma_grid((shape.hidden_dim + kMmaTile - 1) / kMmaTile,
-                                 shape.rows * shape.top_k);
+                                 pairs);
       const dim3 down_mma_grid((shape.model_dim + kMmaTile - 1) / kMmaTile,
-                               shape.rows * shape.top_k);
+                               pairs);
       if (norm_scale != nullptr) {
         MoeHiddenGroupedKernel<true>
             <<<hidden_mma_grid, kMmaThreads, 0, stream>>>(
-                activation, groups, norm_scale, norm_eps, arena, shape,
-                hidden);
+                activation, groups, norm_hi, norm_lo, factors, arena, shape,
+                hidden_hi, hidden_lo);
       } else {
         MoeHiddenGroupedKernel<false>
             <<<hidden_mma_grid, kMmaThreads, 0, stream>>>(
-                activation, groups, nullptr, 0.0f, arena, shape, hidden);
+                activation, groups, nullptr, nullptr, nullptr, arena, shape,
+                hidden_hi, hidden_lo);
       }
       MoeDownGroupedKernel<<<down_mma_grid, kMmaThreads, 0, stream>>>(
-          hidden, groups, top_weights, per_expert_scale, arena, shape,
-          partial);
+          hidden_hi, hidden_lo, groups, top_weights, per_expert_scale, arena,
+          shape, partial);
       status = cudaPeekAtLastError();
       if (status != cudaSuccess) return status;
     } else {
@@ -1748,10 +1888,9 @@ cudaError_t LaunchFusedRouting(const LiteRtNvidiaMoeShape* shape,
         stream);
   }
   if (status != cudaSuccess) return status;
-  if (shape->rows <= kLiteRtNvidiaInt4BlockGemvMaxRows &&
-      !GroupsRows(*shape, *arena)) {
-    // Decode: the hidden kernel routes from the logits itself. Rows that
-    // are grouped by expert are routed here first.
+  if (shape->rows <= kLiteRtNvidiaInt4BlockGemvMaxRows) {
+    // Decode: the hidden kernel routes from the logits itself; rows grouped
+    // by expert, the grouped launch's prologue.
     return cudaSuccess;
   }
   constexpr int kRouteWarps = 4;
@@ -1770,14 +1909,12 @@ cudaError_t LaunchFusedRouting(const LiteRtNvidiaMoeShape* shape,
   return cudaPeekAtLastError();
 }
 
-// The logits the hidden kernel routes from in decode; prefill and grouped
-// rows are routed already.
+// The logits a few rows' launch routes from (the hidden kernel in decode,
+// the prologue of rows grouped by expert); prefill rows are routed already.
 const __nv_bfloat16* DecodeRoutingLogits(const LiteRtNvidiaMoeShape& shape,
-                                         const LiteRtNvidiaMoeArena& arena,
                                          const char* logits) {
   using namespace litert::nvidia::int4_block;
-  return shape.rows <= kLiteRtNvidiaInt4BlockGemvMaxRows &&
-                 !GroupsRows(shape, arena)
+  return shape.rows <= kLiteRtNvidiaInt4BlockGemvMaxRows
              ? reinterpret_cast<const __nv_bfloat16*>(logits)
              : nullptr;
 }
@@ -1821,7 +1958,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchMoeInt4BlockFused(
       reinterpret_cast<const int32_t*>(bytes + w.top_indices),
       reinterpret_cast<const float*>(bytes + w.top_weights), per_expert_scale,
       expert_norm_scale, norm_eps, workspace, output, stream,
-      /*block=*/nullptr, DecodeRoutingLogits(*shape, *arena, bytes + w.logits),
+      /*block=*/nullptr, DecodeRoutingLogits(*shape, bytes + w.logits),
       renormalize);
 }
 
@@ -1902,7 +2039,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchMoeLayerBlock(
       reinterpret_cast<const int32_t*>(bytes + w.top_indices),
       reinterpret_cast<const float*>(bytes + w.top_weights), per_expert_scale,
       expert_norm_scale, norm_eps, workspace, output, stream, &epilogue,
-      DecodeRoutingLogits(*shape, *arena, bytes + w.logits), renormalize);
+      DecodeRoutingLogits(*shape, bytes + w.logits), renormalize);
 }
 
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRows(

@@ -110,10 +110,6 @@ struct LiteRtNvidiaMoeArena {
   // expert (group_rows != 0, compact scales only): an expert's weights are
   // read once for the rows routed to it instead of once per row, the rows
   // multiplied on the tensor cores (the rounding of the dense GEMV's rows).
-  // That is less memory traffic: it pays where the device reads its weights
-  // at the host's memory bandwidth (an integrated GPU), and gains nothing
-  // where a discrete GPU's cache already serves the repeated reads (the RTX
-  // 5080: the verify step's expert launch measured no faster grouped).
   int32_t group_rows;
 };
 

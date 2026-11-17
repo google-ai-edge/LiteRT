@@ -58,12 +58,15 @@ struct WeightTile {
 };
 
 // The activation rows of a launch: row r is `rows[r]` (or r without a row
-// index) of a [*, stride] matrix.
+// index) of a [*, stride] matrix. BF16 rows with `lo` are the high parts of
+// FP32 values split once for the whole launch (SplitPair), whose low parts
+// lo holds at the same places.
 template <typename T>
 struct ActivationRows {
   const T* base;
   size_t stride;
   const int32_t* rows;  // nullptr: the identity
+  const __nv_bfloat16* lo = nullptr;
   __device__ __forceinline__ const T* Row(int r) const {
     return base + static_cast<size_t>(rows == nullptr ? r : rows[r]) * stride;
   }
@@ -440,8 +443,10 @@ __device__ __forceinline__ int SwizzledBlock(int row, int block) {
 // are in flight while a group multiplies. With kNorm the activations are
 // multiplied by norm_scale on the way in and the lane's sum of squares of its
 // raw values of row g goes to *squares (each of a row's values is one lane's
-// of one block).
-template <typename T, int kTiles, bool kCompact, bool kNorm>
+// of one block). With kPreSplit the rows are split already (act.lo): the
+// same fragments as SplitFragment's, read instead of computed.
+template <typename T, int kTiles, bool kCompact, bool kNorm,
+          bool kPreSplit = false>
 __device__ __forceinline__ void AccumulateMma(const WeightTile (&tiles)[kTiles],
                                               const ActivationRows<T>& act,
                                               int count, int input_size,
@@ -450,12 +455,18 @@ __device__ __forceinline__ void AccumulateMma(const WeightTile (&tiles)[kTiles],
                                               float acc[kTiles][4],
                                               const float* norm_scale,
                                               float* squares) {
-  constexpr bool kSplit = kSplitActivations<T, kNorm>;
+  static_assert(!kPreSplit || (std::is_same_v<T, __nv_bfloat16> && !kNorm),
+                "split rows are BF16 high and low parts, normed already");
+  constexpr bool kSplit = kSplitActivations<T, kNorm> || kPreSplit;
   const int lane = threadIdx.x % kWarpSize;
   const int g = lane / 4;
   const int c = lane % 4;
   const int blocks = input_size / kBlock;
   const T* row = g < count ? act.Row(g) : nullptr;
+  const __nv_bfloat16* row_lo = nullptr;
+  if constexpr (kPreSplit) {
+    if (row != nullptr) row_lo = act.lo + (row - act.base);
+  }
   float row_max[kTiles][2] = {};
   if constexpr (kCompact) {
 #pragma unroll
@@ -535,12 +546,20 @@ __device__ __forceinline__ void AccumulateMma(const WeightTile (&tiles)[kTiles],
       ActivationFragment x = {};
       if (row != nullptr) {
         const T* values = row + b * kBlock + 8 * c;
-        if constexpr (!kSplit) {
+        if constexpr (!kSplit || kPreSplit) {
           const uint4 bits = __ldg(reinterpret_cast<const uint4*>(values));
           x.hi[0] = __byte_perm(bits.x, bits.z, 0x5410);
           x.hi[1] = __byte_perm(bits.x, bits.z, 0x7632);
           x.hi[2] = __byte_perm(bits.y, bits.w, 0x5410);
           x.hi[3] = __byte_perm(bits.y, bits.w, 0x7632);
+          if constexpr (kPreSplit) {
+            const uint4 low = __ldg(
+                reinterpret_cast<const uint4*>(row_lo + b * kBlock + 8 * c));
+            x.lo[0] = __byte_perm(low.x, low.z, 0x5410);
+            x.lo[1] = __byte_perm(low.x, low.z, 0x7632);
+            x.lo[2] = __byte_perm(low.y, low.w, 0x5410);
+            x.lo[3] = __byte_perm(low.y, low.w, 0x7632);
+          }
         } else {
           float2 raw[4];
           LoadPairs<T>(values, raw);
