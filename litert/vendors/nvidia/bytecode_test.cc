@@ -438,7 +438,7 @@ TEST(TensorRtBytecodeTest, WeightStoreRoundTripsInAShard) {
   }
 }
 
-TEST(TensorRtBytecodeTest, StepFeedRoundTripsInAShardAsVersionSeven) {
+TEST(TensorRtBytecodeTest, StepFeedRoundTripsInAShardAsVersionEight) {
   const std::vector<uint8_t> run_data = {1, 2, 3, 4};
   const TensorRtWeightStore store = MakeWeightStore(run_data);
   const std::vector<uint8_t> engine = {4, 5};
@@ -462,6 +462,9 @@ TEST(TensorRtBytecodeTest, StepFeedRoundTripsInAShardAsVersionSeven) {
   feed.per_layer_port = 4;
   feed.per_layer_count = 42;
   feed.per_layer_width = 256;
+  // A table of centered INT2 weights.
+  feed.table_bits = 2;
+  feed.table_zero_point = -0.5f;
   TensorRtBundleEntry entry;
   entry.function_name = "decode";
   entry.input_names = {
@@ -477,10 +480,12 @@ TEST(TensorRtBytecodeTest, StepFeedRoundTripsInAShardAsVersionSeven) {
   ASSERT_TRUE(shard.HasValue()) << shard.Error().Message();
   auto parsed = ParseTensorRtBytecode(shard->data(), shard->size(), "decode");
   ASSERT_TRUE(parsed.HasValue()) << parsed.Error().Message();
-  EXPECT_EQ(parsed->version, kTensorRtBytecodeVersionWithPerLayerFeed);
+  EXPECT_EQ(parsed->version, kTensorRtBytecodeVersionWithFeedTableFormat);
   ASSERT_TRUE(parsed->weight_store.has_value());
   ASSERT_TRUE(parsed->step_feed.has_value());
   const TensorRtStepFeed& read = *parsed->step_feed;
+  EXPECT_EQ(read.table_bits, 2u);
+  EXPECT_EQ(read.table_zero_point, -0.5f);
   EXPECT_EQ(read.per_layer_port, 4u);
   EXPECT_EQ(read.per_layer_count, 42u);
   EXPECT_EQ(read.per_layer_width, 256u);
@@ -518,7 +523,7 @@ TEST(TensorRtBytecodeTest, StepFeedRoundTripsInAShardAsVersionSeven) {
   auto second =
       ParseTensorRtBytecode(bundle->data(), bundle->size(), "prefill");
   ASSERT_TRUE(second.HasValue()) << second.Error().Message();
-  EXPECT_EQ(second->version, kTensorRtBytecodeVersionWithPerLayerFeed);
+  EXPECT_EQ(second->version, kTensorRtBytecodeVersionWithFeedTableFormat);
   EXPECT_FALSE(second->step_feed.has_value());
   EXPECT_FALSE(second->weight_store.has_value());
 }
@@ -620,6 +625,16 @@ TEST(TensorRtBytecodeTest, StepFeedRejectsInvalidRecords) {
   bad = feed;
   bad.dim = 3;  // nibbles pair up
   EXPECT_FALSE(packs(bad));
+  bad = feed;
+  bad.table_bits = 8;  // a table of INT4 or INT2 elements
+  EXPECT_FALSE(packs(bad));
+  bad = feed;
+  bad.table_bits = 2;
+  bad.dim = 6;  // INT2 rows end on a byte
+  EXPECT_FALSE(packs(bad));
+  bad.dim = 4;
+  bad.table_zero_point = -0.5f;
+  EXPECT_TRUE(packs(bad));
   bad = feed;
   bad.window = 17;  // within the ring
   EXPECT_FALSE(packs(bad));

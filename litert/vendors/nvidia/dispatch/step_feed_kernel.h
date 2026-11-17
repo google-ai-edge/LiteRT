@@ -25,9 +25,11 @@
 // inputs against.
 //
 // The embedding is the token's row of the INT4 or INT2 table (the low bits
-// first, two's complement) times its scale, then times the multiplier, each
-// product rounded to nearest in float32: the arithmetic of LiteRT-LM's CPU
-// embedder (tfl.embedding_lookup, then tfl.mul). The scale is the row's (one
+// first, two's complement), less the zero point, times its scale, then times
+// the multiplier, each product rounded to nearest in float32: the arithmetic
+// of LiteRT-LM's CPU embedder (tfl.embedding_lookup, then tfl.mul; the zero
+// point is -0.5 for a table of centered INT2 values, whose difference is
+// exact, and 0 otherwise). The scale is the row's (one
 // FP32 per row) or the block's (one FP16 per `scale_block` columns of the
 // row, as the blockwise lookup converts it to float32). The per-layer
 // embeddings, when fed, are the token's rows of `per_layer_count` tables
@@ -44,6 +46,7 @@ struct LiteRtNvidiaStepFeedParams {
   const int32_t* token;     // [1] the greedy token, on the device
   const uint8_t* table;     // INT4 or INT2 [vocab, dim]
   int32_t bits;             // 4 or 2
+  float zero_point;         // taken from an element before its scale
   const float* row_scales;  // [vocab], or null with block scales
   // FP16 bits [vocab, dim / scale_block], or null with row scales.
   const uint16_t* block_scales;
@@ -94,9 +97,10 @@ struct LiteRtNvidiaRowCopy {
 };
 
 // Enqueues the copies on `stream`, a block per copy, in as few launches as
-// they need: the ring cache rows a step ahead saves and a drop puts back. The
-// pointers, widths and pitches are multiples of 16 bytes, or the launch is
-// cudaErrorInvalidValue and nothing is copied.
+// they need: the ring cache rows a step ahead saves and a drop puts back. A
+// copy whose pointers, width and pitches are multiples of 16 bytes moves
+// vectors, any other single bytes. A null pointer, an empty copy or a pitch
+// below the width is cudaErrorInvalidValue, and nothing is copied.
 extern "C" cudaError_t LiteRtNvidiaLaunchRowCopies(
     const LiteRtNvidiaRowCopy* copies, int count, cudaStream_t stream);
 

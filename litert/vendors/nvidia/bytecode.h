@@ -39,6 +39,9 @@ inline constexpr uint32_t kTensorRtBytecodeVersionWithStepFeed = 6;
 // Version 6 plus, in the step feed, the per-layer embeddings: a second input
 // the feed writes, from the per-layer embedder's tables the runtime registers.
 inline constexpr uint32_t kTensorRtBytecodeVersionWithPerLayerFeed = 7;
+// Version 7 plus, in the step feed, the token table's element width and zero
+// point: a table of centered INT2 weights (TensorRtStepFeed::table_bits).
+inline constexpr uint32_t kTensorRtBytecodeVersionWithFeedTableFormat = 8;
 
 // Versioned POD payload behind LiteRtJitExecutable. The compiler plugin owns
 // the bytecode for the lifetime of the compiled result; dispatch reads it
@@ -179,14 +182,19 @@ struct TensorRtStepFeed {
   // The local mask's keys, and the sliding window the host fills it with.
   uint32_t ring = 0;
   uint32_t window = 0;
-  // The token table in the weight store's source file: INT4 row-major
-  // [vocab, dim], the low nibble first, one FP32 scale per row. Or no table
-  // and no scales (kTensorRtStepFeedNoTable): the runtime registers the
-  // embedder's table, scales and multiplier.
+  // The token table in the weight store's source file: row-major
+  // [vocab, dim] elements of table_bits bits (4 or 2), the low bits first,
+  // two's complement, one FP32 scale per row: a value is
+  // (element - table_zero_point) * scale (0 for an INT4 per-channel head,
+  // -0.5 for centered INT2 weights). Or no table and no scales
+  // (kTensorRtStepFeedNoTable): the runtime registers the embedder's table,
+  // scales and multiplier.
   uint64_t table_offset = 0;
   float multiplier = 1.0f;
   const uint8_t* row_scales = nullptr;  // vocab little-endian FP32 values
   size_t row_scales_size = 0;
+  uint32_t table_bits = 4;
+  float table_zero_point = 0.0f;
 };
 
 // TensorRT weight types are kept independent of NvInfer headers so the

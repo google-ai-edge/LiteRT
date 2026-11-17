@@ -48,11 +48,14 @@ constexpr char kUpdateCacheField[] = "update_cache";
 constexpr int kNumFields = 7;
 // The scores a mask hides stay out of the softmax.
 constexpr float kFill = -std::numeric_limits<float>::infinity();
-constexpr int kMaxInputs = 7;
+constexpr int kMaxInputs = 8;
 constexpr int kMaxOutputs = 3;
 // Query rows per KV head the decode kernel takes; more go to the tensor-core
 // kernel.
 constexpr int64_t kMaxDecodeRows = 16;
+// The device memory an attached layer keeps for the decode kernel's one
+// launch (LiteRtNvidiaQuantDecodeAttentionStateBytes): 64 heads of 16 rows.
+constexpr size_t kDecodeStateBytes = 4096;
 
 int32_t NumInputs(Mode mode) {
   switch (mode) {
@@ -62,6 +65,8 @@ int32_t NumInputs(Mode mode) {
       return 4;
     case Mode::kFusedAttentionUpdate:
       return 7;
+    case Mode::kUpdateAttention:
+      return 8;
   }
   return 0;
 }
@@ -73,6 +78,7 @@ int32_t NumOutputs(Mode mode) {
     case Mode::kAttention:
       return 1;
     case Mode::kFusedAttentionUpdate:
+    case Mode::kUpdateAttention:
       return 3;
   }
   return 0;
@@ -98,6 +104,8 @@ const char* InputKinds(Mode mode) {
       return "fccm";
     case Mode::kFusedAttentionUpdate:
       return "fccmffi";
+    case Mode::kUpdateAttention:
+      return "fccmffii";
   }
   return "";
 }
@@ -109,6 +117,7 @@ const char* OutputKinds(Mode mode) {
     case Mode::kAttention:
       return "f";
     case Mode::kFusedAttentionUpdate:
+    case Mode::kUpdateAttention:
       return "fcc";
   }
   return "";
@@ -224,6 +233,16 @@ bool ParseLayout(const QuantAttentionOptions& options,
   if (mask.d[3] != static_cast<int64_t>(layout->cache_len) + layout->new_len) {
     return false;
   }
+  if (mode == Mode::kUpdateAttention) {
+    // One token's rows: their elements are in one order whichever of the
+    // heads and the token comes first.
+    return layout->Decode() && RowTokens(inputs[4], *layout, false) == 1 &&
+           RowTokens(inputs[5], *layout, options.v_token_major) == 1 &&
+           inputs[6].nbDims == 1 && inputs[6].d[0] == 4 &&
+           inputs[7].nbDims == 1 && inputs[7].d[0] == 4 &&
+           LiteRtNvidiaQuantDecodeAttentionUpdateSupports(
+               layout->rows, layout->depth, bits, layout->cache_len);
+  }
   if (layout->Decode()) {
     return LiteRtNvidiaQuantDecodeAttentionSupports(layout->rows, layout->depth,
                                                     bits);
@@ -334,6 +353,12 @@ class QuantAttentionPlugin final : public nvinfer1::IPluginV3,
         return static_cast<nvinfer1::IPluginV3OneRuntime*>(this);
     }
     return nullptr;
+  }
+
+  ~QuantAttentionPlugin() override {
+    if (decode_state_ != nullptr) {
+      cudaFree(decode_state_);
+    }
   }
 
   nvinfer1::IPluginV3* clone() noexcept override {
@@ -511,7 +536,12 @@ class QuantAttentionPlugin final : public nvinfer1::IPluginV3,
   nvinfer1::IPluginV3* attachToContext(
       nvinfer1::IPluginResourceContext* context) noexcept override {
     static_cast<void>(context);
-    return clone();
+    auto* attached = new (std::nothrow) QuantAttentionPlugin(options_);
+    if (attached != nullptr && (options_.mode == Mode::kAttention ||
+                                options_.mode == Mode::kUpdateAttention)) {
+      attached->AllocateDecodeState();
+    }
+    return attached;
   }
 
   const nvinfer1::PluginFieldCollection* getFieldsToSerialize() noexcept
@@ -520,6 +550,33 @@ class QuantAttentionPlugin final : public nvinfer1::IPluginV3,
   }
 
  private:
+  // The decode kernel's counters for this layer of one execution context,
+  // zero between its launches. They are zeroed on a stream of their own: the
+  // default stream is not to be used while another stream is captured.
+  // Without them (no memory, no CUDA context) the attention takes its two
+  // launches.
+  void AllocateDecodeState() noexcept {
+    void* state = nullptr;
+    cudaStream_t stream = nullptr;
+    if (cudaMalloc(&state, kDecodeStateBytes) == cudaSuccess &&
+        cudaStreamCreate(&stream) == cudaSuccess &&
+        cudaMemsetAsync(state, 0, kDecodeStateBytes, stream) == cudaSuccess &&
+        cudaStreamSynchronize(stream) == cudaSuccess) {
+      decode_state_ = state;
+    } else {
+      if (state != nullptr) cudaFree(state);
+      static_cast<void>(cudaGetLastError());
+    }
+    if (stream != nullptr) cudaStreamDestroy(stream);
+  }
+
+  void* DecodeState(const Layout& layout) const {
+    return LiteRtNvidiaQuantDecodeAttentionStateBytes(
+               layout.heads, layout.rows) <= kDecodeStateBytes
+               ? decode_state_
+               : nullptr;
+  }
+
   // The caches' input bytes into the output buffers, unless the runtime
   // bound both to one buffer.
   cudaError_t CarryCaches(const nvinfer1::PluginTensorDesc* input_desc,
@@ -557,11 +614,29 @@ class QuantAttentionPlugin final : public nvinfer1::IPluginV3,
                      const void* const* inputs, void* const* outputs,
                      void* workspace, cudaStream_t stream) const {
     const bool* mask = static_cast<const bool*>(inputs[3]);
+    if (options_.mode == Mode::kUpdateAttention) {
+      const cudaError_t status =
+          CarryCaches(input_desc, inputs, outputs, stream);
+      if (status != cudaSuccess) return status;
+      // The positions along the key cache's axis 2 and the value cache's
+      // axis 3, as kCacheUpdate reads them.
+      const LiteRtNvidiaQuantCacheToken token = {
+          inputs[4], inputs[5], static_cast<const int32_t*>(inputs[6]) + 2,
+          static_cast<const int32_t*>(inputs[7]) + 3};
+      return LiteRtNvidiaLaunchQuantDecodeAttentionUpdate(
+          inputs[0], bf16, outputs[1], outputs[2], &token, &options_.quant,
+          mask, layout.mask_rows, layout.heads, layout.rows, layout.cache_len,
+          layout.depth, kFill, outputs[0], workspace, DecodeState(layout),
+          stream);
+    }
     if (layout.Decode()) {
-      return LiteRtNvidiaLaunchQuantDecodeAttention(
-          inputs[0], bf16, inputs[1], inputs[2], &options_.quant, mask,
-          layout.mask_rows, layout.heads, layout.rows, layout.cache_len,
-          layout.depth, kFill, outputs[0], workspace, stream);
+      // The caches are read only: no token is written.
+      return LiteRtNvidiaLaunchQuantDecodeAttentionUpdate(
+          inputs[0], bf16, const_cast<void*>(inputs[1]),
+          const_cast<void*>(inputs[2]), /*token=*/nullptr, &options_.quant,
+          mask, layout.mask_rows, layout.heads, layout.rows, layout.cache_len,
+          layout.depth, kFill, outputs[0], workspace, DecodeState(layout),
+          stream);
     }
     const TiledWorkspace plan = PlanTiledWorkspace(layout);
     char* base = static_cast<char*>(workspace);
@@ -606,6 +681,7 @@ class QuantAttentionPlugin final : public nvinfer1::IPluginV3,
   }
 
   QuantAttentionOptions options_;
+  void* decode_state_ = nullptr;
   int32_t mode_;
   int32_t v_token_major_;
   int32_t update_cache_;
@@ -667,7 +743,7 @@ class QuantAttentionPluginCreator final : public nvinfer1::IPluginCreatorV3One {
         }
       }
     }
-    if (mode < 0 || mode > static_cast<int32_t>(Mode::kFusedAttentionUpdate)) {
+    if (mode < 0 || mode > static_cast<int32_t>(Mode::kUpdateAttention)) {
       return nullptr;
     }
     options.mode = static_cast<Mode>(mode);

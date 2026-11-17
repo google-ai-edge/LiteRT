@@ -57,6 +57,13 @@ enum class QuantAttentionMode : int32_t {
   // chunk's keys, and the caches with the chunk written at its positions
   // modulo S.
   kFusedAttentionUpdate = 2,
+  // A decode block: odml.cache_update of one token, then
+  // odml.sdpa_transposed over the updated caches, in the attention's
+  // launches (no launch for the update). Inputs: kAttention's (up to 16
+  // rows), then the token's keys [1, H, 1, D], its values (the same
+  // elements, [1, H, 1, D] or [1, 1, H, D]) and kCacheUpdate's start
+  // indices. Outputs: the attention and the updated caches.
+  kUpdateAttention = 3,
 };
 
 struct QuantAttentionOptions {

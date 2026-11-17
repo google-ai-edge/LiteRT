@@ -392,8 +392,12 @@ void RunDecodeBlock(const Scales& scales, int cache_len, bool float32,
        static_cast<size_t>(cache_len), 7 * sizeof(int32_t), 4 * sizeof(int32_t),
        4 * sizeof(int32_t)},
       {cache_bytes, cache_bytes, query_bytes, query_bytes}, {{0, 4}, {1, 5}}));
-  // One launch for the update and one layer per attention.
-  EXPECT_GT(session.LayerNames("cuda_quant_cache_update"), 0);
+  // The first attention writes the token in its own launches (no layer for
+  // the update) and the second reads the caches it updated; INT4 value rows
+  // that do not start on a byte keep the update's own layer.
+  const bool joined = scales.bits == 8 || cache_len % 2 == 0;
+  EXPECT_EQ(session.LayerNames("cuda_quant_cache_update") > 0, !joined);
+  EXPECT_EQ(session.LayerNames("cuda_quant_update_attention") > 0, joined);
   EXPECT_GT(session.LayerNames("cuda_quant_attention"), 0);
   // The plugin's zero for a row that sees no key makes the SELECT after it
   // the identity: neither it nor the mask's reduction is in the engine.

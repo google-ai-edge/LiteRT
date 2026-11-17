@@ -109,11 +109,52 @@ extern "C" bool LiteRtNvidiaQuantDecodeAttentionSupports(int32_t rows,
 // and a row that sees no key gets zero; with a finite fill such a row has no
 // defined result. `workspace` needs
 // LiteRtNvidiaDecodeAttentionWorkspaceBytes(heads, rows, cache_len, depth)
-// bytes.
+// bytes. Two launches: one over the chunks of the keys and one that combines
+// them (LiteRtNvidiaLaunchQuantDecodeAttentionUpdate does both in one).
 extern "C" cudaError_t LiteRtNvidiaLaunchQuantDecodeAttention(
     const void* q, bool q_bf16, const void* k, const void* v,
     const LiteRtNvidiaQuantAttentionParams* params, const bool* mask,
     int32_t mask_rows, int32_t heads, int32_t rows, int32_t cache_len,
     int32_t depth, float fill, void* out, void* workspace, cudaStream_t stream);
+
+// One token's key and value rows of a decode step before their QUANTIZE,
+// [heads, depth] each in the queries' type, and where they go: the key
+// cache's row and the value cache's column, read on the device and clamped
+// to the cache.
+struct LiteRtNvidiaQuantCacheToken {
+  const void* k;
+  const void* v;
+  const int32_t* k_position;
+  const int32_t* v_position;
+};
+
+// What LiteRtNvidiaQuantDecodeAttentionSupports takes, with INT4 value rows
+// that start on a byte (an even cache_len).
+extern "C" bool LiteRtNvidiaQuantDecodeAttentionUpdateSupports(
+    int32_t rows, int32_t depth, int32_t cache_bits, int32_t cache_len);
+
+// The device memory a caller keeps for its launches of
+// LiteRtNvidiaLaunchQuantDecodeAttentionUpdate with these heads and rows:
+// zero before the first launch, and left zero by every launch.
+extern "C" size_t LiteRtNvidiaQuantDecodeAttentionStateBytes(int32_t heads,
+                                                             int32_t rows);
+
+// LiteRtNvidiaLaunchQuantCacheWrite (quant_cache.h) of `token` followed by
+// LiteRtNvidiaLaunchQuantDecodeAttention over the updated caches, with the
+// same results bit for bit, in the attention's launches alone: every block
+// writes the token's quantized rows into the caches before it reads them. A
+// null token writes nothing. With a `state` the attention is one launch when
+// that is the faster way: a block per chunk of 64 keys and query row, as long
+// as the device has a multiprocessor for each (the ring of 512 keys of a
+// decode step on a desktop GPU); the last of a row's blocks combines them,
+// counted in the state, which no two launches in flight may share. Otherwise,
+// and with a null state, the two launches.
+extern "C" cudaError_t LiteRtNvidiaLaunchQuantDecodeAttentionUpdate(
+    const void* q, bool q_bf16, void* k, void* v,
+    const LiteRtNvidiaQuantCacheToken* token,
+    const LiteRtNvidiaQuantAttentionParams* params, const bool* mask,
+    int32_t mask_rows, int32_t heads, int32_t rows, int32_t cache_len,
+    int32_t depth, float fill, void* out, void* workspace, void* state,
+    cudaStream_t stream);
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_DECODE_ATTENTION_H_

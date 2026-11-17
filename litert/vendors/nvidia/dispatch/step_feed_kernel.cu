@@ -57,8 +57,9 @@ __global__ void StepFeedKernel(LiteRtNvidiaStepFeedParams p) {
       } else {
         scale = p.row_scales[token];
       }
-      // Two roundings, as the CPU embedder's dequantize then multiply.
-      value = __fmul_rn(static_cast<float>(q), scale);
+      // Two roundings, as the CPU embedder's dequantize then multiply (the
+      // difference to the zero point is exact).
+      value = __fmul_rn(static_cast<float>(q) - p.zero_point, scale);
       value = __fmul_rn(value, p.multiplier);
     }
     p.embeddings[i] = value;
@@ -125,9 +126,29 @@ struct RowCopyBatch {
   LiteRtNvidiaRowCopy copies[kRowCopiesPerLaunch];
 };
 
-// Block b copies batch.copies[b], 16 bytes per thread per step.
+// Whether a copy moves whole 16-byte vectors between 16-byte addresses.
+__host__ __device__ bool Vectorized(const LiteRtNvidiaRowCopy& copy) {
+  return copy.width % 16 == 0 && copy.src_pitch % 16 == 0 &&
+         copy.dst_pitch % 16 == 0 &&
+         reinterpret_cast<uintptr_t>(copy.src) % 16 == 0 &&
+         reinterpret_cast<uintptr_t>(copy.dst) % 16 == 0;
+}
+
+// Block b copies batch.copies[b], 16 bytes per thread per step, or one byte
+// when the copy is not of whole vectors (a cache whose ring is its last
+// axis: every row one value).
 __global__ void RowCopiesKernel(RowCopyBatch batch) {
   const LiteRtNvidiaRowCopy copy = batch.copies[blockIdx.x];
+  if (!Vectorized(copy)) {
+    const size_t total = static_cast<size_t>(copy.width) * copy.height;
+    for (size_t i = threadIdx.x; i < total; i += blockDim.x) {
+      const size_t row = i / copy.width;
+      const size_t column = i - row * copy.width;
+      static_cast<char*>(copy.dst)[row * copy.dst_pitch + column] =
+          static_cast<const char*>(copy.src)[row * copy.src_pitch + column];
+    }
+    return;
+  }
   const uint32_t vectors_per_row = copy.width / 16;
   const uint32_t total = vectors_per_row * copy.height;
   for (uint32_t i = threadIdx.x; i < total; i += blockDim.x) {
@@ -148,10 +169,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchRowCopies(
   for (int i = 0; i < count; ++i) {
     const LiteRtNvidiaRowCopy& copy = copies[i];
     if (copy.src == nullptr || copy.dst == nullptr || copy.width == 0 ||
-        copy.height == 0 || copy.width % 16 != 0 || copy.src_pitch % 16 != 0 ||
-        copy.dst_pitch % 16 != 0 ||
-        reinterpret_cast<uintptr_t>(copy.src) % 16 != 0 ||
-        reinterpret_cast<uintptr_t>(copy.dst) % 16 != 0 ||
+        copy.height == 0 ||
         (copy.height > 1 && (copy.src_pitch < copy.width || copy.dst_pitch < copy.width))) {
       return cudaErrorInvalidValue;
     }

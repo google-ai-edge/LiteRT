@@ -3583,6 +3583,7 @@ class TensorRtGraphBuilder {
     for (const auto& op : prefill_cache_updates) {
       LITERT_RETURN_IF_ERROR(LowerOp(op));
     }
+    LITERT_RETURN_IF_ERROR(AddUnjoinedQuantCacheUpdates());
     LITERT_RETURN_IF_ERROR(MarkOutputs(subgraph, trtllm_head));
     memory_profiler_.Log("graph_lowered");
 
@@ -3721,12 +3722,13 @@ class TensorRtGraphBuilder {
   }
 
   // A decode step that feeds itself (TensorRtStepFeed): one token's
-  // embeddings in, the logits out, the vocabulary head an INT4 per-channel
-  // fully connected op whose weights the weight store maps (Gemma ties them
-  // to the embedder's table; the embedder's multiplier is sqrt(dim), and the
-  // dispatch verifies every embedding the host feeds against what it ran, so
-  // an untied table only costs the speculation). Nothing when the signature
-  // is not that shape. LITERT_NVIDIA_TENSORRT_STEP_FEED=0 records none.
+  // embeddings in, the logits out, the vocabulary head a fully connected op
+  // with INT4 per-channel or centered INT2 weights that the weight store maps
+  // (the models tie them to the embedder's table; the embedder's multiplier
+  // is sqrt(dim), and the dispatch verifies every embedding the host feeds
+  // against what it ran, so an untied table only costs the speculation).
+  // Nothing when the signature is not that shape.
+  // LITERT_NVIDIA_TENSORRT_STEP_FEED=0 records none.
   Expected<std::optional<TensorRtStepFeedBuildData>> MatchStepFeed(
       const Subgraph& subgraph) {
     const auto none = [] { return std::optional<TensorRtStepFeedBuildData>(); };
@@ -3862,9 +3864,10 @@ class TensorRtGraphBuilder {
     }
     if (!logits.has_value()) return refuse(__LINE__);
     // The token table: the head's weights when they are an INT4 per-channel
-    // [vocab, dim] view of the model file (the embedder's table is tied to
-    // them, with the multiplier sqrt(dim)); otherwise the runtime registers
-    // the embedder's own table (an external head, a blockwise embedder).
+    // or a centered INT2 [vocab, dim] view of the model file (the embedder's
+    // table is tied to them, with the multiplier sqrt(dim)); otherwise the
+    // runtime registers the embedder's own table (an external head, a
+    // blockwise embedder).
     feed.table_offset = kTensorRtStepFeedNoTable;
     feed.multiplier =
         static_cast<float>(std::sqrt(static_cast<double>(feed.dim)));
@@ -3881,7 +3884,8 @@ class TensorRtGraphBuilder {
     const std::string table_text =
         feed.table_offset == kTensorRtStepFeedNoTable
             ? "from the runtime"
-            : "at " + std::to_string(feed.table_offset);
+            : "INT" + std::to_string(feed.table_bits) + " at " +
+                  std::to_string(feed.table_offset);
     const std::string per_layer_text =
         feed.per_layer_port == kTensorRtStepFeedNoPort
             ? "-"
@@ -3941,19 +3945,46 @@ class TensorRtGraphBuilder {
   }
 
   // The head's weights as the feed's table when they are the tied
-  // embedder's: INT4 per-channel [vocab, dim] in the model file.
+  // embedder's: [vocab, dim] in the model file, INT4 per-channel, or
+  // centered INT2 with a scale per row (CenteredInt2Scales: a weight is
+  // scale * (q + 0.5), which the embedder's blockwise lookup computes too).
   void MatchTiedHeadTable(const Tensor& logits,
                           TensorRtStepFeedBuildData& feed) {
     auto head = FindHeadBehind(logits);
     if (!head.has_value() || head->Inputs().size() < 2) return;
     const Tensor weights = head->Inputs()[1];
     auto weights_type = weights.RankedTensorType();
-    if (!weights_type || weights.ElementType() != litert::ElementType::Int4 ||
-        !weights.HasWeights() || weights_type->Layout().Rank() != 2 ||
+    if (!weights_type || !weights.HasWeights() ||
+        weights_type->Layout().Rank() != 2 ||
         weights_type->Layout().Dimensions()[0] !=
             static_cast<int32_t>(feed.vocab) ||
         weights_type->Layout().Dimensions()[1] !=
-            static_cast<int32_t>(feed.dim) ||
+            static_cast<int32_t>(feed.dim)) {
+      return;
+    }
+    if (weights.ElementType() == litert::ElementType::Int2) {
+      const auto scales = CenteredInt2Scales(weights, /*input_axis=*/1);
+      if (!scales.has_value() || scales->size() != feed.vocab ||
+          feed.dim % 4 != 0 || weight_store_ == nullptr) {
+        return;
+      }
+      auto offset = weight_store_->SourceOffset(weights.Weights().Bytes());
+      if (!offset) {
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA TensorRT-RTX step feed: the head's weights are not "
+                   "a view of the model file (%s)",
+                   offset.Error().Message().c_str());
+        return;
+      }
+      feed.table_offset = *offset;
+      feed.table_bits = 2;
+      feed.table_zero_point = -0.5f;
+      feed.row_scales.resize(scales->size() * sizeof(float));
+      std::memcpy(feed.row_scales.data(), scales->data(),
+                  feed.row_scales.size());
+      return;
+    }
+    if (weights.ElementType() != litert::ElementType::Int4 ||
         weights.QTypeId() != kLiteRtQuantizationPerChannel) {
       return;
     }
@@ -10415,15 +10446,60 @@ class TensorRtGraphBuilder {
     return SetOutputTensor(tensor, out);
   }
 
-  // odml.cache_update over quantized caches (ParseQuantCacheUpdate): one
-  // plugin launch quantizes the step's keys and values and writes them into
-  // both caches at the start indices.
-  Expected<void> LowerQuantCacheUpdate(const Op& op,
-                                       const QuantCacheUpdate& form) {
+  // Whether decode attentions alone read the caches a one-token
+  // odml.cache_update writes: every use of both results is an
+  // odml.sdpa_transposed that the plugin's decode kernel runs over exactly
+  // these caches. The first of them to be lowered then writes the token in
+  // its own launches (QuantAttentionMode::kUpdateAttention), and the update
+  // needs none.
+  static bool QuantCacheUpdateJoinsAttention(const Op& op,
+                                             const QuantCacheUpdate& form) {
+    if (form.tokens != 1) {
+      return false;
+    }
     const auto& caches = form.caches;
+    for (int i = 0; i < 2; ++i) {
+      const auto uses = op.Outputs()[i].Uses();
+      if (uses.empty()) {
+        return false;
+      }
+      for (const auto& use : uses) {
+        const Op& reader = use.user;
+        if (reader.Code() != kLiteRtOpCodeShloComposite ||
+            CompositeOpName(reader) != "odml.sdpa_transposed") {
+          return false;
+        }
+        const auto sdpa = ParseQuantSdpa(reader);
+        if (!sdpa.has_value() ||
+            reader.Inputs()[1].Get() != op.Outputs()[0].Get() ||
+            reader.Inputs()[2].Get() != op.Outputs()[1].Get() ||
+            !LiteRtNvidiaQuantDecodeAttentionUpdateSupports(
+                sdpa->group * sdpa->tokens, caches.depth, caches.bits,
+                caches.seq)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  // The token of an odml.cache_update as the plugin takes it: the keys and
+  // the values before their QUANTIZE and the two start indices.
+  struct QuantCacheToken {
+    nvinfer1::ITensor* keys = nullptr;
+    nvinfer1::ITensor* values = nullptr;
+    nvinfer1::ITensor* start_k = nullptr;
+    nvinfer1::ITensor* start_v = nullptr;
+    bool v_token_major = false;
+  };
+
+  Expected<QuantCacheToken> QuantCacheUpdateToken(
+      const Op& op, const QuantCacheUpdate& form) {
+    const auto& caches = form.caches;
+    QuantCacheToken token;
     bool token_major = false;
     LITERT_ASSIGN_OR_RETURN(
-        auto* keys,
+        token.keys,
         QuantizedRowsAsFloat(op.Inputs()[0], /*columns=*/false, caches.heads,
                              form.tokens, caches.depth, &token_major));
     if (token_major) {
@@ -10431,22 +10507,66 @@ class TensorRtGraphBuilder {
                    "Quantized cache update keys must be rows of heads");
     }
     LITERT_ASSIGN_OR_RETURN(
-        auto* values,
+        token.values,
         QuantizedRowsAsFloat(op.Inputs()[1], /*columns=*/false, caches.heads,
-                             form.tokens, caches.depth, &token_major));
-    LITERT_ASSIGN_OR_RETURN(auto* start_k, GetTensor(op.Inputs()[5]));
-    LITERT_ASSIGN_OR_RETURN(auto* start_v, GetTensor(op.Inputs()[6]));
+                             form.tokens, caches.depth, &token.v_token_major));
+    LITERT_ASSIGN_OR_RETURN(token.start_k, GetTensor(op.Inputs()[5]));
+    LITERT_ASSIGN_OR_RETURN(token.start_v, GetTensor(op.Inputs()[6]));
+    return token;
+  }
+
+  // odml.cache_update over quantized caches (ParseQuantCacheUpdate): one
+  // plugin launch quantizes the step's keys and values and writes them into
+  // both caches at the start indices. A decode block's update waits for the
+  // attention that reads its caches instead (QuantCacheUpdateJoinsAttention).
+  Expected<void> LowerQuantCacheUpdate(const Op& op,
+                                       const QuantCacheUpdate& form) {
+    if (QuantCacheUpdateJoinsAttention(op, form)) {
+      joined_quant_cache_updates_.emplace(op.Outputs()[0].Get(), op);
+      return {};
+    }
+    return AddQuantCacheUpdate(op, form);
+  }
+
+  // The cache updates no attention took (their readers were not lowered as
+  // such): a layer of their own, before the graph's outputs are marked.
+  Expected<void> AddUnjoinedQuantCacheUpdates() {
+    // In the graph's order: the layers' names do not depend on the map's.
+    std::vector<Op> left;
+    for (const auto& [cache, op] : joined_quant_cache_updates_) {
+      left.push_back(op);
+    }
+    joined_quant_cache_updates_.clear();
+    std::sort(left.begin(), left.end(), [this](const Op& a, const Op& b) {
+      return op_order_[a.Get()] < op_order_[b.Get()];
+    });
+    for (const Op& op : left) {
+      const auto form = ParseQuantCacheUpdate(op);
+      if (!form.has_value()) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "A deferred quantized cache update no longer parses");
+      }
+      LITERT_RETURN_IF_ERROR(AddQuantCacheUpdate(op, *form));
+    }
+    return {};
+  }
+
+  Expected<void> AddQuantCacheUpdate(const Op& op,
+                                     const QuantCacheUpdate& form) {
+    const auto& caches = form.caches;
+    LITERT_ASSIGN_OR_RETURN(const QuantCacheToken token,
+                            QuantCacheUpdateToken(op, form));
     QuantAttentionOptions options;
     options.mode = QuantAttentionMode::kCacheUpdate;
     options.quant = {1.0f, caches.k_scale, caches.v_scale, caches.bits};
-    options.v_token_major = token_major;
+    options.v_token_major = token.v_token_major;
     LITERT_ASSIGN_OR_RETURN(
-        auto* layer,
-        AddQuantAttentionLayer(options,
-                               {raw_input_map_[op.Inputs()[3].Get()],
-                                raw_input_map_[op.Inputs()[4].Get()], keys,
-                                values, start_k, start_v},
-                               "cuda_quant_cache_update"));
+        auto* layer, AddQuantAttentionLayer(
+                         options,
+                         {raw_input_map_[op.Inputs()[3].Get()],
+                          raw_input_map_[op.Inputs()[4].Get()], token.keys,
+                          token.values, token.start_k, token.start_v},
+                         "cuda_quant_cache_update"));
     LITERT_RETURN_IF_ERROR(
         SetQuantCacheOutput(op.Outputs()[0], layer->getOutput(0)));
     return SetQuantCacheOutput(op.Outputs()[1], layer->getOutput(1));
@@ -10465,12 +10585,43 @@ class TensorRtGraphBuilder {
     QuantAttentionOptions options;
     options.mode = QuantAttentionMode::kAttention;
     options.quant = {form.q_scale, caches.k_scale, caches.v_scale, caches.bits};
-    LITERT_ASSIGN_OR_RETURN(
-        auto* layer,
-        AddQuantAttentionLayer(options,
-                               {q, RawInt8Cache(op.Inputs()[1].Get()),
-                                RawInt8Cache(op.Inputs()[2].Get()), mask},
-                               "cuda_quant_attention"));
+    nvinfer1::IPluginV3Layer* layer = nullptr;
+    if (const auto joined =
+            joined_quant_cache_updates_.find(op.Inputs()[1].Get());
+        joined != joined_quant_cache_updates_.end()) {
+      // The first attention over the caches of a decode block's update
+      // writes its token: the layer's cache outputs are the updated caches,
+      // which the graph returns and the later attentions read.
+      const Op update = joined->second;
+      joined_quant_cache_updates_.erase(joined);
+      const auto update_form = ParseQuantCacheUpdate(update);
+      if (!update_form.has_value()) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "A deferred quantized cache update no longer parses");
+      }
+      LITERT_ASSIGN_OR_RETURN(const QuantCacheToken token,
+                              QuantCacheUpdateToken(update, *update_form));
+      options.mode = QuantAttentionMode::kUpdateAttention;
+      options.v_token_major = token.v_token_major;
+      LITERT_ASSIGN_OR_RETURN(
+          layer, AddQuantAttentionLayer(
+                     options,
+                     {q, raw_input_map_[update.Inputs()[3].Get()],
+                      raw_input_map_[update.Inputs()[4].Get()], mask,
+                      token.keys, token.values, token.start_k, token.start_v},
+                     "cuda_quant_update_attention"));
+      LITERT_RETURN_IF_ERROR(
+          SetQuantCacheOutput(update.Outputs()[0], layer->getOutput(1)));
+      LITERT_RETURN_IF_ERROR(
+          SetQuantCacheOutput(update.Outputs()[1], layer->getOutput(2)));
+    } else {
+      LITERT_ASSIGN_OR_RETURN(
+          layer,
+          AddQuantAttentionLayer(options,
+                                 {q, RawInt8Cache(op.Inputs()[1].Get()),
+                                  RawInt8Cache(op.Inputs()[2].Get()), mask},
+                                 "cuda_quant_attention"));
+    }
     LITERT_ASSIGN_OR_RETURN(auto output_type,
                             op.Outputs()[0].RankedTensorType());
     LITERT_ASSIGN_OR_RETURN(auto output_dims, ConvertDims(output_type));
@@ -13985,6 +14136,10 @@ class TensorRtGraphBuilder {
     uint32_t segment = 0;
     bool scales_too = false;  // the blockwise scales are in the segment too
   };
+  // The odml.cache_update ops whose token the attention over their caches
+  // writes (LowerQuantCacheUpdate), by their updated key cache, until that
+  // attention is lowered.
+  std::unordered_map<LiteRtTensor, Op> joined_quant_cache_updates_;
   // Float32 caches declared to TensorRT as FP16 (Fp16CacheStorageEnabled).
   std::unordered_set<LiteRtTensor> fp16_stored_caches_;
   // Cache inputs another engine keeps in place (FindSharedCacheInputs).

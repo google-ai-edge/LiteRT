@@ -3726,12 +3726,15 @@ class LiteRtDispatchInvocationContextT {
     bool pending = false;
     bool owns_table = false;   // the table is this context's allocation
     bool owns_scales = false;  // the row scales are this context's allocation
-    void* table = nullptr;     // device INT4 [vocab, dim]
+    void* table = nullptr;     // device INT4 or INT2 [vocab, dim]
     float* row_scales = nullptr;             // device [vocab], or null
     const uint16_t* block_scales = nullptr;  // device FP16 per block, or null
     uint32_t scale_block = 0;
     float multiplier = 1.0f;
     uint32_t bits = 4;  // the table's elements: INT4 or INT2
+    // What an element is taken from before its scale: -0.5 for a table of
+    // centered INT2 weights (the bytecode's), 0 otherwise.
+    float zero_point = 0.0f;
     // The per-layer embedder's tables (registered), when the feed writes the
     // per-layer embeddings.
     const uint8_t* per_layer_table = nullptr;
@@ -3825,7 +3828,8 @@ class LiteRtDispatchInvocationContextT {
       return {};
     }
     const auto& feed = *bytecode_.step_feed;
-    const size_t table_bytes = static_cast<size_t>(feed.vocab) * feed.dim / 2;
+    const size_t table_bytes =
+        static_cast<size_t>(feed.vocab) * feed.dim * feed.table_bits / 8;
     const auto fail = [&](const char* what, cudaError_t status) {
       LITERT_LOG(LITERT_WARNING, "NVIDIA dispatch %s: the step feed's %s: %s",
                  bytecode_.function_name.c_str(), what,
@@ -3921,7 +3925,8 @@ class LiteRtDispatchInvocationContextT {
       feed_.owns_table = false;
       feed_.owns_scales = true;
       feed_.table = const_cast<void*>(weight_memory_table_);
-      feed_.bits = 4;
+      feed_.bits = feed.table_bits;
+      feed_.zero_point = feed.table_zero_point;
       feed_.multiplier = feed.multiplier;
       status = cudaMalloc(reinterpret_cast<void**>(&feed_.row_scales),
                           feed.row_scales_size);
@@ -3968,7 +3973,8 @@ class LiteRtDispatchInvocationContextT {
       }
       feed_.owns_table = true;
       feed_.owns_scales = true;
-      feed_.bits = 4;
+      feed_.bits = feed.table_bits;
+      feed_.zero_point = feed.table_zero_point;
       feed_.multiplier = feed.multiplier;
       status = cudaMalloc(&feed_.table, table_bytes);
       if (status != cudaSuccess) return fail("table", status);
@@ -4081,20 +4087,33 @@ class LiteRtDispatchInvocationContextT {
   // The in-place cache outputs with a ring-sized axis, their row within a
   // slab and the slabs (K [1, ring, heads, dim]: one slab of heads * dim; the
   // transposed value cache, logical [1, heads, dim, ring] stored as
-  // [1, heads, ring, dim]: heads slabs of dim), from the records bound now.
+  // [1, heads, ring, dim]: heads slabs of dim; a value cache stored as
+  // [1, heads, dim, ring]: heads * dim slabs of one value), from the records
+  // bound now.
   Expected<void> FindCacheRows() {
     const auto& feed = *bytecode_.step_feed;
     feed_.cache_rows.clear();
     feed_.backup_bytes = 0;
     for (size_t i = 0; i < output_handles_.size(); ++i) {
-      if (output_handles_[i] == 0 || i >= aliased_input_of_output_.size() ||
-          aliased_input_of_output_[i] < 0) {
+      if (output_handles_[i] == 0) {
         continue;
       }
       LITERT_ASSIGN_OR_RETURN(auto* record,
                               device_context_->GetRecord(output_handles_[i]));
       if (!record->direct_cuda_buffer || record->device_ptr == nullptr ||
           record->size == 0) {
+        continue;
+      }
+      // A cache updated in place: the engine aliases the output to an input,
+      // or the runtime bound the output to an input's buffer, which a plugin
+      // that takes its caches as they are bound then updates (the quantized
+      // caches).
+      bool in_place = i < aliased_input_of_output_.size() &&
+                      aliased_input_of_output_[i] >= 0;
+      for (size_t j = 0; j < bound_input_ptrs_.size() && !in_place; ++j) {
+        in_place = bound_input_ptrs_[j] == record->device_ptr;
+      }
+      if (!in_place) {
         continue;
       }
       LiteRtRankedTensorType type;
@@ -4129,11 +4148,6 @@ class LiteRtDispatchInvocationContextT {
       feed_.cache_rows.push_back(row);
     }
     feed_.rows_vectorized = true;
-    for (const StepFeed::CacheRow& cache : feed_.cache_rows) {
-      if (cache.inner_bytes % 16 != 0 || cache.backup_offset % 16 != 0) {
-        feed_.rows_vectorized = false;
-      }
-    }
     for (StepFeedSlot& slot : feed_.slots) {
       if (slot.backup != nullptr) cudaFree(slot.backup);
       slot.backup = nullptr;
@@ -4156,8 +4170,8 @@ class LiteRtDispatchInvocationContextT {
 
   // The rows a step ahead at `slot.position` overwrites, to the slot's
   // backup; and back, after a drop. Both on the stream, in order: one launch
-  // (LiteRtNvidiaLaunchRowCopies) when the rows are 16-byte aligned, a
-  // cudaMemcpy2DAsync per row otherwise.
+  // per 32 caches (LiteRtNvidiaLaunchRowCopies), or a cudaMemcpy2DAsync per
+  // cache once that launch refused the rows.
   Expected<void> CopyCacheRows(StepFeedSlot& slot, bool restore) {
     const auto& feed = *bytecode_.step_feed;
     const size_t ring = feed.ring;
@@ -4995,6 +5009,7 @@ class LiteRtDispatchInvocationContextT {
       params.token = feed_.sampler.device_result;
       params.table = static_cast<const uint8_t*>(feed_.table);
       params.bits = static_cast<int32_t>(feed_.bits);
+      params.zero_point = feed_.zero_point;
       params.row_scales = feed_.row_scales;
       params.block_scales = feed_.block_scales;
       params.scale_block = static_cast<int32_t>(feed_.scale_block);
@@ -5174,7 +5189,8 @@ class LiteRtDispatchInvocationContextT {
             litert::nvidia::kTensorRtStepFeedNoTable) {
       const auto& feed = *bytecode_.step_feed;
       weight_memory_table_ = WeightMemoryAddressOf(
-          feed.table_offset, static_cast<uint64_t>(feed.vocab) * feed.dim / 2);
+          feed.table_offset,
+          static_cast<uint64_t>(feed.vocab) * feed.dim * feed.table_bits / 8);
     }
     return {};
   }

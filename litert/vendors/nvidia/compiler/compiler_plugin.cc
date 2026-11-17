@@ -85,7 +85,7 @@ using litert::Expected;
 
 constexpr char kPluginManufacturer[] = "NVIDIA";
 constexpr char kPluginSocModel[] = "tensorrt-rtx";
-constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 21;
+constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 22;
 
 enum class PartitionPolicy {
   kSafe,
@@ -189,6 +189,8 @@ struct PendingBundleEntry {
       feed.multiplier = step_feed->multiplier;
       feed.row_scales = step_feed->row_scales.data();
       feed.row_scales_size = step_feed->row_scales.size();
+      feed.table_bits = step_feed->table_bits;
+      feed.table_zero_point = step_feed->table_zero_point;
       feed_ptr = &feed;
     }
     if (trtllm_head.has_value()) {

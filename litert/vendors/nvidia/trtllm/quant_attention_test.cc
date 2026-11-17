@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -435,7 +436,8 @@ TEST(QuantDecodeAttentionTest, MatchesTheDecomposition) {
         Case{4, 32768, kGroup, 1, 12345, false},
         Case{4, 1027, kGroup, 1, 700, false},
         Case{8, 1000, kGroup, 1, 999, false},
-        Case{8, kRing, 16, 16, 400, false},
+        Case{4, 448, kGroup, 1, 300, false}, Case{8, 200, kGroup, 1, 150, true},
+        Case{4, 37, kGroup, 1, 20, false}, Case{8, kRing, 16, 16, 400, false},
         Case{4, 2048, 12, 12, 1500, false}}) {
     SCOPED_TRACE(::testing::Message()
                  << "bits=" << c.bits << " cache_len=" << c.cache_len
@@ -497,6 +499,215 @@ TEST(QuantDecodeAttentionTest, MatchesTheDecomposition) {
         << errors.rows_off << " of " << errors.rows
         << " rows are off, the largest error is " << errors.max_error;
   }
+}
+
+// Zeroed device memory for the one-launch attention's counters.
+CudaAllocation AttentionState(int rows) {
+  const size_t bytes = LiteRtNvidiaQuantDecodeAttentionStateBytes(kHeads, rows);
+  auto state = AllocateCuda(bytes);
+  EXPECT_EQ(cudaMemset(state.get(), 0, bytes), cudaSuccess);
+  return state;
+}
+
+TEST(QuantDecodeAttentionTest, OneLaunchHasTheTwoLaunchesBits) {
+  // With a state the attention is one launch whose last blocks combine the
+  // chunks, where the device has the multiprocessors for it (the ring with
+  // four rows, the short caches), and the two launches elsewhere: the same
+  // bits as the two launches either way, launch after launch (the counters
+  // are left zero), for both cache types, masks that hide chunks and rows
+  // that see nothing.
+  struct Case {
+    int bits;
+    int cache_len;
+    int rows;
+    int mask_rows;
+    bool bf16;
+  };
+  uint32_t seed = 900;
+  for (const Case c :
+       {Case{8, kRing, kGroup, 1, false}, Case{8, kRing, 16, 16, true},
+        Case{8, 200, kGroup, 1, false}, Case{4, 2048, kGroup, 1, false},
+        Case{4, 2048, 12, 12, true}, Case{4, 37, kGroup, kGroup, false},
+        Case{8, 64, 16, 16, false}, Case{4, 32768, kGroup, 1, false}}) {
+    SCOPED_TRACE(::testing::Message()
+                 << "bits=" << c.bits << " cache_len=" << c.cache_len
+                 << " rows=" << c.rows << " mask_rows=" << c.mask_rows
+                 << " bf16=" << c.bf16);
+    Random random(seed++);
+    const LiteRtNvidiaQuantAttentionParams params = {
+        0.006f, c.bits == 8 ? 0.039f : 0.3825f, c.bits == 8 ? 0.0518f : 0.7136f,
+        c.bits};
+    const Caches caches = RandomCaches(c.cache_len, c.bits, &random);
+    const auto k = Upload(StoredCache(caches.k, c.bits));
+    const auto v = Upload(StoredCache(caches.v, c.bits));
+    const size_t result_bytes =
+        static_cast<size_t>(kHeads) * c.rows * kDepth * 2;
+    auto expected = AllocateCuda(result_bytes);
+    auto out = AllocateCuda(result_bytes);
+    const size_t workspace_bytes = LiteRtNvidiaDecodeAttentionWorkspaceBytes(
+        kHeads, c.rows, c.cache_len, kDepth);
+    auto workspace = AllocateCuda(workspace_bytes);
+    auto state_workspace = AllocateCuda(workspace_bytes);
+    const auto state = AttentionState(c.rows);
+    for (int launch = 0; launch < 4; ++launch) {
+      SCOPED_TRACE(::testing::Message() << "launch " << launch);
+      const Query query = RandomQuery(c.rows, params.q_scale, c.bf16, &random);
+      // Mask row r: a prefix of the keys, every key, a scattered third, or
+      // none at all.
+      std::vector<uint8_t> mask(static_cast<size_t>(c.mask_rows) * c.cache_len,
+                                0);
+      for (int r = 0; r < c.mask_rows; ++r) {
+        uint8_t* row = mask.data() + static_cast<size_t>(r) * c.cache_len;
+        switch ((launch + r) % 4) {
+          case 0:
+            std::fill(row, row + random.Int(1, c.cache_len), 1);
+            break;
+          case 1:
+            std::fill(row, row + c.cache_len, 1);
+            break;
+          case 2:
+            for (int j = c.cache_len / 3; j < c.cache_len; ++j) {
+              row[j] = random.Int(0, 2) == 0;
+            }
+            break;
+          default:
+            break;
+        }
+      }
+      const auto q = Upload(query.bits);
+      const auto mask_device = Upload(mask);
+      ASSERT_EQ(LiteRtNvidiaLaunchQuantDecodeAttention(
+                    q.get(), c.bf16, k.get(), v.get(), &params,
+                    static_cast<const bool*>(mask_device.get()), c.mask_rows,
+                    kHeads, c.rows, c.cache_len, kDepth,
+                    -std::numeric_limits<float>::infinity(), expected.get(),
+                    workspace.get(), nullptr),
+                cudaSuccess);
+      ASSERT_EQ(LiteRtNvidiaLaunchQuantDecodeAttentionUpdate(
+                    q.get(), c.bf16, k.get(), v.get(), /*token=*/nullptr,
+                    &params, static_cast<const bool*>(mask_device.get()),
+                    c.mask_rows, kHeads, c.rows, c.cache_len, kDepth,
+                    -std::numeric_limits<float>::infinity(), out.get(),
+                    state_workspace.get(), state.get(), nullptr),
+                cudaSuccess);
+      ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+      ASSERT_EQ(Download<uint16_t>(out, query.bits.size()),
+                Download<uint16_t>(expected, query.bits.size()));
+    }
+    const std::vector<uint32_t> counters =
+        Download<uint32_t>(state, static_cast<size_t>(kHeads) * c.rows);
+    EXPECT_EQ(counters, std::vector<uint32_t>(counters.size(), 0));
+  }
+}
+
+TEST(QuantDecodeAttentionTest, WritesTheTokenBeforeItAttends) {
+  // A decode step's cache update inside the attention's launches: the caches
+  // and the result are those of the cache write followed by the attention,
+  // bit for bit, in one launch (with a state) and in two, with positions
+  // inside the cache and clamped to it.
+  struct Case {
+    int bits;
+    int cache_len;
+    int rows;
+    int position;
+    bool bf16;
+  };
+  uint32_t seed = 700;
+  for (const Case c :
+       {Case{8, kRing, kGroup, 0, false}, Case{8, kRing, kGroup, 317, true},
+        Case{8, kRing, 16, 511, false}, Case{8, kRing, kGroup, 4000, false},
+        Case{4, 448, kGroup, 77, false}, Case{4, 2048, kGroup, 1234, false},
+        Case{4, 2048, kGroup, 1235, true}, Case{4, 2048, kGroup, -3, false},
+        Case{8, 1000, kGroup, 999, false}}) {
+    SCOPED_TRACE(::testing::Message()
+                 << "bits=" << c.bits << " cache_len=" << c.cache_len
+                 << " rows=" << c.rows << " position=" << c.position
+                 << " bf16=" << c.bf16);
+    Random random(seed++);
+    const LiteRtNvidiaQuantAttentionParams params = {
+        0.006f, c.bits == 8 ? 0.039f : 0.3825f, c.bits == 8 ? 0.0518f : 0.7136f,
+        c.bits};
+    const Caches caches = RandomCaches(c.cache_len, c.bits, &random);
+    const Query query = RandomQuery(c.rows, params.q_scale, c.bf16, &random);
+    // The token's rows before their QUANTIZE, past the caches' range too.
+    const int limit = c.bits == 8 ? 127 : 7;
+    std::vector<float> k_rows(kHeads * kDepth);
+    std::vector<float> v_rows(kHeads * kDepth);
+    for (float& value : k_rows) {
+      value = random.Next() * 1.2f * limit * params.k_scale;
+    }
+    for (float& value : v_rows) {
+      value = random.Next() * 1.2f * limit * params.v_scale;
+    }
+    const std::vector<uint8_t> mask(c.cache_len, 1);
+    const std::vector<int32_t> position = {c.position};
+    const auto q = Upload(query.bits);
+    const auto k_device = Upload(FloatBits(k_rows, c.bf16));
+    const auto v_device = Upload(FloatBits(v_rows, c.bf16));
+    const auto position_device = Upload(position);
+    const auto mask_device = Upload(mask);
+    const std::vector<uint8_t> k_stored = StoredCache(caches.k, c.bits);
+    const std::vector<uint8_t> v_stored = StoredCache(caches.v, c.bits);
+    const size_t workspace_bytes = LiteRtNvidiaDecodeAttentionWorkspaceBytes(
+        kHeads, c.rows, c.cache_len, kDepth);
+    ASSERT_TRUE(LiteRtNvidiaQuantDecodeAttentionUpdateSupports(
+        c.rows, kDepth, c.bits, c.cache_len));
+
+    // The cache write, then the attention.
+    const auto k_written = Upload(k_stored);
+    const auto v_written = Upload(v_stored);
+    auto expected = AllocateCuda(query.bits.size() * 2);
+    auto workspace = AllocateCuda(workspace_bytes);
+    ASSERT_EQ(LiteRtNvidiaLaunchQuantCacheWrite(
+                  k_written.get(), v_written.get(), k_device.get(),
+                  v_device.get(), c.bf16, /*v_token_major=*/false,
+                  static_cast<const int32_t*>(position_device.get()),
+                  static_cast<const int32_t*>(position_device.get()), c.bits,
+                  params.k_scale, params.v_scale, kHeads, c.cache_len, kDepth,
+                  /*tokens=*/1, nullptr),
+              cudaSuccess);
+    ASSERT_EQ(LiteRtNvidiaLaunchQuantDecodeAttention(
+                  q.get(), c.bf16, k_written.get(), v_written.get(), &params,
+                  static_cast<const bool*>(mask_device.get()), 1, kHeads,
+                  c.rows, c.cache_len, kDepth, kSdpaFill, expected.get(),
+                  workspace.get(), nullptr),
+              cudaSuccess);
+
+    // Both in the attention's launches: one launch, then two.
+    const LiteRtNvidiaQuantCacheToken token = {
+        k_device.get(), v_device.get(),
+        static_cast<const int32_t*>(position_device.get()),
+        static_cast<const int32_t*>(position_device.get())};
+    const auto state = AttentionState(c.rows);
+    for (void* launch_state : {state.get(), static_cast<void*>(nullptr)}) {
+      SCOPED_TRACE(::testing::Message()
+                   << (launch_state != nullptr ? "one launch" : "two"));
+      const auto k_updated = Upload(k_stored);
+      const auto v_updated = Upload(v_stored);
+      auto out = AllocateCuda(query.bits.size() * 2);
+      auto update_workspace = AllocateCuda(workspace_bytes);
+      ASSERT_EQ(LiteRtNvidiaLaunchQuantDecodeAttentionUpdate(
+                    q.get(), c.bf16, k_updated.get(), v_updated.get(), &token,
+                    &params, static_cast<const bool*>(mask_device.get()), 1,
+                    kHeads, c.rows, c.cache_len, kDepth, kSdpaFill, out.get(),
+                    update_workspace.get(), launch_state, nullptr),
+                cudaSuccess);
+      ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+
+      EXPECT_EQ(Download<uint8_t>(k_updated, k_stored.size()),
+                Download<uint8_t>(k_written, k_stored.size()));
+      EXPECT_EQ(Download<uint8_t>(v_updated, v_stored.size()),
+                Download<uint8_t>(v_written, v_stored.size()));
+      EXPECT_NE(Download<uint8_t>(k_updated, k_stored.size()), k_stored);
+      EXPECT_EQ(Download<uint16_t>(out, query.bits.size()),
+                Download<uint16_t>(expected, query.bits.size()));
+    }
+  }
+  // INT4 value rows that do not start on a byte are not written this way.
+  EXPECT_FALSE(
+      LiteRtNvidiaQuantDecodeAttentionUpdateSupports(kGroup, kDepth, 4, 37));
+  EXPECT_TRUE(
+      LiteRtNvidiaQuantDecodeAttentionUpdateSupports(kGroup, kDepth, 8, 37));
 }
 
 TEST(QuantDecodeAttentionTest, ARowThatSeesNoKeyGetsZero) {

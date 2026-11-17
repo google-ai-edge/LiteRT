@@ -65,6 +65,8 @@ struct TensorRtStepFeedBuildData {
   uint64_t table_offset = 0;
   float multiplier = 1.0f;
   std::vector<uint8_t> row_scales;  // vocab little-endian FP32 values
+  uint32_t table_bits = 4;
+  float table_zero_point = 0.0f;
 };
 
 struct TensorRtRefitWeightBuildData {
