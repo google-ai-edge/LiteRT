@@ -208,6 +208,14 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
             "XNNPACK."));
       }
       if (pcq.HasNonZeroZeroPoints()) {
+        // XNNPACK's channelwise quantized values have no zero points, so only
+        // constant weights can be run, by dequantizing them here.
+        if (!info.buffer || is_external) {
+          // Tensors computed by the graph, e.g. by a `Transpose`, are unnamed.
+          return absl::UnimplementedError(absl::StrCat(
+              info.name, info.name.empty() ? "" : ": ",
+              "XNNPACK only supports per-channel zero points of constants"));
+        }
         LRT_TENSOR_ASSIGN_OR_RETURN(
             std::vector<float> f32_data,
             DequantizeInt8ConstantTensor(
