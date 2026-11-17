@@ -230,26 +230,7 @@ LiteRtStatus LiteRtBuilderSetOpInput(LiteRtBuilder builder, LiteRtOp op,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  LiteRtTensor old_tensor = op->Inputs()[input_index];
-
-  // Remove the use of old_tensor by op at input_index.
-  if (old_tensor != nullptr) {
-    for (LiteRtParamIndex i = 0; i < old_tensor->NumUses(); ++i) {
-      auto [user, arg_ind] = old_tensor->GetUse(i);
-      if (user == op && arg_ind == input_index) {
-        old_tensor->RemoveUse(i);
-        break;
-      }
-    }
-  }
-
-  // Update the op's input slot.
-  op->Inputs()[input_index] = new_tensor;
-
-  // Register the new use on new_tensor.
-  new_tensor->Users().push_back(op);
-  new_tensor->UserArgInds().push_back(input_index);
-
+  builder->SetOpInput(op, input_index, new_tensor);
   return kLiteRtStatusOk;
 }
 

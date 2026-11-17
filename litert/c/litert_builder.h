@@ -69,7 +69,10 @@ LiteRtStatus LiteRtBuilderBuildOp(LiteRtBuilder builder, LiteRtOpCode op_code,
 LiteRtStatus LiteRtBuilderEraseOp(LiteRtBuilder builder, LiteRtOp op_to_erase);
 
 // Replaces the tensor at input_index of op with new_tensor, updating
-// the use-def chains on both the old and new tensors.
+// the use-def chains on both the old and new tensors. The update is staged
+// in the builder and only applied when the builder's changes are applied, so
+// a pattern that fails after calling this leaves the graph untouched.
+// op->Inputs() does not reflect the update until then.
 LiteRtStatus LiteRtBuilderSetOpInput(LiteRtBuilder builder, LiteRtOp op,
                                      LiteRtParamIndex input_index,
                                      LiteRtTensor new_tensor);

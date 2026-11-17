@@ -947,6 +947,13 @@ class LiteRtBuilderT {
   // is called.
   void EraseOp(LiteRtOp opToErase);
 
+  // Transactionally replaces the tensor at `input_index` of `op` with
+  // `new_tensor`. The update is staged and only takes effect, in call order,
+  // when ApplyChanges is called. `op` and `new_tensor` must outlive the
+  // builder's ApplyChanges call; `new_tensor` may be owned by the builder.
+  void SetOpInput(LiteRtOp op, LiteRtParamIndex input_index,
+                  LiteRtTensor new_tensor);
+
   // Applies all changes to the given subgraph, that was recorded by the
   // builder.
   //
@@ -962,6 +969,12 @@ class LiteRtBuilderT {
 
   // Records of transactions.
   absl::flat_hash_set<LiteRtOp> erases_;
+  struct InputUpdate {
+    LiteRtOp op;
+    LiteRtParamIndex input_index;
+    LiteRtTensor new_tensor;
+  };
+  std::vector<InputUpdate> input_updates_;
   absl::flat_hash_set<LiteRtTensor> allocated_tensors_;
   absl::flat_hash_set<LiteRtOp> allocated_ops_;
 };
