@@ -540,6 +540,7 @@ typedef struct LiteRtCompilerContext {
       int32_t* stride_h, int32_t* stride_d, int32_t* dilation_w_factor,
       int32_t* dilation_h_factor, int32_t* dilation_d_factor,
       uint32_t* fused_activation_function);
+  // Added in version 1.6.0
   LiteRtStatus (*set_op_input)(LiteRtBuilder builder, LiteRtOp op,
                                LiteRtParamIndex input_index,
                                LiteRtTensor new_tensor);

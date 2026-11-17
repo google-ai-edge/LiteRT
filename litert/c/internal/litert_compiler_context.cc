@@ -28,7 +28,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
               .struct_size = sizeof(LiteRtCompilerContext),
               // LINT.IfChange(compiler_context_version)
               .major_version = 1,
-              .minor_version = 5,
+              .minor_version = 6,
               .reserved = 0,
               // LINT.ThenChange(./litert_compiler_context.h:compiler_context_table)
           },

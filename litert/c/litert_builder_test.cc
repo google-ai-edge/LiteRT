@@ -111,6 +111,16 @@ TEST(LiteRtBuilderTest, SetOpInputOutOfRangeIndexReturnsError) {
   EXPECT_EQ(new_tensor.NumUses(), 0);
 }
 
+TEST(LiteRtBuilderTest, SetOpInputHandlesNullOldTensor) {
+  LiteRtBuilderT builder;
+  LiteRtOpT op;
+  LiteRtTensorT new_tensor;
+  op.Inputs().push_back(nullptr);
+  LITERT_ASSERT_OK(LiteRtBuilderSetOpInput(&builder, &op, 0, &new_tensor));
+  EXPECT_THAT(op.Inputs(), ElementsAre(&new_tensor));
+  ASSERT_EQ(new_tensor.NumUses(), 1);
+}
+
 TEST(LiteRtBuilderTest, CanBuildUnrankedTensor) {
   LiteRtBuilderT builder;
   LiteRtTensor tensor;

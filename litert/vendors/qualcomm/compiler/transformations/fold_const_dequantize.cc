@@ -108,7 +108,20 @@ LiteRtStatus FoldConstDequantizeTransformation(
       return kLiteRtStatusPatternNoMatch;
     }
     absl::Span<const uint8_t> raw_bytes = input.Weights().Bytes();
+    if (raw_bytes.size() % sizeof(uint16_t) != 0) {
+      return kLiteRtStatusPatternNoMatch;
+    }
+    auto in_ranked_type = input.RankedTensorType();
+    if (!in_ranked_type) {
+      return kLiteRtStatusPatternNoMatch;
+    }
+    auto in_num_elements = in_ranked_type->Layout().NumElements();
+    auto out_num_elements = out_ranked_type->Layout().NumElements();
     const size_t num_elements = raw_bytes.size() / sizeof(uint16_t);
+    if (!in_num_elements || !out_num_elements || *in_num_elements == 0 ||
+        *in_num_elements != num_elements || *out_num_elements != num_elements) {
+      return kLiteRtStatusPatternNoMatch;
+    }
     fp32_data.reserve(num_elements);
     for (size_t i = 0; i < num_elements; ++i) {
       // The byte buffer is not guaranteed to be uint16_t-aligned.

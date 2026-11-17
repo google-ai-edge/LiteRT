@@ -233,11 +233,13 @@ LiteRtStatus LiteRtBuilderSetOpInput(LiteRtBuilder builder, LiteRtOp op,
   LiteRtTensor old_tensor = op->Inputs()[input_index];
 
   // Remove the use of old_tensor by op at input_index.
-  for (LiteRtParamIndex i = 0; i < old_tensor->NumUses(); ++i) {
-    auto [user, arg_ind] = old_tensor->GetUse(i);
-    if (user == op && arg_ind == input_index) {
-      old_tensor->RemoveUse(i);
-      break;
+  if (old_tensor != nullptr) {
+    for (LiteRtParamIndex i = 0; i < old_tensor->NumUses(); ++i) {
+      auto [user, arg_ind] = old_tensor->GetUse(i);
+      if (user == op && arg_ind == input_index) {
+        old_tensor->RemoveUse(i);
+        break;
+      }
     }
   }
 
