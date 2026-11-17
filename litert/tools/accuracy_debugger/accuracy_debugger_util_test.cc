@@ -28,6 +28,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_model_types.h"
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
@@ -625,6 +626,133 @@ TEST(AccuracyDebuggerUtilTest, RunAccuracyDebuggerWithCustomInputs) {
   }
   for (size_t i = 0; i < out_size; ++i) {
     EXPECT_EQ(out_dumped_data[i], expected_output_data[i]);
+  }
+}
+
+TEST(AccuracyDebuggerUtilTest, CompareBuffersComputesMeanAbsDiff) {
+  std::vector<float> cpu_data = {1.0f, 2.0f, 3.0f, 4.0f};
+  std::vector<float> accel_data = {1.0f, 2.5f, 2.5f, 6.0f};
+  Dimensions dims = {2, 2};
+  RankedTensorType tensor_type(ElementType::Float32, Layout(dims));
+
+  auto cpu_buffer = TensorBuffer::CreateManagedHostMemory(tensor_type, 16);
+  auto accel_buffer = TensorBuffer::CreateManagedHostMemory(tensor_type, 16);
+  ASSERT_TRUE(
+      cpu_buffer->Write<float>(absl::MakeConstSpan(cpu_data)).HasValue());
+  ASSERT_TRUE(
+      accel_buffer->Write<float>(absl::MakeConstSpan(accel_data)).HasValue());
+
+  AccuracyThresholds thresholds;
+  auto res = internal::CompareBuffers(cpu_buffer.Value(), accel_buffer.Value(),
+                                      thresholds, "mean_abs_diff_test");
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_NEAR(res->max_diff, 2.0f, 1e-6f);
+  EXPECT_NEAR(res->mean_abs_diff, (0.0 + 0.5 + 0.5 + 2.0) / 4.0, 1e-6);
+}
+
+TEST(AccuracyDebuggerUtilTest, RunAccuracyDebuggerStartOpChunkSizeAndCpuMode) {
+  auto env = Environment::Create({});
+  ASSERT_TRUE(env.HasValue());
+
+  std::string model_path = testing::GetTestFilePath("two_adds.tflite");
+  auto model_res = litert::internal::LoadModelFromFile(model_path);
+  ASSERT_TRUE(model_res.HasValue());
+  auto model = std::move(model_res.Value());
+
+  const LiteRtSubgraphT* subgraph = model->MainSubgraph();
+  ASSERT_NE(subgraph, nullptr);
+  ASSERT_GE(subgraph->Ops().size(), 2);
+
+  auto test_dir_res = testing::UniqueTestDirectory::Create();
+  ASSERT_TRUE(test_dir_res.HasValue());
+  std::string test_dir = std::string(test_dir_res->Str());
+
+  auto accel_opts_res = litert::Options::Create();
+  ASSERT_TRUE(accel_opts_res.HasValue());
+  accel_opts_res->SetHardwareAccelerators(litert::HwAccelerators::kCpu);
+
+  // Test start_op=1 with kLiteRtCpuKernelModeReference as golden reference.
+  AccuracyDebuggerOptions options_start;
+  options_start.output_dir = test_dir + "/start_op";
+  options_start.accelerator = "cpu";
+  options_start.start_op = 1;
+  options_start.cpu_kernel_mode = kLiteRtCpuKernelModeReference;
+  AccuracyDebuggerSummary summary_start;
+  auto status = RunAccuracyDebugger(*env, *model, *accel_opts_res,
+                                    options_start, &summary_start);
+  ASSERT_TRUE(status.ok()) << status.message();
+  ASSERT_EQ(summary_start.all_ops.size(), subgraph->Ops().size() - 1);
+  EXPECT_EQ(summary_start.all_ops[0].global_index, 1);
+  EXPECT_TRUE(summary_start.failing_op_indices.empty());
+
+  // Test chunk_size=2 grouping multiple ops into one work unit.
+  AccuracyDebuggerOptions options_chunk;
+  options_chunk.output_dir = test_dir + "/chunk";
+  options_chunk.accelerator = "cpu";
+  options_chunk.chunk_size = 2;
+  AccuracyDebuggerSummary summary_chunk;
+  status = RunAccuracyDebugger(*env, *model, *accel_opts_res, options_chunk,
+                               &summary_chunk);
+  ASSERT_TRUE(status.ok()) << status.message();
+  EXPECT_EQ(summary_chunk.all_ops.size(), 1);
+  EXPECT_TRUE(summary_chunk.failing_op_indices.empty());
+}
+
+TEST(AccuracyDebuggerUtilTest, RunAccuracyDebuggerSingleRawFileInput) {
+  auto env = Environment::Create({});
+  ASSERT_TRUE(env.HasValue());
+
+  std::string model_path = testing::GetTestFilePath("simple_add_op.tflite");
+  auto model_res = litert::internal::LoadModelFromFile(model_path);
+  ASSERT_TRUE(model_res.HasValue());
+  auto model = std::move(model_res.Value());
+
+  const LiteRtSubgraphT* subgraph = model->MainSubgraph();
+  ASSERT_NE(subgraph, nullptr);
+  ASSERT_EQ(subgraph->NumInputs(), 2);
+  size_t num_elements = subgraph->Input(0).NumElements();
+
+  auto test_dir_res = testing::UniqueTestDirectory::Create();
+  ASSERT_TRUE(test_dir_res.HasValue());
+  std::string test_dir = std::string(test_dir_res->Str());
+  std::string single_input_file = test_dir + "/input0.raw";
+  std::vector<float> expected_data(num_elements);
+  for (size_t i = 0; i < num_elements; ++i) {
+    expected_data[i] = static_cast<float>(i) + 1.5f;
+  }
+  {
+    std::ofstream f(single_input_file, std::ios::binary);
+    ASSERT_TRUE(f.is_open());
+    f.write(reinterpret_cast<const char*>(expected_data.data()),
+            expected_data.size() * sizeof(float));
+  }
+
+  AccuracyDebuggerOptions options;
+  options.input_dir = single_input_file;
+  options.output_dir = test_dir + "/out";
+  options.accelerator = "cpu";
+  options.dump_tensors = true;
+
+  auto accel_opts_res = litert::Options::Create();
+  ASSERT_TRUE(accel_opts_res.HasValue());
+  accel_opts_res->SetHardwareAccelerators(litert::HwAccelerators::kCpu);
+
+  AccuracyDebuggerSummary summary;
+  auto status =
+      RunAccuracyDebugger(*env, *model, *accel_opts_res, options, &summary);
+  ASSERT_TRUE(status.ok()) << status.message();
+
+  std::string input0_name = std::string(subgraph->Input(0).Name());
+  std::string dumped_path = absl::StrFormat(
+      "%s/cpu/op_0000_tfl.add_in_0_%s.raw", options.output_dir, input0_name);
+  ASSERT_TRUE(litert::internal::Exists(dumped_path));
+  std::vector<float> dumped_data(num_elements);
+  std::ifstream f_dumped(dumped_path, std::ios::binary);
+  ASSERT_TRUE(f_dumped.is_open());
+  f_dumped.read(reinterpret_cast<char*>(dumped_data.data()),
+                num_elements * sizeof(float));
+  for (size_t i = 0; i < num_elements; ++i) {
+    EXPECT_EQ(dumped_data[i], expected_data[i]);
   }
 }
 
