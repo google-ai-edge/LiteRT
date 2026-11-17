@@ -121,6 +121,31 @@ TEST(LiteRtBuilderTest, SetOpInputHandlesNullOldTensor) {
   ASSERT_EQ(new_tensor.NumUses(), 1);
 }
 
+TEST(LiteRtBuilderTest, IsSubgraphOutput) {
+  LiteRtSubgraphT subgraph;
+  auto& out = subgraph.EmplaceTensor();
+  auto& other = subgraph.EmplaceTensor();
+  subgraph.Outputs().push_back(&out);
+  LiteRtBuilderT builder;
+  bool is_output = false;
+
+  EXPECT_EQ(LiteRtBuilderIsSubgraphOutput(&builder, &out, &is_output),
+            kLiteRtStatusErrorNotFound);
+
+  builder.SetTargetSubgraph(&subgraph);
+  LITERT_ASSERT_OK(LiteRtBuilderIsSubgraphOutput(&builder, &out, &is_output));
+  EXPECT_TRUE(is_output);
+  LITERT_ASSERT_OK(LiteRtBuilderIsSubgraphOutput(&builder, &other, &is_output));
+  EXPECT_FALSE(is_output);
+
+  EXPECT_EQ(LiteRtBuilderIsSubgraphOutput(nullptr, &out, &is_output),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtBuilderIsSubgraphOutput(&builder, nullptr, &is_output),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtBuilderIsSubgraphOutput(&builder, &out, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
 TEST(LiteRtBuilderTest, CanBuildUnrankedTensor) {
   LiteRtBuilderT builder;
   LiteRtTensor tensor;

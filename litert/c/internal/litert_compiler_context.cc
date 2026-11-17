@@ -316,6 +316,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
       .build_conv_3d_transpose_op_option =
           LiteRtBuilderBuildConv3dTransposeOpOption,
       .set_op_input = LiteRtBuilderSetOpInput,
+      .is_subgraph_output = LiteRtBuilderIsSubgraphOutput,
   };
   return &ctx;
 }

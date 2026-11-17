@@ -253,6 +253,21 @@ LiteRtStatus LiteRtBuilderSetOpInput(LiteRtBuilder builder, LiteRtOp op,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtBuilderIsSubgraphOutput(LiteRtBuilder builder,
+                                           LiteRtTensor tensor,
+                                           bool* is_subgraph_output) {
+  if (builder == nullptr || tensor == nullptr ||
+      is_subgraph_output == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const LiteRtSubgraphT* target = builder->TargetSubgraph();
+  if (target == nullptr) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *is_subgraph_output = litert::internal::FindOutput(*target, *tensor).has_value();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtBuilderBuildAddOpOption(LiteRtBuilder builder, LiteRtOp op,
                                            uint32_t* fused_activation) {
   if (builder == nullptr || op == nullptr ||

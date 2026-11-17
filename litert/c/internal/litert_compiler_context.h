@@ -544,6 +544,8 @@ typedef struct LiteRtCompilerContext {
   LiteRtStatus (*set_op_input)(LiteRtBuilder builder, LiteRtOp op,
                                LiteRtParamIndex input_index,
                                LiteRtTensor new_tensor);
+  LiteRtStatus (*is_subgraph_output)(LiteRtBuilder builder, LiteRtTensor tensor,
+                                     bool* is_subgraph_output);
 } LiteRtCompilerContext;
 // LINT.ThenChange(./litert_compiler_context.cc:compiler_context_version)
 
@@ -553,7 +555,7 @@ typedef struct LiteRtCompilerContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCompilerContext) == 1520,
+static_assert(sizeof(LiteRtCompilerContext) == 1528,
               "LiteRtCompilerContext size mismatch");
 static_assert(offsetof(LiteRtCompilerContext, abi_header) == 0,
               "LiteRtCompilerContext abi_header offset mismatch");
@@ -1241,6 +1243,8 @@ static_assert(
     "LiteRtCompilerContext build_conv_3d_transpose_op_option offset mismatch");
 static_assert(offsetof(LiteRtCompilerContext, set_op_input) == 1512,
               "LiteRtCompilerContext set_op_input offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, is_subgraph_output) == 1520,
+              "LiteRtCompilerContext is_subgraph_output offset mismatch");
 #endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();

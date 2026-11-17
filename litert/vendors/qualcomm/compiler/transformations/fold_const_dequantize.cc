@@ -83,9 +83,10 @@ LiteRtStatus FoldConstDequantizeTransformation(
   }
 
   Tensor output = dequant_op.Outputs()[0];
-  // An output without consumers is likely a subgraph output; erasing the
-  // dequantize would drop it.
-  if (output.Uses().empty()) {
+  // Erasing the dequantize would leave a subgraph output without a defining
+  // op, so skip outputs that are subgraph outputs. An output without consumers
+  // is also skipped since there is nothing to rewire.
+  if (output.Uses().empty() || output.IsSubgraphOutput(builder.Get())) {
     return kLiteRtStatusPatternNoMatch;
   }
   auto out_ranked_type = output.RankedTensorType();

@@ -904,6 +904,14 @@ class LiteRtBuilderT {
   // Get the subgraph that is being rewritten.
   LiteRtSubgraphT& Subgraph() { return subgraph_; }
 
+  // Sets the subgraph that this builder's changes will be applied to. Used to
+  // answer queries about the target graph (e.g. whether a tensor is one of its
+  // outputs). Not owned.
+  void SetTargetSubgraph(const LiteRtSubgraphT* target) {
+    target_subgraph_ = target;
+  }
+  const LiteRtSubgraphT* TargetSubgraph() const { return target_subgraph_; }
+
   // Returns the set of ops that are marked for erases.
   absl::flat_hash_set<LiteRtOp> Erases() const { return erases_; }
 
@@ -950,6 +958,7 @@ class LiteRtBuilderT {
   // Subgraph to hold the IR.
   litert::internal::BufferManager buffer_manager_;
   LiteRtSubgraphT subgraph_ = LiteRtSubgraphT(&buffer_manager_);
+  const LiteRtSubgraphT* target_subgraph_ = nullptr;
 
   // Records of transactions.
   absl::flat_hash_set<LiteRtOp> erases_;

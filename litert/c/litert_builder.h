@@ -74,6 +74,13 @@ LiteRtStatus LiteRtBuilderSetOpInput(LiteRtBuilder builder, LiteRtOp op,
                                      LiteRtParamIndex input_index,
                                      LiteRtTensor new_tensor);
 
+// Queries whether `tensor` is an output of the subgraph the builder is
+// rewriting. Returns kLiteRtStatusErrorNotFound if the builder has no target
+// subgraph.
+LiteRtStatus LiteRtBuilderIsSubgraphOutput(LiteRtBuilder builder,
+                                           LiteRtTensor tensor,
+                                           bool* is_subgraph_output);
+
 struct LiteRtCompilerContext;
 
 // Function pointer type for a rewrite pattern (also known as a transformation).

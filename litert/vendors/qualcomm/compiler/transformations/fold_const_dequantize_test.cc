@@ -60,6 +60,7 @@ TEST(FoldConstDequantizeTest, RejectsNonDequantizeOp) {
   const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
 
   auto& in = subgraph.EmplaceTensor();
   in.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {4}));
@@ -80,6 +81,7 @@ TEST(FoldConstDequantizeTest, RejectsNonConstantInput) {
   const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
 
   // Input has no weights — treated as a runtime (non-constant) tensor.
   auto& in = subgraph.EmplaceTensor();
@@ -101,6 +103,7 @@ TEST(FoldConstDequantizeTest, RejectsOutputWithoutConsumers) {
   const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
 
   auto& in = subgraph.EmplaceTensor();
   in.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat16, {4}));
@@ -124,11 +127,50 @@ TEST(FoldConstDequantizeTest, RejectsOutputWithoutConsumers) {
             kLiteRtStatusPatternNoMatch);
 }
 
+TEST(FoldConstDequantizeTest, RejectsSubgraphOutputWithConsumers) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  BufferManager buffer_manager;
+  LiteRtSubgraphT subgraph(&buffer_manager);
+  LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
+
+  auto& in = subgraph.EmplaceTensor();
+  in.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat16, {4}));
+  std::vector<uint16_t> fp16_data(4, fp16_ieee_from_fp32_value(1.0f));
+  SetWeightsFromOwnedBuffer(
+      in.Weights(),
+      OwningBufferRef<uint8_t>(
+          reinterpret_cast<const uint8_t*>(fp16_data.data()),
+          fp16_data.size() * sizeof(uint16_t)));
+
+  auto& out = subgraph.EmplaceTensor();
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {4}));
+  auto& dequant = subgraph.EmplaceOp();
+  dequant.SetOpCode(kLiteRtOpCodeTflDequantize);
+  AttachInput(&in, dequant);
+  AttachOutput(&out, dequant);
+
+  auto& consumer_out = subgraph.EmplaceTensor();
+  consumer_out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {4}));
+  auto& consumer = subgraph.EmplaceOp();
+  consumer.SetOpCode(kLiteRtOpCodeTflRelu);
+  AttachInput(&out, consumer);
+  AttachOutput(&consumer_out, consumer);
+
+  subgraph.Outputs().push_back(&out);
+  subgraph.Outputs().push_back(&consumer_out);
+
+  EXPECT_EQ(FoldConstDequantizeTransformation(ctx, &builder_impl, &dequant),
+            kLiteRtStatusPatternNoMatch);
+  EXPECT_EQ(dequant.Outputs().size(), 1);
+}
+
 TEST(FoldConstDequantizeTest, RejectsSubByteUint4Input) {
   const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   BufferManager buffer_manager;
   LiteRtSubgraphT subgraph(&buffer_manager);
   LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
 
   auto& in = subgraph.EmplaceTensor();
   in.SetType(MakeRankedTensorType(kLiteRtElementTypeUInt4, {4}));
@@ -161,6 +203,7 @@ TEST(FoldConstDequantizeTest, RejectsNonFloat32Output) {
   const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
 
   auto& in = subgraph.EmplaceTensor();
   in.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat16, {4}));
@@ -189,6 +232,7 @@ TEST(FoldConstDequantizeTest, RejectsQuantizedInputWithoutQuantizationParams) {
   const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
   LiteRtSubgraphT subgraph;
   LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
 
   // int8 input but no quantization params — Case B requires them.
   auto& in = subgraph.EmplaceTensor();
@@ -221,6 +265,7 @@ TEST(FoldConstDequantizeTest, CaseA_Fp16FoldsToFp32) {
   BufferManager buffer_manager;
   LiteRtSubgraphT subgraph(&buffer_manager);
   LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
 
   // Build: fp16_const -> dequantize -> fp32_out -> consumer
   auto& fp16_in = subgraph.EmplaceTensor();
@@ -276,6 +321,7 @@ TEST(FoldConstDequantizeTest, CaseA_Fp16MultipleConsumers) {
   BufferManager buffer_manager;
   LiteRtSubgraphT subgraph(&buffer_manager);
   LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
 
   auto& fp16_in = subgraph.EmplaceTensor();
   fp16_in.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat16, {2}));
@@ -333,6 +379,7 @@ TEST(FoldConstDequantizeTest, CaseB_Int8PerTensorFoldsToFp32) {
   BufferManager buffer_manager;
   LiteRtSubgraphT subgraph(&buffer_manager);
   LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
 
   // int8 input with per-tensor quantization: scale=0.5, zero_point=0
   // raw values {2, 4, -2, -4} → dequantized {1.0, 2.0, -1.0, -2.0}
@@ -383,6 +430,7 @@ TEST(FoldConstDequantizeTest, CaseB_Uint8PerTensorFoldsToFp32) {
   BufferManager buffer_manager;
   LiteRtSubgraphT subgraph(&buffer_manager);
   LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
 
   // uint8 input: scale=1.0, zero_point=128
   // raw values {128, 129, 127} → dequantized {0.0, 1.0, -1.0}
@@ -425,6 +473,7 @@ TEST(FoldConstDequantizeTest, CaseB_Uint16PerTensorFoldsToFp32) {
   BufferManager buffer_manager;
   LiteRtSubgraphT subgraph(&buffer_manager);
   LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
 
   // uint16 input: scale=0.5, zero_point=1000
   // raw values {1000, 1002, 998} -> dequantized {0.0, 1.0, -1.0}
@@ -467,6 +516,7 @@ TEST(FoldConstDequantizeTest, CaseB_Int32PerTensorFoldsToFp32) {
   BufferManager buffer_manager;
   LiteRtSubgraphT subgraph(&buffer_manager);
   LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
 
   // int32 input: scale=0.25, zero_point=10
   // raw values {10, 14, 6, 100000} -> dequantized {0.0, 1.0, -1.0, 24997.5}
