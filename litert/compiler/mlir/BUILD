@@ -120,6 +120,7 @@ cc_library(
         "//tflite/converter:model_flags_proto_cc",
         "//tflite/converter:types_proto_cc",
         "//tflite/converter/quantization/common/quantization_lib:quantization_config",
+        "//tflite/converter/quantization/common/quantization_lib:tf_quantization_config",
         "//tflite/converter/tools/optimize:reduced_precision_metadata",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
