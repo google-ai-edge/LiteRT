@@ -366,12 +366,12 @@ TEST(CompilationCacheTest, DifferentSignatureSelectionChangesConfigHash) {
 
   LITERT_ASSIGN_OR_ABORT(
       CompilationCache::CacheKey decode_key,
-      CompilationCache::GetModelHash(
-          *model, decode_options, GetTestCompilerPluginInfo()));
+      CompilationCache::GetModelHash(*model, decode_options,
+                                     GetTestCompilerPluginInfo()));
   LITERT_ASSIGN_OR_ABORT(
       CompilationCache::CacheKey prefill_key,
-      CompilationCache::GetModelHash(
-          *model, prefill_options, GetTestCompilerPluginInfo()));
+      CompilationCache::GetModelHash(*model, prefill_options,
+                                     GetTestCompilerPluginInfo()));
 
   EXPECT_EQ(decode_key.content_hash, prefill_key.content_hash);
   EXPECT_NE(decode_key.config_hash, prefill_key.config_hash);
@@ -893,6 +893,67 @@ TEST(CompilationCacheTest, DifferentCompilerOptionsInputShapesChangesHash) {
     const int32_t dims[] = {1, seq_len};
     LITERT_ABORT_IF_ERROR(LrtAddCompilerOptionsPositionalInputShape(
         compiler_options, /*signature_key=*/"", dims, 2));
+    const char* identifier = nullptr;
+    void* payload = nullptr;
+    void (*payload_deleter)(void*) = nullptr;
+    LITERT_ABORT_IF_ERROR(LrtGetOpaqueCompilerOptionsData(
+        compiler_options, &identifier, &payload, &payload_deleter));
+    LrtDestroyCompilerOptions(compiler_options);
+    LiteRtOpaqueOptions opaque_options = nullptr;
+    LITERT_ABORT_IF_ERROR(LiteRtCreateOpaqueOptions(
+        identifier, payload, payload_deleter, &opaque_options));
+    LITERT_ABORT_IF_ERROR(LiteRtAddOpaqueOptions(options, opaque_options));
+    return options;
+  };
+
+  LiteRtOptions options_128 = make_options_with_shape(128);
+  LiteRtOptions options_512 = make_options_with_shape(512);
+
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_128,
+      CompilationCache::GetModelHash(*model, *options_128,
+                                     GetTestCompilerPluginInfo()));
+  LITERT_ASSIGN_OR_ABORT(
+      CompilationCache::CacheKey key_512,
+      CompilationCache::GetModelHash(*model, *options_512,
+                                     GetTestCompilerPluginInfo()));
+
+  EXPECT_EQ(key_128.content_hash, key_512.content_hash);
+  EXPECT_NE(key_128.config_hash, key_512.config_hash);
+
+  LITERT_ABORT_IF_ERROR(compilation_cache.SaveModel(*model, key_128));
+  LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> hit_128,
+                         compilation_cache.TryLoadModel(key_128));
+  EXPECT_TRUE(hit_128.has_value());
+  LITERT_ASSIGN_OR_ABORT(std::optional<LiteRtModelT::Ptr> miss_512,
+                         compilation_cache.TryLoadModel(key_512));
+  EXPECT_FALSE(miss_512.has_value());
+
+  LiteRtDestroyOptions(options_128);
+  LiteRtDestroyOptions(options_512);
+}
+
+TEST(CompilationCacheTest, DifferentShapeSpecializationsChangesHash) {
+  const std::string cache_root_path =
+      ::testing::TempDir() + "/DifferentShapeSpecializations";
+  LITERT_ABORT_IF_ERROR(litert::internal::MkDir(cache_root_path));
+  LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
+                         CompilationCache::Create(cache_root_path));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model,
+      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+
+  auto make_options_with_shape = [](int32_t seq_len) -> LiteRtOptions {
+    LiteRtOptions options = nullptr;
+    LITERT_ABORT_IF_ERROR(LiteRtCreateOptions(&options));
+    LITERT_ABORT_IF_ERROR(
+        LiteRtSetOptionsHardwareAccelerators(options, kLiteRtHwAcceleratorNpu));
+    LrtCompilerOptions* compiler_options = nullptr;
+    LITERT_ABORT_IF_ERROR(LrtCreateCompilerOptions(&compiler_options));
+    const int32_t dims[] = {1, seq_len};
+    LITERT_ABORT_IF_ERROR(LrtAddCompilerOptionsShapeSpecializationInputShape(
+        compiler_options, /*source_signature_key=*/"", "main_static", "tokens",
+        dims, 2));
     const char* identifier = nullptr;
     void* payload = nullptr;
     void (*payload_deleter)(void*) = nullptr;

@@ -19,6 +19,8 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_compiler_options.h"
@@ -156,6 +158,49 @@ class CompilerOptions : public ConcreteOptionsBase {
     const std::string name(input_name);
     LITERT_RETURN_IF_ERROR(LrtAddCompilerOptionsSignatureInputShape(
         options_.get(), sig.c_str(), name.c_str(), dims.data(), dims.size()));
+    return {};
+  }
+
+  /// @brief Appends one input shape of an "Add" shape specialization: the
+  /// subgraph behind `source_signature_key` is instantiated again as a new,
+  /// fully static signature `new_signature_key` with signature input
+  /// `input_name` fixed to `dims` (all > 0). Call once per input to fix;
+  /// inputs not listed keep their shape. Several specializations may share one
+  /// source (e.g. "prefill" -> "prefill_128", "prefill_512"); the source stays
+  /// available. See `LrtAddCompilerOptionsShapeSpecializationInputShape`.
+  Expected<void> AddShapeSpecializationInputShape(
+      StringView source_signature_key, StringView new_signature_key,
+      StringView input_name, Span<const int32_t> dims) {
+    const std::string src(source_signature_key);
+    const std::string dst(new_signature_key);
+    const std::string name(input_name);
+    LITERT_RETURN_IF_ERROR(LrtAddCompilerOptionsShapeSpecializationInputShape(
+        options_.get(), src.c_str(), dst.c_str(), name.c_str(), dims.data(),
+        dims.size()));
+    return {};
+  }
+
+  /// @brief Convenience overload that fixes several inputs of one
+  /// specialization at once, e.g.
+  /// `AddShapeSpecialization("decode", "decode_128",
+  ///                         {{"tokens", {1, 128}}, {"positions", {1, 128}}})`.
+  ///
+  /// @note Inputs are added one at a time. If this returns an error, the
+  /// inputs listed before the failing one may already have been added, so
+  /// discard this `CompilerOptions` instead of reusing it.
+  Expected<void> AddShapeSpecialization(
+      StringView source_signature_key, StringView new_signature_key,
+      const std::vector<std::pair<std::string, std::vector<int32_t>>>&
+          input_shapes) {
+    if (input_shapes.empty()) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "A shape specialization needs at least one input");
+    }
+    for (const auto& [name, dims] : input_shapes) {
+      LITERT_RETURN_IF_ERROR(AddShapeSpecializationInputShape(
+          source_signature_key, new_signature_key, name,
+          Span<const int32_t>(dims)));
+    }
     return {};
   }
   /// @}

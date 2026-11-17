@@ -233,5 +233,80 @@ TEST(LiteRtCompilerOptionsTest, AddInputShapesInvalidArgs) {
             kLiteRtStatusOk);
 }
 
+TEST(LiteRtCompilerOptionsTest, AddShapeSpecializationSerializesToToml) {
+  LrtCompilerOptions* options;
+  LITERT_ASSERT_OK(LrtCreateCompilerOptions(&options));
+  auto options_cleanup =
+      absl::MakeCleanup([options] { LrtDestroyCompilerOptions(options); });
+
+  const int32_t tokens[] = {1, 128};
+  const int32_t tokens512[] = {1, 512};
+  LITERT_ASSERT_OK(LrtAddCompilerOptionsShapeSpecializationInputShape(
+      options, "prefill", "prefill_128", "tokens", tokens, 2));
+  LITERT_ASSERT_OK(LrtAddCompilerOptionsShapeSpecializationInputShape(
+      options, "prefill", "prefill_128", "positions", tokens, 2));
+  LITERT_ASSERT_OK(LrtAddCompilerOptionsShapeSpecializationInputShape(
+      options, nullptr, "main_512", "tokens", tokens512, 2));
+
+  const char* id = nullptr;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_ASSERT_OK(LrtGetOpaqueCompilerOptionsData(options, &id, &payload,
+                                                   &payload_deleter));
+  EXPECT_STREQ(static_cast<const char*>(payload),
+               "shape_specializations = [\"prefill@prefill_128@tokens@1:128\", "
+               "\"prefill@prefill_128@positions@1:128\", "
+               "\"@main_512@tokens@1:512\"]\n");
+  payload_deleter(payload);
+}
+
+TEST(LiteRtCompilerOptionsTest, AddShapeSpecializationInvalidArgs) {
+  LrtCompilerOptions* options;
+  LITERT_ASSERT_OK(LrtCreateCompilerOptions(&options));
+  auto options_cleanup =
+      absl::MakeCleanup([options] { LrtDestroyCompilerOptions(options); });
+
+  const int32_t dims[] = {1, 128};
+  const int32_t dynamic[] = {1, -1};
+  const int32_t zero[] = {0, 128};
+  EXPECT_EQ(LrtAddCompilerOptionsShapeSpecializationInputShape(
+                nullptr, "prefill", "p128", "tokens", dims, 2),
+            kLiteRtStatusErrorInvalidArgument);
+  // Add mode needs an explicit, non-empty new key.
+  EXPECT_EQ(LrtAddCompilerOptionsShapeSpecializationInputShape(
+                options, "prefill", nullptr, "tokens", dims, 2),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtAddCompilerOptionsShapeSpecializationInputShape(
+                options, "prefill", "", "tokens", dims, 2),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtAddCompilerOptionsShapeSpecializationInputShape(
+                options, "prefill", "p128", "", dims, 2),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtAddCompilerOptionsShapeSpecializationInputShape(
+                options, "prefill", "p128", "tokens", nullptr, 2),
+            kLiteRtStatusErrorInvalidArgument);
+  // Keys may not contain the '@' separator.
+  EXPECT_EQ(LrtAddCompilerOptionsShapeSpecializationInputShape(
+                options, "pre@fill", "p128", "tokens", dims, 2),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtAddCompilerOptionsShapeSpecializationInputShape(
+                options, "prefill", "p@128", "tokens", dims, 2),
+            kLiteRtStatusErrorInvalidArgument);
+  // Add mode requires fully static dims.
+  EXPECT_EQ(LrtAddCompilerOptionsShapeSpecializationInputShape(
+                options, "prefill", "p128", "tokens", dynamic, 2),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtAddCompilerOptionsShapeSpecializationInputShape(
+                options, "prefill", "p128", "tokens", zero, 2),
+            kLiteRtStatusErrorInvalidArgument);
+  // 0-D scalar is fine; '@' inside the input name is fine.
+  EXPECT_EQ(LrtAddCompilerOptionsShapeSpecializationInputShape(
+                options, "prefill", "p128", "step", nullptr, 0),
+            kLiteRtStatusOk);
+  EXPECT_EQ(LrtAddCompilerOptionsShapeSpecializationInputShape(
+                options, "prefill", "p128", "func@0/arg0", dims, 2),
+            kLiteRtStatusOk);
+}
+
 }  // namespace
 }  // namespace litert::compiler
