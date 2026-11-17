@@ -1830,6 +1830,19 @@ cudaError_t LaunchMoeChecked(const LiteRtNvidiaMoeShape* shape,
                          static_cast<char*>(workspace), typed_output, stream,
                          block, logits, renormalize);
   }
+  // Up to 96 input blocks (the 26B's 88): 96-thread hidden blocks. A thread
+  // still takes one input block as with 128, and the fourth warp would only
+  // add zeros after the others to sums that start at +0, so the bits are the
+  // same. The kernel holds 128 registers a thread: five 96-thread blocks fit
+  // a multiprocessor where four of 128 did, and the 26B's 704 blocks of a
+  // decode step take 1.7 waves on the 5080 instead of 2.1 (expert launch
+  // 39.0 to 37.2 us).
+  if (shape->model_dim / kBlock <= 3 * kWarpSize) {
+    return LaunchMoe<96>(*shape, *arena, typed_activation, top_indices,
+                         top_weights, per_expert_scale, norm_scale, norm_eps,
+                         static_cast<char*>(workspace), typed_output, stream,
+                         block, logits, renormalize);
+  }
   return LaunchMoe<128>(*shape, *arena, typed_activation, top_indices,
                         top_weights, per_expert_scale, norm_scale, norm_eps,
                         static_cast<char*>(workspace), typed_output, stream,
