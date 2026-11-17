@@ -237,5 +237,115 @@ TEST(Conv2d, RejectsUnsafeOrInconsistentMetadata) {
   s.stride[0] = 0;
   EXPECT_FALSE(AnalyzeConv2d(s, reason));
 }
+
+TEST(Conv2d,
+     Int16ActivationWithInt8WeightsUsesInt48AccumulatorAndNativeRescale) {
+  using ::tfsc::tosa::OperatorEnum;
+  for (bool depthwise : {false, true}) {
+    auto spec = Fixture();
+    spec.int16_activation = true;
+    spec.input_zero_point = 0;
+    spec.output_zero_point = 0;
+    spec.bias.clear();
+    spec.bias64 = {10, -20, 1LL << 33};
+    spec.input_shape = {1, 7, 7, depthwise ? 3u : 2u};
+    spec.depthwise = depthwise;
+    if (depthwise) {
+      spec.weight_shape[3] = 1;
+      spec.weights.assign(27, 2);
+    }
+    std::string reason;
+    auto plan = AnalyzeConv2d(spec, reason);
+    ASSERT_TRUE(plan) << reason;
+    EXPECT_TRUE(plan->spec.int16_activation);
+    EXPECT_EQ(plan->wide_min_bounds.size(), 3);
+    EXPECT_EQ(plan->wide_max_bounds.size(), 3);
+    auto module = tfsc::CreateModule();
+    tfsc::tosa::Graph graph(module, "main");
+    auto input = graph.AddInput(
+        tfsc::tosa::Tensor(tfsc::tosa::DataType::int16_t,
+                           {spec.input_shape.begin(), spec.input_shape.end()}),
+        0);
+    GraphConstantPool constants;
+    auto output = EmitConv2d(graph, input, *plan, constants);
+    ASSERT_NE(output, nullptr);
+    ASSERT_FALSE(tfsc::IsError(output)) << tfsc::GetErrorMsg(output);
+    graph.AddOutput(output, 1);
+    graph.FinalizeGraph();
+    ASSERT_FALSE(tfsc::WriteToBinary(module).empty());
+    std::vector<OperatorEnum> operators;
+    for (const auto& instruction : module->GetSpirvGraph()) {
+      if (instruction.m_Opcode == spv::Op::OpExtInst) {
+        operators.push_back(
+            static_cast<OperatorEnum>(instruction.m_Operands[3].m_LiteralWord));
+      }
+    }
+    EXPECT_EQ(operators, (std::vector<OperatorEnum>{
+                             depthwise ? OperatorEnum::DepthwiseConv2d
+                                       : OperatorEnum::Conv2d,
+                             OperatorEnum::Rescale, OperatorEnum::Clamp}));
+    EXPECT_EQ(constants.values.size(), 4);
+    EXPECT_EQ(constants.values[1].bytes.size(), 3 * sizeof(int64_t));
+  }
+}
+
+TEST(Conv2d, Int16ActivationGroupedChannelsSliceAndConcatenate) {
+  auto spec = Fixture();
+  spec.int16_activation = true;
+  spec.input_zero_point = 0;
+  spec.output_zero_point = 0;
+  spec.bias.clear();
+  spec.bias64 = {10, -20, 30, -40};
+  spec.input_shape = {1, 8, 8, 4};
+  spec.weight_shape = {4, 3, 3, 2};
+  spec.output_shape = {1, 3, 3, 4};
+  spec.weights.assign(4 * 3 * 3 * 2, 2);
+  spec.weight_scales = {.25, .125, .25, .125};
+  spec.bias_scales = {.03125, .015625, .03125, .015625};
+  std::string reason;
+  auto plan = AnalyzeConv2d(spec, reason);
+  ASSERT_TRUE(plan) << reason;
+  auto module = tfsc::CreateModule();
+  tfsc::tosa::Graph graph(module, "main");
+  auto input = graph.AddInput(
+      tfsc::tosa::Tensor(tfsc::tosa::DataType::int16_t, {1, 8, 8, 4}), 0);
+  GraphConstantPool constants;
+  auto output = EmitConv2d(graph, input, *plan, constants);
+  ASSERT_NE(output, nullptr);
+  ASSERT_FALSE(tfsc::IsError(output)) << tfsc::GetErrorMsg(output);
+  graph.AddOutput(output, 1);
+  graph.FinalizeGraph();
+  EXPECT_FALSE(tfsc::WriteToBinary(module).empty());
+}
+
+TEST(Conv2d, Int16ActivationRejectsAsymmetricZeroPointsAndInt48Overflow) {
+  std::string reason;
+  auto base = [&] {
+    auto s = Fixture();
+    s.int16_activation = true;
+    s.input_zero_point = 0;
+    s.output_zero_point = 0;
+    s.bias.clear();
+    s.bias64 = {10, -20, 30};
+    return s;
+  };
+  auto s = base();
+  s.input_zero_point = 1;
+  EXPECT_FALSE(AnalyzeConv2d(s, reason));
+  EXPECT_NE(reason.find("invalid activation quantization"), std::string::npos)
+      << reason;
+
+  s = base();
+  s.output_zero_point = -1;
+  EXPECT_FALSE(AnalyzeConv2d(s, reason));
+  EXPECT_NE(reason.find("invalid activation quantization"), std::string::npos)
+      << reason;
+
+  s = base();
+  s.bias64[0] = 1LL << 47;
+  EXPECT_FALSE(AnalyzeConv2d(s, reason));
+  EXPECT_NE(reason.find("INT48 accumulator range"), std::string::npos)
+      << reason;
+}
 }  // namespace
 }  // namespace litert::arm_vulkan_ml

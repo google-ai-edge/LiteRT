@@ -1,14 +1,20 @@
 // SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
 // <open-source-office@arm.com> SPDX-License-Identifier: Apache-2.0
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 
 #include <gtest/gtest.h>
+#include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_arm_vulkan_ml_options.h"
@@ -19,6 +25,7 @@
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
+#include "tflite/schema/schema_generated.h"
 
 namespace litert {
 namespace {
@@ -29,13 +36,14 @@ struct JitPlugin {
   internal::LiteRtOptionsPtr options;
 };
 
-JitPlugin CreateJitPlugin() {
+JitPlugin CreateJitPlugin(bool enable_float_fallback = false) {
   auto options = Options::Create();
   EXPECT_TRUE(options);
   auto arm_vulkan_ml_options =
       options->GetOptions<arm_vulkan_ml::ArmVulkanMLOptions>();
   EXPECT_TRUE(arm_vulkan_ml_options);
   EXPECT_TRUE(arm_vulkan_ml_options->SetEnableJustInTime(true));
+  EXPECT_TRUE(arm_vulkan_ml_options->SetFloatFallback(enable_float_fallback));
 
   auto env = Environment::Create({});
   EXPECT_TRUE(env);
@@ -122,6 +130,114 @@ TEST(ArmVulkanMLCompilerPluginPartitionTest, RejectsUnsupportedOperation) {
       jit_plugin.plugin.Get(), nullptr, subgraph.Get(), &selected_ops));
 
   EXPECT_TRUE(selected_ops.Values().empty());
+}
+
+TEST(ArmVulkanMLCompilerPluginPartitionTest, GatesFloatFallbackBehindOption) {
+  auto model = testing::LoadTestFileModel("add_simple.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
+
+  {
+    auto disabled_plugin = CreateJitPlugin(/*enable_float_fallback=*/false);
+    LiteRtOpListT selected_ops;
+    LITERT_ASSERT_OK(disabled_plugin.plugin.Api()->compiler_plugin_partition(
+        disabled_plugin.plugin.Get(), nullptr, subgraph.Get(), &selected_ops));
+    EXPECT_TRUE(selected_ops.Values().empty());
+
+    LiteRtCompiledResult compiled = nullptr;
+    EXPECT_EQ(
+        disabled_plugin.plugin.Api()->compiler_plugin_compile(
+            disabled_plugin.plugin.Get(), nullptr, model.Get(), &compiled),
+        kLiteRtStatusErrorUnsupported);
+    EXPECT_EQ(compiled, nullptr);
+  }
+
+  {
+    auto enabled_plugin = CreateJitPlugin(/*enable_float_fallback=*/true);
+    LiteRtOpListT selected_ops;
+    LITERT_ASSERT_OK(enabled_plugin.plugin.Api()->compiler_plugin_partition(
+        enabled_plugin.plugin.Get(), nullptr, subgraph.Get(), &selected_ops));
+    EXPECT_FALSE(selected_ops.Values().empty());
+
+    LiteRtCompiledResult compiled = nullptr;
+    LITERT_ASSERT_OK(enabled_plugin.plugin.Api()->compiler_plugin_compile(
+        enabled_plugin.plugin.Get(), nullptr, model.Get(), &compiled));
+    ASSERT_NE(compiled, nullptr);
+    LiteRtJitExecutable handle = nullptr;
+    LITERT_ASSERT_OK(enabled_plugin.plugin.Api()->get_compiled_result_handle(
+        compiled, 0, &handle));
+    ASSERT_NE(handle, nullptr);
+    auto artifact =
+        reinterpret_cast<arm_vulkan_ml::ArmVulkanMLJitExecutable*>(handle)
+            ->partition;
+    ASSERT_TRUE(artifact);
+    EXPECT_NE(std::find(artifact->profiles.begin(), artifact->profiles.end(),
+                        "PRO-FP"),
+              artifact->profiles.end());
+    enabled_plugin.plugin.Api()->destroy_compiled_result(compiled);
+  }
+}
+
+TEST(ArmVulkanMLCompilerPluginPartitionTest,
+     CompilesQuantizedSoftmaxProFpWithoutFloatFallback) {
+  tflite::ModelT model_t;
+  model_t.version = 3;
+  model_t.buffers.push_back(std::make_unique<tflite::BufferT>());
+  auto opcode = std::make_unique<tflite::OperatorCodeT>();
+  opcode->builtin_code = tflite::BuiltinOperator_SOFTMAX;
+  opcode->version = 2;
+  model_t.operator_codes.push_back(std::move(opcode));
+  auto sg = std::make_unique<tflite::SubGraphT>();
+  auto add_tensor = [&](float scale, int64_t zp) {
+    auto t = std::make_unique<tflite::TensorT>();
+    t->type = tflite::TensorType_INT8;
+    t->shape = {1, 8};
+    t->quantization = std::make_unique<tflite::QuantizationParametersT>();
+    t->quantization->scale = {scale};
+    t->quantization->zero_point = {zp};
+    sg->tensors.push_back(std::move(t));
+    return static_cast<int>(sg->tensors.size() - 1);
+  };
+  const int in = add_tensor(0.05f, 0);
+  const int out = add_tensor(1.0f / 256.0f, -128);
+  auto op = std::make_unique<tflite::OperatorT>();
+  op->opcode_index = 0;
+  op->inputs = {in};
+  op->outputs = {out};
+  tflite::SoftmaxOptionsT opts;
+  opts.beta = 1.0f;
+  op->builtin_options.Set(opts);
+  sg->operators.push_back(std::move(op));
+  sg->inputs = {in};
+  sg->outputs = {out};
+  model_t.subgraphs.push_back(std::move(sg));
+  flatbuffers::FlatBufferBuilder builder;
+  tflite::FinishModelBuffer(builder, tflite::Model::Pack(builder, &model_t));
+  auto model = ExtendedModel::CreateFromBuffer(
+      BufferRef<uint8_t>(builder.GetBufferPointer(), builder.GetSize()));
+  ASSERT_TRUE(model);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model->Subgraph(0));
+  auto disabled_plugin = CreateJitPlugin(/*enable_float_fallback=*/false);
+  LiteRtOpListT selected_ops;
+  LITERT_ASSERT_OK(disabled_plugin.plugin.Api()->compiler_plugin_partition(
+      disabled_plugin.plugin.Get(), nullptr, subgraph.Get(), &selected_ops));
+  EXPECT_EQ(selected_ops.Values().size(), 1);
+
+  LiteRtCompiledResult compiled = nullptr;
+  LITERT_ASSERT_OK(disabled_plugin.plugin.Api()->compiler_plugin_compile(
+      disabled_plugin.plugin.Get(), nullptr, model->Get(), &compiled));
+  ASSERT_NE(compiled, nullptr);
+  LiteRtJitExecutable handle = nullptr;
+  LITERT_ASSERT_OK(disabled_plugin.plugin.Api()->get_compiled_result_handle(
+      compiled, 0, &handle));
+  ASSERT_NE(handle, nullptr);
+  auto artifact =
+      reinterpret_cast<arm_vulkan_ml::ArmVulkanMLJitExecutable*>(handle)
+          ->partition;
+  ASSERT_TRUE(artifact);
+  EXPECT_NE(
+      std::find(artifact->profiles.begin(), artifact->profiles.end(), "PRO-FP"),
+      artifact->profiles.end());
+  disabled_plugin.plugin.Api()->destroy_compiled_result(compiled);
 }
 
 TEST(ArmVulkanMLCompilerPluginPartitionTest, ValidatesArgumentsAndJitMode) {

@@ -335,10 +335,34 @@ TEST(GraphOptimizer, NativeRequantizationRequiresExactAgreement) {
   }
 }
 TEST(GraphOptimizer,
-     LocallyBoundedApproximationRemainsDisabledAfterCorpusFailure) {
+     SingleRoundRequantizationPromotesCorpusScalePairToRescale) {
   auto input = Value({1, 256}, 0.0071264510042965412, -128);
   auto output = Value({1, 256}, 0.014890247955918312, -6);
   auto transform = Table(input, output, true);
+  CompilerGraph graph;
+  graph.values = {input, output};
+  graph.values[0].graph_input = true;
+  graph.values[1].graph_output = true;
+  graph.inputs = {0};
+  graph.outputs = {1};
+  graph.original_operator_count = 1;
+  graph.nodes = {Function(0, 1, 0, transform)};
+  std::string reason;
+  OptimizationReport report;
+  ASSERT_TRUE(OptimizeGraph(graph, &report, reason)) << reason;
+  EXPECT_EQ(graph.nodes[0].output_transforms[0].kind,
+            OutputTransform::Kind::kRescale);
+  EXPECT_TRUE(std::any_of(
+      report.decisions.begin(), report.decisions.end(), [](const auto& d) {
+        return d.applied && d.pass == "native_requantization";
+      }));
+}
+TEST(GraphOptimizer,
+     LocallyBoundedApproximationRemainsDisabledForNonExactTable) {
+  auto input = Value({1, 256}, 0.0071264510042965412, -128);
+  auto output = Value({1, 256}, 0.014890247955918312, -6);
+  auto transform = Table(input, output, true);
+  transform.table[128] ^= 1;
   CompilerGraph graph;
   graph.values = {input, output};
   graph.values[0].graph_input = true;
@@ -473,6 +497,88 @@ TEST(GraphOptimizer,
     std::string reason;
     ASSERT_TRUE(OptimizeGraph(graph, nullptr, reason)) << reason;
     EXPECT_FALSE(graph.nodes[0].removed);
+  }
+}
+
+TEST(GraphOptimizer,
+     RealZeroSpatialPadFoldsAcrossMultiBranchChannelSlicesIntoGroupedConvs) {
+  CompilerGraph graph;
+  // v0: input [1, 4, 4, 2]
+  // v1: padded [1, 6, 6, 2]
+  // v2: slice0 [1, 6, 6, 1]
+  // v3: slice1 [1, 6, 6, 1]
+  // v4: conv0 [1, 4, 4, 2]
+  // v5: conv1 [1, 4, 4, 2]
+  graph.values = {Value({1, 4, 4, 2}), Value({1, 6, 6, 2}),
+                  Value({1, 6, 6, 1}), Value({1, 6, 6, 1}),
+                  Value({1, 4, 4, 2}), Value({1, 4, 4, 2})};
+  graph.inputs = {0};
+  graph.outputs = {4, 5};
+  graph.values[0].graph_input = true;
+  graph.values[4].graph_output = true;
+  graph.values[5].graph_output = true;
+  graph.original_operator_count = 5;
+
+  GraphNode pad = Shape(0, 1, 0, graph.values[0], graph.values[1], {});
+  pad.body.code = kLiteRtOpCodeTflPad;
+  pad.body.pad_value = -17;
+  pad.body.parameters = {0, 0, 1, 1, 1, 1, 0, 0};
+
+  auto make_slice = [&](ValueId out_id, size_t src, int32_t c_start) {
+    GraphNode slice =
+        Shape(1, out_id, src, graph.values[1], graph.values[out_id], {});
+    slice.body.code = kLiteRtOpCodeTflSlice;
+    slice.body.kernel = {0, 0, 0, c_start};
+    slice.body.parameters = {1, 6, 6, 1};
+    return slice;
+  };
+  auto make_conv = [&](ValueId in_id, ValueId out_id, size_t src) {
+    Conv2dSpec spec{};
+    spec.input_shape = {1, 6, 6, 1};
+    spec.weight_shape = {2, 3, 3, 1};
+    spec.output_shape = {1, 4, 4, 2};
+    spec.stride = {1, 1};
+    spec.dilation = {1, 1};
+    spec.weights.assign(18, 1);
+    spec.bias = {0, 0};
+    spec.input_scale = .125;
+    spec.output_scale = .25;
+    spec.weight_scales = {.5, .5};
+    spec.bias_scales = {.0625, .0625};
+    spec.input_zero_point = -17;
+    spec.output_zero_point = -17;
+    spec.activation = Activation::kNone;
+    std::string reason;
+    std::optional<Conv2dPlan> analyzed = AnalyzeConv2d(spec, reason);
+    EXPECT_TRUE(analyzed) << reason;
+    GraphNode conv = Shape(in_id, out_id, src, graph.values[in_id],
+                           graph.values[out_id], {});
+    conv.kind = CompositeKind::kConvolution;
+    conv.body.code = kLiteRtOpCodeTflConv2d;
+    conv.body.convolution = std::move(analyzed);
+    return conv;
+  };
+
+  graph.nodes = {pad, make_slice(2, 1, 0), make_slice(3, 2, 1),
+                 make_conv(2, 4, 3), make_conv(3, 5, 4)};
+
+  std::string reason;
+  OptimizationReport report;
+  ASSERT_TRUE(OptimizeGraph(graph, &report, reason)) << reason;
+  EXPECT_TRUE(graph.nodes[0].removed);
+  for (size_t slice_idx : {1u, 2u}) {
+    EXPECT_FALSE(graph.nodes[slice_idx].removed);
+    EXPECT_EQ(graph.nodes[slice_idx].inputs[0], 0);
+    EXPECT_EQ(graph.nodes[slice_idx].body.parameters,
+              (std::vector<int32_t>{1, 4, 4, 1}));
+    EXPECT_EQ(graph.values[graph.nodes[slice_idx].outputs[0]].shape,
+              (std::vector<uint32_t>{1, 4, 4, 1}));
+  }
+  for (size_t conv_idx : {3u, 4u}) {
+    EXPECT_FALSE(graph.nodes[conv_idx].removed);
+    const auto& folded = *graph.nodes[conv_idx].body.convolution;
+    EXPECT_EQ(folded.spec.padding, (std::array<int32_t, 4>{1, 1, 1, 1}));
+    EXPECT_EQ(folded.spec.input_shape, (std::array<uint32_t, 4>{1, 4, 4, 1}));
   }
 }
 TEST(GraphOptimizer, PersistentValuesAreFusionAndCleanupBarriers) {
@@ -658,6 +764,83 @@ TEST(GraphOptimizer,
     bad_rescale.nodes[0].output_transforms[0].ranges = {{0, 10}};
     EXPECT_FALSE(ValidateGraph(bad_rescale, reason));
   }
+}
+
+TEST(GraphIrTest, FoldsInt8DequantizeQuantizePairsIntoNativeRequantization) {
+  auto fp_val = [](std::vector<uint32_t> shape) {
+    GraphValue value;
+    value.logical_type = kLiteRtElementTypeFloat32;
+    value.storage_type = tfsc::tosa::DataType::float32_t;
+    value.shape = std::move(shape);
+    return value;
+  };
+  auto dq_or_q = [](LiteRtOpCode code, ValueId input, ValueId output,
+                    const GraphValue& in, const GraphValue& out, size_t src,
+                    bool in_fp, bool out_fp) {
+    GraphNode node;
+    node.kind = CompositeKind::kAnalyzedOperation;
+    node.body.code = code;
+    node.body.runtime_inputs = {0};
+    node.body.inputs = {
+        {in.shape, in.scales.empty() ? 1.0 : in.scales[0],
+         in.zero_points.empty() ? 0 : static_cast<int32_t>(in.zero_points[0]),
+         in_fp, in.storage_type}};
+    node.body.output = {
+        out.shape, out.scales.empty() ? 1.0 : out.scales[0],
+        out.zero_points.empty() ? 0 : static_cast<int32_t>(out.zero_points[0]),
+        out_fp, out.storage_type};
+    node.body.output_type = out.storage_type;
+    node.inputs = {input};
+    node.outputs = {output};
+    node.source_operators = {src};
+    return node;
+  };
+
+  // Chain: add (v0+v0 -> v1) -> dq1 (v1->v2) -> q1 (v2->v3, matching)
+  //        -> dq2 (v3->v4) -> q2 (v4->v5, rescaled) -> v5 (output).
+  CompilerGraph graph;
+  GraphValue v0 = Value({1, 256}, 0.125, -17);
+  v0.graph_input = true;
+  GraphValue v1 = Value({1, 256}, 0.125, -17);
+  GraphValue v2 = fp_val({1, 256});
+  GraphValue v3 = Value({1, 256}, 0.125, -17);
+  GraphValue v4 = fp_val({1, 256});
+  GraphValue v5 = Value({1, 256}, 0.25, 3);
+  v5.graph_output = true;
+  graph.values = {v0, v1, v2, v3, v4, v5};
+  graph.inputs = {0};
+  graph.outputs = {5};
+  graph.original_operator_count = 5;
+
+  GraphNode add = Shape(0, 1, 0, v0, v1, {});
+  add.kind = CompositeKind::kBinary;
+  add.body.code = kLiteRtOpCodeTflAdd;
+  add.inputs = {0, 0};
+  add.body.inputs = {Q(v0), Q(v0)};
+  add.body.runtime_inputs = {0, 1};
+
+  graph.nodes = {
+      add,
+      dq_or_q(kLiteRtOpCodeTflDequantize, 1, 2, v1, v2, 1, false, true),
+      dq_or_q(kLiteRtOpCodeTflQuantize, 2, 3, v2, v3, 2, true, false),
+      dq_or_q(kLiteRtOpCodeTflDequantize, 3, 4, v3, v4, 3, false, true),
+      dq_or_q(kLiteRtOpCodeTflQuantize, 4, 5, v4, v5, 4, true, false),
+  };
+
+  std::string reason;
+  OptimizationReport report;
+  ASSERT_TRUE(OptimizeGraph(graph, &report, reason)) << reason;
+  EXPECT_TRUE(graph.nodes[1].removed);
+  EXPECT_TRUE(graph.nodes[2].removed);
+  EXPECT_TRUE(graph.nodes[3].removed);
+  EXPECT_TRUE(graph.nodes[4].removed);
+  ASSERT_FALSE(graph.nodes[0].removed);
+  EXPECT_EQ(graph.nodes[0].outputs[0], 5);
+  ASSERT_EQ(graph.nodes[0].output_transforms.size(), 1);
+  EXPECT_EQ(graph.nodes[0].output_transforms[0].kind,
+            OutputTransform::Kind::kRescale);
+  EXPECT_EQ(graph.nodes[0].source_operators,
+            (std::vector<size_t>{0, 1, 2, 3, 4}));
 }
 }  // namespace
 }  // namespace litert::arm_vulkan_ml

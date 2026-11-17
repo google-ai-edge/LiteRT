@@ -37,6 +37,7 @@ struct Conv2dSpec {
   std::array<int32_t, 2> dilation;
   std::vector<int8_t> weights;
   std::vector<int32_t> bias;
+  std::vector<int64_t> bias64;
   double input_scale;
   double output_scale;
   int32_t input_zero_point;
@@ -45,6 +46,7 @@ struct Conv2dSpec {
   std::vector<double> bias_scales;
   Activation activation;
   bool depthwise = false;
+  bool int16_activation = false;
 };
 
 // Validated convolution lowering plan with precomputed per-channel rescale
@@ -54,6 +56,8 @@ struct Conv2dPlan {
   Conv2dSpec spec;
   std::vector<Scale32> scales;
   std::vector<AccumulatorRange> accumulator_ranges;
+  std::vector<int64_t> wide_min_bounds;
+  std::vector<int64_t> wide_max_bounds;
   Int8Range activation_range;
   std::array<uint32_t, 4> convolution_input_shape;
   std::array<int32_t, 4> convolution_padding;

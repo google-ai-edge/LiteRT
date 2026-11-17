@@ -32,6 +32,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/vendors/arm_vulkan_ml/common/arm_vulkan_ml_jit_executable.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/conv2d.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/op_registry.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/partition.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/quantization.h"
@@ -428,7 +429,76 @@ TEST(SpecialOps, DirectInt16LayerNormSupportsQuantizedScaleAndInt32Bias) {
   EXPECT_EQ(artifact->inputs[0].element, TensorElement::kInt16);
   EXPECT_EQ(artifact->outputs[0].element, TensorElement::kInt16);
   EXPECT_EQ(artifact->extensions, (std::vector<std::string>{"EXT-INT16"}));
-  EXPECT_EQ(artifact->profiles.back(), "PRO-FP");
+  EXPECT_EQ(artifact->profiles, (std::vector<std::string>{"PRO-INT"}));
+  EXPECT_GE(artifact->metrics.operators.at(static_cast<uint32_t>(O::Clz)), 2);
+  EXPECT_EQ(artifact->metrics.operators.at(static_cast<uint32_t>(O::Table)), 1);
+
+  {
+    flatbuffers::FlatBufferBuilder fbb;
+    tflite::FinishModelBuffer(fbb, tflite::Model::Pack(fbb, &model));
+    auto bytes = std::vector<uint8_t>(fbb.GetBufferPointer(),
+                                      fbb.GetBufferPointer() + fbb.GetSize());
+    auto m = ExtendedModel::CreateFromBuffer(
+        BufferRef<uint8_t>(bytes.data(), bytes.size()));
+    ASSERT_TRUE(m);
+    auto sg = m->Subgraph(0);
+    ASSERT_TRUE(sg);
+    auto fp_art =
+        CompilePartition(*sg, reason, nullptr, nullptr, SoftmaxLutType::kAuto,
+                         32, Int16NormMode::kProFp);
+    ASSERT_NE(fp_art, nullptr) << reason;
+    EXPECT_EQ(fp_art->extensions, (std::vector<std::string>{"EXT-INT16"}));
+    EXPECT_EQ(fp_art->profiles.back(), "PRO-FP");
+  }
+}
+
+TEST(SpecialOps, DirectInt16RmsNormDefaultsToProFpAndKeepsProIntPath) {
+  auto model = Base(tflite::BuiltinOperator_STABLEHLO_COMPOSITE);
+  auto& graph = *model.subgraphs[0];
+  Tensor(graph, tflite::TensorType_INT16, {1, 4, 256}, 0, .0005f);
+  std::vector<int16_t> scale_vals(256, 1000);
+  Tensor(graph, tflite::TensorType_INT16, {256}, Buffer(model, scale_vals),
+         .001f);
+  Tensor(graph, tflite::TensorType_INT16, {1, 4, 256}, 0, .0005f);
+  auto& op = *graph.operators[0];
+  op.inputs = {0, 1};
+  op.outputs = {2};
+  graph.inputs = {0};
+  graph.outputs = {2};
+  flexbuffers::Builder attributes;
+  attributes.Map([&] { attributes.Double("epsilon", 1e-6); });
+  attributes.Finish();
+  tflite::StableHLOCompositeOptionsT options;
+  options.name = "odml.rms_norm";
+  options.version = 0;
+  options.decomposition_subgraph_index = 1;
+  options.composite_attributes = attributes.GetBuffer();
+  op.builtin_options_2.Set(options);
+  model.subgraphs.push_back(std::make_unique<tflite::SubGraphT>());
+
+  std::string reason;
+  auto fp_art = Compile(model, reason);
+  ASSERT_NE(fp_art, nullptr) << reason;
+  EXPECT_EQ(fp_art->extensions, (std::vector<std::string>{"EXT-INT16"}));
+  EXPECT_EQ(fp_art->profiles.back(), "PRO-FP");
+
+  flatbuffers::FlatBufferBuilder fbb;
+  tflite::FinishModelBuffer(fbb, tflite::Model::Pack(fbb, &model));
+  auto bytes = std::vector<uint8_t>(fbb.GetBufferPointer(),
+                                    fbb.GetBufferPointer() + fbb.GetSize());
+  auto m = ExtendedModel::CreateFromBuffer(
+      BufferRef<uint8_t>(bytes.data(), bytes.size()));
+  ASSERT_TRUE(m);
+  auto sg = m->Subgraph(0);
+  ASSERT_TRUE(sg);
+  auto int_art =
+      CompilePartition(*sg, reason, nullptr, nullptr, SoftmaxLutType::kAuto, 32,
+                       Int16NormMode::kProInt);
+  ASSERT_NE(int_art, nullptr) << reason;
+  EXPECT_EQ(int_art->extensions, (std::vector<std::string>{"EXT-INT16"}));
+  EXPECT_EQ(int_art->profiles, (std::vector<std::string>{"PRO-INT"}));
+  EXPECT_GE(int_art->metrics.operators.at(static_cast<uint32_t>(O::Clz)), 1);
+  EXPECT_EQ(int_art->metrics.operators.at(static_cast<uint32_t>(O::Table)), 1);
 }
 
 TEST(SpecialOps, DirectCrossWidthInt8Int16Quantize) {
@@ -513,6 +583,24 @@ TEST(SpecialOps,
     }
   }
 
+  // 1b. Biasless quantized FC (INT8 & INT16, per-tensor & per-channel weights).
+  for (bool wide : {false, true}) {
+    for (bool per_channel : {false, true}) {
+      SCOPED_TRACE((wide ? 10 : 0) + (per_channel ? 1 : 0));
+      auto object = Fc(wide, /*keep=*/true);
+      auto& g = *object.subgraphs[0];
+      g.operators[0]->inputs = {0, 1};
+      if (per_channel) {
+        g.tensors[1]->quantization->quantized_dimension = 0;
+        g.tensors[1]->quantization->scale = {.25f, .5f};
+        g.tensors[1]->quantization->zero_point = {0, 0};
+      }
+      std::string reason;
+      auto art = Compile(object, reason);
+      ASSERT_NE(art, nullptr) << reason;
+    }
+  }
+
   // 2. Rank-5 FP32 odml.l2_norm exercises BroadcastScalar rank > 4, plus norm
   // rejections.
   {
@@ -583,6 +671,118 @@ TEST(SpecialOps,
     EXPECT_EQ(
         CollectGraphMetrics(*mod).operators.at(static_cast<uint32_t>(O::Table)),
         1);
+  }
+}
+
+TEST(SpecialOps, GroupNormSupportsSingleAndMultiGroupFp32AndInt16) {
+  auto make_gn = [](bool int16, std::vector<int32_t> shape, int groups,
+                    int sub_type = 0, int num_inputs = 3) {
+    auto model = Base(tflite::BuiltinOperator_STABLEHLO_COMPOSITE);
+    auto& g = *model.subgraphs[0];
+    const int channels = shape.back();
+    const auto dt =
+        int16 ? tflite::TensorType_INT16 : tflite::TensorType_FLOAT32;
+    Tensor(g, dt, shape, 0, int16 ? 0.001f : 0.0f);
+    if (int16) {
+      std::vector<int16_t> gvals(channels, 1000);
+      std::vector<int16_t> bvals(channels, 50);
+      Tensor(g, tflite::TensorType_INT16, {channels}, Buffer(model, gvals),
+             0.0005f);
+      Tensor(g, tflite::TensorType_INT16, {channels}, Buffer(model, bvals),
+             0.0005f);
+    } else {
+      Tensor(g, tflite::TensorType_FLOAT32, {channels});
+      Tensor(g, tflite::TensorType_FLOAT32, {channels});
+    }
+    Tensor(g, dt, shape, 0, int16 ? 0.001f : 0.0f);
+    auto& op = *g.operators[0];
+    if (num_inputs == 1) {
+      op.inputs = {0};
+    } else if (num_inputs == 2) {
+      op.inputs = {0, 1};
+    } else {
+      op.inputs = {0, 1, 2};
+    }
+    op.outputs = {3};
+    g.inputs = {0};
+    if (num_inputs >= 2 && !int16) g.inputs.push_back(1);
+    if (num_inputs >= 3 && !int16) g.inputs.push_back(2);
+    g.outputs = {3};
+    flexbuffers::Builder attributes;
+    attributes.Map([&] {
+      attributes.Double("epsilon", 1e-5);
+      attributes.Int("channel_axis", static_cast<int>(shape.size()) - 1);
+      attributes.Int("num_groups", groups);
+      attributes.Int("sub_type", sub_type);
+    });
+    attributes.Finish();
+    tflite::StableHLOCompositeOptionsT options;
+    options.name = "odml.group_norm";
+    options.version = 1;
+    options.decomposition_subgraph_index = 1;
+    options.composite_attributes = attributes.GetBuffer();
+    op.builtin_options_2.Set(options);
+    model.subgraphs.push_back(std::make_unique<tflite::SubGraphT>());
+    return model;
+  };
+
+  std::string reason;
+  for (int groups : {1, 4}) {
+    auto fp_art = Compile(make_gn(false, {1, 4, 4, 16}, groups), reason);
+    ASSERT_NE(fp_art, nullptr) << "FP32 groups=" << groups << ": " << reason;
+    EXPECT_EQ(fp_art->profiles.back(), "PRO-FP");
+    EXPECT_EQ(
+        fp_art->metrics.operators.count(static_cast<uint32_t>(O::Transpose)),
+        groups > 1 ? 1u : 0u);
+  }
+
+  // INT16 single-group spatial GroupNorm (d = 131072 -> two-stage mean).
+  {
+    auto art = Compile(make_gn(true, {1, 4, 256, 128}, 1), reason);
+    ASSERT_NE(art, nullptr) << reason;
+    EXPECT_EQ(art->extensions, (std::vector<std::string>{"EXT-INT16"}));
+    EXPECT_EQ(art->profiles, (std::vector<std::string>{"PRO-INT"}));
+    EXPECT_EQ(art->metrics.operators.count(static_cast<uint32_t>(O::Transpose)),
+              0);
+    EXPECT_GE(art->metrics.operators.at(static_cast<uint32_t>(O::ReduceSum)),
+              3);
+    EXPECT_EQ(art->metrics.operators.at(static_cast<uint32_t>(O::Table)), 1);
+  }
+
+  // INT16 multi-group GroupNorm (G=4 across {1, 4, 4, 16}) for 1/2/3 inputs.
+  for (int n_in : {1, 2, 3}) {
+    auto art = Compile(make_gn(true, {1, 4, 4, 16}, 4, 0, n_in), reason);
+    ASSERT_NE(art, nullptr) << "n_in=" << n_in << ": " << reason;
+    EXPECT_EQ(art->extensions, (std::vector<std::string>{"EXT-INT16"}));
+    EXPECT_EQ(art->profiles, (std::vector<std::string>{"PRO-INT"}));
+    EXPECT_EQ(art->metrics.operators.at(static_cast<uint32_t>(O::Transpose)),
+              2);
+  }
+
+  // Reject non-dividing groups, invalid group count, and unknown sub_type.
+  EXPECT_EQ(Compile(make_gn(true, {1, 4, 4, 16}, 3), reason), nullptr);
+  EXPECT_EQ(Compile(make_gn(true, {1, 4, 4, 16}, 0), reason), nullptr);
+  EXPECT_EQ(Compile(make_gn(true, {1, 4, 4, 16}, 1, 2), reason), nullptr);
+}
+
+TEST(SpecialOps, Int8RmsNormAndGroupNormWithAsymmetricZeroPoints) {
+  for (const auto* name : {"odml.rms_norm", "odml.group_norm"}) {
+    auto model = Norm(name);
+    auto& graph = *model.subgraphs[0];
+    const float scales[4] = {0.02f, 0.01f, 0.005f, 0.03f};
+    const int64_t zps[4] = {-12, 5, 2, -3};
+    for (int i = 0; i < 4; ++i) {
+      graph.tensors[i]->type = tflite::TensorType_INT8;
+      graph.tensors[i]->quantization =
+          std::make_unique<tflite::QuantizationParametersT>();
+      graph.tensors[i]->quantization->scale = {scales[i]};
+      graph.tensors[i]->quantization->zero_point = {zps[i]};
+    }
+    std::string reason;
+    auto artifact = Compile(model, reason);
+    ASSERT_NE(artifact, nullptr) << name << ": " << reason;
+    EXPECT_FALSE(artifact->spirv.empty());
+    EXPECT_EQ(artifact->profiles.back(), "PRO-FP");
   }
 }
 }  // namespace

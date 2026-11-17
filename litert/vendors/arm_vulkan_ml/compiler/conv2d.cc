@@ -99,18 +99,26 @@ std::optional<Conv2dPlan> AnalyzeConv2d(Conv2dSpec spec, std::string& reason) {
       spec.output_shape[3] != channels) {
     return reject("CONV2D batch/channel dimensions disagree");
   }
-  if (spec.weights.size() != weight_count || spec.bias.size() != channels ||
+  const size_t bias_count =
+      spec.int16_activation ? spec.bias64.size() : spec.bias.size();
+  if (spec.weights.size() != weight_count || bias_count != channels ||
       spec.weight_scales.size() != channels ||
       spec.bias_scales.size() != channels) {
     return reject("CONV2D constant or per-channel quantization size mismatch");
   }
   if (!std::isfinite(spec.input_scale) || spec.input_scale <= 0 ||
       !std::isfinite(spec.output_scale) || spec.output_scale <= 0 ||
-      spec.input_zero_point < -128 || spec.input_zero_point > 127) {
+      (spec.int16_activation
+           ? (spec.input_zero_point != 0 || spec.output_zero_point != 0)
+           : (spec.input_zero_point < -128 || spec.input_zero_point > 127))) {
     return reject("CONV2D invalid activation quantization");
   }
-  std::optional<Int8Range> activation = ActivationRange(
-      spec.activation, spec.output_scale, spec.output_zero_point);
+  std::optional<Int8Range> activation =
+      spec.int16_activation
+          ? ActivationRangeInt16(spec.activation, spec.output_scale,
+                                 spec.output_zero_point)
+          : ActivationRange(spec.activation, spec.output_scale,
+                            spec.output_zero_point);
   if (!activation) {
     return reject("CONV2D invalid activation or output quantization");
   }
@@ -157,15 +165,49 @@ std::optional<Conv2dPlan> AnalyzeConv2d(Conv2dSpec spec, std::string& reason) {
     if (!scale) {
       return reject("CONV2D scale is not representable as TOSA scale32");
     }
-    std::optional<AccumulatorRange> range = DotProductRange(
-        spec.weights.data() + channel * channel_size, channel_size,
-        spec.input_zero_point, 0, spec.bias[channel]);
-    if (!range ||
-        !IsScale32RangeValid(*scale, range->minimum, range->maximum)) {
-      return reject("CONV2D cannot prove accumulator/RESCALE range safety");
+    if (spec.int16_activation) {
+      constexpr int64_t kInt48Limit = int64_t{1} << 47;
+      const int64_t bias_val = spec.bias64[channel];
+      if (bias_val < -kInt48Limit || bias_val >= kInt48Limit) {
+        return reject("CONV2D bias exceeds INT48 accumulator range");
+      }
+      int64_t minimum = 0;
+      int64_t maximum = 0;
+      const int8_t* ch_weights = spec.weights.data() + channel * channel_size;
+      for (uint64_t i = 0; i < channel_size; ++i) {
+        const int64_t w = ch_weights[i];
+        const int64_t p_lo = -32768 * w;
+        const int64_t p_hi = 32767 * w;
+        minimum += std::min(p_lo, p_hi);
+        maximum += std::max(p_lo, p_hi);
+        if (minimum < -kInt48Limit || maximum >= kInt48Limit) {
+          return reject("CONV2D cannot prove INT48 accumulator/RESCALE safety");
+        }
+      }
+      if (bias_val < -kInt48Limit - minimum ||
+          bias_val >= kInt48Limit - maximum) {
+        return reject("CONV2D cannot prove INT48 accumulator/RESCALE safety");
+      }
+      minimum += bias_val;
+      maximum += bias_val;
+      if (!CanEmitNativeRescale(*scale, minimum, maximum,
+                                /*is_int48=*/true)) {
+        return reject("CONV2D cannot emit INT48 native RESCALE");
+      }
+      plan.scales.push_back(*scale);
+      plan.wide_min_bounds.push_back(minimum);
+      plan.wide_max_bounds.push_back(maximum);
+    } else {
+      std::optional<AccumulatorRange> range = DotProductRange(
+          spec.weights.data() + channel * channel_size, channel_size,
+          spec.input_zero_point, 0, spec.bias[channel]);
+      if (!range ||
+          !IsScale32RangeValid(*scale, range->minimum, range->maximum)) {
+        return reject("CONV2D cannot prove accumulator/RESCALE range safety");
+      }
+      plan.scales.push_back(*scale);
+      plan.accumulator_ranges.push_back(*range);
     }
-    plan.scales.push_back(*scale);
-    plan.accumulator_ranges.push_back(*range);
   }
   plan.spec = std::move(spec);
   return plan;
@@ -345,6 +387,9 @@ tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
                              GraphConstantPool& constants,
                              tfsc::tosa::ResId* accumulator) {
   const Conv2dSpec& spec = plan.spec;
+  const bool wide = spec.int16_activation;
+  const DataType act_type = wide ? DataType::int16_t : DataType::int8_t;
+  const DataType acc_dt = wide ? DataType::int48_t : DataType::int32_t;
   const uint32_t groups =
       spec.depthwise ? 1 : spec.input_shape[3] / spec.weight_shape[3];
   if (groups > 1) {
@@ -369,10 +414,16 @@ tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
       part.input_zero_point = spec.input_zero_point;
       part.output_zero_point = spec.output_zero_point;
       part.activation = spec.activation;
+      part.int16_activation = wide;
       part.weights.assign(spec.weights.begin() + group * group_weights,
                           spec.weights.begin() + (group + 1) * group_weights);
-      part.bias.assign(spec.bias.begin() + group * output_channels,
-                       spec.bias.begin() + (group + 1) * output_channels);
+      if (wide) {
+        part.bias64.assign(spec.bias64.begin() + group * output_channels,
+                           spec.bias64.begin() + (group + 1) * output_channels);
+      } else {
+        part.bias.assign(spec.bias.begin() + group * output_channels,
+                         spec.bias.begin() + (group + 1) * output_channels);
+      }
       part.weight_scales.assign(
           spec.weight_scales.begin() + group * output_channels,
           spec.weight_scales.begin() + (group + 1) * output_channels);
@@ -390,8 +441,7 @@ tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
           input,
           graph.AddTensorConstant(Attribute(
               std::vector<uint32_t>{0, 0, 0, group * input_channels})),
-          graph.AddTensorConstant(Attribute(shape)),
-          Tensor(DataType::int8_t, shape));
+          graph.AddTensorConstant(Attribute(shape)), Tensor(act_type, shape));
       tfsc::tosa::ResId acc;
       outputs.push_back(EmitConv2d(graph, slice, *subplan, constants,
                                    accumulator ? &acc : nullptr));
@@ -400,18 +450,17 @@ tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
     const std::vector<uint32_t> shape(spec.output_shape.begin(),
                                       spec.output_shape.end());
     if (accumulator) {
-      *accumulator =
-          graph.AddConcatOperator(accumulators, Attribute(int32_t{3}),
-                                  Tensor(DataType::int32_t, shape));
+      *accumulator = graph.AddConcatOperator(
+          accumulators, Attribute(int32_t{3}), Tensor(acc_dt, shape));
     }
     return graph.AddConcatOperator(outputs, Attribute(int32_t{3}),
-                                   Tensor(DataType::int8_t, shape));
+                                   Tensor(act_type, shape));
   }
   Tensor weight_type(DataType::int8_t,
                      {spec.weight_shape.begin(), spec.weight_shape.end()});
-  Tensor output_type(DataType::int8_t,
+  Tensor output_type(act_type,
                      {spec.output_shape.begin(), spec.output_shape.end()});
-  Tensor acc_type(DataType::int32_t, output_type.GetTensorShape());
+  Tensor acc_type(acc_dt, output_type.GetTensorShape());
   if (plan.convolution_input_shape != spec.input_shape) {
     tfsc::tosa::ResId start =
         graph.AddTensorConstant(Attribute(std::vector<uint32_t>(4, 0)));
@@ -420,8 +469,8 @@ tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
                                         plan.convolution_input_shape.end())));
     input = graph.AddSliceOperator(
         input, start, size,
-        Tensor(DataType::int8_t, {plan.convolution_input_shape.begin(),
-                                  plan.convolution_input_shape.end()}));
+        Tensor(act_type, {plan.convolution_input_shape.begin(),
+                          plan.convolution_input_shape.end()}));
     if (tfsc::IsError(input)) return input;
   }
   std::vector<int8_t> weights = spec.weights;
@@ -440,13 +489,16 @@ tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
   }
   tfsc::tosa::ResId weight = Constant(graph, weight_type, weights, constants);
   tfsc::tosa::ResId bias =
-      Constant(graph, Tensor(DataType::int32_t, {spec.weight_shape[0]}),
-               spec.bias, constants);
-  tfsc::tosa::ResId input_zp = graph.AddTensorConstant(
-      Attribute(static_cast<int8_t>(spec.input_zero_point)));
+      wide ? Constant(graph, Tensor(DataType::int48_t, {spec.weight_shape[0]}),
+                      spec.bias64, constants)
+           : Constant(graph, Tensor(DataType::int32_t, {spec.weight_shape[0]}),
+                      spec.bias, constants);
+  tfsc::tosa::ResId input_zp =
+      graph.AddTensorConstant(Attribute(spec.input_zero_point, act_type));
   tfsc::tosa::ResId weight_zp = graph.AddTensorConstant(Attribute(int8_t{0}));
   // TOSA.001000.1 enum encodings (not serialization-library DType values):
-  // acc_type_t::INT32 = 1, rounding_mode_t::SINGLE_ROUND = 1.
+  // acc_type_t::INT32 = 1, acc_type_t::INT48 = 4,
+  // rounding_mode_t::SINGLE_ROUND = 1.
   tfsc::tosa::ResId conv = graph.AddOperator(
       spec.depthwise ? tfsc::tosa::OperatorEnum::DepthwiseConv2d
                      : tfsc::tosa::OperatorEnum::Conv2d,
@@ -456,20 +508,28 @@ tfsc::tosa::ResId EmitConv2d(tfsc::tosa::Graph& graph, tfsc::tosa::ResId input,
        Attribute(std::vector<int32_t>(spec.stride.begin(), spec.stride.end())),
        Attribute(
            std::vector<int32_t>(spec.dilation.begin(), spec.dilation.end())),
-       Attribute(int32_t{1}), Attribute(false)})[0];
+       Attribute(int32_t{wide ? 4 : 1}), Attribute(false)})[0];
   if (tfsc::IsError(conv)) return conv;
   if (accumulator) *accumulator = conv;
-  tfsc::tosa::ResId rescale = EmitRescale(
-      graph, conv, output_type.GetTensorShape(), spec.output_zero_point,
-      plan.scales, plan.accumulator_ranges, constants);
+  tfsc::tosa::ResId rescale =
+      wide
+          ? EmitNativeRescale(graph, conv, DataType::int48_t, DataType::int16_t,
+                              output_type.GetTensorShape(), 0,
+                              spec.output_zero_point, plan.scales, constants,
+                              plan.wide_min_bounds, plan.wide_max_bounds)
+          : EmitRescale(graph, conv, output_type.GetTensorShape(),
+                        spec.output_zero_point, plan.scales,
+                        plan.accumulator_ranges, constants);
   if (tfsc::IsError(rescale)) return rescale;
-  if (plan.activation_range.minimum == -128 &&
-      plan.activation_range.maximum == 127) {
+  const int32_t full_min = wide ? -32768 : -128;
+  const int32_t full_max = wide ? 32767 : 127;
+  if (plan.activation_range.minimum == full_min &&
+      plan.activation_range.maximum == full_max) {
     return rescale;
   }
   return graph.AddClampOperator(
-      rescale, Attribute(static_cast<int8_t>(plan.activation_range.minimum)),
-      Attribute(static_cast<int8_t>(plan.activation_range.maximum)),
-      Attribute(int32_t{1}), output_type);
+      rescale, Attribute(plan.activation_range.minimum, act_type),
+      Attribute(plan.activation_range.maximum, act_type), Attribute(int32_t{1}),
+      output_type);
 }
 }  // namespace litert::arm_vulkan_ml

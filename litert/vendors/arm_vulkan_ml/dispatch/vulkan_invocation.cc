@@ -22,7 +22,6 @@
 #include <unistd.h>
 
 #include "litert/vendors/arm_vulkan_ml/dispatch/device_memory_allocator.h"
-#include "litert/vendors/arm_vulkan_ml/dispatch/vulkan_validation.h"
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
 
@@ -64,7 +63,6 @@ size_t Bytes(const TensorDescriptor& tensor) {
 }  // namespace
 
 struct VulkanInvocation::Impl {
-  VulkanValidation validation;
   std::shared_ptr<const CompiledPartition> artifact;
   absl::Mutex mutex;
   void* library = nullptr;
@@ -194,7 +192,6 @@ struct VulkanInvocation::Impl {
     }
     if (module) DestroyShaderModule(device, module, nullptr);
     if (device && DestroyDevice) DestroyDevice(device, nullptr);
-    validation.Close();
     if (instance && destroy_instance) destroy_instance(instance, nullptr);
     if (library) dlclose(library);
   }
@@ -231,11 +228,9 @@ struct VulkanInvocation::Impl {
     app.apiVersion = VK_API_VERSION_1_3;
     VkInstanceCreateInfo ci{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     ci.pApplicationInfo = &app;
-    if (!validation.Prepare(get, ci, error)) return false;
     VK_CHECK(create(&ci, nullptr, &instance));
     destroy_instance = reinterpret_cast<PFN_vkDestroyInstance>(
         get(instance, "vkDestroyInstance"));
-    if (!validation.Attach(get, instance, error)) return false;
 #define INSTANCE_FN(name)                                                \
   auto name = reinterpret_cast<PFN_vk##name>(get(instance, "vk" #name)); \
   if (!name) {                                                           \

@@ -48,6 +48,21 @@ struct SpecialPlan {
   uint32_t batch = 0, channels = 0, depth = 0;
   Int8Range activation{-128, 127};
   double epsilon = 0;
+  bool integer_i16_norm = false;
+  int32_t norm_p = 0;
+  int32_t norm_qy = 0;
+  int32_t norm_c_bits = 0;
+  int32_t norm_eps_mant = 0;
+  int32_t norm_eps_shift_const = 0;
+  bool norm_q4_bias = false;
+  bool norm_group_spatial = false;
+  uint32_t norm_groups = 1;
+  uint32_t norm_mean_outer = 1;
+  uint32_t norm_mean_inner = 0;
+  int32_t norm_mean_q_mid = 0;
+  int32_t norm_mean_pre_shift = 0;
+  std::optional<Scale32> norm_mean_stage1_scale;
+  std::vector<int16_t> norm_rsqrt_lut;
 };
 
 // Returns true if `op` is lowered through the special-ops subsystem.
@@ -55,8 +70,9 @@ bool IsSpecialOperation(const Op& op);
 
 // Validates and lowers `op` into a `SpecialPlan` wrapped in an `OperationPlan`,
 // or populates `reason` on failure.
-std::optional<OperationPlan> AnalyzeSpecialOperation(const Op& op,
-                                                     std::string& reason);
+std::optional<OperationPlan> AnalyzeSpecialOperation(
+    const Op& op, std::string& reason,
+    Int16NormMode int16_norm_mode = Int16NormMode::kAuto);
 
 // Emits TOSA instructions for a validated `SpecialPlan` onto `graph`.
 tfsc::tosa::ResId EmitSpecialOperation(

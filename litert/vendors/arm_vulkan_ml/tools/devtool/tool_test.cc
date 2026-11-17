@@ -106,7 +106,8 @@ TEST(Options, SoftmaxLutAndAlternateReferencesAreValidated) {
   auto defaults = Options{}.SoftmaxLut();
   ASSERT_TRUE(defaults);
   EXPECT_EQ(*defaults, SoftmaxLutType::kAuto);
-  for (const std::string& lut : {"auto", "int8", "int16", "invalid"}) {
+  for (const std::string& lut :
+       {"auto", "int8", "int16", "pro_fp", "invalid"}) {
     std::vector<std::string> args = {"tool", "compile",
                                      "--softmax_lut_type=" + lut};
     std::vector<char*> argv;
@@ -127,6 +128,25 @@ TEST(Options, SoftmaxLutAndAlternateReferencesAreValidated) {
     EXPECT_EQ(static_cast<bool>(
                   ParseOptions(static_cast<int>(argv.size()), argv.data())),
               command == "validate");
+  }
+  for (const std::string& mode : {"off", "core", "sync", "bad"}) {
+    std::vector<std::string> args = {"tool", "capabilities",
+                                     "--vulkan_validation=" + mode};
+    std::vector<char*> argv;
+    for (auto& arg : args) argv.push_back(arg.data());
+    EXPECT_EQ(static_cast<bool>(
+                  ParseOptions(static_cast<int>(argv.size()), argv.data())),
+              mode != "bad");
+  }
+  for (const std::string& command :
+       {"inspect", "compile", "capabilities", "validate", "trace"}) {
+    std::vector<std::string> args = {"tool", command,
+                                     "--vulkan_validation=core"};
+    std::vector<char*> argv;
+    for (auto& arg : args) argv.push_back(arg.data());
+    EXPECT_EQ(static_cast<bool>(
+                  ParseOptions(static_cast<int>(argv.size()), argv.data())),
+              command != "inspect" && command != "compile");
   }
 }
 
@@ -617,15 +637,36 @@ TEST(Inspection, SupportsAndCompilesInt16AttentionSubgraph) {
   for (uint32_t op : partitions[0].tosa_opcodes()) {
     opcodes.insert(static_cast<int>(op));
   }
+  EXPECT_TRUE(opcodes.count(6));   // MATMUL
+  EXPECT_TRUE(opcodes.count(14));  // ADD
+  EXPECT_TRUE(opcodes.count(30));  // TABLE (GELU)
+  EXPECT_TRUE(opcodes.count(10));  // CLAMP (PRO-FP Softmax requantization)
+  EXPECT_TRUE(opcodes.count(65));  // RESCALE
+  EXPECT_FALSE(
+      opcodes.count(34));  // CLZ not used when Softmax defaults to PRO-FP
+
+  Options lut16_options = options;
+  lut16_options.values["softmax_lut_type"] = "int16";
+  lut16_options.values["output_dir"] = testing::TempDir() + "/int16_export_lut";
+  ToolReport lut16_report;
+  ASSERT_TRUE(Inspect(lut16_options, lut16_report, true));
+  EXPECT_TRUE(lut16_report.complete_coverage());
+  const auto& lut16_partitions = lut16_report.subgraphs(0).partitions();
+  ASSERT_EQ(lut16_partitions.size(), 1);
+  EXPECT_TRUE(lut16_partitions[0].spirv_valid());
+  std::set<int> lut16_opcodes;
+  for (uint32_t op : lut16_partitions[0].tosa_opcodes()) {
+    lut16_opcodes.insert(static_cast<int>(op));
+  }
   // MATMUL (6), ADD (14), TABLE (30), CLZ (34), RESCALE (65) must be emitted;
   // INTDIV (19) and CLAMP (10) must not be emitted.
-  EXPECT_TRUE(opcodes.count(6));
-  EXPECT_TRUE(opcodes.count(14));
-  EXPECT_TRUE(opcodes.count(30));
-  EXPECT_TRUE(opcodes.count(34));
-  EXPECT_TRUE(opcodes.count(65));
-  EXPECT_FALSE(opcodes.count(19));
-  EXPECT_FALSE(opcodes.count(10));
+  EXPECT_TRUE(lut16_opcodes.count(6));
+  EXPECT_TRUE(lut16_opcodes.count(14));
+  EXPECT_TRUE(lut16_opcodes.count(30));
+  EXPECT_TRUE(lut16_opcodes.count(34));
+  EXPECT_TRUE(lut16_opcodes.count(65));
+  EXPECT_FALSE(lut16_opcodes.count(19));
+  EXPECT_FALSE(lut16_opcodes.count(10));
 }
 
 TEST(Inspection, ExtractsMultiSubgraphStablehloCompositeWithoutOutOfBounds) {
@@ -806,8 +847,8 @@ TEST(DevtoolCliTest,
 
   // 3. Coverage CLI text and TextFormat report.
   const std::string cov_txtpb = testing::TempDir() + "/cov_report.txtpb";
-  EXPECT_EQ(
-      invoke_main({"tool", "coverage", "--report_txtpb=" + cov_txtpb}), 0);
+  EXPECT_EQ(invoke_main({"tool", "coverage", "--report_txtpb=" + cov_txtpb}),
+            0);
   ToolReport cov_parsed;
   ASSERT_TRUE(ReadTextProto(cov_txtpb, cov_parsed));
   EXPECT_EQ(cov_parsed.status(), "passed");
@@ -885,8 +926,7 @@ TEST(DevtoolCliTest,
   ToolReport compiled_report;
   ASSERT_TRUE(ReadTextProto(compile_report, compiled_report));
   EXPECT_EQ(compiled_report.status(), "passed");
-  EXPECT_TRUE(
-      compiled_report.subgraphs(0).partitions(0).has_vgf_sha256());
+  EXPECT_TRUE(compiled_report.subgraphs(0).partitions(0).has_vgf_sha256());
 
   // Effective inspect with missing plugin dir exercises CompilerDirectory &
   // RuntimeOptions.
@@ -1074,8 +1114,8 @@ TEST(DevtoolCoverageHelpers, CoversOperatorNamesNumericalStatusAndTextProto) {
     f << "unknown_field: 123\n";
   }
   EXPECT_FALSE(ReadTextProto(bad_tp, parsed));
-  EXPECT_FALSE(WriteTextProto(
-      testing::TempDir() + "/no_such_dir/out.txtpb", parsed));
+  EXPECT_FALSE(
+      WriteTextProto(testing::TempDir() + "/no_such_dir/out.txtpb", parsed));
 }
 
 TEST(ValidationReports, ParsesFullJsonEventsEscapesAndRejectsMalformedLines) {
@@ -1087,8 +1127,7 @@ TEST(ValidationReports, ParsesFullJsonEventsEscapesAndRejectsMalformedLines) {
     f << "  { \"event\" : \"instance\", \"mode\" : \"sync\", "
          "\"layer\" : \"VK_LAYER_KHRONOS_validation\", "
          "\"api_version\" : "
-      << VK_HEADER_VERSION_COMPLETE
-      << ", \"implementation_version\" : 7 }\n";
+      << VK_HEADER_VERSION_COMPLETE << ", \"implementation_version\" : 7 }\n";
     f << "{\"event\":\"message\",\"severity\":-2147483648,\"type\":3,"
          "\"id\":\"VUID-esc\","
          "\"message\":\"q:\\\" s:\\\\ /: \\/ b:\\b f:\\f n:\\n r:\\r t:\\t "
@@ -1263,8 +1302,8 @@ TEST(DevtoolCliEdgeCases, ExercisesCliAndTraceValidationErrors) {
               static_cast<std::streamsize>(bytes->size()));
   }
   EXPECT_EQ(invoke_main({"tool", "validate", "--model=" + sm_path,
-                         "--tensor_inputs=" + manifest_path,
-                         "--max_samples=1", "--reference=fp64"}),
+                         "--tensor_inputs=" + manifest_path, "--max_samples=1",
+                         "--reference=fp64"}),
             1);
 }
 

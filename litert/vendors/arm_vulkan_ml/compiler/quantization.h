@@ -134,11 +134,11 @@ std::optional<AccumulatorRange> DotProductRange(const int8_t* weights,
                                                 int32_t weight_zero_point,
                                                 int32_t bias);
 
-// Compile-time int8 requantization table matching LiteRT double rounding.
-// Rejects scales whose intermediate left shift cannot be proven safe.
-std::optional<std::vector<int8_t>> RequantizeTable(float input_scale,
+// Compile-time int8 requantization table using TOSA SINGLE_ROUND Scale32.
+// Rejects unrepresentable scales or input ranges.
+std::optional<std::vector<int8_t>> RequantizeTable(double input_scale,
                                                    int32_t input_zero_point,
-                                                   float output_scale,
+                                                   double output_scale,
                                                    int32_t output_zero_point);
 
 // Exhaustive int8 lookup using LiteRT's documented 16-bit fixed-point
@@ -147,6 +147,13 @@ std::optional<std::vector<int8_t>> HardSwishTable(float input_scale,
                                                   int32_t input_zero_point,
                                                   float output_scale,
                                                   int32_t output_zero_point);
+
+// Exhaustive int8 lookup matching LiteRT's fixed-point INT8 RSQRT kernel,
+// clamping non-positive input domains (code <= input_zero_point) to 127.
+std::optional<std::vector<int8_t>> RsqrtTable(float input_scale,
+                                              int32_t input_zero_point,
+                                              float output_scale,
+                                              int32_t output_zero_point);
 
 }  // namespace litert::arm_vulkan_ml
 #endif  // ODML_LITERT_LITERT_VENDORS_ARM_VULKAN_ML_COMPILER_QUANTIZATION_H_

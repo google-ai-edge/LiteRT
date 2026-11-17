@@ -32,6 +32,18 @@ enum class LoweringRoute {
   kDecomposed
 };
 
+// Policy for lowering symmetric INT16 normalization composites (odml.rms_norm
+// and one-group LayerNorm odml.group_norm).
+enum class Int16NormMode {
+  // Use PRO-FP float shader lowering for RMSNorm and pure PRO-INT + EXT-INT16
+  // for LayerNorm.
+  kAuto,
+  // Lower both INT16 RMSNorm and INT16 LayerNorm via PRO-FP.
+  kProFp,
+  // Lower both INT16 RMSNorm and INT16 LayerNorm via pure PRO-INT + EXT-INT16.
+  kProInt,
+};
+
 // Types describe the principal data input and first result. Individual
 // analyzers still validate every operand/result, quantization, shape and
 // operator option.

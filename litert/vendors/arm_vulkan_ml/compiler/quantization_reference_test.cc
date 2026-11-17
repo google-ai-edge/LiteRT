@@ -62,20 +62,18 @@ TEST(HardSwishTable, ExhaustiveSignedCodesMatchBuiltinFixedPoint) {
   EXPECT_FALSE(HardSwishTable(1, 128, 1, 0));
   EXPECT_FALSE(HardSwishTable(1, 0, 0, 0));
 }
-TEST(RequantizeTable, ExhaustiveSignedCodesMatchReferenceRounding) {
+TEST(RequantizeTable, ExhaustiveSignedCodesMatchSingleRoundReference) {
   for (float scale :
        {0.000001f, 0.125f, 0.4785989f, 0.75f, 1.0f, 1.22785f, 2.0f, 16.0f}) {
+    const auto s32 = MakeScale32(scale);
+    ASSERT_TRUE(s32);
     for (int zero_point : {-128, -11, 0, 127}) {
       auto table = RequantizeTable(scale, zero_point, 1.0f, -6);
       ASSERT_TRUE(table);
-      int32_t multiplier;
-      int shift;
-      tflite::QuantizeMultiplier(static_cast<double>(scale), &multiplier,
-                                 &shift);
       for (int code = -128; code <= 127; ++code) {
-        int value = tflite::MultiplyByQuantizedMultiplier(code - zero_point,
-                                                          multiplier, shift) -
-                    6;
+        const auto scaled = ApplyScale32(code - zero_point, *s32);
+        ASSERT_TRUE(scaled);
+        const int value = *scaled - 6;
         EXPECT_EQ((*table)[code + 128], std::clamp(value, -128, 127))
             << "scale=" << scale << " zero_point=" << zero_point
             << " code=" << code;
@@ -85,9 +83,10 @@ TEST(RequantizeTable, ExhaustiveSignedCodesMatchReferenceRounding) {
   EXPECT_FALSE(RequantizeTable(0, 0, 1, 0));
   EXPECT_FALSE(RequantizeTable(1, 128, 1, 0));
   EXPECT_FALSE(RequantizeTable(1e30f, 0, 1, 0));
-  auto tiny = RequantizeTable(1e-30f, 0, 1, -7);
-  ASSERT_TRUE(tiny);
-  EXPECT_TRUE(std::all_of(tiny->begin(), tiny->end(),
+  EXPECT_FALSE(RequantizeTable(1e-30f, 0, 1, -7));
+  auto small = RequantizeTable(1e-8f, 0, 1, -7);
+  ASSERT_TRUE(small);
+  EXPECT_TRUE(std::all_of(small->begin(), small->end(),
                           [](int8_t x) { return x == -7; }));
 }
 
@@ -134,6 +133,47 @@ TEST(Int16Table, PopulateInt16TableMatchesTfliteLutLookupBitExactly) {
   EXPECT_FALSE(
       PopulateInt16Table<float>(1.0f, 0, 1.0f / 32768.0f, 0,
                                 [](float x) { return x >= 0 ? 1.0f : -1.0f; }));
+}
+
+TEST(RsqrtTable, ExhaustiveSignedCodesMatchBuiltinFixedPoint) {
+  for (int zp : {-128, -40, 0, 50}) {
+    const float in_scale = 0.015f;
+    const float out_scale = 0.25f;
+    const int out_zp = -110;
+    auto table = RsqrtTable(in_scale, zp, out_scale, out_zp);
+    ASSERT_TRUE(table);
+    ASSERT_EQ(table->size(), 256);
+
+    int32_t out_mult = 0;
+    int out_shift = 0;
+    const double scale =
+        1.0 / (std::sqrt(static_cast<double>(in_scale)) * out_scale);
+    tflite::QuantizeMultiplier(scale, &out_mult, &out_shift);
+    constexpr int32_t kShift = 20;
+    for (int code = -128; code <= 127; ++code) {
+      const int32_t value = code - zp;
+      int8_t expected = 127;
+      if (value > 0) {
+        int32_t inv_mult = 0;
+        int inv_shift = 0;
+        tflite::GetInvSqrtQuantizedMultiplierExp(value, tflite::kReverseShift,
+                                                 &inv_mult, &inv_shift);
+        const int64_t total_shift_data = 31 - (inv_shift + kShift);
+        const int64_t round_data = int64_t{1} << (total_shift_data - 1);
+        const int32_t data = static_cast<int32_t>(
+            (int64_t{inv_mult} + round_data) >> total_shift_data);
+        const int64_t total_shift_out = 31 - (out_shift - kShift);
+        const int64_t round_out = int64_t{1} << (total_shift_out - 1);
+        const int32_t out =
+            static_cast<int32_t>(
+                ((int64_t{data} * out_mult + round_out) >> total_shift_out)) +
+            out_zp;
+        expected = static_cast<int8_t>(std::clamp(out, -128, 127));
+      }
+      EXPECT_EQ((*table)[code + 128], expected)
+          << "zp=" << zp << " code=" << code;
+    }
+  }
 }
 
 }  // namespace

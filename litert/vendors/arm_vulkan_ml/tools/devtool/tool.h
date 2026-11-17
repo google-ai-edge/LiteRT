@@ -43,6 +43,9 @@ struct Options {
   Expected<int> Integer(const std::string& key, int fallback) const;
   Expected<double> Number(const std::string& key, double fallback) const;
 };
+struct RuntimeContext {
+  std::string validation_log_dir;
+};
 Expected<void> ReadTextProto(const std::string& path, google::protobuf::Message& message);
 Expected<void> WriteTextProto(const std::string& path,
                               const google::protobuf::Message& message);
@@ -55,7 +58,8 @@ Expected<std::unique_ptr<tflite::ModelT>> LoadModel(const std::string& path);
 Expected<std::vector<uint8_t>> PackModel(const tflite::ModelT& model);
 Expected<void> Inspect(const Options& options, ToolReport& report,
                        bool compile);
-Expected<void> Capabilities(const Options& options, ToolReport& report);
+Expected<void> Capabilities(const Options& options, ToolReport& report,
+                            const RuntimeContext& context = {});
 Expected<void> Validate(const Options& options, ToolReport& report);
 Expected<std::vector<int8_t>> SoftmaxReference(const std::vector<int8_t>& input,
                                                size_t channels,
@@ -71,7 +75,8 @@ Expected<void> ExportVgf(const CompiledPartition&, const std::string& name,
                          const std::string& path);
 Expected<void> Coverage(CoverageReport& report);
 void PrintCoverage(const CoverageReport& report);
-Expected<void> Run(const Options& options, ToolReport& report);
+Expected<void> Run(const Options& options, ToolReport& report,
+                   const RuntimeContext& context = {});
 Expected<void> CollectValidationLogs(const std::string& directory,
                                      const std::string& mode,
                                      VulkanValidationReport& result);

@@ -38,8 +38,10 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_arm_vulkan_ml_options.h"
 #include "litert/vendors/arm_vulkan_ml/common/arm_vulkan_ml_jit_executable.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/op_registry.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/partition.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/softmax.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
 
@@ -105,6 +107,21 @@ class LiteRtCompilerPluginT {
     litert::Expected<bool> dump_op_timings =
         arm_vulkan_ml_options_->GetDumpOpTimings();
     return dump_op_timings && *dump_op_timings;
+  }
+
+  litert::Expected<bool> GetFloatFallback() const {
+    if (!arm_vulkan_ml_options_) {
+      return true;
+    }
+    litert::Expected<bool> float_fallback =
+        arm_vulkan_ml_options_->GetFloatFallback();
+    if (!float_fallback) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to read ArmVulkanML float_fallback option: %s",
+                 float_fallback.Error().Message().c_str());
+      return float_fallback.Error();
+    }
+    return *float_fallback;
   }
 
  private:
@@ -231,10 +248,20 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   size_t accepted_ops = 0;
 
   litert::Subgraph graph(subgraph);
+  LITERT_ASSIGN_OR_RETURN(const bool allow_float_fallback,
+                          compiler_plugin->GetFloatFallback());
+  constexpr litert::arm_vulkan_ml::Int16NormMode int16_norm_mode =
+      litert::arm_vulkan_ml::Int16NormMode::kAuto;
+  constexpr litert::arm_vulkan_ml::SoftmaxLutType softmax_lut =
+      litert::arm_vulkan_ml::SoftmaxLutType::kAuto;
   for (const auto& op : graph.Ops()) {
     ++total_ops;
     std::string reason;
-    if (litert::arm_vulkan_ml::AnalyzeOperation(op, reason)) {
+    if (auto plan = litert::arm_vulkan_ml::AnalyzeOperation(
+            op, reason, softmax_lut, int16_norm_mode)) {
+      if (!allow_float_fallback && plan->requires_float_fallback) {
+        continue;
+      }
       ++accepted_ops;
       LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
     }
@@ -267,18 +294,32 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   litert::ExtendedModel model =
       litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
   if (model.NumSubgraphs() == 0) return kLiteRtStatusErrorInvalidArgument;
+  LITERT_ASSIGN_OR_RETURN(const bool allow_float_fallback,
+                          compiler_plugin->GetFloatFallback());
+  constexpr litert::arm_vulkan_ml::Int16NormMode int16_norm_mode =
+      litert::arm_vulkan_ml::Int16NormMode::kAuto;
+  constexpr litert::arm_vulkan_ml::SoftmaxLutType softmax_lut =
+      litert::arm_vulkan_ml::SoftmaxLutType::kAuto;
   for (size_t i = 0; i < model.NumSubgraphs(); ++i) {
     litert::Expected<litert::Subgraph> graph = model.Subgraph(i);
     if (!graph) return graph.Error().Status();
     std::string reason;
     litert::arm_vulkan_ml::CompileTimingReport timing;
     std::shared_ptr<const litert::arm_vulkan_ml::CompiledPartition> partition =
-        dump_timings
-            ? litert::arm_vulkan_ml::CompilePartition(*graph, reason, timing)
-            : litert::arm_vulkan_ml::CompilePartition(*graph, reason);
+        litert::arm_vulkan_ml::CompilePartition(
+            *graph, reason, nullptr, nullptr, softmax_lut, 32, int16_norm_mode,
+            dump_timings ? &timing : nullptr);
     if (!partition) {
       LITERT_LOG(LITERT_ERROR, "ArmVulkanML partition %zu: %s", i,
                  reason.c_str());
+      return kLiteRtStatusErrorUnsupported;
+    }
+    if (!allow_float_fallback && partition->requires_float_fallback) {
+      LITERT_LOG(LITERT_ERROR,
+                 "ArmVulkanML partition %zu requires PRO-FP float fallback, "
+                 "which is disabled. Enable ArmVulkanML float_fallback to use "
+                 "it.",
+                 i);
       return kLiteRtStatusErrorUnsupported;
     }
     if (dump_timings) {

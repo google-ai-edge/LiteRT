@@ -32,7 +32,9 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model_types.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/conv2d.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/emission.h"
@@ -88,10 +90,12 @@ bool AnalyzeExtendedOperation(const Op& op, OperationPlan& p,
   const auto in = op.Inputs();
   const auto& input = p.inputs[0];
   const auto& output = p.output;
-  if (input.floating != output.floating)
+  if (input.floating != output.floating || input.type != output.type)
     return reject("Extended op requires matching element types");
   if (!input.floating && p.code != kLiteRtOpCodeTflTransposeConv &&
-      (input.scale != output.scale || input.zero_point != output.zero_point))
+      p.output_type !=
+          DataType::int32_t&&(input.scale != output.scale ||
+                              input.zero_point != output.zero_point))
     return reject("Extended op requires preserved quantization");
   if (p.code == kLiteRtOpCodeTflScatterNd) {
     std::vector<int32_t> indices, shape;
@@ -250,31 +254,29 @@ bool AnalyzeExtendedOperation(const Op& op, OperationPlan& p,
       p.kernel.push_back(static_cast<int32_t>(border));
     }
   } else if (p.code == kLiteRtOpCodeTflFullyConnected) {
-    if (in.size() != 3 || !input.floating || !output.floating)
-      return reject("FP32 FULLY_CONNECTED requires constant weights and bias");
+    const bool has_bias = in.size() == 3;
+    if ((in.size() != 2 && !has_bias) || !input.floating || !output.floating)
+      return reject(
+          "FP32 FULLY_CONNECTED requires constant weights and optional bias");
     auto weight_type = in[1].RankedTensorType();
-    auto bias_type = in[2].RankedTensorType();
-    if (!weight_type || !bias_type ||
-        weight_type->ElementType() != ElementType::Float32 ||
-        bias_type->ElementType() != ElementType::Float32 ||
+    auto bias_type = has_bias
+                         ? in[2].RankedTensorType()
+                         : litert::Unexpected(Status::kErrorInvalidArgument);
+    if (!weight_type || weight_type->ElementType() != ElementType::Float32 ||
         weight_type->Layout().HasStrides() ||
-        bias_type->Layout().HasStrides() ||
         weight_type->Layout().Dimensions().size() != 2 ||
-        bias_type->Layout().Dimensions().size() != 1)
+        (has_bias &&
+         (!bias_type || bias_type->ElementType() != ElementType::Float32 ||
+          bias_type->Layout().HasStrides() ||
+          bias_type->Layout().Dimensions().size() != 1)))
       return reject(
           "FP32 FULLY_CONNECTED requires dense matrix weights and vector bias");
     for (auto dim : weight_type->Layout().Dimensions()) {
-      if (dim <= 0 || dim > 8192)
+      if (dim <= 0 || dim > 65536)
         return reject("Invalid FULLY_CONNECTED weight dimensions");
       p.weight_shape.push_back(static_cast<uint32_t>(dim));
     }
     const uint32_t channels = p.weight_shape[0], depth = p.weight_shape[1];
-    if (Count(input.shape) % depth ||
-        bias_type->Layout().Dimensions()[0] != channels ||
-        output.shape !=
-            std::vector<uint32_t>{
-                static_cast<uint32_t>(Count(input.shape) / depth), channels})
-      return reject("FP32 FULLY_CONNECTED shapes disagree");
     uint32_t format;
     bool keep;
     if (LiteRtGetFullyConnectedWeightsFormatOption(op.Get(), &format) !=
@@ -282,25 +284,40 @@ bool AnalyzeExtendedOperation(const Op& op, OperationPlan& p,
         format ||
         LiteRtGetFullyConnectedKeepNumDimsOption(op.Get(), &keep) !=
             kLiteRtStatusOk ||
-        keep ||
         LiteRtGetFullyConnectedFusedActivationOption(
             op.Get(), &p.float_activation) != kLiteRtStatusOk ||
         (p.float_activation != 0 && p.float_activation != 1 &&
          p.float_activation != 3))
       return reject("Unsupported FP32 FULLY_CONNECTED options");
+    std::vector<uint32_t> expected{
+        static_cast<uint32_t>(Count(input.shape) / depth), channels};
+    if (keep) {
+      if (input.shape.empty() || input.shape.back() != depth)
+        return reject("FP32 FULLY_CONNECTED shapes disagree");
+      expected = input.shape;
+      expected.back() = channels;
+    }
+    if (Count(input.shape) % depth ||
+        (has_bias && bias_type->Layout().Dimensions()[0] != channels) ||
+        output.shape != expected)
+      return reject("FP32 FULLY_CONNECTED shapes disagree");
     auto weights = in[1].WeightsData<float>();
-    auto bias = in[2].WeightsData<float>();
-    if (!weights || !bias || weights->size() != Count(p.weight_shape) ||
-        bias->size() != channels)
+    if (!weights || weights->size() != Count(p.weight_shape))
       return reject("Invalid FP32 FULLY_CONNECTED constant sizes");
     p.float_weights.assign(weights->begin(), weights->end());
-    p.float_bias.assign(bias->begin(), bias->end());
     for (float value : p.float_weights)
       if (!std::isfinite(value))
         return reject("Nonfinite FULLY_CONNECTED weights");
-    for (float value : p.float_bias)
-      if (!std::isfinite(value))
-        return reject("Nonfinite FULLY_CONNECTED bias");
+    p.float_bias.clear();
+    if (has_bias) {
+      auto bias = in[2].WeightsData<float>();
+      if (!bias || bias->size() != channels)
+        return reject("Invalid FP32 FULLY_CONNECTED constant sizes");
+      p.float_bias.assign(bias->begin(), bias->end());
+      for (float value : p.float_bias)
+        if (!std::isfinite(value))
+          return reject("Nonfinite FULLY_CONNECTED bias");
+    }
   } else if (!input.floating) {
     if (in.size() < 3 || in.size() > 4 || input.shape.size() != 4 ||
         output.shape.size() != 4 || !Ints(in[0], p.parameters, 1) ||
@@ -493,8 +510,7 @@ bool AnalyzeExtendedOperation(const Op& op, OperationPlan& p,
 ResId EmitExtendedOperation(tfsc::tosa::Graph& g, ResId input,
                             const OperationPlan& p,
                             GraphConstantPool& constants) {
-  const auto type =
-      p.inputs[0].floating ? DataType::float32_t : DataType::int8_t;
+  const auto type = p.output_type;
   TosaTensor output(type, p.output.shape);
   auto reshape = [&](ResId value, const std::vector<uint32_t>& shape) {
     return ReshapeTensor(g, value, g.AddTensorConstant(Attribute(shape)),
@@ -578,8 +594,9 @@ ResId EmitExtendedOperation(tfsc::tosa::Graph& g, ResId input,
         output);
   }
   if (p.code == kLiteRtOpCodeTflFullyConnected) {
-    const uint32_t batch = p.output.shape[0], channels = p.weight_shape[0],
-                   depth = p.weight_shape[1];
+    const uint32_t channels = p.weight_shape[0], depth = p.weight_shape[1];
+    const uint32_t batch =
+        static_cast<uint32_t>(Count(p.inputs[0].shape) / depth);
     auto weights =
         Constant(g, p.float_weights, {1, channels, depth}, constants);
     weights = g.AddTransposeOperator(weights,
@@ -589,9 +606,11 @@ ResId EmitExtendedOperation(tfsc::tosa::Graph& g, ResId input,
     auto result =
         g.AddMatmulOperator(reshape(input, {1, batch, depth}), weights, zero,
                             zero, TosaTensor(type, {1, batch, channels}));
-    result = g.AddAddOperator(
-        result, Constant(g, p.float_bias, {1, 1, channels}, constants),
-        TosaTensor(type, {1, batch, channels}));
+    if (!p.float_bias.empty()) {
+      result = g.AddAddOperator(
+          result, Constant(g, p.float_bias, {1, 1, channels}, constants),
+          TosaTensor(type, {1, batch, channels}));
+    }
     result = reshape(result, p.output.shape);
     if (p.float_activation)
       result = g.AddClampOperator(

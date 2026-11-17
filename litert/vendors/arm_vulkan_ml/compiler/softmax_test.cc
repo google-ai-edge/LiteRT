@@ -61,8 +61,10 @@ TEST(QuantizedSoftmax, RejectsUnsupportedDimensionsAndNonfiniteParameters) {
     EXPECT_FALSE(
         AnalyzeQuantizedSoftmax(5, .125, value, SoftmaxLutType::kAuto, reason));
   }
-  EXPECT_FALSE(AnalyzeQuantizedSoftmax(5, .125, 1,
-                                       static_cast<SoftmaxLutType>(3), reason));
+  EXPECT_FALSE(
+      AnalyzeQuantizedSoftmax(5, .125, 1, SoftmaxLutType::kProFp, reason));
+  EXPECT_FALSE(AnalyzeQuantizedSoftmax(
+      5, .125, 1, static_cast<SoftmaxLutType>(99), reason));
 }
 TEST(QuantizedSoftmax, BothLayoutsRetainTheSameNonnegativeQ31Exponential) {
   for (double scale : {1e-12, 1.0 / 256, .125, 1.0, 100.0})
@@ -198,6 +200,50 @@ TEST(Int16Softmax, RejectsInvalidChannelCountAndOutputScale) {
     EXPECT_FALSE(AnalyzeInt16Softmax(197, invalid, 1.0 / 32768.0, 1.0, reason));
     EXPECT_FALSE(
         AnalyzeInt16Softmax(197, 0.05, 1.0 / 32768.0, invalid, reason));
+  }
+}
+
+TEST(ProFpSoftmax, EmitsFloat32SoftmaxAndRequantizationForInt8AndInt16) {
+  using O = tfsc::tosa::OperatorEnum;
+  for (auto data_type :
+       {tfsc::tosa::DataType::int8_t, tfsc::tosa::DataType::int16_t}) {
+    const bool wide = data_type == tfsc::tosa::DataType::int16_t;
+    std::string reason;
+    auto plan =
+        AnalyzeProFpSoftmax(1000, 0.05, wide ? 1.0 / 32768.0 : 1.0 / 256.0,
+                            wide ? 0 : -128, 1.0, data_type, reason);
+    ASSERT_TRUE(plan) << reason;
+    auto module = tfsc::CreateModule();
+    tfsc::tosa::Graph graph(module, "main");
+    auto input = graph.AddInput(tfsc::tosa::Tensor(data_type, {1, 1000}), 0);
+    GraphConstantPool constants;
+    auto output =
+        EmitProFpSoftmax(graph, input, {1, 1000}, data_type, *plan, constants);
+    ASSERT_TRUE(output);
+    ASSERT_FALSE(tfsc::IsError(output)) << tfsc::GetErrorMsg(output);
+    graph.AddOutput(output, 1);
+    graph.FinalizeGraph();
+    const auto binary = tfsc::WriteToBinary(module);
+    ASSERT_FALSE(binary.empty());
+    spvtools::SpirvTools validator(SPV_ENV_UNIVERSAL_1_6);
+    std::string diagnostics;
+    validator.SetMessageConsumer(
+        [&](spv_message_level_t, const char*, const spv_position_t&,
+            const char* message) { diagnostics += message; });
+    EXPECT_TRUE(validator.Validate(binary)) << diagnostics;
+    int exp_ops = 0, recip_ops = 0;
+    for (const auto& instruction : module->GetSpirvGraph()) {
+      if (instruction.m_Opcode == spv::Op::OpExtInst) {
+        const auto opcode =
+            static_cast<O>(instruction.m_Operands[3].m_LiteralWord);
+        exp_ops += opcode == O::Exp;
+        recip_ops += opcode == O::Reciprocal;
+        EXPECT_NE(opcode, O::Table);
+        EXPECT_NE(opcode, O::IntDiv);
+      }
+    }
+    EXPECT_EQ(exp_ops, 1);
+    EXPECT_EQ(recip_ops, 1);
   }
 }
 }  // namespace

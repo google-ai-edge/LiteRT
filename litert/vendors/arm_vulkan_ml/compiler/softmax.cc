@@ -47,6 +47,8 @@ const char* SoftmaxLutTypeName(SoftmaxLutType type) {
       return "int8";
     case SoftmaxLutType::kInt16:
       return "int16";
+    case SoftmaxLutType::kProFp:
+      return "pro_fp";
   }
   return "invalid";
 }
@@ -55,7 +57,95 @@ std::optional<SoftmaxLutType> ParseSoftmaxLutType(const std::string& name) {
   if (name == "auto") return SoftmaxLutType::kAuto;
   if (name == "int8") return SoftmaxLutType::kInt8;
   if (name == "int16") return SoftmaxLutType::kInt16;
+  if (name == "pro_fp") return SoftmaxLutType::kProFp;
   return std::nullopt;
+}
+
+std::optional<ProFpSoftmaxPlan> AnalyzeProFpSoftmax(
+    uint32_t channels, double input_scale, double output_scale,
+    int32_t output_zero_point, double beta, DataType output_type,
+    std::string& reason) {
+  auto reject = [&](const char* message) -> std::optional<ProFpSoftmaxPlan> {
+    reason = message;
+    return std::nullopt;
+  };
+  if (!channels || channels > 8192) {
+    return reject("Quantized SOFTMAX requires last-axis length 1..8192");
+  }
+  const double scaled_beta = input_scale * beta;
+  if (!std::isfinite(input_scale) || input_scale <= 0 || !std::isfinite(beta) ||
+      beta <= 0 || !std::isfinite(scaled_beta) || scaled_beta <= 0) {
+    return reject("Quantized SOFTMAX requires finite positive scale and beta");
+  }
+  if (output_type == DataType::int16_t) {
+    if (!std::isfinite(output_scale) ||
+        std::abs(output_scale - (1.0 / 32768.0)) > 1e-6 ||
+        output_zero_point != 0) {
+      return reject(
+          "INT16 SOFTMAX requires symmetric output scale=1/32768 and "
+          "zero_point=0");
+    }
+  } else if (output_scale != 1.0 / 256 || output_zero_point != -128) {
+    return reject(
+        "INT8 SOFTMAX requires matching shapes, scale=1/256 and "
+        "zero_point=-128 output");
+  }
+  reason.clear();
+  return ProFpSoftmaxPlan{channels, input_scale, output_scale,
+                          output_zero_point, beta};
+}
+
+ResId EmitProFpSoftmax(tfsc::tosa::Graph& graph, ResId input,
+                       const std::vector<uint32_t>& shape, DataType output_type,
+                       const ProFpSoftmaxPlan& plan,
+                       GraphConstantPool& constants) {
+  std::vector<uint32_t> reduced = shape;
+  reduced.back() = 1;
+  const Tensor fp(DataType::float32_t, shape);
+  const Tensor row(DataType::float32_t, reduced);
+  const Tensor out(output_type, shape);
+  const ResId zero_shift = graph.AddTensorConstant(Attribute(int8_t{0}));
+  auto scalar = [&](float value) {
+    return BroadcastScalar(graph, value, shape.size(), constants);
+  };
+  auto mul = [&](ResId a, ResId b, const Tensor& type) {
+    return graph.AddMulOperator(a, b, zero_shift, type);
+  };
+  // Subtracting max in FP32 of exact integer inputs cancels input zero_point
+  // and keeps exponents <= 0 before multiplying by (input_scale * beta).
+  ResId q_f = graph.AddCastOperator(input, fp);
+  const Attribute axis(static_cast<int32_t>(shape.size() - 1));
+  ResId max_q =
+      graph.AddReduceMaxOperator(q_f, axis, Attribute(uint32_t{0}), row);
+  ResId diff = graph.AddSubOperator(q_f, max_q, fp);
+  const float combined = static_cast<float>(plan.input_scale * plan.beta);
+  if (combined > 0.0f && std::isfinite(combined)) {
+    if (combined != 1.0f) {
+      diff = mul(diff, scalar(combined), fp);
+    }
+  } else {
+    diff = mul(mul(diff, scalar(static_cast<float>(plan.input_scale)), fp),
+               scalar(static_cast<float>(plan.beta)), fp);
+  }
+  ResId exp_val = graph.AddExpOperator(diff, fp);
+  ResId sum = graph.AddReduceSumOperator(exp_val, axis, row);
+  ResId recip = graph.AddReciprocalOperator(sum, row);
+  ResId prob = mul(exp_val, recip, fp);
+  ResId scaled =
+      mul(prob, scalar(static_cast<float>(1.0 / plan.output_scale)), fp);
+  // Probabilities are nonnegative and output_scale > 0, so floor(x + 0.5)
+  // matches round-to-nearest-away-from-zero.
+  ResId rounded = graph.AddFloorOperator(
+      graph.AddAddOperator(scaled, scalar(0.5f), fp), fp);
+  if (plan.output_zero_point != 0) {
+    rounded = graph.AddAddOperator(
+        rounded, scalar(static_cast<float>(plan.output_zero_point)), fp);
+  }
+  const float lo = output_type == DataType::int16_t ? -32768.0f : -128.0f;
+  const float hi = output_type == DataType::int16_t ? 32767.0f : 127.0f;
+  rounded = graph.AddClampOperator(rounded, Attribute(lo), Attribute(hi),
+                                   Attribute(int32_t{1}), fp);
+  return graph.AddCastOperator(rounded, out);
 }
 
 std::optional<QuantizedSoftmaxPlan> AnalyzeQuantizedSoftmax(
@@ -74,7 +164,8 @@ std::optional<QuantizedSoftmaxPlan> AnalyzeQuantizedSoftmax(
       beta <= 0 || !std::isfinite(scale) || scale <= 0) {
     return reject("INT8 SOFTMAX requires finite positive scale and beta");
   }
-  if (!ParseSoftmaxLutType(SoftmaxLutTypeName(type))) {
+  if (type != SoftmaxLutType::kAuto && type != SoftmaxLutType::kInt8 &&
+      type != SoftmaxLutType::kInt16) {
     return reject("Invalid SOFTMAX lookup-table type");
   }
   QuantizedSoftmaxPlan plan;

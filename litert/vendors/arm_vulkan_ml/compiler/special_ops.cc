@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -33,7 +34,9 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model_types.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/conv2d.h"
@@ -92,7 +95,7 @@ std::optional<QuantizedTensor> Read(const Tensor& tensor) {
   }
   uint64_t count = 1;
   for (auto dim : type->Layout().Dimensions()) {
-    if (dim <= 0 || dim > 8192 ||
+    if (dim <= 0 || dim > 65536 ||
         count > (64u * 1024u * 1024u) / static_cast<uint32_t>(dim)) {
       return std::nullopt;
     }
@@ -148,6 +151,464 @@ ResId Reshape(Graph& graph, ResId x, DataType type, const Shape& shape) {
   return ReshapeTensor(graph, x, graph.AddTensorConstant(Attribute(shape)),
                        TosaTensor(type, shape));
 }
+
+// Fixed-point INT16 LayerNorm / RMSNorm Q-format pipeline:
+// 1. Centering (`centered`): RMSNorm stays in Q0 (`centered_bits = 16`,
+//    `centered_q_bits = 0`); LayerNorm rescales mean to Q8 (`centered_bits =
+//    24`, `centered_q_bits = 8`) via 1-stage or 2-stage (`norm_mean_outer` x
+//    `norm_mean_inner`) INT32 accumulation.
+// 2. Per-row normalization: `abs_max` -> `clz` -> `left_shift_bits = clz - (32
+//    - centered_bits)` aligns `centered` to `centered_bits` (`centered_norm`).
+//    Shifting right by `sq_shift_bits = centered_bits - sq_term_bits`
+//    (`sq_term_bits = (30 - ceil_log2(d)) / 2`) bounds `sum(sq_term^2)` within
+//    signed INT32; shifting right by `q15_shift_bits = centered_bits - 15`
+//    yields `centered_q15` in Q15.
+// 3. Variance + epsilon & rsqrt LUT: `eps_rel_shift` aligns `eps_mant *
+//    2^eps_shift` to the squared-sum exponent (downshifting `sum_sq` by even
+//    `sum_sq_downshift` when needed). `var_sum_total >= 1` is normalized by
+//    `even_headroom` into [2^29, 2^31 - 1], and its top 15 bits [8192, 32767]
+//    index the 513-entry `norm_rsqrt_lut` (`TABLE`) producing `rsqrt_q15`.
+// 4. Output rescaling & affine: `centered_q15 * rsqrt_q15` is rescaled by
+//    `sqrt(d) / 2^(9 + (15 - sq_term_bits))` and aligned by `net_out_shift =
+//    even_headroom / 2 - sum_sq_downshift / 2 - (20 - norm_qy)` to
+//    `Q(norm_qy)` (`norm_qy = 14 - ceil(ceil_log2(d) / 2)`), then scaled by
+//    optional gamma/beta (with Q4 bias rescaling when in range).
+bool AnalyzeInt16IntegerNorm(const Op& op, SpecialPlan& p,
+                             const QuantizedTensor& output, const Shape& shape,
+                             Int16NormMode int16_norm_mode,
+                             std::string& reason) {
+  auto fail = [&](const char* text) {
+    reason = text;
+    return false;
+  };
+  const auto in = op.Inputs();
+  const bool all_int =
+      std::all_of(p.inputs.begin(), p.inputs.end(),
+                  [](const QuantizedTensor& q) { return !q.floating; });
+  const bool want_integer_norm = int16_norm_mode == Int16NormMode::kProInt ||
+                                 (int16_norm_mode == Int16NormMode::kAuto &&
+                                  p.kind == SpecialPlan::Kind::kLayerNorm);
+  const uint64_t norm_dim64 = [&]() -> uint64_t {
+    if (!p.norm_group_spatial) return shape.back();
+    uint64_t spatial = 1;
+    for (size_t i = 1; i + 1 < shape.size(); ++i) spatial *= shape[i];
+    return spatial * (shape.back() / p.norm_groups);
+  }();
+  if (int16_norm_mode == Int16NormMode::kProInt &&
+      norm_dim64 > (uint64_t{1} << 22)) {
+    return fail("INT16 normalization group size exceeds integer range");
+  }
+  if (!want_integer_norm || !all_int || norm_dim64 > (uint64_t{1} << 22) ||
+      (p.kind != SpecialPlan::Kind::kLayerNorm &&
+       p.kind != SpecialPlan::Kind::kRmsNorm)) {
+    return true;
+  }
+
+  const uint32_t norm_dim = static_cast<uint32_t>(norm_dim64);
+  int norm_dim_ceil_log2 = 0;
+  while ((uint32_t{1} << norm_dim_ceil_log2) < norm_dim) ++norm_dim_ceil_log2;
+  const int sq_term_bits = (30 - norm_dim_ceil_log2) / 2;
+  const int norm_out_q_bits = 14 - ((norm_dim_ceil_log2 + 1) / 2);
+  const bool is_layer_norm = p.kind == SpecialPlan::Kind::kLayerNorm;
+  const int centered_bits = is_layer_norm ? 24 : 16;
+  const int centered_q_bits = is_layer_norm ? 8 : 0;
+  const int norm_mul_extra_shift = 15 - sq_term_bits;
+  const double eps_scaled = (static_cast<double>(norm_dim) * p.epsilon /
+                             (p.inputs[0].scale * p.inputs[0].scale)) *
+                            std::ldexp(1.0, 2 * centered_q_bits);
+  int eps_exp = 0;
+  const double eps_frac = std::frexp(eps_scaled, &eps_exp);
+  int64_t eps_mantissa = std::llround(std::ldexp(eps_frac, 15));
+  if (eps_mantissa >= 32768) {
+    eps_mantissa >>= 1;
+    ++eps_exp;
+  }
+  auto rsqrt_lut = PopulateInt16Table<double>(
+      1.0 / 4096.0, 0, 1.0 / 32768.0, 0,
+      [](double u) { return 1.0 / std::sqrt(std::max(u, 2.0)); });
+  auto unit_scale = MakeScale32(1.0);
+  auto norm_scale = MakeScale32(std::sqrt(static_cast<double>(norm_dim)) /
+                                std::ldexp(1.0, 9 + norm_mul_extra_shift));
+  auto mean_scale = unit_scale;
+  int64_t mean_lo = 0;
+  int64_t mean_hi = 0;
+  if (is_layer_norm) {
+    if (int64_t{32768} * norm_dim <= std::numeric_limits<int32_t>::max()) {
+      p.norm_mean_outer = 1;
+      p.norm_mean_inner = norm_dim;
+      mean_scale = MakeScale32(256.0 / static_cast<double>(norm_dim));
+      mean_lo = -int64_t{32768} * norm_dim;
+      mean_hi = int64_t{32767} * norm_dim;
+    } else {
+      uint32_t best_inner = 0;
+      for (uint32_t f = 2; static_cast<uint64_t>(f) * f <= norm_dim; ++f) {
+        if (norm_dim % f == 0 && f <= 32768 && (norm_dim / f) <= 32768) {
+          best_inner = f;
+        }
+      }
+      if (best_inner > 0) {
+        const uint32_t d_inner = best_inner;
+        const uint32_t d_outer = norm_dim / best_inner;
+        int32_t q_mid = 0;
+        for (int32_t candidate : {8, 4, 2, 0}) {
+          if ((int64_t{32768} << candidate) * d_outer <=
+              std::numeric_limits<int32_t>::max()) {
+            q_mid = candidate;
+            break;
+          }
+        }
+        auto stage1 =
+            MakeScale32(std::ldexp(1.0, q_mid) / static_cast<double>(d_inner));
+        if (!stage1 || !CanEmitNativeRescale(*stage1, -int64_t{32768} * d_inner,
+                                             int64_t{32767} * d_inner)) {
+          return fail("INT16 normalization stage-1 mean rescale failed");
+        }
+        p.norm_mean_outer = d_outer;
+        p.norm_mean_inner = d_inner;
+        p.norm_mean_q_mid = q_mid;
+        p.norm_mean_stage1_scale = *stage1;
+        mean_scale = MakeScale32(
+            256.0 / (static_cast<double>(d_outer) * std::ldexp(1.0, q_mid)));
+        mean_lo = -(int64_t{32768} << q_mid) * d_outer;
+        mean_hi = (int64_t{32767} << q_mid) * d_outer;
+      } else {
+        int32_t pre_shift = 1;
+        while (pre_shift < 15 && (int64_t{32768} >> pre_shift) * norm_dim >
+                                     std::numeric_limits<int32_t>::max()) {
+          ++pre_shift;
+        }
+        p.norm_mean_outer = 1;
+        p.norm_mean_inner = norm_dim;
+        p.norm_mean_pre_shift = pre_shift;
+        mean_scale =
+            MakeScale32(256.0 * static_cast<double>(int64_t{1} << pre_shift) /
+                        static_cast<double>(norm_dim));
+        mean_lo = -(int64_t{32768} >> pre_shift) * norm_dim;
+        mean_hi = (int64_t{32767} >> pre_shift) * norm_dim;
+      }
+    }
+  }
+  if (!std::isfinite(eps_scaled) || eps_scaled <= 0 || eps_mantissa <= 0 ||
+      !rsqrt_lut || !unit_scale ||
+      !CanEmitNativeRescale(*unit_scale, 8192, 32767) || !norm_scale ||
+      !CanEmitNativeRescale(*norm_scale, -(int64_t{1} << 30),
+                            int64_t{1} << 30) ||
+      !mean_scale ||
+      (is_layer_norm && !CanEmitNativeRescale(*mean_scale, mean_lo, mean_hi))) {
+    return fail("INT16 normalization parameters are not representable");
+  }
+  const double norm_out_scale = (in.size() > 1 ? p.inputs[1].scale : 1.0) /
+                                std::ldexp(1.0, norm_out_q_bits);
+  const int64_t scaled_bound =
+      in.size() > 1 ? (int64_t{1} << 29) : (int64_t{1} << 15);
+  p.integer_i16_norm = true;
+  p.norm_p = sq_term_bits;
+  p.norm_qy = norm_out_q_bits;
+  p.norm_c_bits = centered_bits;
+  p.norm_eps_mant = static_cast<int32_t>(eps_mantissa);
+  p.norm_eps_shift_const = eps_exp - 15;
+  p.norm_rsqrt_lut = std::move(*rsqrt_lut);
+  p.scales = {*unit_scale, *norm_scale, *mean_scale};
+  if (in.size() <= 2) {
+    auto out_scale = MakeScale32(norm_out_scale / output.scale);
+    if (!out_scale ||
+        !CanEmitNativeRescale(*out_scale, -scaled_bound, scaled_bound)) {
+      return fail("INT16 normalization output rescale out of range");
+    }
+    p.scales.push_back(*out_scale);
+    return true;
+  }
+  int64_t bias_lo =
+      p.input_types[2] == DataType::int16_t ? -32768 : -(int64_t{1} << 24);
+  int64_t bias_hi =
+      p.input_types[2] == DataType::int16_t ? 32767 : (int64_t{1} << 24);
+  if (p.input_types[2] == DataType::int16_t) {
+    if (auto w = in[2].WeightsData<int16_t>(); w && !w->empty()) {
+      auto [mn, mx] = std::minmax_element(w->begin(), w->end());
+      bias_lo = *mn;
+      bias_hi = *mx;
+    }
+  } else if (auto w = in[2].WeightsData<int32_t>(); w && !w->empty()) {
+    auto [mn, mx] = std::minmax_element(w->begin(), w->end());
+    bias_lo = *mn;
+    bias_hi = *mx;
+  }
+  bool configured = false;
+  for (bool try_q4 : {true, false}) {
+    const double q_factor = try_q4 ? 16.0 : 1.0;
+    auto gamma_scale = MakeScale32(norm_out_scale * q_factor / output.scale);
+    auto beta_scale = MakeScale32(p.inputs[2].scale * q_factor / output.scale);
+    auto final_scale = try_q4 ? MakeScale32(1.0 / 16.0) : unit_scale;
+    const int64_t final_bound = try_q4 ? (int64_t{1} << 29) : 32767;
+    if (gamma_scale && beta_scale && final_scale &&
+        CanEmitNativeRescale(*gamma_scale, -scaled_bound, scaled_bound) &&
+        CanEmitNativeRescale(*beta_scale, bias_lo, bias_hi) &&
+        CanEmitNativeRescale(*final_scale, -final_bound, final_bound)) {
+      p.norm_q4_bias = try_q4;
+      p.scales.push_back(*gamma_scale);
+      p.scales.push_back(*beta_scale);
+      p.scales.push_back(*final_scale);
+      p.minimum = {bias_lo};
+      p.maximum = {bias_hi};
+      configured = true;
+      break;
+    }
+  }
+  if (!configured) {
+    return fail("INT16 LayerNorm bias rescale out of range");
+  }
+  return true;
+}
+
+struct NormWorkLayout {
+  const SpecialPlan& plan;
+  Shape shape;
+  Shape work_shape;
+  Shape row_shape;
+  Shape channel_shape;
+  uint32_t gn_batch = 1;
+  uint32_t gn_spatial = 1;
+  uint32_t gn_groups = 1;
+  uint32_t gn_group_ch = 1;
+
+  ResId ToWork(Graph& graph, ResId x, DataType dt) const {
+    if (!plan.norm_group_spatial) return x;
+    if (gn_groups == 1 || gn_spatial == 1) {
+      return Reshape(graph, x, dt, work_shape);
+    }
+    ResId r4 =
+        Reshape(graph, x, dt, {gn_batch, gn_spatial, gn_groups, gn_group_ch});
+    ResId tr = graph.AddTransposeOperator(
+        r4, Attribute(std::vector<int32_t>{0, 2, 1, 3}),
+        TosaTensor(dt, {gn_batch, gn_groups, gn_spatial, gn_group_ch}));
+    return Reshape(graph, tr, dt, work_shape);
+  }
+
+  ResId FromWork(Graph& graph, ResId x, DataType dt) const {
+    if (!plan.norm_group_spatial) return x;
+    if (gn_groups == 1 || gn_spatial == 1) {
+      return Reshape(graph, x, dt, shape);
+    }
+    ResId r4 =
+        Reshape(graph, x, dt, {gn_batch, gn_groups, gn_spatial, gn_group_ch});
+    ResId tr = graph.AddTransposeOperator(
+        r4, Attribute(std::vector<int32_t>{0, 2, 1, 3}),
+        TosaTensor(dt, {gn_batch, gn_spatial, gn_groups, gn_group_ch}));
+    return Reshape(graph, tr, dt, shape);
+  }
+};
+
+ResId EmitInt16IntegerNorm(Graph& graph, const std::vector<ResId>& inputs,
+                           const SpecialPlan& plan,
+                           const NormWorkLayout& layout, const Attribute& axis,
+                           GraphConstantPool& pool) {
+  const Shape& shape = layout.shape;
+  const Shape& work_shape = layout.work_shape;
+  const Shape& row_shape = layout.row_shape;
+  const Shape& channel_shape = layout.channel_shape;
+  const TosaTensor work_wide(DataType::int32_t, work_shape);
+  const TosaTensor wide(DataType::int32_t, shape);
+  const TosaTensor row(DataType::int32_t, row_shape);
+  const TosaTensor row_bool(DataType::bool_t, row_shape);
+  const auto work_i32 = [&](int32_t v) {
+    return BroadcastScalar(graph, v, work_shape.size(), pool);
+  };
+  const auto mul_i32 = [&](ResId a, ResId b, const TosaTensor& tensor_type) {
+    return graph.AddMulOperator(
+        a, b, graph.AddTensorConstant(Attribute(int8_t{0})), tensor_type);
+  };
+
+  ResId centered = graph.AddCastOperator(
+      layout.ToWork(graph, inputs[0], plan.input_type), work_wide);
+  if (plan.kind == SpecialPlan::Kind::kLayerNorm) {
+    ResId mean_q8;
+    if (plan.norm_mean_stage1_scale) {
+      Shape s4 = work_shape;
+      s4.back() = plan.norm_mean_outer;
+      s4.push_back(plan.norm_mean_inner);
+      Shape mid_row = s4;
+      mid_row.back() = 1;
+      ResId c4 = Reshape(graph, centered, DataType::int32_t, s4);
+      ResId sum_inner = graph.AddReduceSumOperator(
+          c4, Attribute(static_cast<int32_t>(s4.size() - 1)),
+          TosaTensor(DataType::int32_t, mid_row));
+      ResId mean_inner = EmitNativeRescale(
+          graph, sum_inner, DataType::int32_t, DataType::int32_t, mid_row, 0, 0,
+          {*plan.norm_mean_stage1_scale}, pool,
+          {-int64_t{32768} * static_cast<int64_t>(plan.norm_mean_inner)},
+          {int64_t{32767} * static_cast<int64_t>(plan.norm_mean_inner)});
+      Shape s3 = work_shape;
+      s3.back() = plan.norm_mean_outer;
+      ResId mean_inner3 = Reshape(graph, mean_inner, DataType::int32_t, s3);
+      ResId sum1 = graph.AddReduceSumOperator(mean_inner3, axis, row);
+      mean_q8 =
+          EmitNativeRescale(graph, sum1, DataType::int32_t, DataType::int32_t,
+                            row_shape, 0, 0, {plan.scales[2]}, pool,
+                            {-(int64_t{32768} << plan.norm_mean_q_mid) *
+                             static_cast<int64_t>(plan.norm_mean_outer)},
+                            {(int64_t{32767} << plan.norm_mean_q_mid) *
+                             static_cast<int64_t>(plan.norm_mean_outer)});
+    } else {
+      ResId sum_in = centered;
+      if (plan.norm_mean_pre_shift > 0) {
+        sum_in = graph.AddArithmeticRightShiftOperator(
+            centered, work_i32(plan.norm_mean_pre_shift), Attribute(false),
+            work_wide);
+      }
+      ResId sum1 = graph.AddReduceSumOperator(sum_in, axis, row);
+      const int64_t lo = -(int64_t{32768} >> plan.norm_mean_pre_shift) *
+                         static_cast<int64_t>(work_shape.back());
+      const int64_t hi = (int64_t{32767} >> plan.norm_mean_pre_shift) *
+                         static_cast<int64_t>(work_shape.back());
+      mean_q8 = EmitNativeRescale(graph, sum1, DataType::int32_t,
+                                  DataType::int32_t, row_shape, 0, 0,
+                                  {plan.scales[2]}, pool, {lo}, {hi});
+    }
+    ResId centered_q8 =
+        graph.AddLogicalLeftShiftOperator(centered, work_i32(8), work_wide);
+    centered = graph.AddSubOperator(centered_q8, mean_q8, work_wide);
+  }
+
+  ResId abs_centered = graph.AddAbsOperator(centered, work_wide);
+  ResId max_centered = graph.AddReduceMaxOperator(abs_centered, axis,
+                                                  Attribute(uint32_t{1}), row);
+  ResId clz_max = graph.AddClzOperator(max_centered, row);
+  ResId left_shift_bits =
+      graph.AddSubOperator(clz_max, work_i32(32 - plan.norm_c_bits), row);
+  ResId centered_norm =
+      graph.AddLogicalLeftShiftOperator(centered, left_shift_bits, work_wide);
+  const int32_t sq_shift_bits = plan.norm_c_bits - plan.norm_p;
+  const int32_t q15_shift_bits = plan.norm_c_bits - 15;
+  ResId sq_term = graph.AddArithmeticRightShiftOperator(
+      centered_norm, work_i32(sq_shift_bits), Attribute(false), work_wide);
+  ResId centered_q15 = graph.AddArithmeticRightShiftOperator(
+      centered_norm, work_i32(q15_shift_bits), Attribute(true), work_wide);
+  ResId sq = mul_i32(sq_term, sq_term, work_wide);
+  ResId sum_sq = graph.AddReduceSumOperator(sq, axis, row);
+
+  ResId eps_rel_shift = graph.AddAddOperator(
+      work_i32(plan.norm_eps_shift_const - 2 * sq_shift_bits),
+      graph.AddLogicalLeftShiftOperator(left_shift_bits, work_i32(1), row),
+      row);
+  ResId shift_exceeds_14 =
+      graph.AddGreaterOperator(eps_rel_shift, work_i32(14), row_bool);
+  ResId downshift_even_raw = graph.AddBitwiseAndOperator(
+      graph.AddSubOperator(eps_rel_shift, work_i32(13), row), work_i32(-2),
+      row);
+  ResId sum_sq_downshift = graph.AddSelectOperator(
+      shift_exceeds_14,
+      graph.AddMinimumOperator(downshift_even_raw, work_i32(30),
+                               Attribute(uint32_t{1}), row),
+      work_i32(0), row);
+  ResId clamped_eps_shift =
+      graph.AddSubOperator(eps_rel_shift, sum_sq_downshift, row);
+  clamped_eps_shift = graph.AddMaximumOperator(clamped_eps_shift, work_i32(-31),
+                                               Attribute(uint32_t{1}), row);
+  clamped_eps_shift = graph.AddMinimumOperator(clamped_eps_shift, work_i32(14),
+                                               Attribute(uint32_t{1}), row);
+  ResId eps_left_shift = graph.AddMaximumOperator(
+      clamped_eps_shift, work_i32(0), Attribute(uint32_t{1}), row);
+  ResId eps_right_shift = graph.AddMaximumOperator(
+      graph.AddSubOperator(work_i32(0), clamped_eps_shift, row), work_i32(0),
+      Attribute(uint32_t{1}), row);
+  ResId eps_adj = graph.AddArithmeticRightShiftOperator(
+      graph.AddLogicalLeftShiftOperator(work_i32(plan.norm_eps_mant),
+                                        eps_left_shift, row),
+      eps_right_shift, Attribute(false), row);
+  ResId sum_sq_adj = graph.AddArithmeticRightShiftOperator(
+      sum_sq, sum_sq_downshift, Attribute(false), row);
+  ResId var_sum_total =
+      graph.AddMaximumOperator(graph.AddAddOperator(sum_sq_adj, eps_adj, row),
+                               work_i32(1), Attribute(uint32_t{1}), row);
+
+  ResId clz_var_sum = graph.AddClzOperator(var_sum_total, row);
+  ResId even_headroom = graph.AddBitwiseAndOperator(
+      graph.AddSubOperator(clz_var_sum, work_i32(1), row), work_i32(-2), row);
+  ResId var_sum_norm =
+      graph.AddLogicalLeftShiftOperator(var_sum_total, even_headroom, row);
+  ResId lut_idx_i32 = graph.AddArithmeticRightShiftOperator(
+      var_sum_norm, work_i32(16), Attribute(false), row);
+  ResId lut_idx_i16 = EmitNativeRescale(
+      graph, lut_idx_i32, DataType::int32_t, DataType::int16_t, row_shape, 0, 0,
+      {plan.scales[0]}, pool, {8192}, {32767});
+  ResId lut_id = Constant(graph, plan.norm_rsqrt_lut, {513}, pool);
+  ResId rsqrt_raw = graph.AddTableOperator(lut_idx_i16, lut_id, row);
+  ResId rsqrt_q15 = graph.AddArithmeticRightShiftOperator(
+      rsqrt_raw, work_i32(7), Attribute(true), row);
+
+  ResId prod = mul_i32(centered_q15, rsqrt_q15, work_wide);
+  ResId norm_base = EmitNativeRescale(
+      graph, prod, DataType::int32_t, DataType::int32_t, work_shape, 0, 0,
+      {plan.scales[1]}, pool, {-(int64_t{1} << 30)}, {int64_t{1} << 30});
+  ResId net_out_shift = graph.AddSubOperator(
+      graph.AddSubOperator(
+          graph.AddArithmeticRightShiftOperator(even_headroom, work_i32(1),
+                                                Attribute(false), row),
+          graph.AddArithmeticRightShiftOperator(sum_sq_downshift, work_i32(1),
+                                                Attribute(false), row),
+          row),
+      work_i32(20 - plan.norm_qy), row);
+  ResId out_left_shift = graph.AddMinimumOperator(
+      graph.AddMaximumOperator(net_out_shift, work_i32(0),
+                               Attribute(uint32_t{1}), row),
+      work_i32(31), Attribute(uint32_t{1}), row);
+  ResId out_right_shift = graph.AddMinimumOperator(
+      graph.AddMaximumOperator(
+          graph.AddSubOperator(work_i32(0), net_out_shift, row), work_i32(0),
+          Attribute(uint32_t{1}), row),
+      work_i32(31), Attribute(uint32_t{1}), row);
+  ResId norm_out_work = graph.AddArithmeticRightShiftOperator(
+      graph.AddLogicalLeftShiftOperator(norm_base, out_left_shift, work_wide),
+      out_right_shift, Attribute(true), work_wide);
+  ResId norm_out = layout.FromWork(graph, norm_out_work, DataType::int32_t);
+
+  ResId scaled = norm_out;
+  if (inputs.size() > 1) {
+    ResId gamma = Reshape(graph, inputs[1], plan.input_types[1], channel_shape);
+    if (plan.input_types[1] != DataType::int32_t) {
+      gamma = graph.AddCastOperator(
+          gamma, TosaTensor(DataType::int32_t, channel_shape));
+    }
+    scaled = mul_i32(norm_out, gamma, wide);
+  }
+  const int64_t scaled_bound =
+      inputs.size() > 1 ? (int64_t{1} << 29) : (int64_t{1} << 15);
+  if (inputs.size() <= 2) {
+    return EmitNativeRescale(graph, scaled, DataType::int32_t,
+                             DataType::int16_t, shape, 0, 0, {plan.scales[3]},
+                             pool, {-scaled_bound}, {scaled_bound});
+  }
+  ResId y_scaled = EmitNativeRescale(
+      graph, scaled, DataType::int32_t, DataType::int32_t, shape, 0, 0,
+      {plan.scales[3]}, pool, {-scaled_bound}, {scaled_bound});
+  ResId beta_reshaped =
+      Reshape(graph, inputs[2], plan.input_types[2], channel_shape);
+  ResId beta_i32 =
+      plan.input_types[2] == DataType::int32_t
+          ? beta_reshaped
+          : graph.AddCastOperator(beta_reshaped,
+                                  TosaTensor(DataType::int32_t, channel_shape));
+  ResId beta_scaled = EmitNativeRescale(
+      graph, beta_i32, DataType::int32_t, DataType::int32_t, channel_shape, 0,
+      0, {plan.scales[4]}, pool, {plan.minimum[0]}, {plan.maximum[0]});
+  ResId sum_out = graph.AddAddOperator(y_scaled, beta_scaled, wide);
+  if (!plan.norm_q4_bias) {
+    const auto orig_i32 = [&](int32_t v) {
+      return BroadcastScalar(graph, v, shape.size(), pool);
+    };
+    sum_out = graph.AddMinimumOperator(
+        graph.AddMaximumOperator(sum_out, orig_i32(-32768),
+                                 Attribute(uint32_t{1}), wide),
+        orig_i32(32767), Attribute(uint32_t{1}), wide);
+    return EmitNativeRescale(graph, sum_out, DataType::int32_t,
+                             DataType::int16_t, shape, 0, 0, {plan.scales[5]},
+                             pool, {-32768}, {32767});
+  }
+  return EmitNativeRescale(graph, sum_out, DataType::int32_t, DataType::int16_t,
+                           shape, 0, 0, {plan.scales[5]}, pool,
+                           {-(int64_t{1} << 29)}, {int64_t{1} << 29});
+}
+
 }  // namespace
 
 bool IsSpecialOperation(const Op& op) {
@@ -180,8 +641,8 @@ bool IsSpecialOperation(const Op& op) {
   }
   return false;
 }
-std::optional<OperationPlan> AnalyzeSpecialOperation(const Op& op,
-                                                     std::string& reason) {
+std::optional<OperationPlan> AnalyzeSpecialOperation(
+    const Op& op, std::string& reason, Int16NormMode int16_norm_mode) {
   auto fail = [&](const char* text) -> std::optional<OperationPlan> {
     reason = text;
     return std::nullopt;
@@ -233,14 +694,18 @@ std::optional<OperationPlan> AnalyzeSpecialOperation(const Op& op,
     const bool i16_norm = p->input_type == DataType::int16_t&& p->output_type ==
                           DataType::int16_t&& std::isfinite(
                               static_cast<float>(1.0 / output->scale));
+    const bool i8_norm = p->input_type == DataType::int8_t&& p->output_type ==
+                         DataType::int8_t&& std::isfinite(
+                             static_cast<float>(1.0 / output->scale));
     if (!std::isfinite(p->epsilon) ||
         !std::isfinite(static_cast<float>(p->epsilon)) ||
-        static_cast<float>(p->epsilon) <= 0 || (!fp_norm && !i16_norm) ||
-        shape != output->shape || !SameDimensions(in[0], out[0]) ||
+        static_cast<float>(p->epsilon) <= 0 ||
+        (!fp_norm && !i16_norm && !i8_norm) || shape != output->shape ||
+        !SameDimensions(in[0], out[0]) ||
         original_type->Layout().Dimensions().empty())
       return fail(
-          "Normalization requires matching static FP32/INT16 data and positive "
-          "finite epsilon");
+          "Normalization requires matching static FP32/INT8/INT16 data and "
+          "positive finite epsilon");
     if (!attrs["axis"].IsNull() &&
         (!attrs["axis"].IsInt() ||
          (attrs["axis"].AsInt64() != -1 &&
@@ -257,10 +722,25 @@ std::optional<OperationPlan> AnalyzeSpecialOperation(const Op& op,
         return fail("Normalization currently requires the last axis");
     }
     if (opts->name == "odml.group_norm") {
-      if (!attrs["num_groups"].IsInt() || attrs["num_groups"].AsInt64() != 1 ||
-          !attrs["sub_type"].IsInt() || attrs["sub_type"].AsInt64() != 1 ||
-          in.size() < 2 || in.size() > 3)
-        return fail("Only the one-group LayerNorm composite form is supported");
+      if (!attrs["num_groups"].IsInt() || !attrs["sub_type"].IsInt() ||
+          in.empty() || in.size() > 3)
+        return fail("Invalid odml.group_norm composite attributes");
+      const int64_t sub_type = attrs["sub_type"].AsInt64();
+      const int64_t num_groups = attrs["num_groups"].AsInt64();
+      if (sub_type == 1) {
+        if (num_groups != 1)
+          return fail(
+              "Only the one-group LayerNorm composite form is supported");
+      } else if (sub_type == 0) {
+        if (shape.size() < 2 || num_groups < 1 ||
+            shape.back() % static_cast<uint64_t>(num_groups) != 0)
+          return fail(
+              "GroupNorm requires rank >= 2 and num_groups dividing channels");
+        p->norm_group_spatial = true;
+        p->norm_groups = static_cast<uint32_t>(num_groups);
+      } else {
+        return fail("Unsupported odml.group_norm sub_type");
+      }
       p->kind = SpecialPlan::Kind::kLayerNorm;
     } else if (opts->name == "odml.rms_norm") {
       if (in.size() != 2) return fail("RMSNorm requires data and scale");
@@ -279,32 +759,47 @@ std::optional<OperationPlan> AnalyzeSpecialOperation(const Op& op,
         const DataType param_type = p->input_types.back();
         const bool ok = p->inputs.back().floating ||
                         param_type == DataType::int16_t ||
+                        (i8_norm && param_type == DataType::int8_t) ||
                         (i == 2 && param_type == DataType::int32_t);
         if (!ok) {
           return fail(
-              "INT16 normalization scale/bias must be FP32 or symmetric "
-              "INT16/INT32");
+              "Quantized normalization scale/bias must be FP32 or "
+              "matching INT8/INT16/INT32");
         }
       }
     }
-    if (i16_norm) plan.required_extensions = {"EXT-INT16"};
+    if (i16_norm) {
+      plan.required_extensions = {"EXT-INT16"};
+      if (!AnalyzeInt16IntegerNorm(op, *p, *output, shape, int16_norm_mode,
+                                   reason)) {
+        return std::nullopt;
+      }
+    }
   } else if (op.Code() == kLiteRtOpCodeTflFullyConnected) {
     p->kind = SpecialPlan::Kind::kFullyConnected;
     const bool wide = p->input_type == DataType::int16_t;
-    if (in.size() != 3 || p->output_type != p->input_type)
+    if ((in.size() != 2 && in.size() != 3) || p->output_type != p->input_type)
       return fail("FC requires matching INT8 or INT16 data types");
-    auto wt = in[1].RankedTensorType(), bt = in[2].RankedTensorType();
-    if (!wt || !bt || wt->Layout().HasStrides() || bt->Layout().HasStrides() ||
+    const bool has_bias = in.size() == 3;
+    auto wt = in[1].RankedTensorType();
+    if (!wt || wt->Layout().HasStrides() ||
         wt->ElementType() != ElementType::Int8 ||
-        bt->ElementType() != (wide ? ElementType::Int64 : ElementType::Int32) ||
-        wt->Layout().Dimensions().size() != 2 ||
-        bt->Layout().Dimensions().size() != 1)
+        wt->Layout().Dimensions().size() != 2)
+      return fail(
+          "FC requires constant INT8 matrix weights and matching INT32/INT64 "
+          "bias");
+    auto bt = has_bias ? in[2].RankedTensorType()
+                       : litert::Unexpected(Status::kErrorInvalidArgument);
+    if (has_bias && (!bt || bt->Layout().HasStrides() ||
+                     bt->ElementType() !=
+                         (wide ? ElementType::Int64 : ElementType::Int32) ||
+                     bt->Layout().Dimensions().size() != 1))
       return fail(
           "FC requires constant INT8 matrix weights and matching INT32/INT64 "
           "bias");
     auto dims = wt->Layout().Dimensions();
-    if (dims[0] <= 0 || dims[0] > 8192 || dims[1] <= 0 || dims[1] > 8192 ||
-        bt->Layout().Dimensions()[0] != dims[0])
+    if (dims[0] <= 0 || dims[0] > 65536 || dims[1] <= 0 || dims[1] > 65536 ||
+        (has_bias && bt->Layout().Dimensions()[0] != dims[0]))
       return fail("FC weight/bias dimensions disagree");
     uint32_t format, fused;
     bool keep;
@@ -336,7 +831,9 @@ std::optional<OperationPlan> AnalyzeSpecialOperation(const Op& op,
     if (!weights || weights->size() != uint64_t{p->channels} * p->depth)
       return fail("FC weights are missing or truncated");
     p->weights.assign(weights->begin(), weights->end());
-    if (wide) {
+    if (!has_bias) {
+      p->bias.assign(p->channels, 0);
+    } else if (wide) {
       auto bias = in[2].WeightsData<int64_t>();
       if (!bias) return fail("FC INT64 bias is missing");
       p->bias.assign(bias->begin(), bias->end());
@@ -348,7 +845,7 @@ std::optional<OperationPlan> AnalyzeSpecialOperation(const Op& op,
     std::vector<double> weights_scale, bias_scale;
     if (p->bias.size() != p->channels ||
         !Scales(in[1], p->channels, weights_scale) ||
-        !Scales(in[2], p->channels, bias_scale))
+        (has_bias && !Scales(in[2], p->channels, bias_scale)))
       return fail("FC constant quantization is invalid");
     const int64_t low = wide ? -32768 : -128, high = wide ? 32767 : 127;
     const int64_t limit = wide ? (int64_t{1} << 47) : (int64_t{1} << 31);
@@ -366,7 +863,7 @@ std::optional<OperationPlan> AnalyzeSpecialOperation(const Op& op,
       if (lo < -limit || hi >= limit)
         return fail("FC cannot prove accumulator range");
       const double scale = p->inputs[0].scale * weights_scale[c];
-      if (std::abs(bias_scale[c] - scale) > scale * 1e-5)
+      if (has_bias && std::abs(bias_scale[c] - scale) > scale * 1e-5)
         return fail("FC bias scales disagree");
       auto s = MakeScale32(scale / output->scale);
       if (!s || (!wide && !IsScale32RangeValid(*s, lo, hi)))
@@ -477,7 +974,7 @@ ResId EmitSpecialOperation(Graph& graph, const std::vector<ResId>& inputs,
   auto multiply = [&](ResId a, ResId b, const TosaTensor& type) {
     return graph.AddMulOperator(a, b, zero_shift, type);
   };
-  auto quantize_fp_to_i16 = [&](ResId val) {
+  auto quantize_fp_to_int = [&](ResId val) {
     ResId scaled =
         multiply(val, scalar(static_cast<float>(1.0 / plan.output.scale)), fp);
     ResId positive = graph.AddGreaterEqualOperator(
@@ -491,9 +988,15 @@ ResId EmitSpecialOperation(Graph& graph, const std::vector<ResId>& inputs,
                                fp),
         fp);
     scaled = graph.AddSelectOperator(positive, up, down, fp);
-    scaled =
-        graph.AddClampOperator(scaled, Attribute(-32768.0f),
-                               Attribute(32767.0f), Attribute(int32_t{0}), fp);
+    if (plan.output.zero_point != 0) {
+      scaled = graph.AddAddOperator(
+          scaled, scalar(static_cast<float>(plan.output.zero_point)), fp);
+    }
+    const float q_lo =
+        plan.output_type == DataType::int8_t ? -128.0f : -32768.0f;
+    const float q_hi = plan.output_type == DataType::int8_t ? 127.0f : 32767.0f;
+    scaled = graph.AddClampOperator(scaled, Attribute(q_lo), Attribute(q_hi),
+                                    Attribute(int32_t{0}), fp);
     return graph.AddCastOperator(scaled, out);
   };
   if (plan.kind == SpecialPlan::Kind::kFullyConnected) {
@@ -552,39 +1055,77 @@ ResId EmitSpecialOperation(Graph& graph, const std::vector<ResId>& inputs,
           plan.inputs[0].zero_point, plan.output.zero_point, plan.scales, pool,
           plan.minimum, plan.maximum);
     }
-    return quantize_fp_to_i16(inputs[0]);
+    return quantize_fp_to_int(inputs[0]);
   }
-  Shape row_shape = shape;
+  Shape work_shape = shape;
+  uint32_t gn_batch = 1, gn_spatial = 1, gn_groups = 1, gn_group_ch = 1;
+  if (plan.norm_group_spatial) {
+    gn_batch = shape[0];
+    gn_groups = plan.norm_groups;
+    gn_group_ch = shape.back() / gn_groups;
+    for (size_t i = 1; i + 1 < shape.size(); ++i) gn_spatial *= shape[i];
+    work_shape = {gn_batch, gn_groups, gn_spatial * gn_group_ch};
+  }
+  Shape row_shape = work_shape;
   row_shape.back() = 1;
+  const Attribute axis(static_cast<int32_t>(work_shape.size() - 1));
+  Shape channel_shape(shape.size(), 1);
+  channel_shape.back() = shape.back();
+  const NormWorkLayout layout{plan,       shape,         work_shape,
+                              row_shape,  channel_shape, gn_batch,
+                              gn_spatial, gn_groups,     gn_group_ch};
+  if (plan.integer_i16_norm) {
+    return EmitInt16IntegerNorm(graph, inputs, plan, layout, axis, pool);
+  }
+  auto to_work = [&](ResId x, DataType dt) {
+    return layout.ToWork(graph, x, dt);
+  };
+  auto from_work = [&](ResId x, DataType dt) {
+    return layout.FromWork(graph, x, dt);
+  };
+  const TosaTensor work_fp(DataType::float32_t, work_shape);
   const TosaTensor row(DataType::float32_t, row_shape);
-  const Attribute axis(static_cast<int32_t>(shape.size() - 1));
+  const auto work_scalar = [&](float x) {
+    return BroadcastScalar(graph, x, work_shape.size(), pool);
+  };
   auto mean = [&](ResId value) {
     return multiply(graph.AddReduceSumOperator(value, axis, row),
-                    scalar(1.0f / shape.back()), row);
+                    work_scalar(1.0f / work_shape.back()), row);
   };
-  ResId data = inputs[0];
+  ResId data = to_work(inputs[0], plan.input_type);
   if (!plan.inputs[0].floating) {
-    data = multiply(graph.AddCastOperator(data, fp),
-                    scalar(static_cast<float>(plan.inputs[0].scale)), fp);
+    data = graph.AddCastOperator(data, work_fp);
+    if (plan.inputs[0].zero_point != 0) {
+      data = graph.AddSubOperator(
+          data, work_scalar(static_cast<float>(plan.inputs[0].zero_point)),
+          work_fp);
+    }
+    data = multiply(data, work_scalar(static_cast<float>(plan.inputs[0].scale)),
+                    work_fp);
   }
   ResId centered = data;
   if (plan.kind == SpecialPlan::Kind::kLayerNorm) {
-    centered = graph.AddSubOperator(data, mean(data), fp);
+    centered = graph.AddSubOperator(data, mean(data), work_fp);
   }
-  ResId square = multiply(centered, centered, fp);
+  ResId square = multiply(centered, centered, work_fp);
   ResId variance = plan.kind == SpecialPlan::Kind::kL2Norm
                        ? graph.AddReduceSumOperator(square, axis, row)
                        : mean(square);
   ResId bounded = graph.AddAddOperator(
-      variance, scalar(static_cast<float>(plan.epsilon)), row);
-  ResId value = multiply(centered, graph.AddRsqrtOperator(bounded, row), fp);
-  Shape channel_shape(shape.size(), 1);
-  channel_shape.back() = shape.back();
+      variance, work_scalar(static_cast<float>(plan.epsilon)), row);
+  ResId value = from_work(
+      multiply(centered, graph.AddRsqrtOperator(bounded, row), work_fp),
+      DataType::float32_t);
   const TosaTensor fp_channel(DataType::float32_t, channel_shape);
   auto channel_param = [&](size_t i) {
     ResId param = Reshape(graph, inputs[i], plan.input_types[i], channel_shape);
     if (!plan.inputs[i].floating) {
       param = graph.AddCastOperator(param, fp_channel);
+      if (plan.inputs[i].zero_point != 0) {
+        param = graph.AddSubOperator(
+            param, scalar(static_cast<float>(plan.inputs[i].zero_point)),
+            fp_channel);
+      }
       param = multiply(param, scalar(static_cast<float>(plan.inputs[i].scale)),
                        fp_channel);
     }
@@ -594,6 +1135,6 @@ ResId EmitSpecialOperation(Graph& graph, const std::vector<ResId>& inputs,
   if (inputs.size() > 2) {
     value = graph.AddAddOperator(value, channel_param(2), fp);
   }
-  return plan.output.floating ? value : quantize_fp_to_i16(value);
+  return plan.output.floating ? value : quantize_fp_to_int(value);
 }
 }  // namespace litert::arm_vulkan_ml

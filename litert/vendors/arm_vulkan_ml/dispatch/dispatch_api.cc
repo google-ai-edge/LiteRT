@@ -15,8 +15,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
@@ -305,11 +303,8 @@ LiteRtStatus InvocationContextCreate(const LiteRtRuntimeContext*,
   context->artifact = std::move(artifact);
   context->inputs.resize(num_inputs);
   context->outputs.resize(num_outputs);
-  const char* option = std::getenv("LITERT_ARM_VULKAN_ML_ALLOW_EMULATION");
-  bool allow_emulation = option && !std::strcmp(option, "1");
   const bool dump_timings = device->state->dump_op_timings;
   VulkanInvocation::CreateOptions invocation_options;
-  invocation_options.allow_emulation = allow_emulation;
   invocation_options.dump_timings = dump_timings;
   std::string error;
   context->invocation =
@@ -425,6 +420,14 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext context) {
   } locks{api, {}};
   auto address = [&](const std::shared_ptr<RegisteredBuffer>& r) -> void* {
     if (!r) return nullptr;
+    if (api->get_tensor_buffer_host_memory) {
+      void* base = nullptr;
+      if (api->get_tensor_buffer_host_memory(r->buffer, &base) ==
+              kLiteRtStatusOk &&
+          base != nullptr) {
+        return static_cast<uint8_t*>(base) + r->offset;
+      }
+    }
     auto found = locks.addresses.find(r->buffer);
     if (found == locks.addresses.end()) {
       void* base = nullptr;

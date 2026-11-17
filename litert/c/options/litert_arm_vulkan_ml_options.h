@@ -54,6 +54,12 @@ LiteRtStatus LrtArmVulkanMLOptionsSetDumpOpTimings(
 LiteRtStatus LrtArmVulkanMLOptionsGetDumpOpTimings(
     LrtArmVulkanMLOptions options, bool* dump_op_timings);
 
+LiteRtStatus LrtArmVulkanMLOptionsSetFloatFallback(
+    LrtArmVulkanMLOptions options, bool enable);
+
+LiteRtStatus LrtArmVulkanMLOptionsGetFloatFallback(
+    LrtArmVulkanMLOptions options, bool* enabled);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

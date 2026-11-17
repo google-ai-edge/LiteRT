@@ -87,6 +87,7 @@ struct CompilerGraph {
   std::vector<GraphNode> nodes;
   std::vector<ValueId> inputs, outputs;
   size_t original_operator_count = 0;
+  bool requires_float_fallback = false;
 };
 struct OptimizationDecision {
   std::string pass;
@@ -108,7 +109,8 @@ const char* CompositeKindName(CompositeKind kind);
 // `reason` and returns `std::nullopt`.
 std::optional<CompilerGraph> ImportGraph(
     const Subgraph& graph, std::string& reason,
-    SoftmaxLutType softmax_lut = SoftmaxLutType::kAuto);
+    SoftmaxLutType softmax_lut = SoftmaxLutType::kAuto,
+    Int16NormMode int16_norm_mode = Int16NormMode::kAuto);
 
 // Validates topological ordering, value definitions, and quantization
 // boundaries in `graph`, or populates `reason` on failure.

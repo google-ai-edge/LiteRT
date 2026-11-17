@@ -321,28 +321,72 @@ void Sha256Block(std::array<uint32_t, 8>& state, const uint8_t block[64]) {
 }  // namespace
 std::string TosaOperatorName(uint32_t opcode) {
   static constexpr const char* kTosaOperatorNames[] = {
-      "ARGMAX",         "AVG_POOL2D",   "CONV2D",
-      "CONV3D",         "DEPTHWISE_CONV2D", "FFT2D",
-      "MATMUL",         "MAX_POOL2D",   "RFFT2D",
-      "TRANSPOSE_CONV2D", "CLAMP",      "ERF",
-      "SIGMOID",        "TANH",         "ADD",
-      "ARITHMETIC_RIGHT_SHIFT", "BITWISE_AND", "BITWISE_OR",
-      "BITWISE_XOR",    "INTDIV",       "LOGICAL_AND",
-      "LOGICAL_LEFT_SHIFT", "LOGICAL_RIGHT_SHIFT", "LOGICAL_OR",
-      "LOGICAL_XOR",    "MAXIMUM",      "MINIMUM",
-      "MUL",            "POW",          "SUB",
-      "TABLE",          "ABS",          "BITWISE_NOT",
-      "CEIL",           "CLZ",          "COS",
-      "EXP",            "FLOOR",        "LOG",
-      "LOGICAL_NOT",    "NEGATE",       "RECIPROCAL",
-      "RSQRT",          "SIN",          "SELECT",
-      "EQUAL",          "GREATER",      "GREATER_EQUAL",
-      "REDUCE_ALL",     "REDUCE_ANY",   "REDUCE_MAX",
-      "REDUCE_MIN",     "REDUCE_PRODUCT", "REDUCE_SUM",
-      "CONCAT",         "PAD",          "RESHAPE",
-      "REVERSE",        "SLICE",        "TILE",
-      "TRANSPOSE",      "GATHER",       "SCATTER",
-      "RESIZE",         "CAST",         "RESCALE",
+      "ARGMAX",
+      "AVG_POOL2D",
+      "CONV2D",
+      "CONV3D",
+      "DEPTHWISE_CONV2D",
+      "FFT2D",
+      "MATMUL",
+      "MAX_POOL2D",
+      "RFFT2D",
+      "TRANSPOSE_CONV2D",
+      "CLAMP",
+      "ERF",
+      "SIGMOID",
+      "TANH",
+      "ADD",
+      "ARITHMETIC_RIGHT_SHIFT",
+      "BITWISE_AND",
+      "BITWISE_OR",
+      "BITWISE_XOR",
+      "INTDIV",
+      "LOGICAL_AND",
+      "LOGICAL_LEFT_SHIFT",
+      "LOGICAL_RIGHT_SHIFT",
+      "LOGICAL_OR",
+      "LOGICAL_XOR",
+      "MAXIMUM",
+      "MINIMUM",
+      "MUL",
+      "POW",
+      "SUB",
+      "TABLE",
+      "ABS",
+      "BITWISE_NOT",
+      "CEIL",
+      "CLZ",
+      "COS",
+      "EXP",
+      "FLOOR",
+      "LOG",
+      "LOGICAL_NOT",
+      "NEGATE",
+      "RECIPROCAL",
+      "RSQRT",
+      "SIN",
+      "SELECT",
+      "EQUAL",
+      "GREATER",
+      "GREATER_EQUAL",
+      "REDUCE_ALL",
+      "REDUCE_ANY",
+      "REDUCE_MAX",
+      "REDUCE_MIN",
+      "REDUCE_PRODUCT",
+      "REDUCE_SUM",
+      "CONCAT",
+      "PAD",
+      "RESHAPE",
+      "REVERSE",
+      "SLICE",
+      "TILE",
+      "TRANSPOSE",
+      "GATHER",
+      "SCATTER",
+      "RESIZE",
+      "CAST",
+      "RESCALE",
   };
   static_assert(sizeof(kTosaOperatorNames) / sizeof(kTosaOperatorNames[0]) ==
                     static_cast<size_t>(tfsc::tosa::OperatorEnum::Rescale) + 1,
@@ -378,7 +422,7 @@ std::string NumericalStatus(const ToolReport& report) {
   return failed ? "failed" : (measured ? "passed" : "not_run");
 }
 Expected<void> ReadTextProto(const std::string& path,
-                               google::protobuf::Message& message) {
+                             google::protobuf::Message& message) {
   std::ifstream file(path);
   if (!file) return Invalid("Cannot open textproto file: " + path);
   std::string content((std::istreambuf_iterator<char>(file)), {});
@@ -470,7 +514,9 @@ std::string Options::Get(const std::string& key,
 }
 Expected<SoftmaxLutType> Options::SoftmaxLut() const {
   auto type = ParseSoftmaxLutType(Get("softmax_lut_type", "auto"));
-  if (!type) return Invalid("softmax_lut_type must be auto, int8 or int16");
+  if (!type) {
+    return Invalid("softmax_lut_type must be auto, int8, int16 or pro_fp");
+  }
   return *type;
 }
 Expected<int> Options::Integer(const std::string& key, int fallback) const {
@@ -512,9 +558,17 @@ std::string CompilerDirectory(const Options& options) {
   }
   return ".";
 }
-Expected<litert::Options> RuntimeOptions(const Options&) {
+Expected<litert::Options> RuntimeOptions(const Options& options) {
   LITERT_ASSIGN_OR_RETURN(auto result, litert::Options::Create());
-  LITERT_RETURN_IF_ERROR(result.SetHardwareAccelerators(HwAccelerators::kNpu));
+  LITERT_ASSIGN_OR_RETURN(auto require_full,
+                          options.Integer("require_full_acceleration", 1));
+  if (require_full != 0 && require_full != 1) {
+    return Invalid("require_full_acceleration must be 0 or 1");
+  }
+  const auto accelerators = require_full
+                                ? HwAcceleratorSet(HwAccelerators::kNpu)
+                                : (HwAccelerators::kNpu | HwAccelerators::kCpu);
+  LITERT_RETURN_IF_ERROR(result.SetHardwareAccelerators(accelerators));
   LITERT_ASSIGN_OR_RETURN(auto& arm, result.GetOptions<ArmVulkanMLOptions>());
   LITERT_RETURN_IF_ERROR(arm.SetEnableJustInTime(true));
   return result;
@@ -527,7 +581,7 @@ Expected<Options> ParseOptions(int argc, char** argv) {
         "coverage; use --help");
   options.command = argv[1];
   const std::set<std::string> commands = {
-      "inspect", "capabilities", "compile",  "validate",
+      "inspect", "capabilities", "compile", "validate",
       "trace",   "coverage",     "--help"};
   if (!commands.count(options.command))
     return Invalid("Unknown command: " + options.command);
@@ -599,6 +653,14 @@ Expected<Options> ParseOptions(int argc, char** argv) {
         options.Get("reference") != "fp64" &&
         options.Get("reference") != "xnnpack")))
     return Invalid("reference requires validate and tflite, fp64 or xnnpack");
+  const std::string validation_mode = options.Get("vulkan_validation", "off");
+  if (validation_mode != "off" && validation_mode != "core" &&
+      validation_mode != "sync")
+    return Invalid("vulkan_validation must be off, core or sync");
+  if (validation_mode != "off" &&
+      (options.command == "inspect" || options.command == "compile"))
+    return Invalid(
+        "Vulkan validation requires an execution or capabilities command");
   return options;
 }
 Expected<std::unique_ptr<tflite::ModelT>> LoadModel(const std::string& path) {
@@ -934,7 +996,8 @@ Expected<void> Inspect(const Options& options, ToolReport& report,
   report.set_coverage_status(complete ? "complete" : "partial");
   return {};
 }
-Expected<void> Capabilities(const Options& options, ToolReport& report) {
+Expected<void> Capabilities(const Options& options, ToolReport& report,
+                            const RuntimeContext& context) {
   LITERT_ASSIGN_OR_RETURN(auto softmax_lut, options.SoftmaxLut());
   LITERT_ASSIGN_OR_RETURN(auto rescale_bits, options.RescaleMultiplierBits());
   struct Loader {
@@ -965,8 +1028,12 @@ Expected<void> Capabilities(const Options& options, ToolReport& report) {
   VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
   info.pApplicationInfo = &app;
   std::string validation_error;
-  if (!loader.validation.Prepare(get, info, validation_error))
+  const std::string validation_mode = options.Get("vulkan_validation", "off");
+  const std::string& validation_dir = context.validation_log_dir;
+  if (!loader.validation.Prepare(get, info, validation_mode.c_str(),
+                                 validation_dir.c_str(), validation_error)) {
     return Invalid(validation_error);
+  }
   VkResult result = create(&info, nullptr, &loader.instance);
   if (result != VK_SUCCESS)
     return Invalid("vkCreateInstance returned " + std::to_string(result));
@@ -1114,8 +1181,8 @@ Expected<void> Capabilities(const Options& options, ToolReport& report) {
       e->set_queue_family(engine.queue_family);
       e->set_instruction_set(engine.instruction_set);
       e->set_level(static_cast<int32_t>(engine.level));
-      e->set_level_constraints(
-          artifact ? "enforced_for_engine_match" : "model_not_supplied");
+      e->set_level_constraints(artifact ? "enforced_for_engine_match"
+                                        : "model_not_supplied");
       for (const auto& p : engine.profiles) {
         auto* out_p = e->add_profiles();
         out_p->set_name(p.name);
@@ -1209,16 +1276,14 @@ Expected<void> Compare(const void* actual, const void* expected, size_t count,
   result.set_floating(floating);
   return {};
 }
-Expected<void> Run(const Options& options, ToolReport& report) {
+Expected<void> Run(const Options& options, ToolReport& report,
+                   const RuntimeContext& context) {
   if (options.command == "coverage") {
     return Coverage(*report.mutable_coverage());
   }
   LITERT_ASSIGN_OR_RETURN(int allow, options.Integer("allow_emulation", 0));
   if (allow != 0 && allow != 1)
     return Invalid("allow_emulation must be 0 or 1");
-  // The standalone process explicitly selects this policy for the dispatch
-  // plugin.
-  setenv("LITERT_ARM_VULKAN_ML_ALLOW_EMULATION", allow ? "1" : "0", 1);
   report.set_allow_emulation(allow != 0);
   if (!options.Get("model").empty()) {
     LITERT_ASSIGN_OR_RETURN(const std::string hash,
@@ -1227,7 +1292,8 @@ Expected<void> Run(const Options& options, ToolReport& report) {
   }
   if (options.command == "inspect") return Inspect(options, report, false);
   if (options.command == "compile") return Inspect(options, report, true);
-  if (options.command == "capabilities") return Capabilities(options, report);
+  if (options.command == "capabilities")
+    return Capabilities(options, report, context);
   if (options.command == "validate") return Validate(options, report);
   if (options.command == "trace") return Trace(options, report);
   return Invalid("Unknown command");
@@ -1390,33 +1456,9 @@ int Main(int argc, char** argv) {
   report.set_instruction_set("TOSA.001000.1");
   report.set_tensor_api_revision(2);
   const auto validation_mode = parsed->Get("vulkan_validation", "off");
-  if (validation_mode != "off" && validation_mode != "core" &&
-      validation_mode != "sync") {
-    std::cerr << "vulkan_validation must be off, core or sync\n";
-    return 2;
-  }
-  if (validation_mode != "off" &&
-      (parsed->command == "inspect" || parsed->command == "compile")) {
-    std::cerr
-        << "Vulkan validation requires an execution or capabilities command\n";
-    return 2;
-  }
   struct ValidationScope {
-    std::map<std::string, std::string> previous;
-    std::set<std::string> absent;
     std::string directory;
-    void Set(const std::string& key, const std::string& value) {
-      const char* old = std::getenv(key.c_str());
-      if (old)
-        previous[key] = old;
-      else
-        absent.insert(key);
-      setenv(key.c_str(), value.c_str(), 1);
-    }
     ~ValidationScope() {
-      for (const auto& entry : previous)
-        setenv(entry.first.c_str(), entry.second.c_str(), 1);
-      for (const auto& key : absent) unsetenv(key.c_str());
       std::error_code ec;
       if (!directory.empty()) fs::remove_all(directory, ec);
     }
@@ -1434,21 +1476,20 @@ int Main(int argc, char** argv) {
       return 1;
     }
     validation.directory = directory;
-    validation.Set("LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR", directory);
   }
-  validation.Set("LITERT_ARM_VULKAN_ML_VALIDATION", validation_mode);
-  auto status = Run(*parsed, report);
+  RuntimeContext context{validation.directory};
+  auto status = Run(*parsed, report, context);
   report.set_execution_status(status ? "passed" : "failed");
   report.set_numerical_status(NumericalStatus(report));
-  auto validation_status = CollectValidationLogs(
-      validation.directory, validation_mode,
-      *report.mutable_vulkan_validation());
+  auto validation_status =
+      CollectValidationLogs(validation.directory, validation_mode,
+                            *report.mutable_vulkan_validation());
   if (!validation_status && status) status = validation_status.Error();
-  report.set_status(status ? "passed"
-                           : (parsed->command == "trace" &&
-                                      !report.has_first_divergence()
-                                  ? "incomplete"
-                                  : "failed"));
+  report.set_status(
+      status ? "passed"
+             : (parsed->command == "trace" && !report.has_first_divergence()
+                    ? "incomplete"
+                    : "failed"));
   if (report.vulkan_validation().status() == "failed")
     report.set_status("failed");
   if (!status) report.set_error(status.Error().Message());
@@ -1459,8 +1500,7 @@ int Main(int argc, char** argv) {
       return 1;
     }
   }
-  if (status && parsed->command == "coverage" &&
-      parsed->Get("txtpb") != "1") {
+  if (status && parsed->command == "coverage" && parsed->Get("txtpb") != "1") {
     PrintCoverage(report.coverage());
     return 0;
   }

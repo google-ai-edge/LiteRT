@@ -35,7 +35,9 @@
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/vendors/arm_vulkan_ml/common/arm_vulkan_ml_jit_executable.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/conv2d.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/emission.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/graph_ir.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/op_registry.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/portable_ops.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/softmax.h"
@@ -49,14 +51,15 @@ std::shared_ptr<const CompiledPartition> CompilePartition(
     const Subgraph& subgraph, std::string& reason,
     CompileTimingReport& timing) {
   return CompilePartition(subgraph, reason, nullptr, nullptr,
-                          SoftmaxLutType::kAuto, 32, &timing);
+                          SoftmaxLutType::kAuto, 32, Int16NormMode::kAuto,
+                          &timing);
 }
 
 std::shared_ptr<const CompiledPartition> CompilePartition(
     const Subgraph& subgraph, std::string& reason,
     std::vector<LoweringRecord>* diagnostics, OptimizationReport* optimization,
     SoftmaxLutType softmax_lut, int rescale_multiplier_bits,
-    CompileTimingReport* timing) {
+    Int16NormMode int16_norm_mode, CompileTimingReport* timing) {
   if (rescale_multiplier_bits != 16 && rescale_multiplier_bits != 32) {
     reason = "Rescale multiplier bits must be 16 or 32";
     return nullptr;
@@ -66,7 +69,8 @@ std::shared_ptr<const CompiledPartition> CompilePartition(
   // analysis is shared with partition selection; optimizations cannot add ops
   // to a partition that selection rejected.
   absl::Time stage_start_time = absl::Now();
-  std::optional<CompilerGraph> ir = ImportGraph(subgraph, reason, softmax_lut);
+  std::optional<CompilerGraph> ir =
+      ImportGraph(subgraph, reason, softmax_lut, int16_norm_mode);
   if (!ir) return nullptr;
   const double import_ms =
       absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
@@ -76,6 +80,7 @@ std::shared_ptr<const CompiledPartition> CompilePartition(
       absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
   stage_start_time = absl::Now();
   auto artifact = std::make_shared<CompiledPartition>();
+  artifact->requires_float_fallback = ir->requires_float_fallback;
   std::shared_ptr<tfsc::spirv::Module> module = tfsc::CreateModule();
   tfsc::tosa::Graph graph(module, artifact->entry_point);
   std::vector<tfsc::tosa::ResId> values(ir->values.size());
@@ -256,8 +261,10 @@ std::shared_ptr<const CompiledPartition> CompilePartition(
     }
     TensorDescriptor output = descriptor(value);
     if (value.logical_type == kLiteRtElementTypeBool) {
-      result = graph.AddCastOperator(
-          result,
+      const size_t rank = output.shape.size();
+      result = graph.AddSelectOperator(
+          result, BroadcastScalar(graph, int8_t{1}, rank, constants),
+          BroadcastScalar(graph, int8_t{0}, rank, constants),
           tfsc::tosa::Tensor(tfsc::tosa::DataType::int8_t, output.shape));
     }
     graph.AddOutput(result, output.binding);

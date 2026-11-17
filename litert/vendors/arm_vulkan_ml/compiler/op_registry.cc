@@ -29,8 +29,8 @@ const std::vector<NormalizationRegistration>& GetNormalizationRegistrations() {
   static const auto* const registrations =
       new std::vector<NormalizationRegistration>{
           {"odml.group_norm", 1,
-           "Version 1; FP32/INT16; LayerNorm subtype 1; num_groups=1; last "
-           "axis"},
+           "Version 1; FP32/INT16; LayerNorm (sub_type=1, num_groups=1) or "
+           "GroupNorm (sub_type=0, num_groups>=1); last channel axis"},
           {"odml.rms_norm", 0,
            "Version 0; FP32/INT16; last axis; channel-vector scale"},
           {"odml.l2_norm", 0, "Version 0; FP32/INT16; last axis"}};
@@ -68,12 +68,16 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
         {{i8, i8, R::kGeneral,
           "Static broadcasting; per-tensor affine activations; proven INT32 "
           "ranges; NONE/RELU/RELU6"},
-         {f32, f32, R::kGeneral, "Static broadcasting; NONE/RELU/RELU6"}});
+         {f32, f32, R::kGeneral, "Static broadcasting; NONE/RELU/RELU6"},
+         {i32, i32, R::kTyped,
+          "Static broadcasting; raw INT32 arithmetic; NONE activation"}});
     add({OP(Sub)},
         {{i8, i8, R::kGeneral,
           "Static broadcasting; per-tensor affine activations; proven INT32 "
           "ranges; NONE/RELU/RELU6"},
-         {f32, f32, R::kPortable, "Static broadcasting; NONE/RELU/RELU6"}});
+         {f32, f32, R::kPortable, "Static broadcasting; NONE/RELU/RELU6"},
+         {i32, i32, R::kTyped,
+          "Static broadcasting; raw INT32 arithmetic; NONE activation"}});
     add({OP(Relu), OP(Relu6)}, {{i8, i8, R::kGeneral,
                                  "Matching shapes; affine INT8; "
                                  "activation/requantization bounds checked"},
@@ -81,6 +85,9 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
     add({OP(Abs)},
         {{i8, i8, R::kGeneral,
           "Matching shapes; affine INT8; requantization range proven; TABLE"},
+         {i16, i16, R::kGeneral,
+          "Matching shapes; symmetric INT16; CAST INT32 + ABS + native "
+          "RESCALE; EXT-INT16"},
          {f32, f32, R::kPortable, "Matching shapes"}});
     add({OP(Tanh)},
         {{i8, i8, R::kGeneral,
@@ -100,25 +107,34 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
           "per-channel weights; grouped convolution; proven "
           "accumulator/rescale "
           "ranges"},
+         {i16, i16, R::kGeneral,
+          "NHWC; symmetric per-tensor INT16 activations; constant symmetric "
+          "INT8 weights and matching INT64/INT32 bias; per-channel weights; "
+          "grouped convolution; proven INT48 accumulator/rescale ranges; "
+          "EXT-INT16"},
          {f32, f32, R::kGeneral,
           "NHWC; constant weights/bias; no grouped convolution; supported "
           "padding/stride/dilation and fused activation"}});
-    add({OP(DepthwiseConv2d)}, {{i8, i8, R::kGeneral,
-                                 "NHWC; positive depth multiplier; constant "
-                                 "symmetric INT8 weights and "
-                                 "matching INT32 bias; proven ranges"},
-                                {f32, f32, R::kGeneral,
-                                 "NHWC; positive depth multiplier; constant "
-                                 "weights/bias; supported geometry "
-                                 "and activation"}});
+    add({OP(DepthwiseConv2d)},
+        {{i8, i8, R::kGeneral,
+          "NHWC; positive depth multiplier; constant symmetric INT8 weights "
+          "and matching INT32 bias; proven ranges"},
+         {i16, i16, R::kGeneral,
+          "NHWC; positive depth multiplier; symmetric per-tensor INT16 "
+          "activations; constant symmetric INT8 weights and matching "
+          "INT64/INT32 bias; proven INT48 ranges; EXT-INT16"},
+         {f32, f32, R::kGeneral,
+          "NHWC; positive depth multiplier; constant weights/bias; supported "
+          "geometry and activation"}});
     add({OP(FullyConnected)},
         {{i8, i8, R::kGeneral,
-          "Constant dense INT8 weights and matching INT32 bias; default weight "
-          "format; keep_num_dims=true/false; proven convolution-derived "
-          "ranges"},
+          "Constant dense INT8 weights and optional matching INT32 bias; "
+          "default weight format; keep_num_dims=true/false; proven "
+          "convolution-derived ranges"},
          {f32, f32, R::kExtended,
-          "Constant dense weights and bias; default format; "
-          "keep_num_dims=false; supported fixed dimensions and activation"}});
+          "Constant dense weights and optional bias; default format; "
+          "keep_num_dims=true/false; supported fixed dimensions and "
+          "activation"}});
     add({OP(TransposeConv)},
         {{i8, i8, R::kExtended,
           "NHWC; constant output shape and symmetric weights; optional "
@@ -143,6 +159,12 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
                          "quantization; at most one inferred dimension"},
                         {f32, f32, R::kGeneral,
                          "Constant shape; preserved element count; at most one "
+                         "inferred dimension"},
+                        {i32, i32, R::kGeneral,
+                         "Constant shape; preserved element count; at most one "
+                         "inferred dimension"},
+                        {boolean, boolean, R::kGeneral,
+                         "Constant shape; preserved element count; at most one "
                          "inferred dimension"}});
     add({OP(Transpose)},
         {{i8, i8, R::kGeneral,
@@ -164,6 +186,8 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
                        "Constant rank-sized starts/sizes; matching "
                        "quantization; nonempty bounds"},
                       {f32, f32, R::kPortable,
+                       "Constant rank-sized starts/sizes; nonempty bounds"},
+                      {i32, i32, R::kGeneral,
                        "Constant rank-sized starts/sizes; nonempty bounds"}});
     add({OP(Concatenation)},
         {{i8, i8, R::kGeneral,
@@ -193,7 +217,9 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
           "Static broadcasting; identical input/output quantization"},
          {f32, f32, R::kPortable, "Static broadcasting"}});
     add({OP(Div)},
-        {{f32, f32, R::kPortable, "Static broadcasting; NONE/RELU/RELU6"}});
+        {{f32, f32, R::kPortable, "Static broadcasting; NONE/RELU/RELU6"},
+         {i32, i32, R::kTyped,
+          "Static broadcasting; INT32 integer division; NONE activation"}});
     add({OP(Pow)}, {{f32, f32, R::kPortable, "Static broadcasting"}});
     add({OP(Sin), OP(Cos), OP(Neg), OP(Square), OP(Sqrt), OP(Rsqrt), OP(Exp),
          OP(Log), OP(Floor), OP(Ceil)},
@@ -211,7 +237,8 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
     add({OP(ReduceMax), OP(ReduceMin)},
         {{i8, i8, R::kExtended,
           "Constant axes; preserved quantization; non-scalar result"},
-         {f32, f32, R::kExtended, "Constant axes; non-scalar result"}});
+         {f32, f32, R::kExtended, "Constant axes; non-scalar result"},
+         {i32, i32, R::kExtended, "Constant axes; non-scalar result"}});
     add({OP(Gather)},
         {{i8, i8, R::kExtended,
           "Constant in-range INT32 indices; batch_dims=0; preserved "
@@ -235,8 +262,8 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
                              "bounded batch materialization"}});
     add({OP(Softmax)},
         {{i8, i8, R::kGeneral,
-          "Last axis 1..4095; finite positive scale/beta; output scale=1/256, "
-          "zero_point=-128; auto/int8 LUTs or EXT-INT16-gated int16 LUTs"},
+          "Last axis 1..8192; finite positive scale/beta; output scale=1/256, "
+          "zero_point=-128; PRO-FP default or legacy int8/int16 LUTs"},
          {f32, f32, R::kPortable,
           "Static last-axis Softmax; finite positive beta"}});
     add({OP(Quantize)},
@@ -259,7 +286,11 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
          {i32, boolean, R::kTyped,
           "Matching INT32 operands; static broadcasting"},
          {f32, boolean, R::kTyped,
-          "Matching FP32 operands; static broadcasting"}});
+          "Matching FP32 operands; static broadcasting"},
+         {i8, boolean, R::kDecomposed,
+          "Matching INT8 operands; static broadcasting"},
+         {i16, boolean, R::kDecomposed,
+          "Symmetric INT16 operands; static broadcasting; EXT-INT16"}});
     add({OP(ReduceAll), OP(ReduceAny)},
         {{boolean, boolean, R::kTyped,
           "Constant axes; keep_dims true/false; non-scalar result"}});
@@ -304,8 +335,8 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
     for (LiteRtOpCode code :
          {OP(Exp), OP(Log), OP(Rsqrt), OP(Gelu), OP(Square)}) {
       extend(code, {i8, i8, R::kDecomposed,
-                    "Compile-time mathematical TABLE; LOG/RSQRT input "
-                    "zero_point=-128; GELU exact/approximate"});
+                    "Compile-time mathematical TABLE; non-positive Log/Rsqrt "
+                    "clamped; GELU exact/approximate"});
     }
     extend(OP(Mean), {i8, i8, R::kDecomposed,
                       "Constant nonempty axes; keep_dims true/false; scalar "
@@ -503,11 +534,33 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
     add({OP(Softmax)},
         {{i16, i16, R::kGeneral,
           "Last axis 1..8192; symmetric INT16; output scale=1/32768, "
-          "zero_point=0; CLZ + 2x513 TABLE + saturating RESCALE; EXT-INT16"}});
+          "zero_point=0; PRO-FP default or CLZ + 2x513 TABLE LUTs; "
+          "EXT-INT16"}});
     extend(OP(Gelu),
            {i16, i16, R::kDecomposed,
             "Matching shapes; symmetric INT16; 513-entry compile-time TABLE "
             "(exact/approximate) + 1/128 RESCALE; EXT-INT16"});
+    extend(OP(Log),
+           {i16, i16, R::kDecomposed,
+            "Matching shapes; symmetric INT16; 513-entry compile-time TABLE "
+            "(non-positive clamped) + 1/128 RESCALE; EXT-INT16"});
+    extend(OP(Square),
+           {i16, i16, R::kDecomposed,
+            "Matching shapes; symmetric INT16; CAST INT32 + MUL + native "
+            "RESCALE; EXT-INT16"});
+    for (LiteRtOpCode code : {OP(ReluN1To1), OP(Relu0To1)}) {
+      extend(code, {i16, i16, R::kDecomposed,
+                    "Matching shapes; symmetric INT16; native RESCALE + "
+                    "CLAMP; EXT-INT16"});
+    }
+    extend(OP(LeakyRelu),
+           {i16, i16, R::kDecomposed,
+            "Matching shapes; symmetric INT16; non-negative alpha RESCALE + "
+            "MAX/MIN + RESCALE; EXT-INT16"});
+    extend(OP(Prelu),
+           {i16, i16, R::kDecomposed,
+            "Matching data/output shapes; symmetric INT16; broadcasts alpha; "
+            "native RESCALE + SELECT; EXT-INT16"});
     extend(OP(Mean),
            {i16, i16, R::kDecomposed,
             "Constant nonempty axes; keep_dims true/false; scalar outputs; "

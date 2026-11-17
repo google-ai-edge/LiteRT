@@ -24,6 +24,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "tosa-for-spirv-codegen/tosa/OperatorEnum.hpp"  // from @tosa_for_spirv_codegen
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -131,14 +132,20 @@ TEST(OperationTest,
     ASSERT_TRUE(model);
     auto subgraph = model->Subgraph(0);
     ASSERT_TRUE(subgraph);
-    for (auto lut : {SoftmaxLutType::kAuto, SoftmaxLutType::kInt8,
-                     SoftmaxLutType::kInt16}) {
+    for (auto lut : {SoftmaxLutType::kAuto, SoftmaxLutType::kProFp,
+                     SoftmaxLutType::kInt8, SoftmaxLutType::kInt16}) {
+      const bool expect_pro_fp =
+          lut == SoftmaxLutType::kAuto || lut == SoftmaxLutType::kProFp;
       std::string reason;
       auto compiled =
           CompilePartition(*subgraph, reason, nullptr, nullptr, lut);
-      ASSERT_EQ(static_cast<bool>(compiled), variant == 0) << reason;
+      ASSERT_EQ(static_cast<bool>(compiled),
+                variant == 0 || (variant == 3 && expect_pro_fp))
+          << reason;
       if (!compiled) continue;
-      EXPECT_EQ(compiled->profiles, (std::vector<std::string>{"PRO-INT"}));
+      EXPECT_EQ(compiled->profiles,
+                (expect_pro_fp ? std::vector<std::string>{"PRO-INT", "PRO-FP"}
+                               : std::vector<std::string>{"PRO-INT"}));
       EXPECT_EQ(compiled->extensions,
                 lut == SoftmaxLutType::kInt16
                     ? std::vector<std::string>{"EXT-INT16"}
@@ -437,7 +444,7 @@ TEST(OperationTest, FloatFullyConnectedChecksConstantsShapeAndOptions) {
     ASSERT_TRUE(subgraph);
     std::string reason;
     EXPECT_EQ(static_cast<bool>(CompilePartition(*subgraph, reason)),
-              variant == 0)
+              variant <= 1)
         << reason;
   }
 }
@@ -753,7 +760,11 @@ TEST(OperationTest, Int16LutActivationsSoftmaxLayoutPoolAndSumCompile) {
     if (code != tflite::BuiltinOperator_SOFTMAX) {
       EXPECT_EQ(plan->table16.size(), 513);
     } else {
-      EXPECT_TRUE(plan->softmax16.has_value());
+      EXPECT_TRUE(plan->softmax_pro_fp.has_value());
+      auto lut16_plan =
+          AnalyzeOperation(subgraph->Ops()[0], reason, SoftmaxLutType::kInt16);
+      ASSERT_TRUE(lut16_plan) << reason;
+      EXPECT_TRUE(lut16_plan->softmax16.has_value());
     }
     auto compiled = CompilePartition(*subgraph, reason);
     ASSERT_TRUE(compiled) << reason;
@@ -1706,6 +1717,36 @@ TEST(OperationTest,
     EXPECT_TRUE(CompilePartition(FirstSubgraph(model), reason)) << reason;
   }
 
+  // Large STRIDED_SLICE (>64 slices along unit-stride and strided axes) must
+  // stay within TOSA Level 8K MAX_TENSOR_LIST_SIZE (<= 64).
+  for (bool strided : {false, true}) {
+    SCOPED_TRACE(strided);
+    OpFixture f(tflite::BuiltinOperator_STRIDED_SLICE);
+    const int in =
+        f.Tensor(tflite::TensorType_INT8, {1, strided ? 200 : 197, 8}, 0.1f, 0);
+    const int b = f.Ints({3}, {0, strided ? 0 : 1, 0});
+    const int e = f.Ints({3}, {1, strided ? 200 : 197, 8});
+    const int s = f.Ints({3}, {1, strided ? 2 : 1, 1});
+    const int out =
+        f.Tensor(tflite::TensorType_INT8, {1, strided ? 100 : 196, 8}, 0.1f, 0);
+    f.op->inputs = {in, b, e, s};
+    f.op->outputs = {out};
+    f.graph->inputs = {in};
+    f.graph->outputs = {out};
+    tflite::StridedSliceOptionsT opts;
+    f.op->builtin_options.Set(opts);
+    auto model = f.Load();
+    ASSERT_TRUE(model);
+    std::string reason;
+    auto compiled = CompilePartition(FirstSubgraph(model), reason);
+    ASSERT_TRUE(compiled) << reason;
+    EXPECT_TRUE(compiled->level_requirements.checked);
+    EXPECT_LE(compiled->level_requirements.max_tensor_list_size, 64u);
+    if (!strided) {
+      EXPECT_EQ(compiled->level_requirements.max_tensor_list_size, 0u);
+    }
+  }
+
   // FP32 BATCH_MATMUL (adj_x, adj_y, batch broadcast), MEAN, REDUCE_PROD,
   // SOFTMAX.
   {
@@ -2100,6 +2141,301 @@ TEST(OperationTest,
   EXPECT_FALSE(records.empty());
   EXPECT_NE(report.before_ir.find("quantized_convolution"), std::string::npos);
   EXPECT_NE(report.after_ir.find("quantized_softmax"), std::string::npos);
+}
+
+TEST(OperationTest, Int16AbsUsesInt32CastAndNativeRescale) {
+  using O = tfsc::tosa::OperatorEnum;
+  tflite::ModelT model;
+  model.version = 3;
+  auto oc = std::make_unique<tflite::OperatorCodeT>();
+  oc->builtin_code = tflite::BuiltinOperator_ABS;
+  model.operator_codes.push_back(std::move(oc));
+  model.buffers.push_back(std::make_unique<tflite::BufferT>());
+
+  auto make_q = [](const std::vector<int32_t>& shape, float scale) {
+    auto t = std::make_unique<tflite::TensorT>();
+    t->type = tflite::TensorType_INT16;
+    t->shape = shape;
+    t->quantization = std::make_unique<tflite::QuantizationParametersT>();
+    t->quantization->scale = {scale};
+    t->quantization->zero_point = {0};
+    return t;
+  };
+  auto g = std::make_unique<tflite::SubGraphT>();
+  g->tensors.push_back(make_q({2, 4}, 0.02f));
+  g->tensors.push_back(make_q({2, 4}, 0.01f));
+  auto op = std::make_unique<tflite::OperatorT>();
+  op->opcode_index = 0;
+  op->inputs = {0};
+  op->outputs = {1};
+  g->operators.push_back(std::move(op));
+  g->inputs = {0};
+  g->outputs = {1};
+  model.subgraphs.push_back(std::move(g));
+
+  flatbuffers::FlatBufferBuilder builder;
+  tflite::FinishModelBuffer(builder, tflite::Model::Pack(builder, &model));
+  auto loaded = ExtendedModel::CreateFromBuffer(
+      BufferRef<uint8_t>(builder.GetBufferPointer(), builder.GetSize()));
+  ASSERT_TRUE(loaded);
+  auto sg = loaded->Subgraph(0);
+  ASSERT_TRUE(sg);
+  std::string reason;
+  auto compiled = CompilePartition(*sg, reason);
+  ASSERT_NE(compiled, nullptr) << reason;
+  EXPECT_EQ(compiled->extensions, (std::vector<std::string>{"EXT-INT16"}));
+  EXPECT_EQ(compiled->metrics.operators.at(static_cast<uint32_t>(O::Abs)), 1);
+  EXPECT_EQ(compiled->metrics.operators.at(static_cast<uint32_t>(O::Cast)), 1);
+  EXPECT_EQ(compiled->metrics.operators.at(static_cast<uint32_t>(O::Rescale)),
+            1);
+}
+
+TEST(OperationTest, Int8ScalarMulFoldsIntoSingleNativeRescale) {
+  using O = tfsc::tosa::OperatorEnum;
+  for (int const_slot : {0, 1}) {
+    auto bytes = AddModel(
+        const_slot == 0 ? std::vector<int32_t>{1} : std::vector<int32_t>{1, 8},
+        const_slot == 1 ? std::vector<int32_t>{1} : std::vector<int32_t>{1, 8},
+        {1, 8});
+    auto object = tflite::UnPackModel(bytes.data());
+    object->operator_codes[0]->builtin_code = tflite::BuiltinOperator_MUL;
+    object->buffers.push_back(std::make_unique<tflite::BufferT>());
+    object->buffers[1]->data = {7};  // real = 0.05 * (7 - (-3)) = 0.5
+    auto& graph = *object->subgraphs[0];
+    graph.tensors[const_slot]->buffer = 1;
+    graph.inputs = {1 - const_slot};
+    graph.operators[0]->builtin_options.Set(tflite::MulOptionsT{});
+
+    flatbuffers::FlatBufferBuilder builder;
+    tflite::FinishModelBuffer(builder,
+                              tflite::Model::Pack(builder, object.get()));
+    auto model = ExtendedModel::CreateFromBuffer(
+        BufferRef<uint8_t>(builder.GetBufferPointer(), builder.GetSize()));
+    ASSERT_TRUE(model);
+    auto sg = model->Subgraph(0);
+    ASSERT_TRUE(sg);
+    std::string reason;
+    auto plan = AnalyzeOperation(sg->Ops()[0], reason);
+    ASSERT_TRUE(plan) << reason;
+    EXPECT_TRUE(plan->scalar_mul_fast_path);
+    EXPECT_EQ(plan->runtime_inputs, (std::vector<int>{1 - const_slot}));
+    auto compiled = CompilePartition(*sg, reason);
+    ASSERT_NE(compiled, nullptr) << reason;
+    EXPECT_EQ(compiled->metrics.operators.count(static_cast<uint32_t>(O::Mul)),
+              0);
+    EXPECT_EQ(compiled->metrics.operators.at(static_cast<uint32_t>(O::Rescale)),
+              1);
+  }
+}
+
+TEST(OperationTest, Int16Conv2dAndDepthwiseConv2dUseInt48AndExtInt16) {
+  using O = tfsc::tosa::OperatorEnum;
+  for (bool depthwise : {false, true}) {
+    for (tflite::TensorType bias_type :
+         {tflite::TensorType_INT64, tflite::TensorType_INT32}) {
+      tflite::ModelT model;
+      model.version = 3;
+      auto oc = std::make_unique<tflite::OperatorCodeT>();
+      oc->builtin_code = depthwise ? tflite::BuiltinOperator_DEPTHWISE_CONV_2D
+                                   : tflite::BuiltinOperator_CONV_2D;
+      model.operator_codes.push_back(std::move(oc));
+      // Buffer 0 empty; Buffer 1 weights; Buffer 2 bias.
+      model.buffers.push_back(std::make_unique<tflite::BufferT>());
+      auto wbuf = std::make_unique<tflite::BufferT>();
+      wbuf->data.assign(depthwise ? 27 : 54, 2);
+      model.buffers.push_back(std::move(wbuf));
+      auto bbuf = std::make_unique<tflite::BufferT>();
+      if (bias_type == tflite::TensorType_INT64) {
+        const int64_t bvals[3] = {10, -20, 30};
+        bbuf->data.resize(sizeof(bvals));
+        std::memcpy(bbuf->data.data(), bvals, sizeof(bvals));
+      } else {
+        const int32_t bvals[3] = {10, -20, 30};
+        bbuf->data.resize(sizeof(bvals));
+        std::memcpy(bbuf->data.data(), bvals, sizeof(bvals));
+      }
+      model.buffers.push_back(std::move(bbuf));
+
+      auto make_q = [](tflite::TensorType type,
+                       const std::vector<int32_t>& shape,
+                       const std::vector<float>& scales,
+                       const std::vector<int64_t>& zps, int32_t qdim,
+                       uint32_t buffer = 0) {
+        auto t = std::make_unique<tflite::TensorT>();
+        t->type = type;
+        t->shape = shape;
+        t->buffer = buffer;
+        t->quantization = std::make_unique<tflite::QuantizationParametersT>();
+        t->quantization->scale = scales;
+        t->quantization->zero_point = zps;
+        t->quantization->quantized_dimension = qdim;
+        return t;
+      };
+
+      auto g = std::make_unique<tflite::SubGraphT>();
+      // Input [1, 7, 7, C_in]
+      g->tensors.push_back(make_q(tflite::TensorType_INT16,
+                                  {1, 7, 7, depthwise ? 3 : 2}, {0.125f}, {0},
+                                  0));
+      // Weights: Conv2d [3, 3, 3, 2], DepthwiseConv2d [1, 3, 3, 3]
+      g->tensors.push_back(make_q(tflite::TensorType_INT8,
+                                  depthwise ? std::vector<int32_t>{1, 3, 3, 3}
+                                            : std::vector<int32_t>{3, 3, 3, 2},
+                                  {0.25f, 0.125f, 0.25f}, {0, 0, 0},
+                                  depthwise ? 3 : 0, /*buffer=*/1));
+      // Bias [3]
+      g->tensors.push_back(make_q(bias_type, {3},
+                                  {0.03125f, 0.015625f, 0.03125f}, {0, 0, 0}, 0,
+                                  /*buffer=*/2));
+      // Output [1, 3, 3, 3]
+      g->tensors.push_back(
+          make_q(tflite::TensorType_INT16, {1, 3, 3, 3}, {0.25f}, {0}, 0));
+
+      auto op = std::make_unique<tflite::OperatorT>();
+      op->opcode_index = 0;
+      op->inputs = {0, 1, 2};
+      op->outputs = {3};
+      if (depthwise) {
+        tflite::DepthwiseConv2DOptionsT opts;
+        opts.padding = tflite::Padding_VALID;
+        opts.stride_h = 2;
+        opts.stride_w = 2;
+        opts.depth_multiplier = 1;
+        opts.fused_activation_function = tflite::ActivationFunctionType_RELU;
+        op->builtin_options.Set(opts);
+      } else {
+        tflite::Conv2DOptionsT opts;
+        opts.padding = tflite::Padding_VALID;
+        opts.stride_h = 2;
+        opts.stride_w = 2;
+        opts.fused_activation_function = tflite::ActivationFunctionType_RELU;
+        op->builtin_options.Set(opts);
+      }
+      g->operators.push_back(std::move(op));
+      g->inputs = {0};
+      g->outputs = {3};
+      model.subgraphs.push_back(std::move(g));
+
+      flatbuffers::FlatBufferBuilder builder;
+      tflite::FinishModelBuffer(builder, tflite::Model::Pack(builder, &model));
+      auto loaded = ExtendedModel::CreateFromBuffer(
+          BufferRef<uint8_t>(builder.GetBufferPointer(), builder.GetSize()));
+      ASSERT_TRUE(loaded);
+      auto sg = loaded->Subgraph(0);
+      ASSERT_TRUE(sg);
+      std::string reason;
+      auto plan = AnalyzeOperation(sg->Ops()[0], reason);
+      ASSERT_TRUE(plan) << reason;
+      auto compiled = CompilePartition(*sg, reason);
+      ASSERT_NE(compiled, nullptr) << reason;
+      EXPECT_EQ(compiled->extensions, (std::vector<std::string>{"EXT-INT16"}));
+      EXPECT_EQ(compiled->metrics.operators.at(static_cast<uint32_t>(
+                    depthwise ? O::DepthwiseConv2d : O::Conv2d)),
+                1);
+      EXPECT_EQ(
+          compiled->metrics.operators.at(static_cast<uint32_t>(O::Rescale)), 1);
+      EXPECT_EQ(compiled->metrics.operators.at(static_cast<uint32_t>(O::Clamp)),
+                1);
+    }
+  }
+}
+
+TEST(OperationTest, Int32ArithmeticScalarComparisonsAndBiasless3DFloatFc) {
+  auto compile_binary = [](tflite::BuiltinOperator code,
+                           tflite::TensorType in_type,
+                           std::vector<int32_t> lhs_shape,
+                           std::vector<int32_t> rhs_shape,
+                           tflite::TensorType out_type,
+                           std::vector<int32_t> out_shape) {
+    tflite::ModelT model;
+    model.version = 3;
+    auto opcode = std::make_unique<tflite::OperatorCodeT>();
+    opcode->builtin_code = code;
+    model.operator_codes.push_back(std::move(opcode));
+    model.buffers.push_back(std::make_unique<tflite::BufferT>());
+    auto g = std::make_unique<tflite::SubGraphT>();
+    auto add_tensor = [&](tflite::TensorType t, std::vector<int32_t> s) {
+      auto tensor = std::make_unique<tflite::TensorT>();
+      tensor->type = t;
+      tensor->shape = std::move(s);
+      g->tensors.push_back(std::move(tensor));
+    };
+    add_tensor(in_type, std::move(lhs_shape));
+    add_tensor(in_type, std::move(rhs_shape));
+    add_tensor(out_type, std::move(out_shape));
+    auto op = std::make_unique<tflite::OperatorT>();
+    op->inputs = {0, 1};
+    op->outputs = {2};
+    if (code == tflite::BuiltinOperator_ADD)
+      op->builtin_options.Set(tflite::AddOptionsT());
+    else if (code == tflite::BuiltinOperator_SUB)
+      op->builtin_options.Set(tflite::SubOptionsT());
+    else if (code == tflite::BuiltinOperator_MUL)
+      op->builtin_options.Set(tflite::MulOptionsT());
+    else if (code == tflite::BuiltinOperator_DIV)
+      op->builtin_options.Set(tflite::DivOptionsT());
+    g->operators.push_back(std::move(op));
+    g->inputs = {0, 1};
+    g->outputs = {2};
+    model.subgraphs.push_back(std::move(g));
+    flatbuffers::FlatBufferBuilder builder;
+    tflite::FinishModelBuffer(builder, tflite::Model::Pack(builder, &model));
+    auto loaded = ExtendedModel::CreateFromBuffer(
+        BufferRef<uint8_t>(builder.GetBufferPointer(), builder.GetSize()));
+    EXPECT_TRUE(loaded);
+    std::string reason;
+    auto subgraph = loaded->Subgraph(0);
+    ASSERT_TRUE(subgraph);
+    auto compiled = CompilePartition(*subgraph, reason);
+    EXPECT_NE(compiled, nullptr) << reason;
+  };
+  for (auto code : {tflite::BuiltinOperator_ADD, tflite::BuiltinOperator_SUB,
+                    tflite::BuiltinOperator_MUL, tflite::BuiltinOperator_DIV}) {
+    compile_binary(code, tflite::TensorType_INT32, {1, 4}, {},
+                   tflite::TensorType_INT32, {1, 4});
+  }
+  compile_binary(tflite::BuiltinOperator_NOT_EQUAL, tflite::TensorType_INT32,
+                 {1, 4}, {}, tflite::TensorType_BOOL, {1, 4});
+  compile_binary(tflite::BuiltinOperator_EQUAL, tflite::TensorType_FLOAT32,
+                 {1, 4}, {}, tflite::TensorType_BOOL, {1, 4});
+
+  // Biasless 3D FP32 FULLY_CONNECTED with keep_num_dims=true.
+  {
+    auto bytes = AddModel({1, 2, 4}, {3, 4}, {1, 2, 3});
+    auto object = tflite::UnPackModel(bytes.data());
+    object->operator_codes[0]->builtin_code =
+        tflite::BuiltinOperator_FULLY_CONNECTED;
+    auto& graph = *object->subgraphs[0];
+    for (auto& t : graph.tensors) {
+      t->type = tflite::TensorType_FLOAT32;
+      t->quantization.reset();
+    }
+    std::vector<float> weights(12, 0.25f);
+    auto buffer = std::make_unique<tflite::BufferT>();
+    buffer->data.resize(weights.size() * sizeof(float));
+    std::memcpy(buffer->data.data(), weights.data(), buffer->data.size());
+    object->buffers.push_back(std::move(buffer));
+    graph.tensors[1]->buffer =
+        static_cast<uint32_t>(object->buffers.size() - 1);
+    graph.inputs = {0};
+    graph.outputs = {2};
+    graph.operators[0]->inputs = {0, 1};
+    graph.operators[0]->outputs = {2};
+    tflite::FullyConnectedOptionsT opts;
+    opts.keep_num_dims = true;
+    graph.operators[0]->builtin_options.Set(opts);
+    flatbuffers::FlatBufferBuilder builder;
+    tflite::FinishModelBuffer(builder,
+                              tflite::Model::Pack(builder, object.get()));
+    auto loaded = ExtendedModel::CreateFromBuffer(
+        BufferRef<uint8_t>(builder.GetBufferPointer(), builder.GetSize()));
+    ASSERT_TRUE(loaded);
+    std::string reason;
+    auto subgraph = loaded->Subgraph(0);
+    ASSERT_TRUE(subgraph);
+    auto compiled = CompilePartition(*subgraph, reason);
+    EXPECT_NE(compiled, nullptr) << reason;
+  }
 }
 
 }  // namespace

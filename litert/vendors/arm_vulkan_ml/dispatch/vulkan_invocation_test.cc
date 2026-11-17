@@ -1067,6 +1067,7 @@ std::shared_ptr<const CompiledPartition> Compile(LiteRtModel model) {
   EXPECT_TRUE(arm);
   if (!arm) return nullptr;
   EXPECT_TRUE(arm->SetEnableJustInTime(true));
+  EXPECT_TRUE(arm->SetFloatFallback(true));
   auto env = Environment::Create({});
   EXPECT_TRUE(env);
   if (!env) return nullptr;
@@ -1160,24 +1161,10 @@ std::shared_ptr<const CompiledPartition> FloatFixture() {
 }
 class InvocationTest : public ::testing::Test {
  protected:
-  void SetUp() override {
-    state = &fake_;
-    const char* previous = std::getenv("LITERT_ARM_VULKAN_ML_VALIDATION");
-    if (previous) {
-      had_validation_ = true;
-      previous_validation_ = previous;
-    }
-    unsetenv("LITERT_ARM_VULKAN_ML_VALIDATION");
-  }
+  void SetUp() override { state = &fake_; }
   void TearDown() override {
     EXPECT_TRUE(fake_.live.empty()) << "leaked Vulkan resource";
     state = nullptr;
-    if (had_validation_) {
-      setenv("LITERT_ARM_VULKAN_ML_VALIDATION", previous_validation_.c_str(),
-             1);
-    } else {
-      unsetenv("LITERT_ARM_VULKAN_ML_VALIDATION");
-    }
   }
   std::unique_ptr<VulkanInvocation> Create(
       std::shared_ptr<const CompiledPartition> a = {}) {
@@ -1190,8 +1177,7 @@ class InvocationTest : public ::testing::Test {
   }
 
   Fake fake_;
-  std::string error_, previous_validation_;
-  bool had_validation_ = false;
+  std::string error_;
 };
 
 std::shared_ptr<const CompiledPartition> TypedFixture(
@@ -2047,6 +2033,20 @@ TEST_F(InvocationTest, DispatchInterfaceMetadataAndBufferEventSynchronization) {
 
   EXPECT_EQ(api->invoke(context.get()), kLiteRtStatusOk);
   EXPECT_EQ(waited_events, 4);
+
+  // Already-locked HostMemory buffers (e.g. shared with CPU/XNNPACK via
+  // CompiledModel) must still be readable/writable via
+  // get_tensor_buffer_host_memory without relocking or unlocking the caller's
+  // lock.
+  void* locked_host_addr = nullptr;
+  ASSERT_EQ(custom_runtime.lock_tensor_buffer(buffers.front().get(),
+                                              &locked_host_addr,
+                                              kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk);
+  EXPECT_NE(locked_host_addr, nullptr);
+  EXPECT_EQ(api->invoke(context.get()), kLiteRtStatusOk);
+  EXPECT_EQ(custom_runtime.unlock_tensor_buffer(buffers.front().get()),
+            kLiteRtStatusOk);
 
   wait_mode = 2;
   EXPECT_EQ(api->invoke(context.get()), kLiteRtStatusErrorRuntimeFailure);

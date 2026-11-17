@@ -1101,9 +1101,16 @@ TEST(DecompositionTest,
 
     if (code != tflite::BuiltinOperator_EXP) {
       f.graph->tensors[in]->quantization->zero_point = {0};
-      auto bad = f.Load();
-      ASSERT_TRUE(bad);
-      EXPECT_FALSE(AnalyzeDecomposition(FirstSubgraph(bad).Ops()[0], reason));
+      auto nonneg_clamped = f.Load();
+      ASSERT_TRUE(nonneg_clamped);
+      auto clamped_plan =
+          AnalyzeDecomposition(FirstSubgraph(nonneg_clamped).Ops()[0], reason);
+      ASSERT_TRUE(clamped_plan) << reason;
+      EXPECT_EQ(clamped_plan->table.size(), 256);
+      EXPECT_EQ(clamped_plan->table[0],
+                code == tflite::BuiltinOperator_RSQRT ? 127 : -128);
+      EXPECT_TRUE(CompilePartition(FirstSubgraph(nonneg_clamped), reason))
+          << reason;
     }
   }
   for (bool approx : {false, true}) {
@@ -1401,6 +1408,152 @@ TEST(DecompositionTest,
     ASSERT_TRUE(model);
     std::string reason;
     EXPECT_TRUE(CompilePartition(FirstSubgraph(model), reason)) << reason;
+  }
+}
+
+TEST(DecompositionTest, ReluClipsAndInt16MathDecompositionsUseNativeOps) {
+  using O = tfsc::tosa::OperatorEnum;
+  for (auto code : {tflite::BuiltinOperator_RELU_N1_TO_1,
+                    tflite::BuiltinOperator_RELU_0_TO_1}) {
+    for (auto dtype : {tflite::TensorType_INT8, tflite::TensorType_INT16}) {
+      Fixture f(code);
+      const int32_t zp = dtype == tflite::TensorType_INT8 ? -3 : 0;
+      const int in = f.Tensor(dtype, {2, 4}, 0.05f, zp);
+      const int out = f.Tensor(dtype, {2, 4}, 0.05f, zp);
+      f.op->inputs = {in};
+      f.op->outputs = {out};
+      f.graph->inputs = {in};
+      f.graph->outputs = {out};
+      auto model = f.Load();
+      ASSERT_TRUE(model);
+      std::string reason;
+      auto plan = AnalyzeDecomposition(FirstSubgraph(model).Ops()[0], reason);
+      ASSERT_TRUE(plan) << reason;
+      EXPECT_TRUE(plan->clamp_bounds);
+      EXPECT_TRUE(plan->table.empty());
+      auto compiled = CompilePartition(FirstSubgraph(model), reason);
+      ASSERT_TRUE(compiled) << reason;
+      EXPECT_EQ(
+          compiled->metrics.operators.count(static_cast<uint32_t>(O::Table)),
+          0);
+      EXPECT_EQ(compiled->metrics.operators.at(static_cast<uint32_t>(O::Clamp)),
+                1);
+    }
+  }
+  {
+    Fixture f(tflite::BuiltinOperator_SQUARE);
+    const int in = f.Tensor(tflite::TensorType_INT16, {2, 4}, 0.01f, 0);
+    const int out = f.Tensor(tflite::TensorType_INT16, {2, 4}, 0.02f, 0);
+    f.op->inputs = {in};
+    f.op->outputs = {out};
+    f.graph->inputs = {in};
+    f.graph->outputs = {out};
+    auto model = f.Load();
+    ASSERT_TRUE(model);
+    std::string reason;
+    auto compiled = CompilePartition(FirstSubgraph(model), reason);
+    ASSERT_TRUE(compiled) << reason;
+    EXPECT_EQ(compiled->extensions, (std::vector<std::string>{"EXT-INT16"}));
+    EXPECT_EQ(compiled->metrics.operators.at(static_cast<uint32_t>(O::Mul)), 1);
+  }
+  {
+    Fixture f(tflite::BuiltinOperator_LEAKY_RELU);
+    const int in = f.Tensor(tflite::TensorType_INT16, {2, 4}, 0.05f, 0);
+    const int out = f.Tensor(tflite::TensorType_INT16, {2, 4}, 0.05f, 0);
+    tflite::LeakyReluOptionsT opts;
+    opts.alpha = 0.2f;
+    f.op->builtin_options.Set(opts);
+    f.op->inputs = {in};
+    f.op->outputs = {out};
+    f.graph->inputs = {in};
+    f.graph->outputs = {out};
+    auto model = f.Load();
+    ASSERT_TRUE(model);
+    std::string reason;
+    auto compiled = CompilePartition(FirstSubgraph(model), reason);
+    ASSERT_TRUE(compiled) << reason;
+    EXPECT_EQ(compiled->extensions, (std::vector<std::string>{"EXT-INT16"}));
+    EXPECT_EQ(compiled->metrics.operators.at(static_cast<uint32_t>(O::Maximum)),
+              1);
+  }
+  {
+    Fixture f(tflite::BuiltinOperator_PRELU);
+    const int in = f.Tensor(tflite::TensorType_INT16, {2, 4}, 0.02f, 0);
+    const int alpha = f.Tensor(tflite::TensorType_INT16, {4}, 0.01f, 0);
+    const int out = f.Tensor(tflite::TensorType_INT16, {2, 4}, 0.02f, 0);
+    f.op->inputs = {in, alpha};
+    f.op->outputs = {out};
+    f.graph->inputs = {in, alpha};
+    f.graph->outputs = {out};
+    auto model = f.Load();
+    ASSERT_TRUE(model);
+    std::string reason;
+    auto compiled = CompilePartition(FirstSubgraph(model), reason);
+    ASSERT_TRUE(compiled) << reason;
+    EXPECT_EQ(compiled->extensions, (std::vector<std::string>{"EXT-INT16"}));
+    EXPECT_EQ(compiled->metrics.operators.at(static_cast<uint32_t>(O::Select)),
+              1);
+  }
+  {
+    Fixture f(tflite::BuiltinOperator_LOG);
+    const int in = f.Tensor(tflite::TensorType_INT16, {2, 4}, 0.02f, 0);
+    const int out = f.Tensor(tflite::TensorType_INT16, {2, 4}, 0.05f, 0);
+    f.op->inputs = {in};
+    f.op->outputs = {out};
+    f.graph->inputs = {in};
+    f.graph->outputs = {out};
+    auto model = f.Load();
+    ASSERT_TRUE(model);
+    std::string reason;
+    auto compiled = CompilePartition(FirstSubgraph(model), reason);
+    ASSERT_TRUE(compiled) << reason;
+    EXPECT_EQ(compiled->extensions, (std::vector<std::string>{"EXT-INT16"}));
+    EXPECT_EQ(compiled->metrics.operators.at(static_cast<uint32_t>(O::Table)),
+              1);
+  }
+}
+
+TEST(DecompositionTest, QuantizedEqualAndOneHot10240Compile) {
+  for (auto dtype : {tflite::TensorType_INT8, tflite::TensorType_INT16}) {
+    const int32_t zp = dtype == tflite::TensorType_INT8 ? -128 : 0;
+    for (auto code :
+         {tflite::BuiltinOperator_EQUAL, tflite::BuiltinOperator_NOT_EQUAL}) {
+      Fixture f(code);
+      const int lhs = f.Tensor(dtype, {1, 4}, 0.01f, zp);
+      const int rhs = f.Tensor(dtype, {}, 0.25f, zp);
+      const int out = f.Tensor(tflite::TensorType_BOOL, {1, 4});
+      f.op->inputs = {lhs, rhs};
+      f.op->outputs = {out};
+      f.graph->inputs = {lhs, rhs};
+      f.graph->outputs = {out};
+      auto model = f.Load();
+      ASSERT_TRUE(model);
+      std::string reason;
+      auto compiled = CompilePartition(FirstSubgraph(model), reason);
+      ASSERT_NE(compiled, nullptr) << reason;
+    }
+  }
+  {
+    Fixture f(tflite::BuiltinOperator_ONE_HOT);
+    const int idx = f.Tensor(tflite::TensorType_INT32, {1, 2});
+    const int depth = f.Control({}, {10240});
+    const int on =
+        f.Constant(tflite::TensorType_FLOAT32, {}, std::vector<float>{1.0f});
+    const int off =
+        f.Constant(tflite::TensorType_FLOAT32, {}, std::vector<float>{0.0f});
+    const int out = f.Tensor(tflite::TensorType_FLOAT32, {1, 2, 10240});
+    f.op->inputs = {idx, depth, on, off};
+    f.op->outputs = {out};
+    tflite::OneHotOptionsT opts;
+    opts.axis = -1;
+    f.op->builtin_options.Set(opts);
+    f.graph->inputs = {idx};
+    f.graph->outputs = {out};
+    auto model = f.Load();
+    ASSERT_TRUE(model);
+    std::string reason;
+    auto compiled = CompilePartition(FirstSubgraph(model), reason);
+    ASSERT_NE(compiled, nullptr) << reason;
   }
 }
 }  // namespace

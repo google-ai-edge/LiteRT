@@ -92,11 +92,17 @@ std::optional<Conv2dPlan> AnalyzeConv2d(const Op& op, std::string& reason) {
     return reject("CONV_2D needs input, constant weights, and constant bias");
   }
   Conv2dSpec spec{};
-  if (!Shape4(inputs[0], ElementType::Int8, spec.input_shape) ||
+  Expected<RankedTensorType> in_type = inputs[0].RankedTensorType();
+  const bool int16_activation =
+      in_type && in_type->ElementType() == ElementType::Int16;
+  const ElementType act_elem =
+      int16_activation ? ElementType::Int16 : ElementType::Int8;
+  if (!Shape4(inputs[0], act_elem, spec.input_shape) ||
       !Shape4(inputs[1], ElementType::Int8, spec.weight_shape) ||
-      !Shape4(outputs[0], ElementType::Int8, spec.output_shape)) {
-    return reject("CONV_2D requires dense static rank-4 int8 tensors");
+      !Shape4(outputs[0], act_elem, spec.output_shape)) {
+    return reject("CONV_2D requires dense static rank-4 int8/int16 tensors");
   }
+  spec.int16_activation = int16_activation;
   spec.depthwise = depthwise;
   if (depthwise) {
     if (spec.weight_shape[0] != 1 ||
@@ -109,11 +115,15 @@ std::optional<Conv2dPlan> AnalyzeConv2d(const Op& op, std::string& reason) {
   }
   const Tensor& bias = inputs[2];
   Expected<RankedTensorType> bias_type = bias.RankedTensorType();
-  if (!bias_type || bias_type->ElementType() != ElementType::Int32 ||
-      bias_type->Layout().HasStrides() ||
+  const bool valid_bias_elem =
+      bias_type &&
+      (int16_activation ? (bias_type->ElementType() == ElementType::Int64 ||
+                           bias_type->ElementType() == ElementType::Int32)
+                        : bias_type->ElementType() == ElementType::Int32);
+  if (!valid_bias_elem || bias_type->Layout().HasStrides() ||
       bias_type->Layout().Dimensions().size() != 1 ||
       bias_type->Layout().Dimensions()[0] != spec.weight_shape[0]) {
-    return reject("CONV_2D requires a dense int32 bias vector");
+    return reject("CONV_2D requires a dense matching int32/int64 bias vector");
   }
   if (inputs[0].QTypeId() != QuantizationTypeId::PerTensor ||
       outputs[0].QTypeId() != QuantizationTypeId::PerTensor) {
@@ -123,10 +133,15 @@ std::optional<Conv2dPlan> AnalyzeConv2d(const Op& op, std::string& reason) {
       inputs[0].PerTensorQuantization();
   LiteRtQuantizationPerTensor output_quantization =
       outputs[0].PerTensorQuantization();
-  if (input_quantization.zero_point < -128 ||
-      input_quantization.zero_point > 127 ||
-      output_quantization.zero_point < -128 ||
-      output_quantization.zero_point > 127) {
+  if (int16_activation) {
+    if (input_quantization.zero_point != 0 ||
+        output_quantization.zero_point != 0) {
+      return reject("CONV_2D INT16 activations must have zero_point == 0");
+    }
+  } else if (input_quantization.zero_point < -128 ||
+             input_quantization.zero_point > 127 ||
+             output_quantization.zero_point < -128 ||
+             output_quantization.zero_point > 127) {
     return reject("CONV_2D activation zero point is outside int8");
   }
   spec.input_scale = input_quantization.scale;
@@ -140,12 +155,33 @@ std::optional<Conv2dPlan> AnalyzeConv2d(const Op& op, std::string& reason) {
         "CONV_2D requires symmetric per-tensor or output-channel weights/bias");
   }
   Expected<absl::Span<const int8_t>> weights = inputs[1].WeightsData<int8_t>();
-  Expected<absl::Span<const int32_t>> biases = bias.WeightsData<int32_t>();
-  if (!weights || !biases) {
+  if (!weights) {
     return reject("CONV_2D weights and bias must be valid constants");
   }
+  if (int16_activation) {
+    if (bias_type->ElementType() == ElementType::Int64) {
+      Expected<absl::Span<const int64_t>> biases64 =
+          bias.WeightsData<int64_t>();
+      if (!biases64) {
+        return reject("CONV_2D weights and bias must be valid constants");
+      }
+      spec.bias64.assign(biases64->begin(), biases64->end());
+    } else {
+      Expected<absl::Span<const int32_t>> biases32 =
+          bias.WeightsData<int32_t>();
+      if (!biases32) {
+        return reject("CONV_2D weights and bias must be valid constants");
+      }
+      spec.bias64.assign(biases32->begin(), biases32->end());
+    }
+  } else {
+    Expected<absl::Span<const int32_t>> biases = bias.WeightsData<int32_t>();
+    if (!biases) {
+      return reject("CONV_2D weights and bias must be valid constants");
+    }
+    spec.bias.assign(biases->begin(), biases->end());
+  }
   spec.weights.assign(weights->begin(), weights->end());
-  spec.bias.assign(biases->begin(), biases->end());
   if (depthwise) {
     const size_t channels = spec.weight_shape[0];
     const size_t kernel = size_t{spec.weight_shape[1]} * spec.weight_shape[2];

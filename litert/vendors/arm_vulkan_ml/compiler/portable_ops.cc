@@ -24,6 +24,7 @@
 #include <numeric>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "tosa-for-spirv-codegen/tosa/Graph.hpp"  // from @tosa_for_spirv_codegen
@@ -588,6 +589,40 @@ std::vector<ResId> EmitPortableOperation(tfsc::tosa::Graph& graph,
     }
     return graph.AddOperator(op, inputs, {t})[0];
   };
+  // TOSA Level 8K limits Concat tensor lists to 64 inputs, so reduce larger
+  // lists in balanced chunks rather than emitting an oversized Concat node.
+  constexpr size_t kMaxTosaTensorListSize = 64;
+  auto concat_tensors = [&](std::vector<ResId> tensors,
+                            std::vector<uint32_t> extents, int32_t axis,
+                            const Shape& result_shape) -> ResId {
+    if (tensors.size() == 1) return tensors[0];
+    while (tensors.size() > kMaxTosaTensorListSize) {
+      std::vector<ResId> next;
+      std::vector<uint32_t> next_extents;
+      for (size_t i = 0; i < tensors.size(); i += kMaxTosaTensorListSize) {
+        const size_t count =
+            std::min(kMaxTosaTensorListSize, tensors.size() - i);
+        if (count == 1) {
+          next.push_back(tensors[i]);
+          next_extents.push_back(extents[i]);
+          continue;
+        }
+        uint32_t chunk_extent = 0;
+        for (size_t k = 0; k < count; ++k) chunk_extent += extents[i + k];
+        Shape chunk_shape = result_shape;
+        chunk_shape[axis] = chunk_extent;
+        std::vector<ResId> chunk(tensors.begin() + i,
+                                 tensors.begin() + i + count);
+        next.push_back(
+            graph.AddConcatOperator(chunk, Attribute(axis), type(chunk_shape)));
+        next_extents.push_back(chunk_extent);
+      }
+      tensors = std::move(next);
+      extents = std::move(next_extents);
+    }
+    return graph.AddConcatOperator(tensors, Attribute(axis),
+                                   type(result_shape));
+  };
   switch (plan.code) {
     case kLiteRtOpCodeTflConv3d: {
       // LiteRT DHWIO -> TOSA ODHWI.
@@ -705,7 +740,28 @@ std::vector<ResId> EmitPortableOperation(tfsc::tosa::Graph& graph,
     }
     case kLiteRtOpCodeTflStridedSlice: {
       Shape shape = plan.shapes[0];
+      // Lower all unit-stride axes together via a single contiguous SLICE first
+      // so large unit-stride slices do not fan out into Slice+Concat chains.
+      std::vector<int32_t> contiguous_begin(shape.size(), 0);
+      Shape contiguous_size = shape;
+      bool needs_contiguous_slice = false;
       for (size_t a = 0; a < shape.size(); ++a) {
+        if (plan.strides[a] == 1) {
+          contiguous_begin[a] = plan.parameters[a];
+          contiguous_size[a] = plan.sizes[a];
+          if (contiguous_begin[a] != 0 || contiguous_size[a] != shape[a]) {
+            needs_contiguous_slice = true;
+          }
+        }
+      }
+      if (needs_contiguous_slice) {
+        shape = contiguous_size;
+        x = graph.AddSliceOperator(
+            x, graph.AddTensorConstant(Attribute(contiguous_begin)),
+            graph.AddTensorConstant(Attribute(shape)), type(shape));
+      }
+      for (size_t a = 0; a < shape.size(); ++a) {
+        if (plan.strides[a] == 1) continue;
         std::vector<ResId> slices;
         Shape part = shape;
         part[a] = 1;
@@ -717,10 +773,9 @@ std::vector<ResId> EmitPortableOperation(tfsc::tosa::Graph& graph,
               graph.AddTensorConstant(Attribute(part)), type(part)));
         }
         shape[a] = plan.sizes[a];
-        x = slices.size() == 1
-                ? slices[0]
-                : graph.AddConcatOperator(
-                      slices, Attribute(static_cast<int32_t>(a)), type(shape));
+        x = concat_tensors(std::move(slices),
+                           std::vector<uint32_t>(plan.sizes[a], 1),
+                           static_cast<int32_t>(a), shape);
       }
       return {reshape(x, out)};
     }
@@ -802,15 +857,24 @@ std::vector<ResId> EmitPortableOperation(tfsc::tosa::Graph& graph,
           x, graph.AddTensorConstant(Attribute(plan.parameters)),
           graph.AddTensorConstant(Attribute(plan.scalar)), t)};
     case kLiteRtOpCodeTflPack:
-    case kLiteRtOpCodeTflConcatenation:
+    case kLiteRtOpCodeTflConcatenation: {
+      std::vector<uint32_t> extents;
+      extents.reserve(inputs.size());
       if (plan.code == kLiteRtOpCodeTflPack) {
         for (size_t i = 0; i < inputs.size(); ++i) {
           Shape s = plan.shapes[i];
           s.insert(s.begin() + plan.axis, 1);
           inputs[i] = reshape(inputs[i], s);
         }
+        extents.assign(inputs.size(), 1);
+      } else {
+        for (size_t i = 0; i < inputs.size(); ++i) {
+          extents.push_back(plan.shapes[i][plan.axis]);
+        }
       }
-      return {graph.AddConcatOperator(inputs, Attribute(plan.axis), t)};
+      return {concat_tensors(std::move(inputs), std::move(extents), plan.axis,
+                             out)};
+    }
     case kLiteRtOpCodeTflUnpack:
     case kLiteRtOpCodeTflSplit:
     case kLiteRtOpCodeTflSplitV: {

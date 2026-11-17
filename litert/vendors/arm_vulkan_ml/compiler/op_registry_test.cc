@@ -123,14 +123,26 @@ TEST(OpRegistry, Int16CoreAndCompanionVariantsUseExpectedRoutes) {
     ASSERT_NE(variant, nullptr) << code;
     EXPECT_EQ(variant->route, expected) << code;
   };
-  for (LiteRtOpCode code :
-       {kLiteRtOpCodeTflAdd, kLiteRtOpCodeTflSub, kLiteRtOpCodeTflMul,
-        kLiteRtOpCodeTflSoftmax, kLiteRtOpCodeTflLogistic, kLiteRtOpCodeTflTanh,
-        kLiteRtOpCodeTflRelu, kLiteRtOpCodeTflRelu6, kLiteRtOpCodeTflQuantize,
-        kLiteRtOpCodeTflReshape, kLiteRtOpCodeTflTranspose,
-        kLiteRtOpCodeTflSlice, kLiteRtOpCodeTflConcatenation,
-        kLiteRtOpCodeTflPad, kLiteRtOpCodeTflPadv2, kLiteRtOpCodeTflMaxPool2d,
-        kLiteRtOpCodeTflAveragePool2d, kLiteRtOpCodeTflSum}) {
+  for (LiteRtOpCode code : {kLiteRtOpCodeTflAdd,
+                            kLiteRtOpCodeTflSub,
+                            kLiteRtOpCodeTflMul,
+                            kLiteRtOpCodeTflConv2d,
+                            kLiteRtOpCodeTflDepthwiseConv2d,
+                            kLiteRtOpCodeTflSoftmax,
+                            kLiteRtOpCodeTflLogistic,
+                            kLiteRtOpCodeTflTanh,
+                            kLiteRtOpCodeTflRelu,
+                            kLiteRtOpCodeTflRelu6,
+                            kLiteRtOpCodeTflQuantize,
+                            kLiteRtOpCodeTflReshape,
+                            kLiteRtOpCodeTflTranspose,
+                            kLiteRtOpCodeTflSlice,
+                            kLiteRtOpCodeTflConcatenation,
+                            kLiteRtOpCodeTflPad,
+                            kLiteRtOpCodeTflPadv2,
+                            kLiteRtOpCodeTflMaxPool2d,
+                            kLiteRtOpCodeTflAveragePool2d,
+                            kLiteRtOpCodeTflSum}) {
     expect_route(code, LoweringRoute::kGeneral);
   }
   for (LiteRtOpCode code :

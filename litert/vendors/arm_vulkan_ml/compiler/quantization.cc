@@ -26,6 +26,18 @@ namespace {
 constexpr int64_t kInt32Min = std::numeric_limits<int32_t>::min();
 constexpr int64_t kInt32Max = std::numeric_limits<int32_t>::max();
 bool IsInt8(int64_t value) { return value >= -128 && value <= 127; }
+
+// Computes floor((value * multiplier + 2^(shift - 1)) / 2^shift) for
+// `shift` in [1, 62]. C++17 signed right shift is implementation-defined, so
+// express floor division explicitly (including negative half-way ties toward
+// +infinity).
+int64_t ScaleAndRoundShift(int32_t value, int32_t multiplier, int shift) {
+  const int64_t divisor = int64_t{1} << shift;
+  const int64_t numerator = int64_t{value} * multiplier + divisor / 2;
+  int64_t result = numerator / divisor;
+  if (numerator < 0 && numerator % divisor != 0) --result;
+  return result;
+}
 }  // namespace
 
 std::optional<Scale32> MakeScale32(double scale) {
@@ -56,12 +68,8 @@ bool IsScale32RangeValid(Scale32 scale, int64_t minimum, int64_t maximum) {
 
 std::optional<int32_t> ApplyScale32(int32_t value, Scale32 scale) {
   if (!IsScale32RangeValid(scale, value, value)) return std::nullopt;
-  const int64_t divisor = int64_t{1} << scale.shift;
-  const int64_t numerator = int64_t{value} * scale.multiplier + divisor / 2;
-  // C++17 signed right shift is implementation-defined; express floor division
-  // explicitly, including negative half-way cases (ties toward +infinity).
-  int64_t result = numerator / divisor;
-  if (numerator < 0 && numerator % divisor != 0) --result;
+  const int64_t result =
+      ScaleAndRoundShift(value, scale.multiplier, scale.shift);
   if (result < kInt32Min || result > kInt32Max) return std::nullopt;
   return static_cast<int32_t>(result);
 }
@@ -178,49 +186,28 @@ std::optional<AccumulatorRange> DotProductRange(const int8_t* weights,
   return AccumulatorRange{static_cast<int32_t>(minimum),
                           static_cast<int32_t>(maximum)};
 }
-std::optional<std::vector<int8_t>> RequantizeTable(float input_scale,
+std::optional<std::vector<int8_t>> RequantizeTable(double input_scale,
                                                    int32_t input_zero_point,
-                                                   float output_scale,
+                                                   double output_scale,
                                                    int32_t output_zero_point) {
   if (!std::isfinite(input_scale) || !std::isfinite(output_scale) ||
       input_scale <= 0 || output_scale <= 0 || !IsInt8(input_zero_point) ||
       !IsInt8(output_zero_point)) {
     return std::nullopt;
   }
-  int exponent = 0;
-  const double fraction =
-      std::frexp(static_cast<double>(input_scale) / output_scale, &exponent);
-  int64_t multiplier = std::llround(fraction * (int64_t{1} << 31));
-  if (multiplier == (int64_t{1} << 31)) {
-    multiplier /= 2;
-    ++exponent;
+  const std::optional<Scale32> scale = MakeScale32(input_scale / output_scale);
+  if (!scale || !IsScale32RangeValid(*scale, -128 - input_zero_point,
+                                     127 - input_zero_point)) {
+    return std::nullopt;
   }
-  // LiteRT QuantizeMultiplier flushes shifts below -31 to zero.
-  if (exponent < -31) {
-    multiplier = 0;
-    exponent = 0;
-  }
-  if (exponent > 23) return std::nullopt;
-  const int left_shift = std::max(exponent, 0);
-  const int right_shift = std::max(-exponent, 0);
   std::vector<int8_t> table;
+  table.reserve(256);
   for (int code = -128; code <= 127; ++code) {
-    int64_t shifted = static_cast<int64_t>(code - input_zero_point) *
-                      (int64_t{1} << left_shift);
-    if (shifted < kInt32Min || shifted > kInt32Max) return std::nullopt;
-    int64_t product = shifted * multiplier;
-    // SaturatingRoundingDoublingHighMul followed by RoundingDivideByPOT.
-    int64_t value = (product + (product >= 0 ? (int64_t{1} << 30)
-                                             : 1 - (int64_t{1} << 30))) /
-                    (int64_t{1} << 31);
-    if (right_shift > 0) {
-      int64_t magnitude =
-          (std::abs(value) + (int64_t{1} << (right_shift - 1))) /
-          (int64_t{1} << right_shift);
-      value = value < 0 ? -magnitude : magnitude;
-    }
-    table.push_back(
-        std::clamp(value + output_zero_point, int64_t{-128}, int64_t{127}));
+    const std::optional<int32_t> scaled =
+        ApplyScale32(code - input_zero_point, *scale);
+    if (!scaled) return std::nullopt;
+    table.push_back(static_cast<int8_t>(std::clamp(
+        int64_t{*scaled} + output_zero_point, int64_t{-128}, int64_t{127})));
   }
   return table;
 }
@@ -279,6 +266,164 @@ std::optional<std::vector<int8_t>> HardSwishTable(float input_scale,
     const int32_t result =
         divide(product, output->shift - 31) + output_zero_point;
     table.push_back(std::clamp(result, -128, 127));
+  }
+  return table;
+}
+
+namespace {
+
+// `:quantization` intentionally has zero external dependencies in
+// `compiler/BUILD` so `:compiler_plugin` (`-Os`, `ungrte = True`) stays
+// minimal. The fixed-point helpers below mirror
+// `tflite::GetInvSqrtQuantizedMultiplierExp` and `tflite::QuantizeMultiplier`
+// without pulling TFLite headers into the compiler plugin.
+
+int32_t SaturatingRoundingDoublingHighMul32(int32_t a, int32_t b) {
+  if (a == kInt32Min && b == kInt32Min) return static_cast<int32_t>(kInt32Max);
+  const int64_t ab = int64_t{a} * b;
+  const int64_t nudge = ab >= 0 ? (int64_t{1} << 30) : (1 - (int64_t{1} << 30));
+  int64_t quotient = (ab + nudge) / (int64_t{1} << 31);
+  if (ab + nudge < 0 && (ab + nudge) % (int64_t{1} << 31) != 0) {
+    --quotient;
+  }
+  return static_cast<int32_t>(quotient);
+}
+
+int32_t MultiplyByQuantizedMultiplier32(int32_t x, int32_t multiplier,
+                                        int shift) {
+  const int64_t total_shift = 31 - shift;
+  if (total_shift >= 63) return 0;
+  if (total_shift <= 0) {
+    const int64_t prod = int64_t{x} * multiplier;
+    if (prod == 0) return 0;
+    const int64_t left_shift = -total_shift;
+    if (left_shift >= 31) {
+      return static_cast<int32_t>(prod > 0 ? kInt32Max : kInt32Min);
+    }
+    const int64_t shifted = prod * (int64_t{1} << left_shift);
+    return static_cast<int32_t>(std::clamp(shifted, kInt32Min, kInt32Max));
+  }
+  const int64_t result =
+      ScaleAndRoundShift(x, multiplier, static_cast<int>(total_shift));
+  return static_cast<int32_t>(std::clamp(result, kInt32Min, kInt32Max));
+}
+
+bool DecomposeQuantizedMultiplier(double scale, int32_t* out_mult,
+                                  int* out_shift) {
+  if (!std::isfinite(scale) || scale <= 0) return false;
+  if (auto s = MakeScale32(scale)) {
+    const int shift = 31 - s->shift;
+    if (shift >= -31) {
+      *out_mult = s->multiplier;
+      *out_shift = shift;
+      return true;
+    }
+  }
+  int shift = 0;
+  const double frac = std::frexp(scale, &shift);
+  int64_t mult64 = std::llround(frac * (int64_t{1} << 31));
+  if (mult64 == (int64_t{1} << 31)) {
+    mult64 /= 2;
+    ++shift;
+  }
+  if (shift < -31) {
+    *out_mult = 0;
+    *out_shift = 0;
+    return true;
+  }
+  if (shift > 30) return false;
+  *out_mult = static_cast<int32_t>(mult64);
+  *out_shift = shift;
+  return true;
+}
+
+void GetInvSqrtMultiplier(int32_t input, int32_t* out_mult, int* out_shift) {
+  if (input <= 1) {
+    *out_mult = static_cast<int32_t>(kInt32Max);
+    *out_shift = 0;
+    return;
+  }
+  int shift = 11;
+  while (input >= (1 << 29)) {
+    input /= 4;
+    ++shift;
+  }
+  int lz = 0;
+  uint32_t v = static_cast<uint32_t>(input);
+  while ((v & 0x80000000u) == 0u) {
+    v <<= 1;
+    ++lz;
+  }
+  const int left_shift_pairs = ((lz - 1) / 2) - 1;
+  shift -= left_shift_pairs;
+  input <<= 2 * left_shift_pairs;
+  const int32_t fixed_input = input / 2;
+  const int32_t half_input = (fixed_input + 1) / 2;
+  const int32_t half_three = (1 << 28) + (1 << 27);
+  int32_t x = 1 << 28;
+  auto rescale_f3 = [](int32_t a, int32_t b) {
+    // Multiply two F3 fixed-point values and rescale back to F3
+    // (`Rescale<3>(a * b)` in gemmlowp), safe from overflow for x in
+    // [0.5, 1.5].
+    const int64_t prod = SaturatingRoundingDoublingHighMul32(a, b);
+    return static_cast<int32_t>(
+        std::clamp<int64_t>(prod * 8, kInt32Min, kInt32Max));
+  };
+  for (int i = 0; i < 5; ++i) {
+    const int32_t x2 = rescale_f3(x, x);
+    const int32_t x3 = rescale_f3(x2, x);
+    const int32_t hx3 = rescale_f3(half_input, x3);
+    const int32_t t1 = rescale_f3(half_three, x);
+    x = t1 - hx3;
+  }
+  // 1518500250 == round((sqrt(2) / 2) * 2^31) in F0.
+  x = SaturatingRoundingDoublingHighMul32(x, 1518500250);
+  if (shift < 0) {
+    x <<= -shift;
+    shift = 0;
+  }
+  // Convert right shift to left shift (kReverseShift = -1).
+  *out_mult = x;
+  *out_shift = -shift;
+}
+
+}  // namespace
+
+std::optional<std::vector<int8_t>> RsqrtTable(float input_scale,
+                                              int32_t input_zero_point,
+                                              float output_scale,
+                                              int32_t output_zero_point) {
+  if (!std::isfinite(input_scale) || !std::isfinite(output_scale) ||
+      input_scale <= 0 || output_scale <= 0 || !IsInt8(input_zero_point) ||
+      !IsInt8(output_zero_point)) {
+    return std::nullopt;
+  }
+  const double scale =
+      1.0 / (std::sqrt(static_cast<double>(input_scale)) * output_scale);
+  int32_t out_mult = 0;
+  int out_shift = 0;
+  if (!DecomposeQuantizedMultiplier(scale, &out_mult, &out_shift)) {
+    return std::nullopt;
+  }
+
+  std::vector<int8_t> table;
+  table.reserve(256);
+  constexpr int32_t kShift = 20;
+  for (int code = -128; code <= 127; ++code) {
+    const int32_t value = code - input_zero_point;
+    if (value <= 0) {
+      table.push_back(127);
+      continue;
+    }
+    int32_t inv_sqrt_mult = 0;
+    int inv_sqrt_shift = 0;
+    GetInvSqrtMultiplier(value, &inv_sqrt_mult, &inv_sqrt_shift);
+    const int32_t data = MultiplyByQuantizedMultiplier32(
+        1, inv_sqrt_mult, inv_sqrt_shift + kShift);
+    const int32_t result =
+        MultiplyByQuantizedMultiplier32(data, out_mult, out_shift - kShift) +
+        output_zero_point;
+    table.push_back(static_cast<int8_t>(std::clamp(result, -128, 127)));
   }
   return table;
 }

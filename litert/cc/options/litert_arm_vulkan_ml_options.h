@@ -77,6 +77,19 @@ class ArmVulkanMLOptions : public ConcreteOptionsBase {
     return dump_op_timings;
   }
 
+  Expected<void> SetFloatFallback(bool float_fallback) {
+    internal::AssertOk(LrtArmVulkanMLOptionsSetFloatFallback, Get(),
+                       float_fallback);
+    return {};
+  }
+
+  Expected<bool> GetFloatFallback() const {
+    bool float_fallback = false;
+    internal::AssertOk(LrtArmVulkanMLOptionsGetFloatFallback, Get(),
+                       &float_fallback);
+    return float_fallback;
+  }
+
   LrtArmVulkanMLOptions Get() const { return options_.get(); }
   LrtArmVulkanMLOptions Release() { return options_.release(); }
 

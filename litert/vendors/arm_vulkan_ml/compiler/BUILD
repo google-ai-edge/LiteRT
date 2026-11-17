@@ -123,7 +123,9 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c:litert_op_options",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_model_types",
         "//litert/cc/internal:litert_extended_model",
         "//litert/core/model",
@@ -150,6 +152,7 @@ cc_library(
     copts = ["-fno-exceptions"],
     deps = [
         ":conv2d",
+        ":op_registry",
         ":operation",
         ":quantization",
         ":softmax",
@@ -172,6 +175,7 @@ cc_library(
     deps = [
         ":conv2d",
         ":graph_ir",
+        ":op_registry",
         ":operation",
         ":softmax",
         ":tosa_requirements",
@@ -253,8 +257,10 @@ litert_dynamic_lib(
         "//litert:__subpackages__",
     ],
     deps = [
+        ":op_registry",
         ":operation",
         ":partition",
+        ":softmax",
         "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
         "//litert/c:litert_model",
@@ -305,11 +311,14 @@ cc_test(
         # copybara:uncomment_end_and_comment_begin
         "@com_google_googletest//:gtest_main",
         # copybara:comment_end
+        "@flatbuffers",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context_testonly",
+        "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_options",
+        "//litert/cc/internal:litert_extended_model",
         "//litert/cc/options:litert_arm_vulkan_ml_options",
         "//litert/core/model",
         "//litert/test:load_test_model",
@@ -317,6 +326,7 @@ cc_test(
         "//litert/vendors/c:litert_compiler_plugin",
         "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/cc:litert_compiler_plugin",
+        "//tflite/schema:schema_fbs",
     ],
 )
 
@@ -348,6 +358,7 @@ cc_test(
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
+        "@tosa_for_spirv_codegen//:tosa_for_spirv_codegen_tosa_headers",
     ],
 )
 
@@ -435,6 +446,7 @@ cc_test(
     copts = ["-fno-exceptions"],
     deps = [
         ":conv2d",
+        ":op_registry",
         ":operation",
         ":partition",
         ":quantization",

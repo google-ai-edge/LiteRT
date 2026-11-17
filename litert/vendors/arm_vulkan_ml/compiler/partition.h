@@ -57,7 +57,9 @@ std::shared_ptr<const CompiledPartition> CompilePartition(
     std::vector<LoweringRecord>* diagnostics = nullptr,
     OptimizationReport* optimization = nullptr,
     SoftmaxLutType softmax_lut = SoftmaxLutType::kAuto,
-    int rescale_multiplier_bits = 32, CompileTimingReport* timing = nullptr);
+    int rescale_multiplier_bits = 32,
+    Int16NormMode int16_norm_mode = Int16NormMode::kAuto,
+    CompileTimingReport* timing = nullptr);
 std::shared_ptr<const CompiledPartition> CompilePartition(
     const Subgraph& graph, std::string& reason, CompileTimingReport& timing);
 

@@ -26,18 +26,47 @@
 
 namespace litert::arm_vulkan_ml {
 
-// Lookup-table representation for quantized INT8 Softmax lowering.
+// Lowering policy for quantized Softmax operations.
 enum class SoftmaxLutType {
+  // Default policy: lower quantized Softmax via FP32 TOSA arithmetic (PRO-FP).
   kAuto = 0,
+  // Legacy PRO-INT INT8 lookup-table lowering.
   kInt8 = 1,
+  // Legacy EXT-INT16 16-bit lookup-table lowering.
   kInt16 = 2,
+  // Explicit FP32 TOSA arithmetic lowering (PRO-FP).
+  kProFp = 3,
 };
 
 // Returns the lowercase string name for `type`.
 const char* SoftmaxLutTypeName(SoftmaxLutType type);
 
-// Parses `name` ("auto", "int8", "int16") into a `SoftmaxLutType`.
+// Parses `name` ("auto", "int8", "int16", "pro_fp") into a `SoftmaxLutType`.
 std::optional<SoftmaxLutType> ParseSoftmaxLutType(const std::string& name);
+
+// Validated lowering parameters for PRO-FP lowering of a quantized Softmax.
+struct ProFpSoftmaxPlan {
+  uint32_t channels = 0;
+  double input_scale = 0.0;
+  double output_scale = 0.0;
+  int32_t output_zero_point = 0;
+  double beta = 1.0;
+};
+
+// Validates and plans PRO-FP lowering for a quantized (INT8 or INT16) Softmax
+// with `channels` elements on the last axis, or populates `reason` on failure.
+std::optional<ProFpSoftmaxPlan> AnalyzeProFpSoftmax(
+    uint32_t channels, double input_scale, double output_scale,
+    int32_t output_zero_point, double beta, tfsc::tosa::DataType output_type,
+    std::string& reason);
+
+// Emits the PRO-FP TOSA graph for a validated `ProFpSoftmaxPlan`.
+tfsc::tosa::ResId EmitProFpSoftmax(tfsc::tosa::Graph& graph,
+                                   tfsc::tosa::ResId input,
+                                   const std::vector<uint32_t>& shape,
+                                   tfsc::tosa::DataType output_type,
+                                   const ProFpSoftmaxPlan& plan,
+                                   GraphConstantPool& constants);
 
 // Validated lowering parameters for an INT8 Softmax operation.
 struct QuantizedSoftmaxPlan {

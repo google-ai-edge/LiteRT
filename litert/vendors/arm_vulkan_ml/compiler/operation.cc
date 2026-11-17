@@ -81,6 +81,10 @@ std::optional<QuantizedTensor> ReadTensor(const Tensor& t) {
     result.scale = q.scale;
     result.zero_point = 0;
     result.type = DataType::int16_t;
+  } else if (type->ElementType() == ElementType::Int32) {
+    result.type = DataType::int32_t;
+  } else if (type->ElementType() == ElementType::Bool) {
+    result.type = DataType::bool_t;
   } else {
     return std::nullopt;
   }
@@ -88,7 +92,7 @@ std::optional<QuantizedTensor> ReadTensor(const Tensor& t) {
   auto dims = type->Layout().Dimensions();
   if (dims.size() > 6) return std::nullopt;
   for (auto d : dims) {
-    if (d <= 0 || d > 8192 || count > uint64_t{INT32_MAX} / d)
+    if (d <= 0 || d > 65536 || count > uint64_t{INT32_MAX} / d)
       return std::nullopt;
     count *= d;
     result.shape.push_back(d);
@@ -180,11 +184,19 @@ std::optional<OperationPlan> AnalyzeTypedOperation(const Op& op,
     q.floating = type == DataType::float32_t;
     uint64_t count = 1;
     for (auto d : rt->Layout().Dimensions()) {
-      if (d <= 0 || d > 8192 || count > uint64_t{INT32_MAX} / d) return false;
+      if (d <= 0 || d > 65536 || count > uint64_t{INT32_MAX} / d) return false;
       count *= d;
       q.shape.push_back(static_cast<uint32_t>(d));
     }
-    return !q.shape.empty() && q.shape.size() <= 6;
+    const bool allow_scalar = p.code != kLiteRtOpCodeTflReduceAll &&
+                              p.code != kLiteRtOpCodeTflReduceAny &&
+                              p.code != kLiteRtOpCodeTflArgMax &&
+                              p.code != kLiteRtOpCodeTflLogicalNot;
+    if (q.shape.empty()) {
+      if (!allow_scalar) return false;
+      q.shape = {1};
+    }
+    return q.shape.size() <= 6;
   };
   QuantizedTensor lhs;
   DataType lt;
@@ -258,6 +270,21 @@ std::optional<OperationPlan> AnalyzeTypedOperation(const Op& op,
       if (lt != DataType::int32_t || p.output_type != lt) {
         return reject("BITWISE_XOR requires INT32");
       }
+    } else if (p.code == kLiteRtOpCodeTflAdd || p.code == kLiteRtOpCodeTflSub ||
+               p.code == kLiteRtOpCodeTflMul || p.code == kLiteRtOpCodeTflDiv) {
+      uint32_t fused = 0;
+      LiteRtStatus status =
+          p.code == kLiteRtOpCodeTflAdd
+              ? LiteRtGetAddFusedActivationOption(op.Get(), &fused)
+          : p.code == kLiteRtOpCodeTflSub
+              ? LiteRtGetSubFusedActivationOption(op.Get(), &fused)
+          : p.code == kLiteRtOpCodeTflMul
+              ? LiteRtGetMulFusedActivationOption(op.Get(), &fused)
+              : LiteRtGetDivFusedActivationOption(op.Get(), &fused);
+      if (lt != DataType::int32_t || p.output_type != lt ||
+          status != kLiteRtStatusOk || fused != 0)
+        return reject(
+            "INT32 arithmetic requires INT32 types and NONE activation");
     } else if (p.output_type != DataType::bool_t ||
                ((p.code == kLiteRtOpCodeTflLogicalAnd ||
                  p.code == kLiteRtOpCodeTflLogicalOr) &&
@@ -387,16 +414,62 @@ bool AnalyzeFloatConvolution(const Op& op, OperationPlan& p,
   return true;
 }
 
-}  // namespace
+bool IsFloatElementType(ElementType type) {
+  switch (type) {
+    case ElementType::Float16:
+    case ElementType::Float32:
+    case ElementType::Float64:
+    case ElementType::BFloat16:
+    case ElementType::Float8E4M3FN:
+    case ElementType::Float8E5M2:
+    case ElementType::Complex64:
+    case ElementType::Complex128:
+      return true;
+    default:
+      return false;
+  }
+}
 
-std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason,
-                                              SoftmaxLutType softmax_lut) {
+bool TensorUsesFloatType(const Tensor& tensor) {
+  if (tensor.TypeId() != kLiteRtRankedTensorType) {
+    return false;
+  }
+  auto ranked = tensor.RankedTensorType();
+  return ranked && IsFloatElementType(ranked->ElementType());
+}
+
+bool OpUsesFloatTypes(const Op& op) {
+  if (op.Code() == kLiteRtOpCodeTflBucketize) {
+    return true;
+  }
+  const auto inputs = op.Inputs();
+  if (std::any_of(inputs.begin(), inputs.end(), TensorUsesFloatType)) {
+    return true;
+  }
+  const auto outputs = op.Outputs();
+  return std::any_of(outputs.begin(), outputs.end(), TensorUsesFloatType);
+}
+
+bool NormRequiresProFp(const OperationPlan& plan) {
+  if (!plan.special) return false;
+  using Kind = SpecialPlan::Kind;
+  if (plan.special->kind != Kind::kLayerNorm &&
+      plan.special->kind != Kind::kRmsNorm &&
+      plan.special->kind != Kind::kL2Norm) {
+    return false;
+  }
+  return !plan.special->integer_i16_norm;
+}
+
+std::optional<OperationPlan> AnalyzeOperationImpl(
+    const Op& op, std::string& reason, SoftmaxLutType softmax_lut,
+    Int16NormMode int16_norm_mode) {
   auto reject = [&](const char* s) -> std::optional<OperationPlan> {
     reason = s;
     return std::nullopt;
   };
   if (op.Code() == kLiteRtOpCodeShloComposite)
-    return AnalyzeSpecialOperation(op, reason);
+    return AnalyzeSpecialOperation(op, reason, int16_norm_mode);
   OperationPlan p{};
   p.code = op.Code();
   auto in = op.Inputs();
@@ -414,7 +487,9 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason,
   if (!variant)
     return reject(
         "TFLite data input/output type pair has no registered lowering");
-  if (IsSpecialOperation(op)) return AnalyzeSpecialOperation(op, reason);
+  if (IsSpecialOperation(op)) {
+    return AnalyzeSpecialOperation(op, reason, int16_norm_mode);
+  }
   p.route = variant->route;
   if (p.route == LoweringRoute::kDecomposed) {
     p.decomposition = AnalyzeDecomposition(op, reason);
@@ -467,6 +542,14 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason,
         input->type != output->type || input->shape != output->shape ||
         LiteRtGetSoftmaxBetaOption(op.Get(), &beta) != kLiteRtStatusOk)
       return reject("Quantized SOFTMAX requires matching shapes and types");
+    if (softmax_lut == SoftmaxLutType::kAuto ||
+        softmax_lut == SoftmaxLutType::kProFp) {
+      p.softmax_pro_fp =
+          AnalyzeProFpSoftmax(input->shape.back(), input->scale, output->scale,
+                              output->zero_point, beta, output->type, reason);
+      if (!p.softmax_pro_fp) return std::nullopt;
+      return p;
+    }
     if (input->type == DataType::int16_t) {
       p.softmax16 = AnalyzeInt16Softmax(input->shape.back(), input->scale,
                                         output->scale, beta, reason);
@@ -687,11 +770,18 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason,
     }
     case kLiteRtOpCodeTflAbs: {
       if (in.size() != 1 || input->floating || output->floating ||
-          input->type != DataType::int8_t || output->type != DataType::int8_t ||
-          input->shape != output->shape)
-        return reject("INT8 ABS requires matching shapes");
-      auto table = RequantizeTable(static_cast<float>(input->scale), -128,
-                                   static_cast<float>(output->scale),
+          input->type != output->type || input->shape != output->shape)
+        return reject("Quantized ABS requires matching shapes and types");
+      if (input->type == DataType::int16_t) {
+        auto scale = MakeScale32(input->scale / output->scale);
+        if (!scale || !CanEmitNativeRescale(*scale, 0, 32768))
+          return reject("INT16 ABS rescale range is not supported");
+        p.scales.push_back(*scale);
+        p.min64 = {0};
+        p.max64 = {32768};
+        break;
+      }
+      auto table = RequantizeTable(input->scale, -128, output->scale,
                                    output->zero_point);
       if (!table) return reject("INT8 ABS rescale range not proven");
       for (int code = -128; code <= 127; ++code)
@@ -705,10 +795,11 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason,
       if (input->type == DataType::int16_t) {
         if (output->scale != 1.0 / 32768.0 || output->zero_point != 0)
           return reject("INT16 TANH requires output scale 1/32768, zp 0");
-        auto lut =
-            PopulateInt16Table<float>(static_cast<float>(input->scale), 0,
-                                      static_cast<float>(output->scale), 0,
-                                      [](float x) { return std::tanh(x); });
+        auto lut = PopulateInt16Table<double>(
+            input->scale, 0, 2.0 / 65535.0, 0, [](double x) {
+              const double e = std::exp(-2.0 * x);
+              return (1.0 - e) / (1.0 + e);
+            });
         if (!lut) return reject("INT16 TANH lookup table construction failed");
         p.table16 = std::move(*lut);
         break;
@@ -732,10 +823,9 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason,
       if (input->type == DataType::int16_t) {
         if (output->scale != 1.0 / 32768.0 || output->zero_point != 0)
           return reject("INT16 LOGISTIC requires output scale 1/32768, zp 0");
-        auto lut = PopulateInt16Table<float>(
-            static_cast<float>(input->scale), 0,
-            static_cast<float>(output->scale), 0,
-            [](float x) { return 1.0f / (1.0f + std::exp(-x)); });
+        auto lut = PopulateInt16Table<double>(
+            input->scale, 0, 2.0 / 65535.0, 0,
+            [](double x) { return 1.0 / (1.0 + std::exp(-x)); });
         if (!lut)
           return reject("INT16 LOGISTIC lookup table construction failed");
         p.table16 = std::move(*lut);
@@ -812,6 +902,33 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason,
       }
       p.activation =
           *ActivationRange(*activation, output->scale, output->zero_point);
+      const QuantizedTensor operands[2] = {*input, *rhs};
+      for (int const_idx = 0; const_idx < 2; ++const_idx) {
+        const int var_idx = 1 - const_idx;
+        auto const_data = in[const_idx].WeightsData<int8_t>();
+        if (!const_data || const_data->size() != 1 ||
+            operands[var_idx].shape != output->shape) {
+          continue;
+        }
+        const double scalar_real = operands[const_idx].scale *
+                                   (static_cast<int32_t>((*const_data)[0]) -
+                                    operands[const_idx].zero_point);
+        if (!std::isfinite(scalar_real) || scalar_real <= 0.0) continue;
+        auto scalar_scale =
+            MakeScale32(operands[var_idx].scale * scalar_real / output->scale);
+        const int64_t lo_in = -128 - operands[var_idx].zero_point;
+        const int64_t hi_in = 127 - operands[var_idx].zero_point;
+        if (scalar_scale && CanEmitNativeRescale(*scalar_scale, lo_in, hi_in)) {
+          p.scalar_mul_fast_path = true;
+          p.inputs = {operands[var_idx]};
+          p.runtime_inputs = {var_idx};
+          p.scales = {*scalar_scale};
+          p.min64 = {lo_in};
+          p.max64 = {hi_in};
+          break;
+        }
+      }
+      if (p.scalar_mul_fast_path) break;
       int64_t lo = 0, hi = 0;
       for (int64_t a : {-128 - input->zero_point, 127 - input->zero_point})
         for (int64_t b : {-128 - rhs->zero_point, 127 - rhs->zero_point}) {
@@ -1104,6 +1221,20 @@ std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason,
   return p;
 }
 
+}  // namespace
+
+std::optional<OperationPlan> AnalyzeOperation(const Op& op, std::string& reason,
+                                              SoftmaxLutType softmax_lut,
+                                              Int16NormMode int16_norm_mode) {
+  std::optional<OperationPlan> plan =
+      AnalyzeOperationImpl(op, reason, softmax_lut, int16_norm_mode);
+  if (plan) {
+    plan->requires_float_fallback =
+        OpUsesFloatTypes(op) || NormRequiresProFp(*plan);
+  }
+  return plan;
+}
+
 namespace {
 
 ResId EmitFloatOperation(Graph& g, const std::vector<ResId>& inputs,
@@ -1252,6 +1383,15 @@ ResId EmitOperation(Graph& g, const std::vector<ResId>& inputs,
           type(p.input_types[i], p.inputs[i].shape)));
     auto output = type(p.output_type, p.output.shape);
     switch (p.code) {
+      case kLiteRtOpCodeTflAdd:
+        return g.AddAddOperator(v[0], v[1], output);
+      case kLiteRtOpCodeTflSub:
+        return g.AddSubOperator(v[0], v[1], output);
+      case kLiteRtOpCodeTflMul:
+        return g.AddMulOperator(
+            v[0], v[1], g.AddTensorConstant(Attribute(int8_t{0})), output);
+      case kLiteRtOpCodeTflDiv:
+        return g.AddIntDivOperator(v[0], v[1], output);
       case kLiteRtOpCodeTflLogicalAnd:
         return g.AddLogicalAndOperator(v[0], v[1], output);
       case kLiteRtOpCodeTflLogicalOr:
@@ -1321,6 +1461,9 @@ ResId EmitOperation(Graph& g, const std::vector<ResId>& inputs,
 
   auto input = inputs[0];
   const auto& q = p.inputs[0];
+  if (p.softmax_pro_fp)
+    return EmitProFpSoftmax(g, input, p.output.shape, p.output_type,
+                            *p.softmax_pro_fp, constants);
   if (p.softmax16)
     return EmitInt16Softmax(g, input, p.output.shape, *p.softmax16, constants);
   if (p.softmax)
@@ -1365,6 +1508,17 @@ ResId EmitOperation(Graph& g, const std::vector<ResId>& inputs,
       return g.AddTableOperator(input, Constant(g, p.table, {256}, constants),
                                 out);
     case kLiteRtOpCodeTflAbs:
+      if (p.output_type == DataType::int16_t) {
+        auto wide = g.AddCastOperator(
+            input, TosaTensor(DataType::int32_t, p.output.shape));
+        auto abs_val = g.AddAbsOperator(
+            wide, TosaTensor(DataType::int32_t, p.output.shape));
+        return EmitNativeRescale(g, abs_val, DataType::int32_t,
+                                 DataType::int16_t, p.output.shape, 0, 0,
+                                 p.scales, constants, p.min64, p.max64);
+      }
+      return g.AddTableOperator(input, Constant(g, p.table, {256}, constants),
+                                out);
     case kLiteRtOpCodeTflTanh:
     case kLiteRtOpCodeTflLogistic:
     case kLiteRtOpCodeTflHardSwish:
@@ -1379,6 +1533,14 @@ ResId EmitOperation(Graph& g, const std::vector<ResId>& inputs,
       return g.AddTableOperator(input, Constant(g, p.table, {256}, constants),
                                 out);
     case kLiteRtOpCodeTflMul: {
+      if (p.scalar_mul_fast_path) {
+        return Clamp(
+            g,
+            EmitNativeRescale(g, input, DataType::int8_t, DataType::int8_t,
+                              p.output.shape, q.zero_point, p.output.zero_point,
+                              p.scales, constants, p.min64, p.max64),
+            p);
+      }
       if (p.output_type == DataType::int16_t) {
         const auto lhs_src =
             q.shape.empty() ? std::vector<uint32_t>{1} : q.shape;

@@ -45,12 +45,16 @@ TEST(LiteRtArmVulkanMLOptionsTest, CreateAndNullValidation) {
 
   bool enable_jit = true;
   bool dump_timings = true;
+  bool float_fallback = false;
   LITERT_EXPECT_OK(
       LrtArmVulkanMLOptionsGetEnableJustInTime(options, &enable_jit));
   LITERT_EXPECT_OK(
       LrtArmVulkanMLOptionsGetDumpOpTimings(options, &dump_timings));
+  LITERT_EXPECT_OK(
+      LrtArmVulkanMLOptionsGetFloatFallback(options, &float_fallback));
   EXPECT_FALSE(enable_jit);
   EXPECT_FALSE(dump_timings);
+  EXPECT_TRUE(float_fallback);
 
   EXPECT_THAT(LrtArmVulkanMLOptionsSetEnableJustInTime(nullptr, true),
               IsError(kLiteRtStatusErrorInvalidArgument));
@@ -64,6 +68,12 @@ TEST(LiteRtArmVulkanMLOptionsTest, CreateAndNullValidation) {
               IsError(kLiteRtStatusErrorInvalidArgument));
   EXPECT_THAT(LrtArmVulkanMLOptionsGetDumpOpTimings(options, nullptr),
               IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LrtArmVulkanMLOptionsSetFloatFallback(nullptr, false),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LrtArmVulkanMLOptionsGetFloatFallback(nullptr, &float_fallback),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(LrtArmVulkanMLOptionsGetFloatFallback(options, nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
 }
 
 TEST(LiteRtArmVulkanMLOptionsTest, SetGetAndRoundTripToml) {
@@ -73,6 +83,7 @@ TEST(LiteRtArmVulkanMLOptionsTest, SetGetAndRoundTripToml) {
 
   LITERT_EXPECT_OK(LrtArmVulkanMLOptionsSetEnableJustInTime(options, true));
   LITERT_EXPECT_OK(LrtArmVulkanMLOptionsSetDumpOpTimings(options, true));
+  LITERT_EXPECT_OK(LrtArmVulkanMLOptionsSetFloatFallback(options, false));
 
   const char* identifier = nullptr;
   void* payload = nullptr;
@@ -97,7 +108,8 @@ TEST(LiteRtArmVulkanMLOptionsTest, SetGetAndRoundTripToml) {
   EXPECT_STREQ(identifier, LrtArmVulkanMLOptionsGetIdentifier());
   EXPECT_STREQ(static_cast<const char*>(payload),
                "enable_just_in_time = true\n"
-               "dump_op_timings = true\n");
+               "dump_op_timings = true\n"
+               "float_fallback = false\n");
 
   LrtArmVulkanMLOptions parsed = nullptr;
   LITERT_ASSERT_OK(LrtCreateArmVulkanMLOptionsFromToml(
@@ -106,12 +118,16 @@ TEST(LiteRtArmVulkanMLOptionsTest, SetGetAndRoundTripToml) {
 
   bool enable_jit = false;
   bool dump_timings = false;
+  bool float_fallback = true;
   LITERT_EXPECT_OK(
       LrtArmVulkanMLOptionsGetEnableJustInTime(parsed, &enable_jit));
   LITERT_EXPECT_OK(
       LrtArmVulkanMLOptionsGetDumpOpTimings(parsed, &dump_timings));
+  LITERT_EXPECT_OK(
+      LrtArmVulkanMLOptionsGetFloatFallback(parsed, &float_fallback));
   EXPECT_TRUE(enable_jit);
   EXPECT_TRUE(dump_timings);
+  EXPECT_FALSE(float_fallback);
 }
 
 TEST(LiteRtArmVulkanMLOptionsTest, CreateFromTomlHandlesEmptyAndInvalidInput) {
@@ -122,9 +138,13 @@ TEST(LiteRtArmVulkanMLOptionsTest, CreateFromTomlHandlesEmptyAndInvalidInput) {
   LITERT_ASSERT_OK(LrtCreateArmVulkanMLOptionsFromToml("", &empty_opts));
   const auto empty_cleanup = CleanupOptionsOnScopeExit(empty_opts);
   bool dump_timings = true;
+  bool float_fallback = false;
   LITERT_EXPECT_OK(
       LrtArmVulkanMLOptionsGetDumpOpTimings(empty_opts, &dump_timings));
+  LITERT_EXPECT_OK(
+      LrtArmVulkanMLOptionsGetFloatFallback(empty_opts, &float_fallback));
   EXPECT_FALSE(dump_timings);
+  EXPECT_TRUE(float_fallback);
 
   LrtArmVulkanMLOptions invalid_opts = nullptr;
   EXPECT_NE(LrtCreateArmVulkanMLOptionsFromToml("dump_op_timings = not_a_bool",
@@ -139,11 +159,14 @@ TEST(LiteRtArmVulkanMLOptionsTest, CppWrapperRoundTripsOpaqueOptions) {
       litert::arm_vulkan_ml::ArmVulkanMLOptions::Create());
   LITERT_EXPECT_OK(options.SetEnableJustInTime(true));
   LITERT_EXPECT_OK(options.SetDumpOpTimings(true));
+  LITERT_EXPECT_OK(options.SetFloatFallback(false));
 
   LITERT_ASSERT_OK_AND_ASSIGN(bool enable_jit, options.GetEnableJustInTime());
   LITERT_ASSERT_OK_AND_ASSIGN(bool dump_timings, options.GetDumpOpTimings());
+  LITERT_ASSERT_OK_AND_ASSIGN(bool float_fallback, options.GetFloatFallback());
   EXPECT_TRUE(enable_jit);
   EXPECT_TRUE(dump_timings);
+  EXPECT_FALSE(float_fallback);
 
   const char* identifier = nullptr;
   void* payload = nullptr;
@@ -163,8 +186,11 @@ TEST(LiteRtArmVulkanMLOptionsTest, CppWrapperRoundTripsOpaqueOptions) {
                               other_options.GetEnableJustInTime());
   LITERT_ASSERT_OK_AND_ASSIGN(bool moved_timings,
                               other_options.GetDumpOpTimings());
+  LITERT_ASSERT_OK_AND_ASSIGN(bool moved_fallback,
+                              other_options.GetFloatFallback());
   EXPECT_TRUE(moved_jit);
   EXPECT_TRUE(moved_timings);
+  EXPECT_FALSE(moved_fallback);
   EXPECT_STREQ(litert::arm_vulkan_ml::ArmVulkanMLOptions::Discriminator(),
                LrtArmVulkanMLOptionsGetIdentifier());
 }

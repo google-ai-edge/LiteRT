@@ -131,6 +131,9 @@ void CheckLifecycle(Environment& environment, const std::string& path) {
     LITERT_ASSIGN_OR_RETURN(auto& arm,
                             options.GetOptions<ArmVulkanMLOptions>());
     LITERT_RETURN_IF_ERROR(arm.SetEnableJustInTime(true));
+    if constexpr (std::is_floating_point_v<T>) {
+      LITERT_RETURN_IF_ERROR(arm.SetFloatFallback(true));
+    }
     return CompiledModel::Create(environment, path, options);
   };
   auto first = create();
@@ -290,6 +293,7 @@ TEST(LifecycleTest, ScalarAndComplexBufferLayoutsReachTheDispatchApi) {
     auto arm = options->GetOptions<ArmVulkanMLOptions>();
     ASSERT_TRUE(arm);
     ASSERT_TRUE(arm->SetEnableJustInTime(true));
+    ASSERT_TRUE(arm->SetFloatFallback(true));
     auto model = CompiledModel::Create(*environment, path, *options);
     ASSERT_TRUE(model) << model.Error().Message();
     auto accelerated = model->IsFullyAccelerated();

@@ -57,6 +57,7 @@ struct DecompositionPlan {
   int32_t axis = 0;
   int32_t block = 0;
   bool flag = false;
+  bool clamp_bounds = false;
 };
 
 // Validates and plans a multi-op TOSA decomposition for `op`.

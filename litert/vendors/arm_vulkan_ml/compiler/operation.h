@@ -49,6 +49,7 @@ struct OperationPlan {
   std::optional<Conv2dPlan> convolution;
   std::optional<QuantizedSoftmaxPlan> softmax;
   std::optional<Int16SoftmaxPlan> softmax16;
+  std::optional<ProFpSoftmaxPlan> softmax_pro_fp;
   std::vector<int32_t> parameters;
   std::vector<int32_t> kernel, stride;
   std::vector<uint32_t> cropped_shape;
@@ -65,12 +66,15 @@ struct OperationPlan {
   int32_t axis = 0;
   int32_t pad_value = 0;
   bool equal_scale_fast_path = false;
+  bool scalar_mul_fast_path = false;
+  bool requires_float_fallback = false;
 };
 // Validates and lowers `op` into an `OperationPlan`, or populates `reason` on
 // failure.
 std::optional<OperationPlan> AnalyzeOperation(
     const Op& op, std::string& reason,
-    SoftmaxLutType softmax_lut = SoftmaxLutType::kAuto);
+    SoftmaxLutType softmax_lut = SoftmaxLutType::kAuto,
+    Int16NormMode int16_norm_mode = Int16NormMode::kAuto);
 
 // Emits TOSA instructions for a validated `OperationPlan` onto `graph`.
 tfsc::tosa::ResId EmitOperation(tfsc::tosa::Graph& graph,
